@@ -10,7 +10,7 @@ export GOTOOLCHAIN
 WORKER_BIN_NAME			?= controller
 TEMPORAL_CLI_DOWNLOAD_DIR	?= $(CURDIR)/.go/temporal-cli
 # The e2e-gofail settings are NKE_CONTROLLER_GOFAIL_E2E_*. An empty value counts as unset.
-# CWE_GOFAIL_E2E_* are deprecated aliases for them; nke#1399 removes them.
+# CWE_GOFAIL_E2E_* are deprecated aliases for them; #1399 removes them.
 gofail_e2e_worker_binary	= $(or $(NKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY),$(CWE_GOFAIL_E2E_WORKER_BINARY),$(CURDIR)/.go/bin/cwe-worker-gofail)
 GOFAIL				?= $(shell go env GOPATH)/bin/gofail
 SETUP_ENVTEST			?= $(shell go env GOPATH)/bin/setup-envtest
@@ -38,7 +38,7 @@ include ../make/golangci.mk
 include ../make/coverage.mk
 
 # Image URL to use all building/pushing image targets
-IMG_NAME ?= nvcr.io/j7sbcjl3qgta/nke-controller
+IMG_NAME ?= nvcr.io/j7sbcjl3qgta/nvke-controller
 IMG_TAG ?= latest
 IMG ?= ${IMG_NAME}:${IMG_TAG}
 # Falls back to the commit before v0.0.0. A CI checkout is shallow and carries
@@ -179,12 +179,12 @@ print-%:
 .PHONY: build
 # -buildvcs=false because the version comes from the -X ldflag below.
 build: ## Build controller into bin/.
-	CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags "-X github.com/dsx-ai-factory/nke/controller/internal/version.Version=${BUILD_VERSION} $(RELEASE_LDFLAGS)" -o ./bin/$(WORKER_BIN_NAME) ./cmd/worker/
+	CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags "-X github.com/dsx-ai-factory/nvke/controller/internal/version.Version=${BUILD_VERSION} $(RELEASE_LDFLAGS)" -o ./bin/$(WORKER_BIN_NAME) ./cmd/worker/
 
 .PHONY: fmt
 fmt: ## Format code (gofumpt + goimports; matches .golangci.yml formatters).
 	go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION) -w -extra .
-	go run golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION) -w -local github.com/dsx-ai-factory/nke/controller .
+	go run golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION) -w -local github.com/dsx-ai-factory/nvke/controller .
 
 # GO_TEST_FLAGS lets CI add -race without the workflow having to restate the
 # test command, so `make test` stays the one definition of what "the tests" are.
@@ -229,13 +229,13 @@ test-health: ## Run the health-labeled subset of the test/e2e suite against the 
 	$(MAKE) test-e2e E2E_TIMEOUT=10m ARGS='--label-filter=health'
 
 # The authentication specs. Both need deploy/k8s/nke-auth-dev.yaml applied and
-# an enforcing NKE; the chart binds the JWKS read permission.
+# an enforcing NVKE; the chart binds the JWKS read permission.
 #
 # The SPIRE spec carries both labels, so test-authn runs it too; it skips itself
 # with a message naming deploy/k8s/nke-spire-client.yaml when that scaffolding
 # is absent. test-authn-spire is the way to run only that one.
 #
-# The permissive specs have no target: they need an NKE deployed with
+# The permissive specs have no target: they need an NVKE deployed with
 # PERMISSIVE_MODE=true, which is a different deployment. Run them against one
 # with `make test-e2e ARGS='--label-filter=authn-permissive'`.
 .PHONY: test-authn
@@ -257,7 +257,7 @@ E2E_TIMEOUT ?= 2h
 ARGS ?=
 
 .PHONY: test-e2e
-test-e2e: ## Run all NKE e2e tests; optional ARGS forwards ginkgo flags Example: make test-e2e ARGS='--label-filter="nico-vms && happy-path"'
+test-e2e: ## Run all NVKE e2e tests; optional ARGS forwards ginkgo flags Example: make test-e2e ARGS='--label-filter="nico-vms && happy-path"'
 	cd $(E2E_DIR) && go run github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION) run -v --timeout=$(E2E_TIMEOUT) $(ARGS) .
 
 .PHONY: test-e2e-core-capd test-e2e-core-nico-containers test-e2e-happy-path
@@ -361,7 +361,7 @@ docker-build-multiarch: ## Build the controller image for linux/amd64 and linux/
 # Publish targets for pushing to an explicit registry (used by CI's
 # image-nvcr.yml). These deliberately do NOT use IMG_NAME/IMG: this OSS repo
 # must never default-push to the internal production image
-# (nvcr.io/j7sbcjl3qgta/nke-controller, IMG_NAME above). The destination
+# (nvcr.io/j7sbcjl3qgta/nvke-controller, IMG_NAME above). The destination
 # has no default and must be passed explicitly via IMG_REPO, guarded by
 # check-img-repo below, so a bare invocation cannot clobber it.
 #
@@ -458,7 +458,7 @@ $(GO_LICENSES):
 # A named alias for the rule above, so another module can ask for the binary by
 # name. GO_LICENSES is an absolute path, which means the real rule's target is
 # also absolute and `make -C .. bin/go-licenses` does not match it -- it fails
-# with "No rule to make target 'bin/go-licenses'". nkectl's notices target hit
+# with "No rule to make target 'bin/go-licenses'". nvkectl's notices target hit
 # exactly that, and it was masked in CI because the controller step runs first
 # and leaves the binary behind.
 .PHONY: go-licenses
@@ -488,7 +488,7 @@ license-policy-check: $(GO_LICENSES) ## Verify every third-party dependency uses
 	@# that genuinely need ignoring are named explicitly.
 	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker ../cluster-api-provider-provisioned/cmd/manager \
 		--allowed_licenses=$(ALLOWED_LICENSES) \
-		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nke/agent,github.com/dsx-ai-factory/nke/management-engine,github.com/dsx-ai-factory/nke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
+		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nvke/agent,github.com/dsx-ai-factory/nvke/management-engine,github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 .PHONY: notices
 notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker and provider manager binaries.

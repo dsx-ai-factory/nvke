@@ -51,7 +51,7 @@ $(info $$DEB_VERSION is [${DEB_VERSION}])
 RELEASE_LDFLAGS ?= -s -w -buildid=
 
 # -trimpath removes the build machine's filesystem paths from the binary. These
-# binaries are published to ghcr.io/dsx-ai-factory/nke/agent, so without it every
+# binaries are published to ghcr.io/dsx-ai-factory/nvke/agent, so without it every
 # release carries the layout of whatever machine built it, and two builds of the
 # same commit from different directories differ.
 LDFLAGS += -trimpath -ldflags="-X main.VERSION=$(VERSION) $(RELEASE_LDFLAGS)"
@@ -95,7 +95,7 @@ setup-hooks: ## Install or update Git pre-commit hook (monorepo-aware)
 ##@ Docker images
 .PHONY: build-builder-image push-builder-image setup-buildx
 
-BUILDER_IMAGE := $(or $(BUILDER_IMAGE),$(if $(NKE_CONTAINER_REGISTRY),$(NKE_CONTAINER_REGISTRY)/$(or $(NKE_BUILDER_IMAGE_NAME),nke-builder),ghcr.io/example/nke/nke-builder))
+BUILDER_IMAGE := $(or $(BUILDER_IMAGE),$(if $(NKE_CONTAINER_REGISTRY),$(NKE_CONTAINER_REGISTRY)/$(or $(NKE_BUILDER_IMAGE_NAME),nke-builder),ghcr.io/example/nvke/nke-builder))
 BUILDER_TAG := $(or $(BUILDER_TAG),$(or $(NKE_BUILDER_IMAGE_TAG),latest))
 BUILDX_PLATFORMS := linux/amd64,linux/arm64
 BUILDX_BUILDER := nke-multiarch-builder
@@ -316,7 +316,7 @@ package: package-all ## Default package = all arches
 nfpm: $(NFPM_BIN) ## Build the pinned Debian packaging tool.
 
 $(NFPM_BIN):
-	@GOBIN=$(abspath $(dir $(NFPM_BIN))) go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
+	@GOBIN=$(abspath $(dir $(NFPM_BIN))) GOPROXY='https://proxy.golang.org|direct' go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
 
 # Usage: $(call build_deb,amd64)
 define build_deb

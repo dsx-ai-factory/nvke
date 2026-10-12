@@ -4,7 +4,7 @@
 package capi
 
 import (
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 // ApplyNodePoolNodePayload is a no-op: CAPI nodes carry no per-node

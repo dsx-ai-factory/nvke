@@ -3,7 +3,11 @@
 
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestSaveLoadRoundTripsSiteConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -13,8 +17,8 @@ func TestSaveLoadRoundTripsSiteConfig(t *testing.T) {
 			"dev": {
 				URL:                 "http://localhost:8080",
 				Kubeconfig:          "/home/op/.kube/dev-mgmt.yaml",
-				ProxyClientCertFile: "/home/op/.config/nkectl/client.crt",
-				ProxyClientKeyFile:  "/home/op/.config/nkectl/client.key",
+				ProxyClientCertFile: "/home/op/.config/nvkectl/client.crt",
+				ProxyClientKeyFile:  "/home/op/.config/nvkectl/client.key",
 			},
 		},
 		CurrentSite: "dev",
@@ -37,10 +41,49 @@ func TestSaveLoadRoundTripsSiteConfig(t *testing.T) {
 	if site.Kubeconfig != "/home/op/.kube/dev-mgmt.yaml" {
 		t.Errorf("Kubeconfig = %q, want %q", site.Kubeconfig, "/home/op/.kube/dev-mgmt.yaml")
 	}
-	if site.ProxyClientCertFile != "/home/op/.config/nkectl/client.crt" {
+	if site.ProxyClientCertFile != "/home/op/.config/nvkectl/client.crt" {
 		t.Errorf("ProxyClientCertFile = %q, want proxy client certificate path", site.ProxyClientCertFile)
 	}
-	if site.ProxyClientKeyFile != "/home/op/.config/nkectl/client.key" {
+	if site.ProxyClientKeyFile != "/home/op/.config/nvkectl/client.key" {
 		t.Errorf("ProxyClientKeyFile = %q, want proxy client key path", site.ProxyClientKeyFile)
+	}
+}
+
+// TestLoadReadsTheLegacyLocationOnce: a config written by nkectl, the binary's
+// previous name, is read when nvkectl has none of its own, copied to the
+// current location, and not read again once that copy exists.
+func TestLoadReadsTheLegacyLocationOnce(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	legacy := filepath.Join(xdg, "nkectl", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte("sites:\n  old:\n    url: http://old.example\ncurrent-site: old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.CurrentSite != "old" || loaded.Sites["old"].URL != "http://old.example" {
+		t.Fatalf("Load did not read the legacy file: %+v", loaded)
+	}
+	current := filepath.Join(xdg, "nvkectl", "config.yaml")
+	if _, err := os.Stat(current); err != nil {
+		t.Fatalf("Load did not copy the legacy file to %s: %v", current, err)
+	}
+
+	// The legacy file changes after the handover; the copy is what is read now.
+	if err := os.WriteFile(legacy, []byte("sites:\n  other:\n    url: http://other.example\ncurrent-site: other\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load()
+	if err != nil {
+		t.Fatalf("Load again: %v", err)
+	}
+	if again.CurrentSite != "old" {
+		t.Errorf("second Load read the legacy file again: current-site = %q, want %q", again.CurrentSite, "old")
 	}
 }

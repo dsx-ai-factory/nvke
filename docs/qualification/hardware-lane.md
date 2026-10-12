@@ -49,9 +49,9 @@ goes:
 ```mermaid
 flowchart TB
     S1["1 — Infrastructure<br/>a bare machine, booted and reachable"]
-    S2K["2a — Kubernetes<br/>nkectl bootstrap site"]
-    S2N["2b — the NKE stack<br/>deployed from the staged assets"]
-    S3["3 — Tenant cluster<br/>created through the NKE controller, not through Forge"]
+    S2K["2a — Kubernetes<br/>nvkectl bootstrap site"]
+    S2N["2b — the NVKE stack<br/>deployed from the staged assets"]
+    S3["3 — Tenant cluster<br/>created through the NVKE controller, not through Forge"]
     S4["4 — Node pools<br/>the machines that cluster runs on"]
 
     S1 --> S2K --> S2N --> S3 --> S4
@@ -62,13 +62,13 @@ flowchart TB
 ```
 
 `bootstrap` is the one worth noticing: it stops after vanilla Kubernetes and
-*before* the NKE stack, so it proves `nkectl` can build a cluster on this
+*before* the NVKE stack, so it proves `nvkectl` can build a cluster on this
 hardware without spending the rest of the run on the product.
 
 | Step | Owned by | What it produces |
 |---|---|---|
 | [Infrastructure](#1-forge-infrastructure) | `internal/infra/forge` | One bare machine, booted and reachable |
-| [Site controller](#2-the-site-controller) | `internal/site` | Kubernetes plus the NKE stack on that machine |
+| [Site controller](#2-the-site-controller) | `internal/site` | Kubernetes plus the NVKE stack on that machine |
 | [Tenant cluster](#3-tenant-clusters) | `tenant_test.go`, the controller | A tenant cluster created through the product API |
 | [Node pools](#4-node-pools) | `forgeNodePoolSpecs` | The machines that tenant cluster runs on |
 
@@ -157,33 +157,33 @@ step 1:
 
 ```mermaid
 flowchart TB
-    B1["1 stage nkectl<br/>the binary built from the commit under test"] --> B2
+    B1["1 stage nvkectl<br/>the binary built from the commit under test"] --> B2
     B2["2 stage assets<br/>the deploy path as a tarball, tracked files only"] --> B3
 
     subgraph root [steps 3 to 6 run as root in a login shell, sudo -n -i]
         direction TB
         B3["3 import images<br/>into both containerd namespaces, k8s.io and default"] --> B4
         B4["4 generate site spec<br/>a hosts CSV plus --set for Kubernetes, CNI, SPIRE"] --> B5
-        B5["5 bootstrap site<br/>nkectl bootstrap site"] --> B6
-        B6["6 deploy<br/>the NKE stack from the staged assets"]
+        B5["5 bootstrap site<br/>nvkectl bootstrap site"] --> B6
+        B6["6 deploy<br/>the NVKE stack from the staged assets"]
     end
 ```
 
 A *login* shell, not a plain `sudo`, and the subgraph label is the reason: the
 step titles alone would not tell you why.
 
-1. **stage nkectl** — upload the binary built from the commit under test and
-   run `nkectl version`.
+1. **stage nvkectl** — upload the binary built from the commit under test and
+   run `nvkectl version`.
 2. **stage assets** — upload the deploy path as a tarball, exported from the
    commit under test with tracked files only, so nothing in a working tree
    reaches the node.
 3. **import images** — into *both* containerd namespaces: `k8s.io` for the
    cluster and `default` for the kind bootstrap cluster nerdctl runs.
-4. **generate site spec** — `nkectl generate sitespec` from a hosts CSV
+4. **generate site spec** — `nvkectl generate sitespec` from a hosts CSV
    (`name,ip,tpm_ek_thumbprint`) plus `--set` for the Kubernetes version, the
    CNI, and the SPIRE trust domain.
-5. **bootstrap site** — `nkectl bootstrap site`.
-6. **deploy** — install the NKE stack from the staged assets.
+5. **bootstrap site** — `nvkectl bootstrap site`.
+6. **deploy** — install the NVKE stack from the staged assets.
 
 Steps 3 through 6 run as root in a *login* shell (`sudo -n -i`). Under a plain
 `sudo` the bootstrap's nerdctl inherits the calling user's environment and goes
@@ -195,11 +195,11 @@ handshake error. This mirrors the documented provisioning procedure, which
 brings SPIRE and TPM attestation up in the management-plane install rather than
 at bootstrap.
 
-**Verification is not "nkectl exited 0".** The admin kubeconfig is forwarded
+**Verification is not "nvkectl exited 0".** The admin kubeconfig is forwarded
 off the node to the runner, the controller is polled on `/healthz` and then `/api/version`,
 and the reported version is compared against the candidate's expected version.
 
-**Evidence.** On failure `CollectDiagnostics` tars nkectl's diagnostics
+**Evidence.** On failure `CollectDiagnostics` tars nvkectl's diagnostics
 directory off the node before the machine is released, since nothing else
 preserves it and the release is minutes away. It distinguishes "there is no
 diagnostics directory" — the ordinary case, meaning the deploy worked and the
@@ -220,13 +220,13 @@ place is not covered.
 
 The architectural point worth stating plainly: **tenant clusters are created
 through the controller's API on the site controller machine, not through the Forge API.** The suite
-posts an `nke.ClusterSpec` with `Backend: BackendNicoForge` naming the org,
+posts an `nvke.ClusterSpec` with `Backend: BackendNicoForge` naming the org,
 site and VPC; CAPNico inside the cluster is what calls Forge. That keeps the
 lane on the product's own front door rather than a test-only path.
 
 ```mermaid
 flowchart LR
-    SUITE["the suite<br/>posts an nke.ClusterSpec with<br/>Backend: BackendNicoForge"] --> CTRL["the NKE controller<br/>on the site controller machine"]
+    SUITE["the suite<br/>posts an nvke.ClusterSpec with<br/>Backend: BackendNicoForge"] --> CTRL["the NVKE controller<br/>on the site controller machine"]
     CTRL --> CAPN["CAPNico<br/>inside that cluster"]
     CAPN --> FORGE["the Forge API"]
     SUITE --x FORGE
@@ -239,7 +239,7 @@ path was broken.
 What the suite passes down is `NodePayloads` — the iPXE script and
 `preKubeadmCommands` rendered by the same `BuildForgeNodePayloads` the site
 node was built from, so tenant nodes are constructed the same way. The
-pre-kubeadm script adds the NKE apt repository and installs `nke-agent`, the
+pre-kubeadm script adds the NVKE apt repository and installs `nke-agent`, the
 pinned `nke-kubeadm-distro`, both OVN packages, `openvswitch-switch` and
 `spire-agent`.
 

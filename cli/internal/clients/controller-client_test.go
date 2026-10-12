@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/config"
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/cli/internal/config"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 type fakeTokenSource struct {
@@ -137,7 +137,7 @@ func writeClientCertificate(t *testing.T) (string, string) {
 	}
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "nkectl-test-client"},
+		Subject:      pkix.Name{CommonName: "nvkectl-test-client"},
 		NotBefore:    time.Now().Add(-time.Minute),
 		NotAfter:     time.Now().Add(time.Minute),
 		KeyUsage:     x509.KeyUsageDigitalSignature,

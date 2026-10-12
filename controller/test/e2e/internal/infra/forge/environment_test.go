@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/environment"
 )
 
 // checkedInDir is where the suite's environments live, relative to this

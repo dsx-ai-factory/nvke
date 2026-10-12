@@ -37,11 +37,11 @@ env:
   # Keep in step with os-image-artifact.yml. The bucket and the write role are
   # repository variables.
   BUILD_CACHE_REGION: us-east-1
-  BUILD_CACHE_ISO_PREFIX: nke/os-image/iso
+  BUILD_CACHE_ISO_PREFIX: nvke/os-image/iso
 
 jobs:
   iso:
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     name: Cache the installer ISO (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }})
     runs-on: ubuntu-latest
     # arm64's ISO comes from cdimage.ubuntu.com at a couple of MB/s.
@@ -64,18 +64,18 @@ jobs:
       - name: Configure AWS credentials for the build cache
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.NKE_GHA_CACHE_WRITE_ROLE_ARN }}
+          role-to-assume: ${{ vars.NVKE_GHA_CACHE_WRITE_ROLE_ARN }}
           aws-region: ${{ env.BUILD_CACHE_REGION }}
 
       - name: Download, verify and upload
         env:
-          BUCKET: ${{ vars.NKE_GHA_CACHE_BUCKET }}
+          BUCKET: ${{ vars.NVKE_GHA_CACHE_BUCKET }}
           ARCH: ${{ matrix.arch }}
           UBUNTU_RELEASE: ${{ matrix.ubuntu_release }}
         run: |
           set -euo pipefail
           # Fail now, not after a multi-GB download, if the variable is unset.
-          : "${BUCKET:?NKE_GHA_CACHE_BUCKET is not set}"
+          : "${BUCKET:?NVKE_GHA_CACHE_BUCKET is not set}"
           resolve() {
             make --no-print-directory -C os-image/packer "print-$1" \
               ARCH="${ARCH}" UBUNTU_RELEASE="${UBUNTU_RELEASE}"

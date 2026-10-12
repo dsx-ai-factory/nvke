@@ -4,7 +4,7 @@ scenario: ../../workloads/cni/k8s-netperf-throughput/scenario.yaml
 workload: cni
 k8s_version: 1.34.2
 date: 2026-05-26
-authors: [NVIDIA NKE Scale Team]
+authors: [NVIDIA NVKE Scale Team]
 ---
 
 # OVN-Kubernetes data-plane throughput
@@ -42,7 +42,7 @@ netperf client, not server-side.*
 
 **This is not a maximum-scale claim.** The 11-node topology and the S–XL
 concurrency range are what this run measured, not a ceiling on OVN-Kubernetes
-or on NKE. A different cluster should apply the scenario's `sizing.derivation`
+or on NVKE. A different cluster should apply the scenario's `sizing.derivation`
 rather than read XL as "as far as it goes."
 
 This result publishes only cells the checked-in scenario and engine configs

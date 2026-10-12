@@ -17,7 +17,7 @@ func TestCheck(t *testing.T) {
 		{name: "a consistent set passes", subject: testSubject},
 		{
 			name:    "the subject is not registered",
-			subject: strings.NewReplacer("  name: nke", "  name: agent", "subject: nke", "subject: agent").Replace(testSubject),
+			subject: strings.NewReplacer("  name: nvke", "  name: agent", "subject: nvke", "subject: agent").Replace(testSubject),
 			want:    `subject "agent" is not a component in the registry`,
 		},
 		{

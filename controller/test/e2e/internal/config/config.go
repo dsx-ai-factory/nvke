@@ -57,8 +57,8 @@ type Config struct {
 	Site Site `json:"site"`
 	// Runner is what the machine running the suite supplies.
 	Runner Runner `json:"runner"`
-	// Nkectl is the CLI the bootstrap runs.
-	Nkectl Nkectl `json:"nkectl"`
+	// Nvkectl is the CLI the bootstrap runs.
+	Nvkectl Nvkectl `json:"nvkectl"`
 }
 
 // Runner is the machine the suite runs from, as distinct from the site it
@@ -71,11 +71,11 @@ type Runner struct {
 	TeleportIdentityFile string `json:"teleportIdentityFile"`
 }
 
-// Nkectl is the CLI the bootstrap runs on the node. Its own section rather
+// Nvkectl is the CLI the bootstrap runs on the node. Its own section rather
 // than a field under runner or site: it is neither the machine the suite runs
 // from nor the site it builds, and what the bootstrap asks of it will grow.
-type Nkectl struct {
-	// Binary is a linux nkectl for the node's architecture, on this machine.
+type Nvkectl struct {
+	// Binary is a linux nvkectl for the node's architecture, on this machine.
 	// Empty is what `gmake -C cli build-cross` writes for that architecture.
 	Binary string `json:"binary"`
 }
@@ -191,9 +191,9 @@ func (c *Config) applyDefaults() {
 	// The same repositories and archive names `gmake site-inputs` defaults
 	// to, so a local run after it needs no site block at all.
 	images := &c.Site.Images
-	setDefault(&images.Controller.Repository, "ghcr.io/dsx-ai-factory/nke/nke-controller")
+	setDefault(&images.Controller.Repository, "ghcr.io/dsx-ai-factory/nvke/nke-controller")
 	setDefault(&images.Controller.Archive, DefaultSiteInputs+"/controller.tar")
-	setDefault(&images.CAPIProvisioned.Repository, "ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned")
+	setDefault(&images.CAPIProvisioned.Repository, "ghcr.io/dsx-ai-factory/nvke/cluster-api-provider-provisioned")
 	setDefault(&images.CAPIProvisioned.Archive, DefaultSiteInputs+"/capi-provisioned.tar")
 	setDefault(&images.Profiles.Repository, "nke-e2e-profiles")
 	setDefault(&images.Profiles.Tag, "local")

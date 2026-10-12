@@ -6,9 +6,9 @@ package oidc
 import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
 
 // RegisterDefaults wires the enable-OIDC operation into reg with its runtime
@@ -21,7 +21,7 @@ func RegisterDefaults(
 	dialer nodeagent.Dialer,
 	checker nodeagent.MethodSupportChecker,
 	k8sClient client.Client,
-	oidc config.NkeOIDCAuth,
+	oidc config.NvkeOIDCAuth,
 	trustDomain string,
 ) {
 	oidcConfig := oidc

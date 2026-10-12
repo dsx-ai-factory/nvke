@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 func capiInfraCluster(t *testing.T, req api.CreateClusterJSONRequestBody) map[string]interface{} {
@@ -22,7 +22,7 @@ func capiInfraCluster(t *testing.T, req api.CreateClusterJSONRequestBody) map[st
 
 func testSiteSpec() *sitespec.SiteSpec {
 	return &sitespec.SiteSpec{
-		ClusterName: "nke-site",
+		ClusterName: "nvke-site",
 		Cluster: sitespec.Cluster{
 			Nodes: []sitespec.Node{
 				{Name: "node1", IP: "172.26.0.10", TPMEKThumbprint: strings.Repeat("1", 64)},

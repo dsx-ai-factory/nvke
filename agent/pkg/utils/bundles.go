@@ -50,7 +50,7 @@ type BundleSource struct {
 
 // ParseBundleSourceURI parses a bundle source URI and determines its type.
 // Supported schemes:
-//   - oci://  - OCI registry (e.g., oci://registry.example.com/nke/bundles)
+//   - oci://  - OCI registry (e.g., oci://registry.example.com/nvke/bundles)
 //   - http:// or https:// - HTTP/S3 bundle server
 //   - file:// - Local file system
 //
@@ -169,7 +169,7 @@ type Bundle struct {
 	UseStaging     bool
 	Path           string
 	URL            string
-	OCIReference   string // OCI registry reference (e.g., registry.example.com/nke/bundles/bundles-kubeadm:v1.30.0)
+	OCIReference   string // OCI registry reference (e.g., registry.example.com/nvke/bundles/bundles-kubeadm:v1.30.0)
 }
 
 // Entry represents a single component entry

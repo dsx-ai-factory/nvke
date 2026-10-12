@@ -17,8 +17,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
 
 func TestParseLoopbackIPv4VIPs(t *testing.T) {
@@ -109,7 +109,7 @@ func TestListStaticPodContainerIDsParsesStdoutJSONAndIgnoresStderr(t *testing.T)
 func TestWaitForStaticPodExitAcceptsGoneAtDeadline(t *testing.T) {
 	server := &NodeAgentServer{}
 	runner := &MockRunner{Runners: []runner{
-		runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=kube-vip", "-o", "json"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+		runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=kube-vip", "-o", "json"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 			return []byte(`{"containers":[]}`), nil
 		}),
 	}}
@@ -122,7 +122,7 @@ func TestWaitForStaticPodExitAcceptsGoneAtDeadline(t *testing.T) {
 func TestWaitForStaticPodExitReportsRunningContainerIDs(t *testing.T) {
 	server := &NodeAgentServer{}
 	runner := &MockRunner{Runners: []runner{
-		runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=kube-apiserver", "-o", "json"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+		runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=kube-apiserver", "-o", "json"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 			return []byte(`{"containers":[{"id":"0123456789abcdef"}]}`), nil
 		}),
 	}}
@@ -137,7 +137,7 @@ func TestWaitForVipSocketQuietWindowScansAtDeadline(t *testing.T) {
 	server := &NodeAgentServer{}
 	ssListCalls := 0
 	runner := &MockRunner{Runners: []runner{
-		runForCommand("ss", []string{"-Htan", "state", "established", "src", "192.168.100.0", "sport", "=", ":6443"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+		runForCommand("ss", []string{"-Htan", "state", "established", "src", "192.168.100.0", "sport", "=", ":6443"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 			ssListCalls++
 			return []byte("0 0 192.168.100.0:6443 203.0.113.1:50696\n"), nil
 		}),
@@ -169,11 +169,11 @@ func TestK8SControlPlaneNodeGracefulShutdown(t *testing.T) {
 				return &MockRunner{Runners: []runner{
 					loopbackVIPRunner("1: lo    inet 192.168.100.0/32 scope host lo\\       valid_lft forever preferred_lft forever\n"),
 					staticPodExitedRunner("kube-vip"),
-					runForCommand("ip", []string{"addr", "del", "192.168.100.0/32", "dev", "lo"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+					runForCommand("ip", []string{"addr", "del", "192.168.100.0/32", "dev", "lo"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 						st.order = append(st.order, "remove-vip")
 						return nil, nil
 					}),
-					func(name string, args []string, opts *nkeutils.CommandOptions) (bool, []byte, error) {
+					func(name string, args []string, opts *nvkeutils.CommandOptions) (bool, []byte, error) {
 						if name != "ss" || !slices.Equal(args, []string{"-Htan", "state", "established", "src", "192.168.100.0", "sport", "=", ":6443"}) {
 							return false, nil, nil
 						}
@@ -183,7 +183,7 @@ func TestK8SControlPlaneNodeGracefulShutdown(t *testing.T) {
 						}
 						return true, nil, nil
 					},
-					func(name string, args []string, opts *nkeutils.CommandOptions) (bool, []byte, error) {
+					func(name string, args []string, opts *nvkeutils.CommandOptions) (bool, []byte, error) {
 						if name != "ss" || len(args) == 0 || args[0] != "-Ktan" {
 							return false, nil, nil
 						}
@@ -212,11 +212,11 @@ func TestK8SControlPlaneNodeGracefulShutdown(t *testing.T) {
 				return &MockRunner{Runners: []runner{
 					loopbackVIPRunner("1: lo    inet 192.168.100.0/32 scope host lo\\       valid_lft forever preferred_lft forever\n"),
 					staticPodExitedRunner("kube-vip"),
-					runForCommand("ip", []string{"addr", "del", "192.168.100.0/32", "dev", "lo"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+					runForCommand("ip", []string{"addr", "del", "192.168.100.0/32", "dev", "lo"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 						st.order = append(st.order, "remove-vip")
 						return nil, nil
 					}),
-					runForCommand("ss", []string{"-Htan", "state", "established", "src", "192.168.100.0", "sport", "=", ":6443"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+					runForCommand("ss", []string{"-Htan", "state", "established", "src", "192.168.100.0", "sport", "=", ":6443"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 						return nil, nil
 					}),
 					staticPodRunningThenExitedRunner("kube-apiserver", &st.apiServerListCalls),
@@ -241,10 +241,10 @@ func TestK8SControlPlaneNodeGracefulShutdown(t *testing.T) {
 				writeKubeVipBackupManifest(t, st)
 				return &MockRunner{Runners: []runner{
 					staticPodExitedRunner("kube-vip"),
-					runForCommand("ss", []string{"-Htan", "state", "established", "src", "192.168.100.0", "sport", "=", ":6443"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+					runForCommand("ss", []string{"-Htan", "state", "established", "src", "192.168.100.0", "sport", "=", ":6443"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 						return nil, nil
 					}),
-					runForCommand("ip", []string{"addr", "del", "192.168.100.0/32", "dev", "lo"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+					runForCommand("ip", []string{"addr", "del", "192.168.100.0/32", "dev", "lo"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 						return []byte("not found"), errors.New("ip addr missing")
 					}),
 					loopbackVIPRunner(""),
@@ -300,16 +300,16 @@ func TestK8SControlPlaneNodeGracefulShutdown(t *testing.T) {
 				return &MockRunner{Runners: []runner{
 					loopbackVIPRunner("1: lo    inet 192.168.100.0/32 scope host lo\\       valid_lft forever preferred_lft forever\n"),
 					staticPodExitedRunner("kube-vip"),
-					runForCommand("ss", []string{"-Htan", "state", "established", "src", "192.168.100.0", "sport", "=", ":6443"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+					runForCommand("ss", []string{"-Htan", "state", "established", "src", "192.168.100.0", "sport", "=", ":6443"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 						return []byte("0 0 192.168.100.0:6443 172.18.0.6:34920\n"), nil
 					}),
-					func(name string, args []string, opts *nkeutils.CommandOptions) (bool, []byte, error) {
+					func(name string, args []string, opts *nvkeutils.CommandOptions) (bool, []byte, error) {
 						if name != "ss" || len(args) == 0 || args[0] != "-Ktan" {
 							return false, nil, nil
 						}
 						return true, []byte("boom"), errors.New("ss failed")
 					},
-					runForCommand("ip", []string{"addr", "del", "192.168.100.0/32", "dev", "lo"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+					runForCommand("ip", []string{"addr", "del", "192.168.100.0/32", "dev", "lo"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 						st.removedVIP = true
 						return nil, nil
 					}),
@@ -329,10 +329,10 @@ func TestK8SControlPlaneNodeGracefulShutdown(t *testing.T) {
 				return &MockRunner{Runners: []runner{
 					loopbackVIPRunner("1: lo    inet 192.168.100.0/32 scope host lo\\       valid_lft forever preferred_lft forever\n"),
 					staticPodExitedRunner("kube-vip"),
-					runForCommand("ip", []string{"addr", "del", "192.168.100.0/32", "dev", "lo"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+					runForCommand("ip", []string{"addr", "del", "192.168.100.0/32", "dev", "lo"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 						return nil, nil
 					}),
-					func(name string, args []string, opts *nkeutils.CommandOptions) (bool, []byte, error) {
+					func(name string, args []string, opts *nvkeutils.CommandOptions) (bool, []byte, error) {
 						if name != "ss" || !slices.Equal(args, []string{"-Htan", "state", "established", "src", "192.168.100.0", "sport", "=", ":6443"}) {
 							return false, nil, nil
 						}
@@ -364,7 +364,7 @@ func TestK8SControlPlaneNodeGracefulShutdown(t *testing.T) {
 			runner: func(*gracefulShutdownTestState) *MockRunner {
 				return &MockRunner{Runners: []runner{
 					loopbackVIPRunner("1: lo inet 192.168.100.0/32 scope host lo\n"),
-					runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=kube-vip", "-o", "json"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+					runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=kube-vip", "-o", "json"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 						return []byte("boom"), errors.New("crictl failed")
 					}),
 				}}
@@ -779,25 +779,25 @@ func inactiveGracefulShutdownStatus() *NodeStatus {
 }
 
 func loopbackVIPRunner(output string) runner {
-	return runForCommand("ip", []string{"-o", "-4", "addr", "show", "dev", "lo", "scope", "host"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+	return runForCommand("ip", []string{"-o", "-4", "addr", "show", "dev", "lo", "scope", "host"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 		return []byte(output), nil
 	})
 }
 
 func staticPodRunningRunner(containerName string) runner {
-	return runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=" + containerName, "-o", "json"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+	return runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=" + containerName, "-o", "json"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 		return []byte(`{"containers":[{"id":"0123456789abcdef"}]}`), nil
 	})
 }
 
 func staticPodExitedRunner(containerName string) runner {
-	return runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=" + containerName, "-o", "json"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+	return runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=" + containerName, "-o", "json"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 		return []byte(`{"containers":[]}`), nil
 	})
 }
 
 func staticPodExitedThenRunningRunner(containerName string, calls *int) runner {
-	return runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=" + containerName, "-o", "json"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+	return runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=" + containerName, "-o", "json"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 		*calls += 1
 		if *calls == 1 {
 			return []byte(`{"containers":[]}`), nil
@@ -807,7 +807,7 @@ func staticPodExitedThenRunningRunner(containerName string, calls *int) runner {
 }
 
 func staticPodStaleThenNewRunner(containerName string, calls *int) runner {
-	return runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=" + containerName, "-o", "json"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+	return runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=" + containerName, "-o", "json"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 		*calls += 1
 		if *calls < 3 {
 			return []byte(`{"containers":[{"id":"old-container"}]}`), nil
@@ -817,7 +817,7 @@ func staticPodStaleThenNewRunner(containerName string, calls *int) runner {
 }
 
 func staticPodRunningThenExitedRunner(containerName string, calls *int) runner {
-	return runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=" + containerName, "-o", "json"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+	return runForCommand("crictl", []string{"ps", "--label", "io.kubernetes.container.name=" + containerName, "-o", "json"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 		*calls += 1
 		if *calls == 1 {
 			return []byte(`{"containers":[{"id":"0123456789abcdef"}]}`), nil

@@ -43,7 +43,7 @@ metadata:
 {{- /*
   The tenant-access controller is the only thing that applies this ConfigMap into
   tenant clusters and publishes the SPIRE exec-auth kubeconfig. With it disabled,
-  OIDC-enabled clusters would trust SPIRE JWTs while NKE holds neither RBAC nor a
+  OIDC-enabled clusters would trust SPIRE JWTs while NVKE holds neither RBAC nor a
   kubeconfig there — dark, and silent. Fail the render instead.
 */}}
 {{- if not .Values.tenantAccess.enabled }}

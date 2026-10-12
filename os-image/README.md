@@ -229,7 +229,7 @@ packer build \
 ```
 
 The existing Make targets run `packer init` before validation or build, so the
-developer and NKE CI workflow retain their current plugin-installation path.
+developer and NVKE CI workflow retain their current plugin-installation path.
 Hermetic external runners instead provide the exact Packer executable and the
 QEMU plugin version pinned by `packer/versions.pkr.hcl`, expose the authenticated
 plugin tree through `PACKER_PLUGIN_PATH`, and run `packer validate` followed by
@@ -492,10 +492,10 @@ The pulled file keeps the name Packer gave it, so it carries the Ubuntu point
 release and the architecture and two arches can share a directory:
 
 ```bash
-oras pull ghcr.io/dsx-ai-factory/nke/os-image-fde:vX.Y.Z-amd64 --platform linux/amd64
-oras pull ghcr.io/dsx-ai-factory/nke/os-image-fde:vX.Y.Z-arm64 --platform linux/arm64
-oras pull ghcr.io/dsx-ai-factory/nke/os-image-non-fde:vX.Y.Z-amd64 --platform linux/amd64
-oras pull ghcr.io/dsx-ai-factory/nke/os-image-non-fde:vX.Y.Z-arm64 --platform linux/arm64
+oras pull ghcr.io/dsx-ai-factory/nvke/os-image-fde:vX.Y.Z-amd64 --platform linux/amd64
+oras pull ghcr.io/dsx-ai-factory/nvke/os-image-fde:vX.Y.Z-arm64 --platform linux/arm64
+oras pull ghcr.io/dsx-ai-factory/nvke/os-image-non-fde:vX.Y.Z-amd64 --platform linux/amd64
+oras pull ghcr.io/dsx-ai-factory/nvke/os-image-non-fde:vX.Y.Z-arm64 --platform linux/arm64
 # -> nke-node-{fde,non-fde}-ubuntu-26.04.1-{amd64,arm64}.qcow2
 ```
 

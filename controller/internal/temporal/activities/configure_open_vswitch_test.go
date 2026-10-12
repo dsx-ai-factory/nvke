@@ -16,17 +16,17 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent/agenttest"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestConfigureOpenVSwitchUsesDurableTypedOperation(t *testing.T) {
-	tests := map[string]nkeproto.OpenVSwitchReconciliationResult_Outcome{
-		"configured": nkeproto.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED,
-		"unchanged":  nkeproto.OpenVSwitchReconciliationResult_OUTCOME_UNCHANGED,
+	tests := map[string]nvkeproto.OpenVSwitchReconciliationResult_Outcome{
+		"configured": nvkeproto.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED,
+		"unchanged":  nvkeproto.OpenVSwitchReconciliationResult_OUTCOME_UNCHANGED,
 	}
 	for name, outcome := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -37,7 +37,7 @@ func TestConfigureOpenVSwitchUsesDurableTypedOperation(t *testing.T) {
 			database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Once()
 			database.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "cluster-1"}, nil).Once()
 			fakeAgent := &agenttest.FakeClient{
-				StartOpenVSwitchHook: func(_ db.Node, req *nkeproto.StartOpenVSwitchReconciliationRequest) (*nkeproto.StartOpenVSwitchReconciliationResponse, error) {
+				StartOpenVSwitchHook: func(_ db.Node, req *nvkeproto.StartOpenVSwitchReconciliationRequest) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error) {
 					require.Equal(t, "op-1", req.GetOperationId())
 					return successfulOpenVSwitchStart("op-1", outcome), nil
 				},
@@ -66,14 +66,14 @@ func TestConfigureOpenVSwitchPollsAcceptedOperationToSuccess(t *testing.T) {
 	database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Once()
 	database.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "cluster-1"}, nil).Once()
 	fakeAgent := &agenttest.FakeClient{
-		StartOpenVSwitchHook: func(_ db.Node, req *nkeproto.StartOpenVSwitchReconciliationRequest) (*nkeproto.StartOpenVSwitchReconciliationResponse, error) {
-			return &nkeproto.StartOpenVSwitchReconciliationResponse{
+		StartOpenVSwitchHook: func(_ db.Node, req *nvkeproto.StartOpenVSwitchReconciliationRequest) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error) {
+			return &nvkeproto.StartOpenVSwitchReconciliationResponse{
 				Operation: runningOpenVSwitchOperation(req.GetOperationId()),
 			}, nil
 		},
-		GetOpenVSwitchStatusHook: func(_ db.Node, req *nkeproto.GetOpenVSwitchReconciliationStatusRequest) (*nkeproto.GetOpenVSwitchReconciliationStatusResponse, error) {
-			return &nkeproto.GetOpenVSwitchReconciliationStatusResponse{
-				Operation: successfulOpenVSwitchOperation(req.GetOperationId(), nkeproto.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED),
+		GetOpenVSwitchStatusHook: func(_ db.Node, req *nvkeproto.GetOpenVSwitchReconciliationStatusRequest) (*nvkeproto.GetOpenVSwitchReconciliationStatusResponse, error) {
+			return &nvkeproto.GetOpenVSwitchReconciliationStatusResponse{
+				Operation: successfulOpenVSwitchOperation(req.GetOperationId(), nvkeproto.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED),
 			}, nil
 		},
 	}
@@ -95,13 +95,13 @@ func TestConfigureOpenVSwitchFallsBackOnlyWhenRPCIsUnimplemented(t *testing.T) {
 	database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Twice()
 	database.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "cluster-1"}, nil).Twice()
 	fakeAgent := &agenttest.FakeClient{
-		StartOpenVSwitchHook: func(_ db.Node, _ *nkeproto.StartOpenVSwitchReconciliationRequest) (*nkeproto.StartOpenVSwitchReconciliationResponse, error) {
+		StartOpenVSwitchHook: func(_ db.Node, _ *nvkeproto.StartOpenVSwitchReconciliationRequest) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error) {
 			return nil, status.Error(codes.Unimplemented, "unknown method StartOpenVSwitchReconciliation")
 		},
-		ExecuteScriptHook: func(_ db.Node, scriptName, script string) (*nkeproto.ExecuteScriptResponse, error) {
+		ExecuteScriptHook: func(_ db.Node, scriptName, script string) (*nvkeproto.ExecuteScriptResponse, error) {
 			require.Equal(t, legacyOpenVSwitchRunbook, scriptName)
 			require.Contains(t, script, "configure_openvswitch")
-			return &nkeproto.ExecuteScriptResponse{}, nil
+			return &nvkeproto.ExecuteScriptResponse{}, nil
 		},
 	}
 	a := &Activities{db: database, nodeAgentClient: fakeAgent}
@@ -128,7 +128,7 @@ func TestConfigureOpenVSwitchPropagatesOperationalRPCErrorWithoutFallback(t *tes
 	database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Once()
 	database.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "cluster-1"}, nil).Once()
 	fakeAgent := &agenttest.FakeClient{
-		StartOpenVSwitchHook: func(_ db.Node, _ *nkeproto.StartOpenVSwitchReconciliationRequest) (*nkeproto.StartOpenVSwitchReconciliationResponse, error) {
+		StartOpenVSwitchHook: func(_ db.Node, _ *nvkeproto.StartOpenVSwitchReconciliationRequest) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error) {
 			return nil, errors.New("connection lost after accepting operation")
 		},
 	}
@@ -143,11 +143,11 @@ func TestConfigureOpenVSwitchPropagatesOperationalRPCErrorWithoutFallback(t *tes
 }
 
 func TestConfigureOpenVSwitchRejectsInvalidOperation(t *testing.T) {
-	for name, operation := range map[string]*nkeproto.OpenVSwitchReconciliationOperation{
+	for name, operation := range map[string]*nvkeproto.OpenVSwitchReconciliationOperation{
 		"empty operation": nil,
 		"missing status":  {},
 		"unspecified phase": {
-			Operation: &nkeproto.NodeAgentOperationStatus{OperationId: "op-1"},
+			Operation: &nvkeproto.NodeAgentOperationStatus{OperationId: "op-1"},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -160,8 +160,8 @@ func TestConfigureOpenVSwitchRejectsInvalidOperation(t *testing.T) {
 			a := &Activities{
 				db: database,
 				nodeAgentClient: &agenttest.FakeClient{
-					StartOpenVSwitchHook: func(_ db.Node, _ *nkeproto.StartOpenVSwitchReconciliationRequest) (*nkeproto.StartOpenVSwitchReconciliationResponse, error) {
-						return &nkeproto.StartOpenVSwitchReconciliationResponse{Operation: operation}, nil
+					StartOpenVSwitchHook: func(_ db.Node, _ *nvkeproto.StartOpenVSwitchReconciliationRequest) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error) {
+						return &nvkeproto.StartOpenVSwitchReconciliationResponse{Operation: operation}, nil
 					},
 				},
 			}
@@ -176,36 +176,36 @@ func TestConfigureOpenVSwitchRejectsInvalidOperation(t *testing.T) {
 
 func successfulOpenVSwitchStart(
 	operationID string,
-	outcome nkeproto.OpenVSwitchReconciliationResult_Outcome,
-) *nkeproto.StartOpenVSwitchReconciliationResponse {
-	return &nkeproto.StartOpenVSwitchReconciliationResponse{
+	outcome nvkeproto.OpenVSwitchReconciliationResult_Outcome,
+) *nvkeproto.StartOpenVSwitchReconciliationResponse {
+	return &nvkeproto.StartOpenVSwitchReconciliationResponse{
 		Operation: successfulOpenVSwitchOperation(operationID, outcome),
 	}
 }
 
-func runningOpenVSwitchOperation(operationID string) *nkeproto.OpenVSwitchReconciliationOperation {
-	return &nkeproto.OpenVSwitchReconciliationOperation{
-		Operation: &nkeproto.NodeAgentOperationStatus{
+func runningOpenVSwitchOperation(operationID string) *nvkeproto.OpenVSwitchReconciliationOperation {
+	return &nvkeproto.OpenVSwitchReconciliationOperation{
+		Operation: &nvkeproto.NodeAgentOperationStatus{
 			OperationId: operationID,
-			Phase:       nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING,
+			Phase:       nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING,
 		},
 	}
 }
 
 func successfulOpenVSwitchOperation(
 	operationID string,
-	outcome nkeproto.OpenVSwitchReconciliationResult_Outcome,
-) *nkeproto.OpenVSwitchReconciliationOperation {
-	return &nkeproto.OpenVSwitchReconciliationOperation{
-		Operation: &nkeproto.NodeAgentOperationStatus{
+	outcome nvkeproto.OpenVSwitchReconciliationResult_Outcome,
+) *nvkeproto.OpenVSwitchReconciliationOperation {
+	return &nvkeproto.OpenVSwitchReconciliationOperation{
+		Operation: &nvkeproto.NodeAgentOperationStatus{
 			OperationId: operationID,
-			Phase:       nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED,
+			Phase:       nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED,
 		},
-		Result: &nkeproto.OpenVSwitchReconciliationResult{
+		Result: &nvkeproto.OpenVSwitchReconciliationResult{
 			Outcome:         outcome,
 			BridgeName:      "breth0",
 			UplinkInterface: "eth0",
-			NetworkBackend:  nkeproto.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN,
+			NetworkBackend:  nvkeproto.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN,
 		},
 	}
 }

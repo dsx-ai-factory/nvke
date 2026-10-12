@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package util provides shared utility functions for nkectl commands:
+// Package util provides shared utility functions for nvkectl commands:
 // output formatting, age display, and other common CLI helpers.
 package util
 

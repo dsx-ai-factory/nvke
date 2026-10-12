@@ -3,7 +3,7 @@
 
 [Unit]
 Description=Size nf_conntrack limits to this node's RAM
-Documentation=https://github.com/dsx-ai-factory/nke/blob/main/os-image/SPEC.md https://docs.kernel.org/networking/nf_conntrack-sysctl.html
+Documentation=https://github.com/dsx-ai-factory/nvke/blob/main/os-image/SPEC.md https://docs.kernel.org/networking/nf_conntrack-sysctl.html
 # Writes /run/sysctl.d/10-nke-conntrack.conf for systemd-sysctl.service to
 # apply in its normal boot pass, so this unit sets no sysctl itself.
 #

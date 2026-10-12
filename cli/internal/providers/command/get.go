@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package command holds the nkectl subcommands that work with infrastructure
+// Package command holds the nvkectl subcommands that work with infrastructure
 // providers.
 //
 // It sits above the registry and the inspector so that neither has to know
@@ -16,9 +16,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/config"
-	"github.com/dsx-ai-factory/nke/cli/internal/providers/inspect"
-	"github.com/dsx-ai-factory/nke/cli/internal/util"
+	"github.com/dsx-ai-factory/nvke/cli/internal/config"
+	"github.com/dsx-ai-factory/nvke/cli/internal/providers/inspect"
+	"github.com/dsx-ai-factory/nvke/cli/internal/util"
 )
 
 // SiteFn is a factory that resolves the active site's configuration.
@@ -28,7 +28,7 @@ import (
 // with no site configured at all.
 type SiteFn func() (config.SiteConfig, error)
 
-// NewGetCmd returns the "nkectl get providers" subcommand.
+// NewGetCmd returns the "nvkectl get providers" subcommand.
 func NewGetCmd(siteFn SiteFn, runner inspect.Runner) *cobra.Command {
 	var outputFormat string
 
@@ -38,11 +38,11 @@ func NewGetCmd(siteFn SiteFn, runner inspect.Runner) *cobra.Command {
 		Short:   "List infrastructure providers installed on the site controller",
 		Long: "List infrastructure providers installed on the site controller.\n\n" +
 			"This reads the site's Kubernetes cluster directly rather than the controller API, so it " +
-			"needs the kubeconfig registered with 'nkectl config set-site --kubeconfig' and " +
+			"needs the kubeconfig registered with 'nvkectl config set-site --kubeconfig' and " +
 			"kubectl on PATH.\n\n" +
 			"CONFIGURED means the provider's CRDs are established, its manager is available, and " +
 			"its credentials Secret exists. It does not mean those credentials work.\n\n" +
-			"The set of providers listed is the set nkectl knows how to describe. It is not a " +
+			"The set of providers listed is the set nvkectl knows how to describe. It is not a " +
 			"restriction: the controller accepts any infrastructure manifest written by hand.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

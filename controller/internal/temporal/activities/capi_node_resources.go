@@ -19,12 +19,12 @@ import (
 	capiconditions "sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/clients"
-	"github.com/dsx-ai-factory/nke/controller/internal/clients/shared"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
-	"github.com/dsx-ai-factory/nke/controller/internal/spiffe"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nvke/controller/internal/spiffe"
 )
 
 type CreateCAPIInfraMachineForNodeInput struct {
@@ -79,7 +79,7 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 		K8sClient:                    a.k8sClient,
 		FieldManagerName:             a.cfg.FieldManagerName,
 		ProfilesDir:                  a.cfg.ProfilesDir,
-		Namespace:                    constants.NamespaceNKESystem,
+		Namespace:                    constants.NamespaceNVKESystem,
 		Config:                       a.cfg,
 		ControllerClientCABundle:     a.controllerClientCABundle,
 		GetTrustDomainBundle:         a.getTrustDomainBundle,
@@ -139,7 +139,7 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      node.Name,
-			Namespace: constants.NamespaceNKESystem,
+			Namespace: constants.NamespaceNVKESystem,
 		},
 	}
 
@@ -180,7 +180,7 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-bootstrap-data", node.Name),
-			Namespace: constants.NamespaceNKESystem,
+			Namespace: constants.NamespaceNVKESystem,
 		},
 	}
 	if err := a.k8sClient.Delete(ctx, bootstrapSecret); err != nil && !apierrors.IsNotFound(err) {
@@ -221,7 +221,7 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 
 	machine := &clusterv1.Machine{}
 	if err := a.k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: constants.NamespaceNKESystem,
+		Namespace: constants.NamespaceNVKESystem,
 		Name:      node.Name,
 	}, machine); err != nil {
 		return "", fmt.Errorf("failed to get CAPI machine: %w", err)
@@ -516,7 +516,7 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	if err != nil {
 		return nonRetryableIfNotFound("failed to get node", err)
 	}
-	namespace := constants.NamespaceNKESystem
+	namespace := constants.NamespaceNVKESystem
 	machineName := node.Name
 
 	// Note: With SSA, a field manager can give up ownership of a field by applying an object that no longer includes that field.

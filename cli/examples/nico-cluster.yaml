@@ -3,10 +3,10 @@
 
 # Example CreateClusterRequest for a real NICo site, provisioned by CAPNICo.
 #
-# Usage: nkectl create cluster -f examples/nico-cluster.yaml
+# Usage: nvkectl create cluster -f examples/nico-cluster.yaml
 #
 # Prerequisites:
-#   - CAPNICo installed on the site controller: nkectl get providers reports
+#   - CAPNICo installed on the site controller: nvkectl get providers reports
 #     nico as CONFIGURED
 #   - A NICo site, VPC, VPC prefix, instance type, SSH key group, and an
 #     allocation against the instance type. An instance type with no allocation
@@ -15,7 +15,7 @@
 # Every UUID below is site-specific. Replace all of them. The profile names are
 # placeholders too: fleet profile content is maintained outside this repository
 # and supplied at deploy time. List what your site serves with the API's
-# /api/osProfiles and /api/configProfiles endpoints; nkectl has no command for
+# /api/osProfiles and /api/configProfiles endpoints; nvkectl has no command for
 # them yet.
 #
 # The cluster's top-level `nico` or `infra` sets its provider, and the control

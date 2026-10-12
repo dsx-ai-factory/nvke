@@ -1,8 +1,8 @@
 # Site Spec File
 
-`nkectl bootstrap site` reads a single YAML site spec file that describes your pre-provisioned nodes and the Kubernetes cluster to build on them. The file is loaded and fully validated before any node is touched — a typo or missing field fails fast with a clear error.
+`nvkectl bootstrap site` reads a single YAML site spec file that describes your pre-provisioned nodes and the Kubernetes cluster to build on them. The file is loaded and fully validated before any node is touched — a typo or missing field fails fast with a clear error.
 
-`nkectl generate sitespec <name> --nodes hosts.csv` writes one from a node CSV, so
+`nvkectl generate sitespec <name> --nodes hosts.csv` writes one from a node CSV, so
 the file rarely needs assembling by hand — see
 [Pre-Provisioned Nodes](pre-provisioned-nodes.md#step-2-run-bootstrap-on-init-node).
 This page summarises the schema; the CLI's
@@ -11,7 +11,7 @@ This page summarises the schema; the CLI's
 ## Example
 
 ```yaml
-clusterName: "nke-site"
+clusterName: "nvke-site"
 
 cluster:
   # Pre-provisioned control-plane nodes.
@@ -103,7 +103,7 @@ select a node for `kubeadm init`; the bootstrap process selects it downstream.
 Keep the secret out of the file so the site spec can be committed and shared safely:
 
 ```bash
-REGISTRY_API_KEY="nvapi-xxxx" nkectl bootstrap site -f sitespec.yaml
+REGISTRY_API_KEY="nvapi-xxxx" nvkectl bootstrap site -f sitespec.yaml
 ```
 
 ## Validating the Site Spec
@@ -111,11 +111,11 @@ REGISTRY_API_KEY="nvapi-xxxx" nkectl bootstrap site -f sitespec.yaml
 Use `--dry-run` to load, validate, and print the resolved inventory without dispatching any workflow or touching any node:
 
 ```bash
-nkectl bootstrap site -f sitespec.yaml --dry-run
+nvkectl bootstrap site -f sitespec.yaml --dry-run
 ```
 
 All validation errors are reported together in one pass so you can fix them without iterating.
 
 ## What's Next After Bootstrap
 
-After the site controller cluster is up, install Cluster API and an infrastructure provider on it before deploying the NKE services (CWE, Temporal, CNPG) — see [Infrastructure Providers](infrastructure-providers.md). The NKE services deployment uses a GitOps-based deploy repository and ArgoCD; see [Deploy Repository](deploy-repository.md) for the structure and application manifests.
+After the site controller cluster is up, install Cluster API and an infrastructure provider on it before deploying the NVKE services (CWE, Temporal, CNPG) — see [Infrastructure Providers](infrastructure-providers.md). The NVKE services deployment uses a GitOps-based deploy repository and ArgoCD; see [Deploy Repository](deploy-repository.md) for the structure and application manifests.

@@ -24,7 +24,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/dsx-ai-factory/cluster-api-provider-nico/pkg/test/fixture"
-	internalv1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
+	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -86,7 +86,7 @@ func setupWithManager(ctx SpecContext, tc *fixture.Case) {
 		Controller: config.Controller{SkipNameValidation: new(true)},
 	})
 	Expect(err).NotTo(HaveOccurred())
-	reconciler := &NKEClusterReconciler{Client: mgr.GetClient(), PollInterval: pollInterval}
+	reconciler := &NVKEClusterReconciler{Client: mgr.GetClient(), PollInterval: pollInterval}
 	setupCWEFixture(ctx, tc, reconciler)
 	Expect(reconciler.SetupWithManager(mgr)).To(Succeed())
 	tc.StartManager(ctx, mgr)

@@ -63,7 +63,7 @@ type NodeRequest struct {
 }
 
 // Node is what bootstrap needs to know about a machine. It is the triple
-// `nkectl generate sitespec --nodes` consumes, so the provider produces it
+// `nvkectl generate sitespec --nodes` consumes, so the provider produces it
 // rather than leaving the caller to rediscover it over the session.
 type Node struct {
 	Name string
@@ -81,7 +81,7 @@ type Node struct {
 }
 
 // Session is a command, copy and forward channel to the node. It is what
-// bootstrap runs nkectl through, how the test reaches the cluster the node
+// bootstrap runs nvkectl through, how the test reaches the cluster the node
 // ends up hosting, and what the caller tears down when finished.
 type Session interface {
 	// Run executes cmd on the node and fails on a non-zero exit, returning

@@ -13,12 +13,13 @@ name: CLI Artifact NVCR
 # environment, so no registry identifier lands in a tracked file of a
 # repository that is released publicly:
 #
-#   NKE_NGC_ORG             variable  NGC org that owns the artifact
-#   NGC_REGISTRY_TOKEN_NKE  secret    NGC API key with write access on that org
+#   NVKE_NGC_ORG             variable  NGC org that owns the artifact
+#   NGC_REGISTRY_TOKEN_NVKE  secret    NGC API key with write access on that org
+#                                      (NGC_REGISTRY_TOKEN_NKE until it exists)
 #   DSX_NGC_ORG_TEAM        variable  DSX NGC org/team path
 #   NGC_REGISTRY_TOKEN_DSX  secret    NGC API key with write access on DSX
 #
-# The repository is nvcr.io/<org>/nkectl -- named after the actual binary
+# The repository is nvcr.io/<org>/nvkectl -- named after the actual binary
 # (nkectl), not a generic "nke-cli", matching how nke-agent and nke-controller
 # are both named after their real binaries. An NKE-org path has no team
 # segment; the DSX path carries one, which is why DSX_NGC_ORG_TEAM holds the
@@ -26,7 +27,7 @@ name: CLI Artifact NVCR
 #
 # Published to both orgs, one matrix leg each. A DSX cluster holds an NGC
 # credential for its own org and none for the NKE org, so publishing only to
-# NKE leaves the binary unreachable to exactly the consumers this workflow was
+# NVKE leaves the binary unreachable to exactly the consumers this workflow was
 # added for.
 #
 # No GHCR pair beyond the separate cli-artifact.yml is missing here on
@@ -47,7 +48,7 @@ on:
         required: false
         default: ""
     secrets:
-      NGC_REGISTRY_TOKEN_NKE:
+      NGC_REGISTRY_TOKEN_NVKE:
         description: NGC API key with write access on the NKE org, for the nvcr push.
         required: true
       NGC_REGISTRY_TOKEN_DSX:
@@ -63,17 +64,18 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     name: Publish binaries (${{ matrix.destination }})
     runs-on: ubuntu-latest
     environment: nvcr
     timeout-minutes: 20
     permissions:
       contents: read
+      actions: read  # upload-sarif reads the workflow run
       security-events: write  # the malware scan uploads SARIF
     # Both orgs get the same bytes. DSX clusters hold an NGC credential for
     # their own org and none for the NKE org, so an artifact published only to
-    # NKE is unreachable to them -- the reason this workflow exists in the
+    # NVKE is unreachable to them -- the reason this workflow exists in the
     # first place. Publishing twice rather than promoting matches
     # chart-publish-nvcr.yml: `oras push` is idempotent for identical content,
     # so a second destination costs one more push, not an OCI-layout
@@ -83,11 +85,15 @@ jobs:
       matrix:
         include:
           - destination: nke
-            org_var: NKE_NGC_ORG
-            token_secret_var_name: NGC_REGISTRY_TOKEN_NKE
+            org_var: NVKE_NGC_ORG
+            # The new secret first, the existing one until it is created; an
+            # unset secret reads as empty, so || falls through.
+            token_secret_var_name: "NGC_REGISTRY_TOKEN_NVKE"
+            token_secret_fallback_var_name: "NGC_REGISTRY_TOKEN_NKE"
           - destination: dsx
             org_var: DSX_NGC_ORG_TEAM
-            token_secret_var_name: NGC_REGISTRY_TOKEN_DSX
+            token_secret_var_name: "NGC_REGISTRY_TOKEN_DSX"
+            token_secret_fallback_var_name: "NGC_REGISTRY_TOKEN_DSX"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -126,7 +132,9 @@ jobs:
             echo "::error::${ORG_VAR} is not set in the nvcr environment"
             exit 1
           fi
-          repo="nvcr.io/${NGC_ORG}/nkectl"
+          # The NVCR repository keeps the old name until an nvkectl repository
+          # exists in the NGC org; the binaries inside it are nvkectl.
+          repo="nvcr.io/${NGC_ORG}/nvkectl"
 
           version="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#cli/}"
@@ -149,7 +157,7 @@ jobs:
       # exactly those bytes, so checksums.txt describes what ships here too.
       - name: Download the release build
         if: inputs.dist_artifact != ''
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ${{ inputs.dist_artifact }}
           path: dist
@@ -169,12 +177,13 @@ jobs:
       - name: Log in to NVCR
         shell: bash
         env:
-          NGC_TOKEN: ${{ secrets[matrix.token_secret_var_name] }}
+          NGC_TOKEN: ${{ secrets[matrix.token_secret_var_name] || secrets[matrix.token_secret_fallback_var_name] }}
           TOKEN_SECRET_VAR_NAME: ${{ matrix.token_secret_var_name }}
+          TOKEN_SECRET_FALLBACK_VAR_NAME: ${{ matrix.token_secret_fallback_var_name }}
         run: |
           set -euo pipefail
           if [[ -z "${NGC_TOKEN}" ]]; then
-            echo "::error::${TOKEN_SECRET_VAR_NAME} is not set in the nvcr environment"
+            echo "::error::neither ${TOKEN_SECRET_VAR_NAME} nor ${TOKEN_SECRET_FALLBACK_VAR_NAME} is set in the nvcr environment"
             exit 1
           fi
           # shellcheck disable=SC2016
@@ -194,7 +203,7 @@ jobs:
           for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             os="${platform%/*}"
             arch="${platform#*/}"
-            bin="nkectl-${os}-${arch}"
+            bin="nvkectl-${os}-${arch}"
 
             tags=""
             for alias in "${aliases[@]}"; do
@@ -202,13 +211,13 @@ jobs:
             done
 
             ( cd dist && oras push "${REPO}:${tags}" \
-                --artifact-type application/vnd.nvidia.nke.cli.v1 \
+                --artifact-type application/vnd.nvidia.nvke.cli.v1 \
                 --artifact-platform "${platform}" \
                 --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
                 --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
                 --annotation "org.opencontainers.image.version=${VERSION}" \
                 --annotation "org.opencontainers.image.licenses=Apache-2.0" \
-                --annotation "org.opencontainers.image.title=nkectl" \
+                --annotation "org.opencontainers.image.title=nvkectl" \
                 "${bin}:application/octet-stream" )
           done
 
@@ -233,4 +242,4 @@ jobs:
             ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-linux-arm64
             ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-darwin-amd64
             ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-darwin-arm64
-          component: nkectl-nvcr-${{ matrix.destination }}
+          component: nvkectl-nvcr-${{ matrix.destination }}

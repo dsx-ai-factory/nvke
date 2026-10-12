@@ -1,7 +1,7 @@
 # Getting started
 
 This guide walks you through setting up a local development environment
-for nke and verifying that the modules build and test cleanly. The repository is
+for NVKE and verifying that the modules build and test cleanly. The repository is
 a Go workspace of several modules, listed in `go.work`. The repository README
 says what each one is.
 
@@ -22,8 +22,8 @@ than the declared one panics at startup with a `strcase.UnicodeVersion` mismatch
 ## Clone the repository
 
 ```bash
-git clone https://github.com/dsx-ai-factory/nke.git
-cd nke
+git clone https://github.com/dsx-ai-factory/nvke.git
+cd nvke
 ```
 
 ## controller
@@ -77,7 +77,7 @@ Never hand-edit `*.gen.go` files — they will be overwritten.
 ### Run locally
 
 ```bash
-kind create cluster                       # the NKE controller watches a cluster
+kind create cluster                       # the NVKE controller watches a cluster
 make -C controller run-local              # Postgres, Temporal, then the controller
 ```
 
@@ -100,7 +100,7 @@ go test ./...          # or: make test
 ```
 
 `nke-agent` and `spire-agent` must be present on each managed node before
-the NKE controller can communicate with it. The binaries are typically
+the NVKE controller can communicate with it. The binaries are typically
 pre-built into the OS image or added via cloud-init — the controller does
 not install them. See `agent/AGENTS.md` for the full build, proto and test
 commands.

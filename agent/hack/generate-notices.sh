@@ -138,7 +138,17 @@ done
 
 [[ -s "${CSV}" ]] || die "go-licenses produced no rows for ${PACKAGES[*]}."
 
-# Settle the major-version directory from the committed file, not the network.
+# package -> module@version, so a reader can pin what was actually linked, and
+# so the settle step below can compare the version against the committed file.
+MODMAP="${WORK}/modmap"
+for platform in "${PLATFORMS[@]}"; do
+    goos="${platform%/*}"; goarch="${platform#*/}"
+    GOOS="${goos}" GOARCH="${goarch}" go list -deps -buildvcs=false \
+        -f '{{if .Module}}{{.ImportPath}} {{.Module.Path}}@{{.Module.Version}}{{end}}' \
+        "${PACKAGES[@]}" 2>/dev/null
+done | sort -u >"${MODMAP}"
+
+# Settle the licence URL from the committed file, not the network.
 #
 # For a module in a repository subdirectory with a major version suffix --
 # go.etcd.io/etcd/client/v3, tagged client/v3.7.1 -- the directory may be
@@ -154,6 +164,9 @@ done
 # So when the committed file already has a URL for the package that differs
 # from the regenerated one only by that /vN segment, the committed URL stands:
 # a human verified it once, and the probe has no information the file lacks.
+# The same holds when the probe finds nothing and go-licenses writes "Unknown":
+# gopkg.in answers its go-get requests with a 502 now and then, and a URL the
+# file already has for the same module version stands over a blank.
 # Anything else -- a new package, a new version, a different licence file --
 # still shows up as a diff, and a new package keeps whatever go-licenses chose,
 # to be verified when it is first committed. The root-module repair below runs
@@ -163,17 +176,21 @@ if [[ -f "${OUTPUT}" ]]; then
     SETTLED="${WORK}/licenses.settled.csv"
     awk -F, 'BEGIN { OFS = "," }
         # First file: the committed index rows, "| [pkg](url) | licence | module |".
-        FNR == NR {
+        FILENAME == ARGV[1] {
             if (match($0, /^\| \[[^]]+\]\([^)]+\)/)) {
                 row = substr($0, RSTART, RLENGTH)
                 pkg = substr(row, 4, index(row, "](") - 4)
                 url = substr(row, index(row, "](") + 2)
                 sub(/\)$/, "", url)
                 committed[pkg] = url
+                mod = $0; sub(/ \|$/, "", mod); sub(/^.* \| /, "", mod)
+                cmod[pkg] = mod
             }
             next
         }
-        # Second file: the regenerated CSV.
+        # Second file: package -> module@version.
+        FILENAME == ARGV[2] { split($0, f, " "); mp[f[1]] = f[2]; next }
+        # Third file: the regenerated CSV.
         {
             if (($1 in committed) && committed[$1] != $2) {
                 a = $2; b = committed[$1]
@@ -183,12 +200,13 @@ if [[ -f "${OUTPUT}" ]]; then
                 a2 = a; sub(/\/v[0-9]+\//, "/", a2)
                 b2 = b; sub(/\/v[0-9]+\//, "/", b2)
                 if (a2 == b || b2 == a) { $2 = b }
+                else if (a == "Unknown" && ($1 in mp) && mp[$1] == cmod[$1]) { $2 = b }
             }
             print
-        }' "${OUTPUT}" "${CSV}" >"${SETTLED}"
+        }' "${OUTPUT}" "${MODMAP}" "${CSV}" >"${SETTLED}"
     SETTLED_N=$(diff <(cut -d, -f2 "${CSV}") <(cut -d, -f2 "${SETTLED}") | grep -c '^>' || true)
     if [[ "${SETTLED_N}" -gt 0 ]]; then
-        log "kept ${SETTLED_N} committed major-version licence URL(s) over go-licenses' network-dependent choice"
+        log "kept ${SETTLED_N} committed licence URL(s) over go-licenses' network-dependent choice"
     fi
     mv "${SETTLED}" "${CSV}"
 fi
@@ -253,8 +271,8 @@ fi
 
 # Backstop, in case go-licenses still self-attributes. Anchored on the module
 # path trimmed to its repository root, which is what go-licenses actually builds
-# URLs from -- a module in a subdirectory (github.com/dsx-ai-factory/nke/agent) still
-# yields https://github.com/dsx-ai-factory/nke/blob/..., so anchoring on the full module
+# URLs from -- a module in a subdirectory (github.com/dsx-ai-factory/nvke/agent) still
+# yields https://github.com/dsx-ai-factory/nvke/blob/..., so anchoring on the full module
 # path would miss every row. Not taken from the git remote either: that varies
 # by checkout (a fork remote would disable the check silently) while the URL
 # does not.
@@ -273,15 +291,6 @@ if [[ -n "${SELF_REF}" ]]; then
     while IFS= read -r pkg; do log "  ${pkg}"; done <<<"${SELF_REF}"
     die "$(wc -l <<<"${SELF_REF}" | tr -d ' ') package(s) above are not ours. go-licenses is attributing upstream code to this repository."
 fi
-
-# package -> module@version, so a reader can pin what was actually linked.
-MODMAP="${WORK}/modmap"
-for platform in "${PLATFORMS[@]}"; do
-    goos="${platform%/*}"; goarch="${platform#*/}"
-    GOOS="${goos}" GOARCH="${goarch}" go list -deps -buildvcs=false \
-        -f '{{if .Module}}{{.ImportPath}} {{.Module.Path}}@{{.Module.Version}}{{end}}' \
-        "${PACKAGES[@]}" 2>/dev/null
-done | sort -u >"${MODMAP}"
 
 # Join every licence seen for a package rather than taking the first: a package
 # may be dual-licensed, and dropping one would misstate the terms.

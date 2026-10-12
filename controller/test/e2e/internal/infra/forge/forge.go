@@ -19,9 +19,9 @@ import (
 	"github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra/teleport"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/teleport"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
 const (
@@ -136,10 +136,10 @@ type Options struct {
 
 	// Node carries the package versions under qualification. Its image URLs
 	// are filled from Images, so any set here are ignored.
-	Node  nke.NodeInputs
+	Node  nvke.NodeInputs
 	Tools HostTools
 
-	// DisableMTLS runs the node agent without SPIFFE. nkectl bootstrap site
+	// DisableMTLS runs the node agent without SPIFFE. nvkectl bootstrap site
 	// must be given --disable-mtls to match, and the stack deployed with
 	// spiffe.enabled=false, or every dial fails as a TLS handshake error.
 	DisableMTLS bool
@@ -154,7 +154,7 @@ type Options struct {
 	CreateTimeout time.Duration
 }
 
-// Provider creates Forge instances ready for `nkectl bootstrap site`.
+// Provider creates Forge instances ready for `nvkectl bootstrap site`.
 type Provider struct {
 	opts Options
 	site Site
@@ -458,7 +458,7 @@ func (p *Provider) payloads(req infra.NodeRequest, instanceType InstanceType, au
 	if p.opts.DisableMTLS {
 		inputs.AgentArgs = "--secure-server-port 15005 --disable-mtls"
 	}
-	node, err := nke.BuildForgeNodePayloads(inputs)
+	node, err := nvke.BuildForgeNodePayloads(inputs)
 	if err != nil {
 		return "", "", fmt.Errorf("forge: %w", err)
 	}

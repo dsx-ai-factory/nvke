@@ -10,7 +10,7 @@ import (
 )
 
 const validRegistry = `
-apiVersion: nke.nvidia.com/v1alpha1
+apiVersion: nvke.nvidia.com/v1alpha1
 kind: Registry
 spec:
   components:
@@ -57,7 +57,7 @@ func TestLoadRegistryRejects(t *testing.T) {
 		{"no name", strings.Replace(validRegistry, "{name: kind,", "{name: \"\",", 1), "has no name"},
 		{
 			"no components",
-			"apiVersion: nke.nvidia.com/v1alpha1\nkind: Registry\nspec:\n  components: []\n",
+			"apiVersion: nvke.nvidia.com/v1alpha1\nkind: Registry\nspec:\n  components: []\n",
 			"spec.components is empty",
 		},
 	} {
@@ -69,7 +69,7 @@ func TestLoadRegistryRejects(t *testing.T) {
 }
 
 const sourcedRegistry = `
-apiVersion: nke.nvidia.com/v1alpha1
+apiVersion: nvke.nvidia.com/v1alpha1
 kind: Registry
 spec:
   sources:

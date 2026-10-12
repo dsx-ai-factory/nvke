@@ -7,7 +7,7 @@ package metrics
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
 )
 
 const (
@@ -29,7 +29,7 @@ var (
 	// the path.
 	authRequestsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "nke_auth_requests_total",
+			Name: "nvke_auth_requests_total",
 			Help: "Total API requests evaluated by authentication, by outcome, failure reason and issuer. " +
 				"outcome=would_reject is a permissive-mode deployment counting what enforcement would have refused.",
 		},
@@ -38,14 +38,14 @@ var (
 
 	// authEnabled is a config-state gauge, not a traffic counter: it is set once
 	// at startup from cfg.AuthConfigPath/PermissiveMode, so a site with zero
-	// callers still reports its real mode. nke_auth_requests_total cannot answer
+	// callers still reports its real mode. nvke_auth_requests_total cannot answer
 	// "is this on" on its own -- its series only exist once a request has been
 	// evaluated, so a quiet site is indistinguishable from a disabled one.
 	authEnabled = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "nke_auth_enabled",
+			Name: "nvke_auth_enabled",
 			Help: "1 for the deployment's configured API authentication mode (off, permissive, or enforcing). " +
-				"Set once at startup from config, independent of traffic -- see nke_auth_requests_total for activity.",
+				"Set once at startup from config, independent of traffic -- see nvke_auth_requests_total for activity.",
 		},
 		[]string{"mode"},
 	)

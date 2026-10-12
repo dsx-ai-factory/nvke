@@ -1,5 +1,5 @@
 {
-  "uid": "nke-benchmarks-networking-ovn",
+  "uid": "nvke-benchmarks-networking-ovn",
   "title": "Networking (OVN)",
   "description": "OVN-Kubernetes CNI pipeline latency, controller workqueues, northd/ovn-controller flow compilation, plus a CoreDNS tripwire panel. Uses inline PromQL \u2014 no recording rules required.",
   "schemaVersion": 39,
@@ -12,8 +12,8 @@
   },
   "timezone": "utc",
   "tags": [
-    "nke",
-    "nke-benchmarks",
+    "nvke",
+    "nvke-benchmarks",
     "ovn",
     "cni"
   ],

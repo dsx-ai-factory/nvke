@@ -24,7 +24,7 @@ func TestManagerFactoryAppliesConservativeClientLimitsBeforeProbe(t *testing.T) 
 	factory.verify = func(_ context.Context, config *rest.Config, timeout time.Duration) error {
 		require.InDelta(t, tenantManagerQPS, config.QPS, 0)
 		require.Equal(t, tenantManagerBurst, config.Burst)
-		require.Equal(t, "nke-tenant-controller-manager/"+clusterID.String(), config.UserAgent)
+		require.Equal(t, "nvke-tenant-controller-manager/"+clusterID.String(), config.UserAgent)
 		require.Equal(t, tenantManagerProbeTimeout, timeout)
 		return stopProbe
 	}

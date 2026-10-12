@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# A machine image for `nkectl create machineimage -f machineimage.yaml`.
+# A machine image for `nvkectl create machineimage -f machineimage.yaml`.
 #
 # The whole image is immutable once published. To change anything, publish a
 # new name and point new releases at it; never edit the published object.

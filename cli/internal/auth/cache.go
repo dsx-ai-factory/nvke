@@ -30,7 +30,7 @@ func loadTokenCache() *tokenCache {
 	if err != nil {
 		return cache
 	}
-	cache.path = filepath.Join(dir, "nkectl", "tokens.json")
+	cache.path = filepath.Join(dir, "nvkectl", "tokens.json")
 	data, err := os.ReadFile(cache.path)
 	if err == nil {
 		var tokens map[string]cachedToken

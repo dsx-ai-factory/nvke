@@ -36,9 +36,9 @@ type silentError struct{ error }
 func root() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "qualify",
-		Short:   "Drive NKE release qualification",
+		Short:   "Drive NVKE release qualification",
 		Version: version,
-		Long: `Drive NKE release qualification.
+		Long: `Drive NVKE release qualification.
 
   plan       resolve what to qualify`,
 		SilenceUsage: true,

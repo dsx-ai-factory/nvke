@@ -21,6 +21,7 @@ FROM ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:0.3.0@sha256:6402624276b66
 
 # Set up golang build container
 FROM ${GOLANG_IMAGE} AS builder
+ENV GOPROXY=https://proxy.golang.org|direct
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -80,8 +81,8 @@ COPY ./controller/THIRD_PARTY_NOTICES.md /licenses/THIRD_PARTY_NOTICES.md
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
 LABEL org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.title="controller" \
-      org.opencontainers.image.source="https://github.com/dsx-ai-factory/nke" \
-      org.opencontainers.image.description="NKE Cloud Workflow Engine"
+      org.opencontainers.image.source="https://github.com/dsx-ai-factory/nvke" \
+      org.opencontainers.image.description="NVKE Cloud Workflow Engine"
 
 EXPOSE 8080
 

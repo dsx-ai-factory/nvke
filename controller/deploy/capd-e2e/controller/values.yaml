@@ -7,7 +7,7 @@
 
 # ─── cloud-workflow-engine ───────────────────────────────────────────────────
 # image.repository/tag are left at the chart's own defaults. The nvcr-published
-# chart already carries nvcr.io/j7sbcjl3qgta/nke-controller and the
+# chart already carries nvcr.io/j7sbcjl3qgta/nvke-controller and the
 # svc-nke-ngc-imagepull secret -- chart-publish-nvcr.yml rewrites both at
 # package time -- so pulling the chart from nvcr gets a matching image without
 # any override here.

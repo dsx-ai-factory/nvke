@@ -196,12 +196,12 @@ func TestPatchNodePoolErrors(t *testing.T) {
 			wantErr: "accepts 1 arg(s)",
 		},
 		{
-			// The field is real and the controller would take it; nkectl does not offer
+			// The field is real and the controller would take it; nvkectl does not offer
 			// it yet, and says which fields it does.
 			name:    "patch carries an unsupported field",
 			seeds:   []seed{{clusterName: "alpha", name: "gpu-workers", desiredNodeCount: 3}},
 			args:    []string{"gpu-workers", "-c", "alpha", "--patch", "maxSurge: 2"},
-			wantErr: `unknown field "maxSurge"; nkectl can set desiredNodeCount`,
+			wantErr: `unknown field "maxSurge"; nvkectl can set desiredNodeCount`,
 		},
 		{
 			// Left to reach the controller, a null comes back as a validator message

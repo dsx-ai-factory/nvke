@@ -14,7 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 const testEncryptionKey = "KEY-MATERIAL-THAT-MUST-NOT-BE-LOGGED"

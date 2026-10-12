@@ -10,12 +10,12 @@ import (
 )
 
 const validSubject = `
-apiVersion: nke.nvidia.com/v1alpha1
+apiVersion: nvke.nvidia.com/v1alpha1
 kind: Qualification
 metadata:
-  name: nke
+  name: nvke
 spec:
-  subject: nke
+  subject: nvke
   components:
     - {name: controller, selectors: [latest]}
     - {name: cli, selectors: [latest]}
@@ -54,12 +54,12 @@ func TestLoadSubjectRejects(t *testing.T) {
 		want string
 	}{
 		{"wrong kind", strings.Replace(validSubject, "kind: Qualification", "kind: ComponentQualification", 1), "kind"},
-		{"unknown field", strings.Replace(validSubject, "  subject: nke", "  subjekt: nke", 1), "unknown field"},
-		{"the old component field", strings.Replace(validSubject, "  subject: nke", "  component: nke", 1), "unknown field"},
-		{"no subject", strings.Replace(validSubject, "  subject: nke\n", "", 1), "spec.subject is empty"},
+		{"unknown field", strings.Replace(validSubject, "  subject: nvke", "  subjekt: nvke", 1), "unknown field"},
+		{"the old component field", strings.Replace(validSubject, "  subject: nvke", "  component: nvke", 1), "unknown field"},
+		{"no subject", strings.Replace(validSubject, "  subject: nvke\n", "", 1), "spec.subject is empty"},
 		{
 			"metadata disagrees with spec",
-			strings.Replace(validSubject, "  name: nke", "  name: cli", 1),
+			strings.Replace(validSubject, "  name: nvke", "  name: cli", 1),
 			"but spec.subject is",
 		},
 		{
@@ -74,7 +74,7 @@ func TestLoadSubjectRejects(t *testing.T) {
 		},
 		{
 			"lists itself",
-			strings.Replace(validSubject, "{name: cli, selectors", "{name: nke, selectors", 1),
+			strings.Replace(validSubject, "{name: cli, selectors", "{name: nvke, selectors", 1),
 			"lists itself",
 		},
 		{
@@ -84,7 +84,7 @@ func TestLoadSubjectRejects(t *testing.T) {
 		},
 		{
 			"no components",
-			"apiVersion: nke.nvidia.com/v1alpha1\nkind: Qualification\nspec:\n  subject: nke\n  components: []\n",
+			"apiVersion: nvke.nvidia.com/v1alpha1\nkind: Qualification\nspec:\n  subject: nvke\n  components: []\n",
 			"the combination has no key",
 		},
 		{
@@ -142,7 +142,7 @@ func TestLoadSubjectRejects(t *testing.T) {
 
 func TestSubjectPath(t *testing.T) {
 	for _, tc := range []struct{ subject, want string }{
-		{"nke", filepath.Join("root", "release", "qualification.yaml")},
+		{"nvke", filepath.Join("root", "release", "qualification.yaml")},
 		{"controller", filepath.Join("root", "controller", "qualification.yaml")},
 	} {
 		if got := SubjectPath("root", tc.subject); got != tc.want {

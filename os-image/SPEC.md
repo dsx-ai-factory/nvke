@@ -1,8 +1,8 @@
-# NKE reference node image — contract
+# NVKE reference node image — contract
 
-> **Which path is this?** This spec covers nodes built from the NKE OS image — SPIRE agent pre-installed, mTLS on by default, TPM attestation supported. If you are bringing your own Ubuntu nodes without a SPIRE agent or TPM (bootstrapping with `--disable-mtls`), see [`docs/site-bootstrap/pre-provisioned-nodes.md`](../docs/site-bootstrap/pre-provisioned-nodes.md) instead.
+> **Which path is this?** This spec covers nodes built from the NVKE OS image — SPIRE agent pre-installed, mTLS on by default, TPM attestation supported. If you are bringing your own Ubuntu nodes without a SPIRE agent or TPM (bootstrapping with `--disable-mtls`), see [`docs/site-bootstrap/pre-provisioned-nodes.md`](../docs/site-bootstrap/pre-provisioned-nodes.md) instead.
 
-This is the contract an OS image must satisfy for NKE to manage a node.
+This is the contract an OS image must satisfy for NVKE to manage a node.
 It is **not** a cluster-ready Kubernetes image: kubeadm and GPU drivers are
 installed later through `nke-agent`. The image includes the Calico manifests
 package used during bootstrap.
@@ -26,7 +26,7 @@ TODO:  Need to refine the requirements around spire-agent below
 | TPM identity tool | `/usr/local/bin/get_tpm_pubhash` for the image architecture. |
 | Calico manifests | An `nke-cni-calico-manifests` Debian package is installed. |
 | etcd data directory | `/var/lib/etcd` exists at mode `0700`, owned by a system `etcd` user and group created at bake time. kubeadm reuses the directory rather than creating its own `root:root` one, which is what CIS 1.1.12 checks. etcd itself still runs as root from `registry.k8s.io/etcd` as a static pod, so this changes what the node reports, not what etcd can do. |
-| `multipathd` | **Masked** — both `multipathd.service` and its socket. Ubuntu Server's installer leaves multipathd enabled, and with no blacklist it claims Longhorn's iSCSI-exported volumes (they present as `IET,VIRTUAL-DISK`) through device-mapper: `mkfs` then fails with `is apparently in use by the system; will not make a filesystem here` and newly provisioned volumes never format. No NKE node boots from a multipath-backed disk, so nothing depends on it. Matches `node-images`' `packages` role, which disables the same unit. |
+| `multipathd` | **Masked** — both `multipathd.service` and its socket. Ubuntu Server's installer leaves multipathd enabled, and with no blacklist it claims Longhorn's iSCSI-exported volumes (they present as `IET,VIRTUAL-DISK`) through device-mapper: `mkfs` then fails with `is apparently in use by the system; will not make a filesystem here` and newly provisioned volumes never format. No NVKE node boots from a multipath-backed disk, so nothing depends on it. Matches `node-images`' `packages` role, which disables the same unit. |
 | Background apt | **Masked** — `apt-daily.timer`, `apt-daily-upgrade.timer`, their services and `unattended-upgrades.service`. Ubuntu runs them a few minutes after first boot; the package job restarts journald, networkd and udevd, and a `systemctl daemon-reload` from kubeadm's kubelet-start phase in that window fails, so the kubelet never starts and the node's init or join is lost. Nodes take updates through a new image, never in place. |
 | Unit ordering | `nke-spire-configure.service` before `spire-agent.service` before `nke-agent.service`. `nke-agent` waits for the workload API socket before exec. |
 | First-boot renderer | `/usr/lib/nke/spire-configure.sh`, driven by `nke-spire-configure.service`. Renders `/etc/spire-agent/agent.conf` from instance identity. Does nothing unless `/etc/nke/spire.env` exists. |

@@ -13,17 +13,17 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 )
 
 type nodeAgentEncryptionClient interface {
-	InitializeKubernetesAPIEncryption(ctx context.Context, req *nkeproto.InitializeKubernetesAPIEncryptionRequest, opts ...grpc.CallOption) (*nkeproto.InitializeKubernetesAPIEncryptionResponse, error)
-	PromoteKubernetesAPIEncryptionProviders(ctx context.Context, req *nkeproto.PromoteKubernetesAPIEncryptionProvidersRequest, opts ...grpc.CallOption) (*nkeproto.PromoteKubernetesAPIEncryptionProvidersResponse, error)
-	RemovePlainTextSecondaryEncryptionEntry(ctx context.Context, req *nkeproto.RemovePlainTextSecondaryEncryptionEntryRequest, opts ...grpc.CallOption) (*nkeproto.RemovePlainTextSecondaryEncryptionEntryResponse, error)
-	UpdateEncryptionConfig(ctx context.Context, req *nkeproto.UpdateEncryptionConfigRequest, opts ...grpc.CallOption) (*nkeproto.UpdateEncryptionConfigResponse, error)
+	InitializeKubernetesAPIEncryption(ctx context.Context, req *nvkeproto.InitializeKubernetesAPIEncryptionRequest, opts ...grpc.CallOption) (*nvkeproto.InitializeKubernetesAPIEncryptionResponse, error)
+	PromoteKubernetesAPIEncryptionProviders(ctx context.Context, req *nvkeproto.PromoteKubernetesAPIEncryptionProvidersRequest, opts ...grpc.CallOption) (*nvkeproto.PromoteKubernetesAPIEncryptionProvidersResponse, error)
+	RemovePlainTextSecondaryEncryptionEntry(ctx context.Context, req *nvkeproto.RemovePlainTextSecondaryEncryptionEntryRequest, opts ...grpc.CallOption) (*nvkeproto.RemovePlainTextSecondaryEncryptionEntryResponse, error)
+	UpdateEncryptionConfig(ctx context.Context, req *nvkeproto.UpdateEncryptionConfigRequest, opts ...grpc.CallOption) (*nvkeproto.UpdateEncryptionConfigResponse, error)
 }
 
 type nodeAgentClientDialer func(context.Context, rollout.Node) (nodeAgentEncryptionClient, func(), error)

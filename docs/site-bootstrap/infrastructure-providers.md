@@ -1,8 +1,8 @@
 # Infrastructure Providers
 
-> **Note:** Installing a Cluster API infrastructure provider is a **post-bootstrap concern**. `nkectl bootstrap site` installs Cluster API only into the *ephemeral* Kind cluster it creates and then destroys, so a freshly bootstrapped site cluster has no Cluster API and no provider on it. This page describes that second step.
+> **Note:** Installing a Cluster API infrastructure provider is a **post-bootstrap concern**. `nvkectl bootstrap site` installs Cluster API only into the *ephemeral* Kind cluster it creates and then destroys, so a freshly bootstrapped site cluster has no Cluster API and no provider on it. This page describes that second step.
 
-A tenant cluster is created on a Cluster API **infrastructure provider**: a controller running on the site cluster that holds credentials for a backend and creates machines there. `nkectl` never installs one. You do it once per site, before the first `nkectl create cluster`.
+A tenant cluster is created on a Cluster API **infrastructure provider**: a controller running on the site cluster that holds credentials for a backend and creates machines there. `nvkectl` never installs one. You do it once per site, before the first `nvkectl create cluster`.
 
 This page covers [CAPNICo](https://github.com/dsx-ai-factory/cluster-api-provider-nico), the NICo provider, which is the only provider supported for tenant clusters today. It links out to CAPNICo's own documentation rather than restating it.
 
@@ -12,12 +12,12 @@ This page covers [CAPNICo](https://github.com/dsx-ai-factory/cluster-api-provide
 |---|---|
 | A bootstrapped site cluster | From [Pre-Provisioned Nodes](pre-provisioned-nodes.md), with its kubeconfig |
 | `kubectl` | Pointed at the site cluster |
-| `clusterctl` | Matching the Cluster API version NKE pins, `v1.13.6` |
+| `clusterctl` | Matching the Cluster API version NVKE pins, `v1.13.6` |
 | `helm` **v4 or later** | Helm 3 cannot install the CAPNICo chart; see [Troubleshooting](#troubleshooting) |
 | Outbound network | `clusterctl init` fetches Cluster API and cert-manager from `github.com`. An air-gapped site needs a mirror |
 | A NICo site | Already installed, machines enrolled, and someone who can issue you a token |
 
-`nkectl` is not required for the install itself, only for the verification step at the end.
+`nvkectl` is not required for the install itself, only for the verification step at the end.
 
 ## Order Matters
 
@@ -39,7 +39,7 @@ kubectl rollout restart deployment -n nke-controller -l app.kubernetes.io/name=n
 
 ## 1. Check the Control-Plane Taint Is Gone
 
-Every node on a site cluster is a control-plane node, and neither cert-manager, the Cluster API managers nor the CAPNICo manager tolerates the control-plane taint. `nkectl bootstrap site` removes it. Confirm that before anything that waits, or the waits in the next two steps hang until they time out with no useful message:
+Every node on a site cluster is a control-plane node, and neither cert-manager, the Cluster API managers nor the CAPNICo manager tolerates the control-plane taint. `nvkectl bootstrap site` removes it. Confirm that before anything that waits, or the waits in the next two steps hang until they time out with no useful message:
 
 ```bash
 kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.taints}{"\n"}{end}'
@@ -55,7 +55,7 @@ The site cluster also needs a default StorageClass before CWE's Postgres and SPI
 
 ## 2. Install Cluster API
 
-Use NKE's own pinned invocation. Do **not** use the unpinned `clusterctl init` line in CAPNICo's documentation: without explicit versions, `clusterctl` installs whatever is latest, which drifts from the version NKE pins.
+Use NVKE's own pinned invocation. Do **not** use the unpinned `clusterctl init` line in CAPNICo's documentation: without explicit versions, `clusterctl` installs whatever is latest, which drifts from the version NVKE pins.
 
 ```bash
 clusterctl init \
@@ -67,7 +67,7 @@ clusterctl init \
 
 This also installs cert-manager, which the providers depend on.
 
-`v1.13.6` is the version NKE pins, in `make/tool-versions.mk`. Keep them in step.
+`v1.13.6` is the version NVKE pins, in `make/tool-versions.mk`. Keep them in step.
 
 Running `clusterctl init` again later is supported and skips what is already present, so this is safe to re-run. Only a *conflicting* provider instance is an error.
 
@@ -121,13 +121,13 @@ kubectl create secret generic nico-credentials -n capnico-system \
   ...
 ```
 
-`nkectl` looks for a Secret named `nico-credentials` in `capnico-system` by default.
+`nvkectl` looks for a Secret named `nico-credentials` in `capnico-system` by default.
 
 Before you create anything, read CAPNICo's **[2. Check the Instance Types Have Allocations](https://github.com/dsx-ai-factory/cluster-api-provider-nico/blob/main/docs/getting-started.md#2-check-the-instance-types-have-allocations)** section. An instance type with no allocation looks healthy and provisions nothing, and machines retry forever in `InstanceTypeUnavailable`. It is the single most common way a first cluster stalls.
 
 ## 5. Verify
 
-Use `kubectl` here. `nkectl get providers` cannot run yet: it needs a site registered with `nkectl config set-site`, and that requires a CWE URL, which does not exist until you install the site controller in the next step.
+Use `kubectl` here. `nvkectl get providers` cannot run yet: it needs a site registered with `nvkectl config set-site`, and that requires a CWE URL, which does not exist until you install the site controller in the next step.
 
 ```bash
 # Cluster API core and the kubeadm providers
@@ -142,7 +142,7 @@ kubectl get secret nico-credentials -n capnico-system
 
 The CAPNICo Deployment should be available, and `nicoclusters`, `nicoclustertemplates`, `nicomachines` and `nicomachinetemplates` should all be established.
 
-Once the site controller is installed and you have run `nkectl config set-site`, `nkectl get providers` reports the same thing in one line, and `nico` should read `CONFIGURED`.
+Once the site controller is installed and you have run `nvkectl config set-site`, `nvkectl get providers` reports the same thing in one line, and `nico` should read `CONFIGURED`.
 
 > **`CONFIGURED` is a narrower claim than it looks.** It means the provider's CRDs are established, its controller is running, and a credentials Secret is present. It does **not** check that Cluster API core is installed, that the credentials work, or that the backend is reachable. CAPNICo ships its own CRDs, so `nico` reads `CONFIGURED` even on a cluster with no Cluster API at all. Treat it as "the provider is installed", not "the site is ready".
 
@@ -150,13 +150,13 @@ To prove the credentials actually work before committing hardware, follow CAPNIC
 
 ## Troubleshooting
 
-**Helm fails with `namespaces "capnico-system" already exists` or `invalid ownership metadata`.** Either you are on Helm 3, or you pre-created the namespace. The chart requires **Helm 4**; NKE pins `v4.2.4`. No error message mentions the Helm version.
+**Helm fails with `namespaces "capnico-system" already exists` or `invalid ownership metadata`.** Either you are on Helm 3, or you pre-created the namespace. The chart requires **Helm 4**; NVKE pins `v4.2.4`. No error message mentions the Helm version.
 
 **`clusterctl init` or `helm --wait` hangs.** The control-plane taint is still on the nodes. See step 1.
 
 **`clusterctl` cannot find the `nico` provider.** The configuration file is not where `clusterctl` looked. Pass `--config`. See step 3.
 
-**A tenant cluster is accepted and nothing happens.** `nkectl create cluster` validates the shape of the request, not that a provider exists to service it. The API returns success and nothing reconciles. Check `nkectl get providers` first.
+**A tenant cluster is accepted and nothing happens.** `nvkectl create cluster` validates the shape of the request, not that a provider exists to service it. The API returns success and nothing reconciles. Check `nvkectl get providers` first.
 
 **Machines sit in `InstanceTypeUnavailable`.** The instance type has no NICo allocation. See step 4.
 
@@ -166,11 +166,11 @@ For provider-side conditions — `WaitingForBootstrapData`, `WaitingForIdentityS
 
 - **The site controller (CWE) install.** Separate step, and it must come after this one.
 - **`cluster-api-provider-provisioned`.** It ships in this repository but is not a tenant-cluster infrastructure provider and is not installed on a site cluster.
-- **LaunchLayer.** `nkectl get providers` reports on it, but it is not supported for tenant clusters today.
+- **LaunchLayer.** `nvkectl get providers` reports on it, but it is not supported for tenant clusters today.
 - **Installing the GPU runtime on a tenant cluster.** Once a tenant cluster exists, drivers, operators and system configuration are installed with [NVIDIA AI Cluster Runtime](https://github.com/NVIDIA/aicr), a separate project.
 
 ## Next Steps
 
-- [Deploy Repository](deploy-repository.md) — the ArgoCD application structure for the NKE services stack
+- [Deploy Repository](deploy-repository.md) — the ArgoCD application structure for the NVKE services stack
 - [CAPNICo: Path C, Production Against an Existing NICo Site](https://github.com/dsx-ai-factory/cluster-api-provider-nico/blob/main/docs/getting-started.md#path-c-production-against-an-existing-nico-site) — the provider's own guide for production sites
 - [Your first cluster](../first-cluster.md) — creating a tenant cluster once a provider is configured

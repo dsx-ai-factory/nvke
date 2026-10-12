@@ -65,7 +65,7 @@ jobs:
   local-entrypoint:
     needs: changes
     name: local-backend-e2e.sh on Linux (${{ matrix.arch }}, post-init CNI ${{ matrix.install_cni_after_init }})
-    if: github.repository == 'dsx-ai-factory/nke' && needs.changes.outputs.run_e2e == 'true'
+    if: github.repository_id == '1323115536' && needs.changes.outputs.run_e2e == 'true'
     # The L4 pool is one machine, and this lane runs on pull requests, on main,
     # and twice a day. A run on main waited 87 minutes for a runner, longer than
     # the 84 minutes it then took. cpu16 has capacity, and the L4 was never
@@ -76,7 +76,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
-    timeout-minutes: 120
+    # The 110-minute suite below plus about 15 minutes of setup.
+    timeout-minutes: 135
     strategy:
       fail-fast: false
       matrix:
@@ -93,6 +94,8 @@ jobs:
             install_cni_after_init: false
     env:
       INSTALL_CNI_AFTER_INIT: ${{ matrix.install_cni_after_init }}
+      # arm64 suites run close to the 100-minute default.
+      E2E_SUITE_TIMEOUT_MINUTES: "110"
       # Pull-request mirrors run the same bounded lifecycle as the CAPD lane.
       # Main, scheduled, and manual runs keep the comprehensive CAPD suite.
       LOCAL_NKE_E2E_LABEL_FILTER: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-docker || health' || '' }}
@@ -101,7 +104,7 @@ jobs:
       # A public pull-through mirror: dc.local.gha-runners.nvidia.com resolves
       # only on the self-hosted fleet, and the arm64 leg now runs on ARC.
       # Same host as backend-e2e.yml, os-image-artifact.yml and
-      # nkectl-bootstrap-e2e.yml, each of which had to make this change when
+      # nvkectl-bootstrap-e2e.yml, each of which had to make this change when
       # it moved. helm needs the shim below to honour it for OCI charts,
       # which is how the CI entrypoint does it too.
       NKE_E2E_DOCKERHUB_MIRROR: mirror.gcr.io
@@ -211,7 +214,7 @@ jobs:
 
       - name: Upload diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # The arch too: GitHub keeps two same-named artifacts.
           name: local-entrypoint-e2e-${{ matrix.arch }}-cni-${{ matrix.install_cni_after_init }}-${{ github.run_id }}-${{ github.run_attempt }}

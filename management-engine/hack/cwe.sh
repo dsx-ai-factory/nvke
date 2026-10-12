@@ -87,7 +87,7 @@ cwe_credentials() (
   trap 'rm -f "$token_file"' EXIT
   # Refresh the existing admitted development identity without logging its token.
   KUBE_CONTEXT="$HOST_CONTEXT" NKE_TOKEN_TTL=24h NKE_AUTH_TOKEN='' \
-    bash ../controller/hack/nke-token.sh >"$token_file"
+    bash ../controller/hack/nvke-token.sh >"$token_file"
   [[ -s "$token_file" ]] || fail "CWE must have authentication enabled."
   mv "$token_file" "$cwe_dir/token"
   "${host[@]}" -n "$HOST_NAMESPACE" create secret generic management-cwe-token \

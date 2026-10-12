@@ -19,11 +19,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent/agenttest"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestSoftRebootNodeUsesTypedAgentRPC(t *testing.T) {
@@ -33,7 +33,7 @@ func TestSoftRebootNodeUsesTypedAgentRPC(t *testing.T) {
 	database := &testutil.MockDB{}
 	database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 	fakeAgent := &agenttest.FakeClient{
-		ScheduleNodeRebootResponse: &nkeproto.ScheduleNodeRebootResponse{PackageLocksTimedOut: true},
+		ScheduleNodeRebootResponse: &nvkeproto.ScheduleNodeRebootResponse{PackageLocksTimedOut: true},
 	}
 	activities := &Activities{db: database, nodeAgentClient: fakeAgent}
 	testSuite := &testsuite.WorkflowTestSuite{}
@@ -56,10 +56,10 @@ func TestSoftRebootNodeFallsBackToLegacyRunbookWhenRPCIsUnimplemented(t *testing
 	database.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "cluster-1"}, nil).Once()
 	fakeAgent := &agenttest.FakeClient{
 		ScheduleNodeRebootErr: fmt.Errorf("schedule reboot: %w", status.Error(codes.Unimplemented, "unknown method ScheduleNodeReboot")),
-		ExecuteScriptHook: func(_ db.Node, scriptName, scriptContents string) (*nkeproto.ExecuteScriptResponse, error) {
+		ExecuteScriptHook: func(_ db.Node, scriptName, scriptContents string) (*nvkeproto.ExecuteScriptResponse, error) {
 			require.Equal(t, "reboot", scriptName)
 			require.Contains(t, scriptContents, "Rebooting the system now")
-			return &nkeproto.ExecuteScriptResponse{}, nil
+			return &nvkeproto.ExecuteScriptResponse{}, nil
 		},
 	}
 	activities := &Activities{db: database, nodeAgentClient: fakeAgent}
@@ -131,7 +131,7 @@ func TestSoftRebootNodeDefersUnknownLegacyRunbookOutcomeToBootVerification(t *te
 	database.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "cluster-1"}, nil).Once()
 	fakeAgent := &agenttest.FakeClient{
 		ScheduleNodeRebootErr: status.Error(codes.Unimplemented, "unknown method ScheduleNodeReboot"),
-		ExecuteScriptHook: func(_ db.Node, _, _ string) (*nkeproto.ExecuteScriptResponse, error) {
+		ExecuteScriptHook: func(_ db.Node, _, _ string) (*nvkeproto.ExecuteScriptResponse, error) {
 			return nil, status.Error(codes.Unavailable, "connection lost")
 		},
 	}
@@ -156,7 +156,7 @@ func TestSoftRebootNodeRetrySkipsDuplicateRequestAfterReboot(t *testing.T) {
 	database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Twice()
 	fakeAgent := &agenttest.FakeClient{
 		ScheduleNodeRebootErr: status.Error(codes.Internal, "response was not recorded"),
-		GetNodeBootInfoResponse: &nkeproto.GetNodeBootInfoResponse{
+		GetNodeBootInfoResponse: &nvkeproto.GetNodeBootInfoResponse{
 			BootTimeUnixSeconds: rebootInitiatedTime.Add(time.Minute).Unix(),
 		},
 	}
@@ -198,7 +198,7 @@ func TestGetBootTimeUsesTypedAgentResponse(t *testing.T) {
 	database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 	want := time.Date(2026, time.August, 18, 14, 30, 45, 0, time.UTC)
 	fakeAgent := &agenttest.FakeClient{
-		GetNodeBootInfoResponse: &nkeproto.GetNodeBootInfoResponse{BootTimeUnixSeconds: want.Unix(), BootId: "boot-id"},
+		GetNodeBootInfoResponse: &nvkeproto.GetNodeBootInfoResponse{BootTimeUnixSeconds: want.Unix(), BootId: "boot-id"},
 	}
 	activities := &Activities{db: database, nodeAgentClient: fakeAgent}
 
@@ -220,10 +220,10 @@ func TestGetBootTimeFallsBackToLegacyRunbookWhenRPCIsUnimplemented(t *testing.T)
 	want := time.Date(2026, time.August, 18, 14, 30, 45, 0, time.UTC)
 	fakeAgent := &agenttest.FakeClient{
 		GetNodeBootInfoErr: fmt.Errorf("get boot info: %w", status.Error(codes.Unimplemented, "unknown method GetNodeBootInfo")),
-		ExecuteScriptHook: func(_ db.Node, scriptName, scriptContents string) (*nkeproto.ExecuteScriptResponse, error) {
+		ExecuteScriptHook: func(_ db.Node, scriptName, scriptContents string) (*nvkeproto.ExecuteScriptResponse, error) {
 			require.Equal(t, "uptime", scriptName)
 			require.Contains(t, scriptContents, "Boot Time:")
-			return &nkeproto.ExecuteScriptResponse{Output: "Node: worker-1\nBoot Time: 2026-08-18T14:30:45Z\nUptime: 0d 0h 1m 0s\n"}, nil
+			return &nvkeproto.ExecuteScriptResponse{Output: "Node: worker-1\nBoot Time: 2026-08-18T14:30:45Z\nUptime: 0d 0h 1m 0s\n"}, nil
 		},
 	}
 	activities := &Activities{db: database, nodeAgentClient: fakeAgent}
@@ -247,7 +247,7 @@ func TestGetBootTimeRejectsInvalidAgentResponse(t *testing.T) {
 	node := db.Node{ID: uuid.New(), Name: "worker-1"}
 	database := &testutil.MockDB{}
 	database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
-	fakeAgent := &agenttest.FakeClient{GetNodeBootInfoResponse: &nkeproto.GetNodeBootInfoResponse{}}
+	fakeAgent := &agenttest.FakeClient{GetNodeBootInfoResponse: &nvkeproto.GetNodeBootInfoResponse{}}
 	activities := &Activities{db: database, nodeAgentClient: fakeAgent}
 
 	_, err := activities.getBootTime(context.Background(), node.ID)

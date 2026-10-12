@@ -1,5 +1,5 @@
 [Unit]
-Description=NKE Node Agent
+Description=NVKE Node Agent
 After=multi-user.target
 StartLimitIntervalSec=0
 

@@ -527,7 +527,7 @@ func TestPickReadyPod(t *testing.T) {
 	}
 }
 
-// TestServiceBaseURL: the NKE Service publishes its metrics listener under a
+// TestServiceBaseURL: the NVKE Service publishes its metrics listener under a
 // name, and a name in the authority makes every URL built from it unparseable.
 func TestServiceBaseURL(t *testing.T) {
 	tests := []struct {
@@ -557,5 +557,66 @@ func TestServiceBaseURL(t *testing.T) {
 				t.Fatalf("a request URL built from %q does not parse: %v", got, err)
 			}
 		})
+	}
+}
+
+// wedgedFirstStarter hands out a session that accepts and closes every
+// connection first, the way a port-forward whose SPDY connection has wedged
+// does, and healthy sessions after.
+type wedgedFirstStarter struct {
+	inner      *fakeStarter
+	mu         sync.Mutex
+	starts     int
+	wedgedDone chan struct{}
+}
+
+func (w *wedgedFirstStarter) Target() string { return w.inner.Target() }
+
+func (w *wedgedFirstStarter) Start(ctx context.Context) (*forwardSession, error) {
+	w.mu.Lock()
+	w.starts++
+	first := w.starts == 1
+	w.mu.Unlock()
+	if !first {
+		return w.inner.Start(ctx)
+	}
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	done := make(chan struct{})
+	w.mu.Lock()
+	w.wedgedDone = done
+	w.mu.Unlock()
+	return &forwardSession{
+		addr: listener.Addr().String(),
+		done: done,
+		stop: sync.OnceFunc(func() { _ = listener.Close(); close(done) }),
+	}, nil
+}
+
+func TestServiceForwarderRecoversFromAWedgedSession(t *testing.T) {
+	starter := &wedgedFirstStarter{inner: &fakeStarter{}}
+	forwarder := newTestForwarder(starter, "http://nke-controller.nke-controller.svc:8080")
+	t.Cleanup(forwarder.Close)
+
+	mustGetOK(t, forwarder, "GET through a forward whose first session is wedged")
+
+	if starter.inner.startCount() != 1 {
+		t.Errorf("fresh sessions started = %d, want 1", starter.inner.startCount())
+	}
+	select {
+	case <-starter.wedgedDone:
+	default:
+		t.Error("the wedged session was not stopped")
 	}
 }

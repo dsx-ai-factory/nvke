@@ -18,11 +18,12 @@ ARG GOLANG_IMAGE=docker.io/golang:1.27.2@sha256:5bc7f572bbaa98885a3a1fd9c0aa76b5
 ARG ALPINE_IMAGE=docker.io/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS builder
+ENV GOPROXY=https://proxy.golang.org|direct
 ARG TARGETOS
 ARG TARGETARCH
 ARG BUILD_VERSION=dev
 
-# The build context is the NKE repository root. All Go dependencies are public;
+# The build context is the NVKE repository root. All Go dependencies are public;
 # the builder downloads them as needed without source credentials.
 WORKDIR /workspace
 COPY . .

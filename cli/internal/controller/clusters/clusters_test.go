@@ -12,7 +12,7 @@ import (
 // withParent registers cmd under a throwaway parent so cobra resolves names and
 // aliases exactly as it does at runtime, then calls parent with args.
 func withParent(cmd *cobra.Command, args []string) error {
-	parent := &cobra.Command{Use: "nkectl"}
+	parent := &cobra.Command{Use: "nvkectl"}
 	parent.AddCommand(cmd)
 	parent.SetArgs(args)
 	return parent.Execute()

@@ -28,7 +28,7 @@ type KeySource interface {
 var ErrKeysStale = errors.New("issuer key set is stale")
 
 // FailureReason labels why authentication or admission failed. These are the
-// nke_auth_requests_total{reason} values, so the set is closed.
+// nvke_auth_requests_total{reason} values, so the set is closed.
 type FailureReason string
 
 const (

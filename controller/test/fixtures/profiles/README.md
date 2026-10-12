@@ -15,8 +15,8 @@ Two kinds of entry live here, and the difference matters:
 
 | Profile | URLs | Boots |
 |---|---|---|
-| `test-fixture-amd64`, `nke-local-dev-kindest-arm64` | `example.test`, synthetic | nothing; they exercise CWE's rendering and the CAPD and gofail lanes |
-| `nke-nico-vms-24.04-amd64-fde`, `nke-nico-vms-24.04-arm64-fde` | unreachable placeholders | the NKE node image on the `nico-vms` backend |
+| `test-fixture-amd64`, `nvke-local-dev-kindest-arm64` | `example.test`, synthetic | nothing; they exercise CWE's rendering and the CAPD and gofail lanes |
+| `nvke-nico-vms-24.04-amd64-fde`, `nvke-nico-vms-24.04-arm64-fde` | unreachable placeholders | the NVKE node image on the `nico-vms` backend |
 
 **No file in this tree names a CDN host.** These profiles used to point
 `image-url` at CloudFront and pass `--bundle-server-url` for a CloudFront
@@ -26,7 +26,7 @@ and the agent runs with no bundle server, which makes it prefer apt against the
 `nke-cni-*` debs already in the node image. `nico-vms-e2e.sh` fails the run if
 any file here names CloudFront again.
 
-`nke-nico-vms-24.04-amd64-fde` is a copy of the fleet profile of the same name.
+`nvke-nico-vms-24.04-amd64-fde` is a copy of the fleet profile `nke-nico-vms-24.04-amd64-fde`.
 It is the OS profile every `nico-vms` E2E spec requests, and CWE reads its
 `ipxeScript` and `userData.tmpl` unconditionally when it creates a node, so
 without the copy the first create fails. The files hold no credentials: the

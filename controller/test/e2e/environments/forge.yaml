@@ -105,7 +105,7 @@ infrastructure:
       # Both CPU architectures, because the site controller and the tenants it
       # hosts are different machines and need not agree. A GB200 tenant is
       # arm64 throughout, while the site controller in front of it can be
-      # either: site.arch picks which, and `make site-inputs` builds nkectl
+      # either: site.arch picks which, and `make site-inputs` builds nvkectl
       # and the image archives for the same one.
       #
       # Every id is a separate variable, so a repository that has onboarded one

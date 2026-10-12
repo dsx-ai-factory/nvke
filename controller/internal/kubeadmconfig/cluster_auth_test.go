@@ -17,10 +17,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/nkerbac"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 )
 
 const clusterAuthTrustDomain = "management.example.test"
@@ -29,8 +29,8 @@ func clusterAuthClient(objects ...client.Object) client.Client {
 	return fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).WithObjects(objects...).Build()
 }
 
-func clusterAuthShared() config.NkeOIDCAuth {
-	return config.NkeOIDCAuth{
+func clusterAuthShared() config.NvkeOIDCAuth {
+	return config.NvkeOIDCAuth{
 		Enabled:   true,
 		IssuerURL: "https://management.example.test",
 		CABundleSecret: config.OIDCCABundleSecretRef{
@@ -59,14 +59,14 @@ func clusterAuthOperator() controllerconfig.OIDCProvider {
 	}
 }
 
-func nkeRBAC(users ...string) *corev1.ConfigMap {
+func nvkeRBAC(users ...string) *corev1.ConfigMap {
 	manifest := "kind: ClusterRoleBinding\nsubjects:\n"
 	for _, user := range users {
 		manifest += "  - {kind: User, name: " + user + "}\n"
 	}
 	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: constants.NamespaceNKESystem, Name: nkerbac.ConfigMapName},
-		Data:       map[string]string{nkerbac.ConfigMapKey: manifest},
+		ObjectMeta: metav1.ObjectMeta{Namespace: constants.NamespaceNVKESystem, Name: nvkerbac.ConfigMapName},
+		Data:       map[string]string{nvkerbac.ConfigMapKey: manifest},
 	}
 }
 
@@ -108,7 +108,7 @@ func TestBuildClusterAuthenticationConfig(t *testing.T) {
 
 	t.Run("shared and operator providers, with nke-rbac subjects reserved", func(t *testing.T) {
 		t.Parallel()
-		got, err := BuildClusterAuthenticationConfig(ctx, clusterAuthClient(clusterAuthCASecret(), nkeRBAC("spiffe://exchange.example/capi")), ClusterAuthentication{
+		got, err := BuildClusterAuthenticationConfig(ctx, clusterAuthClient(clusterAuthCASecret(), nvkeRBAC("spiffe://exchange.example/capi")), ClusterAuthentication{
 			ClusterName:   "tenant-1",
 			Shared:        clusterAuthShared(),
 			SharedEnabled: true,
@@ -177,7 +177,7 @@ func TestLoadOperatorJWTPolicy(t *testing.T) {
 		},
 		{
 			name:        "nke-rbac users are reserved",
-			reader:      clusterAuthClient(nkeRBAC("spiffe://exchange.example/capi", "spiffe://exchange.example/cwe")),
+			reader:      clusterAuthClient(nvkeRBAC("spiffe://exchange.example/capi", "spiffe://exchange.example/cwe")),
 			trustDomain: clusterAuthTrustDomain,
 			want: OperatorJWTPolicy{
 				ManagementJWTTrustDomain: clusterAuthTrustDomain,
@@ -186,7 +186,7 @@ func TestLoadOperatorJWTPolicy(t *testing.T) {
 		},
 		{
 			name:    "nke-rbac without a trust domain is an error",
-			reader:  clusterAuthClient(nkeRBAC("spiffe://exchange.example/capi")),
+			reader:  clusterAuthClient(nvkeRBAC("spiffe://exchange.example/capi")),
 			wantErr: "trust domain is unknown",
 		},
 		{

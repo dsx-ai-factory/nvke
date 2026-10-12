@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	controllerpreflights "github.com/dsx-ai-factory/nke/controller/internal/rollout/preflights"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	controllerpreflights "github.com/dsx-ai-factory/nvke/controller/internal/rollout/preflights"
 )
 
 // minimalOp is the smallest possible Operation for factory tests.

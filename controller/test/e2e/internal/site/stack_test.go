@@ -16,7 +16,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 )
 
 const spireOverlay = `
@@ -43,7 +43,7 @@ var stackCheckout = func() string {
 	if err != nil {
 		panic(err)
 	}
-	for _, rel := range []string{"deploy/nke-deploy.sh", "deploy/nico/release.yaml"} {
+	for _, rel := range []string{"deploy/nvke-deploy.sh", "deploy/nico/release.yaml"} {
 		path := filepath.Join(dir, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			panic(err)
@@ -60,8 +60,8 @@ func testSBOM() Stack {
 	layout.Export = []string{"deploy"}
 	return Stack{
 		Assets:     DeployAssets{Dir: stackCheckout, Layout: layout},
-		Controller: Image{Repository: "nvcr.io/nke/cwe", Tag: "v1.2.3"},
-		Profiles:   Image{Repository: "nvcr.io/nke/profiles", Tag: "run-42"},
+		Controller: Image{Repository: "nvcr.io/nvke/cwe", Tag: "v1.2.3"},
+		Profiles:   Image{Repository: "nvcr.io/nvke/profiles", Tag: "run-42"},
 		Provider:   NewNico("https://forge.example", "org", "tok"),
 		Registry:   Registry{Server: "ghcr.io", Username: "u", Token: "r"},
 		Tenant:     Tenant{User: "admin", Password: "p"},
@@ -111,14 +111,14 @@ func TestSBOMRender(t *testing.T) {
 
 	controllerValues := decode(t, files["controller.yaml"])
 	for keys, want := range map[string]string{
-		"image.repository":                 "nvcr.io/nke/cwe",
+		"image.repository":                 "nvcr.io/nvke/cwe",
 		"image.tag":                        "v1.2.3",
 		"appDb.postgresPassword":           "db-secret",
 		"nkeOIDCAuth.discoveryURL":         "https://10.0.0.5:30443/.well-known/openid-configuration",
 		"spiffe.trustDomain":               "e2e-site.nke.local",
 		"spiffe.spire.serverAddress":       "10.0.0.5",
 		"nodeAgent.spireAttestationMethod": "tpm",
-		"profiles.image.repository":        "nvcr.io/nke/profiles",
+		"profiles.image.repository":        "nvcr.io/nvke/profiles",
 		"profiles.image.tag":               "run-42",
 	} {
 		if got := dig(t, controllerValues, strings.Split(keys, ".")...); got != want {
@@ -225,7 +225,7 @@ func TestSBOMDeploy(t *testing.T) {
 		"node-role.kubernetes.io/control-plane-",
 		"clusterctl init",
 		"local-path-storage.yaml",
-		"nke-deploy.sh",
+		"nvke-deploy.sh",
 		"apply-capi-spiffe-exec-auth.sh",
 	}
 	last := -1
@@ -242,7 +242,7 @@ func TestSBOMDeploy(t *testing.T) {
 	if final := s.runs[len(s.runs)-1]; !strings.Contains(final, valuesDir) || !strings.Contains(final, "rm -rf") {
 		t.Errorf("last command should remove the values directory, got %s", final)
 	}
-	install := s.cmd(t, "nke-deploy.sh")
+	install := s.cmd(t, "nvke-deploy.sh")
 	for _, want := range []string{
 		"--deploy-path /var/lib/nke-e2e/assets/deploy/nico",
 		"--config",
@@ -264,7 +264,7 @@ func TestSBOMDeploy(t *testing.T) {
 func TestSBOMDeployCleansUpOnFailure(t *testing.T) {
 	s := sbomSession()
 	s.fail = func(cmd string) (string, error) {
-		if strings.Contains(cmd, "nke-deploy.sh") {
+		if strings.Contains(cmd, "nvke-deploy.sh") {
 			return "helm: release temporal failed", errors.New("exit status 1")
 		}
 		return "", nil

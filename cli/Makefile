@@ -17,14 +17,14 @@ help: ## Show the available targets.
 REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
 
 # Module-level targets, matching the other workspace members. The root Makefile
-# builds nkectl into the repository's bin/ as part of `make build`; this file is
+# builds nvkectl into the repository's bin/ as part of `make build`; this file is
 # for working inside cli/ alone, and it is what the Lint workflow
 # invokes.
 #
 # Every dependency here is public, so these targets can run with GOWORK=off.
 
 GO ?= go
-BINARY := bin/nkectl
+BINARY := bin/nvkectl
 
 # Go tool install location (GOPATH/bin, unless GOBIN is set); matches
 # agent/Makefile and controller/nico-sim/Makefile.
@@ -42,89 +42,100 @@ include ../make/tool-versions.mk
 #
 # --match is not optional. This is a monorepo whose tags are per-component
 # (agent/v*, controller/v*), so a bare `git describe --tags` returns whichever
-# family happens to be nearest and would stamp nkectl with, say, a controller
+# family happens to be nearest and would stamp nvkectl with, say, a controller
 # version. That is not hypothetical: hack/capd-kindest-node/build-image.sh
 # derives an agent version with an unmatched `git describe` and already
 # produces the wrong string.
 #
-# nkectl versions apart from the controller, so it gets its own tag family. Go
+# nvkectl versions apart from the controller, so it gets its own tag family. Go
 # requires a submodule's tags to carry its directory, so this module is tagged
 # cli/vX.Y.Z. The prefix is stripped, so the binary reports v1.2.3. No cli/v*
 # tag exists yet, hence the fallbacks: a plain v* tag, the commit, then v0.0.0.
 # The commit says which source a build came from, leaving v0.0.0 to mean a build
 # outside a git checkout. --dirty marks a modified tree.
-_NKECTL_VERSION_RAW := $(shell git describe --tags --dirty --match 'cli/v[0-9]*' 2>/dev/null || git describe --tags --dirty --match 'v[0-9]*' 2>/dev/null || git describe --always --dirty 2>/dev/null || echo "v0.0.0")
-NKECTL_VERSION  ?= $(patsubst cli/%,%,$(_NKECTL_VERSION_RAW))
-NKECTL_COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-NKECTL_TREE     ?= $(shell test -z "$$(git status --porcelain 2>/dev/null)" && echo clean || echo dirty)
+_NVKECTL_VERSION_RAW := $(shell git describe --tags --dirty --match 'cli/v[0-9]*' 2>/dev/null || git describe --tags --dirty --match 'v[0-9]*' 2>/dev/null || git describe --always --dirty 2>/dev/null || echo "v0.0.0")
+NVKECTL_VERSION  ?= $(patsubst cli/%,%,$(_NVKECTL_VERSION_RAW))
+NVKECTL_COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+NVKECTL_TREE     ?= $(shell test -z "$$(git status --porcelain 2>/dev/null)" && echo clean || echo dirty)
 # The commit timestamp, not the wall clock: building the same commit twice
 # should produce the same binary.
-NKECTL_DATE     ?= $(shell git log -1 --format=%cI 2>/dev/null || echo "unknown")
+NVKECTL_DATE     ?= $(shell git log -1 --format=%cI 2>/dev/null || echo "unknown")
 
 # "main", not the full import path. The variables live in package main, and
 # for that package the linker matches on the package NAME. Given the import
 # path it finds no symbol and silently changes nothing -- no error, no warning,
 # just a binary that still reports "dev". Hence the version assertion in
 # `make build`.
-NKECTL_PKG := main
+NVKECTL_PKG := main
 
 RELEASE_LDFLAGS ?= -s -w -buildid= -extldflags -static
 
-NKECTL_LDFLAGS := \
-	-X '$(NKECTL_PKG).version=$(NKECTL_VERSION)' \
-	-X '$(NKECTL_PKG).gitCommit=$(NKECTL_COMMIT)' \
-	-X '$(NKECTL_PKG).gitTreeState=$(NKECTL_TREE)' \
-	-X '$(NKECTL_PKG).buildDate=$(NKECTL_DATE)' \
-	-X 'github.com/dsx-ai-factory/nke/cli/internal/bootstrap/controllerdeploy.capiVersion=$(CAPI_VERSION)' \
+NVKECTL_LDFLAGS := \
+	-X '$(NVKECTL_PKG).version=$(NVKECTL_VERSION)' \
+	-X '$(NVKECTL_PKG).gitCommit=$(NVKECTL_COMMIT)' \
+	-X '$(NVKECTL_PKG).gitTreeState=$(NVKECTL_TREE)' \
+	-X '$(NVKECTL_PKG).buildDate=$(NVKECTL_DATE)' \
+	-X 'github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/controllerdeploy.capiVersion=$(CAPI_VERSION)' \
 	$(RELEASE_LDFLAGS)
 
 .PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check check-no-docker \
 	ensure-capd-image ensure-provisioned-provider-image images \
 	nodes-up nodes-down nodes-status nodes-hosts nodes-attested
 
-# The platforms shipped on a release. nkectl is the one binary here a human
+# The platforms shipped on a release. nvkectl is the one binary here a human
 # downloads, so it is cross-built; the others are deployed, not fetched.
-NKECTL_PLATFORMS ?= darwin/amd64 darwin/arm64 linux/amd64 linux/arm64
+NVKECTL_PLATFORMS ?= darwin/amd64 darwin/arm64 linux/amd64 linux/arm64
 DIST ?= dist
+# The binary was called nkectl until cli/v0.1.x. For one release build-cross
+# also writes each binary under that name, so published download links and
+# scripts that know it keep working. Set it empty to stop.
+LEGACY_BINARY_NAME ?= nkectl
 
-build-cross: ## Build nkectl for every NKECTL_PLATFORMS entry into DIST.
+build-cross: ## Build nvkectl for every NVKECTL_PLATFORMS entry into DIST.
 	@mkdir -p $(DIST)
 	@# CGO off so each output is a static binary that runs on a bare image, and
 	@# so cross-compiling needs no per-target toolchain.
-	@for p in $(NKECTL_PLATFORMS); do \
+	@for p in $(NVKECTL_PLATFORMS); do \
 	  os=$${p%/*}; arch=$${p#*/}; \
-	  echo "  building $(DIST)/nkectl-$$os-$$arch"; \
+	  echo "  building $(DIST)/nvkectl-$$os-$$arch"; \
 	  CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch \
-	    $(GO) build -trimpath -ldflags "$(NKECTL_LDFLAGS)" \
-	    -o $(DIST)/nkectl-$$os-$$arch ./cmd/nkectl || exit 1; \
+	    $(GO) build -trimpath -ldflags "$(NVKECTL_LDFLAGS)" \
+	    -o $(DIST)/nvkectl-$$os-$$arch ./cmd/nvkectl || exit 1; \
 	done
+	@if [ -n "$(LEGACY_BINARY_NAME)" ]; then \
+	  for p in $(NVKECTL_PLATFORMS); do \
+	    os=$${p%/*}; arch=$${p#*/}; \
+	    cp "$(DIST)/nvkectl-$$os-$$arch" "$(DIST)/$(LEGACY_BINARY_NAME)-$$os-$$arch"; \
+	  done; \
+	  echo "  also written as $(LEGACY_BINARY_NAME)-<os>-<arch>, for one release"; \
+	fi
 	@# `make build` proves the -X symbols by running the binary. That cannot be
 	@# done for a foreign GOOS, so the host-matching output is executed instead:
-	@# every platform shares one NKECTL_LDFLAGS, so if one is stamped they all
+	@# every platform shares one NVKECTL_LDFLAGS, so if one is stamped they all
 	@# are. Skipped when no built platform matches the host.
 	@host="$$($(GO) env GOOS)-$$($(GO) env GOARCH)"; \
-	if [ -x "$(DIST)/nkectl-$$host" ]; then \
-	  out="$$($(DIST)/nkectl-$$host version)"; \
+	if [ -x "$(DIST)/nvkectl-$$host" ]; then \
+	  out="$$($(DIST)/nvkectl-$$host version)"; \
 	  case "$$out" in \
 	    *" dev "*|*"unknown"*|*"v0.0.0"*) \
 	      echo "ERROR: cross build produced an unstamped binary: $$out"; exit 1;; \
 	    *) echo "  verified $$host: $$out";; \
 	  esac; \
 	else \
-	  echo "  no host-matching platform in NKECTL_PLATFORMS; version assertion skipped"; \
+	  echo "  no host-matching platform in NVKECTL_PLATFORMS; version assertion skipped"; \
 	fi
 
-# -buildvcs=false because nkectl's version comes from the -X symbols in
-# NKECTL_LDFLAGS, asserted just below.
-build: ## Build nkectl into bin/, and assert the version stamp took.
-	CGO_ENABLED=0 $(GO) build -buildvcs=false -trimpath -ldflags "$(NKECTL_LDFLAGS)" -o $(BINARY) ./cmd/nkectl
+# -buildvcs=false because nvkectl's version comes from the -X symbols in
+# NVKECTL_LDFLAGS, asserted just below.
+build: ## Build nvkectl into bin/, and assert the version stamp took.
+	CGO_ENABLED=0 $(GO) build -buildvcs=false -trimpath -ldflags "$(NVKECTL_LDFLAGS)" -o $(BINARY) ./cmd/nvkectl
 	@# A wrong -X symbol is silently ignored by the linker, so the only way to
 	@# know the stamping worked is to ask the binary. Cheap, and it fails loudly.
 	@out="$$($(BINARY) version)"; \
 	case "$$out" in \
 	  *" dev "*|*"unknown"*|*"v0.0.0"*) \
-	    echo "ERROR: nkectl was built without version information: $$out"; \
-	    echo "       The -X symbols in NKECTL_LDFLAGS no longer match the variables in cmd/nkectl."; \
+	    echo "ERROR: nvkectl was built without version information: $$out"; \
+	    echo "       The -X symbols in NVKECTL_LDFLAGS no longer match the variables in cmd/nvkectl."; \
 	    exit 1;; \
 	  *) echo "  $$out";; \
 	esac
@@ -139,8 +150,8 @@ test: ## Run this module's tests. (run by the merge gate)
 	@$(COVERAGE_MKDIR)
 	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
 
-# e2e coverage for "nkectl bootstrap site" specifically -- e2e/bootstrap/ is
-# one of what may become several e2e/<command>/ suites as nkectl grows more
+# e2e coverage for "nvkectl bootstrap site" specifically -- e2e/bootstrap/ is
+# one of what may become several e2e/<command>/ suites as nvkectl grows more
 # commands worth covering this way.
 #
 # Self-contained: no live cluster or external service required, unlike
@@ -180,7 +191,7 @@ ensure-capd-image:
 	  bash ../controller/hack/capd-kindest-node/build-image.sh
 
 # The Cluster API infrastructure provider for hosts that already exist, which is
-# what makes a site cluster reconcile: `nkectl bootstrap site` installs it onto
+# what makes a site cluster reconcile: `nvkectl bootstrap site` installs it onto
 # the ephemeral bootstrap cluster (cli/internal/bootstrap/controllerdeploy) and loads this image
 # into it. image-provisioned-nvcr.yml publishes the image, but this target
 # builds it from the checkout regardless: the e2e lane has to exercise the
@@ -193,7 +204,7 @@ ensure-capd-image:
 # workspace vendor tree.
 CAPI_PROVISIONED_IMAGE ?= cluster-api-provider-provisioned:latest
 # The tags below are the defaults `bootstrap site` uses when neither the image
-# flags nor NKECTL_CONTROLLER_IMAGE / NKECTL_CAPI_PROVISIONED_IMAGE name an image; the
+# flags nor NVKECTL_CONTROLLER_IMAGE / NVKECTL_CAPI_PROVISIONED_IMAGE name an image; the
 # bootstrap manifest pins them.
 # CONTROLLER_IMAGE is the tag `images` gives the controller image. CWE_IMAGE
 # is its deprecated name. When CONTROLLER_IMAGE is unset or empty and
@@ -220,7 +231,7 @@ ensure-provisioned-provider-image:
 
 # The controller image records the commit it was built from; the Dockerfile
 # defaults both to v0.0.0 otherwise.
-CONTROLLER_IMAGE_BUILD_ARGS = --build-arg BUILD_VERSION=$(NKECTL_VERSION) --build-arg GIT_VERSION=$(NKECTL_COMMIT)
+CONTROLLER_IMAGE_BUILD_ARGS = --build-arg BUILD_VERSION=$(NVKECTL_VERSION) --build-arg GIT_VERSION=$(NVKECTL_COMMIT)
 
 # `images` always rebuilds. An `ensure-*` target keeps a stale image after a
 # `git pull`; this target does not. BuildKit's cache keeps a no-op rebuild cheap.
@@ -238,12 +249,12 @@ nodes-status:
 	$(GO) run ./e2e/bootstrap/substrate/cmd/nodes status
 
 # TPM attestation stage of the bootstrap e2e. Split in two because
-# the stage straddles a `nkectl bootstrap site` invocation: the thumbprints go
+# the stage straddles a `nvkectl bootstrap site` invocation: the thumbprints go
 # into the site spec that command reads, and the check runs against the SPIRE
 # server it left behind.
 #
-# `nodes-hosts` writes the node CSV that `nkectl generate sitespec` takes to
-# NKECTL_E2E_HOSTS_CSV, with each running fixture host's TPM EK thumbprint, and
+# `nodes-hosts` writes the node CSV that `nvkectl generate sitespec` takes to
+# NVKECTL_E2E_HOSTS_CSV, with each running fixture host's TPM EK thumbprint, and
 # prints the shell assignments run.sh sources: the CSV path and the bootstrap
 # CA paths. Nothing else goes to stdout.
 nodes-hosts:
@@ -264,14 +275,14 @@ lint: check-no-docker ## Run golangci-lint over this module. (run by the merge g
 license: ## Ensure license headers at code.
 	$(GO) run github.com/google/addlicense@$(ADDLICENSE_VERSION) -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" .
 
-# nkectl is a redistributed binary, so it carries its own attribution. It reuses
+# nvkectl is a redistributed binary, so it carries its own attribution. It reuses
 # the controller's generator rather than copying it: the script discovers the
 # vendor tree by walking up, and takes the module and its packages from the
 # environment, so one implementation serves every module in the workspace.
 .PHONY: provider-manifest provider-manifest-check
 
 .PHONY: notices notices-check
-# The provisioned provider's kustomize base, rendered into the binary so nkectl
+# The provisioned provider's kustomize base, rendered into the binary so nvkectl
 # installs it without a checkout. The base is the source of truth and its CRDs
 # and RBAC are controller-gen output, so this is regenerated from there rather
 # than edited: change the provider, `make -C cluster-api-provider-provisioned
@@ -291,7 +302,7 @@ provider-manifest: ## Regenerate the embedded provisioned-provider manifest.
 			'# GENERATED FILE -- do not edit. Regenerate with `make -C cli provider-manifest`.' \
 			'#' \
 			'# `kubectl kustomize cluster-api-provider-provisioned/config/default`, rendered' \
-			'# here so nkectl installs the provider of the commit it was built from without' \
+			'# here so nvkectl installs the provider of the commit it was built from without' \
 			'# a checkout. The source of truth is that kustomize base, whose CRDs and RBAC' \
 			'# are themselves controller-gen output; edit the provider, regenerate there,' \
 			'# then regenerate this.' \
@@ -312,14 +323,14 @@ provider-manifest-check: ## Verify the embedded provisioned-provider manifest is
 		|| { echo "ERROR: $(PROVIDER_MANIFEST) is stale. Run 'make -C cli provider-manifest' and commit it."; exit 1; }
 	@echo "  $(PROVIDER_MANIFEST) is up to date."
 
-notices: ## Regenerate THIRD_PARTY_NOTICES.md for the nkectl binary.
+notices: ## Regenerate THIRD_PARTY_NOTICES.md for the nvkectl binary.
 	@# The tool and the script both live in controller/, which is a sibling now,
 	@# not the parent. `go-licenses`, not `bin/go-licenses`: the real rule's
 	@# target is an absolute path, so a relative name does not match it.
 	@$(MAKE) --no-print-directory -C ../controller go-licenses
 	@MODULE_ROOT="$(CURDIR)" \
 		OUTPUT="$(CURDIR)/THIRD_PARTY_NOTICES.md" \
-		PACKAGES="./cmd/nkectl" \
+		PACKAGES="./cmd/nvkectl" \
 		GO_LICENSES="$(CURDIR)/../controller/bin/go-licenses" \
 		bash ../controller/hack/generate-notices
 

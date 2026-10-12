@@ -13,8 +13,8 @@ import (
 
 	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/sshexec"
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/state"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/sshexec"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/state"
 )
 
 // HTTPMethod is an HTTP method name (e.g. "GET", "POST").

@@ -13,8 +13,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nke/release/internal/qualification"
-	"github.com/dsx-ai-factory/nke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
+	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
 )
 
 func planCmd() *cobra.Command {

@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
 )
 
 // sectionMarker prefixes each command's output so the sections stay legible
@@ -28,7 +28,7 @@ const (
 //	controller did not become healthy within 10m0s: GET /healthz through
 //	port-forward to ...:8080: context deadline exceeded
 //
-// and that is the whole of what either run recorded. nkectl's own diagnostics
+// and that is the whole of what either run recorded. nvkectl's own diagnostics
 // do not cover this: it writes them when the bootstrap fails, and the
 // bootstrap had succeeded, so CollectDiagnostics returned ErrNoDiagnostics
 // and the runs produced no cluster-side evidence at all.
@@ -40,7 +40,7 @@ const (
 // are collected beside it -- a Service with a ready endpoint and a probe that
 // times out is a path fault, and raising the timeout would not touch it.
 //
-// Everything here runs on the node against the kubeconfig nkectl wrote, so it
+// Everything here runs on the node against the kubeconfig nvkectl wrote, so it
 // needs no forward of its own. That matters: if the forward is what broke,
 // a collector that depended on one would fail in the same way as the probe
 // and report nothing.
@@ -73,7 +73,7 @@ func CollectClusterState(ctx context.Context, s infra.Session, dest string, secr
 // deleted. A script with no newlines in it has nothing to lose that way. Run
 // 37582097398 collected all nine sections with it in place.
 //
-// controller.Namespace() and not the nke-controller that nkectl's bootstrap cluster
+// controller.Namespace() and not the nke-controller that nvkectl's bootstrap cluster
 // uses: run 37582097398 found the controller running in controller.Namespace() on the site
 // cluster and nothing at all in nke-controller. The two deploy paths do not
 // agree on where the controller goes, and this one follows the site.

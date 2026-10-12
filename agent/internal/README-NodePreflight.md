@@ -1,13 +1,13 @@
 # ExecuteNodePreflight — Node Readiness Checks
 
-Design for the `ExecuteNodePreflight` gRPC RPC added to the NKE agent (May 2026).
+Design for the `ExecuteNodePreflight` gRPC RPC added to the NVKE agent (May 2026).
 
 ## Problem
 
 Cluster provisioning workflows need to know when a node is actually ready for kubeadm
 and package operations—not just when the agent process is listening.
 
-The NKE controller gates first on agent reachability (for example via
+The NVKE controller gates first on agent reachability (for example via
 `GetAgentVersion` / NodeAgentReady conditions). That is necessary but
 insufficient: cloud-init may still be running `runcmd` steps (package installs,
 sysctl, service restarts) after the agent starts. Proceeding too early produces
@@ -127,7 +127,7 @@ Production agents leave `RootPath` empty and stat the real filesystem.
 
 ## Example usage
 
-**Default (what the NKE controller sends for typical nodes):**
+**Default (what the NVKE controller sends for typical nodes):**
 
 ```json
 {
@@ -162,7 +162,7 @@ Production agents leave `RootPath` empty and stat the real filesystem.
 
 See the main [README](../README.md#executenodepreflight-grpcurl) for `grpcurl` examples.
 
-## NKE controller integration
+## NVKE controller integration
 
 The controller calls this RPC from the `NodePreflight` Temporal activity in
 `controller/internal/temporal/activities/node_preflight.go`.

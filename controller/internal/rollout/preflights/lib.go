@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
 
 // execScriptOnNode dials the agent and runs script via the raw
@@ -34,7 +34,7 @@ func execScriptOnNode(
 	if cleanup != nil {
 		defer cleanup()
 	}
-	resp, err := client.ExecuteScript(ctx, &nkeproto.ExecuteScriptRequest{
+	resp, err := client.ExecuteScript(ctx, &nvkeproto.ExecuteScriptRequest{
 		ScriptName:     scriptName,
 		ScriptContents: script,
 	})
@@ -50,7 +50,7 @@ func dialAndStatus(
 	ctx context.Context,
 	dialer nodeagent.Dialer,
 	node rollout.Node,
-) (*nkeproto.KubeadmStatusResponse, error) {
+) (*nvkeproto.KubeadmStatusResponse, error) {
 	if dialer == nil {
 		return nil, errors.New("preflights: dialer not configured")
 	}
@@ -61,7 +61,7 @@ func dialAndStatus(
 	if cleanup != nil {
 		defer cleanup()
 	}
-	resp, err := client.GetKubeadmStatus(ctx, &nkeproto.KubeadmStatusRequest{})
+	resp, err := client.GetKubeadmStatus(ctx, &nvkeproto.KubeadmStatusRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("get_kubeadm_status on %s: %w", node.Name(), err)
 	}

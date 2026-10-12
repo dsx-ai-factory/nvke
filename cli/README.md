@@ -1,44 +1,44 @@
-# nkectl
+# nvkectl
 
-NKE control-plane CLI. Bootstraps site controllers and manages tenant cluster lifecycle.
+NVKE control-plane CLI. Bootstraps site controllers and manages tenant cluster lifecycle.
 
-**Module:** `github.com/dsx-ai-factory/nke/cli`  
-**Binary:** `nkectl`  
+**Module:** `github.com/dsx-ai-factory/nvke/cli`  
+**Binary:** `nvkectl`  
 **Releases:** `cli/v*` tags
 
 ## What it does
 
-- **Site bootstrap** — `nkectl bootstrap site` creates an ephemeral Kind cluster on nerdctl/containerd, deploys Postgres, Temporal, SPIRE (skipped with `--disable-mtls`, which dials the agents in plaintext), Cluster API and CWE onto it, then drives kubeadm init/join across pre-provisioned nodes via `nke-agent` gRPC; no SSH required, and Docker is not supported
-- **Cluster lifecycle** — `nkectl get/create/patch/delete clusters` manages tenant clusters through the CWE API
-- **Site spec** — `nkectl generate sitespec` writes a site spec from a node CSV; `nkectl bootstrap site --dry-run` validates one without touching a node
-- **Config** — `nkectl config set-site` points the CLI at a site controller.
+- **Site bootstrap** — `nvkectl bootstrap site` creates an ephemeral Kind cluster on nerdctl/containerd, deploys Postgres, Temporal, SPIRE (skipped with `--disable-mtls`, which dials the agents in plaintext), Cluster API and CWE onto it, then drives kubeadm init/join across pre-provisioned nodes via `nke-agent` gRPC; no SSH required, and Docker is not supported
+- **Cluster lifecycle** — `nvkectl get/create/patch/delete clusters` manages tenant clusters through the CWE API
+- **Site spec** — `nvkectl generate sitespec` writes a site spec from a node CSV; `nvkectl bootstrap site --dry-run` validates one without touching a node
+- **Config** — `nvkectl config set-site` points the CLI at a site controller.
 
 ## Installation
 
 ```bash
 # linux/amd64
-curl -fsSL -o nkectl \
-  https://github.com/dsx-ai-factory/nke/releases/latest/download/nkectl-linux-amd64
-chmod +x nkectl && sudo mv nkectl /usr/local/bin/
+curl -fsSL -o nvkectl \
+  https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-linux-amd64
+chmod +x nvkectl && sudo mv nvkectl /usr/local/bin/
 
 # linux/arm64
-curl -fsSL -o nkectl \
-  https://github.com/dsx-ai-factory/nke/releases/latest/download/nkectl-linux-arm64
-chmod +x nkectl && sudo mv nkectl /usr/local/bin/
+curl -fsSL -o nvkectl \
+  https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-linux-arm64
+chmod +x nvkectl && sudo mv nvkectl /usr/local/bin/
 
 # macOS (Apple Silicon)
-curl -fsSL -o nkectl \
-  https://github.com/dsx-ai-factory/nke/releases/latest/download/nkectl-darwin-arm64
-chmod +x nkectl && sudo mv nkectl /usr/local/bin/
+curl -fsSL -o nvkectl \
+  https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-darwin-arm64
+chmod +x nvkectl && sudo mv nvkectl /usr/local/bin/
 
 # macOS (Intel)
-curl -fsSL -o nkectl \
-  https://github.com/dsx-ai-factory/nke/releases/latest/download/nkectl-darwin-amd64
-chmod +x nkectl && sudo mv nkectl /usr/local/bin/
+curl -fsSL -o nvkectl \
+  https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-darwin-amd64
+chmod +x nvkectl && sudo mv nvkectl /usr/local/bin/
 ```
 
 ```bash
-nkectl version
+nvkectl version
 ```
 
 ## Quick reference
@@ -47,57 +47,57 @@ nkectl version
 # Write a site spec from a node CSV, then bootstrap a new site controller with
 # the images `make -C cli images` built. Needs nerdctl+containerd, kind, helm,
 # kubectl and clusterctl on PATH.
-nkectl generate sitespec my-site --nodes hosts.csv > sitespec.yaml
-nkectl bootstrap site -f sitespec.yaml
+nvkectl generate sitespec my-site --nodes hosts.csv > sitespec.yaml
+nvkectl bootstrap site -f sitespec.yaml
 # ... or with images you pushed to a registry
-nkectl bootstrap site -f sitespec.yaml \
-  --controller-image nvcr.io/<org>/nke-controller:edge \
+nvkectl bootstrap site -f sitespec.yaml \
+  --controller-image nvcr.io/<org>/nvke-controller:edge \
   --provisioned-provider-image nvcr.io/<org>/cluster-api-provider-provisioned:edge
-nkectl bootstrap site -f sitespec.yaml --dry-run                 # validate only
-nkectl bootstrap site -f sitespec.yaml --keep-bootstrap-cluster  # leave the Kind cluster for debugging
-nkectl bootstrap site -f sitespec.yaml --timeout 45m \
+nvkectl bootstrap site -f sitespec.yaml --dry-run                 # validate only
+nvkectl bootstrap site -f sitespec.yaml --keep-bootstrap-cluster  # leave the Kind cluster for debugging
+nvkectl bootstrap site -f sitespec.yaml --timeout 45m \
   --kubeconfig-out ./my-site.kubeconfig                          # longer provisioning wait; pick the output path
-nkectl bootstrap site -f sitespec.yaml --disable-mtls            # no SPIRE, plaintext agents; development only
+nvkectl bootstrap site -f sitespec.yaml --disable-mtls            # no SPIRE, plaintext agents; development only
 
 # Point the CLI at a site controller
-nkectl config set-site --url https://cwe.example.com --name default \
+nvkectl config set-site --url https://cwe.example.com --name default \
   --kubeconfig ~/.kube/site.kubeconfig
-nkectl config use-site <name>          # switch between configured sites
-nkectl config view                     # print the config
-nkectl --site <name> get clusters      # override the active site for one call
+nvkectl config use-site <name>          # switch between configured sites
+nvkectl config view                     # print the config
+nvkectl --site <name> get clusters      # override the active site for one call
 
 # Infrastructure providers (alpha)
-nkectl get providers                   # NOT-INSTALLED / NOT-CONFIGURED / DEGRADED / CONFIGURED
-nkectl get providers -o json
+nvkectl get providers                   # NOT-INSTALLED / NOT-CONFIGURED / DEGRADED / CONFIGURED
+nvkectl get providers -o json
 
 # Tenant cluster lifecycle
-nkectl get clusters                    # table with AGE and status
-nkectl get clusters -o json            # JSON output
-nkectl get clusters <name>... -o yaml  # full detail for named clusters
-nkectl create cluster -f <spec-file>   # or: cat spec.yaml | nkectl create cluster -f -
-nkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
-nkectl patch cluster my-cluster --patch-file patch.yaml
-nkectl get kubeconfig <name> --output-file ./tenant.kubeconfig   # admin kubeconfig, read from the site cluster
-nkectl delete cluster <name>           # deletes immediately; there is no prompt
+nvkectl get clusters                    # table with AGE and status
+nvkectl get clusters -o json            # JSON output
+nvkectl get clusters <name>... -o yaml  # full detail for named clusters
+nvkectl create cluster -f <spec-file>   # or: cat spec.yaml | nvkectl create cluster -f -
+nvkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
+nvkectl patch cluster my-cluster --patch-file patch.yaml
+nvkectl get kubeconfig <name> --output-file ./tenant.kubeconfig   # admin kubeconfig, read from the site cluster
+nvkectl delete cluster <name>           # deletes immediately; there is no prompt
 
 # Node pools
-nkectl create nodepool -f <spec-file>  # or: cat pool.yaml | nkectl create nodepool -f -
-nkectl get nodepools                   # every pool on the site
-nkectl get nodepools --cluster <name>  # pools of one cluster
-nkectl get nodepools <name>... --cluster <name> -o yaml  # full detail for named pools
-nkectl patch nodepool <name> --cluster <name> --patch 'desiredNodeCount: 8'
-nkectl patch nodepool <name> --cluster <name> --patch-file patch.yaml
-nkectl delete nodepool <name> --cluster <name>
+nvkectl create nodepool -f <spec-file>  # or: cat pool.yaml | nvkectl create nodepool -f -
+nvkectl get nodepools                   # every pool on the site
+nvkectl get nodepools --cluster <name>  # pools of one cluster
+nvkectl get nodepools <name>... --cluster <name> -o yaml  # full detail for named pools
+nvkectl patch nodepool <name> --cluster <name> --patch 'desiredNodeCount: 8'
+nvkectl patch nodepool <name> --cluster <name> --patch-file patch.yaml
+nvkectl delete nodepool <name> --cluster <name>
 
 # Machine images and releases. Example files are in cli/examples/. Published
 # content is immutable, so to change one, create a new name
-nkectl create machineimage -f machineimage.yaml
-nkectl create clusterrelease -f clusterrelease.yaml --dry-run=client
-nkectl create nodepoolrelease -f nodepoolrelease.yaml
-nkectl get machineimages
-nkectl get clusterreleases <name>... -o yaml
-nkectl deprecate nodepoolrelease <name>
-nkectl delete clusterrelease <name>
+nvkectl create machineimage -f machineimage.yaml
+nvkectl create clusterrelease -f clusterrelease.yaml --dry-run=client
+nvkectl create nodepoolrelease -f nodepoolrelease.yaml
+nvkectl get machineimages
+nvkectl get clusterreleases <name>... -o yaml
+nvkectl deprecate nodepoolrelease <name>
+nvkectl delete clusterrelease <name>
 ```
 
 Global flags: `--site <name>` overrides the active site for one invocation, `-v`
@@ -106,8 +106,8 @@ are aliases on `get`, `create`, `patch` and `delete`.
 
 ## Authenticating to CWE
 
-`nkectl config set-site` command configures the management-cluster kubeconfig with the site.
-nkectl commands use it to mint an audience-scoped token for the admitted
+`nvkectl config set-site` command configures the management-cluster kubeconfig with the site.
+nvkectl commands use it to mint an audience-scoped token for the admitted
 identity `nke-clients/nke-client`. The audience comes from ConfigMap
 `nke-auth-config`, looked up in namespace `nke-controller` first and then
 `cloud-workflow-engine`.
@@ -119,27 +119,27 @@ If neither namespace holds that ConfigMap, the CLI treats authentication as off 
 The kubeconfig identity needs:
 
 - `create` on `serviceaccounts/token` for `nke-client` in `nke-clients`
-- `get` on `secrets` in `nke-system`, for `nkectl get kubeconfig`, which reads
+- `get` on `secrets` in `nke-system`, for `nvkectl get kubeconfig`, which reads
   the `<cluster>-admin-kubeconfig` Secret there directly rather than through CWE
 - `list` on `customresourcedefinitions`, `list` on `deployments` across
   namespaces, and `get` on `secrets` in each provider manager's namespace
-  (`capnico-system` and `capll-system` by default), for `nkectl get providers`
+  (`capnico-system` and `capll-system` by default), for `nvkectl get providers`
 
 A cluster-admin kubeconfig already has all of these. The token grant, and
 creating the service account on a real site, are in
-[Configuring NKE API Authentication](../controller/docs/configuring-api-authentication.md).
+[Configuring NVKE API Authentication](../controller/docs/configuring-api-authentication.md).
 
 The machine image and release commands do not use CWE or a token. Their
 kubeconfig identity needs `get`, `list`, `create` and `delete` on
 `machineimages`, `clusterreleases` and `nodepoolreleases` in
-`internal.nke.nvidia.com`, plus `patch` for `nkectl deprecate`.
+`internal.nke.nvidia.com`, plus `patch` for `nvkectl deprecate`.
 
 ## Infrastructure providers
 
-`nkectl get providers` reports which Cluster API infrastructure providers a site
+`nvkectl get providers` reports which Cluster API infrastructure providers a site
 controller can actually use. It reads the site's Kubernetes cluster directly
 rather than the CWE API, so it needs the kubeconfig registered with
-`nkectl config set-site --kubeconfig` and `kubectl` on `PATH`.
+`nvkectl config set-site --kubeconfig` and `kubectl` on `PATH`.
 
 | State | Meaning |
 |---|---|
@@ -149,7 +149,7 @@ rather than the CWE API, so it needs the kubeconfig registered with
 | `CONFIGURED` | CRDs established, manager available, credentials in place. This does **not** mean the credentials work — nothing here authenticates against the provider's backend. |
 | `UNKNOWN` | A probe failed for a reason other than absence, most often a kubeconfig that may not read Secrets in the manager's namespace. |
 
-The providers listed are the ones nkectl knows how to describe. That is not a
+The providers listed are the ones nvkectl knows how to describe. That is not a
 restriction: CWE accepts any infrastructure manifest written by hand.
 
 ## Configuration
@@ -168,14 +168,14 @@ site spec file rather than from flags or the environment. See
 `bootstrap site` deploys a SPIRE server, so nodes with a hardware identity have
 something to attest to and CWE gets a workload identity of its own. It comes
 from the SPIFFE project's own hardened charts. The bootstrap manifest pins each
-chart's version, and `nkectl get bootstrap-manifest` prints it. Each chart is
+chart's version, and `nvkectl get bootstrap-manifest` prints it. Each chart is
 installed with `helm --repo`, so nothing is added to your global Helm
 repository list. Everything it names is public, so a bootstrap needs no
 registry credential.
 
 Everything static about the deployment lives in
 [`internal/bootstrap/controllerdeploy/manifests/spire-values.yaml`](internal/bootstrap/controllerdeploy/manifests/spire-values.yaml).
-`nkectl` sets only what it cannot know ahead of time: the trust domain and
+`nvkectl` sets only what it cannot know ahead of time: the trust domain and
 cluster name, CWE's admin identity, the CA to chain to, and the TPM thumbprints
 allowed to attest.
 
@@ -207,10 +207,10 @@ or with `--disable-mtls`, nothing is published.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NKECTL_SPIFFE_TRUST_DOMAIN` | `<cluster>.nke.local` | Trust domain for the identities issued |
+| `NVKECTL_SPIFFE_TRUST_DOMAIN` | `<cluster>.nke.local` | Trust domain for the identities issued |
 
 The cluster name SPIRE is told is the ephemeral cluster's own name, from
-`NKECTL_BOOTSTRAP_CLUSTER_NAME` — there is no separate SPIFFE variable for it,
+`NVKECTL_BOOTSTRAP_CLUSTER_NAME` — there is no separate SPIFFE variable for it,
 because the bootstrap cluster has one name and two ways to say it could only
 ever disagree.
 
@@ -229,40 +229,41 @@ talk to — rootful, run as root; Docker is not supported — plus `kind`, `helm
 starts. A missing `kind` fails in the pre-flight check for a leftover bootstrap
 cluster, before anything is created; a missing `helm`, `kubectl` or `clusterctl`
 surfaces mid-bootstrap, after the Kind cluster is already up. kind is driven
-through `KIND_EXPERIMENTAL_PROVIDER=nerdctl`, which `nkectl` sets itself.
+through `KIND_EXPERIMENTAL_PROVIDER=nerdctl`, which `nvkectl` sets itself.
 
 ### Bootstrap cluster and CWE
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NKECTL_BOOTSTRAP_CLUSTER_NAME` | `nkectl-bootstrap` | Name of the ephemeral cluster |
-| `NKECTL_BOOTSTRAP_NODE_IMAGE` | kind's default | Node image for the ephemeral cluster |
-| `NKECTL_BOOTSTRAP_WAIT_READY` | `3m` | Bounds `kind create cluster --wait` |
-| `NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` | unset | Registry mirror the ephemeral cluster pulls Docker Hub images through |
-| `NKECTL_BOOTSTRAP_CLUSTER_TIMEOUT` | `30m` | How long to wait for the site cluster to finish provisioning (`--timeout`) |
-| `NKECTL_CONTROLLER_IMAGE` | `nke-controller:latest` | Controller image to deploy. A reference without a registry is side-loaded from the local image store; `make -C cli images` builds the default with nerdctl. A reference with a registry host is pulled with `nerdctl pull` when it is not already in containerd's image store, then loaded into the ephemeral cluster; log in to the registry first (`nerdctl login`). For Docker Hub, write `docker.io/<org>/<name>`. `--controller-image` overrides it for one run. |
-| `NKECTL_CAPI_PROVISIONED_IMAGE` | `cluster-api-provider-provisioned:latest` | Provisioned-provider image, same semantics. `--provisioned-provider-image` overrides it for one run. |
-| `NKECTL_CONTROLLER_PORT` | `30080` | Port of the controller API: its Service, NodePort, Kind host mapping and the address `nkectl` calls |
-| `NKECTL_CONTROLLER_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |
-| `NKECTL_CONTROLLER_SPIRE_CHART` | `spire` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE chart, same semantics |
-| `NKECTL_CONTROLLER_SPIRE_CRDS_CHART` | `spire-crds` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE CRDs chart, same semantics |
-| `NKECTL_CONTROLLER_HELM_TIMEOUT` | `5m` | Bounds each `helm upgrade --install --wait` |
-| `NKECTL_CONTROLLER_READY_TIMEOUT` | `5m` | Bounds the wait for the controller's `/readyz` |
-| `NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR` | `cluster-diagnostics` | Where a failed bootstrap writes a cluster dump before tearing the cluster down (`--diagnostics-dir`) |
+| `NVKECTL_BOOTSTRAP_CLUSTER_NAME` | `nvkectl-bootstrap` | Name of the ephemeral cluster |
+| `NVKECTL_BOOTSTRAP_NODE_IMAGE` | kind's default | Node image for the ephemeral cluster |
+| `NVKECTL_BOOTSTRAP_WAIT_READY` | `3m` | Bounds `kind create cluster --wait` |
+| `NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` | unset | Registry mirror the ephemeral cluster pulls Docker Hub images through |
+| `NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT` | `30m` | How long to wait for the site cluster to finish provisioning (`--timeout`) |
+| `NVKECTL_CONTROLLER_IMAGE` | `nke-controller:latest` | Controller image to deploy. A reference without a registry is side-loaded from the local image store; `make -C cli images` builds the default with nerdctl. A reference with a registry host is pulled with `nerdctl pull` when it is not already in containerd's image store, then loaded into the ephemeral cluster; log in to the registry first (`nerdctl login`). For Docker Hub, write `docker.io/<org>/<name>`. `--controller-image` overrides it for one run. |
+| `NVKECTL_CAPI_PROVISIONED_IMAGE` | `cluster-api-provider-provisioned:latest` | Provisioned-provider image, same semantics. `--provisioned-provider-image` overrides it for one run. |
+| `NVKECTL_CONTROLLER_PORT` | `30080` | Port of the controller API: its Service, NodePort, Kind host mapping and the address `nvkectl` calls |
+| `NVKECTL_CONTROLLER_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |
+| `NVKECTL_CONTROLLER_SPIRE_CHART` | `spire` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE chart, same semantics |
+| `NVKECTL_CONTROLLER_SPIRE_CRDS_CHART` | `spire-crds` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE CRDs chart, same semantics |
+| `NVKECTL_CONTROLLER_HELM_TIMEOUT` | `5m` | Bounds each `helm upgrade --install --wait` |
+| `NVKECTL_CONTROLLER_READY_TIMEOUT` | `5m` | Bounds the wait for the controller's `/readyz` |
+| `NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR` | `cluster-diagnostics` | Where a failed bootstrap writes a cluster dump before tearing the cluster down (`--diagnostics-dir`) |
 
-Each `NKECTL_CONTROLLER_*` variable above was named `NKECTL_CWE_*` before the
-controller was renamed. The old names still work for one release: when only
-the old name is set, `nkectl` uses it and logs a warning naming the
-replacement. When both are set, the new name wins. Likewise `make -C cli
-images` reads `CONTROLLER_IMAGE`, and still reads `CWE_IMAGE` with a warning.
+Every `NVKECTL_*` variable above was named `NKECTL_*` while the binary was
+called `nkectl`. The old names still work for one release: when only the old
+name is set, `nvkectl` uses it and logs a warning naming the replacement. When
+both are set, the new name wins. The `NKECTL_CWE_*` names from the release
+before that are no longer read. Likewise `make -C cli images` reads
+`CONTROLLER_IMAGE`, and still reads `CWE_IMAGE` with a warning.
 
 The controller and Postgres charts are carried in the binary and are never
 pulled, so they have no variable. For the three that are pulled, the chart
-version stays pinned in `nkectl` whichever source the chart comes from; helm
+version stays pinned in `nvkectl` whichever source the chart comes from; helm
 does not check a local path against the pin, so a tarball has to be the pinned
 version. With those three variables set, no Helm chart is pulled from the
 internet. The images those charts run still come from their
-registries (`NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` covers Docker Hub), and
+registries (`NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` covers Docker Hub), and
 `clusterctl init` still fetches Cluster API and cert-manager from `github.com`.
 
 ## When a bootstrap fails
@@ -281,14 +282,14 @@ releases that explain a pod which never started, and writes it out *before* the
 teardown.
 
 It lands in `cluster-diagnostics/`, overridable with `--diagnostics-dir` or
-`NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR`. A successful run writes nothing. CI uploads
+`NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR`. A successful run writes nothing. CI uploads
 the directory as an artifact when the bootstrap E2E fails.
 
 ## Build from source
 
 ```bash
 # From monorepo root
-make build          # builds all binaries including cli/nkectl into bin/
+make build          # builds all binaries including cli/nvkectl into bin/
 
 # Or from this directory
 make build
@@ -296,7 +297,7 @@ make build
 
 ## Compatibility
 
-`nkectl` releases on its own `cli/vX.Y.Z` tags and follows
+`nvkectl` releases on its own `cli/vX.Y.Z` tags and follows
 [the compatibility policy](docs/compatibility.md): what is contract and what is
 not, the exit codes, signal and non-interactive behaviour, and how something
 gets deprecated before it is removed.
@@ -327,5 +328,5 @@ in a patch release. Match on the exit code, not on error text.
 - [Compatibility and deprecation policy](docs/compatibility.md)
 - [Site Controller Bootstrap](../docs/site-bootstrap/overview.md)
 - [Architecture](../docs/architecture.md)
-- [Authenticating to the NKE API](../controller/docs/authenticating-to-the-api.md)
-- [Configuring NKE API Authentication](../controller/docs/configuring-api-authentication.md)
+- [Authenticating to the NVKE API](../controller/docs/authenticating-to-the-api.md)
+- [Configuring NVKE API Authentication](../controller/docs/configuring-api-authentication.md)

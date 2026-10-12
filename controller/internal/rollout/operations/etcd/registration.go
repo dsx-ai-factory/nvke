@@ -6,8 +6,8 @@ package etcd
 import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
 
 func RegisterDefaults(reg *rollout.Registry, dialer nodeagent.Dialer, k8sClient client.Client, namespace string) {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package kube contains helpers to interact with the kube-api server of
-// NKE clusters.
+// NVKE clusters.
 package kube
 
 import (

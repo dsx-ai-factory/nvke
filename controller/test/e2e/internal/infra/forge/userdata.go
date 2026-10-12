@@ -23,17 +23,17 @@ const (
 	defaultNodeUser = "ubuntu"
 )
 
-// HostTools are the programs `nkectl bootstrap site` needs on the host it
-// runs on, which the NKE image deliberately does not ship. Each version is an
+// HostTools are the programs `nvkectl bootstrap site` needs on the host it
+// runs on, which the NVKE image deliberately does not ship. Each version is an
 // input because the repository pins it: KindVersion and ClusterctlVersion in
-// make/tool-versions.mk, NerdctlVersion in nkectl-bootstrap-e2e.yml.
+// make/tool-versions.mk, NerdctlVersion in nvkectl-bootstrap-e2e.yml.
 type HostTools struct {
-	// NerdctlVersion is nerdctl-full without the leading v. nkectl drives kind
+	// NerdctlVersion is nerdctl-full without the leading v. nvkectl drives kind
 	// through nerdctl; Docker is not supported.
 	NerdctlVersion string
 	// KindVersion carries the leading v, as kind's release URLs do.
 	KindVersion string
-	// ClusterctlVersion must match the CAPI version nkectl was built with.
+	// ClusterctlVersion must match the CAPI version nvkectl was built with.
 	// bootstrap site shells out to it, and nothing documents that it must be
 	// present: without it the run dies with "clusterctl: executable file not
 	// found".
@@ -87,7 +87,7 @@ type cloudConfig struct {
 	RunCmd           []string    `json:"runcmd"`
 }
 
-// renderUserData builds the cloud-init for a node `nkectl bootstrap site`
+// renderUserData builds the cloud-init for a node `nvkectl bootstrap site`
 // runs on. It is marshaled rather than templated: its commands are shell,
 // full of quotes and redirections, and YAML written by hand around them is
 // how a boot payload ends up subtly different from what was reviewed.
@@ -140,7 +140,7 @@ func renderUserData(in userDataInputs) (string, error) {
 	run = append(run, in.NodeCommands...)
 
 	run = append(run,
-		// The site node runs a kind cluster and then the whole NKE stack on
+		// The site node runs a kind cluster and then the whole NVKE stack on
 		// one machine, and Ubuntu's default of 128 inotify instances is not
 		// enough for that many controllers: the 2026-09-29 ytl bootstrap had
 		// to be raised to 1024 by hand before it would complete. Written as a
@@ -170,7 +170,7 @@ func renderUserData(in userDataInputs) (string, error) {
 		fmt.Sprintf("curl -fsSL -o /usr/local/bin/clusterctl https://github.com/kubernetes-sigs/cluster-api/releases/download/%s/clusterctl-linux-%s", in.Tools.ClusterctlVersion, in.Arch),
 		"chmod 0755 /usr/local/bin/clusterctl",
 
-		// kind's default network is dual-stack and the NKE image boots
+		// kind's default network is dual-stack and the NVKE image boots
 		// ipv6.disable=1, so the bridge CNI fails and no container starts.
 		// kind reuses a network that already exists.
 		"nerdctl network create kind --subnet 10.4.1.0/24 --gateway 10.4.1.1 || true",

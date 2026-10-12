@@ -1,4 +1,4 @@
-# Agent guide — NKE reference Grafana dashboards
+# Agent guide — NVKE reference Grafana dashboards
 
 Read this before adding, copying, or editing JSON under `controller/deploy/dashboards/`.
 
@@ -10,9 +10,9 @@ Operators: import steps and a short description of each file are in [README.md](
 
 | File | Purpose | Primary scrape |
 |---|---|---|
-| `nke-site-controller-health-reference.json` | Site-controller workload and node health | kube-state-metrics; optional apiserver/etcd, CNPG |
-| `nke-provisioning-duration-reference.json` | Node provision/teardown duration and outcomes | controller `/metrics` (`nke_controller_*`) |
-| `nke-cluster-upgrade-overview-reference.json` | Kubernetes cluster upgrade progress | kube-state-metrics; optional NKE controller inventory metrics |
+| `nvke-site-controller-health-reference.json` | Site-controller workload and node health | kube-state-metrics; optional apiserver/etcd, CNPG |
+| `nvke-provisioning-duration-reference.json` | Node provision/teardown duration and outcomes | controller `/metrics` (`nvke_controller_*`) |
+| `nvke-cluster-upgrade-overview-reference.json` | Kubernetes cluster upgrade progress | kube-state-metrics; optional NVKE controller inventory metrics |
 
 Each dashboard has a **Requirements and scope** markdown panel. Keep that panel truthful when you change queries.
 
@@ -20,8 +20,8 @@ Each dashboard has a **Requirements and scope** markdown panel. Keep that panel 
 
 - Grafana **import JSON** (schema with `__inputs`, `panels` / rows, `templating`), not `dashboard.grafana.app/v2` Kubernetes CRDs.
 - Datasource: `__inputs` entry `DS_PROMETHEUS` (Prometheus plugin). Operators pick a datasource at import. Do not pin `mimir-*`, Promxy, or a Grafana Cloud UID.
-- `id`: `null`. Stable `uid` matching the filename without `.json` (Grafana's 40-character limit; e.g. `nke-site-controller-health-reference`). `title` prefixed `Reference - …`.
-- Filenames: `nke-<topic>-reference.json`.
+- `id`: `null`. Stable `uid` matching the filename without `.json` (Grafana's 40-character limit; e.g. `nvke-site-controller-health-reference`). `title` prefixed `Reference - …`.
+- Filenames: `nvke-<topic>-reference.json`.
 - `refresh`: `1m` or slower, and keep `timepicker.refresh_intervals` starting at `1m`. Grafana refuses anything below its `min_refresh_interval` with "Dashboard refresh interval is too low", so do not copy an upstream mixin's `10s`.
 - Query variables: write `query` as a **plain `label_values(...)` string**, matching `definition`. Grafana migrates a string into a Label-values query; an object without `qryType` falls back to **Label names**, so the dropdown lists label names (`namespace`, `pod`, `instance`) instead of values.
 
@@ -32,7 +32,7 @@ Do not bump `controller/deploy/charts/controller/Chart.yaml` for dashboard-only 
 1. Identify the **cluster that emits the metrics** (site controller vs tenant vs controller process). Site kube-prometheus does not scrape tenant etcd.
 2. Confirm the series exist in **this repo’s OSS stack** (`generated/nke-stack/values.yaml`, controller metrics).
 3. Prefer **required** panels that work with kube-state-metrics or documented controller metrics. Put everything else in **optional** rows that stay empty without turning red (`or vector(0)` only when zero is a real reading, not a missing scrape).
-4. Update the Requirements panel, `description`, and tags (`nke`, plus the topic).
+4. Update the Requirements panel, `description`, and tags (`nvke`, plus the topic).
 5. Strip private-fleet chrome before commit: `$env`, hardcoded cluster-name regexes, datasource regexes for hosted Mimir, Slack, links to unpublished dashboards, `topk` over a fleet unless the dashboard is explicitly multi-cluster.
 
 When porting a dashboard from elsewhere, treat it as a **query catalog**, not a file to check in.
@@ -46,7 +46,7 @@ When porting a dashboard from elsewhere, treat it as a **query catalog**, not a 
 - kube-prometheus-stack (`monitoring`) — Prometheus, Grafana, node-exporter, kube-state-metrics. **Does not** configure kubeadm etcd TLS scrape.
 - PostgreSQL (`postgres`, in-repo chart) — **not** CNPG
 - Temporal (`temporal`)
-- NKE controller (`cloud-workflow-engine`, `nameOverride: cloud-workflow-engine`, default **replicaCount 1**)
+- NVKE controller (`cloud-workflow-engine`, `nameOverride: cloud-workflow-engine`, default **replicaCount 1**)
 
 **Not** in nke-stack: SWE / `site-workflow-engine`, process-exporter, sdn-monitoring, CNPG (docs/overlays may use it; default stack does not).
 
@@ -70,7 +70,7 @@ exporters already define `cluster` as something else — CNPG's `cluster` is the
 | Context | Do | Do not |
 |---|---|---|
 | Kubernetes cluster identity | `k8s_cluster_name=~"$cluster"` | A bare `cluster=` label, `$env`, or a hardcoded cluster-name regex |
-| NKE controller lifecycle | Filter `tenant_cluster`, `node_type`; give-ups use `cluster_name`. Query `nke_controller_*` metrics directly. | Invent `env`; keep phase labels that are not in `lifecycle.go` |
+| NVKE controller lifecycle | Filter `tenant_cluster`, `node_type`; give-ups use `cluster_name`. Query `nvke_controller_*` metrics directly. | Invent `env`; keep phase labels that are not in `lifecycle.go` |
 | Workloads | Match `cloud-workflow-engine\|nke-controller` for the controller Deployment/container; SPIRE as above | Query SWE or `job="process-exporter"` |
 
 Controller metrics carry `tenant_cluster`, not `k8s_cluster_name`. A pure-controller board
@@ -78,26 +78,26 @@ Controller metrics carry `tenant_cluster`, not `k8s_cluster_name`. A pure-contro
 those series against kube-state-metrics on the same panel do you rewrite the label:
 
 ```
-label_replace(nke_controller_node_info{tenant_cluster=~"$cluster"}, "k8s_cluster_name", "$1", "tenant_cluster", "(.*)")
+label_replace(nvke_controller_node_info{tenant_cluster=~"$cluster"}, "k8s_cluster_name", "$1", "tenant_cluster", "(.*)")
 ```
 
 HA thresholds of **3** (etcd members, ready nodes) are colo-sized. Parameterize or document “typical HA”; nke-stack runs one controller replica and Kind can be 1 node.
 
 ## Do not ship
 
-- SWE (`site-workflow-engine`) — deprecated; the NKE controller replaced it
+- SWE (`site-workflow-engine`) — deprecated; the NVKE controller replaced it
 - `namedprocess_namegroup_*` / `job="process-exporter"` (not packaged)
-- Full SDN / ovn-kubernetes dashboard catalog (IC pack `dashboard-ic` is off for NKE).
+- Full SDN / ovn-kubernetes dashboard catalog (IC pack `dashboard-ic` is off for NVKE).
 - Alert overlay lines (`vector(0.15)` “alert fires”) unless this repo ships those Prometheus rules
 - Secrets, real Slack channels, Grafana Cloud URLs, kubeconfigs
 
 ## Per-dashboard contracts
 
-**Site controller health.** Glance: NKE controller, SPIRE, Temporal, cert-manager, node Ready. Optional collapsed: apiserver/etcd (needs scrape), CNPG **or** postgres. Keep the etcd Has Leader panel as the control-plane health signal. Empty optional ≠ red.
+**Site controller health.** Glance: NVKE controller, SPIRE, Temporal, cert-manager, node Ready. Optional collapsed: apiserver/etcd (needs scrape), CNPG **or** postgres. Keep the etcd Has Leader panel as the control-plane health signal. Empty optional ≠ red.
 
 **Provisioning duration.** Source of truth: `controller/internal/metrics/lifecycle.go` and `node_provisioning.go`.
 
-- `nke_controller_node_provision_total{result="failure"}` is **Temporal attempts**, not failed nodes. Terminal failure is the matching `nke_controller_node_provisioning_giveups_total`.
+- `nvke_controller_node_provision_total{result="failure"}` is **Temporal attempts**, not failed nodes. Terminal failure is the matching `nvke_controller_node_provisioning_giveups_total`.
 - Success rate = successes ÷ (successes + give-ups), not success/(success+failure).
 - Provision phases: `capi_create`, `capi_ready`, `host_preparation`, `reboot` (optional), `join`, `post_join`.
 - Teardown phases: `cluster_remove`, `capi_delete`.

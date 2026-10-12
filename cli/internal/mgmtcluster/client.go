@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package mgmtcluster provides a client for reading resources from the NKE
+// Package mgmtcluster provides a client for reading resources from the NVKE
 // management cluster.
 package mgmtcluster
 
@@ -48,7 +48,7 @@ type Client struct {
 // from, so they all fail the same way when the kubeconfig is missing or unreadable.
 func RESTConfig(kubeconfigPath string) (*rest.Config, error) {
 	if kubeconfigPath == "" {
-		return nil, fmt.Errorf("management cluster kubeconfig path is empty: run 'nkectl config set-site' with --kubeconfig to set the management cluster kubeconfig")
+		return nil, fmt.Errorf("management cluster kubeconfig path is empty: run 'nvkectl config set-site' with --kubeconfig to set the management cluster kubeconfig")
 	}
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {

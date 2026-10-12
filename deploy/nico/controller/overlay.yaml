@@ -33,7 +33,7 @@ apiAuth:
 #
 # `infra` only permits the infrastructure-provider-agnostic escape-hatch input.
 # The clients do differ -- the e2e suite's nico-containers backend submits an
-# Infra block, while `nkectl create cluster` submits the Nico block -- but that
+# Infra block, while `nvkectl create cluster` submits the Nico block -- but that
 # is a difference in what callers send, not in what a site must accept. Keeping
 # the value identical everywhere is what lets one SBOM serve both.
 supportedInfraProviders: nico,infra
@@ -48,7 +48,7 @@ tenantAccess:
 #
 # The settings below are kept, not deleted: the SPIRE OIDC discovery provider
 # and its nodeport are still installed by this path, and the CA chain in
-# nke-base-config still publishes oidc-provider-upstream-ca -- the spire item
+# nvke-base-config still publishes oidc-provider-upstream-ca -- the spire item
 # waits on that Certificate regardless. So turning this true is a one-line
 # change once the SPIRE half is proven, with nothing else to reassemble.
 nkeOIDCAuth:
@@ -125,10 +125,10 @@ nkeSystemNamespace:
 # infra.spireAttestationMethod from the cluster API and moved the choice to
 # nodeAgent.spireAttestationMethod below, and no release has been cut since --
 # GHCR's newest, rc.8, is revision 4c5dc9bc from 2026-09-20, 43 commits before
-# it. A site controller running rc.8 rejects this checkout's own nkectl with
+# it. A site controller running rc.8 rejects this checkout's own nvkectl with
 #   400 Bad Request: infra.spireAttestationMethod is required
 # at "creating the site cluster". The tag below is this branch's merge base with
-# main, so the controller binary, this chart and nkectl all come from one commit.
+# main, so the controller binary, this chart and nvkectl all come from one commit.
 # Repoint at a GHCR release tag once one is cut past #850.
 #
 # This block becomes redundant once the item installs a published chart rather
@@ -179,7 +179,7 @@ serviceMonitor:
   name: nke-controller-metrics
 tracing:
   enabled: true
-  serviceName: nke-controller
+  serviceName: nvke-controller
   endpoint: nktp-daemonset-collector.nktp.svc.cluster.local:4317
   insecure: true
 
@@ -213,7 +213,7 @@ appDb:
   sslMode: disable
 
 # The port nke-agent listens on, and it has to agree with three other places:
-# the sitespec used at bootstrap (nkectl's default, cli/internal/bootstrap/sitespec),
+# the sitespec used at bootstrap (nvkectl's default, cli/internal/bootstrap/sitespec),
 # os-image/SPEC.md's contract, and the agent drop-in the node's cloud-init
 # writes. A real site sets it explicitly rather than relying on a default, and
 # so does this.
@@ -226,17 +226,17 @@ env:
 # in-cluster port while leaving nothing reachable from the node. That is the
 # mistake this file made on its first run -- a live site's release shows
 # service.port: 30080, but it reaches the controller through the separate NodePort
-# Service nkectl's bootstrap applies (controller-nodeport.yaml), not through that.
+# Service nvkectl's bootstrap applies (controller-nodeport.yaml), not through that.
 #
 # nodePort renders a SECOND Service beside the ClusterIP one, which is the
 # chart's supported way to publish the API without a cluster route -- for the
-# host running nkectl, or an operator reaching /api on a node address.
+# host running nvkectl, or an operator reaching /api on a node address.
 service:
   port: 8080
   nodePort: 30080
 
 secrets:
-  # Names the Secret ../nke-base-config/35-dgxc-tenant-credentials.yaml.tmpl
+  # Names the Secret ../nvke-base-config/35-dgxc-tenant-credentials.yaml.tmpl
   # renders. Empty means the controller never receives DGXC_TENANT_USER and
   # DGXC_TENANT_PASSWORD, and every tenant create fails at user-data rendering
   # -- one of that run's eleven failures. The chart injects them only

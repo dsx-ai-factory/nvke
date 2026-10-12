@@ -14,16 +14,16 @@ import (
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/nkerbac"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 )
 
 const (
 	// rbacConfigMapName is the operator-managed ConfigMap holding the tenant RBAC
 	// manifest that gets applied into OIDC tenant clusters.
-	rbacConfigMapName = nkerbac.ConfigMapName
+	rbacConfigMapName = nvkerbac.ConfigMapName
 	// rbacConfigMapKey is the ConfigMap data key containing the multi-document
 	// tenant RBAC manifest.
-	rbacConfigMapKey = nkerbac.ConfigMapKey
+	rbacConfigMapKey = nvkerbac.ConfigMapKey
 	// rbacFieldManager is the Server-Side Apply field owner used when applying the
 	// RBAC manifest into a tenant cluster.
 	rbacFieldManager = "nke"
@@ -32,7 +32,7 @@ const (
 // readRBACManifest reads the operator-managed nke-rbac ConfigMap from the
 // management cluster and returns the multi-document tenant RBAC manifest.
 func (c *Controller) readRBACManifest(ctx context.Context) ([]byte, error) {
-	return nkerbac.ReadManifest(ctx, c.k8sClient)
+	return nvkerbac.ReadManifest(ctx, c.k8sClient)
 }
 
 // applyManifestSSA splits a multi-document YAML manifest and Server-Side-Applies

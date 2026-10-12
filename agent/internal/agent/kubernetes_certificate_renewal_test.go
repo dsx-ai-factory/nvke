@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
 
 const certificateExpirationOutput = `
@@ -44,7 +44,7 @@ type certificateRenewalTestRunner struct {
 	stopFailureIssued   bool
 }
 
-func (r *certificateRenewalTestRunner) Run(name string, args []string, _ *nkeutils.CommandOptions) ([]byte, error) {
+func (r *certificateRenewalTestRunner) Run(name string, args []string, _ *nvkeutils.CommandOptions) ([]byte, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if name != "kubeadm" {
@@ -64,12 +64,12 @@ func (r *certificateRenewalTestRunner) Run(name string, args []string, _ *nkeuti
 func (r *certificateRenewalTestRunner) RunSplitOutput(
 	name string,
 	args []string,
-	_ *nkeutils.CommandOptions,
-) (nkeutils.CommandOutput, error) {
+	_ *nvkeutils.CommandOptions,
+) (nvkeutils.CommandOutput, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if name != "crictl" || len(args) < 3 {
-		return nkeutils.CommandOutput{}, fmt.Errorf("unexpected command: %s %v", name, args)
+		return nvkeutils.CommandOutput{}, fmt.Errorf("unexpected command: %s %v", name, args)
 	}
 	component := strings.TrimPrefix(args[2], "io.kubernetes.container.name=")
 	manifest := map[string]string{
@@ -79,7 +79,7 @@ func (r *certificateRenewalTestRunner) RunSplitOutput(
 		"etcd":                    "etcd.yaml",
 	}[component]
 	if manifest == "" {
-		return nkeutils.CommandOutput{}, fmt.Errorf("unexpected component %s", component)
+		return nvkeutils.CommandOutput{}, fmt.Errorf("unexpected component %s", component)
 	}
 	_, statErr := os.Stat(filepath.Join(r.rootPath, "etc", "kubernetes", "manifests", manifest))
 	running := statErr == nil
@@ -88,18 +88,18 @@ func (r *certificateRenewalTestRunner) RunSplitOutput(
 		if r.conflictWhenStopped {
 			path := filepath.Join(r.rootPath, "etc", "kubernetes", "manifests", manifest)
 			if err := os.WriteFile(path, []byte("conflicting manifest"), 0o600); err != nil {
-				return nkeutils.CommandOutput{}, err
+				return nvkeutils.CommandOutput{}, err
 			}
 		}
-		return nkeutils.CommandOutput{Stderr: []byte("runtime unavailable")}, errors.New("runtime unavailable")
+		return nvkeutils.CommandOutput{Stderr: []byte("runtime unavailable")}, errors.New("runtime unavailable")
 	}
 	if running {
-		return nkeutils.CommandOutput{Stdout: []byte(`{"containers":[{"id":"new-container"}]}`)}, nil
+		return nvkeutils.CommandOutput{Stdout: []byte(`{"containers":[{"id":"new-container"}]}`)}, nil
 	}
-	return nkeutils.CommandOutput{Stdout: []byte(`{"containers":[]}`)}, nil
+	return nvkeutils.CommandOutput{Stdout: []byte(`{"containers":[]}`)}, nil
 }
 
-func (r *certificateRenewalTestRunner) RunDetached(string, []string, *nkeutils.CommandOptions) error {
+func (r *certificateRenewalTestRunner) RunDetached(string, []string, *nvkeutils.CommandOptions) error {
 	return errors.New("unexpected detached command")
 }
 
@@ -214,7 +214,7 @@ func TestRecoverInterruptedCertificateRenewalRestoresBeforeRestart(t *testing.T)
 	assert.False(t, found)
 }
 
-func newCertificateRenewalTestServer(rootPath string, runner nkeutils.CommandRunner) *NodeAgentServer {
+func newCertificateRenewalTestServer(rootPath string, runner nvkeutils.CommandRunner) *NodeAgentServer {
 	return &NodeAgentServer{
 		RootPath:                       rootPath,
 		Runner:                         runner,

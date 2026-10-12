@@ -29,7 +29,7 @@ image:
   # registry (e.g. a private mirror); pair any change with a matching
   # `imagePullSecrets` entry. Not to be confused with
   # `profiles.image.repository` below, a separate optional content image.
-  repository: ghcr.io/dsx-ai-factory/nke/nke-controller
+  repository: ghcr.io/dsx-ai-factory/nvke/nke-controller
   # -- This sets the pull policy for images.
   pullPolicy: IfNotPresent
   # -- Overrides the tag for the nke-controller image; default is the chart
@@ -185,8 +185,8 @@ podAnnotations: {}
 # For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 podLabels:
   app: cloud-workflow-engine
-  project: nke
-  team: nke
+  project: nvke
+  team: nvke
 
 podSecurityContext:
   runAsNonRoot: true
@@ -210,7 +210,7 @@ service:
   port: 8080
   # -- NodePort to publish the apiserver on, via a second Service beside the one
   # above. Empty renders no such Service. Set it where the API has to be
-  # reachable without a cluster route -- the host running `nkectl bootstrap
+  # reachable without a cluster route -- the host running `nvkectl bootstrap
   # site`, or an operator reaching /api on a node address. This does not change
   # the Service above, which stays ClusterIP for in-cluster callers.
   nodePort: ""
@@ -393,7 +393,7 @@ tenantAccess:
   enabled: true
 
 nkeOIDCAuth:
-  # -- Enable OIDC authentication from NKE management identities to tenant cluster kube-apiservers.
+  # -- Enable OIDC authentication from NVKE management identities to tenant cluster kube-apiservers.
   enabled: false
   # -- Name of the ClusterRole/Role/Binding objects the tenant-access controller
   # applies into every tenant cluster (nke-rbac.yaml).
@@ -430,14 +430,14 @@ oidc:
   #       -----END CERTIFICATE-----
   providers: []
 
-# NKE API authentication. The chart always mounts the configuration ConfigMap,
+# NVKE API authentication. The chart always mounts the configuration ConfigMap,
 # and creates it too when apiAuth.configMap.create is set. See the README for
 # the schema.
 apiAuth:
-  # -- Enable NKE API authentication.
+  # -- Enable NVKE API authentication.
   enabled: false
   # -- Count what enforcement would have refused but serve the request anyway.
-  # Watch nke_auth_requests_total{outcome="would_reject"} before enforcing.
+  # Watch nvke_auth_requests_total{outcome="would_reject"} before enforcing.
   permissive: false
   configMap:
     # -- Render `apiAuth.config` into the ConfigMap named below, rather than
@@ -455,7 +455,7 @@ apiAuth:
     # /etc/nke/auth/<filename> -- which is how an issuer behind a private CA
     # gets its bundle. A CA bundle is a public certificate, not a secret. The
     # render fails if `caBundlePath` names a file in that directory that is not
-    # listed here, rather than leaving NKE to crash-loop on a missing file.
+    # listed here, rather than leaving NVKE to crash-loop on a missing file.
     #
     # extraFiles:
     #   spire-ca.crt: \|
@@ -488,7 +488,7 @@ apiAuth:
   #           - namespace: cloud-workflow-engine
   #             name: forge-console
   config: {}
-  # -- Bind system:service-account-issuer-discovery so NKE can read the cluster's
+  # -- Bind system:service-account-issuer-discovery so NVKE can read the cluster's
   # JWKS. Only used by an issuer that points `jwks.uri` at that endpoint.
   # Kubernetes already grants this to every service account, so a stock cluster
   # needs nothing. Keep it for clusters that removed that default.

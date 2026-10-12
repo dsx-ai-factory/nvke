@@ -71,9 +71,9 @@ on:
         required: false
         type: boolean
         default: false
-      nkectl-smoke:
+      nvkectl-smoke:
         description: >-
-          Run hack/ci/nkectl-smoke.sh once the suite passes: drive nkectl against
+          Run hack/ci/nvkectl-smoke.sh once the suite passes: drive nvkectl against
           the controller this lane deployed. CAPD only for now.
         required: false
         type: boolean
@@ -116,7 +116,7 @@ jobs:
   e2e:
     name: ${{ inputs.backend }}-e2e (${{ inputs.arch }})
     runs-on: ${{ inputs.runner }}
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
@@ -133,7 +133,7 @@ jobs:
       NKE_E2E_LABEL_FILTER: ${{ inputs.label-filter }}
       NKE_E2E_PROVIDERS: ${{ inputs.providers }}
       NKE_E2E_REQUIRE_AUTHN: ${{ inputs.require-authn }}
-      NKE_E2E_NKECTL_SMOKE: ${{ inputs.nkectl-smoke }}
+      NKE_E2E_NVKECTL_SMOKE: ${{ inputs.nvkectl-smoke }}
       INSTALL_CNI_AFTER_INIT: ${{ inputs.install-cni-after-init }}
       # Empty unless the caller selects the umbrella-chart deploy. backend-e2e.sh
       # branches on NKE_E2E_STACK_CHART being non-empty; Tilt stays the default.
@@ -296,7 +296,7 @@ jobs:
       - name: Upload redacted diagnostics
         if: always() && steps.diagnostics.outputs.safe == 'true'
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.backend }}-${{ inputs.arch }}-e2e-${{ github.run_id }}-${{ github.run_attempt }}
           path: controller/.local/backend-e2e/${{ env.NKE_E2E_RUN_ID }}/

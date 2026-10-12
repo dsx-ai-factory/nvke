@@ -18,7 +18,7 @@ import (
 	apiserverv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	kubeoidc "k8s.io/apiserver/plugin/pkg/authenticator/token/oidc"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
 
 func TestOperatorJWTAuthenticatorAuthenticatesSignedTokens(t *testing.T) {

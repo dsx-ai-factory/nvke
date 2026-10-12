@@ -11,7 +11,7 @@
 # matches the new spec perfectly -- while breaking every existing client.
 #
 # The baseline is the tag, not the merge base, because the tag is what a
-# consumer pins: `go get github.com/dsx-ai-factory/nke/controller/api@v0.0.17`.
+# consumer pins: `go get github.com/dsx-ai-factory/nvke/controller/api@v0.0.17`.
 # That is what "backward compatible" has to be measured against.
 
 name: API Compatibility
@@ -48,7 +48,7 @@ jobs:
   api-compat:
     name: Check the OpenAPI spec is backward compatible
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     timeout-minutes: 15
     permissions:
       contents: read
@@ -80,7 +80,7 @@ jobs:
       # wants when arguing with it. Uploaded on failure too -- especially then.
       - name: Upload the change report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: openapi-changes
           path: controller/.local/openapi-changes.json

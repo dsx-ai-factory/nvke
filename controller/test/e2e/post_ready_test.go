@@ -20,8 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
 const (
@@ -246,7 +246,7 @@ func assertAuditPolicyMount(pod *corev1.Pod) error {
 	return fmt.Errorf("kube-apiserver mirror pod %s is missing the audit policy hostPath", pod.Name)
 }
 
-func assertSystemReservedMemory(ctx context.Context, tenantClient client.Client, spec nke.ClusterSpec) error {
+func assertSystemReservedMemory(ctx context.Context, tenantClient client.Client, spec nvke.ClusterSpec) error {
 	expected, err := expectedNodeMemoryReservation(spec)
 	if err != nil {
 		return err
@@ -276,11 +276,11 @@ func assertSystemReservedMemory(ctx context.Context, tenantClient client.Client,
 	return nil
 }
 
-func expectedNodeMemoryReservation(spec nke.ClusterSpec) (resource.Quantity, error) {
+func expectedNodeMemoryReservation(spec nvke.ClusterSpec) (resource.Quantity, error) {
 	systemReserved := ""
 	pools := slices.Clone(spec.Workers)
 	if cp := spec.ControlPlane.Config; cp != nil {
-		pools = append(pools, nke.NodePoolSpec{Name: "control-plane", SystemReservedMemory: cp.SystemReservedMemory})
+		pools = append(pools, nvke.NodePoolSpec{Name: "control-plane", SystemReservedMemory: cp.SystemReservedMemory})
 	}
 	for _, pool := range pools {
 		if systemReserved == "" {

@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 // RunScript executes an inline diagnostic script on the node-agent at addr and

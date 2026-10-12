@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/state"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/state"
 )
 
 // maxRequestBodyBytes limits the size of incoming request bodies (1 MiB).

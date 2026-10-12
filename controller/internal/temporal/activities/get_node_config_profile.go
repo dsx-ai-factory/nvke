@@ -14,7 +14,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.yaml.in/yaml/v4"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
 type ConfigProfile struct {

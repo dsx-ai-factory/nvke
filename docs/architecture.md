@@ -1,8 +1,8 @@
 # Architecture overview
 
-nke (NVIDIA Kubernetes Engine) orchestrates the lifecycle of Kubernetes clusters
+NVKE (NVIDIA Kubernetes Engine) orchestrates the lifecycle of Kubernetes clusters
 on NVIDIA infrastructure. The repository is a Go workspace of twelve modules. Three
-of them run in production: the NKE controller, deployed as a Helm chart,
+of them run in production: the NVKE controller, deployed as a Helm chart,
 the node agent, installed on each node as a Debian package and run by systemd,
 and the Cluster API infrastructure provider, deployed into the same cluster as
 the controller. The rest are a CLI, the generated API module, the management engine's
@@ -12,7 +12,7 @@ CRD types, and test and development tooling.
               ┌──────────────────────────────────────────────┐
               │   site controller cluster                    │
               │                                              │
-   client ───▶│  NKE controller (controller/)                │
+   client ───▶│  NVKE controller (controller/)                │
   REST/HTTP   │                                              │
               │   REST API ──▶ Postgres ──▶ outbox processor │
               │                  ▲                │          │
@@ -38,12 +38,12 @@ CRD types, and test and development tooling.
 
 | Module | Binary | What it is |
 |---|---|---|
-| `controller/` | `controller` | The NKE controller: REST API, Temporal workflows, Postgres, reconcilers. Source is `cmd/worker/` |
+| `controller/` | `controller` | The NVKE controller: REST API, Temporal workflows, Postgres, reconcilers. Source is `cmd/worker/` |
 | `agent/` | `agent` | The node agent, a gRPC server that runs on every managed node |
-| `cluster-api-provider-provisioned/` | `manager` | Cluster API infrastructure provider for hosts NKE provisions before CAPI bootstraps them |
-| `cli/` | `nkectl` | The command line client |
+| `cluster-api-provider-provisioned/` | `manager` | Cluster API infrastructure provider for hosts NVKE provisions before CAPI bootstraps them |
+| `cli/` | `nvkectl` | The command line client |
 | `controller/api/` | none | The OpenAPI spec and the generated server and client types |
-| `controller/deploy/charts/` | none | The controller and postgresql Helm charts, embedded so `nkectl` installs the charts of its own commit |
+| `controller/deploy/charts/` | none | The controller and postgresql Helm charts, embedded so `nvkectl` installs the charts of its own commit |
 | `controller/nico-sim/` | `nico-sim`, `nico-simctl` | Forge-compatible VM and Docker-container simulator used by tests and development |
 | `controller/test/e2e/` | none | The end to end suite |
 | `controller/hack/capd-reboot-controller/` | `capd-reboot-controller` | Test helper for CAPD reboot behaviour |
@@ -123,7 +123,7 @@ that is where the agent runs.
 
 The controller is deployed as a Helm chart
 (`controller/deploy/charts/controller`) onto a *site controller*
-cluster, a dedicated Kubernetes cluster that manages the NKE tenant fleet for a
+cluster, a dedicated Kubernetes cluster that manages the NVKE tenant fleet for a
 site.
 
 The agent has no chart. It ships as a Debian package, installed on each node and
@@ -133,7 +133,7 @@ The Cluster API infrastructure provider is a third deployed piece. It is a
 `manager` binary with its own container image and kustomize configuration under
 `cluster-api-provider-provisioned/config/`, and a `metadata.yaml` that makes it
 installable by `clusterctl`. It owns the `ProvisionedCluster` and
-`ProvisionedHostClaim` types, and it reconciles hosts that NKE has already
+`ProvisionedHostClaim` types, and it reconciles hosts that NVKE has already
 provisioned so that Cluster API can bootstrap them.
 
 ## Further reading

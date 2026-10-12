@@ -8,7 +8,7 @@
 # compile could merge and only fail later in a release or an image build.
 #
 # Runs on ubuntu-latest with `pull_request`, deliberately. Every module in
-# go.work — all eleven, including controller, nico-sim, os-image, and nkectl — resolves
+# go.work — all eleven, including controller, nico-sim, os-image, and nvkectl — resolves
 # public dependencies through the Go module cache, so this needs no NVIDIA
 # runner or credentials -- which means it also runs on fork pull requests
 # and on Dependabot's, where the repository currently has almost no coverage.
@@ -60,7 +60,7 @@ jobs:
   build:
     name: Build binaries
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     # 25, not 15: over 7 days on main the job averaged 13.1m and 3 of 38 runs
     # were cut at 15m, which reports as cancelled rather than failed.
     timeout-minutes: 25
@@ -118,6 +118,9 @@ jobs:
       # that adds the entry rather than the weekly scan long afterwards.
       - name: Check .grype.yaml exceptions are scoped, owned and in date
         run: make grype-ignore-check
+
+      - name: Check every deploy-list item has its directory
+        run: make deploy-lists-check
 
       - name: Build
         run: make version-check

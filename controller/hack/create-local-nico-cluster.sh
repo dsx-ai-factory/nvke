@@ -25,9 +25,9 @@ NICO_SUBNET_ID="${NICO_SUBNET_ID:-00000000-0000-0000-0000-000000000003}"
 NICO_SSH_KEY_GROUP_ID="${NICO_SSH_KEY_GROUP_ID:-00000000-0000-0000-0000-000000000004}"
 NICO_INSTANCE_TYPE_ID="${NICO_INSTANCE_TYPE_ID:-00000000-0000-0000-0000-000000000005}"
 
-# /api/* is authenticated. hack/nke-token.sh prints nothing when NKE is not, so
+# /api/* is authenticated. hack/nvke-token.sh prints nothing when NVKE is not, so
 # this works either way.
-TOKEN="$("${SCRIPT_DIR}/nke-token.sh")"
+TOKEN="$("${SCRIPT_DIR}/nvke-token.sh")"
 AUTH_HEADER=()
 if [[ -n "${TOKEN}" ]]; then
   AUTH_HEADER=(-H "Authorization: Bearer ${TOKEN}")

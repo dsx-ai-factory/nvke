@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package command holds the nkectl subcommands that read the management
+// Package command holds the nvkectl subcommands that read the management
 // cluster directly rather than the controller API.
 package command
 
@@ -11,8 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/config"
-	"github.com/dsx-ai-factory/nke/cli/internal/util"
+	"github.com/dsx-ai-factory/nvke/cli/internal/config"
+	"github.com/dsx-ai-factory/nvke/cli/internal/util"
 )
 
 // SiteFn is a factory that resolves the active site's configuration.
@@ -33,7 +33,7 @@ type KubeconfigFetcher interface {
 // *mgmtcluster.Client return type satisfies KubeconfigFetcher.
 type MgmtClientFactory func(kubeconfigPath string) (KubeconfigFetcher, error)
 
-// NewGetKubeconfigCmd returns "nkectl get kubeconfig <cluster-name>".
+// NewGetKubeconfigCmd returns "nvkectl get kubeconfig <cluster-name>".
 //
 // It reads the admin kubeconfig for the named tenant cluster directly from
 // the management cluster, using the active site's configured kubeconfig
@@ -46,22 +46,22 @@ func NewGetKubeconfigCmd(siteFn SiteFn, newMgmtClient MgmtClientFactory) *cobra.
 		Short: "Get the admin kubeconfig for a tenant cluster",
 		Long: `Get the admin kubeconfig for a tenant cluster from the management cluster.
 
-The kubeconfig is read from the Secret that the NKE tenantaccess controller
+The kubeconfig is read from the Secret that the NVKE tenantaccess controller
 publishes into the management cluster at:
 
   nke-system/<cluster-name>-admin-kubeconfig  (key: value)
 
 The management cluster kubeconfig is the active site's configured kubeconfig
-(see 'nkectl config set-site --kubeconfig'); use --site to target a
+(see 'nvkectl config set-site --kubeconfig'); use --site to target a
 different, previously configured site for this invocation.
 
 By default the kubeconfig is printed to stdout. Use --output-file to write it
 to a file instead.
 
 Example:
-  nkectl get kubeconfig my-cluster
-  nkectl get kubeconfig my-cluster --output-file ~/.kube/my-cluster.yaml
-  nkectl get kubeconfig my-cluster --site prod`,
+  nvkectl get kubeconfig my-cluster
+  nvkectl get kubeconfig my-cluster --output-file ~/.kube/my-cluster.yaml
+  nvkectl get kubeconfig my-cluster --site prod`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clusterName := args[0]

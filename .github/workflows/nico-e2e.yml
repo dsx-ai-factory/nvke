@@ -52,7 +52,7 @@ on:
       use-nke-stack:
         description: >-
           Deploy the management plane from controller/deploy/capnico-e2e with
-          deploy/nke-deploy.sh. This is the default on every trigger, as on the CAPD
+          deploy/nvke-deploy.sh. This is the default on every trigger, as on the CAPD
           lane; set false here to fall back to Tilt.
         required: false
         type: boolean
@@ -120,9 +120,9 @@ jobs:
       # skips and the lane stays green having tested nothing new.
       require-authn: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
       # Same controller and the same REST API as CAPD, so this asserts nothing new about
-      # nkectl. It is on because it costs a minute on a lane that already runs,
+      # nvkectl. It is on because it costs a minute on a lane that already runs,
       # and it catches a controller deployment difference the CAPD lane would not see.
-      nkectl-smoke: true
+      nvkectl-smoke: true
       needs-capnico-source: true
       # Default on every trigger; a dispatch can still opt out, the same form
       # the CAPD lane uses. Written as "not a dispatch OR the input" rather

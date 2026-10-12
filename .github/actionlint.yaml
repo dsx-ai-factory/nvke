@@ -24,7 +24,7 @@ self-hosted-runner:
     # Its own single-node pool, not a size on a shared one: the
     # tpm_vtpm_proxy module that gives it /dev/vtpmx cannot be loaded on a
     # node the CAPD lanes run on, since a TPM there makes swtpm emit an EK
-    # certificate SPIRE refuses. nkectl-bootstrap-e2e is the only consumer.
+    # certificate SPIRE refuses. nvkectl-bootstrap-e2e is the only consumer.
     - arc-arm64-vtpm
 
 paths:

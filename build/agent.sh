@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-# Build / package the nke agent from the monorepo.
+# Build / package the NVKE agent from the monorepo.
 #
 # Versioning (Kubernetes/Go monorepo style):
 #   Release tags are namespaced: agent/vX.Y.Z
@@ -17,7 +17,7 @@
 #   ./build/agent.sh test         # run unit tests
 #   ./build/agent.sh package      # build + package release tarballs
 #   ./build/agent.sh protos       # regenerate protobuf stubs
-#   REGISTRY=ghcr.io/my-org/nke ./build/agent.sh builder-image
+#   REGISTRY=ghcr.io/my-org/nvke ./build/agent.sh builder-image
 #   VERSION=v0.1.30 ./build/agent.sh package
 set -euo pipefail
 
@@ -43,7 +43,7 @@ case "${TARGET}" in
     if [[ -n "${NKE_CONTAINER_REGISTRY:-}" ]]; then
       export BUILDER_IMAGE="${BUILDER_IMAGE:-${NKE_CONTAINER_REGISTRY}/${NKE_BUILDER_IMAGE_NAME:-nke-builder}}"
     else
-      export BUILDER_IMAGE="${BUILDER_IMAGE:-${REGISTRY:-ghcr.io/example/nke}/nke-builder}"
+      export BUILDER_IMAGE="${BUILDER_IMAGE:-${REGISTRY:-ghcr.io/example/nvke}/nke-builder}"
     fi
     export BUILDER_TAG="${BUILDER_TAG:-${TAG:-${NKE_BUILDER_IMAGE_TAG:-latest}}}"
     exec make push-builder-image

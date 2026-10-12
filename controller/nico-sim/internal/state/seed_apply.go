@@ -10,7 +10,7 @@ import (
 
 	"github.com/uptrace/bun"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/seed"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/seed"
 )
 
 func (s *Store) ApplySeed(ctx context.Context, doc seed.Document) error {

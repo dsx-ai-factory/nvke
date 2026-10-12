@@ -1,14 +1,14 @@
 # Mutagen project template for a remote Linux Tilt harness (e.g. Colossus).
 #
 # Placeholders (substituted from env vars during setup):
-#   __LOCAL_NKE_ROOT__   Mac absolute path to the parent of the nke/ monorepo
+#   __LOCAL_NVKE_ROOT__   Mac absolute path to the parent of the nvke/ monorepo
 #                        (also parent of cluster-api-provider-nico/, forge-console/,
 #                        nke-site-deploy/)
 #   __REMOTE_SSH_ALIAS__ SSH Host alias for the target
-#   __REMOTE_NKE_ROOT__  Path relative to the remote user's home (same parent)
+#   __REMOTE_NVKE_ROOT__  Path relative to the remote user's home (same parent)
 #
 # Expected layout (Mac and remote — flat siblings, mirrored 1:1):
-#   $ROOT/nke/                         # NVIDIA/nke monorepo (controller/ + agent/)
+#   $ROOT/nvke/                         # dsx-ai-factory/nvke monorepo (controller/ + agent/)
 #   $ROOT/cluster-api-provider-nico/
 #   $ROOT/forge-console/               # optional; enable via tilt_config.json
 #   $ROOT/nke-site-deploy/
@@ -18,7 +18,7 @@
 # opt in with an external dict entry in tilt_config.json.
 #
 # On the target, run Tilt from the controller module:
-#   cd ~/<REMOTE_NKE_ROOT>/nke/controller && TILT_LINK_PORT_OFFSET=1000 tilt up
+#   cd ~/<REMOTE_NVKE_ROOT>/nvke/controller && TILT_LINK_PORT_OFFSET=1000 tilt up
 #
 # Model: Mac is source of truth (edit + git here). Target runs Tilt.
 # Do NOT run git on the target -- one-way-replica overwrites it to match the Mac.
@@ -55,17 +55,17 @@ sync:
         - "*.log"
         - "__debug_bin*"
   nke:
-    alpha: "__LOCAL_NKE_ROOT__/nke"
-    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/nke"
+    alpha: "__LOCAL_NVKE_ROOT__/nvke"
+    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NVKE_ROOT__/nvke"
   cluster-api-provider-nico:
-    alpha: "__LOCAL_NKE_ROOT__/cluster-api-provider-nico"
-    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/cluster-api-provider-nico"
+    alpha: "__LOCAL_NVKE_ROOT__/cluster-api-provider-nico"
+    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NVKE_ROOT__/cluster-api-provider-nico"
   forge-console:
-    alpha: "__LOCAL_NKE_ROOT__/forge-console"
-    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/forge-console"
+    alpha: "__LOCAL_NVKE_ROOT__/forge-console"
+    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NVKE_ROOT__/forge-console"
   nke-site-deploy:
-    alpha: "__LOCAL_NKE_ROOT__/nke-site-deploy"
-    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/nke-site-deploy"
+    alpha: "__LOCAL_NVKE_ROOT__/nke-site-deploy"
+    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NVKE_ROOT__/nke-site-deploy"
 
 forward:
   tilt:

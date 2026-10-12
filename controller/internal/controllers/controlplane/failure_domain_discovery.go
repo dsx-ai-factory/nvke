@@ -12,8 +12,8 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 // failureDomains is what control-plane placement needs from outside the database.
@@ -39,7 +39,7 @@ func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster)
 	capiCluster := &clusterv1.Cluster{}
 	if err := r.k8sClient.Get(ctx, client.ObjectKey{
 		Name:      cluster.Name,
-		Namespace: constants.NamespaceNKESystem,
+		Namespace: constants.NamespaceNVKESystem,
 	}, capiCluster); err != nil {
 		return nil, fmt.Errorf("get CAPI cluster for failure-domain discovery: %w", err)
 	}
@@ -64,7 +64,7 @@ func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster)
 	// their observed domains back to the database.
 	machines := &clusterv1.MachineList{}
 	if err := r.k8sClient.List(ctx, machines,
-		client.InNamespace(constants.NamespaceNKESystem),
+		client.InNamespace(constants.NamespaceNVKESystem),
 		client.MatchingLabels{clusterv1.ClusterNameLabel: cluster.Name},
 	); err != nil {
 		return nil, fmt.Errorf("list CAPI machines for failure-domain discovery: %w", err)

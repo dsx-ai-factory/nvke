@@ -26,7 +26,7 @@
 # when clean.
 #
 # That set was zero for six of the seven modules present on 2026-08-13. The
-# matrix now also discovers the imported nkectl module. It is also the set that
+# matrix now also discovers the imported nvkectl module. It is also the set that
 # matters.
 # GO-2026-6061 was reachable from cmd/agent/main.go through
 # agent.startSecureServer to grpc.Server.Serve, and it reached main behind a
@@ -95,13 +95,16 @@ concurrency:
   group: govulncheck-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+env:
+  GOPROXY: https://proxy.golang.org|direct
+
 jobs:
   discover-modules:
     name: Discover workspace modules
     runs-on: ubuntu-latest
     # Same as license.yml's discover-modules, which does the same work.
     timeout-minutes: 5
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     outputs:
       modules: ${{ steps.find.outputs.modules }}
     steps:

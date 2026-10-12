@@ -45,7 +45,7 @@
 #   NICO_VMS_DHCP_HOSTS_DIR    dnsmasq hostsdir        (default /var/lib/nico-vms/dhcp-hosts)
 #   NICO_VMS_DHCP_LEASE_FILE   dnsmasq lease file      (default /var/run/nico-vms-dnsmasq.leases)
 #   NICO_VMS_DHCP_RANGE_END    last DHCP address       (default <prefix>.239)
-#   NKE_CI_HOST_FDE            "true" adds what the NKE FDE node image needs on
+#   NKE_CI_HOST_FDE            "true" adds what the NVKE FDE node image needs on
 #                              top of the above: UEFI firmware, swtpm, debugfs,
 #                              the carbide-pxe.forge record, and a route from
 #                              the guests to the metadata server that does not

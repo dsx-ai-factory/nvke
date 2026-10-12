@@ -39,7 +39,7 @@ const (
 	tokenRenewBefore    = time.Minute
 )
 
-// TokenSource supplies bearer tokens for nkectl's controller API calls. Mint returns the
+// TokenSource supplies bearer tokens for nvkectl's controller API calls. Mint returns the
 // oidc-login plugin's bearer token, a TokenRequest for nke-clients/nke-client,
 // or no credential when the management cluster has no controller auth ConfigMap in
 // either controller namespace.
@@ -55,7 +55,7 @@ type TokenSource struct {
 // NewTokenSource builds a token source from a management cluster kubeconfig.
 func NewTokenSource(kubeconfig, endpoint string) (*TokenSource, error) {
 	if kubeconfig == "" {
-		return nil, fmt.Errorf("kubeconfig is empty: run 'nkectl config set-site --kubeconfig <path>'")
+		return nil, fmt.Errorf("kubeconfig is empty: run 'nvkectl config set-site --kubeconfig <path>'")
 	}
 
 	restConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
@@ -169,7 +169,7 @@ func (s *TokenSource) mintExec() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("wrapping kubeconfig exec transport: %w", err)
 	}
-	req, err := http.NewRequest(http.MethodGet, "http://nkectl.exec.invalid/", nil)
+	req, err := http.NewRequest(http.MethodGet, "http://nvkectl.exec.invalid/", nil)
 	if err != nil {
 		return "", fmt.Errorf("building exec token request: %w", err)
 	}

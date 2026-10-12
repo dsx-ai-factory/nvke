@@ -18,8 +18,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/mgmtcluster"
-	enginev1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
+	"github.com/dsx-ai-factory/nvke/cli/internal/mgmtcluster"
+	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 )
 
 const (

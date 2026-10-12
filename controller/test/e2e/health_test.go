@@ -15,9 +15,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
 type healthConfig struct {
@@ -80,8 +80,8 @@ func envOrDefault(key, def string) string {
 	return def
 }
 
-// These specs talk to the forwarder directly rather than through nke.Client, so
-// they carry no NKE credential and need none: all three paths are on the
+// These specs talk to the forwarder directly rather than through nvke.Client, so
+// they carry no NVKE credential and need none: all three paths are on the
 // anonymous surface in internal/auth/routes.go. If /api/version ever stops
 // being anonymous, this file goes red before anything else does.
 var _ = Describe("controller management-plane health", Label("health"), func() {

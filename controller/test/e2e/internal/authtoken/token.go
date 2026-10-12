@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package authtoken mints the bearer token the e2e suite presents to the NKE
-// API. Tokens come from the TokenRequest API, not a Secret, because NKE accepts
+// Package authtoken mints the bearer token the e2e suite presents to the NVKE
+// API. Tokens come from the TokenRequest API, not a Secret, because NVKE accepts
 // only a bound audience-scoped token. It refreshes, since the suite's waits
 // outlast a token lifetime, and discovers the audience from the ConfigMap.
 package authtoken
@@ -25,7 +25,7 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 )
 
 // Where the authentication configuration lives, in controller.Namespace().
@@ -53,7 +53,7 @@ const (
 
 // Environment overrides. All optional; the defaults above are what CI uses.
 const (
-	// EnvDisable sends no Authorization header; an enforcing NKE then 401s.
+	// EnvDisable sends no Authorization header; an enforcing NVKE then 401s.
 	EnvDisable  = "NKE_E2E_AUTH_DISABLE"
 	EnvAudience = "NKE_E2E_AUDIENCE"
 	// EnvNamespace and EnvServiceAccount move the suite's identity; point them
@@ -130,9 +130,9 @@ func New(client kubernetes.Interface, opts Options) (*Source, error) {
 	return source, nil
 }
 
-// Discover builds a Source for the NKE in restConfig. found is false, with a
+// Discover builds a Source for the NVKE in restConfig. found is false, with a
 // nil error, when NKE_E2E_AUTH_DISABLE is set or there is no ConfigMap — how
-// the suite keeps working against an NKE without authentication.
+// the suite keeps working against an NVKE without authentication.
 func Discover(ctx context.Context, restConfig *rest.Config) (*Source, bool, error) {
 	off, err := disabled()
 	if err != nil {
@@ -157,7 +157,7 @@ func discover(ctx context.Context, client kubernetes.Interface) (*Source, bool, 
 			return nil, false, err
 		}
 		if !found {
-			// No auth ConfigMap: this NKE authenticates nobody.
+			// No auth ConfigMap: this NVKE authenticates nobody.
 			return nil, false, nil
 		}
 		audience = discovered
@@ -180,7 +180,7 @@ func discover(ctx context.Context, client kubernetes.Interface) (*Source, bool, 
 	return source, true, nil
 }
 
-// RawConfig returns the auth.yaml the NKE pod mounts, out of the
+// RawConfig returns the auth.yaml the NVKE pod mounts, out of the
 // nke-auth-config ConfigMap; found is false, with a nil error, when it does not
 // exist. It stops at the bytes, and each caller decodes what it asserts on.
 func RawConfig(ctx context.Context, client kubernetes.Interface) ([]byte, bool, error) {
@@ -203,7 +203,7 @@ func RawConfig(ctx context.Context, client kubernetes.Interface) ([]byte, bool, 
 // AudienceFromCluster reads one deployment-wide audience out of the
 // nke-auth-config ConfigMap. Only the top-level "audiences" list is read, since
 // nothing shipped overrides it for the Kubernetes issuer; any entry would do,
-// as NKE matches any-of.
+// as NVKE matches any-of.
 func AudienceFromCluster(ctx context.Context, client kubernetes.Interface) (string, bool, error) {
 	raw, found, err := RawConfig(ctx, client)
 	if err != nil || !found {
@@ -259,7 +259,7 @@ func (s *Source) mint(ctx context.Context) (string, error) {
 	expires := response.Status.ExpirationTimestamp.Time
 
 	// An already-expired grant is refused here, so clock skew is reported as a
-	// credential problem instead of a 401 from NKE later.
+	// credential problem instead of a 401 from NVKE later.
 	if !expires.After(s.now()) {
 		return "", fmt.Errorf(
 			"authtoken: TokenRequest for %s returned a token that expired at %s, already past at %s; "+

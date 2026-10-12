@@ -55,7 +55,7 @@ jobs:
   publish:
     name: Generate and publish
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 name: Bug Report
-description: Report a reproducible problem with NKE
+description: Report a reproducible problem with NVKE
 title: "[BUG]: "
 labels: ["bug"]
 
@@ -16,7 +16,7 @@ body:
           required: true
         - label: I included reproduction steps or, for an intermittent failure, its observed frequency and conditions
           required: true
-        - label: This is not a security vulnerability. I will report vulnerabilities to NVIDIA PSIRT as described in the [security policy](https://github.com/dsx-ai-factory/nke/blob/main/SECURITY.md), not through a public issue or GitHub Security Advisory
+        - label: This is not a security vulnerability. I will report vulnerabilities to NVIDIA PSIRT as described in the [security policy](https://github.com/dsx-ai-factory/nvke/blob/main/SECURITY.md), not through a public issue or GitHub Security Advisory
           required: true
 
   - type: dropdown
@@ -26,9 +26,9 @@ body:
       options:
         - Controller
         - Node agent or updater
-        - nkectl CLI
+        - nvkectl CLI
         - Cluster API provider (provisioned)
-        - Helm charts or deployment (nke-stack)
+        - Helm charts or deployment
         - nico-sim (development simulator)
         - OS image or image checker
         - NKTP telemetry pipeline
@@ -78,7 +78,7 @@ body:
       label: Environment
       description: Include only the fields that apply. Redact kubeconfigs, kubeadm join commands and bootstrap tokens, SPIFFE certificates and keys, BMC/Redfish/NICo credentials, database connection strings, and sensitive internal hostnames or IPs. Rotate credentials if exposed.
       placeholder: |
-        - NKE version, tag, or commit:
+        - NVKE version, tag, or commit:
         - Component version:
         - Kubernetes version:
         - Deployment environment (bare metal, CAPD, or other):
@@ -104,5 +104,5 @@ body:
     attributes:
       label: Code of Conduct
       options:
-        - label: I agree to follow the project's [Code of Conduct](https://github.com/dsx-ai-factory/nke/blob/main/CODE_OF_CONDUCT.md)
+        - label: I agree to follow the project's [Code of Conduct](https://github.com/dsx-ai-factory/nvke/blob/main/CODE_OF_CONDUCT.md)
           required: true

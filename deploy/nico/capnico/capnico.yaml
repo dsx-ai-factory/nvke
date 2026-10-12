@@ -25,7 +25,7 @@
 #     to nico.nvidia.com/*; the controller writes nke.nvidia.com/*. A mismatch is not an
 #     error anywhere -- every reboot and repair request is silently ignored.
 #  2. imagePullSecrets: ghcr-imagepull. The upstream asset carries none. The
-#     Secret is rendered by ../nke-base-config/30-ghcr-imagepull.yaml.tmpl,
+#     Secret is rendered by ../nvke-base-config/30-ghcr-imagepull.yaml.tmpl,
 #     which the first item applies. That run patched the Deployment after
 #     applying instead; a manifest item has no patch step, so it is baked in
 #     here.

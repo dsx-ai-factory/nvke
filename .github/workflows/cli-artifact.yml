@@ -3,13 +3,13 @@
 
 name: CLI Artifact GHCR
 
-# Publishes nkectl binaries to GHCR as OCI artifacts, alongside the existing
+# Publishes nvkectl binaries to GHCR as OCI artifacts, alongside the existing
 # GitHub Release. Tags are OS/ARCH-suffixed only (e.g. v0.1.0-linux-amd64),
 # same as os-image -- no `oras manifest index create` step, so unlike
 # agent-artifact.yml there is no bare `:version` tag a consumer can pull with
 # `--platform` to auto-select. Pull the suffixed tag directly.
 #
-# nkectl also ships darwin builds -- every existing `--artifact-platform`
+# nvkectl also ships darwin builds -- every existing `--artifact-platform`
 # use in this repo is linux-only, so this is the first time that flag sees a
 # `darwin/*` value. Watch the first real run.
 
@@ -37,13 +37,14 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     name: Publish binaries
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
       packages: write
+      actions: read  # upload-sarif reads the workflow run
       security-events: write  # the malware scan uploads SARIF
     steps:
       - name: Checkout
@@ -99,7 +100,7 @@ jobs:
       # exactly those bytes, so checksums.txt describes what ships here too.
       - name: Download the release build
         if: inputs.dist_artifact != ''
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ${{ inputs.dist_artifact }}
           path: dist
@@ -136,7 +137,7 @@ jobs:
           for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             os="${platform%/*}"
             arch="${platform#*/}"
-            bin="nkectl-${os}-${arch}"
+            bin="nvkectl-${os}-${arch}"
 
             tags=""
             for alias in "${aliases[@]}"; do
@@ -144,13 +145,13 @@ jobs:
             done
 
             ( cd dist && oras push "${REPO}:${tags}" \
-                --artifact-type application/vnd.nvidia.nke.cli.v1 \
+                --artifact-type application/vnd.nvidia.nvke.cli.v1 \
                 --artifact-platform "${platform}" \
                 --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
                 --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
                 --annotation "org.opencontainers.image.version=${VERSION}" \
                 --annotation "org.opencontainers.image.licenses=Apache-2.0" \
-                --annotation "org.opencontainers.image.title=nkectl" \
+                --annotation "org.opencontainers.image.title=nvkectl" \
                 "${bin}:application/octet-stream" )
           done
 
@@ -174,4 +175,4 @@ jobs:
             ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-linux-arm64
             ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-darwin-amd64
             ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-darwin-arm64
-          component: nkectl
+          component: nvkectl

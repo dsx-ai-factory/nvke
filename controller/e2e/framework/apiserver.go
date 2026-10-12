@@ -47,7 +47,7 @@ func setControllerRuntimeLogger() {
 const kubebuilderAssetsEnv = "KUBEBUILDER_ASSETS"
 
 // The legacy names are deprecated aliases, read when the new name is unset or
-// empty; nke#1399 removes them.
+// empty; #1399 removes them.
 const (
 	clusterCRDsEnv = "NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS"
 	nicoCRDsEnv    = "NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS"

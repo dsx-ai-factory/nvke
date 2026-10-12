@@ -4,7 +4,7 @@
 # GENERATED FILE -- do not edit. Regenerate with `make -C cli provider-manifest`.
 #
 # `kubectl kustomize cluster-api-provider-provisioned/config/default`, rendered
-# here so nkectl installs the provider of the commit it was built from without
+# here so nvkectl installs the provider of the commit it was built from without
 # a checkout. The source of truth is that kustomize base, whose CRDs and RBAC
 # are themselves controller-gen output; edit the provider, regenerate there,
 # then regenerate this.
@@ -76,7 +76,7 @@ spec:
             description: |-
               ProvisionedClusterSpec defines the desired state of ProvisionedCluster.
 
-              The spec holds no control plane endpoint. The NKE controller owns the control plane VIP
+              The spec holds no control plane endpoint. The NVKE controller owns the control plane VIP
               through the controlPlaneVIP field of its own cluster API, and the controller configures
               kube-vip on each control plane node.
             properties:

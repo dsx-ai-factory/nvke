@@ -4,8 +4,8 @@
 package kubevip
 
 import (
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
 
 func RegisterDefaults(reg *rollout.Registry, dialer nodeagent.Dialer) {

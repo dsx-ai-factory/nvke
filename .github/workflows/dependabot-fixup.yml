@@ -74,7 +74,7 @@ jobs:
     # All four conditions matter. See the header for why the third-from-last is
     # load-bearing for security rather than for correctness.
     if: >
-      github.repository == 'dsx-ai-factory/nke' &&
+      github.repository_id == '1323115536' &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       startsWith(github.event.pull_request.head.ref, 'dependabot/go_modules/')

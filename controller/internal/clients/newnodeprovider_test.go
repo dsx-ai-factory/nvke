@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/clients"
-	capiclient "github.com/dsx-ai-factory/nke/controller/internal/clients/capi"
-	"github.com/dsx-ai-factory/nke/controller/internal/clients/nico"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
+	capiclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 func TestGetNewNodeProvider(t *testing.T) {

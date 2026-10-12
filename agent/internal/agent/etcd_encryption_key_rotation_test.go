@@ -33,9 +33,9 @@ import (
 	clientscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 
-	"github.com/dsx-ai-factory/nke/agent/internal/k8s"
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
+	"github.com/dsx-ai-factory/nvke/agent/internal/k8s"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
 
 var (
@@ -59,7 +59,7 @@ func NewMockK8sEncryptionRunner() *MockK8sEncryptionRunner {
 	return &MockK8sEncryptionRunner{Outputs: make(map[string][]byte), Errors: make(map[string]error)}
 }
 
-func (m *MockK8sEncryptionRunner) Run(name string, args []string, opts *nkeutils.CommandOptions) ([]byte, error) {
+func (m *MockK8sEncryptionRunner) Run(name string, args []string, opts *nvkeutils.CommandOptions) ([]byte, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.CalledWith = append(m.CalledWith, append([]string{name}, args...))
@@ -76,16 +76,16 @@ func (m *MockK8sEncryptionRunner) Run(name string, args []string, opts *nkeutils
 	return nil, m.DefaultError
 }
 
-func (m *MockK8sEncryptionRunner) RunDetached(name string, args []string, opts *nkeutils.CommandOptions) error {
+func (m *MockK8sEncryptionRunner) RunDetached(name string, args []string, opts *nvkeutils.CommandOptions) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.CalledWith = append(m.CalledWith, append([]string{name}, args...))
 	return m.DefaultError
 }
 
-func (m *MockK8sEncryptionRunner) RunSplitOutput(name string, args []string, opts *nkeutils.CommandOptions) (nkeutils.CommandOutput, error) {
+func (m *MockK8sEncryptionRunner) RunSplitOutput(name string, args []string, opts *nvkeutils.CommandOptions) (nvkeutils.CommandOutput, error) {
 	output, err := m.Run(name, args, opts)
-	return nkeutils.CommandOutput{Stdout: output}, err
+	return nvkeutils.CommandOutput{Stdout: output}, err
 }
 
 // metricsSequencer returns successive /metrics responses; once exhausted it
@@ -210,7 +210,7 @@ func writeEncryptionConfigFixture(t *testing.T, dir string, keys []KeyConfig) {
 	require.NoError(t, os.WriteFile(filepath.Join(encDir, "encryption-config.yaml"), b, 0o644))
 }
 
-func newEncryptionServer(t *testing.T, tmpDir, role string, runner nkeutils.CommandRunner, metrics *metricsSequencer) *NodeAgentServer {
+func newEncryptionServer(t *testing.T, tmpDir, role string, runner nvkeutils.CommandRunner, metrics *metricsSequencer) *NodeAgentServer {
 	t.Helper()
 	return &NodeAgentServer{
 		Runner: runner, Persister: &MockPersister{},

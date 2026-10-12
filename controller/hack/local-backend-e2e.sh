@@ -238,6 +238,8 @@ if [[ "${LOCAL_NKE_E2E_REUSE_CAPD_SETUP:-false}" == true ]]; then
 else
   make -C "${repo_root}" capd-up REGISTRY_MIRROR_IMAGE="$(dockerhub_image registry:2)"
 fi
+e2e_host_loads_openvswitch "${CAPD_NODE_IMAGE:-cwe-capd-kindest-node:local}" ||
+  fail "this host cannot load the openvswitch module (#1515)"
 
 # The committed fixture, not the provider checkout: this script installs the
 # CRDs but never builds the provider, so requiring a checkout would gate the
@@ -368,16 +370,16 @@ local_e2e_exec() {
 
 run_local_e2e() {
   local label_filter="$1" rc=0
-  # The nkectl row drives the CLI, so it needs nkectl and kubectl inside the
+  # The nvkectl row drives the CLI, so it needs nvkectl and kubectl inside the
   # runner. ci/backend-e2e.sh builds and stages both; this script stages only
   # the test binary, the kubeconfig and the config, and its runner image
   # carries neither. Without this the row would skip, and the skip audit in
   # e2e_run_ginkgo fails the run on a skip reported from an It.
   #
   # Excluded here rather than in the shared filters, so CI -- where both
-  # binaries are present -- still runs it. Stage nkectl and a linux kubectl
+  # binaries are present -- still runs it. Stage nvkectl and a linux kubectl
   # into the runner to drop this.
-  label_filter="(${label_filter}) && !nkectl"
+  label_filter="(${label_filter}) && !nvkectl"
   e2e_run_ginkgo local_e2e_exec log "${state_dir}" "${label_filter}" || rc=$?
   docker cp "${runner_name}:/state/junit.xml" "${state_dir}/junit.xml" >/dev/null 2>&1 || true
   return "${rc}"

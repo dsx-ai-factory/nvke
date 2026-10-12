@@ -66,7 +66,7 @@ jobs:
               exit 0
             fi
 
-            # The CLI hack/ci/nkectl-smoke.sh exercises against a live controller. Keep
+            # The CLI hack/ci/nvkectl-smoke.sh exercises against a live controller. Keep
             # in step with what the smoke asserts on; capd-e2e.yml mirrors it as
             # push globs. The rest of cli/ cannot break against the controller, and skips.
             cwe_facing='^cli/(cmd/|internal/(clients|clusterstate|controller|providers|bootstrap/sitecluster|util)/)'

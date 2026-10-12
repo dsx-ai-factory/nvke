@@ -12,12 +12,12 @@
 // API, a CNI is installed, and every node reports Ready. That matches the
 // GitLab suite's criterion.
 //
-// The CNI is upstream Calico, applied from its public manifests. NKE's own CNI
+// The CNI is upstream Calico, applied from its public manifests. NVKE's own CNI
 // packages sit behind a source-IP allowlist that CI runners are outside of, and
 // the agent's InstallCNI RPC requires one of those packages to be registered
 // with dpkg, so this lane installs the manifests directly. The consequence is
 // worth stating plainly: this proves the cluster the agent builds becomes
-// usable, NOT that NKE's CNI packaging works. Verifying the shipped packages
+// usable, NOT that NVKE's CNI packaging works. Verifying the shipped packages
 // stays with the GitLab suite, which can reach them.
 //
 // Topology is one control plane plus one worker, not the original's three
@@ -35,10 +35,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/cloudinit"
-	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/cluster"
-	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/nicovms"
-	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/verify"
+	"github.com/dsx-ai-factory/nvke/controller/test/kubeadm/internal/cloudinit"
+	"github.com/dsx-ai-factory/nvke/controller/test/kubeadm/internal/cluster"
+	"github.com/dsx-ai-factory/nvke/controller/test/kubeadm/internal/nicovms"
+	"github.com/dsx-ai-factory/nvke/controller/test/kubeadm/internal/verify"
 )
 
 const (

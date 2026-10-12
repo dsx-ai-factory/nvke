@@ -13,9 +13,9 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/tenantauth"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/tenantauth"
 )
 
 var (
@@ -30,8 +30,8 @@ const (
 )
 
 func validateOIDCPostCreate(test *tenantTest) {
-	It("maps NKE's identities and authorizes them through OIDC on the tenant apiserver", func(ctx context.Context) {
-		skipIfNKEOIDCDisabled(ctx, test.k8sClient)
+	It("maps NVKE's identities and authorizes them through OIDC on the tenant apiserver", func(ctx context.Context) {
+		skipIfNVKEOIDCDisabled(ctx, test.k8sClient)
 		if test.trustDomain == "" && os.Getenv(dsxIdentityExchangeEnv) != "true" {
 			Skip("SPIRE trust domain could not be derived from kubeconfig context")
 		}
@@ -84,7 +84,7 @@ func validateOIDCPostCreate(test *tenantTest) {
 
 func validateOIDCPostDelete(test *tenantTest) {
 	It("deletes the kubeconfig and CA trust bundle secrets", func(ctx context.Context) {
-		skipIfNKEOIDCDisabled(ctx, test.k8sClient)
+		skipIfNVKEOIDCDisabled(ctx, test.k8sClient)
 
 		Eventually(func() error {
 			return tenantauth.AssertKubeconfigAndTrustBundleDeleted(ctx, test.k8sClient, test.cluster.Name)
@@ -92,11 +92,11 @@ func validateOIDCPostDelete(test *tenantTest) {
 	}, Label("spire-oidc"))
 }
 
-// skipIfNKEOIDCDisabled skips the current spec when the controller deployment does not
+// skipIfNVKEOIDCDisabled skips the current spec when the controller deployment does not
 // have tenant OIDC JWT auth enabled (NKE_OIDC_AUTH_ENABLED != true).
-func skipIfNKEOIDCDisabled(ctx context.Context, k8s client.Client) {
+func skipIfNVKEOIDCDisabled(ctx context.Context, k8s client.Client) {
 	GinkgoHelper()
-	if !expectSucceed(nke.OIDCEnabled(ctx, k8s)) {
+	if !expectSucceed(nvke.OIDCEnabled(ctx, k8s)) {
 		Skip("OIDC is disabled in the controller deployment (NKE_OIDC_AUTH_ENABLED != true)")
 	}
 }

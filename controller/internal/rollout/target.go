@@ -10,7 +10,7 @@ package rollout
 import (
 	"github.com/google/uuid"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
 
 // NodeRole identifies whether a Node is a control-plane node or a worker.

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Upstream nkectl carries no config of its own: it sat inside a repository
+# Upstream nvkectl carries no config of its own: it sat inside a repository
 # whose root .golangci.yml covered it. Imported here it becomes a module in a
 # workspace where every other module brings its own, so it needs one too --
 # without it golangci-lint applies bare defaults, which lack the exclusion
@@ -60,6 +60,6 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/dsx-ai-factory/nke)
+        - prefix(github.com/dsx-ai-factory/nvke)
     gofumpt:
       extra-rules: true

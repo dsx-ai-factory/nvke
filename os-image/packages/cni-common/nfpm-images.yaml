@@ -11,10 +11,10 @@ version: "${DEB_REVISION}"
 version_schema: none
 section: admin
 priority: optional
-maintainer: "NKE <nke-dev@exchange.nvidia.com>"
+maintainer: "NVKE <nke-dev@exchange.nvidia.com>"
 mtime: "2026-01-01T00:00:00Z"
 description: |
-  ${PRODUCT} ${STREAM} container images for NKE nodes
+  ${PRODUCT} ${STREAM} container images for NVKE nodes
   The images ${PRODUCT} ${STREAM} runs, pulled by digest into one
   docker-archive under ${IMAGE_DIR} and imported into containerd by postinst.
   Pairs with ${CONTENT_PACKAGE}; together they let a node install ${PRODUCT}

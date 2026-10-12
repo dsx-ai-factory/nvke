@@ -8,7 +8,7 @@ package capi
 import (
 	"encoding/json"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 // Client is the CAPI provider's capability client.

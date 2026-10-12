@@ -6,7 +6,7 @@ package controlplane
 import (
 	"math"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 // failureDomainSelectionAlgorithm picks the next failure domain from the

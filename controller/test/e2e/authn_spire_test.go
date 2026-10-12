@@ -24,16 +24,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/authtoken"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/authtoken"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
-// The SPIRE half of NKE API authentication. The Workload API issues a JWT-SVID
+// The SPIRE half of NVKE API authentication. The Workload API issues a JWT-SVID
 // only to an attested process, so the caller is a pod this spec creates and its
 // termination message crosses back. The wrong-audience case is what makes the
 // 200 mean anything; path-prefix admission is admit_test.go's job.
-var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", "authn-spire"), func() {
+var _ = Describe("NVKE API authentication with a SPIRE JWT-SVID", Label("authn", "authn-spire"), func() {
 	var (
 		runtimeClient   client.Client
 		admission       spireAdmission
@@ -52,7 +52,7 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 
 		// Three skips, because any one of these missing makes the spec a lie.
 		mode, err := detectAuthnEnforcement(tctx, clientset)
-		Expect(err).NotTo(HaveOccurred(), "read the NKE deployment's enforcement mode")
+		Expect(err).NotTo(HaveOccurred(), "read the NVKE deployment's enforcement mode")
 		if mode == authnModeDisabled {
 			authnAbsentf(
 				"authentication is OFF on Deployment %s/%s: %s is not set, so the middleware is not in the request chain and no SVID could be rejected",
@@ -61,7 +61,7 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 		}
 		if mode != authnModeEnforcing {
 			// Permissive answers 200 to everything, so both cases below would
-			// pass against an NKE that never heard of SPIRE.
+			// pass against an NVKE that never heard of SPIRE.
 			Skip(fmt.Sprintf(
 				"authentication is %s on Deployment %s/%s: a SPIRE acceptance that is not allowed to reject proves nothing",
 				mode, controller.Namespace(), controller.Deployment(),
@@ -73,7 +73,7 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 		Expect(err).NotTo(HaveOccurred(), "read the deployment's auth configuration")
 		if !found {
 			Skip(fmt.Sprintf(
-				"ConfigMap %s/%s configures no issuer named %q, so this NKE trusts no SPIRE and there is nothing to accept",
+				"ConfigMap %s/%s configures no issuer named %q, so this NVKE trusts no SPIRE and there is nothing to accept",
 				controller.Namespace(), authtoken.ConfigMapName, spireIssuerName,
 			))
 		}
@@ -88,10 +88,10 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 		}
 		Expect(err).NotTo(HaveOccurred(), "read the probe's service account")
 
-		// NKE's own image, the one on the node carrying bash, curl and the
+		// NVKE's own image, the one on the node carrying bash, curl and the
 		// Workload API JWT fetcher.
 		controllerImage, err = controllerContainerImage(tctx, clientset)
-		Expect(err).NotTo(HaveOccurred(), "read the NKE deployment's image")
+		Expect(err).NotTo(HaveOccurred(), "read the NVKE deployment's image")
 	})
 
 	It("admits an attested workload's JWT-SVID and rejects one minted for the wrong audience", func(ctx SpecContext) {
@@ -103,13 +103,13 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 
 		report := parseProbeReport(message)
 		Expect(report).NotTo(HaveKey("error"),
-			"the probe never reached NKE; its report was %s", message)
+			"the probe never reached NVKE; its report was %s", message)
 
 		// The identity, before the status codes, and derived from the
 		// configuration so ClusterSPIFFEID drift fails here.
 		spiffeID := report["spiffe_id"]
 		Expect(spiffeID).To(HavePrefix("spiffe://"+admission.TrustDomain+"/"),
-			"the probe presented an SVID from a trust domain NKE does not admit; report: %s", message)
+			"the probe presented an SVID from a trust domain NVKE does not admit; report: %s", message)
 
 		// Any one of the admitted prefixes, because admission takes any one.
 		Expect(spiffeID).To(Or(admittedPathPrefixMatchers(admission)...),
@@ -119,7 +119,7 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 		Expect(report["admitted"]).To(Equal("200"),
 			"a JWT-SVID for audience %q from %s must be admitted; report: %s", admission.Audience, spiffeID, message)
 		Expect(report["wrong_audience"]).To(Equal("401"),
-			"an SVID identical but for its audience must be rejected, or NKE is not checking \"aud\" on SPIRE tokens; report: %s", message)
+			"an SVID identical but for its audience must be rejected, or NVKE is not checking \"aud\" on SPIRE tokens; report: %s", message)
 	})
 })
 
@@ -147,7 +147,7 @@ const (
 	spireCSIDriver         = "csi.spiffe.io"
 )
 
-// spireAdmission is the identity space NKE admits and the audience it expects.
+// spireAdmission is the identity space NVKE admits and the audience it expects.
 type spireAdmission struct {
 	Audience     string
 	TrustDomain  string
@@ -210,14 +210,14 @@ func parseSpireAdmission(raw []byte) (spireAdmission, bool, error) {
 		}
 
 		// The per-issuer list supersedes the deployment-wide one rather than
-		// adding to it. NKE matches any-of, so the first entry will do.
+		// adding to it. NVKE matches any-of, so the first entry will do.
 		audiences := parsed.Audiences
 		if len(issuer.Audiences) > 0 {
 			audiences = issuer.Audiences
 		}
 		if len(audiences) == 0 || audiences[0] == "" {
 			return spireAdmission{}, false, fmt.Errorf(
-				"issuer %q resolves to no audience, and NKE requires at least one", spireIssuerName,
+				"issuer %q resolves to no audience, and NVKE requires at least one", spireIssuerName,
 			)
 		}
 		audience := audiences[0]
@@ -441,6 +441,6 @@ func TestControllerContainerImage(t *testing.T) {
 	}
 
 	if _, err := controllerContainerImage(context.Background(), fake.NewClientset()); err == nil {
-		t.Fatal("expected an error when the NKE deployment cannot be read")
+		t.Fatal("expected an error when the NVKE deployment cannot be read")
 	}
 }

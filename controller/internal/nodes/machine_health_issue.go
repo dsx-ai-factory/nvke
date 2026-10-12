@@ -35,7 +35,7 @@ const (
 	machineHealthIssueSummaryMaxLen  = 256
 	machineHealthIssueDetailsMinLen  = 2
 	machineHealthIssueDetailsMaxLen  = 256
-	defaultMachineHealthIssueSummary = "Node removed via NKE remediation"
+	defaultMachineHealthIssueSummary = "Node removed via NVKE remediation"
 )
 
 func truncateToRunes(s string, n int) string {

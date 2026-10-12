@@ -11,10 +11,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/util"
+	"github.com/dsx-ai-factory/nvke/cli/internal/util"
 )
 
-// NewPatchCmd returns the "nkectl patch nodepool <name>" subcommand.
+// NewPatchCmd returns the "nvkectl patch nodepool <name>" subcommand.
 // It sends the patch document to the controller, leaving every field the document does
 // not carry unchanged.
 func NewPatchCmd(clientFn ControllerClientFn) *cobra.Command {
@@ -37,14 +37,14 @@ PATCH semantics apply: only the fields in the patch document are changed;
 everything else on the node pool is left as it is. Pass the patch inline with
 --patch, or from a file (or stdin via -) with --patch-file.
 
-nkectl can set ` + strings.Join(settableFields(), ", ") + ` so far. The API
+nvkectl can set ` + strings.Join(settableFields(), ", ") + ` so far. The API
 accepts more, but anything else is rejected before the request is sent.
 
 Example — scale a pool:
-  nkectl patch nodepool gpu-workers --cluster my-cluster --patch 'desiredNodeCount: 8'
+  nvkectl patch nodepool gpu-workers --cluster my-cluster --patch 'desiredNodeCount: 8'
 
 Example — patch file:
-  nkectl patch nodepool gpu-workers --cluster my-cluster --patch-file patch.yaml
+  nvkectl patch nodepool gpu-workers --cluster my-cluster --patch-file patch.yaml
 
 The patch document's fields must match the controller UpdateNodePoolRequest schema
 exactly. See /api/docs on your site controller.`,
@@ -74,7 +74,7 @@ exactly. See /api/docs on your site controller.`,
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Node pool %q patched (id: %s)\n", updated.Name, updated.ID)
 			fmt.Fprintf(cmd.OutOrStdout(),
-				"Update is async — run 'nkectl get nodepools --cluster %s' to check status.\n", clusterName)
+				"Update is async — run 'nvkectl get nodepools --cluster %s' to check status.\n", clusterName)
 			return nil
 		},
 	}
@@ -88,7 +88,7 @@ exactly. See /api/docs on your site controller.`,
 
 // supportedFields is the subset of UpdateNodePoolRequest this command can
 // change. UpdateNodePoolRequest carries more, and the controller accepts them, but only
-// what is declared here is supported through nkectl today.
+// what is declared here is supported through nvkectl today.
 //
 // The patch document is validated against this rather than against the full
 // request type, which is what rejects an unsupported field. Supporting another
@@ -140,7 +140,7 @@ func loadPatchNodePoolRequest(cmd *cobra.Command, patch, patchFile string) ([]by
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&validate); err != nil {
-		return nil, fmt.Errorf("validating patch: %w; nkectl can set %s",
+		return nil, fmt.Errorf("validating patch: %w; nvkectl can set %s",
 			err, strings.Join(settableFields(), ", "))
 	}
 	return data, nil

@@ -34,7 +34,7 @@ func TestLoadAcceptsTheGeneratedSiteConfig(t *testing.T) {
 	doc := `site:
   images:
     controller:
-      repository: nvcr.io/example-org/nke-controller
+      repository: nvcr.io/example-org/nvke-controller
       archive: /w/.site-inputs/controller.tar
     capi-provisioned:
       repository: nvcr.io/example-org/cluster-api-provider-provisioned

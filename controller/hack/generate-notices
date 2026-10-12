@@ -121,7 +121,7 @@ fi
 # No stdlib list is needed anyway: go-licenses already excludes the standard
 # library, verified by it emitting zero packages whose first path component
 # lacks a dot.
-IGNORE="${LOCAL_MODULE},github.com/dsx-ai-factory/nke/agent,github.com/dsx-ai-factory/nke/controller/api,github.com/dsx-ai-factory/nke/controller/deploy/charts,github.com/dsx-ai-factory/nke/management-engine,github.com/dsx-ai-factory/nke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
+IGNORE="${LOCAL_MODULE},github.com/dsx-ai-factory/nvke/agent,github.com/dsx-ai-factory/nvke/controller/api,github.com/dsx-ai-factory/nvke/controller/deploy/charts,github.com/dsx-ai-factory/nvke/management-engine,github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 # Explicit mktemp templates: macOS mktemp with no template ignores TMPDIR and
 # allocates under confstr(_CS_DARWIN_USER_TEMP_DIR), which makes the scratch
@@ -185,7 +185,22 @@ go list -deps -buildvcs=false \
       END { for (i = 1; i <= n; i++) { p = order[i]; printf "%s\t%s\t%s\n", p, lics[p], link[p] } }' \
     > "${INDEX_FILE}"
 
-# Settle the major-version directory from the committed file, not the network.
+# Attach module@version to each row by longest matching module prefix. Before
+# the URL steps below, which compare the version against the committed file.
+awk -F'\t' '
+    NR == FNR { split($0, a, " "); mp[a[1]] = a[2]; next }
+    {
+        best = ""
+        for (m in mp) {
+            if (($1 == m || index($1, m "/") == 1) && length(m) > length(best)) {
+                best = m
+            }
+        }
+        printf "%s\t%s\t%s\t%s\n", $1, $2, $3, (best == "" ? "unknown" : mp[best])
+    }' "${MODMAP_FILE}" "${INDEX_FILE}" > "${INDEX_FILE}.mod"
+mv "${INDEX_FILE}.mod" "${INDEX_FILE}"
+
+# Settle the licence URL from the committed file, not the network.
 #
 # For a module in a repository subdirectory with a major version suffix --
 # go.etcd.io/etcd/client/v3, tagged client/v3.7.1 -- the directory may be
@@ -201,6 +216,9 @@ go list -deps -buildvcs=false \
 # So when the committed file already has a URL for the package that differs
 # from the regenerated one only by that /vN segment, the committed URL stands:
 # a human verified it once, and the probe has no information the file lacks.
+# The same holds when the probe finds nothing and go-licenses writes "Unknown":
+# gopkg.in answers its go-get requests with a 502 now and then, and a URL the
+# file already has for the same module version stands over a blank.
 # Anything else -- a new package, a new version, a different licence file --
 # still shows up as a diff, and a new package keeps whatever go-licenses chose,
 # to be verified when it is first committed. The root-module repair below runs
@@ -213,7 +231,8 @@ if [[ -f "${OUTPUT}" ]]; then
             if ($0 ~ /^\| `[^`]+` \| .* \| `[^`]*` \| [^ |]+ \|$/) {
                 pkg = $0; sub(/^\| `/, "", pkg); sub(/`.*$/, "", pkg)
                 url = $0; sub(/ \|$/, "", url); sub(/^.* \| /, "", url)
-                committed[pkg] = url
+                mod = $0; sub(/ \| [^ |]+ \|$/, "", mod); sub(/^.* \| `/, "", mod); sub(/`$/, "", mod)
+                committed[pkg] = url; cmod[pkg] = mod
             }
             next
         }
@@ -227,12 +246,13 @@ if [[ -f "${OUTPUT}" ]]; then
                 a2 = a; sub(/\/v[0-9]+\//, "/", a2)
                 b2 = b; sub(/\/v[0-9]+\//, "/", b2)
                 if (a2 == b || b2 == a) { $3 = b }
+                else if (a == "Unknown" && cmod[$1] == $4) { $3 = b }
             }
             print
         }' "${OUTPUT}" "${INDEX_FILE}" > "${INDEX_FILE}.settled"
     SETTLED_N=$(diff <(cut -f3 "${INDEX_FILE}") <(cut -f3 "${INDEX_FILE}.settled") | grep -c '^>' || true)
     if [[ "${SETTLED_N}" -gt 0 ]]; then
-        echo "Kept ${SETTLED_N} committed major-version licence URL(s) over go-licenses' network-dependent choice." >&2
+        echo "Kept ${SETTLED_N} committed licence URL(s) over go-licenses' network-dependent choice." >&2
     fi
     mv "${INDEX_FILE}.settled" "${INDEX_FILE}"
 fi
@@ -273,20 +293,6 @@ if [[ "${REPAIRS}" -gt 0 ]]; then
     echo "Repaired ${REPAIRS} major-version licence URL(s) of root modules." >&2
 fi
 mv "${INDEX_FILE}.repaired" "${INDEX_FILE}"
-
-# Attach module@version to each row by longest matching module prefix.
-awk -F'\t' '
-    NR == FNR { split($0, a, " "); mp[a[1]] = a[2]; next }
-    {
-        best = ""
-        for (m in mp) {
-            if (($1 == m || index($1, m "/") == 1) && length(m) > length(best)) {
-                best = m
-            }
-        }
-        printf "%s\t%s\t%s\t%s\n", $1, $2, $3, (best == "" ? "unknown" : mp[best])
-    }' "${MODMAP_FILE}" "${INDEX_FILE}" > "${INDEX_FILE}.mod"
-mv "${INDEX_FILE}.mod" "${INDEX_FILE}"
 
 if [[ ! -s "${INDEX_FILE}" ]]; then
     echo "ERROR: go-licenses produced no entries — refusing to write an empty notices file." >&2

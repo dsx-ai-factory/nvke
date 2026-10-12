@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package operator is the nkectl operator interface to a site's machine images
+// Package operator is the nvkectl operator interface to a site's machine images
 // and releases: the MachineImage, ClusterRelease and NodePoolRelease resources
 // that the controller resolves every osProfile from.
 //

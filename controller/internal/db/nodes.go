@@ -491,7 +491,7 @@ func (q *queriesImpl) DeleteNode(ctx context.Context, id uuid.UUID) error {
 }
 
 func (q *queriesImpl) UpdateNodeTeleportRegistered(ctx context.Context, nodeID uuid.UUID, condition Condition) error {
-	return q.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+	return q.db.RunInTx(ctx, nil, func(_ context.Context, tx bun.Tx) error { // the caller's ctx, see dbImpl.RunInTx
 		qi := queriesImpl{db: tx}
 		node, err := qi.GetNodeForUpdate(ctx, nodeID)
 		if err != nil {
@@ -579,7 +579,7 @@ func (q *queriesImpl) ListNodesEligibleForRecycling(ctx context.Context, nodePoo
 		Where("ns.node_pool_id = ?", nodePoolID).
 		Where("ns.id != np.current_node_set_id").
 		Order("node.created_at ASC").
-		Limit(limit)
+		Limit(int64(limit))
 	query = whereNodeConditionStatus(query, "markedForRecycling", false)
 
 	err := query.Scan(ctx)

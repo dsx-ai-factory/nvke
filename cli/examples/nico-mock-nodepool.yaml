@@ -4,11 +4,11 @@
 # Example CreateNodePoolRequest for the local nico-mock backend, adding a pool
 # to a cluster created from nico-mock-cluster.yaml.
 #
-# Usage: nkectl create nodepool -f examples/nico-mock-nodepool.yaml
+# Usage: nvkectl create nodepool -f examples/nico-mock-nodepool.yaml
 #
 # clusterID is the one field you must fill in. Read it from the cluster:
 #
-#   nkectl get clusters my-cluster -o json | jq -r '.[0].id'
+#   nvkectl get clusters my-cluster -o json | jq -r '.[0].id'
 #
 # The other UUIDs are nico-mock's seeded identifiers and work as-is.
 

@@ -13,12 +13,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/testsuite"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent/agenttest"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestEnsureKubeadmFilesUsesRequestFilesWhenSupported(t *testing.T) {
@@ -61,10 +61,10 @@ func TestEnsureKubeadmFilesFallsBackWithEveryRenderedFile(t *testing.T) {
 	database.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "cluster-1"}, nil).Once()
 	fakeAgent := &agenttest.FakeClient{
 		KubeadmFilesUnsupported: true,
-		ExecuteScriptHook: func(_ db.Node, scriptName, scriptContents string) (*nkeproto.ExecuteScriptResponse, error) {
+		ExecuteScriptHook: func(_ db.Node, scriptName, scriptContents string) (*nvkeproto.ExecuteScriptResponse, error) {
 			require.Equal(t, legacyKubeadmFilesRunbook, scriptName)
 			require.Contains(t, scriptContents, "stage_file")
-			return &nkeproto.ExecuteScriptResponse{}, nil
+			return &nvkeproto.ExecuteScriptResponse{}, nil
 		},
 	}
 	a := &Activities{db: database, nodeAgentClient: fakeAgent}

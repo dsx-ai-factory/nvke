@@ -6,7 +6,7 @@
 # Detects IP drift caused by OVS bridge MAC changes
 LEASE_FILE="${NICO_VMS_DHCP_LEASE_FILE:-/var/run/nico-vms-dnsmasq.leases}"
 HOSTS_DIR="${NICO_VMS_DHCP_HOSTS_DIR:-/var/lib/nico-vms/dhcp-hosts}"
-DB_FILE="${NICO_SIM_DB_PATH:-/workspace/dev/nke/nke-dev/.dev/nico-sim.db}"
+DB_FILE="${NICO_SIM_DB_PATH:-/workspace/dev/nvke/nvke-dev/.dev/nico-sim.db}"
 
 if [ ! -f "$DB_FILE" ]; then
   echo "nico-vms DB not found at $DB_FILE"

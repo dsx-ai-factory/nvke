@@ -220,7 +220,7 @@ render runbooks-path-with-profiles-image \
   --set-string profiles.runbooksPath=/opt/nke/hooks
 
 # env stays open to what nke-controller-config does not carry, such as what
-# Tilt and nkectl bootstrap pass, and refuses what it does.
+# Tilt and nvkectl bootstrap pass, and refuses what it does.
 render env-passthrough \
   --set-string 'env[0].name=LOG_LEVEL' --set-string 'env[0].value=debug' \
   --set-string 'env[1].name=PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER' --set-string 'env[1].value=true' \
@@ -241,9 +241,9 @@ fi
   { echo "env override of CONTROLLER_CONFIG_PATH failed for another reason: ${refusal}" >&2; exit 1; }
 printf '  env overrides of nke-controller-config settings and its path are refused\n'
 
-# The values files the Tilt and nkectl bootstrap deployments install with.
+# The values files the Tilt and nvkectl bootstrap deployments install with.
 render tilt -f "${controller}/hack/tilt-controller-chart-values.yaml"
-render nkectl-bootstrap -f "${controller}/../cli/internal/bootstrap/controllerdeploy/manifests/controller-values.yaml"
+render nvkectl-bootstrap -f "${controller}/../cli/internal/bootstrap/controllerdeploy/manifests/controller-values.yaml"
 
 printf '  rendered %s value sets\n' "$(find "${renders}" -name '*.yaml' | wc -l | tr -d ' ')"
 cd "${controller}"

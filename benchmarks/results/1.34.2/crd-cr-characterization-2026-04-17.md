@@ -4,7 +4,7 @@ scenario: ../../workloads/apiserver/crd-cr-characterization/scenario.yaml
 workload: apiserver
 k8s_version: 1.34.2
 date: 2026-04-17
-authors: [NVIDIA NKE Scale Team]
+authors: [NVIDIA NVKE Scale Team]
 ---
 
 # CRD / CR API-server characterization

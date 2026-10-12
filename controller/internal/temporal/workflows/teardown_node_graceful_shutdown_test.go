@@ -17,7 +17,7 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
+	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
 func TestWaitForControlPlaneGracefulShutdown_UnsupportedRPC_Skips(t *testing.T) {

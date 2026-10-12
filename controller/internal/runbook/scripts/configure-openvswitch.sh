@@ -12,7 +12,7 @@ IFUPDOWN_DIR="${IFUPDOWN_DIR:-/etc/network/interfaces.d}"
 # SYS_CLASS_NET_DIR is overridable for tests; production always reads /sys.
 SYS_CLASS_NET_DIR="${SYS_CLASS_NET_DIR:-/sys/class/net}"
 UPLINK_MTU="${UPLINK_MTU:-}"
-# UPLINK_BRIDGE_NAME pins the OVS bridge name. The NKE controller leaves this unset; the
+# UPLINK_BRIDGE_NAME pins the OVS bridge name. The NVKE controller leaves this unset; the
 # default br<kernel-iface> derivation below matches ovn-kubernetes's
 # strip-br convention. Set this only to override the derivation.
 UPLINK_BRIDGE_NAME="${UPLINK_BRIDGE_NAME:-}"
@@ -634,7 +634,7 @@ configure_openvswitch() {
   fi
 
   # API validation already catches these from controller-driven runs; the checks
-  # below are defense-in-depth for direct nkecli / manual invocation. They
+  # below are defense-in-depth for direct nvkectl / manual invocation. They
   # apply regardless of backend so bad input fails fast.
   if [ -n "${UPLINK_ADDRESS:-}" ]; then
     if [ -z "${UPLINK_PREFIX:-}" ]; then

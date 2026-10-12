@@ -26,7 +26,7 @@
 set -euo pipefail
 
 ORG="${ORG:-dsx-ai-factory}"
-PACKAGES="${PACKAGES:-nke/os-image-fde nke/os-image-non-fde}"
+PACKAGES="${PACKAGES:-nvke/os-image-fde nvke/os-image-non-fde}"
 KEEP_DAYS="${KEEP_DAYS:-7}"
 KEEP_MIN="${KEEP_MIN:-8}"
 DELETE=0

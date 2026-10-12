@@ -4,7 +4,7 @@
 # Helm 4 support requires Tilt 0.36 or newer.
 version_settings(constraint=">=0.36.0")
 
-dev_name = os.getenv("DEV_NAME", "nke")
+dev_name = os.getenv("DEV_NAME", "nvke")
 context = "kind-" + dev_name + "-management"
 kubeconfig = os.path.abspath(".local/dev/" + dev_name + "/kubeconfig")
 if k8s_context() != context or os.getenv("KUBECONFIG") != kubeconfig:

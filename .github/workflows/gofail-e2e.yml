@@ -50,7 +50,7 @@ jobs:
   gofail:
     name: Gofail E2E (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     strategy:
       fail-fast: false
       matrix:

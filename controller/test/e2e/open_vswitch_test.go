@@ -15,18 +15,18 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
-const openVSwitchMetricName = "nke_controller_open_vswitch_reconciliation_total"
+const openVSwitchMetricName = "nvke_controller_open_vswitch_reconciliation_total"
 
 func validateOpenVSwitchPostCreate(test *tenantTest) {
 	It("configures Open vSwitch through the typed node-agent RPC", func(ctx context.Context) {
 		restConfig, err := kube.RESTConfig(test.mgmt.Kubeconfig, test.mgmt.Context)
 		Expect(err).NotTo(HaveOccurred(), "read management-cluster kubeconfig")
-		metrics, err := kube.SharedServiceForwarder(restConfig, controller.Namespace(), controller.Service(), nkeControllerMetricsPort)
-		Expect(err).NotTo(HaveOccurred(), "build a port-forward to NKE controller metrics")
+		metrics, err := kube.SharedServiceForwarder(restConfig, controller.Namespace(), controller.Service(), nvkeControllerMetricsPort)
+		Expect(err).NotTo(HaveOccurred(), "build a port-forward to NVKE controller metrics")
 		expectedNodes := clusterNodeCount(test.spec)
 
 		// Node readiness above is the behavioral assertion: OVN cannot converge
@@ -106,11 +106,11 @@ func openVSwitchMetricLabel(labels, name string) (string, bool) {
 }
 
 func TestOpenVSwitchPathCounts(t *testing.T) {
-	exposition := `# TYPE nke_controller_open_vswitch_reconciliation_total counter
-nke_controller_open_vswitch_reconciliation_total{node_name="cp-0",path="rpc",result="success",tenant_cluster="e2e-nico-vms"} 2
-nke_controller_open_vswitch_reconciliation_total{node_name="cp-1",path="rpc",result="success",tenant_cluster="e2e-nico-vms"} 1
-nke_controller_open_vswitch_reconciliation_total{node_name="other",path="legacy_runbook",result="success",tenant_cluster="another-cluster"} 7
-nke_controller_open_vswitch_reconciliation_total{node_name="cp-2",path="legacy_runbook",result="failure",tenant_cluster="e2e-nico-vms"} 1
+	exposition := `# TYPE nvke_controller_open_vswitch_reconciliation_total counter
+nvke_controller_open_vswitch_reconciliation_total{node_name="cp-0",path="rpc",result="success",tenant_cluster="e2e-nico-vms"} 2
+nvke_controller_open_vswitch_reconciliation_total{node_name="cp-1",path="rpc",result="success",tenant_cluster="e2e-nico-vms"} 1
+nvke_controller_open_vswitch_reconciliation_total{node_name="other",path="legacy_runbook",result="success",tenant_cluster="another-cluster"} 7
+nvke_controller_open_vswitch_reconciliation_total{node_name="cp-2",path="legacy_runbook",result="failure",tenant_cluster="e2e-nico-vms"} 1
 `
 
 	rpcSuccess, fallback, err := openVSwitchPathCounts(exposition, "e2e-nico-vms")

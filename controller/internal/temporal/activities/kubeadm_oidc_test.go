@@ -14,16 +14,16 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/nkerbac"
-	adapter "github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/controller"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/operations/oidc"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
+	adapter "github.com/dsx-ai-factory/nvke/controller/internal/rollout/adapters/controller"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/operations/oidc"
 )
 
 func TestBootstrapAuthenticationMatchesRollout(t *testing.T) {
@@ -33,11 +33,11 @@ func TestBootstrapAuthenticationMatchesRollout(t *testing.T) {
 		RequiredClaims: map[string]string{"organization": "example"}, CABundle: "example public CA bundle",
 	}
 	a := &Activities{
-		cfg:         config.Config{NkeOIDCAuth: config.NkeOIDCAuth{Enabled: true, IssuerURL: "https://shared.example.com"}},
+		cfg:         config.Config{NvkeOIDCAuth: config.NvkeOIDCAuth{Enabled: true, IssuerURL: "https://shared.example.com"}},
 		trustDomain: "jwt.example.com",
 		k8sClient: fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).WithObjects(&corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Namespace: constants.NamespaceNKESystem, Name: nkerbac.ConfigMapName},
-			Data:       map[string]string{nkerbac.ConfigMapKey: "kind: ClusterRoleBinding\nsubjects:\n  - {kind: User, name: spiffe://jwt.example.com/capi}\n"},
+			ObjectMeta: metav1.ObjectMeta{Namespace: constants.NamespaceNVKESystem, Name: nvkerbac.ConfigMapName},
+			Data:       map[string]string{nvkerbac.ConfigMapKey: "kind: ClusterRoleBinding\nsubjects:\n  - {kind: User, name: spiffe://jwt.example.com/capi}\n"},
 		}).Build(),
 	}
 	pinned := db.ClusterOIDCProvidersFromConfig([]controllerconfig.OIDCProvider{provider})
@@ -74,16 +74,16 @@ func TestBootstrapAuthenticationMatchesRollout(t *testing.T) {
 			file, err := kubeadmconfig.GenerateAPIServerAuthenticationConfig(cfg, tt.cluster.KubernetesVersion)
 			require.NoError(t, err)
 			op := oidc.NewEnableOIDCOperation(
-				oidc.WithOIDCConfig(&a.cfg.NkeOIDCAuth),
+				oidc.WithOIDCConfig(&a.cfg.NvkeOIDCAuth),
 				oidc.WithClient(a.k8sClient),
 				oidc.WithTrustDomain(a.trustDomain),
 			)
 			payload, err := op.BuildApplyToNodePayload(context.Background(), adapter.NewCluster(tt.cluster, nil, nil, "50051"))
 			require.NoError(t, err)
 			var artifact struct {
-				Files    []*nkeproto.File `json:"files"`
+				Files    []*nvkeproto.File `json:"files"`
 				Previous *struct {
-					Files []*nkeproto.File `json:"files"`
+					Files []*nvkeproto.File `json:"files"`
 				} `json:"previous"`
 			}
 			require.NoError(t, json.Unmarshal(payload, &artifact))

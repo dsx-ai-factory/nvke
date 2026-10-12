@@ -7,7 +7,7 @@ name: nke-controller
 # The service it deploys is still the cloud-workflow-engine binary; nameOverride
 # in values.yaml pins the rendered resource names and labels to that older name
 # so the rename is an artifact-location change only.
-description: A Helm chart to deploy the NKE controller service
+description: A Helm chart to deploy the NVKE controller service
 
 # A chart can be either an 'application' or a 'library' chart.
 #

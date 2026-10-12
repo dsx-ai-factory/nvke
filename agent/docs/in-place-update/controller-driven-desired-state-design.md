@@ -2,7 +2,7 @@
 
 > Status: selected design draft
 >
-> Tracks: [dsx-ai-factory/nke#205](https://github.com/dsx-ai-factory/nke/issues/205)
+> Tracks: [dsx-ai-factory/nvke#205](https://github.com/dsx-ai-factory/nvke/issues/205)
 >
 > This is the selected controller-driven approach. The earlier
 > [cluster-lock rollout design](in-place-rollout-design.md) is retained for
@@ -15,10 +15,10 @@ OS image that contains the desired agent version. Managing the bare-metal node
 lifecycle is difficult and error-prone. This makes an agent upgrade depend on a
 node rolling update, even when only the agent needs to change.
 
-NKE records each node's observed agent version but does not maintain a desired
-version. In-place agent updates let NKE change that version without replacing
+NVKE records each node's observed agent version but does not maintain a desired
+version. In-place agent updates let NVKE change that version without replacing
 the node. New nodes still start with the agent baked into the OS image. If that
-version differs from the desired version, NKE installs the desired version
+version differs from the desired version, NVKE installs the desired version
 before preflight and kubeadm.
 
 The earlier cluster-lock proposal adds desired state but blocks unrelated
@@ -102,7 +102,7 @@ version after creation. It uses the same `nodeAgentConfig` shape as
   automatically. `GetCluster` reports the current failure while retries continue.
   Operators do not need to resubmit the desired version to trigger retries.
 
-### NKE controller configuration
+### NVKE controller configuration
 
 | Setting | Required | Values | Purpose |
 |---|---|---|---|
@@ -147,7 +147,7 @@ If operators opt in to set `controlPlaneConfig.nodeAgentConfig.version` to a
 non-empty valid version, they must keep the OS image's agent version equal to
 the desired version during rolling node updates. Before a rolling update, operators must update the image or the desired
 version so that both match. A newer OS image does not change the desired version
-automatically. If the versions differ at boot, NKE installs the desired version
+automatically. If the versions differ at boot, NVKE installs the desired version
 first, including a downgrade when necessary.
 
 ### Provisioning and join sequence
@@ -208,7 +208,7 @@ After join, the control-plane controller compares the desired version in
 change events and periodic resynchronization trigger reconciliation using
 desired versions, observations, lifecycle and health conditions, and active operations.
 
-Without a desired version, NKE only observes. A node with conflicting work is
+Without a desired version, NVKE only observes. A node with conflicting work is
 deferred. For an eligible joined node with version drift, the controller records
 the active upgrade and starts or resumes `EnsureNodeAgentVersion` directly. It persists upgrade
 state and polls status on later reconciliations. The control-plane controller
@@ -303,7 +303,7 @@ StartNodeAgentUpgrade(target_version, method)
 GetNodeAgentUpgradeStatus()
 ```
 
-`method` is `APT` or `BUNDLE` and is supplied only by NKE controller
+`method` is `APT` or `BUNDLE` and is supplied only by NVKE controller
 configuration. The RPCs accept no package name, URL, path, install arguments,
 or command. For older agents that do not expose these RPCs, the Day 1
 compatibility contract allows the controller to use the existing shell-script
@@ -320,7 +320,7 @@ depending on the gRPC server process.
 
 ## Day 1 controller-agent compatibility contract
 
-Today the NKE controller is usually newer than some agents it manages. During
+Today the NVKE controller is usually newer than some agents it manages. During
 rollout, different nodes expose different capabilities, so compatibility is a
 responsibility of every controller caller of the agent API.
 

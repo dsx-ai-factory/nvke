@@ -16,7 +16,7 @@ difference is what the tests run against.
 | | The e2e CI lanes | Qualification |
 |---|---|---|
 | Machines | none — containers or VMs on the runner | bare metal from an infrastructure provider |
-| Site controller | Tilt installs the stack into a Kind cluster | `nkectl bootstrap site`, then the NKE stack from the SBOM |
+| Site controller | Tilt installs the stack into a Kind cluster | `nvkectl bootstrap site`, then the NVKE stack from the SBOM |
 | Backends | `capd`, `nico-containers`, `nico-vms` | `nico-forge` |
 | What it proves | the code is correct | the code is correct **on the path a customer takes** |
 | Cost | minutes, free | around 80 minutes, real hardware |
@@ -46,8 +46,8 @@ Four steps, each built on the one before:
 
 1. **Provision** a bare machine from Forge — iPXE boot, the OS image under
    qualification written to disk, reachable over the site's jump host.
-2. **Bootstrap** a site controller on it: stage `nkectl`, generate a site spec,
-   run `nkectl bootstrap site`, install the NKE stack, and confirm the engine
+2. **Bootstrap** a site controller on it: stage `nvkectl`, generate a site spec,
+   run `nvkectl bootstrap site`, install the NVKE stack, and confirm the engine
    answers at the expected version.
 3. **Create a tenant cluster** through that engine's own API — not through
    Forge directly — so the product's front door is part of what is tested.
@@ -83,8 +83,8 @@ group, so it does not wait behind a real run, and its jobs are named
 | Stage | Does everything above, plus | Roughly |
 |---|---|---|
 | `provision` | a Forge node, reachable, then released | 20 min |
-| `bootstrap` | vanilla Kubernetes via `nkectl bootstrap site` | 45 min |
-| `full` | the NKE stack, the engine, and a tenant cluster | 80 min |
+| `bootstrap` | vanilla Kubernetes via `nvkectl bootstrap site` | 45 min |
+| `full` | the NVKE stack, the engine, and a tenant cluster | 80 min |
 
 ## Reading a result
 
@@ -95,7 +95,7 @@ Every run uploads the same artifacts whether it passed or failed:
 | `qualify-e2e.log` | the Ginkgo run |
 | `qualify-e2e.junit.xml` | the same result, machine-readable |
 | `run-inputs.txt` | which versions and settings the run actually resolved, and which were overridden |
-| `nkectl-diagnostics.tar.gz` | what `nkectl` collected on the node — present only when it failed |
+| `nvkectl-diagnostics.tar.gz` | what `nvkectl` collected on the node — present only when it failed |
 | `tbot.log` | the Teleport bot, for when nothing could be reached at all |
 
 A red run is as likely to be the site as the code. [triage.md](triage.md) is how

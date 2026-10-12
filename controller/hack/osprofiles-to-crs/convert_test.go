@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
-	enginev1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
+	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 )
 
 const (
@@ -198,7 +198,7 @@ func TestConvertRejectsBadInput(t *testing.T) {
 		assert.Contains(t, err.Error(), "both metadata.yaml and deprecated.yaml")
 	})
 	t.Run("names that are not Kubernetes object names", func(t *testing.T) {
-		for _, name := range []string{"Nke-Upper", "nke_underscore", "-leading-dash", "trailing.", "double..dot", strings.Repeat("a", 254)} {
+		for _, name := range []string{"Nvke-Upper", "nvke_underscore", "-leading-dash", "trailing.", "double..dot", strings.Repeat("a", 254)} {
 			root := writeTree(t, strings.ReplaceAll(activeMetadata(), activeName, name), "", map[string][2]string{name: {testIPXE, testUser}})
 			_, err := convert(root)
 			require.Error(t, err, name)
@@ -206,7 +206,7 @@ func TestConvertRejectsBadInput(t *testing.T) {
 		}
 	})
 	t.Run("dots in a name are valid", func(t *testing.T) {
-		name := "nke-nico-vms-24.04-amd64-fde"
+		name := "nvke-nico-vms-24.04-amd64-fde"
 		root := writeTree(t, strings.ReplaceAll(activeMetadata(), activeName, name), "", map[string][2]string{name: {testIPXE, testUser}})
 		docs := mustConvert(t, root)
 		assert.Equal(t, name, decodeImage(t, docs[manifestName(name, "MachineImage")]).Name)

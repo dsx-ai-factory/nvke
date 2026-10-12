@@ -74,7 +74,7 @@ jobs:
     # checkout, setup-go, and go-licenses over public modules. It
     # took 47-53s on the 16-CPU pool, so the hosted runner has room.
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     timeout-minutes: 30
     permissions:
       contents: read

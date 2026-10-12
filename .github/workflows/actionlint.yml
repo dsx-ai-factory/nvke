@@ -6,7 +6,7 @@
 # A workflow that fails to parse, or that references a job output or secret that
 # does not exist, produces a run with no jobs and no useful error. Nothing here
 # checked for that. `cluster-api-provider-launchlayer` has run actionlint inside
-# its merge gate for a while; this is the same check inside NKE's merge gate.
+# its merge gate for a while; this is the same check inside NVKE's merge gate.
 #
 # Runs on ubuntu-latest. actionlint is a static binary that reads YAML — it needs
 # no Docker, no private dependency and no NVIDIA runner, so it should not consume
@@ -59,7 +59,7 @@ jobs:
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     timeout-minutes: 10
     permissions:
       contents: read

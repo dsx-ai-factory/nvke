@@ -9,10 +9,10 @@ import (
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/clients/capi"
-	"github.com/dsx-ai-factory/nke/controller/internal/clients/nico"
-	"github.com/dsx-ai-factory/nke/controller/internal/clients/shared"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 // MachineMaterialization builds and creates the provider-specific

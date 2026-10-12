@@ -16,11 +16,11 @@ import (
 	"sigs.k8s.io/cluster-api/util/conditions"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	internalv1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 )
 
-var nkeClusterOwnedConditions = []string{
+var nvkeClusterOwnedConditions = []string{
 	clusterv1.AvailableCondition,
 	internalv1.SyncedCondition,
 	internalv1.ReadyCondition,
@@ -49,7 +49,7 @@ func setClusterStatus(cluster *internalv1.NKECluster, observedCluster *api.Clust
 	}
 }
 
-func setNKEClusterConditions(cluster *internalv1.NKECluster) error {
+func setNVKEClusterConditions(cluster *internalv1.NKECluster) error {
 	// Remove conditions left by earlier development builds.
 	conditions.Delete(cluster, clusterv1.PausedCondition)
 	conditions.Delete(cluster, clusterv1.DeletingCondition)
@@ -112,7 +112,7 @@ func setLifecycleConditions(cluster *internalv1.NKECluster, synced, ready metav1
 	conditions.Set(cluster, metav1.Condition{Type: internalv1.ControlPlaneReadyCondition, Status: ready, Reason: reason, Message: message})
 }
 
-func (r *NKEClusterReconciler) lifecycleError(cluster *internalv1.NKECluster, err error) (ctrl.Result, error) {
+func (r *NVKEClusterReconciler) lifecycleError(cluster *internalv1.NKECluster, err error) (ctrl.Result, error) {
 	if errors.Is(err, errCreateRejected) {
 		setLifecycleConditions(cluster, metav1.ConditionFalse, metav1.ConditionFalse, "CreateRejected", "Cluster creation request was rejected")
 		return ctrl.Result{}, nil

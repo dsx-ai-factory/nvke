@@ -11,9 +11,9 @@ import (
 
 	"github.com/google/uuid"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 )
 
 const (
@@ -146,7 +146,7 @@ func (op *EncryptionOperation) ApplyToNode(ctx context.Context, node rollout.Nod
 func (op *EncryptionOperation) runEncryptionPhase(ctx context.Context, client nodeAgentEncryptionClient, artifact encryptionArtifact, key string) error {
 	switch op.phase {
 	case phaseInitialize:
-		resp, err := client.InitializeKubernetesAPIEncryption(ctx, &nkeproto.InitializeKubernetesAPIEncryptionRequest{
+		resp, err := client.InitializeKubernetesAPIEncryption(ctx, &nvkeproto.InitializeKubernetesAPIEncryptionRequest{
 			EncryptionKey: key, ObjectsToEncrypt: artifact.ObjectsToEncrypt,
 		})
 		if err != nil {
@@ -156,11 +156,11 @@ func (op *EncryptionOperation) runEncryptionPhase(ctx context.Context, client no
 			return fmt.Errorf("initialize kubernetes API encryption: %s", msg)
 		}
 	case phasePromote:
-		if _, err := client.PromoteKubernetesAPIEncryptionProviders(ctx, &nkeproto.PromoteKubernetesAPIEncryptionProvidersRequest{}); err != nil {
+		if _, err := client.PromoteKubernetesAPIEncryptionProviders(ctx, &nvkeproto.PromoteKubernetesAPIEncryptionProvidersRequest{}); err != nil {
 			return fmt.Errorf("promote kubernetes API encryption providers: %w", err)
 		}
 	case phaseRemove:
-		resp, err := client.RemovePlainTextSecondaryEncryptionEntry(ctx, &nkeproto.RemovePlainTextSecondaryEncryptionEntryRequest{})
+		resp, err := client.RemovePlainTextSecondaryEncryptionEntry(ctx, &nvkeproto.RemovePlainTextSecondaryEncryptionEntryRequest{})
 		if err != nil {
 			return fmt.Errorf("remove plain-text identity provider: %w", err)
 		}
@@ -168,25 +168,25 @@ func (op *EncryptionOperation) runEncryptionPhase(ctx context.Context, client no
 			return fmt.Errorf("remove plain-text identity provider: %s", msg)
 		}
 	case phaseAddSecondaryKey:
-		if _, err := client.UpdateEncryptionConfig(ctx, &nkeproto.UpdateEncryptionConfigRequest{
-			Operation: &nkeproto.UpdateEncryptionConfigRequest_AddSecondaryKey{
-				AddSecondaryKey: &nkeproto.AddSecondaryKeyOperation{NewKey: key},
+		if _, err := client.UpdateEncryptionConfig(ctx, &nvkeproto.UpdateEncryptionConfigRequest{
+			Operation: &nvkeproto.UpdateEncryptionConfigRequest_AddSecondaryKey{
+				AddSecondaryKey: &nvkeproto.AddSecondaryKeyOperation{NewKey: key},
 			},
 		}); err != nil {
 			return fmt.Errorf("add secondary encryption key: %w", err)
 		}
 	case phasePromotePrimaryKey:
-		if _, err := client.UpdateEncryptionConfig(ctx, &nkeproto.UpdateEncryptionConfigRequest{
-			Operation: &nkeproto.UpdateEncryptionConfigRequest_PromotePrimaryKey{
-				PromotePrimaryKey: &nkeproto.PromotePrimaryKeyOperation{NewKey: key},
+		if _, err := client.UpdateEncryptionConfig(ctx, &nvkeproto.UpdateEncryptionConfigRequest{
+			Operation: &nvkeproto.UpdateEncryptionConfigRequest_PromotePrimaryKey{
+				PromotePrimaryKey: &nvkeproto.PromotePrimaryKeyOperation{NewKey: key},
 			},
 		}); err != nil {
 			return fmt.Errorf("promote primary encryption key: %w", err)
 		}
 	case phaseRemoveOldEncryptionKey:
-		if _, err := client.UpdateEncryptionConfig(ctx, &nkeproto.UpdateEncryptionConfigRequest{
-			Operation: &nkeproto.UpdateEncryptionConfigRequest_RemoveOldKeys{
-				RemoveOldKeys: &nkeproto.RemoveOldKeysOperation{PrimaryKey: key},
+		if _, err := client.UpdateEncryptionConfig(ctx, &nvkeproto.UpdateEncryptionConfigRequest{
+			Operation: &nvkeproto.UpdateEncryptionConfigRequest_RemoveOldKeys{
+				RemoveOldKeys: &nvkeproto.RemoveOldKeysOperation{PrimaryKey: key},
 			},
 		}); err != nil {
 			return fmt.Errorf("remove old encryption keys: %w", err)

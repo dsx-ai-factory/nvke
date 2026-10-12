@@ -20,7 +20,7 @@ package — drives `kubeadm init` and one worker join over gRPC; upstream Calico
 installs; every node reports `Ready`. That is functional coverage of nke-agent's
 kubeadm RPCs, which nothing else in this repo has.
 
-**Does not prove.** That NKE's own packages work. The Kubernetes stack comes from
+**Does not prove.** That NVKE's own packages work. The Kubernetes stack comes from
 `dl.k8s.io` and GitHub releases, and the CNI from upstream Calico's manifests —
 not from `nke-kubeadm-distro` or `nke-cni-*`. Those live behind a source-IP
 allowlist that CI runners cannot reach. Verifying the shipped artifacts stays
@@ -28,10 +28,10 @@ with the GitLab `cluster-bringup` suite, which can reach them and runs the fulle
 matrix (4 VMs, HA etcd, OVN or Calico).
 
 The distinction matters: a green run here means *the cluster nke-agent builds is
-usable*, not *NKE's packaging is good*.
+usable*, not *NVKE's packaging is good*.
 
 **Not the production CNI path either.** The agent's `InstallCNI` RPC requires an
-NKE-named Debian package registered with dpkg, so this suite applies Calico's
+NVKE-named Debian package registered with dpkg, so this suite applies Calico's
 manifests directly rather than impersonating one.
 
 ## Layout
@@ -83,7 +83,7 @@ run this suite — nico-vms' libvirt backend is Linux-only.
    apply to the current session.
 
 2. **An Ubuntu 24.04 cloud image.** Vanilla noble, BIOS boot. This suite does
-   not use the NKE FDE node image, so there is no UEFI, LUKS or swtpm
+   not use the NVKE FDE node image, so there is no UEFI, LUKS or swtpm
    requirement and no metadata server dependency:
 
    ```bash
@@ -116,7 +116,7 @@ run this suite — nico-vms' libvirt backend is Linux-only.
 
 ```bash
 # Provisioning mode. "community" (the default) fetches upstream Kubernetes and
-# needs no NVIDIA network. "apt" uses the NKE apt repository and only works from
+# needs no NVIDIA network. "apt" uses the NVKE apt repository and only works from
 # an allowlisted host.
 export NKE_BRINGUP_PROVISION_MODE=community
 
@@ -158,7 +158,7 @@ pins. Set both when you are validating a specific apt publish — that is what
 this test is for.
 
 The apt repository coordinates are compiled-in defaults and normally need no
-override: suite `nke-noble` (**not** plain `noble`), component `main`, served
+override: suite `nvke-noble` (**not** plain `noble`), component `main`, served
 from the public upstream mirrors.
 
 `.github/workflows/kubeadm-bringup-e2e.yml` is the canonical worked example of

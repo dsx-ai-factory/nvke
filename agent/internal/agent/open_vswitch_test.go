@@ -18,8 +18,8 @@ import (
 	"google.golang.org/grpc/status"
 	"sigs.k8s.io/yaml"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
 
 type openVSwitchCommandResult struct {
@@ -33,7 +33,7 @@ type openVSwitchTestRunner struct {
 	calls     []string
 }
 
-func (r *openVSwitchTestRunner) Run(name string, args []string, _ *nkeutils.CommandOptions) ([]byte, error) {
+func (r *openVSwitchTestRunner) Run(name string, args []string, _ *nvkeutils.CommandOptions) ([]byte, error) {
 	r.t.Helper()
 	key := strings.Join(append([]string{name}, args...), " ")
 	r.calls = append(r.calls, key)
@@ -45,12 +45,12 @@ func (r *openVSwitchTestRunner) Run(name string, args []string, _ *nkeutils.Comm
 	return responses[0].output, responses[0].err
 }
 
-func (r *openVSwitchTestRunner) RunSplitOutput(name string, args []string, opts *nkeutils.CommandOptions) (nkeutils.CommandOutput, error) {
+func (r *openVSwitchTestRunner) RunSplitOutput(name string, args []string, opts *nvkeutils.CommandOptions) (nvkeutils.CommandOutput, error) {
 	output, err := r.Run(name, args, opts)
-	return nkeutils.CommandOutput{Stdout: output}, err
+	return nvkeutils.CommandOutput{Stdout: output}, err
 }
 
-func (*openVSwitchTestRunner) RunDetached(string, []string, *nkeutils.CommandOptions) error {
+func (*openVSwitchTestRunner) RunDetached(string, []string, *nvkeutils.CommandOptions) error {
 	return errors.New("unexpected detached command")
 }
 

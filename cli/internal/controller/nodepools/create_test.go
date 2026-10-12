@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 // writeSpec writes a spec file named name and returns its path.
@@ -50,7 +50,7 @@ nodeTaints:
 	if !strings.Contains(out, `Node pool "gpu-workers" created`) {
 		t.Errorf("output missing the created line: %q", out)
 	}
-	if !strings.Contains(out, "nkectl get nodepools --cluster") {
+	if !strings.Contains(out, "nvkectl get nodepools --cluster") {
 		t.Errorf("output missing the status hint: %q", out)
 	}
 

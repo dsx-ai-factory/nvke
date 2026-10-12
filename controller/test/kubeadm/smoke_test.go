@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/nicovms"
+	"github.com/dsx-ai-factory/nvke/controller/test/kubeadm/internal/nicovms"
 )
 
 // TestNicoVMSSmoke answers one question on its own: does nico-vms work on this
@@ -24,8 +24,8 @@ import (
 // reach Ready with an address, and proves they can reach each other across the
 // bridge.
 //
-// It installs NOTHING. No kubeadm, no nke-agent, no NKE apt repo — and that is
-// the point. The NKE package repository sits behind a source-IP allowlist that
+// It installs NOTHING. No kubeadm, no nke-agent, no NVKE apt repo — and that is
+// the point. The NVKE package repository sits behind a source-IP allowlist that
 // these runners may not be on, so a test that needed it could not distinguish
 // "nico-vms is broken here" from "we cannot download packages here".
 // TestKubeadmBringup covers the kubeadm layer and does depend on that repo.
@@ -34,7 +34,7 @@ import (
 // are all right), libvirt and QEMU work, the bridge exists and can carry
 // traffic, VMs boot a qcow2, and IP assignment works. It does NOT establish
 // that any of it is fast — no runner here has /dev/kvm, so this is emulated —
-// nor does it exercise the iPXE/UEFI path the NKE FDE images need.
+// nor does it exercise the iPXE/UEFI path the NVKE FDE images need.
 func TestNicoVMSSmoke(t *testing.T) {
 	cfg := loadConfig(t)
 	workDir := resolveWorkDir(t, cfg)
@@ -123,7 +123,7 @@ func TestNicoVMSSmoke(t *testing.T) {
 // smokeCloudConfig is the smallest cloud-config that gets a stock Ubuntu image
 // to a state nico-vms will call Ready: a user with our key, and sshd. No
 // package_update and no packages, so it needs no apt mirror at all — neither
-// NKE's nor Ubuntu's — and cannot be slowed or failed by one.
+// NVKE's nor Ubuntu's — and cannot be slowed or failed by one.
 //
 // Note there is no phone_home stanza. The full bring-up template posts to
 // 169.254.169.254:7777, and setup-ci-host.sh deliberately does not put that
@@ -159,7 +159,7 @@ func generateSSHKey(t *testing.T, workDir string) string {
 	_ = os.Remove(keyPath)
 	_ = os.Remove(keyPath + ".pub")
 	cmd := exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-q",
-		"-C", "nke-nico-vms-smoke", "-f", keyPath)
+		"-C", "nvke-nico-vms-smoke", "-f", keyPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("ssh-keygen: %v\n%s", err, out)
 	}

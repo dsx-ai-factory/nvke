@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 type KubeadmResetInput struct {
@@ -46,7 +46,7 @@ func (a *Activities) kubeadmReset(ctx context.Context, input KubeadmResetInput) 
 		return KubeadmResetResult{}, fmt.Errorf("failed to get node: %w", err)
 	}
 
-	_, err = a.nodeAgentClient.ExecuteKubeadmReset(ctx, node, &nkeproto.KubeadmResetRequest{
+	_, err = a.nodeAgentClient.ExecuteKubeadmReset(ctx, node, &nvkeproto.KubeadmResetRequest{
 		SkipPhases: input.SkipPhases,
 	})
 	if err != nil {

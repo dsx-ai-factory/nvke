@@ -24,17 +24,17 @@ func validateLabelReboot(test *tenantTest) {
 		workerPool := expectWorkerPool(ctx, test)
 
 		By("Waiting for a Ready worker to reboot")
-		worker := expectSucceed(test.nke.WaitForReadyNodeInPool(ctx, workerPool.ID))
+		worker := expectSucceed(test.nvke.WaitForReadyNodeInPool(ctx, workerPool.ID))
 		rebootObservedAfter := worker.Conditions.Rebooting.LastTransitionTime
 
 		By(fmt.Sprintf("Applying %s=%s to worker %s", rebootLabelKey, rebootLabelReason, worker.Name))
 		applyRebootLabel(ctx, test, worker.Name)
 
 		By("Waiting for the controller to observe the reboot")
-		expectSucceed(test.nke.WaitForNodeRebooting(ctx, worker.ID, rebootObservedAfter))
+		expectSucceed(test.nvke.WaitForNodeRebooting(ctx, worker.ID, rebootObservedAfter))
 
 		By("Waiting for reboot to complete (Rebooting=False and KubernetesReady=True)")
-		expectSucceed(test.nke.WaitForNodeRebootComplete(ctx, worker.ID))
+		expectSucceed(test.nvke.WaitForNodeRebootComplete(ctx, worker.ID))
 		validateOVNLifecycleTraffic(ctx, test, "worker reboot", worker.Name)
 	}, Label("lifecycle", "reboot"), NodeTimeout(45*time.Minute))
 }

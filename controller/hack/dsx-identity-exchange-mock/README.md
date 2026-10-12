@@ -117,7 +117,7 @@ backend harness with:
 - an amd64 CAPD runner.
 
 The workflow runs automatically for controller, agent, and Helm chart changes,
-plus changes to its supporting workflow files. It does not run for nkectl or
+plus changes to its supporting workflow files. It does not run for nvkectl or
 other CLI-only changes. It can also be started with `workflow_dispatch` after
 the workflow exists on the default branch.
 

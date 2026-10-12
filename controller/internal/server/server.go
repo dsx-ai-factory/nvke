@@ -19,13 +19,13 @@ import (
 	"go.temporal.io/sdk/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	"github.com/dsx-ai-factory/nke/controller/internal/auth"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/otelx"
-	"github.com/dsx-ai-factory/nke/controller/internal/version"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
+	"github.com/dsx-ai-factory/nvke/controller/internal/version"
 )
 
 const (
@@ -228,7 +228,7 @@ func NewServerImpl(
 		database,
 		nodePoolService,
 		cfg.Teleport,
-		cfg.NkeOIDCAuth.Enabled,
+		cfg.NvkeOIDCAuth.Enabled,
 		cfg.SupportedInfraProviders,
 		cfg.UseControlPlaneControllerForControlPlane(),
 	)

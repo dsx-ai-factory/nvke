@@ -26,25 +26,25 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra/forge"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nkectl"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/tenantauth"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/forge"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvkectl"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/tenantauth"
 )
 
 // clusterLifecycle creates a cluster, reads it back, and deletes it again.
-// *nke.Client satisfies it and is every entry's default; the nkectl entry
+// *nvke.Client satisfies it and is every entry's default; the nvkectl entry
 // substitutes a CLI-backed implementation.
 //
-// It stays narrow because nkectl has no node-level commands: the post-create
-// validations keep using t.nke directly rather than widening this into
+// It stays narrow because nvkectl has no node-level commands: the post-create
+// validations keep using t.nvke directly rather than widening this into
 // something the CLI cannot implement.
 type clusterLifecycle interface {
-	CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.Cluster, error)
+	CreateCluster(ctx context.Context, spec nvke.ClusterSpec) (*api.Cluster, error)
 	GetByName(ctx context.Context, name string) (*api.Cluster, error)
 	WaitForClusterReady(ctx context.Context, id openapi_types.UUID) (*api.Cluster, error)
 	DeleteCluster(ctx context.Context, id openapi_types.UUID) error
@@ -59,23 +59,23 @@ type tenantTest struct {
 	mgmt          managementCluster
 	k8sClient     client.Client
 	tenantClients *kube.TenantClientFactory
-	nke           *nke.Client
-	// lifecycle creates and deletes the cluster. Defaults to nke; the nkectl
+	nvke          *nvke.Client
+	// lifecycle creates and deletes the cluster. Defaults to nke; the nvkectl
 	// entry swaps it so that row drives both ends through the CLI.
 	lifecycle clusterLifecycle
-	// nkectlRunner is set only by the nkectl entry, for the CLI-only
+	// nvkectlRunner is set only by the nvkectl entry, for the CLI-only
 	// validations that follow the create. Nil everywhere else.
-	nkectlRunner *nkectl.Runner
-	timeouts     nke.Options
-	trustDomain  string
-	spec         nke.ClusterSpec
-	cluster      *api.Cluster
+	nvkectlRunner *nvkectl.Runner
+	timeouts      nvke.Options
+	trustDomain   string
+	spec          nvke.ClusterSpec
+	cluster       *api.Cluster
 	// cascadePoolID is set by the node-pool cascade post-create spec and read by
 	// its post-delete counterpart to prove cluster deletion removed the pool.
 	cascadePoolID uuid.UUID
 }
 
-var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
+var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
 	tenantSubtree(configuredManagement),
 	// The pull-request smoke lane uses a separate, minimal topology instead of
 	// filtering the full CAPD row below. The full row needs three control-plane
@@ -85,19 +85,19 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	Entry("CAPD core", Ordered, ContinueOnFailure, Label("core", "core-docker"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
-		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{provisioningOnly: true},
 	}),
 	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path", "kube-vip-route-withdrawal", "cert-renewal"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
+			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
-		options: nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		options: nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		// The last four were nico-vms-only until nico-containers took them, which
 		// left CAPD the one backend in CI not asserting them. They call the controller's
 		// node-pool API and read cluster fields; nothing here is backend-specific.
@@ -110,10 +110,10 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		},
 	}),
 	// The CLI row: the same CAPD lifecycle as the rows above, driven through the
-	// nkectl binary instead of the generated API client. It is the only coverage
+	// nvkectl binary instead of the generated API client. It is the only coverage
 	// of provisioning through the command line, and so the only place
 	// `get kubeconfig` succeeds and a patch lands on a cluster that came up --
-	// hack/ci/nkectl-smoke.sh sets autoProvisionDisabled, so its cluster never
+	// hack/ci/nvkectl-smoke.sh sets autoProvisionDisabled, so its cluster never
 	// provisions and the Secret that command reads never appears.
 	//
 	// One control-plane node, no workers, and provisioningOnly: what this row
@@ -122,25 +122,25 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	// The "capd" label puts it in the full CAPD run on main, scheduled and manual
 	// runs, on the substrate that run already builds. The bounded
 	// pull-request lane selects only "core-docker" and has no room for a second
-	// cluster. "nkectl" selects this row alone.
-	Entry("CAPD via nkectl", Ordered, ContinueOnFailure, Label("capd", "nkectl"), testSpec{
+	// cluster. "nvkectl" selects this row alone.
+	Entry("CAPD via nvkectl", Ordered, ContinueOnFailure, Label("capd", "nvkectl"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
-		options:   nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		createVia: clientNkectl,
+		options:   nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		createVia: clientNvkectl,
 		validate:  validations{provisioningOnly: true},
 	}),
 	// Mirrors the CAPD row above so the node pool lifecycle is covered on the
 	// NICo substrate too; the CLI creates the worker pool this row cares about.
-	Entry("nico-containers via nkectl", Ordered, ContinueOnFailure, Label("nico-containers", "nkectl"), testSpec{
+	Entry("nico-containers via nvkectl", Ordered, ContinueOnFailure, Label("nico-containers", "nvkectl"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
-		options:   nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
-		createVia: clientNkectl,
+		options:   nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
+		createVia: clientNvkectl,
 		validate:  validations{provisioningOnly: true},
 	}),
 	// This row is selected only by the dedicated identity-exchange lane. Keeping
@@ -149,9 +149,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	Entry("CAPD with DSX identity exchange", Ordered, ContinueOnFailure, Label("identity-exchange"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
-		options: nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		options: nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 	}),
 	// Opt-in via the "cp-controller" label: it exercises cluster-level
 	// control-plane-controller provisioning (no control-plane node pool) and its
@@ -159,13 +159,13 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	Entry("CAPD control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("capd", "cp-controller"), testSpec{
 		buildSpec: capdControlPlaneControllerSpec,
 		shape: clusterShape{
-			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
-			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
 		// 15m, matching the nico-containers entry below. The roll waits on a
 		// replacement node reaching KubernetesReady, and the local-entrypoint
 		// CNI-after-init leg straddles 10m.
-		options: nke.Options{Provision: 15 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		options: nvke.Options{Provision: 15 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{
 			controlPlaneController:              true,
 			controlPlaneControllerUpdate:        true,
@@ -176,10 +176,10 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	Entry("CAPD control-plane controller without kube-vip", Ordered, ContinueOnFailure, Label("capd", "cp-controller", "no-vip"), testSpec{
 		buildSpec: capdControlPlaneControllerSpec,
 		shape: clusterShape{
-			controlPlaneConfig:     &nke.ControlPlaneConfigSpec{DesiredCount: 1},
+			controlPlaneConfig:     &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
 			withoutControlPlaneVIP: true,
 		},
-		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{provisioningOnly: true, controlPlaneController: true, noVIPControllerScale: true, noVIPUpgrade: true},
 	}),
 	// A worker-only advertised domain leaves the controller with no eligible
@@ -189,10 +189,10 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		Label("capd", "cp-controller", "no-eligible-failure-domain"), testSpec{
 			buildSpec: capdNoEligibleControlPlaneDomainSpec,
 			shape: clusterShape{
-				controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
-				workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+				controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
+				workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 			},
-			options:  nke.Options{Provision: 15 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+			options:  nvke.Options{Provision: 15 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 			validate: validations{provisioningOnly: true, controlPlaneController: true},
 		}),
 	// The same for nico-containers, so the cp-controller path is not CAPD-only.
@@ -204,10 +204,10 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	Entry("nico-containers control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("nico-containers", "cp-controller"), testSpec{
 		buildSpec: nicoControlPlaneControllerSpec,
 		shape: clusterShape{
-			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 3},
-			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
-		options: nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
+		options: nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{
 			controlPlaneController:              true,
 			controlPlaneControllerUpdate:        true,
@@ -219,7 +219,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			kubernetesVersion: "1.34.2",
-			controlPlaneConfig: &nke.ControlPlaneConfigSpec{
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{
 				DesiredCount:         1,
 				InstanceTypeID:       nicoVMSLargeInstanceID,
 				OSProfile:            nicoVMSOSProfile,
@@ -228,11 +228,11 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 				SSHKeyGroupIDs:       []string{nicoVMSSSHKeyGroupID},
 				SystemReservedMemory: "1Gi",
 			},
-			workerPools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			workerPools: []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		// A healthy create takes about 8.5 minutes, and nothing below gives up on
 		// its own, so this wait is what a broken node costs.
-		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		options:  nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{controlPlaneController: true, controlPlaneControllerUpdate: true, controlPlaneControllerRollingUpdate: true},
 	}),
 	// NICo gets the same bounded pull-request contract as CAPD. Keep this entry
@@ -241,19 +241,19 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	Entry("nico-containers core", Ordered, ContinueOnFailure, Label("core", "core-nico"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
-		options:  nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
+		options:  nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{provisioningOnly: true},
 	}),
 	Entry("nico-containers", Ordered, ContinueOnFailure, Label("nico-containers", "happy-path"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
+			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
-		options: nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
+		options: nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		// Everything CAPD asserts on this shape, plus the node-pool operations
 		// nico-vms carries. None of these reaches the infrastructure API: they
 		// call the controller's REST surface or the tenant cluster, and both backends use
@@ -272,26 +272,26 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	Entry("nico-containers with etcd encryption", Ordered, ContinueOnFailure, Label("nico-containers", "extended", "encryption"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
 			etcdEncrypted:     true,
 		},
-		options:  nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
+		options:  nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{etcdEncryption: true},
 	}),
 	Entry("nico-containers brownfield etcd encryption", Ordered, ContinueOnFailure, Label("nico-containers", "extended", "encryption", "etcd-encryption-enable"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
 		},
-		options:  nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
+		options:  nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{brownfieldEtcdEncryption: true},
 	}),
 	Entry("nico-containers brownfield OIDC enablement", Ordered, ContinueOnFailure, Label("nico-containers", "extended", "oidc", "oidc-enable"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
 		},
-		options:  nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
+		options:  nvke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{brownfieldOIDC: true},
 	}),
 	Entry("nico-vms", Ordered, ContinueOnFailure, Label("nico-vms", "happy-path"), testSpec{
@@ -301,20 +301,20 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			// Calico, so no openVSwitch assertion here; the "nico-vms ovn" entry
 			// below carries it. Large instances kept: cpu2-mem2gb was sized
 			// against ovnkube-node.
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
+			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
-		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		options:  nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{scale: true, reboot: true},
 	}),
 	Entry("nico-vms k8s upgrade", Ordered, ContinueOnFailure, Label("nico-vms", "happy-path", "upgrade"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			kubernetesVersion: upgradeStartingKubernetesVersion,
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
+			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
-		options:  nke.Options{Provision: 30 * time.Minute, Upgrade: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		options:  nvke.Options{Provision: 30 * time.Minute, Upgrade: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{upgrade: true},
 	}),
 	// OVN-Kubernetes is the default CNI for nico-vms entries, so most entries
@@ -329,70 +329,70 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			kubernetesVersion: "1.34.2",
 			cniPlugin:         CNIPluginOVN,
 			// Large instances: cpu2-mem2gb was sized against ovnkube-node.
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
-		options:  nke.Options{Provision: 45 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		options:  nvke.Options{Provision: 45 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{openVSwitch: true, ovnNetworking: true},
 	}),
 	Entry("CAPD with etcd encryption", Ordered, ContinueOnFailure, Label("capd", "extended", "encryption"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
 			etcdEncrypted:     true,
 		},
-		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{etcdEncryption: true},
 	}),
 	Entry("CAPD brownfield etcd encryption", Ordered, ContinueOnFailure, Label("capd", "extended", "encryption", "etcd-encryption-enable"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
 		},
-		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{brownfieldEtcdEncryption: true},
 	}),
 	Entry("CAPD brownfield OIDC enablement", Ordered, ContinueOnFailure, Label("capd", "extended", "oidc", "oidc-enable"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3}},
 		},
-		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{brownfieldOIDC: true},
 	}),
 	Entry("nico-vms OS profiles", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "os-profiles"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			cniPlugin:         CNIPluginCalico, // Simply to make this test run faster (520s vs 1011s).
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-			workerPools: []nke.NodePoolSpec{
-				// Old agent image pins the agent version to 0.1.22, which is before the new nkeproto.CheckCloudInitStatus was introduced in version 0.1.24.
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
+			workerPools: []nvke.NodePoolSpec{
+				// Old agent image pins the agent version to 0.1.22, which is before the new nvkeproto.CheckCloudInitStatus was introduced in version 0.1.24.
 				// So this osProfile test exists to prove that the controller can still provision nodePools that may still be pointed at older agent versions.
-				{Name: "worker-old-agent", NodeNamePrefix: "wold", DesiredNodeCount: 1, OSProfile: "nke-nico-vms-24.04-amd64-fde-old-agent"},
+				{Name: "worker-old-agent", NodeNamePrefix: "wold", DesiredNodeCount: 1, OSProfile: "nvke-nico-vms-24.04-amd64-fde-old-agent"},
 				// nicoVMSNodePoolSpec defaults kube/system reserved memory to 250Mi so the
 				// default nico-vms instance type has enough allocatable memory.
 				{Name: "worker-260625-24.04", NodeNamePrefix: "w260625", DesiredNodeCount: 1, OSProfile: "nke-260625-24.04-x86-fde"},
 				{Name: "worker-260602-24.04", NodeNamePrefix: "w260602", DesiredNodeCount: 1, OSProfile: "nke-260602-24.04-x86-fde"},
 			},
 		},
-		options: nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		options: nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 	}),
 	Entry("nico-vms multi pod CIDRs", Ordered, ContinueOnFailure, Label("nico-vms", "multi-pod-cidrs"), testSpec{
 		buildSpec: nicoVMSMultiPodCIDRSpec,
 		shape: clusterShape{
 			kubernetesVersion: "1.34.2",
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
+			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
-		options: nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 30 * time.Second},
+		options: nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 30 * time.Second},
 	}),
 	Entry("nico-vms node pool lifecycle", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "nodepool"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
-		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		options:  nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{clusterConfig: true, nodeReplacement: true, manualScaleDown: true, nodePoolLifecycle: true, nodePoolCascade: true},
 	}),
 	// The only entry that runs on hardware, and so the only one needing
@@ -432,12 +432,12 @@ func nicoForgeTenant() testSpec {
 			// default, and the controller chart does not set the variable, so
 			// that default is what a site controller runs with.
 			//
-			// Not nkectl, despite it forcing the same flag on: that one
+			// Not nvkectl, despite it forcing the same flag on: that one
 			// reaches only the ephemeral Kind bootstrap controller, which builds the
 			// site cluster. The tenant is created against the site's controller,
 			// which controllerdeploy never touches.
-			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
-			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
+			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
 		// Generous next to the simulator lanes: these timeouts cover a bare
 		// machine booting an OS image over the network and installing
@@ -457,7 +457,7 @@ func nicoForgeTenant() testSpec {
 		// machines are. Run 36051890151 failed the delete at 1800.306s
 		// against the 30 minutes this used to be, while the instances were
 		// still reporting Terminating.
-		options: nke.Options{Provision: 45 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
+		options: nvke.Options{Provision: 45 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
 		// Provisioning only, because that is the path this lane exercises:
 		// a tenant is created on real hardware, its nodes reach Ready, and it
 		// is deleted. The rest assert against a running cluster and belong to
@@ -490,11 +490,11 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 
 		It("creates the cluster", func(ctx context.Context) {
 			test = expectSucceed(setupTenantTest(ctx, expectSucceed(resolve()), spec.options))
-			if spec.createVia == clientNkectl {
+			if spec.createVia == clientNvkectl {
 				// Torn down in AfterAll. A DeferCleanup registered here would run
 				// when this spec ends, taking the port-forward away from every
 				// spec that follows.
-				test.useNkectl(ctx, spec.options)
+				test.useNvkectl(ctx, spec.options)
 			}
 			if spec.validate.brownfieldOIDC {
 				// A cluster on an OIDC-enabled site is always born OIDC-on, but
@@ -504,7 +504,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				// created OIDC-off; validateBrownfieldOIDC flips it on and enables.
 				// Restored in AfterAll.
 				By("Creating the brownfield cluster with the controller OIDC create-default turned off")
-				Expect(nke.SetOIDCEnabled(ctx, test.k8sClient, false)).To(Succeed())
+				Expect(nvke.SetOIDCEnabled(ctx, test.k8sClient, false)).To(Succeed())
 			}
 			test.initCluster(ctx, spec)
 		}, Label("lifecycle"), NodeTimeout(2*time.Hour))
@@ -595,9 +595,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			if spec.validate.nodePoolCascade {
 				validateNodePoolCascadePostCreate(&test)
 			}
-			if spec.createVia == clientNkectl {
-				validateNkectlPostCreate(&test)
-				validateNkectlNodePoolLifecycle(&test)
+			if spec.createVia == clientNvkectl {
+				validateNvkectlPostCreate(&test)
+				validateNvkectlNodePoolLifecycle(&test)
 			}
 		})
 
@@ -636,7 +636,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 		})
 
 		AfterAll(func(ctx context.Context) {
-			// Named once so the delete below and the nkectl sweep cannot disagree
+			// Named once so the delete below and the nvkectl sweep cannot disagree
 			// about when the cluster should outlive the run.
 			keepCluster := test.cfg.Lifecycle.ReuseCluster != "" ||
 				test.cfg.Lifecycle.SkipDelete ||
@@ -646,19 +646,19 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			// panicking, and a delete that does not complete would otherwise leave
 			// the forward and its credential directory behind and skip the sweep.
 			// Ordered so the sweep, which needs the forward, runs first.
-			defer test.closeNkectl()
+			defer test.closeNvkectl()
 			defer func() {
 				if !keepCluster {
-					// Catches what the switch below cannot see: a cluster nkectl
+					// Catches what the switch below cannot see: a cluster nvkectl
 					// created that never reached test.cluster.
-					test.cleanupNkectlCreated(ctx)
+					test.cleanupNvkectlCreated(ctx)
 				}
 			}()
 
 			if spec.validate.brownfieldOIDC && test.k8sClient != nil {
 				// Restore the controller OIDC create-default the create spec turned off, so
 				// it does not leak to other table entries (the suite runs serially).
-				Expect(nke.SetOIDCEnabled(ctx, test.k8sClient, true)).To(Succeed())
+				Expect(nvke.SetOIDCEnabled(ctx, test.k8sClient, true)).To(Succeed())
 			}
 			// Use AfterAll so the cluster is removed even if a spec before the
 			// delete spec fails (or the delete spec is skipped). It is a no-op
@@ -683,7 +683,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			}
 			// Sized to what this node can actually contain rather than to the
 			// suite: WaitForClusterDeleted is bounded by the entry's
-			// nke.Options.Delete, which is 5 or 10 minutes everywhere above,
+			// nvke.Options.Delete, which is 5 or 10 minutes everywhere above,
 			// so fifteen leaves half again over the largest of them.
 			//
 			// It was an hour, and that is the number that matters on the
@@ -707,14 +707,14 @@ func withNicoVMSOSProfileEntries(args ...any) []any {
 
 // specBuilder builds the create spec for the backend under test from cfg and a
 // base cluster name.
-type specBuilder func(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec
+type specBuilder func(cfg config.Config, name string, shape clusterShape) nvke.ClusterSpec
 
 // testSpec is one DescribeTableSubtree entry: how to build the cluster spec
 // plus the validations and cluster-operation options for that variant.
 type testSpec struct {
 	buildSpec specBuilder
 	shape     clusterShape
-	options   nke.Options
+	options   nvke.Options
 	validate  validations
 	// createVia selects the client that drives this entry's cluster lifecycle.
 	createVia clusterClient
@@ -726,9 +726,9 @@ type testSpec struct {
 type clusterClient int
 
 const (
-	// clientNkectl shells out to the nkectl binary instead of using the REST
+	// clientNvkectl shells out to the nvkectl binary instead of using the REST
 	// client.
-	clientNkectl clusterClient = iota + 1
+	clientNvkectl clusterClient = iota + 1
 )
 
 type clusterShape struct {
@@ -737,8 +737,8 @@ type clusterShape struct {
 	// controlPlanePools describes the control plane as one node pool. The spec
 	// builders send it as a cluster-level controlPlaneConfig (see
 	// applyControlPlaneMode).
-	controlPlanePools []nke.NodePoolSpec
-	workerPools       []nke.NodePoolSpec
+	controlPlanePools []nvke.NodePoolSpec
+	workerPools       []nvke.NodePoolSpec
 	etcdEncrypted     bool
 	controlPlaneVIP   string
 	// withoutControlPlaneVIP suppresses automatic VIP allocation.
@@ -749,7 +749,7 @@ type clusterShape struct {
 	// controller-only fields, and the builders leave a spec that already carries
 	// a config unconverted. nicoForgeSpec uses it too, because a site controller runs
 	// with the flag on by default and rejects control-plane pools outright.
-	controlPlaneConfig *nke.ControlPlaneConfigSpec
+	controlPlaneConfig *nvke.ControlPlaneConfigSpec
 }
 
 type validations struct {
@@ -860,9 +860,9 @@ func configuredManagement() (managementCluster, error) {
 }
 
 // setupTenantTest builds the per-backend wiring (clients, trust domain, logger)
-// and preflights NKE reachability over the port-forward. It does not create a
+// and preflights NVKE reachability over the port-forward. It does not create a
 // cluster.
-func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nke.Options) (tenantTest, error) {
+func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nvke.Options) (tenantTest, error) {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return tenantTest{}, fmt.Errorf("loading e2e config: %w", err)
@@ -878,7 +878,7 @@ func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nke.O
 		return tenantTest{}, fmt.Errorf("building management cluster client: %w", err)
 	}
 
-	controllerClient, err := nke.NewClient(ctx, restConfig, timeouts)
+	controllerClient, err := nvke.NewClient(ctx, restConfig, timeouts)
 	if err != nil {
 		return tenantTest{}, fmt.Errorf("building controller API client: %w", err)
 	}
@@ -916,7 +916,7 @@ func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nke.O
 	defer cancel()
 	resp, err := controllerClient.API().GetClusterWithResponse(pingCtx, uuid.New())
 	if err != nil {
-		return tenantTest{}, fmt.Errorf("reaching NKE over the port-forward: %w", err)
+		return tenantTest{}, fmt.Errorf("reaching NVKE over the port-forward: %w", err)
 	}
 	if resp.StatusCode() != 404 {
 		return tenantTest{}, fmt.Errorf("controller preflight: want 404 for a random cluster UUID, got %s: %s", resp.Status(), resp.Body)
@@ -928,7 +928,7 @@ func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nke.O
 		mgmt:          mgmt,
 		k8sClient:     k8sClient,
 		tenantClients: tenantClients,
-		nke:           controllerClient,
+		nvke:          controllerClient,
 		lifecycle:     controllerClient,
 		timeouts:      timeouts,
 		trustDomain:   trustDomain,
@@ -942,7 +942,7 @@ func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 	GinkgoHelper()
 	t.spec = b.buildSpec(t.cfg, clusterNamePrefix, b.shape)
 	Expect(validateCAPDFailureDomainReuse(t.spec, b.validate.controlPlaneController, t.cfg.Lifecycle.ReuseCluster)).To(Succeed())
-	if b.validate.controlPlaneController && t.spec.Backend == nke.BackendCAPD {
+	if b.validate.controlPlaneController && t.spec.Backend == nvke.BackendCAPD {
 		Expect(t.spec.CAPDFailureDomains).NotTo(BeEmpty(), "CAPD control-plane-controller rows must advertise failure domains")
 	}
 	t.spec.Name = fmt.Sprintf("%s-%s", t.spec.Name, t.spec.Backend) // CreateCluster appends a timestamp
@@ -1010,7 +1010,7 @@ func (t *tenantTest) collectDiagnostics(ctx context.Context, clusterID openapi_t
 	// assertion, which a provision timeout skips, so run 37394133486 produced
 	// a 1h51m log naming no node and the instance had to be found by querying
 	// Forge by hand.
-	if nodes, err := t.nke.ListClusterNodes(ctx, clusterID); err != nil {
+	if nodes, err := t.nvke.ListClusterNodes(ctx, clusterID); err != nil {
 		t.log.Info("could not list the cluster's nodes", "error", err.Error())
 	} else {
 		for _, node := range nodes {
@@ -1022,7 +1022,7 @@ func (t *tenantTest) collectDiagnostics(ctx context.Context, clusterID openapi_t
 		}
 	}
 
-	report := t.nke.CollectNodeDiagnostics(ctx, clusterID)
+	report := t.nvke.CollectNodeDiagnostics(ctx, clusterID)
 	if err := os.WriteFile(tenantDiagnostics, report, 0o600); err != nil {
 		t.log.Error(err, "could not write the tenant diagnostics", "path", tenantDiagnostics)
 		return
@@ -1070,15 +1070,15 @@ const (
 	nicoVMSMultiPodServiceCIDR = "10.130.0.0/16"
 )
 
-func preferredControlPlaneVIP(backend nke.Backend) string {
+func preferredControlPlaneVIP(backend nvke.Backend) string {
 	switch backend {
-	case nke.BackendCAPD:
+	case nvke.BackendCAPD:
 		return capdControlPlaneVIP
-	case nke.BackendNicoContainers:
+	case nvke.BackendNicoContainers:
 		return nicoControlPlaneVIP
-	case nke.BackendNicoVMS:
+	case nvke.BackendNicoVMS:
 		return nicoVMSControlPlaneVIP
-	case nke.BackendNicoForge:
+	case nvke.BackendNicoForge:
 		// None. A real site owns its address space, so there is no private
 		// range to pick an unused address out of, and the controller reads an empty VIP
 		// as "do not configure kube-vip". initCluster skips the search when
@@ -1090,7 +1090,7 @@ func preferredControlPlaneVIP(backend nke.Backend) string {
 }
 
 func (t *tenantTest) availableControlPlaneVIP(ctx context.Context, preferred string) (string, error) {
-	clusters, err := t.nke.ListClusters(ctx)
+	clusters, err := t.nvke.ListClusters(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -1125,7 +1125,7 @@ func (t *tenantTest) availableControlPlaneVIP(ctx context.Context, preferred str
 // applyControlPlaneMode sends spec's control-plane pool as the equivalent
 // cluster-level controlPlaneConfig, the only shape the controller provisions. A spec that
 // already carries a controlPlaneConfig is left as it is.
-func applyControlPlaneMode(spec nke.ClusterSpec) nke.ClusterSpec {
+func applyControlPlaneMode(spec nvke.ClusterSpec) nvke.ClusterSpec {
 	if spec.ControlPlane.Config != nil || len(spec.ControlPlane.Pools) == 0 {
 		return spec
 	}
@@ -1138,12 +1138,12 @@ func applyControlPlaneMode(spec nke.ClusterSpec) nke.ClusterSpec {
 // defaulted node pool into the cluster-level config for the same nodes. The
 // pool's kubeReservedMemory is not carried: the create API has no such field,
 // so the controller applies its default (see nicoVMSSpec).
-func controlPlaneConfigFromPools(pools []nke.NodePoolSpec) *nke.ControlPlaneConfigSpec {
+func controlPlaneConfigFromPools(pools []nvke.NodePoolSpec) *nvke.ControlPlaneConfigSpec {
 	if len(pools) != 1 {
 		panic(fmt.Sprintf("a cluster-level control plane has one shape; got %d control-plane pools", len(pools)))
 	}
 	pool := pools[0]
-	return &nke.ControlPlaneConfigSpec{
+	return &nvke.ControlPlaneConfigSpec{
 		DesiredCount:         pool.DesiredNodeCount,
 		InstanceTypeID:       pool.InstanceTypeID,
 		OSProfile:            pool.OSProfile,
@@ -1156,15 +1156,15 @@ func controlPlaneConfigFromPools(pools []nke.NodePoolSpec) *nke.ControlPlaneConf
 }
 
 // capdSpec builds a CAPD topology with the requested cluster shape.
-func capdSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
-	return applyControlPlaneMode(nke.ClusterSpec{
+func capdSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSpec {
+	return applyControlPlaneMode(nvke.ClusterSpec{
 		Name:              name,
-		Backend:           nke.BackendCAPD,
+		Backend:           nvke.BackendCAPD,
 		KubernetesVersion: cmp.Or(shape.kubernetesVersion, defaultKubernetesVersion),
 		CNIPlugin:         cmp.Or(shape.cniPlugin, CNIPluginOVN),
 		CAPDNodeImage:     cfg.Cluster.CAPDNodeImage,
 		SiteID:            uuid.Nil.String(),
-		ControlPlane: nke.ControlPlane{
+		ControlPlane: nvke.ControlPlane{
 			Pools:           capdNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp"),
 			EtcdEncrypted:   shape.etcdEncrypted,
 			ControlPlaneVIP: shape.controlPlaneVIP,
@@ -1178,13 +1178,13 @@ func capdSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpe
 // provisioned by the cluster-level control-plane controller: no control-plane
 // node pool, a cluster-level control plane config instead. Requires CWE deployed
 // with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true.
-func capdControlPlaneControllerSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
+func capdControlPlaneControllerSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSpec {
 	spec := capdSpec(cfg, name, shape)
 	spec.ControlPlane.Pools = nil
 	spec.ControlPlane.Config = shape.controlPlaneConfig
 	// CAPD copies these simulated domains to CAPI Cluster status. The third
 	// domain proves that controlPlane: false is excluded from placement.
-	spec.CAPDFailureDomains = []nke.CAPDFailureDomain{
+	spec.CAPDFailureDomains = []nvke.CAPDFailureDomain{
 		{Name: "fd-a", ControlPlane: true},
 		{Name: "fd-b", ControlPlane: true},
 		{Name: "fd-worker", ControlPlane: false},
@@ -1194,16 +1194,16 @@ func capdControlPlaneControllerSpec(cfg config.Config, name string, shape cluste
 
 // capdNoEligibleControlPlaneDomainSpec advertises a worker-only domain so the
 // control-plane controller must leave Machine failureDomain unset.
-func capdNoEligibleControlPlaneDomainSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
+func capdNoEligibleControlPlaneDomainSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSpec {
 	spec := capdControlPlaneControllerSpec(cfg, name, shape)
-	spec.CAPDFailureDomains = []nke.CAPDFailureDomain{{Name: "fd-worker", ControlPlane: false}}
+	spec.CAPDFailureDomains = []nvke.CAPDFailureDomain{{Name: "fd-worker", ControlPlane: false}}
 	return spec
 }
 
 // nicoControlPlaneControllerSpec builds a NICo container topology whose control
 // plane is shape.controlPlaneConfig, filling in the mock's seed identifiers the
 // entry leaves unset.
-func nicoControlPlaneControllerSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
+func nicoControlPlaneControllerSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSpec {
 	spec := nicoSpec(cfg, name, shape)
 	if spec.ControlPlane.Config != nil {
 		// The same identifiers nicoNodePoolSpecs applies to a pool. Without them
@@ -1240,25 +1240,25 @@ func TestUnit_CAPDSpec(t *testing.T) {
 
 func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 	poolShape := clusterShape{
-		controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
-		workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+		controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
+		workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 	}
 	configShape := clusterShape{
-		controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
-		workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+		controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
+		workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 	}
 
 	tests := []struct {
 		name       string
 		build      specBuilder
 		shape      clusterShape
-		wantConfig *nke.ControlPlaneConfigSpec
+		wantConfig *nvke.ControlPlaneConfigSpec
 	}{
 		{
 			name:  "a nico-vms pool is sent as config",
 			build: nicoVMSSpec,
 			shape: poolShape,
-			wantConfig: &nke.ControlPlaneConfigSpec{
+			wantConfig: &nvke.ControlPlaneConfigSpec{
 				DesiredCount:         3,
 				InstanceTypeID:       nicoVMSLargeInstanceID,
 				OSProfile:            nicoVMSOSProfile,
@@ -1272,13 +1272,13 @@ func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 			name:       "a CAPD pool is sent as config",
 			build:      capdSpec,
 			shape:      poolShape,
-			wantConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 3, SystemReservedMemory: "1Gi"},
+			wantConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3, SystemReservedMemory: "1Gi"},
 		},
 		{
 			name:  "a NICo container pool gets the seed identifiers",
 			build: nicoSpec,
-			shape: clusterShape{controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}}},
-			wantConfig: &nke.ControlPlaneConfigSpec{
+			shape: clusterShape{controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}}},
+			wantConfig: &nvke.ControlPlaneConfigSpec{
 				DesiredCount:         1,
 				InstanceTypeID:       nicoInstanceTypeID,
 				SubnetIDs:            []string{nicoSubnetID},
@@ -1324,7 +1324,7 @@ func TestUnit_NicoVMSControlPlaneFitsKubeletReservation(t *testing.T) {
 	}
 
 	shapes := map[string]clusterShape{
-		"control plane with no instance type": {controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}}},
+		"control plane with no instance type": {controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}}},
 		"OS profile matrix row":               nicoVMSOSProfileTestSpec(nicoVMSOSProfileEntry{name: "unit-profile"}, 0).shape,
 	}
 	for name, shape := range shapes {
@@ -1349,7 +1349,7 @@ func TestUnit_NicoVMSControlPlaneFitsKubeletReservation(t *testing.T) {
 
 // builtControlPlaneInstanceType returns the instance type spec's control plane
 // runs on, in either control-plane shape.
-func builtControlPlaneInstanceType(spec nke.ClusterSpec) string {
+func builtControlPlaneInstanceType(spec nvke.ClusterSpec) string {
 	if spec.ControlPlane.Config != nil {
 		return spec.ControlPlane.Config.InstanceTypeID
 	}
@@ -1386,7 +1386,7 @@ func TestUnit_ForgeControlPlaneConfig(t *testing.T) {
 				t.Fatalf("config for a pool-based entry = %+v, want nil", got)
 			}
 
-			got := forgeControlPlaneConfig(&nke.ControlPlaneConfigSpec{DesiredCount: 1}, tc.site, cpu)
+			got := forgeControlPlaneConfig(&nvke.ControlPlaneConfigSpec{DesiredCount: 1}, tc.site, cpu)
 			if got.InstanceTypeID != cpu.ID || got.SystemReservedMemory != "16Gi" || !slices.Equal(got.SSHKeyGroupIDs, []string{keys}) {
 				t.Errorf("defaults = %+v, want the control plane type, 16Gi and the site's key group", got)
 			}
@@ -1396,15 +1396,15 @@ func TestUnit_ForgeControlPlaneConfig(t *testing.T) {
 
 			// The request the site controller is sent: the control plane rides the
 			// cluster-level config, and no pool claims it.
-			payloads := nke.NodePayloads{IPXEScript: "#!ipxe", PreKubeadmCommands: []string{"true"}}
-			req, err := nke.BuildCreateRequest(nke.ClusterSpec{
+			payloads := nvke.NodePayloads{IPXEScript: "#!ipxe", PreKubeadmCommands: []string{"true"}}
+			req, err := nvke.BuildCreateRequest(nvke.ClusterSpec{
 				Name:         "forge-test",
-				Backend:      nke.BackendNicoForge,
+				Backend:      nvke.BackendNicoForge,
 				SiteID:       tc.site.ID,
 				VpcID:        tc.site.VpcID,
-				NodePayloads: &nke.RolePayloads{ControlPlane: payloads, Worker: payloads},
-				ControlPlane: nke.ControlPlane{Config: got},
-				Workers:      forgeNodePoolSpecs([]nke.NodePoolSpec{{DesiredNodeCount: 1}}, "worker", "w", tc.site, cpu),
+				NodePayloads: &nvke.RolePayloads{ControlPlane: payloads, Worker: payloads},
+				ControlPlane: nvke.ControlPlane{Config: got},
+				Workers:      forgeNodePoolSpecs([]nvke.NodePoolSpec{{DesiredNodeCount: 1}}, "worker", "w", tc.site, cpu),
 			})
 			if err != nil {
 				t.Fatalf("building the create request: %v", err)
@@ -1421,16 +1421,16 @@ func TestUnit_ForgeControlPlaneConfig(t *testing.T) {
 	}
 }
 
-func capdNodePoolSpecs(pools []nke.NodePoolSpec, defaultName, defaultNodeNamePrefix string) []nke.NodePoolSpec {
-	out := make([]nke.NodePoolSpec, 0, len(pools))
+func capdNodePoolSpecs(pools []nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix string) []nvke.NodePoolSpec {
+	out := make([]nvke.NodePoolSpec, 0, len(pools))
 	for _, pool := range pools {
 		out = append(out, capdNodePoolSpec(pool, defaultName, defaultNodeNamePrefix))
 	}
 	return out
 }
 
-func capdNodePoolSpec(pool nke.NodePoolSpec, defaultName, defaultNodeNamePrefix string) nke.NodePoolSpec {
-	return nke.NodePoolSpec{
+func capdNodePoolSpec(pool nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix string) nvke.NodePoolSpec {
+	return nvke.NodePoolSpec{
 		Name:                 cmp.Or(pool.Name, defaultName),
 		NodeNamePrefix:       cmp.Or(pool.NodeNamePrefix, defaultNodeNamePrefix),
 		DesiredNodeCount:     pool.DesiredNodeCount,
@@ -1455,15 +1455,15 @@ const (
 // nicoSpec builds a CAPNico topology backed by the local mock's Docker
 // containers. Like CAPD, it uses the controller's nil-UUID CAPI site; the Nico site and
 // VPC live inside the infrastructure manifests.
-func nicoSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec {
-	return applyControlPlaneMode(nke.ClusterSpec{
+func nicoSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterSpec {
+	return applyControlPlaneMode(nvke.ClusterSpec{
 		Name:              name,
-		Backend:           nke.BackendNicoContainers,
+		Backend:           nvke.BackendNicoContainers,
 		KubernetesVersion: cmp.Or(shape.kubernetesVersion, defaultKubernetesVersion),
 		CNIPlugin:         cmp.Or(shape.cniPlugin, CNIPluginOVN),
 		SiteID:            nicoSiteID,
 		VpcID:             nicoVpcID,
-		ControlPlane: nke.ControlPlane{
+		ControlPlane: nvke.ControlPlane{
 			Pools:           nicoNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp"),
 			EtcdEncrypted:   shape.etcdEncrypted,
 			ControlPlaneVIP: shape.controlPlaneVIP,
@@ -1485,7 +1485,7 @@ func nicoSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec 
 // It fails the spec rather than returning an error, like every other builder
 // in this table. Each thing it can fail on is an input the run was supposed to
 // supply, so naming which one is the useful part.
-func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec {
+func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterSpec {
 	GinkgoHelper()
 
 	env, err := runEnvironment()
@@ -1523,9 +1523,9 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 	}, kubernetesVersion, versions[versionCNIOVN])
 	Expect(err).NotTo(HaveOccurred(), "should render the Forge node payloads")
 
-	return nke.ClusterSpec{
+	return nvke.ClusterSpec{
 		Name:              name,
-		Backend:           nke.BackendNicoForge,
+		Backend:           nvke.BackendNicoForge,
 		KubernetesVersion: kubernetesVersion,
 		// OVN, matching the nke-cni-ovn-images package the pre-kubeadm
 		// commands install. Calico here would install one CNI and run another.
@@ -1534,7 +1534,7 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 		SiteID:       site.ID,
 		VpcID:        site.VpcID,
 		NodePayloads: payloads,
-		ControlPlane: nke.ControlPlane{
+		ControlPlane: nvke.ControlPlane{
 			Pools:         forgeNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, controlPlaneType),
 			Config:        forgeControlPlaneConfig(shape.controlPlaneConfig, site, controlPlaneType),
 			EtcdEncrypted: shape.etcdEncrypted,
@@ -1556,10 +1556,10 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 // Returns nil for an entry that asks for a control-plane node pool instead,
 // which the controller reads as "no cluster-level control plane".
 func forgeControlPlaneConfig(
-	cfg *nke.ControlPlaneConfigSpec,
+	cfg *nvke.ControlPlaneConfigSpec,
 	site forge.Site,
 	instanceType forge.InstanceType,
-) *nke.ControlPlaneConfigSpec {
+) *nvke.ControlPlaneConfigSpec {
 	if cfg == nil {
 		return nil
 	}
@@ -1591,13 +1591,13 @@ type roleArchs struct {
 // forgeRolePayloads renders one payload set per role. When both roles are the
 // same architecture the work is done once and shared, which is the ordinary
 // single-architecture cluster.
-func forgeRolePayloads(archs roleArchs, kubernetesVersion, cniVersion string) (*nke.RolePayloads, error) {
-	build := func(arch string) (nke.NodePayloads, error) {
+func forgeRolePayloads(archs roleArchs, kubernetesVersion, cniVersion string) (*nvke.RolePayloads, error) {
+	build := func(arch string) (nvke.NodePayloads, error) {
 		bootLoaderURL, imageURL, err := requireNodeArtifacts(arch)
 		if err != nil {
-			return nke.NodePayloads{}, err
+			return nvke.NodePayloads{}, err
 		}
-		return nke.BuildForgeNodePayloads(nke.NodeInputs{
+		return nvke.BuildForgeNodePayloads(nvke.NodeInputs{
 			BootLoaderURL:     bootLoaderURL,
 			ImageURL:          imageURL,
 			Arch:              arch,
@@ -1616,21 +1616,21 @@ func forgeRolePayloads(archs roleArchs, kubernetesVersion, cniVersion string) (*
 			return nil, fmt.Errorf("workers (%s): %w", archs.Worker, err)
 		}
 	}
-	return &nke.RolePayloads{ControlPlane: controlPlane, Worker: worker}, nil
+	return &nvke.RolePayloads{ControlPlane: controlPlane, Worker: worker}, nil
 }
 
 // forgeNodePoolSpecs fills each pool from the environment. A pool naming its
 // own instance type keeps it, which is how a table entry asks for a shape the
 // capability match would not have chosen.
 func forgeNodePoolSpecs(
-	pools []nke.NodePoolSpec,
+	pools []nvke.NodePoolSpec,
 	defaultName, defaultNodeNamePrefix string,
 	site forge.Site,
 	instanceType forge.InstanceType,
-) []nke.NodePoolSpec {
-	out := make([]nke.NodePoolSpec, 0, len(pools))
+) []nvke.NodePoolSpec {
+	out := make([]nvke.NodePoolSpec, 0, len(pools))
 	for _, pool := range pools {
-		out = append(out, nke.NodePoolSpec{
+		out = append(out, nvke.NodePoolSpec{
 			Name:                 cmp.Or(pool.Name, defaultName),
 			NodeNamePrefix:       cmp.Or(pool.NodeNamePrefix, defaultNodeNamePrefix),
 			DesiredNodeCount:     pool.DesiredNodeCount,
@@ -1648,10 +1648,10 @@ func forgeNodePoolSpecs(
 	return out
 }
 
-func nicoNodePoolSpecs(pools []nke.NodePoolSpec, defaultName, defaultNodeNamePrefix string) []nke.NodePoolSpec {
-	out := make([]nke.NodePoolSpec, 0, len(pools))
+func nicoNodePoolSpecs(pools []nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix string) []nvke.NodePoolSpec {
+	out := make([]nvke.NodePoolSpec, 0, len(pools))
 	for _, pool := range pools {
-		out = append(out, nke.NodePoolSpec{
+		out = append(out, nvke.NodePoolSpec{
 			Name:                 cmp.Or(pool.Name, defaultName),
 			NodeNamePrefix:       cmp.Or(pool.NodeNamePrefix, defaultNodeNamePrefix),
 			DesiredNodeCount:     pool.DesiredNodeCount,
@@ -1690,22 +1690,22 @@ var nicoVMSInstanceMemory = map[string]string{
 // nicoVMSOSProfile is the profile the nico-vms specs boot. nico-sim takes the
 // guest architecture from the host it runs on, never from the profile, so the
 // profile has to match the runner. hack/ci/nico-vms-e2e.sh builds the same name.
-var nicoVMSOSProfile = "nke-nico-vms-24.04-" + runtime.GOARCH + "-fde"
+var nicoVMSOSProfile = "nvke-nico-vms-24.04-" + runtime.GOARCH + "-fde"
 
 // nicoVMSSpec builds a nico-vms topology using the local emulator's seed
 // identifiers. kube-vip is left enabled (the nico-vms BGP speaker advertises
 // the control-plane VIP), unlike the CAPD topology.
-func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec {
-	return applyControlPlaneMode(nke.ClusterSpec{
+func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterSpec {
+	return applyControlPlaneMode(nvke.ClusterSpec{
 		Name:              name,
-		Backend:           nke.BackendNicoVMS,
+		Backend:           nvke.BackendNicoVMS,
 		KubernetesVersion: cmp.Or(shape.kubernetesVersion, defaultKubernetesVersion),
 		// OVN-Kubernetes unless the entry pins a CNI or NKE_E2E_NICO_VMS_CNI overrides it.
 		CNIPlugin: cmp.Or(shape.cniPlugin, os.Getenv("NKE_E2E_NICO_VMS_CNI"), CNIPluginOVN),
 		OrgID:     nicoVMSOrgID,
 		SiteID:    nicoVMSSiteID,
 		VpcID:     nicoVMSVpcID,
-		ControlPlane: nke.ControlPlane{
+		ControlPlane: nvke.ControlPlane{
 			// Control planes default to the large instance. The controller reserves its default
 			// 2Gi for the kubelet on them, since controlPlaneConfig cannot carry
 			// the pool's 250Mi, and that does not fit in 2 GiB.
@@ -1723,8 +1723,8 @@ func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSp
 
 // withDefaultInstanceType returns a copy of pools with instanceTypeID set on
 // each pool that leaves it unset.
-func withDefaultInstanceType(pools []nke.NodePoolSpec, instanceTypeID string) []nke.NodePoolSpec {
-	out := make([]nke.NodePoolSpec, len(pools))
+func withDefaultInstanceType(pools []nvke.NodePoolSpec, instanceTypeID string) []nvke.NodePoolSpec {
+	out := make([]nvke.NodePoolSpec, len(pools))
 	for i, pool := range pools {
 		pool.InstanceTypeID = cmp.Or(pool.InstanceTypeID, instanceTypeID)
 		out[i] = pool
@@ -1732,16 +1732,16 @@ func withDefaultInstanceType(pools []nke.NodePoolSpec, instanceTypeID string) []
 	return out
 }
 
-func nicoVMSNodePoolSpecs(pools []nke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile string) []nke.NodePoolSpec {
-	out := make([]nke.NodePoolSpec, 0, len(pools))
+func nicoVMSNodePoolSpecs(pools []nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile string) []nvke.NodePoolSpec {
+	out := make([]nvke.NodePoolSpec, 0, len(pools))
 	for _, pool := range pools {
 		out = append(out, nicoVMSNodePoolSpec(pool, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile))
 	}
 	return out
 }
 
-func nicoVMSNodePoolSpec(pool nke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile string) nke.NodePoolSpec {
-	return nke.NodePoolSpec{
+func nicoVMSNodePoolSpec(pool nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile string) nvke.NodePoolSpec {
+	return nvke.NodePoolSpec{
 		Name:                  cmp.Or(pool.Name, defaultName),
 		NodeNamePrefix:        cmp.Or(pool.NodeNamePrefix, defaultNodeNamePrefix),
 		DesiredNodeCount:      pool.DesiredNodeCount,
@@ -1773,10 +1773,10 @@ func defaultStrings(s []string, defaultValue string) []string {
 	return s
 }
 
-func nicoVMSMultiPodCIDRSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
+func nicoVMSMultiPodCIDRSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSpec {
 	spec := nicoVMSSpec(cfg, name, shape)
 	spec.Name = name + "-multi-pod-cidr"
-	spec.Network = &nke.ClusterNetworkSpec{
+	spec.Network = &nvke.ClusterNetworkSpec{
 		PodCIDR:          nicoVMSMultiPodCIDR,
 		ServiceCIDR:      nicoVMSMultiPodServiceCIDR,
 		ExpectedPodCIDRs: []string{"10.250.0.0/23", "10.252.0.0/22"},

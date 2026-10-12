@@ -54,7 +54,7 @@ API_DOCS_OUT ?= ../.local/api-reference.html
 # Node; npx fetches the pinned CLI.
 docs: ## Render openapi.yaml into one HTML page with Redocly, minus the x-fern-ignore surface. (needs Node)
 	@mkdir -p $(dir $(API_DOCS_OUT))
-	npx -y @redocly/cli@$(REDOCLY_VERSION) bundle nke --config redocly.yaml -o $(API_DOCS_OUT).bundle.yaml
+	npx -y @redocly/cli@$(REDOCLY_VERSION) bundle nvke --config redocly.yaml -o $(API_DOCS_OUT).bundle.yaml
 	npx -y @redocly/cli@$(REDOCLY_VERSION) build-docs $(API_DOCS_OUT).bundle.yaml -o $(API_DOCS_OUT)
 	@rm -f $(API_DOCS_OUT).bundle.yaml
 	@echo "Rendered $(API_DOCS_OUT)"

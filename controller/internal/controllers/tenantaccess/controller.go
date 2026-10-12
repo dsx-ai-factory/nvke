@@ -27,14 +27,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent"
-	"github.com/dsx-ai-factory/nke/controller/internal/capi"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/dbwrapper"
-	dbfilters "github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/filters"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
+	dbfilters "github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/filters"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
 )
 
 const (
@@ -46,7 +46,7 @@ const (
 	// exported because the teardown activity deletes those Secrets on cluster
 	// removal. The chart creates the namespace and scopes the controller's Secret grant to
 	// it, so this is a constant rather than a config knob.
-	SecretsNamespace = constants.NamespaceNKESystem
+	SecretsNamespace = constants.NamespaceNVKESystem
 )
 
 // KubeconfigSecretName returns the Secret name that holds the per-cluster
@@ -279,9 +279,9 @@ func (c *Controller) refreshCluster(ctx context.Context, cluster db.Cluster) (db
 	return live, false, nil
 }
 
-// publishSPIRE applies the NKE tenant RBAC first, then publishes the SPIRE
+// publishSPIRE applies the NVKE tenant RBAC first, then publishes the SPIRE
 // exec-auth kubeconfig and the tenant CA trust bundle. RBAC lands before the
-// kubeconfig Secret because the Secret is only useful once NKE has access to the
+// kubeconfig Secret because the Secret is only useful once NVKE has access to the
 // tenant cluster.
 func (c *Controller) publishSPIRE(ctx context.Context, cluster db.Cluster, adminConf []byte) error {
 	if err := c.applyRBAC(ctx, cluster, adminConf); err != nil {
@@ -341,7 +341,7 @@ func (c *Controller) applyRBAC(ctx context.Context, cluster db.Cluster, adminCon
 		return fmt.Errorf("building tenant client for cluster %s: %w", cluster.Name, err)
 	}
 	if err := applyManifestSSA(ctx, tenantClient, manifest, rbacFieldManager); err != nil {
-		return fmt.Errorf("applying NKE RBAC to cluster %s: %w", cluster.Name, err)
+		return fmt.Errorf("applying NVKE RBAC to cluster %s: %w", cluster.Name, err)
 	}
 
 	return nil

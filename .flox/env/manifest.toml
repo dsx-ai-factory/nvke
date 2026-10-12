@@ -22,7 +22,7 @@ go = { pkg-path = "go_1_27", pkg-group = "go" }
 golangci-lint = { pkg-path = "golangci-lint", version = "2.13.2", pkg-group = "golangci-lint" }
 # Shared by local checks and workflows through make/tool-versions.mk.
 kubernetes-helm = { pkg-path = "kubernetes-helm", version = "4.2.4", pkg-group = "helm" }
-# backend-e2e.yml:118 and nkectl-bootstrap-e2e.yml:121.
+# backend-e2e.yml:118 and nvkectl-bootstrap-e2e.yml:121.
 kind = { pkg-path = "kind", version = "0.32.0", pkg-group = "kind" }
 gnumake.pkg-path = "gnumake"
 gnumake.outputs = "all"

@@ -12,24 +12,24 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
 func TestUnit_ExpectedControlPlaneFailureDomainCounts(t *testing.T) {
 	tests := []struct {
 		name    string
-		domains []nke.CAPDFailureDomain
+		domains []nvke.CAPDFailureDomain
 		desired int
 		want    map[string]int
 	}{
-		{name: "no eligible domains", domains: []nke.CAPDFailureDomain{{Name: "worker"}}, desired: 1, want: map[string]int{}},
-		{name: "zero machines", domains: []nke.CAPDFailureDomain{{Name: "zone", ControlPlane: true}}, want: map[string]int{}},
-		{name: "lexicographic first placement ignores spec order", domains: []nke.CAPDFailureDomain{{Name: "zone-z", ControlPlane: true}, {Name: "zone-a", ControlPlane: true}}, desired: 1, want: map[string]int{"zone-a": 1}},
-		{name: "three arbitrary domain names exclude workers", domains: []nke.CAPDFailureDomain{{Name: "zone-z", ControlPlane: true}, {Name: "worker"}, {Name: "zone-m", ControlPlane: true}, {Name: "zone-a", ControlPlane: true}}, desired: 5, want: map[string]int{"zone-a": 2, "zone-m": 2, "zone-z": 1}},
+		{name: "no eligible domains", domains: []nvke.CAPDFailureDomain{{Name: "worker"}}, desired: 1, want: map[string]int{}},
+		{name: "zero machines", domains: []nvke.CAPDFailureDomain{{Name: "zone", ControlPlane: true}}, want: map[string]int{}},
+		{name: "lexicographic first placement ignores spec order", domains: []nvke.CAPDFailureDomain{{Name: "zone-z", ControlPlane: true}, {Name: "zone-a", ControlPlane: true}}, desired: 1, want: map[string]int{"zone-a": 1}},
+		{name: "three arbitrary domain names exclude workers", domains: []nvke.CAPDFailureDomain{{Name: "zone-z", ControlPlane: true}, {Name: "worker"}, {Name: "zone-m", ControlPlane: true}, {Name: "zone-a", ControlPlane: true}}, desired: 5, want: map[string]int{"zone-a": 2, "zone-m": 2, "zone-z": 1}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, expectedControlPlaneFailureDomainCounts(nke.ClusterSpec{CAPDFailureDomains: tt.domains}, tt.desired))
+			require.Equal(t, tt.want, expectedControlPlaneFailureDomainCounts(nvke.ClusterSpec{CAPDFailureDomains: tt.domains}, tt.desired))
 		})
 	}
 }
@@ -37,19 +37,19 @@ func TestUnit_ExpectedControlPlaneFailureDomainCounts(t *testing.T) {
 func TestUnit_CAPDFailureDomainReuse(t *testing.T) {
 	tests := []struct {
 		name       string
-		backend    nke.Backend
+		backend    nvke.Backend
 		controller bool
 		reuse      string
 		wantErr    bool
 	}{
-		{name: "new controller fixture", backend: nke.BackendCAPD, controller: true},
-		{name: "reject reused controller fixture", backend: nke.BackendCAPD, controller: true, reuse: "existing", wantErr: true},
-		{name: "legacy reuse remains supported", backend: nke.BackendCAPD, reuse: "existing"},
-		{name: "other backend reuse remains supported", backend: nke.BackendNicoContainers, controller: true, reuse: "existing"},
+		{name: "new controller fixture", backend: nvke.BackendCAPD, controller: true},
+		{name: "reject reused controller fixture", backend: nvke.BackendCAPD, controller: true, reuse: "existing", wantErr: true},
+		{name: "legacy reuse remains supported", backend: nvke.BackendCAPD, reuse: "existing"},
+		{name: "other backend reuse remains supported", backend: nvke.BackendNicoContainers, controller: true, reuse: "existing"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateCAPDFailureDomainReuse(nke.ClusterSpec{Backend: tt.backend}, tt.controller, tt.reuse)
+			err := validateCAPDFailureDomainReuse(nvke.ClusterSpec{Backend: tt.backend}, tt.controller, tt.reuse)
 			if tt.wantErr {
 				require.ErrorContains(t, err, "lifecycle.reuseCluster is unsupported")
 			} else {

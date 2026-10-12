@@ -33,7 +33,7 @@ export KIND_CLUSTER_CONFIG ?= hack/controller-capi-kind.yaml
 # The image `make registry-mirror` runs. The host daemon pulls it anonymously,
 # so CI points it at the Docker Hub mirror.
 REGISTRY_MIRROR_IMAGE ?= registry:2
-# The pin lives in make/tool-versions.mk, so `nkectl bootstrap site` (which
+# The pin lives in make/tool-versions.mk, so `nvkectl bootstrap site` (which
 # runs clusterctl too, see cli/internal/bootstrap/controllerdeploy) and this dev loop cannot
 # install different CAPI versions.
 include $(CURDIR)/../make/tool-versions.mk

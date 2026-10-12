@@ -41,7 +41,7 @@ jobs:
   review:
     name: dependency-review
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     timeout-minutes: 10
     permissions:
       contents: read
@@ -66,7 +66,7 @@ jobs:
       #
       # Covering is not blocking. This workflow is not a merge-gate member, so
       # a finding here is advisory. Read what does block with:
-      #   gh api repos/dsx-ai-factory/nke/rules/branches/main --jq '[.[].type]'
+      #   gh api repos/dsx-ai-factory/nvke/rules/branches/main --jq '[.[].type]'
       #
       # Re-measure with:
       #

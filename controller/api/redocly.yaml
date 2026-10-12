@@ -5,7 +5,7 @@
 # marked `x-fern-ignore`, so the rendered page shows the same surface as the
 # Fern site. See README.md.
 apis:
-  nke:
+  nvke:
     root: openapi.yaml
 decorators:
   remove-x-internal:

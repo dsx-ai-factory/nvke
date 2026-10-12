@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-The **NKE agent** lives at `agent/` in the [dsx-ai-factory/nke](https://github.com/dsx-ai-factory/nke) monorepo.
+The **NVKE agent** lives at `agent/` in the [dsx-ai-factory/nvke](https://github.com/dsx-ai-factory/nvke) monorepo.
 It is a Go-based gRPC server (systemd service) that runs on Kubernetes nodes and provides remote management for Kubeadm and software package/bundle installation.
 
 **Primary use cases:**
@@ -11,7 +11,7 @@ It is a Go-based gRPC server (systemd service) that runs on Kubernetes nodes and
 - Kubernetes API/etcd secrets encryption
 - mTLS via SPIFFE (SPIRE workload API)
 
-**Module path:** `github.com/dsx-ai-factory/nke/agent`
+**Module path:** `github.com/dsx-ai-factory/nvke/agent`
 
 ## Consumer configuration
 
@@ -33,7 +33,7 @@ Pushing the tag publishes:
 
 - OCI binaries to GHCR / NVCR (`.github/workflows/agent-artifact*.yml`)
 - `.deb`s to the apt-publisher S3 intake, as assets on the GitHub Release
-  for that tag, and to GHCR as `ghcr.io/dsx-ai-factory/nke/agent-deb`
+  for that tag, and to GHCR as `ghcr.io/dsx-ai-factory/nvke/agent-deb`
   (`.github/workflows/agent-deb-publish.yml`)
 
 `make` / `./build/agent.sh` derive `VERSION` from:
@@ -48,7 +48,7 @@ The `agent/` prefix is stripped for the binary ldflag and `.deb` version
 Go module consumers pin the same tag shape:
 
 ```bash
-go get github.com/dsx-ai-factory/nke/agent@agent/v0.1.30
+go get github.com/dsx-ai-factory/nvke/agent@agent/v0.1.30
 ```
 
 ## Build Commands
@@ -259,7 +259,7 @@ grpcurl -plaintext localhost:15005 list proto.NodeAgent
 grpcurl -plaintext localhost:15005 list
 ```
 
-Orchestrators (the NKE controller) probe for RPC availability via reflection before calling
+Orchestrators (the NVKE controller) probe for RPC availability via reflection before calling
 apt or InstallCNI workflows. Semver in `GetKubeadmStatus` remains useful for logging only.
 
 ## Security Notes

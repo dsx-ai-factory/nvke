@@ -3,9 +3,9 @@ SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All 
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# NKE benchmarks
+# NVKE benchmarks
 
-Scale and performance benchmarks for NKE clusters: the recipes that were run,
+Scale and performance benchmarks for NVKE clusters: the recipes that were run,
 and the results obtained.
 
 Every scenario is defined as data and runs on publicly available tools.
@@ -92,7 +92,7 @@ scenario: ../../workloads/cni/k8s-netperf-throughput/scenario.yaml
 workload: cni
 k8s_version: 1.34.2
 date: 2026-05-26
-authors: [NVIDIA NKE Scale Team]
+authors: [NVIDIA NVKE Scale Team]
 ---
 ```
 
@@ -151,7 +151,7 @@ T-shirt sizes (S/M/L/XL) are points on a scenario's own scale. `L` in one
 scenario implies nothing about `L` in another.
 
 **No result here is a maximum-scale claim.** `topology` and `sizing.observed`
-are what a given run happened to measure, not a ceiling on what NKE or the
+are what a given run happened to measure, not a ceiling on what NVKE or the
 component under test can do — a bigger topology is a different
 `sizing.observed`, not a different capability. Read `sizing.derivation` as an
 instruction to authors and readers alike: size the workload to your own

@@ -42,7 +42,7 @@ mask the vendor unit in `/lib`.
 Two divergent install paths used to exist: the Packer build installed raw
 upstream SPIRE and TPM plugin binaries, while apt-path nodes installed
 a `spire-agent` deb built out of an internal GitLab repository and served from
-the NKE S3 apt repo. This package is the single artifact both converge on.
+the NVKE S3 apt repo. This package is the single artifact both converge on.
 SPIRE and the TPM plugin come from public GitHub releases. The DSX IMDS
 plugin comes from the pinned S3 objects below.
 

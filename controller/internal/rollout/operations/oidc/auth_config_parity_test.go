@@ -16,9 +16,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 )
 
 // sharedAuthConfigGolden is the fixture the greenfield bootstrap path already
@@ -47,7 +47,7 @@ func TestBuildApplyToNodePayload_MatchesGreenfieldGolden(t *testing.T) {
 
 	op := NewEnableOIDCOperation(
 		WithClient(oidcCABundleClient(t)),
-		WithOIDCConfig(&config.NkeOIDCAuth{
+		WithOIDCConfig(&config.NvkeOIDCAuth{
 			Enabled:      true,
 			IssuerURL:    "https://nke.site-controller.internal",
 			DiscoveryURL: "https://10.0.0.10:30443/.well-known/openid-configuration",
@@ -97,7 +97,7 @@ func TestRollback_AnonymousConfigurationMatchesBootstrap(t *testing.T) {
 		{version: "v1.35.0", restore: true},
 	} {
 		t.Run(tt.version, func(t *testing.T) {
-			op := NewEnableOIDCOperation(WithOIDCConfig(&config.NkeOIDCAuth{Enabled: true, IssuerURL: "https://shared.example.com"}))
+			op := NewEnableOIDCOperation(WithOIDCConfig(&config.NvkeOIDCAuth{Enabled: true, IssuerURL: "https://shared.example.com"}))
 			payload, err := op.BuildApplyToNodePayload(context.Background(), fakeCluster{name: "tenant", k8s: tt.version})
 			require.NoError(t, err)
 			artifact, err := parsePayload(payload)

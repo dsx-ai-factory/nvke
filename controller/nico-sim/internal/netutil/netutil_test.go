@@ -6,7 +6,7 @@ package netutil_test
 import (
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/netutil"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/netutil"
 )
 
 func TestGatewayIP(t *testing.T) {

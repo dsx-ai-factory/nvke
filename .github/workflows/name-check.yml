@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Fails on every token in the tree that carries a banned name, outside the
+# allowlist in hack/name-check-allowlist.txt.
+#
+# Until 2026-10-11 the check ran in report mode: it printed how many hits
+# remained and exited 0, because the tree still carried the default name
+# everywhere. NAME_CHECK_MODE in make/checks.mk now says fail, so the same job
+# lists every leftover and blocks the merge. A dead allowlist entry fails in
+# both modes, so the allowlist cannot outlive what it covered.
+#
+# Tokens, not lines: the header of hack/name-check.py gives the rule that keeps
+# a product token and drops the English word or camel-case identifier beside
+# it, which a line-based stoplist cannot do.
+#
+# Needs python3 and git, both on the runner image. No ripgrep.
+#
+# Deliberately NOT path-filtered, for the reason recorded in actionlint.yml: a
+# filtered check does not report on a pull request that misses the filter, and
+# a required check that never reports leaves that pull request waiting forever.
+# See .github/workflows/README.md.
+
+name: Name Check
+
+# All pull requests, including forks and Dependabot, reach this through
+# merge-gate.yml. The standalone push trigger is post-merge coverage on main.
+on:
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # The sha is part of the group on main, so every commit gets its own. See the
+  # longer note in shellcheck.yml for why, and why this is a literal name rather
+  # than ${{ github.workflow }}.
+  group: Name Check-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  name-check:
+    name: name-check
+    runs-on: ubuntu-latest
+    # The repository by id, which survives a rename; see .github/workflows/README.md.
+    if: github.repository_id == '1323115536'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Report tokens that carry a banned name
+        run: make --no-print-directory name-check

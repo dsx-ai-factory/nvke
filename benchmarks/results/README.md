@@ -31,7 +31,7 @@ scenario: ../../workloads/cni/k8s-netperf-throughput/scenario.yaml
 workload: cni
 k8s_version: 1.34.2
 date: 2026-05-26
-authors: [NVIDIA NKE Scale Team]
+authors: [NVIDIA NVKE Scale Team]
 ---
 ```
 

@@ -43,7 +43,7 @@ type ProvisionedHost struct {
 
 // ProvisionedClusterSpec defines the desired state of ProvisionedCluster.
 //
-// The spec holds no control plane endpoint. The NKE controller owns the control plane VIP
+// The spec holds no control plane endpoint. The NVKE controller owns the control plane VIP
 // through the controlPlaneVIP field of its own cluster API, and the controller configures
 // kube-vip on each control plane node.
 type ProvisionedClusterSpec struct {

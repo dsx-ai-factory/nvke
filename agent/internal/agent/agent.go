@@ -36,11 +36,11 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/dsx-ai-factory/nke/agent/internal/k8s"
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	"github.com/dsx-ai-factory/nke/agent/pkg/agentupgrade"
-	"github.com/dsx-ai-factory/nke/agent/pkg/deb"
-	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
+	"github.com/dsx-ai-factory/nvke/agent/internal/k8s"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	"github.com/dsx-ai-factory/nvke/agent/pkg/agentupgrade"
+	"github.com/dsx-ai-factory/nvke/agent/pkg/deb"
+	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
 
 var (
@@ -53,25 +53,25 @@ var (
 
 // Enums for example purposes
 const (
-	JoinPhase            = "join"
-	InitPhase            = "initialize"
-	ResetPhase           = "reset"
-	ReadyStatus          = "ready"
-	PendingStatus        = "pending"
-	InstallingStatus     = "installing"
-	ErrorStatus          = "error"
-	SuccessStatus        = "success"
-	NotReadyStatus       = "notready"
-	UninitializedStatus  = "uninitialized"
-	joinFailedStatus     = "join failed"
-	WorkerRole           = "worker"
-	ControlPlaneRole     = "controlplane"
-	UserScriptsDir       = "/usr/local/nke/user-scripts"
-	UploadDir            = "/tmp/nke_uploads"
-	NKEDir               = "/var/lib/nke"
-	StateFile            = NKEDir + "/state.json"
-	NKEAuditLog          = "/var/log/nke-agent-audit.log"
-	NKEExecuteScriptsLog = "/var/log/nke-execute-scripts.log"
+	JoinPhase             = "join"
+	InitPhase             = "initialize"
+	ResetPhase            = "reset"
+	ReadyStatus           = "ready"
+	PendingStatus         = "pending"
+	InstallingStatus      = "installing"
+	ErrorStatus           = "error"
+	SuccessStatus         = "success"
+	NotReadyStatus        = "notready"
+	UninitializedStatus   = "uninitialized"
+	joinFailedStatus      = "join failed"
+	WorkerRole            = "worker"
+	ControlPlaneRole      = "controlplane"
+	UserScriptsDir        = "/usr/local/nke/user-scripts"
+	UploadDir             = "/tmp/nke_uploads"
+	NVKEDir               = "/var/lib/nke"
+	StateFile             = NVKEDir + "/state.json"
+	NVKEAuditLog          = "/var/log/nke-agent-audit.log"
+	NVKEExecuteScriptsLog = "/var/log/nke-execute-scripts.log"
 	// TODO: May need to adjust the following settings, but for now let's start here and expand as needed
 	ScriptStatusLimit       = 3
 	maxScriptLogOutputBytes = 4096
@@ -143,8 +143,8 @@ type kubernetesClientRegistry interface {
 
 type NodeAgentServer struct {
 	pb.UnimplementedNodeAgentServer
-	Runner     nkeutils.CommandRunner
-	FileWriter nkeutils.FileWriter
+	Runner     nvkeutils.CommandRunner
+	FileWriter nvkeutils.FileWriter
 	Persister  NodeStatusPersister
 
 	NodeStatus *NodeStatus
@@ -174,7 +174,7 @@ type NodeAgentServer struct {
 	clientRegistry                 kubernetesClientRegistry
 
 	BundleServerURL string
-	BundleSource    *nkeutils.BundleSource // Parsed bundle source configuration
+	BundleSource    *nvkeutils.BundleSource // Parsed bundle source configuration
 	BundleIndexFile string
 	// CniImageRegistry is the OCI registry prefix for CNI component images.
 	// When set, it is passed to the CNI helm chart as --set global.registry=<value>,
@@ -352,20 +352,20 @@ func (s *NodeAgentServer) setIndexURL(indexFileURL string) error {
 		return nil
 	}
 
-	rel, err := nkeutils.GetBundleIndexPath()
+	rel, err := nvkeutils.GetBundleIndexPath()
 	if err != nil {
 		return fmt.Errorf("failed GetBundleIndexPath, can't set bundle index: %w", err)
 	}
 
-	s.BundleIndexFile = nkeutils.JoinBundleURL(s.BundleServerURL, rel)
+	s.BundleIndexFile = nvkeutils.JoinBundleURL(s.BundleServerURL, rel)
 	return nil
 }
 
 func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniImageRegistry string) *NodeAgentServer {
 	slog.Info("initializing node agent server")
 	// Ensure the directory exists
-	if err := os.MkdirAll(NKEDir, 0o755); err != nil {
-		slog.Error("failed to create nke dir", "err", err)
+	if err := os.MkdirAll(NVKEDir, 0o755); err != nil {
+		slog.Error("failed to create the agent directory", "dir", NVKEDir, "err", err)
 	}
 
 	// Ensure the state file exists, but do NOT truncate if it's already there
@@ -380,13 +380,13 @@ func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniIma
 	}
 
 	// Bundle source is optional. Prefer apt repos; keep HTTP/OCI bundle install when configured.
-	var bundleSource *nkeutils.BundleSource
+	var bundleSource *nvkeutils.BundleSource
 	parsedBundleURL := ""
 	if strings.TrimSpace(bundleServerURL) == "" {
 		slog.Warn("bundle-server-url not set; InstallBundle and InstallCollection(.json) are unavailable until configured — prefer apt repos via ConfigureAptRepo/InstallPackages")
 	} else {
 		var parseErr error
-		bundleSource, parseErr = nkeutils.ParseBundleSourceURI(bundleServerURL)
+		bundleSource, parseErr = nvkeutils.ParseBundleSourceURI(bundleServerURL)
 		if parseErr != nil {
 			slog.Warn("failed to parse bundle source URL; continuing without bundle support", "url", bundleServerURL, "err", parseErr)
 		} else {
@@ -396,12 +396,12 @@ func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniIma
 	}
 
 	clientRegistry := k8s.NewClientRegistry(KubeConfig)
-	runner := &nkeutils.ExecRunner{}
+	runner := &nvkeutils.ExecRunner{}
 	server := &NodeAgentServer{
 		Runner:            runner,
-		FileWriter:        &nkeutils.OSFileWriter{},
+		FileWriter:        &nvkeutils.OSFileWriter{},
 		Persister:         &JSONFilePersister{Path: StateFile},
-		AgentUpgradeStore: agentupgrade.NewStore(filepath.Join(NKEDir, "agent-upgrades")),
+		AgentUpgradeStore: agentupgrade.NewStore(filepath.Join(NVKEDir, "agent-upgrades")),
 		AgentUpgradeLauncher: systemdAgentUpgradeLauncher{
 			runner: runner,
 		},
@@ -412,7 +412,7 @@ func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniIma
 		clientRegistry:   clientRegistry,
 		NodeStatus: &NodeStatus{
 			AgentVersion:  "",
-			NodeName:      nkeutils.GetHostname(),
+			NodeName:      nvkeutils.GetHostname(),
 			Status:        UninitializedStatus,
 			KubeadmStatus: "",
 		},
@@ -458,7 +458,7 @@ func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniIma
 
 	server.NodeStatus.BundleIndexFile = server.BundleIndexFile
 	server.NodeStatus.BundleServerURL = server.BundleServerURL
-	server.NodeStatus.Architecture = nkeutils.GetMachineArchitecture()
+	server.NodeStatus.Architecture = nvkeutils.GetMachineArchitecture()
 
 	if doMlx5Rescan {
 		server.NodeStatus.MLX5ResetDisabled = false
@@ -645,10 +645,10 @@ func (s *NodeAgentServer) processKubeadmJoin(args []string, req *pb.KubeadmJoinR
 		output, err = s.Runner.Run(
 			"kubeadm",
 			joinArgs,
-			&nkeutils.CommandOptions{},
+			&nvkeutils.CommandOptions{},
 		)
 	} else {
-		output, err = s.Runner.Run("kubeadm", args, &nkeutils.CommandOptions{})
+		output, err = s.Runner.Run("kubeadm", args, &nvkeutils.CommandOptions{})
 	}
 
 	if err != nil {
@@ -684,7 +684,7 @@ func kubeadmResetArgs() []string {
 // node. Best effort: when the reset fails, the join runs and reports its own error.
 func (s *NodeAgentServer) resetBeforeJoinRetry() {
 	slog.Info("previous kubeadm join failed, resetting the node before retrying")
-	output, err := s.Runner.Run("kubeadm", kubeadmResetArgs(), &nkeutils.CommandOptions{})
+	output, err := s.Runner.Run("kubeadm", kubeadmResetArgs(), &nvkeutils.CommandOptions{})
 	if err != nil {
 		slog.Error("kubeadm reset before join retry failed", "err", err, "output", string(output))
 	}
@@ -865,7 +865,7 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 		}
 	}
 
-	output, err := s.Runner.Run("kubeadm", args, &nkeutils.CommandOptions{})
+	output, err := s.Runner.Run("kubeadm", args, &nvkeutils.CommandOptions{})
 	if err != nil {
 		if strings.Contains(string(output), "FileAvailable") &&
 			strings.Contains(string(output), "is in use") {
@@ -954,7 +954,7 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 // the config from kubeadm, both at 0644, and kubeadm offers no configuration
 // for the mode of either, so the only way to hold them at 0600 is to re-apply.
 //
-// The kubeadm-distro package ships its units 0600 already, so on an NKE image
+// The kubeadm-distro package ships its units 0600 already, so on an NVKE image
 // this only has work to do on config.yaml. The units are still listed for nodes
 // built from other packages, such as the upstream pkgs.k8s.io ones.
 //
@@ -1010,7 +1010,7 @@ func (s *NodeAgentServer) hardenKubeletFileModes() error {
 
 // disableKubeletSelfRegistration sets registerNode: false in the kubelet config
 // on disk so that if the instance is later terminated and restarted outside of
-// NKE's control, the kubelet will not re-register the node (zombie prevention).
+// NVKE's control, the kubelet will not re-register the node (zombie prevention).
 // The running kubelet is unaffected -- it already registered the node and keeps
 // its in-memory config. The on-disk change only matters on next boot.
 func (s *NodeAgentServer) disableKubeletSelfRegistration() error {
@@ -1060,7 +1060,7 @@ func (s *NodeAgentServer) InstallCNI(
 		slog.DebugContext(ctx, "InstallCNI: skip_apt is deprecated and ignored (InstallCNI never runs apt)")
 	}
 
-	chartsPkgSpec, specErr := nkeCniChartsDebLogicalSpec(req)
+	chartsPkgSpec, specErr := nvkeCniChartsDebLogicalSpec(req)
 	if specErr != nil {
 		return resp, status.Errorf(codes.InvalidArgument, "%v", specErr)
 	}
@@ -1257,7 +1257,7 @@ func (s *NodeAgentServer) ExecuteKubeadmReset(
 	}
 
 	start := time.Now()
-	output, err := s.Runner.Run("kubeadm", cmdArgs, &nkeutils.CommandOptions{})
+	output, err := s.Runner.Run("kubeadm", cmdArgs, &nvkeutils.CommandOptions{})
 	slog.Info("kubeadm reset finished", "duration", time.Since(start).String(), "cmdArgs", cmdArgs, "err", err, "output", string(output))
 	s.mu.Lock()
 	if err != nil {
@@ -1337,7 +1337,7 @@ func (s *NodeAgentServer) runKubeadmPreflight(
 	}
 
 	args := []string{phase, "phase", "preflight", "--config", configPath}
-	output, err := s.Runner.Run("kubeadm", args, &nkeutils.CommandOptions{})
+	output, err := s.Runner.Run("kubeadm", args, &nvkeutils.CommandOptions{})
 	rawOutput := string(output)
 	results := parsePreflightOutput(rawOutput)
 
@@ -1526,25 +1526,25 @@ func (s *NodeAgentServer) UpdateNKERBAC(
 	}
 	if !s.isControlPlaneRole() {
 		slog.Info("unable to fulfill UpdateNKERBAC from non-controlplane node", "NodeRole", role)
-		return nil, status.Errorf(codes.FailedPrecondition, "update NKE RBAC: control-plane node required, current role %q", role)
+		return nil, status.Errorf(codes.FailedPrecondition, "UpdateNKERBAC: control-plane node required, current role %q", role)
 	}
 
-	resources, err := parseAndValidateNKERBACManifest(req.GetManifest())
+	resources, err := parseAndValidateNVKERBACManifest(req.GetManifest())
 	if err != nil {
-		slog.Error("failed to validate nke rbac manifest", "err", err)
-		return nil, status.Errorf(codes.InvalidArgument, "update NKE RBAC: invalid manifest: %v", err)
+		slog.Error("failed to validate the NVKE RBAC manifest", "err", err)
+		return nil, status.Errorf(codes.InvalidArgument, "UpdateNKERBAC: invalid manifest: %v", err)
 	}
 
 	client, err := s.clientRegistry.DynamicClient()
 	if err != nil {
 		slog.Error("failed to initialize Kubernetes client for UpdateNKERBAC", "err", err)
 		if errors.As(err, &k8s.KubeconfigAccessError{}) {
-			return nil, status.Errorf(codes.FailedPrecondition, "update NKE RBAC: kubeconfig precondition failed: %v", err)
+			return nil, status.Errorf(codes.FailedPrecondition, "UpdateNKERBAC: kubeconfig precondition failed: %v", err)
 		}
-		return nil, status.Errorf(codes.Internal, "update NKE RBAC: initializing Kubernetes client: %v", err)
+		return nil, status.Errorf(codes.Internal, "UpdateNKERBAC: initializing Kubernetes client: %v", err)
 	}
 
-	return applyNKERBACResources(ctx, client, resources), nil
+	return applyNVKERBACResources(ctx, client, resources), nil
 }
 
 // UpdateAndFetchKubeAdmJoinStrings updates certs and tokens and creates a new join string for both controlplane and worker
@@ -1569,7 +1569,7 @@ func (s *NodeAgentServer) UpdateAndFetchKubeAdmJoinStrings(
 	}
 
 	tokenArgs := []string{"token", "create", "--print-join-command"}
-	output, err := s.Runner.Run("kubeadm", tokenArgs, &nkeutils.CommandOptions{})
+	output, err := s.Runner.Run("kubeadm", tokenArgs, &nvkeutils.CommandOptions{})
 	if err != nil {
 		slog.Error("failed to create new join string", "err", err, "output", string(output))
 		return nil, fmt.Errorf("kubeadm token create: %w: %s", err, strings.TrimSpace(string(output)))
@@ -1600,7 +1600,7 @@ func (s *NodeAgentServer) uploadControlPlaneCerts() (string, error) {
 		args = append(args, "--config", configPath)
 	}
 	cmd := "kubeadm " + strings.Join(args, " ")
-	output, err := s.Runner.Run("kubeadm", args, &nkeutils.CommandOptions{})
+	output, err := s.Runner.Run("kubeadm", args, &nvkeutils.CommandOptions{})
 	out := strings.TrimSpace(string(output))
 	if err != nil {
 		return "", fmt.Errorf("%s: %w: %s", cmd, err, out)
@@ -1719,7 +1719,7 @@ func (s *NodeAgentServer) executeScript(
 	}
 	defer cleanup()
 
-	output, err := s.Runner.Run(scriptPath, req.Args, &nkeutils.CommandOptions{})
+	output, err := s.Runner.Run(scriptPath, req.Args, &nvkeutils.CommandOptions{})
 	exitCode := 0
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
@@ -1816,7 +1816,7 @@ func (s *NodeAgentServer) UploadFileBundle(stream pb.NodeAgent_UploadFileBundleS
 			_, err = s.Runner.Run(
 				"tar",
 				[]string{"-xvf", UploadDir + "/" + filename, "-C", destination},
-				&nkeutils.CommandOptions{},
+				&nvkeutils.CommandOptions{},
 			)
 			if err != nil {
 				return fmt.Errorf("failed to extract file: %v", err)
@@ -2104,8 +2104,8 @@ func (s *NodeAgentServer) InstallBundle(
 		return nil, fmt.Errorf("failed to parse version: %v", err)
 	}
 
-	slog.Info("[DEBUG] attempt to fetch bundle from index", "IDX", s.BundleIndexFile, "Name", req.Name, "Version", nkeutils.VersionString(version), "ARCH", s.NodeStatus.Architecture)
-	bundle, err := nkeutils.FetchBundleFromIndex(ctx, s.BundleServerURL, s.BundleIndexFile, req.Name, version, s.NodeStatus.Architecture)
+	slog.Info("[DEBUG] attempt to fetch bundle from index", "IDX", s.BundleIndexFile, "Name", req.Name, "Version", nvkeutils.VersionString(version), "ARCH", s.NodeStatus.Architecture)
+	bundle, err := nvkeutils.FetchBundleFromIndex(ctx, s.BundleServerURL, s.BundleIndexFile, req.Name, version, s.NodeStatus.Architecture)
 	if err != nil {
 		return nil, err
 	}
@@ -2144,15 +2144,15 @@ func (s *NodeAgentServer) InstallBundle(
 }
 
 func (s *NodeAgentServer) processBundleInstall(
-	bundle *nkeutils.Bundle,
+	bundle *nvkeutils.Bundle,
 	bundleStatus *Bundle,
 ) error {
 	defer s.PersistNodeStatus()
 	defer s.UpdateBundleStatus(bundleStatus)
 
-	out, err := nkeutils.InstallBundle(bundle, s.Runner, s.BundleSource)
+	out, err := nvkeutils.InstallBundle(bundle, s.Runner, s.BundleSource)
 	if err != nil {
-		slog.Error("failed to install bundle", "name", bundle.Name, "version", nkeutils.VersionString(bundle.Version), "err", err)
+		slog.Error("failed to install bundle", "name", bundle.Name, "version", nvkeutils.VersionString(bundle.Version), "err", err)
 		bundleStatus.Status = ErrorStatus
 		bundleStatus.Error = fmt.Sprintf("failed to install %s bundle version %s @ %s: %v", bundle.Name, bundle.Version, time.Now().Format(time.RFC3339), err)
 		bundleStatus.Output = out
@@ -2164,7 +2164,7 @@ func (s *NodeAgentServer) processBundleInstall(
 	}
 
 	bundleStatus.Status = SuccessStatus
-	slog.Info("bundle successfully installed", "name", bundle.Name, "version", nkeutils.VersionString(bundle.Version))
+	slog.Info("bundle successfully installed", "name", bundle.Name, "version", nvkeutils.VersionString(bundle.Version))
 
 	return nil
 }
@@ -2229,8 +2229,8 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 	// Route by file suffix: .json -> bundles, .txt -> apt packages
 	switch {
 	case isJSONCollection:
-		profile := nkeutils.Profile{}
-		if err := nkeutils.FetchJSON(ctx, req.CollectionURL, &profile); err != nil {
+		profile := nvkeutils.Profile{}
+		if err := nvkeutils.FetchJSON(ctx, req.CollectionURL, &profile); err != nil {
 			slog.Error("failed to fetch collection", "url", req.CollectionURL, "err", err)
 			return nil, status.Errorf(codes.Internal, "failed to fetch collection from %s: %v", req.CollectionURL, err)
 		}
@@ -2240,18 +2240,18 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 			}
 		}
 
-		index, err := nkeutils.FetchIndex(ctx, s.BundleIndexFile)
+		index, err := nvkeutils.FetchIndex(ctx, s.BundleIndexFile)
 		if err != nil {
 			slog.Error("failed to fetch index", "index_file", s.BundleIndexFile, "err", err)
 			return nil, status.Errorf(codes.Internal, "failed to fetch index: %v", err)
 		}
 
 		for _, bundleReq := range profile.Bundles {
-			slog.InfoContext(ctx, "Adding bundle", "name", bundleReq.Name, "version", nkeutils.VersionString(bundleReq.Version), "request_id", requestID)
+			slog.InfoContext(ctx, "Adding bundle", "name", bundleReq.Name, "version", nvkeutils.VersionString(bundleReq.Version), "request_id", requestID)
 
 			bundle, ok := index.Find(bundleReq.Name, bundleReq.Version, s.NodeStatus.Architecture)
 			if !ok {
-				slog.Error("bundle not found in index", "name", bundleReq.Name, "version", nkeutils.VersionString(bundleReq.Version), "architecture", s.NodeStatus.Architecture)
+				slog.Error("bundle not found in index", "name", bundleReq.Name, "version", nvkeutils.VersionString(bundleReq.Version), "architecture", s.NodeStatus.Architecture)
 				return nil, status.Errorf(codes.Internal, "bundle %s version %s not found in index", bundleReq.Name, bundleReq.Version)
 			}
 
@@ -2276,7 +2276,7 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 			s.AppendBundleToStatus(status)
 			s.PersistNodeStatus()
 
-			go func(b *nkeutils.Bundle, st *Bundle) {
+			go func(b *nvkeutils.Bundle, st *Bundle) {
 				if err := s.processBundleInstall(b, st); err != nil {
 					slog.Error("error installing bundle async", "err", err)
 				}
@@ -2284,7 +2284,7 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 		}
 
 	case strings.HasSuffix(strings.ToLower(req.CollectionURL), ".txt"):
-		text, err := nkeutils.FetchText(ctx, req.CollectionURL)
+		text, err := nvkeutils.FetchText(ctx, req.CollectionURL)
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to fetch collection", "url", req.CollectionURL, "err", err)
 			return nil, status.Errorf(codes.Internal, "failed to fetch collection from %s: %v", req.CollectionURL, err)
@@ -2374,13 +2374,13 @@ func (s *NodeAgentServer) GetSupportBundle(ctx context.Context, req *pb.GetSuppo
 	}
 
 	// /var/lib/nke-agent-audit.log
-	srcAudit := filepath.Join(root, NKEAuditLog)
+	srcAudit := filepath.Join(root, NVKEAuditLog)
 	if err := copyFileIntoBundle(srcAudit, filepath.Join(tmpDir, "nke-audit.log")); err != nil {
 		slog.DebugContext(ctx, "audit log not included in support bundle", "path", srcAudit, "err", err)
 	}
 
 	// /var/log/nke-execute-scripts.log
-	srcExecuteScripts := filepath.Join(root, NKEExecuteScriptsLog)
+	srcExecuteScripts := filepath.Join(root, NVKEExecuteScriptsLog)
 	if err := copyFileIntoBundle(srcExecuteScripts, filepath.Join(tmpDir, "nke-execute-scripts.log")); err != nil {
 		slog.DebugContext(ctx, "execute scripts log not included in support bundle", "path", srcExecuteScripts, "err", err)
 	}

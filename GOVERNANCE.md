@@ -2,7 +2,7 @@
 
 ## Overview
 
-nke is an open-source project maintained by NVIDIA. This document
+NVKE is an open-source project maintained by NVIDIA. This document
 describes how the project is governed, how decisions are made, and how
 to become a maintainer.
 

@@ -196,7 +196,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--architecture", choices=("amd64", "arm64"), required=True)
     arguments = parser.parse_args()
-    # This dependency is already installed by NKE autoinstall. Import only in
+    # This dependency is already installed by NVKE autoinstall. Import only in
     # the guest operation so contract tests can exercise error handling on macOS.
     import apt
     capture(arguments.root, arguments.output, arguments.architecture, apt.Cache())

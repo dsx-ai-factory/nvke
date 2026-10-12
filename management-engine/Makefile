@@ -152,7 +152,7 @@ require-host-context:
 require-state-context:
 	@test -n "$(STATE_CONTEXT)" || { echo 'Set STATE_CONTEXT to the datastore cluster'; exit 1; }
 
-DEV_NAME ?= nke
+DEV_NAME ?= nvke
 KIND_NODE_IMAGE ?= kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
 TILT_PORT ?= 10351
 export DEV_NAME KIND_NODE_IMAGE TILT_PORT
@@ -179,7 +179,7 @@ test-install: ## Test the runtime in the prepared environment; run before Tilt.
 	IMG="$(IMG)" bash hack/dev.sh test
 
 .PHONY: dev-cwe dev-cwe-up dev-cwe-down test-cwe
-dev-cwe dev-cwe-up dev-cwe-down test-cwe: DEV_NAME = nke-cwe
+dev-cwe dev-cwe-up dev-cwe-down test-cwe: DEV_NAME = nvke-cwe
 dev-cwe dev-cwe-up dev-cwe-down test-cwe: TILT_PORT = 10353
 dev-cwe: ## Start CWE and management-engine in one Tilt dashboard on dedicated Kind clusters.
 	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh cwe-up

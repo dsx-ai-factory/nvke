@@ -12,7 +12,7 @@
 //
 // The baseline is a published controller/api version tag, not the merge base.
 // The tag is what a consumer can actually pin (`go get
-// github.com/dsx-ai-factory/nke/controller/api@v0.0.17`), so it is the only ref
+// github.com/dsx-ai-factory/nvke/controller/api@v0.0.17`), so it is the only ref
 // against which "backward compatible" means anything to them.
 //
 // Everything that is not provably compatible fails. A missing baseline, an

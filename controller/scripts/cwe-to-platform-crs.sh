@@ -249,7 +249,7 @@ spec:
         cluster_spec+="  controlPlaneVIP: \"${control_plane_vip}\"
 "
     fi
-    write_file "$OUTPUT_DIR/nke-cluster-${cluster_name}.yaml" "apiVersion: ${API_GROUP}/${API_VERSION}
+    write_file "$OUTPUT_DIR/nvke-cluster-${cluster_name}.yaml" "apiVersion: ${API_GROUP}/${API_VERSION}
 kind: NKECluster
 metadata:
   name: ${cluster_name}
@@ -257,7 +257,7 @@ metadata:
 spec:
 ${cluster_spec}
 "
-    APPLY_LINES+=("kubectl apply -f nke-cluster-${cluster_name}.yaml")
+    APPLY_LINES+=("kubectl apply -f nvke-cluster-${cluster_name}.yaml")
 
     # --- NKENodePools (per cluster) ---
     np_count=$(echo "$nodepools_json" | jq 'length')

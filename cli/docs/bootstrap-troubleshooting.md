@@ -1,6 +1,6 @@
 # Troubleshooting a Site Bootstrap
 
-What to do when `nkectl bootstrap site` fails. This page covers where the
+What to do when `nvkectl bootstrap site` fails. This page covers where the
 evidence is, how to read the error, the failures operators meet most often
 with their fixes, and when it is safe to run the command again.
 
@@ -14,12 +14,12 @@ how far it got.
 
 ### The terminal output
 
-`nkectl` logs to standard error, one line per action, and prints the final
+`nvkectl` logs to standard error, one line per action, and prints the final
 error last. Keep the output: redirect it to a file when you run the command,
 or use `--json-logs` for output a tool can parse.
 
 ```bash
-REGISTRY_API_KEY=... nkectl bootstrap site -f sitespec.yaml 2>&1 | tee bootstrap.log
+REGISTRY_API_KEY=... nvkectl bootstrap site -f sitespec.yaml 2>&1 | tee bootstrap.log
 ```
 
 Every line names the component that wrote it. `bootstrap-site` is the command
@@ -28,10 +28,10 @@ controller and its charts. `-v` adds debug detail.
 
 ### The diagnostics directory
 
-When a bootstrap fails after the Kind cluster exists, `nkectl` dumps that
+When a bootstrap fails after the Kind cluster exists, `nvkectl` dumps that
 cluster's state before anything is torn down. The default location is
 `cluster-diagnostics/` in the working directory; `--diagnostics-dir` or
-`NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR` changes it. The log line
+`NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR` changes it. The log line
 `bootstrap failed; collecting cluster diagnostics` names the directory used.
 
 | Path | Contents |
@@ -56,14 +56,14 @@ workflows and credentials needed to recover. In both cases the log line names
 the kubeconfig path:
 
 ```text
-level=WARN msg="bootstrap failed after site cluster creation; retaining the bootstrap kind cluster for recovery" cluster=nkectl-bootstrap kubeconfig=/tmp/nkectl-bootstrap-kubeconfig-.../config
+level=WARN msg="bootstrap failed after site cluster creation; retaining the bootstrap kind cluster for recovery" cluster=nvkectl-bootstrap kubeconfig=/tmp/nvkectl-bootstrap-kubeconfig-.../config
 ```
 
 Use that kubeconfig to look at the live state, which is more than the dump
 captures:
 
 ```bash
-export KUBECONFIG=/tmp/nkectl-bootstrap-kubeconfig-.../config
+export KUBECONFIG=/tmp/nvkectl-bootstrap-kubeconfig-.../config
 kubectl get pods -A
 kubectl -n nke-controller logs deploy/nke-controller --tail=500
 ```
@@ -80,7 +80,7 @@ it `kind` looks in Docker, finds nothing, and exits successfully having deleted
 nothing.
 
 ```bash
-KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nkectl-bootstrap
+KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap
 ```
 
 ### The nodes
@@ -137,7 +137,7 @@ Each entry gives the text to look for, what it means, and what to do.
 **`nerdctl is required to bootstrap a site but was not found on PATH`**
 
 The bootstrap cluster runs on nerdctl and containerd. Docker is not
-supported. Install both on the machine running `nkectl`; see
+supported. Install both on the machine running `nvkectl`; see
 [Installation](../../docs/site-bootstrap/installation.md#additional-prerequisites-for-bootstrap).
 
 **`image <image> is not in the local image store ... and names no registry to pull it from`**
@@ -146,12 +146,12 @@ Bootstrap side-loads two images that default to local builds,
 `nke-controller:latest` and `cluster-api-provider-provisioned:latest`, and
 neither is in containerd's image store. Build them with `make -C cli images`,
 or name images your host can pull, with `--controller-image` and
-`--provisioned-provider-image` or `NKECTL_CONTROLLER_IMAGE` and
-`NKECTL_CAPI_PROVISIONED_IMAGE`. A reference with a registry, such as
+`--provisioned-provider-image` or `NVKECTL_CONTROLLER_IMAGE` and
+`NVKECTL_CAPI_PROVISIONED_IMAGE`. A reference with a registry, such as
 `docker.io/<org>/<name>`, is pulled; if the pull is refused, see
 [Bootstrap cluster](#bootstrap-cluster).
 
-**`bootstrap cluster "nkectl-bootstrap" from an earlier run is still running`**
+**`bootstrap cluster "nvkectl-bootstrap" from an earlier run is still running`**
 
 A previous bootstrap left its Kind cluster behind, either because you passed
 `--keep-bootstrap-cluster` or because that run failed after creating the site
@@ -161,11 +161,11 @@ its key, the key is in this cluster. Save it before deleting anything:
 ```bash
 umask 077
 export KIND_EXPERIMENTAL_PROVIDER=nerdctl
-kind get kubeconfig --name nkectl-bootstrap > bootstrap.kubeconfig
+kind get kubeconfig --name nvkectl-bootstrap > bootstrap.kubeconfig
 kubectl --kubeconfig bootstrap.kubeconfig -n nke-controller get secrets | grep etcd-encryption-key-
 # for each match:
 kubectl --kubeconfig bootstrap.kubeconfig -n nke-controller get secret <name> -o json > <name>.json
-kind delete cluster --name nkectl-bootstrap
+kind delete cluster --name nvkectl-bootstrap
 ```
 
 Then re-run. Bootstrap never deletes or reuses an existing cluster itself.
@@ -203,11 +203,11 @@ path with `--encryption-key-out`.
 
 ### Bootstrap cluster
 
-**`kind create cluster nkectl-bootstrap: exit status 1`**
+**`kind create cluster nvkectl-bootstrap: exit status 1`**
 
 The output after the error is kind's own. Common causes: containerd is not
 running or the current user cannot reach its socket; the kindest/node image
-could not be pulled, in which case set `NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` to a
+could not be pulled, in which case set `NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` to a
 registry mirror; or a host port bootstrap needs is in use. Fix the cause and
 re-run. If a half-created cluster remains, delete it with the command above.
 
@@ -238,12 +238,12 @@ Three patterns account for most of them:
 
 - *Chart fetch failed*, such as `failed to fetch ... 500` or a timeout. The
   chart repository is unreachable from the bootstrap host. Retry, or point at
-  a mirror or local copy with `NKECTL_CONTROLLER_TEMPORAL_CHART`,
-  `NKECTL_CONTROLLER_SPIRE_CHART` and `NKECTL_CONTROLLER_SPIRE_CRDS_CHART`. Nodes are
+  a mirror or local copy with `NVKECTL_CONTROLLER_TEMPORAL_CHART`,
+  `NVKECTL_CONTROLLER_SPIRE_CHART` and `NVKECTL_CONTROLLER_SPIRE_CRDS_CHART`. Nodes are
   untouched.
 - *Image pull failed inside the cluster*, visible in `pods-described.txt` as
   `ErrImagePull` or `ImagePullBackOff`. The Kind node cannot reach the image
-  registry. Set `NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` for Docker Hub images, and
+  registry. Set `NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` for Docker Hub images, and
   check that the controller image was loaded rather than pulled.
 - *`--wait` timed out* with pods still `Pending` or `CrashLoopBackOff`. Open
   the pod's `logs.txt`. A Pending pod is usually resources on the bootstrap
@@ -252,7 +252,7 @@ Three patterns account for most of them:
   shared password did not reach one side; a schema migration error names the
   migration that failed.
 
-`NKECTL_CONTROLLER_HELM_TIMEOUT` raises the per-release wait from its default of
+`NVKECTL_CONTROLLER_HELM_TIMEOUT` raises the per-release wait from its default of
 five minutes on a slow network.
 
 **`cwe did not report healthy on /readyz within 5m0s: last error=... last response=...`**
@@ -261,14 +261,14 @@ The controller pod is running but its readiness check is failing. The response
 names which dependency: `database` means Postgres is not reachable with the
 generated password, `temporal` means the Temporal frontend is not up yet or
 its schema jobs failed. Open `temporal/*/logs.txt` and `postgres/*/logs.txt`
-in the diagnostics directory. `NKECTL_CONTROLLER_READY_TIMEOUT` raises the wait.
+in the diagnostics directory. `NVKECTL_CONTROLLER_READY_TIMEOUT` raises the wait.
 
 **`waiting for the published cwe api: http://127.0.0.1:30080/readyz did not become ready`**
 
 The controller is healthy inside the cluster but not reachable from the host. The
 Kind host port mapping or the NodePort Service did not come up. Check that
 nothing else on the host holds port 30080, or change it with
-`NKECTL_CONTROLLER_PORT`.
+`NVKECTL_CONTROLLER_PORT`.
 
 ### Site cluster
 
@@ -304,7 +304,7 @@ The first control plane node never finished `kubeadm init`. In order:
    misconfigured container runtime are the usual causes; see
    [Pre-Provisioned Nodes](../../docs/site-bootstrap/pre-provisioned-nodes.md#step-1-prepare-all-nodes).
 
-`--timeout` or `NKECTL_BOOTSTRAP_CLUSTER_TIMEOUT` raises the budget for slow
+`--timeout` or `NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT` raises the budget for slow
 networks. The same budget also covers the join wait below.
 
 **`only N of M control plane nodes of cluster <id> finished provisioning within ... (outstanding: <names>)`**

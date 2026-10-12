@@ -127,7 +127,7 @@ if [[ -n "${LUKS_PASSPHRASE}" ]]; then
   while read -r partition; do
     [[ -n "${partition}" ]] || continue
     [[ "$(gf vfs-type "${partition}" 2>/dev/null)" == "crypto_LUKS" ]] || continue
-    gf cryptsetup-open "${partition}" "nkeluks${opened}"
+    gf cryptsetup-open "${partition}" "nvkeluks${opened}"
     echo "Opened the LUKS container on ${partition}"
     opened=$((opened + 1))
   done < <(gf list-partitions)

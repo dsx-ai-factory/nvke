@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Node image for the nkectl bootstrap-site E2E substrate.
+# Node image for the nvkectl bootstrap-site E2E substrate.
 #
 # This is a deliberately thin derivation of the CAPD node image
 # (controller/hack/capd-kindest-node/Dockerfile, built by `make capd-image`),
-# which already provides everything a pre-provisioned NKE host needs:
+# which already provides everything a pre-provisioned NVKE host needs:
 #
 #   * nke-agent installed with its systemd unit, configured via
 #     /etc/default/nke-agent
@@ -49,8 +49,8 @@ RUN SYSTEMD_OFFLINE=1 systemctl disable nke-container-network.service
 #
 # The result is a host that already has a hardware identity and is already
 # looking for its SPIRE server — which is what a pre-provisioned machine looks
-# like by the time nkectl hears about it. The server does not exist yet;
-# spire-agent retries until `nkectl bootstrap site` puts one where agent.conf
+# like by the time nvkectl hears about it. The server does not exist yet;
+# spire-agent retries until `nvkectl bootstrap site` puts one where agent.conf
 # says. That is why the E2E has nothing to configure and nothing to start: it
 # reads the fingerprints, lets the command deploy SPIRE, and checks the agents
 # got in.

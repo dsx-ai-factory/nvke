@@ -8,8 +8,8 @@ import (
 
 	apiserverv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
 
 const (
@@ -45,7 +45,7 @@ func BuildCombinedAuthenticationConfig(
 		JWT: make([]apiserverv1.JWTAuthenticator, 0, providerCount),
 	}
 	if managementOIDC.Enabled {
-		shared, err := BuildOIDCAuthenticationConfig(clusterName, config.NkeOIDCAuth{
+		shared, err := BuildOIDCAuthenticationConfig(clusterName, config.NvkeOIDCAuth{
 			Enabled:      true,
 			IssuerURL:    managementOIDC.IssuerURL,
 			DiscoveryURL: managementOIDC.DiscoveryURL,

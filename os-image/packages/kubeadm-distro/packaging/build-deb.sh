@@ -105,7 +105,7 @@ SCRATCH="$(mktemp -d "${TMPDIR_NO_SLASH%/}/nke-kubeadm-distro-XXXXXX")"
 SCRIPTS_DIR=""
 trap 'rm -rf "${SCRATCH}" "${SCRIPTS_DIR}"' EXIT
 
-printf '%s\n' "Bundled Kubernetes ${K8S_VER} node stack (NKE)." >"${SCRATCH}/README.Debian"
+printf '%s\n' "Bundled Kubernetes ${K8S_VER} node stack (NVKE)." >"${SCRATCH}/README.Debian"
 
 # nfpm.yaml's top-level `mtime` does not reach files pulled in through the one
 # `type: tree` content entry (/opt/cni/bin), so that directory gets a touched

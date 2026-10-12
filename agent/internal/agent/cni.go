@@ -16,8 +16,8 @@ import (
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -82,8 +82,8 @@ const (
 )
 
 // checkHostOpenVSwitchReady verifies ovs-vsctl is installed (ovs-vsctl --version).
-func checkHostOpenVSwitchReady(runner nkeutils.CommandRunner) error {
-	out, err := runner.Run("ovs-vsctl", []string{"--version"}, &nkeutils.CommandOptions{Env: os.Environ()})
+func checkHostOpenVSwitchReady(runner nvkeutils.CommandRunner) error {
+	out, err := runner.Run("ovs-vsctl", []string{"--version"}, &nvkeutils.CommandOptions{Env: os.Environ()})
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
 		if msg != "" {
@@ -98,7 +98,7 @@ func (s *NodeAgentServer) applyTigeraManifestOverrides(path, operatorManifest, r
 	if operatorManifest != "" {
 		operatorManifestPath := filepath.Join(path, "manifests", "tigera-operator.yaml")
 		operatorManifestBackupPath := operatorManifestPath + ".bak"
-		s.Runner.Run("mv", []string{operatorManifestPath, operatorManifestBackupPath}, &nkeutils.CommandOptions{}) //nolint:all
+		s.Runner.Run("mv", []string{operatorManifestPath, operatorManifestBackupPath}, &nvkeutils.CommandOptions{}) //nolint:all
 		if err := os.WriteFile(operatorManifestPath, []byte(operatorManifest), 0o644); err != nil {
 			return fmt.Errorf("failed to write operator manifest file: %w", err)
 		}
@@ -107,7 +107,7 @@ func (s *NodeAgentServer) applyTigeraManifestOverrides(path, operatorManifest, r
 	if resourceManifest != "" {
 		resourceManifestPath := filepath.Join(path, "manifests", "custom-resources.yaml")
 		resourceManifestBackupPath := resourceManifestPath + ".bak"
-		_, err := s.Runner.Run("mv", []string{resourceManifestPath, resourceManifestBackupPath}, &nkeutils.CommandOptions{})
+		_, err := s.Runner.Run("mv", []string{resourceManifestPath, resourceManifestBackupPath}, &nvkeutils.CommandOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to backup default manifest files: %w", err)
 		}
@@ -127,7 +127,7 @@ func (s *NodeAgentServer) installCalico(version *semver.Version, operatorManifes
 	//
 	// We can update the bundle to our "formula" and include everything in it then just call "installBundle"
 	slog.Info("fetching calico bundle by index", "version", version.String(), "architecture", s.NodeStatus.Architecture)
-	calicoBundle, err := nkeutils.FetchBundleFromIndex(context.Background(), s.BundleServerURL, s.BundleIndexFile, cniPluginCalico, version, s.NodeStatus.Architecture)
+	calicoBundle, err := nvkeutils.FetchBundleFromIndex(context.Background(), s.BundleServerURL, s.BundleIndexFile, cniPluginCalico, version, s.NodeStatus.Architecture)
 	if err != nil {
 		slog.Error("failed to fetch calico bundle", "error", err)
 		return err
@@ -146,11 +146,11 @@ func (s *NodeAgentServer) installCalico(version *semver.Version, operatorManifes
 	}
 
 	calicoBundle.InstallFile = "calico-install.py"
-	calicoBundle.InstallCmd = []string{nkeutils.ResolvePython(), "calico-install.py"}
+	calicoBundle.InstallCmd = []string{nvkeutils.ResolvePython(), "calico-install.py"}
 
 	defer s.AppendBundleToStatus(bundleStatus)
 
-	path, err := nkeutils.DownloadAndExtractArchive(calicoBundle, s.BundleSource)
+	path, err := nvkeutils.DownloadAndExtractArchive(calicoBundle, s.BundleSource)
 	if err != nil {
 		bundleStatus.Status = ErrorStatus
 		bundleStatus.Error = fmt.Sprintf("failed to download calico bundle: %v", err.Error())
@@ -165,10 +165,10 @@ func (s *NodeAgentServer) installCalico(version *semver.Version, operatorManifes
 
 	slog.Info("attempting install of calico bundle", "name", calicoBundle.Name, "url", calicoBundle.URL)
 	// Ensure insall file is executable
-	_, _ = s.Runner.Run("chmod", []string{"+x", calicoBundle.InstallFile}, &nkeutils.CommandOptions{Dir: path})
+	_, _ = s.Runner.Run("chmod", []string{"+x", calicoBundle.InstallFile}, &nvkeutils.CommandOptions{Dir: path})
 	out, err := s.Runner.Run(calicoBundle.InstallCmd[0],
 		calicoBundle.InstallCmd[1:],
-		&nkeutils.CommandOptions{
+		&nvkeutils.CommandOptions{
 			Dir: path,
 			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 		})
@@ -192,7 +192,7 @@ func (s *NodeAgentServer) installCalico(version *semver.Version, operatorManifes
 }
 
 // helmValuesFileArgs appends -f flags for standard value files present under chartDir.
-// Later files win, so the chart's defaults go first and NKE's override last.
+// Later files win, so the chart's defaults go first and NVKE's override last.
 func helmValuesFileArgs(chartDir string) []string {
 	var args []string
 	for _, name := range []string{"values.yaml", "values-images.yaml", "values-production.yaml", "values-single-node-zone.yaml", "values-nke.yaml"} {
@@ -368,7 +368,7 @@ func (s *NodeAgentServer) runOvnKubernetesHelmInstallFromDir(chartDir, podNetwor
 	}
 	cniConfig = ovnKubernetesCNIConfig(cniConfig, os.Getenv(openVSwitchDatapathTypeEnv))
 	args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serviceCidr, s.CniImageRegistry, upstreamRepo, cniConfig)
-	stdout, err := s.Runner.Run("helm", args, &nkeutils.CommandOptions{
+	stdout, err := s.Runner.Run("helm", args, &nvkeutils.CommandOptions{
 		Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 	})
 	if err != nil {
@@ -398,7 +398,7 @@ func (s *NodeAgentServer) installOvnK8sCNIPlugin(req *pb.InstallCNIPluginRequest
 		return fmt.Errorf("failed to parse ovn version: %w", err)
 	}
 
-	ovnBundle, err := nkeutils.FetchBundleFromIndex(context.Background(), s.BundleServerURL, s.BundleIndexFile, cniPluginOVN, version, s.NodeStatus.Architecture)
+	ovnBundle, err := nvkeutils.FetchBundleFromIndex(context.Background(), s.BundleServerURL, s.BundleIndexFile, cniPluginOVN, version, s.NodeStatus.Architecture)
 	if err != nil {
 		return err
 	}
@@ -416,17 +416,17 @@ func (s *NodeAgentServer) installOvnK8sCNIPlugin(req *pb.InstallCNIPluginRequest
 	}
 	defer s.AppendBundleToStatus(bundleStatus)
 
-	path, err := nkeutils.DownloadAndExtractArchive(ovnBundle, s.BundleSource)
+	path, err := nvkeutils.DownloadAndExtractArchive(ovnBundle, s.BundleSource)
 	if err != nil {
 		return err
 	}
 
 	slog.Info("attempting install of ovn bundle", "name", ovnBundle.Name, "url", ovnBundle.URL)
 	// Ensure install file is executable
-	_, _ = s.Runner.Run("chmod", []string{"+x", ovnBundle.InstallFile}, &nkeutils.CommandOptions{Dir: path})
+	_, _ = s.Runner.Run("chmod", []string{"+x", ovnBundle.InstallFile}, &nvkeutils.CommandOptions{Dir: path})
 	out, err := s.Runner.Run(ovnBundle.InstallCmd[0],
 		ovnBundle.InstallCmd[1:],
-		&nkeutils.CommandOptions{
+		&nvkeutils.CommandOptions{
 			Dir: path,
 			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 		})
@@ -462,7 +462,7 @@ func effectiveCniVariant(v pb.CniVariant) pb.CniVariant {
 	return v
 }
 
-// nkeCniAptSpec builds an apt install spec for the discrete NKE CNI packages.
+// nvkeCniAptSpec builds an apt install spec for the discrete NVKE CNI packages.
 //
 // OVN Debian names include the Helm chart stream, e.g. nke-cni-ovn-images-1.4.0 and
 // nke-cni-ovn-charts-1.4.0. Request version (after stripping a leading "v") selects that
@@ -478,7 +478,7 @@ func effectiveCniVariant(v pb.CniVariant) pb.CniVariant {
 // installable but are not emitted by this helper.
 //
 // A single leading "v" on version is stripped when non-empty.
-func nkeCniAptSpec(variant pb.CniVariant, role pb.CniAptRole, version string) (string, error) {
+func nvkeCniAptSpec(variant pb.CniVariant, role pb.CniAptRole, version string) (string, error) {
 	variant = effectiveCniVariant(variant)
 	pin := strings.TrimSpace(version)
 	pin = strings.TrimPrefix(pin, "v")
@@ -531,11 +531,11 @@ func nkeCniAptSpec(variant pb.CniVariant, role pb.CniAptRole, version string) (s
 	}
 }
 
-func nkeCniChartsDebLogicalSpec(req *pb.InstallCNIRequest) (string, error) {
+func nvkeCniChartsDebLogicalSpec(req *pb.InstallCNIRequest) (string, error) {
 	if req == nil {
 		return "", errors.New("request is nil")
 	}
-	return nkeCniAptSpec(req.GetCniVariant(), pb.CniAptRole_CNI_APT_ROLE_CHARTS, req.GetVersion())
+	return nvkeCniAptSpec(req.GetCniVariant(), pb.CniAptRole_CNI_APT_ROLE_CHARTS, req.GetVersion())
 }
 
 func dpkgInstalledVersion(ctx context.Context, binPkg string) (string, error) {
@@ -650,7 +650,7 @@ func (s *NodeAgentServer) runCalicoHelmInstallFromDir(chartDir string, req *pb.I
 		}
 		args = append(args, "--set", fmt.Sprintf("%s=%s", key, value))
 	}
-	stdout, err := s.Runner.Run("helm", args, &nkeutils.CommandOptions{
+	stdout, err := s.Runner.Run("helm", args, &nvkeutils.CommandOptions{
 		Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 	})
 	if err != nil {
@@ -715,7 +715,7 @@ func calicoCustomResourcesApplyPath(manifestsDir, podNetworkCidr string) (string
 func (s *NodeAgentServer) runCalicoKubectlApplyFromDir(root, podNetworkCidr string) error {
 	applyScript := filepath.Join(root, "apply-manifests.sh")
 	if st, err := os.Stat(applyScript); err == nil && !st.IsDir() {
-		out, err := s.Runner.Run(applyScript, nil, &nkeutils.CommandOptions{
+		out, err := s.Runner.Run(applyScript, nil, &nvkeutils.CommandOptions{
 			Dir: root,
 			Env: calicoKubectlEnv(podNetworkCidr),
 		})
@@ -749,7 +749,7 @@ func (s *NodeAgentServer) runCalicoKubectlApplyFromDir(root, podNetworkCidr stri
 			{"wait", "--for=condition=Established", "--timeout=120s", "-f", crdsPath},
 		}
 		for _, args := range commands {
-			out, err := s.Runner.Run("kubectl", args, &nkeutils.CommandOptions{
+			out, err := s.Runner.Run("kubectl", args, &nvkeutils.CommandOptions{
 				Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 			})
 			if err != nil {
@@ -760,7 +760,7 @@ func (s *NodeAgentServer) runCalicoKubectlApplyFromDir(root, podNetworkCidr stri
 		return fmt.Errorf("stat calico CRDs: %w", err)
 	}
 	args := []string{"apply", "-f", paths[0], "-f", paths[1]}
-	stdout, err := s.Runner.Run("kubectl", args, &nkeutils.CommandOptions{
+	stdout, err := s.Runner.Run("kubectl", args, &nvkeutils.CommandOptions{
 		Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 	})
 	if err != nil {

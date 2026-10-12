@@ -182,8 +182,8 @@ start_vm() {
 ssh_authorized_keys:
   - $(cat "${SSH_KEY}.pub")
 EOF
-  echo "instance-id: nke-fde-demo-$$-${RANDOM}
-local-hostname: nke-fde-demo" >"${runwork}/meta-data"
+  echo "instance-id: nvke-fde-demo-$$-${RANDOM}
+local-hostname: nvke-fde-demo" >"${runwork}/meta-data"
   cloud-localds "${runwork}/seed.iso" "${runwork}/user-data" "${runwork}/meta-data"
 
   rm -f "${tpmdir}/swtpm-sock" "${tpmdir}/.lock"

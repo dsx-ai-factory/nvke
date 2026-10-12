@@ -5,7 +5,7 @@ traces and exports them over OTLP. This guide installs it, connects it to a
 backend, and covers the settings that most often differ from one cluster to the
 next. The [chart README](../../nktp/deploy/charts/nktp/README.md) summarizes what the chart
 deploys, and the [topology](architecture/topology.md) links the page that covers
-each component and its values. On an NKE site controller, `deploy/nico` deploys
+each component and its values. On an NVKE site controller, `deploy/nico` deploys
 NKTP for you; see [Telemetry on a site controller](site-telemetry/getting-started.md).
 
 ## Before you install
@@ -34,7 +34,7 @@ Install a released chart from GHCR:
 ```bash
 kubectl create namespace nktp
 kubectl label namespace nktp pod-security.kubernetes.io/enforce=privileged
-helm install nktp oci://ghcr.io/dsx-ai-factory/nke/charts/nktp \
+helm install nktp oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp \
   --version <version> --namespace nktp --values my-values.yaml --wait
 ```
 

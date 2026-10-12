@@ -1,15 +1,15 @@
-# nkectl compatibility policy
+# nvkectl compatibility policy
 
-Anything you script against `nkectl` is a contract whether or not anyone
-declared it one. This document declares it: what nkectl promises not to break,
+Anything you script against `nvkectl` is a contract whether or not anyone
+declared it one. This document declares it: what nvkectl promises not to break,
 what it reserves the right to change, and how something that has to change gets
 removed.
 
-`nkectl` versions and releases on its own `cli/vX.Y.Z` tags, separately from the
+`nvkectl` versions and releases on its own `cli/vX.Y.Z` tags, separately from the
 controller. The [release process](../../RELEASE.md) defines what each increment
 means. This document says which parts of the CLI those increments apply to.
 
-`cmd/nkectl/contract_test.go` enforces the promises below at the command
+`cmd/nvkectl/contract_test.go` enforces the promises below at the command
 boundary — it builds the binary and runs it as a process, so it sees the exit
 code, the stream each byte lands on, and what a signal does. A change that
 breaks one of these promises fails that test. Changing the test to match the new
@@ -28,9 +28,9 @@ this document.
 | **Flag names and semantics** | A documented flag keeps its name, its short form, and its meaning. New flags may be added. A flag's default may change only in a MINOR release and only when the new default cannot break a scripted invocation. |
 | **Exit codes** | The table below. |
 | **Output channels** | Results go to stdout. Diagnostics, progress, logs and deprecation warnings go to stderr. The two never mix: an error message never goes to stdout, so a piped `-o json` is never polluted by one. A failing command writes nothing to stdout, with one exception: `get clusters` and `get nodepools` given several names print the ones that matched, kubectl-style, and exit `1` if any name was not found. A query command (`version`, `config view`, `get`, `generate`) that succeeds writes nothing to stderr; a command that does work, such as `bootstrap`, reports its progress there. |
-| **Machine-readable output** | `-o json` and `-o yaml` keep the field names they emit. `nkectl version -o short` stays the bare version string and nothing else. |
-| **Config file** | The location (`$XDG_CONFIG_HOME/nkectl/config.yaml`, else `~/.config/nkectl/config.yaml`) and the `sites` / `current-site` schema. Fields may be added; existing ones are not renamed or repurposed. |
-| **Environment variables** | The `NKECTL_*` variables and `REGISTRY_API_KEY`, as documented in [the README](../README.md), keep their names and meanings. |
+| **Machine-readable output** | `-o json` and `-o yaml` keep the field names they emit. `nvkectl version -o short` stays the bare version string and nothing else. |
+| **Config file** | The location (`$XDG_CONFIG_HOME/nvkectl/config.yaml`, else `~/.config/nvkectl/config.yaml`) and the `sites` / `current-site` schema. Fields may be added; existing ones are not renamed or repurposed. The binary was called `nkectl` until cli/v0.1.x and kept the same file under `nkectl/`; when the current location has no file yet, that one is read and copied over once. |
+| **Environment variables** | The `NVKECTL_*` variables and `REGISTRY_API_KEY`, as documented in [the README](../README.md), keep their names and meanings. Each `NVKECTL_*` variable is also read under its `NKECTL_*` name for one release, with a deprecation warning. |
 | **Site spec schema** | `generate sitespec` output and `bootstrap site -f` input, as documented in [sitespec.md](sitespec.md). |
 
 ## What is not contract
@@ -47,7 +47,7 @@ Depend on these and a patch release may break you.
   change at any time.
 - **Anything under `internal/`.** Go's own rules make this unimportable; it is
   listed so nobody vendors it by copy.
-- **Alpha commands**, which say so in their help text. `nkectl get providers` is
+- **Alpha commands**, which say so in their help text. `nvkectl get providers` is
   alpha today.
 - **Timing and ordering** of the steps a long-running command prints as it runs.
 
@@ -56,18 +56,18 @@ Depend on these and a patch release may break you.
 | Code | Meaning |
 |---|---|
 | `0` | The command succeeded. |
-| `1` | The command failed. Invalid input, a usage error, an unreachable or erroring site controller, and a failed operation all report `1` — nkectl does not distinguish them by code. The reason is on stderr. |
+| `1` | The command failed. Invalid input, a usage error, an unreachable or erroring site controller, and a failed operation all report `1` — nvkectl does not distinguish them by code. The reason is on stderr. |
 | `130` | The command was interrupted by `SIGINT` and stopped before finishing. `128 + SIGINT`, following shell convention. |
 | `143` | The command was interrupted by `SIGTERM` and stopped before finishing. `128 + SIGTERM`. |
 
 Nothing else is returned deliberately. A code outside this table means the
-process was killed by a signal nkectl does not handle, and the shell reported
+process was killed by a signal nvkectl does not handle, and the shell reported
 `128 + signum`.
 
 **`130` and `143` do not mean nothing happened.** Interrupting `bootstrap site` part way
-may leave the site cluster it already created; nkectl does not roll it back.
-Before site-cluster creation has started, nkectl tears down the bootstrap Kind
-cluster unless `--keep-bootstrap-cluster` is set. After it has started, nkectl
+may leave the site cluster it already created; nvkectl does not roll it back.
+Before site-cluster creation has started, nvkectl tears down the bootstrap Kind
+cluster unless `--keep-bootstrap-cluster` is set. After it has started, nvkectl
 retains the bootstrap cluster for recovery and prints how to recover it.
 
 ## Signals
@@ -76,16 +76,16 @@ The first `SIGINT` or `SIGTERM` cancels the running command's context. A command
 that is waiting on the network or on a child process unwinds, cleans up, and
 exits `130` for `SIGINT` or `143` for `SIGTERM`.
 
-A second signal kills the process outright. nkectl restores the default
+A second signal kills the process outright. nvkectl restores the default
 disposition as soon as the first one arrives, so a command blocked somewhere
 that cannot watch a context — reading a spec from a terminal, for instance —
 still answers to a repeated Ctrl-C.
 
 ## Non-interactive use
 
-`nkectl` never prompts. Every command runs unattended, in CI, with stdin closed:
+`nvkectl` never prompts. Every command runs unattended, in CI, with stdin closed:
 
-- Nothing asks for confirmation. `nkectl delete cluster` deletes.
+- Nothing asks for confirmation. `nvkectl delete cluster` deletes.
 - Nothing reads from stdin unless you passed `-f -`.
 - Nothing requires a TTY, and no behaviour changes based on whether one is
   attached.
@@ -119,7 +119,7 @@ when it does.
 ## Reporting a break
 
 If a release broke something on the contract list, that is a bug — open an issue
-on [the repository](https://github.com/dsx-ai-factory/nke/issues) with the
+on [the repository](https://github.com/dsx-ai-factory/nvke/issues) with the
 command, the version you moved from and to, and what changed. If it broke
 something on the "not contract" list, an issue is still useful: it says the line
 is in the wrong place.

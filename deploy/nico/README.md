@@ -14,10 +14,10 @@ Four steps, three owners:
 
 | step | who | produces |
 |---|---|---|
-| 1. create and image the instance | **not NKE** -- the NICo API, iPXE and cloud-init | a booted host running `nke-agent` |
-| 2. `nkectl bootstrap site` | nkectl, on the instance | a **vanilla** Kubernetes cluster |
-| 3. this deploy path | `deploy/nke-deploy.sh`, on the node | the management plane |
-| 4. `nkectl create cluster` | the site controller itself | tenant clusters |
+| 1. create and image the instance | **not NVKE** -- the NICo API, iPXE and cloud-init | a booted host running `nke-agent` |
+| 2. `nvkectl bootstrap site` | nvkectl, on the instance | a **vanilla** Kubernetes cluster |
+| 3. this deploy path | `deploy/nvke-deploy.sh`, on the node | the management plane |
+| 4. `nvkectl create cluster` | the site controller itself | tenant clusters |
 
 Step 2 leaves bare Kubernetes on purpose. `bootstrap site` stands up a
 throwaway kind cluster carrying Postgres, Temporal, SPIRE, CAPI and CWE, uses
@@ -48,13 +48,13 @@ What the node needs, all present on the reference instance type:
 
 ## Before this runs
 
-`deploy/nke-deploy.sh` installs the items below and nothing else. Five things must
+`deploy/nvke-deploy.sh` installs the items below and nothing else. Five things must
 already be true, all of them outside the deploy path:
 
 1. **The control plane is untainted.** A bootstrap cluster is all
    control-plane, and nothing schedules while the `NoSchedule` taint is on
    the nodes; `clusterctl init` times out on cert-manager with no hint why.
-   `nkectl bootstrap site` removes the taint. Check with
+   `nvkectl bootstrap site` removes the taint. Check with
    `kubectl get nodes -o jsonpath='{.items[*].spec.taints}'` and remove it by
    hand if the bootstrap reported that it could not.
 2. **`clusterctl init` has run**, bringing cert-manager, CAPI core and the
@@ -74,7 +74,7 @@ already be true, all of them outside the deploy path:
    containerd namespace is invisible to the kubelet, which that run
    hit as "401 Unauthorized pulling the controller image". Build
    single-manifest too (`--provenance=false --output type=docker`) -- an OCI
-   index with an attestation manifest made nkectl try to pull by digest.
+   index with an attestation manifest made nvkectl try to pull by digest.
 
 4. **A default StorageClass exists.** A bare site ships none and every PVC sits
    Pending. The reference site used rancher local-path because its instance type has a single
@@ -182,12 +182,12 @@ later items create monitors that need them:
 
 The chart's own control-plane monitors cover the API server, etcd and CoreDNS;
 `nktp/values.yaml` turns off the scheduler, controller manager and kube-proxy
-ones, which NKE clusters cannot serve. This path creates no monitors for other
+ones, which NVKE clusters cannot serve. This path creates no monitors for other
 components: each component ships its own, and one that does not is not scraped.
 
 Everything NKTP exports carries `k8s.cluster.name`, the site's name. Nothing
-in the cluster knows it -- NKE's kubeadm configuration names every cluster
-`kubernetes` -- so `nke-base-config` renders it from BootstrapConfig's
+in the cluster knows it -- NVKE's kubeadm configuration names every cluster
+`kubernetes` -- so `nvke-base-config` renders it from BootstrapConfig's
 `ClusterName` into the `nktp-cluster` ConfigMap, and the watchdog and the three
 gateways, which are what export to the backend, read it from there. A config
 without `ClusterName` stops the install at that template.

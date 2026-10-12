@@ -67,7 +67,7 @@ KUBECTL_SHA256_ARM64 ?= 9f9d9c44a7b5264515ac9da5991584e2395bd50662e651132337e7b4
 # clusterctl and the CAPI core/kubeadm providers ship as one release, so one
 # pin covers the binary and everything `clusterctl init` installs.
 # Consumers: controller/Makefile.dev, controller/hack/ci/backend-e2e.sh,
-# cli/Makefile, and the gofail and nkectl bootstrap E2E workflows.
+# cli/Makefile, and the gofail and nvkectl bootstrap E2E workflows.
 CAPI_VERSION    ?= v1.13.6
 # clusterctl-linux-{amd64,arm64} from the CAPI release above.
 CLUSTERCTL_SHA256_AMD64 ?= 1e4019b8ef30fa13993716d28b9fec4072fee1e17ea2cc69cb7c8f232d9b8c2f
@@ -76,7 +76,7 @@ CLUSTERCTL_SHA256_ARM64 ?= c3fe61fd44fa63d2efcee2a93432619527909b210a84cda7ee86e
 # Kind e2e installs it, and its kubeconform check validates against its CRDs.
 # Move it with CAPI_VERSION.
 CERT_MANAGER_VERSION ?= v1.21.1
-# kind drives it as its container provider in the nkectl bootstrap e2e, which
+# kind drives it as its container provider in the nvkectl bootstrap e2e, which
 # installs the nerdctl-full release for this version. release/ reads this pin
 # for the qualification plan.
 NERDCTL_VERSION ?= 2.3.5

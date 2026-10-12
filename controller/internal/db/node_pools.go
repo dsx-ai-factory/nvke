@@ -380,7 +380,7 @@ func (q *queriesImpl) GetNodePoolForUpdate(ctx context.Context, id uuid.UUID) (N
 func (q *queriesImpl) CreateNodePool(ctx context.Context, nodePool *NodePool) (NodePool, error) {
 	normalizeNodePoolCollections(nodePool)
 	if nodePool.ControlPlane {
-		if err := q.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := q.db.RunInTx(ctx, nil, func(_ context.Context, tx bun.Tx) error { // the caller's ctx, see dbImpl.RunInTx
 			qi := queriesImpl{db: tx}
 			_, err := qi.db.NewInsert().Model(nodePool).Exec(ctx)
 			if isViolationOfConstraint(err, ConstraintNodePoolsClusterIDNameUnique) {
@@ -430,7 +430,7 @@ func (q *queriesImpl) UpdateNodePool(ctx context.Context, nodePool *NodePool) (N
 }
 
 func (q *queriesImpl) DeleteNodePool(ctx context.Context, id uuid.UUID) error {
-	return q.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+	return q.db.RunInTx(ctx, nil, func(_ context.Context, tx bun.Tx) error { // the caller's ctx, see dbImpl.RunInTx
 		qi := queriesImpl{db: tx}
 		np, err := qi.GetNodePool(ctx, id)
 		if err != nil {

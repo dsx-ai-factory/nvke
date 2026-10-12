@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 func TestClusterConditions_UpdateInProgress_RoundTrip(t *testing.T) {
@@ -65,7 +65,7 @@ func TestClusterConditions_UpdateFailed_RoundTrip(t *testing.T) {
 
 func TestOperationType_Values(t *testing.T) {
 	// Guard against accidental renaming — these string values are persisted
-	// in the clusters.conditions JSONB and consumed by the UI / nkecli.
+	// in the clusters.conditions JSONB and consumed by the UI / nvkectl.
 	assert.Equal(t, "etcd_encryption", string(db.OperationTypeEtcdEncryption))
 	assert.Equal(t, "k8s_upgrade", string(db.OperationTypeK8sUpgrade))
 	assert.Equal(t, "cp_nodes_recycling", string(db.OperationTypeCPNodesRecycling))

@@ -109,7 +109,7 @@ type NodeAgentClient interface {
 	// idempotent and is run again to finish any incomplete add-on convergence.
 	KubeadmUpgradeApply(ctx context.Context, in *KubeadmUpgradeApplyRequest, opts ...grpc.CallOption) (*KubeadmUpgradeApplyResponse, error)
 	// ReconcileKubeVip atomically converges the kube-vip static-pod manifest for
-	// NKE's active/active BGP control-plane mode. The fixed mode disables every
+	// NVKE's active/active BGP control-plane mode. The fixed mode disables every
 	// Kubernetes API-backed kube-vip feature. For kube-vip v1.2.0 compatibility,
 	// the pod receives a kubeconfig with no client credential; this RPC never
 	// reads, creates, or mounts the host's admin.conf or super-admin.conf.
@@ -155,9 +155,9 @@ type NodeAgentClient interface {
 	InstallCNI(ctx context.Context, in *InstallCNIRequest, opts ...grpc.CallOption) (*InstallCNIResponse, error)
 	UpdateAndFetchKubeAdmJoinStrings(ctx context.Context, in *KubeadmJoinStringRequest, opts ...grpc.CallOption) (*KubeadmJoinStringResponse, error)
 	GetKubeconfig(ctx context.Context, in *KubeconfigRequest, opts ...grpc.CallOption) (*KubeconfigResponse, error)
-	// UpdateNKERBAC applies the NKE RBAC resources carried in the request
+	// UpdateNKERBAC applies the NVKE RBAC resources carried in the request
 	// manifest to the local cluster. This RPC is intended only for managing
-	// NKE-owned RBAC objects: only a fixed set of RBAC kinds is accepted, and
+	// NVKE-owned RBAC objects: only a fixed set of RBAC kinds is accepted, and
 	// every resource name must start within the agent-owned "nke:" prefix.
 	// The request is rejected if any document falls outside that boundary.
 	//
@@ -173,7 +173,7 @@ type NodeAgentClient interface {
 	//	FailedPrecondition — the node is not eligible to serve this RPC
 	//	                     (e.g. not a control-plane node).
 	//	InvalidArgument    — the manifest failed validation (empty, malformed,
-	//	                     or contains a resource outside the NKE RBAC
+	//	                     or contains a resource outside the NVKE RBAC
 	//	                     allowlist); no apply is attempted.
 	//	Internal           — the agent could not reach the local cluster to
 	//	                     perform the apply.
@@ -252,7 +252,7 @@ type NodeAgentClient interface {
 	ExecuteNodePreflight(ctx context.Context, in *ExecuteNodePreflightRequest, opts ...grpc.CallOption) (*ExecuteNodePreflightResponse, error)
 	// Installs the signing key, writes sources.list.d (deb_uri + suite + components), optional pin, apt-get update.
 	ConfigureAptRepo(ctx context.Context, in *ConfigureAptRepoRequest, opts ...grpc.CallOption) (*ConfigureAptRepoResponse, error)
-	// Removes the keyring, NKE apt preferences, and a matching sources.list.d entry so
+	// Removes the keyring, NVKE apt preferences, and a matching sources.list.d entry so
 	// apt update succeeds afterward. By default removes <keyring_name>.list; override with
 	// sources_list_basename when the file name differs.
 	RemoveAptRepo(ctx context.Context, in *RemoveAptRepoRequest, opts ...grpc.CallOption) (*RemoveAptRepoResponse, error)
@@ -874,7 +874,7 @@ type NodeAgentServer interface {
 	// idempotent and is run again to finish any incomplete add-on convergence.
 	KubeadmUpgradeApply(context.Context, *KubeadmUpgradeApplyRequest) (*KubeadmUpgradeApplyResponse, error)
 	// ReconcileKubeVip atomically converges the kube-vip static-pod manifest for
-	// NKE's active/active BGP control-plane mode. The fixed mode disables every
+	// NVKE's active/active BGP control-plane mode. The fixed mode disables every
 	// Kubernetes API-backed kube-vip feature. For kube-vip v1.2.0 compatibility,
 	// the pod receives a kubeconfig with no client credential; this RPC never
 	// reads, creates, or mounts the host's admin.conf or super-admin.conf.
@@ -920,9 +920,9 @@ type NodeAgentServer interface {
 	InstallCNI(context.Context, *InstallCNIRequest) (*InstallCNIResponse, error)
 	UpdateAndFetchKubeAdmJoinStrings(context.Context, *KubeadmJoinStringRequest) (*KubeadmJoinStringResponse, error)
 	GetKubeconfig(context.Context, *KubeconfigRequest) (*KubeconfigResponse, error)
-	// UpdateNKERBAC applies the NKE RBAC resources carried in the request
+	// UpdateNKERBAC applies the NVKE RBAC resources carried in the request
 	// manifest to the local cluster. This RPC is intended only for managing
-	// NKE-owned RBAC objects: only a fixed set of RBAC kinds is accepted, and
+	// NVKE-owned RBAC objects: only a fixed set of RBAC kinds is accepted, and
 	// every resource name must start within the agent-owned "nke:" prefix.
 	// The request is rejected if any document falls outside that boundary.
 	//
@@ -938,7 +938,7 @@ type NodeAgentServer interface {
 	//	FailedPrecondition — the node is not eligible to serve this RPC
 	//	                     (e.g. not a control-plane node).
 	//	InvalidArgument    — the manifest failed validation (empty, malformed,
-	//	                     or contains a resource outside the NKE RBAC
+	//	                     or contains a resource outside the NVKE RBAC
 	//	                     allowlist); no apply is attempted.
 	//	Internal           — the agent could not reach the local cluster to
 	//	                     perform the apply.
@@ -1017,7 +1017,7 @@ type NodeAgentServer interface {
 	ExecuteNodePreflight(context.Context, *ExecuteNodePreflightRequest) (*ExecuteNodePreflightResponse, error)
 	// Installs the signing key, writes sources.list.d (deb_uri + suite + components), optional pin, apt-get update.
 	ConfigureAptRepo(context.Context, *ConfigureAptRepoRequest) (*ConfigureAptRepoResponse, error)
-	// Removes the keyring, NKE apt preferences, and a matching sources.list.d entry so
+	// Removes the keyring, NVKE apt preferences, and a matching sources.list.d entry so
 	// apt update succeeds afterward. By default removes <keyring_name>.list; override with
 	// sources_list_basename when the file name differs.
 	RemoveAptRepo(context.Context, *RemoveAptRepoRequest) (*RemoveAptRepoResponse, error)

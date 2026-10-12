@@ -67,7 +67,7 @@ jobs:
   render:
     name: Render the REST API Reference
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke' && github.event.action != 'closed'
+    if: github.repository_id == '1323115536' && github.event.action != 'closed'
     timeout-minutes: 15
     permissions:
       contents: read
@@ -81,7 +81,7 @@ jobs:
         run: make -C controller/api docs
 
       - name: Upload the rendered reference
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: api-reference
           path: controller/.local/api-reference.html
@@ -91,7 +91,7 @@ jobs:
   fern:
     name: Check the documentation site
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke' && github.event.action != 'closed'
+    if: github.repository_id == '1323115536' && github.event.action != 'closed'
     timeout-minutes: 15
     permissions:
       contents: read
@@ -136,7 +136,7 @@ jobs:
   preview-cleanup:
     name: Delete the site preview
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke' && github.event_name == 'pull_request' && github.event.action == 'closed'
+    if: github.repository_id == '1323115536' && github.event_name == 'pull_request' && github.event.action == 'closed'
     timeout-minutes: 10
     permissions:
       contents: read

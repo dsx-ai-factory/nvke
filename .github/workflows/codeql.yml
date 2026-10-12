@@ -67,7 +67,7 @@ jobs:
   analyze:
     name: Analyze ${{ matrix.language }}
     runs-on: linux-amd64-cpu16
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     timeout-minutes: 60
     permissions:
       contents: read

@@ -859,7 +859,7 @@ type NodeConditions struct {
 	// MarkedForRepair The node is marked for repair.
 	MarkedForRepair Condition `json:"markedForRepair"`
 
-	// NodeAgentReady The NKE node agent is healthy.
+	// NodeAgentReady The NVKE node agent is healthy.
 	NodeAgentReady Condition `json:"nodeAgentReady"`
 
 	// Pending The node is waiting to be provisioned.

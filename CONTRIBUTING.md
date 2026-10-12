@@ -1,11 +1,11 @@
-# Contributing to nke
+# Contributing to NVKE
 
-If you are interested in contributing to nke, your contributions will fall
+If you are interested in contributing to NVKE, your contributions will fall
 into three categories:
 1. You want to report a bug, feature request, or documentation issue
-    - File an [issue](https://github.com/dsx-ai-factory/nke/issues/new/choose)
+    - File an [issue](https://github.com/dsx-ai-factory/nvke/issues/new/choose)
     describing what you encountered or what you want to see changed.
-    - For usage questions, use [GitHub Discussions Q&A](https://github.com/dsx-ai-factory/nke/discussions/categories/q-a)
+    - For usage questions, use [GitHub Discussions Q&A](https://github.com/dsx-ai-factory/nvke/discussions/categories/q-a)
     instead of an issue.
     - Maintainers triage issues. Engineering reviews bugs, Product reviews
     feature requests, and maintainers review documentation requests. The
@@ -46,14 +46,14 @@ into three categories:
 ### Clone and build
 
 ```bash
-git clone https://github.com/dsx-ai-factory/nke.git
-cd nke
+git clone https://github.com/dsx-ai-factory/nvke.git
+cd nvke
 ```
 
 **Everything that builds publicly, in one command:**
 
 ```bash
-make build   # builds agent, controller, nkectl, and helper binaries
+make build   # builds agent, controller, nvkectl, and helper binaries
 ```
 
 The repository is a Go workspace, and `go.work` ties **every module** together.
@@ -133,13 +133,13 @@ For small bug fixes and documentation improvements, a PR without a prior issue i
 
 ### Your first issue
 
-1. Read the project's [README.md](https://github.com/dsx-ai-factory/nke/blob/main/README.md)
+1. Read the project's [README.md](https://github.com/dsx-ai-factory/nvke/blob/main/README.md)
     to learn how to set up the development environment.
-2. Find an issue to work on. The best way is to look for the [good first issue](https://github.com/dsx-ai-factory/nke/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
-    or [help wanted](https://github.com/dsx-ai-factory/nke/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) labels.
+2. Find an issue to work on. The best way is to look for the [good first issue](https://github.com/dsx-ai-factory/nvke/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+    or [help wanted](https://github.com/dsx-ai-factory/nvke/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) labels.
 3. Comment on the issue saying you are going to work on it.
 4. Code! Make sure to update unit tests and documentation.
-5. When done, [create your pull request](https://github.com/dsx-ai-factory/nke/compare)
+5. When done, [create your pull request](https://github.com/dsx-ai-factory/nvke/compare)
     referencing the issue with `Closes #<N>` in the description.
 6. Verify that CI passes all [status checks](https://help.github.com/articles/about-status-checks/), or fix if needed.
 7. Wait for maintainer review and address any feedback.
@@ -151,7 +151,7 @@ Remember, if you are unsure about anything, don't hesitate to comment on issues 
 
 Each PR must mark whether it is a breaking change. This is used to highlight changes that users should know about when upgrading.
 
-For nke, a "breaking" change is one that modifies the public API in a non-backward-compatible way.
+For NVKE, a "breaking" change is one that modifies the public API in a non-backward-compatible way.
 Backward-compatible changes (such as adding a new optional parameter) are not breaking.
 Mark a breaking change with `!` after the type in the PR title or a `BREAKING CHANGE:` footer (see [Commit message format](#commit-message-format)); there is no label for it.
 
@@ -191,7 +191,7 @@ Example: `feat/add-retry-logic`, `fix/null-pointer-in-parser`
 
 ### Commit message format
 
-nke uses [Conventional Commits](https://www.conventionalcommits.org/):
+NVKE uses [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
 <type>(<scope>): <short description>

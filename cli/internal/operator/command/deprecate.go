@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewDeprecateCmd returns "nkectl deprecate clusterrelease|nodepoolrelease
+// NewDeprecateCmd returns "nvkectl deprecate clusterrelease|nodepoolrelease
 // <name>". A machine image has no lifecycle and so no subcommand.
 func NewDeprecateCmd(clientFn ClientFn) *cobra.Command {
 	cmd := &cobra.Command{
@@ -17,7 +17,7 @@ func NewDeprecateCmd(clientFn ClientFn) *cobra.Command {
 		Short: "Deprecate a release",
 		// Without a RunE cobra prints help and exits 0 for an unknown kind,
 		// which a script would read as success. Only releases can be
-		// deprecated, so "nkectl deprecate machineimage x" must fail.
+		// deprecated, so "nvkectl deprecate machineimage x" must fail.
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
@@ -47,7 +47,7 @@ upgrade target, and new clusters and node pools should not select it. Only
 spec.lifecycle.deprecated changes; the release content is immutable.
 
 Example:
-  nkectl deprecate %s <name>`, k.noun, k.use),
+  nvkectl deprecate %s <name>`, k.noun, k.use),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := clientFn()

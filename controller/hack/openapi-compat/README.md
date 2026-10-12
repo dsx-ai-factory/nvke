@@ -26,7 +26,7 @@ The newest tag matching `controller/api/v[0-9]*.[0-9]*.[0-9]*`.
 Those tags are published by
 [`controller-api-tag.yml`](../../../.github/workflows/controller-api-tag.yml) on every
 `main` commit that touches `controller/api`, so that a consumer can pin
-`github.com/dsx-ai-factory/nke/controller/api@v0.0.17`. That pin is exactly what
+`github.com/dsx-ai-factory/nvke/controller/api@v0.0.17`. That pin is exactly what
 "backward compatible" has to be measured against — it is the artefact somebody
 is holding. The merge base would be a weaker baseline: it is a commit nobody
 depends on, and it drifts every time `main` moves.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-**OIDC authentication** lets the NKE Controller and the Cluster API controllers
+**OIDC authentication** lets the NVKE Controller and the Cluster API controllers
 call a tenant cluster's Kubernetes API with short-lived SPIFFE JWTs. The tenant
 API server validates each token against a site-wide OIDC issuer and maps its
 `sub` claim to a Kubernetes username. [Tenant Kubernetes API
@@ -23,7 +23,7 @@ Each uses the [site configuration](#site-configuration).
 
 ## Site Configuration
 
-Set these values in the NKE Controller Helm chart. The [chart
+Set these values in the NVKE Controller Helm chart. The [chart
 README](../../controller/deploy/charts/controller/README.md) lists each one.
 
 | Value | Environment variable | Purpose |
@@ -35,11 +35,11 @@ README](../../controller/deploy/charts/controller/README.md) lists each one.
 
 OIDC authentication also requires:
 
-- `spiffe.enabled: true`, so the NKE Controller has a SPIFFE workload identity
+- `spiffe.enabled: true`, so the NVKE Controller has a SPIFFE workload identity
   to request tokens with.
 - `spiffe.trustDomain`, set to the SPIRE server's trust domain. The chart uses it
   to render the `nke-system/nke-rbac` ConfigMap, which names the SPIFFE
-  identities NKE binds in each tenant cluster.
+  identities NVKE binds in each tenant cluster.
 - `tenantAccess.enabled: true`, the default.
 - Network access from every tenant API server to the discovery document at
   `issuerURL`, or at `discoveryURL` when set, and to the `jwks_uri` that
@@ -54,7 +54,7 @@ issuer leaves OIDC authentication unavailable on a cluster that otherwise
 reports success.
 
 Enabling OIDC authentication on an existing cluster also needs
-`nkeOIDCAuth.enabled: true`, because the chart grants the NKE Controller read
+`nkeOIDCAuth.enabled: true`, because the chart grants the NVKE Controller read
 access to the CA Secret only then. Every cluster created afterward gets OIDC
 authentication too.
 
@@ -75,8 +75,8 @@ older `spiffe.cweSubject` also satisfies the first; if both are set,
 Enabling OIDC authentication cannot be undone.
 
 Send `enableOidc: true` to `PATCH /api/clusters/{clusterID}`. See
-[Authenticating to the NKE API](../../controller/docs/authenticating-to-the-api.md)
-for how to obtain `TOKEN`. `NKE_CONTROLLER_URL` is the NKE Controller's base URL.
+[Authenticating to the NVKE API](../../controller/docs/authenticating-to-the-api.md)
+for how to obtain `TOKEN`. `NKE_CONTROLLER_URL` is the NVKE Controller's base URL.
 
 ```bash
 curl -X PATCH \
@@ -86,7 +86,7 @@ curl -X PATCH \
   "${NKE_CONTROLLER_URL}/api/clusters/${CLUSTER_ID}"
 ```
 
-The request returns `200` and starts a control-plane rollout. The NKE Controller
+The request returns `200` and starts a control-plane rollout. The NVKE Controller
 updates one control-plane node at a time, and each node's API server must
 report ready before the next node starts. While the rollout runs,
 `GET /api/clusters/{clusterID}` includes this under `conditions`:
@@ -105,10 +105,10 @@ response has no field that shows whether OIDC authentication is enabled. Use
 
 When the rollout fails, `updateInProgress` is cleared and
 `conditions.updateFailed` carries the message `OIDC enablement failed`. The
-cause is in the NKE Controller logs. A failure can leave some or all API servers
+cause is in the NVKE Controller logs. A failure can leave some or all API servers
 already accepting OIDC tokens:
 
-- When a node fails to apply the change, the NKE Controller tries to undo it on
+- When a node fails to apply the change, the NVKE Controller tries to undo it on
   the nodes it already updated. The undo is best-effort.
 - When a node fails its readiness check before it is changed, the rollout stops
   and nodes already updated keep the change.
@@ -155,12 +155,12 @@ Before each node is changed, its node agent must report kubeadm as ready.
 ## Verifying OIDC on a Cluster
 
 Check the result on the Site Controller cluster. After OIDC authentication is
-enabled, the tenant-access controller applies the NKE RBAC into the tenant
+enabled, the tenant-access controller applies the NVKE RBAC into the tenant
 cluster and publishes these Secrets in `nke-system`:
 
 | Secret | Contents |
 |---|---|
-| `<cluster>-kubeconfig` | The NKE Controller's kubeconfig. It runs the SPIFFE exec-auth plugin to obtain a JWT. |
+| `<cluster>-kubeconfig` | The NVKE Controller's kubeconfig. It runs the SPIFFE exec-auth plugin to obtain a JWT. |
 | `<cluster>-cluster-trust-bundle` | The tenant cluster CA, under key `ca.crt`. |
 | `<cluster>-admin-kubeconfig` | The kubeadm `admin.conf`. It is published whether or not OIDC authentication is enabled. |
 
@@ -172,11 +172,11 @@ kubectl -n nke-system get secret "${CLUSTER_NAME}-kubeconfig" \
   -o jsonpath='{.metadata.labels.nke\.nvidia\.com/kubeconfig-mode}'
 ```
 
-To check the identity and permissions the NKE Controller receives, follow step 5
+To check the identity and permissions the NVKE Controller receives, follow step 5
 of the [manual validation
 checklist](kubernetes-api-access.md#manual-validation-checklist).
 
-If the label stays `admin` after the rollout succeeds, check the NKE Controller
+If the label stays `admin` after the rollout succeeds, check the NVKE Controller
 logs for the tenant-access controller. It does not publish the OIDC kubeconfig
 when it cannot read the `manifest.yaml` key of the `nke-rbac` ConfigMap, or
 cannot apply that RBAC into the tenant cluster.

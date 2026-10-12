@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/util"
-	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/cli/internal/util"
+	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 // TestExampleNodePoolSpecsDecode checks that every bundled node-pool example

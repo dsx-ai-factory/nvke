@@ -47,14 +47,14 @@ const (
 
 	MachineCapabilityDeviceTypeNVLink = "NVLink"
 
-	// NKE label keys for Forge instances
+	// NVKE label keys for Forge instances
 	LabelKeyNodeID     = "nke.nvidia.com/node-id"
 	LabelKeyNodePoolID = "nke.nvidia.com/node-pool-id"
 	LabelKeyClusterID  = "nke.nvidia.com/cluster-id"
 	LabelKeyIPAddress  = "nke.nvidia.com/ip-address"
 	LabelKeySiteID     = "nke.nvidia.com/site-id"
 
-	// NKE label keys applied to Kubernetes node objects
+	// NVKE label keys applied to Kubernetes node objects
 	LabelKeyMachineID = "nke.nvidia.com/machine-id"
 
 	// Forge topology label keys applied to Kubernetes node objects. These are
@@ -73,7 +73,7 @@ const (
 	LabelKeyNodeVPCID    = "nke.nvidia.com/vpc-id"
 	LabelKeyNodeVPCName  = "nke.nvidia.com/vpc-name"
 
-	// NKE label keys for node remediation
+	// NVKE label keys for node remediation
 	LabelKeyNodeLabelReboot                = "nke.nvidia.com/reboot"
 	LabelKeyNodeLabelRebootStarted         = "nke.nvidia.com/reboot-started"
 	LabelKeyNodeLabelRebootAttempt         = "nke.nvidia.com/reboot-attempt"
@@ -83,14 +83,14 @@ const (
 	LabelKeyNodeLabelTerminate             = "nke.nvidia.com/terminate"
 	LabelKeyNodeLabelTerminateStatus       = "nke.nvidia.com/terminate-status"
 
-	// NKE label key for cluster static entries. The value is
+	// NVKE label key for cluster static entries. The value is
 	// config.Config.ManagedByLabelValue, not a constant -- it is
 	// per-install configurable.
-	LabelKeyNkeManagedBy = "nke.nvidia.com/managed-by"
+	LabelKeyNvkeManagedBy = "nke.nvidia.com/managed-by"
 
-	// NamespaceNKESystem is the shared management-plane namespace for tenant-access
+	// NamespaceNVKESystem is the shared management-plane namespace for tenant-access
 	// Secrets and OIDC-mode CAPI objects. The Helm chart creates it unconditionally.
-	NamespaceNKESystem = "nke-system"
+	NamespaceNVKESystem = "nke-system"
 
 	// LabelKeyKubeconfigMode records whether a published kubeconfig Secret holds
 	// SPIRE exec-auth or a verbatim admin.conf. The mode is rewritten in place when
@@ -101,7 +101,7 @@ const (
 	LabelValueKubeconfigModeSPIRE = "spire"
 	LabelValueKubeconfigModeAdmin = "admin"
 
-	// NKE Field Managers for server-side apply. This controller's own three
+	// NVKE Field Managers for server-side apply. This controller's own three
 	// (config.Config.FieldManagerName, FieldManagerRebootMachineName,
 	// FieldManagerMachineHealthIssueName) are per-install configurable, not
 	// constants here. The NICo manager retains its existing identity when the
@@ -126,7 +126,7 @@ const (
 	TaintKeyMaintenance      = "nke.nvidia.com/maintenance"
 	TaintKeyNodeProvisioning = "nke.nvidia.com/provisioning"
 
-	// NKE Node Condition types
+	// NVKE Node Condition types
 	NodeConditionTypeNeedsRecycle = "nke.nvidia.com/NeedsRecycle"
 	NodeConditionTypeNeedsRepair  = "nke.nvidia.com/NeedsRepair"
 

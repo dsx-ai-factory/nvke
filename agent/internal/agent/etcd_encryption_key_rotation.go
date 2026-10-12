@@ -21,8 +21,8 @@ import (
 	"google.golang.org/grpc/status"
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/dsx-ai-factory/nke/agent/internal/k8s"
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	"github.com/dsx-ai-factory/nvke/agent/internal/k8s"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 // encRotationWALEntry is the WAL checkpoint written atomically before the
@@ -180,7 +180,7 @@ func validateUpdateEncryptionConfigRequest(req *pb.UpdateEncryptionConfigRequest
 }
 
 // validateEncryptionKey checks that key is non-empty, valid standard base64
-// (with padding, as produced by the NKE controller when generating etcd
+// (with padding, as produced by the NVKE controller when generating etcd
 // encryption keys), and decodes to exactly 32 bytes (secretbox requirement).
 func validateEncryptionKey(key string) error {
 	if key == "" {

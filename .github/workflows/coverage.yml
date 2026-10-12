@@ -76,7 +76,7 @@ jobs:
   policy:
     name: Check the coverage registry
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     timeout-minutes: 5
     permissions:
       contents: read
@@ -98,7 +98,7 @@ jobs:
     # and `workflow_dispatch` are the three that are really this workflow's
     # own. See the header for why the gate does not pay for this job.
     if: >-
-      github.repository == 'dsx-ai-factory/nke' &&
+      github.repository_id == '1323115536' &&
       (github.event_name == 'push' ||
        github.event_name == 'schedule' ||
        github.event_name == 'workflow_dispatch')
@@ -146,7 +146,7 @@ jobs:
       # the profiles that were produced before it stopped.
       - name: Upload the coverage profiles
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-profiles
           path: coverage/

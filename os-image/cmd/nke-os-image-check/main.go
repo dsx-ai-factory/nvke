@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dsx-ai-factory/nke/os-image/internal/check"
+	"github.com/dsx-ai-factory/nvke/os-image/internal/check"
 )
 
 // version is set at build time via -X main.version=.

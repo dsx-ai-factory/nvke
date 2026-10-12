@@ -93,10 +93,10 @@ func TestSupportedMatchesProviderSources(t *testing.T) {
 	}
 }
 
-// TestSupportedSetIsTheTwoProvidersNkectlKnows guards the set itself. Adding a
+// TestSupportedSetIsTheTwoProvidersNvkectlKnows guards the set itself. Adding a
 // provider is a deliberate change to what this build claims to support, so it
 // should break this test and be updated with it.
-func TestSupportedSetIsTheTwoProvidersNkectlKnows(t *testing.T) {
+func TestSupportedSetIsTheTwoProvidersNvkectlKnows(t *testing.T) {
 	var names []string
 	for _, p := range Supported() {
 		names = append(names, string(p.Type))

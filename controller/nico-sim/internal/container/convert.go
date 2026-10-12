@@ -13,7 +13,7 @@ import (
 
 	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/apierr"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/apierr"
 )
 
 // loadInstance reconstructs the API object from Docker labels. It intentionally

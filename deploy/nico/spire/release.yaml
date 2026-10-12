@@ -11,7 +11,7 @@
 # `helm dependency build` that commit, is gone with it.
 #
 # 0.30.1 is also what cli/internal/bootstrap/controllerdeploy installs, so the deploy path and
-# nkectl now agree on the version.
+# nvkectl now agree on the version.
 #
 # The only difference against the pinned commit is four ClusterSPIFFEIDs for
 # SPIKE (spire-spike-bootstrap/keeper/nexus/pilot), which 0.30.1 no longer
@@ -28,6 +28,6 @@ values:
   - overlay.yaml
 # Preconditions this item needs and does not own. helm --wait only waits on
 # workloads, and a Certificate is not one, so --wait would return before the CA
-# is issued. nke-base-config applies it; this blocks until cert-manager has.
+# is issued. nvke-base-config applies it; this blocks until cert-manager has.
 requires:
   - {kind: certificate, name: oidc-provider-upstream-ca, namespace: spire-server, condition: Ready}

@@ -16,7 +16,7 @@ const privateFileMode = 0o600
 // left world-readable and a symlink at path is replaced rather than followed.
 func WritePrivateFile(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".nkectl-*")
+	tmp, err := os.CreateTemp(dir, ".nvkectl-*")
 	if err != nil {
 		return fmt.Errorf("creating temp file in %q: %w", dir, err)
 	}

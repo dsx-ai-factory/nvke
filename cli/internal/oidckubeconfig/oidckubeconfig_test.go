@@ -49,7 +49,7 @@ func TestGenerateCopiesClusterAndDropsAdminUser(t *testing.T) {
 
 	data, err := Generate(path, Options{
 		IssuerURL: "https://idp.example/realms/nke",
-		ClientID:  "nke-cli",
+		ClientID:  "nvke-cli",
 	})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
@@ -89,7 +89,7 @@ func TestGenerateCopiesClusterAndDropsAdminUser(t *testing.T) {
 		"oidc-login",
 		"get-token",
 		"--oidc-issuer-url=https://idp.example/realms/nke",
-		"--oidc-client-id=nke-cli",
+		"--oidc-client-id=nvke-cli",
 	}
 	if strings.Join(user.Exec.Args, " ") != strings.Join(wantArgs, " ") {
 		t.Errorf("exec args = %#v, want %#v", user.Exec.Args, wantArgs)
@@ -129,7 +129,7 @@ func TestGenerateInlinesCertificateAuthorityFile(t *testing.T) {
 		t.Fatalf("write kubeconfig: %v", err)
 	}
 
-	outBytes, err := Generate(kcPath, Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"})
+	outBytes, err := Generate(kcPath, Options{IssuerURL: "https://idp.example", ClientID: "nvke-cli"})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestGenerateKeepsEmptyCAForSystemAuthorities(t *testing.T) {
 
 	data, err := Generate(writeAdminKubeconfig(t, cfg), Options{
 		IssuerURL: "https://idp.example",
-		ClientID:  "nke-cli",
+		ClientID:  "nvke-cli",
 	})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
@@ -177,7 +177,7 @@ func TestGenerateAppendsOptionalExecArgs(t *testing.T) {
 	path := writeAdminKubeconfig(t, adminConfig())
 	data, err := Generate(path, Options{
 		IssuerURL:   "https://idp.example",
-		ClientID:    "nke-cli",
+		ClientID:    "nvke-cli",
 		ExtraScopes: []string{"openid", "groups"},
 	})
 	if err != nil {
@@ -206,12 +206,12 @@ func TestGenerateRejects(t *testing.T) {
 		wantErr string
 	}{
 		"empty path": {
-			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"},
+			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nvke-cli"},
 			wantErr: "kubeconfig must not be empty",
 		},
 		"empty issuer": {
 			path:    valid,
-			opts:    Options{ClientID: "nke-cli"},
+			opts:    Options{ClientID: "nvke-cli"},
 			wantErr: "oidc-issuer-url must not be empty",
 		},
 		"empty client id": {
@@ -221,7 +221,7 @@ func TestGenerateRejects(t *testing.T) {
 		},
 		"missing file": {
 			path:    filepath.Join(t.TempDir(), "nope"),
-			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"},
+			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nvke-cli"},
 			wantErr: "loading kubeconfig",
 		},
 		"no current-context": {
@@ -230,7 +230,7 @@ func TestGenerateRejects(t *testing.T) {
 				cfg.CurrentContext = ""
 				return cfg
 			}()),
-			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"},
+			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nvke-cli"},
 			wantErr: "no current-context",
 		},
 		"context not found": {
@@ -239,7 +239,7 @@ func TestGenerateRejects(t *testing.T) {
 				cfg.CurrentContext = "missing"
 				return cfg
 			}()),
-			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"},
+			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nvke-cli"},
 			wantErr: "current-context \"missing\" is not defined",
 		},
 		"context has no cluster": {
@@ -248,7 +248,7 @@ func TestGenerateRejects(t *testing.T) {
 				cfg.Contexts[cfg.CurrentContext].Cluster = ""
 				return cfg
 			}()),
-			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"},
+			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nvke-cli"},
 			wantErr: "has no cluster",
 		},
 		"cluster not found": {
@@ -257,7 +257,7 @@ func TestGenerateRejects(t *testing.T) {
 				cfg.Contexts[cfg.CurrentContext].Cluster = "missing"
 				return cfg
 			}()),
-			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"},
+			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nvke-cli"},
 			wantErr: "cluster \"missing\" is not defined",
 		},
 		"cluster has no server": {
@@ -266,7 +266,7 @@ func TestGenerateRejects(t *testing.T) {
 				cfg.Clusters["site"].Server = ""
 				return cfg
 			}()),
-			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"},
+			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nvke-cli"},
 			wantErr: "has no server",
 		},
 		"unreadable CA file": {
@@ -276,7 +276,7 @@ func TestGenerateRejects(t *testing.T) {
 				cfg.Clusters["site"].CertificateAuthority = filepath.Join(t.TempDir(), "missing-ca.crt")
 				return cfg
 			}()),
-			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"},
+			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nvke-cli"},
 			wantErr: "reading certificate-authority",
 		},
 		"empty CA file": {
@@ -291,7 +291,7 @@ func TestGenerateRejects(t *testing.T) {
 				cfg.Clusters["site"].CertificateAuthority = ca
 				return cfg
 			}()),
-			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"},
+			opts:    Options{IssuerURL: "https://idp.example", ClientID: "nvke-cli"},
 			wantErr: "is empty",
 		},
 	}

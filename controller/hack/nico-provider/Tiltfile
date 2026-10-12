@@ -52,7 +52,7 @@ def _register_node_image(ctx, labels):
         agent_dir = os.path.abspath(os.path.join(ctx.main_dir, agent_dir))
     local_agent_available = os.path.exists(os.path.join(agent_dir, "Makefile"))
     if configured_agent_dir and not local_agent_available:
-        fail("node_agent_source_dir does not contain an NKE agent checkout: %s" % agent_dir)
+        fail("node_agent_source_dir does not contain an NVKE agent checkout: %s" % agent_dir)
     dsx_imds_enabled = "dsx-imds-attestation" in ctx.provider_names
     dsx_imds_agent_plugin = os.path.join(
         ctx.main_dir,

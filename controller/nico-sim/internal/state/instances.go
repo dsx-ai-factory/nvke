@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/ipam"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/ipam"
 )
 
 const (
@@ -106,8 +106,8 @@ func (s *Store) ListInstances(ctx context.Context, filter ListInstancesFilter, p
 	query := selectInstances(s.db, &instances).
 		Order("instance.created_at ASC").
 		Order("instance.id ASC").
-		Limit(page.Size).
-		Offset((page.Number - 1) * page.Size)
+		Limit(int64(page.Size)).
+		Offset(int64((page.Number - 1) * page.Size))
 	if filter.Backend != "" {
 		query = query.Where("instance.backend = ?", filter.Backend)
 	}
@@ -915,7 +915,7 @@ func ownerLabel(labels map[string]string) string {
 	if v := labels["nke.nvidia.com/node-id"]; v != "" {
 		return v
 	}
-	if v := labels["nke.node-id"]; v != "" {
+	if v := labels["nvke.node-id"]; v != "" {
 		return v
 	}
 	return ""

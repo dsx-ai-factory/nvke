@@ -95,7 +95,7 @@ from.
 What a consumer can pin is the Go module:
 
 ```bash
-go get github.com/dsx-ai-factory/nke/controller/api@v0.0.17
+go get github.com/dsx-ai-factory/nvke/controller/api@v0.0.17
 ```
 
 `controller-api-tag.yml` publishes a `controller/api/vX.Y.Z` tag for every `main`

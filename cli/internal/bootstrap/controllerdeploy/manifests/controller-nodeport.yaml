@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Publishes the controller API to the host that ran `nkectl bootstrap site`.
+# Publishes the controller API to the host that ran `nvkectl bootstrap site`.
 #
 # The command deploys the controller and then calls its REST API to create the tier-0
 # cluster. A ClusterIP is not a route the host has, and the chart's Service
@@ -15,7 +15,7 @@
 #
 #   selector   the labels the controller chart puts on its pods. The release name
 #              and nameOverride in controller-values.yaml fix both, so these are stable.
-#   port       Config.CWEPort in controllerdeploy.go. cmd/nkectl/bootstrap.go uses the
+#   port       Config.CWEPort in controllerdeploy.go. cmd/nvkectl/bootstrap.go uses the
 #              same value for both sides of the kind cluster's port mapping.
 #
 # The namespace is deliberately absent: it is applied into the namespace
@@ -27,7 +27,7 @@ metadata:
   name: nke-controller-external
   labels:
     app.kubernetes.io/name: nke-controller
-    app.kubernetes.io/managed-by: nkectl
+    app.kubernetes.io/managed-by: nvkectl
 spec:
   type: NodePort
   selector:

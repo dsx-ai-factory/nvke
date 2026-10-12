@@ -17,7 +17,7 @@ import (
 )
 
 // templateYAML is the annotated site spec Render starts from. It is embedded
-// rather than read from cli/examples so nkectl carries it as a shipped binary,
+// rather than read from cli/examples so nvkectl carries it as a shipped binary,
 // and it is kept byte-identical in content to that example by
 // TestExampleMatchesTemplate.
 //
@@ -32,7 +32,7 @@ var templateYAML []byte
 func deniedPaths() map[string]string {
 	return map[string]string{
 		pathAPIKey: "a registry credential does not belong in a file meant to be committed; " +
-			"pass it to \"nkectl bootstrap site\" with --registry-api-key or " + registryAPIKeyEnvName,
+			"pass it to \"nvkectl bootstrap site\" with --registry-api-key or " + registryAPIKeyEnvName,
 		pathNodes: "nodes come from --nodes",
 	}
 }
@@ -59,7 +59,7 @@ func SettablePaths() []string {
 	return paths
 }
 
-// ParseNodesCSV reads the node list for "nkectl generate sitespec".
+// ParseNodesCSV reads the node list for "nvkectl generate sitespec".
 //
 // The first record is a header naming the columns in any order: name and ip are
 // required, tpm_ek_thumbprint is optional per row. An unknown column is an
@@ -157,7 +157,7 @@ func valueAt(record []string, index map[string]int, column string) string {
 	return record[i]
 }
 
-// Build assembles a SiteSpec from the inputs "nkectl generate sitespec" takes
+// Build assembles a SiteSpec from the inputs "nvkectl generate sitespec" takes
 // and validates it, returning the first problem found in the arguments and
 // otherwise every field-level problem at once.
 //

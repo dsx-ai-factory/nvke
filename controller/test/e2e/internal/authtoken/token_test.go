@@ -23,7 +23,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 )
 
 // fakeClock crosses the refresh boundary without sleeping through a lifetime.
@@ -438,7 +438,7 @@ func TestDiscoverReportsNotFoundRatherThanANilSource(t *testing.T) {
 }
 
 // This variable turns the suite's credential off, and a suite with no
-// credential goes green against an NKE that is not enforcing. ParseBool is the
+// credential goes green against an NVKE that is not enforcing. ParseBool is the
 // contract, so "no" and "yes" are errors, not guesses.
 func TestDisabledParsesBooleans(t *testing.T) {
 	for _, tc := range []struct {
@@ -490,7 +490,7 @@ func TestDiscoverHonoursTheEnvironmentOverrides(t *testing.T) {
 	t.Setenv(EnvTTL, "20m")
 
 	// No ConfigMap: the override alone has to be enough, so a caller without
-	// read access to the NKE namespace can still run the suite.
+	// read access to the NVKE namespace can still run the suite.
 	source, found, err := discover(context.Background(), fake.NewClientset())
 	if err != nil {
 		t.Fatalf("discover: %v", err)

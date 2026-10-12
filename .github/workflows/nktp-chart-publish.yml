@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Releases the NKTP Helm chart on an nktp/vX.Y.Z tag: pushes it to
-# oci://ghcr.io/dsx-ai-factory/nke/charts/nktp and cuts the GitHub Release.
+# oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp and cuts the GitHub Release.
 # release.yml skips nktp/ tags, because nktp/ is not a Go module.
 #
-# The version is authored in Chart.yaml, and the tag has to equal it.
+# The chart version is the tag's, as for the controller chart: Chart.yaml
+# carries a 0.0.0 placeholder and `helm package --version` sets the real one.
 
 name: NKTP Chart Publish
 
@@ -28,13 +29,14 @@ jobs:
   publish:
     name: Publish chart
     if: >-
-      github.repository == 'dsx-ai-factory/nke' &&
+      github.repository_id == '1323115536' &&
       startsWith(github.ref, 'refs/tags/nktp/v')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
       packages: write
+      actions: read  # upload-sarif reads the workflow run
       security-events: write  # the malware scan uploads SARIF
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -55,8 +57,8 @@ jobs:
       - name: Set up kubeconform
         uses: ./.github/actions/setup-kubeconform
 
-      # The same rule release.yml enforces on every other tag.
-      - name: Check the tag against Chart.yaml
+      # The same format rule release.yml enforces on every other tag.
+      - name: Take the version from the tag
         id: version
         run: |
           set -euo pipefail
@@ -65,20 +67,17 @@ jobs:
             echo "::error::${GITHUB_REF_NAME} is neither nktp/vX.Y.Z nor nktp/vX.Y.Z-rc.N. Delete it and push a corrected tag."
             exit 1
           fi
-          chart_version="$(yq '.version' "${CHART}/Chart.yaml")"
-          if [[ "${version}" != "${chart_version}" ]]; then
-            echo "::error::${GITHUB_REF_NAME} does not match version ${chart_version} in ${CHART}/Chart.yaml."
-            exit 1
-          fi
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
       - name: Check the chart
         run: make nktp-chart-check
 
       - name: Package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          helm package "${CHART}" --destination dist
+          helm package "${CHART}" --version "${VERSION}" --destination dist
 
       - name: Malware scan the release artifacts
         uses: ./.github/actions/malware-scan
@@ -98,7 +97,7 @@ jobs:
           ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
-          ref=oci://ghcr.io/dsx-ai-factory/nke/charts/nktp
+          ref=oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp
           archive="dist/nktp-${VERSION}.tgz"
           echo "${GHCR_TOKEN}" | helm registry login ghcr.io --username "${ACTOR}" --password-stdin
           mkdir -p published
@@ -113,7 +112,7 @@ jobs:
             echo "${ref}:${VERSION} is already published with the same contents; reusing it."
             cp "published/nktp-${VERSION}.tgz" "${archive}"
           elif grep -q 'not found' pull.err; then
-            helm push "${archive}" oci://ghcr.io/dsx-ai-factory/nke/charts
+            helm push "${archive}" oci://ghcr.io/dsx-ai-factory/nvke/charts
           else
             cat pull.err >&2
             exit 1
@@ -138,10 +137,10 @@ jobs:
       - name: Record the published digest
         uses: ./.github/actions/record-digest
         with:
-          references: ghcr.io/dsx-ai-factory/nke/charts/nktp:${{ steps.version.outputs.version }}
+          references: ghcr.io/dsx-ai-factory/nvke/charts/nktp:${{ steps.version.outputs.version }}
           component: nktp-chart
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: nktp-chart-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist
@@ -162,7 +161,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: nktp-chart-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist
@@ -197,7 +196,7 @@ jobs:
             ```
             kubectl create namespace nktp
             kubectl label namespace nktp pod-security.kubernetes.io/enforce=privileged
-            helm install nktp oci://ghcr.io/dsx-ai-factory/nke/charts/nktp \
+            helm install nktp oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp \
               --version ${{ needs.publish.outputs.version }} --namespace nktp
             ```
 

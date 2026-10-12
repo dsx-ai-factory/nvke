@@ -31,7 +31,7 @@ import (
 	clienttesting "k8s.io/client-go/testing"
 	"sigs.k8s.io/yaml"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 // baselinePatchManifest matches real kubeadm output: all flags live under

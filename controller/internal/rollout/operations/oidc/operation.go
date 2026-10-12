@@ -23,12 +23,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/version"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
 
 const (
@@ -50,7 +50,7 @@ const (
 type EnableOIDCOperation struct {
 	nodeAgentClientDialer nodeAgentClientDialer
 	k8sClient             client.Client
-	oidcConfig            *config.NkeOIDCAuth
+	oidcConfig            *config.NvkeOIDCAuth
 	trustDomain           string
 	// methodChecker verifies each control-plane agent implements the OIDC
 	// RPCs (gRPC reflection) before any node is touched — the reusable capability
@@ -131,7 +131,7 @@ func (op *EnableOIDCOperation) Validate(ctx context.Context, cluster rollout.Clu
 	// nothing mutated; ApplyToNode additionally maps a live Unimplemented as a
 	// clean failure, covering agents that do not serve reflection.
 	for _, node := range cpNodes {
-		if err := op.methodChecker(ctx, node, nkeproto.NodeAgent_PatchAPIServerManifest_FullMethodName); err != nil {
+		if err := op.methodChecker(ctx, node, nvkeproto.NodeAgent_PatchAPIServerManifest_FullMethodName); err != nil {
 			if nodeagent.IsMethodUnsupported(err) {
 				return fmt.Errorf("node %s agent does not implement PatchAPIServerManifest (upgrade the agent): %w", node.Name(), err)
 			}
@@ -277,14 +277,14 @@ func (op *EnableOIDCOperation) ApplyToNode(ctx context.Context, node rollout.Nod
 	// (it must return these with a nil error, per the two-lane contract, or the
 	// FAILED_RESTORED/NOT_RESTORED distinction is lost over the wire).
 	switch resp.GetOutcome() {
-	case nkeproto.PatchAPIServerManifestResponse_OUTCOME_APPLIED:
+	case nvkeproto.PatchAPIServerManifestResponse_OUTCOME_APPLIED:
 		return rollout.OutcomeApplied, nil
-	case nkeproto.PatchAPIServerManifestResponse_OUTCOME_UNCHANGED:
+	case nvkeproto.PatchAPIServerManifestResponse_OUTCOME_UNCHANGED:
 		return rollout.OutcomeUnchanged, nil
-	case nkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_RESTORED:
+	case nvkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_RESTORED:
 		return rollout.OutcomeFailedRestored, outcomeError("enable", node.Name(), resp)
-	case nkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_NOT_RESTORED,
-		nkeproto.PatchAPIServerManifestResponse_OUTCOME_UNSPECIFIED:
+	case nvkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_NOT_RESTORED,
+		nvkeproto.PatchAPIServerManifestResponse_OUTCOME_UNSPECIFIED:
 		// Both may have left the node mutated, so cascade-roll back. outcomeError
 		// renders the exact reason (not-restored vs unspecified).
 		return rollout.OutcomeFailedNotRestored, outcomeError("enable", node.Name(), resp)
@@ -352,15 +352,15 @@ func (op *EnableOIDCOperation) dialNode(ctx context.Context, node rollout.Node) 
 // outcomeError maps a non-success PatchAPIServerManifest response to an error for
 // the given verb ("enable"/"disable"), or nil for APPLIED/UNCHANGED. Shared by
 // the forward apply and the rollback so both describe outcomes identically.
-func outcomeError(verb, nodeName string, resp *nkeproto.PatchAPIServerManifestResponse) error {
+func outcomeError(verb, nodeName string, resp *nvkeproto.PatchAPIServerManifestResponse) error {
 	switch resp.GetOutcome() {
-	case nkeproto.PatchAPIServerManifestResponse_OUTCOME_APPLIED,
-		nkeproto.PatchAPIServerManifestResponse_OUTCOME_UNCHANGED:
+	case nvkeproto.PatchAPIServerManifestResponse_OUTCOME_APPLIED,
+		nvkeproto.PatchAPIServerManifestResponse_OUTCOME_UNCHANGED:
 		return nil
-	case nkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_RESTORED:
+	case nvkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_RESTORED:
 		return fmt.Errorf("%s OIDC on node %s failed and was restored: %s", verb, nodeName, resp.GetErrorMessage())
-	case nkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_NOT_RESTORED,
-		nkeproto.PatchAPIServerManifestResponse_OUTCOME_UNSPECIFIED:
+	case nvkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_NOT_RESTORED,
+		nvkeproto.PatchAPIServerManifestResponse_OUTCOME_UNSPECIFIED:
 		return fmt.Errorf("%s OIDC on node %s failed and was not restored: %s", verb, nodeName, resp.GetErrorMessage())
 	default:
 		return fmt.Errorf("%s OIDC on node %s returned unexpected outcome %v", verb, nodeName, resp.GetOutcome())
@@ -373,25 +373,25 @@ func outcomeError(verb, nodeName string, resp *nkeproto.PatchAPIServerManifestRe
 // by name/mountPath so it is idempotent), and sets --authentication-config to the
 // file path (a convergent flag op, which strategic-merge cannot express on the
 // keyless command list).
-func buildEnablePatchRequest(a authConfigArtifact) (*nkeproto.PatchAPIServerManifestRequest, error) {
+func buildEnablePatchRequest(a authConfigArtifact) (*nvkeproto.PatchAPIServerManifestRequest, error) {
 	smp, err := oidcVolumeMountSMP(filepath.Dir(a.AuthConfigPath), false)
 	if err != nil {
 		return nil, fmt.Errorf("render auth-config volume patch: %w", err)
 	}
-	return &nkeproto.PatchAPIServerManifestRequest{
+	return &nvkeproto.PatchAPIServerManifestRequest{
 		Files:                 filesToProto(a.Files),
 		StrategicMergePatches: [][]byte{smp},
-		FlagOps: []*nkeproto.FlagOp{{
-			Op: &nkeproto.FlagOp_Set{Set: &nkeproto.SetFlag{Name: kubeadmconfig.AuthConfigFlagName, Value: a.AuthConfigPath}},
+		FlagOps: []*nvkeproto.FlagOp{{
+			Op: &nvkeproto.FlagOp_Set{Set: &nvkeproto.SetFlag{Name: kubeadmconfig.AuthConfigFlagName, Value: a.AuthConfigPath}},
 		}},
 	}, nil
 }
 
 // filesToProto converts the payload's staged files to agent File messages.
-func filesToProto(files []fileArtifact) []*nkeproto.File {
-	out := make([]*nkeproto.File, len(files))
+func filesToProto(files []fileArtifact) []*nvkeproto.File {
+	out := make([]*nvkeproto.File, len(files))
 	for i, f := range files {
-		out[i] = &nkeproto.File{Path: f.Path, Content: f.Content, Mode: f.Mode, Owner: f.Owner}
+		out[i] = &nvkeproto.File{Path: f.Path, Content: f.Content, Mode: f.Mode, Owner: f.Owner}
 	}
 	return out
 }
@@ -407,7 +407,7 @@ func filePaths(files []fileArtifact) []string {
 
 // buildRollbackPatchRequest keeps the authentication flag and mount when the
 // cluster already had an authentication configuration before enablement.
-func buildRollbackPatchRequest(a authConfigArtifact) (*nkeproto.PatchAPIServerManifestRequest, error) {
+func buildRollbackPatchRequest(a authConfigArtifact) (*nvkeproto.PatchAPIServerManifestRequest, error) {
 	if a.Previous == nil {
 		return buildDisablePatchRequest(a)
 	}
@@ -431,15 +431,15 @@ func buildRollbackPatchRequest(a authConfigArtifact) (*nkeproto.PatchAPIServerMa
 // strategic-merge $patch: delete keyed by name/mountPath), and remove the staged
 // files. Every field is idempotent, so a re-run against an already-clean node is
 // a no-op (OUTCOME_UNCHANGED).
-func buildDisablePatchRequest(a authConfigArtifact) (*nkeproto.PatchAPIServerManifestRequest, error) {
+func buildDisablePatchRequest(a authConfigArtifact) (*nvkeproto.PatchAPIServerManifestRequest, error) {
 	smp, err := oidcVolumeMountSMP(filepath.Dir(a.AuthConfigPath), true)
 	if err != nil {
 		return nil, fmt.Errorf("render auth-config volume delete patch: %w", err)
 	}
-	return &nkeproto.PatchAPIServerManifestRequest{
+	return &nvkeproto.PatchAPIServerManifestRequest{
 		StrategicMergePatches: [][]byte{smp},
-		FlagOps: []*nkeproto.FlagOp{{
-			Op: &nkeproto.FlagOp_Remove{Remove: &nkeproto.RemoveFlag{Name: kubeadmconfig.AuthConfigFlagName}},
+		FlagOps: []*nvkeproto.FlagOp{{
+			Op: &nvkeproto.FlagOp_Remove{Remove: &nvkeproto.RemoveFlag{Name: kubeadmconfig.AuthConfigFlagName}},
 		}},
 		RemoveFiles: filePaths(a.Files),
 	}, nil

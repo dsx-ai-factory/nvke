@@ -18,10 +18,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/authtoken"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/authtoken"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
 // Permissive mode answers 200 to everything, so the counter is the only evidence
@@ -31,7 +31,7 @@ import (
 // afterwards, so it runs in the same lane as the enforcing specs rather than
 // needing a cluster of its own. Ordered, because that flip is container-wide
 // setup rather than per-spec.
-var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("authn-permissive"), func() {
+var _ = Describe("NVKE API authentication in permissive mode", Ordered, Label("authn-permissive"), func() {
 	var (
 		restConfig *rest.Config
 		clientset  kubernetes.Interface
@@ -65,7 +65,7 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 
 		rolloutCtx, rolloutCancel := context.WithTimeout(ctx, permissiveRolloutTimeout)
 		defer rolloutCancel()
-		previous, err := nke.SetPermissiveMode(rolloutCtx, runtimeClient, "true")
+		previous, err := nvke.SetPermissiveMode(rolloutCtx, runtimeClient, "true")
 		Expect(err).NotTo(HaveOccurred(), "put Deployment %s/%s into permissive mode",
 			controller.Namespace(), controller.Deployment())
 
@@ -73,7 +73,7 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 			restoreCtx, restoreCancel := context.WithTimeout(ctx, permissiveRolloutTimeout)
 			defer restoreCancel()
 
-			_, restoreErr := nke.SetPermissiveMode(restoreCtx, runtimeClient, previous)
+			_, restoreErr := nvke.SetPermissiveMode(restoreCtx, runtimeClient, previous)
 			Expect(restoreErr).NotTo(HaveOccurred(), "restore %s=%q", authnPermissiveEnv, previous)
 
 			// Checked, not assumed. The enforcing specs skip themselves while the
@@ -90,14 +90,14 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 
 		// The metrics listener is a second server on a second port, reachable
 		// only because the Service publishes `metrics` alongside `http`. The
-		// probe makes a missing port say so rather than read as a dead NKE.
-		metrics, err = kube.SharedServiceForwarder(restConfig, controller.Namespace(), controller.Service(), nkeControllerMetricsPort)
+		// probe makes a missing port say so rather than read as a dead NVKE.
+		metrics, err = kube.SharedServiceForwarder(restConfig, controller.Namespace(), controller.Service(), nvkeControllerMetricsPort)
 		Expect(err).NotTo(HaveOccurred(), "build a port-forward to the metrics listener")
 
 		_, _, err = metrics.Get(tctx, metricsPath)
 		Expect(err).NotTo(HaveOccurred(),
 			"could not reach %s on the %q port of Service %s/%s; the chart publishes it from .Values.metrics.port and a Service without it makes the permissive counter unassertable",
-			metricsPath, nkeControllerMetricsPort, controller.Namespace(), controller.Service())
+			metricsPath, nvkeControllerMetricsPort, controller.Namespace(), controller.Service())
 	})
 
 	It("serves the three rejection cases and counts them as would_reject", func(ctx SpecContext) {
@@ -116,7 +116,7 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 
 		for _, probe := range []struct {
 			name   string
-			client *nke.Client
+			client *nvke.Client
 		}{
 			{"no token", authnClient(restConfig, nil)},
 			{"wrong audience", authnClient(restConfig, wrongAudience)},
@@ -133,7 +133,7 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 		Eventually(func() int {
 			return authWouldRejectCount(ctx, metrics) - before
 		}).WithTimeout(30*time.Second).WithPolling(2*time.Second).Should(Equal(3),
-			"three requests that enforcement would have refused must advance nke_auth_requests_total{outcome=\"would_reject\"} by three")
+			"three requests that enforcement would have refused must advance nvke_auth_requests_total{outcome=\"would_reject\"} by three")
 
 		// The admitted caller must not be counted, or a middleware that counted
 		// every request would pass everything above.
@@ -150,9 +150,9 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 	})
 })
 
-// nkeControllerMetricsPort is the port name the metrics listener is published on. A name
+// nvkeControllerMetricsPort is the port name the metrics listener is published on. A name
 // and not 9090, because the chart renders the number from .Values.metrics.port.
-const nkeControllerMetricsPort = "metrics"
+const nvkeControllerMetricsPort = "metrics"
 
 const metricsPath = "/metrics"
 
@@ -163,7 +163,7 @@ const permissiveRolloutTimeout = 6 * time.Minute
 // The counter permissive mode's behavior lands in, and the label separating it
 // from authenticated and from enforced rejections.
 const (
-	authMetricName   = "nke_auth_requests_total"
+	authMetricName   = "nvke_auth_requests_total"
 	wouldRejectLabel = `outcome="would_reject"`
 )
 
@@ -181,7 +181,7 @@ func authWouldRejectCount(ctx context.Context, metrics *kube.ServiceForwarder) i
 	return total
 }
 
-// sumWouldRejectCounter adds up every sample of nke_auth_requests_total carrying
+// sumWouldRejectCounter adds up every sample of nvke_auth_requests_total carrying
 // wouldRejectLabel. A sum, because the counter is also labeled by reason and
 // issuer, so the spec's three cases land in three series. Substring, because
 // client_golang sorts label pairs and outcome lands between issuer and reason.
@@ -213,15 +213,15 @@ func sumWouldRejectCounter(exposition string) (int, error) {
 }
 
 // A parser that silently returned zero would make the delta assertion above
-// pass for an NKE that counted nothing.
+// pass for an NVKE that counted nothing.
 func TestSumWouldRejectCounter(t *testing.T) {
-	const exposition = `# HELP nke_auth_requests_total Total API requests evaluated by authentication.
-# TYPE nke_auth_requests_total counter
-nke_auth_requests_total{issuer="local-kubernetes",outcome="authenticated",reason=""} 7
-nke_auth_requests_total{issuer="local-kubernetes",outcome="would_reject",reason="not_admitted"} 1
-nke_auth_requests_total{issuer="local-kubernetes",outcome="would_reject",reason="audience_mismatch"} 1
-nke_auth_requests_total{issuer="unknown",outcome="would_reject",reason="no_token"} 1
-nke_auth_requests_total{issuer="unknown",outcome="rejected",reason="no_token"} 4
+	const exposition = `# HELP nvke_auth_requests_total Total API requests evaluated by authentication.
+# TYPE nvke_auth_requests_total counter
+nvke_auth_requests_total{issuer="local-kubernetes",outcome="authenticated",reason=""} 7
+nvke_auth_requests_total{issuer="local-kubernetes",outcome="would_reject",reason="not_admitted"} 1
+nvke_auth_requests_total{issuer="local-kubernetes",outcome="would_reject",reason="audience_mismatch"} 1
+nvke_auth_requests_total{issuer="unknown",outcome="would_reject",reason="no_token"} 1
+nvke_auth_requests_total{issuer="unknown",outcome="rejected",reason="no_token"} 4
 `
 
 	// Returning 3 from an exposition whose samples total 14 is also what proves

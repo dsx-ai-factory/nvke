@@ -19,8 +19,8 @@ func sharedTestConfig() *rest.Config {
 // so a caller holding a forwarder from before the reset still has a working one;
 // only the live session is dropped, and the next request rebuilds it.
 //
-// nke.setNKEContainerEnv uses this rather than Close for exactly that reason:
-// the API client in internal/nke captures a forwarder when it is built, which is
+// nvke.setNVKEContainerEnv uses this rather than Close for exactly that reason:
+// the API client in internal/nvke captures a forwarder when it is built, which is
 // before any rollout the specs perform.
 func TestResetSharedForwardersKeepsTheForwarderUsable(t *testing.T) {
 	CloseSharedForwarders()
@@ -51,7 +51,7 @@ func TestResetSharedForwardersKeepsTheForwarderUsable(t *testing.T) {
 
 // One forwarder per target, and a new one after Close.
 //
-// nke.SetOIDCEnabled and nke.SetPermissiveMode rely on the second half: they drop
+// nvke.SetOIDCEnabled and nvke.SetPermissiveMode rely on the second half: they drop
 // the shared forwards once a rollout completes, so the next request builds a
 // tunnel to the replacement pod instead of reusing one aimed at a pod that is
 // gone. A Close that left the table populated would hand back the closed

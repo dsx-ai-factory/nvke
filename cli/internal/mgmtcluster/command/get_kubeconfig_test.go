@@ -13,7 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/config"
+	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 )
 
 // fakeKubeconfigFetcher is a KubeconfigFetcher double keyed by cluster name.

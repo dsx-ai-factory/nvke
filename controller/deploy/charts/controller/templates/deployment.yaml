@@ -447,7 +447,7 @@ spec:
             - name: CONTROLLER_CONFIG_PATH
               value: {{ printf "%s/%s" (include "controller.controllerConfig.mountPath" .) (include "controller.controllerConfig.file" .) | quote }}
             {{- if .Values.apiAuth.enabled }}
-            # Omitted when disabled, never set empty: NKE reads an empty value as
+            # Omitted when disabled, never set empty: NVKE reads an empty value as
             # unset, so the deployment would look configured and authenticate nobody.
             - name: AUTH_CONFIG_PATH
               value: {{ printf "%s/%s" (include "controller.apiAuth.mountPath" .) (include "controller.apiAuth.configFile" .) | quote }}

@@ -11,10 +11,10 @@ name: Agent Artifact NVCR
 # so no registry identifier lands in a tracked file of a repository that is
 # released publicly:
 #
-#   NKE_NGC_ORG             variable  NGC org that owns the artifact
-#   NGC_REGISTRY_TOKEN_NKE  secret    NGC API key with write access on that org
+#   NVKE_NGC_ORG             variable  NGC org that owns the artifact
+#   NGC_REGISTRY_TOKEN_NVKE  secret    NGC API key with write access on that org
 #
-# The repository is nvcr.io/<NKE_NGC_ORG>/nke-agent. Only the org varies, so the
+# The repository is nvcr.io/<NVKE_NGC_ORG>/nvke-agent. Only the org varies, so the
 # environment carries the org rather than the whole reference, and the steps
 # below share one resolved value via steps.meta.outputs.repo. An NKE-org path
 # has no team segment; compare cluster-api-provider-nico's NVCR_NKE_IMAGE.
@@ -50,7 +50,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     name: Publish binaries
     runs-on: ubuntu-latest
     environment: nvcr
@@ -89,14 +89,14 @@ jobs:
         id: meta
         shell: bash
         env:
-          NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
+          NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
         run: |
           set -euo pipefail
-          if [[ -z "${NKE_NGC_ORG}" ]]; then
-            echo "::error::NKE_NGC_ORG is not set in the nvcr environment"
+          if [[ -z "${NVKE_NGC_ORG}" ]]; then
+            echo "::error::NVKE_NGC_ORG is not set in the nvcr environment"
             exit 1
           fi
-          repo="nvcr.io/${NKE_NGC_ORG}/nke-agent"
+          repo="nvcr.io/${NVKE_NGC_ORG}/nvke-agent"
 
           version="$(git describe --match 'agent/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#agent/}"
@@ -140,7 +140,7 @@ jobs:
       - name: Log in to NVCR
         shell: bash
         env:
-          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NKE }}
+          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE || secrets.NGC_REGISTRY_TOKEN_NKE }}
         run: |
           set -euo pipefail
           # shellcheck disable=SC2016
@@ -165,7 +165,7 @@ jobs:
             done
 
             ( cd "bin/linux_${arch}" && oras push "${REPO}:${tags}" \
-                --artifact-type application/vnd.nvidia.nke.agent.v1 \
+                --artifact-type application/vnd.nvidia.nvke.agent.v1 \
                 --artifact-platform "linux/${arch}" \
                 --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
                 --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \

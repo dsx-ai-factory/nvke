@@ -15,9 +15,9 @@ import (
 	. "github.com/onsi/gomega"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/qualification"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/environment"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/qualification"
 )
 
 var (
@@ -203,8 +203,8 @@ func optionalVersion(component string) string {
 	return versions[component]
 }
 
-// Specs reach NKE over a port-forward they share and establish lazily; this
-// closes it. A no-op when no spec ever talked to NKE.
+// Specs reach NVKE over a port-forward they share and establish lazily; this
+// closes it. A no-op when no spec ever talked to NVKE.
 var _ = AfterSuite(func() {
 	kube.CloseSharedForwarders()
 })
@@ -217,5 +217,5 @@ func TestE2E(t *testing.T) {
 	// the tenant client talks to a machine through a relay, and its retries
 	// and REST-layer warnings are what a slow or flaky run needs explained.
 	ctrllog.SetLogger(GinkgoLogr)
-	RunSpecs(t, "NKE E2E Suite")
+	RunSpecs(t, "NVKE E2E Suite")
 }

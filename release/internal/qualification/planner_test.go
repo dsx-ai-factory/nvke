@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
 )
 
 // fake is a resolver that answers from a function and remembers what it was
@@ -76,19 +76,19 @@ func testPolicy() *Policy {
 
 func testRegistry() *Registry {
 	r := &Registry{APIVersion: APIVersion, Kind: KindRegistry}
-	for _, name := range []string{"nke", "os-image", "cli", "controller", "kube", "cni-ovn", "kind"} {
+	for _, name := range []string{"nvke", "os-image", "cli", "controller", "kube", "cni-ovn", "kind"} {
 		r.Spec.Components = append(r.Spec.Components, Component{Name: name, Resolve: Resolve{Strategy: "fake"}})
 	}
 	return r
 }
 
 const testSubject = `
-apiVersion: nke.nvidia.com/v1alpha1
+apiVersion: nvke.nvidia.com/v1alpha1
 kind: Qualification
 metadata:
-  name: nke
+  name: nvke
 spec:
-  subject: nke
+  subject: nvke
   components:
     - {name: os-image, selectors: [latest]}
     - {name: cli, selectors: [latest]}
@@ -104,7 +104,7 @@ type resolvers map[string]*fake
 
 func newResolvers() resolvers {
 	return resolvers{
-		"nke":      subjectFake(),
+		"nvke":     subjectFake(),
 		"os-image": fixed("v0.1.0", "os-image/v0.1.0"),
 		"cli":      fixed("v0.1.0-rc.7", "cli/v0.1.0-rc.7"),
 		"kube":     byConstraint("2"),
@@ -121,7 +121,7 @@ func newPlanner(t *testing.T, subject string, r resolvers) *Planner {
 	if err := os.MkdirAll(filepath.Join(root, "release"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(SubjectPath(root, SubjectNKE), []byte(subject), 0o600); err != nil {
+	if err := os.WriteFile(SubjectPath(root, SubjectNVKE), []byte(subject), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,12 +145,12 @@ func versionsOf(es []ComponentVersion) string {
 func TestPlanResolvesAndExpands(t *testing.T) {
 	p := newPlanner(t, testSubject, newResolvers())
 
-	got, err := p.Plan("nke", "", "full")
+	got, err := p.Plan("nvke", "", "full")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if got.Subject != "nke" || got.Version != "v0.22.0-beta.1" || got.Scope != "full" {
+	if got.Subject != "nvke" || got.Version != "v0.22.0-beta.1" || got.Scope != "full" {
 		t.Errorf("plan is %s %s over %s", got.Subject, got.Version, got.Scope)
 	}
 	if len(got.Combinations) != 1 {
@@ -195,7 +195,7 @@ func TestPlanResolvesPerStreamOnlyThroughACapability(t *testing.T) {
 	r := newResolvers()
 	p := newPlanner(t, testSubject, r)
 
-	if _, err := p.Plan("nke", "", "full"); err != nil {
+	if _, err := p.Plan("nvke", "", "full"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -213,7 +213,7 @@ func TestPlanHandsLaterStrategiesWhatEarlierOnesResolved(t *testing.T) {
 	r := newResolvers()
 	p := newPlanner(t, testSubject, r)
 
-	if _, err := p.Plan("nke", "", "active"); err != nil {
+	if _, err := p.Plan("nvke", "", "active"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -238,7 +238,7 @@ func TestPlanHandsLaterStrategiesWhatEarlierOnesResolved(t *testing.T) {
 func TestPlanCarriesStreamCapabilities(t *testing.T) {
 	p := newPlanner(t, testSubject, newResolvers())
 
-	got, err := p.Plan("nke", "", "active")
+	got, err := p.Plan("nvke", "", "active")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestPlanCarriesStreamCapabilities(t *testing.T) {
 func TestPlanScopeNarrows(t *testing.T) {
 	p := newPlanner(t, testSubject, newResolvers())
 
-	got, err := p.Plan("nke", "", "active")
+	got, err := p.Plan("nvke", "", "active")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestPlanScopeNarrows(t *testing.T) {
 func TestPlanNarrowsToSubjectStreams(t *testing.T) {
 	p := newPlanner(t, testSubject+"  streams: [amd64-1.34, amd64-1.35]\n", newResolvers())
 
-	got, err := p.Plan("nke", "", "active")
+	got, err := p.Plan("nvke", "", "active")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,48 +289,48 @@ func TestPlanNarrowsToSubjectStreams(t *testing.T) {
 func TestPlanSubjectVersion(t *testing.T) {
 	t.Run("absent means the highest version, as for any component", func(t *testing.T) {
 		r := newResolvers()
-		got, err := newPlanner(t, testSubject, r).Plan("nke", "", "full")
+		got, err := newPlanner(t, testSubject, r).Plan("nvke", "", "full")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got.Version != "v0.22.0-beta.1" {
 			t.Errorf("got %q", got.Version)
 		}
-		if in := r["nke"].calls[0]; in[resolve.InputSelectKey] != "" || in[resolve.InputOverrideKey] != "" {
+		if in := r["nvke"].calls[0]; in[resolve.InputSelectKey] != "" || in[resolve.InputOverrideKey] != "" {
 			t.Errorf("the subject was asked for %v", in)
 		}
 	})
 
 	t.Run("a named version is passed to be checked", func(t *testing.T) {
 		r := newResolvers()
-		got, err := newPlanner(t, testSubject, r).Plan("nke", "v0.22.0-beta.3", "full")
+		got, err := newPlanner(t, testSubject, r).Plan("nvke", "v0.22.0-beta.3", "full")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got.Version != "v0.22.0-beta.3" {
 			t.Errorf("got %q", got.Version)
 		}
-		if in := r["nke"].calls[0]; in[resolve.InputOverrideKey] != "v0.22.0-beta.3" {
+		if in := r["nvke"].calls[0]; in[resolve.InputOverrideKey] != "v0.22.0-beta.3" {
 			t.Errorf("the subject was asked for %v", in)
 		}
 	})
 
 	t.Run("a subject that cannot resolve is named", func(t *testing.T) {
 		r := newResolvers()
-		r["nke"] = &fake{answer: func(map[string]string) (map[string]string, error) {
+		r["nvke"] = &fake{answer: func(map[string]string) (map[string]string, error) {
 			return nil, fmt.Errorf("the repository has no tagged versions")
 		}}
-		_, err := newPlanner(t, testSubject, r).Plan("nke", "", "full")
-		wantError(t, err, "resolving nke: the repository has no tagged versions")
+		_, err := newPlanner(t, testSubject, r).Plan("nvke", "", "full")
+		wantError(t, err, "resolving nvke: the repository has no tagged versions")
 	})
 
 	t.Run("a named version that does not exist names both", func(t *testing.T) {
 		r := newResolvers()
-		r["nke"] = &fake{answer: func(map[string]string) (map[string]string, error) {
+		r["nvke"] = &fake{answer: func(map[string]string) (map[string]string, error) {
 			return nil, fmt.Errorf("the repository has no version v9.9.9")
 		}}
-		_, err := newPlanner(t, testSubject, r).Plan("nke", "v9.9.9", "full")
-		wantError(t, err, "checking nke v9.9.9")
+		_, err := newPlanner(t, testSubject, r).Plan("nvke", "v9.9.9", "full")
+		wantError(t, err, "checking nvke v9.9.9")
 	})
 }
 
@@ -339,7 +339,7 @@ func TestPlanRepeatedSelectorDoesNotDuplicate(t *testing.T) {
 	// resolve to one version, so the product must not double.
 	subject := strings.Replace(testSubject, "{name: cli, selectors: [latest]}", "{name: cli, selectors: [latest, latest]}", 1)
 
-	got, err := newPlanner(t, subject, newResolvers()).Plan("nke", "", "full")
+	got, err := newPlanner(t, subject, newResolvers()).Plan("nvke", "", "full")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +360,7 @@ func TestPlanSelectorsThatDifferMakeCombinations(t *testing.T) {
 	}}
 	subject := strings.Replace(testSubject, "{name: cli, selectors: [latest]}", "{name: cli, selectors: [latest, latest]}", 1)
 
-	got, err := newPlanner(t, subject, r).Plan("nke", "", "full")
+	got, err := newPlanner(t, subject, r).Plan("nvke", "", "full")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +406,7 @@ func TestPlanFailsEarly(t *testing.T) {
 					return nil, fmt.Errorf("os-image has no tagged versions")
 				}}
 			},
-			want: "resolving os-image for nke: os-image has no tagged versions",
+			want: "resolving os-image for nvke: os-image has no tagged versions",
 		},
 		{
 			name: "a dependency that cannot resolve", subject: testSubject, scope: "full",
@@ -415,7 +415,7 @@ func TestPlanFailsEarly(t *testing.T) {
 					return nil, fmt.Errorf("locks no version matching 1.4")
 				}}
 			},
-			want: "resolving cni-ovn for nke: locks no version matching 1.4",
+			want: "resolving cni-ovn for nvke: locks no version matching 1.4",
 		},
 		{
 			name: "a per-stream dependency that cannot resolve names the stream", subject: testSubject, scope: "full",
@@ -424,7 +424,7 @@ func TestPlanFailsEarly(t *testing.T) {
 					return nil, fmt.Errorf("locks no version matching 1.34")
 				}}
 			},
-			want: "stream amd64-1.34: resolving kube for nke: locks no version matching 1.34",
+			want: "stream amd64-1.34: resolving kube for nvke: locks no version matching 1.34",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -432,7 +432,7 @@ func TestPlanFailsEarly(t *testing.T) {
 			if tc.change != nil {
 				tc.change(r)
 			}
-			_, err := newPlanner(t, tc.subject, r).Plan("nke", "", tc.scope)
+			_, err := newPlanner(t, tc.subject, r).Plan("nvke", "", tc.scope)
 			wantError(t, err, tc.want)
 		})
 	}
@@ -442,21 +442,21 @@ func TestPlanNamesAComponentWithNoResolver(t *testing.T) {
 	r := newResolvers()
 	delete(r, "kind")
 
-	_, err := newPlanner(t, testSubject, r).Plan("nke", "", "full")
+	_, err := newPlanner(t, testSubject, r).Plan("nvke", "", "full")
 	wantError(t, err, `no resolver was built for "kind"`)
 }
 
 func TestPlanRejectsASubjectFileForAnotherSubject(t *testing.T) {
-	subject := strings.NewReplacer("  name: nke\n", "  name: controller\n", "subject: nke", "subject: controller").Replace(testSubject)
+	subject := strings.NewReplacer("  name: nvke\n", "  name: controller\n", "subject: nvke", "subject: controller").Replace(testSubject)
 
-	// The file sits where nke's does, so it is read as nke's and has to say so.
-	_, err := newPlanner(t, subject, newResolvers()).Plan("nke", "", "full")
-	wantError(t, err, `describes "controller", not "nke"`)
+	// The file sits where nvke's does, so it is read as nvke's and has to say so.
+	_, err := newPlanner(t, subject, newResolvers()).Plan("nvke", "", "full")
+	wantError(t, err, `describes "controller", not "nvke"`)
 }
 
 func TestPlanIsDeterministic(t *testing.T) {
 	build := func() *Plan {
-		got, err := newPlanner(t, testSubject, newResolvers()).Plan("nke", "", "full")
+		got, err := newPlanner(t, testSubject, newResolvers()).Plan("nvke", "", "full")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -505,11 +505,11 @@ func TestPlanIDDoesNotDependOnComponentOrder(t *testing.T) {
 		t.Fatal("the subject was not reordered")
 	}
 
-	a, err := newPlanner(t, testSubject, newResolvers()).Plan("nke", "", "full")
+	a, err := newPlanner(t, testSubject, newResolvers()).Plan("nvke", "", "full")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := newPlanner(t, swapped, newResolvers()).Plan("nke", "", "full")
+	b, err := newPlanner(t, swapped, newResolvers()).Plan("nvke", "", "full")
 	if err != nil {
 		t.Fatal(err)
 	}

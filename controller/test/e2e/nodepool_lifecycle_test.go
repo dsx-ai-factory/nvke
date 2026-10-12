@@ -12,8 +12,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
 const (
@@ -36,13 +36,13 @@ func validateClusterConfig(test *tenantTest) {
 		By("Verifying the cluster-level control-plane configuration and that no control-plane node pool exists")
 		cpSpec := test.spec.ControlPlane.Config
 		Expect(cpSpec).NotTo(BeNil(), "the cluster must be created with a control-plane config")
-		controlPlane := expectSucceed(test.nke.GetClusterControlPlane(ctx, test.cluster.ID))
+		controlPlane := expectSucceed(test.nvke.GetClusterControlPlane(ctx, test.cluster.ID))
 		if controlPlane.Config.Nico != nil {
 			Expect(controlPlane.Config.Nico.ConfigProfile).To(Equal(cpSpec.ConfigProfile))
 		}
 		Expect(controlPlane.Status.KubernetesVersion).To(Equal(test.spec.KubernetesVersion))
 		Expect(controlPlane.Config.DesiredCount).To(Equal(cpSpec.DesiredCount))
-		for _, pool := range expectSucceed(test.nke.ListNodePools(ctx, test.cluster.ID)) {
+		for _, pool := range expectSucceed(test.nvke.ListNodePools(ctx, test.cluster.ID)) {
 			Expect(pool.ControlPlane).To(BeFalse(), "a controller-managed control plane has no node pool (found %q)", pool.Name)
 		}
 
@@ -68,8 +68,8 @@ func validateNodeReplacement(test *tenantTest) {
 		workerPool := expectWorkerPool(ctx, test)
 
 		By("Scaling the worker pool to two so replacement can be observed with a survivor")
-		expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, workerPool.ID, 2))
-		Expect(test.nke.WaitForProvisionedNodeCount(ctx, workerPool.ID, 2)).To(Succeed())
+		expectSucceed(test.nvke.UpdateNodePoolDesiredCount(ctx, workerPool.ID, 2))
+		Expect(test.nvke.WaitForProvisionedNodeCount(ctx, workerPool.ID, 2)).To(Succeed())
 
 		before := expectNodeIDs(ctx, test, workerPool.ID)
 		Expect(before).To(HaveLen(2), "worker pool should have two provisioned nodes before replacement")
@@ -83,10 +83,10 @@ func validateNodeReplacement(test *tenantTest) {
 		}
 
 		By(fmt.Sprintf("Deleting worker node %s with the desired count unchanged at 2", victim))
-		Expect(test.nke.DeleteNode(ctx, victim)).To(Succeed(), "should delete the worker node")
+		Expect(test.nvke.DeleteNode(ctx, victim)).To(Succeed(), "should delete the worker node")
 
 		By("Waiting for the pool to heal back to two provisioned nodes without the deleted node")
-		Expect(test.nke.WaitForProvisionedNodeCountExcluding(ctx, workerPool.ID, 2, victim)).To(Succeed())
+		Expect(test.nvke.WaitForProvisionedNodeCountExcluding(ctx, workerPool.ID, 2, victim)).To(Succeed())
 
 		By("Verifying the surviving node was preserved")
 		Expect(expectNodeIDs(ctx, test, workerPool.ID)).To(HaveKey(survivor),
@@ -105,14 +105,14 @@ func validateManualScaleDownStability(test *tenantTest) {
 		workerPool := expectWorkerPool(ctx, test)
 
 		By("Scaling the worker pool to two to establish the precondition")
-		expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, workerPool.ID, 2))
-		Expect(test.nke.WaitForProvisionedNodeCount(ctx, workerPool.ID, 2)).To(Succeed())
+		expectSucceed(test.nvke.UpdateNodePoolDesiredCount(ctx, workerPool.ID, 2))
+		Expect(test.nvke.WaitForProvisionedNodeCount(ctx, workerPool.ID, 2)).To(Succeed())
 
 		By("Lowering the worker pool desired count from two to one")
-		expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, workerPool.ID, 1))
+		expectSucceed(test.nvke.UpdateNodePoolDesiredCount(ctx, workerPool.ID, 1))
 
 		By("Verifying scaling down alone did not remove any provisioned node")
-		Expect(expectSucceed(test.nke.ProvisionedNodeCount(ctx, workerPool.ID))).To(Equal(2),
+		Expect(expectSucceed(test.nvke.ProvisionedNodeCount(ctx, workerPool.ID))).To(Equal(2),
 			"lowering the desired count must not auto-remove provisioned workers")
 
 		nodes := expectNodeIDs(ctx, test, workerPool.ID)
@@ -122,13 +122,13 @@ func validateManualScaleDownStability(test *tenantTest) {
 			break
 		}
 		By(fmt.Sprintf("Manually deleting worker node %s", victim))
-		Expect(test.nke.DeleteNode(ctx, victim)).To(Succeed())
+		Expect(test.nvke.DeleteNode(ctx, victim)).To(Succeed())
 
 		By("Waiting for the pool to reach one provisioned node")
-		Expect(test.nke.WaitForProvisionedNodeCount(ctx, workerPool.ID, 1)).To(Succeed())
+		Expect(test.nvke.WaitForProvisionedNodeCount(ctx, workerPool.ID, 1)).To(Succeed())
 
 		By(fmt.Sprintf("Verifying the pool stays at one node (no delayed replacement) for %s", manualScaleDownStableFor))
-		Expect(test.nke.WaitForProvisionedNodeCountStable(ctx, workerPool.ID, 1, manualScaleDownStableFor)).To(Succeed())
+		Expect(test.nvke.WaitForProvisionedNodeCountStable(ctx, workerPool.ID, 1, manualScaleDownStableFor)).To(Succeed())
 	}, Label("lifecycle", "nodepool", "scale", "manual-scale-down"), NodeTimeout(2*time.Hour))
 }
 
@@ -142,25 +142,25 @@ func validateAdditionalNodePool(test *tenantTest) {
 
 		By("Creating an additional worker node pool")
 		req := expectSucceed(workerNodePoolRequest(test, extraPoolName, "wx"))
-		extra := expectSucceed(test.nke.CreateNodePool(ctx, req))
+		extra := expectSucceed(test.nvke.CreateNodePool(ctx, req))
 		Expect(extra.Name).To(Equal(extraPoolName))
 		Expect(extra.ControlPlane).To(BeFalse())
 
 		By("Waiting for the additional pool to reach one provisioned node")
-		Expect(test.nke.WaitForProvisionedNodeCount(ctx, extra.ID, 1)).To(Succeed())
+		Expect(test.nvke.WaitForProvisionedNodeCount(ctx, extra.ID, 1)).To(Succeed())
 
 		By("Scaling the additional pool from one node to two")
-		expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, extra.ID, 2))
-		Expect(test.nke.WaitForProvisionedNodeCount(ctx, extra.ID, 2)).To(Succeed())
+		expectSucceed(test.nvke.UpdateNodePoolDesiredCount(ctx, extra.ID, 2))
+		Expect(test.nvke.WaitForProvisionedNodeCount(ctx, extra.ID, 2)).To(Succeed())
 
 		By("Verifying the primary worker pool was not disturbed")
 		Expect(expectNodeIDs(ctx, test, primaryPool.ID)).To(Equal(primaryBefore),
 			"scaling the additional pool should not change the primary pool")
 
 		By("Deleting the additional worker node pool")
-		Expect(test.nke.DeleteNodePool(ctx, extra.ID)).To(Succeed())
-		Expect(test.nke.WaitForNodePoolDeleted(ctx, extra.ID)).To(Succeed())
-		Expect(expectSucceed(test.nke.ListNodePoolNodes(ctx, extra.ID))).To(BeEmpty(),
+		Expect(test.nvke.DeleteNodePool(ctx, extra.ID)).To(Succeed())
+		Expect(test.nvke.WaitForNodePoolDeleted(ctx, extra.ID)).To(Succeed())
+		Expect(expectSucceed(test.nvke.ListNodePoolNodes(ctx, extra.ID))).To(BeEmpty(),
 			"the deleted node pool should retain no nodes")
 	}, Label("lifecycle", "nodepool", "scale"), NodeTimeout(2*time.Hour))
 }
@@ -171,8 +171,8 @@ func validateAdditionalNodePool(test *tenantTest) {
 func validateNodePoolCascadePostCreate(test *tenantTest) {
 	It("creates a worker node pool that stays active until cluster deletion", func(ctx context.Context) {
 		req := expectSucceed(workerNodePoolRequest(test, cascadePoolName, "wc"))
-		pool := expectSucceed(test.nke.CreateNodePool(ctx, req))
-		Expect(test.nke.WaitForProvisionedNodeCount(ctx, pool.ID, 1)).To(Succeed())
+		pool := expectSucceed(test.nvke.CreateNodePool(ctx, req))
+		Expect(test.nvke.WaitForProvisionedNodeCount(ctx, pool.ID, 1)).To(Succeed())
 		test.cascadePoolID = pool.ID
 	}, Label("lifecycle", "nodepool", "cascade"), NodeTimeout(2*time.Hour))
 }
@@ -184,32 +184,32 @@ func validateNodePoolCascadePostDelete(test *tenantTest) {
 		Expect(test.cascadePoolID).NotTo(Equal(uuid.Nil), "cascade pool should have been created post-create")
 
 		By("Verifying the node pool no longer exists")
-		pool, status, err := test.nke.GetNodePool(ctx, test.cascadePoolID)
+		pool, status, err := test.nvke.GetNodePool(ctx, test.cascadePoolID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(status).To(Equal(404), "cluster deletion should remove the active node pool")
 		Expect(pool).To(BeNil())
 
 		By("Verifying the node pool retains no nodes")
-		Expect(expectSucceed(test.nke.ListNodePoolNodes(ctx, test.cascadePoolID))).To(BeEmpty())
+		Expect(expectSucceed(test.nvke.ListNodePoolNodes(ctx, test.cascadePoolID))).To(BeEmpty())
 	}, Label("cascade"), NodeTimeout(10*time.Minute))
 }
 
 func workerNodePoolRequest(test *tenantTest, name, nodeNamePrefix string) (api.CreateNodePoolRequest, error) {
-	base := nke.NodePoolSpec{Name: name, NodeNamePrefix: nodeNamePrefix, DesiredNodeCount: 1}
-	if test.spec.Backend == nke.BackendCAPD {
+	base := nvke.NodePoolSpec{Name: name, NodeNamePrefix: nodeNamePrefix, DesiredNodeCount: 1}
+	if test.spec.Backend == nvke.BackendCAPD {
 		spec := capdNodePoolSpec(base, name, nodeNamePrefix)
-		return nke.CAPDNodePoolRequest(test.cluster.ID, spec, test.spec.CAPDNodeImage)
+		return nvke.CAPDNodePoolRequest(test.cluster.ID, spec, test.spec.CAPDNodeImage)
 	}
-	if test.spec.Backend == nke.BackendNicoVMS {
+	if test.spec.Backend == nvke.BackendNicoVMS {
 		base.InstanceTypeID = nicoVMSLargeInstanceID
 		spec := nicoVMSNodePoolSpec(base, name, nodeNamePrefix, nicoVMSOSProfile, nicoVMSWConfigProfile)
-		return nke.NicoVMSNodePoolRequest(test.cluster.ID, spec)
+		return nvke.NicoVMSNodePoolRequest(test.cluster.ID, spec)
 	}
-	if test.spec.Backend == nke.BackendNicoContainers {
+	if test.spec.Backend == nvke.BackendNicoContainers {
 		// nicoNodePoolSpecs is what the cluster-create path uses, so a pool
 		// added later is shaped the same as the ones created with the cluster.
-		spec := nicoNodePoolSpecs([]nke.NodePoolSpec{base}, name, nodeNamePrefix)[0]
-		return nke.NicoNodePoolRequest(test.cluster.ID, test.cluster.Name, nicoVpcID, spec)
+		spec := nicoNodePoolSpecs([]nvke.NodePoolSpec{base}, name, nodeNamePrefix)[0]
+		return nvke.NicoNodePoolRequest(test.cluster.ID, test.cluster.Name, nicoVpcID, spec)
 	}
 	return api.CreateNodePoolRequest{}, fmt.Errorf("node pool lifecycle is unsupported for backend %q", test.spec.Backend)
 }

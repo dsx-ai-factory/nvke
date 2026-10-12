@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # nico-vms backend E2E: the only lane that runs the nico-vms specs, on real KVM
-# tenant nodes booted from the NKE FDE image. Body: controller/hack/ci/nico-vms-e2e.sh,
+# tenant nodes booted from the NVKE FDE image. Body: controller/hack/ci/nico-vms-e2e.sh,
 # host mode, because nico-vms needs libvirt, the host bridge and CAP_NET_ADMIN.
 # Advisory. A happy-path run takes 40 minutes on arm64 and 90 on amd64, so the
 # push paths are only the lane's own inputs, and a mirror-branch run is skipped
@@ -28,9 +28,9 @@ on:
       - "controller/hack/nico-provider/**"
       - "controller/hack/ci/nico-vms-e2e.sh"
       - controller/hack/backend-e2e-lib.sh
-      # This lane runs the nkectl smoke, and is the only one that exercises its
+      # This lane runs the nvkectl smoke, and is the only one that exercises its
       # host-mode branch.
-      - "controller/hack/ci/nkectl-smoke.sh"
+      - "controller/hack/ci/nvkectl-smoke.sh"
       - "controller/test/kubeadm/scripts/**"
       # The Tiltfile is the lane's controller deployment recipe (#683).
       - controller/Tiltfile
@@ -89,13 +89,13 @@ jobs:
       pull-requests: read
     with:
       # Keep in step with the push paths above.
-      relevant_paths: '^agent/(internal/agent/open_vswitch.*\.go$|pkg/agent/proto/node_agent\.proto$)|^controller/(Tiltfile$|internal/temporal/activities/configure_open_vswitch\.go$|internal/temporal/workflows/provision_node\.go$|nico-sim/|hack/nico-provider/|hack/ci/nico-vms-e2e\.sh$|hack/ci/nkectl-smoke\.sh$|test/e2e/|test/kubeadm/scripts/)|^\.github/workflows/(nico-vms-e2e|e2e-pr-path-filter)\.yml$'
+      relevant_paths: '^agent/(internal/agent/open_vswitch.*\.go$|pkg/agent/proto/node_agent\.proto$)|^controller/(Tiltfile$|internal/temporal/activities/configure_open_vswitch\.go$|internal/temporal/workflows/provision_node\.go$|nico-sim/|hack/nico-provider/|hack/ci/nico-vms-e2e\.sh$|hack/ci/nvkectl-smoke\.sh$|test/e2e/|test/kubeadm/scripts/)|^\.github/workflows/(nico-vms-e2e|e2e-pr-path-filter)\.yml$'
 
   nico-vms-e2e:
     name: nico-vms-e2e (${{ matrix.arch }}, KVM)
     runs-on: ${{ matrix.runner }}
     needs: changes
-    if: github.repository == 'dsx-ai-factory/nke' && needs.changes.outputs.run_e2e == 'true'
+    if: github.repository_id == '1323115536' && needs.changes.outputs.run_e2e == 'true'
     strategy:
       # One architecture failing must not hide the other's result.
       fail-fast: false
@@ -309,7 +309,7 @@ jobs:
       - name: Upload redacted diagnostics
         if: always() && steps.diagnostics.outputs.safe == 'true'
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # The architecture belongs in the name: both legs upload, and without
           # it the two are one name and you cannot tell which leg you opened.
@@ -317,10 +317,10 @@ jobs:
           path: |
             ${{ env.NKE_E2E_STATE_DIR }}/
             !${{ env.NKE_E2E_STATE_DIR }}/cwe-e2e.test
-            # The smoke's own nkectl state: a cached controller token lives here.
-            !${{ env.NKE_E2E_STATE_DIR }}/nkectl-home
-            !${{ env.NKE_E2E_STATE_DIR }}/nkectl-no-auth
-            !${{ env.NKE_E2E_STATE_DIR }}/nkectl
+            # The smoke's own nvkectl state: a cached controller token lives here.
+            !${{ env.NKE_E2E_STATE_DIR }}/nvkectl-home
+            !${{ env.NKE_E2E_STATE_DIR }}/nvkectl-no-auth
+            !${{ env.NKE_E2E_STATE_DIR }}/nvkectl
             !${{ env.NKE_E2E_STATE_DIR }}/kubeconfig
             # The node image pulled from GHCR (nico-vms-e2e.sh:442): an input,
             # not a diagnostic, and 3.1 GB of a 3.1 GB artifact.

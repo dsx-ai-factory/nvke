@@ -76,7 +76,7 @@ func SetCondition(existing *Condition, condition Condition) {
 // OperationType identifies a long-running cluster mutation that is mutually
 // exclusive with other CP-mutating operations. Persisted as the Type field of
 // UpdateInProgress inside clusters.conditions JSONB; string values must stay
-// stable because they are consumed by the UI and nkecli.
+// stable because they are consumed by the UI and nvkectl.
 type OperationType string
 
 const (

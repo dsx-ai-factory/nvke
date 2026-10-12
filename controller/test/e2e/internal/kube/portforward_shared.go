@@ -12,7 +12,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// Global, so the several places that build an NKE client share one tunnel per
+// Global, so the several places that build an NVKE client share one tunnel per
 // target rather than each opening their own.
 //
 //nolint:gochecknoglobals // deliberate: see above.

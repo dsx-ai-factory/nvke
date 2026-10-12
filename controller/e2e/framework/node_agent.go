@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 type NodeAgentCall struct {
@@ -23,7 +23,7 @@ type NodeAgentCall struct {
 
 // NodeAgentServer is a test fixture reached through the controller's production agent client.
 type NodeAgentServer struct {
-	nkeproto.UnimplementedNodeAgentServer
+	nvkeproto.UnimplementedNodeAgentServer
 	address    string
 	calls      chan NodeAgentCall
 	kubeconfig string
@@ -40,7 +40,7 @@ func StartNodeAgentServer(t testing.TB) *NodeAgentServer {
 		calls:   make(chan NodeAgentCall, 32),
 	}
 	server := grpc.NewServer()
-	nkeproto.RegisterNodeAgentServer(server, fixture)
+	nvkeproto.RegisterNodeAgentServer(server, fixture)
 	go func() {
 		_ = server.Serve(listener)
 	}()
@@ -75,14 +75,14 @@ func (s *NodeAgentServer) SetKubeconfig(kubeconfig string) {
 
 func (s *NodeAgentServer) GetKubeconfig(
 	_ context.Context,
-	_ *nkeproto.KubeconfigRequest,
-) (*nkeproto.KubeconfigResponse, error) {
-	return &nkeproto.KubeconfigResponse{Kubeconfig: s.kubeconfig}, nil
+	_ *nvkeproto.KubeconfigRequest,
+) (*nvkeproto.KubeconfigResponse, error) {
+	return &nvkeproto.KubeconfigResponse{Kubeconfig: s.kubeconfig}, nil
 }
 
-func (s *NodeAgentServer) ExecuteScript(_ context.Context, req *nkeproto.ExecuteScriptRequest) (*nkeproto.ExecuteScriptResponse, error) {
+func (s *NodeAgentServer) ExecuteScript(_ context.Context, req *nvkeproto.ExecuteScriptRequest) (*nvkeproto.ExecuteScriptResponse, error) {
 	s.calls <- NodeAgentCall{ScriptName: req.GetScriptName()}
-	return &nkeproto.ExecuteScriptResponse{
+	return &nvkeproto.ExecuteScriptResponse{
 		Output:   "gofail e2e agent response",
 		Status:   "succeeded",
 		ExitCode: 0,

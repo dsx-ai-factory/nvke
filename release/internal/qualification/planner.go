@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dsx-ai-factory/nke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
 )
 
 // SelectorLatest is the only selector that exists. Anything else in a

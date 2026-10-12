@@ -48,7 +48,7 @@ concurrency:
 
 jobs:
   build-efi:
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     name: Build qcow-imager.efi (${{ matrix.arch }})
     strategy:
       fail-fast: false
@@ -59,7 +59,7 @@ jobs:
             target: build-efi-x86
           - arch: aarch64
             # ARC scale set on the RelEng EKS cluster, same size class as the
-            # nke-arm64-8c16g it replaces. This leg does not need /dev/kvm --
+            # arm64 label it replaces. This leg does not need /dev/kvm --
             # mkosi builds a Unified Kernel Image -- so none of the libvirt
             # limits in #863 apply to it. Verified: 5m34s here against 5m on
             # the self-hosted fleet.
@@ -123,7 +123,7 @@ jobs:
           sha256sum "${efi}"
 
       - name: Upload qcow-imager.efi
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qcow-imager-efi-${{ matrix.arch }}
           path: os-image/efi/output/${{ matrix.arch }}/qcow-imager.efi

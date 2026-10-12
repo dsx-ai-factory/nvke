@@ -1,4 +1,4 @@
-module github.com/dsx-ai-factory/nke/release
+module github.com/dsx-ai-factory/nvke/release
 
 go 1.27.2
 

@@ -13,7 +13,7 @@ navigation:
       - page: Overview
         path: overview.md
 
-      - page: NKE in the DSX Stack
+      - page: NVKE in the DSX Stack
         path: dsx-stack.md
 
       - section: Getting Started
@@ -132,9 +132,9 @@ navigation:
 
       - section: Reference
         contents:
-          - page: nkectl CLI
+          - page: nvkectl CLI
             path: ../cli/docs/user-flow.md
-          - page: nkectl Compatibility Policy
+          - page: nvkectl Compatibility Policy
             path: ../cli/docs/compatibility.md
           - page: Site Spec
             path: ../cli/docs/sitespec.md

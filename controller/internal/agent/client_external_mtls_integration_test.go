@@ -28,10 +28,10 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 const controllerClientURI = "urn:nvidia:nke:controller"
@@ -121,7 +121,7 @@ func TestIntegration_NodeAgentClientInsecureTransportRegression(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	server := grpc.NewServer()
-	nkeproto.RegisterNodeAgentServer(server, recorder)
+	nvkeproto.RegisterNodeAgentServer(server, recorder)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() {
 		server.Stop()
@@ -146,12 +146,12 @@ func TestIntegration_NodeAgentClientInsecureTransportRegression(t *testing.T) {
 }
 
 type externalMTLSTestNodeAgent struct {
-	nkeproto.UnimplementedNodeAgentServer
+	nvkeproto.UnimplementedNodeAgentServer
 	calls    atomic.Int32
 	peerURIs chan string
 }
 
-func (s *externalMTLSTestNodeAgent) GetKubeadmStatus(ctx context.Context, _ *nkeproto.KubeadmStatusRequest) (*nkeproto.KubeadmStatusResponse, error) {
+func (s *externalMTLSTestNodeAgent) GetKubeadmStatus(ctx context.Context, _ *nvkeproto.KubeadmStatusRequest) (*nvkeproto.KubeadmStatusResponse, error) {
 	s.calls.Add(1)
 	if remotePeer, ok := peer.FromContext(ctx); ok {
 		if tlsInfo, tlsOK := remotePeer.AuthInfo.(credentials.TLSInfo); tlsOK && len(tlsInfo.State.PeerCertificates) > 0 {
@@ -161,14 +161,14 @@ func (s *externalMTLSTestNodeAgent) GetKubeadmStatus(ctx context.Context, _ *nke
 			}
 		}
 	}
-	return &nkeproto.KubeadmStatusResponse{AgentVersion: "dummy-agent"}, nil
+	return &nvkeproto.KubeadmStatusResponse{AgentVersion: "dummy-agent"}, nil
 }
 
 func startExternalMTLSTestNodeAgent(
 	t *testing.T,
 	serverCertificate tls.Certificate,
 	trustedControllerCAPEM []byte,
-	service nkeproto.NodeAgentServer,
+	service nvkeproto.NodeAgentServer,
 ) (string, string) {
 	t.Helper()
 
@@ -194,7 +194,7 @@ func startExternalMTLSTestNodeAgent(
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
-	nkeproto.RegisterNodeAgentServer(server, service)
+	nvkeproto.RegisterNodeAgentServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() {
 		server.Stop()

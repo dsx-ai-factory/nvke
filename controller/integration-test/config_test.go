@@ -27,7 +27,7 @@ type IntegrationTestConfig struct {
 
 const (
 	// legacyControllerAPIURLEnv is a deprecated alias for NKE_CONTROLLER_API_URL;
-	// nke#1399 removes it.
+	// #1399 removes it.
 	legacyControllerAPIURLEnv = "CWE_API_URL"
 	defaultControllerAPIURL   = "http://localhost:8080/api"
 )

@@ -139,7 +139,7 @@ spire-server:
                 values:
                   - nke-controller
 
-        # The identity NKE's own services present. This was a loose manifest in
+        # The identity NVKE's own services present. This was a loose manifest in
         # controller/deploy/k8s, which the CAPD lane had to apply between two
         # install phases because a ClusterSPIFFEID needs a CRD the datastore
         # phase installs. Declared here it is rendered by the spire release
@@ -222,7 +222,7 @@ spiffe-oidc-discovery-provider:
 
 # ─── cloud-workflow-engine ───────────────────────────────────────────────────
 # image.repository/tag are left at the chart's own defaults. The nvcr-published
-# chart already carries nvcr.io/j7sbcjl3qgta/nke-controller and the
+# chart already carries nvcr.io/j7sbcjl3qgta/nvke-controller and the
 # svc-nke-ngc-imagepull secret -- chart-publish-nvcr.yml rewrites both at
 # package time -- so pulling the chart from nvcr gets a matching image without
 # any override here.

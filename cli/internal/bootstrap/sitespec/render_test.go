@@ -199,7 +199,7 @@ func TestBuildIgnoresEnvironment(t *testing.T) {
 	for env := range envBindings() {
 		t.Setenv(env, "junk-"+env)
 	}
-	t.Setenv("NKECTL_CLUSTER_NODES", "someone:10.0.0.9")
+	t.Setenv("NVKECTL_CLUSTER_NODES", "someone:10.0.0.9")
 
 	dirty, err := Build("my-tier0-site", oneNode(), nil)
 	if err != nil {

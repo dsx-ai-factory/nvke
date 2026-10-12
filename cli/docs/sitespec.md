@@ -1,6 +1,6 @@
-# nkectl bootstrap site — site spec file spec
+# nvkectl bootstrap site — site spec file spec
 
-`nkectl bootstrap site -f <sitespec-file>` reads one YAML site spec file. The
+`nvkectl bootstrap site -f <sitespec-file>` reads one YAML site spec file. The
 file is the single source of truth for a bootstrap run: it lists the
 pre-provisioned nodes and the vanilla Kubernetes cluster to build on them.
 
@@ -12,11 +12,11 @@ A ready-to-copy example is in [`examples/sitespec.yaml`](../examples/sitespec.ya
 
 ## Generating one
 
-`nkectl generate sitespec` writes a complete site spec, so the file does not
+`nvkectl generate sitespec` writes a complete site spec, so the file does not
 have to be assembled by hand:
 
 ```bash
-nkectl generate sitespec my-tier0-site --nodes hosts.csv > sitespec.yaml
+nvkectl generate sitespec my-tier0-site --nodes hosts.csv > sitespec.yaml
 ```
 
 The hosts come from a CSV, because a real site has more of them than a flag per
@@ -34,7 +34,7 @@ An unknown column is an error rather than being ignored, so a misspelled header
 does not silently drop a field. Pass `--nodes -` to read the CSV from standard
 input.
 
-This is a different format from the `NKECTL_CLUSTER_NODES` environment variable
+This is a different format from the `NVKECTL_CLUSTER_NODES` environment variable
 below, which spells the same list as `name:ip,name:ip`. The two are not
 interchangeable: `name:ip` has nowhere to put a TPM thumbprint.
 
@@ -42,14 +42,14 @@ Anything the CSV does not carry is set with `--set`, using the same field paths
 this document uses. Run it with an unknown path to list what it accepts:
 
 ```bash
-nkectl generate sitespec my-tier0-site --nodes hosts.csv \
+nvkectl generate sitespec my-tier0-site --nodes hosts.csv \
   --set cluster.controlPlaneVIP=10.10.50.10 \
   --set cluster.podCidr=10.244.0.0/16 > sitespec.yaml
 ```
 
 Two fields are deliberately not settable. `cluster.nodes` comes from `--nodes`.
 `registry.apiKey` is a credential and this file is meant to be committed — pass
-it to `nkectl bootstrap site` with `--registry-api-key` or `REGISTRY_API_KEY`
+it to `nvkectl bootstrap site` with `--registry-api-key` or `REGISTRY_API_KEY`
 instead.
 
 Unlike `bootstrap site`, `generate sitespec` ignores the environment variables
@@ -82,7 +82,7 @@ is a file `bootstrap site` accepts.
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to. See below. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Required with `caCertFile`. |
 
-The version (image/chart tag) is baked into the `nkectl` build, so it is not
+The version (image/chart tag) is baked into the `nvkectl` build, so it is not
 part of the site spec.
 
 Unknown fields are rejected. A typo in a field name fails the load rather than
@@ -138,12 +138,12 @@ A set variable takes precedence over the file value.
 | `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |
-| `NKECTL_SPIFFE_TRUST_DOMAIN` | `spire.trustDomain` |
+| `NVKECTL_SPIFFE_TRUST_DOMAIN` | `spire.trustDomain` |
 | `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
 | `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
-| `NKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
+| `NVKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
 
-A malformed `NKECTL_CLUSTER_NODES` entry fails the load rather than being
+A malformed `NVKECTL_CLUSTER_NODES` entry fails the load rather than being
 silently discarded.
 
 `INIT_NODE_IP` and `INIT_NODE_NAME` are not supported. The site spec does not
@@ -176,12 +176,12 @@ visible reason.
 ## The SPIRE CA
 
 `spire.trustDomain` sets the SPIFFE trust domain for the bootstrap server. It
-must be a lowercase DNS name. If it is absent, `nkectl` uses
+must be a lowercase DNS name. If it is absent, `nvkectl` uses
 `<bootstrap-cluster>.nke.local`. A permanent site SPIRE server that replaces
 the bootstrap server must use the same value.
 
 `spire.caCertFile` and `spire.caKeyFile` name a CA the operator brings to the
-bootstrap. `nkectl` configures SPIRE to chain its own CA to it, so a node that
+bootstrap. `nvkectl` configures SPIRE to chain its own CA to it, so a node that
 was given that certificate ahead of time — for DSX, delivered by the ansible
 runbook over SSH — verifies the server the first time it speaks to it, rather
 than trusting whatever answers.
@@ -210,7 +210,7 @@ The decision is final at bootstrap. Encryption is configured during
 on, so a cluster built with `etcdEncryption: false` stays unencrypted. Set it
 to `false` only when that is the intent.
 
-`nkectl bootstrap site` writes the key into the working directory, as a Secret
+`nvkectl bootstrap site` writes the key into the working directory, as a Secret
 manifest named `<clusterName>-etcd-encryption-key.json` (`--encryption-key-out`
 to choose the path; it is resolved independently of `--kubeconfig-out`). Every
 control-plane node holds the key in its kube-apiserver configuration; the file
@@ -226,7 +226,7 @@ nothing schedules: a Helm `--wait` or `clusterctl init` on the new cluster hangs
 until it times out, with no message saying why.
 
 The site spec declares no worker nodes, so the control-plane nodes are the
-only place workloads can run. Once every node has joined, `nkectl bootstrap
+only place workloads can run. Once every node has joined, `nvkectl bootstrap
 site` removes that taint from each node. Other taints are left alone, and a
 node that already lacks the taint is not touched. There is no field for this:
 the taint follows the topology, and the rule will become "only when the site
@@ -275,7 +275,7 @@ The differences from tier-0 are deliberate and make the file open-sourceable:
 - **Generic registry fields.** tier-0's NVIDIA-specific `registry.ngcApiKey` /
   `registry.sweImageTag` become the registry-agnostic `registry.apiKey`,
   `registry.bootstrapRepo`, and `registry.bootstrapChart`. The image/chart tag
-  is baked into the `nkectl` build rather than set in the file.
+  is baked into the `nvkectl` build rather than set in the file.
 - **No deploy-time fields.** `argocd`, `repos`, `skipDeploy`, Forge/baremetal,
   and node-injection blocks are out of scope for the M0 bootstrap and are not
   part of this schema.

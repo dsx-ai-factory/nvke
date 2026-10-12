@@ -8,16 +8,16 @@ import (
 
 	"google.golang.org/grpc"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
 
 type nodeAgentKubeVipClient interface {
-	StartK8SControlPlaneNodeGracefulShutdown(ctx context.Context, req *nkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest, opts ...grpc.CallOption) (*nkeproto.StartK8SControlPlaneNodeGracefulShutdownResponse, error)
-	GetK8SControlPlaneNodeGracefulShutdownStatus(ctx context.Context, req *nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusRequest, opts ...grpc.CallOption) (*nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusResponse, error)
-	StartKubeVipRestore(ctx context.Context, req *nkeproto.StartKubeVipRestoreRequest, opts ...grpc.CallOption) (*nkeproto.StartKubeVipRestoreResponse, error)
+	StartK8SControlPlaneNodeGracefulShutdown(ctx context.Context, req *nvkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest, opts ...grpc.CallOption) (*nvkeproto.StartK8SControlPlaneNodeGracefulShutdownResponse, error)
+	GetK8SControlPlaneNodeGracefulShutdownStatus(ctx context.Context, req *nvkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusRequest, opts ...grpc.CallOption) (*nvkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusResponse, error)
+	StartKubeVipRestore(ctx context.Context, req *nvkeproto.StartKubeVipRestoreRequest, opts ...grpc.CallOption) (*nvkeproto.StartKubeVipRestoreResponse, error)
 }
 
 type nodeAgentKubeVipDialer func(ctx context.Context, node rollout.Node) (nodeAgentKubeVipClient, func(), error)

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package site turns a provisioned machine into a site controller: it
-// bootstraps vanilla Kubernetes on the machine with nkectl, deploys the NKE
+// bootstraps vanilla Kubernetes on the machine with nvkectl, deploys the NVKE
 // stack onto it, and hands back a kubeconfig the runner can use.
 //
 // Everything that touches the cluster before the last step runs on the
@@ -24,11 +24,11 @@ const (
 	workDir = "/var/lib/nke-e2e"
 )
 
-// siteName is what nkectl accepts as a cluster name: an RFC 1123 label.
+// siteName is what nvkectl accepts as a cluster name: an RFC 1123 label.
 var siteName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
 
 // Spec is the site to bootstrap: the software under qualification and the
-// shape of the cluster nkectl is asked to build.
+// shape of the cluster nvkectl is asked to build.
 //
 // It describes the site and nothing about what happens afterwards. The stack
 // the cluster ends up running is a Deployer's, chosen by the caller, which is
@@ -44,7 +44,7 @@ type Spec struct {
 	//
 	// Paths, where ControllerImage and CAPIProvisionedImage below are
 	// references. More archives are staged than references are passed: the
-	// profiles image is the deploy's, and nkectl never names it.
+	// profiles image is the deploy's, and nvkectl never names it.
 	ImageArchives []string
 
 	KubernetesVersion string
@@ -58,9 +58,9 @@ type Spec struct {
 	// archives carry, so the bootstrap's kind cluster resolves them from
 	// containerd rather than from a registry.
 	//
-	// References rather than the environment variables nkectl reads them
+	// References rather than the environment variables nvkectl reads them
 	// from: which variable carries which is the bootstrap's business, and a
-	// caller that spelled them would be writing nkectl's interface from the
+	// caller that spelled them would be writing nvkectl's interface from the
 	// outside.
 	ControllerImage      string
 	CAPIProvisionedImage string

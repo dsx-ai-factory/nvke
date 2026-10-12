@@ -5,7 +5,7 @@
 # Shared helper for building the custom kindest node image used by local CAPD
 # and NICo flows. The Dockerfile remains the source of truth for image-content
 # defaults like KINDEST_NODE_TAG and NODE_AGENT_VERSION. This helper selects the
-# image platform and matching NKE bundle architecture for the container runtime, and
+# image platform and matching NVKE bundle architecture for the container runtime, and
 # can package a sibling agent checkout into the image for local CAPD tests.
 
 set -euo pipefail
@@ -59,7 +59,7 @@ tpm_plugin_version_pin="$(read_tool_version TPM_PLUGIN_VERSION)"
 # The container CLI to build through. Docker by default, for the consumers
 # that run on it (controller/Makefile.dev, controller/hack/ci/backend-e2e.sh).
 # cli/e2e/bootstrap passes nerdctl, because that suite has no Docker daemon
-# and the image has to land in the containerd store nkectl loads from.
+# and the image has to land in the containerd store nvkectl loads from.
 : "${CONTAINER_CLI:=docker}"
 
 if [[ "$(uname -s)" == "Darwin" && -z "${DOCKER_HOST:-}" ]]; then
@@ -371,7 +371,13 @@ fi
 # an anonymous docker.io pull from the shared CI egress returns 429 under load.
 kindest_node_image="${NKE_E2E_DOCKERHUB_MIRROR:+${NKE_E2E_DOCKERHUB_MIRROR}/}kindest/node"
 echo "Ensuring ${kindest_node_image}:${CAPD_KINDEST_NODE_TAG} is available for ${effective_platform}..."
-"${CONTAINER_CLI}" pull --platform "${effective_platform}" "${kindest_node_image}:${CAPD_KINDEST_NODE_TAG}"
+# The mirror sometimes 404s a blob it has not cached yet; a second pull gets it.
+for attempt in 1 2 3; do
+  "${CONTAINER_CLI}" pull --platform "${effective_platform}" "${kindest_node_image}:${CAPD_KINDEST_NODE_TAG}" && break
+  if ((attempt == 3)); then exit 1; fi
+  echo "  pull attempt ${attempt} failed, retrying in 15s" >&2
+  sleep 15
+done
 
 build_args=(
   build

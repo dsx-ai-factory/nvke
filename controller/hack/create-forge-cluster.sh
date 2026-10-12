@@ -11,9 +11,9 @@ NKE_CONTROLLER_HTTP_PORT="${NKE_CONTROLLER_HTTP_PORT:-${CWE_HTTP_PORT:-8080}}"
 API_URL="${API_URL:-http://localhost:${NKE_CONTROLLER_HTTP_PORT}/api}"
 CLUSTERS_API_URL="${API_URL%/}/clusters"
 
-# /api/* is authenticated. hack/nke-token.sh prints nothing when NKE is not, so
+# /api/* is authenticated. hack/nvke-token.sh prints nothing when NVKE is not, so
 # this works either way.
-TOKEN="$("${SCRIPT_DIR}/nke-token.sh")"
+TOKEN="$("${SCRIPT_DIR}/nvke-token.sh")"
 AUTH_HEADER=()
 if [[ -n "${TOKEN}" ]]; then
   AUTH_HEADER=(-H "Authorization: Bearer ${TOKEN}")
@@ -32,7 +32,7 @@ KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
 CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}"
 WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-0}"
-OS_PROFILE="${OS_PROFILE:-nke-local-dev-kindest-arm64}"
+OS_PROFILE="${OS_PROFILE:-nvke-local-dev-kindest-arm64}"
 CONFIG_PROFILE="${CONFIG_PROFILE:-dev-only-empty}"
 SYSTEM_RESERVED_MEMORY="${SYSTEM_RESERVED_MEMORY:-1Gi}"
 

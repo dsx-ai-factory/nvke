@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # The workload the bootstrap e2e serves through Traefik on the cluster
-# `nkectl bootstrap site` just built.
+# `nvkectl bootstrap site` just built.
 #
 # whoami answers with the request it received, so a response proves the whole
 # path end to end: the Ingress was admitted, Traefik routed it, the Service

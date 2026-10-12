@@ -18,8 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 	sdktemporal "go.temporal.io/sdk/temporal"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/temporal"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/temporal"
 )
 
 // fixedLoader returns a preset cluster (or error).

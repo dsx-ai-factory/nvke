@@ -35,7 +35,7 @@ on:
       - .github/workflows/capd-e2e.yml
       - .github/workflows/backend-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
-      # The controller-facing CLI. hack/ci/nkectl-smoke.sh drives nkectl against this
+      # The controller-facing CLI. hack/ci/nvkectl-smoke.sh drives nvkectl against this
       # lane's controller, so a change here has something to break. Keep in step with
       # cwe_facing in e2e-pr-path-filter.yml, which suppresses the rest of cli/.
       - "cli/cmd/**"
@@ -110,7 +110,7 @@ jobs:
       runner: ${{ matrix.runner }}
       # Mirror branches select only the bounded core entry and health probes.
       # Full runs select every CAPD entry plus `health` and the authn specs, both
-      # of which need a deployed, enforcing NKE. authn-spire is excluded (needs
+      # of which need a deployed, enforcing NVKE. authn-spire is excluded (needs
       # SPIRE pod attestation not wired in CAPD). Keep the full expression in
       # step with e2e_suite_filter in hack/backend-e2e-lib.sh.
       label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-docker || health' || '(capd || health) || (authn && !authn-spire) || authn-permissive' }}
@@ -125,7 +125,7 @@ jobs:
       # the authn specs run in the full runs, and without this a broken auth
       # deployment would leave them silently skipped and the job green.
       require-authn: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
-      nkectl-smoke: true
+      nvkectl-smoke: true
       needs-capnico-source: true
       # Default on every trigger; a dispatch can still opt out.
       #

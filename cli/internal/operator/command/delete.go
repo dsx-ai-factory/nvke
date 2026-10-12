@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/operator"
+	"github.com/dsx-ai-factory/nvke/cli/internal/operator"
 )
 
-// NewDeleteCmds returns the "nkectl delete machineimage|clusterrelease|
+// NewDeleteCmds returns the "nvkectl delete machineimage|clusterrelease|
 // nodepoolrelease" subcommands.
 func NewDeleteCmds(clientFn ClientFn) []*cobra.Command {
 	cmds := make([]*cobra.Command, 0, len(kindInfos))
@@ -30,11 +30,11 @@ func newDeleteCmd(k kindInfo, clientFn ClientFn) *cobra.Command {
 
 Deletion is immediate and there is no prompt.
 
-nkectl does not check whether %s the %s,
+nvkectl does not check whether %s the %s,
 and anything that does fails to provision or upgrade once it is gone.%s
 
 Example:
-  nkectl delete %s <name>`, k.noun, k.usedBy, k.noun, k.retireAdvice(), k.use),
+  nvkectl delete %s <name>`, k.noun, k.usedBy, k.noun, k.retireAdvice(), k.use),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := clientFn()
@@ -46,7 +46,7 @@ Example:
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s %q deleted\n", capitalize(k.noun), args[0])
 			fmt.Fprintf(cmd.ErrOrStderr(),
-				"Note: nkectl does not check whether %s this %s.\n", k.usedBy, k.noun)
+				"Note: nvkectl does not check whether %s this %s.\n", k.usedBy, k.noun)
 			return nil
 		},
 	}
@@ -58,5 +58,5 @@ func (k kindInfo) retireAdvice() string {
 	if k.kind == operator.KindMachineImage {
 		return ""
 	}
-	return "\n\nTo retire a release that is still in use, deprecate it instead ('nkectl deprecate')."
+	return "\n\nTo retire a release that is still in use, deprecate it instead ('nvkectl deprecate')."
 }

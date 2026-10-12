@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
 )
 
-// Deployer installs the NKE stack onto a freshly bootstrapped cluster, over
+// Deployer installs the NVKE stack onto a freshly bootstrapped cluster, over
 // the same session bootstrap used. It is an interface because what "the
 // stack" is, and how it is installed, is decided outside this suite.
 type Deployer interface {
@@ -50,33 +50,33 @@ type Cluster struct {
 }
 
 // Bootstrap builds Kubernetes on n: it stages the site onto the node, runs
-// `nkectl bootstrap site`, and forwards the resulting admin kubeconfig back to
+// `nvkectl bootstrap site`, and forwards the resulting admin kubeconfig back to
 // the runner.
 //
-// It stops there. Installing the NKE stack is a Deployer's job and checking
+// It stops there. Installing the NVKE stack is a Deployer's job and checking
 // the controller is ProbeController's, and a caller that wants neither simply does not call
 // them. That is what lets a run stop after Kubernetes without a do-nothing
 // deployer to express it.
 //
 // A failure leaves the node as it is, for the caller to collect from before
 // tearing the session down.
-func Bootstrap(ctx context.Context, n infra.Node, s infra.Session, nkectl string, spec Spec) (Cluster, error) {
+func Bootstrap(ctx context.Context, n infra.Node, s infra.Session, nvkectl string, spec Spec) (Cluster, error) {
 	if err := spec.validate(); err != nil {
 		return Cluster{}, err
 	}
-	if _, err := os.Stat(nkectl); err != nil {
-		return Cluster{}, fmt.Errorf("site: nkectl: %w", err)
+	if _, err := os.Stat(nvkectl); err != nil {
+		return Cluster{}, fmt.Errorf("site: nvkectl: %w", err)
 	}
 	if n.Name == "" || n.IP == "" {
 		return Cluster{}, errors.New("site: node has no name or IP")
 	}
 
-	b := bootstrap{node: n, session: s, localNkectl: nkectl, spec: spec}
+	b := bootstrap{node: n, session: s, localNvkectl: nvkectl, spec: spec}
 	for _, step := range []struct {
 		name string
 		run  func(context.Context) error
 	}{
-		{"stage nkectl", b.stageNkectl},
+		{"stage nvkectl", b.stageNvkectl},
 		{"import images", b.importImages},
 		{"generate site spec", b.generateSiteSpec},
 		{"bootstrap site", b.bootstrapSite},
@@ -102,17 +102,17 @@ func TrustDomain(siteName string) string { return siteName + ".nke.local" }
 type bootstrap struct {
 	node    infra.Node
 	session infra.Session
-	// localNkectl is the binary on the runner, staged to nkectlPath on the
+	// localNvkectl is the binary on the runner, staged to nvkectlPath on the
 	// node. The only path in this type that is not the node's.
-	localNkectl string
-	spec        Spec
+	localNvkectl string
+	spec         Spec
 }
 
 // Paths on the node, not on the runner. workDir is the run's scratch
-// directory; nkectlPath is the only one outside it, because that is where the
+// directory; nvkectlPath is the only one outside it, because that is where the
 // binary is installed rather than where this run keeps its working files.
 const (
-	nkectlPath     = "/usr/local/bin/nkectl"
+	nvkectlPath    = "/usr/local/bin/nvkectl"
 	imagesDir      = workDir + "/images"
 	hostsCSV       = workDir + "/hosts.csv"
 	siteSpecPath   = workDir + "/sitespec.yaml"
@@ -134,7 +134,7 @@ const (
 )
 
 // ErrNoDiagnostics is returned when the node has no diagnostics directory,
-// which is the ordinary case: nkectl writes one when it fails, so its absence
+// which is the ordinary case: nvkectl writes one when it fails, so its absence
 // usually means the deploy worked and the run failed somewhere after it. Run
 // 36045936723 did exactly that -- the stack came up and the suite tripped on
 // a version-string comparison -- and reporting "could not collect the node's
@@ -143,14 +143,14 @@ const (
 // which means diagnostics do exist and are being lost.
 var ErrNoDiagnostics = errors.New("the node has no diagnostics directory")
 
-// CollectDiagnostics copies the cluster diagnostics nkectl writes on failure
+// CollectDiagnostics copies the cluster diagnostics nvkectl writes on failure
 // off the node and into dest.
 //
 // It has to be called before the node is released, which on a failed run is
 // minutes later, and nothing else preserves them: run 36016817952 spent 48
 // minutes reaching a 30-minute "Provisioning" timeout and kept no evidence
 // from the cluster side at all. A tarball rather than a file at a time
-// because the directory's contents are nkectl's to decide.
+// because the directory's contents are nvkectl's to decide.
 //
 // secrets are the values the run placed on the node, removed from the archive
 // before it is written. The archive is uploaded as a CI artifact and a
@@ -180,15 +180,15 @@ func CollectDiagnostics(ctx context.Context, s infra.Session, dest string, secre
 	return os.WriteFile(dest, redacted, 0o600)
 }
 
-func (b bootstrap) stageNkectl(ctx context.Context) error {
-	data, err := os.ReadFile(b.localNkectl)
+func (b bootstrap) stageNvkectl(ctx context.Context) error {
+	data, err := os.ReadFile(b.localNvkectl)
 	if err != nil {
 		return err
 	}
-	if err := b.session.Put(ctx, nkectlPath, data, 0o755); err != nil {
+	if err := b.session.Put(ctx, nvkectlPath, data, 0o755); err != nil {
 		return err
 	}
-	return b.run(ctx, shellQuote(nkectlPath)+" version")
+	return b.run(ctx, shellQuote(nvkectlPath)+" version")
 }
 
 // importImages imports each archive into both containerd namespaces: k8s.io
@@ -217,7 +217,7 @@ func (b bootstrap) generateSiteSpec(ctx context.Context) error {
 	if err := b.session.Put(ctx, hostsCSV, []byte(csv), 0o600); err != nil {
 		return err
 	}
-	args := []string{nkectlPath, "generate", "sitespec", b.spec.Name, "--nodes", hostsCSV}
+	args := []string{nvkectlPath, "generate", "sitespec", b.spec.Name, "--nodes", hostsCSV}
 	for _, set := range []string{
 		"cluster.k8sVersion=" + b.spec.KubernetesVersion,
 		"cluster.cniName=" + b.spec.CNI,
@@ -228,12 +228,12 @@ func (b bootstrap) generateSiteSpec(ctx context.Context) error {
 	return b.run(ctx, asRoot(quoteAll(args)+" > "+shellQuote(siteSpecPath)))
 }
 
-// bootstrapSite runs nkectl as root in a login shell. Under a plain sudo the
+// bootstrapSite runs nvkectl as root in a login shell. Under a plain sudo the
 // bootstrap's nerdctl inherits the invoking user's environment and looks for
 // a rootless containerd.
 func (b bootstrap) bootstrapSite(ctx context.Context) error {
 	args := []string{
-		nkectlPath, "bootstrap", "site",
+		nvkectlPath, "bootstrap", "site",
 		"-f", siteSpecPath,
 		"--kubeconfig-out", kubeconfigPath,
 		"--diagnostics-dir", diagnosticsDir,
@@ -245,20 +245,20 @@ func (b bootstrap) bootstrapSite(ctx context.Context) error {
 	return b.run(ctx, asRoot(cmd))
 }
 
-// env is the image references nkectl reads from the environment. The mapping
+// env is the image references nvkectl reads from the environment. The mapping
 // from a reference to the variable that carries it lives here, so a caller
-// states what it is qualifying and not how nkectl is told.
+// states what it is qualifying and not how nvkectl is told.
 //
-// The controller image goes under both its names: the staged nkectl may be a
-// published release from before NKECTL_CONTROLLER_IMAGE, which reads only
-// NKECTL_CWE_IMAGE. A current nkectl prefers the new name and, with it set,
+// The controller image goes under both its names: the staged nvkectl may be a
+// published release from before NVKECTL_CONTROLLER_IMAGE, which reads only
+// NVKECTL_CWE_IMAGE. A current nvkectl prefers the new name and, with it set,
 // does not warn about the old one.
 func (b bootstrap) env() string {
 	var sb strings.Builder
 	for _, v := range []struct{ key, value string }{
-		{"NKECTL_CONTROLLER_IMAGE", b.spec.ControllerImage},
-		{"NKECTL_CWE_IMAGE", b.spec.ControllerImage},
-		{"NKECTL_CAPI_PROVISIONED_IMAGE", b.spec.CAPIProvisionedImage},
+		{"NVKECTL_CONTROLLER_IMAGE", b.spec.ControllerImage},
+		{"NVKECTL_CWE_IMAGE", b.spec.ControllerImage},
+		{"NVKECTL_CAPI_PROVISIONED_IMAGE", b.spec.CAPIProvisionedImage},
 	} {
 		if v.value != "" {
 			sb.WriteString(v.key + "=" + shellQuote(v.value) + " ")

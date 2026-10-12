@@ -63,7 +63,7 @@ skew policy as API authentication. The verified `sub` must use the configured
 SPIFFE trust domain and exact path `/bm/<node UUID>` for the node being contacted.
 The controller allows gRPC traffic only after those checks succeed.
 
-For TLS/JWT-enabled nodes, NKE registers the local node-agent workload as
+For TLS/JWT-enabled nodes, NVKE registers the local node-agent workload as
 `spiffe://<local-trust-domain>/tenant/<subjectTenant>/service/<subjectService>/bm/<node UUID>`.
 DSX Identity exchanges that canonical source identity into
 `spiffe://<subjectTenant>.<region>.<subjectService>.<partition>/bm/<node UUID>`.

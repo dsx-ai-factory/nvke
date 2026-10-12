@@ -1,0 +1,1702 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus datasource scraping the NVKE controller /metrics endpoint",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "description": "Reference dashboard for NVKE node provisioning duration (p50/p95/p99), teardown, terminal success vs give-up rate, and currently in-progress nodes. Not deployed by nke-stack.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 0,
+      "type": "text",
+      "title": "Requirements and scope",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Scope\nReference dashboard for NVKE node provisioning duration, terminal success vs give-up rate, teardown, and currently in-progress nodes. It is not deployed by nke-stack. Import this JSON and select a Prometheus datasource scraping the NVKE controller `/metrics` endpoint.\n\nQueries use the NVKE controller metrics with the `nvke_controller_*` prefix. Filter variables are the labels the controller emits: `$tenant_cluster` and `$node_type`. Scrapes sometimes add a `k8s_cluster_name` label for the site-controller cluster that runs the controller; this dashboard does not require it. To join these series with kube-state-metrics on a `k8s_cluster_name` board, rewrite the label: `label_replace(nvke_controller_node_info{tenant_cluster=~\"$tenant_cluster\"}, \"k8s_cluster_name\", \"$1\", \"tenant_cluster\", \"(.*)\")`.\n\n### How to read outcomes\n`nvke_controller_node_provision_total{result=\"failure\"}` counts **Temporal attempts**, not failed nodes. A stuck node with unlimited retries inflates that counter. Terminal outcomes are **successes** vs **give-ups** (`nvke_controller_node_provisioning_giveups_total`: recycled after `NODE_PROVISIONING_TIMEOUT`, default 2h). Success rate = successes \u00f7 (successes + give-ups).\n\nGive-up series use `cluster_name` for the tenant cluster; the `$tenant_cluster` variable filters that label in give-up queries. Give-ups have no `node_type` label. With a specific `$node_type` selected, the success-rate panel combines successes for that type with give-ups across all types; select All node types for an all-types rate.\n\n### In-progress nodes\n`nvke_controller_node_lifecycle_elapsed_seconds{state=\"provisioning\"}` is a DB-backed gauge: seconds since the node entered provisioning. Pending (not yet claimed) uses `nvke_controller_node_pool_pending_count`.\n\n### Phases (current controller)\n`capi_create`, `capi_ready`, `host_preparation`, `reboot`, `join`, `post_join`. Older fleet dashboards may still show `forge_ready`. Join p95 has a 300s threshold line (KubeadmJoin StartToClose ceiling).\n\n### Teardown\n`nvke_controller_node_teardown_duration_seconds` and `nvke_controller_node_teardown_total`. Recycle path is give-up \u2192 teardown \u2192 re-provision.\n\nQueries match both the `nvke_controller_*` series and the `nke_controller_*` series a controller emitted before the rename, for one release, so the panels stay continuous across the upgrade.\n"
+      }
+    },
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Current in-progress nodes",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Nodes currently provisioning",
+      "description": "Count of nvke_controller_node_lifecycle_elapsed_seconds{state=\"provisioning\"}.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "count({__name__=~\"nke_controller_node_lifecycle_elapsed_seconds|nvke_controller_node_lifecycle_elapsed_seconds\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"provisioning\"}) or vector(0)",
+          "legendFormat": "provisioning",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Pending nodes (pool)",
+      "description": "nvke_controller_node_pool_pending_count \u2014 nodes not yet in the provisioning workflow.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum({__name__=~\"nke_controller_node_pool_pending_count|nvke_controller_node_pool_pending_count\", tenant_cluster=~\"$tenant_cluster\"}) or vector(0)",
+          "legendFormat": "pending",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Longest time in provisioning",
+      "description": "Max elapsed seconds among nodes currently in state=provisioning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "max({__name__=~\"nke_controller_node_lifecycle_elapsed_seconds|nvke_controller_node_lifecycle_elapsed_seconds\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"provisioning\"}) or vector(0)",
+          "legendFormat": "max elapsed",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1800
+              },
+              {
+                "color": "red",
+                "value": 7200
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Marked for recycling",
+      "description": "Nodes currently in state=markedForRecycling on the lifecycle gauge.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "count({__name__=~\"nke_controller_node_lifecycle_elapsed_seconds|nvke_controller_node_lifecycle_elapsed_seconds\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"markedForRecycling\"}) or vector(0)",
+          "legendFormat": "recycling",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Provisioning nodes (elapsed)",
+      "description": "Each series is one node. Empty when nothing is provisioning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 18
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "{__name__=~\"nke_controller_node_lifecycle_elapsed_seconds|nvke_controller_node_lifecycle_elapsed_seconds\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"provisioning\"}",
+          "legendFormat": "__auto",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "tenant_cluster": "Tenant cluster",
+              "node": "Node",
+              "node_type": "Node type",
+              "state": "State",
+              "Value": "Elapsed (s)"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true,
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Elapsed (s)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "In-progress count over time",
+      "description": "count() of lifecycle gauges. Pending is a pool-level counter, not per-node elapsed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 18
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "count({__name__=~\"nke_controller_node_lifecycle_elapsed_seconds|nvke_controller_node_lifecycle_elapsed_seconds\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"provisioning\"}) or vector(0)",
+          "legendFormat": "provisioning",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "count({__name__=~\"nke_controller_node_lifecycle_elapsed_seconds|nvke_controller_node_lifecycle_elapsed_seconds\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"pending\"}) or vector(0)",
+          "legendFormat": "pending (lifecycle)",
+          "refId": "B",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum({__name__=~\"nke_controller_node_pool_pending_count|nvke_controller_node_pool_pending_count\", tenant_cluster=~\"$tenant_cluster\"}) or vector(0)",
+          "legendFormat": "pending (pool)",
+          "refId": "C",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "count({__name__=~\"nke_controller_node_lifecycle_elapsed_seconds|nvke_controller_node_lifecycle_elapsed_seconds\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"deleting\"}) or vector(0)",
+          "legendFormat": "deleting",
+          "refId": "D",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Success / failure rate",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Provisioning success rate (vs give-ups)",
+      "description": "Successes \u00f7 (successes + terminal give-ups), not success/(success+failure). For a selected node type, successes are filtered but give-ups include all types. Select All node types for an all-types rate. No data means no provisioning in range.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 27
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(sum(increase({__name__=~\"nke_controller_node_provision_total|nvke_controller_node_provision_total\", result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) or vector(0)) / ((sum(increase({__name__=~\"nke_controller_node_provision_total|nvke_controller_node_provision_total\", result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) or vector(0)) + (sum(increase({__name__=~\"nke_controller_node_provisioning_giveups_total|nvke_controller_node_provisioning_giveups_total\", cluster_name=~\"$tenant_cluster\"}[$__range])) or vector(0)))",
+          "legendFormat": "success rate",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.8
+              },
+              {
+                "color": "green",
+                "value": 0.95
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Give-ups (recycled after timeout)",
+      "description": "Terminal failure: recycled after NODE_PROVISIONING_TIMEOUT. Filtered by cluster_name=~$tenant_cluster. Renders 0 when none.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 27
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase({__name__=~\"nke_controller_node_provisioning_giveups_total|nvke_controller_node_provisioning_giveups_total\", cluster_name=~\"$tenant_cluster\"}[$__range])) or vector(0)",
+          "legendFormat": "give-ups",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Successful provisions (range)",
+      "description": "nvke_controller_node_provision_total{result=\"success\"} increase over the dashboard range.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 27
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase({__name__=~\"nke_controller_node_provision_total|nvke_controller_node_provision_total\", result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) or vector(0)",
+          "legendFormat": "successes",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Failed ATTEMPTS (retries, not nodes)",
+      "description": "Per-attempt failure counter. One stuck node retrying swamps this. Use give-ups for terminal failures.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 27
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase({__name__=~\"nke_controller_node_provision_total|nvke_controller_node_provision_total\", result=\"failure\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) or vector(0)",
+          "legendFormat": "failed attempts",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 500
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Throughput \u2014 successes vs give-ups (per hour)",
+      "description": "Terminal outcomes over time. Fail-attempt rate is omitted so retry churn does not hide give-ups.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate({__name__=~\"nke_controller_node_provision_total|nvke_controller_node_provision_total\", result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])) * 3600",
+          "legendFormat": "successes/hr",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate({__name__=~\"nke_controller_node_provisioning_giveups_total|nvke_controller_node_provisioning_giveups_total\", cluster_name=~\"$tenant_cluster\"}[$__rate_interval])) * 3600",
+          "legendFormat": "give-ups/hr",
+          "refId": "B",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "row",
+      "title": "Provisioning duration (P50 / P95 / P99)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "panels": []
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "End-to-end provision duration (p50/p95/p99)",
+      "description": "nvke_controller_node_provision_duration_seconds. Combined success and failure observations.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate({__name__=~\"nke_controller_node_provision_duration_seconds_bucket|nvke_controller_node_provision_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"nke_controller_node_provision_duration_seconds_bucket|nvke_controller_node_provision_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "B",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate({__name__=~\"nke_controller_node_provision_duration_seconds_bucket|nvke_controller_node_provision_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "C",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "All provision phases (p95 overlay)",
+      "description": "Where time goes at p95. Phases from the current controller workflow.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_bucket|nvke_controller_node_provision_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"capi_create\"}[$__rate_interval])))",
+          "legendFormat": "capi_create",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_bucket|nvke_controller_node_provision_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"capi_ready\"}[$__rate_interval])))",
+          "legendFormat": "capi_ready",
+          "refId": "B",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_bucket|nvke_controller_node_provision_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"host_preparation\"}[$__rate_interval])))",
+          "legendFormat": "host_preparation",
+          "refId": "C",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_bucket|nvke_controller_node_provision_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"reboot\"}[$__rate_interval])))",
+          "legendFormat": "reboot",
+          "refId": "D",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_bucket|nvke_controller_node_provision_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"join\"}[$__rate_interval])))",
+          "legendFormat": "join",
+          "refId": "E",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_bucket|nvke_controller_node_provision_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"post_join\"}[$__rate_interval])))",
+          "legendFormat": "post_join",
+          "refId": "F",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Join phase latency (p50/p95/p99)",
+      "description": "Red line = 300s KubeadmJoin StartToClose ceiling.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 49
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_bucket|nvke_controller_node_provision_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"join\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_bucket|nvke_controller_node_provision_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"join\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "B",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_bucket|nvke_controller_node_provision_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"join\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "C",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          },
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Host-preparation (preflight) (p50/p95/p99)",
+      "description": "wait for preflight + beforeJoinNode hooks.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 49
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_bucket|nvke_controller_node_provision_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"host_preparation\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_bucket|nvke_controller_node_provision_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"host_preparation\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "B",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_bucket|nvke_controller_node_provision_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"host_preparation\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "C",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "table",
+      "title": "Average time per phase (current selection)",
+      "description": "sum/count of the phase histogram over the dashboard range.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (phase) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_sum|nvke_controller_node_provision_phase_duration_seconds_sum\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) / clamp_min(sum by (phase) (rate({__name__=~\"nke_controller_node_provision_phase_duration_seconds_count|nvke_controller_node_provision_phase_duration_seconds_count\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])), 1)",
+          "legendFormat": "__auto",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "phase": "Phase",
+              "Value": "Avg (s)"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Avg (s)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      }
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "Teardown duration",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 64
+      },
+      "panels": []
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Teardown duration (p50/p95/p99)",
+      "description": "nvke_controller_node_teardown_duration_seconds plus phase p95 (cluster_remove, capi_delete).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 65
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate({__name__=~\"nke_controller_node_teardown_duration_seconds_bucket|nvke_controller_node_teardown_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"nke_controller_node_teardown_duration_seconds_bucket|nvke_controller_node_teardown_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "B",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate({__name__=~\"nke_controller_node_teardown_duration_seconds_bucket|nvke_controller_node_teardown_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "C",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"nke_controller_node_teardown_phase_duration_seconds_bucket|nvke_controller_node_teardown_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"cluster_remove\"}[$__rate_interval])))",
+          "legendFormat": "cluster_remove p95",
+          "refId": "D",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"nke_controller_node_teardown_phase_duration_seconds_bucket|nvke_controller_node_teardown_phase_duration_seconds_bucket\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"capi_delete\"}[$__rate_interval])))",
+          "legendFormat": "capi_delete p95",
+          "refId": "E",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Teardown result rate (per hour)",
+      "description": "Recycles = give-up \u2192 teardown \u2192 re-provision.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 65
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate({__name__=~\"nke_controller_node_teardown_total|nvke_controller_node_teardown_total\", result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])) * 3600",
+          "legendFormat": "success/hr",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate({__name__=~\"nke_controller_node_teardown_total|nvke_controller_node_teardown_total\", result=\"failure\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])) * 3600",
+          "legendFormat": "failure/hr",
+          "refId": "B",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": [
+    "nvke",
+    "reference",
+    "provisioning"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "tenant_cluster",
+        "label": "Tenant cluster",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(nvke_controller_node_provision_total, tenant_cluster)",
+        "query": "label_values(nvke_controller_node_provision_total, tenant_cluster)",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 2,
+        "sort": 1,
+        "description": "Tenant cluster label on nvke_controller_node_provision_total. Give-up queries use the same value as cluster_name."
+      },
+      {
+        "name": "node_type",
+        "label": "Node type",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(nvke_controller_node_provision_total, node_type)",
+        "query": "label_values(nvke_controller_node_provision_total, node_type)",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ]
+  },
+  "timezone": "browser",
+  "title": "Reference - NVKE Provisioning Duration",
+  "uid": "nvke-provisioning-duration-reference",
+  "weekStart": ""
+}

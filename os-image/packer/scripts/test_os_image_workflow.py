@@ -210,7 +210,7 @@ class OSImageWorkflowTest(unittest.TestCase):
         )
         for line in (
             "BUILD_CACHE_REGION: us-east-1",
-            "BUILD_CACHE_ISO_PREFIX: nke/os-image/iso",
+            "BUILD_CACHE_ISO_PREFIX: nvke/os-image/iso",
         ):
             self.assertIn(line, self.workflow)
             self.assertIn(line, cache)

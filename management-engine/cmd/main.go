@@ -24,9 +24,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	internalv1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
-	"github.com/dsx-ai-factory/nke/management-engine/controllers"
-	"github.com/dsx-ai-factory/nke/management-engine/internal/cwe"
+	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	"github.com/dsx-ai-factory/nvke/management-engine/controllers"
+	"github.com/dsx-ai-factory/nvke/management-engine/internal/cwe"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -141,7 +141,7 @@ func main() {
 	}
 	ctx := ctrl.SetupSignalHandler()
 
-	if err := (&controllers.NKEClusterReconciler{
+	if err := (&controllers.NVKEClusterReconciler{
 		Client:   mgr.GetClient(),
 		CWE:      cweClient,
 		Bindings: bindings,

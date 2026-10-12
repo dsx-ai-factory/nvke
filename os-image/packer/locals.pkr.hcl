@@ -4,7 +4,7 @@
 locals {
   project_root = abspath(path.root)
 
-  # The caller authenticates the manifest and stages these fixed NKE-owned
+  # The caller authenticates the manifest and stages these fixed NVKE-owned
   # bindings beside it. Packer consumes local bytes and performs no acquisition.
   material_description = jsondecode(file(var.material_manifest))
   material_root        = dirname(var.material_manifest)

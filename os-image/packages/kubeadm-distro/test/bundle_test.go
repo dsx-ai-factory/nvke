@@ -227,7 +227,7 @@ type gpgKey struct {
 // "can't connect to the gpg-agent: IPC connect call failed".
 func newGPGKey(t *testing.T, uid string) *gpgKey {
 	t.Helper()
-	home, err := os.MkdirTemp("", "nkegpg")
+	home, err := os.MkdirTemp("", "nvkegpg")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(home) })
 	require.NoError(t, os.Chmod(home, 0o700))

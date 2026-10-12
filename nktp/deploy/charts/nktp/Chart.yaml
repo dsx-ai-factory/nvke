@@ -5,10 +5,14 @@ apiVersion: v2
 name: nktp
 description: A scalable, OpenTelemetry pipeline for collecting, processing, and exporting Kubernetes metrics, logs, and traces.
 type: application
-version: 0.1.0
-home: https://github.com/dsx-ai-factory/nke/tree/main/nktp
+# A placeholder for local `helm lint` / `helm template`. CI sets the real
+# version at package time from the nktp/vX.Y.Z tag (--version X.Y.Z), as
+# chart-publish-nvcr.yml does for the controller chart.
+# See .github/workflows/nktp-chart-publish.yml.
+version: 0.0.0
+home: https://github.com/dsx-ai-factory/nvke/tree/main/nktp
 sources:
-  - https://github.com/dsx-ai-factory/nke
+  - https://github.com/dsx-ai-factory/nvke
 
 dependencies:
   - name: opentelemetry-kube-stack

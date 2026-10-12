@@ -197,13 +197,13 @@ at fault.
 {{- fail "apiAuth.config.audiences is required and must not be empty. The audience is per-install and has no default; a token minted for one install must fail at another." -}}
 {{- end -}}
 {{- if not $auth.config.issuers -}}
-{{- fail "apiAuth.config.issuers is required and must contain at least one issuer. NKE refuses to start with none, so this would be a crash loop rather than a permissive deployment." -}}
+{{- fail "apiAuth.config.issuers is required and must contain at least one issuer. NVKE refuses to start with none, so this would be a crash loop rather than a permissive deployment." -}}
 {{- end -}}
 {{- $dir := printf "%s/" (include "controller.apiAuth.mountPath" .) -}}
 {{- $configFile := include "controller.apiAuth.configFile" . -}}
 {{- $extra := default dict $auth.configMap.extraFiles -}}
 {{- if hasKey $extra $configFile -}}
-{{- fail (printf "apiAuth.configMap.extraFiles must not contain %q: that key is the configuration file itself, and a second copy of it silently replaces the one rendered from apiAuth.config -- NKE would load whatever is here instead. Put the configuration under apiAuth.config, and use extraFiles only for files it refers to by path." $configFile) -}}
+{{- fail (printf "apiAuth.configMap.extraFiles must not contain %q: that key is the configuration file itself, and a second copy of it silently replaces the one rendered from apiAuth.config -- NVKE would load whatever is here instead. Put the configuration under apiAuth.config, and use extraFiles only for files it refers to by path." $configFile) -}}
 {{- end -}}
 {{- range $auth.config.issuers -}}
 {{- $ca := (default dict .jwks).caBundlePath -}}

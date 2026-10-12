@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# A worker release for `nkectl create nodepoolrelease -f nodepoolrelease.yaml`.
+# A worker release for `nvkectl create nodepoolrelease -f nodepoolrelease.yaml`.
 #
 # machineImageRef and machineInit are immutable once published. To change
 # either, publish a new name. The only thing that changes in place is
-# lifecycle, through `nkectl deprecate nodepoolrelease <name>`.
+# lifecycle, through `nvkectl deprecate nodepoolrelease <name>`.
 metadata:
   name: example-ubuntu-24.04-amd64
   annotations:
@@ -61,7 +61,7 @@ spec:
           runcmd:
             - |
                 set -eu
-                echo "deb [trusted=yes] https://apt.example.com/nke stable main" > /etc/apt/sources.list.d/nke.list
+                echo "deb [trusted=yes] https://apt.example.com/nvke stable main" > /etc/apt/sources.list.d/nke.list
                 apt-get update
                 install -d -m 0755 /etc/default
                 DEBIAN_FRONTEND=noninteractive apt-get install -y nke-agent nke-kubeadm-distro-1.34.2 {{ .CNIImagePackage }} {{ .CNIChartsPackage }}

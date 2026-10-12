@@ -28,8 +28,8 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/controllers/tenant"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/tenant"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 const (
@@ -146,7 +146,7 @@ func (r *Reconciler) applyDecision(ctx context.Context, decision csrDecision) er
 		Type:               certificatesv1.CertificateApproved,
 		Status:             corev1.ConditionTrue,
 		Reason:             approvalReason,
-		Message:            "kubelet-serving CSR matches the node identity recorded by NKE",
+		Message:            "kubelet-serving CSR matches the node identity recorded by NVKE",
 		LastUpdateTime:     now,
 		LastTransitionTime: now,
 	})

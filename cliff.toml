@@ -119,7 +119,7 @@ filter_commits = false
 # Anchored. Unanchored, "v[0-9].*" also matches a component tag such as
 # `agent/v0.1.30`, which would treat it as a repository release and file every
 # entry before it under a heading no release workflow reads. No repository here
-# has any tag yet, but nke's release.yml already triggers on `*/v[0-9]*`, so
+# has any tag yet, but this repository's release.yml already triggers on `*/v[0-9]*`, so
 # component tags are the plan rather than a hypothetical.
 tag_pattern = "^v[0-9]"
 

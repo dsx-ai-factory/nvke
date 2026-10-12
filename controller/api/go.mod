@@ -1,4 +1,4 @@
-module github.com/dsx-ai-factory/nke/controller/api
+module github.com/dsx-ai-factory/nvke/controller/api
 
 go 1.27.2
 

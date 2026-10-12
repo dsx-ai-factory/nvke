@@ -9,19 +9,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
 )
 
 // imageSubject lists the os-image artifacts as dependencies. The images depend on
 // the stream's ubuntu series, so they are per stream, and the bootloaders depend
 // on nothing, so they are per combination. The anchor states the releases once.
 const imageSubject = `
-apiVersion: nke.nvidia.com/v1alpha1
+apiVersion: nvke.nvidia.com/v1alpha1
 kind: Qualification
 metadata:
-  name: nke
+  name: nvke
 spec:
-  subject: nke
+  subject: nvke
   components:
     - {name: os-image, selectors: [latest]}
     - {name: cli, selectors: [latest]}
@@ -147,7 +147,7 @@ func TestLoadSubjectAnchorsAndReleases(t *testing.T) {
 
 func TestPlanResolvesImagesPerStreamAndBootloadersPerCombination(t *testing.T) {
 	r := imageResolvers()
-	got, err := imagePlanner(t, r).Plan("nke", "", "full")
+	got, err := imagePlanner(t, r).Plan("nvke", "", "full")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestPlanResolvesImagesPerStreamAndBootloadersPerCombination(t *testing.T) {
 // A strategy is given the inputs its dependency has and no others.
 func TestPlanGivesEachStrategyItsInputs(t *testing.T) {
 	r := imageResolvers()
-	if _, err := imagePlanner(t, r).Plan("nke", "", "full"); err != nil {
+	if _, err := imagePlanner(t, r).Plan("nvke", "", "full"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -222,7 +222,7 @@ func TestPlanOverridesAnImageByName(t *testing.T) {
 	p := imagePlanner(t, r)
 	p.Overrides = map[string]string{"os-image-arm64": "https://mine.example/custom.qcow2"}
 
-	got, err := p.Plan("nke", "", "full")
+	got, err := p.Plan("nvke", "", "full")
 	if err != nil {
 		t.Fatal(err)
 	}

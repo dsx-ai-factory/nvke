@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 )
 
 // Param keys for FailingNodeGuard / FailingClusterGuard.

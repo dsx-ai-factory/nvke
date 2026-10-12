@@ -38,8 +38,8 @@ inputs:
     description: >-
       Names this component in the candidate, and names the uploaded file.
       Unique within a release, which for a workflow with a destination matrix
-      means including the destination: nke-controller-chart-nke and
-      nke-controller-chart-dsx publish the same chart to two registries and
+      means including the destination: nvke-controller-chart-nvke and
+      nvke-controller-chart-dsx publish the same chart to two registries and
       would otherwise collide on the artifact name.
     required: true
   retention_days:
@@ -135,7 +135,7 @@ runs:
 
     # release-digest-* is the prefix `assemble` globs for. Renaming it is a
     # change to the release layer's input contract, not a cosmetic one.
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: release-digest-${{ inputs.component }}
         path: ${{ steps.resolve.outputs.record_dir }}/${{ inputs.component }}.json

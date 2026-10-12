@@ -3,7 +3,7 @@
 
 # Agent guide — benchmarks
 
-For AI agents reading this tree to answer questions about NKE scale and
+For AI agents reading this tree to answer questions about NVKE scale and
 performance, or adding to it. Humans should start at [README.md](README.md).
 
 This file explains how the tree works. It deliberately does not list what is in
@@ -37,7 +37,7 @@ numbers. `benchmarks/schemas/scenario.schema.json` documents every field.
 These are the mistakes most likely to produce a confidently wrong answer.
 
 **No result is a maximum-scale claim.** `topology` and `sizing.observed`
-describe what one run happened to measure, not a ceiling on what NKE or the
+describe what one run happened to measure, not a ceiling on what NVKE or the
 component under test can do. A bigger cluster is a different `sizing.observed`,
 not a different capability. Never report a published number as a limit.
 

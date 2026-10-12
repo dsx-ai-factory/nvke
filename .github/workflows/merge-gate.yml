@@ -26,7 +26,7 @@
 # WHAT IS IN IT
 #
 # Everything that runs on a GitHub-hosted runner and is fast enough not to hurt
-# pull-request latency. Deliberately NOT in it: codeql, image, notices-check,
+# pull-request latency. Deliberately NOT in it: codeql, image,
 # secrets and security-scan, which keep reporting through mirror-branch pushes,
 # and deb, whose two-architecture package build is slow and only matters to an
 # agent release. Those remain advisory.
@@ -181,12 +181,27 @@ jobs:
     permissions:
       contents: read
 
+  # The documentation site: MDX safety, `fern check` and `fern docs md check`.
+  # No secret and no publishing; see the header of fern-docs-ci.yml.
+  fern:
+    uses: ./.github/workflows/fern-docs-ci.yml
+    permissions:
+      contents: read
+
   # Identifiers of internal infrastructure in the tree. Not a credential
   # scan -- the Secrets workflow is that, and finds nothing here, because an
   # org or subnet id grants nothing. What it protects is the property that
   # this repository can become public.
   internal-config-check:
     uses: ./.github/workflows/internal-config-check.yml
+    permissions:
+      contents: read
+
+  # Tokens that carry a banned name, outside hack/name-check-allowlist.txt.
+  # Fail mode since 2026-10-11: every hit outside the allowlist fails. See the
+  # header of name-check.yml.
+  name-check:
+    uses: ./.github/workflows/name-check.yml
     permissions:
       contents: read
 
@@ -247,7 +262,9 @@ jobs:
       - actionlint
       - shellcheck
       - docs-check
+      - fern
       - internal-config-check
+      - name-check
       - lint
       - gofail
       - notices
@@ -263,14 +280,20 @@ jobs:
           results='${{ join(needs.*.result, ' ') }}'
           echo "  results: ${results}"
 
-          # `skipped` is tolerated on purpose. A called workflow can skip for
-          # reasons that are not failures, and treating that as a failure would
-          # block merges for no reason. `failure` and `cancelled` are not
-          # tolerated -- a cancelled run has proven nothing.
+          # Only `success` passes. Every member runs unconditionally in this
+          # repository: a called workflow ignores its own path filter, and the
+          # one job-level condition a member carries is the repository guard,
+          # `github.repository_id == '1323115536'`, which is true here whatever
+          # the repository is called. So a `skipped` member means a guard went
+          # false or a member grew a condition, and either way nothing was
+          # checked. Tolerating `skipped` is what let this gate pass with
+          # nothing run when the slug guards went false during the move to this
+          # organization. `cancelled` has proven nothing either.
           for r in ${results}; do
             case "${r}" in
-              failure|cancelled)
-                echo "::error::a required check did not pass: ${results}"
+              success) ;;
+              *)
+                echo "::error::a required check did not report success: ${results}"
                 exit 1
                 ;;
             esac

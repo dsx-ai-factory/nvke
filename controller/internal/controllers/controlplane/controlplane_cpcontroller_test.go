@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 // cpControllerReconciler returns a reconciler with the control-plane-controller
@@ -62,7 +62,7 @@ func staleCPSpec(t *testing.T, spec db.ControlPlaneConfigSpec) db.ControlPlaneCo
 	t.Helper()
 	nico, err := spec.NicoProvider()
 	require.NoError(t, err)
-	nico.OSProfile = "nke-1.33.6"
+	nico.OSProfile = "nvke-1.33.6"
 	spec.SetNico(nico)
 	return spec
 }
@@ -86,8 +86,8 @@ func TestReadControlPlane_PreloadsControlPlaneConfigs(t *testing.T) {
 	clusterID := uuid.New()
 	configA := uuid.New()
 	configB := uuid.New()
-	specA := nicoCPSpec("nke-1.34.2", "", "1.34.2")
-	specB := nicoCPSpec("nke-1.33.6", "", "1.33.6")
+	specA := nicoCPSpec("nvke-1.34.2", "", "1.34.2")
+	specB := nicoCPSpec("nvke-1.33.6", "", "1.33.6")
 
 	// Two nodes share configA (dedup expected), one uses configB.
 	nodes := []db.Node{
@@ -144,8 +144,8 @@ func TestIsK8sVersionUpgradeNeeded_CPController(t *testing.T) {
 	oldConfigID := uuid.New()
 	currentConfigID := uuid.New()
 
-	currentSpec := nicoCPSpec("nke-1.34.2", "cfg", "1.34.2")
-	oldSpec := nicoCPSpec("nke-1.33.6", "cfg", "1.33.6")
+	currentSpec := nicoCPSpec("nvke-1.34.2", "cfg", "1.34.2")
+	oldSpec := nicoCPSpec("nvke-1.33.6", "cfg", "1.33.6")
 	configs := map[uuid.UUID]db.ControlPlaneConfigSpec{oldConfigID: oldSpec, currentConfigID: currentSpec}
 
 	tests := []struct {
@@ -176,7 +176,7 @@ func TestIsK8sVersionUpgradeNeeded_CPController(t *testing.T) {
 func TestNodesNeedingRollout_TemplateVsLabelOnly(t *testing.T) {
 	t.Parallel()
 
-	currentSpec := nicoCPSpec("nke-1.34.2", "cfg", "1.34.2")
+	currentSpec := nicoCPSpec("nvke-1.34.2", "cfg", "1.34.2")
 	// Same replacing template as current, but a non-replacing (label-only) delta.
 	labelOnlySpec := currentSpec
 	labelOnlySpec.NodeLabels = map[string]string{"role": "cp"}
@@ -208,7 +208,7 @@ func TestNodesNeedingRollout_TemplateVsLabelOnly(t *testing.T) {
 func TestNodesNeedingRollout_IncludesInFlightSkipsMissingSnapshot(t *testing.T) {
 	t.Parallel()
 
-	currentSpec := nicoCPSpec("nke-1.34.2", "", "1.34.2")
+	currentSpec := nicoCPSpec("nvke-1.34.2", "", "1.34.2")
 	replacingSpec := staleCPSpec(t, currentSpec)
 	replacingID := uuid.New()
 
@@ -236,7 +236,7 @@ func TestNodesNeedingRollout_IncludesInFlightSkipsMissingSnapshot(t *testing.T) 
 func TestIsControlPlaneUpgradeComplete_CPController(t *testing.T) {
 	t.Parallel()
 
-	currentSpec := nicoCPSpec("nke-1.34.2", "", "1.34.2")
+	currentSpec := nicoCPSpec("nvke-1.34.2", "", "1.34.2")
 	replacingSpec := staleCPSpec(t, currentSpec)
 	replacingID := uuid.New()
 	currentID := uuid.New()
@@ -307,7 +307,7 @@ func TestIsControlPlaneUpgradeComplete_CPController(t *testing.T) {
 func TestExpectedControlPlaneCount_CPController(t *testing.T) {
 	t.Parallel()
 
-	currentSpec := nicoCPSpec("nke-1.34.2", "", "1.34.2")
+	currentSpec := nicoCPSpec("nvke-1.34.2", "", "1.34.2")
 	replacingSpec := staleCPSpec(t, currentSpec)
 	replacingID := uuid.New()
 	currentID := uuid.New()

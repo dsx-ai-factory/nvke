@@ -38,10 +38,13 @@ named in `Chart.yaml`, and kubeconform downloads its schemas.
 
 ## Constraints
 
-- A released chart version is immutable. Once the `version:` in `Chart.yaml`
-  has been released, any change to the chart bumps it, including the README and
-  dashboards, which ship in the package. A release tag `nktp/vX.Y.Z` has to
-  equal it; `.github/workflows/nktp-chart-publish.yml` rejects one that does not.
+- The chart version is the release tag's. `version:` in `Chart.yaml` is a
+  `0.0.0` placeholder for local `helm lint` and `helm template`; do not edit it.
+  `.github/workflows/nktp-chart-publish.yml` packages an `nktp/vX.Y.Z` tag with
+  `--version X.Y.Z`, as the controller chart is packaged. A released version is
+  immutable: the workflow refuses to replace a published version with different
+  contents, so any change to the chart, the README and dashboards included,
+  ships under a new tag.
 - Dependency pins in `Chart.yaml` and `Chart.lock` move together, in their own
   pull request, with `helm dependency update nktp/deploy/charts/nktp`.
   `make nktp-chart-deps` fails when the two disagree.

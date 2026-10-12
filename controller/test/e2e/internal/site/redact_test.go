@@ -82,7 +82,7 @@ func TestRedactArchive(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString([]byte(testDBPassword))
 	in := tarGz(t, map[string]string{
 		// A journal line, which is how a token most plausibly escapes.
-		"diagnostics/journal.log": "Sep 26 01:14:02 nke nkectl[913]: POST with token=" + testForgeToken + " failed\n",
+		"diagnostics/journal.log": "Sep 26 01:14:02 nke nvkectl[913]: POST with token=" + testForgeToken + " failed\n",
 		// A Secret as kubectl prints it: the value is base64, not plain.
 		"diagnostics/secret.yaml": "data:\n  password: " + encoded + "\n",
 		// Nothing to redact, and it must come through byte for byte.
@@ -114,7 +114,7 @@ func TestRedactArchive(t *testing.T) {
 	}
 	// The surrounding text is what makes the line diagnosable, so only the
 	// value should be gone.
-	if !strings.Contains(files["diagnostics/journal.log"], "nkectl[913]") {
+	if !strings.Contains(files["diagnostics/journal.log"], "nvkectl[913]") {
 		t.Errorf("redaction removed more than the secret: %q", files["diagnostics/journal.log"])
 	}
 }
@@ -138,10 +138,10 @@ func TestRedactArchiveWithoutSecrets(t *testing.T) {
 // A value too short to search for is dropped, because replacing it would hit
 // unrelated text. Worth pinning: the alternative reads as redaction working.
 func TestRedactions(t *testing.T) {
-	got := redactions([]string{"tok", "", "nke-tenant", "nke-tenant", testDBPassword})
+	got := redactions([]string{"tok", "", "nvke-tenant", "nvke-tenant", testDBPassword})
 	want := map[string]bool{
-		"nke-tenant": true,
-		base64.StdEncoding.EncodeToString([]byte("nke-tenant")): true,
+		"nvke-tenant": true,
+		base64.StdEncoding.EncodeToString([]byte("nvke-tenant")): true,
 		testDBPassword: true,
 		base64.StdEncoding.EncodeToString([]byte(testDBPassword)): true,
 	}

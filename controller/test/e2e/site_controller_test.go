@@ -23,21 +23,21 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/discovery"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra/forge"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra/teleport"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/site"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/environment"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/forge"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/teleport"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/site"
 )
 
 // The stages of the site controller run, each doing everything the one before it did.
 const (
 	siteStageProvision = "provision" // a Forge node, reachable, then released
-	siteStageBootstrap = "bootstrap" // plus vanilla Kubernetes from nkectl
-	siteStageFull      = "full"      // plus the NKE stack, the controller, and a tenant
+	siteStageBootstrap = "bootstrap" // plus vanilla Kubernetes from nvkectl
+	siteStageFull      = "full"      // plus the NVKE stack, the controller, and a tenant
 )
 
 // Secrets the site controller run reads from the environment. They are never written to
@@ -224,9 +224,9 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			if session == nil {
 				Skip("no node")
 			}
-			nkectl := expectSucceed(nkectlBinary(cfg, capabilities[infra.CapabilityArch]))
+			nvkectl := expectSucceed(nvkectlBinary(cfg, capabilities[infra.CapabilityArch]))
 			var err error
-			cluster, err = site.Bootstrap(ctx, node, session, nkectl, spec)
+			cluster, err = site.Bootstrap(ctx, node, session, nvkectl, spec)
 			if err != nil {
 				collectSiteDiagnostics(ctx, session, secrets...)
 				collectSiteClusterState(ctx, session, secrets...)
@@ -262,7 +262,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			if err != nil {
 				collectSiteDiagnostics(ctx, session, secrets...)
 			}
-			Expect(err).NotTo(HaveOccurred(), "should install the NKE stack")
+			Expect(err).NotTo(HaveOccurred(), "should install the NVKE stack")
 			deployed = true
 		}, NodeTimeout(1*time.Hour))
 
@@ -325,7 +325,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			return
 		}
 		// SkipDelete as well as the other two. It keeps the tenant and skips
-		// the nkectl sweep, and this node is what those tenants' instances
+		// the nvkectl sweep, and this node is what those tenants' instances
 		// hang off, so releasing it either deletes them through the sweep --
 		// silently undoing the flag -- or orphans them with no controller left to
 		// release them. Whatever keeps a tenant has to keep its site.
@@ -566,7 +566,7 @@ func sessionRelay(session infra.Session) kube.EndpointRelay {
 
 // siteDiagnostics is written next to qualify-e2e.log, in the directory the
 // suite runs from, so CI picks it up with the rest of the run's record.
-const siteDiagnostics = "nkectl-diagnostics.tar.gz"
+const siteDiagnostics = "nvkectl-diagnostics.tar.gz"
 
 // siteDiagnosticsCollected is set once this run has written siteDiagnostics.
 var siteDiagnosticsCollected bool
@@ -612,7 +612,7 @@ var siteClusterStateCollected bool
 // collectSiteClusterState records what the site cluster says about the controller.
 //
 // Separate from collectSiteDiagnostics because the two cover different
-// failures and neither substitutes for the other: nkectl writes diagnostics
+// failures and neither substitutes for the other: nvkectl writes diagnostics
 // when the bootstrap fails, so a run that bootstrapped and then never saw the controller
 // answer gets ErrNoDiagnostics and, before this, kept nothing.
 //
@@ -640,13 +640,13 @@ func collectSiteClusterState(ctx context.Context, session infra.Session, secrets
 // --disable-mtls, which comes from the same constant: the two sides
 // negotiate with each other, and a mismatch surfaces as an opaque TLS
 // handshake error rather than as a configuration problem.
-func nodeInputs(kubernetesVersion, cniVersion string) nke.NodeInputs {
-	inputs := nke.NodeInputs{
+func nodeInputs(kubernetesVersion, cniVersion string) nvke.NodeInputs {
+	inputs := nvke.NodeInputs{
 		KubernetesVersion: kubernetesVersion,
 		CNIVersion:        cniVersion,
 	}
 	if siteDisableMTLS {
-		inputs.AgentArgs = nke.AgentArgsNoMTLS
+		inputs.AgentArgs = nvke.AgentArgsNoMTLS
 	}
 	return inputs
 }
@@ -654,15 +654,15 @@ func nodeInputs(kubernetesVersion, cniVersion string) nke.NodeInputs {
 // candidate is what the site is built from, resolved once the node exists.
 // Only the full stage deploys the stack; the bootstrap stage checks the API
 // server instead of the controller.
-// nkectlBinary is the linux nkectl for an architecture, on the runner. Staged
+// nvkectlBinary is the linux nvkectl for an architecture, on the runner. Staged
 // rather than downloaded: every release is a pre-release, which the
 // latest-release URL skips.
-func nkectlBinary(cfg config.Config, arch string) (string, error) {
+func nvkectlBinary(cfg config.Config, arch string) (string, error) {
 	repo, err := cloneRoot()
 	if err != nil {
 		return "", err
 	}
-	return inRepo(repo, cmp.Or(cfg.Nkectl.Binary, filepath.Join("cli", "dist", "nkectl-linux-"+arch))), nil
+	return inRepo(repo, cmp.Or(cfg.Nvkectl.Binary, filepath.Join("cli", "dist", "nvkectl-linux-"+arch))), nil
 }
 
 // siteSpec is what the node is staged with: the image
@@ -786,7 +786,7 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 		Registry:   site.Registry{Server: siteCAPNICoRegistry, Username: user, Token: token},
 		// The login baked into tenant nodes' user-data. Nothing outside the
 		// run needs it.
-		Tenant: site.Tenant{User: "nke-tenant", Password: tenantPassword},
+		Tenant: site.Tenant{User: "nvke-tenant", Password: tenantPassword},
 		// Set here rather than left for the deployer to generate, so the
 		// value is one the redaction list can name.
 		DatabasePassword: dbPassword,
@@ -829,7 +829,7 @@ func sweepSiteTenants(ctx context.Context, kubeconfig string) error {
 	if err != nil {
 		return err
 	}
-	client, err := nke.NewClient(ctx, restConfig, nke.Options{Delete: sweepDeleteBudget, Poll: 30 * time.Second})
+	client, err := nvke.NewClient(ctx, restConfig, nvke.Options{Delete: sweepDeleteBudget, Poll: 30 * time.Second})
 	if err != nil {
 		return err
 	}

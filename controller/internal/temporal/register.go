@@ -28,19 +28,19 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/kube"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	rolloutcontroller "github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/controller"
-	rolloutkubevip "github.com/dsx-ai-factory/nke/controller/internal/rollout/guards/kubevip"
-	rolloutetcd "github.com/dsx-ai-factory/nke/controller/internal/rollout/operations/etcd"
-	rolloutoidc "github.com/dsx-ai-factory/nke/controller/internal/rollout/operations/oidc"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/preflights"
-	rollouttemporal "github.com/dsx-ai-factory/nke/controller/internal/rollout/temporal"
-	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
-	"github.com/dsx-ai-factory/nke/controller/internal/temporal/workflows"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	rolloutcontroller "github.com/dsx-ai-factory/nvke/controller/internal/rollout/adapters/controller"
+	rolloutkubevip "github.com/dsx-ai-factory/nvke/controller/internal/rollout/guards/kubevip"
+	rolloutetcd "github.com/dsx-ai-factory/nvke/controller/internal/rollout/operations/etcd"
+	rolloutoidc "github.com/dsx-ai-factory/nvke/controller/internal/rollout/operations/oidc"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/preflights"
+	rollouttemporal "github.com/dsx-ai-factory/nvke/controller/internal/rollout/temporal"
+	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
+	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 )
 
 func RegisterNamespace(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
@@ -213,7 +213,7 @@ func NewWorker(
 	preflights.RegisterDefaults(rolloutRegistry, rolloutDialer)
 	rolloutkubevip.RegisterDefaults(rolloutRegistry, rolloutDialer)
 	rolloutetcd.RegisterDefaults(rolloutRegistry, rolloutDialer, k8sClient, cfg.PodNamespace)
-	rolloutoidc.RegisterDefaults(rolloutRegistry, rolloutDialer, rolloutMethodChecker, k8sClient, cfg.NkeOIDCAuth, trustDomain)
+	rolloutoidc.RegisterDefaults(rolloutRegistry, rolloutDialer, rolloutMethodChecker, k8sClient, cfg.NvkeOIDCAuth, trustDomain)
 	rollouttemporal.NewActivities(rolloutLoader, rolloutRegistry).Register(w)
 	rollouttemporal.NewClusterLoaderActivity(rolloutLoader, cfg.NodeAgent.Port).Register(w)
 

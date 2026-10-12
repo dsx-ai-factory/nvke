@@ -14,8 +14,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
 
 type rebootTestRunner struct {
@@ -28,7 +28,7 @@ type rebootTestRunner struct {
 	fuserCalls    int
 }
 
-func (r *rebootTestRunner) Run(name string, _ []string, _ *nkeutils.CommandOptions) ([]byte, error) {
+func (r *rebootTestRunner) Run(name string, _ []string, _ *nvkeutils.CommandOptions) ([]byte, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	switch name {
@@ -46,12 +46,12 @@ func (r *rebootTestRunner) Run(name string, _ []string, _ *nkeutils.CommandOptio
 	}
 }
 
-func (r *rebootTestRunner) RunSplitOutput(name string, args []string, opts *nkeutils.CommandOptions) (nkeutils.CommandOutput, error) {
+func (r *rebootTestRunner) RunSplitOutput(name string, args []string, opts *nvkeutils.CommandOptions) (nvkeutils.CommandOutput, error) {
 	output, err := r.Run(name, args, opts)
-	return nkeutils.CommandOutput{Stdout: output}, err
+	return nvkeutils.CommandOutput{Stdout: output}, err
 }
 
-func (r *rebootTestRunner) RunDetached(name string, _ []string, _ *nkeutils.CommandOptions) error {
+func (r *rebootTestRunner) RunDetached(name string, _ []string, _ *nvkeutils.CommandOptions) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.detachedName = name

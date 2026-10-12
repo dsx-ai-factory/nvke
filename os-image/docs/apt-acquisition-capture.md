@@ -49,7 +49,7 @@ acquisition time is not implemented.
 
 This is not complete OS inventory or a full disk SBOM. Base ISO content,
 non-APT downloads and package events after the export window are not covered.
-The hook's installer-to-target behavior still requires a real NKE image build;
+The hook's installer-to-target behavior still requires a real NVKE image build;
 native APT container tests and Packer validation alone do not prove that handoff.
 Captured archives whose exact repository metadata has disappeared, or whose
 matching locations include any `file:` or `cdrom:` URI, fail export, even when

@@ -19,7 +19,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/dsx-ai-factory/nke/controller
+        - github.com/dsx-ai-factory/nvke/controller
     gofumpt:
       extra-rules: true
 

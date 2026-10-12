@@ -15,8 +15,8 @@ import (
 	authenticationcel "k8s.io/apiserver/pkg/authentication/cel"
 	"k8s.io/apiserver/pkg/cel/lazy"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
 
 func TestBuildOperatorJWTAuthenticator(t *testing.T) {
@@ -462,7 +462,7 @@ func TestBuildOIDCAuthenticationConfigSharedProviderUnchanged(t *testing.T) {
 		ManagementJWTTrustDomain: "example.org",
 	})
 
-	got, err := BuildOIDCAuthenticationConfig("tenant-42", config.NkeOIDCAuth{
+	got, err := BuildOIDCAuthenticationConfig("tenant-42", config.NvkeOIDCAuth{
 		IssuerURL:    "https://shared.example.com",
 		DiscoveryURL: "https://discovery.example.com/.well-known/openid-configuration",
 	}, caBundle)

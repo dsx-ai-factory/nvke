@@ -3,7 +3,7 @@
 Stand up a host-mode FRR BGP speaker so CAPD and NICo control-plane containers
 can run kube-vip in active/active BGP mode locally. This is useful for testing
 control-plane teardown behavior, including the CWE `drain-kube-vip` runbook,
-before using a real NKE site.
+before using a real NVKE site.
 
 CAPD does not normally have a router on the Docker bridge for kube-vip to peer
 with. This harness runs FRR with `--network host`, so FRR listens from the same
@@ -15,7 +15,7 @@ route; no manifest patching or worker static routes are required.
 
 | File | Purpose |
 |------|---------|
-| `frr.conf.tmpl` | FRR routing template. `up.sh` substitutes the detected kind gateway and subnet. Local AS is 4294967000 and remote AS is 65100, matching the NKE kube-vip setup. |
+| `frr.conf.tmpl` | FRR routing template. `up.sh` substitutes the detected kind gateway and subnet. Local AS is 4294967000 and remote AS is 65100, matching the NVKE kube-vip setup. |
 | `daemons` | FRR daemons file. Enables only `zebra` and `bgpd`. |
 | `up.sh` | Starts host-mode FRR and waits for `bgpd` to become ready. |
 | `down.sh` | Gracefully stops and removes the FRR container. Zebra retracts installed routes during clean shutdown. |
@@ -34,7 +34,7 @@ tilt up
 
 # 3. Create the workload cluster. The script auto-detects bgp-containers:
 #    - bgp-containers running: controlPlaneVIP is the first address in
-#      DEFAULT_VIP_RANGE not used by a cluster returned by NKE.
+#      DEFAULT_VIP_RANGE not used by a cluster returned by NVKE.
 #    - bgp-containers absent: controlPlaneVIP is omitted, preserving the plain CAPD path.
 make capd-create-cluster
 
@@ -43,7 +43,7 @@ make capd-create-cluster
 make bgp-containers-verify
 watch -n1 make bgp-containers-verify
 
-# 5. Trigger a CP node removal via CWE or nkecli. FRR should drop the target
+# 5. Trigger a CP node removal via CWE or nvkectl. FRR should drop the target
 #    peer's nexthop, and the drain-kube-vip runbook should complete cleanly.
 
 # 6. Tear down when done.

@@ -19,7 +19,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 const (
@@ -110,7 +110,7 @@ func (s *NodeAgentServer) RemoveEtcdMember(
 		}
 	}
 
-	// NKE controllers rely on etcd's default strict reconfiguration check to
+	// NVKE controllers rely on etcd's default strict reconfiguration check to
 	// reject a removal that would break quorum.
 	if _, err := client.MemberRemove(ctx, targetID); err != nil {
 		return nil, status.Errorf(codes.Internal, "remove etcd member %x: %v", targetID, err)

@@ -12,10 +12,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/clients"
-	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
 const (
@@ -100,12 +100,12 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 	const defaultBGPPeerASN uint32 = 4294967000
 	bgpPeerAS := "4294967000"
 	bgpPeerASN := defaultBGPPeerASN
-	bgpPeerASNSource := nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC
+	bgpPeerASNSource := nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC
 	fmdsEndpoint := a.cfg.KubeVipFMDSEndpoint
 	if fmdsEndpoint != "" {
 		bgpPeerAS = fmdsBGPPeerAS
 		bgpPeerASN = 0
-		bgpPeerASNSource = nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS
+		bgpPeerASNSource = nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS
 	} else {
 		provider, err := clients.GetProviderClient(cluster)
 		if err != nil {
@@ -118,7 +118,7 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 		if useFMDS {
 			bgpPeerAS = fmdsBGPPeerAS
 			bgpPeerASN = 0
-			bgpPeerASNSource = nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS
+			bgpPeerASNSource = nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS
 		}
 	}
 
@@ -135,7 +135,7 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 	hostID := node.ID
 	heartbeatCancel := startActivityHeartbeat(ctx)
 	defer heartbeatCancel()
-	reconcileResponse, err := a.nodeAgentClient.ReconcileKubeVip(ctx, node, &nkeproto.ReconcileKubeVipRequest{
+	reconcileResponse, err := a.nodeAgentClient.ReconcileKubeVip(ctx, node, &nvkeproto.ReconcileKubeVipRequest{
 		VipAddress:       cluster.ControlPlaneVIP,
 		BgpAsn:           kubeVipASN,
 		NodeIp:           node.IP,
@@ -148,11 +148,11 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 			return ConfigureKubeVipResult{}, fmt.Errorf("node agent returned an empty kube-vip reconciliation response")
 		}
 		switch reconcileResponse.GetOutcome() {
-		case nkeproto.ReconcileKubeVipResponse_OUTCOME_UNSPECIFIED:
+		case nvkeproto.ReconcileKubeVipResponse_OUTCOME_UNSPECIFIED:
 			return ConfigureKubeVipResult{}, fmt.Errorf("node agent returned an unspecified kube-vip reconciliation outcome")
-		case nkeproto.ReconcileKubeVipResponse_OUTCOME_CREATED,
-			nkeproto.ReconcileKubeVipResponse_OUTCOME_UPDATED,
-			nkeproto.ReconcileKubeVipResponse_OUTCOME_UNCHANGED:
+		case nvkeproto.ReconcileKubeVipResponse_OUTCOME_CREATED,
+			nvkeproto.ReconcileKubeVipResponse_OUTCOME_UPDATED,
+			nvkeproto.ReconcileKubeVipResponse_OUTCOME_UNCHANGED:
 			return ConfigureKubeVipResult{
 				ConfigureKubeVipOutput: fmt.Sprintf(
 					"kube-vip %s: manifest=%s interface=%s peer=%s peerASN=%d kubeconfig=%s kubeconfigChanged=%t cleanedInterfaces=%v",

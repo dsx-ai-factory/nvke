@@ -12,9 +12,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/clients/capi"
-	"github.com/dsx-ai-factory/nke/controller/internal/clients/nico"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 // ClusterScaffold builds the infrastructure-provider manifest for a cluster.

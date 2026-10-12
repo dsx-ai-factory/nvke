@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
 const (
@@ -360,7 +360,7 @@ func runMockOVNPolicyProbe(t *testing.T, script string, targetExit, controlExit 
 	}
 	if curlPresent {
 		// A shell function avoids executing a freshly written mock file, which
-		// intermittently fails with ETXTBSY on Linux. See https://github.com/dsx-ai-factory/nke/issues/1265.
+		// intermittently fails with ETXTBSY on Linux. See https://github.com/dsx-ai-factory/nvke/issues/1265.
 		script = fmt.Sprintf(`curl() {
 for arg; do
   url="${arg}"

@@ -16,44 +16,44 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent/agenttest"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestReconfigureKubeletAPIServer(t *testing.T) {
 	tests := []struct {
 		name     string
-		response *nkeproto.ReconfigureKubeletAPIServerResponse
+		response *nvkeproto.ReconfigureKubeletAPIServerResponse
 		rpcErr   error
 		wantErr  string
 	}{
 		{
 			name: "applied",
-			response: &nkeproto.ReconfigureKubeletAPIServerResponse{
-				Outcome: nkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_APPLIED,
+			response: &nvkeproto.ReconfigureKubeletAPIServerResponse{
+				Outcome: nvkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_APPLIED,
 			},
 		},
 		{
 			name: "unchanged",
-			response: &nkeproto.ReconfigureKubeletAPIServerResponse{
-				Outcome: nkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_UNCHANGED,
+			response: &nvkeproto.ReconfigureKubeletAPIServerResponse{
+				Outcome: nvkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_UNCHANGED,
 			},
 		},
 		{
 			name: "failed restored",
-			response: &nkeproto.ReconfigureKubeletAPIServerResponse{
-				Outcome:      nkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_FAILED_RESTORED,
+			response: &nvkeproto.ReconfigureKubeletAPIServerResponse{
+				Outcome:      nvkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_FAILED_RESTORED,
 				ErrorMessage: "restart failed",
 			},
 			wantErr: "previous state was restored: restart failed",
 		},
 		{
 			name: "failed not restored",
-			response: &nkeproto.ReconfigureKubeletAPIServerResponse{
-				Outcome:      nkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_FAILED_NOT_RESTORED,
+			response: &nvkeproto.ReconfigureKubeletAPIServerResponse{
+				Outcome:      nvkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_FAILED_NOT_RESTORED,
 				ErrorMessage: "rollback failed",
 			},
 			wantErr: "previous state was not restored: rollback failed",
@@ -62,7 +62,7 @@ func TestReconfigureKubeletAPIServer(t *testing.T) {
 			name:     "RPC failure",
 			rpcErr:   errors.New("dial failed"),
 			wantErr:  "dial failed",
-			response: &nkeproto.ReconfigureKubeletAPIServerResponse{},
+			response: &nvkeproto.ReconfigureKubeletAPIServerResponse{},
 		},
 	}
 
@@ -107,7 +107,7 @@ func TestReconfigureKubeletAPIServerFallsBackToLegacyRunbooksWhenRPCIsUnimplemen
 	database.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "cluster-1"}, nil).Twice()
 	fakeAgent := &agenttest.FakeClient{
 		ReconfigureKubeletAPIServerErr: status.Error(codes.Unimplemented, "unknown method ReconfigureKubeletAPIServer"),
-		ExecuteScriptHook: func(_ db.Node, scriptName, scriptContents string) (*nkeproto.ExecuteScriptResponse, error) {
+		ExecuteScriptHook: func(_ db.Node, scriptName, scriptContents string) (*nvkeproto.ExecuteScriptResponse, error) {
 			switch scriptName {
 			case legacyKubeletAPIAddressRunbook:
 				require.Contains(t, scriptContents, "export API_SERVER='https://api.example.com:6443'")
@@ -117,7 +117,7 @@ func TestReconfigureKubeletAPIServerFallsBackToLegacyRunbooksWhenRPCIsUnimplemen
 			default:
 				t.Fatalf("unexpected legacy runbook %q", scriptName)
 			}
-			return &nkeproto.ExecuteScriptResponse{}, nil
+			return &nvkeproto.ExecuteScriptResponse{}, nil
 		},
 	}
 	a := &Activities{db: database, nodeAgentClient: fakeAgent}

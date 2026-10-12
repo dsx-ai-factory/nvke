@@ -4,9 +4,9 @@
 apiVersion: v2
 name: postgresql
 description: >-
-  Single-instance PostgreSQL for the NKE management plane. Wraps the official
+  Single-instance PostgreSQL for the NVKE management plane. Wraps the official
   postgres image, pinned by digest, rather than depending on a third-party
   chart. Adapted from the AICR bundle's local postgresql component.
 type: application
-version: 0.1.0
+version: 0.1.1
 appVersion: "18.6"

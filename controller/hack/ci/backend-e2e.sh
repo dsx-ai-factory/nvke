@@ -8,8 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTROLLER_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck source=controller/hack/backend-e2e-lib.sh
 source "${CONTROLLER_ROOT}/hack/backend-e2e-lib.sh"
-# shellcheck source=controller/hack/ci/nkectl-smoke.sh
-source "${SCRIPT_DIR}/nkectl-smoke.sh"
+# shellcheck source=controller/hack/ci/nvkectl-smoke.sh
+source "${SCRIPT_DIR}/nvkectl-smoke.sh"
 WORKSPACE_ROOT="$(cd "${CONTROLLER_ROOT}/.." && pwd)"
 cd "${CONTROLLER_ROOT}"
 
@@ -23,6 +23,10 @@ DOCKERHUB_MIRROR="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 # Names the backend in this script's own output. Both lanes share the script, so
 # without it a NICo run reports itself as CAPD.
 BACKEND="${NKE_E2E_BACKEND:-capd}"
+# Passing CAPD suites run within minutes of the shared 100-minute timeout.
+if [[ "${BACKEND}" == capd ]]; then
+  export E2E_SUITE_TIMEOUT_MINUTES="${E2E_SUITE_TIMEOUT_MINUTES:-120}"
+fi
 # Keep the existing in-init default; focused lanes can select InstallCNI.
 export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}"
 RUNNER_NAME="capd-e2e-runner-${RUN_ID}"
@@ -36,10 +40,10 @@ BUNDLE_VOLUME="capd-e2e-bundles-${RUN_ID}"
 CAPD_NODE_IMAGE="cwe-capd-kindest-node:run-${RUN_ID}"
 BGP_CONTAINER_NAME="bgp-containers-${RUN_ID}"
 DIAGNOSTICS_MARKER="${STATE_DIR}/SAFE_TO_UPLOAD"
-# Run the nkectl checks in hack/ci/nkectl-smoke.sh once the suite passes. This
+# Run the nvkectl checks in hack/ci/nvkectl-smoke.sh once the suite passes. This
 # lane has an inner runner, so the smoke drives the CLI inside it.
-NKECTL_SMOKE="${NKE_E2E_NKECTL_SMOKE:-false}"
-NKECTL_SMOKE_RUNNER="${RUNNER_NAME}"
+NVKECTL_SMOKE="${NKE_E2E_NVKECTL_SMOKE:-false}"
+NVKECTL_SMOKE_RUNNER="${RUNNER_NAME}"
 TMP_DIR="$(mktemp -d)"
 MANAGEMENT_KUBECONFIG="${TMP_DIR}/management.kubeconfig"
 CLUSTERCTL_BIN="${TMP_DIR}/clusterctl"
@@ -50,7 +54,7 @@ SOURCE_ARCHIVE="${TMP_DIR}/cwe-source.tgz"
 CAPNICO_SOURCE_CONTAINER_DIR=/workspace/cluster-api-provider-nico
 E2E_BIN="${TMP_DIR}/cwe-e2e.test"
 NICO_SIM_BIN="${TMP_DIR}/nico-sim"
-NKECTL_BIN="${TMP_DIR}/nkectl"
+NVKECTL_BIN="${TMP_DIR}/nvkectl"
 E2E_CONFIG="${TMP_DIR}/e2e-config.json"
 RUNNER_DOCKER_HOST="${DOCKER_HOST:-unix:///var/run/docker.sock}"
 RUNNER_DOCKER_ARGS=()
@@ -111,7 +115,7 @@ else
   NICO_PROVIDER_ENABLED=false
 fi
 
-# Which deploy path nke-deploy.sh installs, one per backend. The trees are not
+# Which deploy path nvke-deploy.sh installs, one per backend. The trees are not
 # interchangeable: capd-e2e carries the reboot test double, the controller's RBAC over
 # dockerclusters and nke-spire-client, while capnico-e2e carries the
 # nico-credentials Secret instead. deploy-stack.sh defaults to capd-e2e, so the
@@ -125,10 +129,10 @@ fi
 
 # The controller's namespace, and the name of its Deployment, Service and
 # container. Tilt and the deploy paths both install it as nke-controller. The
-# e2e suite and the nkectl smoke are pointed at it.
+# e2e suite and the nvkectl smoke are pointed at it.
 CONTROLLER_NAME=nke-controller
-NKECTL_SMOKE_CONTROLLER_NAMESPACE="${CONTROLLER_NAME}"
-NKECTL_SMOKE_CONTROLLER_SERVICE="${CONTROLLER_NAME}"
+NVKECTL_SMOKE_CONTROLLER_NAMESPACE="${CONTROLLER_NAME}"
+NVKECTL_SMOKE_CONTROLLER_SERVICE="${CONTROLLER_NAME}"
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -214,6 +218,36 @@ curl_with_retry() {
     log "curl failed after retries: ${description}" >&2
     return 1
   fi
+}
+
+# The Docker Hub mirror sometimes 404s a blob it has not cached yet; a second pull gets it.
+pull_with_retry() {
+  local image=$1 attempt
+  for attempt in 1 2 3; do
+    bounded "${DOCKER_PULL_TIMEOUT}" docker pull "${image}" && return 0
+    if ((attempt == 3)); then
+      log "docker pull failed after ${attempt} attempts: ${image}" >&2
+      return 1
+    fi
+    log "docker pull attempt ${attempt} failed, retrying: ${image}"
+    sleep 15
+  done
+}
+
+# The same 404 fails a build while it loads a base image; a second build gets it.
+build_with_retry() {
+  local out attempt rc
+  out=$(mktemp)
+  for attempt in 1 2; do
+    rc=0
+    docker build "$@" 2>&1 | tee "${out}" || rc=$?
+    if ((rc == 0 || attempt == 2)) || ! grep -q 'could not fetch content descriptor' "${out}"; then
+      rm -f "${out}"
+      return "${rc}"
+    fi
+    log "docker build hit a mirror 404, retrying in 15s"
+    sleep 15
+  done
 }
 
 runner_exec() {
@@ -681,7 +715,7 @@ DSX_IDENTITY_EXCHANGE_IMAGE=""
 # dockerhub_build_args in backend-e2e-lib.sh.
 log "building the sanitized profiles fixture image"
 mapfile -t profiles_build_args < <(dockerhub_build_args test/fixtures/Dockerfile)
-docker build \
+build_with_retry \
   --platform "linux/${host_arch}" \
   --file test/fixtures/Dockerfile \
   "${profiles_build_args[@]}" \
@@ -692,7 +726,7 @@ docker image inspect "${NKE_CONTROLLER_PROFILES_TILT_IMAGE}" >"${STATE_DIR}/cwe-
 
 log "building controller image ${NKE_CONTROLLER_IMAGE} for the ${host_arch} CAPD runner"
 mapfile -t cwe_build_args < <(dockerhub_build_args "${CONTROLLER_ROOT}/Dockerfile")
-DOCKER_BUILDKIT=1 docker build \
+DOCKER_BUILDKIT=1 build_with_retry \
   --platform "linux/${host_arch}" \
   --file "${CONTROLLER_ROOT}/Dockerfile" \
   --build-arg "BUILD_VERSION=${NKE_CONTROLLER_BUILD_VERSION}" \
@@ -707,7 +741,7 @@ if [[ "${DSX_IDENTITY_EXCHANGE_ENABLED}" == "true" ]]; then
   DSX_IDENTITY_EXCHANGE_IMAGE="dsx-identity-exchange-e2e:${git_short_sha}"
   log "building DSX identity exchange mock ${DSX_IDENTITY_EXCHANGE_IMAGE}"
   mapfile -t dsx_build_args < <(dockerhub_build_args "${CONTROLLER_ROOT}/hack/dsx-identity-exchange-mock/Dockerfile")
-  DOCKER_BUILDKIT=1 docker build \
+  DOCKER_BUILDKIT=1 build_with_retry \
     --platform "linux/${host_arch}" \
     --file "${CONTROLLER_ROOT}/hack/dsx-identity-exchange-mock/Dockerfile" \
     "${dsx_build_args[@]}" \
@@ -816,8 +850,8 @@ if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
   NICO_SIM_BINARY_PREBUILT=true
 fi
 
-if [[ "${NKECTL_SMOKE}" == "true" ]]; then
-  nkectl_smoke_build "${host_arch}"
+if [[ "${NVKECTL_SMOKE}" == "true" ]]; then
+  nvkectl_smoke_build "${host_arch}"
 fi
 
 log "building CAPD node image with agent source ${NODE_AGENT_VERSION}"
@@ -838,6 +872,10 @@ NKE_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" \
   bash hack/capd-kindest-node/build-image.sh
 CAPD_NODE_IMAGE_OWNED=true
 docker image inspect "${CAPD_NODE_IMAGE}" >"${STATE_DIR}/capd-node-image.json"
+if ! e2e_host_loads_openvswitch "${CAPD_NODE_IMAGE}"; then
+  log "this runner host cannot load the openvswitch module (#1515)" >&2
+  exit 1
+fi
 
 log "creating Kind management cluster ${KIND_CLUSTER_NAME}"
 KIND_CLUSTER_OWNED=true
@@ -862,7 +900,7 @@ NKE_E2E_SPIRE_RELEASE="${NKE_E2E_SPIRE_RELEASE:-}"
 if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   log "building capd-reboot-controller for the deploy-path lane"
   mapfile -t reboot_build_args < <(dockerhub_build_args "${CONTROLLER_ROOT}/hack/capd-reboot-controller/Dockerfile")
-  docker build \
+  build_with_retry \
     "${reboot_build_args[@]}" \
     -t "${CAPD_REBOOT_IMAGE}" \
     -f "${CONTROLLER_ROOT}/hack/capd-reboot-controller/Dockerfile" \
@@ -878,11 +916,13 @@ log "starting the CAPD bundle mirror on the Kind Docker network"
 docker volume create "${BUNDLE_VOLUME}" >/dev/null
 BUNDLE_VOLUME_OWNED=true
 BUNDLE_LOADER_OWNED=true
+pull_with_retry "$(dockerhub_image alpine:3.22)"
 bounded "${DOCKER_PULL_TIMEOUT}" docker create --name "${BUNDLE_LOADER_NAME}" -v "${BUNDLE_VOLUME}:/bundle" "$(dockerhub_image alpine:3.22)" true >/dev/null
 docker cp "${BUNDLE_DIR}/." "${BUNDLE_LOADER_NAME}:/bundle/"
 docker rm "${BUNDLE_LOADER_NAME}" >/dev/null
 BUNDLE_LOADER_OWNED=false
 BUNDLE_MIRROR_OWNED=true
+pull_with_retry "$(dockerhub_image nginx:alpine)"
 bounded "${DOCKER_PULL_TIMEOUT}" docker run -d \
   --name "${BUNDLE_MIRROR_NAME}" \
   --network kind \
@@ -890,7 +930,7 @@ bounded "${DOCKER_PULL_TIMEOUT}" docker run -d \
   "$(dockerhub_image nginx:alpine)" >/dev/null
 
 log "starting inner runner on the Kind Docker network"
-bounded "${DOCKER_PULL_TIMEOUT}" docker pull "${RUNNER_IMAGE}"
+pull_with_retry "${RUNNER_IMAGE}"
 docker volume create "${STATE_VOLUME}" >/dev/null
 STATE_VOLUME_OWNED=true
 RUNNER_OWNED=true
@@ -911,8 +951,8 @@ if [[ ! "${runner_kind_ip}" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
 fi
 docker cp "${MANAGEMENT_KUBECONFIG}" "${RUNNER_NAME}:/state/management.kubeconfig"
 docker cp "${CLUSTERCTL_BIN}" "${RUNNER_NAME}:/usr/local/bin/clusterctl"
-if [[ "${NKECTL_SMOKE}" == "true" ]]; then
-  nkectl_smoke_stage
+if [[ "${NVKECTL_SMOKE}" == "true" ]]; then
+  nvkectl_smoke_stage
 fi
 docker cp "${TILT_BIN}" "${RUNNER_NAME}:/usr/local/bin/tilt"
 docker cp "$(command -v helm)" "${RUNNER_NAME}:/usr/local/bin/helm-real"
@@ -979,7 +1019,7 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   docker cp "${WORKSPACE_ROOT}/controller/hack/ci/deploy-stack.sh" \
     "${RUNNER_NAME}:/usr/local/bin/deploy-stack.sh"
   # The deploy paths and the charts they install from live under one root, so
-  # this is a single copy. deploy/nke-deploy.sh reads nke-deploy.yaml from
+  # this is a single copy. deploy/nvke-deploy.sh reads nvke-deploy.yaml from
   # here; controller/deploy/<target>/controller/release.yaml reaches its chart
   # as ../charts/controller, which resolves inside the same tree.
   runner_exec mkdir -p /workspace/nke-stack/controller
@@ -1135,9 +1175,9 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   # Tilt's nico provider runs, so the two paths deploy the provider identically.
   #
   # Before the install, not after: the controller watches the NICo CRDs this chart brings,
-  # and the controller item is the last thing nke-deploy.sh installs.
+  # and the controller item is the last thing nvke-deploy.sh installs.
   # nico-credentials is the other way round -- the deploy path renders it as
-  # part of nke-base-config -- which is fine, because CAPNICo reads that Secret
+  # part of nvke-base-config -- which is fine, because CAPNICo reads that Secret
   # when it reconciles rather than at startup.
   if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
     log "installing CAPNICo from ${CAPNICO_SOURCE_CONTAINER_DIR}"
@@ -1280,8 +1320,8 @@ if ! wait_for_zero_tenant_clusters; then
   exit 1
 fi
 
-if [[ "${NKECTL_SMOKE}" == "true" ]]; then
-  nkectl_smoke
+if [[ "${NVKECTL_SMOKE}" == "true" ]]; then
+  nvkectl_smoke
 fi
 
 log "${BACKEND} management-plane E2E passed"

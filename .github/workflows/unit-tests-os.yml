@@ -41,7 +41,7 @@ jobs:
   test:
     name: make test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     timeout-minutes: 40
     permissions:
       contents: read

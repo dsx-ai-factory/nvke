@@ -17,7 +17,7 @@ func TestTokenCacheRoundTrip(t *testing.T) {
 		Value:     "cached-token",
 		ExpiresAt: time.Now().Add(tokenLifetime),
 	}
-	path := filepath.Join(t.TempDir(), "nkectl", "tokens.json")
+	path := filepath.Join(t.TempDir(), "nvkectl", "tokens.json")
 	cache := &tokenCache{
 		path:   path,
 		tokens: make(map[string]cachedToken),

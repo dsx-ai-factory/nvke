@@ -26,7 +26,7 @@ version: "${DEB_REVISION}"
 version_schema: none
 section: admin
 priority: optional
-maintainer: "NKE <nke-dev@exchange.nvidia.com>"
+maintainer: "NVKE <nke-dev@exchange.nvidia.com>"
 # No vendor/license fields: nfpm's deb packager emits neither, so setting them
 # here would be dead config.
 # Fixed rather than the build time, so two builds of the same input produce a
@@ -34,7 +34,7 @@ maintainer: "NKE <nke-dev@exchange.nvidia.com>"
 # `type: tree` entry (/opt/cni/bin), which build-deb.sh touches ahead of time.
 mtime: "2026-01-01T00:00:00Z"
 description: |
-  NKE kubeadm node stack (Kubernetes ${K8S_VER})
+  NVKE kubeadm node stack (Kubernetes ${K8S_VER})
   Bundled Kubernetes stack with pkgs.k8s.io-style paths: /usr/bin/kubeadm,
   kubectl, kubelet, crictl, helm; /usr/sbin/runc; containerd, containerd-shim-
   runc-v2 and ctr under /usr/local/bin; CNI plugins under /opt/cni/bin;

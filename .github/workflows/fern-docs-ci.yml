@@ -1,34 +1,41 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Required merge gate for documentation changes. Runs without secrets; no
-# publishing. Advisory publishing and the API reference render are in api-docs.yml.
+# Merge-gate member for the documentation site: the MDX safety check, `fern
+# check` and `fern docs md check`, on every pull request through merge-gate.yml.
+# Runs without secrets and publishes nothing; previews, the production publish
+# and the API reference render are in api-docs.yml. The push trigger is
+# post-merge coverage on main.
 
 name: Fern Docs CI
 
 on:
-  pull_request:
+  push:
     branches: [main]
-    types: [opened, synchronize, reopened]
-  ## --- OPTION: NVIDIA copy-PR-bot trigger ---
-  ## Replace the pull_request block above with:
-  # push:
-  #   branches:
-  #     - "pull-request/[0-9]+"
+    paths:
+      - 'docs/**'
+      - 'fern/**'
+      - 'cli/docs/**'
+      - 'controller/docs/**'
+      - 'controller/api/openapi.yaml'
+      - 'tools/check-docs-mdx'
+      - '.github/workflows/fern-docs-ci.yml'
+  workflow_call:
   workflow_dispatch: {}
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
-  group: fern-docs-ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A literal name, not ${{ github.workflow }}: in a called workflow that is the
+  # caller's name. The sha keeps main runs apart. See merge-gate.yml.
+  group: Fern Docs CI-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   fern-check:
     name: Fern Check
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     timeout-minutes: 15
     permissions:
       contents: read
@@ -37,20 +44,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
-
-      - name: Detect docs changes
-        id: changes
-        run: |
-          if git diff --name-only "origin/${GITHUB_BASE_REF:-main}"...HEAD \
-              | grep -qE '^(docs/|fern/|cli/docs/|controller/docs/|tools/check-docs-mdx|\.github/workflows/fern-docs-ci\.yml)'; then
-            echo "docs=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "docs=false" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Check MDX safety
-        if: steps.changes.outputs.docs == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           paths=()
           for d in docs fern cli/docs controller/docs; do
@@ -62,11 +57,9 @@ jobs:
             "${paths[@]}"
 
       - name: Check the site definition
-        if: steps.changes.outputs.docs == 'true' || github.event_name == 'workflow_dispatch'
         working-directory: fern
         run: npx -y fern-api@latest check
 
       - name: Check MDX validity
-        if: steps.changes.outputs.docs == 'true' || github.event_name == 'workflow_dispatch'
         working-directory: fern
         run: npx -y fern-api@latest docs md check

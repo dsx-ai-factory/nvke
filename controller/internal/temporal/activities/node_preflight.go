@@ -14,9 +14,9 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/log"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 const (
@@ -56,7 +56,7 @@ func (a *Activities) nodePreflight(ctx context.Context, nodeID uuid.UUID, logger
 		return fmt.Errorf("node agent is not ready on node %s: %w", node.Name, err)
 	}
 
-	// agent versions before v0.1.24 do not have nkeproto.CheckCloudInitStatus.
+	// agent versions before v0.1.24 do not have nvkeproto.CheckCloudInitStatus.
 	// So the only preflight gate was on agent connectivity.
 	if !nodeAgentVersionAtLeast(agentVersion, minCloudInitStatusPreflightVersion, false) {
 		logger.Info("node agent version predates strict node preflight checks", "nodeID", node.ID, "nodeName", node.Name, "agentVersion", agentVersion)
@@ -121,7 +121,7 @@ func isHexString(value string) bool {
 	return true
 }
 
-func (a *Activities) nodePreflightRequestForNode(ctx context.Context, node db.Node) (*nkeproto.ExecuteNodePreflightRequest, error) {
+func (a *Activities) nodePreflightRequestForNode(ctx context.Context, node db.Node) (*nvkeproto.ExecuteNodePreflightRequest, error) {
 	cluster, err := a.db.GetCluster(ctx, node.ClusterID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cluster: %w", err)
@@ -137,19 +137,19 @@ func (a *Activities) nodePreflightRequestForNode(ctx context.Context, node db.No
 	}
 
 	// Normal non-docker machine backed nodes have a cloud-init status, so we can use the default preflight request.
-	return &nkeproto.ExecuteNodePreflightRequest{
-		CheckCloudInitStatus: &nkeproto.CheckCloudInitStatus{},
+	return &nvkeproto.ExecuteNodePreflightRequest{
+		CheckCloudInitStatus: &nvkeproto.CheckCloudInitStatus{},
 	}, nil
 }
 
-func dockerMachineBackedNodePreflightRequest() *nkeproto.ExecuteNodePreflightRequest {
-	return &nkeproto.ExecuteNodePreflightRequest{
+func dockerMachineBackedNodePreflightRequest() *nvkeproto.ExecuteNodePreflightRequest {
+	return &nvkeproto.ExecuteNodePreflightRequest{
 		CheckCloudInitStatus: nil,
-		Checks: []*nkeproto.NodePreflightCheck{
+		Checks: []*nvkeproto.NodePreflightCheck{
 			{
 				Name: "cluster-api-bootstrap-success",
-				Check: &nkeproto.NodePreflightCheck_FileExists{
-					FileExists: &nkeproto.FileExistsPreflightCheck{Path: capdBootstrapSuccessPath},
+				Check: &nvkeproto.NodePreflightCheck_FileExists{
+					FileExists: &nvkeproto.FileExistsPreflightCheck{Path: capdBootstrapSuccessPath},
 				},
 			},
 		},

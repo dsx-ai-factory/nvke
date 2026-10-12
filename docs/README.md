@@ -1,6 +1,6 @@
 # docs
 
-Everything written down about NKE, grouped by what you are trying to do. Some of
+Everything written down about NVKE, grouped by what you are trying to do. Some of
 it lives beside the code it describes rather than in this directory, so this page
 indexes both.
 
@@ -8,10 +8,10 @@ indexes both.
 
 | Document | Contents |
 |---|---|
-| [overview.md](overview.md) | What NKE is and the problem it solves |
-| [dsx-stack.md](dsx-stack.md) | Where NKE sits in the DSX component ecosystem (NICo, AICR, CRE, Nodewright, NVSentinel) |
+| [overview.md](overview.md) | What NVKE is and the problem it solves |
+| [dsx-stack.md](dsx-stack.md) | Where NVKE sits in the DSX component ecosystem (NICo, AICR, CRE, Nodewright, NVSentinel) |
 | [concepts.md](concepts.md) | The terms the rest of the documentation uses |
-| [first-cluster.md](first-cluster.md) | Three paths to a running cluster, driven by `nkectl` |
+| [first-cluster.md](first-cluster.md) | Three paths to a running cluster, driven by `nvkectl` |
 | [lifecycle.md](lifecycle.md) | Day 0 → Day 1 → Day 2 operational lifecycle |
 | [architecture.md](architecture.md) | The modules, how a cluster request flows through them, and what is deployed where |
 
@@ -31,7 +31,7 @@ indexes both.
 | Document | Contents |
 |---|---|
 | [site-bootstrap/overview.md](site-bootstrap/overview.md) | How a site controller is bootstrapped |
-| [site-bootstrap/installation.md](site-bootstrap/installation.md) | Downloading and installing `nkectl` |
+| [site-bootstrap/installation.md](site-bootstrap/installation.md) | Downloading and installing `nvkectl` |
 | [site-bootstrap/configuration.md](site-bootstrap/configuration.md) | The site spec file that describes a site |
 | [site-bootstrap/pre-provisioned-nodes.md](site-bootstrap/pre-provisioned-nodes.md) | Using hosts that are already provisioned |
 | [site-bootstrap/custom-base-os.md](site-bootstrap/custom-base-os.md) | Running on a base OS other than the reference image |
@@ -48,14 +48,14 @@ indexes both.
 | [tenant-clusters/kubernetes-api-access.md](tenant-clusters/kubernetes-api-access.md) | How operators, automation and Site Controller services reach and authenticate to tenant Kubernetes APIs |
 | [tenant-clusters/oidc-authentication.md](tenant-clusters/oidc-authentication.md) | Turning on OIDC authentication for tenant clusters, site-wide or per cluster |
 | [../controller/docs/authenticating-to-the-api.md](../controller/docs/authenticating-to-the-api.md) | Authenticating to the API |
-| [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nkectl` |
+| [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nvkectl` |
 | [../controller/docs/byo-os.md](../controller/docs/byo-os.md) | Bringing your own OS image |
 
 ## Operating a site
 
 | Document | Contents |
 |---|---|
-| [operations/upgrade.md](operations/upgrade.md) | Upgrading NKE and tenant cluster Kubernetes versions |
+| [operations/upgrade.md](operations/upgrade.md) | Upgrading NVKE and tenant cluster Kubernetes versions |
 | [operations/observability.md](operations/observability.md) | Temporal UI, CWE logs, database health, and CAPNICo diagnostics |
 | [operations/faq.md](operations/faq.md) | Common bootstrap and tenant cluster failure modes |
 | [nktp/site-telemetry/getting-started.md](nktp/site-telemetry/getting-started.md) | Telemetry on a site controller: what NKTP collects and what the deploy path needs |
@@ -99,7 +99,7 @@ exist.
 |---|---|
 | Cloud Workflow Engine | [../controller/README.md](../controller/README.md) |
 | Node agent | [../agent/README.md](../agent/README.md) |
-| `nkectl` | [../cli/README.md](../cli/README.md) |
+| `nvkectl` | [../cli/README.md](../cli/README.md) |
 | Generated API | [../controller/api/README.md](../controller/api/README.md) |
 | `nico-sim` VM and container simulator | [../controller/nico-sim/README.md](../controller/nico-sim/README.md) |
 | Reference node OS image | [../os-image/README.md](../os-image/README.md) |

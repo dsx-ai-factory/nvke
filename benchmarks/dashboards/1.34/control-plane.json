@@ -1,9 +1,9 @@
 {
   "title": "Control Plane",
-  "uid": "nke-benchmarks-control-plane",
+  "uid": "nvke-benchmarks-control-plane",
   "tags": [
-    "nke",
-    "nke-benchmarks",
+    "nvke",
+    "nvke-benchmarks",
     "control-plane",
     "apiserver",
     "etcd",

@@ -14,10 +14,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
 type KubeadmUpgradeApplyInput struct {
@@ -63,7 +63,7 @@ func (a *Activities) KubeadmUpgradeApply(
 	heartbeatCancel := startActivityHeartbeat(ctx)
 	defer heartbeatCancel()
 
-	response, err := a.nodeAgentClient.KubeadmUpgradeApply(ctx, controlPlaneNode, &nkeproto.KubeadmUpgradeApplyRequest{
+	response, err := a.nodeAgentClient.KubeadmUpgradeApply(ctx, controlPlaneNode, &nvkeproto.KubeadmUpgradeApplyRequest{
 		TargetVersion: input.KubernetesVersion,
 	})
 	if err != nil {
@@ -94,7 +94,7 @@ func (a *Activities) KubeadmUpgradeApply(
 		}
 		return KubeadmUpgradeApplyResult{}, fmt.Errorf("failed to apply kubeadm upgrade on control plane node %s: %w", controlPlaneNode.Name, err)
 	}
-	if response.GetOutcome() != nkeproto.KubeadmUpgradeApplyResponse_OUTCOME_APPLIED {
+	if response.GetOutcome() != nvkeproto.KubeadmUpgradeApplyResponse_OUTCOME_APPLIED {
 		return KubeadmUpgradeApplyResult{}, fmt.Errorf("kubeadm upgrade on control plane node %s returned outcome %s", controlPlaneNode.Name, response.GetOutcome())
 	}
 

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/providers"
+	"github.com/dsx-ai-factory/nvke/cli/internal/providers"
 )
 
 // fakeRunner answers kubectl calls by matching on the arguments, not on the
@@ -59,7 +59,7 @@ func (f *fakeRunner) called(fragments ...string) bool {
 	return false
 }
 
-// supported returns the entry for typ from the set nkectl supports.
+// supported returns the entry for typ from the set nvkectl supports.
 func supported(t *testing.T, typ providers.Type) providers.Provider {
 	t.Helper()
 	for _, p := range providers.Supported() {

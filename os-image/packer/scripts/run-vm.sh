@@ -35,7 +35,7 @@
 #   SSH_KEY       ssh key to inject (default: packer/.ssh/id_ed25519)
 #   SSH_PORT      host port to forward to guest :22 (default: 2222)
 #   OVMF_CODE     defaults to the standard OVMF (amd64) / AAVMF (arm64) path
-#                 for this ARCH. NKE qcow2s are UEFI-only.
+#                 for this ARCH. NVKE qcow2s are UEFI-only.
 #   OVMF_VARS_TEMPLATE  default: /usr/share/OVMF/OVMF_VARS_4M.fd (amd64) or
 #                 /usr/share/AAVMF/AAVMF_VARS.fd (arm64)
 #                 Override OVMF_CODE and OVMF_VARS_TEMPLATE together as a matching pair.

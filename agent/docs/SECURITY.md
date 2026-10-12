@@ -6,15 +6,15 @@ Vulnerability reporting for this monorepo lives in the repository-root [SECURITY
 
 ### Purpose and software class
 
-NKE agent (`nke-agent`) is a privileged Go gRPC service installed as a
-systemd unit on NVIDIA Kubernetes Engine nodes. The NKE controller
+NVKE agent (`nke-agent`) is a privileged Go gRPC service installed as a
+systemd unit on NVIDIA Kubernetes Engine nodes. The NVKE controller
 calls it to perform node-local Kubernetes lifecycle and administration tasks
 that would otherwise require root shell access.
 
 The service:
 
 - initializes, joins, resets, and inspects Kubernetes nodes through `kubeadm`;
-- installs NKE bundles, Debian packages, apt repositories, and CNI components;
+- installs NVKE bundles, Debian packages, apt repositories, and CNI components;
 - configures Kubernetes API/etcd encryption and rotates encryption keys;
 - changes control-plane static pod manifests and kube-vip state;
 - uploads files, executes scripts, and collects support bundles.
@@ -25,19 +25,19 @@ RPC implementations are under `internal/agent/`.
 
 ### Protected assets
 
-- Root-level control of each NKE node and its system configuration.
+- Root-level control of each NVKE node and its system configuration.
 - Kubernetes administrator kubeconfig and kubeadm join credentials.
 - Kubernetes API encryption keys and LUKS master keys passed in RPC requests.
 - SPIFFE X.509 SVIDs and the SPIRE workload API trust root.
 - `/var/lib/nke/state.json`, including lifecycle and operation state.
 - Kubernetes static pod manifests and cluster RBAC resources.
-- NKE packages, bundles, signing keys, indexes, and OCI credentials.
+- NVKE packages, bundles, signing keys, indexes, and OCI credentials.
 - Audit logs, script-execution logs, and support bundles, which may contain
   sensitive operational information.
 
 ### Trust boundaries and data flows
 
-1. **Controller to agent:** The NKE controller connects to TCP port `15005`. Production
+1. **Controller to agent:** The NVKE controller connects to TCP port `15005`. Production
    connections use SPIFFE mTLS. `cmd/agent/main.go` requires the client's SVID
    to share the agent's trust domain and have a path beginning with
    `/nke-service/`.
@@ -62,14 +62,14 @@ RPC implementations are under `internal/agent/`.
 
 ### Authorization model
 
-SPIFFE mTLS authenticates and coarsely authorizes the calling NKE service.
+SPIFFE mTLS authenticates and coarsely authorizes the calling NVKE service.
 Possession of an authorized `/nke-service/` identity grants access to the full
 gRPC service; the agent does not implement per-caller or per-RPC roles.
 Individual RPCs add validation where applicable, such as control-plane role
 checks, file path and size constraints, and the fixed resource allowlist in
 `UpdateNKERBAC`.
 
-This broad authority is intentional because the NKE controller is the trusted
+This broad authority is intentional because the NVKE controller is the trusted
 cluster orchestrator. Compromise of an authorized controller identity must therefore be
 treated as potential root compromise of every node reachable by that identity.
 
@@ -118,7 +118,7 @@ S3, HTTPS, apt, or OCI locations. A compromised publisher, registry,
 repository signing key, index, credential, or configuration could introduce
 malicious node software.
 
-Production deployments must use NKE-controlled artifact locations, protect OCI
+Production deployments must use NVKE-controlled artifact locations, protect OCI
 credentials such as `NGC_API_KEY`, validate apt metadata with dedicated
 `signed-by` keyrings, and preserve publisher-side access controls and release
 provenance. Development S3 locations and `file://` sources are not production
@@ -146,7 +146,7 @@ cluster data unavailable.
 
 The newer implementations use operation IDs, persisted status, serialized
 mutation, write-ahead state, readiness checks, snapshots, rollback, and
-explicit terminal outcomes. The NKE controller remains responsible for cross-node sequencing
+explicit terminal outcomes. The NVKE controller remains responsible for cross-node sequencing
 and for applying identical encryption configuration to every control-plane
 node.
 
@@ -168,16 +168,16 @@ repository.
   `--disable-mtls`.
 - SPIRE securely attests workloads, protects its signing keys and workload API
   socket, rotates SVIDs, and issues `/nke-service/` identities only to trusted
-  NKE services.
+  NVKE services.
 - Network policy, host firewalls, and site routing limit TCP port `15005` to
   authorized orchestration paths.
-- The NKE controller authenticates its operators, authorizes requested workflows, validates
+- The NVKE controller authenticates its operators, authorizes requested workflows, validates
   tenant and node ownership, protects sensitive RPC responses, and safely
   sequences multi-node operations.
 - The node OS, systemd unit, root filesystem, SPIRE agent, and executables
   invoked by agent are trusted and protected from unprivileged mutation.
 - Production artifact repositories, OCI registries, apt signing keys, and
-  bundle indexes are controlled by NKE release infrastructure and are not
+  bundle indexes are controlled by NVKE release infrastructure and are not
   writable by untrusted principals.
 - Kubernetes administrator kubeconfig, encryption configuration, and static pod
   manifests have root-only host permissions.
@@ -187,7 +187,7 @@ repository.
 - Audit and script logs are collected, access-controlled, rotated, and monitored
   by deployment infrastructure. The application does not provide remote log
   integrity or retention guarantees.
-- The agent owns one node for one NKE cluster. It is not designed to enforce
+- The agent owns one node for one NVKE cluster. It is not designed to enforce
   isolation among mutually untrusted tenants on the same host.
 
 ## Deployment Assumptions and Hardening
@@ -216,8 +216,8 @@ repository.
 - Vulnerabilities in Kubernetes, kubeadm, SPIRE, container runtimes, the host
   operating system, or third-party packages that are not caused by agent
   integration remain owned by their respective upstream projects.
-- Authentication and authorization of human operators are implemented by the NKE
-  controller and the surrounding NKE platform, not by agent.
+- Authentication and authorization of human operators are implemented by the NVKE
+  controller and the surrounding NVKE platform, not by agent.
 - Cross-node orchestration, tenant ownership decisions, backup, disaster
   recovery, network segmentation, log retention, and artifact publication
   infrastructure are external controls.
@@ -262,4 +262,4 @@ already-root attacker must explain why that condition can occur in production.
 This gate does not exclude bypasses of SPIFFE authorization, cross-trust-domain
 access, archive or path traversal, command injection, secret disclosure,
 artifact-verification failures, unsafe control-plane mutation, or privilege
-escalation from a less-trusted NKE identity.
+escalation from a less-trusted NVKE identity.

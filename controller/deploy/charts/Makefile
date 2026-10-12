@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# This module embeds the Helm charts beside it so nkectl carries them. It is
+# This module embeds the Helm charts beside it so nvkectl carries them. It is
 # its own module, like controller/api, so importing it does not pull the
 # controller's dependency graph into the importer.
 

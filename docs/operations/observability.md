@@ -1,12 +1,12 @@
 # Observability
 
-NKE's operational surface spans three layers: the site controller services, the Cluster API infrastructure provider, and the tenant cluster nodes. Observability tooling for each is covered here.
+NVKE's operational surface spans three layers: the site controller services, the Cluster API infrastructure provider, and the tenant cluster nodes. Observability tooling for each is covered here.
 
 ## Site Controller Services
 
 ### Temporal Web UI
 
-The Temporal Web UI is the primary window into what NKE is doing. Every cluster provisioning, upgrade, or node replacement runs as a Temporal workflow. When an operation stalls or fails, the Temporal UI shows the current workflow state and the last activity that ran.
+The Temporal Web UI is the primary window into what NVKE is doing. Every cluster provisioning, upgrade, or node replacement runs as a Temporal workflow. When an operation stalls or fails, the Temporal UI shows the current workflow state and the last activity that ran.
 
 Port-forward the Temporal Web UI from the site controller cluster:
 
@@ -15,7 +15,7 @@ kubectl port-forward -n temporal svc/temporal-web 8233:8080 \
   --kubeconfig <sitename>.kubeconfig
 ```
 
-Then open http://localhost:8233 in a browser. Workflows are organized by namespace; NKE workflows run in the `nke-controller` namespace.
+Then open http://localhost:8233 in a browser. Workflows are organized by namespace; NVKE workflows run in the `nke-controller` namespace.
 
 **What to look for:**
 - Workflows stuck in `Running` with no recent activity — usually a stalled infrastructure operation, a node that isn't responding, or a timeout waiting for NICo
@@ -24,7 +24,7 @@ Then open http://localhost:8233 in a browser. Workflows are organized by namespa
 
 ### Controller Logs
 
-The NKE controller emits structured JSON logs. Fetch them from the site controller cluster:
+The NVKE controller emits structured JSON logs. Fetch them from the site controller cluster:
 
 ```bash
 kubectl logs -n nke-controller deploy/nke-controller \
@@ -35,14 +35,14 @@ Logs include workflow and activity identifiers so a failure in the Temporal UI c
 
 ### Controller REST API Health
 
-The NKE controller API exposes liveness and readiness endpoints:
+The NVKE controller API exposes liveness and readiness endpoints:
 
 ```bash
 curl https://<controller-url>/healthz   # liveness
 curl https://<controller-url>/readyz    # readiness
 ```
 
-A `200 OK` means the API server is up. `nkectl get providers` shows whether the CAPI infrastructure provider is configured — it returns `CONFIGURED` when the provider's CRDs are present, the controller manager is running, and the credentials Secret exists. Note that `CONFIGURED` does not validate credentials against the provider backend; a separate connectivity issue can still prevent cluster creation even when the status shows `CONFIGURED`.
+A `200 OK` means the API server is up. `nvkectl get providers` shows whether the CAPI infrastructure provider is configured — it returns `CONFIGURED` when the provider's CRDs are present, the controller manager is running, and the credentials Secret exists. Note that `CONFIGURED` does not validate credentials against the provider backend; a separate connectivity issue can still prevent cluster creation even when the status shows `CONFIGURED`.
 
 ## Infrastructure Provider
 
@@ -59,10 +59,10 @@ If a tenant cluster is stuck provisioning, provider logs show whether the infras
 
 ### NICo Site Health
 
-Check the NICo site independently. See the [NICo documentation](https://docs.nvidia.com/infra-controller/documentation/home) for monitoring and health guidance — NKE's provisioning capacity depends entirely on NICo having healthy hosts and available capacity for the configured instance types.
+Check the NICo site independently. See the [NICo documentation](https://docs.nvidia.com/infra-controller/documentation/home) for monitoring and health guidance — NVKE's provisioning capacity depends entirely on NICo having healthy hosts and available capacity for the configured instance types.
 
 ## Tenant Clusters
 
-Tenant clusters are standard Kubernetes clusters. Use `kubectl` with the cluster's admin kubeconfig (obtained with `nkectl get kubeconfig <name>`) to inspect node and workload health.
+Tenant clusters are standard Kubernetes clusters. Use `kubectl` with the cluster's admin kubeconfig (obtained with `nvkectl get kubeconfig <name>`) to inspect node and workload health.
 
-For node-level health integration with NKE's lifecycle APIs, see [Node Lifecycle](../tenant-clusters/node-lifecycle.md) and [NVSentinel](https://github.com/NVIDIA/NVSentinel).
+For node-level health integration with NVKE's lifecycle APIs, see [Node Lifecycle](../tenant-clusters/node-lifecycle.md) and [NVSentinel](https://github.com/NVIDIA/NVSentinel).

@@ -27,7 +27,7 @@ func TestProvisionModesRenderValidYAML(t *testing.T) {
 		want        []string
 	}{
 		{
-			"apt", AptProvision("https://r/", "https://g/", "nke-noble", "main", "pkg", "6"),
+			"apt", AptProvision("https://r/", "https://g/", "nvke-noble", "main", "pkg", "6"),
 			[]string{"apt-get install -y -o DPkg::Lock::Timeout=600 pkg=6 nke-agent"},
 		},
 		{

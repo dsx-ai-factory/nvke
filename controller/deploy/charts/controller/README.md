@@ -2,7 +2,7 @@
 
 ![Version: 0.0.0](https://img.shields.io/badge/Version-0.0.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.0.0](https://img.shields.io/badge/AppVersion-0.0.0-informational?style=flat-square)
 
-A Helm chart to deploy the NKE controller service
+A Helm chart to deploy the NVKE controller service
 
 ## Values
 
@@ -10,13 +10,13 @@ A Helm chart to deploy the NKE controller service
 |-----|------|---------|-------------|
 | additionalInitContainers | list | `[]` | Additional init containers on the output Deployment definition, rendered ahead of the app container. |
 | affinity | object | `{}` |  |
-| apiAuth.clusterIssuerDiscovery | bool | `true` | Bind system:service-account-issuer-discovery so NKE can read the cluster's JWKS. Only used by an issuer that points `jwks.uri` at that endpoint. Kubernetes already grants this to every service account, so a stock cluster needs nothing. Keep it for clusters that removed that default. |
+| apiAuth.clusterIssuerDiscovery | bool | `true` | Bind system:service-account-issuer-discovery so NVKE can read the cluster's JWKS. Only used by an issuer that points `jwks.uri` at that endpoint. Kubernetes already grants this to every service account, so a stock cluster needs nothing. Keep it for clusters that removed that default. |
 | apiAuth.config | object | `{}` | The AuthenticationConfiguration itself, rendered verbatim into that ConfigMap. Carries `audiences` and `issuers` only: apiVersion and kind are supplied by the chart, which ships in lockstep with the build that accepts them.  Not validated here beyond both keys being present. internal/auth/config.go is a strict loader whose errors name the offending field, and a second copy of its rules in Helm would drift the first time an issuer gains a new key. The cost is that a bad value fails at pod start rather than at render.  config:   audiences: ["https://nke.example.internal"]   issuers:     - name: local-kubernetes       issuer: "https://kubernetes.default.svc.cluster.local"       jwks:         uri: "https://kubernetes.default.svc/openid/v1/jwks"         caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt         bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token       algorithms: [RS256, ES256]       admit:         serviceAccounts:           - namespace: cloud-workflow-engine             name: forge-console |
 | apiAuth.configMap.create | bool | `false` | Render `apiAuth.config` into the ConfigMap named below, rather than mounting one managed elsewhere. The two are alternatives: setting `config` without this, or this without `config`, fails the render rather than silently ignoring one of them. |
-| apiAuth.configMap.extraFiles | object | `{}` | Extra files to place beside `auth.yaml`, keyed by filename. Only used when configMap.create=true. The whole ConfigMap is mounted, so each one lands in the same directory and can be named by a `jwks.caBundlePath` as /etc/nke/auth/<filename> -- which is how an issuer behind a private CA gets its bundle. A CA bundle is a public certificate, not a secret. The render fails if `caBundlePath` names a file in that directory that is not listed here, rather than leaving NKE to crash-loop on a missing file.  extraFiles:   spire-ca.crt: \|     -----BEGIN CERTIFICATE-----     ...     -----END CERTIFICATE----- |
+| apiAuth.configMap.extraFiles | object | `{}` | Extra files to place beside `auth.yaml`, keyed by filename. Only used when configMap.create=true. The whole ConfigMap is mounted, so each one lands in the same directory and can be named by a `jwks.caBundlePath` as /etc/nke/auth/<filename> -- which is how an issuer behind a private CA gets its bundle. A CA bundle is a public certificate, not a secret. The render fails if `caBundlePath` names a file in that directory that is not listed here, rather than leaving NVKE to crash-loop on a missing file.  extraFiles:   spire-ca.crt: \|     -----BEGIN CERTIFICATE-----     ...     -----END CERTIFICATE----- |
 | apiAuth.configMap.name | string | `"nke-auth-config"` | ConfigMap holding the authentication configuration, keyed `auth.yaml`. Required when apiAuth.enabled=true; an empty name fails the render. Created by the chart when configMap.create=true, mounted either way. |
-| apiAuth.enabled | bool | `false` | Enable NKE API authentication. |
-| apiAuth.permissive | bool | `false` | Count what enforcement would have refused but serve the request anyway. Watch nke_auth_requests_total{outcome="would_reject"} before enforcing. |
+| apiAuth.enabled | bool | `false` | Enable NVKE API authentication. |
+| apiAuth.permissive | bool | `false` | Count what enforcement would have refused but serve the request anyway. Watch nvke_auth_requests_total{outcome="would_reject"} before enforcing. |
 | appDb.dbName | string | `"cloud-workflow"` |  |
 | appDb.postgresPassword | string | `""` |  |
 | appDb.postgresUser | string | `""` |  |
@@ -39,7 +39,7 @@ A Helm chart to deploy the NKE controller service
 | identity.managedByLabelValue | string | `"cloud-workflow-engine"` | Value written under the nke.nvidia.com/managed-by label on objects this controller owns, and the value the tenant Secret reconciler filters on. |
 | image.digest | string | `""` | Optional digest (sha256:...) for the nke-controller image. When set, the pod pulls by digest and the tag becomes informational only. Use this to pin an immutable image. |
 | image.pullPolicy | string | `"IfNotPresent"` | This sets the pull policy for images. |
-| image.repository | string | `"ghcr.io/dsx-ai-factory/nke/nke-controller"` | Repository, including registry, for the nke-controller image (the controller service) that this chart deploys. Override to pull it from a different registry (e.g. a private mirror); pair any change with a matching `imagePullSecrets` entry. Not to be confused with `profiles.image.repository` below, a separate optional content image. |
+| image.repository | string | `"ghcr.io/dsx-ai-factory/nvke/nke-controller"` | Repository, including registry, for the nke-controller image (the controller service) that this chart deploys. Override to pull it from a different registry (e.g. a private mirror); pair any change with a matching `imagePullSecrets` entry. Not to be confused with `profiles.image.repository` below, a separate optional content image. |
 | image.tag | string | `""` | Overrides the tag for the nke-controller image; default is the chart appVersion. |
 | imagePullSecrets | list | `[]` | Must match image.repository, which defaults to ghcr.io. The NVCR-published chart gets the NGC secret put back at package time. Supply your own for a private GHCR package. |
 | ingress.annotations | object | `{}` |  |
@@ -61,7 +61,7 @@ A Helm chart to deploy the NKE controller service
 | nkeOIDCAuth.caBundleSecret.name | string | `""` | Name of the Secret containing the OIDC CA bundle. |
 | nkeOIDCAuth.caBundleSecret.namespace | string | `""` | Namespace of the Secret containing the OIDC CA bundle. |
 | nkeOIDCAuth.discoveryURL | string | `""` | Optional discovery URL override used when issuerURL is not directly reachable by tenant kube-apiservers. |
-| nkeOIDCAuth.enabled | bool | `false` | Enable OIDC authentication from NKE management identities to tenant cluster kube-apiservers. |
+| nkeOIDCAuth.enabled | bool | `false` | Enable OIDC authentication from NVKE management identities to tenant cluster kube-apiservers. |
 | nkeOIDCAuth.issuerURL | string | `""` | OIDC issuer URL trusted by tenant kube-apiservers. |
 | nkeOIDCAuth.tenantRbacName | string | `"nke:cwe"` | Name of the ClusterRole/Role/Binding objects the tenant-access controller applies into every tenant cluster (nke-rbac.yaml). |
 | nkeSystemNamespace.annotations | object | `{}` | Extra annotations merged onto nke-system. This is useful for adding additional annotations to the namespace to protect it from being deleted. Listing annotations that template already defaults here duplicates the key in the rendered Namespace. |
@@ -87,8 +87,8 @@ A Helm chart to deploy the NKE controller service
 | oidc.providers | list | `[]` | Fleet-wide OIDC providers that clusters trust alongside nkeOIDCAuth; a cluster keeps the list it was created with, and one created on a Kubernetes version earlier than 1.34 gets none. At most five, each with name, issuerURL, audiences, usernameClaim, usernamePrefix and caBundle (inline PEM), and optionally groupsClaim, groupsPrefix and requiredClaims (claim name to required value). |
 | podAnnotations | object | `{}` |  |
 | podLabels.app | string | `"cloud-workflow-engine"` |  |
-| podLabels.project | string | `"nke"` |  |
-| podLabels.team | string | `"nke"` |  |
+| podLabels.project | string | `"nvke"` |  |
+| podLabels.team | string | `"nvke"` |  |
 | podSecurityContext.runAsNonRoot | bool | `true` |  |
 | profiles.image.digest | string | `""` | Digest pin for the profiles content image (preferred; e.g. `sha256:…`) |
 | profiles.image.enabled | bool | `false` | Copy `/profiles` from a content image into profiles.path |

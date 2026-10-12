@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 const (
@@ -40,7 +40,7 @@ func (a *Activities) ReconfigureKubeletAPIServer(
 	response, err := a.nodeAgentClient.ReconfigureKubeletAPIServer(
 		ctx,
 		node,
-		&nkeproto.ReconfigureKubeletAPIServerRequest{Server: input.Server},
+		&nvkeproto.ReconfigureKubeletAPIServerRequest{Server: input.Server},
 	)
 	if err != nil {
 		if status.Code(err) == codes.Unimplemented {
@@ -58,14 +58,14 @@ func (a *Activities) ReconfigureKubeletAPIServer(
 	}
 
 	switch response.GetOutcome() {
-	case nkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_APPLIED,
-		nkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_UNCHANGED:
+	case nvkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_APPLIED,
+		nvkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_UNCHANGED:
 		return ReconfigureKubeletAPIServerResult{}, nil
-	case nkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_FAILED_RESTORED:
+	case nvkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_FAILED_RESTORED:
 		return ReconfigureKubeletAPIServerResult{}, fmt.Errorf("kubelet API server reconfiguration failed on node %s and the previous state was restored: %s", node.Name, response.GetErrorMessage())
-	case nkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_FAILED_NOT_RESTORED:
+	case nvkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_FAILED_NOT_RESTORED:
 		return ReconfigureKubeletAPIServerResult{}, fmt.Errorf("kubelet API server reconfiguration failed on node %s and the previous state was not restored: %s", node.Name, response.GetErrorMessage())
-	case nkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_UNSPECIFIED:
+	case nvkeproto.ReconfigureKubeletAPIServerResponse_OUTCOME_UNSPECIFIED:
 		return ReconfigureKubeletAPIServerResult{}, fmt.Errorf("node agent returned an unspecified kubelet API server outcome for node %s", node.Name)
 	default:
 		return ReconfigureKubeletAPIServerResult{}, fmt.Errorf("node agent returned unknown kubelet API server outcome %d for node %s", response.GetOutcome(), node.Name)

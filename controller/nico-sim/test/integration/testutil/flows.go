@@ -524,8 +524,8 @@ boot
 	t.Logf("[%s] fetch-install.log:\n%s", profile.Name, fetchLog)
 
 	// Check nke-agent status (may fail, that's expected without full config).
-	nkeStatus := WaitForSSHCommand(t, ip, sshCfg, "systemctl is-active nke-agent 2>/dev/null || systemctl status nke-agent --no-pager 2>&1 | head -10", 30*time.Second)
-	t.Logf("[%s] nke-agent status: %s", profile.Name, strings.TrimSpace(nkeStatus))
+	nvkeStatus := WaitForSSHCommand(t, ip, sshCfg, "systemctl is-active nke-agent 2>/dev/null || systemctl status nke-agent --no-pager 2>&1 | head -10", 30*time.Second)
+	t.Logf("[%s] nke-agent status: %s", profile.Name, strings.TrimSpace(nvkeStatus))
 
 	PreserveInstanceArtifacts(t, profile, created.GetId())
 	DeleteAndWait(t, env, profile, created.GetId(), ip)

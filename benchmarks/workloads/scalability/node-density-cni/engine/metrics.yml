@@ -65,7 +65,7 @@
 - query: histogram_quantile(0.99, sum(rate(kubelet_pod_start_duration_seconds_bucket[2m])) by (le))
   metricName: 99thKubeletPodStartDuration
 
-# Container runtime ops — emitted by kubelet, runtime-agnostic (NKE uses
+# Container runtime ops — emitted by kubelet, runtime-agnostic (NVKE uses
 # containerd; these same metric names work for crio/dockerd as well).
 
 - query: histogram_quantile(0.99, sum(rate(kubelet_runtime_operations_duration_seconds_bucket[2m])) by (le, operation_type))
@@ -96,7 +96,7 @@
 - query: histogram_quantile(0.99, sum(rate(workqueue_queue_duration_seconds_bucket[2m])) by (le, name))
   metricName: 99thKcmWorkqueueLatency
 
-# Node metrics (no role join — NKE doesn't apply node-role labels uniformly)
+# Node metrics (no role join — NVKE doesn't apply node-role labels uniformly)
 
 - query: sum(irate(node_cpu_seconds_total[2m])) by (mode, instance)
   metricName: nodeCPU
@@ -161,7 +161,7 @@
   instant: true
 
 # Node count parity panel — kube_node_info exposes labels: node, kernel,
-# kubelet_version, os_image, internal_ip, etc. NKE doesn't apply role labels
+# kubelet_version, os_image, internal_ip, etc. NVKE doesn't apply role labels
 # uniformly, so the OCP "Node count by role" view collapses to "Node count
 # by kubelet_version" in the dashboard.
 

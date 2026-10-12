@@ -85,7 +85,7 @@ NO_TEST_MODULES=(
 # can contain spaces.
 untested_packages() {
 	cat <<-'EOF'
-		cli/e2e/bootstrap	behind `-tags e2e`; driven by e2e/bootstrap/run.sh against a built nkectl
+		cli/e2e/bootstrap	behind `-tags e2e`; driven by e2e/bootstrap/run.sh against a built nvkectl
 		controller/e2e/gofail	behind `-tags gofail`; runs in gofail-e2e.yml against a fault-injection build
 		controller/e2e/tracing	behind `-tags gofail`; runs with the gofail suite in gofail-e2e.yml
 		controller/test/kubeadm	behind `-tags kubeadm_bringup`; needs two QEMU VMs on a self-hosted runner

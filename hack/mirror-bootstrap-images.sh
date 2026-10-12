@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Mirror the images `nkectl bootstrap site` runs into a registry. The list is
-# `nkectl get bootstrap-manifest`. Each image keeps its upstream path under
-# TARGET_REGISTRY, the layout NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR expects; that
+# Mirror the images `nvkectl bootstrap site` runs into a registry. The list is
+# `nvkectl get bootstrap-manifest`. Each image keeps its upstream path under
+# TARGET_REGISTRY, the layout NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR expects; that
 # variable takes a TLS host[:port] with no path. Images from other registries
 # are mirrored too, for a registry that will serve them later. Images with no
 # registry host (the two this repository builds) are skipped: the bootstrap
@@ -14,7 +14,7 @@
 #   TARGET_REGISTRY  host, with an optional path prefix. Default localhost:5000.
 #
 # Env:
-#   NKECTL=<path>    nkectl to read the manifest from; default `nkectl` on PATH,
+#   NVKECTL=<path>    nvkectl to read the manifest from; default `nvkectl` on PATH,
 #                    then `go run` from this checkout.
 #   MANIFEST=<file>  read the manifest from a file instead.
 #   DRY_RUN=1        print the copies without running crane (also true, yes).
@@ -55,12 +55,12 @@ crane_flags=()
 read_manifest() {
   if [ -n "${MANIFEST:-}" ]; then
     cat "${MANIFEST}"
-  elif [ -n "${NKECTL:-}" ]; then
-    "${NKECTL}" get bootstrap-manifest
-  elif command -v nkectl >/dev/null 2>&1; then
-    nkectl get bootstrap-manifest
+  elif [ -n "${NVKECTL:-}" ]; then
+    "${NVKECTL}" get bootstrap-manifest
+  elif command -v nvkectl >/dev/null 2>&1; then
+    nvkectl get bootstrap-manifest
   else
-    (cd "${REPO_ROOT}/cli" && go run ./cmd/nkectl get bootstrap-manifest)
+    (cd "${REPO_ROOT}/cli" && go run ./cmd/nvkectl get bootstrap-manifest)
   fi
 }
 
@@ -77,7 +77,7 @@ list_images() {
 
 # has_host reports whether an image reference names a registry host: the
 # first path component contains a dot or a colon, is localhost, or has an
-# upper-case letter (repository names are lower case). Same rule as nkectl.
+# upper-case letter (repository names are lower case). Same rule as nvkectl.
 has_host() {
   case "$1" in
     */*) first="${1%%/*}"; case "$first" in *.*|*:*|localhost|*[A-Z]*) return 0 ;; esac ;;

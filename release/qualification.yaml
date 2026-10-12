@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# What is qualified when NKE is qualified as a whole. The subject is nke, and
+# What is qualified when NVKE is qualified as a whole. The subject is nvke, and
 # its version, a beta tag on main, is the plan's version.
 #
-# components are the parts of NKE tested together. Each carries selectors that
+# components are the parts of NVKE tested together. Each carries selectors that
 # say which version to take, and the only selector is `latest`. One choice of
 # versions for all of them is a combination.
 #
@@ -24,13 +24,13 @@
 # that same line. A selector would replace an exact pin with float, which is
 # strictly weaker.
 
-apiVersion: nke.nvidia.com/v1alpha1
+apiVersion: nvke.nvidia.com/v1alpha1
 kind: Qualification
 metadata:
-  name: nke
-  description: How NKE as a whole is qualified.
+  name: nvke
+  description: How NVKE as a whole is qualified.
 spec:
-  subject: nke
+  subject: nvke
 
   components:
     - {name: controller,       selectors: [latest]}

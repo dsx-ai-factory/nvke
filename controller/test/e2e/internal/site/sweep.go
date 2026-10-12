@@ -10,10 +10,10 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
-// Tenants is the part of the controller client a sweep needs. *nke.Client satisfies
+// Tenants is the part of the controller client a sweep needs. *nvke.Client satisfies
 // it.
 type Tenants interface {
 	ListClusters(ctx context.Context) ([]api.Cluster, error)

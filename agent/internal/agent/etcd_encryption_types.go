@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 // ---------------------------------------------------------------------------

@@ -19,10 +19,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	enginev1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
+	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/machinerelease"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/machinerelease"
 )
 
 func discardLogger() *slog.Logger {
@@ -33,9 +33,9 @@ func TestClient_ResolveNodePoolUpgrade(t *testing.T) {
 	t.Parallel()
 
 	reader := testReleaseReader(t, releaseFixtures{
-		newReleaseFixture("nke-injected", "", "amd64", "", "2026-01-01", true, false),
-		newReleaseFixture("nke-embedded-1.31.9", "1.31.9", "amd64", "", "2026-01-01", false, false),
-		newReleaseFixture("nke-embedded-1.32.0", "1.32.0", "amd64", "", "2026-01-10", false, false),
+		newReleaseFixture("nvke-injected", "", "amd64", "", "2026-01-01", true, false),
+		newReleaseFixture("nvke-embedded-1.31.9", "1.31.9", "amd64", "", "2026-01-01", false, false),
+		newReleaseFixture("nvke-embedded-1.32.0", "1.32.0", "amd64", "", "2026-01-10", false, false),
 	})
 
 	nodePoolID := uuid.New()
@@ -51,23 +51,23 @@ func TestClient_ResolveNodePoolUpgrade(t *testing.T) {
 	t.Run("injected release keeps its name, updates KubernetesVersion", func(t *testing.T) {
 		t.Parallel()
 
-		updated, err := New().ResolveNodePoolUpgrade(t.Context(), reader, controlPlanePool("nke-injected"), "1.32.0", discardLogger())
+		updated, err := New().ResolveNodePoolUpgrade(t.Context(), reader, controlPlanePool("nvke-injected"), "1.32.0", discardLogger())
 		require.NoError(t, err)
 		assert.Equal(t, "1.32.0", updated.KubernetesVersion)
 		provider, err := updated.NicoProvider()
 		require.NoError(t, err)
-		assert.Equal(t, "nke-injected", provider.OSProfile, "an injected release should not be selected anew")
+		assert.Equal(t, "nvke-injected", provider.OSProfile, "an injected release should not be selected anew")
 	})
 
 	t.Run("embedded release selects a new release for the target version", func(t *testing.T) {
 		t.Parallel()
 
-		updated, err := New().ResolveNodePoolUpgrade(t.Context(), reader, controlPlanePool("nke-embedded-1.31.9"), "1.32.0", discardLogger())
+		updated, err := New().ResolveNodePoolUpgrade(t.Context(), reader, controlPlanePool("nvke-embedded-1.31.9"), "1.32.0", discardLogger())
 		require.NoError(t, err)
 		assert.Equal(t, "1.32.0", updated.KubernetesVersion)
 		provider, err := updated.NicoProvider()
 		require.NoError(t, err)
-		assert.Equal(t, "nke-embedded-1.32.0", provider.OSProfile)
+		assert.Equal(t, "nvke-embedded-1.32.0", provider.OSProfile)
 	})
 
 	t.Run("missing nico payload errors", func(t *testing.T) {
@@ -80,7 +80,7 @@ func TestClient_ResolveNodePoolUpgrade(t *testing.T) {
 	t.Run("no reader errors", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := New().ResolveNodePoolUpgrade(t.Context(), nil, controlPlanePool("nke-injected"), "1.32.0", discardLogger())
+		_, err := New().ResolveNodePoolUpgrade(t.Context(), nil, controlPlanePool("nvke-injected"), "1.32.0", discardLogger())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "release reader is not configured")
 	})
@@ -92,12 +92,12 @@ func TestClient_ResolveNodePoolUpgrade(t *testing.T) {
 func TestClient_ResolveNodePoolUpgradeRejectsBadInjectionAnnotation(t *testing.T) {
 	t.Parallel()
 
-	fixture := newReleaseFixture("nke-undeclared", "1.31.9", "amd64", "", "2026-01-01", false, false)
+	fixture := newReleaseFixture("nvke-undeclared", "1.31.9", "amd64", "", "2026-01-01", false, false)
 	fixture.release.Annotations[enginev1.MachineInitKubernetesVersionInjectedAnnotation] = "maybe"
 	reader := testReleaseReader(t, releaseFixtures{fixture})
 
 	pool := db.NodePool{ID: uuid.New(), KubernetesVersion: "1.31.9", ControlPlane: true}
-	pool.SetNico(db.NicoNodePoolProvider{OSProfile: "nke-undeclared"})
+	pool.SetNico(db.NicoNodePoolProvider{OSProfile: "nvke-undeclared"})
 
 	_, err := New().ResolveNodePoolUpgrade(t.Context(), reader, pool, "1.32.0", discardLogger())
 	require.ErrorIs(t, err, machinerelease.ErrInvalidRelease)
@@ -112,10 +112,10 @@ func TestClient_ResolveNodePoolUpgradeReadsNodePoolReleases(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, enginev1.AddToScheme(scheme))
 	reader := fake.NewClientBuilder().WithScheme(scheme).
-		WithObjects(newNodePoolReleaseFixture("nke-worker-injected", true)...).Build()
+		WithObjects(newNodePoolReleaseFixture("nvke-worker-injected", true)...).Build()
 
 	pool := db.NodePool{ID: uuid.New(), KubernetesVersion: "1.31.9"}
-	pool.SetNico(db.NicoNodePoolProvider{OSProfile: "nke-worker-injected"})
+	pool.SetNico(db.NicoNodePoolProvider{OSProfile: "nvke-worker-injected"})
 
 	updated, err := New().ResolveNodePoolUpgrade(t.Context(), reader, pool, "1.32.0", discardLogger())
 	require.NoError(t, err)
@@ -237,9 +237,9 @@ func TestResolveRelease_CurrentReleaseNotInstalled(t *testing.T) {
 		newReleaseFixture("nke-1.31.9-260101", "1.31.9", "amd64", "", "2026-01-01", false, false),
 	})
 
-	_, err := resolveRelease(t.Context(), reader, true, "nke-unknown-profile")
+	_, err := resolveRelease(t.Context(), reader, true, "nvke-unknown-profile")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), `ClusterRelease "nke-unknown-profile" is not installed`)
+	assert.Contains(t, err.Error(), `ClusterRelease "nvke-unknown-profile" is not installed`)
 }
 
 func TestSelectUpgradeRelease_BuildDateOrdering(t *testing.T) {
@@ -277,13 +277,13 @@ func TestSelectUpgradeRelease_SkipsDeprecatedAndKeepsInjected(t *testing.T) {
 		newReleaseFixture("nke-1.30.5-260101", "1.30.5", "amd64", "", "2026-01-01", false, true),
 		newReleaseFixture("nke-1.31.9-retired", "1.31.9", "amd64", "", "2026-02-01", false, true),
 		newReleaseFixture("nke-1.31.9-fixed", "1.31.9", "amd64", "", "2026-01-10", false, false),
-		newReleaseFixture("nke-injected", "", "amd64", "", "2026-01-20", true, false),
+		newReleaseFixture("nvke-injected", "", "amd64", "", "2026-01-20", true, false),
 	})
 
 	result, err := selectUpgradeRelease(t.Context(), reader, true, "1.35.0", "nke-1.30.5-260101",
 		currentReleaseImage(t, reader, "nke-1.30.5-260101"), discardLogger())
 	require.NoError(t, err)
-	assert.Equal(t, "nke-injected", result)
+	assert.Equal(t, "nvke-injected", result)
 }
 
 func TestSelectUpgradeRelease_LoggingBehavior(t *testing.T) {

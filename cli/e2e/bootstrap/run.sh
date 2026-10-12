@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# `nkectl bootstrap site` e2e entrypoint, invoked by `make test-e2e-bootstrap`
-# and the "nkectl bootstrap e2e" CI workflow.
+# `nvkectl bootstrap site` e2e entrypoint, invoked by `make test-e2e-bootstrap`
+# and the "nvkectl bootstrap e2e" CI workflow.
 #
 # Stages:
 #   1. Fake node containers come up and nke-agent answers on each.
@@ -19,18 +19,18 @@
 #   4. Every site spec node reports Ready through the kubeconfig the command
 #      wrote -- the cluster an operator gets, not the bootstrap cluster.
 #      Check the API endpoint, BGP next-hops and readiness through the VIP.
-#      Set NKECTL_E2E_CONTROL_PLANE_VIP="" only with NKECTL_E2E_NODES=1 to
+#      Set NVKECTL_E2E_CONTROL_PLANE_VIP="" only with NVKECTL_E2E_NODES=1 to
 #      exercise the supported single-node configuration without kube-vip.
 #   5. Traefik serves a whoami Deployment on that cluster: hosts that already
 #      existed now serve traffic like any other cluster.
 #
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit. A failing exit
-# first collects diagnostics into NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.
+# first collects diagnostics into NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.
 #
 # The suite runs entirely on nerdctl/containerd, which `make -C cli
 # check-no-docker` keeps true. It needs on the host: nerdctl and a containerd
-# for kind to drive (nkectl sets KIND_EXPERIMENTAL_PROVIDER=nerdctl
+# for kind to drive (nvkectl sets KIND_EXPERIMENTAL_PROVIDER=nerdctl
 # unconditionally; kind states 1.7.0 as its minimum), buildkitd for `nerdctl
 # build` to reach, and root or sudo to install iptables FORWARD rules and
 # the SPIRE VIP. `cli/hack/bootstrap-e2e-host.sh install-runtime` sets up the
@@ -38,7 +38,7 @@
 #
 # jq is required for BGP route checks when the control-plane VIP is enabled.
 #
-# NKECTL_CWE_IMAGE must already be in containerd's image store: nkectl saves it
+# NVKECTL_CONTROLLER_IMAGE must already be in containerd's image store: nvkectl saves it
 # from there and loads it into the kind cluster rather than pulling from inside
 # the cluster, so no registry credentials are needed past that point.
 
@@ -48,38 +48,38 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
-NKECTL="${NKECTL:-${CLI_DIR}/bin/nkectl}"
-# The site spec is generated per run by `nkectl generate sitespec`, so this lane
+NVKECTL="${NVKECTL:-${CLI_DIR}/bin/nvkectl}"
+# The site spec is generated per run by `nvkectl generate sitespec`, so this lane
 # tests the command an operator uses rather than a fixture kept in step with it
 # by hand. Only the cluster name is fixed here.
 E2E_CLUSTER_NAME="nke-e2e"
-BOOTSTRAP_KIND_CLUSTER="${NKECTL_BOOTSTRAP_CLUSTER_NAME:-nkectl-bootstrap}"
+BOOTSTRAP_KIND_CLUSTER="${NVKECTL_BOOTSTRAP_CLUSTER_NAME:-nvkectl-bootstrap}"
 BOOTSTRAP_CONTROL_PLANE="${BOOTSTRAP_KIND_CLUSTER}-control-plane"
 # The fake-node fixture, as the substrate package names it: N containers on one
 # private network, named by prefix and index. The defaults here mirror
 # substrate.DefaultConfig; override the same variables to change both.
-NODE_COUNT="${NKECTL_E2E_NODES:-3}"
-NODE_PREFIX="${NKECTL_E2E_NAME_PREFIX:-node}"
-NODE_NETWORK="${NKECTL_E2E_NETWORK:-nkectl-e2e-nodes}"
-NODE1="nkectl-e2e-${NODE_PREFIX}1"
+NODE_COUNT="${NVKECTL_E2E_NODES:-3}"
+NODE_PREFIX="${NVKECTL_E2E_NAME_PREFIX:-node}"
+NODE_NETWORK="${NVKECTL_E2E_NETWORK:-nvkectl-e2e-nodes}"
+NODE1="nvkectl-e2e-${NODE_PREFIX}1"
 # The port nke-agent listens on, as the site spec's nodeAgentPort defaults it.
 NODE_AGENT_PORT=15005
 # SiteSpec generation records the exact journal boundary and expected result
 # for every node here. The later check reads the same file after bootstrap.
-export NKECTL_E2E_ATTESTATION_BASELINE="${CLI_DIR}/.local/attestation-baseline.json"
+export NVKECTL_E2E_ATTESTATION_BASELINE="${CLI_DIR}/.local/attestation-baseline.json"
 # Where the node images' spire-agents were built to look for the SPIRE server.
-SPIRE_VIP="${NKECTL_E2E_SPIRE_SERVER_ADDRESS:-172.26.0.2}"
+SPIRE_VIP="${NVKECTL_E2E_SPIRE_SERVER_ADDRESS:-172.26.0.2}"
 # Use a value that differs from bootstrap's derived
 # "<bootstrap-cluster>.nke.local" default. The generated site spec and the
 # pre-provisioned agents must receive this same explicit trust domain, or node
 # attestation fails.
-SPIRE_TRUST_DOMAIN="${NKECTL_E2E_SPIRE_TRUST_DOMAIN:-nkectl-e2e.example.test}"
-export NKECTL_E2E_SPIRE_TRUST_DOMAIN="${SPIRE_TRUST_DOMAIN}"
+SPIRE_TRUST_DOMAIN="${NVKECTL_E2E_SPIRE_TRUST_DOMAIN:-nvkectl-e2e.example.test}"
+export NVKECTL_E2E_SPIRE_TRUST_DOMAIN="${SPIRE_TRUST_DOMAIN}"
 # First CSV node, used for Traefik access. The controller may initialize another node.
-INIT_NODE_IP="${NKECTL_E2E_INIT_NODE_IP:-172.26.0.10}"
+INIT_NODE_IP="${NVKECTL_E2E_INIT_NODE_IP:-172.26.0.10}"
 # Where Traefik is published on the new cluster, and where stage 5 asks for the
 # page. In the NodePort range, and clear of the SPIRE server's 30081.
-TRAEFIK_NODE_PORT="${NKECTL_E2E_TRAEFIK_NODE_PORT:-30082}"
+TRAEFIK_NODE_PORT="${NVKECTL_E2E_TRAEFIK_NODE_PORT:-30082}"
 # Where `bootstrap site` writes the finished cluster's kubeconfig, and the key
 # that encrypts its etcd data.
 TENANT_KUBECONFIG="${SCRIPT_DIR}/.tenant.kubeconfig"
@@ -89,9 +89,9 @@ BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
 # Keep the VIP outside the node subnet so nodes route through the host's
 # BGP-learned /32 instead of ARPing for another node's loopback address.
 # An explicit empty value disables the VIP; an unset variable uses the default.
-CONTROL_PLANE_VIP="${NKECTL_E2E_CONTROL_PLANE_VIP-172.26.1.1}"
+CONTROL_PLANE_VIP="${NVKECTL_E2E_CONTROL_PLANE_VIP-172.26.1.1}"
 if [ -z "${CONTROL_PLANE_VIP}" ] && [ "${NODE_COUNT}" -gt 1 ]; then
-  printf 'FAIL: NKECTL_E2E_CONTROL_PLANE_VIP may be empty only when NKECTL_E2E_NODES=1; multi-node control planes require kube-vip\n' >&2
+  printf 'FAIL: NVKECTL_E2E_CONTROL_PLANE_VIP may be empty only when NVKECTL_E2E_NODES=1; multi-node control planes require kube-vip\n' >&2
   exit 1
 fi
 if [ -n "${CONTROL_PLANE_VIP}" ] && ! command -v jq >/dev/null 2>&1; then
@@ -99,26 +99,26 @@ if [ -n "${CONTROL_PLANE_VIP}" ] && ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 # FRR learns the VIP /32 from kube-vip and installs it in the host routing table.
-BGP_CONTAINER="nkectl-e2e-bgp"
-FRR_IMAGE="${NKECTL_E2E_FRR_IMAGE:-quay.io/frrouting/frr:9.1.0}"
+BGP_CONTAINER="nvkectl-e2e-bgp"
+FRR_IMAGE="${NVKECTL_E2E_FRR_IMAGE:-quay.io/frrouting/frr:9.1.0}"
 REPO_ROOT="$(dirname "${CLI_DIR}")"
 BGP_FILES_DIR="${REPO_ROOT}/controller/hack/bgp-containers"
 # Scratch dir for the rendered FRR config, bind-mounted into the container.
 BGP_RENDER_DIR="${SCRIPT_DIR}/.bgp"
-: "${NKECTL_CWE_IMAGE:?NKECTL_CWE_IMAGE must name the controller image to deploy, already present in containerd (see comment above)}"
-export NKECTL_CWE_IMAGE
+: "${NVKECTL_CONTROLLER_IMAGE:?NVKECTL_CONTROLLER_IMAGE must name the controller image to deploy, already present in containerd (see comment above)}"
+export NVKECTL_CONTROLLER_IMAGE
 
 # The Cluster API infrastructure provider for hosts that already exist, built
-# below from this checkout. Without it the CAPI objects the NKE controller writes have no
-# reconciler and the cluster never leaves provisioning. nkectl finds the
+# below from this checkout. Without it the CAPI objects the NVKE controller writes have no
+# reconciler and the cluster never leaves provisioning. nvkectl finds the
 # kustomize base by walking up to go.work, so only the image is named here.
-export NKECTL_CAPI_PROVISIONED_IMAGE="${NKECTL_CAPI_PROVISIONED_IMAGE:-cluster-api-provider-provisioned:latest}"
+export NVKECTL_CAPI_PROVISIONED_IMAGE="${NVKECTL_CAPI_PROVISIONED_IMAGE:-cluster-api-provider-provisioned:latest}"
 
 # Where a failed bootstrap writes its cluster dump. Set explicitly because
-# nkectl's default is relative to the working directory, which would put the
+# nvkectl's default is relative to the working directory, which would put the
 # bundle where the CI artifact path does not match.
 DIAGNOSTICS_DIR="${CLI_DIR}/cluster-diagnostics"
-export NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}"
+export NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}"
 
 # `kind create cluster` merges into $KUBECONFIG, defaulting to ~/.kube/config:
 # use a scratch path so this run never takes ownership of the caller's. Under
@@ -135,7 +135,7 @@ export KUBECACHEDIR="${KUBECONFIG_DIR}/cache"
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
-log() { printf '[nkectl-bootstrap-e2e] %s\n' "$*"; }
+log() { printf '[nvkectl-bootstrap-e2e] %s\n' "$*"; }
 
 # fail logs one or more lines as a failure and exits 1. The EXIT trap then
 # collects diagnostics and tears down whatever was created.
@@ -164,10 +164,10 @@ cleanup() {
     eval "${DEFERRED[$i]}" || true
   done
 
-  # Same cause as the KUBECONFIG scratch path above: under `sudo -E` nkectl
+  # Same cause as the KUBECONFIG scratch path above: under `sudo -E` nvkectl
   # writes this bundle as root, and the CI step that uploads it runs as the
   # normal user, which cannot traverse a root-owned 0750 directory. Hand
-  # ownership back rather than loosening nkectl's file modes.
+  # ownership back rather than loosening nvkectl's file modes.
   if [ -n "${SUDO_UID:-}" ] && [ -d "${DIAGNOSTICS_DIR}" ]; then
     log "restoring ownership of ${DIAGNOSTICS_DIR} to uid ${SUDO_UID}"
     chown -R "${SUDO_UID}:${SUDO_GID:-${SUDO_UID}}" "${DIAGNOSTICS_DIR}" || true
@@ -295,7 +295,7 @@ collect_diagnostics() {
 
   log "collecting kubelet, containerd, nke-agent and spire-agent diagnostics from ${NODE_COUNT} fake node(s)"
   for ((i = 1; i <= NODE_COUNT; i++)); do
-    node="nkectl-e2e-${NODE_PREFIX}${i}"
+    node="nvkectl-e2e-${NODE_PREFIX}${i}"
     output="${DIAGNOSTICS_DIR}/host-diagnostics-${NODE_PREFIX}${i}.txt"
     {
       printf '### journalctl: kubelet, containerd, nke-agent, spire-agent\n'
@@ -366,14 +366,14 @@ else
   sudo bash "${CLI_DIR}/../controller/hack/ensure-vtpm-proxy.sh"
 fi
 
-log "building the provisioned CAPI provider image (${NKECTL_CAPI_PROVISIONED_IMAGE})"
+log "building the provisioned CAPI provider image (${NVKECTL_CAPI_PROVISIONED_IMAGE})"
 # Its Docker Hub bases come through NKE_E2E_DOCKERHUB_MIRROR when set, like
 # every other image the lanes build on the host.
 # shellcheck source=../../../controller/hack/backend-e2e-lib.sh
 source "${REPO_ROOT}/controller/hack/backend-e2e-lib.sh"
 mirror_build_args="$(dockerhub_build_args "${REPO_ROOT}/cluster-api-provider-provisioned/Dockerfile" | paste -sd ' ' -)"
 make -C "${CLI_DIR}" ensure-provisioned-provider-image \
-  CAPI_PROVISIONED_IMAGE="${NKECTL_CAPI_PROVISIONED_IMAGE}" \
+  CAPI_PROVISIONED_IMAGE="${NVKECTL_CAPI_PROVISIONED_IMAGE}" \
   DOCKERHUB_MIRROR_BUILD_ARGS="${mirror_build_args}"
 
 # The completed images are sufficient from this point. On a CI runner,
@@ -390,15 +390,15 @@ fi
 log "collecting each node's TPM EK thumbprint and the bootstrap CA"
 HOSTS_CSV="${SCRIPT_DIR}/.hosts.csv"
 # shellcheck disable=SC2046 # the assignments are the documented output contract
-export $(NKECTL_E2E_HOSTS_CSV="${HOSTS_CSV}" \
+export $(NVKECTL_E2E_HOSTS_CSV="${HOSTS_CSV}" \
   make -C "${CLI_DIR}" --no-print-directory nodes-hosts | xargs)
 
 # Both or neither. Without a CA, SPIRE self-signs — a supported configuration,
 # so the lane does not require one.
 spire_set=()
-if [[ -n "${NKECTL_E2E_SPIRE_CA_CERT:-}" && -n "${NKECTL_E2E_SPIRE_CA_KEY:-}" ]]; then
-  spire_set=(--set "spire.caCertFile=${NKECTL_E2E_SPIRE_CA_CERT}"
-             --set "spire.caKeyFile=${NKECTL_E2E_SPIRE_CA_KEY}")
+if [[ -n "${NVKECTL_E2E_SPIRE_CA_CERT:-}" && -n "${NVKECTL_E2E_SPIRE_CA_KEY:-}" ]]; then
+  spire_set=(--set "spire.caCertFile=${NVKECTL_E2E_SPIRE_CA_CERT}"
+             --set "spire.caKeyFile=${NVKECTL_E2E_SPIRE_CA_KEY}")
 fi
 
 # Omit the VIP field when disabled.
@@ -407,10 +407,10 @@ if [ -n "${CONTROL_PLANE_VIP}" ]; then
   vip_set=(--set "cluster.controlPlaneVIP=${CONTROL_PLANE_VIP}")
 fi
 
-log "generating the site spec: nkectl generate sitespec ${E2E_CLUSTER_NAME} --nodes ${NKECTL_E2E_HOSTS_CSV}"
+log "generating the site spec: nvkectl generate sitespec ${E2E_CLUSTER_NAME} --nodes ${NVKECTL_E2E_HOSTS_CSV}"
 RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.rendered.yaml"
-"${NKECTL}" generate sitespec "${E2E_CLUSTER_NAME}" \
-  --nodes "${NKECTL_E2E_HOSTS_CSV}" \
+"${NVKECTL}" generate sitespec "${E2E_CLUSTER_NAME}" \
+  --nodes "${NVKECTL_E2E_HOSTS_CSV}" \
   --set cluster.k8sVersion=1.34.8 \
   --set cluster.cniName=ovn-kubernetes \
   --set cluster.cniVersion=1.4.0 \
@@ -508,9 +508,9 @@ fi
 # leftover from an interrupted run has to go first.
 rm -f "${ETCD_KEY_FILE}"
 
-log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
-  "(NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}," \
-  "NKECTL_CAPI_PROVISIONED_IMAGE=${NKECTL_CAPI_PROVISIONED_IMAGE})"
+log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
+  "(NVKECTL_CONTROLLER_IMAGE=${NVKECTL_CONTROLLER_IMAGE}," \
+  "NVKECTL_CAPI_PROVISIONED_IMAGE=${NVKECTL_CAPI_PROVISIONED_IMAGE})"
 
 # In the background, because the attach below has to happen *during* the run:
 # The controller and the spire-agents talk over the node network, which the bootstrap
@@ -519,16 +519,16 @@ log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-clu
 # --keep-bootstrap-cluster: this suite's EXIT trap removes the cluster, and the
 # teardown registers here because the command can fail after creating it.
 defer teardown_bootstrap_cluster
-# setsid makes nkectl a process-group leader so abort_bootstrap can signal the
-# kind, nerdctl and helm it drives as one group; nkectl does not forward
+# setsid makes nvkectl a process-group leader so abort_bootstrap can signal the
+# kind, nerdctl and helm it drives as one group; nvkectl does not forward
 # signals to its children.
-setsid "${NKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
+setsid "${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
   --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" \
   --encryption-key-out "${ETCD_KEY_FILE}" >"${BOOTSTRAP_LOG}" 2>&1 &
 bootstrap_pid=$!
 
 # abort_bootstrap stops the background `bootstrap site` and its children before
-# this script exits -- nkectl runs as a process-group leader, so the whole
+# this script exits -- nvkectl runs as a process-group leader, so the whole
 # group is signalled and reaped. Otherwise the EXIT trap would delete the
 # cluster the command is still driving.
 abort_bootstrap() {
@@ -626,7 +626,7 @@ attach_bootstrap_to_node_network() {
 # and abandoned if the command exits first.
 log "waiting for the bootstrap cluster to become ready, to attach it to the node network at ${SPIRE_VIP}"
 attached=false
-attach_deadline=$((SECONDS + ${NKECTL_E2E_ATTACH_TIMEOUT:-1200}))
+attach_deadline=$((SECONDS + ${NVKECTL_E2E_ATTACH_TIMEOUT:-1200}))
 while kill -0 "${bootstrap_pid}" 2>/dev/null && [ "${SECONDS}" -lt "${attach_deadline}" ]; do
   if grep -q "bootstrap kind cluster ready" "${BOOTSTRAP_LOG}" 2>/dev/null; then
     if attach_bootstrap_to_node_network; then
@@ -654,7 +654,7 @@ cat "${BOOTSTRAP_LOG}"
 output="$(cat "${BOOTSTRAP_LOG}")"
 
 if [ "${status}" -ne 0 ]; then
-  fail "nkectl bootstrap site exited ${status}"
+  fail "nvkectl bootstrap site exited ${status}"
 fi
 if ! grep -q "controller deployment healthy" <<<"${output}"; then
   fail "the controller was never confirmed healthy on /readyz"
@@ -714,7 +714,7 @@ all_nodes_ready() {
 
 # ── Stage 4: every pre-provisioned host is a Ready node ─────────────────
 #
-# Every site spec node joins as a control-plane node and nkectl removes the
+# Every site spec node joins as a control-plane node and nvkectl removes the
 # control-plane taint once they have all joined, so all must be Ready and
 # schedulable. The controller joins them one at a time, ~6 min apart, so the third
 # kubelet starts ~13 min after the cluster is created.
@@ -722,7 +722,7 @@ all_nodes_ready() {
 log "waiting for ${expected_nodes} nodes to report Ready"
 total_nodes=0
 ready_nodes=0
-if ! wait_until "${NKECTL_E2E_NODE_READY_TIMEOUT_SECONDS:-1200}" 5 all_nodes_ready; then
+if ! wait_until "${NVKECTL_E2E_NODE_READY_TIMEOUT_SECONDS:-1200}" 5 all_nodes_ready; then
   kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes -o wide || true
   fail "${ready_nodes} of ${expected_nodes} site spec nodes became Ready (${total_nodes} exist)"
 fi
@@ -759,7 +759,7 @@ else
   # Wait for FRR to learn a next-hop for every control-plane node.
   expected_hops="${cp_node_ips}"
   log "waiting for FRR to learn ${CONTROL_PLANE_VIP}/32 with next-hops: $(echo "${expected_hops}" | tr '\n' ' ')"
-  hops_deadline=$((SECONDS + ${NKECTL_E2E_VIP_BGP_TIMEOUT_SECONDS:-180}))
+  hops_deadline=$((SECONDS + ${NVKECTL_E2E_VIP_BGP_TIMEOUT_SECONDS:-180}))
   learned_hops=""
   while [ "${SECONDS}" -lt "${hops_deadline}" ]; do
     learned_hops="$(bgp_vip_nexthops)"
@@ -786,7 +786,7 @@ else
     kubectl --kubeconfig "${TENANT_KUBECONFIG}" --server "https://${CONTROL_PLANE_VIP}:6443" \
       get --raw /readyz >/dev/null 2>&1
   }
-  if wait_until "${NKECTL_E2E_VIP_READYZ_TIMEOUT_SECONDS:-60}" 3 vip_readyz; then
+  if wait_until "${NVKECTL_E2E_VIP_READYZ_TIMEOUT_SECONDS:-60}" 3 vip_readyz; then
     log "PASS: the API server answered /readyz through the VIP https://${CONTROL_PLANE_VIP}:6443"
   else
     log "FAIL: the API server did not answer /readyz through the VIP https://${CONTROL_PLANE_VIP}:6443"
@@ -808,8 +808,8 @@ log "checking that etcd data is encrypted at rest"
 key_mode=$(stat -c '%a' "${ETCD_KEY_FILE}")
 [ "${key_mode}" = "600" ] || fail "${ETCD_KEY_FILE} has mode ${key_mode}, want 600"
 
-probe_name="nkectl-e2e-encryption-probe"
-plaintext_marker="nkectl-e2e-plaintext-marker-$(date +%s)"
+probe_name="nvkectl-e2e-encryption-probe"
+plaintext_marker="nvkectl-e2e-plaintext-marker-$(date +%s)"
 kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n default create secret generic "${probe_name}" \
   --from-literal=probe="${plaintext_marker}" >/dev/null
 etcd_pod=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n kube-system get pods -l component=etcd \
@@ -844,7 +844,7 @@ saved_active=$(sed -n 's/.*"active": "\([^"]*\)".*/\1/p' "${ETCD_KEY_FILE}" | he
 [ -n "${saved_active}" ] || fail "${ETCD_KEY_FILE} carries no active key"
 saved_digest=$(printf '%s' "${saved_active}" | base64 -d | sha256sum | cut -d' ' -f1)
 for ((i = 1; i <= NODE_COUNT; i++)); do
-  node="nkectl-e2e-${NODE_PREFIX}${i}"
+  node="nvkectl-e2e-${NODE_PREFIX}${i}"
   node_digest=$(nerdctl exec "${node}" \
     awk '/secret:/ {printf "%s", $2; exit}' /etc/kubernetes/kube-api-encryption/encryption-config.yaml \
     | sha256sum | cut -d' ' -f1)
@@ -864,7 +864,7 @@ hello_world_served() {
 
 # ── Stage 4c: the control-plane taint is gone ───────────────────────────
 #
-# The site spec declares no worker nodes, so nkectl must have removed the
+# The site spec declares no worker nodes, so nvkectl must have removed the
 # taint. The workloads below carry no toleration for it.
 
 log "checking that no node still carries the control-plane taint"
@@ -898,7 +898,7 @@ registry_routing 2>&1 | sed 's/^/  /' || true
 log "installing traefik on the new cluster"
 helm --kubeconfig "${TENANT_KUBECONFIG}" upgrade --install traefik traefik \
   --repo https://traefik.github.io/charts \
-  --version "${NKECTL_E2E_TRAEFIK_CHART_VERSION:-41.4.0}" \
+  --version "${NVKECTL_E2E_TRAEFIK_CHART_VERSION:-41.4.0}" \
   --namespace traefik --create-namespace \
   --set service.spec.type=NodePort \
   --set "ports.web.nodePort=${TRAEFIK_NODE_PORT}" \

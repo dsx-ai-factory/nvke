@@ -19,7 +19,7 @@ import (
 
 	"github.com/google/uuid"
 
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 func TestTokenRotation(t *testing.T) {

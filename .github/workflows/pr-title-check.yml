@@ -11,7 +11,7 @@
 #
 # `types` and `scopes` restate the rule's pattern. Read the live rule with:
 #
-#   gh api repos/dsx-ai-factory/nke/rules/branches/main \
+#   gh api repos/dsx-ai-factory/nvke/rules/branches/main \
 #     --jq '.[] | select(.type=="commit_message_pattern").parameters.pattern'
 #
 # Keep the two in step. The action anchors each entry with ^...$, so `scopes`
@@ -33,7 +33,7 @@ concurrency:
 jobs:
   pr-title:
     name: pr-title
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

@@ -14,8 +14,8 @@ import (
 	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1"
 	"google.golang.org/grpc/test/bufconn"
 
-	"github.com/dsx-ai-factory/nke/agent/internal/grpcserver"
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	"github.com/dsx-ai-factory/nvke/agent/internal/grpcserver"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 const bufConnSize = 1024 * 1024

@@ -16,7 +16,7 @@ import (
 
 	"google.golang.org/grpc/credentials"
 
-	"github.com/dsx-ai-factory/nke/agent/pkg/nkeauth"
+	"github.com/dsx-ai-factory/nvke/agent/pkg/nkeauth"
 )
 
 // authRecordTimeout bounds the base handshake and the record read together.

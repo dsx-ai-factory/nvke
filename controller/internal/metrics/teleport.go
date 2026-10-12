@@ -11,7 +11,7 @@ import (
 var (
 	teleportTokensCreated = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "nke_controller_teleport_tokens_created_total",
+			Name: "nvke_controller_teleport_tokens_created_total",
 			Help: "Total number of Teleport TPM join tokens created",
 		},
 		[]string{siteIDLabel},
@@ -19,7 +19,7 @@ var (
 
 	teleportTokenErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "nke_controller_teleport_token_errors_total",
+			Name: "nvke_controller_teleport_token_errors_total",
 			Help: "Total number of Teleport token creation errors",
 		},
 		[]string{siteIDLabel},
@@ -27,7 +27,7 @@ var (
 
 	teleportRegistrationLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "nke_controller_teleport_registration_latency_seconds",
+			Name:    "nvke_controller_teleport_registration_latency_seconds",
 			Help:    "Time from token creation to Teleport registration",
 			Buckets: []float64{60, 120, 300, 600, 900, 1200, 1800, 2400, 3600, 5400},
 		},
@@ -36,7 +36,7 @@ var (
 
 	teleportTokensSkipped = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "nke_controller_teleport_tokens_skipped_total",
+			Name: "nvke_controller_teleport_tokens_skipped_total",
 			Help: "Total number of token creations skipped (token recently created, still within refresh threshold)",
 		},
 		[]string{siteIDLabel},
@@ -44,7 +44,7 @@ var (
 
 	teleportConfirmations = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "nke_controller_teleport_confirmations_total",
+			Name: "nvke_controller_teleport_confirmations_total",
 			Help: "Total number of node registration confirmations (node appeared in Teleport)",
 		},
 		[]string{siteIDLabel},
@@ -52,7 +52,7 @@ var (
 
 	teleportDeconfirmations = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "nke_controller_teleport_deconfirmations_total",
+			Name: "nvke_controller_teleport_deconfirmations_total",
 			Help: "Total number of stale-node deconfirmations (anti-entropy corrections)",
 		},
 		[]string{siteIDLabel},

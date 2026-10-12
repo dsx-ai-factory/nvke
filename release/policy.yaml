@@ -11,10 +11,10 @@
 # A policy naming capabilities no runner has produces plans that nothing can
 # schedule, so a stream is added with the runner that backs it.
 
-apiVersion: nke.nvidia.com/v1alpha1
+apiVersion: nvke.nvidia.com/v1alpha1
 kind: QualificationPolicy
 metadata:
-  name: nke
+  name: nvke
   description: The streams a release can be qualified against and the scopes over them.
 spec:
   scopes:

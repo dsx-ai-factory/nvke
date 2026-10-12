@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewDeleteCmd returns the "nkectl delete nodepool <name>" subcommand.
+// NewDeleteCmd returns the "nvkectl delete nodepool <name>" subcommand.
 func NewDeleteCmd(clientFn ControllerClientFn) *cobra.Command {
 	var clusterName string
 
@@ -26,7 +26,7 @@ Deleting the last joined control-plane node pool of a cluster is rejected;
 delete the cluster instead.
 
 Example:
-  nkectl delete nodepool gpu-workers --cluster my-cluster`,
+  nvkectl delete nodepool gpu-workers --cluster my-cluster`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := clientFn()
@@ -42,7 +42,7 @@ Example:
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Node pool %q deletion started (id: %s)\n", pool.Name, pool.ID)
 			fmt.Fprintf(cmd.OutOrStdout(),
-				"Deletion is async — run 'nkectl get nodepools --cluster %s' to check status.\n", clusterName)
+				"Deletion is async — run 'nvkectl get nodepools --cluster %s' to check status.\n", clusterName)
 			return nil
 		},
 	}

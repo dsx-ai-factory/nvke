@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/providers"
+	"github.com/dsx-ai-factory/nvke/cli/internal/providers"
 )
 
 // defaultTimeout bounds the whole inspection. Without it an unreachable API
@@ -66,7 +66,7 @@ const (
 
 	// StateUnknown means a probe failed for a reason that is not absence —
 	// most often the kubeconfig cannot read Secrets in the manager's
-	// namespace. The provider may be fine; nkectl cannot tell.
+	// namespace. The provider may be fine; nvkectl cannot tell.
 	StateUnknown State = "UNKNOWN"
 )
 
@@ -93,10 +93,10 @@ type Status struct {
 // Status, so one bad provider does not hide the others.
 func Inspect(ctx context.Context, r Runner, kubeconfig string) ([]Status, error) {
 	if kubeconfig == "" {
-		return nil, fmt.Errorf("no kubeconfig configured for this site: run 'nkectl config set-site --kubeconfig <path>'")
+		return nil, fmt.Errorf("no kubeconfig configured for this site: run 'nvkectl config set-site --kubeconfig <path>'")
 	}
 	if _, err := os.Stat(kubeconfig); err != nil {
-		return nil, fmt.Errorf("reading kubeconfig %s: %w (set it with 'nkectl config set-site --kubeconfig <path>')", kubeconfig, err)
+		return nil, fmt.Errorf("reading kubeconfig %s: %w (set it with 'nvkectl config set-site --kubeconfig <path>')", kubeconfig, err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
@@ -425,7 +425,7 @@ func clusterError(what, out string, err error) error {
 		return fmt.Errorf("%s: the site kubeconfig may not list CRDs and Deployments cluster-wide, "+
 			"which this command needs: %w\n%s", what, err, strings.TrimSpace(out))
 	case strings.Contains(lower, "executable file not found"):
-		return fmt.Errorf("%s: kubectl was not found on PATH; nkectl needs it to read the site controller: %w", what, err)
+		return fmt.Errorf("%s: kubectl was not found on PATH; nvkectl needs it to read the site controller: %w", what, err)
 	default:
 		return fmt.Errorf("%s: %w\n%s", what, err, strings.TrimSpace(out))
 	}

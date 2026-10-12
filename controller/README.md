@@ -1,6 +1,6 @@
 # Cloud Workflow Engine
 
-Orchestrate NKE cluster creation and lifecycle operations.
+Orchestrate NVKE cluster creation and lifecycle operations.
 
 ## Tool Dependencies
 
@@ -69,7 +69,7 @@ The `api/` directory is a separate Go module that other projects (e.g. controlle
 To depend on a specific version:
 
 ```bash
-go get github.com/dsx-ai-factory/nke/controller/api@v0.0.1
+go get github.com/dsx-ai-factory/nvke/controller/api@v0.0.1
 ```
 
 Use the latest tagged version or a specific semver (e.g. `@v0.0.5`) as needed.
@@ -275,7 +275,7 @@ BuildKit.
 
 ### TPM support in Docker
 
-TPM is one of the node-attestation mechanisms CWE/NKE uses to establish SPIRE
+TPM is one of the node-attestation mechanisms CWE/NVKE uses to establish SPIRE
 node identity for SPIFFE-enabled nodes. In the TPM mode, Forge exposes the
 node's EK certificate through NICo, CAPNICo publishes the TPM EK pubhash on the
 `NicoMachine`, and CWE annotates the owning CAPI `Machine` with the TPM-shaped
@@ -472,15 +472,15 @@ You should now see the Swagger UI at http://localhost:8080/api/docs.
 
 ## API Authentication
 
-NKE can require a signed JWT on every `/api` request. It is off by default;
+NVKE can require a signed JWT on every `/api` request. It is off by default;
 mounting a configuration file turns it on.
 
 With it off, any caller that can reach `/api` has full administrative access:
 the whole cluster lifecycle, plus the pass-through endpoints that call the
-infrastructure provider using NKE's own credentials.
+infrastructure provider using NVKE's own credentials.
 
 A token is accepted when all four of the following hold: it was signed by an
-issuer you configured, it names NKE in `aud`, it has not expired, and its subject
+issuer you configured, it names NVKE in `aud`, it has not expired, and its subject
 matches an admission rule.
 
 Rules come in two shapes: Kubernetes service accounts (namespace plus name) and
@@ -490,38 +490,38 @@ service account token or a SPIRE JWT-SVID.
 Verifying the token is not enough on its own. Any workload author who can write a
 pod spec can have the kubelet project a token for their own service account,
 naming any audience they choose. No RBAC check applies to that audience. Admission
-rules keep every service account on the cluster from being an NKE administrator.
+rules keep every service account on the cluster from being an NVKE administrator.
 
-NKE does no authorization: every admitted caller can do everything. That is a
+NVKE does no authorization: every admitted caller can do everything. That is a
 platform responsibility.
 
 ### Local Development
 
 You don't need identity infrastructure to work on this. The cluster's own API
-server is an issuer, and the service account tokens it signs are JWTs, so NKE
+server is an issuer, and the service account tokens it signs are JWTs, so NVKE
 verifies them like any other issuer. The e2e suite takes the same path.
 
 For a step-by-step walkthrough of getting a token and calling the API, including
 what to check when you get an unexpected 401, see
-[Authenticating to the NKE API](docs/authenticating-to-the-api.md).
+[Authenticating to the NVKE API](docs/authenticating-to-the-api.md).
 
-`tilt up` deploys an enforcing NKE with the config in
+`tilt up` deploys an enforcing NVKE with the config in
 `deploy/k8s/nke-auth-dev.yaml`, two client identities (one admitted, one not),
 and the binding described under RBAC Prerequisite.
 
-`nkectl` uses that admitted identity. After `nkectl config set-site` with the
+`nvkectl` uses that admitted identity. After `nvkectl config set-site` with the
 kind kubeconfig, CWE commands mint tokens on their own. There is no token
 environment variable:
 
 ```bash
-nkectl config set-site --name local \
+nvkectl config set-site --name local \
   --url http://localhost:8080 \
   --kubeconfig ~/.kube/config
-nkectl get clusters
+nvkectl get clusters
 ```
 
 ```bash
-./hack/nke-auth-demo.sh    # four credentials, prints the status code for each
+./hack/nvke-auth-demo.sh    # four credentials, prints the status code for each
 ```
 
 Mint a token for `curl` yourself:
@@ -542,7 +542,7 @@ NKE_PERMISSIVE_MODE=true tilt up
 For a step-by-step guide to configuring authentication on a deployment you
 operate: writing the config, per-issuer recipes, and moving a running site from
 permissive to enforcing. See
-[Configuring NKE API Authentication](docs/configuring-api-authentication.md).
+[Configuring NVKE API Authentication](docs/configuring-api-authentication.md).
 
 With the Helm chart, set the `apiAuth` values:
 
@@ -556,7 +556,7 @@ apiAuth:
   clusterIssuerDiscovery: true  # see RBAC Prerequisite below
 ```
 
-The chart renders those into the two environment variables NKE reads. Set them
+The chart renders those into the two environment variables NVKE reads. Set them
 directly if you deploy without the chart. Both are read at startup, and so is
 the configuration file, so changing any of them needs a pod restart. The chart
 arranges that restart itself; see [Authentication Configuration](#authentication-configuration) below.
@@ -571,16 +571,16 @@ A deployment that never sets `AUTH_CONFIG_PATH` stays disabled across upgrades.
 
 Permissive is a migration tool, not a setting to leave on. Use it to see who would
 be rejected before anyone actually is: watch
-`nke_auth_requests_total{outcome="would_reject"}` until it stays at zero, then
+`nvke_auth_requests_total{outcome="would_reject"}` until it stays at zero, then
 turn it off. The `reason` and `issuer` labels say what was wrong and whose token
 it was. It suppresses the 403 as well as the 401, so no caller is rejected.
 
-If `AUTH_CONFIG_PATH` is set but unreadable, NKE will not start, rather than
+If `AUTH_CONFIG_PATH` is set but unreadable, NVKE will not start, rather than
 starting with authentication disabled.
 
 ### Authentication Configuration
 
-NKE reads one file, mounted at `AUTH_CONFIG_PATH` from a ConfigMap named by
+NVKE reads one file, mounted at `AUTH_CONFIG_PATH` from a ConfigMap named by
 `apiAuth.configMap.name`. Populate it one of two ways: let the chart render it
 from `apiAuth.config` (`configMap.create: true`), or supply your own ConfigMap
 and leave `create` false. Setting `apiAuth.config` without `create`, or
@@ -731,7 +731,7 @@ issuers:
 
 ### RBAC Prerequisite
 
-An issuer pointing at the cluster's own `/openid/v1/jwks` needs NKE's
+An issuer pointing at the cluster's own `/openid/v1/jwks` needs NVKE's
 ServiceAccount to hold `system:service-account-issuer-discovery`. The endpoint
 requires authentication; an anonymous fetch is refused.
 
@@ -750,13 +750,13 @@ kubectl create clusterrolebinding nke-service-account-issuer-discovery \
 
 ### Calling the API from Scripts and CI
 
-Interactive use is `nkectl`: it mints the same identity from the site
-kubeconfig. `hack/nke-token.sh` is for `curl` and scripts. It prints a bearer
+Interactive use is `nvkectl`: it mints the same identity from the site
+kubeconfig. `hack/nvke-token.sh` is for `curl` and scripts. It prints a bearer
 token, or nothing when authentication is off, so the same call works either
 way:
 
 ```bash
-TOKEN="$(hack/nke-token.sh)"
+TOKEN="$(hack/nvke-token.sh)"
 curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/clusters"
 ```
 
@@ -795,7 +795,7 @@ Every rejection is `401` with a `WWW-Authenticate: Bearer` challenge, except
 | `not_admitted` | 403 | Token verified; its subject matches no admission rule for its issuer. |
 
 The response body names only the reason. Issuer names and configuration detail
-stay in NKE's log. In permissive mode nothing is rejected: the decision is counted
+stay in NVKE's log. In permissive mode nothing is rejected: the decision is counted
 under `outcome="would_reject"` with the status it would have returned.
 
 ### The Anonymous Surface

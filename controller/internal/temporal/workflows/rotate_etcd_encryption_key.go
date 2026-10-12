@@ -10,9 +10,9 @@ import (
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/workflow"
 
-	rolloutetcd "github.com/dsx-ai-factory/nke/controller/internal/rollout/operations/etcd"
-	rollouttemporal "github.com/dsx-ai-factory/nke/controller/internal/rollout/temporal"
-	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
+	rolloutetcd "github.com/dsx-ai-factory/nvke/controller/internal/rollout/operations/etcd"
+	rollouttemporal "github.com/dsx-ai-factory/nvke/controller/internal/rollout/temporal"
+	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
 const (
@@ -24,7 +24,7 @@ type RotateEtcdEncryptionKeyInput struct {
 }
 
 // RotateEtcdEncryptionKey is an operator-initiated Temporal workflow. It is
-// registered on the controller worker but intentionally has no public NKE API route.
+// registered on the controller worker but intentionally has no public NVKE API route.
 func RotateEtcdEncryptionKey(ctx workflow.Context, input RotateEtcdEncryptionKeyInput) error {
 	if input.ClusterID == uuid.Nil {
 		return errors.New("clusterID is required")

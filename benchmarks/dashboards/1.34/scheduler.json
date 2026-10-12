@@ -1,5 +1,5 @@
 {
-  "uid": "nke-benchmarks-scheduler",
+  "uid": "nvke-benchmarks-scheduler",
   "title": "Control Plane — Scheduler",
   "description": "kube-scheduler throughput, scheduling latencies, framework extension points/plugins, binding/permit, pending/unschedulable pods, leadership and resource usage. Uses inline PromQL — no recording rules required.",
   "schemaVersion": 39,
@@ -12,8 +12,8 @@
   },
   "timezone": "utc",
   "tags": [
-    "nke",
-    "nke-benchmarks",
+    "nvke",
+    "nvke-benchmarks",
     "control-plane",
     "scheduler"
   ],

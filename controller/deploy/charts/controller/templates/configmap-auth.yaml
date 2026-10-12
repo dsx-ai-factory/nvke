@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# The AuthenticationConfiguration NKE reads at AUTH_CONFIG_PATH.
+# The AuthenticationConfiguration NVKE reads at AUTH_CONFIG_PATH.
 #
 # apiAuth.config is rendered verbatim; only apiVersion and kind are supplied
 # here. The chart validates nothing beyond the presence of the two top-level

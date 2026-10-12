@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package command holds the nkectl subcommands that manage machine images and
+// Package command holds the nvkectl subcommands that manage machine images and
 // releases on a site's management cluster.
 package command
 
@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/operator"
-	"github.com/dsx-ai-factory/nke/cli/internal/util"
+	"github.com/dsx-ai-factory/nvke/cli/internal/operator"
+	"github.com/dsx-ai-factory/nvke/cli/internal/util"
 )
 
 // ClientFn builds the operator Client for the active site.

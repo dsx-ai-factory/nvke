@@ -31,7 +31,7 @@ const (
 func validatePostReadyNodeOperations(test *tenantTest) {
 	It("applies the requested condition to a Ready tenant Node", func(ctx context.Context) {
 		workerPool := expectWorkerPool(ctx, test)
-		worker := expectSucceed(test.nke.WaitForReadyNodeInPool(ctx, workerPool.ID))
+		worker := expectSucceed(test.nvke.WaitForReadyNodeInPool(ctx, workerPool.ID))
 		tenantClient := expectSucceed(test.tenantClients.GetClient(ctx, test.cluster.Name))
 
 		now := metav1.Now()
@@ -61,7 +61,7 @@ func validatePostReadyNodeOperations(test *tenantTest) {
 
 	It("taints, restarts, and observes a new Lease through the kubelet reconfigure workflow", func(ctx context.Context) {
 		workerPool := expectWorkerPool(ctx, test)
-		worker := expectSucceed(test.nke.WaitForReadyNodeInPool(ctx, workerPool.ID))
+		worker := expectSucceed(test.nvke.WaitForReadyNodeInPool(ctx, workerPool.ID))
 		tenantClient := expectSucceed(test.tenantClients.GetClient(ctx, test.cluster.Name))
 		previousRenewTime := expectSucceed(nodeLeaseRenewTime(ctx, tenantClient, worker.Name))
 

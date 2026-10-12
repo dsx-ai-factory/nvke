@@ -28,10 +28,10 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 
-	server "github.com/dsx-ai-factory/nke/agent/internal/agent"
-	"github.com/dsx-ai-factory/nke/agent/internal/externalmtls"
-	"github.com/dsx-ai-factory/nke/agent/internal/grpcserver"
-	"github.com/dsx-ai-factory/nke/agent/internal/tlsjwt"
+	server "github.com/dsx-ai-factory/nvke/agent/internal/agent"
+	"github.com/dsx-ai-factory/nvke/agent/internal/externalmtls"
+	"github.com/dsx-ai-factory/nvke/agent/internal/grpcserver"
+	"github.com/dsx-ai-factory/nvke/agent/internal/tlsjwt"
 )
 
 const (
@@ -168,7 +168,7 @@ func GetVersionInfo() (string, error) {
 
 // callerPathPrefixes are the SPIFFE ID paths permitted to drive this agent, matched
 // as prefixes: "/nke-service/" does not admit "/nke-service-evil/". Both name the
-// same callers -- NKE is migrating its IDs onto the tenant grammar, and agents have
+// same callers -- NVKE is migrating its IDs onto the tenant grammar, and agents have
 // to accept the old form until the ClusterSPIFFEID template changes and the new one
 // after. Drop "/nke-service/" once nothing issues it.
 var callerPathPrefixes = []string{
@@ -404,7 +404,7 @@ func main() {
 	bundleServerURL := flag.String(
 		"bundle-server-url",
 		envOr("NKE_BUNDLE_SERVER_URL", ""),
-		"Optional bundle source URL for InstallBundle/InstallCollection(.json). Supports http://, https://, file://, or oci://. Also set via NKE_BUNDLE_SERVER_URL. Prefer apt repos when unset. Example: https://artifacts.example.com/ or oci://registry.example.com/nke/bundles",
+		"Optional bundle source URL for InstallBundle/InstallCollection(.json). Supports http://, https://, file://, or oci://. Also set via NKE_BUNDLE_SERVER_URL. Prefer apt repos when unset. Example: https://artifacts.example.com/ or oci://registry.example.com/nvke/bundles",
 	)
 	indexFileURL := flag.String(
 		"index-file-url",
@@ -414,7 +414,7 @@ func main() {
 	cniImageRegistry := flag.String(
 		"cni-image-registry",
 		envOr("NKE_CNI_IMAGE_REGISTRY", ""),
-		"OCI registry prefix for CNI component images (e.g. registry.example.com/nke). When set, passed to the CNI helm chart as --set global.registry=<value>. Also set via NKE_CNI_IMAGE_REGISTRY",
+		"OCI registry prefix for CNI component images (e.g. registry.example.com/nvke). When set, passed to the CNI helm chart as --set global.registry=<value>. Also set via NKE_CNI_IMAGE_REGISTRY",
 	)
 	flag.Parse()
 

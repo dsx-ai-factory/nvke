@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -52,10 +53,10 @@ type ServiceForwarder struct {
 
 const (
 	// coldStartBudget bounds the first connection, where failure means an
-	// undeployed NKE or the wrong kubeconfig.
+	// undeployed NVKE or the wrong kubeconfig.
 	coldStartBudget = 5 * time.Second
-	// reconnectBudget has to outlast a pod replacement, because an NKE rollout
-	// breaks these and the waiters in internal/nke abort on the first error.
+	// reconnectBudget has to outlast a pod replacement, because an NVKE rollout
+	// breaks these and the waiters in internal/nvke abort on the first error.
 	reconnectBudget     = 90 * time.Second
 	retryBackoff        = time.Second
 	maxRetryBackoff     = 10 * time.Second
@@ -71,6 +72,12 @@ var (
 	// the wrapped error is never nil.
 	errNoLocalPort = errors.New("port-forward reported no local port")
 )
+
+// dialError marks a request that never reached the forward; retrying it would only repeat the dial.
+type dialError struct{ err error }
+
+func (e *dialError) Error() string { return e.err.Error() }
+func (e *dialError) Unwrap() error { return e.err }
 
 type forwardSession struct {
 	addr string
@@ -109,7 +116,7 @@ func NewServiceForwarder(restConfig *rest.Config, namespace, service, port strin
 // serviceBaseURL is the authority requests through the forward carry. It is
 // never resolved, and exists so requests carry a stable Host header as the
 // local port changes. The port is omitted unless numeric, because a named one
-// (the NKE Service publishes "metrics") fails url.Parse.
+// (the NVKE Service publishes "metrics") fails url.Parse.
 func serviceBaseURL(namespace, service, port string) string {
 	host := fmt.Sprintf("http://%s.%s.svc", service, namespace)
 	if _, err := strconv.Atoi(port); err != nil {
@@ -129,15 +136,36 @@ func newServiceForwarder(starter sessionStarter, baseURL string) *ServiceForward
 		maxRetryBackoff: maxRetryBackoff,
 	}
 	f.client = &http.Client{
-		Transport: &http.Transport{
+		Transport: &recoveringTransport{forwarder: f, next: &http.Transport{
 			DialContext: f.dialContext,
 			// A connection that went stale while the forward was down would
 			// fail the next request through it, and http.Transport only retries
 			// idempotent ones.
 			DisableKeepAlives: true,
-		},
+		}},
 	}
 	return f
+}
+
+// recoveringTransport drops the forward session behind a request that failed at the transport level and retries a GET or HEAD once on a fresh one.
+type recoveringTransport struct {
+	forwarder *ServiceForwarder
+	next      http.RoundTripper
+}
+
+func (t *recoveringTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.next.RoundTrip(req)
+	var dial *dialError
+	if err == nil || req.Context().Err() != nil || errors.As(err, &dial) {
+		return resp, err
+	}
+	// A wedged SPDY session still accepts the local dial and then resets every stream, so nothing but the request sees it die.
+	slog.Warn("port-forward session replaced after a transport failure", "target", t.forwarder.target, "method", req.Method, "path", req.URL.Path, "err", err)
+	t.forwarder.Reset()
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
+		return nil, err
+	}
+	return t.next.RoundTrip(req)
 }
 
 // BaseURL is the scheme and authority to build request URLs against.
@@ -174,7 +202,7 @@ func (f *ServiceForwarder) Get(ctx context.Context, path string) (int, []byte, e
 // request establishes a new one against whatever pod backs the Service then.
 //
 // This is what a caller that replaced the pod itself wants. Close would leave a
-// forwarder that never reconnects, and callers such as internal/nke's API client
+// forwarder that never reconnects, and callers such as internal/nvke's API client
 // hold one from before the rollout.
 func (f *ServiceForwarder) Reset() {
 	f.mu.Lock()
@@ -232,7 +260,7 @@ func (f *ServiceForwarder) dialContext(ctx context.Context, network, _ string) (
 		if err != nil {
 			cancel()
 			if errors.Is(err, errForwarderClosed) {
-				return nil, err
+				return nil, &dialError{err}
 			}
 			lastErr = err
 			continue
@@ -250,7 +278,7 @@ func (f *ServiceForwarder) dialContext(ctx context.Context, network, _ string) (
 		lastErr = err
 		f.discard(session)
 	}
-	return nil, fmt.Errorf("connecting to %s through a port-forward: %w", f.target, lastErr)
+	return nil, &dialError{fmt.Errorf("connecting to %s through a port-forward: %w", f.target, lastErr)}
 }
 
 func (f *ServiceForwarder) budget() time.Duration {
@@ -506,7 +534,7 @@ func podIsReady(pod *corev1.Pod) bool {
 }
 
 // resolveTargetPort maps a targetPort onto a container port number in pod. A
-// named one, which is what the NKE chart uses, is looked up in the pod's ports.
+// named one, which is what the NVKE chart uses, is looked up in the pod's ports.
 func resolveTargetPort(pod *corev1.Pod, servicePort *corev1.ServicePort) (int32, error) {
 	target := servicePort.TargetPort
 	if target.Type == intstr.Int {

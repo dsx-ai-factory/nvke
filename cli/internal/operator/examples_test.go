@@ -11,11 +11,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/operator"
+	"github.com/dsx-ai-factory/nvke/cli/internal/operator"
 )
 
 // TestExamplesDecode keeps the shipped example documents valid: they are what
-// an operator copies first, so one that nkectl itself rejects is a bug.
+// an operator copies first, so one that nvkectl itself rejects is a bug.
 func TestExamplesDecode(t *testing.T) {
 	t.Parallel()
 

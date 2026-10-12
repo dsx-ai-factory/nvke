@@ -15,24 +15,24 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 func TestListOSProfilesListsClusterReleasesAndSkipsDeprecated(t *testing.T) {
 	t.Parallel()
 
 	svc := NewOSProfileService(slog.Default(), releaseClient(t,
-		testClusterRelease("nke-b", false),
-		testClusterRelease("nke-a", false),
-		testClusterRelease("nke-old", true),
-		testNodePoolRelease("nke-worker-only", false),
+		testClusterRelease("nvke-b", false),
+		testClusterRelease("nvke-a", false),
+		testClusterRelease("nvke-old", true),
+		testNodePoolRelease("nvke-worker-only", false),
 	))
 
 	resp, err := svc.ListOSProfiles(t.Context(), api.ListOSProfilesRequestObject{})
 	require.NoError(t, err)
 	ok, isOK := resp.(api.ListOSProfiles200JSONResponse)
 	require.True(t, isOK)
-	assert.Equal(t, []api.OSProfile{{Name: "nke-a"}, {Name: "nke-b"}}, ok.OsProfiles)
+	assert.Equal(t, []api.OSProfile{{Name: "nvke-a"}, {Name: "nvke-b"}}, ok.OsProfiles)
 }
 
 func TestListOSProfilesNoReleasesReturnsEmptyList(t *testing.T) {

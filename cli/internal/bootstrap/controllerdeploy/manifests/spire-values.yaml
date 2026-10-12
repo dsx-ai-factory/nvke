@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Minimal values for the SPIFFE project's hardened SPIRE umbrella chart on
-# nkectl's ephemeral Kind cluster. The chart supplies the SPIRE server, agent,
+# nvkectl's ephemeral Kind cluster. The chart supplies the SPIRE server, agent,
 # CSI driver, and controller manager. Cluster name, trust domain, and the controller's
 # server-admin identity are set by Engine.Deploy.
 

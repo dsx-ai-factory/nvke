@@ -45,7 +45,7 @@ func EnsureBootstrapCA(dir string) (certPath, keyPath string, err error) {
 	}
 
 	cert, err := clientcert.NewSelfSignedCACert(clientcert.Config{
-		CommonName: "nkectl bootstrap E2E CA",
+		CommonName: "nvkectl bootstrap E2E CA",
 		NotBefore:  time.Now().Add(-time.Hour),
 	}, key)
 	if err != nil {

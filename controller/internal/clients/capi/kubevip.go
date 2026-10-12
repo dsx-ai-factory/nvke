@@ -4,7 +4,7 @@
 package capi
 
 import (
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 // UsesFMDSBGPPeerASN is always false: CAPI node pools carry no VPC-prefix

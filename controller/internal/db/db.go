@@ -43,8 +43,15 @@ type dbImpl struct {
 	queriesImpl
 }
 
+// RunInTx runs fn inside a transaction and hands it the caller's context, not
+// the one bun passes to the callback. Since bun 1.3 that callback context is the
+// one bun used for its own BEGIN query, whose span has already ended, so every
+// span started in the body, and the trace context an outbox row captures there,
+// would hang off a finished span instead of the caller's. The caller's context
+// carries the same deadline and cancellation; bun keeps its own for COMMIT and
+// ROLLBACK.
 func (d *dbImpl) RunInTx(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error {
-	return d.db.RunInTx(ctx, nil, func(ctx context.Context, bunTx bun.Tx) error {
+	return d.db.RunInTx(ctx, nil, func(_ context.Context, bunTx bun.Tx) error {
 		tx := &txImpl{
 			tx:          &bunTx,
 			queriesImpl: queriesImpl{db: bunTx},

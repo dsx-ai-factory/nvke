@@ -19,7 +19,7 @@ import (
 
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
 )
 
 const nodeKubeconfig = `apiVersion: v1
@@ -99,7 +99,7 @@ func (f *fakeSession) Teardown(context.Context) error { return nil }
 func TestCollectDiagnostics(t *testing.T) {
 	s := newFakeSession()
 	s.fetch[diagnosticsArchive] = []byte("tarball")
-	dest := filepath.Join(t.TempDir(), "nkectl-diagnostics.tar.gz")
+	dest := filepath.Join(t.TempDir(), "nvkectl-diagnostics.tar.gz")
 
 	if err := CollectDiagnostics(context.Background(), s, dest); err != nil {
 		t.Fatalf("collect: %v", err)
@@ -120,7 +120,7 @@ func TestCollectDiagnosticsRedacts(t *testing.T) {
 	s.fetch[diagnosticsArchive] = tarGz(t, map[string]string{
 		"diagnostics/journal.log": "authenticating with " + testForgeToken + "\n",
 	})
-	dest := filepath.Join(t.TempDir(), "nkectl-diagnostics.tar.gz")
+	dest := filepath.Join(t.TempDir(), "nvkectl-diagnostics.tar.gz")
 
 	if err := CollectDiagnostics(context.Background(), s, dest, testForgeToken); err != nil {
 		t.Fatalf("collect: %v", err)
@@ -139,16 +139,16 @@ func TestCollectDiagnosticsRedacts(t *testing.T) {
 	}
 }
 
-// A run that failed before nkectl wrote anything has no diagnostics
+// A run that failed before nvkectl wrote anything has no diagnostics
 // directory, and that must be reported rather than leaving an empty file
 // where the real ones would be.
 func TestCollectDiagnosticsWithoutADirectory(t *testing.T) {
 	s := newFakeSession()
 	// fail is the Run hook; a nil error here is the point. This is what the
-	// remote `if test -d ...; else echo ...; fi` prints when nkectl wrote
+	// remote `if test -d ...; else echo ...; fi` prints when nvkectl wrote
 	// nothing, which is what a deploy that worked leaves behind.
 	s.fail = func(string) (string, error) { return noDiagnosticsMarker + "\n", nil }
-	dest := filepath.Join(t.TempDir(), "nkectl-diagnostics.tar.gz")
+	dest := filepath.Join(t.TempDir(), "nvkectl-diagnostics.tar.gz")
 
 	if err := CollectDiagnostics(context.Background(), s, dest); !errors.Is(err, ErrNoDiagnostics) {
 		t.Fatalf("an absent directory should be ErrNoDiagnostics, got %v", err)
@@ -163,7 +163,7 @@ func TestCollectDiagnosticsWithoutADirectory(t *testing.T) {
 func TestCollectDiagnosticsWhenArchivingFails(t *testing.T) {
 	s := newFakeSession()
 	s.fail = func(string) (string, error) { return "tar: permission denied", errors.New("exit status 2") }
-	dest := filepath.Join(t.TempDir(), "nkectl-diagnostics.tar.gz")
+	dest := filepath.Join(t.TempDir(), "nvkectl-diagnostics.tar.gz")
 
 	err := CollectDiagnostics(context.Background(), s, dest)
 	if err == nil || errors.Is(err, ErrNoDiagnostics) {
@@ -209,11 +209,11 @@ func writeFile(t *testing.T, p, content string) {
 	}
 }
 
-// testNkectl is the binary the bootstrap stages, written per test so its
+// testNvkectl is the binary the bootstrap stages, written per test so its
 // absence can be exercised separately from a bad spec.
-func testNkectl(t *testing.T) string {
+func testNvkectl(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "nkectl")
+	path := filepath.Join(t.TempDir(), "nvkectl")
 	writeFile(t, path, "binary")
 	return path
 }
@@ -228,8 +228,8 @@ func testSite(t *testing.T) Spec {
 		KubernetesVersion:    "1.32.0",
 		CNI:                  "calico",
 		DisableMTLS:          true,
-		ControllerImage:      "nvcr.io/nke/cwe:v1.2.3",
-		CAPIProvisionedImage: "nvcr.io/nke/capi-provisioned:v0.1.0",
+		ControllerImage:      "nvcr.io/nvke/cwe:v1.2.3",
+		CAPIProvisionedImage: "nvcr.io/nvke/capi-provisioned:v0.1.0",
 	}
 }
 
@@ -237,14 +237,14 @@ var testNode = infra.Node{Name: "e2e-site-0", IP: "10.0.0.5", TPMEkThumbprint: "
 
 func TestBootstrap(t *testing.T) {
 	s := newFakeSession()
-	res, err := Bootstrap(context.Background(), testNode, s, testNkectl(t), testSite(t))
+	res, err := Bootstrap(context.Background(), testNode, s, testNvkectl(t), testSite(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(res.Kubeconfig)) })
 
-	if got := s.puts[nkectlPath]; string(got.data) != "binary" || got.mode != 0o755 {
-		t.Errorf("nkectl staged as %q mode %o", got.data, got.mode)
+	if got := s.puts[nvkectlPath]; string(got.data) != "binary" || got.mode != 0o755 {
+		t.Errorf("nvkectl staged as %q mode %o", got.data, got.mode)
 	}
 	if got := string(s.puts[hostsCSV].data); got != "name,ip,tpm_ek_thumbprint\ne2e-site-0,10.0.0.5,abc123\n" {
 		t.Errorf("hosts.csv = %q", got)
@@ -252,13 +252,13 @@ func TestBootstrap(t *testing.T) {
 	if _, ok := s.puts[filepath.Join(imagesDir, "cwe.tar")]; !ok {
 		t.Error("image archive not staged")
 	}
-	// The deploy path is the deploy's to stage: nkectl reads none of it.
+	// The deploy path is the deploy's to stage: nvkectl reads none of it.
 	if _, ok := s.puts[assetsArchive]; ok {
 		t.Error("bootstrap staged the deploy path")
 	}
 
 	order := []string{
-		"nkectl version",
+		"nvkectl version",
 		"ctr -n k8s.io images import",
 		"generate sitespec e2e-site",
 		"bootstrap site",
@@ -279,7 +279,7 @@ func TestBootstrap(t *testing.T) {
 		}
 	}
 	boot := s.cmd(t, "bootstrap site")
-	for _, want := range []string{"sudo -n -i sh -c ", "--disable-mtls", "--kubeconfig-out", "NKECTL_CONTROLLER_IMAGE=nvcr.io/nke/cwe:v1.2.3", "NKECTL_CWE_IMAGE=nvcr.io/nke/cwe:v1.2.3", "NKECTL_CAPI_PROVISIONED_IMAGE="} {
+	for _, want := range []string{"sudo -n -i sh -c ", "--disable-mtls", "--kubeconfig-out", "NVKECTL_CONTROLLER_IMAGE=nvcr.io/nvke/cwe:v1.2.3", "NVKECTL_CWE_IMAGE=nvcr.io/nvke/cwe:v1.2.3", "NVKECTL_CAPI_PROVISIONED_IMAGE="} {
 		if !strings.Contains(boot, want) {
 			t.Errorf("bootstrap site lacks %s: %s", want, boot)
 		}
@@ -317,7 +317,7 @@ func TestBootstrapStepFailureStopsAndReports(t *testing.T) {
 		}
 		return "", nil
 	}
-	_, err := Bootstrap(context.Background(), testNode, s, testNkectl(t), testSite(t))
+	_, err := Bootstrap(context.Background(), testNode, s, testNvkectl(t), testSite(t))
 	if err == nil || !strings.Contains(err.Error(), "bootstrap site") || !strings.Contains(err.Error(), "port 6443 in use") {
 		t.Fatalf("err = %v", err)
 	}
@@ -333,7 +333,7 @@ func TestSiteValidation(t *testing.T) {
 			c := testSite(t)
 			mutate(&c)
 			s := newFakeSession()
-			if _, err := Bootstrap(context.Background(), testNode, s, testNkectl(t), c); err == nil {
+			if _, err := Bootstrap(context.Background(), testNode, s, testNvkectl(t), c); err == nil {
 				t.Fatal("expected a validation error")
 			}
 			if len(s.runs) != 0 || len(s.puts) != 0 {
@@ -345,8 +345,8 @@ func TestSiteValidation(t *testing.T) {
 
 func TestArchiveAssets(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "deploy", "nke-deploy.sh"), "script")
-	writeFile(t, filepath.Join(root, "deploy", "._nke-deploy.sh"), "appledouble")
+	writeFile(t, filepath.Join(root, "deploy", "nvke-deploy.sh"), "script")
+	writeFile(t, filepath.Join(root, "deploy", "._nvke-deploy.sh"), "appledouble")
 	writeFile(t, filepath.Join(root, "deploy", "nico", "release.yaml"), "items")
 	writeFile(t, filepath.Join(root, "controller", "deploy", ".git", "HEAD"), "ref")
 	writeFile(t, filepath.Join(root, "controller", "deploy", ".DS_Store"), "junk")
@@ -378,7 +378,7 @@ func TestArchiveAssets(t *testing.T) {
 		}
 	}
 	sort.Strings(files)
-	want := []string{"deploy/nico/release.yaml", "deploy/nke-deploy.sh"}
+	want := []string{"deploy/nico/release.yaml", "deploy/nvke-deploy.sh"}
 	if strings.Join(files, ",") != strings.Join(want, ",") {
 		t.Errorf("archived %v, want %v", files, want)
 	}

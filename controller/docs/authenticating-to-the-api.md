@@ -1,8 +1,8 @@
-# Authenticating to the NKE API
+# Authenticating to the NVKE API
 
-Your local cluster can issue you a JWT, and NKE will accept it. No identity
+Your local cluster can issue you a JWT, and NVKE will accept it. No identity
 provider, no SPIRE, no extra infrastructure. The Kubernetes API server you
-already have is a token issuer, and NKE is configured to trust it.
+already have is a token issuer, and NVKE is configured to trust it.
 
 This walks through getting a token and using it, and what to do when you get a
 401 you weren't expecting. For the configuration schema, RBAC and the full list
@@ -11,20 +11,20 @@ in the main README.
 
 ## The short version
 
-With `nkectl`, point at the cluster Tilt created and call the API. The CLI
+With `nvkectl`, point at the cluster Tilt created and call the API. The CLI
 mints for `nke-clients/nke-client`; you do not export a token.
 
 ```bash
-nkectl config set-site --name local \
+nvkectl config set-site --name local \
   --url http://localhost:8080 \
   --kubeconfig ~/.kube/config
-nkectl get clusters
+nvkectl get clusters
 ```
 
 With `curl`, mint a token yourself:
 
 ```bash
-TOKEN="$(hack/nke-token.sh)"
+TOKEN="$(hack/nvke-token.sh)"
 curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/clusters
 ```
 
@@ -33,13 +33,13 @@ the token path did, so you can fix it when it doesn't.
 
 ## Before you start
 
-You need a kind cluster running NKE:
+You need a kind cluster running NVKE:
 
 ```bash
 tilt up
 ```
 
-That deploys an enforcing NKE. Tilt forwards the API to `localhost:8080` and
+That deploys an enforcing NVKE. Tilt forwards the API to `localhost:8080` and
 applies `deploy/k8s/nke-auth-dev.yaml`, which creates the client identities used
 below.
 
@@ -55,12 +55,12 @@ ignored" look identical from the outside.
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/clusters
 ```
 
-`200` means authentication is off: NKE serves everyone, and nothing below is
+`200` means authentication is off: NVKE serves everyone, and nothing below is
 necessary. `401` means it's on.
 
 If you want to see it from the deployment rather than infer it:
 
-Tilt runs NKE as Deployment `nke-controller` in namespace `nke-controller`. On a
+Tilt runs NVKE as Deployment `nke-controller` in namespace `nke-controller`. On a
 site that still runs it under the old name, use `cloud-workflow-engine` for both.
 
 ```bash
@@ -68,7 +68,7 @@ kubectl -n nke-controller get deploy nke-controller \
   -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="AUTH_CONFIG_PATH")].value}{"\n"}'
 ```
 
-Empty means off. NKE also says so at startup:
+Empty means off. NVKE also says so at startup:
 
 ```json
 {"level":"INFO","msg":"API authentication is enabled","mode":"enforcing",
@@ -78,14 +78,14 @@ Empty means off. NKE also says so at startup:
 
 ## Step 1: find the audience
 
-A token has to say who it's for. NKE rejects any token whose `aud` claim doesn't
+A token has to say who it's for. NVKE rejects any token whose `aud` claim doesn't
 name it, and that rejection is a 401 that looks exactly like sending no token at
 all. Getting the audience right is the single most common thing to get wrong.
 
 Locally it's `https://nke.tilt.local`, but read it rather than assume it:
 
 ```bash
-hack/nke-token.sh --audience
+hack/nvke-token.sh --audience
 ```
 
 Or from the ConfigMap directly:
@@ -103,10 +103,10 @@ This value is per-install. On a real site controller it will be something else.
 
 ## Step 2: pick an identity
 
-NKE doesn't accept every token the cluster signs. If it did, anyone who can
+NVKE doesn't accept every token the cluster signs. If it did, anyone who can
 create a pod could get administrative access: the kubelet will project a token
 for their service account naming any audience they ask for, and no RBAC check
-applies to that. So NKE keeps an allow-list of admitted subjects, and everyone
+applies to that. So NVKE keeps an allow-list of admitted subjects, and everyone
 else is refused even with a perfectly valid token.
 
 `deploy/k8s/nke-auth-dev.yaml` sets up two identities for local work:
@@ -131,7 +131,7 @@ That prints a JWT to stdout.
 
 It has to be `kubectl create token`. That goes through the TokenRequest API,
 which produces a token bound to the audience you asked for. The old approach,
-a ServiceAccount `Secret`, has no audience at all, so NKE refuses it.
+a ServiceAccount `Secret`, has no audience at all, so NVKE refuses it.
 
 `--duration` is a request, not a guarantee. The API server clamps it to its
 own configured maximum. Ask for 10 minutes while you're poking at things; ask for
@@ -147,12 +147,12 @@ TOKEN="$(kubectl create token nke-client -n nke-clients \
 curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/clusters
 ```
 
-`hack/nke-token.sh` wraps steps 1–3: it reads the audience off the running
+`hack/nvke-token.sh` wraps steps 1–3: it reads the audience off the running
 deployment and mints for `nke-clients/nke-client`, so you don't have to keep the
 audience in your head.
 
 ```bash
-TOKEN="$(hack/nke-token.sh)"
+TOKEN="$(hack/nvke-token.sh)"
 ```
 
 ## What actually happened
@@ -167,12 +167,12 @@ Decode the token you just minted and you'll see three claims that matter:
 }
 ```
 
-NKE checks each of them, in this order:
+NVKE checks each of them, in this order:
 
 1. **`iss`**: is this an issuer I trust? It's compared against the configured
    issuer string exactly. Here it's your cluster's API server, which advertises
    itself under that name.
-2. **Signature**: NKE fetched the API server's public keys from
+2. **Signature**: NVKE fetched the API server's public keys from
    `https://kubernetes.default.svc/openid/v1/jwks` at startup, and checks the
    token against them. The `kid` in your token's header names which key.
 3. **`aud`**: does it name me? This is step 1's audience.
@@ -183,20 +183,20 @@ Steps 1–4 are **authentication**: is this token real. Step 5 is **admission**:
 is this caller allowed in. They fail differently, which is why the status codes
 differ. See the table below.
 
-NKE does no authorization beyond that. Every admitted caller can do everything.
+NVKE does no authorization beyond that. Every admitted caller can do everything.
 
 ## When it doesn't work
 
 | What you see | What went wrong | Fix |
 | --- | --- | --- |
 | `401` `"no bearer token was presented"` | The header didn't arrive. | Check for a typo in `Authorization`, or an empty `$TOKEN`: `kubectl create token` failing prints to stderr and leaves you with an empty variable. |
-| `401` and your token looks fine | Almost always the audience. | Re-read it with `hack/nke-token.sh --audience` and mint again. A wrong audience and no token at all are the same 401. |
+| `401` and your token looks fine | Almost always the audience. | Re-read it with `hack/nvke-token.sh --audience` and mint again. A wrong audience and no token at all are the same 401. |
 | `401` after it worked a minute ago | The token expired. | Mint another. They're short-lived by design. |
 | `403` | The token is valid; the subject isn't admitted. | You're minting for the wrong service account, or the `admit` rules don't list yours. A different token won't help. |
-| `200` for everything, even garbage tokens | Authentication is off, or NKE is permissive. | Check `AUTH_CONFIG_PATH` and `PERMISSIVE_MODE` on the deployment. |
+| `200` for everything, even garbage tokens | Authentication is off, or NVKE is permissive. | Check `AUTH_CONFIG_PATH` and `PERMISSIVE_MODE` on the deployment. |
 | `error: failed to create token` | Your kubeconfig identity can't mint for that service account. | You need `create` on `serviceaccounts/token` for it. `deploy/k8s/nke-auth-dev.yaml` grants this locally; apply it, or run `tilt up`. |
 
-NKE logs its reasoning for every rejection. This is usually faster than guessing:
+NVKE logs its reasoning for every rejection. This is usually faster than guessing:
 
 ```bash
 kubectl -n nke-controller logs deploy/nke-controller | grep '"logger":"auth"'
@@ -216,7 +216,7 @@ A successful request logs nothing, so don't read silence as failure.
 Nothing about a JWT is secret except the signature, so you can just look:
 
 ```bash
-TOKEN="$(hack/nke-token.sh)"
+TOKEN="$(hack/nvke-token.sh)"
 echo "${TOKEN}" | cut -d. -f2 | python3 -c \
   'import sys,base64,json; s=sys.stdin.read().strip()
 print(json.dumps(json.loads(base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))), indent=2))'
@@ -225,7 +225,7 @@ print(json.dumps(json.loads(base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))), 
 (JWTs are base64url and unpadded, so piping straight to `base64 -d` works on
 macOS and fails on GNU coreutils. The re-padding above works on both.)
 
-Check `aud` against the audience NKE expects and `exp` against the clock. Those
+Check `aud` against the audience NVKE expects and `exp` against the clock. Those
 two account for most 401s.
 
 ### Proving a rejection
@@ -249,7 +249,7 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 Or run all four cases at once:
 
 ```bash
-hack/nke-auth-demo.sh
+hack/nvke-auth-demo.sh
 ```
 
 ```
@@ -263,20 +263,20 @@ CASE                                 EXPECTED     ACTUAL  RESULT
 all 4 checks passed
 ```
 
-## From nkectl
+## From nvkectl
 
-`nkectl` is a caller of this API. After `nkectl config set-site --kubeconfig`,
+`nvkectl` is a caller of this API. After `nvkectl config set-site --kubeconfig`,
 every controller API command mints the same identity this page uses (`nke-clients/nke-client`)
 with the audience from ConfigMap `nke-auth-config`, read from namespace
 `nke-controller`, or from `cloud-workflow-engine` when that is absent. There
-is no `NKECTL_DEV_TOKEN` and no `hack/nke-token.sh` step.
+is no `NKECTL_DEV_TOKEN` and no `hack/nvke-token.sh` step.
 
 Those names are fixed in the CLI. A cluster-admin kubeconfig (Tilt's kind
 cluster) can mint without extra RBAC. On a real site, grant the kubeconfig
 identity the roles in
-[Configuring NKE API Authentication](configuring-api-authentication.md).
+[Configuring NVKE API Authentication](configuring-api-authentication.md).
 
-If the ConfigMap is missing, `nkectl` sends no bearer token, the same as
+If the ConfigMap is missing, `nvkectl` sends no bearer token, the same as
 authentication being off.
 
 ## Endpoints that need no token
@@ -290,11 +290,11 @@ whether authentication is on.
 
 ## In scripts
 
-`hack/nke-token.sh` prints nothing when authentication is off and exits 0, so one
+`hack/nvke-token.sh` prints nothing when authentication is off and exits 0, so one
 form works in both worlds:
 
 ```bash
-TOKEN="$(hack/nke-token.sh)"
+TOKEN="$(hack/nvke-token.sh)"
 curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/clusters"
 ```
 
@@ -318,7 +318,7 @@ NKE_PERMISSIVE_MODE=true tilt up
 Every request is evaluated, logged and counted, then served anyway. Watch:
 
 ```
-nke_auth_requests_total{outcome="would_reject"}
+nvke_auth_requests_total{outcome="would_reject"}
 ```
 
 The `reason` and `issuer` labels tell you what was wrong and whose token it was.
@@ -329,6 +329,6 @@ not a setting to leave on: it accepts everything.
 
 - [API Authentication](../README.md#api-authentication): configuration schema,
   RBAC prerequisite, the full rejection-reason table.
-- [nkectl](../../cli/README.md#authenticating-to-cwe): how the CLI mints.
+- [nvkectl](../../cli/README.md#authenticating-to-cwe): how the CLI mints.
 - `deploy/k8s/nke-auth-dev.yaml`: the local identities and auth config.
 - `internal/auth/`: the implementation.

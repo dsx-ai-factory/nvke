@@ -290,7 +290,7 @@ func TestPut(t *testing.T) {
 	h := newHarness(t)
 	c := h.dial(t)
 
-	if err := c.Put(context.Background(), "/usr/local/bin/nkectl", []byte("binary"), 0o755); err != nil {
+	if err := c.Put(context.Background(), "/usr/local/bin/nvkectl", []byte("binary"), 0o755); err != nil {
 		t.Fatalf("put: %v", err)
 	}
 	h.node.mu.Lock()
@@ -302,7 +302,7 @@ func TestPut(t *testing.T) {
 		if string(data) != "binary" {
 			t.Errorf("stdin = %q, want the data", data)
 		}
-		for _, want := range []string{"chmod 755", "/usr/local/bin/nkectl.nke-e2e-partial", "mv -f", "mkdir -p '\\''/usr/local/bin'\\''"} {
+		for _, want := range []string{"chmod 755", "/usr/local/bin/nvkectl.nke-e2e-partial", "mv -f", "mkdir -p '\\''/usr/local/bin'\\''"} {
 			if !strings.Contains(cmd, want) {
 				t.Errorf("write command %q should contain %q", cmd, want)
 			}

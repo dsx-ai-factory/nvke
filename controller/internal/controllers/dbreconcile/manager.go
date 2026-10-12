@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	crsource "sigs.k8s.io/controller-runtime/pkg/source"
 
-	dbsource "github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/source"
+	dbsource "github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/source"
 )
 
 func SetupController(

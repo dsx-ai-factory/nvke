@@ -86,7 +86,7 @@ jobs:
   deb:
     name: Build the ${{ matrix.arch }} package
     runs-on: ${{ matrix.runner }}
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     timeout-minutes: 20
     permissions:
       contents: read

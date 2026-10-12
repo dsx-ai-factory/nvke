@@ -19,8 +19,8 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
 )
 
 const (
@@ -155,7 +155,7 @@ type Tenant struct {
 	Password string `json:"Password"`
 }
 
-// Stack deploys the NKE stack with a deploy path from the Stack: it does what
+// Stack deploys the NVKE stack with a deploy path from the Stack: it does what
 // the deploy path's README says a driver does around the install, and renders
 // the values only a site knows.
 //
@@ -168,7 +168,7 @@ type Stack struct {
 	// release reaches its chart by relative path. ExportDeployAssets builds
 	// them.
 	//
-	// Nothing in the bootstrap reads them: nkectl pulls its charts from their
+	// Nothing in the bootstrap reads them: nvkectl pulls its charts from their
 	// repositories and embeds its values. These are the deploy's own
 	// installer, tree and scripts.
 	Assets DeployAssets
@@ -567,7 +567,7 @@ func (d Stack) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, e
 		}
 		files[name] = data
 	}
-	// ClusterName is the name NKTP labels the site's telemetry with. NKE's
+	// ClusterName is the name NKTP labels the site's telemetry with. NVKE's
 	// kubeadm configuration names every cluster "kubernetes".
 	config, err := json.MarshalIndent(map[string]any{
 		d.Provider.ConfigKey(): d.Provider,

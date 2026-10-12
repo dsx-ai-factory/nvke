@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package siteconfig loads and validates the declarative site spec file that
-// drives "nkectl bootstrap site".
+// drives "nvkectl bootstrap site".
 //
 // The site spec file describes a set of pre-provisioned nodes and the vanilla
 // Kubernetes cluster to build on them. It is the single source of truth for a
@@ -31,6 +31,8 @@ import (
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 )
 
 const (
@@ -100,7 +102,7 @@ type SiteSpec struct {
 	Spire Spire `yaml:"spire"`
 }
 
-// Spire describes the identity plane `nkectl bootstrap site` stands up.
+// Spire describes the identity plane `nvkectl bootstrap site` stands up.
 type Spire struct {
 	// TrustDomain is the SPIFFE trust domain used for all identities that the
 	// bootstrap SPIRE server issues. It must also be used by the permanent
@@ -214,7 +216,7 @@ type KubeletConfig struct {
 }
 
 // Registry holds the settings for pulling the bootstrap engine chart. The
-// version (chart tag) is baked into the nkectl build, so it is not part of the
+// version (chart tag) is baked into the nvkectl build, so it is not part of the
 // sitespec. The controller image the chart deploys is published separately, to
 // <registry>/<org>/controller, and is not addressed by these fields.
 type Registry struct {
@@ -249,10 +251,17 @@ func envBindings() map[string]string {
 		"REGISTRY_BOOTSTRAP_REPO":        pathBootstrapRepo,
 		"REGISTRY_BOOTSTRAP_CHART":       pathBootstrapChart,
 		"REGISTRY_API_KEY":               pathAPIKey,
-		"NKECTL_SPIFFE_TRUST_DOMAIN":     pathSpireTrustDomain,
+		"NVKECTL_SPIFFE_TRUST_DOMAIN":    pathSpireTrustDomain,
 		"SPIRE_CA_CERT_FILE":             pathSpireCACertFile,
 		"SPIRE_CA_KEY_FILE":              pathSpireCAKeyFile,
 	}
+}
+
+// Settings is every NVKECTL_* variable this package reads; each is also read
+// under its previous NKECTL_* name for one release (see envalias).
+var Settings = []string{
+	"NVKECTL_SPIFFE_TRUST_DOMAIN",
+	"NVKECTL_CLUSTER_NODES",
 }
 
 // newInventoryViper returns a Viper that reads a YAML site spec file with the
@@ -263,7 +272,13 @@ func newInventoryViper() *viper.Viper {
 	v := viper.New()
 	v.SetConfigType("yaml")
 	for env, path := range envBindings() {
-		_ = v.BindEnv(path, env)
+		// A setting the rename touched is also read under its previous name,
+		// for one release; the current name wins when both are set.
+		if old := envalias.Old(env); old != "" {
+			_ = v.BindEnv(path, env, old)
+		} else {
+			_ = v.BindEnv(path, env)
+		}
 	}
 	return v
 }
@@ -279,10 +294,10 @@ func Load(path string) (*SiteSpec, error) {
 		return nil, fmt.Errorf("read site spec file %s: %w", path, err)
 	}
 
-	// NKECTL_CLUSTER_NODES="name:ip,name:ip" supplies the flat node list when
+	// NVKECTL_CLUSTER_NODES="name:ip,name:ip" supplies the flat node list when
 	// the file lists none. A malformed entry fails loudly rather than being
 	// silently dropped.
-	if nodesEnv := os.Getenv("NKECTL_CLUSTER_NODES"); nodesEnv != "" && !v.IsSet(pathNodes) {
+	if nodesEnv := envalias.Get("NVKECTL_CLUSTER_NODES"); nodesEnv != "" && !v.IsSet(pathNodes) {
 		nodes, err := parseNodesEnv(nodesEnv)
 		if err != nil {
 			return nil, err
@@ -323,7 +338,7 @@ func useYAMLTags(dc *mapstructure.DecoderConfig) { dc.TagName = "yaml" }
 // field name surfaces immediately instead of being silently ignored.
 func rejectUnknownFields(dc *mapstructure.DecoderConfig) { dc.ErrorUnused = true }
 
-// parseNodesEnv parses NKECTL_CLUSTER_NODES="name:ip,name:ip" into node maps,
+// parseNodesEnv parses NVKECTL_CLUSTER_NODES="name:ip,name:ip" into node maps,
 // returning an error on any malformed entry.
 func parseNodesEnv(s string) ([]map[string]string, error) {
 	var nodes []map[string]string
@@ -335,7 +350,7 @@ func parseNodesEnv(s string) ([]map[string]string, error) {
 		name, ip, ok := strings.Cut(entry, ":")
 		name, ip = strings.TrimSpace(name), strings.TrimSpace(ip)
 		if !ok || name == "" || ip == "" {
-			return nil, fmt.Errorf("NKECTL_CLUSTER_NODES entry %q: expected \"name:ip\"", entry)
+			return nil, fmt.Errorf("NVKECTL_CLUSTER_NODES entry %q: expected \"name:ip\"", entry)
 		}
 		nodes = append(nodes, map[string]string{"name": name, "ip": ip})
 	}

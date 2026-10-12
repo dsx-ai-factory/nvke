@@ -14,10 +14,10 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	adaptercontroller "github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/controller"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	adaptercontroller "github.com/dsx-ai-factory/nvke/controller/internal/rollout/adapters/controller"
 )
 
 // WorkflowConfig is the input to RegisterRolloutWorkflow. The factory

@@ -35,13 +35,13 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/dsx-ai-factory/nke/controller/e2e/framework"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/db/migrations"
-	"github.com/dsx-ai-factory/nke/controller/internal/otelx"
-	"github.com/dsx-ai-factory/nke/controller/internal/server"
-	controllertemporal "github.com/dsx-ai-factory/nke/controller/internal/temporal"
+	"github.com/dsx-ai-factory/nvke/controller/e2e/framework"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db/migrations"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
+	"github.com/dsx-ai-factory/nvke/controller/internal/server"
+	controllertemporal "github.com/dsx-ai-factory/nvke/controller/internal/temporal"
 )
 
 const requestSpanName = "POST /api/clusters"

@@ -1,7 +1,7 @@
 # Telemetry on a site controller: configuration
 
 The NKTP chart's defaults are for a multi-node cluster, and they know nothing
-about NKE. Everything a site controller needs differently is in
+about NVKE. Everything a site controller needs differently is in
 [`deploy/nico/nktp/values.yaml`](../../../deploy/nico/nktp/values.yaml),
 which the `nktp` item applies over the chart. This page explains what it
 changes and why, and how a site overrides it.
@@ -10,10 +10,10 @@ changes and why, and how a site overrides it.
 
 | Setting | Why |
 |---|---|
-| **The Operator's finalizer grant** (`opentelemetry-kube-stack.opentelemetry-operator.extraObjects`) | A Role and RoleBinding granting the Operator `update` on its own Deployment's `deployments/finalizers`. Without it, the Operator crash-loops on NKE clusters; see [troubleshooting](troubleshooting.md#the-operator-crash-loops-with-cannot-set-blockownerdeletion). |
-| **`k8s.cluster.name`** on the watchdog, its sidecar and the three gateways | A `K8S_CLUSTER_NAME` environment variable read from ConfigMap `nktp-cluster`, which `nke-base-config` renders from BootstrapConfig's `ClusterName`. The chart's `transform/cluster` processor reads it, and the chart sets it from `global.clusterName` only when the `env` list omits it. NKE's kubeadm configuration names every cluster `kubernetes`, so the name has to come from outside the cluster. |
-| **The API audit log path** (`filelog/kube-api-audit.include`) | NKE's kubeadm configuration writes the API server's audit log to `/var/log/kubernetes_audit/audit.log`, not the chart's default path. |
-| **Control-plane monitors** (`kubeScheduler`, `kubeControllerManager`, `kubeProxy` off) | NKE binds the scheduler and controller manager to `127.0.0.1`, and OVN clusters run no kube-proxy. Left on, they would show as permanently down targets. The API server, etcd and CoreDNS monitors stay on and work. |
+| **The Operator's finalizer grant** (`opentelemetry-kube-stack.opentelemetry-operator.extraObjects`) | A Role and RoleBinding granting the Operator `update` on its own Deployment's `deployments/finalizers`. Without it, the Operator crash-loops on NVKE clusters; see [troubleshooting](troubleshooting.md#the-operator-crash-loops-with-cannot-set-blockownerdeletion). |
+| **`k8s.cluster.name`** on the watchdog, its sidecar and the three gateways | A `K8S_CLUSTER_NAME` environment variable read from ConfigMap `nktp-cluster`, which `nvke-base-config` renders from BootstrapConfig's `ClusterName`. The chart's `transform/cluster` processor reads it, and the chart sets it from `global.clusterName` only when the `env` list omits it. NVKE's kubeadm configuration names every cluster `kubernetes`, so the name has to come from outside the cluster. |
+| **The API audit log path** (`filelog/kube-api-audit.include`) | NVKE's kubeadm configuration writes the API server's audit log to `/var/log/kubernetes_audit/audit.log`, not the chart's default path. |
+| **Control-plane monitors** (`kubeScheduler`, `kubeControllerManager`, `kubeProxy` off) | NVKE binds the scheduler and controller manager to `127.0.0.1`, and OVN clusters run no kube-proxy. Left on, they would show as permanently down targets. The API server, etcd and CoreDNS monitors stay on and work. |
 | **metrics-server on** | Nothing else serves `metrics.k8s.io` on a site controller, and the Collector autoscalers read it. |
 | **Sizing** | One replica of everything, autoscalers starting at one, small requests and limits for every Collector and Target Allocator, and one kube-state-metrics Deployment for all object types instead of five. Sized for the smaller clusters a site controller runs on. |
 
@@ -71,7 +71,7 @@ two consequences:
 
 ## A different host layout
 
-The node Collector assumes the NKE reference node image's layout:
+The node Collector assumes the NVKE reference node image's layout:
 
 - the journal in `/var/log/journal`
 - `/usr/bin/journalctl`

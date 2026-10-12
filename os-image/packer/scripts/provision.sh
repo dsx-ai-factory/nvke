@@ -104,7 +104,7 @@ fi
 # never ran and multipathd stayed active from first boot, undetected for
 # months. An image that ships it off cannot regress that way.
 #
-# No NKE node boots from a multipath-backed disk -- the root filesystem is LVM
+# No NVKE node boots from a multipath-backed disk -- the root filesystem is LVM
 # (optionally over LUKS) on a single local NVMe device, per
 # cidata/autoinstall-lvm.pkrtpl -- so nothing here depends on multipathd.
 #

@@ -20,8 +20,8 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	infrav1 "github.com/dsx-ai-factory/nke/cluster-api-provider-provisioned/api/v1alpha1"
-	"github.com/dsx-ai-factory/nke/cluster-api-provider-provisioned/controllers"
+	infrav1 "github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned/api/v1alpha1"
+	"github.com/dsx-ai-factory/nvke/cluster-api-provider-provisioned/controllers"
 )
 
 var version = "dev"

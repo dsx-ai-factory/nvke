@@ -13,20 +13,20 @@ const (
 	// LabelManagedBy is the label key. Its value is
 	// config.TeleportConfig.ManagedByLabelValue, not a constant -- it is
 	// per-install configurable.
-	LabelManagedBy             = "managed-by"
-	LabelResourceGroup         = "resource-group"
-	LabelResourceGroupNKEValue = "nke"
-	LabelSite                  = "site"
-	LabelNKESiteControllerName = "nke-site-controller-name"
-	LabelNodeID                = "node-id"
-	LabelCluster               = "cluster"
-	LabelClusterName           = "cluster-name"
-	LabelNodePool              = "node-pool"
-	LabelNodeName              = "node-name"
-	LabelNodeRole              = "node-role"
-	LabelNodeRoleControlPlane  = "control-plane"
-	LabelNodeRoleWorker        = "worker"
-	LabelEnvironment           = "environment"
+	LabelManagedBy              = "managed-by"
+	LabelResourceGroup          = "resource-group"
+	LabelResourceGroupNVKEValue = "nke"
+	LabelSite                   = "site"
+	LabelNVKESiteControllerName = "nke-site-controller-name"
+	LabelNodeID                 = "node-id"
+	LabelCluster                = "cluster"
+	LabelClusterName            = "cluster-name"
+	LabelNodePool               = "node-pool"
+	LabelNodeName               = "node-name"
+	LabelNodeRole               = "node-role"
+	LabelNodeRoleControlPlane   = "control-plane"
+	LabelNodeRoleWorker         = "worker"
+	LabelEnvironment            = "environment"
 )
 
 // NodeRoleLabel returns the Teleport label value for the node's role.

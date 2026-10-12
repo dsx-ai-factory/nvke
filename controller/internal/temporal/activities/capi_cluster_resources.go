@@ -15,8 +15,8 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/capi"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 )
 
 type ApplyCAPIClusterResourcesInput struct {
@@ -55,7 +55,7 @@ func (a *Activities) DeleteCAPIClusterResources(ctx context.Context, input Delet
 		return nil
 	}
 
-	namespace := constants.NamespaceNKESystem
+	namespace := constants.NamespaceNVKESystem
 
 	infraCluster, err := capi.ParseManifest(manifest)
 	if err != nil {

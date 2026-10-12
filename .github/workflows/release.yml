@@ -64,6 +64,7 @@ jobs:
     needs: [license-checks]
     permissions:
       contents: write         # creates the GitHub release
+      actions: read  # upload-sarif reads the workflow run
       security-events: write  # the malware scan uploads SARIF
       id-token: write         # the OIDC token the attestation is signed against
       attestations: write     # writes the provenance attestation
@@ -74,7 +75,7 @@ jobs:
           persist-credentials: false
 
       # A tag is <module-directory>/vX.Y.Z, because that is what Go requires of a
-      # submodule: github.com/dsx-ai-factory/nke/cli is tagged cli/vX.Y.Z. So the
+      # submodule: github.com/dsx-ai-factory/nvke/cli is tagged cli/vX.Y.Z. So the
       # directory is read back off the tag and nothing below needs to name a
       # component. Move a module and its tag prefix moves with it, because Go
       # makes them the same string; go.work then says whether the directory is
@@ -156,7 +157,7 @@ jobs:
           case "${DIR}" in
             cli)
               make -C cli build-cross DIST="${GITHUB_WORKSPACE}/dist"
-              # Shipped beside the binaries because nkectl is redistributed --
+              # Shipped beside the binaries because nvkectl is redistributed --
               # which is the reason it carries its own attribution at all.
               cp cli/THIRD_PARTY_NOTICES.md dist/
               ;;
@@ -182,7 +183,8 @@ jobs:
           # and needs the answer for that platform. The four differ, because
           # the dependency graph is GOOS/GOARCH-conditional.
           shopt -s nullglob
-          for bin in dist/nkectl-*; do
+          # Both names for one release; build-cross makes the nkectl-* copies.
+          for bin in dist/nvkectl-* dist/nkectl-*; do
             case "${bin}" in *.spdx.json) continue ;; esac
             syft scan "file:${bin}" \
               --output "spdx-json=${bin}.spdx.json" \
@@ -209,7 +211,7 @@ jobs:
       # describes what every channel ships, not one of four builds.
       - name: Upload the built binaries for the publishers
         if: steps.component.outputs.dir == 'cli'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cli-dist-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist
@@ -218,14 +220,14 @@ jobs:
       # build-cross stamps the version from `git describe`, this job takes it
       # from the tag, and nothing tied the two together. The runner is
       # linux/amd64, so the shipped binary can be asked directly.
-      - name: Check nkectl reports the tag version
+      - name: Check nvkectl reports the tag version
         if: steps.component.outputs.dir == 'cli'
         shell: bash
         env:
           VERSION: ${{ steps.component.outputs.version }}
         run: |
           set -euo pipefail
-          BIN="${GITHUB_WORKSPACE}/dist/nkectl-linux-amd64"
+          BIN="${GITHUB_WORKSPACE}/dist/nvkectl-linux-amd64"
 
           # 2>&1 and the exit check, so a binary that dies on start fails here
           # rather than printing nothing and matching whatever comes last.
@@ -237,7 +239,7 @@ jobs:
           # The trailing space is load-bearing: it stops a v0.1.0 tag accepting
           # a v0.1.0-rc.1 binary, or a describe with commits after the tag.
           case "${out}" in
-            "nkectl ${VERSION} "*) echo "nkectl reports ${VERSION}: ${out}" ;;
+            "nvkectl ${VERSION} "*) echo "nvkectl reports ${VERSION}: ${out}" ;;
             *)
               echo "::error::This release is tagged ${VERSION}, and the binary reports: ${out}"
               exit 1
@@ -321,6 +323,9 @@ jobs:
         id: release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
+          # A bare tag releases the product, so its title says so; a module
+          # tag keeps the tag as its title, as the module workflows do.
+          name: ${{ steps.component.outputs.dir == '' && format('NVKE {0}', steps.component.outputs.version) || github.ref_name }}
           body_path: /tmp/release-notes.md
           draft: true
           prerelease: ${{ contains(github.ref_name, '-rc.') }}
@@ -374,6 +379,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      actions: read  # upload-sarif reads the workflow run
       security-events: write
     with:
       dist_artifact: ${{ needs.release.outputs.dist_artifact }}
@@ -384,9 +390,10 @@ jobs:
     uses: ./.github/workflows/cli-artifact-nvcr.yml
     permissions:
       contents: read
+      actions: read  # upload-sarif reads the workflow run
       security-events: write
     secrets:
-      NGC_REGISTRY_TOKEN_NKE: ${{ secrets.NGC_REGISTRY_TOKEN_NKE }}
+      NGC_REGISTRY_TOKEN_NVKE: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE || secrets.NGC_REGISTRY_TOKEN_NKE }}
       NGC_REGISTRY_TOKEN_DSX: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
     with:
       dist_artifact: ${{ needs.release.outputs.dist_artifact }}
@@ -398,6 +405,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      actions: read  # upload-sarif reads the workflow run
       security-events: write
     with:
       dist_artifact: ${{ needs.release.outputs.dist_artifact }}
@@ -433,7 +441,7 @@ jobs:
 
             os-image/v*)
               echo "OS-image tag ${GITHUB_REF_NAME}:"
-              echo "  - qcow2  → OS Image Artifact (Packer + boot-smoke, then ghcr.io/dsx-ai-factory/nke/os-image)"
+              echo "  - qcow2  → OS Image Artifact (Packer + boot-smoke, then ghcr.io/dsx-ai-factory/nvke/os-image)"
               echo "  - check  → nke-os-image-check attached to the GitHub Release"
               ;;
 
@@ -444,7 +452,7 @@ jobs:
 
             cluster-api-provider-provisioned/v*)
               echo "Provisioned-provider tag ${GITHUB_REF_NAME}:"
-              echo "  - image → Image Provisioned NVCR (promote-ghcr → ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned)"
+              echo "  - image → Image Provisioned NVCR (promote-ghcr → ghcr.io/dsx-ai-factory/nvke/cluster-api-provider-provisioned)"
               ;;
 
             cli/v*)
@@ -454,7 +462,7 @@ jobs:
 
             controller/v*)
               echo "Controller tag ${GITHUB_REF_NAME}:"
-              echo "  - image → Image NVCR (nvcr.io source, promoted to ghcr.io/dsx-ai-factory/nke/nke-controller and DSX NVCR)"
+              echo "  - image → Image NVCR (nvcr.io source, promoted to ghcr.io/dsx-ai-factory/nvke/nke-controller and DSX NVCR)"
               echo "  - chart → Chart Publish / Chart Publish NVCR"
               ;;
 

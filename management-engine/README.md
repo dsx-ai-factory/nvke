@@ -1,6 +1,6 @@
 # Management Engine
 
-The management engine is designed to manage NKE workload clusters through
+The management engine is designed to manage NVKE workload clusters through
 declarative APIs and reconciliation built on Cluster API (CAPI) conventions.
 Its architecture separates user and operator APIs from internal Kubernetes
 resources and lifecycle controllers. This module provides the internal resource
@@ -131,7 +131,7 @@ projections; do not expose internal structs directly.
 Schema validation cannot prove reference existence, current UIDs, or caller
 privileges. Namespace scoping also requires API authorization and controller RBAC.
 
-## Install NKE resource types
+## Install NVKE resource types
 
 For CRDs only, without the datastore identity/RBAC bundle:
 

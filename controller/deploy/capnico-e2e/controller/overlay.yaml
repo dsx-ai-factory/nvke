@@ -13,7 +13,7 @@ apiAuth:
 # The controller reconciles CAPI objects, so it needs the RBAC for them.
 # The controller accepts only the API provider blocks named here, and this lane needs
 # BOTH. The e2e suite submits an Infra block for the nico-containers backend --
-# buildNicoRequest in test/e2e/internal/nke/request.go builds NicoCluster and
+# buildNicoRequest in test/e2e/internal/nvke/request.go builds NicoCluster and
 # NicoMachine manifests inside api.InfraClusterProvider -- and reserves the Nico
 # block for nico-vms. controller/Tiltfile derives the same pair for a provider
 # list containing "nico".

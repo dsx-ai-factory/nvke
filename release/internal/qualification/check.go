@@ -6,7 +6,7 @@ package qualification
 import (
 	"fmt"
 
-	"github.com/dsx-ai-factory/nke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
 )
 
 // Check holds the three files to each other. Each is valid alone, and this is

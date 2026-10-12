@@ -10,11 +10,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/util"
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/cli/internal/util"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
-// NewPatchCmd returns the "nkectl patch cluster <name>" subcommand.
+// NewPatchCmd returns the "nvkectl patch cluster <name>" subcommand.
 func NewPatchCmd(clientFn ControllerClientFn) *cobra.Command {
 	var (
 		patch     string
@@ -32,13 +32,13 @@ everything else on the cluster is left as it is. Pass the patch inline with
 --patch, or from a file (or stdin via -) with --patch-file.
 
 Example — bump the Kubernetes version:
-  nkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
+  nvkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
 
 Example — patch file:
-  nkectl patch cluster my-cluster --patch-file patch.yaml
+  nvkectl patch cluster my-cluster --patch-file patch.yaml
 
 Example — set the control-plane node count:
-  nkectl patch cluster my-cluster --patch 'controlPlaneConfig: {desiredCount: 3}'
+  nvkectl patch cluster my-cluster --patch 'controlPlaneConfig: {desiredCount: 3}'
 
 The patch document's fields must match the controller UpdateClusterRequest schema
 exactly. See /api/docs on your site controller.`,
@@ -67,7 +67,7 @@ exactly. See /api/docs on your site controller.`,
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Cluster %q patched (id: %s)\n", updated.Name, updated.ID)
-			fmt.Fprintf(cmd.OutOrStdout(), "Update is async — run 'nkectl get clusters' to check status.\n")
+			fmt.Fprintf(cmd.OutOrStdout(), "Update is async — run 'nvkectl get clusters' to check status.\n")
 			return nil
 		},
 	}

@@ -10,7 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 const (
@@ -37,31 +37,31 @@ func NewTeleportCollector(logger *slog.Logger, db db.DB) *TeleportCollector {
 		logger: logger,
 		db:     db,
 		clusterEnabledDesc: prometheus.NewDesc(
-			"nke_controller_teleport_cluster_enabled",
+			"nvke_controller_teleport_cluster_enabled",
 			"Whether Teleport is enabled on the cluster (1=enabled, 0=disabled)",
 			[]string{siteIDLabel, clusterIDLabel, "cluster_name"},
 			nil,
 		),
 		nodePoolEnabledDesc: prometheus.NewDesc(
-			"nke_controller_teleport_node_pool_enabled",
+			"nvke_controller_teleport_node_pool_enabled",
 			"Whether Teleport is enabled on the node pool (1=enabled, 0=disabled)",
 			[]string{siteIDLabel, clusterIDLabel, nodePoolIDLabel, "node_pool_name"},
 			nil,
 		),
 		nodesEligibleDesc: prometheus.NewDesc(
-			"nke_controller_teleport_nodes_eligible",
+			"nvke_controller_teleport_nodes_eligible",
 			"Count of nodes eligible for Teleport registration",
 			[]string{siteIDLabel, clusterIDLabel, nodePoolIDLabel},
 			nil,
 		),
 		nodesRegisteredDesc: prometheus.NewDesc(
-			"nke_controller_teleport_nodes_registered",
+			"nvke_controller_teleport_nodes_registered",
 			"Count of nodes registered with Teleport",
 			[]string{siteIDLabel, clusterIDLabel, nodePoolIDLabel},
 			nil,
 		),
 		nodesPendingDesc: prometheus.NewDesc(
-			"nke_controller_teleport_nodes_pending",
+			"nvke_controller_teleport_nodes_pending",
 			"Count of eligible nodes not yet registered with Teleport",
 			[]string{siteIDLabel, clusterIDLabel, nodePoolIDLabel},
 			nil,

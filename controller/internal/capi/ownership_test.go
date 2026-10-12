@@ -12,9 +12,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/capi"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 func TestValidateSecretOwnership(t *testing.T) {
@@ -33,7 +33,7 @@ func TestValidateSecretOwnership(t *testing.T) {
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
 			constants.LabelKeyClusterID:      cluster.ID.String(),
 			constants.LabelKeyKubeconfigMode: constants.LabelValueKubeconfigModeSPIRE,
-			constants.LabelKeyNkeManagedBy:   "cloud-workflow-engine",
+			constants.LabelKeyNvkeManagedBy:  "cloud-workflow-engine",
 		}}}
 		require.NoError(t, capi.ValidateSecretOwnership(secret, cluster))
 	})
@@ -42,7 +42,7 @@ func TestValidateSecretOwnership(t *testing.T) {
 		t.Parallel()
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 			Name:      "alpha-kubeconfig",
-			Namespace: constants.NamespaceNKESystem,
+			Namespace: constants.NamespaceNVKESystem,
 			Labels:    map[string]string{constants.LabelKeyClusterID: uuid.New().String()},
 		}}
 		err := capi.ValidateSecretOwnership(secret, cluster)
@@ -54,7 +54,7 @@ func TestValidateSecretOwnership(t *testing.T) {
 		t.Parallel()
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 			Name:      "alpha-kubeconfig",
-			Namespace: constants.NamespaceNKESystem,
+			Namespace: constants.NamespaceNVKESystem,
 			Labels: map[string]string{
 				constants.LabelKeyClusterID:      cluster.ID.String(),
 				constants.LabelKeyKubeconfigMode: constants.LabelValueKubeconfigModeAdmin,
@@ -70,7 +70,7 @@ func TestSetSecretOwnership(t *testing.T) {
 	cluster := db.Cluster{ID: uuid.New(), Name: "alpha"}
 	secret := &corev1.Secret{}
 	capi.SetSecretOwnership(secret, cluster, constants.LabelValueKubeconfigModeSPIRE, "cloud-workflow-engine")
-	assert.Equal(t, "cloud-workflow-engine", secret.Labels[constants.LabelKeyNkeManagedBy])
+	assert.Equal(t, "cloud-workflow-engine", secret.Labels[constants.LabelKeyNvkeManagedBy])
 	assert.Equal(t, cluster.ID.String(), secret.Labels[constants.LabelKeyClusterID])
 	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, secret.Labels[constants.LabelKeyKubeconfigMode])
 }

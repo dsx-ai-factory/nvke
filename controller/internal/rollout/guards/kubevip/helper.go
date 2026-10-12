@@ -13,22 +13,22 @@ import (
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 )
 
-func nodeAgentOperationDone(current *nkeproto.NodeAgentOperationStatus) (bool, error) {
+func nodeAgentOperationDone(current *nvkeproto.NodeAgentOperationStatus) (bool, error) {
 	if current == nil {
 		return false, errors.New("nil NodeAgentOperationStatus")
 	}
 	switch current.GetPhase() {
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_UNSPECIFIED,
-		nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_UNSPECIFIED,
+		nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING:
 		return false, nil
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED:
 		return true, nil
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED:
 		return false, fmt.Errorf("operation %s failed at step %q: %s",
 			current.GetOperationId(), current.GetStep(), current.GetErrorMessage())
 	default:

@@ -1,15 +1,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Site spec template rendered by "nkectl generate sitespec".
+# Site spec template rendered by "nvkectl generate sitespec".
 #
 # The site spec describes the pre-provisioned nodes and the vanilla Kubernetes
-# cluster to build on them. nkectl loads and validates this file before it
+# cluster to build on them. nvkectl loads and validates this file before it
 # dispatches any work, so a typo or a missing field fails fast with a clear
 # error. See docs/sitespec.md for the full field reference.
 
 # Name of the Kubernetes cluster to create (lowercase RFC 1123 label).
-clusterName: "nke-site"
+clusterName: "nvke-site"
 
 cluster:
   # Pre-provisioned control-plane nodes. The site spec does not select which
@@ -17,7 +17,7 @@ cluster:
   # tpmEkThumbprint is optional: the SHA-256 of the node's TPM endorsement key,
   # read from the host before the bootstrap (spire-tpm-plugin's
   # get_tpm_pubhash). Every thumbprint listed here is allowlisted on the SPIRE
-  # server nkectl deploys, and nothing else is — a node without one cannot
+  # server nvkectl deploys, and nothing else is — a node without one cannot
   # attest, and a file with none deploys no TPM attestor at all. It is a public
   # key hash, not a secret.
   nodes:
@@ -79,7 +79,7 @@ cluster:
 #   caKeyFile: "/etc/nke/spire-ca.key"
 
 # Container registry for the bootstrap engine chart. The version (chart tag) is
-# baked into the nkectl build, so it is not set here. The controller image the
+# baked into the nvkectl build, so it is not set here. The controller image the
 # chart deploys is published separately, to <registry>/<org>/controller. NVCR
 # has no path segment to separate the two, so the chart is published under a
 # distinct name, "controller-chart", instead.

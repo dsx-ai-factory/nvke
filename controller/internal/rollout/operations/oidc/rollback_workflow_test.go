@@ -16,16 +16,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	adapter "github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/controller"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/operations/oidc"
-	rollouttemporal "github.com/dsx-ai-factory/nke/controller/internal/rollout/temporal"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	adapter "github.com/dsx-ai-factory/nvke/controller/internal/rollout/adapters/controller"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/operations/oidc"
+	rollouttemporal "github.com/dsx-ai-factory/nvke/controller/internal/rollout/temporal"
 )
 
 type clusterLoader struct{ cluster rollout.Cluster }
@@ -35,26 +35,26 @@ func (l clusterLoader) LoadCluster(context.Context, uuid.UUID) (rollout.Cluster,
 }
 
 type recordingAgent struct {
-	nkeproto.NodeAgentClient
-	outcome nkeproto.PatchAPIServerManifestResponse_Outcome
-	calls   []*nkeproto.PatchAPIServerManifestRequest
+	nvkeproto.NodeAgentClient
+	outcome nvkeproto.PatchAPIServerManifestResponse_Outcome
+	calls   []*nvkeproto.PatchAPIServerManifestRequest
 }
 
-func (a *recordingAgent) PatchAPIServerManifest(_ context.Context, req *nkeproto.PatchAPIServerManifestRequest, _ ...grpc.CallOption) (*nkeproto.PatchAPIServerManifestResponse, error) {
+func (a *recordingAgent) PatchAPIServerManifest(_ context.Context, req *nvkeproto.PatchAPIServerManifestRequest, _ ...grpc.CallOption) (*nvkeproto.PatchAPIServerManifestResponse, error) {
 	a.calls = append(a.calls, req)
-	return &nkeproto.PatchAPIServerManifestResponse{Outcome: a.outcome, ErrorMessage: "injected later-node failure"}, nil
+	return &nvkeproto.PatchAPIServerManifestResponse{Outcome: a.outcome, ErrorMessage: "injected later-node failure"}, nil
 }
 
 func TestRollout_LaterNodeFailureRestoresAuthentication(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
-		outcome   nkeproto.PatchAPIServerManifestResponse_Outcome
+		outcome   nvkeproto.PatchAPIServerManifestResponse_Outcome
 		providers bool
 	}{
-		{name: "operator failed restored", outcome: nkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_RESTORED, providers: true},
-		{name: "operator failed not restored", outcome: nkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_NOT_RESTORED, providers: true},
-		{name: "anonymous failed restored", outcome: nkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_RESTORED},
-		{name: "anonymous failed not restored", outcome: nkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_NOT_RESTORED},
+		{name: "operator failed restored", outcome: nvkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_RESTORED, providers: true},
+		{name: "operator failed not restored", outcome: nvkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_NOT_RESTORED, providers: true},
+		{name: "anonymous failed restored", outcome: nvkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_RESTORED},
+		{name: "anonymous failed not restored", outcome: nvkeproto.PatchAPIServerManifestResponse_OUTCOME_FAILED_NOT_RESTORED},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			policy := kubeadmconfig.OperatorJWTPolicy{ManagementJWTTrustDomain: "jwt.example.com"}
@@ -75,16 +75,16 @@ func TestRollout_LaterNodeFailureRestoresAuthentication(t *testing.T) {
 				{ID: uuid.New(), Name: "cp-2", ControlPlane: true},
 			}
 			cluster := adapter.NewCluster(row, nodes, nodes, "50051")
-			first := &recordingAgent{outcome: nkeproto.PatchAPIServerManifestResponse_OUTCOME_APPLIED}
+			first := &recordingAgent{outcome: nvkeproto.PatchAPIServerManifestResponse_OUTCOME_APPLIED}
 			later := &recordingAgent{outcome: tt.outcome}
-			untouched := &recordingAgent{outcome: nkeproto.PatchAPIServerManifestResponse_OUTCOME_APPLIED}
+			untouched := &recordingAgent{outcome: nvkeproto.PatchAPIServerManifestResponse_OUTCOME_APPLIED}
 			agents := map[string]*recordingAgent{"cp-0": first, "cp-1": later, "cp-2": untouched}
 			op := oidc.NewEnableOIDCOperation(
 				oidc.WithClient(fake.NewClientBuilder().Build()),
 				oidc.WithTrustDomain(policy.ManagementJWTTrustDomain),
-				oidc.WithOIDCConfig(&config.NkeOIDCAuth{Enabled: true, IssuerURL: "https://shared.example.com"}),
+				oidc.WithOIDCConfig(&config.NvkeOIDCAuth{Enabled: true, IssuerURL: "https://shared.example.com"}),
 				oidc.WithMethodSupportChecker(func(context.Context, rollout.Node, string) error { return nil }),
-				oidc.WithDialer(func(_ context.Context, node rollout.Node) (nkeproto.NodeAgentClient, func(), error) {
+				oidc.WithDialer(func(_ context.Context, node rollout.Node) (nvkeproto.NodeAgentClient, func(), error) {
 					return agents[node.Name()], func() {}, nil
 				}),
 			)

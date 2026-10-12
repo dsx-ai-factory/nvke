@@ -14,12 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/preflights"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/preflights"
 )
 
 // ---- fakes ---------------------------------------------------------------
@@ -49,7 +49,7 @@ func (c *fakeCluster) OIDCProviders() []controllerconfig.OIDCProvider { return n
 func (c *fakeCluster) ControlPlaneNodes() []rollout.Node              { return c.cps }
 func (c *fakeCluster) Nodes() []rollout.Node                          { return c.cps }
 
-// scriptedAgent is a raw nkeproto.NodeAgentClient that returns scripted
+// scriptedAgent is a raw nvkeproto.NodeAgentClient that returns scripted
 // responses per script name. It embeds the proto client interface so the
 // many RPCs the preflights never call are satisfied (they panic if
 // invoked); only ExecuteScript and GetKubeadmStatus are implemented.
@@ -58,11 +58,11 @@ func (c *fakeCluster) Nodes() []rollout.Node                          { return c
 // entry means "match any" and returns the defaultExec result.
 // GetKubeadmStatus returns the scripted single status (or err).
 type scriptedAgent struct {
-	nkeproto.NodeAgentClient
+	nvkeproto.NodeAgentClient
 
 	execResponses    map[string]execResp
 	defaultExec      execResp
-	kubeadmStatus    *nkeproto.KubeadmStatusResponse
+	kubeadmStatus    *nvkeproto.KubeadmStatusResponse
 	kubeadmStatusErr error
 
 	// records every call for assertion
@@ -77,8 +77,8 @@ type execResp struct {
 }
 
 func (a *scriptedAgent) ExecuteScript(
-	_ context.Context, in *nkeproto.ExecuteScriptRequest, _ ...grpc.CallOption,
-) (*nkeproto.ExecuteScriptResponse, error) {
+	_ context.Context, in *nvkeproto.ExecuteScriptRequest, _ ...grpc.CallOption,
+) (*nvkeproto.ExecuteScriptResponse, error) {
 	a.execCalls = append(a.execCalls, in.GetScriptName())
 	r := a.defaultExec
 	if rr, ok := a.execResponses[in.GetScriptName()]; ok {
@@ -87,7 +87,7 @@ func (a *scriptedAgent) ExecuteScript(
 	if r.err != nil {
 		return nil, r.err
 	}
-	return &nkeproto.ExecuteScriptResponse{
+	return &nvkeproto.ExecuteScriptResponse{
 		ExitCode:     r.code,
 		Output:       r.stdout,
 		ErrorMessage: r.stderr,
@@ -95,8 +95,8 @@ func (a *scriptedAgent) ExecuteScript(
 }
 
 func (a *scriptedAgent) GetKubeadmStatus(
-	_ context.Context, _ *nkeproto.KubeadmStatusRequest, _ ...grpc.CallOption,
-) (*nkeproto.KubeadmStatusResponse, error) {
+	_ context.Context, _ *nvkeproto.KubeadmStatusRequest, _ ...grpc.CallOption,
+) (*nvkeproto.KubeadmStatusResponse, error) {
 	if a.kubeadmStatusErr != nil {
 		return nil, a.kubeadmStatusErr
 	}
@@ -107,7 +107,7 @@ func (a *scriptedAgent) GetKubeadmStatus(
 // multiple node-targeted dialer calls in one test. Maps endpoint to agent; a
 // missing endpoint returns a dial error.
 func dialerForAgents(agents map[string]*scriptedAgent) nodeagent.Dialer {
-	return func(_ context.Context, node rollout.Node) (nkeproto.NodeAgentClient, func(), error) {
+	return func(_ context.Context, node rollout.Node) (nvkeproto.NodeAgentClient, func(), error) {
 		endpoint := node.AgentEndpoint()
 		a, ok := agents[endpoint]
 		if !ok {
@@ -120,7 +120,7 @@ func dialerForAgents(agents map[string]*scriptedAgent) nodeagent.Dialer {
 // onceAgentDialer returns a Dialer that returns the same agent for
 // every endpoint. Convenience for single-node tests.
 func onceAgentDialer(a *scriptedAgent) nodeagent.Dialer {
-	return func(_ context.Context, _ rollout.Node) (nkeproto.NodeAgentClient, func(), error) {
+	return func(_ context.Context, _ rollout.Node) (nvkeproto.NodeAgentClient, func(), error) {
 		return a, func() {}, nil
 	}
 }
@@ -143,7 +143,7 @@ func TestNodeAgentReachable_PassesWhenAllCPsDialOK(t *testing.T) {
 	t.Parallel()
 
 	healthy := &scriptedAgent{
-		kubeadmStatus: &nkeproto.KubeadmStatusResponse{KubeadmStatus: "ready", AgentVersion: "v0.1.17"},
+		kubeadmStatus: &nvkeproto.KubeadmStatusResponse{KubeadmStatus: "ready", AgentVersion: "v0.1.17"},
 	}
 	c := newCluster(3)
 	agents := map[string]*scriptedAgent{
@@ -160,7 +160,7 @@ func TestNodeAgentReachable_FailsWhenOneCPDialFails(t *testing.T) {
 	t.Parallel()
 
 	healthy := &scriptedAgent{
-		kubeadmStatus: &nkeproto.KubeadmStatusResponse{KubeadmStatus: "ready"},
+		kubeadmStatus: &nvkeproto.KubeadmStatusResponse{KubeadmStatus: "ready"},
 	}
 	c := newCluster(3)
 	agents := map[string]*scriptedAgent{
@@ -183,7 +183,7 @@ func TestNodeAgentReachable_FailsOnAnyRPCError(t *testing.T) {
 	t.Parallel()
 
 	healthy := &scriptedAgent{
-		kubeadmStatus: &nkeproto.KubeadmStatusResponse{KubeadmStatus: "ready"},
+		kubeadmStatus: &nvkeproto.KubeadmStatusResponse{KubeadmStatus: "ready"},
 	}
 	rpcDown := &scriptedAgent{
 		kubeadmStatusErr: errors.New("rpc error: code = Unavailable"),
@@ -218,7 +218,7 @@ func TestNodeAgentReady_PassesWhenStatusReady(t *testing.T) {
 	t.Parallel()
 
 	agent := &scriptedAgent{
-		kubeadmStatus: &nkeproto.KubeadmStatusResponse{KubeadmStatus: "ready", KubeadmPhase: "initialize"},
+		kubeadmStatus: &nvkeproto.KubeadmStatusResponse{KubeadmStatus: "ready", KubeadmPhase: "initialize"},
 	}
 	fn := preflights.NewNodeAgentReadyFunc(onceAgentDialer(agent))
 
@@ -238,7 +238,7 @@ func TestNodeAgentReady_FailsWhenStatusNotReady(t *testing.T) {
 		t.Run(tc.status, func(t *testing.T) {
 			t.Parallel()
 			agent := &scriptedAgent{
-				kubeadmStatus: &nkeproto.KubeadmStatusResponse{
+				kubeadmStatus: &nvkeproto.KubeadmStatusResponse{
 					KubeadmStatus: tc.status, KubeadmPhase: tc.phase, KubeadmCurrentMessage: tc.msg,
 				},
 			}
@@ -257,7 +257,7 @@ func TestNodeAgentVersion_PassesAtMinimum(t *testing.T) {
 	t.Parallel()
 
 	agent := &scriptedAgent{
-		kubeadmStatus: &nkeproto.KubeadmStatusResponse{KubeadmStatus: "ready", AgentVersion: "v0.1.21"},
+		kubeadmStatus: &nvkeproto.KubeadmStatusResponse{KubeadmStatus: "ready", AgentVersion: "v0.1.21"},
 	}
 	fn := preflights.NewNodeAgentVersionFunc(onceAgentDialer(agent))
 
@@ -271,7 +271,7 @@ func TestNodeAgentVersion_FailsBelowMinimum(t *testing.T) {
 	t.Parallel()
 
 	agent := &scriptedAgent{
-		kubeadmStatus: &nkeproto.KubeadmStatusResponse{KubeadmStatus: "ready", AgentVersion: "v0.1.17-3-gf5bc014"},
+		kubeadmStatus: &nvkeproto.KubeadmStatusResponse{KubeadmStatus: "ready", AgentVersion: "v0.1.17-3-gf5bc014"},
 	}
 	fn := preflights.NewNodeAgentVersionFunc(onceAgentDialer(agent))
 
@@ -287,7 +287,7 @@ func TestNodeAgentVersion_FailsClosedOnMissingParam(t *testing.T) {
 	t.Parallel()
 
 	agent := &scriptedAgent{
-		kubeadmStatus: &nkeproto.KubeadmStatusResponse{KubeadmStatus: "ready", AgentVersion: "v9.9.9"},
+		kubeadmStatus: &nvkeproto.KubeadmStatusResponse{KubeadmStatus: "ready", AgentVersion: "v9.9.9"},
 	}
 	fn := preflights.NewNodeAgentVersionFunc(onceAgentDialer(agent))
 

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/release/internal/qualification"
+	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
 )
 
 func TestBuildResolversBuildsOnePerComponent(t *testing.T) {

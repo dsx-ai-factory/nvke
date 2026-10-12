@@ -9,12 +9,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/dsx-ai-factory/nke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
 )
 
-// SubjectNKE is the subject that stands for the release as a whole. Its
+// SubjectNVKE is the subject that stands for the release as a whole. Its
 // directory is the repository root, so its file sits beside the policy.
-const SubjectNKE = "nke"
+const SubjectNVKE = "nvke"
 
 // Subject is a qualification.yaml: what one qualification moves together and
 // what is resolved around it. The file at release/qualification.yaml is the
@@ -138,7 +138,7 @@ func (d SubjectDependency) inputs(stream *StreamDefinition) (map[string]string, 
 // SubjectPath is where a subject's file lives. The release as a whole sits
 // beside the policy, and a component's sits in its own directory.
 func SubjectPath(root, subject string) string {
-	if subject == SubjectNKE {
+	if subject == SubjectNVKE {
 		return filepath.Join(root, "release", "qualification.yaml")
 	}
 	return filepath.Join(root, subject, "qualification.yaml")

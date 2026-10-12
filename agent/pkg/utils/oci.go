@@ -32,7 +32,7 @@ const (
 
 // OCIConfig holds configuration for OCI registry operations
 type OCIConfig struct {
-	// RegistryURL is the base OCI registry URL (e.g., "registry.example.com/nke/bundles")
+	// RegistryURL is the base OCI registry URL (e.g., "registry.example.com/nvke/bundles")
 	RegistryURL string
 }
 

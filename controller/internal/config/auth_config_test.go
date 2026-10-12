@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 )
 
 // setMinimumEnv sets only what Config.Validate() already required, so these cases
@@ -56,7 +56,7 @@ func TestAuthEnvFields(t *testing.T) {
 			}
 
 			cfg, err := config.ParseConfigFromEnv()
-			require.NoError(t, err, "an unset AUTH_CONFIG_PATH must not stop NKE starting")
+			require.NoError(t, err, "an unset AUTH_CONFIG_PATH must not stop NVKE starting")
 			assert.Equal(t, tt.wantPath, cfg.AuthConfigPath)
 			assert.Equal(t, tt.wantPermissive, cfg.PermissiveMode)
 		})

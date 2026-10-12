@@ -29,11 +29,11 @@ jobs:
   preview:
     name: Post preview comment
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke' && github.event.workflow_run.conclusion == 'success'
+    if: github.repository_id == '1323115536' && github.event.workflow_run.conclusion == 'success'
     timeout-minutes: 15
     steps:
       - name: Download Fern sources and metadata
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: fern-preview
           run-id: ${{ github.event.workflow_run.id }}
@@ -75,7 +75,8 @@ jobs:
           set -o pipefail
           PREVIEW_ID=$(printf 'pr-%s' "$PR_NUMBER" | tr -c 'A-Za-z0-9-' '-')
           npx -y fern-api@latest generate --docs --preview --id "$PREVIEW_ID" 2>&1 | tee /tmp/fern-output.log
-          URL=$(grep -oE 'https://[^[:space:]]+' /tmp/fern-output.log | tail -1 || true)
+          # Fern prints "Published docs to URL (ZWSP URL ZWSP)"; the first copy is the clean one.
+          URL=$(sed -n 's/.*Published docs to \(https:[^[:space:]]*\).*/\1/p' /tmp/fern-output.log | tail -1)
           if [ -z "$URL" ]; then
             echo "::error::Failed to generate preview URL. See fern output above."
             exit 1

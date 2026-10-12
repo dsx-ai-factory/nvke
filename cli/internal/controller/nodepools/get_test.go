@@ -12,7 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 // fields splits a table row into its columns, so an assertion does not depend

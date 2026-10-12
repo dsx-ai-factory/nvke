@@ -13,10 +13,10 @@ import (
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/temporal"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	nodeutil "github.com/dsx-ai-factory/nke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	nodeutil "github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
 const (
@@ -215,19 +215,19 @@ func (a *Activities) GetEtcdEncryptionRewriteStatus(
 }
 
 func etcdEncryptionRewriteOperationFromProto(
-	operation *nkeproto.EtcdEncryptionAtRestObjectsRewriteOperation,
+	operation *nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation,
 ) EtcdEncryptionRewriteOperation {
 	if operation == nil {
 		return EtcdEncryptionRewriteOperation{}
 	}
 	phase := EtcdEncryptionOperationPhaseUnspecified
 	switch operation.GetState() {
-	case nkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_UNSPECIFIED:
-	case nkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_RUNNING:
+	case nvkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_UNSPECIFIED:
+	case nvkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_RUNNING:
 		phase = EtcdEncryptionOperationPhaseRunning
-	case nkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_SUCCEEDED:
+	case nvkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_SUCCEEDED:
 		phase = EtcdEncryptionOperationPhaseSucceeded
-	case nkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_FAILED:
+	case nvkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_FAILED:
 		phase = EtcdEncryptionOperationPhaseFailed
 	}
 	return EtcdEncryptionRewriteOperation{

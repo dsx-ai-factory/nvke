@@ -3,12 +3,12 @@
 
 // Package clusterstate reads a cluster's conditions.
 //
-// One reading, shared: `nkectl get clusters` prints it in a column and
-// `nkectl bootstrap site` waits on it, and the two must not be able to disagree
+// One reading, shared: `nvkectl get clusters` prints it in a column and
+// `nvkectl bootstrap site` waits on it, and the two must not be able to disagree
 // about what a cluster is doing.
 package clusterstate
 
-import api "github.com/dsx-ai-factory/nke/controller/api"
+import api "github.com/dsx-ai-factory/nvke/controller/api"
 
 // Status returns a human-readable state derived from a cluster's conditions.
 // Conditions are checked in priority order: terminal and destructive states

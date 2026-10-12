@@ -17,9 +17,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/clients/shared"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 const testControllerClientCA = "-----BEGIN CERTIFICATE-----\npublic-ca\n-----END CERTIFICATE-----\n"
@@ -372,9 +372,9 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 	releasesDir := filepath.Join("..", "..", "..", "test", "fixtures", "releases")
 	fixtureTemplates := map[string]func(t *testing.T) string{}
 	for _, name := range []string{
-		"nke-local-dev-kindest-arm64",
-		"nke-nico-vms-24.04-amd64-fde",
-		"nke-nico-vms-24.04-arm64-fde",
+		"nvke-local-dev-kindest-arm64",
+		"nvke-nico-vms-24.04-amd64-fde",
+		"nvke-nico-vms-24.04-arm64-fde",
 		"test-fixture-amd64",
 	} {
 		fixtureTemplates["release "+name] = func(t *testing.T) string {

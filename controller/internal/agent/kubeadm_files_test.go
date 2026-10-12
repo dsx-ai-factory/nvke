@@ -21,7 +21,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 func TestSupportsKubeadmFilesViaReflection(t *testing.T) {
@@ -127,7 +127,7 @@ func (*sendEOFReflectionStream) CloseSend() error {
 
 func currentNodeAgentDescriptor() *descriptorpb.FileDescriptorProto {
 	return protodesc.ToFileDescriptorProto(
-		(&nkeproto.KubeadmInitRequest{}).ProtoReflect().Descriptor().ParentFile(),
+		(&nvkeproto.KubeadmInitRequest{}).ProtoReflect().Descriptor().ParentFile(),
 	)
 }
 

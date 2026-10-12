@@ -15,7 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
 // validateControllerManagedControlPlane asserts a cluster provisioned from the
@@ -29,7 +29,7 @@ func validateControllerManagedControlPlane(test *tenantTest) {
 		desired := test.spec.ControlPlane.Config.DesiredCount
 
 		By("Verifying the cluster has no control-plane node pool")
-		pools := expectSucceed(test.nke.ListNodePools(ctx, test.cluster.ID))
+		pools := expectSucceed(test.nvke.ListNodePools(ctx, test.cluster.ID))
 		for _, pool := range pools {
 			Expect(pool.ControlPlane).To(BeFalse(),
 				"a control-plane-controller cluster must have no control-plane node pool (found %q)", pool.Name)
@@ -37,7 +37,7 @@ func validateControllerManagedControlPlane(test *tenantTest) {
 
 		By("Waiting for the desired cluster-level control-plane nodes to become KubernetesReady")
 		Eventually(func(ctx context.Context) error {
-			return test.nke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, desired)
+			return test.nvke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, desired)
 		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
 			Should(Succeed(), "cluster-level control-plane nodes should become ready")
 
@@ -66,11 +66,11 @@ func validateControllerManagedControlPlaneUpdate(test *tenantTest) {
 		desired := controlPlaneControllerUpdateDesiredCount
 
 		By(fmt.Sprintf("Updating the cluster-level control-plane desired count to %d", desired))
-		expectSucceed(test.nke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, desired))
+		expectSucceed(test.nvke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, desired))
 
 		By("Waiting for the updated control-plane node count to become KubernetesReady in the controller")
 		Eventually(func(ctx context.Context) error {
-			return test.nke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, desired)
+			return test.nvke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, desired)
 		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
 			Should(Succeed(), "control plane should scale to the new desired count in the controller")
 
@@ -103,22 +103,22 @@ func validateControllerManagedControlPlaneRollingUpdate(test *tenantTest) {
 			"the control-plane-controller spec must set a cluster-level control plane config")
 
 		By("Capturing the current controller-managed control-plane node set")
-		oldNodeIDs := expectSucceed(test.nke.ControlPlaneNodeIDs(ctx, test.cluster.ID))
+		oldNodeIDs := expectSucceed(test.nvke.ControlPlaneNodeIDs(ctx, test.cluster.ID))
 		desired := len(oldNodeIDs)
 		Expect(desired).To(BeNumerically(">=", 3),
 			"a config-revision roll needs a multi-node control plane to keep etcd quorum while rolling")
 
-		if test.spec.Backend == nke.BackendNicoVMS {
+		if test.spec.Backend == nvke.BackendNicoVMS {
 			By("Changing the control-plane config profile to bump the configuration revision")
 			// Forge requires a real config profile; nico-vms-cp is what create uses.
-			expectSucceed(test.nke.UpdateControlPlaneConfigProfile(ctx, test.cluster.ID, nicoVMSWConfigProfile))
+			expectSucceed(test.nvke.UpdateControlPlaneConfigProfile(ctx, test.cluster.ID, nicoVMSWConfigProfile))
 		} else {
 			By("Upgrading the control-plane Kubernetes version to bump the configuration revision")
-			expectSucceed(test.nke.UpgradeClusterControlPlane(ctx, test.cluster.ID, controlPlaneControllerRollKubernetesVersion))
+			expectSucceed(test.nvke.UpgradeClusterControlPlane(ctx, test.cluster.ID, controlPlaneControllerRollKubernetesVersion))
 		}
 
 		By("Waiting for every old control-plane node to be replaced and KubernetesReady in the controller")
-		Expect(test.nke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, desired, oldNodeIDs)).To(Succeed(),
+		Expect(test.nvke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, desired, oldNodeIDs)).To(Succeed(),
 			"control plane should roll onto new nodes at the same desired count")
 
 		By("Asserting the tenant cluster reports Ready for the rolled control-plane nodes")
@@ -151,7 +151,7 @@ func assertControlPlaneNodesReadyInTenant(ctx context.Context, test *tenantTest,
 }
 
 func controlPlaneNodesReadyInTenant(ctx context.Context, test *tenantTest, tenantClient client.Client, desired int) error {
-	names, err := test.nke.ControlPlaneNodeNames(ctx, test.cluster.ID)
+	names, err := test.nvke.ControlPlaneNodeNames(ctx, test.cluster.ID)
 	if err != nil {
 		return err
 	}
@@ -192,16 +192,16 @@ func validateControllerManagedControlPlaneDeleteRefused(test *tenantTest) {
 	It("refuses a control-plane node delete that would leave fewer than three", func(ctx context.Context) {
 		By("Confirming the control plane is at the three-node fault-tolerant floor")
 		Eventually(func(ctx context.Context) error {
-			return test.nke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)
+			return test.nvke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)
 		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
 			Should(Succeed(), "this spec needs a settled three-node control plane")
 
 		// Assert on Joined as well, so the refusal below is known to come from the
 		// three-to-two boundary rather than from an incidentally smaller joined set.
-		Expect(test.nke.WaitForJoinedControlPlaneNodes(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)).To(Succeed(),
+		Expect(test.nvke.WaitForJoinedControlPlaneNodes(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)).To(Succeed(),
 			"all three control-plane nodes must report Joined for this to test the floor it claims to")
 
-		victim := expectSucceed(test.nke.ControlPlaneNodeIDs(ctx, test.cluster.ID))
+		victim := expectSucceed(test.nvke.ControlPlaneNodeIDs(ctx, test.cluster.ID))
 		Expect(victim).To(HaveLen(controlPlaneControllerUpdateDesiredCount))
 		var target uuid.UUID
 		for id := range victim {
@@ -210,13 +210,13 @@ func validateControllerManagedControlPlaneDeleteRefused(test *tenantTest) {
 		}
 
 		By("Deleting a control-plane node and expecting the quorum floor to refuse it")
-		message := expectSucceed(test.nke.DeleteNodeExpectingRefusal(ctx, target))
+		message := expectSucceed(test.nvke.DeleteNodeExpectingRefusal(ctx, target))
 		Expect(message).To(ContainSubstring("below the minimum of 3"),
 			"the refusal should name the fault-tolerant floor it is protecting")
 
 		By("Verifying the refused delete left no trace on the control plane")
 		Consistently(func(ctx context.Context) error {
-			state, err := test.nke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
+			state, err := test.nvke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
 			if err != nil {
 				return err
 			}
@@ -244,9 +244,9 @@ func validateControllerManagedControlPlaneDeleteRefused(test *tenantTest) {
 func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 	It("serializes a quorum-safe control-plane node delete and gates joins on it", func(ctx context.Context) {
 		By(fmt.Sprintf("Growing the control plane to %d so the delete clears the quorum floor", controlPlaneControllerDeleteSurgeCount))
-		expectSucceed(test.nke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount))
+		expectSucceed(test.nvke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount))
 		Eventually(func(ctx context.Context) error {
-			return test.nke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount)
+			return test.nvke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount)
 		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
 			Should(Succeed(), "control plane should grow before the delete")
 
@@ -255,15 +255,15 @@ func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 		// already marked the node KubernetesReady. Deleting inside that window is
 		// refused for a control plane that is in fact large enough.
 		By("Waiting for every grown control-plane node to report Joined, which is what the quorum floor counts")
-		Expect(test.nke.WaitForJoinedControlPlaneNodes(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount)).To(Succeed(),
+		Expect(test.nvke.WaitForJoinedControlPlaneNodes(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount)).To(Succeed(),
 			"the quorum floor counts joined nodes, so the delete must not race the Joined write")
 		By("Verifying the four-node control plane is balanced before scale-down")
 		assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerDeleteSurgeCount, nil)
 
 		By("Lowering the desired count so the delete shrinks the control plane instead of replacing the node")
-		expectSucceed(test.nke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount))
+		expectSucceed(test.nvke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount))
 
-		before := expectSucceed(test.nke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID))
+		before := expectSucceed(test.nvke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID))
 		Expect(before.NodeIDs).To(HaveLen(controlPlaneControllerDeleteSurgeCount))
 		Expect(before.InFlight()).To(BeFalse(), "no control-plane delete should be in flight before this spec starts one")
 		var target uuid.UUID
@@ -274,14 +274,14 @@ func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 		Expect(target).NotTo(Equal(uuid.Nil), "the control plane should have a joined node to delete")
 
 		By("Deleting one control-plane node")
-		Expect(test.nke.DeleteNode(ctx, target)).To(Succeed(),
+		Expect(test.nvke.DeleteNode(ctx, target)).To(Succeed(),
 			"a delete leaving three joined control-plane nodes should be accepted")
 
 		By("Watching the delete run: one teardown at a time, no joins while it runs, and visible in the cluster status")
 		observedDeleteInStatus := false
 		joinedWatermark := before.JoinedNodeIDs
 		Eventually(func(ctx context.Context) error {
-			state, err := test.nke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
+			state, err := test.nvke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
 			if err != nil {
 				return err
 			}
@@ -351,18 +351,18 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 	It("refuses deleting a healthy control-plane node but removes an unreachable one", func(ctx context.Context) {
 		By("Confirming the control plane is settled at the three-node fault-tolerant floor")
 		Eventually(func(ctx context.Context) error {
-			return test.nke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)
+			return test.nvke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)
 		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
 			Should(Succeed(), "this spec needs a settled three-node control plane")
-		Expect(test.nke.WaitForJoinedControlPlaneNodes(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)).To(Succeed(),
+		Expect(test.nvke.WaitForJoinedControlPlaneNodes(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)).To(Succeed(),
 			"all three control-plane nodes must report Joined for this to test the floor it bypasses")
 
-		cpNodes := expectSucceed(test.nke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true))
+		cpNodes := expectSucceed(test.nvke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true))
 		Expect(cpNodes).To(HaveLen(controlPlaneControllerUpdateDesiredCount))
 		victim := cpNodes[0]
 		var victimDomain string
 		originalNames := make(map[string]struct{}, len(cpNodes))
-		if test.spec.Backend == nke.BackendCAPD {
+		if test.spec.Backend == nvke.BackendCAPD {
 			By("Selecting the Machine in the less-used failure domain for deletion")
 			domainsByNode := assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerUpdateDesiredCount, nil)
 			Expect(controlPlaneEligibleDomains(test.spec)).To(Equal(2),
@@ -384,7 +384,7 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 		}
 
 		By("Confirming the delete is refused while the node is healthy")
-		message := expectSucceed(test.nke.DeleteNodeExpectingRefusal(ctx, victim.ID))
+		message := expectSucceed(test.nvke.DeleteNodeExpectingRefusal(ctx, victim.ID))
 		Expect(message).To(ContainSubstring("below the minimum of 3"),
 			"a healthy node must still be held by the floor")
 
@@ -395,7 +395,7 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 
 		By("Waiting for the controller to observe the node as no longer ready")
 		Eventually(func(ctx context.Context) error {
-			state, err := test.nke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
+			state, err := test.nvke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
 			if err != nil {
 				return err
 			}
@@ -408,12 +408,12 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 			Should(Succeed(), "the controller should notice the node stopped being ready")
 
 		By("Deleting the same node now that it is unreachable")
-		Expect(test.nke.DeleteNode(ctx, victim.ID)).To(Succeed(),
+		Expect(test.nvke.DeleteNode(ctx, victim.ID)).To(Succeed(),
 			"the delete refused a moment ago must be accepted once the node is not serving")
 
 		By("Waiting for the teardown to finish and the node to be gone")
 		Eventually(func(ctx context.Context) error {
-			ids, err := test.nke.ControlPlaneNodeIDs(ctx, test.cluster.ID)
+			ids, err := test.nvke.ControlPlaneNodeIDs(ctx, test.cluster.ID)
 			if err != nil {
 				return err
 			}
@@ -426,7 +426,7 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 
 		By("Waiting for the controller to replace it and return to three healthy nodes")
 		Eventually(func(ctx context.Context) error {
-			state, err := test.nke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
+			state, err := test.nvke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
 			if err != nil {
 				return err
 			}
@@ -448,9 +448,9 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the recovered control plane")
 		assertControlPlaneNodesReadyInTenant(ctx, test, controlPlaneControllerUpdateDesiredCount)
-		if test.spec.Backend == nke.BackendCAPD {
+		if test.spec.Backend == nvke.BackendCAPD {
 			By("Verifying the replacement refilled the deleted Machine's failure domain")
-			names := expectSucceed(test.nke.ControlPlaneNodeNames(ctx, test.cluster.ID))
+			names := expectSucceed(test.nvke.ControlPlaneNodeNames(ctx, test.cluster.ID))
 			var replacementNames []string
 			for _, name := range names {
 				if _, existed := originalNames[name]; !existed {

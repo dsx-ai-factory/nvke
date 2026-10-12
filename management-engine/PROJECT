@@ -11,21 +11,21 @@ plugins:
     manifests: ./dist/install.yaml
     output: .
 projectName: management-engine
-repo: github.com/dsx-ai-factory/nke/management-engine
+repo: github.com/dsx-ai-factory/nvke/management-engine
 resources:
 - api:
     crdVersion: v1
   domain: nke.nvidia.com
   group: internal
   kind: ClusterRelease
-  path: github.com/dsx-ai-factory/nke/management-engine/apis/v1
+  path: github.com/dsx-ai-factory/nvke/management-engine/apis/v1
   version: v1
 - api:
     crdVersion: v1
   domain: nke.nvidia.com
   group: internal
   kind: MachineImage
-  path: github.com/dsx-ai-factory/nke/management-engine/apis/v1
+  path: github.com/dsx-ai-factory/nvke/management-engine/apis/v1
   version: v1
 - api:
     crdVersion: v1
@@ -34,20 +34,20 @@ resources:
   domain: nke.nvidia.com
   group: internal
   kind: NKECluster
-  path: github.com/dsx-ai-factory/nke/management-engine/apis/v1
+  path: github.com/dsx-ai-factory/nvke/management-engine/apis/v1
   version: v1
 - api:
     crdVersion: v1
   domain: nke.nvidia.com
   group: internal
   kind: NodePoolRelease
-  path: github.com/dsx-ai-factory/nke/management-engine/apis/v1
+  path: github.com/dsx-ai-factory/nvke/management-engine/apis/v1
   version: v1
 - api:
     crdVersion: v1
   domain: nke.nvidia.com
   group: internal
   kind: ClusterReleaseChannel
-  path: github.com/dsx-ai-factory/nke/management-engine/apis/v1
+  path: github.com/dsx-ai-factory/nvke/management-engine/apis/v1
   version: v1
 version: "3"

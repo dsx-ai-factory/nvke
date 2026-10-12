@@ -36,7 +36,7 @@ func TestLoadOSProfileMetadata(t *testing.T) {
 `
 
 	testDeprecated := `profiles:
-  nke-deprecated-profile:
+  nvke-deprecated-profile:
     kubernetes_version: "1.31.9"
     architecture: amd64
     build_date: "2025-11-19"
@@ -65,11 +65,11 @@ func TestLoadOSProfileMetadata(t *testing.T) {
 	assert.Equal(t, "2025-11-19", meta.BuildDate)
 
 	// Verify deprecated-only profile is NOT found without includeDeprecated
-	_, ok = idx.GetOSProfileMetadata("nke-deprecated-profile", false)
+	_, ok = idx.GetOSProfileMetadata("nvke-deprecated-profile", false)
 	require.False(t, ok)
 
 	// Verify deprecated profile metadata
-	_, ok = idx.GetOSProfileMetadata("nke-deprecated-profile", true)
+	_, ok = idx.GetOSProfileMetadata("nvke-deprecated-profile", true)
 	require.True(t, ok)
 }
 

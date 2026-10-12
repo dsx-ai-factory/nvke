@@ -21,9 +21,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
 const drainProbeLabel = "e2e.nvidia.com/drain-probe"
@@ -40,7 +40,7 @@ func validateNodePoolScale(test *tenantTest) {
 
 		By("Incrementing the desired count of each node pool by 1")
 		for _, pool := range pools {
-			expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, pool.ID, pool.DesiredNodeCount+1))
+			expectSucceed(test.nvke.UpdateNodePoolDesiredCount(ctx, pool.ID, pool.DesiredNodeCount+1))
 		}
 
 		By("Waiting for each node pool to reach the new desired count")
@@ -55,16 +55,16 @@ func validateNodePoolScale(test *tenantTest) {
 
 		By("Restoring the original desired count of each node pool")
 		for _, pool := range pools {
-			expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, pool.ID, pool.DesiredNodeCount))
+			expectSucceed(test.nvke.UpdateNodePoolDesiredCount(ctx, pool.ID, pool.DesiredNodeCount))
 		}
 
 		// Scaling the desired count down by itself does not delete any nodes.
 		workerNode := newNodes[0]
-		if test.spec.Backend == nke.BackendCAPD {
+		if test.spec.Backend == nvke.BackendCAPD {
 			validateWorkerDrainAndDeletion(ctx, test, workerNode)
 		} else {
 			By("Deleting the scaled-up worker node")
-			Expect(test.nke.DeleteNode(ctx, workerNode.ID)).To(Succeed(), "should delete the scaled-up worker node")
+			Expect(test.nvke.DeleteNode(ctx, workerNode.ID)).To(Succeed(), "should delete the scaled-up worker node")
 		}
 
 		By("Waiting for each node pool to return to its original desired count")
@@ -96,7 +96,7 @@ func validateWorkerDrainAndDeletion(ctx context.Context, test *tenantTest, worke
 	deferDeleteDrainProbeObjects(ctx, adminClient, replicaSet, pdb)
 
 	By("Deleting the scaled-up worker node")
-	Expect(test.nke.DeleteNode(ctx, worker.ID)).To(Succeed(), "should delete the scaled-up worker node")
+	Expect(test.nvke.DeleteNode(ctx, worker.ID)).To(Succeed(), "should delete the scaled-up worker node")
 
 	By("Observing the drain cordon the worker before the PDB permits eviction")
 	Eventually(func(ctx context.Context) error {
@@ -126,7 +126,7 @@ func validateWorkerDrainAndDeletion(ctx context.Context, test *tenantTest, worke
 }
 
 func assertNodeReadyForDrain(ctx context.Context, test *tenantTest, tenantClient client.Client, expected api.Node) error {
-	node, err := test.nke.GetNode(ctx, expected.ID)
+	node, err := test.nvke.GetNode(ctx, expected.ID)
 	if err != nil {
 		return fmt.Errorf("getting scaled-up node %s from the controller: %w", expected.ID, err)
 	}
@@ -290,7 +290,7 @@ type poolScale struct {
 func expectWorkerPool(ctx context.Context, test *tenantTest) api.NodePool {
 	GinkgoHelper()
 
-	pools := expectSucceed(test.nke.ListNodePools(ctx, test.cluster.ID))
+	pools := expectSucceed(test.nvke.ListNodePools(ctx, test.cluster.ID))
 
 	var workerPool *api.NodePool
 	for i := range pools {
@@ -305,7 +305,7 @@ func expectWorkerPool(ctx context.Context, test *tenantTest) api.NodePool {
 func expectNodeIDs(ctx context.Context, test *tenantTest, nodePoolID openapi_types.UUID) map[openapi_types.UUID]struct{} {
 	GinkgoHelper()
 
-	nodes, err := test.nke.ListNodePoolNodes(ctx, nodePoolID)
+	nodes, err := test.nvke.ListNodePoolNodes(ctx, nodePoolID)
 	Expect(err).NotTo(HaveOccurred(), "should list nodes")
 
 	nodeIDs := make(map[openapi_types.UUID]struct{}, len(nodes))
@@ -318,7 +318,7 @@ func expectNodeIDs(ctx context.Context, test *tenantTest, nodePoolID openapi_typ
 func expectNewNode(ctx context.Context, test *tenantTest, nodePoolID openapi_types.UUID, originalNodes map[openapi_types.UUID]struct{}) api.Node {
 	GinkgoHelper()
 
-	nodes, err := test.nke.ListNodePoolNodes(ctx, nodePoolID)
+	nodes, err := test.nvke.ListNodePoolNodes(ctx, nodePoolID)
 	Expect(err).NotTo(HaveOccurred(), "should list nodes")
 
 	for _, node := range nodes {
@@ -336,7 +336,7 @@ func waitForPoolCountsInParallel(ctx context.Context, test *tenantTest, scales .
 	group, groupCtx := errgroup.WithContext(ctx)
 	for _, scale := range scales {
 		group.Go(func() error {
-			if err := test.nke.WaitForProvisionedNodeCount(groupCtx, scale.pool.ID, scale.desired); err != nil {
+			if err := test.nvke.WaitForProvisionedNodeCount(groupCtx, scale.pool.ID, scale.desired); err != nil {
 				return fmt.Errorf("waiting for node pool %s to have %d nodes: %w", scale.pool.Name, scale.desired, err)
 			}
 			return nil

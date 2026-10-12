@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package providers declares the infrastructure providers this build of nkectl
+// Package providers declares the infrastructure providers this build of nvkectl
 // supports.
 //
 // It is a setting rather than a registry: nothing registers into it, the set is
-// fixed when nkectl is compiled, and supporting another provider means editing
-// Supported() and its test. Being supported means only that nkectl knows how to
+// fixed when nvkectl is compiled, and supporting another provider means editing
+// Supported() and its test. Being supported means only that nvkectl knows how to
 // find and describe the provider — the controller accepts any infra.cluster manifest, so
 // a provider absent from this file can still be used by writing one by hand.
 //
@@ -28,18 +28,18 @@ const (
 )
 
 // cluster-api-provider-provisioned is deliberately not here. It adopts hosts
-// NKE provisioned for a site controller during `nkectl bootstrap site`, takes
+// NVKE provisioned for a site controller during `nvkectl bootstrap site`, takes
 // no credentials, and is never a backend an operator chooses for a tenant
 // cluster. Listing it would imply it is an alternative to NICo or LaunchLayer.
 
-// Provider is what nkectl needs to know to find a provider in a cluster and
+// Provider is what nvkectl needs to know to find a provider in a cluster and
 // report whether it is usable.
 type Provider struct {
 	// Type names the provider.
 	Type Type `json:"type"`
 
 	// CRDNames are the CRDs that must be established, and serving at least one
-	// version, for the provider to count as installed. Only the CRDs nkectl
+	// version, for the provider to count as installed. Only the CRDs nvkectl
 	// depends on are listed, not every CRD the provider ships.
 	CRDNames []string `json:"crdNames"`
 
@@ -91,7 +91,7 @@ type Provider struct {
 // serves its cluster and machine-template kinds from.
 const infrastructureGroup = "infrastructure.cluster.x-k8s.io"
 
-// Supported returns the providers this build of nkectl knows about, in a
+// Supported returns the providers this build of nvkectl knows about, in a
 // stable order.
 func Supported() []Provider {
 	return []Provider{

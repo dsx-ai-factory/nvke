@@ -13,13 +13,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent/agenttest"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestPrepareEtcdEncryption_ReturnsStableNodeOrderAndHealthyExecutor(t *testing.T) {
@@ -197,16 +197,16 @@ func TestStartEtcdEncryptionRewrite_ResumesRunningOperation(t *testing.T) {
 	mockDB := &testutil.MockDB{}
 	mockDB.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 	nodeAgent := &agenttest.FakeClient{
-		GetEncryptedObjectsRewriteHook: func(_ db.Node, operationID string) (*nkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
-			return &nkeproto.EtcdEncryptionAtRestObjectsRewriteOperation{
+		GetEncryptedObjectsRewriteHook: func(_ db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
+			return &nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation{
 				OperationId: operationID,
-				State:       nkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_RUNNING,
+				State:       nvkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_RUNNING,
 			}, nil
 		},
-		StartEncryptedObjectsRewriteHook: func(_ db.Node, operationID string) (*nkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
-			return &nkeproto.EtcdEncryptionAtRestObjectsRewriteOperation{
+		StartEncryptedObjectsRewriteHook: func(_ db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
+			return &nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation{
 				OperationId: operationID,
-				State:       nkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_RUNNING,
+				State:       nvkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_RUNNING,
 			}, nil
 		},
 	}
@@ -228,13 +228,13 @@ func TestStartEtcdEncryptionRewrite_StartsFreshOperationAfterFailure(t *testing.
 	mockDB := &testutil.MockDB{}
 	mockDB.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 	nodeAgent := &agenttest.FakeClient{
-		GetEncryptedObjectsRewriteHook: func(_ db.Node, operationID string) (*nkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
+		GetEncryptedObjectsRewriteHook: func(_ db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
 			return nil, status.Errorf(codes.NotFound, "rewrite operation %s not found", operationID)
 		},
-		StartEncryptedObjectsRewriteHook: func(_ db.Node, operationID string) (*nkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
-			return &nkeproto.EtcdEncryptionAtRestObjectsRewriteOperation{
+		StartEncryptedObjectsRewriteHook: func(_ db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
+			return &nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation{
 				OperationId: operationID,
-				State:       nkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_RUNNING,
+				State:       nvkeproto.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_RUNNING,
 			}, nil
 		},
 	}

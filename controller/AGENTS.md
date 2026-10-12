@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Cloud Workflow Engine (CWE) orchestrates NKE (NVIDIA Kubernetes Engine) cluster creation and lifecycle operations. The system uses Temporal for workflow orchestration and provides a REST API for cluster management operations.
+Cloud Workflow Engine (CWE) orchestrates NVKE (NVIDIA Kubernetes Engine) cluster creation and lifecycle operations. The system uses Temporal for workflow orchestration and provides a REST API for cluster management operations.
 
 ### Key Technologies
 - **Language**: Go — the floor is the `go` directive in the root `go.work`, not
@@ -100,7 +100,7 @@ make debug        # Run with delve debugger on :12345
 
 ### Go Conventions
 - Use `go fmt` and `goimports` for formatting
-- Import grouping order: stdlib, then third-party, then local (`github.com/dsx-ai-factory/nke/controller`)
+- Import grouping order: stdlib, then third-party, then local (`github.com/dsx-ai-factory/nvke/controller`)
 - No `github.com/pkg/errors` - use stdlib `errors` and `fmt.Errorf` with `%w`
 - Cyclomatic complexity limit: 15
 - Function length limit: 500 lines (excluding comments)
@@ -109,7 +109,7 @@ make debug        # Run with delve debugger on :12345
 All Go files must use the repository's Apache-2.0 SPDX header. Run `make license` to add missing headers.
 
 ### Prometheus metric naming
-All metric names use the `nke_controller_` prefix — never `cwe_` (legacy) (e.g. `nke_controller_node_provision_total`, not `cwe_node_provision_total`). Metrics live in `internal/metrics/` and `internal/dbmetrics/`.
+All metric names use the `nvke_controller_` prefix — never `cwe_` (legacy) (e.g. `nvke_controller_node_provision_total`, not `cwe_node_provision_total`). Metrics live in `internal/metrics/` and `internal/dbmetrics/`.
 
 ### Linting Notes
 - Use `FIXME:` for things to address in a future PR, with a tracking link
@@ -231,29 +231,29 @@ The two local paths differ, and that is the usual source of confusion:
 | `make run` / `go run ./cmd/worker/main.go` | **off** — `AUTH_CONFIG_PATH` is unset, every request is served |
 | `tilt up` | **enforcing** — `/api/*` needs a bearer token |
 
-So a bare `curl` that works host-local returns 401 under Tilt. `nkectl` mints
+So a bare `curl` that works host-local returns 401 under Tilt. `nvkectl` mints
 from the kind kubeconfig and does not need a token environment variable:
 
 ```bash
-nkectl config set-site --name local \
+nvkectl config set-site --name local \
   --url http://localhost:8080 \
   --kubeconfig ~/.kube/config
-nkectl get clusters
+nvkectl get clusters
 ```
 
 For `curl`, get a token:
 
 ```bash
-TOKEN="$(hack/nke-token.sh)"
+TOKEN="$(hack/nvke-token.sh)"
 curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/clusters
 ```
 
-`hack/nke-token.sh` prints nothing when authentication is off and exits 0, so one
+`hack/nvke-token.sh` prints nothing when authentication is off and exits 0, so one
 form works on both paths — the `${TOKEN:+...}` expansion drops the header
 entirely rather than sending an empty one:
 
 ```bash
-TOKEN="$(hack/nke-token.sh)"
+TOKEN="$(hack/nvke-token.sh)"
 curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} http://localhost:8080/api/clusters
 ```
 

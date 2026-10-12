@@ -1,7 +1,7 @@
 ! FRR config for kube-vip BGP testing on local container-based nodes.
 !
 ! Passively accepts iBGP-like sessions from any node container on the kind
-! network (172.18.0.0/16 typically). NKE's stock kube-vip is configured with
+! network (172.18.0.0/16 typically). NVKE's stock kube-vip is configured with
 ! BGP_AS=65100 (kube-vip local AS) and BGP_PEER_AS=4294967000 (Forge constant).
 ! We mirror those here so the runbook test exercises the same AS pair as prod.
 !

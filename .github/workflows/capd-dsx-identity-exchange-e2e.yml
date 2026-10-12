@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Focused CAPD coverage for the DSX identity exchange boundary. Unlike the
-# general CAPD workflow, this lane is not affected by nkectl or other CLI-only
+# general CAPD workflow, this lane is not affected by nvkectl or other CLI-only
 # changes. Workflow-plumbing paths remain included so changes to the lane itself
 # cannot bypass its E2E check.
 
@@ -23,7 +23,7 @@ on:
   # so a break they filtered out, or one a flake hid, still surfaces within
   # twelve hours. :30 past, continuing the ladder the other lanes use -- 2,14
   # is taken at :00 CAPD, :15 NICo, :30 bringup, :45 gofail; 3,15 at :00
-  # nkectl-bootstrap and nico-vms, :15 local-entrypoint.
+  # nvkectl-bootstrap and nico-vms, :15 local-entrypoint.
   schedule:
     - cron: '30 3,15 * * *'
   workflow_dispatch:

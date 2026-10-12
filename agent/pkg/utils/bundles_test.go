@@ -424,7 +424,7 @@ func TestProfileStruct(t *testing.T) {
 	profile := Profile{
 		Name:        "standard-profile",
 		Version:     "v1.0.0",
-		Summary:     "Standard NKE profile",
+		Summary:     "Standard NVKE profile",
 		Description: "Contains basic components for Kubernetes",
 		Bundles: []Bundle{
 			{Name: "kubeadm", Version: semver.MustParse("v1.28.0")},
@@ -486,15 +486,15 @@ func TestParseBundleSourceURI(t *testing.T) {
 	}{
 		{
 			name:         "OCI registry with oci:// prefix",
-			uri:          "oci://registry.example.com/nke/bundles",
+			uri:          "oci://registry.example.com/nvke/bundles",
 			expectedType: BundleSourceOCI,
-			expectedURL:  "registry.example.com/nke/bundles",
+			expectedURL:  "registry.example.com/nvke/bundles",
 		},
 		{
 			name:         "OCI registry with trailing slash",
-			uri:          "oci://registry.example.com/nke/bundles/",
+			uri:          "oci://registry.example.com/nvke/bundles/",
 			expectedType: BundleSourceOCI,
-			expectedURL:  "registry.example.com/nke/bundles",
+			expectedURL:  "registry.example.com/nvke/bundles",
 		},
 		{
 			name:         "HTTPS URL",

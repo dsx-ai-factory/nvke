@@ -1,15 +1,15 @@
-module github.com/dsx-ai-factory/nke/controller/nico-sim
+module github.com/dsx-ai-factory/nvke/controller/nico-sim
 
 go 1.27.2
 
 require (
 	github.com/NVIDIA/ncx-infra-controller-rest v1.3.0
 	github.com/google/uuid v1.6.0
-	github.com/lmittmann/tint v1.2.0
+	github.com/lmittmann/tint v1.2.1
 	github.com/mattn/go-sqlite3 v1.14.52
-	github.com/osrg/gobgp/v4 v4.9.0
-	github.com/uptrace/bun v1.2.18
-	github.com/uptrace/bun/dialect/sqlitedialect v1.2.18
+	github.com/osrg/gobgp/v4 v4.10.0
+	github.com/uptrace/bun v1.3.0
+	github.com/uptrace/bun/dialect/sqlitedialect v1.3.0
 	github.com/vishvananda/netlink v1.3.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/crypto v0.57.0

@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-REPO="${REPO:-dsx-ai-factory/nke}"
+REPO="${REPO:-dsx-ai-factory/nvke}"
 RUNS_PER_WORKFLOW="${RUNS_PER_WORKFLOW:-30}"
 # How many recent runs to read per view before grouping. Enough that an active
 # workflow still reaches RUNS_PER_WORKFLOW cells.

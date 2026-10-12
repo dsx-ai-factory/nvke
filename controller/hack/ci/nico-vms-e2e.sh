@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # nico-vms E2E lane: the controller on kind, CAPNICo from source, nico-vms on the host,
-# tenant nodes as KVM guests booted from the NKE FDE image.
+# tenant nodes as KVM guests booted from the NVKE FDE image.
 #
 # Runs on the host, not in ci/backend-e2e.sh's container: nico-vms needs
 # libvirt, the host bridge and CAP_NET_ADMIN. Tilt runs in the background for
@@ -18,7 +18,7 @@
 #   NKE_E2E_TILT_STALL       fail when no resource changes state for this long (default: 12m)
 #   NKE_E2E_STATE_DIR        diagnostics directory      (default: controller/.local/nico-vms-e2e/<run>)
 #   NKE_E2E_RUN_ID           names the state directory  (default: GITHUB_RUN_ID or local-<pid>)
-#   NKE_E2E_NKECTL_SMOKE     run hack/ci/nkectl-smoke.sh after the suite (default: true)
+#   NKE_E2E_NVKECTL_SMOKE     run hack/ci/nvkectl-smoke.sh after the suite (default: true)
 #   KIND_CLUSTER_NAME        management cluster name    (default: cwe-nico-vms)
 #   NKE_E2E_KEEP             non-empty keeps kind, Tilt and the VMs running on exit
 
@@ -29,10 +29,10 @@ CONTROLLER_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 WORKSPACE_ROOT="$(cd "${CONTROLLER_ROOT}/.." && pwd)"
 # shellcheck source=controller/hack/backend-e2e-lib.sh
 source "${CONTROLLER_ROOT}/hack/backend-e2e-lib.sh"
-# No runner container here, so the smoke runs nkectl on this host. It reads
-# NKECTL_SMOKE_RUNNER being unset as the signal; see its header.
-# shellcheck source=controller/hack/ci/nkectl-smoke.sh
-source "${SCRIPT_DIR}/nkectl-smoke.sh"
+# No runner container here, so the smoke runs nvkectl on this host. It reads
+# NVKECTL_SMOKE_RUNNER being unset as the signal; see its header.
+# shellcheck source=controller/hack/ci/nvkectl-smoke.sh
+source "${SCRIPT_DIR}/nvkectl-smoke.sh"
 cd "${CONTROLLER_ROOT}"
 
 RUN_ID="${NKE_E2E_RUN_ID:-${GITHUB_RUN_ID:-local-$$}}"
@@ -53,13 +53,13 @@ NICO_SIM_DIR="${CONTROLLER_ROOT}/nico-sim"
 E2E_BIN="${STATE_DIR}/cwe-e2e.test"
 E2E_CONFIG="${STATE_DIR}/e2e-config.json"
 E2E_KUBECONFIG="${STATE_DIR}/kubeconfig"
-# What the nkectl smoke needs. BACKEND gates its write round trip to CAPD, so
+# What the nvkectl smoke needs. BACKEND gates its write round trip to CAPD, so
 # this lane runs the read paths, negatives and provider checks only.
-# NKECTL_SMOKE_RUNNER stays unset, which is how the smoke knows to run the CLI
+# NVKECTL_SMOKE_RUNNER stays unset, which is how the smoke knows to run the CLI
 # on this host.
-NKECTL_SMOKE="${NKE_E2E_NKECTL_SMOKE:-true}"
-NKECTL_BIN="${STATE_DIR}/nkectl"
-NKECTL_SMOKE_KUBECONFIG="${E2E_KUBECONFIG}"
+NVKECTL_SMOKE="${NKE_E2E_NVKECTL_SMOKE:-true}"
+NVKECTL_BIN="${STATE_DIR}/nvkectl"
+NVKECTL_SMOKE_KUBECONFIG="${E2E_KUBECONFIG}"
 TMP_DIR="${STATE_DIR}"
 BACKEND=nico-vms
 # The controller runs with NKE_OIDC_AUTH_ENABLED here, so the smoke's no-token control is
@@ -250,7 +250,7 @@ collect_diagnostics() {
     capture tilt-engine.json tilt_cmd dump engine
     tilt_cmd snapshot create "${STATE_DIR}/tilt-snapshot.json" >/dev/null 2>&1 || true
     # Through the port-forward Tilt still holds open.
-    if token="$(hack/nke-token.sh 2>/dev/null)"; then
+    if token="$(hack/nvke-token.sh 2>/dev/null)"; then
       curl -fsS --max-time 10 ${token:+-H "Authorization: Bearer ${token}"} \
         http://localhost:8080/api/clusters >"${STATE_DIR}/cwe-clusters.json" 2>&1 || true
     fi
@@ -392,7 +392,7 @@ export NICO_SIM_FILES_DIR="${NICO_SIM_DIR}/var/files"
 # nico-sim boots guests of the host's architecture, so the specs use the
 # matching release. Keep this name in step with nicoVMSOSProfile in
 # test/e2e/tenant_test.go.
-NODEPOOL_RELEASE="nke-nico-vms-24.04-${host_arch}-fde"
+NODEPOOL_RELEASE="nvke-nico-vms-24.04-${host_arch}-fde"
 AGENT_URL_PATH="$(grep -oE 'files/[a-z-]+/nke-agent' "${NKE_CONTROLLER_RELEASES_DIR}/${NODEPOOL_RELEASE}-nodepoolrelease.yaml" | head -1)"
 [[ -n "${AGENT_URL_PATH}" ]] || fail "${NODEPOOL_RELEASE} no longer downloads nke-agent from /files/"
 log "building nke-agent from ${WORKSPACE_ROOT}/agent"
@@ -420,7 +420,7 @@ newest_os_image_tag() {
   local arch="$1" repo path org pkg tag sha
   # Keep this in step with image_repo below: both lanes booted an LVM image
   # before this, and -fde is a different boot path that has to unlock first.
-  repo="${NKE_E2E_OS_IMAGE_REPO:-ghcr.io/dsx-ai-factory/nke/os-image-non-fde}"
+  repo="${NKE_E2E_OS_IMAGE_REPO:-ghcr.io/dsx-ai-factory/nvke/os-image-non-fde}"
   path="${repo#ghcr.io/}"
   org="${path%%/*}"
   pkg="${path#*/}"
@@ -435,7 +435,7 @@ newest_os_image_tag() {
     return 0
   done < <(gh api --paginate \
       "/orgs/${org}/packages/container/${pkg//\//%2F}/versions?per_page=100" \
-      --jq '.[] | {u: .updated_at, t: (.metadata.container.tags // [])[]}' 2>/dev/null |
+      --jq '(if type == "array" then . else [] end)[] | {u: .updated_at, t: (.metadata.container.tags // [])[]}' 2>/dev/null |
     jq -rs --arg a "-${arch}" \
       'map(select(.t | startswith("sha-") and endswith($a) and (contains("-ubuntu") | not)))
        | sort_by(.u) | reverse | .[].t')
@@ -458,7 +458,7 @@ fi
 if [[ -n "${NKE_E2E_OS_IMAGE_TAG:-}" ]]; then
   command -v oras >/dev/null 2>&1 ||
     fail "NKE_E2E_OS_IMAGE_TAG is set but oras is not on PATH"
-  image_repo="${NKE_E2E_OS_IMAGE_REPO:-ghcr.io/dsx-ai-factory/nke/os-image-non-fde}"
+  image_repo="${NKE_E2E_OS_IMAGE_REPO:-ghcr.io/dsx-ai-factory/nvke/os-image-non-fde}"
   image_ref="${image_repo}:${NKE_E2E_OS_IMAGE_TAG}-${host_arch}"
   image_dir="${STATE_DIR}/os-image"
   rm -rf "${image_dir}"
@@ -730,7 +730,7 @@ log "nico-vms E2E passed: ${LABEL_FILTER}"
 # After the suite, like the CAPD and NICo lanes: drive the real binary against
 # the controller this lane deployed. Called bare so errexit and the EXIT trap turn a
 # non-zero into a failed job with diagnostics intact.
-if [[ "${NKECTL_SMOKE}" == "true" ]]; then
-  nkectl_smoke_build "$(go env GOARCH)"
-  nkectl_smoke
+if [[ "${NVKECTL_SMOKE}" == "true" ]]; then
+  nvkectl_smoke_build "$(go env GOARCH)"
+  nvkectl_smoke
 fi

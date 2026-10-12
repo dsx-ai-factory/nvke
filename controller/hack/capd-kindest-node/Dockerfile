@@ -93,7 +93,9 @@ RUN set -eux; \
 # Give the agent a netplan description of it, and restore its OVS bridge on
 # container restarts before SPIRE or the agent need the network.
 # ovs-vswitchd keeps the distro unit so it can load the host kernel module
-# from the /lib/modules tree mounted into the container.
+# from the /lib/modules tree mounted into the container. If it cannot, the
+# drop-in fails the unit before ovs-ctl's fallback, `rmmod bridge`, deletes
+# every bridge on the host.
 # Netplan needs a live udev daemon even with KIND's read-only sysfs. Netplan
 # tolerates the resulting device-trigger warning inside containers.
 COPY scripts/prepare-container-network /usr/local/sbin/prepare-container-network
@@ -102,6 +104,9 @@ RUN set -eux; \
     chmod 0755 /usr/local/sbin/prepare-container-network; \
     mkdir -p /etc/systemd/system/systemd-udevd.service.d; \
     printf '[Unit]\nConditionPathIsReadWrite=\n' > /etc/systemd/system/systemd-udevd.service.d/netplan-container.conf; \
+    mkdir -p /etc/systemd/system/ovs-vswitchd.service.d; \
+    printf '[Service]\nExecStartPre=/bin/sh -c "test -e /sys/module/openvswitch || exec modprobe openvswitch"\n' \
+      > /etc/systemd/system/ovs-vswitchd.service.d/no-rmmod-bridge.conf; \
     SYSTEMD_OFFLINE=1 systemctl enable systemd-networkd.service; \
     SYSTEMD_OFFLINE=1 systemctl disable systemd-networkd-wait-online.service; \
     SYSTEMD_OFFLINE=1 systemctl enable nke-container-network.service

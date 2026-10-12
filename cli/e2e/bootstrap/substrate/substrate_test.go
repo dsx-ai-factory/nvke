@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// The fixture and the bootstrap cluster have to share one runtime: nkectl
+// The fixture and the bootstrap cluster have to share one runtime: nvkectl
 // loads its images from containerd, so a node container started through some
 // other daemon would be on a network the cluster cannot reach, and images
 // built through it would be invisible to the loader.

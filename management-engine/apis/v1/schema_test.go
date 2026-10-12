@@ -181,7 +181,7 @@ var baseResources = map[string]string{
 	"machineimages": `{
 		"apiVersion": "internal.nke.nvidia.com/v1",
 		"kind": "MachineImage",
-		"metadata": {"name": "nke-nico-vms-24.04-amd64-fde"},
+		"metadata": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 		"spec": {
 			"operatingSystem": {"family": "ubuntu", "version": "24.04"},
 			"architecture": "amd64",
@@ -193,18 +193,18 @@ var baseResources = map[string]string{
 	"clusterreleases": `{
 		"apiVersion": "internal.nke.nvidia.com/v1",
 		"kind": "ClusterRelease",
-		"metadata": {"name": "nke-nico-vms-24.04-amd64-fde"},
+		"metadata": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 		"spec": {
-			"machineImageRef": {"name": "nke-nico-vms-24.04-amd64-fde"},
+			"machineImageRef": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 			"machineInit": {"userDataTemplate": "#cloud-config\nhostname: {{ .Hostname }}\n"}
 		}
 	}`,
 	"nodepoolreleases": `{
 		"apiVersion": "internal.nke.nvidia.com/v1",
 		"kind": "NodePoolRelease",
-		"metadata": {"name": "nke-nico-vms-24.04-amd64-fde"},
+		"metadata": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 		"spec": {
-			"machineImageRef": {"name": "nke-nico-vms-24.04-amd64-fde"},
+			"machineImageRef": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 			"machineInit": {"userDataTemplate": "#cloud-config\nhostname: {{ .Hostname }}\n"}
 		}
 	}`,

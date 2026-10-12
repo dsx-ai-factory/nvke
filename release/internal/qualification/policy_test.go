@@ -35,7 +35,7 @@ func TestScopeMatches(t *testing.T) {
 }
 
 const validPolicy = `
-apiVersion: nke.nvidia.com/v1alpha1
+apiVersion: nvke.nvidia.com/v1alpha1
 kind: QualificationPolicy
 spec:
   scopes:
@@ -90,9 +90,9 @@ func TestLoadPolicyRejects(t *testing.T) {
 
 func TestLoadPolicyAccepts(t *testing.T) {
 	p, err := LoadPolicy(write(t, "policy.yaml", `
-apiVersion: nke.nvidia.com/v1alpha1
+apiVersion: nvke.nvidia.com/v1alpha1
 kind: QualificationPolicy
-metadata: {name: nke}
+metadata: {name: nvke}
 spec:
   scopes:
     active: {selector: {kube: "1.34"}}

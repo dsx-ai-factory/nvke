@@ -12,7 +12,7 @@
 # them. Deprecated releases are left out, because the matrix covers active
 # ones.
 #
-# The nke-nico-vms-* entries are the suite's own releases rather than fleet
+# The nvke-nico-vms-* entries are the suite's own releases rather than fleet
 # ones, and the matrix needs them here because it reads this index on both
 # architectures.
 #
@@ -694,7 +694,7 @@ spec:
 apiVersion: internal.nke.nvidia.com/v1
 kind: MachineImage
 metadata:
-  name: nke-nico-vms-24.04-amd64-fde
+  name: nvke-nico-vms-24.04-amd64-fde
 spec:
   architecture: amd64
   buildDate: "2026-01-01"
@@ -709,13 +709,13 @@ spec:
 apiVersion: internal.nke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
-  name: nke-nico-vms-24.04-amd64-fde
+  name: nvke-nico-vms-24.04-amd64-fde
   annotations:
     internal.nke.nvidia.com/machine-init-kubernetes-version: ""
     internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
-    name: nke-nico-vms-24.04-amd64-fde
+    name: nvke-nico-vms-24.04-amd64-fde
   machineInit:
     userDataTemplate: |
       #cloud-config
@@ -726,7 +726,7 @@ spec:
 apiVersion: internal.nke.nvidia.com/v1
 kind: MachineImage
 metadata:
-  name: nke-nico-vms-24.04-amd64-fde-old-agent
+  name: nvke-nico-vms-24.04-amd64-fde-old-agent
 spec:
   architecture: amd64
   buildDate: "2026-01-01"
@@ -741,13 +741,13 @@ spec:
 apiVersion: internal.nke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
-  name: nke-nico-vms-24.04-amd64-fde-old-agent
+  name: nvke-nico-vms-24.04-amd64-fde-old-agent
   annotations:
     internal.nke.nvidia.com/machine-init-kubernetes-version: ""
     internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
-    name: nke-nico-vms-24.04-amd64-fde-old-agent
+    name: nvke-nico-vms-24.04-amd64-fde-old-agent
   machineInit:
     userDataTemplate: |
       #cloud-config
@@ -758,7 +758,7 @@ spec:
 apiVersion: internal.nke.nvidia.com/v1
 kind: MachineImage
 metadata:
-  name: nke-nico-vms-24.04-arm64-fde
+  name: nvke-nico-vms-24.04-arm64-fde
 spec:
   architecture: arm64
   buildDate: "2026-01-01"
@@ -773,13 +773,13 @@ spec:
 apiVersion: internal.nke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
-  name: nke-nico-vms-24.04-arm64-fde
+  name: nvke-nico-vms-24.04-arm64-fde
   annotations:
     internal.nke.nvidia.com/machine-init-kubernetes-version: ""
     internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
-    name: nke-nico-vms-24.04-arm64-fde
+    name: nvke-nico-vms-24.04-arm64-fde
   machineInit:
     userDataTemplate: |
       #cloud-config
@@ -790,7 +790,7 @@ spec:
 apiVersion: internal.nke.nvidia.com/v1
 kind: MachineImage
 metadata:
-  name: nke-local-dev-kindest-arm64
+  name: nvke-local-dev-kindest-arm64
 spec:
   architecture: arm64
   buildDate: "2026-01-01"
@@ -805,13 +805,13 @@ spec:
 apiVersion: internal.nke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
-  name: nke-local-dev-kindest-arm64
+  name: nvke-local-dev-kindest-arm64
   annotations:
     internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
     internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
-    name: nke-local-dev-kindest-arm64
+    name: nvke-local-dev-kindest-arm64
   machineInit:
     userDataTemplate: |
       #cloud-config

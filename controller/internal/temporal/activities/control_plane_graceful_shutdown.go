@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 const (
@@ -72,7 +72,7 @@ func (a *Activities) startControlPlaneGracefulShutdown(
 		return ControlPlaneGracefulShutdownOperation{}, fmt.Errorf("failed to get node: %w", err)
 	}
 
-	resp, err := a.nodeAgentClient.StartK8sControlPlaneNodeGracefulShutdown(ctx, node, &nkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest{
+	resp, err := a.nodeAgentClient.StartK8sControlPlaneNodeGracefulShutdown(ctx, node, &nvkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest{
 		OperationId:       input.OperationID,
 		StopKubeApiserver: input.StopKubeAPIServer,
 	})
@@ -111,7 +111,7 @@ func (a *Activities) getControlPlaneGracefulShutdownStatus(
 		return ControlPlaneGracefulShutdownOperation{}, fmt.Errorf("failed to get node: %w", err)
 	}
 
-	resp, err := a.nodeAgentClient.GetK8sControlPlaneNodeGracefulShutdownStatus(ctx, node, &nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusRequest{
+	resp, err := a.nodeAgentClient.GetK8sControlPlaneNodeGracefulShutdownStatus(ctx, node, &nvkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusRequest{
 		OperationId: input.OperationID,
 	})
 	if err != nil {
@@ -140,7 +140,7 @@ func newUnsupportedControlPlaneGracefulShutdownRPCError(nodeName string, err err
 	)
 }
 
-func controlPlaneGracefulShutdownOperationFromProto(operation *nkeproto.NodeAgentOperationStatus) ControlPlaneGracefulShutdownOperation {
+func controlPlaneGracefulShutdownOperationFromProto(operation *nvkeproto.NodeAgentOperationStatus) ControlPlaneGracefulShutdownOperation {
 	if operation == nil {
 		return ControlPlaneGracefulShutdownOperation{}
 	}
@@ -152,15 +152,15 @@ func controlPlaneGracefulShutdownOperationFromProto(operation *nkeproto.NodeAgen
 	}
 }
 
-func controlPlaneGracefulShutdownPhase(phase nkeproto.NodeAgentOperationPhase) string {
+func controlPlaneGracefulShutdownPhase(phase nvkeproto.NodeAgentOperationPhase) string {
 	switch phase {
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_UNSPECIFIED:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_UNSPECIFIED:
 		return ControlPlaneGracefulShutdownPhaseUnspecified
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING:
 		return ControlPlaneGracefulShutdownPhaseRunning
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED:
 		return ControlPlaneGracefulShutdownPhaseSucceeded
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED:
 		return ControlPlaneGracefulShutdownPhaseFailed
 	default:
 		return ControlPlaneGracefulShutdownPhaseUnspecified

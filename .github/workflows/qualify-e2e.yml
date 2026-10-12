@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Builds an NKE site controller on real Forge hardware and runs a tenant
+# Builds an NVKE site controller on real Forge hardware and runs a tenant
 # against it: `site_controller_test.go`, label `site-controller`.
 #
 # Unlike every other e2e lane in this repository, nothing under test runs on
 # the runner. The runner builds the inputs, then drives a bare-metal Forge
-# instance through the site's jump host: stage nkectl, stage the checkout,
-# import the images, `nkectl bootstrap site`, install the deploy path, create
+# instance through the site's jump host: stage nvkectl, stage the checkout,
+# import the images, `nvkectl bootstrap site`, install the deploy path, create
 # a tenant, tear it all down.
 #
 # It runs on the ARC fleet because that is the sanctioned fleet for this
@@ -82,8 +82,8 @@ on:
           - provision
           - bootstrap
           - full
-      nke-version:
-        description: "The nke tag to qualify, e.g. v0.22.0-beta.1. It must be an existing tag. QUALIFY_E2E_NKE_VERSION supplies it when this is empty, and the plan takes the highest nke version when neither is set."
+      nvke-version:
+        description: "The nvke tag to qualify, e.g. v0.22.0-beta.1. It must be an existing tag. QUALIFY_E2E_NVKE_VERSION supplies it when this is empty, and the plan takes the highest nke version when neither is set."
         type: string
         required: false
       scope:
@@ -96,7 +96,7 @@ on:
         type: string
         required: false
       cli-version:
-        description: Overrides the nkectl release the plan resolves, e.g. v0.1.0-rc.7 (the cli/<version> GitHub Release).
+        description: Overrides the nvkectl release the plan resolves, e.g. v0.1.0-rc.7 (the cli/<version> GitHub Release).
         type: string
         required: false
       capi-provisioned-version:
@@ -116,7 +116,7 @@ on:
         type: string
         required: false
       cwe-name:
-        description: "Deprecated alias for controller-name, read when controller-name is empty; nke#1399 removes it."
+        description: "Deprecated alias for controller-name, read when controller-name is empty; #1399 removes it."
         type: string
         required: false
       os-image-version:
@@ -128,7 +128,7 @@ on:
         type: string
         required: false
       os-image-amd64:
-        description: Overrides the HTTPS URL of the amd64 NKE qcow2 the plan resolves.
+        description: Overrides the HTTPS URL of the amd64 NVKE qcow2 the plan resolves.
         type: string
         required: false
       os-image-bootloader-arm64:
@@ -136,7 +136,7 @@ on:
         type: string
         required: false
       os-image-arm64:
-        description: Overrides the HTTPS URL of the arm64 NKE qcow2 the plan resolves.
+        description: Overrides the HTTPS URL of the arm64 NVKE qcow2 the plan resolves.
         type: string
         required: false
       dry-run:
@@ -209,7 +209,7 @@ jobs:
     # `qualify-e2e-dry-run` label for a dry run, from a branch in this
     # repository. The lanes need this job, so they are skipped with it.
     if: >-
-      github.repository == 'dsx-ai-factory/nke' &&
+      github.repository_id == '1323115536' &&
       (github.event_name == 'workflow_dispatch' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
         contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run"]'), github.event.label.name)))
@@ -222,11 +222,11 @@ jobs:
       # Whether this is a dry run, decided here once so every lane agrees.
       dry-run: ${{ steps.matrix.outputs.dry-run }}
       # What the plan resolved for the run as a whole.
-      nke-version: ${{ steps.matrix.outputs.nke-version }}
+      nvke-version: ${{ steps.matrix.outputs.nvke-version }}
       scope: ${{ steps.matrix.outputs.scope }}
     env:
       DRY_RUN: ${{ (inputs.dry-run == true || github.event.label.name == 'qualify-e2e-dry-run') && 'true' || 'false' }}
-      NKE_VERSION: ${{ inputs.nke-version || vars.QUALIFY_E2E_NKE_VERSION }}
+      NVKE_VERSION: ${{ inputs.nvke-version || vars.QUALIFY_E2E_NVKE_VERSION }}
       SCOPE: ${{ inputs.scope || vars.QUALIFY_E2E_SCOPE || 'golden-path' }}
       # The names are the registry's, which are the keys the suite reads.
       OVERRIDE_CONTROLLER: ${{ inputs.controller-version || vars.QUALIFY_E2E_CONTROLLER_VERSION }}
@@ -281,11 +281,11 @@ jobs:
           add os-image-bootloader-amd64 "${OVERRIDE_OS_IMAGE_BOOTLOADER_AMD64}"
           add os-image-bootloader-arm64 "${OVERRIDE_OS_IMAGE_BOOTLOADER_ARM64}"
 
-          args=(plan --subject nke --scope "${SCOPE}" --output plan.json)
+          args=(plan --subject nvke --scope "${SCOPE}" --output plan.json)
           # Left off when unset, so the plan takes the highest nke version
           # rather than this workflow choosing a tag.
-          if [ -n "${NKE_VERSION}" ]; then
-            args+=(--version "${NKE_VERSION}")
+          if [ -n "${NVKE_VERSION}" ]; then
+            args+=(--version "${NVKE_VERSION}")
           fi
           if [ -n "${overrides}" ]; then
             args+=(--overrides "${overrides}")
@@ -378,14 +378,14 @@ jobs:
             ]}' plan.json)"
           {
             echo "matrix=${matrix}"
-            echo "nke-version=$(jq -r .version plan.json)"
+            echo "nvke-version=$(jq -r .version plan.json)"
             echo "scope=$(jq -r .scope plan.json)"
             echo "dry-run=${DRY_RUN}"
           } >> "${GITHUB_OUTPUT}"
           echo "${matrix}" | jq .
 
       - name: Upload the plan
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qualify-plan-${{ github.run_id }}
           path: plan.json
@@ -454,10 +454,10 @@ jobs:
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
       # Empty asks for a build from this checkout; the resolve step fills it
       # in. Every use of it downstream -- the image site-inputs stages, the
-      # NKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
+      # NVKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
       # reads this one value, which is what keeps them the same image.
       SITE_CONTROLLER_VERSION: ${{ matrix.controller }}
-      # The same shape for nkectl: empty builds it from this checkout, a
+      # The same shape for nvkectl: empty builds it from this checkout, a
       # version stages that cli/<version> release. The resolve step fills in
       # the commit when it builds, so -e2e.versions always names one. Named
       # for the component, as CAPI_PROVISIONED_VERSION is; the make variable
@@ -479,9 +479,9 @@ jobs:
       # knobs that have to be equal.
       #
       # The cwe-name input and the CWE_NAMESPACE and CWE_SERVICE variables are
-      # deprecated aliases, read after the new names; nke#1399 removes them.
-      NKE_CONTROLLER_NAMESPACE: ${{ inputs.controller-name || inputs.cwe-name || vars.NKE_CONTROLLER_NAMESPACE || vars.CWE_NAMESPACE }}
-      NKE_CONTROLLER_SERVICE: ${{ inputs.controller-name || inputs.cwe-name || vars.NKE_CONTROLLER_SERVICE || vars.CWE_SERVICE }}
+      # deprecated aliases, read after the new names; #1399 removes them.
+      NKE_CONTROLLER_NAMESPACE: ${{ inputs.controller-name || inputs.cwe-name || vars.NVKE_CONTROLLER_NAMESPACE || vars.CWE_NAMESPACE }}
+      NKE_CONTROLLER_SERVICE: ${{ inputs.controller-name || inputs.cwe-name || vars.NVKE_CONTROLLER_SERVICE || vars.CWE_SERVICE }}
       # One pair per architecture. A run boots as many as its shapes need: a
       # GB200 tenant is arm64 workers behind a control plane of whatever
       # `arch` asked for, so it needs both pairs, while a single-architecture
@@ -531,10 +531,10 @@ jobs:
       #
       CAPI_PROVISIONED_VERSION: ${{ matrix.capi_provisioned }}
       # The NGC org the NVCR images are published under. A repository
-      # variable, not the nvcr environment's NKE_NGC_ORG: that environment
+      # variable, not the nvcr environment's NVKE_NGC_ORG: that environment
       # gates the publish jobs, and this job has no business entering it.
       QUALIFY_E2E_NGC_ORG: ${{ vars.QUALIFY_E2E_NGC_ORG }}
-      # Where `make site-inputs` writes nkectl and the three image archives.
+      # Where `make site-inputs` writes nvkectl and the three image archives.
       # Deliberately not the Makefile default, which is a $HOME cache: that
       # survives between jobs on a self-hosted runner, and a stale archive
       # sitting in it would be staged in place of the one this run built.
@@ -744,7 +744,7 @@ jobs:
           # The image path, resolved here so every later step reads one value.
           # Same image names on both; only the prefix differs.
           case "${SITE_IMAGE_REGISTRY}" in
-            ghcr) images="ghcr.io/dsx-ai-factory/nke" ;;
+            ghcr) images="ghcr.io/dsx-ai-factory/nvke" ;;
             nvcr)
               if [ -z "${QUALIFY_E2E_NGC_ORG}" ] || [ -z "${NGC_TOKEN}" ]; then
                 echo "::error::image-registry nvcr needs the QUALIFY_E2E_NGC_ORG repository variable and the NGC_API_KEY secret"
@@ -760,7 +760,7 @@ jobs:
           echo "SITE_IMAGES=${images}" >> "${GITHUB_ENV}"
           echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION} images=${images}"
 
-      # nkectl is a client of the CWE it bootstraps, so the two have to agree
+      # nvkectl is a client of the CWE it bootstraps, so the two have to agree
       # on the cluster API. By default both are built from this checkout,
       # which makes them one commit. A published pair has to be chosen to
       # agree: GHCR carries release tags only and its newest, v0.1.1-rc.8, is
@@ -859,14 +859,14 @@ jobs:
           done
           echo "OS_IMAGE_VERSIONS=${versions#,}" >> "${GITHUB_ENV}"
 
-      # A named version stages the nkectl that release shipped rather than
+      # A named version stages the nvkectl that release shipped rather than
       # one built here, so a candidate can pair a published CLI with a
       # published CWE. site-inputs does the download and the checks
-      # (hack/fetch-nkectl.sh); this step only decides which, and names the
-      # binary the config points at. The path is the Makefile's SITE_NKECTL.
+      # (hack/fetch-nvkectl.sh); this step only decides which, and names the
+      # binary the config points at. The path is the Makefile's SITE_NVKECTL.
       # It does look the release up, so a mistyped version fails here rather
       # than after the Teleport and registry logins.
-      - name: Resolve the nkectl version
+      - name: Resolve the nvkectl version
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -877,9 +877,9 @@ jobs:
             {
               echo "SITE_CLI_BUILD=1"
               echo "CLI_VERSION=${version}"
-              echo "SITE_NKECTL=cli/dist/nkectl-linux-${SITE_ARCH}"
+              echo "SITE_NVKECTL=cli/dist/nvkectl-linux-${SITE_ARCH}"
             } >> "${GITHUB_ENV}"
-            echo "building nkectl from ${version}"
+            echo "building nvkectl from ${version}"
             exit 0
           fi
           # The two shapes release.yml publishes a cli/<version> tag in. Also
@@ -896,9 +896,9 @@ jobs:
           fi
           {
             echo "SITE_CLI_BUILD=0"
-            echo "SITE_NKECTL=${SITE_INPUTS}/nkectl/nkectl-linux-${SITE_ARCH}"
+            echo "SITE_NVKECTL=${SITE_INPUTS}/nvkectl/nvkectl-linux-${SITE_ARCH}"
           } >> "${GITHUB_ENV}"
-          echo "staging the published nkectl ${CLI_VERSION}"
+          echo "staging the published nvkectl ${CLI_VERSION}"
 
       # No stored identity: tbot joins with the repository's OIDC token
       # against a join token named by FORGE_TELEPORT_JOIN_TOKEN, whose bot
@@ -999,16 +999,16 @@ jobs:
           username: $oauthtoken
           password: ${{ secrets.NGC_API_KEY }}
 
-      # nkectl for the node's architecture, the three image archives, and the
+      # nvkectl for the node's architecture, the three image archives, and the
       # deploy path out of the checkout. The node has no access to this
       # repository, so everything it runs has to be built here and staged.
       # SITE_CONTROLLER_BUILD and SITE_CLI_BUILD come from the resolve steps
-      # and decide whether the CWE archive and nkectl are built here or were
+      # and decide whether the CWE archive and nvkectl are built here or were
       # published.
       - name: Build the site inputs
         shell: bash
         env:
-          # Only the published-nkectl path reads it: the repository is
+          # Only the published-nvkectl path reads it: the repository is
           # private, so release assets come through the API with a token.
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -1042,8 +1042,8 @@ jobs:
           # Generated by .github/workflows/qualify-e2e.yml.
           node:
             user: "${NODE_USER}"
-          nkectl:
-            binary: ${SITE_NKECTL}
+          nvkectl:
+            binary: ${SITE_NVKECTL}
           site:
             images:
               controller:
@@ -1094,7 +1094,7 @@ jobs:
           IN_OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 }}
           IN_OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 }}
           IN_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 }}
-          IN_NKE_VERSION: ${{ inputs.nke-version }}
+          IN_NVKE_VERSION: ${{ inputs.nvke-version }}
           IN_SCOPE: ${{ inputs.scope }}
           IN_DRY_RUN: ${{ inputs.dry-run }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
@@ -1108,11 +1108,11 @@ jobs:
           VAR_CAPI_PROVISIONED_VERSION: ${{ vars.QUALIFY_E2E_CAPI_PROVISIONED_VERSION }}
           VAR_KUBERNETES_VERSION: ${{ vars.QUALIFY_E2E_KUBERNETES_VERSION }}
           VAR_CNI_OVN_VERSION: ${{ vars.QUALIFY_E2E_CNI_OVN_VERSION }}
-          VAR_CONTROLLER_NAMESPACE: ${{ vars.NKE_CONTROLLER_NAMESPACE }}
-          VAR_CONTROLLER_SERVICE: ${{ vars.NKE_CONTROLLER_SERVICE }}
+          VAR_CONTROLLER_NAMESPACE: ${{ vars.NVKE_CONTROLLER_NAMESPACE }}
+          VAR_CONTROLLER_SERVICE: ${{ vars.NVKE_CONTROLLER_SERVICE }}
           # The names those two replaced, read separately so the summary can
           # say a deprecated one answered instead of hiding it behind the
-          # value it supplied. nke#1399 removes them.
+          # value it supplied. #1399 removes them.
           WAS_CONTROLLER_NAMESPACE: ${{ vars.CWE_NAMESPACE }}
           WAS_CONTROLLER_SERVICE: ${{ vars.CWE_SERVICE }}
           VAR_OS_IMAGE_BOOTLOADER_AMD64: ${{ vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
@@ -1120,11 +1120,11 @@ jobs:
           VAR_OS_IMAGE_BOOTLOADER_ARM64: ${{ vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
           VAR_OS_IMAGE_ARM64: ${{ vars.QUALIFY_E2E_OS_IMAGE_ARM64 }}
           VAR_NODE_USER: ${{ vars.QUALIFY_E2E_NODE_USER }}
-          VAR_NKE_VERSION: ${{ vars.QUALIFY_E2E_NKE_VERSION }}
+          VAR_NVKE_VERSION: ${{ vars.QUALIFY_E2E_NVKE_VERSION }}
           VAR_SCOPE: ${{ vars.QUALIFY_E2E_SCOPE }}
           # What the plan resolved for the whole run. The lane's own values
           # come from its matrix entry, which is in the env above.
-          NKE_VERSION: ${{ needs.plan.outputs.nke-version }}
+          NVKE_VERSION: ${{ needs.plan.outputs.nvke-version }}
           SCOPE: ${{ needs.plan.outputs.scope }}
           STREAM: ${{ matrix.stream }}
           COMBINATION: ${{ matrix.combination }}
@@ -1141,7 +1141,7 @@ jobs:
           rows=(
             "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|QUALIFY_E2E_STAGE"
             "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|QUALIFY_E2E_CONTROLLER_VERSION"
-            "nkectl version|CLI_VERSION|IN_CLI_VERSION|VAR_CLI_VERSION|QUALIFY_E2E_CLI_VERSION"
+            "nvkectl version|CLI_VERSION|IN_CLI_VERSION|VAR_CLI_VERSION|QUALIFY_E2E_CLI_VERSION"
             "dry run|DRY_RUN|IN_DRY_RUN||"
             "keep the node|KEEP_SITE|IN_KEEP_SITE|VAR_KEEP_SITE|QUALIFY_E2E_KEEP_SITE"
             "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|QUALIFY_E2E_IMAGE_REGISTRY"
@@ -1172,7 +1172,7 @@ jobs:
             "node user|NODE_USER||VAR_NODE_USER|QUALIFY_E2E_NODE_USER"
             "stream|STREAM|||"
             "combination|COMBINATION|||"
-            "nke version|NKE_VERSION|IN_NKE_VERSION|VAR_NKE_VERSION|QUALIFY_E2E_NKE_VERSION"
+            "nvke version|NVKE_VERSION|IN_NVKE_VERSION|VAR_NVKE_VERSION|QUALIFY_E2E_NVKE_VERSION"
             "scope|SCOPE|IN_SCOPE|VAR_SCOPE|QUALIFY_E2E_SCOPE"
             "cpu arch|ARCH|||"
             "gpu model|GPU|||"
@@ -1202,7 +1202,7 @@ jobs:
           # because the name the controller is installed under is read by the
           # suite from the environment variables it already honours, so it
           # carries no QUALIFY_E2E_ prefix of its own. CWE_ is its deprecated
-          # alias; nke#1399 removes it.
+          # alias; #1399 removes it.
           missing=()
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f5,7 | tr '|' '\n' | grep -qx "${name}" || missing+=("vars.${name}")
@@ -1212,7 +1212,7 @@ jobs:
               grep -qx "IN_$(printf '%s' "${name}" | tr 'a-z-' 'A-Z_')" || missing+=("inputs.${name}")
           # The leading [^a-z-] keeps this off its own artifact name: a bare
           # `inputs\.` also matches the `run-inputs.txt` two lines above.
-          # cwe-name is a deprecated alias for controller-name; nke#1399
+          # cwe-name is a deprecated alias for controller-name; #1399
           # removes it. The summary below names it as the controller rows'
           # source when it answered.
           done < <(grep -oE '[^a-z-]inputs\.[a-z0-9-]+' "${WORKFLOW}" | sed 's/.*inputs\.//' | grep -vx 'cwe-name' | sort -u)
@@ -1413,11 +1413,11 @@ jobs:
       # view, and a green one is the reference for diagnosing the next red
       # one.
       #
-      # nkectl-diagnostics.tar.gz is what nkectl collected on the node when a
+      # nvkectl-diagnostics.tar.gz is what nvkectl collected on the node when a
       # bootstrap failed. It only exists on a failure, and only the suite can
       # save it: the node is released minutes later and takes it with it.
       #
-      # site-cluster-state.txt covers the gap that leaves. nkectl writes
+      # site-cluster-state.txt covers the gap that leaves. nvkectl writes
       # diagnostics when the bootstrap fails, so a run that bootstrapped and
       # then never saw CWE answer gets none, and before this such a run
       # recorded nothing beyond "did not become healthy within 10m0s". It
@@ -1425,13 +1425,13 @@ jobs:
       # merely unreachable.
       - name: Upload the run log
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: forge-site-${{ env.SITE_STAGE }}-${{ matrix.stream }}-${{ github.run_id }}
           path: |
             controller/test/e2e/qualify-e2e.log
             controller/test/e2e/qualify-e2e.junit.xml
-            controller/test/e2e/nkectl-diagnostics.tar.gz
+            controller/test/e2e/nvkectl-diagnostics.tar.gz
             controller/test/e2e/tenant-diagnostics.json
             controller/test/e2e/site-cluster-state.txt
             ${{ runner.temp }}/run-inputs.txt

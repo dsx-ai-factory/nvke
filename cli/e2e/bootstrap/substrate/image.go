@@ -25,7 +25,7 @@ import (
 var nodeAssets embed.FS
 
 const (
-	// tpmPluginVersion pins get_tpm_pubhash to the spire-tpm-plugin release NKE
+	// tpmPluginVersion pins get_tpm_pubhash to the spire-tpm-plugin release NVKE
 	// already ships in its spire-agent bundle (pkg-builder/bundles_latest/
 	// spire-agent.yaml, TPM_PLUGIN_VERSION), so the fingerprint this tool
 	// prints is computed by the same code as the attestor that presents it.
@@ -37,7 +37,7 @@ const (
 // and returns its tag.
 func EnsureNodeImage(ctx context.Context, cfg Config, log Logf) (string, error) {
 	// Before the cache check, not after: a cached image means the certificate
-	// is already baked in, but `nkectl bootstrap site` still needs the key on
+	// is already baked in, but `nvkectl bootstrap site` still needs the key on
 	// this run. Generating it here only when the image is rebuilt would leave a
 	// second run with an image and no CA to go with it.
 	caCert, _, err := EnsureBootstrapCA(cfg.CADir)
@@ -73,7 +73,7 @@ func EnsureNodeImage(ctx context.Context, cfg Config, log Logf) (string, error) 
 			[]byte(cfg.SpireTrustDomain),
 		}, []byte{0})
 		digest := sha256.Sum256(cacheInput)
-		tag = fmt.Sprintf("nkectl-e2e/bootstrap-node:%s-ca%x",
+		tag = fmt.Sprintf("nvkectl-e2e/bootstrap-node:%s-ca%x",
 			sanitizeTag(cfg.BaseImage), digest[:6])
 	}
 
@@ -86,13 +86,13 @@ func EnsureNodeImage(ctx context.Context, cfg Config, log Logf) (string, error) 
 		return "", fmt.Errorf(
 			"base image %q not found locally.\n"+
 				"  Build it first with `make -C cli ensure-capd-image`, or set\n"+
-				"  NKECTL_E2E_BASE_IMAGE to an image that has nke-agent installed\n"+
+				"  NVKECTL_E2E_BASE_IMAGE to an image that has nke-agent installed\n"+
 				"  as a systemd unit",
 			cfg.BaseImage,
 		)
 	}
 
-	buildDir, err := os.MkdirTemp("", "nkectl-e2e-build-*")
+	buildDir, err := os.MkdirTemp("", "nvkectl-e2e-build-*")
 	if err != nil {
 		return "", fmt.Errorf("creating build context: %w", err)
 	}

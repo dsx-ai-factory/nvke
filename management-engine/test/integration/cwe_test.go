@@ -25,8 +25,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	internalv1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 )
 
 //go:embed testdata/cluster.yaml

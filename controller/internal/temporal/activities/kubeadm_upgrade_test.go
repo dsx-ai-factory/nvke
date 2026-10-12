@@ -16,11 +16,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent/agenttest"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestKubeadmUpgradeApplyPrefersHealthyJoinedControlPlaneNode(t *testing.T) {
@@ -33,8 +33,8 @@ func TestKubeadmUpgradeApplyPrefersHealthyJoinedControlPlaneNode(t *testing.T) {
 			filters.ControlPlane != nil && *filters.ControlPlane
 	})).Return([]db.Node{unhealthyNode, healthyNode}, nil).Once()
 	fakeAgent := &agenttest.FakeClient{
-		KubeadmUpgradeApplyResponse: &nkeproto.KubeadmUpgradeApplyResponse{
-			Outcome:       nkeproto.KubeadmUpgradeApplyResponse_OUTCOME_APPLIED,
+		KubeadmUpgradeApplyResponse: &nvkeproto.KubeadmUpgradeApplyResponse{
+			Outcome:       nvkeproto.KubeadmUpgradeApplyResponse_OUTCOME_APPLIED,
 			PlanOutput:    "plan output\n",
 			ApplyOutput:   "apply output\n",
 			TargetVersion: "v1.34.2",
@@ -63,8 +63,8 @@ func TestKubeadmUpgradeApplyFallsBackToJoinedControlPlaneNode(t *testing.T) {
 	mockDB := &testutil.MockDB{}
 	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{joinedNode}, nil).Once()
 	fakeAgent := &agenttest.FakeClient{
-		KubeadmUpgradeApplyResponse: &nkeproto.KubeadmUpgradeApplyResponse{
-			Outcome: nkeproto.KubeadmUpgradeApplyResponse_OUTCOME_APPLIED,
+		KubeadmUpgradeApplyResponse: &nvkeproto.KubeadmUpgradeApplyResponse{
+			Outcome: nvkeproto.KubeadmUpgradeApplyResponse_OUTCOME_APPLIED,
 		},
 	}
 	a := &Activities{db: mockDB, nodeAgentClient: fakeAgent}
@@ -89,13 +89,13 @@ func TestKubeadmUpgradeApplyFallsBackToLegacyRunbookWhenRPCIsUnimplemented(t *te
 	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "cluster-1"}, nil).Once()
 	fakeAgent := &agenttest.FakeClient{
 		KubeadmUpgradeApplyError: fmt.Errorf("kubeadm upgrade: %w", status.Error(codes.Unimplemented, "unknown method KubeadmUpgradeApply")),
-		ExecuteScriptHook: func(_ db.Node, scriptName, scriptContents string) (*nkeproto.ExecuteScriptResponse, error) {
+		ExecuteScriptHook: func(_ db.Node, scriptName, scriptContents string) (*nvkeproto.ExecuteScriptResponse, error) {
 			require.Equal(t, "upgrade-kubelet-kubeadm", scriptName)
 			require.Contains(t, scriptContents, "export IS_MASTER='true'")
 			require.Contains(t, scriptContents, "export KUBEADM_UPGRADE_ONLY='true'")
 			require.Contains(t, scriptContents, "export VERSION='1.34.2'")
 			require.Contains(t, scriptContents, "kubeadm upgrade apply")
-			return &nkeproto.ExecuteScriptResponse{Output: "legacy upgrade output\n"}, nil
+			return &nvkeproto.ExecuteScriptResponse{Output: "legacy upgrade output\n"}, nil
 		},
 	}
 	a := &Activities{db: mockDB, nodeAgentClient: fakeAgent}
@@ -140,7 +140,7 @@ func TestKubeadmUpgradeApplyReportsSelectionAndAgentFailures(t *testing.T) {
 		name       string
 		nodes      []db.Node
 		agentError error
-		response   *nkeproto.KubeadmUpgradeApplyResponse
+		response   *nvkeproto.KubeadmUpgradeApplyResponse
 		wantError  string
 	}{
 		{
@@ -157,7 +157,7 @@ func TestKubeadmUpgradeApplyReportsSelectionAndAgentFailures(t *testing.T) {
 		{
 			name:      "unspecified agent outcome",
 			nodes:     []db.Node{joinedControlPlaneNode(clusterID, "healthy", true)},
-			response:  &nkeproto.KubeadmUpgradeApplyResponse{},
+			response:  &nvkeproto.KubeadmUpgradeApplyResponse{},
 			wantError: "returned outcome OUTCOME_UNSPECIFIED",
 		},
 	}

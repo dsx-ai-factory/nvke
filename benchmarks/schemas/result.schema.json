@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/dsx-ai-factory/nke/benchmarks/schemas/result.schema.json",
+  "$id": "https://github.com/dsx-ai-factory/nvke/benchmarks/schemas/result.schema.json",
   "title": "Published result frontmatter",
   "description": "Frontmatter for a published benchmark result. Every field a reader needs to identify what was run and against which recipe, and nothing that identifies a specific cluster or person. additionalProperties is false, so a document carrying extra fields is rejected rather than silently published.",
   "type": "object",

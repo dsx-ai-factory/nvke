@@ -114,7 +114,7 @@ notices: ## Regenerate THIRD_PARTY_NOTICES.md for the nke-os-image-check binary.
 	@# absolute path, so a relative name does not match it.
 	@#
 	@# GOWORK is deliberately NOT set to off here, unlike the other targets in
-	@# this file. os-image requires github.com/dsx-ai-factory/nke/agent, which resolves
+	@# this file. os-image requires github.com/dsx-ai-factory/nvke/agent, which resolves
 	@# only through the workspace; with the workspace off, go-licenses cannot
 	@# load the module and fails before it collects anything.
 	@$(MAKE) --no-print-directory -C ../controller go-licenses

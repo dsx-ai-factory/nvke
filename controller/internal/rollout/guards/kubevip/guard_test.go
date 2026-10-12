@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
 
 type fakeNode struct {
@@ -47,53 +47,53 @@ func (c *fakeCluster) ControlPlaneNodes() []rollout.Node              { return c
 func (c *fakeCluster) Nodes() []rollout.Node                          { return c.nodes }
 
 type fakeKubeVipClient struct {
-	nkeproto.NodeAgentClient
+	nvkeproto.NodeAgentClient
 
 	drainStartErr error
-	drainStartReq *nkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest
-	drainStatus   []*nkeproto.NodeAgentOperationStatus
+	drainStartReq *nvkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest
+	drainStatus   []*nvkeproto.NodeAgentOperationStatus
 	drainPolls    int
 
-	restoreStartReq *nkeproto.StartKubeVipRestoreRequest
-	restoreStatus   []*nkeproto.NodeAgentOperationStatus
+	restoreStartReq *nvkeproto.StartKubeVipRestoreRequest
+	restoreStatus   []*nvkeproto.NodeAgentOperationStatus
 	restorePolls    int
 }
 
 func (c *fakeKubeVipClient) StartK8SControlPlaneNodeGracefulShutdown(
 	_ context.Context,
-	req *nkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest,
+	req *nvkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest,
 	_ ...grpc.CallOption,
-) (*nkeproto.StartK8SControlPlaneNodeGracefulShutdownResponse, error) {
+) (*nvkeproto.StartK8SControlPlaneNodeGracefulShutdownResponse, error) {
 	c.drainStartReq = req
 	if c.drainStartErr != nil {
 		return nil, c.drainStartErr
 	}
-	return &nkeproto.StartK8SControlPlaneNodeGracefulShutdownResponse{
+	return &nvkeproto.StartK8SControlPlaneNodeGracefulShutdownResponse{
 		Operation: running(req.GetOperationId(), "queued"),
 	}, nil
 }
 
 func (c *fakeKubeVipClient) GetK8SControlPlaneNodeGracefulShutdownStatus(
 	context.Context,
-	*nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusRequest,
+	*nvkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusRequest,
 	...grpc.CallOption,
-) (*nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusResponse, error) {
+) (*nvkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusResponse, error) {
 	op := succeeded("drain")
 	if c.drainPolls < len(c.drainStatus) {
 		op = c.drainStatus[c.drainPolls]
 	}
 	c.drainPolls++
-	return &nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusResponse{Operation: op}, nil
+	return &nvkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusResponse{Operation: op}, nil
 }
 
 func (c *fakeKubeVipClient) StartKubeVipRestore(
 	_ context.Context,
-	req *nkeproto.StartKubeVipRestoreRequest,
+	req *nvkeproto.StartKubeVipRestoreRequest,
 	_ ...grpc.CallOption,
-) (*nkeproto.StartKubeVipRestoreResponse, error) {
+) (*nvkeproto.StartKubeVipRestoreResponse, error) {
 	if c.restoreStartReq == nil {
 		c.restoreStartReq = req
-		return &nkeproto.StartKubeVipRestoreResponse{
+		return &nvkeproto.StartKubeVipRestoreResponse{
 			Operation: running(req.GetOperationId(), "queued"),
 		}, nil
 	}
@@ -104,17 +104,17 @@ func (c *fakeKubeVipClient) StartKubeVipRestore(
 		op = c.restoreStatus[c.restorePolls]
 	}
 	c.restorePolls++
-	return &nkeproto.StartKubeVipRestoreResponse{Operation: op}, nil
+	return &nvkeproto.StartKubeVipRestoreResponse{Operation: op}, nil
 }
 
 func TestKubeVipDrainRestoreGuard_DrainsAndRestores(t *testing.T) {
 	node := fakeNode{id: uuid.New(), name: "cp-0", role: rollout.NodeRoleControlPlane, endpoint: "10.0.0.10:50051"}
 	cluster := &fakeCluster{id: uuid.New(), name: "tenant-a", nodes: []rollout.Node{node}}
 	client := &fakeKubeVipClient{
-		drainStatus: []*nkeproto.NodeAgentOperationStatus{
+		drainStatus: []*nvkeproto.NodeAgentOperationStatus{
 			succeeded("drain"),
 		},
-		restoreStatus: []*nkeproto.NodeAgentOperationStatus{
+		restoreStatus: []*nvkeproto.NodeAgentOperationStatus{
 			succeeded("restore"),
 		},
 	}
@@ -168,7 +168,7 @@ func TestKubeVipDrainRestoreGuard_PostApplyRestoresAfterDrainStartError(t *testi
 	cluster := &fakeCluster{id: uuid.New(), name: "tenant-a", nodes: []rollout.Node{node}}
 	client := &fakeKubeVipClient{
 		drainStartErr: errors.New("rpc error after request dispatch"),
-		restoreStatus: []*nkeproto.NodeAgentOperationStatus{
+		restoreStatus: []*nvkeproto.NodeAgentOperationStatus{
 			succeeded("restore"),
 		},
 	}
@@ -196,10 +196,10 @@ func TestKubeVipDrainRestoreGuard_PostApplyRestoresAfterPreApplyCheckFailure(t *
 	node := fakeNode{id: uuid.New(), name: "cp-0", role: rollout.NodeRoleControlPlane, endpoint: "10.0.0.10:50051"}
 	cluster := &fakeCluster{id: uuid.New(), name: "tenant-a", nodes: []rollout.Node{node}}
 	client := &fakeKubeVipClient{
-		drainStatus: []*nkeproto.NodeAgentOperationStatus{
+		drainStatus: []*nvkeproto.NodeAgentOperationStatus{
 			failed("drain", "waiting_for_vip_socket_quiet_window", "new VIP socket appeared"),
 		},
-		restoreStatus: []*nkeproto.NodeAgentOperationStatus{
+		restoreStatus: []*nvkeproto.NodeAgentOperationStatus{
 			succeeded("restore"),
 		},
 	}
@@ -231,31 +231,31 @@ func TestNodeAgentOperationDone_NilStatusFails(t *testing.T) {
 }
 
 func dialerFor(client *fakeKubeVipClient) nodeagent.Dialer {
-	return func(context.Context, rollout.Node) (nkeproto.NodeAgentClient, func(), error) {
+	return func(context.Context, rollout.Node) (nvkeproto.NodeAgentClient, func(), error) {
 		return client, func() {}, nil
 	}
 }
 
-func running(operationID, step string) *nkeproto.NodeAgentOperationStatus {
-	return &nkeproto.NodeAgentOperationStatus{
+func running(operationID, step string) *nvkeproto.NodeAgentOperationStatus {
+	return &nvkeproto.NodeAgentOperationStatus{
 		OperationId: operationID,
-		Phase:       nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING,
+		Phase:       nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING,
 		Step:        step,
 	}
 }
 
-func succeeded(operationID string) *nkeproto.NodeAgentOperationStatus {
-	return &nkeproto.NodeAgentOperationStatus{
+func succeeded(operationID string) *nvkeproto.NodeAgentOperationStatus {
+	return &nvkeproto.NodeAgentOperationStatus{
 		OperationId: operationID,
-		Phase:       nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED,
+		Phase:       nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED,
 		Step:        "done",
 	}
 }
 
-func failed(operationID, step, msg string) *nkeproto.NodeAgentOperationStatus {
-	return &nkeproto.NodeAgentOperationStatus{
+func failed(operationID, step, msg string) *nvkeproto.NodeAgentOperationStatus {
+	return &nvkeproto.NodeAgentOperationStatus{
 		OperationId:  operationID,
-		Phase:        nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED,
+		Phase:        nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED,
 		Step:         step,
 		ErrorMessage: msg,
 	}
@@ -278,7 +278,7 @@ func TestKubeVipDrainRestoreGuard_DialerRequired(t *testing.T) {
 func TestKubeVipDrainRestoreGuard_DialError(t *testing.T) {
 	node := fakeNode{id: uuid.New(), name: "cp-0", role: rollout.NodeRoleControlPlane, endpoint: "10.0.0.10:50051"}
 	cluster := &fakeCluster{id: uuid.New(), name: "tenant-a", nodes: []rollout.Node{node}}
-	guard := NewGuard(func(context.Context, rollout.Node) (nkeproto.NodeAgentClient, func(), error) {
+	guard := NewGuard(func(context.Context, rollout.Node) (nvkeproto.NodeAgentClient, func(), error) {
 		return nil, nil, errors.New("connection refused")
 	})
 

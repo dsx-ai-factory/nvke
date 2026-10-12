@@ -5,9 +5,9 @@
 # Install the Kubernetes stack a kubeadm bring-up needs, from community
 # artifacts only. Runs inside the test VM from cloud-init.
 #
-# The NKE apt repository sits behind a source-IP allow list that GitHub runners
+# The NVKE apt repository sits behind a source-IP allow list that GitHub runners
 # are outside of, so the lane that needs it reports success having skipped its
-# own test. Everything the NKE kubeadm distro package ships is an upstream
+# own test. Everything the NVKE kubeadm distro package ships is an upstream
 # release with a published checksum, and the agent looks its tools up on PATH
 # (agent/internal/agent/agent.go:423 does exec.LookPath("kubeadm")), so fetching
 # them here gives the agent the same thing the package would.

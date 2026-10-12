@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 )
 
 // The collector's whole value is that it separates "the controller is not ready" from
@@ -110,7 +110,7 @@ func TestClusterStateSurvivesANewlineEatingTransport(t *testing.T) {
 // site cluster is controller.Namespace(). Run 37582097398 dumped every namespace and
 // found the controller running there, and found nke-controller empty.
 //
-// nke-controller is where nkectl's own bootstrap cluster puts it
+// nke-controller is where nvkectl's own bootstrap cluster puts it
 // (cli/internal/bootstrap/controllerdeploy), so it is the plausible wrong answer, and
 // the one a reader reaches for. A collector pointed at it answers "No
 // resources found" for every section -- indistinguishable, in the artifact,

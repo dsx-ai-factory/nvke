@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
 const (
@@ -30,7 +30,7 @@ const (
 func validateKubeletServingCSRApproval(test *tenantTest) {
 	It("approves a new serving CSR created by a real kubelet", func(ctx context.Context) {
 		workerPool := expectWorkerPool(ctx, test)
-		worker := expectSucceed(test.nke.WaitForReadyNodeInPool(ctx, workerPool.ID))
+		worker := expectSucceed(test.nvke.WaitForReadyNodeInPool(ctx, workerPool.ID))
 		tenantClient := expectSucceed(test.tenantClients.GetClient(ctx, test.cluster.Name))
 		adminClient := expectSucceed(test.tenantClients.GetAdminClient(ctx, test.cluster.Name))
 		previousCSRs := expectSucceed(csrNames(ctx, tenantClient))

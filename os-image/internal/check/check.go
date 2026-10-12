@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/reflection/grpc_reflection_v1"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 const (
@@ -160,7 +160,7 @@ func Probe(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("%w: %s not in reflection listing %v", ErrAgentRPC, NodeAgentService, services)
 	}
 
-	statusResp, err := nkeproto.NewNodeAgentClient(conn).GetKubeadmStatus(ctx, &nkeproto.KubeadmStatusRequest{})
+	statusResp, err := nvkeproto.NewNodeAgentClient(conn).GetKubeadmStatus(ctx, &nvkeproto.KubeadmStatusRequest{})
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: GetKubeadmStatus: %w", ErrAgentRPC, err)
 	}

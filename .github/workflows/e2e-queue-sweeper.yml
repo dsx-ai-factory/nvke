@@ -45,7 +45,7 @@ concurrency:
 
 jobs:
   sweep:
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -65,7 +65,7 @@ jobs:
             capd-dsx-identity-exchange-e2e.yml
             local-entrypoint-e2e.yml
             nico-vms-e2e.yml
-            nkectl-bootstrap-e2e.yml
+            nvkectl-bootstrap-e2e.yml
             kubeadm-bringup-e2e.yml
           )
           cancelled=0
@@ -98,7 +98,7 @@ jobs:
             capd-dsx-identity-exchange-e2e.yml
             local-entrypoint-e2e.yml
             nico-vms-e2e.yml
-            nkectl-bootstrap-e2e.yml
+            nvkectl-bootstrap-e2e.yml
             kubeadm-bringup-e2e.yml
           )
           declare -A state

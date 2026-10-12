@@ -20,14 +20,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 const (
-	nkeRBACFieldManager = "nke-agent-rbac"
-	rbacAPIVersion      = "rbac.authorization.k8s.io/v1"
-	nkeRBACNamePrefix   = "nke:"
-	rbacAPIGroup        = "rbac.authorization.k8s.io"
+	nvkeRBACFieldManager = "nke-agent-rbac"
+	rbacAPIVersion       = "rbac.authorization.k8s.io/v1"
+	nvkeRBACNamePrefix   = "nke:"
+	rbacAPIGroup         = "rbac.authorization.k8s.io"
 	// rbacVersionV1 is the version segment of rbacAPIVersion, used on its own
 	// in the GroupVersionResource entries in rbacKindSpecs.
 	rbacVersionV1 = "v1"
@@ -87,7 +87,7 @@ var rbacKindSpecs = map[string]rbacKindSpec{
 	},
 }
 
-func parseAndValidateNKERBACManifest(manifest []byte) ([]*unstructured.Unstructured, error) {
+func parseAndValidateNVKERBACManifest(manifest []byte) ([]*unstructured.Unstructured, error) {
 	objects, err := parseKubernetesManifest(manifest)
 	if err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func parseAndValidateNKERBACManifest(manifest []byte) ([]*unstructured.Unstructu
 
 	for index, obj := range objects {
 		docIndex := index + 1
-		if err := validateNKERBACObject(obj); err != nil {
+		if err := validateNVKERBACObject(obj); err != nil {
 			return nil, fmt.Errorf("validating Kubernetes object from document %d: %w", docIndex, err)
 		}
 
@@ -145,7 +145,7 @@ func keyForObject(obj *unstructured.Unstructured) string {
 	return fmt.Sprintf("%s/%s/%s", gvk, obj.GetNamespace(), obj.GetName())
 }
 
-func validateNKERBACObject(obj *unstructured.Unstructured) error {
+func validateNVKERBACObject(obj *unstructured.Unstructured) error {
 	apiVersion := obj.GetAPIVersion()
 	if apiVersion == "" {
 		return errors.New("apiVersion is required")
@@ -167,8 +167,8 @@ func validateNKERBACObject(obj *unstructured.Unstructured) error {
 	if name == "" {
 		return errors.New("metadata.name is required")
 	}
-	if !isAllowedNKERBACName(name) {
-		return fmt.Errorf("resource %s named %q is not allowed, names must start with %q", kind, name, nkeRBACNamePrefix)
+	if !isAllowedNVKERBACName(name) {
+		return fmt.Errorf("resource %s named %q is not allowed, names must start with %q", kind, name, nvkeRBACNamePrefix)
 	}
 
 	namespace := obj.GetNamespace()
@@ -181,7 +181,7 @@ func validateNKERBACObject(obj *unstructured.Unstructured) error {
 
 	switch kind {
 	case rbacKindClusterRoleBinding, rbacKindRoleBinding:
-		if err := validateNKERBACRoleRef(obj); err != nil {
+		if err := validateNVKERBACRoleRef(obj); err != nil {
 			return err
 		}
 	}
@@ -189,11 +189,11 @@ func validateNKERBACObject(obj *unstructured.Unstructured) error {
 	return nil
 }
 
-func isAllowedNKERBACName(name string) bool {
-	return len(name) > len(nkeRBACNamePrefix) && strings.HasPrefix(name, nkeRBACNamePrefix)
+func isAllowedNVKERBACName(name string) bool {
+	return len(name) > len(nvkeRBACNamePrefix) && strings.HasPrefix(name, nvkeRBACNamePrefix)
 }
 
-func validateNKERBACRoleRef(obj *unstructured.Unstructured) error {
+func validateNVKERBACRoleRef(obj *unstructured.Unstructured) error {
 	roleRefName, found, err := unstructured.NestedString(obj.Object, "roleRef", "name")
 	if err != nil {
 		return fmt.Errorf("reading roleRef.name: %w", err)
@@ -201,14 +201,14 @@ func validateNKERBACRoleRef(obj *unstructured.Unstructured) error {
 	if !found || roleRefName == "" {
 		return nil
 	}
-	if !isAllowedNKERBACName(roleRefName) {
-		return fmt.Errorf("%s roleRef.name %q is not allowed, names must start with %q", obj.GetKind(), roleRefName, nkeRBACNamePrefix)
+	if !isAllowedNVKERBACName(roleRefName) {
+		return fmt.Errorf("%s roleRef.name %q is not allowed, names must start with %q", obj.GetKind(), roleRefName, nvkeRBACNamePrefix)
 	}
 
 	return nil
 }
 
-func applyNKERBACResources(
+func applyNVKERBACResources(
 	ctx context.Context,
 	client dynamic.Interface,
 	resources []*unstructured.Unstructured,
@@ -218,7 +218,7 @@ func applyNKERBACResources(
 	}
 
 	for _, resource := range resources {
-		outcome, err := applyNKERBACResource(ctx, client, resource)
+		outcome, err := applyNVKERBACResource(ctx, client, resource)
 		result := &pb.ResourceApplyResult{
 			Kind:      resource.GetKind(),
 			Name:      resource.GetName(),
@@ -238,7 +238,7 @@ func applyNKERBACResources(
 	return resp
 }
 
-func applyNKERBACResource(
+func applyNVKERBACResource(
 	ctx context.Context,
 	client dynamic.Interface,
 	resource *unstructured.Unstructured,
@@ -277,7 +277,7 @@ func applyNKERBACResource(
 		name,
 		applyObject,
 		metav1.ApplyOptions{
-			FieldManager: nkeRBACFieldManager,
+			FieldManager: nvkeRBACFieldManager,
 			Force:        true,
 		},
 	)

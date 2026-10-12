@@ -17,7 +17,7 @@ import (
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/apierr"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/apierr"
 )
 
 // The shared sentinels are re-exported so existing state.Err* call sites keep

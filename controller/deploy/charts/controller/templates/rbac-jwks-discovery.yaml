@@ -1,5 +1,5 @@
 {{- if and .Values.apiAuth.enabled .Values.apiAuth.clusterIssuerDiscovery }}
-# Lets NKE read the cluster's JWKS at /openid/v1/jwks. An issuer that points
+# Lets NVKE read the cluster's JWKS at /openid/v1/jwks. An issuer that points
 # jwks.uri at that endpoint verifies tokens against those keys.
 #
 # The endpoint requires authentication. Kubernetes already grants this role to

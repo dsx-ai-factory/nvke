@@ -17,7 +17,7 @@ import (
 	"github.com/uptrace/bun/extra/bunotel"
 	"github.com/uptrace/bun/extra/bunslog"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 )
 
 // logFormat creates slog attributes for query events, including PostgreSQL
@@ -79,7 +79,7 @@ func NewBunDB(cfg config.Config, logger *slog.Logger) (*bun.DB, error) {
 		queryLogLevel = slog.LevelInfo
 	}
 
-	db.AddQueryHook(bunslog.NewQueryHook(
+	db = db.WithQueryHook(bunslog.NewQueryHook(
 		bunslog.WithQueryLogLevel(queryLogLevel),
 		bunslog.WithSlowQueryLogLevel(slog.LevelWarn),
 		bunslog.WithErrorQueryLogLevel(slog.LevelError),
@@ -89,7 +89,7 @@ func NewBunDB(cfg config.Config, logger *slog.Logger) (*bun.DB, error) {
 	))
 
 	if cfg.Tracing.Enabled {
-		db.AddQueryHook(newTracingHook(connector))
+		db = db.WithQueryHook(newTracingHook(connector))
 	}
 
 	if err := db.PingContext(context.Background()); err != nil {

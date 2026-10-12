@@ -30,7 +30,7 @@ permissions:
 jobs:
   conflicts:
     name: Check open PRs for conflicts
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     runs-on: ubuntu-latest
     permissions:
       contents: read

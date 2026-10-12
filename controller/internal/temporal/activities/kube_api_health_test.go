@@ -12,10 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent/agenttest"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 func TestParseReadyzVerbose(t *testing.T) {
@@ -60,11 +60,11 @@ func TestKubectlRawLocalTargetsLocalApiserver(t *testing.T) {
 	require.Contains(t, script, "get --raw '/readyz?verbose'")
 }
 
-func readyzResp(healthy bool) *nkeproto.ExecuteScriptResponse {
+func readyzResp(healthy bool) *nvkeproto.ExecuteScriptResponse {
 	if healthy {
-		return &nkeproto.ExecuteScriptResponse{Output: "[+]ping ok\n[+]etcd ok\nreadyz check passed", ExitCode: 0}
+		return &nvkeproto.ExecuteScriptResponse{Output: "[+]ping ok\n[+]etcd ok\nreadyz check passed", ExitCode: 0}
 	}
-	return &nkeproto.ExecuteScriptResponse{Output: "[+]ping ok\n[-]etcd failed: refused", ExitCode: 1}
+	return &nvkeproto.ExecuteScriptResponse{Output: "[+]ping ok\n[-]etcd failed: refused", ExitCode: 1}
 }
 
 func TestProbeControlPlaneAPIHealth(t *testing.T) {
@@ -80,7 +80,7 @@ func TestProbeControlPlaneAPIHealth(t *testing.T) {
 	t.Run("all healthy passes", func(t *testing.T) {
 		t.Parallel()
 		nodes := mkNodes(3)
-		fake := &agenttest.FakeClient{ExecuteScriptHook: func(db.Node, string, string) (*nkeproto.ExecuteScriptResponse, error) {
+		fake := &agenttest.FakeClient{ExecuteScriptHook: func(db.Node, string, string) (*nvkeproto.ExecuteScriptResponse, error) {
 			return readyzResp(true), nil
 		}}
 		a := &Activities{nodeAgentClient: fake}
@@ -90,7 +90,7 @@ func TestProbeControlPlaneAPIHealth(t *testing.T) {
 	t.Run("one down on 3-CP fails (threshold 3)", func(t *testing.T) {
 		t.Parallel()
 		nodes := mkNodes(3)
-		fake := &agenttest.FakeClient{ExecuteScriptHook: func(node db.Node, _, _ string) (*nkeproto.ExecuteScriptResponse, error) {
+		fake := &agenttest.FakeClient{ExecuteScriptHook: func(node db.Node, _, _ string) (*nvkeproto.ExecuteScriptResponse, error) {
 			return readyzResp(node.Name != "cp-0"), nil
 		}}
 		a := &Activities{nodeAgentClient: fake}
@@ -102,7 +102,7 @@ func TestProbeControlPlaneAPIHealth(t *testing.T) {
 	t.Run("one down on 5-CP passes (threshold 4)", func(t *testing.T) {
 		t.Parallel()
 		nodes := mkNodes(5)
-		fake := &agenttest.FakeClient{ExecuteScriptHook: func(node db.Node, _, _ string) (*nkeproto.ExecuteScriptResponse, error) {
+		fake := &agenttest.FakeClient{ExecuteScriptHook: func(node db.Node, _, _ string) (*nvkeproto.ExecuteScriptResponse, error) {
 			return readyzResp(node.Name != "cp-0"), nil
 		}}
 		a := &Activities{nodeAgentClient: fake}
@@ -112,7 +112,7 @@ func TestProbeControlPlaneAPIHealth(t *testing.T) {
 	t.Run("exec error is unhealthy and fails closed", func(t *testing.T) {
 		t.Parallel()
 		nodes := mkNodes(3)
-		fake := &agenttest.FakeClient{ExecuteScriptHook: func(node db.Node, _, _ string) (*nkeproto.ExecuteScriptResponse, error) {
+		fake := &agenttest.FakeClient{ExecuteScriptHook: func(node db.Node, _, _ string) (*nvkeproto.ExecuteScriptResponse, error) {
 			if node.Name == "cp-1" {
 				return nil, fmt.Errorf("dial timeout")
 			}

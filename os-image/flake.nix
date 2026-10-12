@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 {
-  description = "Direct-boot NixOS package-builder VMs for NKE";
+  description = "Direct-boot NixOS package-builder VMs for NVKE";
 
   # Follow nixos-unstable intentionally; flake.lock pins the exact revision used.
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

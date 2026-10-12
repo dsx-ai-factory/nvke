@@ -15,9 +15,9 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/auth"
-	"github.com/dsx-ai-factory/nke/cli/internal/config"
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/cli/internal/auth"
+	"github.com/dsx-ai-factory/nvke/cli/internal/config"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 // ControllerClient is a high-level client for the controller REST API.
@@ -46,7 +46,7 @@ func New(cfg config.SiteConfig) (*ControllerClient, error) {
 
 func newClient(cfg config.SiteConfig, tokens tokenSource) (*ControllerClient, error) {
 	if cfg.URL == "" {
-		return nil, fmt.Errorf("site URL is empty: run 'nkectl config set-site --url <url>'")
+		return nil, fmt.Errorf("site URL is empty: run 'nvkectl config set-site --url <url>'")
 	}
 	if (cfg.ProxyClientCertFile == "") != (cfg.ProxyClientKeyFile == "") {
 		return nil, fmt.Errorf("proxy TLS client certificate and key must be set together")

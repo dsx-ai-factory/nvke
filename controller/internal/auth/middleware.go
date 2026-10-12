@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 // Mode comes from PERMISSIVE_MODE, outside this package. Only ModePermissive
@@ -24,7 +24,7 @@ const (
 	ModePermissive Mode = "permissive"
 )
 
-// Outcome is the nke_auth_requests_total{outcome} label value, a closed set.
+// Outcome is the nvke_auth_requests_total{outcome} label value, a closed set.
 type Outcome string
 
 const (

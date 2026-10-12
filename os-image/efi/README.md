@@ -1,6 +1,6 @@
 # qcow-imager.efi
 
-Builds `qcow-imager.efi`, the EFI a node chainloads from iPXE to write an NKE
+Builds `qcow-imager.efi`, the EFI a node chainloads from iPXE to write an NVKE
 node qcow2 onto its disk.
 
 ## What it does

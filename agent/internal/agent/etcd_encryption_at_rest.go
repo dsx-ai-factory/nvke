@@ -20,9 +20,9 @@ import (
 	"google.golang.org/grpc/status"
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/dsx-ai-factory/nke/agent/internal/k8s"
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
+	"github.com/dsx-ai-factory/nvke/agent/internal/k8s"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
 
 const (
@@ -481,7 +481,7 @@ func (n *NodeAgentServer) RestartAPIPods(
 			"-l",
 			"component=kube-apiserver",
 		},
-		&nkeutils.CommandOptions{
+		&nvkeutils.CommandOptions{
 			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 		},
 	)
@@ -496,7 +496,7 @@ func (n *NodeAgentServer) RestartAPIPods(
 		output, err := n.Runner.Run(
 			"kubectl",
 			[]string{"delete", "pod", podName, "-n", "kube-system"}, //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
-			&nkeutils.CommandOptions{
+			&nvkeutils.CommandOptions{
 				Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 			},
 		)
@@ -585,7 +585,7 @@ func (n *NodeAgentServer) RemovePlainTextSecondaryEncryptionEntry(
 	*/
 	grepCmd := "grep -v \"identity: {}\" /etc/kubernetes/kube-api-encryption/encryption-config.yaml > /tmp/encyrption-cfg-update.yaml"
 
-	output, err := n.Runner.Run("bash", []string{"-c", grepCmd}, &nkeutils.CommandOptions{}) //nolint:goconst // bash argv fragment; naming each CLI flag reads worse than the literal
+	output, err := n.Runner.Run("bash", []string{"-c", grepCmd}, &nvkeutils.CommandOptions{}) //nolint:goconst // bash argv fragment; naming each CLI flag reads worse than the literal
 	if err != nil {
 		log.Printf("failed to remove secondary key entry: %v\n", err)
 		log.Printf("output: %s\n", output)
@@ -602,7 +602,7 @@ func (n *NodeAgentServer) RemovePlainTextSecondaryEncryptionEntry(
 			"/tmp/encyrption-cfg-update.yaml",
 			"/etc/kubernetes/kube-api-encryption/encryption-config.yaml",
 		},
-		&nkeutils.CommandOptions{},
+		&nvkeutils.CommandOptions{},
 	)
 	if err != nil {
 		log.Printf("failed to remove secondary key entry: %v\n", err)
@@ -676,7 +676,7 @@ func (n *NodeAgentServer) getPodStatus(podName string) (string, error) {
 			"-o",
 			"jsonpath={.status.phase}",
 		},
-		&nkeutils.CommandOptions{
+		&nvkeutils.CommandOptions{
 			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 		},
 	)
@@ -707,7 +707,7 @@ func (n *NodeAgentServer) restartAPIServer() error {
 			"pod",
 			podName,
 		},
-		&nkeutils.CommandOptions{
+		&nvkeutils.CommandOptions{
 			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 		},
 	)
@@ -788,7 +788,7 @@ func (n *NodeAgentServer) createVolumeMountEntries() error {
 				volumeEntry,
 			),
 		},
-		&nkeutils.CommandOptions{},
+		&nvkeutils.CommandOptions{},
 	)
 	if err != nil {
 		log.Printf("Failed to add volumeEntry: %v\n", err)
@@ -806,7 +806,7 @@ func (n *NodeAgentServer) createVolumeMountEntries() error {
 				volumeMountsEntry,
 			),
 		},
-		&nkeutils.CommandOptions{},
+		&nvkeutils.CommandOptions{},
 	)
 	if err != nil {
 		log.Printf("failed to add volumeMounts entry: %v\n", err)
@@ -824,7 +824,7 @@ func (n *NodeAgentServer) modifyAPIServerManifest() error {
 			"-c",
 			`sed -i '/- kube-apiserver/a \ \ \ \ - --encryption-provider-config=/etc/kubernetes/kube-api-encryption/encryption-config.yaml' /etc/kubernetes/manifests/kube-apiserver.yaml`,
 		},
-		&nkeutils.CommandOptions{},
+		&nvkeutils.CommandOptions{},
 	)
 	if err != nil {
 		log.Printf("failed to add --encryption-provider-config: %v\n", err)
@@ -838,7 +838,7 @@ func (n *NodeAgentServer) modifyAPIServerManifest() error {
 			"-c",
 			`sed -i '/- kube-apiserver/a \ \ \ \ - --encryption-provider-config-automatic-reload=true' /etc/kubernetes/manifests/kube-apiserver.yaml`,
 		},
-		&nkeutils.CommandOptions{},
+		&nvkeutils.CommandOptions{},
 	)
 	if err != nil {
 		log.Printf("failed to add --encryption-provider-config-automatic-reload: %v\n", err)
@@ -925,7 +925,7 @@ func (n *NodeAgentServer) verifyNodeAPIEncryptionEnabled() (bool, error) {
 			"po",
 			apiServerPodName,
 		},
-		&nkeutils.CommandOptions{
+		&nvkeutils.CommandOptions{
 			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 		},
 	)

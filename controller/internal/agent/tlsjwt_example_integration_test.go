@@ -26,11 +26,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	"github.com/dsx-ai-factory/nke/agent/pkg/nkeauth"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	"github.com/dsx-ai-factory/nvke/agent/pkg/nkeauth"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/auth"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 func readCertificatePool(t *testing.T, path string) *x509.CertPool {
@@ -155,7 +155,7 @@ func TestIntegration_TLSJWTGRPC(t *testing.T) {
 			serverTransport := &dummyAgentTransportCredentials{base: serverBase, token: signed}
 			dummyAgent := &dummyNodeAgentServer{}
 			grpcServer := grpc.NewServer(grpc.Creds(serverTransport))
-			nkeproto.RegisterNodeAgentServer(grpcServer, dummyAgent)
+			nvkeproto.RegisterNodeAgentServer(grpcServer, dummyAgent)
 
 			var listenConfig net.ListenConfig
 			listener, err := listenConfig.Listen(t.Context(), "tcp", "127.0.0.1:0")
@@ -187,9 +187,9 @@ func TestIntegration_TLSJWTGRPC(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			response, callErr := nkeproto.NewNodeAgentClient(conn).GetKubeadmStatus(
+			response, callErr := nvkeproto.NewNodeAgentClient(conn).GetKubeadmStatus(
 				ctx,
-				&nkeproto.KubeadmStatusRequest{},
+				&nvkeproto.KubeadmStatusRequest{},
 			)
 			if params.wantSuccess {
 				require.NoError(t, callErr)
@@ -244,14 +244,14 @@ func (c *dummyAgentTransportCredentials) OverrideServerName(serverNameOverride s
 }
 
 type dummyNodeAgentServer struct {
-	nkeproto.UnimplementedNodeAgentServer
+	nvkeproto.UnimplementedNodeAgentServer
 	calls atomic.Int32
 }
 
 func (s *dummyNodeAgentServer) GetKubeadmStatus(
 	context.Context,
-	*nkeproto.KubeadmStatusRequest,
-) (*nkeproto.KubeadmStatusResponse, error) {
+	*nvkeproto.KubeadmStatusRequest,
+) (*nvkeproto.KubeadmStatusResponse, error) {
 	s.calls.Add(1)
-	return &nkeproto.KubeadmStatusResponse{AgentVersion: "dummy-agent"}, nil
+	return &nvkeproto.KubeadmStatusResponse{AgentVersion: "dummy-agent"}, nil
 }

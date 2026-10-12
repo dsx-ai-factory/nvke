@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/utils"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/utils"
 )
 
 //nolint:gochecknoinits // this is the typical way to register bun migrations
@@ -54,7 +54,7 @@ func init() {
 		// The metadata index is read only to backfill the rows selected above,
 		// so an empty database needs no OS profiles tree at all. Loading it
 		// unconditionally made a profiles bundle a hard prerequisite for
-		// starting the controller against a fresh database, which is what `nkectl bootstrap
+		// starting the controller against a fresh database, which is what `nvkectl bootstrap
 		// site` does: it crash-looped here on a missing osProfiles/metadata.yaml
 		// before it had created a single cluster.
 		//

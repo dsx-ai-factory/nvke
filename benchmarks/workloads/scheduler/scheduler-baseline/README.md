@@ -36,7 +36,7 @@ whatever hardware they have. The bound is their API server and KWOK
 controller, not a node budget.
 
 **This is not a maximum-scale claim.** The tiers are points chosen to expose a
-trend, not a ceiling on NKE. `sizing.derivation` is the part to carry to your
+trend, not a ceiling on NVKE. `sizing.derivation` is the part to carry to your
 own cluster.
 
 ## How it is tested

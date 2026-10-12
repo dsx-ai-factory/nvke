@@ -8,8 +8,8 @@
 # rollout checks, the CAPI controller probes, the Ginkgo legs -- is unchanged and
 # unaware of which path deployed the stack.
 #
-# This script no longer applies anything. deploy/nke-deploy.sh walks
-# controller/deploy/capd-e2e/nke-deploy.yaml and installs its items in
+# This script no longer applies anything. deploy/nvke-deploy.sh walks
+# controller/deploy/capd-e2e/nvke-deploy.yaml and installs its items in
 # order: the namespaces and OIDC CA chain, nke-auth-dev, the TPM pubhashes
 # ConfigMap, the two SPIRE NodePorts, the nke-spire-client probe scaffolding, the
 # CAPD RBAC and reboot test double, and finally the nke-stack umbrella, one
@@ -50,7 +50,7 @@ if [[ -n "${NKE_E2E_STACK_CHART:-}" ]]; then
   echo "Each component is its own release, named in controller/deploy/${DEPLOY_TARGET:-capd-e2e}." >&2
   exit 1
 fi
-# A published chart's version has nowhere to go now: nke-deploy.sh resolves a
+# A published chart's version has nowhere to go now: nvke-deploy.sh resolves a
 # chart from a path, so helm needs no --version, and the item's own release.yaml
 # carries the version the artifact was cut with. Refuse rather than accept a
 # value and ignore it -- a silently dropped pin is how you end up testing a
@@ -106,7 +106,7 @@ cwe_repository="${NKE_CONTROLLER_IMAGE%:*}"
 cwe_tag="${NKE_CONTROLLER_IMAGE##*:}"
 
 # Everything this script used to apply by hand is now an item of the capd-e2e
-# deploy path, applied by deploy/nke-deploy.sh in the order nke-deploy.yaml
+# deploy path, applied by deploy/nvke-deploy.sh in the order nvke-deploy.yaml
 # lists: the namespaces, the OIDC CA chain, nke-auth-dev, the TPM pubhashes
 # ConfigMap, the two SPIRE NodePorts, the nke-spire-client probe scaffolding, and
 # the two CAPD pieces -- the RBAC over dockerclusters/dockermachines without
@@ -356,7 +356,7 @@ RELEASES_PID=$!
 trap 'rm -rf "${VALUES_DIR}"; kill "${RELEASES_PID}" 2>/dev/null || true' EXIT
 
 log "installing ${DEPLOY_TARGET} from ${DEPLOY_PATHS_DIR}"
-bash "${STACK_DIR}/deploy/nke-deploy.sh" install \
+bash "${STACK_DIR}/deploy/nvke-deploy.sh" install \
   --deploy-path "${DEPLOY_PATHS_DIR}/${DEPLOY_TARGET}" \
   --values-for "controller=${VALUES_DIR}/controller.yaml" \
   --values-for "spire=${VALUES_DIR}/spire.yaml" \

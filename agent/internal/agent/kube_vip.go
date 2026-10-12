@@ -28,7 +28,7 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/yaml"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 const (
@@ -62,7 +62,7 @@ type kubeVipRoute struct {
 	Gateway     string `json:"gateway"`
 }
 
-// ReconcileKubeVip converges NKE's credential-less, active/active BGP
+// ReconcileKubeVip converges NVKE's credential-less, active/active BGP
 // kube-vip static pod. The fixed manifest deliberately excludes every
 // Kubernetes API-backed kube-vip feature and models the single-peer settings
 // the controller historically supplied to the runbook rather than its operator-only

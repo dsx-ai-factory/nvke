@@ -18,9 +18,9 @@ func fullVars() Vars {
 		Hostname:     "test-vm",
 		PasswordHash: "$6$rounds=4096$salt$hash",
 		K8sProvision: AptProvision(
-			"https://example.invalid/nke-apt-noble",
-			"https://example.invalid/nke-apt-public.key",
-			"nke-noble", "main", "nke-kubeadm-distro-1.34.2", "5",
+			"https://example.invalid/nvke-apt-noble",
+			"https://example.invalid/nvke-apt-public.key",
+			"nvke-noble", "main", "nke-kubeadm-distro-1.34.2", "5",
 		),
 	}
 }
@@ -31,9 +31,9 @@ func fullVarsJammy() Vars {
 		Hostname:     "test-vm",
 		PasswordHash: "$6$rounds=4096$salt$hash",
 		K8sProvision: AptProvision(
-			"https://example.invalid/nke-apt-jammy",
-			"https://example.invalid/nke-apt-public.key",
-			"nke-jammy", "main", "nke-kubeadm-distro-1.34.2", "5",
+			"https://example.invalid/nvke-apt-jammy",
+			"https://example.invalid/nvke-apt-public.key",
+			"nvke-jammy", "main", "nke-kubeadm-distro-1.34.2", "5",
 		),
 	}
 }
@@ -123,11 +123,11 @@ func TestRender_realTemplate_jammy(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(out, "nke-apt-jammy") {
-		t.Errorf("output missing nke-apt-jammy in rendered template")
+	if !strings.Contains(out, "nvke-apt-jammy") {
+		t.Errorf("output missing nvke-apt-jammy in rendered template")
 	}
-	if !strings.Contains(out, "nke-jammy") {
-		t.Errorf("output missing nke-jammy in rendered template")
+	if !strings.Contains(out, "nvke-jammy") {
+		t.Errorf("output missing nvke-jammy in rendered template")
 	}
 }
 

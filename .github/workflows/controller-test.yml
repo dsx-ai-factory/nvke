@@ -3,7 +3,7 @@
 #
 # Unit-test lane for the controller modules. Until this existed, agent-test.yml
 # was the only workflow that ran `go test` anywhere in the repository, so
-# controller/, controller/nico-sim/ and nkectl were compiled, linted,
+# controller/, controller/nico-sim/ and nvkectl were compiled, linted,
 # vetted, CodeQL-scanned and govulncheck-scanned -- and never
 # tested. A test suite nothing runs reads as coverage in review and provides
 # none.
@@ -78,7 +78,7 @@ jobs:
   test:
     name: Unit tests (${{ matrix.module }})
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     timeout-minutes: 30
     permissions:
       contents: read
@@ -177,7 +177,7 @@ jobs:
   compile:
     name: Compile (${{ matrix.name }})
     runs-on: ubuntu-latest
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     timeout-minutes: 20
     permissions:
       contents: read

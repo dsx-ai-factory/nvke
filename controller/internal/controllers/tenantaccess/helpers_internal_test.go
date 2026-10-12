@@ -70,16 +70,16 @@ func TestBuildSpireKubeconfig(t *testing.T) {
 func TestReadAndApplyRBACManifest(t *testing.T) {
 	t.Parallel()
 
-	const singleDoc = "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: nke-role\nrules: []\n"
-	const multiDoc = singleDoc + "---\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRoleBinding\nmetadata:\n  name: nke-binding\nroleRef:\n  apiGroup: rbac.authorization.k8s.io\n  kind: ClusterRole\n  name: nke-role\nsubjects: []\n"
+	const singleDoc = "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: nvke-role\nrules: []\n"
+	const multiDoc = singleDoc + "---\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRoleBinding\nmetadata:\n  name: nvke-binding\nroleRef:\n  apiGroup: rbac.authorization.k8s.io\n  kind: ClusterRole\n  name: nvke-role\nsubjects: []\n"
 
 	wantRole := &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{Name: "nke-role"},
+		ObjectMeta: metav1.ObjectMeta{Name: "nvke-role"},
 		Rules:      []rbacv1.PolicyRule{},
 	}
 	wantBinding := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: "nke-binding"},
-		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: "nke-role"},
+		ObjectMeta: metav1.ObjectMeta{Name: "nvke-binding"},
+		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: "nvke-role"},
 		// SSA drops the manifest's empty "subjects: []" to nil on round-trip.
 		Subjects: nil,
 	}
@@ -152,7 +152,7 @@ func TestReadRBACManifestAbsentConfigMap(t *testing.T) {
 	ctrl := &Controller{k8sClient: c}
 
 	_, err := ctrl.readRBACManifest(context.Background())
-	require.ErrorContains(t, err, "getting NKE RBAC ConfigMap")
+	require.ErrorContains(t, err, "getting NVKE RBAC ConfigMap")
 }
 
 func assertApplied(t *testing.T, c ctrlclient.Client, want []ctrlclient.Object) {

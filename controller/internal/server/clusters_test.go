@@ -20,13 +20,13 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	"github.com/dsx-ai-factory/nke/controller/internal/capi"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/server"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/server"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 // testOrgID is a real orgID from the tenant list for use in tests
@@ -1710,7 +1710,7 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_StartsWorkflowForCAPI
 
 // TestClusterService_GetCluster_ExposesUpdateInProgress confirms the API
 // response includes the UpdateInProgress field so fleet dashboards and
-// nkecli can surface what operation is running and when it started.
+// nvkectl can surface what operation is running and when it started.
 func TestClusterService_GetCluster_ExposesUpdateInProgress(t *testing.T) {
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 	started := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)

@@ -42,7 +42,7 @@ write_files:
       ExecStart=/usr/local/bin/nke-agent --disable-mtls --secure-server-port 50051
 runcmd:
   # How kubeadm, the kubelet and a container runtime get onto the node. The
-  # block is built in Go: cloudinit.AptProvision for the NKE apt repository, or
+  # block is built in Go: cloudinit.AptProvision for the NVKE apt repository, or
   # cloudinit.CommunityProvision for upstream releases plus a host-served
   # nke-agent .deb, which is what a runner outside the repository's allow list
   # has to use.

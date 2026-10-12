@@ -107,9 +107,9 @@ type LaunchOpts struct {
 
 	// IpxeImageURL, when non-empty, switches VM creation to nico-vms's
 	// iPXE provisioning path: each instance is created with an iPXE script
-	// (built from the NKE node-images x86 LVM template) pointing at this
+	// (built from the NVKE node-images x86 LVM template) pointing at this
 	// qcow2 URL. That path is the only one that boots under UEFI (required
-	// by the UEFI + LUKS NKE node images) and injects the first-boot LUKS
+	// by the UEFI + LUKS NVKE node images) and injects the first-boot LUKS
 	// key. When empty, VMs boot the default base image under BIOS (fine for
 	// the plain Ubuntu cloud image).
 	IpxeImageURL string
@@ -271,7 +271,7 @@ func (p *Process) Stop() error {
 	return nil
 }
 
-// buildIpxeScript returns an iPXE script for booting an NKE x86_64 LVM node
+// buildIpxeScript returns an iPXE script for booting an NVKE x86_64 LVM node
 // image, mirroring nke/node-images/templates/x86-lvm-ipxe-script.txt. nico-vms
 // parses image_url, luks.key, console/kernel params, and update_grub_* out of
 // it; because the instance now carries an iPXE script, nico-vms boots the
@@ -318,7 +318,7 @@ func (p *Process) CreateNode(ctx context.Context, name, userData string, phoneHo
 		PhoneHomeEnabled: phoneHomeEnabled,
 	}
 
-	// NKE node images are UEFI + LUKS-encrypted. nico-vms only boots the
+	// NVKE node images are UEFI + LUKS-encrypted. nico-vms only boots the
 	// default base image under BIOS, which can't boot them. Setting an iPXE
 	// script routes creation through nico-vms's iPXE path, which boots the
 	// downloaded qcow2 under UEFI and injects the first-boot LUKS key. The

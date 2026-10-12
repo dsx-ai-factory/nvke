@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Command nodes drives the nkectl bootstrap-site E2E fixture: the fake
+// Command nodes drives the nvkectl bootstrap-site E2E fixture: the fake
 // pre-provisioned nodes real dispatch will target once bootstrap site stops
 // being a stub. Invoked by `make -C cli nodes-up/nodes-down/nodes-status`,
 // not run directly.
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dsx-ai-factory/nke/cli/e2e/bootstrap/substrate"
+	"github.com/dsx-ai-factory/nvke/cli/e2e/bootstrap/substrate"
 )
 
 // attestTimeout bounds the wait for every host to attest. Credential activation
@@ -58,7 +58,7 @@ func main() {
 }
 
 func down(ctx context.Context, cfg substrate.Config, logf substrate.Logf) error {
-	cfg.Keep = false // "down" always tears down, regardless of NKECTL_E2E_KEEP.
+	cfg.Keep = false // "down" always tears down, regardless of NVKECTL_E2E_KEEP.
 	s, err := substrate.Attach(cfg, logf)
 	if err != nil {
 		return err
@@ -67,7 +67,7 @@ func down(ctx context.Context, cfg substrate.Config, logf substrate.Logf) error 
 	return nil
 }
 
-// writeHostsCSV writes the node CSV that "nkectl generate sitespec" takes, with
+// writeHostsCSV writes the node CSV that "nvkectl generate sitespec" takes, with
 // each running fixture host's TPM EK thumbprint filled in, and prints the shell
 // assignments run.sh needs to build the site spec from it.
 //
@@ -80,10 +80,10 @@ func down(ctx context.Context, cfg substrate.Config, logf substrate.Logf) error 
 // Output is three KEY=value lines on stdout and nothing else, so run.sh can
 // source them.
 func writeHostsCSV(ctx context.Context) error {
-	out := os.Getenv("NKECTL_E2E_HOSTS_CSV")
-	baselinePath := os.Getenv("NKECTL_E2E_ATTESTATION_BASELINE")
+	out := os.Getenv("NVKECTL_E2E_HOSTS_CSV")
+	baselinePath := os.Getenv("NVKECTL_E2E_ATTESTATION_BASELINE")
 	if out == "" || baselinePath == "" {
-		return fmt.Errorf("NKECTL_E2E_HOSTS_CSV and NKECTL_E2E_ATTESTATION_BASELINE are required")
+		return fmt.Errorf("NVKECTL_E2E_HOSTS_CSV and NVKECTL_E2E_ATTESTATION_BASELINE are required")
 	}
 
 	s, err := tpmSubstrate(ctx, func(string, ...any) {})
@@ -115,23 +115,23 @@ func writeHostsCSV(ctx context.Context) error {
 		return err
 	}
 
-	fmt.Printf("NKECTL_E2E_HOSTS_CSV=%s\n", out)
-	fmt.Printf("NKECTL_E2E_SPIRE_CA_CERT=%s\n", caCert)
-	fmt.Printf("NKECTL_E2E_SPIRE_CA_KEY=%s\n", caKey)
+	fmt.Printf("NVKECTL_E2E_HOSTS_CSV=%s\n", out)
+	fmt.Printf("NVKECTL_E2E_SPIRE_CA_CERT=%s\n", caCert)
+	fmt.Printf("NVKECTL_E2E_SPIRE_CA_KEY=%s\n", caKey)
 	return nil
 }
 
 // attested waits for every host's spire-agent to be admitted by the SPIRE
-// server `nkectl bootstrap site` deployed.
+// server `nvkectl bootstrap site` deployed.
 //
 // This is the whole check. The agents have been running since the containers
 // booted, pointed at the address the command puts the server on, so nothing
 // here configures or starts anything — if the bootstrap wired SPIRE correctly
 // they get in, and if it did not they never do.
 func attested(ctx context.Context, logf substrate.Logf) error {
-	baselinePath := os.Getenv("NKECTL_E2E_ATTESTATION_BASELINE")
+	baselinePath := os.Getenv("NVKECTL_E2E_ATTESTATION_BASELINE")
 	if baselinePath == "" {
-		return fmt.Errorf("NKECTL_E2E_ATTESTATION_BASELINE is required")
+		return fmt.Errorf("NVKECTL_E2E_ATTESTATION_BASELINE is required")
 	}
 	baseline, err := substrate.LoadAttestationBaseline(baselinePath)
 	if err != nil {
@@ -160,7 +160,7 @@ func tpmSubstrate(ctx context.Context, logf substrate.Logf) (*substrate.Substrat
 
 func status(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, substrate.ContainerCLI, "ps", "-a",
-		"--filter", "label=nkectl-e2e=true",
+		"--filter", "label=nvkectl-e2e=true",
 		"--format", "table {{.Names}}\t{{.Status}}\t{{.Networks}}")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

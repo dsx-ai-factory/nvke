@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/test/integration/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/test/integration/testutil"
 )
 
 const (

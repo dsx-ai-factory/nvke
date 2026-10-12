@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewDeleteCmd returns the "nkectl delete cluster <name>" subcommand.
+// NewDeleteCmd returns the "nvkectl delete cluster <name>" subcommand.
 func NewDeleteCmd(clientFn ControllerClientFn) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "cluster <name>",
@@ -30,7 +30,7 @@ func NewDeleteCmd(clientFn ControllerClientFn) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Cluster %q deletion started (id: %s)\n", cluster.Name, cluster.ID)
-			fmt.Fprintf(cmd.OutOrStdout(), "Deletion is async — run 'nkectl get clusters' to check status.\n")
+			fmt.Fprintf(cmd.OutOrStdout(), "Deletion is async — run 'nvkectl get clusters' to check status.\n")
 			return nil
 		},
 	}

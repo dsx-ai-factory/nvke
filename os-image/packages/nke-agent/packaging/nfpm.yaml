@@ -8,8 +8,8 @@ version: "${DEB_VERSION}"
 version_schema: none
 section: base
 priority: optional
-maintainer: Nvidia NKE
-description: NKE Node Agent and Attestation Service
+maintainer: Nvidia NVKE
+description: NVKE Node Agent and Attestation Service
 mtime: "2026-01-01T00:00:00Z"
 depends:
   - libc6

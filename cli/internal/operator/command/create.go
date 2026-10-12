@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/operator"
-	"github.com/dsx-ai-factory/nke/cli/internal/util"
+	"github.com/dsx-ai-factory/nvke/cli/internal/operator"
+	"github.com/dsx-ai-factory/nvke/cli/internal/util"
 )
 
 const (
@@ -19,7 +19,7 @@ const (
 	dryRunClient = "client"
 )
 
-// NewCreateCmds returns the "nkectl create machineimage|clusterrelease|
+// NewCreateCmds returns the "nvkectl create machineimage|clusterrelease|
 // nodepoolrelease" subcommands.
 func NewCreateCmds(clientFn ClientFn) []*cobra.Command {
 	cmds := make([]*cobra.Command, 0, len(kindInfos))
@@ -43,7 +43,7 @@ func newCreateCmd(k kindInfo, clientFn ClientFn) *cobra.Command {
 		Long: fmt.Sprintf(`Create a %s on the active site's management cluster.
 
 The request is a single YAML or JSON document with a metadata and a spec, and
-nothing else. nkectl supplies the apiVersion and kind, so leave them out:
+nothing else. nvkectl supplies the apiVersion and kind, so leave them out:
 
   metadata:
     name: <name>
@@ -63,10 +63,10 @@ management cluster when the resource is created, and the machine image a
 release names is not looked up.
 
 Example:
-  nkectl create %s -f %s.yaml
+  nvkectl create %s -f %s.yaml
 
 Example - print the complete manifest without creating anything:
-  nkectl create %s -f %s.yaml --dry-run=client -o yaml`,
+  nvkectl create %s -f %s.yaml --dry-run=client -o yaml`,
 			k.noun, k.noun, k.use, k.use, k.use, k.use),
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -136,7 +136,7 @@ func checkMachineImageExists(ctx context.Context, c operator.Client, k kindInfo,
 	}
 	if _, err := c.Get(ctx, operator.KindMachineImage, name); err != nil {
 		if isNotFound(err) {
-			return fmt.Errorf("machine image %q not found: create it first with 'nkectl create machineimage'", name)
+			return fmt.Errorf("machine image %q not found: create it first with 'nvkectl create machineimage'", name)
 		}
 		return fmt.Errorf("checking machine image %q: %w", name, err)
 	}

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package engine drives the lifecycle of the ephemeral Kind cluster
-// that `nkectl bootstrap site` runs the controller on: create it, wait for it to be
+// that `nvkectl bootstrap site` runs the controller on: create it, wait for it to be
 // Ready, load images into it, and tear it down.
 //
 // Every `kind`/`kubectl` invocation goes through the CommandRunner seam so
@@ -30,6 +30,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 )
 
 const (
@@ -116,11 +118,11 @@ type Config struct {
 // has a working default for a local or CI run.
 func DefaultConfig() Config {
 	return Config{
-		ClusterName: envOr("NKECTL_BOOTSTRAP_CLUSTER_NAME", "nkectl-bootstrap"),
-		NodeImage:   os.Getenv("NKECTL_BOOTSTRAP_NODE_IMAGE"),
-		WaitReady:   envDuration("NKECTL_BOOTSTRAP_WAIT_READY", 3*time.Minute),
+		ClusterName: envOr("NVKECTL_BOOTSTRAP_CLUSTER_NAME", "nvkectl-bootstrap"),
+		NodeImage:   envalias.Get("NVKECTL_BOOTSTRAP_NODE_IMAGE"),
+		WaitReady:   envDuration("NVKECTL_BOOTSTRAP_WAIT_READY", 3*time.Minute),
 
-		DockerHubMirror: os.Getenv("NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR"),
+		DockerHubMirror: envalias.Get("NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR"),
 	}
 }
 
@@ -314,7 +316,7 @@ func (e *Engine) Exists(ctx context.Context, clusterName string) (bool, error) {
 func (e *Engine) Kubeconfig(ctx context.Context, clusterName string) (string, error) {
 	// A new directory, not a temp file: `kind export kubeconfig` merges into
 	// whatever the path holds, and an empty file is not a kubeconfig.
-	dir, err := os.MkdirTemp("", "nkectl-bootstrap-kubeconfig-"+clusterName+"-*")
+	dir, err := os.MkdirTemp("", "nvkectl-bootstrap-kubeconfig-"+clusterName+"-*")
 	if err != nil {
 		return "", fmt.Errorf("creating kubeconfig file for %s: %w", clusterName, err)
 	}
@@ -368,7 +370,7 @@ func saveImageArchive(ctx context.Context, runner CommandRunner, image string) (
 		return "", nil, err
 	}
 
-	f, err := os.CreateTemp("", "nkectl-bootstrap-image-*.tar")
+	f, err := os.CreateTemp("", "nvkectl-bootstrap-image-*.tar")
 	if err != nil {
 		return "", nil, fmt.Errorf("creating image archive for %s: %w", image, err)
 	}
@@ -398,7 +400,7 @@ func saveImageArchive(ctx context.Context, runner CommandRunner, image string) (
 // Pulls the platform manifest by digest before retagging (see the comment on
 // that call below) -- without it, `tag` fails with "not found" for a digest
 // `image inspect` just resolved, confirmed against a real nerdctl-provider
-// CI run: https://github.com/dsx-ai-factory/nke/actions/runs/33088745329.
+// CI run: https://github.com/dsx-ai-factory/nvke/actions/runs/33088745329.
 func flattenToHostPlatform(ctx context.Context, runner CommandRunner, cli, image string) error {
 	repo, ok := repoOfTaggedRef(image)
 	if !ok {
@@ -461,15 +463,24 @@ func repoOfTaggedRef(image string) (repo string, ok bool) {
 	return image[:i], true
 }
 
+// Settings is every environment variable this package reads; each is also
+// read under its previous NKECTL_* name for one release (see envalias).
+var Settings = []string{
+	"NVKECTL_BOOTSTRAP_CLUSTER_NAME",
+	"NVKECTL_BOOTSTRAP_NODE_IMAGE",
+	"NVKECTL_BOOTSTRAP_WAIT_READY",
+	"NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR",
+}
+
 func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
+	if v := envalias.Get(key); v != "" {
 		return v
 	}
 	return fallback
 }
 
 func envDuration(key string, fallback time.Duration) time.Duration {
-	v := os.Getenv(key)
+	v := envalias.Get(key)
 	if v == "" {
 		return fallback
 	}

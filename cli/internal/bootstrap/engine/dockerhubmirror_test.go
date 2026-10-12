@@ -91,11 +91,11 @@ func TestCreate_RejectsAMalformedMirror(t *testing.T) {
 }
 
 func TestDefaultConfig_DockerHubMirrorFromEnv(t *testing.T) {
-	t.Setenv("NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR", "mirror.example.com")
+	t.Setenv("NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR", "mirror.example.com")
 	if got := DefaultConfig().DockerHubMirror; got != "mirror.example.com" {
 		t.Errorf("DockerHubMirror = %q, want %q", got, "mirror.example.com")
 	}
-	t.Setenv("NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR", "")
+	t.Setenv("NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR", "")
 	if got := DefaultConfig().DockerHubMirror; got != "" {
 		t.Errorf("DockerHubMirror = %q, want empty when unset", got)
 	}

@@ -73,7 +73,7 @@ Package: ${CALICO_MANIFESTS_PACKAGE}
 Version: ${CALICO_VERSION}
 Architecture: all
 Maintainer: NVIDIA Kubernetes Engine
-Description: Calico manifests for NKE cluster bootstrap
+Description: Calico manifests for NVKE cluster bootstrap
 EOF
 chmod 0644 "${calico_deb_root}/DEBIAN/control"
 dpkg-deb --root-owner-group --build "${calico_deb_root}" "${calico_deb}"

@@ -18,10 +18,10 @@ version: "${DEB_REVISION}"
 version_schema: none
 section: admin
 priority: optional
-maintainer: "NKE <nke-dev@exchange.nvidia.com>"
+maintainer: "NVKE <nke-dev@exchange.nvidia.com>"
 mtime: "2026-01-01T00:00:00Z"
 description: |
-  Calico ${STREAM} install manifests for NKE nodes
+  Calico ${STREAM} install manifests for NVKE nodes
   The upstream operator-crds.yaml, tigera-operator.yaml and
   custom-resources.yaml for Calico
   ${STREAM}, pinned by sha256 and installed under

@@ -8,17 +8,17 @@ import (
 
 	"google.golang.org/grpc"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 )
 
 // nodeAgentOIDCClient is the narrow slice of the agent gRPC surface the
-// enablement operation uses. The generated nkeproto.NodeAgentClient satisfies
+// enablement operation uses. The generated nvkeproto.NodeAgentClient satisfies
 // it; tests inject a fake. Both enable and disable ride the one convergent
 // PatchAPIServerManifest RPC (disable is the inverse patch).
 type nodeAgentOIDCClient interface {
-	PatchAPIServerManifest(ctx context.Context, req *nkeproto.PatchAPIServerManifestRequest, opts ...grpc.CallOption) (*nkeproto.PatchAPIServerManifestResponse, error)
+	PatchAPIServerManifest(ctx context.Context, req *nvkeproto.PatchAPIServerManifestRequest, opts ...grpc.CallOption) (*nvkeproto.PatchAPIServerManifestResponse, error)
 }
 
 // nodeAgentClientDialer opens a connection to a node's agent and returns a

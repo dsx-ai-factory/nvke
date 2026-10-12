@@ -26,22 +26,22 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ktesting "k8s.io/client-go/testing"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 // Fixture names match the ClusterRole / Role object names still deployed by
-// the NKE controller RBAC charts (historical "cwe"/"swe" suffixes). Rename
+// the NVKE controller RBAC charts (historical "cwe"/"swe" suffixes). Rename
 // these only when the controller charts rename the live resources.
 const (
-	defaultNKERBACName           = "nke:cwe"
-	secondaryNKERBACName         = "nke:swe"
-	defaultNamespacedNKERBACName = "nke:cwe-rbac"
-	sharedNamespacedNKERBACName  = "nke:shared"
-	defaultRBACNamespace         = "nke-system"
-	secondaryRBACNamespace       = "tenant-system"
+	defaultNVKERBACName           = "nke:cwe"
+	secondaryNVKERBACName         = "nke:swe"
+	defaultNamespacedNVKERBACName = "nke:cwe-rbac"
+	sharedNamespacedNVKERBACName  = "nke:shared"
+	defaultRBACNamespace          = "nke-system"
+	secondaryRBACNamespace        = "tenant-system"
 )
 
-var allowedClusterRoleManifest = clusterRoleManifest(defaultNKERBACName)
+var allowedClusterRoleManifest = clusterRoleManifest(defaultNVKERBACName)
 
 func TestUpdateNKERBACManifestRejected(t *testing.T) {
 	tests := []struct {
@@ -118,42 +118,42 @@ metadata:
 		},
 		{
 			name:     "ClusterRole with bare prefix only",
-			manifest: clusterRoleManifest(nkeRBACNamePrefix),
+			manifest: clusterRoleManifest(nvkeRBACNamePrefix),
 			wantErr:  `names must start with "nke:"`,
 		},
 		{
 			name:     "ClusterRole must not set namespace",
-			manifest: clusterRoleManifestWithNamespace(defaultNKERBACName, defaultRBACNamespace),
+			manifest: clusterRoleManifestWithNamespace(defaultNVKERBACName, defaultRBACNamespace),
 			wantErr:  "must not set metadata.namespace",
 		},
 		{
 			name:     "Role must set namespace",
-			manifest: roleManifestNoNamespace(defaultNamespacedNKERBACName),
+			manifest: roleManifestNoNamespace(defaultNamespacedNVKERBACName),
 			wantErr:  "must set metadata.namespace",
 		},
 		{
-			name:     "ClusterRoleBinding roleRef name must use nke prefix",
-			manifest: clusterRoleBindingManifest(defaultNKERBACName, rbacKindClusterRole, "other-name"),
+			name:     "ClusterRoleBinding roleRef name must use the nke: prefix",
+			manifest: clusterRoleBindingManifest(defaultNVKERBACName, rbacKindClusterRole, "other-name"),
 			wantErr:  `roleRef.name "other-name" is not allowed`,
 		},
 		{
 			name:     "duplicate ClusterRole",
-			manifest: string(joinManifests(clusterRoleManifest(defaultNKERBACName), clusterRoleManifest(defaultNKERBACName))),
+			manifest: string(joinManifests(clusterRoleManifest(defaultNVKERBACName), clusterRoleManifest(defaultNVKERBACName))),
 			wantErr:  "duplicated Kubernetes object",
 		},
 		{
 			name: "duplicate Role in same namespace",
 			manifest: string(joinManifests(
-				roleManifest(defaultNamespacedNKERBACName, defaultRBACNamespace),
-				roleManifest(defaultNamespacedNKERBACName, defaultRBACNamespace),
+				roleManifest(defaultNamespacedNVKERBACName, defaultRBACNamespace),
+				roleManifest(defaultNamespacedNVKERBACName, defaultRBACNamespace),
 			)),
 			wantErr: "duplicated Kubernetes object",
 		},
 		{
 			name: "allowed document plus disallowed document",
 			manifest: string(joinManifests(
-				clusterRoleManifest(defaultNKERBACName),
-				roleManifestNoNamespace(defaultNamespacedNKERBACName),
+				clusterRoleManifest(defaultNVKERBACName),
+				roleManifestNoNamespace(defaultNamespacedNVKERBACName),
 			)),
 			wantErr: "validating Kubernetes object from document 2",
 		},
@@ -171,7 +171,7 @@ metadata:
 			require.Error(t, err)
 			assert.Nil(t, resp)
 			assert.Equal(t, codes.InvalidArgument, status.Code(err))
-			require.ErrorContains(t, err, "update NKE RBAC: invalid manifest")
+			require.ErrorContains(t, err, "UpdateNKERBAC: invalid manifest")
 			require.ErrorContains(t, err, tt.wantErr)
 		})
 	}
@@ -209,12 +209,12 @@ rules:
 	}{
 		{
 			name:     "ClusterRole CREATED preserves manifest payload",
-			manifest: []byte(clusterRoleManifest(defaultNKERBACName)),
+			manifest: []byte(clusterRoleManifest(defaultNVKERBACName)),
 			wantResults: []want{
-				{name: defaultNKERBACName, kind: rbacKindClusterRole, outcome: pb.ResourceApplyResult_OUTCOME_CREATED},
+				{name: defaultNVKERBACName, kind: rbacKindClusterRole, outcome: pb.ResourceApplyResult_OUTCOME_CREATED},
 			},
 			thenAssert: func(t *testing.T, c dynamic.Interface) {
-				obj := getObject(t, c, rbacKindClusterRole, "", defaultNKERBACName)
+				obj := getObject(t, c, rbacKindClusterRole, "", defaultNVKERBACName)
 				assert.Equal(t, rbacAPIVersion, obj.GetAPIVersion())
 				rules, found, err := unstructured.NestedSlice(obj.Object, "rules")
 				require.NoError(t, err)
@@ -224,33 +224,33 @@ rules:
 		},
 		{
 			name:     "ClusterRoleBinding CREATED",
-			manifest: []byte(clusterRoleBindingManifest(defaultNKERBACName, rbacKindClusterRole, defaultNKERBACName)),
+			manifest: []byte(clusterRoleBindingManifest(defaultNVKERBACName, rbacKindClusterRole, defaultNVKERBACName)),
 			wantResults: []want{
-				{name: defaultNKERBACName, kind: rbacKindClusterRoleBinding, outcome: pb.ResourceApplyResult_OUTCOME_CREATED},
+				{name: defaultNVKERBACName, kind: rbacKindClusterRoleBinding, outcome: pb.ResourceApplyResult_OUTCOME_CREATED},
 			},
 		},
 		{
 			name:     "Role CREATED in namespace",
-			manifest: []byte(roleManifest(defaultNamespacedNKERBACName, defaultRBACNamespace)),
+			manifest: []byte(roleManifest(defaultNamespacedNVKERBACName, defaultRBACNamespace)),
 			wantResults: []want{
 				{
-					name:      defaultNamespacedNKERBACName,
+					name:      defaultNamespacedNVKERBACName,
 					kind:      rbacKindRole,
 					namespace: defaultRBACNamespace,
 					outcome:   pb.ResourceApplyResult_OUTCOME_CREATED,
 				},
 			},
 			thenAssert: func(t *testing.T, c dynamic.Interface) {
-				obj := getObject(t, c, rbacKindRole, defaultRBACNamespace, defaultNamespacedNKERBACName)
+				obj := getObject(t, c, rbacKindRole, defaultRBACNamespace, defaultNamespacedNVKERBACName)
 				assert.Equal(t, defaultRBACNamespace, obj.GetNamespace())
 			},
 		},
 		{
 			name:     "RoleBinding to Role CREATED",
-			manifest: []byte(roleBindingManifest(defaultNamespacedNKERBACName, defaultRBACNamespace, rbacKindRole, defaultNamespacedNKERBACName)),
+			manifest: []byte(roleBindingManifest(defaultNamespacedNVKERBACName, defaultRBACNamespace, rbacKindRole, defaultNamespacedNVKERBACName)),
 			wantResults: []want{
 				{
-					name:      defaultNamespacedNKERBACName,
+					name:      defaultNamespacedNVKERBACName,
 					kind:      rbacKindRoleBinding,
 					namespace: defaultRBACNamespace,
 					outcome:   pb.ResourceApplyResult_OUTCOME_CREATED,
@@ -259,10 +259,10 @@ rules:
 		},
 		{
 			name:     "RoleBinding to ClusterRole CREATED",
-			manifest: []byte(roleBindingManifest(secondaryNKERBACName, defaultRBACNamespace, rbacKindClusterRole, secondaryNKERBACName)),
+			manifest: []byte(roleBindingManifest(secondaryNVKERBACName, defaultRBACNamespace, rbacKindClusterRole, secondaryNVKERBACName)),
 			wantResults: []want{
 				{
-					name:      secondaryNKERBACName,
+					name:      secondaryNVKERBACName,
 					kind:      rbacKindRoleBinding,
 					namespace: defaultRBACNamespace,
 					outcome:   pb.ResourceApplyResult_OUTCOME_CREATED,
@@ -271,59 +271,59 @@ rules:
 		},
 		{
 			name:        "ClusterRole UNCHANGED when generation does not change",
-			manifest:    []byte(clusterRoleManifest(defaultNKERBACName)),
-			setup:       injectGenerations(rbacKindClusterRole, defaultNKERBACName, "", 12, 12),
-			wantResults: []want{{name: defaultNKERBACName, kind: rbacKindClusterRole, outcome: pb.ResourceApplyResult_OUTCOME_UNCHANGED}},
+			manifest:    []byte(clusterRoleManifest(defaultNVKERBACName)),
+			setup:       injectGenerations(rbacKindClusterRole, defaultNVKERBACName, "", 12, 12),
+			wantResults: []want{{name: defaultNVKERBACName, kind: rbacKindClusterRole, outcome: pb.ResourceApplyResult_OUTCOME_UNCHANGED}},
 		},
 		{
 			name:        "ClusterRole UPDATED when generation changes",
-			manifest:    []byte(clusterRoleManifest(defaultNKERBACName)),
-			setup:       injectGenerations(rbacKindClusterRole, defaultNKERBACName, "", 12, 13),
-			wantResults: []want{{name: defaultNKERBACName, kind: rbacKindClusterRole, outcome: pb.ResourceApplyResult_OUTCOME_UPDATED}},
+			manifest:    []byte(clusterRoleManifest(defaultNVKERBACName)),
+			setup:       injectGenerations(rbacKindClusterRole, defaultNVKERBACName, "", 12, 13),
+			wantResults: []want{{name: defaultNVKERBACName, kind: rbacKindClusterRole, outcome: pb.ResourceApplyResult_OUTCOME_UPDATED}},
 		},
 		{
 			name:        "ClusterRoleBinding UNCHANGED when generation does not change",
-			manifest:    []byte(clusterRoleBindingManifest(defaultNKERBACName, rbacKindClusterRole, defaultNKERBACName)),
-			setup:       injectGenerations(rbacKindClusterRoleBinding, defaultNKERBACName, "", 7, 7),
-			wantResults: []want{{name: defaultNKERBACName, kind: rbacKindClusterRoleBinding, outcome: pb.ResourceApplyResult_OUTCOME_UNCHANGED}},
+			manifest:    []byte(clusterRoleBindingManifest(defaultNVKERBACName, rbacKindClusterRole, defaultNVKERBACName)),
+			setup:       injectGenerations(rbacKindClusterRoleBinding, defaultNVKERBACName, "", 7, 7),
+			wantResults: []want{{name: defaultNVKERBACName, kind: rbacKindClusterRoleBinding, outcome: pb.ResourceApplyResult_OUTCOME_UNCHANGED}},
 		},
 		{
 			name:        "ClusterRoleBinding UPDATED when generation changes",
-			manifest:    []byte(clusterRoleBindingManifest(defaultNKERBACName, rbacKindClusterRole, defaultNKERBACName)),
-			setup:       injectGenerations(rbacKindClusterRoleBinding, defaultNKERBACName, "", 7, 8),
-			wantResults: []want{{name: defaultNKERBACName, kind: rbacKindClusterRoleBinding, outcome: pb.ResourceApplyResult_OUTCOME_UPDATED}},
+			manifest:    []byte(clusterRoleBindingManifest(defaultNVKERBACName, rbacKindClusterRole, defaultNVKERBACName)),
+			setup:       injectGenerations(rbacKindClusterRoleBinding, defaultNVKERBACName, "", 7, 8),
+			wantResults: []want{{name: defaultNVKERBACName, kind: rbacKindClusterRoleBinding, outcome: pb.ResourceApplyResult_OUTCOME_UPDATED}},
 		},
 		{
 			name: "same Role name in different namespaces is allowed and preserves order",
 			manifest: joinManifests(
-				roleManifest(sharedNamespacedNKERBACName, defaultRBACNamespace),
-				roleManifest(sharedNamespacedNKERBACName, secondaryRBACNamespace),
-				clusterRoleManifest(secondaryNKERBACName),
+				roleManifest(sharedNamespacedNVKERBACName, defaultRBACNamespace),
+				roleManifest(sharedNamespacedNVKERBACName, secondaryRBACNamespace),
+				clusterRoleManifest(secondaryNVKERBACName),
 			),
 			wantResults: []want{
 				{
-					name:      sharedNamespacedNKERBACName,
+					name:      sharedNamespacedNVKERBACName,
 					kind:      rbacKindRole,
 					namespace: defaultRBACNamespace,
 					outcome:   pb.ResourceApplyResult_OUTCOME_CREATED,
 				},
 				{
-					name:      sharedNamespacedNKERBACName,
+					name:      sharedNamespacedNVKERBACName,
 					kind:      rbacKindRole,
 					namespace: secondaryRBACNamespace,
 					outcome:   pb.ResourceApplyResult_OUTCOME_CREATED,
 				},
-				{name: secondaryNKERBACName, kind: rbacKindClusterRole, outcome: pb.ResourceApplyResult_OUTCOME_CREATED},
+				{name: secondaryNVKERBACName, kind: rbacKindClusterRole, outcome: pb.ResourceApplyResult_OUTCOME_CREATED},
 			},
 		},
 		{
 			name:     "managedFields are stripped before apply",
 			manifest: []byte(manifestWithManagedFields),
 			wantResults: []want{
-				{name: defaultNKERBACName, kind: rbacKindClusterRole, outcome: pb.ResourceApplyResult_OUTCOME_CREATED},
+				{name: defaultNVKERBACName, kind: rbacKindClusterRole, outcome: pb.ResourceApplyResult_OUTCOME_CREATED},
 			},
 			thenAssert: func(t *testing.T, c dynamic.Interface) {
-				obj := getObject(t, c, rbacKindClusterRole, "", defaultNKERBACName)
+				obj := getObject(t, c, rbacKindClusterRole, "", defaultNVKERBACName)
 				_, found, err := unstructured.NestedFieldNoCopy(obj.Object, "metadata", "managedFields")
 				require.NoError(t, err)
 				assert.False(t, found, "managedFields must be stripped before apply")
@@ -375,14 +375,14 @@ func TestUpdateNKERBACApplyErrors(t *testing.T) {
 		server := newUpdateRBACServerWithClient(client)
 
 		resp, err := server.UpdateNKERBAC(context.Background(), &pb.UpdateNKERBACRequest{
-			Manifest: []byte(clusterRoleManifest(defaultNKERBACName)),
+			Manifest: []byte(clusterRoleManifest(defaultNVKERBACName)),
 		})
 
 		require.NoError(t, err)
 		require.Len(t, resp.GetResults(), 1)
 		got := resp.GetResults()[0]
 		assert.Equal(t, rbacKindClusterRole, got.GetKind())
-		assert.Equal(t, defaultNKERBACName, got.GetName())
+		assert.Equal(t, defaultNVKERBACName, got.GetName())
 		assert.Empty(t, got.GetNamespace())
 		assert.Equal(t, pb.ResourceApplyResult_OUTCOME_FAILED, got.GetOutcome())
 		assert.Contains(t, got.GetErrorMessage(), "reading")
@@ -407,8 +407,8 @@ func TestUpdateNKERBACApplyErrors(t *testing.T) {
 
 		resp, err := server.UpdateNKERBAC(context.Background(), &pb.UpdateNKERBACRequest{
 			Manifest: joinManifests(
-				clusterRoleManifest(defaultNKERBACName),
-				clusterRoleBindingManifest(defaultNKERBACName, rbacKindClusterRole, defaultNKERBACName),
+				clusterRoleManifest(defaultNVKERBACName),
+				clusterRoleBindingManifest(defaultNVKERBACName, rbacKindClusterRole, defaultNVKERBACName),
 			),
 		})
 
@@ -416,12 +416,12 @@ func TestUpdateNKERBACApplyErrors(t *testing.T) {
 		require.Len(t, resp.GetResults(), 2)
 		first := resp.GetResults()[0]
 		assert.Equal(t, rbacKindClusterRole, first.GetKind())
-		assert.Equal(t, defaultNKERBACName, first.GetName())
+		assert.Equal(t, defaultNVKERBACName, first.GetName())
 		assert.Empty(t, first.GetNamespace())
 		assert.Equal(t, pb.ResourceApplyResult_OUTCOME_CREATED, first.GetOutcome())
 		second := resp.GetResults()[1]
 		assert.Equal(t, rbacKindClusterRoleBinding, second.GetKind())
-		assert.Equal(t, defaultNKERBACName, second.GetName())
+		assert.Equal(t, defaultNVKERBACName, second.GetName())
 		assert.Empty(t, second.GetNamespace())
 		assert.Equal(t, pb.ResourceApplyResult_OUTCOME_FAILED, second.GetOutcome())
 		assert.Contains(t, second.GetErrorMessage(), "applying")
@@ -568,7 +568,7 @@ func getObject(t *testing.T, client dynamic.Interface, kind, namespace, name str
 
 // injectGenerations configures the fake client so that Get reports an existing
 // resource at beforeGen and Apply returns one at afterGen. This drives the
-// UNCHANGED/UPDATED outcome classification in applyNKERBACResource.
+// UNCHANGED/UPDATED outcome classification in applyNVKERBACResource.
 func injectGenerations(
 	kind string,
 	name string,

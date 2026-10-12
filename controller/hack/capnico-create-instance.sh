@@ -75,7 +75,7 @@ SUBNET_ID="${SUBNET_ID:-${DEFAULT_SUBNET_ID}}"
 SSH_KEY_GROUP_ID="${SSH_KEY_GROUP_ID:-${DEFAULT_SSH_KEY_GROUP_ID}}"
 # cpu2-mem4gb-disk50gb. The instance type's disk_gib overrides
 # NICO_VMS_VM_DISK_GIB, and 50 GiB is ample for a bare boot. Use
-# a1b2c3d4-0005-4000-8000-000000000004 (cpu6-mem32gb-disk60gb) for real NKE-node
+# a1b2c3d4-0005-4000-8000-000000000004 (cpu6-mem32gb-disk60gb) for real NVKE-node
 # work later.
 INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-${DEFAULT_INSTANCE_TYPE_ID}}"
 

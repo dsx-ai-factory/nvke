@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/operator"
+	"github.com/dsx-ai-factory/nvke/cli/internal/operator"
 )
 
 // fakeClient is an in-memory operator.Client that records the calls it gets.
@@ -296,7 +296,7 @@ func TestCreateReleaseNeedsItsMachineImage(t *testing.T) {
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), `machine image "img-1" not found`)
-			assert.Contains(t, err.Error(), "nkectl create machineimage")
+			assert.Contains(t, err.Error(), "nvkectl create machineimage")
 			assert.Equal(t, []string{"get MachineImage/img-1"}, f.calls, "nothing is created")
 		})
 	}
@@ -356,7 +356,7 @@ func TestCreateDryRunClientPrintsAManifestAndNeedsNoSite(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal([]byte(out), &got), "defaults to YAML")
 	assert.Equal(t, "internal.nke.nvidia.com/v1", got["apiVersion"])
 	assert.Equal(t, "MachineImage", got["kind"])
-	assert.Equal(t, map[string]any{"name": "img-1"}, got["metadata"], "no GitOps annotations: that is not nkectl's concern")
+	assert.Equal(t, map[string]any{"name": "img-1"}, got["metadata"], "no GitOps annotations: that is not nvkectl's concern")
 	assert.Contains(t, out, "ipxeScript: |", "multi-line scripts stay readable")
 	assert.NotContains(t, out, "annotations")
 	assert.NotContains(t, out, "argocd")
@@ -660,7 +660,7 @@ func TestDeleteHelpOnlySuggestsDeprecateForReleases(t *testing.T) {
 		out, _, err := run(t, "delete", func() []*cobra.Command { return NewDeleteCmds(newFakeClient().clientFn()) }, "", verb, "--help")
 
 		require.NoError(t, err)
-		assert.Equal(t, want, strings.Contains(out, "nkectl deprecate"), verb)
+		assert.Equal(t, want, strings.Contains(out, "nvkectl deprecate"), verb)
 	}
 }
 

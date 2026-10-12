@@ -17,8 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
 
 const (
@@ -204,7 +204,7 @@ func renderAuthenticationConfig(config *OIDCAuthenticationConfig, kubernetesVers
 // are constants; the empty prefix is emitted explicitly (Prefix: ptr("")) to mean
 // "no prefix". It is shared by the greenfield bootstrap path and the brownfield
 // enablement rollout so both render byte-identical AuthenticationConfiguration.
-func BuildOIDCAuthenticationConfig(clusterName string, oidc config.NkeOIDCAuth, caBundle []byte) (*OIDCAuthenticationConfig, error) {
+func BuildOIDCAuthenticationConfig(clusterName string, oidc config.NvkeOIDCAuth, caBundle []byte) (*OIDCAuthenticationConfig, error) {
 	if clusterName == "" {
 		return nil, fmt.Errorf("cluster name is required when OIDC auth is enabled")
 	}

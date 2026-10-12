@@ -16,10 +16,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/tenantauth"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/tenantauth"
 )
 
 // The apiserver auth-config settings the brownfield write-back persists into
@@ -49,16 +49,16 @@ const (
 func validateBrownfieldOIDC(test *tenantTest) {
 	It("enables OIDC on an existing cluster and persists the kubeadm-config write-back", func(ctx context.Context) {
 		By("Re-enabling the controller OIDC create-default turned off at cluster creation")
-		Expect(nke.SetOIDCEnabled(ctx, test.k8sClient, true)).To(Succeed())
+		Expect(nvke.SetOIDCEnabled(ctx, test.k8sClient, true)).To(Succeed())
 
-		skipIfNKEOIDCDisabled(ctx, test.k8sClient)
+		skipIfNVKEOIDCDisabled(ctx, test.k8sClient)
 
 		By("Waiting for every desired node to be ready")
 		Eventually(test.assertDesiredNodesReady).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(1*time.Second).
 			Should(Succeed(), "all desired nodes should be ready before enabling OIDC")
 
 		By("Enabling OIDC via the UpdateCluster API")
-		resp := expectSucceed(test.nke.UpdateOIDC(ctx, test.cluster.ID, true))
+		resp := expectSucceed(test.nvke.UpdateOIDC(ctx, test.cluster.ID, true))
 		Expect(resp.StatusCode()).To(Equal(200), string(resp.Body))
 		Expect(resp.JSON200).NotTo(BeNil())
 		Expect(resp.JSON200.Conditions.UpdateInProgress).NotTo(BeNil(),
@@ -66,7 +66,7 @@ func validateBrownfieldOIDC(test *tenantTest) {
 		Expect(resp.JSON200.Conditions.UpdateInProgress.Type).To(Equal(api.UpdateInProgressTypeOidcEnable))
 
 		By("Waiting for OIDC enablement to complete")
-		test.cluster = expectSucceed(test.nke.WaitForOIDCEnabled(ctx, test.cluster.ID))
+		test.cluster = expectSucceed(test.nvke.WaitForOIDCEnabled(ctx, test.cluster.ID))
 
 		By("Validating the auth-config was written back into kubeadm-config")
 		tenantClient := expectSucceed(test.tenantClients.GetClient(ctx, test.cluster.Name))
@@ -81,7 +81,7 @@ func validateBrownfieldOIDC(test *tenantTest) {
 	}, Label("lifecycle", "oidc", "oidc-enable"), NodeTimeout(20*time.Minute))
 
 	It("authenticates the controller SPIRE identity on the tenant apiserver", func(ctx context.Context) {
-		skipIfNKEOIDCDisabled(ctx, test.k8sClient)
+		skipIfNVKEOIDCDisabled(ctx, test.k8sClient)
 		if test.trustDomain == "" {
 			Skip("SPIRE trust domain could not be derived from kubeconfig context")
 		}

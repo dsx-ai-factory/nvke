@@ -17,8 +17,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
 
 const (
@@ -125,7 +125,7 @@ func (s *NodeAgentServer) runKubernetesCertificateRenewal(
 
 	runner := s.Runner
 	if runner == nil {
-		runner = &nkeutils.ExecRunner{}
+		runner = &nvkeutils.ExecRunner{}
 	}
 
 	state := s.kubernetesCertificateRenewalState()
@@ -295,7 +295,7 @@ func expiringKubernetesCertificates(output string, thresholdDays int) ([]string,
 
 // allCertificateRenewalComponentsRunning uses CRI state so it remains usable
 // before, during, and after an API-server restart.
-func allCertificateRenewalComponentsRunning(runner nkeutils.CommandRunner) error {
+func allCertificateRenewalComponentsRunning(runner nvkeutils.CommandRunner) error {
 	var missing []string
 	for _, component := range certificateRenewalControlPlaneComponents {
 		ids, err := listStaticPodContainerIDs(runner, component)
@@ -314,7 +314,7 @@ func allCertificateRenewalComponentsRunning(runner nkeutils.CommandRunner) error
 
 func (s *NodeAgentServer) waitForCertificateRenewalComponentState(
 	ctx context.Context,
-	runner nkeutils.CommandRunner,
+	runner nvkeutils.CommandRunner,
 	wantRunning bool,
 	timeout time.Duration,
 ) error {

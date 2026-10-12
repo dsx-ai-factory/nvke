@@ -14,7 +14,7 @@ Objectives: mutating API latency, read-only API latency and pod startup
 latency. Their bars are under "How to judge the result" below.
 
 **This is not a maximum-scale claim.** The 47-node topology below is what
-this run happened to test, not a ceiling on how large an NKE cluster can go.
+this run happened to test, not a ceiling on how large an NVKE cluster can go.
 `sizing.derivation` exists so a reader can size this workload to their own
 node count — a bigger or smaller cluster is a different `sizing.observed`,
 not a different scenario.

@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 const upgradeStartingKubernetesVersion = "1.34.2"
@@ -57,13 +57,13 @@ func upgradeControlPlaneTo(test *tenantTest, targetVersion string) func(context.
 		}
 
 		By(fmt.Sprintf("Upgrading the control plane from %s to %s", currentVersion, targetVersion))
-		upgraded, err := test.nke.UpgradeClusterControlPlane(ctx, test.cluster.ID, targetVersion)
+		upgraded, err := test.nvke.UpgradeClusterControlPlane(ctx, test.cluster.ID, targetVersion)
 		Expect(err).NotTo(HaveOccurred(), "should request the control-plane upgrade")
 		Expect(upgraded.ControlPlaneKubernetesVersion).To(Equal(targetVersion))
 
 		By("Observing the control-plane upgrade start")
 		Eventually(func(ctx context.Context) bool {
-			currentCluster, getErr := test.nke.GetCluster(ctx, test.cluster.ID)
+			currentCluster, getErr := test.nvke.GetCluster(ctx, test.cluster.ID)
 			if getErr != nil {
 				return false
 			}
@@ -72,12 +72,12 @@ func upgradeControlPlaneTo(test *tenantTest, targetVersion string) func(context.
 			Should(BeTrue(), "control-plane upgrade should enter an in-progress state")
 
 		By("Waiting for the control-plane upgrade to complete")
-		cluster, err := test.nke.WaitForControlPlaneUpgradeComplete(ctx, test.cluster.ID, targetVersion)
+		cluster, err := test.nvke.WaitForControlPlaneUpgradeComplete(ctx, test.cluster.ID, targetVersion)
 		Expect(err).NotTo(HaveOccurred(), "control-plane upgrade should complete")
 		test.cluster = cluster
 
 		By("Verifying recycled control-plane nodes were replaced")
-		Expect(test.nke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, originalDesiredCount, originalControlPlaneNodes)).
+		Expect(test.nvke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, originalDesiredCount, originalControlPlaneNodes)).
 			To(Succeed(), "controller-managed control plane should finish rolling onto replacement nodes")
 		currentControlPlaneNodes, _ := expectControlPlaneNodes(ctx, test)
 		Expect(currentControlPlaneNodes).To(HaveLen(originalDesiredCount), "control plane should retain its desired node count")
@@ -137,8 +137,8 @@ func assertKubeadmKubernetesVersion(ctx context.Context, tenantClient client.Cli
 func expectControlPlaneNodes(ctx context.Context, test *tenantTest) ([]api.Node, int) {
 	GinkgoHelper()
 
-	controlPlane := expectSucceed(test.nke.GetClusterControlPlane(ctx, test.cluster.ID))
-	nodes := expectSucceed(test.nke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true))
+	controlPlane := expectSucceed(test.nvke.GetClusterControlPlane(ctx, test.cluster.ID))
+	nodes := expectSucceed(test.nvke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true))
 	return nodes, controlPlane.Config.DesiredCount
 }
 

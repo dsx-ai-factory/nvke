@@ -4,7 +4,7 @@
 
 set -e
 
-echo "Installing NKE Agent..."
+echo "Installing NVKE Agent..."
 systemctl daemon-reload
 
 systemctl enable nke-agent
@@ -16,4 +16,4 @@ if [ "${NKE_AGENT_SKIP_START:-0}" != 1 ]; then
   systemctl restart nke-agent
 fi
 
-echo "NKE Services installed."
+echo "NVKE Services installed."

@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Build Linux packages with Nix
 
-Nix prepares a Linux VM with the tools needed to build NKE's Debian packages.
+Nix prepares a Linux VM with the tools needed to build NVKE's Debian packages.
 Use this on Apple Silicon macOS or when your Linux host differs from the target
 architecture. Matching Linux hosts use the existing direct package build by default.
 

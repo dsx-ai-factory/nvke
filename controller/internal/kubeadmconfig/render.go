@@ -13,10 +13,10 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	kubeadmv1beta3 "github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig/thirdparty/kubeadmtypes/v1beta3"
-	kubeletconfigv1beta1 "github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig/thirdparty/kubeletconfig/v1beta1"
-	kubeproxyconfigv1alpha1 "github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig/thirdparty/kubeproxyconfig/v1alpha1"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	kubeadmv1beta3 "github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig/thirdparty/kubeadmtypes/v1beta3"
+	kubeletconfigv1beta1 "github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig/thirdparty/kubeletconfig/v1beta1"
+	kubeproxyconfigv1alpha1 "github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig/thirdparty/kubeproxyconfig/v1alpha1"
 )
 
 const (
@@ -54,7 +54,7 @@ const (
 	// defaultServiceAccountExtendTokenExpiration turns off the extended
 	// (one-year) service account token lifetime, so projected tokens expire on
 	// the bound schedule the cluster actually intends (CIS 1.2.30). The extension
-	// exists to shield clients that cannot re-read a rotating token; NKE ships no
+	// exists to shield clients that cannot re-read a rotating token; NVKE ships no
 	// such client, and leaving it on silently grants every workload a year-long
 	// credential.
 	defaultServiceAccountExtendTokenExpiration = "false"
@@ -88,7 +88,7 @@ const (
 	// of the other plugins is safe to enable unconditionally: DenyServiceExternalIPs
 	// and OwnerReferencesPermissionEnforcement are self-contained; PodNodeSelector
 	// and PodTolerationRestriction only activate for namespaces carrying
-	// annotations NKE does not set today, so they are no-ops until paired with
+	// annotations NVKE does not set today, so they are no-ops until paired with
 	// that follow-up work.
 	defaultEnabledAdmissionPlugins = "NodeRestriction,DenyServiceExternalIPs,OwnerReferencesPermissionEnforcement,PodNodeSelector,PodTolerationRestriction"
 )

@@ -15,11 +15,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent/agenttest"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestRemoveEtcdMemberUsesSurvivingNode(t *testing.T) {
@@ -28,7 +28,7 @@ func TestRemoveEtcdMemberUsesSurvivingNode(t *testing.T) {
 	executor := joinedControlPlaneNode(clusterID, "executor", true)
 	database := &testutil.MockDB{}
 	database.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{target, executor}, nil).Once()
-	fakeAgent := &agenttest.FakeClient{RemoveEtcdMemberResponse: &nkeproto.RemoveEtcdMemberResponse{}}
+	fakeAgent := &agenttest.FakeClient{RemoveEtcdMemberResponse: &nvkeproto.RemoveEtcdMemberResponse{}}
 	a := &Activities{db: database, nodeAgentClient: fakeAgent}
 
 	err := executeEtcdRemovalActivity(t, a, EtcdMemberRemovalInput{
@@ -68,9 +68,9 @@ func TestRemoveEtcdMemberFallsBackOnlyOnUnimplemented(t *testing.T) {
 			}
 			fakeAgent := &agenttest.FakeClient{
 				RemoveEtcdMemberError: tt.rpcError,
-				ExecuteScriptHook: func(_ db.Node, scriptName, _ string) (*nkeproto.ExecuteScriptResponse, error) {
+				ExecuteScriptHook: func(_ db.Node, scriptName, _ string) (*nvkeproto.ExecuteScriptResponse, error) {
 					require.Equal(t, legacyEtcdMemberRemoveRunbook, scriptName)
-					return &nkeproto.ExecuteScriptResponse{}, nil
+					return &nvkeproto.ExecuteScriptResponse{}, nil
 				},
 			}
 			a := &Activities{db: database, nodeAgentClient: fakeAgent}

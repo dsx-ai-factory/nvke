@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 func quietLogger() *slog.Logger {
@@ -89,7 +89,7 @@ func condition(status api.ConditionStatus) api.Condition {
 
 func clusterWith(provisioned, provisioning api.ConditionStatus) api.Cluster {
 	return api.Cluster{
-		Name: "nke-site",
+		Name: "nvke-site",
 		Conditions: api.ClusterConditions{
 			Provisioned:  condition(provisioned),
 			Provisioning: condition(provisioning),
@@ -112,8 +112,8 @@ func TestCreate_SendsTheSiteSpecAsACluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
-	if cluster.Name != "nke-site" {
-		t.Errorf("created cluster name = %q, want %q", cluster.Name, "nke-site")
+	if cluster.Name != "nvke-site" {
+		t.Errorf("created cluster name = %q, want %q", cluster.Name, "nvke-site")
 	}
 	if client.created == nil || client.created.Infra == nil || client.created.Infra.Cluster == nil {
 		t.Fatal("Create did not send a CAPI infrastructure cluster")
@@ -146,7 +146,7 @@ func TestWaitProvisioned_ReturnsWhenProvisioned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WaitProvisioned returned error: %v", err)
 	}
-	if cluster.Name != "nke-site" {
+	if cluster.Name != "nvke-site" {
 		t.Errorf("returned cluster = %q, want the polled one", cluster.Name)
 	}
 	if client.gets != 3 {

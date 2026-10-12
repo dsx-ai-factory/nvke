@@ -150,7 +150,7 @@ work:
 ```bash
 curl -fsS http://<site-ip>:30080/readyz; echo                                        # database and temporal ok
 curl -sk -o /dev/null -w '%{http_code}\n' https://<site-ip>:30443/.well-known/openid-configuration   # 200
-nkectl get providers                                                                  # CONFIGURED
+nvkectl get providers                                                                  # CONFIGURED
 ```
 
 - **The first:** the controller's metrics NetworkPolicy must not have cut off

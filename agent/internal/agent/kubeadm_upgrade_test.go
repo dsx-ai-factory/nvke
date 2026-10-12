@@ -16,8 +16,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
 
 func TestKubeadmUpgradeApplyValidatesRequest(t *testing.T) {
@@ -79,7 +79,7 @@ func TestKubeadmUpgradeApplyRunsPlanAndApply(t *testing.T) {
 	}
 	var calls []command
 	runner := &MockRunner{Runners: []runner{
-		func(name string, args []string, _ *nkeutils.CommandOptions) (bool, []byte, error) {
+		func(name string, args []string, _ *nvkeutils.CommandOptions) (bool, []byte, error) {
 			calls = append(calls, command{name: name, args: slices.Clone(args)})
 			switch {
 			case slices.Equal(args, []string{"upgrade", "plan"}):
@@ -123,7 +123,7 @@ func TestKubeadmUpgradeApplyReportsCommandFailures(t *testing.T) {
 	}{
 		{
 			name: "plan failure",
-			runners: []runner{runForCommand("kubeadm", []string{"upgrade", "plan"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+			runners: []runner{runForCommand("kubeadm", []string{"upgrade", "plan"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 				return []byte("plan failed"), errors.New("plan command failed")
 			})},
 			wantRunCalls:  1,
@@ -132,10 +132,10 @@ func TestKubeadmUpgradeApplyReportsCommandFailures(t *testing.T) {
 		{
 			name: "apply failure",
 			runners: []runner{
-				runForCommand("kubeadm", []string{"upgrade", "plan"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+				runForCommand("kubeadm", []string{"upgrade", "plan"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 					return []byte("plan succeeded"), nil
 				}),
-				runForCommand("kubeadm", []string{"upgrade", "apply", "v1.34.2", "--patches=/etc/kubernetes/patches", "-y"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+				runForCommand("kubeadm", []string{"upgrade", "apply", "v1.34.2", "--patches=/etc/kubernetes/patches", "-y"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 					return []byte("apply failed"), errors.New("apply command failed")
 				}),
 			},

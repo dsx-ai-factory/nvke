@@ -14,13 +14,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	internalv1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
-	"github.com/dsx-ai-factory/nke/management-engine/internal/cwe"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	"github.com/dsx-ai-factory/nvke/management-engine/internal/cwe"
 )
 
-func (r *NKEClusterReconciler) reconcileDelete(ctx context.Context, cluster *internalv1.NKECluster) (ctrl.Result, error) {
-	if !controllerutil.ContainsFinalizer(cluster, nkeClusterFinalizer) {
+func (r *NVKEClusterReconciler) reconcileDelete(ctx context.Context, cluster *internalv1.NKECluster) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(cluster, nvkeClusterFinalizer) {
 		return ctrl.Result{}, nil
 	}
 	setLifecycleConditions(cluster, metav1.ConditionFalse, metav1.ConditionUnknown, clusterv1.DeletingReason, "Waiting for cluster deletion")
@@ -31,7 +31,7 @@ func (r *NKEClusterReconciler) reconcileDelete(ctx context.Context, cluster *int
 				"Cluster creation outcome is unknown; contact the service administrator before deletion")
 			return ctrl.Result{RequeueAfter: r.PollInterval}, nil
 		}
-		controllerutil.RemoveFinalizer(cluster, nkeClusterFinalizer)
+		controllerutil.RemoveFinalizer(cluster, nvkeClusterFinalizer)
 		return ctrl.Result{}, nil
 	}
 	if err != nil {

@@ -15,11 +15,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
 type cachedJoinStrings struct {
@@ -127,7 +127,7 @@ func (a *Activities) kubeadmJoin(ctx context.Context, node db.Node) (KubeadmJoin
 		return KubeadmJoinResult{}, fmt.Errorf("failed to render kubeadm join config: %w", err)
 	}
 
-	req := &nkeproto.KubeadmJoinRequest{
+	req := &nvkeproto.KubeadmJoinRequest{
 		JoinConfig:        string(artifacts.ConfigYAML),
 		KubeadmJoinString: joinString,
 		Files:             toNodeAgentFiles(artifacts.Files),
@@ -304,7 +304,7 @@ func validateEtcdQuotaValue(nodeName, quota string) error {
 	return nil
 }
 
-func (a *Activities) getKubeadmJoinStrings(ctx context.Context, cpNode db.Node) (*nkeproto.KubeadmJoinStringResponse, error) {
+func (a *Activities) getKubeadmJoinStrings(ctx context.Context, cpNode db.Node) (*nvkeproto.KubeadmJoinStringResponse, error) {
 	endpoint := net.JoinHostPort(cpNode.IP, a.cfg.NodeAgent.Port)
 	entry, _ := joinStringCache.LoadOrStore(endpoint, &cachedJoinStrings{})
 	cached, ok := entry.(*cachedJoinStrings)
@@ -316,13 +316,13 @@ func (a *Activities) getKubeadmJoinStrings(ctx context.Context, cpNode db.Node) 
 	defer cached.mu.Unlock()
 
 	if cached.controlPlaneJoin != "" && cached.workerJoin != "" && time.Since(cached.fetchedAt) < joinStringCacheTTL {
-		return &nkeproto.KubeadmJoinStringResponse{
+		return &nvkeproto.KubeadmJoinStringResponse{
 			ControlplaneJoinString: cached.controlPlaneJoin,
 			WorkerJoinString:       cached.workerJoin,
 		}, nil
 	}
 
-	resp, err := a.nodeAgentClient.UpdateAndFetchKubeAdmJoinStrings(ctx, cpNode, &nkeproto.KubeadmJoinStringRequest{})
+	resp, err := a.nodeAgentClient.UpdateAndFetchKubeAdmJoinStrings(ctx, cpNode, &nvkeproto.KubeadmJoinStringRequest{})
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +334,7 @@ func (a *Activities) getKubeadmJoinStrings(ctx context.Context, cpNode db.Node) 
 	cached.workerJoin = stripJoinString(resp.GetWorkerJoinString())
 	cached.fetchedAt = time.Now()
 
-	return &nkeproto.KubeadmJoinStringResponse{
+	return &nvkeproto.KubeadmJoinStringResponse{
 		ControlplaneJoinString: cached.controlPlaneJoin,
 		WorkerJoinString:       cached.workerJoin,
 	}, nil

@@ -1,5 +1,5 @@
 [Unit]
-Description=NKE Node Agent Updater (%i)
+Description=NVKE Node Agent Updater (%i)
 After=network-online.target
 Wants=network-online.target
 

@@ -14,8 +14,8 @@ package sitecluster
 import (
 	"fmt"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 const (

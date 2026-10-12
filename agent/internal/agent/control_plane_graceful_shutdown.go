@@ -23,8 +23,8 @@ import (
 	"google.golang.org/grpc/status"
 	yaml "gopkg.in/yaml.v2"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
 
 const (
@@ -169,7 +169,7 @@ func (s *NodeAgentServer) runK8sControlPlaneNodeGracefulShutdown(
 
 	runner := s.Runner
 	if runner == nil {
-		runner = &nkeutils.ExecRunner{}
+		runner = &nvkeutils.ExecRunner{}
 	}
 	progress.SetStep(stepResolvingKubeVip)
 	vip, err := s.resolveKubeVipAddress(runner)
@@ -206,7 +206,7 @@ func (s *NodeAgentServer) runK8sControlPlaneNodeGracefulShutdown(
 // an RST before the local VIP address is removed.
 func (s *NodeAgentServer) drainKubeVip(
 	ctx context.Context,
-	runner nkeutils.CommandRunner,
+	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
 	vip string,
 ) error {
@@ -264,7 +264,7 @@ func (s *NodeAgentServer) runKubeVipRestore(
 
 	runner := s.Runner
 	if runner == nil {
-		runner = &nkeutils.ExecRunner{}
+		runner = &nvkeutils.ExecRunner{}
 	}
 
 	progress.SetStep(stepResolvingKubeVip)
@@ -298,7 +298,7 @@ func (s *NodeAgentServer) runKubeVipRestore(
 
 var errNoKubeVipAddress = errors.New("no kube-vip address found")
 
-func (s *NodeAgentServer) resolveKubeVipAddress(runner nkeutils.CommandRunner) (string, error) {
+func (s *NodeAgentServer) resolveKubeVipAddress(runner nvkeutils.CommandRunner) (string, error) {
 	vip, found, err := s.resolveKubeVipAddressFromManifest()
 	if err != nil {
 		return "", err
@@ -376,7 +376,7 @@ func parseKubeVipManifestAddress(path string) (string, error) {
 	return addr.String(), nil
 }
 
-func resolveKubeVipAddressFromLoopback(runner nkeutils.CommandRunner) (string, error) {
+func resolveKubeVipAddressFromLoopback(runner nvkeutils.CommandRunner) (string, error) {
 	output, err := runner.Run("ip", []string{"-o", "-4", "addr", "show", "dev", "lo", "scope", "host"}, nil) //nolint:goconst // ip(8) argv fragment; naming each CLI flag reads worse than the literal
 	if err != nil {
 		return "", fmt.Errorf("ip addr show dev lo: %w: %s", err, strings.TrimSpace(string(output)))
@@ -433,7 +433,7 @@ type staticPodRestoreSpec struct {
 
 func (s *NodeAgentServer) stopStaticPod(
 	ctx context.Context,
-	runner nkeutils.CommandRunner,
+	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
 	spec staticPodStopSpec,
 ) error {
@@ -454,7 +454,7 @@ func (s *NodeAgentServer) stopStaticPod(
 
 func (s *NodeAgentServer) restoreStaticPod(
 	ctx context.Context,
-	runner nkeutils.CommandRunner,
+	runner nvkeutils.CommandRunner,
 	progress nodeAgentOperationProgress,
 	spec staticPodRestoreSpec,
 ) error {
@@ -564,7 +564,7 @@ func (s *NodeAgentServer) rootedPath(path string) string {
 	return filepath.Join(s.RootPath, strings.TrimPrefix(path, "/"))
 }
 
-func listStaticPodContainerIDs(runner nkeutils.CommandRunner, containerName string) ([]string, error) {
+func listStaticPodContainerIDs(runner nvkeutils.CommandRunner, containerName string) ([]string, error) {
 	output, err := runner.RunSplitOutput("crictl", []string{
 		"ps",
 		"--label", "io.kubernetes.container.name=" + containerName,
@@ -597,7 +597,7 @@ func listStaticPodContainerIDs(runner nkeutils.CommandRunner, containerName stri
 
 func (s *NodeAgentServer) waitForStaticPodExit(
 	ctx context.Context,
-	runner nkeutils.CommandRunner,
+	runner nvkeutils.CommandRunner,
 	containerName string,
 	initialContainerIDs []string,
 	timeout time.Duration,
@@ -626,7 +626,7 @@ func (s *NodeAgentServer) waitForStaticPodExit(
 
 func (s *NodeAgentServer) waitForStaticPodRunning(
 	ctx context.Context,
-	runner nkeutils.CommandRunner,
+	runner nvkeutils.CommandRunner,
 	containerName string,
 	previousContainerIDs []string,
 	timeout time.Duration,
@@ -680,7 +680,7 @@ func sleepOrDone(ctx context.Context, d time.Duration) error {
 	}
 }
 
-func (s *NodeAgentServer) removeKubeVipFromLoopback(runner nkeutils.CommandRunner, vip string) error {
+func (s *NodeAgentServer) removeKubeVipFromLoopback(runner nvkeutils.CommandRunner, vip string) error {
 	output, err := runner.Run("ip", []string{"addr", "del", vip + "/32", "dev", "lo"}, nil)
 	if err == nil {
 		slog.Info("removed kube-vip address from lo", "vip", vip)
@@ -699,7 +699,7 @@ func (s *NodeAgentServer) removeKubeVipFromLoopback(runner nkeutils.CommandRunne
 
 func (s *NodeAgentServer) waitForKubeVipOnLoopback(
 	ctx context.Context,
-	runner nkeutils.CommandRunner,
+	runner nvkeutils.CommandRunner,
 	vip string,
 	timeout time.Duration,
 ) error {
@@ -726,7 +726,7 @@ func (s *NodeAgentServer) waitForKubeVipOnLoopback(
 	}
 }
 
-func (s *NodeAgentServer) closeRemoteVipPeers(runner nkeutils.CommandRunner, vip string, port int) (int, error) {
+func (s *NodeAgentServer) closeRemoteVipPeers(runner nvkeutils.CommandRunner, vip string, port int) (int, error) {
 	peers, err := s.listRemoteVipPeers(runner, vip, port)
 	if err != nil {
 		return 0, err
@@ -752,7 +752,7 @@ func (s *NodeAgentServer) closeRemoteVipPeers(runner nkeutils.CommandRunner, vip
 
 func (s *NodeAgentServer) waitForVipSocketQuietWindow(
 	ctx context.Context,
-	runner nkeutils.CommandRunner,
+	runner nvkeutils.CommandRunner,
 	vip string,
 	port int,
 	quietWindow time.Duration,
@@ -805,7 +805,7 @@ func formatVipSocketPeers(vip string, port int, peers []vipSocketPeer) string {
 	return strings.Join(parts, ", ")
 }
 
-func (s *NodeAgentServer) listRemoteVipPeers(runner nkeutils.CommandRunner, vip string, port int) ([]vipSocketPeer, error) {
+func (s *NodeAgentServer) listRemoteVipPeers(runner nvkeutils.CommandRunner, vip string, port int) ([]vipSocketPeer, error) {
 	output, err := runner.Run("ss", []string{
 		"-Htan", "state", "established",
 		"src", vip, "sport", "=", ":" + strconv.Itoa(port),

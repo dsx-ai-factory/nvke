@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Sample E2E config for the NKE suite. Every field has a default, so a missing
+# Sample E2E config for the NVKE suite. Every field has a default, so a missing
 # file (or an empty one) runs zero-config against the current kube context. The
 # values below are the defaults; uncomment and edit as needed.
 #
@@ -33,7 +33,7 @@
 
 # The site lane builds a site controller on a Forge node (-e2e.site-stage=
 # provision|bootstrap|full). `gmake site-inputs SITE_CONTROLLER_VERSION=...`
-# builds nkectl and the image archives below, pulling the published images
+# builds nvkectl and the image archives below, pulling the published images
 # from SITE_IMAGE_REGISTRY: GHCR by default, or nvcr.io/<NGC org> after a
 # `docker login nvcr.io` with an NGC key. Secrets come only from the
 # environment: FORGE_API_KEY, and GHCR_USERNAME/GHCR_TOKEN for the full stage,
@@ -42,7 +42,7 @@
 # This block names only where artifacts come from. Component versions are
 # -e2e.versions keys (controller, capi-provisioned, os-image,
 # os-image-bootloader, and cli, which is recorded but not checked against
-# site.nkectl). The two OS-image keys may be suffixed with an architecture, as
+# site.nvkectl). The two OS-image keys may be suffixed with an architecture, as
 # os-image-arm64, which is how one run boots two: a GB200 tenant puts arm64
 # workers behind an amd64 control plane, and each role boots the image built
 # for its own machine. The unsuffixed key is what a run on one architecture
@@ -59,10 +59,10 @@
 #   # here.
 #   images:
 #     controller:
-#       repository: ghcr.io/dsx-ai-factory/nke/nke-controller   # or nvcr.io/<org>/nke-controller
+#       repository: ghcr.io/dsx-ai-factory/nvke/nke-controller   # or nvcr.io/<org>/nvke-controller
 #       archive: ~/.cache/nke-e2e/site/controller.tar
 #     capi-provisioned:
-#       repository: ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned
+#       repository: ghcr.io/dsx-ai-factory/nvke/cluster-api-provider-provisioned
 #       archive: ~/.cache/nke-e2e/site/capi-provisioned.tar
 #     profiles:       # built from controller/test/fixtures, published nowhere
 #       repository: nke-e2e-profiles
@@ -76,8 +76,8 @@
 #   (the Teleport proxy comes from $TELEPORT_PROXY or the tsh login profile)
 
 # The CLI the bootstrap runs on the node.
-# nkectl:
-#   binary: ""   # "" -> cli/dist/nkectl-linux-<arch>, which `make site-inputs`
+# nvkectl:
+#   binary: ""   # "" -> cli/dist/nvkectl-linux-<arch>, which `make site-inputs`
 #                #       builds. With SITE_CLI_BUILD=0 it fetches a published
-#                #       one to <SITE_INPUTS>/nkectl/nkectl-linux-<arch>, so
+#                #       one to <SITE_INPUTS>/nvkectl/nvkectl-linux-<arch>, so
 #                #       point this there.

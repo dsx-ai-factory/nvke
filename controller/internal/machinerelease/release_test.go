@@ -13,9 +13,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	enginev1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
+	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/machinerelease"
+	"github.com/dsx-ai-factory/nvke/controller/internal/machinerelease"
 )
 
 func TestResolveClusterReleaseIncludesDeprecatedAndReturnsImage(t *testing.T) {
@@ -23,10 +23,10 @@ func TestResolveClusterReleaseIncludesDeprecatedAndReturnsImage(t *testing.T) {
 
 	reader := fakeClient(t,
 		image("ubuntu-24", "amd64", "fde", "24.04", "2026-03-23", "#!ipxe\necho boot\n"),
-		clusterRelease("nke-old", "ubuntu-24", true),
+		clusterRelease("nvke-old", "ubuntu-24", true),
 	)
 
-	release, img, err := machinerelease.ResolveClusterRelease(t.Context(), reader, "nke-old")
+	release, img, err := machinerelease.ResolveClusterRelease(t.Context(), reader, "nvke-old")
 	require.NoError(t, err)
 	assert.True(t, release.Spec.Lifecycle.Deprecated)
 	assert.Equal(t, "#cloud-config\n", release.Spec.MachineInit.UserDataTemplate)
@@ -47,10 +47,10 @@ func TestResolveNodePoolReleaseInjected(t *testing.T) {
 
 	reader := fakeClient(t,
 		image("ubuntu-24", "arm64", "", "24.04", "2026-09-21", "#!ipxe\n"),
-		nodePoolRelease("nke-injected", "ubuntu-24", "", true, false, "#cloud-config\nhostname: {{ .Hostname }}\n"),
+		nodePoolRelease("nvke-injected", "ubuntu-24", "", true, false, "#cloud-config\nhostname: {{ .Hostname }}\n"),
 	)
 
-	release, img, err := machinerelease.ResolveNodePoolRelease(t.Context(), reader, "nke-injected")
+	release, img, err := machinerelease.ResolveNodePoolRelease(t.Context(), reader, "nvke-injected")
 	require.NoError(t, err)
 	assert.False(t, release.Spec.Lifecycle.Deprecated)
 	assert.Equal(t, "arm64", img.Spec.Architecture)
@@ -92,7 +92,7 @@ func TestResolveEmptyName(t *testing.T) {
 func TestResolveMissingMachineImage(t *testing.T) {
 	t.Parallel()
 
-	_, _, err := machinerelease.ResolveClusterRelease(t.Context(), fakeClient(t, clusterRelease("nke-old", "gone", false)), "nke-old")
+	_, _, err := machinerelease.ResolveClusterRelease(t.Context(), fakeClient(t, clusterRelease("nvke-old", "gone", false)), "nvke-old")
 	require.ErrorIs(t, err, machinerelease.ErrInvalidRelease)
 	assert.Contains(t, err.Error(), `MachineImage "gone" is not installed`)
 }
@@ -100,7 +100,7 @@ func TestResolveMissingMachineImage(t *testing.T) {
 func TestParseKubernetesVersionAnnotationsRejectsBadInjectionAnnotation(t *testing.T) {
 	t.Parallel()
 
-	release := clusterRelease("nke-old", "ubuntu-24", false)
+	release := clusterRelease("nvke-old", "ubuntu-24", false)
 	release.Annotations[enginev1.MachineInitKubernetesVersionInjectedAnnotation] = "maybe"
 
 	_, _, err := machinerelease.ParseKubernetesVersionAnnotations(release)

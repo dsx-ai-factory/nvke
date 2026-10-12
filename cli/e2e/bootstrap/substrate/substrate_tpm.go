@@ -16,7 +16,7 @@ import (
 
 const (
 	// DefaultSpireServerAddress is the address the node images' spire-agents
-	// are built to look for, and therefore the address `nkectl bootstrap site`
+	// are built to look for, and therefore the address `nvkectl bootstrap site`
 	// must put its SPIRE server on. It is a fixed address on the substrate
 	// network that the bootstrap cluster's node container is attached to —
 	// standing in for the VIP a real site controller has.
@@ -330,12 +330,12 @@ func lastLineContaining(text, needle string) string {
 }
 
 // defaultCADir keeps the bootstrap CA beside the module rather than in a user
-// cache, because run.sh reads the same files to hand to `nkectl bootstrap
+// cache, because run.sh reads the same files to hand to `nvkectl bootstrap
 // site` and needs a path it can name without guessing at OS conventions.
 func defaultCADir() string {
 	wd, err := os.Getwd()
 	if err != nil {
-		return filepath.Join(os.TempDir(), "nkectl-e2e-spire-ca")
+		return filepath.Join(os.TempDir(), "nvkectl-e2e-spire-ca")
 	}
 	return filepath.Join(wd, ".local", "spire-ca")
 }
@@ -343,7 +343,7 @@ func defaultCADir() string {
 // defaultCacheDir holds downloaded build inputs between runs.
 func defaultCacheDir() string {
 	if cache, err := os.UserCacheDir(); err == nil {
-		return filepath.Join(cache, "nkectl-e2e-bootstrap")
+		return filepath.Join(cache, "nvkectl-e2e-bootstrap")
 	}
-	return filepath.Join(os.TempDir(), "nkectl-e2e-bootstrap")
+	return filepath.Join(os.TempDir(), "nvkectl-e2e-bootstrap")
 }

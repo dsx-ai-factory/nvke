@@ -8,11 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/util"
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/cli/internal/util"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
-// NewCreateCmd returns the "nkectl create cluster" subcommand.
+// NewCreateCmd returns the "nvkectl create cluster" subcommand.
 func NewCreateCmd(clientFn ControllerClientFn) *cobra.Command {
 	var filename string
 
@@ -28,10 +28,10 @@ CreateClusterRequest schema exactly. See /api/docs on your site controller.
 Pass a file path or '-' to read from stdin (e.g. via a pipe or heredoc).
 
 Example:
-  nkectl create cluster -f examples/capd-cluster.yaml
+  nvkectl create cluster -f examples/capd-cluster.yaml
 
 Example — stdin via pipe:
-  cat examples/capd-cluster.yaml | nkectl create cluster -f -`,
+  cat examples/capd-cluster.yaml | nvkectl create cluster -f -`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			req, err := loadCreateClusterRequest(cmd, filename)
@@ -47,7 +47,7 @@ Example — stdin via pipe:
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Cluster %q created (id: %s)\n", cluster.Name, cluster.ID)
-			fmt.Fprintf(cmd.OutOrStdout(), "Provisioning is async — run 'nkectl get clusters' to check status.\n")
+			fmt.Fprintf(cmd.OutOrStdout(), "Provisioning is async — run 'nvkectl get clusters' to check status.\n")
 			return nil
 		},
 	}

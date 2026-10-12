@@ -34,7 +34,7 @@ updates:
       #
       #   k8s.io/api | dependency_file_not_resolvable
       #     go: finding module for package k8s.io/api/autoscaling/v2beta1
-      #     github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube imports
+      #     github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube imports
       #       k8s.io/client-go/kubernetes/scheme imports
       #       k8s.io/api/autoscaling/v2beta1
       kubernetes:

@@ -4,7 +4,7 @@ scenario: ../../workloads/scalability/node-density-cni/scenario.yaml
 workload: scalability
 k8s_version: 1.34.2
 date: 2026-09-18
-authors: [NVIDIA NKE Scale Team]
+authors: [NVIDIA NVKE Scale Team]
 ---
 
 # node-density-cni — k8s 1.34.2

@@ -9,7 +9,7 @@ import (
 	"context"
 	"fmt"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 // FetchKubeconfig calls the node-agent's GetKubeconfig RPC and returns the

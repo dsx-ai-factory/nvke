@@ -23,23 +23,23 @@ type SiteConfig struct {
 	ProxyClientKeyFile string `yaml:"proxy-client-key,omitempty"`
 }
 
-// Config is the top-level nkectl config file.
+// Config is the top-level nvkectl config file.
 type Config struct {
 	Sites       map[string]SiteConfig `yaml:"sites"`
 	CurrentSite string                `yaml:"current-site"`
 }
 
-// Dir returns the directory where nkectl stores its config.
-// Respects $XDG_CONFIG_HOME; defaults to ~/.config/nkectl.
+// Dir returns the directory where nvkectl stores its config.
+// Respects $XDG_CONFIG_HOME; defaults to ~/.config/nvkectl.
 func Dir() (string, error) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "nkectl"), nil
+		return filepath.Join(xdg, "nvkectl"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "nkectl"), nil
+	return filepath.Join(home, ".config", "nvkectl"), nil
 }
 
 func configPath() (string, error) {
@@ -50,6 +50,18 @@ func configPath() (string, error) {
 	return filepath.Join(dir, "config.yaml"), nil
 }
 
+// legacyConfigPath is where nkectl, the binary's previous name, kept the same
+// file: the sibling directory nkectl/ next to Dir(). Load reads it when the
+// current location has no file yet and writes what it read to the current
+// location, so the handover happens once.
+func legacyConfigPath() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(dir), "nkectl", "config.yaml"), nil
+}
+
 // Load reads the config file. Returns an empty Config if the file does not exist.
 func Load() (*Config, error) {
 	path, err := configPath()
@@ -57,8 +69,17 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	data, err := os.ReadFile(path)
+	migrated := false
 	if os.IsNotExist(err) {
-		return &Config{Sites: map[string]SiteConfig{}}, nil
+		legacy, lerr := legacyConfigPath()
+		if lerr != nil {
+			return nil, lerr
+		}
+		data, err = os.ReadFile(legacy)
+		if os.IsNotExist(err) {
+			return &Config{Sites: map[string]SiteConfig{}}, nil
+		}
+		migrated = err == nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("reading config: %w", err)
@@ -69,6 +90,11 @@ func Load() (*Config, error) {
 	}
 	if cfg.Sites == nil {
 		cfg.Sites = map[string]SiteConfig{}
+	}
+	if migrated {
+		// Best effort: the config was read; a location that cannot be written
+		// is reported by the next Save, not by a read.
+		_ = cfg.Save()
 	}
 	return &cfg, nil
 }
@@ -95,7 +121,7 @@ func (c *Config) Save() error {
 // CurrentSiteConfig returns the SiteConfig for the active site.
 func (c *Config) CurrentSiteConfig() (SiteConfig, error) {
 	if c.CurrentSite == "" {
-		return SiteConfig{}, fmt.Errorf("no site configured: run 'nkectl config set-site' first")
+		return SiteConfig{}, fmt.Errorf("no site configured: run 'nvkectl config set-site' first")
 	}
 	site, ok := c.Sites[c.CurrentSite]
 	if !ok {

@@ -3,13 +3,13 @@
 
 openapi: 3.0.3
 info:
-  title: NVIDIA Kubernetes Engine (NKE) API
+  title: NVIDIA Kubernetes Engine (NVKE) API
   version: "0.1.0-alpha"
   description: |
-    The NKE REST API manages Kubernetes clusters, control planes, node pools and
+    The NVKE REST API manages Kubernetes clusters, control planes, node pools and
     nodes on NVIDIA Infra Controller (NICo) infrastructure. It is used by
-    Operators who run NKE on their own infrastructure, by their automation, and
-    by the `nkectl` CLI.
+    Operators who run NVKE on their own infrastructure, by their automation, and
+    by the `nvkectl` CLI.
 
     **Release:** Alpha (public preview). Examples are illustrative: IDs,
     timestamps and names are placeholders.
@@ -31,7 +31,7 @@ info:
     | 401 | No token, unknown issuer, invalid signature, expired token, or wrong audience. The response includes a `WWW-Authenticate: Bearer` header. |
     | 403 | The token is valid but its subject matches no admission rule. |
 
-    `nkectl` obtains a short-lived token automatically when run against a
+    `nvkectl` obtains a short-lived token automatically when run against a
     management cluster.
 
     **Errors.** Error responses use a single body shape:
@@ -84,7 +84,7 @@ info:
 
     Every resource has a server-assigned UUID `id`, which is used in paths.
     Cluster names are unique per management plane; node pool names are unique
-    within a cluster. Cluster kubeconfigs are retrieved with `nkectl`, not
+    within a cluster. Cluster kubeconfigs are retrieved with `nvkectl`, not
     through this API.
 servers:
   # The embedded Swagger UI and the request validator use the relative URL:
@@ -93,7 +93,7 @@ servers:
     x-fern-ignore: true
   # Fern and Redoc need an absolute URL to render request examples. Replace
   # the host with your management plane's.
-  - url: https://nke.acme.example/api
+  - url: https://nvke.acme.example/api
     description: Your management plane
     x-fern-server-name: Management plane
 
@@ -128,7 +128,7 @@ tags:
       and ovn-kubernetes (default version 1.4.0). Pod and service CIDRs are IPv4,
       private, and immutable after
       creation; the defaults are 192.168.0.0/16 for pods and 10.96.0.0/12 for
-      services. NKE allocates a /24 from the pod CIDR to each node, so the pod
+      services. NVKE allocates a /24 from the pod CIDR to each node, so the pod
       CIDR must have room for every desired node plus surge, or one spare block
       when surge is 0. This is checked when clusters and node pools are created
       or scaled. Set `controlPlaneVIP` to use a virtual IP (kube-vip) as the API
@@ -136,15 +136,15 @@ tags:
       endpoint. The VIP must not fall inside the pod or service CIDR.
   - name: Control plane
     description: |
-      NKE manages each cluster's control plane through a dedicated control-plane
+      NVKE manages each cluster's control plane through a dedicated control-plane
       controller. You declare the control plane once, in `controlPlaneConfig`,
-      and NKE provisions, upgrades and replaces control-plane nodes to match it.
+      and NVKE provisions, upgrades and replaces control-plane nodes to match it.
       Node pools always contain worker nodes.
 
       - **Size.** `controlPlaneConfig.desiredCount` sets the number of
         control-plane nodes. It is required when you create a cluster.
       - **Rollouts.** When the control-plane configuration changes (OS profile
-        or Kubernetes version), NKE compares each control-plane node with the
+        or Kubernetes version), NVKE compares each control-plane node with the
         desired configuration and replaces drifted nodes. `maxSurge` (0 or 1)
         controls whether a replacement node is added before the old one is
         removed. Progress is reported in `ControlPlaneStatus.rollout` and, per
@@ -153,7 +153,7 @@ tags:
         are detected and reported as pending but are not replaced until an
         operator acts.
       - **Deletes.** Control-plane node deletes are serialized. A delete request
-        is recorded first (`deleteRequested`) and NKE starts teardowns one at a
+        is recorded first (`deleteRequested`) and NVKE starts teardowns one at a
         time. A delete is rejected if it would leave fewer than 3 healthy, joined
         control-plane nodes.
 
@@ -820,7 +820,7 @@ paths:
         Deletes a single node from a running cluster. Include a
         `machineHealthIssue` to flag the underlying machine for repair.
 
-        For control-plane nodes, a delete sets `deleteRequested`; NKE then
+        For control-plane nodes, a delete sets `deleteRequested`; NVKE then
         starts teardowns one node at a time. `forceUnreachable` is applied
         automatically when the node is unhealthy.
 
@@ -2321,7 +2321,7 @@ components:
           allOf:
             - $ref: "#/components/schemas/Condition"
         nodeAgentReady:
-          description: The NKE node agent is healthy.
+          description: The NVKE node agent is healthy.
           allOf:
             - $ref: "#/components/schemas/Condition"
         rebooting:

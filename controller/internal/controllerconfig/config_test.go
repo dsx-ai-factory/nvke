@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
 
 // baseConfig is every required key except nodeAgent, for tests that supply
@@ -108,7 +108,7 @@ oidc:
   providers:
     - name: corporate
       issuerURL: https://login.example.com/tenant
-      audiences: ["nke-tenant-cluster"]
+      audiences: ["nvke-tenant-cluster"]
       usernameClaim: sub
       usernamePrefix: "corporate:"
       groupsClaim: groups
@@ -571,8 +571,8 @@ func TestValidateNodeAgentTLSJWT(t *testing.T) {
 		},
 		{
 			name:    "subjectService that is not a DNS label",
-			yaml:    attestationConfig(true, "tpm") + strings.Replace(tlsJWT, "subjectService: nke-node-agent", "subjectService: NKE_Node_Agent", 1),
-			wantErr: `subjectService "NKE_Node_Agent" must be a lowercase DNS label`,
+			yaml:    attestationConfig(true, "tpm") + strings.Replace(tlsJWT, "subjectService: nke-node-agent", "subjectService: NVKE_Node_Agent", 1),
+			wantErr: `subjectService "NVKE_Node_Agent" must be a lowercase DNS label`,
 		},
 	}
 
@@ -623,7 +623,7 @@ oidc:
 	}
 	fields := []string{"usernamePrefix", "groupsPrefix"}
 	reservedPrefixes := controllerconfig.ReservedIdentityPrefixes()
-	allowedPrefixes := []string{"", "corp:", "sys", "System:", "nke-team:", "nvidia"}
+	allowedPrefixes := []string{"", "corp:", "sys", "System:", "nvke-team:", "nvidia"}
 	tests := make([]testCase, 0, len(fields)*(2*len(reservedPrefixes)+len(allowedPrefixes)))
 	for _, reserved := range reservedPrefixes {
 		for _, field := range fields {

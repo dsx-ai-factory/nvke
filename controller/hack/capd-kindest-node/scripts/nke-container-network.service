@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [Unit]
-Description=Prepare Docker node networking for NKE
+Description=Prepare Docker node networking for NVKE
 Requires=ovs-vswitchd.service systemd-udevd.service dbus.socket
 Wants=systemd-networkd.service
 After=ovs-vswitchd.service systemd-networkd.service systemd-udevd.service dbus.socket

@@ -16,8 +16,7 @@ source + output together.
 | CAPI types/markers in `cluster-api-provider-provisioned/` | `make generate manifests` there | types + deepcopy, CRDs, `config/rbac/role.yaml` |
 | `MachineImage`, `ClusterRelease` or `NodePoolRelease` types/markers in `management-engine/apis/v1/` | `make -C management-engine manifests`, then `make chart-crds` at the root | types + `config/crd/bases` + the chart's `files/crds.yaml` |
 | `controller/deploy/release-crds/kustomization.yaml` | `make chart-crds` at the root | overlay + `files/crds.yaml` |
-| `agent/go.mod` dependencies | `make notices` in `agent/` | `go.mod`/`go.sum` + `THIRD_PARTY_NOTICES.md` |
-| any module `go.mod`/`go.sum` | `make work-sync` at the root | `go.work` + `go.work.sum` |
+| any module `go.mod`/`go.sum` | `make work-sync`, then `make notices`, at the root | `go.work` + `go.work.sum` + every changed `THIRD_PARTY_NOTICES.md` |
 
 Rules that trip people up:
 
@@ -29,7 +28,7 @@ Rules that trip people up:
   `flox activate -- make <target>` so the rest of the toolchain matches CI.
   Flox is optional — plain `make` works without it. If you do activate it,
   match the CLI version in `.flox-cli-version`.
-- Drift gates in CI: `make check-protos` and `make notices-check` (agent),
+- Drift gates in CI: `make check-protos` (agent), `make notices-check` (root),
   `make generate-check` (provisioned provider), `make chart-crds-check` (the
   controller chart's release CRDs), `go-work-check` (workspace).
   If one fails, regenerate and commit the result — do not revert the output.

@@ -14,7 +14,7 @@ when the field is omitted, matching older clients):
 - **`noCniInstall` omitted or `false` (legacy / older controller):** After a successful
   init, the agent may run the **legacy in-init** path: it maps Tigera/Calico/OVN fields on
   `KubeadmInitRequest` into `InstallCNIPlugin` and calls the same install logic
-  (unless `skipCniPluginInstall` is set). This exists so **older NKE controller /
+  (unless `skipCniPluginInstall` is set). This exists so **older NVKE controller /
   orchestrator versions** that never passed `noCniInstall` continue to work without code
   changes.
 - **`noCniInstall: true` (current controller / recommended):** No CNI during init. Install
@@ -58,7 +58,7 @@ charts/manifests.
 
 ## Summary sequence (orchestrator view)
 
-**Current NKE controller (recommended):**
+**Current NVKE controller (recommended):**
 
 1. **`ExecuteKubeadmInit`** with **`noCniInstall: true`** on the bootstrap control-plane node.
 2. **`InstallPackages`** (**or apt**) for **`nke-cni-*-images-<stream>`** on nodes that must pre-load images (skip if registry-pull-only tenant policy applies).

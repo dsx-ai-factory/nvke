@@ -13,9 +13,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 func TestInstallCNIRequest(t *testing.T) {
@@ -23,7 +23,7 @@ func TestInstallCNIRequest(t *testing.T) {
 		name        string
 		cluster     db.Cluster
 		registry    string
-		wantVariant nkeproto.CniVariant
+		wantVariant nvkeproto.CniVariant
 		wantVersion string
 		wantConfig  map[string]string
 		wantErr     string
@@ -34,13 +34,13 @@ func TestInstallCNIRequest(t *testing.T) {
 			// the empty-string one below.
 			name:        "a cluster created with the default version is unpinned",
 			cluster:     db.Cluster{CniPlugin: db.CNICalico, CniVersion: db.DefaultCalicoCNIVersion, PodCIDR: "10.100.0.0/16", ServiceCIDR: "10.200.0.0/16"},
-			wantVariant: nkeproto.CniVariant_CNI_VARIANT_CALICO,
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_CALICO,
 			wantVersion: "",
 		},
 		{
 			name:        "a row with no version is unpinned",
 			cluster:     db.Cluster{CniPlugin: db.CNICalico},
-			wantVariant: nkeproto.CniVariant_CNI_VARIANT_CALICO,
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_CALICO,
 			wantVersion: "",
 		},
 		{
@@ -49,19 +49,19 @@ func TestInstallCNIRequest(t *testing.T) {
 			// #396 moved both charts to `upgrade --install`.
 			name:        "ovn selects the ovn variant",
 			cluster:     db.Cluster{CniPlugin: db.CNIOvnKubernetes},
-			wantVariant: nkeproto.CniVariant_CNI_VARIANT_OVN,
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_OVN,
 			wantVersion: "",
 		},
 		{
 			name:        "an ovn version other than the default selects that stream",
 			cluster:     db.Cluster{CniPlugin: db.CNIOvnKubernetes, CniVersion: " 1.4.5 "},
-			wantVariant: nkeproto.CniVariant_CNI_VARIANT_OVN,
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_OVN,
 			wantVersion: "1.4.5",
 		},
 		{
 			name:        "an ovn cluster on the default version is unpinned",
 			cluster:     db.Cluster{CniPlugin: db.CNIOvnKubernetes, CniVersion: db.DefaultOvnKubernetesCNIVersion},
-			wantVariant: nkeproto.CniVariant_CNI_VARIANT_OVN,
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_OVN,
 			wantVersion: "",
 		},
 		{
@@ -69,14 +69,14 @@ func TestInstallCNIRequest(t *testing.T) {
 			// which the agent ignores once the in-init install is skipped.
 			name:        "the CNI image registry override is carried over",
 			cluster:     db.Cluster{CniPlugin: db.CNICalico},
-			registry:    "registry.example.com/nke",
-			wantVariant: nkeproto.CniVariant_CNI_VARIANT_CALICO,
-			wantConfig:  map[string]string{cniRegistryHelmValue: "registry.example.com/nke"},
+			registry:    "registry.example.com/nvke",
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_CALICO,
+			wantConfig:  map[string]string{cniRegistryHelmValue: "registry.example.com/nvke"},
 		},
 		{
 			name:        "a version other than the default selects that stream",
 			cluster:     db.Cluster{CniPlugin: db.CNICalico, CniVersion: " 3.29.0 "},
-			wantVariant: nkeproto.CniVariant_CNI_VARIANT_CALICO,
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_CALICO,
 			wantVersion: "3.29.0",
 		},
 		{

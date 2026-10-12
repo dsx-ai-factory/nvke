@@ -24,8 +24,8 @@ import (
 // controller/, because a chart is named for the OCI repository it publishes
 // to rather than for where it is kept.
 const (
-	NKEController = "controller"
-	Postgresql    = "postgresql"
+	NVKEController = "controller"
+	Postgresql     = "postgresql"
 )
 
 // all: so that templates/_helpers.tpl is included; plain go:embed skips files

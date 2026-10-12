@@ -17,9 +17,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 type machineSpireEntryNodeReader interface {
@@ -121,7 +121,7 @@ func (c *MachineSpireEntryController) applyClusterStaticEntry(ctx context.Contex
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				constants.LabelKeyNkeManagedBy: constants.FieldManagerMachineSpireEntry,
+				constants.LabelKeyNvkeManagedBy: constants.FieldManagerMachineSpireEntry,
 			},
 		},
 		Spec: spirev1alpha1.ClusterStaticEntrySpec{

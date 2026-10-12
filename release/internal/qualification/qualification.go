@@ -23,7 +23,7 @@ import (
 // file naming another is rejected rather than coerced: the alternative is
 // reading a future schema with today's structs and silently dropping the
 // fields that were the reason for the bump.
-const APIVersion = "nke.nvidia.com/v1alpha1"
+const APIVersion = "nvke.nvidia.com/v1alpha1"
 
 // Kinds.
 const (

@@ -18,8 +18,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 )
 
 const (
@@ -39,8 +39,8 @@ func TestController_ReconcileRendersManagedClusterStaticEntries(t *testing.T) {
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-a": constants.LabelKeyNkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
-		"hash-b": constants.LabelKeyNkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-a": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-b": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
 	})
 }
 
@@ -56,7 +56,7 @@ func TestController_ReconcileFiltersClusterStaticEntries(t *testing.T) {
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-valid": constants.LabelKeyNkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-valid": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
 	})
 }
 
@@ -74,7 +74,7 @@ func TestController_ReconcileUpdatesConfigMapOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-new": constants.LabelKeyNkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-new": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
 	})
 }
 
@@ -111,7 +111,7 @@ func TestController_ReconcilePreservesExternallyManagedConfigMapData(t *testing.
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-a": constants.LabelKeyNkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-a": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
 		"bogus":  "bad",
 	})
 }
@@ -174,7 +174,7 @@ func newClusterStaticEntryForTest(name, manager, className, parentID string) *sp
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				constants.LabelKeyNkeManagedBy: manager,
+				constants.LabelKeyNvkeManagedBy: manager,
 			},
 		},
 		Spec: spirev1alpha1.ClusterStaticEntrySpec{

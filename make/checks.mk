@@ -20,9 +20,19 @@ endef
 
 ##@ Checks
 
+# The repository guard compares the id, never the slug. A renamed or
+# transferred repository keeps its id, while a slug guard that has gone false
+# skips every job without a failure. See .github/workflows/README.md,
+# "Repository guards". `github.repository_id` and `github.repository_owner`
+# do not match the pattern, and neither does `x == github.repository`.
 lint-workflows: ## Lint the GitHub Actions workflows. (run by the merge gate)
 	@$(call require_tool,actionlint,$(ACTIONLINT_VERSION))
 	@actionlint -color
+	@if git grep -n -E 'github\.repository[[:space:]]*[!=]=' -- .github >/dev/null; then \
+		echo "ERROR: a workflow compares github.repository to a string. Guard on github.repository_id instead:"; \
+		git grep -n -E 'github\.repository[[:space:]]*[!=]=' -- .github; \
+		exit 1; \
+	 fi
 	@echo "  workflows: no findings"
 
 # --severity=error matches shellcheck.yml. The tree is clean at error and is not
@@ -50,6 +60,17 @@ docs-check: ## Check the documented facts against the repository. (run by the me
 internal-config-check: ## Check the tree names no internal infrastructure. (run by the merge gate)
 	@python3 -B ./hack/test_internal_config_check.py
 	@./hack/internal-config-check.sh
+
+# A banned name, found as tokens rather than lines so that an English word or
+# a camel-case identifier does not hide the real token beside it. Fail mode
+# lists every hit outside hack/name-check-allowlist.txt and exits 1. Report
+# mode summarises and exits 0; the gate ran that way until 2026-10-11, while
+# the tree still carried the name. A dead allowlist entry fails in either mode.
+NAME_CHECK_MODE ?= fail
+name-check: ## Fail on tokens that carry a banned name outside the allowlist. (run by the merge gate)
+	@$(call require_command,python3)
+	@python3 -B ./hack/test_name_check.py
+	@python3 -B ./hack/name-check.py --mode $(NAME_CHECK_MODE)
 
 CHART_CRDS_KUSTOMIZE := controller/deploy/release-crds
 CHART_CRDS_FILE := $(CHART)/files/crds.yaml
@@ -94,7 +115,7 @@ lint-chart: ## Lint and render the Helm chart, then validate it. (run by the mer
 	@helm lint $(CHART)
 	@# A directory, not `mktemp -t`: kubeconform selects files by extension, and
 	@# macOS mktemp appends random characters after the template, so a file named
-	@# nke-chart-XXXXXX.qlKjrjG4RL is skipped and the summary reads
+	@# nvke-chart-XXXXXX.qlKjrjG4RL is skipped and the summary reads
 	@# "0 resource found in 0 file" while the target reports success.
 	@set -eu; \
 	 dir=$$(mktemp -d); \
@@ -276,6 +297,10 @@ go-version-sync: ## Rewrite every go.mod `go` directive to match go.work.
 grype-ignore-check: ## Verify every .grype.yaml exception is scoped, owned and in date.
 	@./hack/grype-ignore-check.sh
 
+.PHONY: deploy-lists-check
+deploy-lists-check: ## Verify every nvke-deploy.yaml item has its directory.
+	@./hack/deploy-lists-check.sh
+
 gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory tool-version-check
 	@$(MAKE) --no-print-directory tools-check
@@ -283,6 +308,7 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory go-version-check
 	@$(MAKE) --no-print-directory base-image-check
 	@$(MAKE) --no-print-directory grype-ignore-check
+	@$(MAKE) --no-print-directory deploy-lists-check
 	@CGO_ENABLED=1 $(MAKE) --no-print-directory GO_TEST_FLAGS=-race test
 	@$(MAKE) --no-print-directory test-compile
 	@$(MAKE) --no-print-directory lint
@@ -294,6 +320,7 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory lint-shell
 	@$(MAKE) --no-print-directory docs-check
 	@$(MAKE) --no-print-directory internal-config-check
+	@$(MAKE) --no-print-directory name-check
 	@$(MAKE) --no-print-directory chart-check
 	@$(MAKE) --no-print-directory nktp-chart-check
 	@$(MAKE) --no-print-directory -C controller generate-check
@@ -305,5 +332,5 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@echo "  gofail e2e             make -C controller e2e-gofail    PostgreSQL, envtest and Temporal"
 	@echo "Workspace re-derivation needs access to the internal provider; work-check reports if it skips."
 	@echo "CAPD backend e2e is advisory, not part of the merge gate: make test-e2e-backend-ci"
-	@echo "nkectl bootstrap e2e is advisory too, not part of the merge gate:"
+	@echo "nvkectl bootstrap e2e is advisory too, not part of the merge gate:"
 	@echo "  make -C cli test-e2e-bootstrap   (nerdctl, buildkitd, kind, and root)"

@@ -12,7 +12,7 @@ import (
 
 // validYAML is a minimal well-formed site spec used as the happy-path baseline.
 const validYAML = `
-clusterName: nke-site
+clusterName: nvke-site
 cluster:
   nodes:
     - name: node1
@@ -42,8 +42,8 @@ func TestLoadValidSiteConfig(t *testing.T) {
 		t.Fatalf("Load returned error for valid site spec: %v", err)
 	}
 
-	if inv.ClusterName != "nke-site" {
-		t.Errorf("ClusterName = %q, want %q", inv.ClusterName, "nke-site")
+	if inv.ClusterName != "nvke-site" {
+		t.Errorf("ClusterName = %q, want %q", inv.ClusterName, "nvke-site")
 	}
 	if len(inv.Cluster.Nodes) != 3 {
 		t.Fatalf("Nodes count = %d, want 3", len(inv.Cluster.Nodes))
@@ -117,7 +117,7 @@ func TestDefaultNodeAgentPortMatchesTheAgent(t *testing.T) {
 func TestLoadRejectsUnknownField(t *testing.T) {
 	// A typo in a field name must fail loudly, not be silently ignored.
 	const typo = `
-clusterName: nke-site
+clusterName: nvke-site
 cluster:
   nodes:
     - name: node1
@@ -154,7 +154,7 @@ func TestLoadEmptyFile(t *testing.T) {
 func TestValidateInvalidInputs(t *testing.T) {
 	base := func() *SiteSpec {
 		return &SiteSpec{
-			ClusterName: "nke-site",
+			ClusterName: "nvke-site",
 			Cluster: Cluster{
 				Nodes:         []Node{{Name: "node1", IP: "10.0.0.1"}},
 				K8sVersion:    "1.32.0",
@@ -176,7 +176,7 @@ func TestValidateInvalidInputs(t *testing.T) {
 		wantSub string
 	}{
 		{"missing clusterName", func(i *SiteSpec) { i.ClusterName = "" }, pathClusterName},
-		{"bad clusterName", func(i *SiteSpec) { i.ClusterName = "Nke_Site" }, pathClusterName},
+		{"bad clusterName", func(i *SiteSpec) { i.ClusterName = "Nvke_Site" }, pathClusterName},
 		{"missing nodes", func(i *SiteSpec) { i.Cluster.Nodes = nil }, pathNodes},
 		{"even node count", func(i *SiteSpec) {
 			i.Cluster.Nodes = append(i.Cluster.Nodes, Node{Name: "node2", IP: "10.0.0.2"})
@@ -358,7 +358,7 @@ func TestValidateAggregatesErrors(t *testing.T) {
 
 func TestValidValidatesClean(t *testing.T) {
 	inv := &SiteSpec{
-		ClusterName: "nke-site",
+		ClusterName: "nvke-site",
 		Cluster: Cluster{
 			ControlPlaneVIP: "10.0.0.100",
 			Nodes: []Node{
@@ -385,7 +385,7 @@ func TestValidValidatesClean(t *testing.T) {
 // noNodesYAML is a site spec with no nodes, used to exercise the environment
 // fallback for the flat node list.
 const noNodesYAML = `
-clusterName: nke-site
+clusterName: nvke-site
 cluster:
   k8sVersion: "1.32.0"
   cniName: calico
@@ -430,7 +430,7 @@ func TestLoadEnvFillsField(t *testing.T) {
 }
 
 func TestLoadTrustDomainFromEnvironment(t *testing.T) {
-	t.Setenv("NKECTL_SPIFFE_TRUST_DOMAIN", "site.example.com")
+	t.Setenv("NVKECTL_SPIFFE_TRUST_DOMAIN", "site.example.com")
 
 	inv, err := Load(writeTemp(t, validYAML))
 	if err != nil {
@@ -442,7 +442,7 @@ func TestLoadTrustDomainFromEnvironment(t *testing.T) {
 }
 
 func TestLoadNodesFromEnv(t *testing.T) {
-	t.Setenv("NKECTL_CLUSTER_NODES", "node1:10.0.0.1,node2:10.0.0.2,node3:10.0.0.3")
+	t.Setenv("NVKECTL_CLUSTER_NODES", "node1:10.0.0.1,node2:10.0.0.2,node3:10.0.0.3")
 	t.Setenv("CLUSTER_CONTROL_PLANE_VIP", "10.0.0.100")
 
 	inv, err := Load(writeTemp(t, noNodesYAML))
@@ -459,10 +459,10 @@ func TestLoadNodesFromEnv(t *testing.T) {
 
 func TestLoadNodesEnvMalformedFails(t *testing.T) {
 	// A malformed node entry must fail loudly, not be silently discarded.
-	t.Setenv("NKECTL_CLUSTER_NODES", "node2:10.0.0.2,bogus")
+	t.Setenv("NVKECTL_CLUSTER_NODES", "node2:10.0.0.2,bogus")
 
 	if _, err := Load(writeTemp(t, noNodesYAML)); err == nil {
-		t.Fatal("Load accepted a malformed NKECTL_CLUSTER_NODES entry; want error")
+		t.Fatal("Load accepted a malformed NVKECTL_CLUSTER_NODES entry; want error")
 	}
 }
 
@@ -540,7 +540,7 @@ func spireCAFiles(t *testing.T) (cert, key, missing string) {
 // one field without restating the whole structure.
 func minimalValid() *SiteSpec {
 	return &SiteSpec{
-		ClusterName: "nke-site",
+		ClusterName: "nvke-site",
 		Cluster: Cluster{
 			ControlPlaneVIP: "10.0.0.100",
 			Nodes: []Node{

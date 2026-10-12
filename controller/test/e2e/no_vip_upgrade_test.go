@@ -19,7 +19,7 @@ func validateNoVIPUpgradeRefused(test *tenantTest) {
 		Expect(currentVersion).NotTo(Equal(targetVersion), "upgrade rejection requires a newer target version")
 
 		By("Attempting a control-plane Kubernetes upgrade with maxSurge set to one")
-		message := expectSucceed(test.nke.UpgradeClusterControlPlaneExpectingRefusal(
+		message := expectSucceed(test.nvke.UpgradeClusterControlPlaneExpectingRefusal(
 			ctx,
 			test.cluster.ID,
 			targetVersion,
@@ -27,7 +27,7 @@ func validateNoVIPUpgradeRefused(test *tenantTest) {
 		Expect(message).To(ContainSubstring("controlPlaneVIP"))
 
 		By("Verifying the rejected upgrade did not change version, surge, or node count")
-		cluster := expectSucceed(test.nke.GetCluster(ctx, test.cluster.ID))
+		cluster := expectSucceed(test.nvke.GetCluster(ctx, test.cluster.ID))
 		Expect(cluster.ControlPlaneKubernetesVersion).To(Equal(currentVersion))
 		Expect(cluster.ControlPlaneConfig).NotTo(BeNil())
 		Expect(cluster.ControlPlaneConfig.MaxSurge).NotTo(BeNil())

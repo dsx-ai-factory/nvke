@@ -16,14 +16,14 @@
 #   <S3_URI>/<S3_PREFIX>/<file basename>.sha256
 #
 # Required env:
-#   S3_URI      e.g. s3://nke-prod-assets/nke-packages
-#   S3_PREFIX   e.g. nkectl/releases/v0.1.0-rc.3/linux/amd64
+#   S3_URI      e.g. s3://nke-prod-assets/nvke-packages
+#   S3_PREFIX   e.g. nvkectl/releases/v0.1.0-rc.3/linux/amd64
 # Args: one or more file paths to upload.
 
 set -euo pipefail
 
-: "${S3_URI:?S3_URI must be set (e.g. s3://nke-prod-assets/nke-packages)}"
-: "${S3_PREFIX:?S3_PREFIX must be set (e.g. nkectl/releases/v0.1.0-rc.3/linux/amd64)}"
+: "${S3_URI:?S3_URI must be set (e.g. s3://nke-prod-assets/nvke-packages)}"
+: "${S3_PREFIX:?S3_PREFIX must be set (e.g. nvkectl/releases/v0.1.0-rc.3/linux/amd64)}"
 
 if [ "$#" -eq 0 ]; then
   echo "error: no files given to upload" >&2

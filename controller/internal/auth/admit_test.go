@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
 )
 
 // serviceAccountPrincipal is a verified principal: admission only ever sees
@@ -263,7 +263,7 @@ func oidcPrincipal(groups []any) *auth.Principal {
 func TestAdmitGroups(t *testing.T) {
 	t.Parallel()
 
-	rule := &auth.Admit{Groups: []string{"nke-operators"}}
+	rule := &auth.Admit{Groups: []string{"nvke-operators"}}
 
 	tests := []struct {
 		name      string
@@ -274,13 +274,13 @@ func TestAdmitGroups(t *testing.T) {
 		{
 			name:      "a matching group in a string list is admitted",
 			admit:     rule,
-			principal: oidcPrincipal([]any{"nke-operators"}),
+			principal: oidcPrincipal([]any{"nvke-operators"}),
 			want:      true,
 		},
 		{
 			name:      "any listed group is enough",
-			admit:     &auth.Admit{Groups: []string{"nke-readers", "nke-operators"}},
-			principal: oidcPrincipal([]any{"nke-operators"}),
+			admit:     &auth.Admit{Groups: []string{"nvke-readers", "nvke-operators"}},
+			principal: oidcPrincipal([]any{"nvke-operators"}),
 			want:      true,
 		},
 		{

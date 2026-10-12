@@ -19,12 +19,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
 // controlPlaneEligibleDomains counts the advertised domains that can host
 // control-plane Machines.
-func controlPlaneEligibleDomains(spec nke.ClusterSpec) int {
+func controlPlaneEligibleDomains(spec nvke.ClusterSpec) int {
 	eligible := 0
 	for _, domain := range spec.CAPDFailureDomains {
 		if domain.ControlPlane {
@@ -36,7 +36,7 @@ func controlPlaneEligibleDomains(spec nke.ClusterSpec) int {
 
 // expectedControlPlaneFailureDomainCounts models placements starting from an
 // empty control plane, using the allocator's lexicographic tie-break.
-func expectedControlPlaneFailureDomainCounts(spec nke.ClusterSpec, desired int) map[string]int {
+func expectedControlPlaneFailureDomainCounts(spec nvke.ClusterSpec, desired int) map[string]int {
 	var names []string
 	for _, domain := range spec.CAPDFailureDomains {
 		if domain.ControlPlane {
@@ -54,8 +54,8 @@ func expectedControlPlaneFailureDomainCounts(spec nke.ClusterSpec, desired int) 
 	return counts
 }
 
-func validateCAPDFailureDomainReuse(spec nke.ClusterSpec, controllerManaged bool, reuseCluster string) error {
-	if spec.Backend == nke.BackendCAPD && controllerManaged && reuseCluster != "" {
+func validateCAPDFailureDomainReuse(spec nvke.ClusterSpec, controllerManaged bool, reuseCluster string) error {
+	if spec.Backend == nvke.BackendCAPD && controllerManaged && reuseCluster != "" {
 		return fmt.Errorf("lifecycle.reuseCluster is unsupported for CAPD control-plane failure-domain fixtures; each row requires its own advertised domains")
 	}
 	return nil
@@ -65,7 +65,7 @@ func validateCAPDFailureDomainReuse(spec nke.ClusterSpec, controllerManaged bool
 // the node-to-domain snapshot. No-op on non-CAPD backends.
 func assertCAPDControlPlaneFailureDomains(ctx context.Context, test *tenantTest, desired int, want map[string]int) map[string]string {
 	GinkgoHelper()
-	if test.spec.Backend != nke.BackendCAPD {
+	if test.spec.Backend != nvke.BackendCAPD {
 		return nil
 	}
 	var domains map[string]string
@@ -113,7 +113,7 @@ func capdControlPlaneFailureDomainsAt(ctx context.Context, test *tenantTest, des
 		return nil, fmt.Errorf("CAPI Cluster published failure domains %v; want %v", gotPublished, wantPublished)
 	}
 
-	names, err := test.nke.ControlPlaneNodeNames(ctx, test.cluster.ID)
+	names, err := test.nvke.ControlPlaneNodeNames(ctx, test.cluster.ID)
 	if err != nil {
 		return nil, err
 	}

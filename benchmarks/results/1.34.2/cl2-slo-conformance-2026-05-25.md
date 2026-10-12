@@ -4,7 +4,7 @@ scenario: ../../workloads/scalability/cl2-slo-conformance/scenario.yaml
 workload: scalability
 k8s_version: 1.34.2
 date: 2026-05-25
-authors: [NVIDIA NKE Scale Team]
+authors: [NVIDIA NVKE Scale Team]
 ---
 
 # ClusterLoader2 SLO conformance — k8s 1.34.2
@@ -21,7 +21,7 @@ with room to spare: pod startup p99 2.54 s (SLO ≤ 5 s), all API verb p99
 ≈ 49–50 ms (SLO ≤ 1 s), and zero APF 429 rejections.
 
 **Not a maximum-scale claim.** 42 workers is what this run tested, not how
-far an NKE cluster can go — every SLO passed with room to spare, which is
+far an NVKE cluster can go — every SLO passed with room to spare, which is
 itself an argument for testing larger, not evidence that this is the top.
 Apply the scenario's `sizing.derivation` to size the workload to a different
 node count.

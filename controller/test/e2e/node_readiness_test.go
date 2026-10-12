@@ -15,7 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
 // validateNodeReadinessPostCreate checks that the complete desired topology is
@@ -77,7 +77,7 @@ func validateNodeReadinessPostCreate(test *tenantTest) {
 // expectedNodeCounts returns the desired node count of every node pool in spec,
 // keyed by pool name. The control plane has no pool, so its nodes are not in the
 // map; see controlPlaneConfigNodeCount.
-func expectedNodeCounts(spec nke.ClusterSpec) map[string]int {
+func expectedNodeCounts(spec nvke.ClusterSpec) map[string]int {
 	counts := make(map[string]int, len(spec.Workers))
 	for _, pool := range spec.Workers {
 		counts[pool.Name] = pool.DesiredNodeCount
@@ -87,7 +87,7 @@ func expectedNodeCounts(spec nke.ClusterSpec) map[string]int {
 
 // controlPlaneConfigNodeCount returns how many nodes spec's cluster-level
 // controlPlaneConfig asks for: the nodes that belong to no node pool.
-func controlPlaneConfigNodeCount(spec nke.ClusterSpec) int {
+func controlPlaneConfigNodeCount(spec nvke.ClusterSpec) int {
 	if spec.ControlPlane.Config == nil {
 		return 0
 	}
@@ -95,13 +95,13 @@ func controlPlaneConfigNodeCount(spec nke.ClusterSpec) int {
 }
 
 // controlPlaneNodeCount returns how many control-plane nodes spec asks for.
-func controlPlaneNodeCount(spec nke.ClusterSpec) int {
+func controlPlaneNodeCount(spec nvke.ClusterSpec) int {
 	return controlPlaneConfigNodeCount(spec)
 }
 
 // clusterNodeCount returns how many nodes spec asks for in total: every
 // node-pool node plus the nodes of a controlPlaneConfig.
-func clusterNodeCount(spec nke.ClusterSpec) int {
+func clusterNodeCount(spec nvke.ClusterSpec) int {
 	return totalExpectedNodes(expectedNodeCounts(spec)) + controlPlaneConfigNodeCount(spec)
 }
 
@@ -140,7 +140,7 @@ func (t *tenantTest) nodesReadyWithProgress(every time.Duration) func(context.Co
 		// disagree about the shape of a response never will. Polling one to
 		// the timeout buys nothing and costs the whole provision budget on a
 		// held machine, and reports a timeout instead of the disagreement.
-		if nke.SchemaMismatch(err) {
+		if nvke.SchemaMismatch(err) {
 			return StopTrying("the API client and the controller under test disagree about the response schema").Wrap(err)
 		}
 		return err
@@ -151,11 +151,11 @@ func (t *tenantTest) nodesReadyWithProgress(every time.Duration) func(context.Co
 // cluster KubernetesReady, including a controller-managed control plane. The
 // caller controls retries.
 func (t *tenantTest) assertDesiredNodesReady(ctx context.Context) error {
-	if err := t.nke.AssertNodeConditions(ctx, t.cluster.ID, expectedNodeCounts(t.spec), nke.IsNodeReady); err != nil {
+	if err := t.nvke.AssertNodeConditions(ctx, t.cluster.ID, expectedNodeCounts(t.spec), nvke.IsNodeReady); err != nil {
 		return err
 	}
 	if desired := controlPlaneConfigNodeCount(t.spec); desired > 0 {
-		return t.nke.AssertControlPlaneNodesReady(ctx, t.cluster.ID, desired)
+		return t.nvke.AssertControlPlaneNodesReady(ctx, t.cluster.ID, desired)
 	}
 	return nil
 }
@@ -169,7 +169,7 @@ func validateNodesReadyInCluster(
 	tenantClient client.Client,
 	expectedPools map[string]int,
 ) ([]string, error) {
-	expectedNodes, err := test.nke.ListExpectedNodes(ctx, test.cluster.ID, expectedPools)
+	expectedNodes, err := test.nvke.ListExpectedNodes(ctx, test.cluster.ID, expectedPools)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +183,7 @@ func validateNodesReadyInCluster(
 		if err != nil {
 			return nil, err
 		}
-		controlPlaneNames, err := test.nke.ControlPlaneNodeNames(ctx, test.cluster.ID)
+		controlPlaneNames, err := test.nvke.ControlPlaneNodeNames(ctx, test.cluster.ID)
 		if err != nil {
 			return nil, err
 		}

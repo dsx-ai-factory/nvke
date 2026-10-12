@@ -4,7 +4,7 @@
 package capi
 
 import (
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 // ApplyNodeSetProvider sets newNodeSet's CAPI payload from nodePool's.

@@ -16,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile"
 )
 
 func TestOwnerLabel(t *testing.T) {

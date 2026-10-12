@@ -1,9 +1,9 @@
-# NKE — NVIDIA Kubernetes Engine
+# NVKE — NVIDIA Kubernetes Engine
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8.svg)](https://go.dev/dl/)
 
-**A management plane for running GPU Kubernetes clusters on bare metal.** NKE
+**A management plane for running GPU Kubernetes clusters on bare metal.** NVKE
 provisions and operates isolated Kubernetes clusters on NVIDIA infrastructure,
 so platform teams can offer managed Kubernetes to their tenants without building
 and running a control plane themselves.
@@ -18,7 +18,7 @@ engineers integrating against that control plane.
 
 ## Overview
 
-NKE is not a Kubernetes distribution and not a Cluster API flavour. It is a
+NVKE is not a Kubernetes distribution and not a Cluster API flavour. It is a
 **self-hosting factory for Kubernetes clusters**: a throwaway seed cluster
 stands up a highly available, self-managing control plane, and that control
 plane then provisions and lifecycle-manages many isolated tenant clusters on
@@ -49,9 +49,9 @@ What distinguishes it from a generic CAPI distribution:
 | Directory | What it is |
 |---|---|
 | `controller/` | The control plane. REST API and UI, durable Temporal workflows, cluster and node inventory, and the infrastructure provider integrations. |
-| `cluster-api-provider-provisioned/` | Cluster API infrastructure provider for hosts that NKE provisions before CAPI bootstraps them. |
+| `cluster-api-provider-provisioned/` | Cluster API infrastructure provider for hosts that NVKE provisions before CAPI bootstraps them. |
 | `agent/` | The on-node daemon. Exposes a gRPC API the controller drives to run `kubeadm`, install a CNI, and configure disk and etcd encryption. |
-| `cli/` | `nkectl`, the command-line interface. Validates a site spec and drives bootstrap. |
+| `cli/` | `nvkectl`, the command-line interface. Validates a site spec and drives bootstrap. |
 | `controller/nico-sim/` | `nico-sim`, the NICo-compatible VM and Docker-container simulator used by development and tests. |
 | `build/` | Build and publish scripts per component. |
 | `docs/` | Architecture, getting started, and admin guides. |
@@ -60,7 +60,7 @@ What distinguishes it from a generic CAPI distribution:
 
 **Twelve Go modules**, tied together by a workspace at the repository root, each
 independently buildable. `make build` links seven binaries: `agent`, `updater`,
-`controller`, `nkectl`, `capd-reboot-controller`, `nke-os-image-check` and
+`controller`, `nvkectl`, `capd-reboot-controller`, `nke-os-image-check` and
 `management-engine`.
 See [docs/go-workspace.md](docs/go-workspace.md) for workspace and dependency setup.
 
@@ -68,11 +68,11 @@ What each binary is, and where it ends up running:
 
 | Binary | Module | What it does | Runs on |
 |---|---|---|---|
-| `management-engine` | `management-engine/` | Controller management engine for NKE resources, communicating directly with the management Kubernetes API | An operator-owned management cluster, or a development host with kubeconfig |
+| `management-engine` | `management-engine/` | Controller management engine for NVKE resources, communicating directly with the management Kubernetes API | An operator-owned management cluster, or a development host with kubeconfig |
 | `controller` | `controller/` | The control plane: REST API, Temporal workflows, and the Kubernetes reconcilers | The site controller cluster |
 | `agent` | `agent/` | gRPC server the control plane drives to run `kubeadm`, install a CNI, and configure encryption | Every managed node |
 | `updater` | `agent/` | Independent helper that replaces the node agent without depending on the agent process | Every managed node |
-| `nkectl` | `cli/` | Validates a site spec and drives bootstrap | Your machine |
+| `nvkectl` | `cli/` | Validates a site spec and drives bootstrap | Your machine |
 | `nke-os-image-check` | `os-image/` | Checks a node image against the contract in `os-image/SPEC.md` | Your machine, or an image build |
 | `capd-reboot-controller` | `controller/hack/capd-reboot-controller/` | Test helper that reboots CAPD machines | Test clusters |
 
@@ -102,8 +102,8 @@ Flox is offered, not required. Every target runs from whatever is on your `PATH`
 ## Getting started
 
 ```bash
-git clone https://github.com/dsx-ai-factory/nke.git
-cd nke
+git clone https://github.com/dsx-ai-factory/nvke.git
+cd nvke
 ```
 
 Build the repository from a clean checkout with access to public Go modules:
@@ -147,7 +147,7 @@ wider local setup, see **[docs/getting-started.md](docs/getting-started.md)**.
 [docs/README.md](docs/README.md) indexes everything else.
 
 The controller has its own guide in
-[controller/README.md](controller/README.md). For a worked `nkectl` input, see
+[controller/README.md](controller/README.md). For a worked `nvkectl` input, see
 [cli/examples/sitespec.yaml](cli/examples/sitespec.yaml), which describes a
 site, and [cli/examples/capd-cluster.yaml](cli/examples/capd-cluster.yaml),
 which requests a cluster.
@@ -161,15 +161,15 @@ which requests a cluster.
 | GNU Make | 4.0+ |
 | Flox | optional, for a reproducible repository toolchain |
 
-Running NKE against real infrastructure additionally requires hosts already
-booted on an NKE-compatible OS image with the agent installed. NKE does not
+Running NVKE against real infrastructure additionally requires hosts already
+booted on an NVKE-compatible OS image with the agent installed. NVKE does not
 publish OS images; it publishes the recipes for building them.
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
-| [docs/first-cluster.md](docs/first-cluster.md) | Three paths to a running cluster, driven by `nkectl` |
+| [docs/first-cluster.md](docs/first-cluster.md) | Three paths to a running cluster, driven by `nvkectl` |
 | [docs/architecture.md](docs/architecture.md) | System overview — modules, data flows, deployment model |
 | [docs/getting-started.md](docs/getting-started.md) | Local development setup for the controller and the agent |
 
@@ -185,7 +185,7 @@ be agreed before you write code.
 Development quickstart:
 
 ```bash
-git clone https://github.com/dsx-ai-factory/nke.git && cd nke
+git clone https://github.com/dsx-ai-factory/nvke.git && cd nvke
 (cd agent && make build test)
 (cd controller && make build test)
 ```
@@ -206,9 +206,9 @@ a public issue for a security report.**
 See [SUPPORT.md](SUPPORT.md) for support channels and expectations.
 
 Questions and discussion:
-[GitHub Discussions](https://github.com/dsx-ai-factory/nke/discussions/categories/q-a).
+[GitHub Discussions](https://github.com/dsx-ai-factory/nvke/discussions/categories/q-a).
 Bugs, feature requests and documentation gaps:
-[GitHub Issues](https://github.com/dsx-ai-factory/nke/issues).
+[GitHub Issues](https://github.com/dsx-ai-factory/nvke/issues).
 
 ## License
 

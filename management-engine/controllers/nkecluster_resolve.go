@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"net/netip"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	internalv1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 )
 
 // InvalidSpecError identifies a request that needs corrected configuration.

@@ -72,9 +72,9 @@ nkeOIDCAuth:
   enabled: false
 
 # Cluster API. A site cluster is a CAPI cluster whose infrastructure provider
-# is cluster-api-provider-provisioned, so the NKE controller runs its CAPI controllers and gets
+# is cluster-api-provider-provisioned, so the NVKE controller runs its CAPI controllers and gets
 # the RBAC to write the objects. Engine.Deploy installs CAPI itself, before this
-# release, so the controllers exist by the time the NKE controller writes anything.
+# release, so the controllers exist by the time the NVKE controller writes anything.
 #
 capi:
   enabled: true

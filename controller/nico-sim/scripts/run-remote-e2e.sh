@@ -41,7 +41,7 @@
 # Sync:
 #   --skip-sync        Skip rsync step (useful when code is already up to date)
 #   NICO_SIM_REMOTE_DIR=<dir>  Remote nico-sim directory
-#                      (default: ~/dev/nke/controller/nico-sim)
+#                      (default: ~/dev/nvke/controller/nico-sim)
 #
 # Examples:
 #   # Run all libvirt tests on SSH machine
@@ -140,7 +140,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-REMOTE_DIR="${NICO_SIM_REMOTE_DIR:-~/dev/nke/controller/nico-sim}"
+REMOTE_DIR="${NICO_SIM_REMOTE_DIR:-~/dev/nvke/controller/nico-sim}"
 
 # --- Log file setup ---
 LOG_DIR="$REPO_ROOT/logs"

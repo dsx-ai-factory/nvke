@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
 )
 
 var errNotLocked = errors.New("1.36.2 is not locked")
@@ -83,7 +83,7 @@ func TestPlanOverridesReplaceWhatResolves(t *testing.T) {
 	p := newPlanner(t, testSubject, r)
 	p.Overrides = map[string]string{"os-image": "v0.1.0-rc.3", "kube": "1.34.2", "kind": "v0.33.0"}
 
-	got, err := p.Plan("nke", "", "active")
+	got, err := p.Plan("nvke", "", "active")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestPlanOverridesReplaceWhatResolves(t *testing.T) {
 }
 
 func TestPlanWithoutOverridesHasNone(t *testing.T) {
-	got, err := newPlanner(t, testSubject, newResolvers()).Plan("nke", "", "full")
+	got, err := newPlanner(t, testSubject, newResolvers()).Plan("nvke", "", "full")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,14 +149,14 @@ func TestPlanRejectsOverridesTheSubjectDoesNotList(t *testing.T) {
 		{
 			"an unknown name",
 			map[string]string{"helm": "v4.0.0"},
-			`nke has no component or dependency "helm", it lists os-image, cli, kube, cni-ovn, kind`,
+			`nvke has no component or dependency "helm", it lists os-image, cli, kube, cni-ovn, kind`,
 		},
-		{"the subject itself", map[string]string{"nke": "v0.22.0-beta.1"}, "nke is the subject, so its version is named with --version"},
+		{"the subject itself", map[string]string{"nvke": "v0.22.0-beta.1"}, "nvke is the subject, so its version is named with --version"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newPlanner(t, testSubject, newResolvers())
 			p.Overrides = tc.overrides
-			_, err := p.Plan("nke", "", "full")
+			_, err := p.Plan("nvke", "", "full")
 			wantError(t, err, tc.want)
 		})
 	}
@@ -172,6 +172,6 @@ func TestPlanSurfacesAnOverrideTheStrategyRefuses(t *testing.T) {
 	p := newPlanner(t, testSubject, r)
 	p.Overrides = map[string]string{"kube": "1.36.2"}
 
-	_, err := p.Plan("nke", "", "active")
-	wantError(t, err, "stream amd64-1.34: resolving kube for nke: 1.36.2 is not locked")
+	_, err := p.Plan("nvke", "", "active")
+	wantError(t, err, "stream amd64-1.34: resolving kube for nvke: 1.36.2 is not locked")
 }

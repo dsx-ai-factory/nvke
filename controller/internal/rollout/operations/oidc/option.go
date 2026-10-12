@@ -8,9 +8,9 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
 
 type Option func(*EnableOIDCOperation)
@@ -37,7 +37,7 @@ func WithClient(k8sClient client.Client) Option {
 
 // WithOIDCConfig injects the site OIDC settings (issuer URL, CA-bundle secret ref)
 // the auth-config is rendered from.
-func WithOIDCConfig(oidc *config.NkeOIDCAuth) Option {
+func WithOIDCConfig(oidc *config.NvkeOIDCAuth) Option {
 	return func(op *EnableOIDCOperation) { op.oidcConfig = oidc }
 }
 

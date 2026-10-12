@@ -53,7 +53,7 @@ grep -qx "version: ${VERSION}" "${chart_src}/Chart.yaml" ||
 mkdir -p "${STAGE}/charts"
 cp -R "$chart_src" "${STAGE}/charts/ovn-kubernetes"
 
-# NKE's overrides, not upstream's; ovnHelmChartStaged in agent/internal/agent/cni.go
+# NVKE's overrides, not upstream's; ovnHelmChartStaged in agent/internal/agent/cni.go
 # keys on this file. OVS runs on the host (checkHostOpenVSwitchReady), so the
 # ovs-node subchart is tagged off.
 cat >"${STAGE}/charts/ovn-kubernetes/values-nke.yaml" <<EOF

@@ -33,17 +33,17 @@ SITE_INPUTS ?= $(HOME)/.cache/nke-e2e/site
 SITE_CONTROLLER_VERSION ?=
 SITE_PROVISIONED_VERSION ?= v0.1.0-rc.1
 # Where the published images are pulled from. Both registries carry them under
-# the same names: GHCR at ghcr.io/dsx-ai-factory/nke, NVCR at nvcr.io/<NGC org>
+# the same names: GHCR at ghcr.io/dsx-ai-factory/nvke, NVCR at nvcr.io/<NGC org>
 # (see image-nvcr.yml and image-provisioned-nvcr.yml). NVCR needs a docker
 # login with an NGC key; the username is the literal $oauthtoken.
-SITE_IMAGE_REGISTRY ?= ghcr.io/dsx-ai-factory/nke
+SITE_IMAGE_REGISTRY ?= ghcr.io/dsx-ai-factory/nvke
 SITE_CONTROLLER_IMAGE ?= $(SITE_IMAGE_REGISTRY)/nke-controller:$(SITE_CONTROLLER_VERSION)
 SITE_PROVISIONED_IMAGE ?= $(SITE_IMAGE_REGISTRY)/cluster-api-provider-provisioned:$(SITE_PROVISIONED_VERSION)
 SITE_PROFILES_IMAGE ?= nke-e2e-profiles:local
 
 # Build the controller from this checkout instead of pulling SITE_CONTROLLER_IMAGE.
 #
-# nkectl is built here by default (see SITE_CLI_BUILD), and it is a client of
+# nvkectl is built here by default (see SITE_CLI_BUILD), and it is a client of
 # the controller it bootstraps, so the two have to agree on the cluster API. Built
 # from one commit they do; a published pair has to be chosen to:
 # GHCR carries release tags only and its newest, v0.1.1-rc.8, is 43 commits
@@ -56,26 +56,26 @@ SITE_PROFILES_IMAGE ?= nke-e2e-profiles:local
 # Set to 0 to qualify a published tag, once one is cut past #850.
 SITE_CONTROLLER_BUILD ?= 1
 
-# Build nkectl from this checkout. Set to 0 to stage the published
-# SITE_CLI_VERSION instead: hack/fetch-nkectl.sh downloads
-# nkectl-linux-$(SITE_ARCH) from its cli/<version> GitHub Release, which needs
-# GITHUB_TOKEN and jq. Either way site.nkectl in e2e-config.yaml points at
-# SITE_NKECTL.
+# Build nvkectl from this checkout. Set to 0 to stage the published
+# SITE_CLI_VERSION instead: hack/fetch-nvkectl.sh downloads
+# nvkectl-linux-$(SITE_ARCH) from its cli/<version> GitHub Release, which needs
+# GITHUB_TOKEN and jq. Either way site.nvkectl in e2e-config.yaml points at
+# SITE_NVKECTL.
 SITE_CLI_BUILD ?= 1
 SITE_CLI_VERSION ?=
 # Read by the recipe from the environment, never expanded into it: a value
 # carrying a quote would otherwise end the argument and run as shell.
 export SITE_CLI_VERSION
 ifeq ($(SITE_CLI_BUILD),1)
-SITE_NKECTL = $(REPO_ROOT)/cli/dist/nkectl-linux-$(SITE_ARCH)
+SITE_NVKECTL = $(REPO_ROOT)/cli/dist/nvkectl-linux-$(SITE_ARCH)
 else
-SITE_NKECTL = $(SITE_INPUTS)/nkectl/nkectl-linux-$(SITE_ARCH)
+SITE_NVKECTL = $(SITE_INPUTS)/nvkectl/nvkectl-linux-$(SITE_ARCH)
 endif
 
 # Passed through as GIT_VERSION, which the controller Makefile takes from
 # CI_COMMIT_SHA whenever CI is set. That is GitLab's variable: under GitHub
 # Actions CI is set and CI_COMMIT_SHA is not, so GIT_VERSION comes out empty
-# and the build dies on `invalid tag "nvcr.io/j7sbcjl3qgta/nke-controller:"`.
+# and the build dies on `invalid tag "nvcr.io/j7sbcjl3qgta/nvke-controller:"`.
 # image-nvcr.yml passes GITHUB_SHA for the same reason.
 #
 # BUILD_VERSION is a different thing: GIT_VERSION only names the image, while
@@ -92,14 +92,14 @@ endif
 SITE_CONTROLLER_COMMIT ?= $(shell git -C "$(REPO_ROOT)" rev-parse --short=12 HEAD)
 
 .PHONY: site-inputs
-site-inputs: ## Build the nkectl and image archives the site lane stages. Needs SITE_CONTROLLER_VERSION and a docker login to SITE_IMAGE_REGISTRY.
+site-inputs: ## Build the nvkectl and image archives the site lane stages. Needs SITE_CONTROLLER_VERSION and a docker login to SITE_IMAGE_REGISTRY.
 	@test -n "$(SITE_CONTROLLER_VERSION)" || { echo "SITE_CONTROLLER_VERSION is required, e.g. v0.1.1-rc.8" >&2; exit 1; }
 	@mkdir -p "$(SITE_INPUTS)"
 ifeq ($(SITE_CLI_BUILD),1)
-	$(MAKE) -C "$(REPO_ROOT)/cli" build-cross NKECTL_PLATFORMS=linux/$(SITE_ARCH)
+	$(MAKE) -C "$(REPO_ROOT)/cli" build-cross NVKECTL_PLATFORMS=linux/$(SITE_ARCH)
 else
-	@test -n "$${SITE_CLI_VERSION}" || { echo "SITE_CLI_BUILD=0 stages a published nkectl and needs SITE_CLI_VERSION, e.g. v0.1.0" >&2; exit 1; }
-	"$(CURDIR)/hack/fetch-nkectl.sh" "$${SITE_CLI_VERSION}" "$(SITE_ARCH)" "$(dir $(SITE_NKECTL))"
+	@test -n "$${SITE_CLI_VERSION}" || { echo "SITE_CLI_BUILD=0 stages a published nvkectl and needs SITE_CLI_VERSION, e.g. v0.1.0" >&2; exit 1; }
+	"$(CURDIR)/hack/fetch-nvkectl.sh" "$${SITE_CLI_VERSION}" "$(SITE_ARCH)" "$(dir $(SITE_NVKECTL))"
 endif
 ifeq ($(SITE_CONTROLLER_BUILD),1)
 	@test "$(SITE_ARCH)" = amd64 || { echo "SITE_CONTROLLER_BUILD=1 builds linux/amd64 only (docker build --load takes one platform); set SITE_CONTROLLER_BUILD=0 for $(SITE_ARCH)" >&2; exit 1; }

@@ -14,10 +14,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
 const (
@@ -42,7 +42,7 @@ func (a *Activities) RemoveEtcdMember(ctx context.Context, input EtcdMemberRemov
 	if err != nil {
 		return err
 	}
-	if _, err := a.nodeAgentClient.RemoveEtcdMember(ctx, executor, &nkeproto.RemoveEtcdMemberRequest{
+	if _, err := a.nodeAgentClient.RemoveEtcdMember(ctx, executor, &nvkeproto.RemoveEtcdMemberRequest{
 		Target: input.TargetMemberName,
 	}); err != nil {
 		if status.Code(err) == codes.Unimplemented {

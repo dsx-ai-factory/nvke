@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Compose authenticated component outputs into the NKE Packer input archive."""
+"""Compose authenticated component outputs into the NVKE Packer input archive."""
 
 from __future__ import annotations
 

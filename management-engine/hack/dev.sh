@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 fail() { echo "$*" >&2; exit 1; }
-: "${DEV_NAME:=nke}"
+: "${DEV_NAME:=nvke}"
 [[ "$DEV_NAME" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ && ${#DEV_NAME} -le 32 ]] || fail "DEV_NAME must be a lowercase DNS label of at most 32 characters."
 dev_dir="$PWD/.local/dev/$DEV_NAME"
 export KUBECONFIG="$dev_dir/kubeconfig"

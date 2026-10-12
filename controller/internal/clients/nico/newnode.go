@@ -4,7 +4,7 @@
 package nico
 
 import (
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 // ApplyNodePoolNodePayload sets node's NICo payload to the instance type

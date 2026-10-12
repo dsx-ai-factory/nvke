@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Open or update a pull request on dsx-ai-factory/nke following the repository's squash-merge, DCO, labeling, and CI-presence rules. Use when asked to open a PR, push a branch for review, or check why PR checks look wrong.
+description: Open or update a pull request on dsx-ai-factory/nvke following the repository's squash-merge, DCO, labeling, and CI-presence rules. Use when asked to open a PR, push a branch for review, or check why PR checks look wrong.
 disable-model-invocation: true
 ---
 
@@ -43,11 +43,11 @@ checks are never created, and **their absence looks identical to success**: a
 column of green ticks with checks simply missing.
 
 ```bash
-gh pr checks <number> --repo dsx-ai-factory/nke --json name,workflow
+gh pr checks <number> --repo dsx-ai-factory/nvke --json name,workflow
 ```
 
 Which checks block a merge is a repository setting. Read it with
-`gh api repos/dsx-ai-factory/nke/rules/branches/main --jq '[.[].type]'`. `gate` and DCO always report; golangci-lint,
+`gh api repos/dsx-ai-factory/nvke/rules/branches/main --jq '[.[].type]'`. `gate` and DCO always report; golangci-lint,
 CodeQL, govulncheck, gitleaks, grype, actionlint, shellcheck, the image build,
 and the notices gate depend on the mirror and are legitimately absent for
 unvetted authors — flag that state rather than treating it as passing.

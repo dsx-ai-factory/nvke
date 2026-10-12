@@ -36,8 +36,8 @@ chart, installs datastore resources, renews credentials, and starts Tilt:
 
 | Cluster | Contents |
 | --- | --- |
-| `nke-management` | Manager and credential Secret in `management-engine-system` |
-| `nke-state` | CRDs/RBAC; identity and election Lease in `management-state-system` |
+| `nvke-management` | Manager and credential Secret in `management-engine-system` |
+| `nvke-state` | CRDs/RBAC; identity and election Lease in `management-state-system` |
 
 Press **Space** to open [Tilt](http://localhost:10351/). Keep the command running;
 Ctrl+C stops Tilt and its dashboard. If the port is occupied, stop the existing
@@ -63,8 +63,8 @@ engine and `DEV_NAME` for all lifecycle commands. The ignored kubeconfig is
 For direct commands against the default environment:
 
 ```sh
-export KUBECONFIG="$PWD/.local/dev/nke/kubeconfig"
-kubectl --context kind-nke-state get namespaces
+export KUBECONFIG="$PWD/.local/dev/nvke/kubeconfig"
+kubectl --context kind-nvke-state get namespaces
 ```
 
 ## CWE integration
@@ -107,7 +107,7 @@ cluster is ready. Leave the machine pause in place for this test.
 Inspect status in the state cluster and runtime logs in Tilt:
 
 ```sh
-kubectl --kubeconfig .local/dev/nke-cwe/kubeconfig --context kind-nke-cwe-state \
+kubectl --kubeconfig .local/dev/nvke-cwe/kubeconfig --context kind-nvke-cwe-state \
   -n cwe-integration get nkeclusters -o yaml
 ```
 
@@ -153,13 +153,13 @@ and `.local/cwe/token`, then mount them in the default development environment:
 
 ```sh
 make dev-up
-export KUBECONFIG="$PWD/.local/dev/nke/kubeconfig"
-kubectl --context kind-nke-management -n management-engine-system create configmap management-cwe-bindings \
+export KUBECONFIG="$PWD/.local/dev/nvke/kubeconfig"
+kubectl --context kind-nvke-management -n management-engine-system create configmap management-cwe-bindings \
   --from-file=bindings.json=.local/cwe/bindings.json --dry-run=client -o yaml | \
-  kubectl --context kind-nke-management apply -f -
-kubectl --context kind-nke-management -n management-engine-system create secret generic management-cwe-token \
+  kubectl --context kind-nvke-management apply -f -
+kubectl --context kind-nvke-management -n management-engine-system create secret generic management-cwe-token \
   --from-file=token=.local/cwe/token --dry-run=client -o yaml | \
-  kubectl --context kind-nke-management apply -f -
+  kubectl --context kind-nvke-management apply -f -
 DEV_VALUES=.local/cwe/values.yaml make dev
 ```
 
@@ -216,12 +216,12 @@ See [sample manifests](config/samples) for examples of the custom resources.
 With the environment's `KUBECONFIG` exported:
 
 ```sh
-kubectl --context kind-nke-state create namespace org-example --dry-run=client -o yaml | \
-  kubectl --context kind-nke-state apply -f -
-kubectl --context kind-nke-state -n org-example apply -k config/samples
-kubectl --context kind-nke-state -n org-example get nkeclusters
+kubectl --context kind-nvke-state create namespace org-example --dry-run=client -o yaml | \
+  kubectl --context kind-nvke-state apply -f -
+kubectl --context kind-nvke-state -n org-example apply -k config/samples
+kubectl --context kind-nvke-state -n org-example get nkeclusters
 # Remove the samples:
-kubectl --context kind-nke-state -n org-example delete -k config/samples
+kubectl --context kind-nvke-state -n org-example delete -k config/samples
 ```
 
 Use these resources to inspect reconciliation through status and conditions.
@@ -236,7 +236,7 @@ make dev-down
 
 This includes clusters reused from another checkout. To remove only the runtime
 and retain datastore objects, keep the environment's `KUBECONFIG` exported and run
-`tilt down --context kind-nke-management` (adjust the context and `DEV_NAME` for a
+`tilt down --context kind-nvke-management` (adjust the context and `DEV_NAME` for a
 custom environment).
 
 ## Build and tests
@@ -257,9 +257,9 @@ separate environment without Tilt:
 
 ```sh
 make docker-build
-make dev-up DEV_NAME=nke-test
-make test-install DEV_NAME=nke-test
-make dev-down DEV_NAME=nke-test
+make dev-up DEV_NAME=nvke-test
+make test-install DEV_NAME=nvke-test
+make dev-down DEV_NAME=nvke-test
 ```
 
 This checks deployment, datastore access, reconciliation, upgrades, and state

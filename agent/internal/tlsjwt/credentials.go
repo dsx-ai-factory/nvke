@@ -13,7 +13,7 @@ import (
 
 	"google.golang.org/grpc/credentials"
 
-	"github.com/dsx-ai-factory/nke/agent/pkg/nkeauth"
+	"github.com/dsx-ai-factory/nvke/agent/pkg/nkeauth"
 )
 
 // HandshakeTimeout bounds the whole authentication exchange: the base TLS

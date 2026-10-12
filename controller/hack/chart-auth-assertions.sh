@@ -94,7 +94,7 @@ YAML
 
 echo "apiAuth disabled (the default):"
 out="$(render)"
-# Absent, not empty: NKE reads an empty AUTH_CONFIG_PATH as unset.
+# Absent, not empty: NVKE reads an empty AUTH_CONFIG_PATH as unset.
 absent "AUTH_CONFIG_PATH is not set at all"   'AUTH_CONFIG_PATH'                     "${out}"
 absent "PERMISSIVE_MODE is not set"           'PERMISSIVE_MODE'                      "${out}"
 absent "no config volume"                     'name: nke-auth-config'                "${out}"

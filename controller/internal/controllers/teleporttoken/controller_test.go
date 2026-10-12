@@ -24,13 +24,13 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile"
-	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/dbwrapper"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/teleport"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/teleport"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 // --- Test environment (replaces mockDB with in-memory SQLite) ---
@@ -174,7 +174,7 @@ func (te *testEnv) createNicoMachineForNode(ctx context.Context, t *testing.T, n
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      node.Name,
-			Namespace: constants.NamespaceNKESystem,
+			Namespace: constants.NamespaceNVKESystem,
 			Annotations: map[string]string{
 				constants.MachineAnnotationKeyHostID: node.ID.String(),
 			},
@@ -190,7 +190,7 @@ func (te *testEnv) createNicoMachineForNode(ctx context.Context, t *testing.T, n
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      node.Name,
-			Namespace: constants.NamespaceNKESystem,
+			Namespace: constants.NamespaceNVKESystem,
 			OwnerReferences: []metav1.OwnerReference{{
 				APIVersion: clusterv1.GroupVersion.String(),
 				Kind:       "Machine",
@@ -296,7 +296,7 @@ func testLogger() *slog.Logger {
 
 func testConfig() config.Config {
 	return config.Config{
-		NKESiteControllerName: "test-site",
+		NVKESiteControllerName: "test-site",
 		Teleport: config.TeleportConfig{
 			Enabled:             true,
 			Environment:         "non-prod",
@@ -690,7 +690,7 @@ func TestCreateTokenForNode(t *testing.T) {
 
 			// Verify identity labels
 			assert.Equal(t, te.siteID.String(), token.Labels[teleport.LabelSite])
-			assert.Equal(t, testConfig().NKESiteControllerName, token.Labels[teleport.LabelNKESiteControllerName])
+			assert.Equal(t, testConfig().NVKESiteControllerName, token.Labels[teleport.LabelNVKESiteControllerName])
 			assert.Equal(t, te.cluster.ID.String(), token.Labels[teleport.LabelCluster])
 			assert.Equal(t, te.cluster.Name, token.Labels[teleport.LabelClusterName])
 			assert.Equal(t, node.ID.String(), token.Labels[teleport.LabelNodeID])
@@ -698,7 +698,7 @@ func TestCreateTokenForNode(t *testing.T) {
 			assert.Equal(t, "test-node", token.Labels[teleport.LabelNodeName])
 
 			// Verify normalized labels (consistent with userData labels)
-			assert.Equal(t, teleport.LabelResourceGroupNKEValue, token.Labels[teleport.LabelResourceGroup])
+			assert.Equal(t, teleport.LabelResourceGroupNVKEValue, token.Labels[teleport.LabelResourceGroup])
 			assert.Equal(t, "non-prod", token.Labels[teleport.LabelEnvironment])
 
 			// Verify TPM config uses the hash resolved from NicoMachine.
@@ -1237,7 +1237,7 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 
 	nicoMachine := &nicov1.NicoMachine{}
 	require.NoError(t, te.k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: constants.NamespaceNKESystem,
+		Namespace: constants.NamespaceNVKESystem,
 		Name:      node1.Name,
 	}, nicoMachine))
 	assert.Equal(t, []dbreconcile.Key{dbreconcile.NodeKey(node1.ID)}, controller.nodeKeysForNicoMachine(ctx, nicoMachine))
@@ -1246,7 +1246,7 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 		orphan := &nicov1.NicoMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "orphan-nicomachine",
-				Namespace: constants.NamespaceNKESystem,
+				Namespace: constants.NamespaceNVKESystem,
 			},
 		}
 
@@ -1262,7 +1262,7 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "invalid-host-machine",
-				Namespace: constants.NamespaceNKESystem,
+				Namespace: constants.NamespaceNVKESystem,
 				Annotations: map[string]string{
 					constants.MachineAnnotationKeyHostID: "not-a-uuid",
 				},
@@ -1277,7 +1277,7 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "invalid-host-machine",
-				Namespace: constants.NamespaceNKESystem,
+				Namespace: constants.NamespaceNVKESystem,
 				OwnerReferences: []metav1.OwnerReference{{
 					APIVersion: clusterv1.GroupVersion.String(),
 					Kind:       "Machine",

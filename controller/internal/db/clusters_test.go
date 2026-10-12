@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestListClusters(t *testing.T) {
@@ -230,8 +230,8 @@ func TestControlPlaneConfigFromNodePool(t *testing.T) {
 			SubnetIDs:             []uuid.UUID{sub},
 			VpcPrefixIDs:          []uuid.UUID{},
 			SSHKeyGroupIDs:        []uuid.UUID{},
-			OSProfile:             "nke-test-os",
-			ConfigProfile:         "nke-test-cfg",
+			OSProfile:             "nvke-test-os",
+			ConfigProfile:         "nvke-test-cfg",
 			DiskSelectionStrategy: db.DiskSelectionStrategyLargest,
 		})
 
@@ -245,8 +245,8 @@ func TestControlPlaneConfigFromNodePool(t *testing.T) {
 		assert.Equal(t, "1.31.0", cfg.KubernetesVersion)
 		// Typed Nico provider carries all provider-specific fields.
 		require.NotNil(t, cfg.Nico)
-		assert.Equal(t, "nke-test-os", cfg.Nico.OSProfile)
-		assert.Equal(t, "nke-test-cfg", cfg.Nico.ConfigProfile)
+		assert.Equal(t, "nvke-test-os", cfg.Nico.OSProfile)
+		assert.Equal(t, "nvke-test-cfg", cfg.Nico.ConfigProfile)
 		assert.Equal(t, db.DiskSelectionStrategyLargest, cfg.Nico.DiskSelectionStrategy)
 		assert.Equal(t, []uuid.UUID{sub}, cfg.Nico.SubnetIDs)
 		assert.Equal(t, []uuid.UUID{inst}, cfg.Nico.InstanceTypePreference)
@@ -696,7 +696,7 @@ func TestCreateControlPlaneConfigRowIfChanged_NoOpWhenUnchanged(t *testing.T) {
 
 	count, err := bunDB.NewSelect().TableExpr("control_plane_configurations").Count(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, 1, count)
+	assert.Equal(t, int64(1), count)
 }
 
 func TestCreateControlPlaneConfigRowIfChanged_CreatesRowWhenDiskStrategyChanges(t *testing.T) {
@@ -742,5 +742,5 @@ func TestCreateControlPlaneConfigRowIfChanged_CreatesRowWhenDiskStrategyChanges(
 
 	count, err := bunDB.NewSelect().TableExpr("control_plane_configurations").Count(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, 2, count)
+	assert.Equal(t, int64(2), count)
 }

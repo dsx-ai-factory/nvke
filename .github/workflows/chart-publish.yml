@@ -4,10 +4,10 @@
 name: Chart Publish
 
 # Packages the controller Helm chart and publishes it under
-# ghcr.io/dsx-ai-factory/nke/charts as an OCI artifact:
+# ghcr.io/dsx-ai-factory/nvke/charts as an OCI artifact:
 #
-#   ghcr.io/dsx-ai-factory/nke/charts/nke-controller:0.1.0        <- release tag
-#   ghcr.io/dsx-ai-factory/nke/charts/nke-controller:0.1.0-rc.1   <- release candidate
+#   ghcr.io/dsx-ai-factory/nvke/charts/nke-controller:0.1.0        <- release tag
+#   ghcr.io/dsx-ai-factory/nvke/charts/nke-controller:0.1.0-rc.1   <- release candidate
 #
 # The last path segment is the chart's `name:`, not anything set here.
 # Through controller/v0.1.1-rc.1 the chart was named cloud-workflow-engine,
@@ -19,7 +19,7 @@ name: Chart Publish
 # also runs on main.
 #
 # `charts/` is a reserved path segment: everything else directly under
-# ghcr.io/dsx-ai-factory/nke is a payload you pull by name -- the controller image, the
+# ghcr.io/dsx-ai-factory/nvke is a payload you pull by name -- the controller image, the
 # agent binaries. Without that split a chart and an image end up in one OCI
 # repository, told apart only by whether the tag carries a "v".
 #
@@ -36,7 +36,7 @@ name: Chart Publish
 # The chart names the GHCR controller image, and image-nvcr.yml promotes to
 # GHCR only for release tags -- NVCR gets every main commit, GHCR does not. A
 # chart built from main would therefore carry an appVersion like
-# v0.1.0-4-gabcdef and point at ghcr.io/dsx-ai-factory/nke/nke-controller:v0.1.0-4-gabcdef,
+# v0.1.0-4-gabcdef and point at ghcr.io/dsx-ai-factory/nvke/nke-controller:v0.1.0-4-gabcdef,
 # which does not exist. Publishing only what the image side publishes keeps the
 # two in step.
 on:
@@ -76,10 +76,10 @@ jobs:
     # The ref check is not redundant with the `on:` filter above: it also covers
     # workflow_dispatch, which accepts any ref. Dispatched from main this job
     # would package something like 0.1.1-rc.0-2-g068156e and point it at
-    # ghcr.io/dsx-ai-factory/nke/nke-controller:v0.1.1-rc.0-2-g068156e, a tag promotion never
+    # ghcr.io/dsx-ai-factory/nvke/nke-controller:v0.1.1-rc.0-2-g068156e, a tag promotion never
     # creates -- a chart naming an image that does not exist.
     if: >-
-      github.repository == 'dsx-ai-factory/nke' &&
+      github.repository_id == '1323115536' &&
       startsWith(github.ref, 'refs/tags/controller/v')
     timeout-minutes: 10
     permissions:
@@ -127,7 +127,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          image="ghcr.io/dsx-ai-factory/nke/nke-controller"
+          image="ghcr.io/dsx-ai-factory/nvke/nke-controller"
 
           # Anchored at exactly two spaces so this hits image.repository and
           # NOT profiles.image.repository, which is nested one level deeper and
@@ -181,8 +181,8 @@ jobs:
           set -euo pipefail
           helm push \
             "${RUNNER_TEMP}/chart-dist/nke-controller-${VERSION}.tgz" \
-            oci://ghcr.io/dsx-ai-factory/nke/charts
-          echo "Pushed ghcr.io/dsx-ai-factory/nke/charts/nke-controller:${VERSION}"
+            oci://ghcr.io/dsx-ai-factory/nvke/charts
+          echo "Pushed ghcr.io/dsx-ai-factory/nvke/charts/nke-controller:${VERSION}"
 
       # The chart names the image by version, and the release layer has to
       # pin both by digest. Until this ran, nothing in CI recorded what GHCR
@@ -191,5 +191,5 @@ jobs:
       - name: Record the published digest
         uses: ./.github/actions/record-digest
         with:
-          references: ghcr.io/dsx-ai-factory/nke/charts/nke-controller:${{ steps.meta.outputs.version }}
+          references: ghcr.io/dsx-ai-factory/nvke/charts/nke-controller:${{ steps.meta.outputs.version }}
           component: nke-controller-chart

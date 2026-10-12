@@ -10,7 +10,7 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 // ListNodePools returns the node pools matching params. A nil params lists

@@ -6,7 +6,7 @@ package db
 import (
 	"maps"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
 
 // ClusterOIDCProvider is one pinned provider. The database owns this shape

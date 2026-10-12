@@ -19,7 +19,7 @@
 #
 #   selector   the labels the SPIFFE hardened chart puts on its server pods.
 #   nodePort   the port the nodes' spire-agent config was built with. In the
-#              E2E that is NKECTL_E2E_SPIRE_SERVER_PORT; on real hardware it is
+#              E2E that is NVKECTL_E2E_SPIRE_SERVER_PORT; on real hardware it is
 #              whatever provisioned the machine.
 #
 # The namespace is deliberately absent: it is applied into the namespace
@@ -31,7 +31,7 @@ metadata:
   name: spire-server-external
   labels:
     app.kubernetes.io/name: server
-    app.kubernetes.io/managed-by: nkectl
+    app.kubernetes.io/managed-by: nvkectl
 spec:
   type: NodePort
   selector:

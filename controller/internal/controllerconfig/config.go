@@ -514,7 +514,7 @@ func (o *OIDCConfig) validate() error {
 }
 
 // ReservedIdentityPrefixes returns the username and group namespaces that
-// Kubernetes, kubeadm, NKE and NVIDIA own. kube-apiserver rejects any identity
+// Kubernetes, kubeadm, NVKE and NVIDIA own. kube-apiserver rejects any identity
 // a fleet-wide provider maps into one, and Validate refuses a provider whose
 // own prefix already lies inside one, since every login through it would fail.
 func ReservedIdentityPrefixes() []string {

@@ -5,7 +5,7 @@
 #
 # Everything a site controller needs differently lives here instead:
 # sizing for the smaller clusters a site controller runs on and the Operator
-# permission NKE's API server requires.
+# permission NVKE's API server requires.
 #
 # The exporters stay pointed at the bundled development backend, which keeps
 # data in memory and has no authentication. A site with its own backend passes
@@ -22,7 +22,7 @@ metrics-server:
   enabled: true
 
 opentelemetry-kube-stack:
-  # NKE binds the scheduler and the controller manager to 127.0.0.1
+  # NVKE binds the scheduler and the controller manager to 127.0.0.1
   # (defaultControlPlaneBindAddress in controller/internal/kubeadmconfig), so
   # their monitors would target an address nothing listens on. An OVN cluster
   # runs no kube-proxy (kubeadm_init.go skips it). The API server, etcd and
@@ -35,7 +35,7 @@ opentelemetry-kube-stack:
     enabled: false
   opentelemetry-operator:
     # The Operator creates a NetworkPolicy owned by its own Deployment, with
-    # blockOwnerDeletion set. NKE's API server runs the
+    # blockOwnerDeletion set. NVKE's API server runs the
     # OwnerReferencesPermissionEnforcement admission plugin, which allows that
     # only with update on the owner's finalizers. The OpenTelemetry Operator
     # Helm chart does not grant it, so the create fails and the Operator exits.
@@ -78,7 +78,7 @@ opentelemetry-kube-stack:
 # name. The chart's transform/cluster processor reads it from K8S_CLUSTER_NAME,
 # and the chart sets that from global.clusterName only when the env list omits
 # it. A site takes the name from the nktp-cluster ConfigMap instead, which
-# nke-base-config renders from BootstrapConfig's ClusterName; the anchor below
+# nvke-base-config renders from BootstrapConfig's ClusterName; the anchor below
 # is defined once and reused by each gateway.
 watchdog:
   kubernetes:
@@ -255,7 +255,7 @@ daemonset:
           sending_queue:
             queue_size: 8388608 # 8MiB serialized.
       receivers:
-        # NKE's kubeadm configuration writes the API server's audit log here
+        # NVKE's kubeadm configuration writes the API server's audit log here
         # (defaultAuditLogPath in controller/internal/kubeadmconfig), not at
         # the chart's /var/log/kubernetes/audit/audit.log.
         filelog/kube-api-audit:

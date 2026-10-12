@@ -64,7 +64,7 @@ create_agent_service_file() {
 
   cat <<'EOL' >"$service_file"
 [Unit]
-Description=NKE Node Agent
+Description=NVKE Node Agent
 After=multi-user.target
 StartLimitIntervalSec=0
 

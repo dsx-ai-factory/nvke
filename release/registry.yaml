@@ -9,13 +9,13 @@
 # the plan can hand the suite what it resolved without a mapping in between.
 #
 # tagPrefix is explicit because a name and its tag genuinely disagree:
-# capi-provisioned is tagged cluster-api-provider-provisioned/v*, and nke
+# capi-provisioned is tagged cluster-api-provider-provisioned/v*, and nvke
 # carries no prefix because its directory is the repository root.
 
-apiVersion: nke.nvidia.com/v1alpha1
+apiVersion: nvke.nvidia.com/v1alpha1
 kind: Registry
 metadata:
-  name: nke
+  name: nvke
   description: How each component resolves to a version.
 spec:
   # Where artifacts are published. A component names a source in its resolve.with,
@@ -24,7 +24,7 @@ spec:
     - {name: artifact-cdn, url: https://d1veq6e8nuk2fy.cloudfront.net}
 
   components:
-    - {name: nke,              resolve: {strategy: gitTag, with: {tagPrefix: ""}}}
+    - {name: nvke,              resolve: {strategy: gitTag, with: {tagPrefix: ""}}}
     - {name: controller,       resolve: {strategy: gitTag, with: {tagPrefix: "controller/"}}}
     - {name: cli,              resolve: {strategy: gitTag, with: {tagPrefix: "cli/"}}}
     - {name: capi-provisioned, resolve: {strategy: gitTag, with: {tagPrefix: "cluster-api-provider-provisioned/"}}}
@@ -37,11 +37,11 @@ spec:
     - name: os-image-amd64
       resolve:
         strategy: osImage
-        with: {from: os-image, arch: amd64, variant: non-fde, source: artifact-cdn, path: nke-packages}
+        with: {from: os-image, arch: amd64, variant: non-fde, source: artifact-cdn, path: nvke-packages}
     - name: os-image-arm64
       resolve:
         strategy: osImage
-        with: {from: os-image, arch: arm64, variant: non-fde, source: artifact-cdn, path: nke-packages}
+        with: {from: os-image, arch: arm64, variant: non-fde, source: artifact-cdn, path: nvke-packages}
     - {name: os-image-bootloader-amd64, resolve: {strategy: url, with: {source: artifact-cdn}}}
     - {name: os-image-bootloader-arm64, resolve: {strategy: url, with: {source: artifact-cdn}}}
 

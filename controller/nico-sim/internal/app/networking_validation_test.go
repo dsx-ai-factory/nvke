@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/seed"
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/state"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/seed"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/state"
 )
 
 func TestValidateVPCAndSubnetsPassesWhenContained(t *testing.T) {

@@ -19,13 +19,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	internalv1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 )
 
 const (
-	nkeClusterFinalizer = "internal.nke.nvidia.com/cluster-cleanup"
-	defaultPollInterval = 10 * time.Second
+	nvkeClusterFinalizer = "internal.nke.nvidia.com/cluster-cleanup"
+	defaultPollInterval  = 10 * time.Second
 )
 
 // CWEClient is the existing REST API surface used by cluster reconciliation.
@@ -37,8 +37,8 @@ type CWEClient interface {
 	Delete(ctx context.Context, id string) error
 }
 
-// NKEClusterReconciler coordinates cluster provisioning from declarative intent.
-type NKEClusterReconciler struct {
+// NVKEClusterReconciler coordinates cluster provisioning from declarative intent.
+type NVKEClusterReconciler struct {
 	client.Client
 	CWE          CWEClient
 	Bindings     []CWEBinding
@@ -48,7 +48,7 @@ type NKEClusterReconciler struct {
 // +kubebuilder:rbac:groups=internal.nke.nvidia.com,resources=nkeclusters,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=internal.nke.nvidia.com,resources=nkeclusters/status,verbs=update;patch
 
-func (r *NKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, retErr error) {
+func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, retErr error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.V(1).Info("reconciling NKECluster")
 
@@ -63,14 +63,14 @@ func (r *NKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 	observed := true
 	defer func() {
-		if conditionErr := setNKEClusterConditions(&cluster); conditionErr != nil {
+		if conditionErr := setNVKEClusterConditions(&cluster); conditionErr != nil {
 			retErr = errors.Join(retErr, conditionErr)
 		}
 		if observed && retErr == nil {
 			// Set this explicitly: the patch helper returns early when other status fields are unchanged.
 			cluster.Status.ObservedGeneration = cluster.Generation
 		}
-		if patchErr := patchHelper.Patch(ctx, &cluster, patch.WithOwnedConditions{Conditions: nkeClusterOwnedConditions}); client.IgnoreNotFound(patchErr) != nil {
+		if patchErr := patchHelper.Patch(ctx, &cluster, patch.WithOwnedConditions{Conditions: nvkeClusterOwnedConditions}); client.IgnoreNotFound(patchErr) != nil {
 			retErr = errors.Join(retErr, patchErr)
 		}
 	}()
@@ -82,9 +82,9 @@ func (r *NKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if !cluster.DeletionTimestamp.IsZero() {
 		return r.reconcileDelete(ctx, &cluster)
 	}
-	if !controllerutil.ContainsFinalizer(&cluster, nkeClusterFinalizer) {
+	if !controllerutil.ContainsFinalizer(&cluster, nvkeClusterFinalizer) {
 		// Persist cleanup responsibility before making any provisioning request.
-		controllerutil.AddFinalizer(&cluster, nkeClusterFinalizer)
+		controllerutil.AddFinalizer(&cluster, nvkeClusterFinalizer)
 		observed = false
 		return ctrl.Result{RequeueAfter: r.PollInterval}, nil
 	}
@@ -92,7 +92,7 @@ func (r *NKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *NKEClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *NVKEClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.PollInterval <= 0 {
 		r.PollInterval = defaultPollInterval
 	}

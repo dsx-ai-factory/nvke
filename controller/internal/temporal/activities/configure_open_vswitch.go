@@ -14,10 +14,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/metrics"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 )
 
 const (
@@ -79,7 +79,7 @@ func (a *Activities) configureOpenVSwitchOnNode(
 	startResponse, err := a.nodeAgentClient.StartOpenVSwitchReconciliation(
 		ctx,
 		node,
-		&nkeproto.StartOpenVSwitchReconciliationRequest{OperationId: input.OperationID},
+		&nvkeproto.StartOpenVSwitchReconciliationRequest{OperationId: input.OperationID},
 	)
 	if err != nil {
 		if status.Code(err) == codes.Unimplemented {
@@ -105,7 +105,7 @@ func (a *Activities) configureOpenVSwitchOnNode(
 		statusResponse, statusErr := a.nodeAgentClient.GetOpenVSwitchReconciliationStatus(
 			ctx,
 			node,
-			&nkeproto.GetOpenVSwitchReconciliationStatusRequest{OperationId: input.OperationID},
+			&nvkeproto.GetOpenVSwitchReconciliationStatusRequest{OperationId: input.OperationID},
 		)
 		if statusErr != nil {
 			if ctx.Err() == nil && status.Code(statusErr) == codes.Unavailable {
@@ -146,7 +146,7 @@ func (a *Activities) configureOpenVSwitchWithLegacyRunbook(
 
 func openVSwitchTerminalResult(
 	expectedOperationID string,
-	operation *nkeproto.OpenVSwitchReconciliationOperation,
+	operation *nvkeproto.OpenVSwitchReconciliationOperation,
 ) (ConfigureOpenVSwitchResult, bool, error) {
 	operationStatus := operation.GetOperation()
 	if operationStatus == nil {
@@ -160,15 +160,15 @@ func openVSwitchTerminalResult(
 		)
 	}
 	switch operationStatus.GetPhase() {
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING:
 		return ConfigureOpenVSwitchResult{}, false, nil
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED:
 		result := operation.GetResult()
 		if result == nil {
 			return ConfigureOpenVSwitchResult{}, true, errors.New("successful Open vSwitch operation has no result")
 		}
-		if result.GetOutcome() != nkeproto.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED &&
-			result.GetOutcome() != nkeproto.OpenVSwitchReconciliationResult_OUTCOME_UNCHANGED {
+		if result.GetOutcome() != nvkeproto.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED &&
+			result.GetOutcome() != nvkeproto.OpenVSwitchReconciliationResult_OUTCOME_UNCHANGED {
 			return ConfigureOpenVSwitchResult{}, true, fmt.Errorf("node agent returned Open vSwitch outcome %s", result.GetOutcome())
 		}
 		return ConfigureOpenVSwitchResult{
@@ -176,14 +176,14 @@ func openVSwitchTerminalResult(
 			UplinkInterface: result.GetUplinkInterface(),
 			NetworkBackend:  result.GetNetworkBackend().String(),
 		}, true, nil
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED:
 		return ConfigureOpenVSwitchResult{}, true, fmt.Errorf(
 			"open vSwitch operation %s failed at %s: %s",
 			operationStatus.GetOperationId(),
 			operationStatus.GetStep(),
 			operationStatus.GetErrorMessage(),
 		)
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_UNSPECIFIED:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_UNSPECIFIED:
 		return ConfigureOpenVSwitchResult{}, true, fmt.Errorf(
 			"open vSwitch operation %s returned invalid phase %s",
 			operationStatus.GetOperationId(),

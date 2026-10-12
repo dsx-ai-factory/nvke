@@ -12,10 +12,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 //nolint:interfacebloat // This mirrors the agent RPC surface used by controllers and activities.
@@ -23,34 +23,34 @@ type Client interface {
 	GetKubeconfig(ctx context.Context, node db.Node) (string, error)
 	GetAgentVersion(ctx context.Context, node db.Node) (string, error)
 	SupportsKubeadmFiles(ctx context.Context, node db.Node) (bool, error)
-	GetKubeadmStatus(ctx context.Context, node db.Node) (*nkeproto.KubeadmStatusResponse, error)
-	ScheduleNodeReboot(ctx context.Context, node db.Node) (*nkeproto.ScheduleNodeRebootResponse, error)
-	GetNodeBootInfo(ctx context.Context, node db.Node) (*nkeproto.GetNodeBootInfoResponse, error)
-	ExecuteKubeadmInit(ctx context.Context, node db.Node, req *nkeproto.KubeadmInitRequest) (*nkeproto.KubeadmInitStatusResponse, error)
-	InstallCNI(ctx context.Context, node db.Node, req *nkeproto.InstallCNIRequest) (*nkeproto.InstallCNIResponse, error)
-	ExecuteKubeadmJoin(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinRequest) (*nkeproto.KubeadmJoinStatusResponse, error)
-	ExecuteKubeadmReset(ctx context.Context, node db.Node, req *nkeproto.KubeadmResetRequest) (*nkeproto.KubeadmResetStatusResponse, error)
-	ReconfigureKubeletAPIServer(ctx context.Context, node db.Node, req *nkeproto.ReconfigureKubeletAPIServerRequest) (*nkeproto.ReconfigureKubeletAPIServerResponse, error)
-	StartOpenVSwitchReconciliation(ctx context.Context, node db.Node, req *nkeproto.StartOpenVSwitchReconciliationRequest) (*nkeproto.StartOpenVSwitchReconciliationResponse, error)
-	GetOpenVSwitchReconciliationStatus(ctx context.Context, node db.Node, req *nkeproto.GetOpenVSwitchReconciliationStatusRequest) (*nkeproto.GetOpenVSwitchReconciliationStatusResponse, error)
-	KubeadmUpgradeApply(ctx context.Context, node db.Node, req *nkeproto.KubeadmUpgradeApplyRequest) (*nkeproto.KubeadmUpgradeApplyResponse, error)
-	ReconcileKubeVip(ctx context.Context, node db.Node, req *nkeproto.ReconcileKubeVipRequest) (*nkeproto.ReconcileKubeVipResponse, error)
-	StartKubernetesCertificateRenewal(ctx context.Context, node db.Node, req *nkeproto.StartKubernetesCertificateRenewalRequest) (*nkeproto.StartKubernetesCertificateRenewalResponse, error)
-	GetKubernetesCertificateRenewalStatus(ctx context.Context, node db.Node, req *nkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nkeproto.GetKubernetesCertificateRenewalStatusResponse, error)
-	RemoveEtcdMember(ctx context.Context, node db.Node, req *nkeproto.RemoveEtcdMemberRequest) (*nkeproto.RemoveEtcdMemberResponse, error)
-	ExecuteNodePreflight(ctx context.Context, node db.Node, req *nkeproto.ExecuteNodePreflightRequest) (*nkeproto.ExecuteNodePreflightResponse, error)
-	GetKubeadmJoinString(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinStringRequest) (*nkeproto.KubeadmJoinStringResponse, error)
-	UpdateAndFetchKubeAdmJoinStrings(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinStringRequest) (*nkeproto.KubeadmJoinStringResponse, error)
-	StartK8sControlPlaneNodeGracefulShutdown(ctx context.Context, node db.Node, req *nkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest) (*nkeproto.StartK8SControlPlaneNodeGracefulShutdownResponse, error)
-	GetK8sControlPlaneNodeGracefulShutdownStatus(ctx context.Context, node db.Node, req *nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusRequest) (*nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusResponse, error)
-	ExecuteScript(ctx context.Context, node db.Node, scriptName, scriptContents string, args []string) (*nkeproto.ExecuteScriptResponse, error)
-	PatchAPIServerManifest(ctx context.Context, node db.Node, req *nkeproto.PatchAPIServerManifestRequest) (*nkeproto.PatchAPIServerManifestResponse, error)
+	GetKubeadmStatus(ctx context.Context, node db.Node) (*nvkeproto.KubeadmStatusResponse, error)
+	ScheduleNodeReboot(ctx context.Context, node db.Node) (*nvkeproto.ScheduleNodeRebootResponse, error)
+	GetNodeBootInfo(ctx context.Context, node db.Node) (*nvkeproto.GetNodeBootInfoResponse, error)
+	ExecuteKubeadmInit(ctx context.Context, node db.Node, req *nvkeproto.KubeadmInitRequest) (*nvkeproto.KubeadmInitStatusResponse, error)
+	InstallCNI(ctx context.Context, node db.Node, req *nvkeproto.InstallCNIRequest) (*nvkeproto.InstallCNIResponse, error)
+	ExecuteKubeadmJoin(ctx context.Context, node db.Node, req *nvkeproto.KubeadmJoinRequest) (*nvkeproto.KubeadmJoinStatusResponse, error)
+	ExecuteKubeadmReset(ctx context.Context, node db.Node, req *nvkeproto.KubeadmResetRequest) (*nvkeproto.KubeadmResetStatusResponse, error)
+	ReconfigureKubeletAPIServer(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureKubeletAPIServerRequest) (*nvkeproto.ReconfigureKubeletAPIServerResponse, error)
+	StartOpenVSwitchReconciliation(ctx context.Context, node db.Node, req *nvkeproto.StartOpenVSwitchReconciliationRequest) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error)
+	GetOpenVSwitchReconciliationStatus(ctx context.Context, node db.Node, req *nvkeproto.GetOpenVSwitchReconciliationStatusRequest) (*nvkeproto.GetOpenVSwitchReconciliationStatusResponse, error)
+	KubeadmUpgradeApply(ctx context.Context, node db.Node, req *nvkeproto.KubeadmUpgradeApplyRequest) (*nvkeproto.KubeadmUpgradeApplyResponse, error)
+	ReconcileKubeVip(ctx context.Context, node db.Node, req *nvkeproto.ReconcileKubeVipRequest) (*nvkeproto.ReconcileKubeVipResponse, error)
+	StartKubernetesCertificateRenewal(ctx context.Context, node db.Node, req *nvkeproto.StartKubernetesCertificateRenewalRequest) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error)
+	GetKubernetesCertificateRenewalStatus(ctx context.Context, node db.Node, req *nvkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nvkeproto.GetKubernetesCertificateRenewalStatusResponse, error)
+	RemoveEtcdMember(ctx context.Context, node db.Node, req *nvkeproto.RemoveEtcdMemberRequest) (*nvkeproto.RemoveEtcdMemberResponse, error)
+	ExecuteNodePreflight(ctx context.Context, node db.Node, req *nvkeproto.ExecuteNodePreflightRequest) (*nvkeproto.ExecuteNodePreflightResponse, error)
+	GetKubeadmJoinString(ctx context.Context, node db.Node, req *nvkeproto.KubeadmJoinStringRequest) (*nvkeproto.KubeadmJoinStringResponse, error)
+	UpdateAndFetchKubeAdmJoinStrings(ctx context.Context, node db.Node, req *nvkeproto.KubeadmJoinStringRequest) (*nvkeproto.KubeadmJoinStringResponse, error)
+	StartK8sControlPlaneNodeGracefulShutdown(ctx context.Context, node db.Node, req *nvkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest) (*nvkeproto.StartK8SControlPlaneNodeGracefulShutdownResponse, error)
+	GetK8sControlPlaneNodeGracefulShutdownStatus(ctx context.Context, node db.Node, req *nvkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusRequest) (*nvkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusResponse, error)
+	ExecuteScript(ctx context.Context, node db.Node, scriptName, scriptContents string, args []string) (*nvkeproto.ExecuteScriptResponse, error)
+	PatchAPIServerManifest(ctx context.Context, node db.Node, req *nvkeproto.PatchAPIServerManifestRequest) (*nvkeproto.PatchAPIServerManifestResponse, error)
 	InitializeAPIEncryption(ctx context.Context, node db.Node, encryptionKey string) error
 	PromoteAPIEncryptionProviders(ctx context.Context, node db.Node) error
-	StartEncryptedObjectsRewrite(ctx context.Context, node db.Node, operationID string) (*nkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error)
-	GetEncryptedObjectsRewriteStatus(ctx context.Context, node db.Node, operationID string) (*nkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error)
+	StartEncryptedObjectsRewrite(ctx context.Context, node db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error)
+	GetEncryptedObjectsRewriteStatus(ctx context.Context, node db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error)
 	RemovePlainTextSecondaryEncryptionEntry(ctx context.Context, node db.Node) error
-	StartKubeVIPRestore(ctx context.Context, node db.Node, operationID string) (*nkeproto.NodeAgentOperationStatus, error)
+	StartKubeVIPRestore(ctx context.Context, node db.Node, operationID string) (*nvkeproto.NodeAgentOperationStatus, error)
 }
 
 type NodeAgentClient struct {
@@ -91,7 +91,7 @@ func (c *NodeAgentClient) GetKubeconfig(ctx context.Context, node db.Node) (stri
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).GetKubeconfig(ctx, &nkeproto.KubeconfigRequest{})
+	resp, err := nvkeproto.NewNodeAgentClient(conn).GetKubeconfig(ctx, &nvkeproto.KubeconfigRequest{})
 	if err != nil {
 		return "", fmt.Errorf("failed to get kubeconfig from node agent for node %s: %w", node.Name, err)
 	}
@@ -114,14 +114,14 @@ func (c *NodeAgentClient) GetAgentVersion(ctx context.Context, node db.Node) (st
 	return status.GetAgentVersion(), nil
 }
 
-func (c *NodeAgentClient) GetKubeadmStatus(ctx context.Context, node db.Node) (*nkeproto.KubeadmStatusResponse, error) {
+func (c *NodeAgentClient) GetKubeadmStatus(ctx context.Context, node db.Node) (*nvkeproto.KubeadmStatusResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get kubeadm status from node agent for node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).GetKubeadmStatus(ctx, &nkeproto.KubeadmStatusRequest{})
+	resp, err := nvkeproto.NewNodeAgentClient(conn).GetKubeadmStatus(ctx, &nvkeproto.KubeadmStatusRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get kubeadm status from node agent for node %s: %w", node.Name, err)
 	}
@@ -129,14 +129,14 @@ func (c *NodeAgentClient) GetKubeadmStatus(ctx context.Context, node db.Node) (*
 	return resp, nil
 }
 
-func (c *NodeAgentClient) ScheduleNodeReboot(ctx context.Context, node db.Node) (*nkeproto.ScheduleNodeRebootResponse, error) {
+func (c *NodeAgentClient) ScheduleNodeReboot(ctx context.Context, node db.Node) (*nvkeproto.ScheduleNodeRebootResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent for reboot on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).ScheduleNodeReboot(ctx, &nkeproto.ScheduleNodeRebootRequest{})
+	resp, err := nvkeproto.NewNodeAgentClient(conn).ScheduleNodeReboot(ctx, &nvkeproto.ScheduleNodeRebootRequest{})
 	if status.Code(err) == codes.Unimplemented {
 		return nil, fmt.Errorf("node agent on node %s does not support ScheduleNodeReboot; upgrade the node agent before retrying: %w", node.Name, err)
 	}
@@ -147,14 +147,14 @@ func (c *NodeAgentClient) ScheduleNodeReboot(ctx context.Context, node db.Node) 
 	return resp, nil
 }
 
-func (c *NodeAgentClient) GetNodeBootInfo(ctx context.Context, node db.Node) (*nkeproto.GetNodeBootInfoResponse, error) {
+func (c *NodeAgentClient) GetNodeBootInfo(ctx context.Context, node db.Node) (*nvkeproto.GetNodeBootInfoResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent for boot info on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).GetNodeBootInfo(ctx, &nkeproto.GetNodeBootInfoRequest{})
+	resp, err := nvkeproto.NewNodeAgentClient(conn).GetNodeBootInfo(ctx, &nvkeproto.GetNodeBootInfoRequest{})
 	if status.Code(err) == codes.Unimplemented {
 		return nil, fmt.Errorf("node agent on node %s does not support GetNodeBootInfo; upgrade the node agent before retrying: %w", node.Name, err)
 	}
@@ -169,14 +169,14 @@ func (c *NodeAgentClient) GetNodeBootInfo(ctx context.Context, node db.Node) (*n
 // kube-apiserver static-pod manifest on a control-plane node (used by the OIDC
 // enable/disable rollout). The agent snapshots and self-restores on failure and
 // returns a restored-vs-not-restored outcome so the rollout can halt vs cascade.
-func (c *NodeAgentClient) PatchAPIServerManifest(ctx context.Context, node db.Node, req *nkeproto.PatchAPIServerManifestRequest) (*nkeproto.PatchAPIServerManifestResponse, error) {
+func (c *NodeAgentClient) PatchAPIServerManifest(ctx context.Context, node db.Node, req *nvkeproto.PatchAPIServerManifestRequest) (*nvkeproto.PatchAPIServerManifestResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to patch apiserver manifest on node agent for node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).PatchAPIServerManifest(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).PatchAPIServerManifest(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to patch apiserver manifest on node agent for node %s: %w", node.Name, err)
 	}
@@ -185,35 +185,35 @@ func (c *NodeAgentClient) PatchAPIServerManifest(ctx context.Context, node db.No
 }
 
 // InstallCNI is synchronous: no status to poll afterwards.
-func (c *NodeAgentClient) InstallCNI(ctx context.Context, node db.Node, req *nkeproto.InstallCNIRequest) (*nkeproto.InstallCNIResponse, error) {
+func (c *NodeAgentClient) InstallCNI(ctx context.Context, node db.Node, req *nvkeproto.InstallCNIRequest) (*nvkeproto.InstallCNIResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install CNI on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).InstallCNI(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).InstallCNI(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install CNI on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) ExecuteKubeadmInit(ctx context.Context, node db.Node, req *nkeproto.KubeadmInitRequest) (*nkeproto.KubeadmInitStatusResponse, error) {
+func (c *NodeAgentClient) ExecuteKubeadmInit(ctx context.Context, node db.Node, req *nvkeproto.KubeadmInitRequest) (*nvkeproto.KubeadmInitStatusResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute kubeadm init on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).ExecuteKubeadmInit(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).ExecuteKubeadmInit(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute kubeadm init on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) ExecuteKubeadmJoin(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinRequest) (*nkeproto.KubeadmJoinStatusResponse, error) {
+func (c *NodeAgentClient) ExecuteKubeadmJoin(ctx context.Context, node db.Node, req *nvkeproto.KubeadmJoinRequest) (*nvkeproto.KubeadmJoinStatusResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute kubeadm join on node %s: %w", node.Name, err)
@@ -225,35 +225,35 @@ func (c *NodeAgentClient) ExecuteKubeadmJoin(ctx context.Context, node db.Node, 
 	// promote resp.Status to a Go error here: a re-fired join on an already
 	// joining/joined agent returns an error status, and callers rely on that
 	// being a non-error to stay idempotent under retries.
-	resp, err := nkeproto.NewNodeAgentClient(conn).ExecuteKubeadmJoin(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).ExecuteKubeadmJoin(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute kubeadm join on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) ExecuteKubeadmReset(ctx context.Context, node db.Node, req *nkeproto.KubeadmResetRequest) (*nkeproto.KubeadmResetStatusResponse, error) {
+func (c *NodeAgentClient) ExecuteKubeadmReset(ctx context.Context, node db.Node, req *nvkeproto.KubeadmResetRequest) (*nvkeproto.KubeadmResetStatusResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute kubeadm reset on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).ExecuteKubeadmReset(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).ExecuteKubeadmReset(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute kubeadm reset on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) ReconfigureKubeletAPIServer(ctx context.Context, node db.Node, req *nkeproto.ReconfigureKubeletAPIServerRequest) (*nkeproto.ReconfigureKubeletAPIServerResponse, error) {
+func (c *NodeAgentClient) ReconfigureKubeletAPIServer(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureKubeletAPIServerRequest) (*nvkeproto.ReconfigureKubeletAPIServerResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).ReconfigureKubeletAPIServer(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).ReconfigureKubeletAPIServer(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconfigure kubelet API server on node %s: %w", node.Name, err)
 	}
@@ -263,15 +263,15 @@ func (c *NodeAgentClient) ReconfigureKubeletAPIServer(ctx context.Context, node 
 func (c *NodeAgentClient) StartOpenVSwitchReconciliation(
 	ctx context.Context,
 	node db.Node,
-	req *nkeproto.StartOpenVSwitchReconciliationRequest,
-) (*nkeproto.StartOpenVSwitchReconciliationResponse, error) {
+	req *nvkeproto.StartOpenVSwitchReconciliationRequest,
+) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent to start Open vSwitch reconciliation on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).StartOpenVSwitchReconciliation(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).StartOpenVSwitchReconciliation(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start Open vSwitch reconciliation on node %s: %w", node.Name, err)
 	}
@@ -281,43 +281,43 @@ func (c *NodeAgentClient) StartOpenVSwitchReconciliation(
 func (c *NodeAgentClient) GetOpenVSwitchReconciliationStatus(
 	ctx context.Context,
 	node db.Node,
-	req *nkeproto.GetOpenVSwitchReconciliationStatusRequest,
-) (*nkeproto.GetOpenVSwitchReconciliationStatusResponse, error) {
+	req *nvkeproto.GetOpenVSwitchReconciliationStatusRequest,
+) (*nvkeproto.GetOpenVSwitchReconciliationStatusResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent for Open vSwitch reconciliation status on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).GetOpenVSwitchReconciliationStatus(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).GetOpenVSwitchReconciliationStatus(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Open vSwitch reconciliation status from node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) KubeadmUpgradeApply(ctx context.Context, node db.Node, req *nkeproto.KubeadmUpgradeApplyRequest) (*nkeproto.KubeadmUpgradeApplyResponse, error) {
+func (c *NodeAgentClient) KubeadmUpgradeApply(ctx context.Context, node db.Node, req *nvkeproto.KubeadmUpgradeApplyRequest) (*nvkeproto.KubeadmUpgradeApplyResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent for kubeadm upgrade on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).KubeadmUpgradeApply(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).KubeadmUpgradeApply(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to apply kubeadm upgrade on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) ReconcileKubeVip(ctx context.Context, node db.Node, req *nkeproto.ReconcileKubeVipRequest) (*nkeproto.ReconcileKubeVipResponse, error) {
+func (c *NodeAgentClient) ReconcileKubeVip(ctx context.Context, node db.Node, req *nvkeproto.ReconcileKubeVipRequest) (*nvkeproto.ReconcileKubeVipResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent for kube-vip reconciliation on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).ReconcileKubeVip(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).ReconcileKubeVip(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconcile kube-vip on node %s: %w", node.Name, err)
 	}
@@ -327,14 +327,14 @@ func (c *NodeAgentClient) ReconcileKubeVip(ctx context.Context, node db.Node, re
 func (c *NodeAgentClient) StartKubernetesCertificateRenewal(
 	ctx context.Context,
 	node db.Node,
-	req *nkeproto.StartKubernetesCertificateRenewalRequest,
-) (*nkeproto.StartKubernetesCertificateRenewalResponse, error) {
+	req *nvkeproto.StartKubernetesCertificateRenewalRequest,
+) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent for certificate renewal on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
-	resp, err := nkeproto.NewNodeAgentClient(conn).StartKubernetesCertificateRenewal(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).StartKubernetesCertificateRenewal(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start certificate renewal on node %s: %w", node.Name, err)
 	}
@@ -344,112 +344,112 @@ func (c *NodeAgentClient) StartKubernetesCertificateRenewal(
 func (c *NodeAgentClient) GetKubernetesCertificateRenewalStatus(
 	ctx context.Context,
 	node db.Node,
-	req *nkeproto.GetKubernetesCertificateRenewalStatusRequest,
-) (*nkeproto.GetKubernetesCertificateRenewalStatusResponse, error) {
+	req *nvkeproto.GetKubernetesCertificateRenewalStatusRequest,
+) (*nvkeproto.GetKubernetesCertificateRenewalStatusResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent for certificate renewal status on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
-	resp, err := nkeproto.NewNodeAgentClient(conn).GetKubernetesCertificateRenewalStatus(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).GetKubernetesCertificateRenewalStatus(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get certificate renewal status from node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) RemoveEtcdMember(ctx context.Context, node db.Node, req *nkeproto.RemoveEtcdMemberRequest) (*nkeproto.RemoveEtcdMemberResponse, error) {
+func (c *NodeAgentClient) RemoveEtcdMember(ctx context.Context, node db.Node, req *nvkeproto.RemoveEtcdMemberRequest) (*nvkeproto.RemoveEtcdMemberResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent for etcd member removal on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).RemoveEtcdMember(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).RemoveEtcdMember(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove etcd member from node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) ExecuteNodePreflight(ctx context.Context, node db.Node, req *nkeproto.ExecuteNodePreflightRequest) (*nkeproto.ExecuteNodePreflightResponse, error) {
+func (c *NodeAgentClient) ExecuteNodePreflight(ctx context.Context, node db.Node, req *nvkeproto.ExecuteNodePreflightRequest) (*nvkeproto.ExecuteNodePreflightResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute node preflight on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).ExecuteNodePreflight(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).ExecuteNodePreflight(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute node preflight on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) GetKubeadmJoinString(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinStringRequest) (*nkeproto.KubeadmJoinStringResponse, error) {
+func (c *NodeAgentClient) GetKubeadmJoinString(ctx context.Context, node db.Node, req *nvkeproto.KubeadmJoinStringRequest) (*nvkeproto.KubeadmJoinStringResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get kubeadm join string from node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).GetKubeadmJoinString(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).GetKubeadmJoinString(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get kubeadm join string from node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) UpdateAndFetchKubeAdmJoinStrings(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinStringRequest) (*nkeproto.KubeadmJoinStringResponse, error) {
+func (c *NodeAgentClient) UpdateAndFetchKubeAdmJoinStrings(ctx context.Context, node db.Node, req *nvkeproto.KubeadmJoinStringRequest) (*nvkeproto.KubeadmJoinStringResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update and fetch kubeadm join strings from node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).UpdateAndFetchKubeAdmJoinStrings(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).UpdateAndFetchKubeAdmJoinStrings(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update and fetch kubeadm join strings from node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) StartK8sControlPlaneNodeGracefulShutdown(ctx context.Context, node db.Node, req *nkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest) (*nkeproto.StartK8SControlPlaneNodeGracefulShutdownResponse, error) {
+func (c *NodeAgentClient) StartK8sControlPlaneNodeGracefulShutdown(ctx context.Context, node db.Node, req *nvkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest) (*nvkeproto.StartK8SControlPlaneNodeGracefulShutdownResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start control-plane graceful shutdown on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).StartK8SControlPlaneNodeGracefulShutdown(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).StartK8SControlPlaneNodeGracefulShutdown(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start control-plane graceful shutdown on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) GetK8sControlPlaneNodeGracefulShutdownStatus(ctx context.Context, node db.Node, req *nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusRequest) (*nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusResponse, error) {
+func (c *NodeAgentClient) GetK8sControlPlaneNodeGracefulShutdownStatus(ctx context.Context, node db.Node, req *nvkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusRequest) (*nvkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get control-plane graceful shutdown status from node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).GetK8SControlPlaneNodeGracefulShutdownStatus(ctx, req)
+	resp, err := nvkeproto.NewNodeAgentClient(conn).GetK8SControlPlaneNodeGracefulShutdownStatus(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get control-plane graceful shutdown status from node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
 
-func (c *NodeAgentClient) ExecuteScript(ctx context.Context, node db.Node, scriptName, scriptContents string, args []string) (*nkeproto.ExecuteScriptResponse, error) {
+func (c *NodeAgentClient) ExecuteScript(ctx context.Context, node db.Node, scriptName, scriptContents string, args []string) (*nvkeproto.ExecuteScriptResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute script on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).ExecuteScript(ctx, &nkeproto.ExecuteScriptRequest{
+	resp, err := nvkeproto.NewNodeAgentClient(conn).ExecuteScript(ctx, &nvkeproto.ExecuteScriptRequest{
 		ScriptName:     scriptName,
 		ScriptContents: scriptContents,
 		Async:          false,
@@ -469,9 +469,9 @@ func (c *NodeAgentClient) InitializeAPIEncryption(ctx context.Context, node db.N
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).InitializeKubernetesAPIEncryption(
+	resp, err := nvkeproto.NewNodeAgentClient(conn).InitializeKubernetesAPIEncryption(
 		ctx,
-		&nkeproto.InitializeKubernetesAPIEncryptionRequest{EncryptionKey: encryptionKey},
+		&nvkeproto.InitializeKubernetesAPIEncryptionRequest{EncryptionKey: encryptionKey},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to initialize API encryption on %s: %w", node.Name, err)
@@ -489,25 +489,25 @@ func (c *NodeAgentClient) PromoteAPIEncryptionProviders(ctx context.Context, nod
 	}
 	defer cleanup()
 
-	if _, err := nkeproto.NewNodeAgentClient(conn).PromoteKubernetesAPIEncryptionProviders(
+	if _, err := nvkeproto.NewNodeAgentClient(conn).PromoteKubernetesAPIEncryptionProviders(
 		ctx,
-		&nkeproto.PromoteKubernetesAPIEncryptionProvidersRequest{},
+		&nvkeproto.PromoteKubernetesAPIEncryptionProvidersRequest{},
 	); err != nil {
 		return fmt.Errorf("failed to promote API encryption providers on %s: %w", node.Name, err)
 	}
 	return nil
 }
 
-func (c *NodeAgentClient) StartEncryptedObjectsRewrite(ctx context.Context, node db.Node, operationID string) (*nkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
+func (c *NodeAgentClient) StartEncryptedObjectsRewrite(ctx context.Context, node db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent on %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).StartEtcdEncryptionAtRestObjectsRewrite(
+	resp, err := nvkeproto.NewNodeAgentClient(conn).StartEtcdEncryptionAtRestObjectsRewrite(
 		ctx,
-		&nkeproto.StartEtcdEncryptionAtRestObjectsRewriteRequest{OperationId: operationID},
+		&nvkeproto.StartEtcdEncryptionAtRestObjectsRewriteRequest{OperationId: operationID},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start encrypted-object rewrite on %s: %w", node.Name, err)
@@ -515,16 +515,16 @@ func (c *NodeAgentClient) StartEncryptedObjectsRewrite(ctx context.Context, node
 	return resp.GetOperation(), nil
 }
 
-func (c *NodeAgentClient) GetEncryptedObjectsRewriteStatus(ctx context.Context, node db.Node, operationID string) (*nkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
+func (c *NodeAgentClient) GetEncryptedObjectsRewriteStatus(ctx context.Context, node db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent on %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).GetEtcdEncryptionAtRestObjectsRewriteStatus(
+	resp, err := nvkeproto.NewNodeAgentClient(conn).GetEtcdEncryptionAtRestObjectsRewriteStatus(
 		ctx,
-		&nkeproto.GetEtcdEncryptionAtRestObjectsRewriteStatusRequest{OperationId: operationID},
+		&nvkeproto.GetEtcdEncryptionAtRestObjectsRewriteStatusRequest{OperationId: operationID},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get encrypted-object rewrite status on %s: %w", node.Name, err)
@@ -539,9 +539,9 @@ func (c *NodeAgentClient) RemovePlainTextSecondaryEncryptionEntry(ctx context.Co
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).RemovePlainTextSecondaryEncryptionEntry(
+	resp, err := nvkeproto.NewNodeAgentClient(conn).RemovePlainTextSecondaryEncryptionEntry(
 		ctx,
-		&nkeproto.RemovePlainTextSecondaryEncryptionEntryRequest{},
+		&nvkeproto.RemovePlainTextSecondaryEncryptionEntryRequest{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to remove plaintext encryption entry on %s: %w", node.Name, err)
@@ -552,16 +552,16 @@ func (c *NodeAgentClient) RemovePlainTextSecondaryEncryptionEntry(ctx context.Co
 	return nil
 }
 
-func (c *NodeAgentClient) StartKubeVIPRestore(ctx context.Context, node db.Node, operationID string) (*nkeproto.NodeAgentOperationStatus, error) {
+func (c *NodeAgentClient) StartKubeVIPRestore(ctx context.Context, node db.Node, operationID string) (*nvkeproto.NodeAgentOperationStatus, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node agent on %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).StartKubeVipRestore(
+	resp, err := nvkeproto.NewNodeAgentClient(conn).StartKubeVipRestore(
 		ctx,
-		&nkeproto.StartKubeVipRestoreRequest{OperationId: operationID},
+		&nvkeproto.StartKubeVipRestoreRequest{OperationId: operationID},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start kube-vip restore on %s: %w", node.Name, err)

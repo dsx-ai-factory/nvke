@@ -12,14 +12,14 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	internalv1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
-	"github.com/dsx-ai-factory/nke/management-engine/internal/cwe"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	"github.com/dsx-ai-factory/nvke/management-engine/internal/cwe"
 )
 
 var errCreateRejected = errors.New("cluster creation request was rejected")
 
-func (r *NKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *internalv1.NKECluster) (ctrl.Result, error) {
+func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *internalv1.NKECluster) (ctrl.Result, error) {
 	observedCluster, err := r.ensureCluster(ctx, cluster)
 	if err != nil {
 		return r.lifecycleError(cluster, err)
@@ -28,7 +28,7 @@ func (r *NKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *in
 	return ctrl.Result{RequeueAfter: r.PollInterval}, nil
 }
 
-func (r *NKEClusterReconciler) ensureCluster(ctx context.Context, cluster *internalv1.NKECluster) (*api.Cluster, error) {
+func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *internalv1.NKECluster) (*api.Cluster, error) {
 	// Recover existing work before resolving a spec that may have changed since creation.
 	observedCluster, err := r.findCluster(ctx, cluster)
 	if !errors.Is(err, cwe.ErrNotFound) {
@@ -87,7 +87,7 @@ func (r *NKEClusterReconciler) ensureCluster(ctx context.Context, cluster *inter
 }
 
 // Lookup also recovers a successful create whose response or status write was lost.
-func (r *NKEClusterReconciler) findCluster(ctx context.Context, cluster *internalv1.NKECluster) (*api.Cluster, error) {
+func (r *NVKEClusterReconciler) findCluster(ctx context.Context, cluster *internalv1.NKECluster) (*api.Cluster, error) {
 	state := cluster.Status.Provisioning
 	if state != nil && state.Endpoint != r.CWE.Endpoint() {
 		return nil, &InvalidSpecError{Message: "Cluster provisioning service has changed; restore the original configuration"}

@@ -54,7 +54,7 @@ Provide the following before installing NKTP.
 ```bash
 kubectl create namespace nktp
 kubectl label namespace nktp pod-security.kubernetes.io/enforce=privileged
-helm install nktp oci://ghcr.io/dsx-ai-factory/nke/charts/nktp \
+helm install nktp oci://ghcr.io/dsx-ai-factory/nvke/charts/nktp \
   --version <version> --namespace nktp --values my-values.yaml --wait
 ```
 
@@ -231,5 +231,5 @@ except the link below.
 
 ## More information
 
-The [NKTP documentation](https://github.com/dsx-ai-factory/nke/tree/main/docs/nktp)
+The [NKTP documentation](https://github.com/dsx-ai-factory/nvke/tree/main/docs/nktp)
 covers each component, configuration guides, operations, and design documents.

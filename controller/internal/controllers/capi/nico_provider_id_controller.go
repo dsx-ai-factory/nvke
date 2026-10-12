@@ -19,8 +19,8 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
 )
 
 const (
@@ -80,7 +80,7 @@ func (c *NicoProviderIDController) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// The owner Machine anchors the CAPI cluster relationship and defines the
-	// tenant Node name used by NKE bootstrap.
+	// tenant Node name used by NVKE bootstrap.
 	machine, err := capiutil.GetOwnerMachine(ctx, c.k8sClient, nicoMachine.ObjectMeta)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get owner machine: %w", err)
@@ -118,7 +118,7 @@ func (c *NicoProviderIDController) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, fmt.Errorf("failed to create tenant cluster client: %w", err)
 	}
 
-	// In the current NKE CAPI path, the controller creates Machine.Name from db.Node.Name
+	// In the current NVKE CAPI path, the controller creates Machine.Name from db.Node.Name
 	// and the controller passes that same value to kubeadm as nodeRegistration.name.
 	node := &corev1.Node{}
 	if err := tenantClient.Get(ctx, client.ObjectKey{Name: machine.Name}, node); err != nil {

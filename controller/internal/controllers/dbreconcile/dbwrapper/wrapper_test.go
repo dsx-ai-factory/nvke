@@ -18,10 +18,10 @@ import (
 	"k8s.io/utils/ptr"
 	crsource "sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile"
-	dbfilters "github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/filters"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile"
+	dbfilters "github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/filters"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestUnit_DBEnqueuesNodeAfterUpdate(t *testing.T) {

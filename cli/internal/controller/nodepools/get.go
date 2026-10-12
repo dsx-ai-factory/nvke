@@ -12,13 +12,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/clients"
-	"github.com/dsx-ai-factory/nke/cli/internal/clusterstate"
-	"github.com/dsx-ai-factory/nke/cli/internal/util"
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/cli/internal/clients"
+	"github.com/dsx-ai-factory/nvke/cli/internal/clusterstate"
+	"github.com/dsx-ai-factory/nvke/cli/internal/util"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
-// NewGetCmd returns the "nkectl get nodepools" subcommand. Both filters are
+// NewGetCmd returns the "nvkectl get nodepools" subcommand. Both filters are
 // applied by the controller, not locally.
 func NewGetCmd(clientFn ControllerClientFn) *cobra.Command {
 	var (
@@ -37,13 +37,13 @@ are unique within a cluster, so a name on its own can match a pool in every
 cluster; pass --cluster as well to select one.
 
 Example — every pool of one cluster:
-  nkectl get nodepools --cluster my-cluster
+  nvkectl get nodepools --cluster my-cluster
 
 Example — two pools by name:
-  nkectl get nodepools control-plane gpu-workers --cluster my-cluster
+  nvkectl get nodepools control-plane gpu-workers --cluster my-cluster
 
 Example — one pool, as YAML:
-  nkectl get nodepools gpu-workers --cluster my-cluster -o yaml`,
+  nvkectl get nodepools gpu-workers --cluster my-cluster -o yaml`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f, err := util.ParseFormat(outputFormat)

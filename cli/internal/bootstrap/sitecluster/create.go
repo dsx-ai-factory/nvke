@@ -13,9 +13,9 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
-	"github.com/dsx-ai-factory/nke/cli/internal/clusterstate"
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nvke/cli/internal/clusterstate"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 // pollInterval is how often WaitProvisioned asks the controller where it has got to. A

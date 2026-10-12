@@ -21,9 +21,9 @@ import (
 
 	"github.com/lmittmann/tint"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/app"
-	nvmconfig "github.com/dsx-ai-factory/nke/controller/nico-sim/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/seed"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/app"
+	nvmconfig "github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/seed"
 )
 
 // runTestServer starts a nico-sim instance configured for integration testing.

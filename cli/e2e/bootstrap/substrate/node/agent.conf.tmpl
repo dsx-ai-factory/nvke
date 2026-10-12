@@ -2,9 +2,9 @@
 # image at build time (cli/e2e/bootstrap/substrate/image.go).
 #
 # The host boots with this already in place and spire-agent already running, so
-# it is looking for its SPIRE server before `nkectl bootstrap site` deploys one
+# it is looking for its SPIRE server before `nvkectl bootstrap site` deploys one
 # and simply retries until it appears. That is what a real pre-provisioned
-# machine looks like by the time nkectl hears about it.
+# machine looks like by the time nvkectl hears about it.
 #
 # ${TPM_PLUGIN_CHECKSUM} is left for spire-agent to expand at run time (its unit
 # runs with -expandEnv and reads /etc/spire-agent/spire-agent.env), so the
@@ -24,7 +24,7 @@ agent {
     rebootstrap_mode = "always"
 
     # A real trust anchor, not trust-on-first-use: this is the CA the suite
-    # generated and also handed to `nkectl bootstrap site`, which configures
+    # generated and also handed to `nvkectl bootstrap site`, which configures
     # SPIRE to chain its own CA to it. The agent can therefore verify the
     # server the first time it speaks to it.
     trust_bundle_path = "{{ .TrustBundlePath }}"

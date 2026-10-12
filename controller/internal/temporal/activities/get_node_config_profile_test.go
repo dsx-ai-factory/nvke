@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/runbook"
+	"github.com/dsx-ai-factory/nvke/controller/internal/runbook"
 )
 
 func TestGetConfigProfile(t *testing.T) {

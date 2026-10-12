@@ -10,7 +10,7 @@ import (
 
 var openVSwitchReconciliationCounter = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
-		Name: "nke_controller_open_vswitch_reconciliation_total",
+		Name: "nvke_controller_open_vswitch_reconciliation_total",
 		Help: "Total Open vSwitch reconciliation attempts by target cluster/node, implementation path, and result.",
 	},
 	[]string{tenantClusterLabel, nodeNameLabel, "path", resultLabel},

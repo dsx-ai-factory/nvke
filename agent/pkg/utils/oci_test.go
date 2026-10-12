@@ -19,24 +19,24 @@ func TestBuildBundleReference(t *testing.T) {
 	}{
 		{
 			name:        "development registry with longhorn-prereqs",
-			registryURL: "registry.example.com/nke/bundles",
+			registryURL: "registry.example.com/nvke/bundles",
 			bundleName:  "longhorn-prereqs",
 			version:     "v1.0.0",
-			want:        "registry.example.com/nke/bundles/bundles-longhorn-prereqs:v1.0.0",
+			want:        "registry.example.com/nvke/bundles/bundles-longhorn-prereqs:v1.0.0",
 		},
 		{
 			name:        "production registry with kubeadm",
-			registryURL: "registry.example.com/nke",
+			registryURL: "registry.example.com/nvke",
 			bundleName:  "kubeadm",
 			version:     "v1.31.9",
-			want:        "registry.example.com/nke/bundles-kubeadm:v1.31.9",
+			want:        "registry.example.com/nvke/bundles-kubeadm:v1.31.9",
 		},
 		{
 			name:        "calico bundle",
-			registryURL: "registry.example.com/nke/bundles",
+			registryURL: "registry.example.com/nvke/bundles",
 			bundleName:  "calico",
 			version:     "v3.30.1",
-			want:        "registry.example.com/nke/bundles/bundles-calico:v3.30.1",
+			want:        "registry.example.com/nvke/bundles/bundles-calico:v3.30.1",
 		},
 	}
 
@@ -58,31 +58,31 @@ func TestBuildCollectionReference(t *testing.T) {
 	}{
 		{
 			name:           "default collection",
-			registryURL:    "registry.example.com/nke/bundles",
+			registryURL:    "registry.example.com/nvke/bundles",
 			collectionName: "",
 			version:        "v1.0.0",
-			want:           "registry.example.com/nke/bundles/bundles-collections:v1.0.0",
+			want:           "registry.example.com/nvke/bundles/bundles-collections:v1.0.0",
 		},
 		{
 			name:           "default collection explicit",
-			registryURL:    "registry.example.com/nke/bundles",
+			registryURL:    "registry.example.com/nvke/bundles",
 			collectionName: "default",
 			version:        "v1.0.0",
-			want:           "registry.example.com/nke/bundles/bundles-collections:v1.0.0",
+			want:           "registry.example.com/nvke/bundles/bundles-collections:v1.0.0",
 		},
 		{
 			name:           "calico collection",
-			registryURL:    "registry.example.com/nke/bundles",
+			registryURL:    "registry.example.com/nvke/bundles",
 			collectionName: "calico",
 			version:        "v2.0.0",
-			want:           "registry.example.com/nke/bundles/bundles-collections-calico:v2.0.0",
+			want:           "registry.example.com/nvke/bundles/bundles-collections-calico:v2.0.0",
 		},
 		{
 			name:           "ovn collection",
-			registryURL:    "registry.example.com/nke/bundles",
+			registryURL:    "registry.example.com/nvke/bundles",
 			collectionName: "ovn",
 			version:        "v1.5.0",
-			want:           "registry.example.com/nke/bundles/bundles-collections-ovn:v1.5.0",
+			want:           "registry.example.com/nvke/bundles/bundles-collections-ovn:v1.5.0",
 		},
 	}
 
@@ -173,10 +173,10 @@ ID=ubuntu`
 
 func TestOCIConfig(t *testing.T) {
 	config := OCIConfig{
-		RegistryURL: "registry.example.com/nke/bundles",
+		RegistryURL: "registry.example.com/nvke/bundles",
 	}
 
-	assert.Equal(t, "registry.example.com/nke/bundles", config.RegistryURL)
+	assert.Equal(t, "registry.example.com/nvke/bundles", config.RegistryURL)
 }
 
 func TestNGCOAuthUsername(t *testing.T) {

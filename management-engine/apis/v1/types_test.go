@@ -61,7 +61,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		{
 			resource: "machineimages", kind: "MachineImage",
 			object: &MachineImage{
-				Name: "nke-nico-vms-24.04-amd64-fde",
+				Name: "nvke-nico-vms-24.04-amd64-fde",
 				Spec: MachineImageSpec{
 					OperatingSystem: OperatingSystem{Family: "ubuntu", Version: "24.04"},
 					Architecture:    "amd64",
@@ -74,9 +74,9 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		{
 			resource: "clusterreleases", kind: "ClusterRelease",
 			object: &ClusterRelease{
-				Name: "nke-nico-vms-24.04-amd64-fde",
+				Name: "nvke-nico-vms-24.04-amd64-fde",
 				Spec: ClusterReleaseSpec{
-					MachineImageRef: MachineImageReference{Name: "nke-nico-vms-24.04-amd64-fde"},
+					MachineImageRef: MachineImageReference{Name: "nvke-nico-vms-24.04-amd64-fde"},
 					MachineInit:     testMachineInit(),
 				},
 			},
@@ -84,9 +84,9 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		{
 			resource: "nodepoolreleases", kind: "NodePoolRelease",
 			object: &NodePoolRelease{
-				Name: "nke-nico-vms-24.04-amd64-fde",
+				Name: "nvke-nico-vms-24.04-amd64-fde",
 				Spec: NodePoolReleaseSpec{
-					MachineImageRef: MachineImageReference{Name: "nke-nico-vms-24.04-amd64-fde"},
+					MachineImageRef: MachineImageReference{Name: "nvke-nico-vms-24.04-amd64-fde"},
 					MachineInit:     testMachineInit(),
 				},
 			},
@@ -211,7 +211,7 @@ func firstAuthenticator(t *testing.T, obj map[string]any) map[string]any {
 // Deprecating a release goes through the Go types, so a decode/edit/encode
 // cycle must not itself look like a change to the immutable content. Without
 // this, the spec-level rule could pass its own unit tests and still reject
-// every write a controller or nkectl makes.
+// every write a controller or nvkectl makes.
 func TestLifecycleEditRoundTripsThroughGoTypes(t *testing.T) {
 	for _, resource := range releaseResources {
 		t.Run(resource, func(t *testing.T) {

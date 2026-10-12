@@ -19,7 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
 const (
@@ -90,7 +90,7 @@ func validateOVNLifecycleTraffic(ctx context.Context, test *tenantTest, phase st
 }
 
 func currentOVNLifecycleNodeCounts(ctx context.Context, test *tenantTest) (map[string]int, error) {
-	pools, err := test.nke.ListNodePools(ctx, test.cluster.ID)
+	pools, err := test.nvke.ListNodePools(ctx, test.cluster.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func currentOVNLifecycleNodeCounts(ctx context.Context, test *tenantTest) (map[s
 // currentControllerControlPlaneCount returns the current desired count of the
 // cluster's controller-managed control plane.
 func currentControllerControlPlaneCount(ctx context.Context, test *tenantTest) (int, error) {
-	controlPlane, err := test.nke.GetClusterControlPlane(ctx, test.cluster.ID)
+	controlPlane, err := test.nvke.GetClusterControlPlane(ctx, test.cluster.ID)
 	if err != nil {
 		return 0, err
 	}

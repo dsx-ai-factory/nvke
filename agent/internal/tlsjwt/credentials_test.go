@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/credentials"
 
-	"github.com/dsx-ai-factory/nke/agent/pkg/nkeauth"
+	"github.com/dsx-ai-factory/nvke/agent/pkg/nkeauth"
 )
 
 // stubBaseCredentials stands in for the agent's SPIFFE mTLS server credentials.

@@ -59,7 +59,7 @@ env:
 jobs:
   clear-on-head:
     name: Clear the labels on a new head
-    if: github.repository == 'dsx-ai-factory/nke' && github.event_name == 'pull_request_target'
+    if: github.repository_id == '1323115536' && github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -89,7 +89,7 @@ jobs:
 
   check:
     name: Check open PRs for test gates
-    if: github.repository == 'dsx-ai-factory/nke' && github.event_name != 'pull_request_target'
+    if: github.repository_id == '1323115536' && github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
     permissions:
       # git/ref read for the mirror branch. conflict-check.yml carries this for

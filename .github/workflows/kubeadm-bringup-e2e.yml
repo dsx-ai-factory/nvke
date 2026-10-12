@@ -67,7 +67,7 @@ jobs:
             # was wrong.
             runner: arc-arm64-kvm-8c16g
     runs-on: ${{ matrix.runner }}
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     # Still sized for the emulated path, so a fall back to TCG cannot time out.
     timeout-minutes: 240
     permissions:
@@ -102,7 +102,7 @@ jobs:
 
       # Not a gate. nico-vms picks its domain type from a bare os.Stat("/dev/kvm")
       # and logs nothing, so this is the only place a run says which it got.
-      # FIXME: https://github.com/dsx-ai-factory/nke/issues/219 -- move to bare metal.
+      # FIXME: https://github.com/dsx-ai-factory/nvke/issues/219 -- move to bare metal.
       - name: Report the accelerator
         run: |
           set -euo pipefail
@@ -127,12 +127,12 @@ jobs:
 
       # ── Step A ──────────────────────────────────────────────────────────────
       # Boots two stock Ubuntu VMs and proves they can reach each other. Installs
-      # nothing, so it depends on no NKE infrastructure and answers "does
+      # nothing, so it depends on no NVKE infrastructure and answers "does
       # nico-vms work on this runner" on its own. -C controller because the suite
       # lives in that module, which keeps go.work and other modules' go.mod out
       # of this change. NICO_VMS_LIBVIRT_NETWORK is deliberately absent: setting
       # it at all selects libvirt-network mode, which is for shared hosts.
-      - name: Smoke test nico-vms (2 VMs, no NKE packages)
+      - name: Smoke test nico-vms (2 VMs, no NVKE packages)
         env:
           # Defaults are sized for hardware virtualisation; readiness is 15m.
           NICO_VMS_READINESS_TIMEOUT: 45m
@@ -148,7 +148,7 @@ jobs:
         run: go test -C controller -tags kubeadm_bringup -timeout 60m -v -run TestNicoVMSSmoke ./test/kubeadm/...
 
       # ── Step B gate ─────────────────────────────────────────────────────────
-      # The bring-up installs from community artifacts, so there is no NKE apt
+      # The bring-up installs from community artifacts, so there is no NVKE apt
       # repository to reach and nothing to probe. nke-agent is built here rather
       # than downloaded, which also makes the suite exercise the agent in the
       # pull request instead of a published one.
@@ -207,7 +207,7 @@ jobs:
       # written, and a second red step would obscure the first.
       - name: Upload bringup diagnostics
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # The arch too: GitHub keeps two same-named artifacts, so without it
           # a download cannot tell the legs apart.

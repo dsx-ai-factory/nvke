@@ -21,9 +21,9 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/capi"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 const (
@@ -58,13 +58,13 @@ func TestResources_ApplyClusterScaffold(t *testing.T) {
 			err := capi.ApplyClusterScaffold(ctx, k8sClient, params.cluster, false, "cloud-workflow-engine", "cloud-workflow-engine")
 			require.NoError(t, err)
 
-			namespace := constants.NamespaceNKESystem
+			namespace := constants.NamespaceNVKESystem
 
 			clusterObj := &clusterv1.Cluster{}
 			require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Name: params.cluster.Name, Namespace: namespace}, clusterObj))
 			require.NotNil(t, clusterObj)
 			assert.Equal(t, namespace, clusterObj.Namespace)
-			assert.Equal(t, "cloud-workflow-engine", clusterObj.Labels[constants.LabelKeyNkeManagedBy])
+			assert.Equal(t, "cloud-workflow-engine", clusterObj.Labels[constants.LabelKeyNvkeManagedBy])
 			assert.Equal(t, nicov1.GroupVersion.Group, clusterObj.Spec.InfrastructureRef.APIGroup)
 			assert.Equal(t, testNicoClusterKind, clusterObj.Spec.InfrastructureRef.Kind)
 			assert.Equal(t, params.cluster.Name, clusterObj.Spec.InfrastructureRef.Name)

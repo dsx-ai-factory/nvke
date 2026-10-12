@@ -450,7 +450,7 @@ def register(ctx):
 
 
     # -----------------------------------------------------------------------
-    # Convenience button: create a sample nico-vms-backed NKE cluster.
+    # Convenience button: create a sample nico-vms-backed NVKE cluster.
     # Defaults to 1 control-plane + 1 worker node using the seed resources.
     # -----------------------------------------------------------------------
     _cwe_port = os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
@@ -473,7 +473,7 @@ def register(ctx):
             icon_name="add_box",
             text="Create sample nico-vms cluster",
             inputs=[
-                text_input("CLUSTER_NAME", label="Cluster name", default="nico-vms", placeholder="Name for the NKE cluster"),
+                text_input("CLUSTER_NAME", label="Cluster name", default="nico-vms", placeholder="Name for the NVKE cluster"),
                 text_input("KUBERNETES_VERSION", label="Kubernetes version", default="1.34.2", placeholder="Tenant Kubernetes version"),
                 text_input("CONTROL_PLANE_DESIRED_COUNT", label="Control-plane nodes", default="1", placeholder="Number of control-plane VMs"),
                 text_input("WORKER_DESIRED_COUNT", label="Worker nodes", default="1", placeholder="Number of worker VMs"),

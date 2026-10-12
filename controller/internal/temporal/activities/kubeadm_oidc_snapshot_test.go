@@ -22,15 +22,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/yaml"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent/agenttest"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/nkerbac"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 const (
@@ -131,7 +131,7 @@ func TestOIDCSnapshotJoinUsesPinnedProviders(t *testing.T) {
 	require.NoError(t, tenantClient.Create(context.Background(), etcdMirrorPod(joinedNode.Name,
 		"--quota-backend-bytes="+kubeadmconfig.EtcdQuotaBackendBytes)))
 	agent := &snapshotWiringAgent{FakeClient: &agenttest.FakeClient{}, joinStatus: true}
-	a := snapshotActivities(database, agent, config.Config{}, nkeRBACConfigMap(exchanged))
+	a := snapshotActivities(database, agent, config.Config{}, nvkeRBACConfigMap(exchanged))
 	a.tenantClientProvider = &fakeTenantClientProvider{tenantClient: tenantClient}
 
 	err := executeSnapshotJoin(t, a, joiningNode)
@@ -146,51 +146,51 @@ func TestOIDCSnapshotJoinUsesPinnedProviders(t *testing.T) {
 
 type snapshotWiringAgent struct {
 	*agenttest.FakeClient
-	initRequests []*nkeproto.KubeadmInitRequest
-	joinRequests []*nkeproto.KubeadmJoinRequest
+	initRequests []*nvkeproto.KubeadmInitRequest
+	joinRequests []*nvkeproto.KubeadmJoinRequest
 	initStatus   bool
 	joinStatus   bool
 	statusCalls  int
 }
 
-func (f *snapshotWiringAgent) GetKubeadmStatus(context.Context, db.Node) (*nkeproto.KubeadmStatusResponse, error) {
+func (f *snapshotWiringAgent) GetKubeadmStatus(context.Context, db.Node) (*nvkeproto.KubeadmStatusResponse, error) {
 	f.statusCalls++
 	if f.initStatus {
 		if f.statusCalls == 1 {
-			return &nkeproto.KubeadmStatusResponse{}, nil
+			return &nvkeproto.KubeadmStatusResponse{}, nil
 		}
-		return &nkeproto.KubeadmStatusResponse{KubeadmPhase: kubeadmPhaseInit, KubeadmStatus: kubeadmStatusReady, CniInstallStatus: cniStatusReady}, nil
+		return &nvkeproto.KubeadmStatusResponse{KubeadmPhase: kubeadmPhaseInit, KubeadmStatus: kubeadmStatusReady, CniInstallStatus: cniStatusReady}, nil
 	}
 	if f.joinStatus {
-		return &nkeproto.KubeadmStatusResponse{KubeadmPhase: kubeadmPhaseJoin, KubeadmStatus: kubeadmStatusReady}, nil
+		return &nvkeproto.KubeadmStatusResponse{KubeadmPhase: kubeadmPhaseJoin, KubeadmStatus: kubeadmStatusReady}, nil
 	}
-	return &nkeproto.KubeadmStatusResponse{}, nil
+	return &nvkeproto.KubeadmStatusResponse{}, nil
 }
 
 func (f *snapshotWiringAgent) ExecuteKubeadmInit(
 	_ context.Context,
 	_ db.Node,
-	req *nkeproto.KubeadmInitRequest,
-) (*nkeproto.KubeadmInitStatusResponse, error) {
+	req *nvkeproto.KubeadmInitRequest,
+) (*nvkeproto.KubeadmInitStatusResponse, error) {
 	f.initRequests = append(f.initRequests, req)
-	return &nkeproto.KubeadmInitStatusResponse{}, nil
+	return &nvkeproto.KubeadmInitStatusResponse{}, nil
 }
 
 func (f *snapshotWiringAgent) ExecuteKubeadmJoin(
 	_ context.Context,
 	_ db.Node,
-	req *nkeproto.KubeadmJoinRequest,
-) (*nkeproto.KubeadmJoinStatusResponse, error) {
+	req *nvkeproto.KubeadmJoinRequest,
+) (*nvkeproto.KubeadmJoinStatusResponse, error) {
 	f.joinRequests = append(f.joinRequests, req)
-	return &nkeproto.KubeadmJoinStatusResponse{}, nil
+	return &nvkeproto.KubeadmJoinStatusResponse{}, nil
 }
 
 func (f *snapshotWiringAgent) UpdateAndFetchKubeAdmJoinStrings(
 	context.Context,
 	db.Node,
-	*nkeproto.KubeadmJoinStringRequest,
-) (*nkeproto.KubeadmJoinStringResponse, error) {
-	return &nkeproto.KubeadmJoinStringResponse{
+	*nvkeproto.KubeadmJoinStringRequest,
+) (*nvkeproto.KubeadmJoinStringResponse, error) {
+	return &nvkeproto.KubeadmJoinStringResponse{
 		ControlplaneJoinString: "kubeadm join 192.0.2.10:6443 --control-plane --certificate-key REDACTED " +
 			"--token example-token.REDACTED --discovery-token-ca-cert-hash sha256:REDACTED",
 		WorkerJoinString: "kubeadm join 192.0.2.10:6443 --token example-token.REDACTED " +
@@ -209,10 +209,10 @@ func snapshotActivities(database *testutil.MockDB, agent *snapshotWiringAgent, c
 	}
 }
 
-func nkeRBACConfigMap(subject string) *corev1.ConfigMap {
+func nvkeRBACConfigMap(subject string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: constants.NamespaceNKESystem, Name: nkerbac.ConfigMapName},
-		Data: map[string]string{nkerbac.ConfigMapKey: `apiVersion: rbac.authorization.k8s.io/v1
+		ObjectMeta: metav1.ObjectMeta{Namespace: constants.NamespaceNVKESystem, Name: nvkerbac.ConfigMapName},
+		Data: map[string]string{nvkerbac.ConfigMapKey: `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: nke:capi-cluster-admin
@@ -236,7 +236,7 @@ func userValidationExpressions(authenticator apiserverv1.JWTAuthenticator) []str
 }
 
 func snapshotSharedConfig() config.Config {
-	return config.Config{NkeOIDCAuth: config.NkeOIDCAuth{
+	return config.Config{NvkeOIDCAuth: config.NvkeOIDCAuth{
 		Enabled:   true,
 		IssuerURL: snapshotSharedIssuer,
 	}}
@@ -356,7 +356,7 @@ func executeSnapshotJoin(t *testing.T, a *Activities, node db.Node) error {
 	return err
 }
 
-func authenticationConfigFromFiles(t *testing.T, files []*nkeproto.File) apiserverv1.AuthenticationConfiguration {
+func authenticationConfigFromFiles(t *testing.T, files []*nvkeproto.File) apiserverv1.AuthenticationConfiguration {
 	t.Helper()
 	for _, file := range files {
 		if file.GetPath() != kubeadmconfig.OIDCAuthConfigPath {
@@ -370,13 +370,13 @@ func authenticationConfigFromFiles(t *testing.T, files []*nkeproto.File) apiserv
 	return apiserverv1.AuthenticationConfiguration{}
 }
 
-func requireSingleInitRequest(t *testing.T, agent *snapshotWiringAgent) *nkeproto.KubeadmInitRequest {
+func requireSingleInitRequest(t *testing.T, agent *snapshotWiringAgent) *nvkeproto.KubeadmInitRequest {
 	t.Helper()
 	require.Len(t, agent.initRequests, 1)
 	return agent.initRequests[0]
 }
 
-func requireSingleJoinRequest(t *testing.T, agent *snapshotWiringAgent) *nkeproto.KubeadmJoinRequest {
+func requireSingleJoinRequest(t *testing.T, agent *snapshotWiringAgent) *nvkeproto.KubeadmJoinRequest {
 	t.Helper()
 	require.Len(t, agent.joinRequests, 1)
 	return agent.joinRequests[0]

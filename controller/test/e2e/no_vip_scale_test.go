@@ -21,7 +21,7 @@ func validateNoVIPControllerScaleRefused(test *tenantTest) {
 		assertNoKubeVIP(ctx, test)
 
 		By("Attempting to increase the cluster-level control-plane desired count")
-		message := expectSucceed(test.nke.UpdateControlPlaneDesiredCountExpectingRefusal(
+		message := expectSucceed(test.nvke.UpdateControlPlaneDesiredCountExpectingRefusal(
 			ctx,
 			test.cluster.ID,
 			controlPlaneControllerUpdateDesiredCount,
@@ -29,7 +29,7 @@ func validateNoVIPControllerScaleRefused(test *tenantTest) {
 		Expect(message).To(ContainSubstring("controlPlaneVIP"))
 
 		By("Verifying the rejected update did not change desired or actual capacity")
-		controlPlane := expectSucceed(test.nke.GetClusterControlPlane(ctx, test.cluster.ID))
+		controlPlane := expectSucceed(test.nvke.GetClusterControlPlane(ctx, test.cluster.ID))
 		Expect(controlPlane.Config.DesiredCount).To(Equal(noVIPControlPlaneCount))
 		assertNoAdditionalControlPlaneNode(ctx, test)
 	}, Label("lifecycle", "cp-controller", "no-vip", "scale"), NodeTimeout(15*time.Minute))
@@ -54,7 +54,7 @@ func assertNoAdditionalControlPlaneNode(ctx context.Context, test *tenantTest) {
 	GinkgoHelper()
 
 	Consistently(func(ctx context.Context) error {
-		nodes, err := test.nke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true)
+		nodes, err := test.nvke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true)
 		if err != nil {
 			return err
 		}

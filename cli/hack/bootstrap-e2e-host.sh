@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Host preparation for the "nkectl bootstrap e2e" job
-# (.github/workflows/nkectl-bootstrap-e2e.yml), and for reproducing that host
+# Host preparation for the "nvkectl bootstrap e2e" job
+# (.github/workflows/nvkectl-bootstrap-e2e.yml), and for reproducing that host
 # locally. cli/e2e/bootstrap/run.sh needs a standalone containerd with nerdctl
 # and buildkitd, and must not be able to reach Docker.
 #
@@ -322,7 +322,7 @@ remove_docker() {
 #!/bin/sh
 echo "docker was invoked by the bootstrap e2e suite: docker $*" >&2
 echo "this job removes Docker so a reintroduced dependency fails here rather than passing unnoticed." >&2
-echo "The suite runs on nerdctl/containerd. See cli/Makefile's check-no-docker and the 'Remove Docker' step in nkectl-bootstrap-e2e.yml." >&2
+echo "The suite runs on nerdctl/containerd. See cli/Makefile's check-no-docker and the 'Remove Docker' step in nvkectl-bootstrap-e2e.yml." >&2
 exit 1
 SHIM
   chmod 0755 "${shim_dir}/docker"

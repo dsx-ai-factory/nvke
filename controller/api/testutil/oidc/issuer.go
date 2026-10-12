@@ -244,7 +244,7 @@ func newTLSCertificate(host string) (tls.Certificate, []byte, error) {
 	if err != nil {
 		return tls.Certificate{}, nil, fmt.Errorf("generate TLS CA certificate serial: %w", err)
 	}
-	ca := &x509.Certificate{SerialNumber: caSerial, Subject: pkix.Name{CommonName: "NKE OIDC test CA"}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	ca := &x509.Certificate{SerialNumber: caSerial, Subject: pkix.Name{CommonName: "NVKE OIDC test CA"}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
 	caDER, err := x509.CreateCertificate(rand.Reader, ca, ca, &caKey.PublicKey, caKey)
 	if err != nil {
 		return tls.Certificate{}, nil, fmt.Errorf("create TLS CA certificate: %w", err)

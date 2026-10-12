@@ -30,7 +30,7 @@
 //
 // These defaults assume etcd runs stacked on each control plane — every
 // apiserver talks to its co-located etcd over localhost — which is how
-// NKE deploys today. The apiserver's /readyz includes an etcd readiness
+// NVKE deploys today. The apiserver's /readyz includes an etcd readiness
 // gate, so the per-CP KubeAPIHealthy check already covers etcd health;
 // no separate etcd probe is needed, and the rollout worker does not require
 // direct etcd access (which it does not have). A control plane with external or

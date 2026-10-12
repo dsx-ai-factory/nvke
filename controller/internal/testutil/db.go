@@ -77,7 +77,7 @@ const (
 	// sqliteDriverName is our own registration, separate from the "sqlite3" that
 	// go-sqlite3 registers in its init. Registering our own is what lets the
 	// gen_random_uuid hook be attached.
-	sqliteDriverName = "sqlite3_nke"
+	sqliteDriverName = "sqlite3_nvke"
 )
 
 // registerDriver registers a SQLite driver carrying a custom gen_random_uuid

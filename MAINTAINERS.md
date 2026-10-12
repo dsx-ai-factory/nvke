@@ -1,6 +1,6 @@
 # Maintainers
 
-This file lists the current maintainers of nke. Maintainers have write
+This file lists the current maintainers of NVKE. Maintainers have write
 access to the repository and share responsibility for reviews, releases,
 and project direction.
 

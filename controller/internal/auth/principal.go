@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package auth holds the NKE API authentication: the configuration schema, token
+// Package auth holds the NVKE API authentication: the configuration schema, token
 // verification, and per-issuer admission. Three states, chosen outside this
 // package:
 //

@@ -89,7 +89,7 @@ The steps below are the one-shot path for nico-vms integration tests only.
 ### One-time setup
 
 The setup script does not clone the repository, so clone it on the remote
-first, at `~/dev/nke`. The tests need the whole repository, not only
+first, at `~/dev/nvke`. The tests need the whole repository, not only
 `nico-sim/`: `TestBGPECMPFlow` reads the control-plane runbooks from
 `controller/internal/runbook/scripts`. Later syncs copy only `nico-sim/` over
 this clone. A `NICO_SIM_REMOTE_DIR` override must also point at the
@@ -100,12 +100,12 @@ steps and writes the sudoers rule for the user who runs it:
 
 ```bash
 ssh my-machine.example.com
-git clone https://github.com/dsx-ai-factory/nke.git ~/dev/nke   # skip if already cloned
-bash ~/dev/nke/controller/nico-sim/scripts/setup-linux.sh
+git clone https://github.com/dsx-ai-factory/nvke.git ~/dev/nvke   # skip if already cloned
+bash ~/dev/nvke/controller/nico-sim/scripts/setup-linux.sh
 ```
 
 If the remote was set up from an older path (`~/dev/cloud-workflow-engine/nico-sim`
-or `~/dev/nke/cloud-workflow-engine/nico-sim`), run the setup script again from
+or `~/dev/nvke/cloud-workflow-engine/nico-sim`), run the setup script again from
 the new path. Its passwordless `setcap` sudoers rule names the exact `nico-sim`
 binary path. The sync skips `images/`, so the first test run at the new path
 downloads the base image again; copy `images/` from the old directory to skip
@@ -120,7 +120,7 @@ rsync -avz \
   --exclude='.git' --exclude='vendor' --exclude='.cache' \
   --exclude='.gocache' --exclude='.gomodcache' \
   --exclude='var' --exclude='images' --exclude='bin' \
-  nico-sim/ my-machine.example.com:~/dev/nke/controller/nico-sim/
+  nico-sim/ my-machine.example.com:~/dev/nvke/controller/nico-sim/
 ```
 
 ### Run tests
@@ -129,7 +129,7 @@ The remote shell is csh/tcsh — always wrap commands in `bash -lc`:
 
 ```bash
 # Production image test
-ssh my-machine.example.com 'bash -lc "cd ~/dev/nke/controller/nico-sim && \
+ssh my-machine.example.com 'bash -lc "cd ~/dev/nvke/controller/nico-sim && \
   NICO_VMS_TEST_PRODUCTION_IMAGE=true \
   NICO_VMS_DHCP_HOSTS_DIR=/var/lib/nico-vms/dhcp-hosts \
   NICO_VMS_DHCP_LEASE_FILE=/var/run/nico-vms-dnsmasq.leases \
@@ -142,7 +142,7 @@ ssh my-machine.example.com 'bash -lc "cd ~/dev/nke/controller/nico-sim && \
 Keep the VM alive after the test:
 
 ```bash
-ssh my-machine.example.com 'bash -lc "cd ~/dev/nke/controller/nico-sim && \
+ssh my-machine.example.com 'bash -lc "cd ~/dev/nvke/controller/nico-sim && \
   NICO_VMS_TEST_PRODUCTION_IMAGE=true \
   NICO_VMS_E2E_TESTS_KEEP_VMS=true \
   NICO_VMS_PRESERVE_LOGS=true \

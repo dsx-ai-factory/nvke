@@ -13,7 +13,7 @@ import (
 var (
 	rebootDurationHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "nke_controller_node_reboot_duration_seconds",
+			Name:    "nvke_controller_node_reboot_duration_seconds",
 			Help:    "Time taken for node reboots to complete",
 			Buckets: []float64{600, 900, 1200, 1800, 2700, 3600, 5400, 7200},
 		},
@@ -22,7 +22,7 @@ var (
 
 	rebootAttemptsHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "nke_controller_node_reboot_attempts",
+			Name:    "nvke_controller_node_reboot_attempts",
 			Help:    "Number of attempts required for successful reboots",
 			Buckets: []float64{1, 2, 3, 4, 5, 10},
 		},
@@ -31,7 +31,7 @@ var (
 
 	rebootCurrentAttemptGauge = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "nke_controller_node_reboot_current_attempt",
+			Name: "nvke_controller_node_reboot_current_attempt",
 			Help: "Current reboot attempt number for a node",
 		},
 		[]string{nodeNameLabel},

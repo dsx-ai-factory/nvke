@@ -5,7 +5,7 @@ syntax = "proto3";
 
 package proto;
 
-option go_package = "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto";
+option go_package = "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto";
 
 service NodeAgent {
   rpc GetKubeadmStatus(KubeadmStatusRequest) returns (KubeadmStatusResponse) {}
@@ -49,7 +49,7 @@ service NodeAgent {
   rpc KubeadmUpgradeApply(KubeadmUpgradeApplyRequest) returns (KubeadmUpgradeApplyResponse) {}
 
   // ReconcileKubeVip atomically converges the kube-vip static-pod manifest for
-  // NKE's active/active BGP control-plane mode. The fixed mode disables every
+  // NVKE's active/active BGP control-plane mode. The fixed mode disables every
   // Kubernetes API-backed kube-vip feature. For kube-vip v1.2.0 compatibility,
   // the pod receives a kubeconfig with no client credential; this RPC never
   // reads, creates, or mounts the host's admin.conf or super-admin.conf.
@@ -105,9 +105,9 @@ service NodeAgent {
 
   rpc GetKubeconfig(KubeconfigRequest) returns (KubeconfigResponse) {}
 
-  // UpdateNKERBAC applies the NKE RBAC resources carried in the request
+  // UpdateNKERBAC applies the NVKE RBAC resources carried in the request
   // manifest to the local cluster. This RPC is intended only for managing
-  // NKE-owned RBAC objects: only a fixed set of RBAC kinds is accepted, and
+  // NVKE-owned RBAC objects: only a fixed set of RBAC kinds is accepted, and
   // every resource name must start within the agent-owned "nke:" prefix.
   // The request is rejected if any document falls outside that boundary.
   //
@@ -122,7 +122,7 @@ service NodeAgent {
   //   FailedPrecondition — the node is not eligible to serve this RPC
   //                        (e.g. not a control-plane node).
   //   InvalidArgument    — the manifest failed validation (empty, malformed,
-  //                        or contains a resource outside the NKE RBAC
+  //                        or contains a resource outside the NVKE RBAC
   //                        allowlist); no apply is attempted.
   //   Internal           — the agent could not reach the local cluster to
   //                        perform the apply.
@@ -230,7 +230,7 @@ service NodeAgent {
   // Installs the signing key, writes sources.list.d (deb_uri + suite + components), optional pin, apt-get update.
   rpc ConfigureAptRepo(ConfigureAptRepoRequest) returns (ConfigureAptRepoResponse) {}
 
-  // Removes the keyring, NKE apt preferences, and a matching sources.list.d entry so
+  // Removes the keyring, NVKE apt preferences, and a matching sources.list.d entry so
   // apt update succeeds afterward. By default removes <keyring_name>.list; override with
   // sources_list_basename when the file name differs.
   rpc RemoveAptRepo(RemoveAptRepoRequest) returns (RemoveAptRepoResponse) {}
@@ -403,7 +403,7 @@ message KubeadmInitRequest {
   // Kubernetes control-plane version for kubeadm static-pod images (e.g. v1.31.9).
   // Used only when init_config is empty (CLI kubeadm init path): implies --kubernetes-version.
   // Canonical form uses a leading v. When empty, the agent tries kubeadm version -o short from the binary on PATH.
-  // When init_config is non-empty, set kubernetesVersion inside ClusterConfiguration instead (NKE controller kubeadm templates already do).
+  // When init_config is non-empty, set kubernetesVersion inside ClusterConfiguration instead (NVKE controller kubeadm templates already do).
   string kubernetes_version = 22;
 }
 
@@ -576,7 +576,7 @@ message KubeconfigResponse {
 }
 
 message UpdateNKERBACRequest {
-  // Raw YAML (or JSON) bytes describing one or more NKE RBAC resources.
+  // Raw YAML (or JSON) bytes describing one or more NVKE RBAC resources.
   // May be a single document or a multi-document YAML stream separated by "---";
   // empty / comment-only documents are ignored. After empty documents are
   // discarded, at least one document must remain.
@@ -608,7 +608,7 @@ message ResourceApplyResult {
   // Kubernetes kind of the resource (e.g. "ClusterRole").
   string kind = 1;
   // metadata.name of the resource (e.g. "nke:cwe", the ClusterRole name still
-  // used by the NKE controller RBAC charts).
+  // used by the NVKE controller RBAC charts).
   string name = 2;
   // metadata.namespace for namespaced resources; empty for cluster-scoped
   // resources.

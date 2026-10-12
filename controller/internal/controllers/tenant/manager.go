@@ -15,7 +15,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
 )
 
 const (
@@ -55,7 +55,7 @@ func (f *ManagerFactory) Start(ctx context.Context, target Target) (Runtime, err
 	}
 	restConfig.QPS = tenantManagerQPS
 	restConfig.Burst = tenantManagerBurst
-	restConfig.UserAgent = "nke-tenant-controller-manager/" + target.ClusterID.String()
+	restConfig.UserAgent = "nvke-tenant-controller-manager/" + target.ClusterID.String()
 
 	if err := f.verify(ctx, restConfig, tenantManagerProbeTimeout); err != nil {
 		return nil, fmt.Errorf("verifying tenant API access: %w", err)

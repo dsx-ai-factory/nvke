@@ -17,14 +17,16 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
-	"github.com/dsx-ai-factory/nke/controller/internal/capi"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/naming"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	capiclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
+	nicoclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/naming"
 )
 
 const (
@@ -125,14 +127,14 @@ func (s *clusterService) applyClusterDefaults(req *api.CreateClusterRequest, clu
 }
 
 // pinFleetOIDCProviders pins none before Kubernetes 1.34, which cannot read the
-// AuthenticationConfiguration NKE renders.
+// AuthenticationConfiguration NVKE renders.
 func (s *clusterService) pinFleetOIDCProviders(cluster *db.Cluster) {
 	if s.fleetOIDC == nil {
 		return
 	}
 	providers := s.fleetOIDC.Providers
 	if len(providers) > 0 && !kubeadmconfig.SupportsAuthenticationConfiguration(cluster.KubernetesVersion) {
-		s.logger.Warn("Creating cluster without the fleet-wide OIDC providers: its Kubernetes version cannot read the AuthenticationConfiguration NKE renders",
+		s.logger.Warn("Creating cluster without the fleet-wide OIDC providers: its Kubernetes version cannot read the AuthenticationConfiguration NVKE renders",
 			"cluster", cluster.Name, "kubernetesVersion", cluster.KubernetesVersion, "providers", len(providers))
 		providers = nil
 	}
@@ -413,7 +415,11 @@ func validateCreateCAPIClusterProvider(req *api.CreateClusterRequest) error {
 	if isEmptyManifestObject(req.Infra.Cluster) {
 		return fmt.Errorf("infra.cluster is required")
 	}
-	if err := validateCAPIInfrastructureManifest(req.Infra.Cluster); err != nil {
+	infraCluster, err := rawManifestFromObject(req.Infra.Cluster)
+	if err != nil {
+		return fmt.Errorf("invalid infra.cluster: %w", err)
+	}
+	if err := capiclient.ValidateInfrastructureManifestBytes(infraCluster); err != nil {
 		return fmt.Errorf("invalid infra.cluster: %w", err)
 	}
 	return nil
@@ -786,17 +792,17 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 	}
 	hasInstanceTypePreferences := cluster.ProviderType == db.ProviderTypeNico && req.Nico != nil && req.Nico.InstanceTypePreference != nil
 	if hasInstanceTypePreferences {
-		if err := validateInstanceTypePreferenceIDs(req.Nico.InstanceTypePreference); err != nil {
+		if err := nicoclient.ValidateInstanceTypePreferenceIDs(req.Nico.InstanceTypePreference); err != nil {
 			return newBadRequestErrorf("%s", err)
 		}
-		nico, err := controlPlaneConfigSpec.NicoProvider()
+		nicoProvider, err := controlPlaneConfigSpec.NicoProvider()
 		if err != nil {
 			return err
 		}
-		nico.InstanceTypePreference = dedupeUUIDsPreserveOrder(
+		nicoProvider.InstanceTypePreference = dedupeUUIDsPreserveOrder(
 			uuidSliceFromAPI(req.Nico.InstanceTypePreference),
 		)
-		controlPlaneConfigSpec.SetNico(nico)
+		controlPlaneConfigSpec.SetNico(nicoProvider)
 	}
 
 	// desiredCount and the full control-plane spec are only honored in
@@ -952,12 +958,12 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 			if isEmptyManifestObject(req.Infra.MachineTemplate) {
 				capi.InfraMachineTemplatePreferences = nil
 			} else {
-				if err := validateCAPIInfrastructureManifest(req.Infra.MachineTemplate); err != nil {
-					return newBadRequestErrorf("invalid infra.machineTemplate: %s", err)
-				}
 				prefs, err := infraMachineTemplatePrefsFromAPI(req.Infra.MachineTemplate)
 				if err != nil {
 					return newBadRequestErrorf("failed to convert infra.machineTemplate: %v", err)
+				}
+				if err := capiclient.ValidateInfrastructureManifestBytes(prefs[0]); err != nil {
+					return newBadRequestErrorf("invalid infra.machineTemplate: %s", err)
 				}
 				capi.InfraMachineTemplatePreferences = prefs
 			}
@@ -969,19 +975,6 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 
 func uuidSliceFromAPI(ids []openapi_types.UUID) []uuid.UUID {
 	return append([]uuid.UUID(nil), ids...)
-}
-
-// validateInstanceTypePreferenceIDs rejects a nil (all-zero) UUID in the
-// instanceTypePreference list. A nil ID is never a valid instance type and would
-// otherwise be silently dropped by dedupeUUIDsPreserveOrder, leaving the control
-// plane with fewer instance types than requested (or none at all).
-func validateInstanceTypePreferenceIDs(ids []openapi_types.UUID) error {
-	for _, id := range ids {
-		if id == uuid.Nil {
-			return fmt.Errorf("controlPlaneConfig.instanceTypePreference contains an invalid nil instance type ID")
-		}
-	}
-	return nil
 }
 
 // dedupeUUIDsPreserveOrder removes duplicate UUIDs while preserving first-seen order, skipping uuid.Nil.

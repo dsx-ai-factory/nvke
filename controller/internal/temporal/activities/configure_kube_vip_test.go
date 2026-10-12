@@ -14,12 +14,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent/agenttest"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
@@ -29,7 +29,7 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 		cluster    db.Cluster
 		nodePool   db.NodePool
 		cfg        config.Config
-		wantSource nkeproto.ReconcileKubeVipRequest_BGPPeerASNSource
+		wantSource nvkeproto.ReconcileKubeVipRequest_BGPPeerASNSource
 		wantASN    uint32
 		wantFMDS   string
 	}{
@@ -42,7 +42,7 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 				ControlPlane: true,
 				Capi:         &db.CAPINodePoolProvider{},
 			},
-			wantSource: nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC,
+			wantSource: nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC,
 			wantASN:    4294967000,
 		},
 		"CAPI pool with site FMDS endpoint uses FMDS ASN": {
@@ -57,7 +57,7 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 			cfg: config.Config{
 				KubeVipFMDSEndpoint: "http://169.254.169.254/latest/meta-data/asn",
 			},
-			wantSource: nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS,
+			wantSource: nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS,
 			wantASN:    0,
 			wantFMDS:   "http://169.254.169.254/latest/meta-data/asn",
 		},
@@ -72,7 +72,7 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 					VpcPrefixIDs: []uuid.UUID{uuid.New()},
 				},
 			},
-			wantSource: nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS,
+			wantSource: nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS,
 			wantASN:    0,
 		},
 	}
@@ -103,8 +103,8 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 			mockDB.On("GetCluster", mock.Anything, clusterID).Return(tt.cluster, nil).Once()
 
 			fakeAgent := &agenttest.FakeClient{
-				ReconcileKubeVipResponse: &nkeproto.ReconcileKubeVipResponse{
-					Outcome:           nkeproto.ReconcileKubeVipResponse_OUTCOME_UNCHANGED,
+				ReconcileKubeVipResponse: &nvkeproto.ReconcileKubeVipResponse{
+					Outcome:           nvkeproto.ReconcileKubeVipResponse_OUTCOME_UNCHANGED,
 					ManifestPath:      "/etc/kubernetes/manifests/kube-vip.yaml",
 					BgpInterface:      "eth0",
 					BgpPeerAddress:    "10.0.0.1",
@@ -195,7 +195,7 @@ func TestConfigureKubeVip_RPCFallbackBoundary(t *testing.T) {
 			mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Times(1 + len(tt.wantRunbooks))
 
 			fakeAgent := &agenttest.FakeClient{ReconcileKubeVipError: tt.rpcError}
-			fakeAgent.ExecuteScriptHook = func(_ db.Node, runbookName, script string) (*nkeproto.ExecuteScriptResponse, error) {
+			fakeAgent.ExecuteScriptHook = func(_ db.Node, runbookName, script string) (*nvkeproto.ExecuteScriptResponse, error) {
 				if runbookName == configureKubeVipRunbookName {
 					wantPeerAS := "4294967000"
 					if tt.fmdsEndpoint != "" {
@@ -207,7 +207,7 @@ func TestConfigureKubeVip_RPCFallbackBoundary(t *testing.T) {
 					require.Contains(t, script, "export FMDS_ENDPOINT='"+tt.fmdsEndpoint+"'")
 					require.Contains(t, script, "export NODE_IP='10.0.0.20'")
 				}
-				return &nkeproto.ExecuteScriptResponse{ExitCode: 0, Output: runbookName + " output"}, nil
+				return &nvkeproto.ExecuteScriptResponse{ExitCode: 0, Output: runbookName + " output"}, nil
 			}
 
 			a := &Activities{

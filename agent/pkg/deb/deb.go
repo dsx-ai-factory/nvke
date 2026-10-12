@@ -242,7 +242,7 @@ func ConfigureAptRepo(ctx context.Context, cfg AptRepoConfig) (string, error) {
 	}
 	sourcesPath := filepath.Join(aptSourcesListDDir, listBase)
 	debLine := fmt.Sprintf("deb [signed-by=%s] %s %s %s\n", keyPath, debURI, suite, components)
-	listBody := "# Written by NKE agent ConfigureAptRepo\n" + debLine
+	listBody := "# Written by NVKE agent ConfigureAptRepo\n" + debLine
 	writeLog("write sources list %s\n", sourcesPath)
 	if werr := os.WriteFile(sourcesPath, []byte(listBody), 0o644); werr != nil {
 		slog.ErrorContext(ctx, "configure apt repo failed", "operation", "write sources list", "error", werr, "path", sourcesPath, "details", rawOut.String())
@@ -259,7 +259,7 @@ func ConfigureAptRepo(ctx context.Context, cfg AptRepoConfig) (string, error) {
 			return rawOut.String(), fmt.Errorf("create preferences dir: %w", mkErr)
 		}
 		prefBody := fmt.Sprintf(
-			"Explanation: NKE-managed priority for repository %q\n"+
+			"Explanation: NVKE-managed priority for repository %q\n"+
 				"Package: *\n"+
 				"Pin: release o=%s\n"+
 				"Pin-Priority: %d\n",

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Builds qcow-imager.efi, the EFI a node chainloads from iPXE to write an NKE
+# Builds qcow-imager.efi, the EFI a node chainloads from iPXE to write an NVKE
 # node qcow2 onto its disk. See README.md.
 #
 # This file holds no build logic. It checks out NVIDIA/infra-controller at a

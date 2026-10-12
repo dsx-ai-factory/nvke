@@ -53,6 +53,8 @@ export SOURCE_ROOT EXPECTED_SOURCE_COMMIT PYTHON
 
 LUKS_PASSPHRASE ?= changeit
 REQUIRE_ACCELERATION ?= 0
+# Attempts check-acceleration makes before giving up on an unusable /dev/kvm; the bake sets 6, laptops keep 1.
+KVM_SETTLE_RETRIES ?= 1
 export NKE_PACKAGE_BUILDER ?= auto
 # Label applied to the root filesystem. Cloud-image importers can use this
 # stable identifier instead of depending on a partition or device path.
@@ -313,8 +315,16 @@ check-acceleration:
 			echo "ISO_URL architecture ($$iso_arch) does not match ARCH=$$ARCH: $$ISO_URL" >&2; \
 			exit 1; \
 		fi'
+	@# A neighbour pod's qemu postinst resets the shared /dev/kvm to 0660 for a few seconds; widen it again and retry.
 	@ARCH=$(ARCH) ACCELERATOR=$(ACCELERATOR) REQUIRE_ACCELERATION=$(REQUIRE_ACCELERATION) bash -ec '\
-		. ./scripts/qemu-arch.sh; nke_qemu_env "$$ARCH"'
+		. ./scripts/qemu-arch.sh; \
+		for attempt in $$(seq 1 $(KVM_SETTLE_RETRIES)); do \
+			nke_qemu_env "$$ARCH" && exit 0; \
+			[[ -c /dev/kvm && $$attempt -lt $(KVM_SETTLE_RETRIES) ]] || exit 1; \
+			echo "KVM check attempt $$attempt failed with /dev/kvm mode $$(stat -c %a /dev/kvm); retrying in 10s" >&2; \
+			sudo -n chmod 666 /dev/kvm 2>/dev/null || true; \
+			sleep 10; \
+		done'
 
 # Stage the source-built packages before Packer starts the VM. Keeping this in
 # Make preserves the current workflow and leaves Packer responsible only for

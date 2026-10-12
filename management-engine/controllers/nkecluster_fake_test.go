@@ -23,9 +23,9 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/cluster-api-provider-nico/pkg/test/fixture"
-	"github.com/dsx-ai-factory/nke/controller/api"
-	internalv1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
-	"github.com/dsx-ai-factory/nke/management-engine/internal/cwe"
+	"github.com/dsx-ai-factory/nvke/controller/api"
+	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+	"github.com/dsx-ai-factory/nvke/management-engine/internal/cwe"
 )
 
 var fixtureRemoteID = uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
@@ -52,7 +52,7 @@ type cweFixture struct {
 	source          client.ObjectKey
 }
 
-func setupCWEFixture(ctx SpecContext, tc *fixture.Case, reconciler *NKEClusterReconciler) {
+func setupCWEFixture(ctx SpecContext, tc *fixture.Case, reconciler *NVKEClusterReconciler) {
 	input, exists := tc.Input("input_cwe.yaml")
 	if !exists {
 		return
@@ -75,7 +75,7 @@ func setupCWEFixture(ctx SpecContext, tc *fixture.Case, reconciler *NKEClusterRe
 	Expect(err).NotTo(HaveOccurred())
 	reconciler.CWE = &fixtureCWEClient{Client: httpClient}
 	if fake.config.Recover {
-		controllerutil.AddFinalizer(&source, nkeClusterFinalizer)
+		controllerutil.AddFinalizer(&source, nvkeClusterFinalizer)
 		Expect(tc.Client.Update(ctx, &source)).To(Succeed())
 		source.Status.Provisioning = &internalv1.ClusterProvisioningStatus{
 			Endpoint: reconciler.CWE.Endpoint(), Generation: source.Generation,
@@ -122,7 +122,7 @@ func (f *cweFixture) serveHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	var source internalv1.NKECluster
-	if err := f.kube.Get(req.Context(), f.source, &source); err != nil || !controllerutil.ContainsFinalizer(&source, nkeClusterFinalizer) {
+	if err := f.kube.Get(req.Context(), f.source, &source); err != nil || !controllerutil.ContainsFinalizer(&source, nvkeClusterFinalizer) {
 		w.WriteHeader(http.StatusPreconditionFailed)
 		return
 	}

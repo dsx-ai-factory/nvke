@@ -1,22 +1,22 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# The bootstrap manifest lists the charts `nkectl bootstrap site` fetches and
-# installs with Helm, and the images the bootstrap runs. nkectl embeds this
-# file. `nkectl get bootstrap-manifest` prints it.
+# The bootstrap manifest lists the charts `nvkectl bootstrap site` fetches and
+# installs with Helm, and the images the bootstrap runs. nvkectl embeds this
+# file. `nvkectl get bootstrap-manifest` prints it.
 #
-# nkectl installs each chart at the version listed here. The digests are a
+# nvkectl installs each chart at the version listed here. The digests are a
 # record for whoever mirrors these artifacts. The bootstrap does not verify
 # them.
 #
 # Two kinds of image entries: images the bootstrap pulls, with a digest; and
 # the two images you build, with the default tag `make -C cli images` gives
 # them and no digest. The --controller-image and --provisioned-provider-image flags,
-# or NKECTL_CONTROLLER_IMAGE and NKECTL_CAPI_PROVISIONED_IMAGE, replace those two.
+# or NVKECTL_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, replace those two.
 #
 # Not listed:
 # - The controller chart, the Postgres chart and the provisioned provider's
-#   manifest. They ship inside nkectl.
+#   manifest. They ship inside nvkectl.
 # - The components `clusterctl init` installs: Cluster API core, the kubeadm
 #   providers and cert-manager.
 # - The kindest/node image kind boots.
@@ -44,7 +44,7 @@ components:
         ref: docker.io/temporalio/ui:2.48.1
         digest: sha256:edb5dd1b3e0ddb35611939dde9b573533afd6fbafbbf077b73c7131a30ca91ff
 
-  # The Postgres chart ships inside nkectl, so it has no chart entry. The
+  # The Postgres chart ships inside nvkectl, so it has no chart entry. The
   # image is an upstream release.
   postgresql:
     images:
@@ -97,8 +97,8 @@ components:
 
   # Built by you from controller/Dockerfile. The ref below is the default:
   # the tag `make -C cli images` builds, side-loaded from the local image
-  # store. --controller-image or NKECTL_CONTROLLER_IMAGE overrides it. The controller chart ships inside
-  # nkectl, so there is no chart entry.
+  # store. --controller-image or NVKECTL_CONTROLLER_IMAGE overrides it. The controller chart ships inside
+  # nvkectl, so there is no chart entry.
   controller:
     images:
       controller:
@@ -106,8 +106,8 @@ components:
 
   # Built by you from cluster-api-provider-provisioned/Dockerfile. The ref
   # below is the default: the tag `make -C cli images` builds, side-loaded.
-  # --provisioned-provider-image or NKECTL_CAPI_PROVISIONED_IMAGE overrides it. Its manifest ships inside
-  # nkectl.
+  # --provisioned-provider-image or NVKECTL_CAPI_PROVISIONED_IMAGE overrides it. Its manifest ships inside
+  # nvkectl.
   cluster-api-provider-provisioned:
     images:
       manager:

@@ -13,13 +13,13 @@ import (
 )
 
 // DefaultCalicoVersion is the Calico stream to install. It tracks the stream
-// NKE's own cni-packages builder currently ships, so the test exercises a
-// version NKE actually uses -- even though the artifacts here come from
-// upstream rather than from NKE's packaging.
+// NVKE's own cni-packages builder currently ships, so the test exercises a
+// version NVKE actually uses -- even though the artifacts here come from
+// upstream rather than from NVKE's packaging.
 const DefaultCalicoVersion = "v3.31.4"
 
 // calicoManifestBase is the upstream manifest root. Public and anonymous,
-// which is the whole point: NKE's CNI packages sit behind a source-IP allowlist
+// which is the whole point: NVKE's CNI packages sit behind a source-IP allowlist
 // that CI runners are outside of.
 const calicoManifestBase = "https://raw.githubusercontent.com/projectcalico/calico"
 
@@ -39,12 +39,12 @@ const upstreamPoolCIDR = "192.168.0.0/16"
 // matching kubectl on the runner for no benefit.
 //
 // This deliberately does NOT go through the agent's InstallCNI RPC. That RPC
-// requires an NKE-named Debian package registered with dpkg
+// requires an NVKE-named Debian package registered with dpkg
 // (agent/internal/agent/cni.go, chartsDebPresenceCheck), and those packages are
 // not publicly available -- driving it would mean fabricating a stub package
 // impersonating one. Applying the manifests directly is honest about what is
 // under test: this proves the cluster the agent built becomes usable, not that
-// NKE's CNI packaging works. The latter stays with the GitLab suite.
+// NVKE's CNI packaging works. The latter stays with the GitLab suite.
 func InstallCalico(ctx context.Context, addr, version, podCIDR string, timeout time.Duration) (string, error) {
 	if version == "" {
 		version = DefaultCalicoVersion

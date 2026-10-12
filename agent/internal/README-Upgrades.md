@@ -1,4 +1,4 @@
-# Upgrade Process using the NKE Agent
+# Upgrade Process using the NVKE Agent
 
 Orchestration of the upgrade process on a node is expected to be handled by the caller, the Node Agent provides 
 grouped operations to aid in the process.

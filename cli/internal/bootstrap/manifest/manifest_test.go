@@ -21,7 +21,7 @@ func TestLoad_PinsTheThreePulledCharts(t *testing.T) {
 	}
 	for _, c := range []string{ComponentPostgres, ComponentController, ComponentProvisioned} {
 		if comp := m.Components[c]; comp.Chart != nil {
-			t.Errorf("component %q lists a chart; it ships inside nkectl", c)
+			t.Errorf("component %q lists a chart; it ships inside nvkectl", c)
 		}
 	}
 }

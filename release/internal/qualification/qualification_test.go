@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
 )
 
 // repoRoot is where the real files live, relative to this package.
@@ -50,7 +50,7 @@ func TestRepositoryFilesAreValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("release/registry.yaml: %v", err)
 	}
-	s, err := LoadSubject(SubjectPath(repoRoot, SubjectNKE))
+	s, err := LoadSubject(SubjectPath(repoRoot, SubjectNVKE))
 	if err != nil {
 		t.Fatalf("release/qualification.yaml: %v", err)
 	}

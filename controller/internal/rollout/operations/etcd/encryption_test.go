@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 )
 
 type fakeNode struct {
@@ -66,62 +66,62 @@ func (r *fakeEncryptionKeyReader) ReadRotationKey(_ context.Context, clusterID u
 }
 
 type fakeEncryptionClient struct {
-	initializeRequest *nkeproto.InitializeKubernetesAPIEncryptionRequest
+	initializeRequest *nvkeproto.InitializeKubernetesAPIEncryptionRequest
 	initializeErr     error
 	promoteErr        error
 	removeErr         error
 	promoteCalls      int
 	removeCalls       int
-	updateRequests    []*nkeproto.UpdateEncryptionConfigRequest
+	updateRequests    []*nvkeproto.UpdateEncryptionConfigRequest
 	updateErr         error
 }
 
 func (c *fakeEncryptionClient) InitializeKubernetesAPIEncryption(
 	_ context.Context,
-	req *nkeproto.InitializeKubernetesAPIEncryptionRequest,
+	req *nvkeproto.InitializeKubernetesAPIEncryptionRequest,
 	_ ...grpc.CallOption,
-) (*nkeproto.InitializeKubernetesAPIEncryptionResponse, error) {
+) (*nvkeproto.InitializeKubernetesAPIEncryptionResponse, error) {
 	c.initializeRequest = req
 	if c.initializeErr != nil {
 		return nil, c.initializeErr
 	}
-	return &nkeproto.InitializeKubernetesAPIEncryptionResponse{}, nil
+	return &nvkeproto.InitializeKubernetesAPIEncryptionResponse{}, nil
 }
 
 func (c *fakeEncryptionClient) PromoteKubernetesAPIEncryptionProviders(
 	context.Context,
-	*nkeproto.PromoteKubernetesAPIEncryptionProvidersRequest,
+	*nvkeproto.PromoteKubernetesAPIEncryptionProvidersRequest,
 	...grpc.CallOption,
-) (*nkeproto.PromoteKubernetesAPIEncryptionProvidersResponse, error) {
+) (*nvkeproto.PromoteKubernetesAPIEncryptionProvidersResponse, error) {
 	c.promoteCalls++
 	if c.promoteErr != nil {
 		return nil, c.promoteErr
 	}
-	return &nkeproto.PromoteKubernetesAPIEncryptionProvidersResponse{}, nil
+	return &nvkeproto.PromoteKubernetesAPIEncryptionProvidersResponse{}, nil
 }
 
 func (c *fakeEncryptionClient) RemovePlainTextSecondaryEncryptionEntry(
 	context.Context,
-	*nkeproto.RemovePlainTextSecondaryEncryptionEntryRequest,
+	*nvkeproto.RemovePlainTextSecondaryEncryptionEntryRequest,
 	...grpc.CallOption,
-) (*nkeproto.RemovePlainTextSecondaryEncryptionEntryResponse, error) {
+) (*nvkeproto.RemovePlainTextSecondaryEncryptionEntryResponse, error) {
 	c.removeCalls++
 	if c.removeErr != nil {
 		return nil, c.removeErr
 	}
-	return &nkeproto.RemovePlainTextSecondaryEncryptionEntryResponse{}, nil
+	return &nvkeproto.RemovePlainTextSecondaryEncryptionEntryResponse{}, nil
 }
 
 func (c *fakeEncryptionClient) UpdateEncryptionConfig(
 	_ context.Context,
-	req *nkeproto.UpdateEncryptionConfigRequest,
+	req *nvkeproto.UpdateEncryptionConfigRequest,
 	_ ...grpc.CallOption,
-) (*nkeproto.UpdateEncryptionConfigResponse, error) {
+) (*nvkeproto.UpdateEncryptionConfigResponse, error) {
 	c.updateRequests = append(c.updateRequests, req)
 	if c.updateErr != nil {
 		return nil, c.updateErr
 	}
-	return &nkeproto.UpdateEncryptionConfigResponse{}, nil
+	return &nvkeproto.UpdateEncryptionConfigResponse{}, nil
 }
 
 func TestInitializeOperationReadsKeyAtApplyTimeAndKeepsItOutOfPayload(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/state"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/state"
 )
 
 // ValidateVPCAndSubnets validates persisted subnet and vpc-prefix ranges are

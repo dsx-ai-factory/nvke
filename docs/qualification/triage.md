@@ -23,10 +23,10 @@ whichever of these the run produced:
 | `qualify-e2e.log` | The Ginkgo run. Start here. |
 | `qualify-e2e.junit.xml` | The same result, machine-readable. |
 | `run-inputs.txt` | Which versions, images and settings the run actually resolved — including which were overridden. Answers "was it even testing what I thought?" |
-| `nkectl-diagnostics.tar.gz` | What `nkectl` collected **on the node**. Present only when nkectl wrote a diagnostics directory, which it does when it fails. |
+| `nvkectl-diagnostics.tar.gz` | What `nvkectl` collected **on the node**. Present only when nvkectl wrote a diagnostics directory, which it does when it fails. |
 | `tbot.log` | The Teleport bot. Only interesting when nothing could be reached at all. |
 
-**An absent `nkectl-diagnostics.tar.gz` is normal and is information.** `nkectl`
+**An absent `nvkectl-diagnostics.tar.gz` is normal and is information.** `nvkectl`
 writes its diagnostics directory when it fails, so no tarball usually means
 bootstrap succeeded and the run failed somewhere after it. The suite
 distinguishes this case (`ErrNoDiagnostics`) from a real failure to archive,
@@ -45,7 +45,7 @@ flowchart TB
     A -->|yes| B{"how far did it get?"}
 
     B -->|"the instance never became usable"| P{"which way?"}
-    B -->|"the node came up, the cluster did not"| BOOT["bootstrap, ours<br/>read the nkectl diagnostics tarball"]
+    B -->|"the node came up, the cluster did not"| BOOT["bootstrap, ours<br/>read the nvkectl diagnostics tarball"]
     B -->|"the cluster exists and<br/>something cannot reach it"| TEN["tenant: usually the relay,<br/>or the missing control-plane VIP"]
 
     P -->|"no machine was ever offered"| CAP["capacity: unschedulable,<br/>not a defect"]
@@ -126,18 +126,18 @@ Two consequences when reading a failure:
 
 ### Bootstrap: the node came up, the cluster did not
 
-`nkectl-diagnostics.tar.gz` exists. Read it first — it is nkectl's own account of
+`nvkectl-diagnostics.tar.gz` exists. Read it first — it is nvkectl's own account of
 what it was doing.
 
 The two failure modes worth knowing in advance:
 
 - **An opaque TLS handshake error on every dial.** The node agent's
-  `AGENT_ARGS` and `nkectl bootstrap site` disagree about mTLS. They have to
+  `AGENT_ARGS` and `nvkectl bootstrap site` disagree about mTLS. They have to
   match: `--disable-mtls` on one requires it on the other.
 - **The cluster sits in Provisioning until the timeout, reporting nothing.**
   On the default agent args the agent expects a SPIFFE identity, which it can
   only get if the site spec carries the node's TPM EK thumbprint. Without one,
-  nkectl deploys no TPM attestor and the agent never attests.
+  nvkectl deploys no TPM attestor and the agent never attests.
 
 ### Tenant: the cluster was created and something could not reach it
 

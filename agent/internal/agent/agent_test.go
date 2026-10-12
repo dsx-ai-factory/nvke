@@ -26,9 +26,9 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/dsx-ai-factory/nke/agent/internal/k8s"
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
+	"github.com/dsx-ai-factory/nvke/agent/internal/k8s"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
 
 var initOutput = `Your Kubernetes control-plane has initialized successfully!
@@ -74,7 +74,7 @@ type concurrentScriptRunner struct {
 func (r *concurrentScriptRunner) Run(
 	name string,
 	args []string,
-	opts *nkeutils.CommandOptions,
+	opts *nvkeutils.CommandOptions,
 ) ([]byte, error) {
 	r.mu.Lock()
 	r.paths = append(r.paths, name)
@@ -83,22 +83,22 @@ func (r *concurrentScriptRunner) Run(
 	r.started <- struct{}{}
 	<-r.release
 
-	return (&nkeutils.ExecRunner{}).Run(name, args, opts)
+	return (&nvkeutils.ExecRunner{}).Run(name, args, opts)
 }
 
 func (r *concurrentScriptRunner) RunSplitOutput(
 	name string,
 	args []string,
-	opts *nkeutils.CommandOptions,
-) (nkeutils.CommandOutput, error) {
+	opts *nvkeutils.CommandOptions,
+) (nvkeutils.CommandOutput, error) {
 	output, err := r.Run(name, args, opts)
-	return nkeutils.CommandOutput{Stdout: output}, err
+	return nvkeutils.CommandOutput{Stdout: output}, err
 }
 
 func (r *concurrentScriptRunner) RunDetached(
 	string,
 	[]string,
-	*nkeutils.CommandOptions,
+	*nvkeutils.CommandOptions,
 ) error {
 	return errors.New("detached execution is not supported")
 }
@@ -110,14 +110,14 @@ func (r *concurrentScriptRunner) Paths() []string {
 }
 
 type (
-	runner  func(string, []string, *nkeutils.CommandOptions) (match bool, output []byte, err error)
-	runFunc func(string, []string, *nkeutils.CommandOptions) ([]byte, error)
+	runner  func(string, []string, *nvkeutils.CommandOptions) (match bool, output []byte, err error)
+	runFunc func(string, []string, *nvkeutils.CommandOptions) ([]byte, error)
 )
 
 func (m *MockRunner) Run(
 	name string,
 	args []string,
-	opts *nkeutils.CommandOptions,
+	opts *nvkeutils.CommandOptions,
 ) ([]byte, error) { //nolint:ireturntring
 	m.RunCalls++
 	for _, runner := range m.Runners {
@@ -132,22 +132,22 @@ func (m *MockRunner) Run(
 func (m *MockRunner) RunSplitOutput(
 	name string,
 	args []string,
-	opts *nkeutils.CommandOptions,
-) (nkeutils.CommandOutput, error) {
+	opts *nvkeutils.CommandOptions,
+) (nvkeutils.CommandOutput, error) {
 	output, err := m.Run(name, args, opts)
-	return nkeutils.CommandOutput{Stdout: output, Stderr: m.Stderr}, err
+	return nvkeutils.CommandOutput{Stdout: output, Stderr: m.Stderr}, err
 }
 
 func (m *MockRunner) RunDetached(
 	name string,
 	args []string,
-	opts *nkeutils.CommandOptions,
+	opts *nvkeutils.CommandOptions,
 ) error { //nolint:ireturntring
 	return m.Err
 }
 
 func runForCommand(wantName string, wantArgs []string, run runFunc) runner {
-	return func(name string, args []string, opts *nkeutils.CommandOptions) (bool, []byte, error) {
+	return func(name string, args []string, opts *nvkeutils.CommandOptions) (bool, []byte, error) {
 		if name != wantName {
 			return false, nil, nil
 		}
@@ -475,7 +475,7 @@ func TestProcessKubeadmInit_FilesWrittenBeforeKubeadm(t *testing.T) {
 	secondExpectedContent := "issuer: https://issuer.example.com\n"
 	server.Runner = &MockRunner{
 		Runners: []runner{
-			runForCommand("kubeadm", []string{"init", "--upload-certs"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+			runForCommand("kubeadm", []string{"init", "--upload-certs"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 				data, err := os.ReadFile(expectedPath)
 				require.NoError(t, err)
 				require.Equal(t, expectedContent, string(data))
@@ -523,7 +523,7 @@ func TestProcessKubeadmJoin_FilesWrittenBeforeKubeadm(t *testing.T) {
 	expectedContent := "discovery: enabled\n"
 	server.Runner = &MockRunner{
 		Runners: []runner{
-			runForCommand("kubeadm", []string{"join", "10.0.0.1:6443"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+			runForCommand("kubeadm", []string{"join", "10.0.0.1:6443"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 				data, err := os.ReadFile(expectedPath)
 				require.NoError(t, err)
 				require.Equal(t, expectedContent, string(data))
@@ -566,7 +566,7 @@ func TestProcessKubeadmJoin_ResetsBeforeRetry(t *testing.T) {
 			}
 
 			var commands []string
-			record := func(_ string, args []string, _ *nkeutils.CommandOptions) ([]byte, error) {
+			record := func(_ string, args []string, _ *nvkeutils.CommandOptions) ([]byte, error) {
 				commands = append(commands, args[0])
 				return []byte("ok"), nil
 			}
@@ -596,7 +596,7 @@ func TestProcessKubeadmInit_FilesWriteFailurePreventsKubeadm(t *testing.T) {
 
 	runner := &MockRunner{
 		Runners: []runner{
-			runForCommand("kubeadm", []string{"init", "--upload-certs"}, func(string, []string, *nkeutils.CommandOptions) ([]byte, error) {
+			runForCommand("kubeadm", []string{"init", "--upload-certs"}, func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) {
 				t.Fatalf("kubeadm should not run when prerequisite files fail")
 				return nil, nil
 			}),
@@ -630,7 +630,7 @@ func TestProcessKubeadmJoin_FileWriteFailsBeforeKubeadm(t *testing.T) {
 
 	runner := &MockRunner{
 		Runners: []runner{
-			func(name string, args []string, opts *nkeutils.CommandOptions) (bool, []byte, error) {
+			func(name string, args []string, opts *nvkeutils.CommandOptions) (bool, []byte, error) {
 				t.Fatalf("kubeadm should not run when prerequisite files fail")
 				return true, nil, nil
 			},
@@ -1416,7 +1416,7 @@ func TestUpdateNKERBACPreconditions(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, resp)
 		assert.Equal(t, codes.FailedPrecondition, status.Code(err))
-		require.ErrorContains(t, err, "update NKE RBAC: control-plane node required")
+		require.ErrorContains(t, err, "UpdateNKERBAC: control-plane node required")
 		require.ErrorContains(t, err, `current role "worker"`)
 	})
 
@@ -1430,7 +1430,7 @@ func TestUpdateNKERBACPreconditions(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, resp)
 		assert.Equal(t, codes.FailedPrecondition, status.Code(err))
-		require.ErrorContains(t, err, "update NKE RBAC: control-plane node required")
+		require.ErrorContains(t, err, "UpdateNKERBAC: control-plane node required")
 	})
 
 	t.Run("missing kubeconfig is rejected", func(t *testing.T) {
@@ -1443,7 +1443,7 @@ func TestUpdateNKERBACPreconditions(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, resp)
 		assert.Equal(t, codes.FailedPrecondition, status.Code(err))
-		require.ErrorContains(t, err, "update NKE RBAC: kubeconfig precondition failed")
+		require.ErrorContains(t, err, "UpdateNKERBAC: kubeconfig precondition failed")
 	})
 
 	t.Run("unparseable kubeconfig is internal", func(t *testing.T) {
@@ -1458,7 +1458,7 @@ func TestUpdateNKERBACPreconditions(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, resp)
 		assert.Equal(t, codes.Internal, status.Code(err))
-		require.ErrorContains(t, err, "update NKE RBAC: initializing Kubernetes client")
+		require.ErrorContains(t, err, "UpdateNKERBAC: initializing Kubernetes client")
 	})
 }
 
@@ -1638,7 +1638,7 @@ func TestUpdateAndFetchKubeAdmJoinStrings(t *testing.T) {
 	uploadArgs := []string{kubeadmCmdInit, kubeadmCmdPhase, "upload-certs", "--upload-certs", "--config", configPath}
 	tokenArgs := []string{"token", "create", "--print-join-command"}
 	reply := func(out string, err error) runFunc {
-		return func(string, []string, *nkeutils.CommandOptions) ([]byte, error) { return []byte(out), err }
+		return func(string, []string, *nvkeutils.CommandOptions) ([]byte, error) { return []byte(out), err }
 	}
 
 	tests := []struct {

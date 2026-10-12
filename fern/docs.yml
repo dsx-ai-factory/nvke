@@ -1,27 +1,28 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# TODO: Confirm instance URL and custom-domain with docs infra team before publishing.
+# The custom domain is declared, not served yet: docs.nvidia.com/nvke needs a
+# reverse proxy to Fern's origin (header x-fern-host) and Fern's subpath setup.
 instances:
-  - url: nvidia-nke.docs.buildwithfern.com/nke
-    custom-domain: docs.nvidia.com/nke
+  - url: nvidia-nvke.docs.buildwithfern.com/nvke
+    custom-domain: docs.nvidia.com/nvke
     multi-source: true
 
 redirects:
-  - source: /nke/index.html
-    destination: /nke
+  - source: /nvke/index.html
+    destination: /nvke
 
 title: NVIDIA Kubernetes Engine
 
 global-theme: nvidia
 
 logo:
-  href: /nke
-  right-text: NKE
+  href: /nvke
+  right-text: NVKE
 
 navbar-links:
   - type: github
-    value: https://github.com/dsx-ai-factory/nke
+    value: https://github.com/dsx-ai-factory/nvke
 
 check:
   rules:

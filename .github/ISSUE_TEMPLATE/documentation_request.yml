@@ -39,7 +39,7 @@ body:
     id: location
     attributes:
       label: Relevant docs link (if updating existing docs)
-      placeholder: "https://github.com/dsx-ai-factory/nke/blob/main/docs/README.md"
+      placeholder: "https://github.com/dsx-ai-factory/nvke/blob/main/docs/README.md"
 
   - type: textarea
     id: problem
@@ -57,9 +57,9 @@ body:
     id: terms
     attributes:
       label: Code of Conduct
-      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/dsx-ai-factory/nke/blob/main/CODE_OF_CONDUCT.md).
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/dsx-ai-factory/nvke/blob/main/CODE_OF_CONDUCT.md).
       options:
-        - label: I agree to follow nke's Code of Conduct
+        - label: I agree to follow NVKE's Code of Conduct
           required: true
         - label: I have searched open documentation issues and found no duplicates
           required: true

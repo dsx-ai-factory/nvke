@@ -39,6 +39,6 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/dsx-ai-factory/nke)
+        - prefix(github.com/dsx-ai-factory/nvke)
     gofumpt:
       extra-rules: true

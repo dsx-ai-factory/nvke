@@ -11,7 +11,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 // CWEBinding maps a namespace, release selection, and class to an existing CWE request.

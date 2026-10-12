@@ -4,7 +4,7 @@
 # Builds the nke-agent .debs on an agent/v* tag, uploads them to the
 # apt-publisher S3 intake, attaches both packages as assets on a GitHub
 # Release for that tag, and publishes the same packages to GHCR as an OCI
-# artifact (ghcr.io/dsx-ai-factory/nke/agent-deb) for oras pull. Apt intake is
+# artifact (ghcr.io/dsx-ai-factory/nvke/agent-deb) for oras pull. Apt intake is
 # tag-only: workflow_dispatch is kept so a failed tag publish can be re-run,
 # but branch dispatches never upload. deb.yml exercises the same packaging
 # path on every agent change and throws the packages away; this workflow is
@@ -20,7 +20,7 @@
 # environment, so no bucket name lands in a tracked file of a repository that
 # is released publicly:
 #
-#   APT_INTAKE_S3_URI       variable  e.g. s3://example-bucket/nke-packages
+#   APT_INTAKE_S3_URI       variable  e.g. s3://example-bucket/nvke-packages
 #   APT_INTAKE_PROJECT      variable  optional; default nke-agent
 #   APT_INTAKE_AWS_ROLE_ARN variable  IAM role assumed via OIDC to write intake
 #   APT_INTAKE_AWS_REGION   variable  optional; default us-west-2
@@ -68,13 +68,14 @@ jobs:
     # Tag-only: a branch workflow_dispatch must not produce packages that the
     # publish job (or a later re-enable) could upload into apt intake.
     if: >-
-      github.repository == 'dsx-ai-factory/nke' &&
+      github.repository_id == '1323115536' &&
       (startsWith(inputs.ref || github.ref_name, 'agent/v') || inputs.ref != '')
     outputs:
       sha: ${{ steps.package.outputs.sha }}
     timeout-minutes: 20
     permissions:
       contents: read
+      actions: read  # upload-sarif reads the workflow run
       security-events: write  # the malware scan uploads SARIF
     strategy:
       fail-fast: false
@@ -190,7 +191,7 @@ jobs:
           output_file: 'clamav-agent-deb.sarif'
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: agent-deb-${{ matrix.arch }}
           path: agent/bin/*.deb
@@ -201,7 +202,7 @@ jobs:
     name: Upload to apt intake
     needs: [build]
     if: >-
-      github.repository == 'dsx-ai-factory/nke' &&
+      github.repository_id == '1323115536' &&
       startsWith(inputs.ref || github.ref_name, 'agent/v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -216,7 +217,7 @@ jobs:
           persist-credentials: false
 
       - name: Download packages
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: agent-deb-*
           merge-multiple: true
@@ -279,7 +280,7 @@ jobs:
     name: Upload dev packages to S3
     needs: [build]
     if: >-
-      github.repository == 'dsx-ai-factory/nke' &&
+      github.repository_id == '1323115536' &&
       github.ref == 'refs/heads/main' &&
       !startsWith(inputs.ref || github.ref_name, 'agent/v')
     runs-on: ubuntu-latest
@@ -309,7 +310,7 @@ jobs:
           persist-credentials: false
 
       - name: Download packages
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: agent-deb-*
           merge-multiple: true
@@ -335,12 +336,12 @@ jobs:
     name: Publish debs to GHCR
     needs: [build]
     if: >-
-      github.repository == 'dsx-ai-factory/nke' &&
+      github.repository_id == '1323115536' &&
       startsWith(inputs.ref || github.ref_name, 'agent/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      REPO: ghcr.io/dsx-ai-factory/nke/agent-deb
+      REPO: ghcr.io/dsx-ai-factory/nvke/agent-deb
       SOURCE_SHA: ${{ needs.build.outputs.sha }}
     permissions:
       contents: read
@@ -360,7 +361,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Download packages
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: agent-deb-*
           merge-multiple: true
@@ -408,7 +409,7 @@ jobs:
             work="$(mktemp -d)"
             cp "$deb" "${work}/nke-agent.deb"
             ( cd "${work}" && oras push "${REPO}:${version}-${arch}" \
-                --artifact-type application/vnd.nvidia.nke.agent.deb.v1 \
+                --artifact-type application/vnd.nvidia.nvke.agent.deb.v1 \
                 --artifact-platform "linux/${arch}" \
                 --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
                 --annotation "org.opencontainers.image.revision=${SOURCE_SHA}" \
@@ -439,7 +440,7 @@ jobs:
     name: Publish debs to NVCR
     needs: [build]
     if: >-
-      github.repository == 'dsx-ai-factory/nke' &&
+      github.repository_id == '1323115536' &&
       startsWith(inputs.ref || github.ref_name, 'agent/v')
     runs-on: ubuntu-latest
     env:
@@ -459,7 +460,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Download packages
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: agent-deb-*
           merge-multiple: true
@@ -478,19 +479,19 @@ jobs:
       - name: Resolve repo
         id: meta
         env:
-          NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
+          NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
         run: |
           set -euo pipefail
-          if [[ -z "${NKE_NGC_ORG}" ]]; then
-            echo "::error::NKE_NGC_ORG is not set in the nvcr environment"
+          if [[ -z "${NVKE_NGC_ORG}" ]]; then
+            echo "::error::NVKE_NGC_ORG is not set in the nvcr environment"
             exit 1
           fi
-          echo "repo=nvcr.io/${NKE_NGC_ORG}/nke-agent-deb" >> "${GITHUB_OUTPUT}"
+          echo "repo=nvcr.io/${NVKE_NGC_ORG}/nvke-agent-deb" >> "${GITHUB_OUTPUT}"
 
       # `$oauthtoken` is NGC's literal username, not a shell variable.
       - name: Log in to NVCR
         env:
-          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NKE }}
+          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE || secrets.NGC_REGISTRY_TOKEN_NKE }}
         run: |
           set -euo pipefail
           # shellcheck disable=SC2016
@@ -516,7 +517,7 @@ jobs:
             work="$(mktemp -d)"
             cp "$deb" "${work}/nke-agent.deb"
             ( cd "${work}" && oras push "${REPO}:${version}-${arch}" \
-                --artifact-type application/vnd.nvidia.nke.agent.deb.v1 \
+                --artifact-type application/vnd.nvidia.nvke.agent.deb.v1 \
                 --artifact-platform "linux/${arch}" \
                 --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
                 --annotation "org.opencontainers.image.revision=${SOURCE_SHA}" \
@@ -552,7 +553,7 @@ jobs:
     name: Attach debs to GitHub Release
     needs: [build]
     if: >-
-      github.repository == 'dsx-ai-factory/nke' &&
+      github.repository_id == '1323115536' &&
       startsWith(inputs.ref || github.ref_name, 'agent/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -580,7 +581,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Download packages
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: agent-deb-*
           merge-multiple: true

@@ -11,7 +11,7 @@ development. One server and one API support two lifecycle backends:
 Both backends can run at the same time. They share the catalog, API, and common
 instance records while keeping backend-specific runtime behavior separate.
 
-This service was called `forge-vms` until [#279](https://github.com/dsx-ai-factory/nke/pull/279). The rename is a hard cut with
+This service was called `forge-vms` until [#279](https://github.com/dsx-ai-factory/nvke/pull/279). The rename is a hard cut with
 no compatibility shims, so a host that ran the old build needs a one-time migration.
 
 ## Selecting a backend
@@ -111,7 +111,7 @@ and TPM behavior.
 ### Migrating from `forge-vms`
 
 This service was called `forge-vms` until
-[#279](https://github.com/dsx-ai-factory/nke/pull/279). The rename is a hard cut with no
+[#279](https://github.com/dsx-ai-factory/nvke/pull/279). The rename is a hard cut with no
 compatibility shims, so a host that ran the old build needs a one-time migration.
 
 First destroy any VMs the old build left behind. They are named `forge-vm-*`,
@@ -204,7 +204,7 @@ By default nico-sim's VM backend **owns its networking**: `scripts/setup-linux.s
 - The base image must boot with **DHCP** (the libvirt network runs the DHCP server); network mode forces DHCP regardless of iPXE presence.
 - `NICO_VMS_BGP_ENABLED=false` is **optional** — BGP is auto-skipped in this mode — but setting it makes intent explicit.
 
-**Readiness (no `phone_home`).** Because there is no nico-vms metadata server on the VM's network, cloud-init's `phone_home` can't report back. Drive readiness by **SSH-probing port 22** (fires early in boot) and then polling whatever agent the VM runs. The NKE cluster-bringup driver does exactly this: SSH-probe, then a `WaitForAgent` gRPC poll on the nke-agent port.
+**Readiness (no `phone_home`).** Because there is no nico-vms metadata server on the VM's network, cloud-init's `phone_home` can't report back. Drive readiness by **SSH-probing port 22** (fires early in boot) and then polling whatever agent the VM runs. The NVKE cluster-bringup driver does exactly this: SSH-probe, then a `WaitForAgent` gRPC poll on the nke-agent port.
 
 **Host prep — `scripts/setup-libvirt-network.sh`.** The network-mode counterpart to `setup-linux.sh`. It (1) ensures the target libvirt network is active, and (2) exempts intra-subnet (VM↔VM) traffic from MASQUERADE by inserting a `RETURN` at the top of the nat `POSTROUTING` chain. Some hosts SNAT inter-VM traffic to the node's own IP — e.g. **AWS EKS via the VPC CNI `AWS-SNAT-CHAIN`**, which masquerades anything not bound for the VPC CIDR. That rewritten source IP breaks IP-bound peer TLS: etcd control-plane joins fail with `"<node-ip>" does not match any of DNSNames [...]`. The `RETURN` preserves the real VM source IPs for VM↔VM traffic while leaving VM→internet NAT intact. The subnet is derived from the network's own XML (not hardcoded), the rule is idempotent, and `--cleanup` removes it (call that from a CI `after_script` so it always runs).
 
@@ -223,7 +223,7 @@ NICO_VMS_BASE_IMAGE=/var/lib/libvirt/images/noble-server-cloudimg-amd64.img \
 scripts/setup-libvirt-network.sh --network default --cleanup
 ```
 
-> This is how the NKE kubeadm `cluster-bringup` test runs its 4-VM HA cluster on the shared GitLab libvirt runner. The kubeadm repo wraps the above in `tests/cluster-bringup/scripts/setup-gitlab-runner.sh`.
+> This is how the NVKE kubeadm `cluster-bringup` test runs its 4-VM HA cluster on the shared GitLab libvirt runner. The kubeadm repo wraps the above in `tests/cluster-bringup/scripts/setup-gitlab-runner.sh`.
 
 ### CIDR ranges
 
@@ -358,7 +358,7 @@ parts required by node bootstrap:
 
 The node image replaces `cloud-init` with a small status shim. Calling
 `cloud-init status` reads that file and prints the normal `status: running`,
-`status: done`, or `status: error` contract, so the NKE agent follows the same
+`status: done`, or `status: error` contract, so the NVKE agent follows the same
 wait path it uses on a real node.
 
 ### Reboot simulation
@@ -600,7 +600,7 @@ mkdir -p ../controller/nico-sim/var/files/agent
 cp bin/linux_amd64/nke-agent ../controller/nico-sim/var/files/agent/nke-agent
 ```
 
-The cloud-init pickup command used by `nke-nico-vms-24.04-amd64-fde` is:
+The cloud-init pickup command used by `nvke-nico-vms-24.04-amd64-fde` is:
 
 ```bash
 sh -c 'u=http://carbide-pxe.forge:18080/files/agent/nke-agent; if curl -fsSL "$u" -o /tmp/nke-agent; then install -m 0755 /tmp/nke-agent /usr/local/bin/nke-agent && echo "downloaded local nke-agent" && /usr/local/bin/nke-agent -version; else echo "local nke-agent not available at $u; using image agent"; fi'
@@ -797,7 +797,7 @@ For one-shot nico-vms integration tests, sync just this tree and run on the remo
 
 ```bash
 ./scripts/sync-to-remote.sh [--ssh|--tsh] hostname
-# syncs to ~/dev/nke/controller/nico-sim/ on the remote (override: NICO_SIM_REMOTE_DIR)
+# syncs to ~/dev/nvke/controller/nico-sim/ on the remote (override: NICO_SIM_REMOTE_DIR)
 ```
 
 ## Helper Scripts
@@ -807,7 +807,7 @@ For one-shot nico-vms integration tests, sync just this tree and run on the remo
 | ---------------------------------- | ----------------------------------------------------------------- |
 | `scripts/run-vm-server.sh`         | Start the server with auto-detected backend and base image        |
 | `scripts/run-dnsmasq.sh`           | Start dnsmasq for VM DHCP/DNS on the bridge (used by Tilt)        |
-| `scripts/get-kubeconfig.sh`        | Extract kubeconfig from a running NKE cluster via the nke-controller API + SSH   |
+| `scripts/get-kubeconfig.sh`        | Extract kubeconfig from a running NVKE cluster via the nke-controller API + SSH   |
 | `scripts/inspect-vm-ips.sh`        | Compare DB IPs vs actual ARP IPs to detect IP drift               |
 | `scripts/create-prod-vm.sh`        | Create a production FDE VM with iPXE + LUKS + kubeadm             |
 | `scripts/nico-vms-console-log.sh` | View VM console output from disk                                  |
@@ -881,7 +881,7 @@ The default seed (`internal/seed/default-seed.yaml`) provides IDs used throughou
 | Backend | Resource | ID | Name |
 |---|---|---|---|
 | shared | Org | `novxwn552ssc` | |
-| shared | Tenant | `d282929f-49d5-4dec-8d27-21ceb30ade19` | Forge-Tenant-NKE |
+| shared | Tenant | `d282929f-49d5-4dec-8d27-21ceb30ade19` | Forge-Tenant-NVKE |
 | nico-vms | Site | `a1b2c3d4-0001-4000-8000-000000000001` | NICo VMs Site |
 | nico-vms | VPC | `a1b2c3d4-0002-4000-8000-000000000001` | mock-vpc |
 | nico-vms | Subnet | `a1b2c3d4-0003-4000-8000-000000000001` | mock-subnet |

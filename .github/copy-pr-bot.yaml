@@ -6,8 +6,9 @@ auto_sync_draft: true
 auto_sync_ready: true
 
 # Contributors whose pull requests the bot mirrors without a vetter's
-# `/ok to test`: the nke-admin, nke-maintainer and nke-write rosters as of
-# 2026-09-12, including members whose dsx-ai-factory invitation is pending.
+# `/ok to test`: the nvke-admin, nvke-maintainer and nvke-write rosters as of
+# 2026-09-12, including members whose dsx-ai-factory invitation is pending,
+# plus everyone with a commit or pull request here as of 2026-10-11.
 additional_trustees:
   - abhay-krishna
   - abhinavmpandey08
@@ -19,10 +20,13 @@ additional_trustees:
   - bmcadams1
   - carldanley
   - chaochn47
+  - coffeepac
   - cullenmcdermott
   - danbudris
   - depohmel
   - dims
+  - dry923
+  - echapman13
   - erstaples
   - g-gaston
   - Ganiredi
@@ -44,21 +48,28 @@ additional_trustees:
   - Lazzer64
   - lia-campbell
   - mark-larter
+  - marklee77
+  - maxcelant
   - mchmarny
   - mdaverde
+  - meet101
   - miancheng7
   - mjlshen
   - mmeha
   - mmoore71
+  - natherz97
   - naut-brian
+  - nbhoomakkanavar
   - newtonkishore-nv
   - nhammernik
   - njhensley
   - nvidiajeff
+  - odacremolbap
   - pbikki
   - pdmack
   - rbever-nvidia
   - rcompos
+  - rorajani
   - sithape2025
   - smalleni
   - srao-nv
@@ -68,6 +79,8 @@ additional_trustees:
   - TerryHowe
   - tjrasche
   - vignesh-goutham
+  - vineeth-bandi
   - vwilson-nvidia
+  - wongma7
   - xdu31
   - zmadell523

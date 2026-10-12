@@ -15,11 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 	temporallog "go.temporal.io/sdk/log"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/agent/agenttest"
-	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestNodePreflight(t *testing.T) {
@@ -36,7 +36,7 @@ func TestNodePreflight(t *testing.T) {
 		agentVersionErr          error
 		wantErr                  string
 		wantPreflightCalls       int
-		assertPreflightRequest   func(t *testing.T, req *nkeproto.ExecuteNodePreflightRequest)
+		assertPreflightRequest   func(t *testing.T, req *nvkeproto.ExecuteNodePreflightRequest)
 	}{
 		{
 			name:                     "old agent skips strict preflight after agent version probe",
@@ -52,7 +52,7 @@ func TestNodePreflight(t *testing.T) {
 			capiInfraMachineTemplate: json.RawMessage(`{}`),
 			agentVersion:             "0.1.24",
 			wantPreflightCalls:       1,
-			assertPreflightRequest: func(t *testing.T, req *nkeproto.ExecuteNodePreflightRequest) {
+			assertPreflightRequest: func(t *testing.T, req *nvkeproto.ExecuteNodePreflightRequest) {
 				t.Helper()
 				assert.NotNil(t, req.GetCheckCloudInitStatus())
 				assert.Empty(t, req.GetChecks())
@@ -66,7 +66,7 @@ func TestNodePreflight(t *testing.T) {
 			),
 			agentVersion:       "0.1.24",
 			wantPreflightCalls: 1,
-			assertPreflightRequest: func(t *testing.T, req *nkeproto.ExecuteNodePreflightRequest) {
+			assertPreflightRequest: func(t *testing.T, req *nvkeproto.ExecuteNodePreflightRequest) {
 				t.Helper()
 				assert.Nil(t, req.GetCheckCloudInitStatus())
 				checks := req.GetChecks()
@@ -89,7 +89,7 @@ func TestNodePreflight(t *testing.T) {
 			nodeAgent := &agenttest.FakeClient{
 				AgentVersion:    tt.agentVersion,
 				AgentVersionErr: tt.agentVersionErr,
-				PreflightResp: &nkeproto.ExecuteNodePreflightResponse{
+				PreflightResp: &nvkeproto.ExecuteNodePreflightResponse{
 					Status: nodePreflightStatusReady,
 				},
 			}

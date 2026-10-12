@@ -9,7 +9,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 // The kubeadm init and join requests carry the cluster's etcd encryption key,
@@ -37,7 +37,7 @@ func loggableJoinRequest(req *pb.KubeadmJoinRequest) *pb.KubeadmJoinRequest {
 }
 
 // encryptionKeyDigest is the hex SHA-256 of key, or "" when there is none. It
-// identifies a key without disclosing it, and matches the digest nkectl logs
+// identifies a key without disclosing it, and matches the digest nvkectl logs
 // for the key it saves.
 func encryptionKeyDigest(key string) string {
 	if key == "" {

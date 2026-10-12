@@ -15,7 +15,7 @@ can't set finalizers on`.
 **Cause:**
 1. The Operator creates a NetworkPolicy for its own Pod, owned by its
    Deployment, with `blockOwnerDeletion: true`.
-2. Every cluster NKE builds runs the `OwnerReferencesPermissionEnforcement`
+2. Every cluster NVKE builds runs the `OwnerReferencesPermissionEnforcement`
    admission plugin (`defaultEnabledAdmissionPlugins` in
    `controller/internal/kubeadmconfig`). It allows that field only if the
    requester can `update` the owner's `deployments/finalizers`.
@@ -35,7 +35,7 @@ kubectl auth can-i update deployments.apps/nktp-operator --subresource=finalizer
   -n nktp --as=system:serviceaccount:nktp:opentelemetry-operator   # yes
 ```
 
-## The install stops at nke-base-config: "`{{ .ClusterName }}` has no value"
+## The install stops at nvke-base-config: "`{{ .ClusterName }}` has no value"
 
 **Cause:** the BootstrapConfig passed with `--config` has no `ClusterName`.
 The `nktp-cluster` ConfigMap is rendered from it, and the renderer refuses an
@@ -45,7 +45,7 @@ empty value rather than labeling every signal with nothing.
 
 ## The nktp item fails building chart dependencies
 
-**Cause:** `deploy/nke-deploy.sh` runs `helm dependency build` for the chart
+**Cause:** `deploy/nvke-deploy.sh` runs `helm dependency build` for the chart
 before installing it. That needs egress to `open-telemetry.github.io`,
 `prometheus-community.github.io` and `kubernetes-sigs.github.io`.
 
@@ -81,15 +81,15 @@ kubectl -n nktp logs -l app.kubernetes.io/component=opentelemetry-collector \
 
 | Target | Cause | Fix |
 |---|---|---|
-| `kube-scheduler`, `kube-controller-manager` | They listen on `127.0.0.1` on NKE, and on kubeadm clusters generally | The site values turn these monitors off. Make sure an override didn't turn them back on. |
+| `kube-scheduler`, `kube-controller-manager` | They listen on `127.0.0.1` on NVKE, and on kubeadm clusters generally | The site values turn these monitors off. Make sure an override didn't turn them back on. |
 | `kube-proxy` | OVN clusters run no kube-proxy | Also turned off in the site values |
-| `kube-etcd` | etcd serves metrics on `127.0.0.1` only | NKE sets `listen-metrics-urls: http://0.0.0.0:2381`; elsewhere, turn the monitor off |
+| `kube-etcd` | etcd serves metrics on `127.0.0.1` only | NVKE sets `listen-metrics-urls: http://0.0.0.0:2381`; elsewhere, turn the monitor off |
 | A target that just disappeared | Its monitor was deleted, but Prometheus keeps the last sample for up to five minutes | Wait it out |
 
 ## No API audit logs
 
 **Cause:**
-- **Wrong path:** the receiver reads a path that doesn't exist. NKE writes the
+- **Wrong path:** the receiver reads a path that doesn't exist. NVKE writes the
   audit log to `/var/log/kubernetes_audit/audit.log`, and the site values
   point `filelog/kube-api-audit` there. A cluster that writes it elsewhere
   needs the same override.

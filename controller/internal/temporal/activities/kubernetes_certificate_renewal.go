@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
 const (
@@ -56,7 +56,7 @@ func (a *Activities) RenewKubernetesCertificates(
 	if input.ThresholdDays <= 0 || input.ThresholdDays > math.MaxInt32 {
 		return KubernetesCertificateRenewalResult{}, fmt.Errorf("threshold days must be between 1 and %d", math.MaxInt32)
 	}
-	response, err := a.nodeAgentClient.StartKubernetesCertificateRenewal(ctx, node, &nkeproto.StartKubernetesCertificateRenewalRequest{
+	response, err := a.nodeAgentClient.StartKubernetesCertificateRenewal(ctx, node, &nvkeproto.StartKubernetesCertificateRenewalRequest{
 		OperationId:   input.OperationID,
 		ThresholdDays: int32(input.ThresholdDays),
 	})
@@ -99,7 +99,7 @@ func (a *Activities) RenewKubernetesCertificates(
 		statusResponse, statusErr := a.nodeAgentClient.GetKubernetesCertificateRenewalStatus(
 			ctx,
 			node,
-			&nkeproto.GetKubernetesCertificateRenewalStatusRequest{OperationId: input.OperationID},
+			&nvkeproto.GetKubernetesCertificateRenewalStatusRequest{OperationId: input.OperationID},
 		)
 		if statusErr != nil {
 			return KubernetesCertificateRenewalResult{}, fmt.Errorf(
@@ -118,26 +118,26 @@ func (a *Activities) RenewKubernetesCertificates(
 }
 
 func certificateRenewalTerminalResult(
-	operation *nkeproto.KubernetesCertificateRenewalOperation,
+	operation *nvkeproto.KubernetesCertificateRenewalOperation,
 ) (KubernetesCertificateRenewalResult, bool, error) {
 	statusOperation := operation.GetOperation()
 	if statusOperation == nil {
 		return KubernetesCertificateRenewalResult{}, true, errors.New("certificate renewal operation status is empty")
 	}
 	switch statusOperation.GetPhase() {
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING:
 		return KubernetesCertificateRenewalResult{}, false, nil
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED:
 		switch operation.GetOutcome() {
-		case nkeproto.KubernetesCertificateRenewalOperation_OUTCOME_UNCHANGED,
-			nkeproto.KubernetesCertificateRenewalOperation_OUTCOME_RENEWED:
+		case nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_UNCHANGED,
+			nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_RENEWED:
 			return KubernetesCertificateRenewalResult{
 				Output: fmt.Sprintf("certificate renewal %s", operation.GetOutcome()),
 			}, true, nil
-		case nkeproto.KubernetesCertificateRenewalOperation_OUTCOME_UNSPECIFIED,
-			nkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_BEFORE_RESTART,
-			nkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_RESTORED,
-			nkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_NOT_RESTORED:
+		case nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_UNSPECIFIED,
+			nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_BEFORE_RESTART,
+			nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_RESTORED,
+			nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_NOT_RESTORED:
 			return KubernetesCertificateRenewalResult{}, true, fmt.Errorf(
 				"certificate renewal operation %s succeeded with invalid outcome %s",
 				statusOperation.GetOperationId(),
@@ -150,7 +150,7 @@ func certificateRenewalTerminalResult(
 				operation.GetOutcome(),
 			)
 		}
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED:
 		return KubernetesCertificateRenewalResult{}, true, fmt.Errorf(
 			"certificate renewal operation %s failed at %s with outcome %s: %s",
 			statusOperation.GetOperationId(),
@@ -158,7 +158,7 @@ func certificateRenewalTerminalResult(
 			operation.GetOutcome(),
 			statusOperation.GetErrorMessage(),
 		)
-	case nkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_UNSPECIFIED:
+	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_UNSPECIFIED:
 		return KubernetesCertificateRenewalResult{}, true, fmt.Errorf(
 			"certificate renewal operation %s returned invalid phase %s",
 			statusOperation.GetOperationId(),

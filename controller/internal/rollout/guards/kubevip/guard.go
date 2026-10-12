@@ -9,10 +9,10 @@ import (
 	"errors"
 	"fmt"
 
-	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
 
 const (
@@ -92,13 +92,13 @@ func (g *KubeVipDrainRestoreGuard) CheckPreApply(
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if _, err := client.StartK8SControlPlaneNodeGracefulShutdown(ctx, &nkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest{
+	if _, err := client.StartK8SControlPlaneNodeGracefulShutdown(ctx, &nvkeproto.StartK8SControlPlaneNodeGracefulShutdownRequest{
 		OperationId:       state.DrainOperationID,
 		StopKubeApiserver: false,
 	}); err != nil {
 		return false, fmt.Errorf("start kube-vip drain on node %s: %w", node.Name(), err)
 	}
-	resp, err := client.GetK8SControlPlaneNodeGracefulShutdownStatus(ctx, &nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusRequest{
+	resp, err := client.GetK8SControlPlaneNodeGracefulShutdownStatus(ctx, &nvkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusRequest{
 		OperationId: state.DrainOperationID,
 	})
 	if err != nil {
@@ -132,7 +132,7 @@ func (g *KubeVipDrainRestoreGuard) PostApply(
 	if cleanup != nil {
 		defer cleanup()
 	}
-	_, err = client.StartKubeVipRestore(ctx, &nkeproto.StartKubeVipRestoreRequest{
+	_, err = client.StartKubeVipRestore(ctx, &nvkeproto.StartKubeVipRestoreRequest{
 		OperationId: state.RestoreOperationID,
 	})
 	if err != nil {
@@ -162,7 +162,7 @@ func (g *KubeVipDrainRestoreGuard) CheckPostApply(
 	if cleanup != nil {
 		defer cleanup()
 	}
-	resp, err := client.StartKubeVipRestore(ctx, &nkeproto.StartKubeVipRestoreRequest{
+	resp, err := client.StartKubeVipRestore(ctx, &nvkeproto.StartKubeVipRestoreRequest{
 		OperationId: state.RestoreOperationID,
 	})
 	if err != nil {

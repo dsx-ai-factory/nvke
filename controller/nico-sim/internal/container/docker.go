@@ -16,7 +16,7 @@ import (
 
 	"go.yaml.in/yaml/v4"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/apierr"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/apierr"
 )
 
 const (

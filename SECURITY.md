@@ -59,19 +59,22 @@ reporting channel and must not be published.
 
 ## Supported versions
 
-nke has no stable release. Every product line is still on pre-releases
-(`*-rc.N`), except the `controller/api` Go module, which publishes `v0.0.x` so
-consumers can pin. Until a stable release exists, `main` is the only branch
-that receives security fixes.
+Each component releases on its own tag line (`agent/vX.Y.Z`, `cli/vX.Y.Z`,
+`controller/vX.Y.Z`, `os-image/vX.Y.Z`, `nktp/vX.Y.Z`) and a product release
+`vX.Y.Z` ties them together; the first stable releases shipped on 2026-09-30.
+The `controller/api` Go module publishes `v0.0.x` so consumers can pin. There
+are no long-lived release branches: a security fix lands on `main` and ships in
+the next release of the affected component, or as a hotfix release cut from the
+patched tag as [RELEASE.md](RELEASE.md) describes.
 
 | Version | Supported |
 |---|---|
 | `main` | ✅ Receives security fixes |
-| Pre-release commits and forks | ❌ Not supported |
+| The latest release of each component line | ✅ Fixed in its next release, or a hotfix release |
+| Older releases, pre-releases and forks | ❌ Not supported |
 
-Once stable releases begin, this table will name the release lines that receive
-backports, and the policy will be to support the latest minor release only
-until the project reaches 1.0.
+Until the project reaches 1.0 the policy is to support the latest minor release
+of each component only.
 
 ## Reporter credit
 
@@ -84,8 +87,8 @@ issues resolved under our coordinated vulnerability disclosure policy.
 
 ## Artifact integrity
 
-**Every release attaches a SHA-256 `checksums.txt` with a build-provenance
-attestation over it, and the images published to GHCR are attested by digest.
+**Every component release attaches a SHA-256 `checksums.txt` with a
+build-provenance attestation over it, and the images published to GHCR are attested by digest.
 Verify the attestation, then the checksums, and treat any artifact that fails
 either as unverified.**
 
@@ -96,7 +99,7 @@ workflow, ref and commit that produced the artifact, and logged in a public
 transparency log. There is no signing key held by this project.
 
 [RELEASE.md](RELEASE.md) carries the verify commands and what each attestation
-covers. Always pass `--repo dsx-ai-factory/nke` — that is what binds an
+covers. Always pass `--repo dsx-ai-factory/nvke` — that is what binds an
 attestation to this repository rather than to any GitHub workflow anywhere.
 
 A checksum alone proves a download arrived intact, not who produced it: whoever
@@ -106,17 +109,22 @@ the attestation adds.
 The NVCR and DSX copies of the published images are not yet attested, because
 those registries do not serve the OCI referrers API. No SLSA level is claimed.
 
-Third-party dependency licenses for the `agent` module are recorded in
-[agent/THIRD_PARTY_NOTICES.md](agent/THIRD_PARTY_NOTICES.md), regenerated and
+Third-party dependency licenses are recorded per component in
+[agent/THIRD_PARTY_NOTICES.md](agent/THIRD_PARTY_NOTICES.md),
+[cli/THIRD_PARTY_NOTICES.md](cli/THIRD_PARTY_NOTICES.md),
+[controller/THIRD_PARTY_NOTICES.md](controller/THIRD_PARTY_NOTICES.md), which
+also covers the provisioned provider, and
+[os-image/THIRD_PARTY_NOTICES.md](os-image/THIRD_PARTY_NOTICES.md), indexed by
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); all four are regenerated and
 verified in CI on every push.
 
 ## Out of scope
 
-These generally do not qualify as vulnerabilities in nke:
+These generally do not qualify as vulnerabilities in NVKE:
 
 - Vulnerabilities in upstream components — Kubernetes, kubeadm, containerd,
   Temporal, PostgreSQL, SPIRE, Cluster API. Report those to the owning project.
-  If nke's use of one of them makes an upstream issue exploitable in a way it
+  If NVKE's use of one of them makes an upstream issue exploitable in a way it
   otherwise would not be, that **is** in scope.
 - Findings that require existing root on a managed node, or cluster-admin on
   the management cluster, to exploit.
@@ -145,7 +153,7 @@ If you deploy or operate nke:
 - **Updates.** Apply security releases promptly and read the release notes for
   the supported-version policy in force at the time.
 - **Dependencies.** Review Dependabot alerts and keep pinned versions current.
-- **Pod Security Admission.** NKE labels its own system namespaces
+- **Pod Security Admission.** NVKE labels its own system namespaces
   `privileged` — kube-proxy, the CNI, and node-local-dns all need host
   access, which is standard practice for these namespaces. Applying Pod
   Security Admission to your own namespaces is your responsibility.

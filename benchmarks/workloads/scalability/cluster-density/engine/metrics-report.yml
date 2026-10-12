@@ -38,7 +38,7 @@
   metricName: max-mutating-inflight
   instant: true
 
-# Kubelet (no kube_node_role join — NKE doesn't apply the worker label uniformly)
+# Kubelet (no kube_node_role join — NVKE doesn't apply the worker label uniformly)
 
 - query: avg(avg_over_time(irate(process_cpu_seconds_total{job="kubelet"}[2m])[{{.elapsed}}:]))
   metricName: cpu-kubelet
@@ -86,7 +86,7 @@
   metricName: max-etcdDBSizeInUseBytes
   instant: true
 
-# Control plane components (NKE: static pods in kube-system)
+# Control plane components (NVKE: static pods in kube-system)
 
 - query: avg(avg_over_time(topk(3, sum(irate(container_cpu_usage_seconds_total{name!="", namespace="kube-system", pod=~"kube-apiserver-.*"}[2m])) by (pod))[{{.elapsed}}:]))
   metricName: cpu-kube-apiserver
@@ -204,7 +204,7 @@
   metricName: max-memory-prometheus
   instant: true
 
-# Nodes (no role split — NKE doesn't apply node-role.kubernetes.io/worker by default)
+# Nodes (no role split — NVKE doesn't apply node-role.kubernetes.io/worker by default)
 
 - query: avg(avg_over_time(sum(irate(node_cpu_seconds_total{mode!="idle", mode!="steal"}[2m])) by (instance)[{{.elapsed}}:]))
   metricName: cpu-nodes

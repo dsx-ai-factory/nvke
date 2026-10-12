@@ -11,13 +11,13 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/netutil"
-	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/state"
-	vmruntime "github.com/dsx-ai-factory/nke/controller/nico-sim/internal/vm"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/netutil"
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/state"
+	vmruntime "github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/vm"
 )
 
-// metadataHostname is the DNS name baked into NKE FDE qcow2 images as the
+// metadataHostname is the DNS name baked into NVKE FDE qcow2 images as the
 // primary cloud-init NoCloud seed source (97-forge-datasource.cfg).
 // nico-vms adds this name to the libvirt network's DNS when running in
 // libvirt-network mode so the VM can resolve it to the metadata server.
@@ -168,7 +168,7 @@ func (n *libvirtNetwork) LookupLease(ctx context.Context, mac string) (string, b
 
 // MetadataAddrs returns the single address the metadata server should bind
 // in libvirt-network mode: the libvirt gateway on port 80, matching the
-// carbide-pxe.forge seedfrom URL baked into the NKE FDE image.
+// carbide-pxe.forge seedfrom URL baked into the NVKE FDE image.
 func (n *libvirtNetwork) MetadataAddrs() []string {
 	if n.gateway == "" {
 		return nil

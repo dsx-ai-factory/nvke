@@ -4,7 +4,7 @@ scenario: ../../workloads/scheduler/scheduler-baseline/scenario.yaml
 workload: scheduler
 k8s_version: 1.34.2
 date: 2026-07-13
-authors: [NVIDIA NKE Scale Team]
+authors: [NVIDIA NVKE Scale Team]
 ---
 
 # Scheduler baseline — Kubernetes 1.34.2

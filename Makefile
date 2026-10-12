@@ -117,7 +117,7 @@ RELEASE_LDFLAGS ?= -s -w -buildid= -extldflags -static
 
 # Must match WORKER_BIN_NAME in controller/Makefile. `build` fails if it does not.
 # NKE_CONTROLLER_BIN_NAME overrides it. An empty value counts as unset.
-# CWE_BIN_NAME is a deprecated alias for NKE_CONTROLLER_BIN_NAME; nke#1399 removes it.
+# CWE_BIN_NAME is a deprecated alias for NKE_CONTROLLER_BIN_NAME; #1399 removes it.
 controller_bin_name = $(or $(NKE_CONTROLLER_BIN_NAME),$(CWE_BIN_NAME),controller)
 
 # No module is excluded from the workspace any more; kept (empty) because
@@ -340,7 +340,7 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
 API_DEPENDENTS := controller cli controller/test/e2e
 
 # The modules that import controller/deploy/charts, so a chart change builds
-# what ships it. nkectl is the consumer; until it imports the module, this only
+# what ships it. nvkectl is the consumer; until it imports the module, this only
 # costs the cli suite a run it cannot fail.
 CHARTS_DEPENDENTS := cli
 
@@ -527,18 +527,18 @@ build: ## Build every workspace package, and the released commands into bin/.
 	@$(MAKE) --no-print-directory -C controller build >/dev/null || exit 1
 	@cp controller/bin/$(controller_bin_name) $(BIN_DIR)/ \
 		|| { echo "ERROR: controller/Makefile no longer produces bin/$(controller_bin_name). Update controller_bin_name here to match its WORKER_BIN_NAME."; exit 1; }
-	@# Same reason as controller: cli/Makefile owns nkectl's
+	@# Same reason as controller: cli/Makefile owns nvkectl's
 	@# version ldflags, and it asserts the stamp took.
 	@echo "- building cli"
 	@$(MAKE) --no-print-directory -C cli build >/dev/null || exit 1
-	@cp cli/bin/nkectl $(BIN_DIR)/ \
-		|| { echo "ERROR: cli/Makefile no longer produces bin/nkectl."; exit 1; }
+	@cp cli/bin/nvkectl $(BIN_DIR)/ \
+		|| { echo "ERROR: cli/Makefile no longer produces bin/nvkectl."; exit 1; }
 	@echo "- building management-engine"
 	@$(MAKE) --no-print-directory -C management-engine build-bin BIN_DIR=$(BIN_DIR) VERSION=$(call cmd_version,management-engine) >/dev/null || exit 1
 	@echo "Built into $(BIN_DIR):"
 	@ls -1 $(BIN_DIR) | sed 's/^/    /'
 
-# Every binary `build` produces, and how each reports its version. nkectl takes a
+# Every binary `build` produces, and how each reports its version. nvkectl takes a
 # subcommand, the rest take a flag. Both answer the same question.
 #
 # name:argument pairs, because the check below reads them at make level. A shell
@@ -548,7 +548,7 @@ VERSION_CMDS := agent:--version \
                 controller:--version \
                 management-engine:--version \
                 nke-os-image-check:--version \
-                nkectl:version \
+                nvkectl:version \
                 updater:--version
 
 version-check: build ## Verify every built binary reports a real version. (run by the merge gate)
@@ -559,7 +559,7 @@ version-check: build ## Verify every built binary reports a real version. (run b
 	@#
 	@# The declared/built comparison sorts LC_ALL=C, because the two sides are
 	@# sorted by different tools: make's $(sort) is byte order, while the shell's
-	@# sort follows the locale, which folds punctuation and puts nkectl before
+	@# sort follows the locale, which folds punctuation and puts nvkectl before
 	@# nke-os-image-check where bytes put nke-os-image-check first. Every name that
 	@# existed before sorted the same both ways, so this surfaced only when
 	@# nke-os-image-check was added -- as a mismatch listing the identical six names.
@@ -604,7 +604,7 @@ license-deps-check: ## Check dependency licenses in every workspace module. (run
 		echo "- dependency licences: $$module"; \
 		GOTOOLCHAIN=local ./controller/bin/go-licenses check "./$$module/..." \
 			--disallowed_types=restricted,reciprocal,forbidden,unknown \
-			--ignore github.com/dsx-ai-factory/nke \
+			--ignore github.com/dsx-ai-factory/nvke \
 			--ignore github.com/dsx-ai-factory/cluster-api-provider-nico || exit 1; \
 	 done
 

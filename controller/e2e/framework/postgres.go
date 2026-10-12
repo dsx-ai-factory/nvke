@@ -22,7 +22,7 @@ import (
 const (
 	ControllerGofailPostgresDSNEnv = "NKE_CONTROLLER_GOFAIL_E2E_DB_CONNECTION_STRING"
 	postgresReadyTimeout           = 15 * time.Second
-	// legacyPostgresDSNEnv is a deprecated alias; nke#1399 removes it.
+	// legacyPostgresDSNEnv is a deprecated alias; #1399 removes it.
 	legacyPostgresDSNEnv = "CWE_GOFAIL_E2E_DB_CONNECTION_STRING"
 )
 
