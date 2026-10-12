@@ -57,9 +57,9 @@ func newFakeController(t *testing.T) *fakeController {
 	return f
 }
 
-// runNkectl executes nvkectl with args against a config pointing at url,
+// runNvkectl executes nvkectl with args against a config pointing at url,
 // returning stdout, stderr and the command's error as Execute reports it.
-func runNkectl(t *testing.T, url string, args ...string) (stdout, stderr string, err error) {
+func runNvkectl(t *testing.T, url string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	// No kubeconfig, so the client sends no bearer token and mints none.
@@ -91,7 +91,7 @@ func traceparents(t *testing.T, f *fakeController) []string {
 
 func TestTraceIDPrintedOnSuccessMatchesTraceparent(t *testing.T) {
 	f := newFakeController(t)
-	stdout, stderr, err := runNkectl(t, f.URL, "delete", "cluster", "demo")
+	stdout, stderr, err := runNvkectl(t, f.URL, "delete", "cluster", "demo")
 	require.NoError(t, err)
 
 	m := traceIDLineRE.FindStringSubmatch(stderr)
@@ -108,7 +108,7 @@ func TestTraceIDPrintedOnSuccessMatchesTraceparent(t *testing.T) {
 func TestTraceIDOnFailureWhenControllerRejects(t *testing.T) {
 	f := newFakeController(t)
 	f.status = http.StatusInternalServerError
-	_, _, err := runNkectl(t, f.URL, "get", "clusters")
+	_, _, err := runNvkectl(t, f.URL, "get", "clusters")
 	require.Error(t, err)
 
 	ids := traceparents(t, f)
@@ -119,7 +119,7 @@ func TestTraceIDOnFailureWhenControllerRejects(t *testing.T) {
 func TestTraceIDOnFailureWhenRequestNeverReachesController(t *testing.T) {
 	f := newFakeController(t)
 	f.Close()
-	_, _, err := runNkectl(t, f.URL, "get", "clusters")
+	_, _, err := runNvkectl(t, f.URL, "get", "clusters")
 	require.Error(t, err)
 	assert.Regexp(t, `\nTrace ID: [0-9a-f]{32}$`, err.Error())
 }
@@ -135,7 +135,7 @@ func TestTraceIDOnFailureBeforeAnyHookRuns(t *testing.T) {
 	}
 	for name, args := range tests {
 		t.Run(name, func(t *testing.T) {
-			stdout, _, err := runNkectl(t, f.URL, args...)
+			stdout, _, err := runNvkectl(t, f.URL, args...)
 			require.Error(t, err)
 			assert.Regexp(t, `\nTrace ID: [0-9a-f]{32}$`, err.Error())
 			assert.Empty(t, stdout)
@@ -147,7 +147,7 @@ func TestTraceIDOnFailureBeforeAnyHookRuns(t *testing.T) {
 func TestNoTraceIDForHelpAndCompletionFailures(t *testing.T) {
 	f := newFakeController(t)
 	for _, args := range [][]string{{"completion", "--bogus"}, {"help", "--bogus"}, {"bogus"}} {
-		_, _, err := runNkectl(t, f.URL, args...)
+		_, _, err := runNvkectl(t, f.URL, args...)
 		require.Error(t, err, args)
 		assert.NotContains(t, err.Error(), "Trace ID", args)
 	}
@@ -176,7 +176,7 @@ func TestSubcommandPreRunDoesNotDisableTracing(t *testing.T) {
 func TestQueryCommandsPrintNoTraceIDOnSuccess(t *testing.T) {
 	f := newFakeController(t)
 	for _, args := range [][]string{{"get", "clusters", "-o", "json"}, {"version"}} {
-		stdout, stderr, err := runNkectl(t, f.URL, args...)
+		stdout, stderr, err := runNvkectl(t, f.URL, args...)
 		require.NoError(t, err, args)
 		assert.NotContains(t, stdout+stderr, "Trace ID", "%v writes only its result", args)
 	}
