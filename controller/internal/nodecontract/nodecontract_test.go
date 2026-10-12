@@ -11,19 +11,19 @@ func TestForAgentVersionBoundary(t *testing.T) {
 		version string
 		want    Contracts
 	}{
-		{"empty is old", "", oldForm},
-		{"whitespace is old", "  ", oldForm},
-		{"unparseable is old", "not-a-version", oldForm},
-		{"far older is old", "v0.1.26", oldForm},
-		{"just below cutover is old", "0.21.99", oldForm},
-		{"prefixed release below cutover is old", "v0.21.0", oldForm},
-		{"cutover is new", "0.22.0", newForm},
-		{"prefixed cutover is new", "v0.22.0", newForm},
-		{"cutover release candidate is new", "v0.22.0-rc.1", newForm},
-		{"cutover git describe is new", "v0.22.0-3-gabc1234", newForm},
-		{"dirty cutover is new", "v0.22.0-dirty", newForm},
-		{"older git describe is old", "v0.21.0-7-gabc1234", oldForm},
-		{"later is new", "v1.0.0", newForm},
+		{"empty is old", "", oldForm()},
+		{"whitespace is old", "  ", oldForm()},
+		{"unparseable is old", "not-a-version", oldForm()},
+		{"far older is old", "v0.1.26", oldForm()},
+		{"just below cutover is old", "0.21.99", oldForm()},
+		{"prefixed release below cutover is old", "v0.21.0", oldForm()},
+		{"cutover is new", "0.22.0", newForm()},
+		{"prefixed cutover is new", "v0.22.0", newForm()},
+		{"cutover release candidate is new", "v0.22.0-rc.1", newForm()},
+		{"cutover git describe is new", "v0.22.0-3-gabc1234", newForm()},
+		{"dirty cutover is new", "v0.22.0-dirty", newForm()},
+		{"older git describe is old", "v0.21.0-7-gabc1234", oldForm()},
+		{"later is new", "v1.0.0", newForm()},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

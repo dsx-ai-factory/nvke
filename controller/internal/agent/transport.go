@@ -92,7 +92,7 @@ func NewTransport(
 			config.NodeAgentExternalTLSNVKECertPath,
 			config.NodeAgentExternalTLSNVKEKeyPath,
 		)
-		if err != nil {
+		if err != nil && !errors.Is(err, errClientCertificateAbsent) {
 			return nil, err
 		}
 	}
@@ -186,10 +186,13 @@ func (t *Transport) externalClientCertificateFor(node db.Node) *tls.Certificate 
 	return t.externalClientCertificate
 }
 
-// loadOptionalClientCertificate returns nil, nil when the certificate file does not exist.
+// errClientCertificateAbsent reports that an optional client certificate file does not exist.
+var errClientCertificateAbsent = errors.New("client certificate file does not exist")
+
+// loadOptionalClientCertificate returns errClientCertificateAbsent when the certificate file does not exist.
 func loadOptionalClientCertificate(certPath, keyPath string) (*tls.Certificate, error) {
 	if _, err := os.Stat(certPath); errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil, errClientCertificateAbsent
 	}
 	certificate, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {

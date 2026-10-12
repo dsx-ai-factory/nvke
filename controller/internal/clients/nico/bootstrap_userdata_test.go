@@ -118,7 +118,7 @@ func TestUnit_RenderUserData(t *testing.T) {
 		"renders profile fields": {
 			config:                baseConfig,
 			template:              userDataTemplate,
-			node:                  db.Node{Name: "test-node", SpiffeEnabled: true},
+			node:                  db.Node{Name: "test-node", SpiffeEnabled: true, AgentVersion: nodecontract.NewFormMinAgentVersion},
 			diskSelectionStrategy: db.DiskSelectionStrategyLargest,
 			kubernetesVersion:     "v1.33.0",
 			teleport: &TeleportUserDataConfig{
@@ -158,7 +158,7 @@ func TestUnit_RenderUserData(t *testing.T) {
 		"renders Calico package names": {
 			config:            baseConfig,
 			template:          "images={{ .CNIImagePackage }}\ncharts={{ .CNIChartsPackage }}\n",
-			node:              db.Node{Name: "test-node"},
+			node:              db.Node{Name: "test-node", AgentVersion: nodecontract.NewFormMinAgentVersion},
 			kubernetesVersion: "1.33.0",
 			cluster:           db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
 			verify: func(t *testing.T, userData string) {
@@ -169,7 +169,7 @@ func TestUnit_RenderUserData(t *testing.T) {
 		"renders OVN package names": {
 			config:            baseConfig,
 			template:          "images={{ .CNIImagePackage }}\ncharts={{ .CNIChartsPackage }}\n",
-			node:              db.Node{Name: "test-node"},
+			node:              db.Node{Name: "test-node", AgentVersion: nodecontract.NewFormMinAgentVersion},
 			kubernetesVersion: "1.33.0",
 			cluster:           db.Cluster{CniPlugin: db.CNIOvnKubernetes, CniVersion: "1.4.1"},
 			verify: func(t *testing.T, userData string) {

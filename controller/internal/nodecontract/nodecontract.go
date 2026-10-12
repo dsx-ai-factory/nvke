@@ -21,7 +21,9 @@ import (
 
 // NewFormMinAgentVersion is the first agent release that speaks the new form of
 // every contract in Contracts. Agents older than this speak only the old form.
-const NewFormMinAgentVersion = "0.22.0"
+const (
+	NewFormMinAgentVersion = "0.22.0"
+)
 
 // Contracts is the set of node contracts the controller writes or addresses
 // for one node.
@@ -38,32 +40,38 @@ type Contracts struct {
 	ControllerCABundlePath string
 }
 
-var (
-	oldForm = Contracts{
+func oldForm() Contracts {
+	return Contracts{
 		URN:                    "urn:nvidia:nke:controller",
 		UnitName:               "nke-agent.service",
 		EnvFilePath:            config.NodeAgentConfigPath,
 		CNIPackagePrefix:       "nke-cni-",
 		ControllerCABundlePath: config.NodeAgentControllerCAPath,
 	}
-	newForm = Contracts{
+}
+
+func newForm() Contracts {
+	return Contracts{
 		URN:                    "urn:nvidia:nvke:controller",
 		UnitName:               "nvke-agent.service",
 		EnvFilePath:            "/etc/default/nvke-agent",
 		CNIPackagePrefix:       "nvke-cni-",
 		ControllerCABundlePath: "/etc/nvke/controller-ca.crt",
 	}
-	newFormMin = semver.MustParse(NewFormMinAgentVersion)
-)
+}
+
+func newFormMin() semver.Version {
+	return semver.MustParse(NewFormMinAgentVersion)
+}
 
 // ForAgentVersion returns the contracts for a node reporting agentVersion.
 // An empty, unparseable or older version gets the old form; only a version
 // that parses and reaches NewFormMinAgentVersion gets the new one.
 func ForAgentVersion(agentVersion string) Contracts {
 	if IsNewForm(agentVersion) {
-		return newForm
+		return newForm()
 	}
-	return oldForm
+	return oldForm()
 }
 
 // IsNewForm reports whether agentVersion selects the new form of the contracts.
@@ -76,7 +84,7 @@ func IsNewForm(agentVersion string) bool {
 	}
 	version.Pre = nil
 	version.Build = nil
-	return version.GTE(newFormMin)
+	return version.GTE(newFormMin())
 }
 
 // normalize reduces `git describe` style versions (v0.22.0-3-gabc1234,
