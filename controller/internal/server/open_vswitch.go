@@ -43,6 +43,20 @@ func dbOpenVSwitchFromAPI(cfg *api.OpenVSwitchConfig) *db.OpenVSwitchConfig {
 	return &db.OpenVSwitchConfig{UplinkInterface: cfg.UplinkInterface, BridgeName: cfg.BridgeName}
 }
 
+func dbOpenVSwitchFromUpdateAPI(cfg *api.OpenVSwitchUpdateConfig) *db.OpenVSwitchConfig {
+	if cfg == nil || (cfg.UplinkInterface == nil && cfg.BridgeName == nil) {
+		return nil
+	}
+	config := &db.OpenVSwitchConfig{}
+	if cfg.UplinkInterface != nil {
+		config.UplinkInterface = *cfg.UplinkInterface
+	}
+	if cfg.BridgeName != nil {
+		config.BridgeName = *cfg.BridgeName
+	}
+	return config
+}
+
 func apiOpenVSwitchFromDB(cfg *db.OpenVSwitchConfig) *api.OpenVSwitchConfig {
 	if cfg == nil {
 		return nil

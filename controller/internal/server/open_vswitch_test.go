@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -73,33 +74,129 @@ func TestOpenVSwitchAPISchema(t *testing.T) {
 	}
 }
 
-func TestOpenVSwitchConfigCreateUpdateAndRead(t *testing.T) {
+func TestOpenVSwitchConfigCreateAndRead(t *testing.T) {
 	want := &api.OpenVSwitchConfig{UplinkInterface: "eth1", BridgeName: "br-eth1"}
 	pool, err := dbNodePoolFromAPI(&api.CreateNodePoolRequest{ClusterID: uuid.New(), OpenVSwitch: want}, "1.36.0")
 	require.NoError(t, err)
 	require.Equal(t, &db.OpenVSwitchConfig{UplinkInterface: "eth1", BridgeName: "br-eth1"}, pool.OpenVSwitch)
 	assert.Equal(t, want, apiNodePoolFromDB(&pool).OpenVSwitch)
-	cluster := db.Cluster{ProviderType: db.ProviderTypeCAPI, CniPlugin: db.CNIOvnKubernetes}
-	require.NoError(t, applyUpdateNodePoolRequest(cluster, &pool, &api.UpdateNodePoolRequest{}))
-	assert.Equal(t, want, apiOpenVSwitchFromDB(pool.OpenVSwitch))
-	old := pool.OpenVSwitch
-	replacement := &api.OpenVSwitchConfig{UplinkInterface: "eth2", BridgeName: "br-eth2"}
-	require.NoError(t, applyUpdateNodePoolRequest(cluster, &pool, &api.UpdateNodePoolRequest{OpenVSwitch: replacement}))
-	assert.Equal(t, replacement, apiOpenVSwitchFromDB(pool.OpenVSwitch))
-	assert.Equal(t, "eth1", old.UplinkInterface)
 
 	spec := controlPlaneConfigSpecFromCreateAPI(&api.CreateClusterControlPlaneConfig{OpenVSwitch: want, Infra: &api.InfraControlPlaneProvider{MachineTemplate: map[string]any{"kind": "ExampleMachineTemplate"}}}, "1.36.0", false, db.ProviderTypeCAPI)
 	assert.Equal(t, want, apiControlPlaneConfigFromDB(db.ControlPlaneConfig{ControlPlaneConfigSpec: spec}).OpenVSwitch)
-	service := &clusterService{}
-	require.NoError(t, service.applyClusterLevelControlPlaneSpecUpdate(context.Background(), &cluster, &api.UpdateClusterControlPlaneConfig{OpenVSwitch: replacement}, &spec))
-	assert.Equal(t, replacement, apiOpenVSwitchFromDB(spec.OpenVSwitch))
-	assert.True(t, hasClusterLevelControlPlaneUpdate(&api.UpdateClusterControlPlaneConfig{OpenVSwitch: replacement}))
+}
+
+func TestOpenVSwitchConfigUpdate(t *testing.T) {
+	explicit := &db.OpenVSwitchConfig{UplinkInterface: "eth1", BridgeName: "br-eth1"}
+	uplink, bridge := "eth2", "br-eth2"
+	replacement := &api.OpenVSwitchUpdateConfig{UplinkInterface: &uplink, BridgeName: &bridge}
+	for _, tt := range []struct {
+		name    string
+		initial *db.OpenVSwitchConfig
+		update  *api.OpenVSwitchUpdateConfig
+		want    *db.OpenVSwitchConfig
+	}{
+		{name: "omission preserves explicit selection", initial: explicit, want: explicit},
+		{name: "empty object restores automatic selection", initial: explicit, update: &api.OpenVSwitchUpdateConfig{}},
+		{name: "pair replaces selection", initial: explicit, update: replacement, want: &db.OpenVSwitchConfig{UplinkInterface: uplink, BridgeName: bridge}},
+		{name: "clearing automatic selection is unchanged", update: &api.OpenVSwitchUpdateConfig{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster := db.Cluster{ProviderType: db.ProviderTypeCAPI, CniPlugin: db.CNIOvnKubernetes}
+			old, pinned := tt.initial.Clone(), tt.initial.Clone()
+			pool := db.NodePool{OpenVSwitch: old}
+			poolPatch := &api.UpdateNodePoolRequest{OpenVSwitch: tt.update}
+			require.NoError(t, (&nodePoolService{}).validateUpdateNodePoolRequest(cluster, poolPatch))
+			require.NoError(t, applyUpdateNodePoolRequest(cluster, &pool, poolPatch))
+			assert.Equal(t, tt.want, pool.OpenVSwitch)
+			assert.Equal(t, pinned, old, "the previous configuration must not be mutated")
+			if tt.update == nil {
+				assert.Same(t, old, pool.OpenVSwitch)
+			}
+			poolResponse := apiNodePoolFromDB(&pool)
+			assert.Equal(t, apiOpenVSwitchFromDB(tt.want), poolResponse.OpenVSwitch)
+
+			spec := db.ControlPlaneConfigSpec{OpenVSwitch: old}
+			patch := &api.UpdateClusterControlPlaneConfig{OpenVSwitch: tt.update}
+			service := &clusterService{}
+			require.NoError(t, service.applyClusterLevelControlPlaneSpecUpdate(context.Background(), &cluster, patch, &spec))
+			assert.Equal(t, tt.want, spec.OpenVSwitch)
+			assert.Equal(t, pinned, old, "the pinned configuration must not be mutated")
+			assert.Equal(t, tt.update != nil, hasClusterLevelControlPlaneUpdate(patch))
+			if tt.update == nil {
+				assert.Same(t, old, spec.OpenVSwitch)
+			}
+			cpResponse := apiControlPlaneConfigFromDB(db.ControlPlaneConfig{ControlPlaneConfigSpec: spec})
+			assert.Equal(t, apiOpenVSwitchFromDB(tt.want), cpResponse.OpenVSwitch)
+			if tt.want == nil {
+				for _, response := range []any{poolResponse, cpResponse} {
+					data, err := json.Marshal(response)
+					require.NoError(t, err)
+					assert.NotContains(t, string(data), `"openVSwitch"`)
+				}
+				poolBefore, specBefore := pool, spec
+				require.NoError(t, applyUpdateNodePoolRequest(cluster, &pool, &api.UpdateNodePoolRequest{OpenVSwitch: &api.OpenVSwitchUpdateConfig{}}))
+				require.NoError(t, service.applyClusterLevelControlPlaneSpecUpdate(context.Background(), &cluster, patch, &spec))
+				assert.Equal(t, poolBefore, pool, "repeating a clear must be a no-op")
+				assert.Equal(t, specBefore, spec, "repeating a clear must be a no-op")
+			}
+		})
+	}
+}
+
+func TestOpenVSwitchUpdateNormalization(t *testing.T) {
+	uplink, bridge, empty := "eth1", "br-eth1", ""
+	for _, tt := range []struct {
+		name    string
+		update  *api.OpenVSwitchUpdateConfig
+		wantNil bool
+		wantErr bool
+	}{
+		{name: "omitted", wantNil: true},
+		{name: "empty object", update: &api.OpenVSwitchUpdateConfig{}, wantNil: true},
+		{name: "pair", update: &api.OpenVSwitchUpdateConfig{UplinkInterface: &uplink, BridgeName: &bridge}},
+		{name: "uplink only", update: &api.OpenVSwitchUpdateConfig{UplinkInterface: &uplink}, wantErr: true},
+		{name: "bridge only", update: &api.OpenVSwitchUpdateConfig{BridgeName: &bridge}, wantErr: true},
+		{name: "empty uplink only", update: &api.OpenVSwitchUpdateConfig{UplinkInterface: &empty}, wantErr: true},
+		{name: "empty names", update: &api.OpenVSwitchUpdateConfig{UplinkInterface: &empty, BridgeName: &empty}, wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := dbOpenVSwitchFromUpdateAPI(tt.update)
+			assert.Equal(t, tt.wantNil, cfg == nil)
+			err := validateOpenVSwitchConfig(db.CNIOvnKubernetes, cfg)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			if cfg == nil {
+				require.NoError(t, validateOpenVSwitchConfig(db.CNICalico, cfg))
+			}
+		})
+	}
+}
+
+func TestOpenVSwitchUpdateRequestJSON(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		body any
+		want string
+	}{
+		{name: "pool reset", body: api.UpdateNodePoolRequest{OpenVSwitch: &api.OpenVSwitchUpdateConfig{}}, want: `{"openVSwitch":{}}`},
+		{name: "control-plane reset", body: api.UpdateClusterRequest{ControlPlaneConfig: &api.UpdateClusterControlPlaneConfig{OpenVSwitch: &api.OpenVSwitchUpdateConfig{}}}, want: `{"controlPlaneConfig":{"openVSwitch":{}}}`},
+		{name: "pool omission", body: api.UpdateNodePoolRequest{}, want: `{}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.body)
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.want, string(data))
+		})
+	}
 }
 
 func TestCreateClusterRejectsInitialPoolOpenVSwitchBeforePersistence(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
-		plugin  string
+		plugin  api.CreateClusterRequestCniPlugin
 		bridge  string
 		message string
 	}{

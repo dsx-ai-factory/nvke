@@ -473,7 +473,7 @@ func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req
 		dbNodePool.SystemReservedMemory = *req.SystemReservedMemory
 	}
 	if req.OpenVSwitch != nil {
-		dbNodePool.OpenVSwitch = dbOpenVSwitchFromAPI(req.OpenVSwitch)
+		dbNodePool.OpenVSwitch = dbOpenVSwitchFromUpdateAPI(req.OpenVSwitch)
 	}
 	if req.KubeReservedMemory != nil {
 		dbNodePool.KubeReservedMemory = *req.KubeReservedMemory
@@ -598,7 +598,7 @@ func validateUpdatedForgeNodePool(_ db.Cluster, dbNodePool *db.NodePool) error {
 // validateUpdateNodePoolRequest validates cluster-type-specific update fields before the request is applied.
 func (s *nodePoolService) validateUpdateNodePoolRequest(cluster db.Cluster, req *api.UpdateNodePoolRequest) error {
 	if req != nil {
-		if err := validateOpenVSwitchConfig(cluster.CniPlugin, dbOpenVSwitchFromAPI(req.OpenVSwitch)); err != nil {
+		if err := validateOpenVSwitchConfig(cluster.CniPlugin, dbOpenVSwitchFromUpdateAPI(req.OpenVSwitch)); err != nil {
 			return err
 		}
 	}

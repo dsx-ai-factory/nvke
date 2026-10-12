@@ -912,7 +912,7 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		spec.NodeAgentConfig.Version = version
 	}
 	if req.OpenVSwitch != nil {
-		spec.OpenVSwitch = dbOpenVSwitchFromAPI(req.OpenVSwitch)
+		spec.OpenVSwitch = dbOpenVSwitchFromUpdateAPI(req.OpenVSwitch)
 	}
 	if req.SystemReservedMemory != nil {
 		spec.SystemReservedMemory = *req.SystemReservedMemory

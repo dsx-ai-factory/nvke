@@ -730,6 +730,120 @@ func TestOpenAPIValidator_UpdateNodePool(t *testing.T) {
 	}
 }
 
+// TestOpenAPIValidator_OpenVSwitchUpdates validates the reset and explicit-pair
+// forms before node-pool and control-plane PATCH handlers access the database.
+func TestOpenAPIValidator_OpenVSwitchUpdates(t *testing.T) {
+	resourceID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440010")
+	endpoints := []struct {
+		name       string
+		path       string
+		lookup     string
+		wrapConfig bool
+	}{
+		{name: "node pool", path: "/api/nodePools/", lookup: "GetNodePool"},
+		{name: "control plane", path: "/api/clusters/", lookup: "GetClusterForUpdate", wrapConfig: true},
+	}
+	tests := []struct {
+		name         string
+		value        string
+		expectReject bool
+	}{
+		{name: "omitted configuration"},
+		{name: "empty object resets configuration", value: `{}`},
+		{name: "complete pair", value: `{"uplinkInterface":"eth1","bridgeName":"br-fabric"}`},
+		{name: "missing uplink", value: `{"bridgeName":"br-fabric"}`, expectReject: true},
+		{name: "missing bridge", value: `{"uplinkInterface":"eth1"}`, expectReject: true},
+		{name: "empty uplink", value: `{"uplinkInterface":"","bridgeName":"br-fabric"}`, expectReject: true},
+		{name: "empty bridge", value: `{"uplinkInterface":"eth1","bridgeName":""}`, expectReject: true},
+		{name: "both names empty", value: `{"uplinkInterface":"","bridgeName":""}`, expectReject: true},
+		{name: "null configuration", value: `null`, expectReject: true},
+		{name: "null names", value: `{"uplinkInterface":null,"bridgeName":null}`, expectReject: true},
+		{name: "unknown key", value: `{"uplinkInterface":"eth1","bridgeName":"br-fabric","addresses":[]}`, expectReject: true},
+	}
+
+	for _, endpoint := range endpoints {
+		t.Run(endpoint.name, func(t *testing.T) {
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					mockDB := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+					mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Maybe()
+					if endpoint.wrapConfig {
+						mockDB.MockTx.On(endpoint.lookup, mock.Anything, resourceID).Return(db.Cluster{}, db.ErrNotFound).Maybe()
+					} else {
+						mockDB.MockTx.On(endpoint.lookup, mock.Anything, resourceID).Return(db.NodePool{}, db.ErrNotFound).Maybe()
+					}
+
+					body := `{}`
+					if tt.value != "" {
+						body = `{"openVSwitch":` + tt.value + `}`
+					}
+					if endpoint.wrapConfig {
+						body = `{"controlPlaneConfig":` + body + `}`
+					}
+					req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch,
+						endpoint.path+resourceID.String(), bytes.NewReader([]byte(body)))
+					req.Header.Set("Content-Type", "application/json")
+					rr := httptest.NewRecorder()
+					newTestServerWithValidator(t, mockDB).ServeHTTP(rr, req)
+
+					if tt.expectReject {
+						assert.Equal(t, http.StatusBadRequest, rr.Code, "body: %s", rr.Body.String())
+						mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+						return
+					}
+					assert.Equal(t, http.StatusNotFound, rr.Code, "valid patch should reach the handler: %s", rr.Body.String())
+					mockDB.MockTx.AssertCalled(t, endpoint.lookup, mock.Anything, resourceID)
+				})
+			}
+		})
+	}
+}
+
+// TestOpenAPIValidator_CreateClusterRejectsEmptyOpenVSwitch keeps the reset form
+// exclusive to PATCH requests for both node pools and the control plane.
+func TestOpenAPIValidator_CreateClusterRejectsEmptyOpenVSwitch(t *testing.T) {
+	for _, scope := range []string{"node pool", "control plane"} {
+		t.Run(scope, func(t *testing.T) {
+			base := openAPIForgeCreateClusterRequest()
+			base.CniPlugin = "ovn-kubernetes"
+			if scope == "node pool" {
+				base.NodePools = &[]api.NodePoolCreateConfig{{
+					Name:             "workers",
+					NodeNamePrefix:   "worker",
+					DesiredNodeCount: 1,
+					Nico:             testNicoNodePoolProvider(),
+				}}
+			}
+			data, err := json.Marshal(base)
+			require.NoError(t, err)
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(data, &body))
+			if scope == "node pool" {
+				pools, ok := body["nodePools"].([]any)
+				require.True(t, ok)
+				pool, ok := pools[0].(map[string]any)
+				require.True(t, ok)
+				pool["openVSwitch"] = map[string]any{}
+			} else {
+				controlPlane, ok := body["controlPlaneConfig"].(map[string]any)
+				require.True(t, ok)
+				controlPlane["openVSwitch"] = map[string]any{}
+			}
+			data, err = json.Marshal(body)
+			require.NoError(t, err)
+			mockDB := &testutil.MockDB{}
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/clusters", bytes.NewReader(data))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			newTestServerWithValidator(t, mockDB).ServeHTTP(rr, req)
+
+			assert.Equal(t, http.StatusBadRequest, rr.Code)
+			assert.Contains(t, rr.Body.String(), "openVSwitch")
+			mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+		})
+	}
+}
+
 // TestStdServerErrorStatus_MalformedPathUUID verifies that requests with a malformed
 // UUID path parameter return HTTP 400 (client error) rather than HTTP 500.
 func TestStdServerErrorStatus_MalformedPathUUID(t *testing.T) {

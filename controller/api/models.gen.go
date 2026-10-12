@@ -229,7 +229,7 @@ type ControlPlaneConfig struct {
 	// NodeLabels Labels applied to control-plane nodes, as a map of keys to values. Set at creation.
 	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
-	// OpenVSwitch Explicit Open vSwitch selection for OVN Kubernetes. Existing uplink addressing, routes and MTU are preserved; management interfaces are not selected implicitly.
+	// OpenVSwitch Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
 	OpenVSwitch *OpenVSwitchConfig `json:"openVSwitch,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
@@ -387,7 +387,7 @@ type CreateClusterControlPlaneConfig struct {
 	// NodeLabels Labels applied to control-plane nodes at creation, as a map of keys to values. Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are reserved, unless the deployment allows specific Kubernetes keys.
 	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
-	// OpenVSwitch Explicit Open vSwitch selection for OVN Kubernetes. Existing uplink addressing, routes and MTU are preserved; management interfaces are not selected implicitly.
+	// OpenVSwitch Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
 	OpenVSwitch *OpenVSwitchConfig `json:"openVSwitch,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
@@ -502,7 +502,7 @@ type CreateNodePoolRequest struct {
 	// Maximum prefix length depends on cluster name length.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
 
-	// OpenVSwitch Explicit Open vSwitch selection for OVN Kubernetes. Existing uplink addressing, routes and MTU are preserved; management interfaces are not selected implicitly.
+	// OpenVSwitch Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
 	OpenVSwitch *OpenVSwitchConfig `json:"openVSwitch,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
@@ -1000,7 +1000,7 @@ type NodePool struct {
 	// NodeNamePrefix Node names are `<cluster>-<prefix>-<NNNN>` (four-digit suffix), at most 63 characters in total.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
 
-	// OpenVSwitch Explicit Open vSwitch selection for OVN Kubernetes. Existing uplink addressing, routes and MTU are preserved; management interfaces are not selected implicitly.
+	// OpenVSwitch Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
 	OpenVSwitch *OpenVSwitchConfig `json:"openVSwitch,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
@@ -1072,7 +1072,7 @@ type NodePoolCreateConfig struct {
 	// Maximum prefix length depends on cluster name length.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
 
-	// OpenVSwitch Explicit Open vSwitch selection for OVN Kubernetes. Existing uplink addressing, routes and MTU are preserved; management interfaces are not selected implicitly.
+	// OpenVSwitch Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
 	OpenVSwitch *OpenVSwitchConfig `json:"openVSwitch,omitempty"`
 
 	// AutoModeDisabled Disables auto-mode (automatic node recycling).
@@ -1111,7 +1111,7 @@ type NodeSet struct {
 	// NodePoolID Owning node pool.
 	NodePoolID openapi_types.UUID `json:"nodePoolID"`
 
-	// OpenVSwitch Explicit Open vSwitch selection for OVN Kubernetes. Existing uplink addressing, routes and MTU are preserved; management interfaces are not selected implicitly.
+	// OpenVSwitch Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
 	OpenVSwitch *OpenVSwitchConfig `json:"openVSwitch,omitempty"`
 
 	// SystemReservedMemory Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
@@ -1145,14 +1145,24 @@ type OpenVSwitchConfig struct {
 	UplinkInterface HostInterfaceName `json:"uplinkInterface"`
 }
 
+// OpenVSwitchUpdateConfig describes an update to the OVN host uplink and bridge.
+// An empty object restores the default NVKE settings for Open vSwitch (default-route selection).
+type OpenVSwitchUpdateConfig struct {
+	// BridgeName Linux interface name; uplinkInterface and bridgeName must differ.
+	BridgeName *HostInterfaceName `json:"bridgeName,omitempty"`
+
+	// UplinkInterface Linux interface name; uplinkInterface and bridgeName must differ.
+	UplinkInterface *HostInterfaceName `json:"uplinkInterface,omitempty"`
+}
+
 // Release A release available to the management plane.
 type Release struct {
 	// Name The name of the release
 	Name string `json:"name"`
 }
 
-// UpdateClusterControlPlaneConfig Changes to `release` or the Kubernetes version start a control-plane
-// rollout. All fields are optional. A provider payload that does not match the
+// UpdateClusterControlPlaneConfig Changes to `release`, config profile, Kubernetes version or Open vSwitch
+// settings start a control-plane rollout. All fields are optional. A provider payload that does not match the
 // cluster's provider is rejected with 400.
 // Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
 // trigger a rollout and remains mutable without a VIP.
@@ -1176,8 +1186,11 @@ type UpdateClusterControlPlaneConfig struct {
 	// NodeAgentConfig Desired control-plane node-agent configuration.
 	NodeAgentConfig *NodeAgentConfig `json:"nodeAgentConfig,omitempty"`
 
-	// OpenVSwitch Explicit Open vSwitch selection for OVN Kubernetes. Existing uplink addressing, routes and MTU are preserved; management interfaces are not selected implicitly.
-	OpenVSwitch *OpenVSwitchConfig `json:"openVSwitch,omitempty"`
+	// OpenVSwitch Open vSwitch uplink and bridge settings for OVN Kubernetes.
+	// An empty object restores the default NVKE settings for Open vSwitch (default-route selection).
+	// Omit to keep the current setting, or supply both names to replace it.
+	// Changes apply to replacement nodes.
+	OpenVSwitch *OpenVSwitchUpdateConfig `json:"openVSwitch,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
@@ -1191,8 +1204,8 @@ type UpdateClusterControlPlaneConfig struct {
 
 // UpdateClusterRequest Changes to a cluster. All fields are optional; unknown fields are rejected.
 type UpdateClusterRequest struct {
-	// ControlPlaneConfig Changes to `release` or the Kubernetes version start a control-plane
-	// rollout. All fields are optional. A provider payload that does not match the
+	// ControlPlaneConfig Changes to `release`, config profile, Kubernetes version or Open vSwitch
+	// settings start a control-plane rollout. All fields are optional. A provider payload that does not match the
 	// cluster's provider is rejected with 400.
 	// Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
 	// trigger a rollout and remains mutable without a VIP.
@@ -1279,8 +1292,11 @@ type UpdateNodePoolRequest struct {
 	// have them stripped.
 	Nico *NicoNodePoolProviderUpdate `json:"nico,omitempty"`
 
-	// OpenVSwitch Explicit Open vSwitch selection for OVN Kubernetes. Existing uplink addressing, routes and MTU are preserved; management interfaces are not selected implicitly.
-	OpenVSwitch *OpenVSwitchConfig `json:"openVSwitch,omitempty"`
+	// OpenVSwitch Open vSwitch uplink and bridge settings for OVN Kubernetes.
+	// An empty object restores the default NVKE settings for Open vSwitch (default-route selection).
+	// Omit to keep the current setting, or supply both names to replace it.
+	// Changes apply to replacement nodes.
+	OpenVSwitch *OpenVSwitchUpdateConfig `json:"openVSwitch,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`

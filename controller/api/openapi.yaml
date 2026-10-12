@@ -1064,7 +1064,8 @@ components:
       description: The control-plane configuration in effect, including the desired node-agent version.
       properties:
         openVSwitch:
-          $ref: "#/components/schemas/OpenVSwitchConfig"
+          allOf:
+            - $ref: "#/components/schemas/OpenVSwitchConfig"
           x-go-name: OpenVSwitch
           description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
         configurationId:
@@ -1202,7 +1203,8 @@ components:
         for a NICo cluster.
       properties:
         openVSwitch:
-          $ref: "#/components/schemas/OpenVSwitchConfig"
+          allOf:
+            - $ref: "#/components/schemas/OpenVSwitchConfig"
           x-go-name: OpenVSwitch
           description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
         desiredCount:
@@ -1249,16 +1251,21 @@ components:
       not:
         required: [nico, infra]
       description: |
-        Changes to `release` or the Kubernetes version start a control-plane
-        rollout. All fields are optional. A provider payload that does not match the
+        Changes to `release`, config profile, Kubernetes version or Open vSwitch
+        settings start a control-plane rollout. All fields are optional. A provider payload that does not match the
         cluster's provider is rejected with 400.
         Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
         trigger a rollout and remains mutable without a VIP.
       properties:
         openVSwitch:
-          $ref: "#/components/schemas/OpenVSwitchConfig"
+          allOf:
+            - $ref: "#/components/schemas/OpenVSwitchUpdateConfig"
           x-go-name: OpenVSwitch
-          description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
+          description: |
+            Open vSwitch uplink and bridge settings for OVN Kubernetes.
+            An empty object restores the default NVKE settings for Open vSwitch (default-route selection).
+            Omit to keep the current setting, or supply both names to replace it.
+            Changes apply to replacement nodes.
         desiredCount:
           type: integer
           minimum: 1
@@ -1524,6 +1531,23 @@ components:
         bridgeName:
           $ref: "#/components/schemas/HostInterfaceName"
 
+    OpenVSwitchUpdateConfig:
+      type: object
+      additionalProperties: false
+      description: |
+        describes an update to the OVN host uplink and bridge.
+        An empty object restores the default NVKE settings for Open vSwitch (default-route selection).
+      # Reject an object that contains exactly one of the two names.
+      not:
+        oneOf:
+          - required: [uplinkInterface]
+          - required: [bridgeName]
+      properties:
+        uplinkInterface:
+          $ref: "#/components/schemas/HostInterfaceName"
+        bridgeName:
+          $ref: "#/components/schemas/HostInterfaceName"
+
     HostInterfaceName:
       type: string
       minLength: 1
@@ -1590,7 +1614,8 @@ components:
                   required: [infra]
       properties:
         openVSwitch:
-          $ref: "#/components/schemas/OpenVSwitchConfig"
+          allOf:
+            - $ref: "#/components/schemas/OpenVSwitchConfig"
           x-go-name: OpenVSwitch
           description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
         name:
@@ -1695,9 +1720,14 @@ components:
       # No required fields since all fields are optional
       properties:
         openVSwitch:
-          $ref: "#/components/schemas/OpenVSwitchConfig"
+          allOf:
+            - $ref: "#/components/schemas/OpenVSwitchUpdateConfig"
           x-go-name: OpenVSwitch
-          description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
+          description: |
+            Open vSwitch uplink and bridge settings for OVN Kubernetes.
+            An empty object restores the default NVKE settings for Open vSwitch (default-route selection).
+            Omit to keep the current setting, or supply both names to replace it.
+            Changes apply to replacement nodes.
         autoProvisionDisabled:
           type: boolean
           description: Disables automatic provisioning for the pool.
@@ -1768,7 +1798,8 @@ components:
         - recycleBudget
       properties:
         openVSwitch:
-          $ref: "#/components/schemas/OpenVSwitchConfig"
+          allOf:
+            - $ref: "#/components/schemas/OpenVSwitchConfig"
           x-go-name: OpenVSwitch
           description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
         id:
@@ -1986,7 +2017,8 @@ components:
         - systemReservedMemory
       properties:
         openVSwitch:
-          $ref: "#/components/schemas/OpenVSwitchConfig"
+          allOf:
+            - $ref: "#/components/schemas/OpenVSwitchConfig"
           x-go-name: OpenVSwitch
           description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
         id:
