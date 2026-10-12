@@ -714,10 +714,14 @@ DSX_IDENTITY_EXCHANGE_IMAGE=""
 # Before any of the builds below, not after them. This is a property of the
 # runner's kernel, so nothing built in between can change the answer, and on a
 # host that cannot load the module the suite is already lost. Asking here costs
-# one alpine pull; asking after the node image build cost ~6 minutes of a
-# cpu16 runner per job (#1515).
+# nothing the run was not going to pay anyway -- the probe image is the node
+# image's own base, pulled by that build regardless. Asking after the build cost
+# ~6 minutes of a cpu16 runner per job (#1515).
 log "checking this host can load the openvswitch module"
-ovs_probe_image="$(dockerhub_image alpine:3.22)"
+ovs_probe_image="$(NKE_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" e2e_capd_base_image "${CONTROLLER_ROOT}")" \
+  || { log "could not resolve the CAPD base image to probe with" >&2; exit 1; }
+# The node image build pulls this a few minutes from now regardless, so this
+# only moves that pull earlier.
 pull_with_retry "${ovs_probe_image}"
 if ! e2e_host_loads_openvswitch "${ovs_probe_image}"; then
   log "this runner host cannot load the openvswitch module (#1515)" >&2

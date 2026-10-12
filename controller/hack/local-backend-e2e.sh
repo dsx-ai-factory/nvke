@@ -185,7 +185,9 @@ fi
 # the answer is a property of this host's kernel, so nothing below changes it,
 # and a host that cannot load the module has already lost the suite.
 log "checking this host can load the openvswitch module"
-e2e_host_loads_openvswitch "$(dockerhub_image alpine:3.22)" ||
+ovs_probe_image="$(e2e_capd_base_image "${repo_root}")" \
+  || fail "could not resolve the CAPD base image to probe with"
+e2e_host_loads_openvswitch "${ovs_probe_image}" ||
   fail "this host cannot load the openvswitch module (#1515)"
 
 log "ensuring the Kind management cluster exists"
