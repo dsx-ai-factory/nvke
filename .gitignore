@@ -103,4 +103,3 @@ controller/test/e2e/nvkectl-diagnostics.tar.gz
 /coverage/
 
 # nvkectl built by make -C deploy test
-deploy/testdata/bin/
