@@ -211,8 +211,9 @@ install_helm_item() {
   fi
   IFS=$'\x1f' read -r _ chart_name version repository path release namespace values requires <<<"${fields}"
 
-  # An override wins, because the caller had to build or fetch the chart. Then a
-  # path inside the deploy path, then a repository the chart is published to.
+  # An override wins, because the caller had to build or fetch the chart.
+  # Then a path inside the deploy path, then a repository the chart is
+  # published to.
   local ref=() override
   override="$(chart_override "${item}")"
   if [[ -n "${override}" ]]; then

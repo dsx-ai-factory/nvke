@@ -333,6 +333,16 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 			t.Errorf("%s in a password: %v", name, err)
 		}
 	}
+	// A checkout under a path with whitespace cannot be carried by the reader.
+	// The committed chart paths climb two levels, so the space sits above that.
+	spaced := filepath.Join(t.TempDir(), "sp ace", "repo", "deploy", "nico")
+	if err := copyTree(nico, spaced); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Render(RenderOptions{DeployPath: spaced, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")})
+	if err == nil || !strings.Contains(err.Error(), "holds whitespace") {
+		t.Errorf("deploy path with a space: %v", err)
+	}
 	// nktpValuesFile without an nktp item is a problem, not a silent skip.
 	spec = filledSiteSpec(t, false, nil)
 	spec.ControllerStack.NktpValuesFile = "nktp.yaml"

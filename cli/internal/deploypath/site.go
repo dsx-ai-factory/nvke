@@ -296,8 +296,9 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 
 // imageValues splits an image reference into the chart's image values:
 // repository and digest, or repository and tag. A tag beside a digest is
-// dropped: the chart renders repository@digest, and the overlay's tag must
-// not survive as a second pin.
+// dropped and tag is cleared so the overlay's tag does not survive as a
+// second pin; the controller chart fills in its appVersion as a placeholder
+// tag and the digest pins the pull.
 func imageValues(ref string) map[string]any {
 	if repo, digest, ok := strings.Cut(ref, "@"); ok {
 		slash := strings.LastIndex(repo, "/")

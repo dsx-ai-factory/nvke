@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 )
@@ -58,7 +59,7 @@ func Render(opts RenderOptions) (*Rendered, error) {
 		return nil, err
 	}
 	opts.Out = out
-	if rel, err := filepath.Rel(deployPath, out); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if rel, err := filepath.Rel(realPath(deployPath), realPath(out)); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return nil, fmt.Errorf("%s is inside the deploy path %s; render writes beside it, not into it", out, deployPath)
 	}
 	items, err := Items(deployPath)
@@ -111,6 +112,23 @@ func (r *renderer) note(format string, args ...any) {
 	fmt.Fprintln(r.opts.Log, line)
 }
 
+// realPath resolves symlinks in path through its nearest existing ancestor,
+// so two spellings of one directory compare equal.
+func realPath(path string) string {
+	rest := ""
+	for p := path; ; {
+		if resolved, err := filepath.EvalSymlinks(p); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		parent, base := filepath.Dir(p), filepath.Base(p)
+		if parent == p {
+			return path
+		}
+		rest = filepath.Join(base, rest)
+		p = parent
+	}
+}
+
 // absoluteChartPaths rewrites a committed chart.path, relative to the
 // deploy path, as an absolute path in the rendered copy: the executor
 // resolves chart.path against the deploy path it installs, and the rendered
@@ -129,6 +147,11 @@ func (r *renderer) absoluteChartPaths() {
 			continue
 		}
 		rel.Chart.Path = filepath.Join(r.opts.DeployPath, rel.Chart.Path)
+		// The deploy path reader takes one unquoted token per value.
+		if strings.ContainsFunc(rel.Chart.Path, unicode.IsSpace) {
+			r.problem("%s: the checkout path %q holds whitespace, which the deploy path reader cannot carry; render from a path without spaces", item.Name, rel.Chart.Path)
+			continue
+		}
 		if err := writePrivate(filepath.Join(r.opts.Out, item.Name, "release.yaml"), rel.Marshal()); err != nil {
 			r.problem("%s: %v", item.Name, err)
 		}
