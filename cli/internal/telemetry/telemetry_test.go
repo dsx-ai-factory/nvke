@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 
@@ -214,4 +215,53 @@ func TestMalformedVersionStillSendsRequests(t *testing.T) {
 	require.NoError(t, resp.Body.Close())
 
 	assert.Equal(t, "nvkectl/v12", userAgent)
+}
+
+func TestWarnsWhenTheControllerReportsADifferentTraceID(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		header   func(sent string) string // the X-Trace-ID the controller returns; "" sends none
+		wantWarn bool
+	}{
+		"a different ID":     {header: func(string) string { return "0af7651916cd43dd8448eb211c80319c" }, wantWarn: true},
+		"the same ID":        {header: func(sent string) string { return sent }},
+		"the same ID, cased": {header: func(sent string) string { return strings.ToUpper(sent) }},
+		"no header":          {header: func(string) string { return "" }},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var logs bytes.Buffer
+			run := NewRun("v1", WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))))
+			ctx := run.Start(context.Background(), "nvkectl get clusters")
+			defer run.Finish(nil)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if id := tc.header(run.TraceID()); id != "" {
+					w.Header().Set("X-Trace-ID", id)
+				}
+			}))
+			defer srv.Close()
+
+			// Two requests: the warning is for the run, not for each request.
+			for range 2 {
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+				require.NoError(t, err)
+				resp, err := (&http.Client{Transport: Transport(nil)}).Do(req)
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+			}
+
+			if !tc.wantWarn {
+				assert.Empty(t, logs.String())
+				return
+			}
+			lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
+			require.Len(t, lines, 1, "warned once")
+			var rec map[string]any
+			require.NoError(t, json.Unmarshal([]byte(lines[0]), &rec))
+			assert.Equal(t, "WARN", rec["level"])
+			assert.Equal(t, run.TraceID(), rec["sent"])
+			assert.Equal(t, "0af7651916cd43dd8448eb211c80319c", rec["received"])
+		})
+	}
 }

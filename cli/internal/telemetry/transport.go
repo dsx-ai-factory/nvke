@@ -45,7 +45,11 @@ func (transport *runTransport) RoundTrip(req *http.Request) (*http.Response, err
 			otelhttp.WithPropagators(propagation.TraceContext{}),
 		))
 	}
-	return traced.(http.RoundTripper).RoundTrip(req)
+	response, err := traced.(http.RoundTripper).RoundTrip(req)
+	if err == nil {
+		run.checkResponseTraceID(req.Context(), response)
+	}
+	return response, err
 }
 
 // userAgentTransport sets the User-Agent and logs each request at debug level.

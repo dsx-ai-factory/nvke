@@ -11,6 +11,8 @@ package telemetry
 
 import (
 	"context"
+	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -25,6 +27,10 @@ const (
 	// defaultUserAgent is the User-Agent of a request sent outside any Run. It
 	// matches the "dev" version a build without ldflags reports.
 	defaultUserAgent = "nvkectl/dev"
+
+	// traceIDHeader is the response header in which the controller reports the
+	// trace ID of the request.
+	traceIDHeader = "X-Trace-ID"
 )
 
 // Run is the trace of one nvkectl invocation. The zero value is not usable;
@@ -33,6 +39,9 @@ const (
 type Run struct {
 	providerOptions []sdktrace.TracerProviderOption
 	userAgent       string
+	logger          *slog.Logger
+
+	mismatchOnce sync.Once // the trace ID mismatch is reported once per run
 
 	mu              sync.Mutex
 	tracerProvider  *sdktrace.TracerProvider
@@ -67,6 +76,12 @@ func WithSpanProcessor(processor sdktrace.SpanProcessor) Option {
 	return func(run *Run) {
 		run.providerOptions = append(run.providerOptions, sdktrace.WithSpanProcessor(processor))
 	}
+}
+
+// WithLogger sets the logger a Run uses for its warnings. The default is the
+// logger returned by slog.Default when the warning is written.
+func WithLogger(logger *slog.Logger) Option {
+	return func(run *Run) { run.logger = logger }
 }
 
 // NewRun returns a Run for an nvkectl build with the given version. Requests
@@ -140,6 +155,28 @@ func (run *Run) Finish(err error) {
 	run.rootSpan.End()
 	_ = run.tracerProvider.Shutdown(context.Background())
 	run.rootSpan, run.tracerProvider = nil, nil
+}
+
+// checkResponseTraceID warns, once per run, when response carries an X-Trace-ID
+// that differs from the run's trace ID. The controller reports the trace its
+// logs and spans use, so a different ID means something between nvkectl and the
+// controller dropped the traceparent header. A response without the header says
+// nothing either way.
+func (run *Run) checkResponseTraceID(ctx context.Context, response *http.Response) {
+	received := response.Header.Get(traceIDHeader)
+	sent := run.TraceID()
+	if received == "" || sent == "" || strings.EqualFold(received, sent) {
+		return
+	}
+	run.mismatchOnce.Do(func() {
+		logger := run.logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.WarnContext(ctx, "the controller reported a different trace ID than nvkectl sent; "+
+			"something between them dropped the traceparent header, so the controller's logs and spans use the received ID",
+			"sent", sent, "received", received)
+	})
 }
 
 type runKey struct{}

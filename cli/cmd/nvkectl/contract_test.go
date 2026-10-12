@@ -772,3 +772,48 @@ func TestDebugLogsCarryTheRequestsTraceID(t *testing.T) {
 		}
 	}
 }
+
+// TestWarnsWhenTheControllerAnswersWithADifferentTraceID runs the built binary
+// against a controller that does or does not honour the traceparent it was sent.
+func TestWarnsWhenTheControllerAnswersWithADifferentTraceID(t *testing.T) {
+	t.Parallel()
+	const otherID = "0af7651916cd43dd8448eb211c80319c"
+
+	tests := []struct {
+		name     string
+		header   func(traceparent string) string // "" sends no X-Trace-ID
+		wantWarn bool
+	}{
+		{"controller honours it", func(tp string) string { return strings.Split(tp, "-")[1] }, false},
+		{"controller starts its own trace", func(string) string { return otherID }, true},
+		{"controller sends no ID", func(string) string { return "" }, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv := stubCWE(t, func(w http.ResponseWriter, r *http.Request) {
+				if id := tc.header(r.Header.Get("Traceparent")); id != "" {
+					w.Header().Set("X-Trace-ID", id)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"clusters":[]}`)
+			})
+
+			got := run(t, writeSiteConfig(t, srv.URL), "get", "clusters", "-o", "json")
+
+			if got.exitCode != 0 {
+				t.Fatalf("exit code = %d, want 0\nstderr: %q", got.exitCode, got.stderr)
+			}
+			if !json.Valid([]byte(got.stdout)) {
+				t.Errorf("stdout is not JSON: %q", got.stdout)
+			}
+			warned := strings.Contains(got.stderr, "level=WARN") && strings.Contains(got.stderr, "received="+otherID)
+			if warned != tc.wantWarn {
+				t.Errorf("warned = %v, want %v\nstderr: %q", warned, tc.wantWarn, got.stderr)
+			}
+			if !tc.wantWarn {
+				assertStream(t, "stderr", got.stderr, "")
+			}
+		})
+	}
+}
