@@ -369,9 +369,16 @@ func (d *Environment) Resolve(capabilities map[string]string) (Selection, error)
 			unusable = append(unusable, fmt.Sprintf("%s (%v)", name, err))
 			continue
 		}
-		machine, err := site.MatchMachine(arch)
-		if err != nil {
-			continue
+		// Machines are optional: a site that declares none places the site
+		// controller on an instance type and lets the datahall choose. Only a
+		// site that pins has a machine to match, and failing to match a pinned
+		// one still rules the site out.
+		var machine Machine
+		if len(site.Machines) > 0 {
+			machine, err = site.MatchMachine(arch)
+			if err != nil {
+				continue
+			}
 		}
 		cpu, err := site.MatchCPU(arch)
 		if err != nil {
@@ -390,7 +397,7 @@ func (d *Environment) Resolve(capabilities map[string]string) (Selection, error)
 
 	// Naming every datahall and what each offers, because the usual cause is a
 	// shape no declared site has rather than a typo in one of them.
-	wanted := fmt.Sprintf("a %s machine and a %s CPU shape", arch, arch)
+	wanted := fmt.Sprintf("a %s CPU shape", arch)
 	if gpu != "" {
 		wanted += fmt.Sprintf(" and a %s GPU shape", gpu)
 	}
@@ -412,10 +419,6 @@ func (d *Environment) Resolve(capabilities map[string]string) (Selection, error)
 	return Selection{}, errors.New(msg)
 }
 
-// MatchMachine returns the first declared machine providing the architecture
-// asked for. First wins, so the file declares machines in the order it would
-// rather spend them.
-//
 // Placement is where a node goes. A DSX create names either a specific
 // machine or an instance type, and this says which the site asked for.
 //
@@ -457,10 +460,13 @@ func (s Site) Place(arch string) (Placement, error) {
 	return Placement{InstanceTypeID: instanceType.ID, Arch: instanceType.Arch(), Name: instanceType.Name}, nil
 }
 
-// Machines are a finite, named list rather than a pool: a datahall holds a
-// handful, and one of them being in Error is the difference between a run that
-// can happen and one that cannot. There is deliberately no fallback to another
+// MatchMachine returns the first declared machine providing the architecture
+// asked for. First wins, so the file declares machines in the order it would
+// rather spend them. There is deliberately no fallback to another
 // architecture.
+//
+// Only reached when a site pins machines, which is the hand bring-up path --
+// see Placement.
 func (s Site) MatchMachine(arch string) (Machine, error) {
 	for _, candidate := range s.Machines {
 		if providesAll(candidate.Provides, map[string]string{infra.CapabilityArch: arch}) {

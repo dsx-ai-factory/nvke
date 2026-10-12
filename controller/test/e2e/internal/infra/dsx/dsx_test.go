@@ -198,7 +198,7 @@ func request(t *testing.T) infra.NodeRequest {
 	}
 }
 
-func TestProvisionNodePlacesOnAMachineNotAnInstanceType(t *testing.T) {
+func TestProvisionNodePinsAMachineWhenTheSiteDeclaresOne(t *testing.T) {
 	nico := &fakeNico{t: t, statuses: []string{"Provisioning"}}
 	dialer := &fakeDialer{conn: &fakeConn{}}
 	provider := newTestProvider(t, nico, dialer)
@@ -209,12 +209,13 @@ func TestProvisionNodePlacesOnAMachineNotAnInstanceType(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = session.Teardown(context.Background()) })
 
-	// The whole of why this provider exists: a DSX create names the host.
+	// A site that declares machines pins one, which is the hand bring-up path.
+	// The default is the other way round -- see the pooled case below.
 	if got := nico.created["machineId"]; got != testMachine {
 		t.Errorf("machineId = %v, want the declared machine", got)
 	}
 	if _, ok := nico.created["instanceTypeId"]; ok {
-		t.Error("the create named an instance type; those place tenants here, not the site controller")
+		t.Error("a pinned create should carry no instanceTypeId; the two are alternatives")
 	}
 	// True re-runs the custom iPXE on every boot instead of booting the disk
 	// the imager just wrote, so the node images itself forever.
@@ -411,5 +412,32 @@ func TestNewRequiresWhatCannotBeDefaulted(t *testing.T) {
 				t.Errorf("New with %s should have failed before anything was created", name)
 			}
 		})
+	}
+}
+
+// The default, and the opposite of the pinned case above: a site declaring no
+// machines sends an instanceTypeId and lets the datahall pick a host that is
+// free and healthy. Pinning one blocked every run on 2026-10-12 while six
+// other machines in the datahall sat idle.
+func TestProvisionNodePlacesOnAnInstanceTypeWhenNoMachineIsDeclared(t *testing.T) {
+	nico := &fakeNico{t: t, statuses: []string{"Provisioning"}}
+	dialer := &fakeDialer{conn: &fakeConn{}}
+	provider := newTestProvider(t, nico, dialer)
+	provider.site.Machines = nil
+
+	node, session, err := provider.ProvisionNode(context.Background(), request(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Teardown(context.Background()) })
+
+	if _, ok := nico.created["machineId"]; ok {
+		t.Error("an unpinned create should carry no machineId; it needs a capability an instance type does not")
+	}
+	if got := nico.created["instanceTypeId"]; got == nil || got == "" {
+		t.Errorf("instanceTypeId = %v, want the declared type", got)
+	}
+	if node.Arch == "" {
+		t.Error("the node should still carry the architecture, which chooses its images")
 	}
 }

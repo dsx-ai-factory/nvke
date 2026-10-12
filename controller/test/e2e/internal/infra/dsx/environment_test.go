@@ -242,7 +242,7 @@ func TestMatchMachineNamesWhatItOffers(t *testing.T) {
 	}
 }
 
-func TestResolveNeedsBothAMachineAndATenantShape(t *testing.T) {
+func TestResolveNeedsATenantShapeOfTheArchitecture(t *testing.T) {
 	withMachineOnly := completeSite()
 	withMachineOnly.InstanceTypes = []InstanceType{
 		{Name: "arm-only", ID: "t1", Provides: map[string]string{infra.CapabilityMachineType: "cpu", infra.CapabilityArch: "arm64"}},
@@ -304,5 +304,35 @@ func TestWorkerTypeFallsBackToTheCPUShape(t *testing.T) {
 	}
 	if selection.WorkerType().Name != "cpu" {
 		t.Errorf("WorkerType() = %q, want the CPU shape when no GPU was asked for", selection.WorkerType().Name)
+	}
+}
+
+// The regression this guards: machines became optional so the datahall could
+// choose a free, healthy host, and Resolve still demanded one. The suite then
+// failed in BeforeAll with "no declared site offers a amd64 machine", before
+// any provider code ran, on a file that was correct.
+func TestResolveDoesNotRequireAMachine(t *testing.T) {
+	pooled := completeSite()
+	pooled.Machines = nil
+	env := &Environment{Org: Org{ID: "ncx"}, Sites: map[string]Site{"dh": pooled}}
+
+	selection, err := env.Resolve(map[string]string{infra.CapabilityArch: "amd64"})
+	if err != nil {
+		t.Fatalf("a site declaring no machines should resolve, got %v", err)
+	}
+	if selection.Machine.ID != "" {
+		t.Errorf("selection should carry no machine, got %+v", selection.Machine)
+	}
+	if selection.CPU.ID == "" {
+		t.Error("selection should still carry the CPU shape the tenant nodes need")
+	}
+
+	// And it must still place: the site controller goes on the instance type.
+	place, err := selection.Site.Place("amd64")
+	if err != nil {
+		t.Fatalf("placing on a site with no machines: %v", err)
+	}
+	if place.InstanceTypeID == "" || place.MachineID != "" {
+		t.Errorf("should place on an instance type, got %+v", place)
 	}
 }
