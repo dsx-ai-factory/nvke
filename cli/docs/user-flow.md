@@ -191,6 +191,15 @@ controller is running, and its credentials are in place; it does not prove the
 credentials work. Needs `kubectl` on `PATH` and the site kubeconfig from
 step 6.
 
+`CREDENTIALS` answers whether they work: it is the provider's own last
+credential check, read from the `NicoIdentity` that names its credentials
+Secret, and `LAST CHECK` says how long ago that check ran. Look for `CONFIGURED`
+with `HEALTHY`. `HEALTHY` means the credentials authenticated recently; it does
+not prove that provisioning will succeed. `NO-IDENTITY` and `UNSUPPORTED` mean
+nothing is checking the credentials yet; see
+[Infrastructure providers](../README.md#infrastructure-providers) for what each
+value means.
+
 `nvkectl` only reads this state and never changes it, so it makes no difference
 whether Helm, Argo CD, or a person applied the provider — the same command
 reports it either way. On a site managed by Argo CD, that makes `get providers`

@@ -57,7 +57,7 @@ nvkectl config view                     # print the config
 nvkectl --site <name> get clusters      # override the active site for one call
 
 # Infrastructure providers (alpha)
-nvkectl get providers                   # NOT-INSTALLED / NOT-CONFIGURED / DEGRADED / CONFIGURED
+nvkectl get providers                   # STATE, CREDENTIALS and LAST CHECK
 nvkectl get providers -o json
 
 # Tenant cluster lifecycle
@@ -114,6 +114,10 @@ The kubeconfig identity needs:
 - `list` on `customresourcedefinitions`, `list` on `deployments` across
   namespaces, and `get` on `secrets` in each provider manager's namespace
   (`capnico-system` and `capll-system` by default), for `nvkectl get providers`
+- `list` on `nicoidentities.infrastructure.cluster.x-k8s.io` in the namespace of
+  CAPNICo's credentials Secret (`capnico-system` by default), for the
+  `CREDENTIALS` column of `nvkectl get providers`. CAPNICo's
+  `nicoidentity-viewer-role` grants it without access to the Secret
 
 A cluster-admin kubeconfig already has all of these. The token grant, and
 creating the service account on a real site, are in
@@ -138,6 +142,42 @@ rather than the CWE API, so it needs the kubeconfig registered with
 | `DEGRADED` | Configured, but the provider's manager is not available or was not found. |
 | `CONFIGURED` | CRDs established, manager available, credentials in place. This does **not** mean the credentials work — nothing here authenticates against the provider's backend. |
 | `UNKNOWN` | A probe failed for a reason other than absence, most often a kubeconfig that may not read Secrets in the manager's namespace. |
+
+`CREDENTIALS` reports whether the credentials work. CAPNICo checks its own
+credentials every few minutes and publishes the result on a `NicoIdentity` that
+names the credentials Secret; nvkectl reads that result and never runs a check.
+`LAST CHECK` is how long ago the latest check finished. The column reads the
+Kubernetes API directly, not through `kubectl`.
+
+| Credentials | Meaning |
+|---|---|
+| `HEALTHY` | The last check authenticated and read the current tenant, within the last 10 minutes. It does not prove that provisioning will succeed. |
+| `FAILING (reason)` | The last check found the Secret missing (`CredentialsNotFound`) or malformed (`InvalidConfiguration`), or the backend rejected (`AuthenticationFailed`) or forbade (`AccessDenied`) the credentials. |
+| `UNKNOWN (reason)` | The last check could not decide: the Secret could not be read (`SecretReadFailed`), or the backend timed out, was unreachable, or failed TLS verification (`ValidationFailed`). `UNKNOWN` with no reason means the check time is in the future or malformed. |
+| `STALE` | No check has finished in the last 10 minutes. The provider's manager may be stopped, or the `NicoIdentity` is outside the namespace or `--watch-filter` the manager watches. `DETAIL` names the likely cause. |
+| `PENDING` | The `NicoIdentity`, or its latest spec change, has not been checked yet. |
+| `NO-IDENTITY` | No `NicoIdentity` in the Secret's namespace names the credentials Secret, so nothing checks it. |
+| `UNSUPPORTED` | The installed CAPNICo does not serve `NicoIdentity`. |
+| `UNREADABLE` | nvkectl could not list `NicoIdentity` objects, most often because the kubeconfig lacks the permission listed above. |
+| `-` | The provider publishes no credential health, or is not installed. |
+
+To observe credential health on a site that reads `NO-IDENTITY`, create a
+`NicoIdentity` that names the credentials Secret CAPNICo uses:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+kind: NicoIdentity
+metadata:
+  name: nico-default
+  namespace: capnico-system
+spec:
+  credentialsRef:
+    name: nico-credentials
+```
+
+`-o json` adds a `credentials` object to each provider that publishes credential
+health, with the health, the `NicoIdentity` it was read from, its `Ready`
+condition, `lastCheckedTime`, and `staleAfterSeconds`.
 
 The providers listed are the ones nvkectl knows how to describe. That is not a
 restriction: CWE accepts any infrastructure manifest written by hand.
