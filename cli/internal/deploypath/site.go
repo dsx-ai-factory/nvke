@@ -126,10 +126,17 @@ func (r *renderer) site() {
 	}
 	if cs.Images.Controller != "" {
 		controller["image"] = r.imageValues("controllerStack.images.controller", cs.Images.Controller)
+		if r.opts.Release != nil {
+			r.note("controller: controllerStack.images.controller overrides the release's image")
+		}
 	}
 	if cs.Images.Profiles != "" {
 		controller["profiles"] = map[string]any{"image": r.imageValues("controllerStack.images.profiles", cs.Images.Profiles)}
-	} else if r.profilesImageRequired() {
+		if r.opts.Release != nil {
+			r.note("controller: controllerStack.images.profiles overrides the release's profiles image")
+		}
+	} else if r.opts.Release == nil && r.profilesImageRequired() {
+		// With a release, the controller item's profilesArtifact names it.
 		r.problem("site spec: controllerStack.images.profiles is required: the deploy path enables profiles.image and nothing else names the image")
 	}
 	r.siteValues("controller", controller)

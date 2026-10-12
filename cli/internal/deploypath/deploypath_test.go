@@ -4,6 +4,9 @@
 package deploypath
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +15,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 )
 
@@ -34,6 +38,16 @@ func TestItemsAndReleases(t *testing.T) {
 	}
 	if controller.Chart.Name != "nke-controller" || controller.Chart.Path == "" || controller.Release.Namespace != "nke-controller" {
 		t.Errorf("controller: %+v", controller.Chart)
+	}
+	if controller.Chart.Artifact != "controller-chart" || controller.Chart.ImageArtifact != "cwe" || controller.Chart.ProfilesArtifact != "controller-profiles" {
+		t.Errorf("controller bindings: %+v", controller.Chart)
+	}
+	capnico, err := ReadRelease(filepath.Join(nico, "capnico"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capnico.Artifact != "capnico-controller" || !strings.HasPrefix(capnico.Image, "ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:") {
+		t.Errorf("capnico: %+v", capnico)
 	}
 	spire, err := ReadRelease(filepath.Join(nico, "spire"))
 	if err != nil {
@@ -582,5 +596,276 @@ func TestImageValuesAndOIDCDomains(t *testing.T) {
 	}
 	if _, err := oidcDomains(filepath.Join(nico, "nvke-deploy.yaml"), "10.0.0.100"); err == nil {
 		t.Error("a file without the block was accepted")
+	}
+}
+
+// fakePuller serves manifests and blobs from memory and records what was asked.
+type fakePuller struct {
+	manifests map[string][]byte
+	blobs     map[string][]byte
+	asked     []string
+}
+
+func (p *fakePuller) Manifest(ref string) ([]byte, error) {
+	p.asked = append(p.asked, "manifest "+ref)
+	m, ok := p.manifests[ref]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return m, nil
+}
+
+func (p *fakePuller) Blob(repository, digest, dest string) error {
+	p.asked = append(p.asked, "blob "+repository+"@"+digest)
+	b, ok := p.blobs[digest]
+	if !ok {
+		return os.ErrNotExist
+	}
+	return os.WriteFile(dest, b, 0o644)
+}
+
+func digest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// chartArtifact builds a chart archive, its manifest and a release artifact
+// for it, under repo, and registers them with the puller.
+func chartArtifact(p *fakePuller, repo, name string) (nvkrrelease.Artifact, string) {
+	blob := []byte("chart " + name)
+	manifest := []byte(`{"layers":[{"mediaType":"application/vnd.cncf.helm.chart.content.v1.tar+gzip","digest":"` + digest(blob) + `"}]}`)
+	ref := repo + "/" + name + "@" + digest(manifest)
+	p.manifests[ref] = manifest
+	p.blobs[digest(blob)] = blob
+	return nvkrrelease.Artifact{Name: name, Kind: "helm-oci", Digest: digest(manifest), Reference: ref}, digest(blob)
+}
+
+func imageArtifact(repo, name, arch string) nvkrrelease.Artifact {
+	d := digest([]byte("image " + name + arch))
+	return nvkrrelease.Artifact{Name: name, Kind: "oci", Digest: d, Reference: repo + "/" + name + "@" + d, Arch: arch}
+}
+
+func TestRender_FromRegistry(t *testing.T) {
+	p := &fakePuller{manifests: map[string][]byte{}, blobs: map[string][]byte{}}
+	repo := "ghcr.io/example/recipes"
+	temporal, temporalLayer := chartArtifact(p, repo, "temporal")
+	controllerChart, _ := chartArtifact(p, repo, "controller-chart")
+	cwe := imageArtifact(repo, "cwe", "")
+	profiles := imageArtifact(repo, "controller-profiles", "")
+	capAMD := imageArtifact(repo, "capnico-controller", "linux/amd64")
+	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
+	release := &nvkrrelease.Release{Subject: repo + "/releases@" + digest([]byte("r")), Artifacts: []nvkrrelease.Artifact{temporal, controllerChart, cwe, profiles, capAMD, capARM}}
+	out := filepath.Join(t.TempDir(), "rendered")
+	result, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Pull: p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The committed path is untouched; the copy carries every file.
+	if _, err := os.Stat(filepath.Join(nico, "charts")); err == nil {
+		t.Fatal("the committed deploy path gained a charts directory")
+	}
+	for _, f := range []string{"nvke-deploy.yaml", "capnico/capnico.yaml", "nvke-base-config/00-namespaces.yaml", "controller/values.yaml"} {
+		if _, err := os.Stat(filepath.Join(out, f)); err != nil {
+			t.Errorf("%s not copied: %v", f, err)
+		}
+	}
+	// temporal comes from the archive; its release.yaml points at it.
+	rel, err := ReadRelease(filepath.Join(out, "temporal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPath := "charts/temporal/temporal-" + strings.TrimPrefix(temporal.Digest, "sha256:") + ".tgz"
+	if rel.Chart.Path != wantPath || rel.Chart.Repository != "" || rel.Chart.Version != "0.74.0" {
+		t.Errorf("temporal release.yaml: %+v", rel.Chart)
+	}
+	if data, err := os.ReadFile(filepath.Join(out, wantPath)); err != nil || digest(data) != temporalLayer {
+		t.Errorf("temporal archive: %v", err)
+	}
+	// postgresql is not in the release: untouched.
+	pg, _ := ReadRelease(filepath.Join(out, "postgresql"))
+	if pg.Chart.Repository == "" || pg.Chart.Path != "" {
+		t.Errorf("postgresql should stay on its repository: %+v", pg.Chart)
+	}
+	// controller: chart from the archive, images in release-images.yaml.
+	ctl, _ := ReadRelease(filepath.Join(out, "controller"))
+	if !strings.HasPrefix(ctl.Chart.Path, "charts/controller/nke-controller-") || ctl.Values[len(ctl.Values)-1] != "release-images.yaml" {
+		t.Errorf("controller release.yaml: %+v", ctl)
+	}
+	values, _ := os.ReadFile(filepath.Join(out, "controller", "release-images.yaml"))
+	want := "image:\n  digest: \"" + cwe.Digest + "\"\n  repository: \"" + repo + "/cwe\"\nprofiles:\n  image:\n    digest: \"" + profiles.Digest + "\"\n    repository: \"" + repo + "/controller-profiles\"\n"
+	if !strings.HasSuffix(string(values), want) {
+		t.Errorf("release-images.yaml:\n%s\nwant suffix:\n%s", values, want)
+	}
+	// capnico: kustomization with the arm64 artifact.
+	kust, _ := os.ReadFile(filepath.Join(out, "capnico", "kustomization.yaml"))
+	if !strings.Contains(string(kust), "  - capnico.yaml\n") || strings.Contains(string(kust), "release.yaml") ||
+		!strings.Contains(string(kust), "newName: \""+repo+"/capnico-controller-arm64\"") || !strings.Contains(string(kust), "digest: \""+capARM.Digest+"\"") {
+		t.Errorf("kustomization:\n%s", kust)
+	}
+	// images.txt lists the three images, without layouts.
+	images, _ := os.ReadFile(filepath.Join(out, "images.txt"))
+	// In deploy-path order: capnico comes before the controller.
+	if string(images) != capARM.Reference+"\t\n"+cwe.Reference+"\t\n"+profiles.Reference+"\t\n" {
+		t.Errorf("images.txt:\n%s", images)
+	}
+	if len(result.Images) != 3 {
+		t.Errorf("images: %+v", result.Images)
+	}
+	for _, ask := range p.asked {
+		if strings.Contains(ask, "cwe") {
+			t.Errorf("an image was pulled: %s", ask)
+		}
+	}
+}
+
+func TestRender_Refusals(t *testing.T) {
+	p := &fakePuller{manifests: map[string][]byte{}, blobs: map[string][]byte{}}
+	repo := "ghcr.io/example/recipes"
+	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
+	profiles := imageArtifact(repo, "controller-profiles", "")
+	release := &nvkrrelease.Release{Subject: "s", Artifacts: []nvkrrelease.Artifact{capARM, profiles}}
+	out := filepath.Join(t.TempDir(), "rendered")
+	_, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/amd64", Out: out, Pull: p})
+	if err == nil {
+		t.Fatal("rendered without the controller image")
+	}
+	for _, want := range []string{"controller: image cwe is not in the release", "capnico: image: capnico-controller is published only for other architectures"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("want %q in:\n%v", want, err)
+		}
+	}
+	if _, statErr := os.Stat(out); statErr == nil {
+		t.Error("a failed render left its output behind")
+	}
+	// The output must not exist.
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Pull: p}); err == nil || !strings.Contains(err.Error(), "exists") {
+		t.Errorf("existing out accepted: %v", err)
+	}
+	// A manifest whose bytes do not match the reference is refused.
+	bad := &fakePuller{manifests: map[string][]byte{}, blobs: map[string][]byte{}}
+	temporal, _ := chartArtifact(bad, repo, "temporal")
+	bad.manifests[temporal.Reference] = []byte(`{"layers":[{"digest":"sha256:other"}]}`)
+	cwe := imageArtifact(repo, "cwe", "")
+	rel := &nvkrrelease.Release{Subject: "s", Artifacts: []nvkrrelease.Artifact{temporal, cwe, profiles, capARM}}
+	_, err = Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: rel, Arch: "linux/arm64", Out: filepath.Join(t.TempDir(), "r"), Pull: bad})
+	if err == nil || !strings.Contains(err.Error(), "the manifest is sha256:") {
+		t.Errorf("tampered manifest: %v", err)
+	}
+}
+
+// writeLayout writes an OCI layout holding manifest (and blob) under dir/name
+// and returns the manifest digest.
+func writeLayout(t *testing.T, dir, name string, manifest, blob []byte) string {
+	t.Helper()
+	layout := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Join(layout, "blobs", "sha256"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d := digest(manifest)
+	if err := os.WriteFile(filepath.Join(layout, "blobs", "sha256", strings.TrimPrefix(d, "sha256:")), manifest, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if blob != nil {
+		if err := os.WriteFile(filepath.Join(layout, "blobs", "sha256", strings.TrimPrefix(digest(blob), "sha256:")), blob, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	index, _ := json.Marshal(map[string]any{"schemaVersion": 2, "manifests": []map[string]any{{"digest": d}}})
+	if err := os.WriteFile(filepath.Join(layout, "index.json"), index, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func TestRender_FromRun(t *testing.T) {
+	run := t.TempDir()
+	packages := filepath.Join(run, "packages")
+	blob := []byte("temporal chart bytes")
+	tManifest := []byte(`{"layers":[{"mediaType":"application/vnd.cncf.helm.chart.content.v1.tar+gzip","digest":"` + digest(blob) + `"}]}`)
+	tDigest := writeLayout(t, packages, "temporal", tManifest, blob)
+	cweDigest := writeLayout(t, packages, "cwe", []byte(`{"config":{"digest":"sha256:0"}}`), nil)
+	profDigest := writeLayout(t, packages, "controller-profiles", []byte(`{"config":{"digest":"sha256:1"}}`), nil)
+	capDigest := writeLayout(t, packages, "capnico-controller-arm64", []byte(`{"config":{"digest":"sha256:2"}}`), nil)
+	ref := func(name, d string) string { return "nvkr.local/nvke/" + name + "@" + d }
+	release := &nvkrrelease.Release{Subject: "nvkr.local/nvke/releases@" + digest([]byte("x")), Artifacts: []nvkrrelease.Artifact{
+		{Name: "temporal", Kind: "helm-oci", Digest: tDigest, Reference: ref("temporal", tDigest)},
+		{Name: "cwe", Kind: "oci", Digest: cweDigest, Reference: ref("cwe", cweDigest)},
+		{Name: "controller-profiles", Kind: "oci", Digest: profDigest, Reference: ref("controller-profiles", profDigest)},
+		{Name: "capnico-controller-arm64", Kind: "oci", Digest: capDigest, Reference: ref("capnico-controller-arm64", capDigest), Arch: "linux/arm64"},
+	}}
+	out := filepath.Join(t.TempDir(), "rendered")
+	result, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", RunDir: run, Out: out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "charts", "temporal", "temporal-"+strings.TrimPrefix(tDigest, "sha256:")+".tgz"))
+	if err != nil || string(data) != string(blob) {
+		t.Errorf("chart copied from the layout: %v", err)
+	}
+	images, _ := os.ReadFile(filepath.Join(out, "images.txt"))
+	want := ref("capnico-controller-arm64", capDigest) + "\t" + filepath.Join(packages, "capnico-controller-arm64") + "\n" +
+		ref("cwe", cweDigest) + "\t" + filepath.Join(packages, "cwe") + "\n" +
+		ref("controller-profiles", profDigest) + "\t" + filepath.Join(packages, "controller-profiles") + "\n"
+	if string(images) != want {
+		t.Errorf("images.txt:\n%s\nwant:\n%s", images, want)
+	}
+	if len(result.Images) != 3 || result.Images[0].Layout == "" {
+		t.Errorf("images: %+v", result.Images)
+	}
+	// A layout the Run lacks is refused, nothing left behind.
+	if err := os.RemoveAll(filepath.Join(packages, "cwe")); err != nil {
+		t.Fatal(err)
+	}
+	out2 := filepath.Join(t.TempDir(), "rendered")
+	_, err = Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", RunDir: run, Out: out2})
+	if err == nil || !strings.Contains(err.Error(), "no OCI layout") {
+		t.Errorf("missing layout: %v", err)
+	}
+	if _, statErr := os.Stat(out2); statErr == nil {
+		t.Error("output left behind")
+	}
+}
+
+func TestRender_SiteAndRelease(t *testing.T) {
+	p := &fakePuller{manifests: map[string][]byte{}, blobs: map[string][]byte{}}
+	repo := "ghcr.io/example/recipes"
+	temporal, _ := chartArtifact(p, repo, "temporal")
+	cwe := imageArtifact(repo, "cwe", "")
+	profiles := imageArtifact(repo, "controller-profiles", "")
+	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
+	release := &nvkrrelease.Release{Subject: repo + "/releases@" + digest([]byte("r")), Artifacts: []nvkrrelease.Artifact{temporal, cwe, profiles, capARM}}
+	out := filepath.Join(t.TempDir(), "rendered")
+	spec := filledSiteSpec(t, false, nil)
+	spec.ControllerStack.Images.Controller = "mirror.example.test/nvke/cwe:v1.2.3"
+	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Release: release, Arch: "linux/arm64", Out: out, Pull: p}); err != nil {
+		t.Fatal(err)
+	}
+	// A tag-only override replaces the release image completely: the site
+	// values clear the digest release-images.yaml set.
+	ctl := readValues(t, filepath.Join(out, "controller", SiteValuesFile))
+	if img, _ := ctl["image"].(map[string]any); img["tag"] != "v1.2.3" || img["digest"] != "" {
+		t.Errorf("tag override beside a release: %v", ctl["image"])
+	}
+	// The controller carries both generated values files, release first,
+	// site last, after the committed ones; its chart is the committed one,
+	// written absolute, since the release lacks controller-chart.
+	rel, _ := ReadRelease(filepath.Join(out, "controller"))
+	if len(rel.Values) != 4 || rel.Values[2] != "release-images.yaml" || rel.Values[3] != SiteValuesFile ||
+		!filepath.IsAbs(rel.Chart.Path) || !strings.HasSuffix(rel.Chart.Path, filepath.Join("controller", "deploy", "charts", "controller")) {
+		t.Errorf("controller release.yaml: %+v %+v", rel, rel.Chart)
+	}
+	tmp, _ := ReadRelease(filepath.Join(out, "temporal"))
+	if !strings.HasPrefix(tmp.Chart.Path, "charts/temporal/") || tmp.Values[len(tmp.Values)-1] != SiteValuesFile {
+		t.Errorf("temporal release.yaml: %+v", tmp)
+	}
+	if _, err := os.Stat(filepath.Join(out, "capnico", "kustomization.yaml")); err != nil {
+		t.Error("capnico kustomization missing")
+	}
+	items, _ := Items(out)
+	if items[0].Type != TypeManifest {
+		t.Errorf("template item not rendered: %+v", items[0])
 	}
 }

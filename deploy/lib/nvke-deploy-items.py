@@ -5,10 +5,16 @@
   items   <nvke-deploy.yaml>  -> "<name>\t<type>" per item, in listed order
   release <release.yaml>     -> "single\x1f<chart>\x1f<version>\x1f<repository>
                                 \x1f<path>\x1f<release>\x1f<namespace>
-                                \x1f<values>\x1f<requires>\x1f<setfile>", one line.
-                                <setfile> is chart.setFile joined with commas:
-                                "<helm key>=<absolute path>" entries the
-                                executor passes as --set-file.
+                                \x1f<values>\x1f<requires>\x1f<artifact>
+                                \x1f<imageArtifact>\x1f<profilesArtifact>
+                                \x1f<setfile>", one line. artifact,
+                                imageArtifact and profilesArtifact are the NVKR
+                                artifacts the chart, the image it runs and its
+                                profiles content image come from, by NVKR's
+                                output names; each may be empty. <setfile> is
+                                chart.setFile joined with commas: "<helm
+                                key>=<absolute path>" entries the executor
+                                passes as --set-file.
 
                                 US-separated, not tab: bash collapses runs of tab
                                 because it is an IFS whitespace character, so an
@@ -123,10 +129,12 @@ def release(path):
         die("%s: missing release.name" % path)
     if "repository" in chart and "path" in chart:
         die("%s: chart has both repository and path; name one source" % path)
-    return ["single\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s" % (
+    return ["single\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s" % (
         chart["name"], chart["version"], chart.get("repository", ""),
         chart.get("path", ""), rel["name"], rel["namespace"],
-        ",".join(values), " ".join(requires), ",".join(setfile))]
+        ",".join(values), " ".join(requires), chart.get("artifact", ""),
+        chart.get("imageArtifact", ""), chart.get("profilesArtifact", ""),
+        ",".join(setfile))]
 
 
 if len(sys.argv) != 3 or sys.argv[1] not in ("items", "release"):

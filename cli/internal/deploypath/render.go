@@ -4,31 +4,53 @@
 package deploypath
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 )
+
+// Puller fetches from a registry: the OCI manifest a reference names, and a
+// blob of a repository into a file.
+type Puller interface {
+	Manifest(ref string) ([]byte, error)
+	Blob(repository, digest, dest string) error
+}
 
 // RenderOptions drive Render.
 type RenderOptions struct {
 	// DeployPath is the committed deploy path; it is never written.
 	DeployPath string
 	// Site is the site spec whose controllerStack section describes the
-	// site the stack is installed for.
+	// site the stack is installed for. Optional.
 	Site *sitespec.SiteSpec
+	// Release is the NVKR release description, and ReleasePath where it was
+	// read from, copied into the output as nvkr-release.json. Optional.
+	Release     *nvkrrelease.Release
+	ReleasePath string
+	// Arch selects release artifacts: linux/amd64 or linux/arm64.
+	Arch string
+	// RunDir, when set, is a completed NVKR Run (or a directory of OCI
+	// layouts): charts and images are read from it and nothing is pulled.
+	RunDir string
 	// Out is the directory to write; it must not exist and must not be
 	// under a shared temp directory.
 	Out string
 	// AllowTempOut accepts an Out under a temp directory. Tests only: their
 	// scratch directories live there.
 	AllowTempOut bool
+	// Pull reaches the registry when Release is set and RunDir is empty.
+	Pull Puller
 	// Log receives one line per decision.
 	Log io.Writer
 }
@@ -53,6 +75,9 @@ func underSharedTemp(path string) bool {
 
 // Rendered reports what Render wrote.
 type Rendered struct {
+	// Images lists the image references the rendered deploy path runs from
+	// the release, with the layout each came from when RunDir was set.
+	Images []ImageSource
 	// Notes are the decisions worth telling the operator.
 	Notes []string
 	// Credentials lists the files under Out that carry a site credential,
@@ -60,19 +85,35 @@ type Rendered struct {
 	Credentials []string
 }
 
-// Render writes a copy of the deploy path under opts.Out, resolved for the
-// site: every item that takes site values gets a site-values.yaml appended
-// to its values, and every template item is rendered against the site and
-// becomes a manifest item. The committed files are copied, never edited.
-// The result holds the site's secrets, so it is written 0700 and is meant
-// for one install. Every problem is reported at once and nothing is left
-// under Out on failure.
+// ImageSource is one image the rendered deploy path runs.
+type ImageSource struct {
+	Reference string
+	Layout    string
+}
+
+// Render writes a copy of the deploy path under opts.Out, resolved for its
+// inputs. For the site: every item that takes site values gets a
+// site-values.yaml appended to its values, and every template item is
+// rendered against the site and becomes a manifest item. For the release: a
+// helm item's chart comes from the chart archive pulled by digest into
+// charts/<item>/ when the release carries the artifact (chart.artifact,
+// default the item name), else stays as committed; an item bound to image
+// artifacts gets a release-images.yaml values file; a manifest item bound
+// to an image artifact gets a kustomization.yaml that rewrites its image to
+// the artifact's repository and digest; images.txt lists the images the
+// result runs. The committed files are copied, never edited. The result
+// holds the site's secrets, so it is written 0700 and is meant for one
+// install. Every problem is reported at once and nothing is left under Out
+// on failure.
 func Render(opts RenderOptions) (*Rendered, error) {
 	if opts.Log == nil {
 		opts.Log = io.Discard
 	}
-	if opts.Site == nil {
-		return nil, errors.New("a site spec is required")
+	if opts.Site == nil && opts.Release == nil {
+		return nil, errors.New("a site spec or a release description is required")
+	}
+	if opts.Release != nil && opts.RunDir == "" && opts.Pull == nil {
+		return nil, errors.New("a puller is required when no run directory is given")
 	}
 	deployPath, err := filepath.Abs(opts.DeployPath)
 	if err != nil {
@@ -90,6 +131,15 @@ func Render(opts RenderOptions) (*Rendered, error) {
 	opts.Out = out
 	if !opts.AllowTempOut && underSharedTemp(out) {
 		return nil, fmt.Errorf("%s is under a shared temp directory; render a site's credentials under a directory only you can read, for example ~/.local/state/nvke/renders/<site>", out)
+	}
+	if opts.RunDir != "" {
+		// images.txt names each image's layout; the install may run from
+		// another directory, so the paths are absolute.
+		runDir, err := filepath.Abs(opts.RunDir)
+		if err != nil {
+			return nil, err
+		}
+		opts.RunDir = runDir
 	}
 	if rel, err := filepath.Rel(realPath(deployPath), realPath(out)); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return nil, fmt.Errorf("%s is inside the deploy path %s; render writes beside it, not into it", out, deployPath)
@@ -111,8 +161,23 @@ func Render(opts RenderOptions) (*Rendered, error) {
 		return nil, err
 	}
 	r := &renderer{opts: opts, items: items, out: &Rendered{}}
+	// Committed chart paths first, so a chart the release carries replaces
+	// them and a chart it lacks resolves from anywhere; then the release, then
+	// the site, whose values are appended last and win.
 	r.absoluteChartPaths()
-	r.site()
+	if opts.Release != nil {
+		for _, item := range items {
+			switch item.Type {
+			case TypeHelm:
+				r.helm(item.Name)
+			case TypeManifest:
+				r.manifest(item.Name)
+			}
+		}
+	}
+	if opts.Site != nil {
+		r.site()
+	}
 	if len(r.problems) > 0 {
 		_ = os.RemoveAll(opts.Out)
 		return nil, fmt.Errorf("nothing was rendered:\n  %s", strings.Join(r.problems, "\n  "))
@@ -214,8 +279,8 @@ func (r *renderer) hasItem(name, kind string) bool {
 // appendValues writes a values file into the rendered item and appends it to
 // the item's values list, after the committed ones so it wins.
 func (r *renderer) appendValues(item, file string, data []byte) {
-	// The rendered copy carries what earlier passes wrote, so the list is
-	// appended there.
+	// The rendered copy carries what earlier passes wrote (the absolute or
+	// archive chart path, release-images.yaml), so the list is appended there.
 	dst := filepath.Join(r.opts.Out, item)
 	rel, err := ReadRelease(dst)
 	if err != nil {
@@ -255,10 +320,224 @@ func (r *renderer) appendSetFile(item string, entries []string) {
 	}
 }
 
+// selectRequired resolves an artifact an item needs; absence is a problem.
+func (r *renderer) selectRequired(item, role, name string) (nvkrrelease.Artifact, bool) {
+	a, err := r.opts.Release.Select(name, r.opts.Arch)
+	if errors.Is(err, nvkrrelease.ErrNotPublished) {
+		r.problem("%s: %s %s is not in the release", item, role, name)
+		return nvkrrelease.Artifact{}, false
+	}
+	if err != nil {
+		r.problem("%s: %s: %v", item, role, err)
+		return nvkrrelease.Artifact{}, false
+	}
+	return a, true
+}
+
+func (r *renderer) helm(item string) {
+	// The rendered copy, which already carries an absolute committed chart path.
+	rel, err := ReadRelease(filepath.Join(r.opts.Out, item))
+	if err != nil {
+		r.problem("%s: %v", item, err)
+		return
+	}
+	if rel.Chart == nil {
+		r.problem("%s: release.yaml has no chart section", item)
+		return
+	}
+	dst := filepath.Join(r.opts.Out, item)
+	changed := false
+
+	artifact := rel.Chart.Artifact
+	if artifact == "" {
+		artifact = item
+	}
+	a, err := r.opts.Release.Select(artifact, r.opts.Arch)
+	switch {
+	case errors.Is(err, nvkrrelease.ErrNotPublished):
+		r.note("%s: %s is not in the release; the chart comes from the deploy path or its repository", item, artifact)
+	case err != nil:
+		r.problem("%s: chart: %v", item, err)
+	default:
+		file, err := r.chartArchive(item, rel.Chart.Name, a)
+		if err != nil {
+			r.problem("%s: chart %s: %v", item, a.Reference, err)
+		} else {
+			rel.Chart.Path = file
+			rel.Chart.Repository = ""
+			changed = true
+			r.note("%s: chart from %s", item, a.Reference)
+		}
+	}
+
+	values := map[string]string{}
+	if rel.Chart.ImageArtifact != "" {
+		if img, ok := r.selectRequired(item, "image", rel.Chart.ImageArtifact); ok {
+			values["image.repository"] = img.Repository()
+			values["image.digest"] = img.Digest
+			r.image(img)
+		}
+	}
+	if rel.Chart.ProfilesArtifact != "" {
+		if img, ok := r.selectRequired(item, "profiles image", rel.Chart.ProfilesArtifact); ok {
+			values["profiles.image.repository"] = img.Repository()
+			values["profiles.image.digest"] = img.Digest
+			r.image(img)
+		}
+	}
+	if len(values) > 0 {
+		if err := writePrivate(filepath.Join(dst, "release-images.yaml"), releaseImageValues(values)); err != nil {
+			r.problem("%s: %v", item, err)
+			return
+		}
+		rel.Values = append(rel.Values, "release-images.yaml")
+		changed = true
+	}
+	if changed {
+		if err := writePrivate(filepath.Join(dst, "release.yaml"), rel.Marshal()); err != nil {
+			r.problem("%s: %v", item, err)
+		}
+	}
+}
+
+func (r *renderer) manifest(item string) {
+	src := filepath.Join(r.opts.DeployPath, item)
+	if _, err := os.Stat(filepath.Join(src, "release.yaml")); err != nil {
+		return
+	}
+	rel, err := ReadRelease(src)
+	if err != nil {
+		r.problem("%s: %v", item, err)
+		return
+	}
+	if rel.Artifact == "" {
+		return
+	}
+	if rel.Image == "" {
+		r.problem("%s: release.yaml binds artifact %s but does not say which image the manifest runs (image: <repository>:<tag>)", item, rel.Artifact)
+		return
+	}
+	img, ok := r.selectRequired(item, "image", rel.Artifact)
+	if !ok {
+		return
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		r.problem("%s: %v", item, err)
+		return
+	}
+	var resources []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".yaml") || name == "release.yaml" || name == "kustomization.yaml" {
+			continue
+		}
+		resources = append(resources, name)
+	}
+	sort.Strings(resources)
+	var b strings.Builder
+	b.WriteString("resources:\n")
+	for _, res := range resources {
+		fmt.Fprintf(&b, "  - %s\n", res)
+	}
+	fmt.Fprintf(&b, "images:\n  - name: %q\n    newName: %q\n    digest: %q\n", rel.Image[:strings.LastIndex(rel.Image, ":")], img.Repository(), img.Digest)
+	if err := writePrivate(filepath.Join(r.opts.Out, item, "kustomization.yaml"), []byte(b.String())); err != nil {
+		r.problem("%s: %v", item, err)
+		return
+	}
+	r.image(img)
+	r.note("%s: image %s -> %s", item, rel.Image, img.Reference)
+}
+
+func (r *renderer) image(a nvkrrelease.Artifact) {
+	for _, have := range r.out.Images {
+		if have.Reference == a.Reference {
+			return
+		}
+	}
+	src := ImageSource{Reference: a.Reference}
+	if r.opts.RunDir != "" {
+		layout, err := nvkrrelease.FindLayout(r.opts.RunDir, a.Digest)
+		if err != nil {
+			r.problem("image %s: %v", a.Reference, err)
+			return
+		}
+		src.Layout = layout
+	}
+	r.out.Images = append(r.out.Images, src)
+}
+
+// chartArchive puts the chart archive of a into charts/<item>/ under Out and
+// returns its path relative to Out. The manifest is hashed against the
+// reference before its layer digest is trusted, and the archive against that
+// layer digest.
+func (r *renderer) chartArchive(item, chartName string, a nvkrrelease.Artifact) (string, error) {
+	var manifest []byte
+	var layout string
+	if r.opts.RunDir != "" {
+		var err error
+		layout, err = nvkrrelease.FindLayout(r.opts.RunDir, a.Digest)
+		if err != nil {
+			return "", err
+		}
+		manifest, err = os.ReadFile(filepath.Join(layout, "blobs", "sha256", strings.TrimPrefix(a.Digest, "sha256:")))
+		if err != nil {
+			return "", err
+		}
+	} else {
+		var err error
+		manifest, err = r.opts.Pull.Manifest(a.Reference)
+		if err != nil {
+			return "", err
+		}
+	}
+	if got := digestOf(manifest); got != a.Digest {
+		return "", fmt.Errorf("the manifest is %s, not the reference's %s", got, a.Digest)
+	}
+	layerDigest, file, err := nvkrrelease.ChartLayer(strings.NewReader(string(manifest)), chartName+"-"+strings.TrimPrefix(a.Digest, "sha256:")+".tgz")
+	if err != nil {
+		return "", err
+	}
+	relDir := filepath.Join("charts", item)
+	if err := os.MkdirAll(filepath.Join(r.opts.Out, relDir), 0o700); err != nil {
+		return "", err
+	}
+	dest := filepath.Join(r.opts.Out, relDir, file)
+	if layout != "" {
+		if err := copyFile(filepath.Join(layout, "blobs", "sha256", strings.TrimPrefix(layerDigest, "sha256:")), dest); err != nil {
+			return "", err
+		}
+	} else if err := r.opts.Pull.Blob(a.Repository(), layerDigest, dest); err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		return "", err
+	}
+	if got := digestOf(data); got != layerDigest {
+		return "", fmt.Errorf("the chart archive is %s, not the manifest's layer %s", got, layerDigest)
+	}
+	return filepath.ToSlash(filepath.Join(relDir, file)), nil
+}
+
 func (r *renderer) finish() error {
 	// The tree holds credentials; a repository must not pick it up by accident.
 	if err := writePrivate(filepath.Join(r.opts.Out, ".gitignore"), []byte("*\n")); err != nil {
 		return err
+	}
+	if len(r.out.Images) > 0 {
+		var b strings.Builder
+		for _, img := range r.out.Images {
+			fmt.Fprintf(&b, "%s\t%s\n", img.Reference, img.Layout)
+		}
+		if err := writePrivate(filepath.Join(r.opts.Out, "images.txt"), []byte(b.String())); err != nil {
+			return err
+		}
+	}
+	if r.opts.ReleasePath != "" {
+		if err := copyFile(r.opts.ReleasePath, filepath.Join(r.opts.Out, "nvkr-release.json")); err != nil {
+			return err
+		}
 	}
 	if r.itemsChanged {
 		header := "Rendered by nvkectl render deploy-path from " + r.opts.DeployPath + ". Template items are rendered and apply as manifests."
@@ -267,6 +546,37 @@ func (r *renderer) finish() error {
 		}
 	}
 	return nil
+}
+
+// releaseImageValues renders the generated values file: nested keys from dotted ones.
+func releaseImageValues(values map[string]string) []byte {
+	var keys []string
+	for k := range values {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString("# Written by nvkectl render deploy-path from the release description.\n")
+	var open []string
+	for _, k := range keys {
+		parts := strings.Split(k, ".")
+		common := 0
+		for common < len(open) && common < len(parts)-1 && open[common] == parts[common] {
+			common++
+		}
+		open = open[:common]
+		for _, p := range parts[common : len(parts)-1] {
+			fmt.Fprintf(&b, "%s%s:\n", strings.Repeat("  ", len(open)), p)
+			open = append(open, p)
+		}
+		fmt.Fprintf(&b, "%s%s: %q\n", strings.Repeat("  ", len(open)), parts[len(parts)-1], values[k])
+	}
+	return []byte(b.String())
+}
+
+func digestOf(data []byte) string {
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // writePrivate writes a file the install reads and nobody else should: the

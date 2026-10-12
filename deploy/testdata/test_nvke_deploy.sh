@@ -8,6 +8,9 @@
 # one on PATH; make -C deploy test builds it.
 #
 # Usage: ./test_nvke_deploy.sh
+#
+# Three deploy paths are installed in dry-run: the committed one, one rendered
+# for a site, and one rendered against a release from a local NVKR Run.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -118,6 +121,95 @@ out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${REP
 expect "placeholders are named" 'controllerStack.arch is still a REPLACE_\* placeholder' "${out}"
 [[ ! -e "${WORK}/refused" ]] && pass "a refused render leaves no output" || fail "refused output left behind"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${rendered}" 2>&1)" && fail "existing --out exited 0"
+expect "an existing --out is refused" 'exists; render writes a new directory' "${out}"
+
+hex_of() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
+
+# A deploy path rendered against a release from a local NVKR Run: the Run's
+# packages/ holds one OCI layout per artifact, and the release description
+# names them with digests that match. The refs' host is only a name.
+# fake_layout DIR NAME MANIFEST_JSON [BLOB]: writes an OCI layout holding the
+# manifest (and the blob it names) and prints the manifest digest.
+fake_layout() {
+  local dir="$1/$2" json="$3" blob="${4:-}" m
+  mkdir -p "${dir}/blobs/sha256"
+  printf '{"imageLayoutVersion":"1.0.0"}' >"${dir}/oci-layout"
+  printf '%s' "${json}" >"${dir}/manifest.json"
+  m="$(hex_of "${dir}/manifest.json")"
+  mv "${dir}/manifest.json" "${dir}/blobs/sha256/${m}"
+  [[ -z "${blob}" ]] || cp "${blob}" "${dir}/blobs/sha256/$(hex_of "${blob}")"
+  printf '{"schemaVersion":2,"manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:%s","size":%s}]}' "${m}" "$(wc -c <"${dir}/blobs/sha256/${m}" | tr -d ' ')" >"${dir}/index.json"
+  printf 'sha256:%s' "${m}"
+}
+run_dir="${WORK}/run"
+packages="${run_dir}/packages"
+printf 'not really a chart\n' >"${WORK}/chart.tgz"
+layer="$(hex_of "${WORK}/chart.tgz")"
+d_cwe="$(fake_layout "${packages}" cwe '{"schemaVersion":2,"config":{"digest":"sha256:0"},"layers":[]}')"
+d_capnico="$(fake_layout "${packages}" capnico-controller-arm64 '{"schemaVersion":2,"config":{"digest":"sha256:1"},"layers":[]}')"
+d_profiles="$(fake_layout "${packages}" controller-profiles '{"schemaVersion":2,"config":{"digest":"sha256:2"},"layers":[]}')"
+d_temporal="$(fake_layout "${packages}" temporal "{\"schemaVersion\":2,\"layers\":[{\"mediaType\":\"application/vnd.cncf.helm.chart.content.v1.tar+gzip\",\"digest\":\"sha256:${layer}\"}]}" "${WORK}/chart.tgz")"
+art() { printf '{"name":"%s","kind":"%s","digest":"%s","reference":"nvkr.local/nvke/%s@%s"%s}' "$1" "$2" "$3" "$1" "$3" "${4:-}"; }
+zeros="$(printf '0%.0s' $(seq 1 64))"
+cat >"${WORK}/local.json" <<JSON
+{"schemaVersion":"nvkr.dev/release/v4","subject":"nvkr.local/nvke/releases@sha256:${zeros}","lane":"unqualified-local-execution","scope":"none",
+ "artifacts":[$(art cwe oci "${d_cwe}"),$(art capnico-controller-arm64 oci "${d_capnico}" ',"arch":"linux/arm64"'),$(art controller-profiles oci "${d_profiles}"),$(art temporal helm-oci "${d_temporal}")],
+ "contentSubject":"sha256:${zeros}","policyDigest":"sha256:${zeros}"}
+JSON
+rendered="${WORK}/rendered-release"
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/local.json" --nvkr-run-dir "${run_dir}" --arch linux/arm64 --out "${rendered}" 2>&1)" || fail "render exited $?: ${out}"
+expect "render reports the images" "^images: nvkr.local/nvke/capnico-controller-arm64@${d_capnico}, nvkr.local/nvke/cwe@${d_cwe}, nvkr.local/nvke/controller-profiles@${d_profiles}$" "${out}"
+expect "render says where a missing chart comes from" '^nktp: nktp is not in the release; the chart comes from the deploy path or its repository$' "${out}"
+[[ -f "${rendered}/charts/temporal/temporal-${d_temporal#sha256:}.tgz" ]] && pass "the temporal archive is in the rendered tree" || fail "temporal archive missing"
+[[ "$(cat "${rendered}/charts/temporal/temporal-${d_temporal#sha256:}.tgz")" == "not really a chart" ]] && pass "the archive is the layout's blob" || fail "archive content"
+grep -q '^  path: charts/temporal/temporal-' "${rendered}/temporal/release.yaml" && pass "temporal release.yaml points at the archive" || fail "temporal release.yaml"
+grep -q '^  repository: https://go.temporal.io' "${NICO}/temporal/release.yaml" && pass "the committed release.yaml is untouched" || fail "committed temporal release.yaml changed"
+[[ ! -e "${NICO}/charts" && ! -e "${NICO}/images.txt" ]] && pass "nothing was written into the committed deploy path" || fail "committed deploy path written"
+grep -q "^nvkr.local/nvke/cwe@${d_cwe}	${packages}/cwe$" "${rendered}/images.txt" && pass "images.txt names the cwe layout" || fail "images.txt: $(cat "${rendered}/images.txt")"
+[[ -f "${rendered}/nvkr-release.json" ]] && pass "the release description travels with the render" || fail "nvkr-release.json missing"
+
+# The executor installs the rendered tree with no release knowledge: charts
+# from the archives, images by digest, imports before anything is applied.
+out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --config "${CONFIG}" --dry-run 2>&1)" || fail "rendered dry run exited $?"
+expect "temporal installed from the archive" "helm upgrade --install temporal ${rendered}/charts/temporal/temporal-${d_temporal#sha256:}\\.tgz " "${out}"
+reject "no dependency build for an archive" 'helm dependency build .*temporal' "${out}"
+expect "postgresql still comes from its public repository" 'helm upgrade --install postgres oci://registry-1.docker.io/bitnamicharts/postgresql --version 18.5.15 ' "${out}"
+expect "nktp still comes from the checkout" 'helm upgrade --install nktp .*/nktp/deploy/charts/nktp ' "${out}"
+expect "the controller takes its images from release-images.yaml" "helm upgrade --install nke-controller .*/controller/deploy/charts/controller .*--values ${rendered}/controller/release-images.yaml" "${out}"
+grep -q "repository: \"nvkr.local/nvke/cwe\"" "${rendered}/controller/release-images.yaml" && pass "release-images.yaml carries the cwe repository" || fail "release-images.yaml"
+grep -q "digest: \"${d_profiles}\"" "${rendered}/controller/release-images.yaml" && pass "and the profiles digest" || fail "profiles digest"
+expect "capnico is applied through a kustomization" "^kubectl kustomize ${rendered}/capnico" "${out}"
+expect "the kustomization names the local image" "^=== kustomization: nvkr.local/nvke/capnico-controller-arm64@${d_capnico}$" "${out}"
+grep -q '^  - capnico.yaml$' "${rendered}/capnico/kustomization.yaml" && pass "the kustomization lists the committed manifest" || fail "kustomization resources"
+reject "release.yaml is not a kustomization resource" 'release.yaml' "$(cat "${rendered}/capnico/kustomization.yaml")"
+for image in cwe capnico-controller-arm64 controller-profiles; do
+  expect "${image} is imported from its layout" "^tar -c -C ${packages}/${image} \\. ?$" "${out}"
+  expect "${image} is named for the kubelet" "^ctr -n k8s.io images import --digests --base-name nvkr.local/nvke/${image} - ?$" "${out}"
+done
+expect "images are imported before the first item" '^(tar|ctr) .*' "$(sed -n '1,/^=== item nvke-base-config/p' <<<"${out}")"
+# CTR may be a command line, as it is for a kind node.
+out="$(CTR="docker exec -i kind-control-plane ctr" bash "${EXECUTOR}" install --deploy-path "${rendered}" --config "${CONFIG}" --dry-run 2>&1)" || fail "kind CTR dry run exited $?"
+expect "images are imported into the kind node" '^docker exec -i kind-control-plane ctr -n k8s.io images import --digests --base-name nvkr.local/nvke/cwe - ?$' "${out}"
+# A layout that went missing after the render stops the install.
+mv "${packages}/cwe" "${packages}/cwe.gone"
+out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --config "${CONFIG}" --dry-run 2>&1)" && fail "missing layout exited 0"
+expect "the missing layout is named" "image nvkr.local/nvke/cwe@${d_cwe}: its OCI layout ${packages}/cwe is missing" "${out}"
+reject "nothing is applied when a layout is missing" '^(kubectl|helm) ' "${out}"
+mv "${packages}/cwe.gone" "${packages}/cwe"
+
+# Render refuses, naming every problem at once, and leaves nothing behind.
+cat >"${WORK}/no-cwe.json" <<JSON
+{"schemaVersion":"nvkr.dev/release/v4","subject":"nvkr.local/nvke/releases@sha256:${zeros}","lane":"unqualified-local-execution","scope":"none",
+ "artifacts":[$(art capnico-controller-arm64 oci "${d_capnico}" ',"arch":"linux/arm64"'),$(art controller-profiles oci "${d_profiles}")],
+ "contentSubject":"sha256:${zeros}","policyDigest":"sha256:${zeros}"}
+JSON
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/no-cwe.json" --nvkr-run-dir "${run_dir}" --arch linux/amd64 --out "${WORK}/refused" 2>&1)" && fail "render without cwe exited 0"
+expect "the missing image artifact is named" 'controller: image cwe is not in the release' "${out}"
+expect "the wrong architecture is named" 'capnico: image: capnico-controller is published only for other architectures' "${out}"
+[[ ! -e "${WORK}/refused" ]] && pass "a refused render leaves no output" || fail "refused output left behind"
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${HERE}/nvkr-release/bad-schema.json" --out "${WORK}/bad" 2>&1)" && fail "bad description exited 0"
+expect "a bad description is named" 'bad-schema.json' "${out}"
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/local.json" --nvkr-run-dir "${run_dir}" --arch linux/arm64 --out "${rendered}" 2>&1)" && fail "existing --out exited 0"
 expect "an existing --out is refused" 'exists; render writes a new directory' "${out}"
 
 # A parser failure stops the install before anything is applied.

@@ -48,3 +48,22 @@ func TestRenderDeployPath(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderDeployPath_ArchFromSiteSpec(t *testing.T) {
+	t.Setenv("NVKECTL_RENDER_ALLOW_TEMP_OUT", "1")
+	spec := filledSiteSpec(t, nil) // controllerStack.arch: arm64
+	nico := filepath.Join("..", "..", "..", "deploy", "nico")
+	release := filepath.Join(releaseFixtures, "valid.json") // capnico-controller for amd64 and -arm64
+	// Without --arch the site spec's architecture selects the artifacts,
+	// whatever machine renders. An empty run directory refuses, naming the
+	// artifact it looked for: the arm64 capnico digest (e...).
+	_, _, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--release", release, "--nvkr-run-dir", t.TempDir(), "--out", filepath.Join(t.TempDir(), "rendered"))
+	if err == nil || !strings.Contains(err.Error(), "no OCI layout") || !strings.Contains(err.Error(), strings.Repeat("e", 64)) {
+		t.Errorf("the arm64 capnico artifact was not selected from the site spec: %v", err)
+	}
+	// A conflicting --arch is refused.
+	_, _, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--release", release, "--arch", "linux/amd64", "--out", filepath.Join(t.TempDir(), "r"))
+	if err == nil || !strings.Contains(err.Error(), "--arch linux/amd64, but the site spec's controllerStack.arch is arm64") {
+		t.Errorf("conflicting arch: %v", err)
+	}
+}
