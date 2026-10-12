@@ -37,7 +37,9 @@ What the node needs, all present on the reference instance type:
   renderer are Python), plus `clusterctl` for the prerequisites
 - to render the site's values first: `nvkectl` (`make -C cli build` writes
   `cli/bin/nvkectl`). `nvkectl render deploy-path --deploy-path deploy/nico
-  --sitespec sitespec.yaml --out DIR` writes a copy of this deploy path for
+  --sitespec sitespec.yaml --out DIR`, with `DIR` under a directory only you
+  can read such as `~/.local/state/nvke/renders/<site>` (a shared temp
+  directory is refused), writes a copy of this deploy path for
   the site the spec's `controllerStack` section describes: the controller,
   SPIRE, PostgreSQL and Temporal items get a `site-values.yaml` (database
   password, OIDC discovery URL, SPIRE server address and identity, the

@@ -14,6 +14,12 @@ func TestRenderDeployPath(t *testing.T) {
 	spec := filledSiteSpec(t, nil)
 	out := filepath.Join(t.TempDir(), "rendered")
 	nico := filepath.Join("..", "..", "..", "deploy", "nico")
+	// A temp --out is refused unless the test-only allowance is set.
+	t.Setenv("NVKECTL_RENDER_ALLOW_TEMP_OUT", "")
+	if _, _, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--out", out); err == nil || !strings.Contains(err.Error(), "shared temp directory") {
+		t.Errorf("temp --out: %v", err)
+	}
+	t.Setenv("NVKECTL_RENDER_ALLOW_TEMP_OUT", "1")
 	stdout, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--out", out)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, stderr)

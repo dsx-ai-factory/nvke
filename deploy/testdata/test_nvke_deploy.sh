@@ -22,6 +22,9 @@ command -v "${NVKECTL}" >/dev/null 2>&1 || { echo "nvkectl not found: set NVKECT
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/nvke-deploy-test.XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
 WORK="$(cd "${WORK}" && pwd)"
+# The render refuses an --out under a temp directory; this suite renders
+# into one on purpose. Test-only allowance.
+export NVKECTL_RENDER_ALLOW_TEMP_OUT=1
 
 failures=0
 pass() { printf 'PASS  %s\n' "$*"; }
@@ -102,6 +105,11 @@ printf 'tok"en\n' >"${WORK}/bad-site/nico-token"
 sed "s|${WORK}/site/|${WORK}/bad-site/|g" "${WORK}/site/sitespec.yaml" >"${WORK}/bad-site/sitespec.yaml"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/bad-site/sitespec.yaml" --out "${WORK}/bad-rendered" 2>&1)" && fail "a quote in a token exited 0"
 expect "the unescapable token is refused by field" 'controllerStack.nico.tokenFile: the value holds a character the templates cannot carry' "${out}"
+
+# Without the allowance, an --out under a temp directory is refused.
+out="$(env -u NVKECTL_RENDER_ALLOW_TEMP_OUT "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${WORK}/refused-temp" 2>&1)" && fail "temp --out exited 0"
+expect "a temp --out is refused" 'is under a shared temp directory' "${out}"
+[[ ! -e "${WORK}/refused-temp" ]] && pass "a refused temp --out is not created" || fail "temp out created"
 
 # Render refuses a site spec with placeholders, naming them, and leaves nothing.
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${REPO}/cli/examples/sitespec.yaml" --out "${WORK}/refused" 2>&1)" && fail "render with placeholders exited 0"

@@ -23,10 +23,32 @@ type RenderOptions struct {
 	// Site is the site spec whose controllerStack section describes the
 	// site the stack is installed for.
 	Site *sitespec.SiteSpec
-	// Out is the directory to write; it must not exist.
+	// Out is the directory to write; it must not exist and must not be
+	// under a shared temp directory.
 	Out string
+	// AllowTempOut accepts an Out under a temp directory. Tests only: their
+	// scratch directories live there.
+	AllowTempOut bool
 	// Log receives one line per decision.
 	Log io.Writer
+}
+
+// sharedTempDirs are the temp directories every user of a host can read.
+var sharedTempDirs = []string{"/tmp", "/var/tmp", "/private/tmp", "/private/var/tmp"}
+
+// underSharedTemp reports whether path is in a shared temp directory or in
+// the process's temp directory.
+func underSharedTemp(path string) bool {
+	dirs := sharedTempDirs
+	if tmp, err := filepath.Abs(os.TempDir()); err == nil {
+		dirs = append(dirs, tmp)
+	}
+	for _, dir := range dirs {
+		if path == dir || strings.HasPrefix(path, dir+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // Rendered reports what Render wrote.
@@ -62,6 +84,9 @@ func Render(opts RenderOptions) (*Rendered, error) {
 		return nil, err
 	}
 	opts.Out = out
+	if !opts.AllowTempOut && underSharedTemp(out) {
+		return nil, fmt.Errorf("%s is under a shared temp directory; render a site's credentials under a directory only you can read, for example ~/.local/state/nvke/renders/<site>", out)
+	}
 	if rel, err := filepath.Rel(realPath(deployPath), realPath(out)); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return nil, fmt.Errorf("%s is inside the deploy path %s; render writes beside it, not into it", out, deployPath)
 	}
