@@ -178,7 +178,7 @@ ConfigMap and sends requests unauthenticated.
 ```bash
 nvkectl get kubeconfig <cluster> \
   --oidc-issuer-url https://idp.example/realms/nke \
-  --oidc-client-id nke-cli \
+  --oidc-client-id nvke-cli \
   --output-file tenant.kubeconfig
 ```
 

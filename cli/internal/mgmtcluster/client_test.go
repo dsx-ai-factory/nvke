@@ -188,7 +188,7 @@ func TestGetKubeconfigCommandUsesAdminClusterStanza(t *testing.T) {
 	cmd.SetArgs([]string{
 		"my-cluster",
 		"--oidc-issuer-url", "https://idp.example/realms/nke",
-		"--oidc-client-id", "nke-cli",
+		"--oidc-client-id", "nvke-cli",
 		"--oidc-extra-scope", "groups",
 	})
 	if err := cmd.Execute(); err != nil {
@@ -220,7 +220,7 @@ func TestGetKubeconfigCommandUsesAdminClusterStanza(t *testing.T) {
 	for _, want := range []string{
 		"oidc-login",
 		"--oidc-issuer-url=https://idp.example/realms/nke",
-		"--oidc-client-id=nke-cli",
+		"--oidc-client-id=nvke-cli",
 		"--oidc-extra-scope=groups",
 	} {
 		if !strings.Contains(args, want) {

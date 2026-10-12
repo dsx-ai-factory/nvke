@@ -346,7 +346,7 @@ nvkectl_smoke_local_commands() {
 # the only proof the CLI looked in the right namespace under the right name.
 nvkectl_smoke_kubeconfig_flags=(
   --oidc-issuer-url http://idp.example/realms/nke
-  --oidc-client-id nke-cli
+  --oidc-client-id nvke-cli
 )
 
 nvkectl_smoke_kubeconfig_negatives() {

@@ -77,7 +77,7 @@ func oidcArgs(extra ...string) []string {
 	args := []string{
 		"my-cluster",
 		"--oidc-issuer-url", "https://idp.example/realms/nke",
-		"--oidc-client-id", "nke-cli",
+		"--oidc-client-id", "nvke-cli",
 	}
 	return append(args, extra...)
 }
@@ -166,7 +166,7 @@ func TestGetKubeconfigCmdPropagatesSiteError(t *testing.T) {
 
 func TestGetKubeconfigCmdRequiresClusterNameArg(t *testing.T) {
 	cmd, _ := newTestKubeconfigCmd(readyFetcher(t), nil)
-	cmd.SetArgs([]string{"--oidc-issuer-url", "https://idp.example", "--oidc-client-id", "nke-cli"})
+	cmd.SetArgs([]string{"--oidc-issuer-url", "https://idp.example", "--oidc-client-id", "nvke-cli"})
 
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("expected error when the cluster-name argument is omitted, got nil")

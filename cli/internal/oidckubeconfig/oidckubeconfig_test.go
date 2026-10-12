@@ -206,7 +206,7 @@ func TestGenerateFromKubeconfigCopiesClusterCAAndDropsAdminUser(t *testing.T) {
 
 	data, err := GenerateFromKubeconfig(admin, Options{
 		IssuerURL: "https://idp.example/realms/nke",
-		ClientID:  "nke-cli",
+		ClientID:  "nvke-cli",
 	})
 	if err != nil {
 		t.Fatalf("GenerateFromKubeconfig: %v", err)
@@ -244,7 +244,7 @@ func TestGenerateFromKubeconfigRejectsCAFilePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	_, err = GenerateFromKubeconfig(admin, Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"})
+	_, err = GenerateFromKubeconfig(admin, Options{IssuerURL: "https://idp.example", ClientID: "nvke-cli"})
 	if err == nil || !strings.Contains(err.Error(), "file path") {
 		t.Fatalf("GenerateFromKubeconfig() = %v, want a file-path error", err)
 	}

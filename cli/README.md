@@ -79,7 +79,7 @@ nvkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
 nvkectl patch cluster my-cluster --patch-file patch.yaml
 nvkectl get kubeconfig <name> \
   --oidc-issuer-url https://idp.example/realms/nke \
-  --oidc-client-id nke-cli \
+  --oidc-client-id nvke-cli \
   --output-file ./tenant.kubeconfig   # oidc-login kubeconfig, built from site-cluster secrets
 nvkectl delete cluster <name>           # deletes immediately; there is no prompt
 

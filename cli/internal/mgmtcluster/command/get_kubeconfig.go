@@ -71,10 +71,10 @@ to a file instead.
 Example:
   nvkectl get kubeconfig my-cluster \
     --oidc-issuer-url https://idp.example/realms/nke \
-    --oidc-client-id nke-cli
+    --oidc-client-id nvke-cli
   nvkectl get kubeconfig my-cluster \
     --oidc-issuer-url https://idp.example/realms/nke \
-    --oidc-client-id nke-cli \
+    --oidc-client-id nvke-cli \
     --output-file ~/.kube/my-cluster.yaml`,
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,

@@ -174,7 +174,7 @@ func (r *Runner) WaitForClusterReady(ctx context.Context, id openapi_types.UUID)
 func (r *Runner) GetKubeconfig(ctx context.Context, name string) ([]byte, error) {
 	out, err := r.Run(ctx, "get", "kubeconfig", name,
 		"--oidc-issuer-url", "https://idp.example/realms/nke",
-		"--oidc-client-id", "nke-cli")
+		"--oidc-client-id", "nvke-cli")
 	if err != nil {
 		return []byte(out), err
 	}
