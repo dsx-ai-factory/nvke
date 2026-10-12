@@ -172,7 +172,9 @@ if output="$("${packer_bin}" validate \
   echo "Packer accepted an unsupported material-manifest schema" >&2
   exit 1
 fi
-grep -F "must use schemaVersion nvke.nvidia.com/os-image-materials/v1" <<<"${output}" >/dev/null || {
+# Packer wraps a diagnostic past its column width. The renamed schema id is
+# what pushes this sentence over that edge, so match it with the breaks folded.
+grep -F "must use schemaVersion nvke.nvidia.com/os-image-materials/v1" <<<"${output//$'\n'/ }" >/dev/null || {
   printf '%s\n' "${output}" >&2
   echo "Packer rejected the schema without the contract error" >&2
   exit 1
