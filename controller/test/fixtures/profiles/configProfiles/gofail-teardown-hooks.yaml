@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Config profile fixture for the gofail teardown-hook e2e.
 #
 # Mirrors the shape of the real site-controller profile (nke-cp-sc-v5 in

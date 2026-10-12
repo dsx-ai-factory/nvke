@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Sanitized fixture index for controller tests / gofail e2e.
 # Fleet metadata lives in nke-site-deploy/cwe-profiles.
 
