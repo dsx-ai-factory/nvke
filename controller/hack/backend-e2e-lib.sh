@@ -200,24 +200,41 @@ e2e_wait_for_zero_tenant_clusters() {
 # removes the bridge module and destroys the Docker networks (#1515).
 e2e_host_loads_openvswitch() (
   set -o pipefail
-  local image="$1" kernel
+  local image="$1" kernel module_root="${NKE_E2E_HOST_MODULES_DIR:-/lib/modules}"
   if docker run --rm --privileged -v /lib/modules:/lib/modules:ro --entrypoint /bin/sh "${image}" \
-    -c 'test -e /sys/module/openvswitch || exec modprobe openvswitch'; then
+    -c '
+      set -eu
+      if test -e /sys/module/openvswitch; then
+        echo "openvswitch was already loaded before the Docker probe"
+      else
+        modprobe --verbose openvswitch
+        test -e /sys/module/openvswitch
+        echo "openvswitch is available after the Docker module insertion attempt"
+      fi
+    '; then
     return 0
   fi
 
   kernel="$(uname -r)" || return 1
-  if [[ "$(uname -s)" != Linux || ! -d "/lib/modules/${kernel}" ]]; then
+  if [[ "$(uname -s)" != Linux || ! -d "${module_root}/${kernel}" ]]; then
     echo "openvswitch is unavailable to Docker and no matching local module tree exists" >&2
     return 1
   fi
   echo "loading openvswitch through privileged Docker with the runner's ${kernel} module files" >&2
-  tar -C /lib/modules -cf - "${kernel}" |
+  tar -C "${module_root}" -cf - "${kernel}" |
     docker run --rm --privileged -i --entrypoint /bin/sh "${image}" -c '
       set -eu
       mkdir -p /lib/modules
       tar -C /lib/modules -xf -
-      modprobe openvswitch
+      if test -e /sys/module/openvswitch; then
+        echo "openvswitch was already loaded before the streamed-module probe"
+      elif modprobe --verbose openvswitch; then
+        echo "openvswitch is available after the streamed-module insertion attempt"
+      else
+        echo "openvswitch insertion failed; matching kernel messages:" >&2
+        dmesg | tail -n 100 | grep -E "openvswitch|nsh|nf_conn|nf_nat|libcrc32c|module_layout|BTF|version.*symbol" >&2 || true
+        exit 1
+      fi
       test -e /sys/module/openvswitch
     '
 )
