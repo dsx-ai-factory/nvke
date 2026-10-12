@@ -62,10 +62,10 @@ type DeployLayout struct {
 	legacyTargetFlags bool
 }
 
-// CurrentLayout() is the layout from #1453 onwards, which renamed the #1291
-// executor from nke-deploy.sh to nvke-deploy.sh and changed nothing else.
-// The one tag cut between the two, controller/v0.1.2-rc.1, matches neither
-// layout and is not qualified; a later tag supersedes it.
+// CurrentLayout() is the layout from #1453 onwards, which gave the #1291
+// executor its nvke- name and changed nothing else. The one tag cut between
+// the two, controller/v0.1.2-rc.1, matches neither layout and is not
+// qualified; a later tag supersedes it.
 //
 // A function and not a package variable, so each caller gets its own Export
 // and appending to one cannot reshape the other's.
