@@ -412,8 +412,13 @@ releaseCRDs:
 
 capi:
   rbac:
-    # -- Create RBAC for the controller to watch and patch CAPI/NICo resources.
+    # -- Create RBAC for the controller to watch and patch CAPI-backed infrastructure resources.
     create: false
+    # -- Grant RBAC for NICo's CRDs (nicoclusters, nicomachines). Only applies when `create` is true.
+    nico: true
+    # -- Grant RBAC for LaunchLayer's CRDs (launchlayerclusters, launchlayermachines,
+    # launchlayermachinetemplates). Only applies when `create` is true.
+    launchLayer: true
 
 kubeadm:
   # -- OCI registry kubeadm uses for control-plane component images.
