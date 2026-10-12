@@ -63,9 +63,9 @@ notices-check` verifies it is up to date.
 | `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.5` | https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE |
 | `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.60.0` | https://cs.opensource.google/go/x/net/+/v0.60.0:LICENSE |
 | `golang.org/x/oauth2` | BSD-3-Clause | `golang.org/x/oauth2@v0.37.0` | https://cs.opensource.google/go/x/oauth2/+/v0.37.0:LICENSE |
-| `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.48.0` | https://cs.opensource.google/go/x/sys/+/v0.48.0:LICENSE |
-| `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.46.0` | https://cs.opensource.google/go/x/term/+/v0.46.0:LICENSE |
-| `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.42.0` | https://cs.opensource.google/go/x/text/+/v0.42.0:LICENSE |
+| `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.49.0` | https://cs.opensource.google/go/x/sys/+/v0.49.0:LICENSE |
+| `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.47.0` | https://cs.opensource.google/go/x/term/+/v0.47.0:LICENSE |
+| `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.43.0` | https://cs.opensource.google/go/x/text/+/v0.43.0:LICENSE |
 | `golang.org/x/time/rate` | BSD-3-Clause | `golang.org/x/time@v0.15.0` | https://cs.opensource.google/go/x/time/+/v0.15.0:LICENSE |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | https://github.com/protocolbuffers/protobuf-go/blob/v1.36.12/LICENSE |
 | `gopkg.in/evanphx/json-patch.v4` | BSD-3-Clause | `gopkg.in/evanphx/json-patch.v4@v4.13.0` | https://github.com/evanphx/json-patch/blob/v4.13.0/LICENSE |
@@ -5854,7 +5854,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/sys/unix
 
-_BSD-3-Clause — golang.org/x/sys@v0.48.0_
+_BSD-3-Clause — golang.org/x/sys@v0.49.0_
 
 #### LICENSE
 
@@ -5891,7 +5891,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/term
 
-_BSD-3-Clause — golang.org/x/term@v0.46.0_
+_BSD-3-Clause — golang.org/x/term@v0.47.0_
 
 #### LICENSE
 
@@ -5928,7 +5928,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/text
 
-_BSD-3-Clause — golang.org/x/text@v0.42.0_
+_BSD-3-Clause — golang.org/x/text@v0.43.0_
 
 #### LICENSE
 

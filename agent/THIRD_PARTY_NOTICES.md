@@ -70,9 +70,9 @@ commands are not listed, because they are not distributed.
 | [golang.org/x/net](https://cs.opensource.google/go/x/net/+/v0.60.0:LICENSE) | BSD-3-Clause | — |
 | [golang.org/x/oauth2](https://cs.opensource.google/go/x/oauth2/+/v0.37.0:LICENSE) | BSD-3-Clause | golang.org/x/oauth2@v0.37.0 |
 | [golang.org/x/sync](https://cs.opensource.google/go/x/sync/+/v0.24.0:LICENSE) | BSD-3-Clause | — |
-| [golang.org/x/sys/unix](https://cs.opensource.google/go/x/sys/+/v0.48.0:LICENSE) | BSD-3-Clause | golang.org/x/sys@v0.48.0 |
-| [golang.org/x/term](https://cs.opensource.google/go/x/term/+/v0.46.0:LICENSE) | BSD-3-Clause | golang.org/x/term@v0.46.0 |
-| [golang.org/x/text](https://cs.opensource.google/go/x/text/+/v0.42.0:LICENSE) | BSD-3-Clause | — |
+| [golang.org/x/sys/unix](https://cs.opensource.google/go/x/sys/+/v0.49.0:LICENSE) | BSD-3-Clause | golang.org/x/sys@v0.49.0 |
+| [golang.org/x/term](https://cs.opensource.google/go/x/term/+/v0.47.0:LICENSE) | BSD-3-Clause | golang.org/x/term@v0.47.0 |
+| [golang.org/x/text](https://cs.opensource.google/go/x/text/+/v0.43.0:LICENSE) | BSD-3-Clause | — |
 | [golang.org/x/time/rate](https://cs.opensource.google/go/x/time/+/v0.15.0:LICENSE) | BSD-3-Clause | golang.org/x/time@v0.15.0 |
 | [google.golang.org/genproto/googleapis/api](https://github.com/googleapis/go-genproto/blob/8a89bd6388cc/googleapis/api/LICENSE) | Apache-2.0 | google.golang.org/genproto/googleapis/api@v0.0.0-20260928230214-8a89bd6388cc |
 | [google.golang.org/genproto/googleapis/rpc/status](https://github.com/googleapis/go-genproto/blob/8a89bd6388cc/googleapis/rpc/LICENSE) | Apache-2.0 | google.golang.org/genproto/googleapis/rpc@v0.0.0-20260928230214-8a89bd6388cc |
