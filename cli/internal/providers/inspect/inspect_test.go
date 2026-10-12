@@ -8,10 +8,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/providers"
+	"github.com/dsx-ai-factory/nvke/cli/internal/providers/credentials"
 )
 
 // fakeRunner answers kubectl calls by matching on the arguments, not on the
@@ -57,6 +60,60 @@ func (f *fakeRunner) called(fragments ...string) bool {
 		}
 	}
 	return false
+}
+
+// unusedLister is a lister factory for tests whose cluster serves no Identity
+// CRD, so Inspect must not build a client to read Identities.
+func unusedLister(t *testing.T) credentials.ListerFactory {
+	t.Helper()
+	return func(string) (credentials.Lister, error) {
+		t.Error("Inspect built an Identity lister although no Identity CRD is established")
+		return nil, errors.New("unexpected")
+	}
+}
+
+// fakeIdentities answers Identity lists with fixed results and records each
+// request.
+type fakeIdentities struct {
+	identities []credentials.Identity
+	err        error
+	requests   []string
+}
+
+func (f *fakeIdentities) List(_ context.Context, kind providers.IdentityKind, namespace string) ([]credentials.Identity, error) {
+	f.requests = append(f.requests, kind.Kind+" in "+namespace)
+	return f.identities, f.err
+}
+
+// listerOf returns a factory serving f, and a counter of how often it was
+// called.
+func listerOf(f *fakeIdentities) (credentials.ListerFactory, *int) {
+	calls := 0
+	return func(string) (credentials.Lister, error) {
+		calls++
+		return f, nil
+	}, &calls
+}
+
+// checkedIdentity returns an Identity in namespace naming secret, whose last
+// check of its current spec finished age ago with the given Ready status.
+func checkedIdentity(namespace, secret string, age time.Duration, status, reason string) credentials.Identity {
+	return credentials.Identity{
+		Namespace:   namespace,
+		Name:        "nico-default",
+		Generation:  1,
+		Created:     time.Now().Add(-time.Hour),
+		SecretName:  secret,
+		Ready:       &credentials.Condition{Status: status, Reason: reason, Message: "checked", ObservedGeneration: 1},
+		LastChecked: new(time.Now().Add(-age)),
+	}
+}
+
+// nicoWithIdentityCRD returns NICo's CRDs plus its Identity CRD.
+func nicoWithIdentityCRD(t *testing.T) string {
+	t.Helper()
+	nico := supported(t, providers.TypeNico)
+	return crdJSON(slices.Concat(nico.CRDNames, []string{nico.Identity.CRDName()})...)
 }
 
 // supported returns the entry for typ from the set nvkectl supports.
@@ -136,7 +193,7 @@ func TestInspect_NoCRDsInstalled(t *testing.T) {
 		"get deployments": emptyList,
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect returned an error for a cluster with no providers: %v", err)
 	}
@@ -161,7 +218,7 @@ func TestInspect_OneInstalledOneNot(t *testing.T) {
 		"get secret":      "",
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
@@ -183,7 +240,7 @@ func TestInspect_CRDNotEstablished(t *testing.T) {
 		"get deployments": emptyList,
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
@@ -202,7 +259,7 @@ func TestInspect_CRDNoServedVersion(t *testing.T) {
 		"get deployments": emptyList,
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
@@ -219,7 +276,7 @@ func TestInspect_ConfiguredWhenManagerAvailable(t *testing.T) {
 		"get secret":      "secret/nico-credentials\n",
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
@@ -242,7 +299,7 @@ func TestInspect_NoManagerDeployment(t *testing.T) {
 		"get secret":      "secret/nico-credentials\n",
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
@@ -263,7 +320,7 @@ func TestInspect_ManagerNotAvailable(t *testing.T) {
 		"get secret":      "secret/nico-credentials\n",
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
@@ -287,7 +344,7 @@ func TestInspect_ManagerFlagsOverrideSecretLocation(t *testing.T) {
 		"get secret":      "secret/other-secret\n",
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
@@ -310,7 +367,7 @@ func TestInspect_ManagerFoundByNamespaceAndName(t *testing.T) {
 		"get secret":      "secret/nico-credentials\n",
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
@@ -334,7 +391,7 @@ func TestInspect_SecretProbeForbidden(t *testing.T) {
 		},
 	}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect returned an error for an unreadable Secret: %v", err)
 	}
@@ -359,7 +416,7 @@ func TestInspect_LaunchLayerUnconfiguredIsNoted(t *testing.T) {
 		"get deployments": emptyList,
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
@@ -384,7 +441,7 @@ func TestInspect_LaunchLayerWithoutBaseURL(t *testing.T) {
 		"get secret":      "secret/ll-credentials\n",
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
@@ -406,7 +463,7 @@ func TestInspect_LaunchLayerWithBaseURLIsConfigured(t *testing.T) {
 		"get secret":      "secret/ll-credentials\n",
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
@@ -425,7 +482,7 @@ func TestInspect_NicoNeedsNoEndpointFlag(t *testing.T) {
 		"get secret":      "secret/nico-credentials\n",
 	}}
 
-	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	got, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
@@ -436,7 +493,7 @@ func TestInspect_NicoNeedsNoEndpointFlag(t *testing.T) {
 
 func TestInspect_KubeconfigNotConfigured(t *testing.T) {
 	r := &fakeRunner{}
-	_, err := Inspect(context.Background(), r, "")
+	_, err := Inspect(context.Background(), r, unusedLister(t), "")
 	if err == nil {
 		t.Fatal("Inspect accepted an empty kubeconfig")
 	}
@@ -451,7 +508,7 @@ func TestInspect_KubeconfigNotConfigured(t *testing.T) {
 func TestInspect_KubeconfigMissingFile(t *testing.T) {
 	r := &fakeRunner{}
 	missing := filepath.Join(t.TempDir(), "absent.kubeconfig")
-	_, err := Inspect(context.Background(), r, missing)
+	_, err := Inspect(context.Background(), r, unusedLister(t), missing)
 	if err == nil {
 		t.Fatal("Inspect accepted a kubeconfig path that does not exist")
 	}
@@ -465,7 +522,7 @@ func TestInspect_ForbiddenListNamesThePermission(t *testing.T) {
 		"get crd": `Error from server (Forbidden): customresourcedefinitions is forbidden`,
 	}}
 
-	_, err := Inspect(context.Background(), r, kubeconfig(t))
+	_, err := Inspect(context.Background(), r, unusedLister(t), kubeconfig(t))
 	if err == nil {
 		t.Fatal("Inspect succeeded despite being unable to list CRDs")
 	}
@@ -486,7 +543,7 @@ func TestInspect_ArgvIsExact(t *testing.T) {
 		"get secret":      "secret/nico-credentials\n",
 	}}
 
-	if _, err := Inspect(context.Background(), r, kc); err != nil {
+	if _, err := Inspect(context.Background(), r, unusedLister(t), kc); err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
 
@@ -530,5 +587,95 @@ func TestFlagValue(t *testing.T) {
 				t.Errorf("flagValue() = %q, %v; want %q, %v", got, ok, tc.want, tc.ok)
 			}
 		})
+	}
+}
+
+func TestInspect_CredentialsComeFromTheIdentityNamingTheSecret(t *testing.T) {
+	nico := supported(t, providers.TypeNico)
+	r := &fakeRunner{responses: map[string]string{
+		"get crd":         nicoWithIdentityCRD(t),
+		"get deployments": deployJSON("capnico-system", "controller-manager", nico.AppName, true, 1, 1, ""),
+		"get secret":      "secret/nico-credentials\n",
+	}}
+	ids := &fakeIdentities{identities: []credentials.Identity{
+		checkedIdentity("capnico-system", "nico-credentials", time.Minute, "True", "ValidationSucceeded"),
+	}}
+	newLister, calls := listerOf(ids)
+
+	got, err := Inspect(t.Context(), r, newLister, kubeconfig(t))
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	s := statusFor(t, got, providers.TypeNico)
+	if s.State != StateConfigured {
+		t.Errorf("state = %s (%s), want %s: credential health must not change STATE", s.State, s.Detail, StateConfigured)
+	}
+	if s.Credentials == nil || s.Credentials.Health != credentials.HealthHealthy {
+		t.Fatalf("credentials = %+v, want HEALTHY", s.Credentials)
+	}
+	if strings.Join(ids.requests, ";") != "NicoIdentity in capnico-system" {
+		t.Errorf("Identity lists = %v, want one list of NicoIdentity in capnico-system", ids.requests)
+	}
+	if *calls != 1 {
+		t.Errorf("lister factory called %d times, want once", *calls)
+	}
+	if ll := statusFor(t, got, providers.TypeLaunchLayer); ll.Credentials != nil {
+		t.Errorf("launchlayer credentials = %+v, want none: it publishes no Identity", ll.Credentials)
+	}
+}
+
+func TestInspect_CredentialsFollowTheManagersSecretFlags(t *testing.T) {
+	nico := supported(t, providers.TypeNico)
+	args := `"--provider-credentials-namespace=other-ns","--provider-credentials-secret-name","other-secret"`
+	r := &fakeRunner{responses: map[string]string{
+		"get crd":         nicoWithIdentityCRD(t),
+		"get deployments": deployJSON("capnico-system", "controller-manager", nico.AppName, true, 1, 1, args),
+		"get secret":      "secret/other-secret\n",
+	}}
+	ids := &fakeIdentities{identities: []credentials.Identity{
+		checkedIdentity("other-ns", "nico-credentials", time.Minute, "True", "ValidationSucceeded"),
+		checkedIdentity("other-ns", "other-secret", time.Minute, "False", "AuthenticationFailed"),
+	}}
+	newLister, _ := listerOf(ids)
+
+	got, err := Inspect(t.Context(), r, newLister, kubeconfig(t))
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if strings.Join(ids.requests, ";") != "NicoIdentity in other-ns" {
+		t.Errorf("Identity lists = %v, want the manager's credentials namespace", ids.requests)
+	}
+	s := statusFor(t, got, providers.TypeNico)
+	if s.Credentials == nil || s.Credentials.Health != credentials.HealthFailing {
+		t.Errorf("credentials = %+v, want the Identity naming other-secret, which is FAILING", s.Credentials)
+	}
+}
+
+func TestInspect_CredentialsReportedWhenTheSecretCannotBeRead(t *testing.T) {
+	nico := supported(t, providers.TypeNico)
+	r := &fakeRunner{
+		responses: map[string]string{
+			"get crd":         nicoWithIdentityCRD(t),
+			"get deployments": deployJSON("capnico-system", "controller-manager", nico.AppName, true, 1, 1, ""),
+		},
+		failures: map[string]string{
+			"get secret": `Error from server (Forbidden): secrets "nico-credentials" is forbidden`,
+		},
+	}
+	ids := &fakeIdentities{identities: []credentials.Identity{
+		checkedIdentity("capnico-system", "nico-credentials", time.Minute, "True", "ValidationSucceeded"),
+	}}
+	newLister, _ := listerOf(ids)
+
+	got, err := Inspect(t.Context(), r, newLister, kubeconfig(t))
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	s := statusFor(t, got, providers.TypeNico)
+	if s.State != StateUnknown {
+		t.Errorf("state = %s, want %s", s.State, StateUnknown)
+	}
+	if s.Credentials == nil || s.Credentials.Health != credentials.HealthHealthy {
+		t.Errorf("credentials = %+v, want HEALTHY: reading Identities needs no Secret access", s.Credentials)
 	}
 }
