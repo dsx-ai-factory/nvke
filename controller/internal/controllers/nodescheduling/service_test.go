@@ -4,7 +4,10 @@
 package nodescheduling
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -55,6 +58,64 @@ func TestUnit_ServiceScheduleCAPIInfraNodesStartsProvisionWorkflows(t *testing.T
 	temporalClient.AssertExpectations(t)
 }
 
+func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T) {
+	clusterID := uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")
+	nodePoolID := uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")
+	nodeID := uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+	const (
+		workflowID = "provision-node-eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+		runID      = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+	)
+
+	temporalClient := &mockWorkflowStarter{}
+	temporalClient.On("ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(mockWorkflowRun{id: workflowID, runID: runID}, nil).Once()
+	var logs bytes.Buffer
+	service := NewService(
+		config.Config{TemporalTaskQueue: "test-task-queue"},
+		slog.New(slog.NewJSONHandler(&logs, nil)),
+		nil,
+		temporalClient,
+	)
+
+	_, err := service.ScheduleCAPIInfraNodes(t.Context(), slog.Default(), []db.Node{{
+		ID:         nodeID,
+		NodePoolID: nodePoolID,
+		ClusterID:  clusterID,
+		Name:       "test-node",
+	}})
+	require.NoError(t, err)
+	temporalClient.AssertExpectations(t)
+
+	var record map[string]any
+	require.NoError(t, json.Unmarshal(logs.Bytes(), &record))
+	require.Equal(t, "Started (or already running) ProvisionNode workflow", record["msg"])
+	require.Equal(t, clusterID.String(), record["clusterID"])
+	require.Equal(t, nodePoolID.String(), record["nodePoolID"])
+	require.Equal(t, nodeID.String(), record["nodeID"])
+	require.Equal(t, "test-node", record["nodeName"])
+	require.Equal(t, workflowID, record["workflowID"])
+	require.Equal(t, runID, record["runID"])
+}
+
+func TestUnit_ServiceScheduleCAPIInfraNodesReportsNodeWhenWorkflowStartFails(t *testing.T) {
+	nodeID := uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+	temporalClient := &mockWorkflowStarter{}
+	temporalClient.On("ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("Temporal unavailable")).Once()
+	service := NewService(
+		config.Config{TemporalTaskQueue: "test-task-queue"},
+		slog.New(slog.DiscardHandler),
+		nil,
+		temporalClient,
+	)
+
+	_, err := service.ScheduleCAPIInfraNodes(t.Context(), slog.Default(), []db.Node{{ID: nodeID}})
+	require.ErrorContains(t, err, "starting ProvisionNode workflow for node "+nodeID.String())
+	require.ErrorContains(t, err, "Temporal unavailable")
+	temporalClient.AssertExpectations(t)
+}
+
 type mockWorkflowStarter struct {
 	mock.Mock
 }
@@ -81,6 +142,14 @@ func (m mockWorkflowRun) GetRunID() string {
 	return m.runID
 }
 
+func (m mockWorkflowRun) GetFirstExecutionRunID() string {
+	return m.runID
+}
+
 func (m mockWorkflowRun) Get(_ context.Context, _ interface{}) error {
+	return nil
+}
+
+func (m mockWorkflowRun) GetWithOptions(_ context.Context, _ interface{}, _ client.WorkflowRunGetOptions) error {
 	return nil
 }

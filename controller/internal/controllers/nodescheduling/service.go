@@ -66,7 +66,7 @@ func (s *Service) startProvisionNodeWorkflow(ctx context.Context, pendingNode db
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
 		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 	}
-	if _, err := s.controllerTemporalClient.ExecuteWorkflow(ctx, workflowOpts, workflows.ProvisionNode, workflows.ProvisionNodeInput{
+	run, err := s.controllerTemporalClient.ExecuteWorkflow(ctx, workflowOpts, workflows.ProvisionNode, workflows.ProvisionNodeInput{
 		NodeID:                         pendingNode.ID,
 		RebootNodeWaitForUptimeTimeout: s.cfg.NodeRebootMaxTimeout,
 		// Control-plane nodes defer join to the control-plane controller, which
@@ -74,8 +74,18 @@ func (s *Service) startProvisionNodeWorkflow(ctx context.Context, pendingNode db
 		// controller owns the control plane; otherwise control-plane nodes
 		// auto-join inline like workers, preserving the pre-controller behavior.
 		SkipJoin: pendingNode.ControlPlane && s.cfg.UseControlPlaneControllerForControlPlane(),
-	}); err != nil {
-		return fmt.Errorf("failed to start ProvisionNode workflow: %w", err)
+	})
+	if err != nil {
+		return fmt.Errorf("starting ProvisionNode workflow for node %s: %w", pendingNode.ID, err)
 	}
+
+	s.logger.InfoContext(ctx, "Started (or already running) ProvisionNode workflow",
+		"clusterID", pendingNode.ClusterID,
+		"nodePoolID", pendingNode.NodePoolID,
+		"nodeID", pendingNode.ID,
+		"nodeName", pendingNode.Name,
+		"workflowID", run.GetID(),
+		"runID", run.GetRunID(),
+	)
 	return nil
 }
