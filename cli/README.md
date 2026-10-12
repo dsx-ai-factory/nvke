@@ -370,6 +370,23 @@ make build          # builds all binaries including cli/nvkectl into bin/
 make build
 ```
 
+## Test a built artifact
+
+Run the existing process-level contract suite against a supplied Linux or macOS
+binary, without rebuilding it:
+
+```bash
+make -C cli test-artifact \
+  NVKECTL=/absolute/path/to/nvkectl \
+  NVKECTL_EXPECTED_VERSION=v0.1.1
+```
+
+The expected version comes from the build inputs. The suite checks exit codes,
+output formats, API errors using local HTTP stubs, and signal handling. It compiles
+the Go test runner, requires an executable for the current platform, and isolates
+configuration in temporary directories. No cluster or hardware is needed.
+`make test` continues to run the source suite and build its own test CLI.
+
 ## Compatibility
 
 `nvkectl` releases on its own `cli/vX.Y.Z` tags and follows

@@ -5,9 +5,9 @@
 
 // Contract tests for the nvkectl command boundary.
 //
-// Everything else in this package tests Go functions. These tests build the
-// real binary and run it as a process, because the properties they protect only
-// exist at that boundary: the exit code the shell sees, which of stdout and
+// Everything else in this package tests Go functions. These tests run the
+// supplied binary, or build one for source tests. The properties they protect
+// only exist at that boundary: the exit code the shell sees, which of stdout and
 // stderr a byte lands on, and what a signal does to a command in flight. A unit
 // test calling RunE observes none of those — it cannot tell os.Exit(1) from
 // os.Exit(130), and a stray fmt.Println that bypasses cmd.OutOrStdout() is
@@ -39,10 +39,32 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// nvkectlBin is the binary under test, built once by TestMain.
-var nvkectlBin string //nolint:gochecknoglobals // TestMain builds it once for every test in this file
+// TestMain selects the binary and expected version once for this suite.
+var nvkectlBin string              //nolint:gochecknoglobals // Shared by the process-level contract tests.
+var nvkectlExpectedVersion = "dev" //nolint:gochecknoglobals // Source builds use the unstamped default.
 
 func TestMain(m *testing.M) {
+	if suppliedBinary, supplied := os.LookupEnv("NVKECTL"); supplied {
+		var err error
+		nvkectlBin, err = filepath.Abs(suppliedBinary)
+		if err != nil || suppliedBinary == "" {
+			fmt.Fprintln(os.Stderr, "contract tests: NVKECTL must name an executable file")
+			os.Exit(1)
+		}
+		info, err := os.Stat(nvkectlBin)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+			fmt.Fprintln(os.Stderr, "contract tests: NVKECTL must name an executable file")
+			os.Exit(1)
+		}
+		nvkectlExpectedVersion = os.Getenv("NVKECTL_EXPECTED_VERSION")
+		if nvkectlExpectedVersion == "" {
+			fmt.Fprintln(os.Stderr, "contract tests: NVKECTL_EXPECTED_VERSION is required for an external binary")
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "contract tests: using external binary %s\n", nvkectlBin)
+		os.Exit(m.Run())
+	}
+
 	dir, err := os.MkdirTemp("", "nvkectl-contract")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "contract tests: creating temp dir: %v\n", err)
@@ -268,6 +290,9 @@ func TestMachineReadableOutputIsParseable(t *testing.T) {
 			t.Fatalf("parsing stdout as JSON: %v\nstdout: %q", err, got.stdout)
 		}
 		requireKeys(t, v, wantVersionKeys)
+		if v["buildVersion"] != nvkectlExpectedVersion {
+			t.Errorf("buildVersion = %v, want %q", v["buildVersion"], nvkectlExpectedVersion)
+		}
 	})
 
 	t.Run("version yaml", func(t *testing.T) {
@@ -288,8 +313,8 @@ func TestMachineReadableOutputIsParseable(t *testing.T) {
 		requireSuccess(t, got)
 		// Exact, not a substring: "-o short" exists so that a script can read
 		// the version without parsing, and a decoration added to it breaks that.
-		if got.stdout != "dev\n" {
-			t.Errorf("stdout = %q, want %q", got.stdout, "dev\n")
+		if got.stdout != nvkectlExpectedVersion+"\n" {
+			t.Errorf("stdout = %q, want %q", got.stdout, nvkectlExpectedVersion+"\n")
 		}
 	})
 
