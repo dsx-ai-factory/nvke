@@ -136,18 +136,18 @@ func TestSelect_SuffixBeatsAnArchlessName(t *testing.T) {
 func TestChartLayer(t *testing.T) {
 	manifest := `{"layers":[{"mediaType":"application/vnd.oci.image.layer.v1.tar","digest":"sha256:first"},` +
 		`{"mediaType":"application/vnd.cncf.helm.chart.content.v1.tar+gzip","digest":"sha256:chart","annotations":{"org.opencontainers.image.title":"spire-0.30.1.tgz"}}]}`
-	digest, file, err := ChartLayer(strings.NewReader(manifest), "fallback.tgz")
-	if err != nil || digest != "sha256:chart" || file != "spire-0.30.1.tgz" {
-		t.Errorf("chart layer: %s %s %v", digest, file, err)
+	layer, file, err := ChartLayer([]byte(manifest), "fallback.tgz")
+	if err != nil || layer.Digest != "sha256:chart" || file != "spire-0.30.1.tgz" {
+		t.Errorf("chart layer: %s %s %v", layer.Digest, file, err)
 	}
-	digest, file, err = ChartLayer(strings.NewReader(`{"layers":[{"digest":"sha256:only"}]}`), "fallback.tgz")
-	if err != nil || digest != "sha256:only" || file != "fallback.tgz" {
-		t.Errorf("first layer fallback: %s %s %v", digest, file, err)
+	layer, file, err = ChartLayer([]byte(`{"layers":[{"digest":"sha256:only"}]}`), "fallback.tgz")
+	if err != nil || layer.Digest != "sha256:only" || file != "fallback.tgz" {
+		t.Errorf("first layer fallback: %s %s %v", layer.Digest, file, err)
 	}
-	if _, _, err := ChartLayer(strings.NewReader(`{"layers":[]}`), "x"); err == nil {
+	if _, _, err := ChartLayer([]byte(`{"layers":[]}`), "x"); err == nil {
 		t.Error("no layers accepted")
 	}
-	if _, _, err := ChartLayer(strings.NewReader(`nope`), "x"); err == nil {
+	if _, _, err := ChartLayer([]byte(`nope`), "x"); err == nil {
 		t.Error("bad JSON accepted")
 	}
 }
@@ -155,7 +155,7 @@ func TestChartLayer(t *testing.T) {
 func TestChartLayer_TitleMustBeAFileName(t *testing.T) {
 	for _, title := range []string{"../x.tgz", "a/b.tgz", ".", ".."} {
 		manifest := `{"layers":[{"digest":"sha256:x","annotations":{"org.opencontainers.image.title":"` + title + `"}}]}`
-		if _, file, _ := ChartLayer(strings.NewReader(manifest), "safe.tgz"); file != "safe.tgz" {
+		if _, file, _ := ChartLayer([]byte(manifest), "safe.tgz"); file != "safe.tgz" {
 			t.Errorf("title %q was used as a file name: %s", title, file)
 		}
 	}

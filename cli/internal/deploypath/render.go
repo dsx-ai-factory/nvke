@@ -4,8 +4,7 @@
 package deploypath
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -16,16 +15,13 @@ import (
 	"strings"
 	"unicode"
 
+	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content"
+	"oras.land/oras-go/v2/content/oci"
+
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 )
-
-// Puller fetches from a registry: the OCI manifest a reference names, and a
-// blob of a repository into a file.
-type Puller interface {
-	Manifest(ref string) ([]byte, error)
-	Blob(repository, digest, dest string) error
-}
 
 // RenderOptions drive Render.
 type RenderOptions struct {
@@ -49,8 +45,9 @@ type RenderOptions struct {
 	// AllowTempOut accepts an Out under a temp directory. Tests only: their
 	// scratch directories live there.
 	AllowTempOut bool
-	// Pull reaches the registry when Release is set and RunDir is empty.
-	Pull Puller
+	// Registry opens a repository named by the release when RunDir is
+	// empty; Registries is the default.
+	Registry func(repository string) (oras.ReadOnlyTarget, error)
 	// Log receives one line per decision.
 	Log io.Writer
 }
@@ -112,8 +109,8 @@ func Render(opts RenderOptions) (*Rendered, error) {
 	if opts.Site == nil && opts.Release == nil {
 		return nil, errors.New("a site spec or a release description is required")
 	}
-	if opts.Release != nil && opts.RunDir == "" && opts.Pull == nil {
-		return nil, errors.New("a puller is required when no run directory is given")
+	if opts.Release != nil && opts.RunDir == "" && opts.Registry == nil {
+		opts.Registry = Registries(nil)
 	}
 	deployPath, err := filepath.Abs(opts.DeployPath)
 	if err != nil {
@@ -468,56 +465,56 @@ func (r *renderer) image(a nvkrrelease.Artifact) {
 }
 
 // chartArchive puts the chart archive of a into charts/<item>/ under Out and
-// returns its path relative to Out. The manifest is hashed against the
-// reference before its layer digest is trusted, and the archive against that
-// layer digest.
+// returns its path relative to Out. The store verifies the manifest and the
+// archive against their digests as it reads them.
 func (r *renderer) chartArchive(item, chartName string, a nvkrrelease.Artifact) (string, error) {
-	var manifest []byte
-	var layout string
-	if r.opts.RunDir != "" {
-		var err error
-		layout, err = nvkrrelease.FindLayout(r.opts.RunDir, a.Digest)
-		if err != nil {
-			return "", err
-		}
-		manifest, err = os.ReadFile(filepath.Join(layout, "blobs", "sha256", strings.TrimPrefix(a.Digest, "sha256:")))
-		if err != nil {
-			return "", err
-		}
-	} else {
-		var err error
-		manifest, err = r.opts.Pull.Manifest(a.Reference)
-		if err != nil {
-			return "", err
-		}
+	ctx := context.Background()
+	store, ref, err := r.store(ctx, a)
+	if err != nil {
+		return "", err
 	}
-	if got := digestOf(manifest); got != a.Digest {
+	desc, err := store.Resolve(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+	if got := desc.Digest.String(); got != a.Digest {
 		return "", fmt.Errorf("the manifest is %s, not the reference's %s", got, a.Digest)
 	}
-	layerDigest, file, err := nvkrrelease.ChartLayer(strings.NewReader(string(manifest)), chartName+"-"+strings.TrimPrefix(a.Digest, "sha256:")+".tgz")
+	manifest, err := content.FetchAll(ctx, store, desc)
 	if err != nil {
 		return "", err
+	}
+	layer, file, err := nvkrrelease.ChartLayer(manifest, chartName+"-"+strings.TrimPrefix(a.Digest, "sha256:")+".tgz")
+	if err != nil {
+		return "", err
+	}
+	data, err := content.FetchAll(ctx, store, layer)
+	if err != nil {
+		return "", fmt.Errorf("chart layer %s: %w", layer.Digest, err)
 	}
 	relDir := filepath.Join("charts", item)
-	if err := os.MkdirAll(filepath.Join(r.opts.Out, relDir), 0o700); err != nil {
+	if err := writePrivate(filepath.Join(r.opts.Out, relDir, file), data); err != nil {
 		return "", err
-	}
-	dest := filepath.Join(r.opts.Out, relDir, file)
-	if layout != "" {
-		if err := copyFile(filepath.Join(layout, "blobs", "sha256", strings.TrimPrefix(layerDigest, "sha256:")), dest); err != nil {
-			return "", err
-		}
-	} else if err := r.opts.Pull.Blob(a.Repository(), layerDigest, dest); err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(dest)
-	if err != nil {
-		return "", err
-	}
-	if got := digestOf(data); got != layerDigest {
-		return "", fmt.Errorf("the chart archive is %s, not the manifest's layer %s", got, layerDigest)
 	}
 	return filepath.ToSlash(filepath.Join(relDir, file)), nil
+}
+
+// store returns where a is read from, the OCI layout in RunDir that holds it
+// or its registry, and the reference to resolve there.
+func (r *renderer) store(ctx context.Context, a nvkrrelease.Artifact) (oras.ReadOnlyTarget, string, error) {
+	if r.opts.RunDir == "" {
+		store, err := r.opts.Registry(a.Repository())
+		return store, a.Reference, err
+	}
+	layout, err := nvkrrelease.FindLayout(r.opts.RunDir, a.Digest)
+	if err != nil {
+		return nil, "", err
+	}
+	store, err := oci.NewFromFS(ctx, os.DirFS(layout))
+	if err != nil {
+		return nil, "", fmt.Errorf("%s: %w", layout, err)
+	}
+	return store, a.Digest, nil
 }
 
 func (r *renderer) finish() error {
@@ -572,11 +569,6 @@ func releaseImageValues(values map[string]string) []byte {
 		fmt.Fprintf(&b, "%s%s: %q\n", strings.Repeat("  ", len(open)), parts[len(parts)-1], values[k])
 	}
 	return []byte(b.String())
-}
-
-func digestOf(data []byte) string {
-	sum := sha256.Sum256(data)
-	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // writePrivate writes a file the install reads and nobody else should: the

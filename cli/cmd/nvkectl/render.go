@@ -34,7 +34,6 @@ type renderDeployPathOptions struct {
 	arch       string
 	runDir     string
 	plainHTTP  []string
-	oras       string
 }
 
 func newRenderDeployPathCmd() *cobra.Command {
@@ -89,7 +88,6 @@ deploy/nvke-deploy.sh install --deploy-path OUT.`,
 	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH, "Architecture to select release artifacts for; default: the site spec's controllerStack.arch, else this machine's")
 	cmd.Flags().StringVar(&opts.runDir, "nvkr-run-dir", "", "A completed NVKR Run or a directory of OCI layouts to read artifacts from instead of a registry")
 	cmd.Flags().StringSliceVar(&opts.plainHTTP, "plain-http-registries", nil, "Registry hosts served over plain HTTP; nothing is probed")
-	cmd.Flags().StringVar(&opts.oras, "oras", "oras", "The oras binary used to pull")
 	for _, flag := range []string{"deploy-path", "out"} {
 		_ = cmd.MarkFlagRequired(flag)
 	}
@@ -127,9 +125,7 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 			}
 		}
 		ro.Release, ro.ReleasePath, ro.Arch, ro.RunDir = release, opts.release, opts.arch, opts.runDir
-		if opts.runDir == "" {
-			ro.Pull = deploypath.ORASPuller{Binary: opts.oras, PlainHTTP: opts.plainHTTP}
-		}
+		ro.Registry = deploypath.Registries(opts.plainHTTP)
 		inputs = append(inputs, "release "+release.Subject)
 	}
 	result, err := deploypath.Render(ro)

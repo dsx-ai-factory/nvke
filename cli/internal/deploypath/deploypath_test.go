@@ -4,16 +4,24 @@
 package deploypath
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	godigest "github.com/opencontainers/go-digest"
+	"github.com/opencontainers/image-spec/specs-go"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"gopkg.in/yaml.v3"
+	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
@@ -599,45 +607,51 @@ func TestImageValuesAndOIDCDomains(t *testing.T) {
 	}
 }
 
-// fakePuller serves manifests and blobs from memory and records what was asked.
-type fakePuller struct {
-	manifests map[string][]byte
-	blobs     map[string][]byte
-	asked     []string
+// registry is an in-memory store that records what was fetched.
+type registry struct {
+	*memory.Store
+	fetched []string
 }
 
-func (p *fakePuller) Manifest(ref string) ([]byte, error) {
-	p.asked = append(p.asked, "manifest "+ref)
-	m, ok := p.manifests[ref]
-	if !ok {
-		return nil, os.ErrNotExist
-	}
-	return m, nil
+func newRegistry() *registry { return &registry{Store: memory.New()} }
+
+func (r *registry) Fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadCloser, error) {
+	r.fetched = append(r.fetched, desc.Digest.String())
+	return r.Store.Fetch(ctx, desc)
 }
 
-func (p *fakePuller) Blob(repository, digest, dest string) error {
-	p.asked = append(p.asked, "blob "+repository+"@"+digest)
-	b, ok := p.blobs[digest]
-	if !ok {
-		return os.ErrNotExist
-	}
-	return os.WriteFile(dest, b, 0o644)
-}
+func (r *registry) open(string) (oras.ReadOnlyTarget, error) { return r, nil }
 
 func digest(data []byte) string {
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// chartArtifact builds a chart archive, its manifest and a release artifact
-// for it, under repo, and registers them with the puller.
-func chartArtifact(p *fakePuller, repo, name string) (nvkrrelease.Artifact, string) {
+// chartManifest returns a chart manifest holding one archive layer.
+func chartManifest(blob []byte) []byte {
+	layer := ocispec.Descriptor{MediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip", Digest: godigest.FromBytes(blob), Size: int64(len(blob))}
+	manifest, _ := json.Marshal(ocispec.Manifest{Versioned: specs.Versioned{SchemaVersion: 2}, MediaType: ocispec.MediaTypeImageManifest, Layers: []ocispec.Descriptor{layer}})
+	return manifest
+}
+
+// chartArtifact pushes a chart and its manifest to r under repo/name and
+// returns the artifact and the archive's digest.
+func chartArtifact(r *registry, repo, name string) (nvkrrelease.Artifact, string) {
+	ctx := context.Background()
 	blob := []byte("chart " + name)
-	manifest := []byte(`{"layers":[{"mediaType":"application/vnd.cncf.helm.chart.content.v1.tar+gzip","digest":"` + digest(blob) + `"}]}`)
-	ref := repo + "/" + name + "@" + digest(manifest)
-	p.manifests[ref] = manifest
-	p.blobs[digest(blob)] = blob
-	return nvkrrelease.Artifact{Name: name, Kind: "helm-oci", Digest: digest(manifest), Reference: ref}, digest(blob)
+	manifest := chartManifest(blob)
+	desc := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageManifest, Digest: godigest.FromBytes(manifest), Size: int64(len(manifest))}
+	ref := repo + "/" + name + "@" + desc.Digest.String()
+	if err := r.Push(ctx, ocispec.Descriptor{MediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip", Digest: godigest.FromBytes(blob), Size: int64(len(blob))}, bytes.NewReader(blob)); err != nil {
+		panic(err)
+	}
+	if err := r.Push(ctx, desc, bytes.NewReader(manifest)); err != nil {
+		panic(err)
+	}
+	if err := r.Tag(ctx, desc, ref); err != nil {
+		panic(err)
+	}
+	return nvkrrelease.Artifact{Name: name, Kind: "helm-oci", Digest: desc.Digest.String(), Reference: ref}, digest(blob)
 }
 
 func imageArtifact(repo, name, arch string) nvkrrelease.Artifact {
@@ -646,17 +660,17 @@ func imageArtifact(repo, name, arch string) nvkrrelease.Artifact {
 }
 
 func TestRender_FromRegistry(t *testing.T) {
-	p := &fakePuller{manifests: map[string][]byte{}, blobs: map[string][]byte{}}
+	p := newRegistry()
 	repo := "ghcr.io/example/recipes"
 	temporal, temporalLayer := chartArtifact(p, repo, "temporal")
-	controllerChart, _ := chartArtifact(p, repo, "controller-chart")
+	controllerChart, controllerLayer := chartArtifact(p, repo, "controller-chart")
 	cwe := imageArtifact(repo, "cwe", "")
 	profiles := imageArtifact(repo, "controller-profiles", "")
 	capAMD := imageArtifact(repo, "capnico-controller", "linux/amd64")
 	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
 	release := &nvkrrelease.Release{Subject: repo + "/releases@" + digest([]byte("r")), Artifacts: []nvkrrelease.Artifact{temporal, controllerChart, cwe, profiles, capAMD, capARM}}
 	out := filepath.Join(t.TempDir(), "rendered")
-	result, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Pull: p})
+	result, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -711,21 +725,23 @@ func TestRender_FromRegistry(t *testing.T) {
 	if len(result.Images) != 3 {
 		t.Errorf("images: %+v", result.Images)
 	}
-	for _, ask := range p.asked {
-		if strings.Contains(ask, "cwe") {
-			t.Errorf("an image was pulled: %s", ask)
+	// Only the two charts were fetched, never an image.
+	charts := []string{temporal.Digest, temporalLayer, controllerChart.Digest, controllerLayer}
+	for _, d := range p.fetched {
+		if !contains(charts, d) {
+			t.Errorf("fetched %s, which is not a chart", d)
 		}
 	}
 }
 
 func TestRender_Refusals(t *testing.T) {
-	p := &fakePuller{manifests: map[string][]byte{}, blobs: map[string][]byte{}}
+	p := newRegistry()
 	repo := "ghcr.io/example/recipes"
 	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
 	profiles := imageArtifact(repo, "controller-profiles", "")
 	release := &nvkrrelease.Release{Subject: "s", Artifacts: []nvkrrelease.Artifact{capARM, profiles}}
 	out := filepath.Join(t.TempDir(), "rendered")
-	_, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/amd64", Out: out, Pull: p})
+	_, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/amd64", Out: out, Registry: p.open})
 	if err == nil {
 		t.Fatal("rendered without the controller image")
 	}
@@ -741,16 +757,22 @@ func TestRender_Refusals(t *testing.T) {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Pull: p}); err == nil || !strings.Contains(err.Error(), "exists") {
+	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err == nil || !strings.Contains(err.Error(), "exists") {
 		t.Errorf("existing out accepted: %v", err)
 	}
-	// A manifest whose bytes do not match the reference is refused.
-	bad := &fakePuller{manifests: map[string][]byte{}, blobs: map[string][]byte{}}
+	// A reference that resolves to another manifest than its digest is refused.
+	bad := newRegistry()
 	temporal, _ := chartArtifact(bad, repo, "temporal")
-	bad.manifests[temporal.Reference] = []byte(`{"layers":[{"digest":"sha256:other"}]}`)
+	tampered := temporal
+	tampered.Digest = "sha256:" + strings.Repeat("0", 64)
+	tampered.Reference = repo + "/temporal@" + tampered.Digest
+	desc, _ := bad.Resolve(context.Background(), temporal.Reference)
+	if err := bad.Tag(context.Background(), desc, tampered.Reference); err != nil {
+		t.Fatal(err)
+	}
 	cwe := imageArtifact(repo, "cwe", "")
-	rel := &nvkrrelease.Release{Subject: "s", Artifacts: []nvkrrelease.Artifact{temporal, cwe, profiles, capARM}}
-	_, err = Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: rel, Arch: "linux/arm64", Out: filepath.Join(t.TempDir(), "r"), Pull: bad})
+	rel := &nvkrrelease.Release{Subject: "s", Artifacts: []nvkrrelease.Artifact{tampered, cwe, profiles, capARM}}
+	_, err = Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: rel, Arch: "linux/arm64", Out: filepath.Join(t.TempDir(), "r"), Registry: bad.open})
 	if err == nil || !strings.Contains(err.Error(), "the manifest is sha256:") {
 		t.Errorf("tampered manifest: %v", err)
 	}
@@ -773,8 +795,11 @@ func writeLayout(t *testing.T, dir, name string, manifest, blob []byte) string {
 			t.Fatal(err)
 		}
 	}
-	index, _ := json.Marshal(map[string]any{"schemaVersion": 2, "manifests": []map[string]any{{"digest": d}}})
+	index, _ := json.Marshal(map[string]any{"schemaVersion": 2, "manifests": []map[string]any{{"mediaType": "application/vnd.oci.image.manifest.v1+json", "digest": d, "size": len(manifest)}}})
 	if err := os.WriteFile(filepath.Join(layout, "index.json"), index, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "oci-layout"), []byte(`{"imageLayoutVersion":"1.0.0"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return d
@@ -784,7 +809,7 @@ func TestRender_FromRun(t *testing.T) {
 	run := t.TempDir()
 	packages := filepath.Join(run, "packages")
 	blob := []byte("temporal chart bytes")
-	tManifest := []byte(`{"layers":[{"mediaType":"application/vnd.cncf.helm.chart.content.v1.tar+gzip","digest":"` + digest(blob) + `"}]}`)
+	tManifest := chartManifest(blob)
 	tDigest := writeLayout(t, packages, "temporal", tManifest, blob)
 	cweDigest := writeLayout(t, packages, "cwe", []byte(`{"config":{"digest":"sha256:0"}}`), nil)
 	profDigest := writeLayout(t, packages, "controller-profiles", []byte(`{"config":{"digest":"sha256:1"}}`), nil)
@@ -830,7 +855,7 @@ func TestRender_FromRun(t *testing.T) {
 }
 
 func TestRender_SiteAndRelease(t *testing.T) {
-	p := &fakePuller{manifests: map[string][]byte{}, blobs: map[string][]byte{}}
+	p := newRegistry()
 	repo := "ghcr.io/example/recipes"
 	temporal, _ := chartArtifact(p, repo, "temporal")
 	cwe := imageArtifact(repo, "cwe", "")
@@ -840,7 +865,7 @@ func TestRender_SiteAndRelease(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "rendered")
 	spec := filledSiteSpec(t, false, nil)
 	spec.ControllerStack.Images.Controller = "mirror.example.test/nvke/cwe:v1.2.3"
-	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Release: release, Arch: "linux/arm64", Out: out, Pull: p}); err != nil {
+	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err != nil {
 		t.Fatal(err)
 	}
 	// A tag-only override replaces the release image completely: the site

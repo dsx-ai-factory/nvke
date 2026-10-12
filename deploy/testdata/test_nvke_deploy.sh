@@ -148,7 +148,7 @@ layer="$(hex_of "${WORK}/chart.tgz")"
 d_cwe="$(fake_layout "${packages}" cwe '{"schemaVersion":2,"config":{"digest":"sha256:0"},"layers":[]}')"
 d_capnico="$(fake_layout "${packages}" capnico-controller-arm64 '{"schemaVersion":2,"config":{"digest":"sha256:1"},"layers":[]}')"
 d_profiles="$(fake_layout "${packages}" controller-profiles '{"schemaVersion":2,"config":{"digest":"sha256:2"},"layers":[]}')"
-d_temporal="$(fake_layout "${packages}" temporal "{\"schemaVersion\":2,\"layers\":[{\"mediaType\":\"application/vnd.cncf.helm.chart.content.v1.tar+gzip\",\"digest\":\"sha256:${layer}\"}]}" "${WORK}/chart.tgz")"
+d_temporal="$(fake_layout "${packages}" temporal "{\"schemaVersion\":2,\"layers\":[{\"mediaType\":\"application/vnd.cncf.helm.chart.content.v1.tar+gzip\",\"digest\":\"sha256:${layer}\",\"size\":$(wc -c <"${WORK}/chart.tgz" | tr -d ' ')}]}" "${WORK}/chart.tgz")"
 art() { printf '{"name":"%s","kind":"%s","digest":"%s","reference":"nvkr.local/nvke/%s@%s"%s}' "$1" "$2" "$3" "$1" "$3" "${4:-}"; }
 zeros="$(printf '0%.0s' $(seq 1 64))"
 cat >"${WORK}/local.json" <<JSON

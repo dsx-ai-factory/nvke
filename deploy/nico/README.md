@@ -58,8 +58,8 @@ What the node needs, all present on the reference instance type:
   `prometheus-community.github.io` and `kubernetes-sigs.github.io`, where the
   chart's dependencies come from, and to `docker.io`, `ghcr.io`, `quay.io` and
   `registry.k8s.io`, where its images come from
-- to install from an NVKR release: `nvkectl` and `oras` on the machine that
-  renders. `nvkectl render deploy-path --deploy-path deploy/nico --release
+- to install from an NVKR release: `nvkectl` on the machine that renders.
+  `nvkectl render deploy-path --deploy-path deploy/nico --release
   release.json --out DIR` resolves this deploy path against the
   `nvkr.dev/release/v4` JSON that `nvkr release verify` prints. Charts the
   release carries are pulled by digest into `DIR/charts/`; images are pinned
@@ -69,7 +69,7 @@ What the node needs, all present on the reference instance type:
   item's `artifact`. `--arch` selects them (default: the site spec's
   `controllerStack.arch`). The render refuses, naming every problem, when an
   image artifact is missing. Then install `DIR` with this script; it needs
-  neither `nvkectl` nor `oras`.
+  no `nvkectl`.
 
 ## Before this runs
 

@@ -7,40 +7,28 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-const (
-	helmChartMediaType = "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
-	titleAnnotation    = "org.opencontainers.image.title"
-)
+const helmChartMediaType = "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
 
-type ociDescriptor struct {
-	MediaType   string            `json:"mediaType"`
-	Digest      string            `json:"digest"`
-	Annotations map[string]string `json:"annotations"`
-}
-
-type ociManifest struct {
-	Layers []ociDescriptor `json:"layers"`
-}
-
-// ChartLayer reads an OCI image manifest and returns the digest and file
-// name of its chart archive: the layer with the Helm chart content media
-// type, else the first layer. The file name is the layer's title annotation
-// when that is a plain file name, else fallback.
-func ChartLayer(manifest io.Reader, fallback string) (digest, file string, err error) {
-	var doc ociManifest
-	if err := json.NewDecoder(manifest).Decode(&doc); err != nil {
-		return "", "", fmt.Errorf("cannot read the OCI manifest: %w", err)
+// ChartLayer returns the chart archive layer of an OCI image manifest: the
+// layer with the Helm chart content media type, else the first layer. The
+// file name is the layer's title annotation when that is a plain file name,
+// else fallback.
+func ChartLayer(manifest []byte, fallback string) (layer ocispec.Descriptor, file string, err error) {
+	var doc ocispec.Manifest
+	if err := json.Unmarshal(manifest, &doc); err != nil {
+		return layer, "", fmt.Errorf("cannot read the OCI manifest: %w", err)
 	}
 	if len(doc.Layers) == 0 {
-		return "", "", errors.New("manifest has no layers")
+		return layer, "", errors.New("manifest has no layers")
 	}
-	layer := doc.Layers[0]
+	layer = doc.Layers[0]
 	for _, candidate := range doc.Layers {
 		if candidate.MediaType == helmChartMediaType {
 			layer = candidate
@@ -48,20 +36,16 @@ func ChartLayer(manifest io.Reader, fallback string) (digest, file string, err e
 		}
 	}
 	if layer.Digest == "" {
-		return "", "", errors.New("the chart layer has no digest")
+		return layer, "", errors.New("the chart layer has no digest")
 	}
 	// The title becomes a file name under the chart cache, so anything that
 	// is not a plain file name falls back: the archive is verified by digest
 	// either way.
-	file = layer.Annotations[titleAnnotation]
+	file = layer.Annotations[ocispec.AnnotationTitle]
 	if file == "" || file == "." || file == ".." || strings.ContainsAny(file, "/\\") {
 		file = fallback
 	}
-	return layer.Digest, file, nil
-}
-
-type ociIndex struct {
-	Manifests []ociDescriptor `json:"manifests"`
+	return layer, file, nil
 }
 
 // FindLayout returns the OCI layout under dir whose index lists a manifest
@@ -91,12 +75,12 @@ func FindLayout(dir, digest string) (string, error) {
 		if err != nil {
 			continue
 		}
-		var index ociIndex
+		var index ocispec.Index
 		if err := json.Unmarshal(data, &index); err != nil {
 			return "", fmt.Errorf("%s/index.json: %w", candidate, err)
 		}
 		for _, manifest := range index.Manifests {
-			if manifest.Digest == digest {
+			if manifest.Digest.String() == digest {
 				found = append(found, candidate)
 				break
 			}
