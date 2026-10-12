@@ -65,6 +65,7 @@ type Config struct {
 	MachineMetadataAllowlistedAnnotationKeys []string                   `json:"machineMetadataAllowlistedAnnotationKeys"`
 	AllowControlPlaneWithoutVIP              bool                       `json:"allowControlPlaneWithoutVIP"`
 	APIAuth                                  APIAuthConfig              `json:"apiAuth"`
+	ImageVerification                        ImageVerificationConfig    `json:"imageVerification"`
 }
 
 // FieldManagerConfig groups the Server-Side-Apply field manager names, mirroring
@@ -801,4 +802,14 @@ func (t *TeleportConfig) validate() error {
 		return fmt.Errorf("environment must be \"prod\" or \"non-prod\", got %q", t.Environment)
 	}
 	return nil
+}
+
+// ImageVerificationConfig governs the node-image validation pre-flight in the
+// NICo machine-materialization path.
+type ImageVerificationConfig struct {
+	// Mode is off (default), warn, or enforce; see
+	// internal/clients/nico/imageverify.go for the semantics. In YAML the
+	// value must be quoted ("off"), because a bare off is YAML's boolean
+	// false and fails to decode into this string field.
+	Mode string `json:"mode"`
 }

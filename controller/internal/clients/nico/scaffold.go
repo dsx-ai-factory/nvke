@@ -18,7 +18,13 @@ import (
 )
 
 // Client is the NICo provider's capability client.
-type Client struct{}
+type Client struct {
+	// ImageVerifier, when set, supplies the node-image validation verdict the
+	// CreateMachine pre-flight checks. Nil means no verdict source is
+	// configured; what that does is decided by
+	// config.Config.ImageVerificationMode (see imageverify.go).
+	ImageVerifier ImageVerifier
+}
 
 // New returns a NICo provider Client.
 func New() *Client {

@@ -42,6 +42,9 @@ credentialMonitoring:
   inspectionInterval: 1h
   observationMaxAge: 3h
   warningDays: 45
+# Node-image validation pre-flight in the NICo machine path: off | warn | enforce.
+imageVerification:
+  mode: "off"
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
 installCNIAfterInit: false
