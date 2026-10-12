@@ -31,10 +31,13 @@ Preserve these rules when adding or changing a workflow:
    `pull_request.types` list.
 8. Concurrency must not let one `main` commit erase another commit's result.
 9. Every tool download retries. A pinned release tarball is fetched with
-   `--retry 8 --retry-all-errors --retry-max-time 240`, because a transient 504
-   from a release CDN would otherwise fail the job on the first response --
-   which it has. `--retry` alone is not enough: curl does not treat a 5xx as
-   retryable without `--retry-all-errors`. Prefer an existing `setup-*`
+   `--retry 8 --retry-all-errors --retry-max-time 240`. Retries default to 0, so
+   a download with no `--retry` fails the job on the first bad response -- which
+   a release-CDN 504 has done. `--retry` alone covers curl's transient set (408,
+   429, 500, 502, 503, 504, 522, 524 and timeouts); `--retry-all-errors` extends
+   that to the rest, such as a connection reset part way through a transfer.
+   Pair it with `-o`, never a pipe: curl cannot rewind output already written to
+   a pipe, so a retry there duplicates data. Prefer an existing `setup-*`
    composite action over inlining a new download.
 
 ## Event ownership
