@@ -37,8 +37,9 @@ spec describes. The committed deploy path is never edited.
 
 The site spec's controllerStack section supplies what the controller stack
 needs from the site: the node architecture, the NICo API and its token, the
-registry pull secret, the tenant login, and optionally the database
-password, a registry mirror, image overrides and an nktp values file. Each
+registry pull secret, the tenant login, the database password file, and
+optionally a registry mirror, image overrides and an nktp values file. A
+missing database password file is created with a generated password. Each
 item that takes site values gets a site-values.yaml appended to its values;
 the controller gets the database password, the OIDC discovery URL and the
 SPIRE server address, SPIRE gets the site identity, the controller's admin

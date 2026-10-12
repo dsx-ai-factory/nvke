@@ -98,7 +98,7 @@ func filledSiteSpec(t *testing.T, withCA bool, extra map[string]string) *sitespe
 		"REPLACE_ARCH": "arm64", "REPLACE_NICO_ENDPOINT": "https://nico.example.com", "REPLACE_NICO_ORG_ID": "org-1",
 		"REPLACE_NICO_API_NAME": "forge", "REPLACE_NICO_TOKEN_PATH": "nico-token",
 		"REPLACE_REGISTRY_SERVER": "ghcr.io", "REPLACE_REGISTRY_USERNAME": "robot", "REPLACE_REGISTRY_TOKEN_PATH": "registry-token",
-		"REPLACE_TENANT_USER": "nvke", "REPLACE_TENANT_PASSWORD_PATH": "tenant-password",
+		"REPLACE_TENANT_USER": "nvke", "REPLACE_TENANT_PASSWORD_PATH": "tenant-password", "REPLACE_DB_PASSWORD_PATH": "db-password",
 	}
 	for k, v := range extra {
 		values[k] = v
@@ -159,7 +159,7 @@ func TestRender_FromSiteSpec(t *testing.T) {
 		t.Errorf("rendered tree is not private: %v %v", info.Mode(), err)
 	}
 	// Nothing was written into the committed deploy path.
-	for _, f := range []string{"controller/site-values.yaml", "site.env", "db-password"} {
+	for _, f := range []string{"controller/site-values.yaml", "site.env"} {
 		if _, err := os.Stat(filepath.Join(nico, f)); err == nil {
 			t.Errorf("the committed deploy path gained %s", f)
 		}
@@ -175,9 +175,8 @@ func TestRender_FromSiteSpec(t *testing.T) {
 		t.Error("controller image set without an override")
 	}
 	password, _ := dig(ctl, "appDb", "postgresPassword").(string)
-	stored, _ := os.ReadFile(filepath.Join(out, DBPasswordFile))
-	if password == "" || strings.TrimSpace(string(stored)) != password {
-		t.Errorf("generated password %q is not kept in %s (%q)", password, DBPasswordFile, stored)
+	if password != "db-secret" {
+		t.Errorf("database password not read from the site spec's file: %q", password)
 	}
 	pg := readValues(t, filepath.Join(out, "postgresql", SiteValuesFile))
 	tp := readValues(t, filepath.Join(out, "temporal", SiteValuesFile))
@@ -245,13 +244,12 @@ func TestRender_FromSiteSpec(t *testing.T) {
 }
 
 func TestRender_SiteSpecOptions(t *testing.T) {
-	// No CA, a configured database password and an nktp values file.
+	// No CA, a mirror, an image override and an nktp values file.
 	spec := filledSiteSpec(t, false, nil)
 	dir := filepath.Dir(spec.ResolvePath("x"))
 	if err := os.WriteFile(filepath.Join(dir, "nktp.yaml"), []byte("gateway:\n  enabled: true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	spec.ControllerStack.Database.PasswordFile = "db-password"
 	spec.ControllerStack.NktpValuesFile = "nktp.yaml"
 	spec.ControllerStack.Mirror = "mirror.example.test:5000"
 	spec.ControllerStack.Images.Controller = "mirror.example.test:5000/cwe@sha256:" + strings.Repeat("a", 64)
@@ -262,9 +260,6 @@ func TestRender_SiteSpecOptions(t *testing.T) {
 	ctl := readValues(t, filepath.Join(out, "controller", SiteValuesFile))
 	if dig(ctl, "appDb", "postgresPassword") != "db-secret" || dig(ctl, "image", "digest") != "sha256:"+strings.Repeat("a", 64) {
 		t.Errorf("controller values: %v", ctl)
-	}
-	if _, err := os.Stat(filepath.Join(out, DBPasswordFile)); err == nil {
-		t.Error("a configured password was written to db-password")
 	}
 	sp := readValues(t, filepath.Join(out, "spire", SiteValuesFile))
 	if _, has := sp["spire-server"].(map[string]any)["upstreamAuthority"]; has {
@@ -284,6 +279,48 @@ func TestRender_SiteSpecOptions(t *testing.T) {
 	nktp, _ := os.ReadFile(filepath.Join(out, "nktp", SiteValuesFile))
 	if string(nktp) != "gateway:\n  enabled: true\n" {
 		t.Errorf("nktp passthrough: %q", nktp)
+	}
+}
+
+func TestRender_DatabasePassword(t *testing.T) {
+	// A missing password file is created, private, and the one password
+	// lands in every item that needs it.
+	spec := filledSiteSpec(t, false, map[string]string{"REPLACE_DB_PASSWORD_PATH": "state/db-password"})
+	path := spec.ResolvePath("state/db-password")
+	out := filepath.Join(t.TempDir(), "rendered")
+	result, err := Render(RenderOptions{DeployPath: nico, Site: spec, Out: out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("generated password file: %v %v", info, err)
+	}
+	stored, _ := os.ReadFile(path)
+	password := strings.TrimSpace(string(stored))
+	ctl := readValues(t, filepath.Join(out, "controller", SiteValuesFile))
+	pg := readValues(t, filepath.Join(out, "postgresql", SiteValuesFile))
+	tp := readValues(t, filepath.Join(out, "temporal", SiteValuesFile))
+	if password == "" || dig(ctl, "appDb", "postgresPassword") != password || dig(pg, "auth", "password") != password ||
+		dig(tp, "server", "config", "persistence", "visibility", "sql", "password") != password {
+		t.Errorf("generated password %q is not the one in the values", password)
+	}
+	if !contains(result.Notes, "database password generated and written to "+path) {
+		t.Errorf("notes: %v", result.Notes)
+	}
+	if _, err := os.Stat(filepath.Join(out, "db-password")); err == nil {
+		t.Error("the rendered tree holds a password copy")
+	}
+	// Without the field the render refuses and leaves nothing.
+	spec = filledSiteSpec(t, false, nil)
+	spec.ControllerStack.Database.PasswordFile = ""
+	out = filepath.Join(t.TempDir(), "rendered")
+	_, err = Render(RenderOptions{DeployPath: nico, Site: spec, Out: out})
+	if err == nil || !strings.Contains(err.Error(), "controllerStack.database.passwordFile is required") {
+		t.Errorf("unset password file: %v", err)
+	}
+	if _, statErr := os.Stat(out); statErr == nil {
+		t.Error("a refused render left its output behind")
 	}
 }
 

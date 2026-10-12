@@ -63,11 +63,14 @@ for f in nico-token registry-token tenant-password; do printf 'secret-%s\n' "$f"
 sed -e 's|REPLACE_ARCH|arm64|; s|REPLACE_NICO_ENDPOINT|https://nico.example.com|; s|REPLACE_NICO_ORG_ID|org-1|; s|REPLACE_NICO_API_NAME|forge|' \
     -e "s|REPLACE_NICO_TOKEN_PATH|${WORK}/site/nico-token|; s|REPLACE_REGISTRY_SERVER|ghcr.io|; s|REPLACE_REGISTRY_USERNAME|robot|" \
     -e "s|REPLACE_REGISTRY_TOKEN_PATH|${WORK}/site/registry-token|; s|REPLACE_TENANT_USER|nvke|; s|REPLACE_TENANT_PASSWORD_PATH|${WORK}/site/tenant-password|" \
+    -e "s|REPLACE_DB_PASSWORD_PATH|${WORK}/site/db-password|" \
     "${REPO}/cli/examples/sitespec.yaml" >"${WORK}/site/sitespec.yaml"
 rendered="${WORK}/rendered"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${rendered}" 2>&1)" || fail "render exited $?: ${out}"
 expect "render reports the site values" '^controller: site values written$' "${out}"
 expect "render reports the templates" '^nvke-base-config: 4 templates rendered; applies as a manifest item$' "${out}"
+expect "a missing database password file is created" "^database password generated and written to ${WORK}/site/db-password$" "${out}"
+[[ -s "${WORK}/site/db-password" && ! -e "${rendered}/db-password" ]] && pass "the password lives in the operator's file, not the tree" || fail "db password placement"
 find "${rendered}" -maxdepth 0 -perm 0700 | grep -q . && pass "the rendered tree is private" || fail "rendered tree mode"
 [[ ! -e "${NICO}/site.env" && ! -e "${NICO}/controller/site-values.yaml" ]] && pass "nothing was written into the committed deploy path" || fail "committed deploy path written"
 grep -q '^  - site-values.yaml$' "${rendered}/controller/release.yaml" && pass "the controller's values list ends with site-values.yaml" || fail "controller release.yaml: $(cat "${rendered}/controller/release.yaml")"

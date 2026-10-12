@@ -26,6 +26,7 @@ func filledStack(t *testing.T) *ControllerStack {
 		Nico:       StackNico{Endpoint: "https://nico.example.com", OrgID: "org-1", APIName: "forge", TokenFile: files["nico-token"]},
 		PullSecret: StackPullSecret{Server: "ghcr.io", Username: "robot", TokenFile: files["registry-token"]},
 		Tenant:     StackTenant{User: "nke", PasswordFile: files["tenant-password"]},
+		Database:   StackDatabase{PasswordFile: filepath.Join(dir, "db-password")},
 	}
 }
 
@@ -54,7 +55,7 @@ func TestTemplate_ControllerStackPlaceholdersPassBootstrapValidation(t *testing.
 	want := []string{
 		"controllerStack.arch", "controllerStack.nico.endpoint", "controllerStack.nico.orgID", "controllerStack.nico.apiName", "controllerStack.nico.tokenFile",
 		"controllerStack.pullSecret.server", "controllerStack.pullSecret.username", "controllerStack.pullSecret.tokenFile",
-		"controllerStack.tenant.user", "controllerStack.tenant.passwordFile",
+		"controllerStack.tenant.user", "controllerStack.tenant.passwordFile", "controllerStack.database.passwordFile",
 	}
 	if strings.Join(left, " ") != strings.Join(want, " ") {
 		t.Errorf("placeholders:\n got %v\nwant %v", left, want)
@@ -102,7 +103,7 @@ func TestValidateControllerStack_Filled(t *testing.T) {
 		t.Errorf("filled section rejected: %v", err)
 	}
 	if err := spec.ValidateControllerStackReferences(); err != nil {
-		t.Errorf("existing files rejected: %v", err)
+		t.Errorf("existing files rejected, or the absent database password file was: %v", err)
 	}
 }
 
@@ -115,6 +116,7 @@ func TestValidateControllerStack_Checks(t *testing.T) {
 		"bad endpoint":       {func(in *ControllerStack) { in.Nico.Endpoint = "nico.example.com" }, "controllerStack.nico.endpoint"},
 		"missing token":      {func(in *ControllerStack) { in.Nico.TokenFile = "" }, "controllerStack.nico.tokenFile is required"},
 		"missing user":       {func(in *ControllerStack) { in.Tenant.User = "" }, "controllerStack.tenant.user is required"},
+		"missing db file":    {func(in *ControllerStack) { in.Database.PasswordFile = "" }, "controllerStack.database.passwordFile is required"},
 		"mirror with scheme": {func(in *ControllerStack) { in.Mirror = "https://mirror.example.com" }, "controllerStack.mirror"},
 	}
 	for name, tc := range cases {
@@ -177,6 +179,7 @@ func TestValidateControllerStackReferences_RelativeToTheSpec(t *testing.T) {
 		"REPLACE_NICO_TOKEN_PATH", "nico-token",
 		"REPLACE_REGISTRY_TOKEN_PATH", "registry-token",
 		"REPLACE_TENANT_PASSWORD_PATH", "tenant-password",
+		"REPLACE_DB_PASSWORD_PATH", "db-password",
 		"REPLACE_ARCH", "arm64",
 		"REPLACE_NICO_ENDPOINT", "https://nico.example.com",
 		"REPLACE_NICO_ORG_ID", "org",

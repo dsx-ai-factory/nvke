@@ -128,10 +128,11 @@ controllerStack:
   # images:
   #   controller: ""
   #   profiles: ""
-  # Optional. File holding the Postgres password the controller and Temporal
-  # share. Omitted, the install generates one and reuses it on reruns.
-  # database:
-  #   passwordFile: ""
+  # File holding the Postgres password the controller and Temporal share.
+  # When the file does not exist, the render creates it with a generated
+  # password.
+  database:
+    passwordFile: REPLACE_DB_PASSWORD_PATH
   # Optional. Registry the external images are pulled from instead of their
   # upstream registries, as host[:port][/prefix], no scheme.
   # mirror: ""

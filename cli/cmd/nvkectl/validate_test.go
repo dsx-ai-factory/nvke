@@ -41,6 +41,7 @@ func filledSiteSpec(t *testing.T, edits map[string]string) string {
 		"REPLACE_NICO_API_NAME": "forge", "REPLACE_NICO_TOKEN_PATH": filepath.Join(dir, "nico-token"),
 		"REPLACE_REGISTRY_SERVER": "ghcr.io", "REPLACE_REGISTRY_USERNAME": "robot", "REPLACE_REGISTRY_TOKEN_PATH": filepath.Join(dir, "registry-token"),
 		"REPLACE_TENANT_USER": "nke", "REPLACE_TENANT_PASSWORD_PATH": filepath.Join(dir, "tenant-password"),
+		"REPLACE_DB_PASSWORD_PATH": filepath.Join(dir, "db-password"),
 	}
 	for k, v := range edits {
 		values[k] = v
@@ -67,7 +68,7 @@ func TestValidateSiteSpec_GeneratedFileListsPlaceholders(t *testing.T) {
 	if !strings.Contains(stdout, "bootstrap: valid\n") {
 		t.Errorf("bootstrap section not reported valid:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "controllerStack: 10 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint") {
+	if !strings.Contains(stdout, "controllerStack: 11 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint") {
 		t.Errorf("placeholders not listed:\n%s", stdout)
 	}
 	if strings.Contains(stdout, "is required") {

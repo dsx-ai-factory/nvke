@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,10 +24,6 @@ import (
 
 // SiteValuesFile is the values file render appends to an item for the site.
 const SiteValuesFile = "site-values.yaml"
-
-// DBPasswordFile is where render keeps a generated database password, so a
-// later render can take it over through controllerStack.database.passwordFile.
-const DBPasswordFile = "db-password"
 
 // oidcNodePort is the NodePort the SPIRE OIDC discovery provider is published
 // on, by the spire-oidc-provider-nodeport item.
@@ -217,16 +215,23 @@ func (r *renderer) siteValues(item string, values map[string]any) {
 	r.note("%s: site values written", item)
 }
 
-// dbPassword is the database password: the site spec's file, else a new one
-// kept in the rendered tree for a later render to take over.
+// dbPassword is the database password from controllerStack.database.passwordFile.
+// A missing file is created with a generated password, so the operator's
+// file is the only copy.
 func (r *renderer) dbPassword(spec *sitespec.SiteSpec) string {
-	if file := spec.ControllerStack.Database.PasswordFile; file != "" {
-		data, err := os.ReadFile(spec.ResolvePath(file))
-		if err != nil {
-			r.problem("site spec: controllerStack.database.passwordFile: %v", err)
-			return ""
-		}
+	file := spec.ControllerStack.Database.PasswordFile
+	if file == "" {
+		r.problem("site spec: controllerStack.database.passwordFile is required; the render keeps no password")
+		return ""
+	}
+	path := spec.ResolvePath(file)
+	data, err := os.ReadFile(path)
+	if err == nil {
 		return strings.TrimSpace(string(data))
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		r.problem("site spec: controllerStack.database.passwordFile: %v", err)
+		return ""
 	}
 	raw := make([]byte, 24)
 	if _, err := rand.Read(raw); err != nil {
@@ -234,11 +239,11 @@ func (r *renderer) dbPassword(spec *sitespec.SiteSpec) string {
 		return ""
 	}
 	password := base64.RawURLEncoding.EncodeToString(raw)
-	if err := writePrivate(filepath.Join(r.opts.Out, DBPasswordFile), []byte(password+"\n")); err != nil {
-		r.problem("%v", err)
+	if err := writePrivate(path, []byte(password+"\n")); err != nil {
+		r.problem("site spec: controllerStack.database.passwordFile: %v", err)
 		return ""
 	}
-	r.note("database password generated and kept in %s; name it as controllerStack.database.passwordFile to keep it on a later render", DBPasswordFile)
+	r.note("database password generated and written to %s", path)
 	return password
 }
 

@@ -31,9 +31,9 @@ type ControllerStack struct {
 	// Images overrides the controller and profiles images, which default to
 	// the release file's items.
 	Images StackImages `yaml:"images,omitempty"`
-	// Database names the file holding the Postgres password. Omitted, the
-	// install generates one and reuses it.
-	Database StackDatabase `yaml:"database,omitempty"`
+	// Database names the file holding the Postgres password. The render
+	// creates the file with a generated password when it does not exist.
+	Database StackDatabase `yaml:"database"`
 	// Mirror is a registry the external images are pulled from instead of
 	// their upstream registries, as host[:port][/prefix], no scheme.
 	Mirror string `yaml:"mirror,omitempty"`
@@ -70,7 +70,7 @@ type StackImages struct {
 
 // StackDatabase names the file holding the Postgres password.
 type StackDatabase struct {
-	PasswordFile string `yaml:"passwordFile,omitempty"`
+	PasswordFile string `yaml:"passwordFile"`
 }
 
 // PlaceholderPrefix marks a value `nvkectl generate sitespec` left for the
@@ -107,6 +107,7 @@ var requiredStackFields = map[string]bool{
 	"controllerStack.arch": true, "controllerStack.nico.endpoint": true, "controllerStack.nico.orgID": true, "controllerStack.nico.apiName": true,
 	"controllerStack.nico.tokenFile": true, "controllerStack.pullSecret.server": true, "controllerStack.pullSecret.username": true,
 	"controllerStack.pullSecret.tokenFile": true, "controllerStack.tenant.user": true, "controllerStack.tenant.passwordFile": true,
+	"controllerStack.database.passwordFile": true,
 }
 
 // ControllerStackPlaceholders returns the controllerStack field paths whose
@@ -205,14 +206,14 @@ func (inv *SiteSpec) ValidateControllerStackReferences() error {
 	return v.err()
 }
 
-// fileFields pairs each controllerStack field that names a file with its
-// value, in file order.
+// fileFields pairs each controllerStack field that names a file that must
+// exist with its value, in file order. database.passwordFile is not one: the
+// render creates it when it is missing.
 func (in *ControllerStack) fileFields() [][2]string {
 	return [][2]string{
 		{"controllerStack.nico.tokenFile", in.Nico.TokenFile},
 		{"controllerStack.pullSecret.tokenFile", in.PullSecret.TokenFile},
 		{"controllerStack.tenant.passwordFile", in.Tenant.PasswordFile},
-		{"controllerStack.database.passwordFile", in.Database.PasswordFile},
 		{"controllerStack.nktpValuesFile", in.NktpValuesFile},
 	}
 }
