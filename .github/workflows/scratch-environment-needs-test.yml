@@ -1,12 +1,8 @@
 name: SCRATCH environment needs-outputs test
 
 on:
-  workflow_dispatch:
-    inputs:
-      gate:
-        description: Whether the gated job should require approval
-        type: boolean
-        default: false
+  pull_request:
+    types: [opened, labeled]
 
 permissions: {}
 
@@ -18,7 +14,7 @@ jobs:
       gate: ${{ steps.set.outputs.gate }}
     steps:
       - id: set
-        run: echo "gate=${{ inputs.gate }}" >> "${GITHUB_OUTPUT}"
+        run: echo "gate=${{ contains(github.event.pull_request.labels.*.name, 'gate') }}" >> "${GITHUB_OUTPUT}"
 
   conditional:
     name: conditional (needs.upstream.outputs.gate=${{ needs.upstream.outputs.gate }})
