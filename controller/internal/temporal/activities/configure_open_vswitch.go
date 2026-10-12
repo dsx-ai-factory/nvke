@@ -228,10 +228,9 @@ func openVSwitchTerminalResult(
 			NetworkBackend:  result.GetNetworkBackend().String(),
 		}, true, nil
 	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED:
-		// The agent saves failures. Temporal retries with the same operation ID
-		// will receive this failure again without rerunning OVS setup. The agent
-		// needs to report whether the failure can be retried. Do not bypass this
-		// limitation by creating new operation IDs here.
+		// FIXME: https://github.com/dsx-ai-factory/nvke/issues/1542 — report retryability for OVS failures.
+		// Explicit OVS retries return the saved failure without rerunning setup.
+		// Keep operation IDs stable until the agent supports safe recovery.
 		return ConfigureOpenVSwitchResult{}, true, fmt.Errorf(
 			"open vSwitch operation %s failed at %s: %s",
 			operationStatus.GetOperationId(),
