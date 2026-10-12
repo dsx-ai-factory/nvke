@@ -117,14 +117,14 @@
    "reference": "ghcr.io/example/recipes/nvkectl@sha256:8888888888888888888888888888888888888888888888888888888888888888"
   },
   {
-   "name": "nke-node-image-arm64",
+   "name": "nvke-node-image-arm64",
    "kind": "disk-image",
    "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
    "buildDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
    "components": [
-    "nke-node-image-arm64"
+    "nvke-node-image-arm64"
    ],
-   "reference": "ghcr.io/example/recipes/nke-node-image-arm64@sha256:9999999999999999999999999999999999999999999999999999999999999999",
+   "reference": "ghcr.io/example/recipes/nvke-node-image-arm64@sha256:9999999999999999999999999999999999999999999999999999999999999999",
    "arch": "linux/arm64"
   },
   {
