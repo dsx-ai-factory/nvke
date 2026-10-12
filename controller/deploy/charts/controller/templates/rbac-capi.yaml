@@ -47,6 +47,9 @@ rules:
       - provisionedclusters
       - provisionedmachines
       - provisionedmachinetemplates
+      - launchlayerclusters
+      - launchlayermachines
+      - launchlayermachinetemplates
     verbs:
       - create
       - delete
@@ -65,6 +68,9 @@ rules:
       - provisionedclusters.infrastructure.cluster.x-k8s.io
       - provisionedmachines.infrastructure.cluster.x-k8s.io
       - provisionedmachinetemplates.infrastructure.cluster.x-k8s.io
+      - launchlayerclusters.infrastructure.cluster.x-k8s.io
+      - launchlayermachines.infrastructure.cluster.x-k8s.io
+      - launchlayermachinetemplates.infrastructure.cluster.x-k8s.io
     verbs:
       - get
 ---
