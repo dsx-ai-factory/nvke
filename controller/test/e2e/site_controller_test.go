@@ -37,7 +37,7 @@ import (
 
 // The stages of the site controller run, each doing everything the one before it did.
 const (
-	siteStageProvision = "provision" // a Forge node, reachable, then released
+	siteStageProvision = "provision" // a node, reachable, then released
 	siteStageBootstrap = "bootstrap" // plus vanilla Kubernetes from nvkectl
 	siteStageFull      = "full"      // plus the NVKE stack, the controller, and a tenant
 )
@@ -51,7 +51,7 @@ const (
 	envJumpHostPassword = "JUMP_HOST_PASSWORD"
 )
 
-// The versions a Forge run is given in -e2e.versions, all required. A run that
+// The versions a site run is given in -e2e.versions, all required. A run that
 // names none of a version has not said what it qualifies, so the suite fails
 // before a machine exists instead of falling back to a constant the record
 // cannot see.
@@ -91,7 +91,7 @@ var (
 
 func init() {
 	flag.StringVar(&siteStage, "e2e.site-stage", "",
-		"build a site controller on Forge up to this stage: provision, bootstrap or full (empty skips the site controller)")
+		"build a site controller up to this stage: provision, bootstrap or full (empty skips the site controller)")
 	flag.BoolVar(&keepSite, "e2e.keep-site", false,
 		"keep the site controller's node after the run, for debugging")
 }
@@ -118,7 +118,7 @@ var siteReaches = []string{
 // shape every stream in release/policy.yaml names. On the container rather
 // than the tenant entry because the site outlives every spec beneath it, and
 // the provider takes the maximum per machine type, not the sum.
-var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("site-controller", "needs:cpu=2", "needs:gpu=1"), func() {
+var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-controller", "needs:cpu=2", "needs:gpu=1"), func() {
 	var (
 		cfg config.Config
 		// provider creates the site node. Settled before anything is created,
@@ -194,7 +194,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			Capabilities: capabilities,
 			Labels:       map[string]string{"purpose": "nke-e2e-site-controller"},
 		})
-		Expect(err).NotTo(HaveOccurred(), "should provision and reach a Forge node")
+		Expect(err).NotTo(HaveOccurred(), "should provision and reach a node")
 		GinkgoLogr.Info("site node", "name", node.Name, "ip", node.IP, "tpmEkThumbprint", node.TPMEkThumbprint)
 
 		out, err := session.Run(ctx, "uname -srm && . /etc/os-release && echo \"$PRETTY_NAME\"")
@@ -333,7 +333,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			GinkgoLogr.Info("keeping the site controller", "name", node.Name, "ip", node.IP,
 				"kubeconfig", cluster.Kubeconfig,
 				"reason", keepReason(keepSite, cfg.Lifecycle.SkipDelete))
-			GinkgoLogr.Info("the Forge instance survives this run and must be released by hand", "name", node.Name)
+			GinkgoLogr.Info("the instance survives this run and must be released by hand", "name", node.Name)
 			return
 		}
 		detached := context.WithoutCancel(ctx)
