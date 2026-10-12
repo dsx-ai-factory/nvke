@@ -24,7 +24,7 @@ capi:
 tenantAccess:
   enabled: true
 
-nkeOIDCAuth:
+nvkeOIDCAuth:
   enabled: true
   # Logical issuer, string-compared against the JWT's iss claim; it does not
   # have to resolve. discoveryURL does, and is VIP-derived, so it is passed in.
@@ -74,7 +74,7 @@ nameOverride: nke-controller
 serviceAccount:
   name: nke-controller
 
-nkeSystemNamespace:
+nvkeSystemNamespace:
   create: false
 
 image:

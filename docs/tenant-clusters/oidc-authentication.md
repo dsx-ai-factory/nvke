@@ -14,7 +14,7 @@ operators or users an OIDC login.
 
 It is disabled by default. You can enable it:
 
-- **For new clusters:** every cluster created while `nkeOIDCAuth.enabled` is
+- **For new clusters:** every cluster created while `nvkeOIDCAuth.enabled` is
   `true` has it from creation.
 - **For an existing cluster:** an `UpdateCluster` request rolls it onto the
   running control plane.
@@ -28,10 +28,14 @@ README](../../controller/deploy/charts/controller/README.md) lists each one.
 
 | Value | `nke-controller-config` key | Purpose |
 |---|---|---|
-| `nkeOIDCAuth.enabled` | `oidc.managementOIDCAuth.enabled` | Enables OIDC authentication for new clusters. Default `false`. |
-| `nkeOIDCAuth.issuerURL` | `oidc.managementOIDCAuth.issuerURL` | The OIDC issuer tenant API servers trust. Required. |
-| `nkeOIDCAuth.discoveryURL` | `oidc.managementOIDCAuth.discoveryURL` | Optional. Set it when tenant API servers cannot reach the issuer's discovery document at `issuerURL`. |
-| `nkeOIDCAuth.caBundleSecret.namespace`, `.name`, `.key` | `oidc.managementOIDCAuth.caBundleSecretRef.*` | Optional. The Secret holding the issuer's PEM CA bundle, embedded in each tenant API server's configuration. Set every field or none. The Secret and key must exist and be non-empty. |
+| `nvkeOIDCAuth.enabled` | `oidc.managementOIDCAuth.enabled` | Enables OIDC authentication for new clusters. Default `false`. |
+| `nvkeOIDCAuth.issuerURL` | `oidc.managementOIDCAuth.issuerURL` | The OIDC issuer tenant API servers trust. Required. |
+| `nvkeOIDCAuth.discoveryURL` | `oidc.managementOIDCAuth.discoveryURL` | Optional. Set it when tenant API servers cannot reach the issuer's discovery document at `issuerURL`. |
+| `nvkeOIDCAuth.caBundleSecret.namespace`, `.name`, `.key` | `oidc.managementOIDCAuth.caBundleSecretRef.*` | Optional. The Secret holding the issuer's PEM CA bundle, embedded in each tenant API server's configuration. Set every field or none. The Secret and key must exist and be non-empty. |
+
+These values were previously under `nkeOIDCAuth`. A values file that still sets
+that key fails to render, naming `nvkeOIDCAuth`, rather than silently leaving OIDC
+disabled.
 
 OIDC authentication also requires:
 
@@ -45,7 +49,7 @@ OIDC authentication also requires:
   `issuerURL`, or at `discoveryURL` when set, and to the `jwks_uri` that
   document names, which serves the signing keys.
 
-With `nkeOIDCAuth.enabled: true`, the chart fails to render when
+With `nvkeOIDCAuth.enabled: true`, the chart fails to render when
 `spiffe.trustDomain` is empty or `tenantAccess.enabled` is `false`. It does not
 check `issuerURL` or the CA Secret. When `issuerURL` is empty or the CA Secret
 cannot be read, cluster provisioning and the `UpdateCluster` rollout fail.
@@ -54,7 +58,7 @@ issuer leaves OIDC authentication unavailable on a cluster that otherwise
 reports success.
 
 Enabling OIDC authentication on an existing cluster also needs
-`nkeOIDCAuth.enabled: true`, because the chart grants the NVKE Controller read
+`nvkeOIDCAuth.enabled: true`, because the chart grants the NVKE Controller read
 access to the CA Secret only then. Every cluster created afterward gets OIDC
 authentication too.
 

@@ -68,7 +68,7 @@ temporal:
 spiffe:
   enabled: true
 
-nkeOIDCAuth:
+nvkeOIDCAuth:
   enabled: false
 
 # Cluster API. A site cluster is a CAPI cluster whose infrastructure provider

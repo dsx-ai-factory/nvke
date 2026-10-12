@@ -114,7 +114,7 @@ func TestSBOMRender(t *testing.T) {
 		"image.repository":                 "nvcr.io/nvke/cwe",
 		"image.tag":                        "v1.2.3",
 		"appDb.postgresPassword":           "db-secret",
-		"nkeOIDCAuth.discoveryURL":         "https://10.0.0.5:30443/.well-known/openid-configuration",
+		"nvkeOIDCAuth.discoveryURL":        "https://10.0.0.5:30443/.well-known/openid-configuration",
 		"spiffe.trustDomain":               "e2e-site.nke.local",
 		"spiffe.spire.serverAddress":       "10.0.0.5",
 		"nodeAgent.spireAttestationMethod": "tpm",

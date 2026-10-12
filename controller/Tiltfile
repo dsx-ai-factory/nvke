@@ -1068,12 +1068,12 @@ _cwe_chart_flags = [
     # machine-engine-crds installs them, so Helm must not try to own them.
     "--set", "releaseCRDs.install=false",
     "--set", "tenantAccess.enabled=%s" % ("true" if _cwe_tenant_access_enabled else "false"),
-    "--set", "nkeOIDCAuth.enabled=%s" % ("true" if _cwe_oidc_enabled else "false"),
-    "--set-string", "nkeOIDCAuth.issuerURL=%s" % NKE_OIDC_ISSUER_URL,
-    "--set-string", "nkeOIDCAuth.discoveryURL=https://%s:30443/.well-known/openid-configuration" % _kind_site_controller_vip,
-    "--set-string", "nkeOIDCAuth.caBundleSecret.namespace=%s" % SPIRE_NAMESPACE,
-    "--set-string", "nkeOIDCAuth.caBundleSecret.name=oidc-provider-upstream-ca",
-    "--set-string", "nkeOIDCAuth.caBundleSecret.key=ca.crt",
+    "--set", "nvkeOIDCAuth.enabled=%s" % ("true" if _cwe_oidc_enabled else "false"),
+    "--set-string", "nvkeOIDCAuth.issuerURL=%s" % NKE_OIDC_ISSUER_URL,
+    "--set-string", "nvkeOIDCAuth.discoveryURL=https://%s:30443/.well-known/openid-configuration" % _kind_site_controller_vip,
+    "--set-string", "nvkeOIDCAuth.caBundleSecret.namespace=%s" % SPIRE_NAMESPACE,
+    "--set-string", "nvkeOIDCAuth.caBundleSecret.name=oidc-provider-upstream-ca",
+    "--set-string", "nvkeOIDCAuth.caBundleSecret.key=ca.crt",
     "--set-string", "spiffe.trustDomain=%s" % SPIRE_TRUST_DOMAIN,
     "--set-string", "spiffe.spire.serverAddress=%s" % _tilt_env.get("SPIRE_SERVER_ADDRESS", _kind_site_controller_vip),
     # helm splits --set-string on commas; escape the one inside the value.

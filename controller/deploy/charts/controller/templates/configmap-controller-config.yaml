@@ -74,13 +74,13 @@ data:
       externalMTLSEnabled: {{ .Values.nodeAgent.externalMTLS.enabled }}
     oidc:
       managementOIDCAuth:
-        enabled: {{ .Values.nkeOIDCAuth.enabled }}
-        issuerURL: {{ .Values.nkeOIDCAuth.issuerURL | quote }}
-        discoveryURL: {{ .Values.nkeOIDCAuth.discoveryURL | quote }}
+        enabled: {{ .Values.nvkeOIDCAuth.enabled }}
+        issuerURL: {{ .Values.nvkeOIDCAuth.issuerURL | quote }}
+        discoveryURL: {{ .Values.nvkeOIDCAuth.discoveryURL | quote }}
         caBundleSecretRef:
-          namespace: {{ .Values.nkeOIDCAuth.caBundleSecret.namespace | quote }}
-          name: {{ .Values.nkeOIDCAuth.caBundleSecret.name | quote }}
-          key: {{ .Values.nkeOIDCAuth.caBundleSecret.key | quote }}
+          namespace: {{ .Values.nvkeOIDCAuth.caBundleSecret.namespace | quote }}
+          name: {{ .Values.nvkeOIDCAuth.caBundleSecret.name | quote }}
+          key: {{ .Values.nvkeOIDCAuth.caBundleSecret.key | quote }}
       {{- with $oidcProviders }}
       providers:
         {{- toYaml . | nindent 8 }}

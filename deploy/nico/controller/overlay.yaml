@@ -51,7 +51,7 @@ tenantAccess:
 # nvke-base-config still publishes oidc-provider-upstream-ca -- the spire item
 # waits on that Certificate regardless. So turning this true is a one-line
 # change once the SPIRE half is proven, with nothing else to reassemble.
-nkeOIDCAuth:
+nvkeOIDCAuth:
   enabled: false
   # Logical issuer, string-compared against the JWT's iss claim; it does not
   # have to resolve. discoveryURL does, and is VIP-derived, so it is passed in.
@@ -99,7 +99,7 @@ nameOverride: nke-controller
 serviceAccount:
   name: nke-controller
 
-nkeSystemNamespace:
+nvkeSystemNamespace:
   create: false
 
 # PINNED, unlike the e2e targets. A site is not building the controller from

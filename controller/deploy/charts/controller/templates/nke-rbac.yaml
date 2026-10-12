@@ -1,7 +1,7 @@
 # Shared nke-system namespace and tenant RBAC ConfigMap.
 #
-# The nke-system Namespace is rendered when nkeSystemNamespace.create is true
-# (the default), irrespective of whether tenantAccess.enabled or nkeOIDCAuth.enabled is true.
+# The nke-system Namespace is rendered when nvkeSystemNamespace.create is true
+# (the default), irrespective of whether tenantAccess.enabled or nvkeOIDCAuth.enabled is true.
 # controller publishes per-cluster Secrets (<cluster>-kubeconfig,
 # <cluster>-cluster-trust-bundle) into it, so the Namespace must stay even if
 # those flags are later turned off. Two annotations are set unconditionally
@@ -10,15 +10,15 @@
 # argocd.argoproj.io/sync-options: Prune=false,Delete=false survives an Argo
 # prune or Application delete. Neither stops a kubectl delete of the Namespace;
 # only an admission policy does. Further annotations come from
-# nkeSystemNamespace.annotations.
+# nvkeSystemNamespace.annotations.
 #
 # The nke-rbac ConfigMap (key manifest.yaml) is rendered whenever
-# spiffe.trustDomain is set, not when the live nkeOIDCAuth flag is on.
+# spiffe.trustDomain is set, not when the live nvkeOIDCAuth flag is on.
 # TenantAccess reads it and Server-Side-Applies the manifest into each
-# persisted-OIDC tenant cluster. Flipping nkeOIDCAuth.enabled off must not
+# persisted-OIDC tenant cluster. Flipping nvkeOIDCAuth.enabled off must not
 # drop the document. It defines the SPIFFE identities allowed to call each
 # tenant API surface (nvke:cwe).
-{{- if .Values.nkeSystemNamespace.create }}
+{{- if .Values.nvkeSystemNamespace.create }}
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -26,11 +26,11 @@ metadata:
   annotations:
     helm.sh/resource-policy: keep
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
-    {{- with .Values.nkeSystemNamespace.annotations }}
+    {{- with .Values.nvkeSystemNamespace.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 {{- end }}
-{{- if .Values.nkeOIDCAuth.enabled }}
+{{- if .Values.nvkeOIDCAuth.enabled }}
 {{- /*
   spiffe.trustDomain builds the nke-service principals below. It must equal the
   SPIRE server's trust domain (the spire chart's global.spire.trustDomain) so these
@@ -38,7 +38,7 @@ metadata:
   layer stamps both from one ${ENV_NAME}.
 */}}
 {{- if not .Values.spiffe.trustDomain }}
-{{- fail "spiffe.trustDomain must be set when nkeOIDCAuth.enabled is true (it must equal the SPIRE server's trust domain so nke-rbac principals match issued identities)" }}
+{{- fail "spiffe.trustDomain must be set when nvkeOIDCAuth.enabled is true (it must equal the SPIRE server's trust domain so nke-rbac principals match issued identities)" }}
 {{- end }}
 {{- /*
   The tenant-access controller is the only thing that applies this ConfigMap into
@@ -47,7 +47,7 @@ metadata:
   kubeconfig there — dark, and silent. Fail the render instead.
 */}}
 {{- if not .Values.tenantAccess.enabled }}
-{{- fail "tenantAccess.enabled must be true when nkeOIDCAuth.enabled is true (the tenant-access controller applies nke-rbac into tenant clusters and publishes their kubeconfig; without it OIDC auth is configured but unusable)" }}
+{{- fail "tenantAccess.enabled must be true when nvkeOIDCAuth.enabled is true (the tenant-access controller applies nke-rbac into tenant clusters and publishes their kubeconfig; without it OIDC auth is configured but unusable)" }}
 {{- end }}
 {{- end }}
 {{- if .Values.spiffe.trustDomain }}
@@ -93,7 +93,7 @@ metadata:
 {{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-control-plane-manager" $td) }}
 {{- $capiKubeadmBootstrapManagerSubject := .Values.spiffe.capiKubeadmBootstrapManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-bootstrap-manager" $td) }}
 {{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/nke-service/capd-manager" $td) }}
-{{- $tenantRbacName := .Values.nkeOIDCAuth.tenantRbacName }}
+{{- $tenantRbacName := .Values.nvkeOIDCAuth.tenantRbacName }}
 ---
 apiVersion: v1
 kind: ConfigMap

@@ -57,15 +57,8 @@ A Helm chart to deploy the NVKE controller service
 | metrics.port | int | `9090` | Port for the dedicated Prometheus metrics server. Must match the port in listenAddress. |
 | nameOverride | string | `"cloud-workflow-engine"` |  |
 | namespaceOverride | string | `""` | Deploy into this namespace instead of the release namespace (umbrella use). |
-| nkeOIDCAuth.caBundleSecret.key | string | `""` | Key in the Secret containing the OIDC CA bundle. |
-| nkeOIDCAuth.caBundleSecret.name | string | `""` | Name of the Secret containing the OIDC CA bundle. |
-| nkeOIDCAuth.caBundleSecret.namespace | string | `""` | Namespace of the Secret containing the OIDC CA bundle. |
-| nkeOIDCAuth.discoveryURL | string | `""` | Optional discovery URL override used when issuerURL is not directly reachable by tenant kube-apiservers. |
-| nkeOIDCAuth.enabled | bool | `false` | Enable OIDC authentication from NVKE management identities to tenant cluster kube-apiservers. |
-| nkeOIDCAuth.issuerURL | string | `""` | OIDC issuer URL trusted by tenant kube-apiservers. |
-| nkeOIDCAuth.tenantRbacName | string | `"nvke:cwe"` | Name of the ClusterRole/Role/Binding objects the tenant-access controller applies into every tenant cluster (nke-rbac.yaml). |
-| nkeSystemNamespace.annotations | object | `{}` | Extra annotations merged onto nke-system. This is useful for adding additional annotations to the namespace to protect it from being deleted. Listing annotations that template already defaults here duplicates the key in the rendered Namespace. |
-| nkeSystemNamespace.create | bool | `true` | Create the shared nke-system namespace. The object always carries helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and argocd.argoproj.io/sync-options: Prune=false,Delete=false so an Argo prune or Application delete does not either. Both are set by the template for default delete protection. |
+| nkeOIDCAuth | object | `{}` | Older name for nvkeOIDCAuth. Setting it fails the render, naming the new key: Helm would otherwise drop an unknown key silently and leave OIDC at enabled: false. The key stays here for one release so the guard can see it. |
+| nkeSystemNamespace | object | `{}` | Older name for nvkeSystemNamespace. Setting it fails the render, naming the new key: Helm would otherwise drop an unknown key silently and fall back to the nvkeSystemNamespace defaults. The key stays here for one release so the guard can see it. |
 | nodeAgent.dsxImds.endpoint | string | `"http://169.254.169.254"` | Metadata endpoint used by the external dsx_imds node attestor. The default is the standard link-local metadata service address. |
 | nodeAgent.dsxImds.operatorTenant | string | `""` | Operator tenant encoded in dsx_imds-attested SPIRE agent IDs. This must match the DSX Identity global.operatorTenant value. |
 | nodeAgent.dsxImds.pluginChecksum | string | `""` | Optional SHA-256 checksum for the external dsx_imds plugin binary. Leave empty to expand DSX_IMDS_PLUGIN_CHECKSUM from the node image's /etc/spire-agent/spire-agent.env file. |
@@ -88,7 +81,16 @@ A Helm chart to deploy the NVKE controller service
 | nodeAgent.tlsJwt.subjectTenant | string | `""` | Tenant segment in the canonical local SPIFFE ID exchanged by DSX Identity. |
 | nodeAgent.tlsJwt.subjectTrustDomain | string | `""` | Exact SPIFFE trust domain accepted in node-agent JWT subjects. |
 | nodeSelector | object | `{}` |  |
-| oidc.providers | list | `[]` | Fleet-wide OIDC providers that clusters trust alongside nkeOIDCAuth; a cluster keeps the list it was created with, and one created on a Kubernetes version earlier than 1.34 gets none. At most five, each with name, issuerURL, audiences, usernameClaim, usernamePrefix and caBundle (inline PEM), and optionally groupsClaim, groupsPrefix and requiredClaims (claim name to required value). |
+| nvkeOIDCAuth.caBundleSecret.key | string | `""` | Key in the Secret containing the OIDC CA bundle. |
+| nvkeOIDCAuth.caBundleSecret.name | string | `""` | Name of the Secret containing the OIDC CA bundle. |
+| nvkeOIDCAuth.caBundleSecret.namespace | string | `""` | Namespace of the Secret containing the OIDC CA bundle. |
+| nvkeOIDCAuth.discoveryURL | string | `""` | Optional discovery URL override used when issuerURL is not directly reachable by tenant kube-apiservers. |
+| nvkeOIDCAuth.enabled | bool | `false` | Enable OIDC authentication from NVKE management identities to tenant cluster kube-apiservers. |
+| nvkeOIDCAuth.issuerURL | string | `""` | OIDC issuer URL trusted by tenant kube-apiservers. |
+| nvkeOIDCAuth.tenantRbacName | string | `"nvke:cwe"` | Name of the ClusterRole/Role/Binding objects the tenant-access controller applies into every tenant cluster (nke-rbac.yaml). |
+| nvkeSystemNamespace.annotations | object | `{}` | Extra annotations merged onto nke-system. This is useful for adding additional annotations to the namespace to protect it from being deleted. Listing annotations that template already defaults here duplicates the key in the rendered Namespace. |
+| nvkeSystemNamespace.create | bool | `true` | Create the shared nke-system namespace. The object always carries helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and argocd.argoproj.io/sync-options: Prune=false,Delete=false so an Argo prune or Application delete does not either. Both are set by the template for default delete protection. |
+| oidc.providers | list | `[]` | Fleet-wide OIDC providers that clusters trust alongside nvkeOIDCAuth; a cluster keeps the list it was created with, and one created on a Kubernetes version earlier than 1.34 gets none. At most five, each with name, issuerURL, audiences, usernameClaim, usernamePrefix and caBundle (inline PEM), and optionally groupsClaim, groupsPrefix and requiredClaims (claim name to required value). |
 | podAnnotations | object | `{}` |  |
 | podLabels.app | string | `"cloud-workflow-engine"` |  |
 | podLabels.project | string | `"nvke"` |  |
@@ -130,7 +132,7 @@ A Helm chart to deploy the NVKE controller service
 | spiffe.capiKubeadmBootstrapManagerSubject | string | `""` | Subject the nvke:capi-cluster-admin RBAC binding names for the kubeadm bootstrap manager. Defaults to its local SPIFFE ID; set it to the rewritten subject when that controller uses an exchanged tenant kubeconfig. |
 | spiffe.capiKubeadmControlPlaneManagerSubject | string | `""` | Subject the nvke:capi-cluster-admin RBAC binding names for the kubeadm control-plane manager. Defaults to its local SPIFFE ID; set it to the rewritten subject when that controller uses an exchanged tenant kubeconfig. |
 | spiffe.capiManagerSubject | string | `""` | Subject the nvke:capi-cluster-admin RBAC binding names for capi-manager. Defaults to spiffe://<trustDomain>/nke-service/capi-manager, which is what a tenant sees without token exchange. Set it whenever jwtExchangeEndpoint is set because the exchange may rewrite the token's sub claim. |
-| spiffe.controllerSubject | string | `""` | Subject the nkeOIDCAuth.tenantRbacName RBAC bindings name in tenant clusters. Defaults to this controller's own SPIFFE ID, spiffe://<trustDomain>/nke-service/cloud-workflow-engine, which is what a tenant sees when no exchange is in play. Set it whenever jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust domain and rewrites the path, so give the exchanged subject in full, e.g. spiffe://nke.<site>.cloud-workflow-engine.nvid.id/bm/cwe. A mismatch authenticates and then fails every authorization check. |
+| spiffe.controllerSubject | string | `""` | Subject the nvkeOIDCAuth.tenantRbacName RBAC bindings name in tenant clusters. Defaults to this controller's own SPIFFE ID, spiffe://<trustDomain>/nke-service/cloud-workflow-engine, which is what a tenant sees when no exchange is in play. Set it whenever jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust domain and rewrites the path, so give the exchanged subject in full, e.g. spiffe://nke.<site>.cloud-workflow-engine.nvid.id/bm/cwe. A mismatch authenticates and then fails every authorization check. |
 | spiffe.cweSubject | string | `""` | Older name for controllerSubject, still read. When both are set, controllerSubject wins. |
 | spiffe.enabled | bool | `false` | Enable SPIFFE identity for mTLS to tenant clusters |
 | spiffe.endpointSocket | string | `"unix:///spiffe-workload-api/spire-agent.sock"` |  |
@@ -142,7 +144,7 @@ A Helm chart to deploy the NVKE controller service
 | spiffe.spire.serverNamespace | string | `"spire-server"` |  |
 | spiffe.spire.serverPort | string | `"30440"` |  |
 | spiffe.spire.tpmPubhashesConfigMapName | string | `"tpm-pubhashes"` |  |
-| spiffe.trustDomain | string | `""` | SPIRE trust domain. When set, the chart renders ConfigMap nke-rbac. Required when nkeOIDCAuth.enabled is true: builds the nkeOIDCAuth.tenantRbacName SPIFFE subject ID in that ConfigMap. Must equal the SPIRE server's trust domain (the spire chart's global.spire.trustDomain) so the RBAC principals match issued identities. |
+| spiffe.trustDomain | string | `""` | SPIRE trust domain. When set, the chart renders ConfigMap nke-rbac. Required when nvkeOIDCAuth.enabled is true: builds the nvkeOIDCAuth.tenantRbacName SPIFFE subject ID in that ConfigMap. Must equal the SPIRE server's trust domain (the spire chart's global.spire.trustDomain) so the RBAC principals match issued identities. |
 | supportedInfraProviders | string | `"nico"` | Comma-separated API provider blocks accepted by mutating cluster and node-pool requests. The chart defaults the deployed controller to Nico only; set to "nico,infra" only for deployments that should accept generic CAPI-backed provider payloads. |
 | teleport.enabled | bool | `false` | Enable Teleport identity for the controller to manage Teleport resources (tokens, nodes) |
 | teleport.environment | string | `"non-prod"` | Teleport environment label: "prod" or "non-prod" (default: "non-prod") |

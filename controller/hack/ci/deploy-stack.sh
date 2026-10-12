@@ -244,7 +244,7 @@ image:
   tag: "${cwe_tag}"
 appDb:
   postgresPassword: "${CNPG_SUPERUSER_PASSWORD:-example-password}"
-nkeOIDCAuth:
+nvkeOIDCAuth:
   discoveryURL: "https://${MANAGEMENT_VIP}:30443/.well-known/openid-configuration"
 spiffe:
   trustDomain: "${TRUST_DOMAIN}"

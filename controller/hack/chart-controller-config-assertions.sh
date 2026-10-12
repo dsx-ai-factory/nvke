@@ -99,14 +99,14 @@ render profiles-image \
 render infra-providers --set-string 'supportedInfraProviders=nico\, infra'
 
 render oidc \
-  --set nkeOIDCAuth.enabled=true \
+  --set nvkeOIDCAuth.enabled=true \
   --set spiffe.enabled=true \
   --set-string spiffe.trustDomain=example.test \
-  --set-string nkeOIDCAuth.issuerURL=https://oidc.example.test \
-  --set-string nkeOIDCAuth.discoveryURL=https://oidc.example.test/.well-known/openid-configuration \
-  --set-string nkeOIDCAuth.caBundleSecret.namespace=nke-system \
-  --set-string nkeOIDCAuth.caBundleSecret.name=oidc-ca \
-  --set-string nkeOIDCAuth.caBundleSecret.key=ca.crt
+  --set-string nvkeOIDCAuth.issuerURL=https://oidc.example.test \
+  --set-string nvkeOIDCAuth.discoveryURL=https://oidc.example.test/.well-known/openid-configuration \
+  --set-string nvkeOIDCAuth.caBundleSecret.namespace=nke-system \
+  --set-string nvkeOIDCAuth.caBundleSecret.name=oidc-ca \
+  --set-string nvkeOIDCAuth.caBundleSecret.key=ca.crt
 
 render api-auth-permissive \
   --set apiAuth.enabled=true \
@@ -231,7 +231,7 @@ render env-passthrough \
   --set-string 'env[1].name=PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER' --set-string 'env[1].value=true' \
   --set-string 'env[2].name=NODE_AGENT_PORT' --set-string 'env[2].value=50051'
 if refusal="$(helm template cwe "${CHART}" \
-  --set nkeOIDCAuth.enabled=true --set spiffe.enabled=true --set-string spiffe.trustDomain=example.test \
+  --set nvkeOIDCAuth.enabled=true --set spiffe.enabled=true --set-string spiffe.trustDomain=example.test \
   --set-string 'env[0].name=NKE_OIDC_AUTH_ISSUER_URL' --set-string 'env[0].value=https://oidc.example.test' 2>&1)"; then
   echo "env set NKE_OIDC_AUTH_ISSUER_URL and rendered; the chart must refuse a variable nke-controller-config carries" >&2
   exit 1
@@ -254,6 +254,19 @@ for key in WORKERS TIMEOUT INTERVAL JITTER; do
     { echo "env override of ${variable} failed for another reason: ${refusal}" >&2; exit 1; }
 done
 printf '  env overrides of nke-controller-config settings and its path are refused\n'
+
+# A renamed values key must fail the render naming its replacement, not fall
+# back to the chart defaults, which is what Helm does with an unknown key.
+for pair in nkeOIDCAuth.enabled=true:nvkeOIDCAuth nkeSystemNamespace.create=false:nvkeSystemNamespace; do
+  old="${pair%%:*}" new="${pair##*:}"
+  if refusal="$(helm template cwe "${CHART}" --set "${old}" 2>&1)"; then
+    echo "values set ${old} and rendered; the chart must refuse a renamed key" >&2
+    exit 1
+  fi
+  [[ "${refusal}" == *"was renamed to ${new}"* ]] ||
+    { echo "setting ${old} failed for another reason: ${refusal}" >&2; exit 1; }
+done
+printf '  renamed values keys are refused, naming their replacement\n'
 
 # The values files the Tilt and nvkectl bootstrap deployments install with.
 render tilt -f "${controller}/hack/tilt-controller-chart-values.yaml"

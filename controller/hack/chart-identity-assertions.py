@@ -93,7 +93,7 @@ def check_greenfield(chart: str) -> list[str]:
             "--set",
             f"spiffe.trustDomain={GREENFIELD_TRUST_DOMAIN}",
             "--set",
-            "nkeOIDCAuth.enabled=true",
+            "nvkeOIDCAuth.enabled=true",
             "--set",
             "tenantAccess.enabled=true",
         ],

@@ -53,7 +53,7 @@ def main():
     parser.add_argument(
         "--tenant-rbac-name",
         default="nvke:cwe",
-        help="Value of nkeOIDCAuth.tenantRbacName; the rendered ClusterRole/Role/Binding objects use this name.",
+        help="Value of nvkeOIDCAuth.tenantRbacName; the rendered ClusterRole/Role/Binding objects use this name.",
     )
     args = parser.parse_args()
     tenant_rbac_name = args.tenant_rbac_name
@@ -66,11 +66,11 @@ def main():
         "--set",
         "spiffe.trustDomain=example.test",
         "--set",
-        "nkeOIDCAuth.enabled=true",
+        "nvkeOIDCAuth.enabled=true",
         "--set",
         "tenantAccess.enabled=true",
         "--set",
-        f"nkeOIDCAuth.tenantRbacName={tenant_rbac_name}",
+        f"nvkeOIDCAuth.tenantRbacName={tenant_rbac_name}",
     ]
     command = [
         *base_command,

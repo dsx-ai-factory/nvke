@@ -162,7 +162,13 @@ identity:
   # controller owns, and the value the tenant Secret reconciler filters on.
   managedByLabelValue: "cloud-workflow-engine"
 
-nkeSystemNamespace:
+# -- Older name for nvkeSystemNamespace. Setting it fails the render, naming the
+# new key: Helm would otherwise drop an unknown key silently and fall back to the
+# nvkeSystemNamespace defaults. The key stays here for one release so the guard
+# can see it.
+nkeSystemNamespace: {}
+
+nvkeSystemNamespace:
   # -- Create the shared nke-system namespace. The object always carries
   # helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and
   # argocd.argoproj.io/sync-options: Prune=false,Delete=false so an Argo prune or
@@ -401,7 +407,12 @@ tenantAccess:
   # and its cleanup activity, and the Secret grant they depend on.
   enabled: true
 
-nkeOIDCAuth:
+# -- Older name for nvkeOIDCAuth. Setting it fails the render, naming the new
+# key: Helm would otherwise drop an unknown key silently and leave OIDC at
+# enabled: false. The key stays here for one release so the guard can see it.
+nkeOIDCAuth: {}
+
+nvkeOIDCAuth:
   # -- Enable OIDC authentication from NVKE management identities to tenant cluster kube-apiservers.
   enabled: false
   # -- Name of the ClusterRole/Role/Binding objects the tenant-access controller
@@ -420,7 +431,7 @@ nkeOIDCAuth:
     key: ""
 
 oidc:
-  # -- Fleet-wide OIDC providers that clusters trust alongside nkeOIDCAuth; a
+  # -- Fleet-wide OIDC providers that clusters trust alongside nvkeOIDCAuth; a
   # cluster keeps the list it was created with, and one created on a
   # Kubernetes version earlier than 1.34 gets none. At most five, each with
   # name, issuerURL, audiences, usernameClaim, usernamePrefix and caBundle
@@ -608,7 +619,7 @@ spiffe:
   # tenant clusters trust the exchange's issuer, otherwise the controller's calls
   # to them will start failing authentication.
   jwtExchangeEndpoint: ""
-  # -- Subject the nkeOIDCAuth.tenantRbacName RBAC bindings name in tenant clusters. Defaults to this
+  # -- Subject the nvkeOIDCAuth.tenantRbacName RBAC bindings name in tenant clusters. Defaults to this
   # controller's own SPIFFE ID, spiffe://<trustDomain>/nke-service/cloud-workflow-engine,
   # which is what a tenant sees when no exchange is in play. Set it whenever
   # jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust
@@ -637,8 +648,8 @@ spiffe:
   # when CAPD uses an exchanged tenant kubeconfig.
   capdManagerSubject: ""
   # -- SPIRE trust domain. When set, the chart renders ConfigMap nke-rbac.
-  # Required when nkeOIDCAuth.enabled is true: builds the
-  # nkeOIDCAuth.tenantRbacName SPIFFE subject ID in that ConfigMap. Must equal the
+  # Required when nvkeOIDCAuth.enabled is true: builds the
+  # nvkeOIDCAuth.tenantRbacName SPIFFE subject ID in that ConfigMap. Must equal the
   # SPIRE server's trust domain (the spire chart's global.spire.trustDomain) so the
   # RBAC principals match issued identities.
   trustDomain: ""

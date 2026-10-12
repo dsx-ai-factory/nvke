@@ -966,7 +966,7 @@ func (e *Engine) publishSpireExternally(ctx context.Context, kubeconfigPath stri
 //
 // It is the plain admin kubeconfig. The controller only rewrites it to a SPIRE exec-auth
 // kubeconfig when OIDC authentication is enabled on the cluster, which a
-// bootstrap does not turn on (see nkeOIDCAuth in manifests/controller-values.yaml).
+// bootstrap does not turn on (see nvkeOIDCAuth in manifests/controller-values.yaml).
 func (e *Engine) TenantKubeconfig(
 	ctx context.Context,
 	kubeconfigPath, clusterName string,

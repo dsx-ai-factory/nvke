@@ -29,6 +29,7 @@
 {{- if and (eq $spireAttestationMethod "dsxImds") (not .Values.spiffe.enabled) }}
 {{- fail "spiffe.enabled must be true when nodeAgent.spireAttestationMethod is dsxImds" }}
 {{- end }}
+{{- include "controller.renamedValues.validate" . }}
 {{- include "controller.apiAuth.validate" . }}
 {{- include "controller.controllerConfig.validateEnv" . }}
 apiVersion: apps/v1

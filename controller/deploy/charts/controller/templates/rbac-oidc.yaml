@@ -1,5 +1,5 @@
-{{- with .Values.nkeOIDCAuth.caBundleSecret }}
-{{- if and $.Values.nkeOIDCAuth.enabled .namespace .name }}
+{{- with .Values.nvkeOIDCAuth.caBundleSecret }}
+{{- if and $.Values.nvkeOIDCAuth.enabled .namespace .name }}
 # The controller reads the OIDC discovery provider's upstream CA at kubeadm-render time
 # (readOIDCCABundle) and embeds it into the tenant apiserver AuthenticationConfiguration.
 # resourceName-scoped `get` on the single CA Secret, in whatever namespace the CA lives
