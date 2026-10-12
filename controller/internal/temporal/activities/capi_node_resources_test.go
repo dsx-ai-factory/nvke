@@ -905,10 +905,16 @@ func TestCreateCAPIInfraMachineForNode_ClassifiesNodeLookupErrors(t *testing.T) 
 	}
 }
 
-func TestApplyCAPIMachineRebootAnnotation(t *testing.T) {
+// TestApplyCAPIMachineRebootAnnotation_LaunchLayerUsesCAPLLKey proves the
+// reboot annotation key is provider-dispatched, not always
+// constants.MachineAnnotationKeyReboot: a LaunchLayer-backed node gets
+// CAPLL's own fixed key, since CAPLL has no configurable override the way
+// CAPNico does.
+func TestApplyCAPIMachineRebootAnnotation_LaunchLayerUsesCAPLLKey(t *testing.T) {
 	ctx := context.Background()
-	nodeID := uuid.MustParse("75000000-0000-0000-0000-000000000001")
-	node := db.Node{ID: nodeID, Name: "worker-0"}
+	nodeID := uuid.MustParse("75000000-0000-0000-0000-000000000003")
+	clusterID := uuid.MustParse("75000000-0000-0000-0000-00000000000e")
+	node := db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-2"}
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, clusterv1.AddToScheme(scheme))
@@ -916,6 +922,39 @@ func TestApplyCAPIMachineRebootAnnotation(t *testing.T) {
 
 	mockDB := &testutil.MockDB{}
 	mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil)
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, ProviderType: db.ProviderTypeLaunchLayer}, nil)
+
+	a := &Activities{db: mockDB, k8sClient: k8sClient, cfg: config.Config{FieldManagerRebootMachineName: "cloud-workflow-engine-reboot-machine"}}
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestActivityEnvironment()
+	env.RegisterActivity(a.ApplyCAPIMachineRebootAnnotation)
+
+	_, err := env.ExecuteActivity(a.ApplyCAPIMachineRebootAnnotation, ApplyCAPIMachineRebootAnnotationInput{NodeID: nodeID})
+	require.NoError(t, err)
+
+	storedMachine := &clusterv1.Machine{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{
+		Namespace: constants.NamespaceNVKESystem,
+		Name:      "worker-2",
+	}, storedMachine))
+	require.Contains(t, storedMachine.Annotations, "infrastructure.cluster.x-k8s.io/reboot-requested")
+	require.NotContains(t, storedMachine.Annotations, constants.MachineAnnotationKeyReboot)
+	mockDB.AssertExpectations(t)
+}
+
+func TestApplyCAPIMachineRebootAnnotation(t *testing.T) {
+	ctx := context.Background()
+	nodeID := uuid.MustParse("75000000-0000-0000-0000-000000000001")
+	clusterID := uuid.MustParse("75000000-0000-0000-0000-00000000000c")
+	node := db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-0"}
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clusterv1.AddToScheme(scheme))
+	k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	mockDB := &testutil.MockDB{}
+	mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil)
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, ProviderType: db.ProviderTypeCAPI}, nil)
 
 	a := &Activities{db: mockDB, k8sClient: k8sClient, cfg: config.Config{FieldManagerRebootMachineName: "cloud-workflow-engine-reboot-machine"}}
 	testSuite := &testsuite.WorkflowTestSuite{}
@@ -974,7 +1013,8 @@ func TestApplyCAPIMachineRebootAnnotation_ClassifiesNodeLookupErrors(t *testing.
 func TestDeleteCAPIMachineRebootAnnotation(t *testing.T) {
 	ctx := context.Background()
 	nodeID := uuid.MustParse("75000000-0000-0000-0000-000000000002")
-	node := db.Node{ID: nodeID, Name: "worker-1"}
+	clusterID := uuid.MustParse("75000000-0000-0000-0000-00000000000d")
+	node := db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-1"}
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, clusterv1.AddToScheme(scheme))
@@ -982,6 +1022,7 @@ func TestDeleteCAPIMachineRebootAnnotation(t *testing.T) {
 
 	mockDB := &testutil.MockDB{}
 	mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil)
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, ProviderType: db.ProviderTypeCAPI}, nil)
 
 	a := &Activities{db: mockDB, k8sClient: k8sClient, cfg: config.Config{FieldManagerRebootMachineName: "cloud-workflow-engine-reboot-machine"}}
 	testSuite := &testsuite.WorkflowTestSuite{}

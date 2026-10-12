@@ -528,6 +528,14 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	if err != nil {
 		return nonRetryableIfNotFound("failed to get node", err)
 	}
+	cluster, err := a.GetCluster(ctx, node.ClusterID)
+	if err != nil {
+		return err
+	}
+	rebootAnnotationProvider, err := clients.GetRebootAnnotationProvider(cluster)
+	if err != nil {
+		return err
+	}
 	namespace := a.cfg.ManagementNamespaceOrDefault()
 	machineName := node.Name
 
@@ -537,13 +545,7 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	annotations := map[string]string{}
 
 	if annotation != nil {
-		// Both domains, for the same reason as the repair annotation above:
-		// cluster-api-provider-nico reads only its --reboot-annotation key.
-		// FIXME: https://github.com/dsx-ai-factory/nvke/issues/1718 -- write
-		// only the current domain once every deployment reads the new key.
-		for _, key := range keys.MachineReboot.All() {
-			annotations[key] = *annotation
-		}
+		annotations[rebootAnnotationProvider.HardRebootAnnotationKey()] = *annotation
 	}
 
 	machine := &clusterv1.Machine{
