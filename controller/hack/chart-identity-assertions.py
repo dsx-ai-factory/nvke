@@ -128,16 +128,16 @@ def check_greenfield(chart: str) -> list[str]:
 
     inner = list(yaml.safe_load_all(config_maps[0]["data"]["manifest.yaml"]))
     bindings = [
-        d for d in inner if d and d.get("kind") == "ClusterRoleBinding" and d["metadata"]["name"] == "nke:cwe"
+        d for d in inner if d and d.get("kind") == "ClusterRoleBinding" and d["metadata"]["name"] == "nvke:cwe"
     ]
     want_subject = f"spiffe://{GREENFIELD_TRUST_DOMAIN}/nke-service/{GREENFIELD_NAME}"
     if not bindings:
-        failures.append("greenfield render has no nke:cwe ClusterRoleBinding")
+        failures.append("greenfield render has no nvke:cwe ClusterRoleBinding")
     else:
         got_subjects = {s["name"] for s in bindings[0].get("subjects") or []}
         if want_subject not in got_subjects:
             failures.append(
-                f"greenfield nke:cwe ClusterRoleBinding subjects {sorted(got_subjects)} "
+                f"greenfield nvke:cwe ClusterRoleBinding subjects {sorted(got_subjects)} "
                 f"do not include {want_subject!r}; renaming the service account should not "
                 "require a manual spiffe.controllerSubject override"
             )

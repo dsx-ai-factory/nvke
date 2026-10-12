@@ -144,6 +144,7 @@ teleport:
   environment: prod
   managedByLabelValue: nke-cloud-workflow-engine
   tokenNamePrefix: nke-cwe-
+  resourceGroupLabelValue: nke
 permissiveMode: false
 `
 
@@ -168,6 +169,7 @@ permissiveMode: false
 	assert.Equal(t, "corporate", cfg.OIDC.Providers[0].Name)
 	assert.Equal(t, map[string]string{"tenant_id": "acme"}, cfg.OIDC.Providers[0].RequiredClaims)
 
+	assert.Equal(t, "nke", cfg.Teleport.ResourceGroupLabelValue)
 	assert.Equal(t, "localhost:7233", cfg.Temporal.HostPort)
 	assert.Equal(t, "/etc/temporal/ca.crt", cfg.Temporal.TLS.CACert)
 
@@ -595,7 +597,7 @@ func TestValidateNodeAgentTLSJWT(t *testing.T) {
 // test rather than quietly widen what an operator provider can claim.
 func TestReservedIdentityPrefixes(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, []string{"system:", "kubeadm:", "nke:", "nvidia:"}, controllerconfig.ReservedIdentityPrefixes())
+	assert.Equal(t, []string{"system:", "kubeadm:", "nke:", "nvke:", "nvidia:"}, controllerconfig.ReservedIdentityPrefixes())
 }
 
 func TestValidateOIDCReservedPrefixes(t *testing.T) {

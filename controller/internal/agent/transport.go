@@ -57,7 +57,7 @@ func NewTransport(
 	if cfg.NodeAgent.TLSJWT.Enabled {
 		tlsJWTLogger = logger.With("logger", "node-agent-auth")
 		verifier, err := auth.SetupTokenVerifier(ctx, &auth.Config{
-			Audiences: []string{auth.NodeAgentAudience},
+			Audiences: auth.NodeAgentAudiences(),
 			Issuers: []auth.Issuer{{
 				Name:       auth.NodeAgentIssuerName,
 				Issuer:     cfg.NodeAgent.TLSJWT.Issuer,

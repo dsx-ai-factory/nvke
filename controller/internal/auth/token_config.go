@@ -13,8 +13,18 @@ const (
 	// NodeAgentIssuerName and NodeAgentAudience are protocol constants rather
 	// than deployment choices in the first TLS/JWT implementation.
 	NodeAgentIssuerName = "dsx-identity"
-	NodeAgentAudience   = "nke-controller"
+	NodeAgentAudience   = "nvke-controller"
+	// NodeAgentAudienceLegacy is the audience agents request until they move to
+	// NodeAgentAudience, so the controller accepts both whatever the release
+	// order. Remove it with the other dual-accept windows.
+	NodeAgentAudienceLegacy = "nke-controller"
 )
+
+// NodeAgentAudiences is the "aud" allow-list for node-agent tokens: both
+// spellings while the agent still requests the legacy one.
+func NodeAgentAudiences() []string {
+	return []string{NodeAgentAudience, NodeAgentAudienceLegacy}
+}
 
 // SetupTokenVerifier builds the enforcing verifier used by the transport. A
 // configured transport can never run permissively.

@@ -302,6 +302,8 @@ func testConfig() config.Config {
 			Environment:         "non-prod",
 			ManagedByLabelValue: "nke-cloud-workflow-engine",
 			TokenNamePrefix:     "nke-cwe-",
+			// Pinned like an existing site, so the test would notice a stamped default.
+			ResourceGroupLabelValue: "nke",
 		},
 	}
 }
@@ -698,7 +700,7 @@ func TestCreateTokenForNode(t *testing.T) {
 			assert.Equal(t, "test-node", token.Labels[teleport.LabelNodeName])
 
 			// Verify normalized labels (consistent with userData labels)
-			assert.Equal(t, teleport.LabelResourceGroupNVKEValue, token.Labels[teleport.LabelResourceGroup])
+			assert.Equal(t, "nke", token.Labels[teleport.LabelResourceGroup])
 			assert.Equal(t, "non-prod", token.Labels[teleport.LabelEnvironment])
 
 			// Verify TPM config uses the hash resolved from NicoMachine.

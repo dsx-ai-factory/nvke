@@ -84,4 +84,5 @@ teleport:
   environment: non-prod
   managedByLabelValue: nke-cloud-workflow-engine
   tokenNamePrefix: nke-cwe-
+  resourceGroupLabelValue: nke
 permissiveMode: false

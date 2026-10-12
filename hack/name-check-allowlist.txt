@@ -50,6 +50,12 @@ token:^rg-nke-|^nke/(gitlab-ci-cd|packages|node-images|kubeadm-bundler|node-agen
 # login user nke.
 token:nke\.local([/:.]|$)|nke\.site-controller\.internal|nke\.capd\.|nke-site-|^spiffe://nke|^nke-cwe-|^nke\.[a-z0-9-]+\.|^nke@$
 
+# The leader-election Lease names. A Lease name is invisible to customers, and
+# renaming it lets two leaders reconcile one site during the upgrade unless
+# someone scales the old controller to zero first. They keep their names
+# permanently rather than behind a manual step.
+token:^(controller|management-engine)\.nke\.nvidia\.com$
+
 # ---- Tier 2: Kubernetes identifiers the post-launch release renames for new sites (PR4) ----
 
 # The controller's Helm release, namespace, Deployment, Service, ServiceAccount,
@@ -65,7 +71,7 @@ token:nke-cloud-workflow-engine|nke-stack
 token:nke-system|nkeSystemNamespace|NkeOIDCAuth
 
 # Label, annotation, taint and condition keys, the CRD group
-# internal.nke.nvidia.com, the Lease names, and the *.nke.nvidia.com trust
+# internal.nke.nvidia.com, and the *.nke.nvidia.com trust
 # domains of existing sites.
 token:(^|[./])nke\.nvidia\.com|\.labels\.nke$
 

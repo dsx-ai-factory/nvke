@@ -552,6 +552,7 @@ func TestBuildTeleportLabels(t *testing.T) {
 				"test-site",
 				"staging",
 				"nke-cloud-workflow-engine",
+				"nke",
 			)
 
 			assert.Contains(t, got, "node-role: "+params.wantRole+"\n")
@@ -578,6 +579,7 @@ func TestBuildTeleportLabels(t *testing.T) {
 			"test-site",
 			"staging",
 			"nke-cloud-workflow-engine",
+			"nke",
 		)
 
 		assert.NotContains(t, got, "node-pool:")

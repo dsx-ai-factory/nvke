@@ -26,8 +26,64 @@ const (
 	rbacConfigMapKey = nvkerbac.ConfigMapKey
 	// rbacFieldManager is the Server-Side Apply field owner used when applying the
 	// RBAC manifest into a tenant cluster.
-	rbacFieldManager = "nke"
+	rbacFieldManager = "nvke"
 )
+
+// legacyRBACObject is a tenant RBAC object an earlier release applied under the
+// field manager "nke". Nothing owns it once the manifest is renamed, yet it
+// keeps its permissions, so it is deleted explicitly.
+type legacyRBACObject struct {
+	kind      string
+	namespace string
+	name      string
+}
+
+// legacyRBACObjects is everything the pre-rename manifest created: the
+// nke:cwe set and the nke:capi-cluster-admin binding.
+var legacyRBACObjects = []legacyRBACObject{
+	{"ClusterRole", "", "nke:cwe"},
+	{"ClusterRoleBinding", "", "nke:cwe"},
+	{"ClusterRoleBinding", "", "nke:capi-cluster-admin"},
+	{"Role", "kube-system", "nke:cwe"},
+	{"RoleBinding", "kube-system", "nke:cwe"},
+	{"Role", "kube-node-lease", "nke:cwe"},
+	{"RoleBinding", "kube-node-lease", "nke:cwe"},
+}
+
+// pruneLegacyRBAC deletes the legacy objects the manifest does not itself
+// carry, so a site that pins the old tenantRbacName keeps what it applies. Call
+// it only after the manifest applied: the new permissions must exist before the
+// old ones go. Deleting an absent object is not an error, which makes the prune
+// safe to repeat on every reconcile.
+func pruneLegacyRBAC(ctx context.Context, c ctrlclient.Client, manifest []byte) error {
+	kept := make(map[legacyRBACObject]bool)
+	decoder := utilyaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifest), 4096)
+	for {
+		obj := &unstructured.Unstructured{}
+		if err := decoder.Decode(obj); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return fmt.Errorf("decoding RBAC manifest: %w", err)
+		}
+		kept[legacyRBACObject{obj.GetKind(), obj.GetNamespace(), obj.GetName()}] = true
+	}
+
+	for _, legacy := range legacyRBACObjects {
+		if kept[legacy] {
+			continue
+		}
+		obj := &unstructured.Unstructured{}
+		obj.SetAPIVersion("rbac.authorization.k8s.io/v1")
+		obj.SetKind(legacy.kind)
+		obj.SetNamespace(legacy.namespace)
+		obj.SetName(legacy.name)
+		if err := c.Delete(ctx, obj); ctrlclient.IgnoreNotFound(err) != nil {
+			return fmt.Errorf("pruning legacy %s %s: %w", legacy.kind, legacy.name, err)
+		}
+	}
+	return nil
+}
 
 // readRBACManifest reads the operator-managed nke-rbac ConfigMap from the
 // management cluster and returns the multi-document tenant RBAC manifest.

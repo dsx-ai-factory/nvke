@@ -102,6 +102,7 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.Teleport.Environment = c.Teleport.Environment
 	cfg.Teleport.ManagedByLabelValue = c.Teleport.ManagedByLabelValue
 	cfg.Teleport.TokenNamePrefix = c.Teleport.TokenNamePrefix
+	cfg.Teleport.ResourceGroupLabelValue = c.Teleport.ResourceGroupLabelValue
 
 	cfg.PermissiveMode = c.PermissiveMode
 }

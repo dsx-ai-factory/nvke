@@ -65,8 +65,8 @@ const (
 	defaultSpireRelease = "spire"
 
 	// adminSPIFFEPath is bound to cluster-admin in every tenant by the
-	// nke:capi-cluster-admin ClusterRoleBinding the nke-rbac ConfigMap carries.
-	// GetAdminClient mints this rather than widening nke:cwe for test setup.
+	// nvke:capi-cluster-admin ClusterRoleBinding the nke-rbac ConfigMap carries.
+	// GetAdminClient mints this rather than widening nvke:cwe for test setup.
 	adminSPIFFEPath     = "/nke-service/capi-manager"
 	spireExecPluginName = "k8s-spiffe-workload-jwt-exec-auth"
 	spireAudienceEnv    = "SPIFFE_JWT_AUDIENCE"
@@ -206,7 +206,7 @@ func (f *TenantClientFactory) GetClient(ctx context.Context, clusterName string)
 // With OIDC off TenantAccess publishes the admin kubeconfig itself, and that
 // Secret is used as it stands. With OIDC on it publishes a SPIRE exec-auth
 // kubeconfig for the controller identity, which is deliberately not an admin
-// credential, so authenticate as adminSPIFFEPath instead. nke:capi-cluster-admin
+// credential, so authenticate as adminSPIFFEPath instead. nvke:capi-cluster-admin
 // binds that identity to cluster-admin in every tenant.
 func (f *TenantClientFactory) GetAdminClient(ctx context.Context, clusterName string) (client.Client, error) {
 	restConfig, err := f.tenantRESTConfigAs(ctx, clusterName, adminSPIFFEPath)
@@ -912,5 +912,5 @@ func discardAndClose(body io.ReadCloser) error {
 }
 
 // controllerSPIFFEPath is the SPIFFE ID path the controller presents and the
-// tenant nke:cwe bindings name: its ServiceAccount under /nke-service/.
+// tenant nvke:cwe bindings name: its ServiceAccount under /nke-service/.
 func controllerSPIFFEPath() string { return "/nke-service/" + controller.ServiceAccount() }
