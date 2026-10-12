@@ -63,6 +63,7 @@ _builtin_provider_dirs = {
     "bgp-containers": os.path.join(config.main_dir, "hack/bgp-containers"),
     "capd": os.path.join(config.main_dir, "hack/capd-provider"),
     "nico": os.path.join(config.main_dir, "hack/nico-provider"),
+    "launchlayer": os.path.join(config.main_dir, "hack/launchlayer-provider"),
     "capd-reboot-controller": os.path.join(config.main_dir, "hack/capd-reboot-controller"),
     "capi-syscmp": os.path.join(config.main_dir, "hack/capi-syscmp-provider"),
     "dsx-identity-exchange": os.path.join(config.main_dir, "hack/dsx-identity-exchange-mock"),
@@ -102,6 +103,9 @@ if "capi-syscmp" in _provider_names and "capi_core" not in _provider_names:
 if "nico-vm" in _provider_names and "capi_core" not in _provider_names:
     fail("Provider 'nico-vm' requires 'capi_core' in the provider list.")
 
+if "launchlayer" in _provider_names and "capi_core" not in _provider_names:
+    fail("Provider 'launchlayer' requires 'capi_core' in the provider list.")
+
 # nico-vm points nico-credentials at the local nico-vms backend and its
 # credentials resource depends on the 'nico-vms' Tilt resource by name.
 #
@@ -137,6 +141,8 @@ if "nico" in _provider_names or "nico-vms" in _provider_names:
     _supported_infra_providers.append("nico")
 if "capd" in _provider_names or "nico" in _provider_names or "nico-vm" in _provider_names:
     _supported_infra_providers.append("infra")
+if "launchlayer" in _provider_names:
+    _supported_infra_providers.append("launchLayer")
 if not _supported_infra_providers:
     _supported_infra_providers.append("nico")
 
