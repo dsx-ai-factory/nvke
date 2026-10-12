@@ -280,6 +280,10 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			Expect(version).To(Equal(stack.Controller.Tag),
 				"the controller should report the version the run deployed")
 		}, NodeTimeout(15*time.Minute))
+
+		validateSitePostDeploy(func() (siteUnderValidation, bool) {
+			return siteUnderValidation{kubeconfig: cluster.Kubeconfig, kubernetesVersion: spec.KubernetesVersion}, deployed
+		})
 	}
 
 	if siteStage == siteStageFull {
