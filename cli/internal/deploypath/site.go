@@ -100,8 +100,8 @@ func (r *renderer) site() {
 		return
 	}
 	trustDomain := spec.EffectiveTrustDomain(spec.ClusterName)
-	checksum, ok := controllerdeploy.SpireTPMDirectChecksum(cs.Arch)
-	if !ok {
+	checksum := controllerdeploy.SpireTPMDirectChecksum(cs.Arch)
+	if checksum == "" {
 		r.problem("site spec: controllerStack.arch %q has no TPM attestor checksum", cs.Arch)
 		return
 	}
