@@ -14,10 +14,8 @@ package sitecluster
 import (
 	"fmt"
 
-	openapi_types "github.com/oapi-codegen/runtime/types"
-
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
-	api "github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 const (
@@ -95,53 +93,22 @@ func nicoClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBod
 			sitespec.InfrastructureNico, "cluster.nico")
 	}
 
-	siteID, err := parseUUID("cluster.nico.siteID", n.SiteID)
-	if err != nil {
-		return api.CreateClusterJSONRequestBody{}, err
-	}
-	vpcID, err := parseUUID("cluster.nico.vpcID", n.VpcID)
-	if err != nil {
-		return api.CreateClusterJSONRequestBody{}, err
-	}
-	instanceTypes, err := parseUUIDs("cluster.nico.instanceTypePreference", n.InstanceTypePreference)
-	if err != nil {
-		return api.CreateClusterJSONRequestBody{}, err
-	}
-	vpcPrefixes, err := parseUUIDs("cluster.nico.vpcPrefixIDs", n.VpcPrefixIDs)
-	if err != nil {
-		return api.CreateClusterJSONRequestBody{}, err
-	}
-	subnets, err := parseUUIDs("cluster.nico.subnetIDs", n.SubnetIDs)
-	if err != nil {
-		return api.CreateClusterJSONRequestBody{}, err
-	}
-	sshKeyGroups, err := parseUUIDs("cluster.nico.sshKeyGroupIDs", n.SSHKeyGroupIDs)
-	if err != nil {
-		return api.CreateClusterJSONRequestBody{}, err
+	if n.Provider == nil || n.ControlPlane == nil {
+		return api.CreateClusterJSONRequestBody{}, fmt.Errorf("sitecluster: cluster.nico needs both provider and controlPlane")
 	}
 
+	// The spec's blocks are the request's own structs, so they go in as read.
 	req := api.CreateClusterJSONRequestBody{
 		Name:                          inv.ClusterName,
 		ControlPlaneKubernetesVersion: inv.Cluster.K8sVersion,
 		CniPlugin:                     api.CreateClusterRequestCniPlugin(inv.Cluster.CniName),
 		EtcdEncrypted:                 inv.Cluster.EtcdEncryptionEnabled(),
 		ControlPlaneVIP:               inv.Cluster.ControlPlaneVIP,
-		Nico: &api.NicoClusterProvider{
-			OrgID:  n.OrgID,
-			SiteID: siteID,
-			VpcID:  vpcID,
-		},
+		Nico:                          n.Provider,
 		ControlPlaneConfig: &api.CreateClusterControlPlaneConfig{
 			DesiredCount:         n.NodeCount,
 			SystemReservedMemory: inv.Cluster.KubeletConfig.SystemReservedMemory,
-			Nico: &api.NicoControlPlaneProviderCreate{
-				ConfigProfile:          n.ConfigProfile,
-				InstanceTypePreference: instanceTypes,
-				OSProfile:              n.OSProfile,
-				SSHKeyGroupIDs:         sshKeyGroups,
-				SubnetIDs:              subnets,
-				VpcPrefixIDs:           vpcPrefixes,
-			},
+			Nico:                 n.ControlPlane,
 		},
 	}
 	applySharedSettings(&req, inv)
@@ -157,29 +124,6 @@ func applySharedSettings(req *api.CreateClusterJSONRequestBody, inv *sitespec.Si
 	if network := clusterNetwork(inv); network != nil {
 		req.Network = network
 	}
-}
-
-func parseUUID(path, value string) (openapi_types.UUID, error) {
-	var id openapi_types.UUID
-	if err := id.UnmarshalText([]byte(value)); err != nil {
-		return id, fmt.Errorf("sitecluster: %s %q is not a UUID: %w", path, value, err)
-	}
-	return id, nil
-}
-
-func parseUUIDs(path string, values []string) ([]openapi_types.UUID, error) {
-	if len(values) == 0 {
-		return nil, nil
-	}
-	ids := make([]openapi_types.UUID, 0, len(values))
-	for i, value := range values {
-		id, err := parseUUID(fmt.Sprintf("%s[%d]", path, i), value)
-		if err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, nil
 }
 
 // provisionedHosts renders the site spec's nodes as ProvisionedCluster hosts.

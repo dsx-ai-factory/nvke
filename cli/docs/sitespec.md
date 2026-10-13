@@ -66,16 +66,33 @@ a NICo site, configured by the profiles the block names. Everything else in the
 file means what it did. [`examples/sitespec-nico.yaml`](../examples/sitespec-nico.yaml)
 is a complete example.
 
+**This NICo is for bootstrap only.** It is the NICo that allocates the site
+controller's own control-plane machines, through a CAPNICo installed in the
+throwaway Kind cluster. It is not the NICo the finished site controller uses to
+create tenant clusters; that is `controllerStack.nico` below and may be a
+different NICo, with different credentials, org and site. A site spec can carry
+both. The Kind cluster, with its CAPNICo and `nico-credentials` Secret, is
+deleted when the bootstrap ends.
+
+`cluster.nico` is built from the structs the controller's REST API takes for a
+NICo cluster, with the API's field names: `provider` is the request's `nico`
+block (`api.NicoClusterProvider`) and `controlPlane` is the control-plane
+config's `nico` block (`api.NicoControlPlaneProviderCreate`). The credentials
+are the same `StackNico` and `StackPullSecret` structs `controllerStack` uses
+for the tenant CAPNICo, under bootstrap-specific names.
+
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `infrastructure` | string | no | `provisioned` (default) or `nico`. `NKECTL_INFRASTRUCTURE` overrides it. |
+| `infrastructure` | string | no | `provisioned` (default) or `nico`. `NVKECTL_INFRASTRUCTURE` overrides it. |
 | `cluster.nico.nodeCount` | int | with `nico` | Odd, at least 1. Takes the place of the length of `cluster.nodes`. |
-| `cluster.nico.orgID` | string | with `nico` | NGC organization that owns the cluster. |
-| `cluster.nico.siteID`, `vpcID` | UUID | with `nico` | The NICo site and the VPC the cluster is created in. |
-| `cluster.nico.instanceTypePreference` | UUID list | with `nico` | Ordered; index 0 is the first choice. |
-| `cluster.nico.vpcPrefixIDs` / `subnetIDs` | UUID list | with `nico` | Exactly one of the two: native networking or not. |
-| `cluster.nico.sshKeyGroupIDs` | UUID list | with `nico` | At least one. |
-| `cluster.nico.osProfile`, `configProfile` | string | with `nico` | Profile names served by the site. |
+| `cluster.nico.provider.orgID` | string | with `nico` | NGC organization that owns the cluster. |
+| `cluster.nico.provider.siteID`, `vpcID` | UUID | with `nico` | The NICo site and the VPC the cluster is created in. |
+| `cluster.nico.controlPlane.instanceTypePreference` | UUID list | with `nico` | Ordered; index 0 is the first choice. |
+| `cluster.nico.controlPlane.vpcPrefixIDs` / `subnetIDs` | UUID list | with `nico` | Exactly one of the two: native networking or not. |
+| `cluster.nico.controlPlane.sshKeyGroupIDs` | UUID list | with `nico` | At least one. |
+| `cluster.nico.controlPlane.osProfile`, `configProfile` | string | with `nico` | Profile names served by the site. |
+| `bootstrapNico` | `StackNico` | with `nico` | The NICo API the bootstrap CAPNICo calls: `endpoint`, `orgID`, `apiName`, `tokenFile`. See below. |
+| `bootstrapPullSecret` | `StackPullSecret` | with `nico` | The registry credential for the bootstrap CAPNICo's image: `server`, `username`, `tokenFile`. |
 | `spire.externalAddress` | string | with `nico` | IP address or DNS name nodes use to reach the bootstrap host's SPIRE server, on NodePort 30081. See below. |
 
 `cluster.nodes` must be empty with `nico`, and `cluster.nico` must be absent
@@ -106,19 +123,36 @@ given their SPIRE address when they were provisioned.
 
 ### NICo credentials
 
-CAPNICo needs credentials for the NICo API. They are not in the file, which is
-meant to be committed. Pass `--nico-credentials-file` (or set
-`NKECTL_NICO_CREDENTIALS_FILE`) to a file of `KEY=VALUE` lines; it becomes the
-`nico-credentials` Secret in `capnico-system`. The keys are CAPNICo's own — see
-[its getting-started guide](https://github.com/dsx-ai-factory/cluster-api-provider-nico/blob/main/docs/getting-started.md#3-get-a-machine-usable-credential).
+`bootstrapNico` and `bootstrapPullSecret` are the same structs as
+`controllerStack.nico` and `controllerStack.pullSecret`, and are checked the same
+way: every field set, the endpoint an http or https URL. Tokens are paths to
+files that hold them, one secret per file, relative paths resolved from the site
+spec, so the file itself holds no credential. Both are required with `nico` and
+refused otherwise. `bootstrapNico.orgID` is the organization the API token
+belongs to; `cluster.nico.provider.orgID` is the one that owns the cluster, and
+the two need not match.
 
-The bootstrap installs CAPNICo into its Kind cluster from the public Helm chart
-(`helm` v4 or later, and network access to `ghcr.io`). The chart and its version
-are pinned in the bootstrap manifest (`nkectl get bootstrap-manifest`).
-`NKECTL_CAPNICO_CHART` and `NKECTL_CAPNICO_VERSION` override the chart reference
-and version. The Kind host
-must reach the NICo API and each new node's agent port, and the nodes must
-reach the SPIRE server the bootstrap publishes on the host.
+The bootstrap installs CAPNICo into its Kind cluster the way the site
+controller's deploy path does: the published release manifest
+(`deploy/nico/capnico/capnico.yaml`), with `nico-credentials` and the
+`ghcr-imagepull` pull secret in `capnico-system`. It is the same file at the
+same pin, embedded in `nvkectl` by `make -C cli capnico-manifest`, so a CAPNICo
+bump in the deploy path is a bump here. It is not the Helm chart: the manifest
+carries the reboot and repair annotation prefixes the controller writes, which
+the chart does not, and needs only `kubectl`.
+
+By default the image is the tag the manifest names. Pass `--release <file>` to
+pin it to an NVKR release's `capnico-controller` artifact instead, as
+`nvkectl render deploy-path --release` does for the site controller's CAPNICo:
+the manifest's one image is replaced with the artifact's `repository@digest`.
+`--arch` (default the bootstrap host's) picks the artifact's architecture, since
+the bootstrap CAPNICo runs in the Kind cluster on that host. It is refused with
+`provisioned` infrastructure, where no CAPNICo is installed. The Kind node pulls
+the image, so `bootstrapPullSecret.server` must be the release image's registry;
+staging images from a release run directory, as the deploy path does for the
+node, is not supported here. The Kind host must reach `ghcr.io`
+and the NICo API and each new node's agent port, and the nodes must reach the
+SPIRE server the bootstrap publishes on the host.
 
 ## Schema
 
@@ -244,7 +278,7 @@ A set variable takes precedence over the file value.
 | `NVKECTL_SPIFFE_TRUST_DOMAIN` | `spire.trustDomain` |
 | `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
 | `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
-| `NKECTL_SPIRE_EXTERNAL_ADDRESS` | `spire.externalAddress` |
+| `NVKECTL_SPIRE_EXTERNAL_ADDRESS` | `spire.externalAddress` |
 | `NKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
 
 A malformed `NVKECTL_CLUSTER_NODES` entry fails the load rather than being

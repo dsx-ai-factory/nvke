@@ -32,11 +32,13 @@ import (
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/spf13/viper"
 	"k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/client-go/util/cert"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 // Infrastructure names where a site cluster's machines come from.
@@ -69,6 +71,8 @@ const (
 	pathInfrastructure       = "infrastructure"
 	pathNodes                = "cluster.nodes"
 	pathNico                 = "cluster.nico"
+	pathBootstrapNico        = "bootstrapNico"
+	pathBootstrapPullSecret  = "bootstrapPullSecret"
 	pathK8sVersion           = "cluster.k8sVersion"
 	pathCniName              = "cluster.cniName"
 	pathCniVersion           = "cluster.cniVersion"
@@ -123,9 +127,6 @@ var (
 	// dnsLabelRE matches an RFC 1123 DNS label, used for cluster and node names.
 	dnsLabelRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
-	// uuidRE matches the canonical lowercase or uppercase textual form of a UUID.
-	uuidRE = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-
 	// tpmEKThumbprintRE matches the SHA-256 of a TPM endorsement key, as
 	// printed by spire-tpm-plugin's get_tpm_pubhash: 64 lowercase hex digits.
 	tpmEKThumbprintRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -151,6 +152,16 @@ type SiteSpec struct {
 	Registry Registry `yaml:"registry"`
 	// Spire holds the identity-plane settings for the bootstrap.
 	Spire Spire `yaml:"spire"`
+	// BootstrapNico is the NICo API the bootstrap Kind cluster's CAPNICo calls
+	// to allocate the site controller's own machines. It is the same struct as
+	// controllerStack.nico, which is the NICo API the finished controller's
+	// CAPNICo calls for tenant clusters, and the two may name different NICos.
+	// Required with InfrastructureNico; refused otherwise.
+	BootstrapNico *StackNico `yaml:"bootstrapNico,omitempty"`
+	// BootstrapPullSecret is the registry credential for the bootstrap
+	// CAPNICo's image pull secret, the same struct as controllerStack.pullSecret.
+	// Required with InfrastructureNico; refused otherwise.
+	BootstrapPullSecret *StackPullSecret `yaml:"bootstrapPullSecret,omitempty"`
 	// ControllerStack is the input the controller stack install reads. The
 	// bootstrap does not read it; ValidateControllerStack checks it at install
 	// time.
@@ -203,8 +214,9 @@ type Cluster struct {
 	// select which node runs kubeadm init. Used only with
 	// InfrastructureProvisioned.
 	Nodes []Node `yaml:"nodes"`
-	// Nico describes the NICo site that machines are allocated from. Used only
-	// with InfrastructureNico.
+	// Nico describes the NICo site that the site controller's own machines are
+	// allocated from, during bootstrap only. Used only with InfrastructureNico.
+	// It is not the NICo the finished controller uses for tenant clusters.
 	Nico *NicoCluster `yaml:"nico,omitempty"`
 	// K8sVersion is the Kubernetes version to install, e.g. "1.32.0".
 	K8sVersion string `yaml:"k8sVersion"`
@@ -284,37 +296,22 @@ func (inv *SiteSpec) ControlPlaneCount() int {
 	return len(inv.Cluster.Nodes)
 }
 
-// NicoCluster describes the NICo site a cluster's control-plane machines are
-// allocated from, and how they are configured. It carries the same
-// information as the nico payload of a CWE CreateCluster request.
+// NicoCluster describes the control-plane machines CAPNICo allocates for the
+// site cluster. It is built from the structs the controller's REST API takes
+// for a NICo cluster, not from a mirror of them, so a field the API gains is a
+// field this block accepts and the field names are the API's own.
 //
-// Credentials for the NICo API are not part of it: this file is meant to be
-// committed. They are supplied to nkectl at run time.
+// Credentials for the NICo API are not part of it: see SiteSpec.BootstrapNico.
 type NicoCluster struct {
 	// NodeCount is the number of control-plane nodes to allocate. Odd, and at
-	// least one, like the length of the hardcoded list it stands in for.
+	// least one, like the length of the hardcoded list it stands in for. It is
+	// the desiredCount of the request's control-plane config.
 	NodeCount int `yaml:"nodeCount"`
-	// OrgID is the NGC organization that owns the cluster.
-	OrgID string `yaml:"orgID"`
-	// SiteID is the registered NICo site ID.
-	SiteID string `yaml:"siteID"`
-	// VpcID is the VPC the cluster is created in.
-	VpcID string `yaml:"vpcID"`
-	// InstanceTypePreference is an ordered list of NICo instance type IDs;
-	// index 0 is the first choice.
-	InstanceTypePreference []string `yaml:"instanceTypePreference"`
-	// VpcPrefixIDs are the VPC prefixes for the nodes, when native networking
-	// is enabled. Exactly one of VpcPrefixIDs and SubnetIDs is set.
-	VpcPrefixIDs []string `yaml:"vpcPrefixIDs,omitempty"`
-	// SubnetIDs are the subnets for the nodes, when native networking is
-	// disabled.
-	SubnetIDs []string `yaml:"subnetIDs,omitempty"`
-	// SSHKeyGroupIDs are the SSH key groups granted access to the nodes.
-	SSHKeyGroupIDs []string `yaml:"sshKeyGroupIDs"`
-	// OSProfile is the NICo OS profile name for the nodes.
-	OSProfile string `yaml:"osProfile"`
-	// ConfigProfile is the config profile name for the nodes.
-	ConfigProfile string `yaml:"configProfile"`
+	// Provider is the request's nico block: organization, site and VPC.
+	Provider *api.NicoClusterProvider `yaml:"provider"`
+	// ControlPlane is the request's control-plane nico block: instance types,
+	// networking, SSH key groups and profiles.
+	ControlPlane *api.NicoControlPlaneProviderCreate `yaml:"controlPlane"`
 }
 
 // Node is a single pre-provisioned host.
@@ -381,7 +378,7 @@ type Registry struct {
 func envBindings() map[string]string {
 	return map[string]string{
 		"CLUSTER_NAME":                   pathClusterName,
-		"NKECTL_INFRASTRUCTURE":          pathInfrastructure,
+		"NVKECTL_INFRASTRUCTURE":         pathInfrastructure,
 		"CLUSTER_K8S_VERSION":            pathK8sVersion,
 		"CLUSTER_CNI_NAME":               pathCniName,
 		"CLUSTER_CNI_VERSION":            pathCniVersion,
@@ -397,7 +394,7 @@ func envBindings() map[string]string {
 		"NVKECTL_SPIFFE_TRUST_DOMAIN":    pathSpireTrustDomain,
 		"SPIRE_CA_CERT_FILE":             pathSpireCACertFile,
 		"SPIRE_CA_KEY_FILE":              pathSpireCAKeyFile,
-		"NKECTL_SPIRE_EXTERNAL_ADDRESS":  pathSpireExternalAddress,
+		"NVKECTL_SPIRE_EXTERNAL_ADDRESS": pathSpireExternalAddress,
 	}
 }
 
@@ -458,7 +455,7 @@ func Load(path string) (*SiteSpec, error) {
 	}
 
 	var inv SiteSpec
-	if err := v.Unmarshal(&inv, useYAMLTags, rejectUnknownFields); err != nil {
+	if err := v.Unmarshal(&inv, useYAMLTags, decodeTextValues, rejectUnknownFields); err != nil {
 		return nil, fmt.Errorf("site spec file %s: %w", path, err)
 	}
 	if abs, err := filepath.Abs(path); err == nil {
@@ -480,6 +477,13 @@ func Load(path string) (*SiteSpec, error) {
 
 // useYAMLTags makes viper decode using the structs' existing yaml tags.
 func useYAMLTags(dc *mapstructure.DecoderConfig) { dc.TagName = "yaml" }
+
+// decodeTextValues lets a string decode into a type that parses itself, which
+// is how the API's UUID fields read from the file. It adds to viper's own
+// hooks rather than replacing them.
+func decodeTextValues(dc *mapstructure.DecoderConfig) {
+	dc.DecodeHook = mapstructure.ComposeDecodeHookFunc(dc.DecodeHook, mapstructure.TextUnmarshallerHookFunc())
+}
 
 // rejectUnknownFields makes decoding fail on an unknown field, so a typo in a
 // field name surfaces immediately instead of being silently ignored.
@@ -545,6 +549,7 @@ func (inv *SiteSpec) Validate() error {
 func (inv *SiteSpec) appendDataChecks(v *validator) {
 	v.checkClusterName(inv.ClusterName)
 	v.checkInfrastructure(inv)
+	v.checkBootstrapNico(inv)
 	v.checkK8sVersion(inv.Cluster.K8sVersion)
 	v.checkCNI(inv.Cluster.CniName)
 	v.checkCIDR(pathPodCidr, inv.Cluster.PodCidr, true)
@@ -574,6 +579,7 @@ func (inv *SiteSpec) ValidateReferences() error {
 // problem to v. See appendDataChecks for why it takes the validator.
 func (inv *SiteSpec) appendReferenceChecks(v *validator) {
 	v.checkSpireFiles(inv.Spire)
+	v.checkBootstrapNicoFiles(inv)
 }
 
 // validator accumulates field-level errors so the caller sees every problem
@@ -643,48 +649,107 @@ func (v *validator) checkNico(n *NicoCluster) {
 	} else if n.NodeCount%2 == 0 {
 		v.addf("%s.nodeCount must be an odd number", pathNico)
 	}
-	if n.OrgID == "" {
-		v.addf("%s.orgID is required", pathNico)
+	if n.Provider == nil {
+		v.addf("%s.provider is required", pathNico)
+	} else {
+		if n.Provider.OrgID == "" {
+			v.addf("%s.provider.orgID is required", pathNico)
+		}
+		v.checkUUID(pathNico+".provider.siteID", n.Provider.SiteID)
+		v.checkUUID(pathNico+".provider.vpcID", n.Provider.VpcID)
 	}
-	v.checkUUID(pathNico+".siteID", n.SiteID)
-	v.checkUUID(pathNico+".vpcID", n.VpcID)
-	if len(n.InstanceTypePreference) == 0 {
-		v.addf("%s.instanceTypePreference must list at least one instance type ID", pathNico)
+	if n.ControlPlane == nil {
+		v.addf("%s.controlPlane is required", pathNico)
+		return
 	}
-	v.checkUUIDs(pathNico+".instanceTypePreference", n.InstanceTypePreference)
-	v.checkUUIDs(pathNico+".vpcPrefixIDs", n.VpcPrefixIDs)
-	v.checkUUIDs(pathNico+".subnetIDs", n.SubnetIDs)
-	if len(n.SSHKeyGroupIDs) == 0 {
-		v.addf("%s.sshKeyGroupIDs must list at least one SSH key group ID", pathNico)
+	cp := n.ControlPlane
+	const cpPath = pathNico + ".controlPlane"
+	if len(cp.InstanceTypePreference) == 0 {
+		v.addf("%s.instanceTypePreference must list at least one instance type ID", cpPath)
 	}
-	v.checkUUIDs(pathNico+".sshKeyGroupIDs", n.SSHKeyGroupIDs)
+	v.checkUUIDs(cpPath+".instanceTypePreference", cp.InstanceTypePreference)
+	v.checkUUIDs(cpPath+".vpcPrefixIDs", cp.VpcPrefixIDs)
+	v.checkUUIDs(cpPath+".subnetIDs", cp.SubnetIDs)
+	if len(cp.SSHKeyGroupIDs) == 0 {
+		v.addf("%s.sshKeyGroupIDs must list at least one SSH key group ID", cpPath)
+	}
+	v.checkUUIDs(cpPath+".sshKeyGroupIDs", cp.SSHKeyGroupIDs)
 	switch {
-	case len(n.VpcPrefixIDs) == 0 && len(n.SubnetIDs) == 0:
-		v.addf("%s must set one of vpcPrefixIDs (native networking) or subnetIDs", pathNico)
-	case len(n.VpcPrefixIDs) > 0 && len(n.SubnetIDs) > 0:
-		v.addf("%s must set only one of vpcPrefixIDs and subnetIDs", pathNico)
+	case len(cp.VpcPrefixIDs) == 0 && len(cp.SubnetIDs) == 0:
+		v.addf("%s must set one of vpcPrefixIDs (native networking) or subnetIDs", cpPath)
+	case len(cp.VpcPrefixIDs) > 0 && len(cp.SubnetIDs) > 0:
+		v.addf("%s must set only one of vpcPrefixIDs and subnetIDs", cpPath)
 	}
-	if n.OSProfile == "" {
-		v.addf("%s.osProfile is required", pathNico)
+	if cp.OSProfile == "" {
+		v.addf("%s.osProfile is required", cpPath)
 	}
-	if n.ConfigProfile == "" {
-		v.addf("%s.configProfile is required", pathNico)
+	if cp.ConfigProfile == "" {
+		v.addf("%s.configProfile is required", cpPath)
 	}
 }
 
-func (v *validator) checkUUID(path, value string) {
-	switch {
-	case value == "":
+// checkBootstrapNico validates the credentials the bootstrap CAPNICo is given.
+// They are the same StackNico and StackPullSecret the controller stack takes
+// for the tenant CAPNICo, and are checked the same way: every field set, the
+// endpoint an http or https URL. They are required with InfrastructureNico and
+// refused otherwise, as spire.externalAddress is.
+func (v *validator) checkBootstrapNico(inv *SiteSpec) {
+	if inv.Infrastructure != InfrastructureNico {
+		if inv.BootstrapNico != nil {
+			v.addf("%s is only valid with %s: %q", pathBootstrapNico, pathInfrastructure, InfrastructureNico)
+		}
+		if inv.BootstrapPullSecret != nil {
+			v.addf("%s is only valid with %s: %q", pathBootstrapPullSecret, pathInfrastructure, InfrastructureNico)
+		}
+		return
+	}
+	if inv.BootstrapNico == nil {
+		v.addf("%s is required with %s: %q: it is the NICo API the bootstrap CAPNICo calls",
+			pathBootstrapNico, pathInfrastructure, InfrastructureNico)
+	} else {
+		inv.BootstrapNico.appendValueChecks(v, pathBootstrapNico)
+	}
+	if inv.BootstrapPullSecret == nil {
+		v.addf("%s is required with %s: %q: it is the registry credential for the CAPNICo image pull secret",
+			pathBootstrapPullSecret, pathInfrastructure, InfrastructureNico)
+	} else {
+		inv.BootstrapPullSecret.appendValueChecks(v, pathBootstrapPullSecret)
+	}
+}
+
+// checkBootstrapNicoFiles checks that the token files the bootstrap credentials
+// name can be read, relative paths resolved from the site spec's directory.
+func (v *validator) checkBootstrapNicoFiles(inv *SiteSpec) {
+	if !inv.IsNico() {
+		return
+	}
+	files := [][2]string{}
+	if inv.BootstrapNico != nil {
+		files = append(files, [2]string{pathBootstrapNico + ".tokenFile", inv.BootstrapNico.TokenFile})
+	}
+	if inv.BootstrapPullSecret != nil {
+		files = append(files, [2]string{pathBootstrapPullSecret + ".tokenFile", inv.BootstrapPullSecret.TokenFile})
+	}
+	for _, f := range files {
+		if f[1] == "" {
+			continue
+		}
+		if _, err := os.Stat(inv.ResolvePath(f[1])); err != nil {
+			v.addf("%s %q cannot be read: %v", f[0], f[1], err)
+		}
+	}
+}
+
+func (v *validator) checkUUID(path string, value openapi_types.UUID) {
+	if value == (openapi_types.UUID{}) {
 		v.addf("%s is required", path)
-	case !uuidRE.MatchString(value):
-		v.addf("%s %q is not a UUID", path, value)
 	}
 }
 
-func (v *validator) checkUUIDs(path string, values []string) {
+func (v *validator) checkUUIDs(path string, values []openapi_types.UUID) {
 	for i, value := range values {
-		if !uuidRE.MatchString(value) {
-			v.addf("%s[%d] %q is not a UUID", path, i, value)
+		if value == (openapi_types.UUID{}) {
+			v.addf("%s[%d] is the nil UUID", path, i)
 		}
 	}
 }

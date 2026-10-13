@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	openapi_types "github.com/oapi-codegen/runtime/types"
+
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
@@ -316,15 +318,19 @@ func nicoSiteSpec() *sitespec.SiteSpec {
 	inv.Infrastructure = sitespec.InfrastructureNico
 	inv.Cluster.Nodes = nil
 	inv.Cluster.Nico = &sitespec.NicoCluster{
-		NodeCount:              3,
-		OrgID:                  "example-org",
-		SiteID:                 "00000000-0000-0000-0000-000000000001",
-		VpcID:                  "00000000-0000-0000-0000-000000000002",
-		InstanceTypePreference: []string{"00000000-0000-0000-0000-000000000003", "00000000-0000-0000-0000-000000000006"},
-		VpcPrefixIDs:           []string{"00000000-0000-0000-0000-000000000004"},
-		SSHKeyGroupIDs:         []string{"00000000-0000-0000-0000-000000000005"},
-		OSProfile:              "example-os-profile",
-		ConfigProfile:          "example-config-profile",
+		NodeCount: 3,
+		Provider: &api.NicoClusterProvider{
+			OrgID:  "example-org",
+			SiteID: openapi_types.UUID{15: 1},
+			VpcID:  openapi_types.UUID{15: 2},
+		},
+		ControlPlane: &api.NicoControlPlaneProviderCreate{
+			InstanceTypePreference: []openapi_types.UUID{{15: 3}, {15: 6}},
+			VpcPrefixIDs:           []openapi_types.UUID{{15: 4}},
+			SSHKeyGroupIDs:         []openapi_types.UUID{{15: 5}},
+			OSProfile:              "example-os-profile",
+			ConfigProfile:          "example-config-profile",
+		},
 	}
 	return inv
 }
@@ -405,13 +411,8 @@ func TestClusterRequest_NicoRejectsInvalidSpecs(t *testing.T) {
 		wantErr string
 	}{
 		{"missing nico block", func(inv *sitespec.SiteSpec) { inv.Cluster.Nico = nil }, "cluster.nico"},
-		{"bad site UUID", func(inv *sitespec.SiteSpec) { inv.Cluster.Nico.SiteID = "not-a-uuid" }, "cluster.nico.siteID"},
-		{"bad VPC UUID", func(inv *sitespec.SiteSpec) { inv.Cluster.Nico.VpcID = "not-a-uuid" }, "cluster.nico.vpcID"},
-		{
-			"bad instance type UUID",
-			func(inv *sitespec.SiteSpec) { inv.Cluster.Nico.InstanceTypePreference[1] = "not-a-uuid" },
-			"cluster.nico.instanceTypePreference[1]",
-		},
+		{"missing provider", func(inv *sitespec.SiteSpec) { inv.Cluster.Nico.Provider = nil }, "provider and controlPlane"},
+		{"missing control plane", func(inv *sitespec.SiteSpec) { inv.Cluster.Nico.ControlPlane = nil }, "provider and controlPlane"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

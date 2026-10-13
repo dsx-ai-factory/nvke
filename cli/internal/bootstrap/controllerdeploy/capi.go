@@ -5,12 +5,12 @@ package controllerdeploy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
-
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/manifest"
 )
 
 // capiVersion is injected by cli/Makefile from CAPI_VERSION in
@@ -30,16 +30,32 @@ const (
 	provisionedNamespace  = "provisioned-system"
 	provisionedDeployment = "provisioned-controller-manager"
 
-	// capnicoNamespace is where the CAPNICo chart installs its manager. The
-	// chart creates it, so it must not exist beforehand.
-	capnicoNamespace = "capnico-system"
-
-	// capnicoReleaseName is the Helm release name for CAPNICo.
-	capnicoReleaseName = "capi-provider-nico"
+	// capnicoNamespace is where CAPNICo's manifest installs its manager, and
+	// where it reads its credentials and pull secret.
+	capnicoNamespace  = "capnico-system"
+	capnicoDeployment = "controller-manager"
 
 	// nicoCredentialsSecret is the Secret CAPNICo reads its NICo API
-	// credentials from.
+	// credentials from. The name, namespace and keys are CAPNICo's own.
 	nicoCredentialsSecret = "nico-credentials"
+
+	// capnicoPullSecret is the Secret the manifest's Deployment names as its
+	// imagePullSecrets entry.
+	capnicoPullSecret = "ghcr-imagepull"
+
+	// CAPNICoArtifact is the NVKR release artifact that carries the CAPNICo
+	// image. It is the artifact deploy/nico/capnico/release.yaml binds to the
+	// manifest, so a release repoints the same image for the deploy path and
+	// the bootstrap.
+	CAPNICoArtifact = "capnico-controller"
+
+	// capnicoManifestFile is deploy/nico/capnico/capnico.yaml, copied by
+	// `make -C cli capnico-manifest`. The copy lives here because go:embed
+	// cannot reach outside this module, and embedding it is what lets
+	// `nvkectl bootstrap site` run from the binary alone, with no repository
+	// checkout. deploy/nico/capnico/ stays the source of truth; a test fails
+	// when the two differ.
+	capnicoManifestFile = "manifests/capnico.yaml"
 
 	// provisionedDefaultImage is the image reference config/manager/manager.yaml
 	// carries. It is a placeholder: no image is published under it. The install
@@ -80,62 +96,148 @@ func (e *Engine) installCAPI(ctx context.Context, kubeconfigPath string, cfg Con
 	return e.installProvisionedProvider(ctx, kubeconfigPath, cfg, timeout)
 }
 
-// installCAPNICo installs the CAPNICo Helm chart and then the NICo credentials
-// it reads.
+// CAPNICoAccess is what the bootstrap CAPNICo needs from the operator: the
+// NICo API it calls and the registry credential its image is pulled with. Each
+// field is the resolved value of the StackNico and StackPullSecret the site
+// spec carries, with the token files read.
+type CAPNICoAccess struct {
+	// Endpoint, OrgID, APIName and Token are the keys of the nico-credentials
+	// Secret.
+	Endpoint string
+	OrgID    string
+	APIName  string
+	Token    string
+
+	// RegistryServer, RegistryUsername and RegistryToken are the pull secret's
+	// credential.
+	RegistryServer   string
+	RegistryUsername string
+	RegistryToken    string
+}
+
+// installCAPNICo installs CAPNICo the way the site controller's deploy path
+// does: the published release manifest, embedded here from
+// deploy/nico/capnico/capnico.yaml, with the NICo credentials and the image
+// pull secret applied beside it.
 //
-// The credentials come after the chart because the chart creates the
-// capnico-system namespace unconditionally and fails with an ownership error if
-// it already exists.
+// It is not the Helm chart. The deploy path installs the manifest because a
+// site has no provider checkout and the chart needs a registry login that path
+// does not assume, and the manifest carries two edits the chart does not: the
+// reboot and repair annotation prefixes the controller writes, and the pull
+// secret. Without the first, every reboot and repair request is silently
+// ignored.
+//
+// The Secrets are applied first, in a file with their namespace, because the
+// manifest's Deployment starts pulling its image as soon as it is applied.
 func (e *Engine) installCAPNICo(ctx context.Context, kubeconfigPath string, cfg Config, timeout time.Duration) error {
-	if cfg.NicoCredentialsFile == "" {
-		return errors.New("cwedeploy: Config.NicoCredentialsFile is required to install CAPNICo; " +
-			"it names a file of KEY=VALUE lines that becomes the " + nicoCredentialsSecret + " Secret")
-	}
-	chart, err := manifestChart(manifest.ComponentCAPNICo)
+	secrets, err := capnicoSecretsManifest(cfg.CAPNICo)
 	if err != nil {
 		return err
 	}
-	// An OCI chart's reference is its repository and name joined; the overrides
-	// replace each half, as Config.*ChartRef does for the other charts.
-	chartRef := cfg.CAPNICoChartRef
-	if chartRef == "" {
-		chartRef = strings.TrimRight(chart.Repo, "/") + "/" + chart.Name
+	raw, err := manifestsFS.ReadFile(capnicoManifestFile)
+	if err != nil {
+		return fmt.Errorf("controllerdeploy: reading the embedded CAPNICo manifest: %w", err)
 	}
-	version := cfg.CAPNICoVersion
-	if version == "" {
-		version = chart.Version
+	raw, err = capnicoManifest(raw, cfg.CAPNICoImage)
+	if err != nil {
+		return err
 	}
 
-	e.log.Info("installing CAPNICo", "namespace", capnicoNamespace, "chart", chartRef, "version", version)
-	if _, err := e.helm(ctx, kubeconfigPath,
-		"upgrade", "--install", capnicoReleaseName, chartRef,
-		"--version", version,
-		"--namespace", capnicoNamespace, "--create-namespace",
-		"--wait", "--timeout", timeout.String(),
-	); err != nil {
-		// The chart is an OCI artifact, which Helm 3 cannot install.
-		return fmt.Errorf("cwedeploy: installing CAPNICo: %w\n"+
-			"the CAPNICo chart needs helm v4 or later and network access to ghcr.io", err)
+	// The Secrets hold credentials, so they go in a 0600 file rather than on a
+	// command line, where a process listing or a failed command's output would
+	// show them.
+	secretsFile, cleanupSecrets, err := writeTempFile("nvkectl-capnico-secrets-*.json", secrets)
+	if err != nil {
+		return err
 	}
+	defer cleanupSecrets()
+	manifestFile, cleanupManifest, err := writeTempFile("nvkectl-capnico-*.yaml", raw)
+	if err != nil {
+		return err
+	}
+	defer cleanupManifest()
 
-	// A kept bootstrap cluster re-run finds the Secret from the earlier run, and
-	// `kubectl create` refuses to replace it.
-	if _, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"-n", capnicoNamespace, "get", "secret", nicoCredentialsSecret); err == nil {
+	e.log.Info("installing CAPNICo", "namespace", capnicoNamespace, "imageOverride", cfg.CAPNICoImage)
+	for _, file := range []string{secretsFile, manifestFile} {
+		// Server-side apply: the CRDs are large enough that a client-side apply
+		// can exceed the last-applied-configuration annotation limit. It also
+		// makes a re-run against a kept cluster replace the Secrets.
 		if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-			"-n", capnicoNamespace, "delete", "secret", nicoCredentialsSecret); err != nil {
-			return fmt.Errorf("cwedeploy: replacing the %s Secret: %w\n%s", nicoCredentialsSecret, err, out)
+			"apply", "--server-side", "--force-conflicts", "-f", file); err != nil {
+			return fmt.Errorf("controllerdeploy: applying CAPNICo: %w\n%s", err, out)
 		}
 	}
-	// --from-env-file passes the path, not the values, so no credential
-	// appears in a process listing or in the output of a failed command.
 	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"-n", capnicoNamespace, "create", "secret", "generic", nicoCredentialsSecret,
-		"--from-env-file="+cfg.NicoCredentialsFile); err != nil {
-		return fmt.Errorf("cwedeploy: creating the %s Secret from %s: %w\n%s",
-			nicoCredentialsSecret, cfg.NicoCredentialsFile, err, out)
+		"-n", capnicoNamespace, "rollout", "status", "deployment/"+capnicoDeployment,
+		"--timeout", timeout.String()); err != nil {
+		return fmt.Errorf("controllerdeploy: waiting for CAPNICo: %w\n%s", err, out)
 	}
 	return nil
+}
+
+// capnicoImageLine matches an image: line of the manifest.
+var capnicoImageLine = regexp.MustCompile(`(?m)^(\s*image:\s*)(\S+)[ \t]*$`)
+
+// capnicoManifest returns the embedded manifest with its image replaced by
+// image, as the deploy path's render does for a release (a kustomization that
+// rewrites the manager image to the artifact's repository and digest). An empty
+// image returns the manifest as embedded.
+//
+// The manifest names exactly one image, the manager's. If a bump adds a second,
+// this refuses rather than guess which one the release's artifact replaces.
+func capnicoManifest(raw []byte, image string) ([]byte, error) {
+	if image == "" {
+		return raw, nil
+	}
+	if n := len(capnicoImageLine.FindAll(raw, -1)); n != 1 {
+		return nil, fmt.Errorf("controllerdeploy: the embedded CAPNICo manifest names %d images, want exactly 1 to replace with %s", n, image)
+	}
+	return capnicoImageLine.ReplaceAll(raw, []byte("${1}"+image)), nil
+}
+
+// capnicoSecretsManifest renders the Namespace, the nico-credentials Secret and
+// the image pull secret as one JSON document, which kubectl applies as it does
+// YAML. They carry the same keys the deploy path's
+// 20-nico-credentials.yaml.tmpl and 30-ghcr-imagepull.yaml.tmpl render.
+//
+// It is built with encoding/json rather than a template so a value holding a
+// quote or a backslash is carried, not written altered.
+func capnicoSecretsManifest(a CAPNICoAccess) ([]byte, error) {
+	for _, f := range []struct{ name, value string }{
+		{"Endpoint", a.Endpoint}, {"OrgID", a.OrgID}, {"APIName", a.APIName}, {"Token", a.Token},
+		{"RegistryServer", a.RegistryServer}, {"RegistryUsername", a.RegistryUsername}, {"RegistryToken", a.RegistryToken},
+	} {
+		if f.value == "" {
+			return nil, fmt.Errorf("controllerdeploy: Config.CAPNICo.%s is required to install CAPNICo", f.name)
+		}
+	}
+	dockerConfig, err := json.Marshal(map[string]any{"auths": map[string]any{
+		a.RegistryServer: map[string]string{"username": a.RegistryUsername, "password": a.RegistryToken},
+	}})
+	if err != nil {
+		return nil, fmt.Errorf("controllerdeploy: encoding the pull secret: %w", err)
+	}
+	secret := func(name, kind string, data map[string]string) map[string]any {
+		return map[string]any{
+			"apiVersion": "v1", "kind": "Secret", "type": kind,
+			"metadata":   map[string]any{"name": name, "namespace": capnicoNamespace},
+			"stringData": data,
+		}
+	}
+	out, err := json.Marshal(map[string]any{
+		"apiVersion": "v1", "kind": "List",
+		"items": []any{
+			map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": capnicoNamespace}},
+			secret(nicoCredentialsSecret, "Opaque", map[string]string{
+				"endpoint": a.Endpoint, "orgID": a.OrgID, "token": a.Token, "apiName": a.APIName,
+			}),
+			secret(capnicoPullSecret, "kubernetes.io/dockerconfigjson", map[string]string{".dockerconfigjson": string(dockerConfig)}),
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("controllerdeploy: encoding the CAPNICo secrets: %w", err)
+	}
+	return out, nil
 }
 
 // installCAPICore runs `clusterctl init` for CAPI core and the kubeadm

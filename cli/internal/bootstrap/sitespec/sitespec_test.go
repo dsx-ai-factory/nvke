@@ -4,10 +4,15 @@
 package sitespec
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	openapi_types "github.com/oapi-codegen/runtime/types"
+
+	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 // validYAML is a minimal well-formed site spec used as the happy-path baseline.
@@ -851,30 +856,63 @@ infrastructure: nico
 cluster:
   nico:
     nodeCount: 3
-    orgID: example-org
-    siteID: 00000000-0000-0000-0000-000000000001
-    vpcID: 00000000-0000-0000-0000-000000000002
-    instanceTypePreference:
-      - 00000000-0000-0000-0000-000000000003
-    vpcPrefixIDs:
-      - 00000000-0000-0000-0000-000000000004
-    sshKeyGroupIDs:
-      - 00000000-0000-0000-0000-000000000005
-    osProfile: example-os-profile
-    configProfile: example-config-profile
+    provider:
+      orgID: example-org
+      siteID: 00000000-0000-0000-0000-000000000001
+      vpcID: 00000000-0000-0000-0000-000000000002
+    controlPlane:
+      instanceTypePreference:
+        - 00000000-0000-0000-0000-000000000003
+      vpcPrefixIDs:
+        - 00000000-0000-0000-0000-000000000004
+      sshKeyGroupIDs:
+        - 00000000-0000-0000-0000-000000000005
+      osProfile: example-os-profile
+      configProfile: example-config-profile
   k8sVersion: "1.34.2"
   cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
 spire:
   externalAddress: 192.0.2.10
+bootstrapNico:
+  endpoint: https://bootstrap-nico.example
+  orgID: bootstrap-org
+  apiName: forge
+  tokenFile: nico.token
+bootstrapPullSecret:
+  server: ghcr.io
+  username: example-user
+  tokenFile: registry.token
 registry:
   bootstrapRepo: "nvcr.io/org"
   bootstrapChart: "controller-chart"
 `
 
+// writeNicoTemp writes a site spec and the two token files it names beside it.
+func writeNicoTemp(t *testing.T, content string) string {
+	t.Helper()
+	path := writeTemp(t, content)
+	for _, name := range []string{"nico.token", "registry.token"} {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(path), name), []byte("example-token\n"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	return path
+}
+
+// makeNico turns a valid provisioned spec into a valid nico one.
+func makeNico(inv *SiteSpec) {
+	inv.Infrastructure = InfrastructureNico
+	inv.Cluster.Nodes = nil
+	inv.Cluster.Nico = validNico()
+	inv.Spire.ExternalAddress = "192.0.2.10"
+	inv.BootstrapNico = &StackNico{Endpoint: "https://bootstrap-nico.example", OrgID: "bootstrap-org", APIName: "forge", TokenFile: "nico.token"}
+	inv.BootstrapPullSecret = &StackPullSecret{Server: "ghcr.io", Username: "example-user", TokenFile: "registry.token"}
+}
+
 func TestLoadInfrastructureFromEnv(t *testing.T) {
-	t.Setenv("NKECTL_INFRASTRUCTURE", "nico")
+	t.Setenv("NVKECTL_INFRASTRUCTURE", "nico")
 	// The file lists nodes; the variable asks for nico, so the spec is
 	// contradictory and must fail rather than quietly pick one.
 	_, err := Load(writeTemp(t, validYAML))
@@ -906,6 +944,41 @@ func TestValidate_Infrastructure(t *testing.T) {
 			wantErr: "cluster.nico is only valid with infrastructure",
 		},
 		{
+			name:    "bootstrapNico with provisioned infrastructure",
+			mutate:  func(inv *SiteSpec) { inv.BootstrapNico = &StackNico{} },
+			wantErr: "bootstrapNico is only valid with infrastructure",
+		},
+		{
+			name:    "bootstrapPullSecret with provisioned infrastructure",
+			mutate:  func(inv *SiteSpec) { inv.BootstrapPullSecret = &StackPullSecret{} },
+			wantErr: "bootstrapPullSecret is only valid with infrastructure",
+		},
+		{
+			name:    "nico without bootstrapNico",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapNico = nil },
+			wantErr: "bootstrapNico is required",
+		},
+		{
+			name:    "nico without bootstrapPullSecret",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapPullSecret = nil },
+			wantErr: "bootstrapPullSecret is required",
+		},
+		{
+			name:    "bootstrapNico endpoint is not a URL",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapNico.Endpoint = "nico.example" },
+			wantErr: "bootstrapNico.endpoint",
+		},
+		{
+			name:    "bootstrapNico missing its token file",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapNico.TokenFile = "" },
+			wantErr: "bootstrapNico.tokenFile is required",
+		},
+		{
+			name:    "bootstrapPullSecret missing its username",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapPullSecret.Username = "" },
+			wantErr: "bootstrapPullSecret.username is required",
+		},
+		{
 			name: "nico without a nico block",
 			mutate: func(inv *SiteSpec) {
 				inv.Infrastructure = InfrastructureNico
@@ -922,13 +995,8 @@ func TestValidate_Infrastructure(t *testing.T) {
 			wantErr: "cluster.nodes must be empty",
 		},
 		{
-			name: "nico is valid",
-			mutate: func(inv *SiteSpec) {
-				inv.Infrastructure = InfrastructureNico
-				inv.Cluster.Nodes = nil
-				inv.Cluster.Nico = validNico()
-				inv.Spire.ExternalAddress = "192.0.2.10"
-			},
+			name:   "nico is valid",
+			mutate: makeNico,
 		},
 	}
 	for _, tt := range tests {
@@ -950,6 +1018,7 @@ func TestValidate_Infrastructure(t *testing.T) {
 }
 
 func TestValidate_NicoCluster(t *testing.T) {
+	id := openapi_types.UUID{9}
 	tests := []struct {
 		name    string
 		mutate  func(*NicoCluster)
@@ -957,28 +1026,31 @@ func TestValidate_NicoCluster(t *testing.T) {
 	}{
 		{"zero nodes", func(n *NicoCluster) { n.NodeCount = 0 }, "nodeCount must be at least 1"},
 		{"even nodes", func(n *NicoCluster) { n.NodeCount = 2 }, "nodeCount must be an odd number"},
-		{"missing org", func(n *NicoCluster) { n.OrgID = "" }, "orgID is required"},
-		{"bad site", func(n *NicoCluster) { n.SiteID = "nope" }, `siteID "nope" is not a UUID`},
-		{"missing vpc", func(n *NicoCluster) { n.VpcID = "" }, "vpcID is required"},
-		{"no instance types", func(n *NicoCluster) { n.InstanceTypePreference = nil }, "instanceTypePreference must list"},
-		{"bad instance type", func(n *NicoCluster) { n.InstanceTypePreference = []string{"x"} }, "instanceTypePreference[0]"},
-		{"no ssh key groups", func(n *NicoCluster) { n.SSHKeyGroupIDs = nil }, "sshKeyGroupIDs must list"},
-		{"no networking", func(n *NicoCluster) { n.VpcPrefixIDs = nil }, "one of vpcPrefixIDs"},
+		{"no provider", func(n *NicoCluster) { n.Provider = nil }, "cluster.nico.provider is required"},
+		{"missing org", func(n *NicoCluster) { n.Provider.OrgID = "" }, "provider.orgID is required"},
+		{"missing site", func(n *NicoCluster) { n.Provider.SiteID = openapi_types.UUID{} }, "provider.siteID is required"},
+		{"missing vpc", func(n *NicoCluster) { n.Provider.VpcID = openapi_types.UUID{} }, "provider.vpcID is required"},
+		{"no control plane", func(n *NicoCluster) { n.ControlPlane = nil }, "cluster.nico.controlPlane is required"},
+		{"no instance types", func(n *NicoCluster) { n.ControlPlane.InstanceTypePreference = nil }, "instanceTypePreference must list"},
+		{
+			"nil instance type",
+			func(n *NicoCluster) { n.ControlPlane.InstanceTypePreference = []openapi_types.UUID{{}} },
+			"instanceTypePreference[0]",
+		},
+		{"no ssh key groups", func(n *NicoCluster) { n.ControlPlane.SSHKeyGroupIDs = nil }, "sshKeyGroupIDs must list"},
+		{"no networking", func(n *NicoCluster) { n.ControlPlane.VpcPrefixIDs = nil }, "one of vpcPrefixIDs"},
 		{
 			"both networkings",
-			func(n *NicoCluster) { n.SubnetIDs = []string{"00000000-0000-0000-0000-000000000009"} },
+			func(n *NicoCluster) { n.ControlPlane.SubnetIDs = []openapi_types.UUID{id} },
 			"only one of vpcPrefixIDs and subnetIDs",
 		},
-		{"missing os profile", func(n *NicoCluster) { n.OSProfile = "" }, "osProfile is required"},
-		{"missing config profile", func(n *NicoCluster) { n.ConfigProfile = "" }, "configProfile is required"},
+		{"missing os profile", func(n *NicoCluster) { n.ControlPlane.OSProfile = "" }, "osProfile is required"},
+		{"missing config profile", func(n *NicoCluster) { n.ControlPlane.ConfigProfile = "" }, "configProfile is required"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			inv := minimalValid()
-			inv.Infrastructure = InfrastructureNico
-			inv.Cluster.Nodes = nil
-			inv.Cluster.Nico = validNico()
-			inv.Spire.ExternalAddress = "192.0.2.10"
+			makeNico(inv)
 			tt.mutate(inv.Cluster.Nico)
 			err := inv.Validate()
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
@@ -988,17 +1060,66 @@ func TestValidate_NicoCluster(t *testing.T) {
 	}
 }
 
+// uid returns the UUID 00000000-0000-0000-0000-00000000000n.
+func uid(n byte) openapi_types.UUID { return openapi_types.UUID{15: n} }
+
+// validNico is built from the API's own structs, as the site spec's block is.
 func validNico() *NicoCluster {
 	return &NicoCluster{
-		NodeCount:              3,
-		OrgID:                  "example-org",
-		SiteID:                 "00000000-0000-0000-0000-000000000001",
-		VpcID:                  "00000000-0000-0000-0000-000000000002",
-		InstanceTypePreference: []string{"00000000-0000-0000-0000-000000000003"},
-		VpcPrefixIDs:           []string{"00000000-0000-0000-0000-000000000004"},
-		SSHKeyGroupIDs:         []string{"00000000-0000-0000-0000-000000000005"},
-		OSProfile:              "example-os-profile",
-		ConfigProfile:          "example-config-profile",
+		NodeCount: 3,
+		Provider: &api.NicoClusterProvider{
+			OrgID:  "example-org",
+			SiteID: uid(1),
+			VpcID:  uid(2),
+		},
+		ControlPlane: &api.NicoControlPlaneProviderCreate{
+			InstanceTypePreference: []openapi_types.UUID{uid(3)},
+			VpcPrefixIDs:           []openapi_types.UUID{uid(4)},
+			SSHKeyGroupIDs:         []openapi_types.UUID{uid(5)},
+			OSProfile:              "example-os-profile",
+			ConfigProfile:          "example-config-profile",
+		},
+	}
+}
+
+// TestLoad_NicoBlocksAreTheAPIsStructs: the file's cluster.nico is decoded into
+// the generated API structs, UUIDs and all, and a field they do not declare is
+// refused like any other unknown field.
+func TestLoad_NicoBlocksAreTheAPIsStructs(t *testing.T) {
+	inv, err := Load(writeNicoTemp(t, nicoYAML))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := validNico()
+	// Compared as the JSON the API would carry: an empty list and an absent one
+	// are the same request.
+	gotJSON, _ := json.Marshal(inv.Cluster.Nico)
+	wantJSON, _ := json.Marshal(want)
+	if string(gotJSON) != string(wantJSON) {
+		t.Errorf("cluster.nico = %s, want %s", gotJSON, wantJSON)
+	}
+	if inv.BootstrapNico == nil || inv.BootstrapNico.Endpoint != "https://bootstrap-nico.example" || inv.BootstrapNico.APIName != "forge" {
+		t.Errorf("BootstrapNico = %+v", inv.BootstrapNico)
+	}
+
+	_, err = Load(writeNicoTemp(t, strings.Replace(nicoYAML, "      osProfile: example-os-profile", "      osProfle: typo", 1)))
+	if err == nil || !strings.Contains(err.Error(), "osprofle") {
+		t.Errorf("Load of a misspelled field = %v, want an error naming it", err)
+	}
+
+	_, err = Load(writeNicoTemp(t, strings.Replace(nicoYAML, "siteID: 00000000-0000-0000-0000-000000000001", "siteID: not-a-uuid", 1)))
+	if err == nil {
+		t.Error("Load accepted a siteID that is not a UUID")
+	}
+}
+
+// TestLoad_BootstrapNicoFilesMustExist: the token files the bootstrap
+// credentials name are checked at load, like spire.caCertFile.
+func TestLoad_BootstrapNicoFilesMustExist(t *testing.T) {
+	path := writeTemp(t, nicoYAML)
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "bootstrapNico.tokenFile") || !strings.Contains(err.Error(), "bootstrapPullSecret.tokenFile") {
+		t.Fatalf("Load error = %v, want both token files reported", err)
 	}
 }
 
@@ -1015,7 +1136,7 @@ func TestLoadInfrastructure(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			inv, err := Load(writeTemp(t, tt.yaml))
+			inv, err := Load(writeNicoTemp(t, tt.yaml))
 			if err != nil {
 				t.Fatalf("Load: %v", err)
 			}
@@ -1054,9 +1175,7 @@ func TestValidate_SpireExternalAddress(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			inv := minimalValid()
 			if tt.nico {
-				inv.Infrastructure = InfrastructureNico
-				inv.Cluster.Nodes = nil
-				inv.Cluster.Nico = validNico()
+				makeNico(inv)
 			}
 			inv.Spire.ExternalAddress = tt.address
 
@@ -1071,5 +1190,27 @@ func TestValidate_SpireExternalAddress(t *testing.T) {
 				t.Fatalf("Validate error = %v, want it to contain %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestNicoExampleLoads: cli/examples/sitespec-nico.yaml is a file an operator
+// will copy, so it has to load as written once the token files it names exist.
+func TestNicoExampleLoads(t *testing.T) {
+	example, err := os.ReadFile("../../../examples/sitespec-nico.yaml")
+	if err != nil {
+		t.Fatalf("read cli/examples/sitespec-nico.yaml: %v", err)
+	}
+	path := writeTemp(t, string(example))
+	for _, name := range []string{"bootstrap-nico.token", "bootstrap-registry.token"} {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(path), name), []byte("example-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inv, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !inv.IsNico() || inv.ControlPlaneCount() != 3 || inv.BootstrapNico == nil || inv.BootstrapPullSecret == nil {
+		t.Errorf("example loaded as %+v", inv)
 	}
 }

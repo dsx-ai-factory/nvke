@@ -262,21 +262,20 @@ type Config struct {
 	// NicoInfrastructure installs CAPNICo as the infrastructure provider, in
 	// place of cluster-api-provider-provisioned: the site's machines are
 	// allocated from a NICo site instead of taken from a hardcoded host list.
+	// This is for the bootstrap Kind cluster only; the finished controller's
+	// tenant-cluster NICo is configured separately and may be a different one.
 	NicoInfrastructure bool
 
-	// NicoCredentialsFile is a file of KEY=VALUE lines that becomes the
-	// nico-credentials Secret CAPNICo reads. Required with NicoInfrastructure.
-	// The keys are CAPNICo's own, documented in its getting-started guide; this
-	// package does not interpret them.
-	NicoCredentialsFile string
+	// CAPNICo is what the bootstrap CAPNICo is given to reach NICo and to pull
+	// its image. Required with NicoInfrastructure. Bootstrap NICo only; not the
+	// tenant-cluster NICo.
+	CAPNICo CAPNICoAccess
 
-	// CAPNICoChartRef is where helm pulls the CAPNICo chart from, as an OCI
-	// reference or a local path. Empty uses the bootstrap manifest's chart.
-	CAPNICoChartRef string
-
-	// CAPNICoVersion is the CAPNICo chart version. Empty uses the version the
-	// bootstrap manifest pins.
-	CAPNICoVersion string
+	// CAPNICoImage, when set, replaces the image the embedded CAPNICo manifest
+	// names, as repository@sha256:digest. It is the capnico-controller artifact
+	// of an NVKR release, so a bootstrap runs the bytes the release published
+	// rather than a tag. Empty runs the manifest's own image.
+	CAPNICoImage string
 
 	// NodeAgentPort is the port CWE dials nke-agent on. Empty leaves CWE's own
 	// default (15005) alone. It comes from the site spec, because it describes
@@ -335,10 +334,8 @@ func DefaultConfig() Config {
 		// it below.
 		SPIFFETrustDomain: getenv("NVKECTL_SPIFFE_TRUST_DOMAIN"),
 
-		ProvisionedProviderImage: envOr("NKECTL_CAPI_PROVISIONED_IMAGE", defaultImage(manifest.ComponentProvisioned, manifest.ImageManager)),
-		CWEPort:                  envPort("NKECTL_CONTROLLER_PORT", DefaultCWEPort),
-		CAPNICoChartRef:          os.Getenv("NKECTL_CAPNICO_CHART"),
-		CAPNICoVersion:           os.Getenv("NKECTL_CAPNICO_VERSION"),
+		ProvisionedProviderImage: envOr("NVKECTL_CAPI_PROVISIONED_IMAGE", defaultImage(manifest.ComponentProvisioned, manifest.ImageManager)),
+		CWEPort:                  envPort("NVKECTL_CONTROLLER_PORT", DefaultCWEPort),
 
 		HelmTimeout:  envDuration("NVKECTL_CONTROLLER_HELM_TIMEOUT", 5*time.Minute),
 		ReadyTimeout: envDuration("NVKECTL_CONTROLLER_READY_TIMEOUT", 5*time.Minute),

@@ -1,15 +1,21 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Example site spec for: nkectl bootstrap site -f <sitespec-file>
+# Example site spec for: nvkectl bootstrap site -f <sitespec-file>
 # with the control-plane machines allocated from a NICo site by CAPNICo,
 # instead of taken from a hardcoded list of hosts (examples/sitespec.yaml).
 #
-# Needs NICo API credentials, supplied at run time and never in this file:
-#   nkectl bootstrap site -f sitespec-nico.yaml --nico-credentials-file nico.env
-# See docs/sitespec.md for the file format.
+# The NICo described here is used ONLY to bootstrap the site controller's own
+# nodes. The NICo the finished site controller uses for tenant clusters is
+# configured separately and may be a different one.
 #
-# Every ID below is site-specific. Replace all of them. An instance type with no
+# bootstrapNico and bootstrapPullSecret are the same structs as
+# controllerStack.nico and controllerStack.pullSecret, which configure the tenant
+# NICo; a site spec can carry both. Tokens are paths to files, so this file holds
+# no credential. See docs/sitespec.md for the file format.
+#
+# Every ID below is a placeholder (the all-zero UUID is refused as unset).
+# Replace all of them. An instance type with no
 # allocation looks healthy and provisions nothing.
 
 clusterName: "nke-site"
@@ -21,19 +27,23 @@ cluster:
   nico:
     # Same meaning as the length of cluster.nodes: odd, at least one.
     nodeCount: 3
-    orgID: "example-org"
-    siteID: "00000000-0000-0000-0000-000000000000"
-    vpcID: "00000000-0000-0000-0000-000000000000"
-    # Ordered; index 0 is the first choice.
-    instanceTypePreference:
-      - "00000000-0000-0000-0000-000000000000"
-    # Exactly one of vpcPrefixIDs (native networking) or subnetIDs.
-    vpcPrefixIDs:
-      - "00000000-0000-0000-0000-000000000000"
-    sshKeyGroupIDs:
-      - "00000000-0000-0000-0000-000000000000"
-    osProfile: "example-os-profile"
-    configProfile: "example-cp-profile"
+    # The request's nico block, with the API's field names.
+    provider:
+      orgID: "example-org"
+      siteID: "00000000-0000-0000-0000-000000000001"
+      vpcID: "00000000-0000-0000-0000-000000000002"
+    # The control-plane config's nico block.
+    controlPlane:
+      # Ordered; index 0 is the first choice.
+      instanceTypePreference:
+        - "00000000-0000-0000-0000-000000000003"
+      # Exactly one of vpcPrefixIDs (native networking) or subnetIDs.
+      vpcPrefixIDs:
+        - "00000000-0000-0000-0000-000000000004"
+      sshKeyGroupIDs:
+        - "00000000-0000-0000-0000-000000000005"
+      osProfile: "example-os-profile"
+      configProfile: "example-cp-profile"
 
   k8sVersion: "1.34.2"
   cniName: "ovn-kubernetes"
@@ -46,6 +56,19 @@ cluster:
 # 30081), as seen from the network they are created on. An IP address or DNS name.
 spire:
   externalAddress: "192.0.2.10"
+
+# The NICo API the bootstrap CAPNICo calls. Not the tenant NICo.
+bootstrapNico:
+  endpoint: "https://nico.example"
+  orgID: "example-org"
+  apiName: "forge"
+  tokenFile: "bootstrap-nico.token"
+
+# The registry credential for the bootstrap CAPNICo's image pull secret.
+bootstrapPullSecret:
+  server: "ghcr.io"
+  username: "example-user"
+  tokenFile: "bootstrap-registry.token"
 
 registry:
   bootstrapRepo: "nvcr.io/org"

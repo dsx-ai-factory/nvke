@@ -279,7 +279,7 @@ license: ## Ensure license headers at code.
 # the controller's generator rather than copying it: the script discovers the
 # vendor tree by walking up, and takes the module and its packages from the
 # environment, so one implementation serves every module in the workspace.
-.PHONY: provider-manifest provider-manifest-check
+.PHONY: provider-manifest provider-manifest-check capnico-manifest capnico-manifest-check
 
 .PHONY: notices notices-check
 # The provisioned provider's kustomize base, rendered into the binary so nvkectl
@@ -313,7 +313,28 @@ provider-manifest: ## Regenerate the embedded provisioned-provider manifest.
 	} > $(PROVIDER_MANIFEST)
 	@echo "  wrote $(PROVIDER_MANIFEST)"
 
-provider-manifest-check: ## Verify the embedded provisioned-provider manifest is up to date.
+# The CAPNICo manifest the bootstrap installs when the site spec selects
+# infrastructure nico. deploy/nico/capnico/capnico.yaml is the source of truth:
+# it is the manifest the site controller's own deploy path installs, with its two
+# edits (the reboot/repair annotation prefixes and the pull secret), and the
+# bootstrap installs the same bytes so the two cannot pin different CAPNICos.
+# The copy is embedded in nvkectl, because go:embed cannot reach outside this
+# module and the bootstrap has to work from the binary alone, without a checkout.
+CAPNICO_SOURCE   := ../deploy/nico/capnico/capnico.yaml
+CAPNICO_MANIFEST := internal/bootstrap/controllerdeploy/manifests/capnico.yaml
+
+capnico-manifest: ## Copy the deploy path's CAPNICo manifest into the embedded manifests.
+	@cp $(CAPNICO_SOURCE) $(CAPNICO_MANIFEST)
+	@echo "  wrote $(CAPNICO_MANIFEST)"
+
+capnico-manifest-check: ## Verify the embedded CAPNICo manifest is the deploy path's.
+	@git ls-files --error-unmatch $(CAPNICO_MANIFEST) > /dev/null 2>&1 \
+		|| { echo "$(CAPNICO_MANIFEST) is not tracked by git. Run 'make -C cli capnico-manifest' and commit it."; exit 1; }
+	@cmp -s $(CAPNICO_SOURCE) $(CAPNICO_MANIFEST) \
+		|| { echo "ERROR: $(CAPNICO_MANIFEST) differs from deploy/nico/capnico/capnico.yaml. Run 'make -C cli capnico-manifest' and commit it."; exit 1; }
+	@echo "  $(CAPNICO_MANIFEST) is up to date."
+
+provider-manifest-check: capnico-manifest-check ## Verify the embedded provider manifests are up to date.
 	@# Tracking first, as notices-check does: git diff says nothing about an
 	@# untracked path, so a never-committed manifest would pass silently.
 	@git ls-files --error-unmatch $(PROVIDER_MANIFEST) > /dev/null 2>&1 \

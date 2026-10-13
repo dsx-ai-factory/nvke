@@ -4,13 +4,16 @@
 package controllerdeploy
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/manifest"
+	"gopkg.in/yaml.v3"
 )
 
 // TestInstallCAPI_InstallsCoreThenTheProvider pins the two things that are easy
@@ -202,8 +205,15 @@ func nicoTestConfig(t *testing.T) Config {
 	cfg := testConfig(t)
 	cfg.ProvisionedProviderImage = ""
 	cfg.NicoInfrastructure = true
-	cfg.NicoCredentialsFile = "/tmp/nico.env"
-	cfg.CAPNICoVersion = "9.9.9"
+	cfg.CAPNICo = CAPNICoAccess{
+		Endpoint:         "https://nico.example",
+		OrgID:            "example-org",
+		APIName:          "forge",
+		Token:            "example-nico-token",
+		RegistryServer:   "ghcr.io",
+		RegistryUsername: "example-user",
+		RegistryToken:    "example-registry-token",
+	}
 	cfg.SPIREExternalAddress = "192.0.2.10"
 	return cfg
 }
@@ -217,13 +227,13 @@ func TestDeploy_NicoInstallsCAPNICoInsteadOfTheProvisionedProvider(t *testing.T)
 		t.Fatalf("Deploy: %v", err)
 	}
 
-	capnico := callIndex(runner, "upgrade --install "+capnicoReleaseName)
+	capnico := callIndex(runner, "deployment/"+capnicoDeployment)
 	cwe := callIndex(runner, "upgrade --install "+cweReleaseName)
 	if capnico < 0 || cwe < 0 || capnico > cwe {
 		t.Fatalf("want CAPNICo (%d) installed before CWE (%d)", capnico, cwe)
 	}
-	if got := callIndex(runner, "--server-side"); got >= 0 {
-		t.Errorf("the provisioned provider was applied (call %d) in nico mode", got)
+	if got := callIndex(runner, "provisioned-controller-manager"); got >= 0 {
+		t.Errorf("the provisioned provider was installed (call %d) in nico mode", got)
 	}
 }
 
@@ -251,81 +261,115 @@ func TestDeploy_CWEAcceptsTheProviderPayloadTheBootstrapSends(t *testing.T) {
 	}
 }
 
-// TestInstallCAPNICo_DefaultsComeFromTheBootstrapManifest: with no override, the
-// chart and version are the ones the manifest pins, which is what `nkectl get
-// bootstrap-manifest` tells an operator will be pulled.
-func TestInstallCAPNICo_DefaultsComeFromTheBootstrapManifest(t *testing.T) {
-	cfg := nicoTestConfig(t)
-	cfg.CAPNICoVersion = ""
-	chart, err := manifestChart(manifest.ComponentCAPNICo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner := &fakeRunner{outputs: []fakeOutput{{}, {err: errors.New("not found")}, {}}}
-
-	if err := New(runner, nil).installCAPNICo(context.Background(), "/tmp/kubeconfig", cfg, time.Minute); err != nil {
+// TestInstallCAPNICo_AppliesSecretsThenTheManifest: the Secrets and their
+// namespace go first, because the manifest's Deployment starts pulling its
+// image as soon as it exists, and the manifest is applied server-side because
+// its CRDs are too large for a client-side apply. The rollout is waited for.
+func TestInstallCAPNICo_AppliesSecretsThenTheManifest(t *testing.T) {
+	runner := &fakeRunner{}
+	if err := New(runner, nil).installCAPNICo(context.Background(), "/tmp/kubeconfig", nicoTestConfig(t), time.Minute); err != nil {
 		t.Fatalf("installCAPNICo: %v", err)
 	}
 
-	args := joinArgs(runner.calls[callIndex(runner, "upgrade --install "+capnicoReleaseName)].args)
-	for _, want := range []string{strings.TrimRight(chart.Repo, "/") + "/" + chart.Name, "--version " + chart.Version} {
-		if !strings.Contains(args, want) {
-			t.Errorf("helm args = %q, want %q", args, want)
+	var applies []string
+	for _, call := range runner.calls {
+		if args := joinArgs(call.args); strings.Contains(args, "apply") {
+			applies = append(applies, args)
 		}
+	}
+	if len(applies) != 2 {
+		t.Fatalf("want two applies (secrets, manifest), got %d: %v", len(applies), applies)
+	}
+	for _, args := range applies {
+		for _, want := range []string{"--server-side", "--force-conflicts", "--kubeconfig /tmp/kubeconfig"} {
+			if !strings.Contains(args, want) {
+				t.Errorf("apply args = %q, want %q", args, want)
+			}
+		}
+		// Nothing a credential could be read from passes on a command line.
+		for _, secret := range []string{"example-nico-token", "example-registry-token"} {
+			if strings.Contains(args, secret) {
+				t.Errorf("apply args = %q carry the credential %q", args, secret)
+			}
+		}
+	}
+	if !strings.Contains(applies[0], "nvkectl-capnico-secrets-") || !strings.Contains(applies[1], "nvkectl-capnico-") {
+		t.Errorf("want the secrets applied before the manifest, got %v", applies)
+	}
+	rollout := callIndex(runner, "-n "+capnicoNamespace+" rollout status deployment/"+capnicoDeployment)
+	if rollout < 0 {
+		t.Errorf("did not wait for the CAPNICo rollout; calls: %+v", runner.calls)
 	}
 }
 
-// TestInstallCAPNICo_Credentials covers the Secret step. The chart has to be
-// installed first -- it creates capnico-system itself and fails if the
-// namespace exists -- and the Secret is built from the file's path, so no
-// credential value passes through a command line. A re-run against a kept
-// bootstrap cluster finds the earlier Secret, which `kubectl create` would
-// refuse to replace.
-func TestInstallCAPNICo_Credentials(t *testing.T) {
-	tests := []struct {
-		name        string
-		secretFound bool
-	}{
-		{"creates the Secret when there is none", false},
-		{"deletes the old Secret before creating the new one", true},
+// TestCAPNICoSecretsManifest: the Secrets carry the names, keys and namespace
+// CAPNICo and its manifest expect, which are the ones the deploy path's
+// 20-nico-credentials and 30-ghcr-imagepull templates render, and values that
+// need escaping survive it.
+func TestCAPNICoSecretsManifest(t *testing.T) {
+	access := nicoTestConfig(t).CAPNICo
+	access.Token = `tok"en\with-escapes`
+
+	raw, err := capnicoSecretsManifest(access)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			getSecret := fakeOutput{err: errors.New("not found")}
-			if tt.secretFound {
-				getSecret = fakeOutput{}
-			}
-			runner := &fakeRunner{outputs: []fakeOutput{{}, getSecret, {}, {}}}
+	var list struct {
+		Items []struct {
+			Kind     string
+			Type     string
+			Metadata struct{ Name, Namespace string }
+			Data     map[string]string `json:"stringData"`
+		}
+	}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, raw)
+	}
+	if len(list.Items) != 3 {
+		t.Fatalf("want a Namespace and two Secrets, got %d items", len(list.Items))
+	}
+	if ns := list.Items[0]; ns.Kind != "Namespace" || ns.Metadata.Name != capnicoNamespace {
+		t.Errorf("first item = %+v, want the %s Namespace", ns, capnicoNamespace)
+	}
+	creds, pull := list.Items[1], list.Items[2]
+	if creds.Metadata.Name != nicoCredentialsSecret || creds.Metadata.Namespace != capnicoNamespace {
+		t.Errorf("credentials Secret = %+v", creds.Metadata)
+	}
+	for key, want := range map[string]string{"endpoint": access.Endpoint, "orgID": access.OrgID, "apiName": access.APIName, "token": access.Token} {
+		if creds.Data[key] != want {
+			t.Errorf("nico-credentials[%s] = %q, want %q", key, creds.Data[key], want)
+		}
+	}
+	if pull.Metadata.Name != capnicoPullSecret || pull.Type != "kubernetes.io/dockerconfigjson" {
+		t.Errorf("pull Secret = %+v type %q", pull.Metadata, pull.Type)
+	}
+	var docker struct {
+		Auths map[string]struct{ Username, Password string }
+	}
+	if err := json.Unmarshal([]byte(pull.Data[".dockerconfigjson"]), &docker); err != nil {
+		t.Fatalf("dockerconfigjson: %v", err)
+	}
+	if got := docker.Auths["ghcr.io"]; got.Username != "example-user" || got.Password != "example-registry-token" {
+		t.Errorf("dockerconfigjson auth = %+v", got)
+	}
+}
 
-			if err := New(runner, nil).installCAPNICo(context.Background(), "/tmp/kubeconfig", nicoTestConfig(t), time.Minute); err != nil {
-				t.Fatalf("installCAPNICo: %v", err)
-			}
-
-			helm := callIndex(runner, "upgrade --install "+capnicoReleaseName)
-			del := callIndex(runner, "delete secret "+nicoCredentialsSecret)
-			create := callIndex(runner, "create secret generic "+nicoCredentialsSecret)
-			if helm < 0 || create < 0 || helm > create {
-				t.Fatalf("want the chart (%d) installed before the Secret (%d); calls: %+v", helm, create, runner.calls)
-			}
-			if tt.secretFound && (del < 0 || del > create) {
-				t.Errorf("want the old Secret deleted (%d) before the new one is created (%d)", del, create)
-			}
-			if !tt.secretFound && del >= 0 {
-				t.Error("deleted a Secret that was not there")
-			}
-			helmArgs := joinArgs(runner.calls[helm].args)
-			for _, want := range []string{
-				"oci://ghcr.io/dsx-ai-factory/cluster-api-provider-nico/charts/capi-provider-nico",
-				"--version 9.9.9", "--namespace " + capnicoNamespace, "--create-namespace", "--wait",
-			} {
-				if !strings.Contains(helmArgs, want) {
-					t.Errorf("helm args = %q, want %q", helmArgs, want)
-				}
-			}
-			if got := joinArgs(runner.calls[create].args); !strings.Contains(got, "--from-env-file=/tmp/nico.env") {
-				t.Errorf("create args = %q, want the credentials file passed by path", got)
-			}
-		})
+// TestEmbeddedCAPNICoManifest: the manifest names the pull secret the install
+// creates and the Deployment it waits for. If a bump of deploy/nico/capnico
+// renames either, this fails instead of a bootstrap hanging.
+func TestEmbeddedCAPNICoManifest(t *testing.T) {
+	raw, err := manifestsFS.ReadFile(capnicoManifestFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"name: " + capnicoNamespace,
+		"- name: " + capnicoPullSecret,
+		"name: " + capnicoDeployment,
+	} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("embedded CAPNICo manifest lacks %q", want)
+		}
 	}
 }
 
@@ -337,16 +381,20 @@ func TestInstallCAPNICo_Errors(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "no credentials file",
-			mutate:  func(cfg *Config) { cfg.NicoCredentialsFile = "" },
-			wantErr: "NicoCredentialsFile",
+			name:    "no NICo token",
+			mutate:  func(cfg *Config) { cfg.CAPNICo.Token = "" },
+			wantErr: "CAPNICo.Token",
 		},
 		{
-			// The chart is an OCI artifact, which Helm 3 cannot install.
-			name:    "helm failure names what the chart needs",
+			name:    "no registry credential",
+			mutate:  func(cfg *Config) { cfg.CAPNICo.RegistryToken = "" },
+			wantErr: "CAPNICo.RegistryToken",
+		},
+		{
+			name:    "apply failure",
 			mutate:  func(*Config) {},
 			outputs: []fakeOutput{{err: errors.New("boom")}},
-			wantErr: "helm v4",
+			wantErr: "applying CAPNICo",
 		},
 	}
 	for _, tt := range tests {
@@ -362,119 +410,93 @@ func TestInstallCAPNICo_Errors(t *testing.T) {
 	}
 }
 
-// spireInstallCall returns the helm arguments of the SPIRE release install.
-func spireInstallCall(t *testing.T, runner *fakeRunner) string {
-	t.Helper()
-	i := callIndex(runner, "upgrade --install "+spireReleaseName+" ")
-	if i < 0 {
-		t.Fatal("SPIRE was not installed")
+// TestEmbeddedCAPNICoManifest_IsTheDeployPathsManifest: the bootstrap installs
+// the same CAPNICo, at the same pin, as the site controller's deploy path. The
+// embedded copy is made by `make -C cli capnico-manifest`; this fails when it
+// is not the file it was copied from, so a bump of one cannot leave the other.
+func TestEmbeddedCAPNICoManifest_IsTheDeployPathsManifest(t *testing.T) {
+	source, err := os.ReadFile("../../../../deploy/nico/capnico/capnico.yaml")
+	if err != nil {
+		t.Fatalf("reading the deploy path's CAPNICo manifest: %v", err)
 	}
-	return joinArgs(runner.calls[i].args)
-}
-
-// TestDeploy_SPIREAttestation covers what the SPIRE install and the CWE install
-// each carry, by infrastructure. The two places have to agree: nodes read the
-// address CWE writes into their userdata, and reach SPIRE through the Service
-// the install publishes.
-func TestDeploy_SPIREAttestation(t *testing.T) {
-	withThumbprints := testConfig(t)
-	withThumbprints.TPMEKFingerprints = []string{strings.Repeat("a", 64)}
-	noMTLS := nicoTestConfig(t)
-	noMTLS.DisableMTLS = true
-	noMTLS.SPIREExternalAddress = ""
-
-	tests := []struct {
-		name         string
-		cfg          Config
-		spireWant    []string
-		spireAbsent  []string
-		cweWant      []string
-		wantNodePort bool
-		wantSPIRE    bool
-	}{
-		{
-			name:         "nico reads the allowlist CWE keeps, and nodes get the host address",
-			cfg:          nicoTestConfig(t),
-			spireWant:    []string{"nodeAttestor.tpmDirect.enabled=true", "extraVolumes[0].configMap.name=tpm-pubhashes", "extraVolumes[0].configMap.optional=true", "extraVolumeMounts[0].mountPath=/run/spire/data/tpm-direct/hashes"},
-			spireAbsent:  []string{"tpmDirect.hashes["},
-			cweWant:      []string{"spiffe.spire.serverAddress=192.0.2.10", "spiffe.spire.serverPort=30081"},
-			wantNodePort: true,
-			wantSPIRE:    true,
-		},
-		{
-			name:         "provisioned with thumbprints keeps its static allowlist",
-			cfg:          withThumbprints,
-			spireWant:    []string{"tpmDirect.hashes[0]=" + strings.Repeat("a", 64)},
-			spireAbsent:  []string{"extraVolumes", "extraVolumeMounts"},
-			cweWant:      []string{"spiffe.spire.serverAddress=" + spireServiceHost(), "spiffe.spire.serverPort=" + spireServerPort},
-			wantNodePort: true,
-			wantSPIRE:    true,
-		},
-		{
-			name:        "provisioned with no thumbprints has no TPM attestor and is not published",
-			cfg:         testConfig(t),
-			spireAbsent: []string{"tpmDirect", "extraVolumes"},
-			cweWant:     []string{"spiffe.spire.serverAddress=" + spireServiceHost()},
-			wantSPIRE:   true,
-		},
-		{
-			name:    "nico without SPIFFE installs no SPIRE",
-			cfg:     noMTLS,
-			cweWant: []string{"spiffe.enabled=false"},
-		},
+	embedded, err := manifestsFS.ReadFile(capnicoManifestFile)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runner := &fakeRunner{}
-			if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", tt.cfg); err != nil {
-				t.Fatalf("Deploy: %v", err)
-			}
-
-			if tt.wantSPIRE {
-				spire := spireInstallCall(t, runner)
-				for _, want := range tt.spireWant {
-					if !strings.Contains(spire, want) {
-						t.Errorf("SPIRE install = %q, want %q", spire, want)
-					}
-				}
-				for _, absent := range tt.spireAbsent {
-					if strings.Contains(spire, absent) {
-						t.Errorf("SPIRE install = %q, must not contain %q", spire, absent)
-					}
-				}
-			} else if callIndex(runner, "upgrade --install "+spireReleaseName+" ") >= 0 {
-				t.Error("SPIRE was installed with SPIFFE disabled")
-			}
-
-			cwe := joinArgs(runner.calls[callIndex(runner, "upgrade --install "+cweReleaseName)].args)
-			for _, want := range tt.cweWant {
-				if !strings.Contains(cwe, want) {
-					t.Errorf("cwe install = %q, want %q", cwe, want)
-				}
-			}
-			if published := hasPublishedSpire(runner); published != tt.wantNodePort {
-				t.Errorf("SPIRE published on a NodePort = %t, want %t", published, tt.wantNodePort)
-			}
-		})
+	if !bytes.Equal(source, embedded) {
+		t.Error("the embedded CAPNICo manifest differs from deploy/nico/capnico/capnico.yaml; run `make -C cli capnico-manifest`")
 	}
 }
 
-// hasPublishedSpire reports whether the SPIRE NodePort Service was applied.
-func hasPublishedSpire(runner *fakeRunner) bool {
-	for _, manifest := range runner.applied {
-		if strings.Contains(manifest, "spire-server-external") {
-			return true
+// TestCAPNICoManifest_ReplacesTheImage: a release's digest replaces the one image
+// the manifest names, and nothing else changes. With no image the manifest is
+// untouched.
+func TestCAPNICoManifest_ReplacesTheImage(t *testing.T) {
+	raw, err := manifestsFS.ReadFile(capnicoManifestFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const image = "registry.example/capnico/controller@sha256:" +
+		"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+	same, err := capnicoManifest(raw, "")
+	if err != nil || !bytes.Equal(same, raw) {
+		t.Fatalf("capnicoManifest with no image changed the manifest (err %v)", err)
+	}
+
+	got, err := capnicoManifest(raw, image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "        image: "+image+"\n") {
+		t.Errorf("manifest does not run %s", image)
+	}
+	if strings.Contains(string(got), "cluster-api-provider-nico/controller:v") {
+		t.Error("the manifest's own image is still there")
+	}
+	// Only that line differs.
+	gotLines, rawLines := strings.Split(string(got), "\n"), strings.Split(string(raw), "\n")
+	if len(gotLines) != len(rawLines) {
+		t.Fatalf("line count %d, want %d", len(gotLines), len(rawLines))
+	}
+	changed := 0
+	for i := range gotLines {
+		if gotLines[i] != rawLines[i] {
+			changed++
 		}
 	}
-	return false
+	if changed != 1 {
+		t.Errorf("%d lines changed, want 1", changed)
+	}
 }
 
-func TestDeploy_NicoRequiresAnExternalSPIREAddress(t *testing.T) {
-	cfg := nicoTestConfig(t)
-	cfg.SPIREExternalAddress = ""
+func TestCAPNICoManifest_RefusesAmbiguousImages(t *testing.T) {
+	two := []byte("image: a/b:1\nimage: c/d:2\n")
+	if _, err := capnicoManifest(two, "x/y@sha256:"+strings.Repeat("a", 64)); err == nil || !strings.Contains(err.Error(), "2 images") {
+		t.Errorf("error = %v, want one about 2 images", err)
+	}
+}
 
-	err := New(&fakeRunner{}, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg)
-	if err == nil || !strings.Contains(err.Error(), "SPIREExternalAddress") {
-		t.Fatalf("Deploy error = %v, want one naming SPIREExternalAddress", err)
+// TestCAPNICoArtifact_IsTheOneTheDeployPathBinds: the bootstrap asks a release
+// for the artifact deploy/nico/capnico/release.yaml binds to the manifest, and
+// that file's image is the one the embedded manifest runs.
+func TestCAPNICoArtifact_IsTheOneTheDeployPathBinds(t *testing.T) {
+	data, err := os.ReadFile("../../../../deploy/nico/capnico/release.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rel struct{ Image, Artifact string }
+	if err := yaml.Unmarshal(data, &rel); err != nil {
+		t.Fatal(err)
+	}
+	if rel.Artifact != CAPNICoArtifact {
+		t.Errorf("release.yaml binds artifact %q, the bootstrap asks for %q", rel.Artifact, CAPNICoArtifact)
+	}
+	embedded, err := manifestsFS.ReadFile(capnicoManifestFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(embedded), "image: "+rel.Image+"\n") {
+		t.Errorf("release.yaml names image %q, which the embedded manifest does not run", rel.Image)
 	}
 }

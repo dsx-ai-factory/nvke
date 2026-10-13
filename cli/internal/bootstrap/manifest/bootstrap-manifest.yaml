@@ -95,22 +95,6 @@ components:
         ref: ghcr.io/spiffe/spire-tpm-plugin-tpm-attestor-server:v1.9.0
         digest: sha256:9d3c69f9a9a59b274e7d6d9f8e75d89691d7d9204f2063d7917685a17b8828dc
 
-  # CAPNICo, the NICo infrastructure provider. Installed only when the site spec
-  # asks for infrastructure: nico. The chart is an OCI artifact, so the chart
-  # reference is repo/name. The chart carries its own controller image, which
-  # defaults to the chart's appVersion; it is pulled, not side-loaded.
-  # NKECTL_CAPNICO_CHART and NKECTL_CAPNICO_VERSION override the chart.
-  cluster-api-provider-nico:
-    chart:
-      repo: oci://ghcr.io/dsx-ai-factory/cluster-api-provider-nico/charts
-      name: capi-provider-nico
-      version: "0.0.45"
-      sha256: ce12c117ce86aec1877c7457954739d00d4bded158bbc847b0602dcd46dcf6c8
-    images:
-      manager:
-        ref: ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.0.45
-        digest: sha256:bca9d77a25e605a5c39faf0a71b45b484d363edc4535f8a37aa811a639738595
-
   # Built by you from controller/Dockerfile. The ref below is the default:
   # the tag `make -C cli images` builds, side-loaded from the local image
   # store. --controller-image or NVKECTL_CONTROLLER_IMAGE overrides it. The controller chart ships inside

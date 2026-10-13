@@ -47,6 +47,44 @@ type StackNico struct {
 	TokenFile string `yaml:"tokenFile"`
 }
 
+// appendValueChecks adds every problem with the NICo API credentials to v:
+// each field set, the endpoint an http or https URL. path names the block, as
+// controllerStack.nico or bootstrapNico.
+func (n *StackNico) appendValueChecks(v *validator, path string) {
+	for _, f := range [][2]string{
+		{"endpoint", n.Endpoint}, {"orgID", n.OrgID}, {"apiName", n.APIName}, {"tokenFile", n.TokenFile},
+	} {
+		if f[1] == "" {
+			v.addf("%s.%s is required", path, f[0])
+		}
+	}
+	if ep := n.Endpoint; ep != "" && !validHTTPEndpoint(ep) {
+		v.addf("%s.endpoint %q must be an http or https URL", path, ep)
+	}
+}
+
+// validHTTPEndpoint reports whether ep is an http or https URL with a host.
+func validHTTPEndpoint(ep string) bool {
+	u, err := url.Parse(ep)
+	return err == nil && u.Host != "" && (u.Scheme == "http" || u.Scheme == "https")
+}
+
+// StackPullSecret is the registry credential for the CAPNICo image pull secret.
+type StackPullSecret struct {
+	Server    string `yaml:"server"`
+	Username  string `yaml:"username"`
+	TokenFile string `yaml:"tokenFile"`
+}
+
+// appendValueChecks adds every unset field of the registry credential to v.
+func (p *StackPullSecret) appendValueChecks(v *validator, path string) {
+	for _, f := range [][2]string{{"server", p.Server}, {"username", p.Username}, {"tokenFile", p.TokenFile}} {
+		if f[1] == "" {
+			v.addf("%s.%s is required", path, f[0])
+		}
+	}
+}
+
 // StackTenant is the login rendered into every tenant node's cloud-init.
 type StackTenant struct {
 	User         string `yaml:"user"`
@@ -163,7 +201,7 @@ func (in *ControllerStack) appendValueChecks(v *validator) {
 		}
 	}
 	if ep := in.Nico.Endpoint; ep != "" && !strings.HasPrefix(ep, PlaceholderPrefix) {
-		if u, err := url.Parse(ep); err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		if !validHTTPEndpoint(ep) {
 			v.addf("controllerStack.nico.endpoint %q must be an http or https URL", ep)
 		}
 	}

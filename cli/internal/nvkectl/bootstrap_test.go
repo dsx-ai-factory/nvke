@@ -1783,39 +1783,100 @@ func TestControllerImageOrder(t *testing.T) {
 	}
 }
 
-// TestRequiredNicoCredentials
-// if external nico is being used, ensure the credentials are present
-func TestRequireNicoCredentials(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "nico.env")
-	if err := os.WriteFile(file, []byte("endpoint=https://nico.example\n"), 0o600); err != nil {
-		t.Fatal(err)
+// TestCapnicoAccess: the bootstrap CAPNICo's credentials come from the site
+// spec's bootstrapNico and bootstrapPullSecret, with the token files read and
+// trimmed, and only for infrastructure nico.
+func TestCapnicoAccess(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
 	}
+	nicoToken := write("nico.token", "example-nico-token\n")
+	registryToken := write("registry.token", "example-registry-token\n")
+	empty := write("empty.token", " \n")
+
+	nico := func(nicoFile, registryFile string) *sitespec.SiteSpec {
+		return &sitespec.SiteSpec{
+			Infrastructure:      sitespec.InfrastructureNico,
+			BootstrapNico:       &sitespec.StackNico{Endpoint: "https://nico.example", OrgID: "example-org", APIName: "forge", TokenFile: nicoFile},
+			BootstrapPullSecret: &sitespec.StackPullSecret{Server: "ghcr.io", Username: "example-user", TokenFile: registryFile},
+		}
+	}
+
+	t.Run("provisioned needs nothing", func(t *testing.T) {
+		got, err := capnicoAccess(&sitespec.SiteSpec{Infrastructure: sitespec.InfrastructureProvisioned})
+		if err != nil || got != (controllerdeploy.CAPNICoAccess{}) {
+			t.Fatalf("capnicoAccess = %+v, %v; want the zero value", got, err)
+		}
+	})
+	t.Run("nico reads both token files", func(t *testing.T) {
+		got, err := capnicoAccess(nico(nicoToken, registryToken))
+		if err != nil {
+			t.Fatalf("capnicoAccess: %v", err)
+		}
+		want := controllerdeploy.CAPNICoAccess{
+			Endpoint: "https://nico.example", OrgID: "example-org", APIName: "forge", Token: "example-nico-token",
+			RegistryServer: "ghcr.io", RegistryUsername: "example-user", RegistryToken: "example-registry-token",
+		}
+		if got != want {
+			t.Errorf("capnicoAccess = %+v, want %+v", got, want)
+		}
+	})
+	for name, tt := range map[string]struct {
+		inv     *sitespec.SiteSpec
+		wantErr string
+	}{
+		"missing NICo token file":     {nico(filepath.Join(dir, "absent"), registryToken), "bootstrapNico.tokenFile"},
+		"missing registry token file": {nico(nicoToken, filepath.Join(dir, "absent")), "bootstrapPullSecret.tokenFile"},
+		"empty NICo token file":       {nico(empty, registryToken), "is empty"},
+		"no credentials in the spec":  {&sitespec.SiteSpec{Infrastructure: sitespec.InfrastructureNico}, "bootstrapNico"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := capnicoAccess(tt.inv); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestCapnicoReleaseImage: a release's capnico-controller artifact becomes the
+// bootstrap CAPNICo image as repository@digest, for the architecture asked, and
+// only with infrastructure nico.
+func TestCapnicoReleaseImage(t *testing.T) {
+	const release = "../../../deploy/testdata/nvkr-release/valid.json"
 	nico := &sitespec.SiteSpec{Infrastructure: sitespec.InfrastructureNico}
 	provisioned := &sitespec.SiteSpec{Infrastructure: sitespec.InfrastructureProvisioned}
 
 	tests := []struct {
 		name    string
 		inv     *sitespec.SiteSpec
-		path    string
+		release string
+		arch    string
+		want    string
 		wantErr string
 	}{
-		{"provisioned needs nothing", provisioned, "", ""},
-		{"nico with a readable file", nico, file, ""},
-		{"nico without a file", nico, "", "--nico-credentials-file"},
-		{"nico with a missing file", nico, filepath.Join(t.TempDir(), "absent"), "NICo credentials file"},
-		{"nico with a directory", nico, t.TempDir(), "is a directory"},
+		{"no release leaves the manifest's image", nico, "", "linux/amd64", "", ""},
+		{"amd64", nico, release, "linux/amd64", "ghcr.io/example/recipes/capnico-controller@sha256:" + strings.Repeat("d", 64), ""},
+		{"arm64", nico, release, "linux/arm64", "ghcr.io/example/recipes/capnico-controller-arm64@sha256:" + strings.Repeat("e", 64), ""},
+		{"provisioned refuses a release", provisioned, release, "linux/amd64", "", "only applies with infrastructure nico"},
+		{"missing release file", nico, filepath.Join(t.TempDir(), "absent.json"), "linux/amd64", "", "absent.json"},
+		{"unknown architecture", nico, release, "linux/riscv64", "", "arch linux/riscv64"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := requireNicoCredentials(tt.inv, tt.path)
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("requireNicoCredentials: %v", err)
+			got, err := capnicoReleaseImage(tt.inv, tt.release, tt.arch)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
+			if err != nil || got != tt.want {
+				t.Fatalf("capnicoReleaseImage = %q, %v; want %q", got, err, tt.want)
 			}
 		})
 	}

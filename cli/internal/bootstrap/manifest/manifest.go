@@ -22,7 +22,6 @@ const (
 	ComponentSPIRE       = "spire"
 	ComponentController  = "controller"
 	ComponentProvisioned = "cluster-api-provider-provisioned"
-	ComponentCAPNICo     = "cluster-api-provider-nico"
 
 	// Image keys under the two components this repository builds.
 	ImageController = "controller"

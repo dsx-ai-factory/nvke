@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	// Aliased: this file has a local variable named engine.
 	bootstrapengine "github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/engine"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/etcdkey"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/spireentrydump"
@@ -71,13 +73,14 @@ type bootstrapSiteOptions struct {
 	diagnosticsDir    string
 	keepBootstrapKind bool
 
+	// release is an NVKR release description. With infrastructure nico its
+	// capnico-controller artifact replaces the CAPNICo image, as the deploy
+	// path's render does. arch selects the artifact's architecture.
+	release string
+	arch    string
+
 	// disableMTLS stands the site up without SPIFFE, for bring-up debugging.
 	disableMTLS bool
-
-	// nicoCredentialsFile is a file of KEY=VALUE lines that becomes the
-	// nico-credentials Secret CAPNICo reads. Required when the site spec's
-	// infrastructure is nico; unused otherwise.
-	nicoCredentialsFile string
 
 	// clusterTimeout bounds the wait for CWE to finish provisioning the
 	// cluster, from the create call to every node having joined.
@@ -196,14 +199,17 @@ site spec file format.`,
 		"Controller image to deploy (overrides NVKECTL_CONTROLLER_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.provisionedProviderImage, "provisioned-provider-image", "",
 		"Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)")
+	cmd.Flags().StringVar(&opts.release, "release", "",
+		"NVKR release description whose "+controllerdeploy.CAPNICoArtifact+" artifact replaces the bootstrap CAPNICo image "+
+			"with its pinned digest, as `render deploy-path --release` does for the site controller's CAPNICo. "+
+			"Only with infrastructure nico.")
+	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH,
+		"Architecture of the release artifact to use: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. "+
+			"Only with --release.")
 	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
 		envOrDefault("NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "cluster-diagnostics"),
 		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
 			"Overrides NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.")
-	cmd.Flags().StringVar(&opts.nicoCredentialsFile, "nico-credentials-file",
-		os.Getenv("NKECTL_NICO_CREDENTIALS_FILE"),
-		"File of KEY=VALUE lines holding the NICo API credentials CAPNICo reads. Required when the "+
-			"site spec's infrastructure is nico. Overrides NKECTL_NICO_CREDENTIALS_FILE.")
 	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
 		"Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. "+
 			"The agents must be running with --disable-mtls too. Development only.")
@@ -333,12 +339,12 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err != nil {
 		return err
 	}
-	cweCfg.NicoCredentialsFile = opts.nicoCredentialsFile
-	// The credentials are checked here, before a Kind cluster exists: a missing
-	// file otherwise surfaces minutes in, from kubectl.
-	if err := requireNicoCredentials(inv, opts.nicoCredentialsFile); err != nil {
+
+	image, err := capnicoReleaseImage(inv, opts.release, opts.arch)
+	if err != nil {
 		return err
 	}
+	cweCfg.CAPNICoImage = image
 
 	// The controller API has to be reachable from this host: this command deploys it
 	// and then calls it. A host port mapping rather than the node container's
@@ -899,10 +905,15 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 		return cfg, errors.New("--controller-image and NVKECTL_CONTROLLER_IMAGE are not set and the bootstrap manifest carries no default controller image")
 	}
 	cfg.NicoInfrastructure = inv.IsNico()
+	access, err := capnicoAccess(inv)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.CAPNICo = access
 	cfg.SPIREExternalAddress = inv.Spire.ExternalAddress
-	// CAPNICo comes from a chart, so the provisioned provider's image is not used.
+	// CAPNICo comes from its own manifest, so the provisioned provider's image is not used.
 	if cfg.ProvisionedProviderImage == "" && !cfg.NicoInfrastructure {
-		return cfg, errors.New("--provisioned-provider-image and NKECTL_CAPI_PROVISIONED_IMAGE is not set and the bootstrap manifest carries no default provisioned-provider image")
+		return cfg, errors.New("--provisioned-provider-image and NVKECTL_CAPI_PROVISIONED_IMAGE is not set and the bootstrap manifest carries no default provisioned-provider image")
 	}
 
 	// SPIRE is told the Kind cluster's own name. The identity trust domain comes
@@ -996,25 +1007,72 @@ func cweImages(cfg controllerdeploy.Config) []string {
 	return []string{cfg.CWEImage, cfg.ProvisionedProviderImage}
 }
 
-// requireNicoCredentials refuses a nico bootstrap that has no readable
-// credentials file. It does nothing for any other infrastructure.
-func requireNicoCredentials(inv *sitespec.SiteSpec, path string) error {
+// capnicoAccess resolves the site spec's bootstrapNico and bootstrapPullSecret
+// into the values the bootstrap CAPNICo is given, reading each token file. The
+// files are read here, before a Kind cluster exists, so an unreadable one fails
+// at once rather than minutes in. It returns the zero value for any
+// infrastructure but nico.
+func capnicoAccess(inv *sitespec.SiteSpec) (controllerdeploy.CAPNICoAccess, error) {
 	if !inv.IsNico() {
-		return nil
+		return controllerdeploy.CAPNICoAccess{}, nil
 	}
-	if path == "" {
-		return errors.New("the site spec selects infrastructure nico, which needs NICo API credentials: " +
-			"pass --nico-credentials-file or set NKECTL_NICO_CREDENTIALS_FILE to a file of KEY=VALUE lines " +
-			"(the keys are listed in CAPNICo's getting-started guide)")
+	if inv.BootstrapNico == nil || inv.BootstrapPullSecret == nil {
+		return controllerdeploy.CAPNICoAccess{}, errors.New("the site spec selects infrastructure nico but has no bootstrapNico or bootstrapPullSecret")
 	}
-	info, err := os.Stat(path)
+	nicoToken, err := readTokenFile("bootstrapNico.tokenFile", inv.ResolvePath(inv.BootstrapNico.TokenFile))
 	if err != nil {
-		return fmt.Errorf("NICo credentials file: %w", err)
+		return controllerdeploy.CAPNICoAccess{}, err
 	}
-	if info.IsDir() {
-		return fmt.Errorf("NICo credentials file %s is a directory", path)
+	registryToken, err := readTokenFile("bootstrapPullSecret.tokenFile", inv.ResolvePath(inv.BootstrapPullSecret.TokenFile))
+	if err != nil {
+		return controllerdeploy.CAPNICoAccess{}, err
 	}
-	return nil
+	return controllerdeploy.CAPNICoAccess{
+		Endpoint:         inv.BootstrapNico.Endpoint,
+		OrgID:            inv.BootstrapNico.OrgID,
+		APIName:          inv.BootstrapNico.APIName,
+		Token:            nicoToken,
+		RegistryServer:   inv.BootstrapPullSecret.Server,
+		RegistryUsername: inv.BootstrapPullSecret.Username,
+		RegistryToken:    registryToken,
+	}, nil
+}
+
+// capnicoReleaseImage returns the image the bootstrap CAPNICo runs when a
+// release is given: the release's capnico-controller artifact as
+// repository@digest, which is how the deploy path's render names it. It returns
+// "" without a release, which leaves the manifest's own image. A release with
+// infrastructure provisioned is refused, since nothing there would read it.
+func capnicoReleaseImage(inv *sitespec.SiteSpec, releasePath, arch string) (string, error) {
+	if releasePath == "" {
+		return "", nil
+	}
+	if !inv.IsNico() {
+		return "", errors.New("--release only applies with infrastructure nico: it replaces the bootstrap CAPNICo image, and no other infrastructure installs one")
+	}
+	release, err := nvkrrelease.Load(releasePath)
+	if err != nil {
+		return "", err
+	}
+	artifact, err := release.Select(controllerdeploy.CAPNICoArtifact, arch)
+	if err != nil {
+		return "", fmt.Errorf("--release %s: %w", releasePath, err)
+	}
+	return artifact.Repository() + "@" + artifact.Digest, nil
+}
+
+// readTokenFile returns the trimmed contents of a file holding one secret, and
+// refuses an empty one, which would render an empty credential.
+func readTokenFile(what, path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", what, err)
+	}
+	token := strings.TrimSpace(string(data))
+	if token == "" {
+		return "", fmt.Errorf("%s: %s is empty", what, path)
+	}
+	return token, nil
 }
 
 // waitForCWEHostEndpoint verifies the same host path that the create request
