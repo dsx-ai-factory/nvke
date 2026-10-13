@@ -78,7 +78,7 @@ is a file `bootstrap site` accepts.
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never defaulted — see below. |
-| `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `nvkectl-bootstrap.nke.local`, and the install says so. |
+| `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `nvkectl-bootstrap.nke.local`, and the install says so. A bootstrap run with `NVKECTL_BOOTSTRAP_CLUSTER_NAME` set derives another, so set it then. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to. See below. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Required with `caCertFile`. |
 | `controllerStack` | section | for the stack install | Read by the controller stack install, not by `bootstrap site`. `generate sitespec` writes it with `REPLACE_*` placeholders; the install refuses a placeholder. See below. |
@@ -215,10 +215,12 @@ visible reason.
 
 ## The SPIRE CA
 
-`spire.trustDomain` sets the SPIFFE trust domain for the bootstrap server. It
-must be a lowercase DNS name. If it is absent, `nvkectl` uses
-`<bootstrap-cluster>.nke.local`. A permanent site SPIRE server that replaces
-the bootstrap server must use the same value.
+`spire.trustDomain` sets the SPIFFE trust domain for the bootstrap server and
+for the controller stack install. It must be a lowercase DNS name. If it is
+absent, both use `<bootstrap-cluster>.nke.local`, which is
+`nvkectl-bootstrap.nke.local` unless `NVKECTL_BOOTSTRAP_CLUSTER_NAME` renames
+the bootstrap cluster; then set the field so the install matches. The site
+SPIRE server that replaces the bootstrap server uses the same value.
 
 `spire.caCertFile` and `spire.caKeyFile` name a CA the operator brings to the
 bootstrap. `nvkectl` configures SPIRE to chain its own CA to it, so a node that

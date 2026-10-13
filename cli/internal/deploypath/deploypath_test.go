@@ -136,7 +136,7 @@ func filledSiteSpec(t *testing.T, withCA bool, extra map[string]string) *sitespe
 	for placeholder, value := range values {
 		body = strings.ReplaceAll(body, placeholder, value)
 	}
-	// The trust domain is the bootstrap's; the render refuses a spec without it.
+	// The trust domain is the bootstrap's; set here so the render does not default it.
 	body += "spire:\n  trustDomain: my-tier0-site.nke.local\n"
 	if withCA {
 		// The bootstrap resolves the CA paths from the working directory, so
@@ -376,7 +376,8 @@ func TestRender_DatabasePassword(t *testing.T) {
 	spec := filledSiteSpec(t, false, map[string]string{"REPLACE_DB_PASSWORD_PATH": "state/db-password"})
 	path := spec.ResolvePath("state/db-password")
 	out := filepath.Join(t.TempDir(), "rendered")
-	result, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
+	var log strings.Builder
+	_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out, Log: &log})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,8 +394,8 @@ func TestRender_DatabasePassword(t *testing.T) {
 		dig(tp, "server", "config", "persistence", "visibility", "sql", "password") != password {
 		t.Errorf("generated password %q is not the one in the values", password)
 	}
-	if !contains(result.Notes, "database password generated and written to "+path) {
-		t.Errorf("notes: %v", result.Notes)
+	if !strings.Contains(log.String(), "database password generated and written to "+path) {
+		t.Errorf("log:\n%s", log.String())
 	}
 	if _, err := os.Stat(filepath.Join(out, "db-password")); err == nil {
 		t.Error("the rendered tree holds a password copy")

@@ -36,6 +36,7 @@ type renderDeployPathOptions struct {
 	arch       string
 	runDir     string
 	plainHTTP  []string
+	ephemeral  bool
 }
 
 func newRenderDeployPathCmd() *cobra.Command {
@@ -96,6 +97,7 @@ deploy/nvke-deploy.sh install --deploy-path OUT.`,
 	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH, "Architecture to select release artifacts for; default: the site spec's controllerStack.arch, else this machine's")
 	cmd.Flags().StringVar(&opts.runDir, "nvkr-run-dir", "", "A completed NVKR Run or a directory of OCI layouts to read artifacts from instead of a registry")
 	cmd.Flags().StringSliceVar(&opts.plainHTTP, "plain-http-registries", nil, "Registry hosts served over plain HTTP; nothing is probed")
+	cmd.Flags().BoolVar(&opts.ephemeral, "ephemeral", false, "The caller removes --out when it is done; the summary does not ask the operator to")
 	for _, flag := range []string{"deploy-path", "out"} {
 		_ = cmd.MarkFlagRequired(flag)
 	}
@@ -149,6 +151,10 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 		}
 		fmt.Fprintf(out, "images: %s\n", strings.Join(refs, ", "))
 	}
-	fmt.Fprintf(out, "%s holds this site's credentials: %s. Delete it after the install.\n", opts.out, strings.Join(result.Credentials, ", "))
+	if opts.ephemeral {
+		fmt.Fprintf(out, "%s holds this site's credentials: %s; it is removed when the install ends.\n", opts.out, strings.Join(result.Credentials, ", "))
+	} else {
+		fmt.Fprintf(out, "%s holds this site's credentials: %s. Delete it after the install.\n", opts.out, strings.Join(result.Credentials, ", "))
+	}
 	return nil
 }

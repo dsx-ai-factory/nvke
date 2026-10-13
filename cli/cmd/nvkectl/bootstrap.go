@@ -253,6 +253,17 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 	noteControllerStackSection(out, inv)
+	// Said as soon as the default is known, dry run included: the controller
+	// stack install shares it only for the default bootstrap cluster name.
+	if inv.Spire.TrustDomain == "" {
+		bootstrapCluster := bootstrapengine.DefaultConfig().ClusterName
+		if bootstrapCluster == sitespec.DefaultBootstrapClusterName {
+			logger.Info("spire.trustDomain is not set; using the default the controller stack install shares", "trustDomain", inv.EffectiveTrustDomain(bootstrapCluster))
+		} else {
+			logger.Warn("spire.trustDomain is not set; derived from the bootstrap cluster name. Set spire.trustDomain to this value before the controller stack install, whose default differs",
+				"trustDomain", inv.EffectiveTrustDomain(bootstrapCluster), "installDefault", inv.EffectiveTrustDomain(sitespec.DefaultBootstrapClusterName))
+		}
+	}
 
 	if opts.dryRun {
 		fmt.Fprintln(out, "\nDry run: site spec is valid. No workflow dispatched.")
@@ -281,17 +292,6 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err != nil {
 		return err
 	}
-	// Said as soon as the default is taken: the controller stack install
-	// shares it only for the default bootstrap cluster name.
-	if inv.Spire.TrustDomain == "" {
-		if cfg.ClusterName == sitespec.DefaultBootstrapClusterName {
-			logger.Info("spire.trustDomain is not set; using the default the controller stack install shares", "trustDomain", cweCfg.SPIFFETrustDomain)
-		} else {
-			logger.Warn("spire.trustDomain is not set; derived from the bootstrap cluster name. Set spire.trustDomain to this value before the controller stack install, whose default differs",
-				"trustDomain", cweCfg.SPIFFETrustDomain, "installDefault", inv.EffectiveTrustDomain(sitespec.DefaultBootstrapClusterName))
-		}
-	}
-
 	// The controller API has to be reachable from this host: this command deploys it
 	// and then calls it. A host port mapping rather than the node container's
 	// own address, because that address is not routable from the host on

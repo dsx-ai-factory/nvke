@@ -141,11 +141,14 @@ kubectl rollout status deployment/cert-manager-webhook -n cert-manager --timeout
 # install, since the rendered tree holds the site's credentials.
 STATE="${WORK}/state"
 log "a failed render leaves nothing behind"
-if NVKECTL="${NVKECTL}" NVKE_STATE_DIR="${STATE}" bash "${REPO}/deploy/nvke-deploy.sh" install \
+if probe="$(NVKECTL="${NVKECTL}" NVKE_STATE_DIR="${STATE}" bash "${REPO}/deploy/nvke-deploy.sh" install \
   --deploy-path "${REPO}/deploy/nico" --sitespec "${WORK}/site/sitespec.yaml" \
-  --release "${WORK}/release.json" --nvkr-run-dir "${WORK}/no-such-run" --kubeconfig "${KUBECONFIG}"; then
+  --release "${WORK}/release.json" --nvkr-run-dir "${WORK}/no-such-run" --kubeconfig "${KUBECONFIG}" 2>&1)"; then
   die "an install with a missing run directory exited 0"
 fi
+# The probe has to fail in the render itself, after the scratch exists;
+# an earlier failure would prove nothing about the cleanup.
+grep -q 'the render failed' <<<"${probe}" || die "the probe did not reach the render: ${probe}"
 [[ -z "$(ls -A "${STATE}/renders" 2>/dev/null)" ]] || die "a failed render left scratch behind: $(ls -A "${STATE}/renders")"
 log "rendering and installing deploy/nico"
 NVKECTL="${NVKECTL}" NVKE_STATE_DIR="${STATE}" CTR="docker exec -i ${node} ctr" bash "${REPO}/deploy/nvke-deploy.sh" install \

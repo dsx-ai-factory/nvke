@@ -197,7 +197,7 @@ or with `--disable-mtls`, nothing is published.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NVKECTL_SPIFFE_TRUST_DOMAIN` | `<cluster>.nke.local` | Trust domain for the identities issued |
+| `NVKECTL_SPIFFE_TRUST_DOMAIN` | `<cluster>.nke.local` | Trust domain for the identities issued; the controller stack install defaults to the same value for the default cluster name |
 
 The cluster name SPIRE is told is the ephemeral cluster's own name, from
 `NVKECTL_BOOTSTRAP_CLUSTER_NAME` — there is no separate SPIFFE variable for it,

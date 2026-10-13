@@ -123,7 +123,8 @@ func (r *renderer) site() {
 		r.problem("site spec: controllerStack.arch %q has no TPM attestor checksum", cs.Arch)
 		return
 	}
-	// Last, because it may write a file: a refused spec creates nothing.
+	// May write the operator's password file. A later refusal leaves it in
+	// place: it is the operator's, and the next render reads it back.
 	password := r.dbPassword(spec)
 	if len(r.problems) > 0 {
 		return
@@ -298,7 +299,8 @@ func (r *renderer) dbPassword(spec *sitespec.SiteSpec) string {
 		r.problem("site spec: controllerStack.database.passwordFile: %v", err)
 		return ""
 	}
-	r.note("database password generated and written to %s", path)
+	// Said at once, not noted: the file exists whether or not the render goes on.
+	fmt.Fprintf(r.opts.Log, "database password generated and written to %s\n", path)
 	return password
 }
 

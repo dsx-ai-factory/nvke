@@ -74,7 +74,8 @@ cluster:
 # spire:
 #   # SPIFFE trust domain, shared by the bootstrap and the controller stack
 #   # install. Set it once, before the bootstrap, or leave it unset: both
-#   # then use nvkectl-bootstrap.nke.local.
+#   # then use nvkectl-bootstrap.nke.local. A bootstrap run with
+#   # NVKECTL_BOOTSTRAP_CLUSTER_NAME set derives another, so set it then.
 #   trustDomain: "site.example.com"
 #   caCertFile: "/etc/nke/spire-ca.crt"
 #   caKeyFile: "/etc/nke/spire-ca.key"

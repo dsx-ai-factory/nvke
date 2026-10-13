@@ -331,7 +331,7 @@ import_images() {
 # that is removed when this script exits.
 render_deploy_path() {
   command -v "${NVKECTL}" >/dev/null 2>&1 || die "nvkectl is needed to render; set NVKECTL or put it on PATH"
-  local args=(render deploy-path --deploy-path "${DEPLOY_PATH}")
+  local args=(render deploy-path --deploy-path "${DEPLOY_PATH}" --ephemeral)
   [[ -z "${SITESPEC}" ]] || args+=(--sitespec "${SITESPEC}")
   [[ -z "${RELEASE}" ]] || args+=(--release "${RELEASE}")
   [[ -z "${RUN_DIR}" ]] || args+=(--nvkr-run-dir "${RUN_DIR}")

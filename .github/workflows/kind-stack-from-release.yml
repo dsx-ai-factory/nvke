@@ -13,7 +13,10 @@ name: Kind stack from release
 on:
   workflow_dispatch:
   push:
-    branches-ignore: [main]
+    # The copy-pr-bot mirror, as the other e2e lanes: one run per push, not
+    # one per branch and one per mirror.
+    branches:
+      - "pull-request/[0-9]+"
     paths:
       - .github/workflows/kind-stack-from-release.yml
       - controller/hack/ci/kind-stack-from-release.sh
@@ -23,6 +26,10 @@ on:
       - cli/internal/deploypath/**
       - cli/internal/bootstrap/nvkrrelease/**
       - cli/internal/bootstrap/sitespec/**
+      - cli/internal/bootstrap/controllerdeploy/**
+      - cli/cmd/nvkectl/validate.go
+      - nktp/deploy/charts/**
+      - .github/actions/setup-kind/**
       - cli/cmd/nvkectl/render.go
       - controller/Dockerfile
       - controller/test/fixtures/**
