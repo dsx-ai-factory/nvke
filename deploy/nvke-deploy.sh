@@ -56,8 +56,9 @@ usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
 
   With --sitespec or --release, the deploy path is first rendered for the
   site and against the release (nvkectl does the rendering) into a private
-  scratch directory, installed from there, and the scratch directory is
-  removed when the install ends, so no rendered credential is left behind.
+  scratch directory under NVKE_STATE_DIR (default $XDG_STATE_HOME/nvke),
+  installed from there, and the scratch directory is removed when the
+  install ends, so no rendered credential is left behind.
 
   --deploy-path DIR   the deploy path to install: a directory holding
                       nvke-deploy.yaml and one directory per item, e.g.
@@ -65,12 +66,12 @@ usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
   --sitespec FILE     render for this site first (needs nvkectl: NVKECTL or PATH)
   --release FILE      render against this NVKR release description first;
                       with --sitespec, which names the architecture
-  --nvkr-run-dir DIR  with --release: read charts and images from this
-                      completed NVKR Run's OCI layouts; images.txt then names
-                      them and they are imported into the node's containerd
-                      (CTR names the import command). The render lives
-                      under NVKE_STATE_DIR (default $XDG_STATE_HOME/nvke)
-                      and is removed when this script exits
+  --nvkr-run-dir DIR  with --release, for a Run that was not published (a
+                      local build, the CI lane): read charts and images from
+                      this completed NVKR Run's OCI layouts instead of a
+                      registry; images.txt then names them and they are
+                      imported into the node's containerd (CTR names the
+                      import command)
   --config PATH       BootstrapConfig, as JSON. Required by a template item;
                       its fields are the context those templates render against.
   --values-for ITEM=PATH
