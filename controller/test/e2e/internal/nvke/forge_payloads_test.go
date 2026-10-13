@@ -347,8 +347,8 @@ func TestBuildForgeNodePayloadsBootParametersFollowTheArch(t *testing.T) {
 // the 24.04 suite finds no packages.
 func TestBuildForgeNodePayloadsAptSuiteFollowsTheImage(t *testing.T) {
 	for _, tc := range []struct{ arch, url, want, wantAbsent string }{
-		{"amd64", "https://cdn.invalid/nke-node-non-fde-ubuntu-24.04.1-amd64.qcow2", "nke-noble", "resolute"},
-		{"arm64", "https://cdn.invalid/nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "nke-resolute", "noble"},
+		{"amd64", "https://cdn.invalid/nvke-node-non-fde-ubuntu-24.04.1-amd64.qcow2", "nke-noble", "resolute"},
+		{"arm64", "https://cdn.invalid/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "nke-resolute", "noble"},
 	} {
 		t.Run(tc.want, func(t *testing.T) {
 			inputs := completeForgeInputs()

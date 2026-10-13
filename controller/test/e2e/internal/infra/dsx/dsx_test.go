@@ -155,7 +155,7 @@ func testEnv(api string) *Environment {
 					{Name: "J701L43T", ID: testMachine, Provides: map[string]string{infra.CapabilityArch: "amd64"}},
 				},
 				InstanceTypes: []InstanceType{
-					{Name: "az51-dev2-dh2-nke-tenant", ID: "tenant-type-uuid", Provides: map[string]string{infra.CapabilityMachineType: "cpu", infra.CapabilityArch: "amd64"}},
+					{Name: "az51-dev2-dh2-nvke-tenant", ID: "tenant-type-uuid", Provides: map[string]string{infra.CapabilityMachineType: "cpu", infra.CapabilityArch: "amd64"}},
 				},
 			},
 		},

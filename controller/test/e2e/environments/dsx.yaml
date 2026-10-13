@@ -112,7 +112,7 @@ infrastructure:
       # have to be bound to this type before one can pass, however many free
       # machines the datahall shows.
       instanceTypes:
-        - name: az51-dev2-dh2-nke-tenant
+        - name: az51-dev2-dh2-nvke-tenant
           id: "${DSX_AZ51_DEV2_DH2_INSTANCE_TYPE_ID:-}"
           provides: {machineType: cpu, arch: amd64}
 
@@ -161,6 +161,6 @@ infrastructure:
       # skipped. Binding the trays instead would place a site controller on a
       # GPU tray, which is what the GB200 streams are for.
       instanceTypes:
-        - name: redstone-dev1-dh2-nke-tenant
+        - name: redstone-dev1-dh2-nvke-tenant
           id: "${DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID:-}"
           provides: {machineType: cpu, arch: arm64}

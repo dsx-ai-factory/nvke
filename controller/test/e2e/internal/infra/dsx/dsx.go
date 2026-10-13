@@ -330,7 +330,7 @@ func (p *Provider) payloads(req infra.NodeRequest, place Placement, authorizedKe
 		inputs.AgentArgs = "--secure-server-port 15005 --disable-mtls"
 	}
 	// The same payload builder the Forge lane uses. Nothing in it is Forge's:
-	// it adds the NKE apt source, installs the kubeadm distro and BOTH OVN
+	// it adds the apt source, installs the kubeadm distro and BOTH OVN
 	// packages, and renders the iPXE the instance boots. A datahall changes
 	// the inputs, not the recipe.
 	node, err := nvke.BuildForgeNodePayloads(inputs)
