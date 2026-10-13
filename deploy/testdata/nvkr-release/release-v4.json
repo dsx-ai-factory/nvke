@@ -1,0 +1,16 @@
+{
+ "schemaVersion": "nvkr.dev/release/v4",
+ "subject": "ghcr.io/example/recipes/releases@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "lane": "pipeline-attested",
+ "scope": "artifact-publication",
+ "artifacts": [
+  {
+   "name": "cwe",
+   "kind": "oci",
+   "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "reference": "ghcr.io/example/recipes/cwe@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+ ],
+ "contentSubject": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "policyDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+}

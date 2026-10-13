@@ -361,10 +361,21 @@ func (r *renderer) helm(item string) {
 	case err != nil:
 		r.problem("%s: chart: %v", item, err)
 	default:
-		// The deploy path pins the chart version; the release has to carry
-		// that chart, not another.
-		if a.ChartVersion != "" && rel.Chart.Version != "" && a.ChartVersion != rel.Chart.Version {
+		// A repository chart's pin selects what installs, so the release has
+		// to carry that version. A path chart's pin is reported only: the
+		// chart at the path decides, and the release's version is noted.
+		refused := false
+		switch {
+		case rel.Chart.Path != "":
+			r.note("%s: chart %s is %s in the release; the path pins %s for the checkout", item, artifact, firstNonEmpty(a.ChartVersion, "unversioned"), rel.Chart.Version)
+		case a.ChartVersion == "":
+			r.problem("%s: chart: the release names no version for %s; release.yaml pins %s", item, artifact, rel.Chart.Version)
+			refused = true
+		case a.ChartVersion != rel.Chart.Version:
 			r.problem("%s: chart: the release carries %s %s, release.yaml pins %s", item, artifact, a.ChartVersion, rel.Chart.Version)
+			refused = true
+		}
+		if refused {
 			break
 		}
 		file, err := r.chartArchive(item, rel.Chart.Name, a)
@@ -635,4 +646,13 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

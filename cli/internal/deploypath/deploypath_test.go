@@ -659,11 +659,38 @@ func imageArtifact(repo, name, arch string) nvkrrelease.Artifact {
 	return nvkrrelease.Artifact{Name: name, Kind: "oci", Digest: d, Reference: repo + "/" + name + "@" + d, Arch: arch}
 }
 
+func TestRender_RepositoryChartVersionMustMatchThePin(t *testing.T) {
+	repo := "ghcr.io/example/recipes"
+	cwe := imageArtifact(repo, "cwe", "")
+	profiles := imageArtifact(repo, "controller-profiles", "")
+	capARM := imageArtifact(repo, "capnico-controller", "linux/arm64")
+	for name, tc := range map[string]struct {
+		version string
+		want    string
+	}{
+		"another version": {"9.9.9", "temporal: chart: the release carries temporal 9.9.9, release.yaml pins 0.74.0"},
+		"no version":      {"", "temporal: chart: the release names no version for temporal; release.yaml pins 0.74.0"},
+	} {
+		p := newRegistry()
+		temporal, _ := chartArtifact(p, repo, "temporal")
+		temporal.ChartVersion = tc.version
+		release := &nvkrrelease.Release{Reference: repo + "/releases@" + digest([]byte("r")), Outputs: []nvkrrelease.Artifact{temporal, cwe, profiles, capARM}}
+		_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: filepath.Join(t.TempDir(), "r"), Registry: p.open})
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: want %q, got %v", name, tc.want, err)
+		}
+	}
+}
+
 func TestRender_FromRegistry(t *testing.T) {
 	p := newRegistry()
 	repo := "ghcr.io/example/recipes"
 	temporal, temporalLayer := chartArtifact(p, repo, "temporal")
 	controllerChart, controllerLayer := chartArtifact(p, repo, "controller-chart")
+	// temporal is a repository chart: the release has to carry the pinned
+	// version. controller is a path chart: its pin is a placeholder and the
+	// release's version is only noted.
+	temporal.ChartVersion, controllerChart.ChartVersion = "0.74.0", "0.1.1"
 	cwe := imageArtifact(repo, "cwe", "")
 	profiles := imageArtifact(repo, "controller-profiles", "")
 	capAMD := imageArtifact(repo, "capnico-controller", "linux/amd64")
@@ -766,6 +793,7 @@ func TestRender_Refusals(t *testing.T) {
 	// A reference that resolves to another manifest than its digest is refused.
 	bad := newRegistry()
 	temporal, _ := chartArtifact(bad, repo, "temporal")
+	temporal.ChartVersion = "0.74.0"
 	tampered := temporal
 	tampered.Digest = "sha256:" + strings.Repeat("0", 64)
 	tampered.Reference = repo + "/temporal@" + tampered.Digest
@@ -819,7 +847,7 @@ func TestRender_FromRun(t *testing.T) {
 	capDigest := writeLayout(t, packages, "capnico-controller-arm64", []byte(`{"config":{"digest":"sha256:2"}}`), nil)
 	ref := func(name, d string) string { return "nvkr.local/nvke/" + name + "@" + d }
 	release := &nvkrrelease.Release{Reference: "nvkr.local/nvke/releases@" + digest([]byte("x")), Outputs: []nvkrrelease.Artifact{
-		{Name: "temporal", Kind: "helm-oci", Digest: tDigest, Reference: ref("temporal", tDigest)},
+		{Name: "temporal", Kind: "helm-oci", Digest: tDigest, Reference: ref("temporal", tDigest), ChartVersion: "0.74.0"},
 		{Name: "cwe", Kind: "oci", Digest: cweDigest, Reference: ref("cwe", cweDigest)},
 		{Name: "controller-profiles", Kind: "oci", Digest: profDigest, Reference: ref("controller-profiles", profDigest)},
 		{Name: "capnico-controller-arm64", Kind: "oci", Digest: capDigest, Reference: ref("capnico-controller-arm64", capDigest), Arch: "linux/arm64"},
@@ -861,6 +889,7 @@ func TestRender_SiteAndRelease(t *testing.T) {
 	p := newRegistry()
 	repo := "ghcr.io/example/recipes"
 	temporal, _ := chartArtifact(p, repo, "temporal")
+	temporal.ChartVersion = "0.74.0"
 	cwe := imageArtifact(repo, "cwe", "")
 	profiles := imageArtifact(repo, "controller-profiles", "")
 	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")

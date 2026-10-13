@@ -54,13 +54,15 @@ install time. Paths under controllerStack resolve from the spec's directory;
 spire.caCertFile and spire.caKeyFile from the working directory, as
 "nvkectl bootstrap site" reads them.
 
-With --release, the nvkr.dev/release-description/v1 JSON "nvkr release
-export" writes, each item's release.yaml names its artifacts:
-chart.artifact (default: the item name), chart.imageArtifact,
-chart.profilesArtifact, or a manifest item's artifact. Charts are pulled by
-digest into charts/<item>/; images go into release-images.yaml or a
-kustomization.yaml; images.txt lists them. A chart the release lacks stays
-as committed. --arch selects artifacts (default: the site spec's
+--release takes the nvkr.dev/release-description/v1 JSON that "nvkr release
+export --reference <release>" writes. The export describes the release and
+verifies nothing: run "nvkr release verify" on the same reference first.
+Each item's release.yaml names its artifacts: chart.artifact (default: the
+item name), chart.imageArtifact, chart.profilesArtifact, or a manifest
+item's artifact. Charts are pulled by digest into charts/<item>/; images go
+into release-images.yaml or a kustomization.yaml; images.txt lists them. A
+chart the release lacks stays as committed. A repository chart the release
+carries at another version than release.yaml pins is refused. --arch selects artifacts (default: the site spec's
 controllerStack.arch, else this machine's). --nvkr-run-dir reads a
 completed NVKR Run or a directory of OCI layouts instead of a registry.
 

@@ -9,6 +9,8 @@
 # installed from it by digest instead.
 chart:
   name: nke-controller
+  # Reported only: the chart at path decides what installs, and a release
+  # carries its own version.
   version: "0.0.0"
   path: ../../controller/deploy/charts/controller
   # NVKR artifact names. The chart artifact defaults to the item name; it

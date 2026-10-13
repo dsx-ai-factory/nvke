@@ -1,0 +1,22 @@
+{
+ "schemaVersion": "nvkr.dev/release-description/v1",
+ "reference": "ghcr.io/example/recipes/releases@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "rootDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "declaredQualification": "pipeline-attested",
+ "metadata": {
+  "contentSubject": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+ },
+ "selectedOutput": "cwe",
+ "inspectionDetails": {
+  "outputSelection": "filtered"
+ },
+ "totalOutputs": 15,
+ "outputs": [
+  {
+   "name": "cwe",
+   "kind": "oci",
+   "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "reference": "ghcr.io/example/recipes/cwe@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+ ]
+}

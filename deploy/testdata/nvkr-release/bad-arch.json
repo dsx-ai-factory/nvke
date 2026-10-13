@@ -31,7 +31,7 @@
    ],
    "reference": "ghcr.io/example/recipes/capnico-controller@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
    "os": "linux",
-   "arch": "x86",
+   "arch": "x86 64",
    "artifactType": "application/vnd.oci.image.manifest.v1+json",
    "buildSubjects": []
   },

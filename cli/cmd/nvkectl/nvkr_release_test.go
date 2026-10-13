@@ -29,7 +29,7 @@ func TestInspectNVKRRelease_Artifacts(t *testing.T) {
 		t.Errorf("arch column: %q", lines[2])
 	}
 	stdout, _, err = runGenerate(t, "inspect", "nvkr-release", valid, "--artifacts", "--kind", "helm-oci")
-	if err != nil || strings.Count(stdout, "\n") != 6 || !strings.HasPrefix(stdout, "controller-chart\thelm-oci\t") || !strings.Contains(stdout, "\t0.0.0\n") {
+	if err != nil || strings.Count(stdout, "\n") != 6 || !strings.HasPrefix(stdout, "controller-chart\thelm-oci\t") || !strings.Contains(stdout, "\t0.1.1\n") {
 		t.Errorf("--kind helm-oci: %q %v", stdout, err)
 	}
 	for _, args := range [][]string{{"--kind", "oci"}, {}, {"--artifacts", "--meta"}, {"--select", "cwe"}, {"--arch", "linux/arm64"}} {

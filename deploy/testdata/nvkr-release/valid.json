@@ -102,7 +102,7 @@
    "reference": "ghcr.io/example/recipes/controller-chart@sha256:1111111111111111111111111111111111111111111111111111111111111111",
    "artifactType": "application/vnd.nvkr.helm-bundle.v1",
    "buildSubjects": [],
-   "chartVersion": "0.0.0"
+   "chartVersion": "0.1.1"
   },
   {
    "name": "nktp",
