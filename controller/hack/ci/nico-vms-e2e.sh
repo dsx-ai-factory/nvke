@@ -654,7 +654,7 @@ wait_for_tilt
 
 kubectl -n nke-controller rollout status deployment/nke-controller --timeout=5m
 # Tilt passes both as chart values, which the chart renders into nke-controller-config.
-for setting in tenantAccess.enabled nkeOIDCAuth.enabled; do
+for setting in tenantAccess.enabled nvkeOIDCAuth.enabled; do
   value="$(helm -n nke-controller get values nke-controller --all -o json | jq -r ".${setting}")"
   [[ "${value}" == "true" ]] || fail "${setting} must be true in the nke-controller release, got ${value:-<empty>}"
 done

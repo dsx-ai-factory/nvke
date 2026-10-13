@@ -1297,7 +1297,7 @@ runner_exec kubectl -n "${CONTROLLER_NAME}" rollout status "deployment/${CONTROL
 # Both deploy paths set these as chart values, which the chart renders into
 # nke-controller-config.
 controller_values="$(runner_exec helm -n "${CONTROLLER_NAME}" get values "${CONTROLLER_NAME}" --all -o json)"
-for setting in tenantAccess.enabled nkeOIDCAuth.enabled; do
+for setting in tenantAccess.enabled nvkeOIDCAuth.enabled; do
   value="$(jq -r ".${setting}" <<<"${controller_values}")"
   if [[ "${value}" != "true" ]]; then
     log "${setting} must be true in the CAPD E2E deployment, got ${value:-<empty>}"

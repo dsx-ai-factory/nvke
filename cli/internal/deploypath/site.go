@@ -136,9 +136,9 @@ func (r *renderer) site() {
 		"appDb": map[string]any{"postgresPassword": password},
 		// The chart then writes the connection string, URL-escaped, into a
 		// Secret instead of a plain env value.
-		"secrets":     map[string]any{"createDbSecret": true},
-		"nkeOIDCAuth": map[string]any{"discoveryURL": fmt.Sprintf("https://%s:%d/.well-known/openid-configuration", vip, oidcNodePort)},
-		"spiffe":      map[string]any{"trustDomain": trustDomain, "spire": map[string]any{"serverAddress": vip}},
+		"secrets":      map[string]any{"createDbSecret": true},
+		"nvkeOIDCAuth": map[string]any{"discoveryURL": fmt.Sprintf("https://%s:%d/.well-known/openid-configuration", vip, oidcNodePort)},
+		"spiffe":       map[string]any{"trustDomain": trustDomain, "spire": map[string]any{"serverAddress": vip}},
 	}
 	if cs.Images.Controller != "" {
 		controller["image"] = r.imageValues("controllerStack.images.controller", cs.Images.Controller)
