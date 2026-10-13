@@ -59,7 +59,8 @@ usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
                       nvke-deploy.yaml and one directory per item, e.g.
                       deploy/nico or controller/deploy/capd-e2e
   --sitespec FILE     render for this site first (needs nvkectl: NVKECTL or PATH)
-  --release FILE      render against this NVKR release description first
+  --release FILE      render against this NVKR release description first;
+                      with --sitespec, which names the architecture
   --nvkr-run-dir DIR  with --release: read charts and images from this
                       completed NVKR Run's OCI layouts; images.txt then names
                       them and they are imported into the node's containerd
@@ -72,7 +73,9 @@ usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
                       single component: with one release per chart the keys are
                       no longer prefixed, so a value meant for the controller
                       cannot be broadcast to every item. Repeatable.
-  --dry-run           print the argv each step would run, and exit
+  --dry-run           print the argv each step would run, and exit. The
+                      render still runs, so it may create the database
+                      password file the site spec names
   --kubeconfig PATH   passed to every kubectl call
   --                  everything after is forwarded to helm verbatim
 USAGE
@@ -385,6 +388,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "${RUN_DIR}" || -n "${RELEASE}" ]] || die "--nvkr-run-dir holds a release's artifacts; pass --release"
+[[ -z "${RELEASE}" || -n "${SITESPEC}" ]] || die "--release needs --sitespec: the site spec names the architecture"
 if [[ -n "${SITESPEC}${RELEASE}" ]]; then
   [[ -n "${DEPLOY_PATH}" ]] || die "--deploy-path is required"
   render_deploy_path

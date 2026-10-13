@@ -158,13 +158,12 @@ That run's install script does none of this, because it had
 
 ## Per-site values
 
-Every item's committed values are site-independent. `nvkectl render
-deploy-path` writes what varies into each item's `site-values.yaml` from the
-site spec; the e2e lanes derive the same values in
-`controller/hack/ci/deploy-stack.sh`. `--values-for` still applies on top of a
+Every item's committed values are site-independent. The install writes what
+varies into each item's `site-values.yaml` from the site spec; the e2e lanes
+derive the same values in `controller/hack/ci/deploy-stack.sh`. `--values-for` still applies on top of a
 rendered path, after `site-values.yaml`.
 
-| value | `render` takes it from | e2e derivation |
+| value | the install takes it from | e2e derivation |
 |---|---|---|
 | trust domain | `spire.trustDomain`, required; never derived from a name | `${KIND_CLUSTER_NAME}.nke.local` |
 | management VIP | `cluster.controlPlaneVIP`, or the only node's IP | kind control-plane IP |

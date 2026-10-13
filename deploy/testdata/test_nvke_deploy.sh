@@ -233,6 +233,8 @@ expect "and installs the rendered tree" "helm upgrade --install nke-controller .
 [[ -z "$(ls -A "${renders}" 2>/dev/null)" ]] && pass "the scratch render is removed when the install ends" || fail "scratch left: $(ls -A "${renders}")"
 out="$(NVKECTL=/nonexistent/nvkectl bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --dry-run 2>&1)" && fail "render without nvkectl exited 0"
 expect "a render without nvkectl is named" 'nvkectl is needed to render' "${out}"
+out="$(bash "${EXECUTOR}" install --deploy-path "${NICO}" --release "${WORK}/local.json" --dry-run 2>&1)" && fail "release without sitespec exited 0"
+expect "a release without the site spec is refused" 'release needs --sitespec' "${out}"
 
 # A parser failure stops the install before anything is applied.
 mkdir -p "${WORK}/broken-list"
