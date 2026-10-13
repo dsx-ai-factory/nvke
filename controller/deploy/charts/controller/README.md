@@ -98,6 +98,7 @@ move `create` and `annotations` from `nkeSystemNamespace` to
 | nodeAgent.tlsJwt.subjectService | string | `""` | Service segment in the canonical local SPIFFE ID exchanged by DSX Identity. |
 | nodeAgent.tlsJwt.subjectTenant | string | `""` | Tenant segment in the canonical local SPIFFE ID exchanged by DSX Identity. |
 | nodeAgent.tlsJwt.subjectTrustDomain | string | `""` | Exact SPIFFE trust domain accepted in node-agent JWT subjects. |
+| nodeAgent.updateMethod | string | `""` | Agent installation method: apt or bundle. Required when clusters set a desired agent version. |
 | nodeSelector | object | `{}` |  |
 | nvkeOIDCAuth.caBundleSecret.key | string | `""` | Key in the Secret containing the OIDC CA bundle. |
 | nvkeOIDCAuth.caBundleSecret.name | string | `""` | Name of the Secret containing the OIDC CA bundle. |

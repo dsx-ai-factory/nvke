@@ -553,3 +553,35 @@ This route is for a future site, and the CI lane no longer offers it. There is
 no network path from the ARC fleet to the site's jump host on port 22 at all —
 only the Teleport proxy reaches it — so `qualify-e2e.yml` always
 goes through `tsh`.
+
+The `node-agent-upgrade` label selects the controller-driven agent tests. These
+tests use real agent bundles and an isolated bundle mirror. They cover upgrades,
+downgrades, restoration after a failed installation, automatic retries, target
+changes, process restarts, deferred joins, and deletion drains. The tests also
+check the agent version before kubeadm and reject TLS clients without an identity.
+Workers keep the version baked into the image.
+
+To include the fixtures in a local run, set
+`LOCAL_NVKE_E2E_NODE_AGENT_UPGRADE=true`. Use a separate checkout at
+`92a3039bae7a12d10244263bff80776d83c2fe72` for the image's old agent. Set
+`NODE_AGENT_REPO_PATH` to that checkout's `agent/` directory and
+`NODE_AGENT_VERSION=v0.1.990`. The fixtures for the desired versions use the
+current checkout. Choose unique names for the management cluster, node image,
+and BGP container:
+
+```bash
+KIND_CLUSTER_NAME=nvke-agent-upgrade-e2e \
+CAPD_NODE_IMAGE=nvke-agent-upgrade-node:local \
+CAPD_KINDEST_NODE_IMAGE=nvke-agent-upgrade-node:local \
+BGP_CONTAINER_NAME=nvke-agent-upgrade-bgp \
+NODE_AGENT_REPO_PATH=/path/to/baseline/agent \
+NODE_AGENT_VERSION=v0.1.990 \
+LOCAL_NVKE_E2E_NODE_AGENT_UPGRADE=true \
+LOCAL_NKE_E2E_LABEL_FILTER=node-agent-upgrade \
+PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true \
+flox activate -- bash controller/hack/local-backend-e2e.sh
+```
+
+If the Docker host already runs, set `LOCAL_NVKE_E2E_REUSE_DOCKER_HOST=true`
+to reuse it without changing the host configuration. The test repairs only its
+private fixture artifact. It does not change a released bundle.
