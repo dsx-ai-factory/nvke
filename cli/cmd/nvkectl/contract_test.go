@@ -40,8 +40,10 @@ import (
 )
 
 // TestMain selects the binary and expected version once for this suite.
-var nvkectlBin string              //nolint:gochecknoglobals // Shared by the process-level contract tests.
-var nvkectlExpectedVersion = "dev" //nolint:gochecknoglobals // Source builds use the unstamped default.
+var (
+	nvkectlBin             string  //nolint:gochecknoglobals // Shared by the process-level contract tests.
+	nvkectlExpectedVersion = "dev" //nolint:gochecknoglobals // Source builds use the unstamped default.
+)
 
 func TestMain(m *testing.M) {
 	if suppliedBinary, supplied := os.LookupEnv("NVKECTL"); supplied {

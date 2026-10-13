@@ -385,7 +385,15 @@ The expected version comes from the build inputs. The suite checks exit codes,
 output formats, API errors using local HTTP stubs, and signal handling. It compiles
 the Go test runner, requires an executable for the current platform, and isolates
 configuration in temporary directories. No cluster or hardware is needed.
-`make test` continues to run the source suite and build its own test CLI.
+When `NVKECTL` is unset, `make test` runs the source suite and builds its own test CLI.
+To run the full CLI Go suite with the supplied executable in its contract tests:
+
+```sh
+make test NVKECTL=/absolute/path/to/nvkectl NVKECTL_EXPECTED_VERSION=v0.1.1
+```
+
+Internal-function unit tests still exercise upstream source; only the process
+contracts execute the supplied binary. Quote paths containing spaces.
 
 ## Compatibility
 
