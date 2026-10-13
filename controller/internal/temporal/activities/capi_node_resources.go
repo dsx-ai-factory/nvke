@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -534,7 +535,9 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	}
 	rebootAnnotationProvider, err := clients.GetRebootAnnotationProvider(cluster)
 	if err != nil {
-		return err
+		// Deterministic: an unsupported cluster.ProviderType cannot become
+		// supported by retrying, so retrying it is pure wasted attempts.
+		return temporal.NewNonRetryableApplicationError("failed to get reboot annotation provider", "UnsupportedProvider", err)
 	}
 	namespace := a.cfg.ManagementNamespaceOrDefault()
 	machineName := node.Name

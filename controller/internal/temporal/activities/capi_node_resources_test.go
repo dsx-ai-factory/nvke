@@ -1010,6 +1010,29 @@ func TestApplyCAPIMachineRebootAnnotation_ClassifiesNodeLookupErrors(t *testing.
 	}
 }
 
+func TestApplyCAPIMachineRebootAnnotation_UnsupportedProviderIsNonRetryable(t *testing.T) {
+	nodeID := uuid.New()
+	clusterID := uuid.New()
+	node := db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker"}
+
+	mockDB := &testutil.MockDB{}
+	mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil)
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, ProviderType: db.ProviderType("bogus")}, nil)
+
+	a := &Activities{db: mockDB}
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestActivityEnvironment()
+	env.RegisterActivity(a.ApplyCAPIMachineRebootAnnotation)
+
+	_, err := env.ExecuteActivity(a.ApplyCAPIMachineRebootAnnotation, ApplyCAPIMachineRebootAnnotationInput{NodeID: nodeID})
+	require.Error(t, err)
+	var applicationErr *temporal.ApplicationError
+	require.ErrorAs(t, err, &applicationErr)
+	require.True(t, applicationErr.NonRetryable(),
+		"an unsupported cluster.ProviderType cannot become supported by retrying")
+	mockDB.AssertExpectations(t)
+}
+
 func TestDeleteCAPIMachineRebootAnnotation(t *testing.T) {
 	ctx := context.Background()
 	nodeID := uuid.MustParse("75000000-0000-0000-0000-000000000002")
