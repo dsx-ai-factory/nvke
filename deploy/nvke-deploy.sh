@@ -262,7 +262,7 @@ install_helm_item() {
     values_args+=(--set-file "${entry}")
   done
 
-  log "item ${item} -> release ${release} (${chart_name} ${version}) in ${namespace}"
+  log "item ${item} -> release ${release} (${chart_name}${version:+ ${version}}) in ${namespace}"
   helm_install "${release}" "${ref[@]}" \
     ${KUBECONFIG_PATH:+--kubeconfig "${KUBECONFIG_PATH}"} \
     --namespace "${namespace}" \

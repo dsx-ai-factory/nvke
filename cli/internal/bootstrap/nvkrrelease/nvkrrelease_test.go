@@ -207,6 +207,23 @@ func TestSelect_ImageIndexNamesThePlatforms(t *testing.T) {
 	}
 }
 
+// A child platform may carry a variant; the architecture is what is asked for.
+func TestSelect_VariantIsTheArchitecture(t *testing.T) {
+	d := "sha256:" + strings.Repeat("a", 64)
+	r, err := Parse([]byte(`{"schemaVersion":"nvkr.dev/release-description/v1","reference":"r.example/x@` + d + `","rootDigest":"` + d + `",` +
+		`"outputs":[{"name":"x","kind":"oci","digest":"` + d + `","reference":"r.example/x@` + d + `",` +
+		`"imageIndex":{"requiredPlatforms":["linux/arm64"],"children":[{"platform":"linux/arm64/v8","manifestDigest":"` + d + `"}]}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := r.Select("x", "linux/arm64"); err != nil || got.Name != "x" {
+		t.Errorf("arm64 via v8 child: %q %v", got.Name, err)
+	}
+	if _, err := r.Select("x", "linux/amd64"); err == nil || !strings.Contains(err.Error(), "published only for other architectures: x (linux/arm64/v8)") {
+		t.Errorf("amd64: %v", err)
+	}
+}
+
 func TestSelect_SuffixBeatsAnArchlessName(t *testing.T) {
 	d := "sha256:" + strings.Repeat("a", 64)
 	r := &Release{Outputs: []Artifact{

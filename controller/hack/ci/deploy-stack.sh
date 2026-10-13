@@ -50,13 +50,13 @@ if [[ -n "${NKE_E2E_STACK_CHART:-}" ]]; then
   echo "Each component is its own release, named in controller/deploy/${DEPLOY_TARGET:-capd-e2e}." >&2
   exit 1
 fi
-# A published chart's version has nowhere to go now: nvke-deploy.sh resolves a
-# chart from a path, so helm needs no --version, and the item's own release.yaml
-# carries the version the artifact was cut with. Refuse rather than accept a
-# value and ignore it -- a silently dropped pin is how you end up testing a
-# different chart than the one you named.
+# A published chart's version has nowhere to go now: nvke-deploy.sh resolves
+# a path chart from the checkout and a release's chart by digest; neither
+# takes a --version. Refuse rather than accept a value and ignore it -- a
+# silently dropped pin is how you end up testing a different chart than the
+# one you named.
 if [[ -n "${NKE_E2E_STACK_VERSION:-}" ]]; then
-  echo "NKE_E2E_STACK_VERSION is set but no longer used: component versions are pinned in each item's release.yaml." >&2
+  echo "NKE_E2E_STACK_VERSION is set but no longer used: component versions come from the checkout or the release, not from this variable." >&2
   exit 1
 fi
 

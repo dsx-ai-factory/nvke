@@ -123,7 +123,7 @@ def release(path):
         die("%s: missing chart.name" % path)
     # A repository chart is selected by its version; a path chart carries
     # its own.
-    if "version" not in chart and "path" not in chart:
+    if not chart.get("version") and "path" not in chart:
         die("%s: missing chart.version for a repository chart" % path)
     chart.setdefault("version", "")
     if "namespace" not in rel:

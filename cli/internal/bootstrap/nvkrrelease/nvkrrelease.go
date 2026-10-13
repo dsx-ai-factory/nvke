@@ -275,7 +275,7 @@ func (a Artifact) validate(i int) error {
 			}
 		}
 		for _, p := range a.ImageIndex.RequiredPlatforms {
-			if !contains(a.Platforms(), p) {
+			if !coversPlatform(a.Platforms(), p) {
 				return fmt.Errorf("output %s: imageIndex requires platform %s but lists no child for it", a.Name, p)
 			}
 		}
@@ -367,9 +367,9 @@ func (r *Release) Select(name, arch string) (Artifact, error) {
 		switch {
 		case len(platforms) == 0:
 			anyArch = a
-		case contains(platforms, arch) && a.Name == name:
+		case coversPlatform(platforms, arch) && a.Name == name:
 			exact = a
-		case contains(platforms, arch):
+		case coversPlatform(platforms, arch):
 			// Two suffixed outputs may both cover arch; the one named for it wins.
 			if suffixed == nil || bySuffix == arch {
 				suffixed = a
@@ -395,6 +395,26 @@ func (r *Release) Select(name, arch string) (Artifact, error) {
 		return Artifact{}, fmt.Errorf("output %s has no reference; the release description must say where it is pulled from", chosen.Name)
 	}
 	return *chosen, nil
+}
+
+// osArch returns a platform without its variant: linux/arm64/v8 is linux/arm64.
+func osArch(platform string) string {
+	if i := strings.Index(platform, "/"); i >= 0 {
+		if j := strings.Index(platform[i+1:], "/"); j >= 0 {
+			return platform[:i+1+j]
+		}
+	}
+	return platform
+}
+
+// coversPlatform reports whether one of platforms is want, variants aside.
+func coversPlatform(platforms []string, want string) bool {
+	for _, p := range platforms {
+		if osArch(p) == osArch(want) {
+			return true
+		}
+	}
+	return false
 }
 
 func contains(list []string, value string) bool {
