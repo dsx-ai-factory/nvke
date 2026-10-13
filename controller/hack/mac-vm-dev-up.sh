@@ -73,8 +73,12 @@ set_env_line() {
 }
 
 ssh_node() {
-  with_nix_tools sshpass=sshpass -- sshpass -p nico-diag ssh -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "nico-diag@$1" "${@:2}"
+  # Password auth only: with several keys in an ssh-agent, ssh offers each one
+  # first and the server drops the connection for too many failures before it
+  # reaches the password.
+  with_nix_tools sshpass=sshpass -- sshpass -p nico-diag ssh -o PubkeyAuthentication=no \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+    "nico-diag@$1" "${@:2}"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -280,5 +284,5 @@ step "Done" \
   "Tilt UI:       http://localhost:${TILT_PORT}" \
   "CWE API:       ${CWE_API} (token: hack/nke-token.sh)" \
   "Cluster:       ${CLUSTER_NAME} (${cluster_id}), API server at https://${vip}:6443" \
-  "Node shell:    sshpass -p nico-diag ssh nico-diag@${cp_ip}" \
+  "Node shell:    sshpass -p nico-diag ssh -o PubkeyAuthentication=no nico-diag@${cp_ip}" \
   "Tear down:     hack/mac-vm-dev-down.sh"
