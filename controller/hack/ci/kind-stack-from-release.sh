@@ -100,9 +100,13 @@ for f in nico-token registry-token tenant-password; do printf 'smoke-%s\n' "${f}
 # nktp sized for one kind node: nktp's own kind values, plus a ceiling of one
 # replica on the autoscaled collectors. The whole stack shares this node, so a
 # scale-up on a startup CPU burst would leave a replica Pending.
-sed '/^      minReplicas: 1$/a\
+if grep -q 'maxReplicas: 1' "${REPO}/nktp/hack/e2e-values.yaml"; then
+  cp "${REPO}/nktp/hack/e2e-values.yaml" "${WORK}/site/nktp-values.yaml"
+else
+  sed '/^      minReplicas: 1$/a\
       maxReplicas: 1' "${REPO}/nktp/hack/e2e-values.yaml" >"${WORK}/site/nktp-values.yaml"
-grep -c 'maxReplicas: 1' "${WORK}/site/nktp-values.yaml" >/dev/null || die "the nktp kind values changed shape; check nktp/hack/e2e-values.yaml"
+fi
+grep -q 'maxReplicas: 1' "${WORK}/site/nktp-values.yaml" || die "the nktp kind values changed shape; check nktp/hack/e2e-values.yaml"
 sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" -e "s|@NKTP_VALUES@|${WORK}/site/nktp-values.yaml|g" \
   "${HERE}/sitespec.yaml.tmpl" >"${WORK}/site/sitespec.yaml"
 "${NVKECTL}" validate sitespec -f "${WORK}/site/sitespec.yaml"
