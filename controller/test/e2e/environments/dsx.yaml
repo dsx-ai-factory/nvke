@@ -60,7 +60,7 @@ infrastructure:
       # The account the image bakes, which is the login every session uses.
       # Empty, so it falls through to the os-image default the same way Forge
       # does -- the lane boots the OSS os-image release for both providers, and
-      # os-image/packer/nke-node-non-fde.pkr.hcl bakes `ubuntu`.
+      # os-image/packer/nvke-node-non-fde.pkr.hcl bakes `ubuntu`.
       #
       # This defaulted to dgxc-admin, which is what the manual az51 procedure
       # uses because that boots an internal-pipeline image. The lane does not:
