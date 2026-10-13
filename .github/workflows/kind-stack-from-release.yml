@@ -4,7 +4,7 @@
 # Brings the controller stack up on a kind node from a release description:
 # controller/hack/ci/kind-stack-from-release.sh builds the controller and the
 # profiles fixture into OCI layouts, copies the CAPNICo image, fills a
-# nvkr.dev/release/v4 file, renders deploy/nico against it with
+# nvkr.dev/release-description/v1 file, renders deploy/nico against it with
 # --nvkr-run-dir, installs the result and checks the pods run the release's
 # digests. Advisory: not a merge-gate member.
 

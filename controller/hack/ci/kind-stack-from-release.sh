@@ -4,9 +4,10 @@
 #
 # Bring the controller stack up on a kind node from a release description.
 #
-# The release is a nvkr.dev/release/v4 file filled from three OCI layouts this
-# script makes: the controller image built from this checkout, the profiles
-# fixture image, and the CAPNICo image copied from its public registry. The
+# The release is a nvkr.dev/release-description/v1 file filled from three OCI
+# layouts this script makes: the controller image built from this checkout,
+# the profiles fixture image, and the CAPNICo image copied from its public
+# registry. The
 # layouts sit under a directory shaped like a completed NVKR Run, so
 # `nvkectl render deploy-path --nvkr-run-dir` reads them in place. The
 # executor then installs deploy/nico on the kind node, importing the images
