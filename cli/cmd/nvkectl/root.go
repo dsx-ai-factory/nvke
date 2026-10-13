@@ -188,12 +188,22 @@ func announceTrace(cmd *cobra.Command, w io.Writer, traceID string, err error) e
 	if err != nil {
 		return &tracedError{err: err, traceID: traceID}
 	}
+	if helpRequested(cmd) {
+		return nil
+	}
 	if queryCommands[topLevel(cmd)] {
 		slog.Debug("command finished", "command", cmd.CommandPath())
 		return nil
 	}
 	fmt.Fprintf(w, "Trace ID: %s\n", traceID)
 	return nil
+}
+
+// helpRequested reports whether the operator passed -h or --help to cmd. Cobra
+// then prints the help and returns success without running the command.
+func helpRequested(cmd *cobra.Command) bool {
+	help := cmd.Flags().Lookup("help")
+	return help != nil && help.Changed
 }
 
 // tracedError is a command failure that reports the trace ID of the run.

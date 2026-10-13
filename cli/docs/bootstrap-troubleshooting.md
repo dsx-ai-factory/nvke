@@ -30,8 +30,9 @@ controller and its charts. `-v` adds debug detail.
 
 Every run has one trace ID. `nvkectl` prints it on its own line, as
 `Trace ID: <32 hex digits>`, when the run starts, and again at the end: last on
-a successful run, and after the final error on a failed one. Every log line
-carries it as `trace_id`, with a `span_id`. The ID goes to standard error with
+a successful run, and after the final error on a failed one. A command that
+cobra rejects for a bad flag or argument never starts, so it prints only the ID
+that ends its error. Every log line carries it as `trace_id`, with a `span_id`. The ID goes to standard error with
 the logs, so the `tee` above keeps it. Keep the ID with the log, and quote it
 when you report a failure.
 

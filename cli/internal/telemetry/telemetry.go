@@ -174,7 +174,7 @@ func (run *Run) checkResponseTraceID(ctx context.Context, response *http.Respons
 			logger = slog.Default()
 		}
 		logger.WarnContext(ctx, "the controller reported a different trace ID than nvkectl sent; "+
-			"something between them dropped the traceparent header, so the controller's logs and spans use the received ID",
+			"check that the traceparent header reaches the controller and that the controller continues incoming trace context",
 			"sent", sent, "received", received)
 	})
 }
