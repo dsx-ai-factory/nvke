@@ -21,6 +21,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/naming"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 )
 
 var (
@@ -166,7 +167,14 @@ func (s *nodePoolService) CreateNodePool(
 		}
 
 		workflowID := constants.ProvisionNodePoolWorkflowPrefix + createdNodePool.ID.String()
-		_, err = tx.CreateWorkflowOutboxEntry(ctx, "ProvisionNodePool", workflowID, map[string]interface{}{
+		err = enqueueWorkflow(ctx, tx, otelx.WorkflowAttributes{
+			WorkflowType: "ProvisionNodePool",
+			WorkflowID:   workflowID,
+			ClusterID:    cluster.ID,
+			ClusterName:  cluster.Name,
+			NodePoolID:   createdNodePool.ID,
+			NodePoolName: createdNodePool.Name,
+		}, map[string]interface{}{
 			nodePoolIDConst: createdNodePool.ID,
 		})
 		if err != nil {

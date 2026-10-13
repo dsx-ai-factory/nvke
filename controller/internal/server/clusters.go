@@ -27,6 +27,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/naming"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 )
 
 const (
@@ -230,7 +231,12 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 		}
 
 		workflowID := constants.ProvisionClusterWorkflowPrefix + createdCluster.ID.String()
-		_, err = tx.CreateWorkflowOutboxEntry(ctx, "ProvisionCluster", workflowID, map[string]interface{}{
+		err = enqueueWorkflow(ctx, tx, otelx.WorkflowAttributes{
+			WorkflowType: "ProvisionCluster",
+			WorkflowID:   workflowID,
+			ClusterID:    createdCluster.ID,
+			ClusterName:  createdCluster.Name,
+		}, map[string]interface{}{
 			clusterIDConst: createdCluster.ID,
 		})
 		if err != nil {
@@ -477,7 +483,14 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 		}
 
 		nodePoolWorkflowID := constants.ProvisionNodePoolWorkflowPrefix + createdNodePool.ID.String()
-		_, err = tx.CreateWorkflowOutboxEntry(ctx, "ProvisionNodePool", nodePoolWorkflowID, map[string]interface{}{
+		err = enqueueWorkflow(ctx, tx, otelx.WorkflowAttributes{
+			WorkflowType: "ProvisionNodePool",
+			WorkflowID:   nodePoolWorkflowID,
+			ClusterID:    cluster.ID,
+			ClusterName:  cluster.Name,
+			NodePoolID:   createdNodePool.ID,
+			NodePoolName: createdNodePool.Name,
+		}, map[string]interface{}{
 			nodePoolIDConst: createdNodePool.ID,
 		})
 		if err != nil {
@@ -598,7 +611,12 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 				db.ClearUpdateFailed(&dbCluster)
 				db.SetUpdateInProgress(&dbCluster, db.OperationTypeEtcdEncryption, "enabling etcd encryption", time.Now().UTC())
 				workflowID := constants.EnableEtcdEncryptionWorkflowPrefix + dbCluster.ID.String()
-				if _, err := tx.CreateWorkflowOutboxEntry(ctx, constants.EnableEtcdEncryptionWorkflowType, workflowID, map[string]interface{}{
+				if err := enqueueWorkflow(ctx, tx, otelx.WorkflowAttributes{
+					WorkflowType: constants.EnableEtcdEncryptionWorkflowType,
+					WorkflowID:   workflowID,
+					ClusterID:    dbCluster.ID,
+					ClusterName:  dbCluster.Name,
+				}, map[string]interface{}{
 					clusterIDConst: dbCluster.ID,
 				}); err != nil {
 					return fmt.Errorf("failed to create workflow outbox entry for etcd encryption: %w", err)
@@ -1056,7 +1074,12 @@ func enqueueOIDCEnablement(ctx context.Context, tx db.Tx, req *api.UpdateCluster
 	db.ClearUpdateFailed(cluster)
 	db.SetUpdateInProgress(cluster, db.OperationTypeOIDCEnable, "enabling OIDC authentication", time.Now().UTC())
 	workflowID := constants.EnableOIDCWorkflowPrefix + cluster.ID.String()
-	if _, err := tx.CreateWorkflowOutboxEntry(ctx, constants.EnableOIDCWorkflowType, workflowID, map[string]interface{}{
+	if err := enqueueWorkflow(ctx, tx, otelx.WorkflowAttributes{
+		WorkflowType: constants.EnableOIDCWorkflowType,
+		WorkflowID:   workflowID,
+		ClusterID:    cluster.ID,
+		ClusterName:  cluster.Name,
+	}, map[string]interface{}{
 		clusterIDConst: cluster.ID,
 	}); err != nil {
 		return fmt.Errorf("failed to create workflow outbox entry for OIDC enablement: %w", err)
@@ -1109,7 +1132,12 @@ func (s *clusterService) DeleteCluster(ctx context.Context, req api.DeleteCluste
 		}
 
 		workflowID := constants.TeardownClusterWorkflowPrefix + dbCluster.ID.String()
-		_, err = tx.CreateWorkflowOutboxEntry(ctx, "TeardownCluster", workflowID, map[string]interface{}{
+		err = enqueueWorkflow(ctx, tx, otelx.WorkflowAttributes{
+			WorkflowType: "TeardownCluster",
+			WorkflowID:   workflowID,
+			ClusterID:    dbCluster.ID,
+			ClusterName:  dbCluster.Name,
+		}, map[string]interface{}{
 			clusterIDConst: dbCluster.ID,
 		})
 		if err != nil {

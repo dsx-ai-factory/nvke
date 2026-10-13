@@ -236,9 +236,18 @@ func DeleteNodePoolWithTx(ctx context.Context, tx db.Tx, nodePoolID uuid.UUID) e
 	}
 
 	workflowID := constants.TeardownNodePoolWorkflowPrefix + dbNodePool.ID.String()
-	if _, err = tx.CreateWorkflowOutboxEntry(ctx, "TeardownNodePool", workflowID, map[string]interface{}{
+	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowEnqueue, otelx.WorkflowAttributes{
+		WorkflowType: "TeardownNodePool",
+		WorkflowID:   workflowID,
+		ClusterID:    dbNodePool.ClusterID,
+		NodePoolID:   dbNodePool.ID,
+		NodePoolName: dbNodePool.Name,
+	})
+	_, err = tx.CreateWorkflowOutboxEntry(ctx, "TeardownNodePool", workflowID, map[string]interface{}{
 		"nodePoolID": dbNodePool.ID,
-	}); err != nil {
+	})
+	otelx.EndWorkflowSpan(span, err)
+	if err != nil {
 		return fmt.Errorf("failed to create workflow outbox entry: %w", err)
 	}
 
