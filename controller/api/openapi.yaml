@@ -2863,33 +2863,10 @@ components:
       type: object
       additionalProperties: false
       description: |
-        Fields fixed at creation (instanceType, hostOSProfile, vmProfile,
-        fulfillmentStrategy, securityGroupRefs) cannot be sent once a Compute
-        request has been submitted: a request carrying one is rejected with 400.
-      properties:
-        instanceType:
-          type: string
-          minLength: 1
-          description: Requests capacity of a given shape, for example "vm200". Fixed at creation.
-          x-go-type-skip-optional-pointer: true
-        hostOSProfile:
-          type: string
-          description: |
-            Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with
-            vmProfile. Fixed at creation.
-          x-go-type-skip-optional-pointer: true
-        vmProfile:
-          type: string
-          description: |
-            Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with
-            hostOSProfile. Fixed at creation.
-          x-go-type-skip-optional-pointer: true
-        fulfillmentStrategy:
-          type: string
-          enum: [BEST_EFFORT, ALL_OR_NOTHING, WAIT_FOR_RESOURCE]
-          description: Controls how the Compute Allocation Operator places the request. Fixed at creation.
-        securityGroupRefs:
-          $ref: "#/components/schemas/LaunchLayerSecurityGroupRefs"
+        All LaunchLayer node-pool fields (instanceType, hostOSProfile, vmProfile,
+        fulfillmentStrategy, securityGroupRefs) are fixed at creation: a request
+        carrying one is rejected with 400. A body echoed from GET must have them
+        stripped.
 
     LaunchLayerNodeSetProvider:
       type: object
@@ -3170,9 +3147,9 @@ components:
       type: object
       additionalProperties: false
       description: |
-        All LaunchLayer control-plane fields are fixed at creation and
-        immutable once a Compute request has been submitted for the first
-        control-plane node: a request carrying one is rejected with 400.
+        All LaunchLayer control-plane fields are fixed at creation: a request
+        carrying one is rejected with 400. A body echoed from GET must have
+        them stripped.
 
     InfraControlPlaneProvider:
       x-fern-ignore: true

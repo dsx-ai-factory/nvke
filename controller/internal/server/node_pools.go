@@ -586,32 +586,11 @@ func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req
 		dbNodePool.SetCapi(capiProvider)
 
 	case db.ProviderTypeLaunchLayer:
-		if req.LaunchLayer == nil {
-			return nil
-		}
-		provider, err := dbNodePool.LaunchLayerProvider()
-		if err != nil {
-			return err
-		}
-		if req.LaunchLayer.InstanceType != "" {
-			provider.InstanceType = req.LaunchLayer.InstanceType
-		}
-		if req.LaunchLayer.HostOSProfile != "" {
-			provider.HostOSProfile = req.LaunchLayer.HostOSProfile
-		}
-		if req.LaunchLayer.VMProfile != "" {
-			provider.VMProfile = req.LaunchLayer.VMProfile
-		}
-		if req.LaunchLayer.FulfillmentStrategy != nil {
-			provider.FulfillmentStrategy = string(*req.LaunchLayer.FulfillmentStrategy)
-		}
-		if req.LaunchLayer.SecurityGroupRefs != nil {
-			provider.SecurityGroupRefs = db.LaunchLayerSecurityGroupRefs{
-				PrimaryNetworkInterface: req.LaunchLayer.SecurityGroupRefs.PrimaryNetworkInterface,
-				GPUNetworkInterface:     req.LaunchLayer.SecurityGroupRefs.GpuNetworkInterface,
-			}
-		}
-		dbNodePool.SetLaunchLayer(provider)
+		// No-op: every LaunchLayer node-pool field is fixed at creation, so
+		// launchLayer has no updatable fields (see
+		// LaunchLayerNodePoolProviderUpdate in openapi.yaml) —
+		// req.LaunchLayer being non-nil just means the caller sent an empty
+		// launchLayer object, which changes nothing.
 	}
 
 	return nil

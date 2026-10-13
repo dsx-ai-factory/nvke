@@ -1027,11 +1027,11 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		}
 		spec.SetCapi(capi)
 	case req.LaunchLayer != nil:
-		// No-op: every LaunchLayer control-plane field is immutable once CAPLL
-		// submits a Compute request for the first control-plane node, so
-		// launchLayer has no updatable fields (see LaunchLayerControlPlaneProviderUpdate
-		// in openapi.yaml) — req.LaunchLayer being non-nil just means the
-		// caller sent an empty launchLayer object, which changes nothing.
+		// No-op: every LaunchLayer control-plane field is fixed at creation,
+		// so launchLayer has no updatable fields (see
+		// LaunchLayerControlPlaneProviderUpdate in openapi.yaml) —
+		// req.LaunchLayer being non-nil just means the caller sent an empty
+		// launchLayer object, which changes nothing.
 	}
 	return nil
 }

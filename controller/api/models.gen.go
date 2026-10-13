@@ -61,13 +61,6 @@ const (
 	LaunchLayerNodePoolProviderFulfillmentStrategyWAITFORRESOURCE LaunchLayerNodePoolProviderFulfillmentStrategy = "WAIT_FOR_RESOURCE"
 )
 
-// Defines values for LaunchLayerNodePoolProviderUpdateFulfillmentStrategy.
-const (
-	LaunchLayerNodePoolProviderUpdateFulfillmentStrategyALLORNOTHING    LaunchLayerNodePoolProviderUpdateFulfillmentStrategy = "ALL_OR_NOTHING"
-	LaunchLayerNodePoolProviderUpdateFulfillmentStrategyBESTEFFORT      LaunchLayerNodePoolProviderUpdateFulfillmentStrategy = "BEST_EFFORT"
-	LaunchLayerNodePoolProviderUpdateFulfillmentStrategyWAITFORRESOURCE LaunchLayerNodePoolProviderUpdateFulfillmentStrategy = "WAIT_FOR_RESOURCE"
-)
-
 // Defines values for LaunchLayerNodeSetProviderFulfillmentStrategy.
 const (
 	LaunchLayerNodeSetProviderFulfillmentStrategyALLORNOTHING    LaunchLayerNodeSetProviderFulfillmentStrategy = "ALL_OR_NOTHING"
@@ -750,9 +743,9 @@ type LaunchLayerControlPlaneProvider struct {
 // LaunchLayerControlPlaneProviderFulfillmentStrategy Controls how the Compute Allocation Operator places the request.
 type LaunchLayerControlPlaneProviderFulfillmentStrategy string
 
-// LaunchLayerControlPlaneProviderUpdate All LaunchLayer control-plane fields are fixed at creation and
-// immutable once a Compute request has been submitted for the first
-// control-plane node: a request carrying one is rejected with 400.
+// LaunchLayerControlPlaneProviderUpdate All LaunchLayer control-plane fields are fixed at creation: a request
+// carrying one is rejected with 400. A body echoed from GET must have
+// them stripped.
 type LaunchLayerControlPlaneProviderUpdate = map[string]interface{}
 
 // LaunchLayerNodePoolProvider LaunchLayer settings for a node pool. instanceType is required, and
@@ -780,33 +773,11 @@ type LaunchLayerNodePoolProvider struct {
 // LaunchLayerNodePoolProviderFulfillmentStrategy Controls how the Compute Allocation Operator places the request.
 type LaunchLayerNodePoolProviderFulfillmentStrategy string
 
-// LaunchLayerNodePoolProviderUpdate Fields fixed at creation (instanceType, hostOSProfile, vmProfile,
-// fulfillmentStrategy, securityGroupRefs) cannot be sent once a Compute
-// request has been submitted: a request carrying one is rejected with 400.
-type LaunchLayerNodePoolProviderUpdate struct {
-	// FulfillmentStrategy Controls how the Compute Allocation Operator places the request. Fixed at creation.
-	FulfillmentStrategy *LaunchLayerNodePoolProviderUpdateFulfillmentStrategy `json:"fulfillmentStrategy,omitempty"`
-
-	// HostOSProfile Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with
-	// vmProfile. Fixed at creation.
-	HostOSProfile string `json:"hostOSProfile,omitempty"`
-
-	// InstanceType Requests capacity of a given shape, for example "vm200". Fixed at creation.
-	InstanceType string `json:"instanceType,omitempty"`
-
-	// SecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
-	// network interface. Mutually exclusive with securityGroups (existing
-	// group IDs) per interface — CAPLL supports both but NVKE always creates
-	// groups through the cluster, so NVKE only exposes refs.
-	SecurityGroupRefs *LaunchLayerSecurityGroupRefs `json:"securityGroupRefs,omitempty"`
-
-	// VMProfile Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with
-	// hostOSProfile. Fixed at creation.
-	VMProfile string `json:"vmProfile,omitempty"`
-}
-
-// LaunchLayerNodePoolProviderUpdateFulfillmentStrategy Controls how the Compute Allocation Operator places the request. Fixed at creation.
-type LaunchLayerNodePoolProviderUpdateFulfillmentStrategy string
+// LaunchLayerNodePoolProviderUpdate All LaunchLayer node-pool fields (instanceType, hostOSProfile, vmProfile,
+// fulfillmentStrategy, securityGroupRefs) are fixed at creation: a request
+// carrying one is rejected with 400. A body echoed from GET must have them
+// stripped.
+type LaunchLayerNodePoolProviderUpdate = map[string]interface{}
 
 // LaunchLayerNodeProvider LaunchLayer identifiers of the instance behind a node, reported by
 // CAPLL on LaunchLayerMachine.status. Omitted when none of its fields
@@ -1436,9 +1407,9 @@ type UpdateClusterControlPlaneConfig struct {
 	// Mutually exclusive with `nico`: a request carrying both is rejected with 400.
 	Infra *InfraControlPlaneProviderUpdate `json:"infra,omitempty"`
 
-	// LaunchLayer All LaunchLayer control-plane fields are fixed at creation and
-	// immutable once a Compute request has been submitted for the first
-	// control-plane node: a request carrying one is rejected with 400.
+	// LaunchLayer All LaunchLayer control-plane fields are fixed at creation: a request
+	// carrying one is rejected with 400. A body echoed from GET must have
+	// them stripped.
 	LaunchLayer *LaunchLayerControlPlaneProviderUpdate `json:"launchLayer,omitempty"`
 
 	// MaxSurge Extra control-plane nodes allowed during a rollout (0 or 1).
@@ -1542,9 +1513,10 @@ type UpdateNodePoolRequest struct {
 	// Must be newer than the current version.
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
 
-	// LaunchLayer Fields fixed at creation (instanceType, hostOSProfile, vmProfile,
-	// fulfillmentStrategy, securityGroupRefs) cannot be sent once a Compute
-	// request has been submitted: a request carrying one is rejected with 400.
+	// LaunchLayer All LaunchLayer node-pool fields (instanceType, hostOSProfile, vmProfile,
+	// fulfillmentStrategy, securityGroupRefs) are fixed at creation: a request
+	// carrying one is rejected with 400. A body echoed from GET must have them
+	// stripped.
 	LaunchLayer *LaunchLayerNodePoolProviderUpdate `json:"launchLayer,omitempty"`
 
 	// MaxSurge Nodes allowed above desiredNodeCount during a rollout. 0 means sequential: each
