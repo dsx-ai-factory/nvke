@@ -705,7 +705,9 @@ type LaunchLayerClusterProvider struct {
 	OrgID string `json:"orgID,omitempty"`
 
 	// Owner The LaunchLayer identity requests are attributed to.
-	Owner          *LaunchLayerClusterOwner    `json:"owner,omitempty"`
+	Owner *LaunchLayerClusterOwner `json:"owner,omitempty"`
+
+	// SecurityGroups Security groups CAPLL creates with the cluster and deletes with it.
 	SecurityGroups *[]LaunchLayerSecurityGroup `json:"securityGroups,omitempty"`
 
 	// SiteID Names the LaunchLayer datahall this cluster's machines come from.
@@ -726,19 +728,26 @@ type LaunchLayerClusterProviderVpcType string
 // LaunchLayer machines. All fields become immutable once CAPLL submits
 // a Compute request for the first control-plane node.
 type LaunchLayerControlPlaneProvider struct {
+	// FulfillmentStrategy Controls how the Compute Allocation Operator places the request.
 	FulfillmentStrategy *LaunchLayerControlPlaneProviderFulfillmentStrategy `json:"fulfillmentStrategy,omitempty"`
-	HostOSProfile       string                                              `json:"hostOSProfile,omitempty"`
-	InstanceType        string                                              `json:"instanceType,omitempty"`
+
+	// HostOSProfile Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with vmProfile.
+	HostOSProfile string `json:"hostOSProfile,omitempty"`
+
+	// InstanceType Requests capacity of a given shape, for example "vm200".
+	InstanceType string `json:"instanceType,omitempty"`
 
 	// SecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
 	// network interface. Mutually exclusive with securityGroups (existing
 	// group IDs) per interface — CAPLL supports both but NVKE always creates
 	// groups through the cluster, so NVKE only exposes refs.
 	SecurityGroupRefs *LaunchLayerSecurityGroupRefs `json:"securityGroupRefs,omitempty"`
-	VMProfile         string                        `json:"vmProfile,omitempty"`
+
+	// VMProfile Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
+	VMProfile string `json:"vmProfile,omitempty"`
 }
 
-// LaunchLayerControlPlaneProviderFulfillmentStrategy defines model for LaunchLayerControlPlaneProvider.FulfillmentStrategy.
+// LaunchLayerControlPlaneProviderFulfillmentStrategy Controls how the Compute Allocation Operator places the request.
 type LaunchLayerControlPlaneProviderFulfillmentStrategy string
 
 // LaunchLayerControlPlaneProviderUpdate All LaunchLayer control-plane fields are fixed at creation and
@@ -775,19 +784,28 @@ type LaunchLayerNodePoolProviderFulfillmentStrategy string
 // fulfillmentStrategy, securityGroupRefs) cannot be sent once a Compute
 // request has been submitted: a request carrying one is rejected with 400.
 type LaunchLayerNodePoolProviderUpdate struct {
+	// FulfillmentStrategy Controls how the Compute Allocation Operator places the request. Fixed at creation.
 	FulfillmentStrategy *LaunchLayerNodePoolProviderUpdateFulfillmentStrategy `json:"fulfillmentStrategy,omitempty"`
-	HostOSProfile       string                                                `json:"hostOSProfile,omitempty"`
-	InstanceType        string                                                `json:"instanceType,omitempty"`
+
+	// HostOSProfile Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with
+	// vmProfile. Fixed at creation.
+	HostOSProfile string `json:"hostOSProfile,omitempty"`
+
+	// InstanceType Requests capacity of a given shape, for example "vm200". Fixed at creation.
+	InstanceType string `json:"instanceType,omitempty"`
 
 	// SecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
 	// network interface. Mutually exclusive with securityGroups (existing
 	// group IDs) per interface — CAPLL supports both but NVKE always creates
 	// groups through the cluster, so NVKE only exposes refs.
 	SecurityGroupRefs *LaunchLayerSecurityGroupRefs `json:"securityGroupRefs,omitempty"`
-	VMProfile         string                        `json:"vmProfile,omitempty"`
+
+	// VMProfile Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with
+	// hostOSProfile. Fixed at creation.
+	VMProfile string `json:"vmProfile,omitempty"`
 }
 
-// LaunchLayerNodePoolProviderUpdateFulfillmentStrategy defines model for LaunchLayerNodePoolProviderUpdate.FulfillmentStrategy.
+// LaunchLayerNodePoolProviderUpdateFulfillmentStrategy Controls how the Compute Allocation Operator places the request. Fixed at creation.
 type LaunchLayerNodePoolProviderUpdateFulfillmentStrategy string
 
 // LaunchLayerNodeProvider LaunchLayer identifiers of the instance behind a node, reported by
@@ -806,19 +824,26 @@ type LaunchLayerNodeProvider struct {
 
 // LaunchLayerNodeSetProvider LaunchLayer settings in a node set (read-only snapshot).
 type LaunchLayerNodeSetProvider struct {
+	// FulfillmentStrategy Controls how the Compute Allocation Operator places the request.
 	FulfillmentStrategy *LaunchLayerNodeSetProviderFulfillmentStrategy `json:"fulfillmentStrategy,omitempty"`
-	HostOSProfile       string                                         `json:"hostOSProfile,omitempty"`
-	InstanceType        string                                         `json:"instanceType,omitempty"`
+
+	// HostOSProfile Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with vmProfile.
+	HostOSProfile string `json:"hostOSProfile,omitempty"`
+
+	// InstanceType Requests capacity of a given shape, for example "vm200".
+	InstanceType string `json:"instanceType,omitempty"`
 
 	// SecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
 	// network interface. Mutually exclusive with securityGroups (existing
 	// group IDs) per interface — CAPLL supports both but NVKE always creates
 	// groups through the cluster, so NVKE only exposes refs.
 	SecurityGroupRefs *LaunchLayerSecurityGroupRefs `json:"securityGroupRefs,omitempty"`
-	VMProfile         string                        `json:"vmProfile,omitempty"`
+
+	// VMProfile Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
+	VMProfile string `json:"vmProfile,omitempty"`
 }
 
-// LaunchLayerNodeSetProviderFulfillmentStrategy defines model for LaunchLayerNodeSetProvider.FulfillmentStrategy.
+// LaunchLayerNodeSetProviderFulfillmentStrategy Controls how the Compute Allocation Operator places the request.
 type LaunchLayerNodeSetProviderFulfillmentStrategy string
 
 // LaunchLayerSecurityGroup A security group LaunchLayer creates with the cluster and deletes with it.
@@ -844,7 +869,10 @@ type LaunchLayerSecurityGroupType string
 // group IDs) per interface — CAPLL supports both but NVKE always creates
 // groups through the cluster, so NVKE only exposes refs.
 type LaunchLayerSecurityGroupRefs struct {
-	GpuNetworkInterface     []string `json:"gpuNetworkInterface,omitempty"`
+	// GpuNetworkInterface Managed security group names to attach to the GPU network interface.
+	GpuNetworkInterface []string `json:"gpuNetworkInterface,omitempty"`
+
+	// PrimaryNetworkInterface Managed security group names to attach to the primary network interface.
 	PrimaryNetworkInterface []string `json:"primaryNetworkInterface,omitempty"`
 }
 

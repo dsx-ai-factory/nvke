@@ -2665,6 +2665,7 @@ components:
         securityGroups:
           type: array
           maxItems: 16
+          description: Security groups CAPLL creates with the cluster and deletes with it.
           items:
             $ref: "#/components/schemas/LaunchLayerSecurityGroup"
 
@@ -2820,11 +2821,13 @@ components:
       properties:
         primaryNetworkInterface:
           type: array
+          description: Managed security group names to attach to the primary network interface.
           items:
             type: string
           x-go-type-skip-optional-pointer: true
         gpuNetworkInterface:
           type: array
+          description: Managed security group names to attach to the GPU network interface.
           items:
             type: string
           x-go-type-skip-optional-pointer: true
@@ -2867,16 +2870,24 @@ components:
         instanceType:
           type: string
           minLength: 1
+          description: Requests capacity of a given shape, for example "vm200". Fixed at creation.
           x-go-type-skip-optional-pointer: true
         hostOSProfile:
           type: string
+          description: |
+            Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with
+            vmProfile. Fixed at creation.
           x-go-type-skip-optional-pointer: true
         vmProfile:
           type: string
+          description: |
+            Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with
+            hostOSProfile. Fixed at creation.
           x-go-type-skip-optional-pointer: true
         fulfillmentStrategy:
           type: string
           enum: [BEST_EFFORT, ALL_OR_NOTHING, WAIT_FOR_RESOURCE]
+          description: Controls how the Compute Allocation Operator places the request. Fixed at creation.
         securityGroupRefs:
           $ref: "#/components/schemas/LaunchLayerSecurityGroupRefs"
 
@@ -2887,16 +2898,20 @@ components:
       properties:
         instanceType:
           type: string
+          description: Requests capacity of a given shape, for example "vm200".
           x-go-type-skip-optional-pointer: true
         hostOSProfile:
           type: string
+          description: Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with vmProfile.
           x-go-type-skip-optional-pointer: true
         vmProfile:
           type: string
+          description: Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
           x-go-type-skip-optional-pointer: true
         fulfillmentStrategy:
           type: string
           enum: [BEST_EFFORT, ALL_OR_NOTHING, WAIT_FOR_RESOURCE]
+          description: Controls how the Compute Allocation Operator places the request.
         securityGroupRefs:
           $ref: "#/components/schemas/LaunchLayerSecurityGroupRefs"
 
@@ -3134,16 +3149,20 @@ components:
         instanceType:
           type: string
           minLength: 1
+          description: Requests capacity of a given shape, for example "vm200".
           x-go-type-skip-optional-pointer: true
         hostOSProfile:
           type: string
+          description: Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with vmProfile.
           x-go-type-skip-optional-pointer: true
         vmProfile:
           type: string
+          description: Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
           x-go-type-skip-optional-pointer: true
         fulfillmentStrategy:
           type: string
           enum: [BEST_EFFORT, ALL_OR_NOTHING, WAIT_FOR_RESOURCE]
+          description: Controls how the Compute Allocation Operator places the request.
         securityGroupRefs:
           $ref: "#/components/schemas/LaunchLayerSecurityGroupRefs"
 
