@@ -151,7 +151,7 @@ func TestTraceContinuesThroughOutbox(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			assertTrace(t, spans.Ended(), traceID, scenario.retries)
+			assertTrace(t, spans.Ended(), traceID, cluster.ID, scenario.retries)
 			assertLogs(t, logs.snapshot(), traceID, scenario.name)
 		})
 	}
@@ -236,8 +236,9 @@ func standInProvision(ctx workflow.Context, input map[string]any) error {
 }
 
 // assertTrace checks that one request produced a single connected trace, from
-// the HTTP span through the outbox dispatch to the workflow and its activities.
-func assertTrace(t *testing.T, ended []sdktrace.ReadOnlySpan, traceID string, retried bool) {
+// the HTTP span through the labeled outbox enqueue and dispatch to the workflow
+// and its activities.
+func assertTrace(t *testing.T, ended []sdktrace.ReadOnlySpan, traceID string, clusterID uuid.UUID, retried bool) {
 	t.Helper()
 	counts := map[string]int{}
 	byName := map[string]sdktrace.ReadOnlySpan{}
@@ -247,11 +248,13 @@ func assertTrace(t *testing.T, ended []sdktrace.ReadOnlySpan, traceID string, re
 			byName[span.Name()] = span
 		}
 	}
-	for _, name := range []string{requestSpanName, "outbox.dispatch", "StartWorkflow:ProvisionCluster", "RunWorkflow:ProvisionCluster"} {
+	enqueueSpanName := string(otelx.WorkflowEnqueue)
+	for _, name := range []string{requestSpanName, enqueueSpanName, "outbox.dispatch", "StartWorkflow:ProvisionCluster", "RunWorkflow:ProvisionCluster"} {
 		require.Equal(t, 1, counts[name], "missing or duplicate span %s: %v", name, counts)
 	}
 	for child, parent := range map[string]string{
-		"outbox.dispatch":                requestSpanName,
+		enqueueSpanName:                  requestSpanName,
+		"outbox.dispatch":                enqueueSpanName,
 		"StartWorkflow:ProvisionCluster": "outbox.dispatch",
 		"RunWorkflow:ProvisionCluster":   "StartWorkflow:ProvisionCluster",
 		"StartActivity:ReadCluster":      "RunWorkflow:ProvisionCluster",
@@ -261,6 +264,12 @@ func assertTrace(t *testing.T, ended []sdktrace.ReadOnlySpan, traceID string, re
 		require.NotNil(t, byName[parent], parent)
 		require.Equal(t, byName[parent].SpanContext().SpanID(), byName[child].Parent().SpanID(), "%s is a child of %s", child, parent)
 	}
+	enqueueAttributes := map[string]string{}
+	for _, attr := range byName[enqueueSpanName].Attributes() {
+		enqueueAttributes[string(attr.Key)] = attr.Value.AsString()
+	}
+	require.Equal(t, clusterID.String(), enqueueAttributes["nvke.cluster.id"])
+	require.Equal(t, "ProvisionCluster", enqueueAttributes["nvke.workflow.type"])
 	attempts := 1
 	if retried {
 		attempts = 2
