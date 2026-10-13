@@ -34,6 +34,10 @@ SITESPEC=""
 RELEASE=""
 RUN_DIR=""
 NVKECTL="${NVKECTL:-nvkectl}"
+# The state directory holds the render scratch: a rendered deploy path
+# carries the site's credentials, so it lives under a directory only this
+# user can read, never a shared temp directory, and is removed on exit.
+STATE_DIR="${NVKE_STATE_DIR:-${XDG_STATE_HOME:-${HOME}/.local/state}/nvke}"
 SCRATCH=""
 VALUES_FOR=()
 DEPLOY_PATH=""
@@ -64,7 +68,9 @@ usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
   --nvkr-run-dir DIR  with --release: read charts and images from this
                       completed NVKR Run's OCI layouts; images.txt then names
                       them and they are imported into the node's containerd
-                      (CTR names the import command)
+                      (CTR names the import command). The render lives
+                      under NVKE_STATE_DIR (default $XDG_STATE_HOME/nvke)
+                      and is removed when this script exits
   --config PATH       BootstrapConfig, as JSON. Required by a template item;
                       its fields are the context those templates render against.
   --values-for ITEM=PATH
@@ -328,9 +334,10 @@ render_deploy_path() {
   [[ -z "${SITESPEC}" ]] || args+=(--sitespec "${SITESPEC}")
   [[ -z "${RELEASE}" ]] || args+=(--release "${RELEASE}")
   [[ -z "${RUN_DIR}" ]] || args+=(--nvkr-run-dir "${RUN_DIR}")
-  local base="${NVKE_RENDERS_DIR:-${XDG_STATE_HOME:-${HOME}/.local/state}/nvke/renders}"
-  mkdir -p "${base}" && chmod 0700 "${base}"
+  local base="${STATE_DIR}/renders"
+  (umask 077 && mkdir -p "${base}") || die "cannot create ${base}; NVKE_STATE_DIR names the state directory"
   SCRATCH="$(mktemp -d "${base}/install.XXXXXX")"
+  # Removed however this script ends: a die, a failed render, a signal.
   trap 'rm -rf "${SCRATCH}"' EXIT
   log "rendering ${DEPLOY_PATH}"
   "${NVKECTL}" "${args[@]}" --out "${SCRATCH}/rendered" || die "the render failed"

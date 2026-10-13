@@ -123,12 +123,27 @@ kubectl rollout status deployment/capi-controller-manager -n capi-system --timeo
 kubectl rollout status deployment/cert-manager-webhook -n cert-manager --timeout=5m
 
 # 5. Render and install in one go: the executor renders deploy/nico for the
-# site and against the release into a private scratch directory, installs
-# it, and removes it. CTR imports the layouts into the kind node's containerd.
+# site and against the release into a private scratch directory under the
+# state directory, installs it, and removes it. CTR imports the layouts into
+# the kind node's containerd. The state directory is this run's, so the
+# scratch can be checked afterwards: nothing rendered may outlive the
+# install, since the rendered tree holds the site's credentials.
+STATE="${WORK}/state"
+log "a failed render leaves nothing behind"
+if NVKECTL="${NVKECTL}" NVKE_STATE_DIR="${STATE}" bash "${REPO}/deploy/nvke-deploy.sh" install \
+  --deploy-path "${REPO}/deploy/nico" --sitespec "${WORK}/site/sitespec.yaml" \
+  --release "${WORK}/release.json" --nvkr-run-dir "${WORK}/no-such-run" --kubeconfig "${KUBECONFIG}"; then
+  die "an install with a missing run directory exited 0"
+fi
+[[ -z "$(ls -A "${STATE}/renders" 2>/dev/null)" ]] || die "a failed render left scratch behind: $(ls -A "${STATE}/renders")"
 log "rendering and installing deploy/nico"
-NVKECTL="${NVKECTL}" CTR="docker exec -i ${node} ctr" bash "${REPO}/deploy/nvke-deploy.sh" install \
+NVKECTL="${NVKECTL}" NVKE_STATE_DIR="${STATE}" CTR="docker exec -i ${node} ctr" bash "${REPO}/deploy/nvke-deploy.sh" install \
   --deploy-path "${REPO}/deploy/nico" --sitespec "${WORK}/site/sitespec.yaml" \
   --release "${WORK}/release.json" --nvkr-run-dir "${RUN}" --kubeconfig "${KUBECONFIG}" --timeout 15m
+[[ -z "$(ls -A "${STATE}/renders" 2>/dev/null)" ]] || die "the install left its render behind: $(ls -A "${STATE}/renders")"
+if leftovers="$(find "${STATE}" \( -name site-values.yaml -o -name site.env -o -name '*.yaml.tmpl' -o -name images.txt \) 2>/dev/null)" && [[ -n "${leftovers}" ]]; then
+  die "rendered files outlived the install: ${leftovers}"
+fi
 
 # 6. Assert: the images are in containerd under the release's names, every
 # pod is Ready, and the controller and CAPNICo run the release digests.

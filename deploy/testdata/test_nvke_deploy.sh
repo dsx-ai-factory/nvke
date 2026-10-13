@@ -226,11 +226,15 @@ expect "an existing --out is refused" 'exists; render writes a new directory' "$
 
 # The executor renders by itself when given the site spec, into a private
 # scratch directory that is gone when it exits.
-renders="${WORK}/renders"
-out="$(NVKE_RENDERS_DIR="${renders}" bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --dry-run 2>&1)" || fail "wrapped render dry run exited $?: ${out}"
+state="${WORK}/state"
+renders="${state}/renders"
+out="$(NVKE_STATE_DIR="${state}" bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --dry-run 2>&1)" || fail "wrapped render dry run exited $?: ${out}"
 expect "the executor renders before installing" "^=== rendering ${NICO}$" "${out}"
 expect "and installs the rendered tree" "helm upgrade --install nke-controller .*--values ${renders}/install\.[A-Za-z0-9]+/rendered/controller/site-values.yaml" "${out}"
 [[ -z "$(ls -A "${renders}" 2>/dev/null)" ]] && pass "the scratch render is removed when the install ends" || fail "scratch left: $(ls -A "${renders}")"
+find "${state}" -maxdepth 0 -perm 0700 | grep -q . && pass "the state directory is private" || fail "state directory mode"
+out="$(NVKE_STATE_DIR="${state}" bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --release "${HERE}/nvkr-release/bad-schema.json" --dry-run 2>&1)" && fail "failed render exited 0"
+[[ -z "$(ls -A "${renders}" 2>/dev/null)" ]] && pass "a failed render leaves no scratch behind" || fail "scratch left after a failed render: $(ls -A "${renders}")"
 out="$(NVKECTL=/nonexistent/nvkectl bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --dry-run 2>&1)" && fail "render without nvkectl exited 0"
 expect "a render without nvkectl is named" 'nvkectl is needed to render' "${out}"
 out="$(bash "${EXECUTOR}" install --deploy-path "${NICO}" --release "${WORK}/local.json" --dry-run 2>&1)" && fail "release without sitespec exited 0"
