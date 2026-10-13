@@ -125,7 +125,14 @@ log "checking the result"
 for ref in "nvkr.local/nvke/cwe@${cwe_digest}" "nvkr.local/nvke/controller-profiles@${profiles_digest}" "nvkr.local/nvke/capnico-controller@${capnico_digest}"; do
   docker exec -i "${node}" ctr -n k8s.io images ls -q "name==${ref}" | grep -qx "${ref}" || die "containerd lacks ${ref}"
 done
-kubectl wait --for=condition=Ready pod --all -A --field-selector=status.phase!=Succeeded --timeout=10m
+# The stack's own workloads, not every pod: nktp's gateway autoscalers may
+# add a replica the 4-vCPU runner cannot schedule, which says nothing about
+# the release path.
+for target in deployment/nke-controller:nke-controller deployment/controller-manager:capnico-system statefulset/spire-server:spire-server \
+  statefulset/postgres-postgresql:postgres deployment/temporal-frontend:temporal deployment/temporal-history:temporal deployment/temporal-matching:temporal; do
+  kubectl -n "${target#*:}" rollout status "${target%%:*}" --timeout=5m || die "${target} is not ready"
+done
+kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded -o wide || true
 controller_ids="$(kubectl -n nke-controller get pods -l app.kubernetes.io/name=nke-controller \
   -o jsonpath='{range .items[*]}{range .status.initContainerStatuses[*]}{.imageID}{"\n"}{end}{range .status.containerStatuses[*]}{.imageID}{"\n"}{end}{end}')"
 grep -q "${cwe_digest}" <<<"${controller_ids}" || die "the controller does not run the release's cwe digest: ${controller_ids}"
