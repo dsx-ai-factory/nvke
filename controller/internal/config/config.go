@@ -441,7 +441,7 @@ type TeleportConfig struct {
 	// controller stamps on tokens it creates, and the value ownership checks
 	// (IsOwnedByController) compare incoming tokens against. The chart default
 	// is for new sites; a site that exists pins its old value
-	// ("nke-cloud-workflow-engine"), or stops recognising the tokens it owns.
+	// ("nke-cloud-workflow-engine"), or stops recognizing the tokens it owns.
 	ManagedByLabelValue string `controllerconfig:"teleport.managedByLabelValue"`
 
 	// TokenNamePrefix prefixes the deterministic Teleport TPM join token name

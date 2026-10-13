@@ -27,6 +27,9 @@ const (
 	// rbacFieldManager is the Server-Side Apply field owner used when applying the
 	// RBAC manifest into a tenant cluster.
 	rbacFieldManager = "nvke"
+	// legacyRBACName is the name the pre-rename manifest gave the controller's own
+	// Role, ClusterRole and their bindings.
+	legacyRBACName = "nke:cwe"
 )
 
 // legacyRBACObject is a tenant RBAC object an earlier release applied under the
@@ -38,16 +41,18 @@ type legacyRBACObject struct {
 	name      string
 }
 
-// legacyRBACObjects is everything the pre-rename manifest created: the
+// legacyRBACObjects returns everything the pre-rename manifest created: the
 // nke:cwe set and the nke:capi-cluster-admin binding.
-var legacyRBACObjects = []legacyRBACObject{
-	{"ClusterRole", "", "nke:cwe"},
-	{"ClusterRoleBinding", "", "nke:cwe"},
-	{"ClusterRoleBinding", "", "nke:capi-cluster-admin"},
-	{"Role", "kube-system", "nke:cwe"},
-	{"RoleBinding", "kube-system", "nke:cwe"},
-	{"Role", "kube-node-lease", "nke:cwe"},
-	{"RoleBinding", "kube-node-lease", "nke:cwe"},
+func legacyRBACObjects() []legacyRBACObject {
+	return []legacyRBACObject{
+		{"ClusterRole", "", legacyRBACName},
+		{"ClusterRoleBinding", "", legacyRBACName},
+		{"ClusterRoleBinding", "", "nke:capi-cluster-admin"},
+		{"Role", "kube-system", legacyRBACName},
+		{"RoleBinding", "kube-system", legacyRBACName},
+		{"Role", "kube-node-lease", legacyRBACName},
+		{"RoleBinding", "kube-node-lease", legacyRBACName},
+	}
 }
 
 // pruneLegacyRBAC deletes the legacy objects the manifest does not itself
@@ -69,7 +74,7 @@ func pruneLegacyRBAC(ctx context.Context, c ctrlclient.Client, manifest []byte) 
 		kept[legacyRBACObject{obj.GetKind(), obj.GetNamespace(), obj.GetName()}] = true
 	}
 
-	for _, legacy := range legacyRBACObjects {
+	for _, legacy := range legacyRBACObjects() {
 		if kept[legacy] {
 			continue
 		}
@@ -78,7 +83,8 @@ func pruneLegacyRBAC(ctx context.Context, c ctrlclient.Client, manifest []byte) 
 		obj.SetKind(legacy.kind)
 		obj.SetNamespace(legacy.namespace)
 		obj.SetName(legacy.name)
-		if err := c.Delete(ctx, obj); ctrlclient.IgnoreNotFound(err) != nil {
+		err := c.Delete(ctx, obj)
+		if ctrlclient.IgnoreNotFound(err) != nil {
 			return fmt.Errorf("pruning legacy %s %s: %w", legacy.kind, legacy.name, err)
 		}
 	}

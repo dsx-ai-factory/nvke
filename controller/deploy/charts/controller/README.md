@@ -144,7 +144,7 @@ A Helm chart to deploy the NVKE controller service
 | teleport.environment | string | `"non-prod"` | Teleport environment label: "prod" or "non-prod" (default: "non-prod") |
 | teleport.identityFile | string | `"/var/run/teleport/identity"` | Path where the tbot identity file is mounted |
 | teleport.identitySecretName | string | `"cloud-workflow-engine-teleport"` | Name of the Kubernetes secret containing the tbot identity (written by tbot output) |
-| teleport.managedByLabelValue | string | `"nvke-controller"` | Value of the Teleport "managed-by" label this controller stamps on tokens it creates, and the value ownership checks compare against. An existing site pins its old value ("nke-cloud-workflow-engine"): ownership compares the value, so a site that does not stops recognising its tokens. |
+| teleport.managedByLabelValue | string | `"nvke-controller"` | Value of the Teleport "managed-by" label this controller stamps on tokens it creates, and the value ownership checks compare against. An existing site pins its old value ("nke-cloud-workflow-engine"): ownership compares the value, so a site that does not stops recognizing its tokens. |
 | teleport.proxyAddress | string | `""` | Teleport proxy address (site-specific, must be set per environment) |
 | teleport.resourceGroupLabelValue | string | `"nvke"` | Value of the Teleport "resource-group" label stamped on the tokens and node userdata this controller creates. An existing site pins "nke". |
 | teleport.tokenNamePrefix | string | `"nvke-controller-"` | Prefix for the deterministic Teleport TPM join token name this controller mints for a node. An existing site pins "nke-cwe-". |

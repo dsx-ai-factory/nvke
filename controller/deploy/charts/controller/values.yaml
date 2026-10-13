@@ -661,7 +661,7 @@ teleport:
   # -- Value of the Teleport "managed-by" label this controller stamps on
   # tokens it creates, and the value ownership checks compare against. An
   # existing site pins its old value ("nke-cloud-workflow-engine"): ownership
-  # compares the value, so a site that does not stops recognising its tokens.
+  # compares the value, so a site that does not stops recognizing its tokens.
   managedByLabelValue: "nvke-controller"
   # -- Prefix for the deterministic Teleport TPM join token name this
   # controller mints for a node. An existing site pins "nke-cwe-".
