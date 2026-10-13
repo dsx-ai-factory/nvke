@@ -4,6 +4,23 @@
 
 A Helm chart to deploy the NVKE controller service
 
+## Renamed values
+
+Two keys were renamed to the `nvke` prefix. The old names are no longer read,
+and setting either one **fails the render** with an error naming its
+replacement — Helm would otherwise drop an unknown key silently and leave the
+setting at its default.
+
+| Old key | New key |
+|---------|---------|
+| `nkeOIDCAuth` | [`nvkeOIDCAuth`](#values) |
+| `nkeSystemNamespace` | [`nvkeSystemNamespace`](#values) |
+
+The sub-keys are unchanged, so migrating is a rename of the top-level key:
+move `create` and `annotations` from `nkeSystemNamespace` to
+`nvkeSystemNamespace`, and `enabled`, `tenantRbacName`, `issuerURL`,
+`discoveryURL` and `caBundleSecret` from `nkeOIDCAuth` to `nvkeOIDCAuth`.
+
 ## Values
 
 | Key | Type | Default | Description |
