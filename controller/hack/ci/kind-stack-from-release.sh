@@ -69,6 +69,9 @@ capnico_image="$(awk '$1 == "image:" { print $2 }' "${REPO}/deploy/nico/capnico/
 [[ -n "${capnico_image}" ]] || die "deploy/nico/capnico/release.yaml names no image"
 log "copying ${capnico_image} into an OCI layout"
 oras cp --platform linux/amd64 --to-oci-layout "${capnico_image}" "${RUN}/packages/capnico-controller:smoke"
+# The layouts hold the images now; the buildx cache would only take disk the
+# kind node needs.
+docker builder prune -af >/dev/null 2>&1 || true
 cwe_digest="$(layout_digest "${RUN}/packages/cwe")"
 profiles_digest="$(layout_digest "${RUN}/packages/controller-profiles")"
 capnico_digest="$(layout_digest "${RUN}/packages/capnico-controller")"

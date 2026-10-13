@@ -44,6 +44,15 @@ jobs:
         with:
           persist-credentials: false
 
+      # The runner's root volume is about 14 GB and holds the Go build, the
+      # buildx cache, the kind node and every image the stack pulls. The
+      # preinstalled SDKs the job does not use are the cheapest space to take.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/.ghcup
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h / | tail -1
+
       - name: Read pinned tool versions
         id: versions
         run: |
@@ -135,6 +144,8 @@ jobs:
           out=/tmp/kind-stack-diag
           mkdir -p "${out}"
           cp "${RUNNER_TEMP}/kind-stack-from-release/release.json" "${out}/" 2>/dev/null || true
+          { df -h /; docker exec -i nvke-release-smoke-control-plane df -h /var/lib/containerd; } > "${out}/disk.txt" 2>&1 || true
+          kubectl get nodes -o wide > "${out}/nodes.txt" 2>&1 || true
           kubectl get pods -A -o wide > "${out}/pods.txt" 2>&1 || true
           kubectl describe pods -A > "${out}/describe-pods.txt" 2>&1 || true
           kubectl get events -A --sort-by=.lastTimestamp > "${out}/events.txt" 2>&1 || true
