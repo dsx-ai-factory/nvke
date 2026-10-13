@@ -219,13 +219,14 @@ func TestUnit_SitePodProblemsCatchStuckAndEvicted(t *testing.T) {
 // The deploy path is what the required namespaces are copied from, so a
 // renamed or added item has to change the list with it.
 func TestUnit_SiteNamespacesCoverTheDeployPath(t *testing.T) {
-	// The backend lanes run this package as a compiled binary inside their
-	// runner, with no source tree. make test runs it from the module, where
-	// the deploy path is.
-	if _, err := os.Stat("go.mod"); err != nil {
-		t.Skipf("needs the source tree: %v", err)
-	}
 	const deployPath = "../../../deploy/nico"
+	// The backend E2E lanes run this package as a compiled binary from /state
+	// or from controller/, so nothing is at the deploy path, and go test runs
+	// every Test in it, not just TestE2E. Only the checkout-based unit lane can
+	// answer this; there, a missing manifest still fails.
+	if _, err := os.Stat(deployPath); os.IsNotExist(err) {
+		t.Skipf("no deploy path beside the test binary: %v", err)
+	}
 	var manifest struct {
 		Items []struct {
 			Name string `json:"name"`
