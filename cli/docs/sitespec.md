@@ -78,7 +78,7 @@ is a file `bootstrap site` accepts.
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never defaulted — see below. |
-| `spire.trustDomain` | string | no for the bootstrap, yes for the controller stack install | SPIFFE trust domain. The bootstrap defaults to `<bootstrap-cluster>.nke.local` and prints it; the controller stack install takes the value from here and never derives one. |
+| `spire.trustDomain` | string | no | SPIFFE trust domain. The bootstrap and the controller stack install both default to `nvkectl-bootstrap.nke.local`, the domain of a bootstrap with the default cluster name, and the install warns when it uses the default. Set it when the bootstrap printed another. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to. See below. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Required with `caCertFile`. |
 | `controllerStack` | section | for the stack install | Read by the controller stack install, not by `bootstrap site`. `generate sitespec` writes it with `REPLACE_*` placeholders; the install refuses a placeholder. See below. |
@@ -114,7 +114,9 @@ refuses a value that is still a placeholder.
 
 `nvkectl validate sitespec -f sitespec.yaml` checks both halves of the file
 and lists what is still a placeholder; `--bootstrap-only` checks only what
-`bootstrap site` reads.
+`bootstrap site` reads. A file whose bootstrap half is valid can bootstrap
+the cluster before the `controllerStack` section is filled in; the output
+says so.
 
 The section is filled in by hand. `generate sitespec --set` reaches only the
 bootstrap fields listed under "Environment variable overrides", not

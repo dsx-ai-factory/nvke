@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	"github.com/dsx-ai-factory/nvke/controller/deploy/charts"
 )
@@ -408,7 +409,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	}
 	spireClusterName := cfg.SPIFFEClusterName
 	if spireClusterName == "" {
-		spireClusterName = "nvkectl-bootstrap"
+		spireClusterName = sitespec.DefaultBootstrapClusterName
 	}
 	spireTrustDomain := cfg.SPIFFETrustDomain
 	if spireTrustDomain == "" {

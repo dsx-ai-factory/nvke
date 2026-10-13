@@ -109,12 +109,14 @@ func (r *renderer) site() {
 	if len(r.problems) > 0 {
 		return
 	}
-	// The stack joins the trust domain the nodes were bootstrapped with; the
-	// bootstrap prints it. Deriving one here would name a second domain.
-	trustDomain := spec.Spire.TrustDomain
-	if trustDomain == "" {
-		r.problem("site spec: spire.trustDomain is required: set it to the trust domain nvkectl bootstrap site printed")
-		return
+	// The stack joins the trust domain the nodes were bootstrapped with. The
+	// default is the one a bootstrap with the default cluster name derives;
+	// a bootstrap that was given another name needs spire.trustDomain set.
+	// The warning is written now, not noted: it matters even when the render
+	// fails later.
+	trustDomain, defaulted := spec.TrustDomain()
+	if defaulted {
+		fmt.Fprintf(r.opts.Log, "warning: spire.trustDomain is not set; using %s, the default of a bootstrap with the default cluster name. Set it if nvkectl bootstrap site printed another.\n", trustDomain)
 	}
 	checksum := controllerdeploy.SpireTPMDirectChecksum(cs.Arch)
 	if checksum == "" {

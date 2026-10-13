@@ -1063,9 +1063,14 @@ func dumpSiteSpec(out io.Writer, inv *sitespec.SiteSpec) error {
 // is the moment to say so.
 func noteControllerStackSection(out io.Writer, inv *sitespec.SiteSpec, bootstrapClusterName string) {
 	if inv.Spire.TrustDomain == "" {
-		fmt.Fprintf(out, "\nThe SPIFFE trust domain of this bootstrap is %s, derived from the bootstrap cluster name. "+
-			"Set spire.trustDomain to it in the site spec so the controller stack install uses the same one.\n",
-			inv.EffectiveTrustDomain(bootstrapClusterName))
+		domain := inv.EffectiveTrustDomain(bootstrapClusterName)
+		if bootstrapClusterName == sitespec.DefaultBootstrapClusterName {
+			fmt.Fprintf(out, "\nThe SPIFFE trust domain of this bootstrap is %s. The controller stack install defaults to the same value.\n", domain)
+		} else {
+			fmt.Fprintf(out, "\nThe SPIFFE trust domain of this bootstrap is %s, derived from the bootstrap cluster name. "+
+				"Set spire.trustDomain to it in the site spec: the controller stack install defaults to %s.\n",
+				domain, inv.EffectiveTrustDomain(sitespec.DefaultBootstrapClusterName))
+		}
 	}
 	switch left := inv.ControllerStackPlaceholders(); {
 	case inv.ControllerStack == nil:

@@ -500,7 +500,6 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 		want   string
 	}{
 		"profiles image": {func(s *sitespec.SiteSpec) { s.ControllerStack.Images.Profiles = "" }, "controllerStack.images.profiles is required"},
-		"trust domain":   {func(s *sitespec.SiteSpec) { s.Spire.TrustDomain = "" }, "spire.trustDomain is required"},
 		"empty secret":   {func(s *sitespec.SiteSpec) { _ = os.WriteFile(s.ResolvePath("nico-token"), []byte(" \n"), 0o600) }, "controllerStack.nico.tokenFile is empty"},
 		"quoted orgID":   {func(s *sitespec.SiteSpec) { s.ControllerStack.Nico.OrgID = "org\"x" }, "controllerStack.nico.orgID: the value holds a character"},
 		"unpinned image": {func(s *sitespec.SiteSpec) { s.ControllerStack.Images.Controller = "mirror.example.test/cwe" }, "controllerStack.images.controller: \"mirror.example.test/cwe\" names neither a tag nor a digest"},
@@ -720,6 +719,23 @@ func TestRender_ReleaseChartVersionWins(t *testing.T) {
 		if got := strings.Contains(log.String(), "warning: temporal"); got != (tc.warning != "") || (tc.warning != "" && !strings.Contains(log.String(), tc.warning)) {
 			t.Errorf("%s: log:\n%s", name, log.String())
 		}
+	}
+}
+
+func TestRender_TrustDomainDefaultsWithAWarning(t *testing.T) {
+	spec := filledSiteSpec(t, false, nil)
+	spec.Spire.TrustDomain = ""
+	out := filepath.Join(t.TempDir(), "r")
+	var log strings.Builder
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out, Log: &log}); err != nil {
+		t.Fatal(err)
+	}
+	env, _ := os.ReadFile(filepath.Join(out, "site.env"))
+	if !strings.Contains(string(env), "SITE_TRUST_DOMAIN=nvkectl-bootstrap.nke.local\n") {
+		t.Errorf("site.env:\n%s", env)
+	}
+	if !strings.Contains(log.String(), "warning: spire.trustDomain is not set; using nvkectl-bootstrap.nke.local") {
+		t.Errorf("no warning in the log:\n%s", log.String())
 	}
 }
 

@@ -68,27 +68,28 @@ func TestValidateSiteSpec_GeneratedFileListsPlaceholders(t *testing.T) {
 	if err == nil {
 		t.Fatal("a generated site spec validated as ready")
 	}
-	if !strings.Contains(stdout, "bootstrap: valid\n") {
+	if !strings.Contains(stdout, "bootstrap: valid; nvkectl bootstrap site can run with this file\n") {
 		t.Errorf("bootstrap section not reported valid:\n%s", stdout)
 	}
 	if !strings.Contains(stdout, "controllerStack: 11 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint") {
 		t.Errorf("placeholders not listed:\n%s", stdout)
 	}
-	// generate sitespec leaves the spire block commented out, so the trust
-	// domain is the one value missing that is not a placeholder.
-	if !strings.Contains(stdout, "controllerStack: spire.trustDomain is required") {
-		t.Errorf("missing trust domain not reported:\n%s", stdout)
+	// generate sitespec leaves the spire block commented out; the default
+	// trust domain is reported, not required.
+	if !strings.Contains(stdout, "spire.trustDomain: not set; the bootstrap and the controller stack install default to nvkectl-bootstrap.nke.local") {
+		t.Errorf("default trust domain not reported:\n%s", stdout)
 	}
-	for _, line := range strings.Split(stdout, "\n") {
-		if strings.Contains(line, "is required") && !strings.Contains(line, "spire.trustDomain") {
-			t.Errorf("placeholder reported as an error too: %s", line)
-		}
+	if strings.Contains(stdout, "is required") {
+		t.Errorf("placeholders reported as errors too:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "bootstrap: valid; nvkectl bootstrap site can run with this file") || !strings.Contains(err.Error(), "the bootstrap can run now") {
+		t.Errorf("the output does not say the bootstrap can run:\n%s\n%v", stdout, err)
 	}
 }
 
 func TestValidateSiteSpec_BootstrapOnly(t *testing.T) {
 	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", generatedSiteSpec(t), "--bootstrap-only")
-	if err != nil || stdout != "bootstrap: valid\n" {
+	if err != nil || stdout != "bootstrap: valid; nvkectl bootstrap site can run with this file\n" {
 		t.Errorf("--bootstrap-only: %q %v", stdout, err)
 	}
 }
@@ -98,6 +99,11 @@ func TestValidateSiteSpec_Filled(t *testing.T) {
 	if err != nil || !strings.HasSuffix(stdout, "controllerStack: valid\n") {
 		t.Errorf("filled site spec: %q %v", stdout, err)
 	}
+	// Without a trust domain the file is still ready: both commands default it.
+	stdout, _, err = runGenerate(t, "validate", "sitespec", "-f", filledSiteSpec(t, map[string]string{"spire:\n  trustDomain: my-tier0-site.nke.local\n": ""}))
+	if err != nil || !strings.Contains(stdout, "spire.trustDomain: not set") || !strings.HasSuffix(stdout, "controllerStack: valid\n") {
+		t.Errorf("filled site spec without a trust domain: %q %v", stdout, err)
+	}
 }
 
 func TestValidateSiteSpec_Problems(t *testing.T) {
@@ -105,12 +111,11 @@ func TestValidateSiteSpec_Problems(t *testing.T) {
 		edits map[string]string
 		want  string
 	}{
-		"bad arch":        {map[string]string{"REPLACE_ARCH": "x86"}, `controllerStack.arch "x86" must be one of amd64, arm64`},
-		"bad endpoint":    {map[string]string{"REPLACE_NICO_ENDPOINT": "nico.example.com"}, "controllerStack.nico.endpoint"},
-		"missing secret":  {map[string]string{"REPLACE_TENANT_PASSWORD_PATH": "/nonexistent/password"}, "controllerStack.tenant.passwordFile \"/nonexistent/password\" cannot be read"},
-		"empty required":  {map[string]string{"REPLACE_TENANT_USER": `""`}, "controllerStack.tenant.user is required"},
-		"half filled":     {map[string]string{"REPLACE_ARCH": "REPLACE_ARCH"}, "1 values still to fill in: controllerStack.arch"},
-		"no trust domain": {map[string]string{"spire:\n  trustDomain: my-tier0-site.nke.local\n": ""}, "spire.trustDomain is required"},
+		"bad arch":       {map[string]string{"REPLACE_ARCH": "x86"}, `controllerStack.arch "x86" must be one of amd64, arm64`},
+		"bad endpoint":   {map[string]string{"REPLACE_NICO_ENDPOINT": "nico.example.com"}, "controllerStack.nico.endpoint"},
+		"missing secret": {map[string]string{"REPLACE_TENANT_PASSWORD_PATH": "/nonexistent/password"}, "controllerStack.tenant.passwordFile \"/nonexistent/password\" cannot be read"},
+		"empty required": {map[string]string{"REPLACE_TENANT_USER": `""`}, "controllerStack.tenant.user is required"},
+		"half filled":    {map[string]string{"REPLACE_ARCH": "REPLACE_ARCH"}, "1 values still to fill in: controllerStack.arch"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

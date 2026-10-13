@@ -59,7 +59,7 @@ registry:
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never logged or printed. See below. |
-| `spire.trustDomain` | string | no for the bootstrap, yes for the controller stack install | SPIFFE trust domain. The bootstrap defaults to `<bootstrap-cluster>.nke.local` and prints it; the controller stack install takes the value from here. |
+| `spire.trustDomain` | string | no | SPIFFE trust domain. The bootstrap and the controller stack install both default to `nvkectl-bootstrap.nke.local`, the domain of a bootstrap with the default cluster name; the install warns when it uses the default. Set it when the bootstrap printed another. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to, so a node given that certificate when it was provisioned verifies the server on first contact. Without it SPIRE is self-signed. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Both or neither; both files are checked for existence at load. |
 
@@ -108,7 +108,7 @@ REGISTRY_API_KEY="nvapi-xxxx" nvkectl bootstrap site -f sitespec.yaml
 
 ## Validating the Site Spec
 
-`nvkectl validate sitespec` checks the whole file and reports by section: the fields `bootstrap site` reads, then the `controllerStack:` section the controller stack install reads, with the `REPLACE_*` values still to fill in listed apart from errors. It exits 0 only when the file is ready for both.
+`nvkectl validate sitespec` checks the whole file and reports by section: the fields `bootstrap site` reads, then the `controllerStack:` section the controller stack install reads, with the `REPLACE_*` values still to fill in listed apart from errors. It exits 0 only when the file is ready for both. The two halves are used in sequence: once the bootstrap section is valid, `nvkectl bootstrap site` can run with the file, and the `controllerStack:` section is filled in before the stack install. The output says so.
 
 ```bash
 nvkectl validate sitespec -f sitespec.yaml
