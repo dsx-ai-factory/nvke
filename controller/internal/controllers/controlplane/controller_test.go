@@ -57,6 +57,7 @@ func TestUnit_ControllerReconcileSkipsMissingCluster(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	result, err := controller.Reconcile(context.Background(), dbreconcile.ClusterKey(clusterID))
@@ -450,7 +451,7 @@ func (c *controller) Start(ctx context.Context) {
 
 // newCPController creates a controller wrapper for a controlplane.Controller.
 func newCPController(cfg config.Config, logger *slog.Logger, database db.DB, clusterID uuid.UUID) *controller {
-	cpController := controlplane.NewController(cfg, logger, dbwrapper.New(database, logger), nil, nil, nil)
+	cpController := controlplane.NewController(cfg, logger, dbwrapper.New(database, logger), nil, nil, nil, nil)
 	return newController(func(ctx context.Context) error {
 		_, err := cpController.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
 		return err

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -236,4 +237,39 @@ func TestProvisionCAPINodeClaimsNodeBeforeCreatingInfraMachine(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
+}
+
+func agentBeforePreflightTestWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
+	return provisionNode(ctx, ProvisionNodeInput{NodeID: nodeID}, nodeMetricLabels{}, activities.NodeProvisioningContext{NodeID: nodeID, NodeAgentVersion: "v0.1.2", NodeAgentUpdateMethod: "apt"})
+}
+
+func TestProvisioningConvergesAgentBeforePreflight(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		historyVersion workflow.Version
+		wantUpgrade    bool
+	}{
+		{name: "new workflow upgrades before preflight", historyVersion: 1, wantUpgrade: true},
+		{name: "existing workflow keeps its recorded steps", historyVersion: workflow.DefaultVersion},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			suite := &testsuite.WorkflowTestSuite{}
+			env := suite.NewTestWorkflowEnvironment()
+			env.RegisterWorkflow(agentBeforePreflightTestWorkflow)
+			env.OnGetVersion("node-agent-before-preflight", workflow.DefaultVersion, 1).Return(test.historyVersion)
+			var a *activities.Activities
+			nodeID := uuid.New()
+			completed := false
+			env.OnActivity(a.WaitForCAPIMachineReady, mock.Anything, mock.Anything).Return("", nil).Once()
+			if test.wantUpgrade {
+				env.OnActivity(a.EnsureNodeAgentVersion, mock.Anything, activities.EnsureNodeAgentVersionInput{NodeID: nodeID, Version: "v0.1.2", Method: "apt"}).Return(nil).Run(func(mock.Arguments) { completed = true }).Once()
+			}
+			env.OnActivity(a.NodePreflight, mock.Anything, mock.Anything).Return(nil).Run(func(mock.Arguments) { require.Equal(t, test.wantUpgrade, completed) }).Once()
+			// Stop after preflight so this test does not replace the join workflow tests.
+			env.OnActivity(a.GetNodeConfigProfile, mock.Anything, mock.Anything).Return(activities.ConfigProfile{}, temporal.NewNonRetryableApplicationError("stop after preflight", "test", nil)).Once()
+			env.ExecuteWorkflow(agentBeforePreflightTestWorkflow, nodeID)
+			require.ErrorContains(t, env.GetWorkflowError(), "stop after preflight")
+			env.AssertExpectations(t)
+		})
+	}
 }

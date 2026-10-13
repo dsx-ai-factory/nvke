@@ -1546,14 +1546,14 @@ exec "${REAL_MV:?}" "$@"
              "https://releases.ubuntu.com/26.04/ubuntu-26.04.1-live-server-amd64.iso",
              "file:https://releases.ubuntu.com/26.04/SHA256SUMS"),
             ("26.04.1", "arm64",
-             "https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04.1-live-server-arm64.iso",
-             "file:https://cdimage.ubuntu.com/releases/26.04/release/SHA256SUMS"),
+             "https://cdimage.ubuntu.com/ubuntu/releases/26.04/release/ubuntu-26.04.1-live-server-arm64.iso",
+             "file:https://cdimage.ubuntu.com/ubuntu/releases/26.04/release/SHA256SUMS"),
             ("24.04.5", "amd64",
              "https://releases.ubuntu.com/24.04/ubuntu-24.04.5-live-server-amd64.iso",
              "file:https://releases.ubuntu.com/24.04/SHA256SUMS"),
             ("24.04.5", "arm64",
-             "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.5-live-server-arm64.iso",
-             "file:https://cdimage.ubuntu.com/releases/24.04/release/SHA256SUMS"),
+             "https://cdimage.ubuntu.com/ubuntu/releases/24.04/release/ubuntu-24.04.5-live-server-arm64.iso",
+             "file:https://cdimage.ubuntu.com/ubuntu/releases/24.04/release/SHA256SUMS"),
         )
         for release, arch, iso_url, iso_checksum in cases:
             with self.subTest(release=release, arch=arch):

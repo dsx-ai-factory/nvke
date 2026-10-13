@@ -509,3 +509,19 @@ func TestStartRequestedTeardownWithoutRequest(t *testing.T) {
 	require.ErrorIs(t, nodes.StartRequestedTeardown(ctx, mockTx, target.ID), nodes.ErrNoDeleteRequested)
 	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 }
+
+func TestStartRequestedTeardownForcesDeleteWhenAgentBecomesUnavailable(t *testing.T) {
+	t.Parallel()
+	target := joinedCPNode(cpNodeIDs(1)[0])
+	target.Conditions.DeleteRequested = db.NewCondition(true, "Delete accepted")
+	target.Conditions.NodeAgentReady = db.NewCondition(false, "Agent drain failed")
+	target.DeleteRequest = []byte(`{"reason":"API"}`)
+	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
+	mockTx.On("UpdateNode", mock.Anything, mock.Anything).Return(target, nil)
+	mockTx.On("CreateWorkflowOutboxEntry", mock.Anything, constants.TeardownNodeWorkflowType, constants.TeardownNodeWorkflowPrefix+target.ID.String(), mock.MatchedBy(func(input nodes.TeardownNodeInput) bool {
+		return input.NodeID == target.ID && input.Reason == "API" && input.ForceUnreachable && input.AllowCPNode
+	})).Return(db.WorkflowOutbox{}, nil)
+	require.NoError(t, nodes.StartRequestedTeardown(context.Background(), mockTx, target.ID))
+	mockTx.AssertExpectations(t)
+}

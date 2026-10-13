@@ -49,7 +49,7 @@ func newTestClusterService(logger *slog.Logger, mockDB *mockDB) clusterService {
 // useControlPlaneController.
 func newTestClusterServiceWithControlPlaneController(logger *slog.Logger, mockDB *mockDB, useControlPlaneController bool) clusterService {
 	nodePoolService := server.NewNodePoolService(logger, mockDB, config.TeleportConfig{}, nil, useControlPlaneController)
-	return server.NewClusterService(logger, mockDB, nodePoolService, config.TeleportConfig{}, false, nil, true, useControlPlaneController)
+	return server.NewClusterService(logger, mockDB, nodePoolService, config.TeleportConfig{}, false, nil, true, useControlPlaneController, "")
 }
 
 func discardLogger() *slog.Logger {
@@ -718,6 +718,7 @@ func TestClusterService_CreateClusterRejectsUnsupportedInfraProvider(t *testing.
 		[]string{config.InfraProviderNico},
 		false,
 		false,
+		"",
 	)
 
 	resp, err := service.CreateCluster(context.Background(), api.CreateClusterRequestObject{
@@ -2118,6 +2119,7 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsUnsupportedProvi
 		[]string{config.InfraProviderInfra},
 		false,
 		false,
+		"",
 	)
 
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
@@ -2210,7 +2212,7 @@ func TestValidateCreateClusterRequestFields_LegacyCalicoCreationGate(t *testing.
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, tt.allowCalico, false)
+			svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, tt.allowCalico, false, "")
 			req := baseNicoClusterCreateRequest()
 			req.CniPlugin = tt.cni
 
@@ -2227,7 +2229,7 @@ func TestValidateCreateClusterRequestFields_LegacyCalicoCreationGate(t *testing.
 
 func TestClusterService_CreateClusterRejectsCalicoBeforeTransaction(t *testing.T) {
 	mockDB := &mockDB{}
-	svc := server.NewClusterService(discardLogger(), mockDB, nil, config.TeleportConfig{}, false, nil, false, false)
+	svc := server.NewClusterService(discardLogger(), mockDB, nil, config.TeleportConfig{}, false, nil, false, false, "")
 
 	resp, err := svc.CreateCluster(context.Background(), api.CreateClusterRequestObject{Body: baseNicoClusterCreateRequest()})
 
@@ -2239,7 +2241,7 @@ func TestClusterService_CreateClusterRejectsCalicoBeforeTransaction(t *testing.T
 }
 
 func TestValidateCreateClusterRequestFields_RejectsTaintsOnControlPlanePool(t *testing.T) {
-	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, true, false)
+	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, true, false, "")
 	req := baseNicoClusterCreateRequest()
 	(*req.NodePools)[0].NodeTaints = []api.NodeTaint{{
 		Key:    "dedicated",
@@ -2252,7 +2254,7 @@ func TestValidateCreateClusterRequestFields_RejectsTaintsOnControlPlanePool(t *t
 }
 
 func TestValidateCreateClusterRequestFields_RequiresExactlyOneProvider(t *testing.T) {
-	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false, false)
+	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false, false, "")
 
 	t.Run("neither provider", func(t *testing.T) {
 		req := baseNicoClusterCreateRequest()
@@ -2275,7 +2277,7 @@ func TestValidateCreateClusterRequestFields_RequiresExactlyOneProvider(t *testin
 // The Forge identity fields are required, and they are only reachable through
 // the nested nico payload.
 func TestValidateCreateClusterRequestFields_NicoIdentityFieldsRequired(t *testing.T) {
-	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false, false)
+	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false, false, "")
 
 	cases := []struct {
 		name    string

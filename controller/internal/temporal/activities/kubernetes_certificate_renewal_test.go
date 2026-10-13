@@ -194,3 +194,55 @@ func certificateRenewalTestNode() db.Node {
 		ID: uuid.New(), ClusterID: uuid.New(), Name: "cp-0", ControlPlane: true,
 	}
 }
+
+func TestRenewalAdmissionAndRecovery(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		upgrade      bool
+		accepted     bool
+		statusError  bool
+		phase        nvkeproto.NodeAgentOperationPhase
+		wantRetained bool
+		wantError    string
+	}{
+		{name: "upgrade blocks renewal before its first RPC", upgrade: true, wantError: "installation is in progress"},
+		{name: "completed renewal releases admission", phase: nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED},
+		{name: "lost response retains accepted work", statusError: true, phase: nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING, wantRetained: true, wantError: "connection lost"},
+		{name: "later workflow reattaches to accepted work", accepted: true, phase: nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			node := certificateRenewalTestNode()
+			database := &agentAdmissionDatabase{cluster: db.Cluster{ID: node.ClusterID}, node: node}
+			if test.upgrade {
+				database.cluster.NodeAgentUpgrade = &db.NodeAgentUpgrade{NodeID: node.ID, TargetVersion: "v0.1.2", Method: "apt", Phase: "Running"}
+			}
+			if test.accepted {
+				database.cluster.CertificateRenewal = &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: "accepted-operation"}
+			}
+			fake := &agenttest.FakeClient{
+				StartKubernetesCertificateRenewalHook: func(_ db.Node, req *nvkeproto.StartKubernetesCertificateRenewalRequest) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error) {
+					require.False(t, test.upgrade, "renewal must not call the agent during an upgrade")
+					require.True(t, database.mu.TryLock(), "renewal RPC must not hold the database transaction")
+					require.NotNil(t, database.cluster.CertificateRenewal, "record admission before the RPC")
+					require.Equal(t, req.GetOperationId(), database.cluster.CertificateRenewal.OperationID)
+					if test.accepted {
+						require.Equal(t, "accepted-operation", req.GetOperationId())
+					}
+					database.mu.Unlock()
+					return certificateRenewalStartResponse(req.GetOperationId(), test.phase, nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_RENEWED, ""), nil
+				},
+				GetKubernetesCertificateRenewalHook: func(db.Node, *nvkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nvkeproto.GetKubernetesCertificateRenewalStatusResponse, error) {
+					return nil, status.Error(codes.Unavailable, "connection lost")
+				},
+			}
+			a := &Activities{cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true}, db: database, nodeAgentClient: fake}
+			_, err := executeCertificateRenewalActivity(t, a, KubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "new-operation", ThresholdDays: 14})
+			if test.wantError == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantError)
+			}
+			require.Equal(t, test.wantRetained, database.cluster.CertificateRenewal != nil)
+		})
+	}
+}

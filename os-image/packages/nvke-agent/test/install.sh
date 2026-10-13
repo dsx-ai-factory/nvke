@@ -85,23 +85,29 @@ systemctl is-active --quiet nke-agent.service
 [ "$(cat /var/lib/nke/enc-rotation.state)" = rotation-checkpoint ]
 [ "$(cat /var/lib/nke/agent-upgrades/retained/operation.json)" = retained-operation ]
 # Qualify the actual independent updater with both bundle layouts too.
+# Requests use an exact release version, so stamp this private fixture explicitly.
+target_version=v0.3.0
+make -C "$repo_root/agent" "build-${arch}" VERSION="$target_version"
 bundle_archive="$work/agent.tgz"
 tar -czf "$bundle_archive" \
   -C "$repo_root/agent/bin/linux_${arch}" nvke-agent nvke-agent-updater \
   -C "$repo_root/agent/scripts" nvke-agent.service nvke-agent-updater@.service migrate-agent-paths.sh
 op_root="$work/operations"
-mkdir -p "$op_root/bundle-rename" "$op_root/bundle-restore"
-target_version="$("$repo_root/agent/bin/linux_${arch}/nvke-agent" --version | sed 's/^NVKE Agent Version: //')"
-printf '{"id":"bundle-rename","action":"upgrade","targetVersion":"%s","previousVersion":"v0.2.0","method":"bundle","artifactUrl":"file://%s","phase":"Pending"}\n' \
-  "$target_version" "$bundle_archive" >"$op_root/bundle-rename/operation.json"
-"$repo_root/agent/bin/linux_${arch}/nvke-agent-updater" --operation-root "$op_root" --operation-id bundle-rename
-grep -q '"phase": "Succeeded"' "$op_root/bundle-rename/operation.json"
+upgrade_request="${target_version}_bundle"
+downgrade_request=v0.2.0_bundle
+mkdir -p "$op_root/$upgrade_request" "$op_root/$downgrade_request"
+printf '{"targetVersion":"%s","previousVersion":"v0.2.0","method":"bundle","artifactUrl":"file://%s","phase":"Pending"}\n' \
+  "$target_version" "$bundle_archive" >"$op_root/$upgrade_request/operation.json"
+"$repo_root/agent/bin/linux_${arch}/nvke-agent-updater" --operation-root "$op_root" --request "$upgrade_request"
+grep -q '"phase": "Succeeded"' "$op_root/$upgrade_request/operation.json"
 systemctl is-active --quiet nvke-agent.service
-printf '{"id":"bundle-restore","action":"rollback","restoreFromOperationId":"bundle-rename","phase":"Pending"}\n' \
-  >"$op_root/bundle-restore/operation.json"
-"$repo_root/agent/bin/linux_${arch}/nvke-agent-updater" --operation-root "$op_root" --operation-id bundle-restore
-grep -q '"phase": "Succeeded"' "$op_root/bundle-restore/operation.json"
+older_archive="$work/older-agent.tgz"
+tar -czf "$older_archive" -C "$work/old/usr/local/bin" nke-agent -C "$work/old/etc/systemd/system" nke-agent.service
+printf '{"targetVersion":"v0.2.0","previousVersion":"%s","method":"bundle","artifactUrl":"file://%s","phase":"Pending"}\n' \
+  "$target_version" "$older_archive" >"$op_root/$downgrade_request/operation.json"
+"$repo_root/agent/bin/linux_${arch}/nvke-agent-updater" --operation-root "$op_root" --request "$downgrade_request"
+grep -q '"phase": "Succeeded"' "$op_root/$downgrade_request/operation.json"
 systemctl is-active --quiet nke-agent.service
 /usr/local/bin/nke-agent --version | grep -Fx 'NKE Agent Version: v0.2.0'
 [ "$(cat /var/lib/nvke/enc-rotation.state)" = rotation-checkpoint ]
-echo 'PASS: apt replacement, systemd alias, state preservation, native daemon startup, bundle upgrade and exact legacy rollback'
+echo 'PASS: apt replacement, systemd alias, state preservation, native daemon startup, bundle upgrade and legacy bundle downgrade'

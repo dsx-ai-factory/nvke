@@ -245,6 +245,7 @@ func TestControllerReturnsErrorWhileClusterInfrastructureIsNotReady(t *testing.T
 		nil,
 		k8sClient,
 		k8sClient,
+		nil,
 	)
 
 	result, err := controller.Reconcile(context.Background(), dbreconcile.ClusterKey(clusterID))

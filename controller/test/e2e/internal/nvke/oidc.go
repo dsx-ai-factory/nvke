@@ -213,3 +213,15 @@ func waitForDeploymentRollout(ctx context.Context, c client.Client, namespace, n
 			deploy.Status.AvailableReplicas == desired, nil
 	})
 }
+
+// SetNodeAgentUpdateMethod configures the isolated test controller installation method.
+func SetNodeAgentUpdateMethod(ctx context.Context, c client.Client, method string) (string, bool, error) {
+	previous, written, err := setControllerSetting(ctx, c, "nodeAgent.updateMethod", method)
+	value, _ := previous.(string)
+	return value, written, err
+}
+
+// RestartNodeAgentTestController restarts the isolated controller without changing desired state.
+func RestartNodeAgentTestController(ctx context.Context, c client.Client) error {
+	return restartController(ctx, c)
+}
