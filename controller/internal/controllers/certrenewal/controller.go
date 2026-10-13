@@ -73,13 +73,13 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 	}
 
 	workflowID := constants.RenewK8sCertsWorkflowPrefix + cluster.ID.String()
-	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowStart, otelx.WorkflowAttributes{
+	workflowCtx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowStart, otelx.WorkflowAttributes{
 		WorkflowType: workflows.RenewK8sCertsWorkflowType,
 		WorkflowID:   workflowID,
 		ClusterID:    cluster.ID,
 		ClusterName:  cluster.Name,
 	})
-	_, err = c.controllerTemporalClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+	_, err = c.controllerTemporalClient.ExecuteWorkflow(workflowCtx, client.StartWorkflowOptions{
 		TaskQueue:                c.cfg.TemporalTaskQueue,
 		ID:                       workflowID,
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
@@ -90,7 +90,7 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 	})
 	otelx.EndWorkflowSpan(span, err)
 	if err != nil {
-		c.logger.ErrorContext(ctx, "Failed to start cert renewal workflow", "error", err, "cluster_id", cluster.ID, "workflow_id", workflowID)
+		c.logger.ErrorContext(workflowCtx, "Failed to start cert renewal workflow", "error", err, "cluster_id", cluster.ID, "workflow_id", workflowID)
 		return reconcile.Result{}, fmt.Errorf("start cert renewal workflow for cluster %s: %w", cluster.ID, err)
 	}
 

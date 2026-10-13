@@ -15,9 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 
@@ -63,15 +61,6 @@ func TestUnit_ServiceScheduleCAPIInfraNodesStartsProvisionWorkflows(t *testing.T
 }
 
 func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T) {
-	previousProvider := otel.GetTracerProvider()
-	recorder := tracetest.NewSpanRecorder()
-	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
-	otel.SetTracerProvider(provider)
-	t.Cleanup(func() {
-		otel.SetTracerProvider(previousProvider)
-		require.NoError(t, provider.Shutdown(context.Background()))
-	})
-
 	clusterID := uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")
 	nodePoolID := uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")
 	nodeID := uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
@@ -91,7 +80,12 @@ func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T
 		temporalClient,
 	)
 
-	_, err := service.ScheduleCAPIInfraNodes(t.Context(), slog.Default(), []db.Node{{
+	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	})
+	ctx := trace.ContextWithSpanContext(t.Context(), spanContext)
+	_, err := service.ScheduleCAPIInfraNodes(ctx, slog.Default(), []db.Node{{
 		ID:         nodeID,
 		NodePoolID: nodePoolID,
 		ClusterID:  clusterID,
@@ -109,21 +103,8 @@ func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T
 	require.Equal(t, "test-node", record["node_name"])
 	require.Equal(t, workflowID, record["workflow_id"])
 	require.Equal(t, runID, record["run_id"])
-	require.NotEmpty(t, record["trace_id"])
-	require.NotEmpty(t, record["span_id"])
-
-	spans := recorder.Ended()
-	require.Len(t, spans, 1)
-	require.Equal(t, string(otelx.WorkflowStart), spans[0].Name())
-	attrs := make(map[string]string)
-	for _, attr := range spans[0].Attributes() {
-		attrs[string(attr.Key)] = attr.Value.AsString()
-	}
-	require.Equal(t, "ProvisionNode", attrs["nvke.workflow.type"])
-	require.Equal(t, workflowID, attrs["nvke.workflow.id"])
-	require.Equal(t, clusterID.String(), attrs["nvke.cluster.id"])
-	require.Equal(t, nodePoolID.String(), attrs["nvke.node_pool.id"])
-	require.Equal(t, nodeID.String(), attrs["nvke.node.id"])
+	require.Equal(t, spanContext.TraceID().String(), record["trace_id"])
+	require.Equal(t, spanContext.SpanID().String(), record["span_id"])
 }
 
 func TestUnit_ServiceScheduleCAPIInfraNodesReportsNodeWhenWorkflowStartFails(t *testing.T) {

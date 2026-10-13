@@ -42,6 +42,10 @@ type WorkflowAttributes struct {
 // an outbox enqueue. The returned context must be passed to Temporal or the
 // outbox so downstream work continues the span's trace.
 func StartWorkflowSpan(ctx context.Context, operation WorkflowOperation, values WorkflowAttributes) (context.Context, trace.Span) {
+	return startWorkflowSpan(ctx, otel.Tracer(workflowInstrumentationName), operation, values)
+}
+
+func startWorkflowSpan(ctx context.Context, tracer trace.Tracer, operation WorkflowOperation, values WorkflowAttributes) (context.Context, trace.Span) {
 	attrs := make([]attribute.KeyValue, 0, 8)
 	attrs = appendStringAttribute(attrs, "nvke.workflow.type", values.WorkflowType)
 	attrs = appendStringAttribute(attrs, "nvke.workflow.id", values.WorkflowID)
@@ -53,7 +57,7 @@ func StartWorkflowSpan(ctx context.Context, operation WorkflowOperation, values 
 	attrs = appendStringAttribute(attrs, "nvke.node.name", values.NodeName)
 
 	//nolint:spancheck // Ownership is transferred to the caller through the returned span.
-	spanCtx, span := otel.Tracer(workflowInstrumentationName).Start(
+	spanCtx, span := tracer.Start(
 		ctx,
 		string(operation),
 		trace.WithAttributes(attrs...),

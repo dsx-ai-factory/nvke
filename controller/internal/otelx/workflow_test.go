@@ -10,26 +10,22 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 )
 
 func TestWorkflowSpan(t *testing.T) {
-	previousProvider := otel.GetTracerProvider()
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
-	otel.SetTracerProvider(provider)
 	t.Cleanup(func() {
-		otel.SetTracerProvider(previousProvider)
 		require.NoError(t, provider.Shutdown(context.Background()))
 	})
 
 	clusterID := uuid.New()
 	nodePoolID := uuid.New()
 	nodeID := uuid.New()
-	ctx, span := StartWorkflowSpan(context.Background(), WorkflowStart, WorkflowAttributes{
+	ctx, span := startWorkflowSpan(context.Background(), provider.Tracer(workflowInstrumentationName), WorkflowStart, WorkflowAttributes{
 		WorkflowType: "ProvisionNode",
 		WorkflowID:   "provision-node-1",
 		ClusterID:    clusterID,

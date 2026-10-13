@@ -10,8 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
@@ -22,14 +20,6 @@ import (
 )
 
 func TestDelete(t *testing.T) {
-	previousProvider := otel.GetTracerProvider()
-	provider := sdktrace.NewTracerProvider()
-	otel.SetTracerProvider(provider)
-	t.Cleanup(func() {
-		otel.SetTracerProvider(previousProvider)
-		require.NoError(t, provider.Shutdown(context.Background()))
-	})
-
 	nodeID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
 	nodeSetID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")
@@ -115,7 +105,11 @@ func TestDelete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID: trace.TraceID{1},
+				SpanID:  trace.SpanID{1},
+			})
+			ctx := trace.ContextWithSpanContext(t.Context(), spanContext)
 			mockTx := &testutil.MockTx{}
 
 			if tt.wantErr != nil {

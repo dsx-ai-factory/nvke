@@ -6,6 +6,8 @@ package otelx
 import (
 	"context"
 	"log/slog"
+	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -23,25 +25,25 @@ func TestInitDisabledIsNoop(t *testing.T) {
 	require.NoError(t, shutdown(context.Background()))
 }
 
-// Not parallel: the endpoint can come from the process environment and Init
-// replaces the global tracer provider.
 func TestInitEnabledWithoutEndpointCreatesLocalSpans(t *testing.T) {
+	const helperEnv = "NVKE_TEST_OTEL_INIT_WITHOUT_EXPORTER"
+	if os.Getenv(helperEnv) == "1" {
+		shutdown, err := Init(context.Background(), config.TracingConfig{Enabled: true, Endpoint: ""}, slog.New(slog.DiscardHandler))
+		require.NoError(t, err)
+		spanCtx, span := otel.Tracer("test").Start(context.Background(), "local")
+		require.True(t, span.SpanContext().IsValid())
+		require.Contains(t, Capture(spanCtx)["traceparent"], span.SpanContext().TraceID().String())
+		span.End()
+		require.NoError(t, shutdown(context.Background()))
+		return
+	}
+
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
-	previousProvider := otel.GetTracerProvider()
-	previousPropagator := otel.GetTextMapPropagator()
-	t.Cleanup(func() {
-		otel.SetTracerProvider(previousProvider)
-		otel.SetTextMapPropagator(previousPropagator)
-	})
-
-	shutdown, err := Init(context.Background(), config.TracingConfig{Enabled: true, Endpoint: ""}, slog.New(slog.DiscardHandler))
-	require.NoError(t, err)
-	spanCtx, span := otel.Tracer("test").Start(context.Background(), "local")
-	require.True(t, span.SpanContext().IsValid())
-	require.Contains(t, Capture(spanCtx)["traceparent"], span.SpanContext().TraceID().String())
-	span.End()
-	require.NoError(t, shutdown(context.Background()))
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestInitEnabledWithoutEndpointCreatesLocalSpans$")
+	cmd.Env = append(os.Environ(), helperEnv+"=1")
+	output, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "subprocess failed:\n%s", output)
 }
 
 func TestStripOTLPScheme(t *testing.T) {
