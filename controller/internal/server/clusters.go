@@ -487,6 +487,7 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 			Infra:                       nodePoolConfig.Infra,
 			MachineAnnotations:          nodePoolConfig.MachineAnnotations,
 			MachineLabels:               nodePoolConfig.MachineLabels,
+			LaunchLayer:                 nodePoolConfig.LaunchLayer,
 		}
 
 		if err := s.nodePoolService.validateCreateNodePoolRequest(cluster, &nodePoolReq); err != nil {
@@ -581,25 +582,8 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 		}
 		// Reject a controlPlaneConfig provider block that doesn't match the cluster before
 		// any field is touched.
-		if cpConfig := req.Body.ControlPlaneConfig; cpConfig != nil {
-			providerField, providerName := "", ""
-			switch dbCluster.ProviderType {
-			case db.ProviderTypeNico:
-				providerField, providerName = "nico", "controlPlaneConfig.nico"
-			case db.ProviderTypeCAPI:
-				providerField, providerName = "infra", "controlPlaneConfig.infra"
-			case db.ProviderTypeLaunchLayer:
-				providerField, providerName = "launchLayer", "controlPlaneConfig.launchLayer"
-			}
-			if providerField != "nico" && cpConfig.Nico != nil {
-				return newBadRequestErrorf("controlPlaneConfig.nico is not supported, please provide %s", providerName)
-			}
-			if providerField != "infra" && cpConfig.Infra != nil {
-				return newBadRequestErrorf("controlPlaneConfig.infra is not supported, please provide %s", providerName)
-			}
-			if providerField != "launchLayer" && cpConfig.LaunchLayer != nil {
-				return newBadRequestErrorf("controlPlaneConfig.launchLayer is not supported, please provide %s", providerName)
-			}
+		if err := validateUpdateControlPlaneConfigProviderMatch(dbCluster.ProviderType, req.Body.ControlPlaneConfig); err != nil {
+			return err
 		}
 		// Update fields from request
 		if req.Body.EnableCPNodeRecycling != nil {
@@ -706,6 +690,34 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 		"response", response,
 	)
 	return response, nil
+}
+
+// validateUpdateControlPlaneConfigProviderMatch rejects a controlPlaneConfig
+// provider block that doesn't match providerType, before any field is
+// touched.
+func validateUpdateControlPlaneConfigProviderMatch(providerType db.ProviderType, cpConfig *api.UpdateClusterControlPlaneConfig) error {
+	if cpConfig == nil {
+		return nil
+	}
+	providerField, providerName := "", ""
+	switch providerType {
+	case db.ProviderTypeNico:
+		providerField, providerName = "nico", "controlPlaneConfig.nico"
+	case db.ProviderTypeCAPI:
+		providerField, providerName = "infra", "controlPlaneConfig.infra"
+	case db.ProviderTypeLaunchLayer:
+		providerField, providerName = "launchLayer", "controlPlaneConfig.launchLayer"
+	}
+	if providerField != "nico" && cpConfig.Nico != nil {
+		return newBadRequestErrorf("controlPlaneConfig.nico is not supported, please provide %s", providerName)
+	}
+	if providerField != "infra" && cpConfig.Infra != nil {
+		return newBadRequestErrorf("controlPlaneConfig.infra is not supported, please provide %s", providerName)
+	}
+	if providerField != "launchLayer" && cpConfig.LaunchLayer != nil {
+		return newBadRequestErrorf("controlPlaneConfig.launchLayer is not supported, please provide %s", providerName)
+	}
+	return nil
 }
 
 // validateOIDCUpdateRequest rejects unsupported OIDC-toggle requests up front:

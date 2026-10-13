@@ -627,8 +627,10 @@ func validateUpdatedNodePool(cluster db.Cluster, dbNodePool *db.NodePool) error 
 		return validateUpdatedCAPINodePool(cluster, dbNodePool)
 	case db.ProviderTypeLaunchLayer:
 		return validateUpdatedLaunchLayerNodePool(cluster, dbNodePool)
-	default:
+	case db.ProviderTypeNico:
 		return validateUpdatedForgeNodePool(cluster, dbNodePool)
+	default:
+		return newBadRequestErrorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
 	}
 }
 
