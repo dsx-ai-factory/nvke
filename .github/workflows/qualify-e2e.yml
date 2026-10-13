@@ -758,6 +758,17 @@ jobs:
       SSA_ISSUER: ${{ secrets.SSA_ISSUER }}
       DSX_AZ51_DEV2_DH2_SSA_CLIENT_ID: ${{ secrets.DSX_AZ51_DEV2_DH2_SSA_CLIENT_ID }}
       DSX_AZ51_DEV2_DH2_SSA_CLIENT_SECRET: ${{ secrets.DSX_AZ51_DEV2_DH2_SSA_CLIENT_SECRET }}
+      DSX_REDSTONE_DEV1_DH2_SITE_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_SITE_ID }}
+      DSX_REDSTONE_DEV1_DH2_TENANT_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_TENANT_ID }}
+      DSX_REDSTONE_DEV1_DH2_VPC_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_VPC_ID }}
+      DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID }}
+      DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID }}
+      DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID }}
+      DSX_REDSTONE_DEV1_DH2_NODE_USER: ${{ vars.DSX_REDSTONE_DEV1_DH2_NODE_USER }}
+      DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN: ${{ vars.DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN }}
+      DSX_REDSTONE_DEV1_DH2_JUMP_HOST: ${{ secrets.DSX_REDSTONE_DEV1_DH2_JUMP_HOST }}
+      DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID: ${{ secrets.DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID }}
+      DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET: ${{ secrets.DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET }}
       # root for the same reason as FORGE_TELEPORT_LOGIN: the same bot reaches
       # both jump hosts through rg-k8aas-bot-ssh-root, whose only login is
       # root. Unset falls back to tsh's default, the runner's local user,
@@ -1256,12 +1267,22 @@ jobs:
           # Forge's on every run passes for the wrong reason on a DSX stream
           # and sends a reader to a setting that run never touches.
           case "${SITE_ENVIRONMENT}" in
-            forge) jump_host_var=FORGE_JUMP_HOST ;;
-            dsx)   jump_host_var=DSX_AZ51_DEV2_DH2_JUMP_HOST ;;
+            forge) jump_host_vars=(FORGE_JUMP_HOST) ;;
+            # Two datahalls, each behind its own jump host, and which one a run
+            # dials is decided inside the suite by the arch the stream asks
+            # for. Requiring both would fail a run against a configured
+            # datahall because the other one is not configured yet; requiring
+            # neither would let a run reach the dial with nothing to dial
+            # through. One of them is the honest assertion at this point.
+            dsx)   jump_host_vars=(DSX_AZ51_DEV2_DH2_JUMP_HOST DSX_REDSTONE_DEV1_DH2_JUMP_HOST) ;;
             *)     echo "::error::no jump host is declared for environment ${SITE_ENVIRONMENT}"; exit 1 ;;
           esac
-          test -n "${!jump_host_var}" || {
-            echo "::error::the ${jump_host_var} repository secret is unset; the suite has no way to reach the node"
+          jump_host_var=""
+          for candidate in "${jump_host_vars[@]}"; do
+            if [ -n "${!candidate-}" ]; then jump_host_var="${candidate}"; break; fi
+          done
+          test -n "${jump_host_var}" || {
+            echo "::error::none of ${jump_host_vars[*]} is set; the suite has no way to reach the node"
             exit 1
           }
           # The repositories are the ones site-inputs pulled or tagged, so the
@@ -1624,7 +1645,7 @@ jobs:
         working-directory: controller/test/e2e
         run: |
           set -Eeuo pipefail
-          for raw in "${FORGE_JUMP_HOST}" "${FORGE_YTL_JUMP_HOST}" "${DSX_AZ51_DEV2_DH2_JUMP_HOST}"; do
+          for raw in "${FORGE_JUMP_HOST}" "${FORGE_YTL_JUMP_HOST}" "${DSX_AZ51_DEV2_DH2_JUMP_HOST}" "${DSX_REDSTONE_DEV1_DH2_JUMP_HOST}"; do
             [ -n "${raw}" ] || continue
             host="$(printf '%s' "${raw}" | sed 's/[][\.*^$/]/\\&/g')"
             for f in qualify-e2e.log qualify-e2e.junit.xml tenant-diagnostics.json site-cluster-state.txt; do

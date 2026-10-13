@@ -81,3 +81,13 @@ spec:
     # run is where that shows.
     - name: dsx-amd64-ubuntu-24.04-kube-1.36
       capabilities: {provider: dsx, arch: amd64, ubuntu: "24.04", kube: "1.36"}
+
+    # The second datahall, redstone-dev1-dh2, which is aarch64 throughout. Arch
+    # is what separates the two DSX streams: the resolver searches every
+    # declared site, and only one of them answers each.
+    #
+    # Unproven on hardware, as the amd64 stream is. It also needs an instance
+    # type bound to that datahall's CPU machines, which does not exist yet ---
+    # until it does the site is skipped and this stream resolves to nothing.
+    - name: dsx-arm64-ubuntu-24.04-kube-1.36
+      capabilities: {provider: dsx, arch: arm64, ubuntu: "24.04", kube: "1.36"}
