@@ -171,7 +171,7 @@ func TestUnit_SiteVersionProblems(t *testing.T) {
 	}
 	require.Empty(t, versionProblems("1.36.3", "v1.36.3", []corev1.Node{node("a", "v1.36.3")}))
 	require.Empty(t, versionProblems("v1.36.3", "v1.36.3", []corev1.Node{node("a", "v1.36.3")}))
-	require.Empty(t, versionProblems("1.36.3", "v1.36.3+abc", []corev1.Node{node("a", "v1.36.3-nke.1")}),
+	require.Empty(t, versionProblems("1.36.3", "v1.36.3+abc", []corev1.Node{node("a", "v1.36.3-vendor.1")}),
 		"a build suffix is the same Kubernetes")
 	require.Equal(t, []string{"API server: v1.36.2, want 1.36.3", "a: kubelet: v1.35.0, want 1.36.3"},
 		versionProblems("1.36.3", "v1.36.2", []corev1.Node{node("a", "v1.35.0")}))

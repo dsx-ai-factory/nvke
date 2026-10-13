@@ -466,7 +466,7 @@ func healthCheckProblems(endpoint, body string) error {
 
 // versionProblems compares the API server and every kubelet against the
 // version the site was built with, by major, minor and patch. A build suffix
-// such as -nke.1 or +abc is a packaging detail, not a different Kubernetes,
+// such as -vendor.1 or +abc is a packaging detail, not a different Kubernetes,
 // so it does not count as a mismatch.
 func versionProblems(want, server string, nodes []corev1.Node) []string {
 	wanted, err := utilversion.ParseGeneric(want)
