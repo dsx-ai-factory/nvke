@@ -22,6 +22,7 @@ type ClusterOIDCProvider struct {
 	GroupsPrefix   string            `json:"groupsPrefix,omitempty"`
 	RequiredClaims map[string]string `json:"requiredClaims,omitempty"`
 	CABundle       string            `json:"caBundle"`
+	DiscoveryURL   string            `json:"discoveryURL,omitempty"`
 }
 
 // ClusterOIDCProvidersFromConfig converts the fleet-wide providers from
@@ -40,6 +41,7 @@ func ClusterOIDCProvidersFromConfig(providers []controllerconfig.OIDCProvider) [
 			GroupsPrefix:   provider.GroupsPrefix,
 			RequiredClaims: maps.Clone(provider.RequiredClaims),
 			CABundle:       provider.CABundle,
+			DiscoveryURL:   provider.DiscoveryURL,
 		})
 	}
 	return out
@@ -60,6 +62,7 @@ func ClusterOIDCProvidersToConfig(providers []ClusterOIDCProvider) []controllerc
 			GroupsPrefix:   provider.GroupsPrefix,
 			RequiredClaims: maps.Clone(provider.RequiredClaims),
 			CABundle:       provider.CABundle,
+			DiscoveryURL:   provider.DiscoveryURL,
 		})
 	}
 	return out

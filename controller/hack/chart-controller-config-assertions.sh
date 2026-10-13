@@ -179,6 +179,7 @@ oidc:
       requiredClaims:
         hd: example.test
         tenant: "1"
+      discoveryURL: https://login.internal.example.test/.well-known/openid-configuration
       caBundle: |
         -----BEGIN CERTIFICATE-----
         MIIBexample

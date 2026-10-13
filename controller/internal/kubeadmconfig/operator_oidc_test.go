@@ -59,6 +59,36 @@ func TestBuildOperatorJWTAuthenticator(t *testing.T) {
 	assert.Equal(t, "example.com", got.ClaimValidationRules[0].RequiredValue)
 }
 
+func TestBuildOperatorJWTAuthenticatorDiscoveryURL(t *testing.T) {
+	tests := []struct {
+		name         string
+		discoveryURL string
+	}{
+		{name: "unset leaves kube-apiserver's default discovery path"},
+		{name: "set overrides where the discovery document is fetched", discoveryURL: "https://issuer.internal.example/.well-known/openid-configuration"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := controllerconfig.OIDCProvider{
+				Name:          "workforce",
+				IssuerURL:     "https://issuer.example.com",
+				Audiences:     []string{"nke"},
+				UsernameClaim: "email",
+				CABundle:      "-----BEGIN CERTIFICATE-----\nexample\n-----END CERTIFICATE-----\n",
+				DiscoveryURL:  tt.discoveryURL,
+			}
+			got := mustBuildOperatorJWTAuthenticator(t, provider, OperatorJWTPolicy{})
+			if tt.discoveryURL == "" {
+				assert.Nil(t, got.Issuer.DiscoveryURL)
+			} else {
+				require.NotNil(t, got.Issuer.DiscoveryURL)
+				assert.Equal(t, tt.discoveryURL, *got.Issuer.DiscoveryURL)
+			}
+			assert.Equal(t, provider.IssuerURL, got.Issuer.URL, "the issuer URL is still what tokens must carry")
+		})
+	}
+}
+
 func TestBuildOperatorJWTAuthenticatorOptionalGroupsAndEmptyPrefixes(t *testing.T) {
 	tests := []struct {
 		name           string

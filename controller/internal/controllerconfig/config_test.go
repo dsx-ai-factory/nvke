@@ -846,6 +846,74 @@ oidc:
 	})
 }
 
+// A provider's discoveryURL gets the checks kube-apiserver applies to it, so a
+// value it would reject stops the controller at startup instead of failing
+// every new cluster's control plane.
+func TestValidateOIDCProviderDiscoveryURL(t *testing.T) {
+	t.Parallel()
+
+	provider := func(name, issuerURL, discoveryURL string) string {
+		return fmt.Sprintf(`    - name: %s
+      issuerURL: %s
+      discoveryURL: %q
+      usernameClaim: sub
+      audiences: ["tenant"]
+      caBundle: pem
+`, name, issuerURL, discoveryURL)
+	}
+	const (
+		issuer   = "https://login.example.com"
+		internal = "https://login.internal.example/.well-known/openid-configuration"
+	)
+	shared := func(enabled bool) string {
+		return fmt.Sprintf(`  managementOIDCAuth:
+    enabled: %t
+    issuerURL: https://management.example.com
+    discoveryURL: %s
+`, enabled, internal)
+	}
+
+	tests := []struct {
+		name    string
+		oidc    string
+		wantErr string
+	}{
+		{name: "an https URL other than the issuer loads", oidc: "  providers:\n" + provider("corporate", issuer, internal)},
+		{name: "http fails", oidc: "  providers:\n" + provider("corporate", issuer, "http://login.internal.example/discovery"), wantErr: "must be an absolute https URL"},
+		{name: "a relative URL fails", oidc: "  providers:\n" + provider("corporate", issuer, "/.well-known/openid-configuration"), wantErr: "must be an absolute https URL"},
+		{name: "a port with no hostname fails", oidc: "  providers:\n" + provider("corporate", issuer, "https://:443/.well-known/openid-configuration"), wantErr: "must be an absolute https URL"},
+		{name: "credentials fail", oidc: "  providers:\n" + provider("corporate", issuer, "https://user:secret@login.internal.example/discovery"), wantErr: "must not contain a username or password"},
+		{name: "a query fails", oidc: "  providers:\n" + provider("corporate", issuer, "https://login.internal.example/discovery?tenant=a"), wantErr: "must not contain a query or fragment"},
+		{name: "the issuerURL itself fails", oidc: "  providers:\n" + provider("corporate", issuer, issuer+"/"), wantErr: "must differ from issuerURL"},
+		{name: "padding fails", oidc: "  providers:\n" + provider("corporate", issuer, " "+internal), wantErr: "leading or trailing whitespace"},
+		{
+			name:    "the same URL on two providers fails",
+			oidc:    "  providers:\n" + provider("corporate", issuer, internal) + provider("other", "https://other.example.com", internal),
+			wantErr: "duplicate discoveryURL",
+		},
+		{
+			name:    "the discoveryURL of the enabled managementOIDCAuth fails",
+			oidc:    shared(true) + "  providers:\n" + provider("corporate", issuer, internal),
+			wantErr: "already used by managementOIDCAuth",
+		},
+		{name: "the discoveryURL of a disabled managementOIDCAuth loads", oidc: shared(false) + "  providers:\n" + provider("corporate", issuer, internal)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := controllerconfig.Load(writeConfig(t, minimalConfig+"oidc:\n"+tt.oidc))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, cfg.OIDC.Providers, 1)
+			assert.Equal(t, internal, cfg.OIDC.Providers[0].DiscoveryURL)
+		})
+	}
+}
+
 func TestValidateSupportedInfraProviders(t *testing.T) {
 	t.Parallel()
 

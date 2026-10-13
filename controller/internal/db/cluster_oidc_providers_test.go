@@ -37,6 +37,7 @@ func corpProvider() db.ClusterOIDCProvider {
 		GroupsPrefix:   "corp:",
 		RequiredClaims: map[string]string{"tenant": "a"},
 		CABundle:       "-----BEGIN CERTIFICATE-----\nexample\n-----END CERTIFICATE-----\n",
+		DiscoveryURL:   "https://issuer.internal.example/.well-known/openid-configuration",
 	}
 }
 
@@ -82,6 +83,7 @@ func TestClusterOIDCProvidersFromConfig(t *testing.T) {
 			GroupsPrefix:   want.GroupsPrefix,
 			RequiredClaims: map[string]string{"tenant": "a"},
 			CABundle:       want.CABundle,
+			DiscoveryURL:   want.DiscoveryURL,
 		}}
 
 		got := db.ClusterOIDCProvidersFromConfig(in)
@@ -103,6 +105,7 @@ func TestClusterOIDCProvidersToConfig(t *testing.T) {
 		GroupsPrefix:   "corp:",
 		RequiredClaims: map[string]string{"tenant": "a"},
 		CABundle:       "pem",
+		DiscoveryURL:   "https://issuer.internal.example/.well-known/openid-configuration",
 	}}
 	stored := db.ClusterOIDCProvidersFromConfig(in)
 	got := db.ClusterOIDCProvidersToConfig(stored)

@@ -152,6 +152,7 @@ type OIDCProvider struct {
 	GroupsPrefix   string            `json:"groupsPrefix,omitempty"`
 	RequiredClaims map[string]string `json:"requiredClaims,omitempty"`
 	CABundle       string            `json:"caBundle"`
+	DiscoveryURL   string            `json:"discoveryURL,omitempty"`
 }
 
 // MaxOIDCProviders is the fleet-wide provider cap: AuthenticationConfiguration
@@ -478,6 +479,7 @@ func (o *OIDCConfig) validate() error {
 
 	seenNames := make(map[string]int, len(o.Providers))
 	seenIssuers := make(map[string]int, len(o.Providers))
+	seenDiscoveryURLs := make(map[string]int, len(o.Providers))
 	for i, p := range o.Providers {
 		name := strings.TrimSpace(p.Name)
 		if name == "" {
@@ -500,6 +502,19 @@ func (o *OIDCConfig) validate() error {
 		}
 		seenIssuers[issuerURL] = i
 
+		if p.DiscoveryURL != "" {
+			if err := validateDiscoveryURL(issuerURL, p.DiscoveryURL); err != nil {
+				return fmt.Errorf("providers[%d] (%s): %w", i, name, err)
+			}
+			if prev, dup := seenDiscoveryURLs[p.DiscoveryURL]; dup {
+				return fmt.Errorf("providers[%d] (%s): duplicate discoveryURL %q, already used by providers[%d]", i, name, p.DiscoveryURL, prev)
+			}
+			if o.ManagementOIDCAuth.Enabled && p.DiscoveryURL == strings.TrimSpace(o.ManagementOIDCAuth.DiscoveryURL) {
+				return fmt.Errorf("providers[%d] (%s): duplicate discoveryURL %q, already used by managementOIDCAuth", i, name, p.DiscoveryURL)
+			}
+			seenDiscoveryURLs[p.DiscoveryURL] = i
+		}
+
 		if strings.TrimSpace(p.UsernameClaim) == "" {
 			return fmt.Errorf("providers[%d] (%s): usernameClaim is required and must not be empty", i, name)
 		}
@@ -517,6 +532,30 @@ func (o *OIDCConfig) validate() error {
 		if strings.TrimSpace(p.CABundle) == "" {
 			return fmt.Errorf("providers[%d] (%s): caBundle is required and must not be empty", i, name)
 		}
+	}
+	return nil
+}
+
+// validateDiscoveryURL applies kube-apiserver's checks on a JWT issuer's
+// discoveryURL, so a bad value stops the controller at startup rather than
+// every control-plane node of each new cluster at bootstrap.
+func validateDiscoveryURL(issuerURL, discoveryURL string) error {
+	if err := requireUnpadded("discoveryURL", discoveryURL); err != nil {
+		return err
+	}
+	u, err := url.Parse(discoveryURL)
+	if err != nil {
+		return fmt.Errorf("discoveryURL %q is not a URL: %w", discoveryURL, err)
+	}
+	switch {
+	case u.Scheme != "https" || u.Hostname() == "":
+		return fmt.Errorf("discoveryURL %q must be an absolute https URL", discoveryURL)
+	case u.User != nil:
+		return fmt.Errorf("discoveryURL %q must not contain a username or password", discoveryURL)
+	case u.RawQuery != "" || u.Fragment != "":
+		return fmt.Errorf("discoveryURL %q must not contain a query or fragment", discoveryURL)
+	case strings.TrimRight(discoveryURL, "/") == strings.TrimRight(issuerURL, "/"):
+		return fmt.Errorf("discoveryURL %q must differ from issuerURL; leave it unset to use the issuer's own discovery document", discoveryURL)
 	}
 	return nil
 }
