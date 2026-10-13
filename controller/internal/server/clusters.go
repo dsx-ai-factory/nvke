@@ -77,13 +77,14 @@ func (e *updateInProgressError) Error() string {
 }
 
 type clusterService struct {
-	logger          *slog.Logger
-	db              db.DB
-	nodePoolService *nodePoolService
-	teleportCfg     config.TeleportConfig
-	oidcAuthEnabled bool
-	fleetOIDC       *controllerconfig.OIDCConfig
-	providers       providerSupport
+	logger                           *slog.Logger
+	db                               db.DB
+	nodePoolService                  *nodePoolService
+	teleportCfg                      config.TeleportConfig
+	oidcAuthEnabled                  bool
+	fleetOIDC                        *controllerconfig.OIDCConfig
+	providers                        providerSupport
+	allowLegacyCalicoClusterCreation bool
 	// useControlPlaneController mirrors the controller feature flag
 	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true, the
 	// cluster-level controlPlaneConfig is authoritative: it is required on
@@ -101,16 +102,18 @@ func NewClusterService(
 	teleportCfg config.TeleportConfig,
 	oidcAuthEnabled bool,
 	supportedInfraProviders []string,
+	allowLegacyCalicoClusterCreation bool,
 	useControlPlaneController bool,
 ) *clusterService {
 	return &clusterService{
-		logger:                    logger,
-		db:                        database,
-		nodePoolService:           nodePoolService,
-		teleportCfg:               teleportCfg,
-		oidcAuthEnabled:           oidcAuthEnabled,
-		providers:                 newProviderSupport(supportedInfraProviders),
-		useControlPlaneController: useControlPlaneController,
+		logger:                           logger,
+		db:                               database,
+		nodePoolService:                  nodePoolService,
+		teleportCfg:                      teleportCfg,
+		oidcAuthEnabled:                  oidcAuthEnabled,
+		providers:                        newProviderSupport(supportedInfraProviders),
+		allowLegacyCalicoClusterCreation: allowLegacyCalicoClusterCreation,
+		useControlPlaneController:        useControlPlaneController,
 	}
 }
 
@@ -386,8 +389,15 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 	}
 
 	dbCniPlugin := db.EffectiveCNIPlugin(db.CniPlugin(req.CniPlugin))
-	if !slices.Contains(db.ListCNIPlugins(), dbCniPlugin) {
-		return fmt.Errorf("invalid CNI plugin: %s, valid plugins: %v", req.CniPlugin, db.ListCNIPlugins())
+	supportedCNIPlugins := db.ListCNIPlugins()
+	if !s.allowLegacyCalicoClusterCreation {
+		supportedCNIPlugins = slices.DeleteFunc(supportedCNIPlugins, func(p db.CniPlugin) bool { return p == db.CNICalico })
+	}
+	if !slices.Contains(supportedCNIPlugins, dbCniPlugin) {
+		if dbCniPlugin == db.CNICalico {
+			return errors.New("calico cluster creation is disabled by this controller deployment; use ovn-kubernetes")
+		}
+		return fmt.Errorf("invalid CNI plugin: %s, valid plugins: %v", req.CniPlugin, supportedCNIPlugins)
 	}
 	if req.CniVersion != nil {
 		cniVersion := strings.TrimSpace(*req.CniVersion)

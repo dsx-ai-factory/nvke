@@ -186,10 +186,11 @@ CWE consumes, and it becomes a SPIRE exec-auth kubeconfig when OIDC is on.
 ## Real Site
 
 Real hardware, a real NICo site, and a site controller that outlives your
-terminal. Steps 1 to 4 have been run end to end on leased bare metal with calico, to a
+terminal. Steps 1 to 4 have been run end to end on leased bare metal to a
 `Ready` control-plane node; steps 5, 6 and 8 have been run against mock NICo
-rather than a real site, and step 7 against neither. Treat a surprise here as a
-bug in this page and say so.
+rather than a real site, and step 7 against neither. New site-controller
+clusters use OVN-Kubernetes. Treat a surprise here as a bug in this page and
+say so.
 
 ### Before you start
 

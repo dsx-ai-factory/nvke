@@ -34,6 +34,7 @@ certRenewal:
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
 installCNIAfterInit: false
+allowLegacyCalicoClusterCreation: false
 nicoControllersEnabled: true
 profilesDir: test/fixtures/profiles
 runbooksDir: test/fixtures/runbooks

@@ -122,7 +122,6 @@ func nicoVMSOSProfileTestSpec(profile nicoVMSOSProfileEntry, index int) testSpec
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			kubernetesVersion: kubernetesVersion,
-			cniPlugin:         CNIPluginCalico,
 			// The profile under test is the worker's. The control plane takes the
 			// nico-vms default instance, which leaves room for the controller's kubelet
 			// reservation (see nicoVMSSpec).

@@ -298,9 +298,9 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			kubernetesVersion: "1.34.2",
-			// Calico, so no openVSwitch assertion here; the "nico-vms ovn" entry
-			// below carries it. Large instances kept: cpu2-mem2gb was sized
-			// against ovnkube-node.
+			// OVN-Kubernetes, via the nico-vms default. Open vSwitch is asserted
+			// on the "nico-vms ovn" entry below. Large instances kept:
+			// cpu2-mem2gb was sized against ovnkube-node.
 			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
 			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
@@ -363,7 +363,6 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
 	Entry("nico-vms OS profiles", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "os-profiles"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			cniPlugin:         CNIPluginCalico, // Simply to make this test run faster (520s vs 1011s).
 			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 			workerPools: []nvke.NodePoolSpec{
 				// Old agent image pins the agent version to 0.1.22, which is before the new nvkeproto.CheckCloudInitStatus was introduced in version 0.1.24.
@@ -1078,7 +1077,6 @@ func (t *tenantTest) deleteClusterAndWait(ctx context.Context, accepted *bool) {
 const (
 	clusterNamePrefix        = "e2e" // CreateCluster appends the backend and a timestamp
 	defaultKubernetesVersion = "1.34.2"
-	CNIPluginCalico          = "calico"
 	CNIPluginOVN             = "ovn-kubernetes"
 	capdControlPlaneVIP      = "172.31.1.1"
 

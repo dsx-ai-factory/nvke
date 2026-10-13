@@ -86,6 +86,7 @@ certRenewal:
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
 installCNIAfterInit: false
+allowLegacyCalicoClusterCreation: true
 nicoControllersEnabled: true
 profilesDir: ./profiles
 runbooksDir: ""
@@ -166,6 +167,7 @@ permissiveMode: false
 	assert.Equal(t, []string{"nico"}, cfg.SupportedInfraProviders)
 	assert.Equal(t, 12*time.Hour, cfg.CertRenewal.Interval.Duration)
 	assert.Equal(t, 30, cfg.CertRenewal.ThresholdDays)
+	assert.True(t, cfg.AllowLegacyCalicoClusterCreation)
 	assert.Equal(t, "dsxImds", cfg.NodeAgent.SpireAttestationMethod)
 	assert.Equal(t, "acme", cfg.NodeAgent.DSXImds.OperatorTenant)
 	assert.Equal(t, exampleChecksum, cfg.NodeAgent.DSXImds.PluginChecksum)

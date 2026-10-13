@@ -41,6 +41,9 @@ render readiness-custom \
   --set-string nodeAgent.readiness.interval=90s \
   --set nodeAgent.readiness.jitter=0
 
+render legacy-calico \
+  --set cni.allowLegacyCalicoClusterCreation=true
+
 # Padded on purpose: the template must trim these.
 render dsx-imds \
   --set spiffe.enabled=true \

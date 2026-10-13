@@ -108,7 +108,7 @@ NVKE handles the following for you — you don't need deep expertise in these to
 - **kubeadm internals** — NVKE drives these via `nvke-agent`
 - **Certificate lifecycle** — managed by `cert-manager` and `nvke-agent`
 - **etcd operations** — managed by NVKE with built-in encryption and `etcd-manager` for compaction and snapshots
-- **CNI configuration** — NVKE configures OVN-Kubernetes during bootstrap from your `cniName` setting; Calico is accepted for development
+- **CNI configuration** — NVKE configures OVN-Kubernetes during site-controller bootstrap
 
 ---
 

@@ -273,7 +273,7 @@ func TestValidateCreateClusterRequest_NodeNamePrefixLength(t *testing.T) {
 				SiteID: uuid.New(),
 				VpcID:  uuid.New(),
 			},
-			CniPlugin:                     "calico",
+			CniPlugin:                     "ovn-kubernetes",
 			ControlPlaneKubernetesVersion: "1.29.0",
 			NodePools:                     &[]api.NodePoolCreateConfig{nodePool},
 		}

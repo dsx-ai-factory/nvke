@@ -335,7 +335,7 @@ cluster:
     - name: node1
       ip: 10.0.0.1
   k8sVersion: "1.32.0"
-  cniName: calico
+  cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
 registry:
@@ -355,7 +355,7 @@ cluster:
       ip: 10.0.0.3
   controlPlaneVIP: 10.0.0.100
   k8sVersion: "1.32.0"
-  cniName: calico
+  cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
 registry:
@@ -413,7 +413,7 @@ cluster:
     - name: node1
       ip: not-an-ip
   k8sVersion: "1.32.0"
-  cniName: calico
+  cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
 registry:

@@ -110,6 +110,32 @@ func TestPublicOpenAPIHidesTeleportFromTheClusterSpec(t *testing.T) {
 	assert.Contains(t, full, "teleportEnabled")
 }
 
+func TestPublicOpenAPIHidesCreateTimeCNISelection(t *testing.T) {
+	t.Parallel()
+
+	got, err := publicOpenAPI([]byte(api.OpenapiYAML))
+	require.NoError(t, err)
+
+	loader := openapi3.NewLoader()
+	doc, err := loader.LoadFromData(got)
+	require.NoError(t, err)
+	require.NoError(t, doc.Validate(context.Background()))
+
+	createCluster := doc.Components.Schemas["CreateClusterRequest"].Value
+	assert.NotContains(t, createCluster.Properties, "cniPlugin")
+	assert.NotContains(t, createCluster.Properties, "cniVersion")
+
+	cluster := doc.Components.Schemas["Cluster"].Value
+	assert.Contains(t, cluster.Properties, "cniPlugin")
+	assert.Contains(t, cluster.Properties, "cniVersion")
+
+	fullDoc, err := api.GetSwagger()
+	require.NoError(t, err)
+	fullCreateCluster := fullDoc.Components.Schemas["CreateClusterRequest"].Value
+	assert.Contains(t, fullCreateCluster.Properties, "cniPlugin")
+	assert.Contains(t, fullCreateCluster.Properties, "cniVersion")
+}
+
 func TestPublicOpenAPIRequiredNamesAreProperties(t *testing.T) {
 	t.Parallel()
 

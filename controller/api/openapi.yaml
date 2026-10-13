@@ -124,8 +124,9 @@ tags:
       and a pool's `kubernetesVersion` are desired versions; the control plane's
       current running version is reported in `ControlPlaneStatus.kubernetesVersion`.
 
-      **Networking.** Supported CNI plugins are calico (default version 3.30.1)
-      and ovn-kubernetes (default version 1.4.0). Pod and service CIDRs are IPv4,
+      **Networking.** New clusters use ovn-kubernetes (default version 1.4.0).
+      Calico is retained only for existing fleets and its creation path is
+      disabled by default. Pod and service CIDRs are IPv4,
       private, and immutable after
       creation; the defaults are 192.168.0.0/16 for pods and 10.96.0.0/12 for
       services. NVKE allocates a /24 from the pod CIDR to each node, so the pod
@@ -233,7 +234,6 @@ paths:
             example:
               name: tenant-a-prod
               controlPlaneKubernetesVersion: 1.33.4
-              cniPlugin: ovn-kubernetes
               etcdEncrypted: true
               network:
                 podCIDR: 192.168.0.0/16
@@ -972,17 +972,19 @@ components:
           description: Kubernetes version for the cluster, as X.Y.Z with no leading "v".
           x-order: 5
         cniPlugin:
+          x-fern-ignore: true
           type: string
           enum: [calico, ovn-kubernetes]
           example: "ovn-kubernetes"
-          description: CNI plugin. Defaults to ovn-kubernetes when omitted. calico is an explicit override.
+          description: CNI plugin. Defaults to ovn-kubernetes when omitted. calico is a disabled-by-default legacy override.
           x-go-type-skip-optional-pointer: true
           x-order: 6
         cniVersion:
+          x-fern-ignore: true
           type: string
           pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
           example: "1.4.0"
-          description: CNI version, as X.Y.Z. Defaults to 3.30.1 for calico or 1.4.0 for ovn-kubernetes.
+          description: CNI version, as X.Y.Z. Defaults to 3.30.1 for legacy calico or 1.4.0 for ovn-kubernetes.
           x-order: 7
         etcdEncrypted:
           type: boolean

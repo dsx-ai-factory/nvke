@@ -41,7 +41,7 @@ func validForgeCreateClusterRequest() *api.CreateClusterRequest {
 			SiteID: uuid.New(),
 			VpcID:  uuid.New(),
 		},
-		CniPlugin:                     "calico",
+		CniPlugin:                     "ovn-kubernetes",
 		ControlPlaneKubernetesVersion: "1.29.0",
 	}
 }
@@ -188,7 +188,7 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		svc := clusterService{useControlPlaneController: true}
 		req := &api.CreateClusterRequest{
 			Name:                          "capi-cluster",
-			CniPlugin:                     "calico",
+			CniPlugin:                     "ovn-kubernetes",
 			ControlPlaneKubernetesVersion: "1.29.0",
 			Infra: &api.InfraClusterProvider{
 				Cluster: map[string]interface{}{

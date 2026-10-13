@@ -40,7 +40,7 @@ func openAPIForgeCreateClusterRequest() api.CreateClusterRequest {
 			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
 			VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 		},
-		CniPlugin:                     "calico",
+		CniPlugin:                     "ovn-kubernetes",
 		EtcdEncrypted:                 false,
 		ControlPlaneKubernetesVersion: "1.29.7",
 		NodePools: &[]api.NodePoolCreateConfig{
@@ -442,7 +442,7 @@ func TestOpenAPIValidator_CreateClusterControlPlaneConfig(t *testing.T) {
 				"siteID": "550e8400-e29b-41d4-a716-446655440001",
 				"vpcID": "550e8400-e29b-41d4-a716-446655440002"
 			},
-			"cniPlugin": "calico",
+			"cniPlugin": "ovn-kubernetes",
 			"controlPlaneKubernetesVersion": "1.29.7",
 			"etcdEncrypted": false,
 			"controlPlaneConfig": {"desiredCount": 3, "nico": ` + nico + `}
@@ -522,7 +522,7 @@ func TestOpenAPIValidator_CreateRequiresExactlyOneProvider(t *testing.T) {
 	body := func(cluster, controlPlane, nodePool string) []byte {
 		return []byte(`{
 			"name": "test-cluster",
-			"cniPlugin": "calico",
+			"cniPlugin": "ovn-kubernetes",
 			"controlPlaneKubernetesVersion": "1.29.7",
 			"etcdEncrypted": false` + field(cluster) + `,
 			"controlPlaneConfig": {"desiredCount": 3` + field(controlPlane) + `},

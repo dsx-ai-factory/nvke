@@ -36,12 +36,19 @@ const (
 type Option func(*options)
 
 type options struct {
-	fleetOIDC *controllerconfig.OIDCConfig
+	fleetOIDC                        *controllerconfig.OIDCConfig
+	allowLegacyCalicoClusterCreation bool
 }
 
 // WithFleetOIDC sets the nke-controller-config OIDC section new clusters are pinned from.
 func WithFleetOIDC(oidc *controllerconfig.OIDCConfig) Option {
 	return func(o *options) { o.fleetOIDC = oidc }
+}
+
+// WithAllowLegacyCalicoClusterCreation permits new tenant clusters to select Calico.
+// Existing Calico clusters stay manageable either way. The default is false.
+func WithAllowLegacyCalicoClusterCreation(allow bool) Option {
+	return func(o *options) { o.allowLegacyCalicoClusterCreation = allow }
 }
 
 // NewServer builds the API's HTTP server. A nil authn leaves the authentication
@@ -243,6 +250,7 @@ func NewServerImpl(
 		cfg.Teleport,
 		cfg.NvkeOIDCAuth.Enabled,
 		cfg.SupportedInfraProviders,
+		o.allowLegacyCalicoClusterCreation,
 		cfg.UseControlPlaneControllerForControlPlane(),
 	)
 	clusterService.fleetOIDC = o.fleetOIDC

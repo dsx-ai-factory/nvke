@@ -99,7 +99,12 @@ var stayEnv = map[string]string{
 
 // configMapOnly lists config.yaml keys that never had an environment variable,
 // because the ConfigMap is the first place they exist.
-var configMapOnly = []string{"oidc.providers"}
+var configMapOnly = []string{
+	"oidc.providers",
+	// New clusters default to OVN-Kubernetes. This is the switch internal
+	// fleets set when they still create Calico clusters.
+	"allowLegacyCalicoClusterCreation",
+}
 
 // chartDeployment is the template whose env block decides what the chart sets.
 const chartDeployment = "../../deploy/charts/controller/templates/deployment.yaml"

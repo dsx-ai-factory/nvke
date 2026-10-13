@@ -241,7 +241,7 @@ Template files use Go [`text/template`](https://pkg.go.dev/text/template) syntax
 |------------|------|-------------|
 | `.Cluster.Nodes` | list | Control-plane nodes (iterate with `range`) |
 | `.Cluster.K8sVersion` | string | Kubernetes version |
-| `.Cluster.CNIName` | string | CNI name (`ovn-kubernetes`; `calico` for development) |
+| `.Cluster.CNIName` | string | CNI name (`ovn-kubernetes`) |
 | `.Cluster.PodCIDR` | string | Pod CIDR |
 
 Each node in `.Cluster.Nodes`:

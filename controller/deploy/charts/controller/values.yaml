@@ -387,6 +387,12 @@ kubeadm:
   imageRepository: registry.k8s.io
 
 cni:
+  # -- Permit new tenant clusters to use the legacy Calico CNI. Existing Calico
+  # clusters remain manageable when false. Legacy fleets that still create
+  # Calico clusters must set this before upgrading the controller. This
+  # compatibility setting is for legacy fleets only. New deployments must use
+  # OVN-Kubernetes.
+  allowLegacyCalicoClusterCreation: false
   # -- Optional OCI registry prefix for CNI component images. Empty uses chart defaults.
   imageRegistry: ""
   # -- Install CNI after kubeadm init through the agent's InstallCNI RPC, which

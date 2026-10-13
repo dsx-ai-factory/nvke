@@ -42,7 +42,6 @@ const (
 	DefaultNodeAgentPort = "15005"
 
 	// DefaultCNIName is the CNI installed when cluster.cniName is omitted.
-	// calico remains valid when set explicitly.
 	DefaultCNIName = "ovn-kubernetes"
 
 	// DefaultEtcdEncryption is what cluster.etcdEncryption means when the site
@@ -86,7 +85,7 @@ var (
 
 // SupportedCNIs returns the CNI plugins the bootstrap flow can install.
 func SupportedCNIs() []string {
-	return []string{"calico", "ovn-kubernetes"}
+	return []string{DefaultCNIName}
 }
 
 // SiteSpec is the declarative bootstrap input file.
@@ -145,9 +144,8 @@ type Cluster struct {
 	K8sVersion string `yaml:"k8sVersion"`
 	// CniName selects the CNI plugin; see SupportedCNIs. Empty means DefaultCNIName.
 	CniName string `yaml:"cniName"`
-	// CniVersion is an optional CNI plugin version (for example "1.4.0" for
-	// ovn-kubernetes or "3.30.1" for calico). Empty lets the node-agent use its
-	// compiled-in default.
+	// CniVersion is an optional OVN-Kubernetes version (for example "1.4.0").
+	// Empty lets the node-agent use its compiled-in default.
 	CniVersion string `yaml:"cniVersion"`
 	// ControlPlaneVIP is an IPv4 API endpoint advertised by kube-vip over BGP.
 	// It may be empty only for a single-node control plane, which then uses the

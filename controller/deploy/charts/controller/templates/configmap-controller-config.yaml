@@ -52,6 +52,7 @@ data:
     kubeadmImageRepository: {{ .Values.kubeadm.imageRepository | default "registry.k8s.io" | quote }}
     cniImageRegistry: {{ .Values.cni.imageRegistry | quote }}
     installCNIAfterInit: {{ .Values.cni.installAfterInit }}
+    allowLegacyCalicoClusterCreation: {{ .Values.cni.allowLegacyCalicoClusterCreation }}
     nicoControllersEnabled: {{ include "controller.controllerConfig.orGoDefault" (list .Values.controllers.nico.enabled true) }}
     profilesDir: {{ .Values.profiles.path | default "./profiles" | quote }}
     runbooksDir: {{ include "controller.runbooksDir" . | quote }}

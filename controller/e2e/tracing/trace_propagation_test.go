@@ -199,7 +199,7 @@ func createCluster(ctx context.Context, t *testing.T, baseURL, name, traceparent
 	payload, err := json.Marshal(map[string]any{
 		"etcdEncrypted":                 false,
 		"name":                          name + "-" + uuid.NewString()[:8],
-		"cniPlugin":                     "calico",
+		"cniPlugin":                     "ovn-kubernetes",
 		"controlPlaneKubernetesVersion": "1.34.1",
 		"infra":                         map[string]any{"cluster": manifest("DockerCluster")},
 		"controlPlaneConfig":            map[string]any{"desiredCount": 1, "infra": map[string]any{"machineTemplate": manifest("DockerMachineTemplate")}},

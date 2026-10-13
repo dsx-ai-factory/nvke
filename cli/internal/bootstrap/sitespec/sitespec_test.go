@@ -22,8 +22,8 @@ cluster:
     - name: node3
       ip: 10.0.0.3
   k8sVersion: "1.32.0"
-  cniName: calico
-  cniVersion: "3.31.4"
+  cniName: ovn-kubernetes
+  cniVersion: "1.4.0"
   controlPlaneVIP: "10.0.0.100"
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
@@ -123,10 +123,10 @@ cluster:
     - name: node1
       ip: 10.0.0.1
   k8sVersion: "1.32.0"
-  cniName: calico
+  cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
-  cniVersionn: "3.31.4"
+  cniVersionn: "1.4.0"
 registry:
   bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
   bootstrapChart: "cloud-workflow-engine"
@@ -158,7 +158,7 @@ func TestValidateInvalidInputs(t *testing.T) {
 			Cluster: Cluster{
 				Nodes:         []Node{{Name: "node1", IP: "10.0.0.1"}},
 				K8sVersion:    "1.32.0",
-				CniName:       "calico",
+				CniName:       "ovn-kubernetes",
 				PodCidr:       "10.100.0.0/16",
 				ServiceCidr:   "10.200.0.0/16",
 				NodeAgentPort: DefaultNodeAgentPort,
@@ -193,6 +193,7 @@ func TestValidateInvalidInputs(t *testing.T) {
 		{"missing k8sVersion", func(i *SiteSpec) { i.Cluster.K8sVersion = "" }, pathK8sVersion},
 		{"bad k8sVersion", func(i *SiteSpec) { i.Cluster.K8sVersion = "v1.32" }, pathK8sVersion},
 		{"missing cni", func(i *SiteSpec) { i.Cluster.CniName = "" }, pathCniName},
+		{"legacy calico cni", func(i *SiteSpec) { i.Cluster.CniName = "calico" }, pathCniName},
 		{"unsupported cni", func(i *SiteSpec) { i.Cluster.CniName = "flannel" }, pathCniName},
 		{"missing podCidr", func(i *SiteSpec) { i.Cluster.PodCidr = "" }, pathPodCidr},
 		{"bad podCidr", func(i *SiteSpec) { i.Cluster.PodCidr = "10.100.0.0" }, pathPodCidr},
@@ -388,7 +389,7 @@ const noNodesYAML = `
 clusterName: nvke-site
 cluster:
   k8sVersion: "1.32.0"
-  cniName: calico
+  cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
 registry:
