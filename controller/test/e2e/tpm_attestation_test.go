@@ -41,6 +41,10 @@ func validateTPMAttestationPostCreate(test *tenantTest) {
 		want := clusterNodeCount(test.spec)
 		var ids []string
 
+		By("Reading the SPIRE server's trust domain")
+		trustDomain, err := test.tenantClients.ManagementTrustDomain(ctx)
+		Expect(err).NotTo(HaveOccurred(), "the agent IDs are built in the SPIRE server's trust domain")
+
 		By("Reading each Machine's SPIRE agent identity")
 		Eventually(func(ctx context.Context) error {
 			machines := &unstructured.UnstructuredList{}
@@ -50,7 +54,7 @@ func validateTPMAttestationPostCreate(test *tenantTest) {
 				return fmt.Errorf("listing CAPI Machines: %w", err)
 			}
 			var err error
-			ids, err = tpmAgentIDs(test.trustDomain, machines.Items, want)
+			ids, err = tpmAgentIDs(trustDomain, machines.Items, want)
 			return err
 		}).WithContext(ctx).WithTimeout(2*time.Minute).WithPolling(5*time.Second).Should(Succeed(),
 			"every Machine should carry a TPM agent identity")
@@ -61,13 +65,13 @@ func validateTPMAttestationPostCreate(test *tenantTest) {
 			Expect(err).NotTo(HaveOccurred(), "the SPIRE server should list %s as attested", id)
 			test.log.Info("attested SPIRE agent", "spiffeID", id, "server", strings.TrimSpace(out))
 		}
-	}, Label("readiness", "tpm"), NodeTimeout(5*time.Minute))
+	}, Label("readiness", "tpm-attestation"), NodeTimeout(5*time.Minute))
 }
 
 // tpmAgentIDs returns the SPIFFE ID each Machine's agent attests as, sorted,
-// and an error naming every Machine that has no TPM identity. want is the
-// node count the cluster was created with: fewer Machines would let a node
-// that never got one go unchecked.
+// and an error naming every Machine that has no TPM identity or shares one
+// with another Machine. want is the node count the cluster was created with:
+// fewer Machines would let a node that never got one go unchecked.
 func tpmAgentIDs(trustDomain string, machines []unstructured.Unstructured, want int) ([]string, error) {
 	if trustDomain == "" {
 		return nil, errors.New("no SPIRE trust domain to build the agent IDs in")
@@ -78,6 +82,7 @@ func tpmAgentIDs(trustDomain string, machines []unstructured.Unstructured, want 
 	var (
 		ids      []string
 		problems []string
+		owners   = map[string]string{}
 	)
 	for _, machine := range machines {
 		path := machine.GetAnnotations()[spireAgentIDPathAnnotation]
@@ -85,6 +90,11 @@ func tpmAgentIDs(trustDomain string, machines []unstructured.Unstructured, want 
 			problems = append(problems, fmt.Sprintf("Machine %s has agent path %q, not a TPM identity", machine.GetName(), path))
 			continue
 		}
+		if owner, seen := owners[path]; seen {
+			problems = append(problems, fmt.Sprintf("Machine %s has the same TPM identity as %s", machine.GetName(), owner))
+			continue
+		}
+		owners[path] = machine.GetName()
 		ids = append(ids, "spiffe://"+trustDomain+path)
 	}
 	if len(problems) > 0 {

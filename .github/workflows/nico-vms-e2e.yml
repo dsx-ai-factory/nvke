@@ -106,8 +106,8 @@ jobs:
         include:
           - arch: amd64
             runner: linux-amd64-gpu-l4-latest-1
-            # !gpu and not !tpm: the guests carry an emulated TPM (swtpm) and
-            # no GPU.
+            # !gpu and not !tpm-attestation: the guests carry an emulated TPM
+            # (swtpm) and no GPU.
             label_filter: 'nico-vms && (happy-path || multi-pod-cidrs) && !gpu'
           - arch: arm64
             # Back on the ARC fleet, same root cause and fix as

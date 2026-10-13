@@ -115,7 +115,7 @@ jobs:
       # step with e2e_suite_filter in hack/backend-e2e-lib.sh.
       # CAPD nodes are containers, with no TPM and no GPU, so a spec that needs
       # either is excluded whatever else selects it.
-      label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && '(core-docker || health) && !tpm && !gpu' || '((capd || health) || (authn && !authn-spire) || authn-permissive) && !tpm && !gpu' }}
+      label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && '(core-docker || health) && !tpm-attestation && !gpu' || '((capd || health) || (authn && !authn-spire) || authn-permissive) && !tpm-attestation && !gpu' }}
       providers: '["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]'
       # copy-pr-bot mirrors PRs onto pull-request/<n> for self-hosted runners.
       # Mirrored runs select the smaller core/health suite; 30 minutes leaves

@@ -59,6 +59,17 @@ func TestTPMAgentIDsRequiresAMachinePerNode(t *testing.T) {
 	}
 }
 
+func TestTPMAgentIDsRejectsASharedIdentity(t *testing.T) {
+	// One attested agent would otherwise pass the SPIRE check for both nodes.
+	_, err := tpmAgentIDs("site.example", []unstructured.Unstructured{
+		tpmTestMachine("cp-0", "/spire/agent/tpm/aaa"),
+		tpmTestMachine("w-0", "/spire/agent/tpm/aaa"),
+	}, 2)
+	if err == nil || !strings.Contains(err.Error(), "same TPM identity") {
+		t.Errorf("error = %v, want one reporting the shared identity", err)
+	}
+}
+
 func TestTPMAgentIDsNeedsATrustDomain(t *testing.T) {
 	if _, err := tpmAgentIDs("", []unstructured.Unstructured{tpmTestMachine("cp-0", "/spire/agent/tpm/aaa")}, 1); err == nil {
 		t.Error("an empty trust domain should be an error, not spiffe:///spire/...")

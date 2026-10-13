@@ -778,7 +778,8 @@ type validations struct {
 	certificateRenewal bool
 	// tpmAttestation asserts every node's SPIRE agent attested to the
 	// management cluster by its TPM. Only for a backend whose machines have
-	// one; the spec carries the tpm label so a lane without a TPM excludes it.
+	// one; the spec carries the tpm-attestation label so a lane without a TPM
+	// excludes it.
 	tpmAttestation bool
 	// openVSwitch proves OVN node provisioning used the typed node-agent RPC
 	// on every node and did not enter the legacy runbook fallback.

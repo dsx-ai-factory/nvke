@@ -314,7 +314,7 @@ func (f *TenantClientFactory) tenantRESTConfigAs(ctx context.Context, clusterNam
 	if err != nil {
 		return nil, fmt.Errorf("reading SPIRE JWT audience from tenant kubeconfig for %q: %w", clusterName, err)
 	}
-	trustDomain, err := f.managementTrustDomain(ctx)
+	trustDomain, err := f.ManagementTrustDomain(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -387,7 +387,7 @@ func (f *TenantClientFactory) AdminKubeconfig(ctx context.Context, clusterName s
 	if err != nil {
 		return nil, fmt.Errorf("reading SPIRE JWT audience from tenant kubeconfig for %q: %w", clusterName, err)
 	}
-	trustDomain, err := f.managementTrustDomain(ctx)
+	trustDomain, err := f.ManagementTrustDomain(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -630,7 +630,9 @@ func (f *TenantClientFactory) execSPIREServer(ctx context.Context, what string, 
 	return stdout.String(), nil
 }
 
-func (f *TenantClientFactory) managementTrustDomain(ctx context.Context) (string, error) {
+// ManagementTrustDomain reads the SPIRE server's trust domain from its own
+// configuration, so it holds whatever the kubeconfig context is called.
+func (f *TenantClientFactory) ManagementTrustDomain(ctx context.Context) (string, error) {
 	configMap, err := f.coreClient.ConfigMaps(spireServerNamespace).Get(
 		ctx, spireServerConfigMapName(), metav1.GetOptions{},
 	)
