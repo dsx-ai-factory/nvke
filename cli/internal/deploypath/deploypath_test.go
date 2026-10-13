@@ -659,25 +659,34 @@ func imageArtifact(repo, name, arch string) nvkrrelease.Artifact {
 	return nvkrrelease.Artifact{Name: name, Kind: "oci", Digest: d, Reference: repo + "/" + name + "@" + d, Arch: arch}
 }
 
-func TestRender_RepositoryChartVersionMustMatchThePin(t *testing.T) {
+// The release decides the version of a chart it carries: the rendered copy
+// records it, and a difference from the pin is a warning, not a refusal.
+func TestRender_ReleaseChartVersionWins(t *testing.T) {
 	repo := "ghcr.io/example/recipes"
 	cwe := imageArtifact(repo, "cwe", "")
 	profiles := imageArtifact(repo, "controller-profiles", "")
 	capARM := imageArtifact(repo, "capnico-controller", "linux/arm64")
 	for name, tc := range map[string]struct {
-		version string
-		want    string
+		version, recorded, warning string
 	}{
-		"another version": {"9.9.9", "temporal: chart: the release carries temporal 9.9.9, release.yaml pins 0.74.0"},
-		"no version":      {"", "temporal: chart: the release names no version for temporal; release.yaml pins 0.74.0"},
+		"another version": {"9.9.9", "9.9.9", "warning: temporal: the release carries temporal 9.9.9, release.yaml pins 0.74.0"},
+		"no version":      {"", "0.74.0", ""},
 	} {
 		p := newRegistry()
 		temporal, _ := chartArtifact(p, repo, "temporal")
 		temporal.ChartVersion = tc.version
 		release := &nvkrrelease.Release{Reference: repo + "/releases@" + digest([]byte("r")), Outputs: []nvkrrelease.Artifact{temporal, cwe, profiles, capARM}}
-		_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: filepath.Join(t.TempDir(), "r"), Registry: p.open})
-		if err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("%s: want %q, got %v", name, tc.want, err)
+		out := filepath.Join(t.TempDir(), "r")
+		var log strings.Builder
+		if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open, Log: &log}); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		rel, _ := ReadRelease(filepath.Join(out, "temporal"))
+		if rel.Chart.Version != tc.recorded {
+			t.Errorf("%s: recorded version %q, want %q", name, rel.Chart.Version, tc.recorded)
+		}
+		if got := strings.Contains(log.String(), "warning: temporal"); got != (tc.warning != "") || (tc.warning != "" && !strings.Contains(log.String(), tc.warning)) {
+			t.Errorf("%s: log:\n%s", name, log.String())
 		}
 	}
 }

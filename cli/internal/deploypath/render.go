@@ -361,22 +361,14 @@ func (r *renderer) helm(item string) {
 	case err != nil:
 		r.problem("%s: chart: %v", item, err)
 	default:
-		// A repository chart's pin selects what installs, so the release has
-		// to carry that version. A path chart's pin is reported only: the
-		// chart at the path decides, and the release's version is noted.
-		refused := false
-		switch {
-		case rel.Chart.Path != "":
-			r.note("%s: chart %s is %s in the release; the path pins %s for the checkout", item, artifact, firstNonEmpty(a.ChartVersion, "unversioned"), rel.Chart.Version)
-		case a.ChartVersion == "":
-			r.problem("%s: chart: the release names no version for %s; release.yaml pins %s", item, artifact, rel.Chart.Version)
-			refused = true
-		case a.ChartVersion != rel.Chart.Version:
-			r.problem("%s: chart: the release carries %s %s, release.yaml pins %s", item, artifact, a.ChartVersion, rel.Chart.Version)
-			refused = true
-		}
-		if refused {
-			break
+		// The release decides the version of every chart it carries; the pin
+		// in release.yaml decides only for a chart the release lacks. A
+		// difference is said at once, not noted, because it points at values
+		// written for another chart. 0.0.0 is the placeholder of a chart in
+		// this tree, so it is not a difference.
+		if a.ChartVersion != "" && a.ChartVersion != rel.Chart.Version && rel.Chart.Version != "0.0.0" {
+			fmt.Fprintf(r.opts.Log, "warning: %s: the release carries %s %s, release.yaml pins %s; the release decides, check the item's values against %s\n",
+				item, artifact, a.ChartVersion, rel.Chart.Version, a.ChartVersion)
 		}
 		file, err := r.chartArchive(item, rel.Chart.Name, a)
 		if err != nil {
@@ -384,8 +376,11 @@ func (r *renderer) helm(item string) {
 		} else {
 			rel.Chart.Path = file
 			rel.Chart.Repository = ""
+			if a.ChartVersion != "" {
+				rel.Chart.Version = a.ChartVersion
+			}
 			changed = true
-			r.note("%s: chart from %s", item, a.Reference)
+			r.note("%s: chart %s from %s", item, firstNonEmpty(a.ChartVersion, rel.Chart.Version), a.Reference)
 		}
 	}
 

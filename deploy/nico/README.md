@@ -66,7 +66,9 @@ What the node needs, all present on the reference instance type:
   verifies nothing. Run `nvkr release verify` on the same reference first.
   Charts the release carries are pulled by digest into `DIR/charts/`; images
   are pinned by digest; a chart the release lacks stays on its public
-  repository. The release's chart version has to match the item's pin. Each
+  repository. The release decides the version of a chart it carries, with
+  a warning when the item pins another; the pin decides only for a chart
+  the release lacks. Each
   item's `release.yaml` names its artifacts: `chart.artifact` (default: the
   item name), `chart.imageArtifact`, `chart.profilesArtifact`, or a manifest
   item's `artifact`. `--arch` selects them (default: the site spec's

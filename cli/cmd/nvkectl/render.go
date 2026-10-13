@@ -61,8 +61,10 @@ Each item's release.yaml names its artifacts: chart.artifact (default: the
 item name), chart.imageArtifact, chart.profilesArtifact, or a manifest
 item's artifact. Charts are pulled by digest into charts/<item>/; images go
 into release-images.yaml or a kustomization.yaml; images.txt lists them. A
-chart the release lacks stays as committed. A repository chart the release
-carries at another version than release.yaml pins is refused. --arch selects artifacts (default: the site spec's
+chart the release lacks stays as committed. The release decides the version
+of every chart it carries, with a warning when release.yaml pins another;
+the pin decides only for a chart the release lacks. --arch selects
+artifacts (default: the site spec's
 controllerStack.arch, else this machine's). --nvkr-run-dir reads a
 completed NVKR Run or a directory of OCI layouts instead of a registry.
 

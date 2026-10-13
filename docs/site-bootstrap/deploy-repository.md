@@ -107,7 +107,7 @@ A helm item installs one chart as one Helm release. Its `release.yaml` names the
 ```yaml
 chart:
   name: temporal            # the chart's name
-  version: "0.74.0"         # pinned; passed to helm for a repository chart, and a release must carry this version. A path chart reports it; the chart at the path decides
+  version: "0.74.0"         # pinned; passed to helm for a repository chart the release lacks. A release that carries the chart decides its version
   repository: https://go.temporal.io/helm-charts   # or path: ../../nktp/deploy/charts/nktp
   artifact: temporal        # NVKR artifact of the chart; default: the item name
   imageArtifact: cwe        # NVKR artifact of the image the chart runs, if any

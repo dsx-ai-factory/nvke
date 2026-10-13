@@ -209,14 +209,16 @@ out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK
 expect "the missing image artifact is named" 'controller: image cwe is not in the release' "${out}"
 expect "the wrong architecture is named" 'capnico: image: capnico-controller is published only for other architectures' "${out}"
 [[ ! -e "${WORK}/refused" ]] && pass "a refused render leaves no output" || fail "refused output left behind"
-# A chart the release carries at another version than the item pins is refused.
+# The release decides the version of a chart it carries: the difference from
+# the pin is a warning, and the rendered copy records the release's version.
 cat >"${WORK}/other-chart.json" <<JSON
 {"schemaVersion":"nvkr.dev/release-description/v1","reference":"nvkr.local/nvke/releases@sha256:${zeros}","rootDigest":"sha256:${zeros}",
  "declaredQualification":"unqualified-local-execution","metadata":{"contentSubject":"sha256:${zeros}"},
  "outputs":[$(art cwe oci "${d_cwe}"),$(art capnico-controller-arm64 oci "${d_capnico}" ',"os":"linux","arch":"arm64"'),$(art controller-profiles oci "${d_profiles}"),$(art temporal helm-oci "${d_temporal}" ',"chartVersion":"9.9.9"')]}
 JSON
-out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/other-chart.json" --nvkr-run-dir "${run_dir}" --arch linux/arm64 --out "${WORK}/other-chart" 2>&1)" && fail "render with another chart version exited 0"
-expect "the chart version mismatch is named" 'temporal: chart: the release carries temporal 9.9.9, release.yaml pins 0.74.0' "${out}"
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/other-chart.json" --nvkr-run-dir "${run_dir}" --arch linux/arm64 --out "${WORK}/other-chart" 2>&1)" || fail "render with another chart version exited $?: ${out}"
+expect "the chart version difference is a warning" '^warning: temporal: the release carries temporal 9.9.9, release.yaml pins 0.74.0' "${out}"
+grep -q '^  version: "9.9.9"$' "${WORK}/other-chart/temporal/release.yaml" && pass "the rendered copy records the release chart version" || fail "temporal version not recorded"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${HERE}/nvkr-release/bad-schema.json" --out "${WORK}/bad" 2>&1)" && fail "bad description exited 0"
 expect "a bad description is named" 'bad-schema.json' "${out}"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/local.json" --nvkr-run-dir "${run_dir}" --arch linux/arm64 --out "${rendered}" 2>&1)" && fail "existing --out exited 0"
