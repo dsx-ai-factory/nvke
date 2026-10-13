@@ -246,6 +246,18 @@ func TestValidateInvalidInputs(t *testing.T) {
 			p.CABundle = ""
 			i.Cluster.OIDCProviders = []OIDCProvider{p}
 		}, "cluster.oidcProviders[0].caBundle"},
+		{"oidc provider http issuer", func(i *SiteSpec) {
+			i.Cluster.K8sVersion = "1.34.0"
+			p := validOIDCProvider()
+			p.IssuerURL = "http://login.example.com"
+			i.Cluster.OIDCProviders = []OIDCProvider{p}
+		}, "cluster.oidcProviders[0].issuerURL"},
+		{"oidc provider caBundle is not a certificate", func(i *SiteSpec) {
+			i.Cluster.K8sVersion = "1.34.0"
+			p := validOIDCProvider()
+			p.CABundle = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+			i.Cluster.OIDCProviders = []OIDCProvider{p}
+		}, "cluster.oidcProviders[0].caBundle"},
 	}
 
 	for _, tc := range tests {
@@ -267,10 +279,29 @@ func validOIDCProvider() OIDCProvider {
 	return OIDCProvider{
 		Name:           "corp",
 		IssuerURL:      "https://login.example.com",
-		Audiences:      []string{"nke"},
+		Audiences:      []string{"nvke"},
 		UsernameClaim:  "email",
 		UsernamePrefix: "corp:",
-		CABundle:       "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+		CABundle: `-----BEGIN CERTIFICATE-----
+MIIDCTCCAfGgAwIBAgIUfGXirJ1/KK2sS+M1ktcL2jKHJOcwDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEAwwJb2lkYy10ZXN0MB4XDTI2MTAxMzE5NDA0NloXDTM2MTAx
+MDE5NDA0NlowFDESMBAGA1UEAwwJb2lkYy10ZXN0MIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEAsqiBv8u0Am0ovLJ9XUkB2tfz2aLvw7V/Iur00XOzPKhp
+Hx4MgMQPSgRL/GmrvqwvjFC7ts+1ngTdMPnFo7iWlVKaiRQ+jgOaWc326HsanFsx
+duFJQ3VQYwAcw6vCaIACN7nMQuqmC3VtX4odVLMCrxsJXsHqhTriI0E8So4GzAv1
+Od3uA9QX1hAtevNTe7bpXyDca+p9xLr7JsY94LvvzjuXesAYmK4QcnggPEMR0hPv
+mn/M5YxzKxVjf2HwyddIyCdX10h9i7isTTxkPa/hJ/pbVQ8IB69URbUO/cySbl6A
+OpTz1gfxJEqepGt7SaY6SKY852khpE+oY6WDLJJMsQIDAQABo1MwUTAdBgNVHQ4E
+FgQUOQ4fTXchQ4yvOvssmBJ45QJuRgIwHwYDVR0jBBgwFoAUOQ4fTXchQ4yvOvss
+mBJ45QJuRgIwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAMXM0
+aTT9nSY4lMAn07bSyMg6JF7MCz3MHqPCj9IrzkXk0eH5S9rrDOqwFJCa74pTzLsD
+3gC8AmcaOmTRuBeEmu+CoO73n3fveR3moh1dupT61PRohfpdM47g+d5F1l0UdsWg
+OXjHThCq0+PDR/w6/aYkW2nF1eyIYVS3FQlZUl+DvQDJsJqyNePtKCjMr+D3yywl
+liNqG/bR3JXrwDCBLwbWzVRE1acA6frIzr8mR8skKm2DPmcsxUX5eO64XsNIYpxc
+co5hU70BGb6ZUvwExLA5obJZPx3gFDtKVqJodwOFna2Df1Ai2Tuhztv+yVbz6M1s
+f0pVwhs7o5oqIpjTuQ==
+-----END CERTIFICATE-----
+`,
 	}
 }
 

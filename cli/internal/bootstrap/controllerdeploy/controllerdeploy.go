@@ -174,6 +174,16 @@ var chartFetchServerError = regexp.MustCompile(`failed to fetch .*: 5\d\d\b`)
 
 const defaultTenantKubeconfigTimeout = 2 * time.Minute
 
+// oidcValues is the helms values file
+type oidcValues struct {
+	OIDC oidcProviders `yaml:"oidc"`
+}
+
+// oidcProviders is the helm chart's oidc.providers list.
+type oidcProviders struct {
+	Providers []sitespec.OIDCProvider `yaml:"providers"`
+}
+
 // Config describes a controller deployment.
 type Config struct {
 	// CWEImage is the image reference to deploy. Defaults to nke-controller:latest,
@@ -236,8 +246,8 @@ type Config struct {
 	// how the site's hosts were configured long before this cluster existed.
 	NodeAgentPort string
 
-	// OIDCProviders are written into the controller values as oidc.providers.
-	// Empty leaves the chart default, an empty list.
+	// OIDCProviders are the external oidc providers site cluster kube-apiserver authenticates
+	// client requests against. Optional field.
 	OIDCProviders []sitespec.OIDCProvider
 
 	// CWEPort is the port the controller API uses for its Helm Service, Kubernetes
@@ -534,11 +544,20 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return err
 	}
 
-	cweValues, cleanup, err := writeCWEValues(cfg.OIDCProviders)
+	cweValues, cleanup, err := writeEmbeddedFile(cweValuesFile)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+
+	oidcValues := ""
+	if len(cfg.OIDCProviders) > 0 {
+		oidcValues, cleanup, err = writeOIDCValues(cfg.OIDCProviders)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+	}
 
 	// tag and digest are always set, empty when unused: the chart reads an
 	// empty tag as "use appVersion" and an empty digest as "pull by tag".
@@ -566,6 +585,9 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	}
 	cweArgs = append(cweArgs, cweEnvArgs(cfg)...)
 	cweArgs = append(cweArgs, "--wait", "--timeout", helmTimeout.String())
+	if oidcValues != "" {
+		cweArgs = append(cweArgs, "--values", oidcValues)
+	}
 	if _, err := e.helm(ctx, kubeconfigPath, cweArgs...); err != nil {
 		return fmt.Errorf("controllerdeploy: installing the controller: %w", err)
 	}
@@ -691,34 +713,14 @@ func (e *Engine) helm(ctx context.Context, kubeconfigPath string, args ...string
 	}
 }
 
-// writeCWEValues writes the controller values helm installs. Only merges oidc.providers if there are any.
-func writeCWEValues(providers []sitespec.OIDCProvider) (path string, cleanup func(), err error) {
-	body, err := manifestsFS.ReadFile(cweValuesFile)
+func writeOIDCValues(providers []sitespec.OIDCProvider) (path string, cleanup func(), err error) {
+	body, err := yaml.Marshal(oidcValues{
+		OIDC: oidcProviders{Providers: providers},
+	})
 	if err != nil {
-		return "", func() {}, fmt.Errorf("controllerdeploy: reading embedded %s: %w", cweValuesFile, err)
+		return "", func() {}, fmt.Errorf("controllerdeploy: rendering oidc values: %w", err)
 	}
-	if len(providers) > 0 {
-		body, err = mergeOIDCProviders(body, providers)
-		if err != nil {
-			return "", func() {}, err
-		}
-	}
-	return writeTempFile("nvkectl-cwedeploy-*.yaml", body)
-}
-
-// mergeOIDCProviders sets oidc.providers on the controller values. The embedded
-// file has no oidc key, so the whole section is this list.
-func mergeOIDCProviders(values []byte, providers []sitespec.OIDCProvider) ([]byte, error) {
-	var doc map[string]any
-	if err := yaml.Unmarshal(values, &doc); err != nil {
-		return nil, fmt.Errorf("controllerdeploy: parsing embedded %s: %w", cweValuesFile, err)
-	}
-	doc["oidc"] = map[string]any{"providers": providers}
-	merged, err := yaml.Marshal(doc)
-	if err != nil {
-		return nil, fmt.Errorf("controllerdeploy: rendering controller values: %w", err)
-	}
-	return merged, nil
+	return writeTempFile("nvkectl-cwe-oidc-*.yaml", body)
 }
 
 // writeEmbeddedFile copies an embedded values file to a temporary file on

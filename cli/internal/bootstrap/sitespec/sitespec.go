@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -33,6 +34,7 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"k8s.io/apimachinery/pkg/util/version"
+	"k8s.io/client-go/util/cert"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 )
@@ -593,10 +595,15 @@ func (v *validator) checkOIDCProviders(c Cluster) {
 		issuerURL := strings.TrimSpace(p.IssuerURL)
 		if issuerURL == "" {
 			v.addf("%s.issuerURL is required", path)
-		} else if prev, dup := seenIssuers[issuerURL]; dup {
-			v.addf("%s.issuerURL %q is already used by %s[%d]", path, issuerURL, pathOIDCProviders, prev)
 		} else {
-			seenIssuers[issuerURL] = i
+			if u, err := url.Parse(issuerURL); err != nil || u.Scheme != "https" || u.Host == "" {
+				v.addf("%s.issuerURL %q must be an https URL", path, issuerURL)
+			}
+			if prev, dup := seenIssuers[issuerURL]; dup {
+				v.addf("%s.issuerURL %q is already used by %s[%d]", path, issuerURL, pathOIDCProviders, prev)
+			} else {
+				seenIssuers[issuerURL] = i
+			}
 		}
 		if strings.TrimSpace(p.UsernameClaim) == "" {
 			v.addf("%s.usernameClaim is required", path)
@@ -616,6 +623,8 @@ func (v *validator) checkOIDCProviders(c Cluster) {
 		}
 		if strings.TrimSpace(p.CABundle) == "" {
 			v.addf("%s.caBundle is required", path)
+		} else if _, err := cert.ParseCertsPEM([]byte(p.CABundle)); err != nil {
+			v.addf("%s.caBundle must contain a PEM-encoded certificate", path)
 		}
 	}
 }
