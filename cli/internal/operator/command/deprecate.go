@@ -21,6 +21,9 @@ func NewDeprecateCmd(clientFn ClientFn) *cobra.Command {
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
+				// Mark the help flag as passed: the root reports no trace ID for a
+				// command that only printed help.
+				_ = cmd.Flags().Set("help", "true")
 				return cmd.Help()
 			}
 			return fmt.Errorf("cannot deprecate %q: only clusterrelease and nodepoolrelease have a lifecycle", args[0])

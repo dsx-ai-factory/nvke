@@ -44,6 +44,7 @@ on:
       - "cli/internal/controller/**"
       - "cli/internal/providers/**"
       - "cli/internal/bootstrap/sitecluster/**"
+      - "cli/internal/telemetry/**"
       - "cli/internal/util/**"
   # Also twice a day, so a break the paths above filtered out, or one a flake
   # hid, still surfaces within twelve hours. A schedule ignores those paths, so

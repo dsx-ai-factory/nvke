@@ -238,8 +238,8 @@ func TestBootstrapSiteReportsTraceIDOnStderr(t *testing.T) {
 	assert.Empty(t, stdout.String(), "a failure before any result writes nothing to stdout")
 }
 
-// Cobra answers -h and --help without running the command, so a mutating
-// command must not report a trace ID for it.
+// Cobra answers -h and --help, and a bare group such as "create", without
+// running anything, so a mutating command must not report a trace ID for it.
 func TestHelpFlagPrintsNoTraceID(t *testing.T) {
 	f := newFakeController(t)
 	for _, args := range [][]string{
@@ -248,6 +248,9 @@ func TestHelpFlagPrintsNoTraceID(t *testing.T) {
 		{"patch", "nodepool", "--help"},
 		{"bootstrap", "site", "--help"},
 		{"deprecate", "--help"},
+		{"deprecate"},
+		{"create"},
+		{"bootstrap"},
 	} {
 		stdout, stderr, err := runNvkectl(t, f.URL, args...)
 		require.NoError(t, err, args)

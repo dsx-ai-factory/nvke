@@ -154,13 +154,15 @@ var untracedCommands = map[string]bool{ //nolint:gochecknoglobals // constant lo
 	cobra.ShellCompNoDescRequestCmd: true,
 }
 
-// queryCommands are the top-level commands that only report. When one
-// succeeds it writes nothing but its result, so it does not print the trace ID.
+// queryCommands are the top-level commands that only report or write files.
+// When one succeeds it writes nothing but its result, so it does not print the
+// trace ID.
 var queryCommands = map[string]bool{ //nolint:gochecknoglobals // constant lookup table
 	"get":      true,
 	"version":  true,
 	"config":   true,
 	"generate": true,
+	"render":   true,
 }
 
 // topLevel returns the name of the command directly under the root that cmd
@@ -190,7 +192,9 @@ func announceTrace(cmd *cobra.Command, w io.Writer, traceID string, err error) e
 	if err != nil {
 		return &tracedError{err: err, traceID: traceID}
 	}
-	if helpRequested(cmd) {
+	// Cobra prints help for a bare group such as "nvkectl create" and for -h and
+	// --help without running anything, so there is nothing to trace.
+	if helpRequested(cmd) || !cmd.Runnable() {
 		return nil
 	}
 	if queryCommands[topLevel(cmd)] {
