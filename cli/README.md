@@ -16,11 +16,14 @@ NVKE control-plane CLI. Bootstraps site controllers and manages tenant cluster l
 ## Installation
 
 ```bash
+# Set RELEASE to a cli/ tag listed at https://github.com/dsx-ai-factory/nvke/releases
+export RELEASE=cli/vX.Y.Z
+
 # Detects linux/darwin and amd64/arm64 (uname reports x86_64, aarch64, or arm64)
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 curl -fsSL -o nvkectl \
-  "https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-${OS}-${ARCH}"
+  "https://github.com/dsx-ai-factory/nvke/releases/download/${RELEASE}/nvkectl-${OS}-${ARCH}"
 chmod +x nvkectl && sudo mv nvkectl /usr/local/bin/
 ```
 
