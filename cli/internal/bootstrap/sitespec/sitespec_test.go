@@ -405,7 +405,7 @@ func TestValidateControlPlaneVIP_NodeCountRequirement(t *testing.T) {
 				if err == nil {
 					t.Fatal("Validate accepted a multi-node control plane without a VIP")
 				}
-				if !strings.Contains(err.Error(), pathControlPlaneVIP) || !strings.Contains(err.Error(), "more than one node") {
+				if !strings.Contains(err.Error(), pathControlPlaneVIP) || !strings.Contains(err.Error(), "more than one control-plane node") {
 					t.Fatalf("error %q does not explain the %s node-count requirement", err, pathControlPlaneVIP)
 				}
 				return
@@ -869,6 +869,7 @@ cluster:
         - 00000000-0000-0000-0000-000000000005
       osProfile: example-os-profile
       configProfile: example-config-profile
+  controlPlaneVIP: "10.0.0.100"
   k8sVersion: "1.34.2"
   cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
@@ -1247,6 +1248,38 @@ func TestCheckBootstrapMode(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("CheckBootstrapMode: %v", err)
+			}
+		})
+	}
+}
+
+// TestValidate_NicoControlPlaneVIP: nico's nodeCount counts toward the
+// multi-node VIP requirement, as the length of cluster.nodes does.
+func TestValidate_NicoControlPlaneVIP(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		count   int
+		vip     string
+		wantErr bool
+	}{
+		{"three nodes without a VIP", 3, "", true},
+		{"three nodes with a VIP", 3, "10.0.0.100", false},
+		{"one node without a VIP", 1, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inv := minimalValid()
+			makeNico(inv)
+			inv.Cluster.Nico.NodeCount = tc.count
+			inv.Cluster.ControlPlaneVIP = tc.vip
+			err := inv.Validate()
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), pathControlPlaneVIP+" is required") {
+					t.Fatalf("Validate error = %v, want %s is required", err, pathControlPlaneVIP)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Validate: %v", err)
 			}
 		})
 	}

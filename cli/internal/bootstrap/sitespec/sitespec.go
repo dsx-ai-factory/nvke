@@ -555,7 +555,7 @@ func (inv *SiteSpec) appendDataChecks(v *validator) {
 	v.checkCIDR(pathPodCidr, inv.Cluster.PodCidr, true)
 	v.checkCIDR(pathServiceCidr, inv.Cluster.ServiceCidr, false)
 	v.checkCIDRsDisjoint(inv.Cluster)
-	v.checkControlPlaneVIP(inv.Cluster)
+	v.checkControlPlaneVIP(inv)
 	v.checkNodeAgentPort(inv.Cluster.NodeAgentPort)
 	v.checkRegistry(inv.Registry)
 	v.checkSpire(inv.Spire)
@@ -928,11 +928,12 @@ func (v *validator) checkCIDR(path, value string, allowList bool) {
 
 // checkControlPlaneVIP requires a stable endpoint for multi-node control planes
 // and validates a configured IPv4 VIP against cluster CIDRs.
-func (v *validator) checkControlPlaneVIP(c Cluster) {
+func (v *validator) checkControlPlaneVIP(inv *SiteSpec) {
+	c := inv.Cluster
 	if c.ControlPlaneVIP == "" {
-		if len(c.Nodes) > 1 {
-			v.addf("%s is required when %s contains more than one node because kube-vip provides a stable control-plane endpoint",
-				pathControlPlaneVIP, pathNodes)
+		if inv.ControlPlaneCount() > 1 {
+			v.addf("%s is required when the cluster has more than one control-plane node (%s or %s) because kube-vip provides "+
+				"a stable control-plane endpoint", pathControlPlaneVIP, pathNodes, pathNico+".nodeCount")
 		}
 		return
 	}

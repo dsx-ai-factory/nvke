@@ -292,6 +292,11 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := inv.CheckBootstrapMode(opts.disableMTLS); err != nil {
 		return err
 	}
+	// Resolved here too, so a bad --release or --arch fails the dry run.
+	capnicoImage, err := capnicoReleaseImage(inv, opts.release, opts.arch)
+	if err != nil {
+		return err
+	}
 
 	// An explicit --registry-api-key flag wins over the value the loader
 	// resolved (the site spec file or the REGISTRY_API_KEY env var). The
@@ -344,11 +349,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 
-	image, err := capnicoReleaseImage(inv, opts.release, opts.arch)
-	if err != nil {
-		return err
-	}
-	cweCfg.CAPNICoImage = image
+	cweCfg.CAPNICoImage = capnicoImage
 
 	// The controller API has to be reachable from this host: this command deploys it
 	// and then calls it. A host port mapping rather than the node container's

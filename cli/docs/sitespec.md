@@ -84,15 +84,15 @@ for the tenant CAPNICo, under bootstrap-specific names.
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `infrastructure` | string | no | `provisioned` (default) or `nico`. `NVKECTL_INFRASTRUCTURE` overrides it. |
-| `cluster.nico.nodeCount` | int | with `nico`, unless `--disable-mtls` | Odd, at least 1. Takes the place of the length of `cluster.nodes`. |
-| `cluster.nico.provider.orgID` | string | with `nico`, unless `--disable-mtls` | NGC organization that owns the cluster. |
-| `cluster.nico.provider.siteID`, `vpcID` | UUID | with `nico`, unless `--disable-mtls` | The NICo site and the VPC the cluster is created in. |
-| `cluster.nico.controlPlane.instanceTypePreference` | UUID list | with `nico`, unless `--disable-mtls` | Ordered; index 0 is the first choice. |
-| `cluster.nico.controlPlane.vpcPrefixIDs` / `subnetIDs` | UUID list | with `nico`, unless `--disable-mtls` | Exactly one of the two: native networking or not. |
-| `cluster.nico.controlPlane.sshKeyGroupIDs` | UUID list | with `nico`, unless `--disable-mtls` | At least one. |
-| `cluster.nico.controlPlane.osProfile`, `configProfile` | string | with `nico`, unless `--disable-mtls` | Profile names served by the site. |
-| `bootstrapNico` | `StackNico` | with `nico`, unless `--disable-mtls` | The NICo API the bootstrap CAPNICo calls: `endpoint`, `orgID`, `apiName`, `tokenFile`. See below. |
-| `bootstrapPullSecret` | `StackPullSecret` | with `nico`, unless `--disable-mtls` | The registry credential for the bootstrap CAPNICo's image: `server`, `username`, `tokenFile`. |
+| `cluster.nico.nodeCount` | int | with `nico` | Odd, at least 1. Takes the place of the length of `cluster.nodes`. |
+| `cluster.nico.provider.orgID` | string | with `nico` | NGC organization that owns the cluster. |
+| `cluster.nico.provider.siteID`, `vpcID` | UUID | with `nico` | The NICo site and the VPC the cluster is created in. |
+| `cluster.nico.controlPlane.instanceTypePreference` | UUID list | with `nico` | Ordered; index 0 is the first choice. |
+| `cluster.nico.controlPlane.vpcPrefixIDs` / `subnetIDs` | UUID list | with `nico` | Exactly one of the two: native networking or not. |
+| `cluster.nico.controlPlane.sshKeyGroupIDs` | UUID list | with `nico` | At least one. |
+| `cluster.nico.controlPlane.osProfile`, `configProfile` | string | with `nico` | Profile names served by the site. |
+| `bootstrapNico` | `StackNico` | with `nico` | The NICo API the bootstrap CAPNICo calls: `endpoint`, `orgID`, `apiName`, `tokenFile`. See below. |
+| `bootstrapPullSecret` | `StackPullSecret` | with `nico` | The registry credential for the bootstrap CAPNICo's image: `server`, `username`, `tokenFile`. |
 | `spire.externalAddress` | string | with `nico`, unless `--disable-mtls` | IP address or DNS name nodes use to reach the bootstrap host's SPIRE server, on NodePort 30081. See below. |
 
 `cluster.nodes` must be empty with `nico`, and `cluster.nico` must be absent

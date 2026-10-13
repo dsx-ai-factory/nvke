@@ -45,6 +45,8 @@ cluster:
       osProfile: "example-os-profile"
       configProfile: "example-cp-profile"
 
+  # Required with more than one control-plane node (nodeCount above).
+  controlPlaneVIP: "10.0.0.100"
   k8sVersion: "1.34.2"
   cniName: "ovn-kubernetes"
   podCidr: "192.168.0.0/16"
