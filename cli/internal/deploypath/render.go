@@ -362,11 +362,10 @@ func (r *renderer) helm(item string) {
 		r.problem("%s: chart: %v", item, err)
 	default:
 		// The release decides the version of every chart it carries; the pin
-		// in release.yaml decides only for a chart the release lacks. A
-		// difference is said at once, not noted, because it points at values
-		// written for another chart. 0.0.0 is the placeholder of a chart in
-		// this tree, so it is not a difference.
-		if a.ChartVersion != "" && a.ChartVersion != rel.Chart.Version && rel.Chart.Version != "0.0.0" {
+		// in release.yaml decides only for a repository chart the release
+		// lacks, and a path chart names none. A difference is said at once,
+		// not noted, because it points at values written for another chart.
+		if a.ChartVersion != "" && rel.Chart.Version != "" && a.ChartVersion != rel.Chart.Version {
 			fmt.Fprintf(r.opts.Log, "warning: %s: the release carries %s %s, release.yaml pins %s; the release decides, check the item's values against %s\n",
 				item, artifact, a.ChartVersion, rel.Chart.Version, a.ChartVersion)
 		}
@@ -380,7 +379,7 @@ func (r *renderer) helm(item string) {
 				rel.Chart.Version = a.ChartVersion
 			}
 			changed = true
-			r.note("%s: chart %s from %s", item, firstNonEmpty(a.ChartVersion, rel.Chart.Version), a.Reference)
+			r.note("%s: chart %s from %s", item, firstNonEmpty(a.ChartVersion, rel.Chart.Version, "(unversioned)"), a.Reference)
 		}
 	}
 

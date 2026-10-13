@@ -87,7 +87,8 @@ func TestItemsAndReleases(t *testing.T) {
 
 func TestReadRelease_Problems(t *testing.T) {
 	cases := map[string]string{
-		"chart:\n  name: x\n": "chart.name and chart.version are required",
+		"chart:\n  version: \"1.0.0\"\n  repository: https://charts.example\n": "chart.name is required",
+		"chart:\n  name: x\n  repository: https://charts.example\n": "chart.version is required for a repository chart",
 		"chart:\n  name: x\n  version: \"1\"\n  path: a\n  repository: b\n":     "both repository and path",
 		"chart:\n  name: x\n  version: \"1\"\n  path: a\nrelease:\n  name: r\n": "release.name and release.namespace",
 		"chart:\n  name: x\n  version: \"1\"\n  colour: red\n":                  "field colour not found",

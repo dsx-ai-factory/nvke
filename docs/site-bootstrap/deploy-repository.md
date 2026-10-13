@@ -107,7 +107,7 @@ A helm item installs one chart as one Helm release. Its `release.yaml` names the
 ```yaml
 chart:
   name: temporal            # the chart's name
-  version: "0.74.0"         # pinned; passed to helm for a repository chart the release lacks. A release that carries the chart decides its version
+  version: "0.74.0"         # required for a repository chart; a path chart names none
   repository: https://go.temporal.io/helm-charts   # or path: ../../nktp/deploy/charts/nktp
   artifact: temporal        # NVKR artifact of the chart; default: the item name
   imageArtifact: cwe        # NVKR artifact of the image the chart runs, if any
@@ -123,7 +123,7 @@ requires:
   - {kind: certificate, name: oidc-provider-upstream-ca, namespace: spire-server, condition: Ready}
 ```
 
-`repository` and `path` name where the chart comes from; one of them. The three artifact keys bind the item to an NVKR release by NVKR's output names. A manifest item binds the image its YAML runs the same way, with top-level `image: <repository>:<tag>` and `artifact: <name>`. `setFile` keeps a secret the operator holds out of the deploy path.
+`repository` and `path` name where the chart comes from; one of them. A repository chart is selected by `version`. A path chart names no version: the chart at the path carries its own, and a release that carries the chart decides. The three artifact keys bind the item to an NVKR release by NVKR's output names. A manifest item binds the image its YAML runs the same way, with top-level `image: <repository>:<tag>` and `artifact: <name>`. `setFile` keeps a secret the operator holds out of the deploy path.
 
 `nvkectl render deploy-path` writes a resolved copy of the deploy path. Charts from the release land in `charts/<item>/` and `chart.path` points at them. An item gets `release-images.yaml` and `site-values.yaml` as needed. A manifest item bound to an image gets a `kustomization.yaml`. Template items are rendered and become manifest items. At the top: `images.txt`, `site.env`, `nvkr-release.json` and a `.gitignore` that ignores the tree. `deploy/nvke-deploy.sh` applies the copy as a plain deploy path.
 

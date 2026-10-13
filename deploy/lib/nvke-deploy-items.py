@@ -119,9 +119,13 @@ def release(path):
         else:
             die("%s:%d: unrecognised: %s" % (path, num, line))
 
-    for key in ("name", "version"):
-        if key not in chart:
-            die("%s: missing chart.%s" % (path, key))
+    if "name" not in chart:
+        die("%s: missing chart.name" % path)
+    # A repository chart is selected by its version; a path chart carries
+    # its own.
+    if "version" not in chart and "path" not in chart:
+        die("%s: missing chart.version for a repository chart" % path)
+    chart.setdefault("version", "")
     if "namespace" not in rel:
         die("%s: missing release.namespace" % path)
 
