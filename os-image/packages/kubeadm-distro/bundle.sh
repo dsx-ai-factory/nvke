@@ -75,7 +75,21 @@ component_url() {
 # --retry-all-errors is left off so a pin typo fails on the first 404.
 # No --retry-delay: it replaces curl's exponential backoff with a flat wait.
 fetch() {
-  curl -fsSL --retry 8 --max-time 600 --max-filesize "$MAX_ARTIFACT_BYTES" -o "$2" "$1" || die "download $1 failed"
+  local attempt curl_status
+  for attempt in 1 2 3; do
+    if curl -fsSL --retry 8 --max-time 600 --max-filesize "$MAX_ARTIFACT_BYTES" -o "$2" "$1"; then
+      break
+    else
+      curl_status=$?
+    fi
+    # curl's normal retries omit receive errors such as a peer reset (56).
+    # Retry those twice, while HTTP errors such as 404 still fail at once.
+    if [[ "$curl_status" != 56 || "$attempt" -eq 3 ]]; then
+      die "download $1 failed (curl exit ${curl_status})"
+    fi
+    echo "bundle.sh: receive error downloading $1; retrying (${attempt}/2)" >&2
+    sleep "$attempt"
+  done
   # --max-filesize is advisory: a chunked response has no Content-Length for
   # curl to check it against, so re-check the ceiling on what landed.
   local size; size="$(stat -c %s "$2")"

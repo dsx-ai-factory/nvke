@@ -54,26 +54,8 @@ done
 #   1. On a VM runner the kernel is there but Ubuntu ships it mode 0600.
 #   2. On a container runner (the arm64 leg is an ARC pod) there is no kernel
 #      package installed at all, because a container does not boot one.
-ensure_appliance_kernel() {
-  local vmlinuz found=""
-  shopt -s nullglob
-  for vmlinuz in /boot/vmlinuz-*; do
-    [[ -f "${vmlinuz}" ]] || continue
-    found="${vmlinuz}"
-    if [[ ! -r "${vmlinuz}" ]] && command -v sudo >/dev/null; then
-      sudo chmod 0644 "${vmlinuz}"
-    fi
-  done
-  shopt -u nullglob
-
-  if [[ -z "${found}" ]]; then
-    echo "No kernel in /boot for the libguestfs appliance; installing one..."
-    # -virtual, not -generic: this kernel is never booted, it is only read to
-    # build the appliance, so the smaller image is the right one.
-    sudo apt-get install -y -qq linux-image-virtual
-    ensure_appliance_kernel
-  fi
-}
+# shellcheck source=os-image/packer/scripts/libguestfs-kernel.sh
+source "$(dirname "${BASH_SOURCE[0]}")/libguestfs-kernel.sh"
 ensure_appliance_kernel
 
 # The disk is opened explicitly -- LUKS, then LVM, then the root filesystem --
