@@ -24,6 +24,13 @@
 #   5. Traefik serves a whoami Deployment on that cluster: hosts that already
 #      existed now serve traffic like any other cluster.
 #
+# The EXIT trap also scans what the run printed and saved, the bootstrap log and
+# the diagnostics bundle, for credentials with gitleaks and gitleaks.toml. It
+# runs on success and on failure, so a change that starts printing a secret turns
+# the run red. CI sets NVKECTL_E2E_REQUIRE_SECRET_SCAN=1, which makes a missing
+# gitleaks a failure; a developer running this locally without it only sees a
+# warning.
+#
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit. A failing exit
 # first collects diagnostics into NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.
@@ -147,6 +154,106 @@ fail() {
   exit 1
 }
 
+# scan_output_for_secrets scans the bootstrap log and the diagnostics bundle for
+# credentials, and returns 1 if it finds one or cannot tell. It prints the
+# scanner's findings with the secret redacted and never the secret itself: this
+# output goes to a public CI log.
+#
+# It first proves the rules work, because a clean result from a scanner that
+# matches nothing means nothing. Each shape the rules target must be flagged when
+# it holds a value, and must pass when it holds nvkectl's <redacted> placeholder.
+# The sample values are plain on purpose, so the commit that adds this line does
+# not trip the Secrets workflow.
+#
+# --exit-code 2 separates a finding (2) from a scanner failure (1).
+GITLEAKS_CONFIG="${SCRIPT_DIR}/gitleaks.toml"
+gitleaks_scan() {
+  local target="$1"
+  shift
+  gitleaks dir "${target}" --config "${GITLEAKS_CONFIG}" --redact=100 --no-banner --exit-code 2 "$@"
+}
+scan_output_for_secrets() {
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    if [ "${NVKECTL_E2E_REQUIRE_SECRET_SCAN:-}" = 1 ]; then
+      log "FAIL: gitleaks is not on PATH, so the bootstrap output was not scanned for credentials"
+      return 1
+    fi
+    log "gitleaks is not on PATH: skipping the scan of the bootstrap output for credentials (CI requires it)"
+    return 0
+  fi
+  if [ ! -f "${BOOTSTRAP_LOG}" ]; then
+    log "no bootstrap output to scan: bootstrap site was never started"
+    return 0
+  fi
+
+  local work rc name shape fingerprint join_token
+  work="$(mktemp -d)"
+
+  # The rules, proved on a sample of each shape: flagged with a value, clean with
+  # the placeholder.
+  mkdir -p "${work}/flagged" "${work}/clean"
+  for shape in \
+    'helm|helm upgrade --install demo chart --set-string auth.password=PLACEHOLDER --wait' \
+    'url|{"env":[{"name":"DATABASE_URL","value":"postgres://cloud:PLACEHOLDER@db.example:5432/cloud"}]}' \
+    'field|{"auth":{"username":"cloud","password":"PLACEHOLDER"}}'; do
+    name="${shape%%|*}"
+    printf '%s\n' "${shape#*|}" | sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' >"${work}/flagged/${name}.txt"
+    printf '%s\n' "${shape#*|}" | sed 's/PLACEHOLDER/<redacted>/' >"${work}/clean/${name}.txt"
+  done
+  # The one line the rules allow, and the same line under another message, which
+  # they must not allow. The hash is computed here, not written in this file: a
+  # literal would trip the Secrets workflow just as it trips the default rules.
+  fingerprint="$(printf '%s' sample | sha256sum | cut -d' ' -f1)"
+  printf 'msg="wrote the etcd encryption key" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
+    "${fingerprint}" 1 1 >"${work}/clean/etcd-fingerprint.txt"
+  printf 'msg="wrote the file" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
+    "${fingerprint}" 1 1 >"${work}/flagged/etcd-other.txt"
+  # The two hashes the rules allow, and a join token and certificate key beside one
+  # of them, which they must not. Computed here for the same reason as above.
+  printf '{"msg":"update","api_encryption_key_sha256":"%s"}\n' "${fingerprint}" >"${work}/clean/key-fingerprint.txt"
+  printf 'kubeadm join x:6443 --discovery-token-ca-cert-hash sha256:%s --control-plane\n' "${fingerprint}" >"${work}/clean/ca-hash.txt"
+  join_token="$(printf a | sha256sum | cut -c1-6).$(printf b | sha256sum | cut -c1-16)"
+  printf '{"args":["join","--token","%s","--discovery-token-ca-cert-hash","sha256:%s"]}\n' \
+    "${join_token}" "${fingerprint}" >"${work}/flagged/join-token.txt"
+  for name in "${work}"/flagged/*; do
+    rc=0
+    gitleaks_scan "${name}" >/dev/null 2>&1 || rc=$?
+    if [ "${rc}" -ne 2 ]; then
+      log "FAIL: the secret scan's rules did not flag the sample ${name##*/} (exit ${rc}), so a clean scan proves nothing"
+      rm -rf "${work}"
+      return 1
+    fi
+  done
+  rc=0
+  gitleaks_scan "${work}/clean" >/dev/null 2>&1 || rc=$?
+  if [ "${rc}" -ne 0 ]; then
+    log "FAIL: the secret scan flagged the clean samples, the <redacted> placeholder and the fingerprint and hash lines it allows (exit ${rc}), so it would flag a clean run"
+    rm -rf "${work}"
+    return 1
+  fi
+
+  # What the run produced.
+  mkdir -p "${work}/output"
+  cp "${BOOTSTRAP_LOG}" "${work}/output/bootstrap.log"
+  if [ -d "${DIAGNOSTICS_DIR}" ]; then
+    mkdir -p "${work}/output/diagnostics"
+    cp -R "${DIAGNOSTICS_DIR}/." "${work}/output/diagnostics/" || {
+      log "FAIL: could not read ${DIAGNOSTICS_DIR}, so it was not scanned for credentials"
+      rm -rf "${work}"
+      return 1
+    }
+  fi
+  rc=0
+  # --verbose names each finding: rule, file and line, with the secret redacted.
+  gitleaks_scan "${work}/output" --verbose || rc=$?
+  rm -rf "${work}"
+  case "${rc}" in
+    0) log "PASS: no credential in the bootstrap log or its diagnostics" ;;
+    2) log "FAIL: gitleaks found a credential in the bootstrap output; the findings above are redacted" ; return 1 ;;
+    *) log "FAIL: gitleaks could not scan the bootstrap output (exit ${rc})" ; return 1 ;;
+  esac
+}
+
 # defer registers a command for the EXIT trap, which runs registrations in
 # reverse order. Register the teardown *before* the operation it undoes: under
 # `set -e` an operation can fail partway and exit on the spot, so the teardown
@@ -160,6 +267,10 @@ cleanup() {
   if [ "${status}" -ne 0 ] && [ "${nodes_started}" = true ]; then
     collect_diagnostics
   fi
+  # Before anything is removed: the log and the diagnostics are what is scanned.
+  # A leak turns a passing run red; a run that already failed stays failed.
+  local scan_failed=0
+  scan_output_for_secrets || scan_failed=1
   for ((i = ${#DEFERRED[@]} - 1; i >= 0; i--)); do
     eval "${DEFERRED[$i]}" || true
   done
@@ -175,6 +286,9 @@ cleanup() {
 
   rm -f "${TENANT_KUBECONFIG}" "${ETCD_KEY_FILE}" "${BOOTSTRAP_LOG}"
   rm -rf "${KUBECONFIG_DIR}" "${CNI_BUNDLE_DIR}" "${BGP_RENDER_DIR}"
+  if [ "${scan_failed}" -ne 0 ] && [ "${status}" -eq 0 ]; then
+    exit 1
+  fi
 }
 nodes_started=false
 trap cleanup EXIT

@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# gitleaks rules for what `nvkectl bootstrap site` prints and saves during the
+# e2e run: its log and the diagnostics bundle. run.sh scans both with this file.
+#
+# This is not the repository's .gitleaks.toml, which the Secrets workflow uses
+# to scan commits. That file's allowlists are about committed fixtures. These
+# rules are about runtime output, and fire without an entropy threshold: the
+# default generic-api-key rule skips a value whose entropy is under 3.5, which a
+# random 32-character hex password falls under about one time in five, and it has
+# no rule for a password inside a Postgres URL.
+#
+# The `<redacted>` placeholder nvkectl prints in place of a credential must not
+# match. The value patterns below cannot start with `<`, since RE2, which
+# gitleaks uses, has no negative lookahead to say "anything but <redacted>".
+#
+# run.sh checks these rules on every run before it trusts a clean scan: it
+# scans a sample of each shape and requires the scanner to flag it, and a
+# redacted version of the same sample and requires it to pass.
+
+title = "nvkectl bootstrap e2e output"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "nvkectl-helm-credential-argument"
+description = "A credential passed to helm on the command line, which an error message repeats"
+regex = '''(?i)--set(?:-string)?[ =]+[\w.\[\]-]*(?:passw(?:or)?d|secret|token|api-?key|credential)[\w.\[\]-]*=([^\s"'<][^\s"']*)'''
+secretGroup = 1
+keywords = ["--set"]
+
+[[rules]]
+id = "nvkectl-database-url-password"
+description = "A password inside a database URL, as a pod spec carries it"
+regex = '''(?i)postgres(?:ql)?://[^:/\s@"']+:([^@/\s"'<][^@/\s"']*)@'''
+secretGroup = 1
+keywords = ["postgres://", "postgresql://"]
+
+[[rules]]
+id = "nvkectl-password-field"
+description = "A password field with a literal value in JSON or YAML output"
+regex = '''(?i)["']?[\w.-]*passw(?:or)?d["']?\s*[:=]\s*["']([^"'<\s]{4,})["']'''
+secretGroup = 1
+keywords = ["passw"]
+
+# nvkectl logs the SHA-256 of the etcd encryption key next to the key file's path,
+# so an operator can tell two keys apart. etcdkey.Fingerprint is a hash of the
+# key, "nothing that decrypts anything", but the default generic-api-key rule
+# reads the key-like file name and the high-entropy value as a credential.
+#
+# Scoped to that one rule and that one log message, by its text, and anchored
+# to the end of the line so nothing else can ride along on it. A hash anywhere
+# else still counts. The line is matched, not the file or the value.
+[[allowlists]]
+description = "the etcd encryption key's fingerprint that nvkectl logs"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+regexes = [
+  '''msg="wrote the etcd encryption key" (\S+ )*path=\S+ sha256=[0-9a-f]{64}( trace_id=[0-9a-f]{32} span_id=[0-9a-f]{16})?$''',
+]
+
+# Two more hashes the default generic-api-key rule reads as credentials.
+#
+# api_encryption_key_sha256 is the node agent's log of a fingerprint of the key it
+# received, the same kind of value as the etcd line above. The kubeadm
+# --discovery-token-ca-cert-hash is the SHA-256 of the cluster CA certificate,
+# which kubeadm prints for anyone to pin; it is not a secret.
+#
+# These match each finding's own text, not its line, because the same log line
+# also carries the join token and the certificate key, which are credentials and
+# must still be reported.
+[[allowlists]]
+description = "a fingerprint or CA certificate hash that is not a credential"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = [
+  '''api_encryption_key_sha256"?\s*[:=]\s*"?[0-9a-f]{64}''',
+  '''--discovery-token-ca-cert-hash"?[ ,:]+"?sha256:[0-9a-f]{64}''',
+]
+
