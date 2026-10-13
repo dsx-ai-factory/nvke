@@ -25,8 +25,13 @@ func New() *Client {
 	return &Client{}
 }
 
-// infrastructureAPIVersion is the CAPLL CRDs' apiVersion.
-const infrastructureAPIVersion = "infrastructure.cluster.x-k8s.io/v1alpha1"
+const (
+	// infrastructureAPIVersion is the CAPLL CRDs' apiVersion.
+	infrastructureAPIVersion = "infrastructure.cluster.x-k8s.io/v1alpha1"
+	// nameKey is the metadata/security-group "name" JSON field, shared across
+	// every manifest this package builds.
+	nameKey = "name"
+)
 
 // GetClusterScaffoldManifest builds the LaunchLayerCluster manifest for a
 // LaunchLayer-backed cluster, natively constructed from the cluster's
@@ -65,7 +70,7 @@ func (*Client) GetClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, 
 		"apiVersion": infrastructureAPIVersion,
 		"kind":       "LaunchLayerCluster",
 		"metadata": map[string]any{
-			"name": cluster.Name,
+			nameKey: cluster.Name,
 		},
 		"spec": spec,
 	}
@@ -94,7 +99,7 @@ func buildOwner(owner db.LaunchLayerClusterOwner) map[string]any {
 func buildSecurityGroups(groups []db.LaunchLayerSecurityGroup) []map[string]any {
 	out := make([]map[string]any, 0, len(groups))
 	for _, g := range groups {
-		group := map[string]any{"name": g.Name, "type": g.Type}
+		group := map[string]any{nameKey: g.Name, "type": g.Type}
 		if g.NetworkType != "" {
 			group["networkType"] = g.NetworkType
 		}

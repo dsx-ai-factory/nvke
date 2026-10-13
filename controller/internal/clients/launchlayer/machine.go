@@ -46,7 +46,7 @@ func buildInfraMachine(node db.Node, nodeSet db.NodeSet, cluster db.Cluster, con
 		"apiVersion": infrastructureAPIVersion,
 		"kind":       "LaunchLayerMachine",
 		"metadata": map[string]any{
-			"name":      node.Name,
+			nameKey:     node.Name,
 			"namespace": "", // set by the caller once namespace is known
 			"labels":    shared.MachineLabels(cluster.Name, controlPlane),
 		},
