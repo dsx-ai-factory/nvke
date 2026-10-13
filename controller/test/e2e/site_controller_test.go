@@ -281,8 +281,8 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 				"the controller should report the version the run deployed")
 		}, NodeTimeout(15*time.Minute))
 
-		validateSitePostDeploy(func() (siteUnderValidation, bool) {
-			return siteUnderValidation{kubeconfig: cluster.Kubeconfig, kubernetesVersion: spec.KubernetesVersion}, deployed
+		validateSitePostDeploy(func() (site.Cluster, site.Spec, bool) {
+			return cluster, spec, deployed
 		})
 	}
 

@@ -26,6 +26,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/site"
 )
 
 // siteNamespace is a namespace a full-stage site must run workloads in, and
@@ -75,35 +76,35 @@ const (
 	// crash-looping container with no readiness probe reads as Ready for a
 	// moment after each restart, so one clean poll proves nothing.
 	siteStable = 30 * time.Second
+	// siteStablePoll samples the pod check through siteStable often enough
+	// that a crash-looping container is unlikely to read as Ready at every
+	// one of them.
+	siteStablePoll = 2 * time.Second
 )
-
-// siteUnderValidation is what the site validation specs read. Resolved when a
-// spec runs rather than when the tree is built, because the kubeconfig exists
-// only once the bootstrap spec has run.
-type siteUnderValidation struct {
-	kubeconfig        string
-	kubernetesVersion string
-}
 
 // validateSitePostDeploy asserts on a site controller after the stack is
 // installed: the site's software (what the platform and the deploy path put on
 // it) and its distro (what Kubernetes itself reports).
 //
-// resolve reports false when the stack was not deployed, and every spec then
-// skips: ContinueOnFailure reaches these after a failed install, and polling
-// a stack that is not there spends minutes teardown needs. For the same
+// resolve returns the site as built and the spec it was built from. It runs
+// when a spec does rather than when the tree is built, because the cluster
+// exists only once the bootstrap spec has run. It reports false when the
+// stack was not deployed, and every spec then skips: ContinueOnFailure
+// reaches these after a failed install, and polling a stack that is not there
+// spends minutes teardown needs. For the same
 // reason the first failing check skips the rest: each one reports every
 // problem it found, so the ones after it add time and little evidence.
-func validateSitePostDeploy(resolve func() (siteUnderValidation, bool)) {
+func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool)) {
 	var (
-		site       siteUnderValidation
+		cluster    site.Cluster
+		spec       site.Spec
 		restConfig *rest.Config
 		c          client.Client
 		invalid    bool
 	)
 	connect := func() {
 		var deployed bool
-		site, deployed = resolve()
+		cluster, spec, deployed = resolve()
 		if !deployed {
 			Skip("the stack was not deployed")
 		}
@@ -114,7 +115,7 @@ func validateSitePostDeploy(resolve func() (siteUnderValidation, bool)) {
 		if c != nil {
 			return
 		}
-		restConfig = expectSucceed(kube.RESTConfig(site.kubeconfig, ""))
+		restConfig = expectSucceed(kube.RESTConfig(cluster.Kubeconfig, ""))
 		c = expectSucceed(siteClient(restConfig))
 	}
 
@@ -162,7 +163,7 @@ func validateSitePostDeploy(resolve func() (siteUnderValidation, bool)) {
 			return joinProblems("pods", podProblems(pods.Items, jobs.Items))
 		}
 		Eventually(pods).WithContext(ctx).WithTimeout(siteSettle).WithPolling(sitePoll).Should(Succeed())
-		Consistently(pods).WithContext(ctx).WithTimeout(siteStable).WithPolling(sitePoll).Should(Succeed())
+		Consistently(pods).WithContext(ctx).WithTimeout(siteStable).WithPolling(siteStablePoll).Should(Succeed())
 	}, Label("readiness", "site-software"), NodeTimeout(siteSettle+siteStable+time.Minute))
 
 	It("has issued every cert-manager certificate", func(ctx SpecContext) {
@@ -212,7 +213,7 @@ func validateSitePostDeploy(resolve func() (siteUnderValidation, bool)) {
 		server := expectSucceed(clientset.Discovery().ServerVersion())
 		var nodes corev1.NodeList
 		Expect(c.List(ctx, &nodes)).To(Succeed())
-		Expect(joinProblems("versions", versionProblems(site.kubernetesVersion, server.GitVersion, nodes.Items))).To(Succeed())
+		Expect(joinProblems("versions", versionProblems(spec.KubernetesVersion, server.GitVersion, nodes.Items))).To(Succeed())
 	}, Label("readiness", "site-distro"), NodeTimeout(2*time.Minute))
 
 	// The probe pod also proves the CNI: it has to get an address and reach
