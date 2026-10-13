@@ -44,7 +44,7 @@ the JWT audience `nke-controller`.
 ## Node bootstrap and authentication
 
 When enabled, controller-generated generic CAPI bootstrap data and rendered
-Nico OS-profile user data write a complete `/etc/default/nke-agent` file with
+Nico OS-profile user data write a complete `/etc/default/nvke-agent` file with
 `--grpc-auth-mode=tls-jwt`, `--dsx-identity-exchange-url`, the secure server port, and the external mTLS CA
 bundle flag when configured. CAPI bootstrap always restarts the agent after
 writing its configuration file and running pre-kubeadm commands. Nico OS

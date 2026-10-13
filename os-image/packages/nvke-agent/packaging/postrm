@@ -1,0 +1,23 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+set -e
+
+case "$1" in
+    purge)
+        echo "Purging configuration and logs for nvke-agent..."
+        rm -f /etc/default/nvke-agent
+        rm -rf /var/log/nvke-agent # Replace with your actual log directory if applicable
+
+        # Cleanup systemd symlinks
+        systemctl daemon-reload
+        ;;
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        # For a standard remove, we usually don't want to delete user data/configs
+        ;;
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac

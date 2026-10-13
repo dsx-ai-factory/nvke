@@ -27,9 +27,23 @@ absent() {
   fi
 }
 
+# setting <description> <config.yaml key> <value> <rendered>
+# Asserts one key of the rendered nke-controller-config, where the controller
+# reads its settings. A list compares as its items joined with commas.
+setting() {
+  local got
+  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nke-controller-config") | .data["config.yaml"]' <<<"$4" |
+    yq ".$2 | (select(tag == \"!!seq\") | join(\",\")) // .")"
+  if [[ "${got}" == "$3" ]]; then
+    printf '  ok    %s\n' "$1"
+  else
+    printf '  FAIL  %s (expected %s = %s, got %s)\n' "$1" "$2" "$3" "${got}" >&2
+    failures=$((failures + 1))
+  fi
+}
+
 disabled="$(helm template cwe "${chart}")"
-want "disabled flag" 'name: NODE_AGENT_EXTERNAL_MTLS_ENABLED' "${disabled}"
-want "disabled flag value" 'value: "false"' "${disabled}"
+setting "disabled flag" nodeAgent.externalMTLSEnabled false "${disabled}"
 absent "disabled certificate mount" 'name: node-agent-client-tls' "${disabled}"
 
 enabled="$(helm template cwe "${chart}" \
@@ -38,7 +52,7 @@ enabled="$(helm template cwe "${chart}" \
   --set nodeAgent.externalMTLS.secret.certificateKey=client.pem \
   --set nodeAgent.externalMTLS.secret.privateKeyKey=client-key.pem \
   --set nodeAgent.externalMTLS.secret.caBundleKey=trust.pem)"
-want "enabled flag" 'name: NODE_AGENT_EXTERNAL_MTLS_ENABLED' "${enabled}"
+setting "enabled flag" nodeAgent.externalMTLSEnabled true "${enabled}"
 absent "controller-owned client Certificate" 'name: nke-controller-agent-client' "${enabled}"
 want "client identity Secret" 'secretName: dsx-controller-client' "${enabled}"
 want "certificate Secret key" 'key: client.pem' "${enabled}"

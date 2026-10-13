@@ -112,20 +112,29 @@ token:^nke$
 
 # ---- Tier 2: the node (PR5) and the OS image and packages (PR6) ----
 
-# The agent package, unit, binary, env file, updater, paths and NVCR repository.
-token:nke-agent
+# One-release compatibility inputs: the old package guard, rollback artifact
+# names, binary/env/state aliases and the controller defaults gated in #1496.
+# Old fleet profiles still contain these names until reprovisioned.
+token:(^|/)nke-agent([._:@-]|$)
 
 # Node filesystem paths and files the agent, the image and cloud-init write,
-# the support bundle, and the attestation unit.
-token:(^|/)(var/lib|etc|opt|usr/lib|usr/local|usr/share|run|tmp|var/log)/nke|^/nke/|\.nke-attested$|nke-execute-scripts|/nke\.(asc|gpg)$|nke(-local)?\.list$|preferences\.d/nke-|/\d\d-nke-|nke-conntrack|values-nke\.yaml|nke-container-(network|cni)|nke-cert-renewal|nke-support-bundle|nke-audit|nke-attestation
+# the support bundle, and the attestation unit. /usr/lib/nke moved to
+# /usr/lib/nvke with the OS image. /etc/nke stays; the nvke-agent package
+# migrates state out of /var/lib/nke.
+token:(^|/)(var/lib|etc|opt|usr/local|usr/share|run|tmp|var/log)/nke|^/nke/|\.nke-attested$|/nke\.(asc|gpg)$|nke(-local)?\.list$|preferences\.d/nke-|/\d\d-nke-|nke-conntrack|values-nke\.yaml|nke-container-(network|cni)|nke-audit|nke-attestation
 
-# The agent-written node labels under Nike's domain.
-token:nke\.io/
+# Old encryption labels are read once and migrated; never write this domain.
+token:^nke\.io/($|k8s-api-encryption-(configured|rewrite-complete))
 
-# Package, image, Packer, nix builder and nico-sim backend names, the CNI deb
-# name prefix, and the legacy installer path the kubeadm-distro test asserts
-# is absent.
-token:nke-kubeadm-distro|nke-cni-|nke-cni/|nke-calico-|nke-spire|nke-node|nke-os-image|nke_qemu|qemu\.nke-|nke-packer-|nke-(non-)?fde$|nke-\d\d\.\d\d-|nke-rootfs|nke-builder|nke-builds|nke-package-builder|nke-ubuntu|nke-multiarch|nke\.ssh|nke-efi|nke-boot-smoke|nke-run-|nke_find_firmware|nke_arch_from|nke-capture|nke-image|nke-pxe|nke-iso|nke-materials|nke\.dev/|\.cache/nke|\.nke-kubeadm-file|^/nke-$|^nke-k8s-installer$
+# Names this image rename kept on purpose, plus the build-guest and nix names
+# that are still spelled the old way. The packages Provide nke-kubeadm-distro
+# and nke-cni-* so apt requests for those names still resolve. nke-calico-* is
+# the legacy pkg-builder layout. nke-spire-* is the SPIRE client, not the
+# nvke-spire-configure unit. nke-node-agent and nke-nodepool belong to the
+# other rename issues; the pattern stops there so a leftover nke-node-*.qcow2
+# is not exempt. The qcow2, qemu source, checker, apt capture hook and
+# material schema now say nvke.
+token:nke-kubeadm-distro|nke-cni-|nke-calico-|nke-spire|nke-node-agent|nke-nodepool|nke-packer-|nke-\d\d\.\d\d-|nke-rootfs|nke-builder|nke-builds|nke-package-builder|nke-ubuntu|nke-multiarch|nke\.ssh|nke-efi|nke-boot-smoke|nke-run-|nke_find_firmware|nke_arch_from|nke-image|nke-iso|\.cache/nke|\.nke-kubeadm-file|^/nke-$|^nke-k8s-installer$
 
 # S3 buckets, the CloudFront bundle path, the ISO prefix and the IAM role keep
 # their names (D16); `nke-packages` is the local package cache on nodes and in
@@ -159,12 +168,12 @@ token:^_nke_|^nke_repo_root$
 path:controller/hack/keycloak/*
 token:^nke-operators$|realms/nke(/|$)
 
-# The version line the updater parses, `NKE Agent Version: <v>`, and the
-# updater's own; both change with the per-node gating after launch.
-path:agent/cmd/agent/main.go
-path:agent/cmd/updater/main.go
+# The updater accepts the legacy version line for old rollback binaries.
+# Both command entrypoints now print NVKE; only this parser and its tests retain NKE.
 path:agent/pkg/agentupgrade/updater.go
 path:agent/pkg/agentupgrade/updater_test.go
+# The package qualification builds a legacy agent fixture with its old version line.
+path:os-image/packages/nvke-agent/test/install.sh
 
 # The OIDC upstream CA's subject (CN "NKE OIDC Upstream CA", OU "NKE") is in
 # every certificate it issued; a new subject is a new CA (PR4, new sites).

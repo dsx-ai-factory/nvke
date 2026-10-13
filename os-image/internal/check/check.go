@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package check dials an nke-agent gRPC endpoint over SPIFFE mTLS and verifies
+// Package check dials an nvke-agent gRPC endpoint over SPIFFE mTLS and verifies
 // the NodeAgent service is reachable.
 package check
 
@@ -25,27 +25,27 @@ import (
 )
 
 const (
-	// DefaultPort is the nke-agent gRPC listen port.
+	// DefaultPort is the nvke-agent gRPC listen port.
 	DefaultPort = "15005"
-	// DefaultSPIFFESocket is the workload API address nke-agent uses.
+	// DefaultSPIFFESocket is the workload API address nvke-agent uses.
 	DefaultSPIFFESocket = "unix:///tmp/spire-agent/public/api.sock"
 	// NodeAgentService is the gRPC reflection name of proto.NodeAgent.
 	NodeAgentService = "proto.NodeAgent"
-	// ClientPathPrefix is the SPIFFE path prefix nke-agent authorizes.
-	ClientPathPrefix = "/nke-service/"
+	// ClientPathPrefix is the SPIFFE path prefix nvke-agent authorizes.
+	ClientPathPrefix = "/tenant/nvke/service/"
 )
 
 // ErrWorkloadAPI means the local SPIFFE workload API was not usable.
 var ErrWorkloadAPI = errors.New("spiffe workload api")
 
-// ErrClientIdentity means the local SVID would be rejected by nke-agent.
+// ErrClientIdentity means the local SVID would be rejected by nvke-agent.
 var ErrClientIdentity = errors.New("client spiffe identity")
 
 // ErrDial means the TCP/TLS handshake to the agent failed.
-var ErrDial = errors.New("dial nke-agent")
+var ErrDial = errors.New("dial nvke-agent")
 
 // ErrAgentRPC means the agent was reachable but an RPC failed.
-var ErrAgentRPC = errors.New("nke-agent rpc")
+var ErrAgentRPC = errors.New("nvke-agent rpc")
 
 // Options configure a connectivity probe.
 type Options struct {
@@ -122,8 +122,8 @@ func Probe(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: %w", ErrWorkloadAPI, err)
 	}
-	if !strings.HasPrefix(svid.ID.Path(), ClientPathPrefix) {
-		return Result{}, fmt.Errorf("%w: %s does not start with %s (nke-agent will reject the handshake)",
+	if !authorizedClientPath(svid.ID.Path()) {
+		return Result{}, fmt.Errorf("%w: %s does not start with %s (nvke-agent will reject the handshake)",
 			ErrClientIdentity, svid.ID, ClientPathPrefix)
 	}
 	clientTD := svid.ID.TrustDomain()
@@ -218,6 +218,16 @@ func ListServices(ctx context.Context, conn grpc.ClientConnInterface) ([]string,
 func HasNodeAgent(services []string) bool {
 	for _, name := range services {
 		if name == NodeAgentService {
+			return true
+		}
+	}
+	return false
+}
+
+// authorizedClientPath mirrors the node agent's transitional caller paths.
+func authorizedClientPath(path string) bool {
+	for _, prefix := range []string{ClientPathPrefix, "/nvke-service/", "/nke-service/", "/tenant/nke/service/"} {
+		if strings.HasPrefix(path, prefix) {
 			return true
 		}
 	}

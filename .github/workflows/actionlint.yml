@@ -82,7 +82,9 @@ jobs:
           tar="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           tmp="$(mktemp -d)"
 
-          curl -fsSL -o "${tmp}/${tar}" "${base}/${tar}"
+          # Retry: a CDN 504 must not fail the job on the first response.
+          curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 \
+            -o "${tmp}/${tar}" "${base}/${tar}"
           # A committed digest, not the release's checksums.txt: that file comes
           # from the host that serves the artifact, so it proves transport, not
           # provenance. make/tool-versions.mk carries it beside the version.

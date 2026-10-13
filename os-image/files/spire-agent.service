@@ -4,9 +4,9 @@
 [Unit]
 Description=SPIRE Agent
 Documentation=https://github.com/dsx-ai-factory/nvke/blob/main/os-image/SPEC.md
-After=network-online.target nke-spire-configure.service
+After=network-online.target nvke-spire-configure.service
 Wants=network-online.target
-Requires=nke-spire-configure.service
+Requires=nvke-spire-configure.service
 
 [Service]
 Type=simple

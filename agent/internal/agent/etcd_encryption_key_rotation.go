@@ -53,7 +53,7 @@ const (
 	//   WAL present + config=desired + op_id match R == N → reload pending:   wait for reload
 	//   WAL present + config=desired + op_id match R > N  → reload confirmed: skip wait, clean up
 	//   WAL absent  + config=desired                      → complete:         return success immediately
-	encRotationWALFile = "/var/lib/nke/enc-rotation.state"
+	encRotationWALFile = "/var/lib/nvke/enc-rotation.state"
 
 	// encryptionReloadTimeout is the maximum time UpdateEncryptionConfig will
 	// block waiting for the apiserver to confirm a reload. Callers that receive
@@ -732,7 +732,7 @@ func (n *NodeAgentServer) rewriteEncryptedObjects(
 			continue
 		}
 		slog.Info("labeling node", "node", node)
-		if err := k8s.LabelNode(ctx, node, APIEncryptionRewriteCompleteLabel); err != nil {
+		if err := labelAPIEncryptionNode(ctx, node, APIEncryptionRewriteCompleteLabel); err != nil {
 			slog.Error("failed to label node", "node", node, "err", err)
 			n.markK8sAPIEncryptionErrorLocked()
 			return err

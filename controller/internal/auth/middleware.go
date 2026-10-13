@@ -13,7 +13,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
-// Mode comes from PERMISSIVE_MODE, outside this package. Only ModePermissive
+// Mode comes from permissiveMode in nke-controller-config, outside this package. Only ModePermissive
 // suppresses a rejection; every other value, the zero value included, enforces.
 type Mode string
 

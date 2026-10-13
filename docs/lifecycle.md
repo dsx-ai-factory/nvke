@@ -14,7 +14,7 @@ cluster
 
 **Goal:** Turn a set of bare, prepared nodes into a running Kubernetes cluster that will host the site controller.
 
-`nvkectl bootstrap site` does this. It creates a temporary Kind cluster on the init node, uses it to drive `kubeadm init` and `kubeadm join` on your nodes through `nke-agent` gRPC, and tears the temporary cluster down when done. You are left with:
+`nvkectl bootstrap site` does this. It creates a temporary Kind cluster on the init node, uses it to drive `kubeadm init` and `kubeadm join` on your nodes through `nvke-agent` gRPC, and tears the temporary cluster down when done. You are left with:
 
 - A Kubernetes cluster (`<sitename>.kubeconfig`)
 - An etcd encryption key (`<sitename>-etcd-encryption-key.json`) — move this off the bootstrap host immediately
@@ -22,7 +22,7 @@ cluster
 The cluster at this point is a plain kubeadm cluster. No NVKE services are installed.
 
 **What Day 0 requires:**
-- Ubuntu 24.04 or 26.04 nodes with `nke-agent` running (see [Pre-Provisioned Nodes](site-bootstrap/pre-provisioned-nodes.md) or [Custom Base OS](site-bootstrap/custom-base-os.md))
+- Ubuntu 24.04 or 26.04 nodes with `nvke-agent` running (see [Pre-Provisioned Nodes](site-bootstrap/pre-provisioned-nodes.md) or [Custom Base OS](site-bootstrap/custom-base-os.md))
 - `nvkectl`, `nerdctl`, `kind` on the init node
 - Network reach from the init node to all nodes on port 15005
 

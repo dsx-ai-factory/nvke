@@ -5,7 +5,7 @@
 #
 # The Tiltfile builds this with build context test/fixtures/ and the chart's
 # materialize-profiles initContainer copies /profiles into the shared volume
-# that the app container mounts at PROFILES_DIR (profiles.path). Fleet profiles
+# that the app container mounts at profilesDir (profiles.path). Fleet profiles
 # live in nke-site-deploy/cwe-profiles; this tree is a sanitized fixture used
 # only for tests.
 #

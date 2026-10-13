@@ -32,7 +32,7 @@ import (
 	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
-// Plaintext default — VMs run nke-agent with AGENT_ARGS=--disable-mtls per
+// Plaintext default — VMs run nvke-agent with AGENT_ARGS=--disable-mtls per
 // the cloud-init drop-in. Production never uses this path.
 const DefaultAgentPort = 50051
 
@@ -177,7 +177,7 @@ func WaitForPhase(ctx context.Context, addr, phase string, timeout, pollInterval
 }
 
 // WaitForAgent polls the node-agent until it answers a GetKubeadmStatus RPC —
-// i.e. until nke-agent is installed and serving. Needed when VM readiness is
+// i.e. until nvke-agent is installed and serving. Needed when VM readiness is
 // gated on SSH (VM booted) instead of cloud-init phone_home: SSH comes up early
 // in boot, so the agent may not be installed yet when the VM first becomes
 // reachable. Polling here bridges the gap before we drive ExecuteInit.

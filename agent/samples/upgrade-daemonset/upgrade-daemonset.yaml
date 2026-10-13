@@ -19,7 +19,7 @@ spec:
       - operator: "Exists"  # run on all nodes, even tainted ones
       containers:
       - name: agent-updater
-          image: nvcr.io/nvidian/nke/nke-agent-installer:latest
+        image: nvcr.io/nvidian/nke/nvke-agent-installer:latest
         imagePullPolicy: Always
         securityContext:
           privileged: true 

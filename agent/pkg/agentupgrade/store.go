@@ -168,12 +168,13 @@ func (s *Store) SetStatus(id string, phase Phase, step, errorMessage string) (Op
 	return op, nil
 }
 
-// SetPreviousPackageVersion records the exact Debian version retained for rollback.
-func (s *Store) SetPreviousPackageVersion(id, version string) (Operation, error) {
+// SetPreviousPackage records the exact Debian package retained for rollback.
+func (s *Store) SetPreviousPackage(id, name, version string) (Operation, error) {
 	op, err := s.Load(id)
 	if err != nil {
 		return Operation{}, err
 	}
+	op.PreviousPackageName = name
 	op.PreviousPackageVersion = version
 	op.UpdatedAt = time.Now().UTC()
 	if err := s.write(op); err != nil {

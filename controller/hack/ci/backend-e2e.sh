@@ -477,11 +477,11 @@ collect_diagnostics() {
         [[ -n "${node_name}" ]] || continue
         docker logs "${node_name}" >"${STATE_DIR}/nodes/${node_name}-console.log" 2>&1
         docker exec "${node_name}" systemctl status \
-          nke-agent spire-agent swtpm-local containerd kubelet \
+          nvke-agent spire-agent swtpm-local containerd kubelet \
           ovsdb-server ovs-vswitchd nke-container-network nke-container-cni-images --no-pager \
           >"${STATE_DIR}/nodes/${node_name}-systemd.txt" 2>&1
         docker exec "${node_name}" journalctl --no-pager \
-          -u nke-agent -u spire-agent -u swtpm-local -u containerd -u kubelet \
+          -u nvke-agent -u spire-agent -u swtpm-local -u containerd -u kubelet \
           -u ovsdb-server -u ovs-vswitchd -u nke-container-network -u nke-container-cni-images \
           >"${STATE_DIR}/nodes/${node_name}-journal.log" 2>&1
         docker exec "${node_name}" crictl ps -a \
@@ -761,7 +761,7 @@ log "using agent source version ${NODE_AGENT_VERSION}"
 
 log "preparing verified SPIRE and OVN-Kubernetes charts"
 CNI_PLUGIN=ovn-kubernetes BUNDLE_ARCH="${host_arch}" bash hack/ci/prepare-capd-bundles.sh "${BUNDLE_DIR}"
-OVN_CHARTS_DEB="${BUNDLE_DIR}/nke-cni-ovn-charts-1.4.0_1.4.0_${host_arch}.deb"
+OVN_CHARTS_DEB="${BUNDLE_DIR}/nvke-cni-ovn-charts-1.4.0_1.4.0_${host_arch}.deb"
 [[ -f "${OVN_CHARTS_DEB}" ]] || {
   log "OVN charts package was not produced: ${OVN_CHARTS_DEB}" >&2
   exit 1
@@ -861,7 +861,7 @@ NODE_AGENT_VERSION="${NODE_AGENT_VERSION}" \
 NODE_AGENT_REPO_PATH="${WORKSPACE_ROOT}/agent" \
 SPIRE_AGENT_BUNDLE_PATH="${BUNDLE_DIR}/spire-agent.tgz" \
 CAPD_CNI_CHARTS_DEB_PATH="${OVN_CHARTS_DEB}" \
-CAPD_CNI_IMAGES_DEB_PATH="${BUNDLE_DIR}/nke-cni-ovn-images-1.4.0_1.4.0_${host_arch}.deb" \
+CAPD_CNI_IMAGES_DEB_PATH="${BUNDLE_DIR}/nvke-cni-ovn-images-1.4.0_1.4.0_${host_arch}.deb" \
 CAPD_HELM_DEB_PATH="${BUNDLE_DIR}/nke-e2e-helm.deb" \
 CAPD_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
 BUNDLE_SERVER_URL="http://${BUNDLE_MIRROR_NAME}/" \
@@ -1281,11 +1281,13 @@ for controller in \
     /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth --help >/dev/null 2>&1
 done
 runner_exec kubectl -n "${CONTROLLER_NAME}" rollout status "deployment/${CONTROLLER_NAME}" --timeout=5m
-for env_name in TENANT_ACCESS_ENABLED NKE_OIDC_AUTH_ENABLED; do
-  env_value="$(runner_exec kubectl -n "${CONTROLLER_NAME}" get "deployment/${CONTROLLER_NAME}" \
-    -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"${env_name}\")].value}")"
-  if [[ "${env_value}" != "true" ]]; then
-    log "${env_name} must be true in the CAPD E2E deployment, got ${env_value:-<empty>}"
+# Both deploy paths set these as chart values, which the chart renders into
+# nke-controller-config.
+controller_values="$(runner_exec helm -n "${CONTROLLER_NAME}" get values "${CONTROLLER_NAME}" --all -o json)"
+for setting in tenantAccess.enabled nkeOIDCAuth.enabled; do
+  value="$(jq -r ".${setting}" <<<"${controller_values}")"
+  if [[ "${value}" != "true" ]]; then
+    log "${setting} must be true in the CAPD E2E deployment, got ${value:-<empty>}"
     exit 1
   fi
 done

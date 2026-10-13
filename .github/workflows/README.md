@@ -30,6 +30,15 @@ Preserve these rules when adding or changing a workflow:
 7. A base retarget must re-run the gate. Keep `edited` in the aggregate's
    `pull_request.types` list.
 8. Concurrency must not let one `main` commit erase another commit's result.
+9. Every tool download retries. A pinned release tarball is fetched with
+   `--retry 8 --retry-all-errors --retry-max-time 240`. Retries default to 0, so
+   a download with no `--retry` fails the job on the first bad response -- which
+   a release-CDN 504 has done. `--retry` alone covers curl's transient set (408,
+   429, 500, 502, 503, 504, 522, 524 and timeouts); `--retry-all-errors` extends
+   that to the rest, such as a connection reset part way through a transfer.
+   Pair it with `-o`, never a pipe: curl cannot rewind output already written to
+   a pipe, so a retry there duplicates data. Prefer an existing `setup-*`
+   composite action over inlining a new download.
 
 ## Event ownership
 
@@ -287,6 +296,8 @@ Before submitting a workflow change:
 9. Update this guide if the ownership model changes.
 10. Guard a job that must not run in a fork with `github.repository_id`, never
     with the slug.
+11. Give every `curl` that fetches a tool the retry flags from invariant 9,
+    and keep the committed-digest check that follows it.
 
 Run the static checks from the repository root:
 

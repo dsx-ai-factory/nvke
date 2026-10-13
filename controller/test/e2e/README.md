@@ -141,13 +141,13 @@ Three labels, which do not all run against the same deployment.
 
 | Label | What it covers | Deployment it needs |
 |---|---|---|
-| `authn` | The negative cases: no token -> 401, wrong audience -> 401, an unadmitted identity -> 403, and the anonymous routes `internal/auth/routes.go` exempts staying reachable with no credential. Also selects `authn-spire`. | Enforcing (`AUTH_CONFIG_PATH` set, `PERMISSIVE_MODE` unset or false) |
+| `authn` | The negative cases: no token -> 401, wrong audience -> 401, an unadmitted identity -> 403, and the anonymous routes `internal/auth/routes.go` exempts staying reachable with no credential. Also selects `authn-spire`. | Enforcing (`AUTH_CONFIG_PATH` set, `permissiveMode` false) |
 | `authn-spire` | A SPIRE JWT-SVID end to end: a pod the spec creates fetches an SVID over the Workload API and calls NVKE with it, and with one that differs only in `aud`. | Enforcing, plus SPIFFE enabled on the NVKE pod |
 | `authn-permissive` | That permissive mode counts what it would have rejected: all cases return 200 and `nvke_auth_requests_total{outcome="would_reject"}` advances. It flips the deployment itself and puts it back. | Enforcing; it arranges permissive mode for its own duration |
 
 Each skips itself, with the reason, when the deployment is not in the state it
-needs, reading `AUTH_CONFIG_PATH` and `PERMISSIVE_MODE` off the live NVKE
-Deployment. Set `NKE_E2E_REQUIRE_AUTHN=true` (as the CAPD lane does) to turn
+needs, reading `AUTH_CONFIG_PATH` off the live NVKE Deployment and
+`permissiveMode` from its `nke-controller-config`. Set `NKE_E2E_REQUIRE_AUTHN=true` (as the CAPD lane does) to turn
 "authentication is not deployed" from a skip into a failure; without it a
 cluster with authentication off produces `SUCCESS! -- 0 Passed | 0 Failed | N
 Skipped`, indistinguishable in a CI log from a suite that never had these specs.
@@ -385,12 +385,12 @@ make test-e2e ARGS='--label-filter="oidc-enable"'
 enqueues the `EnableOIDC` workflow via the outbox, then waits for the lock to clear.
 
 **Constructing the OIDC-off precondition.** A cluster created on an OIDC-enabled
-site is always born OIDC-on (`OIDCAuthEnabled` follows the CWE `NKE_OIDC_AUTH_ENABLED`
-create default), which would make `UpdateCluster{enableOidc}` a no-op — there is no
+site is always born OIDC-on (`OIDCAuthEnabled` follows
+`oidc.managementOIDCAuth.enabled` in `nke-controller-config`), which would make `UpdateCluster{enableOidc}` a no-op — there is no
 supported way to create an OIDC-off cluster on such a site. So the brownfield entry
 creates its cluster with the CWE create-default flipped **off**
-(`nvke.SetOIDCEnabled(false)` — a live env override on the CWE deployment, leaving the
-OIDC issuer/discovery/CA env intact), then flips it back **on** before enabling. This
+(`nvke.SetOIDCEnabled(false)` — a live edit of `nke-controller-config` and a controller
+restart, leaving the OIDC issuer/discovery/CA settings intact), then flips it back **on** before enabling. This
 mirrors a real brownfield cluster: one created before its site turned OIDC on. The
 flag is restored in the entry's `AfterAll`; the CAPD suite runs serially so this does
 not race other entries.
@@ -398,7 +398,7 @@ not race other entries.
 **Prerequisites.** The control-plane agent must be `>= v0.1.29`
 (`PatchAPIServerManifest`; `EnableOIDC.Validate` fails closed below it — the CAPD
 node image is pinned accordingly). The CAPD deploy stands up the OIDC substrate
-(config env + SPIRE discovery provider + tenant-access controller) by default
+(the `oidc.managementOIDCAuth` settings + SPIRE discovery provider + tenant-access controller) by default
 (`NKE_OIDC_AUTH_ENABLED` / `TENANT_ACCESS_ENABLED` default true in the Tiltfile), so
 the flip-on has everything it needs.
 

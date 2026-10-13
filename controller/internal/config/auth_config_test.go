@@ -13,38 +13,31 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 )
 
-// setMinimumEnv sets only what Config.Validate() already required, so these cases
-// exercise the authentication fields and nothing else.
+// setMinimumEnv sets only what ParseConfigFromEnv and Config.Validate require,
+// so these cases exercise the authentication fields and nothing else.
 func setMinimumEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("CNPG_SUPERUSER_PASSWORD", "not-the-dev-default")
+	t.Setenv("CONTROLLER_CONFIG_PATH", "/etc/nke/controller-config/config.yaml")
 }
 
-// The tri-state selector. Unset AUTH_CONFIG_PATH parses as the disabled state.
+// Unset AUTH_CONFIG_PATH parses as the disabled state. Permissive mode comes
+// from nke-controller-config.
 func TestAuthEnvFields(t *testing.T) {
 	tests := []struct {
-		name           string
-		env            map[string]string
-		wantPath       string
-		wantPermissive bool
+		name     string
+		env      map[string]string
+		wantPath string
 	}{
 		{
-			name:           "both unset: authentication disabled",
-			env:            nil,
-			wantPath:       "",
-			wantPermissive: false,
+			name:     "unset: authentication disabled",
+			env:      nil,
+			wantPath: "",
 		},
 		{
-			// The two fields are independent env tags with no cross-field logic, so
-			// the both-set case covers the singly-set ones. Whether a path with no
-			// mode enforces is cmd/worker's decision, not this parser's.
-			name: "path set, mode on: permissive",
-			env: map[string]string{
-				"AUTH_CONFIG_PATH": "/etc/nke/auth/authentication.yaml",
-				"PERMISSIVE_MODE":  "true",
-			},
-			wantPath:       "/etc/nke/auth/authentication.yaml",
-			wantPermissive: true,
+			name:     "set",
+			env:      map[string]string{"AUTH_CONFIG_PATH": "/etc/nke/auth/authentication.yaml"},
+			wantPath: "/etc/nke/auth/authentication.yaml",
 		},
 	}
 
@@ -58,7 +51,6 @@ func TestAuthEnvFields(t *testing.T) {
 			cfg, err := config.ParseConfigFromEnv()
 			require.NoError(t, err, "an unset AUTH_CONFIG_PATH must not stop NVKE starting")
 			assert.Equal(t, tt.wantPath, cfg.AuthConfigPath)
-			assert.Equal(t, tt.wantPermissive, cfg.PermissiveMode)
 		})
 	}
 }

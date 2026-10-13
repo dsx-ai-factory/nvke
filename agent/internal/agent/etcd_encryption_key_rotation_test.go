@@ -305,9 +305,9 @@ func TestRemovePlainTextSecondaryEncryptionEntry_WaitsForReloadMetricWithoutAPIS
 	}
 	got, err := clientset.CoreV1().Nodes().Get(context.Background(), hostname, metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "true", got.Labels["nke.io/k8s-api-encryption-enabled"])
-	assert.NotContains(t, got.Labels, "nke.io/k8s-api-encryption-configured")
-	assert.NotContains(t, got.Labels, "nke.io/k8s-api-encryption-rewrite-complete")
+	assert.Equal(t, "true", got.Labels["nvke.nvidia.com/k8s-api-encryption-enabled"])
+	assert.NotContains(t, got.Labels, "nvke.nvidia.com/k8s-api-encryption-configured")
+	assert.NotContains(t, got.Labels, "nvke.nvidia.com/k8s-api-encryption-rewrite-complete")
 }
 
 func rewriteStateSnapshot(srv *NodeAgentServer) (K8sAPIRewriteOperation, bool) {
@@ -394,7 +394,7 @@ func TestRunAsyncRewriteEncryptedObjectsPersistsSucceededOperation(t *testing.T)
 
 	node, err := clientset.CoreV1().Nodes().Get(context.Background(), "cp-0", metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "true", node.Labels["nke.io/k8s-api-encryption-rewrite-complete"])
+	assert.Equal(t, "true", node.Labels["nvke.nvidia.com/k8s-api-encryption-rewrite-complete"])
 }
 
 func TestRunAsyncRewriteEncryptedObjectsPersistsFailedOperation(t *testing.T) {

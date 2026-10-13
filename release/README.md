@@ -82,8 +82,8 @@ $ go run ./release/cmd/qualify plan --subject nvke --scope full
           "capabilities": { "arch": "amd64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "24.04" },
           "dependencies": [
             { "name": "kube",           "version": "1.36.3" },
-            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2" },
-            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nke-node-non-fde-ubuntu-24.04.5-arm64.qcow2" }
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-24.04.5-arm64.qcow2" }
           ]
         },
         {
@@ -91,8 +91,8 @@ $ go run ./release/cmd/qualify plan --subject nvke --scope full
           "capabilities": { "arch": "arm64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "24.04" },
           "dependencies": [
             { "name": "kube",           "version": "1.36.3" },
-            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2" },
-            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nke-node-non-fde-ubuntu-24.04.5-arm64.qcow2" }
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-24.04.5-arm64.qcow2" }
           ]
         },
         {
@@ -100,8 +100,8 @@ $ go run ./release/cmd/qualify plan --subject nvke --scope full
           "capabilities": { "arch": "amd64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "26.04" },
           "dependencies": [
             { "name": "kube",           "version": "1.36.3" },
-            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2" },
-            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2" }
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2" }
           ]
         },
         {
@@ -109,8 +109,8 @@ $ go run ./release/cmd/qualify plan --subject nvke --scope full
           "capabilities": { "arch": "arm64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "26.04" },
           "dependencies": [
             { "name": "kube",           "version": "1.36.3" },
-            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2" },
-            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2" }
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2" }
           ]
         }
       ]

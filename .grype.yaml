@@ -48,21 +48,4 @@
 # Everything from `medium` up is still reported to Security -> Code scanning
 # either way; this only affects what fails the build.
 
-ignore:
-  - vulnerability: GO-2026-6612
-    package:
-      name: golang.org/x/net
-      location: /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
-    reason: owner=@dims review=2026-11-30 scope=image the third-party
-      k8s-spiffe-workload-jwt-exec-auth 0.3.0 binary copied into the controller
-      image is built upstream with golang.org/x/net v0.58.0, and no upstream
-      release carries the fix (v0.60.0). Remove when the helper is rebuilt from
-      source with a fixed x/net or upstream ships a fixed release.
-  - vulnerability: GO-2026-6612
-    package:
-      name: stdlib
-      location: /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
-    reason: owner=@dims review=2026-11-30 scope=image the same third-party
-      binary is built upstream with Go 1.26.7; our own binaries use the pinned
-      Go 1.27.2 and the location keeps them outside this entry. Remove when the
-      helper is rebuilt from source or upstream ships a fixed release.
+ignore: []

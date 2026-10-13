@@ -204,7 +204,34 @@ func applySpec(root *yaml.Node, spec *SiteSpec) error {
 			return err
 		}
 	}
+	// The controllerStack section, when the spec has one: the template carries
+	// the required fields as placeholders, so writing them keeps a rendered
+	// file equal to the spec it came from; optional fields only when set.
+	if spec.ControllerStack != nil {
+		for _, f := range spec.ControllerStack.stackFields() {
+			if f[1] == "" && !requiredStackFields[f[0]] {
+				continue
+			}
+			if err := setScalar(root, f[0], f[1]); err != nil {
+				return err
+			}
+		}
+	} else {
+		// A spec that has no section renders without one, so a rendered file
+		// never says more than the spec it came from.
+		dropMapping(root, "controllerStack")
+	}
 	return nil
+}
+
+// dropMapping removes key and its value from mapping, if present.
+func dropMapping(mapping *yaml.Node, key string) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			mapping.Content = append(mapping.Content[:i], mapping.Content[i+2:]...)
+			return
+		}
+	}
 }
 
 // decode reads a SiteSpec out of a node tree.
@@ -230,7 +257,10 @@ func decodeBytes(b []byte) (*SiteSpec, error) {
 
 // specDiff returns a human-readable difference between two site specs, or "".
 func specDiff(got, want *SiteSpec) string {
-	if reflect.DeepEqual(got, want) {
+	// The directory a spec was loaded from is not part of what it says.
+	g, w := *got, *want
+	g.dir, w.dir = "", ""
+	if reflect.DeepEqual(&g, &w) {
 		return ""
 	}
 	gotYAML, _ := yaml.Marshal(got)

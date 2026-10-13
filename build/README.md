@@ -2,7 +2,7 @@
 
 # build
 
-Scripts for building and publishing NVKE component artifacts — the CLI binary, nke-agent image, Cloud Workflow Engine image, and node images — into an operator-controlled registry.
+Scripts for building and publishing NVKE component artifacts — the CLI binary, nvke-agent image, Cloud Workflow Engine image, and node images — into an operator-controlled registry.
 
 These scripts are the operator's entry point into the NKD build pipeline. They wrap the component-specific build tooling and produce the artifacts NVKE consumes.
 
@@ -11,7 +11,7 @@ These scripts are the operator's entry point into the NKD build pipeline. They w
 | Script | What it builds |
 |--------|---------------|
 | `cli.sh` | `nvkectl` binary (multi-arch) |
-| `node-agent.sh` | `nke-agent` Debian package and container image |
+| `node-agent.sh` | `nvke-agent` Debian package and container image |
 | `controller.sh` | Cloud Workflow Engine container image |
 | `node-image.sh` | Node OS image (QCOW2) from an NKD recipe |
 

@@ -126,8 +126,8 @@ func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB, useCont
 		SELECT ns.id                 AS node_set_id,
 		       p.cluster_id          AS cluster_id,
 		       c.configuration_id    AS current_config_id,
-		       ns.os_profile         AS os_profile,
-		       ns.config_profile     AS config_profile,
+		       COALESCE(ns.nico->>'os_profile', '')     AS os_profile,
+		       COALESCE(ns.nico->>'config_profile', '') AS config_profile,
 		       ns.kubernetes_version AS kubernetes_version
 		FROM node_sets ns
 		JOIN node_pools p ON p.id = ns.node_pool_id
@@ -155,16 +155,20 @@ func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB, useCont
 		if err := tx.NewRaw(`
 			INSERT INTO control_plane_configurations (cluster_id, config, change_reason)
 			SELECT ?,
-			       cur.config || jsonb_build_object(
-			           'os_profile', ?::text,
-			           'config_profile', ?::text,
-			           'kubernetes_version', ?::text
-			       ),
+			       cur.config
+			         || jsonb_build_object('kubernetes_version', ?::text)
+			         || CASE WHEN jsonb_typeof(cur.config->'nico') = 'object'
+			                 THEN jsonb_build_object('nico',
+			                        cur.config->'nico' || jsonb_build_object(
+			                            'os_profile', ?::text,
+			                            'config_profile', ?::text))
+			                 ELSE '{}'::jsonb
+			            END,
 			       ?
 			FROM control_plane_configurations cur
 			WHERE cur.id = ?
 			RETURNING id
-		`, d.ClusterID, d.OSProfile, d.ConfigProfile, d.KubernetesVersion,
+		`, d.ClusterID, d.KubernetesVersion, d.OSProfile, d.ConfigProfile,
 			"control-plane migration: preserve deprecated node generation for rollout",
 			d.CurrentConfigID).Scan(ctx, &newConfigID); err != nil {
 			return fmt.Errorf("snapshot deprecated control-plane node set %s: %w", d.NodeSetID, err)

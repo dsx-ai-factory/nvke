@@ -151,7 +151,7 @@ type AptRepoConfig struct {
 
 // ConfigureAptRepo writes /etc/apt/keyrings/<keyringName>.gpg,
 // /etc/apt/sources.list.d/<name>.list when deb_uri and suite are set,
-// optionally /etc/apt/preferences.d/nke-<keyringName>.pref, then apt-get update.
+// optionally /etc/apt/preferences.d/nvke-<keyringName>.pref, then apt-get update.
 func ConfigureAptRepo(ctx context.Context, cfg AptRepoConfig) (string, error) {
 	basename, baseErr := aptKeyringBasename(cfg.KeyringName)
 	if baseErr != nil {
@@ -249,7 +249,8 @@ func ConfigureAptRepo(ctx context.Context, cfg AptRepoConfig) (string, error) {
 		return rawOut.String(), fmt.Errorf("write sources list: %w", werr)
 	}
 
-	prefPath := filepath.Join(aptPreferencesDir, fmt.Sprintf("nke-%s.pref", basename))
+	prefPath := filepath.Join(aptPreferencesDir, fmt.Sprintf("nvke-%s.pref", basename))
+	legacyPrefPath := filepath.Join(aptPreferencesDir, fmt.Sprintf("nke-%s.pref", basename))
 	if cfg.RepoPriority == 0 {
 		writeLog("remove preferences file if present: %s\n", prefPath)
 		_ = os.Remove(prefPath)
@@ -274,6 +275,10 @@ func ConfigureAptRepo(ctx context.Context, cfg AptRepoConfig) (string, error) {
 		}
 	}
 
+	if rmErr := os.Remove(legacyPrefPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+		return rawOut.String(), fmt.Errorf("remove legacy apt preferences: %w", rmErr)
+	}
+
 	writeLog("apt-get update\n")
 	cmd := exec.CommandContext(ctx, "apt-get", "update")
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
@@ -288,7 +293,7 @@ func ConfigureAptRepo(ctx context.Context, cfg AptRepoConfig) (string, error) {
 }
 
 // RemoveAptRepo deletes /etc/apt/keyrings/<keyringName>.gpg,
-// /etc/apt/preferences.d/nke-<keyringName>.pref, and
+// /etc/apt/preferences.d/nvke-<keyringName>.pref, and
 // /etc/apt/sources.list.d/<listBasename> if present, then runs apt-get update.
 // sourcesListBasename selects the .list file; if empty, listBasename is <keyringName>.list.
 // keyringName must pass the same validation as ConfigureAptRepo. Missing files are ignored.
@@ -317,11 +322,12 @@ func RemoveAptRepo(ctx context.Context, keyringName, sourcesListBasename string)
 		return rawOut.String(), fmt.Errorf("remove keyring: %w", rmErr)
 	}
 
-	prefPath := filepath.Join(aptPreferencesDir, fmt.Sprintf("nke-%s.pref", basename))
-	writeLog("remove apt preferences if present: %s\n", prefPath)
-	if rmErr := os.Remove(prefPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
-		slog.ErrorContext(ctx, "remove apt repo failed", "operation", "remove apt preferences", "error", rmErr, "prefPath", prefPath, "keyPath", keyPath, "details", rawOut.String())
-		return rawOut.String(), fmt.Errorf("remove apt preferences: %w", rmErr)
+	prefPath := filepath.Join(aptPreferencesDir, fmt.Sprintf("nvke-%s.pref", basename))
+	for _, path := range []string{prefPath, filepath.Join(aptPreferencesDir, fmt.Sprintf("nke-%s.pref", basename))} {
+		writeLog("remove apt preferences if present: %s\n", path)
+		if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			return rawOut.String(), fmt.Errorf("remove apt preferences: %w", rmErr)
+		}
 	}
 
 	sourcesPath := filepath.Join(aptSourcesListDDir, listBase)

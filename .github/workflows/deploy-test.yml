@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Runs the tests of the site controller install under deploy/.
+#
+# make -C deploy test builds nvkectl from cli/ and runs the executor's dry-run
+# suite in deploy/testdata/: item order, where each chart comes from, a deploy
+# path rendered for a site, and the errors the executor must stop on. Nothing
+# is applied and no registry is reached, so the job runs on ubuntu-latest with
+# no secret.
+#
+# The Go tests of the package nvkectl render uses run in controller-test.yml
+# with the rest of cli/.
+#
+# The push filter scopes the post-merge canary on main. Pull requests reach
+# this through merge-gate.yml, which ignores the filter, so every pull request
+# reports. See .github/workflows/README.md.
+
+name: Deploy Test
+
+# All pull requests, including forks and Dependabot, reach this through
+# merge-gate.yml. The standalone push trigger is post-merge coverage on main;
+# naming mirror or Dependabot branches here too would run it a second time.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/**'
+      - 'cli/**'
+      - 'nktp/**'
+      - 'controller/deploy/charts/**'
+      - 'controller/api/**'
+      - 'management-engine/**'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/workflows/deploy-test.yml'
+  workflow_call:
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # The sha is part of the group on main, so every commit gets its own. See the
+  # longer note in shellcheck.yml for why, and why this is a literal name rather
+  # than ${{ github.workflow }}.
+  group: Deploy Test-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  deploy-test:
+    name: deploy-test
+    runs-on: ubuntu-latest
+    if: github.repository_id == '1323115536'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            cli/go.sum
+            go.work.sum
+
+      - name: Run the install tests
+        run: make --no-print-directory -C deploy test

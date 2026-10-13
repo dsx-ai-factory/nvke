@@ -30,8 +30,9 @@ Permissive (NKE_PERMISSIVE_MODE=true tilt up):
   advances by 3 across the run, which is the only evidence permissive mode
   produces. That counter check is the extra case in a permissive run.
 
-The mode is read from the live Deployment's PERMISSIVE_MODE, so the same script
-covers both deployments. Override it with --mode.
+The mode is read from the live Deployment's AUTH_CONFIG_PATH and the
+permissiveMode key of its nke-controller-config, so the same script covers both
+deployments. Override it with --mode.
 
 Scaffolding lives in deploy/k8s/nke-auth-dev.yaml (namespaces, service accounts,
 token-minter RBAC, nke-auth-config). The chart mounts the config and binds the
@@ -48,7 +49,7 @@ NKE_CONTROLLER_NAMESPACE="${NKE_CONTROLLER_NAMESPACE:-${CWE_NAMESPACE:-}}"
 NKE_DEPLOYMENT="${NKE_DEPLOYMENT:-}"
 NKE_CONTROLLER_HTTP_PORT="${NKE_CONTROLLER_HTTP_PORT:-${CWE_HTTP_PORT:-8080}}"
 NKE_HTTP_URL="${NKE_HTTP_URL:-http://127.0.0.1:${NKE_CONTROLLER_HTTP_PORT}}"
-# Metrics are a separate listener (METRICS_LISTEN_ADDRESS, chart default
+# Metrics are a separate listener (metricsListenAddress, chart default
 # 0.0.0.0:9090) that neither the Service nor Tilt publishes, so this script
 # forwards that port itself.
 NKE_METRICS_PORT="${NKE_METRICS_PORT:-9090}"
@@ -90,6 +91,7 @@ KUBECTL=(kubectl --context "${KUBE_CONTEXT}")
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 not found on PATH"; }
 need kubectl
 need curl
+need yq
 
 if [[ -z "${NKE_CONTROLLER_NAMESPACE}" ]]; then
   # Same order nvkectl uses: the greenfield namespace if it holds the auth
@@ -140,7 +142,8 @@ if [[ -z "${MODE}" ]]; then
       -o jsonpath="{.spec.template.spec.containers[?(@.name=='${NKE_DEPLOYMENT}')].env[?(@.name=='$1')].value}" 2>/dev/null
   }
   auth_path="$(container_env AUTH_CONFIG_PATH)"
-  permissive="$(container_env PERMISSIVE_MODE)"
+  permissive="$("${KUBECTL[@]}" get configmap nke-controller-config -n "${NKE_CONTROLLER_NAMESPACE}" \
+    -o jsonpath='{.data.config\.yaml}' 2>/dev/null | yq '.permissiveMode')"
   if [[ -z "${auth_path}" ]]; then
     MODE="disabled"
   elif [[ "${permissive}" == "true" ]]; then

@@ -442,7 +442,7 @@ jobs:
             os-image/v*)
               echo "OS-image tag ${GITHUB_REF_NAME}:"
               echo "  - qcow2  → OS Image Artifact (Packer + boot-smoke, then ghcr.io/dsx-ai-factory/nvke/os-image)"
-              echo "  - check  → nke-os-image-check attached to the GitHub Release"
+              echo "  - check  → nvke-os-image-check attached to the GitHub Release"
               ;;
 
             nktp/v*)

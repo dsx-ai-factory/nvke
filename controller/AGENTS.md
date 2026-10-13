@@ -132,7 +132,7 @@ All metric names use the `nvke_controller_` prefix — never `cwe_` (legacy) (e.
 ├── hack/
 │   └── remote-sync/        # Mutagen templates for Mac→Linux Tilt
 ├── internal/
-│   ├── config/             # Configuration from environment variables
+│   ├── config/             # Configuration: environment variables and nke-controller-config fields
 │   ├── controllers/        # Background controllers (auto-provisioner, health checks)
 │   ├── db/                 # Database layer (Bun ORM, migrations)
 │   │   └── migrations/     # Database migration files
@@ -189,20 +189,34 @@ See [`api/README.md`](api/README.md#compatibility) and
 docker run -d --name=cwe-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:17.4
 ```
 
-## Environment Variables
+## Configuration
 
-Key configuration (see `internal/config/config.go` for full list):
+The controller reads its settings once, at startup, from the
+`nke-controller-config` file (`internal/controllerconfig`), and reads a few more
+from environment variables (`internal/config/config.go`). The chart renders the
+file into a ConfigMap and mounts it; host-local runs use
+`hack/local-controller-config.yaml`. A field of `config.Config` with a
+`controllerconfig` tag comes from the file, and one with an `env` tag from the
+environment.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `CONTROLLER_CONFIG_PATH` | (required) | The `nke-controller-config` file. The chart sets it to the mounted ConfigMap; `make run` sets it to `hack/local-controller-config.yaml`. Unset, missing or invalid is a startup failure. |
 | `LOG_LEVEL` | `info` | Log level (debug/info/warn/error) |
 | `DB_CONNECTION_STRING` | `postgres://...` | PostgreSQL connection string |
-| `TEMPORAL_HOST_PORT` | `localhost:7233` | Temporal server for CWE workflows |
-| `PROFILES_DIR` | `./profiles` | Directory for OS/config profiles. Fleet profile content is maintained outside this repository and supplied at deploy time; this repo ships only example profiles. The directory may be empty: CWE starts without a profiles tree, and one is needed to provision a node, not to come up. |
-| `SPIFFE_ENDPOINT_SOCKET` | (optional) | SPIRE agent socket path for SPIFFE identity (e.g., `unix:///tmp/spire-agent/agent.sock`) |
-| `AUTH_CONFIG_PATH` | (unset) | API authentication config file. Unset disables authentication entirely, which is what a host-local `go run` gets. Set but unreadable is a startup failure, never "disabled". |
-| `PERMISSIVE_MODE` | `false` | Only read when `AUTH_CONFIG_PATH` is set. `true` evaluates, logs and counts every request, then serves it anyway — nothing is rejected. |
-| `CONTROLLER_CONFIG_PATH` | (unset) | The mounted `nke-controller-config` file, loaded and validated at startup. The chart always sets it; unset runs without the file, which is what a host-local `go run` gets. Set but missing or invalid is a startup failure. |
+| `AUTH_CONFIG_PATH` | (unset) | API authentication config file. Unset disables authentication entirely, which is what `make run` gets. Set but unreadable is a startup failure, never "disabled". |
+
+Settings in the file that local work most often changes:
+
+| Key | Description |
+|-----|-------------|
+| `temporal.hostPort` | Temporal server for controller workflows |
+| `profilesDir` | Directory for OS/config profiles. Fleet profile content is maintained outside this repository and supplied at deploy time; this repo ships only example profiles. The directory may be empty: the controller starts without a profiles tree, and one is needed to provision a node, not to come up. |
+| `spire.spiffeEnabled`, `spire.spiffeEndpointSocket` | SPIFFE identity, from the SPIRE agent socket (for example `unix:///tmp/spire-agent/agent.sock`) |
+| `permissiveMode` | Only read when `AUTH_CONFIG_PATH` is set. `true` evaluates, logs and counts every request, then serves it anyway — nothing is rejected. |
+
+To change one for your own runs, copy `hack/local-controller-config.yaml` under
+`.local/` and point `CONTROLLER_CONFIG_PATH` at the copy.
 
 ## Local Development
 
@@ -216,9 +230,9 @@ Preferred day-to-day path is CAPI + Tilt (see `README.md` in this directory).
  ```bash
  make releases-install
  ```
-4. Run CWE:
+4. Run CWE, with `hack/local-controller-config.yaml`:
  ```bash
- TEMPORAL_HOST_PORT=localhost:7233 go run ./cmd/worker/main.go
+ make run
  ```
 5. Access Swagger UI at http://localhost:8080/api/docs.
 
@@ -228,7 +242,7 @@ The two local paths differ, and that is the usual source of confusion:
 
 | Path | Authentication |
 |------|----------------|
-| `make run` / `go run ./cmd/worker/main.go` | **off** — `AUTH_CONFIG_PATH` is unset, every request is served |
+| `make run` | **off** — `AUTH_CONFIG_PATH` is unset, every request is served |
 | `tilt up` | **enforcing** — `/api/*` needs a bearer token |
 
 So a bare `curl` that works host-local returns 401 under Tilt. `nvkectl` mints
@@ -260,7 +274,7 @@ curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} http://localhost:8080/api/clu
 `NKE_AUTH_ENABLED=false tilt up` turns it off. `NKE_PERMISSIVE_MODE=true tilt up`
 evaluates and counts without rejecting anything.
 
-`/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`, `/docs` and `/api/docs/`
+`/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`, `/openapi-public.yaml`, `/docs` and `/api/docs/`
 never need a token. The Swagger UI therefore loads either way, but calls issued
 from it 401 under Tilt.
 
@@ -276,8 +290,10 @@ To test mTLS calls to tenant clusters locally using SPIFFE/SPIRE:
 # Setup and start SPIRE agent (includes port-forward)
 make dev-spire-start
 
-# Start CWE with SPIRE
-SPIFFE_ENDPOINT_SOCKET=unix:///tmp/spire-agent/agent.sock make run
+# Start CWE with SPIRE: a copy of the local config with spire.spiffeEnabled set
+mkdir -p .local
+yq '.spire.spiffeEnabled = true' hack/local-controller-config.yaml > .local/controller-config.spire.yaml
+CONTROLLER_CONFIG_PATH=.local/controller-config.spire.yaml make run
 
 # Stop agent
 make dev-spire-stop

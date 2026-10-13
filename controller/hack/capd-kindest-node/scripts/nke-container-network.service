@@ -6,7 +6,7 @@ Description=Prepare Docker node networking for NVKE
 Requires=ovs-vswitchd.service systemd-udevd.service dbus.socket
 Wants=systemd-networkd.service
 After=ovs-vswitchd.service systemd-networkd.service systemd-udevd.service dbus.socket
-Before=nke-agent.service spire-agent.service
+Before=nvke-agent.service spire-agent.service
 
 [Service]
 Type=oneshot

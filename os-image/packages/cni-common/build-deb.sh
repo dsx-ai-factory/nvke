@@ -31,9 +31,15 @@ command -v "$NFPM_BIN" >/dev/null 2>&1 || {
   exit 1
 }
 
-CONTENT_PACKAGE="nke-${CNI}-${CONTENT_KIND}-${STREAM}"
-IMAGES_PACKAGE="nke-${CNI}-images-${STREAM}"
-IMAGE_DIR="/usr/lib/nke/${CNI}/${STREAM}"
+CONTENT_PACKAGE="nvke-${CNI}-${CONTENT_KIND}-${STREAM}"
+IMAGES_PACKAGE="nvke-${CNI}-images-${STREAM}"
+IMAGE_DIR="/usr/lib/nvke/${CNI}/${STREAM}"
+# Previous names, kept as Provides. The prefix is one token so the old name
+# is not split by the ${} that follows it in the spec.
+old_cni_prefix=nke-cni-
+short="${CNI#cni-}"
+OLD_IMAGES_VIRTUAL="${old_cni_prefix}${short}-images"
+OLD_IMAGES_VERSIONED="${old_cni_prefix}${short}-images-${STREAM}"
 # The installed name bundle-lib.sh writes into the sha256 sidecar.
 IMG_TGZ="${IMAGE_DIR}/${CNI#cni-}-images_${STREAM}_linux_${ARCH}.tgz"
 
@@ -49,6 +55,7 @@ build_one() {
     PACKAGE_NAME="$package" STREAM="$STREAM" DEB_REVISION="$DEB_REVISION" ARCH="$ARCH" \
     SRC="$SRC" CNI="$CNI" PRODUCT="$PRODUCT" IMAGE_DIR="$IMAGE_DIR" IMG_TGZ="$IMG_TGZ" \
     CONTENT_PACKAGE="$CONTENT_PACKAGE" IMAGES_PACKAGE="$IMAGES_PACKAGE" \
+    OLD_IMAGES_VIRTUAL="$OLD_IMAGES_VIRTUAL" OLD_IMAGES_VERSIONED="$OLD_IMAGES_VERSIONED" \
     "$NFPM_BIN" package -f "$spec" -p deb -t "$OUT_DIR")
   echo "wrote ${OUT_DIR}/${package}_${DEB_REVISION}_${ARCH}.deb"
 }

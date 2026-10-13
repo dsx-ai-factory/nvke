@@ -221,7 +221,7 @@ service:
 
 metrics:
   # -- Port for the dedicated Prometheus metrics server.
-  # Must match METRICS_LISTEN_ADDRESS in the container env.
+  # Must match the port in listenAddress.
   port: 9090
   # -- listenAddress controls which interface the metrics server binds.
   # Set to 0.0.0.0:<port> when a NetworkPolicy is in place to restrict access.
@@ -382,8 +382,8 @@ cni:
   imageRegistry: ""
   # -- Install CNI after kubeadm init through the agent's InstallCNI RPC, which
   # reads manifests from a Debian package rather than a bundle server. Needs the
-  # CNI charts package on the node that runs kubeadm init: nke-cni-ovn-charts-<stream>
-  # for OVN, or nke-cni-calico-manifests-<stream> for Calico.
+  # CNI charts package on the node that runs kubeadm init: nvke-cni-ovn-charts-<stream>
+  # for OVN, or nvke-cni-calico-manifests-<stream> for Calico.
   installAfterInit: false
 
 tenantAccess:
@@ -552,13 +552,13 @@ temporal:
     queue: cloud-workflow-engine-tasks
 
 profiles:
-  # Directory the controller reads OS/config profiles from (PROFILES_DIR) and profile-hook
-  # scripts from its runbooks/ child (RUNBOOKS_DIR).
+  # Directory the controller reads OS/config profiles from (profilesDir) and profile-hook
+  # scripts from its runbooks/ child (runbooksDir).
   # When image.enabled is true, an initContainer copies /profiles from the
   # profiles content image into an emptyDir mounted at this path.
-  # -- Directory mounted/read as PROFILES_DIR
+  # -- Directory mounted and read as profilesDir
   path: ""
-  # -- Directory read as RUNBOOKS_DIR for config-profile hook scripts. Empty
+  # -- Directory read as runbooksDir for config-profile hook scripts. Empty
   # uses the runbooks/ directory under path.
   runbooksPath: ""
   image:

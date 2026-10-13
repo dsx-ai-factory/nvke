@@ -1,0 +1,18 @@
+{
+  "ClusterName": "example-site",
+  "Nico": {
+    "Endpoint": "https://nico.example.invalid",
+    "OrgID": "example-org",
+    "Token": "example-token",
+    "APIName": "forge"
+  },
+  "Registry": {
+    "Server": "ghcr.io",
+    "Username": "example-user",
+    "Token": "example-token"
+  },
+  "Tenant": {
+    "User": "example-user",
+    "Password": "example-password"
+  }
+}

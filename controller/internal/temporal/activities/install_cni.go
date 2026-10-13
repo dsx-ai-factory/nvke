@@ -114,7 +114,7 @@ func installCNIError(nodeName string, err error) error {
 	switch status.Code(err) { //nolint:exhaustive // the default keeps every other code retryable
 	case codes.Unimplemented:
 		return temporal.NewNonRetryableApplicationError(
-			fmt.Sprintf("node %s runs an agent that does not serve InstallCNI: the post-init CNI path needs nke-agent 0.2.0 or later", nodeName),
+			fmt.Sprintf("node %s runs an agent that does not serve InstallCNI: the post-init CNI path needs nvke-agent 0.2.0 or later", nodeName),
 			"AgentTooOld", err,
 		)
 	// Missing charts package, a worker node, no Open vSwitch on the host.

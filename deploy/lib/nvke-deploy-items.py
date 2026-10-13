@@ -5,7 +5,16 @@
   items   <nvke-deploy.yaml>  -> "<name>\t<type>" per item, in listed order
   release <release.yaml>     -> "single\x1f<chart>\x1f<version>\x1f<repository>
                                 \x1f<path>\x1f<release>\x1f<namespace>
-                                \x1f<values>\x1f<requires>", one line.
+                                \x1f<values>\x1f<requires>\x1f<artifact>
+                                \x1f<imageArtifact>\x1f<profilesArtifact>
+                                \x1f<setfile>", one line. artifact,
+                                imageArtifact and profilesArtifact are the NVKR
+                                artifacts the chart, the image it runs and its
+                                profiles content image come from, by NVKR's
+                                output names; each may be empty. <setfile> is
+                                chart.setFile joined with commas: "<helm
+                                key>=<absolute path>" entries the executor
+                                passes as --set-file.
 
                                 US-separated, not tab: bash collapses runs of tab
                                 because it is an IFS whitespace character, so an
@@ -29,6 +38,8 @@ ITEM = re.compile(r'^  - \{name: ([\w.-]+), type: ([\w-]+)\}$')
 TOP = re.compile(r'^([\w]+):$')
 KV = re.compile(r'^  ([\w]+): (\S+)$')
 SEQ = re.compile(r'^  - (\S+)$')
+SETFILE_HDR = re.compile(r'^  setFile:$')
+SETFILE_ITEM = re.compile(r'^    - (\S+=/\S+)$')
 FLOW_REQ = re.compile(r'^  - \{kind: ([\w.-]+), name: ([\w.-]+), '
                       r'namespace: ([\w.-]+), condition: ([\w.-]+)\}$')
 
@@ -79,8 +90,9 @@ def items(path):
 
 
 def release(path):
-    chart, rel, values, requires = {}, {}, [], []
+    chart, rel, values, requires, setfile = {}, {}, [], [], []
     section = None
+    in_setfile = False
     for num, line in significant(path):
         top = TOP.match(line)
         if top:
@@ -91,7 +103,12 @@ def release(path):
         if section is None:
             die("%s:%d: value before any section: %s" % (path, num, line))
 
-        if section == "chart" and KV.match(line):
+        if section == "chart" and SETFILE_HDR.match(line):
+            in_setfile = True
+        elif section == "chart" and in_setfile and SETFILE_ITEM.match(line):
+            setfile.append(SETFILE_ITEM.match(line).group(1))
+        elif section == "chart" and KV.match(line):
+            in_setfile = False
             chart.update([unquote(KV.match(line).groups())])
         elif section == "release" and KV.match(line):
             rel.update([unquote(KV.match(line).groups())])
@@ -112,10 +129,12 @@ def release(path):
         die("%s: missing release.name" % path)
     if "repository" in chart and "path" in chart:
         die("%s: chart has both repository and path; name one source" % path)
-    return ["single\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s" % (
+    return ["single\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s" % (
         chart["name"], chart["version"], chart.get("repository", ""),
         chart.get("path", ""), rel["name"], rel["namespace"],
-        ",".join(values), " ".join(requires))]
+        ",".join(values), " ".join(requires), chart.get("artifact", ""),
+        chart.get("imageArtifact", ""), chart.get("profilesArtifact", ""),
+        ",".join(setfile))]
 
 
 if len(sys.argv) != 3 or sys.argv[1] not in ("items", "release"):

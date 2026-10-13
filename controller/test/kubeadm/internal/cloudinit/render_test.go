@@ -20,7 +20,7 @@ func fullVars() Vars {
 		K8sProvision: AptProvision(
 			"https://example.invalid/nvke-apt-noble",
 			"https://example.invalid/nvke-apt-public.key",
-			"nvke-noble", "main", "nke-kubeadm-distro-1.34.2", "5",
+			"nvke-noble", "main", "nvke-kubeadm-distro-1.34.2", "5",
 		),
 	}
 }
@@ -33,7 +33,7 @@ func fullVarsJammy() Vars {
 		K8sProvision: AptProvision(
 			"https://example.invalid/nvke-apt-jammy",
 			"https://example.invalid/nvke-apt-public.key",
-			"nvke-jammy", "main", "nke-kubeadm-distro-1.34.2", "5",
+			"nvke-jammy", "main", "nvke-kubeadm-distro-1.34.2", "5",
 		),
 	}
 }

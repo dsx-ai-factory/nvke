@@ -41,7 +41,7 @@ func serveArtifacts(t *testing.T, cfg config) (scriptURL, agentDebURL string) {
 
 	for _, f := range []struct{ what, path string }{
 		{"provision script", cfg.provisionScript},
-		{"nke-agent .deb", cfg.agentDeb},
+		{"nvke-agent .deb", cfg.agentDeb},
 	} {
 		if _, err := os.Stat(f.path); err != nil {
 			t.Fatalf("%s not readable at %s: %v", f.what, f.path, err)
@@ -63,7 +63,7 @@ func serveArtifacts(t *testing.T, cfg config) (scriptURL, agentDebURL string) {
 	mux.HandleFunc("/install-k8s.sh", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, cfg.provisionScript)
 	})
-	mux.HandleFunc("/nke-agent.deb", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/nvke-agent.deb", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, cfg.agentDeb)
 	})
 
@@ -77,5 +77,5 @@ func serveArtifacts(t *testing.T, cfg config) (scriptURL, agentDebURL string) {
 
 	base := "http://" + ln.Addr().String()
 	t.Logf("serving %s and %s on %s", cfg.provisionScript, cfg.agentDeb, base)
-	return base + "/install-k8s.sh", base + "/nke-agent.deb"
+	return base + "/install-k8s.sh", base + "/nvke-agent.deb"
 }

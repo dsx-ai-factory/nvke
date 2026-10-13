@@ -93,8 +93,11 @@ releases-install: ## Install the release CRDs and apply RELEASES_DIR to the clus
 	kubectl apply --server-side --field-manager=releases -f "$(RELEASES_DIR)"
 
 .PHONY: license
+# Ignored on purpose: third-party text (nico-sim/ui/vendor, capnico-crds) and golden
+# or chart files compared byte-for-byte or rendered by Helm (kubeadmconfig and tenantaccess
+# testdata, deploy/charts). Templates and fixtures are not ignored.
 license: ## Ensure license headers at code.
-	go run github.com/google/addlicense@$(ADDLICENSE_VERSION) -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore 'test/fixtures/capnico-crds/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'nico-sim/ui/vendor/**' -ignore 'nico-sim/test/integration/testutil/testdata/**' -ignore 'nico-sim/.dev/**' -ignore 'deploy/charts/**' .
+	go run github.com/google/addlicense@$(ADDLICENSE_VERSION) -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/capnico-crds/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'nico-sim/ui/vendor/**' -ignore 'nico-sim/.dev/**' -ignore 'deploy/charts/**' .
 
 # Expected to be run on clean working directory.
 .PHONY: file-license-check
@@ -236,7 +239,7 @@ test-health: ## Run the health-labeled subset of the test/e2e suite against the 
 # is absent. test-authn-spire is the way to run only that one.
 #
 # The permissive specs have no target: they need an NVKE deployed with
-# PERMISSIVE_MODE=true, which is a different deployment. Run them against one
+# permissiveMode: true, which is a different deployment. Run them against one
 # with `make test-e2e ARGS='--label-filter=authn-permissive'`.
 .PHONY: test-authn
 test-authn: ## Run the authn-labeled subset of the test/e2e suite against the cluster in KUBECONFIG.
@@ -430,6 +433,12 @@ docker-manifest: check-img-repo ## Stitch <t>-amd64 + <t>-arm64 into <t> under I
 ##@ Run
 
 .PHONY: run
+# Host-local runs read nke-controller-config from this file unless
+# CONTROLLER_CONFIG_PATH names another.
+LOCAL_CONTROLLER_CONFIG ?= $(CURDIR)/hack/local-controller-config.yaml
+
+run debug run-local: export CONTROLLER_CONFIG_PATH ?= $(LOCAL_CONTROLLER_CONFIG)
+
 run: ## Runs the worker.
 	go run cmd/worker/main.go
 

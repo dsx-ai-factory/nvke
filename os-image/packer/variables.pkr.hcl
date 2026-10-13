@@ -28,10 +28,10 @@ variable "material_manifest" {
 
   validation {
     condition = try(
-      jsondecode(file(var.material_manifest)).schemaVersion == "nke.dev/os-image-materials/v1",
+      jsondecode(file(var.material_manifest)).schemaVersion == "nvke.nvidia.com/os-image-materials/v1",
       false,
     )
-    error_message = "The material manifest must use schemaVersion nke.dev/os-image-materials/v1."
+    error_message = "The material manifest must use schemaVersion nvke.nvidia.com/os-image-materials/v1."
   }
 
   validation {

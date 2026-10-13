@@ -52,9 +52,10 @@ before installing it. That needs egress to `open-telemetry.github.io`,
 **Fix:**
 - **Allow that egress,** or
 - **Build the dependencies ahead of time** with `make nktp-chart-deps` in the
-  checkout the path installs from. `helm dependency build` still re-fetches
-  them, so for a fully offline install, pass a packaged chart instead:
-  `--chart-override nktp=<nktp-x.y.z.tgz>`.
+  checkout the path installs from, or
+- **Install from a release.** `nvkectl render deploy-path` puts the packaged
+  nktp chart the release carries under `charts/`, and `helm dependency build`
+  is not run for an archive.
 
 ## Collectors don't appear, or the Operator's webhook fails
 

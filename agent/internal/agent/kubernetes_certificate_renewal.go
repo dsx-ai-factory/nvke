@@ -33,7 +33,7 @@ const (
 	certificateRenewalResultFailedRestored      = "failed_restored"
 	certificateRenewalResultFailedNotRestored   = "failed_not_restored"
 
-	certificateRenewalStagingDir = "/etc/kubernetes/nke-cert-renewal-manifests"
+	certificateRenewalStagingDir = "/etc/kubernetes/nvke-cert-renewal-manifests"
 
 	// Preserve the runbook's operational envelope: stopping static pods should
 	// be quick, while startup gets longer for image/runtime and etcd recovery.

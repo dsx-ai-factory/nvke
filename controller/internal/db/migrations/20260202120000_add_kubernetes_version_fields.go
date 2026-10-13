@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/utils"
 )
 
@@ -63,7 +63,7 @@ func init() {
 		// falling back silently would write wrong ones.
 		var metadataIdx *utils.MetadataIndex
 		if len(nodePools) > 0 {
-			cfg, cfgErr := config.ParseConfigFromEnv()
+			cfg, _, cfgErr := controllerconfig.LoadStartupConfig()
 			if cfgErr != nil {
 				return fmt.Errorf("failed to parse config: %w", cfgErr)
 			}

@@ -21,7 +21,7 @@ In the NVKE context, there are two kinds of Kubernetes clusters:
 
 ## kubeadm
 
-`kubeadm` is the upstream tool for bootstrapping Kubernetes clusters — it initializes the control plane, generates certificates, and joins nodes. NVKE uses `kubeadm` under the hood via `nke-agent` to bring up both the site controller and tenant clusters.
+`kubeadm` is the upstream tool for bootstrapping Kubernetes clusters — it initializes the control plane, generates certificates, and joins nodes. NVKE uses `kubeadm` under the hood via `nvke-agent` to bring up both the site controller and tenant clusters.
 
 You don't run `kubeadm` directly. NVKE runs it for you. But understanding what it does helps when reading bootstrap logs or troubleshooting a failed node join.
 
@@ -87,7 +87,7 @@ NVKE's primary CAPI infrastructure provider for production deployments is [`clus
 
 SPIFFE (Secure Production Identity Framework for Everyone) is a standard for issuing cryptographic identities to workloads. SPIRE is its reference implementation.
 
-In NVKE, every node and every workload gets a SPIFFE identity backed by TPM attestation. Workflow engines and `nke-agent` use these identities to mutually authenticate over mTLS — no static credentials are passed between components. When you see "SPIFFE mTLS" in these docs, it means the two endpoints have verified each other's hardware-rooted identity before exchanging data.
+In NVKE, every node and every workload gets a SPIFFE identity backed by TPM attestation. Workflow engines and `nvke-agent` use these identities to mutually authenticate over mTLS — no static credentials are passed between components. When you see "SPIFFE mTLS" in these docs, it means the two endpoints have verified each other's hardware-rooted identity before exchanging data.
 
 **Learn more:** https://spiffe.io/docs/latest/spiffe-about/overview/
 
@@ -105,8 +105,8 @@ NVKE requires a **deploy repository** — a git repo you own and maintain, struc
 
 NVKE handles the following for you — you don't need deep expertise in these to operate NVKE:
 
-- **kubeadm internals** — NVKE drives these via `nke-agent`
-- **Certificate lifecycle** — managed by `cert-manager` and `nke-agent`
+- **kubeadm internals** — NVKE drives these via `nvke-agent`
+- **Certificate lifecycle** — managed by `cert-manager` and `nvke-agent`
 - **etcd operations** — managed by NVKE with built-in encryption and `etcd-manager` for compaction and snapshots
 - **CNI configuration** — NVKE configures OVN-Kubernetes during bootstrap from your `cniName` setting; Calico is accepted for development
 

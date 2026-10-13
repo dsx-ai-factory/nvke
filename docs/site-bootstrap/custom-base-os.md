@@ -14,7 +14,7 @@ scripting them; the right commands depend on your image.
 
 ## Cloud-Init Example
 
-Below is a complete cloud-init configuration for bootstrapping a tier-0 cluster on a custom base OS. This installs Kubernetes components, `nke-agent`, and `nvkectl`, then runs the bootstrap on first boot.
+Below is a complete cloud-init configuration for bootstrapping a tier-0 cluster on a custom base OS. This installs Kubernetes components, `nvke-agent`, and `nvkectl`, then runs the bootstrap on first boot.
 
 ```yaml
 #cloud-config
@@ -89,13 +89,13 @@ autoinstall:
       - [sh, -c, "apt-mark hold kubelet kubeadm kubectl"]
 
       # TODO: Replace apt repo URL with confirmed public URL before publishing.
-      # Install nke-agent from the NVKE apt repository
+      # Install nvke-agent from the NVKE apt repository
       - [sh, -c, "curl -fsSL -o /etc/apt/keyrings/nke.asc https://packages.nvidia.com/nvke/nvke-apt-public.key"]
       - [sh, -c, "echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://packages.nvidia.com/nvke/apt nvke-noble main' | tee /etc/apt/sources.list.d/nke-apt.list"]
       - [sh, -c, "apt-get update"]
-      - [sh, -c, "apt-get install -y nke-agent"]
-      - [sh, -c, "echo 'AGENT_ARGS=\"--disable-mtls --secure-server-port 15005\"' > /etc/default/nke-agent"]
-      - [sh, -c, "systemctl restart nke-agent"]
+      - [sh, -c, "apt-get install -y nvke-agent"]
+      - [sh, -c, "echo 'AGENT_ARGS=\"--disable-mtls --secure-server-port 15005\"' > /etc/default/nvke-agent"]
+      - [sh, -c, "systemctl restart nvke-agent"]
 
       # Bootstrap host only: install nerdctl + containerd, kind, helm, kubectl and
       # clusterctl here. nvkectl checks for nerdctl before it starts; a missing kind
@@ -121,7 +121,7 @@ finished and delete it from the host. See
 ## Key Components
 
 - **Kubernetes Installation**: Adds the Kubernetes apt repository and installs kubelet, kubeadm, and kubectl. Marks packages held to prevent automatic upgrades.
-- **nke-agent**: Installed from the NVKE apt repository; configured with `--disable-mtls` and `--secure-server-port 15005` for pre-provisioned node bootstrap.
+- **nvke-agent**: Installed from the NVKE apt repository; configured with `--disable-mtls` and `--secure-server-port 15005` for pre-provisioned node bootstrap.
 - **nvkectl**: Install it only on the **bootstrap host**, together with its container runtime and CLI dependencies. It is run with `--disable-mtls` to match the agents, and with the two image flags set. Omit the nvkectl download and bootstrap commands on other nodes.
 
 > **Plaintext mode is development only.** With `--disable-mtls` on both sides there is no SPIRE and no attestation. For the attested path — `spire-agent` on every node, a TPM EK thumbprint per host, a SPIRE CA in the site spec — follow [Your First Cluster, Real Site](../first-cluster.md#real-site).
@@ -131,7 +131,7 @@ finished and delete it from the host. See
 | | Bootstrap Host | Other Nodes |
 |---|---|---|
 | Kubernetes packages | ✓ | ✓ |
-| nke-agent | ✓ | ✓ |
+| nvke-agent | ✓ | ✓ |
 | nerdctl, kind, helm, clusterctl | ✓ | ✗ |
 | `/etc/nvkectl/sitespec.yaml` | ✓ | ✗ |
 | `nvkectl` download + bootstrap run | ✓ | ✗ |

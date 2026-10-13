@@ -33,7 +33,7 @@ type systemdAgentUpgradeLauncher struct {
 func (l systemdAgentUpgradeLauncher) Start(operationID string) error {
 	_, err := l.runner.Run(
 		"systemctl",
-		[]string{"start", "--no-block", "nke-agent-updater@" + operationID + ".service"},
+		[]string{"start", "--no-block", "nvke-agent-updater@" + operationID + ".service"},
 		nil,
 	)
 	if err != nil {

@@ -22,7 +22,7 @@
 
 set -euo pipefail
 
-: "${LUKS_PASSPHRASE:?LUKS_PASSPHRASE must be set (passed via the shell provisioner environment_vars in nke-node-fde.pkr.hcl)}"
+: "${LUKS_PASSPHRASE:?LUKS_PASSPHRASE must be set (passed via the shell provisioner environment_vars in nvke-node-fde.pkr.hcl)}"
 
 SRC=/var/tmp/nke-image/luks
 

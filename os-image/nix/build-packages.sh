@@ -101,7 +101,7 @@ rsync -a --exclude=/debs -e nke-builder-ssh \
   "root@127.0.0.1:$work/artifacts/" "$artifacts/"
 rsync -a --delete -e nke-builder-ssh \
   "root@127.0.0.1:$work/artifacts/debs/" "$artifacts/debs/"
-for expected in nke-agent.deb debs/Packages; do
+for expected in nvke-agent.deb debs/Packages; do
   [[ -e "$artifacts/$expected" ]] ||
     { echo "Builder produced no $expected; see $log" >&2; exit 1; }
 done

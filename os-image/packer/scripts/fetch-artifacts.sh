@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Run on the Packer host. Builds the nke-agent Debian package from this checkout's
+# Run on the Packer host. Builds the nvke-agent Debian package from this checkout's
 # source (agent/) and builds the node .deb packages (os-image/packages/,
 # staged into the image by provision.sh as a local apt repo) into
 # ARTIFACTS_DIR.
@@ -37,36 +37,36 @@ fi
 mkdir -p "${ARTIFACTS_DIR}"
 
 if ! command -v go >/dev/null 2>&1; then
-  echo "go is required to build nke-agent from source (agent/)" >&2
+  echo "go is required to build nvke-agent from source (agent/)" >&2
   echo "https://go.dev/dl/" >&2
   exit 1
 fi
 
 # Use the package target so dpkg owns the agent, updater, and their units.
 # An exact output path avoids selecting a stale version from agent/bin.
-echo "building nke-agent deb from source (${repo_root}/agent, ${ARCH})"
-make -C "${repo_root}/agent" "deb-${ARCH}" DEB_OUTPUT="${ARTIFACTS_DIR}/nke-agent.deb"
+echo "building nvke-agent deb from source (${repo_root}/agent, ${ARCH})"
+make -C "${repo_root}/agent" "deb-${ARCH}" DEB_OUTPUT="${ARTIFACTS_DIR}/nvke-agent.deb"
 
 # The debs a node installs at cluster create, plus a flat apt index that
 # provision.sh stages as a local repo. Without the kubeadm one a node built
 # here cannot obtain kubeadm at all: there is no bundle server to fall back to.
 # Both architectures have a lock. bundle.sh runs the downloaded kubeadm, so the
 # Packer host has to be the target architecture.
-echo "building nke-kubeadm-distro debs (${repo_root}/os-image/packages/kubeadm-distro)"
+echo "building nvke-kubeadm-distro debs (${repo_root}/os-image/packages/kubeadm-distro)"
 kubeadm_distro_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
 if [[ -n "${K8S_VERSIONS:-}" ]]; then
   kubeadm_distro_args+=(K8S_VERSIONS="${K8S_VERSIONS}")
 fi
 make -C "${repo_root}/os-image/packages/kubeadm-distro" debs "${kubeadm_distro_args[@]}"
 
-echo "building nke-cni-calico debs (${repo_root}/os-image/packages/cni-calico)"
+echo "building nvke-cni-calico debs (${repo_root}/os-image/packages/cni-calico)"
 cni_calico_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
 if [[ -n "${CALICO_VERSIONS:-}" ]]; then
   cni_calico_args+=(CALICO_VERSIONS="${CALICO_VERSIONS}")
 fi
 make -C "${repo_root}/os-image/packages/cni-calico" debs "${cni_calico_args[@]}"
 
-echo "building nke-cni-ovn debs (${repo_root}/os-image/packages/cni-ovn)"
+echo "building nvke-cni-ovn debs (${repo_root}/os-image/packages/cni-ovn)"
 cni_ovn_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
 if [[ -n "${OVN_STREAMS:-}" ]]; then
   cni_ovn_args+=(OVN_STREAMS="${OVN_STREAMS}")
@@ -90,7 +90,7 @@ fi
 make -C "${repo_root}/os-image/packages/spire-agent" debs "${spire_args[@]}"
 
 files_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../files" && pwd)"
-install -m 0644 "${files_dir}/nke-agent-spire.conf" "${ARTIFACTS_DIR}/nke-agent-spire.conf"
+install -m 0644 "${files_dir}/nvke-agent-spire.conf" "${ARTIFACTS_DIR}/nvke-agent-spire.conf"
 install -m 0644 "${files_dir}/00-dhcp-all.yaml" "${ARTIFACTS_DIR}/00-dhcp-all.yaml"
 install -m 0644 "${files_dir}/99-disable-network-config.cfg" "${ARTIFACTS_DIR}/99-disable-network-config.cfg"
 install -m 0755 "${files_dir}/wait-spiffe-socket.sh" "${ARTIFACTS_DIR}/wait-spiffe-socket.sh"

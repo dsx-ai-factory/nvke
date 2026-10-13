@@ -33,7 +33,7 @@ class BuildEntrypointTest(unittest.TestCase):
         for name in ("code.fd", "vars.fd"):
             (self.root / name).touch()
         self.script("uname", '#!/bin/sh\ncase "$1" in -m) echo aarch64;; -s) echo Linux;; esac\n')
-        # nke_qemu_env resolves the QEMU binary by name off PATH; check-deps
+        # nvke_qemu_env resolves the QEMU binary by name off PATH; check-deps
         # looks for qemu-img, which the macOS CI runner lacks.
         self.script("qemu-system-aarch64", '#!/bin/sh\nif [ "$1" = -accel ]; then echo tcg; fi\n')
         self.script("qemu-img", '#!/bin/sh\nexit 0\n')
@@ -45,7 +45,7 @@ values = dict(arg.split('=', 1) for arg in sys.argv[1:] if '=' in arg)
 variant = 'non-fde' if 'non-fde' in values['-only'] else 'fde'
 output = Path(values['output_directory']) / variant
 output.mkdir(parents=True, exist_ok=True)
-(output / 'nke-node.qcow2').touch()
+(output / 'nvke-node.qcow2').touch()
 ''')
 
     def script(self, name, text):
@@ -221,14 +221,14 @@ class GuestUpdaterTest(unittest.TestCase):
                 for name in (
                     "00-dhcp-all.yaml",
                     "99-disable-network-config.cfg",
-                    "nke-agent-spire.conf",
+                    "nvke-agent-spire.conf",
                     "wait-spiffe-socket.sh",
                     "conntrack-tune.service",
                     "configure-conntrack.sh",
                     "10-nke-conntrack-timeouts.conf",
                 ):
                     shutil.copy(PACKER_DIR.parent / "files" / name, files)
-                updater = repo / "agent/bin/linux_arm64/nke-agent-updater"
+                updater = repo / "agent/bin/linux_arm64/nvke-agent-updater"
                 updater.parent.mkdir(parents=True)
                 updater.touch()
                 artifacts = root / "artifacts"
@@ -261,7 +261,7 @@ class GuestUpdaterTest(unittest.TestCase):
                 self.assertIn(f"-C {repo}/agent deb-arm64", calls[0])
                 self.assertTrue((artifacts / "00-dhcp-all.yaml").is_file())
                 self.assertTrue((artifacts / "99-disable-network-config.cfg").is_file())
-                self.assertTrue((artifacts / "nke-agent-spire.conf").is_file())
+                self.assertTrue((artifacts / "nvke-agent-spire.conf").is_file())
                 # provision.sh installs these from the artifacts directory, so
                 # each must arrive byte-for-byte, with the mode it is installed with.
                 for name, mode in (("conntrack-tune.service", 0o644),

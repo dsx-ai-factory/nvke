@@ -15,7 +15,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/stretchr/testify/require"
@@ -37,12 +36,11 @@ const renderedChartDirEnv = "NKE_RENDERED_CHART_DIR"
 
 // TestRenderedChart checks the chart's nke-controller-config against the
 // controller, once per rendered value set: the document loads, defines every
-// key, resolves each migrated key to the value the controller derives from the
-// same render's environment variables today, and is mounted where
-// CONTROLLER_CONFIG_PATH points. Ordinary test runs skip it.
+// key, is mounted where CONTROLLER_CONFIG_PATH points, and together with the
+// render's environment gives the controller a configuration that validates.
+// Ordinary test runs skip it.
 func TestRenderedChart(t *testing.T) {
 	t.Parallel()
-	migrated := loadMigrated(t)
 
 	dir := os.Getenv(renderedChartDirEnv)
 	if dir == "" {
@@ -52,6 +50,7 @@ func TestRenderedChart(t *testing.T) {
 	renders, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 	require.NoError(t, err)
 	require.NotEmpty(t, renders, "no renders in %s", dir)
+	require.Contains(t, renders, filepath.Join(dir, "defaults.yaml"), "the script no longer renders the chart's defaults")
 
 	for _, render := range renders {
 		t.Run(strings.TrimSuffix(filepath.Base(render), ".yaml"), func(t *testing.T) {
@@ -72,21 +71,17 @@ func TestRenderedChart(t *testing.T) {
 				}
 			}
 
-			// What the controller runs on today: the same environment parsed and
-			// validated as at startup, which trims and normalizes in place.
-			fromEnv, err := env.ParseAsWithOptions[config.Config](env.Options{
+			// The controller's startup sequence: the environment, then the file.
+			cfg, err := env.ParseAsWithOptions[config.Config](env.Options{
 				Environment:         environment,
 				DefaultValueTagName: "default",
 			})
 			require.NoError(t, err)
-			require.NoError(t, fromEnv.Validate())
+			fromFile.ApplyTo(&cfg)
+			require.NoError(t, cfg.Validate())
 
-			for name, key := range migrated {
-				want := setting(fieldByEnv(reflect.ValueOf(fromEnv), "", name))
-				got := setting(fieldByKey(reflect.ValueOf(*fromFile), key))
-				if !reflect.DeepEqual(want, got) {
-					t.Errorf("%s is %s, but the controller derives %s from %s", key, show(got), show(want), name)
-				}
+			if filepath.Base(render) == "defaults.yaml" {
+				checkLocalAgreesWithChart(t, fromFile)
 			}
 		})
 	}
@@ -192,67 +187,97 @@ func documentKeys(t *testing.T, document string) map[string]bool {
 	return keys
 }
 
-// fieldByEnv finds the config.Config field that caarlos0/env fills from name.
-func fieldByEnv(v reflect.Value, prefix, name string) reflect.Value {
-	for i := range v.NumField() {
-		field := v.Type().Field(i)
-		if tag, ok := field.Tag.Lookup("env"); ok {
-			if envName, _, _ := strings.Cut(tag, ","); prefix+envName == name {
-				return v.Field(i)
-			}
-			continue
-		}
-		if field.Type.Kind() == reflect.Struct {
-			if found := fieldByEnv(v.Field(i), prefix+field.Tag.Get("envPrefix"), name); found.IsValid() {
-				return found
-			}
+// localControllerConfig is the file host-local runs and the gofail e2e worker
+// start with.
+const localControllerConfig = "../../hack/local-controller-config.yaml"
+
+func TestLocalControllerConfig(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile(localControllerConfig)
+	require.NoError(t, err)
+	local, err := controllerconfig.Load(localControllerConfig)
+	require.NoError(t, err, "%s does not load", localControllerConfig)
+
+	// The gofail e2e worker edits the loaded file and writes it back out.
+	encoded, err := yaml.Marshal(local)
+	require.NoError(t, err)
+	reloaded, err := controllerconfig.Load(writeConfig(t, string(encoded)))
+	require.NoError(t, err, "a marshaled controllerconfig.Config does not load")
+	require.Equal(t, local, reloaded)
+
+	present := documentKeys(t, string(raw))
+	for _, key := range schemaKeys(reflect.TypeFor[controllerconfig.Config](), "") {
+		if !present[key] {
+			t.Errorf("%s leaves out %s, which would decode as its zero value", localControllerConfig, key)
 		}
 	}
-	return reflect.Value{}
 }
 
-// fieldByKey finds the controllerconfig.Config field at a dotted config.yaml key.
-func fieldByKey(v reflect.Value, key string) reflect.Value {
-	head, rest, nested := strings.Cut(key, ".")
-	for i := range v.NumField() {
-		if name, _, _ := strings.Cut(v.Type().Field(i).Tag.Get("json"), ","); name == head {
-			if nested {
-				return fieldByKey(v.Field(i), rest)
-			}
-			return v.Field(i)
-		}
-	}
-	return reflect.Value{}
+// Not parallel: the configuration comes from the process environment.
+func TestLoadStartupConfig(t *testing.T) {
+	t.Setenv("CNPG_SUPERUSER_PASSWORD", "not-the-dev-default")
+	t.Setenv("LOG_LEVEL", "debug")
+
+	t.Run("environment and file together", func(t *testing.T) {
+		t.Setenv("CONTROLLER_CONFIG_PATH", localControllerConfig)
+
+		cfg, file, err := controllerconfig.LoadStartupConfig()
+		require.NoError(t, err)
+		require.NotNil(t, file)
+		require.Equal(t, "debug", cfg.LogLevel, "from the environment")
+		require.Equal(t, "localhost:7233", cfg.TemporalHostPort, "from the file")
+		require.Equal(t, file.ProfilesDir, cfg.ProfilesDir)
+	})
+
+	t.Run("a missing file is an error", func(t *testing.T) {
+		t.Setenv("CONTROLLER_CONFIG_PATH", filepath.Join(t.TempDir(), "absent.yaml"))
+
+		_, _, err := controllerconfig.LoadStartupConfig()
+		require.ErrorContains(t, err, "absent.yaml")
+	})
 }
 
-// setting reduces a field from either struct to a comparable form: durations
-// to time.Duration, string kinds to string, and an empty slice to the same
-// value whether it decoded as nil or as [].
-func setting(v reflect.Value) any {
-	if !v.IsValid() {
-		return nil
+// localOnly lists the keys where hack/local-controller-config.yaml deliberately
+// differs from what the chart renders by default, with the reason. Every other
+// key must agree, so a default changed in one place cannot quietly diverge
+// between a host-local run and a deployment.
+var localOnly = map[string]string{
+	"metricsListenAddress":       "a host-local controller keeps metrics on the loopback",
+	"profilesDir":                "host-local runs use the fixture profiles",
+	"runbooksDir":                "host-local runs use the fixture runbooks",
+	"spire.serverPort":           "the local SPIRE server port-forward, not the site's NodePort",
+	"spire.spiffeEndpointSocket": "the socket the local SPIRE agent opens, not the CSI driver's",
+	"temporal.hostPort":          "the local Temporal dev server",
+	"tenantAccessEnabled":        "off for host-local runs, as it was before the file existed",
+}
+
+// checkLocalAgreesWithChart compares the chart's default render with
+// hack/local-controller-config.yaml key by key.
+func checkLocalAgreesWithChart(t *testing.T, chart *controllerconfig.Config) {
+	t.Helper()
+
+	local, err := controllerconfig.Load(localControllerConfig)
+	require.NoError(t, err)
+	for _, key := range schemaKeys(reflect.TypeFor[controllerconfig.Config](), "") {
+		chartValue := fileField(t, reflect.ValueOf(chart).Elem(), key).Interface()
+		localValue := fileField(t, reflect.ValueOf(local).Elem(), key).Interface()
+		_, allowed := localOnly[key]
+		switch differs := !reflect.DeepEqual(chartValue, localValue); {
+		case differs && !allowed:
+			t.Errorf("%s is %s in %s but %s in the chart's default render; align them, or add it to localOnly with a reason",
+				key, show(localValue), localControllerConfig, show(chartValue))
+		case !differs && allowed:
+			t.Errorf("localOnly lists %s, but %s and the chart's default render agree on it; remove the entry", key, localControllerConfig)
+		}
 	}
-	switch value := v.Interface().(type) {
-	case metav1.Duration:
-		return value.Duration
-	case time.Duration:
-		return value
-	case []string:
-		return append([]string{}, value...)
-	}
-	// A named string type such as config.SpireAttestationMethod compares as
-	// its string. Bools and ints already share a type on both sides.
-	if v.Kind() == reflect.String {
-		return v.String()
-	}
-	return v.Interface()
 }
 
 // show formats a setting for a failure message: a duration as its Go string,
 // anything else with %#v, so an empty string is visible as "".
 func show(value any) string {
-	if duration, ok := value.(time.Duration); ok {
-		return duration.String()
+	if duration, ok := value.(metav1.Duration); ok {
+		return duration.Duration.String()
 	}
 	return fmt.Sprintf("%#v", value)
 }

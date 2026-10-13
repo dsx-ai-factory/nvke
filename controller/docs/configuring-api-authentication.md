@@ -399,7 +399,7 @@ in the log.
 
 ### Endpoints that need no token
 
-`/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`, `/docs`, and the Swagger
+`/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`, `/openapi-public.yaml`, `/docs`, and the Swagger
 UI under `/api/docs/`.
 
 Everything else needs one, including paths that route nowhere, so a caller

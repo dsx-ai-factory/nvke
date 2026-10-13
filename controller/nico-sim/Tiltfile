@@ -484,7 +484,5 @@ def register(ctx):
 
     return struct(
         cwe_resource_deps = ["nico-sim"],
-        cwe_env_overrides = {
-            "SPIFFE_ENABLED": "true",
-        },
+        cwe_env_overrides = {},
     )

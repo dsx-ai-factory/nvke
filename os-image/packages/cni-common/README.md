@@ -8,7 +8,7 @@ Shared by [`cni-calico/`](../cni-calico/README.md) and
 | `bundle-lib.sh` | Sourced by each `bundle.sh`: arguments, the lock file, and the images pulled by digest and repacked deterministically |
 | `build-deb.sh` | Builds the content deb from the package's own spec and the images deb from the spec here |
 | `deb.mk` | The targets: `debs`, `bundle`, `lock`, `repro-check`, the pinned `crane` and `nfpm`, host checks |
-| `nfpm-images.yaml`, `postinst` | The images deb: one docker-archive under `/usr/lib/nke/<cni>/<stream>/`, imported into containerd |
+| `nfpm-images.yaml`, `postinst` | The images deb: one docker-archive under `/usr/lib/nvke/<cni>/<stream>/`, imported into containerd |
 
 A package is four things: a `Makefile` that sets `CNI`, `PRODUCT`, `VERSIONS`,
 `CONTENT_SPEC` and `CONTENT_KIND` and includes `deb.mk`; a `bundle.sh` that
@@ -35,7 +35,7 @@ two cannot drift apart, and `ARCH=arm64` needs amd64 locked first. Nothing here
 runs a downloaded binary, so an arm64 build works on an amd64 host.
 
 The images debs `Provides` and `Conflicts` with their unversioned name, so a
-node holds one stream per CNI. They depend on `containerd | nke-kubeadm-distro`:
+node holds one stream per CNI. They depend on `containerd | nvke-kubeadm-distro`:
 the distro package ships its own containerd and conflicts with Ubuntu's.
 
 Set `CNI_DOCKERHUB_MIRROR` to a registry host when Docker Hub reads must use a

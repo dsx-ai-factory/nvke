@@ -13,8 +13,8 @@ for package in kubeadm-distro cni-calico cni-ovn spire-agent; do
 done
 bash "$REPO_ROOT/os-image/packer/scripts/fetch-artifacts.sh"
 check-ubuntu-elf --arch "$ARCH" \
-  "$REPO_ROOT/agent/bin/linux_$ARCH/nke-agent"
-updater=$REPO_ROOT/agent/bin/linux_$ARCH/nke-agent-updater
+  "$REPO_ROOT/agent/bin/linux_$ARCH/nvke-agent"
+updater=$REPO_ROOT/agent/bin/linux_$ARCH/nvke-agent-updater
 [[ -f "$updater" ]] ||
   { echo "FAIL: $updater: expected updater binary" >&2; exit 1; }
 headers=$(readelf -lW "$updater")

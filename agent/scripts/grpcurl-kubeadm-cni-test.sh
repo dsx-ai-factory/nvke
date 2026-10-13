@@ -7,8 +7,8 @@
 # (--disable-mtls); for TLS/mTLS, set GRPCURL_EXTRA_OPTS (e.g. -cert -key -cacert).
 #
 # InstallCNI only deploys charts/manifests (helm/kubectl). Install the charts and image Debian
-# packages beforehand — e.g. via `InstallPackages` with nke-cni-ovn-charts-<stream> and
-# nke-cni-ovn-images-<stream> (workers/join nodes typically need images only if not pulling from a
+# packages beforehand — e.g. via `InstallPackages` with nvke-cni-ovn-charts-<stream> and
+# nvke-cni-ovn-images-<stream> (workers/join nodes typically need images only if not pulling from a
 # registry). The agent does not verify container images in containerd so air-gapped pre-load and
 # private-registry-only flows both remain valid.
 #

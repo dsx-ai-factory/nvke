@@ -85,11 +85,11 @@ notices-check` verifies it is up to date.
 | `github.com/onsi/gomega` | MIT | `github.com/onsi/gomega@v1.44.0` | https://github.com/onsi/gomega/blob/v1.44.0/LICENSE |
 | `github.com/pkg/errors` | BSD-2-Clause | `github.com/pkg/errors@v0.9.1` | https://github.com/pkg/errors/blob/v0.9.1/LICENSE |
 | `github.com/pmezard/go-difflib/difflib` | BSD-3-Clause | `github.com/pmezard/go-difflib@v1.0.1-0.20181226105442-5d4384ee4fb2` | https://github.com/pmezard/go-difflib/blob/5d4384ee4fb2/LICENSE |
-| `github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil` | BSD-3-Clause | `github.com/prometheus/client_golang@v1.24.1` | https://github.com/prometheus/client_golang/blob/v1.24.1/internal/github.com/golang/gddo/LICENSE |
-| `github.com/prometheus/client_golang/prometheus` | Apache-2.0 | `github.com/prometheus/client_golang@v1.24.1` | https://github.com/prometheus/client_golang/blob/v1.24.1/LICENSE |
+| `github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil` | BSD-3-Clause | `github.com/prometheus/client_golang@v1.25.0` | https://github.com/prometheus/client_golang/blob/v1.25.0/internal/github.com/golang/gddo/LICENSE |
+| `github.com/prometheus/client_golang/prometheus` | Apache-2.0 | `github.com/prometheus/client_golang@v1.25.0` | https://github.com/prometheus/client_golang/blob/v1.25.0/LICENSE |
 | `github.com/prometheus/client_model/go` | Apache-2.0 | `github.com/prometheus/client_model@v0.6.3` | https://github.com/prometheus/client_model/blob/v0.6.3/LICENSE |
-| `github.com/prometheus/common` | Apache-2.0 | `github.com/prometheus/common@v0.70.1` | https://github.com/prometheus/common/blob/v0.70.1/LICENSE |
-| `github.com/prometheus/procfs` | Apache-2.0 | `github.com/prometheus/procfs@v0.21.1` | https://github.com/prometheus/procfs/blob/v0.21.1/LICENSE |
+| `github.com/prometheus/common` | Apache-2.0 | `github.com/prometheus/common@v0.72.0` | https://github.com/prometheus/common/blob/v0.72.0/LICENSE |
+| `github.com/prometheus/procfs` | Apache-2.0 | `github.com/prometheus/procfs@v0.22.0` | https://github.com/prometheus/procfs/blob/v0.22.0/LICENSE |
 | `github.com/puzpuzpuz/xsync/v3` | Apache-2.0 | `github.com/puzpuzpuz/xsync/v3@v3.5.1` | https://github.com/puzpuzpuz/xsync/blob/v3.5.1/LICENSE |
 | `github.com/robfig/cron` | MIT | `github.com/robfig/cron@v1.2.0` | https://github.com/robfig/cron/blob/v1.2.0/LICENSE |
 | `github.com/russellhaering/gosaml2` | Apache-2.0 | `github.com/russellhaering/gosaml2@v0.11.0` | https://github.com/russellhaering/gosaml2/blob/v0.11.0/LICENSE |
@@ -139,13 +139,13 @@ notices-check` verifies it is up to date.
 | `go.yaml.in/yaml/v2` | Apache-2.0 | `go.yaml.in/yaml/v2@v2.4.4` | https://github.com/yaml/go-yaml/blob/v2.4.4/LICENSE |
 | `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.5` | https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE |
 | `go.yaml.in/yaml/v4` | Apache-2.0 | `go.yaml.in/yaml/v4@v4.0.0-rc.6` | https://github.com/yaml/go-yaml/blob/v4.0.0-rc.6/LICENSE |
-| `golang.org/x/crypto` | BSD-3-Clause | `golang.org/x/crypto@v0.57.0` | https://cs.opensource.google/go/x/crypto/+/v0.57.0:LICENSE |
+| `golang.org/x/crypto` | BSD-3-Clause | `golang.org/x/crypto@v0.58.0` | https://cs.opensource.google/go/x/crypto/+/v0.58.0:LICENSE |
 | `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.60.0` | https://cs.opensource.google/go/x/net/+/v0.60.0:LICENSE |
 | `golang.org/x/oauth2` | BSD-3-Clause | `golang.org/x/oauth2@v0.37.0` | https://cs.opensource.google/go/x/oauth2/+/v0.37.0:LICENSE |
 | `golang.org/x/sync` | BSD-3-Clause | `golang.org/x/sync@v0.24.0` | https://cs.opensource.google/go/x/sync/+/v0.24.0:LICENSE |
-| `golang.org/x/sys` | BSD-3-Clause | `golang.org/x/sys@v0.48.0` | https://cs.opensource.google/go/x/sys/+/v0.48.0:LICENSE |
-| `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.46.0` | https://cs.opensource.google/go/x/term/+/v0.46.0:LICENSE |
-| `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.42.0` | https://cs.opensource.google/go/x/text/+/v0.42.0:LICENSE |
+| `golang.org/x/sys` | BSD-3-Clause | `golang.org/x/sys@v0.49.0` | https://cs.opensource.google/go/x/sys/+/v0.49.0:LICENSE |
+| `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.47.0` | https://cs.opensource.google/go/x/term/+/v0.47.0:LICENSE |
+| `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.43.0` | https://cs.opensource.google/go/x/text/+/v0.43.0:LICENSE |
 | `golang.org/x/time/rate` | BSD-3-Clause | `golang.org/x/time@v0.15.0` | https://cs.opensource.google/go/x/time/+/v0.15.0:LICENSE |
 | `gomodules.xyz/jsonpatch/v2` | Apache-2.0 | `gomodules.xyz/jsonpatch/v2@v2.5.0` | https://github.com/gomodules/jsonpatch/blob/v2.5.0/LICENSE |
 | `google.golang.org/genproto/googleapis/api` | Apache-2.0 | `google.golang.org/genproto/googleapis/api@v0.0.0-20260928230214-8a89bd6388cc` | https://github.com/googleapis/go-genproto/blob/8a89bd6388cc/googleapis/api/LICENSE |
@@ -7732,7 +7732,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil
 
-_BSD-3-Clause — github.com/prometheus/client_golang@v1.24.1_
+_BSD-3-Clause — github.com/prometheus/client_golang@v1.25.0_
 
 #### LICENSE
 
@@ -7769,7 +7769,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/prometheus/client_golang/prometheus
 
-_Apache-2.0 — github.com/prometheus/client_golang@v1.24.1_
+_Apache-2.0 — github.com/prometheus/client_golang@v1.25.0_
 
 #### LICENSE
 
@@ -8226,7 +8226,7 @@ SoundCloud Ltd. (http://soundcloud.com/).
 
 ### github.com/prometheus/common
 
-_Apache-2.0 — github.com/prometheus/common@v0.70.1_
+_Apache-2.0 — github.com/prometheus/common@v0.72.0_
 
 #### LICENSE
 
@@ -8448,7 +8448,7 @@ SoundCloud Ltd. (http://soundcloud.com/).
 
 ### github.com/prometheus/procfs
 
-_Apache-2.0 — github.com/prometheus/procfs@v0.21.1_
+_Apache-2.0 — github.com/prometheus/procfs@v0.22.0_
 
 #### LICENSE
 
@@ -14527,7 +14527,7 @@ http://www.apache.org/licenses/LICENSE-2.0
 
 ### golang.org/x/crypto
 
-_BSD-3-Clause — golang.org/x/crypto@v0.57.0_
+_BSD-3-Clause — golang.org/x/crypto@v0.58.0_
 
 #### LICENSE
 
@@ -14675,7 +14675,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/sys
 
-_BSD-3-Clause — golang.org/x/sys@v0.48.0_
+_BSD-3-Clause — golang.org/x/sys@v0.49.0_
 
 #### LICENSE
 
@@ -14712,7 +14712,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/term
 
-_BSD-3-Clause — golang.org/x/term@v0.46.0_
+_BSD-3-Clause — golang.org/x/term@v0.47.0_
 
 #### LICENSE
 
@@ -14749,7 +14749,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/text
 
-_BSD-3-Clause — golang.org/x/text@v0.42.0_
+_BSD-3-Clause — golang.org/x/text@v0.43.0_
 
 #### LICENSE
 

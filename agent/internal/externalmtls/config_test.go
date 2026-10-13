@@ -180,6 +180,9 @@ func TestServerConfig_HandshakeAcceptsSignedAndRejectsUnsigned(t *testing.T) {
 			clientCertificate: ca.issueClient(t, ControllerURI),
 			wantErr:           false,
 		},
+		"legacy controller URI remains accepted": {
+			clientCertificate: ca.issueClient(t, LegacyControllerURI),
+		},
 		"certificate from another ca": {
 			clientCertificate: newControllerCA(t).issueClient(t, ControllerURI),
 			wantErr:           true,

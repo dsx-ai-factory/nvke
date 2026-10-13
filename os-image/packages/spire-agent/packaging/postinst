@@ -29,7 +29,7 @@ install -d -m 0750 -o spire -g spire /var/lib/spire-agent
 chmod 0644 /etc/spire-agent/spire-agent.env
 
 # The TPM node attestor opens /dev/tpmrm0, which udev owns tss:tss. Without
-# this spire-agent crash-loops on "permission denied" and nke-agent never
+# this spire-agent crash-loops on "permission denied" and nvke-agent never
 # starts, because it waits on a workload socket that never opens. The group
 # only exists where the TPM tools are installed.
 if getent group tss >/dev/null 2>&1; then
@@ -38,7 +38,7 @@ fi
 
 # A unit under /etc masks the vendor unit this package ships in /lib. Images
 # built before this package existed have exactly that, from provision.sh.
-for unit in spire-agent.service nke-spire-configure.service; do
+for unit in spire-agent.service nvke-spire-configure.service; do
   if [ -f "/etc/systemd/system/${unit}" ]; then
     echo "${PACKAGE}: removing /etc/systemd/system/${unit} so the vendor unit in /lib applies."
     rm -f "/etc/systemd/system/${unit}"
@@ -46,8 +46,8 @@ for unit in spire-agent.service nke-spire-configure.service; do
 done
 
 systemctl daemon-reload
-# enable, not `enable --now`: nke-spire-configure.service needs
+# enable, not `enable --now`: nvke-spire-configure.service needs
 # /etc/nke/spire.env, which cloud-init writes on first boot of the deployed
 # node -- not here, and not in the Packer build VM.
-systemctl enable nke-spire-configure.service
+systemctl enable nvke-spire-configure.service
 systemctl enable spire-agent.service

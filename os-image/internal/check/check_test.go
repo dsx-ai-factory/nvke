@@ -128,3 +128,16 @@ func TestListServicesAndStatus(t *testing.T) {
 		t.Fatalf("agent version = %q, want test", statusResp.GetAgentVersion())
 	}
 }
+
+func TestAuthorizedClientPath(t *testing.T) {
+	for _, path := range []string{"/tenant/nvke/service/cwe", "/nvke-service/cwe", "/tenant/nke/service/cwe", "/nke-service/cwe"} {
+		if !authorizedClientPath(path) {
+			t.Errorf("authorizedClientPath(%q) = false", path)
+		}
+	}
+	for _, path := range []string{"/tenant/nvke/service-evil/cwe", "/nvke-service-evil/cwe", "/tenant/other/service/cwe"} {
+		if authorizedClientPath(path) {
+			t.Errorf("authorizedClientPath(%q) = true", path)
+		}
+	}
+}

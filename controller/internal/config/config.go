@@ -4,7 +4,6 @@
 package config
 
 import (
-	"encoding/hex"
 	"fmt"
 	"net"
 	"net/url"
@@ -13,8 +12,6 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
-	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const (
@@ -40,45 +37,45 @@ type SpireAttestationMethod string
 // DSXImdsConfig configures the external dsx_imds SPIRE node attestor.
 type DSXImdsConfig struct {
 	// Endpoint is the metadata endpoint used by the external node attestor.
-	Endpoint string `env:"ENDPOINT" default:"http://169.254.169.254"`
+	Endpoint string `controllerconfig:"nodeAgent.dsxImds.endpoint"`
 
 	// PluginChecksum overrides the checksum supplied by the DSX node image. An
 	// empty value keeps the image-owned environment expansion.
-	PluginChecksum string `env:"PLUGIN_CHECKSUM"`
+	PluginChecksum string `controllerconfig:"nodeAgent.dsxImds.pluginChecksum"`
 
 	// OperatorTenant is the tenant segment in dsx_imds-attested SPIRE agent IDs.
 	// It must match the DSX Identity operator tenant.
-	OperatorTenant string `env:"OPERATOR_TENANT"`
+	OperatorTenant string `controllerconfig:"nodeAgent.dsxImds.operatorTenant"`
 }
 
 // TLSJWTConfig configures TLS/JWT authentication for controller calls to node agents.
 type TLSJWTConfig struct {
 	// Enabled selects the TLS/JWT transport pinned to newly created nodes.
-	Enabled bool `env:"ENABLED" default:"false"`
+	Enabled bool `controllerconfig:"nodeAgent.tlsJWT.enabled"`
 
 	// Issuer is the identity issuer expected in node-agent JWTs.
-	Issuer string `env:"ISSUER"`
+	Issuer string `controllerconfig:"nodeAgent.tlsJWT.issuer"`
 
 	// JWKSURI is the HTTPS endpoint used to fetch node-agent JWT signing keys.
-	JWKSURI string `env:"JWKS_URI"`
+	JWKSURI string `controllerconfig:"nodeAgent.tlsJWT.jwksURI"`
 
 	// Algorithms is the asymmetric JWT algorithm allow-list.
-	Algorithms []string `env:"ALGORITHMS" envSeparator:","`
+	Algorithms []string `controllerconfig:"nodeAgent.tlsJWT.algorithms"`
 
 	// SubjectTrustDomain is the exact SPIFFE trust domain accepted in the
 	// verified node-agent JWT subject.
-	SubjectTrustDomain string `env:"SUBJECT_TRUST_DOMAIN"`
+	SubjectTrustDomain string `controllerconfig:"nodeAgent.tlsJWT.subjectTrustDomain"`
 
 	// SubjectTenant is the tenant segment in the local SPIFFE ID exchanged by
 	// DSX Identity for node-agent JWT authentication.
-	SubjectTenant string `env:"SUBJECT_TENANT"`
+	SubjectTenant string `controllerconfig:"nodeAgent.tlsJWT.subjectTenant"`
 
 	// SubjectService is the service segment in the local SPIFFE ID exchanged by
 	// DSX Identity for node-agent JWT authentication.
-	SubjectService string `env:"SUBJECT_SERVICE"`
+	SubjectService string `controllerconfig:"nodeAgent.tlsJWT.subjectService"`
 
 	// DSXIdentityExchangeURL is injected into node-agent bootstrap arguments.
-	DSXIdentityExchangeURL string `env:"DSX_IDENTITY_EXCHANGE_URL"`
+	DSXIdentityExchangeURL string `controllerconfig:"nodeAgent.tlsJWT.dsxIdentityExchangeURL"`
 }
 
 // NodeAgentConfig configures connections to and SPIRE attestation for managed node agents.
@@ -88,15 +85,19 @@ type NodeAgentConfig struct {
 
 	// SpireAttestationMethod selects the SPIRE attestation method pinned to
 	// newly created nodes.
-	SpireAttestationMethod SpireAttestationMethod `env:"SPIRE_ATTESTATION_METHOD" default:"tpm"`
+	SpireAttestationMethod SpireAttestationMethod `controllerconfig:"nodeAgent.spireAttestationMethod"`
 
 	// DSXImds contains settings specific to dsx_imds attestation.
-	DSXImds DSXImdsConfig `envPrefix:"DSX_IMDS_"`
+	DSXImds DSXImdsConfig
 
 	// TLSJWT contains TLS/JWT transport settings.
-	TLSJWT TLSJWTConfig `envPrefix:"TLS_JWT_"`
+	TLSJWT TLSJWTConfig
 }
 
+// Config is the controller's configuration. A field with an env tag comes from
+// that environment variable; a field with a controllerconfig tag comes from that
+// key in the mounted nke-controller-config file, which
+// controllerconfig.Config.ApplyTo copies in at startup.
 type Config struct {
 	// LogLevel is the level of logs to output (debug|info|warn|error)
 	LogLevel string `env:"LOG_LEVEL" default:"info"`
@@ -131,19 +132,19 @@ type Config struct {
 	// server. Defaults to 127.0.0.1:9090 (localhost-only) so the endpoint is
 	// not reachable from outside the pod without an explicit override.
 	// Set to 0.0.0.0:9090 (paired with a NetworkPolicy) to allow scraping.
-	MetricsListenAddress string `env:"METRICS_LISTEN_ADDRESS" default:"127.0.0.1:9090"`
+	MetricsListenAddress string `controllerconfig:"metricsListenAddress"`
 
 	// TemporalHostPort is the host and port of the Temporal server to use for controller workflows
-	TemporalHostPort string `env:"TEMPORAL_HOST_PORT" default:"localhost:7233"`
+	TemporalHostPort string `controllerconfig:"temporal.hostPort"`
 
 	// TemporalNamespace is the Temporal namespace to use for controller workflows
-	TemporalNamespace string `env:"TEMPORAL_NAMESPACE" default:"cloud-workflow-engine"`
+	TemporalNamespace string `controllerconfig:"temporal.namespace"`
 
 	// TemporalTaskQueue is the Temporal task queue to use for controller workflows
-	TemporalTaskQueue string `env:"TEMPORAL_TASK_QUEUE" default:"cloud-workflow-engine-tasks"`
+	TemporalTaskQueue string `controllerconfig:"temporal.taskQueue"`
 
 	// TemporalTLS configures optional mTLS for the controller's Temporal client.
-	TemporalTLS TemporalTLSConfig `envPrefix:"TEMPORAL_MTLS_"`
+	TemporalTLS TemporalTLSConfig
 
 	// OutboxPollingInterval is the interval to wait between polling the workflow outbox for new entries
 	OutboxPollingInterval time.Duration `env:"OUTBOX_POLLING_INTERVAL" default:"5s"`
@@ -163,23 +164,23 @@ type Config struct {
 
 	// NicoControllersEnabled enables controllers that watch NICo infrastructure
 	// resources. Disable it when the controller manages only provisioned infrastructure.
-	NicoControllersEnabled bool `env:"NICO_CONTROLLERS_ENABLED" default:"true"`
+	NicoControllersEnabled bool `controllerconfig:"nicoControllersEnabled"`
 	// KubeVipFMDSEndpoint is the full Forge Metadata Service URL used to resolve
 	// the per-node DPU ASN on native-networking sites. When empty, CAPI and
 	// subnet-based NICo pools use the static Forge peer ASN.
 	KubeVipFMDSEndpoint string `env:"KUBE_VIP_FMDS_ENDPOINT"`
 
 	// ProfilesDir is the directory from which to read osProfiles and configProfiles
-	ProfilesDir string `env:"PROFILES_DIR" default:"./profiles"`
+	ProfilesDir string `controllerconfig:"profilesDir"`
 
 	// SupportedInfraProviders is the list of provider payload keys this controller
 	// deployment advertises for cluster specs.
-	SupportedInfraProviders []string `env:"SUPPORTED_INFRA_PROVIDERS" envSeparator:"," default:"nico"`
+	SupportedInfraProviders []string `controllerconfig:"supportedInfraProviders"`
 
 	// RunbooksDir is the optional directory containing config-profile hook scripts.
 	// When omitted, hook execution looks under ProfilesDir/runbooks before falling
 	// back to controller-owned embedded runbooks.
-	RunbooksDir string `env:"RUNBOOKS_DIR"`
+	RunbooksDir string `controllerconfig:"runbooksDir"`
 
 	// NodeRebootInitialTimeout is the initial timeout for the node reboot workflow.
 	NodeRebootInitialTimeout time.Duration `env:"NODE_REBOOT_INITIAL_TIMEOUT" default:"30m"`
@@ -206,13 +207,13 @@ type Config struct {
 	NodeProvisioningTimeout time.Duration `env:"NODE_PROVISIONING_TIMEOUT" default:"2h"`
 
 	// CertRenewalControllerEnabled enables controller-owned periodic Kubernetes control-plane certificate renewal.
-	CertRenewalControllerEnabled bool `env:"CERT_RENEWAL_CONTROLLER_ENABLED" default:"true"`
+	CertRenewalControllerEnabled bool `controllerconfig:"certRenewal.controllerEnabled"`
 
 	// CertRenewalInterval is the interval between certificate renewal checks for each cluster.
-	CertRenewalInterval time.Duration `env:"CERT_RENEWAL_INTERVAL" default:"12h"`
+	CertRenewalInterval time.Duration `controllerconfig:"certRenewal.interval"`
 
 	// CertRenewalThresholdDays is passed to the certificate-renewal runbook.
-	CertRenewalThresholdDays int `env:"CERT_RENEWAL_THRESHOLD_DAYS" default:"30"`
+	CertRenewalThresholdDays int `controllerconfig:"certRenewal.thresholdDays"`
 
 	// NVKESiteControllerName is the name of the site controller
 	NVKESiteControllerName string `env:"NKE_SITE_CONTROLLER_NAME"`
@@ -222,25 +223,25 @@ type Config struct {
 	// unset value is today's behavior exactly; a site that renames it changes
 	// who future patches say they own, not who owns fields already applied
 	// under the old name.
-	FieldManagerName string `env:"FIELD_MANAGER_NAME" default:"cloud-workflow-engine"`
+	FieldManagerName string `controllerconfig:"fieldManager.name"`
 
 	// FieldManagerRebootMachineName is the field manager scoped to the CAPI
 	// Machine reboot annotation alone, kept separate from FieldManagerName so
 	// removing it releases only that annotation.
-	FieldManagerRebootMachineName string `env:"FIELD_MANAGER_REBOOT_MACHINE_NAME" default:"cloud-workflow-engine-reboot-machine"`
+	FieldManagerRebootMachineName string `controllerconfig:"fieldManager.rebootMachineName"`
 
 	// FieldManagerMachineHealthIssueName is the field manager used when
 	// patching a Machine's health-issue annotation.
-	FieldManagerMachineHealthIssueName string `env:"FIELD_MANAGER_MACHINE_HEALTH_ISSUE_NAME" default:"cloud-workflow-engine-machine-health-issue"`
+	FieldManagerMachineHealthIssueName string `controllerconfig:"fieldManager.machineHealthIssueName"`
 
 	// ManagedByLabelValue is the value written under the
 	// nke.nvidia.com/managed-by label key on objects this controller owns,
 	// and the value the tenant Secret reconciler filters incoming Secret
 	// events on. Both sides must agree, so this is read from one place.
-	ManagedByLabelValue string `env:"MANAGED_BY_LABEL_VALUE" default:"cloud-workflow-engine"`
+	ManagedByLabelValue string `controllerconfig:"managedByLabelValue"`
 
 	// SpiffeEnabled is a feature flag to enable SPIFFE support.
-	SpiffeEnabled bool `env:"SPIFFE_ENABLED" default:"false"`
+	SpiffeEnabled bool `controllerconfig:"spire.spiffeEnabled"`
 
 	// SpireAgentStartupTimeout is the timeout for the SPIRE agent startup.
 	SpireAgentStartupTimeout time.Duration `env:"SPIRE_AGENT_STARTUP_TIMEOUT" default:"30s"`
@@ -248,8 +249,8 @@ type Config struct {
 	// SpireAgentStartupRetryInterval is the interval for retrying the SPIRE agent startup.
 	SpireAgentStartupRetryInterval time.Duration `env:"SPIRE_AGENT_STARTUP_RETRY_INTERVAL" default:"1s"`
 
-	// SpiffeEndpointSocket is the socket path for the SPIFFE endpoint. Note this is the same env var used by SPIRE agent by default.
-	SpiffeEndpointSocket string `env:"SPIFFE_ENDPOINT_SOCKET" default:"unix:///tmp/spire-agent/agent.sock"`
+	// SpiffeEndpointSocket is the socket path for the SPIFFE endpoint.
+	SpiffeEndpointSocket string `controllerconfig:"spire.spiffeEndpointSocket"`
 
 	// SpiffeJWTExchangeEndpoint, when set, is the RFC 8693 token-exchange endpoint
 	// the exec credential plugin trades its JWT-SVID at before presenting the
@@ -260,16 +261,16 @@ type Config struct {
 	// which is the behavior every site has today. Set it only where the tenant
 	// clusters trust the exchange's issuer rather than that SPIRE server's, or
 	// the controller's calls to them will start failing authentication.
-	SpiffeJWTExchangeEndpoint string `env:"SPIFFE_JWT_EXCHANGE_ENDPOINT"`
+	SpiffeJWTExchangeEndpoint string `controllerconfig:"spire.spiffeJWTExchangeEndpoint"`
 
 	// SpireServerNamespace is the namespace of the SPIRE server.
-	SpireServerNamespace string `env:"SPIRE_SERVER_NAMESPACE" default:"spire-server"`
+	SpireServerNamespace string `controllerconfig:"spire.serverNamespace"`
 
 	// SpireClassName is the SPIRE className used in ClusterStaticEntry CRD entries.
-	SpireClassName string `env:"SPIRE_CLASS_NAME" default:"spire-mgmt-spire"`
+	SpireClassName string `controllerconfig:"spire.className"`
 
 	// SpireTPMPubhashesConfigMapName is the name of the SPIRE configmap to store TPM pubhashes.
-	SpireTPMPubhashesConfigMapName string `env:"SPIRE_TPM_PUBHASHES_CONFIG_MAP_NAME" default:"tpm-pubhashes"`
+	SpireTPMPubhashesConfigMapName string `controllerconfig:"spire.tpmPubhashesConfigMapName"`
 
 	// SpireServerAddress is the address of the SPIRE server for agents to connect to.
 	// This needs to be an address that is reachable from the node which at the time of provisioning is not running in k8s e.g. kube-vip or control plane node IP.
@@ -277,21 +278,21 @@ type Config struct {
 
 	// SpireServerPort is the port of the SPIRE server for agents to connect to.
 	// This needs to be a port that is exposed externally to the node which at the time of provisioning is not running in k8s e.g. a nodePort value.
-	SpireServerPort string `env:"SPIRE_SERVER_PORT" default:"9091"`
+	SpireServerPort string `controllerconfig:"spire.serverPort"`
 
 	// SpireServerAPIAddress is the SPIRE server API address used for server-side operations such as issuing join tokens.
 	// This should be reachable from the controller. By default we assume SPIRE server is running in-cluster in the spire-server namespace.
 	SpireServerAPIAddress string `env:"SPIRE_SERVER_API_ADDRESS" default:"spire-server.spire-server.svc.cluster.local:8081"`
 
 	// SpireJoinTokenTTL is the TTL used when creating SPIRE join tokens via the server API.
-	SpireJoinTokenTTL time.Duration `env:"SPIRE_JOIN_TOKEN_TTL" default:"1h"`
+	SpireJoinTokenTTL time.Duration `controllerconfig:"spire.joinTokenTTL"`
 
 	NodeAgent NodeAgentConfig `envPrefix:"NODE_AGENT_"`
 
 	// NodeAgentExternalMTLSEnabled selects an externally issued client
 	// certificate as the base transport pinned to newly created nodes instead
 	// of selecting transport from each node's SPIFFE setting.
-	NodeAgentExternalMTLSEnabled bool `env:"NODE_AGENT_EXTERNAL_MTLS_ENABLED" default:"false"`
+	NodeAgentExternalMTLSEnabled bool `controllerconfig:"nodeAgent.externalMTLSEnabled"`
 
 	// DgxcTenantUser is the DGXC tenant SSH username injected into OS profile userData templates.
 	DgxcTenantUser string `env:"DGXC_TENANT_USER"`
@@ -333,30 +334,29 @@ type Config struct {
 	//
 	// Still off by default: no real site has run this path yet. Turn it on
 	// deliberately, so a regression has one obvious cause.
-	InstallCNIAfterInit bool `env:"INSTALL_CNI_AFTER_INIT" default:"false"`
+	InstallCNIAfterInit bool `controllerconfig:"installCNIAfterInit"`
 
 	// PodNamespace is the namespace the controller worker runs in.
 	PodNamespace string `env:"POD_NAMESPACE" default:"cloud-workflow-engine"`
 
 	// KubeadmImageRepository is the OCI registry kubeadm uses for control-plane
-	// component images. Set KUBEADM_IMAGE_REPOSITORY to redirect to a local mirror
-	// for air-gap environments.
-	KubeadmImageRepository string `env:"KUBEADM_IMAGE_REPOSITORY" default:"registry.k8s.io"`
+	// component images. Point it at a local mirror for air-gap environments.
+	KubeadmImageRepository string `controllerconfig:"kubeadmImageRepository"`
 
-	// CNIImageRegistry is the OCI registry prefix for CNI component images.
-	// Set CNI_IMAGE_REGISTRY to redirect CNI image pulls to a local mirror.
-	CNIImageRegistry string `env:"CNI_IMAGE_REGISTRY" default:""`
+	// CNIImageRegistry is the OCI registry prefix for CNI component images. Point
+	// it at a local mirror to redirect CNI image pulls.
+	CNIImageRegistry string `controllerconfig:"cniImageRegistry"`
 
 	// NvkeOIDCAuth is the site-wide configuration for OIDC authentication from
 	// NVKE management identities to tenant cluster kube-apiservers.
 	NvkeOIDCAuth NvkeOIDCAuth `envPrefix:"NKE_OIDC_AUTH_"`
 
-	// TenantAccessEnabled is the site Helm/env flag for the Nico consume
+	// TenantAccessEnabled is the site flag for the Nico consume
 	// fallback. CAPI clients always read the published nke-system Secret.
 	// The TenantAccess controller is constructed whenever a Kubernetes client
 	// exists and always publishes nke-system/<name>-kubeconfig; this flag does
 	// not gate that writer.
-	TenantAccessEnabled bool `env:"TENANT_ACCESS_ENABLED" default:"false"`
+	TenantAccessEnabled bool `controllerconfig:"tenantAccessEnabled"`
 
 	// AuthConfigPath is the mounted YAML file holding the API authentication
 	// configuration. Unset disables authentication. A set-but-unreadable path is
@@ -365,65 +365,61 @@ type Config struct {
 	// Validate() does not check it: unset is the valid default.
 	AuthConfigPath string `env:"AUTH_CONFIG_PATH"`
 
-	// ControllerConfigPath is the mounted nke-controller-config file, loaded and
-	// validated at startup. Unset runs without it, which is what a host-local run
-	// gets; a set path that does not load is a startup failure.
-	ControllerConfigPath string `env:"CONTROLLER_CONFIG_PATH"`
+	// ControllerConfigPath is the nke-controller-config file every field with a
+	// controllerconfig tag comes from. Required: a path that does not load is a
+	// startup failure.
+	ControllerConfigPath string `env:"CONTROLLER_CONFIG_PATH,notEmpty"`
 
 	// PermissiveMode evaluates and logs authentication and admission decisions
 	// without enforcing them, so no request is rejected. No effect when
 	// AuthConfigPath is unset.
-	PermissiveMode bool `env:"PERMISSIVE_MODE" default:"false"`
+	PermissiveMode bool `controllerconfig:"permissiveMode"`
 
-	// Tracing configures OpenTelemetry distributed tracing. When Enabled and
-	// Endpoint are set, the controller exports OTLP gRPC spans. Endpoint and related OTEL_*
-	// vars may be injected by the OpenTelemetry Operator (inject-sdk + sidecar);
-	// do not hardcode collector URLs in application code.
-	Tracing TracingConfig `envPrefix:"OTEL_"`
+	// Tracing configures OpenTelemetry distributed tracing. When Enabled, the
+	// controller exports OTLP gRPC spans to Endpoint, or, when Endpoint is empty,
+	// to the OTEL_EXPORTER_OTLP_* variables the OpenTelemetry Operator injects.
+	Tracing TracingConfig
 }
 
 // TracingConfig configures OpenTelemetry tracing export.
-// Env vars use standard OTEL_* names (also commonly injected by the
-// OpenTelemetry Operator): OTEL_TRACING_ENABLED, OTEL_EXPORTER_OTLP_ENDPOINT,
-// OTEL_EXPORTER_OTLP_INSECURE, OTEL_SERVICE_NAME.
 type TracingConfig struct {
 	// Enabled gates TracerProvider initialization and transport instrumentation.
-	Enabled bool `env:"TRACING_ENABLED" default:"false"`
+	Enabled bool `controllerconfig:"tracing.enabled"`
 	// Endpoint is the OTLP gRPC collector host:port (scheme optional). With
 	// operator sidecar injection this is typically localhost:4317.
-	Endpoint string `env:"EXPORTER_OTLP_ENDPOINT" default:""`
+	Endpoint string `controllerconfig:"tracing.endpoint"`
 	// Insecure uses plaintext OTLP (required for localhost sidecar / in-cluster collectors).
-	Insecure bool `env:"EXPORTER_OTLP_INSECURE" default:"true"`
+	Insecure bool `controllerconfig:"tracing.insecure"`
 	// ServiceName is the resource attribute service.name.
-	ServiceName string `env:"SERVICE_NAME" default:"cloud-workflow-engine"`
+	ServiceName string `controllerconfig:"tracing.serviceName"`
 }
 
 // TemporalTLSConfig contains optional file paths for Temporal client mTLS.
 type TemporalTLSConfig struct {
-	CaCert     string `env:"CA_CERT"`
-	ClientKey  string `env:"CLIENT_KEY"`
-	ClientCert string `env:"CLIENT_CERT"`
-	ServerName string `env:"SERVER_NAME"`
+	CaCert     string `controllerconfig:"temporal.tls.caCert"`
+	ClientKey  string `controllerconfig:"temporal.tls.clientKey"`
+	ClientCert string `controllerconfig:"temporal.tls.clientCert"`
+	ServerName string `controllerconfig:"temporal.tls.serverName"`
 }
 
 type NvkeOIDCAuth struct {
 	// Enabled controls whether new clusters receive an apiserver
 	// AuthenticationConfiguration for NVKE OIDC identities.
-	Enabled bool `env:"ENABLED" default:"false"`
+	Enabled bool `controllerconfig:"oidc.managementOIDCAuth.enabled"`
 	// AutoMigrationEnabled is reserved for future migration of existing clusters.
 	AutoMigrationEnabled bool `env:"AUTO_MIGRATION_ENABLED" default:"false"`
 	// IssuerURL is the OIDC issuer trusted by tenant kube-apiservers.
-	IssuerURL string `env:"ISSUER_URL" default:""`
+	IssuerURL string `controllerconfig:"oidc.managementOIDCAuth.issuerURL"`
 	// DiscoveryURL optionally overrides the issuer discovery endpoint.
-	DiscoveryURL string `env:"DISCOVERY_URL" default:""`
+	DiscoveryURL string `controllerconfig:"oidc.managementOIDCAuth.discoveryURL"`
 	// CABundleSecret points at the Secret containing a PEM CA bundle for the issuer.
-	CABundleSecret OIDCCABundleSecretRef `envPrefix:"CA_BUNDLE_SECRET_"`
+	CABundleSecret OIDCCABundleSecretRef
 }
 
 type OIDCCABundleSecretRef struct {
-	Namespace string `env:"NAMESPACE" default:""`
-	Name      string `env:"NAME" default:""`
-	Key       string `env:"KEY" default:""`
+	Namespace string `controllerconfig:"oidc.managementOIDCAuth.caBundleSecretRef.namespace"`
+	Name      string `controllerconfig:"oidc.managementOIDCAuth.caBundleSecretRef.name"`
+	Key       string `controllerconfig:"oidc.managementOIDCAuth.caBundleSecretRef.key"`
 }
 
 func (r OIDCCABundleSecretRef) Empty() bool {
@@ -432,10 +428,10 @@ func (r OIDCCABundleSecretRef) Empty() bool {
 
 // TeleportConfig contains configuration for the Teleport TPM join token integration.
 type TeleportConfig struct {
-	Enabled      bool   `env:"ENABLED" default:"false"`
-	IdentityFile string `env:"IDENTITY_FILE"`
-	ProxyAddress string `env:"PROXY_ADDRESS"`
-	Environment  string `env:"ENVIRONMENT" default:"non-prod"`
+	Enabled      bool   `controllerconfig:"teleport.enabled"`
+	IdentityFile string `controllerconfig:"teleport.identityFile"`
+	ProxyAddress string `controllerconfig:"teleport.proxyAddress"`
+	Environment  string `controllerconfig:"teleport.environment"`
 
 	DefaultClusterEnabled    bool `env:"DEFAULT_CLUSTER_ENABLED" default:"false"`
 	DefaultCPPoolEnabled     bool `env:"DEFAULT_CP_POOL_ENABLED" default:"false"`
@@ -444,11 +440,11 @@ type TeleportConfig struct {
 	// ManagedByLabelValue is the value of the Teleport "managed-by" label this
 	// controller stamps on tokens it creates, and the value ownership checks
 	// (IsOwnedByController) compare incoming tokens against.
-	ManagedByLabelValue string `env:"MANAGED_BY_LABEL_VALUE" default:"nke-cloud-workflow-engine"`
+	ManagedByLabelValue string `controllerconfig:"teleport.managedByLabelValue"`
 
 	// TokenNamePrefix prefixes the deterministic Teleport TPM join token name
 	// this controller mints for a node.
-	TokenNamePrefix string `env:"TOKEN_NAME_PREFIX" default:"nke-cwe-"`
+	TokenNamePrefix string `controllerconfig:"teleport.tokenNamePrefix"`
 }
 
 // NodePoolTeleportDefault returns the teleport default for a node pool based on its role.
@@ -510,159 +506,14 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// Validate checks required field constraints.
+// Validate checks the settings the environment supplies. nke-controller-config
+// validates its own when it loads.
 func (c *Config) Validate() error {
-	if strings.TrimSpace(c.MetricsListenAddress) == "" {
-		return fmt.Errorf("METRICS_LISTEN_ADDRESS must not be empty")
-	}
 	if err := c.validateDBCredentials(); err != nil {
 		return err
 	}
 	if c.SpireServerAPIAddress == "" {
 		return fmt.Errorf("SPIRE_SERVER_API_ADDRESS is required")
-	}
-	if c.SpireJoinTokenTTL <= 0 {
-		return fmt.Errorf("SPIRE_JOIN_TOKEN_TTL must be greater than 0")
-	}
-	switch c.NodeAgent.SpireAttestationMethod {
-	case SpireAttestationMethodTPM, SpireAttestationMethodJoinToken, SpireAttestationMethodDSXIMDS:
-	default:
-		return fmt.Errorf("NODE_AGENT_SPIRE_ATTESTATION_METHOD must be one of tpm, joinToken, or dsxImds, got %q", c.NodeAgent.SpireAttestationMethod)
-	}
-	if c.NodeAgent.SpireAttestationMethod == SpireAttestationMethodDSXIMDS && !c.SpiffeEnabled {
-		return fmt.Errorf("SPIFFE_ENABLED must be true when NODE_AGENT_SPIRE_ATTESTATION_METHOD is dsxImds")
-	}
-	if c.NodeAgent.SpireAttestationMethod == SpireAttestationMethodDSXIMDS {
-		c.NodeAgent.DSXImds.OperatorTenant = strings.TrimSpace(c.NodeAgent.DSXImds.OperatorTenant)
-		if c.NodeAgent.DSXImds.OperatorTenant == "" {
-			return fmt.Errorf("NODE_AGENT_DSX_IMDS_OPERATOR_TENANT is required when NODE_AGENT_SPIRE_ATTESTATION_METHOD is dsxImds")
-		}
-		if err := spiffeid.ValidatePathSegment(c.NodeAgent.DSXImds.OperatorTenant); err != nil {
-			return fmt.Errorf("NODE_AGENT_DSX_IMDS_OPERATOR_TENANT must be a valid SPIFFE path segment: %w", err)
-		}
-		dsxIMDSEndpoint, err := normalizeDSXIMDSEndpoint(c.NodeAgent.DSXImds.Endpoint)
-		if err != nil {
-			return err
-		}
-		c.NodeAgent.DSXImds.Endpoint = dsxIMDSEndpoint
-		if err := validateDSXIMDSPluginChecksum(c.NodeAgent.DSXImds.PluginChecksum); err != nil {
-			return err
-		}
-	}
-	if c.NodeAgent.SpireAttestationMethod == SpireAttestationMethodJoinToken && !c.SpiffeEnabled {
-		return fmt.Errorf("SPIFFE_ENABLED must be true when NODE_AGENT_SPIRE_ATTESTATION_METHOD is joinToken")
-	}
-	if err := c.Teleport.Validate(); err != nil {
-		return err
-	}
-	supportedInfraProviders, err := normalizeSupportedInfraProviders(c.SupportedInfraProviders)
-	if err != nil {
-		return err
-	}
-	c.SupportedInfraProviders = supportedInfraProviders
-	if c.NodeAgent.TLSJWT.Enabled {
-		if !c.SpiffeEnabled && !c.NodeAgentExternalMTLSEnabled {
-			return fmt.Errorf("SPIFFE_ENABLED or NODE_AGENT_EXTERNAL_MTLS_ENABLED must be true when NODE_AGENT_TLS_JWT_ENABLED=true")
-		}
-		if strings.TrimSpace(c.NodeAgent.TLSJWT.Issuer) == "" {
-			return fmt.Errorf("NODE_AGENT_TLS_JWT_ISSUER is required when NODE_AGENT_TLS_JWT_ENABLED=true")
-		}
-		if strings.TrimSpace(c.NodeAgent.TLSJWT.JWKSURI) == "" {
-			return fmt.Errorf("NODE_AGENT_TLS_JWT_JWKS_URI is required when NODE_AGENT_TLS_JWT_ENABLED=true")
-		}
-		if len(c.NodeAgent.TLSJWT.Algorithms) == 0 {
-			return fmt.Errorf("NODE_AGENT_TLS_JWT_ALGORITHMS is required when NODE_AGENT_TLS_JWT_ENABLED=true")
-		}
-		if strings.TrimSpace(c.NodeAgent.TLSJWT.SubjectTrustDomain) == "" {
-			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN is required when NODE_AGENT_TLS_JWT_ENABLED=true")
-		}
-		c.NodeAgent.TLSJWT.SubjectTenant = strings.TrimSpace(c.NodeAgent.TLSJWT.SubjectTenant)
-		if c.NodeAgent.TLSJWT.SubjectTenant == "" {
-			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_TENANT is required when NODE_AGENT_TLS_JWT_ENABLED=true")
-		}
-		if len(validation.IsDNS1123Label(c.NodeAgent.TLSJWT.SubjectTenant)) != 0 {
-			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_TENANT must be a lowercase DNS label")
-		}
-		c.NodeAgent.TLSJWT.SubjectService = strings.TrimSpace(c.NodeAgent.TLSJWT.SubjectService)
-		if c.NodeAgent.TLSJWT.SubjectService == "" {
-			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_SERVICE is required when NODE_AGENT_TLS_JWT_ENABLED=true")
-		}
-		if len(validation.IsDNS1123Label(c.NodeAgent.TLSJWT.SubjectService)) != 0 {
-			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_SERVICE must be a lowercase DNS label")
-		}
-		if strings.TrimSpace(c.NodeAgent.TLSJWT.DSXIdentityExchangeURL) == "" {
-			return fmt.Errorf("NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL is required when NODE_AGENT_TLS_JWT_ENABLED=true")
-		}
-	}
-
-	return nil
-}
-
-func normalizeDSXIMDSEndpoint(endpoint string) (string, error) {
-	trimmedEndpoint := strings.TrimSpace(endpoint)
-	if trimmedEndpoint == "" {
-		return "", fmt.Errorf("NODE_AGENT_DSX_IMDS_ENDPOINT is required when NODE_AGENT_SPIRE_ATTESTATION_METHOD is dsxImds")
-	}
-
-	parsedEndpoint, err := url.ParseRequestURI(trimmedEndpoint)
-	if err != nil || parsedEndpoint.Hostname() == "" ||
-		(!strings.EqualFold(parsedEndpoint.Scheme, "http") && !strings.EqualFold(parsedEndpoint.Scheme, "https")) {
-		return "", fmt.Errorf("NODE_AGENT_DSX_IMDS_ENDPOINT must be an absolute HTTP(S) URL with a host, got %q", endpoint)
-	}
-
-	return trimmedEndpoint, nil
-}
-
-func validateDSXIMDSPluginChecksum(checksum string) error {
-	if checksum == "" {
-		return nil
-	}
-	decodedChecksum, err := hex.DecodeString(checksum)
-	if err != nil || len(decodedChecksum) != 32 {
-		return fmt.Errorf("NODE_AGENT_DSX_IMDS_PLUGIN_CHECKSUM must be a 64-character SHA-256 hex digest")
-	}
-	return nil
-}
-
-func normalizeSupportedInfraProviders(providers []string) ([]string, error) {
-	if providers == nil {
-		return []string{InfraProviderNico}, nil
-	}
-	if len(providers) == 0 {
-		return nil, fmt.Errorf("SUPPORTED_INFRA_PROVIDERS must contain at least one provider")
-	}
-
-	seen := make(map[string]struct{}, len(providers))
-	normalizedProviders := make([]string, 0, len(providers))
-	for _, provider := range providers {
-		normalized := strings.TrimSpace(provider)
-		if normalized == "" {
-			return nil, fmt.Errorf("SUPPORTED_INFRA_PROVIDERS must not contain empty provider names")
-		}
-		if normalized != InfraProviderNico && normalized != InfraProviderInfra {
-			return nil, fmt.Errorf("SUPPORTED_INFRA_PROVIDERS contains unsupported provider %q", normalized)
-		}
-		if _, ok := seen[normalized]; ok {
-			return nil, fmt.Errorf("SUPPORTED_INFRA_PROVIDERS contains duplicate provider %q", normalized)
-		}
-		seen[normalized] = struct{}{}
-		normalizedProviders = append(normalizedProviders, normalized)
-	}
-	return normalizedProviders, nil
-}
-
-func (c *TeleportConfig) Validate() error {
-	if !c.Enabled {
-		return nil
-	}
-	if c.IdentityFile == "" {
-		return fmt.Errorf("TELEPORT_IDENTITY_FILE is required when TELEPORT_ENABLED=true")
-	}
-	if c.ProxyAddress == "" {
-		return fmt.Errorf("TELEPORT_PROXY_ADDRESS is required when TELEPORT_ENABLED=true")
-	}
-	if c.Environment != "prod" && c.Environment != "non-prod" {
-		return fmt.Errorf("TELEPORT_ENVIRONMENT must be 'prod' or 'non-prod', got: %q", c.Environment)
 	}
 	return nil
 }
@@ -682,16 +533,14 @@ func (c Config) EffectiveRunbooksDir() string {
 	return filepath.Join(c.ProfilesDir, "runbooks")
 }
 
-// ParseConfigFromEnv parses configuration from environment variables and validates it.
+// ParseConfigFromEnv parses the fields with an env tag. It does not validate:
+// the caller applies nke-controller-config first, then calls Validate.
 func ParseConfigFromEnv() (Config, error) {
 	cfg, err := env.ParseAsWithOptions[Config](env.Options{
 		DefaultValueTagName: "default",
 	})
 	if err != nil {
 		return Config{}, fmt.Errorf("failed to parse config from environment: %w", err)
-	}
-	if err := cfg.Validate(); err != nil {
-		return Config{}, fmt.Errorf("config validation failed: %w", err)
 	}
 	return cfg, nil
 }

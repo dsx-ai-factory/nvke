@@ -2,7 +2,7 @@
 
 > Status: **proposal** — for discussion. Describes a shift from NVKE-owned OS
 > image construction to an operator-owned node readiness contract, with
-> cluster software installed afterward by the NVKE controller through `nke-agent`.
+> cluster software installed afterward by the NVKE controller through `nvke-agent`.
 
 ---
 
@@ -18,10 +18,10 @@ user-data.
 This proposal reframes that relationship into two clear phases:
 
 1. **BYO-OS (operator-owned):** the node meets a minimal readiness contract
-   (Ubuntu 24.04, NVKE apt repo, `nke-agent`, `spire-agent`, TPM). *How* that
+   (Ubuntu 24.04, NVKE apt repo, `nvke-agent`, `spire-agent`, TPM). *How* that
    happens is out of scope for NVKE.
 2. **Post-provision bootstrap (NVKE-owned):** once the agent is reachable over
-   SPIFFE mTLS, the controller drives the rest through `nke-agent` — kubeadm packages,
+   SPIFFE mTLS, the controller drives the rest through `nvke-agent` — kubeadm packages,
    CNI, Teleport, cluster identity config, and lifecycle operations.
 
 Operators may satisfy phase 1 with a Packer-built qcow, cloud-init at first
@@ -38,7 +38,7 @@ The controller provisions nodes by selecting an **OS profile** that typically in
 
 - An iPXE / image URL pointing at an NVKE-built Ubuntu qcow
 - A cloud-init `userData` template that installs packages from the NVKE apt repo
-  (`nke-agent`, `spire-agent`, kubeadm distro packages, CNI image packages,
+  (`nvke-agent`, `spire-agent`, kubeadm distro packages, CNI image packages,
   Teleport, …), writes SPIRE / Teleport config, enables systemd units, and
   signals readiness (e.g. `phone_home`, `/run/cloud-init.done`)
 
@@ -61,7 +61,7 @@ contract, validate it, then configure the node as an NVKE bootstrap step.**
 | Phase | Owner | Responsibility |
 |-------|--------|----------------|
 | Bring OS / agents online | **Operator** | Satisfy the BYO-OS contract by any means |
-| Cluster bootstrap & lifecycle | **NVKE (controller → nke-agent)** | Install kubeadm / CNI / Teleport / etc., inject identity, run kubeadm, manage the node |
+| Cluster bootstrap & lifecycle | **NVKE (controller → nvke-agent)** | Install kubeadm / CNI / Teleport / etc., inject identity, run kubeadm, manage the node |
 
 NVKE continues to own:
 
@@ -112,14 +112,14 @@ true is irrelevant to NVKE.
 |---|-------------|--------|
 | 1 | **Ubuntu 24.04** | `amd64` / `arm64` as required by the node pool. Kernel and userspace must be a supported 24.04 LTS baseline. |
 | 2 | **NVKE apt repository configured** | Sources and signing keyrings present so later `apt-get install` (from the agent) can resolve NVKE packages. Exact repo URL / suite is environment-specific and documented with the artifact publish pipeline. |
-| 3 | **`nke-agent` installed and running** | systemd unit active; gRPC listening on the configured secure port (default `15005`); production deployments must not disable mTLS. |
-| 4 | **`spire-agent` installed and running** | Workload API available to `nke-agent`. TPM node attestor plugin present where TPM attestation is required. |
+| 3 | **`nvke-agent` installed and running** | systemd unit active; gRPC listening on the configured secure port (default `15005`); production deployments must not disable mTLS. |
+| 4 | **`spire-agent` installed and running** | Workload API available to `nvke-agent`. TPM node attestor plugin present where TPM attestation is required. |
 | 5 | **TPM utilities and enablement** | Hardware or firmware TPM 2.0 visible to the guest/host as applicable; userspace tools needed for attestation available (e.g. `tpm2-tools`). See §8 for FDE caveats. |
 
 ### Explicitly **not** part of the BYO-OS contract
 
 These must **not** be required in the operator’s base image. They are installed
-and configured afterward by NVKE (controller → `nke-agent`):
+and configured afterward by NVKE (controller → `nvke-agent`):
 
 | Component | Why post-provision |
 |-----------|-------------------|
@@ -135,14 +135,14 @@ and configured afterward by NVKE (controller → `nke-agent`):
 │              Phase 1 — operator-owned (BYO-OS)                  │
 │                                                                 │
 │  Packer/qcow  ──┐                                               │
-│  cloud-init   ──┼──► Ubuntu 24.04 + apt repo + nke-agent        │
+│  cloud-init   ──┼──► Ubuntu 24.04 + apt repo + nvke-agent        │
 │  Ansible      ──┤      + spire-agent + TPM ready                │
 │  manual / CI  ──┘                                               │
 └───────────────────────────────┬─────────────────────────────────┘
                                 │ contract met; agent reachable
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│     Phase 2 — NVKE-owned (controller → nke-agent bootstrap)      │
+│     Phase 2 — NVKE-owned (controller → nvke-agent bootstrap)      │
 │                                                                 │
 │  • SPIRE trust material / agent config (if not already present) │
 │  • Install kubeadm distro packages                              │
@@ -152,7 +152,7 @@ and configured afterward by NVKE (controller → `nke-agent`):
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Operator:** base OS + repos + `nke-agent` + `spire-agent` + TPM enablement.
+**Operator:** base OS + repos + `nvke-agent` + `spire-agent` + TPM enablement.
 
 **NVKE:** everything from “agent is up” onward — package installs that today often
 live in cloud-init `runcmd`, plus cluster lifecycle.
@@ -168,7 +168,7 @@ All of the following are valid for **phase 1**. NVKE does not prefer one.
 
 | Pattern | Sketch |
 |---------|--------|
-| Pre-built image | Packer (or equivalent) bakes Ubuntu 24.04, configures the NVKE apt repo, installs `nke-agent` / `spire-agent` / TPM tools. **Does not** bake kubeadm, CNI, or Teleport. |
+| Pre-built image | Packer (or equivalent) bakes Ubuntu 24.04, configures the NVKE apt repo, installs `nvke-agent` / `spire-agent` / TPM tools. **Does not** bake kubeadm, CNI, or Teleport. |
 | Provision-time install | Stock Ubuntu cloud image; operator installs only the contract packages after create. |
 | Post-create config management | Minimal image + Ansible (or similar) converges the contract packages/services before controller bootstrap. |
 
@@ -208,7 +208,7 @@ sink” package lists.
 
 Before phase-2 bootstrap (kubeadm packages, CNI, Teleport, init/join):
 
-1. TCP / gRPC reachability to `nke-agent` (`NodeAgentReady`)
+1. TCP / gRPC reachability to `nvke-agent` (`NodeAgentReady`)
 2. Optional `ExecuteNodePreflight` (and/or operator-documented sentinels)
 3. mTLS handshake success (SPIRE-issued SVID present for both sides)
 
@@ -223,7 +223,7 @@ BYO-OS does not mean operators invent packages from scratch.
 
 | Artifact | Owner | Role under BYO-OS |
 |----------|--------|-------------------|
-| `nke-agent` `.deb` | NVKE | **Phase 1** — required on the node before bootstrap |
+| `nvke-agent` `.deb` | NVKE | **Phase 1** — required on the node before bootstrap |
 | `spire-agent` (NVKE-packaged / TPM-enabled build as applicable) | NVKE / platform | **Phase 1** — required |
 | NVKE apt repo metadata + signing keys | NVKE | **Phase 1** — repo must be configured so phase 2 can install |
 | kubeadm / Kubernetes distro packages | NVKE | **Phase 2** — installed via controller → agent after readiness |
@@ -238,7 +238,7 @@ BYO-OS does not mean operators invent packages from scratch.
 
 FDE does **not** fit cleanly into “operator brings any Ubuntu and we apt-install
 the rest.” Disk layout, LUKS, unlock policy, and often the image itself are
-decided **before** `nke-agent` is reachable. Treat FDE as an explicit overlay on
+decided **before** `nvke-agent` is reachable. Treat FDE as an explicit overlay on
 BYO-OS, not as silent part of the minimal contract.
 
 ### Why it is special
@@ -282,7 +282,7 @@ those images — FDE images should still aim for the thin phase-1 package set.
 
 ## 9. Security considerations
 
-- **Trust boundary unchanged:** a reachable `nke-agent` with a valid SPIFFE
+- **Trust boundary unchanged:** a reachable `nvke-agent` with a valid SPIFFE
   identity is still root-equivalent for that node. BYO-OS must not weaken mTLS
   or TPM attestation requirements.
 - **Supply chain:** operators who bake images are responsible for verifying apt
@@ -303,7 +303,7 @@ See also `agent/docs/SECURITY.md`.
 
 1. **Document** this contract (this proposal → accepted design).
 2. **Move** kubeadm / CNI / Teleport installs out of normative cloud-init
-   `runcmd` into controller → `nke-agent` bootstrap activities.
+   `runcmd` into controller → `nvke-agent` bootstrap activities.
 3. **Validate** phase 1 in controller provisioning (explicit conditions / preflight)
    without removing existing OS profiles.
 4. **Thin** reference images and OS profiles to the phase-1 package set;
@@ -321,7 +321,7 @@ valid way to satisfy phase 1 while phase-2 work lands.
 ## 11. Open questions
 
 1. **Version pins:** does phase 1 require exact package versions
-   (`nke-agent=…`) or only “≥ N / from channel X”?
+   (`nvke-agent=…`) or only “≥ N / from channel X”?
 2. **SPIRE config at first boot:** minimum overlay so mTLS works before phase 2
    (trust bundle / server address) — cloud-init vs agent-first chicken-and-egg?
 3. **Registration API:** do operators hand the controller an image ID only, or also a
@@ -337,11 +337,11 @@ valid way to satisfy phase 1 while phase-2 work lands.
 
 Approve the direction that:
 
-1. NVKE specifies **Ubuntu 24.04 + NVKE apt repo + `nke-agent` + `spire-agent` +
+1. NVKE specifies **Ubuntu 24.04 + NVKE apt repo + `nvke-agent` + `spire-agent` +
    TPM enablement** as the phase-1 node readiness contract.
 2. **How** phase 1 is met is **out of scope for NVKE** and owned by the operator.
 3. **kubeadm, CNI, Teleport, and similar** are **not** base-image requirements;
-   they are installed and configured by **the controller → nke-agent** after provisioning.
+   they are installed and configured by **the controller → nvke-agent** after provisioning.
 4. **FDE** is a documented caveat (§8): encryption layout is not “just another
    apt package”; FDE pools need an explicit image/boot contract on top of BYO-OS.
 5. The controller evolves OS profiles toward thin phase-1 bring-up + agent-driven phase-2

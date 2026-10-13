@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/teleport"
 )
 
@@ -38,13 +39,21 @@ func getTestTokenExpiry() time.Duration {
 func getTestClient(t *testing.T) teleport.Client {
 	t.Helper()
 
-	cfg, err := config.ParseConfigFromEnv()
-	if err != nil {
-		t.Fatalf("failed to parse config: %v", err)
-	}
-	if !cfg.Teleport.Enabled {
+	if os.Getenv("TELEPORT_ENABLED") != "true" {
 		t.Skip("TELEPORT_ENABLED not set, skipping integration test")
 	}
+	// The Teleport cluster comes from the environment; the label and token-name
+	// defaults come from the local controller config.
+	file, err := controllerconfig.Load("../../hack/local-controller-config.yaml")
+	require.NoError(t, err)
+	file.Teleport.Enabled = true
+	file.Teleport.IdentityFile = os.Getenv("TELEPORT_IDENTITY_FILE")
+	file.Teleport.ProxyAddress = os.Getenv("TELEPORT_PROXY_ADDRESS")
+	if environment := os.Getenv("TELEPORT_ENVIRONMENT"); environment != "" {
+		file.Teleport.Environment = environment
+	}
+	var cfg config.Config
+	file.ApplyTo(&cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

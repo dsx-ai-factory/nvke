@@ -95,7 +95,7 @@ console:
 - `systemd-networkd-wait-online` failed;
 - cloud-init could not reach `169.254.169.254` ("Network is unreachable"), fell
   back to `DataSourceNone`, and so set no hostname and installed no packages;
-- `kubelet`, `containerd` and `nke-agent` are all `inactive`, and the disk is
+- `kubelet`, `containerd` and `nvke-agent` are all `inactive`, and the disk is
   nearly empty.
 
 Carrier up and no address is the tell. That is DHCP, which is the site's, and

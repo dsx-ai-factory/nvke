@@ -4,7 +4,7 @@
 # Two steps. A: boot two stock Ubuntu VMs with nico-vms and prove they can reach
 # each other -- installs nothing, so it answers "does nico-vms work on a GitHub
 # runner" on its own. B: kubeadm init plus one join, installing the Kubernetes
-# stack from community releases and nke-agent from a package built in this job,
+# stack from community releases and nvke-agent from a package built in this job,
 # then installing upstream Calico so every node reaches Ready. The lane needs no
 # NVIDIA-internal network.
 # Advisory, deliberately NOT in merge-gate.yml: it needs NVIDIA runners and root.
@@ -149,10 +149,10 @@ jobs:
 
       # ── Step B gate ─────────────────────────────────────────────────────────
       # The bring-up installs from community artifacts, so there is no NVKE apt
-      # repository to reach and nothing to probe. nke-agent is built here rather
+      # repository to reach and nothing to probe. nvke-agent is built here rather
       # than downloaded, which also makes the suite exercise the agent in the
       # pull request instead of a published one.
-      - name: Build the nke-agent package the VMs install
+      - name: Build the nvke-agent package the VMs install
         id: agent_deb
         env:
           ARCH: ${{ matrix.arch }}
@@ -164,7 +164,7 @@ jobs:
           # rather than restating the naming rule here. find, not ls: actionlint
           # runs shellcheck and SC2012 fails the required gate.
           deb=$(find "${GITHUB_WORKSPACE}/agent/bin" -maxdepth 1 \
-                  -name "nke-agent_*_${ARCH}.deb" -printf '%T@ %p\n' \
+                  -name "nvke-agent_*_${ARCH}.deb" -printf '%T@ %p\n' \
                 | sort -rn | head -1 | cut -d' ' -f2-)
           # Empty means the build produced nothing; without this the failure
           # surfaces much later as a confusing "file not found" in the guest.

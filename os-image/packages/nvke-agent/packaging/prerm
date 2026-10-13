@@ -1,0 +1,11 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+set -e
+
+# Stop services before removal or upgrade
+if [ -d /run/systemd/system ]; then
+  systemctl stop nvke-agent.service || true
+  systemctl disable nvke-agent.service || true
+fi

@@ -8,7 +8,7 @@
 // GitHub Actions runner?
 //
 // Success is a usable two-node cluster: kubeadm reaches phase=initialize on the
-// control plane and phase=join on the worker, both driven over nke-agent's gRPC
+// control plane and phase=join on the worker, both driven over nvke-agent's gRPC
 // API, a CNI is installed, and every node reports Ready. That matches the
 // GitLab suite's criterion.
 //
@@ -271,18 +271,18 @@ func createNodes(ctx context.Context, t *testing.T, cfg config, proc *nicovms.Pr
 	return nodes
 }
 
-// waitForAgents blocks until every nke-agent answers. An SSH-ready VM has only
+// waitForAgents blocks until every nvke-agent answers. An SSH-ready VM has only
 // booted; cloud-init may still be installing the kubeadm distro and the agent.
 func waitForAgents(ctx context.Context, t *testing.T, cfg config, nodes []nicovms.Node) {
 	t.Helper()
 	for _, n := range nodes {
 		addr := agentAddr(n.IP, cluster.DefaultAgentPort)
-		t.Logf("waiting for nke-agent on %s (%s, timeout %s)", n.Name, addr, cfg.initTimeout)
+		t.Logf("waiting for nvke-agent on %s (%s, timeout %s)", n.Name, addr, cfg.initTimeout)
 		if err := cluster.WaitForAgent(ctx, addr, cfg.initTimeout, 5*time.Second); err != nil {
-			t.Fatalf("nke-agent on %s never came up: %v", n.Name, err)
+			t.Fatalf("nvke-agent on %s never came up: %v", n.Name, err)
 		}
 	}
-	t.Logf("all %d nke-agents are up", len(nodes))
+	t.Logf("all %d nvke-agents are up", len(nodes))
 }
 
 // tailFile returns the last n lines of a file, best-effort — it only ever

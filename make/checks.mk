@@ -282,6 +282,17 @@ go-version-check: ## Verify every hand-kept Go version matches go.work.
 base-image-check: ## Verify release-relevant Dockerfiles pin base images by digest.
 	@./hack/base-image-check.sh
 
+# The other half of the same policy. base-image-check keeps the digests
+# immutable; this follows the tags they were taken from, because Dependabot
+# cannot see an ARG-named base and a pin nothing bumps goes stale instead.
+# Deliberately NOT in `gate`: a republished upstream base is news, not a
+# reason to fail somebody's pull request. base-image-digests.yml runs it
+# weekly and opens a pull request with whatever moved.
+# Pass --check to the script directly to report without writing.
+.PHONY: base-image-update
+base-image-update: ## Re-resolve ARG-pinned base image digests in place (needs crane).
+	@./hack/base-image-update.sh
+
 # Not read-only. A Go bump moves go.work and then eleven `go` directives, and a
 # fix you have to apply by hand eleven times is a fix that gets applied ten
 # times.
@@ -321,6 +332,7 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory docs-check
 	@$(MAKE) --no-print-directory internal-config-check
 	@$(MAKE) --no-print-directory name-check
+	@$(MAKE) --no-print-directory -C deploy test
 	@$(MAKE) --no-print-directory chart-check
 	@$(MAKE) --no-print-directory nktp-chart-check
 	@$(MAKE) --no-print-directory -C controller generate-check

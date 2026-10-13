@@ -1,0 +1,19 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+set -e
+
+echo "Installing NVKE Agent..."
+
+/usr/local/lib/nvke-agent/migrate-agent-paths.sh
+
+systemctl daemon-reload
+# An old enablement link points at the removed unit until the alias is recreated.
+systemctl enable --force nvke-agent
+# Image builds enable the service but defer startup until instance identity exists.
+if [ "${NVKE_AGENT_SKIP_START:-${NKE_AGENT_SKIP_START:-0}}" != 1 ]; then
+  systemctl restart nvke-agent
+fi
+
+echo "NVKE Services installed."

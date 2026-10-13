@@ -364,7 +364,7 @@ EOF
     success "✅ Setup complete!"
     echo ""
     echo "📋 Next steps:"
-    echo "  3. Run the controller with SPIRE: SPIFFE_ENDPOINT_SOCKET=unix:///tmp/spire-agent/agent.sock make run"
+    echo "  3. Run the controller with SPIRE: set spire.spiffeEnabled: true in a copy of hack/local-controller-config.yaml, then CONTROLLER_CONFIG_PATH=<your copy> make run"
     echo ""
 }
 

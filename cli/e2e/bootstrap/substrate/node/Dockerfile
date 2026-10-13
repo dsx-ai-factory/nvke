@@ -7,8 +7,8 @@
 # (controller/hack/capd-kindest-node/Dockerfile, built by `make capd-image`),
 # which already provides everything a pre-provisioned NVKE host needs:
 #
-#   * nke-agent installed with its systemd unit, configured via
-#     /etc/default/nke-agent
+#   * nvke-agent installed with its systemd unit, configured via
+#     /etc/default/nvke-agent
 #   * spire-agent including the TPM attestor plugin
 #   * a software TPM with a DER-encoded EK certificate at /var/lib/swtpm/ek.cert
 #   * a kubeadm wrapper that skips the container-only SystemVerification failure
@@ -26,8 +26,8 @@ ARG NODE_AGENT_PORT=15005
 # Fail the build loudly if the base image ever stops serving on the port the
 # substrate (and the controller's NODE_AGENT_PORT default) expects, rather than letting it
 # surface as an unexplained readiness timeout.
-RUN grep -q -- "--secure-server-port ${NODE_AGENT_PORT}" /etc/default/nke-agent
-RUN ! grep -q -- '--disable-mtls' /etc/default/nke-agent
+RUN grep -q -- "--secure-server-port ${NODE_AGENT_PORT}" /etc/default/nvke-agent
+RUN ! grep -q -- '--disable-mtls' /etc/default/nvke-agent
 
 # These hosts are already provisioned. The CAPD base image has a cloud-init
 # status shim (controller/hack/capd-kindest-node/scripts/cloud-init-status-shim)

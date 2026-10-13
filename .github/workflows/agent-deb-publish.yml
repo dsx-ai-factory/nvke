@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Builds the nke-agent .debs on an agent/v* tag, uploads them to the
+# Builds the nvke-agent .debs on an agent/v* tag, uploads them to the
 # apt-publisher S3 intake, attaches both packages as assets on a GitHub
 # Release for that tag, and publishes the same packages to GHCR as an OCI
 # artifact (ghcr.io/dsx-ai-factory/nvke/agent-deb) for oras pull. Apt intake is
@@ -21,7 +21,7 @@
 # is released publicly:
 #
 #   APT_INTAKE_S3_URI       variable  e.g. s3://example-bucket/nvke-packages
-#   APT_INTAKE_PROJECT      variable  optional; default nke-agent
+#   APT_INTAKE_PROJECT      variable  optional; default nvke-agent
 #   APT_INTAKE_AWS_ROLE_ARN variable  IAM role assumed via OIDC to write intake
 #   APT_INTAKE_AWS_REGION   variable  optional; default us-west-2
 #
@@ -149,8 +149,8 @@ jobs:
           ver=$(dpkg-deb -f "$deb" Version)
           arch=$(dpkg-deb -f "$deb" Architecture)
 
-          [ "$pkg" = "nke-agent" ] \
-            || { echo "::error::${deb}: Package is '${pkg}', expected 'nke-agent'"; exit 1; }
+          [ "$pkg" = "nvke-agent" ] \
+            || { echo "::error::${deb}: Package is '${pkg}', expected 'nvke-agent'"; exit 1; }
 
           case "$ver" in
             [0-9]*) ;;
@@ -161,13 +161,13 @@ jobs:
             || { echo "::error::${deb}: Architecture is '${arch}', expected '${{ matrix.arch }}'"; exit 1; }
 
           contents=$(dpkg-deb -c "$deb")
-          printf '%s\n' "$contents" | grep -q './usr/local/bin/nke-agent' \
-            || { echo "::error::${deb}: does not contain /usr/local/bin/nke-agent"; exit 1; }
+          printf '%s\n' "$contents" | grep -q './usr/local/bin/nvke-agent' \
+            || { echo "::error::${deb}: does not contain /usr/local/bin/nvke-agent"; exit 1; }
           printf '%s\n' "$contents" | grep -q './etc/systemd/system/.*\.service' \
             || { echo "::error::${deb}: contains no systemd unit"; exit 1; }
 
-          dpkg-deb --fsys-tarfile "$deb" | tar -xO ./usr/local/bin/nke-agent > /tmp/nke-agent
-          linkage=$(file -b /tmp/nke-agent)
+          dpkg-deb --fsys-tarfile "$deb" | tar -xO ./usr/local/bin/nvke-agent > /tmp/nvke-agent
+          linkage=$(file -b /tmp/nvke-agent)
           echo "  linkage: ${linkage}"
           case "$linkage" in
             *"dynamically linked"*) ;;
@@ -242,7 +242,7 @@ jobs:
             exit 1
           fi
 
-          project="${APT_INTAKE_PROJECT:-nke-agent}"
+          project="${APT_INTAKE_PROJECT:-nvke-agent}"
           region="${APT_INTAKE_AWS_REGION:-us-west-2}"
 
           release="${SOURCE_REF#agent/}"
@@ -290,7 +290,7 @@ jobs:
       id-token: write
     env:
       APT_INTAKE_S3_URI: ${{ vars.AGENT_DEV_S3_URI }}
-      APT_INTAKE_PROJECT: nke-agent
+      APT_INTAKE_PROJECT: nvke-agent
       APT_INTAKE_RELEASE: ${{ needs.build.outputs.sha }}
       DEV_AWS_ROLE_ARN: ${{ vars.AGENT_DEV_AWS_ROLE_ARN }}
     steps:
@@ -331,7 +331,7 @@ jobs:
 
   # OCI copy of the same two packages the GitHub Release attaches. The Packer
   # reference OS image pulls from here with oras (see os-image/packer/scripts/fetch-artifacts.sh).
-  # Filename is always nke-agent.deb so `oras pull` writes a stable path.
+  # Filename is always nvke-agent.deb so `oras pull` writes a stable path.
   publish-ghcr:
     name: Publish debs to GHCR
     needs: [build]
@@ -407,7 +407,7 @@ jobs:
           for deb in "${debs[@]}"; do
             arch=$(dpkg-deb -f "$deb" Architecture)
             work="$(mktemp -d)"
-            cp "$deb" "${work}/nke-agent.deb"
+            cp "$deb" "${work}/nvke-agent.deb"
             ( cd "${work}" && oras push "${REPO}:${version}-${arch}" \
                 --artifact-type application/vnd.nvidia.nvke.agent.deb.v1 \
                 --artifact-platform "linux/${arch}" \
@@ -415,8 +415,8 @@ jobs:
                 --annotation "org.opencontainers.image.revision=${SOURCE_SHA}" \
                 --annotation "org.opencontainers.image.version=${version}" \
                 --annotation "org.opencontainers.image.licenses=Apache-2.0" \
-                --annotation "org.opencontainers.image.title=nke-agent.deb" \
-                nke-agent.deb:application/vnd.debian.binary-package )
+                --annotation "org.opencontainers.image.title=nvke-agent.deb" \
+                nvke-agent.deb:application/vnd.debian.binary-package )
             rm -rf "${work}"
           done
 
@@ -515,7 +515,7 @@ jobs:
           for deb in "${debs[@]}"; do
             arch=$(dpkg-deb -f "$deb" Architecture)
             work="$(mktemp -d)"
-            cp "$deb" "${work}/nke-agent.deb"
+            cp "$deb" "${work}/nvke-agent.deb"
             ( cd "${work}" && oras push "${REPO}:${version}-${arch}" \
                 --artifact-type application/vnd.nvidia.nvke.agent.deb.v1 \
                 --artifact-platform "linux/${arch}" \
@@ -523,8 +523,8 @@ jobs:
                 --annotation "org.opencontainers.image.revision=${SOURCE_SHA}" \
                 --annotation "org.opencontainers.image.version=${version}" \
                 --annotation "org.opencontainers.image.licenses=Apache-2.0" \
-                --annotation "org.opencontainers.image.title=nke-agent.deb" \
-                nke-agent.deb:application/vnd.debian.binary-package )
+                --annotation "org.opencontainers.image.title=nvke-agent.deb" \
+                nvke-agent.deb:application/vnd.debian.binary-package )
             rm -rf "${work}"
           done
 
@@ -622,7 +622,7 @@ jobs:
           # One SPDX document per package, from the package's own contents.
           #
           # syft reads a .deb directly, but a deb-archive scan yields only the
-          # control metadata -- one entry, "nke-agent <version>", which a
+          # control metadata -- one entry, "nvke-agent <version>", which a
           # consumer already knows from the filename. The question this exists
           # to answer is which components are inside, so the archive is
           # unpacked first and the extracted tree scanned: that reaches the
@@ -691,7 +691,7 @@ jobs:
           name: ${{ steps.meta.outputs.release_name }}
           draft: true
           body: |
-            nke-agent ${{ steps.meta.outputs.version }} Debian packages (amd64 and arm64).
+            nvke-agent ${{ steps.meta.outputs.version }} Debian packages (amd64 and arm64).
 
             Apt install path is the apt-publisher intake from this same workflow; these assets are the same `.deb`s attached for direct download.
 

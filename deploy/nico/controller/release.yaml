@@ -4,14 +4,19 @@
 # The controller. Last, because it blocks on "no identity issued" until
 # SPIRE has issued its SVID, and it reads both Postgres and Temporal.
 #
-# path, not repository: the published chart carries a released image and this
-# lane builds the controller at HEAD, so installing a published chart would test
-# the templates as they were when that artifact was cut. The image itself is
-# repointed with --set at install time.
+# path, not repository: the lanes build the controller at HEAD and install
+# the chart from this checkout. A release that carries controller-chart is
+# installed from it by digest instead.
 chart:
   name: nke-controller
   version: "0.0.0"
   path: ../../controller/deploy/charts/controller
+  # NVKR artifact names. The chart artifact defaults to the item name; it
+  # differs here. The two images must be in the release; the render writes
+  # their repository and digest into release-images.yaml.
+  artifact: controller-chart
+  imageArtifact: cwe
+  profilesArtifact: controller-profiles
 release:
   name: nke-controller
   namespace: nke-controller

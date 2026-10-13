@@ -154,6 +154,31 @@ func NodeHasLabel(ctx context.Context, nodeName, label string) (bool, error) {
 	return ok && v == val, nil
 }
 
+// NodeHasLabelOrMigrate reads the new label first and migrates a matching legacy
+// label in one node update. An explicit new value takes precedence.
+func NodeHasLabelOrMigrate(ctx context.Context, nodeName, label, legacyLabel string) (bool, error) {
+	client, err := getK8sClientSet()
+	if err != nil {
+		return false, err
+	}
+	key, value, _ := strings.Cut(label, "=")
+	legacyKey, legacyValue, _ := strings.Cut(legacyLabel, "=")
+	node, err := client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return false, err
+	}
+	if actual, ok := node.Labels[key]; ok {
+		return actual == value, nil
+	}
+	if actual, ok := node.Labels[legacyKey]; !ok || actual != legacyValue {
+		return false, nil
+	}
+	node.Labels[key] = value
+	delete(node.Labels, legacyKey)
+	_, err = client.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+	return err == nil, err
+}
+
 func LabelPod(ctx context.Context, namespace, name, label string) error {
 	client, err := getK8sClientSet()
 	if err != nil {

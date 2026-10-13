@@ -1,4 +1,6 @@
 #cloud-config
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 # Rendered from profiles/osProfiles/nke-260306-24.04-amd64-fde/userData.tmpl
 # Flags: TeleportEnabled=false, SpiffeEnabled=false, CalicoEnabled=false, OvnEnabled=true
 # Test user added for SSH verification.
@@ -25,7 +27,7 @@ runcmd:
   - echo "SAN_IP=$(hostname -I | cut -d' ' -f1)" >> /etc/dgx/attestation/vars
   - sysctl --system
   - systemctl daemon-reload
-  - systemctl restart nke-agent.service
+  - systemctl restart nvke-agent.service
   - systemctl restart procps
 
 phone_home:

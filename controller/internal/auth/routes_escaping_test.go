@@ -37,6 +37,7 @@ func TestIsAnonymousRequestPathAgreesWithTheMux(t *testing.T) {
 		// Nothing is registered at "/".
 		{"root", "/", false},
 		{"openapi document", "/openapi.yaml", true},
+		{"public openapi document", "/openapi-public.yaml", true},
 		{"version", "/api/version", true},
 		{"swagger subtree", "/api/docs/swagger-ui.css", true},
 		// The escaped view alone would exempt this: path.Clean leaves "%2e%2e" as

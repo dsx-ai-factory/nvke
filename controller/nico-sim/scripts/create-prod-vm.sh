@@ -43,7 +43,7 @@ runcmd:
   - echo SERVER=REPLACED-BY-SWE >> /etc/dgx/attestation/vars
   - sysctl --system
   - systemctl daemon-reload
-  - systemctl restart nke-agent.service
+  - systemctl restart nvke-agent.service
   - systemctl restart procps
 
 phone_home:

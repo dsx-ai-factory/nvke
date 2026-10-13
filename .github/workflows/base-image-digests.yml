@@ -1,0 +1,178 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Base Image Digests
+
+# Follows the base images that Dependabot cannot see, and opens a pull request
+# when one of them has been republished.
+#
+# The two images this repository publishes name their golang and alpine bases
+# through `ARG <NAME>_IMAGE=docker.io/<image>:<tag>@sha256:<digest>`. The
+# `docker` ecosystem in .github/dependabot.yml reads an image named on a
+# `FROM` and does not resolve an ARG default, so those digests are watched by
+# nothing -- the evidence is in the header of hack/base-image-check.sh. Pinned
+# and unwatched means an upstream rebuild that fixes a CVE in the base layer
+# never reaches a release until somebody re-resolves the digest by hand.
+#
+# This is that re-resolution, weekly. It changes digests only, never tags, so
+# the Go version policy in dependabot.yml stays the only thing that decides
+# when a tag moves.
+#
+# Known rough edge: a `pull_request` run caused by GITHUB_TOKEN is created in an
+# approval-required state, so merge-gate.yml sits queued and the required `gate`
+# context does not report until somebody with write access chooses "Approve
+# workflows to run". The pull-request body says so too. Giving this job an app
+# token would remove the approval step; that is an organisation decision, not
+# one this workflow can make.
+on:
+  schedule:
+    # 07:15 UTC Monday. Clear of the E2E block (02:00-03:15, 14:00-15:15),
+    # os-image-prune at 05:40, codeql at 06:00 Monday and govulncheck at 06:30.
+    - cron: '15 7 * * 1'
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: Base Image Digests
+  cancel-in-progress: false
+
+env:
+  BRANCH: automation/base-image-digests
+
+jobs:
+  bump:
+    if: github.repository_id == '1323115536'
+    name: Re-resolve ARG-pinned base image digests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # Pushing the branch this job commits to.
+      contents: write
+      # Opening the pull request for it.
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up crane
+        uses: ./.github/actions/setup-crane
+
+      # Writes the files and prints what moved. A registry it cannot reach, or
+      # an ARG pinned to a digest with no tag to re-resolve it from, fails here
+      # rather than producing a quietly empty pull request.
+      - name: Re-resolve digests
+        id: update
+        run: |
+          set -euo pipefail
+          report="${RUNNER_TEMP}/report.txt"
+          ./hack/base-image-update.sh | tee "${report}"
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          fi
+          echo "report=${report}" >> "${GITHUB_OUTPUT}"
+
+      # The script rewrites one `ARG ...=<ref>@sha256:<digest>` line per stale
+      # base and nothing else. Anything outside that shape is a bug in the
+      # script, and it fails here rather than landing in a pull request that
+      # reads as routine.
+      - name: Guard — refuse to commit anything but ARG digest lines
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          bad="$(git diff --name-only | grep -Ev 'Dockerfile(\..*)?$' || true)"
+          if [ -n "${bad}" ]; then
+            echo "::error::Refusing to commit files that are not Dockerfiles:"
+            printf '%s\n' "${bad}" | sed 's/^/    /'
+            exit 1
+          fi
+          # Every changed line, added or removed, must be an ARG digest pin.
+          offending="$(git diff -U0 | grep -E '^[+-][^+-]' \
+            | grep -Ev '^[+-]ARG [A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+@sha256:[0-9a-f]{64}$' || true)"
+          if [ -n "${offending}" ]; then
+            echo "::error::Refusing to commit changes outside ARG digest pins:"
+            printf '%s\n' "${offending}" | sed 's/^/    /'
+            exit 1
+          fi
+
+      # The digests the pull request proposes are the ones this verifies, which
+      # is worth doing here because the gate will not run on the pull request
+      # itself until somebody nudges it.
+      - name: Re-check the pins
+        if: steps.update.outputs.changed == 'true'
+        run: make base-image-check
+
+      - name: Commit and push
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # -s: the DCO check is a required context and applies to this commit
+          # like any other.
+          git commit -s -a -m "build(deps): bump ARG-pinned base image digests"
+          # Force: the branch is this job's alone, and a rerun should replace
+          # last week's proposal rather than stack onto it.
+          git push --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/${BRANCH}"
+
+      - name: Open or update the pull request
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT: ${{ steps.update.outputs.report }}
+        run: |
+          set -euo pipefail
+
+          body="${RUNNER_TEMP}/body.md"
+          {
+            echo "Upstream republished the tags below, so the digest pinned here"
+            echo "no longer resolves to what the tag serves. Tags are unchanged;"
+            echo "only the digests move."
+            echo
+            echo '```'
+            cat "${REPORT}"
+            echo '```'
+            echo
+            echo "Opened by [base-image-digests.yml](.github/workflows/base-image-digests.yml)."
+            echo "Dependabot cannot see these bases because they are named through an"
+            echo "\`ARG\` default rather than on a \`FROM\`; the evidence is in the header"
+            echo "of \`hack/base-image-check.sh\`."
+            echo
+            echo "**The gate is waiting to be approved.** A \`pull_request\` run caused"
+            echo "by \`GITHUB_TOKEN\` is created in an approval-required state. Someone with"
+            echo "write access needs to approve the queued \`merge-gate.yml\` run before the"
+            echo "required \`gate\` context reports."
+          } >"${body}"
+
+          existing="$(gh pr list --head "${BRANCH}" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "${existing}" ]; then
+            gh pr edit "${existing}" --body-file "${body}"
+            echo "Updated #${existing}."
+            exit 0
+          fi
+
+          # A repository or organisation that disallows Actions-created pull
+          # requests fails here. The branch is already pushed either way, so
+          # the work is not lost -- open the pull request by hand.
+          if ! gh pr create \
+            --head "${BRANCH}" \
+            --base main \
+            --title "build(deps): bump ARG-pinned base image digests" \
+            --body-file "${body}"; then
+            echo "::error::Could not open the pull request. If this says pull request" \
+                 "creation is not allowed, enable 'Allow GitHub Actions to create and" \
+                 "approve pull requests' for this repository. Branch ${BRANCH} is pushed."
+            exit 1
+          fi
+
+      - name: Nothing to do
+        if: steps.update.outputs.changed != 'true'
+        run: echo "Every ARG-pinned base image digest is current."

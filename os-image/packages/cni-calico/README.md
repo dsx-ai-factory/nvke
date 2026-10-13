@@ -1,14 +1,14 @@
-# nke-cni-calico
+# nvke-cni-calico
 
-Builds the two Debian packages `nke-agent` installs when it sets up Calico:
+Builds the two Debian packages `nvke-agent` installs when it sets up Calico:
 
 | Package | Contents | Installed to |
 |---|---|---|
-| `nke-cni-calico-manifests-<stream>` | Upstream `operator-crds.yaml`, `tigera-operator.yaml`, and `custom-resources.yaml` | `/usr/share/nke-cni/calico/<stream>/manifests/` |
-| `nke-cni-calico-images-<stream>` | Every image the operator resolves, as one docker-archive | `/usr/lib/nke/cni-calico/<stream>/`, imported into containerd by `postinst` |
+| `nvke-cni-calico-manifests-<stream>` | Upstream `operator-crds.yaml`, `tigera-operator.yaml`, and `custom-resources.yaml` | `/usr/share/nvke-cni/calico/<stream>/manifests/` |
+| `nvke-cni-calico-images-<stream>` | Every image the operator resolves, as one docker-archive | `/usr/lib/nvke/cni-calico/<stream>/`, imported into containerd by `postinst` |
 
-`provision.sh` stages both into the image under `/usr/lib/nke/debs` as a local
-apt repo. Nothing is installed at bake time: `nke-agent` installs them by name
+`provision.sh` stages both into the image under `/usr/lib/nvke/debs` as a local
+apt repo. Nothing is installed at bake time: `nvke-agent` installs them by name
 at cluster create. The build machinery is shared with `cni-ovn` in
 [`../cni-common/`](../cni-common/README.md); this directory holds only what is
 Calico's: `bundle.sh`, the manifests spec and the lock.
@@ -20,10 +20,10 @@ the rest of Calico itself, so a node with no registry access needs the whole set
 present in containerd before the operator starts. The images package is what
 makes that true; without it a cluster comes up and Calico never does.
 
-## The contract with nke-agent
+## The contract with nvke-agent
 
-`agent/internal/agent/cni.go` asks apt for `nke-cni-calico-manifests-<stream>`
-and `nke-cni-calico-images-<stream>`, where `<stream>` is the request's Calico
+`agent/internal/agent/cni.go` asks apt for `nvke-cni-calico-manifests-<stream>`
+and `nvke-cni-calico-images-<stream>`, where `<stream>` is the request's Calico
 version or `defaultCalicoCniStream`. It then finds the install root by looking
 through `dpkg-query -L` for a path ending in `manifests/tigera-operator.yaml`.
 It applies `operator-crds.yaml` and waits for the CRDs to be established. It

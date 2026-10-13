@@ -61,6 +61,12 @@ func NewServer(
 	if err != nil {
 		return nil, fmt.Errorf("failed to load OpenAPI spec: %w", err)
 	}
+	// Swagger UI loads this copy. Request validation keeps using openapiSpec,
+	// which still contains the x-fern-ignore surface.
+	publicSpec, err := publicOpenAPI([]byte(api.OpenapiYAML))
+	if err != nil {
+		return nil, fmt.Errorf("building Swagger UI OpenAPI document: %w", err)
+	}
 	serverImpl := NewServerImpl(cfg, logger, database, temporalClient, k8sReader, opts...)
 	strictHandler := api.NewStrictHandlerWithOptions(serverImpl, nil, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
@@ -103,6 +109,13 @@ func NewServer(
 		}
 	})
 
+	m.HandleFunc("GET /openapi-public.yaml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml")
+		if _, err := w.Write(publicSpec); err != nil {
+			logger.Error("Failed to write /openapi-public.yaml response", "error", err)
+		}
+	})
+
 	m.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		resp := map[string]any{
@@ -118,7 +131,7 @@ func NewServer(
 		}
 	})
 
-	m.Handle("/api/docs/", v5emb.New("Controller API", "/openapi.yaml", "/api/docs/"))
+	m.Handle("/api/docs/", v5emb.New("Controller API", "/openapi-public.yaml", "/api/docs/"))
 
 	// Serve a simple page at /docs with a message that the swagger UI is now at /api/docs
 	m.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {

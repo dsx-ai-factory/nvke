@@ -363,6 +363,7 @@ func TestMiddlewareAnonymousSurface(t *testing.T) {
 
 	paths := []string{
 		"/openapi.yaml",
+		"/openapi-public.yaml",
 		"/api/version",
 
 		// The mux 301s the unslashed form downstream of this middleware. Both
@@ -420,6 +421,7 @@ func TestMiddlewareCatchAllDoesNotLeak(t *testing.T) {
 		// Near misses on the exempt literals, which prefix matching would admit.
 		"/api/versions",
 		"/openapi.yaml.bak",
+		"/openapi-public.yaml.bak",
 		"/healthzz",
 		"/api/docsclusters",
 

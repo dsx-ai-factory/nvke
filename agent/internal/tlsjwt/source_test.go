@@ -68,7 +68,7 @@ func TestNewCachingTokenSource_RequiresItsCollaborators(t *testing.T) {
 	t.Run("nil SVID source", func(t *testing.T) {
 		t.Parallel()
 
-		source, err := NewCachingTokenSource(nil, &stubExchanger{})
+		source, err := NewCachingTokenSource(nil, &stubExchanger{}, ControllerAudience)
 		assert.Nil(t, source)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "jwt-svid source")
@@ -77,7 +77,7 @@ func TestNewCachingTokenSource_RequiresItsCollaborators(t *testing.T) {
 	t.Run("nil exchanger", func(t *testing.T) {
 		t.Parallel()
 
-		source, err := NewCachingTokenSource((&stubSVIDSource{}).fetch, nil)
+		source, err := NewCachingTokenSource((&stubSVIDSource{}).fetch, nil, ControllerAudience)
 		assert.Nil(t, source)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "token exchanger")
@@ -91,7 +91,7 @@ func TestToken_RequestsTheControllerAudience(t *testing.T) {
 	svids := &stubSVIDSource{svid: "svid-a"}
 	exchanger := &stubExchanger{tokens: []Token{{Value: "dsx-a", Expiry: now.Add(5 * time.Minute)}}}
 
-	source, err := NewCachingTokenSource(svids.fetch, exchanger)
+	source, err := NewCachingTokenSource(svids.fetch, exchanger, ControllerAudience)
 	require.NoError(t, err)
 	source.now = func() time.Time { return now }
 
@@ -113,7 +113,7 @@ func TestToken_ReusesACachedTokenUntilItNearsExpiry(t *testing.T) {
 		{Value: "dsx-b", Expiry: start.Add(10 * time.Minute)},
 	}}
 
-	source, err := NewCachingTokenSource(svids.fetch, exchanger)
+	source, err := NewCachingTokenSource(svids.fetch, exchanger, ControllerAudience)
 	require.NoError(t, err)
 
 	now := start
@@ -186,7 +186,7 @@ func TestToken_FailsClosedAndKeepsTheCacheWhenRefreshFails(t *testing.T) {
 			svids := &stubSVIDSource{svid: "svid-a", err: test.svidErr}
 			exchanger := &stubExchanger{tokens: test.tokens, err: test.exchangeErr}
 
-			source, err := NewCachingTokenSource(svids.fetch, exchanger)
+			source, err := NewCachingTokenSource(svids.fetch, exchanger, ControllerAudience)
 			require.NoError(t, err)
 			source.now = func() time.Time { return now }
 
@@ -209,7 +209,7 @@ func TestToken_KeepsServingAfterARefreshFailure(t *testing.T) {
 	svids := &stubSVIDSource{svid: "svid-a"}
 	exchanger := &stubExchanger{tokens: []Token{{Value: "dsx-a", Expiry: start.Add(5 * time.Minute)}}}
 
-	source, err := NewCachingTokenSource(svids.fetch, exchanger)
+	source, err := NewCachingTokenSource(svids.fetch, exchanger, ControllerAudience)
 	require.NoError(t, err)
 	now := start
 	source.now = func() time.Time { return now }
@@ -239,7 +239,7 @@ func TestToken_ExchangesOnceForConcurrentCallers(t *testing.T) {
 	svids := &stubSVIDSource{svid: "svid-a"}
 	exchanger := &stubExchanger{tokens: []Token{{Value: "dsx-a", Expiry: now.Add(5 * time.Minute)}}}
 
-	source, err := NewCachingTokenSource(svids.fetch, exchanger)
+	source, err := NewCachingTokenSource(svids.fetch, exchanger, ControllerAudience)
 	require.NoError(t, err)
 	source.now = func() time.Time { return now }
 
@@ -258,4 +258,24 @@ func TestToken_ExchangesOnceForConcurrentCallers(t *testing.T) {
 
 	// A burst of connections must not turn into a burst of exchanges.
 	assert.Equal(t, 1, exchanger.callCount())
+}
+
+func TestCachingTokenSourceAcceptsBothControllerAudiences(t *testing.T) {
+	for _, audience := range []string{ControllerAudience, LegacyControllerAudience} {
+		t.Run(audience, func(t *testing.T) {
+			fetched := ""
+			fetch := func(_ context.Context, actual string) (string, error) {
+				fetched = actual
+				return "jwt-svid", nil
+			}
+			exchanger := &stubExchanger{tokens: []Token{{Value: "identity-token", Expiry: time.Now().Add(time.Hour)}}}
+			source, err := NewCachingTokenSource(fetch, exchanger, audience)
+			require.NoError(t, err)
+			_, err = source.Token(context.Background())
+			require.NoError(t, err)
+			assert.Equal(t, audience, fetched)
+		})
+	}
+	_, err := NewCachingTokenSource((&stubSVIDSource{}).fetch, &stubExchanger{}, "other-service")
+	require.Error(t, err)
 }

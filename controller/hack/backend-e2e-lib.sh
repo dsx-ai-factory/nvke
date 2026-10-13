@@ -193,12 +193,51 @@ e2e_wait_for_zero_tenant_clusters() {
   done
 }
 
-# Runs node image $1's ovs-vswitchd check on this host. If it fails, every OVN
-# tenant stays unready until the suite times out (#1515).
-e2e_host_loads_openvswitch() {
-  docker run --rm --privileged -v /lib/modules:/lib/modules:ro --entrypoint /bin/sh "$1" \
-    -c 'test -e /sys/module/openvswitch || exec modprobe openvswitch'
-}
+# Runs node image $1's ovs-vswitchd check on the Docker kernel. ARC's runner
+# cannot load modules itself, and its installed module files are not in DinD's
+# filesystem. If the daemon cannot load the module, stream the runner's matching
+# module tree into a privileged helper instead. Never invoke ovs-ctl: its fallback
+# removes the bridge module and destroys the Docker networks (#1515).
+e2e_host_loads_openvswitch() (
+  set -o pipefail
+  local image="$1" kernel module_root="${NKE_E2E_HOST_MODULES_DIR:-/lib/modules}"
+  if docker run --rm --privileged -v /lib/modules:/lib/modules:ro --entrypoint /bin/sh "${image}" \
+    -c '
+      set -eu
+      if test -e /sys/module/openvswitch; then
+        echo "openvswitch was already loaded before the Docker probe"
+      else
+        modprobe --verbose openvswitch
+        test -e /sys/module/openvswitch
+        echo "openvswitch is available after the Docker module insertion attempt"
+      fi
+    '; then
+    return 0
+  fi
+
+  kernel="$(uname -r)" || return 1
+  if [[ "$(uname -s)" != Linux || ! -d "${module_root}/${kernel}" ]]; then
+    echo "openvswitch is unavailable to Docker and no matching local module tree exists" >&2
+    return 1
+  fi
+  echo "loading openvswitch through privileged Docker with the runner's ${kernel} module files" >&2
+  tar -C "${module_root}" -cf - "${kernel}" |
+    docker run --rm --privileged -i --entrypoint /bin/sh "${image}" -c '
+      set -eu
+      mkdir -p /lib/modules
+      tar -C /lib/modules -xf -
+      if test -e /sys/module/openvswitch; then
+        echo "openvswitch was already loaded before the streamed-module probe"
+      elif modprobe --verbose openvswitch; then
+        echo "openvswitch is available after the streamed-module insertion attempt"
+      else
+        echo "openvswitch insertion failed; matching kernel messages:" >&2
+        dmesg | tail -n 100 | grep -E "openvswitch|nsh|nf_conn|nf_nat|libcrc32c|module_layout|BTF|version.*symbol" >&2 || true
+        exit 1
+      fi
+      test -e /sys/module/openvswitch
+    '
+)
 
 # Per-node evidence: console, unit status, and the journals of the units a
 # CAPD node depends on. Without this a node whose agent never binds its port is
@@ -211,11 +250,11 @@ e2e_collect_node_diagnostics() {
     [[ -n "${node_name}" ]] || continue
     docker logs "${node_name}" >"${out_dir}/${node_name}-console.log" 2>&1
     docker exec "${node_name}" systemctl status \
-      nke-agent spire-agent swtpm-local containerd kubelet \
+      nvke-agent spire-agent swtpm-local containerd kubelet \
       ovsdb-server ovs-vswitchd nke-container-network nke-container-cni-images --no-pager \
       >"${out_dir}/${node_name}-systemd.txt" 2>&1
     docker exec "${node_name}" journalctl --no-pager \
-      -u nke-agent -u spire-agent -u swtpm-local -u containerd -u kubelet \
+      -u nvke-agent -u spire-agent -u swtpm-local -u containerd -u kubelet \
       -u ovsdb-server -u ovs-vswitchd -u nke-container-network -u nke-container-cni-images \
       >"${out_dir}/${node_name}-journal.txt" 2>&1
   done < <(docker ps -a --filter "ancestor=${node_image}" --format '{{.Names}}')

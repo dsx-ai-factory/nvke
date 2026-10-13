@@ -31,21 +31,21 @@ packages:
   - gnupg
   - jq
 write_files:
-  - path: /etc/systemd/system/nke-agent.service.d/10-disable-mtls.conf
+  - path: /etc/systemd/system/nvke-agent.service.d/10-disable-mtls.conf
     permissions: '0644'
     content: |
-      # Phase 4 test override — runs nke-agent with plaintext gRPC on :50051.
+      # Phase 4 test override — runs nvke-agent with plaintext gRPC on :50051.
       # ExecStart= (empty) clears the base unit's command before overriding.
       # Never use in production; consumed by tests/cluster-bringup/.
       [Service]
       ExecStart=
-      ExecStart=/usr/local/bin/nke-agent --disable-mtls --secure-server-port 50051
+      ExecStart=/usr/local/bin/nvke-agent --disable-mtls --secure-server-port 50051
 runcmd:
   # How kubeadm, the kubelet and a container runtime get onto the node. The
   # block is built in Go: cloudinit.AptProvision for the NVKE apt repository, or
   # cloudinit.CommunityProvision for upstream releases plus a host-served
-  # nke-agent .deb, which is what a runner outside the repository's allow list
+  # nvke-agent .deb, which is what a runner outside the repository's allow list
   # has to use.
 __K8S_PROVISION__
   - systemctl daemon-reload
-  - systemctl restart nke-agent
+  - systemctl restart nvke-agent

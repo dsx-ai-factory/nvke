@@ -244,14 +244,14 @@ def main() -> None:
         if total_bytes > MAX_TOTAL_PACKAGE_BYTES:
             raise SystemExit("image inputs exceed their total package byte budget")
         total_bytes = install_file(
-            agent, stage / "nke-agent.deb", 0o644,
+            agent, stage / "nvke-agent.deb", 0o644,
             max_bytes=min(MAX_PACKAGE_BYTES, MAX_TOTAL_PACKAGE_BYTES),
         )
         if total_bytes == 0:
             raise SystemExit("agent package is empty")
-        require_architecture(stage / "nke-agent.deb", args.architecture)
+        require_architecture(stage / "nvke-agent.deb", args.architecture)
         for name, mode in (
-            ("nke-agent-spire.conf", 0o644),
+            ("nvke-agent-spire.conf", 0o644),
             ("wait-spiffe-socket.sh", 0o755),
             ("conntrack-tune.service", 0o644),
             ("configure-conntrack.sh", 0o755),
@@ -270,8 +270,8 @@ def main() -> None:
                 require_architecture(debs / name, args.architecture)
         if len(list(debs.glob("spire-agent_*.deb"))) != 1:
             raise SystemExit("image inputs must contain exactly one spire-agent_*.deb across all bindings")
-        if len(list(debs.glob("nke-cni-calico-manifests-*.deb"))) > 1:
-            raise SystemExit("calico inputs must contain at most one nke-cni-calico-manifests-*.deb")
+        if len(list(debs.glob("nvke-cni-calico-manifests-*.deb"))) > 1:
+            raise SystemExit("calico inputs must contain at most one nvke-cni-calico-manifests-*.deb")
 
         environment = os.environ.copy()
         environment.update({"LC_ALL": "C", "LANG": "C", "TZ": "UTC"})

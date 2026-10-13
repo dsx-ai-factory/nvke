@@ -85,8 +85,8 @@ func TestSetScalarPlacementIsOrderIndependent(t *testing.T) {
 			// between controlPlaneVIP and nodeAgentPort.
 			mustBefore(t, out, "serviceCidr:", "IPv4 API endpoint advertised by kube-vip")
 			mustBefore(t, out, "IPv4 API endpoint advertised by kube-vip", "controlPlaneVIP:")
-			mustBefore(t, out, "controlPlaneVIP:", "gRPC port nke-agent listens on")
-			mustBefore(t, out, "gRPC port nke-agent listens on", "nodeAgentPort:")
+			mustBefore(t, out, "controlPlaneVIP:", "gRPC port nvke-agent listens on")
+			mustBefore(t, out, "gRPC port nvke-agent listens on", "nodeAgentPort:")
 
 			// The commented-out examples are replaced, not duplicated.
 			for _, key := range []string{"controlPlaneVIP", "nodeAgentPort"} {

@@ -31,7 +31,7 @@ read_values() {
 systemctl is-active --quiet conntrack-tune.service || fail "conntrack-tune.service is not active"
 [[ -f "${TIMEOUTS}" ]] || fail "${TIMEOUTS} is missing"
 
-want="$(/usr/lib/nke/configure-conntrack.sh --print-target)"
+want="$(/usr/lib/nvke/configure-conntrack.sh --print-target)"
 read -r max buckets time_wait <<<"$(read_values)"
 
 # The generator writes nf_conntrack_max only when the target is above the

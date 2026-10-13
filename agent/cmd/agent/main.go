@@ -55,7 +55,7 @@ const (
 // Keep it as variable or things are going to break
 //
 // "dev", not the zero value, so a build with no -X says so. Empty, it printed
-// "NKE Agent Version: " and registered an empty version, which reads as a
+// "NVKE Agent Version: " and registered an empty version, which reads as a
 // display bug instead of a missing stamp.
 var VERSION = "dev"
 
@@ -87,12 +87,16 @@ type AgentConfig struct {
 	DSXIdentityCABundle      string
 	DSXIdentityTimeout       time.Duration
 	ControllerClientCABundle string
+	ControllerAudience       string
 }
 
 // validateAuthConfig rejects authentication settings that cannot work, so a
 // misconfigured agent fails at startup with a readable message instead of
 // failing every handshake.
 func validateAuthConfig(cfg AgentConfig) error {
+	if cfg.ControllerAudience != "" && cfg.ControllerAudience != tlsjwt.ControllerAudience && cfg.ControllerAudience != tlsjwt.LegacyControllerAudience {
+		return fmt.Errorf("--controller-audience must be %q or %q", tlsjwt.ControllerAudience, tlsjwt.LegacyControllerAudience)
+	}
 	if cfg.ControllerClientCABundle != "" {
 		if cfg.DisableMTLS {
 			return errors.New("--controller-client-ca-bundle cannot be combined with --disable-mtls: " +
@@ -137,8 +141,8 @@ func Bootstrap(kubeVersion string) error {
 		return err
 	}
 
-	slog.Info("executing /usr/local/nke/bin/bootstrap.sh", "kubeVersion", kubeVersion)
-	cmd := exec.Command("/usr/local/nke/bin/bootstrap.sh", kubeVersion)
+	slog.Info("executing /usr/local/nvke/bin/bootstrap.sh", "kubeVersion", kubeVersion)
+	cmd := exec.Command("/usr/local/nvke/bin/bootstrap.sh", kubeVersion)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -172,6 +176,8 @@ func GetVersionInfo() (string, error) {
 // to accept the old form until the ClusterSPIFFEID template changes and the new one
 // after. Drop "/nke-service/" once nothing issues it.
 var callerPathPrefixes = []string{
+	"/tenant/nvke/service/",
+	"/nvke-service/",
 	"/nke-service/",
 	"/tenant/nke/service/",
 }
@@ -243,7 +249,11 @@ func buildTLSJWTCredentials(
 		return nil, fmt.Errorf("failed to create dsx identity exchange client: %w", err)
 	}
 
-	tokens, err := tlsjwt.NewCachingTokenSource(tlsjwt.WorkloadAPISVIDs(jwtSource), exchanger)
+	audience := cfg.ControllerAudience
+	if audience == "" {
+		audience = tlsjwt.LegacyControllerAudience
+	}
+	tokens, err := tlsjwt.NewCachingTokenSource(tlsjwt.WorkloadAPISVIDs(jwtSource), exchanger, audience)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create node-agent token source: %w", err)
 	}
@@ -397,7 +407,7 @@ func main() {
 	versionFlag := flag.Bool("version", false, "Print the version and exit")
 	auditLogFileName := flag.String(
 		"audit-log-file",
-		"/var/log/nke-agent-audit.log",
+		"/var/log/nvke-agent-audit.log",
 		"The audit log file name",
 	)
 	secureServerPort := flag.String("secure-server-port", DefaultNodeServerListenPort, "The port for the gRPC server")
@@ -416,10 +426,11 @@ func main() {
 		envOr("NKE_CNI_IMAGE_REGISTRY", ""),
 		"OCI registry prefix for CNI component images (e.g. registry.example.com/nvke). When set, passed to the CNI helm chart as --set global.registry=<value>. Also set via NKE_CNI_IMAGE_REGISTRY",
 	)
+	controllerAudience := flag.String("controller-audience", tlsjwt.LegacyControllerAudience, "JWT audience: select nvke-controller once the controller accepts the renamed contract")
 	flag.Parse()
 
 	if *versionFlag {
-		fmt.Printf("NKE Agent Version: %s\n", VERSION)
+		fmt.Printf("NVKE Agent Version: %s\n", VERSION)
 		os.Exit(0)
 	}
 
@@ -427,7 +438,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to open audit log file: %v", err)
 	}
-	scriptExecLogFile, err := os.OpenFile("/var/log/nke-execute-scripts.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	scriptExecLogFile, err := os.OpenFile("/var/log/nvke-execute-scripts.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		log.Fatalf("failed to open script execution log file: %v", err)
 	}
@@ -454,6 +465,7 @@ func main() {
 		DSXIdentityCABundle:      *dsxIdentityCABundle,
 		DSXIdentityTimeout:       *dsxIdentityTimeout,
 		ControllerClientCABundle: *controllerClientCABundle,
+		ControllerAudience:       *controllerAudience,
 	}
 
 	if err := validateAuthConfig(cfg); err != nil {

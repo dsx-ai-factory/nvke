@@ -4,11 +4,11 @@
 
 set -euo pipefail
 
-# nke-agent.service runs this before every start. An agent told to skip mTLS
+# nvke-agent.service runs this before every start. An agent told to skip mTLS
 # never opens a workload socket, so waiting for one keeps it from starting at
 # all -- the flag alone would leave the unit failing after this times out.
 if [[ "${AGENT_ARGS:-}" == *--disable-mtls* ]]; then
-  echo "nke-agent: --disable-mtls set, not waiting for a SPIFFE socket"
+  echo "nvke-agent: --disable-mtls set, not waiting for a SPIFFE socket"
   exit 0
 fi
 
@@ -22,5 +22,5 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 
-echo "nke-agent: timed out waiting for SPIFFE workload API socket ${SOCKET}" >&2
+echo "nvke-agent: timed out waiting for SPIFFE workload API socket ${SOCKET}" >&2
 exit 1

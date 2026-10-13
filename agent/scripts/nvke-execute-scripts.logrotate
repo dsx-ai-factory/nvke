@@ -1,0 +1,14 @@
+# Logrotate config for nvke-agent script execution log.
+# Install to /etc/logrotate.d/ (e.g. as nvke-execute-scripts or nvke-agent).
+#
+# copytruncate: truncate the log in place after copying, so the running
+# agent does not need to reopen the file (it keeps writing to the same inode).
+
+/var/log/nvke-execute-scripts.log {
+    daily
+    rotate 7
+    copytruncate
+    missingok
+    notifempty
+    compress
+}

@@ -62,12 +62,12 @@ func TestUnit_ContainerCAPIReadyCommandsPreserveBundleSource(t *testing.T) {
 	if len(commands) != 3 {
 		t.Fatalf("pre-kubeadm command count = %d, want 3", len(commands))
 	}
-	agentEnv := filepath.Join(t.TempDir(), "nke-agent")
+	agentEnv := filepath.Join(t.TempDir(), "nvke-agent")
 	if err := os.WriteFile(agentEnv, []byte("AGENT_ARGS=\"--secure-server-port 15005\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	command := strings.ReplaceAll(commands[0], "/etc/default/nke-agent", agentEnv)
-	command = strings.ReplaceAll(command, "systemctl restart nke-agent.service", "true")
+	command := strings.ReplaceAll(commands[0], "/etc/default/nvke-agent", agentEnv)
+	command = strings.ReplaceAll(command, "systemctl restart nvke-agent.service", "true")
 	for range 2 {
 		if output, err := exec.CommandContext(t.Context(), "sh", "-c", command).CombinedOutput(); err != nil {
 			t.Fatalf("agent override failed: %v: %s", err, output)
@@ -135,13 +135,13 @@ func TestUnit_ContainerCAPIReadyCommandsReplaceBundleSource(t *testing.T) {
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("NKE_E2E_BUNDLE_SERVER_URL", params.bundleURL)
-			agentEnv := filepath.Join(t.TempDir(), "nke-agent")
+			agentEnv := filepath.Join(t.TempDir(), "nvke-agent")
 			if err := os.WriteFile(agentEnv, []byte("AGENT_ARGS=\""+params.agentArgs+"\"\nOTHER_SETTING=\"keep me\"\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			command := containerCAPIReadyCommands()[0]
-			command = strings.ReplaceAll(command, "/etc/default/nke-agent", agentEnv)
-			command = strings.ReplaceAll(command, "systemctl restart nke-agent.service", "true")
+			command = strings.ReplaceAll(command, "/etc/default/nvke-agent", agentEnv)
+			command = strings.ReplaceAll(command, "systemctl restart nvke-agent.service", "true")
 			for range 2 {
 				if output, err := exec.CommandContext(t.Context(), "sh", "-c", command).CombinedOutput(); err != nil {
 					t.Fatalf("agent override failed: %v: %s", err, output)

@@ -193,19 +193,19 @@ than a real site. Treat a surprise here as a bug in this page and say so.
 ### Before you start
 
 **Nodes.** An odd number — one, three, five; an even count is rejected. Each
-already imaged and running `nke-agent` and `spire-agent`. You need every node's
+already imaged and running `nvke-agent` and `spire-agent`. You need every node's
 IP and its **TPM EK thumbprint**: the site cluster attests nodes by TPM, and a
 node with no thumbprint cannot join.
 
 **kubeadm on each node, installed by your cloud-init.** An image built from
 [`os-image/`](https://github.com/dsx-ai-factory/nvke/tree/main/os-image) only *stages* the packages in a local apt repo at
-`/usr/lib/nke/debs`; nothing installs them for a pre-provisioned node, because
+`/usr/lib/nvke/debs`; nothing installs them for a pre-provisioned node, because
 CWE writes no cloud-init for hosts it did not create. Install them yourself:
 
 ```yaml
 runcmd:
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-kubeadm-distro-<k8s-version>
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-<stream> nke-cni-ovn-charts-<stream>
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-kubeadm-distro-<k8s-version>
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-cni-ovn-images-<stream> nvke-cni-ovn-charts-<stream>
 ```
 
 Skip this and the bootstrap runs its full 30 minutes before failing on
@@ -339,7 +339,7 @@ registries. Cluster API and cert-manager come from `github.com` through
 `clusterctl init`.
 
 It creates a throwaway kind cluster, installs Postgres, Temporal, SPIRE, CAPI and
-CWE into it, builds the site cluster on your hosts through `nke-agent`, and
+CWE into it, builds the site cluster on your hosts through `nvke-agent`, and
 writes `my-site.kubeconfig`. Allow 30 minutes.
 
 Allow longer than that and raise `--timeout` (default `30m`) if the site is large —
@@ -445,10 +445,10 @@ The node agent, the SPIRE agent, kubeadm, kubelet and containerd all stay
 installed, so reclaiming a host for something else is manual:
 
 ```bash
-apt-get purge nke-agent spire-agent
+apt-get purge nvke-agent spire-agent
 ```
 
-A purge still leaves `/var/lib/nke/state.json` and the two agent logs on disk.
+A purge still leaves `/var/lib/nvke/state.json` and the two agent logs on disk.
 
 **No command tears down a site cluster.** `nvkectl delete` covers tenant clusters
 and node pools only. Reversing `nvkectl bootstrap site` is manual.

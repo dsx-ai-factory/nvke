@@ -22,6 +22,10 @@ func TestAuthorizeClient(t *testing.T) {
 		id      string
 		wantErr bool
 	}{
+		{name: "renamed tenant path", id: "spiffe://example.org/tenant/nvke/service/cwe/bm/cwe"},
+		{name: "renamed service path", id: "spiffe://example.org/nvke-service/cwe"},
+		{name: "renamed prefix must end at slash", id: "spiffe://example.org/tenant/nvke/service-evil/cwe", wantErr: true},
+		{name: "renamed caller in foreign trust domain", id: "spiffe://attacker.test/tenant/nvke/service/cwe", wantErr: true},
 		{name: "legacy service path", id: "spiffe://example.org/nke-service/cloud-workflow-engine"},
 		{name: "tenant-grammar path", id: "spiffe://example.org/tenant/nke/service/cloud-workflow-engine/bm/cwe"},
 		{name: "tenant-grammar path, other service", id: "spiffe://example.org/tenant/nke/service/capi-manager/bm/cwe"},
@@ -159,5 +163,16 @@ func TestValidateAuthConfig(t *testing.T) {
 				t.Fatalf("validateAuthConfig() = %v, want error containing %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestControllerAudienceCompatibility(t *testing.T) {
+	for _, audience := range []string{"", "nke-controller", "nvke-controller"} {
+		if err := validateAuthConfig(AgentConfig{ControllerAudience: audience, GRPCAuthMode: authModeSPIFFEMTLS}); err != nil {
+			t.Errorf("audience %q: %v", audience, err)
+		}
+	}
+	if err := validateAuthConfig(AgentConfig{ControllerAudience: "other-service", GRPCAuthMode: authModeSPIFFEMTLS}); err == nil {
+		t.Fatal("unsupported audience accepted")
 	}
 }

@@ -19,9 +19,9 @@
 # either way. So of the bases this script enforces:
 #
 #   controller/Dockerfile   SPIFFE jwt-exec-auth  direct FROM  Dependabot bumps it
-#                           golang, alpine        via ARG      bumped by hand
+#                           golang, alpine        via ARG      base-image-update.sh
 #   cluster-api-provider-provisioned/Dockerfile
-#                           golang, alpine        via ARG      bumped by hand
+#                           golang, alpine        via ARG      base-image-update.sh
 #
 # cluster-api-provider-provisioned has no directly-named base at all -- all
 # three of its FROM lines go through an ARG or a previous stage.
@@ -33,10 +33,18 @@
 # Kubernetes manifests (#956) and a golang digest on a direct FROM (#916),
 # while leaving the ARG-named bases in these two files alone.
 #
-# Closing that gap means naming the image on the FROM so Dependabot can see it,
-# which gives up the `--build-arg GOLANG_IMAGE=...` override #888 added for
-# internal mirrors. That is a maintainer decision, not one this script makes.
-# Until it is taken, the ARG-named digests are a manual bump.
+# Closing that gap by naming the image on the FROM, so Dependabot can see it,
+# gives up the `--build-arg GOLANG_IMAGE=...` override #888 added for internal
+# mirrors -- which the e2e lanes use to route Docker Hub pulls through
+# NKE_E2E_DOCKERHUB_MIRROR (controller/hack/backend-e2e-lib.sh). That is a
+# maintainer decision, not one this script makes, and it is still open.
+#
+# So the ARG form stays, and the automation is local instead:
+# hack/base-image-update.sh re-resolves these digests and
+# .github/workflows/base-image-digests.yml runs it weekly and opens a pull
+# request with whatever moved. That covers a republished tag, which is what
+# Dependabot would have caught here. It does NOT move a tag -- 3.24.1 to
+# 3.24.2 remains a human edit until the FROM question above is settled.
 
 set -euo pipefail
 

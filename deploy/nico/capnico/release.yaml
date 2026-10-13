@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The image capnico.yaml runs and the NVKR artifact that publishes it. With
+# a release, the render writes a kustomization.yaml that repoints the image
+# to the artifact's digest. Keep the tag equal to the one in capnico.yaml.
+image: ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.0.45
+artifact: capnico-controller

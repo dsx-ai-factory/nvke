@@ -102,9 +102,9 @@ jobs:
       # Comprehensive runs use the same expression as the CAPD lane. Health and
       # authn hit the
       # management-cluster controller, not the tenant backend, so this lane already
-      # pays for them. authn-spire is out because the NICo provider does not
-      # set SPIFFE_ENABLED. The label filter keeps this job focused on the
-      # nico-containers specs; nico-vms uses its own job below. Keep the full
+      # pays for them. authn-spire is out because it needs SPIRE pod attestation
+      # the container-backed backends do not wire up. The label filter keeps this
+      # job focused on the nico-containers specs; nico-vms uses its own job below. Keep the full
       # expression in step with e2e_suite_filter in hack/backend-e2e-lib.sh.
       label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-nico || health' || '(nico-containers || health) || (authn && !authn-spire) || authn-permissive' }}
       # The nico provider installs CAPNICo, starts nico-sim by default, and

@@ -13,7 +13,7 @@ K8S_VER="{{K8S_VER}}"
 K8S_PATCH="{{K8S_PATCH}}"
 ARCH="{{ARCH}}"
 PACKAGE="{{PACKAGE_NAME}}"
-MATRIX_ROOT="/usr/lib/nke/{{MATRIX_SUBDIR}}/${K8S_VER}"
+MATRIX_ROOT="/usr/lib/nvke/{{MATRIX_SUBDIR}}/${K8S_VER}"
 LOG="/var/log/${PACKAGE}-postinst.log"
 
 case "${1:-}" in

@@ -6,7 +6,7 @@ Vulnerability reporting for this monorepo lives in the repository-root [SECURITY
 
 ### Purpose and software class
 
-NVKE agent (`nke-agent`) is a privileged Go gRPC service installed as a
+NVKE agent (`nvke-agent`) is a privileged Go gRPC service installed as a
 systemd unit on NVIDIA Kubernetes Engine nodes. The NVKE controller
 calls it to perform node-local Kubernetes lifecycle and administration tasks
 that would otherwise require root shell access.
@@ -29,7 +29,7 @@ RPC implementations are under `internal/agent/`.
 - Kubernetes administrator kubeconfig and kubeadm join credentials.
 - Kubernetes API encryption keys and LUKS master keys passed in RPC requests.
 - SPIFFE X.509 SVIDs and the SPIRE workload API trust root.
-- `/var/lib/nke/state.json`, including lifecycle and operation state.
+- `/var/lib/nvke/state.json`, including lifecycle and operation state.
 - Kubernetes static pod manifests and cluster RBAC resources.
 - NVKE packages, bundles, signing keys, indexes, and OCI credentials.
 - Audit logs, script-execution logs, and support bundles, which may contain
@@ -56,8 +56,8 @@ RPC implementations are under `internal/agent/`.
    content from configured HTTPS/S3 or OCI sources. Apt repositories use
    caller-supplied signing keys and `signed-by` keyrings.
 6. **agent to operators:** Unary RPC metadata is written to
-   `/var/log/nke-agent-audit.log`. Script activity is written to
-   `/var/log/nke-execute-scripts.log`. `GetSupportBundle` returns selected
+   `/var/log/nvke-agent-audit.log`. Script activity is written to
+   `/var/log/nvke-execute-scripts.log`. `GetSupportBundle` returns selected
    state and logs to an authenticated caller.
 
 ### Authorization model
@@ -199,8 +199,8 @@ repository.
   back to plaintext.
 - Restrict and monitor port `15005`; do not expose it through a public load
   balancer.
-- Protect `/etc/default/nke-agent`, the SPIRE socket, `/var/lib/nke`,
-  `/etc/kubernetes`, apt keyrings, and `/var/log/nke-*` with root-only write
+- Protect `/etc/default/nvke-agent`, the SPIRE socket, `/var/lib/nvke`,
+  `/etc/kubernetes`, apt keyrings, and `/var/log/nvke-*` with root-only write
   access.
 - Use production-controlled HTTPS or OCI bundle sources and dedicated apt
   signing keys. Do not use arbitrary caller-controlled repositories.

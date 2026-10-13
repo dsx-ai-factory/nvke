@@ -6,129 +6,149 @@ package nvke
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
 const (
-	oidcEnabledEnvVar = "NKE_OIDC_AUTH_ENABLED"
-	enabledValue      = "true"
+	// ControllerConfigMap is the ConfigMap the controller reads its settings
+	// from, once, at startup.
+	ControllerConfigMap = "nke-controller-config"
+	controllerConfigKey = "config.yaml"
 
-	// permissiveModeEnvVar is what NVKE reads to decide whether a failed check
-	// rejects the request or is only counted.
-	permissiveModeEnvVar = "PERMISSIVE_MODE"
+	// restartedAtAnnotation is the pod-template annotation `kubectl rollout
+	// restart` sets.
+	restartedAtAnnotation = "kubectl.kubernetes.io/restartedAt"
+
+	// oidcEnabledKey turns on tenant OIDC JWT auth for clusters created from
+	// then on.
+	oidcEnabledKey = "oidc.managementOIDCAuth.enabled"
+	// permissiveModeKey decides whether a failed authentication check rejects
+	// the request or is only counted.
+	permissiveModeKey = "permissiveMode"
 )
 
-// OIDCEnabled reports whether the controller deployment on the management cluster has
-// tenant OIDC JWT auth turned on (NKE_OIDC_AUTH_ENABLED=true on its container). The OIDC
-// validations only apply when the controller configures tenant OIDC auth, so the suite uses this
-// to skip them on deployments where OIDC is off.
-func OIDCEnabled(ctx context.Context, c client.Client) (bool, error) {
-	var deploy appsv1.Deployment
-	if err := c.Get(ctx, client.ObjectKey{Namespace: controller.Namespace(), Name: controller.Deployment()}, &deploy); err != nil {
-		return false, fmt.Errorf("getting NVKE deployment %s/%s: %w", controller.Namespace(), controller.Deployment(), err)
+// ControllerSetting returns the value at key, a dotted config.yaml path such as
+// oidc.managementOIDCAuth.enabled, in data, the data of the controller's
+// nke-controller-config ConfigMap.
+func ControllerSetting(data map[string]string, key string) (any, error) {
+	settings, err := parseControllerConfig(data)
+	if err != nil {
+		return nil, err
 	}
-	for _, container := range deploy.Spec.Template.Spec.Containers {
-		for _, env := range container.Env {
-			if env.Name != oidcEnabledEnvVar {
-				continue
-			}
-			if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil {
-				return oidcEnabledFromConfigMap(ctx, c, deploy.Namespace, env.ValueFrom.ConfigMapKeyRef.Name, env.ValueFrom.ConfigMapKeyRef.Key)
-			}
-			return env.Value == enabledValue, nil
-		}
-		for _, envFrom := range container.EnvFrom {
-			if envFrom.ConfigMapRef == nil {
-				continue
-			}
-			enabled, found, err := oidcEnabledFromConfigMapData(ctx, c, deploy.Namespace, envFrom.ConfigMapRef.Name)
-			if err != nil {
-				if envFrom.ConfigMapRef.Optional != nil && *envFrom.ConfigMapRef.Optional && apierrors.IsNotFound(err) {
-					continue
-				}
-				return false, err
-			}
-			if found {
-				return enabled, nil
-			}
-		}
-	}
-	return false, nil
+	value, _, err := lookup(settings, key)
+	return value, err
 }
 
-// SetOIDCEnabled overrides NKE_OIDC_AUTH_ENABLED on the controller deployment's app
-// container with a direct env value (which takes precedence over any
-// ConfigMap-sourced value) and waits for the rollout to finish. The OIDC issuer /
-// discovery / CA env the enable workflow needs are left in place, so toggling this
-// flag alone moves the controller between "new clusters are created OIDC-off" and "OIDC is
-// active" without a redeploy.
+// OIDCEnabled reports whether the controller has tenant OIDC JWT auth turned on
+// (oidc.managementOIDCAuth.enabled in nke-controller-config). The OIDC
+// validations only apply when it does, so the suite uses this to skip them on
+// deployments where OIDC is off.
+func OIDCEnabled(ctx context.Context, c client.Client) (bool, error) {
+	var cm corev1.ConfigMap
+	if err := c.Get(ctx, client.ObjectKey{Namespace: controller.Namespace(), Name: ControllerConfigMap}, &cm); err != nil {
+		return false, fmt.Errorf("getting ConfigMap %s/%s: %w", controller.Namespace(), ControllerConfigMap, err)
+	}
+	value, err := ControllerSetting(cm.Data, oidcEnabledKey)
+	if err != nil {
+		return false, err
+	}
+	return value == true, nil
+}
+
+// SetOIDCEnabled sets oidc.managementOIDCAuth.enabled in nke-controller-config,
+// restarts the controller and waits for the rollout. The issuer, discovery and
+// CA settings the enable workflow needs are left in place, so toggling this
+// flag alone moves the controller between "new clusters are created OIDC-off"
+// and "OIDC is active" without a redeploy.
 //
 // The brownfield OIDC spec uses this to construct its precondition: a cluster on
 // an OIDC-enabled site is always born OIDC-on, so the spec creates its cluster with
 // the flag off, then flips it back on before enabling.
 func SetOIDCEnabled(ctx context.Context, c client.Client, enabled bool) error {
-	_, err := setNVKEContainerEnv(ctx, c, oidcEnabledEnvVar, strconv.FormatBool(enabled))
+	_, _, err := setControllerSetting(ctx, c, oidcEnabledKey, enabled)
 	return err
 }
 
-// SetPermissiveMode sets PERMISSIVE_MODE on the NVKE container and waits for the
-// rollout, returning the value it replaced so a caller can put it back.
-//
-// An absent variable comes back as "", and restoring that sets it to the empty
-// string rather than removing it. NVKE reads both as enforcing.
-func SetPermissiveMode(ctx context.Context, c client.Client, value string) (string, error) {
-	return setNVKEContainerEnv(ctx, c, permissiveModeEnvVar, value)
+// SetPermissiveMode sets permissiveMode in nke-controller-config, restarts the
+// controller and waits for the rollout, returning the value it replaced so a
+// caller can put it back. The second result reports whether the ConfigMap was
+// written. It stays true when the restart after the write fails, and the caller
+// must put the old value back then too: the enforcing specs read the mode from
+// the ConfigMap, so a permissive value left there makes them skip.
+func SetPermissiveMode(ctx context.Context, c client.Client, permissive bool) (bool, bool, error) {
+	previous, written, err := setControllerSetting(ctx, c, permissiveModeKey, permissive)
+	return previous == true, written, err
 }
 
-// setNVKEContainerEnv upserts an environment variable on the NVKE container and
-// waits for the rollout. It returns the value it replaced.
+// setControllerSetting sets one key of nke-controller-config and restarts the
+// controller, which reads the file only at startup. It returns the value it
+// replaced and whether it wrote the ConfigMap, including when the restart that
+// follows the write fails.
+func setControllerSetting(ctx context.Context, c client.Client, key string, value any) (any, bool, error) {
+	var cm corev1.ConfigMap
+	if err := c.Get(ctx, client.ObjectKey{Namespace: controller.Namespace(), Name: ControllerConfigMap}, &cm); err != nil {
+		return nil, false, fmt.Errorf("getting ConfigMap %s/%s: %w", controller.Namespace(), ControllerConfigMap, err)
+	}
+	settings, err := parseControllerConfig(cm.Data)
+	if err != nil {
+		return nil, false, err
+	}
+	previous, parent, err := lookup(settings, key)
+	if err != nil {
+		return nil, false, err
+	}
+	parent[key[strings.LastIndex(key, ".")+1:]] = value
+
+	updated, err := yaml.Marshal(settings)
+	if err != nil {
+		return nil, false, fmt.Errorf("encoding %s: %w", ControllerConfigMap, err)
+	}
+	cm.Data[controllerConfigKey] = string(updated)
+	if err := c.Update(ctx, &cm); err != nil {
+		return nil, false, fmt.Errorf("setting %s=%v in %s: %w", key, value, ControllerConfigMap, err)
+	}
+	if err := restartController(ctx, c); err != nil {
+		return previous, true, err
+	}
+	return previous, true, nil
+}
+
+// restartController rolls the controller's pods so they read the current
+// nke-controller-config, and waits for the rollout.
 //
-// The container is found by name, with no fallback. Guessing container 0 writes
-// the variable onto whichever sidecar happens to be first, then waits out a
-// rollout that changed nothing.
-func setNVKEContainerEnv(ctx context.Context, c client.Client, name, value string) (string, error) {
-	var deploy appsv1.Deployment
-	if err := c.Get(ctx, client.ObjectKey{Namespace: controller.Namespace(), Name: controller.Deployment()}, &deploy); err != nil {
-		return "", fmt.Errorf("getting NVKE deployment %s/%s: %w", controller.Namespace(), controller.Deployment(), err)
-	}
-
-	containers := deploy.Spec.Template.Spec.Containers
-	idx := -1
-	for i := range containers {
-		if containers[i].Name == controller.Deployment() {
-			idx = i
-			break
+// Where Reloader runs, the ConfigMap edit makes it update the Deployment too, so
+// that update can land between the read and the write here; a conflict is
+// retried on a fresh read. The rollout wait also covers a Reloader update that
+// lands while it waits, since that bumps the generation it checks.
+func restartController(ctx context.Context, c client.Client) error {
+	key := client.ObjectKey{Namespace: controller.Namespace(), Name: controller.Deployment()}
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var deploy appsv1.Deployment
+		if err := c.Get(ctx, key, &deploy); err != nil {
+			return fmt.Errorf("getting NVKE deployment %s: %w", key, err)
 		}
-	}
-	if idx < 0 {
-		return "", fmt.Errorf("NVKE deployment %s/%s has no container named %q",
-			controller.Namespace(), controller.Deployment(), controller.Deployment())
-	}
-
-	var previous string
-	for _, env := range containers[idx].Env {
-		if env.Name == name {
-			previous = env.Value
-			break
+		if deploy.Spec.Template.Annotations == nil {
+			deploy.Spec.Template.Annotations = map[string]string{}
 		}
-	}
-
-	setContainerEnv(&containers[idx], name, value)
-	if err := c.Update(ctx, &deploy); err != nil {
-		return "", fmt.Errorf("setting %s=%q on the NVKE deployment: %w", name, value, err)
+		deploy.Spec.Template.Annotations[restartedAtAnnotation] = time.Now().UTC().Format(time.RFC3339Nano)
+		return c.Update(ctx, &deploy)
+	})
+	if err != nil {
+		return fmt.Errorf("restarting the NVKE deployment: %w", err)
 	}
 	if err := waitForDeploymentRollout(ctx, c, controller.Namespace(), controller.Deployment()); err != nil {
-		return "", err
+		return err
 	}
 
 	// The rollout replaced the pod the shared forwards point at. Their local
@@ -139,20 +159,37 @@ func setNVKEContainerEnv(ctx context.Context, c client.Client, name, value strin
 	// Reset rather than Close: the API client in this package holds a forwarder
 	// from before the rollout, and a closed one never reconnects.
 	kube.ResetSharedForwarders()
-	return previous, nil
+	return nil
 }
 
-// setContainerEnv upserts a plain-value env var, clearing any ValueFrom so the
-// literal value wins over a ConfigMap/Secret source.
-func setContainerEnv(container *corev1.Container, name, value string) {
-	for i := range container.Env {
-		if container.Env[i].Name == name {
-			container.Env[i].Value = value
-			container.Env[i].ValueFrom = nil
-			return
-		}
+func parseControllerConfig(data map[string]string) (map[string]any, error) {
+	raw, ok := data[controllerConfigKey]
+	if !ok {
+		return nil, fmt.Errorf("%s has no %s", ControllerConfigMap, controllerConfigKey)
 	}
-	container.Env = append(container.Env, corev1.EnvVar{Name: name, Value: value})
+	var settings map[string]any
+	if err := yaml.Unmarshal([]byte(raw), &settings); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", ControllerConfigMap, err)
+	}
+	return settings, nil
+}
+
+// lookup returns the value at the dotted key and the map holding it.
+func lookup(settings map[string]any, key string) (any, map[string]any, error) {
+	parts := strings.Split(key, ".")
+	node := settings
+	for _, part := range parts[:len(parts)-1] {
+		next, ok := node[part].(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("%s has no %s", ControllerConfigMap, key)
+		}
+		node = next
+	}
+	value, ok := node[parts[len(parts)-1]]
+	if !ok {
+		return nil, nil, fmt.Errorf("%s has no %s", ControllerConfigMap, key)
+	}
+	return value, node, nil
 }
 
 // waitForDeploymentRollout blocks until the deployment has observed its latest
@@ -175,21 +212,4 @@ func waitForDeploymentRollout(ctx context.Context, c client.Client, namespace, n
 			deploy.Status.Replicas == desired &&
 			deploy.Status.AvailableReplicas == desired, nil
 	})
-}
-
-func oidcEnabledFromConfigMap(ctx context.Context, c client.Client, namespace, name, key string) (bool, error) {
-	cm := &corev1.ConfigMap{}
-	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, cm); err != nil {
-		return false, fmt.Errorf("getting ConfigMap %s/%s: %w", namespace, name, err)
-	}
-	return cm.Data[key] == enabledValue, nil
-}
-
-func oidcEnabledFromConfigMapData(ctx context.Context, c client.Client, namespace, name string) (bool, bool, error) {
-	cm := &corev1.ConfigMap{}
-	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, cm); err != nil {
-		return false, false, fmt.Errorf("getting ConfigMap %s/%s: %w", namespace, name, err)
-	}
-	value, found := cm.Data[oidcEnabledEnvVar]
-	return value == enabledValue, found, nil
 }

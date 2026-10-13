@@ -45,10 +45,10 @@ const (
 	RestartAPIServerErrorEncryptionPhase K8sAPIEncryptionPhaseType = "RestartAPIServerError"
 	RestartedAPIServerEncryptionPhase    K8sAPIEncryptionPhaseType = "RestartedAPIServer"
 
-	APIEncryptionConfiguredLabel          string = "nke.io/k8s-api-encryption-configured=true"
-	APIEncryptionRewriteCompleteLabel     string = "nke.io/k8s-api-encryption-rewrite-complete=true"
-	APIEncryptionEnabledLabel             string = "nke.io/k8s-api-encryption-enabled=true"
-	APIEncryptionSecondaryKeyEnabledLabel string = "nke.io/k8s-api-encryption-secondary-key-configured=true"
+	APIEncryptionConfiguredLabel          string = "nvke.nvidia.com/k8s-api-encryption-configured=true"
+	APIEncryptionRewriteCompleteLabel     string = "nvke.nvidia.com/k8s-api-encryption-rewrite-complete=true"
+	APIEncryptionEnabledLabel             string = "nvke.nvidia.com/k8s-api-encryption-enabled=true"
+	APIEncryptionSecondaryKeyEnabledLabel string = "nvke.nvidia.com/k8s-api-encryption-secondary-key-configured=true"
 )
 
 type (
@@ -204,7 +204,7 @@ func (s *NodeAgentServer) InitializeKubernetesAPIEncryption(
 	// call will fail.  This way we can set everything up and not have to do
 	// any sort of waiting or polling, just set the values; let the auto-restart
 	// handle the rest.
-	err = k8s.LabelNode(ctx, s.NodeStatus.NodeName, APIEncryptionConfiguredLabel)
+	err = labelAPIEncryptionNode(ctx, s.NodeStatus.NodeName, APIEncryptionConfiguredLabel)
 	if err != nil {
 		log.Printf("failed to set api encryption label to `configured`: %v\n", err)
 		response.ErrorMessage = "failed to set api encryption label to `configured`"
@@ -222,7 +222,7 @@ func (s *NodeAgentServer) InitializeKubernetesAPIEncryption(
 			s.NodeStatus.K8sAPIEncryption.Status = K8sAPIEncryptionErrorStatus
 			response.ErrorMessage = "failed to initialize api encryption config"
 			log.Printf("removing the configured label\n")
-			err = k8s.RemoveNodeLabel(ctx, s.NodeStatus.NodeName, APIEncryptionConfiguredLabel)
+			err = removeAPIEncryptionNodeLabel(ctx, s.NodeStatus.NodeName, APIEncryptionConfiguredLabel)
 			if err != nil {
 				log.Printf("failed to remove api encryption configured label: %v\n", err)
 			}
@@ -236,7 +236,7 @@ func (s *NodeAgentServer) InitializeKubernetesAPIEncryption(
 			s.NodeStatus.K8sAPIEncryption.Status = K8sAPIEncryptionErrorStatus
 			response.ErrorMessage = "failed to create volume mount entries"
 			log.Printf("removing the configured label\n")
-			err = k8s.RemoveNodeLabel(ctx, s.NodeStatus.NodeName, APIEncryptionConfiguredLabel)
+			err = removeAPIEncryptionNodeLabel(ctx, s.NodeStatus.NodeName, APIEncryptionConfiguredLabel)
 			if err != nil {
 				log.Printf("failed to remove api encryption configured label: %v\n", err)
 			}
@@ -250,7 +250,7 @@ func (s *NodeAgentServer) InitializeKubernetesAPIEncryption(
 			s.NodeStatus.K8sAPIEncryption.Status = K8sAPIEncryptionErrorStatus
 			response.ErrorMessage = "failed to modify api server manifest"
 			log.Printf("removing the configured label\n")
-			err = k8s.RemoveNodeLabel(ctx, s.NodeStatus.NodeName, APIEncryptionConfiguredLabel)
+			err = removeAPIEncryptionNodeLabel(ctx, s.NodeStatus.NodeName, APIEncryptionConfiguredLabel)
 			if err != nil {
 				log.Printf("failed to remove api encryption configured label: %v\n", err)
 			}
@@ -408,7 +408,7 @@ func (n *NodeAgentServer) RewriteKubernetesAPIObjects(
 			"skipping node label validation; ensure this is an intentional key-rotation call\n")
 	} else {
 		for _, node := range cpNodes {
-			hasLabel, err := k8s.NodeHasLabel(ctx, node, APIEncryptionConfiguredLabel)
+			hasLabel, err := k8s.NodeHasLabelOrMigrate(ctx, node, APIEncryptionConfiguredLabel, "nke.io/k8s-api-encryption-configured=true")
 			if err != nil {
 				log.Printf("failed to get control-plane node %s label: %v\n", node, err)
 			}
@@ -446,7 +446,7 @@ func (n *NodeAgentServer) RewriteKubernetesAPIObjects(
 	for _, node := range cpNodes {
 		if node != "" {
 			log.Printf("labeling node %s\n", node)
-			err := k8s.LabelNode(ctx, node, APIEncryptionRewriteCompleteLabel)
+			err := labelAPIEncryptionNode(ctx, node, APIEncryptionRewriteCompleteLabel)
 			if err != nil {
 				log.Printf("failed to label node %s: %v\n", node, err)
 				response.ErrorMessage = "failed to label node"
@@ -533,7 +533,7 @@ func (n *NodeAgentServer) RemovePlainTextSecondaryEncryptionEntry(
 		return response, err
 	}
 
-	hasLabel, err := k8s.NodeHasLabel(ctx, hostname, APIEncryptionRewriteCompleteLabel)
+	hasLabel, err := k8s.NodeHasLabelOrMigrate(ctx, hostname, APIEncryptionRewriteCompleteLabel, "nke.io/k8s-api-encryption-rewrite-complete=true")
 	if err != nil {
 		response.ErrorMessage = fmt.Sprintf("failed to check node label: %v", err)
 		return response, err
@@ -618,20 +618,20 @@ func (n *NodeAgentServer) RemovePlainTextSecondaryEncryptionEntry(
 	}
 
 	// Finally we can add the APIEncryptionEnabledLabel
-	err = k8s.LabelNode(ctx, n.NodeStatus.NodeName, APIEncryptionEnabledLabel)
+	err = labelAPIEncryptionNode(ctx, n.NodeStatus.NodeName, APIEncryptionEnabledLabel)
 	if err != nil {
 		log.Printf("failed to add label: %v\n", err)
 		return response, err
 	}
 
 	// Remove the other labels
-	err = k8s.RemoveNodeLabel(ctx, n.NodeStatus.NodeName, APIEncryptionConfiguredLabel)
+	err = removeAPIEncryptionNodeLabel(ctx, n.NodeStatus.NodeName, APIEncryptionConfiguredLabel)
 	if err != nil {
 		log.Printf("failed to remove label: %v\n", err)
 		return response, err
 	}
 
-	err = k8s.RemoveNodeLabel(ctx, n.NodeStatus.NodeName, APIEncryptionRewriteCompleteLabel)
+	err = removeAPIEncryptionNodeLabel(ctx, n.NodeStatus.NodeName, APIEncryptionRewriteCompleteLabel)
 	if err != nil {
 		log.Printf("failed to remove label: %v\n", err)
 		return response, err
@@ -991,4 +991,19 @@ func (n *NodeAgentServer) updateEncryptionEntryForKubeadmConfigMap() error {
 	}
 
 	return nil
+}
+
+// labelAPIEncryptionNode writes the new key and prunes its legacy counterpart.
+func labelAPIEncryptionNode(ctx context.Context, node, label string) error {
+	if err := k8s.LabelNode(ctx, node, label); err != nil {
+		return err
+	}
+	return k8s.RemoveNodeLabel(ctx, node, strings.Replace(label, "nvke.nvidia.com/", "nke.io/", 1))
+}
+
+func removeAPIEncryptionNodeLabel(ctx context.Context, node, label string) error {
+	return errors.Join(
+		k8s.RemoveNodeLabel(ctx, node, label),
+		k8s.RemoveNodeLabel(ctx, node, strings.Replace(label, "nvke.nvidia.com/", "nke.io/", 1)),
+	)
 }

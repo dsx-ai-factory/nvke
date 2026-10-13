@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Builds the nke-agent Debian packages and inspects what came out.
+# Builds the nvke-agent Debian packages and inspects what came out.
 #
 # Nothing built them before. The .deb is how the agent reaches a node, and it
 # was the only artefact in the repository with no CI at all -- not even a lint.
@@ -166,8 +166,14 @@ jobs:
           ver=$(dpkg-deb -f "$deb" Version)
           arch=$(dpkg-deb -f "$deb" Architecture)
 
-          [ "$pkg" = "nke-agent" ] \
-            || { echo "::error::${deb}: Package is '${pkg}', expected 'nke-agent'"; exit 1; }
+          [ "$pkg" = "nvke-agent" ] \
+            || { echo "::error::${deb}: Package is '${pkg}', expected 'nvke-agent'"; exit 1; }
+
+          # The renamed package must replace a manually installed legacy agent.
+          for field in Replaces Conflicts Provides; do
+            [ "$(dpkg-deb -f "$deb" "$field")" = "nke-agent" ] \
+              || { echo "::error::${deb}: ${field} must name nke-agent"; exit 1; }
+          done
 
           # The regression guard for the bug this workflow was written after.
           # dpkg itself rejects this at build time, but asserting it here names
@@ -189,8 +195,8 @@ jobs:
           # as a service, so an empty unit directory is a broken install that
           # still produces a valid .deb.
           contents=$(dpkg-deb -c "$deb")
-          printf '%s\n' "$contents" | grep -q './usr/local/bin/nke-agent' \
-            || { echo "::error::${deb}: does not contain /usr/local/bin/nke-agent"; exit 1; }
+          printf '%s\n' "$contents" | grep -q './usr/local/bin/nvke-agent' \
+            || { echo "::error::${deb}: does not contain /usr/local/bin/nvke-agent"; exit 1; }
           printf '%s\n' "$contents" | grep -q './etc/systemd/system/.*\.service' \
             || { echo "::error::${deb}: contains no systemd unit"; exit 1; }
 
@@ -198,8 +204,8 @@ jobs:
           # disabled and comes out static, which would make the Depends: libc6
           # in the control file false. Asserting it keeps the two architectures
           # honest with each other rather than trusting the runner label.
-          dpkg-deb --fsys-tarfile "$deb" | tar -xO ./usr/local/bin/nke-agent > /tmp/nke-agent
-          linkage=$(file -b /tmp/nke-agent)
+          dpkg-deb --fsys-tarfile "$deb" | tar -xO ./usr/local/bin/nvke-agent > /tmp/nvke-agent
+          linkage=$(file -b /tmp/nvke-agent)
           echo "  linkage: ${linkage}"
           case "$linkage" in
             *"dynamically linked"*) ;;
@@ -207,6 +213,13 @@ jobs:
           esac
 
           echo "OK  ${deb}  package=${pkg} version=${ver} arch=${arch}"
+
+      - name: Verify legacy package replacement and rollback
+        working-directory: agent
+        run: |
+          set -euo pipefail
+          debs=(bin/*.deb)
+          sudo bash ../os-image/packages/nvke-agent/test/install.sh "$PWD/${debs[0]}"
 
       - name: Summarise
         if: always()
@@ -220,7 +233,7 @@ jobs:
               echo '|---|---|---|---|---|'
               for deb in bin/*.deb; do
                 link='?'
-                if dpkg-deb --fsys-tarfile "$deb" | tar -xO ./usr/local/bin/nke-agent > /tmp/s 2>/dev/null; then
+                if dpkg-deb --fsys-tarfile "$deb" | tar -xO ./usr/local/bin/nvke-agent > /tmp/s 2>/dev/null; then
                   link=$(file -b /tmp/s | grep -oE 'statically linked|dynamically linked' || echo '?')
                 fi
                 printf '| %s | %s | %s | %s | %s |\n' \

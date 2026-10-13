@@ -3,12 +3,12 @@
 
 name: Agent Artifact
 
-# Publishes the nke-agent binaries to ghcr.io/dsx-ai-factory/nvke/agent as OCI
+# Publishes the nvke-agent binaries to ghcr.io/dsx-ai-factory/nvke/agent as OCI
 # artifacts, joined by a multi-arch index:
 #
 #   ghcr.io/dsx-ai-factory/nvke/agent:v0.3.0            <- OCI image index
-#     |-- ...:v0.3.0-amd64   platform linux/amd64   layer: nke-agent
-#     `-- ...:v0.3.0-arm64   platform linux/arm64   layer: nke-agent
+#     |-- ...:v0.3.0-amd64   platform linux/amd64   layer: nvke-agent
+#     `-- ...:v0.3.0-arm64   platform linux/arm64   layer: nvke-agent
 #
 #   oras pull ghcr.io/dsx-ai-factory/nvke/agent:v0.3.0 --platform linux/arm64
 #
@@ -156,7 +156,7 @@ jobs:
         run: |
           set -euo pipefail
           for arch in amd64 arm64; do
-            bin="bin/linux_${arch}/nke-agent"
+            bin="bin/linux_${arch}/nvke-agent"
             file "${bin}"
             # A binary for the wrong architecture would push and index without
             # complaint, and only fail on a node. Assert what was actually
@@ -201,7 +201,7 @@ jobs:
             done
 
             # Pushed from the binary's own directory so the layer's title
-            # annotation is "nke-agent" and not a path -- that title is the
+            # annotation is "nvke-agent" and not a path -- that title is the
             # filename `oras pull` writes.
             #
             # Capture the digest from the push output so the index step can
@@ -214,8 +214,8 @@ jobs:
                 --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
                 --annotation "org.opencontainers.image.version=${VERSION}" \
                 --annotation "org.opencontainers.image.licenses=Apache-2.0" \
-                --annotation "org.opencontainers.image.title=nke-agent" \
-                nke-agent:application/octet-stream)
+                --annotation "org.opencontainers.image.title=nvke-agent" \
+                nvke-agent:application/octet-stream)
             echo "${output}"
             digest=$(echo "${output}" | grep '^Digest:' | awk '{print $2}')
             echo "digest_${arch}=${digest}" >> "${GITHUB_OUTPUT}"
@@ -256,4 +256,4 @@ jobs:
         uses: ./.github/actions/record-digest
         with:
           references: ${{ env.REPO }}:sha-${{ github.sha }}
-          component: nke-agent
+          component: nvke-agent

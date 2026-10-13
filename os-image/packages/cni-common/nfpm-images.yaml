@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# nfpm spec for nke-<cni>-images-<stream>; build-deb.sh exports the variables.
+# nfpm spec for nvke-<cni>-images-<stream>; build-deb.sh exports the variables.
 # postinst imports the archive into containerd, so the node needs no registry.
 
 name: "${PACKAGE_NAME}"
@@ -20,16 +20,22 @@ description: |
   Pairs with ${CONTENT_PACKAGE}; together they let a node install ${PRODUCT}
   with no registry access at all.
 
-# nke-kubeadm-distro ships its own containerd and conflicts with the Ubuntu
-# package, so either one satisfies this.
+# nvke-kubeadm-distro ships its own containerd and conflicts with the Ubuntu
+# package. The previous virtual name still satisfies a node that has the
+# pre-rename kubeadm package installed.
 depends:
-  - containerd | nke-kubeadm-distro
+  - containerd | nvke-kubeadm-distro | nke-kubeadm-distro
 
-# One image set per node: a second stream replaces the first.
+# One image set per node: a second stream replaces the first. The previous
+# virtual and versioned names are provided so apt install of nke-cni-*-images-<stream>
+# still selects this package.
 provides:
-  - nke-${CNI}-images
+  - nvke-${CNI}-images
+  - ${OLD_IMAGES_VIRTUAL}
+  - ${OLD_IMAGES_VERSIONED}
 conflicts:
-  - nke-${CNI}-images
+  - nvke-${CNI}-images
+  - ${OLD_IMAGES_VIRTUAL}
 
 contents:
   - src: "${SRC}/images.tgz"

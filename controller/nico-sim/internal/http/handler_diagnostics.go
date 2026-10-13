@@ -27,8 +27,8 @@ type CatalogItem struct {
 var catalog = []CatalogItem{
 	{
 		ID: "agent-logs", Name: "Node Agent Logs", Type: "log", Follow: true,
-		cmd:       "sudo journalctl -b -u nke-agent --no-pager -n 500 -o cat",
-		followCmd: "sudo journalctl -b -u nke-agent -f -o cat",
+		cmd:       "sudo journalctl -b -u nvke-agent --no-pager -n 500 -o cat",
+		followCmd: "sudo journalctl -b -u nvke-agent -f -o cat",
 	},
 	{
 		ID: "kubelet-logs", Name: "Kubelet Logs", Type: "log", Follow: true,
@@ -51,7 +51,7 @@ var catalog = []CatalogItem{
 	},
 	{
 		ID: "agent-state", Name: "Agent State", Type: "file", Syntax: "json",
-		cmd: "sudo cat /var/lib/nke/state.json",
+		cmd: "sudo cat /var/lib/nvke/state.json",
 	},
 	{
 		ID: "kubelet-config", Name: "Kubelet Config", Type: "file", Syntax: "yaml",

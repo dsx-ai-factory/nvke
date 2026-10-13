@@ -15,7 +15,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/agent/pkg/agentupgrade"
 )
 
-const defaultOperationRoot = "/var/lib/nke/agent-upgrades"
+const defaultOperationRoot = "/var/lib/nvke/agent-upgrades"
 
 // version is set at build time via -ldflags "-X main.version=<version>".
 var version = "dev"
@@ -26,7 +26,7 @@ func main() {
 	operationRoot := flag.String("operation-root", defaultOperationRoot, "durable node-agent upgrade operation root")
 	flag.Parse()
 	if *versionFlag {
-		_, _ = fmt.Fprintf(os.Stdout, "NKE Agent Updater Version: %s\n", version)
+		_, _ = fmt.Fprintf(os.Stdout, "NVKE Agent Updater Version: %s\n", version)
 		return
 	}
 

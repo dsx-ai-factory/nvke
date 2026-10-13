@@ -12,8 +12,8 @@ Usage:
 
 Starts the capture set needed before triggering a controller node deletion:
   - tcpdump -U -l on every capd-cp-* container and the worker
-  - /var/log/nke-execute-scripts.log on the target CP
-  - nke-agent.service journal on the target CP
+  - /var/log/nvke-execute-scripts.log on the target CP
+  - nvke-agent.service journal on the target CP
   - kubelet and kube-proxy logs on the target CP and worker
   - worker and CP socket state monitors
   - FRR VIP route monitor
@@ -155,9 +155,9 @@ start_capture() {
     require_cmd "${cp}" ss
   done <"${RESULT_DIR}/cp-nodes.txt"
 
-  require_file "${target_cp}" /var/log/nke-execute-scripts.log
-  docker exec "${target_cp}" systemctl is-active --quiet nke-agent.service \
-    || die "nke-agent.service is not active in ${target_cp}"
+  require_file "${target_cp}" /var/log/nvke-execute-scripts.log
+  docker exec "${target_cp}" systemctl is-active --quiet nvke-agent.service \
+    || die "nvke-agent.service is not active in ${target_cp}"
   docker exec "${target_cp}" sh -c 'ls /var/log/containers/kube-proxy-*_kube-system_kube-proxy-*.log >/dev/null 2>&1' \
     || die "kube-proxy container log not found in ${target_cp}"
 
@@ -172,11 +172,11 @@ start_capture() {
       docker exec "${cp}" sh -c "while true; do date -u +%Y-%m-%dT%H:%M:%SZ; ss -Htoni state established '( sport = :${port} and dst = ${worker_ip} )'; sleep 1; done"
   done <"${RESULT_DIR}/cp-nodes.txt"
 
-  start_job target-nke-execute-scripts "${RESULT_DIR}/target-nke-execute-scripts-live.log" \
-    docker exec "${target_cp}" tail -n0 -F /var/log/nke-execute-scripts.log
+  start_job target-nvke-execute-scripts "${RESULT_DIR}/target-nvke-execute-scripts-live.log" \
+    docker exec "${target_cp}" tail -n0 -F /var/log/nvke-execute-scripts.log
 
-  start_job target-nke-agent-journal "${RESULT_DIR}/target-nke-agent-journal-live.log" \
-    docker exec "${target_cp}" journalctl -u nke-agent.service -f --since now --no-pager -o short-iso-precise
+  start_job target-nvke-agent-journal "${RESULT_DIR}/target-nvke-agent-journal-live.log" \
+    docker exec "${target_cp}" journalctl -u nvke-agent.service -f --since now --no-pager -o short-iso-precise
 
   start_job target-kubelet "${RESULT_DIR}/target-kubelet-live.log" \
     docker exec "${target_cp}" journalctl -u kubelet.service -f --since now --no-pager -o short-iso-precise

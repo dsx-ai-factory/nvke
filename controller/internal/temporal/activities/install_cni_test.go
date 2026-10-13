@@ -127,11 +127,11 @@ func TestInstallCNIError(t *testing.T) {
 			name:       "an agent without the RPC names the version needed",
 			err:        status.Error(codes.Unimplemented, "unknown method InstallCNI"),
 			wantType:   "AgentTooOld",
-			wantSubstr: "nke-agent 0.2.0 or later",
+			wantSubstr: "nvke-agent 0.2.0 or later",
 		},
 		{
 			name:     "a missing charts package is permanent",
-			err:      status.Error(codes.FailedPrecondition, "nke-cni-calico-manifests-3.30.1 is not installed"),
+			err:      status.Error(codes.FailedPrecondition, "nvke-cni-calico-manifests-3.30.1 is not installed"),
 			wantType: "InstallCNIPreconditionFailed",
 		},
 		{

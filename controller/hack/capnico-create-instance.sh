@@ -15,7 +15,7 @@
 #     template variable today and is rendered with sed; any surviving `{{` is a
 #     hard failure rather than a VM that silently fails to boot.
 #   - The userData is a deliberately minimal bare boot: no teleport, SPIRE,
-#     nke-agent or kubeadm. Readiness is a port-22 probe (nico-vms injects its
+#     nvke-agent or kubeadm. Readiness is a port-22 probe (nico-vms injects its
 #     own nico-diag user), so cloud-init never gates Ready.
 #   - CAPNICo v0.0.28 CRDs strict-decode: the capital-`ID` spelling (siteID,
 #     vpcID, instanceTypeID, subnetID, sshKeyGroupIDs) is load-bearing. Lowercase

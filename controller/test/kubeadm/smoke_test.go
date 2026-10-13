@@ -24,7 +24,7 @@ import (
 // reach Ready with an address, and proves they can reach each other across the
 // bridge.
 //
-// It installs NOTHING. No kubeadm, no nke-agent, no NVKE apt repo — and that is
+// It installs NOTHING. No kubeadm, no nvke-agent, no NVKE apt repo — and that is
 // the point. The NVKE package repository sits behind a source-IP allowlist that
 // these runners may not be on, so a test that needed it could not distinguish
 // "nico-vms is broken here" from "we cannot download packages here".
