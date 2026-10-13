@@ -49,6 +49,19 @@ the controller sets it on first reconcile.
 
 Two controllers reconciling the same clusters through different CRDs will fight.
 
+The `cloud-workflow-engine` (CWE) chart is also affected: it reads the
+`machineimages`, `clusterreleases` and `nodepoolreleases` CRs to resolve
+osProfile names, and its RBAC now grants only the new group. Until step 3 has
+applied the releases, a CWE running the new chart sees **no releases** and
+cannot resolve an osProfile for new provisioning. Existing tenant clusters are
+not touched. So:
+
+- Run steps 1–5 before, or in the same maintenance window as, the chart upgrade,
+  and install the new CRDs first (the chart does this; do not upgrade a
+  site's CWE and leave it for later).
+- Do not create, resize or upgrade tenant clusters from the chart upgrade until
+  step 5 is clean.
+
 ```bash
 kubectl -n nke-system scale deployment/management-engine --replicas=0
 kubectl -n nke-system rollout status deployment/management-engine --timeout=120s
@@ -76,7 +89,13 @@ for f in *.json; do echo "${f}: $(jq '.items | length' "${f}")"; done
 `jq` drops the server-owned metadata that cannot be re-applied — `uid`,
 `resourceVersion`, `generation`, `creationTimestamp`, `managedFields`,
 `selfLink` — and the old finalizer, which would otherwise be carried onto an
-object whose controller never set it.
+object whose controller never set it. It also drops
+`kubectl.kubernetes.io/last-applied-configuration`, which describes the old
+group, and rewrites annotation keys from the old group prefix to the new one.
+The release CRs carry `internal.nke.nvidia.com/machine-init-kubernetes-version`
+and `...-injected`; the controller reads them under the new prefix, so a copy
+that kept the old keys would silently lose which Kubernetes versions each
+release supports.
 
 ```bash
 rewrite() {  # $1 = input file, $2 = new apiVersion, $3 = new kind (empty keeps it)
@@ -90,6 +109,12 @@ rewrite() {  # $1 = input file, $2 = new apiVersion, $3 = new kind (empty keeps 
             .metadata.creationTimestamp, .metadata.managedFields,
             .metadata.selfLink, .metadata.ownerReferences
           )
+        | del(.metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"])
+        | (if .metadata.annotations then
+             .metadata.annotations |= with_entries(
+               .key |= sub("^internal\\.nke\\.nvidia\\.com/"; "internal.nvke.nvidia.com/"))
+           else . end)
+        | (if .metadata.annotations == {} then del(.metadata.annotations) else . end)
         | .metadata.finalizers = (
             (.metadata.finalizers // [])
             | map(select(startswith("internal.nke.nvidia.com/") | not))
@@ -145,6 +170,10 @@ done
 
 `ClusterReleaseChannel` has no status subresource and is skipped.
 
+Do this while the management-engine is still scaled to zero (step 1). A merge
+patch cannot remove fields a running controller has already written, so restoring
+status after it starts could leave a partial status.
+
 ### 5. Verify before deleting anything
 
 Counts match, and every cluster kept its provisioning identity:
@@ -158,6 +187,17 @@ kubectl get nvkeclusters.internal.nvke.nvidia.com --all-namespaces \
 Every row must carry the same UUID as the matching row in `nkeclusters.json`. An
 empty `id` on a cluster that had one means step 4 did not land — fix it before
 continuing, not after.
+
+Release annotations carried across under the new prefix, and none under the old
+one (both commands should list each release with its version annotations, and the
+second should print nothing):
+
+```bash
+kubectl get clusterreleases.internal.nvke.nvidia.com,nodepoolreleases.internal.nvke.nvidia.com \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations}{"\n"}{end}'
+kubectl get clusterreleases.internal.nvke.nvidia.com,nodepoolreleases.internal.nvke.nvidia.com,machineimages.internal.nvke.nvidia.com \
+  -o json | grep -F 'internal.nke.nvidia.com'
+```
 
 Bring the controller back and let it reconcile:
 
