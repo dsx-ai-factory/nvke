@@ -155,8 +155,11 @@ token:nke-kubeadm-distro|nke-cni-|nke-calico-|nke-spire|nke-node-agent|nke-nodep
 # S3 buckets, the CloudFront bundle path, the ISO prefix and the IAM role keep
 # their names (D16); `nke-packages` is the local package cache on nodes and in
 # the build guest, `nke-apt` the agent's example repository URLs and the
-# image's acquisitions tarball. The apt suites and keys moved to nvke-*.
-token:nke_bundles|nke-isos|nke-apt|nke-packages|nke-prod-assets|nke-non-prod-assets|nke-github-apt-intake
+# image's acquisitions tarball. `nke-noble` and `nke-resolute` are the apt
+# suites nke/packages/apt-publisher actually publishes: #1518 renamed the
+# consumers to nvke- ahead of it and every node install 403'd. They move here
+# when the publisher moves, not before.
+token:nke_bundles|nke-isos|nke-apt|nke-noble|nke-resolute|nke-packages|nke-prod-assets|nke-non-prod-assets|nke-github-apt-intake
 
 # ---- The CLI's old name, kept for one release (D10, D27) ----
 
