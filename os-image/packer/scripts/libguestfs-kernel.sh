@@ -6,9 +6,10 @@
 # use temporary directories without changing the host's /boot or os-release.
 ensure_appliance_kernel() {
   local boot_dir="${1:-/boot}" os_release="${2:-/etc/os-release}"
-  local pass vmlinuz found ID="" VERSION_ID=""
+  local pass vmlinuz found readable ID="" VERSION_ID=""
   for pass in 0 1; do
     found=""
+    readable=""
     for vmlinuz in "${boot_dir}"/vmlinuz-*; do
       [[ -f "${vmlinuz}" ]] || continue
       found="${vmlinuz}"
@@ -16,8 +17,9 @@ ensure_appliance_kernel() {
         echo "::warning::cannot make kernel readable: ${vmlinuz}" >&2
         continue
       fi
-      [[ ! -r "${vmlinuz}" ]] || return 0
+      [[ ! -r "${vmlinuz}" ]] || readable="${vmlinuz}"
     done
+    [[ -z "${readable}" ]] || return 0
     if [[ -n "${found}" ]]; then
       echo "::error::no readable kernel in ${boot_dir}" >&2
       return 1

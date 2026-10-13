@@ -16,7 +16,7 @@ HELPER = Path(__file__).with_name("libguestfs-kernel.sh")
 class LibguestfsKernelTest(unittest.TestCase):
     def invoke(self, root, *, default_ok=True, fallback_ok=True, create_kernel=True,
                existing=False, release="24.04", distro="ubuntu", mode=0o644,
-               chmod_ok=True, extra_readable=False):
+               chmod_ok=True, extra_readable=False, extra_unreadable=False):
         boot = root / "boot"
         boot.mkdir()
         if existing:
@@ -25,6 +25,10 @@ class LibguestfsKernelTest(unittest.TestCase):
             kernel.chmod(mode)
         if extra_readable:
             (boot / "vmlinuz-z-readable").write_text("kernel")
+        if extra_unreadable:
+            kernel = boot / "vmlinuz-z-unreadable"
+            kernel.write_text("kernel")
+            kernel.chmod(0)
         release_file = root / "os-release"
         release_file.write_text(f'ID={distro}\nVERSION_ID="{release}"\n')
         tools = root / "tools"
@@ -90,6 +94,24 @@ fi
         with tempfile.TemporaryDirectory() as tmp:
             result, calls = self.invoke(Path(tmp), existing=True, mode=0,
                                         chmod_ok=False, extra_readable=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(calls, [])
+            self.assertIn("cannot make kernel readable", result.stderr)
+
+    @unittest.skipIf(os.geteuid() == 0, "root can read mode 000 files")
+    def test_readable_kernel_does_not_skip_later_permission_repair(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result, calls = self.invoke(root, existing=True, extra_unreadable=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((root / "boot/vmlinuz-z-unreadable").stat().st_mode & 0o777, 0o644)
+            self.assertEqual(calls, [])
+
+    @unittest.skipIf(os.geteuid() == 0, "root can read mode 000 files")
+    def test_readable_kernel_survives_a_later_permission_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, calls = self.invoke(Path(tmp), existing=True, extra_unreadable=True,
+                                        chmod_ok=False)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(calls, [])
             self.assertIn("cannot make kernel readable", result.stderr)
