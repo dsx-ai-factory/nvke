@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# nfpm spec for nke-cni-calico-manifests-<stream>. build-deb.sh exports
+# nfpm spec for nvke-cni-calico-manifests-<stream>. build-deb.sh exports
 # PACKAGE_NAME, STREAM, DEB_REVISION, ARCH, SRC and IMAGES_PACKAGE.
 #
 # The agent finds this package's install root by asking dpkg-query -L for a
@@ -25,20 +25,31 @@ description: |
   The upstream operator-crds.yaml, tigera-operator.yaml and
   custom-resources.yaml for Calico
   ${STREAM}, pinned by sha256 and installed under
-  /usr/share/nke-cni/calico/${STREAM}. nvke-agent applies them with kubectl
+  /usr/share/nvke-cni/calico/${STREAM}. nvke-agent applies them with kubectl
   when it installs the CNI. The container images they need ship separately in
   ${IMAGES_PACKAGE}; install both for a node with no registry access.
 
+# The previous virtual and versioned names stay provided, so apt install of
+# nke-cni-calico-manifests-<stream> still selects this package. One stream
+# per node: the virtual names conflict with every other provider.
+provides:
+  - nvke-cni-calico-manifests
+  - nke-cni-calico-manifests
+  - nke-cni-calico-manifests-${STREAM}
+conflicts:
+  - nvke-cni-calico-manifests
+  - nke-cni-calico-manifests
+
 contents:
   - src: "${SRC}/manifests/operator-crds.yaml"
-    dst: "/usr/share/nke-cni/calico/${STREAM}/manifests/operator-crds.yaml"
+    dst: "/usr/share/nvke-cni/calico/${STREAM}/manifests/operator-crds.yaml"
     file_info: { mode: 0644 }
     expand: true
   - src: "${SRC}/manifests/tigera-operator.yaml"
-    dst: "/usr/share/nke-cni/calico/${STREAM}/manifests/tigera-operator.yaml"
+    dst: "/usr/share/nvke-cni/calico/${STREAM}/manifests/tigera-operator.yaml"
     file_info: { mode: 0644 }
     expand: true
   - src: "${SRC}/manifests/custom-resources.yaml"
-    dst: "/usr/share/nke-cni/calico/${STREAM}/manifests/custom-resources.yaml"
+    dst: "/usr/share/nvke-cni/calico/${STREAM}/manifests/custom-resources.yaml"
     file_info: { mode: 0644 }
     expand: true

@@ -35,6 +35,11 @@ render() {
 checksum="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 render defaults
+render readiness-custom \
+  --set nodeAgent.readiness.workers=4 \
+  --set-string nodeAgent.readiness.timeout=10s \
+  --set-string nodeAgent.readiness.interval=90s \
+  --set nodeAgent.readiness.jitter=0
 
 # Padded on purpose: the template must trim these.
 render dsx-imds \
@@ -239,6 +244,15 @@ if refusal="$(helm template cwe "${CHART}" --set-string 'env[0].name=CONTROLLER_
 fi
 [[ "${refusal}" == *"env sets CONTROLLER_CONFIG_PATH"* ]] ||
   { echo "env override of CONTROLLER_CONFIG_PATH failed for another reason: ${refusal}" >&2; exit 1; }
+for key in WORKERS TIMEOUT INTERVAL JITTER; do
+  variable="NODE_AGENT_READINESS_${key}"
+  if refusal="$(helm template cwe "${CHART}" --set-string "env[0].name=${variable}" --set-string 'env[0].value=1' 2>&1)"; then
+    echo "env set ${variable} and rendered; the chart must refuse it" >&2
+    exit 1
+  fi
+  [[ "${refusal}" == *"env sets ${variable}, which nke-controller-config carries as agentReadiness."* ]] ||
+    { echo "env override of ${variable} failed for another reason: ${refusal}" >&2; exit 1; }
+done
 printf '  env overrides of nke-controller-config settings and its path are refused\n'
 
 # The values files the Tilt and nvkectl bootstrap deployments install with.

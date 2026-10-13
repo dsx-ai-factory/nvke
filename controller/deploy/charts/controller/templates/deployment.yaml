@@ -221,98 +221,10 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-            # Identity strings for Server-Side-Apply field managers and the
-            # managed-by label. See values.yaml identity.* for the greenfield story.
-            - name: FIELD_MANAGER_NAME
-              value: {{ .Values.identity.fieldManagerName | quote }}
-            - name: FIELD_MANAGER_REBOOT_MACHINE_NAME
-              value: {{ .Values.identity.fieldManagerRebootMachineName | quote }}
-            - name: FIELD_MANAGER_MACHINE_HEALTH_ISSUE_NAME
-              value: {{ .Values.identity.fieldManagerMachineHealthIssueName | quote }}
-            - name: MANAGED_BY_LABEL_VALUE
-              value: {{ .Values.identity.managedByLabelValue | quote }}
-            # Metrics server listen address
-            - name: METRICS_LISTEN_ADDRESS
-              value: {{ .Values.metrics.listenAddress | quote }}
-            - name: SUPPORTED_INFRA_PROVIDERS
-              value: {{ .Values.supportedInfraProviders | quote }}
-            {{- if .Values.tracing.enabled }}
-            - name: OTEL_TRACING_ENABLED
-              value: "true"
-            {{- /* When operatorInject is enabled, leave OTEL_EXPORTER_OTLP_* unset (no tracing.endpoint) so inject-sdk supplies localhost sidecar values. */}}
-            {{- if .Values.tracing.endpoint }}
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.tracing.endpoint | quote }}
-            - name: OTEL_EXPORTER_OTLP_INSECURE
-              value: {{ .Values.tracing.insecure | quote }}
-            {{- if .Values.tracing.serviceName }}
-            - name: OTEL_SERVICE_NAME
-              value: {{ .Values.tracing.serviceName | quote }}
-            {{- end }}
-            {{- end }}
-            {{- end }}
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: CERT_RENEWAL_CONTROLLER_ENABLED
-              value: {{ .Values.scheduledMaintenance.certRenewal.enabled | quote }}
-            - name: CERT_RENEWAL_INTERVAL
-              value: {{ .Values.scheduledMaintenance.certRenewal.interval | quote }}
-            - name: CERT_RENEWAL_THRESHOLD_DAYS
-              value: {{ .Values.scheduledMaintenance.certRenewal.thresholdDays | quote }}
-            - name: KUBEADM_IMAGE_REPOSITORY
-              value: {{ .Values.kubeadm.imageRepository | quote }}
-            {{- if .Values.cni.imageRegistry }}
-            - name: CNI_IMAGE_REGISTRY
-              value: {{ .Values.cni.imageRegistry | quote }}
-            {{- end }}
-            - name: INSTALL_CNI_AFTER_INIT
-              value: {{ .Values.cni.installAfterInit | quote }}
-            - name: TENANT_ACCESS_ENABLED
-              value: {{ .Values.tenantAccess.enabled | quote }}
-            - name: NODE_AGENT_TLS_JWT_ENABLED
-              value: {{ .Values.nodeAgent.tlsJwt.enabled | quote }}
-            {{- if .Values.nodeAgent.tlsJwt.enabled }}
-            - name: NODE_AGENT_TLS_JWT_ISSUER
-              value: {{ required "nodeAgent.tlsJwt.issuer is required when TLS/JWT is enabled" .Values.nodeAgent.tlsJwt.issuer | quote }}
-            - name: NODE_AGENT_TLS_JWT_JWKS_URI
-              value: {{ required "nodeAgent.tlsJwt.jwksURI is required when TLS/JWT is enabled" .Values.nodeAgent.tlsJwt.jwksURI | quote }}
-            - name: NODE_AGENT_TLS_JWT_ALGORITHMS
-              value: {{ required "nodeAgent.tlsJwt.algorithms must contain at least one algorithm when TLS/JWT is enabled" (join "," .Values.nodeAgent.tlsJwt.algorithms) | quote }}
-            - name: NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN
-              value: {{ required "nodeAgent.tlsJwt.subjectTrustDomain is required when TLS/JWT is enabled" .Values.nodeAgent.tlsJwt.subjectTrustDomain | quote }}
-            - name: NODE_AGENT_TLS_JWT_SUBJECT_TENANT
-              value: {{ required "nodeAgent.tlsJwt.subjectTenant is required when TLS/JWT is enabled" (.Values.nodeAgent.tlsJwt.subjectTenant | trim) | quote }}
-            - name: NODE_AGENT_TLS_JWT_SUBJECT_SERVICE
-              value: {{ required "nodeAgent.tlsJwt.subjectService is required when TLS/JWT is enabled" (.Values.nodeAgent.tlsJwt.subjectService | trim) | quote }}
-            - name: NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL
-              value: {{ required "nodeAgent.tlsJwt.dsxIdentityExchangeURL is required when TLS/JWT is enabled" (.Values.nodeAgent.tlsJwt.dsxIdentityExchangeURL | trim) | quote }}
-            {{- end }}
-            - name: NODE_AGENT_EXTERNAL_MTLS_ENABLED
-              value: {{ .Values.nodeAgent.externalMTLS.enabled | quote }}
-            - name: NKE_OIDC_AUTH_ENABLED
-              value: {{ .Values.nkeOIDCAuth.enabled | quote }}
-            {{- if .Values.nkeOIDCAuth.issuerURL }}
-            - name: NKE_OIDC_AUTH_ISSUER_URL
-              value: {{ .Values.nkeOIDCAuth.issuerURL | quote }}
-            {{- end }}
-            {{- if .Values.nkeOIDCAuth.discoveryURL }}
-            - name: NKE_OIDC_AUTH_DISCOVERY_URL
-              value: {{ .Values.nkeOIDCAuth.discoveryURL | quote }}
-            {{- end }}
-            {{- if .Values.nkeOIDCAuth.caBundleSecret.namespace }}
-            - name: NKE_OIDC_AUTH_CA_BUNDLE_SECRET_NAMESPACE
-              value: {{ .Values.nkeOIDCAuth.caBundleSecret.namespace | quote }}
-            {{- end }}
-            {{- if .Values.nkeOIDCAuth.caBundleSecret.name }}
-            - name: NKE_OIDC_AUTH_CA_BUNDLE_SECRET_NAME
-              value: {{ .Values.nkeOIDCAuth.caBundleSecret.name | quote }}
-            {{- end }}
-            {{- if .Values.nkeOIDCAuth.caBundleSecret.key }}
-            - name: NKE_OIDC_AUTH_CA_BUNDLE_SECRET_KEY
-              value: {{ .Values.nkeOIDCAuth.caBundleSecret.key | quote }}
-            {{- end }}
             # DB
             {{- if or .Values.secrets.createDbSecret .Values.secrets.dbSecretName }}
             - name: DB_CONNECTION_STRING
@@ -324,46 +236,7 @@ spec:
             - name: DB_CONNECTION_STRING
               value: {{ printf "postgres://%s:%s@%s/%s?sslmode=%s" .Values.appDb.postgresUser (default "placeholder" .Values.appDb.postgresPassword) .Values.appDb.url .Values.appDb.dbName (default "disable" .Values.appDb.sslMode) | quote }}
             {{- end }}
-            # Temporal config
-            - name: TEMPORAL_HOST_PORT
-              value: "{{ .Values.temporal.host }}:{{ .Values.temporal.port }}"
-            - name: TEMPORAL_NAMESPACE
-              value: {{ .Values.temporal.cloudWorkflow.namespace }}
-            - name: TEMPORAL_TASK_QUEUE
-              value: {{ .Values.temporal.cloudWorkflow.queue }}
-            {{- if .Values.temporal.mtls.enabled }}
-            - name: TEMPORAL_MTLS_CA_CERT
-              value: {{ printf "%s/%s" .Values.temporal.mtls.mountPath .Values.temporal.mtls.caCertFile | quote }}
-            - name: TEMPORAL_MTLS_CLIENT_CERT
-              value: {{ printf "%s/%s" .Values.temporal.mtls.mountPath .Values.temporal.mtls.clientCertFile | quote }}
-            - name: TEMPORAL_MTLS_CLIENT_KEY
-              value: {{ printf "%s/%s" .Values.temporal.mtls.mountPath .Values.temporal.mtls.clientKeyFile | quote }}
-            - name: TEMPORAL_MTLS_SERVER_NAME
-              value: {{ .Values.temporal.mtls.serverName | quote }}
-            {{- end }}
-            - name: PROFILES_DIR
-              value: {{ .Values.profiles.path | quote }}
-            - name: NICO_CONTROLLERS_ENABLED
-              value: {{ .Values.controllers.nico.enabled | quote }}
-            {{- with include "controller.runbooksDir" . }}
-            - name: RUNBOOKS_DIR
-              value: {{ . | quote }}
-            {{- end }}
-            # SPIFFE/SPIRE config
-            - name: SPIFFE_ENABLED
-              value: {{ .Values.spiffe.enabled | quote }}
-            - name: SPIFFE_ENDPOINT_SOCKET
-              value: {{ .Values.spiffe.endpointSocket | quote }}
-            {{- with .Values.spiffe.jwtExchangeEndpoint }}
-            - name: SPIFFE_JWT_EXCHANGE_ENDPOINT
-              value: {{ . | quote }}
-            {{- end }}
-            - name: SPIRE_SERVER_NAMESPACE
-              value: {{ .Values.spiffe.spire.serverNamespace | quote }}
-            - name: SPIRE_CLASS_NAME
-              value: {{ .Values.spiffe.spire.className | quote }}
-            - name: SPIRE_TPM_PUBHASHES_CONFIG_MAP_NAME
-              value: {{ .Values.spiffe.spire.tpmPubhashesConfigMapName | quote }}
+            # Not in nke-controller-config: its default comes from the downward API.
             - name: SPIRE_SERVER_ADDRESS
               {{- if .Values.spiffe.spire.serverAddress }}
               value: {{ .Values.spiffe.spire.serverAddress | quote }}
@@ -373,38 +246,6 @@ spec:
               {{- else }}
               {{- fail "Either spiffe.spire.serverAddress or spiffe.spire.serverAddressFrom must be set" }}
               {{- end }}
-            - name: SPIRE_SERVER_PORT
-              value: {{ .Values.spiffe.spire.serverPort | quote }}
-            - name: SPIRE_JOIN_TOKEN_TTL
-              value: {{ .Values.spiffe.spire.joinTokenTTL | quote }}
-            - name: NODE_AGENT_SPIRE_ATTESTATION_METHOD
-              value: {{ $spireAttestationMethod | quote }}
-            {{- if eq $spireAttestationMethod "dsxImds" }}
-            - name: NODE_AGENT_DSX_IMDS_OPERATOR_TENANT
-              value: {{ $dsxIMDSOperatorTenant | quote }}
-            - name: NODE_AGENT_DSX_IMDS_ENDPOINT
-              value: {{ $dsxIMDSEndpoint | quote }}
-            - name: NODE_AGENT_DSX_IMDS_PLUGIN_CHECKSUM
-              value: {{ $dsxIMDSPluginChecksum | quote }}
-            {{- end }}
-            # Teleport config
-            {{- if .Values.teleport.enabled }}
-            - name: TELEPORT_ENABLED
-              value: "true"
-            - name: TELEPORT_IDENTITY_FILE
-              value: {{ .Values.teleport.identityFile | quote }}
-            - name: TELEPORT_PROXY_ADDRESS
-              value: {{ .Values.teleport.proxyAddress | quote }}
-            - name: TELEPORT_ENVIRONMENT
-              value: {{ .Values.teleport.environment | quote }}
-            {{- end }}
-            # Set unconditionally: node userdata carries a TPM join token
-            # name and ownership label regardless of teleport.enabled, which
-            # only gates this controller's own Teleport API client.
-            - name: TELEPORT_MANAGED_BY_LABEL_VALUE
-              value: {{ .Values.teleport.managedByLabelValue | quote }}
-            - name: TELEPORT_TOKEN_NAME_PREFIX
-              value: {{ .Values.teleport.tokenNamePrefix | quote }}
             {{- if .Values.secrets.dgxcTenantCredSecretName }}
             - name: DGXC_TENANT_USER
               valueFrom:
@@ -451,8 +292,6 @@ spec:
             # unset, so the deployment would look configured and authenticate nobody.
             - name: AUTH_CONFIG_PATH
               value: {{ printf "%s/%s" (include "controller.apiAuth.mountPath" .) (include "controller.apiAuth.configFile" .) | quote }}
-            - name: PERMISSIVE_MODE
-              value: {{ .Values.apiAuth.permissive | quote }}
             {{- end }}
             {{- range .Values.env }}
             - name: {{ .name }}

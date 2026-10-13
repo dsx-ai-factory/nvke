@@ -76,3 +76,22 @@ regexes = [
   '''nvapi-0123456789abcdefghij''',
   '''8f14e45fceea167a5a36dedd4bea2543''',
 ]
+
+[[allowlists]]
+description = """The name-check test's CLEAN fixture is a line of words that
+contain the banned name without being it, and one of them is a go.sum-shaped
+module hash for nats-io/nkeys. generic-api-key reads "nkeys h1:<base64>" as a
+keyed secret. The hash is synthetic -- a short prefix padded with "abcdef" --
+and names no module version. Scoped to that one literal in that one file, so a
+real credential added beside it is still caught.
+
+It reaches a scan on any branch that merges main after #1444, because the
+workflow scans merges as their first-parent diff and that diff carries the
+file's addition."""
+condition = "AND"
+paths = [
+  '''^hack/test_name_check\.py$''',
+]
+regexes = [
+  '''9Q3nKEdv4abcdef''',
+]

@@ -2685,7 +2685,7 @@ type InstallCNIRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// OVN or CALICO; when UNSPECIFIED the agent uses OVN (stream selects nke-cni-ovn-charts-<stream>, etc.).
+	// OVN or CALICO; when UNSPECIFIED the agent uses OVN (stream selects nvke-cni-ovn-charts-<stream>, etc.).
 	CniVariant CniVariant `protobuf:"varint,1,opt,name=cni_variant,json=cniVariant,proto3,enum=proto.CniVariant" json:"cni_variant,omitempty"`
 	// Selects Debian stream suffix in the charts/manifest package name used to locate bundled
 	// charts on disk (leading "v" stripped). Empty uses defaults matching cni-packages (OVN 1.4.0,
@@ -6342,8 +6342,10 @@ type ExecuteNodePreflightRequest struct {
 	Checks []*NodePreflightCheck `protobuf:"bytes,1,rep,name=checks,proto3" json:"checks,omitempty"`
 	// Optional kubeadm init/join preflight for this node.
 	KubeadmPreflight *KubeadmPreflightRequest `protobuf:"bytes,2,opt,name=kubeadm_preflight,json=kubeadmPreflight,proto3,oneof" json:"kubeadm_preflight,omitempty"`
-	// When set, the agent runs `cloud-init status` and passes when output contains
-	// "status: done". "status: running" yields notready; "status: error" yields error.
+	// When set, the agent runs `cloud-init status --long` and passes when its
+	// status line reads "status: done". "status: running" yields notready;
+	// "status: error" yields error. The lines after the status line are
+	// reported, not evaluated.
 	CheckCloudInitStatus *CheckCloudInitStatus `protobuf:"bytes,3,opt,name=check_cloud_init_status,json=checkCloudInitStatus,proto3" json:"check_cloud_init_status,omitempty"`
 }
 

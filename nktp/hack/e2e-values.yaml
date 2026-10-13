@@ -6,8 +6,10 @@
 #
 # The defaults size NKTP for a multi-node cluster; one Kind node on the e2e
 # runner cannot schedule them. Lower replica counts, autoscaler floors and
-# requests keep it schedulable while collection behavior and limits stay the
-# chart's own.
+# ceilings and requests keep it schedulable while collection behavior and
+# limits stay the chart's own. The ceiling matters when NKTP shares the node
+# with other workloads: with 50m requests a startup burst crosses the
+# autoscaler's target, and a second replica would stay Pending.
 #
 # Two workloads keep their replica counts, because there the count is behavior:
 # cluster_events runs an elected reader and a standby, and large_target_metrics
@@ -34,6 +36,7 @@ watchdog:
     replicas: 1
     autoscaler:
       minReplicas: 1
+      maxReplicas: 1
     resources:
       requests:
         cpu: 50m
@@ -43,6 +46,7 @@ gateway_logs:
     replicas: 1
     autoscaler:
       minReplicas: 1
+      maxReplicas: 1
     resources:
       requests:
         cpu: 50m
@@ -52,6 +56,7 @@ gateway_metrics:
     replicas: 1
     autoscaler:
       minReplicas: 1
+      maxReplicas: 1
     resources:
       requests:
         cpu: 50m
@@ -61,6 +66,7 @@ gateway_traces:
     replicas: 1
     autoscaler:
       minReplicas: 1
+      maxReplicas: 1
     resources:
       requests:
         cpu: 50m

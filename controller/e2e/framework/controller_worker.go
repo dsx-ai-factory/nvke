@@ -21,8 +21,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -116,19 +118,28 @@ func StartControllerWorkerBinary(t testing.TB, cfg ControllerWorkerBinaryConfig)
 	_, err := os.Stat(filepath.Join(profilesDir, "configProfiles"))
 	require.NoError(t, err, "expected fixture config profiles under %s", profilesDir)
 
+	settings, err := controllerconfig.Load(filepath.Join(RepoRoot(t), "hack", "local-controller-config.yaml"))
+	require.NoError(t, err)
+	settings.Temporal.HostPort = cfg.TemporalHostPort
+	settings.Temporal.Namespace = cfg.Namespace
+	settings.Temporal.TaskQueue = cfg.TaskQueue
+	settings.ProfilesDir = profilesDir
+	settings.RunbooksDir = ""
+	settings.Spire.SpiffeEnabled = false
+	settings.Teleport.Enabled = false
+	encoded, err := yaml.Marshal(settings)
+	require.NoError(t, err)
+	settingsPath := filepath.Join(t.TempDir(), "controller-config.yaml")
+	require.NoError(t, os.WriteFile(settingsPath, encoded, 0o600))
+
 	env := []string{
+		"CONTROLLER_CONFIG_PATH=" + settingsPath,
 		"DB_CONNECTION_STRING=" + cfg.DBConnectionString,
 		"DB_MAX_OPEN_CONNECTIONS=4",
 		"DB_QUERY_LOG_LEVEL=debug",
 		"KUBECONFIG=" + cfg.KubeconfigPath,
 		"NODE_AGENT_PORT=" + cfg.NodeAgent.Port,
-		"TEMPORAL_HOST_PORT=" + cfg.TemporalHostPort,
-		"TEMPORAL_NAMESPACE=" + cfg.Namespace,
-		"TEMPORAL_TASK_QUEUE=" + cfg.TaskQueue,
-		"PROFILES_DIR=" + profilesDir,
 		"NODE_HEALTH_CHECK_DISABLED=true",
-		"SPIFFE_ENABLED=false",
-		"TELEPORT_ENABLED=false",
 		"GOFAIL_FAILPOINTS=",
 		"GOFAIL_HTTP=",
 		"SERVER_LISTEN_ADDRESS=127.0.0.1:0",

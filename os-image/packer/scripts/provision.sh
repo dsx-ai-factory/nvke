@@ -9,19 +9,19 @@ set -euo pipefail
 SRC=/var/tmp/nke-image
 ROOT_FS_LABEL="${ROOT_FS_LABEL:?ROOT_FS_LABEL is required}"
 
-sudo install -d -m 0755 /usr/lib/nke /etc/nke /var/lib/nke /usr/local/bin
-sudo install -m 0755 "${SRC}/wait-spiffe-socket.sh" /usr/lib/nke/wait-spiffe-socket.sh
+sudo install -d -m 0755 /usr/lib/nvke /etc/nke /var/lib/nke /usr/local/bin
+sudo install -m 0755 "${SRC}/wait-spiffe-socket.sh" /usr/lib/nvke/wait-spiffe-socket.sh
 # Conntrack limits. conntrack-tune.service generates its sysctl.d file at
 # every boot from that node's RAM; nothing here computes it, so the build VM's
 # RAM never reaches the image. Only the RAM-independent TIME_WAIT file is
 # baked in.
-sudo install -m 0755 "${SRC}/configure-conntrack.sh" /usr/lib/nke/configure-conntrack.sh
+sudo install -m 0755 "${SRC}/configure-conntrack.sh" /usr/lib/nvke/configure-conntrack.sh
 sudo install -m 0644 "${SRC}/conntrack-tune.service" /etc/systemd/system/conntrack-tune.service
 sudo install -m 0644 "${SRC}/10-nke-conntrack-timeouts.conf" /etc/sysctl.d/10-nke-conntrack-timeouts.conf
 # Load nf_conntrack at boot, before systemd-sysctl.service, so its keys exist
 # when conntrack-tune.service compares against them and when systemd-sysctl
 # applies both conntrack files. Otherwise it loads on demand (a netfilter
-# rule, or the openvswitch module), after the boot pass. nke-kubeadm-distro's
+# rule, or the openvswitch module), after the boot pass. nvke-kubeadm-distro's
 # modules-load.d/k8s.conf lists it too, but only from cluster create on.
 echo 'nf_conntrack' | sudo tee /etc/modules-load.d/nf_conntrack.conf >/dev/null
 sudo systemctl enable conntrack-tune.service
@@ -50,16 +50,16 @@ sudo install -m 0644 "${SRC}/nvke-agent-spire.conf" /etc/systemd/system/nvke-age
 sudo env NKE_AGENT_SKIP_START=1 dpkg -i "${SRC}/nvke-agent.deb"
 
 # Stage the CNI debs as a local flat apt repo, so cluster create's `apt-get
-# install nke-cni-...` resolves offline with apt's dependency handling intact.
+# install nvke-cni-...` resolves offline with apt's dependency handling intact.
 # trusted=yes: the content is already on this root fs.
 if [[ -d "${SRC}/debs" ]]; then
-  sudo install -d -m 0755 /usr/lib/nke/debs
-  sudo install -m 0644 "${SRC}"/debs/*.deb "${SRC}/debs/Packages" /usr/lib/nke/debs/
-  echo 'deb [trusted=yes] file:/usr/lib/nke/debs ./' | sudo tee /etc/apt/sources.list.d/nke-local.list >/dev/null
+  sudo install -d -m 0755 /usr/lib/nvke/debs
+  sudo install -m 0644 "${SRC}"/debs/*.deb "${SRC}/debs/Packages" /usr/lib/nvke/debs/
+  echo 'deb [trusted=yes] file:/usr/lib/nvke/debs ./' | sudo tee /etc/apt/sources.list.d/nke-local.list >/dev/null
 fi
 
 # Install the Calico manifest package for this image architecture.
-calico_manifest_deb="$(find "${SRC}/debs" -maxdepth 1 -type f -name 'nke-cni-calico-manifests-*.deb' -print -quit 2>/dev/null || true)"
+calico_manifest_deb="$(find "${SRC}/debs" -maxdepth 1 -type f -name 'nvke-cni-calico-manifests-*.deb' -print -quit 2>/dev/null || true)"
 if [[ -n "${calico_manifest_deb}" ]]; then
   sudo dpkg -i "${calico_manifest_deb}"
 fi
@@ -254,7 +254,7 @@ done
 # Smaller qcow2: apt's package cache and now-unreferenced blocks (deleted
 # files, old package versions) don't shrink the disk image on their own --
 # fstrim tells the guest kernel to discard them, which the disk_discard =
-# "unmap" builder setting (nke-node-fde.pkr.hcl / nke-node-non-fde.pkr.hcl)
+# "unmap" builder setting (nvke-node-fde.pkr.hcl / nvke-node-non-fde.pkr.hcl)
 # passes through to the backing qcow2 so Packer's own post-build compaction
 # ("Converting hard drive...") actually has free space to reclaim. Must run
 # last: any write after this leaves blocks un-trimmed again.

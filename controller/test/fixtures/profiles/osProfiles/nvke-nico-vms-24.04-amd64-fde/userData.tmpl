@@ -96,14 +96,14 @@ runcmd:
   - systemctl is-active --quiet teleport && echo 'Teleport service started successfully' >> /var/log/cloud-init-teleport.log || { echo 'Teleport service failed to start' >> /var/log/cloud-init-teleport.log; systemctl status teleport --no-pager >> /var/log/cloud-init-teleport.log; exit 1; }
   - echo 'Teleport installation completed at '$(date) >> /var/log/cloud-init-teleport.log
 {{- end }}
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nvke-agent nke-kubeadm-distro-{{ trimPrefix .KubernetesVersion "v" }} spire-agent
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nvke-agent nvke-kubeadm-distro-{{ trimPrefix .KubernetesVersion "v" }} spire-agent
   - [sh, -c, 'u=http://carbide-pxe.forge:18080/files/node-agent/nvke-agent; if curl -fsSL "$u" -o /tmp/nvke-agent; then install -m 0755 /tmp/nvke-agent /usr/local/bin/nvke-agent && echo "downloaded local nvke-agent" && /usr/local/bin/nvke-agent -version; else echo "local nvke-agent not available at $u; using image agent"; fi']
 {{- if .CalicoEnabled }}
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nke-cni-calico-images-3.30.1 nke-cni-calico-manifests-3.30.1
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nvke-cni-calico-images-3.30.1 nvke-cni-calico-manifests-3.30.1
 {{- end }}
 {{- if .OvnEnabled }}
   # The charts package is what the post-init CNI install reads.
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nke-cni-ovn-images-1.4.0 nke-cni-ovn-charts-1.4.0
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nvke-cni-ovn-images-1.4.0 nvke-cni-ovn-charts-1.4.0
 {{- end }}
   - sysctl --system
   - systemctl daemon-reload

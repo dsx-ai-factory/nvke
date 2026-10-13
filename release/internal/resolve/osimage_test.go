@@ -58,7 +58,7 @@ func TestOSImageBuildsTheImageURL(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := srv.URL + "/nke-packages/os-image/releases/v0.1.1-rc.1/" + tc + "/nke-node-non-fde-ubuntu-24.04.5-" + tc + ".qcow2"
+			want := srv.URL + "/nke-packages/os-image/releases/v0.1.1-rc.1/" + tc + "/nvke-node-non-fde-ubuntu-24.04.5-" + tc + ".qcow2"
 			if got[ResultURLKey] != want {
 				t.Errorf("url = %q, want %q", got[ResultURLKey], want)
 			}
@@ -173,10 +173,28 @@ func TestNewOSImageAndURL(t *testing.T) {
 	}
 }
 
+// A release published before the rename keeps its original filename. When the
+// new name is not there, Resolve returns that one.
+func TestOSImageLegacyFilename(t *testing.T) {
+	legacy := newOSImage("", "amd64").imageObjectURL("", "v0.1.1-rc.1", "24.04.5", "nke")
+	srv := server(t, legacy)
+
+	got, err := newOSImage(srv.URL, "amd64").Resolve(imageInputs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[ResultURLKey] != srv.URL+legacy {
+		t.Errorf("url = %q, want the filename published before the rename", got[ResultURLKey])
+	}
+	if got[ResultVersionKey] != "v0.1.1-rc.1" {
+		t.Errorf("version = %q, want the release tag", got[ResultVersionKey])
+	}
+}
+
 // The URL is always asked for, and a missing one fails with both explanations of
 // a 403.
 func TestOSImageChecksTheURLExists(t *testing.T) {
-	const image = "/os-image/releases/v0.1.1-rc.1/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"
+	const image = "/os-image/releases/v0.1.1-rc.1/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"
 	srv := server(t, image)
 
 	t.Run("it exists", func(t *testing.T) {
@@ -192,7 +210,7 @@ func TestOSImageChecksTheURLExists(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected an error, got none")
 		}
-		for _, want := range []string{"could not confirm", "ubuntu-26.04.1-amd64.qcow2", "HTTP 403", "a network that is not allowed both answer 403"} {
+		for _, want := range []string{"could not confirm", "nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2", "HTTP 403", "a network that is not allowed both answer 403"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("error does not mention %q:\n%s", want, err)
 			}
@@ -285,9 +303,9 @@ func TestOSImagePath(t *testing.T) {
 	srv := everything(t)
 
 	for _, tc := range []struct{ name, path, want string }{
-		{"with a path", "nke-packages", "/nke-packages/os-image/releases/v0.1.1-rc.1/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"},
-		{"with slashes around it", "/nke-packages/", "/nke-packages/os-image/releases/v0.1.1-rc.1/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"},
-		{"with none", "", "/os-image/releases/v0.1.1-rc.1/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"},
+		{"with a path", "nke-packages", "/nke-packages/os-image/releases/v0.1.1-rc.1/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"},
+		{"with slashes around it", "/nke-packages/", "/nke-packages/os-image/releases/v0.1.1-rc.1/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"},
+		{"with none", "", "/os-image/releases/v0.1.1-rc.1/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o := newOSImage(srv.URL, "amd64")

@@ -547,7 +547,7 @@ VERSION_CMDS := agent:--version \
                 capd-reboot-controller:--version \
                 controller:--version \
                 management-engine:--version \
-                nke-os-image-check:--version \
+                nvke-os-image-check:--version \
                 nvkectl:version \
                 updater:--version
 
@@ -560,9 +560,9 @@ version-check: build ## Verify every built binary reports a real version. (run b
 	@# The declared/built comparison sorts LC_ALL=C, because the two sides are
 	@# sorted by different tools: make's $(sort) is byte order, while the shell's
 	@# sort follows the locale, which folds punctuation and puts nvkectl before
-	@# nke-os-image-check where bytes put nke-os-image-check first. Every name that
+	@# nvke-os-image-check where bytes put nvke-os-image-check first. Every name that
 	@# existed before sorted the same both ways, so this surfaced only when
-	@# nke-os-image-check was added -- as a mismatch listing the identical six names.
+	@# nvke-os-image-check was added -- as a mismatch listing the identical six names.
 	@fail=0; \
 	check() { \
 		out=$$("$(BIN_DIR)/$$1" $$2 2>&1) || { \

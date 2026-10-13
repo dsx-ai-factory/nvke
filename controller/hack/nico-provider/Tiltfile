@@ -241,10 +241,6 @@ def register(ctx):
     cwe_resource_deps = sim_result.cwe_resource_deps + [CAPNICO_CREDENTIALS_RESOURCE]
     cwe_env_overrides = {}
     cwe_env_overrides.update(sim_result.cwe_env_overrides)
-    if not use_nico_sim:
-        cwe_env_overrides.update({
-            "SPIFFE_ENABLED": "true",
-        })
 
     cwe_http_port = os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
     cmd_button(

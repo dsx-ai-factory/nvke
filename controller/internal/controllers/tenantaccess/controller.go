@@ -327,7 +327,7 @@ func (c *Controller) publishSPIRE(ctx context.Context, cluster db.Cluster, admin
 func (c *Controller) applyRBAC(ctx context.Context, cluster db.Cluster, adminConf []byte) error {
 	manifest, err := c.readRBACManifest(ctx)
 	if apierrors.IsNotFound(err) {
-		// Do not publish a SPIRE kubeconfig that cannot authenticate as nke:cwe /
+		// Do not publish a SPIRE kubeconfig that cannot authenticate as nvke:cwe /
 		// CAPI SPIFFE IDs. The chart renders this ConfigMap when spiffe.trustDomain
 		// is set, independent of the live OIDC flag.
 		return fmt.Errorf("nke-rbac ConfigMap not found; refusing to publish SPIRE kubeconfig for cluster %s: %w", cluster.Name, err)
@@ -342,6 +342,9 @@ func (c *Controller) applyRBAC(ctx context.Context, cluster db.Cluster, adminCon
 	}
 	if err := applyManifestSSA(ctx, tenantClient, manifest, rbacFieldManager); err != nil {
 		return fmt.Errorf("applying NVKE RBAC to cluster %s: %w", cluster.Name, err)
+	}
+	if err := pruneLegacyRBAC(ctx, tenantClient, manifest); err != nil {
+		return fmt.Errorf("pruning legacy NVKE RBAC from cluster %s: %w", cluster.Name, err)
 	}
 
 	return nil

@@ -229,7 +229,7 @@ func requireKubeadmConfig(t *testing.T, c config) {
 		}
 	case provisionApt:
 		if c.kubeadmDeb == "" {
-			missing = append(missing, "NKE_BRINGUP_KUBEADM_DEB (e.g. nke-kubeadm-distro-1.36.3)")
+			missing = append(missing, "NKE_BRINGUP_KUBEADM_DEB (e.g. nvke-kubeadm-distro-1.36.3)")
 		}
 		if c.kubeadmDebVersion == "" {
 			missing = append(missing, "NKE_BRINGUP_KUBEADM_VERSION (pinned apt version, e.g. 6)")

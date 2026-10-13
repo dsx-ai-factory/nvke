@@ -82,7 +82,7 @@ checkout, and do not stub a dependency to make the build pass.
 | `controller/profiles/` | OS and config profiles | Ask first — being moved out of this repo |
 | `build/` | Build scripts (`agent.sh`) | Yes |
 | `docs/` | Repository-level documentation | Yes |
-| `os-image/` | Reference node OS image spec, Packer recipe, `nke-os-image-check` | Yes |
+| `os-image/` | Reference node OS image spec, Packer recipe, `nvke-os-image-check` | Yes |
 | `controller/api/*.gen.go` | oapi-codegen output | **No — regenerate** |
 | `cluster-api-provider-provisioned/api/v1alpha1/zz_generated.deepcopy.go` | controller-gen output | **No — regenerate** |
 | `cluster-api-provider-provisioned/config/crd/bases/*.yaml` | controller-gen output | **No — regenerate** |

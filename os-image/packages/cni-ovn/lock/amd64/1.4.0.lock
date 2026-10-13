@@ -1,4 +1,4 @@
-# nke-cni-ovn lock for 1.4.0 (amd64). Regenerate with `make lock`; review the diff before committing.
+# nvke-cni-ovn lock for 1.4.0 (amd64). Regenerate with `make lock`; review the diff before committing.
 ovn 1.4.0
 artifact ovn-kubernetes-src-v1.4.0.tar.gz c807488a6cf9b3d690fcb61d8c607ffbe455f5d7bf28a85c3031ff327d3b935e https://github.com/ovn-kubernetes/ovn-kubernetes/archive/refs/tags/v1.4.0.tar.gz
 image ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu:release-1.4 sha256:88c56666ab2fcf7e0d1cc3b99557e240070d2465b0adf3f06a63911abc652c47

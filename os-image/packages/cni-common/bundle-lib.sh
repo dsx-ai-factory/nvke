@@ -273,7 +273,7 @@ finish_bundle() {
   if [[ "$WRITE_LOCK" == true ]]; then
     mkdir -p "$(dirname "$LOCK")"
     {
-      echo "# nke-${CNI} lock for ${VERSION} (${ARCH}). Regenerate with \`make lock\`; review the diff before committing."
+      echo "# nvke-${CNI} lock for ${VERSION} (${ARCH}). Regenerate with \`make lock\`; review the diff before committing."
       echo "${CNI#cni-} ${VERSION}"
       printf '%s\n' "${ARTIFACT_LINES[@]}" "${IMAGE_LINES[@]}"
     } >"${LOCK}.new"

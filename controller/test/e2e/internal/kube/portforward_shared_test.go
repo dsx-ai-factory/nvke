@@ -19,7 +19,7 @@ func sharedTestConfig() *rest.Config {
 // so a caller holding a forwarder from before the reset still has a working one;
 // only the live session is dropped, and the next request rebuilds it.
 //
-// nvke.setNVKEContainerEnv uses this rather than Close for exactly that reason:
+// nvke.restartController uses this rather than Close for exactly that reason:
 // the API client in internal/nvke captures a forwarder when it is built, which is
 // before any rollout the specs perform.
 func TestResetSharedForwardersKeepsTheForwarderUsable(t *testing.T) {

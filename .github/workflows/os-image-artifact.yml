@@ -10,7 +10,7 @@ name: OS Image Artifact
 # the 12-hourly schedule, pushes all eight qcow2s to GHCR as OCI artifacts
 # (main pushes and the schedule stop there; NVCR, S3 and the Release stay
 # tag/dispatch only), and on a real tag cuts a GitHub
-# Release carrying nke-os-image-check + checksums covering all nine files.
+# Release carrying nvke-os-image-check + checksums covering all nine files.
 # The GitHub Release is created here (not in release.yml) so a failed bake or
 # validation never cuts a release.
 #
@@ -37,7 +37,7 @@ name: OS Image Artifact
 #   ghcr.io/dsx-ai-factory/nvke/os-image-fde:v0.1.0[-ubuntu24.04]-{amd64,arm64}
 #   ghcr.io/dsx-ai-factory/nvke/os-image-non-fde:v0.1.0[-ubuntu24.04]-{amd64,arm64}
 #     `-- platform linux/{amd64,arm64}
-#         layer: nke-node-{fde,non-fde}-ubuntu-<version>-<arch>.qcow2
+#         layer: nvke-node-{fde,non-fde}-ubuntu-<version>-<arch>.qcow2
 #
 #   oras pull ghcr.io/dsx-ai-factory/nvke/os-image-fde:v0.1.0-amd64 --platform linux/amd64
 #
@@ -226,7 +226,7 @@ jobs:
 
       # Once per run here rather than in each of the eight bare-metal builds,
       # which only need the binary.
-      - name: Test nke-os-image-check and the Packer scripts
+      - name: Test nvke-os-image-check and the Packer scripts
         working-directory: os-image
         env:
           NKE_REQUIRE_REAL_TOOLS: "1"
@@ -404,7 +404,7 @@ jobs:
 
       # validate-packer runs the tests. Only the build that carries the shared
       # release assets (see "Prepare release assets") needs the binary.
-      - name: Build nke-os-image-check
+      - name: Build nvke-os-image-check
         if: matrix.arch == 'amd64' && matrix.tag_suffix == '' && matrix.variant == 'non-fde'
         working-directory: os-image
         run: make build
@@ -464,7 +464,7 @@ jobs:
             sudo chmod 666 /dev/kvm
           fi
           ls -l /dev/kvm
-          # Still open it: nke_qemu_env tests the permission bits with -w,
+          # Still open it: nvke_qemu_env tests the permission bits with -w,
           # which says nothing about whether open(2) would actually succeed.
           exec 3<>/dev/kvm
           exec 3>&-
@@ -482,7 +482,7 @@ jobs:
           # call alone saves little time -- check-acceleration repeats it
           # seconds later -- and is here for the diagnosis.
           #
-          # Then start QEMU for real on what it picked. nke_qemu_env goes no
+          # Then start QEMU for real on what it picked. nvke_qemu_env goes no
           # further than the permission bits and 'qemu -accel help', and that
           # list is what this QEMU was compiled with, not what it can
           # initialise here -- so a pod whose /dev/kvm cannot back a VM still
@@ -499,7 +499,7 @@ jobs:
           if ! ( cd os-image/packer && ACCELERATOR=kvm REQUIRE_ACCELERATION=1 \
                  bash -ec '
                    . ./scripts/qemu-arch.sh
-                   nke_qemu_env "${ARCH}"
+                   nvke_qemu_env "${ARCH}"
                    printf "quit\\n" | timeout 60 "${QEMU_BIN}" \
                      -machine "${QEMU_MACHINE}" -cpu "${QEMU_CPU}" "${ACCEL_ARGS[@]}" \
                      -S -no-user-config -nodefaults -display none -monitor stdio
@@ -736,7 +736,7 @@ jobs:
       # Runs regardless of outcome: this runner has no VNC/monitor access to
       # inspect a stuck or failed FDE/non-FDE build interactively, so the
       # guest's own serial console (boot + autoinstall output, see
-      # console=ttyS0 in nke-node-fde.pkr.hcl / nke-node-non-fde.pkr.hcl) is
+      # console=ttyS0 in nvke-node-fde.pkr.hcl / nvke-node-non-fde.pkr.hcl) is
       # the only way to see what happened. No-op if the dir is empty/missing
       # (e.g. a failure before either build reached prepare-installer-iso).
       # Arch-suffixed: upload-artifact rejects two jobs in the same run
@@ -863,8 +863,8 @@ jobs:
           ( cd dist && sha256sum "${sbom}" ) >> "assets/checksums-${BUILD}.txt"
           cp "dist/${sbom}" "assets/${sbom}"
           if [[ "${BUILD}" == "amd64-non-fde" ]]; then
-            cp os-image/bin/nke-os-image-check assets/nke-os-image-check
-            ( cd assets && sha256sum nke-os-image-check >> "checksums-${BUILD}.txt" )
+            cp os-image/bin/nvke-os-image-check assets/nvke-os-image-check
+            ( cd assets && sha256sum nvke-os-image-check >> "checksums-${BUILD}.txt" )
             {
               echo "version=${VERSION}"
               echo "agent_version=${AGENT_VERSION}"
@@ -1057,7 +1057,7 @@ jobs:
           set -euo pipefail
           sums="expected/checksums-${BUILD}.txt"
           # --ignore-missing, because the default flavor's amd64 non-FDE build
-          # also lists nke-os-image-check, which is a release asset, not a disk.
+          # also lists nvke-os-image-check, which is a release asset, not a disk.
           # That makes an empty dist/ pass, so count the disks separately.
           disks=(dist/*.qcow2)
           if [[ ! -e "${disks[0]}" ]]; then
@@ -1209,8 +1209,8 @@ jobs:
             too large to attach here.
 
             Each disk has an SPDX 2.3 SBOM attached beside it, named after the
-            disk it describes -- `nke-node-fde-ubuntu-26.04.1-amd64.spdx.json`
-            for `nke-node-fde-ubuntu-26.04.1-amd64.qcow2`, and so on. It lists
+            disk it describes -- `nvke-node-fde-ubuntu-26.04.1-amd64.spdx.json`
+            for `nvke-node-fde-ubuntu-26.04.1-amd64.qcow2`, and so on. It lists
             the image's dpkg package set, read out of the built disk rather
             than derived from the Packer templates.
 
@@ -1218,7 +1218,7 @@ jobs:
             over `checksums.txt`; see [RELEASE.md](RELEASE.md) for the verify
             commands.
           files: |
-            dist/nke-os-image-check
+            dist/nvke-os-image-check
             dist/*.spdx.json
             dist/checksums.txt
             dist/checksums.txt.sigstore.json
@@ -1276,7 +1276,7 @@ jobs:
             // here, so adding an Ubuntu flavor or an architecture to the
             // matrix does not need a second edit. The eight build legs each
             // append their own disk and SBOM to it, so it names all eight
-            // .spdx.json and nke-os-image-check. The qcow2s are dropped: they
+            // .spdx.json and nvke-os-image-check. The qcow2s are dropped: they
             // ship as OCI artifacts, too large to attach. checksums.txt and
             // its attestation do not appear inside it, so they stay explicit.
             const listed = fs.readFileSync(process.env.CHECKSUMS, 'utf8')

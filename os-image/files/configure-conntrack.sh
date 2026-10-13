@@ -98,7 +98,7 @@ if [[ -z "${body}" ]]; then
   exit 0
 fi
 
-content="# Generated at boot by conntrack-tune.service (/usr/lib/nke/configure-conntrack.sh).
+content="# Generated at boot by conntrack-tune.service (/usr/lib/nvke/configure-conntrack.sh).
 # MemTotal ${mem_kib} kB -> target ${target}. The kernel had nf_conntrack_max ${have_max}
 # and nf_conntrack_buckets ${have_buckets}; only values above those are written.
 # Regenerated every boot, so do not edit it. To override, add a same-named file in

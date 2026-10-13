@@ -332,8 +332,8 @@ log "building the OVN packages for post-init CNI"
 BUNDLE_ARCH="$(go env GOARCH)"
 export BUNDLE_ARCH
 bash "${CLI_DIR}/../controller/hack/ci/prepare-capd-bundles.sh" "${CNI_BUNDLE_DIR}"
-CAPD_CNI_CHARTS_DEB_PATH="${CNI_BUNDLE_DIR}/nke-cni-ovn-charts-1.4.0_1.4.0_${BUNDLE_ARCH}.deb"
-CAPD_CNI_IMAGES_DEB_PATH="${CNI_BUNDLE_DIR}/nke-cni-ovn-images-1.4.0_1.4.0_${BUNDLE_ARCH}.deb"
+CAPD_CNI_CHARTS_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-charts-1.4.0_1.4.0_${BUNDLE_ARCH}.deb"
+CAPD_CNI_IMAGES_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-images-1.4.0_1.4.0_${BUNDLE_ARCH}.deb"
 CAPD_HELM_DEB_PATH="${CNI_BUNDLE_DIR}/nke-e2e-helm.deb"
 export CAPD_CNI_CHARTS_DEB_PATH CAPD_CNI_IMAGES_DEB_PATH CAPD_HELM_DEB_PATH
 if [ ! -f "${CAPD_CNI_CHARTS_DEB_PATH}" ] || [ ! -f "${CAPD_CNI_IMAGES_DEB_PATH}" ] || [ ! -f "${CAPD_HELM_DEB_PATH}" ]; then

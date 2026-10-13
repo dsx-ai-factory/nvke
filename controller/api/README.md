@@ -49,8 +49,9 @@ make -C controller generate-api
 
 Operations, schemas and properties that are not part of the customer-facing
 API carry `x-fern-ignore: true`. Fern, which builds the REST API Reference tab
-of the documentation site from this file, leaves them out; Swagger UI at
-`/api/docs/` and the generated Go are unaffected. Today that is the `infra`
+of the documentation site from this file, leaves them out. Swagger UI at
+`/api/docs/` loads `GET /openapi-public.yaml`, which drops the same surface.
+`GET /openapi.yaml` and the generated Go keep it. Today that is the `infra`
 provider, `teleportEnabled`, the legacy `controlPlane` node-pool flag, and the
 `/osProfiles` and `/configProfiles` endpoints.
 

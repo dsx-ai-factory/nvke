@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -26,20 +27,80 @@ const (
 	// deployPathRef in site_controller_test.go.
 	DeployPathRef = "HEAD"
 
-	// scriptsDir holds the executor, its helpers and the customer deploy
-	// path deploy/nico; deployDir the e2e deploy paths and the charts every
-	// path installs by relative path; hackDir the post-install script; and
-	// nktpChartDir the NKTP chart, which the nktp item installs by relative
-	// path from outside both.
-	scriptsDir   = "deploy"
+	// deployDir holds the e2e deploy paths and the charts every path installs
+	// by relative path; hackDir the post-install script; and nktpChartDir the
+	// NKTP chart, which the nktp item installs by relative path from outside
+	// both.
 	deployDir    = "controller/deploy"
 	hackDir      = "controller/hack"
 	nktpChartDir = "nktp/deploy/charts/nktp"
 )
 
-// DeployAssetPaths are what the Stack deployer runs from.
-func DeployAssetPaths() []string {
-	return []string{scriptsDir, deployDir, hackDir, nktpChartDir}
+// DeployLayout is where a ref keeps the deploy assets, and how the executor it
+// ships is called. The lane exports from the release tag under
+// qualification, so it reads trees older than itself and cannot assume they
+// are shaped like the checkout it was built from.
+//
+// Only CurrentLayout() is supported. Release tags cut before it are not
+// qualified: the plan selects the latest controller tag, and nothing pins an
+// older one.
+type DeployLayout struct {
+	// Name identifies the layout in errors, as the directory it is built
+	// around.
+	Name string
+	// Executor is the install script, relative to the exported assets.
+	Executor string
+	// DeployPath is the customer deploy path, relative to the exported
+	// assets. It holds controller/release.yaml and spire/overlay.yaml.
+	DeployPath string
+	// Export is what to pull out of the ref.
+	Export []string
+}
+
+// CurrentLayout() is the layout from #1453 onwards, the first controller tag
+// carrying it being controller/v0.2.0-rc.1.
+//
+// A function and not a package variable, so each caller gets its own Export
+// and appending to one cannot reshape the other's.
+func CurrentLayout() DeployLayout {
+	return DeployLayout{
+		Name:       "deploy",
+		Executor:   "deploy/nvke-deploy.sh",
+		DeployPath: "deploy/nico",
+		Export:     []string{"deploy", deployDir, hackDir, nktpChartDir},
+	}
+}
+
+// TargetArgs names this layout's deploy path, which is under assets, to its
+// executor.
+func (l DeployLayout) TargetArgs(assets string) []string {
+	return []string{"--deploy-path", path.Join(assets, l.DeployPath)}
+}
+
+// ControllerReleasePath is the HelmRelease deployPath installs the
+// controller from, relative to the exported assets.
+func ControllerReleasePath(deployPath string) string {
+	return path.Join(deployPath, "controller", "release.yaml")
+}
+
+// ResolveLayout reports the layout ref uses, or that it predates the one the
+// lane supports. It probes for the executor rather than reading the version,
+// because a backport, a branch or a hand-cut tag need not follow the version.
+func ResolveLayout(ctx context.Context, repo, ref string) (DeployLayout, error) {
+	// That ref resolves at all, first, so a version with a typo in it does
+	// not report that the executor moved.
+	if err := exec.CommandContext(ctx, "git", "-C", repo, "cat-file", "-e", ref+"^{commit}").Run(); err != nil {
+		return DeployLayout{}, fmt.Errorf("resolve layout: %s is not a commit in %s: %w", ref, repo, err)
+	}
+	layout := CurrentLayout()
+	if exec.CommandContext(ctx, "git", "-C", repo, "cat-file", "-e", ref+":"+layout.Executor).Run() != nil {
+		return DeployLayout{}, fmt.Errorf(
+			"%s in %s has no %s: the site lane qualifies controller/v0.2.0-rc.1 and later, "+
+				"so qualify a newer controller, or update CurrentLayout if the executor moved",
+			ref, repo, layout.Executor,
+		)
+	}
+	return layout, nil
 }
 
 // ExportRef writes paths as they are at ref in the repository at repo into a

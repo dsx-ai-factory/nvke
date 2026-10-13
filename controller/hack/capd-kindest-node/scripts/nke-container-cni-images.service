@@ -3,7 +3,7 @@
 
 [Unit]
 Description=Import packaged OVN images into the KIND node runtime
-ConditionPathExists=/usr/lib/nke/e2e/cni-images.deb
+ConditionPathExists=/usr/lib/nvke/e2e/cni-images.deb
 Requires=containerd.service
 After=containerd.service
 Before=nvke-agent.service spire-agent.service
@@ -12,7 +12,7 @@ Before=nvke-agent.service spire-agent.service
 Type=oneshot
 # KIND ships containerd as a binary, without either Debian dependency provider.
 # Keep the canonical postinst; containerd.service above supplies the runtime.
-ExecStart=/usr/bin/dpkg --ignore-depends=containerd,nke-kubeadm-distro -i /usr/lib/nke/e2e/cni-images.deb
+ExecStart=/usr/bin/dpkg --ignore-depends=containerd,nvke-kubeadm-distro -i /usr/lib/nvke/e2e/cni-images.deb
 RemainAfterExit=yes
 
 [Install]

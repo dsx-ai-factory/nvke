@@ -9,8 +9,8 @@
 # real server -- just proves the image boots on its own.
 #
 # QCOW defaults to the single *.qcow2 under output-non-fde/ (its filename
-# encodes the Ubuntu version/arch, e.g. nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2
-# -- see vm_name in nke-node-non-fde.pkr.hcl). This variant is UEFI-installed,
+# encodes the Ubuntu version/arch, e.g. nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2
+# -- see vm_name in nvke-node-non-fde.pkr.hcl). This variant is UEFI-installed,
 # firmware is discovered automatically; override both paths together when necessary:
 #   OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd \
 #     OVMF_VARS_TEMPLATE=/usr/share/OVMF/OVMF_VARS_4M.fd ./boot-smoke.sh
@@ -36,7 +36,7 @@ if [[ -z "${QCOW}" ]]; then
 fi
 SSH_KEY="${SSH_KEY:-${ROOT}/.ssh/id_ed25519}"
 SSH_PORT="${SSH_PORT:-2222}"
-nke_qemu_env "$(nke_arch_from_qcow "${QCOW}")"
+nvke_qemu_env "$(nke_arch_from_qcow "${QCOW}")"
 OVMF_CODE="${OVMF_CODE:-${EFI_CODE_DEFAULT}}"
 OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-${EFI_VARS_DEFAULT}}"
 ROOT_FS_LABEL="${ROOT_FS_LABEL:-cloudimg-rootfs}"
@@ -57,7 +57,7 @@ if [[ ! -f "${SSH_KEY}" ]]; then
 fi
 
 WORKDIR="$(mktemp -d)"
-DISK="${WORKDIR}/nke-node-smoke.qcow2"
+DISK="${WORKDIR}/nvke-node-smoke.qcow2"
 SEED="${WORKDIR}/seed.iso"
 PIDFILE="${WORKDIR}/qemu.pid"
 
@@ -143,7 +143,7 @@ minimum_root_bytes=$((target_disk_bytes * 80 / 100))
 test "${root_bytes}" -ge "${minimum_root_bytes}"
 systemctl is-enabled nvke-agent.service
 systemctl is-enabled spire-agent.service
-systemctl is-enabled nke-spire-configure.service
+systemctl is-enabled nvke-spire-configure.service
 # multipathd must stay masked, both units: it races Longhorn for newly
 # attached volumes and leaves them unformattable (see provision.sh for the
 # mechanism). is-enabled exits non-zero for a masked unit, so compare its
@@ -173,14 +173,14 @@ for path in /usr/local/bin/nvke-agent /usr/local/bin/nvke-agent-updater \
   /etc/systemd/system/nvke-agent.service /etc/systemd/system/nvke-agent-updater@.service; do
   test "$(dpkg-query -S "${path}" | cut -d: -f1)" = nvke-agent
 done
-systemctl cat nvke-agent.service | grep -Fx 'ExecStartPre=/usr/lib/nke/wait-spiffe-socket.sh'
+systemctl cat nvke-agent.service | grep -Fx 'ExecStartPre=/usr/lib/nvke/wait-spiffe-socket.sh'
 test -x /usr/local/bin/spire-agent
 test -x /usr/local/lib/spire-agent/tpm_attestor_agent
 test -x /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent
 test -x /usr/local/bin/get_tpm_pubhash
-test -x /usr/lib/nke/spire-configure.sh
-test -x /usr/lib/nke/wait-spiffe-socket.sh
-dpkg-query -W -f='${Status}\n' 'nke-cni-calico-manifests-*' | grep -Fxq 'install ok installed'
+test -x /usr/lib/nvke/spire-configure.sh
+test -x /usr/lib/nvke/wait-spiffe-socket.sh
+dpkg-query -W -f='${Status}\n' 'nvke-cni-calico-manifests-*' | grep -Fxq 'install ok installed'
 # The paths above would also pass against the raw-binary install this package
 # replaced, so assert dpkg actually owns them.
 dpkg-query -W -f='${Status}\n' spire-agent | grep -Fxq 'install ok installed'
@@ -210,8 +210,27 @@ have_in_local_repo() {
     [[ -n "$(apt-cache search --names-only "^$1-[0-9]")" ]] ||
         { echo "the image's local apt repo offers no $1-* package" >&2; return 1; }
 }
-have_in_local_repo nke-kubeadm-distro
-have_in_local_repo nke-cni-calico-images
+have_in_local_repo nvke-kubeadm-distro
+have_in_local_repo nvke-cni-calico-images
+# The package Provides its previous name, so a node that asks apt for
+# nke-kubeadm-distro-<ver> or nke-cni-*-images-<ver> still installs it.
+# showpkg lists that provider under Reverse Provides.
+provides_previous_name() {
+    local real old
+    real="$(apt-cache search --names-only "^$1-[0-9]" | awk 'NR==1 { print $1 }')"
+    [[ -n "${real}" ]] || { echo "no $1 package to check Provides against" >&2; return 1; }
+    case "${real}" in
+        nvke-kubeadm-distro-*) old="nke-kubeadm-distro-${real#nvke-kubeadm-distro-}" ;;
+        nvke-cni-*) old="nke-cni-${real#nvke-cni-}" ;;
+        *) echo "no previous name for ${real}" >&2; return 1 ;;
+    esac
+    apt-cache showpkg "${old}" | grep -Fq "${real}" || {
+        echo "apt-cache showpkg ${old} does not list ${real} as a provider" >&2
+        return 1
+    }
+}
+provides_previous_name nvke-kubeadm-distro
+provides_previous_name nvke-cni-calico-images
 
 EOF
 

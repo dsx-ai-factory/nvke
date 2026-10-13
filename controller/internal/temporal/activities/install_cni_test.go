@@ -131,7 +131,7 @@ func TestInstallCNIError(t *testing.T) {
 		},
 		{
 			name:     "a missing charts package is permanent",
-			err:      status.Error(codes.FailedPrecondition, "nke-cni-calico-manifests-3.30.1 is not installed"),
+			err:      status.Error(codes.FailedPrecondition, "nvke-cni-calico-manifests-3.30.1 is not installed"),
 			wantType: "InstallCNIPreconditionFailed",
 		},
 		{

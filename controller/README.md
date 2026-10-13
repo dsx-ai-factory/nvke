@@ -188,10 +188,10 @@ tilt up
   explicitly want the local nico-vms path.
 - CAPNICo reaches nico-sim through `NICO_SIM_ENDPOINT_HOST` when set. Otherwise
   Tilt uses `host.docker.internal` on macOS and the Kind gateway on Linux.
-- `.env.tilt` configures in-cluster CWE env overrides. Keep host-local settings in `.env.local`.
+- `.env.tilt` holds Tilt's inputs: the credentials, toggles such as `NKE_AUTH_ENABLED` and `TENANT_ACCESS_ENABLED`, and the few variables the Tiltfile passes to the controller (`LOG_LEVEL`, `SPIRE_SERVER_API_ADDRESS`, ...). The controller's other settings come from the chart values, rendered into `nke-controller-config`. Keep host-local settings in `.env.local`.
 - `DGXC_TENANT_USER`, `DGXC_TENANT_PASSWORD`, `CNPG_SUPERUSER_PASSWORD`, `CNPG_CLOUD_PASSWORD`, and `CNPG_TEMPORAL_PASSWORD` have no defaults — set them in `.env.tilt` or export them, or `tilt up` fails with the list of what is missing. `CNPG_SUPERUSER_PASSWORD` is what the local postgres chart is installed with, so changing it after the first `tilt up` requires deleting the postgres PVC.
 - Personal Tilt customizations can go in `tilt.d/*.tilt` or `tilt.d/*.star`.
-- CWE defaults to `SPIRE_SERVER_ADDRESS=host.docker.internal` and `SPIRE_SERVER_PORT=30440`. On Linux Docker, if `host.docker.internal` is not available, override `SPIRE_SERVER_ADDRESS` in `.env.tilt` to your host's gateway IP (for example: `ip -4 route show default | awk '{print $3}'`).
+- CWE defaults to `SPIRE_SERVER_ADDRESS=host.docker.internal`, and Tilt's chart values set `spiffe.spire.serverPort` to `30440`. On Linux Docker, if `host.docker.internal` is not available, override `SPIRE_SERVER_ADDRESS` in `.env.tilt` to your host's gateway IP (for example: `ip -4 route show default | awk '{print $3}'`).
 
 ### CAPNICo simulation: nico-vms and nico-containers
 
@@ -463,9 +463,11 @@ You'll probably also want the Temporal UI (open in browser at http://localhost:1
 kubectl port-forward -n temporal svc/temporal-web 18233:8080
 ```
 
-And now you're ready to build and run CWE:
+And now you're ready to build and run CWE, against the forwarded Temporal port:
 ```bash
-TEMPORAL_HOST_PORT=localhost:17233 go run ./cmd/worker/main.go
+mkdir -p .local
+yq '.temporal.hostPort = "localhost:17233"' hack/local-controller-config.yaml > .local/controller-config.remote.yaml
+CONTROLLER_CONFIG_PATH=.local/controller-config.remote.yaml make run
 ```
 
 You should now see the Swagger UI at http://localhost:8080/api/docs.
@@ -556,16 +558,17 @@ apiAuth:
   clusterIssuerDiscovery: true  # see RBAC Prerequisite below
 ```
 
-The chart renders those into the two environment variables NVKE reads. Set them
-directly if you deploy without the chart. Both are read at startup, and so is
+The chart renders those into the `AUTH_CONFIG_PATH` environment variable and the
+`permissiveMode` key of `nke-controller-config`. Set them directly if you deploy
+without the chart. Both are read at startup, and so is
 the configuration file, so changing any of them needs a pod restart. The chart
 arranges that restart itself; see [Authentication Configuration](#authentication-configuration) below.
 
-| State | `AUTH_CONFIG_PATH` | `PERMISSIVE_MODE` | Result |
+| State | `AUTH_CONFIG_PATH` | `permissiveMode` | Result |
 | --- | --- | --- | --- |
 | **Disabled** | unset | — | Middleware is not in the chain. Every request served. The default. |
 | **Permissive** | set | `true` | Every request evaluated, logged and counted, then served anyway. |
-| **Enforcing** | set | unset or `false` | Failures answered 401 or 403. |
+| **Enforcing** | set | `false` | Failures answered 401 or 403. |
 
 A deployment that never sets `AUTH_CONFIG_PATH` stays disabled across upgrades.
 
@@ -801,9 +804,9 @@ under `outcome="would_reject"` with the status it would have returned.
 ### The Anonymous Surface
 
 These need no token: `/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`,
-`/docs`, and the Swagger UI under `/api/docs/`. Everything else does, including
-paths that route nowhere, so an unauthenticated caller cannot probe which ones
-exist. `internal/auth/routes.go` is the list.
+`/openapi-public.yaml`, `/docs`, and the Swagger UI under `/api/docs/`.
+Everything else does, including paths that route nowhere, so an unauthenticated
+caller cannot probe which ones exist. `internal/auth/routes.go` is the list.
 
 ## Debugging
 
@@ -858,12 +861,17 @@ Interpret the results this way:
 
 Use this when you want to set breakpoints and step through CWE code while the rest of the stack (Temporal, Postgres, SPIRE) is managed by Tilt.
 
-**Prerequisites:** `tilt up` is running and all resources are healthy. Ensure `.env.local` has the Tilt-forwarded endpoints:
+**Prerequisites:** `tilt up` is running and all resources are healthy. Make a copy of the local config that uses the Tilt deployment's Temporal namespace and queue:
 
 ```bash
-export TEMPORAL_HOST_PORT=localhost:7233
-export TEMPORAL_NAMESPACE=nke-controller
-export TEMPORAL_TASK_QUEUE=nke-controller-tasks
+mkdir -p .local
+yq '.temporal.namespace = "nke-controller" | .temporal.taskQueue = "nke-controller-tasks"' hack/local-controller-config.yaml > .local/controller-config.tilt.yaml
+```
+
+and ensure `.env.local` points at it and at the Tilt-forwarded database:
+
+```bash
+export CONTROLLER_CONFIG_PATH="$PWD/.local/controller-config.tilt.yaml"
 export DB_CONNECTION_STRING="postgres://postgres:postgres@localhost:5432/nke-controller?sslmode=disable"
 export DB_MAX_OPEN_CONNECTIONS=12
 ```

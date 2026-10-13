@@ -1,4 +1,4 @@
-# nke-kubeadm-distro lock for v1.34.2 (arm64). Regenerate with `make lock`; review the diff before committing.
+# nvke-kubeadm-distro lock for v1.34.2 (arm64). Regenerate with `make lock`; review the diff before committing.
 kubernetes v1.34.2
 artifact cni-plugins db09ab057ecf60b05ba05cbec38d55b95cc139c7f1078e2e4857cc13af158cee https://github.com/containernetworking/plugins/releases/download/v1.6.0/cni-plugins-linux-arm64-v1.6.0.tgz
 artifact containerd 5e6a05fc6990912f856fab297bee13b6ba83ff4e9b6b3bc507da33da8c1f5b5f https://github.com/containerd/containerd/releases/download/v2.1.7/containerd-2.1.7-linux-arm64.tar.gz

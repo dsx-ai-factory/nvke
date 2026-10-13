@@ -31,8 +31,8 @@ Orchestration is responsible for installing Debian packages (typically via **`In
 
 | `cni_variant` | Charts/manifest deb (required on CP before **`InstallCNI`**) | Image deb (typically all nodes — optional if registry-pull only) |
 |---------------|-----------------------------|------------------|
-| OVN           | `nke-cni-ovn-charts-<stream>`   | `nke-cni-ovn-images-<stream>` |
-| CALICO        | `nke-cni-calico-manifests-<stream>` | `nke-cni-calico-images-<stream>` |
+| OVN           | `nvke-cni-ovn-charts-<stream>`   | `nvke-cni-ovn-images-<stream>` |
+| CALICO        | `nvke-cni-calico-manifests-<stream>` | `nvke-cni-calico-images-<stream>` |
 
 `cni_variant` **UNSPECIFIED** is treated as **OVN**. **`version`**:strip leading **`v`**; selects **`<stream>`** in the deb naming; empty **`version`** selects defaults matching **cni-packages** (currently OVN **`1.4.0`**, Calico **`3.30.1`**). Pinning still appears as **`=…`** appended to logical package names produced for logging and **`resolvedAptPackage`**.
 
@@ -61,8 +61,8 @@ charts/manifests.
 **Current NVKE controller (recommended):**
 
 1. **`ExecuteKubeadmInit`** with **`noCniInstall: true`** on the bootstrap control-plane node.
-2. **`InstallPackages`** (**or apt**) for **`nke-cni-*-images-<stream>`** on nodes that must pre-load images (skip if registry-pull-only tenant policy applies).
-3. **`InstallPackages`** for **`nke-cni-*-charts-<stream>`** or **`nke-cni-calico-manifests-<stream>`** on **one control-plane**.
+2. **`InstallPackages`** (**or apt**) for **`nvke-cni-*-images-<stream>`** on nodes that must pre-load images (skip if registry-pull-only tenant policy applies).
+3. **`InstallPackages`** for **`nvke-cni-*-charts-<stream>`** or **`nvke-cni-calico-manifests-<stream>`** on **one control-plane**.
 4. **`InstallCNI`** once on **that control-plane**.
 5. **Join workflow:** continue using **`ExecuteKubeadmJoin`**; repeat **step 2** on join-only nodes where offline image bundles are needed (no **`InstallCNI`** on workers).
 

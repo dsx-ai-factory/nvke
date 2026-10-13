@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -141,8 +142,8 @@ func verifyNodeAudience(claims jwt.MapClaims) error {
 	if err != nil {
 		return fmt.Errorf("node-agent token audience is unreadable: %w", err)
 	}
-	if len(audiences) != 1 || audiences[0] != auth.NodeAgentAudience {
-		return fmt.Errorf("node-agent token audience must contain only %q", auth.NodeAgentAudience)
+	if len(audiences) != 1 || !slices.Contains(auth.NodeAgentAudiences(), audiences[0]) {
+		return fmt.Errorf("node-agent token audience must contain only %q or %q", auth.NodeAgentAudience, auth.NodeAgentAudienceLegacy)
 	}
 	return nil
 }

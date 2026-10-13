@@ -63,15 +63,28 @@ packages it needs to join, never phones home, and the run spends its whole
 budget on KubernetesReady=Unknown ("Node data not available") with nothing
 saying why. set -u is safe because every command below is fully rendered
 before it is sent: none of them reads a shell variable.
+
+The route wait comes straight after it, before the first command that needs
+the network. Forge hosts race cloud-init for the network, so on a node whose
+default route is not up yet the curl below fails at once, set -eu stops the
+script there, and cloud-init reports status: error with nothing installed.
+The amd64 kernel line in nico_forge_ipxe.tmpl does not carry ip=dhcp the way
+the arm64 one does, so amd64 nodes reach this point earlier relative to their
+network. Run 37873467928 is that case: an amd64 control plane failed
+cloud-init while an arm64 worker running these same commands passed, and the
+amd64 site node beside them passed only because its own user data waits for
+a route first. Bounded, so a node that never gets a route fails here with a
+line saying so rather than hanging the boot.
 */ -}}
 set -eu
+timeout 300s sh -c 'until ip -4 route list default | grep -q .; do echo "waiting for an IPv4 default route"; sleep 5; done'
 install -d -m 0755 /etc/apt/keyrings
 timeout 300s sh -c 'until getent hosts nke-prod-assets.s3.us-west-2.amazonaws.com >/dev/null 2>&1; do echo "waiting for name resolution"; sleep 5; done'
 curl -fsSL -o /etc/apt/keyrings/nke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-public.key
 echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-{{ .AptSuite }} nvke-{{ .AptSuite }} main' > /etc/apt/sources.list.d/nke-apt.list
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y nke-kubeadm-distro-{{ .KubernetesVersion }}
-DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-{{ .CNIVersion }} nke-cni-ovn-charts-{{ .CNIVersion }}
+DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-kubeadm-distro-{{ .KubernetesVersion }}
+DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-cni-ovn-images-{{ .CNIVersion }} nvke-cni-ovn-charts-{{ .CNIVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y openvswitch-switch
 printf 'AGENT_ARGS="{{ .AgentArgs }}"\n' > /etc/default/nvke-agent
 sysctl --system

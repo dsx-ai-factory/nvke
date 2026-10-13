@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -21,10 +22,19 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	certificatesv1 "k8s.io/api/certificates/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/controllerdeploy"
 	bootstrapengine "github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/engine"
@@ -37,13 +47,24 @@ import (
 // succeeds, and every `kubectl get --raw .../readyz` call reports healthy
 // immediately, so runBootstrapSite's controller deploy step can be exercised
 // without a real helm binary, kubectl binary or cluster.
-type fakeCWERunner struct{}
+type fakeCWERunner struct {
+	kubeconfig []byte
+}
 
-func (fakeCWERunner) Run(_ context.Context, name string, args ...string) (string, error) {
+func newFakeCWERunner(t *testing.T) fakeCWERunner {
+	t.Helper()
+	return fakeCWERunner{kubeconfig: fakeSiteKubeconfig(t)}
+}
+
+func (r fakeCWERunner) Run(_ context.Context, name string, args ...string) (string, error) {
 	joined := strings.Join(args, " ")
 	if name == "kubectl" && strings.Contains(joined, "jsonpath={.data.value}") {
 		// The Secret the controller publishes the finished cluster's kubeconfig in.
-		return base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nkind: Config\n")), nil
+		kc := r.kubeconfig
+		if len(kc) == 0 {
+			kc = []byte("apiVersion: v1\nkind: Config\n")
+		}
+		return base64.StdEncoding.EncodeToString(kc), nil
 	}
 	if name == "kubectl" && strings.Contains(joined, "get secret etcd-encryption-key-") {
 		// The Secret the controller keeps the cluster's etcd encryption key in.
@@ -58,6 +79,142 @@ func (fakeCWERunner) Run(_ context.Context, name string, args ...string) (string
 		return "Error from server (NotFound)", errors.New("exit status 1")
 	}
 	return "", nil
+}
+
+const fakeBreakglassCertPEM = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+
+var kubeAPICodecs = serializer.NewCodecFactory(scheme.Scheme)
+
+// fakeSiteKubeconfig is an admin.conf that points at an httptest kube-apiserver.
+// That server signs kube-apiserver-client CSRs so bootstrap can run
+// GenerateBreakglassKubeconfig without a cluster.
+func fakeSiteKubeconfig(t *testing.T) []byte {
+	t.Helper()
+
+	var mu sync.Mutex
+	bindings := map[string]struct{}{}
+	csrs := map[string]*certificatesv1.CertificateSigningRequest{}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /apis/rbac.authorization.k8s.io/v1/clusterrolebindings", func(w http.ResponseWriter, r *http.Request) {
+		var b rbacv1.ClusterRoleBinding
+		if err := decodeK8sObject(r, &b); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if _, ok := bindings[b.Name]; ok {
+			writeK8sObject(w, r, http.StatusConflict, &metav1.Status{
+				TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Status"},
+				Status:   metav1.StatusFailure,
+				Reason:   metav1.StatusReasonAlreadyExists,
+				Code:     http.StatusConflict,
+				Message:  b.Name + " already exists",
+			})
+			return
+		}
+		bindings[b.Name] = struct{}{}
+		writeK8sObject(w, r, http.StatusCreated, &b)
+	})
+	mux.HandleFunc("POST /apis/certificates.k8s.io/v1/certificatesigningrequests", func(w http.ResponseWriter, r *http.Request) {
+		var csr certificatesv1.CertificateSigningRequest
+		if err := decodeK8sObject(r, &csr); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		csrs[csr.Name] = csr.DeepCopy()
+		mu.Unlock()
+		writeK8sObject(w, r, http.StatusCreated, &csr)
+	})
+	mux.HandleFunc("PUT /apis/certificates.k8s.io/v1/certificatesigningrequests/{name}/approval", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		var csr certificatesv1.CertificateSigningRequest
+		if err := decodeK8sObject(r, &csr); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		stored, ok := csrs[name]
+		if !ok {
+			mu.Unlock()
+			http.NotFound(w, r)
+			return
+		}
+		stored.Status.Conditions = csr.Status.Conditions
+		stored.Status.Certificate = []byte(fakeBreakglassCertPEM)
+		csrs[name] = stored
+		out := stored.DeepCopy()
+		mu.Unlock()
+		writeK8sObject(w, r, http.StatusOK, out)
+	})
+	mux.HandleFunc("GET /apis/certificates.k8s.io/v1/certificatesigningrequests/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		mu.Lock()
+		stored, ok := csrs[name]
+		mu.Unlock()
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		writeK8sObject(w, r, http.StatusOK, stored)
+	})
+	mux.HandleFunc("DELETE /apis/certificates.k8s.io/v1/certificatesigningrequests/{name}", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		delete(csrs, r.PathValue("name"))
+		mu.Unlock()
+		writeK8sObject(w, r, http.StatusOK, &metav1.Status{
+			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Status"},
+			Status:   metav1.StatusSuccess,
+			Code:     http.StatusOK,
+		})
+	})
+
+	srv := httptest.NewTLSServer(mux)
+	t.Cleanup(srv.Close)
+
+	ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	cfg := clientcmdapi.NewConfig()
+	cfg.Clusters["cluster"] = &clientcmdapi.Cluster{
+		Server:                   srv.URL,
+		CertificateAuthorityData: ca,
+	}
+	cfg.AuthInfos["kubernetes-admin"] = &clientcmdapi.AuthInfo{Token: "test"}
+	cfg.Contexts["admin"] = &clientcmdapi.Context{Cluster: "cluster", AuthInfo: "kubernetes-admin"}
+	cfg.CurrentContext = "admin"
+	raw, err := clientcmd.Write(*cfg)
+	if err != nil {
+		t.Fatalf("write fake site kubeconfig: %v", err)
+	}
+	return raw
+}
+
+func decodeK8sObject(r *http.Request, into runtime.Object) error {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+	_, _, err = kubeAPICodecs.UniversalDeserializer().Decode(body, nil, into)
+	return err
+}
+
+func writeK8sObject(w http.ResponseWriter, r *http.Request, code int, obj runtime.Object) {
+	mediaType := runtime.ContentTypeJSON
+	if strings.Contains(r.Header.Get("Accept"), runtime.ContentTypeProtobuf) {
+		mediaType = runtime.ContentTypeProtobuf
+	}
+	info, ok := runtime.SerializerInfoForMediaType(kubeAPICodecs.SupportedMediaTypes(), mediaType)
+	if !ok {
+		http.Error(w, "no serializer for "+mediaType, http.StatusInternalServerError)
+		return
+	}
+	if gvks, _, err := scheme.Scheme.ObjectKinds(obj); err == nil && len(gvks) > 0 {
+		obj.GetObjectKind().SetGroupVersionKind(gvks[0])
+	}
+	w.Header().Set("Content-Type", info.MediaType)
+	w.WriteHeader(code)
+	_ = info.Serializer.Encode(obj, w)
 }
 
 // startFakeCWEAPI stands up an HTTP server that answers the two calls
@@ -292,7 +449,7 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
-		cweRunner:           fakeCWERunner{},
+		cweRunner:           newFakeCWERunner(t),
 		kubeconfigOut:       kubeconfigOut,
 		lookPath:            runtimeOnPath,
 		dialContext:         refuseDial,
@@ -331,6 +488,48 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 	}
 }
 
+func TestRunBootstrapSiteWritesIssuedBreakglassKubeconfig(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
+
+	kubeconfigOut := filepath.Join(t.TempDir(), "nvke-site.kubeconfig")
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     fakeBootstrapRunner{},
+		cweRunner:           newFakeCWERunner(t),
+		kubeconfigOut:       kubeconfigOut,
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		dumpSpireEntries:    func(context.Context, string, string) (int, error) { return 0, nil },
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
+	})
+	if err != nil {
+		t.Fatalf("runBootstrapSite: %v", err)
+	}
+	body, readErr := os.ReadFile(kubeconfigOut)
+	if readErr != nil {
+		t.Fatalf("read kubeconfig: %v", readErr)
+	}
+	cfg, loadErr := clientcmd.Load(body)
+	if loadErr != nil {
+		t.Fatalf("parse kubeconfig: %v", loadErr)
+	}
+	if cfg.CurrentContext != "nvke-breakglass" {
+		t.Errorf("current-context = %q, want nvke-breakglass", cfg.CurrentContext)
+	}
+	user := cfg.AuthInfos["nvke-breakglass"]
+	if user == nil {
+		t.Fatal("issued kubeconfig has no nvke-breakglass user")
+	}
+	if user.Token != "" {
+		t.Error("issued kubeconfig kept the admin token")
+	}
+	if len(user.ClientCertificateData) == 0 || len(user.ClientKeyData) == 0 {
+		t.Error("issued kubeconfig is missing the minted client cert or key")
+	}
+}
+
 func TestRunBootstrapSiteRetainsBootstrapClusterWhenSpireEntryDumpFails(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)
@@ -339,7 +538,7 @@ func TestRunBootstrapSiteRetainsBootstrapClusterWhenSpireEntryDumpFails(t *testi
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
-		cweRunner:           fakeCWERunner{},
+		cweRunner:           newFakeCWERunner(t),
 		kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
 		lookPath:            runtimeOnPath,
 		dialContext:         refuseDial,
@@ -366,7 +565,7 @@ func TestRunBootstrapSiteSkipsSpireEntryDumpWhenMTLSDisabled(t *testing.T) {
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		disableMTLS:         true,
 		bootstrapRunner:     fakeBootstrapRunner{},
-		cweRunner:           fakeCWERunner{},
+		cweRunner:           newFakeCWERunner(t),
 		kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
 		lookPath:            runtimeOnPath,
 		dialContext:         refuseDial,
@@ -398,7 +597,7 @@ func TestRunBootstrapSiteFailsWhenTheClusterNeverComesUp(t *testing.T) {
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
-		cweRunner:           fakeCWERunner{},
+		cweRunner:           newFakeCWERunner(t),
 		clusterTimeout:      5 * time.Millisecond,
 		kubeconfigOut:       filepath.Join(t.TempDir(), "unused.kubeconfig"),
 		lookPath:            runtimeOnPath,
@@ -510,7 +709,7 @@ func TestRunBootstrapSiteUsesNerdctl(t *testing.T) {
 	_ = runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
-		cweRunner:           fakeCWERunner{},
+		cweRunner:           newFakeCWERunner(t),
 		kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
 		lookPath:            runtimeOnPath,
 		dialContext:         refuseDial,
@@ -538,7 +737,7 @@ func TestRunBootstrapSiteRequiresNerdctlOnPath(t *testing.T) {
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:        writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner: runner,
-		cweRunner:       fakeCWERunner{},
+		cweRunner:       newFakeCWERunner(t),
 		lookPath: func(name string) (string, error) {
 			return "", fmt.Errorf("exec: %q: %w", name, exec.ErrNotFound)
 		},
@@ -618,7 +817,7 @@ func TestRunBootstrapSiteDefaultsImagesToTheLocalBuild(t *testing.T) {
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
-		cweRunner:           fakeCWERunner{},
+		cweRunner:           newFakeCWERunner(t),
 		kubeconfigOut:       filepath.Join(t.TempDir(), "site.kubeconfig"),
 		lookPath:            runtimeOnPath,
 		dialContext:         refuseDial,
@@ -647,7 +846,7 @@ func TestRunBootstrapSiteUsesTheImageFlags(t *testing.T) {
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:                 writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:          runner,
-		cweRunner:                fakeCWERunner{},
+		cweRunner:                newFakeCWERunner(t),
 		kubeconfigOut:            filepath.Join(t.TempDir(), "site.kubeconfig"),
 		lookPath:                 runtimeOnPath,
 		dialContext:              refuseDial,
@@ -718,7 +917,7 @@ func TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate(t *testing.T) {
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
-		cweRunner:           fakeCWERunner{},
+		cweRunner:           newFakeCWERunner(t),
 		lookPath:            runtimeOnPath,
 		dialContext:         refuseDial,
 		untaintControlPlane: skipUntaint,
@@ -917,7 +1116,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 			siteSpec:            writeSiteSpec(t, validSiteSpec),
 			diagnosticsDir:      dir,
 			bootstrapRunner:     fakeBootstrapRunner{},
-			cweRunner:           fakeCWERunner{},
+			cweRunner:           newFakeCWERunner(t),
 			kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
 			lookPath:            runtimeOnPath,
 			dialContext:         refuseDial,
@@ -1009,7 +1208,7 @@ func TestRunBootstrapSiteWaitsForEveryControlPlaneNode(t *testing.T) {
 			err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 				siteSpec:        writeSiteSpec(t, threeNodeSiteSpec),
 				bootstrapRunner: runner,
-				cweRunner:       fakeCWERunner{},
+				cweRunner:       newFakeCWERunner(t),
 				// Longer than the 5ms the timeout-only tests above use. This
 				// one asserts the error names how many nodes joined, so the
 				// first read of the fake API has to land before the deadline.
@@ -1058,7 +1257,7 @@ func TestRunBootstrapSiteTearsDownOnceEveryNodeHasJoined(t *testing.T) {
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, threeNodeSiteSpec),
 		bootstrapRunner:     runner,
-		cweRunner:           fakeCWERunner{},
+		cweRunner:           newFakeCWERunner(t),
 		kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
 		lookPath:            runtimeOnPath,
 		dialContext:         refuseDial,
@@ -1126,7 +1325,7 @@ func TestRunBootstrapSiteSavesTheEtcdEncryptionKey(t *testing.T) {
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
-		cweRunner:           fakeCWERunner{},
+		cweRunner:           newFakeCWERunner(t),
 		kubeconfigOut:       filepath.Join(t.TempDir(), "site.kubeconfig"),
 		encryptionKeyOut:    keyOut,
 		lookPath:            runtimeOnPath,
@@ -1194,7 +1393,7 @@ func TestRunBootstrapSiteRetainsClusterWhenKeyCaptureFails(t *testing.T) {
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
-		cweRunner:           missingEtcdKeyRunner{},
+		cweRunner:           missingEtcdKeyRunner{fakeCWERunner: newFakeCWERunner(t)},
 		kubeconfigOut:       kubeconfigOut,
 		encryptionKeyOut:    keyOut,
 		lookPath:            runtimeOnPath,
@@ -1262,7 +1461,7 @@ func TestRunBootstrapSiteSkipsKeyCaptureWhenEncryptionIsOff(t *testing.T) {
 	startFakeCWEAPI(t, true)
 
 	keyOut := filepath.Join(t.TempDir(), "key.json")
-	cwe := &recordingCWERunner{next: fakeCWERunner{}}
+	cwe := &recordingCWERunner{next: newFakeCWERunner(t)}
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, strings.Replace(validSiteSpec, "  k8sVersion:", "  etcdEncryption: false\n  k8sVersion:", 1)),
 		bootstrapRunner:     &recordingRunner{next: fakeBootstrapRunner{}},
@@ -1300,7 +1499,7 @@ func TestRunBootstrapSiteRefusesAnExistingKeyFile(t *testing.T) {
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
-		cweRunner:           fakeCWERunner{},
+		cweRunner:           newFakeCWERunner(t),
 		encryptionKeyOut:    keyOut,
 		lookPath:            runtimeOnPath,
 		dialContext:         refuseDial,
@@ -1339,7 +1538,7 @@ func TestRunBootstrapSiteRefusesHostsServingAControlPlane(t *testing.T) {
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:         writeSiteSpec(t, threeNodeSiteSpec),
 		bootstrapRunner:  runner,
-		cweRunner:        fakeCWERunner{},
+		cweRunner:        newFakeCWERunner(t),
 		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 		lookPath:         runtimeOnPath,
 		dialContext: func(_ context.Context, _, address string) (net.Conn, error) {
@@ -1389,7 +1588,7 @@ func TestRunBootstrapSiteRefusesWhileAnEarlierBootstrapClusterRuns(t *testing.T)
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
-		cweRunner:           fakeCWERunner{},
+		cweRunner:           newFakeCWERunner(t),
 		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
 		lookPath:            runtimeOnPath,
 		dialContext:         refuseDial,
@@ -1429,7 +1628,7 @@ func TestRunBootstrapSiteRemovesTheControlPlaneTaint(t *testing.T) {
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:         writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:  &recordingRunner{next: fakeBootstrapRunner{}},
-		cweRunner:        fakeCWERunner{},
+		cweRunner:        newFakeCWERunner(t),
 		kubeconfigOut:    kubeconfigOut,
 		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 		lookPath:         runtimeOnPath,
@@ -1459,7 +1658,7 @@ func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	keyOut := filepath.Join(t.TempDir(), "key.json")
 	spireEntriesDumped := false
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	cwe := &recordingCWERunner{next: fakeCWERunner{}}
+	cwe := &recordingCWERunner{next: newFakeCWERunner(t)}
 	var out bytes.Buffer
 	err := runBootstrapSite(context.Background(), &out, &bootstrapSiteOptions{
 		siteSpec:         writeSiteSpec(t, validSiteSpec),

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Stages the upstream ovn-kubernetes chart and image for the nke-cni-ovn-<stream>
+# Stages the upstream ovn-kubernetes chart and image for the nvke-cni-ovn-<stream>
 # debs.
 #
 # Usage: bundle.sh --version 1.4.0 --dist DIR --lock-dir DIR --crane PATH

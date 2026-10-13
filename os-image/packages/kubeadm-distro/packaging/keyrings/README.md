@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 The ASCII-armored OpenPGP public keys of the runc release signers, used to
 verify runc's clearsigned `runc.sha256sum` checksum document before
-`nke-kubeadm-distro-<x.y.z>` bundles the runc binary.
+`nvke-kubeadm-distro-<x.y.z>` bundles the runc binary.
 
 ## Provenance
 

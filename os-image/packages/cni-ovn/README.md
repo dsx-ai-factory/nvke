@@ -1,13 +1,13 @@
-# nke-cni-ovn
+# nvke-cni-ovn
 
 Builds the two Debian packages `nvke-agent` installs when it sets up OVN:
 
 | Package | Contents | Installed to |
 |---|---|---|
-| `nke-cni-ovn-charts-<stream>` | The `ovn-kubernetes` Helm chart, unpacked | `/etc/dgx/ovn-kubernetes/` |
-| `nke-cni-ovn-images-<stream>` | `ovn-kube-ubuntu`, as one docker-archive | `/usr/lib/nke/cni-ovn/<stream>/`, imported into containerd by `postinst` |
+| `nvke-cni-ovn-charts-<stream>` | The `ovn-kubernetes` Helm chart, unpacked | `/etc/dgx/ovn-kubernetes/` |
+| `nvke-cni-ovn-images-<stream>` | `ovn-kube-ubuntu`, as one docker-archive | `/usr/lib/nvke/cni-ovn/<stream>/`, imported into containerd by `postinst` |
 
-`provision.sh` stages both into the image under `/usr/lib/nke/debs` as a local
+`provision.sh` stages both into the image under `/usr/lib/nvke/debs` as a local
 apt repo. Nothing is installed at bake time: `nvke-agent` installs them by name
 at cluster create. The build machinery is shared with `cni-calico` in
 [`../cni-common/`](../cni-common/README.md); this directory holds only what is
@@ -15,8 +15,8 @@ OVN's: `bundle.sh`, the charts spec and the lock.
 
 ## The contract with nvke-agent
 
-`agent/internal/agent/cni.go` asks apt for `nke-cni-ovn-charts-<stream>` and
-`nke-cni-ovn-images-<stream>`, where `<stream>` is the request's version or
+`agent/internal/agent/cni.go` asks apt for `nvke-cni-ovn-charts-<stream>` and
+`nvke-cni-ovn-images-<stream>`, where `<stream>` is the request's version or
 `defaultOvnCniChartStream`. It runs helm on `/etc/dgx/ovn-kubernetes` when
 `values-nke.yaml` is there, else on the directory of the first `Chart.yaml` that
 `dpkg-query -L` lists for the charts package. The chart is unpacked at build
@@ -31,7 +31,7 @@ imports into containerd. The chart has no `values.yaml`: its defaults are
 `values-nke.yaml`.
 
 Every stream unpacks to the same directory, so the charts package `Provides`
-and `Conflicts` with `nke-cni-ovn-charts`: one stream per node.
+and `Conflicts` with `nvke-cni-ovn-charts`: one stream per node.
 
 ## Access
 

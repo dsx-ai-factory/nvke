@@ -27,7 +27,7 @@ RUN apk add --update --no-cache \
 WORKDIR /
 COPY ./bin/controller /usr/local/bin/controller
 COPY --from=spiffe-jwt-exec-auth /ko-app/cmd /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
-# OS/config profiles are supplied at runtime via PROFILES_DIR (chart mount /
+# OS/config profiles are supplied at runtime via profilesDir (chart mount /
 # nke-site-deploy ConfigMap unpack). Keep the mount point; do not bake content.
 # Non-archive Tilt builds append a COPY of ./profiles after this line.
 RUN mkdir -p /profiles

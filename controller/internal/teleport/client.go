@@ -36,8 +36,8 @@ const (
 
 var (
 	ErrTeleportDisabled      = errors.New("teleport integration is disabled")
-	ErrIdentityFileNotSet    = errors.New("TELEPORT_IDENTITY_FILE environment variable not set")
-	ErrProxyAddressNotSet    = errors.New("TELEPORT_PROXY_ADDRESS environment variable not set")
+	ErrIdentityFileNotSet    = errors.New("teleport.identityFile is not set")
+	ErrProxyAddressNotSet    = errors.New("teleport.proxyAddress is not set")
 	ErrUnsupportedJoinMethod = errors.New("unsupported join method")
 )
 

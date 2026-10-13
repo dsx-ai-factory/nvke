@@ -7,7 +7,7 @@ encryption-at-rest is a separate, controller/agent-side concern and is out of
 scope for `os-image/` — see the controller's etcd-encryption workflows for
 that half.
 
-This is a plain-shell Packer build, `nke-node-fde.pkr.hcl`.
+This is a plain-shell Packer build, `nvke-node-fde.pkr.hcl`.
 
 ## How it works
 

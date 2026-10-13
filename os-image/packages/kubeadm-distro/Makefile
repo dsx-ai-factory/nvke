@@ -52,7 +52,7 @@ LOCK_DIR ?= $(CURDIR)/lock
 debs: check-host check-deb-tools bundle ## Build one .deb per K8S_VERSIONS into OUT_DIR, plus a flat apt index.
 	@# Clear the previous run first: a .deb left from a different K8S_VERSIONS
 	@# would be indexed here without appearing in any package's Conflicts.
-	rm -f "$(OUT_DIR)"/nke-kubeadm-distro-*.deb "$(OUT_DIR)/Packages"
+	rm -f "$(OUT_DIR)"/nvke-kubeadm-distro-*.deb "$(OUT_DIR)/Packages"
 	@set -eu; \
 	for v in $(K8S_VERSIONS_V); do \
 		PEER_VERSIONS="$(K8S_VERSIONS_V)" DEB_REVISION="$(DEB_REVISION)" NFPM_BIN="$(NFPM_BIN)" ARCH="$(ARCH)" \

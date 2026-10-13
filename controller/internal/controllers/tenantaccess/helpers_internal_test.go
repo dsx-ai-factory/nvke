@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -183,4 +184,55 @@ func assertGolden(t *testing.T, goldenFile string, got []byte) {
 	want, err := os.ReadFile(path)
 	require.NoError(t, err, "reading golden file %q (run with -update to create)", goldenFile)
 	assert.Equal(t, string(want), string(got), "golden mismatch for %s", goldenFile)
+}
+
+func legacyClusterObjects() []ctrlclient.Object {
+	meta := func(name string) metav1.ObjectMeta { return metav1.ObjectMeta{Name: name} }
+	nsMeta := func(ns string) metav1.ObjectMeta { return metav1.ObjectMeta{Name: "nke:cwe", Namespace: ns} }
+	return []ctrlclient.Object{
+		&rbacv1.ClusterRole{ObjectMeta: meta("nke:cwe")},
+		&rbacv1.ClusterRoleBinding{ObjectMeta: meta("nke:cwe")},
+		&rbacv1.ClusterRoleBinding{ObjectMeta: meta("nke:capi-cluster-admin")},
+		&rbacv1.Role{ObjectMeta: nsMeta("kube-system")},
+		&rbacv1.RoleBinding{ObjectMeta: nsMeta("kube-system")},
+		&rbacv1.Role{ObjectMeta: nsMeta("kube-node-lease")},
+		&rbacv1.RoleBinding{ObjectMeta: nsMeta("kube-node-lease")},
+	}
+}
+
+func TestPruneLegacyRBAC(t *testing.T) {
+	t.Parallel()
+
+	const renamed = "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: nvke:cwe\nrules: []\n"
+	const pinned = "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: nke:cwe\nrules: []\n"
+
+	t.Run("removes every legacy object and keeps the renamed ones", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		keep := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "nvke:cwe"}}
+		c := crfake.NewClientBuilder().WithScheme(scheme.Scheme).
+			WithObjects(append(legacyClusterObjects(), keep)...).Build()
+
+		require.NoError(t, pruneLegacyRBAC(ctx, c, []byte(renamed)))
+		for _, obj := range legacyClusterObjects() {
+			err := c.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), obj)
+			require.True(t, apierrors.IsNotFound(err), "%T %s should be gone", obj, obj.GetName())
+		}
+		require.NoError(t, c.Get(ctx, ctrlclient.ObjectKeyFromObject(keep), &rbacv1.ClusterRole{}))
+
+		// Nothing left to delete is not an error.
+		require.NoError(t, pruneLegacyRBAC(ctx, c, []byte(renamed)))
+	})
+
+	t.Run("keeps a legacy name the manifest still carries", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		c := crfake.NewClientBuilder().WithScheme(scheme.Scheme).
+			WithObjects(legacyClusterObjects()...).Build()
+
+		require.NoError(t, pruneLegacyRBAC(ctx, c, []byte(pinned)))
+		require.NoError(t, c.Get(ctx, ctrlclient.ObjectKey{Name: "nke:cwe"}, &rbacv1.ClusterRole{}))
+		err := c.Get(ctx, ctrlclient.ObjectKey{Name: "nke:capi-cluster-admin"}, &rbacv1.ClusterRoleBinding{})
+		require.True(t, apierrors.IsNotFound(err))
+	})
 }

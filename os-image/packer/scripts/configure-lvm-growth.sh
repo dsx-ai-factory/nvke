@@ -5,7 +5,7 @@
 # Installs the first-boot storage-growth service for the plain-LVM (no
 # encryption) build variant. Counterpart to configure-fde.sh, minus
 # everything LUKS/Clevis/TPM — this variant follows the same
-# installer+autoinstall+LVM flow as nke-node-fde.pkr.hcl so the two are
+# installer+autoinstall+LVM flow as nvke-node-fde.pkr.hcl so the two are
 # comparable, but ships no encryption at all.
 
 set -euo pipefail

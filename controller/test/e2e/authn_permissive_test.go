@@ -65,25 +65,28 @@ var _ = Describe("NVKE API authentication in permissive mode", Ordered, Label("a
 
 		rolloutCtx, rolloutCancel := context.WithTimeout(ctx, permissiveRolloutTimeout)
 		defer rolloutCancel()
-		previous, err := nvke.SetPermissiveMode(rolloutCtx, runtimeClient, "true")
+		previous, written, err := nvke.SetPermissiveMode(rolloutCtx, runtimeClient, true)
+		// Registered before the error check: a restart that fails after the
+		// ConfigMap write still leaves the deployment permissive.
+		if written {
+			DeferCleanup(func(ctx SpecContext) {
+				restoreCtx, restoreCancel := context.WithTimeout(ctx, permissiveRolloutTimeout)
+				defer restoreCancel()
+
+				_, _, restoreErr := nvke.SetPermissiveMode(restoreCtx, runtimeClient, previous)
+				Expect(restoreErr).NotTo(HaveOccurred(), "restore permissiveMode=%t", previous)
+
+				// Checked, not assumed. The enforcing specs skip themselves while the
+				// deployment is permissive, so a restore that quietly failed would turn
+				// the rest of the authn pass green without running any of it.
+				mode, modeErr := detectAuthnEnforcement(restoreCtx, clientset)
+				Expect(modeErr).NotTo(HaveOccurred(), "re-read the enforcement mode after restoring it")
+				Expect(mode).NotTo(Equal(authnModePermissive),
+					"the deployment was left permissive; every enforcing spec after this one would skip")
+			})
+		}
 		Expect(err).NotTo(HaveOccurred(), "put Deployment %s/%s into permissive mode",
 			controller.Namespace(), controller.Deployment())
-
-		DeferCleanup(func(ctx SpecContext) {
-			restoreCtx, restoreCancel := context.WithTimeout(ctx, permissiveRolloutTimeout)
-			defer restoreCancel()
-
-			_, restoreErr := nvke.SetPermissiveMode(restoreCtx, runtimeClient, previous)
-			Expect(restoreErr).NotTo(HaveOccurred(), "restore %s=%q", authnPermissiveEnv, previous)
-
-			// Checked, not assumed. The enforcing specs skip themselves while the
-			// deployment is permissive, so a restore that quietly failed would turn
-			// the rest of the authn pass green without running any of it.
-			mode, modeErr := detectAuthnEnforcement(restoreCtx, clientset)
-			Expect(modeErr).NotTo(HaveOccurred(), "re-read the enforcement mode after restoring it")
-			Expect(mode).NotTo(Equal(authnModePermissive),
-				"the deployment was left permissive; every enforcing spec after this one would skip")
-		})
 
 		tctx, cancel := context.WithTimeout(ctx, authnTimeout)
 		defer cancel()
@@ -156,7 +159,7 @@ const nvkeControllerMetricsPort = "metrics"
 
 const metricsPath = "/metrics"
 
-// permissiveRolloutTimeout bounds one flip of PERMISSIVE_MODE and the rollout
+// permissiveRolloutTimeout bounds one flip of permissiveMode and the restart
 // that follows it.
 const permissiveRolloutTimeout = 6 * time.Minute
 

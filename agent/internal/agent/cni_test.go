@@ -231,7 +231,7 @@ func TestInstallCNIApplyRequiresControlPlane(t *testing.T) {
 	err := s.installCNI(t.Context(), &pb.InstallCNIRequest{
 		CniVariant: pb.CniVariant_CNI_VARIANT_OVN,
 		Version:    "1.0.0",
-	}, "nke-cni-ovn-charts-1.0.0=1.0.0")
+	}, "nvke-cni-ovn-charts-1.0.0=1.0.0")
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, errCNIApplyRequiresControlPlane), "got %v", err)
 }
@@ -270,7 +270,7 @@ func TestInstallCNIOVNRequiresHostOpenVSwitch(t *testing.T) {
 		CniVariant:     pb.CniVariant_CNI_VARIANT_OVN,
 		PodNetworkCidr: "10.244.0.0/16",
 		ServiceCidr:    "10.96.0.0/12",
-	}, "nke-cni-ovn-charts-1.4.0")
+	}, "nvke-cni-ovn-charts-1.4.0")
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, errOvnRequiresHostOpenVSwitch), "got %v", err)
 }
@@ -284,30 +284,36 @@ func TestChartsDebPresenceFailsWhenAbsent(t *testing.T) {
 func TestNvkeCniAptSpec(t *testing.T) {
 	spec, err := nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_OVN, pb.CniAptRole_CNI_APT_ROLE_CHARTS, "v2.1.0")
 	assert.NoError(t, err)
-	assert.Equal(t, "nke-cni-ovn-charts-2.1.0=2.1.0", spec)
+	assert.Equal(t, "nvke-cni-ovn-charts-2.1.0=2.1.0", spec)
 
 	spec, err = nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_OVN, pb.CniAptRole_CNI_APT_ROLE_IMAGES, "1")
 	assert.NoError(t, err)
-	assert.Equal(t, "nke-cni-ovn-images-1=1", spec)
+	assert.Equal(t, "nvke-cni-ovn-images-1=1", spec)
 
 	spec, err = nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_CALICO, pb.CniAptRole_CNI_APT_ROLE_CHARTS, "3.0")
 	assert.NoError(t, err)
-	assert.Equal(t, "nke-cni-calico-manifests-3.0=3.0", spec)
+	assert.Equal(t, "nvke-cni-calico-manifests-3.0=3.0", spec)
 
 	spec, err = nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_UNSPECIFIED, pb.CniAptRole_CNI_APT_ROLE_IMAGES, "1")
 	assert.NoError(t, err)
-	assert.Equal(t, "nke-cni-ovn-images-1=1", spec)
+	assert.Equal(t, "nvke-cni-ovn-images-1=1", spec)
 
 	spec, err = nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_UNSPECIFIED, pb.CniAptRole_CNI_APT_ROLE_CHARTS, "")
 	assert.NoError(t, err)
-	assert.Equal(t, "nke-cni-ovn-charts-1.4.0", spec)
+	assert.Equal(t, "nvke-cni-ovn-charts-1.4.0", spec)
 
 	spec, err = nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_CALICO, pb.CniAptRole_CNI_APT_ROLE_IMAGES, "")
 	assert.NoError(t, err)
-	assert.Equal(t, "nke-cni-calico-images-3.30.1", spec)
+	assert.Equal(t, "nvke-cni-calico-images-3.30.1", spec)
 
 	_, err = nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_CALICO, pb.CniAptRole_CNI_APT_ROLE_UNSPECIFIED, "1")
 	assert.Error(t, err)
+}
+
+func TestAlternateCniDebName(t *testing.T) {
+	assert.Equal(t, "nke-cni-ovn-charts-1.4.0", alternateCniDebName("nvke-cni-ovn-charts-1.4.0"))
+	assert.Equal(t, "nvke-cni-calico-manifests-3.30.1", alternateCniDebName("nke-cni-calico-manifests-3.30.1"))
+	assert.Empty(t, alternateCniDebName("spire-agent"))
 }
 
 func TestCalicoInstallRootFromFiles(t *testing.T) {
@@ -327,26 +333,26 @@ func TestCalicoInstallRootFromFiles(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "/usr/share/nke-calico-charts", root)
 	})
-	t.Run("cni-packages layout under /usr/share/nke-cni/calico", func(t *testing.T) {
+	t.Run("cni-packages layout under /usr/share/nvke-cni/calico", func(t *testing.T) {
 		root, err := calicoInstallRootFromFiles([]string{
-			"/usr/share/nke-cni/calico/manifests/tigera-operator.yaml",
-			"/usr/share/nke-cni/calico/manifests/custom-resources.yaml",
-			"/usr/share/nke-cni/calico/apply-manifests.sh",
+			"/usr/share/nvke-cni/calico/manifests/tigera-operator.yaml",
+			"/usr/share/nvke-cni/calico/manifests/custom-resources.yaml",
+			"/usr/share/nvke-cni/calico/apply-manifests.sh",
 		})
 		assert.NoError(t, err)
-		assert.Equal(t, "/usr/share/nke-cni/calico", root)
+		assert.Equal(t, "/usr/share/nvke-cni/calico", root)
 	})
-	// The exact `dpkg-query -L` output of the nke-cni-calico-manifests-<stream>
+	// The exact `dpkg-query -L` output of the nvke-cni-calico-manifests-<stream>
 	// deb built by os-image/packages/cni-calico. That package exists so a node
 	// can install Calico with no registry, and it is only useful if this
 	// resolves: keep the two in step.
 	t.Run("os-image cni-calico package layout", func(t *testing.T) {
 		root, err := calicoInstallRootFromFiles([]string{
-			"/usr/share/nke-cni/calico/3.30.1/manifests/custom-resources.yaml",
-			"/usr/share/nke-cni/calico/3.30.1/manifests/tigera-operator.yaml",
+			"/usr/share/nvke-cni/calico/3.30.1/manifests/custom-resources.yaml",
+			"/usr/share/nvke-cni/calico/3.30.1/manifests/tigera-operator.yaml",
 		})
 		assert.NoError(t, err)
-		assert.Equal(t, "/usr/share/nke-cni/calico/3.30.1", root)
+		assert.Equal(t, "/usr/share/nvke-cni/calico/3.30.1", root)
 	})
 	t.Run("prefers chart root when both match", func(t *testing.T) {
 		root, err := calicoInstallRootFromFiles([]string{

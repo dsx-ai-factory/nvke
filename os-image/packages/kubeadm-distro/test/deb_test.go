@@ -141,14 +141,14 @@ func TestBuildDeb(t *testing.T) {
 	combined, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "build-deb.sh failed: %s", combined)
 
-	deb := filepath.Join(out, "nke-kubeadm-distro-1.36.3_1_amd64.deb")
+	deb := filepath.Join(out, "nvke-kubeadm-distro-1.36.3_1_amd64.deb")
 	require.FileExists(t, deb)
 
 	fields := map[string]string{
-		"Package":      "nke-kubeadm-distro-1.36.3",
+		"Package":      "nvke-kubeadm-distro-1.36.3",
 		"Version":      "1",
 		"Architecture": "amd64",
-		"Provides":     "nke-kubeadm-distro",
+		"Provides":     "nvke-kubeadm-distro, nke-kubeadm-distro, nke-kubeadm-distro-1.36.3",
 		"Depends":      "iptables, iproute2, conntrack, socat, ethtool",
 	}
 	for field, want := range fields {
@@ -167,11 +167,12 @@ func TestBuildDeb(t *testing.T) {
 	require.NoError(t, err)
 	for _, want := range []string{
 		"kubeadm", "runc", "containerd", "containerd.io",
+		"nvke-kubeadm-distro", "nvke-kubeadm-distro-1.35.3", "nvke-kubeadm-distro-1.34.2",
 		"nke-kubeadm-distro", "nke-kubeadm-distro-1.35.3", "nke-kubeadm-distro-1.34.2",
 	} {
 		assert.Contains(t, string(conflicts), want)
 	}
-	assert.NotContains(t, string(conflicts), "nke-kubeadm-distro-1.36.3", "a package must not conflict with itself")
+	assert.NotContains(t, string(conflicts), "nvke-kubeadm-distro-1.36.3", "a package must not conflict with itself")
 
 	// /etc/default/kubelet must be a conffile so operator edits survive an upgrade.
 	ctrlDir := filepath.Join(t.TempDir(), "control")
@@ -249,9 +250,9 @@ func TestBuildDeb(t *testing.T) {
 		"/var/lib/kubelet/",
 		"/etc/cni/net.d/",
 		"/etc/containerd/conf.d/",
-		"/usr/lib/nke/k8s-matrix/v1.36.3/amd64/" + baseImagesTarball,
-		"/usr/lib/nke/k8s-matrix/v1.36.3/amd64/" + baseImagesTarball + ".sha256",
-		"/usr/share/doc/nke-kubeadm-distro-1.36.3/README.Debian",
+		"/usr/lib/nvke/k8s-matrix/v1.36.3/amd64/" + baseImagesTarball,
+		"/usr/lib/nvke/k8s-matrix/v1.36.3/amd64/" + baseImagesTarball + ".sha256",
+		"/usr/share/doc/nvke-kubeadm-distro-1.36.3/README.Debian",
 	} {
 		assert.Contains(t, contents, want)
 	}
@@ -261,12 +262,12 @@ func TestBuildDeb(t *testing.T) {
 	// binaries or tarballs, no bundle manifest.
 	for _, notWant := range []string{
 		"nke-k8s-installer",
-		"/usr/lib/nke/k8s-matrix/v1.36.3/installer",
-		"/usr/lib/nke/k8s-matrix/v1.36.3/manifest.json",
-		"/usr/lib/nke/k8s-matrix/v1.36.3/amd64/kubeadm",
-		"/usr/lib/nke/k8s-matrix/v1.36.3/amd64/kubectl",
-		"/usr/lib/nke/k8s-matrix/v1.36.3/amd64/kubelet",
-		"/usr/lib/nke/k8s-matrix/v1.36.3/amd64/runc.amd64",
+		"/usr/lib/nvke/k8s-matrix/v1.36.3/installer",
+		"/usr/lib/nvke/k8s-matrix/v1.36.3/manifest.json",
+		"/usr/lib/nvke/k8s-matrix/v1.36.3/amd64/kubeadm",
+		"/usr/lib/nvke/k8s-matrix/v1.36.3/amd64/kubectl",
+		"/usr/lib/nvke/k8s-matrix/v1.36.3/amd64/kubelet",
+		"/usr/lib/nvke/k8s-matrix/v1.36.3/amd64/runc.amd64",
 	} {
 		assert.NotContains(t, contents, notWant)
 	}
@@ -355,7 +356,7 @@ func TestBuildDebReproducible(t *testing.T) {
 		cmd.Env = append(os.Environ(), "PEER_VERSIONS="+debVersion, "DEB_REVISION=1", "NFPM_BIN="+nfpm)
 		combined, err := cmd.CombinedOutput()
 		require.NoErrorf(t, err, "build-deb.sh failed: %s", combined)
-		data, err := os.ReadFile(filepath.Join(out, "nke-kubeadm-distro-1.36.3_1_amd64.deb"))
+		data, err := os.ReadFile(filepath.Join(out, "nvke-kubeadm-distro-1.36.3_1_amd64.deb"))
 		require.NoError(t, err)
 		return data
 	}
@@ -379,7 +380,7 @@ func TestBuildDebRefusesBundleWithoutImages(t *testing.T) {
 	combined, err := cmd.CombinedOutput()
 	require.Error(t, err, "build-deb.sh must refuse a bundle with no container images")
 	assert.Contains(t, string(combined), "could not bring up a node offline")
-	assert.NoFileExists(t, filepath.Join(out, "nke-kubeadm-distro-1.36.3_1_amd64.deb"))
+	assert.NoFileExists(t, filepath.Join(out, "nvke-kubeadm-distro-1.36.3_1_amd64.deb"))
 }
 
 // TestBuildDebRefusesBundleWithoutStage guards the same offline contract for
@@ -397,7 +398,7 @@ func TestBuildDebRefusesBundleWithoutStage(t *testing.T) {
 	combined, err := cmd.CombinedOutput()
 	require.Error(t, err, "build-deb.sh must refuse a bundle with no staged runtime tree")
 	assert.Contains(t, string(combined), "missing staged file")
-	assert.NoFileExists(t, filepath.Join(out, "nke-kubeadm-distro-1.36.3_1_amd64.deb"))
+	assert.NoFileExists(t, filepath.Join(out, "nvke-kubeadm-distro-1.36.3_1_amd64.deb"))
 }
 
 // The postinst comments out swap entries in /etc/fstab. That line is a sed

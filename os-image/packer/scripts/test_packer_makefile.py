@@ -140,6 +140,7 @@ class PackerMakefileTest(unittest.TestCase):
         scripts = workspace / "scripts"
         scripts.mkdir()
         shutil.copy2(PACKER_DIR / "scripts" / "qemu-arch.sh", scripts / "qemu-arch.sh")
+        shutil.copy2(PACKER_DIR / "scripts" / "run-packer-build.sh", scripts / "run-packer-build.sh")
         shutil.copy2(PACKER_DIR / "scripts" / "package-builder.sh", scripts / "package-builder.sh")
         events = root / "events.log"
         artifacts = workspace / "artifacts"
@@ -185,6 +186,15 @@ printf 'patched installer iso\n' > "${OUT_DIR}/${ISO_URL##*/}.patched.iso"
 set -eu
 printf 'packer:%s\\n' "$1" >> "${EVENT_LOG:?}"
 printf 'packer-args|%s\\n' "$*" >> "${EVENT_LOG:?}"
+if [ "$1" = "build" ] && [ "${PACKER_KVM_DENIED_ONCE:-0}" = "1" ] && [ ! -e "${EVENT_LOG}.kvm-denied" ]; then
+  : > "${EVENT_LOG}.kvm-denied"
+  printf 'Qemu stderr: Could not access KVM kernel module: Permission denied\\n' >> "${PACKER_LOG_PATH:?}"
+  exit 1
+fi
+if [ "$1" = "build" ] && [ "${PACKER_BUILD_FAIL:-0}" = "1" ]; then
+  printf 'Error launching VM: Qemu failed to start\\n' >> "${PACKER_LOG_PATH:?}"
+  exit 1
+fi
 if [ "$1" = "build" ]; then
   test -f "${EXPECTED_ARTIFACTS_DIR:?}/ready"
   test ! -e "${EXPECTED_ARTIFACTS_DIR}/stale"
@@ -193,20 +203,21 @@ if [ "$1" = "build" ]; then
   for argument in "$@"; do
     case "${argument}" in
       output_directory=*) output_directory="${argument#output_directory=}" ;;
-      -only=nke-node-fde.qemu.nke-fde) variant=fde ;;
-      -only=nke-node-non-fde.qemu.nke-non-fde) variant=non-fde ;;
+      -only=nvke-node-fde.qemu.nvke-fde) variant=fde ;;
+      -only=nvke-node-non-fde.qemu.nvke-non-fde) variant=non-fde ;;
     esac
   done
   test -n "${output_directory}"
   test -n "${variant}"
   mkdir -p "${output_directory}/${variant}"
-  printf 'qcow2 bytes\n' > "${output_directory}/${variant}/nke-node.qcow2"
+  printf 'qcow2 bytes\n' > "${output_directory}/${variant}/nvke-node.qcow2"
   printf 'efi vars\n' > "${output_directory}/${variant}/efivars.fd"
 fi
 """,
         )
         self.write_executable(tools / "go", "#!/bin/sh\nexit 0\n")
         self.write_executable(tools / "qemu-img", "#!/bin/sh\nexit 0\n")
+        self.write_executable(tools / "sudo", "#!/bin/sh\nexit 0\n")
         self.write_executable(
             tools / "ssh-keygen",
             """#!/bin/sh
@@ -250,8 +261,8 @@ printf '%s\n' 'ssh-ed25519 generated-key generated' > "${key}.pub"
             "versions.pkr.hcl",
             "variables.pkr.hcl",
             "locals.pkr.hcl",
-            "nke-node-fde.pkr.hcl",
-            "nke-node-non-fde.pkr.hcl",
+            "nvke-node-fde.pkr.hcl",
+            "nvke-node-non-fde.pkr.hcl",
         ):
             (workspace / template).write_text("# test fixture\n", encoding="utf-8")
 
@@ -278,6 +289,8 @@ printf '%s\n' 'ssh-ed25519 generated-key generated' > "${key}.pub"
         generate_ssh_key=False,
         generated_key_state=None,
         guest_memory_mib=None,
+        packer_kvm_denied_once=False,
+        packer_build_fails=False,
     ):
         workspace, source, tools, packer, events, artifacts = (
             self.create_image_build_fixture(
@@ -397,6 +410,8 @@ exec "${REAL_MV:?}" "$@"
                 },
                 "FETCH_FAIL": "1" if fetch_fails else "0",
                 "PROMOTION_FAIL": "1" if promotion_fails else "0",
+                "PACKER_KVM_DENIED_ONCE": "1" if packer_kvm_denied_once else "0",
+                "PACKER_BUILD_FAIL": "1" if packer_build_fails else "0",
                 "REAL_MV": real_mv,
             },
             make_options=make_options,
@@ -645,8 +660,8 @@ exec "${REAL_MV:?}" "$@"
 
     def test_source_preflight_runs_before_any_packer_command(self):
         cases = (
-            ("os-image-fde", "nke-node-fde.qemu.nke-fde"),
-            ("os-image-non-fde", "nke-node-non-fde.qemu.nke-non-fde"),
+            ("os-image-fde", "nvke-node-fde.qemu.nvke-fde"),
+            ("os-image-non-fde", "nvke-node-non-fde.qemu.nvke-non-fde"),
         )
         for target, selector in cases:
             with self.subTest(target=target):
@@ -671,17 +686,17 @@ exec "${REAL_MV:?}" "$@"
 
     def test_each_image_build_stages_clean_artifacts_once_before_packer_build(self):
         cases = (
-            ("os-image-fde", "amd64", "nke-node-fde.qemu.nke-fde"),
-            ("os-image-fde", "arm64", "nke-node-fde.qemu.nke-fde"),
+            ("os-image-fde", "amd64", "nvke-node-fde.qemu.nvke-fde"),
+            ("os-image-fde", "arm64", "nvke-node-fde.qemu.nvke-fde"),
             (
                 "os-image-non-fde",
                 "amd64",
-                "nke-node-non-fde.qemu.nke-non-fde",
+                "nvke-node-non-fde.qemu.nvke-non-fde",
             ),
             (
                 "os-image-non-fde",
                 "arm64",
-                "nke-node-non-fde.qemu.nke-non-fde",
+                "nvke-node-non-fde.qemu.nvke-non-fde",
             ),
         )
         for target, arch, selector in cases:
@@ -730,7 +745,7 @@ exec "${REAL_MV:?}" "$@"
                 self.assertTrue(build.endswith(str(artifacts.parent)))
 
                 output_name = (
-                    f"nke-node-{variant}-ubuntu-26.04.1-{arch}.qcow2"
+                    f"nvke-node-{variant}-ubuntu-26.04.1-{arch}.qcow2"
                 )
                 self.assertEqual(
                     (artifacts.parent / f"output-{variant}" / output_name).read_bytes(),
@@ -759,7 +774,7 @@ exec "${REAL_MV:?}" "$@"
                     "sha256:"
                     + hashlib.sha256(b"patched installer iso\n").hexdigest(),
                 )
-                self.assertEqual(manifest["schemaVersion"], "nke.dev/os-image-materials/v1")
+                self.assertEqual(manifest["schemaVersion"], "nvke.nvidia.com/os-image-materials/v1")
                 self.assertEqual(materials["installer-iso"]["architecture"], arch)
                 self.assertEqual(materials["image-inputs"]["architecture"], arch)
                 self.assertEqual(
@@ -777,6 +792,29 @@ exec "${REAL_MV:?}" "$@"
                 builds = [event for event in events if event.startswith("packer-args|build ")]
                 self.assertEqual(len(builds), 1)
                 self.assertIn("-var guest_memory_mib=16384", builds[0])
+
+    def test_packer_build_retries_once_when_qemu_cannot_open_kvm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, events, artifacts, _ = self.run_image_build(
+                "os-image-fde", "amd64", Path(tmp), packer_kvm_denied_once=True
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            builds = [event for event in events if event.startswith("packer-args|build ")]
+            self.assertEqual(len(builds), 2)
+            kept_log = artifacts.parent / "build-logs" / "packer-fde.kvm-denied.log"
+            self.assertIn(
+                "Could not access KVM kernel module",
+                kept_log.read_text(encoding="utf-8"),
+            )
+
+    def test_packer_build_does_not_retry_other_failures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, events, _, _ = self.run_image_build(
+                "os-image-non-fde", "arm64", Path(tmp), packer_build_fails=True
+            )
+            self.assertNotEqual(result.returncode, 0)
+            builds = [event for event in events if event.startswith("packer-args|build ")]
+            self.assertEqual(len(builds), 1)
 
     def test_failed_artifact_staging_prevents_packer_build(self):
         cases = (
@@ -1071,7 +1109,7 @@ exec "${REAL_MV:?}" "$@"
                 self.assertEqual((artifacts / "stale").read_text(), "stale\n")
 
     def test_packer_templates_do_not_fetch_host_artifacts(self):
-        for template in ("nke-node-fde.pkr.hcl", "nke-node-non-fde.pkr.hcl"):
+        for template in ("nvke-node-fde.pkr.hcl", "nvke-node-non-fde.pkr.hcl"):
             with self.subTest(template=template):
                 contents = (PACKER_DIR / template).read_text(encoding="utf-8")
                 self.assertNotIn("fetch-artifacts.sh", contents)
@@ -1081,7 +1119,7 @@ exec "${REAL_MV:?}" "$@"
                     contents.count('error-cleanup-provisioner "shell-local"'), 1
                 )
                 self.assertIn("generated   = true", contents)
-                self.assertNotIn("/tmp/nke-image-inputs.tar", contents)
+                self.assertNotIn("/tmp/nvke-image-inputs.tar", contents)
                 self.assertEqual(contents.count('"MODE=clean"'), 2)
                 self.assertLess(
                     contents.index('"MODE=stage"'),
@@ -1377,10 +1415,10 @@ exec "${REAL_MV:?}" "$@"
             project.count('can(regex("^sha256:[0-9a-f]{64}$", material.digest))'),
             2,
         )
-        self.assertIn('source "qemu" "nke-fde"', project)
-        self.assertIn('source "qemu" "nke-non-fde"', project)
-        self.assertRegex(project, r'name\s*=\s*"nke-node-fde"')
-        self.assertRegex(project, r'name\s*=\s*"nke-node-non-fde"')
+        self.assertIn('source "qemu" "nvke-fde"', project)
+        self.assertIn('source "qemu" "nvke-non-fde"', project)
+        self.assertRegex(project, r'name\s*=\s*"nvke-node-fde"')
+        self.assertRegex(project, r'name\s*=\s*"nvke-node-non-fde"')
         self.assertEqual(
             len(re.findall(r"ssh_private_key_file\s*=\s*var\.ssh_private_key_file", project)),
             2,
@@ -1397,7 +1435,7 @@ exec "${REAL_MV:?}" "$@"
             6,
         )
         self.assertEqual(len(re.findall(r"generated\s*=\s*true", project)), 2)
-        self.assertNotIn("/tmp/nke-image-inputs.tar", project)
+        self.assertNotIn("/tmp/nvke-image-inputs.tar", project)
         self.assertEqual(len(re.findall(r"skip_compaction\s*=\s*true", project)), 2)
         self.assertEqual(len(re.findall(r"disk_compression\s*=\s*false", project)), 2)
         self.assertEqual(len(re.findall(r"efi_drop_efivars\s*=\s*true", project)), 2)
@@ -1563,7 +1601,7 @@ exec "${REAL_MV:?}" "$@"
                 commit = self.create_source_repo(source)
                 output = workspace / f"output-{variant}"
                 output.mkdir()
-                name = f"nke-node-{variant}-ubuntu-{release}-{arch}.qcow2"
+                name = f"nvke-node-{variant}-ubuntu-{release}-{arch}.qcow2"
                 payload = f"{variant}-{arch}-bytes".encode()
                 (output / name).write_bytes(payload)
                 dist = workspace / "dist"
@@ -1596,12 +1634,12 @@ exec "${REAL_MV:?}" "$@"
                 commit = self.create_source_repo(source)
                 output = workspace / "output-fde"
                 output.mkdir()
-                expected = output / "nke-node-fde-ubuntu-26.04.1-amd64.qcow2"
+                expected = output / "nvke-node-fde-ubuntu-26.04.1-amd64.qcow2"
                 if case == "multiple":
                     expected.write_bytes(b"one")
                     (output / "extra.qcow2").write_bytes(b"two")
                 elif case == "wrong-name":
-                    (output / "nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2").write_bytes(b"wrong")
+                    (output / "nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2").write_bytes(b"wrong")
                 elif case == "symlink":
                     target = output / "image.data"
                     target.write_bytes(b"target")
@@ -1630,7 +1668,7 @@ exec "${REAL_MV:?}" "$@"
             commit = self.create_source_repo(source)
             output = workspace / "output-fde"
             output.mkdir()
-            name = "nke-node-fde-ubuntu-26.04.1-amd64.qcow2"
+            name = "nvke-node-fde-ubuntu-26.04.1-amd64.qcow2"
             (output / name).write_bytes(b"bytes")
 
             no_destination = self.run_make(
@@ -1667,7 +1705,7 @@ exec "${REAL_MV:?}" "$@"
             commit = self.create_source_repo(source)
             output = workspace / "output-fde"
             output.mkdir()
-            name = "nke-node-fde-ubuntu-26.04.1-amd64.qcow2"
+            name = "nvke-node-fde-ubuntu-26.04.1-amd64.qcow2"
             (output / name).write_bytes(b"source-bytes")
             dist = workspace / "dist"
             tools = root / "tools"

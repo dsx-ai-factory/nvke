@@ -125,7 +125,9 @@ func renderUserData(in userDataInputs) (string, error) {
 
 		// BlueField hosts race cloud-init for the network, and apt fails
 		// without one. Bounded, so a node with no route fails here rather
-		// than silently.
+		// than silently. NodeCommands opens with the same wait; it is kept
+		// here too so the site node does not depend on what it is handed,
+		// and the second one returns at once.
 		`timeout 300s sh -c 'until ip -4 route list default | grep -q .; do echo "waiting for an IPv4 default route"; sleep 5; done'`,
 
 		// The key is written deferred, after the account exists, into a
@@ -151,7 +153,7 @@ func renderUserData(in userDataInputs) (string, error) {
 		"printf 'fs.inotify.max_user_instances = 1024\n' > /etc/sysctl.d/99-nke-e2e-inotify.conf",
 		"sysctl --system",
 
-		// nke-kubeadm-distro ships a containerd and declares Conflicts: runc,
+		// nvke-kubeadm-distro ships a containerd and declares Conflicts: runc,
 		// so installing Ubuntu's containerd aborts the whole apt transaction.
 		// Start the one already there.
 		"systemctl enable --now containerd",

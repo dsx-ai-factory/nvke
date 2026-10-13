@@ -99,7 +99,9 @@ jobs:
       E2E_SUITE_TIMEOUT_MINUTES: "110"
       # Pull-request mirrors run the same bounded lifecycle as the CAPD lane.
       # Main, scheduled, and manual runs keep the comprehensive CAPD suite.
-      LOCAL_NKE_E2E_LABEL_FILTER: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-docker || health' || '' }}
+      # Empty takes E2E_CAPD_SUITE_FILTER, which already excludes
+      # tpm-attestation and gpu.
+      LOCAL_NKE_E2E_LABEL_FILTER: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && '(core-docker || health) && !tpm-attestation && !gpu' || '' }}
       # Same override as backend-e2e.yml (capd-e2e, nico-e2e).
       NODE_REBOOT_SOFT_REBOOT_ENABLED: false
       # A public pull-through mirror: dc.local.gha-runners.nvidia.com resolves

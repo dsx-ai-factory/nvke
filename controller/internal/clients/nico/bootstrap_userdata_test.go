@@ -140,8 +140,8 @@ func TestUnit_RenderUserData(t *testing.T) {
 				assert.Contains(t, userData, "diskSelectionStrategy=largest\n")
 				assert.Contains(t, userData, "calicoEnabled=true\n")
 				assert.Contains(t, userData, "ovnEnabled=false\n")
-				assert.Contains(t, userData, "cniImagePackage=nke-cni-calico-images-3.31.5\n")
-				assert.Contains(t, userData, "cniChartsPackage=nke-cni-calico-manifests-3.31.5\n")
+				assert.Contains(t, userData, "cniImagePackage=nvke-cni-calico-images-3.31.5\n")
+				assert.Contains(t, userData, "cniChartsPackage=nvke-cni-calico-manifests-3.31.5\n")
 				assert.Contains(t, userData, "files=1\n")
 				assert.Contains(t, userData, "spiffeEnabled=true\n")
 				assert.Contains(t, userData, "spireServer=spire.example.com:9091\n")
@@ -162,7 +162,7 @@ func TestUnit_RenderUserData(t *testing.T) {
 			cluster:           db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
 			verify: func(t *testing.T, userData string) {
 				t.Helper()
-				assert.Equal(t, "images=nke-cni-calico-images-3.31.5\ncharts=nke-cni-calico-manifests-3.31.5\n", userData)
+				assert.Equal(t, "images=nvke-cni-calico-images-3.31.5\ncharts=nvke-cni-calico-manifests-3.31.5\n", userData)
 			},
 		},
 		"renders OVN package names": {
@@ -173,7 +173,7 @@ func TestUnit_RenderUserData(t *testing.T) {
 			cluster:           db.Cluster{CniPlugin: db.CNIOvnKubernetes, CniVersion: "1.4.1"},
 			verify: func(t *testing.T, userData string) {
 				t.Helper()
-				assert.Equal(t, "images=nke-cni-ovn-images-1.4.1\ncharts=nke-cni-ovn-charts-1.4.1\n", userData)
+				assert.Equal(t, "images=nvke-cni-ovn-images-1.4.1\ncharts=nvke-cni-ovn-charts-1.4.1\n", userData)
 			},
 		},
 		"renders TLS JWT agent file in Nico user data": {
@@ -552,6 +552,7 @@ func TestBuildTeleportLabels(t *testing.T) {
 				"test-site",
 				"staging",
 				"nke-cloud-workflow-engine",
+				"nke",
 			)
 
 			assert.Contains(t, got, "node-role: "+params.wantRole+"\n")
@@ -578,6 +579,7 @@ func TestBuildTeleportLabels(t *testing.T) {
 			"test-site",
 			"staging",
 			"nke-cloud-workflow-engine",
+			"nke",
 		)
 
 		assert.NotContains(t, got, "node-pool:")

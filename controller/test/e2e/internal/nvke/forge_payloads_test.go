@@ -27,7 +27,7 @@ const (
 func completeForgeInputs() NodeInputs {
 	return NodeInputs{
 		BootLoaderURL:     "https://example.invalid/qcow-imager.efi",
-		ImageURL:          "https://example.invalid/nke-node-non-fde-ubuntu-24.04.1-amd64.qcow2",
+		ImageURL:          "https://example.invalid/nvke-node-non-fde-ubuntu-24.04.1-amd64.qcow2",
 		Arch:              "amd64",
 		KubernetesVersion: "1.34.2",
 		CNIVersion:        "1.4.0",
@@ -61,9 +61,9 @@ func TestBuildForgeNodePayloadsRendersEveryInput(t *testing.T) {
 	// terminates provisioning rather than retrying.
 	joined := strings.Join(payloads.PreKubeadmCommands, "\n")
 	for _, want := range []string{
-		"nke-kubeadm-distro-" + inputs.KubernetesVersion,
-		"nke-cni-ovn-images-" + inputs.CNIVersion,
-		"nke-cni-ovn-charts-" + inputs.CNIVersion,
+		"nvke-kubeadm-distro-" + inputs.KubernetesVersion,
+		"nvke-cni-ovn-images-" + inputs.CNIVersion,
+		"nvke-cni-ovn-charts-" + inputs.CNIVersion,
 		"openvswitch-switch",
 	} {
 		if !strings.Contains(joined, want) {
@@ -323,7 +323,7 @@ func TestBuildForgeNodePayloadsBootParametersFollowTheArch(t *testing.T) {
 			inputs.Arch = tc.arch
 			// The image has to match, or checkArch rejects the pair before
 			// the boot parameters are reached.
-			inputs.ImageURL = "https://example.invalid/nke-node-non-fde-ubuntu-24.04.1-" + tc.arch + ".qcow2"
+			inputs.ImageURL = "https://example.invalid/nvke-node-non-fde-ubuntu-24.04.1-" + tc.arch + ".qcow2"
 			payloads, err := BuildForgeNodePayloads(inputs)
 			if err != nil {
 				t.Fatalf("building payloads: %v", err)
@@ -347,8 +347,8 @@ func TestBuildForgeNodePayloadsBootParametersFollowTheArch(t *testing.T) {
 // the 24.04 suite finds no packages.
 func TestBuildForgeNodePayloadsAptSuiteFollowsTheImage(t *testing.T) {
 	for _, tc := range []struct{ arch, url, want, wantAbsent string }{
-		{"amd64", "https://cdn.invalid/nke-node-non-fde-ubuntu-24.04.1-amd64.qcow2", "nvke-noble", "resolute"},
-		{"arm64", "https://cdn.invalid/nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "nvke-resolute", "noble"},
+		{"amd64", "https://cdn.invalid/nvke-node-non-fde-ubuntu-24.04.1-amd64.qcow2", "nvke-noble", "resolute"},
+		{"arm64", "https://cdn.invalid/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "nvke-resolute", "noble"},
 	} {
 		t.Run(tc.want, func(t *testing.T) {
 			inputs := completeForgeInputs()
@@ -374,8 +374,8 @@ func TestBuildForgeNodePayloadsAptSuiteFollowsTheImage(t *testing.T) {
 // surfaces as a package that cannot be found minutes into a boot.
 func TestBuildForgeNodePayloadsRejectsAnUnknownRelease(t *testing.T) {
 	for _, tc := range []struct{ name, url, want string }{
-		{"no release in the url", "https://cdn.invalid/nke-node.qcow2", "cannot tell which Ubuntu release"},
-		{"a release with no suite", "https://cdn.invalid/nke-node-ubuntu-22.04-amd64.qcow2", "no NVKE apt suite is known for Ubuntu 22.04"},
+		{"no release in the url", "https://cdn.invalid/nvke-node.qcow2", "cannot tell which Ubuntu release"},
+		{"a release with no suite", "https://cdn.invalid/nvke-node-ubuntu-22.04-amd64.qcow2", "no NVKE apt suite is known for Ubuntu 22.04"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inputs := completeForgeInputs()
@@ -414,13 +414,13 @@ func TestBuildForgeNodePayloadsRejectsAnArchMismatch(t *testing.T) {
 		{
 			name:  "arm64 node, amd64 image",
 			arch:  "arm64",
-			image: "https://cdn.invalid/releases/v1/amd64/nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2",
+			image: "https://cdn.invalid/releases/v1/amd64/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2",
 			want:  "the node is arm64 but its OS image names amd64",
 		},
 		{
 			name:   "arm64 node, x86_64 imager",
 			arch:   "arm64",
-			image:  "https://cdn.invalid/releases/v1/arm64/nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2",
+			image:  "https://cdn.invalid/releases/v1/arm64/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2",
 			loader: "https://cdn.invalid/efi/x86_64/qcow-imager.efi",
 			want:   "the node is arm64 but its boot loader names x86_64",
 		},
@@ -444,8 +444,8 @@ func TestBuildForgeNodePayloadsRejectsAnArchMismatch(t *testing.T) {
 
 	// A matching pair, and a URL naming no architecture, both pass.
 	for _, tc := range []struct{ name, image, loader string }{
-		{"matching arm64", "https://cdn.invalid/arm64/nke-node-ubuntu-26.04.1-arm64.qcow2", "https://cdn.invalid/efi/aarch64/qcow-imager.efi"},
-		{"silent about arch", "https://cdn.invalid/nke-node-ubuntu-26.04.1.qcow2", "https://cdn.invalid/qcow-imager.efi"},
+		{"matching arm64", "https://cdn.invalid/arm64/nvke-node-ubuntu-26.04.1-arm64.qcow2", "https://cdn.invalid/efi/aarch64/qcow-imager.efi"},
+		{"silent about arch", "https://cdn.invalid/nvke-node-ubuntu-26.04.1.qcow2", "https://cdn.invalid/qcow-imager.efi"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inputs := completeForgeInputs()
@@ -465,7 +465,7 @@ func TestForgeRequestGivesEachRoleItsOwnPayloads(t *testing.T) {
 		t.Helper()
 		inputs := completeForgeInputs()
 		inputs.Arch = arch
-		inputs.ImageURL = "https://cdn.invalid/nke-node-non-fde-ubuntu-26.04.1-" + arch + ".qcow2"
+		inputs.ImageURL = "https://cdn.invalid/nvke-node-non-fde-ubuntu-26.04.1-" + arch + ".qcow2"
 		inputs.BootLoaderURL = "https://cdn.invalid/qcow-imager.efi"
 		payloads, err := BuildForgeNodePayloads(inputs)
 		if err != nil {
@@ -496,7 +496,7 @@ func TestBuildForgeNodePayloadsLuksKeyFollowsTheArch(t *testing.T) {
 		t.Run(tc.arch, func(t *testing.T) {
 			inputs := completeForgeInputs()
 			inputs.Arch = tc.arch
-			inputs.ImageURL = "https://cdn.invalid/nke-node-non-fde-ubuntu-26.04.1-" + tc.arch + ".qcow2"
+			inputs.ImageURL = "https://cdn.invalid/nvke-node-non-fde-ubuntu-26.04.1-" + tc.arch + ".qcow2"
 			inputs.BootLoaderURL = "https://cdn.invalid/qcow-imager.efi"
 			payloads, err := BuildForgeNodePayloads(inputs)
 			if err != nil {
@@ -524,6 +524,45 @@ func TestBuildForgeNodePayloadsGuardsAgainstAFailedStep(t *testing.T) {
 	}
 	if got := payloads.PreKubeadmCommands[0]; got != "set -eu" {
 		t.Errorf("first pre-kubeadm command is %q, want \"set -eu\": anything before it runs unguarded", got)
+	}
+}
+
+// Forge hosts race cloud-init for the network. Under set -eu the first
+// download fails at once on a node whose default route is not up yet, and
+// cloud-init reports status: error with nothing installed -- the amd64 control
+// plane of run 37873467928, beside an arm64 worker that passed running these
+// same commands. The wait has to come before anything that touches the
+// network, not merely be present.
+func TestBuildForgeNodePayloadsWaitsForTheNetworkFirst(t *testing.T) {
+	for _, arch := range []string{"amd64", "arm64"} {
+		t.Run(arch, func(t *testing.T) {
+			inputs := completeForgeInputs()
+			inputs.Arch = arch
+			inputs.ImageURL = strings.ReplaceAll(inputs.ImageURL, "amd64", arch)
+			payloads, err := BuildForgeNodePayloads(inputs)
+			if err != nil {
+				t.Fatalf("building payloads: %v", err)
+			}
+
+			wait, firstNetwork := -1, -1
+			for i, command := range payloads.PreKubeadmCommands {
+				if wait < 0 && strings.Contains(command, "ip -4 route list default") {
+					wait = i
+				}
+				if firstNetwork < 0 && (strings.Contains(command, "curl ") || strings.Contains(command, "apt-get")) {
+					firstNetwork = i
+				}
+			}
+			if wait < 0 {
+				t.Fatal("no wait for a default route: the first download races the network")
+			}
+			if firstNetwork >= 0 && wait > firstNetwork {
+				t.Errorf("the route wait is command %d but the first download is command %d", wait, firstNetwork)
+			}
+			if !strings.HasPrefix(payloads.PreKubeadmCommands[wait], "timeout ") {
+				t.Errorf("the route wait must be bounded, got: %s", payloads.PreKubeadmCommands[wait])
+			}
+		})
 	}
 }
 

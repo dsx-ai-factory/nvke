@@ -15,7 +15,6 @@ const (
 	// per-install configurable.
 	LabelManagedBy              = "managed-by"
 	LabelResourceGroup          = "resource-group"
-	LabelResourceGroupNVKEValue = "nke"
 	LabelSite                   = "site"
 	LabelNVKESiteControllerName = "nke-site-controller-name"
 	LabelNodeID                 = "node-id"

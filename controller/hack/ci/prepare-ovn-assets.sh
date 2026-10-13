@@ -66,7 +66,7 @@ case "${arch}" in
 esac
 bundle_name="ovn_v${version}_${bundle_arch}"
 mkdir -p "${scratch}/${bundle_name}"
-cp "${output_dir}"/nke-cni-ovn-*_${version}_${arch}.deb "${scratch}/${bundle_name}/"
+cp "${output_dir}"/nvke-cni-ovn-*_${version}_${arch}.deb "${scratch}/${bundle_name}/"
 install -m 0755 "${workspace_root}/controller/hack/ci/assets/ovn-install.sh" \
   "${scratch}/${bundle_name}/install.sh"
 tar -czf "${output_dir}/${bundle_name}.tgz" -C "${scratch}" "${bundle_name}"

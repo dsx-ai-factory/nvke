@@ -118,7 +118,14 @@ var siteReaches = []string{
 // The container is serial: one site, built once, holding the tenant specs that run
 // against it. ContinueOnFailure lets teardown and the tenant sweep run after a
 // failure; a failed build still skips the tenants, which check for a site.
-var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("site-controller"), func() {
+//
+// The needs: labels are every machine this container holds at once, which is
+// what the Capacity Provider checks for before a run starts: the site node and
+// the tenant's control plane on CPU shapes, and the tenant's worker on the GPU
+// shape every stream in release/policy.yaml names. On the container rather
+// than the tenant entry because the site outlives every spec beneath it, and
+// the provider takes the maximum per machine type, not the sum.
+var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("site-controller", "needs:cpu=2", "needs:gpu=1"), func() {
 	var (
 		cfg config.Config
 		// provider creates the site node. Settled before anything is created,
@@ -757,20 +764,15 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	if err != nil {
 		return site.Stack{}, nil, err
 	}
-	assets, err := site.ExportRef(context.Background(), repo, ref, site.DeployAssetPaths())
+	// Here, in BeforeAll, rather than when the stack deploys: this also
+	// checks the controller's name against the release, which has to fail
+	// before a machine is taken.
+	assets, cleanupAssets, err := site.ExportDeployAssets(context.Background(), repo, ref)
 	if err != nil {
 		return site.Stack{}, nil, err
 	}
-	DeferCleanup(func() { _ = os.RemoveAll(assets) })
+	DeferCleanup(cleanupAssets)
 
-	// Before a machine is taken: the deploy path chooses the name the controller is
-	// installed under, the lane chooses the name the suite looks for, and
-	// nothing else makes the two agree. Checked here rather than beside the
-	// spec because the stack is what exports these assets and so what knows
-	// the name they install.
-	if nameErr := site.CheckControllerName(assets); nameErr != nil {
-		return site.Stack{}, nil, nameErr
-	}
 	images := cfg.Site.Images
 	profiles := site.Image{Repository: images.Profiles.Repository, Tag: images.Profiles.Tag}
 	user, token := os.Getenv(envRegistryUser), os.Getenv(envRegistryToken)
@@ -789,7 +791,6 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	GinkgoLogr.Info("deploying the stack", "controller", controller.Ref(), "profiles", profiles.Ref())
 	return site.Stack{
 		Assets:     assets,
-		AssetPaths: site.DeployAssetPaths(),
 		Controller: controller,
 		Profiles:   profiles,
 		Provider:   deployConfig,

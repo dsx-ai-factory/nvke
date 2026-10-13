@@ -340,7 +340,7 @@ func (p *Process) CreateNode(ctx context.Context, name, userData string, phoneHo
 	}
 
 	// Poll until ready + IP assigned. 20 min budget covers cloud-init
-	// apt-install of nke-kubeadm-distro (~3-5 min on cold image cache).
+	// apt-install of nvke-kubeadm-distro (~3-5 min on cold image cache).
 	deadline := time.Now().Add(20 * time.Minute)
 	for {
 		// Per-iteration RPC timeout — don't defer across iterations.

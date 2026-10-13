@@ -416,7 +416,7 @@ func (b *bundleRun) wantLock() string {
 		records = append(records, fmt.Sprintf("image %s %s", img.ref, img.digest))
 	}
 	sort.Strings(records)
-	header := fmt.Sprintf("# nke-kubeadm-distro lock for %s (amd64). Regenerate with `make lock`; review the diff before committing.\n"+
+	header := fmt.Sprintf("# nvke-kubeadm-distro lock for %s (amd64). Regenerate with `make lock`; review the diff before committing.\n"+
 		"kubernetes %s\n", fixtureVersion, fixtureVersion)
 	return header + strings.Join(records, "\n") + "\n"
 }

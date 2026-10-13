@@ -101,3 +101,6 @@ controller/test/e2e/nvkectl-diagnostics.tar.gz
 # hack/coverage.sh reads the directory. Nothing in it is committed: a profile
 # describes one run on one machine, and CI uploads it as an artifact instead.
 /coverage/
+
+# nvkectl built by make -C deploy test
+deploy/testdata/bin/

@@ -16,7 +16,7 @@
 #
 # Env overrides:
 #   QCOW          path to the FDE qcow2 (default: the single *.qcow2 under
-#                 packer/output-fde/, e.g. nke-node-fde-ubuntu-26.04.1-amd64.qcow2)
+#                 packer/output-fde/, e.g. nvke-node-fde-ubuntu-26.04.1-amd64.qcow2)
 #   ARCH          amd64 or arm64; must match the qcow2 (default: amd64)
 #   SSH_KEY       ssh key used for the build (default: packer/.ssh/id_ed25519)
 #   SSH_PORT      host port to forward to guest :22 (default: 2222)
@@ -45,7 +45,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QCOW="${QCOW:-}"
 if [[ -z "${QCOW}" ]]; then
   # The output filename encodes the Ubuntu version/arch (see vm_name in
-  # nke-node-fde.pkr.hcl), so glob for it instead of hardcoding it here.
+  # nvke-node-fde.pkr.hcl), so glob for it instead of hardcoding it here.
   shopt -s nullglob
   fde_qcows=("${ROOT}/packer/output-fde"/*.qcow2)
   shopt -u nullglob
@@ -63,7 +63,7 @@ SSH_PORT="${SSH_PORT:-2222}"
 ARCH="${ARCH:-amd64}"
 
 # machine_type/cpu_model matter here for the same reason they do in
-# nke-node-fde.pkr.hcl: this image boots via UEFI, and on amd64 QEMU's default
+# nvke-node-fde.pkr.hcl: this image boots via UEFI, and on amd64 QEMU's default
 # "pc" (i440fx) machine type is a known-fragile pairing with OVMF that
 # produced intermittent guest-kernel instability while developing this
 # variant. q35 + an explicit cpu_model avoids it. aarch64 has no default
@@ -135,7 +135,7 @@ OVMF_CODE="${OVMF_CODE:-${DEFAULT_OVMF_CODE}}"
 OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-${DEFAULT_OVMF_VARS}}"
 
 WORKDIR="$(mktemp -d)"
-DISK="${WORKDIR}/nke-node-fde-demo.qcow2"
+DISK="${WORKDIR}/nvke-node-fde-demo.qcow2"
 trap 'rm -rf "${WORKDIR}"' EXIT
 
 qemu-img create -f qcow2 -F qcow2 -b "${QCOW}" "${DISK}" >/dev/null

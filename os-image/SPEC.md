@@ -24,14 +24,14 @@ TODO:  Need to refine the requirements around spire-agent below
 | Node attestor | Whichever the instance can use, chosen on first boot: join-token (`NodeAttestor "join_token"`) when cloud-init supplied `SPIRE_JOIN_TOKEN`, TPM (`NodeAttestor "tpm"`, via `/usr/local/lib/spire-agent/tpm_attestor_agent`) otherwise. A site cluster attests its nodes by TPM and mints no join token, so an image that could only do join-token could not join one. This is separate from the FDE variant's use of TPM to seal the disk-encryption key. |
 | DSX IMDS node attestor | `/usr/local/lib/spire-agent/dsx-imds-node-attestor-agent` for the image architecture, installed by the same `spire-agent` package. CAPI user-data selects it by writing `NodeAttestor "dsx_imds"` with `plugin_checksum = "${DSX_IMDS_PLUGIN_CHECKSUM}"`. The first-boot renderer does not select this attestor. |
 | TPM identity tool | `/usr/local/bin/get_tpm_pubhash` for the image architecture. |
-| Calico manifests | An `nke-cni-calico-manifests` Debian package is installed. |
+| Calico manifests | An `nvke-cni-calico-manifests` Debian package is installed. |
 | etcd data directory | `/var/lib/etcd` exists at mode `0700`, owned by a system `etcd` user and group created at bake time. kubeadm reuses the directory rather than creating its own `root:root` one, which is what CIS 1.1.12 checks. etcd itself still runs as root from `registry.k8s.io/etcd` as a static pod, so this changes what the node reports, not what etcd can do. |
 | `multipathd` | **Masked** — both `multipathd.service` and its socket. Ubuntu Server's installer leaves multipathd enabled, and with no blacklist it claims Longhorn's iSCSI-exported volumes (they present as `IET,VIRTUAL-DISK`) through device-mapper: `mkfs` then fails with `is apparently in use by the system; will not make a filesystem here` and newly provisioned volumes never format. No NVKE node boots from a multipath-backed disk, so nothing depends on it. Matches `node-images`' `packages` role, which disables the same unit. |
 | Background apt | **Masked** — `apt-daily.timer`, `apt-daily-upgrade.timer`, their services and `unattended-upgrades.service`. Ubuntu runs them a few minutes after first boot; the package job restarts journald, networkd and udevd, and a `systemctl daemon-reload` from kubeadm's kubelet-start phase in that window fails, so the kubelet never starts and the node's init or join is lost. Nodes take updates through a new image, never in place. |
-| Unit ordering | `nke-spire-configure.service` before `spire-agent.service` before `nvke-agent.service`. `nvke-agent` waits for the workload API socket before exec. |
-| First-boot renderer | `/usr/lib/nke/spire-configure.sh`, driven by `nke-spire-configure.service`. Renders `/etc/spire-agent/agent.conf` from instance identity. Does nothing unless `/etc/nke/spire.env` exists. |
+| Unit ordering | `nvke-spire-configure.service` before `spire-agent.service` before `nvke-agent.service`. `nvke-agent` waits for the workload API socket before exec. |
+| First-boot renderer | `/usr/lib/nvke/spire-configure.sh`, driven by `nvke-spire-configure.service`. Renders `/etc/spire-agent/agent.conf` from instance identity. Does nothing unless `/etc/nke/spire.env` exists. |
 | Plugin checksum | `/etc/spire-agent/spire-agent.env` holds `TPM_PLUGIN_CHECKSUM` and `DSX_IMDS_PLUGIN_CHECKSUM`, written by the .deb's postinst from the plugins it installed. `spire-agent.service` runs with `-expandEnv`, so an `agent.conf` that cloud-init wrote with the literal `${TPM_PLUGIN_CHECKSUM}` or `${DSX_IMDS_PLUGIN_CHECKSUM}` resolves against this image's own plugins. The two config paths are exclusive: a profile supplies `agent.conf` and no `/etc/nke/spire.env`, or it supplies `/etc/nke/spire.env` and the renderer writes `agent.conf`. |
-| Conntrack limits | `conntrack-tune.service` **enabled** (`WantedBy=sysinit.target`), ordered after `systemd-modules-load.service` and before `systemd-sysctl.service`. At every boot `/usr/lib/nke/configure-conntrack.sh` writes `/run/sysctl.d/10-nke-conntrack.conf`, raising `net.netfilter.nf_conntrack_max` and `nf_conntrack_buckets` to `min(max(RAM_MiB × 64, 1024), 600000)` wherever that is above the kernel's value, and `systemd-sysctl` applies it. `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` sets `nf_conntrack_tcp_timeout_time_wait` to 60s. `/etc/modules-load.d/nf_conntrack.conf` loads `nf_conntrack` at boot. See [Conntrack limits](#conntrack-limits). |
+| Conntrack limits | `conntrack-tune.service` **enabled** (`WantedBy=sysinit.target`), ordered after `systemd-modules-load.service` and before `systemd-sysctl.service`. At every boot `/usr/lib/nvke/configure-conntrack.sh` writes `/run/sysctl.d/10-nke-conntrack.conf`, raising `net.netfilter.nf_conntrack_max` and `nf_conntrack_buckets` to `min(max(RAM_MiB × 64, 1024), 600000)` wherever that is above the kernel's value, and `systemd-sysctl` applies it. `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` sets `nf_conntrack_tcp_timeout_time_wait` to 60s. `/etc/modules-load.d/nf_conntrack.conf` loads `nf_conntrack` at boot. See [Conntrack limits](#conntrack-limits). |
 
 ### Conntrack limits
 
@@ -86,7 +86,7 @@ fewer logical CPUs it replaces the image's 600000 with less (262144 on an
 holds only on OVN-Kubernetes clusters. kube-proxy leaves TIME_WAIT alone.
 
 Anything that re-applies `sysctl.d` after kube-proxy starts, such as the
-`sysctl --system` in `nke-kubeadm-distro`'s postinst on a Kubernetes version
+`sysctl --system` in `nvke-kubeadm-distro`'s postinst on a Kubernetes version
 change, sets `nf_conntrack_max` back to the image's value until kube-proxy
 next restarts. On Calico nodes with 18 or fewer CPUs that is a raise; on
 nodes with 19 or more it is a reduction.
@@ -135,7 +135,7 @@ After a successful `nvke-agent` start, the image touches
 
 ## Must have (FDE variant)
 
-`nke-node-fde.pkr.hcl` is an **opt-in** build variant, not the default image.
+`nvke-node-fde.pkr.hcl` is an **opt-in** build variant, not the default image.
 It satisfies everything above, plus:
 
 | Item | Requirement |
@@ -150,7 +150,7 @@ It satisfies everything above, plus:
 
 ## Must have (non-FDE variant, no encryption)
 
-`nke-node-non-fde.pkr.hcl` is also **opt-in**, not the default image. It uses
+`nvke-node-non-fde.pkr.hcl` is also **opt-in**, not the default image. It uses
 the same LVM layout as the FDE image but configures no encryption. This layout
 parity is intentional.
 
@@ -184,7 +184,7 @@ server, not this image.
 | Agent env | `/etc/default/nvke-agent` (`AGENT_ARGS`) |
 | SPIRE config | `/etc/spire-agent/agent.conf` (rendered, not a baked secret) |
 | SPIRE data | `/var/lib/spire-agent` |
-| Conntrack tuning | `/usr/lib/nke/configure-conntrack.sh` writes `/run/sysctl.d/10-nke-conntrack.conf` (logs to `journalctl -u conntrack-tune`); TIME_WAIT in `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` |
+| Conntrack tuning | `/usr/lib/nvke/configure-conntrack.sh` writes `/run/sysctl.d/10-nke-conntrack.conf` (logs to `journalctl -u conntrack-tune`); TIME_WAIT in `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` |
 
 ## Out of scope for this image
 
@@ -201,7 +201,7 @@ server that has issued a join token and a `/nke-service/...` identity for the
 checker, then:
 
 ```bash
-nke-os-image-check --endpoint <node-ip>:15005
+nvke-os-image-check --endpoint <node-ip>:15005
 ```
 
 The checker is a **client**. It uses the local workload API (same pattern as

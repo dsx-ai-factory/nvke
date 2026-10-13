@@ -181,6 +181,15 @@ else
   log "preserving tenant node containers from other local E2E runs"
 fi
 
+# Before the cluster and the builds, for the reason given in backend-e2e-lib.sh:
+# the answer is a property of this host's kernel, so nothing below changes it,
+# and a host that cannot load the module has already lost the suite.
+log "checking this host can load the openvswitch module"
+ovs_probe_image="$(e2e_capd_base_image "${repo_root}")" \
+  || fail "could not resolve the CAPD base image to probe with"
+e2e_host_loads_openvswitch "${ovs_probe_image}" ||
+  fail "this host cannot load the openvswitch module (#1515)"
+
 log "ensuring the Kind management cluster exists"
 kind_config_for_mirror "${repo_root}/hack/controller-capi-kind.yaml" "${tmp_dir}/kind-config.yaml"
 make -C "${repo_root}" kind-up KIND_CLUSTER_CONFIG="${tmp_dir}/kind-config.yaml"
@@ -197,10 +206,10 @@ rm -rf "${bundle_dir}"
 CNI_PLUGIN=ovn-kubernetes BUNDLE_ARCH="${host_arch}" bash "${repo_root}/hack/ci/prepare-capd-bundles.sh" "${bundle_dir}"
 
 export SPIRE_AGENT_BUNDLE_PATH="${bundle_dir}/spire-agent.tgz"
-CAPD_CNI_CHARTS_DEB_PATH="${bundle_dir}/nke-cni-ovn-charts-1.4.0_1.4.0_${host_arch}.deb"
+CAPD_CNI_CHARTS_DEB_PATH="${bundle_dir}/nvke-cni-ovn-charts-1.4.0_1.4.0_${host_arch}.deb"
 export CAPD_CNI_CHARTS_DEB_PATH
 export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}"
-export CAPD_CNI_IMAGES_DEB_PATH="${bundle_dir}/nke-cni-ovn-images-1.4.0_1.4.0_${host_arch}.deb"
+export CAPD_CNI_IMAGES_DEB_PATH="${bundle_dir}/nvke-cni-ovn-images-1.4.0_1.4.0_${host_arch}.deb"
 export CAPD_HELM_DEB_PATH="${bundle_dir}/nke-e2e-helm.deb"
 [[ -f "${CAPD_CNI_CHARTS_DEB_PATH}" ]] \
   || fail "prepare-capd-bundles.sh produced no OVN charts package"
@@ -238,8 +247,6 @@ if [[ "${LOCAL_NKE_E2E_REUSE_CAPD_SETUP:-false}" == true ]]; then
 else
   make -C "${repo_root}" capd-up REGISTRY_MIRROR_IMAGE="$(dockerhub_image registry:2)"
 fi
-e2e_host_loads_openvswitch "${CAPD_NODE_IMAGE:-cwe-capd-kindest-node:local}" ||
-  fail "this host cannot load the openvswitch module (#1515)"
 
 # The committed fixture, not the provider checkout: this script installs the
 # CRDs but never builds the provider, so requiring a checkout would gate the

@@ -83,6 +83,15 @@ controllers:
     enabled: true
 
 nodeAgent:
+  readiness:
+    # -- Maximum simultaneous node-agent readiness reconciles.
+    workers: 8
+    # -- Deadline for agent transport setup and version RPC.
+    timeout: "30s"
+    # -- Delay after a reconcile before its next periodic check.
+    interval: "2m"
+    # -- Symmetric fractional scheduling variation. Set 0 to disable jitter.
+    jitter: 0.1
   # -- SPIRE node attestation method pinned to newly created nodes. Changing
   # this deployment default does not reconfigure existing nodes; keep their
   # attestation plugins available until those nodes are retired or migrated.
@@ -221,7 +230,7 @@ service:
 
 metrics:
   # -- Port for the dedicated Prometheus metrics server.
-  # Must match METRICS_LISTEN_ADDRESS in the container env.
+  # Must match the port in listenAddress.
   port: 9090
   # -- listenAddress controls which interface the metrics server binds.
   # Set to 0.0.0.0:<port> when a NetworkPolicy is in place to restrict access.
@@ -382,8 +391,8 @@ cni:
   imageRegistry: ""
   # -- Install CNI after kubeadm init through the agent's InstallCNI RPC, which
   # reads manifests from a Debian package rather than a bundle server. Needs the
-  # CNI charts package on the node that runs kubeadm init: nke-cni-ovn-charts-<stream>
-  # for OVN, or nke-cni-calico-manifests-<stream> for Calico.
+  # CNI charts package on the node that runs kubeadm init: nvke-cni-ovn-charts-<stream>
+  # for OVN, or nvke-cni-calico-manifests-<stream> for Calico.
   installAfterInit: false
 
 tenantAccess:
@@ -397,7 +406,7 @@ nkeOIDCAuth:
   enabled: false
   # -- Name of the ClusterRole/Role/Binding objects the tenant-access controller
   # applies into every tenant cluster (nke-rbac.yaml).
-  tenantRbacName: "nke:cwe"
+  tenantRbacName: "nvke:cwe"
   # -- OIDC issuer URL trusted by tenant kube-apiservers.
   issuerURL: ""
   # -- Optional discovery URL override used when issuerURL is not directly reachable by tenant kube-apiservers.
@@ -552,13 +561,13 @@ temporal:
     queue: cloud-workflow-engine-tasks
 
 profiles:
-  # Directory the controller reads OS/config profiles from (PROFILES_DIR) and profile-hook
-  # scripts from its runbooks/ child (RUNBOOKS_DIR).
+  # Directory the controller reads OS/config profiles from (profilesDir) and profile-hook
+  # scripts from its runbooks/ child (runbooksDir).
   # When image.enabled is true, an initContainer copies /profiles from the
   # profiles content image into an emptyDir mounted at this path.
-  # -- Directory mounted/read as PROFILES_DIR
+  # -- Directory mounted and read as profilesDir
   path: ""
-  # -- Directory read as RUNBOOKS_DIR for config-profile hook scripts. Empty
+  # -- Directory read as runbooksDir for config-profile hook scripts. Empty
   # uses the runbooks/ directory under path.
   runbooksPath: ""
   image:
@@ -610,20 +619,20 @@ spiffe:
   # -- Older name for controllerSubject, still read. When both are set,
   # controllerSubject wins.
   cweSubject: ""
-  # -- Subject the nke:capi-cluster-admin RBAC binding names for capi-manager.
+  # -- Subject the nvke:capi-cluster-admin RBAC binding names for capi-manager.
   # Defaults to spiffe://<trustDomain>/nke-service/capi-manager, which is what a
   # tenant sees without token exchange. Set it whenever jwtExchangeEndpoint is
   # set because the exchange may rewrite the token's sub claim.
   capiManagerSubject: ""
-  # -- Subject the nke:capi-cluster-admin RBAC binding names for the kubeadm
+  # -- Subject the nvke:capi-cluster-admin RBAC binding names for the kubeadm
   # control-plane manager. Defaults to its local SPIFFE ID; set it to the
   # rewritten subject when that controller uses an exchanged tenant kubeconfig.
   capiKubeadmControlPlaneManagerSubject: ""
-  # -- Subject the nke:capi-cluster-admin RBAC binding names for the kubeadm
+  # -- Subject the nvke:capi-cluster-admin RBAC binding names for the kubeadm
   # bootstrap manager. Defaults to its local SPIFFE ID; set it to the rewritten
   # subject when that controller uses an exchanged tenant kubeconfig.
   capiKubeadmBootstrapManagerSubject: ""
-  # -- Subject the nke:capi-cluster-admin RBAC binding names for the CAPD
+  # -- Subject the nvke:capi-cluster-admin RBAC binding names for the CAPD
   # manager. Defaults to its local SPIFFE ID; set it to the rewritten subject
   # when CAPD uses an exchanged tenant kubeconfig.
   capdManagerSubject: ""
@@ -659,8 +668,13 @@ teleport:
   # -- Name of the Kubernetes secret containing the tbot identity (written by tbot output)
   identitySecretName: "cloud-workflow-engine-teleport"
   # -- Value of the Teleport "managed-by" label this controller stamps on
-  # tokens it creates, and the value ownership checks compare against.
-  managedByLabelValue: "nke-cloud-workflow-engine"
+  # tokens it creates, and the value ownership checks compare against. An
+  # existing site pins its old value ("nke-cloud-workflow-engine"): ownership
+  # compares the value, so a site that does not stops recognizing its tokens.
+  managedByLabelValue: "nvke-controller"
   # -- Prefix for the deterministic Teleport TPM join token name this
-  # controller mints for a node.
-  tokenNamePrefix: "nke-cwe-"
+  # controller mints for a node. An existing site pins "nke-cwe-".
+  tokenNamePrefix: "nvke-controller-"
+  # -- Value of the Teleport "resource-group" label stamped on the tokens and
+  # node userdata this controller creates. An existing site pins "nke".
+  resourceGroupLabelValue: "nvke"

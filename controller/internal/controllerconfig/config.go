@@ -32,25 +32,26 @@ import (
 // and AUTH_CONFIG_PATH. The package tests hold the full classification and fail
 // when config.Config gains a field it does not cover.
 type Config struct {
-	FieldManager            FieldManagerConfig `json:"fieldManager"`
-	ManagedByLabelValue     string             `json:"managedByLabelValue"`
-	MetricsListenAddress    string             `json:"metricsListenAddress"`
-	SupportedInfraProviders []string           `json:"supportedInfraProviders"`
-	Tracing                 TracingConfig      `json:"tracing"`
-	CertRenewal             CertRenewalConfig  `json:"certRenewal"`
-	KubeadmImageRepository  string             `json:"kubeadmImageRepository"`
-	CNIImageRegistry        string             `json:"cniImageRegistry"`
-	InstallCNIAfterInit     bool               `json:"installCNIAfterInit"`
-	NicoControllersEnabled  bool               `json:"nicoControllersEnabled"`
-	ProfilesDir             string             `json:"profilesDir"`
-	RunbooksDir             string             `json:"runbooksDir"`
-	TenantAccessEnabled     bool               `json:"tenantAccessEnabled"`
-	NodeAgent               NodeAgentConfig    `json:"nodeAgent"`
-	OIDC                    OIDCConfig         `json:"oidc"`
-	Temporal                TemporalConfig     `json:"temporal"`
-	Spire                   SpireConfig        `json:"spire"`
-	Teleport                TeleportConfig     `json:"teleport"`
-	PermissiveMode          bool               `json:"permissiveMode"`
+	AgentReadiness          AgentReadinessConfig `json:"agentReadiness"`
+	FieldManager            FieldManagerConfig   `json:"fieldManager"`
+	ManagedByLabelValue     string               `json:"managedByLabelValue"`
+	MetricsListenAddress    string               `json:"metricsListenAddress"`
+	SupportedInfraProviders []string             `json:"supportedInfraProviders"`
+	Tracing                 TracingConfig        `json:"tracing"`
+	CertRenewal             CertRenewalConfig    `json:"certRenewal"`
+	KubeadmImageRepository  string               `json:"kubeadmImageRepository"`
+	CNIImageRegistry        string               `json:"cniImageRegistry"`
+	InstallCNIAfterInit     bool                 `json:"installCNIAfterInit"`
+	NicoControllersEnabled  bool                 `json:"nicoControllersEnabled"`
+	ProfilesDir             string               `json:"profilesDir"`
+	RunbooksDir             string               `json:"runbooksDir"`
+	TenantAccessEnabled     bool                 `json:"tenantAccessEnabled"`
+	NodeAgent               NodeAgentConfig      `json:"nodeAgent"`
+	OIDC                    OIDCConfig           `json:"oidc"`
+	Temporal                TemporalConfig       `json:"temporal"`
+	Spire                   SpireConfig          `json:"spire"`
+	Teleport                TeleportConfig       `json:"teleport"`
+	PermissiveMode          bool                 `json:"permissiveMode"`
 }
 
 // FieldManagerConfig groups the Server-Side-Apply field manager names, mirroring
@@ -216,6 +217,8 @@ type TeleportConfig struct {
 	Environment         string `json:"environment"`
 	ManagedByLabelValue string `json:"managedByLabelValue"`
 	TokenNamePrefix     string `json:"tokenNamePrefix"`
+
+	ResourceGroupLabelValue string `json:"resourceGroupLabelValue"`
 }
 
 // Load reads and validates the configuration at path. A missing file is not
@@ -310,6 +313,10 @@ func (c *Config) Validate() error {
 
 	if err := validateSupportedInfraProviders(c.SupportedInfraProviders); err != nil {
 		return fmt.Errorf("supportedInfraProviders: %w", err)
+	}
+
+	if err := c.AgentReadiness.validate(); err != nil {
+		return fmt.Errorf("agentReadiness: %w", err)
 	}
 
 	return nil
@@ -518,7 +525,7 @@ func (o *OIDCConfig) validate() error {
 // a fleet-wide provider maps into one, and Validate refuses a provider whose
 // own prefix already lies inside one, since every login through it would fail.
 func ReservedIdentityPrefixes() []string {
-	return []string{"system:", "kubeadm:", "nke:", "nvidia:"}
+	return []string{"system:", "kubeadm:", "nke:", "nvke:", "nvidia:"}
 }
 
 // validateIdentityPrefixes refuses a usernamePrefix or groupsPrefix inside a

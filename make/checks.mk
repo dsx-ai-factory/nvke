@@ -332,6 +332,7 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory docs-check
 	@$(MAKE) --no-print-directory internal-config-check
 	@$(MAKE) --no-print-directory name-check
+	@$(MAKE) --no-print-directory -C deploy test
 	@$(MAKE) --no-print-directory chart-check
 	@$(MAKE) --no-print-directory nktp-chart-check
 	@$(MAKE) --no-print-directory -C controller generate-check

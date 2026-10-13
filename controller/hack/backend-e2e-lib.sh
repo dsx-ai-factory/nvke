@@ -193,11 +193,34 @@ e2e_wait_for_zero_tenant_clusters() {
   done
 }
 
-# Runs node image $1's ovs-vswitchd check on the Docker kernel. ARC's runner
+# The kindest/node image the CAPD node image is built FROM, as build-image.sh
+# resolves it -- mirror prefix and pinned tag included. Asking that script keeps
+# one definition of the pin: a bump there reaches the probe with no second edit.
+# $1 is the controller directory.
+e2e_capd_base_image() {
+  local image
+  image="$(bash "$1/hack/capd-kindest-node/build-image.sh" --print-base-image)" || return 1
+  [[ -n "${image}" ]] || return 1
+  printf '%s' "${image}"
+}
+
+# Runs image $1's ovs-vswitchd check on the Docker kernel. ARC's runner
 # cannot load modules itself, and its installed module files are not in DinD's
 # filesystem. If the daemon cannot load the module, stream the runner's matching
 # module tree into a privileged helper instead. Never invoke ovs-ctl: its fallback
 # removes the bridge module and destroys the Docker networks (#1515).
+#
+# Image $1 supplies only /bin/sh, modprobe and tar -- the module lives in the
+# host's /lib/modules and the result is a property of the host kernel, not of
+# the image. So this does NOT need the CAPD node image, and callers should not
+# wait for one to be built before asking: a host that cannot load the module
+# fails the suite whatever the image turns out to be.
+#
+# It does need the same modprobe, though. Use e2e_capd_base_image: that is the
+# kindest/node the node image is built FROM, so the probe runs the kmod the
+# nodes will run (+ZSTD, which Ubuntu's compressed modules need). Alpine's
+# modprobe is busybox's, a different implementation whose answer here would not
+# be the one that matters.
 e2e_host_loads_openvswitch() (
   set -o pipefail
   local image="$1" kernel module_root="${NKE_E2E_HOST_MODULES_DIR:-/lib/modules}"
@@ -274,7 +297,7 @@ E2E_CAPD_PROVIDERS='["capi_core", "bgp-containers", "capd", "capd-reboot-control
 # container-backed backend wires up. The CI workflows pass the same expression
 # as `label-filter` for their full runs; keep the three in step.
 e2e_suite_filter() {
-  printf '(%s || health) || (authn && !authn-spire) || authn-permissive' "$1"
+  printf '((%s || health) || (authn && !authn-spire) || authn-permissive) && !tpm-attestation && !gpu' "$1"
 }
 
 # Kept for callers that still name CAPD directly.

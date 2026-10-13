@@ -89,8 +89,8 @@ service NodeAgent {
 
   // InstallCNI deploys packaged CNI charts or manifests into the cluster (helm install /
   // kubectl apply). It assumes the charts/manifest Debian package is already installed
-  // on this node — use InstallPackages (or apt) for nke-cni-ovn-charts-<stream>,
-  // nke-cni-calico-manifests-<stream>, and optional image packages (when not pulling
+  // on this node — use InstallPackages (or apt) for nvke-cni-ovn-charts-<stream>,
+  // nvke-cni-calico-manifests-<stream>, and optional image packages (when not pulling
   // exclusively from a tenant registry).
   //
   // OVN resolves the chart tree from /etc/dgx/ovn-kubernetes when present else from the
@@ -527,7 +527,7 @@ message InstallCNIPluginRequest {
 }
 
 message InstallCNIRequest {
-  // OVN or CALICO; when UNSPECIFIED the agent uses OVN (stream selects nke-cni-ovn-charts-<stream>, etc.).
+  // OVN or CALICO; when UNSPECIFIED the agent uses OVN (stream selects nvke-cni-ovn-charts-<stream>, etc.).
   CniVariant cni_variant = 1;
   // Selects Debian stream suffix in the charts/manifest package name used to locate bundled
   // charts on disk (leading "v" stripped). Empty uses defaults matching cni-packages (OVN 1.4.0,
@@ -979,8 +979,10 @@ message ExecuteNodePreflightRequest {
   repeated NodePreflightCheck checks = 1;
   // Optional kubeadm init/join preflight for this node.
   optional KubeadmPreflightRequest kubeadm_preflight = 2;
-  // When set, the agent runs `cloud-init status` and passes when output contains
-  // "status: done". "status: running" yields notready; "status: error" yields error.
+  // When set, the agent runs `cloud-init status --long` and passes when its
+  // status line reads "status: done". "status: running" yields notready;
+  // "status: error" yields error. The lines after the status line are
+  // reported, not evaluated.
   CheckCloudInitStatus check_cloud_init_status = 3;
 }
 

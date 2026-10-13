@@ -29,7 +29,7 @@ Conflicts=shutdown.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/lib/nke/configure-conntrack.sh
+ExecStart=/usr/lib/nvke/configure-conntrack.sh
 
 [Install]
 WantedBy=sysinit.target

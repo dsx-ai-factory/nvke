@@ -47,7 +47,7 @@ func deployPath(t *testing.T) string {
 	if exec.CommandContext(context.Background(), "git", "-C", repo, "cat-file", "-e", DeployPathRef+"^{commit}").Run() != nil {
 		t.Skipf("%s does not resolve in this clone", DeployPathRef)
 	}
-	dir, err := ExportRef(context.Background(), repo, DeployPathRef, DeployAssetPaths())
+	dir, err := ExportRef(context.Background(), repo, DeployPathRef, CurrentLayout().Export)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 	// that deploy path installs, not whatever a lane is configured for. The
 	// two are the same thing read from the same file, which is the point of
 	// controllerNameFromDeployPath.
-	name, err := controllerNameFromDeployPath(assets)
+	name, err := controllerNameFromDeployPath(assets, CurrentLayout().DeployPath)
 	if err != nil {
 		t.Fatalf("reading the deploy path's controller name: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 	for release, install := range installs {
 		if fields := strings.Fields(install); len(fields) > 4 && filepath.IsAbs(fields[4]) {
 			if _, err := os.Stat(filepath.Join(fields[4], "Chart.yaml")); err != nil {
-				t.Errorf("release %s installs %s, which DeployAssetPaths does not export: %v", release, fields[4], err)
+				t.Errorf("release %s installs %s, which the layout does not export: %v", release, fields[4], err)
 			}
 		}
 	}
@@ -244,17 +244,29 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		for name, want := range map[string]string{
 			"NODE_AGENT_PORT":          nodeAgentPort,
 			"SPIRE_SERVER_API_ADDRESS": spireServerAPIAddress,
-			// The greenfield profile, not the chart's legacy defaults.
-			"TEMPORAL_NAMESPACE":                controllerName(),
-			"TEMPORAL_TASK_QUEUE":               controllerName() + "-tasks",
-			"FIELD_MANAGER_NAME":                controllerName(),
-			"FIELD_MANAGER_REBOOT_MACHINE_NAME": controllerName() + "-reboot-machine",
-			"MANAGED_BY_LABEL_VALUE":            controllerName(),
-			"TELEPORT_MANAGED_BY_LABEL_VALUE":   controllerName(),
-			"TELEPORT_TOKEN_NAME_PREFIX":        controllerName() + "-",
 		} {
 			if env[name] != want {
 				t.Errorf("controller env %s = %v, want %s", name, env[name], want)
+			}
+		}
+
+		var settings map[string]any
+		raw, _ := dig(t, find(t, docs, "ConfigMap", "nke-controller-config"), "data", "config.yaml").(string)
+		if err := yaml.Unmarshal([]byte(raw), &settings); err != nil {
+			t.Fatalf("parse nke-controller-config: %v", err)
+		}
+		for key, want := range map[string]string{
+			// The greenfield profile, not the chart's legacy defaults.
+			"temporal.namespace":             controllerName(),
+			"temporal.taskQueue":             controllerName() + "-tasks",
+			"fieldManager.name":              controllerName(),
+			"fieldManager.rebootMachineName": controllerName() + "-reboot-machine",
+			"managedByLabelValue":            controllerName(),
+			"teleport.managedByLabelValue":   controllerName(),
+			"teleport.tokenNamePrefix":       controllerName() + "-",
+		} {
+			if got := dig(t, settings, strings.Split(key, ".")...); got != want {
+				t.Errorf("nke-controller-config %s = %v, want %s", key, got, want)
 			}
 		}
 		if got, _ := env["DB_CONNECTION_STRING"].(string); !strings.Contains(got, "/"+controllerName()+"?") {

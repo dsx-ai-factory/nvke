@@ -42,7 +42,7 @@ autoinstall:
         size: largest
 
   identity:
-    hostname: nke-node
+    hostname: nvke-node
     username: ubuntu
     # Locked — login is by SSH key only (ssh.allow-pw: false below).
     password: "!"

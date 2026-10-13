@@ -71,13 +71,51 @@ func TestUnit_TransportVerifierValidatesOptionalNotBefore(t *testing.T) {
 	}
 }
 
+func TestNodeAgentAudiencesAcceptsBothSpellings(t *testing.T) {
+	t.Parallel()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	cfg := validTransportVerificationConfig()
+	verifier, err := newVerifier(cfg, map[string]KeySource{
+		NodeAgentIssuerName: staticPublicKey{key: &key.PublicKey},
+	}, false)
+	require.NoError(t, err)
+
+	for aud, wantErr := range map[string]bool{
+		NodeAgentAudience:       false,
+		NodeAgentAudienceLegacy: false,
+		"someone-else":          true,
+	} {
+		t.Run(aud, func(t *testing.T) {
+			t.Parallel()
+			token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+				"iss": cfg.Issuers[0].Issuer,
+				"sub": "spiffe://identity.example.test/bm/node-id",
+				"aud": aud,
+				"exp": time.Now().Add(time.Minute).Unix(),
+			})
+			token.Header["kid"] = "key-1"
+			signed, signErr := token.SignedString(key)
+			require.NoError(t, signErr)
+
+			_, verifyErr := verifier.Verify(context.Background(), signed)
+			if wantErr {
+				require.Error(t, verifyErr)
+				return
+			}
+			require.NoError(t, verifyErr)
+		})
+	}
+}
+
 type staticPublicKey struct{ key crypto.PublicKey }
 
 func (s staticPublicKey) KeyFor(context.Context, string) (crypto.PublicKey, error) { return s.key, nil }
 
 func validTransportVerificationConfig() *Config {
 	return &Config{
-		Audiences: []string{NodeAgentAudience},
+		Audiences: NodeAgentAudiences(),
 		Issuers: []Issuer{{
 			Name:       NodeAgentIssuerName,
 			Issuer:     "https://identity.example.test",

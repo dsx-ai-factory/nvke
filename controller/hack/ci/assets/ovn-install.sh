@@ -8,4 +8,4 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 export NKE_CTR_BIN="$(command -v ctr)"
 # KIND supplies a running containerd binary, outside dpkg.
 containerd --version >/dev/null
-dpkg --ignore-depends=containerd,nke-kubeadm-distro -i ./nke-cni-ovn-*.deb
+dpkg --ignore-depends=containerd,nvke-kubeadm-distro -i ./nvke-cni-ovn-*.deb

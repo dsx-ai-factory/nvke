@@ -21,6 +21,11 @@ import (
 // baseConfig is every required key except nodeAgent, for tests that supply
 // their own nodeAgent block.
 const baseConfig = `
+agentReadiness:
+  workers: 8
+  timeout: 30s
+  interval: 2m
+  jitter: 0.1
 metricsListenAddress: 127.0.0.1:9090
 supportedInfraProviders: [nico]
 spire:
@@ -57,6 +62,11 @@ func TestLoadFullConfig(t *testing.T) {
 	t.Parallel()
 
 	const full = `
+agentReadiness:
+  workers: 8
+  timeout: 30s
+  interval: 2m
+  jitter: 0.1
 fieldManager:
   name: cloud-workflow-engine
   rebootMachineName: cloud-workflow-engine-reboot-machine
@@ -144,6 +154,7 @@ teleport:
   environment: prod
   managedByLabelValue: nke-cloud-workflow-engine
   tokenNamePrefix: nke-cwe-
+  resourceGroupLabelValue: nke
 permissiveMode: false
 `
 
@@ -168,6 +179,7 @@ permissiveMode: false
 	assert.Equal(t, "corporate", cfg.OIDC.Providers[0].Name)
 	assert.Equal(t, map[string]string{"tenant_id": "acme"}, cfg.OIDC.Providers[0].RequiredClaims)
 
+	assert.Equal(t, "nke", cfg.Teleport.ResourceGroupLabelValue)
 	assert.Equal(t, "localhost:7233", cfg.Temporal.HostPort)
 	assert.Equal(t, "/etc/temporal/ca.crt", cfg.Temporal.TLS.CACert)
 
@@ -395,6 +407,11 @@ nodeAgent:
 // nodeAgent keys indented by two spaces.
 func attestationConfig(spiffeEnabled bool, method string) string {
 	return fmt.Sprintf(`
+agentReadiness:
+  workers: 8
+  timeout: 30s
+  interval: 2m
+  jitter: 0.1
 metricsListenAddress: 127.0.0.1:9090
 supportedInfraProviders: [nico]
 spire:
@@ -595,7 +612,7 @@ func TestValidateNodeAgentTLSJWT(t *testing.T) {
 // test rather than quietly widen what an operator provider can claim.
 func TestReservedIdentityPrefixes(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, []string{"system:", "kubeadm:", "nke:", "nvidia:"}, controllerconfig.ReservedIdentityPrefixes())
+	assert.Equal(t, []string{"system:", "kubeadm:", "nke:", "nvke:", "nvidia:"}, controllerconfig.ReservedIdentityPrefixes())
 }
 
 func TestValidateOIDCReservedPrefixes(t *testing.T) {

@@ -711,6 +711,23 @@ NKE_CONTROLLER_PROFILES_TILT_IMAGE="docker.local/cwe-profiles:tilt"
 CAPD_REBOOT_IMAGE="ko.local/capd-reboot-controller"
 DSX_IDENTITY_EXCHANGE_IMAGE=""
 
+# Before any of the builds below, not after them. This is a property of the
+# runner's kernel, so nothing built in between can change the answer, and on a
+# host that cannot load the module the suite is already lost. Asking here costs
+# nothing the run was not going to pay anyway -- the probe image is the node
+# image's own base, pulled by that build regardless. Asking after the build cost
+# ~6 minutes of a cpu16 runner per job (#1515).
+log "checking this host can load the openvswitch module"
+ovs_probe_image="$(NKE_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" e2e_capd_base_image "${CONTROLLER_ROOT}")" \
+  || { log "could not resolve the CAPD base image to probe with" >&2; exit 1; }
+# The node image build pulls this a few minutes from now regardless, so this
+# only moves that pull earlier.
+pull_with_retry "${ovs_probe_image}"
+if ! e2e_host_loads_openvswitch "${ovs_probe_image}"; then
+  log "this runner host cannot load the openvswitch module (#1515)" >&2
+  exit 1
+fi
+
 # Every host build below pulls its bases through the mirror; see
 # dockerhub_build_args in backend-e2e-lib.sh.
 log "building the sanitized profiles fixture image"
@@ -761,7 +778,7 @@ log "using agent source version ${NODE_AGENT_VERSION}"
 
 log "preparing verified SPIRE and OVN-Kubernetes charts"
 CNI_PLUGIN=ovn-kubernetes BUNDLE_ARCH="${host_arch}" bash hack/ci/prepare-capd-bundles.sh "${BUNDLE_DIR}"
-OVN_CHARTS_DEB="${BUNDLE_DIR}/nke-cni-ovn-charts-1.4.0_1.4.0_${host_arch}.deb"
+OVN_CHARTS_DEB="${BUNDLE_DIR}/nvke-cni-ovn-charts-1.4.0_1.4.0_${host_arch}.deb"
 [[ -f "${OVN_CHARTS_DEB}" ]] || {
   log "OVN charts package was not produced: ${OVN_CHARTS_DEB}" >&2
   exit 1
@@ -861,7 +878,7 @@ NODE_AGENT_VERSION="${NODE_AGENT_VERSION}" \
 NODE_AGENT_REPO_PATH="${WORKSPACE_ROOT}/agent" \
 SPIRE_AGENT_BUNDLE_PATH="${BUNDLE_DIR}/spire-agent.tgz" \
 CAPD_CNI_CHARTS_DEB_PATH="${OVN_CHARTS_DEB}" \
-CAPD_CNI_IMAGES_DEB_PATH="${BUNDLE_DIR}/nke-cni-ovn-images-1.4.0_1.4.0_${host_arch}.deb" \
+CAPD_CNI_IMAGES_DEB_PATH="${BUNDLE_DIR}/nvke-cni-ovn-images-1.4.0_1.4.0_${host_arch}.deb" \
 CAPD_HELM_DEB_PATH="${BUNDLE_DIR}/nke-e2e-helm.deb" \
 CAPD_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
 BUNDLE_SERVER_URL="http://${BUNDLE_MIRROR_NAME}/" \
@@ -872,10 +889,6 @@ NKE_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" \
   bash hack/capd-kindest-node/build-image.sh
 CAPD_NODE_IMAGE_OWNED=true
 docker image inspect "${CAPD_NODE_IMAGE}" >"${STATE_DIR}/capd-node-image.json"
-if ! e2e_host_loads_openvswitch "${CAPD_NODE_IMAGE}"; then
-  log "this runner host cannot load the openvswitch module (#1515)" >&2
-  exit 1
-fi
 
 log "creating Kind management cluster ${KIND_CLUSTER_NAME}"
 KIND_CLUSTER_OWNED=true
@@ -1281,11 +1294,13 @@ for controller in \
     /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth --help >/dev/null 2>&1
 done
 runner_exec kubectl -n "${CONTROLLER_NAME}" rollout status "deployment/${CONTROLLER_NAME}" --timeout=5m
-for env_name in TENANT_ACCESS_ENABLED NKE_OIDC_AUTH_ENABLED; do
-  env_value="$(runner_exec kubectl -n "${CONTROLLER_NAME}" get "deployment/${CONTROLLER_NAME}" \
-    -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"${env_name}\")].value}")"
-  if [[ "${env_value}" != "true" ]]; then
-    log "${env_name} must be true in the CAPD E2E deployment, got ${env_value:-<empty>}"
+# Both deploy paths set these as chart values, which the chart renders into
+# nke-controller-config.
+controller_values="$(runner_exec helm -n "${CONTROLLER_NAME}" get values "${CONTROLLER_NAME}" --all -o json)"
+for setting in tenantAccess.enabled nkeOIDCAuth.enabled; do
+  value="$(jq -r ".${setting}" <<<"${controller_values}")"
+  if [[ "${value}" != "true" ]]; then
+    log "${setting} must be true in the CAPD E2E deployment, got ${value:-<empty>}"
     exit 1
   fi
 done

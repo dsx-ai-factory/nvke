@@ -16,7 +16,7 @@ where those notices are, and which do not yet — and why.
 | `agent/` — the node agent | [agent/THIRD_PARTY_NOTICES.md](agent/THIRD_PARTY_NOTICES.md) | the import closure of `./cmd/...` for `linux/amd64` and `linux/arm64` | the `Third-Party Notices` workflow, on every push |
 | `controller/` — the Cloud Workflow Engine | [controller/THIRD_PARTY_NOTICES.md](controller/THIRD_PARTY_NOTICES.md) — **151 modules** | the import closures of `./cmd/worker` and the provider's `./cmd/manager` for `linux/amd64` | the `Third-Party Notices` workflow, on every push |
 | `cli/` — the `nvkectl` CLI | [cli/THIRD_PARTY_NOTICES.md](cli/THIRD_PARTY_NOTICES.md) — **24 modules** | the import closure of `./cmd/nvkectl` for `linux/amd64` | the `Third-Party Notices` workflow, on every push |
-| `os-image/` — the `nke-os-image-check` binary | [os-image/THIRD_PARTY_NOTICES.md](os-image/THIRD_PARTY_NOTICES.md) — **9 modules** | the import closure of `./cmd/nke-os-image-check` for `linux/amd64` | the `Third-Party Notices` workflow, on every push |
+| `os-image/` — the `nvke-os-image-check` binary | [os-image/THIRD_PARTY_NOTICES.md](os-image/THIRD_PARTY_NOTICES.md) — **9 modules** | the import closure of `./cmd/nvke-os-image-check` for `linux/amd64` | the `Third-Party Notices` workflow, on every push |
 
 Regenerate with:
 

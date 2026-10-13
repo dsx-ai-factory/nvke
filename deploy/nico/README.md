@@ -35,6 +35,19 @@ What the node needs, all present on the reference instance type:
 
 - `helm`, `kubectl`, `git`, `python3` (the executor's item parser and template
   renderer are Python), plus `clusterctl` for the prerequisites
+- to render the site's values first: `nvkectl` (`make -C cli build` writes
+  `cli/bin/nvkectl`). `nvkectl render deploy-path --deploy-path deploy/nico
+  --sitespec sitespec.yaml --out DIR`, with `DIR` under a directory only you
+  can read such as `~/.local/state/nvke/renders/<site>` (a shared temp
+  directory is refused), writes a copy of this deploy path with the site's
+  values filled in from the spec's `controllerStack` section. `DIR` holds
+  the site's secrets, so it is created `0700` and is for one install. The
+  command ends by naming the files under `DIR` that hold a credential;
+  delete `DIR` after the install. `DIR` gets a `.gitignore` that ignores
+  everything, so a repository does not pick it up by accident. Then install
+  `DIR` with this script; it needs no `--config`. Without a release, the
+  spec sets `controllerStack.images.profiles`: this deploy path enables the
+  profiles content image without naming it
 - a checkout laid out so that `deploy/` and `controller/` are siblings --
   `controller/release.yaml` reaches its chart as
   `../../controller/deploy/charts/controller`
@@ -45,6 +58,18 @@ What the node needs, all present on the reference instance type:
   `prometheus-community.github.io` and `kubernetes-sigs.github.io`, where the
   chart's dependencies come from, and to `docker.io`, `ghcr.io`, `quay.io` and
   `registry.k8s.io`, where its images come from
+- to install from an NVKR release: `nvkectl` on the machine that renders.
+  `nvkectl render deploy-path --deploy-path deploy/nico --release
+  release.json --out DIR` resolves this deploy path against the
+  `nvkr.dev/release/v4` JSON that `nvkr release verify` prints. Charts the
+  release carries are pulled by digest into `DIR/charts/`; images are pinned
+  by digest; a chart the release lacks stays on its public repository. Each
+  item's `release.yaml` names its artifacts: `chart.artifact` (default: the
+  item name), `chart.imageArtifact`, `chart.profilesArtifact`, or a manifest
+  item's `artifact`. `--arch` selects them (default: the site spec's
+  `controllerStack.arch`). The render refuses, naming every problem, when an
+  image artifact is missing. Then install `DIR` with this script; it needs
+  no `nvkectl`.
 
 ## Before this runs
 
@@ -64,7 +89,21 @@ already be true, all of them outside the deploy path:
    controller overlay sets `imagePullPolicy: IfNotPresent` and this path
    supplies no pull secret for them -- deliberately, because the node's
    containerd IS the cluster's containerd, so an imported image resolves
-   without one. Import them before installing:
+   without one. A deploy path rendered against a release sets the two images
+   by digest from the release's `cwe` and `controller-profiles` artifacts,
+   and the CAPNICo image from `capnico-controller`; the nodes then pull them
+   from the registries the release names, so those registries need to be
+   reachable from the nodes, with a containerd registry config or a pull
+   secret where they need one. Rendered with `--nvkr-run-dir` as well, from a
+   completed NVKR Run (`.nvkr/runs/<attempt>`, whose `packages/` holds one OCI
+   layout per artifact), nothing is pulled: charts come out of the layouts,
+   and `images.txt` in the rendered path names each image's layout, which
+   this script imports into the node's containerd under the reference's name
+   before applying anything, so the reference's host is only a name. `CTR`
+   is the import command and may carry arguments: `CTR="sudo ctr"` when the
+   install does not run as root, `CTR="docker exec -i kind-control-plane
+   ctr"` when the cluster is a kind node. Without a render, import the
+   images before installing:
 
    ```
    docker save --platform linux/amd64 <image> | sudo ctr -n k8s.io images import -
@@ -170,7 +209,9 @@ afterwards.
 ## Telemetry
 
 The `nktp` item installs the NKTP chart from this checkout
-(`nktp/deploy/charts/nktp`), with the values in `nktp/values.yaml`. It comes
+(`nktp/deploy/charts/nktp`), or from the archive a render against a release
+that carries the `nktp` chart artifact put under `charts/`, with the values
+in `nktp/values.yaml`. It comes
 straight after `capnico` because it installs the monitoring CRDs, and three
 later items create monitors that need them:
 

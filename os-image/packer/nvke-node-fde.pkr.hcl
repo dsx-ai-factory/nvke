@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Non-FDE image variant. Shared input, architecture, and QEMU configuration is
-# declared once in variables.pkr.hcl and locals.pkr.hcl.
+# Full-disk-encryption image variant. Shared input, architecture, and QEMU
+# configuration is declared once in variables.pkr.hcl and locals.pkr.hcl.
 
-source "qemu" "nke-non-fde" {
+source "qemu" "nvke-fde" {
   iso_url = local.installer_iso
   # Recheck the staged ISO against the digest in the authenticated manifest.
   iso_checksum = local.installer_checksum
@@ -36,20 +36,20 @@ source "qemu" "nke-non-fde" {
   http_content = {
     "/user-data" = templatefile("${local.project_root}/cidata/autoinstall-lvm.pkrtpl", {
       ssh_public_key            = local.ssh_public_key
-      luks_enabled              = false
-      luks_passphrase           = ""
+      luks_enabled              = true
+      luks_passphrase           = var.luks_passphrase
       nvidia_kernel_package     = local.nvidia_kernel_package
       serial_console            = local.serial_console
       capture_apt_acquisitions  = var.capture_apt_acquisitions
       apt_capture_configuration = file("${local.project_root}/cidata/apt-capture.conf")
     })
-    "/meta-data" = "instance-id: nke-packer-non-fde\nlocal-hostname: nke-packer-non-fde\n"
+    "/meta-data" = "instance-id: nke-packer-fde\nlocal-hostname: nke-packer-fde\n"
   }
 
   boot_wait    = var.boot_wait
   boot_command = local.boot_command
   qemuargs = concat(local.architecture_qemuargs, [
-    ["-serial", "file:${local.build_log_directory}/non-fde-install-console.log"],
+    ["-serial", "file:${local.build_log_directory}/fde-install-console.log"],
   ])
 
   ssh_username         = "ubuntu"
@@ -60,8 +60,8 @@ source "qemu" "nke-non-fde" {
   ssh_handshake_attempts = 10000
 
   shutdown_command = "sudo shutdown -P now"
-  vm_name          = "nke-node.qcow2"
-  output_directory = "${var.output_directory}/non-fde"
+  vm_name          = "nvke-node.qcow2"
+  output_directory = "${var.output_directory}/fde"
   headless         = true
   memory           = var.guest_memory_mib
   cpus             = var.cpus
@@ -69,15 +69,15 @@ source "qemu" "nke-non-fde" {
 }
 
 build {
-  name    = "nke-node-non-fde"
-  sources = ["source.qemu.nke-non-fde"]
+  name    = "nvke-node-fde"
+  sources = ["source.qemu.nvke-fde"]
 
   provisioner "shell-local" {
     environment_vars = [
       "MODE=stage",
       "MATERIAL_PATH=${local.image_inputs}",
       "EXPECTED_DIGEST=${local.image_inputs_digest}",
-      "STAGING_DIRECTORY=${local.staged_image_inputs.non_fde}",
+      "STAGING_DIRECTORY=${local.staged_image_inputs.fde}",
     ]
     script = "${local.project_root}/scripts/prepare-image-inputs.sh"
   }
@@ -85,17 +85,17 @@ build {
   error-cleanup-provisioner "shell-local" {
     environment_vars = [
       "MODE=clean",
-      "STAGING_DIRECTORY=${local.staged_image_inputs.non_fde}",
+      "STAGING_DIRECTORY=${local.staged_image_inputs.fde}",
     ]
     script = "${local.project_root}/scripts/prepare-image-inputs.sh"
   }
 
   provisioner "shell" {
-    inline = ["mkdir -p /var/tmp/nke-image/lvm"]
+    inline = ["mkdir -p /var/tmp/nke-image/luks"]
   }
 
   provisioner "file" {
-    source      = "${local.staged_image_inputs.non_fde}/"
+    source      = "${local.staged_image_inputs.fde}/"
     destination = "/var/tmp/nke-image/"
     generated   = true
   }
@@ -103,31 +103,33 @@ build {
   provisioner "shell-local" {
     environment_vars = [
       "MODE=clean",
-      "STAGING_DIRECTORY=${local.staged_image_inputs.non_fde}",
+      "STAGING_DIRECTORY=${local.staged_image_inputs.fde}",
     ]
     script = "${local.project_root}/scripts/prepare-image-inputs.sh"
   }
 
   provisioner "file" {
-    source      = "${local.project_root}/../files/lvm/"
-    destination = "/var/tmp/nke-image/lvm/"
+    source      = "${local.project_root}/../files/luks/"
+    destination = "/var/tmp/nke-image/luks/"
   }
 
   provisioner "shell" {
-    script = "${local.project_root}/scripts/configure-lvm-growth.sh"
+    # Run before provision.sh removes Packer's authorized SSH key.
+    environment_vars = ["LUKS_PASSPHRASE=${var.luks_passphrase}"]
+    script           = "${local.project_root}/scripts/configure-fde.sh"
   }
 
   # Export actual installer-acquired archives before provision.sh clears APT
   # indexes and removes Packer's build SSH key. The caller owns this extra
   # capture under output_directory; build logs are not a payload carrier.
   provisioner "file" {
-    except      = var.capture_apt_acquisitions ? [] : ["qemu.nke-non-fde"]
+    except      = var.capture_apt_acquisitions ? [] : ["qemu.nvke-fde"]
     source      = "${local.project_root}/scripts/capture-apt-acquisitions.py"
     destination = "/var/tmp/capture-apt-acquisitions.py"
   }
 
   provisioner "shell" {
-    except = var.capture_apt_acquisitions ? [] : ["qemu.nke-non-fde"]
+    except = var.capture_apt_acquisitions ? [] : ["qemu.nvke-fde"]
     inline = [
       "sudo systemctl mask --now apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service unattended-upgrades.service",
       "sudo python3 /var/tmp/capture-apt-acquisitions.py --root /var/lib/nke/apt-acquisitions --output /var/tmp/nke-apt-acquisitions.tar --architecture ${var.architecture}",
@@ -135,19 +137,19 @@ build {
   }
 
   provisioner "file" {
-    except      = var.capture_apt_acquisitions ? [] : ["qemu.nke-non-fde"]
+    except      = var.capture_apt_acquisitions ? [] : ["qemu.nvke-fde"]
     direction   = "download"
     source      = "/var/tmp/nke-apt-acquisitions.tar"
-    destination = "${var.output_directory}/non-fde/apt-acquisitions.tar"
+    destination = "${var.output_directory}/fde/apt-acquisitions.tar"
   }
 
   provisioner "shell" {
-    except = var.capture_apt_acquisitions ? [] : ["qemu.nke-non-fde"]
+    except = var.capture_apt_acquisitions ? [] : ["qemu.nvke-fde"]
     # Curtin owns apt.conf's supplied conf at 94curtin-config. This template
     # supplies only the capture hook there; the separate proxy file is untouched.
     inline = [
       "sudo rm -f /var/tmp/capture-apt-acquisitions.py /var/tmp/nke-apt-acquisitions.tar /etc/apt/apt.conf.d/94curtin-config",
-      "configuration=$(apt-config dump) || exit 1; case \"$configuration\" in *DPkg::Pre-Install-Pkgs::nke-capture*) echo 'APT capture hook remains after cleanup' >&2; exit 1;; esac",
+      "configuration=$(apt-config dump) || exit 1; case \"$configuration\" in *DPkg::Pre-Install-Pkgs::nvke-capture*) echo 'APT capture hook remains after cleanup' >&2; exit 1;; esac",
       "sudo rm -rf /var/lib/nke/apt-acquisitions",
       "sudo test ! -e /var/lib/nke/apt-acquisitions",
     ]
@@ -160,6 +162,6 @@ build {
 
   post-processor "shell-local" {
     # Keep one source-owned final conversion for Make and direct callers.
-    inline = ["${local.project_root}/scripts/compress-qcow2.sh ${var.output_directory}/non-fde/nke-node.qcow2"]
+    inline = ["${local.project_root}/scripts/compress-qcow2.sh ${var.output_directory}/fde/nvke-node.qcow2"]
   }
 }

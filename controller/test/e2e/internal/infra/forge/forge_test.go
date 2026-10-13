@@ -169,7 +169,7 @@ func newTestProvider(t *testing.T, forge *fakeForge, dialer Dialer) *Provider {
 		APIKey:   "nvapi-test",
 		Endpoint: srv.URL,
 		Images: func(version, arch string) (string, string, error) {
-			return "https://example.invalid/imager.efi", "https://example.invalid/nke-node-non-fde-ubuntu-24.04.1-" + arch + "-" + version + ".qcow2", nil
+			return "https://example.invalid/imager.efi", "https://example.invalid/nvke-node-non-fde-ubuntu-24.04.1-" + arch + "-" + version + ".qcow2", nil
 		},
 		Dialer:   dialer,
 		JumpHost: testJumpHost,
@@ -374,7 +374,7 @@ func newSlowCreateProvider(t *testing.T, forge *fakeForge, dialer Dialer, perReq
 		APIKey:   "nvapi-test",
 		Endpoint: srv.URL,
 		Images: func(version, arch string) (string, string, error) {
-			return "https://example.invalid/imager.efi", "https://example.invalid/nke-node-non-fde-ubuntu-24.04.1-" + arch + "-" + version + ".qcow2", nil
+			return "https://example.invalid/imager.efi", "https://example.invalid/nvke-node-non-fde-ubuntu-24.04.1-" + arch + "-" + version + ".qcow2", nil
 		},
 		Dialer:   dialer,
 		JumpHost: testJumpHost,

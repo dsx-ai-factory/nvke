@@ -14,7 +14,7 @@ ConditionPathExists=/etc/nke/spire.env
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/lib/nke/spire-configure.sh
+ExecStart=/usr/lib/nvke/spire-configure.sh
 
 [Install]
 WantedBy=multi-user.target

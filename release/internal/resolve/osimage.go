@@ -71,15 +71,32 @@ func (o OSImage) Resolve(inputs map[string]string) (map[string]string, error) {
 	if o.Path != "" {
 		under += "/" + strings.Trim(o.Path, "/")
 	}
+	// New images publish under the nvke filename. Releases already in the bucket
+	// keep the previous filename, and the bucket does not list, so the name that
+	// answers is the one that was published. A release that has neither reports
+	// the new name, which is what a new image is published as.
 	got, err := url.Resolve(map[string]string{
-		InputValueKey: fmt.Sprintf("%s/os-image/releases/%s/%s/nke-node-%s-ubuntu-%s-%s.qcow2",
-			under, tag, o.Arch, o.Variant, release, o.Arch),
+		InputValueKey: o.imageObjectURL(under, tag, release, "nvke"),
 	})
 	if err != nil {
-		return nil, err
+		legacy, legacyErr := url.Resolve(map[string]string{
+			InputValueKey: o.imageObjectURL(under, tag, release, "nke"),
+		})
+		if legacyErr != nil {
+			return nil, err
+		}
+		got = legacy
 	}
 	got[ResultVersionKey] = tag
 	return got, nil
+}
+
+// imageObjectURL is the qcow2 published for one release, architecture and point
+// release. prefix is nvke for an image built after the rename and nke for one
+// published before it.
+func (o OSImage) imageObjectURL(under, tag, release, prefix string) string {
+	return fmt.Sprintf("%s/os-image/releases/%s/%s/%s-node-%s-ubuntu-%s-%s.qcow2",
+		under, tag, o.Arch, prefix, o.Variant, release, o.Arch)
 }
 
 // Validate requires the series and the releases, and that one of the releases

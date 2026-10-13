@@ -33,7 +33,7 @@ class BuildEntrypointTest(unittest.TestCase):
         for name in ("code.fd", "vars.fd"):
             (self.root / name).touch()
         self.script("uname", '#!/bin/sh\ncase "$1" in -m) echo aarch64;; -s) echo Linux;; esac\n')
-        # nke_qemu_env resolves the QEMU binary by name off PATH; check-deps
+        # nvke_qemu_env resolves the QEMU binary by name off PATH; check-deps
         # looks for qemu-img, which the macOS CI runner lacks.
         self.script("qemu-system-aarch64", '#!/bin/sh\nif [ "$1" = -accel ]; then echo tcg; fi\n')
         self.script("qemu-img", '#!/bin/sh\nexit 0\n')
@@ -45,7 +45,7 @@ values = dict(arg.split('=', 1) for arg in sys.argv[1:] if '=' in arg)
 variant = 'non-fde' if 'non-fde' in values['-only'] else 'fde'
 output = Path(values['output_directory']) / variant
 output.mkdir(parents=True, exist_ok=True)
-(output / 'nke-node.qcow2').touch()
+(output / 'nvke-node.qcow2').touch()
 ''')
 
     def script(self, name, text):

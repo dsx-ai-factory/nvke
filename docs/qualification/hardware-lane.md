@@ -195,7 +195,7 @@ handshake error. This mirrors the documented provisioning procedure, which
 brings SPIRE and TPM attestation up in the management-plane install rather than
 at bootstrap.
 
-**Verification is not "nvkectl exited 0".** The admin kubeconfig is forwarded
+**Verification is not "nvkectl exited 0".** The breakglass admin kubeconfig is forwarded
 off the node to the runner, the controller is polled on `/healthz` and then `/api/version`,
 and the reported version is compared against the candidate's expected version.
 
@@ -240,11 +240,11 @@ What the suite passes down is `NodePayloads` — the iPXE script and
 `preKubeadmCommands` rendered by the same `BuildForgeNodePayloads` the site
 node was built from, so tenant nodes are constructed the same way. The
 pre-kubeadm script adds the NVKE apt repository and installs `nvke-agent`, the
-pinned `nke-kubeadm-distro`, both OVN packages, `openvswitch-switch` and
+pinned `nvke-kubeadm-distro`, both OVN packages, `openvswitch-switch` and
 `spire-agent`.
 
 "Both OVN packages" is load-bearing and was learned on hardware. The agent
-checks that `nke-cni-ovn-charts` is *already installed* and terminates the
+checks that `nvke-cni-ovn-charts` is *already installed* and terminates the
 provisioning workflow when it is not, so installing it afterwards does not
 recover the run.
 

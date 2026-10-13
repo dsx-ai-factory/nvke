@@ -29,12 +29,12 @@ for architecture in amd64 arm64; do
   iso_digest="$(sha256sum "${fixture}/materials/installer-iso" | cut -d' ' -f1)"
   inputs_digest="$(sha256sum "${fixture}/materials/image-inputs" | cut -d' ' -f1)"
   printf '%s\n' \
-    "{\"schemaVersion\":\"nke.dev/os-image-materials/v1\",\"materials\":[{\"binding\":\"installer-iso\",\"component\":\"validation-installer\",\"kind\":\"disk-image\",\"architecture\":\"${architecture}\",\"digest\":\"sha256:${iso_digest}\",\"path\":\"materials/installer-iso\"},{\"binding\":\"image-inputs\",\"component\":\"validation-inputs\",\"kind\":\"archive\",\"architecture\":\"${architecture}\",\"digest\":\"sha256:${inputs_digest}\",\"path\":\"materials/image-inputs\"}]}" \
+    "{\"schemaVersion\":\"nvke.nvidia.com/os-image-materials/v1\",\"materials\":[{\"binding\":\"installer-iso\",\"component\":\"validation-installer\",\"kind\":\"disk-image\",\"architecture\":\"${architecture}\",\"digest\":\"sha256:${iso_digest}\",\"path\":\"materials/installer-iso\"},{\"binding\":\"image-inputs\",\"component\":\"validation-inputs\",\"kind\":\"archive\",\"architecture\":\"${architecture}\",\"digest\":\"sha256:${inputs_digest}\",\"path\":\"materials/image-inputs\"}]}" \
     >"${fixture}/material-manifest.json"
 
   for selector in \
-    nke-node-fde.qemu.nke-fde \
-    nke-node-non-fde.qemu.nke-non-fde; do
+    nvke-node-fde.qemu.nvke-fde \
+    nvke-node-non-fde.qemu.nvke-non-fde; do
     for capture in false true; do
       "${packer_bin}" validate \
         -only="${selector}" \
@@ -52,7 +52,7 @@ done
 
 # The schema minimum is tested separately from a successful image bake.
 if output="$("${packer_bin}" validate \
-  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
   -var "material_manifest=${work}/amd64/material-manifest.json" \
   -var "output_directory=${work}/amd64/output" \
@@ -71,7 +71,7 @@ grep -F "integer of at least 1024" <<<"${output}" >/dev/null || {
 }
 
 if output="$("${packer_bin}" validate \
-  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=arm64" \
   -var "material_manifest=${work}/amd64/material-manifest.json" \
   -var "output_directory=${work}/amd64/output" \
@@ -94,7 +94,7 @@ grep -F "Invalid index" <<<"${output}" >/dev/null || {
 # control-plane hardware exposes SOL there.
 for bad in "ttyS0; rm -rf /" "tty S0" "../../etc/passwd" "\$(id)"; do
   if output="$("${packer_bin}" validate \
-    -only=nke-node-non-fde.qemu.nke-non-fde \
+    -only=nvke-node-non-fde.qemu.nvke-non-fde \
     -var "architecture=amd64" \
     -var "material_manifest=${work}/amd64/material-manifest.json" \
     -var "output_directory=${work}/amd64/output" \
@@ -115,7 +115,7 @@ done
 
 for good in ttyS0 ttyS1 ttyAMA0 ""; do
   "${packer_bin}" validate \
-    -only=nke-node-non-fde.qemu.nke-non-fde \
+    -only=nvke-node-non-fde.qemu.nvke-non-fde \
     -var "architecture=amd64" \
     -var "material_manifest=${work}/amd64/material-manifest.json" \
     -var "output_directory=${work}/amd64/output" \
@@ -148,7 +148,7 @@ readonly_project="${readonly_source}/packer"
 chmod -R a-w "${readonly_source}"
 chmod -R a-w "${PACKER_PLUGIN_PATH}"
 "${packer_bin}" validate \
-  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
   -var "material_manifest=${work}/amd64/material-manifest.json" \
   -var "output_directory=${work}/amd64/output" \
@@ -158,10 +158,10 @@ chmod -R a-w "${PACKER_PLUGIN_PATH}"
   "${readonly_project}"
 
 invalid_manifest="${work}/amd64/material-manifest-invalid.json"
-sed 's#nke.dev/os-image-materials/v1#nke.dev/os-image-materials/invalid#' \
+sed 's#nvke.nvidia.com/os-image-materials/v1#nvke.nvidia.com/os-image-materials/invalid#' \
   "${work}/amd64/material-manifest.json" >"${invalid_manifest}"
 if output="$("${packer_bin}" validate \
-  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
   -var "material_manifest=${invalid_manifest}" \
   -var "output_directory=${work}/amd64/output" \
@@ -172,7 +172,9 @@ if output="$("${packer_bin}" validate \
   echo "Packer accepted an unsupported material-manifest schema" >&2
   exit 1
 fi
-grep -F "must use schemaVersion nke.dev/os-image-materials/v1" <<<"${output}" >/dev/null || {
+# Packer wraps a diagnostic past its column width. The renamed schema id is
+# what pushes this sentence over that edge, so match it with the breaks folded.
+grep -F "must use schemaVersion nvke.nvidia.com/os-image-materials/v1" <<<"${output//$'\n'/ }" >/dev/null || {
   printf '%s\n' "${output}" >&2
   echo "Packer rejected the schema without the contract error" >&2
   exit 1
@@ -190,7 +192,7 @@ with open(sys.argv[2], "w", encoding="utf-8") as destination:
     json.dump(manifest, destination)
 PY
 if output="$("${packer_bin}" validate \
-  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
   -var "material_manifest=${missing_digest_manifest}" \
   -var "output_directory=${work}/amd64/output" \
@@ -208,7 +210,7 @@ grep -F "lowercase sha256 digests" <<<"${output}" >/dev/null || {
 }
 
 if output="$("${packer_bin}" validate \
-  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
   -var "material_manifest=${work}/amd64/material-manifest.json" \
   -var "output_directory=${work}/amd64/output/../escaped" \
@@ -237,7 +239,7 @@ with open(sys.argv[2], "w", encoding="utf-8") as destination:
     json.dump(manifest, destination)
 PY
 if output="$("${packer_bin}" validate \
-  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
   -var "material_manifest=${mismatched_manifest}" \
   -var "output_directory=${work}/amd64/output" \
@@ -269,7 +271,7 @@ with open(sys.argv[2], "w", encoding="utf-8") as destination:
     json.dump(manifest, destination)
 PY
 if output="$("${packer_bin}" validate \
-  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
   -var "material_manifest=${duplicate_manifest}" \
   -var "output_directory=${work}/amd64/output" \

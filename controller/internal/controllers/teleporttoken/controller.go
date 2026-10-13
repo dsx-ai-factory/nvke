@@ -465,7 +465,7 @@ func (c *Controller) createTokenForNode(ctx context.Context, node db.Node, ekPub
 			teleport.LabelNodeID:                 node.ID.String(),
 			teleport.LabelNodePool:               nodePool.ID.String(),
 			teleport.LabelNodeName:               node.Name,
-			teleport.LabelResourceGroup:          teleport.LabelResourceGroupNVKEValue,
+			teleport.LabelResourceGroup:          c.cfg.Teleport.ResourceGroupLabelValue,
 			teleport.LabelEnvironment:            c.cfg.Teleport.Environment,
 		},
 		Spec: &teleport.TPMConfig{

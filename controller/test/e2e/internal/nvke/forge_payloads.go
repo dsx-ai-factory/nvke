@@ -24,7 +24,7 @@ var (
 	bootLoaderArchInURL = regexp.MustCompile(`\b(x86_64|aarch64)\b`)
 
 	// ubuntuReleaseInURL matches the Ubuntu release in an OS image filename,
-	// as in nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2. The point release is
+	// as in nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2. The point release is
 	// optional and ignored: NVKE publishes a suite per Ubuntu release, not per
 	// point.
 	ubuntuReleaseInURL = regexp.MustCompile(`ubuntu-(\d+\.\d+)`)
@@ -52,9 +52,9 @@ type NodeInputs struct {
 	// node is created as, so it cannot disagree with the hardware.
 	Arch string
 
-	// KubernetesVersion selects the nke-kubeadm-distro package, e.g. "1.34.2".
+	// KubernetesVersion selects the nvke-kubeadm-distro package, e.g. "1.34.2".
 	KubernetesVersion string
-	// CNIVersion selects the nke-cni-ovn-images package, e.g. "1.4.0".
+	// CNIVersion selects the nvke-cni-ovn-images package, e.g. "1.4.0".
 	CNIVersion string
 	// AptSuite is the NVKE apt suite the node installs its packages from, one
 	// per Ubuntu release. Empty derives it from ImageURL, which is where the
@@ -151,7 +151,7 @@ func BuildForgeNodePayloads(inputs NodeInputs) (NodePayloads, error) {
 }
 
 // ubuntuReleaseInURL matches the Ubuntu release in an OS image filename, as in
-// nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2. The point release is optional
+// nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2. The point release is optional
 // and ignored: NVKE publishes a suite per Ubuntu release, not per point.
 
 // unameArch is the imager's spelling of an architecture, empty for one it does

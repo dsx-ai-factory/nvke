@@ -92,12 +92,12 @@ func validateOIDCPostDelete(test *tenantTest) {
 	}, Label("spire-oidc"))
 }
 
-// skipIfNVKEOIDCDisabled skips the current spec when the controller deployment does not
-// have tenant OIDC JWT auth enabled (NKE_OIDC_AUTH_ENABLED != true).
+// skipIfNVKEOIDCDisabled skips the current spec when the controller does not have
+// tenant OIDC JWT auth enabled (oidc.managementOIDCAuth.enabled in nke-controller-config).
 func skipIfNVKEOIDCDisabled(ctx context.Context, k8s client.Client) {
 	GinkgoHelper()
 	if !expectSucceed(nvke.OIDCEnabled(ctx, k8s)) {
-		Skip("OIDC is disabled in the controller deployment (NKE_OIDC_AUTH_ENABLED != true)")
+		Skip("OIDC is disabled in the controller (oidc.managementOIDCAuth.enabled is not true)")
 	}
 }
 

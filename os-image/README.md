@@ -19,7 +19,7 @@ consumers whose other software pins that release — see `UBUNTU_RELEASE` under
 | `files/lvm/` | First-boot storage-growth assets for the non-FDE variant |
 | `docs/full-disk-encryption.md` | FDE variant: build, verify, failure modes |
 | `demo-fde.sh` | Runs the host-FDE acceptance scenarios against a built image |
-| `cmd/nke-os-image-check` | Connectivity checker (Go) |
+| `cmd/nvke-os-image-check` | Connectivity checker (Go) |
 
 ## Build the OS image
 
@@ -74,7 +74,7 @@ make -C os-image/packer os-image-non-fde ARCH=amd64 UBUNTU_RELEASE=24.04.5
 ```
 
 The point release lands in the output filename, so the two flavors never
-collide on disk (`nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2`). Pass the same
+collide on disk (`nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2`). Pass the same
 `UBUNTU_RELEASE` to `collect-qcow2-*`, which re-derives that expected name.
 A package builder newer than the target release cannot build the image: the
 `nvke-agent` .deb declares a bare `Depends: libc6`, so an agent compiled against a
@@ -129,7 +129,7 @@ one is an error. For example, from `os-image/`:
 ```bash
 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd \
 OVMF_VARS_TEMPLATE=/usr/share/OVMF/OVMF_VARS_4M.fd \
-make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2
+make run-vm QCOW=packer/output-non-fde/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2
 ```
 
 `REQUIRE_ACCELERATION=1` rejects software
@@ -208,8 +208,8 @@ materials or build packages:
 
 | Build | Exact selector | Output below `output_directory` |
 |---|---|---|
-| Non-FDE | `nke-node-non-fde.qemu.nke-non-fde` | `non-fde/nke-node.qcow2` |
-| FDE | `nke-node-fde.qemu.nke-fde` | `fde/nke-node.qcow2` |
+| Non-FDE | `nvke-node-non-fde.qemu.nvke-non-fde` | `non-fde/nvke-node.qcow2` |
+| FDE | `nvke-node-fde.qemu.nvke-fde` | `fde/nvke-node.qcow2` |
 
 For example, for a local invocation after installing the pinned plugin with
 `packer init`:
@@ -217,7 +217,7 @@ For example, for a local invocation after installing the pinned plugin with
 ```bash
 cd packer
 packer build \
-  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var architecture=amd64 \
   -var material_manifest=/run/nke-image/inputs/material-manifest.json \
   -var output_directory=/run/nke-image/output \
@@ -274,7 +274,7 @@ The manifest contract is:
 
 ```json
 {
-  "schemaVersion": "nke.dev/os-image-materials/v1",
+  "schemaVersion": "nvke.nvidia.com/os-image-materials/v1",
   "materials": [
     {
       "binding": "installer-iso",
@@ -286,7 +286,7 @@ The manifest contract is:
     },
     {
       "binding": "image-inputs",
-      "component": "nke-image-inputs",
+      "component": "nvke-image-inputs",
       "kind": "archive",
       "architecture": "amd64",
       "digest": "sha256:<digest>",
@@ -341,7 +341,7 @@ Run their `debs` targets and archive only the resulting `.deb` files with
 `tar --format=ustar -cf component.tar -C "$OUT_DIR" <package filenames>`.
 The composer regenerates `Packages` itself. The SPIRE binding must contain
 exactly one `spire-agent_*.deb`; Calico inputs may contain at most one
-`nke-cni-calico-manifests-*.deb`. Every package must declare the requested
+`nvke-cni-calico-manifests-*.deb`. Every package must declare the requested
 `--architecture` or `all`, checked with `dpkg-deb`.
 
 `--source-files-dir` supplies the checkout's image-owned provisioning files:
@@ -408,8 +408,8 @@ cd packer
 make os-image-fde
 ```
 
-Output: `packer/output-fde/nke-node-fde-ubuntu-<version>-<arch>.qcow2` (e.g.
-`nke-node-fde-ubuntu-26.04.1-amd64.qcow2`). `LUKS_PASSPHRASE` (default
+Output: `packer/output-fde/nvke-node-fde-ubuntu-<version>-<arch>.qcow2` (e.g.
+`nvke-node-fde-ubuntu-26.04.1-amd64.qcow2`). `LUKS_PASSPHRASE` (default
 `changeit` — **set this to a real value for any build that will run on real
 hardware**; see [docs/full-disk-encryption.md](docs/full-disk-encryption.md))
 sets the build-time-only passphrase, which the shipped image never retains
@@ -434,8 +434,8 @@ cd packer
 make os-image-non-fde
 ```
 
-Output: `packer/output-non-fde/nke-node-non-fde-ubuntu-<version>-<arch>.qcow2`
-(e.g. `nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2`). Boot it with
+Output: `packer/output-non-fde/nvke-node-non-fde-ubuntu-<version>-<arch>.qcow2`
+(e.g. `nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2`). Boot it with
 `boot-smoke.sh` (`QCOW` defaults to the single qcow2 under `output-non-fde/`;
 firmware is discovered automatically):
 
@@ -468,9 +468,9 @@ repo builds is UEFI-only; `TPM=1` attaches a TPM for the FDE image).
 Examples:
 
 ```bash
-make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2
-make run-vm QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04.1-amd64.qcow2 TPM=1
-make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2
+make run-vm QCOW=packer/output-non-fde/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2
+make run-vm QCOW=packer/output-fde/nvke-node-fde-ubuntu-26.04.1-amd64.qcow2 TPM=1
+make run-vm QCOW=packer/output-non-fde/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2
 ```
 
 ## Release
@@ -480,7 +480,7 @@ An `os-image/vX.Y.Z` tag (or `os-image/vX.Y.Z-rc.N`) runs
 and non-FDE images for both architectures and, only if that succeeds, pushes
 the qcow2s to GHCR as OCI artifacts under arch-suffixed tags — not one
 multi-platform manifest shared across arches, see the workflow's header
-comment for why — then cuts a GitHub Release attaching `nke-os-image-check`
+comment for why — then cuts a GitHub Release attaching `nvke-os-image-check`
 and a `checksums.txt` covering all four qcow2s and the checker binary.
 
 The workflow selects the source-owned Make collection target for each matrix
@@ -496,7 +496,7 @@ oras pull ghcr.io/dsx-ai-factory/nvke/os-image-fde:vX.Y.Z-amd64 --platform linux
 oras pull ghcr.io/dsx-ai-factory/nvke/os-image-fde:vX.Y.Z-arm64 --platform linux/arm64
 oras pull ghcr.io/dsx-ai-factory/nvke/os-image-non-fde:vX.Y.Z-amd64 --platform linux/amd64
 oras pull ghcr.io/dsx-ai-factory/nvke/os-image-non-fde:vX.Y.Z-arm64 --platform linux/arm64
-# -> nke-node-{fde,non-fde}-ubuntu-26.04.1-{amd64,arm64}.qcow2
+# -> nvke-node-{fde,non-fde}-ubuntu-26.04.1-{amd64,arm64}.qcow2
 ```
 
 **FDE security note**: the published image's `LUKS_PASSPHRASE` is the
@@ -550,13 +550,13 @@ write_files:
       -----END CERTIFICATE-----
 ```
 
-`nke-spire-configure.service` reads the files after cloud-init writes them, renders
+`nvke-spire-configure.service` reads the files after cloud-init writes them, renders
 `/etc/spire-agent/agent.conf`, and only then does `spire-agent` start.
 `nvke-agent` starts after the workload API socket exists.
 
 The site SPIRE server must also register a workload entry for root
 `nvke-agent` (unix attestor, uid 0) and a `/nke-service/...` identity for
-whatever will dial the node (controller or `nke-os-image-check`).
+whatever will dial the node (controller or `nvke-os-image-check`).
 
 ## Conntrack limits
 
@@ -595,10 +595,10 @@ The Make targets do not collect the capture; use direct Packer for this output.
 
 ## Checker
 
-From the repository root (`make build` writes `bin/nke-os-image-check`):
+From the repository root (`make build` writes `bin/nvke-os-image-check`):
 
 ```bash
-nke-os-image-check --endpoint 192.0.2.10:15005
+nvke-os-image-check --endpoint 192.0.2.10:15005
 ```
 
 The process needs a SPIFFE workload API with an SVID whose path starts with
@@ -613,7 +613,7 @@ dialer; it is not a SPIRE server. For a local SPIRE, see
 If the node runs `nvke-agent --grpc-auth-mode=tls-jwt`, pass `--tls-jwt`:
 
 ```bash
-nke-os-image-check --endpoint 192.0.2.10:15005 --tls-jwt
+nvke-os-image-check --endpoint 192.0.2.10:15005 --tls-jwt
 ```
 
 That agent writes an `NKEAuth` record after the TLS handshake and before the
