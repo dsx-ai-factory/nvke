@@ -12,6 +12,7 @@ set -euo pipefail
 : "${CAPLL_STAGED_CHART_DIR:?CAPLL_STAGED_CHART_DIR is required}"
 : "${CAPLL_SOURCE_DIR:?CAPLL_SOURCE_DIR is required}"
 : "${KIND_CLUSTER_NAME:?KIND_CLUSTER_NAME is required}"
+: "${KIND_BIN:=kind}"
 
 chart_source="${CAPLL_SOURCE_DIR}/chart"
 if [[ ! -f "${chart_source}/Chart.yaml" ]]; then
@@ -43,13 +44,7 @@ build_and_load() {
     echo "${image} build failed twice." >&2
     exit 1
   fi
-  # `kind load docker-image` parses the node's live `containerd config dump`
-  # and only recognizes config schema versions 2 and 3. containerd 2.3.x
-  # reports schema version 4 there (the on-disk file is still version 2;
-  # containerd migrates it in memory), so kind v0.29.0 refuses to load any
-  # image into this node image. Load it directly through ctr instead --
-  # the same mechanism kind uses internally, without kind's version check.
-  docker save "${image}" | docker exec -i "${KIND_CLUSTER_NAME}-control-plane" ctr -n k8s.io images import -
+  "${KIND_BIN}" load docker-image "${image}" --name "${KIND_CLUSTER_NAME}"
 }
 
 adopt_namespace "${CAPLL_NAMESPACE}"
