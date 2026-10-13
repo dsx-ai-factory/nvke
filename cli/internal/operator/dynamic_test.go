@@ -50,7 +50,7 @@ func stored(kind Kind, name string, spec map[string]any) *unstructured.Unstructu
 			"creationTimestamp": time.Now().Add(-3 * time.Hour).UTC().Format(time.RFC3339),
 			"annotations": map[string]any{
 				"kubectl.kubernetes.io/last-applied-configuration": "{}",
-				"internal.nvke.nvidia.com/note":                     "kept",
+				"internal.nvke.nvidia.com/note":                    "kept",
 			},
 			"managedFields": []any{map[string]any{"manager": "kubectl"}},
 		},
