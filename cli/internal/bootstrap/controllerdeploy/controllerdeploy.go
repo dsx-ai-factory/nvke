@@ -25,6 +25,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -42,6 +44,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
+	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
 	"github.com/dsx-ai-factory/nvke/controller/deploy/charts"
 )
 
@@ -438,6 +441,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 			return fmt.Errorf("controllerdeploy: generating postgres password: %w", err)
 		}
 	}
+	redact.RegisterSecret(password)
 
 	helmTimeout := cfg.HelmTimeout
 	if helmTimeout <= 0 {
@@ -462,13 +466,20 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return err
 	}
 	defer postgresCleanup()
+	postgresSecrets, postgresSecretsCleanup, err := writeSecretValues(map[string]any{
+		"auth": map[string]any{"password": password},
+	})
+	if err != nil {
+		return err
+	}
+	defer postgresSecretsCleanup()
 
 	e.log.Info("installing postgres", "namespace", postgresNamespace, "chart", postgresChartPath)
 	if _, err := e.helm(ctx, kubeconfigPath,
 		"upgrade", "--install", postgresReleaseName, postgresChartPath,
 		"--namespace", postgresNamespace, "--create-namespace",
 		"--values", postgresValues,
-		"--set-string", "auth.password="+password,
+		"--values", postgresSecrets,
 		"--wait", "--timeout", helmTimeout.String(),
 	); err != nil {
 		return fmt.Errorf("controllerdeploy: installing postgres: %w", err)
@@ -479,6 +490,26 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return err
 	}
 	defer cleanup()
+	persistence := map[string]any{
+		"default": map[string]any{
+			"sql": map[string]any{"password": password},
+		},
+		"visibility": map[string]any{
+			"sql": map[string]any{"password": password},
+		},
+	}
+
+	temporalSecrets, temporalSecretsCleanup, err := writeSecretValues(map[string]any{
+		"server": map[string]any{
+			"config": map[string]any{
+				"persistence": persistence,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	defer temporalSecretsCleanup()
 
 	// Chart identities come from the embedded bootstrap manifest, so what the
 	// bootstrap installs is pinned in one place. Each chart is passed via
@@ -505,8 +536,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	temporalArgs = append(temporalArgs,
 		"--namespace", temporalNamespace, "--create-namespace",
 		"--values", temporalValues,
-		"--set-string", "server.config.persistence.default.sql.password="+password,
-		"--set-string", "server.config.persistence.visibility.sql.password="+password,
+		"--values", temporalSecrets,
 		"--version", temporalChart.Version,
 		"--wait", "--timeout", helmTimeout.String(),
 	)
@@ -569,6 +599,13 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return err
 	}
 	defer cleanup()
+	cweSecrets, cweSecretsCleanup, err := writeSecretValues(map[string]any{
+		"appDb": map[string]any{"postgresPassword": password},
+	})
+	if err != nil {
+		return err
+	}
+	defer cweSecretsCleanup()
 
 	oidcValues := ""
 	if len(cfg.OIDCProviders) > 0 {
@@ -588,7 +625,11 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"upgrade", "--install", cweReleaseName, chartPath,
 		"--namespace", cweNamespace, "--create-namespace",
 		"--values", cweValues,
-		"--set-string", "appDb.postgresPassword=" + password,
+		"--values", cweSecrets,
+		// The chart then builds the database URL into a Secret and the pod reads
+		// it by reference. Without it the password sits in the pod spec, where
+		// `kubectl describe` and the diagnostics dump show it.
+		"--set", "secrets.createDbSecret=true",
 		"--set-string", "image.repository=" + imageRepo,
 		"--set-string", "image.tag=" + imageTag,
 		"--set-string", "image.digest=" + imageDigest,
@@ -711,19 +752,23 @@ func (e *Engine) WaitReady(ctx context.Context, kubeconfigPath string, timeout t
 // helm runs the helm CLI with kubeconfigPath and args.
 func (e *Engine) helm(ctx context.Context, kubeconfigPath string, args ...string) (string, error) {
 	fullArgs := append([]string{"--kubeconfig", kubeconfigPath}, args...)
+	// The credentials are in values files, not arguments. Masking the registered
+	// ones anyway keeps a future argument that carries one out of the error.
+	shown := redact.Text(strings.Join(args, " "))
 	for attempt := 1; ; attempt++ {
 		out, err := e.Runner.Run(ctx, "helm", fullArgs...)
+		out = redact.Text(out)
 		if err == nil {
 			return out, nil
 		}
 		// GitHub's release downloads answer 5xx now and then; nothing was installed yet, so the same command is safe to repeat.
 		if attempt == helmFetchAttempts || !chartFetchServerError.MatchString(out) {
-			return out, fmt.Errorf("helm %s: %w\n%s", strings.Join(args, " "), err, out)
+			return out, fmt.Errorf("helm %s: %w\n%s", shown, err, out)
 		}
 		e.log.Warn("helm chart download failed, retrying", "attempt", attempt, "err", err)
 		select {
 		case <-ctx.Done():
-			return out, fmt.Errorf("helm %s: %w\n%s", strings.Join(args, " "), ctx.Err(), out)
+			return out, fmt.Errorf("helm %s: %w\n%s", shown, ctx.Err(), out)
 		case <-time.After(helmFetchRetryInterval):
 		}
 	}
@@ -788,6 +833,19 @@ func writeTempFile(pattern string, body []byte) (path string, cleanup func(), er
 		return "", func() {}, fmt.Errorf("controllerdeploy: closing %s: %w", tmpName, err)
 	}
 	return tmpName, cleanup, nil
+}
+
+// writeSecretValues writes values, which hold credentials, to a values file for
+// helm's --values and returns its path plus a cleanup func the caller should
+// defer immediately. A credential goes in a file, not on the command line,
+// where it would show in `ps` and in the command an error prints. The file is
+// created 0600, and an error from here names the path, never the contents.
+func writeSecretValues(values map[string]any) (path string, cleanup func(), err error) {
+	body, err := yaml.Marshal(values)
+	if err != nil {
+		return "", func() {}, fmt.Errorf("controllerdeploy: rendering a values file: %w", err)
+	}
+	return writeTempFile("nvkectl-secret-values-*.yaml", body)
 }
 
 // splitImageRef splits "repo:tag", "repo@sha256:..." or "repo:tag@sha256:..."
@@ -1086,14 +1144,29 @@ func (e *Engine) tenantKubeconfigOnce(ctx context.Context, kubeconfigPath, clust
 // Every step is best-effort. This runs on a path where something has already
 // gone wrong, and failing to collect diagnostics must not replace the original
 // error with one about diagnostics.
+//
+// DumpDiagnostics masks the registered credentials in what it collected. It
+// reads and changes only the files it collected: any other file in dir is left
+// as it was, and a file of the same name is replaced. A collected file it cannot
+// scrub is not written to dir, and nothing is written there before it is scrubbed.
 func (e *Engine) DumpDiagnostics(ctx context.Context, kubeconfigPath, dir string) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		e.log.Warn("could not create the diagnostics directory", "dir", dir, "err", err)
 		return
 	}
+	// dir can hold other files, such as the caller's own, and is the directory that
+	// gets shared. The dump goes into a fresh private directory outside it, so the
+	// scrub only touches what this call wrote, and a dump that could not be cleaned
+	// up cannot be left in dir.
+	staging, err := os.MkdirTemp("", "nvkectl-diagnostics-*")
+	if err != nil {
+		e.log.Warn("could not create a staging directory for the diagnostics", "err", err)
+		return
+	}
+	defer e.removeStaging(staging)
 
 	if _, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"cluster-info", "dump", "--all-namespaces", "--output-directory", dir); err != nil {
+		"cluster-info", "dump", "--all-namespaces", "--output-directory", staging); err != nil {
 		e.log.Warn("cluster-info dump did not complete", "err", err)
 	}
 
@@ -1105,7 +1178,7 @@ func (e *Engine) DumpDiagnostics(ctx context.Context, kubeconfigPath, dir string
 		if err != nil {
 			out += "\n" + err.Error()
 		}
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(out), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(staging, name), []byte(out), 0o600); err != nil {
 			e.log.Warn("could not write a diagnostics file", "file", name, "err", err)
 		}
 	}
@@ -1114,7 +1187,161 @@ func (e *Engine) DumpDiagnostics(ctx context.Context, kubeconfigPath, dir string
 	if err != nil {
 		out += "\n" + err.Error()
 	}
-	if err := os.WriteFile(filepath.Join(dir, "helm-releases.txt"), []byte(out), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(staging, "helm-releases.txt"), []byte(out), 0o600); err != nil {
 		e.log.Warn("could not write a diagnostics file", "file", "helm-releases.txt", "err", err)
+	}
+
+	e.publishDiagnostics(staging, dir, e.redactDiagnostics(staging, dir))
+}
+
+// redactDiagnostics masks credentials in everything under staging. It returns
+// the paths under staging that it could not scrub, and warns about each, named
+// as it would be under dir.
+func (e *Engine) redactDiagnostics(staging, dir string) map[string]bool {
+	unscrubbed := map[string]bool{}
+	for _, path := range redact.Tree(staging) {
+		unscrubbed[path] = true
+		rel, err := filepath.Rel(staging, path)
+		if err != nil {
+			rel = path
+		}
+		e.log.Warn("could not scrub part of the diagnostics; it is not published", "path", filepath.Join(dir, rel))
+	}
+	return unscrubbed
+}
+
+// publishDiagnostics copies every regular file under staging to the same relative
+// path under dir, replacing a file that is already there. It leaves out each path
+// in withheld, and everything under it.
+func (e *Engine) publishDiagnostics(staging, dir string, withheld map[string]bool) {
+	// dir is the caller's, so it is trusted as given, even if it is a symlink. What
+	// is under it is not: it can hold links the bundle must not be written through.
+	root, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		e.log.Warn("could not resolve the diagnostics directory", "dir", dir, "err", err)
+		return
+	}
+	_ = filepath.WalkDir(staging, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			e.log.Warn("could not read part of the collected diagnostics", "path", path, "err", err)
+			return nil
+		}
+		if withheld[path] {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		// The scrub only reads regular files, and a copy follows a symlink to
+		// whatever it points at, so anything else is left out.
+		if !d.Type().IsRegular() {
+			e.log.Warn("not publishing a diagnostics entry that is not a regular file", "path", path)
+			return nil
+		}
+		rel, err := filepath.Rel(staging, path)
+		if err != nil {
+			e.log.Warn("could not place a diagnostics file", "path", path, "err", err)
+			return nil
+		}
+		dst, err := destination(root, rel)
+		if err != nil {
+			e.log.Warn("not publishing a diagnostics file", "path", filepath.Join(dir, rel), "err", err)
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			e.log.Warn("could not place a diagnostics file", "path", dst, "err", err)
+			return nil
+		}
+		if err := copyFile(path, dst, info.Mode().Perm()); err != nil {
+			e.log.Warn("could not place a diagnostics file", "path", dst, "err", err)
+		}
+		return nil
+	})
+}
+
+// destination returns where rel goes under root, creating the directories on the
+// way. It fails if rel is not a path inside root, or if a directory on the way is
+// a symlink or is not a directory, so a publish cannot be redirected to write
+// outside root. It is safe to call concurrently for paths that share directories.
+func destination(root, rel string) (string, error) {
+	if !filepath.IsLocal(rel) {
+		return "", fmt.Errorf("%q is not a path inside the directory", rel)
+	}
+	cur := root
+	for _, part := range strings.Split(filepath.Dir(rel), string(filepath.Separator)) {
+		if part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		// Create first and check after. Checking first leaves a gap in which
+		// someone else can make the directory, and that would be reported as a
+		// failure. A symlink already there is also "exists", and is caught below.
+		if err := os.Mkdir(cur, 0o750); err != nil && !errors.Is(err, fs.ErrExist) {
+			return "", err
+		}
+		info, err := os.Lstat(cur)
+		if err != nil {
+			return "", err
+		}
+		if !info.IsDir() {
+			return "", fmt.Errorf("%s is a %s, not a directory", cur, info.Mode().Type())
+		}
+	}
+	return filepath.Join(root, rel), nil
+}
+
+// copyFile copies src to dst with mode perm, replacing dst. It writes a temporary
+// file next to dst first, so a failure leaves neither a partial dst nor a stray
+// file, and dst is never half-written.
+func copyFile(src, dst string, perm fs.FileMode) (err error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".nvkectl-copy-*")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+	if _, err = io.Copy(tmp, in); err != nil {
+		return err
+	}
+	if err = tmp.Chmod(perm); err != nil {
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), dst)
+}
+
+// removeStaging deletes the staging directory, which holds the dump as the
+// cluster produced it, before any scrub. A directory the dump left unreadable
+// blocks the removal, so the directories are made accessible and it is retried.
+// If it still cannot be removed, the path is logged, since it holds credentials
+// and only the caller can delete it.
+func (e *Engine) removeStaging(staging string) {
+	if err := os.RemoveAll(staging); err == nil {
+		return
+	}
+	_ = filepath.WalkDir(staging, func(path string, d fs.DirEntry, _ error) error {
+		if d != nil && d.IsDir() {
+			_ = os.Chmod(path, 0o700)
+		}
+		return nil
+	})
+	if err := os.RemoveAll(staging); err != nil {
+		e.log.Error("could not remove the temporary diagnostics, which hold credentials; delete this directory",
+			"path", staging, "err", err)
 	}
 }
