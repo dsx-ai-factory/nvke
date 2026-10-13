@@ -92,6 +92,8 @@ nodeAgent:
     interval: "2m"
     # -- Symmetric fractional scheduling variation. Set 0 to disable jitter.
     jitter: 0.1
+  # -- Installation method for agent convergence: apt or bundle. Required when clusters opt in.
+  updateMethod: ""
   # -- SPIRE node attestation method pinned to newly created nodes. Changing
   # this deployment default does not reconfigure existing nodes; keep their
   # attestation plugins available until those nodes are retired or migrated.

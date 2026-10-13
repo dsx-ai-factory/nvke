@@ -41,6 +41,12 @@ const (
 	DiskSelectionStrategyCreateSmallest DiskSelectionStrategyCreate = "smallest"
 )
 
+// Defines values for NodeAgentUpgradeStatusPhase.
+const (
+	NodeAgentUpgradeStatusPhasePending NodeAgentUpgradeStatusPhase = "Pending"
+	NodeAgentUpgradeStatusPhaseRunning NodeAgentUpgradeStatusPhase = "Running"
+)
+
 // Defines values for NodeTaintEffect.
 const (
 	NodeTaintEffectNoExecute        NodeTaintEffect = "NoExecute"
@@ -103,14 +109,14 @@ type Cluster struct {
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this cluster.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 
+	// CreatedAt Creation time.
+	CreatedAt time.Time `json:"createdAt"`
+
 	// Conditions Lifecycle conditions.
 	Conditions ClusterConditions `json:"conditions"`
 
 	// ControlPlaneConfig Current control-plane configuration.
 	ControlPlaneConfig *ControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
-
-	// CreatedAt Creation time.
-	CreatedAt time.Time `json:"createdAt"`
 
 	// Infra Infra provider fields.
 	Infra *InfraClusterProvider `json:"infra,omitempty"`
@@ -120,6 +126,9 @@ type Cluster struct {
 
 	// Nico NICo identifiers.
 	Nico *NicoClusterProvider `json:"nico,omitempty"`
+
+	// NodeAgentUpgrade The active agent upgrade and latest retry error.
+	NodeAgentUpgrade *NodeAgentUpgradeStatus `json:"nodeAgentUpgrade,omitempty"`
 }
 
 // ClusterConditions Lifecycle conditions of a cluster. Each is a Condition.
@@ -197,7 +206,7 @@ type ConfigProfile struct {
 	Name string `json:"name"`
 }
 
-// ControlPlaneConfig The control-plane configuration in effect.
+// ControlPlaneConfig The control-plane configuration in effect, including the desired node-agent version.
 type ControlPlaneConfig struct {
 	// ConfigurationID ID of the current configuration snapshot.
 	ConfigurationID openapi_types.UUID `json:"configurationId,omitempty"`
@@ -213,6 +222,9 @@ type ControlPlaneConfig struct {
 
 	// Nico NICo settings for control-plane nodes.
 	Nico *NicoControlPlaneProvider `json:"nico,omitempty"`
+
+	// NodeAgentConfig Desired control-plane node-agent configuration.
+	NodeAgentConfig *NodeAgentConfig `json:"nodeAgentConfig,omitempty"`
 
 	// NodeLabels Labels applied to control-plane nodes, as a map of keys to values. Set at creation.
 	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
@@ -365,6 +377,9 @@ type CreateClusterControlPlaneConfig struct {
 	// Nico NICo settings for control-plane nodes at creation. osProfile is required,
 	// configProfile is optional, and exactly one of subnetIDs and vpcPrefixIDs.
 	Nico *NicoControlPlaneProviderCreate `json:"nico,omitempty"`
+
+	// NodeAgentConfig Desired control-plane node-agent configuration.
+	NodeAgentConfig *NodeAgentConfig `json:"nodeAgentConfig,omitempty"`
 
 	// NodeLabels Labels applied to control-plane nodes, as a map of keys to values. Set at creation.
 	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
@@ -829,6 +844,33 @@ type Node struct {
 	Nico *NicoNodeProvider `json:"nico,omitempty"`
 }
 
+// NodeAgentConfig Desired control-plane node-agent configuration.
+type NodeAgentConfig struct {
+	// Version Exact agent release version. An empty value disables agent convergence.
+	Version *string `json:"version,omitempty"`
+}
+
+// NodeAgentUpgradeStatus The active agent upgrade and latest retry error.
+type NodeAgentUpgradeStatus struct {
+	// ErrorMessage Latest failure message while retries continue.
+	ErrorMessage string `json:"errorMessage"`
+
+	// Method Installation method from the controller configuration.
+	Method string `json:"method"`
+
+	// NodeID ID of the selected control-plane node.
+	NodeID openapi_types.UUID `json:"nodeId"`
+
+	// Phase Pending before installation starts. Running includes retries.
+	Phase NodeAgentUpgradeStatusPhase `json:"phase"`
+
+	// TargetVersion Exact version accepted for this upgrade.
+	TargetVersion string `json:"targetVersion"`
+}
+
+// NodeAgentUpgradeStatusPhase Pending before installation starts. Running includes retries.
+type NodeAgentUpgradeStatusPhase string
+
 // NodeConditions Each is a Condition. A node normally moves through pending, provisioningClaimed,
 // provisioning, readyToJoin, joined and provisioned; deletion moves through
 // deleteRequested (control-plane nodes) and deleting.
@@ -1100,6 +1142,9 @@ type UpdateClusterControlPlaneConfig struct {
 	// Nico Each field has three states: omitted leaves the stored value, a value replaces
 	// it, and an empty value clears it. Clearing a required field is rejected.
 	Nico *NicoControlPlaneProviderUpdate `json:"nico,omitempty"`
+
+	// NodeAgentConfig Desired control-plane node-agent configuration.
+	NodeAgentConfig *NodeAgentConfig `json:"nodeAgentConfig,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`

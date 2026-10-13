@@ -87,6 +87,7 @@ type NodeAgentConfig struct {
 	DSXImds                DSXImdsConfig `json:"dsxImds"`
 	TLSJWT                 TLSJWTConfig  `json:"tlsJWT"`
 	ExternalMTLSEnabled    bool          `json:"externalMTLSEnabled"`
+	UpdateMethod           string        `json:"updateMethod"`
 }
 
 // DSXImdsConfig mirrors config.DSXImdsConfig.
@@ -353,6 +354,9 @@ func validateSupportedInfraProviders(providers []string) error {
 // dsxImds, and TLS/JWT all read spire.spiffeEnabled, which lives outside this
 // struct, so it is passed in.
 func (n *NodeAgentConfig) validate(spiffeEnabled bool) error {
+	if n.UpdateMethod != "" && n.UpdateMethod != "apt" && n.UpdateMethod != "bundle" {
+		return fmt.Errorf("updateMethod must be apt or bundle")
+	}
 	switch n.SpireAttestationMethod {
 	case SpireAttestationMethodTPM:
 	case SpireAttestationMethodJoinToken:

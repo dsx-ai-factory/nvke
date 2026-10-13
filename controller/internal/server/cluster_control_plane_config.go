@@ -299,6 +299,9 @@ func controlPlaneConfigSpecFromCreateAPI(
 		KubernetesVersion:           kubernetesVersion,
 	}
 
+	if c.NodeAgentConfig != nil && c.NodeAgentConfig.Version != nil {
+		spec.NodeAgentConfig.Version = *c.NodeAgentConfig.Version
+	}
 	switch providerType {
 	case db.ProviderTypeNico:
 		nicoControlPlaneProvider := db.NicoControlPlaneProvider{

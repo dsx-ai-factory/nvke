@@ -98,6 +98,9 @@ type NodeAgentConfig struct {
 
 	// TLSJWT contains TLS/JWT transport settings.
 	TLSJWT TLSJWTConfig
+
+	// UpdateMethod selects apt or bundle installation for opted-in clusters.
+	UpdateMethod string `controllerconfig:"nodeAgent.updateMethod"`
 }
 
 // Config is the controller's configuration. A field with an env tag comes from

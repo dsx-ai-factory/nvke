@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
@@ -33,6 +34,7 @@ type Controller struct {
 	controllerTemporalClient client.Client
 	k8sClient                ctrlclient.Client
 	k8sReader                ctrlclient.Reader
+	nodeAgentClient          agent.Client
 }
 
 // NewController creates a new control plane Controller.
@@ -43,6 +45,7 @@ func NewController(
 	controllerTemporalClient client.Client,
 	k8sClient ctrlclient.Client,
 	k8sReader ctrlclient.Reader,
+	nodeAgentClient agent.Client,
 ) *Controller {
 	return &Controller{
 		cfg:                      cfg,
@@ -51,6 +54,7 @@ func NewController(
 		controllerTemporalClient: controllerTemporalClient,
 		k8sClient:                k8sClient,
 		k8sReader:                k8sReader,
+		nodeAgentClient:          nodeAgentClient,
 	}
 }
 
@@ -82,6 +86,7 @@ func nodeClusterKeys(_ context.Context, node db.Node) ([]dbreconcile.Key, error)
 
 // Reconcile reconciles one cluster's control plane from a ClusterID root key.
 func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {
+	var cluster db.Cluster
 	err := c.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		// Re-read under a row lock: the cluster may have been enqueued from a stale
 		// event, so the reconciler could otherwise act on a stale snapshot and race
@@ -99,8 +104,12 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 			return nil
 		}
 
+		cluster = lockedCluster
 		reconciler := newReconciler(c.cfg, c.logger, tx, c.controllerTemporalClient, c.k8sClient, c.k8sReader)
 		return reconciler.reconcile(ctx, lockedCluster)
 	})
-	return reconcile.Result{}, err
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	return c.reconcileNodeAgentUpgrade(ctx, cluster)
 }

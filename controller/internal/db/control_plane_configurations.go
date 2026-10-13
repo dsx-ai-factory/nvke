@@ -17,6 +17,11 @@ import (
 	"github.com/uptrace/bun"
 )
 
+// NodeAgentConfig stores the exact desired agent release.
+type NodeAgentConfig struct {
+	Version string `json:"version,omitempty"`
+}
+
 // ControlPlaneConfigSpec is the snapshot payload stored in
 // control_plane_configurations.config.
 //
@@ -32,6 +37,7 @@ type ControlPlaneConfigSpec struct {
 	KubernetesVersion           string                    `json:"kubernetes_version,omitempty" bun:"-"`
 	Nico                        *NicoControlPlaneProvider `json:"nico,omitempty" bun:"-"`
 	Capi                        *CAPIControlPlaneProvider `json:"capi,omitempty" bun:"-"`
+	NodeAgentConfig             NodeAgentConfig           `json:"node_agent_config,omitempty" bun:"-"`
 }
 
 type NicoControlPlaneProvider struct {

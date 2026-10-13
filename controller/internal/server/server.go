@@ -252,6 +252,7 @@ func NewServerImpl(
 		cfg.SupportedInfraProviders,
 		o.allowLegacyCalicoClusterCreation,
 		cfg.UseControlPlaneControllerForControlPlane(),
+		cfg.NodeAgent.UpdateMethod,
 	)
 	clusterService.fleetOIDC = o.fleetOIDC
 

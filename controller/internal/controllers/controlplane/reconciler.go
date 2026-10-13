@@ -107,26 +107,30 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return err
 	}
 
-	// ConfigMap changes only.
-	if err := r.reconcileK8sUpgrade(ctx, cluster, controlPlane, provider.NodePoolUpgradeConfig()); err != nil {
-		return fmt.Errorf("reconciling k8s upgrade: %w", err)
-	}
+	// Agent replacement can interrupt join and kubeadm RPCs. Deletion and repair
+	// still proceed, because they do not require the upgrade to finish.
+	if !agentUpgradeBlocksNodeWork(cluster, controlPlane.nodes) {
+		// ConfigMap changes only.
+		if err := r.reconcileK8sUpgrade(ctx, cluster, controlPlane, provider.NodePoolUpgradeConfig()); err != nil {
+			return fmt.Errorf("reconciling k8s upgrade: %w", err)
+		}
 
-	// FIXME: https://github.com/dsx-ai-factory/nvke/issues/784 - reconcileNodesNeedingRollout
-	// still tears a node down directly instead of recording intent and letting the
-	// promotion below start it, so rollout teardowns bypass the serialized path.
-	if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider()); err != nil {
-		return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
-	}
+		// FIXME: https://github.com/dsx-ai-factory/nvke/issues/784 - reconcileNodesNeedingRollout
+		// still tears a node down directly instead of recording intent and letting the
+		// promotion below start it, so rollout teardowns bypass the serialized path.
+		if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider()); err != nil {
+			return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
+		}
 
-	// Grow before shrink: join a ready host if one is waiting, and leave any
-	// queued delete alone until that join is done.
-	joinInFlight, err := r.reconcileControlPlaneJoins(ctx, cluster, controlPlane)
-	if err != nil {
-		return fmt.Errorf("reconciling control plane joins: %w", err)
-	}
-	if joinInFlight {
-		return nil
+		// Grow before shrink: join a ready host if one is waiting, and leave any
+		// queued delete alone until that join is done.
+		joinInFlight, err := r.reconcileControlPlaneJoins(ctx, cluster, controlPlane)
+		if err != nil {
+			return fmt.Errorf("reconciling control plane joins: %w", err)
+		}
+		if joinInFlight {
+			return nil
+		}
 	}
 
 	// Promote the oldest accepted delete into a teardown, one at a time.

@@ -94,6 +94,7 @@ type clusterService struct {
 	// false, the control plane is provisioned from a control-plane node pool and
 	// supplying controlPlaneConfig.desiredCount/spec is rejected.
 	useControlPlaneController bool
+	nodeAgentUpdateMethod     string
 }
 
 func NewClusterService(
@@ -105,6 +106,7 @@ func NewClusterService(
 	supportedInfraProviders []string,
 	allowLegacyCalicoClusterCreation bool,
 	useControlPlaneController bool,
+	updateMethod string,
 ) *clusterService {
 	return &clusterService{
 		logger:                           logger,
@@ -115,6 +117,7 @@ func NewClusterService(
 		providers:                        newProviderSupport(supportedInfraProviders),
 		allowLegacyCalicoClusterCreation: allowLegacyCalicoClusterCreation,
 		useControlPlaneController:        useControlPlaneController,
+		nodeAgentUpdateMethod:            updateMethod,
 	}
 }
 
@@ -365,6 +368,16 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		return fmt.Errorf("exactly one provider must be set")
 	}
 
+	if req.ControlPlaneConfig != nil && req.ControlPlaneConfig.NodeAgentConfig != nil && req.ControlPlaneConfig.NodeAgentConfig.Version != nil {
+		version, err := canonicalNodeAgentVersion(*req.ControlPlaneConfig.NodeAgentConfig.Version)
+		if err != nil {
+			return err
+		}
+		if version != "" && s.nodeAgentUpdateMethod == "" {
+			return fmt.Errorf("nodeAgent.updateMethod is required for agent convergence")
+		}
+		req.ControlPlaneConfig.NodeAgentConfig.Version = &version
+	}
 	if s.useControlPlaneController {
 		// Cluster-level control plane config is authoritative: control-plane node
 		// pools are rejected and the control plane is described by controlPlaneConfig.
@@ -564,6 +577,9 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 				message:   uip.Message,
 			}
 		}
+		if agentUpgradeBlocksMaintenance(dbCluster, req.Body) {
+			return errAgentUpgradeInProgress
+		}
 		// Reject a controlPlaneConfig provider block that doesn't match the cluster before
 		// any field is touched.
 		if cpConfig := req.Body.ControlPlaneConfig; cpConfig != nil {
@@ -660,9 +676,8 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 			return api.UpdateCluster404Response{}, nil
 		}
 		// Return 409 when another mutually-exclusive operation is already running.
-		var uipErr *updateInProgressError
-		if errors.As(err, &uipErr) {
-			return api.UpdateCluster409JSONResponse{Message: uipErr.Error()}, nil
+		if response := updateClusterConflictResponse(err); response != nil {
+			return response, nil
 		}
 		var badRequestErr *badRequestError
 		if errors.As(err, &badRequestErr) {
@@ -880,7 +895,8 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 //
 // Provider fields are read directly from the nested payloads.
 func hasClusterLevelControlPlaneUpdate(req *api.UpdateClusterControlPlaneConfig) bool {
-	if req.DesiredCount != nil ||
+	if req.NodeAgentConfig != nil ||
+		req.DesiredCount != nil ||
 		req.SystemReservedMemory != nil ||
 		req.TeleportEnabled != nil ||
 		req.Infra != nil {
@@ -929,6 +945,16 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		cluster.ControlPlaneConfig.DesiredCount = *req.DesiredCount
 	}
 
+	if req.NodeAgentConfig != nil && req.NodeAgentConfig.Version != nil {
+		version, err := canonicalNodeAgentVersion(*req.NodeAgentConfig.Version)
+		if err != nil {
+			return newBadRequestErrorf("%s", err)
+		}
+		if version != "" && s.nodeAgentUpdateMethod == "" {
+			return newBadRequestErrorf("nodeAgent.updateMethod is required for agent convergence")
+		}
+		spec.NodeAgentConfig.Version = version
+	}
 	if req.SystemReservedMemory != nil {
 		spec.SystemReservedMemory = *req.SystemReservedMemory
 	}
@@ -1037,6 +1063,7 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 		TeleportEnabled:             &teleportEnabled,
 		Nico:                        apiNicoControlPlaneProviderFromDB(cfg.Nico),
 		Infra:                       apiInfraControlPlaneProviderFromDB(cfg.Capi),
+		NodeAgentConfig:             apiNodeAgentConfigFromDB(cfg.NodeAgentConfig),
 	}
 }
 
@@ -1135,6 +1162,7 @@ func (s *clusterService) DeleteCluster(ctx context.Context, req api.DeleteCluste
 			return fmt.Errorf("failed to get cluster: %w", err)
 		}
 
+		// Cluster deletion stops controller-side agent upgrades.
 		dbCluster.Conditions.Deleting = db.NewCondition(true, "Cluster deletion is pending")
 
 		if _, err := tx.UpdateCluster(ctx, &dbCluster); err != nil {
@@ -1217,7 +1245,8 @@ func APIClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 		Nico:  apiNicoClusterProviderFromDB(dbCluster.Nico),
 		Infra: apiInfraClusterProviderFromDB(dbCluster.Capi),
 
-		Conditions: conditions,
+		Conditions:       conditions,
+		NodeAgentUpgrade: apiNodeAgentUpgradeFromDB(dbCluster.NodeAgentUpgrade),
 	}
 }
 
@@ -1386,4 +1415,37 @@ func parseKubernetesVersion(version string) (int, int, int, error) {
 		return 0, 0, 0, fmt.Errorf("invalid patch version: %w", err)
 	}
 	return major, minor, patch, nil
+}
+
+func apiNodeAgentUpgradeFromDB(upgrade *db.NodeAgentUpgrade) *api.NodeAgentUpgradeStatus {
+	if upgrade == nil {
+		return nil
+	}
+	phase := api.NodeAgentUpgradeStatusPhase("Running")
+	if upgrade.Phase == "Pending" {
+		phase = "Pending"
+	}
+	return &api.NodeAgentUpgradeStatus{NodeID: upgrade.NodeID, TargetVersion: upgrade.TargetVersion, Method: upgrade.Method, Phase: phase, ErrorMessage: upgrade.ErrorMessage}
+}
+
+func apiNodeAgentConfigFromDB(config db.NodeAgentConfig) *api.NodeAgentConfig {
+	if config.Version == "" {
+		return nil
+	}
+	return &api.NodeAgentConfig{Version: &config.Version}
+}
+
+func agentUpgradeBlocksMaintenance(cluster db.Cluster, request *api.UpdateClusterJSONRequestBody) bool {
+	return cluster.NodeAgentUpgrade != nil && (request.EnableEtcdEncryption != nil && *request.EnableEtcdEncryption || request.EnableOidc != nil && *request.EnableOidc)
+}
+
+func updateClusterConflictResponse(err error) api.UpdateClusterResponseObject {
+	if errors.Is(err, errAgentUpgradeInProgress) {
+		return api.UpdateCluster409JSONResponse{Message: err.Error()}
+	}
+	var uipErr *updateInProgressError
+	if errors.As(err, &uipErr) {
+		return api.UpdateCluster409JSONResponse{Message: uipErr.Error()}
+	}
+	return nil
 }

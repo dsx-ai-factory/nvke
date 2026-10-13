@@ -27,6 +27,7 @@ PROFILES_DIR: profilesDir
 RUNBOOKS_DIR: runbooksDir
 TENANT_ACCESS_ENABLED: tenantAccessEnabled
 
+NODE_AGENT_UPDATE_METHOD: nodeAgent.updateMethod
 NODE_AGENT_SPIRE_ATTESTATION_METHOD: nodeAgent.spireAttestationMethod
 NODE_AGENT_DSX_IMDS_ENDPOINT: nodeAgent.dsxImds.endpoint
 NODE_AGENT_DSX_IMDS_PLUGIN_CHECKSUM: nodeAgent.dsxImds.pluginChecksum

@@ -480,6 +480,7 @@ func main() {
 		temporalClient,
 		k8sControllerManager.GetClient(),
 		managementK8sClient,
+		nodeAgentClient,
 	)
 	if err := controlPlaneController.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up control plane controller", "error", err)

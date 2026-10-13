@@ -1032,10 +1032,40 @@ components:
         infra:
           x-fern-ignore: true
           $ref: "#/components/schemas/InfraClusterProvider"
+    NodeAgentConfig:
+      description: Desired control-plane node-agent configuration.
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: string
+          description: Exact agent release version. An empty value disables agent convergence.
+    NodeAgentUpgradeStatus:
+      description: The active agent upgrade and latest retry error.
+      type: object
+      required: [nodeId, targetVersion, method, phase, errorMessage]
+      properties:
+        nodeId:
+          description: ID of the selected control-plane node.
+          type: string
+          format: uuid
+        targetVersion:
+          description: Exact version accepted for this upgrade.
+          type: string
+        method:
+          description: Installation method from the controller configuration.
+          type: string
+        phase:
+          description: Pending before installation starts. Running includes retries.
+          type: string
+          enum: [Pending, Running]
+        errorMessage:
+          description: Latest failure message while retries continue.
+          type: string
     ControlPlaneConfig:
       type: object
       additionalProperties: false
-      description: The control-plane configuration in effect.
+      description: The control-plane configuration in effect, including the desired node-agent version.
       properties:
         configurationId:
           type: string
@@ -1078,7 +1108,8 @@ components:
           allOf:
             - $ref: "#/components/schemas/InfraControlPlaneProvider"
           description: Infra provider control plane fields.
-
+        nodeAgentConfig:
+          $ref: "#/components/schemas/NodeAgentConfig"
     ClusterControlPlane:
       type: object
       additionalProperties: false
@@ -1203,6 +1234,8 @@ components:
         infra:
           x-fern-ignore: true
           $ref: "#/components/schemas/InfraControlPlaneProvider"
+        nodeAgentConfig:
+          $ref: "#/components/schemas/NodeAgentConfig"
     UpdateClusterControlPlaneConfig:
       type: object
       additionalProperties: false
@@ -1240,6 +1273,8 @@ components:
         infra:
           x-fern-ignore: true
           $ref: "#/components/schemas/InfraControlPlaneProviderUpdate"
+        nodeAgentConfig:
+          $ref: "#/components/schemas/NodeAgentConfig"
     Cluster:
       description: |
         A Kubernetes cluster. Holds the Kubernetes version, network, CNI, etcd
@@ -1327,6 +1362,8 @@ components:
           allOf:
             - $ref: "#/components/schemas/InfraClusterProvider"
           description: Infra provider fields.
+        nodeAgentUpgrade:
+          $ref: "#/components/schemas/NodeAgentUpgradeStatus"
     UpdateClusterRequest:
       description: Changes to a cluster. All fields are optional; unknown fields are rejected.
       type: object

@@ -58,6 +58,7 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.RunbooksDir = c.RunbooksDir
 	cfg.TenantAccessEnabled = c.TenantAccessEnabled
 
+	cfg.NodeAgent.UpdateMethod = c.NodeAgent.UpdateMethod
 	cfg.NodeAgent.SpireAttestationMethod = config.SpireAttestationMethod(c.NodeAgent.SpireAttestationMethod)
 	cfg.NodeAgent.DSXImds.Endpoint = c.NodeAgent.DSXImds.Endpoint
 	cfg.NodeAgent.DSXImds.PluginChecksum = c.NodeAgent.DSXImds.PluginChecksum

@@ -58,6 +58,7 @@ data:
     runbooksDir: {{ include "controller.runbooksDir" . | quote }}
     tenantAccessEnabled: {{ .Values.tenantAccess.enabled }}
     nodeAgent:
+      updateMethod: {{ .Values.nodeAgent.updateMethod | quote }}
       spireAttestationMethod: {{ .Values.nodeAgent.spireAttestationMethod | quote }}
       dsxImds:
         endpoint: {{ if $dsxImds }}{{ trim .Values.nodeAgent.dsxImds.endpoint | quote }}{{ else }}"http://169.254.169.254"{{ end }}

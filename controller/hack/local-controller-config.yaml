@@ -40,6 +40,7 @@ profilesDir: test/fixtures/profiles
 runbooksDir: test/fixtures/runbooks
 tenantAccessEnabled: false
 nodeAgent:
+  updateMethod: ""
   spireAttestationMethod: tpm
   dsxImds:
     endpoint: http://169.254.169.254

@@ -11,8 +11,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.temporal.io/sdk/temporal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
@@ -56,6 +59,9 @@ func (a *Activities) RenewKubernetesCertificates(
 	if input.ThresholdDays <= 0 || input.ThresholdDays > math.MaxInt32 {
 		return KubernetesCertificateRenewalResult{}, fmt.Errorf("threshold days must be between 1 and %d", math.MaxInt32)
 	}
+	if err := a.reserveCertificateRenewal(ctx, node, &input); err != nil {
+		return KubernetesCertificateRenewalResult{}, err
+	}
 	response, err := a.nodeAgentClient.StartKubernetesCertificateRenewal(ctx, node, &nvkeproto.StartKubernetesCertificateRenewalRequest{
 		OperationId:   input.OperationID,
 		ThresholdDays: int32(input.ThresholdDays),
@@ -74,6 +80,9 @@ func (a *Activities) RenewKubernetesCertificates(
 		if legacyErr != nil {
 			return KubernetesCertificateRenewalResult{}, fmt.Errorf("failed to execute legacy certificate renewal on node %s: %w", node.Name, legacyErr)
 		}
+		if err := a.releaseCertificateRenewal(ctx, node, input.OperationID); err != nil {
+			return KubernetesCertificateRenewalResult{}, err
+		}
 		return KubernetesCertificateRenewalResult(legacy), nil
 	}
 	if response == nil || response.GetOperation() == nil {
@@ -85,6 +94,12 @@ func (a *Activities) RenewKubernetesCertificates(
 	for {
 		result, done, err := certificateRenewalTerminalResult(operation)
 		if err != nil || done {
+			phase := operation.GetOperation().GetPhase()
+			if phase == nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED || phase == nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED {
+				if releaseErr := a.releaseCertificateRenewal(ctx, node, input.OperationID); releaseErr != nil {
+					return result, releaseErr
+				}
+			}
 			return result, err
 		}
 		if waitBeforePoll {
@@ -171,4 +186,60 @@ func certificateRenewalTerminalResult(
 			statusOperation.GetPhase(),
 		)
 	}
+}
+
+// reserveCertificateRenewal admits actual agent work. Merely scheduling the
+// Temporal workflow does not block upgrades. Both callers use the cluster row
+// so an agent restart cannot begin between this check and the renewal RPC.
+func (a *Activities) reserveCertificateRenewal(ctx context.Context, node db.Node, input *KubernetesCertificateRenewalInput) error {
+	if !a.cfg.UseControlPlaneControllerForControlPlane() || !node.IsManagedByControlPlaneController() {
+		return nil
+	}
+	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		cluster, err := tx.GetClusterForUpdate(ctx, node.ClusterID)
+		if err != nil {
+			return err
+		}
+		locked, err := tx.GetNodeForUpdate(ctx, node.ID)
+		if err != nil {
+			return err
+		}
+		if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue || nodeAgentRemovalRequested(locked) {
+			return temporal.NewCanceledError("node or cluster is deleting")
+		}
+		if cluster.NodeAgentUpgrade != nil {
+			return fmt.Errorf("node-agent installation is in progress")
+		}
+		if active := cluster.CertificateRenewal; active != nil {
+			if active.NodeID != node.ID {
+				return fmt.Errorf("certificate renewal is in progress on another node")
+			}
+			// A later activity attempt reattaches even if its workflow run changed.
+			input.OperationID = active.OperationID
+			return nil
+		}
+		cluster.CertificateRenewal = &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: input.OperationID}
+		_, err = tx.UpdateCluster(ctx, &cluster)
+		return err
+	})
+}
+
+func (a *Activities) releaseCertificateRenewal(ctx context.Context, node db.Node, operationID string) error {
+	if !a.cfg.UseControlPlaneControllerForControlPlane() || !node.IsManagedByControlPlaneController() {
+		return nil
+	}
+	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		cluster, err := tx.GetClusterForUpdate(ctx, node.ClusterID)
+		if errors.Is(err, db.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if active := cluster.CertificateRenewal; active != nil && active.NodeID == node.ID && active.OperationID == operationID {
+			cluster.CertificateRenewal = nil
+			_, err = tx.UpdateCluster(ctx, &cluster)
+		}
+		return err
+	})
 }

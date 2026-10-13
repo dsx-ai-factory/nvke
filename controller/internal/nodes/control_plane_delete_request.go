@@ -213,7 +213,7 @@ func StartRequestedTeardown(ctx context.Context, tx db.Tx, nodeID uuid.UUID) err
 
 	return StartTeardown(ctx, tx, node, TeardownNodeInput{
 		Reason:             recorded.Reason,
-		ForceUnreachable:   recorded.ForceUnreachable,
+		ForceUnreachable:   recorded.ForceUnreachable || !isHealthyControlPlaneNode(node),
 		MachineHealthIssue: recorded.MachineHealthIssue,
 	}, "Node deletion in progress")
 }
