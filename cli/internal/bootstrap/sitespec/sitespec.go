@@ -1046,9 +1046,10 @@ func (v *validator) checkSpire(s Spire) {
 	}
 }
 
-// checkSpireExternalAddress requires the address nodes reach SPIRE on when
-// CAPNICo creates them, and refuses it otherwise so a value that nothing reads
-// is not mistaken for one that does.
+// checkSpireExternalAddress checks the address nodes reach SPIRE on when CAPNICo
+// creates them, and refuses it otherwise so a value that nothing reads is not
+// mistaken for one that does. Whether it is required depends on whether mTLS is
+// on, which the site spec does not know; nvkectl bootstrap site checks that.
 func (v *validator) checkSpireExternalAddress(inv *SiteSpec) {
 	address := inv.Spire.ExternalAddress
 	if inv.Infrastructure != InfrastructureNico {
@@ -1058,8 +1059,6 @@ func (v *validator) checkSpireExternalAddress(inv *SiteSpec) {
 		return
 	}
 	if address == "" {
-		v.addf("%s is required with %s: %q: nodes created by CAPNICo need an address that reaches "+
-			"the bootstrap host's SPIRE server", pathSpireExternalAddress, pathInfrastructure, InfrastructureNico)
 		return
 	}
 	if ip, err := netip.ParseAddr(address); err == nil {
@@ -1075,6 +1074,18 @@ func (v *validator) checkSpireExternalAddress(inv *SiteSpec) {
 			return
 		}
 	}
+}
+
+// CheckBootstrapMode applies the rules that depend on how the bootstrap will
+// run, which Validate cannot know. With CAPNICo creating the nodes and mTLS on,
+// the nodes read the SPIRE server's address from their userdata, so
+// spire.externalAddress is required; with disableMTLS nothing reads it.
+func (inv *SiteSpec) CheckBootstrapMode(disableMTLS bool) error {
+	if inv.IsNico() && !disableMTLS && inv.Spire.ExternalAddress == "" {
+		return fmt.Errorf("%s is required with %s: %q unless mTLS is disabled: nodes created by CAPNICo "+
+			"need an address that reaches the bootstrap host's SPIRE server", pathSpireExternalAddress, pathInfrastructure, InfrastructureNico)
+	}
+	return nil
 }
 
 // checkTrustDomain validates the DNS-name form required for a SPIFFE trust

@@ -1163,7 +1163,7 @@ func TestValidate_SpireExternalAddress(t *testing.T) {
 		{"nico with an IPv4 address", true, "192.0.2.10", ""},
 		{"nico with an IPv6 address", true, "2001:db8::10", ""},
 		{"nico with a DNS name", true, "bootstrap.example.com", ""},
-		{"nico without an address", true, "", "spire.externalAddress is required"},
+		{"nico without an address (required only with mTLS, checked by bootstrap)", true, "", ""},
 		{"nico with loopback", true, "127.0.0.1", "routable unicast"},
 		{"nico with the unspecified address", true, "0.0.0.0", "routable unicast"},
 		{"nico with an upper-case name", true, "Bootstrap.Example.com", "IP address or a lowercase DNS name"},
@@ -1212,5 +1212,42 @@ func TestNicoExampleLoads(t *testing.T) {
 	}
 	if !inv.IsNico() || inv.ControlPlaneCount() != 3 || inv.BootstrapNico == nil || inv.BootstrapPullSecret == nil {
 		t.Errorf("example loaded as %+v", inv)
+	}
+}
+
+// TestCheckBootstrapMode: the SPIRE address CAPNICo nodes read from userdata is
+// required with mTLS and unused without it.
+func TestCheckBootstrapMode(t *testing.T) {
+	tests := []struct {
+		name        string
+		nico        bool
+		address     string
+		disableMTLS bool
+		wantErr     bool
+	}{
+		{"nico, mTLS, no address", true, "", false, true},
+		{"nico, mTLS, address", true, "192.0.2.10", false, false},
+		{"nico, mTLS disabled, no address", true, "", true, false},
+		{"provisioned, mTLS, no address", false, "", false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv := minimalValid()
+			if tt.nico {
+				makeNico(inv)
+			}
+			inv.Spire.ExternalAddress = tt.address
+
+			err := inv.CheckBootstrapMode(tt.disableMTLS)
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "spire.externalAddress is required") {
+					t.Fatalf("CheckBootstrapMode error = %v, want spire.externalAddress is required", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CheckBootstrapMode: %v", err)
+			}
+		})
 	}
 }

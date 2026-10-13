@@ -209,7 +209,7 @@ site spec file format.`,
 	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
 		envOrDefault("NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "cluster-diagnostics"),
 		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
-			"Overrides NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.")
+			"Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.")
 	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
 		"Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. "+
 			"The agents must be running with --disable-mtls too. Development only.")
@@ -288,6 +288,10 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 	logger.Info("loaded site spec", "path", opts.siteSpec, "cluster", inv.ClusterName)
+	// Checked before the dry-run return so --dry-run is the complete pre-flight.
+	if err := inv.CheckBootstrapMode(opts.disableMTLS); err != nil {
+		return err
+	}
 
 	// An explicit --registry-api-key flag wins over the value the loader
 	// resolved (the site spec file or the REGISTRY_API_KEY env var). The
