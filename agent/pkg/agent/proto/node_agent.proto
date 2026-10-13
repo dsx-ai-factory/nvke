@@ -208,10 +208,6 @@ service NodeAgent {
   // nvke-agent restart.
   rpc GetNodeAgentUpgradeStatus(GetNodeAgentUpgradeStatusRequest) returns (GetNodeAgentUpgradeStatusResponse) {}
 
-  // StartNodeAgentRollback restores the exact artifact retained by a prior
-  // successful StartNodeAgentUpgrade operation.
-  rpc StartNodeAgentRollback(StartNodeAgentRollbackRequest) returns (StartNodeAgentRollbackResponse) {}
-
   rpc InstallPackages(InstallPackagesRequest) returns (InstallPackagesResponse) {}
 
   rpc ListPackages(ListPackagesRequest) returns (ListPackagesResponse) {}
@@ -284,6 +280,7 @@ message KubeadmStatusResponse {
   string kubeadm_current_message = 4;
   repeated string kubeadm_completed_phases = 5;
   string agent_version = 6;
+  reserved 7;
 }
 
 message File {
@@ -877,40 +874,28 @@ enum NodeAgentUpgradePhase {
 }
 
 message NodeAgentUpgradeOperation {
-  string operation_id = 1;
-  string target_version = 2;
-  string previous_version = 3;
-  NodeAgentUpgradeMethod method = 4;
-  NodeAgentUpgradePhase phase = 5;
-  string step = 6;
-  string error_message = 7;
+  string target_version = 1;
+  string previous_version = 2;
+  NodeAgentUpgradeMethod method = 3;
+  NodeAgentUpgradePhase phase = 4;
+  string step = 5;
+  string error_message = 6;
 }
 
 message StartNodeAgentUpgradeRequest {
-  string operation_id = 1;
   // Canonical node-agent release version, for example v0.1.31.
-  string target_version = 2;
-  NodeAgentUpgradeMethod method = 3;
+  string target_version = 1;
+  NodeAgentUpgradeMethod method = 2;
 }
 
 message StartNodeAgentUpgradeResponse {
   NodeAgentUpgradeOperation operation = 1;
 }
 
-message GetNodeAgentUpgradeStatusRequest {
-  string operation_id = 1;
-}
+message GetNodeAgentUpgradeStatusRequest {}
 
 message GetNodeAgentUpgradeStatusResponse {
-  NodeAgentUpgradeOperation operation = 1;
-}
-
-message StartNodeAgentRollbackRequest {
-  string operation_id = 1;
-  string upgrade_operation_id = 2;
-}
-
-message StartNodeAgentRollbackResponse {
+  // Absent when no upgrade has been requested.
   NodeAgentUpgradeOperation operation = 1;
 }
 

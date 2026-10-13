@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/nvke-agent-updater --operation-id %i
+ExecStart=/usr/local/bin/nvke-agent-updater --request %i
 TimeoutStartSec=30min
 Restart=on-failure
 RestartSec=5s
@@ -13,5 +13,5 @@ StandardOutput=journal
 StandardError=journal
 
 # This unit deliberately has no PartOf=, Requires=, or shared cgroup with
-# nvke-agent.service. Debian prerm stops nvke-agent.service during replacement;
+# the node-agent service. Debian prerm stops it during replacement;
 # the package transaction must continue in this independent unit.
