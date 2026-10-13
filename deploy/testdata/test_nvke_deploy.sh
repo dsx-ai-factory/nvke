@@ -149,12 +149,13 @@ d_cwe="$(fake_layout "${packages}" cwe '{"schemaVersion":2,"config":{"digest":"s
 d_capnico="$(fake_layout "${packages}" capnico-controller-arm64 '{"schemaVersion":2,"config":{"digest":"sha256:1"},"layers":[]}')"
 d_profiles="$(fake_layout "${packages}" controller-profiles '{"schemaVersion":2,"config":{"digest":"sha256:2"},"layers":[]}')"
 d_temporal="$(fake_layout "${packages}" temporal "{\"schemaVersion\":2,\"layers\":[{\"mediaType\":\"application/vnd.cncf.helm.chart.content.v1.tar+gzip\",\"digest\":\"sha256:${layer}\",\"size\":$(wc -c <"${WORK}/chart.tgz" | tr -d ' ')}]}" "${WORK}/chart.tgz")"
+# The shape nvkr release export writes, with the fields the render reads.
 art() { printf '{"name":"%s","kind":"%s","digest":"%s","reference":"nvkr.local/nvke/%s@%s"%s}' "$1" "$2" "$3" "$1" "$3" "${4:-}"; }
 zeros="$(printf '0%.0s' $(seq 1 64))"
 cat >"${WORK}/local.json" <<JSON
-{"schemaVersion":"nvkr.dev/release/v4","subject":"nvkr.local/nvke/releases@sha256:${zeros}","lane":"unqualified-local-execution","scope":"none",
- "artifacts":[$(art cwe oci "${d_cwe}"),$(art capnico-controller-arm64 oci "${d_capnico}" ',"arch":"linux/arm64"'),$(art controller-profiles oci "${d_profiles}"),$(art temporal helm-oci "${d_temporal}")],
- "contentSubject":"sha256:${zeros}","policyDigest":"sha256:${zeros}"}
+{"schemaVersion":"nvkr.dev/release-description/v1","reference":"nvkr.local/nvke/releases@sha256:${zeros}","rootDigest":"sha256:${zeros}",
+ "declaredQualification":"unqualified-local-execution","metadata":{"contentSubject":"sha256:${zeros}"},
+ "outputs":[$(art cwe oci "${d_cwe}"),$(art capnico-controller-arm64 oci "${d_capnico}" ',"os":"linux","arch":"arm64"'),$(art controller-profiles oci "${d_profiles}"),$(art temporal helm-oci "${d_temporal}" ',"chartVersion":"0.74.0"')]}
 JSON
 rendered="${WORK}/rendered-release"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/local.json" --nvkr-run-dir "${run_dir}" --arch linux/arm64 --out "${rendered}" 2>&1)" || fail "render exited $?: ${out}"
@@ -200,14 +201,22 @@ mv "${packages}/cwe.gone" "${packages}/cwe"
 
 # Render refuses, naming every problem at once, and leaves nothing behind.
 cat >"${WORK}/no-cwe.json" <<JSON
-{"schemaVersion":"nvkr.dev/release/v4","subject":"nvkr.local/nvke/releases@sha256:${zeros}","lane":"unqualified-local-execution","scope":"none",
- "artifacts":[$(art capnico-controller-arm64 oci "${d_capnico}" ',"arch":"linux/arm64"'),$(art controller-profiles oci "${d_profiles}")],
- "contentSubject":"sha256:${zeros}","policyDigest":"sha256:${zeros}"}
+{"schemaVersion":"nvkr.dev/release-description/v1","reference":"nvkr.local/nvke/releases@sha256:${zeros}","rootDigest":"sha256:${zeros}",
+ "declaredQualification":"unqualified-local-execution","metadata":{"contentSubject":"sha256:${zeros}"},
+ "outputs":[$(art capnico-controller-arm64 oci "${d_capnico}" ',"os":"linux","arch":"arm64"'),$(art controller-profiles oci "${d_profiles}")]}
 JSON
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/no-cwe.json" --nvkr-run-dir "${run_dir}" --arch linux/amd64 --out "${WORK}/refused" 2>&1)" && fail "render without cwe exited 0"
 expect "the missing image artifact is named" 'controller: image cwe is not in the release' "${out}"
 expect "the wrong architecture is named" 'capnico: image: capnico-controller is published only for other architectures' "${out}"
 [[ ! -e "${WORK}/refused" ]] && pass "a refused render leaves no output" || fail "refused output left behind"
+# A chart the release carries at another version than the item pins is refused.
+cat >"${WORK}/other-chart.json" <<JSON
+{"schemaVersion":"nvkr.dev/release-description/v1","reference":"nvkr.local/nvke/releases@sha256:${zeros}","rootDigest":"sha256:${zeros}",
+ "declaredQualification":"unqualified-local-execution","metadata":{"contentSubject":"sha256:${zeros}"},
+ "outputs":[$(art cwe oci "${d_cwe}"),$(art capnico-controller-arm64 oci "${d_capnico}" ',"os":"linux","arch":"arm64"'),$(art controller-profiles oci "${d_profiles}"),$(art temporal helm-oci "${d_temporal}" ',"chartVersion":"9.9.9"')]}
+JSON
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/other-chart.json" --nvkr-run-dir "${run_dir}" --arch linux/arm64 --out "${WORK}/other-chart" 2>&1)" && fail "render with another chart version exited 0"
+expect "the chart version mismatch is named" 'temporal: chart: the release carries temporal 9.9.9, release.yaml pins 0.74.0' "${out}"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${HERE}/nvkr-release/bad-schema.json" --out "${WORK}/bad" 2>&1)" && fail "bad description exited 0"
 expect "a bad description is named" 'bad-schema.json' "${out}"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/local.json" --nvkr-run-dir "${run_dir}" --arch linux/arm64 --out "${rendered}" 2>&1)" && fail "existing --out exited 0"

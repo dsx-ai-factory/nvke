@@ -43,23 +43,24 @@ func newInspectNVKRReleaseCmd() *cobra.Command {
 	opts := &inspectNVKRReleaseOptions{}
 	cmd := &cobra.Command{
 		Use:   "nvkr-release FILE (--artifacts [--kind KIND] | --meta | --select NAME --arch OS/ARCH)",
-		Short: "Print one view of the release description nvkr release verify prints",
-		Long: `Read the nvkr.dev/release/v4 document nvkr release verify prints, bare or
-inside its verification result, and print one view of it:
+		Short: "Print one view of the release description nvkr release export writes",
+		Long: `Read the nvkr.dev/release-description/v1 document nvkr release export
+writes and print one view of it:
 
-  --artifacts    one line per artifact in document order, tab separated:
-                 name, kind, reference, digest, arch. --kind keeps one kind.
-  --meta         SUBJECT, LANE, SCOPE and CONTENT_SUBJECT, one per line,
-                 each single-quoted for eval.
+  --artifacts    one line per output in document order, tab separated:
+                 name, kind, reference, digest, platforms (comma separated),
+                 chart version. --kind keeps one kind.
+  --meta         REFERENCE, ROOT_DIGEST, QUALIFICATION and CONTENT_SUBJECT,
+                 one per line, each single-quoted for eval.
   --select NAME --arch OS/ARCH
-                 the artifact of that name for that architecture, as
-                 name, reference, digest, tab separated. NVKR publishes some
-                 outputs per architecture (NAME and NAME-arm64) and some as
-                 multi-arch indexes under one name; an artifact carrying
-                 arch is taken only for that architecture. No artifact of
-                 the name prints nothing and exits 0; one published only
-                 for other architectures, or without a reference, is an
-                 error.`,
+                 the output of that name for that architecture, as name,
+                 reference, digest, tab separated. A native output names its
+                 platform; a multi-arch image lists its platforms in its
+                 image index; NVKR may also publish per-architecture outputs
+                 as NAME and NAME-arm64. An output naming platforms is taken
+                 only for one of them. No output of the name prints nothing
+                 and exits 0; one published only for other architectures, or
+                 without a reference, is an error.`,
 		Example: `  nvkectl inspect nvkr-release release.json --artifacts --kind helm-oci
   nvkectl inspect nvkr-release release.json --select cwe --arch linux/arm64`,
 		Args:         cobra.ExactArgs(1),
@@ -68,10 +69,10 @@ inside its verification result, and print one view of it:
 			return runInspectNVKRRelease(cmd, args[0], opts)
 		},
 	}
-	cmd.Flags().BoolVar(&opts.artifacts, "artifacts", false, "Print one tab-separated line per artifact")
-	cmd.Flags().StringVar(&opts.kind, "kind", "", "With --artifacts: print only artifacts of this kind (oci, helm-oci, executable, disk-image, ...)")
+	cmd.Flags().BoolVar(&opts.artifacts, "artifacts", false, "Print one tab-separated line per output")
+	cmd.Flags().StringVar(&opts.kind, "kind", "", "With --artifacts: print only outputs of this kind (oci, helm-oci, executable, disk-image, ...)")
 	cmd.Flags().BoolVar(&opts.meta, "meta", false, "Print the metadata as shell assignments")
-	cmd.Flags().StringVar(&opts.name, "select", "", "Print the artifact of this name for --arch")
+	cmd.Flags().StringVar(&opts.name, "select", "", "Print the output of this name for --arch")
 	cmd.Flags().StringVar(&opts.arch, "arch", "", "With --select: the architecture to select for, linux/amd64 or linux/arm64")
 	return cmd
 }
@@ -100,14 +101,14 @@ func runInspectNVKRRelease(cmd *cobra.Command, path string, opts *inspectNVKRRel
 	switch {
 	case opts.artifacts:
 		for _, a := range r.OfKind(opts.kind) {
-			fmt.Fprintf(out, "%s\t%s\t%s\t%s\t%s\n", a.Name, a.Kind, a.Reference, a.Digest, a.Platform())
+			fmt.Fprintf(out, "%s\t%s\t%s\t%s\t%s\t%s\n", a.Name, a.Kind, a.Reference, a.Digest, strings.Join(a.Platforms(), ","), a.ChartVersion)
 		}
 	case opts.meta:
 		for _, kv := range [][2]string{
-			{"SUBJECT", r.Subject},
-			{"LANE", r.Lane},
-			{"SCOPE", r.Scope},
-			{"CONTENT_SUBJECT", r.ContentSubject},
+			{"REFERENCE", r.Reference},
+			{"ROOT_DIGEST", r.RootDigest},
+			{"QUALIFICATION", r.DeclaredQualification},
+			{"CONTENT_SUBJECT", r.Metadata.ContentSubject},
 		} {
 			fmt.Fprintf(out, "%s=%s\n", kv[0], shellQuote(kv[1]))
 		}

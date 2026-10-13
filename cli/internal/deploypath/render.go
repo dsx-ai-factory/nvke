@@ -30,8 +30,9 @@ type RenderOptions struct {
 	// Site is the site spec whose controllerStack section describes the
 	// site the stack is installed for. Optional.
 	Site *sitespec.SiteSpec
-	// Release is the NVKR release description, and ReleasePath where it was
-	// read from, copied into the output as nvkr-release.json. Optional.
+	// Release is the NVKR release description nvkr release export writes,
+	// and ReleasePath where it was read from, copied into the output as
+	// nvkr-release.json. Optional.
 	Release     *nvkrrelease.Release
 	ReleasePath string
 	// Arch selects release artifacts: linux/amd64 or linux/arm64.
@@ -360,6 +361,12 @@ func (r *renderer) helm(item string) {
 	case err != nil:
 		r.problem("%s: chart: %v", item, err)
 	default:
+		// The deploy path pins the chart version; the release has to carry
+		// that chart, not another.
+		if a.ChartVersion != "" && rel.Chart.Version != "" && a.ChartVersion != rel.Chart.Version {
+			r.problem("%s: chart: the release carries %s %s, release.yaml pins %s", item, artifact, a.ChartVersion, rel.Chart.Version)
+			break
+		}
 		file, err := r.chartArchive(item, rel.Chart.Name, a)
 		if err != nil {
 			r.problem("%s: chart %s: %v", item, a.Reference, err)

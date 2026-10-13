@@ -1,9 +1,14 @@
 {
- "schemaVersion": "nvkr.dev/release/v4",
- "subject": "ghcr.io/example/recipes/releases@sha256:0000000000000000000000000000000000000000000000000000000000000000",
- "lane": "pipeline-attested",
- "scope": "artifact-publication",
- "artifacts": [
+ "schemaVersion": "nvkr.dev/release-description/v1",
+ "inspection": "metadata inspection; payloads, signatures and policy not verified",
+ "reference": "ghcr.io/example/recipes/releases@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "rootDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "declaredQualification": "pipeline-attested",
+ "metadata": {
+  "contentSubject": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+ },
+ "totalOutputs": 14,
+ "outputs": [
   {
    "name": "cwe",
    "kind": "oci",
@@ -12,7 +17,9 @@
    "components": [
     "nke-controller"
    ],
-   "reference": "ghcr.io/example/recipes/cwe@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   "reference": "ghcr.io/example/recipes/cwe@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "artifactType": "application/vnd.oci.image.manifest.v1+json",
+   "buildSubjects": []
   },
   {
    "name": "capnico-controller",
@@ -23,7 +30,10 @@
     "capnico-controller"
    ],
    "reference": "ghcr.io/example/recipes/capnico-controller@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-   "arch": "linux/amd64"
+   "os": "linux",
+   "arch": "amd64",
+   "artifactType": "application/vnd.oci.image.manifest.v1+json",
+   "buildSubjects": []
   },
   {
    "name": "capnico-controller-arm64",
@@ -34,7 +44,10 @@
     "capnico-controller-arm64"
    ],
    "reference": "ghcr.io/example/recipes/capnico-controller-arm64@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-   "arch": "linux/arm64"
+   "os": "linux",
+   "arch": "arm64",
+   "artifactType": "application/vnd.oci.image.manifest.v1+json",
+   "buildSubjects": []
   },
   {
    "name": "cluster-api-provider-provisioned-arm64",
@@ -45,7 +58,10 @@
     "cluster-api-provider-provisioned-arm64"
    ],
    "reference": "ghcr.io/example/recipes/cluster-api-provider-provisioned-arm64@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-   "arch": "linux/arm64"
+   "os": "linux",
+   "arch": "arm64",
+   "artifactType": "application/vnd.oci.image.manifest.v1+json",
+   "buildSubjects": []
   },
   {
    "name": "controller-profiles",
@@ -55,7 +71,9 @@
    "components": [
     "controller-profiles"
    ],
-   "reference": "ghcr.io/example/recipes/controller-profiles@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   "reference": "ghcr.io/example/recipes/controller-profiles@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "artifactType": "application/vnd.oci.image.manifest.v1+json",
+   "buildSubjects": []
   },
   {
    "name": "controller-chart",
@@ -65,7 +83,9 @@
    "components": [
     "nke-controller-chart"
    ],
-   "reference": "ghcr.io/example/recipes/controller-chart@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+   "reference": "ghcr.io/example/recipes/controller-chart@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+   "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+   "buildSubjects": []
   },
   {
    "name": "nktp",
@@ -75,7 +95,9 @@
    "components": [
     "nktp"
    ],
-   "reference": "ghcr.io/example/recipes/nktp@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+   "reference": "ghcr.io/example/recipes/nktp@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+   "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+   "buildSubjects": []
   },
   {
    "name": "postgresql",
@@ -85,7 +107,9 @@
    "components": [
     "postgresql"
    ],
-   "reference": "ghcr.io/example/recipes/postgresql@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+   "reference": "ghcr.io/example/recipes/postgresql@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+   "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+   "buildSubjects": []
   },
   {
    "name": "spire-crds",
@@ -95,7 +119,9 @@
    "components": [
     "spire-crds"
    ],
-   "reference": "ghcr.io/example/recipes/spire-crds@sha256:4444444444444444444444444444444444444444444444444444444444444444"
+   "reference": "ghcr.io/example/recipes/spire-crds@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+   "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+   "buildSubjects": []
   },
   {
    "name": "temporal",
@@ -105,7 +131,9 @@
    "components": [
     "temporal"
    ],
-   "reference": "ghcr.io/example/recipes/temporal@sha256:5555555555555555555555555555555555555555555555555555555555555555"
+   "reference": "ghcr.io/example/recipes/temporal@sha256:5555555555555555555555555555555555555555555555555555555555555555",
+   "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+   "buildSubjects": []
   },
   {
    "name": "spire-server-image-arm64",
@@ -116,7 +144,10 @@
     "spire-server-image-arm64"
    ],
    "reference": "ghcr.io/example/recipes/spire-server-image-arm64@sha256:7777777777777777777777777777777777777777777777777777777777777777",
-   "arch": "linux/arm64"
+   "os": "linux",
+   "arch": "arm64",
+   "artifactType": "application/vnd.oci.image.manifest.v1+json",
+   "buildSubjects": []
   },
   {
    "name": "nvkectl",
@@ -126,7 +157,9 @@
    "components": [
     "nvkectl"
    ],
-   "reference": "ghcr.io/example/recipes/nvkectl@sha256:8888888888888888888888888888888888888888888888888888888888888888"
+   "reference": "ghcr.io/example/recipes/nvkectl@sha256:8888888888888888888888888888888888888888888888888888888888888888",
+   "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+   "buildSubjects": []
   },
   {
    "name": "nvke-node-image-arm64",
@@ -137,7 +170,10 @@
     "nvke-node-image-arm64"
    ],
    "reference": "ghcr.io/example/recipes/nvke-node-image-arm64@sha256:9999999999999999999999999999999999999999999999999999999999999999",
-   "arch": "linux/arm64"
+   "os": "linux",
+   "arch": "arm64",
+   "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+   "buildSubjects": []
   },
   {
    "name": "nvke-os",
@@ -147,9 +183,9 @@
    "components": [
     "nvke-os"
    ],
-   "reference": "ghcr.io/example/recipes/nvke-os@sha256:0000000000000000000000000000000000000000000000000000000000000001"
+   "reference": "ghcr.io/example/recipes/nvke-os@sha256:0000000000000000000000000000000000000000000000000000000000000001",
+   "artifactType": "application/vnd.nvkr.helm-bundle.v1",
+   "buildSubjects": []
   }
- ],
- "contentSubject": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
- "policyDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+ ]
 }

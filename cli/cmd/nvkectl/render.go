@@ -54,8 +54,8 @@ install time. Paths under controllerStack resolve from the spec's directory;
 spire.caCertFile and spire.caKeyFile from the working directory, as
 "nvkectl bootstrap site" reads them.
 
-With --release, the nvkr.dev/release/v4 JSON "nvkr release verify" prints
-(bare or wrapped), each item's release.yaml names its artifacts:
+With --release, the nvkr.dev/release-description/v1 JSON "nvkr release
+export" writes, each item's release.yaml names its artifacts:
 chart.artifact (default: the item name), chart.imageArtifact,
 chart.profilesArtifact, or a manifest item's artifact. Charts are pulled by
 digest into charts/<item>/; images go into release-images.yaml or a
@@ -126,7 +126,7 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 		}
 		ro.Release, ro.ReleasePath, ro.Arch, ro.RunDir = release, opts.release, opts.arch, opts.runDir
 		ro.Registry = deploypath.Registries(opts.plainHTTP)
-		inputs = append(inputs, "release "+release.Subject)
+		inputs = append(inputs, "release "+release.Reference)
 	}
 	result, err := deploypath.Render(cmd.Context(), ro)
 	if err != nil {

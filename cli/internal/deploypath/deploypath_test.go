@@ -670,7 +670,7 @@ func TestRender_FromRegistry(t *testing.T) {
 	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
 	// A release may reference an image as repository:tag@digest.
 	capARM.Reference = repo + "/capnico-controller-arm64:v0.0.45@" + capARM.Digest
-	release := &nvkrrelease.Release{Subject: repo + "/releases@" + digest([]byte("r")), Artifacts: []nvkrrelease.Artifact{temporal, controllerChart, cwe, profiles, capAMD, capARM}}
+	release := &nvkrrelease.Release{Reference: repo + "/releases@" + digest([]byte("r")), Outputs: []nvkrrelease.Artifact{temporal, controllerChart, cwe, profiles, capAMD, capARM}}
 	out := filepath.Join(t.TempDir(), "rendered")
 	result, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open})
 	if err != nil {
@@ -742,7 +742,7 @@ func TestRender_Refusals(t *testing.T) {
 	repo := "ghcr.io/example/recipes"
 	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
 	profiles := imageArtifact(repo, "controller-profiles", "")
-	release := &nvkrrelease.Release{Subject: "s", Artifacts: []nvkrrelease.Artifact{capARM, profiles}}
+	release := &nvkrrelease.Release{Reference: "s", Outputs: []nvkrrelease.Artifact{capARM, profiles}}
 	out := filepath.Join(t.TempDir(), "rendered")
 	_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/amd64", Out: out, Registry: p.open})
 	if err == nil {
@@ -774,7 +774,7 @@ func TestRender_Refusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	cwe := imageArtifact(repo, "cwe", "")
-	rel := &nvkrrelease.Release{Subject: "s", Artifacts: []nvkrrelease.Artifact{tampered, cwe, profiles, capARM}}
+	rel := &nvkrrelease.Release{Reference: "s", Outputs: []nvkrrelease.Artifact{tampered, cwe, profiles, capARM}}
 	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: rel, Arch: "linux/arm64", Out: filepath.Join(t.TempDir(), "r"), Registry: bad.open})
 	if err == nil || !strings.Contains(err.Error(), "the manifest is sha256:") {
 		t.Errorf("tampered manifest: %v", err)
@@ -818,7 +818,7 @@ func TestRender_FromRun(t *testing.T) {
 	profDigest := writeLayout(t, packages, "controller-profiles", []byte(`{"config":{"digest":"sha256:1"}}`), nil)
 	capDigest := writeLayout(t, packages, "capnico-controller-arm64", []byte(`{"config":{"digest":"sha256:2"}}`), nil)
 	ref := func(name, d string) string { return "nvkr.local/nvke/" + name + "@" + d }
-	release := &nvkrrelease.Release{Subject: "nvkr.local/nvke/releases@" + digest([]byte("x")), Artifacts: []nvkrrelease.Artifact{
+	release := &nvkrrelease.Release{Reference: "nvkr.local/nvke/releases@" + digest([]byte("x")), Outputs: []nvkrrelease.Artifact{
 		{Name: "temporal", Kind: "helm-oci", Digest: tDigest, Reference: ref("temporal", tDigest)},
 		{Name: "cwe", Kind: "oci", Digest: cweDigest, Reference: ref("cwe", cweDigest)},
 		{Name: "controller-profiles", Kind: "oci", Digest: profDigest, Reference: ref("controller-profiles", profDigest)},
@@ -864,7 +864,7 @@ func TestRender_SiteAndRelease(t *testing.T) {
 	cwe := imageArtifact(repo, "cwe", "")
 	profiles := imageArtifact(repo, "controller-profiles", "")
 	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
-	release := &nvkrrelease.Release{Subject: repo + "/releases@" + digest([]byte("r")), Artifacts: []nvkrrelease.Artifact{temporal, cwe, profiles, capARM}}
+	release := &nvkrrelease.Release{Reference: repo + "/releases@" + digest([]byte("r")), Outputs: []nvkrrelease.Artifact{temporal, cwe, profiles, capARM}}
 	out := filepath.Join(t.TempDir(), "rendered")
 	spec := filledSiteSpec(t, false, nil)
 	spec.ControllerStack.Images.Controller = "mirror.example.test/nvke/cwe:v1.2.3"

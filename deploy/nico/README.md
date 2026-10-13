@@ -61,9 +61,12 @@ What the node needs, all present on the reference instance type:
 - to install from an NVKR release: `nvkectl` on the machine that renders.
   `nvkectl render deploy-path --deploy-path deploy/nico --release
   release.json --out DIR` resolves this deploy path against the
-  `nvkr.dev/release/v4` JSON that `nvkr release verify` prints. Charts the
-  release carries are pulled by digest into `DIR/charts/`; images are pinned
-  by digest; a chart the release lacks stays on its public repository. Each
+  `nvkr.dev/release-description/v1` JSON that `nvkr release export
+  --reference <repo@digest>` writes. The export describes the release; it
+  verifies nothing. Run `nvkr release verify` on the same reference first.
+  Charts the release carries are pulled by digest into `DIR/charts/`; images
+  are pinned by digest; a chart the release lacks stays on its public
+  repository. The release's chart version has to match the item's pin. Each
   item's `release.yaml` names its artifacts: `chart.artifact` (default: the
   item name), `chart.imageArtifact`, `chart.profilesArtifact`, or a manifest
   item's `artifact`. `--arch` selects them (default: the site spec's
