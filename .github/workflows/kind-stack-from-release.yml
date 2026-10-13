@@ -23,6 +23,10 @@ on:
       - cli/internal/deploypath/**
       - cli/internal/bootstrap/nvkrrelease/**
       - cli/cmd/nvkectl/render.go
+      - controller/Dockerfile
+      - controller/test/fixtures/**
+      - nktp/hack/e2e-values.yaml
+      - make/tool-versions.mk
 
 permissions: {}
 
@@ -62,6 +66,7 @@ jobs:
             echo "helm_version=$(make --no-print-directory print-HELM_VERSION)"
             echo "capi_version=$(make --no-print-directory print-CAPI_VERSION)"
             echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)"
+            echo "clusterctl_sha256=$(make --no-print-directory print-CLUSTERCTL_SHA256_AMD64)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
@@ -96,11 +101,13 @@ jobs:
         shell: bash
         env:
           CAPI_VERSION: ${{ steps.versions.outputs.capi_version }}
+          CLUSTERCTL_SHA256: ${{ steps.versions.outputs.clusterctl_sha256 }}
         run: |
           set -Eeuo pipefail
           curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 --retry-connrefused \
             -o /tmp/clusterctl \
-            "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_VERSION}/clusterctl-linux-$(dpkg --print-architecture)"
+            "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_VERSION}/clusterctl-linux-amd64"
+          printf '%s  %s\n' "${CLUSTERCTL_SHA256}" /tmp/clusterctl | sha256sum -c -
           chmod +x /tmp/clusterctl
           sudo mv /tmp/clusterctl /usr/local/bin/clusterctl
           got="$(clusterctl version -o short)"

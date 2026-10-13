@@ -100,13 +100,13 @@ for f in nico-token registry-token tenant-password; do printf 'smoke-%s\n' "${f}
 # nktp sized for one kind node: nktp's own kind values, plus a ceiling of one
 # replica on the autoscaled collectors. The whole stack shares this node, so a
 # scale-up on a startup CPU burst would leave a replica Pending.
-if grep -q 'maxReplicas: 1' "${REPO}/nktp/hack/e2e-values.yaml"; then
+if grep -qE '^ *maxReplicas: 1$' "${REPO}/nktp/hack/e2e-values.yaml"; then
   cp "${REPO}/nktp/hack/e2e-values.yaml" "${WORK}/site/nktp-values.yaml"
 else
   sed '/^      minReplicas: 1$/a\
       maxReplicas: 1' "${REPO}/nktp/hack/e2e-values.yaml" >"${WORK}/site/nktp-values.yaml"
 fi
-grep -q 'maxReplicas: 1' "${WORK}/site/nktp-values.yaml" || die "the nktp kind values changed shape; check nktp/hack/e2e-values.yaml"
+grep -qE '^ *maxReplicas: 1$' "${WORK}/site/nktp-values.yaml" || die "the nktp kind values changed shape; check nktp/hack/e2e-values.yaml"
 sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" -e "s|@NKTP_VALUES@|${WORK}/site/nktp-values.yaml|g" \
   "${HERE}/sitespec.yaml.tmpl" >"${WORK}/site/sitespec.yaml"
 "${NVKECTL}" validate sitespec -f "${WORK}/site/sitespec.yaml"
@@ -143,8 +143,8 @@ for target in deployment/nke-controller:nke-controller deployment/controller-man
 done
 not_ready() {
   local ns
-  for ns in nvke-system capnico-system nktp postgres spire-server temporal nke-controller cert-manager capi-system; do
-    kubectl -n "${ns}" get pods -o jsonpath='{range .items[?(@.status.phase!="Succeeded")]}{.metadata.namespace}/{.metadata.name}{"\t"}{.status.phase}{"\t"}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\n"}{end}' 2>/dev/null
+  for ns in nke-system capnico-system nktp postgres spire-server spire-system temporal nke-controller cert-manager capi-system; do
+    kubectl -n "${ns}" get pods -o jsonpath='{range .items[?(@.status.phase!="Succeeded")]}{.metadata.namespace}/{.metadata.name}{"\t"}{.status.phase}{"\t"}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\n"}{end}' || die "cannot list pods in ${ns}"
   done | awk -F'\t' '$2 != "Running" || $3 ~ /false/'
 }
 for _ in $(seq 1 30); do
