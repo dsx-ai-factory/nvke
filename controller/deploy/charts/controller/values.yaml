@@ -137,6 +137,12 @@ nodeAgent:
       privateKeyKey: tls.key
       # -- Secret key containing the PEM-encoded issuing CA bundle.
       caBundleKey: ca.crt
+      # -- Optional Secret key containing the new-form PEM-encoded client
+      # certificate chain. Set together with newPrivateKeyKey; leave empty for
+      # nodes that only use the original identity.
+      newCertificateKey: ""
+      # -- Optional Secret key containing the new-form PEM-encoded client private key.
+      newPrivateKeyKey: ""
 
 # identity configures the strings this controller compiles into
 # Server-Side-Apply field managers and the nke.nvidia.com/managed-by label

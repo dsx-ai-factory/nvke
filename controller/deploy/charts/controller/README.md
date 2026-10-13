@@ -73,6 +73,8 @@ A Helm chart to deploy the NVKE controller service
 | nodeAgent.externalMTLS.secret.caBundleKey | string | `"ca.crt"` | Secret key containing the PEM-encoded issuing CA bundle. |
 | nodeAgent.externalMTLS.secret.certificateKey | string | `"tls.crt"` | Secret key containing the PEM-encoded client certificate chain. |
 | nodeAgent.externalMTLS.secret.name | string | `""` | Name of the externally managed Secret containing the client identity. |
+| nodeAgent.externalMTLS.secret.newCertificateKey | string | `""` | Optional Secret key containing the new-form PEM-encoded client certificate chain. Set together with newPrivateKeyKey; leave empty for nodes that only use the original identity. |
+| nodeAgent.externalMTLS.secret.newPrivateKeyKey | string | `""` | Optional Secret key containing the new-form PEM-encoded client private key. |
 | nodeAgent.externalMTLS.secret.privateKeyKey | string | `"tls.key"` | Secret key containing the PEM-encoded client private key. |
 | nodeAgent.spireAttestationMethod | string | `"tpm"` | SPIRE node attestation method pinned to newly created nodes. Existing nodes retain their method when this deployment default changes; keep their attestation plugins available. dsxImds requires SPIFFE and a compatible DSX node image. |
 | nodeAgent.tlsJwt.algorithms | list | `["RS256"]` | Asymmetric JWT signing algorithms accepted from the issuer. |

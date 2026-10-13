@@ -313,6 +313,12 @@ spec:
                 path: tls.key
               - key: {{ required "nodeAgent.externalMTLS.secret.caBundleKey is required when external mTLS is enabled" .Values.nodeAgent.externalMTLS.secret.caBundleKey }}
                 path: ca.crt
+              {{- if or .Values.nodeAgent.externalMTLS.secret.newCertificateKey .Values.nodeAgent.externalMTLS.secret.newPrivateKeyKey }}
+              - key: {{ required "nodeAgent.externalMTLS.secret.newCertificateKey is required when the new-form identity is configured" .Values.nodeAgent.externalMTLS.secret.newCertificateKey }}
+                path: nvke-tls.crt
+              - key: {{ required "nodeAgent.externalMTLS.secret.newPrivateKeyKey is required when the new-form identity is configured" .Values.nodeAgent.externalMTLS.secret.newPrivateKeyKey }}
+                path: nvke-tls.key
+              {{- end }}
         {{- end }}
         {{- if .Values.profiles.image.enabled }}
         - name: profiles
