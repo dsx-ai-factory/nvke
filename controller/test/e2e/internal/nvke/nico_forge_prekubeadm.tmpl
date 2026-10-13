@@ -24,11 +24,11 @@ for the same reason — OVN runs Open vSwitch on the host, and the agent checks
 for ovs-vsctl before helm. Both were observed on real Forge hardware before
 they were read out of the agent source.
 
-nvke-agent is deliberately absent, for the reason spire-agent is. The image
+nke-agent is deliberately absent, for the reason spire-agent is. The image
 builds it as a .deb from this checkout's agent/ source at bake time and
 installs it with dpkg, so its version is the checkout's `git describe` and it
 is the build under qualification (os-image/AGENTS.md). The apt repository
-publishes its own nvke-agent, and installing that unpinned would swap the
+publishes its own nke-agent, and installing that unpinned would swap the
 component being qualified for whichever one the suite currently holds, without
 the run saying so. Today dpkg keeps the baked build because a bake version
 sorts above a release tag, so the install was a no-op that would have stopped
@@ -63,6 +63,24 @@ AccessDenied rather than 404 -- and that kills the block before apt runs. Moving
 them back needs the publisher to move first, or to dual-publish; it is not a
 rename this repository can make on its own.
 
+The package names say nke- for the same reason, and #1548 renamed them here
+ahead of the same publisher. The suite nke-noble holds 94 nke-* packages and
+no nvke-* package at all, so an install of nvke-kubeadm-distro-<ver> resolves
+to nothing -- a later failure than the 403, and a quieter one. The renamed
+packages Provide their old names (see hack/name-check-allowlist.txt), so the
+dependency runs one way: asking for nke- works against either corpus, asking
+for nvke- works against neither until one is published.
+
+The unit and its environment file are nke- for a third turn of the same
+screw. #1565 renamed them to nvke-agent.service and /etc/default/nvke-agent,
+but the image a run boots is an os-image release, and the newest one --
+v0.2.0-rc.1, tagged 2026-10-11 -- predates that merge, so it bakes
+nke-agent.service. The restart then fails with "Unit nvke-agent.service not
+found" and takes the whole block with it, while the write to the renamed
+environment file succeeds and is simply never read, so AgentArgs would go
+missing in silence even if the restart were removed. These move when an image
+carrying the renamed unit is published, not before.
+
 set -eu is the first command for the reason the site node has it
 (internal/infra/forge/userdata.go): cloud-init runs these as one /bin/sh
 script and reports the exit status of the last one, which is the
@@ -95,9 +113,9 @@ apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-kubeadm-distro-{{ .KubernetesVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-cni-ovn-images-{{ .CNIVersion }} nvke-cni-ovn-charts-{{ .CNIVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y openvswitch-switch
-printf 'AGENT_ARGS="{{ .AgentArgs }}"\n' > /etc/default/nvke-agent
+printf 'AGENT_ARGS="{{ .AgentArgs }}"\n' > /etc/default/nke-agent
 sysctl --system
 systemctl daemon-reload
-systemctl restart nvke-agent.service
+systemctl restart nke-agent.service
 systemctl restart procps
 touch /run/cloud-init.done
