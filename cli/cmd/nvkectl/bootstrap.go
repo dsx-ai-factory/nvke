@@ -252,7 +252,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := dumpSiteSpec(out, inv); err != nil {
 		return err
 	}
-	noteControllerStackSection(out, inv, bootstrapengine.DefaultConfig().ClusterName)
+	noteControllerStackSection(out, inv)
 
 	if opts.dryRun {
 		fmt.Fprintln(out, "\nDry run: site spec is valid. No workflow dispatched.")
@@ -280,6 +280,16 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	cweCfg, err := cweDeployConfig(inv, cfg.ClusterName, opts.disableMTLS, opts.controllerImage, opts.provisionedProviderImage)
 	if err != nil {
 		return err
+	}
+	// Said as soon as the default is taken: the controller stack install
+	// shares it only for the default bootstrap cluster name.
+	if inv.Spire.TrustDomain == "" {
+		if cfg.ClusterName == sitespec.DefaultBootstrapClusterName {
+			logger.Info("spire.trustDomain is not set; using the default the controller stack install shares", "trustDomain", cweCfg.SPIFFETrustDomain)
+		} else {
+			logger.Warn("spire.trustDomain is not set; derived from the bootstrap cluster name. Set spire.trustDomain to this value before the controller stack install, whose default differs",
+				"trustDomain", cweCfg.SPIFFETrustDomain, "installDefault", inv.EffectiveTrustDomain(sitespec.DefaultBootstrapClusterName))
+		}
 	}
 
 	// The controller API has to be reachable from this host: this command deploys it
@@ -1061,17 +1071,7 @@ func dumpSiteSpec(out io.Writer, inv *sitespec.SiteSpec) error {
 // the controller stack install: the whole controllerStack: section, or the
 // placeholders left in it. The bootstrap does not read the section, so this
 // is the moment to say so.
-func noteControllerStackSection(out io.Writer, inv *sitespec.SiteSpec, bootstrapClusterName string) {
-	if inv.Spire.TrustDomain == "" {
-		domain := inv.EffectiveTrustDomain(bootstrapClusterName)
-		if bootstrapClusterName == sitespec.DefaultBootstrapClusterName {
-			fmt.Fprintf(out, "\nThe SPIFFE trust domain of this bootstrap is %s. The controller stack install defaults to the same value.\n", domain)
-		} else {
-			fmt.Fprintf(out, "\nThe SPIFFE trust domain of this bootstrap is %s, derived from the bootstrap cluster name. "+
-				"Set spire.trustDomain to it in the site spec: the controller stack install defaults to %s.\n",
-				domain, inv.EffectiveTrustDomain(sitespec.DefaultBootstrapClusterName))
-		}
-	}
+func noteControllerStackSection(out io.Writer, inv *sitespec.SiteSpec) {
 	switch left := inv.ControllerStackPlaceholders(); {
 	case inv.ControllerStack == nil:
 		fmt.Fprintf(out, "\nBefore installing the controller stack, add the controllerStack: section to the site spec. "+

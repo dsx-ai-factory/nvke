@@ -36,8 +36,11 @@ export KUBECONFIG="${WORK}/kubeconfig"
 log() { printf '\n=== %s\n' "$*" >&2; }
 die() { printf 'kind-stack-from-release: %s\n' "$*" >&2; exit 1; }
 
+# Only a cluster this run created is deleted: a cluster of the same name
+# that was there first is refused, not reused and not removed.
+CREATED_CLUSTER=false
 cleanup() {
-  if [[ "${KEEP_CLUSTER}" != true ]]; then
+  if [[ "${CREATED_CLUSTER}" == true && "${KEEP_CLUSTER}" != true ]]; then
     kind delete cluster --name "${CLUSTER}" >/dev/null 2>&1 || true
   fi
 }
@@ -87,6 +90,10 @@ log "release: cwe ${cwe_digest}, controller-profiles ${profiles_digest}, capnico
 # 2. The kind node. Images from Docker Hub go through a mirror when one is
 # named, as the other kind lanes do.
 log "creating kind cluster ${CLUSTER}"
+if kind get clusters 2>/dev/null | grep -qx "${CLUSTER}"; then
+  die "a kind cluster named ${CLUSTER} already exists; delete it or set KIND_CLUSTER_NAME"
+fi
+CREATED_CLUSTER=true
 kind create cluster --name "${CLUSTER}" --kubeconfig "${KUBECONFIG}" --wait 5m
 node="${CLUSTER}-control-plane"
 if [[ -n "${DOCKERHUB_MIRROR}" ]]; then
@@ -164,8 +171,8 @@ done
 not_ready() {
   local ns
   for ns in nke-system capnico-system nktp postgres spire-server spire-system temporal nke-controller cert-manager capi-system; do
-    kubectl -n "${ns}" get pods -o jsonpath='{range .items[?(@.status.phase!="Succeeded")]}{.metadata.namespace}/{.metadata.name}{"\t"}{.status.phase}{"\t"}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\n"}{end}' || die "cannot list pods in ${ns}"
-  done | awk -F'\t' '$2 != "Running" || $3 ~ /false/'
+    kubectl -n "${ns}" get pods -o jsonpath='{range .items[?(@.status.phase!="Succeeded")]}{.metadata.namespace}/{.metadata.name}{"\t"}{.status.phase}{"\t"}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' || die "cannot list pods in ${ns}"
+  done | awk -F'\t' '$2 != "Running" || $3 ~ /false/ || $4 != "True"'
 }
 for _ in $(seq 1 30); do
   pending="$(not_ready)"

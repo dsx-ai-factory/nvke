@@ -75,7 +75,7 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 	}
 	ready := true
 	if domain, defaulted := spec.TrustDomain(); defaulted {
-		fmt.Fprintf(out, "spire.trustDomain: not set; the bootstrap and the controller stack install default to %s\n", domain)
+		fmt.Fprintf(out, "spire.trustDomain: not set; a bootstrap with the default cluster name and the controller stack install both use %s\n", domain)
 	}
 	if left := spec.ControllerStackPlaceholders(); len(left) > 0 {
 		ready = false

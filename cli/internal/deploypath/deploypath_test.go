@@ -207,7 +207,7 @@ func TestRender_FromSiteSpec(t *testing.T) {
 		}
 	}
 	vip := spec.Cluster.ControlPlaneVIP
-	td := "my-tier0-site.nke.local"
+	td := spec.Spire.TrustDomain
 	ctl := readValues(t, filepath.Join(out, "controller", SiteValuesFile))
 	if dig(ctl, "spiffe", "trustDomain") != td || dig(ctl, "spiffe", "spire", "serverAddress") != vip ||
 		dig(ctl, "nkeOIDCAuth", "discoveryURL") != "https://"+vip+":30443/.well-known/openid-configuration" {
