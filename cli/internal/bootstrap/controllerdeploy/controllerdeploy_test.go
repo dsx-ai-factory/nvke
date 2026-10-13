@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 )
 
@@ -366,6 +367,48 @@ func TestDeploy_EnablesPostInitCNI(t *testing.T) {
 	cwe := helmCalls(runner)[4]
 	if !strings.Contains(cwe, "cni.installAfterInit=true") {
 		t.Errorf("controller helm call = %q, want post-init CNI enabled", cwe)
+	}
+}
+
+func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
+	embedded, err := fs.ReadFile(manifestsFS, cweValuesFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+	if got := runner.valuesFiles[cweReleaseName]; got != string(embedded) {
+		t.Errorf("controller --values file differs from the embedded %s", cweValuesFile)
+	}
+	if strings.Contains(runner.valuesFiles[cweReleaseName], "\noidc:") {
+		t.Errorf("controller values contain an oidc key when no providers were set")
+	}
+
+	cfg := testConfig(t)
+	cfg.OIDCProviders = []sitespec.OIDCProvider{{
+		Name:           "corp",
+		IssuerURL:      "https://login.example.com",
+		Audiences:      []string{"nke"},
+		UsernameClaim:  "email",
+		UsernamePrefix: "corp:",
+		CABundle:       "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+	}}
+	runner = &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+	got := runner.valuesFiles[cweReleaseName]
+	for _, want := range []string{"nke-controller", "name: corp", "issuerURL: https://login.example.com", "providers:"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("controller values missing %q:\n%s", want, got)
+		}
+	}
+	cwe := helmCalls(runner)[4]
+	if strings.Count(cwe, "--values") != 1 {
+		t.Errorf("controller helm call has %d --values, want 1: %s", strings.Count(cwe, "--values"), cwe)
 	}
 }
 

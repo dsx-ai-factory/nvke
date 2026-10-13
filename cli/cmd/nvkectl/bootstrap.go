@@ -869,6 +869,7 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	// How the hosts were configured when they were provisioned, which is why it
 	// is in the site spec and not in the environment.
 	cfg.NodeAgentPort = inv.Cluster.NodeAgentPort
+	cfg.OIDCProviders = inv.Cluster.OIDCProviders
 
 	return cfg, nil
 }

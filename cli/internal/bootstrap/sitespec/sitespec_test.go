@@ -236,6 +236,16 @@ func TestValidateInvalidInputs(t *testing.T) {
 		{"missing bootstrapRepo", func(i *SiteSpec) { i.Registry.BootstrapRepo = "" }, pathBootstrapRepo},
 		{"missing bootstrapChart", func(i *SiteSpec) { i.Registry.BootstrapChart = "" }, pathBootstrapChart},
 		{"whitespace in bootstrapRepo", func(i *SiteSpec) { i.Registry.BootstrapRepo = "bad repo" }, pathBootstrapRepo},
+		{"oidc providers before 1.34", func(i *SiteSpec) {
+			i.Cluster.K8sVersion = "1.33.4"
+			i.Cluster.OIDCProviders = []OIDCProvider{validOIDCProvider()}
+		}, pathOIDCProviders},
+		{"oidc provider missing caBundle", func(i *SiteSpec) {
+			i.Cluster.K8sVersion = "1.34.0"
+			p := validOIDCProvider()
+			p.CABundle = ""
+			i.Cluster.OIDCProviders = []OIDCProvider{p}
+		}, "cluster.oidcProviders[0].caBundle"},
 	}
 
 	for _, tc := range tests {
@@ -250,6 +260,48 @@ func TestValidateInvalidInputs(t *testing.T) {
 				t.Errorf("error %q does not mention %q", err.Error(), tc.wantSub)
 			}
 		})
+	}
+}
+
+func validOIDCProvider() OIDCProvider {
+	return OIDCProvider{
+		Name:           "corp",
+		IssuerURL:      "https://login.example.com",
+		Audiences:      []string{"nke"},
+		UsernameClaim:  "email",
+		UsernamePrefix: "corp:",
+		CABundle:       "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+	}
+}
+
+func TestValidate_OIDCProviders(t *testing.T) {
+	absent := func() *SiteSpec {
+		inv := &SiteSpec{
+			ClusterName: "nvke-site",
+			Cluster: Cluster{
+				Nodes:         []Node{{Name: "node1", IP: "10.0.0.1"}},
+				K8sVersion:    "1.32.0",
+				CniName:       "calico",
+				PodCidr:       "10.100.0.0/16",
+				ServiceCidr:   "10.200.0.0/16",
+				NodeAgentPort: DefaultNodeAgentPort,
+			},
+			Registry: Registry{
+				BootstrapRepo:  "nvcr.io/org/cloud-workflow-engine",
+				BootstrapChart: "cloud-workflow-engine",
+			},
+		}
+		return inv
+	}
+	if err := absent().Validate(); err != nil {
+		t.Fatalf("Validate rejected a 1.32 site spec with no oidc providers: %v", err)
+	}
+
+	withProviders := absent()
+	withProviders.Cluster.K8sVersion = "1.34.0"
+	withProviders.Cluster.OIDCProviders = []OIDCProvider{validOIDCProvider()}
+	if err := withProviders.Validate(); err != nil {
+		t.Fatalf("Validate rejected oidc providers on 1.34.0: %v", err)
 	}
 }
 

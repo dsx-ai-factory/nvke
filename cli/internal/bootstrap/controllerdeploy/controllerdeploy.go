@@ -36,7 +36,10 @@ import (
 	"text/template"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	"github.com/dsx-ai-factory/nvke/controller/deploy/charts"
 )
@@ -232,6 +235,10 @@ type Config struct {
 	// default (15005) alone. It comes from the site spec, because it describes
 	// how the site's hosts were configured long before this cluster existed.
 	NodeAgentPort string
+
+	// OIDCProviders are written into the controller values as oidc.providers.
+	// Empty leaves the chart default, an empty list.
+	OIDCProviders []sitespec.OIDCProvider
 
 	// CWEPort is the port the controller API uses for its Helm Service, Kubernetes
 	// NodePort, Kind host mapping, and host client. Zero uses DefaultCWEPort.
@@ -527,7 +534,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return err
 	}
 
-	cweValues, cleanup, err := writeEmbeddedFile(cweValuesFile)
+	cweValues, cleanup, err := writeCWEValues(cfg.OIDCProviders)
 	if err != nil {
 		return err
 	}
@@ -682,6 +689,36 @@ func (e *Engine) helm(ctx context.Context, kubeconfigPath string, args ...string
 		case <-time.After(helmFetchRetryInterval):
 		}
 	}
+}
+
+// writeCWEValues writes the controller values helm installs. Only merges oidc.providers if there are any.
+func writeCWEValues(providers []sitespec.OIDCProvider) (path string, cleanup func(), err error) {
+	body, err := manifestsFS.ReadFile(cweValuesFile)
+	if err != nil {
+		return "", func() {}, fmt.Errorf("controllerdeploy: reading embedded %s: %w", cweValuesFile, err)
+	}
+	if len(providers) > 0 {
+		body, err = mergeOIDCProviders(body, providers)
+		if err != nil {
+			return "", func() {}, err
+		}
+	}
+	return writeTempFile("nvkectl-cwedeploy-*.yaml", body)
+}
+
+// mergeOIDCProviders sets oidc.providers on the controller values. The embedded
+// file has no oidc key, so the whole section is this list.
+func mergeOIDCProviders(values []byte, providers []sitespec.OIDCProvider) ([]byte, error) {
+	var doc map[string]any
+	if err := yaml.Unmarshal(values, &doc); err != nil {
+		return nil, fmt.Errorf("controllerdeploy: parsing embedded %s: %w", cweValuesFile, err)
+	}
+	doc["oidc"] = map[string]any{"providers": providers}
+	merged, err := yaml.Marshal(doc)
+	if err != nil {
+		return nil, fmt.Errorf("controllerdeploy: rendering controller values: %w", err)
+	}
+	return merged, nil
 }
 
 // writeEmbeddedFile copies an embedded values file to a temporary file on

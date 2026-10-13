@@ -32,6 +32,7 @@ import (
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
+	"k8s.io/apimachinery/pkg/util/version"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 )
@@ -68,9 +69,36 @@ const (
 	pathSpireTrustDomain     = "spire.trustDomain"
 	pathSpireCACertFile      = "spire.caCertFile"
 	pathSpireCAKeyFile       = "spire.caKeyFile"
+	pathOIDCProviders        = "cluster.oidcProviders"
+
+	// maxOIDCProviders matches controllerconfig.MaxOIDCProviders.
+	maxOIDCProviders = 5
+
+	// oidcAuthConfigMinVersion is the first Kubernetes release that can read the
+	// AuthenticationConfiguration the controller renders. Below it the controller
+	// pins an empty provider list and the site API server never sees the ones
+	// the site spec asked for.
+	oidcAuthConfigMinVersion = "1.34.0"
+
+	// Identity namespaces a fleet-wide OIDC provider must not use as a
+	// usernamePrefix or groupsPrefix. kube-apiserver rejects system, kubeadm,
+	// nke, and nvidia; nvke is reserved the same way.
+	oidcPrefixSystem  = "system:"
+	oidcPrefixKubeadm = "kubeadm:"
+	oidcPrefixNKE     = "nke:"
+	oidcPrefixNVKE    = "nvke:"
+	oidcPrefixNVIDIA  = "nvidia:"
 )
 
 var (
+	oidcReservedPrefixes = []string{
+		oidcPrefixSystem,
+		oidcPrefixKubeadm,
+		oidcPrefixNKE,
+		oidcPrefixNVKE,
+		oidcPrefixNVIDIA,
+	}
+
 	// k8sVersionRE matches a plain semantic version like "1.32.0". A leading
 	// "v" is not accepted — the bootstrap flow passes this string straight to
 	// kubeadm.
@@ -168,6 +196,23 @@ type Cluster struct {
 	EtcdEncryption *bool `yaml:"etcdEncryption,omitempty"`
 	// KubeletConfig holds optional kubelet resource reservations.
 	KubeletConfig KubeletConfig `yaml:"kubeletConfig"`
+	// OIDC providers the bootstrap controller
+	// pins onto the site cluster apiservers. Optional.
+	OIDCProviders []OIDCProvider `yaml:"oidcProviders,omitempty"`
+}
+
+// OIDCProvider is one fleet-wide OIDC provider. Field names match the
+// controller chart's oidc.providers entries.
+type OIDCProvider struct {
+	Name           string            `yaml:"name"`
+	IssuerURL      string            `yaml:"issuerURL"`
+	Audiences      []string          `yaml:"audiences"`
+	UsernameClaim  string            `yaml:"usernameClaim"`
+	UsernamePrefix string            `yaml:"usernamePrefix"`
+	GroupsClaim    string            `yaml:"groupsClaim,omitempty"`
+	GroupsPrefix   string            `yaml:"groupsPrefix,omitempty"`
+	RequiredClaims map[string]string `yaml:"requiredClaims,omitempty"`
+	CABundle       string            `yaml:"caBundle"`
 }
 
 // EtcdEncryptionEnabled reports whether the cluster's etcd data is encrypted
@@ -417,6 +462,7 @@ func (inv *SiteSpec) appendDataChecks(v *validator) {
 	v.checkNodeAgentPort(inv.Cluster.NodeAgentPort)
 	v.checkRegistry(inv.Registry)
 	v.checkSpire(inv.Spire)
+	v.checkOIDCProviders(inv.Cluster)
 }
 
 // ValidateReferences checks that the files the site spec names can be read,
@@ -518,6 +564,68 @@ func (v *validator) checkNode(path string, n Node, names, ips map[string]int) {
 	if n.TPMEKThumbprint != "" && !tpmEKThumbprintRE.MatchString(n.TPMEKThumbprint) {
 		v.addf("%s.tpmEkThumbprint %q must be 64 lowercase hex digits (the SHA-256 of the node's TPM endorsement key)",
 			path, n.TPMEKThumbprint)
+	}
+}
+
+func (v *validator) checkOIDCProviders(c Cluster) {
+	if len(c.OIDCProviders) == 0 {
+		return
+	}
+	if got, err := version.ParseGeneric(c.K8sVersion); err == nil && got.LessThan(version.MustParseGeneric(oidcAuthConfigMinVersion)) {
+		v.addf("%s requires %s %s or newer, got %q", pathOIDCProviders, pathK8sVersion, oidcAuthConfigMinVersion, c.K8sVersion)
+	}
+	if len(c.OIDCProviders) > maxOIDCProviders {
+		v.addf("%s has %d entries, more than the %d-entry cap", pathOIDCProviders, len(c.OIDCProviders), maxOIDCProviders)
+	}
+
+	seenNames := map[string]int{}
+	seenIssuers := map[string]int{}
+	for i, p := range c.OIDCProviders {
+		path := fmt.Sprintf("%s[%d]", pathOIDCProviders, i)
+		name := strings.TrimSpace(p.Name)
+		if name == "" {
+			v.addf("%s.name is required", path)
+		} else if prev, dup := seenNames[name]; dup {
+			v.addf("%s.name %q is already used by %s[%d]", path, name, pathOIDCProviders, prev)
+		} else {
+			seenNames[name] = i
+		}
+		issuerURL := strings.TrimSpace(p.IssuerURL)
+		if issuerURL == "" {
+			v.addf("%s.issuerURL is required", path)
+		} else if prev, dup := seenIssuers[issuerURL]; dup {
+			v.addf("%s.issuerURL %q is already used by %s[%d]", path, issuerURL, pathOIDCProviders, prev)
+		} else {
+			seenIssuers[issuerURL] = i
+		}
+		if strings.TrimSpace(p.UsernameClaim) == "" {
+			v.addf("%s.usernameClaim is required", path)
+		}
+		if strings.TrimSpace(p.UsernamePrefix) == "" {
+			v.addf("%s.usernamePrefix is required", path)
+		}
+		v.checkOIDCPrefix(path+".usernamePrefix", p.UsernamePrefix)
+		v.checkOIDCPrefix(path+".groupsPrefix", p.GroupsPrefix)
+		if len(p.Audiences) == 0 {
+			v.addf("%s.audiences is required", path)
+		}
+		for j, aud := range p.Audiences {
+			if strings.TrimSpace(aud) == "" {
+				v.addf("%s.audiences[%d] must not be empty", path, j)
+			}
+		}
+		if strings.TrimSpace(p.CABundle) == "" {
+			v.addf("%s.caBundle is required", path)
+		}
+	}
+}
+
+func (v *validator) checkOIDCPrefix(path, prefix string) {
+	for _, reserved := range oidcReservedPrefixes {
+		if strings.HasPrefix(prefix, reserved) {
+			v.addf("%s %q is inside the reserved %q namespace", path, prefix, reserved)
+			return
+		}
 	}
 }
 
