@@ -851,7 +851,7 @@ func TestControlPlaneSchedulable(t *testing.T) {
 }
 
 const nicoYAML = `
-clusterName: nke-site
+clusterName: nvke-site
 infrastructure: nico
 cluster:
   nico:

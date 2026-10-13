@@ -52,7 +52,10 @@ type StackNico struct {
 // controllerStack.nico or bootstrapNico.
 func (n *StackNico) appendValueChecks(v *validator, path string) {
 	for _, f := range [][2]string{
-		{"endpoint", n.Endpoint}, {"orgID", n.OrgID}, {"apiName", n.APIName}, {"tokenFile", n.TokenFile},
+		{"endpoint", n.Endpoint},
+		{"orgID", n.OrgID},
+		{"apiName", n.APIName},
+		{"tokenFile", n.TokenFile},
 	} {
 		if f[1] == "" {
 			v.addf("%s.%s is required", path, f[0])
@@ -78,7 +81,11 @@ type StackPullSecret struct {
 
 // appendValueChecks adds every unset field of the registry credential to v.
 func (p *StackPullSecret) appendValueChecks(v *validator, path string) {
-	for _, f := range [][2]string{{"server", p.Server}, {"username", p.Username}, {"tokenFile", p.TokenFile}} {
+	for _, f := range [][2]string{
+		{"server", p.Server},
+		{"username", p.Username},
+		{"tokenFile", p.TokenFile},
+	} {
 		if f[1] == "" {
 			v.addf("%s.%s is required", path, f[0])
 		}

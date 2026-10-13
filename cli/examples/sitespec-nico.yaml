@@ -18,7 +18,7 @@
 # Replace all of them. An instance type with no
 # allocation looks healthy and provisions nothing.
 
-clusterName: "nke-site"
+clusterName: "nvke-site"
 
 # "provisioned" (the default) reads cluster.nodes. "nico" reads cluster.nico.
 infrastructure: nico

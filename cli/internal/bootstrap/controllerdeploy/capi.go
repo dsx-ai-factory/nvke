@@ -204,8 +204,13 @@ func capnicoManifest(raw []byte, image string) ([]byte, error) {
 // quote or a backslash is carried, not written altered.
 func capnicoSecretsManifest(a CAPNICoAccess) ([]byte, error) {
 	for _, f := range []struct{ name, value string }{
-		{"Endpoint", a.Endpoint}, {"OrgID", a.OrgID}, {"APIName", a.APIName}, {"Token", a.Token},
-		{"RegistryServer", a.RegistryServer}, {"RegistryUsername", a.RegistryUsername}, {"RegistryToken", a.RegistryToken},
+		{"Endpoint", a.Endpoint},
+		{"OrgID", a.OrgID},
+		{"APIName", a.APIName},
+		{"Token", a.Token},
+		{"RegistryServer", a.RegistryServer},
+		{"RegistryUsername", a.RegistryUsername},
+		{"RegistryToken", a.RegistryToken},
 	} {
 		if f.value == "" {
 			return nil, fmt.Errorf("controllerdeploy: Config.CAPNICo.%s is required to install CAPNICo", f.name)
