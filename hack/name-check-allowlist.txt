@@ -222,3 +222,10 @@ path:controller/profiles/*
 # Image URLs inside the two synthetic fixture profiles. Their MachineImage specs
 # are published fixtures, and published release content is immutable.
 token:^https://example\.test/nke/
+
+# oapi-codegen embeds the whole OpenAPI spec in server.gen.go as a gzipped,
+# base64-encoded blob (swaggerSpec) for /openapi.yaml to serve at runtime.
+# Every openapi.yaml edit reflows that blob's bytes, and a 3-character,
+# case-insensitive token can land inside it by chance -- not a name, and not
+# stable across edits, so there is nothing here to ever remove it for.
+path:controller/api/server.gen.go
