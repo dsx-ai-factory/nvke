@@ -162,12 +162,10 @@ identity:
   # controller owns, and the value the tenant Secret reconciler filters on.
   managedByLabelValue: "cloud-workflow-engine"
 
-# -- Older name for nvkeSystemNamespace. Setting it fails the render, naming the
-# new key: Helm would otherwise drop an unknown key silently and fall back to the
-# nvkeSystemNamespace defaults. The key stays here for one release so the guard
-# can see it.
-nkeSystemNamespace: {}
-
+# nkeSystemNamespace is the older name for nvkeSystemNamespace. It is absent
+# here on purpose: the guard in _helpers.tpl keys off its presence, so setting
+# it at all fails the render naming the new key, rather than letting Helm drop
+# an unknown key silently and fall back to the nvkeSystemNamespace defaults.
 nvkeSystemNamespace:
   # -- Create the shared nke-system namespace. The object always carries
   # helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and
@@ -407,11 +405,10 @@ tenantAccess:
   # and its cleanup activity, and the Secret grant they depend on.
   enabled: true
 
-# -- Older name for nvkeOIDCAuth. Setting it fails the render, naming the new
-# key: Helm would otherwise drop an unknown key silently and leave OIDC at
-# enabled: false. The key stays here for one release so the guard can see it.
-nkeOIDCAuth: {}
-
+# nkeOIDCAuth is the older name for nvkeOIDCAuth. It is absent here on purpose:
+# the guard in _helpers.tpl keys off its presence, so setting it at all fails
+# the render naming the new key, rather than letting Helm drop an unknown key
+# silently and leave OIDC at enabled: false.
 nvkeOIDCAuth:
   # -- Enable OIDC authentication from NVKE management identities to tenant cluster kube-apiservers.
   enabled: false

@@ -266,6 +266,17 @@ for pair in nkeOIDCAuth.enabled=true:nvkeOIDCAuth nkeSystemNamespace.create=fals
   [[ "${refusal}" == *"was renamed to ${new}"* ]] ||
     { echo "setting ${old} failed for another reason: ${refusal}" >&2; exit 1; }
 done
+# An explicitly empty old key is false in a Helm condition, so the guard keys
+# off presence instead. Assert that, or the rename is bypassable with --set-json.
+for new in nvkeOIDCAuth nvkeSystemNamespace; do
+  old="nke${new#nvke}"
+  if refusal="$(helm template cwe "${CHART}" --set-json "${old}={}" 2>&1)"; then
+    echo "values set ${old} to {} and rendered; the chart must refuse a renamed key" >&2
+    exit 1
+  fi
+  [[ "${refusal}" == *"was renamed to ${new}"* ]] ||
+    { echo "setting ${old} to {} failed for another reason: ${refusal}" >&2; exit 1; }
+done
 printf '  renamed values keys are refused, naming their replacement\n'
 
 # The values files the Tilt and nvkectl bootstrap deployments install with.

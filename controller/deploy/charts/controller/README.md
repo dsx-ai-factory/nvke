@@ -57,8 +57,6 @@ A Helm chart to deploy the NVKE controller service
 | metrics.port | int | `9090` | Port for the dedicated Prometheus metrics server. Must match the port in listenAddress. |
 | nameOverride | string | `"cloud-workflow-engine"` |  |
 | namespaceOverride | string | `""` | Deploy into this namespace instead of the release namespace (umbrella use). |
-| nkeOIDCAuth | object | `{}` | Older name for nvkeOIDCAuth. Setting it fails the render, naming the new key: Helm would otherwise drop an unknown key silently and leave OIDC at enabled: false. The key stays here for one release so the guard can see it. |
-| nkeSystemNamespace | object | `{}` | Older name for nvkeSystemNamespace. Setting it fails the render, naming the new key: Helm would otherwise drop an unknown key silently and fall back to the nvkeSystemNamespace defaults. The key stays here for one release so the guard can see it. |
 | nodeAgent.dsxImds.endpoint | string | `"http://169.254.169.254"` | Metadata endpoint used by the external dsx_imds node attestor. The default is the standard link-local metadata service address. |
 | nodeAgent.dsxImds.operatorTenant | string | `""` | Operator tenant encoded in dsx_imds-attested SPIRE agent IDs. This must match the DSX Identity global.operatorTenant value. |
 | nodeAgent.dsxImds.pluginChecksum | string | `""` | Optional SHA-256 checksum for the external dsx_imds plugin binary. Leave empty to expand DSX_IMDS_PLUGIN_CHECKSUM from the node image's /etc/spire-agent/spire-agent.env file. |
