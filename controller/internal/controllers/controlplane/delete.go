@@ -15,6 +15,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 )
 
@@ -120,21 +121,30 @@ func (r *reconciler) restartFailedTeardown(ctx context.Context, node db.Node) (b
 		return false, err
 	}
 
+	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowStart, otelx.WorkflowAttributes{
+		WorkflowType: constants.TeardownNodeWorkflowType,
+		WorkflowID:   workflowID,
+		ClusterID:    node.ClusterID,
+		NodePoolID:   node.NodePoolID,
+		NodeID:       node.ID,
+		NodeName:     node.Name,
+	})
 	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:                       workflowID,
 		TaskQueue:                r.cfg.TemporalTaskQueue,
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
 		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 	}, workflows.TeardownNode, input)
+	otelx.EndWorkflowSpan(span, err)
 	if err != nil {
 		return false, fmt.Errorf("restarting teardown workflow for node %s (%s): %w", node.ID, node.Name, err)
 	}
 
-	r.logger.Warn("Restarted a control-plane node teardown whose workflow closed without completing",
-		"nodeID", node.ID,
-		"nodeName", node.Name,
-		"workflowID", run.GetID(),
-		"runID", run.GetRunID(),
+	r.logger.WarnContext(ctx, "Restarted a control-plane node teardown whose workflow closed without completing",
+		"node_id", node.ID,
+		"node_name", node.Name,
+		"workflow_id", workflowID,
+		"run_id", run.GetRunID(),
 	)
 	return true, nil
 }

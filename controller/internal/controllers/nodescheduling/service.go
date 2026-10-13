@@ -16,6 +16,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 )
 
@@ -66,6 +67,14 @@ func (s *Service) startProvisionNodeWorkflow(ctx context.Context, pendingNode db
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
 		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 	}
+	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowStart, otelx.WorkflowAttributes{
+		WorkflowType: workflows.ProvisionNodeWorkflowType,
+		WorkflowID:   workflowID,
+		ClusterID:    pendingNode.ClusterID,
+		NodePoolID:   pendingNode.NodePoolID,
+		NodeID:       pendingNode.ID,
+		NodeName:     pendingNode.Name,
+	})
 	run, err := s.controllerTemporalClient.ExecuteWorkflow(ctx, workflowOpts, workflows.ProvisionNode, workflows.ProvisionNodeInput{
 		NodeID:                         pendingNode.ID,
 		RebootNodeWaitForUptimeTimeout: s.cfg.NodeRebootMaxTimeout,
@@ -75,17 +84,18 @@ func (s *Service) startProvisionNodeWorkflow(ctx context.Context, pendingNode db
 		// auto-join inline like workers, preserving the pre-controller behavior.
 		SkipJoin: pendingNode.ControlPlane && s.cfg.UseControlPlaneControllerForControlPlane(),
 	})
+	otelx.EndWorkflowSpan(span, err)
 	if err != nil {
 		return fmt.Errorf("starting ProvisionNode workflow for node %s: %w", pendingNode.ID, err)
 	}
 
 	s.logger.InfoContext(ctx, "Started (or already running) ProvisionNode workflow",
-		"clusterID", pendingNode.ClusterID,
-		"nodePoolID", pendingNode.NodePoolID,
-		"nodeID", pendingNode.ID,
-		"nodeName", pendingNode.Name,
-		"workflowID", run.GetID(),
-		"runID", run.GetRunID(),
+		"cluster_id", pendingNode.ClusterID,
+		"node_pool_id", pendingNode.NodePoolID,
+		"node_id", pendingNode.ID,
+		"node_name", pendingNode.Name,
+		"workflow_id", workflowID,
+		"run_id", run.GetRunID(),
 	)
 	return nil
 }

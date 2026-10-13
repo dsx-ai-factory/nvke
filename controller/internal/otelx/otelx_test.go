@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 )
@@ -22,13 +23,24 @@ func TestInitDisabledIsNoop(t *testing.T) {
 	require.NoError(t, shutdown(context.Background()))
 }
 
-// Not parallel: the endpoint can come from the process environment.
-func TestInitEnabledWithoutEndpointIsNoop(t *testing.T) {
+// Not parallel: the endpoint can come from the process environment and Init
+// replaces the global tracer provider.
+func TestInitEnabledWithoutEndpointCreatesLocalSpans(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+	previousProvider := otel.GetTracerProvider()
+	previousPropagator := otel.GetTextMapPropagator()
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previousProvider)
+		otel.SetTextMapPropagator(previousPropagator)
+	})
 
 	shutdown, err := Init(context.Background(), config.TracingConfig{Enabled: true, Endpoint: ""}, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
+	spanCtx, span := otel.Tracer("test").Start(context.Background(), "local")
+	require.True(t, span.SpanContext().IsValid())
+	require.Contains(t, Capture(spanCtx)["traceparent"], span.SpanContext().TraceID().String())
+	span.End()
 	require.NoError(t, shutdown(context.Background()))
 }
 

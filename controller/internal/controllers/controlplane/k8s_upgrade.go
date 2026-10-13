@@ -18,6 +18,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 )
 
@@ -517,17 +518,24 @@ func (r *reconciler) startUpdateKubeadmConfigMapWorkflow(ctx context.Context, cl
 		WorkflowRunTimeout: 35 * time.Minute,
 	}
 
+	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowStart, otelx.WorkflowAttributes{
+		WorkflowType: workflows.UpdateKubeadmConfigMapWorkflowType,
+		WorkflowID:   workflowID,
+		ClusterID:    cluster.ID,
+		ClusterName:  cluster.Name,
+	})
 	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, options, workflows.UpdateKubeadmConfigMap, workflows.UpdateKubeadmConfigMapInput{
 		ClusterID:         cluster.ID,
 		KubernetesVersion: cluster.KubernetesVersion,
 	})
+	otelx.EndWorkflowSpan(span, err)
 	if err != nil {
 		return fmt.Errorf("failed to start UpdateKubeadmConfigMap workflow: %w", err)
 	}
 
-	logger.Info("Started UpdateKubeadmConfigMap workflow - will check status on next reconcile",
-		"workflowID", run.GetID(),
-		"runID", run.GetRunID())
+	logger.InfoContext(ctx, "Started UpdateKubeadmConfigMap workflow - will check status on next reconcile",
+		"workflow_id", workflowID,
+		"run_id", run.GetRunID())
 
 	return nil
 }
@@ -548,18 +556,25 @@ func (r *reconciler) startKubeadmAddOnUpgradeWorkflow(ctx context.Context, clust
 		WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 	}
 
+	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowStart, otelx.WorkflowAttributes{
+		WorkflowType: workflows.UpgradeControlPlaneAddonsWorkflowType,
+		WorkflowID:   workflowID,
+		ClusterID:    cluster.ID,
+		ClusterName:  cluster.Name,
+	})
 	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, options, workflows.UpgradeControlPlaneAddons, workflows.UpgradeControlPlaneAddonsInput{
 		ClusterID:         cluster.ID,
 		KubernetesVersion: cluster.KubernetesVersion,
 	})
+	otelx.EndWorkflowSpan(span, err)
 	if err != nil {
 		return fmt.Errorf("failed to start kubeadm upgrade workflow: %w", err)
 	}
 
-	logger.Info("Started kubeadm upgrade workflow - will check status on next reconcile",
-		"workflowID", run.GetID(),
-		"runID", run.GetRunID(),
-		"kubernetesVersion", cluster.KubernetesVersion)
+	logger.InfoContext(ctx, "Started kubeadm upgrade workflow - will check status on next reconcile",
+		"workflow_id", workflowID,
+		"run_id", run.GetRunID(),
+		"kubernetes_version", cluster.KubernetesVersion)
 
 	// Workflow started - not yet completed
 	return nil

@@ -15,6 +15,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 )
 
@@ -153,19 +154,30 @@ func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.
 			MaximumAttempts:    controlPlaneJoinMaxAttempts,
 		},
 	}
+	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowStart, otelx.WorkflowAttributes{
+		WorkflowType: workflows.JoinNodeWorkflowType,
+		WorkflowID:   workflowID,
+		ClusterID:    cluster.ID,
+		ClusterName:  cluster.Name,
+		NodePoolID:   node.NodePoolID,
+		NodeID:       node.ID,
+		NodeName:     node.Name,
+	})
 	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, options, workflows.JoinNode, workflows.JoinNodeInput{
 		NodeID: node.ID,
 	})
+	otelx.EndWorkflowSpan(span, err)
 	if err != nil {
 		return false, fmt.Errorf("starting JoinNode workflow for node %s: %w", node.Name, err)
 	}
 
-	r.logger.Info("Started control-plane JoinNode workflow",
-		"clusterID", cluster.ID,
-		"nodeID", node.ID,
-		"nodeName", node.Name,
-		"workflowID", run.GetID(),
-		"runID", run.GetRunID(),
+	r.logger.InfoContext(ctx, "Started control-plane JoinNode workflow",
+		"cluster_id", cluster.ID,
+		"node_pool_id", node.NodePoolID,
+		"node_id", node.ID,
+		"node_name", node.Name,
+		"workflow_id", workflowID,
+		"run_id", run.GetRunID(),
 	)
 	return true, nil
 }

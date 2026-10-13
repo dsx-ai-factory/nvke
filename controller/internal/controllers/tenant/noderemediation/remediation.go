@@ -16,6 +16,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 )
 
@@ -82,17 +83,26 @@ func (r *nodeRemediator) startTeardownNodeWorkflow(ctx context.Context, node db.
 		MachineHealthIssue:    machineHealthIssue,
 	}
 
+	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowStart, otelx.WorkflowAttributes{
+		WorkflowType: constants.TeardownNodeWorkflowType,
+		WorkflowID:   workflowID,
+		ClusterID:    node.ClusterID,
+		NodePoolID:   node.NodePoolID,
+		NodeID:       node.ID,
+		NodeName:     node.Name,
+	})
 	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, options, workflows.TeardownNode, input)
+	otelx.EndWorkflowSpan(span, err)
 	if err != nil {
 		return fmt.Errorf("failed to execute teardown node workflow for node %s: %w", node.ID, err)
 	}
 
-	r.logger.Info("Started (or already running) teardown node workflow",
-		"workflowID", run.GetID(),
-		"runID", run.GetRunID(),
-		"nodeID", node.ID.String(),
-		"nodeName", node.Name,
-		"nvidiaLabels", nvidiaLabels(kubeNode.GetLabels()))
+	r.logger.InfoContext(ctx, "Started (or already running) teardown node workflow",
+		"workflow_id", workflowID,
+		"run_id", run.GetRunID(),
+		"node_id", node.ID.String(),
+		"node_name", node.Name,
+		"nvidia_labels", nvidiaLabels(kubeNode.GetLabels()))
 	return nil
 }
 
@@ -115,17 +125,26 @@ func (r *nodeRemediator) startNodeRebootWorkflow(ctx context.Context, node db.No
 		SoftRebootEnabled: r.cfg.NodeRebootSoftRebootEnabled,
 	}
 
+	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowStart, otelx.WorkflowAttributes{
+		WorkflowType: workflows.RebootNodeWorkflowType,
+		WorkflowID:   workflowID,
+		ClusterID:    node.ClusterID,
+		NodePoolID:   node.NodePoolID,
+		NodeID:       node.ID,
+		NodeName:     node.Name,
+	})
 	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, options, workflows.RebootNode, input)
+	otelx.EndWorkflowSpan(span, err)
 	if err != nil {
 		return fmt.Errorf("failed to execute reboot node workflow for node %s: %w", node.ID, err)
 	}
 
-	r.logger.Info("Started (or already running) reboot node workflow",
-		"workflowID", run.GetID(),
-		"runID", run.GetRunID(),
-		"nodeID", node.ID.String(),
-		"nodeName", node.Name,
-		"nvidiaLabels", nvidiaLabels(kubeNode.GetLabels()))
+	r.logger.InfoContext(ctx, "Started (or already running) reboot node workflow",
+		"workflow_id", workflowID,
+		"run_id", run.GetRunID(),
+		"node_id", node.ID.String(),
+		"node_name", node.Name,
+		"nvidia_labels", nvidiaLabels(kubeNode.GetLabels()))
 	return nil
 }
 

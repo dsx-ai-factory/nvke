@@ -15,12 +15,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 )
 
@@ -59,6 +63,15 @@ func TestUnit_ServiceScheduleCAPIInfraNodesStartsProvisionWorkflows(t *testing.T
 }
 
 func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previousProvider)
+		require.NoError(t, provider.Shutdown(context.Background()))
+	})
+
 	clusterID := uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")
 	nodePoolID := uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")
 	nodeID := uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
@@ -73,7 +86,7 @@ func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T
 	var logs bytes.Buffer
 	service := NewService(
 		config.Config{TemporalTaskQueue: "test-task-queue"},
-		slog.New(slog.NewJSONHandler(&logs, nil)),
+		slog.New(otelx.LogHandler{Handler: slog.NewJSONHandler(&logs, nil)}),
 		nil,
 		temporalClient,
 	)
@@ -90,12 +103,27 @@ func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T
 	var record map[string]any
 	require.NoError(t, json.Unmarshal(logs.Bytes(), &record))
 	require.Equal(t, "Started (or already running) ProvisionNode workflow", record["msg"])
-	require.Equal(t, clusterID.String(), record["clusterID"])
-	require.Equal(t, nodePoolID.String(), record["nodePoolID"])
-	require.Equal(t, nodeID.String(), record["nodeID"])
-	require.Equal(t, "test-node", record["nodeName"])
-	require.Equal(t, workflowID, record["workflowID"])
-	require.Equal(t, runID, record["runID"])
+	require.Equal(t, clusterID.String(), record["cluster_id"])
+	require.Equal(t, nodePoolID.String(), record["node_pool_id"])
+	require.Equal(t, nodeID.String(), record["node_id"])
+	require.Equal(t, "test-node", record["node_name"])
+	require.Equal(t, workflowID, record["workflow_id"])
+	require.Equal(t, runID, record["run_id"])
+	require.NotEmpty(t, record["trace_id"])
+	require.NotEmpty(t, record["span_id"])
+
+	spans := recorder.Ended()
+	require.Len(t, spans, 1)
+	require.Equal(t, string(otelx.WorkflowStart), spans[0].Name())
+	attrs := make(map[string]string)
+	for _, attr := range spans[0].Attributes() {
+		attrs[string(attr.Key)] = attr.Value.AsString()
+	}
+	require.Equal(t, "ProvisionNode", attrs["nvke.workflow.type"])
+	require.Equal(t, workflowID, attrs["nvke.workflow.id"])
+	require.Equal(t, clusterID.String(), attrs["nvke.cluster.id"])
+	require.Equal(t, nodePoolID.String(), attrs["nvke.node_pool.id"])
+	require.Equal(t, nodeID.String(), attrs["nvke.node.id"])
 }
 
 func TestUnit_ServiceScheduleCAPIInfraNodesReportsNodeWhenWorkflowStartFails(t *testing.T) {

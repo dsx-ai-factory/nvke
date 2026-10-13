@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	ApplyK8sNodeConditionWorkflowName = "ApplyK8sNodeCondition"
+	ApplyK8sNodeConditionWorkflowType = "ApplyK8sNodeCondition"
 )
 
 type ApplyK8sNodeConditionInput struct {

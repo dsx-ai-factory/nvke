@@ -13,6 +13,10 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 )
 
+const (
+	JoinNodeWorkflowType = "JoinNode"
+)
+
 // JoinNodeInput starts kubeadm join and post-join for a host that is already ReadyToJoin.
 type JoinNodeInput struct {
 	NodeID uuid.UUID

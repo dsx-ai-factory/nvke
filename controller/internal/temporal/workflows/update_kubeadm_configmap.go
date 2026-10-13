@@ -14,6 +14,11 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
+const (
+	//nolint:gosec // Temporal workflow type name, not a credential.
+	UpdateKubeadmConfigMapWorkflowType = "UpdateKubeadmConfigMap"
+)
+
 type UpdateKubeadmConfigMapInput struct {
 	ClusterID         uuid.UUID `json:"clusterID"`
 	KubernetesVersion string    `json:"kubernetesVersion"`

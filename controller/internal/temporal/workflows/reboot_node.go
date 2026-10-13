@@ -20,6 +20,10 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
+const (
+	RebootNodeWorkflowType = "RebootNode"
+)
+
 type RebootNodeInput struct {
 	NodeID           uuid.UUID
 	Reason           string

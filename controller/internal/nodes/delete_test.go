@@ -10,6 +10,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -19,6 +22,14 @@ import (
 )
 
 func TestDelete(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	provider := sdktrace.NewTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previousProvider)
+		require.NoError(t, provider.Shutdown(context.Background()))
+	})
+
 	nodeID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
 	nodeSetID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")
@@ -119,7 +130,9 @@ func TestDelete(t *testing.T) {
 				})).Return(node, nil)
 				mockTx.On(
 					"CreateWorkflowOutboxEntry",
-					mock.Anything,
+					mock.MatchedBy(func(ctx context.Context) bool {
+						return trace.SpanContextFromContext(ctx).IsValid()
+					}),
 					constants.TeardownNodeWorkflowType,
 					constants.TeardownNodeWorkflowPrefix+tt.nodeID.String(),
 					mock.MatchedBy(func(input workflows.TeardownNodeInput) bool {

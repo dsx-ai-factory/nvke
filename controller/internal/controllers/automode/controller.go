@@ -22,6 +22,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	dbfilters "github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 )
 
@@ -155,7 +156,16 @@ func (c *Controller) reconcileAutoMode(ctx context.Context, tx db.Tx, nodePool d
 		}
 
 		workflowID := constants.ApplyK8sNodeConditionWorkflowPrefix + lockedNode.ID.String()
-		_, err = tx.CreateWorkflowOutboxEntry(ctx, workflows.ApplyK8sNodeConditionWorkflowName, workflowID, workflows.ApplyK8sNodeConditionInput{
+		workflowCtx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowEnqueue, otelx.WorkflowAttributes{
+			WorkflowType: workflows.ApplyK8sNodeConditionWorkflowType,
+			WorkflowID:   workflowID,
+			ClusterID:    lockedNode.ClusterID,
+			NodePoolID:   lockedNode.NodePoolID,
+			NodePoolName: nodePool.Name,
+			NodeID:       lockedNode.ID,
+			NodeName:     lockedNode.Name,
+		})
+		_, err = tx.CreateWorkflowOutboxEntry(workflowCtx, workflows.ApplyK8sNodeConditionWorkflowType, workflowID, workflows.ApplyK8sNodeConditionInput{
 			NodeID: lockedNode.ID,
 			NodeCondition: corev1.NodeCondition{
 				Type:               constants.NodeConditionTypeNeedsRecycle,
@@ -165,6 +175,7 @@ func (c *Controller) reconcileAutoMode(ctx context.Context, tx db.Tx, nodePool d
 				LastTransitionTime: metav1.Now(),
 			},
 		})
+		otelx.EndWorkflowSpan(span, err)
 		if err != nil {
 			return fmt.Errorf("failed to create workflow outbox entry: %s: %w", lockedNode.ID, err)
 		}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 )
 
 // DeleteOptions are the options for deleting a node.
@@ -194,7 +195,17 @@ func DeleteWithTx(ctx context.Context, tx db.Tx, nodeID uuid.UUID, opts ...Delet
 	input := options.toWorkflowInput()
 	input.NodeID = dbNode.ID
 
-	if _, err = tx.CreateWorkflowOutboxEntry(ctx, constants.TeardownNodeWorkflowType, workflowID, input); err != nil {
+	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowEnqueue, otelx.WorkflowAttributes{
+		WorkflowType: constants.TeardownNodeWorkflowType,
+		WorkflowID:   workflowID,
+		ClusterID:    dbNode.ClusterID,
+		NodePoolID:   dbNode.NodePoolID,
+		NodeID:       dbNode.ID,
+		NodeName:     dbNode.Name,
+	})
+	_, err = tx.CreateWorkflowOutboxEntry(ctx, constants.TeardownNodeWorkflowType, workflowID, input)
+	otelx.EndWorkflowSpan(span, err)
+	if err != nil {
 		return fmt.Errorf("failed to create workflow outbox entry: %w", err)
 	}
 

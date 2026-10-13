@@ -22,6 +22,8 @@ import (
 type HookType string
 
 const (
+	ProvisionNodeWorkflowType = "ProvisionNode"
+
 	BeforeJoinNode   HookType = "before-join"
 	AfterJoinNode    HookType = "after-join"
 	BeforeRemoveNode HookType = "before-remove"

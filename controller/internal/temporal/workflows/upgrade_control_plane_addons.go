@@ -14,6 +14,10 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
+const (
+	UpgradeControlPlaneAddonsWorkflowType = "UpgradeControlPlaneAddons"
+)
+
 type UpgradeControlPlaneAddonsInput struct {
 	ClusterID         uuid.UUID `json:"clusterID"`
 	KubernetesVersion string    `json:"kubernetesVersion"`

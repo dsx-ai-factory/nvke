@@ -30,19 +30,13 @@ type ShutdownFunc func(context.Context) error
 // Init configures the global TracerProvider when tracing is enabled. Spans go
 // to cfg.Endpoint, or, when that is empty, to the OTLP endpoint the environment
 // sets, which is how the OpenTelemetry Operator's inject-sdk supplies a
-// localhost sidecar. With neither, Init is a no-op so local runs do not dial a
-// collector.
+// localhost sidecar. With neither, Init still installs a provider so logs can
+// carry trace and span IDs, but it does not configure an exporter.
 func Init(ctx context.Context, cfg config.TracingConfig, logger *slog.Logger) (ShutdownFunc, error) {
 	noop := ShutdownFunc(func(context.Context) error { return nil })
 
 	if !cfg.Enabled {
 		logger.Info("OpenTelemetry tracing disabled")
-		return noop, nil
-	}
-
-	target, ok := resolveOTLPTarget(cfg, os.Getenv)
-	if !ok {
-		logger.Info("OpenTelemetry tracing enabled, but neither tracing.endpoint nor the environment sets an OTLP endpoint; skipping exporter setup")
 		return noop, nil
 	}
 
@@ -64,32 +58,40 @@ func Init(ctx context.Context, cfg config.TracingConfig, logger *slog.Logger) (S
 		return noop, fmt.Errorf("create OpenTelemetry resource: %w", err)
 	}
 
-	// The SDK also reads OTEL_EXPORTER_OTLP_* itself, and an endpoint's scheme
-	// sets its transport security. Passing the resolved endpoint as a URL sets
-	// both, so an injected http:// endpoint cannot downgrade a secure
-	// tracing.endpoint, and an endpoint the SDK cannot parse as a URL, such as
-	// a bare IP:port, still reaches the exporter.
-	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithEndpointURL(target.url()))
-	if err != nil {
-		return noop, fmt.Errorf("create OTLP gRPC trace exporter: %w", err)
+	providerOptions := []sdktrace.TracerProviderOption{sdktrace.WithResource(res)}
+	target, export := resolveOTLPTarget(cfg, os.Getenv)
+	if export {
+		// The SDK also reads OTEL_EXPORTER_OTLP_* itself, and an endpoint's scheme
+		// sets its transport security. Passing the resolved endpoint as a URL sets
+		// both, so an injected http:// endpoint cannot downgrade a secure
+		// tracing.endpoint, and an endpoint the SDK cannot parse as a URL, such as
+		// a bare IP:port, still reaches the exporter.
+		exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithEndpointURL(target.url()))
+		if err != nil {
+			return noop, fmt.Errorf("create OTLP gRPC trace exporter: %w", err)
+		}
+		providerOptions = append(providerOptions, sdktrace.WithBatcher(exporter))
 	}
 
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(res),
-	)
+	tp := sdktrace.NewTracerProvider(providerOptions...)
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	))
 
-	logger.Info("OpenTelemetry tracing initialized",
-		"endpoint", target.endpoint,
-		"endpointFromEnvironment", target.fromEnv,
-		"insecure", target.insecure,
-		"serviceName", serviceName,
-	)
+	if export {
+		logger.Info("OpenTelemetry tracing initialized",
+			"endpoint", target.endpoint,
+			"endpointFromEnvironment", target.fromEnv,
+			"insecure", target.insecure,
+			"serviceName", serviceName,
+		)
+	} else {
+		logger.Info("OpenTelemetry tracing initialized without an exporter",
+			"serviceName", serviceName,
+		)
+	}
 
 	return tp.Shutdown, nil
 }
