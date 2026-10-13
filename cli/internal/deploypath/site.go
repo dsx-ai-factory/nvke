@@ -116,7 +116,7 @@ func (r *renderer) site() {
 	// fails later.
 	trustDomain, defaulted := spec.TrustDomain()
 	if defaulted {
-		fmt.Fprintf(r.opts.Log, "warning: spire.trustDomain is not set; using %s, the default of a bootstrap with the default cluster name. Set it if nvkectl bootstrap site printed another.\n", trustDomain)
+		fmt.Fprintf(r.opts.Log, "warning: spire.trustDomain is not set; using %s, the domain a bootstrap with the default cluster name used. A bootstrap run under another cluster name printed a different one; the install has to use that.\n", trustDomain)
 	}
 	checksum := controllerdeploy.SpireTPMDirectChecksum(cs.Arch)
 	if checksum == "" {

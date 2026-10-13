@@ -72,9 +72,9 @@ cluster:
 # certificate already exists as a file because it has to be delivered to each
 # node. Both or neither — omitting them leaves SPIRE self-signed.
 # spire:
-#   # SPIFFE trust domain. The bootstrap and the controller stack install
-#   # both default to nvkectl-bootstrap.nke.local. Set it when the bootstrap
-#   # printed another.
+#   # SPIFFE trust domain, shared by the bootstrap and the controller stack
+#   # install. Set it once, before the bootstrap, or leave it unset: both
+#   # then use nvkectl-bootstrap.nke.local.
 #   trustDomain: "site.example.com"
 #   caCertFile: "/etc/nke/spire-ca.crt"
 #   caKeyFile: "/etc/nke/spire-ca.key"
