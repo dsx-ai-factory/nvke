@@ -330,6 +330,10 @@ resources: {}
 # -- Comma-separated API provider blocks accepted by mutating cluster and node-pool requests. The chart defaults the deployed controller to Nico only; set to "nico,infra" only for deployments that should accept generic CAPI-backed provider payloads.
 supportedInfraProviders: "nico"
 
+nodeMetadata:
+  # -- Label keys that should be allowed under kubernetes.io and k8s.io (and their subdomains). By default, deployed controller API rejects pool labels under these domains.
+  allowlistedLabelKeys: []
+
 # -- Additional environment variables to inject into the controller container. A
 # variable nke-controller-config carries is refused; set its chart value instead.
 env: []

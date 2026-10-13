@@ -104,6 +104,7 @@ var configMapOnly = []string{
 	// New clusters default to OVN-Kubernetes. This is the switch internal
 	// fleets set when they still create Calico clusters.
 	"allowLegacyCalicoClusterCreation",
+	"nodeMetadataAllowlistedLabelKeys",
 }
 
 // chartDeployment is the template whose env block decides what the chart sets.
@@ -174,7 +175,7 @@ func TestEveryMigratedKeyHasOneConfigField(t *testing.T) {
 		if f.fileKey == "" {
 			continue
 		}
-		if !slices.Contains(slices.Collect(mapValues(migrated)), f.fileKey) {
+		if !slices.Contains(slices.Collect(mapValues(migrated)), f.fileKey) && !slices.Contains(configMapOnly, f.fileKey) {
 			t.Errorf("config.Config.%s takes %s from the file, which %s does not list", f.name, f.fileKey, migratedEnvFile)
 		}
 		if other, taken := fieldFor[f.fileKey]; taken {

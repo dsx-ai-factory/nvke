@@ -54,6 +54,7 @@ type nodePoolService struct {
 	// control-plane node pools are rejected on create/update because the control
 	// plane is provisioned from the cluster-level controlPlaneConfig instead.
 	useControlPlaneController bool
+	allowlistedLabelKeys      []string
 }
 
 func NewNodePoolService(
@@ -234,7 +235,7 @@ func (s *nodePoolService) validateCreateNodePoolRequest(cluster db.Cluster, req 
 	if err := naming.ValidateNodeNamePrefix(cluster.Name, req.NodeNamePrefix); err != nil {
 		return err
 	}
-	if err := validateNodeLabels(req.NodeLabels); err != nil {
+	if err := validateNodeLabels(req.NodeLabels, s.allowlistedLabelKeys); err != nil {
 		return newBadRequestErrorf("%s", err)
 	}
 	if err := validateNodeTaints(req.NodeTaints, req.ControlPlane); err != nil {

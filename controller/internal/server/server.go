@@ -240,6 +240,7 @@ func NewServerImpl(
 		cfg.SupportedInfraProviders,
 		cfg.UseControlPlaneControllerForControlPlane(),
 	)
+	nodePoolService.allowlistedLabelKeys = cfg.NodeMetadataAllowlistedLabelKeys
 
 	clusterService := NewClusterService(
 		logger,
@@ -252,6 +253,7 @@ func NewServerImpl(
 		cfg.UseControlPlaneControllerForControlPlane(),
 		cfg.NodeAgent.UpdateMethod,
 	)
+	clusterService.allowlistedLabelKeys = cfg.NodeMetadataAllowlistedLabelKeys
 	clusterService.fleetOIDC = o.fleetOIDC
 
 	return &serverImpl{

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
 
@@ -948,6 +949,94 @@ func TestValidateSupportedInfraProviders(t *testing.T) {
 			}
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestValidateNodeMetadataAllowlistedLabelKeys(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		line    string // appended after minimalConfig's supportedInfraProviders line
+		want    []string
+		wantErr string
+	}{
+		{name: "omitted allows none"},
+		{name: "empty list allows none", line: "nodeMetadataAllowlistedLabelKeys: []\n", want: []string{}},
+		{
+			name: "accepts k8s.io and a kubernetes.io subdomain",
+			line: "nodeMetadataAllowlistedLabelKeys: [k8s.io/custom, node-role.kubernetes.io/worker]\n",
+			want: []string{"k8s.io/custom", "node-role.kubernetes.io/worker"},
+		},
+		{
+			name: "accepts a key outside the reserved domains",
+			line: "nodeMetadataAllowlistedLabelKeys: [nvidia.com/gpu, nodegroup]\n",
+			want: []string{"nvidia.com/gpu", "nodegroup"},
+		},
+		{
+			name: "accepts a lookalike internal domain",
+			line: "nodeMetadataAllowlistedLabelKeys: [mynke.io/rack]\n",
+			want: []string{"mynke.io/rack"},
+		},
+		{
+			name:    "rejects an empty key",
+			line:    `nodeMetadataAllowlistedLabelKeys: [node.kubernetes.io/custom, ""]` + "\n",
+			wantErr: "nodeMetadataAllowlistedLabelKeys: [1] must not be empty",
+		},
+		{
+			name:    "rejects a padded key",
+			line:    `nodeMetadataAllowlistedLabelKeys: [" node.kubernetes.io/custom"]` + "\n",
+			wantErr: `[0] " node.kubernetes.io/custom" has leading or trailing whitespace`,
+		},
+		{
+			name:    "rejects an invalid key",
+			line:    `nodeMetadataAllowlistedLabelKeys: ["bad key"]` + "\n",
+			wantErr: `[0] "bad key" is not a valid label key`,
+		},
+		{
+			name:    "rejects the control-plane role",
+			line:    "nodeMetadataAllowlistedLabelKeys: [node-role.kubernetes.io/control-plane]\n",
+			wantErr: `[0] "node-role.kubernetes.io/control-plane" is managed by core bootstrap components and cannot be allowlisted`,
+		},
+		{
+			name:    "rejects an nke.nvidia.com key",
+			line:    "nodeMetadataAllowlistedLabelKeys: [nke.nvidia.com/terminate]\n",
+			wantErr: `[0] "nke.nvidia.com/terminate" is under reserved domain "nke.nvidia.com" and cannot be allowlisted`,
+		},
+		{
+			name:    "rejects an nke.io key",
+			line:    "nodeMetadataAllowlistedLabelKeys: [nke.io/k8s-api-encryption-configured]\n",
+			wantErr: `[0] "nke.io/k8s-api-encryption-configured" is under reserved domain "nke.io" and cannot be allowlisted`,
+		},
+		{
+			name:    "rejects an internal subdomain key",
+			line:    "nodeMetadataAllowlistedLabelKeys: [agent.nvke.io/state]\n",
+			wantErr: `[0] "agent.nvke.io/state" is under reserved domain "nvke.io" and cannot be allowlisted`,
+		},
+		{
+			name:    "rejects a duplicate",
+			line:    "nodeMetadataAllowlistedLabelKeys: [node.kubernetes.io/custom, node.kubernetes.io/custom]\n",
+			wantErr: `[1] "node.kubernetes.io/custom" duplicates [0]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			yaml := strings.Replace(minimalConfig, "supportedInfraProviders: [nico]\n", "supportedInfraProviders: [nico]\n"+tt.line, 1)
+			file, err := controllerconfig.Load(writeConfig(t, yaml))
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+
+			var cfg config.Config
+			file.ApplyTo(&cfg)
+			assert.Equal(t, tt.want, cfg.NodeMetadataAllowlistedLabelKeys)
 		})
 	}
 }

@@ -21,11 +21,15 @@ func TestValidateNodeLabels(t *testing.T) {
 	}{
 		{name: "empty"},
 		{name: "bare key", labels: map[string]string{"nodegroup": "workers"}},
-		{name: "empty value", labels: map[string]string{"node-role.kubernetes.io/worker": ""}},
+		{name: "empty value", labels: map[string]string{"nodegroup": ""}},
 		{name: "vendor key", labels: map[string]string{"nvidia.com/gpu.product": "B300"}},
 		{name: "lookalike nke domain", labels: map[string]string{"mynke.nvidia.com/rack": "a"}},
 		{name: "lookalike kubernetes domain", labels: map[string]string{"notkubernetes.io/hostname": "n1"}},
-		{name: "allowlisted label key from reserved domain", labels: map[string]string{"node.kubernetes.io/instance-type": "h100"}},
+		{
+			name:    "kubernetes key without an allowlist entry",
+			labels:  map[string]string{"node.kubernetes.io/instance-type": "h100"},
+			wantErr: `nodeLabels: key "node.kubernetes.io/instance-type" is under reserved domain "kubernetes.io"; labels in this domain cannot be set`,
+		},
 		{
 			name:    "invalid key",
 			labels:  map[string]string{"bad key": "x"},
@@ -39,44 +43,44 @@ func TestValidateNodeLabels(t *testing.T) {
 		{
 			name:    "nke domain",
 			labels:  map[string]string{"nke.nvidia.com/managed": "true"},
-			wantErr: `nodeLabels: key "nke.nvidia.com/managed" is reserved`,
+			wantErr: `nodeLabels: key "nke.nvidia.com/managed" is under reserved domain "nke.nvidia.com"; labels in this domain cannot be set`,
 		},
 		{
 			name:    "nke subdomain",
 			labels:  map[string]string{"site.nke.io/rack": "a"},
-			wantErr: `nodeLabels: key "site.nke.io/rack" is reserved`,
+			wantErr: `nodeLabels: key "site.nke.io/rack" is under reserved domain "nke.io"; labels in this domain cannot be set`,
 		},
 		{
 			name:    "control-plane role",
 			labels:  map[string]string{"node-role.kubernetes.io/control-plane": ""},
-			wantErr: `nodeLabels: key "node-role.kubernetes.io/control-plane" is forbidden`,
+			wantErr: `nodeLabels: key "node-role.kubernetes.io/control-plane" is managed by core bootstrap components and cannot be set`,
 		},
 		{
 			name:    "unlisted node role",
 			labels:  map[string]string{"node-role.kubernetes.io/master": ""},
-			wantErr: `nodeLabels: key "node-role.kubernetes.io/master" is reserved`,
+			wantErr: `nodeLabels: key "node-role.kubernetes.io/master" is under reserved domain "kubernetes.io"; labels in this domain cannot be set`,
 		},
 		{
 			name:    "exact kubernetes.io",
 			labels:  map[string]string{"kubernetes.io/hostname": "n1"},
-			wantErr: `nodeLabels: key "kubernetes.io/hostname" is reserved`,
+			wantErr: `nodeLabels: key "kubernetes.io/hostname" is under reserved domain "kubernetes.io"; labels in this domain cannot be set`,
 		},
 		{
 			name:    "exact k8s.io",
 			labels:  map[string]string{"k8s.io/foo": "bar"},
-			wantErr: `nodeLabels: key "k8s.io/foo" is reserved`,
+			wantErr: `nodeLabels: key "k8s.io/foo" is under reserved domain "k8s.io"; labels in this domain cannot be set`,
 		},
 		{
 			name:    "kubernetes.io subdomain",
 			labels:  map[string]string{"topology.kubernetes.io/zone": "az1"},
-			wantErr: `nodeLabels: key "topology.kubernetes.io/zone" is reserved`,
+			wantErr: `nodeLabels: key "topology.kubernetes.io/zone" is under reserved domain "kubernetes.io"; labels in this domain cannot be set`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err := validateNodeLabels(tt.labels)
+			err := validateNodeLabels(tt.labels, nil)
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 				return
@@ -84,6 +88,31 @@ func TestValidateNodeLabels(t *testing.T) {
 			require.ErrorContains(t, err, tt.wantErr)
 		})
 	}
+}
+
+func TestValidateNodeLabels_ConfiguredAllowlist(t *testing.T) {
+	t.Parallel()
+
+	allowlistedLabelKeys := []string{"node.kubernetes.io/custom", "k8s.io/custom", "nke.nvidia.com/terminate", "nke.io/k8s-api-encryption-configured"}
+
+	require.NoError(t, validateNodeLabels(map[string]string{"node.kubernetes.io/custom": ""}, allowlistedLabelKeys))
+	require.NoError(t, validateNodeLabels(map[string]string{"k8s.io/custom": ""}, allowlistedLabelKeys))
+	require.ErrorContains(t,
+		validateNodeLabels(map[string]string{"node.kubernetes.io/instance-type": "h100"}, allowlistedLabelKeys),
+		`nodeLabels: key "node.kubernetes.io/instance-type" is under reserved domain "kubernetes.io"; labels in this domain cannot be set`,
+	)
+	require.ErrorContains(t,
+		validateNodeLabels(map[string]string{controlPlaneRoleKey: ""}, allowlistedLabelKeys),
+		`nodeLabels: key "node-role.kubernetes.io/control-plane" is managed by core bootstrap components and cannot be set`,
+	)
+	require.ErrorContains(t,
+		validateNodeLabels(map[string]string{"nke.nvidia.com/terminate": "true"}, allowlistedLabelKeys),
+		`nodeLabels: key "nke.nvidia.com/terminate" is under reserved domain "nke.nvidia.com"; labels in this domain cannot be set`,
+	)
+	require.ErrorContains(t,
+		validateNodeLabels(map[string]string{"nke.io/k8s-api-encryption-configured": "true"}, allowlistedLabelKeys),
+		`nodeLabels: key "nke.io/k8s-api-encryption-configured" is under reserved domain "nke.io"; labels in this domain cannot be set`,
+	)
 }
 
 func TestValidateNodeTaints(t *testing.T) {
@@ -113,21 +142,29 @@ func TestValidateNodeTaints(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid key",
+			taints: []api.NodeTaint{{
+				Key:    "bad key",
+				Effect: api.NodeTaintEffectNoSchedule,
+			}},
+			wantErr: `nodeTaints: key "bad key" is invalid`,
+		},
+		{
 			name: "control-plane role",
 			taints: []api.NodeTaint{{
 				Key:    "node-role.kubernetes.io/control-plane",
 				Effect: api.NodeTaintEffectNoSchedule,
 			}},
-			wantErr: `nodeTaints: key "node-role.kubernetes.io/control-plane" is forbidden`,
+			wantErr: `nodeTaints: key "node-role.kubernetes.io/control-plane" is managed by core bootstrap components and cannot be set`,
 		},
 		{
-			name: "allowlisted label keys do not allow taints",
+			name: "kubernetes.io subdomain",
 			taints: []api.NodeTaint{{
 				Key:    "node.kubernetes.io/instance-type",
 				Value:  "h100",
 				Effect: api.NodeTaintEffectNoSchedule,
 			}},
-			wantErr: `nodeTaints: key "node.kubernetes.io/instance-type" is reserved`,
+			wantErr: `nodeTaints: key "node.kubernetes.io/instance-type" is under reserved domain "kubernetes.io"; taints in this domain cannot be set`,
 		},
 		{
 			name: "nke domain",
@@ -135,7 +172,7 @@ func TestValidateNodeTaints(t *testing.T) {
 				Key:    "nke.nvidia.com/managed",
 				Effect: api.NodeTaintEffectNoSchedule,
 			}},
-			wantErr: `nodeTaints: key "nke.nvidia.com/managed" is reserved`,
+			wantErr: `nodeTaints: key "nke.nvidia.com/managed" is under reserved domain "nke.nvidia.com"; taints in this domain cannot be set`,
 		},
 		{
 			name: "k8s.io",
@@ -143,7 +180,7 @@ func TestValidateNodeTaints(t *testing.T) {
 				Key:    "k8s.io/foo",
 				Effect: api.NodeTaintEffectNoSchedule,
 			}},
-			wantErr: `nodeTaints: key "k8s.io/foo" is reserved`,
+			wantErr: `nodeTaints: key "k8s.io/foo" is under reserved domain "k8s.io"; taints in this domain cannot be set`,
 		},
 		{
 			name:         "control-plane pool",

@@ -189,6 +189,11 @@ type Config struct {
 	// deployment advertises for cluster specs.
 	SupportedInfraProviders []string `controllerconfig:"supportedInfraProviders"`
 
+	// NodeMetadataAllowlistedLabelKeys is the optional allowlist of label keys a caller
+	// may set under the reserved Kubernetes domains (kubernetes.io, k8s.io). Empty, no
+	// keys in those domains are allowed. It does not apply to taints.
+	NodeMetadataAllowlistedLabelKeys []string `controllerconfig:"nodeMetadataAllowlistedLabelKeys"`
+
 	// RunbooksDir is the optional directory containing config-profile hook scripts.
 	// When omitted, hook execution looks under ProfilesDir/runbooks before falling
 	// back to controller-owned embedded runbooks.

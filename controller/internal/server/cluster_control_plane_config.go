@@ -144,6 +144,7 @@ func validateCreateClusterLevelControlPlane(
 	req *api.CreateClusterRequest,
 	nodePools []api.NodePoolCreateConfig,
 	providerType db.ProviderType,
+	allowlistedLabelKeys []string,
 ) error {
 	for _, np := range nodePools {
 		if np.ControlPlane {
@@ -158,7 +159,7 @@ func validateCreateClusterLevelControlPlane(
 	if ccpc.DesiredCount < 1 {
 		return fmt.Errorf("controlPlaneConfig.desiredCount must be at least 1")
 	}
-	if err := validateNodeLabels(ccpc.NodeLabels); err != nil {
+	if err := validateNodeLabels(ccpc.NodeLabels, allowlistedLabelKeys); err != nil {
 		return fmt.Errorf("controlPlaneConfig: %w", err)
 	}
 	if ccpc.MaxSurge != nil && *ccpc.MaxSurge > 1 {

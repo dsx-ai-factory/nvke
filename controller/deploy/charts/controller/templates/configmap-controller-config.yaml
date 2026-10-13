@@ -40,6 +40,14 @@ data:
       {{- range splitList "," (.Values.supportedInfraProviders | default "nico") }}
       - {{ trim . | quote }}
       {{- end }}
+    {{- with .Values.nodeMetadata.allowlistedLabelKeys }}
+    nodeMetadataAllowlistedLabelKeys:
+      {{- range . }}
+      - {{ trim . | quote }}
+      {{- end }}
+    {{- else }}
+    nodeMetadataAllowlistedLabelKeys: []
+    {{- end }}
     tracing:
       enabled: {{ if $tracing.enabled }}true{{ else }}false{{ end }}
       endpoint: {{ if $traceToEndpoint }}{{ $tracing.endpoint | quote }}{{ else }}""{{ end }}

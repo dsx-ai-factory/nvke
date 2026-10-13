@@ -2260,7 +2260,7 @@ func TestValidateCreateClusterRequestFields_RejectsReservedNodeLabel(t *testing.
 
 	err := svc.ValidateCreateClusterRequestFields(req)
 
-	require.EqualError(t, err, `invalid node pool "cp": nodeLabels: key "kubernetes.io/hostname" is reserved`)
+	require.EqualError(t, err, `invalid node pool "cp": nodeLabels: key "kubernetes.io/hostname" is under reserved domain "kubernetes.io"; labels in this domain cannot be set`)
 }
 
 func TestValidateCreateClusterRequestFields_RequiresExactlyOneProvider(t *testing.T) {

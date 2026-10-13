@@ -101,6 +101,10 @@ render profiles-image \
 
 render infra-providers --set-string 'supportedInfraProviders=nico\, infra'
 
+# Padded on purpose: the template must trim these.
+render node-label-allowlist \
+  --set 'nodeMetadata.allowlistedLabelKeys={ node.kubernetes.io/custom ,k8s.io/custom}'
+
 render oidc \
   --set nvkeOIDCAuth.enabled=true \
   --set spiffe.enabled=true \

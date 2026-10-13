@@ -95,6 +95,7 @@ type clusterService struct {
 	// supplying controlPlaneConfig.desiredCount/spec is rejected.
 	useControlPlaneController bool
 	nodeAgentUpdateMethod     string
+	allowlistedLabelKeys      []string
 }
 
 func NewClusterService(
@@ -381,7 +382,7 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 	if s.useControlPlaneController {
 		// Cluster-level control plane config is authoritative: control-plane node
 		// pools are rejected and the control plane is described by controlPlaneConfig.
-		if err := validateCreateClusterLevelControlPlane(req, nodePools, providerType); err != nil {
+		if err := validateCreateClusterLevelControlPlane(req, nodePools, providerType, s.allowlistedLabelKeys); err != nil {
 			return err
 		}
 		if err := validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, req.ControlPlaneConfig.DesiredCount); err != nil {
@@ -429,7 +430,7 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		if err := naming.ValidateNodeNamePrefix(req.Name, nodePool.NodeNamePrefix); err != nil {
 			return fmt.Errorf("invalid node pool %q: %w", nodePool.Name, err)
 		}
-		if err := validateNodeLabels(nodePool.NodeLabels); err != nil {
+		if err := validateNodeLabels(nodePool.NodeLabels, s.allowlistedLabelKeys); err != nil {
 			return fmt.Errorf("invalid node pool %q: %w", nodePool.Name, err)
 		}
 		if err := validateNodeTaints(nodePool.NodeTaints, nodePool.ControlPlane); err != nil {

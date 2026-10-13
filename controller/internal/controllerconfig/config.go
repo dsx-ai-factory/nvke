@@ -19,6 +19,7 @@ import (
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	yamlv3 "gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/api/validate/content"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 	kjson "sigs.k8s.io/json"
@@ -37,6 +38,7 @@ type Config struct {
 	ManagedByLabelValue              string               `json:"managedByLabelValue"`
 	MetricsListenAddress             string               `json:"metricsListenAddress"`
 	SupportedInfraProviders          []string             `json:"supportedInfraProviders"`
+	NodeMetadataAllowlistedLabelKeys []string             `json:"nodeMetadataAllowlistedLabelKeys"`
 	Tracing                          TracingConfig        `json:"tracing"`
 	CertRenewal                      CertRenewalConfig    `json:"certRenewal"`
 	KubeadmImageRepository           string               `json:"kubeadmImageRepository"`
@@ -318,6 +320,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("supportedInfraProviders: %w", err)
 	}
 
+	if err := validateNodeMetadataAllowlistedLabelKeys(c.NodeMetadataAllowlistedLabelKeys); err != nil {
+		return fmt.Errorf("nodeMetadataAllowlistedLabelKeys: %w", err)
+	}
+
 	if err := c.AgentReadiness.validate(); err != nil {
 		return fmt.Errorf("agentReadiness: %w", err)
 	}
@@ -349,6 +355,62 @@ func validateSupportedInfraProviders(providers []string) error {
 		seen[provider] = i
 	}
 	return nil
+}
+
+const (
+	// NodeMetadataControlPlaneRoleKey is written by core bootstrap components when a
+	// node joins as a control plane. Callers cannot set it as a label or a taint, and
+	// nodeMetadataAllowlistedLabelKeys cannot list it.
+	NodeMetadataControlPlaneRoleKey = "node-role.kubernetes.io/control-plane"
+)
+
+// NodeMetadataReservedInternalDomains and their subdomains are reserved for internal components. Callers cannot
+// set label or taint keys under them, and nodeMetadataAllowlistedLabelKeys cannot list them.
+func NodeMetadataReservedInternalDomains() []string {
+	return []string{"nke.nvidia.com", "nke.io", "nvke.io", "nvke.nvidia.com"}
+}
+
+// validateNodeMetadataAllowlistedLabelKeys refuses an entry the server would never honor: the
+// control-plane role key, or a key under NodeMetadataReservedInternalDomains. An empty
+// list is valid and allows no keys under the reserved Kubernetes domains.
+func validateNodeMetadataAllowlistedLabelKeys(keys []string) error {
+	seen := make(map[string]int, len(keys))
+	for i, key := range keys {
+		if strings.TrimSpace(key) == "" {
+			return fmt.Errorf("[%d] must not be empty", i)
+		}
+		if err := requireUnpadded(fmt.Sprintf("[%d]", i), key); err != nil {
+			return err
+		}
+		if errs := content.IsLabelKey(key); len(errs) > 0 {
+			return fmt.Errorf("[%d] %q is not a valid label key: %s", i, key, strings.Join(errs, "; "))
+		}
+		if key == NodeMetadataControlPlaneRoleKey {
+			return fmt.Errorf("[%d] %q is managed by core bootstrap components and cannot be allowlisted", i, key)
+		}
+		if domain, isReserved := reservedDomain(key, NodeMetadataReservedInternalDomains()); isReserved {
+			return fmt.Errorf("[%d] %q is under reserved domain %q and cannot be allowlisted", i, key, domain)
+		}
+		if prev, dup := seen[key]; dup {
+			return fmt.Errorf("[%d] %q duplicates [%d]", i, key, prev)
+		}
+		seen[key] = i
+	}
+	return nil
+}
+
+// reservedDomain returns the entry of domains that key's prefix equals or is a subdomain of. A bare key has no prefix.
+func reservedDomain(key string, domains []string) (string, bool) {
+	prefix, _, prefixed := strings.Cut(key, "/")
+	if !prefixed {
+		return "", false
+	}
+	for _, domain := range domains {
+		if prefix == domain || strings.HasSuffix(prefix, "."+domain) {
+			return domain, true
+		}
+	}
+	return "", false
 }
 
 // validate mirrors the node-agent rules in config.Config.Validate. joinToken,

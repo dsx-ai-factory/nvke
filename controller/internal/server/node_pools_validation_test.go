@@ -233,7 +233,27 @@ func TestValidateCreateNodePoolRequest_RejectsReservedLabel(t *testing.T) {
 		NodeLabels:     map[string]string{"nke.nvidia.com/managed": "true"},
 	})
 
-	require.EqualError(t, err, `nodeLabels: key "nke.nvidia.com/managed" is reserved`)
+	require.EqualError(t, err, `nodeLabels: key "nke.nvidia.com/managed" is under reserved domain "nke.nvidia.com"; labels in this domain cannot be set`)
+}
+
+func TestValidateCreateNodePoolRequest_UsesConfiguredLabelAllowlist(t *testing.T) {
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
+	service.allowlistedLabelKeys = []string{"node.kubernetes.io/custom"}
+
+	req := &api.CreateNodePoolRequest{
+		Name:             "worker",
+		NodeNamePrefix:   "w",
+		DesiredNodeCount: 1,
+		Infra: &api.InfraNodePoolProvider{
+			MachineTemplate: map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
+		},
+		NodeLabels: map[string]string{"node.kubernetes.io/custom": "true"},
+	}
+	require.NoError(t, service.validateCreateNodePoolRequest(capiCluster(), req))
+
+	req.NodeLabels = map[string]string{"node.kubernetes.io/instance-type": "h100"}
+	require.EqualError(t, service.validateCreateNodePoolRequest(capiCluster(), req),
+		`nodeLabels: key "node.kubernetes.io/instance-type" is under reserved domain "kubernetes.io"; labels in this domain cannot be set`)
 }
 
 func TestValidateCreateNodePoolRequest_NodeNamePrefixLength(t *testing.T) {

@@ -40,7 +40,7 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.ManagedByLabelValue = c.ManagedByLabelValue
 	cfg.MetricsListenAddress = c.MetricsListenAddress
 	cfg.SupportedInfraProviders = slices.Clone(c.SupportedInfraProviders)
-
+	cfg.NodeMetadataAllowlistedLabelKeys = slices.Clone(c.NodeMetadataAllowlistedLabelKeys)
 	cfg.Tracing.Enabled = c.Tracing.Enabled
 	cfg.Tracing.Endpoint = c.Tracing.Endpoint
 	cfg.Tracing.Insecure = c.Tracing.Insecure

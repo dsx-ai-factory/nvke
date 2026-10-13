@@ -115,7 +115,34 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		req.ControlPlaneConfig = cp
 
 		err := svc.ValidateCreateClusterRequestFields(req)
-		require.EqualError(t, err, `controlPlaneConfig: nodeLabels: key "node-role.kubernetes.io/control-plane" is forbidden`)
+		require.EqualError(t, err, `controlPlaneConfig: nodeLabels: key "node-role.kubernetes.io/control-plane" is managed by core bootstrap components and cannot be set`)
+	})
+
+	t.Run("flag ON uses the label allowlist for control-plane labels", func(t *testing.T) {
+		svc := clusterService{useControlPlaneController: true, allowlistedLabelKeys: []string{"node.kubernetes.io/custom"}}
+		req := validForgeCreateClusterRequest()
+		cp := validForgeControlPlaneConfig()
+		cp.DesiredCount = 1
+		cp.NodeLabels = map[string]string{"node.kubernetes.io/custom": "true"}
+		req.ControlPlaneConfig = cp
+		require.NoError(t, svc.ValidateCreateClusterRequestFields(req))
+
+		cp.NodeLabels = map[string]string{"node.kubernetes.io/instance-type": "h100"}
+		require.EqualError(t, svc.ValidateCreateClusterRequestFields(req),
+			`controlPlaneConfig: nodeLabels: key "node.kubernetes.io/instance-type" is under reserved domain "kubernetes.io"; labels in this domain cannot be set`)
+	})
+
+	t.Run("flag OFF uses the label allowlist for node pool labels", func(t *testing.T) {
+		svc := clusterService{useControlPlaneController: false, allowlistedLabelKeys: []string{"node.kubernetes.io/custom"}}
+		req := validForgeCreateClusterRequest()
+		pool := validForgeNodePoolCreateConfig("cp")
+		pool.NodeLabels = map[string]string{"node.kubernetes.io/custom": "true"}
+		req.NodePools = &[]api.NodePoolCreateConfig{pool}
+		require.NoError(t, svc.ValidateCreateClusterRequestFields(req))
+
+		(*req.NodePools)[0].NodeLabels = map[string]string{"node.kubernetes.io/instance-type": "h100"}
+		require.EqualError(t, svc.ValidateCreateClusterRequestFields(req),
+			`invalid node pool "cp": nodeLabels: key "node.kubernetes.io/instance-type" is under reserved domain "kubernetes.io"; labels in this domain cannot be set`)
 	})
 
 	t.Run("flag ON accepts a valid Forge cluster-level control plane with no node pools", func(t *testing.T) {
