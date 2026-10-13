@@ -23,7 +23,10 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 HERE="${REPO}/controller/hack/ci/kind-stack-from-release"
 NVKECTL="${NVKECTL:-${REPO}/cli/bin/nvkectl}"
 CLUSTER="${KIND_CLUSTER_NAME:-nvke-release-smoke}"
-WORK="${WORK:-${RUNNER_TEMP:-/tmp}/kind-stack-from-release}"
+# WORK holds this run's layouts, release, site files and kubeconfig. It is
+# created per run unless the caller names one, and never emptied: a caller's
+# directory may hold another run's files.
+WORK="${WORK:-$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/kind-stack-from-release.XXXXXX")}"
 RUN="${WORK}/run"
 KEEP_CLUSTER="${KEEP_CLUSTER:-false}"
 CAPI_VERSION="${CAPI_VERSION:-$(make -C "${REPO}" --no-print-directory print-CAPI_VERSION)}"
@@ -60,7 +63,8 @@ command -v "${NVKECTL}" >/dev/null || die "nvkectl not found at ${NVKECTL}; run 
 for tool in docker kind kubectl helm clusterctl oras python3; do
   command -v "${tool}" >/dev/null || die "${tool} is not on PATH"
 done
-rm -rf "${WORK}"
+mkdir -p "${WORK}"
+[[ -z "$(ls -A "${WORK}")" ]] || die "WORK ${WORK} is not empty; name an empty directory or let this script create one"
 mkdir -p "${RUN}/packages" "${WORK}/site"
 
 # 1. The release: three layouts and the description that names them.

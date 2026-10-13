@@ -37,11 +37,11 @@ kubectl auth can-i update deployments.apps/nktp-operator --subresource=finalizer
 
 ## The install stops at nvke-base-config: "`{{ .ClusterName }}` has no value"
 
-**Cause:** the BootstrapConfig passed with `--config` has no `ClusterName`.
+**Cause:** the install has no site name. With `--sitespec`, the site spec's `clusterName` is empty; without one, the BootstrapConfig passed with `--config` has no `ClusterName`.
 The `nktp-cluster` ConfigMap is rendered from it, and the renderer refuses an
 empty value rather than labeling every signal with nothing.
 
-**Fix:** add `"ClusterName": "<site-name>"` to the BootstrapConfig.
+**Fix:** set `clusterName: <site-name>` in the site spec, or add `"ClusterName": "<site-name>"` to the BootstrapConfig.
 
 ## The nktp item fails building chart dependencies
 

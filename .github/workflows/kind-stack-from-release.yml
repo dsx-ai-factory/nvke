@@ -22,6 +22,7 @@ on:
       - controller/deploy/charts/**
       - cli/internal/deploypath/**
       - cli/internal/bootstrap/nvkrrelease/**
+      - cli/internal/bootstrap/sitespec/**
       - cli/cmd/nvkectl/render.go
       - controller/Dockerfile
       - controller/test/fixtures/**
@@ -140,6 +141,9 @@ jobs:
           CAPI_VERSION: ${{ steps.versions.outputs.capi_version }}
           NKE_E2E_DOCKERHUB_MIRROR: mirror.gcr.io
           KEEP_CLUSTER: "true"
+          # A fixed directory on this single-use runner, so the diagnostics
+          # step below finds the run's files.
+          WORK: ${{ runner.temp }}/kind-stack-from-release
         run: ./controller/hack/ci/kind-stack-from-release.sh
 
       - name: Collect diagnostics

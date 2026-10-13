@@ -229,15 +229,20 @@ components: each component ships its own, and one that does not is not scraped.
 
 Everything NKTP exports carries `k8s.cluster.name`, the site's name. Nothing
 in the cluster knows it -- NVKE's kubeadm configuration names every cluster
-`kubernetes` -- so `nvke-base-config` renders it from BootstrapConfig's
-`ClusterName` into the `nktp-cluster` ConfigMap, and the watchdog and the three
-gateways, which are what export to the backend, read it from there. A config
-without `ClusterName` stops the install at that template.
+`kubernetes` -- so `nvke-base-config` renders it into the `nktp-cluster`
+ConfigMap, and the watchdog and the three gateways, which are what export to
+the backend, read it from there. With `--sitespec`, the render takes it from
+the spec's `clusterName`. A plain install without a site spec renders the
+template from the BootstrapConfig passed with `--config`, whose `ClusterName`
+must be set; an empty name stops the install at that template.
 
 Everything exports to the chart's bundled development backend by default. It
 keeps data in memory and has no authentication, so it is for evaluation. A site
-with a real backend passes it with `--values-for nktp=<file>`; the chart
-README's "The backend" section lists the keys that file sets.
+with a real backend names a values file in `controllerStack.nktpValuesFile`;
+the render applies it after the item's own values. `--values-for nktp=<file>`
+is the same thing for an install without a site spec, and applies on top of a
+rendered path. The chart README's "The backend" section lists the keys that
+file sets.
 
 Not scraped yet: the Postgres item runs no metrics exporter; CAPI core and the
 kubeadm providers serve metrics only to a caller with a bearer token, which the
