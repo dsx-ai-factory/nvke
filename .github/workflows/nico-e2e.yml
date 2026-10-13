@@ -106,7 +106,8 @@ jobs:
       # the container-backed backends do not wire up. The label filter keeps this
       # job focused on the nico-containers specs; nico-vms uses its own job below. Keep the full
       # expression in step with e2e_suite_filter in hack/backend-e2e-lib.sh.
-      label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-nico || health' || '(nico-containers || health) || (authn && !authn-spire) || authn-permissive' }}
+      # nico-containers machines are containers, with no TPM and no GPU.
+      label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && '(core-nico || health) && !tpm-attestation && !gpu' || '((nico-containers || health) || (authn && !authn-spire) || authn-permissive) && !tpm-attestation && !gpu' }}
       # The nico provider installs CAPNICo, starts nico-sim by default, and
       # brings its own node image step. capi_core is required.
       providers: '["capi_core", "bgp-containers", "nico"]'

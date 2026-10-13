@@ -297,7 +297,7 @@ E2E_CAPD_PROVIDERS='["capi_core", "bgp-containers", "capd", "capd-reboot-control
 # container-backed backend wires up. The CI workflows pass the same expression
 # as `label-filter` for their full runs; keep the three in step.
 e2e_suite_filter() {
-  printf '(%s || health) || (authn && !authn-spire) || authn-permissive' "$1"
+  printf '((%s || health) || (authn && !authn-spire) || authn-permissive) && !tpm-attestation && !gpu' "$1"
 }
 
 # Kept for callers that still name CAPD directly.

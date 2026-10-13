@@ -216,6 +216,8 @@ type TeleportConfig struct {
 	Environment         string `json:"environment"`
 	ManagedByLabelValue string `json:"managedByLabelValue"`
 	TokenNamePrefix     string `json:"tokenNamePrefix"`
+
+	ResourceGroupLabelValue string `json:"resourceGroupLabelValue"`
 }
 
 // Load reads and validates the configuration at path. A missing file is not
@@ -518,7 +520,7 @@ func (o *OIDCConfig) validate() error {
 // a fleet-wide provider maps into one, and Validate refuses a provider whose
 // own prefix already lies inside one, since every login through it would fail.
 func ReservedIdentityPrefixes() []string {
-	return []string{"system:", "kubeadm:", "nke:", "nvidia:"}
+	return []string{"system:", "kubeadm:", "nke:", "nvke:", "nvidia:"}
 }
 
 // validateIdentityPrefixes refuses a usernamePrefix or groupsPrefix inside a

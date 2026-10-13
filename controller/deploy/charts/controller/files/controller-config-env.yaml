@@ -71,5 +71,6 @@ TELEPORT_PROXY_ADDRESS: teleport.proxyAddress
 TELEPORT_ENVIRONMENT: teleport.environment
 TELEPORT_MANAGED_BY_LABEL_VALUE: teleport.managedByLabelValue
 TELEPORT_TOKEN_NAME_PREFIX: teleport.tokenNamePrefix
+TELEPORT_RESOURCE_GROUP_LABEL_VALUE: teleport.resourceGroupLabelValue
 
 PERMISSIVE_MODE: permissiveMode

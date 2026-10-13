@@ -28,7 +28,7 @@ otherwise.
 | Tenant operator | The operator obtains the kubeadm `admin.conf` with `nvkectl get kubeconfig`. It contains an X.509 client certificate and private key. | The certificate identifies `kubernetes-admin` in the `kubeadm:cluster-admins` group, which has `cluster-admin`. | The operator connects directly to the tenant API endpoint from an approved private network. | One year. See [Alpha Operator Access](#alpha-operator-access) for renewal and retrieval details. |
 | Tenant user | NVKE alpha does not deliver a distinct, individually attributable tenant-user credential. A tenant operator must establish the user's authentication outside NVKE. | A tenant operator creates the required Kubernetes RBAC bindings. NVKE grants no default tenant-user role. | The user connects directly to the tenant API endpoint from an approved private network. | Determined by the tenant's chosen authentication mechanism. |
 | Tenant automation | A tenant operator creates a Kubernetes ServiceAccount and uses a TokenRequest token, or configures another Kubernetes-supported authenticator. NVKE does not distribute a separate automation credential. | A tenant operator binds the ServiceAccount or other identity to a workload-specific Role or ClusterRole. NVKE grants no default role. | The automation connects directly to the tenant API endpoint, normally from the tenant network or from inside the cluster. | TokenRequest tokens are time limited. Their requested and maximum lifetimes are deployment policy rather than an NVKE tenant-access setting. |
-| NVKE Controller | The NVKE Controller's SPIFFE workload identity obtains a short-lived JWT-SVID, optionally exchanges it through the configured token-exchange service, and presents the resulting bearer token to the tenant API server. | The token's `sub` claim maps to a Kubernetes user. NVKE binds that user to the `nke:cwe` ClusterRole and namespace-scoped Roles needed for lifecycle operations. | The NVKE Controller connects from the Site Controller cluster directly to the tenant API endpoint over the site's private network. | JWT expiry is set by the issuing identity system. The client obtains a new token rather than storing a long-lived bearer token. |
+| NVKE Controller | The NVKE Controller's SPIFFE workload identity obtains a short-lived JWT-SVID, optionally exchanges it through the configured token-exchange service, and presents the resulting bearer token to the tenant API server. | The token's `sub` claim maps to a Kubernetes user. NVKE binds that user to the `nvke:cwe` ClusterRole and namespace-scoped Roles needed for lifecycle operations. | The NVKE Controller connects from the Site Controller cluster directly to the tenant API endpoint over the site's private network. | JWT expiry is set by the issuing identity system. The client obtains a new token rather than storing a long-lived bearer token. |
 | Cluster API controllers | Each controller uses its SPIFFE workload identity and the same JWT authentication path as the NVKE Controller. | The current NVKE manifest binds the CAPI manager identities to `cluster-admin`. | The controllers connect from the Site Controller cluster directly to the tenant API endpoint. | JWT expiry is set by the issuing identity system, and clients obtain replacement tokens as needed. |
 | Break-fix system | NVKE alpha defines no generic break-fix credential. A break-fix deployment must use a dedicated ServiceAccount or workload identity rather than the operator admin kubeconfig. | The deployer creates RBAC matching the repair operations the system performs. NVKE grants no default break-fix role. | The system connects directly to the private tenant API endpoint from its approved runtime network. | Determined by the selected ServiceAccount or workload-identity mechanism. |
 | Break-glass operator | The operator obtains the same kubeadm `admin.conf` used by the alpha tenant-operator path. Access to the management-cluster Secret is the delivery control. | `cluster-admin`. | The operator must have both management-cluster access to retrieve the kubeconfig and private network reachability to the tenant API endpoint. | The same one-year certificate and renewal behavior apply. The exported copy does not refresh or gain the renewed certificate automatically. Treat every downloaded copy as sensitive until its certificate expires or the cluster CA and credentials are replaced. |
@@ -95,7 +95,7 @@ groups. Kubernetes RBAC makes the separate authorization decision:
 
 - The alpha admin certificate maps to `kubernetes-admin` and the
   `kubeadm:cluster-admins` group, which is bound to `cluster-admin`.
-- The NVKE Controller's JWT `sub` maps to the user named in NVKE's `nke:cwe`
+- The NVKE Controller's JWT `sub` maps to the user named in NVKE's `nvke:cwe`
   bindings. The identifier is retained in the current RBAC manifest. Its
   ClusterRole and namespace Roles enumerate the lifecycle operations the NVKE
   Controller may perform.
@@ -241,7 +241,7 @@ logs.
    kubectl --kubeconfig tenant-service.kubeconfig auth can-i --list
    ```
 
-   The NVKE Controller must receive only the permissions in `nke:cwe`. Cluster
+   The NVKE Controller must receive only the permissions in `nvke:cwe`. Cluster
    API controller identities currently receive `cluster-admin`. A JWT with the
    wrong audience or an unbound `sub` must be rejected or denied.
 

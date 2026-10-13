@@ -17,7 +17,7 @@
 # TenantAccess reads it and Server-Side-Applies the manifest into each
 # persisted-OIDC tenant cluster. Flipping nkeOIDCAuth.enabled off must not
 # drop the document. It defines the SPIFFE identities allowed to call each
-# tenant API surface (nke:cwe).
+# tenant API surface (nvke:cwe).
 {{- if .Values.nkeSystemNamespace.create }}
 apiVersion: v1
 kind: Namespace
@@ -53,7 +53,7 @@ metadata:
 {{- if .Values.spiffe.trustDomain }}
 {{- $td := .Values.spiffe.trustDomain }}
 {{- /*
-  The nke:cwe bindings name whatever subject the tenant apiserver will see in the
+  The nvke:cwe bindings name whatever subject the tenant apiserver will see in the
   token's sub claim (username maps from sub with an empty prefix). That is this
   controller's own SPIFFE ID by default. It is NOT the same string once
   spiffe.jwtExchangeEndpoint is set: an RFC 8693 exchange re-issues the token under
@@ -233,7 +233,7 @@ data:
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
-      name: nke:capi-cluster-admin
+      name: nvke:capi-cluster-admin
     subjects:
       - kind: User
         name: {{ $capiManagerSubject | quote }}

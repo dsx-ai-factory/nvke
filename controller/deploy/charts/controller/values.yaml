@@ -397,7 +397,7 @@ nkeOIDCAuth:
   enabled: false
   # -- Name of the ClusterRole/Role/Binding objects the tenant-access controller
   # applies into every tenant cluster (nke-rbac.yaml).
-  tenantRbacName: "nke:cwe"
+  tenantRbacName: "nvke:cwe"
   # -- OIDC issuer URL trusted by tenant kube-apiservers.
   issuerURL: ""
   # -- Optional discovery URL override used when issuerURL is not directly reachable by tenant kube-apiservers.
@@ -610,20 +610,20 @@ spiffe:
   # -- Older name for controllerSubject, still read. When both are set,
   # controllerSubject wins.
   cweSubject: ""
-  # -- Subject the nke:capi-cluster-admin RBAC binding names for capi-manager.
+  # -- Subject the nvke:capi-cluster-admin RBAC binding names for capi-manager.
   # Defaults to spiffe://<trustDomain>/nke-service/capi-manager, which is what a
   # tenant sees without token exchange. Set it whenever jwtExchangeEndpoint is
   # set because the exchange may rewrite the token's sub claim.
   capiManagerSubject: ""
-  # -- Subject the nke:capi-cluster-admin RBAC binding names for the kubeadm
+  # -- Subject the nvke:capi-cluster-admin RBAC binding names for the kubeadm
   # control-plane manager. Defaults to its local SPIFFE ID; set it to the
   # rewritten subject when that controller uses an exchanged tenant kubeconfig.
   capiKubeadmControlPlaneManagerSubject: ""
-  # -- Subject the nke:capi-cluster-admin RBAC binding names for the kubeadm
+  # -- Subject the nvke:capi-cluster-admin RBAC binding names for the kubeadm
   # bootstrap manager. Defaults to its local SPIFFE ID; set it to the rewritten
   # subject when that controller uses an exchanged tenant kubeconfig.
   capiKubeadmBootstrapManagerSubject: ""
-  # -- Subject the nke:capi-cluster-admin RBAC binding names for the CAPD
+  # -- Subject the nvke:capi-cluster-admin RBAC binding names for the CAPD
   # manager. Defaults to its local SPIFFE ID; set it to the rewritten subject
   # when CAPD uses an exchanged tenant kubeconfig.
   capdManagerSubject: ""
@@ -659,8 +659,13 @@ teleport:
   # -- Name of the Kubernetes secret containing the tbot identity (written by tbot output)
   identitySecretName: "cloud-workflow-engine-teleport"
   # -- Value of the Teleport "managed-by" label this controller stamps on
-  # tokens it creates, and the value ownership checks compare against.
-  managedByLabelValue: "nke-cloud-workflow-engine"
+  # tokens it creates, and the value ownership checks compare against. An
+  # existing site pins its old value ("nke-cloud-workflow-engine"): ownership
+  # compares the value, so a site that does not stops recognizing its tokens.
+  managedByLabelValue: "nvke-controller"
   # -- Prefix for the deterministic Teleport TPM join token name this
-  # controller mints for a node.
-  tokenNamePrefix: "nke-cwe-"
+  # controller mints for a node. An existing site pins "nke-cwe-".
+  tokenNamePrefix: "nvke-controller-"
+  # -- Value of the Teleport "resource-group" label stamped on the tokens and
+  # node userdata this controller creates. An existing site pins "nke".
+  resourceGroupLabelValue: "nvke"

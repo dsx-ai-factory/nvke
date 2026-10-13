@@ -62,7 +62,7 @@ func nicoMachineTeleportConfig(cfg config.Config, node db.Node, cluster db.Clust
 		TokenName:    teleport.TPMTokenName(cfg.Teleport.TokenNamePrefix, node.ID),
 		ProxyAddress: cfg.Teleport.ProxyAddress,
 		JoinMethod:   string(teleport.JoinMethodTPM),
-		Labels:       buildTeleportLabels(node, cluster, nicoProvider, nodePoolID, isControlPlaneRole, cfg.NVKESiteControllerName, cfg.Teleport.Environment, cfg.Teleport.ManagedByLabelValue),
+		Labels:       buildTeleportLabels(node, cluster, nicoProvider, nodePoolID, isControlPlaneRole, cfg.NVKESiteControllerName, cfg.Teleport.Environment, cfg.Teleport.ManagedByLabelValue, cfg.Teleport.ResourceGroupLabelValue),
 	}, nil
 }
 
@@ -243,7 +243,7 @@ func cniChartsPackageName(plugin db.CniPlugin, version string) (string, error) {
 
 // buildTeleportLabels constructs YAML-formatted label lines for the Teleport config in userData.
 // Output is "key: value" per line (no leading indent); the template applies indentation.
-func buildTeleportLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoClusterProvider, nodePoolID uuid.UUID, controlPlane bool, siteName, environment, managedByLabelValue string) string {
+func buildTeleportLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoClusterProvider, nodePoolID uuid.UUID, controlPlane bool, siteName, environment, managedByLabelValue, resourceGroupLabelValue string) string {
 	labels := map[string]string{
 		teleport.LabelNodeID:                 node.ID.String(),
 		teleport.LabelNodeName:               node.Name,
@@ -252,7 +252,7 @@ func buildTeleportLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoC
 		teleport.LabelNVKESiteControllerName: siteName,
 		teleport.LabelCluster:                cluster.ID.String(),
 		teleport.LabelClusterName:            cluster.Name,
-		teleport.LabelResourceGroup:          teleport.LabelResourceGroupNVKEValue,
+		teleport.LabelResourceGroup:          resourceGroupLabelValue,
 		teleport.LabelManagedBy:              managedByLabelValue,
 		teleport.LabelEnvironment:            environment,
 	}

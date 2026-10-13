@@ -29,8 +29,11 @@ var ErrEmptyPath = errors.New("authentication config path is empty")
 // The only apiVersion and kind this build accepts. Both are required, never
 // defaulted.
 const (
-	ConfigAPIVersion = "auth.nke.nvidia.com/v1alpha1"
-	ConfigKind       = "AuthenticationConfiguration"
+	ConfigAPIVersion = "auth.nvke.nvidia.com/v1alpha1"
+	// ConfigAPIVersionLegacy is the spelling existing sites still mount. Both
+	// are read for one release; remove it with the other dual-accept windows.
+	ConfigAPIVersionLegacy = "auth.nke.nvidia.com/v1alpha1"
+	ConfigKind             = "AuthenticationConfiguration"
 )
 
 // allowedAlgorithms returns the permitted JWS algorithms, asymmetric only. Taken
@@ -306,11 +309,11 @@ func (c *Config) Validate() error {
 // the wrong ConfigMap key mounted at AUTH_CONFIG_PATH.
 func (c *Config) validateTypeMeta() error {
 	switch apiVersion := strings.TrimSpace(c.APIVersion); apiVersion {
-	case ConfigAPIVersion:
+	case ConfigAPIVersion, ConfigAPIVersionLegacy:
 	case "":
-		return fmt.Errorf("apiVersion is required; this build accepts %q", ConfigAPIVersion)
+		return fmt.Errorf("apiVersion is required; this build accepts %q or %q", ConfigAPIVersion, ConfigAPIVersionLegacy)
 	default:
-		return fmt.Errorf("apiVersion %q is not supported; this build accepts %q", apiVersion, ConfigAPIVersion)
+		return fmt.Errorf("apiVersion %q is not supported; this build accepts %q or %q", apiVersion, ConfigAPIVersion, ConfigAPIVersionLegacy)
 	}
 
 	switch kind := strings.TrimSpace(c.Kind); kind {

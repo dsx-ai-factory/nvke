@@ -410,7 +410,11 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
 	// The validations it runs, and why the rest are off, are on the entry
 	// itself: what this site's capacity and shape allow rather than what the
 	// subtree offers.
-	Entry("nico-forge", Ordered, ContinueOnFailure, Label("nico-forge"), nicoForgeTenant()),
+	//
+	// needs: is the tenant's own machines, a CPU control plane and a GPU
+	// worker, on a site that already exists. The site lane's entry carries
+	// the same tenant under a container that also counts the site node.
+	Entry("nico-forge", Ordered, ContinueOnFailure, Label("nico-forge", "needs:cpu=1", "needs:gpu=1"), nicoForgeTenant()),
 )...)
 
 // nicoForgeTenant is the Forge tenant both the nico-forge lane and the site
@@ -462,7 +466,11 @@ func nicoForgeTenant() testSpec {
 		// a tenant is created on real hardware, its nodes reach Ready, and it
 		// is deleted. The rest assert against a running cluster and belong to
 		// a lane that has one for longer than a GB200 can be held.
-		validate: validations{provisioningOnly: true},
+		//
+		// TPM attestation is the exception: it reads what the nodes already
+		// did to join, so it costs seconds, and this is the one lane whose
+		// machines attest with a hardware TPM.
+		validate: validations{provisioningOnly: true, tpmAttestation: true},
 	}
 }
 
@@ -520,6 +528,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				validateOIDCPostCreate(&test)
 			}
 			validateNodeReadinessPostCreate(&test)
+			if spec.validate.tpmAttestation {
+				validateTPMAttestationPostCreate(&test)
+			}
 			if spec.validate.openVSwitch {
 				validateOpenVSwitchPostCreate(&test)
 			}
@@ -765,6 +776,11 @@ type validations struct {
 	// certificateRenewal forces certificate renewal on every control-plane node
 	// and verifies the cluster returns to Ready after each sequential restart.
 	certificateRenewal bool
+	// tpmAttestation asserts every node's SPIRE agent attested to the
+	// management cluster by its TPM. Only for a backend whose machines have
+	// one; the spec carries the tpm-attestation label so a lane without a TPM
+	// excludes it.
+	tpmAttestation bool
 	// openVSwitch proves OVN node provisioning used the typed node-agent RPC
 	// on every node and did not enter the legacy runbook fallback.
 	openVSwitch bool

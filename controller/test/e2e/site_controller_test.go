@@ -118,7 +118,14 @@ var siteReaches = []string{
 // The container is serial: one site, built once, holding the tenant specs that run
 // against it. ContinueOnFailure lets teardown and the tenant sweep run after a
 // failure; a failed build still skips the tenants, which check for a site.
-var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("site-controller"), func() {
+//
+// The needs: labels are every machine this container holds at once, which is
+// what the Capacity Provider checks for before a run starts: the site node and
+// the tenant's control plane on CPU shapes, and the tenant's worker on the GPU
+// shape every stream in release/policy.yaml names. On the container rather
+// than the tenant entry because the site outlives every spec beneath it, and
+// the provider takes the maximum per machine type, not the sum.
+var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("site-controller", "needs:cpu=2", "needs:gpu=1"), func() {
 	var (
 		cfg config.Config
 		// provider creates the site node. Settled before anything is created,

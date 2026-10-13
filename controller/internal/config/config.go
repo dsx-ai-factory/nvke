@@ -439,12 +439,18 @@ type TeleportConfig struct {
 
 	// ManagedByLabelValue is the value of the Teleport "managed-by" label this
 	// controller stamps on tokens it creates, and the value ownership checks
-	// (IsOwnedByController) compare incoming tokens against.
+	// (IsOwnedByController) compare incoming tokens against. The chart default
+	// is for new sites; a site that exists pins its old value
+	// ("nke-cloud-workflow-engine"), or stops recognizing the tokens it owns.
 	ManagedByLabelValue string `controllerconfig:"teleport.managedByLabelValue"`
 
 	// TokenNamePrefix prefixes the deterministic Teleport TPM join token name
 	// this controller mints for a node.
 	TokenNamePrefix string `controllerconfig:"teleport.tokenNamePrefix"`
+
+	// ResourceGroupLabelValue is the value of the Teleport "resource-group"
+	// label stamped on tokens and node userdata. Existing sites pin "nke".
+	ResourceGroupLabelValue string `controllerconfig:"teleport.resourceGroupLabelValue"`
 }
 
 // NodePoolTeleportDefault returns the teleport default for a node pool based on its role.

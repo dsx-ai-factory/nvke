@@ -106,7 +106,9 @@ jobs:
         include:
           - arch: amd64
             runner: linux-amd64-gpu-l4-latest-1
-            label_filter: 'nico-vms && (happy-path || multi-pod-cidrs)'
+            # !gpu and not !tpm-attestation: the guests carry an emulated TPM
+            # (swtpm) and no GPU.
+            label_filter: 'nico-vms && (happy-path || multi-pod-cidrs) && !gpu'
           - arch: arm64
             # Back on the ARC fleet, same root cause and fix as
             # kubeadm-bringup-e2e; see setup-ci-host.sh.
@@ -115,7 +117,7 @@ jobs:
             # by side) and the ovn smoke, which asserts the typed Open vSwitch
             # node-agent RPC and NetworkPolicy enforcement, because it is the
             # faster leg -- see the timing note below.
-            label_filter: 'nico-vms && (happy-path || parallel-lifecycle || ovn || multi-pod-cidrs)'
+            label_filter: 'nico-vms && (happy-path || parallel-lifecycle || ovn || multi-pod-cidrs) && !gpu'
     # Happy path in #804: arm64 41m, amd64 1h31m. Generous for the wider label
     # filters a dispatch can ask for.
     timeout-minutes: 330

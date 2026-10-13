@@ -63,7 +63,7 @@ A Helm chart to deploy the NVKE controller service
 | nkeOIDCAuth.discoveryURL | string | `""` | Optional discovery URL override used when issuerURL is not directly reachable by tenant kube-apiservers. |
 | nkeOIDCAuth.enabled | bool | `false` | Enable OIDC authentication from NVKE management identities to tenant cluster kube-apiservers. |
 | nkeOIDCAuth.issuerURL | string | `""` | OIDC issuer URL trusted by tenant kube-apiservers. |
-| nkeOIDCAuth.tenantRbacName | string | `"nke:cwe"` | Name of the ClusterRole/Role/Binding objects the tenant-access controller applies into every tenant cluster (nke-rbac.yaml). |
+| nkeOIDCAuth.tenantRbacName | string | `"nvke:cwe"` | Name of the ClusterRole/Role/Binding objects the tenant-access controller applies into every tenant cluster (nke-rbac.yaml). |
 | nkeSystemNamespace.annotations | object | `{}` | Extra annotations merged onto nke-system. This is useful for adding additional annotations to the namespace to protect it from being deleted. Listing annotations that template already defaults here duplicates the key in the rendered Namespace. |
 | nkeSystemNamespace.create | bool | `true` | Create the shared nke-system namespace. The object always carries helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and argocd.argoproj.io/sync-options: Prune=false,Delete=false so an Argo prune or Application delete does not either. Both are set by the template for default delete protection. |
 | nodeAgent.dsxImds.endpoint | string | `"http://169.254.169.254"` | Metadata endpoint used by the external dsx_imds node attestor. The default is the standard link-local metadata service address. |
@@ -122,10 +122,10 @@ A Helm chart to deploy the NVKE controller service
 | serviceMonitor.labels | object | `{}` | Additional labels for the ServiceMonitor |
 | serviceMonitor.matchLabels | object | `{}` | Selector labels to match the service. Values here win over the chart-derived selector labels, so leave unset to let the derived labels through |
 | serviceMonitor.name | string | `"cloud-workflow-engine-metrics"` | Name of the ServiceMonitor |
-| spiffe.capdManagerSubject | string | `""` | Subject the nke:capi-cluster-admin RBAC binding names for the CAPD manager. Defaults to its local SPIFFE ID; set it to the rewritten subject when CAPD uses an exchanged tenant kubeconfig. |
-| spiffe.capiKubeadmBootstrapManagerSubject | string | `""` | Subject the nke:capi-cluster-admin RBAC binding names for the kubeadm bootstrap manager. Defaults to its local SPIFFE ID; set it to the rewritten subject when that controller uses an exchanged tenant kubeconfig. |
-| spiffe.capiKubeadmControlPlaneManagerSubject | string | `""` | Subject the nke:capi-cluster-admin RBAC binding names for the kubeadm control-plane manager. Defaults to its local SPIFFE ID; set it to the rewritten subject when that controller uses an exchanged tenant kubeconfig. |
-| spiffe.capiManagerSubject | string | `""` | Subject the nke:capi-cluster-admin RBAC binding names for capi-manager. Defaults to spiffe://<trustDomain>/nke-service/capi-manager, which is what a tenant sees without token exchange. Set it whenever jwtExchangeEndpoint is set because the exchange may rewrite the token's sub claim. |
+| spiffe.capdManagerSubject | string | `""` | Subject the nvke:capi-cluster-admin RBAC binding names for the CAPD manager. Defaults to its local SPIFFE ID; set it to the rewritten subject when CAPD uses an exchanged tenant kubeconfig. |
+| spiffe.capiKubeadmBootstrapManagerSubject | string | `""` | Subject the nvke:capi-cluster-admin RBAC binding names for the kubeadm bootstrap manager. Defaults to its local SPIFFE ID; set it to the rewritten subject when that controller uses an exchanged tenant kubeconfig. |
+| spiffe.capiKubeadmControlPlaneManagerSubject | string | `""` | Subject the nvke:capi-cluster-admin RBAC binding names for the kubeadm control-plane manager. Defaults to its local SPIFFE ID; set it to the rewritten subject when that controller uses an exchanged tenant kubeconfig. |
+| spiffe.capiManagerSubject | string | `""` | Subject the nvke:capi-cluster-admin RBAC binding names for capi-manager. Defaults to spiffe://<trustDomain>/nke-service/capi-manager, which is what a tenant sees without token exchange. Set it whenever jwtExchangeEndpoint is set because the exchange may rewrite the token's sub claim. |
 | spiffe.controllerSubject | string | `""` | Subject the nkeOIDCAuth.tenantRbacName RBAC bindings name in tenant clusters. Defaults to this controller's own SPIFFE ID, spiffe://<trustDomain>/nke-service/cloud-workflow-engine, which is what a tenant sees when no exchange is in play. Set it whenever jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust domain and rewrites the path, so give the exchanged subject in full, e.g. spiffe://nke.<site>.cloud-workflow-engine.nvid.id/bm/cwe. A mismatch authenticates and then fails every authorization check. |
 | spiffe.cweSubject | string | `""` | Older name for controllerSubject, still read. When both are set, controllerSubject wins. |
 | spiffe.enabled | bool | `false` | Enable SPIFFE identity for mTLS to tenant clusters |
@@ -144,9 +144,10 @@ A Helm chart to deploy the NVKE controller service
 | teleport.environment | string | `"non-prod"` | Teleport environment label: "prod" or "non-prod" (default: "non-prod") |
 | teleport.identityFile | string | `"/var/run/teleport/identity"` | Path where the tbot identity file is mounted |
 | teleport.identitySecretName | string | `"cloud-workflow-engine-teleport"` | Name of the Kubernetes secret containing the tbot identity (written by tbot output) |
-| teleport.managedByLabelValue | string | `"nke-cloud-workflow-engine"` | Value of the Teleport "managed-by" label this controller stamps on tokens it creates, and the value ownership checks compare against. |
+| teleport.managedByLabelValue | string | `"nvke-controller"` | Value of the Teleport "managed-by" label this controller stamps on tokens it creates, and the value ownership checks compare against. An existing site pins its old value ("nke-cloud-workflow-engine"): ownership compares the value, so a site that does not stops recognizing its tokens. |
 | teleport.proxyAddress | string | `""` | Teleport proxy address (site-specific, must be set per environment) |
-| teleport.tokenNamePrefix | string | `"nke-cwe-"` | Prefix for the deterministic Teleport TPM join token name this controller mints for a node. |
+| teleport.resourceGroupLabelValue | string | `"nvke"` | Value of the Teleport "resource-group" label stamped on the tokens and node userdata this controller creates. An existing site pins "nke". |
+| teleport.tokenNamePrefix | string | `"nvke-controller-"` | Prefix for the deterministic Teleport TPM join token name this controller mints for a node. An existing site pins "nke-cwe-". |
 | temporal.cloudWorkflow.namespace | string | `"cloud-workflow-engine"` |  |
 | temporal.cloudWorkflow.queue | string | `"cloud-workflow-engine-tasks"` |  |
 | temporal.host | string | `"temporal-frontend.temporal.svc.cluster.local"` |  |

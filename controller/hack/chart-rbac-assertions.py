@@ -52,7 +52,7 @@ def main():
     parser.add_argument("--chart", required=True)
     parser.add_argument(
         "--tenant-rbac-name",
-        default="nke:cwe",
+        default="nvke:cwe",
         help="Value of nkeOIDCAuth.tenantRbacName; the rendered ClusterRole/Role/Binding objects use this name.",
     )
     args = parser.parse_args()
@@ -116,10 +116,10 @@ def main():
         for document in inner
         if document and document.get("kind") == "ClusterRoleBinding"
     }
-    capi_binding = bindings.get("nke:capi-cluster-admin")
+    capi_binding = bindings.get("nvke:capi-cluster-admin")
     if capi_binding is None:
         print(
-            "ERROR: no nke:capi-cluster-admin ClusterRoleBinding in the nke-rbac manifest",
+            "ERROR: no nvke:capi-cluster-admin ClusterRoleBinding in the nke-rbac manifest",
             file=sys.stderr,
         )
         return 1
@@ -135,7 +135,7 @@ def main():
     }
     if capi_subjects != expected_capi_subjects:
         print(
-            "ERROR: nke:capi-cluster-admin subjects do not match configured identities\n"
+            "ERROR: nvke:capi-cluster-admin subjects do not match configured identities\n"
             f"  got:  {sorted(capi_subjects)}\n"
             f"  want: {sorted(expected_capi_subjects)}",
             file=sys.stderr,
@@ -313,7 +313,7 @@ def main():
         return 1
 
     print(f"{tenant_rbac_name} ClusterRole grants all {len(required)} required permissions")
-    print("nke:capi-cluster-admin uses all configured CAPI controller subjects")
+    print("nvke:capi-cluster-admin uses all configured CAPI controller subjects")
     print("token exchange requires explicit subjects for every CAPI controller")
     print(f"{tenant_rbac_name} bindings take spiffe.controllerSubject over spiffe.cweSubject, render the same for either, and need one with token exchange")
     return 0

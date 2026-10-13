@@ -82,6 +82,7 @@ teleport:
   identityFile: ""
   proxyAddress: ""
   environment: non-prod
-  managedByLabelValue: nke-cloud-workflow-engine
-  tokenNamePrefix: nke-cwe-
+  managedByLabelValue: nvke-controller
+  tokenNamePrefix: nvke-controller-
+  resourceGroupLabelValue: nvke
 permissiveMode: false

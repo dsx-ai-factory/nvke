@@ -148,8 +148,18 @@ func TestUnit_VerifyNodeAudience(t *testing.T) {
 		"string": {
 			audience: auth.NodeAgentAudience,
 		},
+		"legacy string": {
+			audience: auth.NodeAgentAudienceLegacy,
+		},
 		"singleton array": {
 			audience: []string{auth.NodeAgentAudience},
+		},
+		"legacy singleton array": {
+			audience: []string{auth.NodeAgentAudienceLegacy},
+		},
+		"unknown audience": {
+			audience: "someone-else",
+			wantErr:  true,
 		},
 		"multiple audiences": {
 			audience: []string{auth.NodeAgentAudience, "another-service"},
@@ -162,7 +172,7 @@ func TestUnit_VerifyNodeAudience(t *testing.T) {
 			t.Parallel()
 			err := verifyNodeAudience(jwt.MapClaims{"aud": params.audience})
 			if params.wantErr {
-				require.ErrorContains(t, err, `must contain only "nke-controller"`)
+				require.ErrorContains(t, err, `must contain only "nvke-controller" or "nke-controller"`)
 				return
 			}
 			require.NoError(t, err)
@@ -204,7 +214,7 @@ func TestUnit_TLSJWTClientHandshake(t *testing.T) {
 	require.NoError(t, err)
 	issuer := "https://identity.example.test"
 	verifier, err := auth.NewVerifier(&auth.Config{
-		Audiences: []string{auth.NodeAgentAudience},
+		Audiences: auth.NodeAgentAudiences(),
 		Issuers: []auth.Issuer{{
 			Name:       auth.NodeAgentIssuerName,
 			Issuer:     issuer,
@@ -402,7 +412,7 @@ func newTestTLSJWTVerifier(t *testing.T, issuer string, key crypto.PublicKey) *a
 	t.Helper()
 
 	verifier, err := auth.NewVerifier(&auth.Config{
-		Audiences: []string{auth.NodeAgentAudience},
+		Audiences: auth.NodeAgentAudiences(),
 		Issuers: []auth.Issuer{{
 			Name:       auth.NodeAgentIssuerName,
 			Issuer:     issuer,

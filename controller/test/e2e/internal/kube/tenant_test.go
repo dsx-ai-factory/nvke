@@ -769,6 +769,42 @@ func TestMintJWTIncludesExecutorStderr(t *testing.T) {
 	}
 }
 
+func TestShowSPIREAgentAsksTheServerForThatAgent(t *testing.T) {
+	factory := newTestTenantClientFactory(t, spireServerPod("spire-server-1", true, spireServerSelector()))
+	var command []string
+	factory.newExecutor = func(_ string, requestURL *url.URL) (remotecommand.Executor, error) {
+		command = requestURL.Query()["command"]
+		return &fakeExecutor{stdout: "Found 1 attested agent:\n"}, nil
+	}
+
+	const id = "spiffe://test.nke.local/spire/agent/tpm/abc123"
+	out, err := factory.ShowSPIREAgent(context.Background(), id)
+	if err != nil {
+		t.Fatalf("ShowSPIREAgent() error = %v", err)
+	}
+	if want := []string{"bin/spire-server", "agent", "show", "-spiffeID", id}; !slices.Equal(command, want) {
+		t.Errorf("command = %q, want %q", command, want)
+	}
+	if !strings.Contains(out, "attested agent") {
+		t.Errorf("ShowSPIREAgent() = %q, want the server's output", out)
+	}
+}
+
+func TestShowSPIREAgentReportsAnAgentTheServerDoesNotHave(t *testing.T) {
+	// The server exits non-zero for an ID no agent attested as, and that has to
+	// reach the caller as an error carrying the server's reason, not as empty
+	// output a caller could read as success.
+	factory := newTestTenantClientFactory(t, spireServerPod("spire-server-1", true, spireServerSelector()))
+	factory.newExecutor = func(string, *url.URL) (remotecommand.Executor, error) {
+		return &fakeExecutor{stderr: "Error: rpc error: code = NotFound desc = no such agent", err: errors.New("command terminated with exit code 1")}, nil
+	}
+
+	_, err := factory.ShowSPIREAgent(context.Background(), "spiffe://test.nke.local/spire/agent/tpm/missing")
+	if err == nil || !strings.Contains(err.Error(), "no such agent") {
+		t.Fatalf("ShowSPIREAgent() error = %v, want one carrying the server's NotFound", err)
+	}
+}
+
 func newTestTenantClientFactory(t *testing.T, objects ...runtime.Object) *TenantClientFactory {
 	t.Helper()
 	managementConfig := &rest.Config{Host: "https://management.example"}
