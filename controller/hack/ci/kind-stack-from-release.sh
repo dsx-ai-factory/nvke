@@ -97,7 +97,13 @@ vip="$(docker inspect -f '{{with index .NetworkSettings.Networks "kind"}}{{.IPAd
 # 3. The site spec and its credential files. The credentials are placeholders:
 # nothing in this lane reaches NICo or a private registry.
 for f in nico-token registry-token tenant-password; do printf 'smoke-%s\n' "${f}" >"${WORK}/site/${f}"; done
-sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" -e "s|@NKTP_VALUES@|${REPO}/nktp/hack/e2e-values.yaml|g" \
+# nktp sized for one kind node: nktp's own kind values, plus a ceiling of one
+# replica on the autoscaled collectors. The whole stack shares this node, so a
+# scale-up on a startup CPU burst would leave a replica Pending.
+sed '/^      minReplicas: 1$/a\
+      maxReplicas: 1' "${REPO}/nktp/hack/e2e-values.yaml" >"${WORK}/site/nktp-values.yaml"
+grep -c 'maxReplicas: 1' "${WORK}/site/nktp-values.yaml" >/dev/null || die "the nktp kind values changed shape; check nktp/hack/e2e-values.yaml"
+sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" -e "s|@NKTP_VALUES@|${WORK}/site/nktp-values.yaml|g" \
   "${HERE}/sitespec.yaml.tmpl" >"${WORK}/site/sitespec.yaml"
 "${NVKECTL}" validate sitespec -f "${WORK}/site/sitespec.yaml"
 
@@ -125,14 +131,24 @@ log "checking the result"
 for ref in "nvkr.local/nvke/cwe@${cwe_digest}" "nvkr.local/nvke/controller-profiles@${profiles_digest}" "nvkr.local/nvke/capnico-controller@${capnico_digest}"; do
   docker exec -i "${node}" ctr -n k8s.io images ls -q "name==${ref}" | grep -qx "${ref}" || die "containerd lacks ${ref}"
 done
-# The stack's own workloads, not every pod: nktp's gateway autoscalers may
-# add a replica the 4-vCPU runner cannot schedule, which says nothing about
-# the release path.
+# The stack's workloads first, for a named failure; then every pod in the
+# stack's namespaces must be Running and Ready, nothing excluded.
 for target in deployment/nke-controller:nke-controller deployment/controller-manager:capnico-system statefulset/spire-server:spire-server \
   statefulset/postgres-postgresql:postgres deployment/temporal-frontend:temporal deployment/temporal-history:temporal deployment/temporal-matching:temporal; do
   kubectl -n "${target#*:}" rollout status "${target%%:*}" --timeout=5m || die "${target} is not ready"
 done
-kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded -o wide || true
+not_ready() {
+  local ns
+  for ns in nvke-system capnico-system nktp postgres spire-server temporal nke-controller cert-manager capi-system; do
+    kubectl -n "${ns}" get pods -o jsonpath='{range .items[?(@.status.phase!="Succeeded")]}{.metadata.namespace}/{.metadata.name}{"\t"}{.status.phase}{"\t"}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\n"}{end}' 2>/dev/null
+  done | awk -F'\t' '$2 != "Running" || $3 ~ /false/'
+}
+for _ in $(seq 1 30); do
+  pending="$(not_ready)"
+  [[ -n "${pending}" ]] || break
+  sleep 10
+done
+[[ -z "${pending}" ]] || { printf '%s\n' "${pending}" >&2; die "pods that are not Running and Ready"; }
 controller_ids="$(kubectl -n nke-controller get pods -l app.kubernetes.io/name=nke-controller \
   -o jsonpath='{range .items[*]}{range .status.initContainerStatuses[*]}{.imageID}{"\n"}{end}{range .status.containerStatuses[*]}{.imageID}{"\n"}{end}{end}')"
 grep -q "${cwe_digest}" <<<"${controller_ids}" || die "the controller does not run the release's cwe digest: ${controller_ids}"
