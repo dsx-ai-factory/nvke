@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// Exercise the actual Make target without compiling or recursively running this suite.
+// TestArtifactMakeTargetInputs checks the Make target's required inputs and path handling.
 func TestArtifactMakeTargetInputs(t *testing.T) {
 	dir := t.TempDir()
 	probe := filepath.Join(dir, "probe.sh")
