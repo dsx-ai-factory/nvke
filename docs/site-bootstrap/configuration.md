@@ -59,7 +59,7 @@ registry:
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never logged or printed. See below. |
-| `spire.trustDomain` | string | no | SPIFFE trust domain for the identities the bootstrap SPIRE server issues. Defaults to `<bootstrap-cluster>.nke.local`. |
+| `spire.trustDomain` | string | no for the bootstrap, yes for the controller stack install | SPIFFE trust domain. The bootstrap defaults to `<bootstrap-cluster>.nke.local` and prints it; the controller stack install takes the value from here. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to, so a node given that certificate when it was provisioned verifies the server on first contact. Without it SPIRE is self-signed. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Both or neither; both files are checked for existence at load. |
 

@@ -106,7 +106,6 @@ func (r *renderer) site() {
 	ctx.Registry.Token = read("controllerStack.pullSecret.tokenFile", stackPath(cs.PullSecret.TokenFile))
 	ctx.Tenant.User = check("controllerStack.tenant.user", cs.Tenant.User)
 	ctx.Tenant.Password = read("controllerStack.tenant.passwordFile", stackPath(cs.Tenant.PasswordFile))
-	password := r.dbPassword(spec)
 	if len(r.problems) > 0 {
 		return
 	}
@@ -120,6 +119,11 @@ func (r *renderer) site() {
 	checksum := controllerdeploy.SpireTPMDirectChecksum(cs.Arch)
 	if checksum == "" {
 		r.problem("site spec: controllerStack.arch %q has no TPM attestor checksum", cs.Arch)
+		return
+	}
+	// Last, because it may write a file: a refused spec creates nothing.
+	password := r.dbPassword(spec)
+	if len(r.problems) > 0 {
 		return
 	}
 

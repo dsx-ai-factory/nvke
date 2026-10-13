@@ -74,6 +74,10 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 		return errors.New("the site spec is not ready for the controller stack install")
 	}
 	ready := true
+	if spec.Spire.TrustDomain == "" {
+		ready = false
+		fmt.Fprintln(out, "controllerStack: spire.trustDomain is required: set it to the trust domain nvkectl bootstrap site printed")
+	}
 	if left := spec.ControllerStackPlaceholders(); len(left) > 0 {
 		ready = false
 		fmt.Fprintf(out, "controllerStack: %d values still to fill in: %s\n", len(left), strings.Join(left, ", "))

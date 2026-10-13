@@ -52,11 +52,11 @@ func filledSiteSpec(t *testing.T, edits map[string]string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(body)
+	// The trust domain goes in before the edits, so a case can take it out.
+	text := string(body) + "spire:\n  trustDomain: my-tier0-site.nke.local\n"
 	for placeholder, value := range values {
 		text = strings.ReplaceAll(text, placeholder, value)
 	}
-	text += "spire:\n  trustDomain: my-tier0-site.nke.local\n"
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -74,8 +74,15 @@ func TestValidateSiteSpec_GeneratedFileListsPlaceholders(t *testing.T) {
 	if !strings.Contains(stdout, "controllerStack: 11 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint") {
 		t.Errorf("placeholders not listed:\n%s", stdout)
 	}
-	if strings.Contains(stdout, "is required") {
-		t.Errorf("placeholders reported as errors too:\n%s", stdout)
+	// generate sitespec leaves the spire block commented out, so the trust
+	// domain is the one value missing that is not a placeholder.
+	if !strings.Contains(stdout, "controllerStack: spire.trustDomain is required") {
+		t.Errorf("missing trust domain not reported:\n%s", stdout)
+	}
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.Contains(line, "is required") && !strings.Contains(line, "spire.trustDomain") {
+			t.Errorf("placeholder reported as an error too: %s", line)
+		}
 	}
 }
 
@@ -98,11 +105,12 @@ func TestValidateSiteSpec_Problems(t *testing.T) {
 		edits map[string]string
 		want  string
 	}{
-		"bad arch":       {map[string]string{"REPLACE_ARCH": "x86"}, `controllerStack.arch "x86" must be one of amd64, arm64`},
-		"bad endpoint":   {map[string]string{"REPLACE_NICO_ENDPOINT": "nico.example.com"}, "controllerStack.nico.endpoint"},
-		"missing secret": {map[string]string{"REPLACE_TENANT_PASSWORD_PATH": "/nonexistent/password"}, "controllerStack.tenant.passwordFile \"/nonexistent/password\" cannot be read"},
-		"empty required": {map[string]string{"REPLACE_TENANT_USER": `""`}, "controllerStack.tenant.user is required"},
-		"half filled":    {map[string]string{"REPLACE_ARCH": "REPLACE_ARCH"}, "1 values still to fill in: controllerStack.arch"},
+		"bad arch":        {map[string]string{"REPLACE_ARCH": "x86"}, `controllerStack.arch "x86" must be one of amd64, arm64`},
+		"bad endpoint":    {map[string]string{"REPLACE_NICO_ENDPOINT": "nico.example.com"}, "controllerStack.nico.endpoint"},
+		"missing secret":  {map[string]string{"REPLACE_TENANT_PASSWORD_PATH": "/nonexistent/password"}, "controllerStack.tenant.passwordFile \"/nonexistent/password\" cannot be read"},
+		"empty required":  {map[string]string{"REPLACE_TENANT_USER": `""`}, "controllerStack.tenant.user is required"},
+		"half filled":     {map[string]string{"REPLACE_ARCH": "REPLACE_ARCH"}, "1 values still to fill in: controllerStack.arch"},
+		"no trust domain": {map[string]string{"spire:\n  trustDomain: my-tier0-site.nke.local\n": ""}, "spire.trustDomain is required"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
