@@ -69,6 +69,7 @@ func main() {
 // cancellation is the operator's own doing, so it reports as one line rather
 // than as a wrapped "context canceled" from wherever the request gave up — but
 // not when the error carries recovery instructions, which the operator needs.
+// The trace ID is kept either way.
 func reportFailure(w io.Writer, err error, canceled bool, sig syscall.Signal) int {
 	if !canceled {
 		fmt.Fprintln(w, "Error:", err)
@@ -76,8 +77,15 @@ func reportFailure(w io.Writer, err error, canceled bool, sig syscall.Signal) in
 	}
 	fmt.Fprintln(w, "nvkectl: canceled")
 	var recovery *recoveryError
-	if errors.As(err, &recovery) {
+	var traced *tracedError
+	switch {
+	case errors.As(err, &recovery):
+		// err's text already ends with the trace ID.
 		fmt.Fprintln(w, "Error:", err)
+	case errors.As(err, &traced):
+		// An interrupted request may already have reached the controller, so
+		// the operator keeps the ID to find out what became of it.
+		fmt.Fprintln(w, "Trace ID:", traced.traceID)
 	}
 	if sig == syscall.SIGTERM {
 		return exitSIGTERM

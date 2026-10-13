@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -210,6 +211,31 @@ func TestExecuteNodePreflight(t *testing.T) {
 		assert.Contains(t, resp.GetErrorMessage(), "cloud-init error status")
 	})
 
+	// The reason cloud-init failed only leaves the node if this check carries
+	// it. Run 37745107586 reported the bare "status: error" 44 times over 90
+	// minutes and the node was released before anyone could log in, so the
+	// cause was never recovered. Whatever --long puts after the status line
+	// has to survive into the message the controller logs.
+	t.Run("check cloud init status carries the failing stage", func(t *testing.T) {
+		report := strings.Join([]string{
+			"status: error",
+			"extended_status: error - done",
+			"boot_status_code: enabled-by-generator",
+			"detail:",
+			"errors:",
+			"\t- Failed to apply network config: no matching NIC for e*",
+		}, "\n")
+		srv := cloudInitStatusServer(t, []byte(report+"\n"), nil)
+
+		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
+			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, ErrorStatus, resp.GetStatus())
+		assert.Contains(t, resp.GetErrorMessage(), "no matching NIC for e*",
+			"the failing stage must reach the controller; a bare status: error is not diagnosable")
+	})
+
 	// `cloud-init status` exits 2 once cloud-init records a recoverable error,
 	// even after it finishes, so a degraded node must still report ready.
 	t.Run("check cloud init status degraded done passes", func(t *testing.T) {
@@ -326,6 +352,31 @@ func TestEvaluateCloudInitStatus(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "cloud-init error status")
 	})
+
+	// The case this guards: a failed node whose --long detail happens to
+	// contain a success phrase must still fail, not report ready.
+	t.Run("only the status line decides", func(t *testing.T) {
+		report := strings.Join([]string{
+			"status: error",
+			"extended_status: error - done",
+			"detail: previous boot reported status: done",
+		}, "\n")
+		_, _, err := evaluateCloudInitStatus(report)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cloud-init error status")
+	})
+
+	t.Run("extended_status is not the status line", func(t *testing.T) {
+		passed, _, err := evaluateCloudInitStatus("extended_status: done\n")
+		require.NoError(t, err)
+		assert.False(t, passed)
+	})
+
+	t.Run("the status line is read case-insensitively", func(t *testing.T) {
+		passed, _, err := evaluateCloudInitStatus("Status: Done\n")
+		require.NoError(t, err)
+		assert.True(t, passed)
+	})
 }
 
 // cloudInitStatusServer builds a server whose runner answers
@@ -350,7 +401,7 @@ func cloudInitStatusServerCounted(t *testing.T, output []byte, runErr error) (*N
 		Runner: &MockRunner{
 			Runners: []runner{
 				func(name string, args []string, _ *nvkeutils.CommandOptions) (bool, []byte, error) {
-					if name == "cloud-init" && len(args) == 1 && args[0] == "status" {
+					if name == "cloud-init" && slices.Equal(args, []string{"status", "--long"}) {
 						calls++
 						return true, output, runErr
 					}

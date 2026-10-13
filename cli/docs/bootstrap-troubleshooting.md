@@ -26,6 +26,45 @@ Every line names the component that wrote it. `bootstrap-site` is the command
 itself, `bootstrapengine` drives the Kind cluster, `cwedeploy` installs the
 controller and its charts. `-v` adds debug detail.
 
+#### The trace ID
+
+Every run has one trace ID. `nvkectl` prints it on its own line, as
+`Trace ID: <32 hex digits>`, when the run starts, and again at the end: last on
+a successful run, and after the final error on a failed one. A command that
+cobra rejects for a bad flag or argument never starts, so it prints only the ID
+that ends its error. Every log line carries it as `trace_id`, with a `span_id`. The ID goes to standard error with
+the logs, so the `tee` above keeps it. Keep the ID with the log, and quote it
+when you report a failure.
+
+```text
+Trace ID: 4bf92f3577b34da6a3ce929d0e0e4736
+time=2026-10-12T17:19:10.769-04:00 level=INFO msg="loaded site spec" component=bootstrap-site path=sitespec.yaml cluster=demo-site trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7
+```
+
+With `--json-logs` the same fields are JSON keys:
+
+```json
+{"time":"2026-10-12T17:19:10.787Z","level":"INFO","msg":"loaded site spec","component":"bootstrap-site","path":"sitespec.yaml","cluster":"demo-site","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7"}
+```
+
+Use the ID to pick one run out of a log that holds several, such as a file you
+append to on every attempt. Each run, including a re-run after a failure, has
+its own ID.
+
+```bash
+grep 'trace_id=4bf92f3577b34da6a3ce929d0e0e4736' bootstrap.log                      # text logs
+jq -Rc 'fromjson? | select(.trace_id=="4bf92f3577b34da6a3ce929d0e0e4736")' bootstrap.log   # --json-logs
+```
+
+The `jq -R` form reads each line as text, so the `Trace ID:` and `Error:` lines,
+which are not JSON, are skipped instead of stopping `jq`.
+
+`nvkectl` also sends the ID to the controller it installs, in the `traceparent`
+header of the site cluster request. The controller writes it to its own logs
+only when its tracing is enabled, and bootstrap does not enable it, so find the
+controller's records for a run by the cluster or node name, as described under
+[The retained bootstrap cluster](#the-retained-bootstrap-cluster).
+
 ### The diagnostics directory
 
 When a bootstrap fails after the Kind cluster exists, `nvkectl` dumps that
@@ -104,6 +143,7 @@ root cause on the right. Take a generic chart download failure:
 ```text
 Error: deploying cwe: cwedeploy: installing SPIRE CRDs: helm upgrade --install spire-crds spire-crds --repo https://spiffe.github.io/helm-charts-hardened/ --namespace spire-server --create-namespace --version 0.6.1 --wait --timeout 5m0s: exit status 1
 Error: failed to fetch https://spiffe.github.io/helm-charts-hardened/releases/download/spire-crds-0.6.1/spire-crds-0.6.1.tgz : 500 Internal Server Error
+Trace ID: 4bf92f3577b34da6a3ce929d0e0e4736
 ```
 
 - `deploying cwe` is the phase: installing the controller and its dependencies onto
@@ -113,6 +153,8 @@ Error: failed to fetch https://spiffe.github.io/helm-charts-hardened/releases/do
   its full arguments, so you can run it by hand.
 - The lines that follow are the command's own output, and hold the cause: the
   chart repository returned a server error.
+- The last line is the run's [trace ID](#the-trace-id). It is not part of the
+  error chain, so leave it out when you match the error text.
 
 So this bootstrap failed before any of your nodes were touched, because a
 public chart repository was unavailable. The fix is to retry, or to point at a

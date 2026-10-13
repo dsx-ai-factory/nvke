@@ -527,6 +527,45 @@ func TestBuildForgeNodePayloadsGuardsAgainstAFailedStep(t *testing.T) {
 	}
 }
 
+// Forge hosts race cloud-init for the network. Under set -eu the first
+// download fails at once on a node whose default route is not up yet, and
+// cloud-init reports status: error with nothing installed -- the amd64 control
+// plane of run 37873467928, beside an arm64 worker that passed running these
+// same commands. The wait has to come before anything that touches the
+// network, not merely be present.
+func TestBuildForgeNodePayloadsWaitsForTheNetworkFirst(t *testing.T) {
+	for _, arch := range []string{"amd64", "arm64"} {
+		t.Run(arch, func(t *testing.T) {
+			inputs := completeForgeInputs()
+			inputs.Arch = arch
+			inputs.ImageURL = strings.ReplaceAll(inputs.ImageURL, "amd64", arch)
+			payloads, err := BuildForgeNodePayloads(inputs)
+			if err != nil {
+				t.Fatalf("building payloads: %v", err)
+			}
+
+			wait, firstNetwork := -1, -1
+			for i, command := range payloads.PreKubeadmCommands {
+				if wait < 0 && strings.Contains(command, "ip -4 route list default") {
+					wait = i
+				}
+				if firstNetwork < 0 && (strings.Contains(command, "curl ") || strings.Contains(command, "apt-get")) {
+					firstNetwork = i
+				}
+			}
+			if wait < 0 {
+				t.Fatal("no wait for a default route: the first download races the network")
+			}
+			if firstNetwork >= 0 && wait > firstNetwork {
+				t.Errorf("the route wait is command %d but the first download is command %d", wait, firstNetwork)
+			}
+			if !strings.HasPrefix(payloads.PreKubeadmCommands[wait], "timeout ") {
+				t.Errorf("the route wait must be bounded, got: %s", payloads.PreKubeadmCommands[wait])
+			}
+		})
+	}
+}
+
 // The image builds nvke-agent from this checkout's agent/ source at bake time,
 // so the installed agent is the build under qualification. Installing the apt
 // repository's unpinned nvke-agent over it would swap that for whichever build

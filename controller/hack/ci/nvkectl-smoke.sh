@@ -229,6 +229,12 @@ EOF
     log "nvkectl smoke: 'get clusters <name>' failed without a not-found message" >&2
     return 1
   fi
+  # A failed command still names its trace, so the operator can look it up in
+  # the controller's logs. The success side is asserted on create below.
+  if ! grep -Eq '^Trace ID: [0-9a-f]{32}$' <<<"${out}"; then
+    log "nvkectl smoke: 'get clusters <name>' failed without a Trace ID line: ${out}" >&2
+    return 1
+  fi
 
   # The same FindClusterByName lookup patch cluster shares with delete.
   if out="$(nvkectl_exec patch cluster "${NVKECTL_SMOKE_ABSENT}" --patch 'teleportEnabled: true' 2>&1)"; then
@@ -646,6 +652,13 @@ nvkectl_smoke_write_round_trip() {
   fi
   if ! grep -q 'created (id: ' <<<"${out}"; then
     log "nvkectl smoke: 'create cluster' succeeded without reporting the id: ${out}" >&2
+    nvkectl_smoke_write_cleanup
+    return 1
+  fi
+  # A successful write prints its trace ID on stderr, which this captures with
+  # stdout.
+  if ! grep -Eq '^Trace ID: [0-9a-f]{32}$' <<<"${out}"; then
+    log "nvkectl smoke: 'create cluster' succeeded without a Trace ID line: ${out}" >&2
     nvkectl_smoke_write_cleanup
     return 1
   fi

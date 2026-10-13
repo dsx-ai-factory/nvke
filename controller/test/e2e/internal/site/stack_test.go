@@ -56,9 +56,10 @@ var stackCheckout = func() string {
 }()
 
 func testSBOM() Stack {
+	layout := CurrentLayout()
+	layout.Export = []string{"deploy"}
 	return Stack{
-		Assets:     stackCheckout,
-		AssetPaths: []string{"deploy"},
+		Assets:     DeployAssets{Dir: stackCheckout, Layout: layout},
 		Controller: Image{Repository: "nvcr.io/nvke/cwe", Tag: "v1.2.3"},
 		Profiles:   Image{Repository: "nvcr.io/nvke/profiles", Tag: "run-42"},
 		Provider:   NewNico("https://forge.example", "org", "tok"),
@@ -319,4 +320,46 @@ func mustChecksum(t *testing.T, arch string) string {
 		t.Fatalf("no checksum for %s", arch)
 	}
 	return sum
+}
+
+// assetsInstalling is a deploy path whose controller HelmRelease installs
+// under name, which is all CheckControllerName reads.
+func assetsInstalling(t *testing.T, deployPath, name string) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ControllerReleasePath(deployPath)),
+		"chart:\n  name: nke-controller\nrelease:\n  name: c\n  namespace: "+name+"\n")
+	return dir
+}
+
+// TestCheckControllerName covers the guard that runs before a machine is
+// taken: a deploy path installing the controller under a name the suite does
+// not look for fails on the runner, naming both and the variables to set.
+func TestCheckControllerName(t *testing.T) {
+	deployPath := CurrentLayout().DeployPath
+	for _, env := range []string{
+		controller.EnvNamespace, controller.LegacyEnvNamespace,
+		controller.EnvService, controller.LegacyEnvService,
+	} {
+		t.Setenv(env, "")
+	}
+
+	t.Run("the suite default matches", func(t *testing.T) {
+		if err := CheckControllerName(assetsInstalling(t, deployPath, controller.ServiceNamespace), deployPath); err != nil {
+			t.Fatalf("a matching name was rejected: %v", err)
+		}
+	})
+
+	t.Run("a different name fails", func(t *testing.T) {
+		const deployed = "other-controller"
+		err := CheckControllerName(assetsInstalling(t, deployPath, deployed), deployPath)
+		if err == nil {
+			t.Fatal("a deploy path installing a different name was accepted")
+		}
+		for _, want := range []string{deployed, controller.ServiceNamespace, controller.EnvNamespace, controller.EnvService} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the error does not name %s: %v", want, err)
+			}
+		}
+	})
 }

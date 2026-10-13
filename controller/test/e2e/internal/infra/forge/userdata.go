@@ -125,7 +125,9 @@ func renderUserData(in userDataInputs) (string, error) {
 
 		// BlueField hosts race cloud-init for the network, and apt fails
 		// without one. Bounded, so a node with no route fails here rather
-		// than silently.
+		// than silently. NodeCommands opens with the same wait; it is kept
+		// here too so the site node does not depend on what it is handed,
+		// and the second one returns at once.
 		`timeout 300s sh -c 'until ip -4 route list default | grep -q .; do echo "waiting for an IPv4 default route"; sleep 5; done'`,
 
 		// The key is written deferred, after the account exists, into a

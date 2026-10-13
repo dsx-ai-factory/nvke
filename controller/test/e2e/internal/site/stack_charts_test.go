@@ -47,7 +47,7 @@ func deployPath(t *testing.T) string {
 	if exec.CommandContext(context.Background(), "git", "-C", repo, "cat-file", "-e", DeployPathRef+"^{commit}").Run() != nil {
 		t.Skipf("%s does not resolve in this clone", DeployPathRef)
 	}
-	dir, err := ExportRef(context.Background(), repo, DeployPathRef, DeployAssetPaths())
+	dir, err := ExportRef(context.Background(), repo, DeployPathRef, CurrentLayout().Export)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 	// that deploy path installs, not whatever a lane is configured for. The
 	// two are the same thing read from the same file, which is the point of
 	// controllerNameFromDeployPath.
-	name, err := controllerNameFromDeployPath(assets)
+	name, err := controllerNameFromDeployPath(assets, CurrentLayout().DeployPath)
 	if err != nil {
 		t.Fatalf("reading the deploy path's controller name: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 	for release, install := range installs {
 		if fields := strings.Fields(install); len(fields) > 4 && filepath.IsAbs(fields[4]) {
 			if _, err := os.Stat(filepath.Join(fields[4], "Chart.yaml")); err != nil {
-				t.Errorf("release %s installs %s, which DeployAssetPaths does not export: %v", release, fields[4], err)
+				t.Errorf("release %s installs %s, which the layout does not export: %v", release, fields[4], err)
 			}
 		}
 	}

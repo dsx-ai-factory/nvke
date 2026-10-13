@@ -17,6 +17,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/auth"
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
+	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
@@ -55,16 +56,12 @@ func newClient(cfg config.SiteConfig, tokens tokenSource) (*ControllerClient, er
 	if err != nil {
 		return nil, fmt.Errorf("building API URL: %w", err)
 	}
-	httpClient := &http.Client{Timeout: 30 * time.Second}
-	if cfg.ProxyClientCertFile != "" {
-		cert, err := tls.LoadX509KeyPair(cfg.ProxyClientCertFile, cfg.ProxyClientKeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("loading TLS client cert/key: %w", err)
-		}
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
-		httpClient.Transport = transport
+	base, err := proxyTransport(cfg)
+	if err != nil {
+		return nil, err
 	}
+	// Outermost, so the proxy mTLS transport stays underneath.
+	httpClient := &http.Client{Timeout: 30 * time.Second, Transport: telemetry.Transport(base)}
 	opts := []api.ClientOption{api.WithHTTPClient(httpClient)}
 	if tokens != nil {
 		opts = append(opts, api.WithRequestEditorFn(bearerToken(tokens)))
@@ -74,6 +71,21 @@ func newClient(cfg config.SiteConfig, tokens tokenSource) (*ControllerClient, er
 		return nil, fmt.Errorf("building controller API client: %w", err)
 	}
 	return &ControllerClient{raw: raw}, nil
+}
+
+// proxyTransport returns the transport that presents the site's proxy client
+// certificate, or nil when none is configured.
+func proxyTransport(cfg config.SiteConfig) (http.RoundTripper, error) {
+	if cfg.ProxyClientCertFile == "" {
+		return nil, nil
+	}
+	cert, err := tls.LoadX509KeyPair(cfg.ProxyClientCertFile, cfg.ProxyClientKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("loading TLS client cert/key: %w", err)
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
+	return transport, nil
 }
 
 func bearerToken(tokens tokenSource) api.RequestEditorFn {

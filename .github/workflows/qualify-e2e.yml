@@ -112,7 +112,7 @@ on:
         type: string
         required: false
       controller-name:
-        description: "Name the controller is installed under, e.g. cloud-workflow-engine. The deploy path decides it and it changed partway through the releases, so it moves with controller-version. Empty leaves the suite on its default, and the run fails early if that disagrees with the deploy path."
+        description: "Name the controller is installed under. Empty uses the suite default, nke-controller, which every release the lane qualifies installs. The run fails early if it disagrees with the deploy path."
         type: string
         required: false
       cwe-name:
@@ -145,7 +145,7 @@ on:
         required: false
         default: false
       keep-site:
-        description: Keep the node after the run, for debugging. Remember to delete it by hand.
+        description: Keep the site node after the run, and a failed tenant's nodes, for debugging. Remember to delete them by hand.
         type: boolean
         required: false
         default: false
@@ -463,18 +463,13 @@ jobs:
       # for the component, as CAPI_PROVISIONED_VERSION is; the make variable
       # it feeds keeps the SITE_ prefix.
       CLI_VERSION: ${{ matrix.cli }}
-      # The name CWE is installed under, which the deploy path decides and the
-      # suite has to be told. The deploy path is exported from
-      # SITE_CONTROLLER_VERSION, and CWE was renamed partway through the
-      # releases: one cut before installs cloud-workflow-engine, one cut after
-      # installs nke-controller. So these two move with that version, and
-      # nothing but care keeps them in step.
+      # The name the controller is installed under, which the deploy path
+      # decides. Empty leaves the suite on its default, nke-controller, which
+      # every release the lane qualifies installs. Either way
+      # site.CheckControllerName reads the name out of the exported deploy
+      # path before a machine is taken and fails the run when it does not
+      # match, so a wrong value costs a minute rather than an hour.
       #
-      # Empty leaves the suite on its own default, which is the older name and
-      # what a developer running by hand against a released deploy path gets.
-      # Either way site.CheckControllerName reads the name out of the exported
-      # deploy path before a machine is taken and fails the run when it does
-      # not match, so a stale value here costs a minute rather than an hour.
       # One input for two variables: the deploy path names the namespace and
       # the Service alike in every release, so splitting them here would be two
       # knobs that have to be equal.
@@ -1058,6 +1053,12 @@ jobs:
                 tag: local
                 archive: ${SITE_INPUTS}/profiles.tar
           EOF
+          # -e2e.keep-site holds only the site node. The tenant's own cleanup
+          # still deletes a failed tenant's cluster, which releases the very
+          # instances the site was kept to look at.
+          if [ "${KEEP_SITE}" = "true" ]; then
+            printf 'lifecycle:\n  preserveOnFailure: true\n' >> controller/test/e2e/e2e-config.yaml
+          fi
           echo "--- e2e-config.yaml ---"
           cat controller/test/e2e/e2e-config.yaml
 
@@ -1327,7 +1328,7 @@ jobs:
           keep=()
           if [ "${KEEP_SITE}" = "true" ]; then
             keep=(-e2e.keep-site)
-            echo "::warning::-e2e.keep-site is set; the Forge instance survives this run and must be deleted by hand"
+            echo "::warning::-e2e.keep-site is set; the site node, and a failed tenant's nodes, survive this run and must be deleted by hand"
           fi
           # -v so a green run keeps its output. Without it `go test` buffers a
           # passing package's stdout and throws it away, which is what run

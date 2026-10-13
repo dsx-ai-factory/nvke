@@ -6,14 +6,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	"github.com/dsx-ai-factory/nvke/cli/internal/operator"
+	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 )
 
 var (
@@ -31,8 +34,12 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 		// message on stderr.
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			return setupLogging(verbose, jsonLogs)
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			run := telemetry.RunFrom(cmd.Context())
+			if !isTraced(cmd) {
+				run = nil
+			}
+			return setupLogging(verbose, jsonLogs, run)
 		},
 	}
 
@@ -113,11 +120,106 @@ func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
 // Execute runs the command tree and returns the error the command failed with,
 // or nil. ctx becomes the root context every command sees through
 // cmd.Context(), so cancelling it cancels the command in flight.
+//
+// Every command but help and completion gets one trace ID. A failing command's
+// error ends with it. A succeeding command other than a query command prints it
+// as a "Trace ID:" line on stderr, never on stdout. A succeeding query command
+// writes nothing and logs the ID at debug level.
 func Execute(ctx context.Context, ver, commit, treeState, date string) error {
-	return newRootCmd(ver, commit, treeState, date).ExecuteContext(ctx)
+	root := newRootCmd(ver, commit, treeState, date)
+	return execute(ctx, root, ver, root.ErrOrStderr())
 }
 
-func setupLogging(verbose, jsonLogs bool) error {
+// execute runs root under a new trace run and reports the trace ID as Execute
+// describes, writing the line for a successful command to stderr.
+func execute(ctx context.Context, root *cobra.Command, ver string, stderr io.Writer) error {
+	run := telemetry.NewRun(ver)
+	// Started before cobra parses anything, so even a rejected flag has an ID.
+	// The name is only known once cobra has resolved the command.
+	ctx = run.Start(ctx, root.Name())
+	cmd, err := root.ExecuteContextC(ctx)
+	if cmd != nil {
+		run.SetName(cmd.CommandPath())
+	}
+	run.Finish(err)
+	return announceTrace(cmd, stderr, run.TraceID(), err)
+}
+
+// untracedCommands are the top-level commands that do no work of their own:
+// cobra's help and shell completion.
+var untracedCommands = map[string]bool{ //nolint:gochecknoglobals // constant lookup table
+	"help":                          true,
+	"completion":                    true,
+	cobra.ShellCompRequestCmd:       true,
+	cobra.ShellCompNoDescRequestCmd: true,
+}
+
+// queryCommands are the top-level commands that only report. When one
+// succeeds it writes nothing but its result, so it does not print the trace ID.
+var queryCommands = map[string]bool{ //nolint:gochecknoglobals // constant lookup table
+	"get":      true,
+	"version":  true,
+	"config":   true,
+	"generate": true,
+}
+
+// topLevel returns the name of the command directly under the root that cmd
+// belongs to, or "" for the root itself.
+func topLevel(cmd *cobra.Command) string {
+	path := strings.Fields(cmd.CommandPath())
+	if len(path) < 2 {
+		return ""
+	}
+	return path[1]
+}
+
+// isTraced reports whether cmd starts a trace: every command but help and
+// completion.
+func isTraced(cmd *cobra.Command) bool {
+	top := topLevel(cmd)
+	return top != "" && !untracedCommands[top]
+}
+
+// announceTrace reports the run's trace ID for the command that ran. It returns
+// err, with the trace ID appended if the command failed. A command that is not
+// traced reports nothing.
+func announceTrace(cmd *cobra.Command, w io.Writer, traceID string, err error) error {
+	if traceID == "" || cmd == nil || !isTraced(cmd) {
+		return err
+	}
+	if err != nil {
+		return &tracedError{err: err, traceID: traceID}
+	}
+	if helpRequested(cmd) {
+		return nil
+	}
+	if queryCommands[topLevel(cmd)] {
+		slog.Debug("command finished", "command", cmd.CommandPath())
+		return nil
+	}
+	fmt.Fprintf(w, "Trace ID: %s\n", traceID)
+	return nil
+}
+
+// helpRequested reports whether the operator passed -h or --help to cmd. Cobra
+// then prints the help and returns success without running the command.
+func helpRequested(cmd *cobra.Command) bool {
+	help := cmd.Flags().Lookup("help")
+	return help != nil && help.Changed
+}
+
+// tracedError is a command failure that reports the trace ID of the run.
+type tracedError struct {
+	err     error
+	traceID string
+}
+
+func (e *tracedError) Error() string { return e.err.Error() + "\nTrace ID: " + e.traceID }
+func (e *tracedError) Unwrap() error { return e.err }
+
+// setupLogging installs the default logger. A run that has started adds its
+// trace_id and span_id to every record.
+func setupLogging(verbose, jsonLogs bool, run *telemetry.Run) error {
 	level := slog.LevelInfo
 	if verbose {
 		level = slog.LevelDebug
@@ -128,6 +230,9 @@ func setupLogging(verbose, jsonLogs bool) error {
 		h = slog.NewJSONHandler(os.Stderr, opts)
 	} else {
 		h = slog.NewTextHandler(os.Stderr, opts)
+	}
+	if run != nil {
+		h = run.LogHandler(h)
 	}
 	slog.SetDefault(slog.New(h))
 	return nil

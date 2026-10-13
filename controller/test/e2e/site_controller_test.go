@@ -753,20 +753,15 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	if err != nil {
 		return site.Stack{}, nil, err
 	}
-	assets, err := site.ExportRef(context.Background(), repo, ref, site.DeployAssetPaths())
+	// Here, in BeforeAll, rather than when the stack deploys: this also
+	// checks the controller's name against the release, which has to fail
+	// before a machine is taken.
+	assets, cleanupAssets, err := site.ExportDeployAssets(context.Background(), repo, ref)
 	if err != nil {
 		return site.Stack{}, nil, err
 	}
-	DeferCleanup(func() { _ = os.RemoveAll(assets) })
+	DeferCleanup(cleanupAssets)
 
-	// Before a machine is taken: the deploy path chooses the name the controller is
-	// installed under, the lane chooses the name the suite looks for, and
-	// nothing else makes the two agree. Checked here rather than beside the
-	// spec because the stack is what exports these assets and so what knows
-	// the name they install.
-	if nameErr := site.CheckControllerName(assets); nameErr != nil {
-		return site.Stack{}, nil, nameErr
-	}
 	images := cfg.Site.Images
 	profiles := site.Image{Repository: images.Profiles.Repository, Tag: images.Profiles.Tag}
 	user, token := os.Getenv(envRegistryUser), os.Getenv(envRegistryToken)
@@ -785,7 +780,6 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	GinkgoLogr.Info("deploying the stack", "controller", controller.Ref(), "profiles", profiles.Ref())
 	return site.Stack{
 		Assets:     assets,
-		AssetPaths: site.DeployAssetPaths(),
 		Controller: controller,
 		Profiles:   profiles,
 		Provider:   deployConfig,

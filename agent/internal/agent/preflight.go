@@ -117,7 +117,13 @@ func (s *NodeAgentServer) runCloudInitStatusPreflightCheck() (*pb.NodePreflightR
 		return nil, fmt.Errorf("check_cloud_init_status: command runner not configured")
 	}
 
-	output, runErr := s.Runner.Run("cloud-init", []string{"status"}, nil)
+	// --long because the bare status is one word. Run 37745107586 retried
+	// this check 44 times over 90 minutes and reported "status: error" every
+	// time, which says a node failed cloud-init and not which part of it, and
+	// the node was released before anyone could ask. --long adds the failing
+	// stage and its message, so the report that reaches the controller names
+	// the cause. The status line it already parsed is still the first line.
+	output, runErr := s.Runner.Run("cloud-init", []string{"status", "--long"}, nil)
 	report := strings.TrimSpace(string(output))
 
 	// A non-zero exit only tells us cloud-init recorded errors, not that it
@@ -148,23 +154,33 @@ func (s *NodeAgentServer) runCloudInitStatusPreflightCheck() (*pb.NodePreflightR
 	}, nil
 }
 
+// cloudInitState is the value of the first line of report that starts with
+// "status:". --long follows that line with free text -- detail, errors --
+// that can say anything, including another status phrase, so only the
+// status line decides. extended_status does not match: the prefix is
+// checked at the start of the line.
+func cloudInitState(report string) string {
+	for _, line := range strings.Split(report, "\n") {
+		line = strings.ToLower(strings.TrimSpace(line))
+		if value, ok := strings.CutPrefix(line, "status:"); ok {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 func evaluateCloudInitStatus(output string) (bool, string, error) {
 	outputTrimmed := strings.TrimSpace(output)
-	outputLower := strings.ToLower(outputTrimmed)
 
-	if strings.Contains(outputLower, "status: done") {
+	switch cloudInitState(outputTrimmed) {
+	case "done":
 		return true, fmt.Sprintf("cloud-init done: %s", outputTrimmed), nil
-	}
-	if strings.Contains(outputLower, "status: error") {
+	case "error":
 		return false, "", fmt.Errorf("cloud-init error status: %s", outputTrimmed)
-	}
-	if strings.Contains(outputLower, "status: running") {
-		return false, fmt.Sprintf("cloud-init not done: %s", outputTrimmed), nil
 	}
 	if outputTrimmed == "" {
 		return false, "cloud-init status returned empty output", nil
 	}
-
 	return false, fmt.Sprintf("cloud-init not done: %s", outputTrimmed), nil
 }
 

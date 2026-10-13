@@ -62,6 +62,17 @@ tpm_plugin_version_pin="$(read_tool_version TPM_PLUGIN_VERSION)"
 # and the image has to land in the containerd store nvkectl loads from.
 : "${CONTAINER_CLI:=docker}"
 
+# The base this script builds on, resolved the same way the build below resolves
+# it. Callers that need the base without building ask here rather than restating
+# the pin -- see e2e_host_loads_openvswitch, which probes the host kernel with
+# the base's own kmod before anything is built.
+if [[ "${1:-}" == "--print-base-image" ]]; then
+  printf '%s:%s\n' \
+    "${NKE_E2E_DOCKERHUB_MIRROR:+${NKE_E2E_DOCKERHUB_MIRROR}/}kindest/node" \
+    "${CAPD_KINDEST_NODE_TAG}"
+  exit 0
+fi
+
 if [[ "$(uname -s)" == "Darwin" && -z "${DOCKER_HOST:-}" ]]; then
   : "${COLIMA_DOCKER_HOST:=unix://${HOME}/.colima/default/docker.sock}"
   export DOCKER_HOST="${COLIMA_DOCKER_HOST}"

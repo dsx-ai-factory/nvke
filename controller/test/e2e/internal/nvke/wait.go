@@ -6,6 +6,8 @@ package nvke
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -45,15 +47,45 @@ func stallWindow(budget time.Duration) time.Duration {
 	return window
 }
 
+// provisioningProgress is what WaitForClusterReady compares between polls to
+// decide whether provisioning is still moving: the cluster's provisioning
+// message plus each node's milestones.
+//
+// The cluster message alone is not enough. It reads "Waiting for a control
+// plane node to be ready to join" for the whole of the control plane's boot,
+// which on bare metal can outlast the stall window while the node is still
+// getting somewhere: run 37882425829 stopped an amd64 control plane sixteen
+// minutes in, after it had gained an address and a reachable agent and while
+// its setup script was still running.
+//
+// Milestones are statuses, not messages. A node's provisioning message carries
+// an attempt count and an elapsed time that change on every retry, so a node
+// retrying forever would look like it was progressing.
+func provisioningProgress(message string, nodes []api.Node) string {
+	sorted := slices.Clone(nodes)
+	slices.SortFunc(sorted, func(a, b api.Node) int { return strings.Compare(a.Name, b.Name) })
+
+	var b strings.Builder
+	b.WriteString(message)
+	for _, node := range sorted {
+		conditions := node.Conditions
+		fmt.Fprintf(&b, "\n%s ip=%t agent=%s readyToJoin=%s joined=%s provisioned=%s ready=%s",
+			node.Name, node.IP != "",
+			conditions.NodeAgentReady.Status, conditions.ReadyToJoin.Status, conditions.Joined.Status,
+			conditions.Provisioned.Status, conditions.KubernetesReady.Status)
+	}
+	return b.String()
+}
+
 // WaitForClusterReady polls the cluster until its Provisioned condition is True,
-// erroring if Provisioning flips to False, the message stops changing, the
+// erroring if Provisioning flips to False, provisioning stops progressing, the
 // deadline passes, or ctx is done.
 //
 // The message is watched because the controller does not give up. Its provisioning
 // activities retry indefinitely, so a node that cannot be provisioned leaves
 // Provisioning True and Provisioned False for as long as anyone waits, and the
 // deadline is the only thing that ends it. A run then spends its whole budget
-// to report that the time ran out. A message that has not changed for
+// to report that the time ran out. Progress that has not changed for
 // stallWindow says the same thing sooner, and says what it was stuck on.
 func (c *Client) WaitForClusterReady(ctx context.Context, id openapi_types.UUID) (*api.Cluster, error) {
 	deadline := time.After(c.opts.Provision)
@@ -61,7 +93,8 @@ func (c *Client) WaitForClusterReady(ctx context.Context, id openapi_types.UUID)
 	defer ticker.Stop()
 
 	stall := stallWindow(c.opts.Provision)
-	message, changed := noLastError, time.Now()
+	progress, changed := noLastError, time.Now()
+	var lastNodes []api.Node
 
 	for {
 		select {
@@ -82,12 +115,21 @@ func (c *Client) WaitForClusterReady(ctx context.Context, id openapi_types.UUID)
 				if cluster.Conditions.Provisioning.Status == api.ConditionStatusFalse {
 					return nil, fmt.Errorf("cluster %s provisioning failed: %s", cluster.Name, cluster.Conditions.Provisioning.Message)
 				}
-				if current := cluster.Conditions.Provisioning.Message; current != message {
-					message, changed = current, time.Now()
+				// A failed list keeps the last nodes seen rather than skipping
+				// the poll, so failures neither hide a stall nor look like
+				// progress when the next list succeeds.
+				nodes, err := c.ListClusterNodes(ctx, id)
+				if err != nil {
+					nodes = lastNodes
+				} else {
+					lastNodes = nodes
+				}
+				if current := provisioningProgress(cluster.Conditions.Provisioning.Message, nodes); current != progress {
+					progress, changed = current, time.Now()
 				} else if waited := time.Since(changed); waited >= stall {
 					return nil, fmt.Errorf(
-						"cluster %s has not progressed for %v of its %v: provisioning still reports %q",
-						cluster.Name, waited.Round(time.Second), c.opts.Provision, current,
+						"cluster %s has not progressed for %v of its %v: provisioning still reports %q and no node has reached a new milestone",
+						cluster.Name, waited.Round(time.Second), c.opts.Provision, cluster.Conditions.Provisioning.Message,
 					)
 				}
 			}

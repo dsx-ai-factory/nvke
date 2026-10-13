@@ -24,9 +24,6 @@ import (
 )
 
 const (
-	// defaultDeployPath is the customer deploy path, relative to the assets.
-	defaultDeployPath = "deploy/nico"
-
 	// defaultStorageClassManifest is rancher local-path, what the reference
 	// site used because its instance type has one NVMe with root on it.
 	defaultStorageClassManifest = "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.31/deploy/local-path-storage.yaml"
@@ -166,22 +163,18 @@ type Tenant struct {
 // not from this suite, so the suite follows whatever deploy path the checkout
 // it stages carries.
 type Stack struct {
-	// DeployPath is the deploy path to install, relative to the assets.
-	// Defaults to deploy/nico.
-	DeployPath string
-
-	Controller Image
-	Profiles   Image
-
-	// Assets is a checkout on the runner. AssetPaths, relative to it, are
-	// staged to the node with their layout intact, which the deploy path
-	// depends on: a release reaches its chart by relative path.
+	// Assets are the deploy path and the scripts that apply it, staged to
+	// the node with their layout intact, which the deploy path depends on: a
+	// release reaches its chart by relative path. ExportDeployAssets builds
+	// them.
 	//
 	// Nothing in the bootstrap reads them: nvkectl pulls its charts from their
 	// repositories and embeds its values. These are the deploy's own
 	// installer, tree and scripts.
-	Assets     string
-	AssetPaths []string
+	Assets DeployAssets
+
+	Controller Image
+	Profiles   Image
 
 	// Provider is how the installed Cluster API provider reaches its
 	// infrastructure. Required: a stack with no way to create machines
@@ -208,10 +201,44 @@ type Stack struct {
 	ControllerEnv map[string]string
 }
 
+// DeployAssets are a ref's deploy path and the scripts that apply it,
+// exported onto the runner.
+type DeployAssets struct {
+	// Dir is the export. Layout.Export, relative to it, is what is staged.
+	Dir string
+	// Layout is where Dir keeps the executor and the deploy path, which
+	// depends on the ref it came from. Zero is CurrentLayout().
+	Layout DeployLayout
+}
+
+// ExportDeployAssets exports ref's deploy assets from repo and checks that
+// the controller name they install is the one the suite looks for. cleanup
+// removes the export; the caller owns when it runs.
+//
+// Call it before any machine is taken, not at deploy time, so a release that
+// predates the supported layout or disagrees about the name fails here on
+// the runner rather than after a node has been provisioned.
+func ExportDeployAssets(ctx context.Context, repo, ref string) (DeployAssets, func(), error) {
+	layout, err := ResolveLayout(ctx, repo, ref)
+	if err != nil {
+		return DeployAssets{}, nil, err
+	}
+	dir, err := ExportRef(ctx, repo, ref, layout.Export)
+	if err != nil {
+		return DeployAssets{}, nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	if err := CheckControllerName(dir, layout.DeployPath); err != nil {
+		cleanup()
+		return DeployAssets{}, nil, err
+	}
+	return DeployAssets{Dir: dir, Layout: layout}, cleanup, nil
+}
+
 // stageAssets copies the deploy path onto the node, with the layout the
 // scripts in it expect.
 func (d Stack) stageAssets(ctx context.Context, s infra.Session) error {
-	archive, err := archiveAssets(d.Assets, d.AssetPaths)
+	archive, err := archiveAssets(d.Assets.Dir, d.Assets.Layout.Export)
 	if err != nil {
 		return err
 	}
@@ -255,7 +282,7 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 		return err
 	}
 
-	overlay, err := s.Fetch(ctx, path.Join(assetsDir, d.DeployPath, releaseSpire, "overlay.yaml"))
+	overlay, err := s.Fetch(ctx, path.Join(assetsDir, d.Assets.Layout.DeployPath, releaseSpire, "overlay.yaml"))
 	if err != nil {
 		return fmt.Errorf("read the deploy path's SPIRE overlay: %w", err)
 	}
@@ -293,8 +320,8 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 }
 
 func (d Stack) withDefaults() Stack {
-	if d.DeployPath == "" {
-		d.DeployPath = defaultDeployPath
+	if d.Assets.Layout.Executor == "" {
+		d.Assets.Layout = CurrentLayout()
 	}
 	if d.StorageClassManifest == "" {
 		d.StorageClassManifest = defaultStorageClassManifest
@@ -305,29 +332,22 @@ func (d Stack) withDefaults() Stack {
 	return d
 }
 
-const (
-	// controllerReleasePath is the HelmRelease the deploy/nico deploy path
-	// installs CWE from, relative to the exported assets.
-	controllerReleasePath = defaultDeployPath + "/controller/release.yaml"
-)
-
-// CheckControllerName fails when the deploy path installs CWE under a name the
-// suite is not configured to look for.
+// CheckControllerName fails when the deploy path installs the controller
+// under a name the suite is not configured to look for.
 //
-// These are two different owners of one string. The deploy path is exported
-// from the controller version under test, so a release cut before CWE was
-// renamed installs cloud-workflow-engine and one cut after installs
-// nke-controller. What the suite looks for comes from NKE_CONTROLLER_NAMESPACE
-// and NKE_CONTROLLER_SERVICE, which the lane sets. Nothing makes the two move
-// together.
+// These are two owners of one string: the deploy path, exported from the
+// controller version under test, and NKE_CONTROLLER_NAMESPACE and
+// NKE_CONTROLLER_SERVICE, which default to nke-controller. Nothing makes the
+// two move together.
 //
-// They disagreed once already, and the symptom was expensive: the readiness
-// probe opened a port-forward onto a Service that did not exist, the forwarder
-// retried the NotFound rather than reporting it, and the run spent ten minutes
-// reporting that CWE would not come up while CWE was healthy in the namespace
-// beside it. Checked here, on the runner, before any machine is taken.
-func CheckControllerName(assets string) error {
-	deployed, err := controllerNameFromDeployPath(assets)
+// Getting it wrong is expensive rather than obvious: the readiness probe
+// opens a port-forward onto a Service that does not exist, the forwarder
+// retries the NotFound rather than reporting it, and the run spends ten
+// minutes reporting that the controller will not come up while it is healthy
+// in the namespace beside it. So this runs on the runner, before any machine
+// is taken.
+func CheckControllerName(assets, deployPath string) error {
+	deployed, err := controllerNameFromDeployPath(assets, deployPath)
 	if err != nil {
 		return err
 	}
@@ -335,15 +355,16 @@ func CheckControllerName(assets string) error {
 		return nil
 	}
 	return fmt.Errorf(
-		"the deploy path installs CWE as %q but the suite looks for %s/%s: set %s and %s to %q, or qualify a controller whose deploy path matches",
+		"the deploy path installs the controller as %q but the suite looks for %s/%s: set %s and %s to %q, or qualify a controller whose deploy path matches",
 		deployed, controller.Namespace(), controller.Service(), controller.EnvNamespace, controller.EnvService, deployed,
 	)
 }
 
 // controllerNameFromDeployPath is the name a set of exported assets installs
 // CWE under, read from the HelmRelease rather than assumed.
-func controllerNameFromDeployPath(assets string) (string, error) {
-	raw, err := os.ReadFile(filepath.Join(assets, controllerReleasePath))
+func controllerNameFromDeployPath(assets, deployPath string) (string, error) {
+	releasePath := ControllerReleasePath(deployPath)
+	raw, err := os.ReadFile(filepath.Join(assets, releasePath))
 	if err != nil {
 		return "", fmt.Errorf("reading the deploy path's controller release: %w", err)
 	}
@@ -354,24 +375,20 @@ func controllerNameFromDeployPath(assets string) (string, error) {
 		} `json:"release"`
 	}
 	if err := yaml.Unmarshal(raw, &release); err != nil {
-		return "", fmt.Errorf("parsing %s: %w", controllerReleasePath, err)
+		return "", fmt.Errorf("parsing %s: %w", releasePath, err)
 	}
 	if release.Release.Namespace == "" {
-		return "", fmt.Errorf("%s names no release namespace, so the name CWE is installed under cannot be read", controllerReleasePath)
+		return "", fmt.Errorf("%s names no release namespace, so the name CWE is installed under cannot be read", releasePath)
 	}
 	return release.Release.Namespace, nil
 }
 
-// controllerName is the namespace, Service and ServiceAccount CWE is installed
-// under, and so the last segment of its SPIFFE ID.
+// controllerName is the namespace, Service and ServiceAccount the controller
+// is installed under, and so the last segment of its SPIFFE ID.
 //
-// Read from the cwe package rather than written out here, because this file
-// does not get to choose it. The deploy path does, and the deploy path is
-// exported from the controller version under test: a release cut before CWE
-// was renamed installs cloud-workflow-engine, one cut after installs
-// nke-controller. The lane says which by setting NKE_CONTROLLER_NAMESPACE and
-// NKE_CONTROLLER_SERVICE, and CheckControllerName fails the run when the two
-// disagree.
+// Read from the controller package rather than written out here, because this
+// file does not get to choose it. The deploy path does, and
+// CheckControllerName fails the run before any spec when the two disagree.
 func controllerName() string { return controller.Service() }
 
 // spireAdminPath is CWE's SPIFFE ID below the trust domain. A name that does
@@ -387,12 +404,12 @@ func (d Stack) validate() error {
 	if !d.Profiles.valid() {
 		problems = append(problems, "profiles image needs a repository and a tag")
 	}
-	if d.Assets == "" {
+	if d.Assets.Dir == "" {
 		problems = append(problems, "no assets")
-	} else if _, err := os.Stat(d.Assets); err != nil {
+	} else if _, err := os.Stat(d.Assets.Dir); err != nil {
 		problems = append(problems, fmt.Sprintf("assets: %v", err))
 	}
-	for _, rel := range d.AssetPaths {
+	for _, rel := range d.Assets.Layout.Export {
 		if filepath.IsAbs(rel) || strings.HasPrefix(filepath.Clean(rel), "..") {
 			problems = append(problems, fmt.Sprintf("asset path %q is not inside the checkout", rel))
 		}
@@ -429,13 +446,22 @@ func (d Stack) commands(t DeployTarget, valuesDir string) []step {
 		return "--values-for " + shellQuote(release+"="+path.Join(valuesDir, valuesFile(release)))
 	}
 	defaultClass := `{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}`
+	// The flag that names the deploy path is the one thing the two executors
+	// spell differently.
+	target := ""
+	for i, arg := range d.Assets.Layout.TargetArgs(assetsDir) {
+		if i > 0 {
+			target += " "
+		}
+		target += shellQuote(arg)
+	}
 	return []step{
 		{"untaint the control plane", env + "kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true"},
 		{"clusterctl init", env + "clusterctl init --wait-providers"},
 		{"default storage class", env + "kubectl apply -f " + shellQuote(d.StorageClassManifest) +
 			" && " + env + "kubectl patch storageclass " + shellQuote(d.StorageClassName) + " -p " + shellQuote(defaultClass)},
-		{"install " + d.DeployPath, env + "bash " + shellQuote(path.Join(assetsDir, scriptsDir, "nvke-deploy.sh")) + " install" +
-			" --deploy-path " + shellQuote(path.Join(assetsDir, d.DeployPath)) +
+		{"install " + d.Assets.Layout.DeployPath, env + "bash " + shellQuote(path.Join(assetsDir, d.Assets.Layout.Executor)) + " install" +
+			" " + target +
 			" --config " + shellQuote(path.Join(valuesDir, "bootstrap-config.json")) +
 			" " + values(releaseController) +
 			" " + values(releaseSpire) +

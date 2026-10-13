@@ -181,6 +181,15 @@ else
   log "preserving tenant node containers from other local E2E runs"
 fi
 
+# Before the cluster and the builds, for the reason given in backend-e2e-lib.sh:
+# the answer is a property of this host's kernel, so nothing below changes it,
+# and a host that cannot load the module has already lost the suite.
+log "checking this host can load the openvswitch module"
+ovs_probe_image="$(e2e_capd_base_image "${repo_root}")" \
+  || fail "could not resolve the CAPD base image to probe with"
+e2e_host_loads_openvswitch "${ovs_probe_image}" ||
+  fail "this host cannot load the openvswitch module (#1515)"
+
 log "ensuring the Kind management cluster exists"
 kind_config_for_mirror "${repo_root}/hack/controller-capi-kind.yaml" "${tmp_dir}/kind-config.yaml"
 make -C "${repo_root}" kind-up KIND_CLUSTER_CONFIG="${tmp_dir}/kind-config.yaml"
@@ -238,8 +247,6 @@ if [[ "${LOCAL_NKE_E2E_REUSE_CAPD_SETUP:-false}" == true ]]; then
 else
   make -C "${repo_root}" capd-up REGISTRY_MIRROR_IMAGE="$(dockerhub_image registry:2)"
 fi
-e2e_host_loads_openvswitch "${CAPD_NODE_IMAGE:-cwe-capd-kindest-node:local}" ||
-  fail "this host cannot load the openvswitch module (#1515)"
 
 # The committed fixture, not the provider checkout: this script installs the
 # CRDs but never builds the provider, so requiring a checkout would gate the

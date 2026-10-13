@@ -979,8 +979,10 @@ message ExecuteNodePreflightRequest {
   repeated NodePreflightCheck checks = 1;
   // Optional kubeadm init/join preflight for this node.
   optional KubeadmPreflightRequest kubeadm_preflight = 2;
-  // When set, the agent runs `cloud-init status` and passes when output contains
-  // "status: done". "status: running" yields notready; "status: error" yields error.
+  // When set, the agent runs `cloud-init status --long` and passes when its
+  // status line reads "status: done". "status: running" yields notready;
+  // "status: error" yields error. The lines after the status line are
+  // reported, not evaluated.
   CheckCloudInitStatus check_cloud_init_status = 3;
 }
 

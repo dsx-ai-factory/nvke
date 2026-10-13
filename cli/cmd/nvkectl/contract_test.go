@@ -27,8 +27,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -476,7 +478,9 @@ func TestSignalCancelsAnInFlightCommand(t *testing.T) {
 			reached := make(chan struct{})
 			release := make(chan struct{})
 			var once sync.Once
+			var traceparent atomic.Value
 			srv := stubCWE(t, func(_ http.ResponseWriter, r *http.Request) {
+				traceparent.Store(r.Header.Get("Traceparent"))
 				once.Do(func() { close(reached) })
 				// Hold the request open until the command is interrupted, or until
 				// the test finishes, whichever comes first.
@@ -522,6 +526,11 @@ func TestSignalCancelsAnInFlightCommand(t *testing.T) {
 			}
 			if stdout.String() != "" {
 				t.Errorf("stdout = %q, want nothing: a cancelled command produces no result", stdout.String())
+			}
+			// The report must name the ID the controller received.
+			wantID := traceIDOf(t, traceparent.Load().(string))
+			if want := "nvkectl: canceled\nTrace ID: " + wantID + "\n"; stderr.String() != want {
+				t.Errorf("stderr = %q, want %q", stderr.String(), want)
 			}
 		})
 	}
@@ -650,5 +659,161 @@ func requireKeys(t *testing.T, doc map[string]any, keys []string) {
 		if _, ok := doc[k]; !ok {
 			t.Errorf("key %q is missing; it is part of the documented output contract", k)
 		}
+	}
+}
+
+// traceIDOf returns the trace ID in a W3C traceparent header value.
+func traceIDOf(t *testing.T, traceparent string) string {
+	t.Helper()
+	parts := strings.Split(traceparent, "-")
+	if len(parts) != 4 || len(parts[1]) != 32 {
+		t.Fatalf("traceparent = %q, want version-traceid-spanid-flags", traceparent)
+	}
+	return parts[1]
+}
+
+const dryRunImage = `metadata:
+  name: img-1
+spec:
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  architecture: amd64
+  variant: fde
+  buildDate: "2026-03-23"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      chain ${loader}
+`
+
+// TestTraceIDStaysOffStructuredOutput runs the built binary, so the root
+// wrapper that reports the trace ID is exercised. A trace line after a JSON
+// document breaks any caller that parses stdout.
+func TestTraceIDStaysOffStructuredOutput(t *testing.T) {
+	t.Parallel()
+	image := filepath.Join(t.TempDir(), "image.yaml")
+	if err := os.WriteFile(image, []byte(dryRunImage), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	traceLine := regexp.MustCompile(`(?m)^Trace ID: [0-9a-f]{32}$`)
+
+	for _, format := range []string{"json", "yaml", ""} {
+		t.Run("format="+format, func(t *testing.T) {
+			t.Parallel()
+			args := []string{"create", "machineimage", "-f", image, "--dry-run=client"}
+			if format != "" {
+				args = append(args, "-o", format)
+			}
+			got := run(t, t.TempDir(), args...)
+			if got.exitCode != 0 {
+				t.Fatalf("exit code = %d\nstderr: %q", got.exitCode, got.stderr)
+			}
+
+			var doc map[string]any
+			var err error
+			if format == "json" {
+				err = json.Unmarshal([]byte(got.stdout), &doc)
+			} else {
+				err = yaml.Unmarshal([]byte(got.stdout), &doc)
+			}
+			if err != nil {
+				t.Fatalf("stdout is not one %s document: %v\n%s", format, err, got.stdout)
+			}
+			requireKeys(t, doc, []string{"apiVersion", "kind", "metadata", "spec"})
+			if len(doc) != 4 {
+				t.Errorf("stdout has keys beyond the manifest's: %v", doc)
+			}
+			if traceLine.MatchString(got.stdout) {
+				t.Errorf("stdout carries a trace ID line:\n%s", got.stdout)
+			}
+			if !traceLine.MatchString(got.stderr) {
+				t.Errorf("stderr has no trace ID line: %q", got.stderr)
+			}
+		})
+	}
+}
+
+// TestDebugLogsCarryTheRequestsTraceID runs the built binary with -v and
+// --json-logs and checks each record carries the trace ID the controller
+// received.
+func TestDebugLogsCarryTheRequestsTraceID(t *testing.T) {
+	t.Parallel()
+	var traceparent atomic.Value
+	srv := stubCWE(t, func(w http.ResponseWriter, r *http.Request) {
+		traceparent.Store(r.Header.Get("Traceparent"))
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"clusters":[]}`)
+	})
+
+	got := run(t, writeSiteConfig(t, srv.URL), "-v", "--json-logs", "get", "clusters", "-o", "json")
+	if got.exitCode != 0 {
+		t.Fatalf("exit code = %d\nstderr: %q", got.exitCode, got.stderr)
+	}
+	wantID := traceIDOf(t, traceparent.Load().(string))
+
+	seen := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(got.stderr), "\n") {
+		var rec map[string]any
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("stderr line is not JSON: %q", line)
+		}
+		if rec["trace_id"] != wantID {
+			t.Errorf("record %q has trace_id %v, want %s", rec["msg"], rec["trace_id"], wantID)
+		}
+		if id, _ := rec["span_id"].(string); len(id) != 16 {
+			t.Errorf("record %q has span_id %v", rec["msg"], rec["span_id"])
+		}
+		seen[fmt.Sprint(rec["msg"])] = true
+	}
+	for _, msg := range []string{"sending request", "command finished"} {
+		if !seen[msg] {
+			t.Errorf("no %q record in:\n%s", msg, got.stderr)
+		}
+	}
+}
+
+// TestWarnsWhenTheControllerAnswersWithADifferentTraceID runs the built binary
+// against a controller that does or does not honour the traceparent it was sent.
+func TestWarnsWhenTheControllerAnswersWithADifferentTraceID(t *testing.T) {
+	t.Parallel()
+	const otherID = "0af7651916cd43dd8448eb211c80319c"
+
+	tests := []struct {
+		name     string
+		header   func(traceparent string) string // "" sends no X-Trace-ID
+		wantWarn bool
+	}{
+		{"controller honours it", func(tp string) string { return strings.Split(tp, "-")[1] }, false},
+		{"controller starts its own trace", func(string) string { return otherID }, true},
+		{"controller sends no ID", func(string) string { return "" }, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv := stubCWE(t, func(w http.ResponseWriter, r *http.Request) {
+				if id := tc.header(r.Header.Get("Traceparent")); id != "" {
+					w.Header().Set("X-Trace-ID", id)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"clusters":[]}`)
+			})
+
+			got := run(t, writeSiteConfig(t, srv.URL), "get", "clusters", "-o", "json")
+
+			if got.exitCode != 0 {
+				t.Fatalf("exit code = %d, want 0\nstderr: %q", got.exitCode, got.stderr)
+			}
+			if !json.Valid([]byte(got.stdout)) {
+				t.Errorf("stdout is not JSON: %q", got.stdout)
+			}
+			warned := strings.Contains(got.stderr, "level=WARN") && strings.Contains(got.stderr, "received="+otherID)
+			if warned != tc.wantWarn {
+				t.Errorf("warned = %v, want %v\nstderr: %q", warned, tc.wantWarn, got.stderr)
+			}
+			if !tc.wantWarn {
+				assertStream(t, "stderr", got.stderr, "")
+			}
+		})
 	}
 }

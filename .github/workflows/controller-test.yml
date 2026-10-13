@@ -118,6 +118,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The e2e module's TestLayoutsMatchTheReleaseTags is the only test
+          # that checks the deploy-layout table against the tags the site
+          # lane actually exports from; without the tags here it skips, and
+          # the table could drift from every release unnoticed. The default
+          # shallow fetch is kept -- the test reads each tag's tree, which a
+          # depth-1 tag fetch carries, and skips any tag it cannot read.
+          fetch-tags: true
 
       # Workspace mode (default) so tests resolve the root module graph.
       # go.work carries the toolchain that satisfies every module.
