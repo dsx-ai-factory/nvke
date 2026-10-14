@@ -339,6 +339,7 @@ nodeMetadata:
 
 # -- Additional environment variables to inject into the controller container. A
 # variable nke-controller-config carries is refused; set its chart value instead.
+# CONTROLLER_CONFIG_PATH is refused too: the chart sets it to the mounted file.
 env: []
 # - name: EXAMPLE
 #   value: example

@@ -69,7 +69,7 @@ cni:
   installAfterInit: true
 
 # Empty on this path: none of the optional variables the Tiltfile forwards
-# (LOG_LEVEL, FORGE_URL, ...) are set by backend-e2e.sh.
+# (LOG_LEVEL, NODE_PROVISIONING_TIMEOUT, ...) are set by backend-e2e.sh.
 env: []
 
 # ---------------------------------------------------------------------------

@@ -113,13 +113,13 @@ if "nico-vm" in _provider_names and "nico-vms" not in _provider_names:
          "in the provider list: it points nico-credentials at that backend and depends on " +
          "its Tilt resource by name.")
 
-# 'nico' and 'nico-vms' are mutually exclusive Forge backends for the controller: both set
-# FORGE_URL and both bind host port 18080 (nico-mock's port-forward vs nico-vms's
-# listener). Enable at most one. (capd is orthogonal and may accompany either.)
+# 'nico' and 'nico-vms' are mutually exclusive Forge backends for the controller: both
+# bind host port 18080 (nico-mock's port-forward vs nico-vms's listener). Enable at
+# most one. (capd is orthogonal and may accompany either.)
 if "nico" in _provider_names and "nico-vms" in _provider_names:
     fail("Providers 'nico' (nico-mock, container-backed nodes) and 'nico-vms' (real " +
-         "KVM/libvirt VMs) are mutually exclusive controller backends: both set the controller's FORGE_URL " +
-         "and bind host port 18080. Enable only one (capd may accompany either).")
+         "KVM/libvirt VMs) are mutually exclusive controller backends: both bind host port 18080. " +
+         "Enable only one (capd may accompany either).")
 
 # 'nico' and 'nico-vm' are mutually exclusive ways to get a CAPNICo
 # controller: both install one into the capnico-system namespace and own the
@@ -1005,8 +1005,6 @@ _cwe_permissive_mode = os.getenv(
     "NKE_PERMISSIVE_MODE", _tilt_env.get("NKE_PERMISSIVE_MODE", "false")) == "true"
 
 _cwe_chart_extra_env_names = [
-    "NODE_HEALTH_CHECK_POLLING_INTERVAL",
-    "NODE_HEALTH_CHECK_INTERVAL",
     "NODE_PROVISIONING_TIMEOUT",
     "NODE_REBOOT_POLLING_INTERVAL",
     "LOG_LEVEL",

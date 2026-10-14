@@ -194,9 +194,10 @@ Temporal workflow.
 
 ### Node-agent update method
 
-A required site-scoped NVKE controller setting, `NODE_AGENT_UPDATE_METHOD`,
-selects `apt` or `bundle`. The reconciler validates it and snapshots the
-resolved value into each workflow and node operation. Changing this setting does
+A site-scoped NVKE controller setting, `nodeAgent.updateMethod` in
+`nke-controller-config` (the chart value of the same name), selects `apt` or
+`bundle`. It is required when a cluster sets a desired agent version and may
+be empty otherwise. The reconciler validates it and snapshots the resolved value into each workflow and node operation. Changing this setting does
 not reinstall an agent or alter an in-flight workflow; it applies to the next
 desired-state generation. Artifact locations and qualification remain release
 configuration, not API input.
@@ -246,7 +247,7 @@ Add a cluster-scoped `nodeagentupgrade` controller:
 5. On control-plane drift, atomically acquire the cluster update lock with the
    rollout generation and Temporal workflow ID. Worker drift does not acquire
    that lock.
-6. Record `Running`, snapshot `NODE_AGENT_UPDATE_METHOD`, and write the workflow
+6. Record `Running`, snapshot `nodeAgent.updateMethod`, and write the workflow
    outbox entry. The workflow rechecks node lifecycle, agent readiness, and RPC
    support before changing each node.
 7. Every workflow status write and lock clear performs a compare-and-swap on the

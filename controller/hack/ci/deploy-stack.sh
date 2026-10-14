@@ -136,7 +136,7 @@ TRUST_DOMAIN="${KIND_CLUSTER_NAME}.nke.local"
 #     it; the e2e lanes leave it unset, so the controller takes its default
 #   * the five credentials the Tiltfile treats as required
 #   * NODE_REBOOT_SOFT_REBOOT_ENABLED, which backend-e2e.yml does set
-#   * the remaining optional names (LOG_LEVEL, FORGE_URL, ...) which nothing on
+#   * the remaining optional names (LOG_LEVEL, NODE_PROVISIONING_TIMEOUT, ...) which nothing on
 #     this path sets, so they are absent rather than empty
 #
 # Passed as JSON for the same reason Tilt uses --set-json: a list of
