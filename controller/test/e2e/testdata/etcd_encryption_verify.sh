@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 set -eu
 kubeconfig_path="${E2E_KUBECONFIG_PATH:-/kubeconfig/value}"
 termination_log="${E2E_TERMINATION_LOG:-/dev/termination-log}"

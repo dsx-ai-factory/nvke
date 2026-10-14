@@ -180,8 +180,9 @@ nvkectl get kubeconfig <cluster> --output-file tenant.kubeconfig
 ```
 
 This reads the `<cluster>-admin-kubeconfig` Secret in `nke-system`, which
-holds the verbatim `admin.conf`. The `-kubeconfig` Secret beside it is the one
-CWE consumes, and it becomes a SPIRE exec-auth kubeconfig when OIDC is on.
+holds an `nvke:breakglass` admin kubeconfig. The `-kubeconfig` Secret beside
+it is the one CWE consumes, and it becomes a SPIRE exec-auth kubeconfig when
+OIDC is on.
 
 ## Real Site
 
