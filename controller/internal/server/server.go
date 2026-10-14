@@ -168,16 +168,14 @@ func NewServer(
 		handler = authn.Wrap(handler)
 	}
 	handler = otelx.ExposeTraceID(loggingMiddleware(handler, logger))
-	if cfg.Tracing.Enabled {
-		handler = otelhttp.NewHandler(handler, "cloud-workflow-engine",
-			otelhttp.WithFilter(func(r *http.Request) bool {
-				// Skip operational probes (/healthz, /readyz, /metrics). /metrics is
-				// served on a separate listen address today, but is excluded here too
-				// so it stays consistent with isOperationalPath.
-				return !isOperationalPath(pathpkg.Clean(r.URL.Path))
-			}),
-		)
-	}
+	handler = otelhttp.NewHandler(handler, "cloud-workflow-engine",
+		otelhttp.WithFilter(func(r *http.Request) bool {
+			// Skip operational probes (/healthz, /readyz, /metrics). /metrics is
+			// served on a separate listen address today, but is excluded here too
+			// so it stays consistent with isOperationalPath.
+			return !isOperationalPath(pathpkg.Clean(r.URL.Path))
+		}),
+	)
 
 	srv := &http.Server{
 		Addr:              cfg.ServerListenAddress,

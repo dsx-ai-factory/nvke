@@ -63,7 +63,7 @@ type FieldManagerConfig struct {
 	MachineHealthIssueName string `json:"machineHealthIssueName"`
 }
 
-// TracingConfig configures OpenTelemetry tracing export, mirroring
+// TracingConfig configures OpenTelemetry span export, mirroring
 // config.TracingConfig.
 type TracingConfig struct {
 	Enabled     bool   `json:"enabled"`

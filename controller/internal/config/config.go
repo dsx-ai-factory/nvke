@@ -384,18 +384,18 @@ type Config struct {
 	// AuthConfigPath is unset.
 	PermissiveMode bool `controllerconfig:"permissiveMode"`
 
-	// Tracing configures OpenTelemetry distributed tracing. When Enabled, the
-	// controller exports OTLP gRPC spans to Endpoint, or, when Endpoint is empty,
-	// to the OTEL_EXPORTER_OTLP_* variables the OpenTelemetry Operator injects.
+	// Tracing configures the export of OpenTelemetry spans to an OTLP collector.
 	Tracing TracingConfig
 }
 
-// TracingConfig configures OpenTelemetry tracing export.
+// TracingConfig configures OpenTelemetry span export.
 type TracingConfig struct {
-	// Enabled gates TracerProvider initialization and transport instrumentation.
+	// Enabled turns on span export and per-query database spans.
 	Enabled bool `controllerconfig:"tracing.enabled"`
-	// Endpoint is the OTLP gRPC collector host:port (scheme optional). With
-	// operator sidecar injection this is typically localhost:4317.
+	// Endpoint is the OTLP gRPC collector host:port (scheme optional) that
+	// spans are exported to. When empty, the OTEL_EXPORTER_OTLP_* variables the
+	// OpenTelemetry Operator injects are used; with a sidecar this is typically
+	// localhost:4317.
 	Endpoint string `controllerconfig:"tracing.endpoint"`
 	// Insecure uses plaintext OTLP (required for localhost sidecar / in-cluster collectors).
 	Insecure bool `controllerconfig:"tracing.insecure"`

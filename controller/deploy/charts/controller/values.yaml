@@ -253,8 +253,8 @@ metrics:
     additionalNamespaces: []
 
 tracing:
-  # -- Enable OpenTelemetry tracing in the controller binary (TracerProvider + transport hooks).
-  # Keep false in chart defaults; enable per environment against an OTLP collector.
+  # -- Export OpenTelemetry spans to an OTLP collector, at tracing.endpoint or the endpoint
+  # the OpenTelemetry Operator injects. Keep false in chart defaults; enable per environment.
   enabled: false
   # OpenTelemetry Operator injection. When enabled (with tracing.enabled), add
   # standard Operator annotations so inject-sdk / sidecar inject can supply

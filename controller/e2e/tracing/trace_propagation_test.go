@@ -67,9 +67,10 @@ func TestTraceContinuesThroughOutbox(t *testing.T) {
 		OutboxBatchSize:         100,
 		SupportedInfraProviders: []string{"infra"},
 		ProvisionControlPlaneWithControlPlaneController: true,
-		// Enabled turns on the HTTP and Temporal tracing instrumentation. No
-		// endpoint is set, so nothing is exported; spans are recorded in memory.
-		Tracing: config.TracingConfig{Enabled: true},
+		// Export is off, the chart default: the trace ID on the logs and the span
+		// tree must not depend on it. This runs once because the controller
+		// registers its metrics on the process-global registry.
+		Tracing: config.TracingConfig{Enabled: false},
 	}
 
 	spans := installTracing(t)
@@ -275,13 +276,10 @@ func assertTrace(t *testing.T, ended []sdktrace.ReadOnlySpan, traceID string, cl
 		attempts = 2
 	}
 	require.Equal(t, attempts, counts["RunActivity:ReadCluster"], "%v", counts)
-	var sqlSpans int
-	for name, count := range counts {
-		if strings.HasPrefix(name, "SELECT") || strings.HasPrefix(name, "INSERT") {
-			sqlSpans += count
-		}
+	// Per-query SQL spans need tracing.enabled, which is off here.
+	for name := range counts {
+		require.False(t, strings.HasPrefix(name, "SELECT") || strings.HasPrefix(name, "INSERT"), "SQL span %s with export off: %v", name, counts)
 	}
-	require.Positive(t, sqlSpans, "no SQL spans in the trace: %v", counts)
 }
 
 // assertLogs checks the structured logs written under the request's trace ID:

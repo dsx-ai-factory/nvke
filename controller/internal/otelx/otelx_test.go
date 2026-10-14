@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,11 +18,39 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 )
 
-func TestInitDisabledIsNoop(t *testing.T) {
-	t.Parallel()
+// requireTraceContext checks that Init left the global tracer able to mint
+// valid trace IDs and the propagator able to carry them.
+func requireTraceContext(t *testing.T) {
+	t.Helper()
+	_, span := otel.Tracer("otelx-test").Start(context.Background(), "probe")
+	defer span.End()
+	require.True(t, span.SpanContext().IsValid(), "spans get real trace and span IDs")
+	require.True(t, span.SpanContext().TraceID().IsValid())
+	require.Contains(t, otel.GetTextMapPropagator().Fields(), "traceparent")
+}
+
+// restoreTracerGlobals puts back the global provider and propagator when the
+// test ends, because Init replaces them.
+func restoreTracerGlobals(t *testing.T) {
+	t.Helper()
+	provider, propagator := otel.GetTracerProvider(), otel.GetTextMapPropagator()
+	t.Cleanup(func() {
+		otel.SetTracerProvider(provider)
+		otel.SetTextMapPropagator(propagator)
+	})
+}
+
+// The tests below are not parallel: Init sets the global provider, and the
+// endpoint can come from the process environment.
+
+func TestInitDisabledStillCreatesTraceContext(t *testing.T) {
+	restoreTracerGlobals(t)
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "collector.example.test:4317")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
 
 	shutdown, err := Init(context.Background(), config.TracingConfig{Enabled: false}, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
+	requireTraceContext(t)
 	require.NoError(t, shutdown(context.Background()))
 }
 
@@ -44,6 +73,47 @@ func TestInitEnabledWithoutEndpointCreatesLocalSpans(t *testing.T) {
 	cmd.Env = append(os.Environ(), helperEnv+"=1")
 	output, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "subprocess failed:\n%s", output)
+}
+
+func TestInitWithEndpointCreatesTraceContext(t *testing.T) {
+	restoreTracerGlobals(t)
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+
+	// The batcher dials lazily, so an unreachable endpoint still initializes.
+	cfg := config.TracingConfig{Enabled: true, Endpoint: "127.0.0.1:1", Insecure: true}
+	shutdown, err := Init(context.Background(), cfg, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	requireTraceContext(t)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_ = shutdown(shutdownCtx) // flushing to the unreachable endpoint may time out
+}
+
+func TestExportTarget(t *testing.T) {
+	t.Parallel()
+
+	env := map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "collector.example.test:4317"}
+	getenv := func(name string) string { return env[name] }
+	tests := []struct {
+		name       string
+		cfg        config.TracingConfig
+		getenv     func(string) string
+		wantExport bool
+	}{
+		{name: "disabled does not export even with an endpoint", cfg: config.TracingConfig{Endpoint: "c.example.test:4317"}, getenv: getenv},
+		{name: "disabled does not export an environment endpoint", cfg: config.TracingConfig{}, getenv: getenv},
+		{name: "enabled without an endpoint does not export", cfg: config.TracingConfig{Enabled: true}, getenv: func(string) string { return "" }},
+		{name: "enabled with tracing.endpoint exports", cfg: config.TracingConfig{Enabled: true, Endpoint: "c.example.test:4317"}, getenv: func(string) string { return "" }, wantExport: true},
+		{name: "enabled with an environment endpoint exports", cfg: config.TracingConfig{Enabled: true}, getenv: getenv, wantExport: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, export := exportTarget(tt.cfg, tt.getenv, slog.New(slog.DiscardHandler))
+			require.Equal(t, tt.wantExport, export)
+		})
+	}
 }
 
 func TestStripOTLPScheme(t *testing.T) {

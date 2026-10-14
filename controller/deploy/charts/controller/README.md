@@ -186,7 +186,7 @@ move `create` and `annotations` from `nkeSystemNamespace` to
 | temporal.publicTemporalHostPort | string | `""` |  |
 | tenantAccess.enabled | bool | `true` | Publish each cluster's kubeconfig as a Secret in the nke-system namespace, and remove those Secrets during cluster teardown. Gates both the controller and its cleanup activity, and the Secret grant they depend on. |
 | tolerations | list | `[]` |  |
-| tracing.enabled | bool | `false` | Enable OpenTelemetry tracing in the controller binary (TracerProvider + transport hooks). Keep false in chart defaults; enable per environment against an OTLP collector. |
+| tracing.enabled | bool | `false` | Export OpenTelemetry spans to an OTLP collector, at tracing.endpoint or the endpoint the OpenTelemetry Operator injects. Keep false in chart defaults; enable per environment. |
 | tracing.endpoint | string | `""` | Optional OTLP gRPC endpoint override (host:port). Leave empty when operatorInject.enabled is true so the operator-injected localhost sidecar endpoint is used. |
 | tracing.insecure | bool | `true` | Use insecure (plaintext) OTLP gRPC. Required for localhost sidecar / most in-cluster collectors. |
 | tracing.operatorInject.enabled | bool | `false` | When true (with tracing.enabled), add OpenTelemetry Operator pod annotations. |
