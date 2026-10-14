@@ -79,6 +79,10 @@ const releaseStream = "nvke-release"
 // "missing" (aggregator/fanout.js hasReleaseTag). Omitting these two fields
 // doesn't error -- the build still renders fine on the plain TestGrid
 // dashboard page -- it just never appears in the Qualification Matrix.
+// ReleaseTag also has its leading "v" stripped (see releaseTag) -- TestGrid's
+// own semver sort reads a leading non-digit as making the major version
+// parse as 0, which would sort every nvke release equally regardless of its
+// real version.
 //
 // Metadata must stay flat strings: TestGrid's Metadata.Strings() drops
 // nested maps, so Capabilities is flattened into gpu/arch/ubuntu/kube here
@@ -138,7 +142,7 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 		SHA:           result.Spec.Identity.SHA,
 		Actor:         result.Spec.Identity.Actor,
 		ReleaseStream: releaseStream,
-		ReleaseTag:    result.Spec.Version,
+		ReleaseTag:    releaseTag(result.Spec.Version),
 		Provider:      capabilities["provider"],
 		GPU:           capabilities["gpu"],
 		Arch:          capabilities["arch"],
@@ -253,4 +257,16 @@ func (d *Destination) buildPrefix(result *qualification.Result) (string, error) 
 func shortHash(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])[:8]
+}
+
+// releaseTag strips a version's leading "v" so TestGrid's semver sort reads
+// its major version instead of always reading 0. Only strips when what
+// follows is a digit, so a version that does not start with v<digit> (which
+// should not happen, but costs nothing to guard) passes through unchanged
+// rather than losing a real leading character.
+func releaseTag(version string) string {
+	if len(version) > 1 && (version[0] == 'v' || version[0] == 'V') && version[1] >= '0' && version[1] <= '9' {
+		return version[1:]
+	}
+	return version
 }

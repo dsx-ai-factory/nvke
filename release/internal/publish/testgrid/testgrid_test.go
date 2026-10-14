@@ -195,6 +195,22 @@ func TestShortHashIsStableAndEightChars(t *testing.T) {
 	}
 }
 
+func TestReleaseTagStripsLeadingV(t *testing.T) {
+	for _, tc := range []struct{ version, want string }{
+		{"v1.0.0", "1.0.0"},
+		{"V2.3.4", "2.3.4"},
+		{"v0.0.0-beta-abc1234", "0.0.0-beta-abc1234"},
+		{"1.0.0", "1.0.0"},
+		{"version-with-no-leading-digit", "version-with-no-leading-digit"},
+		{"v", "v"},
+		{"", ""},
+	} {
+		if got := releaseTag(tc.version); got != tc.want {
+			t.Errorf("releaseTag(%q) = %q, want %q", tc.version, got, tc.want)
+		}
+	}
+}
+
 // upload is one call a fakeUploader captured.
 type upload struct {
 	path        string
@@ -376,7 +392,7 @@ func TestPublishMetadataFlattensCapabilitiesAndFixesReleaseStream(t *testing.T) 
 		SHA:           "abc123",
 		Actor:         "byron",
 		ReleaseStream: "nvke-release",
-		ReleaseTag:    "v1.0.0",
+		ReleaseTag:    "1.0.0",
 		Provider:      "forge",
 		GPU:           "h100",
 		Arch:          "amd64",
