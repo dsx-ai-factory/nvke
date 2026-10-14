@@ -60,7 +60,7 @@ flowchart LR
 | **Build** | The operator builds node OS images, packages and NVKE components from pinned sources with NVKR, in a local Run or in NVKR's hosted pipeline, verifies each Release, and publishes the artifacts to its own registries. The operator repeats this stage for each new Kubernetes version or security fix. | [Get NVKE artifacts and OS profiles built with NVKR](../operate/build-node-images.md) |
 | **Day 0: Bootstrap** | The operator prepares the management cluster's nodes. `nvkectl` starts a seed cluster, uses it to form the management cluster with kubeadm, then deletes it. The operator installs the NVKE management plane and the Cluster API controllers onto the management cluster. | [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md), [Install management-plane services](../operate/install-management-plane-services.md) |
 | **Day 1: Configure** | The operator connects the management plane to the infrastructure provider, configures API authentication, and registers the NVKR-built node images and profiles that clusters will use. | [Configure an infrastructure provider: NICo](../operate/provider-nico.md), [Secure the NVKE API](../operate/api-authentication.md) |
-| **Day 2: Run clusters** | The operator creates NVKE clusters through the API, gives customers access, and installs the accelerated runtime with AICR, which these pages do not cover. NVKE scales node pools, upgrades the control plane and workers to new NVKR-built images, replaces nodes and renews certificates. With NVSentinel installed, NVKE reboots or replaces nodes that NVSentinel reports as faulty. | [Create a workload cluster](../workload-clusters/create.md), [Manage node pools](../workload-clusters/node-pools.md) |
+| **Day 2: Run clusters** | The operator creates NVKE clusters through the API, gives customers access, and installs the accelerated runtime with [NVIDIA AI Cluster Runtime (AICR)](https://docs.nvidia.com/aicr). NVKE scales node pools, upgrades the control plane and workers to new NVKR-built images, replaces nodes and renews certificates. With NVSentinel installed, NVKE reboots or replaces nodes that NVSentinel reports as faulty. | [Create a workload cluster](../workload-clusters/create.md), [Manage node pools](../workload-clusters/node-pools.md) |
 
 ## What the project ships
 
@@ -105,7 +105,7 @@ NVKE is the Kubernetes layer of DSX OS, NVIDIA's software stack for AI factories
 | Infrastructure | NICo (NVIDIA Infra Controller) | Bare-metal machine and network lifecycle: discovery, firmware, network configuration and host provisioning. |
 | Build | NVKR (NVIDIA Kubernetes Recipes) | Builds the node OS images, packages and components that NVKE deploys, as Releases. Releases from its hosted pipeline are signed and verifiable. |
 | Kubernetes | NVKE | Creates and operates Kubernetes clusters on NICo machines. |
-| Accelerated runtime | AICR (AI Cluster Runtime) | Validated, version-locked combinations of the GPU Operator, Network Operator, DRA and other runtime components, installed into each NVKE cluster. |
+| Accelerated runtime | [AICR (AI Cluster Runtime)](https://docs.nvidia.com/aicr) | Validated, version-locked combinations of the GPU Operator, Network Operator, DRA and other runtime components, installed into each NVKE cluster. |
 | Health | NVSentinel | Detects GPU faults on each node and requests remediation from NVKE. |
 | Telemetry | NKTP | Collects metrics, logs and traces across clusters. |
 

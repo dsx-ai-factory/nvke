@@ -8,10 +8,10 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 
 | Item | Supported | Notes |
 |---|---|---|
-| Kubernetes versions | 1.34.2, 1.35.3, 1.36.3 | Pinned. The node image stages one `nvke-kubeadm-distro` package for each version. A version not listed, including another patch release of the same minor version, is not on the node. |
+| Kubernetes version | 1.36.3 | Pinned. The node image stages an `nvke-kubeadm-distro` package for it. Another patch release of 1.36 is not on the node. |
 | Version format | `X.Y.Z`, with no leading `v` | The API and the site spec reject any other format. |
-| Management cluster | One of the versions above, 1.34.2 by default | Set once, in the site spec's `k8sVersion` field, at bootstrap. The management cluster does not upgrade itself. |
-| Workload cluster | One of the versions above | `controlPlaneKubernetesVersion` is required and has no default. The API accepts any `X.Y.Z`, but nodes run only a version their node image carries. |
+| Management cluster | 1.36.3 | Set once, in the site spec's `cluster.k8sVersion` field, at bootstrap. `nvkectl generate sitespec` writes an older default unless you set it. The management cluster does not upgrade itself. |
+| Workload cluster | 1.36.3 | `controlPlaneKubernetesVersion` is required and has no default. The API accepts any `X.Y.Z`, but nodes run only a version their node image carries. |
 | Control-plane upgrade | One minor version up, or a later patch release | Range. Downgrades and requests for the current version are rejected. The cluster must have a `controlPlaneVIP`, and only one upgrade runs at a time. |
 | Worker node pool skew | Up to 3 minor versions behind the control plane | Range. Checked when you upgrade the control plane. A new node pool starts at the cluster's version. |
 | Upgrade target on NICo | A registered OS profile for the target version | The upgrade selects an OS profile for the target Kubernetes version with the same architecture, variant and Ubuntu version as the current one. It fails if none is registered, unless the current OS profile sets the Kubernetes version at provisioning time. |
