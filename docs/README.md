@@ -24,6 +24,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [operate/api-authentication.md](operate/api-authentication.md) | Turning on OIDC authentication for the NVKE API |
 | [workload-clusters/create.md](workload-clusters/create.md) | Creating a workload cluster |
 | [workload-clusters/access.md](workload-clusters/access.md) | Getting a workload cluster's admin kubeconfig, giving the customer access, and connecting with `kubectl` |
+| [workload-clusters/oidc.md](workload-clusters/oidc.md) | Making workload clusters accept tokens from the management plane and from your own OpenID Connect (OIDC) identity providers, and the identities they may not claim |
 | [workload-clusters/node-pools.md](workload-clusters/node-pools.md) | Adding, scaling and removing node pools |
 | [operate/observe.md](operate/observe.md) | Metrics, dashboards, logs and status for NVKE and its clusters |
 | [operate/troubleshoot.md](operate/troubleshoot.md) | Symptoms, causes and fixes for common failures |
@@ -70,7 +71,6 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 |---|---|
 | [tenant-clusters/node-lifecycle.md](tenant-clusters/node-lifecycle.md) | What happens to a node through its life |
 | [tenant-clusters/kubernetes-api-access.md](tenant-clusters/kubernetes-api-access.md) | How operators, automation and Site Controller services reach and authenticate to tenant Kubernetes APIs |
-| [tenant-clusters/oidc-authentication.md](tenant-clusters/oidc-authentication.md) | Turning on OIDC authentication for tenant clusters, site-wide or per cluster |
 | [../controller/docs/authenticating-to-the-api.md](../controller/docs/authenticating-to-the-api.md) | Authenticating to the API |
 | [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nvkectl` |
 | [../controller/docs/byo-os.md](../controller/docs/byo-os.md) | Bringing your own OS image |

@@ -15,7 +15,8 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | Control-plane upgrade | One minor version up, or a later patch release | Range. Downgrades and requests for the current version are rejected. The cluster must have a `controlPlaneVIP`, and only one upgrade runs at a time. |
 | Worker node pool skew | Up to 3 minor versions behind the control plane | Range. Checked when you upgrade the control plane. A new node pool starts at the cluster's version. |
 | Upgrade target on NICo | A registered OS profile for the target version | The upgrade selects an OS profile for the target Kubernetes version with the same architecture, variant and Ubuntu version as the current one. It fails if none is registered, unless the current OS profile sets the Kubernetes version at provisioning time. |
-| OpenID Connect (OIDC) on a workload cluster | 1.30.0 or later | Range. Applies to `enableOidc` and `nkeOIDCAuth`. |
+| OpenID Connect (OIDC) on a workload cluster | 1.30.0 or later | Range. Applies to `enableOidc` and `nvkeOIDCAuth`. |
+| Fleet-wide OIDC providers on a workload cluster | 1.34.0 or later | Range. Applies to `oidc.providers`. A cluster created on an earlier version gets none. |
 
 ## Container networking
 
