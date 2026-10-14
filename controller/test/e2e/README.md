@@ -419,7 +419,8 @@ without it the lane is skipped:
 
 - `provision`: provision the node over the site's jump host and check its egress.
 - `bootstrap`: also run `nvkectl bootstrap site` and wait for the API server.
-- `full`: also deploy the SBOM stack, wait for CWE, then create and delete a tenant.
+- `full`: also deploy the SBOM stack, wait for CWE, check that NKTP delivers the
+  site's telemetry (below), then create and delete a tenant.
 
 Both lanes create the same `nico-forge` tenant and both entries carry that
 label, so pick between them with `site-controller`, which only the lane that
@@ -428,16 +429,30 @@ builds a site carries. Measured against this tree with `-ginkgo.dry-run` and
 
 | label filter | specs | which |
 |---|---|---|
-| `nico-forge && !site-controller` | 4 | the tenant, against the site controller in the kube context |
-| `site-controller` | 7 | the lane that builds a site, tenant included |
-| `nico-forge` | 8 | both |
+| `nico-forge && !site-controller` | 5 | the tenant, against the site controller in the kube context |
+| `site-controller` | 12 | the lane that builds a site, tenant included |
+| `nico-forge` | 10 | both |
 
 `-e2e.site-stage`, not the label, is what decides whether a machine is
 provisioned: the site lane's tenant entries are built only when it is set, so
-a bare `nico-forge` without it selects 4 specs and reaches no hardware.
+a bare `nico-forge` without it selects 5 specs and reaches no hardware.
 
 The node is torn down afterwards (tenants are deleted first). `-e2e.keep-site`, or
 `lifecycle.preserveOnFailure` with a failed spec, keeps it.
+
+### NKTP on the built site
+
+The `full` stage checks that NKTP delivers the site's telemetry by querying its
+backend, not by reading Pod status: a Collector can be Ready and export nothing.
+`internal/nktp` runs the same checks as `nktp/hack/e2e-validate.sh` does on
+Kind, plus what only a site wires up: the control plane, controller, Temporal
+and SPIRE metrics and logs, the API server's audit log, a trace of a request the
+spec itself makes to the controller, and the site's name on every signal.
+`siteTelemetry` in `site_controller_test.go` lists the site-specific checks.
+
+The checks run concurrently, so the spec takes as long as its slowest check:
+a few minutes when healthy, and at most about twelve when a signal never
+arrives. The failure names every check that did not hold and what it last saw.
 
 Prerequisites: a way to reach the jump host (below), the jump host in
 `FORGE_JUMP_HOST` (read by `environments/forge.yaml`) and `FORGE_API_KEY`.

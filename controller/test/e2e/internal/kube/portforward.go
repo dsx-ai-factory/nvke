@@ -175,6 +175,13 @@ func (f *ServiceForwarder) BaseURL() string { return f.baseURL }
 // sets no headers of its own.
 func (f *ServiceForwarder) HTTPClient() *http.Client { return f.client }
 
+// Dial opens a raw TCP connection through the forward, for a caller that speaks
+// something other than plain HTTP to the Service, such as its own TLS
+// handshake. It reconnects exactly as a request through HTTPClient would.
+func (f *ServiceForwarder) Dial(ctx context.Context) (net.Conn, error) {
+	return f.dialContext(ctx, "tcp", "")
+}
+
 // Get performs a GET of path through the forward. Any response is data; the
 // error is non-nil only for transport failures.
 func (f *ServiceForwarder) Get(ctx context.Context, path string) (int, []byte, error) {
@@ -511,7 +518,7 @@ func pickReadyPod(pods []corev1.Pod) *corev1.Pod {
 	var first *corev1.Pod
 	for i := range pods {
 		pod := &pods[i]
-		if !podIsReady(pod) {
+		if !PodIsReady(pod) {
 			continue
 		}
 		if first == nil || pod.Name < first.Name {
@@ -521,7 +528,8 @@ func pickReadyPod(pods []corev1.Pod) *corev1.Pod {
 	return first
 }
 
-func podIsReady(pod *corev1.Pod) bool {
+// PodIsReady reports whether pod is running, Ready and not being deleted.
+func PodIsReady(pod *corev1.Pod) bool {
 	if pod.DeletionTimestamp != nil || pod.Status.Phase != corev1.PodRunning {
 		return false
 	}
