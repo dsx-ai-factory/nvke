@@ -26,6 +26,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -42,17 +43,17 @@ func TestUnit_NodeRequestsForDBNodeUsesNodeName(t *testing.T) {
 }
 
 func TestUnit_RemediationNodePredicateOnlyMatchesRequestChanges(t *testing.T) {
-	p := remediationNodePredicate()
+	p := remediationNodePredicate(keys.New("", ""))
 	oldNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
 		Name: "worker-1",
 		Labels: map[string]string{
-			constants.LabelKeyNodeLabelReboot: "codex-smoke",
+			keys.New("", "").Reboot.String(): "codex-smoke",
 		},
 	}}
 	statusOnlyNode := oldNode.DeepCopy()
-	statusOnlyNode.Labels[constants.LabelKeyNodeLabelRebootStatus] = "InProgress"
+	statusOnlyNode.Labels[keys.New("", "").RebootStatus.String()] = "InProgress"
 	requestChangedNode := oldNode.DeepCopy()
-	requestChangedNode.Labels[constants.LabelKeyNodeLabelReboot] = "operator-request"
+	requestChangedNode.Labels[keys.New("", "").Reboot.String()] = "operator-request"
 
 	require.True(t, p.Update(event.UpdateEvent{ObjectOld: oldNode, ObjectNew: requestChangedNode}))
 	require.False(t, p.Update(event.UpdateEvent{ObjectOld: oldNode, ObjectNew: statusOnlyNode}))
@@ -67,7 +68,7 @@ func TestUnit_ReconcileStartsNodeRemediationWorkflows(t *testing.T) {
 		wantInput   func(t *testing.T, arg interface{}, nodeID uuid.UUID)
 	}{
 		"reboot label starts reboot workflow": {
-			labels:     map[string]string{constants.LabelKeyNodeLabelReboot: "operator-request"},
+			labels:     map[string]string{keys.New("", "").Reboot.String(): "operator-request"},
 			wantPrefix: constants.RebootNodeWorkflowPrefix,
 			wantInput: func(t *testing.T, arg interface{}, nodeID uuid.UUID) {
 				t.Helper()
@@ -82,7 +83,7 @@ func TestUnit_ReconcileStartsNodeRemediationWorkflows(t *testing.T) {
 			},
 		},
 		"terminate label starts teardown workflow": {
-			labels:     map[string]string{constants.LabelKeyNodeLabelTerminate: "replace-node"},
+			labels:     map[string]string{keys.New("", "").Terminate.String(): "replace-node"},
 			wantPrefix: constants.TeardownNodeWorkflowPrefix,
 			wantInput: func(t *testing.T, arg interface{}, nodeID uuid.UUID) {
 				t.Helper()
@@ -95,9 +96,9 @@ func TestUnit_ReconcileStartsNodeRemediationWorkflows(t *testing.T) {
 			},
 		},
 		"terminate label includes machine health issue": {
-			labels: map[string]string{constants.LabelKeyNodeLabelTerminate: "replace-node"},
+			labels: map[string]string{keys.New("", "").Terminate.String(): "replace-node"},
 			annotations: map[string]string{
-				constants.NodeAnnotationKeyMachineHealthIssue: `{"category":"Hardware","summary":"GPU failure","details":"xid errors"}`,
+				keys.New("", "").NodeHealthIssueAnnotation.String(): `{"category":"Hardware","summary":"GPU failure","details":"xid errors"}`,
 			},
 			wantPrefix: constants.TeardownNodeWorkflowPrefix,
 			wantInput: func(t *testing.T, arg interface{}, nodeID uuid.UUID) {
@@ -115,8 +116,8 @@ func TestUnit_ReconcileStartsNodeRemediationWorkflows(t *testing.T) {
 		},
 		"terminate label wins over reboot label": {
 			labels: map[string]string{
-				constants.LabelKeyNodeLabelReboot:    "operator-request",
-				constants.LabelKeyNodeLabelTerminate: "replace-node",
+				keys.New("", "").Reboot.String():    "operator-request",
+				keys.New("", "").Terminate.String(): "replace-node",
 			},
 			wantPrefix: constants.TeardownNodeWorkflowPrefix,
 			wantInput: func(t *testing.T, arg interface{}, nodeID uuid.UUID) {

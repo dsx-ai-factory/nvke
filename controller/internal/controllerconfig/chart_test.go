@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,12 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
+
+// emptyIsDefault lists keys the chart omits unless a value is set. An omitted
+// key decodes as empty, and for these empty is the intended default (today's
+// nke.nvidia.com and nke-system), so a default render stays byte-identical to
+// the one before they existed. Every other key must be rendered.
+var emptyIsDefault = []string{"labelDomain", "managementNamespace"}
 
 // renderedChartDirEnv names the directory of `helm template` outputs that
 // TestRenderedChart checks, one file per value set.
@@ -67,7 +74,7 @@ func TestRenderedChart(t *testing.T) {
 
 			present := documentKeys(t, document)
 			for _, key := range schemaKeys(reflect.TypeFor[controllerconfig.Config](), "") {
-				if !present[key] {
+				if !present[key] && !slices.Contains(emptyIsDefault, key) {
 					t.Errorf("the rendered config.yaml leaves out %s, which would decode as its zero value", key)
 				}
 			}

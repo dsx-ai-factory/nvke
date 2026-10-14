@@ -15,6 +15,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
@@ -39,6 +40,15 @@ type ProvisionNodeInput struct {
 	// The zero value must be false so in-flight ProvisionNode workflows keep
 	// joining after a worker upgrade.
 	SkipJoin bool
+
+	// LabelDomain is the key domain of the labels and taints this workflow
+	// writes. Empty is the legacy domain, so an input recorded before this
+	// field existed replays as it ran.
+	LabelDomain string `json:",omitempty"`
+}
+
+func (i ProvisionNodeInput) labelKeys() keys.Keys {
+	return keys.New(i.LabelDomain, "")
 }
 
 func ProvisionNode(ctx workflow.Context, input ProvisionNodeInput) error {
@@ -104,7 +114,7 @@ func ProvisionNode(ctx workflow.Context, input ProvisionNodeInput) error {
 
 	// Workers auto-join inline and retry the join indefinitely (boundJoinAttempt
 	// false); only the control-plane JoinNode workflow bounds the attempt.
-	if err := joinProvisionedNode(ctx, input.NodeID, nodeCtx, labels, false); err != nil {
+	if err := joinProvisionedNode(ctx, input.labelKeys(), input.NodeID, nodeCtx, labels, false); err != nil {
 		// Best effort to update the node conditions to indicate the join failed
 		if err := updateNodeProvisioningMessage(ctx, input.NodeID, fmt.Sprintf("Workflow failed: %s", err)); err != nil {
 			logger.Error("failed to update node conditions", "error", err)
@@ -278,7 +288,7 @@ func provisionNode(ctx workflow.Context, input ProvisionNodeInput, labels nodeMe
 // called inline by ProvisionNode for auto-join nodes (workers) and by the
 // JoinNode workflow for control-plane nodes the control-plane controller joins
 // one at a time.
-func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activities.NodeProvisioningContext, labels nodeMetricLabels, boundJoinAttempt bool) error {
+func joinProvisionedNode(ctx workflow.Context, k keys.Keys, nodeID uuid.UUID, nodeCtx activities.NodeProvisioningContext, labels nodeMetricLabels, boundJoinAttempt bool) error {
 	recordPhase := func(phase string, start, end time.Time) {
 		if !workflow.IsReplaying(ctx) {
 			metrics.RecordProvisionPhase(labels.ClusterName, labels.NodeType, phase, end.Sub(start))
@@ -330,7 +340,7 @@ func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activit
 	postJoinStart := workflow.Now(ctx)
 	endPostJoin := func() { recordPhase("post_join", postJoinStart, workflow.Now(ctx)) }
 
-	if err := labelNode(ctx, nodeID, hasConfigProfile); err != nil {
+	if err := labelNode(ctx, k, nodeID, hasConfigProfile); err != nil {
 		endPostJoin()
 		return fmt.Errorf("failed to label node: %w", err)
 	}
@@ -349,13 +359,16 @@ func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activit
 		}
 	}
 
-	// Remove taint (nke.nvidia.com/provisioning=true:NoSchedule-)
+	// Remove taint (<domain>/provisioning=true:NoSchedule-)
 	// This taint is added via kubeadm join config.
-	// Hyphen at the end of the taint effect removes the taint
-	taintToRemove := constants.NodeTaintProvisioning()
-	if err := taintNode(ctx, nodeID, taintToRemove.Key, taintToRemove.Value, taintToRemove.Effect+"-"); err != nil {
-		endPostJoin()
-		return fmt.Errorf("failed to untaint node: %w", err)
+	// Hyphen at the end of the taint effect removes the taint. Every form of the
+	// key is removed: a node that joined under the legacy domain carries that one.
+	taintToRemove := constants.NodeTaintProvisioning(k.ProvisioningTaint)
+	for _, taintKey := range k.ProvisioningTaint.All() {
+		if err := taintNode(ctx, nodeID, taintKey, taintToRemove.Value, taintToRemove.Effect+"-"); err != nil {
+			endPostJoin()
+			return fmt.Errorf("failed to untaint node: %w", err)
+		}
 	}
 
 	if err := markNodeAsProvisioned(ctx, nodeID); err != nil {
@@ -750,7 +763,7 @@ func cleanBeforeControlPlaneRejoin(ctx workflow.Context, nodeID uuid.UUID) {
 	}
 }
 
-func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bool) error {
+func labelNode(ctx workflow.Context, k keys.Keys, nodeID uuid.UUID, addConfigProfileLabels bool) error {
 	var a *activities.Activities
 
 	activityOptions := workflow.ActivityOptions{
@@ -786,7 +799,7 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 			return err
 		}
 		if nicoNodeProvider.ForgeMachineID != "" {
-			labels = append(labels, constants.LabelKeyMachineID+"="+nicoNodeProvider.ForgeMachineID)
+			labels = append(labels, k.MachineID.String()+"="+nicoNodeProvider.ForgeMachineID)
 		}
 	}
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 )
 
@@ -40,7 +41,7 @@ func (c ClusterAuthentication) Needed() bool {
 // BuildClusterAuthenticationConfig builds a cluster's AuthenticationConfiguration.
 // A cluster with only the shared provider gets exactly what
 // BuildOIDCAuthenticationConfig builds.
-func BuildClusterAuthenticationConfig(ctx context.Context, c client.Client, in ClusterAuthentication) (*OIDCAuthenticationConfig, error) {
+func BuildClusterAuthenticationConfig(ctx context.Context, k keys.Keys, c client.Client, in ClusterAuthentication) (*OIDCAuthenticationConfig, error) {
 	if !in.Needed() {
 		return nil, errors.New("the cluster uses neither the shared OIDC provider nor fleet-wide providers")
 	}
@@ -59,7 +60,7 @@ func BuildClusterAuthenticationConfig(ctx context.Context, c client.Client, in C
 		}
 	}
 
-	policy, err := LoadOperatorJWTPolicy(ctx, c, in.TrustDomain)
+	policy, err := LoadOperatorJWTPolicy(ctx, k, c, in.TrustDomain)
 	if err != nil {
 		return nil, err
 	}
@@ -72,13 +73,13 @@ func BuildClusterAuthenticationConfig(ctx context.Context, c client.Client, in C
 
 // LoadOperatorJWTPolicy reserves the management SPIFFE trust domain and the User
 // subjects nke-rbac binds. With nke-rbac present, the trust domain is required.
-func LoadOperatorJWTPolicy(ctx context.Context, reader client.Reader, trustDomain string) (OperatorJWTPolicy, error) {
+func LoadOperatorJWTPolicy(ctx context.Context, k keys.Keys, reader client.Reader, trustDomain string) (OperatorJWTPolicy, error) {
 	if reader == nil {
 		return OperatorJWTPolicy{}, errors.New("reading nke-rbac needs a management-cluster client")
 	}
 	policy := OperatorJWTPolicy{ManagementJWTTrustDomain: trustDomain}
 
-	manifest, err := nvkerbac.ReadManifest(ctx, reader)
+	manifest, err := nvkerbac.ReadManifest(ctx, k, reader)
 	if apierrors.IsNotFound(err) {
 		return policy, nil
 	}

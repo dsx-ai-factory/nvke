@@ -80,6 +80,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The label, annotation, taint and condition keys, and the management
+	// namespace, built once from the config and handed to everything that reads
+	// or writes those objects.
+	labelKeys := cfg.Keys()
+
 	logLevel := slog.LevelInfo
 	if err := logLevel.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing configured log level: %v\n", err)
@@ -213,6 +218,7 @@ func main() {
 		kube.RuntimeManagerOptions{
 			ConfigMapCacheNamespace: cfg.SpireServerNamespace,
 			LeaderElectionNamespace: cfg.PodNamespace,
+			Keys:                    labelKeys,
 		},
 		spirev1alpha1.AddToScheme,
 		nicov1.AddToScheme,
@@ -227,6 +233,7 @@ func main() {
 		managementK8sClient,
 		nodeAgentClient,
 		cfg.TenantAccessEnabled,
+		labelKeys,
 	)
 
 	if cfg.SpiffeEnabled {
@@ -235,6 +242,7 @@ func main() {
 			logger.With("logger", "tpm-pubhashes-configmap-controller"),
 			k8sControllerManager.GetClient(),
 			trustDomain,
+			labelKeys,
 		)
 		if err := tpmPubhashesCmController.SetupWithManager(k8sControllerManager); err != nil {
 			logger.Error("Failed to set up TPM pubhashes ConfigMap controller", "error", err)
@@ -321,6 +329,7 @@ func main() {
 			dbInstance,
 			logger.With("logger", "machine-spire-entry-controller"),
 			trustDomain,
+			labelKeys,
 		)
 		if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
 			logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
@@ -347,6 +356,7 @@ func main() {
 				dbInstance,
 				k8sControllerManager.GetClient(),
 				logger.With("logger", "nico-spiffe-controller"),
+				labelKeys,
 			)
 			if err := nicoSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
 				logger.Error("Failed to set up nico SPIFFE controller", "error", err)
@@ -357,6 +367,7 @@ func main() {
 				k8sControllerManager.GetClient(),
 				tenantClientProvider,
 				logger.With("logger", "nico-provider-id-controller"),
+				labelKeys,
 			)
 			if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
 				logger.Error("Failed to set up nico provider ID controller", "error", err)
@@ -387,6 +398,7 @@ func main() {
 			k8sControllerManager.GetClient(),
 			logger.With("logger", "teleport-token-controller"),
 			teleportClient,
+			labelKeys,
 		)
 		if err := teleportTokenController.SetupWithManager(k8sControllerManager); err != nil {
 			logger.Error("Failed to set up Teleport token controller", "error", err)
@@ -416,7 +428,7 @@ func main() {
 	}
 	if !cfg.NodeHealthCheckDisabled {
 		tenantRegistrars = append(tenantRegistrars,
-			tenantnodestatus.NewRegistrar(dbInstance, logger.With("logger", "tenant-node-health-controller")),
+			tenantnodestatus.NewRegistrar(dbInstance, logger.With("logger", "tenant-node-health-controller"), labelKeys),
 			tenantnoderemediation.NewRegistrar(
 				cfg,
 				dbInstance,
@@ -447,6 +459,7 @@ func main() {
 		managementK8sClient,
 		nodeAgentClient,
 		tenantManagerSet,
+		labelKeys,
 	)
 	if err := tenantAccessController.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up tenant access controller", "error", err)
@@ -458,6 +471,7 @@ func main() {
 		k8sControllerManager.GetClient(),
 		tenantManagerSet,
 		cfg.ManagedByLabelValue,
+		labelKeys,
 	)
 	if err := tenantSecretReconciler.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up tenant manager Secret reconciler", "error", err)
@@ -479,6 +493,7 @@ func main() {
 		k8sControllerManager.GetClient(),
 		managementK8sClient,
 		nodeAgentClient,
+		labelKeys,
 	)
 	if err := controlPlaneController.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up control plane controller", "error", err)

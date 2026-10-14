@@ -17,8 +17,8 @@ import (
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // NodeConfig is the NICo-specific node provisioning data resolved from a
@@ -72,7 +72,7 @@ func ResolveNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool) (NodeConfig, er
 // renderInfraMachine builds the NicoMachine the controller constructs for a NICo-backed
 // node. ipxeScriptTemplate is the iPXE script of the image the node's release
 // boots, which this renders with the node's disk selection strategy.
-func (*Client) renderInfraMachine(ipxeScriptTemplate, namespace string, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) (client.Object, error) {
+func (*Client) renderInfraMachine(k keys.Keys, ipxeScriptTemplate, namespace string, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) (client.Object, error) {
 	config, err := ResolveNodeConfig(nodeSet, nodePool)
 	if err != nil {
 		return nil, err
@@ -87,7 +87,7 @@ func (*Client) renderInfraMachine(ipxeScriptTemplate, namespace string, node db.
 		return nil, fmt.Errorf("failed to render iPXE script for release %s: %w", config.Release, err)
 	}
 
-	instanceLabels := BuildInstanceLabels(node, cluster, config.NodePoolID)
+	instanceLabels := BuildInstanceLabels(k, node, cluster, config.NodePoolID)
 
 	return buildMachine(
 		node,
@@ -128,7 +128,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return err
 	}
 
-	infraMachineObj, err := c.renderInfraMachine(resolved.image.Spec.NICo.IPXEScript, deps.Namespace, node, nodeSet, nodePool, cluster)
+	infraMachineObj, err := c.renderInfraMachine(deps.Keys, resolved.image.Spec.NICo.IPXEScript, deps.Namespace, node, nodeSet, nodePool, cluster)
 	if err != nil {
 		return err
 	}
@@ -149,7 +149,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return fmt.Errorf("failed to apply bootstrap secret %s: %w", bootstrapSecret.Name, err)
 	}
 
-	machine, err := shared.BuildMachine(node, nodeSet, nodePool, cluster, deps.Namespace, bootstrapSecret.Name, clusterv1.ContractVersionedObjectReference{
+	machine, err := shared.BuildMachine(deps.Keys, node, nodeSet, nodePool, cluster, deps.Namespace, bootstrapSecret.Name, clusterv1.ContractVersionedObjectReference{
 		APIGroup: nicov1.GroupVersion.Group,
 		Kind:     "NicoMachine",
 		Name:     nicoMachine.Name,
@@ -223,13 +223,13 @@ func buildMachine(
 // create. Exported because the CAPI client applies it too, for the rare case
 // where a CAPI-provider cluster's own template happens to render a
 // NicoMachine.
-func BuildInstanceLabels(node db.Node, cluster db.Cluster, nodePoolID uuid.UUID) map[string]string {
+func BuildInstanceLabels(k keys.Keys, node db.Node, cluster db.Cluster, nodePoolID uuid.UUID) map[string]string {
 	labels := map[string]string{
-		constants.LabelKeyNodeID:    node.ID.String(),
-		constants.LabelKeyClusterID: cluster.ID.String(),
+		k.NodeID.String():    node.ID.String(),
+		k.ClusterID.String(): cluster.ID.String(),
 	}
 	if nodePoolID != uuid.Nil {
-		labels[constants.LabelKeyNodePoolID] = nodePoolID.String()
+		labels[k.NodePoolID.String()] = nodePoolID.String()
 	}
 	return labels
 }

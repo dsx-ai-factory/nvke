@@ -17,6 +17,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
@@ -37,6 +38,15 @@ type RebootNodeInput struct {
 	// RPC error or boot verification timeout) and the hard CAPI Machine reboot annotation, for any
 	// backend where the in-guest reboot path can never produce a real, detectable boot change.
 	SoftRebootEnabled bool
+
+	// LabelDomain is the key domain of the node labels this workflow writes.
+	// Empty is the legacy domain, so an input recorded before this field
+	// existed replays as it ran.
+	LabelDomain string `json:",omitempty"`
+}
+
+func (i RebootNodeInput) labelKeys() keys.Keys {
+	return keys.New(i.LabelDomain, "")
 }
 
 func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
@@ -50,6 +60,8 @@ func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 
 	logger := workflow.GetLogger(ctx)
 	logger.Info("Starting reboot node workflow", "nodeID", input.NodeID)
+
+	k := input.labelKeys()
 
 	workflowStartTime := workflow.Now(ctx).UTC()
 
@@ -91,14 +103,14 @@ func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 
 	// Set reboot-started label
 	// The reboot-started is an ephemeral label, and will be deleted after the node has rebooted.
-	rebootStartedLabel := fmt.Sprintf("%s=%s", constants.LabelKeyNodeLabelRebootStarted, formatTimeForK8sLabel(workflow.Now(ctx).UTC()))
+	rebootStartedLabel := fmt.Sprintf("%s=%s", k.RebootStarted, formatTimeForK8sLabel(workflow.Now(ctx).UTC()))
 
 	// Also set reboot-status labels
 	// They are used to provide external visibility to SREs and engineers that the reboot is in progress,
 	// and making progress (or at least retrying) on the reboot, using kube native labels.
 	// Instead of needing access to our logging and monitoring.
-	rebootStatusLabel := fmt.Sprintf("%s=%s", constants.LabelKeyNodeLabelRebootStatus, constants.RebootStatusInProgress)
-	rebootStatusTime := fmt.Sprintf("%s=%s", constants.LabelKeyNodeLabelRebootStatusTimestamp, formatTimeForK8sLabel(time.Now().UTC()))
+	rebootStatusLabel := fmt.Sprintf("%s=%s", k.RebootStatus, constants.RebootStatusInProgress)
+	rebootStatusTime := fmt.Sprintf("%s=%s", k.RebootStatusTimestamp, formatTimeForK8sLabel(time.Now().UTC()))
 
 	if err := applyRebootLabelsAndSetNodeCondition(ctx, input, rebootStartedLabel, rebootStatusLabel, rebootStatusTime); err != nil {
 		return fmt.Errorf("failed to apply reboot-started label to node: %w", err)
@@ -112,9 +124,9 @@ func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 			return fmt.Errorf("failed to get node: %w", err)
 		}
 
-		if !rebootRequestActive(node) {
+		if !rebootRequestActive(k, node) {
 			logger.Info("Node reboot request withdrawn or node terminating, canceling workflow", "nodeID", input.NodeID, "nodeName", node.Name)
-			return workflow.ErrCanceled
+			return workflow.ErrCanceled // Cancel the workflow cleanup happens in defer
 		}
 
 		if !workflow.IsReplaying(ctx) {
@@ -122,7 +134,7 @@ func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 		}
 
 		// Update reboot attempt label
-		rebootAttemptLabel := fmt.Sprintf("%s=%d", constants.LabelKeyNodeLabelRebootAttempt, rebootAttempt)
+		rebootAttemptLabel := fmt.Sprintf("%s=%d", k.RebootAttempt, rebootAttempt)
 		if err := applyRebootLabelsAndSetNodeCondition(ctx, input, rebootAttemptLabel); err != nil {
 			return fmt.Errorf("failed to apply reboot-attempt label to node: %w", err)
 		}
@@ -194,7 +206,7 @@ func rebootAndWaitCAPINode(ctx workflow.Context, input RebootNodeInput, rebootAt
 		if readErr != nil {
 			return fmt.Errorf("failed to inspect node before hard reboot: %w", readErr)
 		}
-		if !rebootRequestActive(node) {
+		if !rebootRequestActive(input.labelKeys(), node) {
 			return workflow.ErrCanceled
 		}
 		if node.Status.NodeInfo.BootID != "" && node.Status.NodeInfo.BootID != previousBootID {
@@ -211,9 +223,8 @@ func rebootAndWaitCAPINode(ctx workflow.Context, input RebootNodeInput, rebootAt
 	return waitForNodeReboot(ctx, input, rebootAttempt, previousBootID, started)
 }
 
-func rebootRequestActive(node corev1.Node) bool {
-	_, terminating := node.Labels[constants.LabelKeyNodeLabelTerminate]
-	return node.Labels[constants.LabelKeyNodeLabelReboot] != "" && node.DeletionTimestamp.IsZero() && !terminating
+func rebootRequestActive(k keys.Keys, node corev1.Node) bool {
+	return k.Reboot.Value(node.Labels) != "" && node.DeletionTimestamp.IsZero() && !k.Terminate.Has(node.Labels)
 }
 
 func isRebootVerificationTimeout(err error) bool {
@@ -245,21 +256,16 @@ func completeReboot(ctx workflow.Context, input RebootNodeInput, status constant
 		return fmt.Errorf("failed to delete capi machine reboot annotation: %w", err)
 	}
 
-	rebootStatusLabel := fmt.Sprintf("%s=%s", constants.LabelKeyNodeLabelRebootStatus, status)
-	rebootStatusTime := fmt.Sprintf("%s=%s", constants.LabelKeyNodeLabelRebootStatusTimestamp, ts)
-	deleteRebootStartedLabel := fmt.Sprintf("%s-", constants.LabelKeyNodeLabelRebootStarted)
-	deleteRebootLabel := fmt.Sprintf("%s-", constants.LabelKeyNodeLabelReboot)
-	deleteRebootAttemptLabel := fmt.Sprintf("%s-", constants.LabelKeyNodeLabelRebootAttempt)
+	k := input.labelKeys()
 
-	var labelArgs []string
-	labelArgs = append(labelArgs, rebootStatusLabel, rebootStatusTime)
-
-	if success != nil {
-		lastRebootedAtLabel := fmt.Sprintf("%s=%s", constants.LabelKeyNodeLabelLastCompletedReboot, ts)
-		labelArgs = append(labelArgs, lastRebootedAtLabel, deleteRebootStartedLabel, deleteRebootLabel, deleteRebootAttemptLabel)
-	} else {
-		labelArgs = append(labelArgs, deleteRebootStartedLabel, deleteRebootLabel, deleteRebootAttemptLabel)
+	labelArgs := []string{
+		fmt.Sprintf("%s=%s", k.RebootStatus, status),
+		fmt.Sprintf("%s=%s", k.RebootStatusTimestamp, ts),
 	}
+	if success != nil {
+		labelArgs = append(labelArgs, fmt.Sprintf("%s=%s", k.LastCompletedReboot, ts))
+	}
+	labelArgs = append(labelArgs, labelRemovals(k.RebootStarted, k.Reboot, k.RebootAttempt)...)
 
 	if err := applyRebootLabelsAndSetNodeCondition(ctx, input, labelArgs...); err != nil {
 		return fmt.Errorf("failed to apply completion labels to node: %w", err)
@@ -272,7 +278,7 @@ func completeReboot(ctx workflow.Context, input RebootNodeInput, status constant
 	if success != nil {
 		duration := workflow.Now(ctx).Sub(success.workflowStartTime)
 		if !workflow.IsReplaying(ctx) {
-			rebootReason := success.node.Labels[constants.LabelKeyNodeLabelReboot]
+			rebootReason := k.Reboot.Value(success.node.Labels)
 			metrics.RecordRebootCompleted(rebootReason, duration, success.rebootAttempt)
 		}
 		logger.Info("Node reboot complete", "nodeID", input.NodeID, "nodeName", success.node.Name, "rebootAttempt", success.rebootAttempt, "duration", duration.Seconds())

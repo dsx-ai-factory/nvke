@@ -250,11 +250,14 @@ func NewServerImpl(
 	clusterService.allowlistedLabelKeys = cfg.NodeMetadataAllowlistedLabelKeys
 	clusterService.fleetOIDC = o.fleetOIDC
 
+	nodeService := NewNodeService(logger, database)
+	nodeService.labelDomain = cfg.LabelDomain
+
 	return &serverImpl{
 		clusterService:       *clusterService,
 		nodePoolService:      *nodePoolService,
 		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
-		nodeService:          *NewNodeService(logger, database),
+		nodeService:          *nodeService,
 		releaseService:       *NewReleaseService(logger, k8sReader),
 		configProfileService: *NewConfigProfileService(cfg, logger),
 	}

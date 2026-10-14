@@ -11,8 +11,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 const (
@@ -24,24 +24,24 @@ var ErrWrongSecretOwner = errors.New("secret owned by a different cluster")
 // ValidateSecretOwnership checks the immutable cluster-id label.
 // Missing labels are allowed (legacy Secrets). kubeconfig-mode may change
 // (EnableOIDC rewrites admin → SPIRE in place).
-func ValidateSecretOwnership(secret *corev1.Secret, cluster db.Cluster) error {
+func ValidateSecretOwnership(k keys.Keys, secret *corev1.Secret, cluster db.Cluster) error {
 	if secret.Labels == nil {
 		return nil
 	}
-	if existing := secret.Labels[constants.LabelKeyClusterID]; existing != "" && existing != cluster.ID.String() {
+	if existing := k.ClusterID.Value(secret.Labels); existing != "" && existing != cluster.ID.String() {
 		return fmt.Errorf("%w: %s/%s has cluster-id %s, want %s", ErrWrongSecretOwner, secret.Namespace, secret.Name, existing, cluster.ID)
 	}
 	return nil
 }
 
 // SetSecretOwnership writes the immutable ownership labels onto secret.
-func SetSecretOwnership(secret *corev1.Secret, cluster db.Cluster, mode, managedByLabelValue string) {
+func SetSecretOwnership(k keys.Keys, secret *corev1.Secret, cluster db.Cluster, mode, managedByLabelValue string) {
 	if secret.Labels == nil {
 		secret.Labels = map[string]string{}
 	}
-	secret.Labels[constants.LabelKeyNvkeManagedBy] = managedByLabelValue
-	secret.Labels[constants.LabelKeyClusterID] = cluster.ID.String()
-	secret.Labels[constants.LabelKeyKubeconfigMode] = mode
+	secret.Labels[k.ManagedBy.String()] = managedByLabelValue
+	secret.Labels[k.ClusterID.String()] = cluster.ID.String()
+	secret.Labels[k.KubeconfigMode.String()] = mode
 }
 
 // IsSPIREExecKubeconfig reports whether kubeconfigBytes is credential-free SPIRE exec-auth.

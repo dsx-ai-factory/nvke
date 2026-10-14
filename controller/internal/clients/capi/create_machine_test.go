@@ -13,8 +13,8 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func TestApplyNicoMachineInstanceLabels_MergesOntoTemplateSpec(t *testing.T) {
@@ -46,19 +46,20 @@ func TestApplyNicoMachineInstanceLabels_MergesOntoTemplateSpec(t *testing.T) {
 		},
 	}
 
-	err := applyNicoMachineInstanceLabels(node, cluster, nodePoolID, infraMachine)
+	k := keys.New("", "")
+	err := applyNicoMachineInstanceLabels(k, node, cluster, nodePoolID, infraMachine)
 	require.NoError(t, err)
 
 	labels, found, err := unstructured.NestedStringMap(infraMachine.Object, "spec", "labels")
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "keep", labels["example.com/from-template"])
-	assert.Equal(t, nodeID.String(), labels[constants.LabelKeyNodeID])
-	assert.Equal(t, clusterID.String(), labels[constants.LabelKeyClusterID])
-	assert.Equal(t, nodePoolID.String(), labels[constants.LabelKeyNodePoolID])
-	assert.Empty(t, labels[constants.LabelKeyMachineID])
-	assert.Empty(t, labels[constants.LabelKeyNodeSiteID])
-	assert.Empty(t, labels[constants.LabelKeyNodeSiteName])
-	assert.Empty(t, labels[constants.LabelKeyNodeVPCID])
-	assert.Empty(t, labels[constants.LabelKeyNodeVPCName])
+	assert.Equal(t, nodeID.String(), labels[k.NodeID.String()])
+	assert.Equal(t, clusterID.String(), labels[k.ClusterID.String()])
+	assert.Equal(t, nodePoolID.String(), labels[k.NodePoolID.String()])
+	assert.Empty(t, labels[k.MachineID.String()])
+	assert.Empty(t, labels[k.NodeSiteID.String()])
+	assert.Empty(t, labels[k.NodeSiteName.String()])
+	assert.Empty(t, labels[k.NodeVPCID.String()])
+	assert.Empty(t, labels[k.NodeVPCName.String()])
 }

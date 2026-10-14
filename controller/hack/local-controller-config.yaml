@@ -19,8 +19,8 @@ fieldManager:
   rebootMachineName: cloud-workflow-engine-reboot-machine
   machineHealthIssueName: cloud-workflow-engine-machine-health-issue
 managedByLabelValue: cloud-workflow-engine
-labelDomain: nke.nvidia.com
-managementNamespace: nke-system
+labelDomain: ""
+managementNamespace: ""
 metricsListenAddress: 127.0.0.1:9090
 supportedInfraProviders:
   - nico

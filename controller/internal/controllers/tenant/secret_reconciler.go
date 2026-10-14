@@ -18,9 +18,9 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/tenantaccess"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 type clusterReader interface {
@@ -35,21 +35,23 @@ type SecretReconciler struct {
 	reader              client.Reader
 	managerSet          *ManagerSet
 	managedByLabelValue string
+	keys                keys.Keys
 }
 
-func NewSecretReconciler(database clusterReader, reader client.Reader, managerSet *ManagerSet, managedByLabelValue string) *SecretReconciler {
+func NewSecretReconciler(database clusterReader, reader client.Reader, managerSet *ManagerSet, managedByLabelValue string, k keys.Keys) *SecretReconciler {
 	return &SecretReconciler{
 		database:            database,
 		reader:              reader,
 		managerSet:          managerSet,
 		managedByLabelValue: managedByLabelValue,
+		keys:                k,
 	}
 }
 
 func (r *SecretReconciler) SetupWithManager(manager ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(manager).
 		Named("tenant-access-secret").
-		For(&corev1.Secret{}, builder.WithPredicates(tenantAccessSecretPredicate(r.managedByLabelValue))).
+		For(&corev1.Secret{}, builder.WithPredicates(tenantAccessSecretPredicate(r.keys, r.managedByLabelValue))).
 		Complete(r)
 }
 
@@ -64,7 +66,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		return ctrl.Result{}, fmt.Errorf("getting tenant-access Secret %s: %w", secretRef, err)
 	}
 
-	clusterID, ok := clusterIDForKubeconfigSecret(secret, r.managedByLabelValue)
+	clusterID, ok := clusterIDForKubeconfigSecret(r.keys, secret, r.managedByLabelValue)
 	if !ok {
 		r.managerSet.RemoveKubeconfigSecret(secretRef)
 		return ctrl.Result{}, nil
@@ -101,23 +103,23 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
-func clusterIDForKubeconfigSecret(secret *corev1.Secret, managedByLabelValue string) (uuid.UUID, bool) {
-	if secret.Namespace != tenantaccess.SecretsNamespace ||
-		secret.Labels[constants.LabelKeyNvkeManagedBy] != managedByLabelValue ||
+func clusterIDForKubeconfigSecret(k keys.Keys, secret *corev1.Secret, managedByLabelValue string) (uuid.UUID, bool) {
+	if secret.Namespace != k.ManagementNamespace ||
+		k.ManagedBy.Value(secret.Labels) != managedByLabelValue ||
 		!tenantaccess.IsControllerKubeconfigSecretName(secret.Name) {
 		return uuid.Nil, false
 	}
-	clusterID, err := uuid.Parse(secret.Labels[constants.LabelKeyClusterID])
+	clusterID, err := uuid.Parse(k.ClusterID.Value(secret.Labels))
 	return clusterID, err == nil
 }
 
-func tenantAccessSecretPredicate(managedByLabelValue string) predicate.Predicate {
+func tenantAccessSecretPredicate(k keys.Keys, managedByLabelValue string) predicate.Predicate {
 	matches := func(object client.Object) bool {
 		secret, ok := object.(*corev1.Secret)
 		if !ok {
 			return false
 		}
-		_, matches := clusterIDForKubeconfigSecret(secret, managedByLabelValue)
+		_, matches := clusterIDForKubeconfigSecret(k, secret, managedByLabelValue)
 		return matches
 	}
 

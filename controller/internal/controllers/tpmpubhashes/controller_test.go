@@ -39,8 +39,8 @@ func TestController_ReconcileRendersManagedClusterStaticEntries(t *testing.T) {
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-a": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
-		"hash-b": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-a": testKeys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-b": testKeys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
 	})
 }
 
@@ -56,7 +56,7 @@ func TestController_ReconcileFiltersClusterStaticEntries(t *testing.T) {
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-valid": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-valid": testKeys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
 	})
 }
 
@@ -74,7 +74,7 @@ func TestController_ReconcileUpdatesConfigMapOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-new": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-new": testKeys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
 	})
 }
 
@@ -111,7 +111,7 @@ func TestController_ReconcilePreservesExternallyManagedConfigMapData(t *testing.
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-a": constants.LabelKeyNvkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-a": testKeys.ManagedBy.String() + "=" + constants.FieldManagerMachineSpireEntry,
 		"bogus":  "bad",
 	})
 }
@@ -136,6 +136,7 @@ func newControllerForTest(t *testing.T, objs ...client.Object) *Controller {
 	t.Helper()
 
 	return &Controller{
+		keys: testKeys,
 		cfg: config.Config{
 			SpireClassName:                 testSpireClassName,
 			SpireServerNamespace:           testSpireServerNamespace,
@@ -174,7 +175,7 @@ func newClusterStaticEntryForTest(name, manager, className, parentID string) *sp
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				constants.LabelKeyNvkeManagedBy: manager,
+				testKeys.ManagedBy.String(): manager,
 			},
 		},
 		Spec: spirev1alpha1.ClusterStaticEntrySpec{

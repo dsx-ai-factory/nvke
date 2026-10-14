@@ -17,8 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func TestBuildBootstrapSecret(t *testing.T) {
@@ -114,6 +114,7 @@ func TestBuildMachine(t *testing.T) {
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
 			machine, err := shared.BuildMachine(
+				keys.New("", ""),
 				params.node,
 				params.nodeSet,
 				params.nodePool,
@@ -131,7 +132,7 @@ func TestBuildMachine(t *testing.T) {
 			assert.Equal(t, params.node.Name, machine.Name)
 			assert.Equal(t, "capi-cluster-a", machine.Namespace)
 			assert.Equal(t, params.cluster.Name, machine.Labels["cluster.x-k8s.io/cluster-name"])
-			assert.Equal(t, params.node.ID.String(), machine.Annotations[constants.MachineAnnotationKeyHostID])
+			assert.Equal(t, params.node.ID.String(), machine.Annotations[keys.New("", "").HostID.String()])
 			assert.Equal(t, "cwe-controlled", machine.Annotations[clusterv1.ExcludeNodeDrainingAnnotation])
 			assert.Equal(t, "cwe-controlled", machine.Annotations[clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation])
 			assert.Equal(t, params.wantVersion, machine.Spec.Version)

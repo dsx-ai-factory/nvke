@@ -97,7 +97,8 @@ var stayEnv = map[string]string{
 }
 
 // configMapOnly lists config.yaml keys that never had an environment variable,
-// because the ConfigMap is the first place they exist.
+// because the ConfigMap is the first place they exist. A key here may still have
+// a config.Config field; it just is not listed as a migrated variable.
 var configMapOnly = []string{
 	"oidc.providers",
 	"labelDomain",

@@ -22,11 +22,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	dbfilters "github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/tenant"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // Reconciler starts node remediation workflows from tenant Kubernetes Node labels.
@@ -54,7 +54,7 @@ func NewRegistrar(cfg config.Config, database *dbwrapper.DB, controllerTemporalC
 		return ctrl.NewControllerManagedBy(manager).
 			Named(controllerName).
 			WithOptions(controllerOptions).
-			For(&corev1.Node{}, builder.WithPredicates(remediationNodePredicate())).
+			For(&corev1.Node{}, builder.WithPredicates(remediationNodePredicate(cfg.Keys()))).
 			WatchesRawSource(dbwrapper.NewMappedNodeSource(
 				database,
 				dbfilters.Node{
@@ -67,36 +67,35 @@ func NewRegistrar(cfg config.Config, database *dbwrapper.DB, controllerTemporalC
 	}
 }
 
-func remediationNodePredicate() predicate.Predicate {
+func remediationNodePredicate(k keys.Keys) predicate.Predicate {
 	return predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool { return nodeHasRemediationRequest(e.Object) },
+		CreateFunc: func(e event.CreateEvent) bool { return nodeHasRemediationRequest(k, e.Object) },
 		DeleteFunc: func(_ event.DeleteEvent) bool { return false },
 		// Reconcile only when the requested remediation changes; workflow status
 		// labels are written back to the Node and should not requeue this controller.
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return nodeRemediationRequestChanged(e.ObjectOld, e.ObjectNew) && nodeHasRemediationRequest(e.ObjectNew)
+			return nodeRemediationRequestChanged(k, e.ObjectOld, e.ObjectNew) && nodeHasRemediationRequest(k, e.ObjectNew)
 		},
-		GenericFunc: func(e event.GenericEvent) bool { return nodeHasRemediationRequest(e.Object) },
+		GenericFunc: func(e event.GenericEvent) bool { return nodeHasRemediationRequest(k, e.Object) },
 	}
 }
 
-func nodeHasRemediationRequest(object ctrlclient.Object) bool {
+func nodeHasRemediationRequest(k keys.Keys, object ctrlclient.Object) bool {
 	node, isNode := object.(*corev1.Node)
 	if !isNode {
 		return false
 	}
 	labels := node.GetLabels()
-	if _, hasTerminateRequest := labels[constants.LabelKeyNodeLabelTerminate]; hasTerminateRequest {
+	if k.Terminate.Has(labels) {
 		return true
 	}
-	if _, hasRebootRequest := labels[constants.LabelKeyNodeLabelReboot]; hasRebootRequest {
+	if k.Reboot.Has(labels) {
 		return true
 	}
-	_, hasMachineHealthIssue := node.GetAnnotations()[constants.NodeAnnotationKeyMachineHealthIssue]
-	return hasMachineHealthIssue
+	return k.NodeHealthIssueAnnotation.Has(node.GetAnnotations())
 }
 
-func nodeRemediationRequestChanged(oldObject, newObject ctrlclient.Object) bool {
+func nodeRemediationRequestChanged(k keys.Keys, oldObject, newObject ctrlclient.Object) bool {
 	oldNode, ok := oldObject.(*corev1.Node)
 	if !ok {
 		return false
@@ -105,9 +104,9 @@ func nodeRemediationRequestChanged(oldObject, newObject ctrlclient.Object) bool 
 	if !ok {
 		return false
 	}
-	return oldNode.GetLabels()[constants.LabelKeyNodeLabelTerminate] != newNode.GetLabels()[constants.LabelKeyNodeLabelTerminate] ||
-		oldNode.GetLabels()[constants.LabelKeyNodeLabelReboot] != newNode.GetLabels()[constants.LabelKeyNodeLabelReboot] ||
-		oldNode.GetAnnotations()[constants.NodeAnnotationKeyMachineHealthIssue] != newNode.GetAnnotations()[constants.NodeAnnotationKeyMachineHealthIssue]
+	return k.Terminate.Value(oldNode.GetLabels()) != k.Terminate.Value(newNode.GetLabels()) ||
+		k.Reboot.Value(oldNode.GetLabels()) != k.Reboot.Value(newNode.GetLabels()) ||
+		k.NodeHealthIssueAnnotation.Value(oldNode.GetAnnotations()) != k.NodeHealthIssueAnnotation.Value(newNode.GetAnnotations())
 }
 
 func controllerRegistration(clusterID uuid.UUID) (string, controller.Options) {

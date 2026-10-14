@@ -20,6 +20,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 type machineSpireEntryNodeReader interface {
@@ -32,6 +33,7 @@ type MachineSpireEntryController struct {
 	nodes       machineSpireEntryNodeReader
 	logger      *slog.Logger
 	trustDomain string
+	keys        keys.Keys
 }
 
 func NewMachineSpireEntryController(
@@ -40,6 +42,7 @@ func NewMachineSpireEntryController(
 	nodes machineSpireEntryNodeReader,
 	logger *slog.Logger,
 	trustDomain string,
+	k keys.Keys,
 ) *MachineSpireEntryController {
 	return &MachineSpireEntryController{
 		cfg:         cfg,
@@ -47,6 +50,7 @@ func NewMachineSpireEntryController(
 		nodes:       nodes,
 		logger:      logger,
 		trustDomain: trustDomain,
+		keys:        k,
 	}
 }
 
@@ -68,7 +72,7 @@ func (c *MachineSpireEntryController) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, fmt.Errorf("failed to get machine: %w", err)
 	}
 
-	hostID := machine.GetAnnotations()[constants.MachineAnnotationKeyHostID]
+	hostID := c.keys.HostID.Value(machine.GetAnnotations())
 	if !machine.DeletionTimestamp.IsZero() {
 		if hostID == "" {
 			return ctrl.Result{}, nil
@@ -81,7 +85,7 @@ func (c *MachineSpireEntryController) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, nil
 	}
 
-	spireAgentIDPath := machine.GetAnnotations()[constants.MachineAnnotationKeySpireAgentSpiffeIDPath]
+	spireAgentIDPath := c.keys.SpireAgentSpiffeIDPath.Value(machine.GetAnnotations())
 	if spireAgentIDPath == "" {
 		logger.Info("Waiting for spire agent ID path to be set on Machine", "hostID", hostID)
 		return ctrl.Result{}, nil
@@ -121,7 +125,7 @@ func (c *MachineSpireEntryController) applyClusterStaticEntry(ctx context.Contex
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				constants.LabelKeyNvkeManagedBy: constants.FieldManagerMachineSpireEntry,
+				c.keys.ManagedBy.String(): constants.FieldManagerMachineSpireEntry,
 			},
 		},
 		Spec: spirev1alpha1.ClusterStaticEntrySpec{

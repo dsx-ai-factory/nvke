@@ -80,7 +80,8 @@ func (s *Service) startProvisionNodeWorkflow(ctx context.Context, pendingNode db
 		RebootNodeWaitForUptimeTimeout: s.cfg.NodeRebootMaxTimeout,
 		// Control-plane nodes defer join to the control-plane controller, which
 		// serializes joins one node at a time.
-		SkipJoin: pendingNode.ControlPlane,
+		SkipJoin:    pendingNode.ControlPlane,
+		LabelDomain: s.cfg.LabelDomain,
 	})
 	otelx.EndWorkflowSpan(span, err)
 	if err != nil {

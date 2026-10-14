@@ -21,14 +21,13 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 const (
-	tenantAccessKubeconfigNamespace = constants.NamespaceNVKESystem
-	tenantAccessKubeconfigKey       = "value"
-	tenantAPIServerProbeTimeout     = 5 * time.Second
+	tenantAccessKubeconfigKey   = "value"
+	tenantAPIServerProbeTimeout = 5 * time.Second
 )
 
 var ErrTenantClientNotReady = errors.New("tenant client not ready")
@@ -85,6 +84,7 @@ type DBClusterTenantClientProvider struct {
 	managementClient    client.Reader
 	nodeAgentClient     agent.Client
 	tenantAccessEnabled bool
+	keys                keys.Keys
 
 	clientsMu sync.RWMutex
 	clients   map[uuid.UUID]tenantClientCacheEntry
@@ -100,12 +100,14 @@ func NewDBClusterTenantClientProvider(
 	managementClient client.Reader,
 	nodeAgentClient agent.Client,
 	tenantAccessEnabled bool,
+	k keys.Keys,
 ) *DBClusterTenantClientProvider {
 	return &DBClusterTenantClientProvider{
 		database:            database,
 		managementClient:    managementClient,
 		nodeAgentClient:     nodeAgentClient,
 		tenantAccessEnabled: tenantAccessEnabled,
+		keys:                k,
 		clients:             make(map[uuid.UUID]tenantClientCacheEntry),
 	}
 }
@@ -164,19 +166,19 @@ func (p *DBClusterTenantClientProvider) clientFromTenantAccessSecret(ctx context
 	secretName := cluster.Name + "-kubeconfig"
 	secret := &corev1.Secret{}
 	if err := p.managementClient.Get(ctx, client.ObjectKey{
-		Namespace: tenantAccessKubeconfigNamespace,
+		Namespace: p.keys.ManagementNamespace,
 		Name:      secretName,
 	}, secret); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, fmt.Errorf(
 				"%w: published tenant kubeconfig secret %s/%s not found: %w",
 				ErrTenantClientNotReady,
-				tenantAccessKubeconfigNamespace,
+				p.keys.ManagementNamespace,
 				secretName,
 				err,
 			)
 		}
-		return nil, fmt.Errorf("failed to get published tenant kubeconfig secret %s/%s: %w", tenantAccessKubeconfigNamespace, secretName, err)
+		return nil, fmt.Errorf("failed to get published tenant kubeconfig secret %s/%s: %w", p.keys.ManagementNamespace, secretName, err)
 	}
 
 	kubeconfigBytes := secret.Data[tenantAccessKubeconfigKey]
@@ -184,14 +186,14 @@ func (p *DBClusterTenantClientProvider) clientFromTenantAccessSecret(ctx context
 		return nil, fmt.Errorf(
 			"%w: published tenant kubeconfig secret %s/%s has no non-empty %q key",
 			ErrTenantClientNotReady,
-			tenantAccessKubeconfigNamespace,
+			p.keys.ManagementNamespace,
 			secretName,
 			tenantAccessKubeconfigKey,
 		)
 	}
 	tenantClient, err := p.clientFromSecretVersion(cluster, secret, kubeconfigBytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create client from published tenant kubeconfig secret %s/%s: %w", tenantAccessKubeconfigNamespace, secretName, err)
+		return nil, fmt.Errorf("failed to create client from published tenant kubeconfig secret %s/%s: %w", p.keys.ManagementNamespace, secretName, err)
 	}
 	return tenantClient, nil
 }

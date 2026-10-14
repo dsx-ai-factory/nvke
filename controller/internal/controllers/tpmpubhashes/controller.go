@@ -23,6 +23,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // Controller is responsible for reconciling the tpm-pubhashes configmap.
@@ -31,6 +32,7 @@ type Controller struct {
 	k8sClient   client.Client
 	logger      *slog.Logger
 	trustDomain string
+	keys        keys.Keys
 }
 
 // NewController creates a new Controller.
@@ -39,12 +41,14 @@ func NewController(
 	logger *slog.Logger,
 	k8sClient client.Client,
 	trustDomain string,
+	k keys.Keys,
 ) *Controller {
 	return &Controller{
 		cfg:         cfg,
 		k8sClient:   k8sClient,
 		logger:      logger,
 		trustDomain: trustDomain,
+		keys:        k,
 	}
 }
 
@@ -88,16 +92,29 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 func (c *Controller) reconcileTpmPubhashesCm(ctx context.Context) error {
 	// List ClusterStaticEntries managed by the controller's machine-spire-entry-controller.
-	clusterStaticEntries := &spirev1alpha1.ClusterStaticEntryList{}
-	err := c.k8sClient.List(ctx, clusterStaticEntries, client.MatchingLabels{
-		constants.LabelKeyNvkeManagedBy: constants.FieldManagerMachineSpireEntry,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to list cluster static entries: %w", err)
+	// Entries applied before the label domain changed still carry the legacy
+	// managed-by key, so list under every form and de-duplicate by name.
+	var entries []spirev1alpha1.ClusterStaticEntry
+	seen := make(map[string]struct{})
+	for _, managedBy := range c.keys.ManagedBy.All() {
+		clusterStaticEntries := &spirev1alpha1.ClusterStaticEntryList{}
+		err := c.k8sClient.List(ctx, clusterStaticEntries, client.MatchingLabels{
+			managedBy: constants.FieldManagerMachineSpireEntry,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to list cluster static entries: %w", err)
+		}
+		for _, entry := range clusterStaticEntries.Items {
+			if _, dup := seen[entry.Name]; dup {
+				continue
+			}
+			seen[entry.Name] = struct{}{}
+			entries = append(entries, entry)
+		}
 	}
 
 	desiredPubHashes := make(map[string]struct{})
-	for _, clusterStaticEntry := range clusterStaticEntries.Items {
+	for _, clusterStaticEntry := range entries {
 		// Only process entries for our SPIRE installation.
 		if clusterStaticEntry.Spec.ClassName != c.cfg.SpireClassName {
 			continue
@@ -114,7 +131,7 @@ func (c *Controller) reconcileTpmPubhashesCm(ctx context.Context) error {
 	for pubHash := range desiredPubHashes {
 		// A data value is added for each pubhash, it is not currently used, but will allow more granular control in the future, if necessary.
 		// e.g. "<pubhash>": "nke.nvidia.com/managed-by=machine-spire-entry-controller"
-		value := fmt.Sprintf("%s=%s", constants.LabelKeyNvkeManagedBy, constants.FieldManagerMachineSpireEntry)
+		value := fmt.Sprintf("%s=%s", c.keys.ManagedBy, constants.FieldManagerMachineSpireEntry)
 		data[pubHash] = value
 	}
 

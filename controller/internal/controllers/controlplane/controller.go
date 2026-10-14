@@ -23,6 +23,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	dbfilters "github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // Controller manages keyed control plane reconciliation for clusters.
@@ -35,6 +36,7 @@ type Controller struct {
 	k8sClient                ctrlclient.Client
 	k8sReader                ctrlclient.Reader
 	nodeAgentClient          agent.Client
+	keys                     keys.Keys
 }
 
 // NewController creates a new control plane Controller.
@@ -46,6 +48,7 @@ func NewController(
 	k8sClient ctrlclient.Client,
 	k8sReader ctrlclient.Reader,
 	nodeAgentClient agent.Client,
+	k keys.Keys,
 ) *Controller {
 	return &Controller{
 		cfg:                      cfg,
@@ -55,6 +58,7 @@ func NewController(
 		k8sClient:                k8sClient,
 		k8sReader:                k8sReader,
 		nodeAgentClient:          nodeAgentClient,
+		keys:                     k,
 	}
 }
 
@@ -105,7 +109,7 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		}
 
 		cluster = lockedCluster
-		reconciler := newReconciler(c.cfg, c.logger, tx, c.controllerTemporalClient, c.k8sClient, c.k8sReader)
+		reconciler := newReconciler(c.cfg, c.logger, tx, c.controllerTemporalClient, c.k8sClient, c.k8sReader, c.keys)
 		return reconciler.reconcile(ctx, lockedCluster)
 	})
 	if err != nil {

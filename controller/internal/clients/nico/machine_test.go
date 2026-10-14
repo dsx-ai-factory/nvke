@@ -12,8 +12,8 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func TestClient_renderInfraMachine(t *testing.T) {
@@ -46,7 +46,7 @@ func TestClient_renderInfraMachine(t *testing.T) {
 	node := db.Node{ID: uuid.New(), Name: "worker-0"}
 
 	t.Run("builds a NicoMachine for the node", func(t *testing.T) {
-		obj, err := New().renderInfraMachine(ipxeScriptTemplate, "nico-test-cluster", node, nodeSet, nodePool, cluster)
+		obj, err := New().renderInfraMachine(keys.New("", ""), ipxeScriptTemplate, "nico-test-cluster", node, nodeSet, nodePool, cluster)
 		require.NoError(t, err)
 
 		nicoMachine, ok := obj.(*nicov1.NicoMachine)
@@ -56,11 +56,11 @@ func TestClient_renderInfraMachine(t *testing.T) {
 		assert.Equal(t, vpcID.String(), nicoMachine.Spec.VPCID)
 		assert.Equal(t, instanceTypeID.String(), nicoMachine.Spec.InstanceTypeID)
 		assert.Equal(t, "#!ipxe\nlargest", nicoMachine.Spec.IpxeScript)
-		assert.Equal(t, node.ID.String(), nicoMachine.Spec.Labels[constants.LabelKeyNodeID])
+		assert.Equal(t, node.ID.String(), nicoMachine.Spec.Labels[keys.New("", "").NodeID.String()])
 	})
 
 	t.Run("missing provider payload errors", func(t *testing.T) {
-		_, err := New().renderInfraMachine(ipxeScriptTemplate, "ns", db.Node{}, db.NodeSet{}, db.NodePool{}, db.Cluster{})
+		_, err := New().renderInfraMachine(keys.New("", ""), ipxeScriptTemplate, "ns", db.Node{}, db.NodeSet{}, db.NodePool{}, db.Cluster{})
 		require.Error(t, err)
 		require.ErrorIs(t, err, db.ErrMissingProviderPayload)
 	})
@@ -212,15 +212,17 @@ func TestBuildInstanceLabels(t *testing.T) {
 	clusterID := uuid.MustParse("11111111-2222-3333-4444-555555555555")
 	nodePoolID := uuid.MustParse("99999999-8888-7777-6666-555555555555")
 
+	k := keys.New("", "")
 	labels := BuildInstanceLabels(
+		k,
 		db.Node{ID: nodeID},
 		db.Cluster{ID: clusterID},
 		nodePoolID,
 	)
 
 	assert.Equal(t, map[string]string{
-		constants.LabelKeyNodeID:     nodeID.String(),
-		constants.LabelKeyClusterID:  clusterID.String(),
-		constants.LabelKeyNodePoolID: nodePoolID.String(),
+		k.NodeID.String():     nodeID.String(),
+		k.ClusterID.String():  clusterID.String(),
+		k.NodePoolID.String(): nodePoolID.String(),
 	}, labels)
 }

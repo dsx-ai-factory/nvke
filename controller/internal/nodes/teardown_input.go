@@ -23,6 +23,11 @@ type TeardownNodeInput struct {
 	// But we do want to allow deleting control-plane nodes from the API.
 	AllowCPNode bool
 
+	// LabelDomain is the key domain of the node labels TeardownNode writes.
+	// Empty is the legacy domain, so an input recorded before this field
+	// existed replays as it ran.
+	LabelDomain string `json:",omitempty"`
+
 	// If MachineHealthIssue is provided, it is non nil it signals to Forge to flag the instance for repair.
 	MachineHealthIssue *MachineHealthIssue
 }

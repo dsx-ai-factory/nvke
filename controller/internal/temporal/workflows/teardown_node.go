@@ -16,6 +16,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
@@ -57,6 +58,8 @@ func TeardownNode(ctx workflow.Context, input TeardownNodeInput) error {
 		labels = nodeMetricLabels{ClusterName: unknownValue, NodeType: unknownValue}
 	}
 
+	k := keys.New(input.LabelDomain, "")
+
 	// Check if node is a CP node
 	isCPNode, err := isControlPlaneNode(ctx, input.NodeID)
 	if err != nil {
@@ -66,13 +69,12 @@ func TeardownNode(ctx workflow.Context, input TeardownNodeInput) error {
 	// if CP node, remove terminate label and finish workflow with success
 	if isCPNode && !input.AllowCPNode {
 		logger.Warn("Skipping teardown: Node is a control-plane node. label based teardown is not allowed for control-plane nodes", "nodeID", input.NodeID)
-		deleteTerminateLabel := fmt.Sprintf("%s-", constants.LabelKeyNodeLabelTerminate)
-		terminateStatus := fmt.Sprintf("%s=%s", constants.LabelKeyNodeLabelTerminateStatus, constants.LabelValueTerminateStatusNotAllowed)
-		tryApplyNodeTerminatingLabels(ctx, input, deleteTerminateLabel, terminateStatus)
+		terminateStatus := fmt.Sprintf("%s=%s", k.TerminateStatus, constants.LabelValueTerminateStatusNotAllowed)
+		tryApplyNodeTerminatingLabels(ctx, input, append(labelRemovals(k.Terminate), terminateStatus)...)
 		return nil
 	}
 
-	terminateStatus := fmt.Sprintf("%s=%s", constants.LabelKeyNodeLabelTerminateStatus, constants.LabelValueTerminateStatusInProgress)
+	terminateStatus := fmt.Sprintf("%s=%s", k.TerminateStatus, constants.LabelValueTerminateStatusInProgress)
 	tryApplyNodeTerminatingLabels(ctx, input, terminateStatus)
 
 	if err := teardownNode(ctx, input, labels); err != nil {

@@ -9,6 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
@@ -44,6 +45,12 @@ func WithOIDCConfig(oidc *config.NvkeOIDCAuth) Option {
 // WithTrustDomain injects the management SPIFFE trust domain.
 func WithTrustDomain(trustDomain string) Option {
 	return func(op *EnableOIDCOperation) { op.trustDomain = trustDomain }
+}
+
+// WithKeys injects the label keys and management namespace. The default is
+// keys.New("", ""), today's literals.
+func WithKeys(k keys.Keys) Option {
+	return func(op *EnableOIDCOperation) { op.keys = k }
 }
 
 // WithMethodSupportChecker injects the reusable agent capability check

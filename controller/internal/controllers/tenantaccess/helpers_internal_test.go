@@ -103,11 +103,11 @@ func TestReadAndApplyRBACManifest(t *testing.T) {
 
 			ctx := context.Background()
 			cm := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Namespace: SecretsNamespace, Name: rbacConfigMapName},
+				ObjectMeta: metav1.ObjectMeta{Namespace: defaultKeys.ManagementNamespace, Name: rbacConfigMapName},
 				Data:       map[string]string{rbacConfigMapKey: tc.manifest},
 			}
 			c := crfake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(cm).Build()
-			ctrl := &Controller{k8sClient: c}
+			ctrl := &Controller{k8sClient: c, keys: defaultKeys}
 
 			manifest, err := ctrl.readRBACManifest(ctx)
 			if err == nil {
@@ -134,11 +134,11 @@ func TestReadRBACManifestMissingKey(t *testing.T) {
 	t.Parallel()
 
 	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: SecretsNamespace, Name: rbacConfigMapName},
+		ObjectMeta: metav1.ObjectMeta{Namespace: defaultKeys.ManagementNamespace, Name: rbacConfigMapName},
 		Data:       map[string]string{"other.yaml": "irrelevant"},
 	}
 	c := crfake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(cm).Build()
-	ctrl := &Controller{k8sClient: c}
+	ctrl := &Controller{k8sClient: c, keys: defaultKeys}
 
 	_, err := ctrl.readRBACManifest(context.Background())
 	require.ErrorContains(t, err, "missing required key")
@@ -150,7 +150,7 @@ func TestReadRBACManifestAbsentConfigMap(t *testing.T) {
 	t.Parallel()
 
 	c := crfake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
-	ctrl := &Controller{k8sClient: c}
+	ctrl := &Controller{k8sClient: c, keys: defaultKeys}
 
 	_, err := ctrl.readRBACManifest(context.Background())
 	require.ErrorContains(t, err, "getting NVKE RBAC ConfigMap")

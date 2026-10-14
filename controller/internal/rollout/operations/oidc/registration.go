@@ -7,6 +7,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
 )
@@ -23,6 +24,7 @@ func RegisterDefaults(
 	k8sClient client.Client,
 	oidc config.NvkeOIDCAuth,
 	trustDomain string,
+	k keys.Keys,
 ) {
 	oidcConfig := oidc
 	reg.RegisterOperation(rollout.Compile(NewEnableOIDCOperation(
@@ -31,5 +33,6 @@ func RegisterDefaults(
 		WithClient(k8sClient),
 		WithOIDCConfig(&oidcConfig),
 		WithTrustDomain(trustDomain),
+		WithKeys(k),
 	)))
 }

@@ -16,15 +16,15 @@ import (
 	"go.temporal.io/sdk/workflow"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
 // labelNodeTestWorkflow is a thin wrapper so the unexported labelNode helper can
 // be driven through the Temporal test environment.
 func labelNodeTestWorkflow(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bool) error {
-	return labelNode(ctx, nodeID, addConfigProfileLabels)
+	return labelNode(ctx, keys.New("", ""), nodeID, addConfigProfileLabels)
 }
 
 // cleanBeforeControlPlaneRejoinTestWorkflow exposes the unexported cleanup
@@ -94,7 +94,7 @@ func TestLabelNode(t *testing.T) {
 				return labelNodeEnv{env: env, captured: captured, called: called, nodeID: res.nodeID}
 			},
 			wantCalled: true,
-			wantLabels: []string{constants.LabelKeyMachineID + "=machine-abc123"},
+			wantLabels: []string{keys.New("", "").MachineID.String() + "=machine-abc123"},
 		},
 		"adds machine ID label from nico node provider": {
 			setup: func(t *testing.T) labelNodeEnv {
@@ -141,8 +141,8 @@ func TestLabelNode(t *testing.T) {
 				return labelNodeEnv{env: env, captured: captured, called: &wasCalled, nodeID: nodeID}
 			},
 			wantCalled:     true,
-			wantLabels:     []string{constants.LabelKeyMachineID + "=payload-machine"},
-			unwantedLabels: []string{constants.LabelKeyMachineID + "=legacy-machine"},
+			wantLabels:     []string{keys.New("", "").MachineID.String() + "=payload-machine"},
+			unwantedLabels: []string{keys.New("", "").MachineID.String() + "=legacy-machine"},
 		},
 		"skips machine ID label when empty": {
 			setup: func(t *testing.T) labelNodeEnv {

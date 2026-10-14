@@ -45,6 +45,18 @@ type DeleteOptions struct {
 
 	// If a non-nil MachineHealthIssue is provided it signals Forge to flag the instance for repair.
 	MachineHealthIssue *MachineHealthIssue
+
+	// LabelDomain is the key domain TeardownNode writes node labels under. Empty
+	// is the legacy domain.
+	LabelDomain string
+}
+
+// WithLabelDomain sets the key domain the teardown workflow writes node labels
+// under. Pass config.Config.LabelDomain.
+func WithLabelDomain(domain string) DeleteOpt {
+	return func(o *DeleteOptions) {
+		o.LabelDomain = domain
+	}
 }
 
 // WithReason sets the reason for node deletion.
@@ -101,7 +113,7 @@ func WithMachineHealthIssue(machineHealthIssue *MachineHealthIssue) DeleteOpt {
 }
 
 func (o *DeleteOptions) toWorkflowInput() TeardownNodeInput {
-	input := TeardownNodeInput{}
+	input := TeardownNodeInput{LabelDomain: o.LabelDomain}
 	if o.SkipRemoveFromCluster {
 		input.SkipRemoveFromCluster = o.SkipRemoveFromCluster
 	}

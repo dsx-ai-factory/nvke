@@ -131,6 +131,7 @@ func (c *Controller) reconcile(ctx context.Context, tx db.Tx, dbNode db.Node) (r
 		// Controller already filters pool/CP; skip live-API guard so recycle
 		// does not take the cluster row lock.
 		nodes.WithSkipLiveDeleteGuard(),
+		nodes.WithLabelDomain(c.cfg.LabelDomain),
 	)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to recycle node %s stuck provisioning: %w", dbNode.ID, err)

@@ -21,8 +21,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
@@ -74,14 +74,14 @@ func TestRebootAndWaitCAPINode(t *testing.T) {
 					node.Status.NodeInfo.BootID = "new-boot"
 				}
 				if test.withdrawn {
-					delete(node.Labels, constants.LabelKeyNodeLabelReboot)
+					delete(node.Labels, keys.New("", "").Reboot.String())
 				}
 				if test.deleting {
 					ts := metav1.Now()
 					node.DeletionTimestamp = &ts
 				}
 				if test.terminating {
-					node.Labels[constants.LabelKeyNodeLabelTerminate] = "repair"
+					node.Labels[keys.New("", "").Terminate.String()] = "repair"
 				}
 				env.OnActivity(a.GetKubeNode, mock.Anything, mock.Anything).Return(activities.GetKubeNodeResult{Node: node}, nil).Once()
 			}
@@ -143,7 +143,7 @@ func TestSoftRebootVerificationWindow(t *testing.T) {
 
 func rebootTestKubeNode(bootID string) corev1.Node {
 	return corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: "worker", Labels: map[string]string{constants.LabelKeyNodeLabelReboot: "repair"}},
+		ObjectMeta: metav1.ObjectMeta{Name: "worker", Labels: map[string]string{keys.New("", "").Reboot.String(): "repair"}},
 		Status:     corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{BootID: bootID}},
 	}
 }

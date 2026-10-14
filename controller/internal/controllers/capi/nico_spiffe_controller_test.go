@@ -114,10 +114,10 @@ func TestUnit_NicoSpiffeControllerReconcile(t *testing.T) {
 
 			machine := newMachineForNicoSpiffeTest(params.existingPath)
 			if params.missingHostID {
-				delete(machine.Annotations, constants.MachineAnnotationKeyHostID)
+				delete(machine.Annotations, testKeys.HostID.String())
 			}
 			if params.invalidHostID {
-				machine.Annotations[constants.MachineAnnotationKeyHostID] = "not-a-uuid"
+				machine.Annotations[testKeys.HostID.String()] = "not-a-uuid"
 			}
 			nicoMachine := newNicoMachineForSpiffeTest(params.status, params.ownerRef, params.deleting)
 			nodes := &nicoSpiffeNodeReaderStub{node: db.Node{SpireAttestationMethod: params.method}, err: params.dbErr}
@@ -142,10 +142,10 @@ func TestUnit_NicoSpiffeControllerReconcile(t *testing.T) {
 			gotMachine := &clusterv1.Machine{}
 			require.NoError(t, controller.k8sClient.Get(t.Context(), client.ObjectKeyFromObject(machine), gotMachine))
 			if params.wantPath == "" {
-				require.NotContains(t, gotMachine.Annotations, constants.MachineAnnotationKeySpireAgentSpiffeIDPath)
+				require.NotContains(t, gotMachine.Annotations, testKeys.SpireAgentSpiffeIDPath.String())
 				return
 			}
-			require.Equal(t, params.wantPath, gotMachine.Annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath])
+			require.Equal(t, params.wantPath, gotMachine.Annotations[testKeys.SpireAgentSpiffeIDPath.String()])
 		})
 	}
 }
@@ -164,12 +164,12 @@ func TestUnit_NicoSpiffeControllerReconcileIgnoresMissingNicoMachine(t *testing.
 
 func TestUnit_NicoSpiffeControllerMachineWatchPredicate(t *testing.T) {
 	t.Parallel()
-	pred := machineHostIDWatchPredicate()
+	pred := machineHostIDWatchPredicate(testKeys)
 	machine := newMachineForNicoSpiffeTest("")
 	withoutHostID := machine.DeepCopy()
-	delete(withoutHostID.Annotations, constants.MachineAnnotationKeyHostID)
+	delete(withoutHostID.Annotations, testKeys.HostID.String())
 	withAgentPath := machine.DeepCopy()
-	withAgentPath.Annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath] = constants.TPMSpireAgentPath + "hash"
+	withAgentPath.Annotations[testKeys.SpireAgentSpiffeIDPath.String()] = constants.TPMSpireAgentPath + "hash"
 
 	require.False(t, pred.Create(event.CreateEvent{Object: withoutHostID}))
 	require.True(t, pred.Create(event.CreateEvent{Object: machine}))
@@ -239,7 +239,7 @@ func TestUnit_NicoSpiffeControllerMachineWatchMapping(t *testing.T) {
 func TestUnit_NicoSpiffeControllerReconcileAfterMachineHostIDAdded(t *testing.T) {
 	t.Parallel()
 	machine := newMachineForNicoSpiffeTest("")
-	delete(machine.Annotations, constants.MachineAnnotationKeyHostID)
+	delete(machine.Annotations, testKeys.HostID.String())
 	machine.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{
 		APIGroup: nicov1.GroupVersion.Group,
 		Kind:     "NicoMachine",
@@ -256,22 +256,22 @@ func TestUnit_NicoSpiffeControllerReconcileAfterMachineHostIDAdded(t *testing.T)
 
 	updated := &clusterv1.Machine{}
 	require.NoError(t, controller.k8sClient.Get(t.Context(), client.ObjectKeyFromObject(machine), updated))
-	updated.Annotations = map[string]string{constants.MachineAnnotationKeyHostID: nicoSpiffeTestHostID}
+	updated.Annotations = map[string]string{testKeys.HostID.String(): nicoSpiffeTestHostID}
 	require.NoError(t, controller.k8sClient.Update(t.Context(), updated))
-	require.True(t, machineHostIDWatchPredicate().Update(event.UpdateEvent{ObjectOld: machine, ObjectNew: updated}))
+	require.True(t, machineHostIDWatchPredicate(testKeys).Update(event.UpdateEvent{ObjectOld: machine, ObjectNew: updated}))
 	require.Equal(t, []reconcile.Request{req}, nicoMachineRequestsForMachine(t.Context(), updated))
 
 	_, err = controller.Reconcile(t.Context(), req)
 	require.NoError(t, err)
 	require.NoError(t, controller.k8sClient.Get(t.Context(), client.ObjectKeyFromObject(machine), updated))
 	require.Equal(t, constants.TPMSpireAgentPath+"hash-current",
-		updated.Annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath])
+		updated.Annotations[testKeys.SpireAgentSpiffeIDPath.String()])
 }
 
 func newMachineForNicoSpiffeTest(existingPath string) *clusterv1.Machine {
-	annotations := map[string]string{constants.MachineAnnotationKeyHostID: nicoSpiffeTestHostID}
+	annotations := map[string]string{testKeys.HostID.String(): nicoSpiffeTestHostID}
 	if existingPath != "" {
-		annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath] = existingPath
+		annotations[testKeys.SpireAgentSpiffeIDPath.String()] = existingPath
 	}
 	return &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{APIVersion: clusterv1.GroupVersion.String(), Kind: "Machine"},
@@ -326,6 +326,7 @@ func newNicoSpiffeControllerForTest(t *testing.T, nodes nicoSpiffeNodeReader, ob
 	require.NoError(t, nicov1.AddToScheme(scheme))
 
 	return &NicoSpiffeController{
+		keys: testKeys,
 		cfg: config.Config{
 			NodeAgent: config.NodeAgentConfig{
 				SpireAttestationMethod: config.SpireAttestationMethodTPM,

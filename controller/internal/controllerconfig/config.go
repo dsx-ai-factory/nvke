@@ -61,13 +61,6 @@ type Config struct {
 	PermissiveMode                   bool                 `json:"permissiveMode"`
 }
 
-// Keys builds the label, annotation, taint and condition keys, and the
-// management namespace, from LabelDomain and ManagementNamespace. Empty values
-// are today's literals. Build it once at startup and thread it through.
-func (c *Config) Keys() keys.Keys {
-	return keys.New(c.LabelDomain, c.ManagementNamespace)
-}
-
 // FieldManagerConfig groups the Server-Side-Apply field manager names, mirroring
 // the FieldManager* prefix in config.Config.
 type FieldManagerConfig struct {

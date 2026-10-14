@@ -22,8 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // MachineCreateDeps bundles what Activities supplies so a provider client's
@@ -43,7 +43,9 @@ import (
 // is still checked in exactly one place: the factory that selected the
 // client.
 type MachineCreateDeps struct {
-	K8sClient        client.Client
+	K8sClient client.Client
+	// Keys builds the label and annotation keys written onto the objects.
+	Keys             keys.Keys
 	FieldManagerName string
 	ProfilesDir      string
 	Namespace        string
@@ -120,7 +122,7 @@ func BuildBootstrapSecret(node db.Node, cluster db.Cluster, namespace, userData 
 // BuildMachine builds the generic CAPI Machine pointing at a provider's
 // already-applied infrastructure object. Identical for every provider — only
 // the infrastructureRef differs.
-func BuildMachine(node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster, namespace, bootstrapSecretName string, infrastructureRef clusterv1.ContractVersionedObjectReference) (*clusterv1.Machine, error) {
+func BuildMachine(k keys.Keys, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster, namespace, bootstrapSecretName string, infrastructureRef clusterv1.ContractVersionedObjectReference) (*clusterv1.Machine, error) {
 	machineVersion := nodeSet.KubernetesVersion
 	if machineVersion == "" {
 		machineVersion = cluster.KubernetesVersion
@@ -141,7 +143,7 @@ func BuildMachine(node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluste
 			Name:        node.Name,
 			Namespace:   namespace,
 			Labels:      MachineLabels(cluster.Name, nodePool.ControlPlane),
-			Annotations: machineAnnotations(node),
+			Annotations: machineAnnotations(k, node),
 		},
 		Spec: clusterv1.MachineSpec{
 			ClusterName:   cluster.Name,
@@ -191,12 +193,12 @@ func MachineLabels(clusterName string, controlPlane bool) map[string]string {
 	return labels
 }
 
-func machineAnnotations(node db.Node) map[string]string {
+func machineAnnotations(k keys.Keys, node db.Node) map[string]string {
 	// The controller owns drain / kube Node removal in teardown workflows. Tell CAPI to skip its
 	// drain and volume-detach waits so Machine deletion is not blocked when the
 	// workload API is unreachable.
 	return map[string]string{
-		constants.MachineAnnotationKeyHostID:               node.ID.String(),
+		k.HostID.String():                                  node.ID.String(),
 		clusterv1.ExcludeNodeDrainingAnnotation:            "cwe-controlled",
 		clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation: "cwe-controlled",
 	}

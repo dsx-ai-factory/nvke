@@ -23,6 +23,7 @@ import (
 	dbfilters "github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/tenant"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // Reconciler reconciles tenant Kubernetes Node status into controller nodes.
@@ -31,10 +32,11 @@ type Reconciler struct {
 	db        *dbwrapper.DB
 	client    ctrlclient.Client
 	logger    *slog.Logger
+	keys      keys.Keys
 }
 
 // NewRegistrar returns a tenant-manager registrar for Kubernetes Node health.
-func NewRegistrar(database *dbwrapper.DB, logger *slog.Logger) tenant.Registrar {
+func NewRegistrar(database *dbwrapper.DB, logger *slog.Logger, k keys.Keys) tenant.Registrar {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -45,6 +47,7 @@ func NewRegistrar(database *dbwrapper.DB, logger *slog.Logger) tenant.Registrar 
 			db:        database,
 			client:    manager.GetClient(),
 			logger:    logger.With("clusterID", clusterID),
+			keys:      k,
 		}
 
 		return ctrl.NewControllerManagedBy(manager).
@@ -116,7 +119,7 @@ func (r *Reconciler) updateKubernetesHealth(ctx context.Context, nodeID uuid.UUI
 		}
 
 		previousConditions := lockedNode.Conditions
-		applyKubernetesNodeHealth(&lockedNode, kubeNode)
+		applyKubernetesNodeHealth(&lockedNode, kubeNode, r.keys)
 		if lockedNode.Conditions.Equal(previousConditions) {
 			r.logger.Debug("Kubernetes node health unchanged, skipping update",
 				"nodeID", nodeID, "nodeName", lockedNode.Name)

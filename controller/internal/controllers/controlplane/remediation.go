@@ -62,6 +62,7 @@ func (r *reconciler) remediateMachines(ctx context.Context, cluster db.Cluster, 
 		// Controllers enforce their own preconditions; skip the live-API guard
 		// (also avoids SELECT FOR UPDATE, which SQLite unit tests cannot run).
 		nodes.WithSkipLiveDeleteGuard(),
+		nodes.WithLabelDomain(r.cfg.LabelDomain),
 		// canStartRemediation already ran the etcd-quorum check against live node
 		// health, and this delete is a replacement rather than a shrink.
 		nodes.WithSkipQuorumFloor(),

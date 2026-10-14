@@ -26,6 +26,7 @@ import (
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout/nodeagent"
@@ -52,6 +53,8 @@ type EnableOIDCOperation struct {
 	k8sClient             client.Client
 	oidcConfig            *config.NvkeOIDCAuth
 	trustDomain           string
+	// keys scopes the management namespace the CA bundle and RBAC are read from.
+	keys keys.Keys
 	// methodChecker verifies each control-plane agent implements the OIDC
 	// RPCs (gRPC reflection) before any node is touched — the reusable capability
 	// gate in place of an agent version floor.
@@ -74,7 +77,7 @@ func minK8sVersionForOIDC() *version.Version { return version.MustParseGeneric("
 // agent dialer, the client, and the OIDC config) are injected via options
 // and validated by Validate before any node is touched.
 func NewEnableOIDCOperation(opts ...Option) *EnableOIDCOperation {
-	op := &EnableOIDCOperation{}
+	op := &EnableOIDCOperation{keys: keys.New("", "")}
 	for _, opt := range opts {
 		opt(op)
 	}
@@ -185,7 +188,7 @@ func (op *EnableOIDCOperation) BuildApplyToNodePayload(ctx context.Context, clus
 		Providers:     cluster.OIDCProviders(),
 		TrustDomain:   op.trustDomain,
 	}
-	cfg, err := kubeadmconfig.BuildClusterAuthenticationConfig(ctx, op.k8sClient, authn)
+	cfg, err := kubeadmconfig.BuildClusterAuthenticationConfig(ctx, op.keys, op.k8sClient, authn)
 	if err != nil {
 		return nil, fmt.Errorf("build OIDC authentication config for cluster %s: %w", cluster.Name(), err)
 	}
@@ -199,7 +202,7 @@ func (op *EnableOIDCOperation) BuildApplyToNodePayload(ctx context.Context, clus
 	var previous *kubeadmconfig.OIDCAuthenticationConfig
 	if len(authn.Providers) > 0 {
 		authn.SharedEnabled = false
-		previous, err = kubeadmconfig.BuildClusterAuthenticationConfig(ctx, op.k8sClient, authn)
+		previous, err = kubeadmconfig.BuildClusterAuthenticationConfig(ctx, op.keys, op.k8sClient, authn)
 		if err != nil {
 			return nil, fmt.Errorf("build previous authentication config for cluster %s: %w", cluster.Name(), err)
 		}

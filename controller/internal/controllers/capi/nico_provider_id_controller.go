@@ -19,7 +19,7 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
 )
 
@@ -37,17 +37,20 @@ type NicoProviderIDController struct {
 	k8sClient            client.Client
 	tenantClientProvider kube.TenantClientProvider
 	logger               *slog.Logger
+	keys                 keys.Keys
 }
 
 func NewNicoProviderIDController(
 	k8sClient client.Client,
 	tenantClientProvider kube.TenantClientProvider,
 	logger *slog.Logger,
+	k keys.Keys,
 ) *NicoProviderIDController {
 	return &NicoProviderIDController{
 		k8sClient:            k8sClient,
 		tenantClientProvider: tenantClientProvider,
 		logger:               logger,
+		keys:                 k,
 	}
 }
 
@@ -139,7 +142,7 @@ func (c *NicoProviderIDController) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	patch := client.MergeFrom(node.DeepCopy())
-	changed := reconcileNodeMetadata(node, nicoMachine)
+	changed := reconcileNodeMetadata(c.keys, node, nicoMachine)
 	if !changed {
 		logger.Debug("Tenant Node already has expected providerID and topology labels", "nodeName", node.Name)
 		return ctrl.Result{}, nil
@@ -152,42 +155,49 @@ func (c *NicoProviderIDController) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, nil
 }
 
-func reconcileNodeMetadata(node *corev1.Node, nicoMachine *nicov1.NicoMachine) bool {
+// reconcileNodeMetadata copies the NICo identity onto node. Topology labels are
+// written under the configured domain; a node that still carries the legacy
+// domain's copy is read through it and migrated, so only one domain stays live.
+func reconcileNodeMetadata(k keys.Keys, node *corev1.Node, nicoMachine *nicov1.NicoMachine) bool {
 	changed := false
 	if node.Spec.ProviderID != nicoMachine.Spec.ProviderID {
 		node.Spec.ProviderID = nicoMachine.Spec.ProviderID
 		changed = true
 	}
 
-	desired := map[string]string{
-		constants.LabelKeyMachineID:    nicoMachine.Status.MachineID,
-		constants.LabelKeyNodeSiteID:   nicoMachine.Status.SiteID,
-		constants.LabelKeyNodeSiteName: kube.NormalizeLabelValue(nicoMachine.Status.SiteName),
-		constants.LabelKeyNodeVPCID:    nicoMachine.Status.VPCID,
-		constants.LabelKeyNodeVPCName:  kube.NormalizeLabelValue(nicoMachine.Status.VPCName),
+	desired := [...]struct {
+		key   keys.Key
+		value string
+	}{
+		{k.MachineID, nicoMachine.Status.MachineID},
+		{k.NodeSiteID, nicoMachine.Status.SiteID},
+		{k.NodeSiteName, kube.NormalizeLabelValue(nicoMachine.Status.SiteName)},
+		{k.NodeVPCID, nicoMachine.Status.VPCID},
+		{k.NodeVPCName, kube.NormalizeLabelValue(nicoMachine.Status.VPCName)},
 	}
-	managedTopologyLabelKeys := [...]string{
-		constants.LabelKeyMachineID,
-		constants.LabelKeyNodeSiteID,
-		constants.LabelKeyNodeSiteName,
-		constants.LabelKeyNodeVPCID,
-		constants.LabelKeyNodeVPCName,
-	}
-	for _, key := range managedTopologyLabelKeys {
-		value := desired[key]
-		if value == "" {
-			if _, exists := node.Labels[key]; exists {
-				delete(node.Labels, key)
-				changed = true
+	for _, d := range desired {
+		if d.value == "" {
+			// Clear every form, or a legacy copy would outlive the change of domain.
+			for _, name := range d.key.All() {
+				if _, exists := node.Labels[name]; exists {
+					delete(node.Labels, name)
+					changed = true
+				}
 			}
 			continue
 		}
 		if node.Labels == nil {
 			node.Labels = make(map[string]string)
 		}
-		if node.Labels[key] != value {
-			node.Labels[key] = value
+		if node.Labels[d.key.String()] != d.value {
+			node.Labels[d.key.String()] = d.value
 			changed = true
+		}
+		if legacy := d.key.Legacy(); legacy != "" {
+			if _, exists := node.Labels[legacy]; exists {
+				delete(node.Labels, legacy)
+				changed = true
+			}
 		}
 	}
 

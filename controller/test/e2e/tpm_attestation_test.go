@@ -18,10 +18,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// The controller's names for a Machine's SPIRE agent identity. They must match
-// constants.MachineAnnotationKeySpireAgentSpiffeIDPath, constants.TPMSpireAgentPath
-// and constants.NamespaceNVKESystem in controller/internal/constants, which this
-// module does not import.
+// The controller's names for a Machine's SPIRE agent identity, at their default
+// label domain and namespace. They must match keys.New("", "") (the
+// SpireAgentSpiffeIDPath key and the ManagementNamespace) in
+// controller/internal/keys and constants.TPMSpireAgentPath in
+// controller/internal/constants, which this module does not import.
 const (
 	spireAgentIDPathAnnotation = "nke.nvidia.com/spire-agent-spiffe-id-path"
 	tpmSpireAgentPath          = "/spire/agent/tpm/"

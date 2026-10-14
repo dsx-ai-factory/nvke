@@ -16,12 +16,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
-func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster db.Cluster, paused bool, fieldManagerName, managedByLabelValue string) error {
-	namespace := constants.NamespaceNVKESystem
+func ApplyClusterScaffold(ctx context.Context, k keys.Keys, k8sClient client.Client, cluster db.Cluster, paused bool, fieldManagerName, managedByLabelValue string) error {
+	namespace := k.ManagementNamespace
 
 	manifest, err := ClusterScaffoldManifest(cluster)
 	if err != nil {
@@ -55,7 +55,7 @@ func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster 
 			Name:      cluster.Name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				constants.LabelKeyNvkeManagedBy: managedByLabelValue,
+				k.ManagedBy.String(): managedByLabelValue,
 			},
 		},
 		Spec: clusterv1.ClusterSpec{

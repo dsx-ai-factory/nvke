@@ -79,7 +79,8 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 		K8sClient:                    a.k8sClient,
 		FieldManagerName:             a.cfg.FieldManagerName,
 		ProfilesDir:                  a.cfg.ProfilesDir,
-		Namespace:                    constants.NamespaceNVKESystem,
+		Namespace:                    a.cfg.Keys().ManagementNamespace,
+		Keys:                         a.cfg.Keys(),
 		Config:                       a.cfg,
 		ControllerClientCABundle:     a.controllerClientCABundle,
 		GetTrustDomainBundle:         a.getTrustDomainBundle,
@@ -139,7 +140,7 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      node.Name,
-			Namespace: constants.NamespaceNVKESystem,
+			Namespace: a.cfg.Keys().ManagementNamespace,
 		},
 	}
 
@@ -150,7 +151,7 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 	// ignore it (CAPD) and delete the instance as normal.
 	if input.MachineHealthIssue != nil {
 		logger.Info("Applying machine health issue annotation", "nodeID", input.NodeID, "machine", machine.Name, "machineHealthIssue", input.MachineHealthIssue)
-		machine.Annotations = map[string]string{constants.MachineAnnotationKeyMachineHealthIssue: *input.MachineHealthIssue}
+		machine.Annotations = map[string]string{a.cfg.Keys().MachineHealthIssueAnnotation.String(): *input.MachineHealthIssue}
 
 		if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(a.cfg.FieldManagerMachineHealthIssueName), client.ForceOwnership); err != nil {
 			return fmt.Errorf("failed to apply machine health issue annotation: %w", err)
@@ -180,7 +181,7 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-bootstrap-data", node.Name),
-			Namespace: constants.NamespaceNVKESystem,
+			Namespace: a.cfg.Keys().ManagementNamespace,
 		},
 	}
 	if err := a.k8sClient.Delete(ctx, bootstrapSecret); err != nil && !apierrors.IsNotFound(err) {
@@ -221,7 +222,7 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 
 	machine := &clusterv1.Machine{}
 	if err := a.k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: constants.NamespaceNVKESystem,
+		Namespace: a.cfg.Keys().ManagementNamespace,
 		Name:      node.Name,
 	}, machine); err != nil {
 		return "", fmt.Errorf("failed to get CAPI machine: %w", err)
@@ -516,7 +517,7 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	if err != nil {
 		return nonRetryableIfNotFound("failed to get node", err)
 	}
-	namespace := constants.NamespaceNVKESystem
+	namespace := a.cfg.Keys().ManagementNamespace
 	machineName := node.Name
 
 	// Note: With SSA, a field manager can give up ownership of a field by applying an object that no longer includes that field.
@@ -525,7 +526,7 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	annotations := map[string]string{}
 
 	if annotation != nil {
-		annotations[constants.MachineAnnotationKeyReboot] = *annotation
+		annotations[a.cfg.Keys().MachineRebootAnnotation.String()] = *annotation
 	}
 
 	machine := &clusterv1.Machine{

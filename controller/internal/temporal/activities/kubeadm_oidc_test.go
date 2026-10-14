@@ -17,9 +17,9 @@ import (
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 	adapter "github.com/dsx-ai-factory/nvke/controller/internal/rollout/adapters/controller"
@@ -36,7 +36,7 @@ func TestBootstrapAuthenticationMatchesRollout(t *testing.T) {
 		cfg:         config.Config{NvkeOIDCAuth: config.NvkeOIDCAuth{Enabled: true, IssuerURL: "https://shared.example.com"}},
 		trustDomain: "jwt.example.com",
 		k8sClient: fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).WithObjects(&corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Namespace: constants.NamespaceNVKESystem, Name: nvkerbac.ConfigMapName},
+			ObjectMeta: metav1.ObjectMeta{Namespace: keys.LegacyManagementNamespace, Name: nvkerbac.ConfigMapName},
 			Data:       map[string]string{nvkerbac.ConfigMapKey: "kind: ClusterRoleBinding\nsubjects:\n  - {kind: User, name: spiffe://jwt.example.com/capi}\n"},
 		}).Build(),
 	}
@@ -63,7 +63,7 @@ func TestBootstrapAuthenticationMatchesRollout(t *testing.T) {
 				return
 			}
 			tt.cluster.KubernetesVersion = "v1.34.2"
-			cfg, err := kubeadmconfig.BuildClusterAuthenticationConfig(context.Background(), a.k8sClient, authn)
+			cfg, err := kubeadmconfig.BuildClusterAuthenticationConfig(context.Background(), a.cfg.Keys(), a.k8sClient, authn)
 			require.NoError(t, err)
 			got := make([]string, 0, len(cfg.JWT))
 			for _, jwt := range cfg.JWT {

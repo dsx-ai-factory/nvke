@@ -20,7 +20,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -52,8 +51,8 @@ func TestMachineSpireEntryControllerReconcileCreatesClusterStaticEntry(t *testin
 					Name:      "worker-0",
 					Namespace: "cluster-test",
 					Annotations: map[string]string{
-						constants.MachineAnnotationKeyHostID:                 nodeID,
-						constants.MachineAnnotationKeySpireAgentSpiffeIDPath: "/spire/agent/tpm/test-hash",
+						testKeys.HostID.String():                 nodeID,
+						testKeys.SpireAgentSpiffeIDPath.String(): "/spire/agent/tpm/test-hash",
 					},
 				},
 			}
@@ -62,6 +61,7 @@ func TestMachineSpireEntryControllerReconcileCreatesClusterStaticEntry(t *testin
 				NodeAgentTLSJWTEnabled: test.tlsJWT,
 			}}
 			controller := &MachineSpireEntryController{
+				keys: testKeys,
 				cfg: config.Config{
 					SpireClassName: "spire",
 					NodeAgent: config.NodeAgentConfig{TLSJWT: config.TLSJWTConfig{
@@ -104,7 +104,7 @@ func TestMachineSpireEntryControllerReconcileDeletesClusterStaticEntryWhenMachin
 			Name:      "worker-0",
 			Namespace: "cluster-test",
 			Annotations: map[string]string{
-				constants.MachineAnnotationKeyHostID: "host-123",
+				testKeys.HostID.String(): "host-123",
 			},
 			Finalizers:        []string{"test.finalizer"},
 			DeletionTimestamp: &metav1.Time{Time: metav1.Now().Time},
@@ -118,6 +118,7 @@ func TestMachineSpireEntryControllerReconcileDeletesClusterStaticEntryWhenMachin
 	}
 
 	controller := &MachineSpireEntryController{
+		keys:      testKeys,
 		k8sClient: fake.NewClientBuilder().WithScheme(scheme).WithObjects(machine, cse).Build(),
 		logger:    slog.New(slog.DiscardHandler),
 	}

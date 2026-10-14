@@ -88,6 +88,7 @@ func (a *Activities) triggerClusterTeardownControlPlaneNodes(
 				skipRemoveFromClusterParam: true,
 				"allowCPNode":              true,
 				"reason":                   "cluster teardown",
+				"labelDomain":              a.cfg.LabelDomain,
 			}); err != nil {
 				return fmt.Errorf("failed to create teardown workflow outbox entry for node %s: %w", node.ID, err)
 			}

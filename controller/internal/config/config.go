@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 const (
@@ -257,6 +259,19 @@ type Config struct {
 	// and the value the tenant Secret reconciler filters incoming Secret
 	// events on. Both sides must agree, so this is read from one place.
 	ManagedByLabelValue string `controllerconfig:"managedByLabelValue"`
+
+	// LabelDomain is the key domain of the labels, annotations, taints and node
+	// conditions this controller writes. Empty means keys.LegacyDomain
+	// (nke.nvidia.com), so an unset value is today's behavior exactly. Objects
+	// that still carry the legacy domain are read as well (dual-read), so a site
+	// that changes it does not have to relabel anything.
+	LabelDomain string `controllerconfig:"labelDomain"`
+
+	// ManagementNamespace is the shared management-plane namespace for
+	// tenant-access Secrets and OIDC-mode CAPI objects. Empty means
+	// keys.LegacyManagementNamespace (nke-system). Unlike labels, an object in
+	// the old namespace is not read: a site that renames it moves its Secrets.
+	ManagementNamespace string `controllerconfig:"managementNamespace"`
 
 	// SpiffeEnabled is a feature flag to enable SPIFFE support.
 	SpiffeEnabled bool `controllerconfig:"spire.spiffeEnabled"`
@@ -517,6 +532,14 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// Keys returns the label, annotation, taint and condition keys, and the
+// management namespace, built from LabelDomain and ManagementNamespace. The zero
+// Config yields today's literals, so a component handed a bare Config still
+// works.
+func (c Config) Keys() keys.Keys {
+	return keys.New(c.LabelDomain, c.ManagementNamespace)
 }
 
 // Validate checks the settings the environment supplies. nke-controller-config

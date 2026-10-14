@@ -160,7 +160,7 @@ func TestNewJoinConfigFromString(t *testing.T) {
 				NodeName:                 "worker-1",
 				NodeIP:                   "10.0.0.1",
 				NodeTaints: []constants.NodeTaint{
-					constants.NodeTaintProvisioning(),
+					constants.NodeTaintProvisioning(defaultKeys.ProvisioningTaint),
 				},
 			},
 		},
@@ -176,7 +176,7 @@ func TestNewJoinConfigFromString(t *testing.T) {
 				NodeName:                 "worker-1",
 				NodeIP:                   "10.0.0.1",
 				NodeTaints: []constants.NodeTaint{
-					constants.NodeTaintProvisioning(),
+					constants.NodeTaintProvisioning(defaultKeys.ProvisioningTaint),
 				},
 			},
 		},
@@ -241,7 +241,7 @@ func TestNewJoinConfigFromString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewJoinConfigFromString(tt.nodeIP, tt.nodeName, tt.joinString)
+			got, err := NewJoinConfigFromString(defaultKeys, tt.nodeIP, tt.nodeName, tt.joinString)
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
 
@@ -329,7 +329,7 @@ func validWorkerJoinConfig() *JoinConfig {
 		NodeName:                 "worker-1",
 		NodeIP:                   "10.0.0.3",
 		NodeTaints: []constants.NodeTaint{
-			constants.NodeTaintProvisioning(),
+			constants.NodeTaintProvisioning(defaultKeys.ProvisioningTaint),
 		},
 	}
 }

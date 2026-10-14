@@ -15,6 +15,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // reconciler reconciles control planes.
@@ -26,6 +27,7 @@ type reconciler struct {
 	controllerTemporalClient temporalclient.Client
 	k8sClient                ctrlclient.Client
 	k8sReader                ctrlclient.Reader
+	keys                     keys.Keys
 
 	// providerClient resolves the composed ProviderClient for a cluster.
 	// Defaults to clients.GetProviderClient; tests override it with a stub so
@@ -43,6 +45,7 @@ func newReconciler(
 	controllerTemporalClient temporalclient.Client,
 	k8sClient ctrlclient.Client,
 	k8sReader ctrlclient.Reader,
+	k keys.Keys,
 ) *reconciler {
 	return &reconciler{
 		cfg:                      cfg,
@@ -51,6 +54,7 @@ func newReconciler(
 		controllerTemporalClient: controllerTemporalClient,
 		k8sClient:                k8sClient,
 		k8sReader:                k8sReader,
+		keys:                     k,
 		providerClient:           clients.GetProviderClient,
 	}
 }

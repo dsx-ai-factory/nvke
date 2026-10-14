@@ -20,6 +20,10 @@ import (
 type nodeService struct {
 	logger *slog.Logger
 	db     db.DB
+
+	// labelDomain is the key domain the TeardownNode workflow writes node labels
+	// under. Empty is the legacy domain.
+	labelDomain string
 }
 
 func NewNodeService(logger *slog.Logger, database db.DB) *nodeService {
@@ -95,6 +99,7 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 			nodes.WithAllowCPNode(true),
 			nodes.WithMachineHealthIssue(machineHealthIssue),
 			nodes.WithForceUnreachable(forceUnreachable),
+			nodes.WithLabelDomain(s.labelDomain),
 		)
 	})
 	if err != nil {

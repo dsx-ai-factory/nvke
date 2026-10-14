@@ -18,10 +18,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 )
+
+// defaultKeys is today's behavior: the legacy domain and namespace.
+var defaultKeys = keys.New("", "")
 
 const clusterAuthTrustDomain = "management.example.test"
 
@@ -65,7 +68,7 @@ func nvkeRBAC(users ...string) *corev1.ConfigMap {
 		manifest += "  - {kind: User, name: " + user + "}\n"
 	}
 	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: constants.NamespaceNVKESystem, Name: nvkerbac.ConfigMapName},
+		ObjectMeta: metav1.ObjectMeta{Namespace: defaultKeys.ManagementNamespace, Name: nvkerbac.ConfigMapName},
 		Data:       map[string]string{nvkerbac.ConfigMapKey: manifest},
 	}
 }
@@ -92,7 +95,7 @@ func TestBuildClusterAuthenticationConfigSharedOnlyIsUnchanged(t *testing.T) {
 	want, err := BuildOIDCAuthenticationConfig("tenant-1", clusterAuthShared(), []byte("management CA"))
 	require.NoError(t, err)
 
-	got, err := BuildClusterAuthenticationConfig(context.Background(), clusterAuthClient(clusterAuthCASecret()), ClusterAuthentication{
+	got, err := BuildClusterAuthenticationConfig(context.Background(), defaultKeys, clusterAuthClient(clusterAuthCASecret()), ClusterAuthentication{
 		ClusterName:   "tenant-1",
 		Shared:        clusterAuthShared(),
 		SharedEnabled: true,
@@ -108,7 +111,7 @@ func TestBuildClusterAuthenticationConfig(t *testing.T) {
 
 	t.Run("shared and operator providers, with nke-rbac subjects reserved", func(t *testing.T) {
 		t.Parallel()
-		got, err := BuildClusterAuthenticationConfig(ctx, clusterAuthClient(clusterAuthCASecret(), nvkeRBAC("spiffe://exchange.example/capi")), ClusterAuthentication{
+		got, err := BuildClusterAuthenticationConfig(ctx, defaultKeys, clusterAuthClient(clusterAuthCASecret(), nvkeRBAC("spiffe://exchange.example/capi")), ClusterAuthentication{
 			ClusterName:   "tenant-1",
 			Shared:        clusterAuthShared(),
 			SharedEnabled: true,
@@ -131,7 +134,7 @@ func TestBuildClusterAuthenticationConfig(t *testing.T) {
 
 	t.Run("operator providers without the shared provider read no CA bundle", func(t *testing.T) {
 		t.Parallel()
-		got, err := BuildClusterAuthenticationConfig(ctx, clusterAuthClient(), ClusterAuthentication{
+		got, err := BuildClusterAuthenticationConfig(ctx, defaultKeys, clusterAuthClient(), ClusterAuthentication{
 			ClusterName: "tenant-1",
 			Shared:      clusterAuthShared(),
 			Providers:   []controllerconfig.OIDCProvider{clusterAuthOperator()},
@@ -143,7 +146,7 @@ func TestBuildClusterAuthenticationConfig(t *testing.T) {
 
 	t.Run("neither provider is an error", func(t *testing.T) {
 		t.Parallel()
-		_, err := BuildClusterAuthenticationConfig(ctx, clusterAuthClient(), ClusterAuthentication{ClusterName: "tenant-1"})
+		_, err := BuildClusterAuthenticationConfig(ctx, defaultKeys, clusterAuthClient(), ClusterAuthentication{ClusterName: "tenant-1"})
 		require.Error(t, err)
 	})
 }
@@ -204,7 +207,7 @@ func TestLoadOperatorJWTPolicy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := LoadOperatorJWTPolicy(ctx, tt.reader, tt.trustDomain)
+			got, err := LoadOperatorJWTPolicy(ctx, defaultKeys, tt.reader, tt.trustDomain)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				return

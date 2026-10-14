@@ -159,7 +159,8 @@ func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.
 		NodeName:     node.Name,
 	})
 	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, options, workflows.JoinNode, workflows.JoinNodeInput{
-		NodeID: node.ID,
+		NodeID:      node.ID,
+		LabelDomain: r.cfg.LabelDomain,
 	})
 	otelx.EndWorkflowSpan(span, err)
 	if err != nil {

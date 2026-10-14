@@ -23,7 +23,6 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
 )
 
@@ -96,11 +95,11 @@ func TestNicoProviderIDControllerReconcilePatchesTenantNodeTopologyLabels(t *tes
 	node := getTenantNodeForProviderIDTest(t, tenantClient)
 	require.Equal(t, map[string]string{
 		"example.com/keep":             "value",
-		constants.LabelKeyMachineID:    "machine-123",
-		constants.LabelKeyNodeSiteID:   "site-123",
-		constants.LabelKeyNodeSiteName: "new-york-a",
-		constants.LabelKeyNodeVPCID:    "vpc-123",
-		constants.LabelKeyNodeVPCName:  "production-vpc",
+		testKeys.MachineID.String():    "machine-123",
+		testKeys.NodeSiteID.String():   "site-123",
+		testKeys.NodeSiteName.String(): "new-york-a",
+		testKeys.NodeVPCID.String():    "vpc-123",
+		testKeys.NodeVPCName.String():  "production-vpc",
 	}, node.Labels)
 }
 
@@ -115,11 +114,11 @@ func TestNicoProviderIDControllerReconcileRemovesMissingTopologyLabels(t *testin
 		[]client.Object{
 			newTenantNodeForProviderIDTest("nico://instance-1", map[string]string{
 				"example.com/keep":             "value",
-				constants.LabelKeyMachineID:    "stale-machine",
-				constants.LabelKeyNodeSiteID:   "stale-site",
-				constants.LabelKeyNodeSiteName: "stale-site-name",
-				constants.LabelKeyNodeVPCID:    "stale-vpc",
-				constants.LabelKeyNodeVPCName:  "stale-vpc-name",
+				testKeys.MachineID.String():    "stale-machine",
+				testKeys.NodeSiteID.String():   "stale-site",
+				testKeys.NodeSiteName.String(): "stale-site-name",
+				testKeys.NodeVPCID.String():    "stale-vpc",
+				testKeys.NodeVPCName.String():  "stale-vpc-name",
 			}),
 		},
 	)
@@ -329,6 +328,7 @@ func newNicoProviderIDControllerForTestWithProvider(
 		WithObjects(managementObjects...).
 		Build()
 	return &NicoProviderIDController{
+		keys:                 testKeys,
 		k8sClient:            managementClient,
 		tenantClientProvider: tenantProvider,
 		logger:               slog.New(slog.DiscardHandler),

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/workflow"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 )
 
@@ -20,6 +21,11 @@ const (
 // JoinNodeInput starts kubeadm join and post-join for a host that is already ReadyToJoin.
 type JoinNodeInput struct {
 	NodeID uuid.UUID
+
+	// LabelDomain is the key domain of the labels and taints this workflow
+	// writes. Empty is the legacy domain, so an input recorded before this
+	// field existed replays as it ran.
+	LabelDomain string `json:",omitempty"`
 }
 
 // JoinNode joins a node that has already completed host provisioning. Worker
@@ -48,7 +54,7 @@ func JoinNode(ctx workflow.Context, input JoinNodeInput) error {
 	// Bound the join to a single attempt so a failure fails this workflow run;
 	// the workflow-level RetryPolicy set by the control-plane controller owns the
 	// retry budget (retry X times, then rotate to the next control-plane node).
-	if err := joinProvisionedNode(ctx, input.NodeID, nodeCtx, labels, true); err != nil {
+	if err := joinProvisionedNode(ctx, keys.New(input.LabelDomain, ""), input.NodeID, nodeCtx, labels, true); err != nil {
 		// Best effort to update the node conditions to indicate the join failed
 		if err := updateNodeProvisioningMessage(ctx, input.NodeID, fmt.Sprintf("Workflow failed: %s", err)); err != nil {
 			logger.Error("failed to update node conditions", "error", err)

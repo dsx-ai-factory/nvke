@@ -18,6 +18,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
@@ -37,6 +38,7 @@ func TestUnit_ControllerReconcileSkipsMissingCluster(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		keys.New("", ""),
 	)
 
 	result, err := controller.Reconcile(context.Background(), dbreconcile.ClusterKey(clusterID))

@@ -17,10 +17,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/tenantaccess"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
+
+// defaultKeys is today's behavior: the legacy domain and namespace.
+var defaultKeys = keys.New("", "")
 
 type staticClusterReader struct {
 	cluster db.Cluster
@@ -49,7 +52,7 @@ func TestSecretReconcilerFeedsSecretIdentityToManagerSet(t *testing.T) {
 		return newFakeRuntime(nil), nil
 	}), 1)
 	t.Cleanup(managerSet.Shutdown)
-	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet, "cloud-workflow-engine")
+	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet, "cloud-workflow-engine", defaultKeys)
 
 	_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{
 		Namespace: secret.Namespace,
@@ -59,7 +62,7 @@ func TestSecretReconcilerFeedsSecretIdentityToManagerSet(t *testing.T) {
 	target := <-started
 	require.Equal(t, cluster.ID, target.ClusterID)
 	require.Equal(t, types.NamespacedName{
-		Namespace: tenantaccess.SecretsNamespace,
+		Namespace: defaultKeys.ManagementNamespace,
 		Name:      "active-kubeconfig",
 	}, target.KubeconfigSecretRef)
 	require.Equal(t, types.UID("uid-active"), target.KubeconfigSecretUID)
@@ -84,7 +87,7 @@ func TestSecretReconcilerIgnoresMetadataOnlySecretUpdate(t *testing.T) {
 		return newFakeRuntime(func() { stopped <- struct{}{} }), nil
 	}), 1)
 	t.Cleanup(managerSet.Shutdown)
-	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet, "cloud-workflow-engine")
+	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet, "cloud-workflow-engine", defaultKeys)
 	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: secret.Namespace, Name: secret.Name}}
 
 	_, err := reconciler.Reconcile(ctx, request)
@@ -124,7 +127,7 @@ func TestSecretReconcilerStopsRuntimeWhenSecretIsDeleted(t *testing.T) {
 		return newFakeRuntime(func() { stopped <- struct{}{} }), nil
 	}), 1)
 	t.Cleanup(managerSet.Shutdown)
-	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet, "cloud-workflow-engine")
+	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet, "cloud-workflow-engine", defaultKeys)
 	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: secret.Namespace, Name: secret.Name}}
 
 	_, err := reconciler.Reconcile(ctx, request)
@@ -167,7 +170,7 @@ func TestSecretReconcilerRejectsDeletingCluster(t *testing.T) {
 		return newFakeRuntime(nil), nil
 	}), 1)
 	t.Cleanup(managerSet.Shutdown)
-	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet, "cloud-workflow-engine")
+	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet, "cloud-workflow-engine", defaultKeys)
 
 	_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: secret.Namespace, Name: secret.Name}})
 	require.NoError(t, err)
@@ -177,15 +180,43 @@ func TestSecretReconcilerRejectsDeletingCluster(t *testing.T) {
 func tenantAccessSecret(clusterID uuid.UUID, clusterName, uid, resourceVersion string, kubeconfig []byte) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:       tenantaccess.SecretsNamespace,
+			Namespace:       defaultKeys.ManagementNamespace,
 			Name:            tenantaccess.KubeconfigSecretName(clusterName),
 			UID:             types.UID(uid),
 			ResourceVersion: resourceVersion,
 			Labels: map[string]string{
-				constants.LabelKeyNvkeManagedBy: "cloud-workflow-engine",
-				constants.LabelKeyClusterID:     clusterID.String(),
+				defaultKeys.ManagedBy.String(): "cloud-workflow-engine",
+				defaultKeys.ClusterID.String(): clusterID.String(),
 			},
 		},
 		Data: map[string][]byte{tenantaccess.KubeconfigSecretKey: kubeconfig},
 	}
+}
+
+func TestClusterIDForKubeconfigSecretReadsBothDomains(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	custom := keys.New("nvke.example.com", "nvke-system")
+
+	legacy := tenantAccessSecret(clusterID, "active", "uid", "1", []byte("kubeconfig"))
+	legacy.Namespace = custom.ManagementNamespace
+
+	got, ok := clusterIDForKubeconfigSecret(custom, legacy, "cloud-workflow-engine")
+	require.True(t, ok, "a Secret carrying only the legacy keys is still recognized")
+	require.Equal(t, clusterID, got)
+
+	current := legacy.DeepCopy()
+	current.Labels = map[string]string{
+		custom.ManagedBy.String(): "cloud-workflow-engine",
+		custom.ClusterID.String(): clusterID.String(),
+	}
+	got, ok = clusterIDForKubeconfigSecret(custom, current, "cloud-workflow-engine")
+	require.True(t, ok)
+	require.Equal(t, clusterID, got)
+
+	wrongNamespace := legacy.DeepCopy()
+	wrongNamespace.Namespace = defaultKeys.ManagementNamespace
+	_, ok = clusterIDForKubeconfigSecret(custom, wrongNamespace, "cloud-workflow-engine")
+	require.False(t, ok, "the management namespace is not dual-read")
 }

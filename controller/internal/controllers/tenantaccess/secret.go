@@ -18,6 +18,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // upsertSecret publishes one Controller-owned Secret.
@@ -35,7 +36,7 @@ func (c *Controller) upsertSecret(ctx context.Context, cluster db.Cluster, desir
 	}
 
 	capiCluster := &clusterv1.Cluster{}
-	key := types.NamespacedName{Namespace: SecretsNamespace, Name: live.Name}
+	key := types.NamespacedName{Namespace: c.keys.ManagementNamespace, Name: live.Name}
 	if err := c.k8sClient.Get(ctx, key, capiCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			c.logger.Debug("CAPI cluster no longer exists; skipping tenant-access publish", "clusterID", live.ID, "clusterName", live.Name)
@@ -47,11 +48,12 @@ func (c *Controller) upsertSecret(ctx context.Context, cluster db.Cluster, desir
 		return fmt.Errorf("setting owner reference on secret %s/%s: %w", desired.Namespace, desired.Name, err)
 	}
 
-	return upsertOwnedSecret(ctx, c.k8sClient, c.logger, live, desired)
+	return upsertOwnedSecret(ctx, c.keys, c.k8sClient, c.logger, live, desired)
 }
 
 func upsertOwnedSecret(
 	ctx context.Context,
+	k keys.Keys,
 	k8sClient client.Client,
 	logger *slog.Logger,
 	cluster db.Cluster,
@@ -61,7 +63,7 @@ func upsertOwnedSecret(
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(desired), existing); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("getting secret %s/%s before upsert: %w", desired.Namespace, desired.Name, err)
 	} else if err == nil && existing.Type != desired.Type {
-		if err := capi.ValidateSecretOwnership(existing, cluster); err != nil {
+		if err := capi.ValidateSecretOwnership(k, existing, cluster); err != nil {
 			return err
 		}
 
@@ -85,7 +87,7 @@ func upsertOwnedSecret(
 	}
 
 	op, err := controllerutil.CreateOrUpdate(ctx, k8sClient, secret, func() error {
-		if err := capi.ValidateSecretOwnership(secret, cluster); err != nil {
+		if err := capi.ValidateSecretOwnership(k, secret, cluster); err != nil {
 			return err
 		}
 		if secret.Labels == nil {

@@ -23,6 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlruntimelog "sigs.k8s.io/controller-runtime/pkg/log"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 const (
@@ -38,6 +40,9 @@ type RuntimeManagerOptions struct {
 	ConfigMapCacheNamespace string
 	// LeaderElectionNamespace is the namespace containing the manager's Lease.
 	LeaderElectionNamespace string
+	// Keys supplies the management namespace the Secret cache is scoped to. The
+	// zero value scopes it to the default management namespace.
+	Keys keys.Keys
 }
 
 // NewRuntimeClient creates a new Kubernetes client using the controller-runtime client.
@@ -105,10 +110,14 @@ func NewRuntimeManager(
 }
 
 func runtimeManagerOptions(scheme *runtime.Scheme, opts RuntimeManagerOptions) ctrl.Options {
+	managementNamespace := opts.Keys.ManagementNamespace
+	if managementNamespace == "" {
+		managementNamespace = keys.LegacyManagementNamespace
+	}
 	cacheOptions := cache.Options{ByObject: map[client.Object]cache.ByObject{
 		&corev1.Secret{}: {
 			Namespaces: map[string]cache.Config{
-				tenantAccessKubeconfigNamespace: {},
+				managementNamespace: {},
 			},
 		},
 	}}

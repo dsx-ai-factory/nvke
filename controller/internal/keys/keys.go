@@ -109,6 +109,12 @@ type Keys struct {
 	// the Forge-instance labels above even where the name matches (site-id):
 	// the two families target different objects and own separate deprecation
 	// contracts.
+	//
+	// NOTE: node.kubernetes.io/instance-type is intentionally NOT set here. The
+	// prod tenant Prometheus SLO rules (prometheus/slo.rules) exact-match
+	// instance_type="cpu" to exclude CPU nodes from GPU capacity/health math, and
+	// the Forge instance-type name (e.g. "cpu.t1") does not match "cpu". Leave the
+	// upstream/kubelet-provided value untouched.
 	MachineID    Key
 	NodeSiteID   Key
 	NodeSiteName Key

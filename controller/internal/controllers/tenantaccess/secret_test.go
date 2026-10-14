@@ -34,7 +34,7 @@ func TestUpsertOwnedSecretUpdatesMatchingTypeInPlace(t *testing.T) {
 	existing := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      KubeconfigSecretName(cluster.Name),
-			Namespace: SecretsNamespace,
+			Namespace: defaultKeys.ManagementNamespace,
 			UID:       types.UID("existing-uid"),
 			Labels: map[string]string{
 				"owner.nke.nvidia.com/cluster": cluster.ID.String(),
@@ -46,15 +46,15 @@ func TestUpsertOwnedSecretUpdatesMatchingTypeInPlace(t *testing.T) {
 	desired := desiredKubeconfigSecret(cluster, corev1.SecretTypeOpaque, "new")
 	k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(existing).Build()
 
-	require.NoError(t, upsertOwnedSecret(ctx, k8sClient, slog.Default(), cluster, desired))
+	require.NoError(t, upsertOwnedSecret(ctx, defaultKeys, k8sClient, slog.Default(), cluster, desired))
 
 	got := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(existing), got))
 	assert.Equal(t, types.UID("existing-uid"), got.UID)
 	assert.Equal(t, []byte("new"), got.Data[KubeconfigSecretKey])
 	assert.Equal(t, cluster.ID.String(), got.Labels["owner.nke.nvidia.com/cluster"])
-	assert.Equal(t, "cloud-workflow-engine", got.Labels[constants.LabelKeyNvkeManagedBy])
-	assert.Equal(t, cluster.ID.String(), got.Labels[constants.LabelKeyClusterID])
+	assert.Equal(t, "cloud-workflow-engine", got.Labels[defaultKeys.ManagedBy.String()])
+	assert.Equal(t, cluster.ID.String(), got.Labels[defaultKeys.ClusterID.String()])
 	assert.Equal(t, cluster.Name, got.Labels[clusterv1.ClusterNameLabel])
 }
 
@@ -70,6 +70,7 @@ func TestUpsertOwnedSecretReplacesIncompatibleType(t *testing.T) {
 
 	require.NoError(t, upsertOwnedSecret(
 		ctx,
+		defaultKeys,
 		k8sClient,
 		slog.Default(),
 		cluster,
@@ -83,7 +84,7 @@ func TestUpsertOwnedSecretReplacesIncompatibleType(t *testing.T) {
 	assert.NotEqual(t, types.UID("existing-uid"), got.UID)
 	assert.Equal(t, corev1.SecretTypeOpaque, got.Type)
 	assert.Equal(t, []byte("new"), got.Data[KubeconfigSecretKey])
-	assert.Equal(t, "cloud-workflow-engine", got.Labels[constants.LabelKeyNvkeManagedBy])
+	assert.Equal(t, "cloud-workflow-engine", got.Labels[defaultKeys.ManagedBy.String()])
 	assert.Equal(t, cluster.Name, got.Labels[clusterv1.ClusterNameLabel])
 }
 
@@ -106,6 +107,7 @@ func TestUpsertOwnedSecretStopsAfterDeletePreconditionConflict(t *testing.T) {
 
 	err := upsertOwnedSecret(
 		ctx,
+		defaultKeys,
 		k8sClient,
 		slog.Default(),
 		cluster,
@@ -129,12 +131,13 @@ func TestUpsertOwnedSecretDoesNotDeleteWrongOwner(t *testing.T) {
 	ctx := context.Background()
 	cluster := db.Cluster{ID: uuid.New(), Name: "wrong-owner"}
 	existing := desiredKubeconfigSecret(cluster, clusterv1.ClusterSecretType, "old")
-	existing.Labels[constants.LabelKeyClusterID] = uuid.New().String()
+	existing.Labels[defaultKeys.ClusterID.String()] = uuid.New().String()
 	baseClient := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(existing).Build()
 	k8sClient := &recordingClient{Client: baseClient}
 
 	err := upsertOwnedSecret(
 		ctx,
+		defaultKeys,
 		k8sClient,
 		slog.Default(),
 		cluster,
@@ -168,6 +171,7 @@ func TestUpsertOwnedSecretDoesNotDeleteOnValidationFailure(t *testing.T) {
 
 	err := upsertOwnedSecret(
 		ctx,
+		defaultKeys,
 		k8sClient,
 		slog.Default(),
 		cluster,
@@ -187,7 +191,7 @@ func desiredKubeconfigSecret(cluster db.Cluster, secretType corev1.SecretType, v
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      KubeconfigSecretName(cluster.Name),
-			Namespace: SecretsNamespace,
+			Namespace: defaultKeys.ManagementNamespace,
 			Labels: map[string]string{
 				clusterv1.ClusterNameLabel: cluster.Name,
 			},
@@ -195,7 +199,7 @@ func desiredKubeconfigSecret(cluster db.Cluster, secretType corev1.SecretType, v
 		Type: secretType,
 		Data: map[string][]byte{KubeconfigSecretKey: []byte(value)},
 	}
-	capi.SetSecretOwnership(secret, cluster, constants.LabelValueKubeconfigModeAdmin, "cloud-workflow-engine")
+	capi.SetSecretOwnership(defaultKeys, secret, cluster, constants.LabelValueKubeconfigModeAdmin, "cloud-workflow-engine")
 	return secret
 }
 

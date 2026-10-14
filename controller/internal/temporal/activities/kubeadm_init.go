@@ -108,7 +108,7 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 		KubeReservedMemory:    nodePool.KubeReservedMemory,
 	}
 	if authn := a.clusterAuthentication(cluster); authn.Needed() {
-		initConfig.AuthenticationConfig, err = kubeadmconfig.BuildClusterAuthenticationConfig(ctx, a.k8sClient, authn)
+		initConfig.AuthenticationConfig, err = kubeadmconfig.BuildClusterAuthenticationConfig(ctx, a.cfg.Keys(), a.k8sClient, authn)
 		if err != nil {
 			return fmt.Errorf("failed to build OIDC authentication config: %w", err)
 		}

@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	kubeadmv1beta3 "github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig/thirdparty/kubeadmtypes/v1beta3"
 )
 
@@ -63,7 +64,7 @@ type JoinConfig struct {
 // `kubeadm join <api-endpoint> --control-plane --certificate-key <key> --token <token> --discovery-token-ca-cert-hash <hash>`.
 // The join string for a worker node should be in the format:
 // `kubeadm join <api-endpoint> --token <token> --discovery-token-ca-cert-hash <hash>`.
-func NewJoinConfigFromString(nodeIP, nodeName, joinString string) (*JoinConfig, error) {
+func NewJoinConfigFromString(k keys.Keys, nodeIP, nodeName, joinString string) (*JoinConfig, error) {
 	joinString = strings.TrimSpace(joinString)
 
 	if !strings.HasPrefix(joinString, "kubeadm join ") {
@@ -114,7 +115,7 @@ func NewJoinConfigFromString(nodeIP, nodeName, joinString string) (*JoinConfig, 
 		config.NodeTaints = nil
 	} else {
 		config.NodeTaints = []constants.NodeTaint{
-			constants.NodeTaintProvisioning(),
+			constants.NodeTaintProvisioning(k.ProvisioningTaint),
 		}
 	}
 

@@ -44,10 +44,12 @@ func newNodeRemediator(cfg config.Config, logger *slog.Logger, controllerTempora
 func (r *nodeRemediator) startWorkflowsIfNecessary(ctx context.Context, node db.Node, kubeNode *corev1.Node) error {
 	labels := kubeNode.GetLabels()
 
-	if reason, terminateLabelPresent := labels[constants.LabelKeyNodeLabelTerminate]; terminateLabelPresent {
+	k := r.cfg.Keys()
+
+	if reason, terminateLabelPresent := k.Terminate.Get(labels); terminateLabelPresent {
 		return r.startTeardownNodeWorkflow(ctx, node, kubeNode, reason)
 	}
-	if reason, rebootLabelPresent := labels[constants.LabelKeyNodeLabelReboot]; rebootLabelPresent {
+	if reason, rebootLabelPresent := k.Reboot.Get(labels); rebootLabelPresent {
 		return r.startNodeRebootWorkflow(ctx, node, kubeNode, reason)
 	}
 
@@ -65,7 +67,7 @@ func (r *nodeRemediator) startTeardownNodeWorkflow(ctx context.Context, node db.
 	}
 
 	var machineHealthIssue *workflows.MachineHealthIssue
-	if annotation, ok := kubeNode.GetAnnotations()[constants.NodeAnnotationKeyMachineHealthIssue]; ok {
+	if annotation, ok := r.cfg.Keys().NodeHealthIssueAnnotation.Get(kubeNode.GetAnnotations()); ok {
 		var err error
 		machineHealthIssue, err = workflows.NewMachineHealthIssueFromJSON([]byte(annotation))
 		if err != nil {
@@ -81,6 +83,7 @@ func (r *nodeRemediator) startTeardownNodeWorkflow(ctx context.Context, node db.
 		Reason:                reason,
 		SkipRemoveFromCluster: false,
 		MachineHealthIssue:    machineHealthIssue,
+		LabelDomain:           r.cfg.LabelDomain,
 	}
 
 	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowStart, otelx.WorkflowAttributes{
@@ -123,6 +126,7 @@ func (r *nodeRemediator) startNodeRebootWorkflow(ctx context.Context, node db.No
 		MaxTimeout:        r.cfg.NodeRebootMaxTimeout,
 		PollingInterval:   r.cfg.NodeRebootPollingInterval,
 		SoftRebootEnabled: r.cfg.NodeRebootSoftRebootEnabled,
+		LabelDomain:       r.cfg.LabelDomain,
 	}
 
 	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowStart, otelx.WorkflowAttributes{

@@ -148,7 +148,8 @@ func (r *reconciler) teardownOldNode(
 	}
 
 	if err := nodes.StartTeardown(ctx, r.db, nodeToDelete, nodes.TeardownNodeInput{
-		Reason: workflowReason,
+		Reason:      workflowReason,
+		LabelDomain: r.cfg.LabelDomain,
 	}, deletingMessage); err != nil {
 		return false, err
 	}

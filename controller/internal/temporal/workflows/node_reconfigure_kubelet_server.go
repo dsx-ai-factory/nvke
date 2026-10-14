@@ -12,6 +12,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
@@ -21,6 +22,10 @@ const (
 
 type NodeReconfigureKubeletServerInput struct {
 	Server string `json:"server"`
+
+	// LabelDomain is the key domain of the maintenance taint this workflow
+	// writes. Empty is the legacy domain.
+	LabelDomain string `json:"labelDomain,omitempty"`
 }
 
 type NodeReconfigureKubeletServerResult struct{}
@@ -34,7 +39,7 @@ func NodeReconfigureKubeletServer(
 
 	logger.Info("Reconfiguring kubelet server", "nodeID", nodeID, "server", input.Server)
 
-	taintKey := constants.TaintKeyMaintenance
+	taintKey := keys.New(input.LabelDomain, "").MaintenanceTaint.String()
 	taintValue := kubeVIPMaintenanceTaintValue
 	taintEffect := constants.TaintEffectNoSchedule
 

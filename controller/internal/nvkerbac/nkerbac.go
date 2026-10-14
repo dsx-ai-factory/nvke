@@ -17,7 +17,7 @@ import (
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 const (
@@ -27,9 +27,9 @@ const (
 
 // ReadManifest returns the manifest. A missing ConfigMap gives an
 // apierrors.IsNotFound error.
-func ReadManifest(ctx context.Context, reader ctrlclient.Reader) ([]byte, error) {
+func ReadManifest(ctx context.Context, k keys.Keys, reader ctrlclient.Reader) ([]byte, error) {
 	var cm corev1.ConfigMap
-	key := types.NamespacedName{Namespace: constants.NamespaceNVKESystem, Name: ConfigMapName}
+	key := types.NamespacedName{Namespace: k.ManagementNamespace, Name: ConfigMapName}
 	if err := reader.Get(ctx, key, &cm); err != nil {
 		return nil, fmt.Errorf("getting NVKE RBAC ConfigMap %s/%s: %w", key.Namespace, key.Name, err)
 	}

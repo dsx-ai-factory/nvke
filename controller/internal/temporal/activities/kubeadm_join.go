@@ -102,7 +102,7 @@ func (a *Activities) kubeadmJoin(ctx context.Context, node db.Node) (KubeadmJoin
 		return KubeadmJoinResult{}, fmt.Errorf("failed to get node pool for node: %w", err)
 	}
 
-	joinConfig, err := kubeadmconfig.NewJoinConfigFromString(node.IP, node.Name, joinString)
+	joinConfig, err := kubeadmconfig.NewJoinConfigFromString(a.cfg.Keys(), node.IP, node.Name, joinString)
 	if err != nil {
 		return KubeadmJoinResult{}, fmt.Errorf("failed to create kubeadm join config: %w", err)
 	}
@@ -116,7 +116,7 @@ func (a *Activities) kubeadmJoin(ctx context.Context, node db.Node) (KubeadmJoin
 	joinConfig.KubeReservedMemory = nodePool.KubeReservedMemory
 
 	if authn := a.clusterAuthentication(cluster); node.ControlPlane && authn.Needed() {
-		joinConfig.AuthenticationConfig, err = kubeadmconfig.BuildClusterAuthenticationConfig(ctx, a.k8sClient, authn)
+		joinConfig.AuthenticationConfig, err = kubeadmconfig.BuildClusterAuthenticationConfig(ctx, a.cfg.Keys(), a.k8sClient, authn)
 		if err != nil {
 			return KubeadmJoinResult{}, fmt.Errorf("failed to build OIDC authentication config: %w", err)
 		}

@@ -18,12 +18,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
+
 	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func TestClient_CreateMachine_MissingRelease(t *testing.T) {
@@ -130,12 +131,12 @@ func TestClient_CreateMachine_ResolvesByRole(t *testing.T) {
 			require.NoError(t, err)
 
 			nicoMachines := &nicov1.NicoMachineList{}
-			require.NoError(t, k8sClient.List(ctx, nicoMachines, ctrlclient.InNamespace(constants.NamespaceNVKESystem)))
+			require.NoError(t, k8sClient.List(ctx, nicoMachines, ctrlclient.InNamespace(keys.New("", "").ManagementNamespace)))
 			require.Len(t, nicoMachines.Items, 1)
 			assert.Contains(t, nicoMachines.Items[0].Spec.IpxeScript, tt.wantIPXE)
 
 			secrets := &corev1.SecretList{}
-			require.NoError(t, k8sClient.List(ctx, secrets, ctrlclient.InNamespace(constants.NamespaceNVKESystem)))
+			require.NoError(t, k8sClient.List(ctx, secrets, ctrlclient.InNamespace(keys.New("", "").ManagementNamespace)))
 			require.Len(t, secrets.Items, 1)
 			assert.Contains(t, string(secrets.Items[0].Data["value"]), tt.wantUserData)
 		})
@@ -166,7 +167,8 @@ func testMachineCreateDeps(k8sClient ctrlclient.Client) shared.MachineCreateDeps
 	return shared.MachineCreateDeps{
 		K8sClient:        k8sClient,
 		FieldManagerName: "cloud-workflow-engine",
-		Namespace:        constants.NamespaceNVKESystem,
+		Keys:             keys.New("", ""),
+		Namespace:        keys.LegacyManagementNamespace,
 		Config:           cfg,
 		NodeAgentBootstrapFiles: func(db.Node) ([]db.CloudInitFile, error) {
 			return nil, nil

@@ -8,19 +8,19 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
-func applyKubernetesNodeHealth(controllerNode *db.Node, kubeNode *corev1.Node) {
+func applyKubernetesNodeHealth(controllerNode *db.Node, kubeNode *corev1.Node, k keys.Keys) {
 	controllerNode.Conditions.KubernetesReady = fromKubeCondition(controllerNode.Conditions.KubernetesReady, kubeNode, string(corev1.NodeReady))
 	controllerNode.Conditions.KubernetesUnschedulable = kubernetesUnschedulableCondition(controllerNode.Conditions.KubernetesUnschedulable, kubeNode)
 
-	needsRecycle := fromKubeCondition(controllerNode.Conditions.MarkedForRecycling, kubeNode, constants.NodeConditionTypeNeedsRecycle)
+	needsRecycle := fromKubeCondition(controllerNode.Conditions.MarkedForRecycling, kubeNode, k.NeedsRecycle.All()...)
 	if needsRecycle.Status == db.ConditionStatusTrue {
 		controllerNode.Conditions.MarkedForRecycling = needsRecycle
 	}
-	needsRepair := fromKubeCondition(controllerNode.Conditions.MarkedForRepair, kubeNode, constants.NodeConditionTypeNeedsRepair)
+	needsRepair := fromKubeCondition(controllerNode.Conditions.MarkedForRepair, kubeNode, k.NeedsRepair.All()...)
 	if needsRepair.Status == db.ConditionStatusTrue {
 		controllerNode.Conditions.MarkedForRepair = needsRepair
 	}
@@ -48,24 +48,29 @@ func describeConditionChanges(previous, current db.NodeConditions) []string {
 	return changes
 }
 
-func fromKubeCondition(existing db.Condition, kubeNode *corev1.Node, conditionType string) db.Condition {
+// fromKubeCondition reads the first of conditionTypes the node reports. The
+// types are in order of preference: the configured domain's form first, then the
+// legacy one.
+func fromKubeCondition(existing db.Condition, kubeNode *corev1.Node, conditionTypes ...string) db.Condition {
 	if kubeNode == nil {
 		return updatedCondition(existing, db.ConditionStatusUnknown, "Node data not available")
 	}
 
-	for _, condition := range kubeNode.Status.Conditions {
-		if string(condition.Type) == conditionType {
-			return db.Condition{
-				Status:  dbStatusFromKubeStatus(condition.Status),
-				Message: condition.Message,
-				// metav1.Time decodes into the local zone, so normalize to keep
-				// what is persisted to JSONB in the same shape it is read back in.
-				LastTransitionTime: condition.LastTransitionTime.Time.UTC(),
+	for _, conditionType := range conditionTypes {
+		for _, condition := range kubeNode.Status.Conditions {
+			if string(condition.Type) == conditionType {
+				return db.Condition{
+					Status:  dbStatusFromKubeStatus(condition.Status),
+					Message: condition.Message,
+					// metav1.Time decodes into the local zone, so normalize to keep
+					// what is persisted to JSONB in the same shape it is read back in.
+					LastTransitionTime: condition.LastTransitionTime.Time.UTC(),
+				}
 			}
 		}
 	}
 
-	return updatedCondition(existing, db.ConditionStatusUnknown, fmt.Sprintf("Condition %s not found on node", conditionType))
+	return updatedCondition(existing, db.ConditionStatusUnknown, fmt.Sprintf("Condition %s not found on node", conditionTypes[0]))
 }
 
 func kubernetesUnschedulableCondition(existing db.Condition, kubeNode *corev1.Node) db.Condition {

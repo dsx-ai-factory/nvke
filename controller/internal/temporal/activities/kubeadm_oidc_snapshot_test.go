@@ -26,8 +26,8 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nvkerbac"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
@@ -211,7 +211,7 @@ func snapshotActivities(database *testutil.MockDB, agent *snapshotWiringAgent, c
 
 func nvkeRBACConfigMap(subject string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: constants.NamespaceNVKESystem, Name: nvkerbac.ConfigMapName},
+		ObjectMeta: metav1.ObjectMeta{Namespace: keys.LegacyManagementNamespace, Name: nvkerbac.ConfigMapName},
 		Data: map[string]string{nvkerbac.ConfigMapKey: `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:

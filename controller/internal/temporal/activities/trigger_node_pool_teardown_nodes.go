@@ -68,6 +68,7 @@ func (a *Activities) triggerNodePoolTeardownNodes(
 				"nodeID":                   node.ID,
 				skipRemoveFromClusterParam: input.SkipRemoveFromCluster,
 				"allowCPNode":              true,
+				"labelDomain":              a.cfg.LabelDomain,
 			}); err != nil {
 				return fmt.Errorf("failed to create workflow outbox entry: %w", err)
 			}

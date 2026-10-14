@@ -15,7 +15,11 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
+
+// defaultKeys is today's behavior: the legacy domain and namespace.
+var defaultKeys = keys.New("", "")
 
 func TestValidateSecretOwnership(t *testing.T) {
 	t.Parallel()
@@ -24,28 +28,28 @@ func TestValidateSecretOwnership(t *testing.T) {
 
 	t.Run("missing labels are allowed", func(t *testing.T) {
 		t.Parallel()
-		require.NoError(t, capi.ValidateSecretOwnership(&corev1.Secret{}, cluster))
-		require.NoError(t, capi.ValidateSecretOwnership(&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{}}}, cluster))
+		require.NoError(t, capi.ValidateSecretOwnership(defaultKeys, &corev1.Secret{}, cluster))
+		require.NoError(t, capi.ValidateSecretOwnership(defaultKeys, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{}}}, cluster))
 	})
 
 	t.Run("matching cluster-id passes", func(t *testing.T) {
 		t.Parallel()
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
-			constants.LabelKeyClusterID:      cluster.ID.String(),
-			constants.LabelKeyKubeconfigMode: constants.LabelValueKubeconfigModeSPIRE,
-			constants.LabelKeyNvkeManagedBy:  "cloud-workflow-engine",
+			defaultKeys.ClusterID.String():      cluster.ID.String(),
+			defaultKeys.KubeconfigMode.String(): constants.LabelValueKubeconfigModeSPIRE,
+			defaultKeys.ManagedBy.String():      "cloud-workflow-engine",
 		}}}
-		require.NoError(t, capi.ValidateSecretOwnership(secret, cluster))
+		require.NoError(t, capi.ValidateSecretOwnership(defaultKeys, secret, cluster))
 	})
 
 	t.Run("wrong cluster-id is refused", func(t *testing.T) {
 		t.Parallel()
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 			Name:      "alpha-kubeconfig",
-			Namespace: constants.NamespaceNVKESystem,
-			Labels:    map[string]string{constants.LabelKeyClusterID: uuid.New().String()},
+			Namespace: defaultKeys.ManagementNamespace,
+			Labels:    map[string]string{defaultKeys.ClusterID.String(): uuid.New().String()},
 		}}
-		err := capi.ValidateSecretOwnership(secret, cluster)
+		err := capi.ValidateSecretOwnership(defaultKeys, secret, cluster)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, capi.ErrWrongSecretOwner)
 	})
@@ -54,13 +58,13 @@ func TestValidateSecretOwnership(t *testing.T) {
 		t.Parallel()
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 			Name:      "alpha-kubeconfig",
-			Namespace: constants.NamespaceNVKESystem,
+			Namespace: defaultKeys.ManagementNamespace,
 			Labels: map[string]string{
-				constants.LabelKeyClusterID:      cluster.ID.String(),
-				constants.LabelKeyKubeconfigMode: constants.LabelValueKubeconfigModeAdmin,
+				defaultKeys.ClusterID.String():      cluster.ID.String(),
+				defaultKeys.KubeconfigMode.String(): constants.LabelValueKubeconfigModeAdmin,
 			},
 		}}
-		require.NoError(t, capi.ValidateSecretOwnership(secret, cluster))
+		require.NoError(t, capi.ValidateSecretOwnership(defaultKeys, secret, cluster))
 	})
 }
 
@@ -69,10 +73,10 @@ func TestSetSecretOwnership(t *testing.T) {
 
 	cluster := db.Cluster{ID: uuid.New(), Name: "alpha"}
 	secret := &corev1.Secret{}
-	capi.SetSecretOwnership(secret, cluster, constants.LabelValueKubeconfigModeSPIRE, "cloud-workflow-engine")
-	assert.Equal(t, "cloud-workflow-engine", secret.Labels[constants.LabelKeyNvkeManagedBy])
-	assert.Equal(t, cluster.ID.String(), secret.Labels[constants.LabelKeyClusterID])
-	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, secret.Labels[constants.LabelKeyKubeconfigMode])
+	capi.SetSecretOwnership(defaultKeys, secret, cluster, constants.LabelValueKubeconfigModeSPIRE, "cloud-workflow-engine")
+	assert.Equal(t, "cloud-workflow-engine", secret.Labels[defaultKeys.ManagedBy.String()])
+	assert.Equal(t, cluster.ID.String(), secret.Labels[defaultKeys.ClusterID.String()])
+	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, secret.Labels[defaultKeys.KubeconfigMode.String()])
 }
 
 func TestIsSPIREExecKubeconfig(t *testing.T) {
@@ -175,4 +179,45 @@ users:
 		require.NoError(t, err)
 		assert.False(t, ok)
 	})
+}
+
+func TestValidateSecretOwnershipReadsLegacyKeys(t *testing.T) {
+	t.Parallel()
+
+	custom := keys.New("nvke.example.com", "nvke-system")
+	cluster := db.Cluster{ID: uuid.New(), Name: "alpha"}
+
+	t.Run("a legacy cluster-id label still identifies the owner", func(t *testing.T) {
+		t.Parallel()
+		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+			Name:      "alpha-kubeconfig",
+			Namespace: custom.ManagementNamespace,
+			Labels:    map[string]string{defaultKeys.ClusterID.String(): uuid.New().String()},
+		}}
+		err := capi.ValidateSecretOwnership(custom, secret, cluster)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, capi.ErrWrongSecretOwner)
+	})
+
+	t.Run("a legacy cluster-id label for the same cluster passes", func(t *testing.T) {
+		t.Parallel()
+		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{defaultKeys.ClusterID.String(): cluster.ID.String()},
+		}}
+		require.NoError(t, capi.ValidateSecretOwnership(custom, secret, cluster))
+	})
+}
+
+func TestSetSecretOwnershipWritesConfiguredDomain(t *testing.T) {
+	t.Parallel()
+
+	custom := keys.New("nvke.example.com", "nvke-system")
+	cluster := db.Cluster{ID: uuid.New(), Name: "alpha"}
+	secret := &corev1.Secret{}
+	capi.SetSecretOwnership(custom, secret, cluster, constants.LabelValueKubeconfigModeAdmin, "cloud-workflow-engine")
+
+	assert.Equal(t, "cloud-workflow-engine", secret.Labels["nvke.example.com/managed-by"])
+	assert.Equal(t, cluster.ID.String(), secret.Labels["nvke.example.com/cluster-id"])
+	assert.Equal(t, constants.LabelValueKubeconfigModeAdmin, secret.Labels["nvke.example.com/kubeconfig-mode"])
+	assert.NotContains(t, secret.Labels, "nke.nvidia.com/cluster-id", "legacy keys are read, never written")
 }

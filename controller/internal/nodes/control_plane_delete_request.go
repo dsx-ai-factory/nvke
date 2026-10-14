@@ -45,6 +45,9 @@ type deleteRequestRecord struct {
 	Reason             string              `json:"reason,omitempty"`
 	ForceUnreachable   bool                `json:"forceUnreachable,omitempty"`
 	MachineHealthIssue *MachineHealthIssue `json:"machineHealthIssue,omitempty"`
+	// LabelDomain is the key domain the TeardownNode workflow writes node labels
+	// under, captured when the request was accepted. Empty is the legacy domain.
+	LabelDomain string `json:"labelDomain,omitempty"`
 }
 
 // ControlPlaneQuorumFloorError reports a control-plane delete refused because
@@ -125,6 +128,7 @@ func recordControlPlaneDeleteRequest(ctx context.Context, tx db.Tx, node db.Node
 		Reason:             options.Reason,
 		ForceUnreachable:   forceUnreachable,
 		MachineHealthIssue: options.MachineHealthIssue,
+		LabelDomain:        options.LabelDomain,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to record control-plane delete request: %w", err)
@@ -215,6 +219,7 @@ func StartRequestedTeardown(ctx context.Context, tx db.Tx, nodeID uuid.UUID) err
 		Reason:             recorded.Reason,
 		ForceUnreachable:   recorded.ForceUnreachable || !isHealthyControlPlaneNode(node),
 		MachineHealthIssue: recorded.MachineHealthIssue,
+		LabelDomain:        recorded.LabelDomain,
 	}, "Node deletion in progress")
 }
 
@@ -238,6 +243,7 @@ func RestartTeardownInput(node db.Node) (TeardownNodeInput, error) {
 		Reason:             recorded.Reason,
 		MachineHealthIssue: recorded.MachineHealthIssue,
 		ForceUnreachable:   true,
+		LabelDomain:        recorded.LabelDomain,
 	}, nil
 }
 
@@ -259,6 +265,7 @@ func StartTeardown(ctx context.Context, tx db.Tx, node db.Node, input TeardownNo
 		Reason:             input.Reason,
 		ForceUnreachable:   input.ForceUnreachable,
 		MachineHealthIssue: input.MachineHealthIssue,
+		LabelDomain:        input.LabelDomain,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to record teardown input for node %s: %w", node.ID, err)

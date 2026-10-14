@@ -20,8 +20,8 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // renderInfraMachine renders the caller-supplied CAPI infrastructure machine
@@ -69,7 +69,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 	if !ok {
 		return fmt.Errorf("expected unstructured infra machine, got %T", infraMachineObj)
 	}
-	if err := applyNicoMachineInstanceLabels(node, cluster, nodePool.ID, infraMachine); err != nil {
+	if err := applyNicoMachineInstanceLabels(deps.Keys, node, cluster, nodePool.ID, infraMachine); err != nil {
 		return err
 	}
 
@@ -100,7 +100,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return fmt.Errorf("infra machine apiVersion %q must include an API group", infraMachine.GetAPIVersion())
 	}
 
-	machine, err := shared.BuildMachine(node, nodeSet, nodePool, cluster, deps.Namespace, bootstrapSecret.Name, clusterv1.ContractVersionedObjectReference{
+	machine, err := shared.BuildMachine(deps.Keys, node, nodeSet, nodePool, cluster, deps.Namespace, bootstrapSecret.Name, clusterv1.ContractVersionedObjectReference{
 		APIGroup: infraMachineGV.Group,
 		Kind:     infraMachine.GetKind(),
 		Name:     infraMachine.GetName(),
@@ -109,7 +109,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return err
 	}
 	if spireJoinToken != "" {
-		machine.Annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath] = spireAgentAlternateIDPath
+		machine.Annotations[deps.Keys.SpireAgentSpiffeIDPath.String()] = spireAgentAlternateIDPath
 	}
 	if err := shared.ApplyMachine(ctx, deps.K8sClient, deps.FieldManagerName, machine); err != nil {
 		return err
@@ -121,7 +121,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 // applyNicoMachineInstanceLabels merges the controller's identity labels onto a
 // rendered infra machine, for the edge case where a CAPI-provider cluster's
 // own template happens to render a NicoMachine. A no-op for any other kind.
-func applyNicoMachineInstanceLabels(node db.Node, cluster db.Cluster, nodePoolID uuid.UUID, infraMachine *unstructured.Unstructured) error {
+func applyNicoMachineInstanceLabels(k keys.Keys, node db.Node, cluster db.Cluster, nodePoolID uuid.UUID, infraMachine *unstructured.Unstructured) error {
 	gv, err := schema.ParseGroupVersion(infraMachine.GetAPIVersion())
 	if err != nil {
 		return fmt.Errorf("parse infrastructure machine apiVersion %q: %w", infraMachine.GetAPIVersion(), err)
@@ -130,7 +130,7 @@ func applyNicoMachineInstanceLabels(node db.Node, cluster db.Cluster, nodePoolID
 		return nil
 	}
 
-	labels := nico.BuildInstanceLabels(node, cluster, nodePoolID)
+	labels := nico.BuildInstanceLabels(k, node, cluster, nodePoolID)
 	existingLabels, _, err := unstructured.NestedStringMap(infraMachine.Object, "spec", "labels")
 	if err != nil {
 		return fmt.Errorf("read NicoMachine instance labels: %w", err)

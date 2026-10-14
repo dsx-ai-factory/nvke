@@ -23,8 +23,8 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
@@ -41,7 +41,7 @@ func TestDeleteCAPIClusterResources_LeavesSharedNamespaceIntact(t *testing.T) {
 		ProviderType: db.ProviderTypeNico,
 		Nico:         &db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID},
 	}
-	ns := constants.NamespaceNVKESystem
+	ns := keys.LegacyManagementNamespace
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
@@ -80,7 +80,7 @@ func TestDeleteCAPIClusterResources_WaitsForRemainingMachines(t *testing.T) {
 		ProviderType: db.ProviderTypeNico,
 		Nico:         &db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID},
 	}
-	ns := constants.NamespaceNVKESystem
+	ns := keys.LegacyManagementNamespace
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
