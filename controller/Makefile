@@ -17,6 +17,7 @@ SETUP_ENVTEST			?= $(shell go env GOPATH)/bin/setup-envtest
 # Explicit store, so CI can cache a known path instead of guessing setup-envtest's
 # platform-dependent default.
 ENVTEST_BIN_DIR			?= $(CURDIR)/.go/envtest
+OIDC_LIVE_CAPD_NODE_IMAGE	?= cwe-capd-kindest-node:oidc-acceptance-jointoken
 gofail_e2e_cluster_crds		= $(or $(NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS),$(CWE_GOFAIL_E2E_CLUSTER_CRDS),$(shell go env GOMODCACHE)/sigs.k8s.io/cluster-api@$(shell go list -m -f '{{.Version}}' sigs.k8s.io/cluster-api)/config/crd/bases)
 gofail_e2e_capnico_crds		= $(or $(NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS),$(CWE_GOFAIL_E2E_CAPNICO_CRDS),$(shell go env GOMODCACHE)/github.com/dsx-ai-factory/cluster-api-provider-nico@$(shell go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)/config/crd/bases)
 
@@ -251,6 +252,7 @@ test-integration-teleport: ## Execute Teleport client integration tests (require
 
 E2E_DIR := test/e2e
 E2E_TIMEOUT ?= 2h
+OIDC_ACCEPTANCE_LABEL_FILTER ?= oidc-acceptance
 # Ginkgo CLI flags, e.g. ARGS='--label-filter="nico-vms && happy-path"'
 ARGS ?=
 
@@ -276,7 +278,7 @@ test-e2e-capd: ## Run CAPD happy-path e2e tests
 test-e2e-capd-local: ## Run all CAPD e2e tests with local CWE and agent source. macOS bootstraps Colima; Linux uses the host Docker daemon.
 	./hack/local-backend-e2e.sh
 
-.PHONY: oidc-envtest-assets test-oidc-reference
+.PHONY: oidc-envtest-assets test-oidc-reference test-oidc-acceptance-live
 oidc-envtest-assets: ## Install the pinned setup-envtest and resolve the pinned Kubernetes assets.
 	@mkdir -p "$(dir $(SETUP_ENVTEST))" "$(ENVTEST_BIN_DIR)"
 	@GOBIN="$(dir $(SETUP_ENVTEST))" go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
@@ -294,6 +296,42 @@ test-oidc-reference: oidc-envtest-assets ## Run the production-rendered OIDC con
 	grep -Fq -- "--- PASS: TestReferenceOIDCAuthenticationMatrix (" "$$output_file" && \
 		grep -Eq -- "--- PASS: TestReferenceOIDCAuthenticationMatrix/[^/]+/[^/]+ [(]" "$$output_file" || \
 		{ echo "OIDC reference matrix and its cases must run and pass" >&2; exit 1; }
+
+test-oidc-acceptance-live: ## Run the tagged OIDC lifecycle on a fresh local CAPD management cluster.
+	@set -eu; \
+	if [ "$$(uname -s)" = Darwin ]; then \
+		export COLIMA_CPUS="$${COLIMA_CPUS:-10}" COLIMA_MEMORY_GIB="$${COLIMA_MEMORY_GIB:-24}" COLIMA_DISK_GIB="$${COLIMA_DISK_GIB:-150}"; \
+		export DOCKER_HOST="$${DOCKER_HOST:-$(COLIMA_DOCKER_HOST)}"; \
+		export COLIMA_DOCKER_HOST="$$DOCKER_HOST"; \
+		$(MAKE) host-up; \
+	fi; \
+	if ! docker image inspect "$(OIDC_LIVE_CAPD_NODE_IMAGE)" >/dev/null 2>&1; then \
+		$(MAKE) capd-image \
+			COLIMA_DOCKER_HOST="$${DOCKER_HOST:-$(COLIMA_DOCKER_HOST)}" \
+			CAPD_KINDEST_NODE_IMAGE="$(OIDC_LIVE_CAPD_NODE_IMAGE)" \
+			CAPD_SPIRE_ATTESTATION_METHOD=joinToken \
+			INSTALL_CNI_AFTER_INIT=true; \
+	fi; \
+	run_id="$$(date +%s)-$$$$"; \
+	kind_cluster_name="nke-oidc-live-$$run_id"; \
+	providers="$${LOCAL_NKE_E2E_PROVIDERS:-}"; \
+	if test -z "$$providers" && \
+		test "$$(docker inspect --format '{{.State.Running}}' "$${BGP_CONTAINER_NAME:-bgp-containers}" 2>/dev/null || true)" = true; then \
+		providers='["capi_core","capd","capd-reboot-controller"]'; \
+	fi; \
+	KIND_CLUSTER_NAME="$$kind_cluster_name" \
+	CAPD_KINDEST_NODE_IMAGE="$(OIDC_LIVE_CAPD_NODE_IMAGE)" \
+	CAPD_NODE_IMAGE="$(OIDC_LIVE_CAPD_NODE_IMAGE)" \
+	CAPD_SPIRE_ATTESTATION_METHOD=joinToken \
+	LOCAL_NKE_E2E_REUSE_CAPD_NODE_IMAGE=true \
+	LOCAL_NKE_E2E_STATE_DIR="$(CURDIR)/.local/nke-oidc-live-$$run_id" \
+	LOCAL_NKE_E2E_KUBECONFIG="$(CURDIR)/.local/nke-oidc-live-$$run_id/management.kubeconfig" \
+	LOCAL_NKE_E2E_BUILD_TAGS=oidc_acceptance \
+	LOCAL_NKE_E2E_LABEL_FILTER="$(OIDC_ACCEPTANCE_LABEL_FILTER)" \
+	LOCAL_NKE_E2E_PROVIDERS="$$providers" \
+	INSTALL_CNI_AFTER_INIT=true \
+	./hack/local-backend-e2e.sh; \
+	kind delete cluster --name "$$kind_cluster_name"
 
 .PHONY: test-e2e-nico-vms
 test-e2e-nico-vms: ## Run NICo VMs happy-path e2e tests

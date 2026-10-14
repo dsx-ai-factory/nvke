@@ -585,3 +585,21 @@ flox activate -- bash controller/hack/local-backend-e2e.sh
 If the Docker host already runs, set `LOCAL_NVKE_E2E_REUSE_DOCKER_HOST=true`
 to reuse it without changing the host configuration. The test repairs only its
 private fixture artifact. It does not change a released bundle.
+
+## OIDC acceptance
+
+From `controller/`, run `make test-oidc-reference` to check NVKE's rendered
+authentication config and RBAC against the pinned envtest API server.
+`make test-oidc-acceptance-live` verifies authentication and provider snapshot
+preservation during control-plane joins through CAPD/Tilt; successful runs delete
+their management Kind cluster, and failed runs retain it and artifacts for
+inspection. After changing agent or bundle sources, remove the cached CAPD image
+and CNI packages from `controller/` before rerunning, and delete retained
+management clusters when finished:
+
+```bash
+docker rmi cwe-capd-kindest-node:oidc-acceptance-jointoken
+rm -rf .local/cni
+kind get clusters
+kind delete cluster --name "nke-oidc-live-<run_id>"
+```
