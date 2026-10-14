@@ -121,6 +121,18 @@ func (c *controlPlane) surgeBudget() int {
 		len(c.nodesNeedingRollout(c.clusterControlPlaneConfig.ControlPlaneConfigSpec)))
 }
 
+// countControllerManagedNodes returns the number of control plane nodes owned by
+// the control-plane controller.
+func (c *controlPlane) countControllerManagedNodes() int {
+	count := 0
+	for _, node := range c.nodes {
+		if node.IsManagedByControlPlaneController() {
+			count++
+		}
+	}
+	return count
+}
+
 // expectedCount returns the expected number of control plane nodes.
 func (c *controlPlane) expectedCount() int {
 	return c.clusterControlPlaneConfig.DesiredCount + c.surgeBudget()

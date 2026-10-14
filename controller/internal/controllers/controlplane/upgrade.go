@@ -45,14 +45,10 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 	}
 
 	if cluster.ControlPlaneConfig.MaxSurge > 0 {
-		surgeNodes, err := r.getControlPlaneControllerManagedNodes(ctx, cluster.ID)
-		if err != nil {
-			return err
-		}
 		// Today surgeBudget is 0 or 1; a future MaxSurge>1 refills the full deficit
 		// in one pass (parallel host provisioning) with no further upgrade-code changes.
 		target := cluster.ControlPlaneConfig.DesiredCount + cp.surgeBudget()
-		if deficit := target - len(surgeNodes); deficit > 0 {
+		if deficit := target - cp.countControllerManagedNodes(); deficit > 0 {
 			if controlPlaneReplacementBlocked(cluster) {
 				logger.Warn("Skipping control plane scale-up because controlPlaneVIP is not configured",
 					"nodesNeedingRolloutCount", len(nodesNeedingRollout))
@@ -121,22 +117,6 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 	nodeLogger.Info("Node marked for deletion - will be replaced on next reconcile")
 
 	return nil
-}
-
-func (r *reconciler) getControlPlaneControllerManagedNodes(ctx context.Context, clusterID uuid.UUID) ([]db.Node, error) {
-	nodes, err := r.getControlPlaneNodes(ctx, clusterID)
-	if err != nil {
-		return nil, err
-	}
-
-	controlPlaneManagedNodes := make([]db.Node, 0)
-	for _, node := range nodes {
-		if !node.IsManagedByControlPlaneController() {
-			continue
-		}
-		controlPlaneManagedNodes = append(controlPlaneManagedNodes, node)
-	}
-	return controlPlaneManagedNodes, nil
 }
 
 // teardownOldNode marks a control-plane node for deletion and queues its

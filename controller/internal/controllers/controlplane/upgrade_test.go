@@ -125,11 +125,6 @@ func TestReconcileNodesNeedingRolloutWithoutControlPlaneVIPDoesNotReplaceNodes(t
 		},
 	}
 	mockTx := &testutil.MockTx{}
-	cpTrue := true
-	mockTx.On("ListNodes", mock.Anything, db.NodeFilters{
-		ClusterID:    &clusterID,
-		ControlPlane: &cpTrue,
-	}).Return([]db.Node{node}, nil)
 	r := &reconciler{cfg: config.Config{}, db: mockTx, logger: slog.Default()}
 
 	err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
@@ -186,7 +181,7 @@ func TestReconcileNodesNeedingRolloutWithoutControlPlaneVIPDeletesAfterSurgeExis
 	mockTx.On("ListNodes", mock.Anything, db.NodeFilters{
 		ClusterID:    &clusterID,
 		ControlPlane: &cpTrue,
-	}).Return([]db.Node{oldNode, newNode}, nil).Twice()
+	}).Return([]db.Node{oldNode, newNode}, nil).Once()
 	mockTx.On("GetNodeForUpdate", mock.Anything, oldNode.ID).Return(oldNode, nil)
 	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
 		return node.ID == oldNode.ID && node.Conditions.Deleting.Status == db.ConditionStatusTrue
