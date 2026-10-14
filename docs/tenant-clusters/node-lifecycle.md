@@ -57,6 +57,24 @@ If rebooting a node is required, use one of the following approaches:
 2. **Via the controller UI** — find the node and use the reboot action.
 3. **Via `nvkectl`** — `nvkectl` provides cluster and node-level operations.
 
+For new label-driven worker reboots, the controller first requests a soft reboot through
+the node agent. It polls for a boot change every 10 seconds, or faster if configured.
+If the agent response is lost, the controller waits because the reboot can already
+be in progress. If no boot change appears before the verification deadline, the
+controller requests a hard reboot through the infrastructure provider.
+The deadline defaults to 30 minutes after the scheduling attempt finishes.
+`NODE_REBOOT_INITIAL_TIMEOUT` can shorten that window, but it cannot extend soft
+verification beyond 30 minutes. Later attempts use hard reboot until boot
+verification succeeds.
+
+Before escalation, the controller reads the node again. A new boot ID prevents
+a duplicate reboot. A removed reboot label, a deletion timestamp, or a termination
+label cancels escalation. The controller does not uncordon the node during this flow.
+Your break-fix system controls workload recovery and uncordoning.
+
+Existing Temporal executions retain their recorded reboot strategy after an upgrade.
+Start a new reboot workflow to use timeout escalation for those nodes.
+
 ## Terminating a Node
 
 Manual node termination should be the exception. Prefer the [NVSentinel](https://github.com/NVIDIA/NVSentinel) break-fix flow when the node is being recycled or repaired — that path applies workload-aware policy before termination.

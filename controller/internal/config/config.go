@@ -194,7 +194,8 @@ type Config struct {
 	// back to controller-owned embedded runbooks.
 	RunbooksDir string `controllerconfig:"runbooksDir"`
 
-	// NodeRebootInitialTimeout is the initial timeout for the node reboot workflow.
+	// NodeRebootInitialTimeout is the initial reboot verification timeout. Soft
+	// verification uses this duration capped at 30 minutes, without retry increments.
 	NodeRebootInitialTimeout time.Duration `env:"NODE_REBOOT_INITIAL_TIMEOUT" default:"30m"`
 
 	// NodeRebootTimeoutIncrement is the increment for the node reboot workflow timeout by each attempt.
@@ -207,8 +208,8 @@ type Config struct {
 	NodeRebootPollingInterval time.Duration `env:"NODE_REBOOT_POLLING_INTERVAL" default:"1m"`
 
 	// NodeRebootSoftRebootEnabled selects a CAPI node reboot's strategy: true tries the in-guest
-	// soft reboot RPC first, falling back to a hard reboot only on RPC error - matching behavior
-	// from before this flag existed. false skips straight to the hard CAPI Machine reboot
+	// soft reboot RPC first, falling back to a hard reboot on RPC error or after at most 30 minutes
+	// without a verified boot change. false skips straight to the hard CAPI Machine reboot
 	// annotation, for any backend where the in-guest reboot path can never produce a real,
 	// detectable boot change.
 	NodeRebootSoftRebootEnabled bool `env:"NODE_REBOOT_SOFT_REBOOT_ENABLED" default:"true"`

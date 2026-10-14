@@ -115,6 +115,20 @@ These are the checks where a local answer will differ from CI, and why:
 | CodeQL, Scorecard, dependency review | these need GitHub-side infrastructure and have no local form. |
 | version strings | a CI checkout is shallow and carries no tags, so `git describe` there returns a commit where your full clone returns a tag. Both are correct. |
 
+## Reboot timeout regression
+
+From `controller/`, run `make e2e-gofail` to include
+`TestRebootVerificationTimeoutEscalates`. The test starts the production controller
+with real Temporal, PostgreSQL, and Kubernetes API processes. The agent fixture is
+a simulated gRPC server. It accepts a reboot without changing boot state, or
+returns `Unavailable` to simulate an unknown scheduling outcome.
+
+The test uses a 45-second verification window through `NODE_REBOOT_INITIAL_TIMEOUT`.
+It requires one soft request, no premature hard request, eventual hard escalation,
+and completion after simulated recovery. It also requires the worker to remain
+cordoned. A delayed soft-recovery case must complete without a hard request.
+The test does not exercise physical power cycling.
+
 ## Documentation
 
 `docs/` holds the longer-form guides. [`go-workspace.md`](go-workspace.md) is the
