@@ -1,8 +1,11 @@
 # Site and Tenant Cluster Flow
 
-What `nvkectl` does today, in the order an operator uses it. Every command
-below is on `main`; the steps the CLI does not cover are marked.
-`nvkectl <command> --help` is the authoritative reference for flags.
+What `nvkectl` does today, in the order an operator uses it, with the two
+steps that are not CLI commands marked: getting a release from NVKR and
+installing the controller stack with the deploy script.
+`nvkectl <command> --help` is the authoritative reference for flags. The
+walkthrough is [Your first cluster](../../docs/first-cluster.md); this page is
+the reference it points at.
 
 ## Commands
 
@@ -13,9 +16,9 @@ below is on `main`; the steps the CLI does not cover are marked.
 | Fill in the `controllerStack:` section of the site spec | The controller stack install reads it: node architecture, the NICo API, the tenant login, and paths to the files that hold the tokens and passwords. `generate sitespec` writes the section with `REPLACE_*` placeholders; the install refuses a placeholder. Not read by `bootstrap site`. | Available |
 | `nvkectl validate sitespec -f sitespec.yaml` | Checks the whole site spec and reports by section: the bootstrap fields, then `controllerStack:` with the placeholders still to fill in. `--bootstrap-only` before the section is filled in. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
-| Install an infrastructure provider on the new cluster | Install Cluster API and CAPNICo, before the site controller. See [Infrastructure Providers](../../docs/site-bootstrap/infrastructure-providers.md). No `nvkectl` command. | Not in the CLI |
-| Install the site controller on the new cluster | Deploy the controller Helm chart (`controller/deploy/charts/controller`). No `nvkectl` command yet. | Not in the CLI |
-| `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
+| `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts and images come from this checkout. | Not in the CLI |
+| `deploy/nvke-deploy.sh install --sitespec sitespec.yaml --kubeconfig <path> [--release release.json]` | Installs the controller stack on the bootstrapped cluster in one run: readiness checks, the cluster's taint and StorageClass, Cluster API, the `deploy/nico` deploy path rendered for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller), the SPIRE exec-auth patch, and `config set-site`. See [Install the Site Controller](../../docs/site-bootstrap/install-site-controller.md). | Not in the CLI |
+| `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at a site controller. The install runs it; run it yourself for a site installed another way. `use-site` switches between entries, `view` prints the config. | Available |
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
 | `nvkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
 | `nvkectl get clusters [name ...]` | Lists tenant clusters. Names narrow to those clusters. `-o json\|yaml` changes the format. | Available |
@@ -35,7 +38,26 @@ Global flags: `--site <name>` overrides the active site for one invocation,
 
 ## Example
 
-### 1. Describe the hosts and generate the site spec
+### 1. Get a release
+
+NVKR builds and publishes NVKE's artifacts. Verify a published release under
+your policy, then export its description; the install takes that file as
+`--release` and pulls every chart and image it carries by digest.
+
+```bash
+nvkr release verify --reference <repo@digest> --lane pipeline-attested --scope artifact-publication \
+  --identity <signer identity regexp> --issuer <OIDC issuer> --cosign <cosign> --cosign-digest <sha256>
+nvkr release export --reference <repo@digest> > release.json
+```
+
+`export` describes the release and verifies nothing, so run it only on a
+reference `verify` accepted. The
+[Release](../../docs/site-bootstrap/install-site-controller.md#release) section
+of the install guide explains what each command checks and writes. The release
+is optional: without it the install takes the charts from this checkout and
+their public repositories, and the site spec names the controller images.
+
+### 2. Describe the hosts and generate the site spec
 
 A CSV with a header names the hosts. `name` and `ip` are required;
 `tpm_ek_thumbprint` is optional per row and turns on TPM attestation for that
@@ -60,7 +82,7 @@ nvkectl generate sitespec my-tier0-site --nodes hosts.csv \
 The file format is described in [sitespec.md](sitespec.md); a complete example
 is in [examples/sitespec.yaml](../examples/sitespec.yaml).
 
-### 2. Bootstrap the site cluster
+### 3. Bootstrap the site cluster
 
 ```bash
 # Validate only: load, check and print the spec, touch nothing
@@ -70,47 +92,44 @@ nvkectl bootstrap site -f sitespec.yaml --dry-run
 REGISTRY_API_KEY=... nvkectl bootstrap site -f sitespec.yaml
 ```
 
-The command needs nerdctl and containerd on the host — plus `kind`, `helm`,
-`kubectl` and `clusterctl` on `PATH` — and network reach to the hosts'
-`nvke-agent` ports. The [README](../README.md#bootstrap-cluster-and-cwe) lists
-every `NVKECTL_*` variable the command reads. On success it
-writes `my-tier0-site.kubeconfig` and `my-tier0-site-etcd-encryption-key.json`
-in the working directory (`--kubeconfig-out` and `--encryption-key-out` change
-the paths) and removes the Kind cluster. Every control-plane node holds the
-etcd encryption key; the key file is a convenience for installing a controller
-later and the copy a disaster recovery needs. Move it off the host. On failure it writes cluster
-diagnostics to `cluster-diagnostics/` first, and keeps the Kind cluster when
-the failure came after the site cluster was created, or when
-`--keep-bootstrap-cluster` is set; the error says how to clean up.
-[bootstrap-troubleshooting.md](bootstrap-troubleshooting.md) explains how to
-read a failure and fix the common ones.
+The command needs nerdctl and containerd on the host, plus `kind`, `helm`,
+`kubectl` and `clusterctl` on `PATH`, and network reach to the hosts'
+`nvke-agent` ports. It leaves a plain Kubernetes cluster and
+`my-tier0-site.kubeconfig`, and ends by listing what the `controllerStack:`
+section of the site spec still needs. Fill that in and run
+`nvkectl validate sitespec -f sitespec.yaml` before the next step.
 
-The Kind cluster runs Postgres, Temporal, SPIRE, Cluster API and the controller.
-`nvkectl get bootstrap-manifest` lists the charts and images the bootstrap
-fetches, with their versions. It leaves out the kind node image and what
-`clusterctl init` installs. The `NVKECTL_*` variables in the
-[README](../README.md) point a chart or an image at another location;
-`--controller-image` and `--provisioned-provider-image` do the same for the two
-built images for one run.
+### 4. Install the controller stack
 
-### 3. Install an infrastructure provider
+```bash
+deploy/nvke-deploy.sh install --sitespec sitespec.yaml --kubeconfig my-tier0-site.kubeconfig \
+  --release release.json --site-releases releases/ --api-client-cidrs "10.0.0.0/8"
+```
 
-Install Cluster API and CAPNICo onto the site cluster, before the site
-controller — see [Infrastructure Providers](../../docs/site-bootstrap/infrastructure-providers.md)
-for why the order matters. `nvkectl` has no command for this step.
+One command: it checks the inputs and the cluster, prepares the cluster,
+installs Cluster API, renders the `deploy/nico` deploy path for the site and
+the release and applies it, item by item, then patches the Cluster API
+controllers for SPIRE and registers the site with `config set-site`. Every
+step is safe to repeat; after a failure, fix the cause and run it again.
+[Install the Site Controller](../../docs/site-bootstrap/install-site-controller.md)
+describes each step, the inputs, removal and upgrade.
 
-### 4. Install the site controller
-
-The site cluster from step 2 is a plain Kubernetes cluster. The site controller
-that manages tenant clusters is installed with the controller Helm chart
-in [`controller/deploy/charts/controller`](https://github.com/dsx-ai-factory/nvke/tree/main/controller/deploy/charts/controller).
-`nvkectl` has no command for this step yet.
+The deploy path is the interface and the script is the reference way to apply
+it. `deploy/nico/nvke-deploy.yaml` lists the items in install order, and each
+item directory holds its chart pin, values and overlay, or its manifests;
+`--dry-run` prints every kubectl, helm and clusterctl call the script would
+make. An operator can apply the same items with their own tooling or through
+GitOps; [Deploy Repository](../../docs/site-bootstrap/deploy-repository.md)
+describes the format.
 
 ### 5. Point the CLI at the site controller
 
+The install has already run this; after an install done another way, or to
+reach the site from a second machine:
+
 ```bash
 nvkectl config set-site --name my-tier0-site \
-  --url https://controller.my-tier0-site.example.com \
+  --url http://<VIP>:30080 \
   --kubeconfig ./my-tier0-site.kubeconfig
 nvkectl config view
 ```
@@ -133,7 +152,7 @@ The kubeconfig identity needs `create` on `serviceaccounts/token` for
 
 A tenant cluster is created on an infrastructure provider: a controller running
 on the site cluster that holds credentials for its backend and creates machines
-there. Once step 3 is done, confirm the site can use it:
+there. Once step 4 is done, confirm the site can use it:
 
 ```bash
 nvkectl get providers
