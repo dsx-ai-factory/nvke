@@ -523,7 +523,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 
-	// TODO: need to implement this for nico mode: print the allocated nodes' names and IPs.
+	// Nico mode does not list the allocated nodes here; kubectl get nodes shows them.
 	fmt.Fprintf(out, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
 		inv.ClusterName, kubeconfigPath)
 	return nil

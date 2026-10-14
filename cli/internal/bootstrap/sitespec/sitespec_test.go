@@ -1342,6 +1342,22 @@ func TestLoad_BootstrapReleases(t *testing.T) {
 			docs:    "kind: NodePoolRelease\nmetadata:\n  name: example-os-profile\n",
 			wantErr: "no ClusterRelease",
 		},
+		"not YAML": {
+			docs:    "kind: [unclosed\n",
+			wantErr: "is not valid YAML",
+		},
+		"not a manifest": {
+			docs:    "- kind: ClusterRelease\n",
+			wantErr: "is not a Kubernetes manifest",
+		},
+		"ClusterRelease with a spec of the wrong shape": {
+			docs:    "kind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec: nope\n",
+			wantErr: "holds an invalid ClusterRelease",
+		},
+		"MachineImage with a spec of the wrong shape": {
+			docs:    "kind: MachineImage\nmetadata:\n  name: img\nspec: nope\n",
+			wantErr: "holds an invalid MachineImage",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := writeNicoTemp(t, nicoYAML)

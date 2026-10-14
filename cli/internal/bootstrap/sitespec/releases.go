@@ -5,6 +5,7 @@ package sitespec
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -12,23 +13,11 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-)
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 
-// releaseDoc is the part of a MachineImage or ClusterRelease manifest the
-// pre-flight reads: what the object is, its name, and the image a ClusterRelease
-// boots.
-type releaseDoc struct {
-	Kind     string `yaml:"kind"`
-	Metadata struct {
-		Name string `yaml:"name"`
-	} `yaml:"metadata"`
-	Spec struct {
-		MachineImageRef struct {
-			Name string `yaml:"name"`
-		} `yaml:"machineImageRef"`
-	} `yaml:"spec"`
-}
+	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+)
 
 // releaseFiles lists the manifest files bootstrapReleases names: the file
 // itself, or the .yaml, .yml and .json files directly inside the directory, as
@@ -83,20 +72,37 @@ func (v *validator) checkBootstrapReleases(inv *SiteSpec) {
 			v.addf("%s %q cannot be read: %v", pathBootstrapReleases, file, err)
 			return
 		}
-		dec := yaml.NewDecoder(bytes.NewReader(data))
+		dec := utilyaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), 4096)
 		for {
-			var doc releaseDoc
-			if err := dec.Decode(&doc); errors.Is(err, io.EOF) {
+			var raw json.RawMessage
+			if err := dec.Decode(&raw); errors.Is(err, io.EOF) {
 				break
 			} else if err != nil {
 				v.addf("%s %q is not valid YAML: %v", pathBootstrapReleases, file, err)
 				return
 			}
-			switch {
-			case doc.Kind == "ClusterRelease" && doc.Metadata.Name == profile:
-				foundRelease, releaseImage = true, doc.Spec.MachineImageRef.Name
-			case doc.Kind == "MachineImage":
-				images[doc.Metadata.Name] = true
+			var meta metav1.TypeMeta
+			if err := json.Unmarshal(raw, &meta); err != nil {
+				v.addf("%s %q is not a Kubernetes manifest: %v", pathBootstrapReleases, file, err)
+				return
+			}
+			switch meta.Kind {
+			case "ClusterRelease":
+				var release enginev1.ClusterRelease
+				if err := json.Unmarshal(raw, &release); err != nil {
+					v.addf("%s %q holds an invalid ClusterRelease: %v", pathBootstrapReleases, file, err)
+					return
+				}
+				if release.Name == profile {
+					foundRelease, releaseImage = true, string(release.Spec.MachineImageRef.Name)
+				}
+			case "MachineImage":
+				var image enginev1.MachineImage
+				if err := json.Unmarshal(raw, &image); err != nil {
+					v.addf("%s %q holds an invalid MachineImage: %v", pathBootstrapReleases, file, err)
+					return
+				}
+				images[image.Name] = true
 			}
 		}
 	}
