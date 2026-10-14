@@ -169,10 +169,16 @@ func loadGinkgoReport(path string) (types.Report, error) {
 }
 
 // summarizeGinkgoReport renders a short pass-count summary from a Ginkgo
-// report's own spec states.
+// report's own spec states, counting only It leaf nodes -- report.SpecReports
+// also carries an entry for BeforeSuite/AfterSuite/cleanup nodes, which would
+// otherwise inflate the total, and a stream that runs under Ginkgo's own
+// focus/skip filtering (common for per-stream subsets of a shared suite
+// binary) would read as a mostly-failing run instead of a fully-passing one
+// restricted to a handful of specs.
 func summarizeGinkgoReport(report types.Report) string {
-	total := len(report.SpecReports)
-	passed := report.SpecReports.CountWithState(types.SpecStatePassed)
+	its := report.SpecReports.WithLeafNodeType(types.NodeTypeIt)
+	total := len(its)
+	passed := its.CountWithState(types.SpecStatePassed)
 	return fmt.Sprintf("%d/%d passed", passed, total)
 }
 

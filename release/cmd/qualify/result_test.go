@@ -372,3 +372,24 @@ func TestResultCmdRejectsSubjectWithNoType(t *testing.T) {
 		t.Errorf("err = %v, want it to say spec.type is empty", err)
 	}
 }
+
+// A suite running under Ginkgo's own focus/skip filtering -- the normal case
+// for a per-stream subset of a shared suite binary -- must read as a
+// fully-passing run restricted to a handful of specs, not a mostly-failing
+// one. SpecReports also carries a BeforeSuite/AfterSuite entry, which must
+// not inflate the denominator either.
+func TestSummarizeGinkgoReportCountsOnlyItNodes(t *testing.T) {
+	report := types.Report{
+		SpecReports: types.SpecReports{
+			{LeafNodeType: types.NodeTypeBeforeSuite, State: types.SpecStatePassed},
+			{LeafNodeType: types.NodeTypeIt, State: types.SpecStatePassed},
+			{LeafNodeType: types.NodeTypeIt, State: types.SpecStatePassed},
+			{LeafNodeType: types.NodeTypeIt, State: types.SpecStateSkipped},
+			{LeafNodeType: types.NodeTypeAfterSuite, State: types.SpecStatePassed},
+		},
+	}
+	got := summarizeGinkgoReport(report)
+	if got != "2/3 passed" {
+		t.Errorf("summarizeGinkgoReport = %q, want %q (2 passed Its out of 3 total Its, suite nodes excluded)", got, "2/3 passed")
+	}
+}
