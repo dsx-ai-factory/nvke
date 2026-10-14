@@ -102,7 +102,7 @@ NVKE admits callers by group but does no authorization: every admitted caller ca
 | Management cluster API VIP | Bootstrap | Required for more than one node. |
 | SPIFFE trust domain | Node preparation | One value in the node user data, the site spec and the install values. If the site spec leaves it unset, `nvkectl` uses `nvkectl-bootstrap.nke.local`, which does not match your nodes. |
 | Node CPU architecture | Image build | The node image and the SPIRE TPM attestor checksum are per architecture. |
-| Workload cluster Container Network Interface (CNI) plugin and networks | Cluster creation | `ovn-kubernetes`, the default, or `calico`. Custom pod and service ranges require `ovn-kubernetes`; `calico` requires the defaults, `192.168.0.0/16` and `10.96.0.0/12`. |
+| Workload cluster Container Network Interface (CNI) plugin and networks | Cluster creation | `ovn-kubernetes`. Pod and service ranges default to `192.168.0.0/16` and `10.96.0.0/12`. |
 | Workload cluster etcd encryption | Cluster creation | `etcdEncrypted` has no default. You can turn encryption on later, never off. |
 | Workload cluster API VIP | Cluster creation | Without one, the control plane has one node that you cannot scale, upgrade or replace. Adding a VIP means recreating the cluster. |
 | NICo identifiers | Cluster or node pool creation | A cluster's `orgID`, `siteID` and `vpcID`, and a node pool's `instanceTypeID`, InfiniBand partition and NVLink logical partition. |

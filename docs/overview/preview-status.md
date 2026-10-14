@@ -9,7 +9,7 @@ NVIDIA Kubernetes Engine (NVKE) is available as a preview. APIs, configuration a
 - Install the management plane on the management cluster: [Install management-plane services](../operate/install-management-plane-services.md).
 - Provision workload cluster nodes through NVIDIA Infra Controller (NICo): [Configure an infrastructure provider: NICo](../operate/provider-nico.md).
 - Authenticate NVKE API callers with JWTs from your identity provider: [Secure the NVKE API](../operate/api-authentication.md).
-- Create, change and delete workload clusters with `ovn-kubernetes` or `calico` networking and optional etcd encryption: [Create a workload cluster](../workload-clusters/create.md).
+- Create, change and delete workload clusters with `ovn-kubernetes` networking and optional etcd encryption: [Create a workload cluster](../workload-clusters/create.md).
 - Add, scale and delete node pools, replace nodes, and mark outdated nodes for recycling with auto mode: [Manage node pools](../workload-clusters/node-pools.md).
 - Hand a workload cluster to a customer through its admin kubeconfig: [Access a workload cluster](../workload-clusters/access.md).
 - Check health and collect telemetry with NVIDIA Kubernetes Telemetry Pipeline (NKTP): [Observe NVKE and its clusters](../operate/observe.md).

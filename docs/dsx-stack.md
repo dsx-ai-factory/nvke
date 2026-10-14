@@ -41,7 +41,7 @@ NVKE's primary CAPI infrastructure provider is [CAPNICo](https://github.com/dsx-
 
 ### NVKE (this project)
 
-NVKE sits between NICo and the Kubernetes workload layer. It bootstraps the site controller cluster, then uses NICo (through CAPNICo and Cluster API) to provision and manage tenant Kubernetes clusters. NVKE provisions the cluster with OVN-Kubernetes, then hands off — the GPU software stack, workload configuration, and cluster readiness certification are handled by the components above. Calico remains as a disabled-by-default compatibility path for legacy fleets and cannot be selected for a new tenant cluster in a default deployment.
+NVKE sits between NICo and the Kubernetes workload layer. It bootstraps the site controller cluster, then uses NICo (through CAPNICo and Cluster API) to provision and manage tenant Kubernetes clusters. NVKE provisions the cluster with OVN-Kubernetes, then hands off — the GPU software stack, workload configuration, and cluster readiness certification are handled by the components above.
 
 **NVKE's scope:**
 - Bootstrap a site controller cluster from pre-provisioned nodes (`nvkectl bootstrap site`)
