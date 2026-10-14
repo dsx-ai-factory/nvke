@@ -12,8 +12,7 @@ import (
 )
 
 // deprecatedControlPlaneNodeSet is a control-plane node set that is no longer
-// its pool's current node set but still owns pooled control-plane nodes — i.e. a
-// generation left behind by an in-flight rolling upgrade.
+// its pool's current node set but still owns pooled control-plane nodes.
 type deprecatedControlPlaneNodeSet struct {
 	NodeSetID         uuid.UUID `bun:"node_set_id"`
 	ClusterID         uuid.UUID `bun:"cluster_id"`
@@ -80,27 +79,15 @@ func hasActiveControlPlaneNodePool(pools []NodePool) bool {
 	return false
 }
 
-// MigrateControlPlaneToController re-parents legacy node-pool-managed
-// control-plane nodes onto the control-plane controller.
+// MigrateControlPlaneToController enrolls every non-deleting cluster in the
+// control-plane controller by re-parenting its pooled control-plane nodes onto
+// the cluster's control-plane configuration snapshot, then deleting the emptied
+// node pools and node sets.
 //
-// It is a temporary, boot-time, idempotent sweep: it runs once per process
-// start, after schema migrations and before the controllers and worker start, so
-// nothing mutates nodes while ownership is rewritten. Re-parenting is pure
-// metadata: pooled control-plane nodes have their node_pool_id/node_set_id cleared and are pinned to a control-plane
-// configuration snapshot — the cluster's current one, except a deprecated node
-// generation left by an in-flight upgrade gets a freshly minted snapshot so the
-// controller still finishes its rollout — then the emptied pools and node sets
-// are deleted. Deleting clusters are skipped. The sweep is one transaction and
-// fails closed: if any non-deleting cluster cannot be fully migrated it errors so
-// the worker refuses to start rather than serve a half-migrated fleet.
-//
-// Before rewriting ownership it fills missing clusters.configuration_id from
-// active CP node pools. Self-imported site controllers often have a pool but no
-// snapshot (inject skipped the pool-create sync); without that the fail-closed
-// leftover check would abort startup.
-//
-// Runs on every boot, so a cluster that cannot be migrated blocks worker startup.
-// Remove this and its worker call site once every site is migrated.
+// The sweep is idempotent and runs in one transaction on every worker boot,
+// after schema migrations and before the controllers start. It returns an error
+// if any non-deleting cluster cannot be fully migrated; the worker then refuses
+// to start. Temporary: remove it and its worker call site once every site is migrated.
 func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB) error {
 	if err := SyncMissingControlPlaneConfigsFromCPNodePools(ctx, bunDB); err != nil {
 		return err
