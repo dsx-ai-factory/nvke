@@ -56,7 +56,8 @@ func Create(ctx context.Context, client ClusterAPI, inv *sitespec.SiteSpec, log 
 		"cluster", req.Name,
 		"kubernetesVersion", req.ControlPlaneKubernetesVersion,
 		"cni", req.CniPlugin,
-		"hosts", len(inv.Cluster.Nodes))
+		"infrastructure", inv.Infrastructure,
+		"controlPlaneNodes", inv.ControlPlaneCount())
 
 	cluster, err := client.CreateCluster(ctx, req)
 	if err != nil {

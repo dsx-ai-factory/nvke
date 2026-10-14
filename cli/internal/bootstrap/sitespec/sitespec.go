@@ -39,6 +39,18 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 )
 
+// Infrastructure names where a site cluster's machines come from.
+const (
+	// InfrastructureProvisioned takes the machines from the hardcoded list in
+	// cluster.nodes: hosts that already exist and are handed out one to each
+	// machine. It is the default.
+	InfrastructureProvisioned = "provisioned"
+
+	// InfrastructureNico asks CAPNICo to allocate the machines from a NICo
+	// site, described by cluster.nico.
+	InfrastructureNico = "nico"
+)
+
 const (
 	// DefaultNodeAgentPort is the gRPC port nvke-agent listens on when the
 	// site spec does not set cluster.nodeAgentPort.
@@ -54,7 +66,9 @@ const (
 	// SiteSpec field paths — the single source of truth for the dotted paths
 	// shared by the environment bindings and the validator messages.
 	pathClusterName          = "clusterName"
+	pathInfrastructure       = "infrastructure"
 	pathNodes                = "cluster.nodes"
+	pathNico                 = "cluster.nico"
 	pathK8sVersion           = "cluster.k8sVersion"
 	pathCniName              = "cluster.cniName"
 	pathCniVersion           = "cluster.cniVersion"
@@ -84,11 +98,12 @@ const (
 	// Identity namespaces a fleet-wide OIDC provider must not use as a
 	// usernamePrefix or groupsPrefix. kube-apiserver rejects system, kubeadm,
 	// nke, and nvidia; nvke is reserved the same way.
-	oidcPrefixSystem  = "system:"
-	oidcPrefixKubeadm = "kubeadm:"
-	oidcPrefixNKE     = "nke:"
-	oidcPrefixNVKE    = "nvke:"
-	oidcPrefixNVIDIA  = "nvidia:"
+	oidcPrefixSystem         = "system:"
+	oidcPrefixKubeadm        = "kubeadm:"
+	oidcPrefixNKE            = "nke:"
+	oidcPrefixNVKE           = "nvke:"
+	oidcPrefixNVIDIA         = "nvidia:"
+	pathSpireExternalAddress = "spire.externalAddress"
 )
 
 var (
@@ -108,6 +123,9 @@ var (
 	// dnsLabelRE matches an RFC 1123 DNS label, used for cluster and node names.
 	dnsLabelRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
+	// uuidRE matches the canonical lowercase or uppercase textual form of a UUID.
+	uuidRE = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
 	// tpmEKThumbprintRE matches the SHA-256 of a TPM endorsement key, as
 	// printed by spire-tpm-plugin's get_tpm_pubhash: 64 lowercase hex digits.
 	tpmEKThumbprintRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -122,6 +140,9 @@ func SupportedCNIs() []string {
 type SiteSpec struct {
 	// ClusterName is the name of the Kubernetes cluster to create.
 	ClusterName string `yaml:"clusterName"`
+	// Infrastructure selects where the cluster's machines come from: one of
+	// InfrastructureProvisioned (the default) or InfrastructureNico.
+	Infrastructure string `yaml:"infrastructure,omitempty"`
 	// Cluster holds the node inventory and Kubernetes settings.
 	Cluster Cluster `yaml:"cluster"`
 	// Registry holds the container-registry settings for the bootstrap engine
@@ -163,13 +184,28 @@ type Spire struct {
 	// be given a trust anchor in advance.
 	CACertFile string `yaml:"caCertFile,omitempty"`
 	CAKeyFile  string `yaml:"caKeyFile,omitempty"`
+
+	// ExternalAddress is the address nodes use to reach the bootstrap SPIRE
+	// server: the host that runs the bootstrap, as seen from the network the
+	// nodes are on. An IP address or a DNS name.
+	//
+	// Required with InfrastructureNico, where CWE writes the SPIRE server's
+	// address into each node's userdata, so it has to be one the node can reach
+	// before anything in the cluster exists. Not used with
+	// InfrastructureProvisioned: those hosts were given the address when they
+	// were provisioned.
+	ExternalAddress string `yaml:"externalAddress,omitempty"`
 }
 
 // Cluster describes the target Kubernetes cluster and its nodes.
 type Cluster struct {
 	// Nodes are the pre-provisioned control-plane nodes. The site spec does not
-	// select which node runs kubeadm init.
+	// select which node runs kubeadm init. Used only with
+	// InfrastructureProvisioned.
 	Nodes []Node `yaml:"nodes"`
+	// Nico describes the NICo site that machines are allocated from. Used only
+	// with InfrastructureNico.
+	Nico *NicoCluster `yaml:"nico,omitempty"`
 	// K8sVersion is the Kubernetes version to install, e.g. "1.32.0".
 	K8sVersion string `yaml:"k8sVersion"`
 	// CniName selects the CNI plugin; see SupportedCNIs. Empty means DefaultCNIName.
@@ -228,6 +264,57 @@ func (c Cluster) ControlPlaneSchedulable() bool {
 	// The site spec cannot declare worker nodes yet. Derive this from that
 	// list once it exists.
 	return true
+}
+
+// IsNico reports whether the cluster's machines are allocated through CAPNICo.
+func (inv *SiteSpec) IsNico() bool {
+	return inv.Infrastructure == InfrastructureNico
+}
+
+// ControlPlaneCount returns how many control-plane nodes the site cluster is
+// built from: the length of cluster.nodes, or cluster.nico.nodeCount when the
+// machines are allocated from NICo.
+func (inv *SiteSpec) ControlPlaneCount() int {
+	if inv.IsNico() {
+		if inv.Cluster.Nico == nil {
+			return 0
+		}
+		return inv.Cluster.Nico.NodeCount
+	}
+	return len(inv.Cluster.Nodes)
+}
+
+// NicoCluster describes the NICo site a cluster's control-plane machines are
+// allocated from, and how they are configured. It carries the same
+// information as the nico payload of a CWE CreateCluster request.
+//
+// Credentials for the NICo API are not part of it: this file is meant to be
+// committed. They are supplied to nkectl at run time.
+type NicoCluster struct {
+	// NodeCount is the number of control-plane nodes to allocate. Odd, and at
+	// least one, like the length of the hardcoded list it stands in for.
+	NodeCount int `yaml:"nodeCount"`
+	// OrgID is the NGC organization that owns the cluster.
+	OrgID string `yaml:"orgID"`
+	// SiteID is the registered NICo site ID.
+	SiteID string `yaml:"siteID"`
+	// VpcID is the VPC the cluster is created in.
+	VpcID string `yaml:"vpcID"`
+	// InstanceTypePreference is an ordered list of NICo instance type IDs;
+	// index 0 is the first choice.
+	InstanceTypePreference []string `yaml:"instanceTypePreference"`
+	// VpcPrefixIDs are the VPC prefixes for the nodes, when native networking
+	// is enabled. Exactly one of VpcPrefixIDs and SubnetIDs is set.
+	VpcPrefixIDs []string `yaml:"vpcPrefixIDs,omitempty"`
+	// SubnetIDs are the subnets for the nodes, when native networking is
+	// disabled.
+	SubnetIDs []string `yaml:"subnetIDs,omitempty"`
+	// SSHKeyGroupIDs are the SSH key groups granted access to the nodes.
+	SSHKeyGroupIDs []string `yaml:"sshKeyGroupIDs"`
+	// OSProfile is the NICo OS profile name for the nodes.
+	OSProfile string `yaml:"osProfile"`
+	// ConfigProfile is the config profile name for the nodes.
+	ConfigProfile string `yaml:"configProfile"`
 }
 
 // Node is a single pre-provisioned host.
@@ -294,6 +381,7 @@ type Registry struct {
 func envBindings() map[string]string {
 	return map[string]string{
 		"CLUSTER_NAME":                   pathClusterName,
+		"NKECTL_INFRASTRUCTURE":          pathInfrastructure,
 		"CLUSTER_K8S_VERSION":            pathK8sVersion,
 		"CLUSTER_CNI_NAME":               pathCniName,
 		"CLUSTER_CNI_VERSION":            pathCniVersion,
@@ -309,6 +397,7 @@ func envBindings() map[string]string {
 		"NVKECTL_SPIFFE_TRUST_DOMAIN":    pathSpireTrustDomain,
 		"SPIRE_CA_CERT_FILE":             pathSpireCACertFile,
 		"SPIRE_CA_KEY_FILE":              pathSpireCAKeyFile,
+		"NKECTL_SPIRE_EXTERNAL_ADDRESS":  pathSpireExternalAddress,
 	}
 }
 
@@ -423,6 +512,9 @@ func parseNodesEnv(s string) ([]map[string]string, error) {
 // it can be supplied explicitly (flag or environment variable) rather than
 // silently falling back to a shared default.
 func (inv *SiteSpec) SetDefaults() {
+	if inv.Infrastructure == "" {
+		inv.Infrastructure = InfrastructureProvisioned
+	}
 	if inv.Cluster.NodeAgentPort == "" {
 		inv.Cluster.NodeAgentPort = DefaultNodeAgentPort
 	}
@@ -452,7 +544,7 @@ func (inv *SiteSpec) Validate() error {
 // caller that runs more than one check set still reports one aggregated error.
 func (inv *SiteSpec) appendDataChecks(v *validator) {
 	v.checkClusterName(inv.ClusterName)
-	v.checkNodes(inv.Cluster)
+	v.checkInfrastructure(inv)
 	v.checkK8sVersion(inv.Cluster.K8sVersion)
 	v.checkCNI(inv.Cluster.CniName)
 	v.checkCIDR(pathPodCidr, inv.Cluster.PodCidr, true)
@@ -463,6 +555,7 @@ func (inv *SiteSpec) appendDataChecks(v *validator) {
 	v.checkRegistry(inv.Registry)
 	v.checkSpire(inv.Spire)
 	v.checkOIDCProviders(inv.Cluster)
+	v.checkSpireExternalAddress(inv)
 }
 
 // ValidateReferences checks that the files the site spec names can be read,
@@ -506,6 +599,93 @@ func (v *validator) checkClusterName(name string) {
 		v.addf("clusterName is required")
 	case !dnsLabelRE.MatchString(name):
 		v.addf("clusterName %q must be a lowercase RFC 1123 label (letters, digits, hyphens)", name)
+	}
+}
+
+// checkInfrastructure validates the choice of infrastructure and then the
+// block that choice makes mandatory. The other block must be absent: a file
+// that lists both a hardcoded list and a NICo site is ambiguous about which it
+// means, and silently ignoring one would hide a mistake.
+func (v *validator) checkInfrastructure(inv *SiteSpec) {
+	// Empty means the default, so a SiteSpec that never went through SetDefaults
+	// validates the way one that did would.
+	infrastructure := inv.Infrastructure
+	if infrastructure == "" {
+		infrastructure = InfrastructureProvisioned
+	}
+	switch infrastructure {
+	case InfrastructureProvisioned:
+		if inv.Cluster.Nico != nil {
+			v.addf("%s is only valid with %s: %q", pathNico, pathInfrastructure, InfrastructureNico)
+		}
+		v.checkNodes(inv.Cluster)
+	case InfrastructureNico:
+		if len(inv.Cluster.Nodes) > 0 {
+			v.addf("%s must be empty with %s: %q; the nodes are allocated, not listed",
+				pathNodes, pathInfrastructure, InfrastructureNico)
+		}
+		v.checkNico(inv.Cluster.Nico)
+	default:
+		v.addf("%s %q is not supported (one of: %s, %s)",
+			pathInfrastructure, inv.Infrastructure, InfrastructureProvisioned, InfrastructureNico)
+	}
+}
+
+// checkNico validates the NICo block. It checks shape only: whether an ID names
+// something that exists is NICo's to say.
+func (v *validator) checkNico(n *NicoCluster) {
+	if n == nil {
+		v.addf("%s is required with %s: %q", pathNico, pathInfrastructure, InfrastructureNico)
+		return
+	}
+	if n.NodeCount < 1 {
+		v.addf("%s.nodeCount must be at least 1", pathNico)
+	} else if n.NodeCount%2 == 0 {
+		v.addf("%s.nodeCount must be an odd number", pathNico)
+	}
+	if n.OrgID == "" {
+		v.addf("%s.orgID is required", pathNico)
+	}
+	v.checkUUID(pathNico+".siteID", n.SiteID)
+	v.checkUUID(pathNico+".vpcID", n.VpcID)
+	if len(n.InstanceTypePreference) == 0 {
+		v.addf("%s.instanceTypePreference must list at least one instance type ID", pathNico)
+	}
+	v.checkUUIDs(pathNico+".instanceTypePreference", n.InstanceTypePreference)
+	v.checkUUIDs(pathNico+".vpcPrefixIDs", n.VpcPrefixIDs)
+	v.checkUUIDs(pathNico+".subnetIDs", n.SubnetIDs)
+	if len(n.SSHKeyGroupIDs) == 0 {
+		v.addf("%s.sshKeyGroupIDs must list at least one SSH key group ID", pathNico)
+	}
+	v.checkUUIDs(pathNico+".sshKeyGroupIDs", n.SSHKeyGroupIDs)
+	switch {
+	case len(n.VpcPrefixIDs) == 0 && len(n.SubnetIDs) == 0:
+		v.addf("%s must set one of vpcPrefixIDs (native networking) or subnetIDs", pathNico)
+	case len(n.VpcPrefixIDs) > 0 && len(n.SubnetIDs) > 0:
+		v.addf("%s must set only one of vpcPrefixIDs and subnetIDs", pathNico)
+	}
+	if n.OSProfile == "" {
+		v.addf("%s.osProfile is required", pathNico)
+	}
+	if n.ConfigProfile == "" {
+		v.addf("%s.configProfile is required", pathNico)
+	}
+}
+
+func (v *validator) checkUUID(path, value string) {
+	switch {
+	case value == "":
+		v.addf("%s is required", path)
+	case !uuidRE.MatchString(value):
+		v.addf("%s %q is not a UUID", path, value)
+	}
+}
+
+func (v *validator) checkUUIDs(path string, values []string) {
+	for i, value := range values {
+		if !uuidRE.MatchString(value) {
+			v.addf("%s[%d] %q is not a UUID", path, i, value)
+		}
 	}
 }
 
@@ -798,6 +978,37 @@ func (v *validator) checkSpire(s Spire) {
 	case s.CAKeyFile == "":
 		v.addf("%s is required when %s is set: SPIRE needs the key to sign with, "+
 			"not just the certificate to chain to", pathSpireCAKeyFile, pathSpireCACertFile)
+	}
+}
+
+// checkSpireExternalAddress requires the address nodes reach SPIRE on when
+// CAPNICo creates them, and refuses it otherwise so a value that nothing reads
+// is not mistaken for one that does.
+func (v *validator) checkSpireExternalAddress(inv *SiteSpec) {
+	address := inv.Spire.ExternalAddress
+	if inv.Infrastructure != InfrastructureNico {
+		if address != "" {
+			v.addf("%s is only valid with %s: %q", pathSpireExternalAddress, pathInfrastructure, InfrastructureNico)
+		}
+		return
+	}
+	if address == "" {
+		v.addf("%s is required with %s: %q: nodes created by CAPNICo need an address that reaches "+
+			"the bootstrap host's SPIRE server", pathSpireExternalAddress, pathInfrastructure, InfrastructureNico)
+		return
+	}
+	if ip, err := netip.ParseAddr(address); err == nil {
+		// Loopback and the unspecified address mean nothing from another machine.
+		if !ip.IsGlobalUnicast() {
+			v.addf("%s %q must be a routable unicast address", pathSpireExternalAddress, address)
+		}
+		return
+	}
+	for _, label := range strings.Split(address, ".") {
+		if len(label) == 0 || len(label) > 63 || !dnsLabelRE.MatchString(label) {
+			v.addf("%s %q must be an IP address or a lowercase DNS name", pathSpireExternalAddress, address)
+			return
+		}
 	}
 }
 

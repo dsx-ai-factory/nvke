@@ -310,3 +310,116 @@ func TestClusterRequest_ForwardsVIPMatchingNodeIP(t *testing.T) {
 		})
 	}
 }
+
+func nicoSiteSpec() *sitespec.SiteSpec {
+	inv := testSiteSpec()
+	inv.Infrastructure = sitespec.InfrastructureNico
+	inv.Cluster.Nodes = nil
+	inv.Cluster.Nico = &sitespec.NicoCluster{
+		NodeCount:              3,
+		OrgID:                  "example-org",
+		SiteID:                 "00000000-0000-0000-0000-000000000001",
+		VpcID:                  "00000000-0000-0000-0000-000000000002",
+		InstanceTypePreference: []string{"00000000-0000-0000-0000-000000000003", "00000000-0000-0000-0000-000000000006"},
+		VpcPrefixIDs:           []string{"00000000-0000-0000-0000-000000000004"},
+		SSHKeyGroupIDs:         []string{"00000000-0000-0000-0000-000000000005"},
+		OSProfile:              "example-os-profile",
+		ConfigProfile:          "example-config-profile",
+	}
+	return inv
+}
+
+// TestClusterRequest_NicoIsAForgeCluster pins what makes CWE treat the request
+// as a NICo cluster: a nico payload, no infra payload, and the control-plane
+// count taken from the spec's nodeCount.
+func TestClusterRequest_NicoIsAForgeCluster(t *testing.T) {
+	req, err := ClusterRequest(nicoSiteSpec())
+	if err != nil {
+		t.Fatalf("ClusterRequest: %v", err)
+	}
+
+	if req.Infra != nil {
+		t.Errorf("infra = %#v, want nil: CWE rejects both payloads together", req.Infra)
+	}
+	if req.Nico == nil || req.Nico.OrgID != "example-org" ||
+		req.Nico.SiteID.String() != "00000000-0000-0000-0000-000000000001" ||
+		req.Nico.VpcID.String() != "00000000-0000-0000-0000-000000000002" {
+		t.Errorf("nico = %#v, want the org, site and VPC from the spec", req.Nico)
+	}
+
+	cp := req.ControlPlaneConfig
+	if cp == nil {
+		t.Fatal("controlPlaneConfig is nil")
+	}
+	if cp.DesiredCount != 3 {
+		t.Errorf("desiredCount = %d, want 3", cp.DesiredCount)
+	}
+	if cp.Infra != nil {
+		t.Errorf("controlPlaneConfig.infra = %#v, want nil", cp.Infra)
+	}
+	if cp.Nico == nil {
+		t.Fatal("controlPlaneConfig.nico is nil")
+	}
+	if got := len(cp.Nico.InstanceTypePreference); got != 2 {
+		t.Fatalf("instanceTypePreference has %d entries, want 2", got)
+	}
+	if cp.Nico.InstanceTypePreference[0].String() != "00000000-0000-0000-0000-000000000003" {
+		t.Errorf("instanceTypePreference[0] = %s, want the first listed type to stay first",
+			cp.Nico.InstanceTypePreference[0])
+	}
+	if cp.Nico.OSProfile != "example-os-profile" || cp.Nico.ConfigProfile != "example-config-profile" {
+		t.Errorf("profiles = %q/%q, want the spec's", cp.Nico.OSProfile, cp.Nico.ConfigProfile)
+	}
+	if cp.SystemReservedMemory != "512Mi" {
+		t.Errorf("systemReservedMemory = %q, want the shared kubelet setting", cp.SystemReservedMemory)
+	}
+}
+
+// TestClusterRequest_SharedSettingsMatchAcrossInfrastructure guards the promise
+// that only where machines come from differs between the two modes.
+func TestClusterRequest_SharedSettingsMatchAcrossInfrastructure(t *testing.T) {
+	provisioned, err := ClusterRequest(testSiteSpec())
+	if err != nil {
+		t.Fatalf("provisioned: %v", err)
+	}
+	nico, err := ClusterRequest(nicoSiteSpec())
+	if err != nil {
+		t.Fatalf("nico: %v", err)
+	}
+
+	if provisioned.Name != nico.Name ||
+		provisioned.ControlPlaneKubernetesVersion != nico.ControlPlaneKubernetesVersion ||
+		provisioned.CniPlugin != nico.CniPlugin ||
+		provisioned.EtcdEncrypted != nico.EtcdEncrypted ||
+		*provisioned.CniVersion != *nico.CniVersion ||
+		provisioned.Network.PodCIDR != nico.Network.PodCIDR ||
+		provisioned.ControlPlaneConfig.DesiredCount != nico.ControlPlaneConfig.DesiredCount {
+		t.Errorf("shared settings differ:\nprovisioned: %#v\nnico: %#v", provisioned, nico)
+	}
+}
+
+func TestClusterRequest_NicoRejectsInvalidSpecs(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*sitespec.SiteSpec)
+		wantErr string
+	}{
+		{"missing nico block", func(inv *sitespec.SiteSpec) { inv.Cluster.Nico = nil }, "cluster.nico"},
+		{"bad site UUID", func(inv *sitespec.SiteSpec) { inv.Cluster.Nico.SiteID = "not-a-uuid" }, "cluster.nico.siteID"},
+		{"bad VPC UUID", func(inv *sitespec.SiteSpec) { inv.Cluster.Nico.VpcID = "not-a-uuid" }, "cluster.nico.vpcID"},
+		{
+			"bad instance type UUID",
+			func(inv *sitespec.SiteSpec) { inv.Cluster.Nico.InstanceTypePreference[1] = "not-a-uuid" },
+			"cluster.nico.instanceTypePreference[1]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv := nicoSiteSpec()
+			tt.mutate(inv)
+			if _, err := ClusterRequest(inv); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("ClusterRequest error = %v, want one naming %s", err, tt.wantErr)
+			}
+		})
+	}
+}

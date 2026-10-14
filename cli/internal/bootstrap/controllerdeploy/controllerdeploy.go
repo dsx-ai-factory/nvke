@@ -137,6 +137,16 @@ const (
 	//
 	DefaultCWEPort int32 = 30080
 
+	// tpmPubhashesConfigMap is the ConfigMap CWE keeps the TPM allowlist in. The
+	// name is CWE's default (SPIRE_TPM_PUBHASHES_CONFIG_MAP_NAME) and has to
+	// match it.
+	tpmPubhashesConfigMap = "tpm-pubhashes"
+	tpmPubhashesVolume    = "tpm-pubhashes"
+
+	// tpmHashesMountPath is the directory the chart points the TPM attestor's
+	// hash_path at when it is given no static hashes.
+	tpmHashesMountPath = "/run/spire/data/tpm-direct/hashes"
+
 	// SPIREServerNodePort is the fixed NodePort used by the bootstrap SPIRE server.
 	SPIREServerNodePort int32 = 30081
 
@@ -224,6 +234,13 @@ type Config struct {
 	// attest are outside the cluster, and a ClusterIP is not a route they have.
 	TPMEKFingerprints []string
 
+	// SPIREExternalAddress is the address nodes created by CAPNICo use to reach
+	// the SPIRE server. CWE writes it into each node's userdata, so it has to
+	// work from outside the cluster; the in-cluster name the provisioned path
+	// uses does not. Required with NicoInfrastructure, and always paired with
+	// SPIREServerNodePort.
+	SPIREExternalAddress string
+
 	// DisableMTLS stands the site up without SPIFFE: no SPIRE is installed, and
 	// the controller dials each node agent in plaintext. The agent has to be running with
 	// --disable-mtls for that to connect.
@@ -242,7 +259,26 @@ type Config struct {
 	// pulled, because the bootstrap cluster has no pull secret.
 	ProvisionedProviderImage string
 
-	// NodeAgentPort is the port the controller dials nvke-agent on. Empty leaves the controller's own
+	// NicoInfrastructure installs CAPNICo as the infrastructure provider, in
+	// place of cluster-api-provider-provisioned: the site's machines are
+	// allocated from a NICo site instead of taken from a hardcoded host list.
+	NicoInfrastructure bool
+
+	// NicoCredentialsFile is a file of KEY=VALUE lines that becomes the
+	// nico-credentials Secret CAPNICo reads. Required with NicoInfrastructure.
+	// The keys are CAPNICo's own, documented in its getting-started guide; this
+	// package does not interpret them.
+	NicoCredentialsFile string
+
+	// CAPNICoChartRef is where helm pulls the CAPNICo chart from, as an OCI
+	// reference or a local path. Empty uses the bootstrap manifest's chart.
+	CAPNICoChartRef string
+
+	// CAPNICoVersion is the CAPNICo chart version. Empty uses the version the
+	// bootstrap manifest pins.
+	CAPNICoVersion string
+
+	// NodeAgentPort is the port CWE dials nke-agent on. Empty leaves CWE's own
 	// default (15005) alone. It comes from the site spec, because it describes
 	// how the site's hosts were configured long before this cluster existed.
 	NodeAgentPort string
@@ -280,6 +316,14 @@ type Config struct {
 	SPIRECRDsChartRef string
 }
 
+// TPMAttestorEnabled reports whether the bootstrap SPIRE server attests hosts
+// by TPM, and so is published to hosts outside the cluster. That is the case
+// when the site spec listed endorsement-key thumbprints, or when CAPNICo creates
+// the nodes and CWE learns their keys as it allocates them.
+func (c Config) TPMAttestorEnabled() bool {
+	return !c.DisableMTLS && (len(c.TPMEKFingerprints) > 0 || c.NicoInfrastructure)
+}
+
 // DefaultConfig reads the package's knobs from the environment, mirroring
 // bootstrapengine.DefaultConfig's env-driven shape.
 func DefaultConfig() Config {
@@ -291,8 +335,10 @@ func DefaultConfig() Config {
 		// it below.
 		SPIFFETrustDomain: getenv("NVKECTL_SPIFFE_TRUST_DOMAIN"),
 
-		ProvisionedProviderImage: envOr("NVKECTL_CAPI_PROVISIONED_IMAGE", defaultImage(manifest.ComponentProvisioned, manifest.ImageManager)),
-		CWEPort:                  envPort("NVKECTL_CONTROLLER_PORT", DefaultCWEPort),
+		ProvisionedProviderImage: envOr("NKECTL_CAPI_PROVISIONED_IMAGE", defaultImage(manifest.ComponentProvisioned, manifest.ImageManager)),
+		CWEPort:                  envPort("NKECTL_CONTROLLER_PORT", DefaultCWEPort),
+		CAPNICoChartRef:          os.Getenv("NKECTL_CAPNICO_CHART"),
+		CAPNICoVersion:           os.Getenv("NKECTL_CAPNICO_VERSION"),
 
 		HelmTimeout:  envDuration("NVKECTL_CONTROLLER_HELM_TIMEOUT", 5*time.Minute),
 		ReadyTimeout: envDuration("NVKECTL_CONTROLLER_READY_TIMEOUT", 5*time.Minute),
@@ -404,9 +450,14 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return errors.New("controllerdeploy: Config.CWEImage is required " +
 			"(e.g. nvcr.io/<org>/nvke-controller:edge -- see .github/workflows/image-nvcr.yml)")
 	}
-	if cfg.ProvisionedProviderImage == "" {
-		return errors.New("controllerdeploy: Config.ProvisionedProviderImage is required; the CAPI " +
-			"objects the NVKE controller writes for a site cluster go unreconciled without it " +
+	if cfg.NicoInfrastructure && !cfg.DisableMTLS && cfg.SPIREExternalAddress == "" {
+		return errors.New("cwedeploy: Config.SPIREExternalAddress is required with NicoInfrastructure; " +
+			"nodes created by CAPNICo read the SPIRE server's address from their userdata, " +
+			"and the in-cluster name does not reach them")
+	}
+	if cfg.ProvisionedProviderImage == "" && !cfg.NicoInfrastructure {
+		return errors.New("cwedeploy: Config.ProvisionedProviderImage is required; the CAPI " +
+			"objects CWE writes for a site cluster have no controller without it " +
 			"(see Config.ProvisionedProviderImage)")
 	}
 
@@ -550,7 +601,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 
 		// Only external TPM nodes need the NodePort. The controller and the in-cluster agents
 		// use SPIRE's ClusterIP service.
-		if len(cfg.TPMEKFingerprints) > 0 {
+		if cfg.TPMAttestorEnabled() {
 			if err := e.publishSpireExternally(ctx, kubeconfigPath); err != nil {
 				return err
 			}
@@ -598,9 +649,9 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,
 		"--set-string", "spiffe.spire.className=" + spireControllerManagerClass,
-		"--set-string", "spiffe.spire.serverAddress=" + spireServiceHost(),
-		"--set-string", "spiffe.spire.serverPort=" + spireServerPort,
-		"--set-string", "supportedInfraProviders=infra",
+		"--set-string", "spiffe.spire.serverAddress=" + spireNodeAddress(cfg),
+		"--set-string", "spiffe.spire.serverPort=" + spireNodePort(cfg),
+		"--set-string", "supportedInfraProviders=" + supportedInfraProviders(cfg),
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
 	}
 	cweArgs = append(cweArgs, cweEnvArgs(cfg)...)
@@ -851,7 +902,28 @@ func effectiveCWEPort(cfg Config) int32 {
 	return cfg.CWEPort
 }
 
-// spireServiceHost is the in-cluster address the controller dials the SPIRE server on.
+// spireNodeAddress and spireNodePort are where CWE tells nodes to find SPIRE.
+// Only the node userdata CWE renders reads them; CWE does not dial them itself.
+//
+// Hosts that already exist were given the address when they were provisioned, so
+// the in-cluster name is only a placeholder for them. Nodes CAPNICo creates have
+// nothing but this userdata, so they get the address and NodePort the bootstrap
+// publishes the server on.
+func spireNodeAddress(cfg Config) string {
+	if cfg.NicoInfrastructure {
+		return cfg.SPIREExternalAddress
+	}
+	return spireServiceHost()
+}
+
+func spireNodePort(cfg Config) string {
+	if cfg.NicoInfrastructure {
+		return strconv.Itoa(int(SPIREServerNodePort))
+	}
+	return spireServerPort
+}
+
+// spireServiceHost is the in-cluster address CWE dials the SPIRE server on.
 // The Service is named after the release.
 func spireServiceHost() string {
 	return spireReleaseName + "-server." + spireNamespace + ".svc.cluster.local"
@@ -885,6 +957,16 @@ func manifestChart(component string) (manifest.Chart, error) {
 		return manifest.Chart{}, fmt.Errorf("controllerdeploy: the embedded bootstrap manifest pins no chart for %q", component)
 	}
 	return *comp.Chart, nil
+}
+
+// supportedInfraProviders is the provider payload CWE accepts on CreateCluster.
+// The site cluster's request carries exactly one of them, and CWE rejects the
+// other, so it has to match what the bootstrap sends.
+func supportedInfraProviders(cfg Config) string {
+	if cfg.NicoInfrastructure {
+		return "nico"
+	}
+	return "infra"
 }
 
 // chartArgs returns the chart half of a `helm upgrade --install`: the override
@@ -939,18 +1021,41 @@ func spireInstallArgs(cfg Config, chart manifest.Chart, valuesPath, clusterName,
 // Reaching the server from outside is a separate concern, handled by
 // spire-server-nodeport.yaml rather than by the chart's own Service.
 func tpmAttestorArgs(cfg Config, prefix string) []string {
-	if len(cfg.TPMEKFingerprints) == 0 {
+	if !cfg.TPMAttestorEnabled() {
 		return nil
 	}
 	args := []string{"--set", prefix + ".nodeAttestor.tpmDirect.enabled=true"}
 	if checksum := SpireTPMDirectChecksum(runtime.GOARCH); checksum != "" {
 		args = append(args, "--set-string", prefix+".nodeAttestor.tpmDirect.checksum="+checksum)
 	}
+	if len(cfg.TPMEKFingerprints) == 0 {
+		return append(args, tpmDynamicAllowlistArgs(prefix)...)
+	}
 	for i, fingerprint := range cfg.TPMEKFingerprints {
 		args = append(args, "--set-string",
 			fmt.Sprintf("%s.nodeAttestor.tpmDirect.hashes[%d]=%s", prefix, i, fingerprint))
 	}
 	return args
+}
+
+// tpmDynamicAllowlistArgs mounts the ConfigMap CWE keeps the allowlist in on the
+// directory the TPM attestor reads.
+//
+// The chart reads its own static hashes list or this directory, never both, so
+// this is for a bootstrap with no thumbprints to list: CAPNICo reports each
+// machine's key as it allocates the machine, and CWE adds it to the ConfigMap.
+// The attestor looks the key up on every attestation, so an entry takes effect
+// as soon as the kubelet syncs the ConfigMap into the pod. Optional, so the
+// server starts before CWE has written it.
+func tpmDynamicAllowlistArgs(prefix string) []string {
+	return []string{
+		"--set-string", prefix + ".extraVolumes[0].name=" + tpmPubhashesVolume,
+		"--set-string", prefix + ".extraVolumes[0].configMap.name=" + tpmPubhashesConfigMap,
+		"--set", prefix + ".extraVolumes[0].configMap.optional=true",
+		"--set-string", prefix + ".extraVolumeMounts[0].name=" + tpmPubhashesVolume,
+		"--set-string", prefix + ".extraVolumeMounts[0].mountPath=" + tpmHashesMountPath,
+		"--set", prefix + ".extraVolumeMounts[0].readOnly=true",
+	}
 }
 
 // SpireTPMDirectChecksum returns the sha256 of the TPM attestor server plugin

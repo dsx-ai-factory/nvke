@@ -1226,10 +1226,21 @@ func TestRemovedSettings(t *testing.T) {
 // the embedded bootstrap manifest pins, and every chart the manifest pins is
 // pulled. Identities live in the manifest alone; this test fails when either
 // side gains or loses a chart.
+//
+// Both infrastructures are deployed, because each pulls a chart the other does
+// not: CAPNICo comes only with infrastructure nico.
 func TestDeploy_ChartsMatchTheBootstrapManifest(t *testing.T) {
-	runner := &fakeRunner{}
-	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
-		t.Fatalf("Deploy returned error: %v", err)
+	// No version override: the point is what Deploy pulls by default.
+	nico := nicoTestConfig(t)
+	nico.CAPNICoVersion = ""
+
+	var calls []string
+	for _, cfg := range []Config{testConfig(t), nico} {
+		runner := &fakeRunner{}
+		if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+			t.Fatalf("Deploy returned error: %v", err)
+		}
+		calls = append(calls, helmCalls(runner)...)
 	}
 
 	pinned := map[string]manifest.Chart{}
@@ -1240,20 +1251,26 @@ func TestDeploy_ChartsMatchTheBootstrapManifest(t *testing.T) {
 	}
 
 	pulled := 0
-	for _, call := range helmCalls(runner) {
-		if !strings.Contains(call, " --repo ") {
-			continue // embedded charts install from a path and pull nothing
+	for _, call := range calls {
+		// A chart is pulled from a repo (--repo) or by an OCI reference; embedded
+		// charts install from a path and pull nothing.
+		if !strings.Contains(call, " --repo ") && !strings.Contains(call, " oci://") {
+			continue
 		}
 		pulled++
 		matched := false
 		for name, chart := range pinned {
-			if hasArgs(call, chart.Name, "--repo", chart.Repo) && hasArgs(call, "--version", chart.Version) {
+			fromRepo := hasArgs(call, chart.Name, "--repo", chart.Repo)
+			fromOCI := strings.HasPrefix(chart.Repo, "oci://") && hasArgs(call, strings.TrimRight(chart.Repo, "/")+"/"+chart.Name)
+			if (fromRepo || fromOCI) && hasArgs(call, "--version", chart.Version) {
 				delete(pinned, name)
 				matched = true
 				break
 			}
 		}
-		if !matched {
+		// Both deployments pull the same charts, so a second sighting of one that
+		// is already matched is not a chart the manifest lacks.
+		if !matched && !matchesAnyChart(call) {
 			t.Errorf("Deploy pulls a chart the bootstrap manifest does not pin: %q", call)
 		}
 	}
@@ -1263,6 +1280,23 @@ func TestDeploy_ChartsMatchTheBootstrapManifest(t *testing.T) {
 	if pulled == 0 {
 		t.Fatal("no pulled charts found; the assertion matched nothing")
 	}
+}
+
+// matchesAnyChart reports whether call pulls a chart the manifest pins, whether
+// or not it was already seen.
+func matchesAnyChart(call string) bool {
+	for _, comp := range manifest.Load().Components {
+		chart := comp.Chart
+		if chart == nil {
+			continue
+		}
+		fromRepo := hasArgs(call, chart.Name, "--repo", chart.Repo)
+		fromOCI := strings.HasPrefix(chart.Repo, "oci://") && hasArgs(call, strings.TrimRight(chart.Repo, "/")+"/"+chart.Name)
+		if (fromRepo || fromOCI) && hasArgs(call, "--version", chart.Version) {
+			return true
+		}
+	}
+	return false
 }
 
 // testSpireChart is the SPIRE chart as the embedded bootstrap manifest pins it.

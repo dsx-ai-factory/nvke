@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/manifest"
 )
 
 // capiVersion is injected by cli/Makefile from CAPI_VERSION in
@@ -27,6 +29,17 @@ const (
 	// these; see cluster-api-provider-provisioned/config.
 	provisionedNamespace  = "provisioned-system"
 	provisionedDeployment = "provisioned-controller-manager"
+
+	// capnicoNamespace is where the CAPNICo chart installs its manager. The
+	// chart creates it, so it must not exist beforehand.
+	capnicoNamespace = "capnico-system"
+
+	// capnicoReleaseName is the Helm release name for CAPNICo.
+	capnicoReleaseName = "capi-provider-nico"
+
+	// nicoCredentialsSecret is the Secret CAPNICo reads its NICo API
+	// credentials from.
+	nicoCredentialsSecret = "nico-credentials"
 
 	// provisionedDefaultImage is the image reference config/manager/manager.yaml
 	// carries. It is a placeholder: no image is published under it. The install
@@ -55,11 +68,74 @@ func (e *Engine) installCAPI(ctx context.Context, kubeconfigPath string, cfg Con
 	if err := e.installCAPICore(ctx, kubeconfigPath); err != nil {
 		return err
 	}
+	// The two infrastructure providers are alternatives, not a pair: a site's
+	// machines come from the hardcoded host list or from NICo, never both.
+	if cfg.NicoInfrastructure {
+		return e.installCAPNICo(ctx, kubeconfigPath, cfg, timeout)
+	}
 	if cfg.ProvisionedProviderImage == "" {
 		e.log.Info("provisioned infrastructure provider image not configured; skipping provider install")
 		return nil
 	}
 	return e.installProvisionedProvider(ctx, kubeconfigPath, cfg, timeout)
+}
+
+// installCAPNICo installs the CAPNICo Helm chart and then the NICo credentials
+// it reads.
+//
+// The credentials come after the chart because the chart creates the
+// capnico-system namespace unconditionally and fails with an ownership error if
+// it already exists.
+func (e *Engine) installCAPNICo(ctx context.Context, kubeconfigPath string, cfg Config, timeout time.Duration) error {
+	if cfg.NicoCredentialsFile == "" {
+		return errors.New("cwedeploy: Config.NicoCredentialsFile is required to install CAPNICo; " +
+			"it names a file of KEY=VALUE lines that becomes the " + nicoCredentialsSecret + " Secret")
+	}
+	chart, err := manifestChart(manifest.ComponentCAPNICo)
+	if err != nil {
+		return err
+	}
+	// An OCI chart's reference is its repository and name joined; the overrides
+	// replace each half, as Config.*ChartRef does for the other charts.
+	chartRef := cfg.CAPNICoChartRef
+	if chartRef == "" {
+		chartRef = strings.TrimRight(chart.Repo, "/") + "/" + chart.Name
+	}
+	version := cfg.CAPNICoVersion
+	if version == "" {
+		version = chart.Version
+	}
+
+	e.log.Info("installing CAPNICo", "namespace", capnicoNamespace, "chart", chartRef, "version", version)
+	if _, err := e.helm(ctx, kubeconfigPath,
+		"upgrade", "--install", capnicoReleaseName, chartRef,
+		"--version", version,
+		"--namespace", capnicoNamespace, "--create-namespace",
+		"--wait", "--timeout", timeout.String(),
+	); err != nil {
+		// The chart is an OCI artifact, which Helm 3 cannot install.
+		return fmt.Errorf("cwedeploy: installing CAPNICo: %w\n"+
+			"the CAPNICo chart needs helm v4 or later and network access to ghcr.io", err)
+	}
+
+	// A kept bootstrap cluster re-run finds the Secret from the earlier run, and
+	// `kubectl create` refuses to replace it.
+	if _, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", capnicoNamespace, "get", "secret", nicoCredentialsSecret); err == nil {
+		if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"-n", capnicoNamespace, "delete", "secret", nicoCredentialsSecret); err != nil {
+			return fmt.Errorf("cwedeploy: replacing the %s Secret: %w\n%s", nicoCredentialsSecret, err, out)
+		}
+	}
+	// --from-env-file passes the path, not the values, so no credential
+	// appears in a process listing or in the output of a failed command.
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", capnicoNamespace, "create", "secret", "generic", nicoCredentialsSecret,
+		"--from-env-file="+cfg.NicoCredentialsFile); err != nil {
+		return fmt.Errorf("cwedeploy: creating the %s Secret from %s: %w\n%s",
+			nicoCredentialsSecret, cfg.NicoCredentialsFile, err, out)
+	}
+	return nil
 }
 
 // installCAPICore runs `clusterctl init` for CAPI core and the kubeadm

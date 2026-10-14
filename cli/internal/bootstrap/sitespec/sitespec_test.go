@@ -844,3 +844,232 @@ func TestControlPlaneSchedulable(t *testing.T) {
 		t.Error("ControlPlaneSchedulable() = false for a site spec with no worker nodes, want true")
 	}
 }
+
+const nicoYAML = `
+clusterName: nke-site
+infrastructure: nico
+cluster:
+  nico:
+    nodeCount: 3
+    orgID: example-org
+    siteID: 00000000-0000-0000-0000-000000000001
+    vpcID: 00000000-0000-0000-0000-000000000002
+    instanceTypePreference:
+      - 00000000-0000-0000-0000-000000000003
+    vpcPrefixIDs:
+      - 00000000-0000-0000-0000-000000000004
+    sshKeyGroupIDs:
+      - 00000000-0000-0000-0000-000000000005
+    osProfile: example-os-profile
+    configProfile: example-config-profile
+  k8sVersion: "1.34.2"
+  cniName: ovn-kubernetes
+  podCidr: "10.100.0.0/16"
+  serviceCidr: "10.200.0.0/16"
+spire:
+  externalAddress: 192.0.2.10
+registry:
+  bootstrapRepo: "nvcr.io/org"
+  bootstrapChart: "controller-chart"
+`
+
+func TestLoadInfrastructureFromEnv(t *testing.T) {
+	t.Setenv("NKECTL_INFRASTRUCTURE", "nico")
+	// The file lists nodes; the variable asks for nico, so the spec is
+	// contradictory and must fail rather than quietly pick one.
+	_, err := Load(writeTemp(t, validYAML))
+	if err == nil || !strings.Contains(err.Error(), "cluster.nodes must be empty") {
+		t.Fatalf("Load error = %v, want one about cluster.nodes", err)
+	}
+}
+
+func TestValidate_Infrastructure(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*SiteSpec)
+		wantErr string // empty means the spec must validate
+	}{
+		{
+			name:   "provisioned list is valid",
+			mutate: func(*SiteSpec) {},
+		},
+		{
+			name:    "unknown infrastructure",
+			mutate:  func(inv *SiteSpec) { inv.Infrastructure = "aws" },
+			wantErr: `infrastructure "aws" is not supported`,
+		},
+		{
+			name: "nico block with provisioned infrastructure",
+			mutate: func(inv *SiteSpec) {
+				inv.Cluster.Nico = &NicoCluster{}
+			},
+			wantErr: "cluster.nico is only valid with infrastructure",
+		},
+		{
+			name: "nico without a nico block",
+			mutate: func(inv *SiteSpec) {
+				inv.Infrastructure = InfrastructureNico
+				inv.Cluster.Nodes = nil
+			},
+			wantErr: "cluster.nico is required",
+		},
+		{
+			name: "nico with a node list",
+			mutate: func(inv *SiteSpec) {
+				inv.Infrastructure = InfrastructureNico
+				inv.Cluster.Nico = validNico()
+			},
+			wantErr: "cluster.nodes must be empty",
+		},
+		{
+			name: "nico is valid",
+			mutate: func(inv *SiteSpec) {
+				inv.Infrastructure = InfrastructureNico
+				inv.Cluster.Nodes = nil
+				inv.Cluster.Nico = validNico()
+				inv.Spire.ExternalAddress = "192.0.2.10"
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv := minimalValid()
+			tt.mutate(inv)
+			err := inv.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidate_NicoCluster(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*NicoCluster)
+		wantErr string
+	}{
+		{"zero nodes", func(n *NicoCluster) { n.NodeCount = 0 }, "nodeCount must be at least 1"},
+		{"even nodes", func(n *NicoCluster) { n.NodeCount = 2 }, "nodeCount must be an odd number"},
+		{"missing org", func(n *NicoCluster) { n.OrgID = "" }, "orgID is required"},
+		{"bad site", func(n *NicoCluster) { n.SiteID = "nope" }, `siteID "nope" is not a UUID`},
+		{"missing vpc", func(n *NicoCluster) { n.VpcID = "" }, "vpcID is required"},
+		{"no instance types", func(n *NicoCluster) { n.InstanceTypePreference = nil }, "instanceTypePreference must list"},
+		{"bad instance type", func(n *NicoCluster) { n.InstanceTypePreference = []string{"x"} }, "instanceTypePreference[0]"},
+		{"no ssh key groups", func(n *NicoCluster) { n.SSHKeyGroupIDs = nil }, "sshKeyGroupIDs must list"},
+		{"no networking", func(n *NicoCluster) { n.VpcPrefixIDs = nil }, "one of vpcPrefixIDs"},
+		{
+			"both networkings",
+			func(n *NicoCluster) { n.SubnetIDs = []string{"00000000-0000-0000-0000-000000000009"} },
+			"only one of vpcPrefixIDs and subnetIDs",
+		},
+		{"missing os profile", func(n *NicoCluster) { n.OSProfile = "" }, "osProfile is required"},
+		{"missing config profile", func(n *NicoCluster) { n.ConfigProfile = "" }, "configProfile is required"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv := minimalValid()
+			inv.Infrastructure = InfrastructureNico
+			inv.Cluster.Nodes = nil
+			inv.Cluster.Nico = validNico()
+			inv.Spire.ExternalAddress = "192.0.2.10"
+			tt.mutate(inv.Cluster.Nico)
+			err := inv.Validate()
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func validNico() *NicoCluster {
+	return &NicoCluster{
+		NodeCount:              3,
+		OrgID:                  "example-org",
+		SiteID:                 "00000000-0000-0000-0000-000000000001",
+		VpcID:                  "00000000-0000-0000-0000-000000000002",
+		InstanceTypePreference: []string{"00000000-0000-0000-0000-000000000003"},
+		VpcPrefixIDs:           []string{"00000000-0000-0000-0000-000000000004"},
+		SSHKeyGroupIDs:         []string{"00000000-0000-0000-0000-000000000005"},
+		OSProfile:              "example-os-profile",
+		ConfigProfile:          "example-config-profile",
+	}
+}
+
+func TestLoadInfrastructure(t *testing.T) {
+	tests := []struct {
+		name            string
+		yaml            string
+		wantInfra       string
+		wantNico        bool
+		wantCPNodeCount int
+	}{
+		{"unset defaults to provisioned and counts the listed nodes", validYAML, InfrastructureProvisioned, false, 3},
+		{"nico counts nico.nodeCount", nicoYAML, InfrastructureNico, true, 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv, err := Load(writeTemp(t, tt.yaml))
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if inv.Infrastructure != tt.wantInfra {
+				t.Errorf("Infrastructure = %q, want %q", inv.Infrastructure, tt.wantInfra)
+			}
+			if inv.IsNico() != tt.wantNico {
+				t.Errorf("IsNico() = %t, want %t", inv.IsNico(), tt.wantNico)
+			}
+			if got := inv.ControlPlaneCount(); got != tt.wantCPNodeCount {
+				t.Errorf("ControlPlaneCount() = %d, want %d", got, tt.wantCPNodeCount)
+			}
+		})
+	}
+}
+
+func TestValidate_SpireExternalAddress(t *testing.T) {
+	tests := []struct {
+		name    string
+		nico    bool
+		address string
+		wantErr string // empty means the spec must validate
+	}{
+		{"nico with an IPv4 address", true, "192.0.2.10", ""},
+		{"nico with an IPv6 address", true, "2001:db8::10", ""},
+		{"nico with a DNS name", true, "bootstrap.example.com", ""},
+		{"nico without an address", true, "", "spire.externalAddress is required"},
+		{"nico with loopback", true, "127.0.0.1", "routable unicast"},
+		{"nico with the unspecified address", true, "0.0.0.0", "routable unicast"},
+		{"nico with an upper-case name", true, "Bootstrap.Example.com", "IP address or a lowercase DNS name"},
+		{"nico with a name carrying a port", true, "bootstrap.example.com:30081", "IP address or a lowercase DNS name"},
+		{"provisioned without an address", false, "", ""},
+		{"provisioned with an address nothing would read", false, "192.0.2.10", "only valid with infrastructure"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv := minimalValid()
+			if tt.nico {
+				inv.Infrastructure = InfrastructureNico
+				inv.Cluster.Nodes = nil
+				inv.Cluster.Nico = validNico()
+			}
+			inv.Spire.ExternalAddress = tt.address
+
+			err := inv.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}

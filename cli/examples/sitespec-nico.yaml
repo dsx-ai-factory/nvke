@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Example site spec for: nkectl bootstrap site -f <sitespec-file>
+# with the control-plane machines allocated from a NICo site by CAPNICo,
+# instead of taken from a hardcoded list of hosts (examples/sitespec.yaml).
+#
+# Needs NICo API credentials, supplied at run time and never in this file:
+#   nkectl bootstrap site -f sitespec-nico.yaml --nico-credentials-file nico.env
+# See docs/sitespec.md for the file format.
+#
+# Every ID below is site-specific. Replace all of them. An instance type with no
+# allocation looks healthy and provisions nothing.
+
+clusterName: "nke-site"
+
+# "provisioned" (the default) reads cluster.nodes. "nico" reads cluster.nico.
+infrastructure: nico
+
+cluster:
+  nico:
+    # Same meaning as the length of cluster.nodes: odd, at least one.
+    nodeCount: 3
+    orgID: "example-org"
+    siteID: "00000000-0000-0000-0000-000000000000"
+    vpcID: "00000000-0000-0000-0000-000000000000"
+    # Ordered; index 0 is the first choice.
+    instanceTypePreference:
+      - "00000000-0000-0000-0000-000000000000"
+    # Exactly one of vpcPrefixIDs (native networking) or subnetIDs.
+    vpcPrefixIDs:
+      - "00000000-0000-0000-0000-000000000000"
+    sshKeyGroupIDs:
+      - "00000000-0000-0000-0000-000000000000"
+    osProfile: "example-os-profile"
+    configProfile: "example-cp-profile"
+
+  k8sVersion: "1.34.2"
+  cniName: "ovn-kubernetes"
+  podCidr: "192.168.0.0/16"
+  serviceCidr: "10.96.0.0/12"
+  kubeletConfig:
+    systemReservedMemory: "16Gi"
+
+# The address the nodes use to reach the bootstrap host's SPIRE server (NodePort
+# 30081), as seen from the network they are created on. An IP address or DNS name.
+spire:
+  externalAddress: "192.0.2.10"
+
+registry:
+  bootstrapRepo: "nvcr.io/org"
+  bootstrapChart: "controller-chart"

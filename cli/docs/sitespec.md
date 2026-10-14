@@ -57,6 +57,69 @@ listed below, so a generated file never carries a value nobody typed. Every
 field is validated before anything is written, so a file this command produces
 is a file `bootstrap site` accepts.
 
+## Where the machines come from
+
+By default the file lists the hosts (`cluster.nodes`) and the bootstrap builds
+the cluster on them. Setting `infrastructure: nico` swaps that list for
+`cluster.nico`: CAPNICo allocates the same number of control-plane machines from
+a NICo site, configured by the profiles the block names. Everything else in the
+file means what it did. [`examples/sitespec-nico.yaml`](../examples/sitespec-nico.yaml)
+is a complete example.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `infrastructure` | string | no | `provisioned` (default) or `nico`. `NKECTL_INFRASTRUCTURE` overrides it. |
+| `cluster.nico.nodeCount` | int | with `nico` | Odd, at least 1. Takes the place of the length of `cluster.nodes`. |
+| `cluster.nico.orgID` | string | with `nico` | NGC organization that owns the cluster. |
+| `cluster.nico.siteID`, `vpcID` | UUID | with `nico` | The NICo site and the VPC the cluster is created in. |
+| `cluster.nico.instanceTypePreference` | UUID list | with `nico` | Ordered; index 0 is the first choice. |
+| `cluster.nico.vpcPrefixIDs` / `subnetIDs` | UUID list | with `nico` | Exactly one of the two: native networking or not. |
+| `cluster.nico.sshKeyGroupIDs` | UUID list | with `nico` | At least one. |
+| `cluster.nico.osProfile`, `configProfile` | string | with `nico` | Profile names served by the site. |
+| `spire.externalAddress` | string | with `nico` | IP address or DNS name nodes use to reach the bootstrap host's SPIRE server, on NodePort 30081. See below. |
+
+`cluster.nodes` must be empty with `nico`, and `cluster.nico` must be absent
+with `provisioned`; a file that names both is rejected rather than half-obeyed.
+
+With `nico` the nodes' names and addresses are results, not inputs, and are
+printed once the nodes join.
+
+TODO: need to implement this for nico mode. Until then, read them from the
+finished cluster (`kubectl get nodes -o wide`).
+
+### SPIRE with NICo nodes
+
+Nodes are attested by TPM, as on a site of listed hosts, but the allowlist is
+not in the file. A host's endorsement key cannot be known before the machine
+exists, so there is no per-node `tpmEkThumbprint` to write. CAPNICo reports each
+machine's key when NICo allocates it, and CWE adds it to the allowlist the
+bootstrap SPIRE server reads (the `tpm-pubhashes` ConfigMap in `spire-server`).
+A node attests once that entry has synced into the SPIRE pod, which can take up
+to about a minute; its agent retries until then.
+
+CWE writes the SPIRE server's address into each node's userdata, so it has to be
+one a node can reach before any cluster exists. Set `spire.externalAddress` to
+the address of the host running the bootstrap, as seen from the network the nodes
+are created on. The bootstrap publishes the server there on NodePort 30081.
+Setting `spire.externalAddress` with `provisioned` is rejected: those hosts were
+given their SPIRE address when they were provisioned.
+
+### NICo credentials
+
+CAPNICo needs credentials for the NICo API. They are not in the file, which is
+meant to be committed. Pass `--nico-credentials-file` (or set
+`NKECTL_NICO_CREDENTIALS_FILE`) to a file of `KEY=VALUE` lines; it becomes the
+`nico-credentials` Secret in `capnico-system`. The keys are CAPNICo's own — see
+[its getting-started guide](https://github.com/dsx-ai-factory/cluster-api-provider-nico/blob/main/docs/getting-started.md#3-get-a-machine-usable-credential).
+
+The bootstrap installs CAPNICo into its Kind cluster from the public Helm chart
+(`helm` v4 or later, and network access to `ghcr.io`). The chart and its version
+are pinned in the bootstrap manifest (`nkectl get bootstrap-manifest`).
+`NKECTL_CAPNICO_CHART` and `NKECTL_CAPNICO_VERSION` override the chart reference
+and version. The Kind host
+must reach the NICo API and each new node's agent port, and the nodes must
+reach the SPIRE server the bootstrap publishes on the host.
+
 ## Schema
 
 | Field | Type | Required | Notes |
@@ -181,7 +244,8 @@ A set variable takes precedence over the file value.
 | `NVKECTL_SPIFFE_TRUST_DOMAIN` | `spire.trustDomain` |
 | `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
 | `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
-| `NVKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
+| `NKECTL_SPIRE_EXTERNAL_ADDRESS` | `spire.externalAddress` |
+| `NKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
 
 A malformed `NVKECTL_CLUSTER_NODES` entry fails the load rather than being
 silently discarded.

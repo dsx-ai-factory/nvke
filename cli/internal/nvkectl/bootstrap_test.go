@@ -1783,7 +1783,45 @@ func TestControllerImageOrder(t *testing.T) {
 	}
 }
 
-// TestRunBootstrapSiteWarnsAboutOldSettingNames: an old NKECTL_* name set
+// TestRequiredNicoCredentials
+// if external nico is being used, ensure the credentials are present
+func TestRequireNicoCredentials(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "nico.env")
+	if err := os.WriteFile(file, []byte("endpoint=https://nico.example\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nico := &sitespec.SiteSpec{Infrastructure: sitespec.InfrastructureNico}
+	provisioned := &sitespec.SiteSpec{Infrastructure: sitespec.InfrastructureProvisioned}
+
+	tests := []struct {
+		name    string
+		inv     *sitespec.SiteSpec
+		path    string
+		wantErr string
+	}{
+		{"provisioned needs nothing", provisioned, "", ""},
+		{"nico with a readable file", nico, file, ""},
+		{"nico without a file", nico, "", "--nico-credentials-file"},
+		{"nico with a missing file", nico, filepath.Join(t.TempDir(), "absent"), "NICo credentials file"},
+		{"nico with a directory", nico, t.TempDir(), "is a directory"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := requireNicoCredentials(tt.inv, tt.path)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("requireNicoCredentials: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestRunBootstrapSiteWarnsAboutOldSettingNames: an old NKECTL_CWE_* name set
 // without its replacement is logged as a warning naming the replacement, before
 // anything else runs; a setting under its new name is not.
 func TestRunBootstrapSiteWarnsAboutOldSettingNames(t *testing.T) {
@@ -1892,6 +1930,25 @@ func TestRunBootstrapSiteStopsOnRemovedSettings(t *testing.T) {
 			}
 			if tc.wantWarning != "" && !strings.Contains(logged, tc.wantWarning) {
 				t.Errorf("no warning %q in:\n%s", tc.wantWarning, logged)
+			}
+		})
+	}
+}
+
+func TestCWEImages(t *testing.T) {
+	tests := []struct {
+		name string
+		nico bool
+		want []string
+	}{
+		{"provisioned loads both images", false, []string{"cwe:1", "prov:1"}},
+		{"nico loads only the CWE image", true, []string{"cwe:1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := cwedeploy.Config{CWEImage: "cwe:1", ProvisionedProviderImage: "prov:1", NicoInfrastructure: tt.nico}
+			if got := cweImages(cfg); !slices.Equal(got, tt.want) {
+				t.Errorf("cweImages = %v, want %v", got, tt.want)
 			}
 		})
 	}

@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-func TestLoad_PinsTheThreePulledCharts(t *testing.T) {
+func TestLoad_PinsThePulledCharts(t *testing.T) {
 	m := Load()
-	for _, c := range []string{ComponentTemporal, ComponentSPIRECRDs, ComponentSPIRE} {
+	for _, c := range []string{ComponentTemporal, ComponentSPIRECRDs, ComponentSPIRE, ComponentCAPNICo} {
 		comp, ok := m.Components[c]
 		if !ok || comp.Chart == nil {
 			t.Fatalf("component %q has no chart", c)
