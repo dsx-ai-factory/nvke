@@ -7,9 +7,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -19,8 +23,22 @@ import (
 // and it does so silently.
 var version = "dev"
 
+// commandTimeout bounds the whole command, most relevantly the GCS calls
+// `qualify publish` makes through cmd.Context(). plan and result are local
+// file I/O and do not read the context at all, so this only ever caps a
+// stalled network call (a hung TLS handshake, a silent partition) from
+// blocking indefinitely instead of erroring -- well above any realistic
+// publish, which uploads at most three small files with its own bounded
+// retry/backoff.
+const commandTimeout = 2 * time.Minute
+
 func main() {
-	if err := root().Execute(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+
+	if err := root().ExecuteContext(ctx); err != nil {
 		// Cobra has already printed usage errors. Anything else is ours and
 		// is printed here, once.
 		var silent silentError
