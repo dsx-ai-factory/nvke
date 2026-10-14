@@ -23,6 +23,7 @@ func resultCmd() *cobra.Command {
 		stream      string
 		output      string
 		root        string
+		startedAt   string
 	)
 
 	cmd := &cobra.Command{
@@ -41,7 +42,11 @@ come from the Ginkgo report, not a second re-derivation from JUnit.
 If --report is missing or unreadable (the suite never ran -- a Forge
 provisioning failure, a wedged runner), this still writes a Result: FAIL,
 with a summary saying so, rather than erroring. A run that fails this early
-still needs a red entry in TestGrid, not silence.
+still needs a red entry in TestGrid, not silence. On that path, StartedAt
+comes from --started-at if the workflow passed one (the job's own start
+time), since there is no Ginkgo report to read it from; FinishedAt is still
+` + "`qualify result`" + `'s own run time, which is accurate -- that is genuinely
+when the failure was discovered.
 
 Type comes from the subject's own qualification.yaml (spec.type).`,
 		Args:         cobra.NoArgs,
@@ -71,7 +76,16 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 				return fmt.Errorf("%s: spec.type is empty, so this result would not say what kind of thing it qualified", qualification.SubjectPath(root, p.Subject))
 			}
 
-			resultState, summary, startedAt, finishedAt := "FAIL", "", time.Now().UTC(), time.Now().UTC()
+			infraFailureStart := time.Now().UTC()
+			if startedAt != "" {
+				t, err := time.Parse(time.RFC3339, startedAt)
+				if err != nil {
+					return fmt.Errorf("--started-at: %w", err)
+				}
+				infraFailureStart = t.UTC()
+			}
+
+			resultState, summary, runStartedAt, runFinishedAt := "FAIL", "", infraFailureStart, time.Now().UTC()
 			ginkgoReport, err := loadGinkgoReport(report)
 			switch {
 			case err != nil:
@@ -81,7 +95,7 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 				fallthrough
 			default:
 				summary = summarizeGinkgoReport(ginkgoReport)
-				startedAt, finishedAt = ginkgoReport.StartTime, ginkgoReport.EndTime
+				runStartedAt, runFinishedAt = ginkgoReport.StartTime, ginkgoReport.EndTime
 			}
 
 			result := qualification.NewResult(
@@ -90,8 +104,8 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 					Type:         subject.Spec.Type,
 					Version:      p.Version,
 					Dependencies: combo.Dependencies,
-					StartedAt:    startedAt,
-					FinishedAt:   finishedAt,
+					StartedAt:    runStartedAt,
+					FinishedAt:   runFinishedAt,
 					Identity:     identityFromEnv(),
 				},
 				qualification.ResultCombination{
@@ -119,6 +133,7 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 	f.StringVar(&stream, "stream", "", "the stream name this leg ran (required)")
 	f.StringVar(&output, "output", "-", "where to write the result, - is stdout")
 	f.StringVar(&root, "root", "", "repository root (default: the enclosing git checkout)")
+	f.StringVar(&startedAt, "started-at", "", "RFC3339 time the job started, used as StartedAt only when --report is missing or unreadable (default: now, which is a near-zero-duration guess)")
 
 	for _, name := range []string{"plan", "report", "combination", "stream"} {
 		_ = cmd.MarkFlagRequired(name)

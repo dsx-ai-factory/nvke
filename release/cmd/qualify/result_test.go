@@ -204,6 +204,54 @@ func TestResultCmdReportsInfrastructureFailureOnMissingReport(t *testing.T) {
 	}
 }
 
+// When --started-at is passed, the infra-failure path's StartedAt is the
+// job's own start time, not the moment `qualify result` happened to run --
+// there is no Ginkgo report to read it from otherwise.
+func TestResultCmdInfrastructureFailureUsesStartedAtFlag(t *testing.T) {
+	root, plan := resultTestRoot(t)
+	jobStart := time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC)
+
+	stdout, err := runResultCmd(t,
+		"--root", root,
+		"--plan", plan,
+		"--report", filepath.Join(t.TempDir(), "does-not-exist.json"),
+		"--combination", "cli-v1.0.0",
+		"--stream", "amd64-1.34",
+		"--started-at", jobStart.Format(time.RFC3339),
+		"--output", "-",
+	)
+	if err != nil {
+		t.Fatalf("RunE returned an error, want a written FAIL result: %v", err)
+	}
+
+	var result qualification.Result
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Spec.StartedAt.Equal(jobStart) {
+		t.Errorf("startedAt = %v, want the --started-at value %v", result.Spec.StartedAt, jobStart)
+	}
+	if !result.Spec.FinishedAt.After(jobStart) {
+		t.Errorf("finishedAt = %v, want it after startedAt (still qualify result's own run time)", result.Spec.FinishedAt)
+	}
+}
+
+func TestResultCmdRejectsMalformedStartedAt(t *testing.T) {
+	root, plan := resultTestRoot(t)
+
+	_, err := runResultCmd(t,
+		"--root", root,
+		"--plan", plan,
+		"--report", filepath.Join(t.TempDir(), "does-not-exist.json"),
+		"--combination", "cli-v1.0.0",
+		"--stream", "amd64-1.34",
+		"--started-at", "not-a-timestamp",
+	)
+	if err == nil || !strings.Contains(err.Error(), "--started-at") {
+		t.Errorf("err = %v, want it to name --started-at", err)
+	}
+}
+
 func TestResultCmdRejectsUnknownCombination(t *testing.T) {
 	root, plan := resultTestRoot(t)
 	report := writeGinkgoReport(t, true)
