@@ -15,6 +15,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -104,11 +105,18 @@ type meta struct {
 }
 
 // Publish writes started.json, a copy of the JUnit report, then finished.json
-// (in that order -- finished.json is never written unless the JUnit evidence
-// behind it uploaded successfully) under a build prefix derived from result's
+// (in that order -- finished.json is never written unless everything ahead of
+// it uploaded successfully) under a build prefix derived from result's
 // combination and stream. Capabilities (gpu/kube/arch/ubuntu) come from
 // result's own Status.Combinations[0].Streams[0].Capabilities, stamped there
 // by `qualify result` -- not looked up separately.
+//
+// junitPath may not exist: a run that never produced a Ginkgo report (a Forge
+// provisioning failure, a wedged runner) has no JUnit either, and `qualify
+// result` already wrote a FAIL record with an infrastructure-failure summary
+// for exactly that case. Publish still uploads started.json/finished.json so
+// that record reaches TestGrid instead of silently never publishing; it just
+// skips the junit.xml artifact, since there is genuinely nothing to upload.
 func (d *Destination) Publish(ctx context.Context, result *qualification.Result, junitPath string) error {
 	combo := result.Status.Combinations[0]
 	stream := combo.Streams[0]
@@ -153,11 +161,16 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 	}
 
 	junitBytes, err := os.ReadFile(junitPath)
-	if err != nil {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		// Nothing ran, so there is nothing to upload -- the FAIL record
+		// above already carries why.
+	case err != nil:
 		return fmt.Errorf("reading JUnit report: %w", err)
-	}
-	if err := d.Uploader.Upload(ctx, prefix+"artifacts/junit.xml", junitBytes, "application/xml"); err != nil {
-		return fmt.Errorf("uploading junit.xml: %w", err)
+	default:
+		if err := d.Uploader.Upload(ctx, prefix+"artifacts/junit.xml", junitBytes, "application/xml"); err != nil {
+			return fmt.Errorf("uploading junit.xml: %w", err)
+		}
 	}
 
 	resultStr := "SUCCESS"

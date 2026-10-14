@@ -169,15 +169,6 @@ func TestPublishCmdRejectsStreamMismatch(t *testing.T) {
 	}
 }
 
-func TestPublishCmdRejectsMissingJUnit(t *testing.T) {
-	resultPath := writeFile(t, "qualify-result.json", publishTestResult)
-
-	_, err := runPublishCmd(t, publishArgs(t, resultPath, filepath.Join(t.TempDir(), "does-not-exist.xml"), "cli-v1.0.0", "amd64-1.34")...)
-	if err == nil || !strings.Contains(err.Error(), "JUnit report") {
-		t.Errorf("err = %v, want it to name the JUnit report", err)
-	}
-}
-
 func TestBuildDestinationRejectsUnknownDestination(t *testing.T) {
 	_, _, err := buildDestination(nil, "not-a-real-destination", "staging") //nolint:staticcheck // ctx unused before the error path
 	if err == nil || !strings.Contains(err.Error(), "unknown --destination") {

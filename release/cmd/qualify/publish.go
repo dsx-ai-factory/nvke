@@ -32,8 +32,11 @@ func publishCmd() *cobra.Command {
 		Long: `Ship one stream's qualification result to a destination.
 
 Reads the Result at --result and the JUnit report at --junit and ships them
-to --destination. testgrid is the only destination today; --destination
-exists so a second one is additive rather than a rewrite.
+to --destination. --junit may point at a file that does not exist -- a run
+that never produced a report has no JUnit either, and the Result alone still
+carries the infrastructure-failure verdict. testgrid is the only destination
+today; --destination exists so a second one is additive rather than a
+rewrite.
 
 Does not read plan.json: the Result record already carries this leg's
 Stream.Capabilities (gpu/kube and similar), stamped there by ` + "`qualify result`" + `,
@@ -58,9 +61,6 @@ so routing is built from the record itself.`,
 			if combo.Streams[0].Name != stream {
 				return fmt.Errorf("--stream=%s does not match the result record's stream %q", stream, combo.Streams[0].Name)
 			}
-			if _, err := os.Stat(junitPath); err != nil {
-				return fmt.Errorf("JUnit report: %w", err)
-			}
 
 			dest, closeDest, err := buildDestination(cmd.Context(), destination, bucket)
 			if err != nil {
@@ -80,7 +80,7 @@ so routing is built from the record itself.`,
 
 	f := cmd.Flags()
 	f.StringVar(&resultPath, "result", "", "path to the qualify-result.json this leg wrote (required)")
-	f.StringVar(&junitPath, "junit", "", "path to the qualify-e2e.junit.xml this leg wrote (required)")
+	f.StringVar(&junitPath, "junit", "", "path to the qualify-e2e.junit.xml this leg wrote, if any (required)")
 	f.StringVar(&combination, "combination", "", "the combination id being published (required)")
 	f.StringVar(&stream, "stream", "", "the stream name being published (required)")
 	f.StringVar(&destination, "destination", "testgrid", "where to publish: testgrid")

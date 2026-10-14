@@ -282,6 +282,33 @@ func TestPublishUploadsInOrderWithTheRightPaths(t *testing.T) {
 	}
 }
 
+// A run that never produced a Ginkgo report has no JUnit file either -- the
+// FAIL record `qualify result` already wrote still needs to reach TestGrid,
+// so Publish must not error just because the artifact it would have carried
+// never existed.
+func TestPublishSkipsJUnitWhenMissing(t *testing.T) {
+	result := publishTestResult(t, false)
+	junitPath := filepath.Join(t.TempDir(), "does-not-exist.xml")
+	uploader := &fakeUploader{}
+	d := &Destination{Uploader: uploader}
+
+	if err := d.Publish(context.Background(), result, junitPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(uploader.calls) != 2 {
+		t.Fatalf("got %d uploads, want 2 (started.json, finished.json)", len(uploader.calls))
+	}
+	for _, call := range uploader.calls {
+		if strings.Contains(call.path, "junit") {
+			t.Errorf("uploaded %q, want no junit.xml artifact when the file does not exist", call.path)
+		}
+	}
+	if !strings.HasSuffix(uploader.calls[0].path, "started.json") || !strings.HasSuffix(uploader.calls[1].path, "finished.json") {
+		t.Errorf("uploads = %v, want started.json then finished.json", uploader.calls)
+	}
+}
+
 func TestPublishFinishedJSONReflectsPassFail(t *testing.T) {
 	for _, tc := range []struct {
 		passed     bool
