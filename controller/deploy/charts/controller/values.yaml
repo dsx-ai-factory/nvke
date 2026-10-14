@@ -169,12 +169,22 @@ identity:
   # -- Value written under the nke.nvidia.com/managed-by label on objects this
   # controller owns, and the value the tenant Secret reconciler filters on.
   managedByLabelValue: "cloud-workflow-engine"
+  # -- Key domain of the labels, annotations, taints and node conditions the
+  # controller writes. Empty means nke.nvidia.com. Objects that still carry
+  # nke.nvidia.com keys are read as well, so changing this relabels nothing by
+  # itself. Pass the same value to capnico as --topology-label-domain so it
+  # writes the matching instance labels.
+  labelDomain: ""
 
 # nkeSystemNamespace is the older name for nvkeSystemNamespace. It is absent
 # here on purpose: the guard in _helpers.tpl keys off its presence, so setting
 # it at all fails the render naming the new key, rather than letting Helm drop
 # an unknown key silently and fall back to the nvkeSystemNamespace defaults.
 nvkeSystemNamespace:
+  # -- Name of the shared management-plane namespace. Empty means nke-system. An
+  # existing site keeps nke-system: Secrets already in the old namespace are not
+  # read from the new one.
+  name: ""
   # -- Create the shared nke-system namespace. The object always carries
   # helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and
   # argocd.argoproj.io/sync-options: Prune=false,Delete=false so an Argo prune or

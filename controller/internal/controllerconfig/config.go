@@ -24,6 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	kjson "sigs.k8s.io/json"
 	"sigs.k8s.io/yaml"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // Config is the top-level shape of nke-controller-config's config.yaml key. It
@@ -36,6 +38,8 @@ type Config struct {
 	AgentReadiness                   AgentReadinessConfig `json:"agentReadiness"`
 	FieldManager                     FieldManagerConfig   `json:"fieldManager"`
 	ManagedByLabelValue              string               `json:"managedByLabelValue"`
+	LabelDomain                      string               `json:"labelDomain"`
+	ManagementNamespace              string               `json:"managementNamespace"`
 	MetricsListenAddress             string               `json:"metricsListenAddress"`
 	SupportedInfraProviders          []string             `json:"supportedInfraProviders"`
 	NodeMetadataAllowlistedLabelKeys []string             `json:"nodeMetadataAllowlistedLabelKeys"`
@@ -55,6 +59,13 @@ type Config struct {
 	Spire                            SpireConfig          `json:"spire"`
 	Teleport                         TeleportConfig       `json:"teleport"`
 	PermissiveMode                   bool                 `json:"permissiveMode"`
+}
+
+// Keys builds the label, annotation, taint and condition keys, and the
+// management namespace, from LabelDomain and ManagementNamespace. Empty values
+// are today's literals. Build it once at startup and thread it through.
+func (c *Config) Keys() keys.Keys {
+	return keys.New(c.LabelDomain, c.ManagementNamespace)
 }
 
 // FieldManagerConfig groups the Server-Side-Apply field manager names, mirroring
@@ -302,6 +313,10 @@ func (c *Config) Validate() error {
 
 	if err := c.OIDC.validate(); err != nil {
 		return fmt.Errorf("oidc: %w", err)
+	}
+
+	if err := keys.Validate(c.LabelDomain, c.ManagementNamespace); err != nil {
+		return err
 	}
 
 	if c.Spire.JoinTokenTTL.Duration <= 0 {

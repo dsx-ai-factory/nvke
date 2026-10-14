@@ -12,6 +12,15 @@ Expand the name of the chart.
 {{- end }}
 
 {{/*
+The shared management-plane namespace. nvkeSystemNamespace.name is the one
+source for the Namespace and for the Roles and RoleBindings in it. The
+controller reads the same value from its config (managementNamespace).
+*/}}
+{{- define "controller.managementNamespace" -}}
+{{- .Values.nvkeSystemNamespace.name | default "nke-system" -}}
+{{- end }}
+
+{{/*
 Allow the release namespace to be overridden for multi-namespace deployments in combined charts
 */}}
 {{- define "controller.namespace" -}}
@@ -177,7 +186,7 @@ values.yaml so that presence only ever comes from the caller. Emits nothing.
 */}}
 {{- define "controller.renamedValues.validate" -}}
 {{- if hasKey .Values "nkeSystemNamespace" -}}
-{{- fail "nkeSystemNamespace was renamed to nvkeSystemNamespace and is no longer read. Move its settings (create, annotations) under nvkeSystemNamespace." -}}
+{{- fail "nkeSystemNamespace was renamed to nvkeSystemNamespace and is no longer read. Move its settings (name, create, annotations) under nvkeSystemNamespace." -}}
 {{- end -}}
 {{- if hasKey .Values "nkeOIDCAuth" -}}
 {{- fail "nkeOIDCAuth was renamed to nvkeOIDCAuth and is no longer read. Move its settings (enabled, tenantRbacName, issuerURL, discoveryURL, caBundleSecret) under nvkeOIDCAuth." -}}

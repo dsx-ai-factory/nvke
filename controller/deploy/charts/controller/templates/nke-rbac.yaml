@@ -22,7 +22,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: nke-system
+  name: {{ include "controller.managementNamespace" . }}
   annotations:
     helm.sh/resource-policy: keep
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
@@ -99,7 +99,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: nke-rbac
-  namespace: nke-system
+  namespace: {{ include "controller.managementNamespace" . }}
   labels:
     {{- include "controller.labels" . | nindent 4 }}
 data:
