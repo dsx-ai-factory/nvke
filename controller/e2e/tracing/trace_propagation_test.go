@@ -243,10 +243,14 @@ func assertTrace(t *testing.T, ended []sdktrace.ReadOnlySpan, traceID string, cl
 	t.Helper()
 	counts := map[string]int{}
 	byName := map[string]sdktrace.ReadOnlySpan{}
+	var sqlSpans []string
 	for _, span := range ended {
 		if span.SpanContext().TraceID().String() == traceID {
 			counts[span.Name()]++
 			byName[span.Name()] = span
+			if hasQueryAttribute(span) {
+				sqlSpans = append(sqlSpans, span.Name())
+			}
 		}
 	}
 	enqueueSpanName := string(otelx.WorkflowEnqueue)
@@ -277,9 +281,20 @@ func assertTrace(t *testing.T, ended []sdktrace.ReadOnlySpan, traceID string, cl
 	}
 	require.Equal(t, attempts, counts["RunActivity:ReadCluster"], "%v", counts)
 	// Per-query SQL spans need tracing.enabled, which is off here.
-	for name := range counts {
-		require.False(t, strings.HasPrefix(name, "SELECT") || strings.HasPrefix(name, "INSERT"), "SQL span %s with export off: %v", name, counts)
+	require.Empty(t, sqlSpans, "per-query SQL spans with export off: %v", counts)
+}
+
+// hasQueryAttribute reports whether span describes a SQL query. The bun hook
+// sets db.statement and db.operation on every query span, whatever its SQL
+// operation; other db.* attributes, such as db.user, also appear on spans that
+// are not queries.
+func hasQueryAttribute(span sdktrace.ReadOnlySpan) bool {
+	for _, attr := range span.Attributes() {
+		if key := string(attr.Key); key == "db.statement" || key == "db.operation" {
+			return true
+		}
 	}
+	return false
 }
 
 // assertLogs checks the structured logs written under the request's trace ID:
