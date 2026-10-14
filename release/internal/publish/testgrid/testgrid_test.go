@@ -42,62 +42,43 @@ func testResult(subject, combinationID, streamName, runID, runAttempt string, ca
 }
 
 func TestBuildPrefix(t *testing.T) {
-	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"gpu": "h100", "kube": "1.34"})
-	d := &Destination{Environment: "staging"}
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
+	d := &Destination{}
 
 	got, err := d.buildPrefix(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "groups/forge-non-prod/h100-v1.34-nvke-e2e/amd64-1.34/12345-" + shortHash("cli-v1.0.0") + "/"
+	want := "groups/forge-prod/h100-v1.34-nvke-e2e/amd64-1.34/12345-" + shortHash("cli-v1.0.0") + "/"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
 func TestBuildPrefixRunAttemptIsAppendedToBuild(t *testing.T) {
-	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "2", map[string]string{"gpu": "h100", "kube": "1.34"})
-	d := &Destination{Environment: "staging"}
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "2", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
+	d := &Destination{}
 
 	got, err := d.buildPrefix(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "groups/forge-non-prod/h100-v1.34-nvke-e2e/amd64-1.34/12345-2-" + shortHash("cli-v1.0.0") + "/"
+	want := "groups/forge-prod/h100-v1.34-nvke-e2e/amd64-1.34/12345-2-" + shortHash("cli-v1.0.0") + "/"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
-func TestBuildPrefixGroupReflectsEnvironment(t *testing.T) {
-	for _, tc := range []struct {
-		environment string
-		wantGroup   string
-	}{
-		{"staging", "forge-non-prod"},
-		{"prod", "forge-prod"},
-	} {
-		t.Run(tc.environment, func(t *testing.T) {
-			result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"gpu": "h100", "kube": "1.34"})
-			d := &Destination{Environment: tc.environment}
+func TestBuildPrefixGroupUsesCapabilitiesProvider(t *testing.T) {
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "some-other-provider", "gpu": "h100", "kube": "1.34"})
+	d := &Destination{}
 
-			got, err := d.buildPrefix(result)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if group := strings.Split(got, "/")[1]; group != tc.wantGroup {
-				t.Errorf("group is %q, want %q", group, tc.wantGroup)
-			}
-		})
+	got, err := d.buildPrefix(result)
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestBuildPrefixRejectsUnknownEnvironment(t *testing.T) {
-	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"gpu": "h100", "kube": "1.34"})
-	d := &Destination{Environment: "dev"}
-
-	if _, err := d.buildPrefix(result); err == nil {
-		t.Fatal("buildPrefix returned nil, want an error for an unknown environment")
+	if group := strings.Split(got, "/")[1]; group != "some-other-provider-prod" {
+		t.Errorf("group is %q, want %q", group, "some-other-provider-prod")
 	}
 }
 
@@ -106,16 +87,17 @@ func TestBuildPrefixRejectsMissingCapabilities(t *testing.T) {
 		name         string
 		capabilities map[string]string
 	}{
-		{"no gpu", map[string]string{"kube": "1.34"}},
-		{"no kube", map[string]string{"gpu": "h100"}},
+		{"no provider", map[string]string{"gpu": "h100", "kube": "1.34"}},
+		{"no gpu", map[string]string{"provider": "forge", "kube": "1.34"}},
+		{"no kube", map[string]string{"provider": "forge", "gpu": "h100"}},
 		{"no capabilities at all", map[string]string{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", tc.capabilities)
-			d := &Destination{Environment: "staging"}
+			d := &Destination{}
 
 			if _, err := d.buildPrefix(result); err == nil {
-				t.Fatal("buildPrefix returned nil, want an error for missing gpu/kube")
+				t.Fatal("buildPrefix returned nil, want an error for missing provider/gpu/kube")
 			}
 		})
 	}
@@ -125,8 +107,8 @@ func TestBuildPrefixRejectsMissingCapabilities(t *testing.T) {
 // dashboard naming, or every result published here silently never appears in
 // the TestGrid UI while still sitting in the bucket.
 func TestBuildPrefixDashboardMatchesConfigGenNewFormat(t *testing.T) {
-	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"gpu": "h100", "kube": "1.34"})
-	d := &Destination{Environment: "staging"}
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
+	d := &Destination{}
 
 	prefix, err := d.buildPrefix(result)
 	if err != nil {
@@ -147,8 +129,8 @@ func TestBuildPrefixDashboardMatchesConfigGenNewFormat(t *testing.T) {
 // land at different build paths. Before combination was folded into build,
 // these collided and silently overwrote each other's evidence.
 func TestBuildPrefixDoesNotCollideAcrossCombinations(t *testing.T) {
-	capabilities := map[string]string{"gpu": "h100", "kube": "1.34"}
-	d := &Destination{Environment: "staging"}
+	capabilities := map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"}
+	d := &Destination{}
 
 	a, err := d.buildPrefix(testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", capabilities))
 	if err != nil {
@@ -223,7 +205,7 @@ func publishTestResult(t *testing.T, passed bool) *qualification.Result {
 					Result: resultState,
 					RunURL: "https://github.com/dsx-ai-factory/nvke/actions/runs/12345",
 					Capabilities: map[string]string{
-						"gpu": "h100", "kube": "1.34", "arch": "amd64", "ubuntu": "24.04",
+						"provider": "forge", "gpu": "h100", "kube": "1.34", "arch": "amd64", "ubuntu": "24.04",
 					},
 				}},
 			}},
@@ -238,7 +220,7 @@ func TestPublishUploadsInOrderWithTheRightPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	uploader := &fakeUploader{}
-	d := &Destination{Uploader: uploader, Environment: "staging"}
+	d := &Destination{Uploader: uploader}
 
 	if err := d.Publish(context.Background(), result, junitPath); err != nil {
 		t.Fatal(err)
@@ -277,7 +259,7 @@ func TestPublishFinishedJSONReflectsPassFail(t *testing.T) {
 				t.Fatal(err)
 			}
 			uploader := &fakeUploader{}
-			d := &Destination{Uploader: uploader, Environment: "staging"}
+			d := &Destination{Uploader: uploader}
 
 			if err := d.Publish(context.Background(), result, junitPath); err != nil {
 				t.Fatal(err)
@@ -307,7 +289,7 @@ func TestPublishMetadataFlattensCapabilitiesAndFixesReleaseStream(t *testing.T) 
 		t.Fatal(err)
 	}
 	uploader := &fakeUploader{}
-	d := &Destination{Uploader: uploader, Environment: "staging"}
+	d := &Destination{Uploader: uploader}
 
 	if err := d.Publish(context.Background(), result, junitPath); err != nil {
 		t.Fatal(err)
@@ -348,7 +330,7 @@ func TestPublishPropagatesBuildPrefixErrors(t *testing.T) {
 	result.Status.Combinations[0].Streams[0].Capabilities = nil // no gpu/kube
 	junitPath := filepath.Join(t.TempDir(), "qualify-e2e.junit.xml")
 	uploader := &fakeUploader{}
-	d := &Destination{Uploader: uploader, Environment: "staging"}
+	d := &Destination{Uploader: uploader}
 
 	if err := d.Publish(context.Background(), result, junitPath); err == nil {
 		t.Fatal("Publish returned nil, want an error from buildPrefix")

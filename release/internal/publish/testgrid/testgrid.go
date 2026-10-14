@@ -27,13 +27,9 @@ type Uploader interface {
 	Upload(ctx context.Context, path string, data []byte, contentType string) error
 }
 
-// Destination is the TestGrid Destination. Environment picks the group's
-// {provider}-{env} suffix (non-prod/prod) -- it must match whatever bucket
-// Uploader actually writes to, so it is set alongside Uploader at
-// construction, not re-derived.
+// Destination is the TestGrid Destination.
 type Destination struct {
-	Uploader    Uploader
-	Environment string
+	Uploader Uploader
 }
 
 // Name is the --destination value that selects this Destination.
@@ -50,10 +46,6 @@ type finished struct {
 	Result    string `json:"result"`
 	Metadata  meta   `json:"metadata"`
 }
-
-// provider is the only Forge environment qualify-e2e.yml runs against today.
-// Not derived from anything -- there is nothing yet to derive it from.
-const provider = "forge"
 
 // releaseStream is the Release Source value config-gen's ColumnHeader
 // surfaces on every build (tools/config-gen/main.go), and the one the
@@ -121,7 +113,7 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 		Actor:         result.Spec.Identity.Actor,
 		ReleaseStream: releaseStream,
 		ReleaseTag:    result.Spec.Version,
-		Provider:      provider,
+		Provider:      capabilities["provider"],
 		GPU:           capabilities["gpu"],
 		Arch:          capabilities["arch"],
 		Ubuntu:        capabilities["ubuntu"],
@@ -173,29 +165,13 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 	return nil
 }
 
-// environmentSuffix maps --environment to the group suffix autotest's own
-// writers use (normalizeGroupName trims "-non-prod" for display; "-prod" is
-// kept verbatim so both can co-exist under one bucket without colliding).
-//
-// cmd/qualify/publish.go's buildDestination validates --environment too, for
-// bucket selection. The two checks are intentionally separate: this one
-// backs buildPrefix's own tests directly, without going through
-// buildDestination.
-func environmentSuffix(environment string) (string, error) {
-	switch environment {
-	case "staging":
-		return "non-prod", nil
-	case "prod":
-		return "prod", nil
-	default:
-		return "", fmt.Errorf("--environment=%s is not staging or prod", environment)
-	}
-}
-
 // buildPrefix is the group/dashboard/tab/build GCS path for this leg.
 //
-// group is {provider}-{env}, matching autotest's real CSP-group convention
+// group is {provider}-prod, matching autotest's real CSP-group convention
 // (testgrid_destination.py _publish_to_group) -- not a bare subject name.
+// "prod" is hardcoded, not a second environment: nothing reads any bucket
+// but the prod one (confirmed against the real config-gen deployment), and
+// Forge carries no staging/prod distinction of its own to put in its place.
 //
 // dashboard is {gpu}-v{kube}-nvke-e2e: the {track}-e2e suffix is required
 // for config-gen to discover and render the dashboard at all, and "nvke" is
@@ -209,21 +185,16 @@ func environmentSuffix(environment string) (string, error) {
 // short, with the full ID still in metadata. The hash is what keeps two
 // combinations sharing a stream's gpu/kube from colliding.
 func (d *Destination) buildPrefix(result *qualification.Result) (string, error) {
-	suffix, err := environmentSuffix(d.Environment)
-	if err != nil {
-		return "", err
-	}
-
 	combo := result.Status.Combinations[0]
 	stream := combo.Streams[0]
 	capabilities := stream.Capabilities
 
-	gpu, kube := capabilities["gpu"], capabilities["kube"]
-	if gpu == "" || kube == "" {
-		return "", fmt.Errorf("stream %q capabilities have no gpu/kube (got %v)", stream.Name, capabilities)
+	provider, gpu, kube := capabilities["provider"], capabilities["gpu"], capabilities["kube"]
+	if provider == "" || gpu == "" || kube == "" {
+		return "", fmt.Errorf("stream %q capabilities have no provider/gpu/kube (got %v)", stream.Name, capabilities)
 	}
 
-	group := fmt.Sprintf("%s-%s", provider, suffix)
+	group := fmt.Sprintf("%s-prod", provider)
 	dashboard := fmt.Sprintf("%s-v%s-nvke-e2e", gpu, kube)
 
 	build := result.Spec.Identity.RunID

@@ -22,10 +22,9 @@ apiVersion: nvke.nvidia.com/v1alpha1
 kind: Qualification
 metadata:
   name: nvke
-status:
-  type: site-controller
 spec:
   subject: nvke
+  type: site-controller
   components:
     - {name: cli, selectors: [latest]}
   dependencies:
@@ -247,5 +246,34 @@ func TestResultCmdRejectsMissingPlan(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "--plan") {
 		t.Errorf("err = %v, want it to name --plan", err)
+	}
+}
+
+// qualify result is the one place spec.type is actually required -- Subject
+// loading itself (shared with qualify plan) does not enforce it.
+func TestResultCmdRejectsSubjectWithNoType(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "release"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	noType := strings.Replace(resultTestSubject, "  type: site-controller\n", "", 1)
+	if err := os.WriteFile(filepath.Join(root, "release", "qualification.yaml"), []byte(noType), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(root, "plan.json")
+	if err := os.WriteFile(plan, []byte(resultTestPlan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	report := writeGinkgoReport(t, true)
+
+	_, err := runResultCmd(t,
+		"--root", root,
+		"--plan", plan,
+		"--report", report,
+		"--combination", "cli-v1.0.0",
+		"--stream", "amd64-1.34",
+	)
+	if err == nil || !strings.Contains(err.Error(), "spec.type is empty") {
+		t.Errorf("err = %v, want it to say spec.type is empty", err)
 	}
 }

@@ -178,13 +178,6 @@ func TestPublishCmdRejectsMissingJUnit(t *testing.T) {
 	}
 }
 
-func TestBuildDestinationRejectsUnknownEnvironment(t *testing.T) {
-	_, _, err := buildDestination(nil, "testgrid", "dev") //nolint:staticcheck // ctx unused before the error path
-	if err == nil || !strings.Contains(err.Error(), "is not staging or prod") {
-		t.Errorf("err = %v, want it to name the bad environment", err)
-	}
-}
-
 func TestBuildDestinationRejectsUnknownDestination(t *testing.T) {
 	_, _, err := buildDestination(nil, "not-a-real-destination", "staging") //nolint:staticcheck // ctx unused before the error path
 	if err == nil || !strings.Contains(err.Error(), "unknown --destination") {

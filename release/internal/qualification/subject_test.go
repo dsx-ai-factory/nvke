@@ -14,10 +14,9 @@ apiVersion: nvke.nvidia.com/v1alpha1
 kind: Qualification
 metadata:
   name: nvke
-status:
-  type: site-controller
 spec:
   subject: nvke
+  type: site-controller
   components:
     - {name: controller, selectors: [latest]}
     - {name: cli, selectors: [latest]}
@@ -36,8 +35,8 @@ func TestLoadSubjectAccepts(t *testing.T) {
 	if got := len(s.Spec.Components); got != 2 {
 		t.Errorf("got %d components, want 2", got)
 	}
-	if s.Status.Type != "site-controller" {
-		t.Errorf("status.type is %q, want site-controller", s.Status.Type)
+	if s.Spec.Type != "site-controller" {
+		t.Errorf("spec.type is %q, want site-controller", s.Spec.Type)
 	}
 
 	kube, ovn, kind := s.Spec.Dependencies[0], s.Spec.Dependencies[1], s.Spec.Dependencies[2]
@@ -52,6 +51,20 @@ func TestLoadSubjectAccepts(t *testing.T) {
 	}
 }
 
+// A subject with no spec.type must still load -- `qualify plan` never reads
+// Type, and a future per-component subject that never declares one must not
+// be blocked from planning.
+func TestLoadSubjectAcceptsNoType(t *testing.T) {
+	body := strings.Replace(validSubject, "  type: site-controller\n", "", 1)
+	s, err := LoadSubject(write(t, "qualification.yaml", body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Spec.Type != "" {
+		t.Errorf("spec.type is %q, want empty", s.Spec.Type)
+	}
+}
+
 func TestLoadSubjectRejects(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -62,7 +75,6 @@ func TestLoadSubjectRejects(t *testing.T) {
 		{"unknown field", strings.Replace(validSubject, "  subject: nvke", "  subjekt: nvke", 1), "unknown field"},
 		{"the old component field", strings.Replace(validSubject, "  subject: nvke", "  component: nvke", 1), "unknown field"},
 		{"no subject", strings.Replace(validSubject, "  subject: nvke\n", "", 1), "spec.subject is empty"},
-		{"no status.type", strings.Replace(validSubject, "status:\n  type: site-controller\n", "", 1), "status.type is empty"},
 		{
 			"metadata disagrees with spec",
 			strings.Replace(validSubject, "  name: nvke", "  name: cli", 1),

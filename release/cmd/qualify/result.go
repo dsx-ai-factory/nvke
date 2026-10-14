@@ -43,7 +43,7 @@ provisioning failure, a wedged runner), this still writes a Result: FAIL,
 with a summary saying so, rather than erroring. A run that fails this early
 still needs a red entry in TestGrid, not silence.
 
-Type comes from the subject's own qualification.yaml (status.type).`,
+Type comes from the subject's own qualification.yaml (spec.type).`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -67,6 +67,9 @@ Type comes from the subject's own qualification.yaml (status.type).`,
 			if err != nil {
 				return err
 			}
+			if subject.Spec.Type == "" {
+				return fmt.Errorf("%s: spec.type is empty, so this result would not say what kind of thing it qualified", qualification.SubjectPath(root, p.Subject))
+			}
 
 			resultState, summary, startedAt, finishedAt := "FAIL", "", time.Now().UTC(), time.Now().UTC()
 			ginkgoReport, err := loadGinkgoReport(report)
@@ -84,7 +87,7 @@ Type comes from the subject's own qualification.yaml (status.type).`,
 			result := qualification.NewResult(
 				qualification.ResultSpec{
 					Subject:      p.Subject,
-					Type:         subject.Status.Type,
+					Type:         subject.Spec.Type,
 					Version:      p.Version,
 					Dependencies: combo.Dependencies,
 					StartedAt:    startedAt,

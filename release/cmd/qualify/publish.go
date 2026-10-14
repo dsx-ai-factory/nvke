@@ -16,15 +16,6 @@ import (
 	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
 )
 
-// testGridBucket is the data bucket the GCS-backed TestGrid destination
-// writes to. Not a flag: the same two environments every other piece of
-// this pipeline knows about, picked by --environment rather than a raw
-// bucket name a typo could point anywhere.
-var testGridBuckets = map[string]string{
-	"staging": "dgxc-testgrid-staging",
-	"prod":    "dgxc-testgrid",
-}
-
 func publishCmd() *cobra.Command {
 	var (
 		resultPath  string
@@ -32,7 +23,7 @@ func publishCmd() *cobra.Command {
 		combination string
 		stream      string
 		destination string
-		environment string
+		bucket      string
 	)
 
 	cmd := &cobra.Command{
@@ -71,7 +62,7 @@ so routing is built from the record itself.`,
 				return fmt.Errorf("JUnit report: %w", err)
 			}
 
-			dest, closeDest, err := buildDestination(cmd.Context(), destination, environment)
+			dest, closeDest, err := buildDestination(cmd.Context(), destination, bucket)
 			if err != nil {
 				return err
 			}
@@ -93,7 +84,7 @@ so routing is built from the record itself.`,
 	f.StringVar(&combination, "combination", "", "the combination id being published (required)")
 	f.StringVar(&stream, "stream", "", "the stream name being published (required)")
 	f.StringVar(&destination, "destination", "testgrid", "where to publish: testgrid")
-	f.StringVar(&environment, "environment", "staging", "which environment's bucket to publish to: staging or prod")
+	f.StringVar(&bucket, "bucket", "dgxc-testgrid", "the GCS bucket testgrid publishes to")
 
 	for _, name := range []string{"result", "junit", "combination", "stream"} {
 		_ = cmd.MarkFlagRequired(name)
@@ -120,18 +111,14 @@ func loadResult(path string) (*qualification.Result, error) {
 // buildDestination constructs the named Destination. The returned func
 // closes whatever the destination opened (a GCS client today); nil if there
 // is nothing to close.
-func buildDestination(ctx context.Context, name, environment string) (publish.Destination, func(), error) {
+func buildDestination(ctx context.Context, name, bucket string) (publish.Destination, func(), error) {
 	switch name {
 	case "testgrid":
-		bucket, ok := testGridBuckets[environment]
-		if !ok {
-			return nil, nil, fmt.Errorf("--environment=%s is not staging or prod", environment)
-		}
 		uploader, err := testgrid.NewGCSUploader(ctx, bucket)
 		if err != nil {
 			return nil, nil, err
 		}
-		dest := &testgrid.Destination{Uploader: uploader, Environment: environment}
+		dest := &testgrid.Destination{Uploader: uploader}
 		return dest, func() { _ = uploader.Close() }, nil
 	default:
 		return nil, nil, fmt.Errorf("unknown --destination=%s, have: testgrid", name)

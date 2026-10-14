@@ -27,7 +27,7 @@ type ResultSpec struct {
 	Subject string `json:"subject"`
 
 	// Type classifies what was qualified, e.g. "site-controller". Read from
-	// the subject's own qualification.yaml (status.type).
+	// the subject's own qualification.yaml (spec.type).
 	Type    string `json:"type"`
 	Version string `json:"version"`
 

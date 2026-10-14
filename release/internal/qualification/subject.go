@@ -21,11 +21,10 @@ const SubjectNVKE = "nvke"
 // subject for the release as a whole, and a component may carry its own
 // beside its code.
 type Subject struct {
-	APIVersion string        `json:"apiVersion"`
-	Kind       string        `json:"kind"`
-	Metadata   Metadata      `json:"metadata,omitempty"`
-	Spec       SubjectSpec   `json:"spec"`
-	Status     SubjectStatus `json:"status"`
+	APIVersion string      `json:"apiVersion"`
+	Kind       string      `json:"kind"`
+	Metadata   Metadata    `json:"metadata,omitempty"`
+	Spec       SubjectSpec `json:"spec"`
 }
 
 // SubjectSpec is the body of a Qualification.
@@ -33,6 +32,14 @@ type SubjectSpec struct {
 	// Subject names what is being qualified. Its version is the plan's
 	// version.
 	Subject string `json:"subject"`
+
+	// Type classifies what this subject qualifies, e.g. "site-controller".
+	// Authored, like Subject, not computed -- apiVersion/kind/spec carries
+	// declared data, status would carry observed data, and this is neither.
+	// Optional here: only `qualify result` needs it, and requiring it for
+	// every subject would also block `qualify plan` for a future
+	// per-component subject that never reads Type at all.
+	Type string `json:"type,omitempty"`
 
 	// Components move together in this qualification, and the combination is
 	// keyed by them.
@@ -84,13 +91,6 @@ type SubjectDependency struct {
 // ConstraintFrom names the stream capability a constraint is taken from.
 type ConstraintFrom struct {
 	Capability string `json:"capability"`
-}
-
-// SubjectStatus classifies what this subject qualifies. Read by `qualify
-// result` for QualificationResult.Spec.Type.
-type SubjectStatus struct {
-	// Type is a component-type classification, e.g. "site-controller".
-	Type string `json:"type"`
 }
 
 // releasePattern is a dotted version of numbers, such as 24.04.5.
@@ -177,9 +177,6 @@ func (s *Subject) validate(path string) error {
 	}
 	if len(s.Spec.Components) == 0 {
 		return fmt.Errorf("%s: spec.components is empty, so the combination has no key", path)
-	}
-	if s.Status.Type == "" {
-		return fmt.Errorf("%s: status.type is empty, so a published result would not say what kind of thing it qualified", path)
 	}
 
 	seen := map[string]bool{}
