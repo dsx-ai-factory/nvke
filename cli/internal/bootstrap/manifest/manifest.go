@@ -22,10 +22,14 @@ const (
 	ComponentSPIRE       = "spire"
 	ComponentController  = "controller"
 	ComponentProvisioned = "cluster-api-provider-provisioned"
+	ComponentCAPNICo     = "cluster-api-provider-nico"
 
 	// Image keys under the two components this repository builds.
 	ImageController = "controller"
 	ImageManager    = "manager"
+
+	// ImageCAPNICo is the key of the CAPNICo controller image.
+	ImageCAPNICo = "controller"
 )
 
 // manifestYAML is the embedded manifest. `nvkectl get bootstrap-manifest` prints it.

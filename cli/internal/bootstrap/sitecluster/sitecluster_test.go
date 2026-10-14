@@ -315,21 +315,24 @@ func TestClusterRequest_ForwardsVIPMatchingNodeIP(t *testing.T) {
 
 func nicoSiteSpec() *sitespec.SiteSpec {
 	inv := testSiteSpec()
-	inv.Infrastructure = sitespec.InfrastructureNico
+	inv.Infra.Provider = sitespec.ProviderNico
 	inv.Cluster.Nodes = nil
-	inv.Cluster.Nico = &sitespec.NicoCluster{
-		NodeCount: 3,
-		Provider: &api.NicoClusterProvider{
-			OrgID:  "example-org",
-			SiteID: openapi_types.UUID{15: 1},
-			VpcID:  openapi_types.UUID{15: 2},
+	inv.Infra.Nico = &sitespec.NicoInfra{
+		OrgID: "example-org",
+		Remote: &sitespec.NicoRemote{
+			Endpoint: "https://nico.example",
+			SiteID:   openapi_types.UUID{15: 1},
+			VpcID:    openapi_types.UUID{15: 2},
 		},
-		ControlPlane: &api.NicoControlPlaneProviderCreate{
-			InstanceTypePreference: []openapi_types.UUID{{15: 3}, {15: 6}},
-			VpcPrefixIDs:           []openapi_types.UUID{{15: 4}},
-			SSHKeyGroupIDs:         []openapi_types.UUID{{15: 5}},
-			OSProfile:              "example-os-profile",
-			ConfigProfile:          "example-config-profile",
+		ControlPlane: sitespec.NicoControlPlane{
+			Count: 3,
+			NicoControlPlaneProviderCreate: api.NicoControlPlaneProviderCreate{
+				InstanceTypePreference: []openapi_types.UUID{{15: 3}, {15: 6}},
+				VpcPrefixIDs:           []openapi_types.UUID{{15: 4}},
+				SSHKeyGroupIDs:         []openapi_types.UUID{{15: 5}},
+				OSProfile:              "example-os-profile",
+				ConfigProfile:          "example-config-profile",
+			},
 		},
 	}
 	return inv
@@ -337,7 +340,7 @@ func nicoSiteSpec() *sitespec.SiteSpec {
 
 // TestClusterRequest_NicoIsAForgeCluster pins what makes CWE treat the request
 // as a NICo cluster: a nico payload, no infra payload, and the control-plane
-// count taken from the spec's nodeCount.
+// count taken from the spec's controlPlane.count.
 func TestClusterRequest_NicoIsAForgeCluster(t *testing.T) {
 	req, err := ClusterRequest(nicoSiteSpec())
 	if err != nil {
@@ -410,9 +413,8 @@ func TestClusterRequest_NicoRejectsInvalidSpecs(t *testing.T) {
 		mutate  func(*sitespec.SiteSpec)
 		wantErr string
 	}{
-		{"missing nico block", func(inv *sitespec.SiteSpec) { inv.Cluster.Nico = nil }, "cluster.nico"},
-		{"missing provider", func(inv *sitespec.SiteSpec) { inv.Cluster.Nico.Provider = nil }, "provider and controlPlane"},
-		{"missing control plane", func(inv *sitespec.SiteSpec) { inv.Cluster.Nico.ControlPlane = nil }, "provider and controlPlane"},
+		{"missing nico block", func(inv *sitespec.SiteSpec) { inv.Infra.Nico = nil }, "infra.nico"},
+		{"missing remote", func(inv *sitespec.SiteSpec) { inv.Infra.Nico.Remote = nil }, "needs a remote"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

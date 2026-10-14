@@ -73,7 +73,7 @@ type bootstrapSiteOptions struct {
 	diagnosticsDir    string
 	keepBootstrapKind bool
 
-	// release is an NVKR release description. With infrastructure nico its
+	// release is an NVKR release description. With infra.provider nico its
 	// capnico-controller artifact replaces the CAPNICo image, as the deploy
 	// path's render does. arch selects the artifact's architecture.
 	release string
@@ -148,15 +148,15 @@ func newBootstrapSiteCmd() *cobra.Command {
 		Short: "Bootstrap a new NVKE site controller from a site spec file",
 		Long: `Bootstrap a vanilla Kubernetes cluster from the nodes described by the site
 spec file passed with -f/--sitespec: pre-provisioned hosts it lists
-(infrastructure provisioned, the default), or machines CAPNICo allocates from a
-NICo site (infrastructure nico).
+(infra.provider provisioned, the default), or machines CAPNICo allocates from a
+NICo site (infra.provider nico).
 
 The site spec file is loaded and validated first. On any invalid or missing
 field the command fails immediately with a clear error, before any workflow is
 dispatched or any node is touched.
 
 The bootstrap side-loads the images this repository builds, nke-controller:latest
-and, with provisioned infrastructure, cluster-api-provider-provisioned:latest,
+and, with the provisioned provider, cluster-api-provider-provisioned:latest,
 which "make -C cli images" builds. With nico, CAPNICo's image is public and
 pulled by the cluster; --release pins it to an NVKR release's artifact. --controller-image and --provisioned-provider-image, or
 NVKECTL_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, name other images, such as
@@ -166,9 +166,10 @@ every NVKECTL_* variable.
 Every node becomes a control-plane node. Once the cluster is up, the
 control-plane NoSchedule taint is removed from each node so workloads can run.
 
-With nico, the site spec also names the NICo credentials, the tenant login and
-the MachineImage and ClusterRelease manifests the controller needs, and
-spire.externalAddress is required unless --disable-mtls is set. The nodes'
+With nico, infra.nico names the NICo, the tenant login and the MachineImage and
+ClusterRelease manifests the controller needs; the NICo token is read from the
+file the NVKECTL_NICO_CREDENTIALS variable names; and spire.externalAddress is
+required unless --disable-mtls is set. The nodes'
 names and addresses are not printed; read them with "kubectl get nodes -o wide"
 on the finished cluster.
 
@@ -193,6 +194,10 @@ site spec file format.`,
 			if id := telemetry.RunFrom(cmd.Context()).TraceID(); id != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Trace ID: %s\n", id)
 			}
+			// arch has a default, so only Changed tells an explicit value from none.
+			if cmd.Flags().Changed("arch") && opts.release == "" {
+				return errors.New("--arch selects the architecture of a --release artifact; pass --release too, or drop --arch")
+			}
 			return runBootstrapSite(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
 	}
@@ -210,8 +215,8 @@ site spec file format.`,
 		"Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.release, "release", "",
 		"NVKR release description whose "+controllerdeploy.CAPNICoArtifact+" artifact replaces the bootstrap CAPNICo image "+
-			"with its pinned digest, as `render deploy-path --release` does for the site controller's CAPNICo. "+
-			"Only with infrastructure nico.")
+			"with its pinned digest, as \"render deploy-path --release\" does for the site controller's CAPNICo. "+
+			"Only with infra.provider nico.")
 	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH,
 		"Architecture of the release artifact to use: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. "+
 			"Only with --release.")
@@ -301,6 +306,9 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := inv.CheckBootstrapMode(opts.disableMTLS); err != nil {
 		return err
 	}
+	if err := inv.ValidateBootstrapReferences(); err != nil {
+		return fmt.Errorf("site spec file %s: %w", opts.siteSpec, err)
+	}
 	// Resolved here too, so a bad --release or --arch fails the dry run.
 	capnicoImage, err := capnicoReleaseImage(inv, opts.release, opts.arch)
 	if err != nil {
@@ -385,7 +393,11 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	//
 	// A bootstrap cluster still running is the strongest sign of an earlier
 	// attempt, and may hold that attempt's encryption key.
-	if err := requireNoBootstrapCluster(ctx, engine, cfg.ClusterName); err != nil {
+	releaseSteps := ""
+	if inv.IsNico() {
+		releaseSteps = nicoReleaseSteps(inv.ClusterName, cfg.ClusterName, "<its kubeconfig file>", cweCfg.CWEPort) + ", "
+	}
+	if err := requireNoBootstrapCluster(ctx, engine, cfg.ClusterName, releaseSteps); err != nil {
 		return err
 	}
 	// A key file already at the output path belongs to an earlier bootstrap of
@@ -408,7 +420,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	}
 	// The two images this repository builds are side-loaded, not pulled. A
 	// build that was never made fails here, before the cluster exists.
-	if err := requireLocalImages(ctx, engine, cweImages(cweCfg)...); err != nil {
+	if err := requireLocalImages(ctx, engine, nvkeImages(cweCfg)...); err != nil {
 		return err
 	}
 
@@ -479,23 +491,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// site spec's hosts.
 	siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, cweCfg.CWEPort, logger)
 	if err != nil && siteClusterCreated {
-		// The advice below ends with the command that deletes the bootstrap
-		// cluster. When the key was not saved, that cluster holds the only copy
-		// the operator does not have, and the error says so instead.
-		var capture *keyCaptureError
-		if errors.As(err, &capture) {
-			return &recoveryError{fmt.Errorf("%w (bootstrap cluster %q kept; its kubeconfig is %s)",
-				err, cluster.Name, cluster.KubeconfigPath)}
-		}
-		// The env prefix is not optional: kind resolves a cluster through the
-		// provider that created it, so without it the command reports the
-		// cluster as missing rather than deleting it.
-		deleteCommand := fmt.Sprintf(
-			"KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s", cluster.Name,
-		)
-		return &recoveryError{fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
-			"(kubeconfig: %s); delete it after recovery with `%s`",
-			err, cluster.Name, cluster.KubeconfigPath, deleteCommand)}
+		return retainedClusterError(err, inv, cluster, cweCfg.CWEPort)
 	}
 	if err == nil && !cweCfg.DisableMTLS {
 		count, dumpErr := dumpSpireBootstrapEntries(
@@ -800,6 +796,56 @@ func siteKubeconfigPath(clusterName string, opts *bootstrapSiteOptions) string {
 	return clusterName + ".kubeconfig"
 }
 
+// nicoReleaseSteps says how to release the NICo instances CAPNICo allocated for
+// the site cluster. Deleting the bootstrap Kind cluster does not: it runs no
+// finalizers, so the instances stay allocated and unmanaged, with the tenant
+// login in their user data, and every re-run allocates another set. Deleting
+// the site cluster through the bootstrap cluster's controller deletes each
+// node's Cluster API machine, which releases its instance.
+func nicoReleaseSteps(siteCluster, bootstrapCluster, kubeconfig string, port int32) string {
+	return fmt.Sprintf("release the NICo instances CAPNICo allocated first, because deleting the bootstrap cluster does not "+
+		"(it leaves them allocated and unmanaged, with the tenant login in their user data): point nvkectl at this "+
+		"cluster's controller with `nvkectl config set-site --name %s --url http://127.0.0.1:%d --kubeconfig %s`, run "+
+		"`nvkectl delete cluster %s`, and wait until `nvkectl get clusters` no longer lists it; set-site made %s the "+
+		"active site, so switch back afterwards with `nvkectl config use-site <name>`",
+		bootstrapCluster, port, kubeconfig, siteCluster, bootstrapCluster)
+}
+
+// retainedClusterError wraps err, from a failure after the site cluster was
+// created, with what to do about the bootstrap cluster that was kept for
+// recovery. With nico the advice leads with releasing the allocated instances.
+func retainedClusterError(err error, inv *sitespec.SiteSpec, cluster *bootstrapengine.Cluster, port int32) error {
+	release := ""
+	if inv.IsNico() {
+		release = nicoReleaseSteps(inv.ClusterName, cluster.Name, cluster.KubeconfigPath, port)
+	}
+	// The advice below ends with the command that deletes the bootstrap
+	// cluster. When the key was not saved, that cluster holds the only copy
+	// the operator does not have, and the error says so instead.
+	var capture *keyCaptureError
+	if errors.As(err, &capture) {
+		kept := fmt.Errorf("%w (bootstrap cluster %q kept; its kubeconfig is %s)", err, cluster.Name, cluster.KubeconfigPath)
+		if release != "" {
+			kept = fmt.Errorf("%w; once the key is saved, %s", kept, release)
+		}
+		return &recoveryError{kept}
+	}
+	// The env prefix is not optional: kind resolves a cluster through the
+	// provider that created it, so without it the command reports the
+	// cluster as missing rather than deleting it.
+	deleteCommand := fmt.Sprintf(
+		"KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s", cluster.Name,
+	)
+	if release != "" {
+		return &recoveryError{fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
+			"(kubeconfig: %s); %s; then delete it with `%s`",
+			err, cluster.Name, cluster.KubeconfigPath, release, deleteCommand)}
+	}
+	return &recoveryError{fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
+		"(kubeconfig: %s); delete it after recovery with `%s`",
+		err, cluster.Name, cluster.KubeconfigPath, deleteCommand)}
+}
+
 // requireNoBootstrapCluster refuses to start while a bootstrap cluster from an
 // earlier run is still running.
 //
@@ -808,7 +854,12 @@ func siteKubeconfigPath(clusterName string, opts *bootstrapSiteOptions) string {
 // only copy of that cluster's etcd encryption key that is not on a node, and
 // the natural response to "already exists" is the delete that loses it. The
 // message leads with saving the key. Nothing is deleted or reused here.
-func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engine, name string) error {
+//
+// With nico this is the only re-run guard: the machines are allocated, not
+// listed, so there is no host to probe. releaseSteps, when set, is
+// nicoReleaseSteps for this cluster, so the "delete it and re-run" the message
+// ends with does not orphan the instances an earlier run allocated.
+func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engine, name, releaseSteps string) error {
 	exists, err := engine.Exists(ctx, name)
 	if err != nil {
 		return fmt.Errorf("checking for a bootstrap cluster from an earlier run: %w", err)
@@ -819,9 +870,9 @@ func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engi
 	return fmt.Errorf("bootstrap cluster %q from an earlier run is still running. If that run built an encrypted "+
 		"site cluster and did not save its key, the key is in this cluster: get its kubeconfig with "+
 		"`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name %s`, save every etcd-encryption-key-* Secret it "+
-		"holds from the namespace it is in (`kubectl get secrets -A | grep etcd-encryption-key-`), then delete it with "+
+		"holds from the namespace it is in (`kubectl get secrets -A | grep etcd-encryption-key-`), %sthen delete it with "+
 		"`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s` and re-run",
-		name, name, name)
+		name, name, releaseSteps, name)
 }
 
 // requireNoControlPlane refuses to bootstrap over a host that already accepts
@@ -925,12 +976,13 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	}
 	cfg.CAPNICo = access
 	if inv.IsNico() {
-		password, err := readTokenFile("bootstrapTenant.passwordFile", inv.ResolvePath(inv.BootstrapTenant.PasswordFile))
+		tenant := inv.Infra.Nico.Tenant
+		password, err := readTokenFile("infra.nico.tenant.passwordFile", inv.ResolvePath(tenant.PasswordFile))
 		if err != nil {
 			return cfg, err
 		}
-		cfg.DGXCTenant = controllerdeploy.TenantLogin{User: inv.BootstrapTenant.User, Password: password}
-		cfg.ReleasesPath = inv.ResolvePath(inv.BootstrapReleases)
+		cfg.DGXCTenant = controllerdeploy.TenantLogin{User: tenant.User, Password: password}
+		cfg.ReleasesPath = inv.ResolvePath(inv.Infra.Nico.Releases)
 	}
 	cfg.SPIREExternalAddress = inv.Spire.ExternalAddress
 	// CAPNICo comes from its own manifest, so the provisioned provider's image is not used.
@@ -995,7 +1047,7 @@ func deployAndWaitForCWE(
 	cweRunner controllerdeploy.CommandRunner,
 	logger *slog.Logger,
 ) error {
-	for _, image := range cweImages(cweCfg) {
+	for _, image := range nvkeImages(cweCfg) {
 		if err := ensureImageAvailable(ctx, engine, cluster, image, logger); err != nil {
 			return fmt.Errorf("loading %s into bootstrap kind cluster: %w", image, err)
 		}
@@ -1019,36 +1071,41 @@ func deployAndWaitForCWE(
 	return nil
 }
 
-// cweImages lists the images this repository builds that the bootstrap loads
+// nvkeImages lists the images this repository builds that the bootstrap loads
 // into the Kind cluster. The provisioned provider is among them only when it is
 // the infrastructure provider in use.
-func cweImages(cfg controllerdeploy.Config) []string {
+func nvkeImages(cfg controllerdeploy.Config) []string {
 	if cfg.NicoInfrastructure {
 		return []string{cfg.CWEImage}
 	}
 	return []string{cfg.CWEImage, cfg.ProvisionedProviderImage}
 }
 
-// capnicoAccess resolves the site spec's bootstrapNico
-// into the values the bootstrap CAPNICo is given, reading each token file. The
-// files are read here, before a Kind cluster exists, so an unreadable one fails
-// at once rather than minutes in. It returns the zero value for any
-// infrastructure but nico.
+// capnicoAccess resolves the site spec's infra.nico into the values the
+// bootstrap CAPNICo is given: the endpoint and organization from the spec, and
+// the token from the file NVKECTL_NICO_CREDENTIALS names. The file is read here,
+// before a Kind cluster exists, so an unreadable one fails at once rather than
+// minutes in. It returns the zero value for any provider but nico.
 func capnicoAccess(inv *sitespec.SiteSpec) (controllerdeploy.CAPNICoAccess, error) {
 	if !inv.IsNico() {
 		return controllerdeploy.CAPNICoAccess{}, nil
 	}
-	if inv.BootstrapNico == nil {
-		return controllerdeploy.CAPNICoAccess{}, errors.New("the site spec selects infrastructure nico but has no bootstrapNico")
+	n := inv.Infra.Nico
+	if n == nil || n.Remote == nil {
+		return controllerdeploy.CAPNICoAccess{}, errors.New("the site spec selects infra.provider nico but has no infra.nico.remote")
 	}
-	nicoToken, err := readTokenFile("bootstrapNico.tokenFile", inv.ResolvePath(inv.BootstrapNico.TokenFile))
+	path := sitespec.NicoCredentialsPath()
+	if path == "" {
+		return controllerdeploy.CAPNICoAccess{}, fmt.Errorf("%s must name the file holding the NICo token", sitespec.NicoCredentialsEnv)
+	}
+	nicoToken, err := sitespec.ReadNicoToken(path)
 	if err != nil {
-		return controllerdeploy.CAPNICoAccess{}, err
+		return controllerdeploy.CAPNICoAccess{}, fmt.Errorf("%s: %w", sitespec.NicoCredentialsEnv, err)
 	}
 	return controllerdeploy.CAPNICoAccess{
-		Endpoint: inv.BootstrapNico.Endpoint,
-		OrgID:    inv.BootstrapNico.OrgID,
-		APIName:  inv.BootstrapNico.APIName,
+		Endpoint: n.Remote.Endpoint,
+		OrgID:    n.OrgID,
+		APIName:  sitespec.DefaultNicoAPIName,
 		Token:    nicoToken,
 	}, nil
 }
@@ -1057,13 +1114,13 @@ func capnicoAccess(inv *sitespec.SiteSpec) (controllerdeploy.CAPNICoAccess, erro
 // release is given: the release's capnico-controller artifact as
 // repository@digest, which is how the deploy path's render names it. It returns
 // "" without a release, which leaves the manifest's own image. A release with
-// infrastructure provisioned is refused, since nothing there would read it.
+// provider provisioned is refused, since nothing there would read it.
 func capnicoReleaseImage(inv *sitespec.SiteSpec, releasePath, arch string) (string, error) {
 	if releasePath == "" {
 		return "", nil
 	}
 	if !inv.IsNico() {
-		return "", errors.New("--release only applies with infrastructure nico: it replaces the bootstrap CAPNICo image, and no other infrastructure installs one")
+		return "", errors.New("--release only applies with infra.provider nico: it replaces the bootstrap CAPNICo image, and no other provider installs one")
 	}
 	release, err := nvkrrelease.Load(releasePath)
 	if err != nil {

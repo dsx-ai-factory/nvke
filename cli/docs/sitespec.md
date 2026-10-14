@@ -60,8 +60,8 @@ is a file `bootstrap site` accepts.
 ## Where the machines come from
 
 By default the file lists the hosts (`cluster.nodes`) and the bootstrap builds
-the cluster on them. Setting `infrastructure: nico` swaps that list for
-`cluster.nico`: CAPNICo allocates the same number of control-plane machines from
+the cluster on them. Setting `infra.provider: nico` swaps that list for
+`infra.nico`: CAPNICo allocates the same number of control-plane machines from
 a NICo site, configured by the profiles the block names. Everything else in the
 file means what it did. [`examples/sitespec-nico.yaml`](../examples/sitespec-nico.yaml)
 is a complete example.
@@ -81,31 +81,37 @@ created. In both, the cluster and those Secrets stay on the bootstrap host until
 you delete the cluster with
 `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`
 (the failure message prints the command). Treat the host as holding the tokens
-until then.
+until then. After a failure, release the NICo instances CAPNICo allocated before
+you delete the cluster, as the failure message and
+[the retained bootstrap cluster](bootstrap-troubleshooting.md#release-the-nico-instances-first)
+describe: deleting the Kind cluster alone leaves them allocated and unmanaged.
 
-`cluster.nico` is built from the structs the controller's REST API takes for a
-NICo cluster, with the API's field names: `provider` is the request's `nico`
-block (`api.NicoClusterProvider`) and `controlPlane` is the control-plane
-config's `nico` block (`api.NicoControlPlaneProviderCreate`). The credentials
-is the same `StackNico` struct `controllerStack` uses for the tenant CAPNICo,
-under a bootstrap-specific name.
+`infra.nico.controlPlane` is built from the struct the controller's REST API
+takes for a NICo control plane (`api.NicoControlPlaneProviderCreate`), with the
+API's field names, plus `count`. The request's `nico` block
+(`api.NicoClusterProvider`) is assembled from `orgID` and the `remote` IDs. The
+NICo is described by one mode block, `remote`, an existing NICo; another mode
+would be a sibling of it, so nothing here changes when one is added.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `infrastructure` | string | no | `provisioned` (default) or `nico`. `NVKECTL_INFRASTRUCTURE` overrides it. |
-| `cluster.nico.nodeCount` | int | with `nico` | Odd, at least 1. Takes the place of the length of `cluster.nodes`. |
-| `cluster.nico.provider.orgID` | string | with `nico` | NGC organization that owns the cluster. |
-| `cluster.nico.provider.siteID`, `vpcID` | UUID | with `nico` | The NICo site and the VPC the cluster is created in. |
-| `cluster.nico.controlPlane.instanceTypePreference` | UUID list | with `nico` | Ordered; index 0 is the first choice. |
-| `cluster.nico.controlPlane.vpcPrefixIDs` / `subnetIDs` | UUID list | with `nico` | Exactly one of the two: native networking or not. |
-| `cluster.nico.controlPlane.sshKeyGroupIDs` | UUID list | with `nico` | At least one. |
-| `cluster.nico.controlPlane.osProfile`, `configProfile` | string | with `nico` | Profile names served by the site. |
-| `bootstrapNico` | `StackNico` | with `nico` | The NICo API the bootstrap CAPNICo calls: `endpoint`, `orgID`, `apiName`, `tokenFile`. See below. |
-| `bootstrapTenant` | `StackTenant` | with `nico` | The login the controller renders into the user data of every node CAPNICo creates: `user` and `passwordFile`. The controller refuses to render user data without it. See below. |
-| `bootstrapReleases` | path | with `nico` | A file, or a directory of `.yaml`, `.yml` and `.json` files, holding the `MachineImage` and `ClusterRelease` manifests. See below. |
+| `infra.provider` | string | no | `provisioned` (default) or `nico`. `NVKECTL_INFRA_PROVIDER` overrides it. |
+| `infra.nico.orgID` | string | with `nico` | The NICo organization the machines are created in. |
+| `infra.nico.remote.endpoint` | string | with `nico` | The existing NICo's API base URL, an http or https URL. |
+| `infra.nico.remote.siteID`, `vpcID` | UUID | with `nico` | The NICo site and the VPC the cluster is created in. |
+| `infra.nico.controlPlane.count` | int | with `nico` | Odd, at least 1. Takes the place of the length of `cluster.nodes`. |
+| `infra.nico.controlPlane.instanceTypePreference` | UUID list | with `nico` | Ordered; index 0 is the first choice. |
+| `infra.nico.controlPlane.vpcPrefixIDs` / `subnetIDs` | UUID list | with `nico` | Exactly one of the two: native networking or not. |
+| `infra.nico.controlPlane.sshKeyGroupIDs` | UUID list | with `nico` | At least one. |
+| `infra.nico.controlPlane.osProfile` | string | with `nico` | The `ClusterRelease` the nodes boot from, which `infra.nico.releases` must hold. See Release manifests. |
+| `infra.nico.controlPlane.configProfile` | string | no | A config profile name. The bootstrap controller starts with an empty profiles directory and serves none, so it treats any name as missing and logs a warning: its hooks and labels never reach the nodes. Leave it unset. |
+| `infra.nico.tenant` | `StackTenant` | with `nico` | The login the controller renders into the user data of every node CAPNICo creates: `user` and `passwordFile`. The controller refuses to render user data without it. See below. |
+| `infra.nico.releases` | path | with `nico` | A file, or a directory of `.yaml`, `.yml` and `.json` files, holding the `MachineImage` and `ClusterRelease` manifests. See below. |
 | `spire.externalAddress` | string | with `nico`, unless `--disable-mtls` | IP address or DNS name nodes use to reach the bootstrap host's SPIRE server, on NodePort 30081. See below. |
 
-`cluster.nodes` must be empty with `nico`, and `cluster.nico` must be absent
+The NICo token is not a field: see NICo credentials below.
+
+`cluster.nodes` must be empty with `nico`, and `infra.nico` must be absent
 with `provisioned`; a file that names both is rejected rather than half-obeyed.
 
 With `nico` the nodes' names and addresses are results, not inputs. The
@@ -133,12 +139,20 @@ given their SPIRE address when they were provisioned.
 
 ### NICo credentials
 
-`bootstrapNico` is the same struct as `controllerStack.nico`, and is checked the
-same way: every field set, the endpoint an http or https URL. The token is a path
-to a file that holds it, relative paths resolved from the site spec, so the spec
-itself holds no credential. It is required with `nico` and refused otherwise.
-`bootstrapNico.orgID` is the organization the API token belongs to; `cluster.nico.provider.orgID` is the one that owns the cluster, and
-the two need not match.
+The token is not in the site spec. `NVKECTL_NICO_CREDENTIALS` names a file that
+holds it, read on the host that runs the bootstrap, relative to the working
+directory. `bootstrap site` and `validate sitespec` require it with `nico`; it is
+not read by commands that never run the bootstrap, such as
+`render deploy-path`. The bootstrap creates the `nico-credentials` Secret in the
+Kind cluster from it, with `infra.nico.remote.endpoint` and `infra.nico.orgID`
+from the spec and the API name `forge`.
+
+The file's format is told from its content. A bare token, one value with no
+whitespace, is the bearer token. A file that carries `tokenURL`, `clientID` or
+`clientSecret` is the OAuth client-credentials form, which is recognised and
+refused for now, because CAPNICo's `nico-credentials` Secret takes only a bearer
+token. The Secret on the site cluster is not created by the bootstrap: the
+controller stack install creates it, from `controllerStack.nico`.
 
 The bootstrap installs CAPNICo into its Kind cluster the way the site
 controller's deploy path does: the published release manifest
@@ -157,14 +171,14 @@ pin it to an NVKR release's `capnico-controller` artifact instead, as
 the manifest's one image is replaced with the artifact's `repository@digest`.
 `--arch` (default the bootstrap host's) picks the artifact's architecture, since
 the bootstrap CAPNICo runs in the Kind cluster on that host. It is refused with
-`provisioned` infrastructure, where no CAPNICo is installed. The Kind node pulls
+the `provisioned` provider, where no CAPNICo is installed. The Kind node pulls
 the image anonymously, so the release's `capnico-controller` image must be
 publicly pullable; staging images from a release run directory, as the deploy path does for the
 node, is not supported here. The Kind host must reach `ghcr.io`
 and the NICo API and each new node's agent port, and the nodes must reach the
 SPIRE server the bootstrap publishes on the host.
 
-`bootstrapTenant` is the same struct as `controllerStack.tenant`. The bootstrap
+`infra.nico.tenant` is the same struct as `controllerStack.tenant`. The bootstrap
 puts it in a `dgxc-tenant-credentials` Secret in the controller's namespace and
 points the controller chart at it (`secrets.dgxcTenantCredSecretName`); without
 it the controller fails every node's user-data rendering and no node is created.
@@ -172,30 +186,36 @@ it the controller fails every node's user-data rendering and no node is created.
 
 ### Release manifests
 
-With `nico` the controller resolves `cluster.nico.controlPlane.osProfile` from
+With `nico` the controller resolves `infra.nico.controlPlane.osProfile` from
 its own API: a `ClusterRelease` of that name and the `MachineImage` it names.
-The bootstrap controller starts with neither, so `bootstrapReleases` points at
+The bootstrap controller starts with neither, so `infra.nico.releases` points at
 the manifests, written as in
 [Get NVKE artifacts and OS profiles built with NVKR](../../docs/operate/build-node-images.md),
 and the bootstrap applies them to the Kind cluster after the controller's CRDs
-exist and before it creates the site cluster. The load fails, before any Kind
-cluster exists, if they hold no `ClusterRelease` named for the `osProfile` or
-not the `MachineImage` it references. Relative paths resolve from the site
-spec's directory.
+exist and before it creates the site cluster. `bootstrap site` and
+`nvkectl validate sitespec` fail, before any Kind cluster exists, if the files
+cannot be read or hold no `ClusterRelease` named for the `osProfile` or not the
+`MachineImage` it references. Each must be a full manifest, with
+`apiVersion: internal.nvke.nvidia.com/v1` and its `kind`: the portable request
+documents in `examples/clusterrelease.yaml` and `machineimage.yaml` carry
+neither, because `nvkectl create` adds them, so they do not work here as they
+are. Loading the file for any other command, such as
+`render deploy-path` on the site node, does not read them. Relative paths
+resolve from the site spec's directory.
 
 ## Schema
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `clusterName` | string | yes | Lowercase RFC 1123 label. |
-| `cluster.nodes` | list | yes, with `provisioned` | Must contain an odd number of control-plane nodes and at least one node. With `nico` it must be empty and `cluster.nico.nodeCount` sets the count; see [Where the machines come from](#where-the-machines-come-from). |
+| `cluster.nodes` | list | yes, with `provisioned` | Must contain an odd number of control-plane nodes and at least one node. With `nico` it must be empty and `infra.nico.controlPlane.count` sets the count; see [Where the machines come from](#where-the-machines-come-from). |
 | `cluster.nodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Unique across all nodes. |
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Unique across all nodes. |
 | `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. See below. |
 | `cluster.k8sVersion` | string | yes | Plain semantic version, e.g. `1.32.0` (no leading `v`). |
 | `cluster.cniName` | string | no | Defaults to and must be `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the node-agent default. |
-| `cluster.controlPlaneVIP` | string | for multiple nodes | IPv4 control-plane VIP. Required when `cluster.nodes` has more than one entry, or `cluster.nico.nodeCount` is more than one. A single-node cluster may omit it and use that node's IP as its fixed endpoint. See below. |
+| `cluster.controlPlaneVIP` | string | for multiple nodes | IPv4 control-plane VIP. Required when `cluster.nodes` has more than one entry, or `infra.nico.controlPlane.count` is more than one. A single-node cluster may omit it and use that node's IP as its fixed endpoint, except with `nico`: the node has no address until NICo allocates it, so the controller stack install needs the VIP even for one node (the bootstrap does not). `validate sitespec` reports it missing in the `controllerStack` section. See below. |
 | `cluster.podCidr` | string | yes | Valid CIDR. A comma-separated list of CIDRs is allowed. Must not overlap `serviceCidr`. |
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
@@ -259,8 +279,8 @@ them from there and they are not repeated in `controllerStack:`.
 - All problems are reported together in one error, each naming the offending
   field, so a bad file can be fixed in one pass.
 - The site spec must contain an odd number of nodes and at least one node: the
-  length of `cluster.nodes` with `provisioned`, `cluster.nico.nodeCount` with
-  `nico`.
+  length of `cluster.nodes` with `provisioned`, `infra.nico.controlPlane.count`
+  with `nico`.
 - Node names and IPs must be unique across all nodes (`provisioned` only; `nico`
   has none to list).
 - `podCidr` / `serviceCidr` are parsed as CIDRs; `podCidr` also accepts a
@@ -270,10 +290,12 @@ them from there and they are not repeated in `controllerStack:`.
   and must not fall inside `podCidr` or `serviceCidr`. It may equal a declared
   node IP.
 - `controlPlaneVIP` is required when `cluster.nodes` contains more than one
-  node, or `cluster.nico.nodeCount` is more than one.
-- With `nico`: `bootstrapNico`, `bootstrapTenant`, `bootstrapReleases` and
-  `cluster.nico` are required and the files they name must exist; with
-  `provisioned` they are rejected. `spire.externalAddress` is required with
+  node, or `infra.nico.controlPlane.count` is more than one.
+- With `nico`: `infra.nico` (its `orgID`, `remote`, `controlPlane`, `tenant` and
+  `releases`) is required, and the files it names, and the file
+  `NVKECTL_NICO_CREDENTIALS` names, must exist when the bootstrap runs
+  (`bootstrap site` and `validate sitespec` check; `render deploy-path` does
+  not); with `provisioned` `infra.nico` is rejected. `spire.externalAddress` is required with
   `nico` unless `--disable-mtls`, which `nvkectl validate sitespec` and
   `bootstrap site` both check.
 
@@ -316,7 +338,7 @@ A set variable takes precedence over the file value.
 | `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
 | `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
 | `NVKECTL_SPIRE_EXTERNAL_ADDRESS` | `spire.externalAddress` |
-| `NVKECTL_INFRASTRUCTURE` | `infrastructure` — `provisioned` or `nico` |
+| `NVKECTL_INFRA_PROVIDER` | `infra.provider` — `provisioned` or `nico` |
 | `NVKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
 
 A malformed `NVKECTL_CLUSTER_NODES` entry fails the load rather than being
@@ -426,7 +448,7 @@ kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- \
 
 `cluster.controlPlaneVIP` is an IPv4 address that fronts the Kubernetes API for
 every control-plane node. It is required when `cluster.nodes` contains more than
-one node, or `cluster.nico.nodeCount` is more than one with `nico`. When set, the controller runs kube-vip on each node,
+one node, or `infra.nico.controlPlane.count` is more than one with `nico`. When set, the controller runs kube-vip on each node,
 kubeadm uses the VIP as the `controlPlaneEndpoint`, and the kubeconfig `bootstrap
 site` writes points at it. A single-node cluster may leave it empty and use that
 node's IP as its fixed endpoint. The controller selects a control-plane node that reports

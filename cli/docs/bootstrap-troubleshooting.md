@@ -84,11 +84,38 @@ available, the kubeconfig path.
 level=WARN msg="bootstrap failed after site cluster creation; retaining the bootstrap kind cluster for recovery" cluster=nvkectl-bootstrap kubeconfig=/tmp/nvkectl-bootstrap-kubeconfig-.../config
 ```
 
-With `infrastructure: nico`, the kept cluster also holds the
+With `infra.provider: nico`, the kept cluster also holds the
 NICo token and the tenant password as Secrets (`nico-credentials` in
 `capnico-system`, `dgxc-tenant-credentials` in `nke-controller`), so delete it
 when you are done:
 `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`.
+
+#### Release the NICo instances first
+
+After a failure past the point where the site cluster was created, the
+retained cluster also holds the Cluster API machines for the NICo instances
+CAPNICo allocated. Deleting a Kind cluster runs no finalizers, so deleting it
+now leaves those instances allocated and unmanaged, with the tenant login in
+their user data, and nothing in NICo or in a re-run will find them. Release them
+first, by deleting the site cluster through the retained cluster's controller,
+which deletes each node's machine and so releases its instance:
+
+```bash
+nvkectl config set-site --name nvkectl-bootstrap --url http://127.0.0.1:30080 \
+  --kubeconfig /tmp/nvkectl-bootstrap-kubeconfig-.../config   # the path in the log line above
+nvkectl delete cluster <clusterName>                          # clusterName from your site spec
+nvkectl get clusters                                          # repeat until it is no longer listed
+```
+
+The URL port is `NVKECTL_CONTROLLER_PORT`, `30080` by default. `set-site` makes
+`nvkectl-bootstrap` the active site; switch back with
+`nvkectl config use-site <name>`. A cluster can be deleted in any state, and it
+stays listed as `Deleting` until every machine is released. Only then delete the
+Kind cluster. The failure message prints these steps.
+
+None of this applies to a run that succeeded and was kept with
+`--keep-bootstrap-cluster`: the instances are then the new cluster's nodes, so
+delete only the Kind cluster.
 
 Use that kubeconfig to look at the live state, which is more than the dump
 captures:

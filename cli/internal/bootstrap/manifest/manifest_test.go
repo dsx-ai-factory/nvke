@@ -5,6 +5,7 @@ package manifest
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -19,7 +20,7 @@ func TestLoad_PinsTheThreePulledCharts(t *testing.T) {
 			t.Errorf("component %q chart is incomplete: %+v", c, *comp.Chart)
 		}
 	}
-	for _, c := range []string{ComponentPostgres, ComponentController, ComponentProvisioned} {
+	for _, c := range []string{ComponentPostgres, ComponentController, ComponentProvisioned, ComponentCAPNICo} {
 		if comp := m.Components[c]; comp.Chart != nil {
 			t.Errorf("component %q lists a chart; it ships inside nvkectl", c)
 		}
@@ -34,5 +35,18 @@ func TestBytes_IsTheFileAsShipped(t *testing.T) {
 	b[0] = 'X'
 	if Bytes()[0] != '#' {
 		t.Error("Bytes() returned the embedded slice itself, not a copy")
+	}
+}
+
+func TestLoad_ListsTheCAPNICoImageWithItsDigest(t *testing.T) {
+	img, ok := Load().Components[ComponentCAPNICo].Images[ImageCAPNICo]
+	if !ok {
+		t.Fatalf("component %q lists no %q image", ComponentCAPNICo, ImageCAPNICo)
+	}
+	if !strings.Contains(img.Ref, "/") || !strings.Contains(img.Ref, ":") {
+		t.Errorf("CAPNICo image ref %q is not a registry reference with a tag", img.Ref)
+	}
+	if !strings.HasPrefix(img.Digest, "sha256:") || len(img.Digest) != len("sha256:")+64 {
+		t.Errorf("CAPNICo image digest %q is not a sha256 digest", img.Digest)
 	}
 }

@@ -47,25 +47,6 @@ type StackNico struct {
 	TokenFile string `yaml:"tokenFile"`
 }
 
-// appendValueChecks adds every problem with the NICo API credentials to v:
-// each field set, the endpoint an http or https URL. path names the block, as
-// controllerStack.nico or bootstrapNico.
-func (n *StackNico) appendValueChecks(v *validator, path string) {
-	for _, f := range [][2]string{
-		{"endpoint", n.Endpoint},
-		{"orgID", n.OrgID},
-		{"apiName", n.APIName},
-		{"tokenFile", n.TokenFile},
-	} {
-		if f[1] == "" {
-			v.addf("%s.%s is required", path, f[0])
-		}
-	}
-	if ep := n.Endpoint; ep != "" && !validHTTPEndpoint(ep) {
-		v.addf("%s.endpoint %q must be an http or https URL", path, ep)
-	}
-}
-
 // validHTTPEndpoint reports whether ep is an http or https URL with a host.
 func validHTTPEndpoint(ep string) bool {
 	u, err := url.Parse(ep)
@@ -159,7 +140,16 @@ func (inv *SiteSpec) ValidateControllerStack() error {
 		v.addf("%s is still a REPLACE_* placeholder; fill it in", path)
 	}
 	inv.ControllerStack.appendValueChecks(v)
+	inv.checkControllerEndpoint(v)
 	return v.err()
+}
+
+// checkControllerEndpoint reports a site spec the stack install has no address
+// to reach the controller at.
+func (inv *SiteSpec) checkControllerEndpoint(v *validator) {
+	if _, err := inv.ControllerEndpoint(); err != nil {
+		v.addf("%v", err)
+	}
 }
 
 // ValidateControllerStackValues checks the values that are filled in and
@@ -170,6 +160,7 @@ func (inv *SiteSpec) ValidateControllerStackValues() error {
 	}
 	v := &validator{}
 	inv.ControllerStack.appendValueChecks(v)
+	inv.checkControllerEndpoint(v)
 	return v.err()
 }
 
@@ -281,10 +272,18 @@ func (inv *SiteSpec) TrustDomain() (domain string, defaulted bool) {
 
 // ControllerEndpoint returns the address the site controller is reached at:
 // the control-plane VIP, or the only node's IP when the spec has one node
-// and no VIP.
+// and no VIP. With nico no node has an address until NICo allocates it, so
+// the VIP is the only source; the bootstrap itself does not need one for a
+// single node, which is why this is checked with the controllerStack section
+// and not when the spec loads.
 func (inv *SiteSpec) ControllerEndpoint() (string, error) {
 	if inv.Cluster.ControlPlaneVIP != "" {
 		return inv.Cluster.ControlPlaneVIP, nil
+	}
+	if inv.IsNico() {
+		return "", errors.New("the controller stack install needs cluster.controlPlaneVIP with infra.provider nico: the " +
+			"nodes have no address until NICo allocates them, so there is nothing else to reach the controller at " +
+			"(the bootstrap itself does not need it with one node)")
 	}
 	if len(inv.Cluster.Nodes) == 1 {
 		return inv.Cluster.Nodes[0].IP, nil

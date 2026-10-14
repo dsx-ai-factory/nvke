@@ -43,14 +43,15 @@ registry:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `clusterName` | string | yes | Lowercase RFC 1123 label. |
-| `cluster.nodes` | list | yes | Must contain an odd number of control-plane nodes and at least one node. |
+| `infra.provider` | string | no | `provisioned` (default) or `nico`. With `nico`, CAPNICo allocates the control-plane machines, described by `infra.nico`; see the CLI's [site spec reference](../../cli/docs/sitespec.md). |
+| `cluster.nodes` | list | yes, with `provisioned` | Must contain an odd number of control-plane nodes and at least one node. Not used with `infra.provider: nico`, which takes `infra.nico.controlPlane.count` instead and rejects this list. |
 | `cluster.nodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Must be unique across all nodes. |
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Must be unique across all nodes. |
-| `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. Every thumbprint listed is allowlisted on the SPIRE server the bootstrap deploys; a node without one cannot attest, and a file with none deploys no TPM attestor. Ignored with `--disable-mtls`. |
+| `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. Every thumbprint listed is allowlisted on the SPIRE server the bootstrap deploys; a node without one cannot attest, and a file with none deploys no TPM attestor. That holds for `provisioned` only: with `infra.provider: nico` there is no node list, and the attestor is always on, with its allowlist filled in from the nodes CAPNICo creates. Ignored with `--disable-mtls`. |
 | `cluster.k8sVersion` | string | yes | Plain semver, e.g. `1.34.2` — no leading `v`. |
 | `cluster.cniName` | string | no | Defaults to and must be `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the agent's built-in default. |
-| `cluster.controlPlaneVIP` | string | for multiple nodes | kube-vip control-plane VIP. Required when `cluster.nodes` has more than one entry. It must be a routable unicast IPv4 address, reachable by the nodes over BGP, and outside `podCidr` and `serviceCidr`. It may equal a declared node IP, but CLI acceptance does not prove bootstrap or networking works. See [CLI validation rules](../../cli/docs/sitespec.md#validation-rules) for runtime constraints. A single-node cluster may omit it and use that node's IP as its fixed endpoint. |
+| `cluster.controlPlaneVIP` | string | for multiple nodes | kube-vip control-plane VIP. Required when `cluster.nodes` (or `infra.nico.controlPlane.count` with nico) has more than one entry. It must be a routable unicast IPv4 address, reachable by the nodes over BGP, and outside `podCidr` and `serviceCidr`. It may equal a declared node IP, but CLI acceptance does not prove bootstrap or networking works. See [CLI validation rules](../../cli/docs/sitespec.md#validation-rules) for runtime constraints. A single-node cluster may omit it and use that node's IP as its fixed endpoint. |
 | `cluster.podCidr` | string | yes | Valid CIDR. Comma-separated list allowed for dual-stack. |
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | gRPC port nvke-agent listens on. Defaults to `15005`. Set it only if you passed `--secure-server-port` to the agent. |
@@ -61,6 +62,7 @@ registry:
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never logged or printed. See below. |
 | `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `nvkectl-bootstrap.nke.local`, and the install says so. A bootstrap run with `NVKECTL_BOOTSTRAP_CLUSTER_NAME` set derives another, so set it then. |
+| `spire.externalAddress` | string | with `nico`, unless `--disable-mtls` | IP address or DNS name nodes created by CAPNICo use to reach the bootstrap SPIRE server, on NodePort 30081. Rejected with `provisioned`. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to, so a node given that certificate when it was provisioned verifies the server on first contact. Without it SPIRE is self-signed. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Both or neither; both files are checked for existence at load. |
 
@@ -86,6 +88,8 @@ Any field can be supplied or overridden via an environment variable. A set varia
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |
 | `NVKECTL_SPIFFE_TRUST_DOMAIN` | `spire.trustDomain` |
+| `NVKECTL_SPIRE_EXTERNAL_ADDRESS` | `spire.externalAddress` |
+| `NVKECTL_INFRA_PROVIDER` | `infra.provider` — `provisioned` or `nico` |
 | `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
 | `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
 | `NVKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |

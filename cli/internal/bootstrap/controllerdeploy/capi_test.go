@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
 )
 
 // TestInstallCAPI_InstallsCoreThenTheProvider pins the two things that are easy
@@ -466,6 +468,24 @@ func TestEmbeddedCAPNICoManifest_IsTheDeployPathsManifest(t *testing.T) {
 	}
 	if !bytes.Equal(source, embedded) {
 		t.Error("the embedded CAPNICo manifest differs from deploy/nico/capnico/capnico.yaml; run `make -C cli capnico-manifest`")
+	}
+}
+
+// TestBootstrapManifest_NamesTheEmbeddedCAPNICoImage: the bootstrap manifest
+// is what `nvkectl get bootstrap-manifest` and the mirroring script read, so the
+// CAPNICo image it lists has to be the one the embedded manifest runs.
+func TestBootstrapManifest_NamesTheEmbeddedCAPNICoImage(t *testing.T) {
+	raw, err := manifestsFS.ReadFile(capnicoManifestFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := capnicoImageLine.FindAllSubmatch(raw, -1)
+	if len(lines) != 1 {
+		t.Fatalf("the embedded CAPNICo manifest names %d images, want 1", len(lines))
+	}
+	listed := manifest.Load().Components[manifest.ComponentCAPNICo].Images[manifest.ImageCAPNICo].Ref
+	if got := string(lines[0][2]); listed != got {
+		t.Errorf("bootstrap-manifest.yaml lists the CAPNICo image %q, the embedded manifest runs %q; update the manifest entry and its digest", listed, got)
 	}
 }
 

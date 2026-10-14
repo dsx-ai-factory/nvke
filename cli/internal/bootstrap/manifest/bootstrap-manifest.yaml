@@ -15,8 +15,8 @@
 # or NVKECTL_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, replace those two.
 #
 # Not listed:
-# - The controller chart, the Postgres chart and the provisioned provider's
-#   manifest. They ship inside nvkectl.
+# - The controller chart, the Postgres chart, the provisioned provider's
+#   manifest and the CAPNICo manifest. They ship inside nvkectl.
 # - The components `clusterctl init` installs: Cluster API core, the kubeadm
 #   providers and cert-manager.
 # - The kindest/node image kind boots.
@@ -112,3 +112,14 @@ components:
     images:
       manager:
         ref: cluster-api-provider-provisioned:latest
+
+  # Pulled only with `infra.provider: nico`. An upstream release: the image the
+  # embedded CAPNICo manifest runs, pinned there by tag. --release replaces it
+  # for one run with the capnico-controller digest of an NVKR release. The
+  # manifest ships inside nvkectl, so there is no chart entry. The digest is
+  # the multi-architecture index's.
+  cluster-api-provider-nico:
+    images:
+      controller:
+        ref: ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.0.45
+        digest: sha256:bca9d77a25e605a5c39faf0a71b45b484d363edc4535f8a37aa811a639738595

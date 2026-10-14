@@ -164,6 +164,34 @@ func TestEffectiveTrustDomainAndEndpoint(t *testing.T) {
 	}
 }
 
+// TestControllerEndpoint_NicoNeedsTheVIP: one nico node without a VIP
+// bootstraps, but the stack install has no address for the controller, and the
+// controllerStack checks say so instead of leaving render deploy-path to fail.
+func TestControllerEndpoint_NicoNeedsTheVIP(t *testing.T) {
+	spec := baseSpec(t)
+	makeNico(spec)
+	spec.Infra.Nico.ControlPlane.Count = 1
+	spec.Cluster.ControlPlaneVIP = ""
+	if err := spec.Validate(); err != nil {
+		t.Fatalf("one nico node without a VIP must validate for the bootstrap: %v", err)
+	}
+	if _, err := spec.ControllerEndpoint(); err == nil || !strings.Contains(err.Error(), "cluster.controlPlaneVIP") || strings.Contains(err.Error(), "several nodes") {
+		t.Errorf("ControllerEndpoint error = %v, want one naming cluster.controlPlaneVIP for nico", err)
+	}
+	for name, check := range map[string]func() error{
+		"ValidateControllerStack":       spec.ValidateControllerStack,
+		"ValidateControllerStackValues": spec.ValidateControllerStackValues,
+	} {
+		if err := check(); err == nil || !strings.Contains(err.Error(), "cluster.controlPlaneVIP") {
+			t.Errorf("%s = %v, want the missing VIP reported", name, err)
+		}
+	}
+	spec.Cluster.ControlPlaneVIP = "10.0.0.5"
+	if ep, err := spec.ControllerEndpoint(); err != nil || ep != "10.0.0.5" {
+		t.Errorf("endpoint with a VIP: %q %v", ep, err)
+	}
+}
+
 // Relative file paths in the section resolve from the site spec's directory,
 // not from wherever the command runs.
 func TestValidateControllerStackReferences_RelativeToTheSpec(t *testing.T) {

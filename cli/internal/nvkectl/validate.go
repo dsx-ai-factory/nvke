@@ -37,7 +37,8 @@ func newValidateSiteSpecCmd() *cobra.Command {
 		Long: `Check the whole site spec and report by section.
 
 The bootstrap section is what "nvkectl bootstrap site" reads: every field is
-checked, and the SPIRE CA files must exist. With infrastructure nico,
+checked, and the SPIRE CA files must exist. With infra.provider nico, the
+files infra.nico names and the file NVKECTL_NICO_CREDENTIALS names must exist, and
 spire.externalAddress is required unless --disable-mtls is given, as it is for
 "nvkectl bootstrap site". The controllerStack section is
 what the controller stack install reads: the REPLACE_* values still to fill
@@ -61,7 +62,7 @@ is not filled in yet.`,
 	_ = cmd.MarkFlagRequired("sitespec")
 	cmd.Flags().BoolVar(&opts.bootstrapOnly, "bootstrap-only", false, "Check only the fields bootstrap site reads")
 	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
-		"Check the file as \"bootstrap site --disable-mtls\" would: with infrastructure nico, spire.externalAddress is not required")
+		"Check the file as \"bootstrap site --disable-mtls\" would: with infra.provider nico, spire.externalAddress is not required")
 	return cmd
 }
 
@@ -74,6 +75,10 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 	// this command passes is one that command accepts.
 	if err := spec.CheckBootstrapMode(opts.disableMTLS); err != nil {
 		fmt.Fprintf(out, "bootstrap: %v (--disable-mtls lifts this)\n", err)
+		return errors.New("the site spec is not ready for nvkectl bootstrap site")
+	}
+	if err := spec.ValidateBootstrapReferences(); err != nil {
+		fmt.Fprintf(out, "bootstrap: %v\n", err)
 		return errors.New("the site spec is not ready for nvkectl bootstrap site")
 	}
 	fmt.Fprintln(out, "bootstrap: valid; nvkectl bootstrap site can run with this file")

@@ -182,15 +182,16 @@ func TestValidateSiteSpec_NicoNeedsTheSpireAddressUnlessMTLSIsOff(t *testing.T) 
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"bootstrap-nico.token", "bootstrap-tenant.password"} {
+	for _, name := range []string{"nico.token", "bootstrap-tenant.password"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
+	t.Setenv("NVKECTL_NICO_CREDENTIALS", filepath.Join(dir, "nico.token"))
 	if err := os.Mkdir(filepath.Join(dir, "releases"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	const releases = "kind: MachineImage\nmetadata:\n  name: img\n---\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n"
+	const releases = "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n"
 	if err := os.WriteFile(filepath.Join(dir, "releases", "r.yaml"), []byte(releases), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -203,5 +204,53 @@ func TestValidateSiteSpec_NicoNeedsTheSpireAddressUnlessMTLSIsOff(t *testing.T) 
 	out.Reset()
 	if err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true, disableMTLS: true}); err != nil {
 		t.Fatalf("with --disable-mtls: %v\n%s", err, out.String())
+	}
+}
+
+// TestValidateSiteSpec_NicoOneNodeWithoutVIP: the bootstrap can run, and the
+// controllerStack section is reported not ready, because render deploy-path
+// would have no address for the controller.
+func TestValidateSiteSpec_NicoOneNodeWithoutVIP(t *testing.T) {
+	path := nicoStackSiteSpec(t, oneNicoNodeNoVIP(t))
+	dir := filepath.Dir(path)
+	for _, name := range []string{"nico.token", "bootstrap-tenant.password"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("NVKECTL_NICO_CREDENTIALS", filepath.Join(dir, "nico.token"))
+	if err := os.Mkdir(filepath.Join(dir, "releases"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const releases = "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n"
+	if err := os.WriteFile(filepath.Join(dir, "releases", "r.yaml"), []byte(releases), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path})
+	got := out.String()
+	if err == nil || !strings.Contains(got, "bootstrap: valid") || !strings.Contains(got, "controllerStack: ") || !strings.Contains(got, "cluster.controlPlaneVIP") || strings.Contains(got, "controllerStack: valid\n") {
+		t.Fatalf("err = %v, output %q; want the bootstrap valid and the controllerStack section reporting the missing VIP", err, got)
+	}
+}
+
+// TestValidateSiteSpec_BootstrapFilesAreCheckedInTheBootstrapSection: the files
+// the bootstrap reads are no longer checked when the spec loads, so validate
+// checks them itself, and a nico spec without them is not ready to bootstrap.
+func TestValidateSiteSpec_BootstrapFilesAreCheckedInTheBootstrapSection(t *testing.T) {
+	example, err := os.ReadFile("../../examples/sitespec-nico.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "sitespec.yaml")
+	if err := os.WriteFile(path, example, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("NVKECTL_NICO_CREDENTIALS", "")
+	var out strings.Builder
+	err = runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
+	if err == nil || !strings.Contains(out.String(), "NVKECTL_NICO_CREDENTIALS must name") || !strings.Contains(out.String(), "infra.nico.tenant.passwordFile") || strings.Contains(out.String(), "can run with this file") {
+		t.Fatalf("err = %v, output %q; want the credentials variable and the missing files reported", err, out.String())
 	}
 }

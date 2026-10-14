@@ -7,13 +7,16 @@
 #
 # The NICo described here is used ONLY to bootstrap the site controller's own
 # nodes. The NICo the finished site controller uses for tenant clusters is
-# configured separately and may be a different one.
+# configured separately (controllerStack.nico) and may be a different one.
 #
-# bootstrapNico and bootstrapTenant are the same structs as controllerStack.nico
-# and controllerStack.tenant, which configures the
-# tenant NICo; a site spec can carry both. The CAPNICo image is public, so the
-# bootstrap needs no registry credential. Tokens are paths to files, so this file holds
-# no credential. See docs/sitespec.md for the file format.
+# The NICo token is not in this file. Point NVKECTL_NICO_CREDENTIALS at a file
+# that holds it:
+#
+#   NVKECTL_NICO_CREDENTIALS=/path/to/nico.token nvkectl bootstrap site -f sitespec.yaml
+#
+# The CAPNICo image is public, so the bootstrap needs no registry credential.
+# The tenant password is a path to a file, so this file holds no credential. See
+# docs/sitespec.md for the file format.
 #
 # Every ID below is a placeholder (the all-zero UUID is refused as unset).
 # Replace all of them. An instance type with no
@@ -21,20 +24,23 @@
 
 clusterName: "nvke-site"
 
-# "provisioned" (the default) reads cluster.nodes. "nico" reads cluster.nico.
-infrastructure: nico
+infra:
+  # "provisioned" (the default) reads cluster.nodes. "nico" reads infra.nico.
+  provider: nico
 
-cluster:
   nico:
-    # Same meaning as the length of cluster.nodes: odd, at least one.
-    nodeCount: 3
-    # The request's nico block, with the API's field names.
-    provider:
-      orgID: "example-org"
+    # The NICo organization the machines are created in.
+    orgID: "example-org"
+
+    # An existing NICo, which the bootstrap CAPNICo calls.
+    remote:
+      endpoint: "https://nico.example"
       siteID: "00000000-0000-0000-0000-000000000001"
       vpcID: "00000000-0000-0000-0000-000000000002"
-    # The control-plane config's nico block.
+
     controlPlane:
+      # Same meaning as the length of cluster.nodes: odd, at least one.
+      count: 3
       # Ordered; index 0 is the first choice.
       instanceTypePreference:
         - "00000000-0000-0000-0000-000000000003"
@@ -44,9 +50,23 @@ cluster:
       sshKeyGroupIDs:
         - "00000000-0000-0000-0000-000000000005"
       osProfile: "example-os-profile"
-      configProfile: "example-cp-profile"
+      # Optional. The bootstrap controller serves no config profiles, so a name
+      # here is accepted but its hooks and labels never reach the nodes.
+      # configProfile: "example-cp-profile"
 
-  # Required with more than one control-plane node (nodeCount above).
+    # The login the controller renders into every node CAPNICo creates; it refuses to
+    # render user data without it. The password is a path to a file.
+    tenant:
+      user: "example-user"
+      passwordFile: "bootstrap-tenant.password"
+
+    # MachineImage and ClusterRelease manifests (a file or a directory) applied to the
+    # bootstrap cluster before the site cluster is created. They must include the
+    # ClusterRelease named by controlPlane.osProfile and its MachineImage.
+    releases: "releases"
+
+cluster:
+  # Required with more than one control-plane node (count above).
   controlPlaneVIP: "10.0.0.100"
   k8sVersion: "1.34.2"
   cniName: "ovn-kubernetes"
@@ -59,24 +79,6 @@ cluster:
 # 30081), as seen from the network they are created on. An IP address or DNS name.
 spire:
   externalAddress: "192.0.2.10"
-
-# The NICo API the bootstrap CAPNICo calls. Not the tenant NICo.
-bootstrapNico:
-  endpoint: "https://nico.example"
-  orgID: "example-org"
-  apiName: "forge"
-  tokenFile: "bootstrap-nico.token"
-
-# The login the controller renders into every node CAPNICo creates; it refuses to
-# render user data without it. The password is a path to a file, as the token is.
-bootstrapTenant:
-  user: "example-user"
-  passwordFile: "bootstrap-tenant.password"
-
-# MachineImage and ClusterRelease manifests (a file or a directory) applied to the
-# bootstrap cluster before the site cluster is created. They must include the
-# ClusterRelease named by cluster.nico.controlPlane.osProfile and its MachineImage.
-bootstrapReleases: "releases"
 
 registry:
   bootstrapRepo: "nvcr.io/org"

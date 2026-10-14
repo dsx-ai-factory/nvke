@@ -852,15 +852,16 @@ func TestControlPlaneSchedulable(t *testing.T) {
 
 const nicoYAML = `
 clusterName: nvke-site
-infrastructure: nico
-cluster:
+infra:
+  provider: nico
   nico:
-    nodeCount: 3
-    provider:
-      orgID: example-org
+    orgID: example-org
+    remote:
+      endpoint: https://nico.example
       siteID: 00000000-0000-0000-0000-000000000001
       vpcID: 00000000-0000-0000-0000-000000000002
     controlPlane:
+      count: 3
       instanceTypePreference:
         - 00000000-0000-0000-0000-000000000003
       vpcPrefixIDs:
@@ -869,6 +870,11 @@ cluster:
         - 00000000-0000-0000-0000-000000000005
       osProfile: example-os-profile
       configProfile: example-config-profile
+    tenant:
+      user: example-user
+      passwordFile: tenant.password
+    releases: releases
+cluster:
   controlPlaneVIP: "10.0.0.100"
   k8sVersion: "1.34.2"
   cniName: ovn-kubernetes
@@ -876,28 +882,22 @@ cluster:
   serviceCidr: "10.200.0.0/16"
 spire:
   externalAddress: 192.0.2.10
-bootstrapNico:
-  endpoint: https://bootstrap-nico.example
-  orgID: bootstrap-org
-  apiName: forge
-  tokenFile: nico.token
-bootstrapTenant:
-  user: example-user
-  passwordFile: tenant.password
-bootstrapReleases: releases
 registry:
   bootstrapRepo: "nvcr.io/org"
   bootstrapChart: "controller-chart"
 `
 
-// writeNicoTemp writes a site spec and the files it names beside it: the NICo
-// token, the tenant password, and a releases directory holding the
-// example-os-profile ClusterRelease and its MachineImage.
+// writeNicoTemp writes a site spec and the files it names beside it: the tenant
+// password and a releases directory holding the example-os-profile
+// ClusterRelease and its MachineImage. It also writes a NICo token file and
+// points NVKECTL_NICO_CREDENTIALS at it, as an operator running the bootstrap
+// would.
 func writeNicoTemp(t *testing.T, content string) string {
 	t.Helper()
 	path := writeTemp(t, content)
 	dir := filepath.Dir(path)
 	writeNicoFiles(t, dir, "nico.token", "tenant.password", "releases")
+	t.Setenv(NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
 	return path
 }
 
@@ -922,17 +922,14 @@ func writeNicoFiles(t *testing.T, dir, token, password, releases string) {
 
 // makeNico turns a valid provisioned spec into a valid nico one.
 func makeNico(inv *SiteSpec) {
-	inv.Infrastructure = InfrastructureNico
+	inv.Infra.Provider = ProviderNico
 	inv.Cluster.Nodes = nil
-	inv.Cluster.Nico = validNico()
+	inv.Infra.Nico = validNico()
 	inv.Spire.ExternalAddress = "192.0.2.10"
-	inv.BootstrapNico = &StackNico{Endpoint: "https://bootstrap-nico.example", OrgID: "bootstrap-org", APIName: "forge", TokenFile: "nico.token"}
-	inv.BootstrapTenant = &StackTenant{User: "example-user", PasswordFile: "tenant.password"}
-	inv.BootstrapReleases = "releases"
 }
 
 func TestLoadInfrastructureFromEnv(t *testing.T) {
-	t.Setenv("NVKECTL_INFRASTRUCTURE", "nico")
+	t.Setenv("NVKECTL_INFRA_PROVIDER", "nico")
 	// The file lists nodes; the variable asks for nico, so the spec is
 	// contradictory and must fail rather than quietly pick one.
 	_, err := Load(writeTemp(t, validYAML))
@@ -952,75 +949,58 @@ func TestValidate_Infrastructure(t *testing.T) {
 			mutate: func(*SiteSpec) {},
 		},
 		{
-			name:    "unknown infrastructure",
-			mutate:  func(inv *SiteSpec) { inv.Infrastructure = "aws" },
-			wantErr: `infrastructure "aws" is not supported`,
+			name:    "unknown provider",
+			mutate:  func(inv *SiteSpec) { inv.Infra.Provider = "aws" },
+			wantErr: `infra.provider "aws" is not supported`,
 		},
 		{
-			name: "nico block with provisioned infrastructure",
-			mutate: func(inv *SiteSpec) {
-				inv.Cluster.Nico = &NicoCluster{}
-			},
-			wantErr: "cluster.nico is only valid with infrastructure",
+			name:    "nico block with the provisioned provider",
+			mutate:  func(inv *SiteSpec) { inv.Infra.Nico = &NicoInfra{} },
+			wantErr: "infra.nico is only valid with infra.provider",
 		},
 		{
-			name:    "bootstrapNico with provisioned infrastructure",
-			mutate:  func(inv *SiteSpec) { inv.BootstrapNico = &StackNico{} },
-			wantErr: "bootstrapNico is only valid with infrastructure",
+			name:    "nico without a tenant",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.Infra.Nico.Tenant = nil },
+			wantErr: "infra.nico.tenant is required",
 		},
 		{
-			name:    "bootstrapTenant with provisioned infrastructure",
-			mutate:  func(inv *SiteSpec) { inv.BootstrapTenant = &StackTenant{} },
-			wantErr: "bootstrapTenant is only valid with infrastructure",
+			name:    "tenant missing its password file",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.Infra.Nico.Tenant.PasswordFile = "" },
+			wantErr: "infra.nico.tenant.passwordFile is required",
 		},
 		{
-			name:    "bootstrapReleases with provisioned infrastructure",
-			mutate:  func(inv *SiteSpec) { inv.BootstrapReleases = "releases" },
-			wantErr: "bootstrapReleases is only valid with infrastructure",
+			name:    "nico without releases",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.Infra.Nico.Releases = "" },
+			wantErr: "infra.nico.releases is required",
 		},
 		{
-			name:    "nico without bootstrapTenant",
-			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapTenant = nil },
-			wantErr: "bootstrapTenant is required",
+			name:    "nico without a remote",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.Infra.Nico.Remote = nil },
+			wantErr: "infra.nico.remote is required",
 		},
 		{
-			name:    "bootstrapTenant missing its password file",
-			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapTenant.PasswordFile = "" },
-			wantErr: "bootstrapTenant.passwordFile is required",
+			name:    "remote endpoint is not a URL",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.Infra.Nico.Remote.Endpoint = "nico.example" },
+			wantErr: "infra.nico.remote.endpoint",
 		},
 		{
-			name:    "nico without bootstrapReleases",
-			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapReleases = "" },
-			wantErr: "bootstrapReleases is required",
-		},
-		{
-			name:    "nico without bootstrapNico",
-			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapNico = nil },
-			wantErr: "bootstrapNico is required",
-		},
-		{
-			name:    "bootstrapNico endpoint is not a URL",
-			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapNico.Endpoint = "nico.example" },
-			wantErr: "bootstrapNico.endpoint",
-		},
-		{
-			name:    "bootstrapNico missing its token file",
-			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapNico.TokenFile = "" },
-			wantErr: "bootstrapNico.tokenFile is required",
+			name:    "remote missing its endpoint",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.Infra.Nico.Remote.Endpoint = "" },
+			wantErr: "infra.nico.remote.endpoint is required",
 		},
 		{
 			name: "nico without a nico block",
 			mutate: func(inv *SiteSpec) {
-				inv.Infrastructure = InfrastructureNico
+				inv.Infra.Provider = ProviderNico
 				inv.Cluster.Nodes = nil
 			},
-			wantErr: "cluster.nico is required",
+			wantErr: "infra.nico is required",
 		},
 		{
 			name: "nico with a node list",
 			mutate: func(inv *SiteSpec) {
-				inv.Infrastructure = InfrastructureNico
-				inv.Cluster.Nico = validNico()
+				inv.Infra.Provider = ProviderNico
+				inv.Infra.Nico = validNico()
 			},
 			wantErr: "cluster.nodes must be empty",
 		},
@@ -1047,41 +1027,38 @@ func TestValidate_Infrastructure(t *testing.T) {
 	}
 }
 
-func TestValidate_NicoCluster(t *testing.T) {
+func TestValidate_NicoInfra(t *testing.T) {
 	id := openapi_types.UUID{9}
 	tests := []struct {
 		name    string
-		mutate  func(*NicoCluster)
+		mutate  func(*NicoInfra)
 		wantErr string
 	}{
-		{"zero nodes", func(n *NicoCluster) { n.NodeCount = 0 }, "nodeCount must be at least 1"},
-		{"even nodes", func(n *NicoCluster) { n.NodeCount = 2 }, "nodeCount must be an odd number"},
-		{"no provider", func(n *NicoCluster) { n.Provider = nil }, "cluster.nico.provider is required"},
-		{"missing org", func(n *NicoCluster) { n.Provider.OrgID = "" }, "provider.orgID is required"},
-		{"missing site", func(n *NicoCluster) { n.Provider.SiteID = openapi_types.UUID{} }, "provider.siteID is required"},
-		{"missing vpc", func(n *NicoCluster) { n.Provider.VpcID = openapi_types.UUID{} }, "provider.vpcID is required"},
-		{"no control plane", func(n *NicoCluster) { n.ControlPlane = nil }, "cluster.nico.controlPlane is required"},
-		{"no instance types", func(n *NicoCluster) { n.ControlPlane.InstanceTypePreference = nil }, "instanceTypePreference must list"},
+		{"zero nodes", func(n *NicoInfra) { n.ControlPlane.Count = 0 }, "controlPlane.count must be at least 1"},
+		{"even nodes", func(n *NicoInfra) { n.ControlPlane.Count = 2 }, "controlPlane.count must be an odd number"},
+		{"missing org", func(n *NicoInfra) { n.OrgID = "" }, "infra.nico.orgID is required"},
+		{"missing site", func(n *NicoInfra) { n.Remote.SiteID = openapi_types.UUID{} }, "remote.siteID is required"},
+		{"missing vpc", func(n *NicoInfra) { n.Remote.VpcID = openapi_types.UUID{} }, "remote.vpcID is required"},
+		{"no instance types", func(n *NicoInfra) { n.ControlPlane.InstanceTypePreference = nil }, "instanceTypePreference must list"},
 		{
 			"nil instance type",
-			func(n *NicoCluster) { n.ControlPlane.InstanceTypePreference = []openapi_types.UUID{{}} },
+			func(n *NicoInfra) { n.ControlPlane.InstanceTypePreference = []openapi_types.UUID{{}} },
 			"instanceTypePreference[0]",
 		},
-		{"no ssh key groups", func(n *NicoCluster) { n.ControlPlane.SSHKeyGroupIDs = nil }, "sshKeyGroupIDs must list"},
-		{"no networking", func(n *NicoCluster) { n.ControlPlane.VpcPrefixIDs = nil }, "one of vpcPrefixIDs"},
+		{"no ssh key groups", func(n *NicoInfra) { n.ControlPlane.SSHKeyGroupIDs = nil }, "sshKeyGroupIDs must list"},
+		{"no networking", func(n *NicoInfra) { n.ControlPlane.VpcPrefixIDs = nil }, "one of vpcPrefixIDs"},
 		{
 			"both networkings",
-			func(n *NicoCluster) { n.ControlPlane.SubnetIDs = []openapi_types.UUID{id} },
+			func(n *NicoInfra) { n.ControlPlane.SubnetIDs = []openapi_types.UUID{id} },
 			"only one of vpcPrefixIDs and subnetIDs",
 		},
-		{"missing os profile", func(n *NicoCluster) { n.ControlPlane.OSProfile = "" }, "osProfile is required"},
-		{"missing config profile", func(n *NicoCluster) { n.ControlPlane.ConfigProfile = "" }, "configProfile is required"},
+		{"missing os profile", func(n *NicoInfra) { n.ControlPlane.OSProfile = "" }, "osProfile is required"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			inv := minimalValid()
 			makeNico(inv)
-			tt.mutate(inv.Cluster.Nico)
+			tt.mutate(inv.Infra.Nico)
 			err := inv.Validate()
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("Validate error = %v, want it to contain %q", err, tt.wantErr)
@@ -1090,31 +1067,49 @@ func TestValidate_NicoCluster(t *testing.T) {
 	}
 }
 
-// uid returns the UUID 00000000-0000-0000-0000-00000000000n.
-func uid(n byte) openapi_types.UUID { return openapi_types.UUID{15: n} }
-
-// validNico is built from the API's own structs, as the site spec's block is.
-func validNico() *NicoCluster {
-	return &NicoCluster{
-		NodeCount: 3,
-		Provider: &api.NicoClusterProvider{
-			OrgID:  "example-org",
-			SiteID: uid(1),
-			VpcID:  uid(2),
-		},
-		ControlPlane: &api.NicoControlPlaneProviderCreate{
-			InstanceTypePreference: []openapi_types.UUID{uid(3)},
-			VpcPrefixIDs:           []openapi_types.UUID{uid(4)},
-			SSHKeyGroupIDs:         []openapi_types.UUID{uid(5)},
-			OSProfile:              "example-os-profile",
-			ConfigProfile:          "example-config-profile",
-		},
+// TestValidate_NicoConfigProfileIsOptional: the bootstrap controller serves no
+// config profiles, so a spec that names none is complete.
+func TestValidate_NicoConfigProfileIsOptional(t *testing.T) {
+	inv := minimalValid()
+	makeNico(inv)
+	inv.Infra.Nico.ControlPlane.ConfigProfile = ""
+	if err := inv.Validate(); err != nil {
+		t.Fatalf("Validate rejected a nico spec with no configProfile: %v", err)
 	}
 }
 
-// TestLoad_NicoBlocksAreTheAPIsStructs: the file's cluster.nico is decoded into
-// the generated API structs, UUIDs and all, and a field they do not declare is
-// refused like any other unknown field.
+// uid returns the UUID 00000000-0000-0000-0000-00000000000n.
+func uid(n byte) openapi_types.UUID { return openapi_types.UUID{15: n} }
+
+// validNico is built with the API's own struct for the control-plane block, as
+// the site spec's is.
+func validNico() *NicoInfra {
+	return &NicoInfra{
+		OrgID: "example-org",
+		Remote: &NicoRemote{
+			Endpoint: "https://nico.example",
+			SiteID:   uid(1),
+			VpcID:    uid(2),
+		},
+		ControlPlane: NicoControlPlane{
+			Count: 3,
+			NicoControlPlaneProviderCreate: api.NicoControlPlaneProviderCreate{
+				InstanceTypePreference: []openapi_types.UUID{uid(3)},
+				VpcPrefixIDs:           []openapi_types.UUID{uid(4)},
+				SSHKeyGroupIDs:         []openapi_types.UUID{uid(5)},
+				OSProfile:              "example-os-profile",
+				ConfigProfile:          "example-config-profile",
+			},
+		},
+		Tenant:   &StackTenant{User: "example-user", PasswordFile: "tenant.password"},
+		Releases: "releases",
+	}
+}
+
+// TestLoad_NicoBlocksAreTheAPIsStructs: the file's infra.nico is decoded with the
+// generated API struct for the control plane flattened into controlPlane, UUIDs
+// and all, and a field it does not declare is refused like any other unknown
+// field.
 func TestLoad_NicoBlocksAreTheAPIsStructs(t *testing.T) {
 	inv, err := Load(writeNicoTemp(t, nicoYAML))
 	if err != nil {
@@ -1123,13 +1118,10 @@ func TestLoad_NicoBlocksAreTheAPIsStructs(t *testing.T) {
 	want := validNico()
 	// Compared as the JSON the API would carry: an empty list and an absent one
 	// are the same request.
-	gotJSON, _ := json.Marshal(inv.Cluster.Nico)
+	gotJSON, _ := json.Marshal(inv.Infra.Nico)
 	wantJSON, _ := json.Marshal(want)
 	if string(gotJSON) != string(wantJSON) {
-		t.Errorf("cluster.nico = %s, want %s", gotJSON, wantJSON)
-	}
-	if inv.BootstrapNico == nil || inv.BootstrapNico.Endpoint != "https://bootstrap-nico.example" || inv.BootstrapNico.APIName != "forge" {
-		t.Errorf("BootstrapNico = %+v", inv.BootstrapNico)
+		t.Errorf("infra.nico = %s, want %s", gotJSON, wantJSON)
 	}
 
 	_, err = Load(writeNicoTemp(t, strings.Replace(nicoYAML, "      osProfile: example-os-profile", "      osProfle: typo", 1)))
@@ -1143,26 +1135,90 @@ func TestLoad_NicoBlocksAreTheAPIsStructs(t *testing.T) {
 	}
 }
 
-// TestLoad_BootstrapNicoFilesMustExist: the token file the bootstrap
-// credentials name is checked at load, like spire.caCertFile.
-func TestLoad_BootstrapNicoFilesMustExist(t *testing.T) {
+// TestValidateBootstrapReferences_FilesMustExist: the files the bootstrap reads
+// are checked by the bootstrap's own check, not at load, so a command that never
+// runs the bootstrap does not need them.
+func TestValidateBootstrapReferences_FilesMustExist(t *testing.T) {
 	path := writeTemp(t, nicoYAML)
-	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "bootstrapNico.tokenFile") {
-		t.Fatalf("Load error = %v, want the token file reported", err)
+	inv, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load must not need the bootstrap-only files: %v", err)
+	}
+
+	t.Setenv(NicoCredentialsEnv, "")
+	err = inv.ValidateBootstrapReferences()
+	for _, want := range []string{NicoCredentialsEnv + " must name", "infra.nico.tenant.passwordFile", "infra.nico.releases"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("ValidateBootstrapReferences error = %v, want it to report %q", err, want)
+		}
+	}
+
+	t.Setenv(NicoCredentialsEnv, filepath.Join(t.TempDir(), "absent"))
+	if err := inv.ValidateBootstrapReferences(); err == nil || !strings.Contains(err.Error(), NicoCredentialsEnv+": ") {
+		t.Errorf("ValidateBootstrapReferences with a missing credentials file = %v", err)
 	}
 }
 
-func TestLoadInfrastructure(t *testing.T) {
+// TestReadNicoToken: the credentials file's format is told from its content. A
+// bare token is the bearer token; the client-credentials form is recognised and
+// refused until CAPNICo can take it; anything else is not a token.
+func TestReadNicoToken(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		content string
+		want    string
+		wantErr string
+	}{
+		{"a bare token", "example-token", "example-token", ""},
+		{"a token with a trailing newline", "example-token\n", "example-token", ""},
+		{"a JWT", "aaa.bbb.ccc=", "aaa.bbb.ccc=", ""},
+		{"empty", "  \n", "", "is empty"},
+		{"two values", "one two\n", "", "one value with no whitespace"},
+		{"client credentials as YAML", "tokenURL: https://idp.example/token\nclientID: id\nclientSecret: secret\n", "", "client-credentials form is not supported"},
+		{"client credentials as JSON", `{"tokenURL": "https://idp.example/token", "clientID": "id", "clientSecret": "s"}`, "", "client-credentials form is not supported"},
+		{"client credentials as KEY=VALUE", "clientID=id\nclientSecret=secret\n", "", "client-credentials form is not supported"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "credentials")
+			if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := ReadNicoToken(path)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("ReadNicoToken error = %v, want it to contain %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("ReadNicoToken = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+	if _, err := ReadNicoToken(filepath.Join(t.TempDir(), "absent")); err == nil {
+		t.Error("ReadNicoToken of a missing file succeeded")
+	}
+}
+
+// TestValidateBootstrapReferences_NothingToCheckWithProvisioned: a provisioned
+// spec names none of those files.
+func TestValidateBootstrapReferences_NothingToCheckWithProvisioned(t *testing.T) {
+	inv := minimalValid()
+	if err := inv.ValidateBootstrapReferences(); err != nil {
+		t.Fatalf("ValidateBootstrapReferences on a provisioned spec: %v", err)
+	}
+}
+
+func TestLoadInfra(t *testing.T) {
 	tests := []struct {
 		name            string
 		yaml            string
-		wantInfra       string
+		wantProvider    Provider
 		wantNico        bool
 		wantCPNodeCount int
 	}{
-		{"unset defaults to provisioned and counts the listed nodes", validYAML, InfrastructureProvisioned, false, 3},
-		{"nico counts nico.nodeCount", nicoYAML, InfrastructureNico, true, 3},
+		{"unset defaults to provisioned and counts the listed nodes", validYAML, ProviderProvisioned, false, 3},
+		{"nico counts controlPlane.count", nicoYAML, ProviderNico, true, 3},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1170,8 +1226,8 @@ func TestLoadInfrastructure(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load: %v", err)
 			}
-			if inv.Infrastructure != tt.wantInfra {
-				t.Errorf("Infrastructure = %q, want %q", inv.Infrastructure, tt.wantInfra)
+			if inv.Infra.Provider != tt.wantProvider {
+				t.Errorf("Infra.Provider = %q, want %q", inv.Infra.Provider, tt.wantProvider)
 			}
 			if inv.IsNico() != tt.wantNico {
 				t.Errorf("IsNico() = %t, want %t", inv.IsNico(), tt.wantNico)
@@ -1199,7 +1255,7 @@ func TestValidate_SpireExternalAddress(t *testing.T) {
 		{"nico with an upper-case name", true, "Bootstrap.Example.com", "IP address or a lowercase DNS name"},
 		{"nico with a name carrying a port", true, "bootstrap.example.com:30081", "IP address or a lowercase DNS name"},
 		{"provisioned without an address", false, "", ""},
-		{"provisioned with an address nothing would read", false, "192.0.2.10", "only valid with infrastructure"},
+		{"provisioned with an address nothing would read", false, "192.0.2.10", "only valid with infra.provider"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1224,19 +1280,19 @@ func TestValidate_SpireExternalAddress(t *testing.T) {
 }
 
 // TestNicoExampleLoads: cli/examples/sitespec-nico.yaml is a file an operator
-// will copy, so it has to load as written once the token files it names exist.
+// will copy, so it has to load as written once the files it names exist.
 func TestNicoExampleLoads(t *testing.T) {
 	example, err := os.ReadFile("../../../examples/sitespec-nico.yaml")
 	if err != nil {
 		t.Fatalf("read cli/examples/sitespec-nico.yaml: %v", err)
 	}
 	path := writeTemp(t, string(example))
-	writeNicoFiles(t, filepath.Dir(path), "bootstrap-nico.token", "bootstrap-tenant.password", "releases")
+	writeNicoFiles(t, filepath.Dir(path), "nico.token", "bootstrap-tenant.password", "releases")
 	inv, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if !inv.IsNico() || inv.ControlPlaneCount() != 3 || inv.BootstrapNico == nil {
+	if !inv.IsNico() || inv.ControlPlaneCount() != 3 || inv.Infra.Nico == nil {
 		t.Errorf("example loaded as %+v", inv)
 	}
 }
@@ -1278,7 +1334,7 @@ func TestCheckBootstrapMode(t *testing.T) {
 	}
 }
 
-// TestValidate_NicoControlPlaneVIP: nico's nodeCount counts toward the
+// TestValidate_NicoControlPlaneVIP: nico's controlPlane.count counts toward the
 // multi-node VIP requirement, as the length of cluster.nodes does.
 func TestValidate_NicoControlPlaneVIP(t *testing.T) {
 	for _, tc := range []struct {
@@ -1294,7 +1350,7 @@ func TestValidate_NicoControlPlaneVIP(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			inv := minimalValid()
 			makeNico(inv)
-			inv.Cluster.Nico.NodeCount = tc.count
+			inv.Infra.Nico.ControlPlane.Count = tc.count
 			inv.Cluster.ControlPlaneVIP = tc.vip
 			err := inv.Validate()
 			if tc.wantErr {
@@ -1310,40 +1366,60 @@ func TestValidate_NicoControlPlaneVIP(t *testing.T) {
 	}
 }
 
-// TestLoad_BootstrapPullSecretIsRefused: the bootstrap CAPNICo image is public,
-// so a spec that still carries the old pull secret is refused rather than
-// having it silently ignored.
-func TestLoad_BootstrapPullSecretIsRefused(t *testing.T) {
-	yaml := nicoYAML + "bootstrapPullSecret:\n  server: ghcr.io\n  username: example-user\n  tokenFile: nico.token\n"
-	_, err := Load(writeNicoTemp(t, yaml))
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "bootstrappullsecret") {
-		t.Fatalf("Load error = %v, want bootstrapPullSecret refused as unknown", err)
+// TestLoad_OldNicoKeysAreRefused: nico mode was never released, so its first
+// layout was replaced rather than aliased. A spec still in it fails to load,
+// naming the key, instead of having it silently ignored.
+func TestLoad_OldNicoKeysAreRefused(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{"infrastructure", strings.Replace(nicoYAML, "infra:\n  provider: nico\n", "infrastructure: nico\ninfra:\n  provider: nico\n", 1), "infrastructure"},
+		{"bootstrapNico", nicoYAML + "bootstrapNico:\n  endpoint: https://nico.example\n", "bootstrapnico"},
+		{"bootstrapTenant", nicoYAML + "bootstrapTenant:\n  user: u\n", "bootstraptenant"},
+		{"bootstrapReleases", nicoYAML + "bootstrapReleases: releases\n", "bootstrapreleases"},
+		{"bootstrapPullSecret", nicoYAML + "bootstrapPullSecret:\n  server: ghcr.io\n", "bootstrappullsecret"},
+		{"cluster.nico", strings.Replace(nicoYAML, "cluster:\n", "cluster:\n  nico:\n    nodeCount: 3\n", 1), "nico"},
+		{"a managed block", strings.Replace(nicoYAML, "    releases: releases\n", "    releases: releases\n    managed:\n      siteName: x\n", 1), "managed"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(writeNicoTemp(t, tt.yaml))
+			if err == nil || !strings.Contains(strings.ToLower(err.Error()), tt.want) {
+				t.Fatalf("Load error = %v, want %q refused as unknown", err, tt.want)
+			}
+		})
 	}
 }
 
-// TestLoad_BootstrapReleases: the release manifests must hold the ClusterRelease
-// the control plane's osProfile names and the MachineImage it boots, so a
-// missing one fails before any Kind cluster exists.
 func TestLoad_BootstrapReleases(t *testing.T) {
 	for name, tt := range map[string]struct {
 		docs    string
 		wantErr string
 	}{
-		"complete": {docs: "kind: MachineImage\nmetadata:\n  name: img\n---\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n"},
+		"complete": {docs: "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n"},
 		"no ClusterRelease for the osProfile": {
-			docs:    "kind: ClusterRelease\nmetadata:\n  name: other\nspec:\n  machineImageRef:\n    name: img\n---\nkind: MachineImage\nmetadata:\n  name: img\n",
+			docs:    "apiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: other\nspec:\n  machineImageRef:\n    name: img\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n",
 			wantErr: `no ClusterRelease named "example-os-profile"`,
 		},
 		"no MachineImage for the release": {
-			docs:    "kind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n",
+			docs:    "apiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n",
 			wantErr: `not the MachineImage "img"`,
 		},
 		"a NodePoolRelease alone is not enough": {
-			docs:    "kind: NodePoolRelease\nmetadata:\n  name: example-os-profile\n",
+			docs:    "apiVersion: internal.nvke.nvidia.com/v1\nkind: NodePoolRelease\nmetadata:\n  name: example-os-profile\n",
 			wantErr: "no ClusterRelease",
 		},
+		"ClusterRelease without an apiVersion": {
+			docs:    "kind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n",
+			wantErr: `holds a ClusterRelease with apiVersion "", want "internal.nvke.nvidia.com/v1"`,
+		},
+		"MachineImage with another group": {
+			docs:    "apiVersion: example.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n",
+			wantErr: `holds a MachineImage with apiVersion "example.com/v1"`,
+		},
 		"not YAML": {
-			docs:    "kind: [unclosed\n",
+			docs:    "apiVersion: internal.nvke.nvidia.com/v1\nkind: [unclosed\n",
 			wantErr: "is not valid YAML",
 		},
 		"not a manifest": {
@@ -1351,11 +1427,11 @@ func TestLoad_BootstrapReleases(t *testing.T) {
 			wantErr: "is not a Kubernetes manifest",
 		},
 		"ClusterRelease with a spec of the wrong shape": {
-			docs:    "kind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec: nope\n",
+			docs:    "apiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec: nope\n",
 			wantErr: "holds an invalid ClusterRelease",
 		},
 		"MachineImage with a spec of the wrong shape": {
-			docs:    "kind: MachineImage\nmetadata:\n  name: img\nspec: nope\n",
+			docs:    "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\nspec: nope\n",
 			wantErr: "holds an invalid MachineImage",
 		},
 	} {
@@ -1364,15 +1440,19 @@ func TestLoad_BootstrapReleases(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(filepath.Dir(path), "releases", "release.yaml"), []byte(tt.docs), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			_, err := Load(path)
+			inv, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			err = inv.ValidateBootstrapReferences()
 			if tt.wantErr == "" {
 				if err != nil {
-					t.Fatalf("Load: %v", err)
+					t.Fatalf("ValidateBootstrapReferences: %v", err)
 				}
 				return
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("Load error = %v, want it to contain %q", err, tt.wantErr)
+				t.Fatalf("ValidateBootstrapReferences error = %v, want it to contain %q", err, tt.wantErr)
 			}
 		})
 	}
@@ -1382,8 +1462,12 @@ func TestLoad_BootstrapReleases(t *testing.T) {
 		if err := os.RemoveAll(filepath.Join(filepath.Dir(path), "releases")); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "bootstrapReleases") {
-			t.Fatalf("Load error = %v, want bootstrapReleases reported", err)
+		inv, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if err := inv.ValidateBootstrapReferences(); err == nil || !strings.Contains(err.Error(), "infra.nico.releases") {
+			t.Fatalf("ValidateBootstrapReferences error = %v, want infra.nico.releases reported", err)
 		}
 	})
 }

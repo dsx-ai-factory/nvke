@@ -1578,6 +1578,103 @@ func (r leftoverKindRunner) Run(ctx context.Context, env map[string]string, name
 	return r.fakeBootstrapRunner.Run(ctx, env, name, args...)
 }
 
+// nicoSiteSpecFile writes examples/sitespec-nico.yaml with the files it names
+// beside it, and points NVKECTL_NICO_CREDENTIALS at a token file, so the
+// bootstrap checks pass.
+func nicoSiteSpecFile(t *testing.T) string {
+	t.Helper()
+	example, err := os.ReadFile("../../examples/sitespec-nico.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeSiteSpec(t, string(example))
+	dir := filepath.Dir(path)
+	for _, name := range []string{"nico.token", "bootstrap-tenant.password"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(sitespec.NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
+	if err := os.Mkdir(filepath.Join(dir, "releases"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const releases = "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n" +
+		"---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\n" +
+		"spec:\n  machineImageRef:\n    name: img\n"
+	if err := os.WriteFile(filepath.Join(dir, "releases", "r.yaml"), []byte(releases), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestRunBootstrapSiteNicoLeftoverClusterSaysToReleaseInstancesFirst: with nico
+// the leftover-cluster refusal is the only re-run guard, and the "delete it and
+// re-run" it ends with would orphan the NICo instances an earlier run
+// allocated. The refusal names the release step before the delete.
+func TestRunBootstrapSiteNicoLeftoverClusterSaysToReleaseInstancesFirst(t *testing.T) {
+	setBootstrapEnv(t)
+
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:            nicoSiteSpecFile(t),
+		bootstrapRunner:     &recordingRunner{next: leftoverKindRunner{}},
+		cweRunner:           newFakeCWERunner(t),
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+	})
+	if err == nil {
+		t.Fatal("expected an error while an earlier bootstrap cluster is still running")
+	}
+	msg := err.Error()
+	for _, want := range []string{"`nvkectl delete cluster nvke-site`", "nvkectl config set-site --name nvkectl-bootstrap --url http://127.0.0.1:30080", "no longer lists it"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q does not contain %q", msg, want)
+		}
+	}
+	if strings.Index(msg, "nvkectl delete cluster") > strings.Index(msg, "kind delete cluster") {
+		t.Errorf("error %q tells the operator to delete the Kind cluster before it releases the instances", msg)
+	}
+}
+
+// TestRetainedClusterError: the advice after a failure past CreateCluster. With
+// nico it leads with releasing the instances; with provisioned it is unchanged.
+func TestRetainedClusterError(t *testing.T) {
+	cluster := &bootstrapengine.Cluster{Name: "nvkectl-bootstrap", KubeconfigPath: "/tmp/kc"}
+	cause := errors.New("workflow failed")
+	nico := &sitespec.SiteSpec{ClusterName: "nvke-site", Infra: sitespec.Infra{Provider: sitespec.ProviderNico}}
+	provisioned := &sitespec.SiteSpec{ClusterName: "nvke-site"}
+
+	t.Run("provisioned", func(t *testing.T) {
+		msg := retainedClusterError(cause, provisioned, cluster, 30080).Error()
+		if strings.Contains(msg, "NICo") || !strings.Contains(msg, "delete it after recovery with `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`") {
+			t.Errorf("provisioned advice changed: %q", msg)
+		}
+	})
+	t.Run("nico", func(t *testing.T) {
+		msg := retainedClusterError(cause, nico, cluster, 30080).Error()
+		for _, want := range []string{
+			"release the NICo instances", "leaves them allocated and unmanaged", "tenant login",
+			"`nvkectl config set-site --name nvkectl-bootstrap --url http://127.0.0.1:30080 --kubeconfig /tmp/kc`",
+			"`nvkectl delete cluster nvke-site`", "nvkectl config use-site",
+		} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("nico advice %q does not contain %q", msg, want)
+			}
+		}
+		if strings.Index(msg, "nvkectl delete cluster") > strings.Index(msg, "kind delete cluster") {
+			t.Errorf("advice %q deletes the Kind cluster before it releases the instances", msg)
+		}
+	})
+	t.Run("nico with the key unsaved", func(t *testing.T) {
+		capture := &keyCaptureError{clusterName: "nvke-site", keyPath: "k.json", kubeconfigPath: "/tmp/kc", recover: "save-it", err: cause}
+		msg := retainedClusterError(capture, nico, cluster, 30080).Error()
+		if !strings.Contains(msg, "once the key is saved, release the NICo instances") || !strings.Contains(msg, "nvkectl delete cluster nvke-site") {
+			t.Errorf("key-unsaved advice lacks the release step: %q", msg)
+		}
+	})
+}
+
 // TestRunBootstrapSiteRefusesWhileAnEarlierBootstrapClusterRuns: the cluster
 // left by an earlier run may hold the key that run did not save. The refusal
 // says how to get it out before it says how to delete the cluster, and does
@@ -1783,9 +1880,9 @@ func TestControllerImageOrder(t *testing.T) {
 	}
 }
 
-// TestCapnicoAccess: the bootstrap CAPNICo's credentials come from the site
-// spec's bootstrapNico, with the token file read and trimmed, and only for
-// infrastructure nico.
+// TestCapnicoAccess: the bootstrap CAPNICo's endpoint and organization come from
+// the site spec's infra.nico, its token from the file NVKECTL_NICO_CREDENTIALS
+// names, and only for the nico provider.
 func TestCapnicoAccess(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name, body string) string {
@@ -1797,41 +1894,47 @@ func TestCapnicoAccess(t *testing.T) {
 	}
 	nicoToken := write("nico.token", "example-nico-token\n")
 	empty := write("empty.token", " \n")
+	structured := write("client.yaml", "tokenURL: https://idp.example/token\nclientID: id\nclientSecret: secret\n")
 
-	nico := func(nicoFile string) *sitespec.SiteSpec {
-		return &sitespec.SiteSpec{
-			Infrastructure: sitespec.InfrastructureNico,
-			BootstrapNico:  &sitespec.StackNico{Endpoint: "https://nico.example", OrgID: "example-org", APIName: "forge", TokenFile: nicoFile},
-		}
+	nico := &sitespec.SiteSpec{
+		Infra: sitespec.Infra{
+			Provider: sitespec.ProviderNico,
+			Nico:     &sitespec.NicoInfra{OrgID: "example-org", Remote: &sitespec.NicoRemote{Endpoint: "https://nico.example"}},
+		},
 	}
 
 	t.Run("provisioned needs nothing", func(t *testing.T) {
-		got, err := capnicoAccess(&sitespec.SiteSpec{Infrastructure: sitespec.InfrastructureProvisioned})
+		got, err := capnicoAccess(&sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderProvisioned}})
 		if err != nil || got != (controllerdeploy.CAPNICoAccess{}) {
 			t.Fatalf("capnicoAccess = %+v, %v; want the zero value", got, err)
 		}
 	})
 	t.Run("nico reads the token file", func(t *testing.T) {
-		got, err := capnicoAccess(nico(nicoToken))
+		t.Setenv(sitespec.NicoCredentialsEnv, nicoToken)
+		got, err := capnicoAccess(nico)
 		if err != nil {
 			t.Fatalf("capnicoAccess: %v", err)
 		}
 		want := controllerdeploy.CAPNICoAccess{
-			Endpoint: "https://nico.example", OrgID: "example-org", APIName: "forge", Token: "example-nico-token",
+			Endpoint: "https://nico.example", OrgID: "example-org", APIName: sitespec.DefaultNicoAPIName, Token: "example-nico-token",
 		}
 		if got != want {
 			t.Errorf("capnicoAccess = %+v, want %+v", got, want)
 		}
 	})
 	for name, tt := range map[string]struct {
+		env     string
 		inv     *sitespec.SiteSpec
 		wantErr string
 	}{
-		"missing NICo token file":    {nico(filepath.Join(dir, "absent")), "bootstrapNico.tokenFile"},
-		"empty NICo token file":      {nico(empty), "is empty"},
-		"no credentials in the spec": {&sitespec.SiteSpec{Infrastructure: sitespec.InfrastructureNico}, "bootstrapNico"},
+		"credentials variable unset": {"", nico, sitespec.NicoCredentialsEnv + " must name"},
+		"missing NICo token file":    {filepath.Join(dir, "absent"), nico, sitespec.NicoCredentialsEnv},
+		"empty NICo token file":      {empty, nico, "is empty"},
+		"client credentials refused": {structured, nico, "client-credentials form is not supported"},
+		"no NICo block in the spec":  {nicoToken, &sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderNico}}, "infra.nico.remote"},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Setenv(sitespec.NicoCredentialsEnv, tt.env)
 			if _, err := capnicoAccess(tt.inv); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
 			}
@@ -1841,11 +1944,11 @@ func TestCapnicoAccess(t *testing.T) {
 
 // TestCapnicoReleaseImage: a release's capnico-controller artifact becomes the
 // bootstrap CAPNICo image as repository@digest, for the architecture asked, and
-// only with infrastructure nico.
+// only with the nico provider.
 func TestCapnicoReleaseImage(t *testing.T) {
 	const release = "../../../deploy/testdata/nvkr-release/valid.json"
-	nico := &sitespec.SiteSpec{Infrastructure: sitespec.InfrastructureNico}
-	provisioned := &sitespec.SiteSpec{Infrastructure: sitespec.InfrastructureProvisioned}
+	nico := &sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderNico}}
+	provisioned := &sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderProvisioned}}
 
 	tests := []struct {
 		name    string
@@ -1858,7 +1961,7 @@ func TestCapnicoReleaseImage(t *testing.T) {
 		{"no release leaves the manifest's image", nico, "", "linux/amd64", "", ""},
 		{"amd64", nico, release, "linux/amd64", "ghcr.io/example/recipes/capnico-controller@sha256:" + strings.Repeat("d", 64), ""},
 		{"arm64", nico, release, "linux/arm64", "ghcr.io/example/recipes/capnico-controller-arm64@sha256:" + strings.Repeat("e", 64), ""},
-		{"provisioned refuses a release", provisioned, release, "linux/amd64", "", "only applies with infrastructure nico"},
+		{"provisioned refuses a release", provisioned, release, "linux/amd64", "", "only applies with infra.provider nico"},
 		{"missing release file", nico, filepath.Join(t.TempDir(), "absent.json"), "linux/amd64", "", "absent.json"},
 		{"unknown architecture", nico, release, "linux/riscv64", "", "arch linux/riscv64"},
 	}
@@ -1992,7 +2095,17 @@ func TestRunBootstrapSiteStopsOnRemovedSettings(t *testing.T) {
 	}
 }
 
-func TestCWEImages(t *testing.T) {
+// TestBootstrapSite_ArchNeedsARelease: --arch only picks a --release artifact,
+// so an explicit one without --release is refused instead of ignored. The
+// default does not count, which is why the check reads the flag's Changed.
+func TestBootstrapSite_ArchNeedsARelease(t *testing.T) {
+	_, _, err := runGenerate(t, "bootstrap", "site", "-f", "unused.yaml", "--arch", "linux/riscv64")
+	if err == nil || !strings.Contains(err.Error(), "--arch") || !strings.Contains(err.Error(), "--release") {
+		t.Fatalf("err = %v, want --arch refused without --release", err)
+	}
+}
+
+func TestNvkeImages(t *testing.T) {
 	tests := []struct {
 		name string
 		nico bool
@@ -2004,8 +2117,8 @@ func TestCWEImages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := controllerdeploy.Config{CWEImage: "cwe:1", ProvisionedProviderImage: "prov:1", NicoInfrastructure: tt.nico}
-			if got := cweImages(cfg); !slices.Equal(got, tt.want) {
-				t.Errorf("cweImages = %v, want %v", got, tt.want)
+			if got := nvkeImages(cfg); !slices.Equal(got, tt.want) {
+				t.Errorf("nvkeImages = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -2013,7 +2126,7 @@ func TestCWEImages(t *testing.T) {
 
 // TestCWEDeployConfig_NicoTenantLoginAndReleases: the controller config carries
 // the tenant login, with its password read from the file, and the release
-// manifests' path resolved from the site spec, for infrastructure nico only.
+// manifests' path resolved from the site spec, for the nico provider only.
 func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"nico.token", "tenant.password"} {
@@ -2029,11 +2142,17 @@ func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
 		t.Fatalf("provisioned: %+v, %v; want no tenant login or releases", cfg, err)
 	}
 
+	t.Setenv(sitespec.NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
 	nico := &sitespec.SiteSpec{
-		Infrastructure:    sitespec.InfrastructureNico,
-		BootstrapNico:     &sitespec.StackNico{Endpoint: "https://nico.example", OrgID: "o", APIName: "forge", TokenFile: filepath.Join(dir, "nico.token")},
-		BootstrapTenant:   &sitespec.StackTenant{User: "example-user", PasswordFile: filepath.Join(dir, "tenant.password")},
-		BootstrapReleases: filepath.Join(dir, "releases"),
+		Infra: sitespec.Infra{
+			Provider: sitespec.ProviderNico,
+			Nico: &sitespec.NicoInfra{
+				OrgID:    "o",
+				Remote:   &sitespec.NicoRemote{Endpoint: "https://nico.example"},
+				Tenant:   &sitespec.StackTenant{User: "example-user", PasswordFile: filepath.Join(dir, "tenant.password")},
+				Releases: filepath.Join(dir, "releases"),
+			},
+		},
 	}
 	cfg, err := cweDeployConfig(nico, "c", true, "", "")
 	if err != nil {
@@ -2046,8 +2165,8 @@ func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
 		t.Errorf("ReleasesPath = %q", cfg.ReleasesPath)
 	}
 
-	nico.BootstrapTenant.PasswordFile = filepath.Join(dir, "absent")
-	if _, err := cweDeployConfig(nico, "c", true, "", ""); err == nil || !strings.Contains(err.Error(), "bootstrapTenant.passwordFile") {
-		t.Errorf("missing password file: err = %v, want bootstrapTenant.passwordFile", err)
+	nico.Infra.Nico.Tenant.PasswordFile = filepath.Join(dir, "absent")
+	if _, err := cweDeployConfig(nico, "c", true, "", ""); err == nil || !strings.Contains(err.Error(), "infra.nico.tenant.passwordFile") {
+		t.Errorf("missing password file: err = %v, want infra.nico.tenant.passwordFile", err)
 	}
 }
