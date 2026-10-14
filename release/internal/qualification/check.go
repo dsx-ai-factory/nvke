@@ -22,12 +22,20 @@ func Check(p *Policy, r *Registry, s *Subject, version, location map[string]reso
 		return fmt.Errorf("subject %q is not a component in the registry", s.Spec.Subject)
 	}
 
-	// Which names a version may be taken from. A component is resolved before
-	// any dependency and its result is offered to every one of them, which a
-	// dependency's result is not, so only these can be borrowed from.
-	resolved := map[string]bool{s.Spec.Subject: true}
+	// Which names a version may be taken from, and which of those have one to
+	// give. A component is resolved before any dependency and its result is
+	// offered to every one of them, which a dependency's result is not. A
+	// component that resolves only a location has nothing to lend, and the two
+	// are separate mistakes with separate fixes.
+	listed := map[string]bool{s.Spec.Subject: true}
+	lends := map[string]bool{}
 	for _, c := range s.Spec.Components {
-		resolved[c.Name] = true
+		listed[c.Name] = true
+	}
+	for name := range listed {
+		if rc, ok := r.Component(name); ok && rc.Resolve.Version != nil {
+			lends[name] = true
+		}
 	}
 
 	for _, c := range s.Spec.Components {
@@ -51,9 +59,15 @@ func Check(p *Policy, r *Registry, s *Subject, version, location map[string]reso
 		if !ok {
 			return fmt.Errorf("%s depends on %q, which is not a component in the registry", s.Spec.Subject, d.Name)
 		}
-		if from := versionFrom(c); from != "" && !resolved[from] {
-			return fmt.Errorf("%s: %q takes its version from %q, which the subject does not list as a "+
-				"component, so there would be no version to take", s.Spec.Subject, d.Name, from)
+		if from := versionFrom(c); from != "" {
+			switch {
+			case !listed[from]:
+				return fmt.Errorf("%s: %q takes its version from %q, which the subject does not list as a "+
+					"component, so there would be no version to take", s.Spec.Subject, d.Name, from)
+			case !lends[from]:
+				return fmt.Errorf("%s: %q takes its version from %q, which resolves only a location, "+
+					"so it has no version to give", s.Spec.Subject, d.Name, from)
+			}
 		}
 		if err := checkInputs(p, s.Spec.Subject, d, c, version[d.Name], location[d.Name]); err != nil {
 			return err

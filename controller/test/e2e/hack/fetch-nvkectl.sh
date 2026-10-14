@@ -5,19 +5,23 @@
 # Stage a published nvkectl for the site lane: pull the artifact SITE_CLI_REF
 # names, and check the binary reports the version it was asked for.
 #
-#   SITE_CLI_REF=<registry>/nvkectl:<alias>-linux-<arch> \
+#   SITE_CLI_REF=<registry>/nvkectl:<version>-linux-<arch> \
 #     fetch-nvkectl.sh <version> <arch> <dir>
 #
 # Writes <dir>/nvkectl-linux-<arch>. `make site-inputs SITE_CLI_BUILD=0` runs
-# this; the Forge workflow is one caller of that.
+# this, and the Forge workflow is one caller of that.
 #
-# The artifact is tagged <alias>-<os>-<arch>, where the alias is the commit for
-# a run that described one and the version for a run that resolved from tags.
-# The caller builds the reference, because only it knows which.
+# nvkectl carries no index above its platform tags, so the artifact is tagged
+# <version>-<os>-<arch>. The caller supplies the whole reference, which the
+# qualification plan resolved.
 #
-# The manifest digest covers the bytes, so there is nothing else to check them
-# against. The version check below is a different claim, that the binary is the
-# one asked for rather than intact, which no digest can make.
+# What the pull guarantees, exactly: oras checks each blob against the manifest
+# the registry served for that tag, so a truncated or corrupted transfer fails.
+# It does not pin the tag. Nothing here compares that manifest with a digest
+# recorded independently of it, so an artifact republished under the same tag
+# pulls cleanly, and the binary then runs on the site node. The version check
+# below is a separate claim, that the binary is the one asked for rather than
+# that it is intact.
 #
 # oras reads the registry credentials docker login wrote, so a caller that can
 # pull the images can pull this.

@@ -12,9 +12,15 @@ qualification run would cover.
 ## Usage
 
 `qualify plan` resolves what to qualify and writes it as JSON. Run it from the
-repository root:
+repository root.
+
+`registry.yaml` names the artifact registry as `oci://nvcr.io/${QUALIFY_E2E_NGC_ORG}`,
+so every `plan` needs that variable. It is read when the file is loaded, and an
+unset one fails the command before anything resolves.
 
 ```console
+$ export QUALIFY_E2E_NGC_ORG=<the NGC org the artifacts are published under>
+
 # The highest version of nvke, over every stream
 $ go run ./release/cmd/qualify plan --subject nvke
 
@@ -31,8 +37,18 @@ $ go run ./release/cmd/qualify plan --subject nvke --output plan.json
 $ go run ./release/cmd/qualify plan --subject nvke --version v0.22.0-beta.1 --resolution commitDescribe
 
 # Check that everything the plan names is published, waiting for any still building
-$ go run ./release/cmd/qualify verify --plan plan.json --wait 90m
+$ NGC_API_KEY=<an NGC key that can read that org> \
+    go run ./release/cmd/qualify verify --plan plan.json --wait 90m
 ```
+
+`verify` reads the registries anonymously unless it is given credentials, and
+both hold private repositories, so without them every OCI reference answers 401.
+With `--wait` it then retries each one for the whole budget before failing.
+
+| Variable | For |
+|---|---|
+| `NGC_API_KEY` | `nvcr.io`, with the literal username `$oauthtoken` |
+| `GITHUB_ACTOR`, `GITHUB_TOKEN` | `ghcr.io` |
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -191,7 +207,7 @@ publications; it does not replace them.
 | [`qualification.yaml`](qualification.yaml) | What is qualified when NVKE is qualified as a whole: the components tested together, and the other versions a run needs |
 | [`cmd/qualify/`](cmd/qualify/) | The binary. `plan` resolves what to qualify, `verify` checks that it is published |
 | [`internal/qualification/`](internal/qualification/) | Reading and checking the three files, and turning them into a plan |
-| [`internal/resolve/`](internal/resolve/) | The resolution strategies. It imports nothing from this repository |
+| [`internal/resolve/`](internal/resolve/) | The resolution strategies. Of this repository it takes only `internal/artifact` |
 | [`internal/artifact/`](internal/artifact/) | Asking whether a location holds something, over HTTPS or a registry, and waiting for one that is still publishing |
 
 Each file has one concern. A component that is qualified on its own would carry

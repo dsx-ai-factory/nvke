@@ -268,7 +268,9 @@ jobs:
       # unset rather than naming an artifact under no org. The same variable
       # the lanes build SITE_IMAGES from.
       QUALIFY_E2E_NGC_ORG: ${{ vars.QUALIFY_E2E_NGC_ORG }}
-      # The names are the registry's, which are the keys the suite reads.
+      # The names are the registry's, which are the keys the suite reads. The
+      # Plan step drops these on a tag push, where they could only come from a
+      # repository variable.
       OVERRIDE_CONTROLLER: ${{ inputs.controller-version || vars.QUALIFY_E2E_CONTROLLER_VERSION }}
       OVERRIDE_CLI: ${{ inputs.cli-version || vars.QUALIFY_E2E_CLI_VERSION }}
       OVERRIDE_CAPI_PROVISIONED: ${{ inputs.capi-provisioned-version || vars.QUALIFY_E2E_CAPI_PROVISIONED_VERSION }}
@@ -305,9 +307,20 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          # A tag push carries no inputs, so anything set here came from a
+          # QUALIFY_E2E_* repository variable, which dispatch and label runs
+          # use. A beta is pushed to be qualified as what its own commit built,
+          # and an override beats the description, so one left set would qualify
+          # a pinned release component under the beta's name. NVKE_VERSION
+          # ignores its variable on this event for the same reason.
           overrides=""
+          ignored=()
           add() {
             [ -n "$2" ] || return 0
+            if [ "${GITHUB_EVENT_NAME}" = push ]; then
+              ignored+=("$1=$2")
+              return 0
+            fi
             overrides="${overrides:+${overrides},}$1=$2"
           }
           add controller "${OVERRIDE_CONTROLLER}"
@@ -320,6 +333,11 @@ jobs:
           add os-image-arm64 "${OVERRIDE_OS_IMAGE_ARM64}"
           add os-image-bootloader-amd64 "${OVERRIDE_OS_IMAGE_BOOTLOADER_AMD64}"
           add os-image-bootloader-arm64 "${OVERRIDE_OS_IMAGE_BOOTLOADER_ARM64}"
+
+          if [ "${#ignored[@]}" -gt 0 ]; then
+            echo "::warning::a tag push qualifies the commit it marks, so these repository" \
+                 "variables were not applied: ${ignored[*]}"
+          fi
 
           args=(plan --subject nvke --scope "${SCOPE}" --output plan.json)
           # Left off when unset, so the plan takes the highest nke version
@@ -405,6 +423,7 @@ jobs:
             def value($all; $name): entry($all; $name) as $e | ($e.url // $e.version // "");
             def version($all; $name): entry($all; $name) as $e | ($e.version // "");
             def url($all; $name): entry($all; $name) as $e | ($e.url // "");
+            def versionStrategy($all; $name): entry($all; $name) as $e | ($e.versionStrategy // "");
             {include: [
               .combinations[] as $c
               | $c.streams[] as $s
@@ -427,7 +446,8 @@ jobs:
                   os_image_arm64: value($all; "os-image-arm64"),
                   os_image_bootloader_amd64: value($all; "os-image-bootloader-amd64"),
                   os_image_bootloader_arm64: value($all; "os-image-bootloader-arm64"),
-                  cli_ref: url($all; "cli-" + $s.capabilities.arch)
+                  cli_ref: url($all; "cli-" + $s.capabilities.arch),
+                  controller_version_strategy: versionStrategy($all; "controller")
                 }
             ]}' plan.json)"
           {
@@ -574,6 +594,11 @@ jobs:
       # the cli version below names none of them. Resolving it there is also
       # what lets the verify job confirm it before a machine is taken.
       CLI_REF: ${{ matrix.cli_ref }}
+      # How the controller's version was resolved, and the commit a described
+      # one was taken at. Together they say what the deploy path is exported
+      # from, which is a tag for one and a commit for the other.
+      CONTROLLER_VERSION_STRATEGY: ${{ matrix.controller_version_strategy }}
+      PLAN_COMMIT: ${{ needs.plan.outputs.commit }}
       # Empty asks for a build from this checkout; the resolve step fills it
       # in. Every use of it downstream -- the image site-inputs stages, the
       # NVKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
@@ -796,12 +821,33 @@ jobs:
             echo "SITE_CONTROLLER_BUILD=0" >> "${GITHUB_ENV}"
             echo "qualifying the published ${SITE_CONTROLLER_VERSION}"
             echo "::warning::pulling a published CWE, ${SITE_CONTROLLER_VERSION}; if it predates #850 the bootstrap fails at \"creating the site cluster\""
-            tag="controller/${SITE_CONTROLLER_VERSION}"
             auth="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 -w0)"
             echo "::add-mask::${auth}"
+
+            # The deploy path is exported from the controller's own tree and
+            # this checkout is shallow, so that tree has to be fetched. What
+            # names it depends on how the version was resolved.
+            #
+            # A version read from the tags is a tag. A description is not a ref,
+            # so there is nothing by that name to ask the remote for, and the
+            # abbreviated hash inside it is refused over the wire. It resolves
+            # locally through that hash once the commit is here, and the full
+            # hash is what the plan recorded.
+            if [ "${CONTROLLER_VERSION_STRATEGY}" = commitDescribe ]; then
+              if [ -z "${PLAN_COMMIT}" ]; then
+                echo "::error::the controller was described at a commit, but the plan records none"
+                exit 1
+              fi
+              want="${PLAN_COMMIT}"
+              missing="could not fetch ${PLAN_COMMIT}, the commit ${SITE_CONTROLLER_VERSION} describes"
+            else
+              tag="controller/${SITE_CONTROLLER_VERSION}"
+              want="refs/tags/${tag}:refs/tags/${tag}"
+              missing="no ${tag} release tag; the deploy path is exported from the controller's own commit"
+            fi
             git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" \
-              fetch --no-tags --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}" || {
-              echo "::error::no ${tag} release tag; the deploy path is exported from the controller's own commit"
+              fetch --no-tags --depth=1 origin "${want}" || {
+              echo "::error::${missing}"
               exit 1
             }
             exit 0
@@ -1104,10 +1150,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # An NGC key with pull access on the QUALIFY_E2E_NGC_ORG org's registry.
-      # Separate from FORGE_API_KEY because NGC cannot scope one key to both
-      # the Forge tenant and the registry. The runner is the only thing that
-      # pulls with it: nothing on the node pulls from NVCR.
       # The pin every tool version comes from, read once so the setup below and
       # a local run cannot disagree.
       - name: Read the pinned ORAS version
@@ -1116,6 +1158,10 @@ jobs:
         shell: bash
         run: echo "version=$(make --no-print-directory print-ORAS_VERSION)" >> "${GITHUB_OUTPUT}"
 
+      # An NGC key with pull access on the QUALIFY_E2E_NGC_ORG org's registry.
+      # Separate from FORGE_API_KEY because NGC cannot scope one key to both
+      # the Forge tenant and the registry. The runner is the only thing that
+      # pulls with it: nothing on the node pulls from NVCR.
       - name: Log in to NVCR
         if: env.SITE_IMAGE_REGISTRY == 'nvcr'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

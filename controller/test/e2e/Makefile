@@ -32,12 +32,21 @@ SITE_ARCH ?= amd64
 SITE_INPUTS ?= $(HOME)/.cache/nke-e2e/site
 SITE_CONTROLLER_VERSION ?=
 SITE_PROVISIONED_VERSION ?= v0.1.0-rc.1
-# Where the published images are pulled from. Both registries carry them under
-# the same names: GHCR at ghcr.io/dsx-ai-factory/nvke, NVCR at nvcr.io/<NGC org>
-# (see image-nvcr.yml and image-provisioned-nvcr.yml). NVCR needs a docker
-# login with an NGC key; the username is the literal $oauthtoken.
+# Where the published images are pulled from: GHCR at ghcr.io/dsx-ai-factory/nvke,
+# NVCR at nvcr.io/<NGC org>. NVCR needs a docker login with an NGC key, and the
+# username is the literal $oauthtoken.
+#
+# The controller is nvke-controller on NVCR and nke-controller on GHCR
+# (image-nvcr.yml publishes both), so the repository follows the registry.
+# capi-provisioned carries the same name on both.
+#
+# The controller name also has to match what qualify-e2e.yml writes into the
+# e2e config as site.images.controller.repository. The node's containerd knows
+# the image only by the name inside controller.tar, so a disagreement leaves
+# the Helm values asking for an image that is not on the node.
 SITE_IMAGE_REGISTRY ?= ghcr.io/dsx-ai-factory/nvke
-SITE_CONTROLLER_IMAGE ?= $(SITE_IMAGE_REGISTRY)/nke-controller:$(SITE_CONTROLLER_VERSION)
+SITE_CONTROLLER_REPOSITORY ?= $(if $(findstring ghcr.io,$(SITE_IMAGE_REGISTRY)),nke-controller,nvke-controller)
+SITE_CONTROLLER_IMAGE ?= $(SITE_IMAGE_REGISTRY)/$(SITE_CONTROLLER_REPOSITORY):$(SITE_CONTROLLER_VERSION)
 SITE_PROVISIONED_IMAGE ?= $(SITE_IMAGE_REGISTRY)/cluster-api-provider-provisioned:$(SITE_PROVISIONED_VERSION)
 SITE_PROFILES_IMAGE ?= nke-e2e-profiles:local
 

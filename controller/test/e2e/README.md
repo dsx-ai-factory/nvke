@@ -500,7 +500,9 @@ once one is cut past #850.
 To stage a published nvkectl instead, set `SITE_CLI_BUILD=0` and name the
 artifact. `site-inputs` pulls `nvkectl-linux-$(SITE_ARCH)` out of it into
 `$(SITE_INPUTS)/nvkectl/` and, when the binary is for the host it runs on,
-checks it reports `SITE_CLI_VERSION`. The manifest digest covers the bytes.
+checks it reports `SITE_CLI_VERSION`. The pull checks each blob against the
+manifest the registry served for that tag, which catches a corrupted transfer
+but does not pin the tag.
 
 nvkectl is published per alias and platform, so the reference is
 `<registry>/nvkectl:<alias>-linux-<arch>`, where the alias is a version for a

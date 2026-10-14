@@ -6,8 +6,9 @@
 // A resolver sees a flat map of plain values and nothing else. It has no
 // notion of a stream, a capability or a qualification subject, so the code
 // that does know those things stays in one place and the strategies stay
-// testable with a map literal. The package imports nothing from this
-// repository.
+// testable with a map literal. The only package it takes from this repository
+// is internal/artifact, which answers whether a location holds something, for
+// the strategies asked to check.
 package resolve
 
 import (

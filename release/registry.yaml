@@ -45,9 +45,11 @@ spec:
   # tag, so the tags would answer with the newest release rather than what was
   # built there.
   #
-  # repository is the component's name under the artifact-registry source. It is
-  # the same wherever the artifacts are pushed, because only the prefix differs
-  # between registries.
+  # repository is the component's name under the artifact-registry source. The
+  # names belong to the registry and differ between them: the controller is
+  # nvke-controller on NVCR and nke-controller on GHCR, and nvkectl is cli on
+  # GHCR. GHCR also carries released tags only, so a described commit has
+  # nothing there. Moving the source means revisiting these.
   components:
     # The subject stays gitTag. Its version is what the run is called and what a
     # qualification is recorded against, so it is a release that was cut and
