@@ -14,6 +14,8 @@ apiVersion: nvke.nvidia.com/v1alpha1
 kind: Qualification
 metadata:
   name: nvke
+status:
+  type: site-controller
 spec:
   subject: nvke
   components:
@@ -33,6 +35,9 @@ func TestLoadSubjectAccepts(t *testing.T) {
 
 	if got := len(s.Spec.Components); got != 2 {
 		t.Errorf("got %d components, want 2", got)
+	}
+	if s.Status.Type != "site-controller" {
+		t.Errorf("status.type is %q, want site-controller", s.Status.Type)
 	}
 
 	kube, ovn, kind := s.Spec.Dependencies[0], s.Spec.Dependencies[1], s.Spec.Dependencies[2]
@@ -57,6 +62,7 @@ func TestLoadSubjectRejects(t *testing.T) {
 		{"unknown field", strings.Replace(validSubject, "  subject: nvke", "  subjekt: nvke", 1), "unknown field"},
 		{"the old component field", strings.Replace(validSubject, "  subject: nvke", "  component: nvke", 1), "unknown field"},
 		{"no subject", strings.Replace(validSubject, "  subject: nvke\n", "", 1), "spec.subject is empty"},
+		{"no status.type", strings.Replace(validSubject, "status:\n  type: site-controller\n", "", 1), "status.type is empty"},
 		{
 			"metadata disagrees with spec",
 			strings.Replace(validSubject, "  name: nvke", "  name: cli", 1),

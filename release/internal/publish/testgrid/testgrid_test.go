@@ -1,0 +1,359 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package testgrid
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
+)
+
+// newFormatDashboard mirrors testgrid's own tools/config-gen/main.go
+// isNewFormatDashboard regex. config-gen silently drops any discovered
+// dashboard that does not match this -- not an error, just never rendered in
+// the UI -- so a dashboard name that stops matching it is a regression this
+// test catches locally instead of only on a live TestGrid check.
+var newFormatDashboard = regexp.MustCompile(`-[a-z0-9]+-(e2e|tenant)(-(nclave|cpu))?$`)
+
+func testResult(subject, combinationID, streamName, runID, runAttempt string, capabilities map[string]string) *qualification.Result {
+	return &qualification.Result{
+		Spec: qualification.ResultSpec{
+			Subject: subject,
+			Identity: qualification.ResultIdentity{
+				RunID:      runID,
+				RunAttempt: runAttempt,
+			},
+		},
+		Status: qualification.ResultStatus{
+			Combinations: []qualification.ResultCombination{{
+				ID:      combinationID,
+				Streams: []qualification.ResultStream{{Name: streamName, Capabilities: capabilities}},
+			}},
+		},
+	}
+}
+
+func TestBuildPrefix(t *testing.T) {
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"gpu": "h100", "kube": "1.34"})
+	d := &Destination{Environment: "staging"}
+
+	got, err := d.buildPrefix(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "groups/forge-non-prod/h100-v1.34-nvke-e2e/amd64-1.34/12345-" + shortHash("cli-v1.0.0") + "/"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestBuildPrefixRunAttemptIsAppendedToBuild(t *testing.T) {
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "2", map[string]string{"gpu": "h100", "kube": "1.34"})
+	d := &Destination{Environment: "staging"}
+
+	got, err := d.buildPrefix(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "groups/forge-non-prod/h100-v1.34-nvke-e2e/amd64-1.34/12345-2-" + shortHash("cli-v1.0.0") + "/"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestBuildPrefixGroupReflectsEnvironment(t *testing.T) {
+	for _, tc := range []struct {
+		environment string
+		wantGroup   string
+	}{
+		{"staging", "forge-non-prod"},
+		{"prod", "forge-prod"},
+	} {
+		t.Run(tc.environment, func(t *testing.T) {
+			result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"gpu": "h100", "kube": "1.34"})
+			d := &Destination{Environment: tc.environment}
+
+			got, err := d.buildPrefix(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if group := strings.Split(got, "/")[1]; group != tc.wantGroup {
+				t.Errorf("group is %q, want %q", group, tc.wantGroup)
+			}
+		})
+	}
+}
+
+func TestBuildPrefixRejectsUnknownEnvironment(t *testing.T) {
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"gpu": "h100", "kube": "1.34"})
+	d := &Destination{Environment: "dev"}
+
+	if _, err := d.buildPrefix(result); err == nil {
+		t.Fatal("buildPrefix returned nil, want an error for an unknown environment")
+	}
+}
+
+func TestBuildPrefixRejectsMissingCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		capabilities map[string]string
+	}{
+		{"no gpu", map[string]string{"kube": "1.34"}},
+		{"no kube", map[string]string{"gpu": "h100"}},
+		{"no capabilities at all", map[string]string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", tc.capabilities)
+			d := &Destination{Environment: "staging"}
+
+			if _, err := d.buildPrefix(result); err == nil {
+				t.Fatal("buildPrefix returned nil, want an error for missing gpu/kube")
+			}
+		})
+	}
+}
+
+// buildPrefix's dashboard segment must match config-gen's new-format
+// dashboard naming, or every result published here silently never appears in
+// the TestGrid UI while still sitting in the bucket.
+func TestBuildPrefixDashboardMatchesConfigGenNewFormat(t *testing.T) {
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"gpu": "h100", "kube": "1.34"})
+	d := &Destination{Environment: "staging"}
+
+	prefix, err := d.buildPrefix(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(strings.Trim(prefix, "/"), "/")
+	if len(parts) < 3 {
+		t.Fatalf("prefix %q does not have a dashboard segment", prefix)
+	}
+	dashboard := parts[2] // groups/{group}/{dashboard}/...
+	if !newFormatDashboard.MatchString(dashboard) {
+		t.Errorf("dashboard %q does not match config-gen's new-format regex %s", dashboard, newFormatDashboard)
+	}
+}
+
+// Two combinations that share a stream's gpu/kube (the normal case for a
+// qualification matrix -- same hardware, different dependency versions) must
+// land at different build paths. Before combination was folded into build,
+// these collided and silently overwrote each other's evidence.
+func TestBuildPrefixDoesNotCollideAcrossCombinations(t *testing.T) {
+	capabilities := map[string]string{"gpu": "h100", "kube": "1.34"}
+	d := &Destination{Environment: "staging"}
+
+	a, err := d.buildPrefix(testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", capabilities))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := d.buildPrefix(testResult("nvke", "cli-v2.0.0", "amd64-1.34", "12345", "", capabilities))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if a == b {
+		t.Errorf("combinations cli-v1.0.0 and cli-v2.0.0 produced the same prefix %q", a)
+	}
+}
+
+func TestShortHashIsStableAndEightChars(t *testing.T) {
+	a := shortHash("cli-v1.0.0_os-image-v0.1.0")
+	b := shortHash("cli-v1.0.0_os-image-v0.1.0")
+	if a != b {
+		t.Errorf("shortHash is not stable: %q != %q", a, b)
+	}
+	if len(a) != 8 {
+		t.Errorf("shortHash is %d characters, want 8", len(a))
+	}
+}
+
+// upload is one call a fakeUploader captured.
+type upload struct {
+	path        string
+	data        []byte
+	contentType string
+}
+
+// fakeUploader records every Upload call, in order, instead of writing
+// anywhere -- what Publish's tests assert against.
+type fakeUploader struct {
+	calls []upload
+}
+
+func (f *fakeUploader) Upload(_ context.Context, path string, data []byte, contentType string) error {
+	f.calls = append(f.calls, upload{path, data, contentType})
+	return nil
+}
+
+func publishTestResult(t *testing.T, passed bool) *qualification.Result {
+	t.Helper()
+	started := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
+	finished := started.Add(45 * time.Minute)
+	resultState := "FAIL"
+	if passed {
+		resultState = "PASS"
+	}
+	return &qualification.Result{
+		Spec: qualification.ResultSpec{
+			Subject:    "nvke",
+			Version:    "v1.0.0",
+			StartedAt:  started,
+			FinishedAt: finished,
+			Identity: qualification.ResultIdentity{
+				Repository: "dsx-ai-factory/nvke",
+				RunID:      "12345",
+				RunAttempt: "1",
+				SHA:        "abc123",
+				Actor:      "byron",
+			},
+		},
+		Status: qualification.ResultStatus{
+			Combinations: []qualification.ResultCombination{{
+				ID: "cli-v1.0.0",
+				Streams: []qualification.ResultStream{{
+					Name:   "amd64-1.34",
+					Result: resultState,
+					RunURL: "https://github.com/dsx-ai-factory/nvke/actions/runs/12345",
+					Capabilities: map[string]string{
+						"gpu": "h100", "kube": "1.34", "arch": "amd64", "ubuntu": "24.04",
+					},
+				}},
+			}},
+		},
+	}
+}
+
+func TestPublishUploadsInOrderWithTheRightPaths(t *testing.T) {
+	result := publishTestResult(t, true)
+	junitPath := filepath.Join(t.TempDir(), "qualify-e2e.junit.xml")
+	if err := os.WriteFile(junitPath, []byte("<testsuites/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uploader := &fakeUploader{}
+	d := &Destination{Uploader: uploader, Environment: "staging"}
+
+	if err := d.Publish(context.Background(), result, junitPath); err != nil {
+		t.Fatal(err)
+	}
+
+	wantPrefix, err := d.buildPrefix(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uploader.calls) != 3 {
+		t.Fatalf("got %d uploads, want 3", len(uploader.calls))
+	}
+	wantOrder := []string{wantPrefix + "started.json", wantPrefix + "artifacts/junit.xml", wantPrefix + "finished.json"}
+	for i, want := range wantOrder {
+		if uploader.calls[i].path != want {
+			t.Errorf("upload %d: path %q, want %q", i, uploader.calls[i].path, want)
+		}
+	}
+	if string(uploader.calls[1].data) != "<testsuites/>" {
+		t.Errorf("junit upload carries %q, want the file's own content", uploader.calls[1].data)
+	}
+}
+
+func TestPublishFinishedJSONReflectsPassFail(t *testing.T) {
+	for _, tc := range []struct {
+		passed     bool
+		wantResult string
+	}{
+		{true, "SUCCESS"},
+		{false, "FAILURE"},
+	} {
+		t.Run(tc.wantResult, func(t *testing.T) {
+			result := publishTestResult(t, tc.passed)
+			junitPath := filepath.Join(t.TempDir(), "qualify-e2e.junit.xml")
+			if err := os.WriteFile(junitPath, []byte("<testsuites/>"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			uploader := &fakeUploader{}
+			d := &Destination{Uploader: uploader, Environment: "staging"}
+
+			if err := d.Publish(context.Background(), result, junitPath); err != nil {
+				t.Fatal(err)
+			}
+
+			var got finished
+			if err := json.Unmarshal(uploader.calls[2].data, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Passed != tc.passed {
+				t.Errorf("passed = %v, want %v", got.Passed, tc.passed)
+			}
+			if got.Result != tc.wantResult {
+				t.Errorf("result = %q, want %q", got.Result, tc.wantResult)
+			}
+			if got.Timestamp != result.Spec.FinishedAt.Unix() {
+				t.Errorf("timestamp = %d, want %d", got.Timestamp, result.Spec.FinishedAt.Unix())
+			}
+		})
+	}
+}
+
+func TestPublishMetadataFlattensCapabilitiesAndFixesReleaseStream(t *testing.T) {
+	result := publishTestResult(t, true)
+	junitPath := filepath.Join(t.TempDir(), "qualify-e2e.junit.xml")
+	if err := os.WriteFile(junitPath, []byte("<testsuites/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uploader := &fakeUploader{}
+	d := &Destination{Uploader: uploader, Environment: "staging"}
+
+	if err := d.Publish(context.Background(), result, junitPath); err != nil {
+		t.Fatal(err)
+	}
+
+	var got started
+	if err := json.Unmarshal(uploader.calls[0].data, &got); err != nil {
+		t.Fatal(err)
+	}
+	m := got.Metadata
+	want := meta{
+		Subject:       "nvke",
+		Version:       "v1.0.0",
+		Combination:   "cli-v1.0.0",
+		Stream:        "amd64-1.34",
+		Repository:    "dsx-ai-factory/nvke",
+		RunID:         "12345",
+		RunAttempt:    "1",
+		SHA:           "abc123",
+		Actor:         "byron",
+		ReleaseStream: "nvke-release",
+		ReleaseTag:    "v1.0.0",
+		Provider:      "forge",
+		GPU:           "h100",
+		Arch:          "amd64",
+		Ubuntu:        "24.04",
+		Kube:          "1.34",
+		RunURL:        "https://github.com/dsx-ai-factory/nvke/actions/runs/12345",
+		Commit:        "abc123",
+	}
+	if m != want {
+		t.Errorf("metadata = %+v, want %+v", m, want)
+	}
+}
+
+func TestPublishPropagatesBuildPrefixErrors(t *testing.T) {
+	result := publishTestResult(t, true)
+	result.Status.Combinations[0].Streams[0].Capabilities = nil // no gpu/kube
+	junitPath := filepath.Join(t.TempDir(), "qualify-e2e.junit.xml")
+	uploader := &fakeUploader{}
+	d := &Destination{Uploader: uploader, Environment: "staging"}
+
+	if err := d.Publish(context.Background(), result, junitPath); err == nil {
+		t.Fatal("Publish returned nil, want an error from buildPrefix")
+	}
+	if len(uploader.calls) != 0 {
+		t.Errorf("got %d uploads, want 0 -- buildPrefix should fail before any upload", len(uploader.calls))
+	}
+}

@@ -59,3 +59,8 @@ spec:
     - {name: kind}
     - {name: clusterctl}
     - {name: nerdctl}
+
+# status.type classifies what this subject qualifies, for a published
+# QualificationResult -- today only read by `qualify result`.
+status:
+  type: site-controller

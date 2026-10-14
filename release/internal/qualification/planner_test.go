@@ -87,6 +87,8 @@ apiVersion: nvke.nvidia.com/v1alpha1
 kind: Qualification
 metadata:
   name: nvke
+status:
+  type: site-controller
 spec:
   subject: nvke
   components:

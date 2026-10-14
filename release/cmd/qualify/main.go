@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Command qualify drives release qualification. Its one verb, `plan`,
-// resolves what to qualify.
+// Command qualify drives release qualification: plan resolves what to
+// qualify, result records what one stream ran, publish ships a stream's
+// result and JUnit report to a destination.
 package main
 
 import (
@@ -40,9 +41,13 @@ func root() *cobra.Command {
 		Version: version,
 		Long: `Drive NVKE release qualification.
 
-  plan       resolve what to qualify`,
+  plan       resolve what to qualify
+  result     record what one stream of one combination qualified
+  publish    ship a stream's result and JUnit report to a destination`,
 		SilenceUsage: true,
 	}
 	cmd.AddCommand(planCmd())
+	cmd.AddCommand(resultCmd())
+	cmd.AddCommand(publishCmd())
 	return cmd
 }
