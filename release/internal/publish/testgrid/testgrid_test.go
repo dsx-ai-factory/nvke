@@ -388,6 +388,22 @@ func TestPublishMetadataFlattensCapabilitiesAndFixesReleaseStream(t *testing.T) 
 	if m != want {
 		t.Errorf("metadata = %+v, want %+v", m, want)
 	}
+
+	// TestGrid's own metadata.Version() reader only recognizes "revision",
+	// "repo-commit", or "job-version" -- a "commit" key is metadata it never
+	// reads back.
+	var raw struct {
+		Metadata map[string]any `json:"metadata"`
+	}
+	if err := json.Unmarshal(uploader.calls[0].data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw.Metadata["repo-commit"]; !ok {
+		t.Errorf("metadata has no repo-commit key: %v", raw.Metadata)
+	}
+	if _, ok := raw.Metadata["commit"]; ok {
+		t.Errorf("metadata still has a commit key, which TestGrid never reads: %v", raw.Metadata)
+	}
 }
 
 func TestPublishPropagatesBuildPrefixErrors(t *testing.T) {

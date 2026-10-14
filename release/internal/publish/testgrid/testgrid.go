@@ -83,6 +83,10 @@ const releaseStream = "nvke-release"
 // Metadata must stay flat strings: TestGrid's Metadata.Strings() drops
 // nested maps, so Capabilities is flattened into gpu/arch/ubuntu/kube here
 // rather than passed through as a map.
+//
+// Commit is keyed "repo-commit", not "commit": TestGrid's own
+// metadata.Version() reader only recognizes "revision", "repo-commit", or
+// "job-version" -- any other key name is metadata TestGrid never reads back.
 type meta struct {
 	Subject       string `json:"subject"`
 	Version       string `json:"version"`
@@ -101,7 +105,7 @@ type meta struct {
 	Ubuntu        string `json:"ubuntu,omitempty"`
 	Kube          string `json:"kube,omitempty"`
 	RunURL        string `json:"run_url,omitempty"`
-	Commit        string `json:"commit,omitempty"`
+	Commit        string `json:"repo-commit,omitempty"`
 }
 
 // Publish writes started.json, a copy of the JUnit report, then finished.json
