@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
 )
@@ -32,23 +31,10 @@ type Uploader interface {
 // Destination is the TestGrid Destination.
 type Destination struct {
 	Uploader Uploader
-
-	// Now returns the current time, used to stamp the build name's ordering
-	// prefix at upload time. nil means time.Now; a test sets it to a fixed
-	// clock for a deterministic build name.
-	Now func() time.Time
 }
 
 // Name is the --destination value that selects this Destination.
 func (d *Destination) Name() string { return "testgrid" }
-
-// now is d.Now if set, else time.Now.
-func (d *Destination) now() time.Time {
-	if d.Now != nil {
-		return d.Now()
-	}
-	return time.Now()
-}
 
 type started struct {
 	Timestamp int64 `json:"timestamp"`
@@ -213,19 +199,23 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 // the track the SPA derives this subject's "nvke-release" release source
 // from.
 //
-// build is {upload time as 19-digit nanoseconds}-{run_id}-{run_attempt}-
+// build is {FinishedAt as 19-digit nanoseconds}-{run_id}-{run_attempt}-
 // {short hash of combination ID}. The updater drops any build whose name
 // sorts <= the highest one it has already processed (pkg/updater/read.go,
 // ListBuilds), so the sort key has to track the order builds actually land
 // in GCS -- not run_id, which two overlapping runs on different refs, or a
 // retried older attempt publishing after a newer one already did, can put
-// out of order. A fixed-width zero-padded UnixNano, taken right before this
-// leg's own upload sequence starts, sorts lexicographically the same as it
-// sorts numerically and stays monotonic across retries, since a retry always
-// uploads later than the attempt it is retrying. run_id/run_attempt/hash
-// stay in the name after the timestamp for a human reading the build list
-// and to keep two combinations sharing a stream's gpu/kube from colliding
-// even if their timestamps tie.
+// out of order. A fixed-width zero-padded UnixNano sorts lexicographically
+// the same as it sorts numerically.
+//
+// The timestamp comes from the Result record's own FinishedAt, not from
+// reading the clock when Publish runs: FinishedAt is set once by `qualify
+// result` and persisted to the file `qualify publish` reads, so a retried
+// `qualify publish` invocation against that same file computes the exact
+// same build path as the attempt it is retrying, rather than a new one that
+// orphans the first attempt's partially-uploaded files forever. A real
+// upload-time clock would make every retry start a fresh, permanently
+// incomplete build instead.
 func (d *Destination) buildPrefix(result *qualification.Result) (string, error) {
 	combo := result.Status.Combinations[0]
 	stream := combo.Streams[0]
@@ -235,11 +225,14 @@ func (d *Destination) buildPrefix(result *qualification.Result) (string, error) 
 	if provider == "" || gpu == "" || kube == "" {
 		return "", fmt.Errorf("stream %q capabilities have no provider/gpu/kube (got %v)", stream.Name, capabilities)
 	}
+	if result.Spec.FinishedAt.IsZero() {
+		return "", fmt.Errorf("result has no spec.finishedAt, so the build name has no ordering timestamp")
+	}
 
 	group := fmt.Sprintf("%s-prod", provider)
 	dashboard := fmt.Sprintf("%s-v%s-nvke-e2e", gpu, kube)
 
-	build := fmt.Sprintf("%019d", d.now().UTC().UnixNano())
+	build := fmt.Sprintf("%019d", result.Spec.FinishedAt.UTC().UnixNano())
 	if result.Spec.Identity.RunID != "" {
 		build += "-" + result.Spec.Identity.RunID
 	}

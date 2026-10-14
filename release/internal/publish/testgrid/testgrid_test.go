@@ -18,12 +18,6 @@ import (
 	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
 )
 
-// fixedClock is a Destination.Now that always returns t, for a build name
-// test's timestamp to be reproducible instead of racing the real clock.
-func fixedClock(t time.Time) func() time.Time {
-	return func() time.Time { return t }
-}
-
 // newFormatDashboard mirrors testgrid's own tools/config-gen/main.go
 // isNewFormatDashboard regex. config-gen silently drops any discovered
 // dashboard that does not match this -- not an error, just never rendered in
@@ -31,10 +25,17 @@ func fixedClock(t time.Time) func() time.Time {
 // test catches locally instead of only on a live TestGrid check.
 var newFormatDashboard = regexp.MustCompile(`-[a-z0-9]+-(e2e|tenant)(-(nclave|cpu))?$`)
 
+// testResultFinishedAt is the default FinishedAt testResult stamps -- the
+// build name's ordering source, so tests that are not specifically about
+// ordering need a stable non-zero value to not trip buildPrefix's "no
+// spec.finishedAt" guard.
+var testResultFinishedAt = time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
+
 func testResult(subject, combinationID, streamName, runID, runAttempt string, capabilities map[string]string) *qualification.Result {
 	return &qualification.Result{
 		Spec: qualification.ResultSpec{
-			Subject: subject,
+			Subject:    subject,
+			FinishedAt: testResultFinishedAt,
 			Identity: qualification.ResultIdentity{
 				RunID:      runID,
 				RunAttempt: runAttempt,
@@ -51,14 +52,13 @@ func testResult(subject, combinationID, streamName, runID, runAttempt string, ca
 
 func TestBuildPrefix(t *testing.T) {
 	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
-	clock := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
-	d := &Destination{Now: fixedClock(clock)}
+	d := &Destination{}
 
 	got, err := d.buildPrefix(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := fmt.Sprintf("groups/forge-prod/h100-v1.34-nvke-e2e/amd64-1.34/%019d-12345-%s/", clock.UnixNano(), shortHash("cli-v1.0.0"))
+	want := fmt.Sprintf("groups/forge-prod/h100-v1.34-nvke-e2e/amd64-1.34/%019d-12345-%s/", testResultFinishedAt.UnixNano(), shortHash("cli-v1.0.0"))
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -66,35 +66,35 @@ func TestBuildPrefix(t *testing.T) {
 
 func TestBuildPrefixRunAttemptIsAppendedToBuild(t *testing.T) {
 	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "2", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
-	clock := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
-	d := &Destination{Now: fixedClock(clock)}
+	d := &Destination{}
 
 	got, err := d.buildPrefix(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := fmt.Sprintf("groups/forge-prod/h100-v1.34-nvke-e2e/amd64-1.34/%019d-12345-2-%s/", clock.UnixNano(), shortHash("cli-v1.0.0"))
+	want := fmt.Sprintf("groups/forge-prod/h100-v1.34-nvke-e2e/amd64-1.34/%019d-12345-2-%s/", testResultFinishedAt.UnixNano(), shortHash("cli-v1.0.0"))
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
 // The updater drops any build whose name sorts <= the highest one already
-// processed -- so a later publish must always sort after an earlier one,
-// even when the later publish carries a lower run_id (an older attempt
-// retried after a newer run already published).
-func TestBuildPrefixBuildNameSortsByUploadTimeNotRunID(t *testing.T) {
+// processed -- so a later-finishing leg must always sort after an
+// earlier-finishing one, even when the later leg carries a lower run_id (an
+// older attempt retried after a newer run already finished).
+func TestBuildPrefixBuildNameSortsByFinishedAtNotRunID(t *testing.T) {
 	capabilities := map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"}
-	earlier := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
-	later := earlier.Add(time.Nanosecond)
+	earlier := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "99999", "", capabilities)
+	earlier.Spec.FinishedAt = time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
+	later := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", capabilities)
+	later.Spec.FinishedAt = earlier.Spec.FinishedAt.Add(time.Nanosecond)
 
-	dEarlier := &Destination{Now: fixedClock(earlier)}
-	earlierBuild, err := dEarlier.buildPrefix(testResult("nvke", "cli-v1.0.0", "amd64-1.34", "99999", "", capabilities))
+	d := &Destination{}
+	earlierBuild, err := d.buildPrefix(earlier)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dLater := &Destination{Now: fixedClock(later)}
-	laterBuild, err := dLater.buildPrefix(testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", capabilities))
+	laterBuild, err := d.buildPrefix(later)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,37 @@ func TestBuildPrefixBuildNameSortsByUploadTimeNotRunID(t *testing.T) {
 	names := []string{laterBuild, earlierBuild}
 	sort.Strings(names)
 	if names[0] != earlierBuild || names[1] != laterBuild {
-		t.Errorf("sorted names = %v, want the earlier-published build (run 99999) before the later one (run 12345) despite its lower run_id", names)
+		t.Errorf("sorted names = %v, want the earlier-finishing build (run 99999) before the later one (run 12345) despite its lower run_id", names)
+	}
+}
+
+// A retried qualify publish re-reads the same already-written Result record,
+// so it must compute the exact same build path as the attempt it is
+// retrying -- not a new one that orphans the first attempt's partial upload.
+func TestBuildPrefixIsStableAcrossRepeatedCalls(t *testing.T) {
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
+	d := &Destination{}
+
+	first, err := d.buildPrefix(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := d.buildPrefix(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Errorf("buildPrefix(result) = %q then %q, want the same path both times", first, second)
+	}
+}
+
+func TestBuildPrefixRejectsZeroFinishedAt(t *testing.T) {
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
+	result.Spec.FinishedAt = time.Time{}
+	d := &Destination{}
+
+	if _, err := d.buildPrefix(result); err == nil {
+		t.Fatal("buildPrefix returned nil, want an error for a zero FinishedAt")
 	}
 }
 
@@ -167,8 +197,7 @@ func TestBuildPrefixDashboardMatchesConfigGenNewFormat(t *testing.T) {
 // these collided and silently overwrote each other's evidence.
 func TestBuildPrefixDoesNotCollideAcrossCombinations(t *testing.T) {
 	capabilities := map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"}
-	clock := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
-	d := &Destination{Now: fixedClock(clock)}
+	d := &Destination{}
 
 	a, err := d.buildPrefix(testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", capabilities))
 	if err != nil {
@@ -274,7 +303,7 @@ func TestPublishUploadsInOrderWithTheRightPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	uploader := &fakeUploader{}
-	d := &Destination{Uploader: uploader, Now: fixedClock(time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC))}
+	d := &Destination{Uploader: uploader}
 
 	if err := d.Publish(context.Background(), result, junitPath); err != nil {
 		t.Fatal(err)
@@ -295,6 +324,36 @@ func TestPublishUploadsInOrderWithTheRightPaths(t *testing.T) {
 	}
 	if string(uploader.calls[1].data) != "<testsuites/>" {
 		t.Errorf("junit upload carries %q, want the file's own content", uploader.calls[1].data)
+	}
+}
+
+// Retrying Publish against the same already-written Result record (what a
+// retried `qualify publish` invocation actually does) must land at the same
+// build path both times -- a different path on the second attempt would
+// orphan the first attempt's uploads instead of completing them.
+func TestPublishIsIdempotentAcrossRetries(t *testing.T) {
+	result := publishTestResult(t, true)
+	junitPath := filepath.Join(t.TempDir(), "qualify-e2e.junit.xml")
+	if err := os.WriteFile(junitPath, []byte("<testsuites/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	first := &fakeUploader{}
+	if err := (&Destination{Uploader: first}).Publish(context.Background(), result, junitPath); err != nil {
+		t.Fatal(err)
+	}
+	second := &fakeUploader{}
+	if err := (&Destination{Uploader: second}).Publish(context.Background(), result, junitPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(first.calls) != len(second.calls) {
+		t.Fatalf("first attempt uploaded %d objects, second uploaded %d", len(first.calls), len(second.calls))
+	}
+	for i := range first.calls {
+		if first.calls[i].path != second.calls[i].path {
+			t.Errorf("upload %d: first attempt wrote %q, retry wrote %q, want the same path", i, first.calls[i].path, second.calls[i].path)
+		}
 	}
 }
 
