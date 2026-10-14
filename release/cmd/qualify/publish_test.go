@@ -63,7 +63,7 @@ func writeResult(t *testing.T, result qualification.Result) string {
 func TestLoadResultAccepts(t *testing.T) {
 	path := writeFile(t, "qualify-result.json", publishTestResult)
 
-	result, err := loadResult(path)
+	result, err := qualification.LoadResult(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestLoadResultAccepts(t *testing.T) {
 }
 
 func TestLoadResultRejectsMissingFile(t *testing.T) {
-	_, err := loadResult(filepath.Join(t.TempDir(), "does-not-exist.json"))
+	_, err := qualification.LoadResult(filepath.Join(t.TempDir(), "does-not-exist.json"))
 	if err == nil {
 		t.Fatal("got nil, want an error for a missing file")
 	}
@@ -82,7 +82,7 @@ func TestLoadResultRejectsMissingFile(t *testing.T) {
 func TestLoadResultRejectsMalformedJSON(t *testing.T) {
 	path := writeFile(t, "qualify-result.json", "not json")
 
-	_, err := loadResult(path)
+	_, err := qualification.LoadResult(path)
 	if err == nil {
 		t.Fatal("got nil, want an error for malformed JSON")
 	}
@@ -91,9 +91,27 @@ func TestLoadResultRejectsMalformedJSON(t *testing.T) {
 func TestLoadResultRejectsWrongKind(t *testing.T) {
 	path := writeFile(t, "qualify-result.json", strings.Replace(publishTestResult, "QualificationResult", "QualificationPlan", 1))
 
-	_, err := loadResult(path)
+	_, err := qualification.LoadResult(path)
 	if err == nil || !strings.Contains(err.Error(), "kind is") {
 		t.Errorf("err = %v, want it to name the wrong kind", err)
+	}
+}
+
+func TestLoadResultRejectsWrongAPIVersion(t *testing.T) {
+	path := writeFile(t, "qualify-result.json", strings.Replace(publishTestResult, "nvke.nvidia.com/v1alpha1", "nvke.nvidia.com/v2", 1))
+
+	_, err := qualification.LoadResult(path)
+	if err == nil || !strings.Contains(err.Error(), "apiVersion is") {
+		t.Errorf("err = %v, want it to name the wrong apiVersion", err)
+	}
+}
+
+func TestLoadResultRejectsUnknownField(t *testing.T) {
+	path := writeFile(t, "qualify-result.json", strings.Replace(publishTestResult, `"subject": "nvke"`, `"subject": "nvke", "subjekt": "nvke"`, 1))
+
+	_, err := qualification.LoadResult(path)
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Errorf("err = %v, want it to name the unknown field", err)
 	}
 }
 

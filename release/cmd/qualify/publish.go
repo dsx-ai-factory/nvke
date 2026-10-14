@@ -5,9 +5,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -44,7 +42,7 @@ so routing is built from the record itself.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			result, err := loadResult(resultPath)
+			result, err := qualification.LoadResult(resultPath)
 			if err != nil {
 				return err
 			}
@@ -90,22 +88,6 @@ so routing is built from the record itself.`,
 		_ = cmd.MarkFlagRequired(name)
 	}
 	return cmd
-}
-
-// loadResult reads a QualificationResult written by `qualify result`.
-func loadResult(path string) (*qualification.Result, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading result record: %w", err)
-	}
-	var result qualification.Result
-	if err := json.Unmarshal(b, &result); err != nil {
-		return nil, fmt.Errorf("parsing result record: %w", err)
-	}
-	if result.Kind != qualification.KindQualificationResult {
-		return nil, fmt.Errorf("%s: kind is %q, want %q", path, result.Kind, qualification.KindQualificationResult)
-	}
-	return &result, nil
 }
 
 // buildDestination constructs the named Destination. The returned func
