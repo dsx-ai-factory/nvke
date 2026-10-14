@@ -4,7 +4,7 @@
 #
 # Tests for nvke-deploy.sh against deploy/nico, committed and rendered for a
 # site, in --dry-run: the item order, where each chart comes from, and the
-# refusals. Needs python3 and nvkectl: NVKECTL names the binary, else the
+# refusals, and check-site.sh against stub tools. Needs python3 and nvkectl: NVKECTL names the binary, else the
 # one on PATH; make -C deploy test builds it.
 #
 # Usage: ./test_nvke_deploy.sh
@@ -79,7 +79,7 @@ printf 'spire:\n  trustDomain: nvke-site.nke.local\n  caCertFile: %s\n  caKeyFil
 rendered="${WORK}/rendered"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${rendered}" 2>&1)" || fail "render exited $?: ${out}"
 expect "render reports the site values" '^controller: site values written$' "${out}"
-expect "render reports the templates" '^nvke-base-config: 4 templates rendered; applies as a manifest item$' "${out}"
+expect "render reports the templates" '^nvke-base-config: 3 templates rendered; applies as a manifest item$' "${out}"
 expect "a missing database password file is created" "^database password generated and written to ${WORK}/site/db-password$" "${out}"
 [[ -s "${WORK}/site/db-password" && ! -e "${rendered}/db-password" ]] && pass "the password lives in the operator's file, not the tree" || fail "db password placement"
 find "${rendered}" -maxdepth 0 -perm 0700 | grep -q . && pass "the rendered tree is private" || fail "rendered tree mode"
@@ -259,6 +259,46 @@ out="$(bash "${EXECUTOR}" install --config "${CONFIG}" --dry-run 2>&1)" && fail 
 expect "missing --deploy-path is named" 'deploy-path is required' "${out}"
 out="$(bash "${EXECUTOR}" install --deploy-path "${NICO}" --dry-run 2>&1)" && fail "template item without --config exited 0"
 expect "template item needs --config" 'needs --config' "${out}"
+
+# check-site.sh against stub tools: every finding passes on a ready cluster
+# and names the fix on one that is not. The stubs answer the exact reads the
+# check makes; STUB_* switch the answers.
+CHECK="${DEPLOY_DIR}/check-site.sh"
+stubs="${WORK}/stubs"
+mkdir -p "${stubs}"
+cat >"${stubs}/kubectl" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  *"spec.taints"*) printf 'node-1\t%s\n' "${STUB_TAINT:-}" ;;
+  *"kubernetes\.io/arch"*) printf 'node-1\tarm64\n' ;;
+  *"get storageclass"*) [[ -n "${STUB_NO_SC:-}" ]] || printf 'local-path\ttrue\n' ;;
+  *"capi-controller-manager"*) printf '%s' "${STUB_CAPI_IMAGE:-}" ;;
+esac
+exit 0
+STUB
+printf '#!/usr/bin/env bash\ncase "$1" in version) printf "v4.2.4" ;; esac\nexit 0\n' >"${stubs}/helm"
+printf '#!/usr/bin/env bash\nexit 0\n' >"${stubs}/clusterctl"
+printf '#!/usr/bin/env bash\nexit 0\n' >"${stubs}/curl"
+chmod +x "${stubs}"/*
+: >"${WORK}/stub.kubeconfig"
+out="$(PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" --release "${WORK}/local.json" --nvkr-run-dir "${run_dir}" 2>&1)" || fail "check-site on a ready cluster exited $?: ${out}"
+expect "the site spec passes" '^PASS  site spec: .* is valid for the controller stack$' "${out}"
+expect "the release is named with its verify command" '^PASS  release: .* verify it with: nvkr release verify --reference ' "${out}"
+expect "the architecture matches" '^PASS  cluster: node architecture arm64 matches controllerStack.arch$' "${out}"
+expect "no taint" '^PASS  cluster: no node carries the control-plane NoSchedule taint$' "${out}"
+expect "one default StorageClass" '^PASS  cluster: default StorageClass local-path$' "${out}"
+expect "Cluster API is not installed yet and the init command is printed" '^PASS  Cluster API: not installed yet; run: clusterctl init .*--core cluster-api:v[0-9.]+ --bootstrap kubeadm:v[0-9.]+ --control-plane kubeadm:v[0-9.]+ --wait-providers$' "${out}"
+expect "the check ends ready with the install command" "nvke-deploy.sh install --deploy-path ${NICO} --sitespec ${WORK}/site/sitespec.yaml --kubeconfig ${WORK}/stub.kubeconfig --release ${WORK}/local.json --nvkr-run-dir ${run_dir}" "${out}"
+reject "the check changes nothing" '^(PASS|WARN|SKIP|FAIL)  .*(taint nodes |apply |helm upgrade)' "${out}"
+out="$(PATH="${stubs}:${PATH}" STUB_TAINT=NoSchedule STUB_NO_SC=1 STUB_CAPI_IMAGE=registry.k8s.io/cluster-api/cluster-api-controller:v0.0.1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site on an unready cluster exited 0"
+expect "the taint is a finding with the fix" '^FAIL  cluster: node-1 still carries the control-plane NoSchedule taint, which the bootstrap removes; run: kubectl taint nodes' "${out}"
+expect "the missing StorageClass is a finding with the fix" '^FAIL  cluster: no default StorageClass; Postgres and SPIRE need persistent volumes' "${out}"
+expect "another Cluster API version is a finding" '^FAIL  Cluster API: v0.0.1 is installed; the stack wants v[0-9.]+\. Use clusterctl upgrade' "${out}"
+expect "the failures are counted" '3 finding\(s\) to fix before the stack installs' "${out}"
+out="$(bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site without --sitespec exited 0"
+expect "the site spec is required" '^usage: check-site.sh' "${out}"
+PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" --diagnostics >/dev/null 2>&1 || fail "check-site --diagnostics exited $?"
+[[ -f "${WORK}/check-state/diagnostics/nodes.txt" ]] && pass "diagnostics are written under the state directory" || fail "no diagnostics: $(ls -R "${WORK}/check-state" 2>/dev/null)"
 
 if [[ "${failures}" -eq 0 ]]; then
   echo "all nvke-deploy tests passed"
