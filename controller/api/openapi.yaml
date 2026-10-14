@@ -1225,7 +1225,7 @@ components:
             type: string
           description: >-
             Labels applied to control-plane nodes at creation, as a map of keys to values.
-            Keys under nke.nvidia.com, nke.io, kubernetes.io, k8s.io and their subdomains are
+            Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are
             reserved, unless the deployment allows specific Kubernetes keys.
           x-go-type-skip-optional-pointer: true
         teleportEnabled:
@@ -1593,7 +1593,7 @@ components:
             type: string
           description: >-
             Labels applied to the pool's nodes at creation, as a map of keys to values.
-            Keys under nke.nvidia.com, nke.io, kubernetes.io, k8s.io and their subdomains are
+            Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are
             reserved, unless the deployment allows specific Kubernetes keys.
           x-go-type-skip-optional-pointer: true
           x-order: 13
@@ -1603,7 +1603,7 @@ components:
             $ref: "#/components/schemas/NodeTaint"
           description: >-
             Taints applied to the pool's nodes at creation. Not allowed on control-plane pools.
-            Keys under nke.nvidia.com, nke.io, kubernetes.io, k8s.io and their subdomains are
+            Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are
             reserved. Each key and effect pair may appear only once.
           x-go-type-skip-optional-pointer: true
           x-order: 14

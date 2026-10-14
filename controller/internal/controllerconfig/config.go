@@ -367,7 +367,7 @@ const (
 // NodeMetadataReservedInternalDomains and their subdomains are reserved for internal components. Callers cannot
 // set label or taint keys under them, and nodeMetadataAllowlistedLabelKeys cannot list them.
 func NodeMetadataReservedInternalDomains() []string {
-	return []string{"nke.nvidia.com", "nke.io", "nvke.io", "nvke.nvidia.com"}
+	return []string{"nke.nvidia.com", "nke.io", "nvke.nvidia.com"}
 }
 
 // validateNodeMetadataAllowlistedLabelKeys refuses an entry the server would never honor: the

@@ -1011,8 +1011,8 @@ func TestValidateNodeMetadataAllowlistedLabelKeys(t *testing.T) {
 		},
 		{
 			name:    "rejects an internal subdomain key",
-			line:    "nodeMetadataAllowlistedLabelKeys: [agent.nvke.io/state]\n",
-			wantErr: `[0] "agent.nvke.io/state" is under reserved domain "nvke.io" and cannot be allowlisted`,
+			line:    "nodeMetadataAllowlistedLabelKeys: [agent.nvke.nvidia.com/state]\n",
+			wantErr: `[0] "agent.nvke.nvidia.com/state" is under reserved domain "nvke.nvidia.com" and cannot be allowlisted`,
 		},
 		{
 			name:    "rejects a duplicate",

@@ -141,6 +141,9 @@ token:(^|/)(var/lib|etc|opt|usr/local|usr/share|run|tmp|var/log)/nke|^/nke/|\.nk
 # Old encryption labels are read once and migrated; never write this domain.
 token:^nke\.io/($|k8s-api-encryption-(configured|rewrite-complete))
 
+# The controller API validates that this legacy label domain is reserved and cannot be set with labels and taints
+token:^nke\.io$
+
 # Names this image rename kept on purpose, plus the build-guest and nix names
 # that are still spelled the old way. The packages Provide nke-kubeadm-distro
 # and nke-cni-* so apt requests for those names still resolve. nke-calico-* is

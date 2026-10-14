@@ -46,9 +46,9 @@ func TestValidateNodeLabels(t *testing.T) {
 			wantErr: `nodeLabels: key "nke.nvidia.com/managed" is under reserved domain "nke.nvidia.com"; labels in this domain cannot be set`,
 		},
 		{
-			name:    "nke subdomain",
-			labels:  map[string]string{"site.nke.io/rack": "a"},
-			wantErr: `nodeLabels: key "site.nke.io/rack" is under reserved domain "nke.io"; labels in this domain cannot be set`,
+			name:    "nvke subdomain",
+			labels:  map[string]string{"site.nvke.nvidia.com/rack": "a"},
+			wantErr: `nodeLabels: key "site.nvke.nvidia.com/rack" is under reserved domain "nvke.nvidia.com"; labels in this domain cannot be set`,
 		},
 		{
 			name:    "control-plane role",
