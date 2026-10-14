@@ -206,14 +206,13 @@ func nicoTestConfig(t *testing.T) Config {
 	cfg.ProvisionedProviderImage = ""
 	cfg.NicoInfrastructure = true
 	cfg.CAPNICo = CAPNICoAccess{
-		Endpoint:         "https://nico.example",
-		OrgID:            "example-org",
-		APIName:          "forge",
-		Token:            "example-nico-token",
-		RegistryServer:   "ghcr.io",
-		RegistryUsername: "example-user",
-		RegistryToken:    "example-registry-token",
+		Endpoint: "https://nico.example",
+		OrgID:    "example-org",
+		APIName:  "forge",
+		Token:    "example-nico-token",
 	}
+	cfg.DGXCTenant = TenantLogin{User: "example-tenant", Password: "example-tenant-password"}
+	cfg.ReleasesPath = "/srv/releases"
 	cfg.SPIREExternalAddress = "192.0.2.10"
 	return cfg
 }
@@ -256,6 +255,67 @@ func TestDeploy_CWEAcceptsTheProviderPayloadTheBootstrapSends(t *testing.T) {
 			cwe := callIndex(runner, "upgrade --install "+cweReleaseName)
 			if cwe < 0 || !strings.Contains(joinArgs(runner.calls[cwe].args), tt.want) {
 				t.Errorf("cwe install args do not contain %q", tt.want)
+			}
+		})
+	}
+}
+
+// TestDeploy_NicoGivesTheControllerTheTenantLoginAndReleases: the controller
+// refuses to render a node's user data without DGXC_TENANT_USER and
+// DGXC_TENANT_PASSWORD, and cannot resolve the osProfile without the release
+// manifests. So in nico mode the Secret exists before the controller installs,
+// the chart is told its name, the releases are applied after the chart, and none
+// of it is true in provisioned mode.
+func TestDeploy_NicoGivesTheControllerTheTenantLoginAndReleases(t *testing.T) {
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", nicoTestConfig(t)); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+
+	cwe := callIndex(runner, "upgrade --install "+cweReleaseName)
+	if cwe < 0 || !strings.Contains(joinArgs(runner.calls[cwe].args), "secrets.dgxcTenantCredSecretName="+dgxcTenantSecret) {
+		t.Fatalf("the controller install does not name the tenant credential Secret; call %d", cwe)
+	}
+	secret := callIndex(runner, "nvkectl-tenant-credentials-")
+	releases := callIndex(runner, "-f /srv/releases")
+	if secret < 0 || secret > cwe {
+		t.Errorf("want the tenant Secret (%d) applied before the controller (%d)", secret, cwe)
+	}
+	if releases < 0 || releases < cwe {
+		t.Errorf("want the release manifests (%d) applied after the controller chart (%d)", releases, cwe)
+	}
+	for _, call := range runner.calls {
+		if args := joinArgs(call.args); strings.Contains(args, "example-tenant-password") {
+			t.Errorf("the tenant password is on a command line: %q", args)
+		}
+	}
+
+	provisioned := &fakeRunner{}
+	if err := New(provisioned, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	if got := callIndex(provisioned, "dgxcTenantCredSecretName"); got >= 0 {
+		t.Errorf("provisioned mode named a tenant credential Secret (call %d)", got)
+	}
+}
+
+// TestDeploy_NicoRefusesWithoutTheTenantLoginOrReleases: a nico Deploy that
+// would only fail at the first node, minutes later, fails at once.
+func TestDeploy_NicoRefusesWithoutTheTenantLoginOrReleases(t *testing.T) {
+	for name, tt := range map[string]struct {
+		mutate  func(*Config)
+		wantErr string
+	}{
+		"no tenant user":     {func(c *Config) { c.DGXCTenant.User = "" }, "Config.DGXCTenant"},
+		"no tenant password": {func(c *Config) { c.DGXCTenant.Password = "" }, "Config.DGXCTenant"},
+		"no releases":        {func(c *Config) { c.ReleasesPath = "" }, "Config.ReleasesPath"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := nicoTestConfig(t)
+			tt.mutate(&cfg)
+			err := New(&fakeRunner{}, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Deploy error = %v, want it to contain %q", err, tt.wantErr)
 			}
 		})
 	}
@@ -304,8 +364,8 @@ func TestInstallCAPNICo_AppliesSecretsThenTheManifest(t *testing.T) {
 
 // TestCAPNICoSecretsManifest: the Secrets carry the names, keys and namespace
 // CAPNICo and its manifest expect, which are the ones the deploy path's
-// 20-nico-credentials and 30-ghcr-imagepull templates render, and values that
-// need escaping survive it.
+// 20-nico-credentials template renders, that no pull secret is created for the
+// public image, and that values needing escaping survive it.
 func TestCAPNICoSecretsManifest(t *testing.T) {
 	access := nicoTestConfig(t).CAPNICo
 	access.Token = `tok"en\with-escapes`
@@ -317,7 +377,6 @@ func TestCAPNICoSecretsManifest(t *testing.T) {
 	var list struct {
 		Items []struct {
 			Kind     string
-			Type     string
 			Metadata struct{ Name, Namespace string }
 			Data     map[string]string `json:"stringData"`
 		}
@@ -325,13 +384,13 @@ func TestCAPNICoSecretsManifest(t *testing.T) {
 	if err := json.Unmarshal(raw, &list); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, raw)
 	}
-	if len(list.Items) != 3 {
-		t.Fatalf("want a Namespace and two Secrets, got %d items", len(list.Items))
+	if len(list.Items) != 2 {
+		t.Fatalf("want a Namespace and the credentials Secret, got %d items", len(list.Items))
 	}
 	if ns := list.Items[0]; ns.Kind != "Namespace" || ns.Metadata.Name != capnicoNamespace {
 		t.Errorf("first item = %+v, want the %s Namespace", ns, capnicoNamespace)
 	}
-	creds, pull := list.Items[1], list.Items[2]
+	creds := list.Items[1]
 	if creds.Metadata.Name != nicoCredentialsSecret || creds.Metadata.Namespace != capnicoNamespace {
 		t.Errorf("credentials Secret = %+v", creds.Metadata)
 	}
@@ -340,23 +399,11 @@ func TestCAPNICoSecretsManifest(t *testing.T) {
 			t.Errorf("nico-credentials[%s] = %q, want %q", key, creds.Data[key], want)
 		}
 	}
-	if pull.Metadata.Name != capnicoPullSecret || pull.Type != "kubernetes.io/dockerconfigjson" {
-		t.Errorf("pull Secret = %+v type %q", pull.Metadata, pull.Type)
-	}
-	var docker struct {
-		Auths map[string]struct{ Username, Password string }
-	}
-	if err := json.Unmarshal([]byte(pull.Data[".dockerconfigjson"]), &docker); err != nil {
-		t.Fatalf("dockerconfigjson: %v", err)
-	}
-	if got := docker.Auths["ghcr.io"]; got.Username != "example-user" || got.Password != "example-registry-token" {
-		t.Errorf("dockerconfigjson auth = %+v", got)
-	}
 }
 
-// TestEmbeddedCAPNICoManifest: the manifest names the pull secret the install
-// creates and the Deployment it waits for. If a bump of deploy/nico/capnico
-// renames either, this fails instead of a bootstrap hanging.
+// TestEmbeddedCAPNICoManifest: the manifest names the namespace and the
+// Deployment the install waits for. If a bump of deploy/nico/capnico renames
+// either, this fails instead of a bootstrap hanging.
 func TestEmbeddedCAPNICoManifest(t *testing.T) {
 	raw, err := manifestsFS.ReadFile(capnicoManifestFile)
 	if err != nil {
@@ -364,7 +411,6 @@ func TestEmbeddedCAPNICoManifest(t *testing.T) {
 	}
 	for _, want := range []string{
 		"name: " + capnicoNamespace,
-		"- name: " + capnicoPullSecret,
 		"name: " + capnicoDeployment,
 	} {
 		if !strings.Contains(string(raw), want) {
@@ -384,11 +430,6 @@ func TestInstallCAPNICo_Errors(t *testing.T) {
 			name:    "no NICo token",
 			mutate:  func(cfg *Config) { cfg.CAPNICo.Token = "" },
 			wantErr: "CAPNICo.Token",
-		},
-		{
-			name:    "no registry credential",
-			mutate:  func(cfg *Config) { cfg.CAPNICo.RegistryToken = "" },
-			wantErr: "CAPNICo.RegistryToken",
 		},
 		{
 			name:    "apply failure",

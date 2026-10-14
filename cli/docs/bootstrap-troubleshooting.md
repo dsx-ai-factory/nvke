@@ -80,7 +80,18 @@ accepts the site cluster request and before the outputs are saved. A failed
 cleanup can also leave it behind. The logs report retention and, when
 available, the kubeconfig path.
 
-Use that kubeconfig to inspect the live cluster:
+```text
+level=WARN msg="bootstrap failed after site cluster creation; retaining the bootstrap kind cluster for recovery" cluster=nvkectl-bootstrap kubeconfig=/tmp/nvkectl-bootstrap-kubeconfig-.../config
+```
+
+With `infrastructure: nico`, the kept cluster also holds the
+NICo token and the tenant password as Secrets (`nico-credentials` in
+`capnico-system`, `dgxc-tenant-credentials` in `nke-controller`), so delete it
+when you are done:
+`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`.
+
+Use that kubeconfig to look at the live state, which is more than the dump
+captures:
 
 ```bash
 export KUBECONFIG=<bootstrap-kubeconfig>

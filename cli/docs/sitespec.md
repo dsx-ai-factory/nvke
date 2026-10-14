@@ -71,15 +71,24 @@ controller's own control-plane machines, through a CAPNICo installed in the
 throwaway Kind cluster. It is not the NICo the finished site controller uses to
 create tenant clusters; that is `controllerStack.nico` below and may be a
 different NICo, with different credentials, org and site. A site spec can carry
-both. The Kind cluster, with its CAPNICo and `nico-credentials` Secret, is
-deleted when the bootstrap ends.
+both.
+
+The Kind cluster holds the CAPNICo, the `nico-credentials` Secret (the NICo
+token) and the `dgxc-tenant-credentials` Secret (the tenant password). It is
+deleted when the bootstrap ends, except in two cases: when you pass
+`--keep-bootstrap-cluster`, and when the run fails after the site cluster was
+created. In both, the cluster and those Secrets stay on the bootstrap host until
+you delete the cluster with
+`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`
+(the failure message prints the command). Treat the host as holding the tokens
+until then.
 
 `cluster.nico` is built from the structs the controller's REST API takes for a
 NICo cluster, with the API's field names: `provider` is the request's `nico`
 block (`api.NicoClusterProvider`) and `controlPlane` is the control-plane
 config's `nico` block (`api.NicoControlPlaneProviderCreate`). The credentials
-are the same `StackNico` and `StackPullSecret` structs `controllerStack` uses
-for the tenant CAPNICo, under bootstrap-specific names.
+is the same `StackNico` struct `controllerStack` uses for the tenant CAPNICo,
+under a bootstrap-specific name.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
@@ -92,17 +101,16 @@ for the tenant CAPNICo, under bootstrap-specific names.
 | `cluster.nico.controlPlane.sshKeyGroupIDs` | UUID list | with `nico` | At least one. |
 | `cluster.nico.controlPlane.osProfile`, `configProfile` | string | with `nico` | Profile names served by the site. |
 | `bootstrapNico` | `StackNico` | with `nico` | The NICo API the bootstrap CAPNICo calls: `endpoint`, `orgID`, `apiName`, `tokenFile`. See below. |
-| `bootstrapPullSecret` | `StackPullSecret` | with `nico` | The registry credential for the bootstrap CAPNICo's image: `server`, `username`, `tokenFile`. |
+| `bootstrapTenant` | `StackTenant` | with `nico` | The login the controller renders into the user data of every node CAPNICo creates: `user` and `passwordFile`. The controller refuses to render user data without it. See below. |
+| `bootstrapReleases` | path | with `nico` | A file, or a directory of `.yaml`, `.yml` and `.json` files, holding the `MachineImage` and `ClusterRelease` manifests. See below. |
 | `spire.externalAddress` | string | with `nico`, unless `--disable-mtls` | IP address or DNS name nodes use to reach the bootstrap host's SPIRE server, on NodePort 30081. See below. |
 
 `cluster.nodes` must be empty with `nico`, and `cluster.nico` must be absent
 with `provisioned`; a file that names both is rejected rather than half-obeyed.
 
-With `nico` the nodes' names and addresses are results, not inputs, and are
-printed once the nodes join.
-
-TODO: need to implement this for nico mode. Until then, read them from the
-finished cluster (`kubectl get nodes -o wide`).
+With `nico` the nodes' names and addresses are results, not inputs. The
+bootstrap does not print them; read them from the finished cluster with
+`kubectl get nodes -o wide`.
 
 ### SPIRE with NICo nodes
 
@@ -125,19 +133,19 @@ given their SPIRE address when they were provisioned.
 
 ### NICo credentials
 
-`bootstrapNico` and `bootstrapPullSecret` are the same structs as
-`controllerStack.nico` and `controllerStack.pullSecret`, and are checked the same
-way: every field set, the endpoint an http or https URL. Tokens are paths to
-files that hold them, one secret per file, relative paths resolved from the site
-spec, so the file itself holds no credential. Both are required with `nico` and
-refused otherwise. `bootstrapNico.orgID` is the organization the API token
-belongs to; `cluster.nico.provider.orgID` is the one that owns the cluster, and
+`bootstrapNico` is the same struct as `controllerStack.nico`, and is checked the
+same way: every field set, the endpoint an http or https URL. The token is a path
+to a file that holds it, relative paths resolved from the site spec, so the spec
+itself holds no credential. It is required with `nico` and refused otherwise.
+`bootstrapNico.orgID` is the organization the API token belongs to; `cluster.nico.provider.orgID` is the one that owns the cluster, and
 the two need not match.
 
 The bootstrap installs CAPNICo into its Kind cluster the way the site
 controller's deploy path does: the published release manifest
-(`deploy/nico/capnico/capnico.yaml`), with `nico-credentials` and the
-`ghcr-imagepull` pull secret in `capnico-system`. It is the same file at the
+(`deploy/nico/capnico/capnico.yaml`), with the `nico-credentials` Secret in
+`capnico-system`. No registry credential is created: the image is public, and
+the manifest's `ghcr-imagepull` reference is left unresolved, which the kubelet
+tolerates. It is the same file at the
 same pin, embedded in `nvkectl` by `make -C cli capnico-manifest`, so a CAPNICo
 bump in the deploy path is a bump here. It is not the Helm chart: the manifest
 carries the reboot and repair annotation prefixes the controller writes, which
@@ -150,25 +158,44 @@ the manifest's one image is replaced with the artifact's `repository@digest`.
 `--arch` (default the bootstrap host's) picks the artifact's architecture, since
 the bootstrap CAPNICo runs in the Kind cluster on that host. It is refused with
 `provisioned` infrastructure, where no CAPNICo is installed. The Kind node pulls
-the image, so `bootstrapPullSecret.server` must be the release image's registry;
-staging images from a release run directory, as the deploy path does for the
+the image anonymously, so the release's `capnico-controller` image must be
+publicly pullable; staging images from a release run directory, as the deploy path does for the
 node, is not supported here. The Kind host must reach `ghcr.io`
 and the NICo API and each new node's agent port, and the nodes must reach the
 SPIRE server the bootstrap publishes on the host.
+
+`bootstrapTenant` is the same struct as `controllerStack.tenant`. The bootstrap
+puts it in a `dgxc-tenant-credentials` Secret in the controller's namespace and
+points the controller chart at it (`secrets.dgxcTenantCredSecretName`); without
+it the controller fails every node's user-data rendering and no node is created.
+`passwordFile` is a path to a file holding the password, like the tokens.
+
+### Release manifests
+
+With `nico` the controller resolves `cluster.nico.controlPlane.osProfile` from
+its own API: a `ClusterRelease` of that name and the `MachineImage` it names.
+The bootstrap controller starts with neither, so `bootstrapReleases` points at
+the manifests, written as in
+[Get NVKE artifacts and OS profiles built with NVKR](../../docs/operate/build-node-images.md),
+and the bootstrap applies them to the Kind cluster after the controller's CRDs
+exist and before it creates the site cluster. The load fails, before any Kind
+cluster exists, if they hold no `ClusterRelease` named for the `osProfile` or
+not the `MachineImage` it references. Relative paths resolve from the site
+spec's directory.
 
 ## Schema
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `clusterName` | string | yes | Lowercase RFC 1123 label. |
-| `cluster.nodes` | list | yes | Must contain an odd number of control-plane nodes and at least one node. |
+| `cluster.nodes` | list | yes, with `provisioned` | Must contain an odd number of control-plane nodes and at least one node. With `nico` it must be empty and `cluster.nico.nodeCount` sets the count; see [Where the machines come from](#where-the-machines-come-from). |
 | `cluster.nodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Unique across all nodes. |
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Unique across all nodes. |
 | `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. See below. |
 | `cluster.k8sVersion` | string | yes | Plain semantic version, e.g. `1.32.0` (no leading `v`). |
 | `cluster.cniName` | string | no | Defaults to and must be `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the node-agent default. |
-| `cluster.controlPlaneVIP` | string | for multiple nodes | IPv4 control-plane VIP. Required when `cluster.nodes` has more than one entry. A single-node cluster may omit it and use that node's IP as its fixed endpoint. See below. |
+| `cluster.controlPlaneVIP` | string | for multiple nodes | IPv4 control-plane VIP. Required when `cluster.nodes` has more than one entry, or `cluster.nico.nodeCount` is more than one. A single-node cluster may omit it and use that node's IP as its fixed endpoint. See below. |
 | `cluster.podCidr` | string | yes | Valid CIDR. A comma-separated list of CIDRs is allowed. Must not overlap `serviceCidr`. |
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
@@ -231,8 +258,11 @@ them from there and they are not repeated in `controllerStack:`.
 
 - All problems are reported together in one error, each naming the offending
   field, so a bad file can be fixed in one pass.
-- The site spec must contain an odd number of nodes and at least one node.
-- Node names and IPs must be unique across all nodes.
+- The site spec must contain an odd number of nodes and at least one node: the
+  length of `cluster.nodes` with `provisioned`, `cluster.nico.nodeCount` with
+  `nico`.
+- Node names and IPs must be unique across all nodes (`provisioned` only; `nico`
+  has none to list).
 - `podCidr` / `serviceCidr` are parsed as CIDRs; `podCidr` also accepts a
   comma-separated list and validates each entry. No `podCidr` entry may
   overlap `serviceCidr`.
@@ -240,7 +270,12 @@ them from there and they are not repeated in `controllerStack:`.
   and must not fall inside `podCidr` or `serviceCidr`. It may equal a declared
   node IP.
 - `controlPlaneVIP` is required when `cluster.nodes` contains more than one
-  node.
+  node, or `cluster.nico.nodeCount` is more than one.
+- With `nico`: `bootstrapNico`, `bootstrapTenant`, `bootstrapReleases` and
+  `cluster.nico` are required and the files they name must exist; with
+  `provisioned` they are rejected. `spire.externalAddress` is required with
+  `nico` unless `--disable-mtls`, which `nvkectl validate sitespec` and
+  `bootstrap site` both check.
 
 CLI acceptance does not prove bootstrap or network reachability. The controller
 chooses the first control-plane node ready to join, which need not be the first
@@ -281,6 +316,7 @@ A set variable takes precedence over the file value.
 | `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
 | `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
 | `NVKECTL_SPIRE_EXTERNAL_ADDRESS` | `spire.externalAddress` |
+| `NVKECTL_INFRASTRUCTURE` | `infrastructure` — `provisioned` or `nico` |
 | `NVKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
 
 A malformed `NVKECTL_CLUSTER_NODES` entry fails the load rather than being
@@ -291,6 +327,7 @@ select a node for `kubeadm init`; the bootstrap process selects it downstream.
 
 ## TPM endorsement-key thumbprints
 
+This section is for `provisioned` sites, where the nodes are listed.
 `tpmEkThumbprint` is the SHA-256 of a node's TPM endorsement key, as printed by
 [`spire-tpm-plugin`](https://github.com/spiffe/spire-tpm-plugin)'s
 `get_tpm_pubhash`. It identifies the *machine* rather than anything about its
@@ -305,6 +342,9 @@ Every thumbprint in the file is seeded into the allowlist of the SPIRE server
 - a node with a thumbprint can attest and be issued an identity
 - a node without one cannot
 - a site spec where no node has one deploys SPIRE with no TPM attestor at all
+  (`provisioned` only: with `nico` the attestor is always on, and its allowlist
+  is filled as CAPNICo reports each machine's key; see
+  [SPIRE with NICo nodes](#spire-with-nico-nodes))
 
 It is a public key hash, not a secret, so it belongs in the site spec rather
 than beside the credentials, and a file carrying them stays safe to commit.
@@ -386,7 +426,7 @@ kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- \
 
 `cluster.controlPlaneVIP` is an IPv4 address that fronts the Kubernetes API for
 every control-plane node. It is required when `cluster.nodes` contains more than
-one node. When set, the controller runs kube-vip on each node,
+one node, or `cluster.nico.nodeCount` is more than one with `nico`. When set, the controller runs kube-vip on each node,
 kubeadm uses the VIP as the `controlPlaneEndpoint`, and the kubeconfig `bootstrap
 site` writes points at it. A single-node cluster may leave it empty and use that
 node's IP as its fixed endpoint. The controller selects a control-plane node that reports

@@ -26,6 +26,7 @@ func newValidateCmd() *cobra.Command {
 type validateSiteSpecOptions struct {
 	siteSpec      string
 	bootstrapOnly bool
+	disableMTLS   bool
 }
 
 func newValidateSiteSpecCmd() *cobra.Command {
@@ -36,7 +37,9 @@ func newValidateSiteSpecCmd() *cobra.Command {
 		Long: `Check the whole site spec and report by section.
 
 The bootstrap section is what "nvkectl bootstrap site" reads: every field is
-checked, and the SPIRE CA files must exist. The controllerStack section is
+checked, and the SPIRE CA files must exist. With infrastructure nico,
+spire.externalAddress is required unless --disable-mtls is given, as it is for
+"nvkectl bootstrap site". The controllerStack section is
 what the controller stack install reads: the REPLACE_* values still to fill
 in are listed apart from errors, every required field must be set, the
 architecture and the NICo endpoint must be well-formed, and the files the
@@ -46,7 +49,8 @@ The command exits 0 only when the file is ready for both. --bootstrap-only
 checks the bootstrap section alone, for a file whose controllerStack section
 is not filled in yet.`,
 		Example: `  nvkectl validate sitespec -f sitespec.yaml
-  nvkectl validate sitespec -f sitespec.yaml --bootstrap-only`,
+  nvkectl validate sitespec -f sitespec.yaml --bootstrap-only
+  nvkectl validate sitespec -f sitespec.yaml --disable-mtls`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -56,6 +60,8 @@ is not filled in yet.`,
 	cmd.Flags().StringVarP(&opts.siteSpec, "sitespec", "f", "", "Path to the site spec (required)")
 	_ = cmd.MarkFlagRequired("sitespec")
 	cmd.Flags().BoolVar(&opts.bootstrapOnly, "bootstrap-only", false, "Check only the fields bootstrap site reads")
+	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
+		"Check the file as \"bootstrap site --disable-mtls\" would: with infrastructure nico, spire.externalAddress is not required")
 	return cmd
 }
 
@@ -63,6 +69,12 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 	spec, err := sitespec.Load(opts.siteSpec)
 	if err != nil {
 		return err
+	}
+	// The same check bootstrap site applies before its dry-run return, so a file
+	// this command passes is one that command accepts.
+	if err := spec.CheckBootstrapMode(opts.disableMTLS); err != nil {
+		fmt.Fprintf(out, "bootstrap: %v (--disable-mtls lifts this)\n", err)
+		return errors.New("the site spec is not ready for nvkectl bootstrap site")
 	}
 	fmt.Fprintln(out, "bootstrap: valid; nvkectl bootstrap site can run with this file")
 	if opts.bootstrapOnly {

@@ -65,6 +65,11 @@ const (
 	// and scopes the controller's Secret grant to, so it is a constant on both sides.
 	tenantSecretsNamespace = "nke-system"
 
+	// dgxcTenantSecret is the Secret holding the tenant node login, named by
+	// the chart's secrets.dgxcTenantCredSecretName. It matches the name the
+	// deploy path's 35-dgxc-tenant-credentials template renders.
+	dgxcTenantSecret = "dgxc-tenant-credentials"
+
 	postgresReleaseName  = "postgres"
 	temporalReleaseName  = "temporal"
 	spireCRDsReleaseName = "spire-crds"
@@ -266,10 +271,20 @@ type Config struct {
 	// tenant-cluster NICo is configured separately and may be a different one.
 	NicoInfrastructure bool
 
-	// CAPNICo is what the bootstrap CAPNICo is given to reach NICo and to pull
-	// its image. Required with NicoInfrastructure. Bootstrap NICo only; not the
-	// tenant-cluster NICo.
+	// CAPNICo is what the bootstrap CAPNICo is given to reach NICo. Required
+	// with NicoInfrastructure. Bootstrap NICo only; not the tenant-cluster NICo.
 	CAPNICo CAPNICoAccess
+
+	// DGXCTenant is the login the controller renders into the cloud-init of
+	// every node CAPNICo creates. Required with NicoInfrastructure: the
+	// controller refuses to render user data without it.
+	DGXCTenant TenantLogin
+
+	// ReleasesPath is a file or directory of MachineImage and ClusterRelease
+	// manifests applied to the cluster once the controller's CRDs exist. The
+	// controller resolves the control plane's osProfile from them when it
+	// creates the first node. Required with NicoInfrastructure.
+	ReleasesPath string
 
 	// CAPNICoImage, when set, replaces the image the embedded CAPNICo manifest
 	// names, as repository@sha256:digest. It is the capnico-controller artifact
@@ -452,6 +467,14 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 			"nodes created by CAPNICo read the SPIRE server's address from their userdata, " +
 			"and the in-cluster name does not reach them")
 	}
+	if cfg.NicoInfrastructure && (cfg.DGXCTenant.User == "" || cfg.DGXCTenant.Password == "") {
+		return errors.New("cwedeploy: Config.DGXCTenant is required with NicoInfrastructure; " +
+			"the controller refuses to render a node's user data without DGXC_TENANT_USER and DGXC_TENANT_PASSWORD")
+	}
+	if cfg.NicoInfrastructure && cfg.ReleasesPath == "" {
+		return errors.New("cwedeploy: Config.ReleasesPath is required with NicoInfrastructure; " +
+			"the controller cannot resolve the control plane's osProfile without the release manifests")
+	}
 	if cfg.ProvisionedProviderImage == "" && !cfg.NicoInfrastructure {
 		return errors.New("cwedeploy: Config.ProvisionedProviderImage is required; the CAPI " +
 			"objects CWE writes for a site cluster have no controller without it " +
@@ -627,6 +650,14 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		defer cleanup()
 	}
 
+	// The Secret has to exist before the controller's pod does: the chart wires
+	// DGXC_TENANT_USER and DGXC_TENANT_PASSWORD from it only when told its name.
+	if cfg.NicoInfrastructure {
+		if err := e.applyTenantCredentials(ctx, kubeconfigPath, cfg.DGXCTenant); err != nil {
+			return err
+		}
+	}
+
 	// tag and digest are always set, empty when unused: the chart reads an
 	// empty tag as "use appVersion" and an empty digest as "pull by tag".
 	imageRepo, imageTag, imageDigest := splitImageRef(cfg.CWEImage)
@@ -652,6 +683,9 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
 	}
 	cweArgs = append(cweArgs, cweEnvArgs(cfg)...)
+	if cfg.NicoInfrastructure {
+		cweArgs = append(cweArgs, "--set-string", "secrets.dgxcTenantCredSecretName="+dgxcTenantSecret)
+	}
 	cweArgs = append(cweArgs, "--wait", "--timeout", helmTimeout.String())
 	if oidcValues != "" {
 		cweArgs = append(cweArgs, "--values", oidcValues)
@@ -660,9 +694,68 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return fmt.Errorf("controllerdeploy: installing the controller: %w", err)
 	}
 
+	// The chart installed the release CRDs, so the manifests can be applied now,
+	// before the site cluster is created.
+	if cfg.NicoInfrastructure {
+		if err := e.applyReleases(ctx, kubeconfigPath, cfg.ReleasesPath); err != nil {
+			return err
+		}
+	}
+
 	// The API has to be reachable from the host that ran this command: it is
 	// what creates the cluster next. See Config.CWEPort.
 	return e.publishCWEExternally(ctx, kubeconfigPath, cwePort)
+}
+
+// TenantLogin is the user and password the controller renders into the
+// cloud-init of the nodes it creates.
+type TenantLogin struct {
+	User     string
+	Password string
+}
+
+// applyTenantCredentials applies the Secret secrets.dgxcTenantCredSecretName
+// names, with the keys the chart reads (user and password), in the controller's
+// namespace. It goes through a 0600 file, not the command line, as the NICo
+// credentials do.
+func (e *Engine) applyTenantCredentials(ctx context.Context, kubeconfigPath string, login TenantLogin) error {
+	body, err := json.Marshal(map[string]any{
+		"apiVersion": "v1", "kind": "List",
+		"items": []any{
+			map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": cweNamespace}},
+			map[string]any{
+				"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
+				"metadata":   map[string]any{"name": dgxcTenantSecret, "namespace": cweNamespace},
+				"stringData": map[string]string{"user": login.User, "password": login.Password},
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("controllerdeploy: encoding the tenant credentials: %w", err)
+	}
+	file, cleanup, err := writeTempFile("nvkectl-tenant-credentials-*.json", body)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	e.log.Info("applying the tenant node credentials", "namespace", cweNamespace, "secret", dgxcTenantSecret)
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "--server-side", "--force-conflicts", "-f", file); err != nil {
+		return fmt.Errorf("controllerdeploy: applying the tenant credentials: %w\n%s", err, out)
+	}
+	return nil
+}
+
+// applyReleases applies the MachineImage and ClusterRelease manifests at path,
+// a file or a directory, so the controller can resolve an osProfile from them.
+func (e *Engine) applyReleases(ctx context.Context, kubeconfigPath, path string) error {
+	e.log.Info("applying the release manifests", "path", path)
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "--server-side", "--force-conflicts", "-f", path); err != nil {
+		return fmt.Errorf("controllerdeploy: applying the release manifests at %s: %w\n%s", path, err, out)
+	}
+	return nil
 }
 
 // cweEnvArgs renders the settings the controller reads from its own environment as helm

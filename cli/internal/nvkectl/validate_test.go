@@ -164,3 +164,44 @@ func TestValidateSiteSpec_BootstrapErrorsComeFirst(t *testing.T) {
 		t.Error("missing -f accepted")
 	}
 }
+
+// TestValidateSiteSpec_NicoNeedsTheSpireAddressUnlessMTLSIsOff: validate applies
+// the check bootstrap site applies, so a file it passes is one that command
+// accepts, and --disable-mtls lifts it in both.
+func TestValidateSiteSpec_NicoNeedsTheSpireAddressUnlessMTLSIsOff(t *testing.T) {
+	example, err := os.ReadFile("../../examples/sitespec-nico.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	text := strings.Replace(string(example), `  externalAddress: "192.0.2.10"`, "", 1)
+	if text == string(example) {
+		t.Fatal("the example no longer sets spire.externalAddress; update this test")
+	}
+	path := filepath.Join(dir, "sitespec.yaml")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"bootstrap-nico.token", "bootstrap-tenant.password"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "releases"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const releases = "kind: MachineImage\nmetadata:\n  name: img\n---\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n"
+	if err := os.WriteFile(filepath.Join(dir, "releases", "r.yaml"), []byte(releases), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	err = runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
+	if err == nil || !strings.Contains(out.String(), "spire.externalAddress is required") || strings.Contains(out.String(), "can run with this file") {
+		t.Fatalf("with mTLS: err = %v, output %q; want the address refused", err, out.String())
+	}
+	out.Reset()
+	if err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true, disableMTLS: true}); err != nil {
+		t.Fatalf("with --disable-mtls: %v\n%s", err, out.String())
+	}
+}

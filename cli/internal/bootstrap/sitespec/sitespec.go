@@ -72,7 +72,8 @@ const (
 	pathNodes                = "cluster.nodes"
 	pathNico                 = "cluster.nico"
 	pathBootstrapNico        = "bootstrapNico"
-	pathBootstrapPullSecret  = "bootstrapPullSecret"
+	pathBootstrapTenant      = "bootstrapTenant"
+	pathBootstrapReleases    = "bootstrapReleases"
 	pathK8sVersion           = "cluster.k8sVersion"
 	pathCniName              = "cluster.cniName"
 	pathCniVersion           = "cluster.cniVersion"
@@ -158,10 +159,17 @@ type SiteSpec struct {
 	// CAPNICo calls for tenant clusters, and the two may name different NICos.
 	// Required with InfrastructureNico; refused otherwise.
 	BootstrapNico *StackNico `yaml:"bootstrapNico,omitempty"`
-	// BootstrapPullSecret is the registry credential for the bootstrap
-	// CAPNICo's image pull secret, the same struct as controllerStack.pullSecret.
-	// Required with InfrastructureNico; refused otherwise.
-	BootstrapPullSecret *StackPullSecret `yaml:"bootstrapPullSecret,omitempty"`
+	// BootstrapTenant is the login the controller renders into the
+	// cloud-init of the nodes CAPNICo creates, the same struct as
+	// controllerStack.tenant. The controller refuses to render user data
+	// without it. Required with InfrastructureNico; refused otherwise.
+	BootstrapTenant *StackTenant `yaml:"bootstrapTenant,omitempty"`
+	// BootstrapReleases is a file, or a directory of files, holding the
+	// MachineImage and ClusterRelease manifests the bootstrap applies to the
+	// Kind cluster before it creates the site cluster. The controller resolves
+	// cluster.nico.controlPlane.osProfile from them. Required with
+	// InfrastructureNico; refused otherwise.
+	BootstrapReleases string `yaml:"bootstrapReleases,omitempty"`
 	// ControllerStack is the input the controller stack install reads. The
 	// bootstrap does not read it; ValidateControllerStack checks it at install
 	// time.
@@ -689,8 +697,8 @@ func (v *validator) checkNico(n *NicoCluster) {
 }
 
 // checkBootstrapNico validates the credentials the bootstrap CAPNICo is given.
-// They are the same StackNico and StackPullSecret the controller stack takes
-// for the tenant CAPNICo, and are checked the same way: every field set, the
+// It is the same StackNico the controller stack takes for the tenant CAPNICo,
+// and is checked the same way: every field set, the
 // endpoint an http or https URL. They are required with InfrastructureNico and
 // refused otherwise, as spire.externalAddress is.
 func (v *validator) checkBootstrapNico(inv *SiteSpec) {
@@ -698,8 +706,11 @@ func (v *validator) checkBootstrapNico(inv *SiteSpec) {
 		if inv.BootstrapNico != nil {
 			v.addf("%s is only valid with %s: %q", pathBootstrapNico, pathInfrastructure, InfrastructureNico)
 		}
-		if inv.BootstrapPullSecret != nil {
-			v.addf("%s is only valid with %s: %q", pathBootstrapPullSecret, pathInfrastructure, InfrastructureNico)
+		if inv.BootstrapTenant != nil {
+			v.addf("%s is only valid with %s: %q", pathBootstrapTenant, pathInfrastructure, InfrastructureNico)
+		}
+		if inv.BootstrapReleases != "" {
+			v.addf("%s is only valid with %s: %q", pathBootstrapReleases, pathInfrastructure, InfrastructureNico)
 		}
 		return
 	}
@@ -709,16 +720,24 @@ func (v *validator) checkBootstrapNico(inv *SiteSpec) {
 	} else {
 		inv.BootstrapNico.appendValueChecks(v, pathBootstrapNico)
 	}
-	if inv.BootstrapPullSecret == nil {
-		v.addf("%s is required with %s: %q: it is the registry credential for the CAPNICo image pull secret",
-			pathBootstrapPullSecret, pathInfrastructure, InfrastructureNico)
+	if inv.BootstrapTenant == nil {
+		v.addf("%s is required with %s: %q: the controller renders it into every node's user data and refuses to without it",
+			pathBootstrapTenant, pathInfrastructure, InfrastructureNico)
 	} else {
-		inv.BootstrapPullSecret.appendValueChecks(v, pathBootstrapPullSecret)
+		for _, f := range [][2]string{{"user", inv.BootstrapTenant.User}, {"passwordFile", inv.BootstrapTenant.PasswordFile}} {
+			if f[1] == "" {
+				v.addf("%s.%s is required", pathBootstrapTenant, f[0])
+			}
+		}
+	}
+	if inv.BootstrapReleases == "" {
+		v.addf("%s is required with %s: %q: the controller resolves cluster.nico.controlPlane.osProfile from the "+
+			"MachineImage and ClusterRelease manifests in it", pathBootstrapReleases, pathInfrastructure, InfrastructureNico)
 	}
 }
 
-// checkBootstrapNicoFiles checks that the token files the bootstrap credentials
-// name can be read, relative paths resolved from the site spec's directory.
+// checkBootstrapNicoFiles checks that the files the bootstrap credentials name
+// can be read, relative paths resolved from the site spec's directory.
 func (v *validator) checkBootstrapNicoFiles(inv *SiteSpec) {
 	if !inv.IsNico() {
 		return
@@ -727,8 +746,8 @@ func (v *validator) checkBootstrapNicoFiles(inv *SiteSpec) {
 	if inv.BootstrapNico != nil {
 		files = append(files, [2]string{pathBootstrapNico + ".tokenFile", inv.BootstrapNico.TokenFile})
 	}
-	if inv.BootstrapPullSecret != nil {
-		files = append(files, [2]string{pathBootstrapPullSecret + ".tokenFile", inv.BootstrapPullSecret.TokenFile})
+	if inv.BootstrapTenant != nil {
+		files = append(files, [2]string{pathBootstrapTenant + ".passwordFile", inv.BootstrapTenant.PasswordFile})
 	}
 	for _, f := range files {
 		if f[1] == "" {
@@ -738,6 +757,7 @@ func (v *validator) checkBootstrapNicoFiles(inv *SiteSpec) {
 			v.addf("%s %q cannot be read: %v", f[0], f[1], err)
 		}
 	}
+	v.checkBootstrapReleases(inv)
 }
 
 func (v *validator) checkUUID(path string, value openapi_types.UUID) {

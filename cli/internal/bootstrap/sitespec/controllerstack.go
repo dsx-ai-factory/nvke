@@ -79,19 +79,6 @@ type StackPullSecret struct {
 	TokenFile string `yaml:"tokenFile"`
 }
 
-// appendValueChecks adds every unset field of the registry credential to v.
-func (p *StackPullSecret) appendValueChecks(v *validator, path string) {
-	for _, f := range [][2]string{
-		{"server", p.Server},
-		{"username", p.Username},
-		{"tokenFile", p.TokenFile},
-	} {
-		if f[1] == "" {
-			v.addf("%s.%s is required", path, f[0])
-		}
-	}
-}
-
 // StackTenant is the login rendered into every tenant node's cloud-init.
 type StackTenant struct {
 	User         string `yaml:"user"`

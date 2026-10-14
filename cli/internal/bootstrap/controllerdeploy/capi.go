@@ -31,17 +31,13 @@ const (
 	provisionedDeployment = "provisioned-controller-manager"
 
 	// capnicoNamespace is where CAPNICo's manifest installs its manager, and
-	// where it reads its credentials and pull secret.
+	// where it reads its credentials.
 	capnicoNamespace  = "capnico-system"
 	capnicoDeployment = "controller-manager"
 
 	// nicoCredentialsSecret is the Secret CAPNICo reads its NICo API
 	// credentials from. The name, namespace and keys are CAPNICo's own.
 	nicoCredentialsSecret = "nico-credentials"
-
-	// capnicoPullSecret is the Secret the manifest's Deployment names as its
-	// imagePullSecrets entry.
-	capnicoPullSecret = "ghcr-imagepull"
 
 	// CAPNICoArtifact is the NVKR release artifact that carries the CAPNICo
 	// image. It is the artifact deploy/nico/capnico/release.yaml binds to the
@@ -97,9 +93,9 @@ func (e *Engine) installCAPI(ctx context.Context, kubeconfigPath string, cfg Con
 }
 
 // CAPNICoAccess is what the bootstrap CAPNICo needs from the operator: the
-// NICo API it calls and the registry credential its image is pulled with. Each
-// field is the resolved value of the StackNico and StackPullSecret the site
-// spec carries, with the token files read.
+// NICo API it calls. Each field is the resolved value of the StackNico the site
+// spec carries, with the token file read. Its image is public, so no registry
+// credential is needed.
 type CAPNICoAccess struct {
 	// Endpoint, OrgID, APIName and Token are the keys of the nico-credentials
 	// Secret.
@@ -107,28 +103,24 @@ type CAPNICoAccess struct {
 	OrgID    string
 	APIName  string
 	Token    string
-
-	// RegistryServer, RegistryUsername and RegistryToken are the pull secret's
-	// credential.
-	RegistryServer   string
-	RegistryUsername string
-	RegistryToken    string
 }
 
 // installCAPNICo installs CAPNICo the way the site controller's deploy path
 // does: the published release manifest, embedded here from
-// deploy/nico/capnico/capnico.yaml, with the NICo credentials and the image
-// pull secret applied beside it.
+// deploy/nico/capnico/capnico.yaml, with the NICo credentials applied beside it.
 //
 // It is not the Helm chart. The deploy path installs the manifest because a
 // site has no provider checkout and the chart needs a registry login that path
-// does not assume, and the manifest carries two edits the chart does not: the
-// reboot and repair annotation prefixes the controller writes, and the pull
-// secret. Without the first, every reboot and repair request is silently
-// ignored.
+// does not assume, and the manifest carries an edit the chart does not: the
+// reboot and repair annotation prefixes the controller writes. Without it,
+// every reboot and repair request is silently ignored.
 //
-// The Secrets are applied first, in a file with their namespace, because the
-// manifest's Deployment starts pulling its image as soon as it is applied.
+// The manifest's Deployment names a ghcr-imagepull pull secret that this does
+// not create: the image is public, and the kubelet pulls anonymously when the
+// reference is missing.
+//
+// The credentials are applied first, in a file with their namespace, because
+// the manager reads them as soon as the manifest starts it.
 func (e *Engine) installCAPNICo(ctx context.Context, kubeconfigPath string, cfg Config, timeout time.Duration) error {
 	secrets, err := capnicoSecretsManifest(cfg.CAPNICo)
 	if err != nil {
@@ -195,10 +187,10 @@ func capnicoManifest(raw []byte, image string) ([]byte, error) {
 	return capnicoImageLine.ReplaceAll(raw, []byte("${1}"+image)), nil
 }
 
-// capnicoSecretsManifest renders the Namespace, the nico-credentials Secret and
-// the image pull secret as one JSON document, which kubectl applies as it does
-// YAML. They carry the same keys the deploy path's
-// 20-nico-credentials.yaml.tmpl and 30-ghcr-imagepull.yaml.tmpl render.
+// capnicoSecretsManifest renders the Namespace and the nico-credentials Secret
+// as one JSON document, which kubectl applies as it does YAML. The Secret
+// carries the same keys the deploy path's 20-nico-credentials.yaml.tmpl
+// renders.
 //
 // It is built with encoding/json rather than a template so a value holding a
 // quote or a backslash is carried, not written altered.
@@ -208,35 +200,23 @@ func capnicoSecretsManifest(a CAPNICoAccess) ([]byte, error) {
 		{"OrgID", a.OrgID},
 		{"APIName", a.APIName},
 		{"Token", a.Token},
-		{"RegistryServer", a.RegistryServer},
-		{"RegistryUsername", a.RegistryUsername},
-		{"RegistryToken", a.RegistryToken},
 	} {
 		if f.value == "" {
 			return nil, fmt.Errorf("controllerdeploy: Config.CAPNICo.%s is required to install CAPNICo", f.name)
 		}
 	}
-	dockerConfig, err := json.Marshal(map[string]any{"auths": map[string]any{
-		a.RegistryServer: map[string]string{"username": a.RegistryUsername, "password": a.RegistryToken},
-	}})
-	if err != nil {
-		return nil, fmt.Errorf("controllerdeploy: encoding the pull secret: %w", err)
-	}
-	secret := func(name, kind string, data map[string]string) map[string]any {
-		return map[string]any{
-			"apiVersion": "v1", "kind": "Secret", "type": kind,
-			"metadata":   map[string]any{"name": name, "namespace": capnicoNamespace},
-			"stringData": data,
-		}
+	secret := map[string]any{
+		"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
+		"metadata": map[string]any{"name": nicoCredentialsSecret, "namespace": capnicoNamespace},
+		"stringData": map[string]string{
+			"endpoint": a.Endpoint, "orgID": a.OrgID, "token": a.Token, "apiName": a.APIName,
+		},
 	}
 	out, err := json.Marshal(map[string]any{
 		"apiVersion": "v1", "kind": "List",
 		"items": []any{
 			map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": capnicoNamespace}},
-			secret(nicoCredentialsSecret, "Opaque", map[string]string{
-				"endpoint": a.Endpoint, "orgID": a.OrgID, "token": a.Token, "apiName": a.APIName,
-			}),
-			secret(capnicoPullSecret, "kubernetes.io/dockerconfigjson", map[string]string{".dockerconfigjson": string(dockerConfig)}),
+			secret,
 		},
 	})
 	if err != nil {

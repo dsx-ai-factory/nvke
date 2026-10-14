@@ -881,25 +881,43 @@ bootstrapNico:
   orgID: bootstrap-org
   apiName: forge
   tokenFile: nico.token
-bootstrapPullSecret:
-  server: ghcr.io
-  username: example-user
-  tokenFile: registry.token
+bootstrapTenant:
+  user: example-user
+  passwordFile: tenant.password
+bootstrapReleases: releases
 registry:
   bootstrapRepo: "nvcr.io/org"
   bootstrapChart: "controller-chart"
 `
 
-// writeNicoTemp writes a site spec and the two token files it names beside it.
+// writeNicoTemp writes a site spec and the files it names beside it: the NICo
+// token, the tenant password, and a releases directory holding the
+// example-os-profile ClusterRelease and its MachineImage.
 func writeNicoTemp(t *testing.T, content string) string {
 	t.Helper()
 	path := writeTemp(t, content)
-	for _, name := range []string{"nico.token", "registry.token"} {
-		if err := os.WriteFile(filepath.Join(filepath.Dir(path), name), []byte("example-token\n"), 0o600); err != nil {
+	dir := filepath.Dir(path)
+	writeNicoFiles(t, dir, "nico.token", "tenant.password", "releases")
+	return path
+}
+
+// writeNicoFiles writes the files a nico site spec names into dir.
+func writeNicoFiles(t *testing.T, dir, token, password, releases string) {
+	t.Helper()
+	for _, name := range []string{token, password} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	return path
+	if err := os.MkdirAll(filepath.Join(dir, releases), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const docs = "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: example-image\n" +
+		"---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\n" +
+		"spec:\n  machineImageRef:\n    name: example-image\n"
+	if err := os.WriteFile(filepath.Join(dir, releases, "release.yaml"), []byte(docs), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // makeNico turns a valid provisioned spec into a valid nico one.
@@ -909,7 +927,8 @@ func makeNico(inv *SiteSpec) {
 	inv.Cluster.Nico = validNico()
 	inv.Spire.ExternalAddress = "192.0.2.10"
 	inv.BootstrapNico = &StackNico{Endpoint: "https://bootstrap-nico.example", OrgID: "bootstrap-org", APIName: "forge", TokenFile: "nico.token"}
-	inv.BootstrapPullSecret = &StackPullSecret{Server: "ghcr.io", Username: "example-user", TokenFile: "registry.token"}
+	inv.BootstrapTenant = &StackTenant{User: "example-user", PasswordFile: "tenant.password"}
+	inv.BootstrapReleases = "releases"
 }
 
 func TestLoadInfrastructureFromEnv(t *testing.T) {
@@ -950,19 +969,34 @@ func TestValidate_Infrastructure(t *testing.T) {
 			wantErr: "bootstrapNico is only valid with infrastructure",
 		},
 		{
-			name:    "bootstrapPullSecret with provisioned infrastructure",
-			mutate:  func(inv *SiteSpec) { inv.BootstrapPullSecret = &StackPullSecret{} },
-			wantErr: "bootstrapPullSecret is only valid with infrastructure",
+			name:    "bootstrapTenant with provisioned infrastructure",
+			mutate:  func(inv *SiteSpec) { inv.BootstrapTenant = &StackTenant{} },
+			wantErr: "bootstrapTenant is only valid with infrastructure",
+		},
+		{
+			name:    "bootstrapReleases with provisioned infrastructure",
+			mutate:  func(inv *SiteSpec) { inv.BootstrapReleases = "releases" },
+			wantErr: "bootstrapReleases is only valid with infrastructure",
+		},
+		{
+			name:    "nico without bootstrapTenant",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapTenant = nil },
+			wantErr: "bootstrapTenant is required",
+		},
+		{
+			name:    "bootstrapTenant missing its password file",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapTenant.PasswordFile = "" },
+			wantErr: "bootstrapTenant.passwordFile is required",
+		},
+		{
+			name:    "nico without bootstrapReleases",
+			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapReleases = "" },
+			wantErr: "bootstrapReleases is required",
 		},
 		{
 			name:    "nico without bootstrapNico",
 			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapNico = nil },
 			wantErr: "bootstrapNico is required",
-		},
-		{
-			name:    "nico without bootstrapPullSecret",
-			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapPullSecret = nil },
-			wantErr: "bootstrapPullSecret is required",
 		},
 		{
 			name:    "bootstrapNico endpoint is not a URL",
@@ -973,11 +1007,6 @@ func TestValidate_Infrastructure(t *testing.T) {
 			name:    "bootstrapNico missing its token file",
 			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapNico.TokenFile = "" },
 			wantErr: "bootstrapNico.tokenFile is required",
-		},
-		{
-			name:    "bootstrapPullSecret missing its username",
-			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.BootstrapPullSecret.Username = "" },
-			wantErr: "bootstrapPullSecret.username is required",
 		},
 		{
 			name: "nico without a nico block",
@@ -1114,13 +1143,13 @@ func TestLoad_NicoBlocksAreTheAPIsStructs(t *testing.T) {
 	}
 }
 
-// TestLoad_BootstrapNicoFilesMustExist: the token files the bootstrap
-// credentials name are checked at load, like spire.caCertFile.
+// TestLoad_BootstrapNicoFilesMustExist: the token file the bootstrap
+// credentials name is checked at load, like spire.caCertFile.
 func TestLoad_BootstrapNicoFilesMustExist(t *testing.T) {
 	path := writeTemp(t, nicoYAML)
 	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "bootstrapNico.tokenFile") || !strings.Contains(err.Error(), "bootstrapPullSecret.tokenFile") {
-		t.Fatalf("Load error = %v, want both token files reported", err)
+	if err == nil || !strings.Contains(err.Error(), "bootstrapNico.tokenFile") {
+		t.Fatalf("Load error = %v, want the token file reported", err)
 	}
 }
 
@@ -1202,16 +1231,12 @@ func TestNicoExampleLoads(t *testing.T) {
 		t.Fatalf("read cli/examples/sitespec-nico.yaml: %v", err)
 	}
 	path := writeTemp(t, string(example))
-	for _, name := range []string{"bootstrap-nico.token", "bootstrap-registry.token"} {
-		if err := os.WriteFile(filepath.Join(filepath.Dir(path), name), []byte("example-token\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	writeNicoFiles(t, filepath.Dir(path), "bootstrap-nico.token", "bootstrap-tenant.password", "releases")
 	inv, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if !inv.IsNico() || inv.ControlPlaneCount() != 3 || inv.BootstrapNico == nil || inv.BootstrapPullSecret == nil {
+	if !inv.IsNico() || inv.ControlPlaneCount() != 3 || inv.BootstrapNico == nil {
 		t.Errorf("example loaded as %+v", inv)
 	}
 }
@@ -1283,4 +1308,66 @@ func TestValidate_NicoControlPlaneVIP(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLoad_BootstrapPullSecretIsRefused: the bootstrap CAPNICo image is public,
+// so a spec that still carries the old pull secret is refused rather than
+// having it silently ignored.
+func TestLoad_BootstrapPullSecretIsRefused(t *testing.T) {
+	yaml := nicoYAML + "bootstrapPullSecret:\n  server: ghcr.io\n  username: example-user\n  tokenFile: nico.token\n"
+	_, err := Load(writeNicoTemp(t, yaml))
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "bootstrappullsecret") {
+		t.Fatalf("Load error = %v, want bootstrapPullSecret refused as unknown", err)
+	}
+}
+
+// TestLoad_BootstrapReleases: the release manifests must hold the ClusterRelease
+// the control plane's osProfile names and the MachineImage it boots, so a
+// missing one fails before any Kind cluster exists.
+func TestLoad_BootstrapReleases(t *testing.T) {
+	for name, tt := range map[string]struct {
+		docs    string
+		wantErr string
+	}{
+		"complete": {docs: "kind: MachineImage\nmetadata:\n  name: img\n---\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n"},
+		"no ClusterRelease for the osProfile": {
+			docs:    "kind: ClusterRelease\nmetadata:\n  name: other\nspec:\n  machineImageRef:\n    name: img\n---\nkind: MachineImage\nmetadata:\n  name: img\n",
+			wantErr: `no ClusterRelease named "example-os-profile"`,
+		},
+		"no MachineImage for the release": {
+			docs:    "kind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n",
+			wantErr: `not the MachineImage "img"`,
+		},
+		"a NodePoolRelease alone is not enough": {
+			docs:    "kind: NodePoolRelease\nmetadata:\n  name: example-os-profile\n",
+			wantErr: "no ClusterRelease",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeNicoTemp(t, nicoYAML)
+			if err := os.WriteFile(filepath.Join(filepath.Dir(path), "releases", "release.yaml"), []byte(tt.docs), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(path)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Load: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Load error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+
+	t.Run("missing path", func(t *testing.T) {
+		path := writeNicoTemp(t, nicoYAML)
+		if err := os.RemoveAll(filepath.Join(filepath.Dir(path), "releases")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "bootstrapReleases") {
+			t.Fatalf("Load error = %v, want bootstrapReleases reported", err)
+		}
+	})
 }

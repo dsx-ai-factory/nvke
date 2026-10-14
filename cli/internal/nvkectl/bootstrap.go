@@ -146,22 +146,31 @@ func newBootstrapSiteCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   siteSubcommand,
 		Short: "Bootstrap a new NVKE site controller from a site spec file",
-		Long: `Bootstrap a vanilla Kubernetes cluster from a set of pre-provisioned nodes
-described by the site spec file passed with -f/--sitespec.
+		Long: `Bootstrap a vanilla Kubernetes cluster from the nodes described by the site
+spec file passed with -f/--sitespec: pre-provisioned hosts it lists
+(infrastructure provisioned, the default), or machines CAPNICo allocates from a
+NICo site (infrastructure nico).
 
 The site spec file is loaded and validated first. On any invalid or missing
 field the command fails immediately with a clear error, before any workflow is
 dispatched or any node is touched.
 
-The bootstrap side-loads two images this repository builds,
-nke-controller:latest and cluster-api-provider-provisioned:latest, which
-"make -C cli images" builds. --controller-image and --provisioned-provider-image, or
+The bootstrap side-loads the images this repository builds, nke-controller:latest
+and, with provisioned infrastructure, cluster-api-provider-provisioned:latest,
+which "make -C cli images" builds. With nico, CAPNICo's image is public and
+pulled by the cluster; --release pins it to an NVKR release's artifact. --controller-image and --provisioned-provider-image, or
 NVKECTL_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, name other images, such as
 ones pushed to a registry; a flag wins over its variable. cli/README.md lists
 every NVKECTL_* variable.
 
 Every node becomes a control-plane node. Once the cluster is up, the
 control-plane NoSchedule taint is removed from each node so workloads can run.
+
+With nico, the site spec also names the NICo credentials, the tenant login and
+the MachineImage and ClusterRelease manifests the controller needs, and
+spire.externalAddress is required unless --disable-mtls is set. The nodes'
+names and addresses are not printed; read them with "kubectl get nodes -o wide"
+on the finished cluster.
 
 See the bundled examples/sitespec.yaml and docs/sitespec.md for the
 site spec file format.`,
@@ -915,6 +924,14 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 		return cfg, err
 	}
 	cfg.CAPNICo = access
+	if inv.IsNico() {
+		password, err := readTokenFile("bootstrapTenant.passwordFile", inv.ResolvePath(inv.BootstrapTenant.PasswordFile))
+		if err != nil {
+			return cfg, err
+		}
+		cfg.DGXCTenant = controllerdeploy.TenantLogin{User: inv.BootstrapTenant.User, Password: password}
+		cfg.ReleasesPath = inv.ResolvePath(inv.BootstrapReleases)
+	}
 	cfg.SPIREExternalAddress = inv.Spire.ExternalAddress
 	// CAPNICo comes from its own manifest, so the provisioned provider's image is not used.
 	if cfg.ProvisionedProviderImage == "" && !cfg.NicoInfrastructure {
@@ -1012,7 +1029,7 @@ func cweImages(cfg controllerdeploy.Config) []string {
 	return []string{cfg.CWEImage, cfg.ProvisionedProviderImage}
 }
 
-// capnicoAccess resolves the site spec's bootstrapNico and bootstrapPullSecret
+// capnicoAccess resolves the site spec's bootstrapNico
 // into the values the bootstrap CAPNICo is given, reading each token file. The
 // files are read here, before a Kind cluster exists, so an unreadable one fails
 // at once rather than minutes in. It returns the zero value for any
@@ -1021,25 +1038,18 @@ func capnicoAccess(inv *sitespec.SiteSpec) (controllerdeploy.CAPNICoAccess, erro
 	if !inv.IsNico() {
 		return controllerdeploy.CAPNICoAccess{}, nil
 	}
-	if inv.BootstrapNico == nil || inv.BootstrapPullSecret == nil {
-		return controllerdeploy.CAPNICoAccess{}, errors.New("the site spec selects infrastructure nico but has no bootstrapNico or bootstrapPullSecret")
+	if inv.BootstrapNico == nil {
+		return controllerdeploy.CAPNICoAccess{}, errors.New("the site spec selects infrastructure nico but has no bootstrapNico")
 	}
 	nicoToken, err := readTokenFile("bootstrapNico.tokenFile", inv.ResolvePath(inv.BootstrapNico.TokenFile))
 	if err != nil {
 		return controllerdeploy.CAPNICoAccess{}, err
 	}
-	registryToken, err := readTokenFile("bootstrapPullSecret.tokenFile", inv.ResolvePath(inv.BootstrapPullSecret.TokenFile))
-	if err != nil {
-		return controllerdeploy.CAPNICoAccess{}, err
-	}
 	return controllerdeploy.CAPNICoAccess{
-		Endpoint:         inv.BootstrapNico.Endpoint,
-		OrgID:            inv.BootstrapNico.OrgID,
-		APIName:          inv.BootstrapNico.APIName,
-		Token:            nicoToken,
-		RegistryServer:   inv.BootstrapPullSecret.Server,
-		RegistryUsername: inv.BootstrapPullSecret.Username,
-		RegistryToken:    registryToken,
+		Endpoint: inv.BootstrapNico.Endpoint,
+		OrgID:    inv.BootstrapNico.OrgID,
+		APIName:  inv.BootstrapNico.APIName,
+		Token:    nicoToken,
 	}, nil
 }
 

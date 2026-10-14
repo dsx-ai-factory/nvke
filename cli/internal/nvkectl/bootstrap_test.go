@@ -1784,8 +1784,8 @@ func TestControllerImageOrder(t *testing.T) {
 }
 
 // TestCapnicoAccess: the bootstrap CAPNICo's credentials come from the site
-// spec's bootstrapNico and bootstrapPullSecret, with the token files read and
-// trimmed, and only for infrastructure nico.
+// spec's bootstrapNico, with the token file read and trimmed, and only for
+// infrastructure nico.
 func TestCapnicoAccess(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name, body string) string {
@@ -1796,14 +1796,12 @@ func TestCapnicoAccess(t *testing.T) {
 		return path
 	}
 	nicoToken := write("nico.token", "example-nico-token\n")
-	registryToken := write("registry.token", "example-registry-token\n")
 	empty := write("empty.token", " \n")
 
-	nico := func(nicoFile, registryFile string) *sitespec.SiteSpec {
+	nico := func(nicoFile string) *sitespec.SiteSpec {
 		return &sitespec.SiteSpec{
-			Infrastructure:      sitespec.InfrastructureNico,
-			BootstrapNico:       &sitespec.StackNico{Endpoint: "https://nico.example", OrgID: "example-org", APIName: "forge", TokenFile: nicoFile},
-			BootstrapPullSecret: &sitespec.StackPullSecret{Server: "ghcr.io", Username: "example-user", TokenFile: registryFile},
+			Infrastructure: sitespec.InfrastructureNico,
+			BootstrapNico:  &sitespec.StackNico{Endpoint: "https://nico.example", OrgID: "example-org", APIName: "forge", TokenFile: nicoFile},
 		}
 	}
 
@@ -1813,14 +1811,13 @@ func TestCapnicoAccess(t *testing.T) {
 			t.Fatalf("capnicoAccess = %+v, %v; want the zero value", got, err)
 		}
 	})
-	t.Run("nico reads both token files", func(t *testing.T) {
-		got, err := capnicoAccess(nico(nicoToken, registryToken))
+	t.Run("nico reads the token file", func(t *testing.T) {
+		got, err := capnicoAccess(nico(nicoToken))
 		if err != nil {
 			t.Fatalf("capnicoAccess: %v", err)
 		}
 		want := controllerdeploy.CAPNICoAccess{
 			Endpoint: "https://nico.example", OrgID: "example-org", APIName: "forge", Token: "example-nico-token",
-			RegistryServer: "ghcr.io", RegistryUsername: "example-user", RegistryToken: "example-registry-token",
 		}
 		if got != want {
 			t.Errorf("capnicoAccess = %+v, want %+v", got, want)
@@ -1830,10 +1827,9 @@ func TestCapnicoAccess(t *testing.T) {
 		inv     *sitespec.SiteSpec
 		wantErr string
 	}{
-		"missing NICo token file":     {nico(filepath.Join(dir, "absent"), registryToken), "bootstrapNico.tokenFile"},
-		"missing registry token file": {nico(nicoToken, filepath.Join(dir, "absent")), "bootstrapPullSecret.tokenFile"},
-		"empty NICo token file":       {nico(empty, registryToken), "is empty"},
-		"no credentials in the spec":  {&sitespec.SiteSpec{Infrastructure: sitespec.InfrastructureNico}, "bootstrapNico"},
+		"missing NICo token file":    {nico(filepath.Join(dir, "absent")), "bootstrapNico.tokenFile"},
+		"empty NICo token file":      {nico(empty), "is empty"},
+		"no credentials in the spec": {&sitespec.SiteSpec{Infrastructure: sitespec.InfrastructureNico}, "bootstrapNico"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := capnicoAccess(tt.inv); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
@@ -2012,5 +2008,46 @@ func TestCWEImages(t *testing.T) {
 				t.Errorf("cweImages = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestCWEDeployConfig_NicoTenantLoginAndReleases: the controller config carries
+// the tenant login, with its password read from the file, and the release
+// manifests' path resolved from the site spec, for infrastructure nico only.
+func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"nico.token", "tenant.password"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-secret\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inv, err := sitespec.Load(writeSiteSpec(t, validSiteSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err := cweDeployConfig(inv, "c", false, "", ""); err != nil || cfg.DGXCTenant != (controllerdeploy.TenantLogin{}) || cfg.ReleasesPath != "" {
+		t.Fatalf("provisioned: %+v, %v; want no tenant login or releases", cfg, err)
+	}
+
+	nico := &sitespec.SiteSpec{
+		Infrastructure:    sitespec.InfrastructureNico,
+		BootstrapNico:     &sitespec.StackNico{Endpoint: "https://nico.example", OrgID: "o", APIName: "forge", TokenFile: filepath.Join(dir, "nico.token")},
+		BootstrapTenant:   &sitespec.StackTenant{User: "example-user", PasswordFile: filepath.Join(dir, "tenant.password")},
+		BootstrapReleases: filepath.Join(dir, "releases"),
+	}
+	cfg, err := cweDeployConfig(nico, "c", true, "", "")
+	if err != nil {
+		t.Fatalf("nico: %v", err)
+	}
+	if want := (controllerdeploy.TenantLogin{User: "example-user", Password: "example-secret"}); cfg.DGXCTenant != want {
+		t.Errorf("DGXCTenant = %+v, want %+v", cfg.DGXCTenant, want)
+	}
+	if cfg.ReleasesPath != filepath.Join(dir, "releases") {
+		t.Errorf("ReleasesPath = %q", cfg.ReleasesPath)
+	}
+
+	nico.BootstrapTenant.PasswordFile = filepath.Join(dir, "absent")
+	if _, err := cweDeployConfig(nico, "c", true, "", ""); err == nil || !strings.Contains(err.Error(), "bootstrapTenant.passwordFile") {
+		t.Errorf("missing password file: err = %v, want bootstrapTenant.passwordFile", err)
 	}
 }
