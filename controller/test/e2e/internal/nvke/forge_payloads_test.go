@@ -62,8 +62,9 @@ func TestBuildForgeNodePayloadsRendersEveryInput(t *testing.T) {
 	joined := strings.Join(payloads.PreKubeadmCommands, "\n")
 	for _, want := range []string{
 		"nvke-kubeadm-distro-" + inputs.KubernetesVersion,
-		"nvke-cni-ovn-images-" + inputs.CNIVersion,
-		"nvke-cni-ovn-charts-" + inputs.CNIVersion,
+		// REVERT-WHEN-1600: nke-, because nvke-cni-ovn-* is not in the suite yet.
+		"nke-cni-ovn-images-" + inputs.CNIVersion,
+		"nke-cni-ovn-charts-" + inputs.CNIVersion,
 		"openvswitch-switch",
 	} {
 		if !strings.Contains(joined, want) {
@@ -566,10 +567,11 @@ func TestBuildForgeNodePayloadsWaitsForTheNetworkFirst(t *testing.T) {
 	}
 }
 
-// The image builds nvke-agent from this checkout's agent/ source at bake time,
+// The image builds the agent from this checkout's agent/ source at bake time,
 // so the installed agent is the build under qualification. Installing the apt
-// repository's unpinned nvke-agent over it would swap that for whichever build
+// repository's unpinned nke-agent over it would swap that for whichever build
 // the suite currently holds, and the run would still report the baked version.
+// REVERT-WHEN-1600: the published package name is nke-agent until #1600.
 //
 // Asserted rather than left to dpkg. A bake version sorts above a release tag
 // today, so apt declines the swap, which makes the bug invisible until the
@@ -584,8 +586,8 @@ func TestBuildForgeNodePayloadsDoesNotInstallNvkeAgent(t *testing.T) {
 			continue
 		}
 		for _, field := range strings.Fields(command) {
-			if field == "nvke-agent" {
-				t.Errorf("the node's own nvke-agent should be left alone, got:\n%s", command)
+			if field == "nke-agent" || field == "nvke-agent" {
+				t.Errorf("the node's own agent should be left alone, got:\n%s", command)
 			}
 		}
 	}
@@ -627,7 +629,7 @@ func TestBuildForgeNodePayloadsWaitsForNameResolutionBeforeFetchingTheAptKey(t *
 		}
 		return -1
 	}
-	wait, fetch := index("getent hosts"), index("/etc/apt/keyrings/nke.asc")
+	wait, fetch := index("getent hosts"), index("/etc/apt/keyrings/nvke.asc")
 	if wait < 0 {
 		t.Fatalf("no wait for name resolution, got:\n%s", strings.Join(payloads.PreKubeadmCommands, "\n"))
 	}
