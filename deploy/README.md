@@ -12,7 +12,7 @@ Two scripts: `check-site.sh` reports what the site still needs, `nvke-deploy.sh`
 | The release description | `nvkr release export --reference <repo@digest>` | Which published artifacts to use, each by OCI reference and digest: `nvkr.dev/release-description/v1` JSON. It describes the release and verifies nothing; run `nvkr release verify` on the same reference first. Optional; without it the charts come from this checkout and the public repositories, and the site spec names the images |
 | The deploy path, [`nico/`](nico/) | This checkout | What to install and in which order. `nvke-deploy.yaml` lists the items; each item directory holds its chart pin (`release.yaml`), values and overlay, or its manifests. [deploy-repository.md](../docs/site-bootstrap/deploy-repository.md) |
 
-The credentials the install reads, the NICo token, the tenant password and the database password, are file paths in the site spec, so the spec holds none of them; `registry.apiKey` is the bootstrap's and comes from the environment, as [Configuration](../docs/site-bootstrap/configuration.md#credential-handling) says. `nvkectl` reads the deploy path and renders it for the site and against the release into a private scratch directory under `$XDG_STATE_HOME/nvke/renders` (`~/.local/state/nvke/renders`); the script removes it when it exits.
+The credentials the install reads, the NICo token, the tenant password and the database password, are file paths in the site spec, so the spec holds none of them; `registry.apiKey` is the bootstrap's and comes from the environment, as [Bootstrap the management cluster](../docs/operate/bootstrap-management-cluster.md#write-the-site-spec) says. `nvkectl` reads the deploy path and renders it for the site and against the release into a private scratch directory under `$XDG_STATE_HOME/nvke/renders` (`~/.local/state/nvke/renders`); the script removes it when it exits.
 
 ## Run
 
@@ -23,6 +23,7 @@ deploy/check-site.sh --sitespec sitespec.yaml --kubeconfig site.kubeconfig [--re
 clusterctl init --kubeconfig site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
 deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --kubeconfig site.kubeconfig [--release release.json [--nvkr-run-dir DIR]]
 controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig site.kubeconfig
+kubectl --kubeconfig site.kubeconfig apply -f nvke-api-clients.yaml   # the NetworkPolicy admitting your client networks; the guide shows it
 nvkectl config set-site --name <site> --url http://<VIP>:30080 --kubeconfig site.kubeconfig
 nvkectl create machineimage -f machineimage.yaml && nvkectl create clusterrelease -f clusterrelease.yaml && nvkectl create nodepoolrelease -f nodepoolrelease.yaml
 ```
@@ -35,11 +36,11 @@ One line per finding, PASS, WARN, SKIP or FAIL with the fix, and a non-zero exit
 |---|---|
 | tools | `kubectl`, `helm`, `clusterctl`, `curl`, `python3` on `PATH`; `helm` at the pin in `make/tool-versions.mk`; `nvkectl` (`NVKECTL`, else `PATH`) |
 | checkout | `deploy/nico/nvke-deploy.yaml` and the controller and NKTP charts, which the executor installs from the tree |
-| Cluster API | `CAPI_VERSION` from `make/tool-versions.mk`; `clusterctl` at that version; not installed yet, installed at that version, or installed at another, which is a FAIL |
+| Cluster API | `CAPI_VERSION` from `make/tool-versions.mk`; `clusterctl` at that version; not installed yet, installed at that version with its kubeadm providers, or a FAIL: another version, a digest-only image, or a core without the kubeadm providers |
 | site spec | `nvkectl validate sitespec` passes; the architecture is read for the node check |
 | release | `--release` parses and names its reference and declared qualification; `--nvkr-run-dir` exists |
 | cluster | the API answers with `--kubeconfig`; an odd node count; the node architecture matches `controllerStack.arch`; no control-plane `NoSchedule` taint; exactly one default StorageClass |
-| egress | the chart repositories and registries answer within 10s (WARN) |
+| egress | a fixed list of endpoints answers within 10s: `ghcr.io`, `github.com`, the NKTP chart indexes, `quay.io`, `registry.k8s.io` (WARN) |
 | disk | at least 10 GB free under the state directory (WARN) |
 
 `--diagnostics` with `--kubeconfig` instead writes nodes, pods, events, helm releases and the controller logs under `NVKE_STATE_DIR/diagnostics` and exits 0; run it after a failed step.

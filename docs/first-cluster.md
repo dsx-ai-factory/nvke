@@ -412,8 +412,9 @@ nvkectl get providers      # nico must read CONFIGURED before you create anythin
 
 ### 7. Publish a release
 
-Step 6 installed the three release CRDs with the chart, but no releases. Publish
-one with `nvkectl` before you create a cluster.
+Step 6 ended by publishing a release through the install guide. To add another,
+for a second image or a changed user data, publish a new set under a new name;
+`nvkectl create` refuses an existing one.
 
 Copy the three examples —
 [`machineimage.yaml`](../cli/examples/machineimage.yaml),
@@ -531,5 +532,5 @@ shape instead: a node pool with `controlPlane: true`, and no
 - [architecture.md](architecture.md) — how CWE, the agent and CAPI fit together
 - [../cli/docs/sitespec.md](../cli/docs/sitespec.md) — every site spec field
 - [../cli/docs/user-flow.md](../cli/docs/user-flow.md) — the command reference
-- [site-bootstrap/infrastructure-providers.md](site-bootstrap/infrastructure-providers.md)
-  — the full CAPNICo install: order, both routes, and what stalls it
+- [operate/provider-nico.md](operate/provider-nico.md)
+  — proving the NICo credentials and what CAPNICo's states mean

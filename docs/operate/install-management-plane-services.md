@@ -105,7 +105,7 @@ The install refuses a release that lacks an image artifact the deploy path names
    deploy/check-site.sh --sitespec ../sitespec.yaml --kubeconfig ../<CLUSTER_NAME>.kubeconfig --release ../release.json
    ```
 
-   The check changes nothing. It prints one line per finding, `PASS`, `WARN`, `SKIP` or `FAIL`, and every `FAIL` names its fix. It covers the tools and the `helm` pin, the checkout, the site spec, the release description and its declared qualification, the cluster's API, the node count, the node architecture against `controllerStack.arch`, the control-plane taint, the default StorageClass, the Cluster API version and that its kubeadm providers are present, egress and disk space. It exits non-zero on any `FAIL`. When everything passes, it prints the next two commands with your paths filled in.
+   The check changes nothing. It prints one line per finding, `PASS`, `WARN`, `SKIP` or `FAIL`, and every `FAIL` names its fix. It covers the tools and the `helm` pin, the checkout, the site spec, the release description and its declared qualification, the cluster's API, the node count, the node architecture against `controllerStack.arch`, the control-plane taint, the default StorageClass, the Cluster API version and that its kubeadm providers are present, egress and disk space. It exits non-zero on any `FAIL`. When everything passes, it prints the commands that remain with your paths filled in.
 
 2. Install Cluster API at the version NVKE pins.
 

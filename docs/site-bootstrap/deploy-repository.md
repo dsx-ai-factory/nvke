@@ -56,7 +56,7 @@ items:
 | `name` | Yes | The item's directory under the deploy path. For a `helm` item, also the default NVKR artifact name of its chart. Letters, digits, `-`, `_` and inner dots. |
 | `type` | Yes | `template`, `manifest` or `helm`. |
 
-The list order is the install order. Items are applied one at a time, and a failed item stops the run. Nothing is auto-detected: an item that is not listed is not applied. `nvkectl` refuses an unknown type when it reads or renders the deploy path, so a rendered install applies nothing; the executor's own parser accepts the list as written and stops at the unknown item when it reaches it, after the items before it.
+The list order is the install order. Items are applied one at a time, and a failed item stops the run. Nothing is auto-detected: an item that is not listed is not applied, and `nvkectl` and the executor's own parser both refuse an unknown type before anything is applied.
 
 The script reads the item list and an item's `release.yaml` through `deploy/lib/nvke-deploy-items.py`; `nvkectl render deploy-path` reads them through `cli/internal/deploypath`. Both accept the grammar shown here.
 

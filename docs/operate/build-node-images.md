@@ -9,6 +9,7 @@ NVIDIA Kubernetes Recipes (NVKR) builds the artifacts NVKE runs: the controller 
 - You have read [Plan your installation](plan-installation.md).
 - You have a published NVKR Release reference, as `<REGISTRY>/<REPOSITORY>@sha256:<DIGEST>`, or a completed local NVKR Run. To produce either, follow the NVKR documentation linked in [Get the artifacts from NVKR](#get-the-artifacts-from-nvkr).
 - You have a checkout of `dsx-ai-factory/nvke` in `nvke/`, at the release you install.
+- You have `nvkectl` on this host, from [Install nvkectl](bootstrap-management-cluster.md#install-nvkectl), to check the release resources before you publish them.
 - To build your own profile content image, you have Docker and a container registry that the management cluster's nodes can pull from.
 
 ## Get the artifacts from NVKR
@@ -124,7 +125,7 @@ A control-plane node pool resolves its `osProfile` to a `ClusterRelease`, and a 
 
    The command prints nothing when every placeholder host is replaced.
 
-The files hold `metadata` and `spec` only; `nvkectl` supplies the API version and kind when it publishes them. You publish the three resources with `nvkectl create` in [Install management-plane services](install-management-plane-services.md), after `nvkectl` points at the NVKE API, with the machine image first because both releases reference it.
+The files hold `metadata` and `spec` only; `nvkectl` supplies the API version and kind when it publishes them. You publish the three resources with `nvkectl create` in [Install management-plane services](install-management-plane-services.md), after `nvkectl config set-site` records the management cluster's kubeconfig, with the machine image first because both releases reference it.
 
 ### What NVKE puts in the user data
 

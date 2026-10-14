@@ -76,7 +76,7 @@ What the node needs, all present on the reference instance type:
 ## Before this runs
 
 `deploy/nvke-deploy.sh` installs the items below and nothing else. Five things must
-already be true, all of them outside the deploy path:
+be true before it runs and one after, all of them outside the deploy path:
 
 1. **The control plane is untainted.** A bootstrap cluster is all
    control-plane, and nothing schedules while the `NoSchedule` taint is on

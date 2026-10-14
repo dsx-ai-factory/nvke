@@ -16,7 +16,7 @@ the reference it points at.
 | Fill in the `controllerStack:` section of the site spec | The controller stack install reads it: node architecture, the NICo API, the tenant login, and paths to the files that hold the tokens and passwords. `generate sitespec` writes the section with `REPLACE_*` placeholders; the install refuses a placeholder. Not read by `bootstrap site`. | Available |
 | `nvkectl validate sitespec -f sitespec.yaml` | Checks the whole site spec and reports by section: the bootstrap fields, then `controllerStack:` with the placeholders still to fill in. `--bootstrap-only` before the section is filled in. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
-| `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts and images come from this checkout. | Not in the CLI |
+| `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts come from this checkout and the images from `controllerStack.images`. | Not in the CLI |
 | `deploy/check-site.sh`, `clusterctl init`, `deploy/nvke-deploy.sh install --deploy-path deploy/nico`, the exec-auth patch | The site controller install, a short list of commands run in order: the check reports what the cluster and this machine still need; `clusterctl init` installs Cluster API; the executor renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller) and applies it; the patch gives the Cluster API controllers SPIRE exec-auth. See [Install management-plane services](../../docs/operate/install-management-plane-services.md). | Not in the CLI |
 | `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
@@ -107,15 +107,17 @@ deploy/check-site.sh --sitespec sitespec.yaml --kubeconfig my-tier0-site.kubecon
 clusterctl init --kubeconfig my-tier0-site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
 deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --kubeconfig my-tier0-site.kubeconfig --release release.json
 controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig my-tier0-site.kubeconfig
+kubectl --kubeconfig my-tier0-site.kubeconfig apply -f nvke-api-clients.yaml
 ```
 
 A list of commands, in this order: the check reports what the cluster and
-this machine still need, with the fix, and prints the next two commands
+this machine still need, with the fix, and prints the commands that remain
 when everything passes; `clusterctl init` installs Cluster API at the
 pinned version; the executor renders the `deploy/nico` deploy path for the
-site and the release and applies it, item by item; the last script patches
-the Cluster API controllers for SPIRE. Then point the CLI at the site (step
-5) and publish a `MachineImage`, `ClusterRelease` and `NodePoolRelease`
+site and the release and applies it, item by item; the next script patches
+the Cluster API controllers for SPIRE; the NetworkPolicy admits your client
+networks to the controller API, which the chart otherwise answers from
+in-cluster pods only. Then point the CLI at the site (step 5) and publish a `MachineImage`, `ClusterRelease` and `NodePoolRelease`
 with `nvkectl create`, as [Your first cluster](../../docs/first-cluster.md#7-publish-a-release)
 shows, before the first tenant cluster.
 [Install management-plane services](../../docs/operate/install-management-plane-services.md)

@@ -34,7 +34,7 @@ Used by deploy/nvke-deploy.sh, which lives one directory up.
 import re
 import sys
 
-ITEM = re.compile(r'^  - \{name: ([\w.-]+), type: (template|manifest|helm|argocd)\}$')
+ITEM = re.compile(r'^  - \{name: ([\w.-]+), type: (template|manifest|helm)\}$')
 TOP = re.compile(r'^([\w]+):$')
 KV = re.compile(r'^  ([\w]+): (\S+)$')
 SEQ = re.compile(r'^  - (\S+)$')
