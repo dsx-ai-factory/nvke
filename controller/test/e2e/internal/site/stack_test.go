@@ -242,7 +242,7 @@ func TestSBOMDeploy(t *testing.T) {
 	}
 	install := s.cmd(t, "nvke-deploy.sh")
 	for _, want := range []string{
-		"nvke-deploy.sh apply ",
+		"nvke-deploy.sh install ",
 		"--deploy-path /var/lib/nke-e2e/assets/deploy/nico",
 		"--config",
 		"controller=/var/lib/nke-e2e/values/controller.yaml",

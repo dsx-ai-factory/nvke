@@ -38,6 +38,7 @@ STATE_DIR="${NVKE_STATE_DIR:-${XDG_STATE_HOME:-${HOME}/.local/state}/nvke}"
 CONTROLLER_NAMESPACE="${CONTROLLER_NAMESPACE:-nke-controller}"
 CAPI_VERSION="${CAPI_VERSION:-$(mk_var CAPI_VERSION)}"
 SITE_ARCH=""
+CAPI_INIT=""
 
 EGRESS_URLS=(
   https://ghcr.io/v2/
@@ -92,11 +93,12 @@ fi
 [[ -n "${SITESPEC}" ]] || usage
 [[ -z "${RUN_DIR}" || -n "${RELEASE}" ]] || die "--nvkr-run-dir holds a release's artifacts; pass --release"
 
-default_storageclasses() {
-  kq get storageclass -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}{"\n"}{end}' |
-    awk '$2 == "true" { print $1 }'
-}
-deployment_image() { kq -n "$1" get deployment "$2" -o jsonpath='{.spec.template.spec.containers[0].image}'; }
+# kread is a kubectl read whose failure is a finding: a denied, timed-out or
+# flaky read must not pass as an empty answer. Its stderr lands in KREAD_ERR.
+KREAD_ERR="$(mktemp "${TMPDIR:-/tmp}/check-site.XXXXXX")"
+trap 'rm -f "${KREAD_ERR}"' EXIT
+kread() { kubectl --kubeconfig "${KUBECONFIG_PATH}" "$@" 2>"${KREAD_ERR}"; }
+kread_err() { tr -d '\n' <"${KREAD_ERR}" | cut -c1-200; }
 
 # --- this machine ------------------------------------------------------------
 
@@ -165,48 +167,63 @@ if ! kubectl --kubeconfig "${KUBECONFIG_PATH}" version >/dev/null 2>&1; then
   check_fail "cluster: API not reachable with ${KUBECONFIG_PATH}"
 else
   check_pass "cluster: API reachable with ${KUBECONFIG_PATH}"
-  nodes="$(kq get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.kubernetes\.io/arch}{"\n"}{end}')"
-  count="$(printf '%s\n' "${nodes}" | sed '/^$/d' | wc -l | tr -d ' ')"
-  if [[ "${count}" -ge 1 && $((count % 2)) -eq 1 ]]; then
-    check_pass "cluster: ${count} node(s), an odd number"
+  if ! nodes="$(kread get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.kubernetes\.io/arch}{"\t"}{.spec.taints[?(@.key=="node-role.kubernetes.io/control-plane")].effect}{"\n"}{end}')"; then
+    check_fail "cluster: cannot list nodes: $(kread_err)"
   else
-    check_fail "cluster: ${count} node(s); expected an odd number, at least 1"
-  fi
-  archs="$(printf '%s\n' "${nodes}" | awk 'NF { print $2 }' | sort -u | tr '\n' ' ')"
-  archs="${archs% }"
-  if [[ -z "${SITE_ARCH}" ]]; then
-    check_skip "cluster: node architecture ${archs:-unknown}; the site spec did not load"
-  elif [[ "${archs}" == "${SITE_ARCH}" ]]; then
-    check_pass "cluster: node architecture ${archs} matches controllerStack.arch"
-  else
-    check_fail "cluster: node architecture ${archs:-unknown}; the site spec says ${SITE_ARCH}"
-  fi
-  # nvkectl bootstrap site removes the control-plane taint; nothing schedules
-  # while it is on.
-  tainted="$(kq get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.taints[?(@.key=="node-role.kubernetes.io/control-plane")].effect}{"\n"}{end}' | awk '$2 ~ /NoSchedule/ { print $1 }' | tr '\n' ' ')"
-  if [[ -z "${tainted}" ]]; then
-    check_pass "cluster: no node carries the control-plane NoSchedule taint"
-  else
-    check_fail "cluster: ${tainted% } still carries the control-plane NoSchedule taint, which the bootstrap removes; run: kubectl taint nodes <node> node-role.kubernetes.io/control-plane:NoSchedule-"
+    count="$(printf '%s\n' "${nodes}" | sed '/^$/d' | wc -l | tr -d ' ')"
+    if [[ "${count}" -ge 1 && $((count % 2)) -eq 1 ]]; then
+      check_pass "cluster: ${count} node(s), an odd number"
+    else
+      check_fail "cluster: ${count} node(s); expected an odd number, at least 1"
+    fi
+    archs="$(printf '%s\n' "${nodes}" | awk -F'\t' 'NF { print $2 }' | sort -u | tr '\n' ' ')"
+    archs="${archs% }"
+    if [[ -z "${SITE_ARCH}" ]]; then
+      check_skip "cluster: node architecture ${archs:-unknown}; the site spec did not load"
+    elif [[ "${archs}" == "${SITE_ARCH}" ]]; then
+      check_pass "cluster: node architecture ${archs} matches controllerStack.arch"
+    else
+      check_fail "cluster: node architecture ${archs:-unknown}; the site spec says ${SITE_ARCH}"
+    fi
+    # nvkectl bootstrap site removes the control-plane taint; nothing
+    # schedules while it is on.
+    tainted="$(printf '%s\n' "${nodes}" | awk -F'\t' '$3 ~ /NoSchedule/ { print $1 }' | tr '\n' ' ')"
+    if [[ -z "${tainted}" ]]; then
+      check_pass "cluster: no node carries the control-plane NoSchedule taint"
+    else
+      check_fail "cluster: ${tainted% } still carries the control-plane NoSchedule taint, which the bootstrap removes; run: kubectl taint nodes <node> node-role.kubernetes.io/control-plane:NoSchedule-"
+    fi
   fi
   # Which provisioner is right is a property of the hardware, not of NVKE.
-  count="$(default_storageclasses | wc -l | tr -d ' ')"
-  if [[ "${count}" -eq 1 ]]; then
-    check_pass "cluster: default StorageClass $(default_storageclasses)"
-  elif [[ "${count}" -eq 0 ]]; then
-    check_fail "cluster: no default StorageClass; Postgres and SPIRE need persistent volumes. Install the CSI driver for this hardware and annotate its class storageclass.kubernetes.io/is-default-class=true (a lab can use rancher local-path-provisioner)"
+  if ! classes="$(kread get storageclass -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}{"\n"}{end}')"; then
+    check_fail "cluster: cannot list StorageClasses: $(kread_err)"
   else
-    check_fail "cluster: ${count} default StorageClasses; the stack needs exactly one"
+    defaults="$(printf '%s\n' "${classes}" | awk -F'\t' '$2 == "true" { print $1 }')"
+    count="$(printf '%s\n' "${defaults}" | sed '/^$/d' | wc -l | tr -d ' ')"
+    if [[ "${count}" -eq 1 ]]; then
+      check_pass "cluster: default StorageClass ${defaults}"
+    elif [[ "${count}" -eq 0 ]]; then
+      check_fail "cluster: no default StorageClass; Postgres and SPIRE need persistent volumes. Install the CSI driver for this hardware and annotate its class storageclass.kubernetes.io/is-default-class=true (a lab can use rancher local-path-provisioner)"
+    else
+      check_fail "cluster: ${count} default StorageClasses; the stack needs exactly one"
+    fi
   fi
   # clusterctl init does not upgrade, so a Cluster API of another version is
-  # a finding, not something to install over.
-  image="$(deployment_image capi-system capi-controller-manager)"
-  if [[ -z "${image}" ]]; then
-    check_pass "Cluster API: not installed yet; run: clusterctl init --kubeconfig ${KUBECONFIG_PATH} --core cluster-api:${CAPI_VERSION} --bootstrap kubeadm:${CAPI_VERSION} --control-plane kubeadm:${CAPI_VERSION} --wait-providers"
-  elif [[ "${image##*:}" == "${CAPI_VERSION}" ]]; then
-    check_pass "Cluster API: ${CAPI_VERSION} already installed"
+  # a finding, not something to install over. Only NotFound means absent.
+  CAPI_INIT="clusterctl init --kubeconfig ${KUBECONFIG_PATH} --core cluster-api:${CAPI_VERSION} --bootstrap kubeadm:${CAPI_VERSION} --control-plane kubeadm:${CAPI_VERSION} --wait-providers"
+  if image="$(kread -n capi-system get deployment capi-controller-manager -o jsonpath='{.spec.template.spec.containers[0].image}')"; then
+    if [[ "${image##*:}" == "${CAPI_VERSION}" ]]; then
+      check_pass "Cluster API: ${CAPI_VERSION} already installed"
+      CAPI_INIT=""
+    else
+      check_fail "Cluster API: ${image##*:} is installed; the stack is tested with ${CAPI_VERSION}, and clusterctl init does not upgrade. Run: clusterctl upgrade apply --kubeconfig ${KUBECONFIG_PATH} --core cluster-api:${CAPI_VERSION} --bootstrap kubeadm:${CAPI_VERSION} --control-plane kubeadm:${CAPI_VERSION}"
+      CAPI_INIT=""
+    fi
+  elif grep -q 'NotFound' "${KREAD_ERR}"; then
+    check_pass "Cluster API: not installed yet; run: ${CAPI_INIT}"
   else
-    check_fail "Cluster API: ${image##*:} is installed; the stack wants ${CAPI_VERSION}. Use clusterctl upgrade, see docs/operations/upgrade.md"
+    check_fail "cluster: cannot read deployment capi-system/capi-controller-manager: $(kread_err)"
+    CAPI_INIT=""
   fi
 fi
 
@@ -226,5 +243,7 @@ if [[ -n "${avail_kb}" && $((avail_kb / 1024 / 1024)) -lt 10 ]]; then
 fi
 
 [[ "${CHECK_FAILURES}" -eq 0 ]] || die "${CHECK_FAILURES} finding(s) to fix before the stack installs"
-printf 'ready. Next: clusterctl init (above), then\n  deploy/nvke-deploy.sh install --deploy-path %s --sitespec %s --kubeconfig %s%s%s\n' \
-  "${DEPLOY_PATH}" "${SITESPEC}" "${KUBECONFIG_PATH}" "${RELEASE:+ --release ${RELEASE}}" "${RUN_DIR:+ --nvkr-run-dir ${RUN_DIR}}"
+printf 'ready. Next:\n'
+[[ -z "${CAPI_INIT:-}" ]] || printf '  %s\n' "${CAPI_INIT}"
+printf '  %s/nvke-deploy.sh install --deploy-path %s --sitespec %s --kubeconfig %s%s%s\n' \
+  "${SCRIPT_DIR}" "${DEPLOY_PATH}" "${SITESPEC}" "${KUBECONFIG_PATH}" "${RELEASE:+ --release ${RELEASE}}" "${RUN_DIR:+ --nvkr-run-dir ${RUN_DIR}}"

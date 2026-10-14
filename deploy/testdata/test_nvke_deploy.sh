@@ -268,11 +268,16 @@ stubs="${WORK}/stubs"
 mkdir -p "${stubs}"
 cat >"${stubs}/kubectl" <<'STUB'
 #!/usr/bin/env bash
+if [[ -n "${STUB_DENY:-}" && "$*" == *" get "* ]]; then
+  echo 'Error from server (Forbidden): nodes is forbidden: User "stub" cannot list resource "nodes"' >&2
+  exit 1
+fi
 case "$*" in
-  *"spec.taints"*) printf 'node-1\t%s\n' "${STUB_TAINT:-}" ;;
-  *"kubernetes\.io/arch"*) printf 'node-1\tarm64\n' ;;
+  *"get nodes"*) printf 'node-1\tarm64\t%s\n' "${STUB_TAINT:-}" ;;
   *"get storageclass"*) [[ -n "${STUB_NO_SC:-}" ]] || printf 'local-path\ttrue\n' ;;
-  *"capi-controller-manager"*) printf '%s' "${STUB_CAPI_IMAGE:-}" ;;
+  *"capi-controller-manager"*)
+    if [[ -n "${STUB_CAPI_IMAGE:-}" ]]; then printf '%s' "${STUB_CAPI_IMAGE}"; else
+      echo 'Error from server (NotFound): deployments.apps "capi-controller-manager" not found' >&2; exit 1; fi ;;
 esac
 exit 0
 STUB
@@ -288,12 +293,21 @@ expect "the architecture matches" '^PASS  cluster: node architecture arm64 match
 expect "no taint" '^PASS  cluster: no node carries the control-plane NoSchedule taint$' "${out}"
 expect "one default StorageClass" '^PASS  cluster: default StorageClass local-path$' "${out}"
 expect "Cluster API is not installed yet and the init command is printed" '^PASS  Cluster API: not installed yet; run: clusterctl init .*--core cluster-api:v[0-9.]+ --bootstrap kubeadm:v[0-9.]+ --control-plane kubeadm:v[0-9.]+ --wait-providers$' "${out}"
-expect "the check ends ready with the install command" "nvke-deploy.sh install --deploy-path ${NICO} --sitespec ${WORK}/site/sitespec.yaml --kubeconfig ${WORK}/stub.kubeconfig --release ${WORK}/local.json --nvkr-run-dir ${run_dir}" "${out}"
+expect "the check ends ready with the init command" '^  clusterctl init --kubeconfig .* --wait-providers$' "${out}"
+expect "the check ends ready with the executor command, by its resolved path" "^  ${DEPLOY_DIR}/nvke-deploy.sh install --deploy-path ${NICO} --sitespec ${WORK}/site/sitespec.yaml --kubeconfig ${WORK}/stub.kubeconfig --release ${WORK}/local.json --nvkr-run-dir ${run_dir}$" "${out}"
+out="$(PATH="${stubs}:${PATH}" STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller:$(sed -n 's/^CAPI_VERSION[[:space:]]*?=[[:space:]]*//p' "${DEPLOY_DIR}/../make/tool-versions.mk")" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" || fail "check-site with Cluster API installed exited $?: ${out}"
+expect "Cluster API at the pinned version passes" '^PASS  Cluster API: v[0-9.]+ already installed$' "${out}"
+reject "no init command is printed when Cluster API is installed" '^  clusterctl init' "${out}"
+out="$(PATH="${stubs}:${PATH}" STUB_DENY=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with denied reads exited 0"
+expect "a denied node read is a finding, not a pass" '^FAIL  cluster: cannot list nodes: Error from server \(Forbidden\)' "${out}"
+expect "a denied StorageClass read is a finding" '^FAIL  cluster: cannot list StorageClasses: ' "${out}"
+expect "a denied Cluster API read is a finding, not an init hint" '^FAIL  cluster: cannot read deployment capi-system/capi-controller-manager: ' "${out}"
+reject "no init hint on a denied read" 'not installed yet' "${out}"
 reject "the check changes nothing" '^(PASS|WARN|SKIP|FAIL)  .*(taint nodes |apply |helm upgrade)' "${out}"
 out="$(PATH="${stubs}:${PATH}" STUB_TAINT=NoSchedule STUB_NO_SC=1 STUB_CAPI_IMAGE=registry.k8s.io/cluster-api/cluster-api-controller:v0.0.1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site on an unready cluster exited 0"
 expect "the taint is a finding with the fix" '^FAIL  cluster: node-1 still carries the control-plane NoSchedule taint, which the bootstrap removes; run: kubectl taint nodes' "${out}"
 expect "the missing StorageClass is a finding with the fix" '^FAIL  cluster: no default StorageClass; Postgres and SPIRE need persistent volumes' "${out}"
-expect "another Cluster API version is a finding" '^FAIL  Cluster API: v0.0.1 is installed; the stack wants v[0-9.]+\. Use clusterctl upgrade' "${out}"
+expect "another Cluster API version is a finding with the upgrade command" '^FAIL  Cluster API: v0.0.1 is installed; the stack is tested with v[0-9.]+, and clusterctl init does not upgrade\. Run: clusterctl upgrade apply ' "${out}"
 expect "the failures are counted" '3 finding\(s\) to fix before the stack installs' "${out}"
 out="$(bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site without --sitespec exited 0"
 expect "the site spec is required" '^usage: check-site.sh' "${out}"
