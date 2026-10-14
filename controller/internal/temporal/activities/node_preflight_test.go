@@ -176,7 +176,7 @@ func setupNodePreflightRequestTest(
 		VpcPrefixIDs:          []uuid.UUID{},
 		InstanceTypeID:        uuid.New(),
 		SSHKeyGroupIDs:        []uuid.UUID{},
-		OSProfile:             "os",
+		Release:               "os",
 		ConfigProfile:         "config",
 		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
 	}

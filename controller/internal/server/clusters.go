@@ -814,7 +814,7 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 	}
 
 	// A PATCH must not clear a required field or persist a spec that create would
-	// reject (Forge instanceTypePreference/osProfile or the CAPI
+	// reject (Forge instanceTypePreference/release or the CAPI
 	// capiInfraMachineTemplate). instanceTypePreference is merged above and is not
 	// covered by hasClusterLevelControlPlaneUpdate, so gate on it explicitly;
 	// maxSurge- and k8s-version-only updates leave these fields untouched.
@@ -933,7 +933,7 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 			nico.VpcPrefixIDs = uuidSliceDedupe(uuidSliceFromAPI(req.Nico.VpcPrefixIDs))
 		}
 		if req.Nico.Release != nil {
-			nico.OSProfile = *req.Nico.Release
+			nico.Release = *req.Nico.Release
 		}
 		if req.Nico.ConfigProfile != nil {
 			nico.ConfigProfile = *req.Nico.ConfigProfile

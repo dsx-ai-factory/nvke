@@ -170,7 +170,7 @@ func TestSelectUpgradeTargetSearchesOnlyTheRolesKind(t *testing.T) {
 	)
 
 	_, _, err := machinerelease.SelectUpgradeTarget(t.Context(), reader, true, "1.31.9", image("current", "amd64", "", "22.04", "", ""))
-	require.ErrorContains(t, err, "no OSProfile found for Kubernetes version 1.31.9")
+	require.ErrorContains(t, err, "no release found for Kubernetes version 1.31.9")
 }
 
 func TestSelectUpgradeTargetSkipsReleasesThatCannotBeResolved(t *testing.T) {
@@ -199,7 +199,7 @@ func TestSelectUpgradeTargetWithoutCurrentMatchesOnlyBareImages(t *testing.T) {
 	)
 
 	_, _, err := machinerelease.SelectUpgradeTarget(t.Context(), reader, true, "1.31.12", nil)
-	require.ErrorContains(t, err, "no OSProfile found")
+	require.ErrorContains(t, err, "no release found")
 }
 
 func fakeClient(t *testing.T, objects ...client.Object) client.Client {

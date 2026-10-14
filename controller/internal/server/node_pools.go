@@ -504,7 +504,7 @@ func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req
 			nico.VpcPrefixIDs = uuidSliceDedupe(req.Nico.VpcPrefixIDs)
 		}
 		if req.Nico.Release != nil {
-			nico.OSProfile = *req.Nico.Release
+			nico.Release = *req.Nico.Release
 		}
 		if req.Nico.ConfigProfile != nil {
 			nico.ConfigProfile = *req.Nico.ConfigProfile
@@ -649,7 +649,7 @@ func validateUpdateNicoNodePoolRequest(_ db.Cluster, req *api.UpdateNodePoolRequ
 	// exclusivity checked below) is re-checked against the full merged
 	// payload by validateUpdatedForgeNodePool once this patch is applied —
 	// no need to duplicate it here against the partial request.
-	// The OS profile can be replaced but not cleared. Rejecting the empty value
+	// The release can be replaced but not cleared. Rejecting the empty value
 	// here rather than after the merge leaves a pool whose stored profile is
 	// already empty patchable in every other respect. The config profile is
 	// optional and may be cleared.
@@ -766,7 +766,7 @@ func apiNicoNodePoolProviderFromDB(nicoNodePoolProvider *db.NicoNodePoolProvider
 		InfinibandPartitionID:    clonePtr(nicoNodePoolProvider.InfinibandPartitionID),
 		NvLinkLogicalPartitionID: clonePtr(nicoNodePoolProvider.NvLinkLogicalPartitionID),
 		SSHKeyGroupIDs:           cloneUUIDSlicePtr(nicoNodePoolProvider.SSHKeyGroupIDs),
-		Release:                  nicoNodePoolProvider.OSProfile,
+		Release:                  nicoNodePoolProvider.Release,
 		ConfigProfile:            nicoNodePoolProvider.ConfigProfile,
 		DiskSelectionStrategy:    api.DiskSelectionStrategyCreate(nicoNodePoolProvider.DiskSelectionStrategy),
 	}
@@ -886,7 +886,7 @@ func dbNodePoolFromAPI(
 			InfinibandPartitionID:    req.Nico.InfinibandPartitionID,
 			NvLinkLogicalPartitionID: req.Nico.NvLinkLogicalPartitionID,
 			SSHKeyGroupIDs:           sshKeyGroupIDs,
-			OSProfile:                req.Nico.Release,
+			Release:                  req.Nico.Release,
 			ConfigProfile:            req.Nico.ConfigProfile,
 			DiskSelectionStrategy:    db.DiskSelectionStrategy(req.Nico.DiskSelectionStrategy),
 		})

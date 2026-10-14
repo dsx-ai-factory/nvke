@@ -337,9 +337,9 @@ test-oidc-acceptance-live: ## Run the tagged OIDC lifecycle on a fresh local CAP
 test-e2e-nico-vms: ## Run NICo VMs happy-path e2e tests
 	make test-e2e ARGS='--label-filter="nico-vms && happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
 
-.PHONY: test-e2e-nico-vms-os-profiles
-test-e2e-nico-vms-os-profiles: ## Run the opt-in NICo VMs OS profile provisioning matrix
-	$(MAKE) test-e2e E2E_TIMEOUT=6h ARGS='--label-filter="nico-vms && os-profiles"'
+.PHONY: test-e2e-nico-vms-releases
+test-e2e-nico-vms-releases: ## Run the opt-in NICo VMs release provisioning matrix
+	$(MAKE) test-e2e E2E_TIMEOUT=6h ARGS='--label-filter="nico-vms && releases"'
 
 .PHONY: e2e-gofail
 e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.

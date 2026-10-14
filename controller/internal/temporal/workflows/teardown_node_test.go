@@ -770,7 +770,7 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 	// the nested nico payload, which is where the provisioning context reads the
 	// config profile that decides whether hooks run.
 	nicoProfiles := db.NicoNodePoolProvider{
-		OSProfile:      "test",
+		Release:        "test",
 		ConfigProfile:  configProfileName,
 		SubnetIDs:      []uuid.UUID{},
 		VpcPrefixIDs:   []uuid.UUID{},

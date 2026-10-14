@@ -385,7 +385,7 @@ type testWriteFile struct {
 }
 
 // parseAutoinstallWriteFiles decodes the write_files list out of a rendered
-// "#cloud-config autoinstall" document, the shape Nico OS profile templates
+// "#cloud-config autoinstall" document, the shape Nico release templates
 // use.
 func parseAutoinstallWriteFiles(t *testing.T, userData string) []testWriteFile {
 	t.Helper()
@@ -544,7 +544,7 @@ func releaseUserDataTemplate(t *testing.T, path string) string {
 
 // parseWriteFiles decodes write_files whether the document is a bare
 // cloud-config or wraps user-data inside an autoinstall block, mirroring
-// what Nico OS profile fixtures actually produce.
+// what Nico release fixtures actually produce.
 func parseWriteFiles(t *testing.T, userData string) []testWriteFile {
 	t.Helper()
 	var cloudConfig struct {

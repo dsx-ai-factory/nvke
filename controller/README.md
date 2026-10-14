@@ -112,7 +112,7 @@ restart, but do not rotate the CA on existing nodes.
 This is the recommended local workflow for developing against a Kind management cluster with CAPD.
 Tilt improves the Kubernetes inner dev loop: it rebuilds and redeploys services when code or manifests change, keeps a multi-service local stack coordinated in one place, and gives you a single UI for logs, status, port-forwards, and helper actions.
 
-Full nico-vms (real libvirt VMs / amd64 OS profiles) usually needs an x86_64 Linux host with KVM.
+Full nico-vms (real libvirt VMs / amd64 releases) usually needs an x86_64 Linux host with KVM.
 
 ### First Run
 

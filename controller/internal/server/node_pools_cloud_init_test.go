@@ -195,7 +195,7 @@ func TestDbNodePoolFromAPI_EveryNestedNicoFieldReachesTheStoredPool(t *testing.T
 	require.NotNil(t, nico.NvLinkLogicalPartitionID)
 	assert.Equal(t, nv, *nico.NvLinkLogicalPartitionID)
 	assert.Equal(t, []uuid.UUID{ssh}, nico.SSHKeyGroupIDs)
-	assert.Equal(t, "os", nico.OSProfile)
+	assert.Equal(t, "os", nico.Release)
 	assert.Equal(t, "cfg", nico.ConfigProfile)
 	assert.Equal(t, db.DiskSelectionStrategy(api.DiskSelectionStrategyCreateLargest), nico.DiskSelectionStrategy)
 
@@ -253,7 +253,7 @@ func TestApplyUpdateNodePoolRequest_NestedNicoPatch(t *testing.T) {
 			VpcPrefixIDs:          []uuid.UUID{},
 			InstanceTypeID:        uuid.New(),
 			SSHKeyGroupIDs:        []uuid.UUID{},
-			OSProfile:             "os",
+			Release:               "os",
 			ConfigProfile:         "cfg",
 			DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
 		})
@@ -272,7 +272,7 @@ func TestApplyUpdateNodePoolRequest_NestedNicoPatch(t *testing.T) {
 
 		require.NotNil(t, pool.Nico)
 		assert.Equal(t, []uuid.UUID{subnetB}, pool.Nico.SubnetIDs)
-		assert.Equal(t, "os-v2", pool.Nico.OSProfile)
+		assert.Equal(t, "os-v2", pool.Nico.Release)
 
 		got := apiNodePoolFromDB(pool)
 		require.NotNil(t, got.Nico)
@@ -300,7 +300,7 @@ func TestApplyUpdateNodePoolRequest_NestedNicoPatch(t *testing.T) {
 
 		require.NotNil(t, pool.Nico)
 		assert.Equal(t, "cfg-v2", pool.Nico.ConfigProfile)
-		assert.Equal(t, "os", pool.Nico.OSProfile)
+		assert.Equal(t, "os", pool.Nico.Release)
 		assert.Equal(t, []uuid.UUID{subnetA}, pool.Nico.SubnetIDs)
 	})
 }
@@ -317,7 +317,7 @@ func TestApiNodePoolFromDB_EmitsNestedWhenPayloadPresent(t *testing.T) {
 		Nico: &db.NicoNodePoolProvider{
 			InstanceTypeID:        uuid.New(),
 			SSHKeyGroupIDs:        []uuid.UUID{},
-			OSProfile:             "os",
+			Release:               "os",
 			ConfigProfile:         "cfg",
 			SubnetIDs:             []uuid.UUID{uuid.New()},
 			VpcPrefixIDs:          []uuid.UUID{},
@@ -350,7 +350,7 @@ func TestNodePoolGetThenPatchNestedMutableOnly(t *testing.T) {
 		VpcPrefixIDs:          []uuid.UUID{},
 		InstanceTypeID:        uuid.New(),
 		SSHKeyGroupIDs:        []uuid.UUID{uuid.New()},
-		OSProfile:             "os",
+		Release:               "os",
 		ConfigProfile:         "cfg",
 		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
 	})
@@ -369,6 +369,6 @@ func TestNodePoolGetThenPatchNestedMutableOnly(t *testing.T) {
 		}
 		require.NoError(t, applyUpdateNodePoolRequest(forgeCluster(), pool, req))
 		assert.Equal(t, []uuid.UUID{newSubnet}, pool.Nico.SubnetIDs)
-		assert.Equal(t, "os-v2", pool.Nico.OSProfile)
+		assert.Equal(t, "os-v2", pool.Nico.Release)
 	})
 }

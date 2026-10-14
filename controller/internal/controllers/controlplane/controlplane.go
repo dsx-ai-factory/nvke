@@ -166,7 +166,7 @@ func (c *controlPlane) countNodesNeedingRollout() int {
 }
 
 // nodesNeedingRollout returns CP-controller nodes whose pinned snapshot differs
-// from current in a field that requires replacement (k8s version, OS profile, or
+// from current in a field that requires replacement (k8s version, release, or
 // config profile).
 func (c *controlPlane) nodesNeedingRollout(current db.ControlPlaneConfigSpec) []db.Node {
 	var toReplace []db.Node

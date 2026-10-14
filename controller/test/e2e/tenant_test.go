@@ -75,7 +75,7 @@ type tenantTest struct {
 	cascadePoolID uuid.UUID
 }
 
-var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
+var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	tenantSubtree(configuredManagement),
 	// The pull-request smoke lane uses a separate, minimal topology instead of
 	// filtering the full CAPD row below. The full row needs three control-plane
@@ -228,7 +228,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{
 				DesiredCount:         1,
 				InstanceTypeID:       nicoVMSLargeInstanceID,
-				OSProfile:            nicoVMSOSProfile,
+				Release:              nicoVMSRelease,
 				ConfigProfile:        nicoVMSCPConfigProfile,
 				VpcPrefixIDs:         []string{nicoVMSVpcPrefixID},
 				SSHKeyGroupIDs:       []string{nicoVMSSSHKeyGroupID},
@@ -366,18 +366,18 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
 		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{brownfieldOIDC: true},
 	}),
-	Entry("nico-vms OS profiles", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "os-profiles"), testSpec{
+	Entry("nico-vms releases", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "releases"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 			workerPools: []nvke.NodePoolSpec{
 				// Old agent image pins the agent version to 0.1.22, which is before the new nvkeproto.CheckCloudInitStatus was introduced in version 0.1.24.
-				// So this osProfile test exists to prove that the controller can still provision nodePools that may still be pointed at older agent versions.
-				{Name: "worker-old-agent", NodeNamePrefix: "wold", DesiredNodeCount: 1, OSProfile: "nvke-nico-vms-24.04-amd64-fde-old-agent"},
+				// So this release test exists to prove that the controller can still provision nodePools that may still be pointed at older agent versions.
+				{Name: "worker-old-agent", NodeNamePrefix: "wold", DesiredNodeCount: 1, Release: "nvke-nico-vms-24.04-amd64-fde-old-agent"},
 				// nicoVMSNodePoolSpec defaults kube/system reserved memory to 250Mi so the
 				// default nico-vms instance type has enough allocatable memory.
-				{Name: "worker-260625-24.04", NodeNamePrefix: "w260625", DesiredNodeCount: 1, OSProfile: "nke-260625-24.04-x86-fde"},
-				{Name: "worker-260602-24.04", NodeNamePrefix: "w260602", DesiredNodeCount: 1, OSProfile: "nke-260602-24.04-x86-fde"},
+				{Name: "worker-260625-24.04", NodeNamePrefix: "w260625", DesiredNodeCount: 1, Release: "nke-260625-24.04-x86-fde"},
+				{Name: "worker-260602-24.04", NodeNamePrefix: "w260602", DesiredNodeCount: 1, Release: "nke-260602-24.04-x86-fde"},
 			},
 		},
 		options: nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
@@ -727,8 +727,8 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 	}
 }
 
-func withNicoVMSOSProfileEntries(args ...any) []any {
-	for _, entry := range mustNicoVMSOSProfileTableEntries() {
+func withNicoVMSReleaseEntries(args ...any) []any {
+	for _, entry := range mustNicoVMSReleaseTableEntries() {
 		args = append(args, entry)
 	}
 	return args
@@ -1180,7 +1180,7 @@ func controlPlaneConfigFromPools(pools []nvke.NodePoolSpec) *nvke.ControlPlaneCo
 	return &nvke.ControlPlaneConfigSpec{
 		DesiredCount:         pool.DesiredNodeCount,
 		InstanceTypeID:       pool.InstanceTypeID,
-		OSProfile:            pool.OSProfile,
+		Release:              pool.Release,
 		ConfigProfile:        pool.ConfigProfile,
 		VpcPrefixIDs:         pool.VpcPrefixIDs,
 		SubnetIDs:            pool.SubnetIDs,
@@ -1294,7 +1294,7 @@ func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 			wantConfig: &nvke.ControlPlaneConfigSpec{
 				DesiredCount:         3,
 				InstanceTypeID:       nicoVMSLargeInstanceID,
-				OSProfile:            nicoVMSOSProfile,
+				Release:              nicoVMSRelease,
 				ConfigProfile:        nicoVMSCPConfigProfile,
 				VpcPrefixIDs:         []string{nicoVMSVpcPrefixID},
 				SSHKeyGroupIDs:       []string{nicoVMSSSHKeyGroupID},
@@ -1358,7 +1358,7 @@ func TestUnit_NicoVMSControlPlaneFitsKubeletReservation(t *testing.T) {
 
 	shapes := map[string]clusterShape{
 		"control plane with no instance type": {controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}}},
-		"OS profile matrix row":               nicoVMSOSProfileTestSpec(nicoVMSOSProfileEntry{name: "unit-profile"}, 0).shape,
+		"OS profile matrix row":               nicoVMSReleaseTestSpec(nicoVMSReleaseEntry{name: "unit-profile"}, 0).shape,
 	}
 	for name, shape := range shapes {
 		t.Run(name, func(t *testing.T) {
@@ -1720,10 +1720,10 @@ var nicoVMSInstanceMemory = map[string]string{
 	nicoVMSLargeInstanceID: "6Gi",
 }
 
-// nicoVMSOSProfile is the profile the nico-vms specs boot. nico-sim takes the
+// nicoVMSRelease is the profile the nico-vms specs boot. nico-sim takes the
 // guest architecture from the host it runs on, never from the profile, so the
 // profile has to match the runner. hack/ci/nico-vms-e2e.sh builds the same name.
-var nicoVMSOSProfile = "nvke-nico-vms-24.04-" + runtime.GOARCH + "-fde"
+var nicoVMSRelease = "nvke-nico-vms-24.04-" + runtime.GOARCH + "-fde"
 
 // nicoVMSSpec builds a nico-vms topology using the local emulator's seed
 // identifiers. kube-vip is left enabled (the nico-vms BGP speaker advertises
@@ -1744,13 +1744,13 @@ func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterS
 			// the pool's 250Mi, and that does not fit in 2 GiB.
 			Pools: nicoVMSNodePoolSpecs(
 				withDefaultInstanceType(shape.controlPlanePools, nicoVMSLargeInstanceID),
-				"control-plane", "cp", nicoVMSOSProfile, nicoVMSCPConfigProfile,
+				"control-plane", "cp", nicoVMSRelease, nicoVMSCPConfigProfile,
 			),
 			ControlPlaneVIP: shape.controlPlaneVIP,
 			EtcdEncrypted:   shape.etcdEncrypted,
 			Config:          shape.controlPlaneConfig,
 		},
-		Workers: nicoVMSNodePoolSpecs(shape.workerPools, "worker", "w", nicoVMSOSProfile, nicoVMSWConfigProfile),
+		Workers: nicoVMSNodePoolSpecs(shape.workerPools, "worker", "w", nicoVMSRelease, nicoVMSWConfigProfile),
 	})
 }
 
@@ -1765,15 +1765,15 @@ func withDefaultInstanceType(pools []nvke.NodePoolSpec, instanceTypeID string) [
 	return out
 }
 
-func nicoVMSNodePoolSpecs(pools []nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile string) []nvke.NodePoolSpec {
+func nicoVMSNodePoolSpecs(pools []nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultRelease, defaultConfigProfile string) []nvke.NodePoolSpec {
 	out := make([]nvke.NodePoolSpec, 0, len(pools))
 	for _, pool := range pools {
-		out = append(out, nicoVMSNodePoolSpec(pool, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile))
+		out = append(out, nicoVMSNodePoolSpec(pool, defaultName, defaultNodeNamePrefix, defaultRelease, defaultConfigProfile))
 	}
 	return out
 }
 
-func nicoVMSNodePoolSpec(pool nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile string) nvke.NodePoolSpec {
+func nicoVMSNodePoolSpec(pool nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultRelease, defaultConfigProfile string) nvke.NodePoolSpec {
 	return nvke.NodePoolSpec{
 		Name:                  cmp.Or(pool.Name, defaultName),
 		NodeNamePrefix:        cmp.Or(pool.NodeNamePrefix, defaultNodeNamePrefix),
@@ -1783,7 +1783,7 @@ func nicoVMSNodePoolSpec(pool nvke.NodePoolSpec, defaultName, defaultNodeNamePre
 		InstanceTypeID:        cmp.Or(pool.InstanceTypeID, nicoVMSInstanceTypeID),
 		VpcPrefixIDs:          defaultStrings(pool.VpcPrefixIDs, nicoVMSVpcPrefixID),
 		SSHKeyGroupIDs:        defaultStrings(pool.SSHKeyGroupIDs, nicoVMSSSHKeyGroupID),
-		OSProfile:             cmp.Or(pool.OSProfile, defaultOSProfile),
+		Release:               cmp.Or(pool.Release, defaultRelease),
 		ConfigProfile:         cmp.Or(pool.ConfigProfile, defaultConfigProfile),
 		DiskSelectionStrategy: cmp.Or(pool.DiskSelectionStrategy, "smallest"),
 	}

@@ -26,7 +26,7 @@ path:controller/internal/db/migrations/20250515120225_add_nodepool_deprecated.go
 # The package that implements the NKEAuth record keeps the magic's spelling.
 token:nkeauth
 
-# Fleet release and OS profile names are rows users typed (node_pools.os_profile)
+# Fleet release names are rows users typed (node_pools.nico->>'release')
 # and CR names at the two sites: the dated nke-YYMMDD profiles, the
 # nke-<k8s>-<date> MachineImages, the mirrored index entries and the test
 # doubles shaped like them, the fleet profile the nico-vms fixture copies and

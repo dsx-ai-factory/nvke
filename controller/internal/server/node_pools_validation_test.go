@@ -347,7 +347,7 @@ func TestValidateUpdateNodePoolRequest_WrongProvider(t *testing.T) {
 	require.EqualError(t, err, "nico is not supported, please use infra")
 }
 
-// Clearing the OS profile is expressible in the request, and rejected: a Forge
+// Clearing the release is expressible in the request, and rejected: a Forge
 // node pool always has one. The config profile is optional and may be cleared.
 func TestValidateUpdateForgeNodePoolRequest_RejectsClearedRelease(t *testing.T) {
 	svc := &nodePoolService{}

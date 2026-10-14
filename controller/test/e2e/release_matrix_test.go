@@ -21,38 +21,38 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
-// errOSProfileMetadataUnavailable is returned when fleet OS profile metadata
+// errReleaseMetadataUnavailable is returned when fleet release metadata
 // cannot be located (sibling nke-site-deploy / NKE_CONTROLLER_RELEASES_DIR).
-var errOSProfileMetadataUnavailable = errors.New("OS profile fleet metadata unavailable")
+var errReleaseMetadataUnavailable = errors.New("release fleet metadata unavailable")
 
-func isOSProfileMetadataUnavailable(err error) bool {
-	return errors.Is(err, errOSProfileMetadataUnavailable)
+func isReleaseMetadataUnavailable(err error) bool {
+	return errors.Is(err, errReleaseMetadataUnavailable)
 }
 
-type osProfileMetadata struct {
+type releaseMetadata struct {
 	KubernetesVersion         string `json:"kubernetes_version"`
 	KubernetesVersionInjected bool   `json:"kubernetes_version_injected"`
 	Architecture              string `json:"architecture"`
 }
 
-type osProfileMetadataIndex struct {
-	Profiles map[string]osProfileMetadata `json:"profiles"`
+type releaseMetadataIndex struct {
+	Profiles map[string]releaseMetadata `json:"profiles"`
 }
 
-type osProfileExclusion struct {
+type releaseExclusion struct {
 	reason string
 }
 
 const legacyAutoinstallExclusionReason = "profile boots vmlinuz, initrd, and ISO directly; nico-vms currently requires a qcow-imager chain with image_url"
 
-// nicoVMSOSProfileExclusions classifies active profiles that the local
+// nicoVMSReleaseExclusions classifies active profiles that the local
 // nico-vms backend cannot use on any host. Profiles built for another
 // architecture are not listed here. nico-sim takes the guest architecture from
-// its host, so nicoVMSOSProfileMatrix drops those by architecture instead. New
+// its host, so nicoVMSReleaseMatrix drops those by architecture instead. New
 // active profiles are otherwise required by the matrix, so an unsupported
 // profile must be added here with an explicit reason before the suite will
 // register.
-var nicoVMSOSProfileExclusions = map[string]osProfileExclusion{
+var nicoVMSReleaseExclusions = map[string]releaseExclusion{
 	"nke-1.29.7-251119": {
 		reason: legacyAutoinstallExclusionReason,
 	},
@@ -81,38 +81,38 @@ var nicoVMSOSProfileExclusions = map[string]osProfileExclusion{
 		reason: legacyAutoinstallExclusionReason,
 	},
 	"nvke-local-dev-kindest-arm64": {
-		reason: "local kindest profile is an arm64 development placeholder, not a tenant OS profile",
+		reason: "local kindest profile is an arm64 development placeholder, not a tenant release",
 	},
 }
 
-func mustNicoVMSOSProfileTableEntries() []ginkgo.TableEntry {
-	profiles, err := nicoVMSOSProfileMatrix()
+func mustNicoVMSReleaseTableEntries() []ginkgo.TableEntry {
+	profiles, err := nicoVMSReleaseMatrix()
 	if err != nil {
 		// CAPD and other non-nico-vms suites import this package but do not ship
 		// fleet profile metadata (moved to nke-site-deploy). Soft-skip
 		// only that case — other matrix errors still panic so nico-vms regressions
 		// stay loud.
-		if isOSProfileMetadataUnavailable(err) {
-			fmt.Fprintf(os.Stderr, "skipping nico-vms OS profile matrix entries: %v\n", err)
+		if isReleaseMetadataUnavailable(err) {
+			fmt.Fprintf(os.Stderr, "skipping nico-vms release matrix entries: %v\n", err)
 			return nil
 		}
-		panic(fmt.Sprintf("building nico-vms OS profile matrix: %v", err))
+		panic(fmt.Sprintf("building nico-vms release matrix: %v", err))
 	}
 
 	entries := make([]ginkgo.TableEntry, 0, len(profiles))
 	for i, profile := range profiles {
 		entries = append(entries, ginkgo.Entry(
-			fmt.Sprintf("nico-vms OS profile %s", profile.name),
+			fmt.Sprintf("nico-vms release %s", profile.name),
 			ginkgo.Ordered,
 			ginkgo.ContinueOnFailure,
-			ginkgo.Label("nico-vms", "extended", "os-profiles", profile.name),
-			nicoVMSOSProfileTestSpec(profile, i),
+			ginkgo.Label("nico-vms", "extended", "releases", profile.name),
+			nicoVMSReleaseTestSpec(profile, i),
 		))
 	}
 	return entries
 }
 
-func nicoVMSOSProfileTestSpec(profile nicoVMSOSProfileEntry, index int) testSpec {
+func nicoVMSReleaseTestSpec(profile nicoVMSReleaseEntry, index int) testSpec {
 	kubernetesVersion := defaultKubernetesVersion
 	if !profile.metadata.KubernetesVersionInjected {
 		kubernetesVersion = profile.metadata.KubernetesVersion
@@ -130,7 +130,7 @@ func nicoVMSOSProfileTestSpec(profile nicoVMSOSProfileEntry, index int) testSpec
 				Name:             fmt.Sprintf("worker-profile-%02d", index+1),
 				NodeNamePrefix:   fmt.Sprintf("wp%02d", index+1),
 				DesiredNodeCount: 1,
-				OSProfile:        profile.name,
+				Release:          profile.name,
 				InstanceTypeID:   nicoVMSInstanceTypeID,
 			}},
 		},
@@ -143,20 +143,20 @@ func nicoVMSOSProfileTestSpec(profile nicoVMSOSProfileEntry, index int) testSpec
 	}
 }
 
-type nicoVMSOSProfileEntry struct {
+type nicoVMSReleaseEntry struct {
 	name     string
-	metadata osProfileMetadata
+	metadata releaseMetadata
 }
 
-func nicoVMSOSProfileMatrix() ([]nicoVMSOSProfileEntry, error) {
-	index, err := loadActiveOSProfileMetadata()
+func nicoVMSReleaseMatrix() ([]nicoVMSReleaseEntry, error) {
+	index, err := loadActiveReleaseMetadata()
 	if err != nil {
 		return nil, err
 	}
 
-	for name := range nicoVMSOSProfileExclusions {
+	for name := range nicoVMSReleaseExclusions {
 		if _, ok := index.Profiles[name]; !ok {
-			return nil, fmt.Errorf("exclusion %q is not an active OS profile", name)
+			return nil, fmt.Errorf("exclusion %q is not an active release", name)
 		}
 	}
 
@@ -166,9 +166,9 @@ func nicoVMSOSProfileMatrix() ([]nicoVMSOSProfileEntry, error) {
 	}
 	sort.Strings(names)
 
-	profiles := make([]nicoVMSOSProfileEntry, 0, len(names))
+	profiles := make([]nicoVMSReleaseEntry, 0, len(names))
 	for _, name := range names {
-		if _, excluded := nicoVMSOSProfileExclusions[name]; excluded {
+		if _, excluded := nicoVMSReleaseExclusions[name]; excluded {
 			continue
 		}
 
@@ -186,7 +186,7 @@ func nicoVMSOSProfileMatrix() ([]nicoVMSOSProfileEntry, error) {
 		if !metadata.KubernetesVersionInjected && metadata.KubernetesVersion == "" {
 			return nil, fmt.Errorf("active profile %q has neither an embedded nor injectable Kubernetes version", name)
 		}
-		profiles = append(profiles, nicoVMSOSProfileEntry{name: name, metadata: metadata})
+		profiles = append(profiles, nicoVMSReleaseEntry{name: name, metadata: metadata})
 	}
 
 	return profiles, nil
@@ -195,10 +195,10 @@ func nicoVMSOSProfileMatrix() ([]nicoVMSOSProfileEntry, error) {
 // otherArchProfiles counts active profiles this host cannot boot because they
 // are built for another architecture, ignoring any the exclusion map already
 // covers so the two never count the same profile twice.
-func otherArchProfiles(index osProfileMetadataIndex) int {
+func otherArchProfiles(index releaseMetadataIndex) int {
 	count := 0
 	for name, metadata := range index.Profiles {
-		if _, excluded := nicoVMSOSProfileExclusions[name]; excluded {
+		if _, excluded := nicoVMSReleaseExclusions[name]; excluded {
 			continue
 		}
 		if metadata.Architecture != runtime.GOARCH {
@@ -234,17 +234,17 @@ type releaseStub struct {
 	} `json:"spec"`
 }
 
-// loadActiveOSProfileMetadata indexes the releases by the name of each
+// loadActiveReleaseMetadata indexes the releases by the name of each
 // active (not deprecated) NodePoolRelease, taking the Kubernetes version from
 // its annotations and the architecture from the MachineImage it references.
-func loadActiveOSProfileMetadata() (osProfileMetadataIndex, error) {
+func loadActiveReleaseMetadata() (releaseMetadataIndex, error) {
 	dir, err := resolveReleasesDir()
 	if err != nil {
-		return osProfileMetadataIndex{}, err
+		return releaseMetadataIndex{}, err
 	}
 	stubs, err := readReleaseStubs(dir)
 	if err != nil {
-		return osProfileMetadataIndex{}, err
+		return releaseMetadataIndex{}, err
 	}
 
 	architectures := map[string]string{}
@@ -254,7 +254,7 @@ func loadActiveOSProfileMetadata() (osProfileMetadataIndex, error) {
 		}
 	}
 
-	index := osProfileMetadataIndex{Profiles: map[string]osProfileMetadata{}}
+	index := releaseMetadataIndex{Profiles: map[string]releaseMetadata{}}
 	for _, stub := range stubs {
 		if stub.Kind != kindNodePoolRelease || stub.Spec.Lifecycle.Deprecated {
 			continue
@@ -262,9 +262,9 @@ func loadActiveOSProfileMetadata() (osProfileMetadataIndex, error) {
 		image := stub.Spec.MachineImageRef.Name
 		architecture, ok := architectures[image]
 		if !ok {
-			return osProfileMetadataIndex{}, fmt.Errorf("NodePoolRelease %q references MachineImage %q, which is not in %s", stub.Metadata.Name, image, dir)
+			return releaseMetadataIndex{}, fmt.Errorf("NodePoolRelease %q references MachineImage %q, which is not in %s", stub.Metadata.Name, image, dir)
 		}
-		index.Profiles[stub.Metadata.Name] = osProfileMetadata{
+		index.Profiles[stub.Metadata.Name] = releaseMetadata{
 			KubernetesVersion:         stub.Metadata.Annotations[annotationKubernetesVersion],
 			KubernetesVersionInjected: stub.Metadata.Annotations[annotationKubernetesVersionInjected] == "true",
 			Architecture:              architecture,
@@ -330,28 +330,28 @@ func resolveReleasesDir() (string, error) {
 		}
 		missing = append(missing, dir)
 	}
-	return "", fmt.Errorf("%w (set NKE_CONTROLLER_RELEASES_DIR to nke-site-deploy/cwe-profiles/releases); tried: %s", errOSProfileMetadataUnavailable, strings.Join(missing, ", "))
+	return "", fmt.Errorf("%w (set NKE_CONTROLLER_RELEASES_DIR to nke-site-deploy/cwe-profiles/releases); tried: %s", errReleaseMetadataUnavailable, strings.Join(missing, ", "))
 }
 
-func TestNicoVMSOSProfileMatrix(t *testing.T) {
-	profiles, err := nicoVMSOSProfileMatrix()
+func TestNicoVMSReleaseMatrix(t *testing.T) {
+	profiles, err := nicoVMSReleaseMatrix()
 	if err != nil {
 		// Fleet metadata lives in nke-site-deploy; CI without a sibling checkout
 		// cannot build the full matrix. Other matrix errors must still fail.
-		if isOSProfileMetadataUnavailable(err) {
+		if isReleaseMetadataUnavailable(err) {
 			t.Skipf("building matrix: %v", err)
 		}
 		t.Fatalf("building matrix: %v", err)
 	}
 
-	index, err := loadActiveOSProfileMetadata()
+	index, err := loadActiveReleaseMetadata()
 	if err != nil {
-		if isOSProfileMetadataUnavailable(err) {
+		if isReleaseMetadataUnavailable(err) {
 			t.Skipf("loading active metadata: %v", err)
 		}
 		t.Fatalf("loading active metadata: %v", err)
 	}
-	expectedProfiles := len(index.Profiles) - len(nicoVMSOSProfileExclusions) - otherArchProfiles(index)
+	expectedProfiles := len(index.Profiles) - len(nicoVMSReleaseExclusions) - otherArchProfiles(index)
 	if len(profiles) != expectedProfiles {
 		t.Fatalf("matrix contains %d profiles, want %d active %s profiles minus exclusions", len(profiles), expectedProfiles, runtime.GOARCH)
 	}
@@ -361,20 +361,20 @@ func TestNicoVMSOSProfileMatrix(t *testing.T) {
 		}
 	}
 
-	for name, exclusion := range nicoVMSOSProfileExclusions {
+	for name, exclusion := range nicoVMSReleaseExclusions {
 		if exclusion.reason == "" {
 			t.Errorf("exclusion %s must document a reason", name)
 		}
 	}
 
-	profilesByName := make(map[string]nicoVMSOSProfileEntry, len(profiles))
+	profilesByName := make(map[string]nicoVMSReleaseEntry, len(profiles))
 	for _, profile := range profiles {
 		profilesByName[profile.name] = profile
 	}
 
-	fixedVersionSpec := nicoVMSOSProfileTestSpec(nicoVMSOSProfileEntry{
+	fixedVersionSpec := nicoVMSReleaseTestSpec(nicoVMSReleaseEntry{
 		name: "fixed-version-test-profile",
-		metadata: osProfileMetadata{
+		metadata: releaseMetadata{
 			KubernetesVersion: "1.29.7",
 		},
 	}, 0)
@@ -385,7 +385,7 @@ func TestNicoVMSOSProfileMatrix(t *testing.T) {
 	// Which profiles the matrix holds depends on the host architecture, so take
 	// an injected-version profile from it rather than naming one. profiles is
 	// sorted by name, so the choice is the same every run.
-	var injected nicoVMSOSProfileEntry
+	var injected nicoVMSReleaseEntry
 	for _, profile := range profiles {
 		if profile.metadata.KubernetesVersionInjected {
 			injected = profile
@@ -395,7 +395,7 @@ func TestNicoVMSOSProfileMatrix(t *testing.T) {
 	if injected.name == "" {
 		t.Fatal("matrix has no profile with an injected Kubernetes version")
 	}
-	productionSpec := nicoVMSOSProfileTestSpec(injected, 1)
+	productionSpec := nicoVMSReleaseTestSpec(injected, 1)
 	if productionSpec.shape.kubernetesVersion != defaultKubernetesVersion {
 		t.Errorf("injected profile uses Kubernetes %q, want suite default %q", productionSpec.shape.kubernetesVersion, defaultKubernetesVersion)
 	}
@@ -410,11 +410,11 @@ func TestNicoVMSOSProfileMatrix(t *testing.T) {
 		t.Errorf("provision timeout is %s, want 2h", productionSpec.options.Provision)
 	}
 
-	nicoVMSProfile, ok := profilesByName[nicoVMSOSProfile]
+	nicoVMSProfile, ok := profilesByName[nicoVMSRelease]
 	if !ok {
-		t.Fatalf("matrix missing expected nico-vms profile %q", nicoVMSOSProfile)
+		t.Fatalf("matrix missing expected nico-vms profile %q", nicoVMSRelease)
 	}
-	nicoVMSProfileSpec := nicoVMSOSProfileTestSpec(nicoVMSProfile, 2)
+	nicoVMSProfileSpec := nicoVMSReleaseTestSpec(nicoVMSProfile, 2)
 	if nicoVMSProfileSpec.shape.workerPools[0].InstanceTypeID != nicoVMSInstanceTypeID {
 		t.Errorf("nico-vms profile uses instance type %q, want %q", nicoVMSProfileSpec.shape.workerPools[0].InstanceTypeID, nicoVMSInstanceTypeID)
 	}

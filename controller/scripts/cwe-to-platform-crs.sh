@@ -266,9 +266,9 @@ ${cluster_spec}
         np=$(echo "$nodepools_json" | jq -c ".[$idx]")
         np_name=$(echo "$np" | jq -r '.name // empty')
         np_prefix=$(echo "$np" | jq -r '.nodeNamePrefix // empty')
-        np_instance_type=$(uuid_from_json "$(echo "$np" | jq -c '.instanceTypeID // empty')")
-        np_os_profile=$(echo "$np" | jq -r '.osProfile // empty')
-        np_config_profile=$(echo "$np" | jq -r '.configProfile // empty')
+        np_instance_type=$(uuid_from_json "$(echo "$np" | jq -c '.nico.instanceTypeID // empty')")
+        np_os_profile=$(echo "$np" | jq -r '.nico.release // empty')
+        np_config_profile=$(echo "$np" | jq -r '.nico.configProfile // empty')
         np_desired=$(echo "$np" | jq -r '.desiredNodeCount // 1')
         np_control_plane=$(echo "$np" | jq -r '.controlPlane // false')
         np_node_type="Worker"
@@ -280,7 +280,7 @@ ${cluster_spec}
         np_max_surge=$(echo "$np" | jq -r '.maxSurge // 0')
         # Validate required fields; skip node pools with missing or zero UUIDs (controller data issue)
         if [[ -z "$np_name" ]] || [[ -z "$np_prefix" ]] || [[ -z "$np_os_profile" ]] || [[ -z "$np_config_profile" ]]; then
-            echo "  Warning: skipping node pool (missing name, nodeNamePrefix, osProfile, or configProfile): $np"
+            echo "  Warning: skipping node pool (missing name, nodeNamePrefix, release, or configProfile): $np"
             continue
         fi
         if [[ -z "$np_instance_type" ]] || [[ "$np_instance_type" == "$ZERO_UUID" ]] || [[ "$np_instance_type" == "null" ]]; then
@@ -288,22 +288,22 @@ ${cluster_spec}
             continue
         fi
         extra_spec=""
-        subnet_ids=$(echo "$np" | jq -r '(.subnetIDs // [])[] | tostring' 2>/dev/null)
+        subnet_ids=$(echo "$np" | jq -r '(.nico.subnetIDs // [])[] | tostring' 2>/dev/null)
         if [[ -n "$subnet_ids" ]]; then
             extra_spec="  subnetIDs:"$'\n'
             while IFS= read -r s; do [[ -n "$s" ]] && [[ "$s" != "null" ]] && extra_spec="${extra_spec}    - ${s}"$'\n'; done <<< "$subnet_ids"
         fi
-        vpc_prefix_ids=$(echo "$np" | jq -r '(.vpcPrefixIDs // [])[] | tostring' 2>/dev/null)
+        vpc_prefix_ids=$(echo "$np" | jq -r '(.nico.vpcPrefixIDs // [])[] | tostring' 2>/dev/null)
         if [[ -n "$vpc_prefix_ids" ]]; then
             extra_spec="${extra_spec}  vpcPrefixIDs:"$'\n'
             while IFS= read -r v; do [[ -n "$v" ]] && [[ "$v" != "null" ]] && extra_spec="${extra_spec}    - ${v}"$'\n'; done <<< "$vpc_prefix_ids"
         fi
-        ssh_ids=$(echo "$np" | jq -r '(.sshKeyGroupIDs // [])[] | tostring' 2>/dev/null)
+        ssh_ids=$(echo "$np" | jq -r '(.nico.sshKeyGroupIDs // [])[] | tostring' 2>/dev/null)
         if [[ -n "$ssh_ids" ]]; then
             extra_spec="${extra_spec}  sshKeyGroupIDs:"$'\n'
             while IFS= read -r k; do [[ -n "$k" ]] && [[ "$k" != "null" ]] && extra_spec="${extra_spec}    - ${k}"$'\n'; done <<< "$ssh_ids"
         fi
-        np_ib=$(uuid_from_json "$(echo "$np" | jq -c '.infinibandPartitionID // empty')")
+        np_ib=$(uuid_from_json "$(echo "$np" | jq -c '.nico.infinibandPartitionID // empty')")
         if [[ -n "$np_ib" ]] && [[ "$np_ib" != "null" ]] && [[ "$np_ib" != "$ZERO_UUID" ]]; then
             extra_spec="${extra_spec}  infinibandPartitionID: ${np_ib}"$'\n'
         fi

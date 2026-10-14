@@ -314,7 +314,7 @@ func TestApplyClusterControlPlaneConfigUpdate_RolloutRequiresVIP(t *testing.T) {
 			currentSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
 			currentSpec.SetNico(db.NicoControlPlaneProvider{
 				InstanceTypePreference: []uuid.UUID{instanceTypeID},
-				OSProfile:              "os-v1",
+				Release:                "os-v1",
 				ConfigProfile:          "cfg-v1",
 			})
 			cluster := &db.Cluster{
@@ -423,7 +423,7 @@ func TestGetClusterControlPlane(t *testing.T) {
 		}
 		cluster.ControlPlaneConfig.SetNico(db.NicoControlPlaneProvider{
 			InstanceTypePreference: []uuid.UUID{instanceType},
-			OSProfile:              "ubuntu",
+			Release:                "ubuntu",
 			ConfigProfile:          "default",
 		})
 		return cluster
@@ -504,9 +504,9 @@ func TestGetClusterControlPlane(t *testing.T) {
 		desiredCfgID := uuid.MustParse("aaaaaaaa-0000-0000-0000-0000000000d1")
 		driftedCfgID := uuid.MustParse("aaaaaaaa-0000-0000-0000-0000000000d2")
 		desiredSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
-		desiredSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v2"})
+		desiredSpec.SetNico(db.NicoControlPlaneProvider{Release: "os-v2", ConfigProfile: "cfg-v2"})
 		driftedSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
-		driftedSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v1", ConfigProfile: "cfg-v2"})
+		driftedSpec.SetNico(db.NicoControlPlaneProvider{Release: "os-v1", ConfigProfile: "cfg-v2"})
 
 		cluster := newCluster()
 		cluster.EnableCPNodeRecycling = true
@@ -620,7 +620,7 @@ func TestApplyClusterControlPlaneConfigUpdate_RejectsClearingRequiredField(t *te
 		cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "test-org", SiteID: uuid.New()})
 		cluster.ControlPlaneConfig.SetNico(db.NicoControlPlaneProvider{
 			InstanceTypePreference: []uuid.UUID{uuid.New()},
-			OSProfile:              "ubuntu",
+			Release:                "ubuntu",
 			ConfigProfile:          "default",
 		})
 		return cluster
@@ -687,7 +687,7 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 		assert.Nil(t, spec.Capi)
 		assert.Equal(t, prefs, spec.Nico.InstanceTypePreference)
 		assert.Equal(t, []uuid.UUID{subnet}, spec.Nico.SubnetIDs)
-		assert.Equal(t, "os", spec.Nico.OSProfile)
+		assert.Equal(t, "os", spec.Nico.Release)
 		assert.Equal(t, "cfg", spec.Nico.ConfigProfile)
 		// The control plane always installs to the smallest disk; it is not
 		// configurable through the API.
@@ -751,7 +751,7 @@ func TestNicoControlPlaneConfigProfileIsOptional(t *testing.T) {
 		var spec db.ControlPlaneConfigSpec
 		spec.SetNico(db.NicoControlPlaneProvider{
 			InstanceTypePreference: []uuid.UUID{uuid.New()},
-			OSProfile:              "ubuntu",
+			Release:                "ubuntu",
 		})
 		require.NoError(t, validateMergedForgeControlPlaneSpec(spec))
 	})

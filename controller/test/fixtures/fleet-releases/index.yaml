@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Mirror of the active releases in nke-site-deploy/cwe-profiles/releases.
-# TestNicoVMSOSProfileMatrix reads it to check that every entry in
-# nicoVMSOSProfileExclusions still names an active release, and that every
+# TestNicoVMSReleaseMatrix reads it to check that every entry in
+# nicoVMSReleaseExclusions still names an active release, and that every
 # release that is not excluded is one nico-vms can boot.
 #
 # Only some fields are true: each active NodePoolRelease's name, Kubernetes
