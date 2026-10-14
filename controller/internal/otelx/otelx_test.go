@@ -4,6 +4,7 @@
 package otelx
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/resource"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 )
@@ -88,6 +90,49 @@ func TestInitWithEndpointCreatesTraceContext(t *testing.T) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	_ = shutdown(shutdownCtx) // flushing to the unreachable endpoint may time out
+}
+
+func TestNewResourceMalformedEnvironment(t *testing.T) {
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "badentry,k=v")
+
+	t.Run("export off keeps the valid entries and warns", func(t *testing.T) {
+		var logs bytes.Buffer
+		res, err := newResource(context.Background(), "svc", false, slog.New(slog.NewTextHandler(&logs, nil)))
+		require.NoError(t, err)
+		attrs := res.Set()
+		value, ok := attrs.Value("k")
+		require.True(t, ok, "the entry that parsed is kept")
+		require.Equal(t, "v", value.AsString())
+		value, ok = attrs.Value("service.name")
+		require.True(t, ok)
+		require.Equal(t, "svc", value.AsString())
+		require.Contains(t, logs.String(), "level=WARN")
+		require.Contains(t, logs.String(), "badentry")
+	})
+
+	t.Run("export on fails", func(t *testing.T) {
+		_, err := newResource(context.Background(), "svc", true, slog.New(slog.DiscardHandler))
+		require.ErrorIs(t, err, resource.ErrPartialResource)
+	})
+}
+
+func TestInitMalformedResourceEnvironment(t *testing.T) {
+	restoreTracerGlobals(t)
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "badentry")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+
+	// Export off, and enabled without an endpoint: the controller still starts.
+	for _, cfg := range []config.TracingConfig{{Enabled: false}, {Enabled: true}} {
+		shutdown, err := Init(context.Background(), cfg, slog.New(slog.DiscardHandler))
+		require.NoError(t, err, "%+v", cfg)
+		requireTraceContext(t)
+		require.NoError(t, shutdown(context.Background()))
+	}
+
+	// Export on: the malformed value is still refused, as before.
+	_, err := Init(context.Background(), config.TracingConfig{Enabled: true, Endpoint: "127.0.0.1:1", Insecure: true}, slog.New(slog.DiscardHandler))
+	require.ErrorIs(t, err, resource.ErrPartialResource)
 }
 
 func TestExportTarget(t *testing.T) {

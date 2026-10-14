@@ -7,6 +7,7 @@ package otelx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -43,21 +44,13 @@ func Init(ctx context.Context, cfg config.TracingConfig, logger *slog.Logger) (S
 		serviceName = "cloud-workflow-engine"
 	}
 
-	res, err := resource.New(ctx,
-		resource.WithAttributes(
-			semconv.ServiceName(serviceName),
-			semconv.ServiceVersion(version.Version),
-		),
-		resource.WithFromEnv(),
-		resource.WithTelemetrySDK(),
-		resource.WithHost(),
-	)
+	target, export := exportTarget(cfg, os.Getenv, logger)
+	res, err := newResource(ctx, serviceName, export, logger)
 	if err != nil {
-		return noop, fmt.Errorf("create OpenTelemetry resource: %w", err)
+		return noop, err
 	}
 
 	opts := []sdktrace.TracerProviderOption{sdktrace.WithResource(res)}
-	target, export := exportTarget(cfg, os.Getenv, logger)
 	if export {
 		// The SDK also reads OTEL_EXPORTER_OTLP_* itself, and an endpoint's scheme
 		// sets its transport security. Passing the resolved endpoint as a URL sets
@@ -87,6 +80,29 @@ func Init(ctx context.Context, cfg config.TracingConfig, logger *slog.Logger) (S
 	)
 
 	return tp.Shutdown, nil
+}
+
+// newResource builds the resource that describes this process on its spans.
+// Malformed entries in OTEL_RESOURCE_ATTRIBUTES are an error when spans are
+// exported. When they are not, they only cost a label nobody sees, so they log
+// a warning and the entries that parsed are kept.
+func newResource(ctx context.Context, serviceName string, export bool, logger *slog.Logger) (*resource.Resource, error) {
+	res, err := resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceName(serviceName),
+			semconv.ServiceVersion(version.Version),
+		),
+		resource.WithFromEnv(),
+		resource.WithTelemetrySDK(),
+		resource.WithHost(),
+	)
+	if err != nil {
+		if export || !errors.Is(err, resource.ErrPartialResource) {
+			return nil, fmt.Errorf("create OpenTelemetry resource: %w", err)
+		}
+		logger.Warn("OpenTelemetry resource attributes are partly invalid; keeping the valid ones", "error", err)
+	}
+	return res, nil
 }
 
 // exportTarget returns the endpoint spans are exported to, and false when
