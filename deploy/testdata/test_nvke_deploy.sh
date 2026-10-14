@@ -292,6 +292,7 @@ case "$*" in
     if [[ -n "${STUB_CAPI_IMAGE:-}" ]]; then printf '%s' "${STUB_CAPI_IMAGE}"; else
       echo 'Error from server (NotFound): deployments.apps "capi-controller-manager" not found' >&2; exit 1; fi ;;
   *"capi-kubeadm-"*)
+    if [[ -n "${STUB_DENY_KUBEADM:-}" ]]; then echo 'Error from server (Forbidden): deployments.apps is forbidden' >&2; exit 1; fi
     if [[ -n "${STUB_NO_KUBEADM:-}" ]]; then echo 'Error from server (NotFound): deployments.apps not found' >&2; exit 1; else printf 'deployment.apps/x'; fi ;;
 esac
 exit 0
@@ -336,6 +337,12 @@ expect "an unreachable API is a finding" "^FAIL  cluster: API not reachable with
 reject "no node findings when the API is down" '^(PASS|FAIL)  cluster: .*node' "${out}"
 out="$(PATH="${stubs}:${PATH}" STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller:$(sed -n 's/^CAPI_VERSION[[:space:]]*?=[[:space:]]*//p' "${DEPLOY_DIR}/../make/tool-versions.mk")@sha256:0000000000000000000000000000000000000000000000000000000000000000" STUB_NO_KUBEADM=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with a core-only Cluster API exited 0"
 expect "a digest-pinned image is compared by its tag, and a core without the kubeadm providers is a finding" '^FAIL  Cluster API: v[0-9.]+ core is installed without capi-kubeadm-bootstrap-system/capi-kubeadm-bootstrap-controller-manager capi-kubeadm-control-plane-system/capi-kubeadm-control-plane-controller-manager; run: clusterctl init' "${out}"
+PIN="$(sed -n 's/^CAPI_VERSION[[:space:]]*?=[[:space:]]*//p' "${DEPLOY_DIR}/../make/tool-versions.mk")"
+out="$(PATH="${stubs}:${PATH}" STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller:${PIN}" STUB_DENY_KUBEADM=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with a denied kubeadm read exited 0"
+expect "a denied kubeadm-provider read is a finding" '^FAIL  cluster: cannot read deployment capi-kubeadm-bootstrap-system/' "${out}"
+reject "no 'already installed' pass after a denied provider read" 'already installed' "${out}"
+out="$(PATH="${stubs}:${PATH}" STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller@sha256:0000000000000000000000000000000000000000000000000000000000000000" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with a digest-only Cluster API image exited 0"
+expect "a digest-only image is reported as such, not by its repository" '^FAIL  Cluster API: registry.k8s.io/cluster-api/cluster-api-controller@sha256:0+ is installed, pinned by digest; its version cannot be read' "${out}"
 out="$(PATH="${stubs}:${PATH}" NVKECTL=/nonexistent/nvkectl NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site without nvkectl exited 0"
 expect "a missing nvkectl is a finding, and the spec checks are skipped" '^FAIL  tool nvkectl: /nonexistent/nvkectl not found' "${out}"
 expect "the site spec is skipped without nvkectl" '^SKIP  site spec: ' "${out}"

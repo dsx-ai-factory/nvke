@@ -98,6 +98,8 @@ KREAD_ERR="$(mktemp "${TMPDIR:-/tmp}/check-site.XXXXXX")"
 trap 'rm -f "${KREAD_ERR}"' EXIT
 kread() { kubectl --kubeconfig "${KUBECONFIG_PATH}" "$@" 2>"${KREAD_ERR}"; }
 kread_err() { tr -d '\n' <"${KREAD_ERR}" | cut -c1-200; }
+# q quotes one word for a command the operator will paste.
+q() { printf '%q' "$1"; }
 
 # --- this machine ------------------------------------------------------------
 
@@ -144,10 +146,13 @@ if [[ -z "${HAVE_NVKECTL}" ]]; then
   check_skip "site spec: ${SITESPEC} (no nvkectl)"
 elif "${NVKECTL}" validate sitespec -f "${SITESPEC}" >/dev/null 2>&1; then
   check_pass "site spec: ${SITESPEC} is valid for the controller stack"
-  site_vars="$("${NVKECTL}" inspect sitespec "${SITESPEC}")" || die "cannot read ${SITESPEC}"
-  eval "${site_vars}"
+  if site_vars="$("${NVKECTL}" inspect sitespec "${SITESPEC}" 2>/dev/null)"; then
+    eval "${site_vars}"
+  else
+    check_fail "site spec: cannot read ${SITESPEC}; run: $(q "${NVKECTL}") inspect sitespec $(q "${SITESPEC}")"
+  fi
 else
-  check_fail "site spec: ${SITESPEC} is not ready; run: ${NVKECTL} validate sitespec -f ${SITESPEC}"
+  check_fail "site spec: ${SITESPEC} is not ready; run: $(q "${NVKECTL}") validate sitespec -f $(q "${SITESPEC}")"
 fi
 if [[ -n "${RELEASE}" && -z "${HAVE_NVKECTL}" ]]; then
   check_skip "release: ${RELEASE} (no nvkectl)"
@@ -159,7 +164,7 @@ elif [[ -n "${RELEASE}" ]]; then
     check_pass "release: ${REFERENCE} (declared ${QUALIFICATION:-?}); verify it with: nvkr release verify --reference ${REFERENCE}"
     [[ "${QUALIFICATION:-}" == "pipeline-attested" ]] || check_warn "release qualification is ${QUALIFICATION:-unknown}, not pipeline-attested, as the publisher declared it"
   else
-    check_fail "release: ${RELEASE} does not parse; run: ${NVKECTL} inspect nvkr-release ${RELEASE} --meta"
+    check_fail "release: ${RELEASE} does not parse; run: $(q "${NVKECTL}") inspect nvkr-release $(q "${RELEASE}") --meta"
   fi
 fi
 if [[ -n "${RUN_DIR}" ]]; then
@@ -222,21 +227,28 @@ else
   CAPI_INIT="$(printf '%q ' clusterctl init --kubeconfig "${KUBECONFIG_PATH}" --core "cluster-api:${CAPI_VERSION}" --bootstrap "kubeadm:${CAPI_VERSION}" --control-plane "kubeadm:${CAPI_VERSION}" --wait-providers)"
   CAPI_INIT="${CAPI_INIT% }"
   if image="$(kread -n capi-system get deployment capi-controller-manager -o jsonpath='{.spec.template.spec.containers[0].image}')"; then
-    # The tag, without a digest suffix or a registry port.
-    tag="${image%@*}"; tag="${tag##*/}"; tag="${tag##*:}"
-    if [[ "${tag}" != "${CAPI_VERSION}" ]]; then
-      check_fail "Cluster API: ${tag} is installed; the stack is tested with ${CAPI_VERSION}, and clusterctl init does not upgrade. Run: clusterctl upgrade apply --kubeconfig ${KUBECONFIG_PATH} --core cluster-api:${CAPI_VERSION} --bootstrap kubeadm:${CAPI_VERSION} --control-plane kubeadm:${CAPI_VERSION}"
+    # The tag, without a digest suffix or a registry port. An image pinned
+    # by digest alone carries no version to compare.
+    name="${image%@*}"; tag="${name##*/}"
+    if [[ "${tag}" == *:* ]]; then tag="${tag##*:}"; else tag=""; fi
+    if [[ -z "${tag}" ]]; then
+      check_fail "Cluster API: ${image} is installed, pinned by digest; its version cannot be read, and the stack is tested with ${CAPI_VERSION}"
+      CAPI_INIT=""
+    elif [[ "${tag}" != "${CAPI_VERSION}" ]]; then
+      check_fail "Cluster API: ${tag} is installed; the stack is tested with ${CAPI_VERSION}, and clusterctl init does not upgrade. Run: clusterctl upgrade apply --kubeconfig $(q "${KUBECONFIG_PATH}") --core cluster-api:${CAPI_VERSION} --bootstrap kubeadm:${CAPI_VERSION} --control-plane kubeadm:${CAPI_VERSION}"
       CAPI_INIT=""
     else
       # The kubeadm providers come with the same init; a core without them is
       # a partial install the stack cannot use.
-      missing=""
+      missing=""; read_err=""
       for d in capi-kubeadm-bootstrap-system/capi-kubeadm-bootstrap-controller-manager capi-kubeadm-control-plane-system/capi-kubeadm-control-plane-controller-manager; do
         if ! kread -n "${d%%/*}" get deployment "${d#*/}" -o name >/dev/null; then
-          if grep -q 'NotFound' "${KREAD_ERR}"; then missing="${missing}${d} "; else check_fail "cluster: cannot read deployment ${d}: $(kread_err)"; fi
+          if grep -q 'NotFound' "${KREAD_ERR}"; then missing="${missing}${d} "; else read_err=1; check_fail "cluster: cannot read deployment ${d}: $(kread_err)"; fi
         fi
       done
-      if [[ -z "${missing}" ]]; then
+      if [[ -n "${read_err}" ]]; then
+        CAPI_INIT=""
+      elif [[ -z "${missing}" ]]; then
         check_pass "Cluster API: ${CAPI_VERSION} already installed"
         CAPI_INIT=""
       else

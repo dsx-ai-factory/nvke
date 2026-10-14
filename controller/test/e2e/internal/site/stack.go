@@ -541,9 +541,10 @@ func (d Stack) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, e
 		"Tenant":               d.Tenant,
 		"ClusterName":          t.SiteName,
 		// Controller releases that still carry nvke-base-config's
-		// ghcr-imagepull template render .Registry; the stack pulls nothing
-		// with it, so the values are placeholders.
-		"Registry": map[string]string{"Server": "ghcr.io", "Username": "unused", "Token": "unused"},
+		// ghcr-imagepull template render a pull Secret from .Registry. The
+		// server is not a registry any image uses, so no pull sends these
+		// values and the public GHCR image is pulled anonymously.
+		"Registry": map[string]string{"Server": "placeholder.invalid", "Username": "unused", "Token": "unused"},
 	}, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("render bootstrap config: %w", err)
