@@ -121,6 +121,10 @@ token:^urn:nvidia:nke
 # the Flox environment.
 token:^nke$
 
+# The site spec constant for the reserved OIDC prefix "nke:". The prefix
+# string is already covered by ^nke:; this is the Go identifier that names it.
+token:^oidcPrefixNKE$
+
 # ---- Tier 2: the node (PR5) and the OS image and packages (PR6) ----
 
 # One-release compatibility inputs: the old package guard, rollback artifact

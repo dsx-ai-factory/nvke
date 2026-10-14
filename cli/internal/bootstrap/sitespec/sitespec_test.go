@@ -313,7 +313,7 @@ func TestValidate_OIDCProviders(t *testing.T) {
 			Cluster: Cluster{
 				Nodes:         []Node{{Name: "node1", IP: "10.0.0.1"}},
 				K8sVersion:    "1.32.0",
-				CniName:       "calico",
+				CniName:       "ovn-kubernetes",
 				PodCidr:       "10.100.0.0/16",
 				ServiceCidr:   "10.200.0.0/16",
 				NodeAgentPort: DefaultNodeAgentPort,
