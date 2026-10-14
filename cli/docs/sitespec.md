@@ -88,9 +88,6 @@ is a file `bootstrap site` accepts.
 | `controllerStack.nico.orgID` | string | yes, in `controllerStack` | NICo organisation ID. |
 | `controllerStack.nico.apiName` | string | yes, in `controllerStack` | NICo API name, for example `forge`. |
 | `controllerStack.nico.tokenFile` | string | yes, in `controllerStack` | Path to a file holding the NICo API token. |
-| `controllerStack.pullSecret.server` | string | yes, in `controllerStack` | Registry host for the CAPNICo image pull secret, for example `ghcr.io`. |
-| `controllerStack.pullSecret.username` | string | yes, in `controllerStack` | Registry username. |
-| `controllerStack.pullSecret.tokenFile` | string | yes, in `controllerStack` | Path to a file holding the registry token. |
 | `controllerStack.tenant.user` | string | yes, in `controllerStack` | Login user rendered into every tenant node's cloud-init. |
 | `controllerStack.tenant.passwordFile` | string | yes, in `controllerStack` | Path to a file holding that user's password. |
 | `controllerStack.images.controller` | string | no | Overrides the controller image; defaults to the release file's `controller` item. |
@@ -98,6 +95,8 @@ is a file `bootstrap site` accepts.
 | `controllerStack.database.passwordFile` | string | yes, in `controllerStack` | Path to a file holding the Postgres password. The render creates it with a generated password when it does not exist. |
 | `controllerStack.mirror` | string | no | Registry the external images are pulled from instead of upstream, `host[:port][/prefix]`, no scheme. |
 | `controllerStack.nktpValuesFile` | string | no | Values file for the nktp release, applied last. |
+
+A site spec written before the stack install dropped its registry credential still carries a `controllerStack.pullSecret` block. Delete the block: the file has no unknown-field tolerance, and nothing reads it. CAPNICo's image is public on GHCR, or comes from the release.
 
 The version (image/chart tag) is baked into the `nvkectl` build, so it is not
 part of the site spec.

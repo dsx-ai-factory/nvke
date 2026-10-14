@@ -59,8 +59,9 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [site-bootstrap/configuration.md](site-bootstrap/configuration.md) | The site spec file that describes a site |
 | [site-bootstrap/pre-provisioned-nodes.md](site-bootstrap/pre-provisioned-nodes.md) | Using hosts that are already provisioned |
 | [site-bootstrap/custom-base-os.md](site-bootstrap/custom-base-os.md) | Running on a base OS other than the reference image |
-| [site-bootstrap/deploy-repository.md](site-bootstrap/deploy-repository.md) | The deploy repository and what it holds |
+| [site-bootstrap/deploy-repository.md](site-bootstrap/deploy-repository.md) | The deploy path format: `nvke-deploy.yaml`, the item types, and how `deploy/nvke-deploy.sh` applies them |
 | [site-bootstrap/infrastructure-providers.md](site-bootstrap/infrastructure-providers.md) | Installing Cluster API and an infrastructure provider on a site cluster |
+| [site-bootstrap/install-site-controller.md](site-bootstrap/install-site-controller.md) | Installing Postgres, Temporal, SPIRE, CAPNICo, NKTP and the NVKE controller onto a bootstrapped site cluster with `deploy/nvke-deploy.sh install`, from the site spec, an NVKR release description and the `deploy/nico` deploy path |
 | [../cli/docs/sitespec.md](../cli/docs/sitespec.md) | Every field of the site spec file, with its type |
 | [../cli/docs/bootstrap-troubleshooting.md](../cli/docs/bootstrap-troubleshooting.md) | Where a failed bootstrap leaves its evidence, how to read the error, common failures and when to re-run |
 

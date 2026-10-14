@@ -29,7 +29,8 @@ starts from nothing.
 Step 3 runs ON the node, not against it from a workstation. That is what makes
 the image story cheap: the node's containerd IS the cluster's containerd, so
 an image imported there resolves with `imagePullPolicy: IfNotPresent` and needs
-no registry credential. CAPNICo is the one exception, and the one pull secret.
+no registry credential, and CAPNICo's image is public on GHCR or comes from
+the release by digest, so this path renders no pull secret.
 
 What the node needs, all present on the reference instance type:
 
@@ -37,13 +38,15 @@ What the node needs, all present on the reference instance type:
   renderer are Python), plus `clusterctl` for the prerequisites
 - to install for a site: `nvkectl` (`make -C cli build` writes
   `cli/bin/nvkectl`; `NVKECTL` names it, else PATH). `deploy/nvke-deploy.sh
-  install --deploy-path deploy/nico --sitespec sitespec.yaml` renders a copy
-  of this deploy path with the site's values filled in from the spec's
-  `controllerStack` section into a private scratch directory, installs it,
-  and removes it, so no rendered credential is left behind; it needs no
-  `--config`. Without a release, the spec
-  sets `controllerStack.images.profiles`: this deploy path enables the
-  profiles content image without naming it
+  install --sitespec sitespec.yaml --kubeconfig site.kubeconfig` runs the
+  steps: readiness, prepare the cluster, Cluster API, this deploy path
+  rendered for the site from the spec's `controllerStack` section and
+  applied, secure and register. The render lives in a private scratch
+  directory and is removed when the script exits, so no rendered credential
+  is left behind. `deploy/nvke-deploy.sh apply --deploy-path deploy/nico
+  --sitespec sitespec.yaml` applies this deploy path alone. Without a
+  release, the spec sets `controllerStack.images.profiles`: this deploy path
+  enables the profiles content image without naming it
 - a checkout laid out so that `deploy/` and `controller/` are siblings --
   `controller/release.yaml` reaches its chart as
   `../../controller/deploy/charts/controller`

@@ -97,7 +97,7 @@ In NVKE, every node and every workload gets a SPIFFE identity backed by TPM atte
 
 GitOps is the practice of using a git repository as the single source of truth for infrastructure state. You declare what you want in git; a controller (ArgoCD in NVKE's case) makes the cluster match it.
 
-NVKE requires a **deploy repository** — a git repo you own and maintain, structured so ArgoCD can discover and apply its contents. After `nvkectl` bootstraps the cluster, you install ArgoCD and point it at the deploy repository to bring up the NVKE services stack. ArgoCD then owns ongoing reconciliation. See [Deploy Repository](site-bootstrap/deploy-repository.md) for the structure.
+NVKE ships a **deploy path**, `deploy/nico`: a directory that lists the NVKE services in install order, each as a Helm chart with values or as plain manifests. After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh install` applies it. A GitOps tool such as ArgoCD can deliver the same items and own ongoing reconciliation. See [Deploy Path](site-bootstrap/deploy-repository.md) for the format and [Install the Site Controller](site-bootstrap/install-site-controller.md) for the install.
 
 ---
 

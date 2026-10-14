@@ -42,7 +42,7 @@ After bootstrap completes:
 - Each node has an available NVMe device for local storage (non-root, unpartitioned, not in use)
 - NGC API key (required for pulling NVKE container images)
 - On the **init node**: `kind` binary and `nerdctl` with containerd installed — `nvkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises
-- The two images `nvkectl` side-loads: `make -C cli images` builds them on the init node. To use images from a registry instead, pass `--controller-image` and `--provisioned-provider-image`, or set `NKECTL_CONTROLLER_IMAGE` (e.g. `nvcr.io/<org>/nvke-controller:edge`) and `NKECTL_CAPI_PROVISIONED_IMAGE` (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
+- The two images `nvkectl` side-loads: `make -C cli images` builds them on the init node. To use images from a registry instead, pass `--controller-image` and `--provisioned-provider-image`, or set `NVKECTL_CONTROLLER_IMAGE` (e.g. `nvcr.io/<org>/nvke-controller:edge`) and `NVKECTL_CAPI_PROVISIONED_IMAGE` (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
 - On the **init node**, also on `PATH`: `helm`, `kubectl`, and `clusterctl`. `nvkectl`
   shells out to all three during bootstrap — Helm for the Postgres, Temporal, SPIRE
   and CWE releases, `kubectl` for the manifests, and `clusterctl init` for the
@@ -58,7 +58,7 @@ After bootstrap completes:
   what `clusterctl init` installs: Cluster API and cert-manager come from
   `github.com` and their images from their own registries
 
-If you are targeting a self-managed cluster, prepare your environment SBOM and [deploy repository](deploy-repository.md) ahead of time.
+If you are targeting a self-managed cluster, prepare your release manifest and site config for the [deploy path](deploy-repository.md) ahead of time.
 
 ## Step 1: Prepare All Nodes
 
@@ -249,8 +249,8 @@ nvkectl bootstrap site -f sitespec.yaml --dry-run
 
 # Run bootstrap. --disable-mtls matches the plaintext agents from Step 1.
 REGISTRY_API_KEY="<your-registry-api-key>" \
-NKECTL_CONTROLLER_IMAGE="nvcr.io/<org>/nvke-controller:edge" \
-NKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
+NVKECTL_CONTROLLER_IMAGE="nvcr.io/<org>/nvke-controller:edge" \
+NVKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
   nvkectl bootstrap site -f sitespec.yaml --disable-mtls
 ```
 

@@ -125,7 +125,7 @@ requires:
 
 `repository` and `path` name where the chart comes from; one of them. A repository chart is selected by `version`. A path chart names no version: the chart at the path carries its own, and a release that carries the chart decides. The three artifact keys bind the item to an NVKR release by NVKR's output names. A manifest item binds the image its YAML runs the same way, with top-level `image: <repository>:<tag>` and `artifact: <name>`. `setFile` keeps a secret the operator holds out of the deploy path.
 
-`deploy/nvke-deploy.sh install --sitespec … --release …` renders a resolved copy of the deploy path (through `nvkectl`) into a private scratch directory, installs it and removes it. Charts from the release land in `charts/<item>/` and `chart.path` points at them. An item gets `release-images.yaml` and `site-values.yaml` as needed. A manifest item bound to an image gets a `kustomization.yaml`. Template items are rendered and become manifest items. At the top: `images.txt`, `site.env`, `nvkr-release.json` and a `.gitignore` that ignores the tree. These files live in the scratch tree for the install's duration.
+`deploy/nvke-deploy.sh apply --deploy-path … --sitespec … --release …` renders a resolved copy of the deploy path (through `nvkectl`) into a private scratch directory, applies it and removes it; `nvke-deploy.sh install` runs that as one of its stages. Charts from the release land in `charts/<item>/` and `chart.path` points at them. An item gets `release-images.yaml` and `site-values.yaml` as needed. A manifest item bound to an image gets a `kustomization.yaml`. Template items are rendered and become manifest items. At the top: `images.txt`, `site.env`, `nvkr-release.json` and a `.gitignore` that ignores the tree. These files live in the scratch tree for the install's duration.
 
 ### `argocd` — ArgoCD Applications
 
@@ -250,22 +250,6 @@ Each node in `.Cluster.Nodes`:
 |------------|------|-------------|
 | `.Name` | string | Node hostname |
 | `.IP` | string | Node IP address |
-
-### `.Registry`
-
-Credentials for images the site cannot stage locally. On a site controller the
-node's containerd is the cluster's containerd, so an imported image resolves
-with `imagePullPolicy: IfNotPresent` and needs no credential at all. CAPNICo is
-the exception: its published manifest names an image on `ghcr.io` that is not
-anonymously pullable, so a deploy path that installs it must template a
-`kubernetes.io/dockerconfigjson` Secret.
-
-| Expression | Type | Description |
-|------------|------|-------------|
-| `.Registry.NGCAPIKey` | string | NGC API key |
-| `.Registry.Server` | string | Registry host (e.g. `ghcr.io`) |
-| `.Registry.Username` | string | Registry username |
-| `.Registry.Token` | string | Registry token or password |
 
 ### `.Nico`
 
