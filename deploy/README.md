@@ -2,7 +2,7 @@
 
 Installs the NVKE management plane onto a site cluster that `nvkectl bootstrap site` left behind: Postgres, Temporal, SPIRE, CAPNICo, NKTP and the NVKE controller. One scenario: NVKE with CAPNICo on a NICo site.
 
-One script, `nvke-deploy.sh`, two commands. Read it before you run it. The guide [docs/site-bootstrap/install-site-controller.md](../docs/site-bootstrap/install-site-controller.md) explains each step.
+Two scripts: `check-site.sh` reports what the site still needs, `nvke-deploy.sh` installs the deploy path. Read them before you run them. The guide [docs/site-bootstrap/install-site-controller.md](../docs/site-bootstrap/install-site-controller.md) explains each step.
 
 ## Inputs
 
@@ -22,9 +22,9 @@ The install is a list of commands; [docs/site-bootstrap/install-site-controller.
 deploy/check-site.sh --sitespec sitespec.yaml --kubeconfig site.kubeconfig [--release release.json [--nvkr-run-dir DIR]]
 clusterctl init --kubeconfig site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
 deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --kubeconfig site.kubeconfig [--release release.json [--nvkr-run-dir DIR]]
-kubectl --kubeconfig site.kubeconfig apply --server-side -f releases/
 controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig site.kubeconfig
 nvkectl config set-site --name <site> --url http://<VIP>:30080 --kubeconfig site.kubeconfig
+nvkectl create machineimage -f machineimage.yaml && nvkectl create clusterrelease -f clusterrelease.yaml && nvkectl create nodepoolrelease -f nodepoolrelease.yaml
 ```
 
 ## check-site.sh
@@ -76,5 +76,5 @@ A chart comes from `chart.path` (a checkout directory, `helm dependency build` f
 ## Test
 
 ```bash
-make -C deploy test   # builds nvkectl, renders deploy/nico for a site and against a fake Run, runs install and apply in --dry-run
+make -C deploy test   # builds nvkectl, renders deploy/nico for a site and against a fake Run, runs check-site.sh against stub tools and the executor in --dry-run
 ```

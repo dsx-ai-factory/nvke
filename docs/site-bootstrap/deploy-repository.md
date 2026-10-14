@@ -4,7 +4,7 @@ A deploy path is a directory that lists the NVKE services in install order. It h
 
 NVKE ships one deploy path, [`deploy/nico`](https://github.com/dsx-ai-factory/nvke/tree/main/deploy/nico). `deploy/nvke-deploy.sh install` applies it as one of its steps, rendered for the site spec and the NVKR release. See [Install the Site Controller](install-site-controller.md) for the install and its inputs.
 
-The deploy path is the interface. The script is the reference way to apply it. An operator can apply the same items with their own tooling, or through GitOps. `deploy/nvke-deploy.sh apply --dry-run` prints every kubectl and helm call the script would make, in order.
+The deploy path is the interface. The script is the reference way to apply it. An operator can apply the same items with their own tooling, or through GitOps. `deploy/nvke-deploy.sh install --dry-run` prints every kubectl and helm call the script would make, in order.
 
 ## Layout
 
@@ -56,7 +56,7 @@ items:
 | `name` | Yes | The item's directory under the deploy path. For a `helm` item, also the default NVKR artifact name of its chart. Letters, digits, `-`, `_` and inner dots. |
 | `type` | Yes | `template`, `manifest` or `helm`. |
 
-The list order is the install order. Items are applied one at a time, and a failed item stops the run. Nothing is auto-detected: an item that is not listed is not applied, and an unknown type is refused before anything is applied.
+The list order is the install order. Items are applied one at a time, and a failed item stops the run. Nothing is auto-detected: an item that is not listed is not applied. `nvkectl` refuses an unknown type when it reads or renders the deploy path, so a rendered install applies nothing; the executor's own parser accepts the list as written and stops at the unknown item when it reaches it, after the items before it.
 
 The script reads the item list and an item's `release.yaml` through `deploy/lib/nvke-deploy-items.py`; `nvkectl render deploy-path` reads them through `cli/internal/deploypath`. Both accept the grammar shown here.
 
@@ -173,7 +173,7 @@ Every item is a Helm chart with values, or plain YAML, so another tool can deliv
 3. Wait for each `requires` entry before its chart. In GitOps that is a sync-wave boundary or a health check on the object.
 4. With a local NVKR Run (`--nvkr-run-dir`), import the images listed in `images.txt` into the node's containerd before the first item.
 
-The [GitOps option](install-site-controller.md#option-3-gitops) of the install guide maps these onto a GitOps tool. The steps around the deploy path, such as `clusterctl init` and the SPIRE exec-auth patch, are in the same guide and stay imperative.
+The [GitOps option](install-site-controller.md#gitops) of the install guide maps these onto a GitOps tool. The steps around the deploy path, such as `clusterctl init` and the SPIRE exec-auth patch, are in the same guide and stay imperative.
 
 ## Adding an Item
 

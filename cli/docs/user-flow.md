@@ -107,7 +107,6 @@ section of the site spec still needs. Fill that in and run
 deploy/check-site.sh --sitespec sitespec.yaml --kubeconfig my-tier0-site.kubeconfig --release release.json
 clusterctl init --kubeconfig my-tier0-site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
 deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --kubeconfig my-tier0-site.kubeconfig --release release.json
-kubectl --kubeconfig my-tier0-site.kubeconfig apply --server-side -f releases/
 controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig my-tier0-site.kubeconfig
 ```
 
@@ -115,16 +114,18 @@ A list of commands, in this order: the check reports what the cluster and
 this machine still need, with the fix, and prints the next two commands
 when everything passes; `clusterctl init` installs Cluster API at the
 pinned version; the executor renders the `deploy/nico` deploy path for the
-site and the release and applies it, item by item; your release resources
-follow; the last script patches the Cluster API controllers for SPIRE.
+site and the release and applies it, item by item; the last script patches
+the Cluster API controllers for SPIRE. Then point the CLI at the site (step
+5) and publish a `MachineImage`, `ClusterRelease` and `NodePoolRelease`
+with `nvkectl create`, as [Your first cluster](../../docs/first-cluster.md#7-publish-a-release)
+shows, before the first tenant cluster.
 [Install the Site Controller](../../docs/site-bootstrap/install-site-controller.md)
 gives each step, the inputs, removal and upgrade.
 
 The deploy path is the interface and the script is the reference way to apply
 it. `deploy/nico/nvke-deploy.yaml` lists the items in install order, and each
 item directory holds its chart pin, values and overlay, or its manifests;
-`--dry-run` prints every kubectl, helm and clusterctl call the script would
-make. An operator can apply the same items with their own tooling or through
+`--dry-run` prints every kubectl and helm call the script would make. An operator can apply the same items with their own tooling or through
 GitOps; [Deploy Path](../../docs/site-bootstrap/deploy-repository.md)
 describes the format.
 

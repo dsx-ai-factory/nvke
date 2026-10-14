@@ -37,7 +37,7 @@ This phase installs everything that makes the cluster an NVKE site:
 1. **Deploy the NVKE component stack** — the controller, Temporal, PostgreSQL, SPIRE, NKTP and CAPNICo, as the `deploy/nico` deploy path lists them. `deploy/nvke-deploy.sh` installs it from the site spec and an NVKR release description, one step of a short list of commands; your GitOps tooling can deliver the same items. See [Install the Site Controller](site-bootstrap/install-site-controller.md) and [Deploy Path](site-bootstrap/deploy-repository.md).
 2. **Configure CAPNICo** — the deploy path installed it in step 1; connect it to your NICo site with the `nico-credentials` Secret the same step rendered. Run `nvkectl get providers` to confirm `nico: CONFIGURED`.
 3. **Ingest the site into NVKE** — the NVKE team registers the site and applies the etcd encryption key from Day 0. This step requires coordination with the NVKE team; contact your NVKE onboarding contact with your site's kubeconfig and the etcd encryption key file from Day 0.
-4. **Create your first tenant cluster** — `nvkectl create cluster -f cluster.yaml`. See [Your First Cluster — Path C, Step 7](first-cluster.md#7-create-a-tenant-cluster).
+4. **Create your first tenant cluster** — `nvkectl create cluster -f cluster.yaml`. See [Your First Cluster — Path C, Step 8](first-cluster.md#8-create-a-tenant-cluster).
 
 **What Day 1 requires:**
 - A working NICo site with capacity allocated for the instance types your cluster spec uses

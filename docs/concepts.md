@@ -43,7 +43,7 @@ After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` installs them fr
 
 ArgoCD is a GitOps continuous delivery tool for Kubernetes. It watches a git repository for Kubernetes manifests and keeps the cluster in sync with what's declared there. When you push a change, ArgoCD detects the drift and reconciles the cluster.
 
-NVKE does not require ArgoCD. The deploy path is Helm charts with values and plain manifests, so a GitOps tool can deliver the same items and own ongoing reconciliation; the [GitOps option](site-bootstrap/install-site-controller.md#option-3-gitops) of the install guide describes what that takes.
+NVKE does not require ArgoCD. The deploy path is Helm charts with values and plain manifests, so a GitOps tool can deliver the same items and own ongoing reconciliation; the [GitOps option](site-bootstrap/install-site-controller.md#gitops) of the install guide describes what that takes.
 
 **Learn more:** https://argo-cd.readthedocs.io/en/stable/core_concepts/
 

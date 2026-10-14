@@ -39,18 +39,18 @@ The install is a list of commands, run in this order. Each one stands on its own
 1. **Check the site.** `deploy/check-site.sh --sitespec sitespec.yaml --kubeconfig site.kubeconfig --release release.json` prints one line per finding, with the fix: the tools and the `helm` pin, the checkout, the site spec, the release description and its declared qualification, the cluster API, an odd node count, the node architecture against `controllerStack.arch`, the control-plane taint the bootstrap removes, exactly one default StorageClass, the Cluster API version, egress and disk. It changes nothing and exits non-zero on a FAIL. When everything passes it prints the next two commands with your paths filled in. The StorageClass is yours to bring: which provisioner is right is a property of the hardware, so install the CSI driver for it and annotate its class `storageclass.kubernetes.io/is-default-class=true`; a lab can use rancher local-path-provisioner.
 2. **Install Cluster API.** `clusterctl init --kubeconfig site.kubeconfig --core cluster-api:<version> --bootstrap kubeadm:<version> --control-plane kubeadm:<version> --wait-providers`, with the version `make/tool-versions.mk` pins; the check prints the exact line. cert-manager comes with it. `clusterctl init` does not upgrade, so a Cluster API of another version is a finding in step 1, not something to install over. See [Upgrade](../operations/upgrade.md).
 3. **Install the stack.** `deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --kubeconfig site.kubeconfig --release release.json` renders `deploy/nico` for the site and against the release into a private scratch directory, applies it item by item with `--wait`, and removes the scratch directory. `--dry-run` prints every kubectl and helm call instead. A failed helm release is uninstalled before the rerun: `helm --kubeconfig site.kubeconfig uninstall <release> -n <namespace>`.
-4. **Publish the release resources.** `kubectl --kubeconfig site.kubeconfig apply --server-side -f releases/`, your `MachineImage`, `ClusterRelease` and `NodePoolRelease`, as [Your first cluster](../first-cluster.md#7-publish-a-release) shows. The chart installed their CRDs in step 3.
-5. **Patch the Cluster API controllers for SPIRE.** `controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig site.kubeconfig` gives them the SPIFFE exec-auth plugin, so Cluster API reaches tenant clusters with a SPIFFE JWT rather than a stored admin kubeconfig. After step 3, because the script checks the rollout only once the SPIRE CSI driver, which the `spire` item installs, is registered. `clusterctl upgrade` drops the patch; run the script again after it.
-6. **Register the site and admit your networks.** On the machine the CLI lives on: `nvkectl config set-site --name <site> --url http://<VIP>:30080 --kubeconfig site.kubeconfig`. The chart admits the controller API from pods in the cluster only; a NetworkPolicy in `nke-controller` selecting `app.kubernetes.io/name: nke-controller` that admits your client CIDRs on port 8080 opens it to your machines.
-7. **Verify.** `nvkectl get providers`, and `curl http://<VIP>:30080/api/version` from an admitted machine.
+4. **Patch the Cluster API controllers for SPIRE.** `controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig site.kubeconfig` gives them the SPIFFE exec-auth plugin, so Cluster API reaches tenant clusters with a SPIFFE JWT rather than a stored admin kubeconfig. After step 3, because the script checks the rollout only once the SPIRE CSI driver, which the `spire` item installs, is registered. `clusterctl upgrade` drops the patch; run the script again after it.
+5. **Register the site and admit your networks.** On the machine the CLI lives on: `nvkectl config set-site --name <site> --url http://<VIP>:30080 --kubeconfig site.kubeconfig`. Port 30080 is the plain-HTTP NodePort the chart exposes and the CLI sends a bearer token to it, so use it from a trusted network only. The chart admits the controller API from pods in the cluster only; a NetworkPolicy in `nke-controller` selecting `app.kubernetes.io/name: nke-controller` that admits your client CIDRs on port 8080 opens it to your machines.
+6. **Publish the release resources.** `nvkectl create machineimage -f machineimage.yaml`, then `nvkectl create clusterrelease -f clusterrelease.yaml` and `nvkectl create nodepoolrelease -f nodepoolrelease.yaml`, through the controller API you just registered. The files are `nvkectl create` inputs, not manifests; [Your first cluster](../first-cluster.md#7-publish-a-release) shows the three and the examples to copy. The chart installed their CRDs in step 3.
+7. **Verify.** `nvkectl get providers` and `nvkectl get machineimages`, and `curl http://<VIP>:30080/api/version` from an admitted machine.
 
 After a failure in step 3, `deploy/check-site.sh --kubeconfig site.kubeconfig --diagnostics` writes nodes, pods, events, helm releases and the controller logs under `$XDG_STATE_HOME/nvke/diagnostics/`.
 
-The kind lane, `controller/hack/ci/kind-stack-from-release.sh`, runs steps 1, 2, 3 and 5 in this order on a kind node from a three-artifact release, so the list above is executed in CI.
+The kind lane, `controller/hack/ci/kind-stack-from-release.sh`, runs steps 1, 2, 3 and 4 in this order on a kind node from a three-artifact release, so the list above is executed in CI.
 
 ### Taking the executor apart
 
-Step 3 is two things you can run yourself. `nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --release release.json --out <dir>` writes the copy resolved for the site and the release into a directory only you can read; it holds the site's credentials, so delete it when you are done. Then apply the items in the order `nvke-deploy.yaml` lists them: a manifest item is `kubectl apply --server-side -f` on each of its files, or on `kubectl kustomize` of the directory when the render wrote a `kustomization.yaml`; a helm item is `helm upgrade --install <release> <chart> -n <namespace> --wait` with the item's values files in order, and its `release.yaml` names the chart, release, values and `requires`. Wait for each `requires` entry with `kubectl wait` before its chart. `deploy/nvke-deploy.sh install --dry-run` prints exactly this for your site.
+Step 3 is two things you can run yourself. `nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --release release.json --out <dir>` writes the copy resolved for the site and the release into a directory only you can read; it holds the site's credentials, so delete it when you are done. Then apply the items in the order `nvke-deploy.yaml` lists them: a manifest item is `kubectl apply --server-side -f` on each of its files, or on `kubectl kustomize` of the directory when the render wrote a `kustomization.yaml`; a helm item is `helm upgrade --install <release> <chart> -n <namespace> --wait` with the item's values files in order, and its `release.yaml` names the chart, release, values and `requires`. A path chart with a `Chart.lock`, which the NKTP chart has, needs `helm dependency build` first. Each `chart.setFile` entry an item declares is passed as `--set-file`; an item that declares none has none. Wait for each `requires` entry with `kubectl wait` before its chart. `deploy/nvke-deploy.sh install --dry-run` prints exactly this for your site.
 
 ### GitOps
 
@@ -59,9 +59,10 @@ Every item in `deploy/nico/nvke-deploy.yaml` is a Helm chart plus values files, 
 - **Source.** The clone is a valid git source. The controller and NKTP charts are in the tree, at `controller/deploy/charts/controller` and `nktp/deploy/charts/nktp`. Postgres, SPIRE CRDs, Temporal and SPIRE come from the references in the release. An OCI registry is a valid Helm source, so the same references serve Argo CD.
 - **Order.** The item list order maps to sync waves, one wave per item.
 - **The Certificate.** The `spire` item declares a `requires:` on the `oidc-provider-upstream-ca` Certificate. In GitOps that is a wave boundary or a health check on the Certificate, not a `kubectl wait`.
-- **Secrets.** The `nvke-base-config` item renders two Secrets: `nico-credentials` and `dgxc-tenant-credentials`. Under GitOps those come from the operator's secret store. The namespaces and the Certificate chain in the same item are plain YAML and stay in git.
+- **Rendered objects.** The `nvke-base-config` item renders two Secrets, `nico-credentials` and `dgxc-tenant-credentials`, and the `nktp-cluster` ConfigMap, which the NKTP collectors read through a required `configMapKeyRef` and do not start without. Under GitOps the Secrets come from the operator's secret store and the ConfigMap is committed with the site's name. The namespaces and the Certificate chain in the same item are plain YAML and stay in git.
+- **Charts.** A path chart with a `Chart.lock` needs its dependencies built, and a `chart.setFile` entry becomes a values override, the same as by hand.
 - **Per-site values.** The `site-values.yaml` files the render writes belong in your own repository or your secret store.
-- **Outside GitOps.** Steps 1, 2, 5 and 6 stay as they are: a check, `clusterctl init`, the exec-auth patch and your own machine.
+- **Outside GitOps.** Steps 1, 2, 4, 5 and 6 stay as they are: a check, `clusterctl init`, the exec-auth patch, and your own machine for the registration and the releases.
 
 [Deploy Path](deploy-repository.md#applying-it-another-way) lists what an executor has to do.
 
@@ -70,6 +71,7 @@ Every item in `deploy/nico/nvke-deploy.yaml` is a Helm chart plus values files, 
 Uninstall in reverse item order, then remove Cluster API:
 
 ```bash
+export KUBECONFIG=site.kubeconfig
 helm uninstall nke-controller -n nke-controller
 helm uninstall spire -n spire-server
 helm uninstall temporal -n temporal
@@ -83,7 +85,7 @@ kubectl delete namespace nke-controller nke-system nktp postgres temporal spire-
 
 The last line removes what the manifest and template items created and what Helm leaves behind: the `nico-credentials` and `dgxc-tenant-credentials` Secrets, the `nktp-cluster` ConfigMap, the SPIRE Services and TPM hashes, the Certificate chain, and the PersistentVolumeClaims, whose volumes go with them under the default reclaim policy. `cert-manager` belongs to Cluster API and stays until `clusterctl delete --all --include-crd` or your own cleanup. The `capi-spiffe-exec-auth` patch goes with the Cluster API controllers.
 
-Helm leaves PersistentVolumeClaims behind. Delete the `postgres` and `spire-server` PVCs yourself when the data is no longer needed.
+Deleting the namespaces deletes the PersistentVolumeClaims with them. Take a copy of the Postgres data first if you still need it.
 
 ## Upgrade
 
@@ -98,5 +100,5 @@ The check reports Cluster API at its version; the stack is upgraded in place. [T
 
 ## Next Steps
 
-- [Your first cluster](../first-cluster.md#7-create-a-tenant-cluster) — create a tenant cluster on the registered site
+- [Your first cluster](../first-cluster.md#8-create-a-tenant-cluster) — create a tenant cluster on the registered site
 - [Infrastructure Providers](infrastructure-providers.md) — prove the NICo credentials before committing hardware

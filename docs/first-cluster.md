@@ -371,18 +371,12 @@ common failures with their fixes.
 
 ### 5. Install an infrastructure provider
 
-Install Cluster API and CAPNICo onto the site cluster **before** the site
-controller. CWE reads the `Machine` and `NicoMachine` CRDs once, at process
-start, and silently skips three of its controllers when they are absent — so
-installing it first means restarting it afterward, or losing them until you do.
-
-The control-plane nodes must be schedulable first or every `--wait` hangs.
-`nvkectl bootstrap site` removes the taint; check with
-`kubectl --kubeconfig ./my-site.kubeconfig get nodes -o jsonpath='{.items[*].spec.taints}'`,
-and if it is still there run
-`kubectl --kubeconfig ./my-site.kubeconfig taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-`.
-Full steps, both a Helm and a `clusterctl` route, and how to verify the result
-with `kubectl`: [Infrastructure Providers](site-bootstrap/infrastructure-providers.md).
+Cluster API and CAPNICo are part of the next step: the install guide's list
+installs Cluster API with `clusterctl init` and CAPNICo from the `deploy/nico`
+deploy path, in that order and before CWE. Do not install them separately
+first; [Infrastructure Providers](site-bootstrap/infrastructure-providers.md)
+explains the provider, the order, and how to prove the NICo credentials once
+the site is up.
 
 ### 6. Install the site controller
 
@@ -395,9 +389,12 @@ NKTP and CWE, with the commands [Install the Site Controller](site-bootstrap/ins
 deploy path, the site spec and an NVKR release description.
 
 ```bash
-nvkectl config set-site --name my-site --url https://<cwe-url> \
+nvkectl config set-site --name my-site --url http://<VIP>:30080 \
   --kubeconfig ./my-site.kubeconfig
 ```
+
+Port 30080 is the plain-HTTP NodePort the chart exposes, and the CLI sends a
+bearer token to it, so use it from a trusted network only.
 
 That kubeconfig is also how `nvkectl` authenticates to CWE once the site has API
 authentication on. The CLI always mints for `nke-clients/nke-client` and reads
@@ -407,8 +404,8 @@ account, admit it, and grant the kubeconfig identity the permissions in
 [Configuring NVKE API Authentication](../controller/docs/configuring-api-authentication.md).
 Without them, `get clusters` fails at minting or CWE returns 403.
 
-With the site registered, `nvkectl` can report on the provider you installed in
-step 5:
+With the site registered, `nvkectl` can report on the provider the install put
+in place:
 
 ```bash
 nvkectl get providers      # nico must read CONFIGURED before you create anything
