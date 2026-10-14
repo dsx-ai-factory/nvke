@@ -94,8 +94,8 @@ func (a *Activities) labelNode(ctx context.Context, input LabelNodeInput) (Label
 	}
 
 	if len(labels) == 0 {
-		return LabelNodeResult{}, fmt.Errorf("no labels to apply to node (AddConfigProfileLabels=%v, explicit labels provided=%v)",
-			input.AddConfigProfileLabels, len(input.Labels) > 0)
+		logger.Info("No labels to apply to node", "nodeID", input.NodeID, "nodeName", node.Name)
+		return LabelNodeResult{Output: fmt.Sprintf("node/%s has no labels to apply", node.Name)}, nil
 	}
 
 	logger.Info("Labeling node", "nodeID", input.NodeID, "labels", labels)
