@@ -41,7 +41,7 @@ This phase installs everything that makes the cluster an NVKE site:
 
 **What Day 1 requires:**
 - A working NICo site with capacity allocated for the instance types your cluster spec uses
-- An ArgoCD-compatible deploy repository with your environment's SBOM values
+- The site spec with its `controllerStack` section filled in, and the NVKR release description if you install from a release
 - The etcd encryption key from Day 0
 
 **See:** [Your First Cluster](first-cluster.md) · [NICo documentation](https://docs.nvidia.com/infra-controller/documentation/home)

@@ -83,7 +83,7 @@ Every item in `deploy/nico/nvke-deploy.yaml` is a Helm chart plus values files, 
 - **Per-site values.** The `site-values.yaml` files the render writes belong in your own repository or your secret store.
 - **Imperative steps.** `clusterctl init` and `controller/hack/apply-capi-spiffe-exec-auth.sh` stay imperative, outside GitOps. The other steps do not change.
 
-[Deploy Path](deploy-repository.md#applying-it-another-way) lists what an executor has to do, and the `argocd` item type for a deploy path that carries Argo CD Applications.
+[Deploy Path](deploy-repository.md#applying-it-another-way) lists what an executor has to do.
 
 ## Remove
 

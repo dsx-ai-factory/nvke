@@ -25,13 +25,12 @@ What you get after bootstrap depends on whether your environment includes a [NVI
 
 ## What `nvkectl bootstrap site` Does
 
-`nvkectl bootstrap site` has one job on pre-provisioned nodes: turn your prepared nodes into a **Kubernetes cluster**. It does not install your site stack, GitOps controller, or application workloads.
+`nvkectl bootstrap site` has one job on pre-provisioned nodes: turn your prepared nodes into a **Kubernetes cluster**. It does not install the site controller stack or application workloads.
 
 After bootstrap completes:
 
 1. **Verify the cluster** is healthy (see [Step 3](#step-3-verify-the-cluster)).
-2. **If self-managed**, install your environment SBOM (NVKE, NICo, Temporal, Postgres, SPIRE, and the rest).
-3. **Deploy your GitOps tooling** — ArgoCD, Flux, or whatever you use for an app-of-apps layer.
+2. **Install the site controller** from the `deploy/nico` deploy path, with the script, by hand or through GitOps. See [Install the Site Controller](install-site-controller.md).
 
 ## Prerequisites
 

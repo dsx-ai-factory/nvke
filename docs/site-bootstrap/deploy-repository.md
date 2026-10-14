@@ -54,7 +54,7 @@ items:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | Yes | The item's directory under the deploy path. For a `helm` item, also the default NVKR artifact name of its chart. Letters, digits, `-`, `_` and inner dots. |
-| `type` | Yes | `template`, `manifest`, `helm` or `argocd`. |
+| `type` | Yes | `template`, `manifest` or `helm`. |
 
 The list order is the install order. Items are applied one at a time, and a failed item stops the run. Nothing is auto-detected: an item that is not listed is not applied, and an unknown type is refused before anything is applied.
 
@@ -147,10 +147,6 @@ requires:
 
 The install runs `helm upgrade --install --wait` for each item, with the item's namespace and values, and retries a chart download that fails with a server error. With a release, the release decides the version of every chart it carries, and a `release.yaml` that pins another version gets a warning. The pin decides only for a chart the release lacks.
 
-### `argocd`: an Argo CD Application
-
-An argocd item holds one `application.yaml`, an `argoproj.io/v1alpha1` Application. The script applies it with `kubectl apply --server-side` and moves on. It does not wait for the Application to sync, and it does not install Argo CD. `deploy/nico` has no argocd item; the type is there for a deploy path of your own that hands items to an Argo CD you run.
-
 ## Rendering for a Site and a Release
 
 The committed deploy path is site-independent and names no digest. `nvkectl render deploy-path` writes a copy resolved for the site spec, the release, or both. The committed files are copied, never edited. The copy has:
@@ -177,7 +173,7 @@ Every item is a Helm chart with values, or plain YAML, so another tool can deliv
 3. Wait for each `requires` entry before its chart. In GitOps that is a sync-wave boundary or a health check on the object.
 4. With a local NVKR Run (`--nvkr-run-dir`), import the images `images.txt` names into the node's containerd before the first item.
 
-The [GitOps option](install-site-controller.md#option-3-gitops) of the install guide maps these onto Argo CD. The steps around the deploy path, such as `clusterctl init` and the SPIRE exec-auth patch, are in the same guide and stay imperative.
+The [GitOps option](install-site-controller.md#option-3-gitops) of the install guide maps these onto a GitOps tool. The steps around the deploy path, such as `clusterctl init` and the SPIRE exec-auth patch, are in the same guide and stay imperative.
 
 ## Adding an Item
 
