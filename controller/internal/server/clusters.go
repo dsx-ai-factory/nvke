@@ -368,6 +368,9 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 	if err := validateCreateClusterLevelControlPlane(req, nodePools, providerType, s.allowlistedLabelKeys); err != nil {
 		return err
 	}
+	if req.ControlPlaneConfig == nil {
+		return fmt.Errorf("controlPlaneConfig is required")
+	}
 	if err := validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, req.ControlPlaneConfig.DesiredCount); err != nil {
 		return err
 	}
