@@ -331,7 +331,7 @@ resources: {}
 supportedInfraProviders: "nico"
 
 nodeMetadata:
-  # -- Label keys that should be allowed under kubernetes.io and k8s.io (and their subdomains). By default, deployed controller API rejects pool labels under these domains.
+  # -- Allowlist of label keys under the reserved kubernetes.io and k8s.io domains. Intended for operators whose deployments specifically need some Kubernetes labels. Use with care: these keys can conflict with Kubernetes core components.
   allowlistedLabelKeys: []
 
 # -- Additional environment variables to inject into the controller container. A
