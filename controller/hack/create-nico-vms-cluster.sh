@@ -112,7 +112,7 @@ BODY=$(cat <<EOF
     "nico": {
       "instanceTypePreference": ["${INSTANCE_TYPE_ID}"],
       "vpcPrefixIDs": ["${VPC_PREFIX_ID}"],
-      "osProfile": "${OS_PROFILE}",
+      "release": "${OS_PROFILE}",
       "configProfile": "${CP_CONFIG_PROFILE}"
     }
   },
@@ -123,7 +123,7 @@ BODY=$(cat <<EOF
       "nico": {
         "vpcPrefixIDs": ["${VPC_PREFIX_ID}"],
         "instanceTypeID": "${INSTANCE_TYPE_ID}",
-        "osProfile": "${OS_PROFILE}",
+        "release": "${OS_PROFILE}",
         "configProfile": "${WORKER_CONFIG_PROFILE}"
       },
       "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",

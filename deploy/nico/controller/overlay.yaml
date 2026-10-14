@@ -253,7 +253,7 @@ temporal:
 profiles:
   path: /profiles
   # Profiles are a separate content image, materialised by an init container.
-  # Without it /api/osProfiles returns 500 and nothing can be provisioned --
+  # Without it /api/releases returns 500 and nothing can be provisioned --
   # the profiles directory may be empty at startup, but it must exist by the
   # time a cluster is created.
   #

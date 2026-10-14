@@ -1003,7 +1003,7 @@ func TestNodeService_ListNodes_ControlPlaneRollout(t *testing.T) {
 	// the drift without enumerating fields itself.
 	assert.ElementsMatch(t, []api.ControlPlaneRolloutChange{
 		{Field: "kubernetesVersion", From: "1.33.6", To: "1.34.2"},
-		{Field: "osProfile", From: "os-v1", To: "os-v2"},
+		{Field: "release", From: "os-v1", To: "os-v2"},
 		{Field: "configProfile", From: "cfg-v1", To: "cfg-v2"},
 	}, drifted.ControlPlaneRollout.Changes)
 

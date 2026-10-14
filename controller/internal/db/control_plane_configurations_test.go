@@ -213,7 +213,7 @@ func TestComputeControlPlaneRolloutChanges(t *testing.T) {
 			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
 				return withNicoProfiles(s, "os-v2", "cfg-v1")
 			},
-			want: []db.ControlPlaneRolloutChange{{Field: "osProfile", From: "os-v1", To: "os-v2"}},
+			want: []db.ControlPlaneRolloutChange{{Field: "release", From: "os-v1", To: "os-v2"}},
 		},
 		{
 			name: "config profile differs",
@@ -230,7 +230,7 @@ func TestComputeControlPlaneRolloutChanges(t *testing.T) {
 			},
 			want: []db.ControlPlaneRolloutChange{
 				{Field: "kubernetesVersion", From: "1.34.2", To: "1.34.3"},
-				{Field: "osProfile", From: "os-v1", To: "os-v2"},
+				{Field: "release", From: "os-v1", To: "os-v2"},
 				{Field: "configProfile", From: "cfg-v1", To: "cfg-v2"},
 			},
 		},

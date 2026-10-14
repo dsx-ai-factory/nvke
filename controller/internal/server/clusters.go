@@ -865,7 +865,7 @@ func hasNestedNicoControlPlanePatch(n *api.NicoControlPlaneProviderUpdate) bool 
 	return n.SubnetIDs != nil ||
 		n.VpcPrefixIDs != nil ||
 		n.SSHKeyGroupIDs != nil ||
-		n.OSProfile != nil ||
+		n.Release != nil ||
 		n.ConfigProfile != nil
 }
 
@@ -932,8 +932,8 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		if req.Nico.VpcPrefixIDs != nil {
 			nico.VpcPrefixIDs = uuidSliceDedupe(uuidSliceFromAPI(req.Nico.VpcPrefixIDs))
 		}
-		if req.Nico.OSProfile != nil {
-			nico.OSProfile = *req.Nico.OSProfile
+		if req.Nico.Release != nil {
+			nico.OSProfile = *req.Nico.Release
 		}
 		if req.Nico.ConfigProfile != nil {
 			nico.ConfigProfile = *req.Nico.ConfigProfile

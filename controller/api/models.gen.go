@@ -281,7 +281,7 @@ type ControlPlaneConfigHistory struct {
 
 // ControlPlaneRolloutChange One rollout-relevant field whose pinned value differs from the desired value, as plain strings.
 type ControlPlaneRolloutChange struct {
-	// Field The rollout-relevant field that changed (e.g. kubernetesVersion, osProfile).
+	// Field The rollout-relevant field that changed (e.g. kubernetesVersion, release).
 	Field string `json:"field"`
 
 	// From The value the node is currently pinned to.
@@ -291,7 +291,7 @@ type ControlPlaneRolloutChange struct {
 	To string `json:"to"`
 }
 
-// ControlPlaneRolloutStatus Control-plane nodes only. Drift is computed on the OS profile (osProfile) and
+// ControlPlaneRolloutStatus Control-plane nodes only. Drift is computed on the release and
 // the Kubernetes version. Resolve pinnedConfigurationID and desiredConfigurationID
 // with GET /clusters/{clusterID}/control-plane/configHistory.
 type ControlPlaneRolloutStatus struct {
@@ -301,7 +301,7 @@ type ControlPlaneRolloutStatus struct {
 	// Actionable The node can be replaced now.
 	Actionable bool `json:"actionable"`
 
-	// Changes Each with field, from, to as plain strings. Drift is computed on the OS profile (osProfile) and the Kubernetes version.
+	// Changes Each with field, from, to as plain strings. Drift is computed on the release and the Kubernetes version.
 	Changes []ControlPlaneRolloutChange `json:"changes,omitempty"`
 
 	// PinnedConfigurationID Configuration the node was built from.
@@ -374,7 +374,7 @@ type CreateClusterControlPlaneConfig struct {
 	// MaxSurge Extra control-plane nodes allowed during a rollout (0 or 1).
 	MaxSurge *int `json:"maxSurge,omitempty"`
 
-	// Nico NICo settings for control-plane nodes at creation. osProfile is required,
+	// Nico NICo settings for control-plane nodes at creation. release is required,
 	// and exactly one of subnetIDs and vpcPrefixIDs is required.
 	Nico *NicoControlPlaneProviderCreate `json:"nico,omitempty"`
 
@@ -483,7 +483,7 @@ type CreateNodePoolRequest struct {
 	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
 
-	// Nico NICo settings for a node pool. instanceTypeID and osProfile are required,
+	// Nico NICo settings for a node pool. instanceTypeID and release are required,
 	// and exactly one of subnetIDs and vpcPrefixIDs is required.
 	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
 
@@ -631,10 +631,10 @@ type ListNodesResponse struct {
 	Nodes []Node `json:"nodes"`
 }
 
-// ListOSProfilesResponse A list of OS profiles.
-type ListOSProfilesResponse struct {
-	// OsProfiles The list of OS profiles
-	OsProfiles []OSProfile `json:"osProfiles"`
+// ListReleasesResponse A list of releases.
+type ListReleasesResponse struct {
+	// Releases The list of releases
+	Releases []Release `json:"releases"`
 }
 
 // MachineHealthIssue Flags the underlying machine for repair.
@@ -674,8 +674,8 @@ type NicoControlPlaneProvider struct {
 	// InstanceTypePreference Ordered list of acceptable NICo instance types; index 0 is the highest priority.
 	InstanceTypePreference []openapi_types.UUID `json:"instanceTypePreference,omitempty"`
 
-	// OSProfile Name of an OS profile the Operator has supplied to the management plane.
-	OSProfile string `json:"osProfile,omitempty"`
+	// Release Name of a release the Operator has supplied to the management plane.
+	Release string `json:"release,omitempty"`
 
 	// SSHKeyGroupIDs SSH key groups for node access. Can be updated.
 	SSHKeyGroupIDs []openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
@@ -687,7 +687,7 @@ type NicoControlPlaneProvider struct {
 	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
-// NicoControlPlaneProviderCreate NICo settings for control-plane nodes at creation. osProfile is required,
+// NicoControlPlaneProviderCreate NICo settings for control-plane nodes at creation. release is required,
 // and exactly one of subnetIDs and vpcPrefixIDs is required.
 type NicoControlPlaneProviderCreate struct {
 	// ConfigProfile Deprecated: Config profile name for the control-plane nodes. Optional; when omitted the nodes run no config profile hooks or labels.
@@ -696,8 +696,8 @@ type NicoControlPlaneProviderCreate struct {
 	// InstanceTypePreference Ordered list of acceptable NICo instance types; index 0 is the highest priority.
 	InstanceTypePreference []openapi_types.UUID `json:"instanceTypePreference,omitempty"`
 
-	// OSProfile Name of an OS profile the Operator has supplied to the management plane.
-	OSProfile string `json:"osProfile,omitempty"`
+	// Release Name of a release the Operator has supplied to the management plane.
+	Release string `json:"release,omitempty"`
 
 	// SSHKeyGroupIDs SSH key groups for node access. Can be updated.
 	SSHKeyGroupIDs []openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
@@ -718,8 +718,8 @@ type NicoControlPlaneProviderUpdate struct {
 	// InstanceTypePreference Ordered list of acceptable NICo instance types; index 0 is the highest priority.
 	InstanceTypePreference []openapi_types.UUID `json:"instanceTypePreference,omitempty"`
 
-	// OSProfile Name of an OS profile. Changing it starts a control-plane rollout.
-	OSProfile *string `json:"osProfile,omitempty"`
+	// Release Name of a release. Changing it starts a control-plane rollout.
+	Release *string `json:"release,omitempty"`
 
 	// SSHKeyGroupIDs SSH key groups for node access. Can be updated.
 	SSHKeyGroupIDs []openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
@@ -731,7 +731,7 @@ type NicoControlPlaneProviderUpdate struct {
 	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
-// NicoNodePoolProvider NICo settings for a node pool. instanceTypeID and osProfile are required,
+// NicoNodePoolProvider NICo settings for a node pool. instanceTypeID and release are required,
 // and exactly one of subnetIDs and vpcPrefixIDs is required.
 type NicoNodePoolProvider struct {
 	// ConfigProfile Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
@@ -749,8 +749,8 @@ type NicoNodePoolProvider struct {
 	// NvLinkLogicalPartitionID NVLink logical partition. Fixed at creation.
 	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
 
-	// OSProfile Name of an OS profile the Operator has supplied to the management plane.
-	OSProfile string `json:"osProfile,omitempty"`
+	// Release Name of a release the Operator has supplied to the management plane.
+	Release string `json:"release,omitempty"`
 
 	// SSHKeyGroupIDs SSH key groups for node access. Fixed at creation.
 	SSHKeyGroupIDs *[]openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
@@ -773,9 +773,9 @@ type NicoNodePoolProviderUpdate struct {
 	// DiskSelectionStrategy Which disk the OS is installed on. Default smallest.
 	DiskSelectionStrategy *DiskSelectionStrategy `json:"diskSelectionStrategy,omitempty"`
 
-	// OSProfile Name of an OS profile. Changing it rolls the pool's nodes to the new profile. An
-	// empty string is rejected: a pool always has an OS profile.
-	OSProfile *string `json:"osProfile,omitempty"`
+	// Release Name of a release. Changing it rolls the pool's nodes to the new release. An
+	// empty string is rejected: a pool always has a release.
+	Release *string `json:"release,omitempty"`
 
 	// SubnetIDs Replaces the list; [] clears it. Subnets, for sites without native networking.
 	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
@@ -804,8 +804,8 @@ type NicoNodeSetProvider struct {
 	// DiskSelectionStrategy Which disk the OS is installed on. Default smallest.
 	DiskSelectionStrategy DiskSelectionStrategyCreate `json:"diskSelectionStrategy,omitempty"`
 
-	// OSProfile Name of an OS profile the Operator has supplied to the management plane.
-	OSProfile string `json:"osProfile,omitempty"`
+	// Release Name of a release the Operator has supplied to the management plane.
+	Release string `json:"release,omitempty"`
 
 	// SubnetIDs Subnets, for sites without native networking.
 	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
@@ -932,7 +932,7 @@ type NodeConditions struct {
 // Maximum prefix length depends on cluster name length.
 type NodeNamePrefix = string
 
-// NodePool A group of worker nodes sharing an instance type, OS profile and Kubernetes version.
+// NodePool A group of worker nodes sharing an instance type, release and Kubernetes version.
 type NodePool struct {
 	// ID Node pool ID.
 	ID openapi_types.UUID `json:"id"`
@@ -1044,7 +1044,7 @@ type NodePoolCreateConfig struct {
 	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
 
-	// Nico NICo settings for a node pool. instanceTypeID and osProfile are required,
+	// Nico NICo settings for a node pool. instanceTypeID and release are required,
 	// and exactly one of subnetIDs and vpcPrefixIDs is required.
 	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
 
@@ -1115,13 +1115,13 @@ type NodeTaint struct {
 // NodeTaintEffect Kubernetes taint effect.
 type NodeTaintEffect string
 
-// OSProfile An OS profile available to the management plane.
-type OSProfile struct {
-	// Name The name of the OS profile
+// Release A release available to the management plane.
+type Release struct {
+	// Name The name of the release
 	Name string `json:"name"`
 }
 
-// UpdateClusterControlPlaneConfig Changes to `osProfile` or the Kubernetes version start a control-plane
+// UpdateClusterControlPlaneConfig Changes to `release` or the Kubernetes version start a control-plane
 // rollout. All fields are optional. A provider payload that does not match the
 // cluster's provider is rejected with 400.
 // Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
@@ -1158,7 +1158,7 @@ type UpdateClusterControlPlaneConfig struct {
 
 // UpdateClusterRequest Changes to a cluster. All fields are optional; unknown fields are rejected.
 type UpdateClusterRequest struct {
-	// ControlPlaneConfig Changes to `osProfile` or the Kubernetes version start a control-plane
+	// ControlPlaneConfig Changes to `release` or the Kubernetes version start a control-plane
 	// rollout. All fields are optional. A provider payload that does not match the
 	// cluster's provider is rejected with 400.
 	// Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not

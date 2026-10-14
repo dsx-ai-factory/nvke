@@ -177,7 +177,7 @@ func cloneRawMessages(in []json.RawMessage) []json.RawMessage {
 // ControlPlaneRolloutChange is a single rollout-relevant field that differs
 // between two control-plane config snapshots.
 type ControlPlaneRolloutChange struct {
-	Field string // "kubernetesVersion", "osProfile", or "configProfile"
+	Field string // "kubernetesVersion", "release", or "configProfile"
 	From  string
 	To    string
 }
@@ -198,7 +198,7 @@ func ComputeControlPlaneRolloutChanges(pinned, desired ControlPlaneConfigSpec) [
 	pinnedNico, _ := pinned.NicoProvider()
 	desiredNico, _ := desired.NicoProvider()
 	if pinnedNico.OSProfile != desiredNico.OSProfile {
-		changes = append(changes, ControlPlaneRolloutChange{Field: "osProfile", From: pinnedNico.OSProfile, To: desiredNico.OSProfile})
+		changes = append(changes, ControlPlaneRolloutChange{Field: "release", From: pinnedNico.OSProfile, To: desiredNico.OSProfile})
 	}
 	if pinnedNico.ConfigProfile != desiredNico.ConfigProfile {
 		changes = append(changes, ControlPlaneRolloutChange{Field: "configProfile", From: pinnedNico.ConfigProfile, To: desiredNico.ConfigProfile})

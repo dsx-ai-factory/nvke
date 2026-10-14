@@ -437,7 +437,7 @@ nvkectl create nodepoolrelease -f nodepoolrelease.yaml
 nvkectl get machineimages      # the name you just published
 ```
 
-That name is what a cluster asks for as its `osProfile`. Published content is
+That name is what a cluster asks for as its `release`. Published content is
 immutable, so changing a release means publishing a new name.
 
 ### 8. Create a tenant cluster
@@ -449,7 +449,7 @@ nvkectl get clusters
 
 Start from [`cli/examples/nico-cluster.yaml`](../cli/examples/nico-cluster.yaml).
 Replace every UUID and `orgID` — a leftover placeholder returns 500 rather than
-a validation error. Every `osProfile` has to name a release already published on
+a validation error. Every `release` has to name a release already published on
 the site — the one from step 7. Every `configProfile` has to name a config
 profile the site controller already holds, and that content is maintained
 outside this repository.
@@ -511,7 +511,7 @@ controlPlaneConfig:
       - 00000000-0000-0000-0000-000000000000
     sshKeyGroupIDs:
       - 00000000-0000-0000-0000-000000000000
-    osProfile: nke-260625-24.04-x86-fde
+    release: nke-260625-24.04-x86-fde
     configProfile: default-cp
 ```
 

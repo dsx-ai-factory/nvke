@@ -157,8 +157,8 @@ type ClientInterface interface {
 	// GetNode request
 	GetNode(ctx context.Context, nodeID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ListOSProfiles request
-	ListOSProfiles(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ListReleases request
+	ListReleases(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ListClusters(ctx context.Context, params *ListClustersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -437,8 +437,8 @@ func (c *Client) GetNode(ctx context.Context, nodeID openapi_types.UUID, reqEdit
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListOSProfiles(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListOSProfilesRequest(c.Server)
+func (c *Client) ListReleases(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListReleasesRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -1241,8 +1241,8 @@ func NewGetNodeRequest(server string, nodeID openapi_types.UUID) (*http.Request,
 	return req, nil
 }
 
-// NewListOSProfilesRequest generates requests for ListOSProfiles
-func NewListOSProfilesRequest(server string) (*http.Request, error) {
+// NewListReleasesRequest generates requests for ListReleases
+func NewListReleasesRequest(server string) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -1250,7 +1250,7 @@ func NewListOSProfilesRequest(server string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/osProfiles")
+	operationPath := fmt.Sprintf("/releases")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1375,8 +1375,8 @@ type ClientWithResponsesInterface interface {
 	// GetNodeWithResponse request
 	GetNodeWithResponse(ctx context.Context, nodeID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetNodeClientResponse, error)
 
-	// ListOSProfilesWithResponse request
-	ListOSProfilesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListOSProfilesClientResponse, error)
+	// ListReleasesWithResponse request
+	ListReleasesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReleasesClientResponse, error)
 }
 
 type ListClustersClientResponse struct {
@@ -1814,16 +1814,16 @@ func (r GetNodeClientResponse) StatusCode() int {
 	return 0
 }
 
-type ListOSProfilesClientResponse struct {
+type ListReleasesClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *ListOSProfilesResponse
+	JSON200      *ListReleasesResponse
 	JSON401      *Unauthorized
 	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
-func (r ListOSProfilesClientResponse) Status() string {
+func (r ListReleasesClientResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1831,7 +1831,7 @@ func (r ListOSProfilesClientResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r ListOSProfilesClientResponse) StatusCode() int {
+func (r ListReleasesClientResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2040,13 +2040,13 @@ func (c *ClientWithResponses) GetNodeWithResponse(ctx context.Context, nodeID op
 	return ParseGetNodeClientResponse(rsp)
 }
 
-// ListOSProfilesWithResponse request returning *ListOSProfilesClientResponse
-func (c *ClientWithResponses) ListOSProfilesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListOSProfilesClientResponse, error) {
-	rsp, err := c.ListOSProfiles(ctx, reqEditors...)
+// ListReleasesWithResponse request returning *ListReleasesClientResponse
+func (c *ClientWithResponses) ListReleasesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReleasesClientResponse, error) {
+	rsp, err := c.ListReleases(ctx, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseListOSProfilesClientResponse(rsp)
+	return ParseListReleasesClientResponse(rsp)
 }
 
 // ParseListClustersClientResponse parses an HTTP response from a ListClustersWithResponse call
@@ -2789,22 +2789,22 @@ func ParseGetNodeClientResponse(rsp *http.Response) (*GetNodeClientResponse, err
 	return response, nil
 }
 
-// ParseListOSProfilesClientResponse parses an HTTP response from a ListOSProfilesWithResponse call
-func ParseListOSProfilesClientResponse(rsp *http.Response) (*ListOSProfilesClientResponse, error) {
+// ParseListReleasesClientResponse parses an HTTP response from a ListReleasesWithResponse call
+func ParseListReleasesClientResponse(rsp *http.Response) (*ListReleasesClientResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &ListOSProfilesClientResponse{
+	response := &ListReleasesClientResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ListOSProfilesResponse
+		var dest ListReleasesResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

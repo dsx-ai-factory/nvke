@@ -29,11 +29,11 @@ func TestControlPlaneRolloutRequiredMessage(t *testing.T) {
 
 	msg := controlPlaneRolloutRequiredMessage([]db.ControlPlaneRolloutChange{
 		{Field: "kubernetesVersion", From: "1.33.6", To: "1.34.2"},
-		{Field: "osProfile", From: "os-v1", To: "os-v2"},
+		{Field: "release", From: "os-v1", To: "os-v2"},
 	})
 	assert.Contains(t, msg, "differs from desired")
 	assert.Contains(t, msg, "kubernetesVersion 1.33.6->1.34.2")
-	assert.Contains(t, msg, "osProfile os-v1->os-v2")
+	assert.Contains(t, msg, "release os-v1->os-v2")
 }
 
 func TestRefreshControlPlaneRolloutRequiredCondition(t *testing.T) {

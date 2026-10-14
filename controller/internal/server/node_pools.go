@@ -284,8 +284,8 @@ func validateCreateNicoNodePoolRequest(cluster db.Cluster, req *api.CreateNodePo
 		return fmt.Errorf("nico.instanceTypeID is required when creating a nico node pool")
 	}
 
-	if req.Nico.OSProfile == "" {
-		return fmt.Errorf("nico.osProfile is required when creating a nico node pool")
+	if req.Nico.Release == "" {
+		return fmt.Errorf("nico.release is required when creating a nico node pool")
 	}
 
 	var nodePool db.NodePool
@@ -503,8 +503,8 @@ func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req
 		if req.Nico.VpcPrefixIDs != nil {
 			nico.VpcPrefixIDs = uuidSliceDedupe(req.Nico.VpcPrefixIDs)
 		}
-		if req.Nico.OSProfile != nil {
-			nico.OSProfile = *req.Nico.OSProfile
+		if req.Nico.Release != nil {
+			nico.OSProfile = *req.Nico.Release
 		}
 		if req.Nico.ConfigProfile != nil {
 			nico.ConfigProfile = *req.Nico.ConfigProfile
@@ -654,8 +654,8 @@ func validateUpdateNicoNodePoolRequest(_ db.Cluster, req *api.UpdateNodePoolRequ
 	// already empty patchable in every other respect. The config profile is
 	// optional and may be cleared.
 	if req.Nico != nil {
-		if req.Nico.OSProfile != nil && *req.Nico.OSProfile == "" {
-			return fmt.Errorf("nico.osProfile cannot be cleared for a nico node pool")
+		if req.Nico.Release != nil && *req.Nico.Release == "" {
+			return fmt.Errorf("nico.release cannot be cleared for a nico node pool")
 		}
 	}
 
@@ -766,7 +766,7 @@ func apiNicoNodePoolProviderFromDB(nicoNodePoolProvider *db.NicoNodePoolProvider
 		InfinibandPartitionID:    clonePtr(nicoNodePoolProvider.InfinibandPartitionID),
 		NvLinkLogicalPartitionID: clonePtr(nicoNodePoolProvider.NvLinkLogicalPartitionID),
 		SSHKeyGroupIDs:           cloneUUIDSlicePtr(nicoNodePoolProvider.SSHKeyGroupIDs),
-		OSProfile:                nicoNodePoolProvider.OSProfile,
+		Release:                  nicoNodePoolProvider.OSProfile,
 		ConfigProfile:            nicoNodePoolProvider.ConfigProfile,
 		DiskSelectionStrategy:    api.DiskSelectionStrategyCreate(nicoNodePoolProvider.DiskSelectionStrategy),
 	}
@@ -886,7 +886,7 @@ func dbNodePoolFromAPI(
 			InfinibandPartitionID:    req.Nico.InfinibandPartitionID,
 			NvLinkLogicalPartitionID: req.Nico.NvLinkLogicalPartitionID,
 			SSHKeyGroupIDs:           sshKeyGroupIDs,
-			OSProfile:                req.Nico.OSProfile,
+			OSProfile:                req.Nico.Release,
 			ConfigProfile:            req.Nico.ConfigProfile,
 			DiskSelectionStrategy:    db.DiskSelectionStrategy(req.Nico.DiskSelectionStrategy),
 		})

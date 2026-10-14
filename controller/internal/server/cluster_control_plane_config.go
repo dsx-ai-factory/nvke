@@ -217,8 +217,8 @@ func validateCreateForgeControlPlaneConfigFields(c *api.CreateClusterControlPlan
 	if err := nico.ValidateInstanceTypePreferenceIDs(c.Nico.InstanceTypePreference); err != nil {
 		return err
 	}
-	if c.Nico.OSProfile == "" {
-		return fmt.Errorf("controlPlaneConfig.nico.osProfile is required for a nico cluster control plane")
+	if c.Nico.Release == "" {
+		return fmt.Errorf("controlPlaneConfig.nico.release is required for a nico cluster control plane")
 	}
 	return nil
 }
@@ -248,7 +248,7 @@ func validateMergedForgeControlPlaneSpec(spec db.ControlPlaneConfigSpec) error {
 		return newBadRequestErrorf("controlPlaneConfig.nico.instanceTypePreference must contain at least one instance type ID for a nico cluster control plane")
 	}
 	if spec.Nico.OSProfile == "" {
-		return newBadRequestErrorf("controlPlaneConfig.nico.osProfile is required for a nico cluster control plane")
+		return newBadRequestErrorf("controlPlaneConfig.nico.release is required for a nico cluster control plane")
 	}
 	return nil
 }
@@ -315,7 +315,7 @@ func controlPlaneConfigSpecFromCreateAPI(
 			nicoControlPlaneProvider.InstanceTypePreference = dedupeUUIDsPreserveOrder(uuidSliceFromAPI(c.Nico.InstanceTypePreference))
 			nicoControlPlaneProvider.SubnetIDs = uuidSliceDedupe(uuidSliceFromAPI(c.Nico.SubnetIDs))
 			nicoControlPlaneProvider.VpcPrefixIDs = uuidSliceDedupe(uuidSliceFromAPI(c.Nico.VpcPrefixIDs))
-			nicoControlPlaneProvider.OSProfile = c.Nico.OSProfile
+			nicoControlPlaneProvider.OSProfile = c.Nico.Release
 			nicoControlPlaneProvider.ConfigProfile = c.Nico.ConfigProfile
 			nicoControlPlaneProvider.SSHKeyGroupIDs = uuidSliceDedupe(uuidSliceFromAPI(c.Nico.SSHKeyGroupIDs))
 		}
@@ -345,7 +345,7 @@ func apiNicoControlPlaneProviderFromDB(nicoControlPlaneProvider *db.NicoControlP
 		InstanceTypePreference: append([]openapi_types.UUID(nil), nicoControlPlaneProvider.InstanceTypePreference...),
 		SubnetIDs:              append([]openapi_types.UUID(nil), nicoControlPlaneProvider.SubnetIDs...),
 		VpcPrefixIDs:           append([]openapi_types.UUID(nil), nicoControlPlaneProvider.VpcPrefixIDs...),
-		OSProfile:              nicoControlPlaneProvider.OSProfile,
+		Release:                nicoControlPlaneProvider.OSProfile,
 		ConfigProfile:          nicoControlPlaneProvider.ConfigProfile,
 		SSHKeyGroupIDs:         append([]openapi_types.UUID(nil), nicoControlPlaneProvider.SSHKeyGroupIDs...),
 	}

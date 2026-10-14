@@ -56,7 +56,7 @@ BODY=$(cat <<EOF
         "subnetIDs": ["${MOCK_SUBNET_ID}"],
         "instanceTypeID": "${MOCK_INSTANCE_TYPE_ID}",
         "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
-        "osProfile": "${OS_PROFILE}",
+        "release": "${OS_PROFILE}",
         "configProfile": "${CONFIG_PROFILE}"
       },
       "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",
@@ -74,7 +74,7 @@ BODY=$(cat <<EOF
         "subnetIDs": ["${MOCK_SUBNET_ID}"],
         "instanceTypeID": "${MOCK_INSTANCE_TYPE_ID}",
         "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
-        "osProfile": "${OS_PROFILE}",
+        "release": "${OS_PROFILE}",
         "configProfile": "${CONFIG_PROFILE}"
       },
       "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",

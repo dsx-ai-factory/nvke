@@ -114,7 +114,7 @@ func TestGetClusterControlPlaneConfigHistory(t *testing.T) {
 		for _, f := range out.Changes[2].ChangedFields {
 			fields[f.Field] = f.To
 		}
-		assert.Equal(t, "os-v2", fields["osProfile"])
+		assert.Equal(t, "os-v2", fields["release"])
 		assert.Equal(t, "true", fields["teleportEnabled"])
 		assert.NotContains(t, fields, "kubernetesVersion")
 

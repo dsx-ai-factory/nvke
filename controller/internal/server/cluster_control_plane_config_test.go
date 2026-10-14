@@ -27,7 +27,7 @@ func validForgeControlPlaneConfig() *api.CreateClusterControlPlaneConfig {
 		DesiredCount: 3,
 		Nico: &api.NicoControlPlaneProviderCreate{
 			InstanceTypePreference: []uuid.UUID{uuid.New()},
-			OSProfile:              "ubuntu",
+			Release:                "ubuntu",
 			ConfigProfile:          "default",
 		},
 	}
@@ -55,7 +55,7 @@ func validForgeNodePoolCreateConfig(name string) api.NodePoolCreateConfig {
 		Nico: &api.NicoNodePoolProvider{
 			SubnetIDs:      []uuid.UUID{uuid.New()},
 			InstanceTypeID: uuid.New(),
-			OSProfile:      "ubuntu",
+			Release:        "ubuntu",
 			ConfigProfile:  "default",
 		},
 		DesiredNodeCount: 1,
@@ -197,7 +197,7 @@ func TestValidateCreateClusterRequestFields_ControlPlaneConfig(t *testing.T) {
 			},
 			ControlPlaneConfig: &api.CreateClusterControlPlaneConfig{
 				DesiredCount: 3,
-				Nico:         &api.NicoControlPlaneProviderCreate{OSProfile: "ubuntu"},
+				Nico:         &api.NicoControlPlaneProviderCreate{Release: "ubuntu"},
 			},
 		}
 
@@ -383,7 +383,7 @@ func TestCreateNodePool_RejectsControlPlanePoolWhenControllerEnabled(t *testing.
 			Name:           "cp",
 			NodeNamePrefix: "cp",
 			Nico: &api.NicoNodePoolProvider{
-				OSProfile:     "ubuntu",
+				Release:       "ubuntu",
 				ConfigProfile: "default",
 			},
 			ControlPlane:     true,
@@ -463,7 +463,7 @@ func TestGetClusterControlPlane(t *testing.T) {
 		require.Equal(t, 3, out.Config.DesiredCount)
 		require.Equal(t, map[string]string{"role": "cp"}, out.Config.NodeLabels)
 		require.NotNil(t, out.Config.Nico)
-		require.Equal(t, "ubuntu", out.Config.Nico.OSProfile)
+		require.Equal(t, "ubuntu", out.Config.Nico.Release)
 		require.Equal(t, 2, out.Status.NodeCount)
 		require.Equal(t, 1, out.Status.ReadyNodeCount)
 		require.Equal(t, "1.29.0", out.Status.KubernetesVersion)
@@ -633,13 +633,13 @@ func TestApplyClusterControlPlaneConfigUpdate_RejectsClearingRequiredField(t *te
 	}
 
 	// tx is never reached: validation fails before the config row is persisted.
-	t.Run("clearing osProfile is rejected", func(t *testing.T) {
+	t.Run("clearing release is rejected", func(t *testing.T) {
 		empty := ""
 		err := applyUpdate(t, newForgeCluster(), &api.UpdateClusterControlPlaneConfig{
-			Nico: &api.NicoControlPlaneProviderUpdate{OSProfile: &empty},
+			Nico: &api.NicoControlPlaneProviderUpdate{Release: &empty},
 		})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "osProfile is required")
+		require.Contains(t, err.Error(), "release is required")
 	})
 
 	// instanceTypePreference is merged in the parent (not applyClusterLevelControlPlaneSpecUpdate),
@@ -675,7 +675,7 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 			Nico: &api.NicoControlPlaneProviderCreate{
 				InstanceTypePreference: prefs,
 				SubnetIDs:              []uuid.UUID{subnet},
-				OSProfile:              "os",
+				Release:                "os",
 				ConfigProfile:          "cfg",
 				SSHKeyGroupIDs:         []uuid.UUID{uuid.New()},
 			},
@@ -741,7 +741,7 @@ func TestNicoControlPlaneConfigProfileIsOptional(t *testing.T) {
 		err := validateCreateForgeControlPlaneConfigFields(&api.CreateClusterControlPlaneConfig{
 			Nico: &api.NicoControlPlaneProviderCreate{
 				InstanceTypePreference: []uuid.UUID{uuid.New()},
-				OSProfile:              "ubuntu",
+				Release:                "ubuntu",
 			},
 		})
 		require.NoError(t, err)

@@ -34,7 +34,7 @@ func testNicoNodePoolProvider() *api.NicoNodePoolProvider {
 		SubnetIDs:      []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")},
 		InstanceTypeID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
 		SSHKeyGroupIDs: &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-		OSProfile:      "ubuntu",
+		Release:        "ubuntu",
 		ConfigProfile:  "default",
 	}
 }
@@ -278,7 +278,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 						InstanceTypeID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
 						NvLinkLogicalPartitionID: &nvLinkLogicalPartitionID,
 						SSHKeyGroupIDs:           &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-						OSProfile:                "ubuntu",
+						Release:                  "ubuntu",
 						ConfigProfile:            "default",
 					},
 					NodeLabels:       map[string]string{"label1": "value1", "label2": "value2"},
@@ -414,7 +414,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 					VpcPrefixIDs:   []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440005")},
 					InstanceTypeID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
 					SSHKeyGroupIDs: &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-					OSProfile:      "ubuntu",
+					Release:        "ubuntu",
 					ConfigProfile:  "default",
 				},
 				NodeLabels:       map[string]string{"label1": "value1", "label2": "value2"},

@@ -279,7 +279,7 @@ func TestDbNodePoolFromAPI_TeleportDefault(t *testing.T) {
 			Nico: &api.NicoNodePoolProvider{
 				SubnetIDs:      []uuid.UUID{uuid.New()},
 				InstanceTypeID: uuid.New(),
-				OSProfile:      "ubuntu",
+				Release:        "ubuntu",
 				ConfigProfile:  "default",
 			},
 			DesiredNodeCount: 1,

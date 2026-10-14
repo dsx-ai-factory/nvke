@@ -352,8 +352,8 @@ func TestUnit_BuildNicoVMSRequestControlPlaneConfig(t *testing.T) {
 	if req.ControlPlaneConfig.Nico == nil {
 		t.Fatal("ControlPlaneConfig.Nico is nil")
 	}
-	if req.ControlPlaneConfig.Nico.OSProfile != "nvke-nico-vms-24.04-amd64-fde" {
-		t.Fatalf("Nico.OSProfile = %q", req.ControlPlaneConfig.Nico.OSProfile)
+	if req.ControlPlaneConfig.Nico.Release != "nvke-nico-vms-24.04-amd64-fde" {
+		t.Fatalf("Nico.Release = %q", req.ControlPlaneConfig.Nico.Release)
 	}
 	if len(req.ControlPlaneConfig.Nico.InstanceTypePreference) != 1 {
 		t.Fatalf("Nico.InstanceTypePreference len = %d, want 1", len(req.ControlPlaneConfig.Nico.InstanceTypePreference))

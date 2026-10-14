@@ -17,25 +17,25 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
-type osProfileService struct {
+type releaseService struct {
 	k8sReader ctrlclient.Reader
 	logger    *slog.Logger
 }
 
-// NewOSProfileService creates a new OS profile service backed by the releases.
-func NewOSProfileService(logger *slog.Logger, k8sReader ctrlclient.Reader) *osProfileService {
-	return &osProfileService{
+// NewReleaseService creates a new release service backed by the releases.
+func NewReleaseService(logger *slog.Logger, k8sReader ctrlclient.Reader) *releaseService {
+	return &releaseService{
 		k8sReader: k8sReader,
 		logger:    logger,
 	}
 }
 
-// ListOSProfiles returns the names of the OS profiles that can be selected for
-// new clusters and node pools.
-func (s *osProfileService) ListOSProfiles(
+// ListReleases returns the names of the releases that can be selected for new
+// clusters and node pools.
+func (s *releaseService) ListReleases(
 	ctx context.Context,
-	req api.ListOSProfilesRequestObject,
-) (api.ListOSProfilesResponseObject, error) {
+	req api.ListReleasesRequestObject,
+) (api.ListReleasesResponseObject, error) {
 	if s.k8sReader == nil {
 		return nil, errors.New("release reader is not configured")
 	}
@@ -52,10 +52,10 @@ func (s *osProfileService) ListOSProfiles(
 	}
 	slices.Sort(names)
 
-	osProfilesList := make([]api.OSProfile, 0, len(names))
+	releaseList := make([]api.Release, 0, len(names))
 	for _, name := range names {
-		osProfilesList = append(osProfilesList, api.OSProfile{Name: name})
+		releaseList = append(releaseList, api.Release{Name: name})
 	}
 
-	return api.ListOSProfiles200JSONResponse{OsProfiles: osProfilesList}, nil
+	return api.ListReleases200JSONResponse{Releases: releaseList}, nil
 }

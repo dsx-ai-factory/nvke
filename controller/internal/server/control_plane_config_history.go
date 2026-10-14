@@ -82,7 +82,7 @@ func controlPlaneConfigDiff(prev, curr *db.ControlPlaneConfigSpec) []api.Control
 	// value and the profile comparisons are a no-op for it.
 	prevNico, _ := prev.NicoProvider()
 	currNico, _ := curr.NicoProvider()
-	addIfChanged("osProfile", prevNico.OSProfile, currNico.OSProfile)
+	addIfChanged("release", prevNico.OSProfile, currNico.OSProfile)
 	addIfChanged("configProfile", prevNico.ConfigProfile, currNico.ConfigProfile)
 	addIfChanged("kubernetesVersion", prev.KubernetesVersion, curr.KubernetesVersion)
 	addIfChanged("systemReservedMemory", prev.SystemReservedMemory, curr.SystemReservedMemory)
