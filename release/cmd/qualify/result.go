@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -88,8 +89,16 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 			resultState, summary, runStartedAt, runFinishedAt := "FAIL", "", infraFailureStart, time.Now().UTC()
 			ginkgoReport, err := loadGinkgoReport(report)
 			switch {
-			case err != nil:
+			case errors.Is(err, os.ErrNotExist):
+				// The suite never ran -- a Forge provisioning failure, a
+				// wedged runner. Genuinely nothing to report beyond that.
 				summary = fmt.Sprintf("infrastructure failure: %s", err)
+			case err != nil:
+				// The report exists but is unreadable -- a bug in how it was
+				// written, or a corrupted artifact. Distinct from the suite
+				// itself failing, so this is a command error, not a quiet
+				// FAIL result that would bury it.
+				return fmt.Errorf("--report: %w", err)
 			case ginkgoReport.SuiteSucceeded:
 				resultState = "PASS"
 				fallthrough

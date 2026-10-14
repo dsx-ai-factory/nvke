@@ -204,6 +204,50 @@ func TestResultCmdReportsInfrastructureFailureOnMissingReport(t *testing.T) {
 	}
 }
 
+// A report that exists but is unreadable (malformed JSON, a truncated or
+// corrupted artifact) is not the same thing as the suite never having run --
+// it is a bug in how the report was written, so it is a command error, not a
+// quiet FAIL result that would bury it.
+func TestResultCmdErrorsOnMalformedReport(t *testing.T) {
+	root, plan := resultTestRoot(t)
+	badReport := filepath.Join(t.TempDir(), "report.json")
+	if err := os.WriteFile(badReport, []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := runResultCmd(t,
+		"--root", root,
+		"--plan", plan,
+		"--report", badReport,
+		"--combination", "cli-v1.0.0",
+		"--stream", "amd64-1.34",
+	)
+	if err == nil || !strings.Contains(err.Error(), "--report") {
+		t.Errorf("err = %v, want it to name --report", err)
+	}
+}
+
+// Ginkgo always encodes the report as a JSON array with one entry; an empty
+// array is as unreadable as malformed JSON, not an infrastructure failure.
+func TestResultCmdErrorsOnEmptyReportArray(t *testing.T) {
+	root, plan := resultTestRoot(t)
+	emptyReport := filepath.Join(t.TempDir(), "report.json")
+	if err := os.WriteFile(emptyReport, []byte("[]"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := runResultCmd(t,
+		"--root", root,
+		"--plan", plan,
+		"--report", emptyReport,
+		"--combination", "cli-v1.0.0",
+		"--stream", "amd64-1.34",
+	)
+	if err == nil || !strings.Contains(err.Error(), "--report") {
+		t.Errorf("err = %v, want it to name --report", err)
+	}
+}
+
 // When --started-at is passed, the infra-failure path's StartedAt is the
 // job's own start time, not the moment `qualify result` happened to run --
 // there is no Ginkgo report to read it from otherwise.
