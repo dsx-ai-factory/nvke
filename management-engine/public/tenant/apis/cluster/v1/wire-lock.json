@@ -1,0 +1,283 @@
+{
+  "$create:apiServerAccess": {
+    "path": "",
+    "tag": 0,
+    "access": null,
+    "name": "private_create_admission",
+    "required": false,
+    "schema": {
+      "type": "object",
+      "required": [
+        "publicAccessEnabled"
+      ]
+    }
+  },
+  "$default:apiServerAccess.publicAccessEnabled": {
+    "path": "",
+    "tag": 0,
+    "access": null,
+    "name": "private_create_default",
+    "required": true,
+    "schema": {
+      "type": "boolean"
+    },
+    "default": false
+  },
+  "$default:clusterNetwork.serviceDomain": {
+    "path": "",
+    "tag": 0,
+    "access": null,
+    "name": "private_create_default",
+    "required": true,
+    "schema": {
+      "type": "string",
+      "maxLength": 253,
+      "minLength": 1,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+    },
+    "default": "cluster.local"
+  },
+  "$resource": {
+    "path": "",
+    "tag": 0,
+    "access": null,
+    "name": "resource_admission",
+    "required": false,
+    "schema": {
+      "type": "object",
+      "required": [
+        "spec"
+      ]
+    }
+  },
+  "$spec": {
+    "path": "",
+    "tag": 0,
+    "access": null,
+    "name": "spec_admission",
+    "required": false,
+    "schema": {
+      "type": "object",
+      "required": [
+        "apiServerAccess",
+        "clusterNetwork",
+        "controlPlaneClass",
+        "release"
+      ],
+      "x-kubernetes-validations": [
+        {
+          "rule": "has(self.authentication) == has(oldSelf.authentication) \u0026\u0026 (!has(self.authentication) || self.authentication == oldSelf.authentication)"
+        },
+        {
+          "rule": "!has(self.nodePools) || self.nodePools.size() == 0 || has(self.network)"
+        }
+      ]
+    }
+  },
+  "clusterNetwork": {
+    "path": "clusterNetwork",
+    "tag": 3,
+    "access": [
+      "create",
+      "read"
+    ],
+    "name": "cluster_network",
+    "required": true,
+    "schema": {
+      "type": "object",
+      "required": [
+        "pods",
+        "serviceDomain",
+        "services"
+      ]
+    }
+  },
+  "clusterNetwork.pods": {
+    "path": "clusterNetwork.pods",
+    "tag": 1,
+    "access": [
+      "create",
+      "read"
+    ],
+    "name": "pods",
+    "required": true,
+    "schema": {
+      "type": "object",
+      "required": [
+        "cidrBlocks"
+      ]
+    }
+  },
+  "clusterNetwork.pods.cidrBlocks": {
+    "path": "clusterNetwork.pods.cidrBlocks",
+    "tag": 1,
+    "access": [
+      "create",
+      "read"
+    ],
+    "input": {
+      "max_items": 1
+    },
+    "name": "cidr_blocks",
+    "required": true,
+    "schema": {
+      "type": "array",
+      "maxItems": 2,
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "maxLength": 49,
+        "x-kubernetes-validations": [
+          {
+            "rule": "isCIDR(self)"
+          }
+        ]
+      },
+      "x-kubernetes-list-type": "atomic",
+      "x-kubernetes-validations": [
+        {
+          "rule": "self.size() \u003c 2 || self[0] != self[1]"
+        },
+        {
+          "rule": "self.size() \u003c 2 || cidr(self[0]).ip().family() != cidr(self[1]).ip().family()"
+        }
+      ]
+    }
+  },
+  "clusterNetwork.services": {
+    "path": "clusterNetwork.services",
+    "tag": 2,
+    "access": [
+      "create",
+      "read"
+    ],
+    "name": "services",
+    "required": true,
+    "schema": {
+      "type": "object",
+      "required": [
+        "cidrBlocks"
+      ]
+    }
+  },
+  "clusterNetwork.services.cidrBlocks": {
+    "path": "clusterNetwork.services.cidrBlocks",
+    "tag": 1,
+    "access": [
+      "create",
+      "read"
+    ],
+    "input": {
+      "max_items": 1
+    },
+    "name": "cidr_blocks",
+    "required": true,
+    "schema": {
+      "type": "array",
+      "maxItems": 2,
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "maxLength": 49,
+        "x-kubernetes-validations": [
+          {
+            "rule": "isCIDR(self)"
+          }
+        ]
+      },
+      "x-kubernetes-list-type": "atomic",
+      "x-kubernetes-validations": [
+        {
+          "rule": "self.size() \u003c 2 || self[0] != self[1]"
+        },
+        {
+          "rule": "self.size() \u003c 2 || cidr(self[0]).ip().family() != cidr(self[1]).ip().family()"
+        }
+      ]
+    }
+  },
+  "controlPlaneClass": {
+    "path": "controlPlaneClass",
+    "tag": 2,
+    "access": [
+      "create",
+      "read",
+      "replace"
+    ],
+    "name": "control_plane_class",
+    "required": true,
+    "schema": {
+      "type": "string",
+      "maxLength": 253,
+      "minLength": 1,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+    }
+  },
+  "release": {
+    "path": "release",
+    "tag": 1,
+    "access": [
+      "create",
+      "read",
+      "replace"
+    ],
+    "name": "release",
+    "required": true,
+    "schema": {
+      "type": "object",
+      "required": [
+        "channel"
+      ]
+    }
+  },
+  "release.channel": {
+    "path": "release.channel",
+    "tag": 1,
+    "access": [
+      "create",
+      "read",
+      "replace"
+    ],
+    "name": "channel",
+    "required": true,
+    "schema": {
+      "type": "object",
+      "required": [
+        "name"
+      ]
+    }
+  },
+  "release.channel.name": {
+    "path": "release.channel.name",
+    "tag": 1,
+    "access": [
+      "create",
+      "read",
+      "replace"
+    ],
+    "name": "name",
+    "required": true,
+    "schema": {
+      "type": "string",
+      "maxLength": 253,
+      "minLength": 1,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+    }
+  },
+  "release.channel.version": {
+    "path": "release.channel.version",
+    "tag": 2,
+    "access": [
+      "create",
+      "read",
+      "replace"
+    ],
+    "name": "version",
+    "required": false,
+    "schema": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 1
+    }
+  }
+}

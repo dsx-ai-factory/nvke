@@ -44,7 +44,24 @@ jobs:
           set -euo pipefail
           failed=0
 
-          test_files="$(find management-engine -path management-engine/apis -prune -o -name '*_test.go' ! -type d -print | sort)"
+          # Keep file discovery and test-name discovery on the same controller boundary.
+          # The manager command is one package; the controller and CWE suites are recursive.
+          policy_packages=(
+            ./management-engine/cmd
+            ./management-engine/controllers/...
+            ./management-engine/internal/cwe/...
+            ./management-engine/test/integration/...
+          )
+          test_files="$(
+            for package in "${policy_packages[@]}"; do
+              directory="${package#./}"
+              if [[ "${directory}" == */... ]]; then
+                find "${directory%/...}" -name '*_test.go' ! -type d -print
+              else
+                find "${directory}" -maxdepth 1 -name '*_test.go' ! -type d -print
+              fi
+            done | LC_ALL=C sort
+          )"
           while IFS= read -r file; do
             [[ -n "${file}" ]] || continue
             if ! jq -e --arg file "${file}" '(.ginkgoSpecs | has($file)) or (.goTestFiles | index($file) != null)' .github/workflows/management-engine/controller-test-policy.json >/dev/null; then
@@ -73,7 +90,7 @@ jobs:
 
           expected_ordinary_tests="$(jq -r '.ordinaryGoTests[]' .github/workflows/management-engine/controller-test-policy.json)"
           actual_ordinary_tests="$(
-            go test -tags=integration_test ./management-engine/controllers ./management-engine/internal/... ./management-engine/cmd ./management-engine/test/integration -run '^$' -list '^(Test|Benchmark|Fuzz)' |
+            go test -tags=integration_test "${policy_packages[@]}" -run '^$' -list '^(Test|Benchmark|Fuzz)' |
               awk '/^(Test|Benchmark|Fuzz)[[:alnum:]_]*$/ { print }' |
               LC_ALL=C sort
           )"
