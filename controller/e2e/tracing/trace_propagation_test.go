@@ -284,12 +284,11 @@ func assertTrace(t *testing.T, ended []sdktrace.ReadOnlySpan, traceID string, cl
 	require.Empty(t, sqlSpans, "per-query SQL spans with export off: %v", counts)
 }
 
-// hasQueryAttribute reports whether span describes a SQL query. The bun hook
-// sets db.statement and db.operation on every query span, whatever its SQL
-// operation; other db.* attributes, such as db.user, also appear on spans that
-// are not queries.
+// hasQueryAttribute reports whether span is a SQL query span, which the bun
+// hook marks with db.statement and db.operation whatever the SQL operation.
 func hasQueryAttribute(span sdktrace.ReadOnlySpan) bool {
 	for _, attr := range span.Attributes() {
+		// Not any db.* key: db.user is also set on spans that are not queries.
 		if key := string(attr.Key); key == "db.statement" || key == "db.operation" {
 			return true
 		}

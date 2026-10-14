@@ -130,7 +130,7 @@ func TestInitMalformedResourceEnvironment(t *testing.T) {
 		require.NoError(t, shutdown(context.Background()))
 	}
 
-	// Export on: the malformed value is still refused, as before.
+	// Export on: the malformed value is refused.
 	_, err := Init(context.Background(), config.TracingConfig{Enabled: true, Endpoint: "127.0.0.1:1", Insecure: true}, slog.New(slog.DiscardHandler))
 	require.ErrorIs(t, err, resource.ErrPartialResource)
 }

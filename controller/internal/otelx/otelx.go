@@ -82,10 +82,9 @@ func Init(ctx context.Context, cfg config.TracingConfig, logger *slog.Logger) (S
 	return tp.Shutdown, nil
 }
 
-// newResource builds the resource that describes this process on its spans.
-// Malformed entries in OTEL_RESOURCE_ATTRIBUTES are an error when spans are
-// exported. When they are not, they only cost a label nobody sees, so they log
-// a warning and the entries that parsed are kept.
+// newResource builds the resource attached to every span. A malformed
+// OTEL_RESOURCE_ATTRIBUTES entry is an error when export is true. Otherwise it
+// is logged as a warning and the entries that parsed are kept.
 func newResource(ctx context.Context, serviceName string, export bool, logger *slog.Logger) (*resource.Resource, error) {
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
