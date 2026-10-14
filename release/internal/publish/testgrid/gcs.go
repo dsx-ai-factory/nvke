@@ -33,8 +33,10 @@ type GCSUploader struct {
 	Client *storage.Client
 
 	// sleep is swapped out in tests so retry backoff does not slow down
-	// `go test`. Defaults to time.Sleep.
-	sleep func(time.Duration)
+	// `go test`. Defaults to a context-aware sleep that returns ctx.Err()
+	// early if ctx is canceled mid-wait, rather than finishing out the
+	// backoff before the next ctx.Err() check at the top of the loop.
+	sleep func(ctx context.Context, d time.Duration) error
 
 	// doUpload is swapped out in tests so the retry loop can be exercised
 	// without a real GCS client. Defaults to uploadOnce.
@@ -47,7 +49,7 @@ func NewGCSUploader(ctx context.Context, bucket string) (*GCSUploader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening GCS client: %w", err)
 	}
-	u := &GCSUploader{Bucket: bucket, Client: client, sleep: time.Sleep}
+	u := &GCSUploader{Bucket: bucket, Client: client, sleep: ctxSleep}
 	u.doUpload = u.uploadOnce
 	return u, nil
 }
@@ -59,9 +61,11 @@ func (u *GCSUploader) Close() error { return u.Client.Close() }
 // path is left untouched, not overwritten -- either a prior attempt of this
 // same upload already succeeded (a retry after a transient failure) or this
 // exact build path was already published, and in both cases not writing is
-// correct. Retries on failure with exponential backoff, up to
-// retryMaxAttempts, unless ctx is done -- a canceled context should fail
-// fast, not keep retrying.
+// correct. Retries only errors storage.ShouldRetry calls retryable (timeouts,
+// 5xx, connection resets) with exponential backoff, up to retryMaxAttempts --
+// a permission or not-found error will not start succeeding on attempt two,
+// so retrying it just delays surfacing a failure CI needs to see promptly.
+// Stops immediately, including mid-backoff, if ctx is done.
 func (u *GCSUploader) Upload(ctx context.Context, path string, data []byte, contentType string) error {
 	var lastErr error
 	for attempt := 1; attempt <= retryMaxAttempts; attempt++ {
@@ -72,11 +76,28 @@ func (u *GCSUploader) Upload(ctx context.Context, path string, data []byte, cont
 		if lastErr == nil {
 			return nil
 		}
+		if !storage.ShouldRetry(lastErr) {
+			return fmt.Errorf("non-retryable: %w", lastErr)
+		}
 		if attempt < retryMaxAttempts {
-			u.sleep(retryBaseWait * time.Duration(1<<(attempt-1)))
+			if err := u.sleep(ctx, retryBaseWait*time.Duration(1<<(attempt-1))); err != nil {
+				return err
+			}
 		}
 	}
 	return fmt.Errorf("after %d attempts: %w", retryMaxAttempts, lastErr)
+}
+
+// ctxSleep waits for d, or returns ctx.Err() early if ctx is canceled first.
+func ctxSleep(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (u *GCSUploader) uploadOnce(ctx context.Context, path string, data []byte, contentType string) error {
