@@ -132,7 +132,7 @@ const (
 	// template has no nodePort field -- so this is a second Service beside the
 	// chart's own, the same shape and for the same reason as
 	// spire-server-nodeport.yaml. bootstrapengine maps it to a host port (see
-	// cmd/nvkectl/bootstrap.go), which keeps the route the same whether kind runs
+	// internal/nvkectl/bootstrap.go), which keeps the route the same whether kind runs
 	// on Docker or nerdctl, on Linux or macOS.
 	//
 	DefaultCWEPort int32 = 30080

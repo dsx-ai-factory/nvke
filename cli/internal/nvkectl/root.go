@@ -1,7 +1,16 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package main
+// Package nvkectl holds the nvkectl command tree.
+//
+// cmd/nvkectl is a shim over it. The tree lives here, rather than in that
+// package, so a second program can import it: the reference documentation
+// under cli/docs/reference is generated from the same tree the binary runs,
+// and a command tree in package main can be executed but never imported.
+//
+// Clients are created lazily, when a command runs rather than when the tree is
+// built, so constructing the tree reads no configuration and contacts nothing.
+package nvkectl
 
 import (
 	"context"

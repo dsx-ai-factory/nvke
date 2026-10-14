@@ -38,7 +38,14 @@ on:
       # The controller-facing CLI. hack/ci/nvkectl-smoke.sh drives nvkectl against this
       # lane's controller, so a change here has something to break. Keep in step with
       # cwe_facing in e2e-pr-path-filter.yml, which suppresses the rest of cli/.
+      #
+      # Both halves of the command tree: cmd/ is the shim holding main and the
+      # contract test, and internal/nvkectl is the tree itself. The smoke drives
+      # config set-site, config view, create cluster and delete nodepool, all of
+      # which live in the latter, so cmd/ alone would skip this lane for a change
+      # to any of them.
       - "cli/cmd/**"
+      - "cli/internal/nvkectl/**"
       - "cli/internal/clients/**"
       - "cli/internal/clusterstate/**"
       - "cli/internal/controller/**"
