@@ -2153,3 +2153,83 @@ func TestDumpDiagnostics_WhatAlreadyHasTheFinalName(t *testing.T) {
 		}
 	})
 }
+
+func TestProfilesImageArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		image   string
+		want    []string // substrings the args must contain; empty means no args at all
+		wantErr string
+	}{
+		{"unset adds nothing", "", nil, ""},
+		{
+			"a tagged local image",
+			"controller-profiles:e2e",
+			[]string{"profiles.image.enabled=true", "profiles.image.repository=controller-profiles", "profiles.image.tag=e2e", "profiles.image.digest="},
+			"",
+		},
+		{
+			"a registry image with a port and a tag",
+			"localhost:5000/team/profiles:v1",
+			[]string{"profiles.image.repository=localhost:5000/team/profiles", "profiles.image.tag=v1"},
+			"",
+		},
+		{
+			"a digest pin needs no tag",
+			"registry.example.com/profiles@sha256:abc123",
+			[]string{"profiles.image.repository=registry.example.com/profiles", "profiles.image.digest=sha256:abc123"},
+			"",
+		},
+		{"an explicit latest tag is refused", "controller-profiles:latest", nil, "other than latest"},
+		{"an untagged reference reads as latest and is refused", "controller-profiles", nil, "other than latest"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args, err := profilesImageArgs(Config{ProfilesImage: tt.image})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("profilesImageArgs error = %v, want one containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("profilesImageArgs: %v", err)
+			}
+			if len(tt.want) == 0 && len(args) != 0 {
+				t.Fatalf("args = %v, want none", args)
+			}
+			joined := strings.Join(args, " ")
+			for _, want := range tt.want {
+				if !strings.Contains(joined, want) {
+					t.Errorf("args = %q, want %q", joined, want)
+				}
+			}
+		})
+	}
+}
+
+// TestDeploy_ProfilesImageReachesTheControllerInstall: the chart values are on
+// the release that runs the controller, not just built.
+func TestDeploy_ProfilesImageReachesTheControllerInstall(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ProfilesImage = "controller-profiles:e2e"
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	install := joinArgs(runner.calls[callIndex(runner, "upgrade --install "+cweReleaseName)].args)
+	for _, want := range []string{"profiles.image.enabled=true", "profiles.image.repository=controller-profiles", "profiles.image.tag=e2e"} {
+		if !strings.Contains(install, want) {
+			t.Errorf("controller install = %q, want %q", install, want)
+		}
+	}
+}
+
+func TestDeploy_RefusesAProfilesImageTheClusterWouldPull(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ProfilesImage = "controller-profiles:latest"
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err == nil {
+		t.Fatal("Deploy accepted a latest-tagged profiles image")
+	}
+}

@@ -2,15 +2,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# `nkectl bootstrap site` e2e for `infrastructure: nico`: the control-plane
+# `nvkectl bootstrap site` e2e for `infrastructure: nico`: the control-plane
 # machines are allocated by CAPNICo from a NICo site instead of taken from a
 # hardcoded list. The sibling of run.sh, which covers `infrastructure:
 # provisioned`; same host requirements (see run.sh), plus a Go toolchain to
 # build nico-sim, and network access to ghcr.io for the CAPNICo chart.
 #
 # Stages:
-#   1. Images: the CAPD node image nico-sim creates its nodes from, and a CWE
-#      profiles image built from the in-repo fixture tree.
+#   1. Images: the CAPD node image nico-sim creates its nodes from, and a
+#      controller profiles image built from the in-repo fixture tree.
 #   2. nico-sim, run as a host process with the container backend pointed at
 #      nerdctl, on a node network this script creates.
 #   3. `bootstrap site` with a nico site spec, run in the background. As soon as
@@ -22,13 +22,16 @@
 #      attested to the bootstrap SPIRE server over TPM, and the allowlist that
 #      admitted it was filled in by CWE from the NicoMachine, not by the site spec.
 #
-# Two things nkectl does not supply and CWE needs to provision a node through the
-# NICo path, which this script hands it through env hooks:
-#   - NKECTL_CWE_PROFILES_IMAGE: the OS and config profiles a cluster request
-#     names. nkectl deploys CWE with an empty profiles directory.
-#   - NKECTL_CWE_TENANT_CREDENTIALS_SECRET: the login CWE puts on each node. The
-#     Secret is created here, with throwaway values, as soon as the bootstrap
-#     cluster exists.
+# Three inputs the site spec supplies and this script prepares:
+#   - bootstrapNico: the token file for nico-sim's API.
+#   - bootstrapTenant: the login the controller puts on each node, with throwaway
+#     values. `bootstrap site` creates the Secret that carries it.
+#   - bootstrapReleases: the MachineImage and ClusterRelease the controller
+#     resolves cluster.nico.controlPlane.osProfile from, copied from the in-repo
+#     fixtures. `bootstrap site` applies them before it creates the cluster.
+# One thing it does not supply, which this script hands it through an env hook:
+#   - NVKECTL_CONTROLLER_PROFILES_IMAGE: the config profile a cluster request
+#     names. The controller deploys with an empty profiles directory.
 #
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit.
@@ -40,55 +43,57 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
 REPO_ROOT="$(dirname "${CLI_DIR}")"
-NKECTL="${NKECTL:-${CLI_DIR}/bin/nkectl}"
+NVKECTL="${NVKECTL:-${CLI_DIR}/bin/nvkectl}"
 NICO_SIM_DIR="${REPO_ROOT}/controller/nico-sim"
 PROFILES_FIXTURE_DIR="${REPO_ROOT}/controller/test/fixtures"
+RELEASES_FIXTURE_DIR="${PROFILES_FIXTURE_DIR}/releases"
 
-E2E_CLUSTER_NAME="nke-e2e-nico"
-BOOTSTRAP_KIND_CLUSTER="${NKECTL_BOOTSTRAP_CLUSTER_NAME:-nkectl-bootstrap}"
+E2E_CLUSTER_NAME="nvke-e2e-nico"
+BOOTSTRAP_KIND_CLUSTER="${NVKECTL_BOOTSTRAP_CLUSTER_NAME:-nvkectl-bootstrap}"
 BOOTSTRAP_CONTROL_PLANE="${BOOTSTRAP_KIND_CLUSTER}-control-plane"
 
 # How many control-plane nodes CAPNICo is asked for. Odd, like the hosts list it
 # stands in for.
-NODE_COUNT="${NKECTL_E2E_NICO_NODES:-1}"
-NODE_NETWORK="${NKECTL_E2E_NICO_NETWORK:-nkectl-e2e-nico-nodes}"
-NODE_SUBNET="${NKECTL_E2E_NICO_SUBNET:-172.28.0.0/24}"
+NODE_COUNT="${NVKECTL_E2E_NICO_NODES:-1}"
+NODE_NETWORK="${NVKECTL_E2E_NICO_NETWORK:-nvkectl-e2e-nico-nodes}"
+NODE_SUBNET="${NVKECTL_E2E_NICO_SUBNET:-172.28.0.0/24}"
 
-SIM_PORT="${NKECTL_E2E_NICO_SIM_PORT:-18080}"
+SIM_PORT="${NVKECTL_E2E_NICO_SIM_PORT:-18080}"
 SIM_BIN="${CLI_DIR}/.local/nico-sim"
 SIM_STATE_DIR="$(mktemp -d)"
 SIM_LOG="${SIM_STATE_DIR}/nico-sim.log"
 NODE_IMAGE="${CAPD_KINDEST_NODE_IMAGE:-cwe-capd-kindest-node:local}"
-PROFILES_IMAGE="${NKECTL_E2E_PROFILES_IMAGE:-cwe-profiles:nkectl-e2e}"
+PROFILES_IMAGE="${NVKECTL_E2E_PROFILES_IMAGE:-cwe-profiles:nvkectl-e2e}"
 # nico-sim's managed-container label, which is how teardown finds what it made.
 SIM_LABEL="nvidia.com/nico-containers.managed=true"
 
 # What nico-sim seeds for its container site. The IDs are the simulator's own;
 # see controller/hack/create-local-nico-cluster.sh, which uses the same ones.
-NICO_ORG_ID="${NKECTL_E2E_NICO_ORG_ID:-novxwn552ssc}"
+NICO_ORG_ID="${NVKECTL_E2E_NICO_ORG_ID:-novxwn552ssc}"
 NICO_SITE_ID="00000000-0000-0000-0000-000000000001"
 NICO_VPC_ID="00000000-0000-0000-0000-000000000002"
 NICO_SUBNET_ID="00000000-0000-0000-0000-000000000003"
 NICO_SSH_KEY_GROUP_ID="00000000-0000-0000-0000-000000000004"
 NICO_INSTANCE_TYPE_ID="00000000-0000-0000-0000-000000000005"
-# Profiles from the fixture tree the profiles image is built from.
-OS_PROFILE="${NKECTL_E2E_NICO_OS_PROFILE:-nke-local-dev-kindest-arm64}"
-CONFIG_PROFILE="${NKECTL_E2E_NICO_CONFIG_PROFILE:-dev-only-empty}"
+# The OS profile is a ClusterRelease from the releases fixture, so it names a
+# file pair there; the config profile comes from the profiles image.
+OS_PROFILE="${NVKECTL_E2E_NICO_OS_PROFILE:-nvke-local-dev-kindest-arm64}"
+CONFIG_PROFILE="${NVKECTL_E2E_NICO_CONFIG_PROFILE:-dev-only-empty}"
 
-SPIRE_TRUST_DOMAIN="${NKECTL_E2E_SPIRE_TRUST_DOMAIN:-nkectl-e2e.example.test}"
-# CWE's namespace in the bootstrap cluster, and the Secret that holds the login
-# it gives the nodes it provisions.
-CWE_NAMESPACE=nke-controller
-TENANT_SECRET="nke-e2e-tenant-credentials"
+SPIRE_TRUST_DOMAIN="${NVKECTL_E2E_SPIRE_TRUST_DOMAIN:-nvkectl-e2e.example.test}"
+# The controller's namespace in the bootstrap cluster, and the Secret
+# `bootstrap site` creates there from bootstrapTenant.
+CONTROLLER_NAMESPACE=nke-controller
+TENANT_SECRET=dgxc-tenant-credentials
 
 TENANT_KUBECONFIG="${SCRIPT_DIR}/.tenant-nico.kubeconfig"
 RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.nico.rendered.yaml"
 BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap-nico.log"
 DIAGNOSTICS_DIR="${CLI_DIR}/cluster-diagnostics"
-export NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}"
+export NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}"
 
-: "${NKECTL_CWE_IMAGE:?NKECTL_CWE_IMAGE must name the CWE image to deploy, already present in containerd (see run.sh)}"
-export NKECTL_CWE_IMAGE
+: "${NVKECTL_CONTROLLER_IMAGE:?NVKECTL_CONTROLLER_IMAGE must name the controller image to deploy, already present in containerd (see run.sh)}"
+export NVKECTL_CONTROLLER_IMAGE
 
 # `kind create cluster` merges into $KUBECONFIG; use a scratch path so this run
 # never takes ownership of the caller's. See run.sh for the sudo -E reasoning.
@@ -96,11 +101,14 @@ KUBECONFIG_DIR="$(mktemp -d)"
 export KUBECONFIG="${KUBECONFIG_DIR}/config"
 export KUBECACHEDIR="${KUBECONFIG_DIR}/cache"
 CNI_BUNDLE_DIR="$(mktemp -d)"
-CREDENTIALS_FILE="${SIM_STATE_DIR}/nico-credentials.env"
+# What the site spec's bootstrapNico, bootstrapTenant and bootstrapReleases name.
+TOKEN_FILE="${SIM_STATE_DIR}/bootstrap-nico.token"
+TENANT_PASSWORD_FILE="${SIM_STATE_DIR}/bootstrap-tenant.password"
+RELEASES_DIR="${SIM_STATE_DIR}/releases"
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
-log() { printf '[nkectl-bootstrap-nico-e2e] %s\n' "$*"; }
+log() { printf '[nvkectl-bootstrap-nico-e2e] %s\n' "$*"; }
 
 fail() {
   log "FAIL: $1"
@@ -163,9 +171,9 @@ wait_until() {
 for tool in nerdctl kind kubectl helm clusterctl go gcc make iptables ip; do
   command -v "${tool}" >/dev/null 2>&1 || fail "${tool} is required"
 done
-[ -x "${NKECTL}" ] || fail "${NKECTL} is not built (run make -C cli build)"
+[ -x "${NVKECTL}" ] || fail "${NVKECTL} is not built (run make -C cli build)"
 if (( NODE_COUNT < 1 || NODE_COUNT % 2 == 0 )); then
-  fail "NKECTL_E2E_NICO_NODES must be odd and at least 1, got ${NODE_COUNT}"
+  fail "NVKECTL_E2E_NICO_NODES must be odd and at least 1, got ${NODE_COUNT}"
 fi
 
 # ── Teardowns, one per thing created ───────────────────────────────────────
@@ -203,14 +211,19 @@ remove_forward_rules() {
 
 started=true
 
-log "building the Calico manifests package for post-init CNI"
-BUNDLE_ARCH="$(go env GOARCH)" \
-  bash "${REPO_ROOT}/controller/hack/ci/prepare-capd-bundles.sh" "${CNI_BUNDLE_DIR}"
-CAPD_CNI_MANIFESTS_DEB_PATH="${CNI_BUNDLE_DIR}/nke-cni-calico-manifests-3.30.1_3.30.1_all.deb"
-export CAPD_CNI_MANIFESTS_DEB_PATH
-[ -f "${CAPD_CNI_MANIFESTS_DEB_PATH}" ] || fail "no Calico manifests package was built"
+log "building the OVN packages for post-init CNI"
+BUNDLE_ARCH="$(go env GOARCH)"
+export BUNDLE_ARCH
+bash "${REPO_ROOT}/controller/hack/ci/prepare-capd-bundles.sh" "${CNI_BUNDLE_DIR}"
+CAPD_CNI_CHARTS_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-charts-1.4.0_1.4.0_${BUNDLE_ARCH}.deb"
+CAPD_CNI_IMAGES_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-images-1.4.0_1.4.0_${BUNDLE_ARCH}.deb"
+CAPD_HELM_DEB_PATH="${CNI_BUNDLE_DIR}/nke-e2e-helm.deb"
+export CAPD_CNI_CHARTS_DEB_PATH CAPD_CNI_IMAGES_DEB_PATH CAPD_HELM_DEB_PATH
+if [ ! -f "${CAPD_CNI_CHARTS_DEB_PATH}" ] || [ ! -f "${CAPD_CNI_IMAGES_DEB_PATH}" ] || [ ! -f "${CAPD_HELM_DEB_PATH}" ]; then
+  fail "OVN packages were not built"
+fi
 
-# nico-sim creates its nodes from this image, which already carries nke-agent,
+# nico-sim creates its nodes from this image, which already carries nvke-agent,
 # swtpm and the SPIRE plumbing. A no-op when it exists.
 log "ensuring the node image ${NODE_IMAGE}"
 make -C "${CLI_DIR}" ensure-capd-image CAPD_KINDEST_NODE_IMAGE="${NODE_IMAGE}"
@@ -222,10 +235,9 @@ mapfile -t mirror_args < <(dockerhub_build_args "${PROFILES_FIXTURE_DIR}/Dockerf
 log "building the CWE profiles image ${PROFILES_IMAGE} from ${PROFILES_FIXTURE_DIR}"
 nerdctl build --file "${PROFILES_FIXTURE_DIR}/Dockerfile" --tag "${PROFILES_IMAGE}" \
   "${mirror_args[@]}" "${PROFILES_FIXTURE_DIR}" >/dev/null
-# nkectl loads it into the Kind cluster from here, so it must be a tag other
+# nvkectl loads it into the Kind cluster from here, so it must be a tag other
 # than latest: the chart sets no pull policy on it.
-export NKECTL_CWE_PROFILES_IMAGE="${PROFILES_IMAGE}"
-export NKECTL_CWE_TENANT_CREDENTIALS_SECRET="${TENANT_SECRET}"
+export NVKECTL_CONTROLLER_PROFILES_IMAGE="${PROFILES_IMAGE}"
 log "PASS: the node and profiles images are in containerd"
 
 # ── Stage 2: nico-sim ──────────────────────────────────────────────────────
@@ -249,7 +261,7 @@ GATEWAY="$(nerdctl network inspect "${NODE_NETWORK}" \
 # nico-sim creates its first node. CAPNICo is pointed at the gateway address, and
 # the forwarding rules below name the bridge. This container holds the bridge up
 # for the length of the run.
-ANCHOR="nkectl-e2e-nico-anchor"
+ANCHOR="nvkectl-e2e-nico-anchor"
 remove_anchor() { nerdctl rm -f "${ANCHOR}" >/dev/null 2>&1 || true; }
 defer remove_anchor
 nerdctl rm -f "${ANCHOR}" >/dev/null 2>&1 || true
@@ -292,15 +304,25 @@ log "PASS: nico-sim is up on :${SIM_PORT}"
 
 # ── Stage 3: bootstrap site ────────────────────────────────────────────────
 
-# nico-sim accepts any non-empty bearer token. The keys are CAPNICo's own.
+# nico-sim accepts any non-empty bearer token. The throwaway files are named by
+# the site spec, so no credential is on a command line.
 umask 077
-cat >"${CREDENTIALS_FILE}" <<EOF
-endpoint=http://${GATEWAY}:${SIM_PORT}
-orgID=${NICO_ORG_ID}
-token=nico-simctl-token
-apiName=forge
-EOF
+printf 'nico-simctl-token' >"${TOKEN_FILE}"
+printf 'nvke-e2e' >"${TENANT_PASSWORD_FILE}"
 umask 022
+
+# Only the release pair the OS profile names, not every fixture release.
+mkdir -p "${RELEASES_DIR}"
+for kind in machineimage clusterrelease; do
+  cp "${RELEASES_FIXTURE_DIR}/${OS_PROFILE}-${kind}.yaml" "${RELEASES_DIR}/" ||
+    fail "no ${OS_PROFILE} ${kind} fixture in ${RELEASES_FIXTURE_DIR}"
+done
+
+vip_line=""
+if (( NODE_COUNT > 1 )); then
+  : "${NVKECTL_E2E_CONTROL_PLANE_VIP:?NVKECTL_E2E_CONTROL_PLANE_VIP must be set for more than one control-plane node}"
+  vip_line="  controlPlaneVIP: ${NVKECTL_E2E_CONTROL_PLANE_VIP}"
+fi
 
 cat >"${RENDERED_SITESPEC}" <<EOF
 clusterName: ${E2E_CLUSTER_NAME}
@@ -308,42 +330,54 @@ infrastructure: nico
 cluster:
   nico:
     nodeCount: ${NODE_COUNT}
-    orgID: ${NICO_ORG_ID}
-    siteID: ${NICO_SITE_ID}
-    vpcID: ${NICO_VPC_ID}
-    instanceTypePreference:
-      - ${NICO_INSTANCE_TYPE_ID}
-    subnetIDs:
-      - ${NICO_SUBNET_ID}
-    sshKeyGroupIDs:
-      - ${NICO_SSH_KEY_GROUP_ID}
-    osProfile: ${OS_PROFILE}
-    configProfile: ${CONFIG_PROFILE}
+    provider:
+      orgID: ${NICO_ORG_ID}
+      siteID: ${NICO_SITE_ID}
+      vpcID: ${NICO_VPC_ID}
+    controlPlane:
+      instanceTypePreference:
+        - ${NICO_INSTANCE_TYPE_ID}
+      subnetIDs:
+        - ${NICO_SUBNET_ID}
+      sshKeyGroupIDs:
+        - ${NICO_SSH_KEY_GROUP_ID}
+      osProfile: ${OS_PROFILE}
+      configProfile: ${CONFIG_PROFILE}
+${vip_line}
   k8sVersion: "1.34.8"
-  cniName: calico
+  cniName: ovn-kubernetes
+  cniVersion: "1.4.0"
   podCidr: "192.168.0.0/16"
   serviceCidr: "10.96.0.0/12"
-  etcdEncryption: false
   kubeletConfig:
     systemReservedMemory: "1Gi"
 spire:
   trustDomain: ${SPIRE_TRUST_DOMAIN}
   externalAddress: ${GATEWAY}
+bootstrapNico:
+  endpoint: http://${GATEWAY}:${SIM_PORT}
+  orgID: ${NICO_ORG_ID}
+  apiName: forge
+  tokenFile: ${TOKEN_FILE}
+bootstrapTenant:
+  user: nvke-e2e
+  passwordFile: ${TENANT_PASSWORD_FILE}
+bootstrapReleases: ${RELEASES_DIR}
 registry:
   bootstrapRepo: "nvcr.io/org"
   bootstrapChart: "controller-chart"
 EOF
 
-log "validating the site spec: nkectl bootstrap site --dry-run"
-"${NKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --dry-run >/dev/null || fail "the nico site spec did not validate"
+log "validating the site spec: nvkectl bootstrap site --dry-run"
+"${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --dry-run >/dev/null || fail "the nico site spec did not validate"
 
 # See run.sh for why this runs in the background: the networks have to be
 # bridged *during* the run, once the Kind cluster exists.
-log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --nico-credentials-file <file> --keep-bootstrap-cluster --timeout 25m" \
-  "(NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}, NKECTL_CWE_PROFILES_IMAGE=${NKECTL_CWE_PROFILES_IMAGE})"
+log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 25m" \
+  "(NVKECTL_CONTROLLER_IMAGE=${NVKECTL_CONTROLLER_IMAGE}, NVKECTL_CONTROLLER_PROFILES_IMAGE=${NVKECTL_CONTROLLER_PROFILES_IMAGE})"
 defer teardown_bootstrap_cluster
-setsid "${NKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" \
-  --nico-credentials-file "${CREDENTIALS_FILE}" --keep-bootstrap-cluster \
+setsid "${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" \
+  --keep-bootstrap-cluster \
   --timeout 25m --kubeconfig-out "${TENANT_KUBECONFIG}" >"${BOOTSTRAP_LOG}" 2>&1 &
 bootstrap_pid=$!
 
@@ -355,7 +389,7 @@ abort_bootstrap() {
 }
 
 # Both are nerdctl bridges, and nerdctl's firewall plugin drops forwards between
-# them. CWE -> nke-agent and node -> SPIRE (published on the Kind node's
+# them. The controller -> nvke-agent and node -> SPIRE (published on the Kind node's
 # NodePort) both cross, so permit exactly this pair, both directions, at
 # position 1 so it precedes the isolation chain. See run.sh.
 bridge_of() {
@@ -374,44 +408,21 @@ permit_cross_bridge_forwarding() {
   iptables -I FORWARD 1 -i "${node_bridge}" -o "${kind_bridge}" -j ACCEPT || return 1
 }
 
-# CWE reads a login user and password for every node it provisions through the
-# NICo path, and retries a node indefinitely without them. The values are
-# throwaway, for a cluster that lives minutes, and go in through files so they
-# never appear in a process listing. The namespace is created ahead of the CWE
-# release, which tolerates it existing.
-create_tenant_credentials() {
-  local cfg dir
-  cfg="$(mktemp)"
-  dir="$(mktemp -d)"
-  KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_CLUSTER}" >"${cfg}" || return 1
-  printf 'nke-e2e' >"${dir}/user"
-  head -c 18 /dev/urandom | base64 | tr -d '/+=\n' >"${dir}/password"
-  kubectl --kubeconfig "${cfg}" create namespace "${CWE_NAMESPACE}" >/dev/null 2>&1 || true
-  kubectl --kubeconfig "${cfg}" -n "${CWE_NAMESPACE}" create secret generic "${TENANT_SECRET}" \
-    --from-file=user="${dir}/user" --from-file=password="${dir}/password" >/dev/null
-  local rc=$?
-  rm -rf "${cfg}" "${dir}"
-  return "${rc}"
-}
-
 log "waiting for the bootstrap cluster to become ready, to bridge it to the node network"
 bridged=false
-bridge_deadline=$((SECONDS + ${NKECTL_E2E_ATTACH_TIMEOUT:-1200}))
+bridge_deadline=$((SECONDS + ${NVKECTL_E2E_ATTACH_TIMEOUT:-1200}))
 while kill -0 "${bootstrap_pid}" 2>/dev/null && [ "${SECONDS}" -lt "${bridge_deadline}" ]; do
   if grep -q "bootstrap kind cluster ready" "${BOOTSTRAP_LOG}" 2>/dev/null; then
     permit_cross_bridge_forwarding || { log "WARN: could not bridge the Kind and node networks"; break; }
     log "permitted forwarding between the Kind and node bridges"
-    create_tenant_credentials || { log "WARN: could not create the tenant credentials Secret"; break; }
-    log "created the tenant credentials Secret ${CWE_NAMESPACE}/${TENANT_SECRET}"
     bridged=true
     break
   fi
   sleep 2
 done
 if [ "${bridged}" != true ]; then
-  log "FAIL: the Kind and node networks were never bridged, or the tenant credentials"
-  log "  Secret was never created, so CWE cannot provision or reach the nodes. Not"
-  log "  waiting for a bootstrap that cannot finish."
+  log "FAIL: the Kind and node networks were never bridged, so the controller cannot"
+  log "  reach the nodes. Not waiting for a bootstrap that cannot finish."
   abort_bootstrap
 fi
 
@@ -420,7 +431,7 @@ wait "${bootstrap_pid}" || status=$?
 cat "${BOOTSTRAP_LOG}"
 output="$(cat "${BOOTSTRAP_LOG}")"
 
-[ "${status}" -eq 0 ] || fail "nkectl bootstrap site exited ${status}"
+[ "${status}" -eq 0 ] || fail "nvkectl bootstrap site exited ${status}"
 grep -q "installing CAPNICo" <<<"${output}" || fail "the bootstrap never installed CAPNICo"
 grep -q "cluster provisioned" <<<"${output}" || fail "the command exited 0 without reporting the cluster provisioned"
 [ -s "${TENANT_KUBECONFIG}" ] || fail "no kubeconfig was written to ${TENANT_KUBECONFIG}"
@@ -434,12 +445,20 @@ KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_
 defer "rm -f ${bootstrap_kubeconfig}"
 bk() { kubectl --kubeconfig "${bootstrap_kubeconfig}" "$@"; }
 
+# What the site spec's bootstrapTenant and bootstrapReleases asked for, which the
+# controller needed to create the first node at all.
+bk get clusterrelease "${OS_PROFILE}" >/dev/null 2>&1 ||
+  fail "the ClusterRelease ${OS_PROFILE} bootstrapReleases names was not applied to the bootstrap cluster"
+bk -n "${CONTROLLER_NAMESPACE}" get secret "${TENANT_SECRET}" >/dev/null 2>&1 ||
+  fail "the tenant credentials Secret ${CONTROLLER_NAMESPACE}/${TENANT_SECRET} bootstrapTenant names was not created"
+log "PASS: bootstrap site applied ${OS_PROFILE} and created the tenant credentials Secret"
+
 sim_nodes="$(nerdctl ps -q --filter "label=${SIM_LABEL}" | wc -l | tr -d ' ')"
 [ "${sim_nodes}" -eq "${NODE_COUNT}" ] ||
   fail "nico-sim is running ${sim_nodes} node container(s), expected ${NODE_COUNT}"
 log "PASS: nico-sim created ${sim_nodes} node container(s) for the ${NODE_COUNT} control-plane node(s) asked for"
 
-# nkectl returns once CWE reports every node provisioned, which can be seconds
+# nvkectl returns once the controller reports every node provisioned, which can be seconds
 # before the last one's CNI settles and the node reports Ready, so wait for it.
 ready_nodes=0
 nodes_ready() {
@@ -447,11 +466,11 @@ nodes_ready() {
     awk '$2 == "Ready" {n++} END {print n+0}')"
   [ "${ready_nodes}" -eq "${NODE_COUNT}" ]
 }
-if ! wait_until "${NKECTL_E2E_NODE_READY_TIMEOUT_SECONDS:-600}" 5 nodes_ready; then
+if ! wait_until "${NVKECTL_E2E_NODE_READY_TIMEOUT_SECONDS:-600}" 5 nodes_ready; then
   kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes -o wide || true
-  fail "${ready_nodes} of ${NODE_COUNT} node(s) became Ready in the cluster nkectl built"
+  fail "${ready_nodes} of ${NODE_COUNT} node(s) became Ready in the cluster nvkectl built"
 fi
-log "PASS: all ${NODE_COUNT} node(s) are Ready in the cluster nkectl built"
+log "PASS: all ${NODE_COUNT} node(s) are Ready in the cluster nvkectl built"
 
 # The address CWE wrote into each node's userdata is the one nodes can reach
 # before any cluster exists: the host on the node network, on the NodePort the

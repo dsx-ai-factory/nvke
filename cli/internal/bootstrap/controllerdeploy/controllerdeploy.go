@@ -250,16 +250,6 @@ type Config struct {
 	// tag other than latest, or a digest, or the cluster tries to pull it.
 	ProfilesImage string
 
-	// TenantCredentialsSecret names a Secret in CWE's namespace, with keys user
-	// and password, that the chart injects as DGXC_TENANT_USER and
-	// DGXC_TENANT_PASSWORD. CWE renders the login for the nodes it provisions
-	// through the NICo path from them, and fails every node without them. Empty
-	// injects neither, which is enough for hosts that already exist.
-	//
-	// The Secret is not created here: the namespace belongs to the CWE release,
-	// and the credential is the operator's to supply.
-	TenantCredentialsSecret string
-
 	// SPIREExternalAddress is the address nodes created by CAPNICo use to reach
 	// the SPIRE server. CWE writes it into each node's userdata, so it has to
 	// work from outside the cluster; the in-cluster name the provisioned path
@@ -372,6 +362,9 @@ func DefaultConfig() Config {
 
 		ProvisionedProviderImage: envOr("NVKECTL_CAPI_PROVISIONED_IMAGE", defaultImage(manifest.ComponentProvisioned, manifest.ImageManager)),
 		CWEPort:                  envPort("NVKECTL_NVKE_CONTROLLER_PORT", DefaultCWEPort),
+		// Added after the rename, so it has no NKECTL_ name to fall back to and
+		// is not in Settings.
+		ProfilesImage: os.Getenv("NVKECTL_CONTROLLER_PROFILES_IMAGE"),
 
 		HelmTimeout:  envDuration("NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT", 5*time.Minute),
 		ReadyTimeout: envDuration("NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT", 5*time.Minute),
@@ -731,9 +724,6 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return err
 	}
 	cweArgs = append(cweArgs, profilesArgs...)
-	if cfg.TenantCredentialsSecret != "" {
-		cweArgs = append(cweArgs, "--set-string", "secrets.dgxcTenantCredSecretName="+cfg.TenantCredentialsSecret)
-	}
 	cweArgs = append(cweArgs, cweEnvArgs(cfg)...)
 	if cfg.NicoInfrastructure {
 		cweArgs = append(cweArgs, "--set-string", "secrets.dgxcTenantCredSecretName="+dgxcTenantSecret)
@@ -808,6 +798,30 @@ func (e *Engine) applyReleases(ctx context.Context, kubeconfigPath, path string)
 		return fmt.Errorf("controllerdeploy: applying the release manifests at %s: %w\n%s", path, err, out)
 	}
 	return nil
+}
+
+// profilesImageArgs turns Config.ProfilesImage into the chart values that make
+// its init container copy the profiles into place. Nothing is added when no
+// image is set.
+func profilesImageArgs(cfg Config) ([]string, error) {
+	if cfg.ProfilesImage == "" {
+		return nil, nil
+	}
+	repo, tag, digest := splitImageRef(cfg.ProfilesImage)
+	// splitImageRef reports an untagged reference as latest. Kubernetes pulls
+	// latest unconditionally, and the chart gives this image no pull policy to
+	// override that, so a side-loaded image would never be found.
+	if digest == "" && tag == "latest" {
+		return nil, fmt.Errorf("controllerdeploy: the profiles image %q must carry a tag other than latest, or a digest: "+
+			"the chart sets no pull policy on it, so a latest tag makes the cluster pull it instead of using the "+
+			"side-loaded copy", cfg.ProfilesImage)
+	}
+	return []string{
+		"--set", "profiles.image.enabled=true",
+		"--set-string", "profiles.image.repository=" + repo,
+		"--set-string", "profiles.image.tag=" + tag,
+		"--set-string", "profiles.image.digest=" + digest,
+	}, nil
 }
 
 // cweEnvArgs renders the settings the controller reads from its own environment as helm
