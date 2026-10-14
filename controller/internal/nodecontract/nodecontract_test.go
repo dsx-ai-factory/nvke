@@ -15,14 +15,14 @@ func TestForAgentVersionBoundary(t *testing.T) {
 		{"whitespace is old", "  ", oldForm()},
 		{"unparseable is old", "not-a-version", oldForm()},
 		{"far older is old", "v0.1.26", oldForm()},
-		{"just below cutover is old", "0.21.99", oldForm()},
-		{"prefixed release below cutover is old", "v0.21.0", oldForm()},
-		{"cutover is new", "0.22.0", newForm()},
-		{"prefixed cutover is new", "v0.22.0", newForm()},
-		{"cutover release candidate is new", "v0.22.0-rc.1", newForm()},
-		{"cutover git describe is new", "v0.22.0-3-gabc1234", newForm()},
-		{"dirty cutover is new", "v0.22.0-dirty", newForm()},
-		{"older git describe is old", "v0.21.0-7-gabc1234", oldForm()},
+		{"just below cutover is old", "0.2.99", oldForm()},
+		{"prefixed release below cutover is old", "v0.2.0", oldForm()},
+		{"cutover is new", "0.3.0", newForm()},
+		{"prefixed cutover is new", "v0.3.0", newForm()},
+		{"cutover release candidate is new", "v0.3.0-rc.1", newForm()},
+		{"cutover git describe is new", "v0.3.0-3-gabc1234", newForm()},
+		{"dirty cutover is new", "v0.3.0-dirty", newForm()},
+		{"older git describe is old", "v0.2.0-7-gabc1234", oldForm()},
 		{"later is new", "v1.0.0", newForm()},
 	}
 	for _, tt := range tests {
@@ -37,7 +37,7 @@ func TestForAgentVersionBoundary(t *testing.T) {
 // Each of the five contracts is checked at the boundary, including the empty
 // version, so a field that is not wired to the gate cannot hide behind the others.
 func TestEveryContractFlipsAtTheBoundary(t *testing.T) {
-	for _, version := range []string{"", "0.21.9"} {
+	for _, version := range []string{"", "0.2.9"} {
 		got := ForAgentVersion(version)
 		if got.URN != "urn:nvidia:nke:controller" ||
 			got.UnitName != "nke-agent.service" ||

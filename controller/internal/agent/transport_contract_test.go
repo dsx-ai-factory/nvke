@@ -25,9 +25,9 @@ func TestExternalClientCertificateGatedOnAgentVersion(t *testing.T) {
 		want         *tls.Certificate
 	}{
 		"empty version gets the old URN":                     {newCert, "", oldCert},
-		"below the cutover gets the old URN":                 {newCert, "v0.21.0", oldCert},
-		"at the cutover gets the new URN":                    {newCert, "v0.22.0", newCert},
-		"at the cutover without a new identity gets the old": {nil, "v0.22.0", oldCert},
+		"below the cutover gets the old URN":                 {newCert, "v0.2.0", oldCert},
+		"at the cutover gets the new URN":                    {newCert, "v0.3.0", newCert},
+		"at the cutover without a new identity gets the old": {nil, "v0.3.0", oldCert},
 	}
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {

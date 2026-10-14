@@ -257,7 +257,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 		},
 		"agent version below the cutover restarts the old unit": {
 			config: config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}},
-			node:   nodeWithAgentVersion(config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}}, "v0.21.0"),
+			node:   nodeWithAgentVersion(config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}}, "v0.2.0"),
 			verify: func(t *testing.T, userData string) {
 				t.Helper()
 				var rendered cloudInitConfig
@@ -267,7 +267,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 		},
 		"agent version at the cutover restarts the new unit": {
 			config: config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}},
-			node:   nodeWithAgentVersion(config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}}, "v0.22.0"),
+			node:   nodeWithAgentVersion(config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}}, "v0.3.0"),
 			verify: func(t *testing.T, userData string) {
 				t.Helper()
 				var rendered cloudInitConfig

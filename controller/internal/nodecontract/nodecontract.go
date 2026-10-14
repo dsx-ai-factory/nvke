@@ -22,7 +22,7 @@ import (
 // NewFormMinAgentVersion is the first agent release that speaks the new form of
 // every contract in Contracts. Agents older than this speak only the old form.
 const (
-	NewFormMinAgentVersion = "0.22.0"
+	NewFormMinAgentVersion = "0.3.0"
 )
 
 // Contracts is the set of node contracts the controller writes or addresses
@@ -87,8 +87,8 @@ func IsNewForm(agentVersion string) bool {
 	return version.GTE(newFormMin())
 }
 
-// normalize reduces `git describe` style versions (v0.22.0-3-gabc1234,
-// v0.22.0-dirty) to the release they were built from.
+// normalize reduces `git describe` style versions (v0.3.0-3-gabc1234,
+// v0.3.0-dirty) to the release they were built from.
 func normalize(version string) string {
 	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
 	parts := strings.Split(version, "-")

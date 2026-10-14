@@ -191,7 +191,7 @@ func TestUnit_RenderUserData(t *testing.T) {
 		"agent version below the cutover renders the old CNI package family": {
 			config:            baseConfig,
 			template:          "images={{ .CNIImagePackage }}\ncharts={{ .CNIChartsPackage }}\n",
-			node:              db.Node{Name: "test-node", AgentVersion: "v0.21.0"},
+			node:              db.Node{Name: "test-node", AgentVersion: "v0.2.0"},
 			kubernetesVersion: "1.33.0",
 			cluster:           db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
 			verify: func(t *testing.T, userData string) {

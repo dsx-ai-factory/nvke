@@ -24,9 +24,9 @@ func TestNodeAgentBootstrapFilesGatedOnAgentVersion(t *testing.T) {
 		wantEnvPath  string
 	}{
 		"empty version is old":          {"", "/etc/nke/controller-ca.crt", "/etc/default/nke-agent"},
-		"below the cutover is old":      {"v0.21.0", "/etc/nke/controller-ca.crt", "/etc/default/nke-agent"},
-		"at the cutover is new":         {"v0.22.0", "/etc/nvke/controller-ca.crt", "/etc/default/nvke-agent"},
-		"cutover git describe is new":   {"v0.22.0-3-gabc1234", "/etc/nvke/controller-ca.crt", "/etc/default/nvke-agent"},
+		"below the cutover is old":      {"v0.2.0", "/etc/nke/controller-ca.crt", "/etc/default/nke-agent"},
+		"at the cutover is new":         {"v0.3.0", "/etc/nvke/controller-ca.crt", "/etc/default/nvke-agent"},
+		"cutover git describe is new":   {"v0.3.0-3-gabc1234", "/etc/nvke/controller-ca.crt", "/etc/default/nvke-agent"},
 		"unparseable version stays old": {"garbage", "/etc/nke/controller-ca.crt", "/etc/default/nke-agent"},
 	}
 	for name, params := range tests {
