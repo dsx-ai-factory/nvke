@@ -84,6 +84,9 @@ func (u *GCSUploader) uploadOnce(ctx context.Context, path string, data []byte, 
 	w.ContentType = contentType
 	if _, err := w.Write(data); err != nil {
 		_ = w.Close()
+		if isPreconditionFailed(err) {
+			return nil
+		}
 		return fmt.Errorf("writing gs://%s/%s: %w", u.Bucket, path, err)
 	}
 	if err := w.Close(); err != nil {
