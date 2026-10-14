@@ -84,6 +84,14 @@ jobs:
 
           selected=""
           while read -r sha; do
+            # The publishers' beta triggers landed with this file, so a commit
+            # without it would take a tag that starts nothing -- and every
+            # commit older than it predates them too.
+            if ! git cat-file -e "${sha}:.github/workflows/nightly-beta-tag.yml" 2>/dev/null; then
+              echo "${sha:0:9}: predates the beta publishers"
+              break
+            fi
+
             # branch=main, because a tag push is a push too. These five also run
             # on the component tags, and a tag is cut after the merge, so the
             # newest run at a tagged commit is the tag's -- which would let a
