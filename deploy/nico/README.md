@@ -37,14 +37,13 @@ What the node needs, all present on the reference instance type:
 - `helm`, `kubectl`, `git`, `python3` (the executor's item parser and template
   renderer are Python), plus `clusterctl` for the prerequisites
 - to install for a site: `nvkectl` (`make -C cli build` writes
-  `cli/bin/nvkectl`; `NVKECTL` names it, else PATH). `deploy/nvke-deploy.sh
-  install --sitespec sitespec.yaml --kubeconfig site.kubeconfig` runs the
-  steps: readiness, Cluster API, this deploy path rendered for the site
-  from the spec's `controllerStack` section and applied, the SPIRE
-  exec-auth patch. The render lives in a private scratch
-  directory and is removed when the script exits, so no rendered credential
-  is left behind. `deploy/nvke-deploy.sh apply --deploy-path deploy/nico
-  --sitespec sitespec.yaml` applies this deploy path alone. Without a
+  `cli/bin/nvkectl`; `NVKECTL` names it, else PATH). `deploy/check-site.sh --sitespec
+  sitespec.yaml --kubeconfig site.kubeconfig` reports what is still missing;
+  `deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec
+  sitespec.yaml --kubeconfig site.kubeconfig` renders this deploy path for
+  the site from the spec's `controllerStack` section and applies it. The
+  render lives in a private scratch directory and is removed when the
+  script exits, so no rendered credential is left behind. Without a
   release, the spec sets `controllerStack.images.profiles`: this deploy path
   enables the profiles content image without naming it
 - a checkout laid out so that `deploy/` and `controller/` are siblings --

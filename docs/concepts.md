@@ -33,7 +33,7 @@ You don't run `kubeadm` directly. NVKE runs it for you. But understanding what i
 
 Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NVKE's own services (the controller, Temporal, Postgres, SPIRE, NKTP) are installed as Helm charts, from the NVKR release or their public repositories.
 
-After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh install` installs them from the `deploy/nico` deploy path: each item is a chart with its values, or plain manifests. See [Install the Site Controller](site-bootstrap/install-site-controller.md).
+After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` installs them from the `deploy/nico` deploy path, one step of a short list of commands: each item is a chart with its values, or plain manifests. See [Install the Site Controller](site-bootstrap/install-site-controller.md).
 
 **Learn more:** https://helm.sh/docs/intro/using_helm/
 
@@ -97,7 +97,7 @@ In NVKE, every node and every workload gets a SPIFFE identity backed by TPM atte
 
 GitOps is the practice of using a git repository as the single source of truth for infrastructure state. You declare what you want in git; a controller (ArgoCD in NVKE's case) makes the cluster match it.
 
-NVKE ships a **deploy path**, `deploy/nico`: a directory that lists the NVKE services in install order, each as a Helm chart with values or as plain manifests. After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh install` applies it. A GitOps tool such as ArgoCD can deliver the same items and own ongoing reconciliation. See [Deploy Path](site-bootstrap/deploy-repository.md) for the format and [Install the Site Controller](site-bootstrap/install-site-controller.md) for the install.
+NVKE ships a **deploy path**, `deploy/nico`: a directory that lists the NVKE services in install order, each as a Helm chart with values or as plain manifests. After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` applies it, one step of a short list of commands. A GitOps tool such as ArgoCD can deliver the same items and own ongoing reconciliation. See [Deploy Path](site-bootstrap/deploy-repository.md) for the format and [Install the Site Controller](site-bootstrap/install-site-controller.md) for the install.
 
 ---
 

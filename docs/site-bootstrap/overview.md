@@ -45,7 +45,7 @@ sequenceDiagram
 
 ## After Bootstrap
 
-`nvkectl bootstrap site` leaves a plain Kubernetes cluster and its kubeconfig. [Install the Site Controller](install-site-controller.md) installs the management plane onto it from the `deploy/nico` deploy path: Cluster API, CAPNICo, Postgres, Temporal, SPIRE, NKTP and the NVKE controller. `deploy/nvke-deploy.sh install` does it as one command; the same page describes doing it by hand and through GitOps.
+`nvkectl bootstrap site` leaves a plain Kubernetes cluster and its kubeconfig. [Install the Site Controller](install-site-controller.md) installs the management plane onto it from the `deploy/nico` deploy path: Cluster API, CAPNICo, Postgres, Temporal, SPIRE, NKTP and the NVKE controller. It is a short list of commands; the page gives them in order, and how a GitOps tool delivers the same items.
 
 The cluster's etcd data is encrypted at rest from its first `kubeadm init`, and every control-plane node holds the key. Bootstrap also saves it into the working directory as `<clusterName>-etcd-encryption-key.json` (`--encryption-key-out` to choose the path): a convenience, since a controller installed later can be given the file instead of having the key pulled off a node, and the disaster-recovery copy, since a restore onto new hosts has no node to pull it from. Move the file off the host and keep it. See [Pre-Provisioned Nodes](pre-provisioned-nodes.md#troubleshooting).
 

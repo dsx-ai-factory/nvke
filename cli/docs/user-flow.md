@@ -17,8 +17,8 @@ the reference it points at.
 | `nvkectl validate sitespec -f sitespec.yaml` | Checks the whole site spec and reports by section: the bootstrap fields, then `controllerStack:` with the placeholders still to fill in. `--bootstrap-only` before the section is filled in. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
 | `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts and images come from this checkout. | Not in the CLI |
-| `deploy/nvke-deploy.sh install --sitespec sitespec.yaml --kubeconfig <path> [--release release.json]` | Installs the controller stack on the bootstrapped cluster in one run: readiness checks, the cluster's taint and StorageClass, Cluster API, the `deploy/nico` deploy path rendered for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller), and the SPIRE exec-auth patch, then prints the `config set-site` command. See [Install the Site Controller](../../docs/site-bootstrap/install-site-controller.md). | Not in the CLI |
-| `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at a site controller; the install prints the command. `use-site` switches between entries, `view` prints the config. | Available |
+| `deploy/check-site.sh`, `clusterctl init`, `deploy/nvke-deploy.sh install --deploy-path deploy/nico`, the exec-auth patch | The site controller install, a short list of commands run in order: the check reports what the cluster and this machine still need; `clusterctl init` installs Cluster API; the executor renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller) and applies it; the patch gives the Cluster API controllers SPIRE exec-auth. See [Install the Site Controller](../../docs/site-bootstrap/install-site-controller.md). | Not in the CLI |
+| `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
 | `nvkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
 | `nvkectl get clusters [name ...]` | Lists tenant clusters. Names narrow to those clusters. `-o json\|yaml` changes the format. | Available |
@@ -104,18 +104,21 @@ section of the site spec still needs. Fill that in and run
 ### 4. Install the controller stack
 
 ```bash
-deploy/nvke-deploy.sh install --sitespec sitespec.yaml --kubeconfig my-tier0-site.kubeconfig \
-  --release release.json --site-releases releases/
+deploy/check-site.sh --sitespec sitespec.yaml --kubeconfig my-tier0-site.kubeconfig --release release.json
+clusterctl init --kubeconfig my-tier0-site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
+deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --kubeconfig my-tier0-site.kubeconfig --release release.json
+kubectl --kubeconfig my-tier0-site.kubeconfig apply --server-side -f releases/
+controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig my-tier0-site.kubeconfig
 ```
 
-One command: it checks the inputs and the cluster, installs Cluster API,
-renders the `deploy/nico` deploy path for the site and the release and
-applies it, item by item, then patches the Cluster API controllers for
-SPIRE. It ends by printing what is yours to do by hand: register the site
-with the CLI and admit your networks to the controller API. Every step is
-safe to repeat; after a failure, fix the cause and run it again.
+A list of commands, in this order: the check reports what the cluster and
+this machine still need, with the fix, and prints the next two commands
+when everything passes; `clusterctl init` installs Cluster API at the
+pinned version; the executor renders the `deploy/nico` deploy path for the
+site and the release and applies it, item by item; your release resources
+follow; the last script patches the Cluster API controllers for SPIRE.
 [Install the Site Controller](../../docs/site-bootstrap/install-site-controller.md)
-describes each step, the inputs, removal and upgrade.
+gives each step, the inputs, removal and upgrade.
 
 The deploy path is the interface and the script is the reference way to apply
 it. `deploy/nico/nvke-deploy.yaml` lists the items in install order, and each
@@ -127,7 +130,7 @@ describes the format.
 
 ### 5. Point the CLI at the site controller
 
-The install prints this command; run it on the machine the CLI lives on:
+On the machine the CLI lives on:
 
 ```bash
 nvkectl config set-site --name my-tier0-site \

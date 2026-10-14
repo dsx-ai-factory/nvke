@@ -142,4 +142,4 @@ nvkectl bootstrap site -f sitespec.yaml --dry-run
 
 ## What's Next After Bootstrap
 
-After the site controller cluster is up, `deploy/nvke-deploy.sh install` installs Cluster API, the infrastructure provider and the NVKE services on it in one run; see [Install the Site Controller](install-site-controller.md). [Infrastructure Providers](infrastructure-providers.md) describes the provider it installs, and [Deploy Path](deploy-repository.md) the format of the directory the services are installed from.
+After the site controller cluster is up, a short list of commands installs Cluster API, the infrastructure provider and the NVKE services on it; see [Install the Site Controller](install-site-controller.md). [Infrastructure Providers](infrastructure-providers.md) describes the provider it installs, and [Deploy Path](deploy-repository.md) the format of the directory the services are installed from.

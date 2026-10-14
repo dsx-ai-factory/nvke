@@ -16,30 +16,42 @@ The site spec names credential files; it holds no credential itself. `nvkectl` r
 
 ## Run
 
+The install is a list of commands; [docs/site-bootstrap/install-site-controller.md](../docs/site-bootstrap/install-site-controller.md) gives it in order with what each one does. The two scripts here are steps 1 and 3 of that list.
+
 ```bash
-deploy/nvke-deploy.sh install --sitespec sitespec.yaml --kubeconfig site.kubeconfig \
-  [--release release.json [--nvkr-run-dir .nvkr/runs/<attempt>]] \
-  [--site-releases releases/] [--dry-run]
+deploy/check-site.sh --sitespec sitespec.yaml --kubeconfig site.kubeconfig [--release release.json [--nvkr-run-dir DIR]]
+clusterctl init --kubeconfig site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
+deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --kubeconfig site.kubeconfig [--release release.json [--nvkr-run-dir DIR]]
+kubectl --kubeconfig site.kubeconfig apply --server-side -f releases/
+controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig site.kubeconfig
+nvkectl config set-site --name <site> --url http://<VIP>:30080 --kubeconfig site.kubeconfig
 ```
 
-One run, five steps, in this order. The install does what is NVKE's and reports or prints what is the site's: the StorageClass, who may reach the controller API and the CLI on your machine stay yours. The first failure stops the run and writes diagnostics under `$XDG_STATE_HOME/nvke/diagnostics/`. Every step is safe to repeat: fix the cause and run the same command again. `--dry-run` prints every kubectl, helm and clusterctl argv and changes nothing in the cluster.
+## check-site.sh
 
-| Step | Does |
+One line per finding, PASS, WARN, SKIP or FAIL with the fix, and a non-zero exit on any FAIL. It changes nothing. When everything passes it prints the `clusterctl init` and `nvke-deploy.sh install` commands with the given paths.
+
+| Finding | What it checks |
 |---|---|
-| check readiness | tools on `PATH` and `helm` at the pin; the checkout; `nvkectl validate sitespec`; the release description parses; the run directory; the cluster API, an odd node count, the node architecture against `controllerStack.arch`, no control-plane taint, exactly one default StorageClass; egress to the chart repositories and registries. Changes nothing |
-| install Cluster API | `clusterctl init` with the core and kubeadm providers at `CAPI_VERSION` from `make/tool-versions.mk`; cert-manager comes with it. Another installed version is an error |
-| install the site controller | `apply` of `deploy/nico` rendered for the site and against the release; the site's release resources from `--site-releases`; waits for CAPNICo and the controller and asks the controller's `/readyz` |
-| secure | `controller/hack/apply-capi-spiffe-exec-auth.sh` |
-| verify | `GET /api/version` from inside the cluster, then the next steps for the operator: `nvkectl config set-site`, a NetworkPolicy for their client networks, the release resources if none were passed |
+| tools | `kubectl`, `helm`, `clusterctl`, `curl`, `python3` on `PATH`; `helm` at the pin in `make/tool-versions.mk`; `nvkectl` (`NVKECTL`, else `PATH`) |
+| checkout | `deploy/nico/nvke-deploy.yaml` and the controller and NKTP charts, which the executor installs from the tree |
+| Cluster API | `CAPI_VERSION` from `make/tool-versions.mk`; `clusterctl` at that version; not installed yet, installed at that version, or installed at another, which is a FAIL |
+| site spec | `nvkectl validate sitespec` passes; the architecture is read for the node check |
+| release | `--release` parses and names its reference and declared qualification; `--nvkr-run-dir` exists |
+| cluster | the API answers with `--kubeconfig`; an odd node count; the node architecture matches `controllerStack.arch`; no control-plane `NoSchedule` taint; exactly one default StorageClass |
+| egress | the chart repositories and registries answer within 10s (WARN) |
+| disk | at least 10 GB free under the state directory (WARN) |
 
-## apply
+`--diagnostics` with `--kubeconfig` instead writes nodes, pods, events, helm releases and the controller logs under `NVKE_STATE_DIR/diagnostics` and exits 0; run it after a failed step.
+
+## nvke-deploy.sh
 
 ```bash
-deploy/nvke-deploy.sh apply --deploy-path DIR [--sitespec FILE] [--release FILE] [--nvkr-run-dir DIR] \
+deploy/nvke-deploy.sh install --deploy-path DIR [--sitespec FILE] [--release FILE] [--nvkr-run-dir DIR] \
   [--config bootstrap-config.json] [--values-for ITEM=FILE]... [--kubeconfig PATH] [--timeout 15m] [--dry-run] [-- helm args]
 ```
 
-`apply` is what the install runs for the stack, on its own: it walks `nvke-deploy.yaml` and applies the items in list order. The e2e lanes install `controller/deploy/capd-e2e` and `capnico-e2e` with it, and `controller/hack/ci/kind-stack-from-release.sh` brings `deploy/nico` up on a kind node from a release.
+The executor: it walks `nvke-deploy.yaml` and applies the items in list order. With `--sitespec` or `--release` it first renders the deploy path for the site and against the release into a private scratch directory under `NVKE_STATE_DIR`, installs from there and removes it when it exits, so no rendered credential is left behind. `--dry-run` prints every kubectl and helm argv instead. The e2e lanes install `controller/deploy/capd-e2e` and `capnico-e2e` with it, and `controller/hack/ci/kind-stack-from-release.sh` brings `deploy/nico` up on a kind node from a release through the whole list above.
 
 | Type | What happens |
 |---|---|

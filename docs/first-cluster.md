@@ -391,7 +391,7 @@ separate job, and the largest step here — `nvkectl` has no command for it.
 
 Follow [Install the Site Controller](site-bootstrap/install-site-controller.md).
 It installs the whole management plane, Postgres, Temporal, SPIRE, CAPNICo,
-NKTP and CWE, with `deploy/nvke-deploy.sh install`, from the `deploy/nico`
+NKTP and CWE, with the commands [Install the Site Controller](site-bootstrap/install-site-controller.md) lists, from the `deploy/nico`
 deploy path, the site spec and an NVKR release description.
 
 ```bash

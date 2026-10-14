@@ -1,6 +1,6 @@
 # Install the Site Controller
 
-`nvkectl bootstrap site` leaves a plain Kubernetes cluster. This page installs the management plane onto it: Postgres, Temporal, SPIRE, [CAPNICo](https://github.com/dsx-ai-factory/cluster-api-provider-nico), NKTP and the NVKE controller.
+`nvkectl bootstrap site` leaves a plain Kubernetes cluster. This page installs the management plane onto it, as a short list of commands: Postgres, Temporal, SPIRE, [CAPNICo](https://github.com/dsx-ai-factory/cluster-api-provider-nico), NKTP and the NVKE controller.
 
 The install takes three inputs.
 
@@ -34,51 +34,25 @@ nvkr release export --reference <repo@digest> > release.json
 
 ## Install
 
-There are three ways to install the stack. All three apply the same deploy path, in the same order, with the same inputs. The deploy path is the interface; the script is the reference way to apply it. [Deploy Path](deploy-repository.md) describes the format.
+The install is a list of commands, run in this order. Each one stands on its own; nothing orchestrates them. What is the site's to decide, the StorageClass, who may reach the controller API, the CLI on your machine, is yours to do, and the first command tells you what is still missing.
 
-### Option 1: The Script
+1. **Check the site.** `deploy/check-site.sh --sitespec sitespec.yaml --kubeconfig site.kubeconfig --release release.json` prints one line per finding, with the fix: the tools and the `helm` pin, the checkout, the site spec, the release description and its declared qualification, the cluster API, an odd node count, the node architecture against `controllerStack.arch`, the control-plane taint the bootstrap removes, exactly one default StorageClass, the Cluster API version, egress and disk. It changes nothing and exits non-zero on a FAIL. When everything passes it prints the next two commands with your paths filled in. The StorageClass is yours to bring: which provisioner is right is a property of the hardware, so install the CSI driver for it and annotate its class `storageclass.kubernetes.io/is-default-class=true`; a lab can use rancher local-path-provisioner.
+2. **Install Cluster API.** `clusterctl init --kubeconfig site.kubeconfig --core cluster-api:<version> --bootstrap kubeadm:<version> --control-plane kubeadm:<version> --wait-providers`, with the version `make/tool-versions.mk` pins; the check prints the exact line. cert-manager comes with it. `clusterctl init` does not upgrade, so a Cluster API of another version is a finding in step 1, not something to install over. See [Upgrade](../operations/upgrade.md).
+3. **Install the stack.** `deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --kubeconfig site.kubeconfig --release release.json` renders `deploy/nico` for the site and against the release into a private scratch directory, applies it item by item with `--wait`, and removes the scratch directory. `--dry-run` prints every kubectl and helm call instead. A failed helm release is uninstalled before the rerun: `helm --kubeconfig site.kubeconfig uninstall <release> -n <namespace>`.
+4. **Publish the release resources.** `kubectl --kubeconfig site.kubeconfig apply --server-side -f releases/`, your `MachineImage`, `ClusterRelease` and `NodePoolRelease`, as [Your first cluster](../first-cluster.md#7-publish-a-release) shows. The chart installed their CRDs in step 3.
+5. **Patch the Cluster API controllers for SPIRE.** `controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig site.kubeconfig` gives them the SPIFFE exec-auth plugin, so Cluster API reaches tenant clusters with a SPIFFE JWT rather than a stored admin kubeconfig. After step 3, because the script checks the rollout only once the SPIRE CSI driver, which the `spire` item installs, is registered. `clusterctl upgrade` drops the patch; run the script again after it.
+6. **Register the site and admit your networks.** On the machine the CLI lives on: `nvkectl config set-site --name <site> --url http://<VIP>:30080 --kubeconfig site.kubeconfig`. The chart admits the controller API from pods in the cluster only; a NetworkPolicy in `nke-controller` selecting `app.kubernetes.io/name: nke-controller` that admits your client CIDRs on port 8080 opens it to your machines.
+7. **Verify.** `nvkectl get providers`, and `curl http://<VIP>:30080/api/version` from an admitted machine.
 
-One command does the whole install:
+After a failure in step 3, `deploy/check-site.sh --kubeconfig site.kubeconfig --diagnostics` writes nodes, pods, events, helm releases and the controller logs under `$XDG_STATE_HOME/nvke/diagnostics/`.
 
-```bash
-deploy/nvke-deploy.sh install --sitespec sitespec.yaml --kubeconfig site.kubeconfig \
-  --release release.json --site-releases releases/
-```
+The kind lane, `controller/hack/ci/kind-stack-from-release.sh`, runs steps 1, 2, 3 and 5 in this order on a kind node from a three-artifact release, so the list above is executed in CI.
 
-It does what is NVKE's to do and reports or prints what is the site's: the StorageClass, who may reach the controller API, and the CLI on your machine stay yours. It runs five steps in order and stops at the first failure, with diagnostics under `$XDG_STATE_HOME/nvke/diagnostics/`. Every step is safe to repeat: fix the cause and run the same command again. `--dry-run` prints every kubectl, helm and clusterctl argv and changes nothing in the cluster. The [deploy README](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/README.md) lists every flag and variable.
+### Taking the executor apart
 
-1. **Checks readiness.** The tools and the `helm` pin, the checkout, the site spec, the release description, the run directory, the cluster API, the node count and architecture, a control-plane taint the bootstrap should have removed, exactly one default StorageClass, and egress. A failed check names the fix. Nothing is changed. The StorageClass is yours to bring: which provisioner is right is a property of the hardware, so install the CSI driver for it and annotate its class `storageclass.kubernetes.io/is-default-class=true`; a lab can use rancher local-path-provisioner.
-2. **Installs Cluster API.** `clusterctl init` with the core and kubeadm providers at `CAPI_VERSION` from `make/tool-versions.mk`. cert-manager comes with it. A Cluster API of another version is an error: `clusterctl init` does not upgrade. See [Upgrade](../operations/upgrade.md).
-3. **Installs the site controller.** Renders `deploy/nico` for the site and against the release into a private scratch directory, applies it item by item, and removes the scratch directory. Applies the site's `MachineImage`, `ClusterRelease` and `NodePoolRelease` resources from `--site-releases`. Waits for CAPNICo and the controller and asks the controller's `/readyz` for its database and Temporal.
-4. **Secures.** Patches the Cluster API controllers with the SPIRE exec-auth plugin (`controller/hack/apply-capi-spiffe-exec-auth.sh`). `clusterctl upgrade` drops the patch; rerun the install after it.
-5. **Verifies.** Asks the controller for `/api/version` from inside the cluster, then prints what you do next by hand.
+Step 3 is two things you can run yourself. `nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --release release.json --out <dir>` writes the copy resolved for the site and the release into a directory only you can read; it holds the site's credentials, so delete it when you are done. Then apply the items in the order `nvke-deploy.yaml` lists them: a manifest item is `kubectl apply --server-side -f` on each of its files, or on `kubectl kustomize` of the directory when the render wrote a `kustomization.yaml`; a helm item is `helm upgrade --install <release> <chart> -n <namespace> --wait` with the item's values files in order, and its `release.yaml` names the chart, release, values and `requires`. Wait for each `requires` entry with `kubectl wait` before its chart. `deploy/nvke-deploy.sh install --dry-run` prints exactly this for your site.
 
-After the install, on your own machine and under your own policy:
-
-- **Register the site with the CLI.** `nvkectl config set-site --name <site> --url http://<VIP>:30080 --kubeconfig site.kubeconfig`. The install prints the exact command.
-- **Admit your client networks.** The chart admits the controller API from pods in the cluster only. A NetworkPolicy in `nke-controller` selecting `app.kubernetes.io/name: nke-controller` that admits your CIDRs on port 8080 opens it to your machines.
-- **Publish the release resources** if you did not pass `--site-releases`: a `MachineImage`, a `ClusterRelease` and a `NodePoolRelease`, as [Your first cluster](../first-cluster.md#7-publish-a-release) shows.
-
-A failed helm release is uninstalled before the rerun:
-
-```bash
-helm --kubeconfig site.kubeconfig uninstall <release> -n <namespace>
-deploy/nvke-deploy.sh install ...
-```
-
-### Option 2: By Hand
-
-The same steps, run by you. Take the script apart as far as you like: `deploy/nvke-deploy.sh install --dry-run` prints the exact commands for your site, in order, and nothing below is hidden in it.
-
-1. **Prepare the cluster.** Make sure exactly one StorageClass is default. The bootstrap already removed the control-plane `NoSchedule` taint.
-2. **Install Cluster API.** `clusterctl init --core cluster-api:<version> --bootstrap kubeadm:<version> --control-plane kubeadm:<version>`, with the version `make/tool-versions.mk` pins.
-3. **Render the deploy path.** `nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --release release.json --out <dir>` writes a copy resolved for the site and the release into a directory only you can read. It holds the site's credentials; delete it when the install is done.
-4. **Apply the items** in the order `nvke-deploy.yaml` lists them. A manifest item is `kubectl apply --server-side -f` on each of its files, or on `kubectl kustomize` of the directory when the render wrote a `kustomization.yaml`. A helm item is `helm upgrade --install <release> <chart> -n <namespace> --wait` with the item's values files in order; the item's `release.yaml` names the chart, release, values and `requires`. Wait for each `requires` entry with `kubectl wait` before its chart. Then apply the site's release resources with `kubectl apply --server-side -f releases/`.
-5. **Secure.** Run `controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig site.kubeconfig`.
-6. **Register and admit.** `nvkectl config set-site --name <site> --url http://<VIP>:30080 --kubeconfig site.kubeconfig`, and a NetworkPolicy in `nke-controller` that admits your client networks to the controller API.
-7. **Verify.** `curl http://<VIP>:30080/api/version` from an admitted machine, and `nvkectl get providers`.
-
-### Option 3: GitOps
+### GitOps
 
 Every item in `deploy/nico/nvke-deploy.yaml` is a Helm chart plus values files, or plain YAML, so a GitOps tool can deliver the same items without changing the deploy path.
 
@@ -87,7 +61,7 @@ Every item in `deploy/nico/nvke-deploy.yaml` is a Helm chart plus values files, 
 - **The Certificate.** The `spire` item declares a `requires:` on the `oidc-provider-upstream-ca` Certificate. In GitOps that is a wave boundary or a health check on the Certificate, not a `kubectl wait`.
 - **Secrets.** The `nvke-base-config` item renders two Secrets: `nico-credentials` and `dgxc-tenant-credentials`. Under GitOps those come from the operator's secret store. The namespaces and the Certificate chain in the same item are plain YAML and stay in git.
 - **Per-site values.** The `site-values.yaml` files the render writes belong in your own repository or your secret store.
-- **Imperative steps.** `clusterctl init` and `controller/hack/apply-capi-spiffe-exec-auth.sh` stay imperative, outside GitOps. The other steps do not change.
+- **Outside GitOps.** Steps 1, 2, 5 and 6 stay as they are: a check, `clusterctl init`, the exec-auth patch and your own machine.
 
 [Deploy Path](deploy-repository.md#applying-it-another-way) lists what an executor has to do.
 
@@ -110,13 +84,14 @@ Helm leaves PersistentVolumeClaims behind. Delete the `postgres` and `spire-serv
 
 ## Upgrade
 
-Verify and export the new release, then run the install again with the new description:
+Verify and export the new release, then run the check and the executor again with the new description:
 
 ```bash
-deploy/nvke-deploy.sh install --sitespec sitespec.yaml --kubeconfig site.kubeconfig --release new-release.json
+deploy/check-site.sh --sitespec sitespec.yaml --kubeconfig site.kubeconfig --release new-release.json
+deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --kubeconfig site.kubeconfig --release new-release.json
 ```
 
-The steps before the stack find nothing to do; the stack is upgraded in place. [Tenant Cluster Kubernetes Upgrades](../operations/upgrade.md) covers upgrades of tenant clusters.
+The check reports Cluster API at its version; the stack is upgraded in place. [Tenant Cluster Kubernetes Upgrades](../operations/upgrade.md) covers upgrades of tenant clusters.
 
 ## Next Steps
 
