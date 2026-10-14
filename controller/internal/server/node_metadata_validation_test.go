@@ -90,6 +90,20 @@ func TestValidateNodeLabels(t *testing.T) {
 	}
 }
 
+func TestValidateNodeLabels_ReportsFirstInvalidKeyInSortedOrder(t *testing.T) {
+	t.Parallel()
+
+	labels := map[string]string{
+		"nvke.nvidia.com/managed": "true",
+		"k8s.io/foo":              "bar",
+		"bad key":                 "x",
+	}
+	// Map iteration order varies between ranges, so repeat to catch an unsorted walk.
+	for range 10 {
+		require.ErrorContains(t, validateNodeLabels(labels, nil), `nodeLabels: key "bad key" is invalid`)
+	}
+}
+
 func TestValidateNodeLabels_ConfiguredAllowlist(t *testing.T) {
 	t.Parallel()
 

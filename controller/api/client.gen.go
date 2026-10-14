@@ -472,7 +472,6 @@ func NewListClustersRequest(server string, params *ListClustersParams) (*http.Re
 		queryValues := queryURL.Query()
 
 		if params.Name != nil {
-
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "name", runtime.ParamLocationQuery, *params.Name); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
@@ -484,7 +483,6 @@ func NewListClustersRequest(server string, params *ListClustersParams) (*http.Re
 					}
 				}
 			}
-
 		}
 
 		queryURL.RawQuery = queryValues.Encode()
@@ -510,7 +508,7 @@ func NewCreateClusterRequest(server string, body CreateClusterJSONRequestBody) (
 }
 
 // NewCreateClusterRequestWithBody generates requests for CreateCluster with any type of body
-func NewCreateClusterRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+func NewCreateClusterRequestWithBody(server, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -771,7 +769,6 @@ func NewListNodePoolsRequest(server string, params *ListNodePoolsParams) (*http.
 		queryValues := queryURL.Query()
 
 		if params.ClusterID != nil {
-
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "clusterID", runtime.ParamLocationQuery, *params.ClusterID); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
@@ -783,11 +780,9 @@ func NewListNodePoolsRequest(server string, params *ListNodePoolsParams) (*http.
 					}
 				}
 			}
-
 		}
 
 		if params.ClusterName != nil {
-
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "clusterName", runtime.ParamLocationQuery, *params.ClusterName); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
@@ -799,11 +794,9 @@ func NewListNodePoolsRequest(server string, params *ListNodePoolsParams) (*http.
 					}
 				}
 			}
-
 		}
 
 		if params.Name != nil {
-
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "name", runtime.ParamLocationQuery, *params.Name); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
@@ -815,7 +808,6 @@ func NewListNodePoolsRequest(server string, params *ListNodePoolsParams) (*http.
 					}
 				}
 			}
-
 		}
 
 		queryURL.RawQuery = queryValues.Encode()
@@ -841,7 +833,7 @@ func NewCreateNodePoolRequest(server string, body CreateNodePoolJSONRequestBody)
 }
 
 // NewCreateNodePoolRequestWithBody generates requests for CreateNodePool with any type of body
-func NewCreateNodePoolRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+func NewCreateNodePoolRequestWithBody(server, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -1007,7 +999,6 @@ func NewListNodeSetsRequest(server string, params *ListNodeSetsParams) (*http.Re
 		queryValues := queryURL.Query()
 
 		if params.NodePoolID != nil {
-
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "nodePoolID", runtime.ParamLocationQuery, *params.NodePoolID); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
@@ -1019,7 +1010,6 @@ func NewListNodeSetsRequest(server string, params *ListNodeSetsParams) (*http.Re
 					}
 				}
 			}
-
 		}
 
 		queryURL.RawQuery = queryValues.Encode()
@@ -1090,7 +1080,6 @@ func NewListNodesRequest(server string, params *ListNodesParams) (*http.Request,
 		queryValues := queryURL.Query()
 
 		if params.ClusterID != nil {
-
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "clusterID", runtime.ParamLocationQuery, *params.ClusterID); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
@@ -1102,11 +1091,9 @@ func NewListNodesRequest(server string, params *ListNodesParams) (*http.Request,
 					}
 				}
 			}
-
 		}
 
 		if params.NodePoolID != nil {
-
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "nodePoolID", runtime.ParamLocationQuery, *params.NodePoolID); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
@@ -1118,11 +1105,9 @@ func NewListNodesRequest(server string, params *ListNodesParams) (*http.Request,
 					}
 				}
 			}
-
 		}
 
 		if params.ClusterName != nil {
-
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "clusterName", runtime.ParamLocationQuery, *params.ClusterName); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
@@ -1134,11 +1119,9 @@ func NewListNodesRequest(server string, params *ListNodesParams) (*http.Request,
 					}
 				}
 			}
-
 		}
 
 		if params.Name != nil {
-
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "name", runtime.ParamLocationQuery, *params.Name); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
@@ -1150,11 +1133,9 @@ func NewListNodesRequest(server string, params *ListNodesParams) (*http.Request,
 					}
 				}
 			}
-
 		}
 
 		if params.ControlPlane != nil {
-
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "controlPlane", runtime.ParamLocationQuery, *params.ControlPlane); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
@@ -1166,7 +1147,6 @@ func NewListNodesRequest(server string, params *ListNodesParams) (*http.Request,
 					}
 				}
 			}
-
 		}
 
 		queryURL.RawQuery = queryValues.Encode()
@@ -2303,7 +2283,6 @@ func ParseGetClusterControlPlaneClientResponse(rsp *http.Response) (*GetClusterC
 			return nil, err
 		}
 		response.JSON200 = &dest
-
 	}
 
 	return response, nil

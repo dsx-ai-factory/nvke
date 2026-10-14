@@ -2254,7 +2254,7 @@ func TestValidateCreateClusterRequestFields_RejectsTaintsOnControlPlanePool(t *t
 }
 
 func TestValidateCreateClusterRequestFields_RejectsReservedNodeLabel(t *testing.T) {
-	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false)
+	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, true, false, "")
 	req := baseNicoClusterCreateRequest()
 	(*req.NodePools)[0].NodeLabels = map[string]string{"kubernetes.io/hostname": "n1"}
 

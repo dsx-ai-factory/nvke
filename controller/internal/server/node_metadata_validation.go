@@ -5,6 +5,7 @@ package server
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -28,16 +29,18 @@ func reservedKubernetesDomains() []string {
 // reserved unless they appear in allowlistedLabelKeys, which operators set through
 // nodeMetadataAllowlistedLabelKeys in nke-controller-config. Keys under the internal domains are always reserved.
 func validateNodeLabels(labels map[string]string, allowlistedLabelKeys []string) error {
-	for key, value := range labels {
-		if err := validateLabelKey(key, value, allowlistedLabelKeys); err != nil {
+	//  sort the keys to get a deterministic error for failures
+	for _, key := range slices.Sorted(maps.Keys(labels)) {
+		if err := validateLabelKey(key, labels[key], allowlistedLabelKeys); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// validateNodeTaints checks taints supplied on create. Pool taints are applied only to workers,
-// so control-plane pools cannot carry them; control-plane nodes keep the default taint set by core bootstrap components.
+// validateNodeTaints checks taints supplied on create. Custom taints are only relevant for worker pools, and are not supported on control-plane for now.
+// Core bootstrap components add node-role.kubernetes.io/control-plane:NoSchedule to control-plane nodes, which keeps
+// workloads that don't tolerate it from running on them by default.
 func validateNodeTaints(taints []api.NodeTaint, controlPlane bool) error {
 	if controlPlane && len(taints) > 0 {
 		return fmt.Errorf("nodeTaints: not allowed on a control-plane pool")

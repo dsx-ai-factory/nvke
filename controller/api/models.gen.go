@@ -381,7 +381,7 @@ type CreateClusterControlPlaneConfig struct {
 	// NodeAgentConfig Desired control-plane node-agent configuration.
 	NodeAgentConfig *NodeAgentConfig `json:"nodeAgentConfig,omitempty"`
 
-	// NodeLabels Labels applied to control-plane nodes, as a map of keys to values. Set at creation.
+	// NodeLabels Labels applied to control-plane nodes at creation, as a map of keys to values. Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are reserved, unless the deployment allows specific Kubernetes keys.
 	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
@@ -465,10 +465,10 @@ type CreateNodePoolRequest struct {
 	// ControlPlane Whether the nodes in this pool should be added as Kubernetes control plane nodes
 	ControlPlane bool `json:"controlPlane,omitempty"`
 
-	// NodeLabels Labels applied to the pool's nodes, as a map of keys to values. Set at creation.
+	// NodeLabels Labels applied to the pool's nodes at creation, as a map of keys to values. Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are reserved, unless the deployment allows specific Kubernetes keys.
 	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
-	// NodeTaints Taints applied to the pool's nodes. Set at creation.
+	// NodeTaints Taints applied to the pool's nodes at creation. Not allowed on control-plane pools. Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are reserved. Each key and effect pair may appear only once.
 	NodeTaints []NodeTaint `json:"nodeTaints,omitempty"`
 
 	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
@@ -1029,10 +1029,10 @@ type NodePoolCreateConfig struct {
 	// ControlPlane Whether the nodes in this pool should be added as Kubernetes control plane nodes
 	ControlPlane bool `json:"controlPlane,omitempty"`
 
-	// NodeLabels Labels applied to the pool's nodes, as a map of keys to values. Set at creation.
+	// NodeLabels Labels applied to the pool's nodes at creation, as a map of keys to values. Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are reserved, unless the deployment allows specific Kubernetes keys.
 	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
-	// NodeTaints Taints applied to the pool's nodes. Set at creation.
+	// NodeTaints Taints applied to the pool's nodes at creation. Not allowed on control-plane pools. Keys under nvke.nvidia.com, nke.nvidia.com (legacy), nke.io (legacy), kubernetes.io, k8s.io and their subdomains are reserved. Each key and effect pair may appear only once.
 	NodeTaints []NodeTaint `json:"nodeTaints,omitempty"`
 
 	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.

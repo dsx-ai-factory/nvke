@@ -331,7 +331,10 @@ resources: {}
 supportedInfraProviders: "nico"
 
 nodeMetadata:
-  # -- Allowlist of label keys under the reserved kubernetes.io and k8s.io domains. Intended for operators whose deployments specifically need some Kubernetes labels. Use with care: these keys can conflict with Kubernetes core components.
+  # -- Allowlist of label keys under the reserved kubernetes.io and k8s.io domains. Intended for operators whose deployments specifically need labels from these domains.
+  # Use with care: these keys can conflict with Kubernetes core components.
+  # `node-role.kubernetes.io/control-plane` and keys under the internal NVKE domains cannot be listed.
+  # The controller validates the allowlist and refuses to start if an entry is one of the above forbidden keys, or is empty, padded, not a valid label key, or a duplicate.
   allowlistedLabelKeys: []
 
 # -- Additional environment variables to inject into the controller container. A
