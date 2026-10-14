@@ -82,8 +82,9 @@ func IsScheme(location string) bool {
 //
 // The bucket is private and does not list, so a missing object answers 403 as
 // well, and so does a request from a network that is not allowed. The check can
-// confirm that something exists and cannot say that it does not, so a failure
-// names both explanations.
+// confirm that something exists and cannot say that it does not, so a 403 names
+// both explanations. Another status means neither of those, and says only what
+// it was.
 func (c Checker) httpExists(ctx context.Context, url string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
@@ -96,11 +97,15 @@ func (c Checker) httpExists(ctx context.Context, url string) error {
 	}
 	resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("could not confirm %s exists: HTTP %d. A missing artifact and a network that is "+
-			"not allowed both answer 403, so check both", url, resp.StatusCode)
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusForbidden:
+		return fmt.Errorf("could not confirm %s exists: HTTP 403. A missing artifact and a network that is "+
+			"not allowed both answer 403, so check both", url)
+	default:
+		return fmt.Errorf("could not confirm %s exists: HTTP %d", url, resp.StatusCode)
 	}
-	return nil
 }
 
 func (c Checker) client() *http.Client {

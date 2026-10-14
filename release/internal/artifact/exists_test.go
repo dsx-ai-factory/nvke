@@ -41,6 +41,23 @@ func TestExistsOverHTTP(t *testing.T) {
 		}
 	})
 
+	// A status that is not 403 means neither of those things, so saying so
+	// would send a reader looking for a network problem that is not there.
+	t.Run("another status says only what it was", func(t *testing.T) {
+		gone := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		t.Cleanup(gone.Close)
+
+		err := Exists(context.Background(), gone.URL+"/x.qcow2")
+		if err == nil || !strings.Contains(err.Error(), "HTTP 404") {
+			t.Fatalf("err = %v, want it to report the 404", err)
+		}
+		if strings.Contains(err.Error(), "403") {
+			t.Errorf("a 404 should not carry the 403 explanation:\n%s", err)
+		}
+	})
+
 	t.Run("an unreachable host is reported", func(t *testing.T) {
 		err := Exists(context.Background(), "http://127.0.0.1:1/x")
 		if err == nil || !strings.Contains(err.Error(), "could not confirm") {
