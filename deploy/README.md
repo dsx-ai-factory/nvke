@@ -2,7 +2,7 @@
 
 Installs the NVKE management plane onto a site cluster that `nvkectl bootstrap site` left behind: Postgres, Temporal, SPIRE, CAPNICo, NKTP and the NVKE controller. One scenario: NVKE with CAPNICo on a NICo site.
 
-Two scripts: `check-site.sh` reports what the site still needs, `nvke-deploy.sh` installs the deploy path. Read them before you run them. The guide [docs/site-bootstrap/install-site-controller.md](../docs/site-bootstrap/install-site-controller.md) explains each step.
+Two scripts: `check-site.sh` reports what the site still needs, `nvke-deploy.sh` installs the deploy path. Read them before you run them. The guide [Install management-plane services](../docs/operate/install-management-plane-services.md) explains each step.
 
 ## Inputs
 
@@ -16,7 +16,7 @@ The credentials the install reads, the NICo token, the tenant password and the d
 
 ## Run
 
-The install is a list of commands; [docs/site-bootstrap/install-site-controller.md](../docs/site-bootstrap/install-site-controller.md) gives it in order with what each one does. The two scripts here are steps 1 and 3 of that list.
+The install is a list of commands; [Install management-plane services](../docs/operate/install-management-plane-services.md) gives it in order with what each one does. The two scripts here are steps 1 and 3 of that list.
 
 ```bash
 deploy/check-site.sh --sitespec sitespec.yaml --kubeconfig site.kubeconfig [--release release.json [--nvkr-run-dir DIR]]

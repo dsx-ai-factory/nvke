@@ -2,7 +2,7 @@
 
 A deploy path is a directory that lists the NVKE services in install order. It holds one `nvke-deploy.yaml` and one directory per item. An item is a Helm chart with its values, a set of plain manifests, or templates that render the site's secrets.
 
-NVKE ships one deploy path, [`deploy/nico`](https://github.com/dsx-ai-factory/nvke/tree/main/deploy/nico). `deploy/nvke-deploy.sh install` applies it as one of its steps, rendered for the site spec and the NVKR release. See [Install the Site Controller](install-site-controller.md) for the install and its inputs.
+NVKE ships one deploy path, [`deploy/nico`](https://github.com/dsx-ai-factory/nvke/tree/main/deploy/nico). `deploy/nvke-deploy.sh install` applies it, rendered for the site spec and the NVKR release, as one step of the install. See [Install management-plane services](../operate/install-management-plane-services.md) for the list and its inputs.
 
 The deploy path is the interface. The script is the reference way to apply it. An operator can apply the same items with their own tooling, or through GitOps. `deploy/nvke-deploy.sh install --dry-run` prints every kubectl and helm call the script would make, in order.
 
@@ -173,7 +173,7 @@ Every item is a Helm chart with values, or plain YAML, so another tool can deliv
 3. Wait for each `requires` entry before its chart. In GitOps that is a sync-wave boundary or a health check on the object.
 4. With a local NVKR Run (`--nvkr-run-dir`), import the images listed in `images.txt` into the node's containerd before the first item.
 
-The [GitOps option](install-site-controller.md#gitops) of the install guide maps these onto a GitOps tool. The steps around the deploy path, such as `clusterctl init` and the SPIRE exec-auth patch, are in the same guide and stay imperative.
+A GitOps tool maps these onto sync waves and a secret store; `nvkectl render deploy-path` writes the per-site values and the rendered template items it delivers. The steps around the deploy path, such as `clusterctl init` and the SPIRE exec-auth patch, are in the same guide and stay imperative.
 
 ## Adding an Item
 

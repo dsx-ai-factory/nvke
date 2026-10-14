@@ -17,7 +17,7 @@ the reference it points at.
 | `nvkectl validate sitespec -f sitespec.yaml` | Checks the whole site spec and reports by section: the bootstrap fields, then `controllerStack:` with the placeholders still to fill in. `--bootstrap-only` before the section is filled in. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
 | `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts and images come from this checkout. | Not in the CLI |
-| `deploy/check-site.sh`, `clusterctl init`, `deploy/nvke-deploy.sh install --deploy-path deploy/nico`, the exec-auth patch | The site controller install, a short list of commands run in order: the check reports what the cluster and this machine still need; `clusterctl init` installs Cluster API; the executor renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller) and applies it; the patch gives the Cluster API controllers SPIRE exec-auth. See [Install the Site Controller](../../docs/site-bootstrap/install-site-controller.md). | Not in the CLI |
+| `deploy/check-site.sh`, `clusterctl init`, `deploy/nvke-deploy.sh install --deploy-path deploy/nico`, the exec-auth patch | The site controller install, a short list of commands run in order: the check reports what the cluster and this machine still need; `clusterctl init` installs Cluster API; the executor renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller) and applies it; the patch gives the Cluster API controllers SPIRE exec-auth. See [Install management-plane services](../../docs/operate/install-management-plane-services.md). | Not in the CLI |
 | `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
 | `nvkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
@@ -43,7 +43,7 @@ Global flags: `--site <name>` overrides the active site for one invocation,
 NVKR builds and publishes NVKE's artifacts. Verify a published release under
 your policy, then export its description; the install takes that file as
 `--release` and pulls every chart and image it carries by digest. The
-release also carries `nvkectl` itself; [Download and Install nvkectl](../../docs/site-bootstrap/installation.md)
+release also carries `nvkectl` itself; [Bootstrap the management cluster](../../docs/operate/bootstrap-management-cluster.md#install-nvkectl)
 shows how to take it from there.
 
 ```bash
@@ -53,9 +53,8 @@ nvkr release export --reference <repo@digest> > release.json
 ```
 
 `export` describes the release and verifies nothing, so run it only on a
-reference `verify` accepted. The
-[Release](../../docs/site-bootstrap/install-site-controller.md#release) section
-of the install guide explains what each command checks and writes. The release
+reference `verify` accepted. [Get NVKE artifacts and OS profiles built with NVKR](../../docs/operate/build-node-images.md)
+explains what each command checks and writes. The release
 is optional: without it the install takes the charts from this checkout and
 their public repositories, and the site spec names the controller images.
 
@@ -119,8 +118,8 @@ the Cluster API controllers for SPIRE. Then point the CLI at the site (step
 5) and publish a `MachineImage`, `ClusterRelease` and `NodePoolRelease`
 with `nvkectl create`, as [Your first cluster](../../docs/first-cluster.md#7-publish-a-release)
 shows, before the first tenant cluster.
-[Install the Site Controller](../../docs/site-bootstrap/install-site-controller.md)
-gives each step, the inputs, removal and upgrade.
+[Install management-plane services](../../docs/operate/install-management-plane-services.md)
+gives each step with its inputs.
 
 The deploy path is the interface and the script is the reference way to apply
 it. `deploy/nico/nvke-deploy.yaml` lists the items in install order, and each

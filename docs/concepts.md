@@ -33,7 +33,7 @@ You don't run `kubeadm` directly. NVKE runs it for you. But understanding what i
 
 Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NVKE's own services (the controller, Temporal, Postgres, SPIRE, NKTP) are installed as Helm charts, from the NVKR release or their public repositories.
 
-After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` installs them from the `deploy/nico` deploy path, one step of a short list of commands: each item is a chart with its values, or plain manifests. See [Install the Site Controller](site-bootstrap/install-site-controller.md).
+After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` installs them from the `deploy/nico` deploy path, one step of a short list of commands: each item is a chart with its values, or plain manifests. See [Install management-plane services](operate/install-management-plane-services.md).
 
 **Learn more:** https://helm.sh/docs/intro/using_helm/
 
@@ -43,7 +43,7 @@ After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` installs them fr
 
 ArgoCD is a GitOps continuous delivery tool for Kubernetes. It watches a git repository for Kubernetes manifests and keeps the cluster in sync with what's declared there. When you push a change, ArgoCD detects the drift and reconciles the cluster.
 
-NVKE does not require ArgoCD. The deploy path is Helm charts with values and plain manifests, so a GitOps tool can deliver the same items and own ongoing reconciliation; the [GitOps option](site-bootstrap/install-site-controller.md#gitops) of the install guide describes what that takes.
+NVKE does not require ArgoCD. The deploy path is Helm charts with values and plain manifests, so a GitOps tool can deliver the same items and own ongoing reconciliation; [Deploy Path](site-bootstrap/deploy-repository.md#applying-it-another-way) lists what an executor has to do.
 
 **Learn more:** https://argo-cd.readthedocs.io/en/stable/core_concepts/
 

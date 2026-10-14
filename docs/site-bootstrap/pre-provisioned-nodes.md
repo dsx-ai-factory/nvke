@@ -25,12 +25,13 @@ What you get after bootstrap depends on whether your environment includes a [NVI
 
 ## What `nvkectl bootstrap site` Does
 
-`nvkectl bootstrap site` has one job on pre-provisioned nodes: turn your prepared nodes into a **Kubernetes cluster**. It does not install the site controller stack or application workloads.
+`nvkectl bootstrap site` has one job on pre-provisioned nodes: turn your prepared nodes into a **Kubernetes cluster**. It does not install your site stack, GitOps controller, or application workloads.
 
 After bootstrap completes:
 
 1. **Verify the cluster** is healthy (see [Step 3](#step-3-verify-the-cluster)).
-2. **Install the site controller** from the `deploy/nico` deploy path, with the script, by hand or through GitOps. See [Install the Site Controller](install-site-controller.md).
+2. **If self-managed**, install your environment SBOM (NVKE, NICo, Temporal, Postgres, SPIRE, and the rest).
+3. **Deploy your GitOps tooling** — ArgoCD, Flux, or whatever you use for an app-of-apps layer.
 
 ## Prerequisites
 
@@ -41,7 +42,7 @@ After bootstrap completes:
 - Each node has an available NVMe device for local storage (non-root, unpartitioned, not in use)
 - NGC API key (required for pulling NVKE container images)
 - On the **init node**: `kind` binary and `nerdctl` with containerd installed — `nvkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises
-- The two images `nvkectl` side-loads: `make -C cli images` builds them on the init node. To use images from a registry instead, pass `--controller-image` and `--provisioned-provider-image`, or set `NVKECTL_CONTROLLER_IMAGE` (e.g. `nvcr.io/<org>/nvke-controller:edge`) and `NVKECTL_CAPI_PROVISIONED_IMAGE` (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
+- The two images `nvkectl` side-loads: `make -C cli images` builds them on the init node. To use images from a registry instead, pass `--controller-image` and `--provisioned-provider-image`, or set `NKECTL_CONTROLLER_IMAGE` (e.g. `nvcr.io/<org>/nvke-controller:edge`) and `NKECTL_CAPI_PROVISIONED_IMAGE` (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
 - On the **init node**, also on `PATH`: `helm`, `kubectl`, and `clusterctl`. `nvkectl`
   shells out to all three during bootstrap — Helm for the Postgres, Temporal, SPIRE
   and CWE releases, `kubectl` for the manifests, and `clusterctl init` for the
@@ -57,7 +58,7 @@ After bootstrap completes:
   what `clusterctl init` installs: Cluster API and cert-manager come from
   `github.com` and their images from their own registries
 
-If you are targeting a self-managed cluster, prepare the release description and the site spec's `controllerStack` section for the [deploy path](deploy-repository.md) ahead of time.
+If you are targeting a self-managed cluster, prepare your environment SBOM and [deploy repository](deploy-repository.md) ahead of time.
 
 ## Step 1: Prepare All Nodes
 
@@ -248,8 +249,8 @@ nvkectl bootstrap site -f sitespec.yaml --dry-run
 
 # Run bootstrap. --disable-mtls matches the plaintext agents from Step 1.
 REGISTRY_API_KEY="<your-registry-api-key>" \
-NVKECTL_CONTROLLER_IMAGE="nvcr.io/<org>/nvke-controller:edge" \
-NVKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
+NKECTL_CONTROLLER_IMAGE="nvcr.io/<org>/nvke-controller:edge" \
+NKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
   nvkectl bootstrap site -f sitespec.yaml --disable-mtls
 ```
 
@@ -303,8 +304,9 @@ All nodes should show `Ready` status.
 **Self-managed sites:**
 
 1. Ensure your NICo site is set up and healthy before proceeding. See the [NICo documentation](https://docs.nvidia.com/infra-controller/documentation/home) for site setup and networking requirements.
-2. Install the site controller from the `deploy/nico` deploy path; see [Install the Site Controller](install-site-controller.md).
-3. Complete NVKE and NICo host ingestion with the NVKE team. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. **TODO:** Publish NVKE-specific ingestion runbook here once it exists.
+2. Install your environment SBOM so NVKE can drive day-2 operations through NICo.
+3. Wait until the SBOM is fully deployed and healthy.
+4. Complete NVKE and NICo host ingestion with the NVKE team. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. **TODO:** Publish NVKE-specific ingestion runbook here once it exists.
 5. Operate the site through NVKE day-2 workflows.
 
 **Unmanaged sites:** Deploy workloads with whatever tooling fits your environment. No NVKE site-controller installation is required. Note that without NICo, no NVKE day-2 operations (tenant cluster creation, node add/remove, upgrades) are available.

@@ -105,7 +105,7 @@ The install refuses a release that lacks an image artifact the deploy path names
    deploy/check-site.sh --sitespec ../sitespec.yaml --kubeconfig ../<CLUSTER_NAME>.kubeconfig --release ../release.json
    ```
 
-   The check changes nothing. It prints one line per finding, `PASS`, `WARN`, `SKIP` or `FAIL`, and every `FAIL` names its fix. It covers the tools and the `helm` pin, the checkout, the site spec, the release description and its declared qualification, the cluster's API, the node count, the node architecture against `controllerStack.arch`, the control-plane taint, the default StorageClass, the Cluster API version, egress and disk space. It exits non-zero on any `FAIL`. When everything passes, it prints the next two commands with your paths filled in.
+   The check changes nothing. It prints one line per finding, `PASS`, `WARN`, `SKIP` or `FAIL`, and every `FAIL` names its fix. It covers the tools and the `helm` pin, the checkout, the site spec, the release description and its declared qualification, the cluster's API, the node count, the node architecture against `controllerStack.arch`, the control-plane taint, the default StorageClass, the Cluster API version and that its kubeadm providers are present, egress and disk space. It exits non-zero on any `FAIL`. When everything passes, it prints the next two commands with your paths filled in.
 
 2. Install Cluster API at the version NVKE pins.
 
@@ -141,15 +141,7 @@ The install refuses a release that lacks an image artifact the deploy path names
 
    The SPIFFE trust domain, the SPIRE server address and the TPM attestor checksum for `controllerStack.arch` all come from the site spec; you do not set them by hand.
 
-4. Apply your OS release resources.
-
-   ```bash
-   kubectl --kubeconfig ../<CLUSTER_NAME>.kubeconfig apply --server-side -f ../releases/
-   ```
-
-   `releases/` holds the `MachineImage`, `ClusterRelease` and `NodePoolRelease` resources you wrote in [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md). The controller chart installed their custom resource definitions in step 3. NVKE resolves the `osProfile` of a workload cluster or node pool from them, so you cannot create a cluster until they exist.
-
-5. Give the Cluster API controllers a SPIFFE identity.
+4. Give the Cluster API controllers a SPIFFE identity.
 
    ```bash
    controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig ../<CLUSTER_NAME>.kubeconfig
@@ -157,7 +149,7 @@ The install refuses a release that lacks an image artifact the deploy path names
 
    The script patches the Cluster API controller Deployments so that they reach workload clusters with a SPIFFE token rather than a stored admin kubeconfig. Run it after step 3, because it checks the rollout only once SPIRE's CSI driver is registered. `clusterctl upgrade` removes the patch; run the script again after an upgrade.
 
-6. Admit your client networks to the NVKE API. The chart admits the API only from pods in the cluster. Save this NetworkPolicy as `../nvke-api-clients.yaml`, with one `ipBlock` for each network your operators and automation call the API from:
+5. Admit your client networks to the NVKE API. The chart admits the API only from pods in the cluster. Save this NetworkPolicy as `../nvke-api-clients.yaml`, with one `ipBlock` for each network your operators and automation call the API from:
 
    ```yaml
    apiVersion: networking.k8s.io/v1
@@ -186,13 +178,29 @@ The install refuses a release that lacks an image artifact the deploy path names
 
    Which networks may reach the API is your decision. Until you complete [Secure the NVKE API](api-authentication.md), any caller you admit can call every endpoint.
 
-7. Point `nvkectl` at the NVKE API.
+6. Point `nvkectl` at the NVKE API.
 
    ```bash
    nvkectl config set-site --name <CLUSTER_NAME> --url http://<MANAGEMENT_ADDRESS>:30080 --kubeconfig "$PWD/../<CLUSTER_NAME>.kubeconfig"
    ```
 
    `<MANAGEMENT_ADDRESS>` is the management cluster's API virtual IP address (VIP), or the node IP of a single-node cluster.
+
+7. Publish your OS release resources, the machine image first because both releases reference it.
+
+   ```bash
+   nvkectl create machineimage -f ../releases/machineimage.yaml
+   ```
+
+   ```bash
+   nvkectl create clusterrelease -f ../releases/clusterrelease.yaml
+   ```
+
+   ```bash
+   nvkectl create nodepoolrelease -f ../releases/nodepoolrelease.yaml
+   ```
+
+   The files are the ones you wrote in [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md). `nvkectl` writes the resources to the management cluster through the kubeconfig of the previous step and supplies their API version and kind; the controller chart installed their custom resource definitions in step 3. `nvkectl get machineimages` lists what you published.
 
 ## If the install fails
 

@@ -1,11 +1,6 @@
 # Site Spec File
 
-The site spec is one YAML file with two parts, used in sequence.
-
-1. **The bootstrap part**: `clusterName`, `cluster`, `registry` and `spire`. It describes your pre-provisioned nodes and the Kubernetes cluster to build on them. `nvkectl bootstrap site` reads it, and nothing else. It is all the bootstrap requires.
-2. **The `controllerStack:` section**: the node architecture, the NICo API, the tenant login, and paths to the files that hold the tokens and passwords. The controller stack install reads it after the bootstrap; see [Install the Site Controller](install-site-controller.md). The bootstrap does not read it, so it can stay unfilled until then.
-
-The file is loaded and validated before any node is touched — a typo or missing field fails fast with a clear error.
+`nvkectl bootstrap site` reads a single YAML site spec file that describes your pre-provisioned nodes and the Kubernetes cluster to build on them. The file is loaded and fully validated before any node is touched — a typo or missing field fails fast with a clear error.
 
 `nvkectl generate sitespec <name> --nodes hosts.csv` writes one from a node CSV, so
 the file rarely needs assembling by hand — see
@@ -43,8 +38,6 @@ registry:
   # or the REGISTRY_API_KEY env var so the file can be committed safely.
 ```
 
-The example shows the bootstrap part. `nvkectl generate sitespec` writes the `controllerStack:` section below it with `REPLACE_*` placeholders; the [site spec reference](../../cli/docs/sitespec.md) describes its fields.
-
 ## Field Reference
 
 | Field | Type | Required | Notes |
@@ -70,7 +63,6 @@ The example shows the bootstrap part. `nvkectl generate sitespec` writes the `co
 | `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `nvkectl-bootstrap.nke.local`, and the install says so. A bootstrap run with `NVKECTL_BOOTSTRAP_CLUSTER_NAME` set derives another, so set it then. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to, so a node given that certificate when it was provisioned verifies the server on first contact. Without it SPIRE is self-signed. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Both or neither; both files are checked for existence at load. |
-| `controllerStack` | object | not for the bootstrap; yes for the install | The second part of the file. `nvkectl bootstrap site` ignores it; the controller stack install refuses a `REPLACE_*` placeholder in it. See the [site spec reference](../../cli/docs/sitespec.md). |
 
 Unknown fields are rejected. A typo in a field name fails the load rather than being silently ignored.
 
@@ -117,30 +109,21 @@ REGISTRY_API_KEY="nvapi-xxxx" nvkectl bootstrap site -f sitespec.yaml
 
 ## Validating the Site Spec
 
-`nvkectl validate sitespec` checks both parts and reports them one at a time. It exits 0 only when the file is ready for the bootstrap and the install. In between, when the bootstrap part is valid and the `controllerStack:` section is still to fill in, it says exactly that. On a spec `generate sitespec` just wrote:
-
-```console
-$ nvkectl validate sitespec -f sitespec.yaml
-bootstrap: valid; nvkectl bootstrap site can run with this file
-spire.trustDomain: not set; a bootstrap with the default cluster name and the controller stack install both use nvkectl-bootstrap.nke.local
-controllerStack: 8 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint, ...
-```
-
-and it exits non-zero with `the site spec is not ready for the controller stack install; the bootstrap can run now`. Run the bootstrap on the strength of the first line; fill in the section, run the command again and the second line becomes `controllerStack: valid`. `--bootstrap-only` checks the first part alone and exits 0 on it.
+`nvkectl validate sitespec` checks the whole file and reports by section: the fields `bootstrap site` reads, then the `controllerStack:` section the controller stack install reads, with the `REPLACE_*` values still to fill in listed apart from errors. It exits 0 only when the file is ready for both. The two halves are used in sequence: once the bootstrap section is valid, `nvkectl bootstrap site` can run with the file, and the `controllerStack:` section is filled in before the stack install. The output says so.
 
 ```bash
 nvkectl validate sitespec -f sitespec.yaml
-nvkectl validate sitespec -f sitespec.yaml --bootstrap-only
+nvkectl validate sitespec -f sitespec.yaml --bootstrap-only   # before the controllerStack section is filled in
 ```
 
-`bootstrap site --dry-run` loads and validates the bootstrap part and prints the resolved inventory without dispatching any workflow or touching any node. All validation errors are reported together in one pass.
+`bootstrap site --dry-run` loads and validates the bootstrap fields and prints the resolved inventory without dispatching any workflow or touching any node. All validation errors are reported together in one pass.
 
 ```bash
 nvkectl bootstrap site -f sitespec.yaml --dry-run
 ```
 
-`nvkectl bootstrap site` ends by listing the `REPLACE_*` values still in the file, and the install refuses one. The `controllerStack` tokens and passwords are paths to files that hold them, so that section holds no credential; `registry.apiKey` stays out of the file the way the section above says.
+The site spec's `controllerStack:` section is the input for the controller stack install. `nvkectl generate sitespec` writes it with `REPLACE_*` placeholders, `nvkectl bootstrap site` ends by listing the ones still in the file, and the install refuses a placeholder. Fill it in before installing the stack. Tokens and passwords are paths to files that hold them, so the site spec holds no credential.
 
 ## What's Next After Bootstrap
 
-After the site controller cluster is up, a short list of commands installs Cluster API, the infrastructure provider and the NVKE services on it; see [Install the Site Controller](install-site-controller.md). [Infrastructure Providers](infrastructure-providers.md) describes the provider it installs, and [Deploy Path](deploy-repository.md) the format of the directory the services are installed from.
+After the site controller cluster is up, install Cluster API and an infrastructure provider on it before deploying the NVKE services (CWE, Temporal, CNPG) — see [Infrastructure Providers](infrastructure-providers.md). The NVKE services deployment uses a GitOps-based deploy repository and ArgoCD; see [Deploy Repository](deploy-repository.md) for the structure and application manifests.

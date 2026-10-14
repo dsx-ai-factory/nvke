@@ -371,21 +371,20 @@ common failures with their fixes.
 
 ### 5. Install an infrastructure provider
 
-Cluster API and CAPNICo are part of the next step: the install guide's list
-installs Cluster API with `clusterctl init` and CAPNICo from the `deploy/nico`
-deploy path, in that order and before CWE. Do not install them separately
-first; [Infrastructure Providers](site-bootstrap/infrastructure-providers.md)
-explains the provider, the order, and how to prove the NICo credentials once
-the site is up.
+Cluster API and CAPNICo are part of the next step: the install's list of
+commands installs Cluster API with `clusterctl init` and CAPNICo from the
+`deploy/nico` deploy path, in that order and before CWE. Do not install them
+separately first; [Configure an infrastructure provider: NICo](operate/provider-nico.md)
+explains how to prove the NICo credentials once the site is up.
 
 ### 6. Install the site controller
 
 The bootstrap leaves you a plain Kubernetes cluster. Installing CWE onto it is a
 separate job, and the largest step here — `nvkectl` has no command for it.
 
-Follow [Install the Site Controller](site-bootstrap/install-site-controller.md).
+Follow [Install management-plane services](operate/install-management-plane-services.md).
 It installs the whole management plane, Postgres, Temporal, SPIRE, CAPNICo,
-NKTP and CWE, with the commands [Install the Site Controller](site-bootstrap/install-site-controller.md) lists, from the `deploy/nico`
+NKTP and CWE, with the commands that page lists, from the `deploy/nico`
 deploy path, the site spec and an NVKR release description.
 
 ```bash

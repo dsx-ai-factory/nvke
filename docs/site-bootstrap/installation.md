@@ -2,24 +2,23 @@
 
 `nvkectl` is the NVKE control-plane CLI. You use it to validate and bootstrap a site controller cluster from a declarative site spec file, and to manage tenant cluster lifecycle.
 
-NVKR builds `nvkectl` from the same source commit as the controller image and publishes it in the release, so the CLI matches the stack it installs. Take it from the release you verified. Without a release, build it from the clone.
+Releases are published under `cli/v*` tags at https://github.com/dsx-ai-factory/nvke/releases.
 
-## From the NVKR Release
-
-Verify the release and export its description, as [Install the Site Controller](install-site-controller.md#release) describes. The description names an executable output per architecture. With `jq` and [`oras`](https://oras.land/docs/installation) on the machine, pull it and unpack the binary:
+## Download
 
 ```bash
+# Set RELEASE to a cli/ tag listed at https://github.com/dsx-ai-factory/nvke/releases
+export RELEASE=cli/vX.Y.Z
+
+# Detects linux/darwin and amd64/arm64 (uname reports x86_64, aarch64, or arm64)
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-REF=$(jq -r --arg arch "$ARCH" '
-  [.outputs[] | select(.kind == "executable" and (.name | startswith("nvkectl")))]
-  | (map(select(.arch == $arch)) + map(select(.arch == null and (.name | endswith($arch)))) + map(select(.arch == null and .name == "nvkectl")))
-  | first.reference' release.json)
-oras pull "$REF"              # writes bundle.tar.gz
-tar -xzf bundle.tar.gz        # writes files/nvkectl
-sudo install -m 0755 files/nvkectl /usr/local/bin/nvkectl
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+curl -fsSL -o nvkectl \
+  "https://github.com/dsx-ai-factory/nvke/releases/download/${RELEASE}/nvkectl-${OS}-${ARCH}"
+chmod +x nvkectl && sudo mv nvkectl /usr/local/bin/
 ```
 
-The filter takes the output that declares your architecture, else the one named for it, else the plain `nvkectl` output of a description that declares no architecture; `nvkectl version` confirms what you got. The output is an OCI artifact with one layer, a gzip tar of the binaries, so any OCI client that pulls by digest works in place of `oras`. For a release held as a local OCI layout, `nvkr publish extract --layout <dir> --bundle nvkectl --out <dir>` verifies the publication and writes the same binary.
+Verify the download with `checksums.txt` from the same release.
 
 ## Verify
 
@@ -28,8 +27,6 @@ nvkectl version
 ```
 
 ## Build from Source
-
-Without a release, build the CLI from the clone; the controller and profiles images are built from the same clone.
 
 ```bash
 git clone https://github.com/dsx-ai-factory/nvke.git
