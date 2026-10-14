@@ -1,8 +1,8 @@
-# Get NVKE artifacts and OS profiles built with NVKR
+# Get NVKE artifacts from NVKR and write release manifests
 
-This page describes where the artifacts that NVIDIA Kubernetes Engine (NVKE) installs come from, how to hand them to the install, and how to write the OS profiles that the management plane provisions nodes from. Do it after you plan the installation and before you prepare the nodes.
+This page describes where the artifacts that NVIDIA Kubernetes Engine (NVKE) installs come from, how to hand them to the install, and how to write the releases that the management plane provisions nodes from. Do it after you plan the installation and before you prepare the nodes.
 
-NVIDIA Kubernetes Recipes (NVKR) builds the artifacts NVKE runs: the controller image and chart, the charts NVKE installs alongside it, `nvkectl`, and the node OS image. NVKR's own documentation covers building, publishing and verifying them. NVKE owns the OS profiles, which are Kubernetes resources you write and apply to the management cluster.
+NVIDIA Kubernetes Recipes (NVKR) builds the artifacts NVKE runs: the controller image and chart, the charts NVKE installs alongside it, `nvkectl`, and the node OS image. NVKR's own documentation covers building, publishing and verifying them. NVKE owns the releases, which are Kubernetes resources you write and apply to the management cluster.
 
 ## Before you begin
 
@@ -24,7 +24,7 @@ NVKR builds every artifact from a Definition, a YAML file that names each output
 | The maintained NVKE Definition | [Combined NVKE M2 candidate](https://github.com/dsx-ai-factory/nvkr/blob/main/definitions/nvke-m2/README.md) |
 | Build the node OS image | [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/definitions/nvke-os/README.md) and [Build a node image from component materials](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/node-images.md) |
 
-### What the install takes from a Release
+### What the install takes from an NVKR Release
 
 The install reads a Release by output name. Each item of the `deploy/nico` deploy path names the outputs it uses:
 
@@ -38,7 +38,7 @@ The install reads a Release by output name. Each item of the `deploy/nico` deplo
 
 The install selects each output for the site's architecture, `controllerStack.arch` in the site spec. An output name may carry an `-amd64` or `-arm64` suffix. A chart the Release does not carry comes from the checkout or from its public repository. An image the Release does not carry stops the render, which names every missing image.
 
-### Hand the Release to the install
+### Hand the NVKR Release to the install
 
 1. Verify the Release under your policy, as described in [Verify against an accepted policy](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/release-quickstart.md#verify-against-an-accepted-policy).
 
@@ -54,7 +54,7 @@ The install selects each output for the site's architecture, `controllerStack.ar
 
 > **Note:** NVKR's maintained M2 Definition (`definitions/nvke-m2`) does not build the `controller-profiles` or `capnico-controller` outputs, so the install refuses a Release built from it. Install without `--release` instead. The controller chart then comes from your checkout, and the site spec names the controller and profiles images in `controllerStack.images.controller` and `controllerStack.images.profiles`, each as `repository:tag` or `repository@sha256:<DIGEST>`. To use the Release's controller image, take the `cwe` output's `Derived artifact reference:` from `nvkr release browse`. To build the profiles image, see [Build the profile content image](#build-the-profile-content-image).
 
-### What a Release proves
+### What an NVKR Release proves
 
 NVKR records an evidence lane for every plan, Run and Release. No lane qualifies a Release.
 
@@ -70,9 +70,9 @@ See [Preview status and known limitations](../overview/preview-status.md).
 
 NVKR builds the node OS image, `nvke-node-image-<ARCH>.qcow2`: Ubuntu 26.04.1 in QEMU copy-on-write (QCOW2) format, for `amd64` or `arm64`. A local build runs NVKR's `scripts/nvke-os-local.sh` with `NVKE_OS_ARCH` set to the architecture, on native Linux with Kernel-based Virtual Machine (KVM) access, at least 8 CPUs, 10 GiB of memory and 64 GiB of free disk space. It writes `.nvkr/runs/<ATTEMPT>/outputs/nvke-node-image-<ARCH>.qcow2`, which is unsigned and unqualified. The maintained M2 Definition also builds node images for both architectures in the hosted pipeline. [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/definitions/nvke-os/README.md) has the procedure. Copy the image to where your provisioning system serves images, then [Prepare nodes](prepare-nodes.md) from it.
 
-## Write the OS profiles
+## Write the release manifests
 
-The `osProfile` field of a workload cluster or node pool names a release that the management plane provisions its nodes from. NVKE reads releases only from three cluster-scoped custom resources in the API group `internal.nvke.nvidia.com/v1`:
+The `release` field of a workload cluster or node pool names the release that the management plane provisions its nodes from. NVKE reads releases only from three cluster-scoped custom resources in the API group `internal.nvke.nvidia.com/v1`:
 
 | Resource | What it holds |
 |---|---|
@@ -80,7 +80,7 @@ The `osProfile` field of a workload cluster or node pool names a release that th
 | `ClusterRelease` | For control-plane nodes: the `MachineImage` to boot and the cloud-init user data the node runs on first boot. |
 | `NodePoolRelease` | The same, for worker nodes. |
 
-A control-plane node pool resolves its `osProfile` to a `ClusterRelease`, and a worker node pool to a `NodePoolRelease`. Give all three resources one name, and use that name as the `osProfile`. The specs are immutable once applied: to change an image or its user data, apply new resources with a new name.
+A control-plane node pool resolves its `release` to a `ClusterRelease`, and a worker node pool to a `NodePoolRelease`. Give all three resources one name, and use that name as the `release`. The specs are immutable once applied: to change an image or its user data, apply new resources with a new name.
 
 1. Copy the examples into a `releases` directory.
 

@@ -4,7 +4,7 @@ NVIDIA Kubernetes Engine (NVKE) is available as a preview. APIs, configuration a
 
 ## Supported at preview
 
-- Build node OS images and NVKE components with NVIDIA Kubernetes Recipes (NVKR): [Get NVKE artifacts and OS profiles built with NVKR](../operate/build-node-images.md).
+- Build node OS images and NVKE components with NVIDIA Kubernetes Recipes (NVKR): [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md).
 - Prepare nodes and bootstrap a management cluster from them with `nvkectl`: [Prepare nodes](../operate/prepare-nodes.md) and [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md).
 - Install the management plane on the management cluster: [Install management-plane services](../operate/install-management-plane-services.md).
 - Provision workload cluster nodes through NVIDIA Infra Controller (NICo): [Configure an infrastructure provider: NICo](../operate/provider-nico.md).
@@ -22,7 +22,7 @@ NVIDIA Kubernetes Engine (NVKE) is available as a preview. APIs, configuration a
 - **The management cluster does not manage itself.** It does not upgrade, scale or replace its own nodes.
 - **No management-plane upgrade procedure.** NVKE provides no procedure to move the management-plane services to a later NVKE release.
 - **No backup or restore procedure.** NVKE provides no procedure to back up or restore the management cluster or the management plane's state. Keep the kubeconfig and etcd encryption key file from the bootstrap in secure storage: the key file is the only copy of the management cluster's etcd encryption key that is not on a node.
-- **Management cluster nodes built from the node image need your own SPIRE certificate authority (CA).** Without your CA files at bootstrap, SPIRE uses a self-signed CA that no node can trust in advance, so the nodes cannot attest and cannot join. Supply your CA files as described in [Prepare nodes](../operate/prepare-nodes.md). Workload cluster nodes do not use this CA: NVKE puts the management cluster's SPIRE trust bundle in their user data, as described in [Get NVKE artifacts and OS profiles built with NVKR](../operate/build-node-images.md#what-nvke-puts-in-the-user-data).
+- **Management cluster nodes built from the node image need your own SPIRE certificate authority (CA).** Without your CA files at bootstrap, SPIRE uses a self-signed CA that no node can trust in advance, so the nodes cannot attest and cannot join. Supply your CA files as described in [Prepare nodes](../operate/prepare-nodes.md). Workload cluster nodes do not use this CA: NVKE puts the management cluster's SPIRE trust bundle in their user data, as described in [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md#what-nvke-puts-in-the-user-data).
 - **NICo is the only infrastructure provider.** NVKE provisions workload cluster nodes only through NICo.
 
 ### API and access
@@ -39,9 +39,9 @@ NVIDIA Kubernetes Engine (NVKE) is available as a preview. APIs, configuration a
 
 ### Building artifacts
 
-- **No NVKR Release is qualified, and local builds are unsigned.** A Run on your own host is in the `unqualified-local-execution` evidence lane, with no signatures or build provenance. Only NVKR's hosted pipeline produces `pipeline-attested` Releases, which carry signatures and build provenance, and NVKR qualifies none of them. See [Get NVKE artifacts and OS profiles built with NVKR](../operate/build-node-images.md#what-a-release-proves).
-- **NVKR's maintained Release lacks two images the install needs.** The `deploy/nico` deploy path names the profile content image `controller-profiles` and the CAPNICo image `capnico-controller`, which NVKR's maintained M2 Definition does not build, so the install refuses a Release built from it. Install without `--release` and name the images in the site spec, as described in [Get NVKE artifacts and OS profiles built with NVKR](../operate/build-node-images.md#hand-the-release-to-the-install).
-- **No reference iPXE script boots the NVKR node image through NICo.** To provision workload cluster nodes from the image, an OS profile's `ipxeScript` must write the image, a QEMU copy-on-write (QCOW2) file, to the machine's disk with a loader your NICo site provides. The example OS profile installs Ubuntu 24.04 from the installer ISO instead. See [Get NVKE artifacts and OS profiles built with NVKR](../operate/build-node-images.md).
+- **No NVKR Release is qualified, and local builds are unsigned.** A Run on your own host is in the `unqualified-local-execution` evidence lane, with no signatures or build provenance. Only NVKR's hosted pipeline produces `pipeline-attested` Releases, which carry signatures and build provenance, and NVKR qualifies none of them. See [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md#what-an-nvkr-release-proves).
+- **NVKR's maintained Release lacks two images the install needs.** The `deploy/nico` deploy path names the profile content image `controller-profiles` and the CAPNICo image `capnico-controller`, which NVKR's maintained M2 Definition does not build, so the install refuses a Release built from it. Install without `--release` and name the images in the site spec, as described in [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md#hand-the-nvkr-release-to-the-install).
+- **No reference iPXE script boots the NVKR node image through NICo.** To provision workload cluster nodes from the image, a release's `ipxeScript` must write the image, a QEMU copy-on-write (QCOW2) file, to the machine's disk with a loader your NICo site provides. The example release installs Ubuntu 24.04 from the installer ISO instead. See [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md).
 
 ### Telemetry
 

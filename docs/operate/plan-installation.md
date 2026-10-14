@@ -14,7 +14,7 @@ A management cluster with an odd number of nodes, each a control-plane node that
 
 | Step | What you do | Page |
 |---|---|---|
-| 1. Build | Build the NVKE controller image and the node OS image with NVIDIA Kubernetes Recipes (NVKR), and package the OS profiles. | [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md) |
+| 1. Build | Build the NVKE controller image and the node OS image with NVIDIA Kubernetes Recipes (NVKR), and package the releases. | [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md) |
 | 2. Prepare nodes | Boot the management cluster's nodes from the node image with cloud-init user data, and record each node's TPM thumbprint. | [Prepare nodes](prepare-nodes.md) |
 | 3. Bootstrap | Run `nvkectl bootstrap site` to form the management cluster. | [Bootstrap the management cluster](bootstrap-management-cluster.md) |
 | 4. Install | Install Cluster API, CAPNICo, SPIRE, telemetry and the NVKE API and controllers. | [Install management-plane services](install-management-plane-services.md) |
@@ -106,7 +106,7 @@ NVKE admits callers by group but does no authorization: every admitted caller ca
 | Workload cluster etcd encryption | Cluster creation | `etcdEncrypted` has no default. You can turn encryption on later, never off. |
 | Workload cluster API VIP | Cluster creation | Without one, the control plane has one node that you cannot scale, upgrade or replace. Adding a VIP means recreating the cluster. |
 | NICo identifiers | Cluster or node pool creation | A cluster's `orgID`, `siteID` and `vpcID`, and a node pool's `instanceTypeID`, InfiniBand partition and NVLink logical partition. |
-| OS profiles | When applied | `MachineImage`, `ClusterRelease` and `NodePoolRelease` resources are immutable. To change an image or its user data, publish a profile with a new name. |
+| Releases | When applied | `MachineImage`, `ClusterRelease` and `NodePoolRelease` resources are immutable. To change an image or its user data, publish a release with a new name. |
 
 ## Fill in your values
 
@@ -181,7 +181,7 @@ The workload cluster pages name each cluster `<WORKLOAD_CLUSTER>`. [Create a wor
 | Pod and service networks, if not the defaults | `network.podCIDR`, `network.serviceCIDR` | |
 | CNI | `cniPlugin` | |
 | etcd encryption | `etcdEncrypted` | |
-| OS profiles for the control plane and the workers | `<CP_OS_PROFILE>`, `<WORKER_OS_PROFILE>` | |
+| Releases for the control plane and the workers | `<CP_RELEASE>`, `<WORKER_RELEASE>` | |
 | Each node pool's name | `<POOL_NAME>` | |
 
 ## Verify
@@ -190,4 +190,4 @@ Your plan is complete when every row in [Fill in your values](#fill-in-your-valu
 
 ## Next steps
 
-- [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md).
+- [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md).

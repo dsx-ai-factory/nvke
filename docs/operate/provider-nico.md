@@ -113,7 +113,7 @@ The management plane holds no site-wide NICo settings. Each workload cluster req
 | `sshKeyGroupIDs` | Control plane and node pool `nico` | Optional. SSH key groups for node access. |
 | `infinibandPartitionID`, `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An InfiniBand partition and an NVLink logical partition. Fixed when the node pool is created. |
 
-The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and node pools also name an OS profile, `osProfile`, one of the profiles you applied in [Install management-plane services](install-management-plane-services.md), and optionally a config profile, `configProfile`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
+The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and each node pool select one of the releases you applied in [Install management-plane services](install-management-plane-services.md) with `nico.release` and, optionally, a config profile with `nico.configProfile`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
 
 ## Verify
 
