@@ -13,21 +13,21 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 )
 
-// newInspectCmd groups internal diagnostics: hidden from the top-level help,
-// text output, and no registry or cluster access. Nothing under deploy/ calls
-// them; the render does the work. The verb-noun shape is the one every
-// nvkectl command has.
+// newInspectCmd groups internal commands: hidden from the top-level help,
+// text output, and no registry or cluster access. deploy/check-site.sh
+// reads the site spec and the release description through them; the
+// verb-noun shape is the one every nvkectl command has.
 func newInspectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "inspect",
 		Short:  "Internal diagnostics: print one view of a file nvkectl reads",
 		Hidden: true,
-		Long: `Internal diagnostics. These subcommands read a file nvkectl consumes and
-print one view of it as plain text. Nothing under deploy/ calls them, and
-operators are not expected to; they exist to look at an input when a render
-refuses it. Nothing here touches a registry or a cluster.`,
+		Long: `Internal commands. These subcommands read a file nvkectl consumes and
+print one view of it as plain text. deploy/check-site.sh reads the site
+spec and the release description through them; operators are not expected
+to. Nothing here touches a registry or a cluster.`,
 	}
-	cmd.AddCommand(newInspectNVKRReleaseCmd())
+	cmd.AddCommand(newInspectNVKRReleaseCmd(), newInspectSiteSpecCmd())
 	return cmd
 }
 
