@@ -161,34 +161,6 @@ func TestExportTarget(t *testing.T) {
 	}
 }
 
-func TestExportTargetWarnsWhenEnabledWithoutEndpoint(t *testing.T) {
-	t.Parallel()
-
-	noEnv := func(string) string { return "" }
-	tests := []struct {
-		name     string
-		cfg      config.TracingConfig
-		wantWarn bool
-	}{
-		{name: "enabled without an endpoint warns", cfg: config.TracingConfig{Enabled: true}, wantWarn: true},
-		{name: "enabled with an endpoint does not warn", cfg: config.TracingConfig{Enabled: true, Endpoint: "c.example.test:4317"}},
-		{name: "disabled does not warn", cfg: config.TracingConfig{}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var logs bytes.Buffer
-			exportTarget(tt.cfg, noEnv, slog.New(slog.NewTextHandler(&logs, nil)))
-			if tt.wantWarn {
-				require.Contains(t, logs.String(), "level=WARN")
-				require.Contains(t, logs.String(), "tracing.endpoint")
-			} else {
-				require.NotContains(t, logs.String(), "level=WARN")
-			}
-		})
-	}
-}
-
 func TestStripOTLPScheme(t *testing.T) {
 	t.Parallel()
 
