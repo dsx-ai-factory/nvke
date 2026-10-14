@@ -27,7 +27,7 @@ One run, six steps, in this order. The first failure stops the run and writes di
 | Step | Does |
 |---|---|
 | check readiness | tools on `PATH` and `helm` at the pin; the checkout; `nvkectl validate sitespec`; the release description parses; the run directory; the cluster API, an odd node count, the node architecture against `controllerStack.arch`; egress to the chart repositories and registries. Changes nothing |
-| prepare the cluster | removes the control-plane `NoSchedule` taint when there are no workers; installs rancher local-path-provisioner as the default StorageClass when none is default (`SKIP_STORAGECLASS=1` leaves storage alone); fails unless exactly one class is default |
+| prepare the cluster | installs rancher local-path-provisioner as the default StorageClass when none is default (`SKIP_STORAGECLASS=1` leaves storage alone); fails unless exactly one class is default |
 | install Cluster API | `clusterctl init` with the core and kubeadm providers at `CAPI_VERSION` from `make/tool-versions.mk`; cert-manager comes with it. Another installed version is an error |
 | install the site controller | `apply` of `deploy/nico` rendered for the site and against the release; the site's release resources from `--site-releases`; waits for CAPNICo and the controller and asks the controller's `/readyz` |
 | secure and register | `controller/hack/apply-capi-spiffe-exec-auth.sh`; `nvkectl config set-site`; a NetworkPolicy admitting `--api-client-cidrs` to the controller API |
