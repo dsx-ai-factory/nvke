@@ -6,9 +6,11 @@
 package db_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"strings"
@@ -218,7 +220,9 @@ func TestMigrateControlPlaneToController(t *testing.T) {
 	orphanedPool, orphanedSet := f.insertPool(orphaned.ID, true, true)
 	orphanedNode := f.insertNode(orphaned.ID, true, &orphanedPool, &orphanedSet, uuid.Nil)
 
-	require.NoError(t, db.MigrateControlPlaneToController(ctx, bunDB))
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	require.NoError(t, db.MigrateControlPlaneToController(ctx, bunDB, logger))
 
 	t.Run("imported cluster gets a snapshot and is re-parented", func(t *testing.T) {
 		cluster, err := f.dbi.GetCluster(ctx, imported.ID)
@@ -286,9 +290,17 @@ func TestMigrateControlPlaneToController(t *testing.T) {
 		assert.Equal(t, 1, f.count("node_pools", orphanedPool.ID))
 	})
 
+	t.Run("skipped cluster is logged and others are not", func(t *testing.T) {
+		out := logs.String()
+		assert.Contains(t, out, "skipped cluster with no snapshot source")
+		assert.Contains(t, out, orphaned.ID.String())
+		assert.NotContains(t, out, imported.ID.String())
+		assert.NotContains(t, out, deleting.ID.String())
+	})
+
 	t.Run("second run changes nothing", func(t *testing.T) {
 		before := f.node(deprecatedNode.ID)
-		require.NoError(t, db.MigrateControlPlaneToController(ctx, bunDB))
+		require.NoError(t, db.MigrateControlPlaneToController(ctx, bunDB, logger))
 		after := f.node(deprecatedNode.ID)
 		assert.Equal(t, before.ControlPlaneConfigurationID, after.ControlPlaneConfigurationID)
 		assert.Equal(t, 1, f.count("node_pools", workerPool.ID))

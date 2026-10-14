@@ -179,7 +179,7 @@ func main() {
 
 	// Re-parent legacy node-pool-managed control planes onto the control-plane
 	// controller. Fails closed on a half-migrated fleet.
-	if err := db.MigrateControlPlaneToController(ctx, bunDB); err != nil {
+	if err := db.MigrateControlPlaneToController(ctx, bunDB, dbLogger); err != nil {
 		logger.Error("Failed to migrate control plane to controller", "error", err)
 		os.Exit(1)
 	}
