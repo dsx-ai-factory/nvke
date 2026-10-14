@@ -44,7 +44,7 @@ func TestTransportInjectsTraceparentAndUserAgent(t *testing.T) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer secret")
-	resp, err := (&http.Client{Transport: Transport(nil)}).Do(req)
+	resp, err := (&http.Client{Transport: Transport(srv.Client().Transport)}).Do(req)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	run.Finish(nil)
@@ -128,12 +128,21 @@ func TestTransportOutsideARunSendsDefaultUserAgentAndNoTrace(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got = r.Header.Clone() }))
 	defer srv.Close()
 
-	resp, err := (&http.Client{Transport: Transport(nil)}).Get(srv.URL)
+	resp, err := (&http.Client{Transport: Transport(srv.Client().Transport)}).Get(srv.URL)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 
 	assert.Equal(t, "nvkectl/dev", got.Get("User-Agent"))
 	assert.Empty(t, got.Get("Traceparent"))
+}
+
+// The tests that send requests pass their own server's transport, so this is
+// the only cover for the documented nil-base fallback.
+func TestTransportDefaultsToTheSharedDefaultTransport(t *testing.T) {
+	t.Parallel()
+	transport, ok := Transport(nil).(*runTransport)
+	require.True(t, ok)
+	assert.Same(t, http.DefaultTransport, transport.base)
 }
 
 func TestRunsKeepTheirOwnUserAgent(t *testing.T) {
@@ -146,7 +155,7 @@ func TestRunsKeepTheirOwnUserAgent(t *testing.T) {
 		seen[r.URL.Path] = r.Header.Get("User-Agent")
 	}))
 	defer srv.Close()
-	client := &http.Client{Transport: Transport(nil)}
+	client := &http.Client{Transport: Transport(srv.Client().Transport)}
 
 	for _, version := range []string{"v1", "v2"} {
 		run := NewRun(version)
@@ -210,7 +219,7 @@ func TestMalformedVersionStillSendsRequests(t *testing.T) {
 	defer run.Finish(nil)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
 	require.NoError(t, err)
-	resp, err := (&http.Client{Transport: Transport(nil)}).Do(req)
+	resp, err := (&http.Client{Transport: Transport(srv.Client().Transport)}).Do(req)
 	require.NoError(t, err, "the request must not be rejected over its User-Agent")
 	require.NoError(t, resp.Body.Close())
 
@@ -246,7 +255,7 @@ func TestWarnsWhenTheControllerReportsADifferentTraceID(t *testing.T) {
 			for range 2 {
 				req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
 				require.NoError(t, err)
-				resp, err := (&http.Client{Transport: Transport(nil)}).Do(req)
+				resp, err := (&http.Client{Transport: Transport(srv.Client().Transport)}).Do(req)
 				require.NoError(t, err)
 				require.NoError(t, resp.Body.Close())
 			}
