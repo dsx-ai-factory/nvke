@@ -114,7 +114,7 @@ type meta struct {
 func (d *Destination) Publish(ctx context.Context, result *qualification.Result, junitPath string) error {
 	combo := result.Status.Combinations[0]
 	stream := combo.Streams[0]
-	passed := stream.Result == "PASS"
+	passed := stream.Result == qualification.ResultPass
 	capabilities := stream.Capabilities
 
 	m := meta{

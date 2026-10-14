@@ -86,7 +86,7 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 				infraFailureStart = t.UTC()
 			}
 
-			resultState, summary, runStartedAt, runFinishedAt := "FAIL", "", infraFailureStart, time.Now().UTC()
+			resultState, summary, runStartedAt, runFinishedAt := qualification.ResultFail, "", infraFailureStart, time.Now().UTC()
 			ginkgoReport, err := loadGinkgoReport(report)
 			switch {
 			case errors.Is(err, os.ErrNotExist):
@@ -100,7 +100,7 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 				// FAIL result that would bury it.
 				return fmt.Errorf("--report: %w", err)
 			case ginkgoReport.SuiteSucceeded:
-				resultState = "PASS"
+				resultState = qualification.ResultPass
 				fallthrough
 			default:
 				summary = summarizeGinkgoReport(ginkgoReport)

@@ -56,6 +56,12 @@ type ResultCombination struct {
 	Streams    []ResultStream     `json:"streams"`
 }
 
+// ResultPass and ResultFail are the two values ResultStream.Result takes.
+const (
+	ResultPass = "PASS"
+	ResultFail = "FAIL"
+)
+
 // ResultStream is one stream's outcome within a combination. Result and
 // Summary are read from the Ginkgo report, not re-derived from JUnit --
 // there is never a second place a verdict could disagree with the
@@ -68,7 +74,7 @@ type ResultCombination struct {
 type ResultStream struct {
 	Name    string `json:"name"`
 	Scope   string `json:"scope"`
-	Result  string `json:"result"`
+	Result  string `json:"result"` // ResultPass or ResultFail
 	Summary string `json:"summary"`
 	RunURL  string `json:"runUrl,omitempty"`
 
