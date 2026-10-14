@@ -442,7 +442,7 @@ func TestCanStartRemediation(t *testing.T) {
 			name: "accounts for surge when nodes need rollout",
 			controlPlane: func() *controlPlane {
 				staleID, currentID := uuid.New(), uuid.New()
-				currentSpec := nicoCPSpec("nke-1.34.2", "", "1.34.2")
+				currentSpec := nicoCPSpec("nvke-1.34.2", "", "1.34.2")
 				return &controlPlane{
 					nodes: []db.Node{
 						nodeToRemove,
@@ -460,7 +460,7 @@ func TestCanStartRemediation(t *testing.T) {
 			name: "can remediate during rollout when size equals expected with surge",
 			controlPlane: func() *controlPlane {
 				staleID, currentID := uuid.New(), uuid.New()
-				currentSpec := nicoCPSpec("nke-1.34.2", "", "1.34.2")
+				currentSpec := nicoCPSpec("nvke-1.34.2", "", "1.34.2")
 				return &controlPlane{
 					nodes: []db.Node{
 						nodeToRemove,

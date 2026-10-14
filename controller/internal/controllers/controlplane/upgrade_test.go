@@ -21,7 +21,7 @@ import (
 func TestIsControlPlaneHealthy_WithSurgeThreshold(t *testing.T) {
 	t.Parallel()
 
-	currentSpec := nicoCPSpec("nke-1.34.2", "", "1.34.2")
+	currentSpec := nicoCPSpec("nvke-1.34.2", "", "1.34.2")
 	currentID, staleID := uuid.New(), uuid.New()
 	configs := map[uuid.UUID]db.ControlPlaneConfigSpec{currentID: currentSpec, staleID: staleCPSpec(t, currentSpec)}
 
