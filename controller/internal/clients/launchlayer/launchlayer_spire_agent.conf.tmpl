@@ -7,10 +7,6 @@ agent {
 
     trust_domain = "{{ .TrustDomain }}"
     trust_bundle_path = "{{ .TrustBundlePath }}"
-{{- if eq .AttestationMethod "joinToken" }}
-
-    join_token = "{{ .SpireJoinToken }}"
-{{- end }}
 }
 
 plugins {
@@ -20,11 +16,7 @@ plugins {
         }
     }
 
-{{- if eq .AttestationMethod "joinToken" }}
-    NodeAttestor "join_token" {
-        plugin_data {}
-    }
-{{- else if eq .AttestationMethod "tpm" }}
+{{- if eq .AttestationMethod "tpm" }}
     NodeAttestor "tpm" {
         plugin_cmd = "/usr/local/lib/spire-agent/tpm_attestor_agent"
         plugin_checksum = "${TPM_PLUGIN_CHECKSUM}"

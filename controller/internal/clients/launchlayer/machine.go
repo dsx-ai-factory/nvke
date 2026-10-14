@@ -12,7 +12,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -77,11 +76,16 @@ func toAnySlice(in []string) []any {
 	return out
 }
 
-// CreateMachine renders and applies the LaunchLayerMachine, mints a SPIRE
-// join token if the node needs one (CAPLL is a pure bootstrap pass-through,
-// so SPIRE material has to already be in the cloud-init payload — the same
-// reasoning as the CAPI client), renders and applies the bootstrap secret,
-// and applies the generic CAPI Machine pointing at the LaunchLayerMachine.
+// CreateMachine renders and applies the LaunchLayerMachine, renders and
+// applies the bootstrap secret (CAPLL is a pure bootstrap pass-through, so
+// SPIRE material has to already be in the cloud-init payload — the same
+// reasoning as the CAPI client), and applies the generic CAPI Machine
+// pointing at the LaunchLayerMachine.
+//
+// Unlike CAPI, this never mints a SPIRE join token: CAPLL is the
+// production-target provider, and join-token attestation must not be
+// reachable for it even as a configurable option. renderBootstrapUserData
+// rejects a node configured for join-token attestation outright instead.
 func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDeps, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) error {
 	infraMachine, err := buildInfraMachine(node, nodeSet, cluster, nodePool.ControlPlane)
 	if err != nil {
@@ -93,12 +97,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return fmt.Errorf("failed to apply LaunchLayerMachine %s: %w", infraMachine.GetName(), err)
 	}
 
-	spireJoinToken, spireAgentAlternateIDPath, err := deps.CreateSpireJoinToken(ctx, node)
-	if err != nil {
-		return err
-	}
-
-	userData, err := c.renderBootstrapUserData(ctx, deps, node, spireJoinToken)
+	userData, err := c.renderBootstrapUserData(ctx, deps, node)
 	if err != nil {
 		return fmt.Errorf("failed to render LaunchLayer bootstrap user data: %w", err)
 	}
@@ -115,9 +114,6 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 	})
 	if err != nil {
 		return err
-	}
-	if spireJoinToken != "" {
-		machine.Annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath] = spireAgentAlternateIDPath
 	}
 	return shared.ApplyMachine(ctx, deps.K8sClient, deps.FieldManagerName, machine)
 }
