@@ -31,8 +31,8 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | Provider | Version | Notes |
 |---|---|---|
 | NVIDIA Infra Controller (NICo), through CAPNICo | CAPNICo v0.0.45 | Pinned. The only infrastructure provider for workload clusters. The install deploys this CAPNICo release with the reboot and repair settings NVKE uses. The local quickstart builds a development CAPNICo version from source instead. |
-| Cluster API core, kubeadm bootstrap and kubeadm control plane | v1.12.3 | Pinned. One version covers `clusterctl`, the providers that `clusterctl init` installs on the management cluster, and the providers `nvkectl` installs in the seed cluster. |
-| cert-manager | v1.19.3 | Pinned by Cluster API v1.12.3, which installs it during `clusterctl init`. |
+| Cluster API core, kubeadm bootstrap and kubeadm control plane | v1.13.6 | Pinned. One version covers `clusterctl`, the providers that `clusterctl init` installs on the management cluster, and the providers `nvkectl` installs in the seed cluster. |
+| cert-manager | The version Cluster API v1.13.6 installs | `clusterctl init` installs it. |
 | Provisioned infrastructure provider | Built from the same NVKE source as `nvkectl` | Runs only in the seed cluster during bootstrap, to form the management cluster. |
 
 ## Node operating system
@@ -46,7 +46,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | SPIFFE Runtime Environment (SPIRE) agent | 1.14.1, with TPM plugin 1.9.0 | Pinned. Installed on the node image for TPM node attestation. |
 | Node agent (`nvke-agent`) | Built from the NVKE source NVKR pins | Installed and enabled on the node image. Listens on port 15005. |
 
-See [Build node images with NVKR](../operate/build-node-images.md) for the build host requirements.
+NVKR's [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/definitions/nvke-os/README.md) lists the build host requirements; [Get NVKE artifacts and OS profiles built with NVKR](../operate/build-node-images.md) summarizes them.
 
 ## Management and bootstrap tooling
 
@@ -56,12 +56,12 @@ See [Build node images with NVKR](../operate/build-node-images.md) for the build
 | Container runtime on the bootstrap host | Rootful `nerdctl` with containerd | No version is checked. Docker is not supported. |
 | `kind` | v0.32.0 | Pinned for continuous integration (CI) and the local quickstart. The bootstrap does not check the version. |
 | `kubectl` | v1.36.0 | Pinned for CI. The bootstrap does not check the version. |
-| `clusterctl` | v1.12.3 | Pinned. Match the Cluster API version above. |
-| Helm | v4.2.4 | Pinned for CI. The local quickstart needs Helm 4. The bootstrap and the install do not check the version. |
+| `clusterctl` | v1.13.6 | Pinned. Match the Cluster API version above. `deploy/check-site.sh` reports a Cluster API of another version. |
+| Helm | v4.2.4 | Pinned. The install and the local quickstart need Helm 4; Helm 3 cannot install the charts. `deploy/check-site.sh` warns on another version. |
 | Go, to build `nvkectl` and the NVKE images | 1.27.2 or later | Range. An older Go downloads 1.27.2 unless `GOTOOLCHAIN=local` is set. Also needs GNU Make. |
-| Go, to build `nvkr` (NVKR) | 1.27.1 | Pinned. NVKR builds with `GOTOOLCHAIN=local`. |
+| Go, to build `nvkr` (NVKR) | 1.27.2 | Pinned in NVKR's `.go-version`. |
 | `nvkectl` | Linux and macOS, amd64 and arm64 | `nvkectl bootstrap site` runs only on a Linux bootstrap host. |
-| Management cluster nodes | amd64 | The install uses the controller image that NVKR's `nvke-v1` Definition builds, and `nvke-v1` builds the controller image, its Helm chart and `nvkectl` for linux/amd64 only. The NVKE source also builds the controller image for arm64, but the install does not use that image. |
+| Management cluster nodes | amd64, arm64 | Set `controllerStack.arch` in the site spec; the install selects the release's artifacts for it. NVKR's maintained release builds the controller image for both architectures. |
 | Local quickstart host | Linux, amd64 or arm64 | See [Quickstart: evaluate locally with mock-NICo](../get-started/quickstart-local.md). |
 
 ## nvkectl compatibility

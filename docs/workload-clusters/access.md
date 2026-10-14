@@ -26,14 +26,18 @@ The operator runs these steps.
    If `nvkectl` uses an OIDC kubeconfig because API authentication is on, read the same Secret with `kubectl` and the management cluster's admin kubeconfig instead:
 
    ```bash
-   kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig -n nke-system get secret <WORKLOAD_CLUSTER>-admin-kubeconfig -o jsonpath='{.data.value}' | base64 -d > <WORKLOAD_CLUSTER>.kubeconfig
+   (
+     set -euo pipefail
+     tmp="$(mktemp <WORKLOAD_CLUSTER>.kubeconfig.XXXXXX)"
+     trap 'rm -f "$tmp"' EXIT
+     kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig -n nke-system get secret <WORKLOAD_CLUSTER>-admin-kubeconfig -o jsonpath='{.data.value}' | base64 -d > "$tmp"
+     test -s "$tmp"
+     chmod 600 "$tmp"
+     mv "$tmp" <WORKLOAD_CLUSTER>.kubeconfig
+   )
    ```
 
-   ```bash
-   chmod 600 <WORKLOAD_CLUSTER>.kubeconfig
-   ```
-
-   `<CLUSTER_NAME>` is the management cluster's name.
+   `<CLUSTER_NAME>` is the management cluster's name. The commands decode the kubeconfig into a temporary file readable only by you, and replace `<WORKLOAD_CLUSTER>.kubeconfig` only when `kubectl` and the decode succeed and the result is not empty. On any failure they print the error, delete the temporary file and leave an existing `<WORKLOAD_CLUSTER>.kubeconfig` unchanged.
 
 2. Check the API address the kubeconfig uses.
 

@@ -6,9 +6,9 @@ NICo is the only infrastructure provider NVKE supports at preview; see [Preview 
 
 ## Before you begin
 
-- You have completed [Install management-plane services](install-management-plane-services.md). That procedure installs CAPNICo in the `capnico-system` namespace and writes your NICo API details from `install-config.json` to the `nico-credentials` Secret, before it installs the management plane.
+- You have completed [Install management-plane services](install-management-plane-services.md). That procedure installs CAPNICo in the `capnico-system` namespace and writes your NICo API details from the `controllerStack.nico` section of the site spec to the `nico-credentials` Secret, before it installs the management plane.
 - You have the management cluster kubeconfig, `<CLUSTER_NAME>.kubeconfig`, and `kubectl` on `PATH`. The kubeconfig must be able to read Secrets in the `capnico-system` namespace.
-- `nvkectl` points at your management plane, as set in [Install management-plane services](install-management-plane-services.md) with `nvkectl config set-site`.
+- `nvkectl` points at your management plane, as set in [Install management-plane services](install-management-plane-services.md) with `nvkectl config set-site`. If API authentication is on, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](api-authentication.md), and `nvkectl get providers` fails with it, because it reads the management cluster's Kubernetes API, which does not accept your identity provider's tokens. The steps that use it give a `kubectl` alternative.
 - In NICo, you have:
   - A site, with machines enrolled.
   - A virtual private cloud (VPC) in that site, and either VPC prefixes or subnets in it for the nodes.
@@ -31,6 +31,14 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
 
    The `nico` row reads `CONFIGURED`: the CAPNICo custom resource definitions (CRDs) are established, the CAPNICo controller is available and the `nico-credentials` Secret exists. `NOT-INSTALLED` or `NOT-CONFIGURED` means the install did not complete; run it again as described in [Install management-plane services](install-management-plane-services.md). `DEGRADED` means the CAPNICo controller is not available; check the `controller-manager` Deployment in `capnico-system`. `UNKNOWN` usually means the kubeconfig that `nvkectl` uses cannot read Secrets in `capnico-system`.
 
+   With API authentication on, this command fails. Check CAPNICo with `kubectl` instead:
+
+   ```bash
+   kubectl -n capnico-system get deploy,secret
+   ```
+
+   The Deployment `controller-manager` shows all replicas ready, and the Secret `nico-credentials` is listed.
+
 2. Check that the management plane started its NICo controllers.
 
    ```bash
@@ -49,12 +57,12 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
 
 CAPNICo authenticates to the NICo API with a bearer token from the Secret `nico-credentials` in the `capnico-system` namespace. The name, the namespace and the four keys are fixed.
 
-| Key | Value | `install-config.json` field |
+| Key | Value | Site spec field |
 |---|---|---|
-| `endpoint` | The NICo API base URL. | `Nico.Endpoint` |
-| `orgID` | Your NICo organization ID. | `Nico.OrgID` |
-| `token` | Your NICo API token. | `Nico.Token` |
-| `apiName` | The API name in the NICo API path that your NICo deployment serves, such as `forge`. | `Nico.APIName` |
+| `endpoint` | The NICo API base URL. | `controllerStack.nico.endpoint` |
+| `orgID` | Your NICo organization ID. | `controllerStack.nico.orgID` |
+| `token` | Your NICo API token. | The contents of the file that `controllerStack.nico.tokenFile` names. |
+| `apiName` | The API name in the NICo API path that your NICo deployment serves, such as `forge`. | `controllerStack.nico.apiName` |
 
 To rotate the token or change any other value:
 
@@ -88,7 +96,7 @@ To rotate the token or change any other value:
 
    The Secret is read on each reconcile, so the change takes effect without a restart.
 
-3. Put the same values in `install-config.json`. If you run the install again, it writes the Secret from that file and overwrites your change.
+3. Put the same values in the site spec: write the new token into the file that `controllerStack.nico.tokenFile` names, and update `endpoint`, `orgID` and `apiName` under `controllerStack.nico` if they changed. If you run the install again, it writes the Secret from the site spec and overwrites your change.
 
 ## Collect the NICo identifiers
 
@@ -115,7 +123,7 @@ The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is cre
    nvkectl get providers
    ```
 
-   The `nico` row reads `CONFIGURED`.
+   The `nico` row reads `CONFIGURED`. With API authentication on, run `kubectl -n capnico-system get deploy,secret` instead, as in [Confirm that CAPNICo is running](#confirm-that-capnico-is-running).
 
 2. Check that the Secret has all four keys.
 

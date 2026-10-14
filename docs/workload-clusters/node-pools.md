@@ -5,7 +5,7 @@ This page describes how to add, scale and delete the worker node pools of an NVI
 ## Before you begin
 
 - You have completed [Configure an infrastructure provider: NICo](../operate/provider-nico.md) and [Create a workload cluster](create.md), and the cluster's status in `nvkectl get clusters` is `Provisioned`.
-- `nvkectl` points at your management plane, set with `nvkectl config set-site`.
+- `nvkectl` points at your management plane, set with `nvkectl config set-site`. If API authentication is on, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](../operate/api-authentication.md). With that kubeconfig, `nvkectl get nodepoolreleases` and `nvkectl get kubeconfig` fail, because they read the management cluster's Kubernetes API, which does not accept your identity provider's tokens; the steps that use them give a `kubectl` alternative with the management cluster's admin kubeconfig, `<CLUSTER_NAME>.kubeconfig`.
 - You have `curl` and `jq`. Listing nodes, deleting a node and changing auto-mode settings use the NVKE API directly, because `nvkectl` has no commands for them.
 - You know `<API_URL>`, the base address of the NVKE API without `/api`: `http://<MANAGEMENT_ADDRESS>:30080`, where `<MANAGEMENT_ADDRESS>` is the management cluster's API virtual IP address (VIP), or the node IP of a single-node management cluster. If API authentication is on, add `-H "Authorization: Bearer <TOKEN>"` to each `curl` command that calls `/api/`, where `<TOKEN>` is a JSON Web Token (JWT) from your identity provider, as described in [Secure the NVKE API](../operate/api-authentication.md).
 
@@ -38,7 +38,11 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
    nvkectl get clusters <WORKLOAD_CLUSTER> -o json | jq -r '.[0].id'
    ```
 
-   The output is the cluster ID. You also need the NICo instance type ID for the GPU machines, from NICo, and the name of a node pool release you have published as a worker OS profile, which `nvkectl get nodepoolreleases` lists. Copy the `vpcPrefixIDs` or `subnetIDs` from an existing pool with `nvkectl get nodepools <POOL_NAME> --cluster <WORKLOAD_CLUSTER> -o yaml`.
+   The output is the cluster ID. You also need:
+
+   - The NICo instance type ID for the GPU machines, from NICo.
+   - The name of a node pool release you have published as a worker OS profile, which `nvkectl get nodepoolreleases` lists. With API authentication on, list them with `kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig get nodepoolreleases` instead.
+   - The `vpcPrefixIDs` or `subnetIDs` for the pool's nodes. If the cluster already has a worker pool, copy them from it with `nvkectl get nodepools <POOL_NAME> --cluster <WORKLOAD_CLUSTER> -o yaml`. For a cluster created without `nodePools`, use the VPC prefix or subnet IDs you recorded in [Collect the NICo identifiers](../operate/provider-nico.md#collect-the-nico-identifiers).
 
 2. Write the node pool spec and save it as `pool.yaml`.
 
@@ -199,6 +203,8 @@ Two related settings take the same request:
    ```bash
    nvkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file <WORKLOAD_CLUSTER>.kubeconfig
    ```
+
+   With API authentication on, this command fails; get the file with `kubectl` as described in [Get the admin kubeconfig](access.md#get-the-admin-kubeconfig) instead.
 
    ```bash
    kubectl --kubeconfig <WORKLOAD_CLUSTER>.kubeconfig get nodes

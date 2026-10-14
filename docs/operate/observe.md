@@ -4,7 +4,7 @@ This page describes how to check the health of the NVIDIA Kubernetes Engine (NVK
 
 ## Before you begin
 
-- You have completed [Install management-plane services](install-management-plane-services.md), and `nvkectl config set-site` points `nvkectl` at your NVKE API and the management cluster's kubeconfig.
+- You have completed [Install management-plane services](install-management-plane-services.md), and `nvkectl config set-site` points `nvkectl` at your NVKE API and the management cluster's kubeconfig. If API authentication is on, `nvkectl` points at an OpenID Connect (OIDC) kubeconfig instead, as described in [Secure the NVKE API](api-authentication.md). With that kubeconfig, `nvkectl get providers` and `nvkectl get kubeconfig` fail, because they read the management cluster's Kubernetes API, which does not accept your identity provider's tokens; the steps that use them give a `kubectl` alternative.
 - `kubectl` uses the management cluster's admin kubeconfig, for example with `export KUBECONFIG=<CLUSTER_NAME>.kubeconfig`, where `<CLUSTER_NAME>` is the management cluster's name.
 - You have `curl` and `jq`.
 - You know `<MANAGEMENT_ADDRESS>`, the management cluster's API virtual IP address (VIP), or the node IP of a single-node management cluster. The NVKE API is at `http://<MANAGEMENT_ADDRESS>:30080`. If API authentication is on, add `-H "Authorization: Bearer <TOKEN>"` to each `curl` command that calls `/api/`, where `<TOKEN>` is a JSON Web Token (JWT) from your identity provider, as described in [Secure the NVKE API](api-authentication.md). `/healthz` and `/readyz` need no token.
@@ -43,6 +43,14 @@ This page describes how to check the health of the NVIDIA Kubernetes Engine (NVK
 
    The `nico` row, for NVIDIA Infra Controller (NICo), reads `CONFIGURED` and `REPLICAS` reads `1/1` or more. `CONFIGURED` means the provider's resource definitions exist, its controller is available and its credentials Secret exists. It does not test the credentials against NICo. `DEGRADED` means the provider's controller is not available, and `UNKNOWN` usually means your kubeconfig cannot read Secrets in the provider's namespace.
 
+   With API authentication on, this command fails. Check the provider with `kubectl` instead:
+
+   ```bash
+   kubectl -n capnico-system get deploy,secret
+   ```
+
+   The Deployment `controller-manager` shows all replicas ready, and the Secret `nico-credentials` is listed.
+
 ### Read the management plane logs
 
 The management plane writes one JSON object per log line to standard output, with the keys `time`, `level` and `msg`.
@@ -60,7 +68,7 @@ The management plane writes one JSON object per log line to standard output, wit
    kubectl logs deployment/nke-controller -n nke-controller -f
    ```
 
-The default level is `info`. To log at `debug`, add `env` to `controller.yaml` and run the install command from [Install management-plane services](install-management-plane-services.md) again:
+The default level is `info`. To log at `debug`, save these values as `controller-log.yaml` in the directory above the `nvke/` checkout:
 
 ```yaml
 env:
@@ -70,7 +78,7 @@ env:
     value: debug
 ```
 
-Your `env` list replaces the deploy path's list, which sets `NODE_AGENT_PORT`, so keep that entry. `LOG_LEVEL` accepts `debug`, `info`, `warn` and `error`. If you turned on API authentication, add `--values-for controller=auth-values.yaml` after `--values-for controller=controller.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
+Then run the install command from [Install management-plane services](install-management-plane-services.md) again, with the same flags and `--values-for controller=../controller-log.yaml` added. Your `env` list replaces the deploy path's list, which sets `NODE_AGENT_PORT`, so keep that entry. `LOG_LEVEL` accepts `debug`, `info`, `warn` and `error`. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
 
 ### Read the management plane metrics
 
@@ -103,7 +111,7 @@ The series that answer the most common questions:
 
 `node_type` is `cp` for control-plane nodes and `worker` for workers. The `tenant_cluster` label holds the workload cluster's name.
 
-A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces, including `monitoring`, and from the namespaces in the `metrics.networkPolicy.additionalNamespaces` value, which the deploy path sets to `nktp`. To scrape from a Prometheus in another namespace, add its namespace to that value in `controller.yaml`, keep `nktp` in the list, and run the install again. If you turned on API authentication, add `--values-for controller=auth-values.yaml` after `--values-for controller=controller.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
+A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces, including `monitoring`, and from the namespaces in the `metrics.networkPolicy.additionalNamespaces` value, which the deploy path sets to `nktp`. To scrape from a Prometheus in another namespace, write that value, with `nktp` and the new namespace in the list, to a values file, and run the install again with `--values-for controller=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
 
 ## Check workload clusters and node pools
 
@@ -112,6 +120,8 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
    ```bash
    nvkectl get clusters
    ```
+
+   With API authentication on, `nvkectl` must use an OIDC kubeconfig for this and the next two steps; with the management cluster's admin kubeconfig every NVKE API call fails.
 
    A healthy cluster's `STATUS` is `Provisioned`. `Provisioning`, `Updating`, `Upgrading`, `Recycling` and `Deleting` mean an operation is running. `ProvisioningFailed` and `UpdateFailed` mean the last operation failed. [Create a workload cluster](../workload-clusters/create.md) describes each status.
 
@@ -154,6 +164,8 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
    nvkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file <WORKLOAD_CLUSTER>.kubeconfig
    ```
 
+   With API authentication on, this command fails; get the file with `kubectl` as described in [Get the admin kubeconfig](../workload-clusters/access.md#get-the-admin-kubeconfig) instead.
+
    ```bash
    kubectl --kubeconfig <WORKLOAD_CLUSTER>.kubeconfig get nodes
    ```
@@ -170,7 +182,7 @@ By default NKTP exports to a bundled development backend, with Grafana, Promethe
 kubectl -n nktp port-forward svc/lgtm 3000:3000 --address 127.0.0.1
 ```
 
-To keep the data, send it to your own backend: write a values file as described under "Set a backend" in [Getting started with NKTP](../nktp/getting-started.md), and run the install from [Install management-plane services](install-management-plane-services.md) again with `--values-for nktp=<FILE>`. If you turned on API authentication, add `--values-for controller=auth-values.yaml` after `--values-for controller=controller.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
+To keep the data, send it to your own backend: write a values file as described under "Set a backend" in [Getting started with NKTP](../nktp/getting-started.md), set `controllerStack.nktpValuesFile` in the site spec to its path, and run the install from [Install management-plane services](install-management-plane-services.md) again. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
 
 NVKE installs neither NKTP nor cert-manager in workload clusters. NKTP collects only from the management cluster, where the install deploys it; for workload clusters you have the management plane's metrics, which describe each cluster, node pool and node as NVKE tracks them. [Getting started with NKTP](../nktp/getting-started.md) describes NKTP itself.
 

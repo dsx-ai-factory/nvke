@@ -1,226 +1,224 @@
 # Install management-plane services
 
-This page describes how to install the NVIDIA Kubernetes Engine (NVKE) management plane on the management cluster: Cluster API, the Cluster API infrastructure provider for NVIDIA Infra Controller (NICo), called CAPNICo, SPIRE, NVIDIA Kubernetes Telemetry Pipeline (NKTP), and the NVKE API and controllers. You do this after [Bootstrap the management cluster](bootstrap-management-cluster.md) and before you configure the infrastructure provider and API authentication.
+This page describes how to install the NVIDIA Kubernetes Engine (NVKE) management plane on the management cluster: Cluster API, the Cluster API infrastructure provider for NVIDIA Infra Controller (NICo), called CAPNICo, PostgreSQL, Temporal, SPIRE, NVIDIA Kubernetes Telemetry Pipeline (NKTP), and the NVKE API and controllers. You do this after [Bootstrap the management cluster](bootstrap-management-cluster.md) and before you configure the infrastructure provider and API authentication.
 
-`nvkectl` has no command for this step. You run `clusterctl init` for Cluster API, then the repository's install script, `deploy/nvke-deploy.sh`, with the `deploy/nico` deploy path. The script installs each component with Helm or `kubectl apply --server-side`, in the order the deploy path lists, and stops at the first component that fails.
+The install is a short list of commands that you run in order. Each one stands on its own, and nothing orchestrates them. The first command checks the cluster and your host and tells you what is still missing. The install reads three inputs:
+
+| Input | What it says |
+|---|---|
+| The site spec | What is specific to this site. It is the file you wrote for the bootstrap, with its `controllerStack` section filled in. |
+| The release description | Which published artifacts to install, each by OCI reference and digest: the `release.json` file from [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md). Optional; see [Choose where the artifacts come from](#choose-where-the-artifacts-come-from). |
+| The deploy path, `deploy/nico` | What to install, in which order, with which values. It is in the `nvke/` checkout. |
 
 ## Before you begin
 
-- You have the outputs of [Build node images with NVKR](build-node-images.md): the controller image (the `cwe` output) in your registry, the profile content image and its digest, and the OS profile resources in `example-releases`.
-- You have completed [Bootstrap the management cluster](bootstrap-management-cluster.md), and you have its kubeconfig, `<CLUSTER_NAME>.kubeconfig`. Every node is `Ready` and no node carries the control-plane `NoSchedule` taint.
-- You have the other bootstrap output files in secure storage. This procedure does not use `<CLUSTER_NAME>-etcd-encryption-key.json`, `clusterstaticentry-crd.yaml` or `clusterstaticentries.yaml`.
-- The management cluster has a default StorageClass. `kubectl get storageclass` lists one marked `(default)`. The bootstrap installs none, and the management plane's database claims a 40 GiB volume that stays `Pending` without one. Which provisioner to use depends on your storage hardware.
-- You have the NICo API endpoint, your organization ID, an API token and the API name. [Configure an infrastructure provider: NICo](provider-nico.md) explains each value and how to rotate the token.
-- You have a GitHub user name and a token with `read:packages`. CAPNICo's image is on `ghcr.io`, and the install creates a pull Secret for it from these credentials.
-- You run the commands on a Linux host that reaches the management cluster's Kubernetes API, such as the bootstrap host. It has `helm`, `kubectl`, `clusterctl` `v1.12.3`, `python3` and `git` on `PATH`, and the `nvke/` checkout from [Bootstrap the management cluster](bootstrap-management-cluster.md) at the same release.
-- The host and the management cluster have outbound access to the chart repositories and registries the install pulls from: `registry-1.docker.io`, `spiffe.github.io`, `go.temporal.io`, `open-telemetry.github.io`, `prometheus-community.github.io`, `kubernetes-sigs.github.io`, `github.com`, `docker.io`, `ghcr.io`, `quay.io` and `registry.k8s.io`.
+- You have completed [Bootstrap the management cluster](bootstrap-management-cluster.md). You have its kubeconfig, `<CLUSTER_NAME>.kubeconfig`, and its site spec, `sitespec.yaml`, in your working directory. The cluster has an odd number of nodes, all control-plane, and none carries the control-plane `NoSchedule` taint.
+- The management cluster has exactly one default StorageClass. `kubectl get storageclass` lists one marked `(default)`. The bootstrap installs none, and PostgreSQL and SPIRE need persistent volumes. Install the Container Storage Interface (CSI) driver for your storage hardware and annotate its class `storageclass.kubernetes.io/is-default-class=true`. A lab can use the rancher local-path-provisioner.
+- You have the NICo API endpoint, your organization ID, an API token and the API name. [Configure an infrastructure provider: NICo](provider-nico.md) explains each value.
+- You have a release description from [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md), or a completed local NVKR Run, or the image references to install without either.
+- You run the commands on a Linux host that reaches the management cluster's Kubernetes API, such as the bootstrap host. It has the `nvke/` checkout from the bootstrap, at the same release as `nvkectl`, and these tools on `PATH`:
+  - `nvkectl`. The install reads the deploy path and renders it with it. `NVKECTL` names another binary.
+  - `helm` `v4.2.4`. Helm 3 cannot install these charts.
+  - `clusterctl` `v1.13.6`, `kubectl`, `curl` and `python3`.
 
-Run every command on this page from the directory that holds the kubeconfig and the `nvke/` checkout, with `KUBECONFIG` set.
+  The versions are the ones `make/tool-versions.mk` pins.
+- The management cluster's nodes reach the registries the release names and the images the charts, the CAPNICo manifest and Cluster API run. The host reaches `github.com` for `clusterctl init`, and `kubernetes-sigs.github.io`, `open-telemetry.github.io` and `prometheus-community.github.io` for NKTP's chart dependencies. An install from a local NVKR Run needs none of the registries.
+
+Run every command on this page from the root of the `nvke/` checkout. The site spec, the kubeconfig and the release description stay in the directory above it.
 
 ```bash
-export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
+cd nvke
 ```
 
-## Install Cluster API
+## Fill in the controller stack settings
 
-1. Install Cluster API core and the kubeadm providers at the version NVKE pins.
+`nvkectl generate sitespec` wrote a `controllerStack` section into `sitespec.yaml`, with every value a `REPLACE_*` placeholder. The bootstrap does not read it; the install does, and refuses to run while a placeholder is left.
+
+1. Write each secret to its own file, readable only by you. The site spec holds paths to these files, not the secrets, so you can keep the site spec in version control.
 
    ```bash
-   clusterctl init \
-     --core cluster-api:v1.12.3 \
-     --bootstrap kubeadm:v1.12.3 \
-     --control-plane kubeadm:v1.12.3 \
+   install -m 600 /dev/null ../nico-token
+   ```
+
+   ```bash
+   install -m 600 /dev/null ../tenant-password
+   ```
+
+   Write the NICo API token into `../nico-token` and the node login password into `../tenant-password` with an editor, so that neither value reaches your shell history.
+
+2. Fill in the `controllerStack` section of `../sitespec.yaml`.
+
+   ```yaml
+   controllerStack:
+     arch: <ARCH>
+     nico:
+       endpoint: <NICO_ENDPOINT>
+       orgID: <NICO_ORG_ID>
+       apiName: <NICO_API_NAME>
+       tokenFile: nico-token
+     tenant:
+       user: <NODE_USER>
+       passwordFile: tenant-password
+     database:
+       passwordFile: db-password
+   ```
+
+   - `<ARCH>`: the CPU architecture of the management nodes, `amd64` or `arm64`. The install selects the release's artifacts for it.
+   - `<NICO_ENDPOINT>`, `<NICO_ORG_ID>` and `<NICO_API_NAME>`: your NICo API details. The API name is, for example, `forge`. The install writes them, with the token, to the `nico-credentials` Secret that CAPNICo reads.
+   - `<NODE_USER>` and the password file: the login account NVKE writes into the cloud-init user data of every workload-cluster node.
+   - `database.passwordFile`: the PostgreSQL password that the management plane and Temporal share. When the file does not exist, the install creates it with a generated password.
+
+   Relative paths are resolved from the site spec's directory. The site name, the SPIFFE trust domain, the control-plane VIP and the SPIRE certificate authority come from the bootstrap fields of the same file, so they are not repeated here.
+
+   Two optional fields:
+
+   - `nktpValuesFile`: a values file for NKTP. Without it, NKTP sends telemetry to a bundled development backend that keeps data in memory and has no authentication. To send it to your own backend, write the file as described in [Getting started with NKTP](../nktp/getting-started.md).
+   - `mirror`: a registry to pull the external images from instead of their upstream registries, as `host[:port][/prefix]`, with no scheme.
+
+   [Site Spec](../../cli/docs/sitespec.md) lists every field.
+
+3. Validate the whole site spec.
+
+   ```bash
+   nvkectl validate sitespec -f ../sitespec.yaml
+   ```
+
+   The command checks the bootstrap fields and then the `controllerStack` section, and lists every placeholder still in the file. Fill them in until it reports none.
+
+## Choose where the artifacts come from
+
+The install takes its charts and images from one of three places. The commands in [Install](#install) use the first; change the flags for the other two.
+
+| Source | Flags | What happens |
+|---|---|---|
+| A published NVKR release | `--release ../release.json` | The charts the release carries are installed by digest, and the images are pinned by digest. A chart the release does not carry comes from the checkout or its public repository. |
+| A local NVKR Run | `--release ../release.json --nvkr-run-dir <NVKR_CHECKOUT>/.nvkr/runs/<ATTEMPT>` | Charts and images come out of the Run's OCI layouts and are imported into the nodes' container runtime. No registry is involved. |
+| No release | Neither flag | Every chart comes from the checkout and the public repositories. Set `controllerStack.images.controller` and `controllerStack.images.profiles` in the site spec, each as `repository:tag` or `repository@sha256:<digest>`. |
+
+The install refuses a release that lacks an image artifact the deploy path names: the controller image `cwe`, the profile content image `controller-profiles` or the CAPNICo image `capnico-controller`. See [Preview status and known limitations](../overview/preview-status.md).
+
+## Install
+
+1. Check the site.
+
+   ```bash
+   deploy/check-site.sh --sitespec ../sitespec.yaml --kubeconfig ../<CLUSTER_NAME>.kubeconfig --release ../release.json
+   ```
+
+   The check changes nothing. It prints one line per finding, `PASS`, `WARN`, `SKIP` or `FAIL`, and every `FAIL` names its fix. It covers the tools and the `helm` pin, the checkout, the site spec, the release description and its declared qualification, the cluster's API, the node count, the node architecture against `controllerStack.arch`, the control-plane taint, the default StorageClass, the Cluster API version, egress and disk space. It exits non-zero on any `FAIL`. When everything passes, it prints the next two commands with your paths filled in.
+
+2. Install Cluster API at the version NVKE pins.
+
+   ```bash
+   clusterctl init --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
+     --core cluster-api:v1.13.6 \
+     --bootstrap kubeadm:v1.13.6 \
+     --control-plane kubeadm:v1.13.6 \
      --wait-providers
    ```
 
-   The command also installs cert-manager, which the install script needs. It returns when every provider is running. If it times out on cert-manager, check that the control-plane taint is gone.
+   The command also installs cert-manager. It returns when every provider is running. `clusterctl init` does not upgrade an existing installation: a Cluster API at another version is a finding of step 1, not something to install over.
 
-## Write the install configuration
-
-The deploy path's own values are the same on every site. You supply what is specific to your site in one JSON file and four values files. They hold credentials: keep them outside the `nvke/` checkout, readable only by you.
-
-1. Write the site configuration as `install-config.json`.
-
-   ```json
-   {
-     "ClusterName": "<CLUSTER_NAME>",
-     "Nico": {
-       "Endpoint": "<NICO_ENDPOINT>",
-       "OrgID": "<NICO_ORG_ID>",
-       "Token": "<NICO_TOKEN>",
-       "APIName": "<NICO_API_NAME>"
-     },
-     "Registry": {
-       "Server": "ghcr.io",
-       "Username": "<GITHUB_USER>",
-       "Token": "<GITHUB_TOKEN>"
-     },
-     "Tenant": {
-       "User": "<NODE_USER>",
-       "Password": "<NODE_PASSWORD>"
-     }
-   }
-   ```
-
-   - `<CLUSTER_NAME>`: the management cluster's name. NKTP labels the management cluster's telemetry with it.
-   - `<NICO_ENDPOINT>`, `<NICO_ORG_ID>`, `<NICO_TOKEN>` and `<NICO_API_NAME>`: your NICo API details. The install writes them to the `nico-credentials` Secret in `capnico-system`.
-   - `<GITHUB_USER>` and `<GITHUB_TOKEN>`: the credentials for CAPNICo's image. The install renders them into the pull Secret `ghcr-imagepull` in `capnico-system`, which CAPNICo's Deployment names, and refuses to run with either field empty. Supply a token with `read:packages` even if you can pull the image without one.
-   - `<NODE_USER>` and `<NODE_PASSWORD>`: the login account NVKE writes into the cloud-init user data of every workload-cluster node. Without it, every workload cluster fails when NVKE renders the node user data.
-
-   Every field is required. The install refuses to start a component whose template refers to an empty or missing field.
-
-2. Write the management plane's values as `controller.yaml`.
-
-   ```yaml
-   image:
-     repository: <CONTROLLER_IMAGE_REPOSITORY>
-     tag: <CONTROLLER_IMAGE_TAG>
-     digest: <CONTROLLER_IMAGE_DIGEST>
-   profiles:
-     path: /profiles
-     image:
-       enabled: true
-       repository: <REGISTRY_HOST>/<NAMESPACE>/nvke-profiles
-       digest: <PROFILES_DIGEST>
-   appDb:
-     postgresPassword: <DB_PASSWORD>
-   spiffe:
-     trustDomain: <TRUST_DOMAIN>
-     spire:
-       serverAddress: <MANAGEMENT_ADDRESS>
-   ```
-
-   - `<CONTROLLER_IMAGE_REPOSITORY>`, `<CONTROLLER_IMAGE_DIGEST>` and `<CONTROLLER_IMAGE_TAG>`: the controller image in your registry, from the `Derived artifact reference:` of the `cwe` output that `nvkr release browse` lists in [Build node images with NVKR](build-node-images.md). That reference is `<CONTROLLER_IMAGE_REPOSITORY>@<CONTROLLER_IMAGE_DIGEST>`, pinned by digest with no tag. The digest selects the image, so `<CONTROLLER_IMAGE_TAG>` is any label you choose, such as `v1`. The deploy path's default names an image you cannot pull, so set all three.
-   - `profiles`: the values you recorded in [Build node images with NVKR](build-node-images.md). `<REGISTRY_HOST>/<NAMESPACE>/nvke-profiles` is the profile content image and `<PROFILES_DIGEST>` its `sha256:` digest. The image carries your config profiles and hook scripts. The chart refuses to render without a digest or a tag.
-   - `<DB_PASSWORD>`: a password you choose for the management plane's database. You enter the same value in two more files below.
-   - `<TRUST_DOMAIN>`: the SPIFFE trust domain from your site spec, `spire.trustDomain`.
-   - `<MANAGEMENT_ADDRESS>`: the address workload-cluster nodes use to reach the management cluster: its API virtual IP address (VIP), or the node IP of a single-node cluster. Nodes reach SPIRE there on port 30440.
-
-3. If your registry requires credentials, create the management plane's namespace and a pull Secret in it, then name the Secret in `controller.yaml`.
+3. Install the stack.
 
    ```bash
-   kubectl create namespace nke-controller
+   deploy/nvke-deploy.sh install --deploy-path deploy/nico \
+     --sitespec ../sitespec.yaml \
+     --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
+     --release ../release.json
    ```
 
-   ```bash
-   kubectl create secret docker-registry registry-pull -n nke-controller \
-     --docker-server=<REGISTRY_HOST> --docker-username=<REGISTRY_USER> --docker-password=<REGISTRY_TOKEN>
-   ```
-
-   ```yaml
-   imagePullSecrets:
-     - name: registry-pull
-   ```
-
-   The same Secret applies to the controller image and the profile content image, so both must be in a registry it can read.
-
-4. Write the database values as `postgresql.yaml`, with the same `<DB_PASSWORD>`.
-
-   ```yaml
-   auth:
-     postgresPassword: <DB_PASSWORD>
-   ```
-
-5. Write the workflow-service values as `temporal.yaml`, with the same `<DB_PASSWORD>` in both places.
-
-   ```yaml
-   server:
-     config:
-       persistence:
-         default:
-           sql:
-             password: <DB_PASSWORD>
-         visibility:
-           sql:
-             password: <DB_PASSWORD>
-   ```
-
-   If the password is missing from either one, the `temporal` component's schema job fails with `password authentication failed` and the install stops.
-
-6. Write the SPIRE values as `spire.yaml`.
-
-   ```yaml
-   global:
-     spire:
-       trustDomain: <TRUST_DOMAIN>
-       clusterName: <CLUSTER_NAME>
-   spire-server:
-     adminIDs:
-       - spiffe://<TRUST_DOMAIN>/nke-service/nke-controller
-     nodeAttestor:
-       tpmDirect:
-         checksum: <TPM_ATTESTOR_CHECKSUM>
-   ```
-
-   `<TRUST_DOMAIN>` must be the same in both places and in `controller.yaml`. If they differ, the management plane has no admin access to SPIRE and no error says so. `<TPM_ATTESTOR_CHECKSUM>` is the checksum of SPIRE's TPM attestor plugin for the management nodes' architecture:
-
-   | Architecture | `<TPM_ATTESTOR_CHECKSUM>` |
-   |---|---|
-   | x86_64 | `46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc` |
-   | aarch64 | `b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16` |
-
-   This is the SPIRE server plugin's checksum. It is not the `TPM_PLUGIN_CHECKSUM` that nodes carry for the agent plugin.
-
-NKTP sends telemetry to a bundled development backend that keeps data in memory and has no authentication. To send it to your own backend, write a values file as described in [Getting started with NKTP](../nktp/getting-started.md) and add `--values-for nktp=<FILE>` to the install command.
-
-## Run the install
-
-1. Print every command the install would run, without changing the cluster.
-
-   ```bash
-   bash nvke/deploy/nvke-deploy.sh install --deploy-path nvke/deploy/nico \
-     --config install-config.json \
-     --values-for controller=controller.yaml \
-     --values-for postgresql=postgresql.yaml \
-     --values-for temporal=temporal.yaml \
-     --values-for spire=spire.yaml \
-     --dry-run
-   ```
-
-   The output lists the `kubectl apply` or `helm upgrade --install` command for each component, the `helm` commands that fetch NKTP's chart dependencies, and a `kubectl wait` for the OIDC CA certificate. The dry run also renders the templates against `install-config.json`, so a missing or empty field fails here.
-
-2. Run the same command without `--dry-run`.
-
-   The script installs the components in this order and waits for each Helm release to become ready, for up to 15 minutes each (`--timeout` changes it):
+   The script renders `deploy/nico` for your site and against the release into a private scratch directory, applies it one component at a time, waits for each, and removes the scratch directory, so no rendered credential is left on the host. Add `--dry-run` first to print every `kubectl` and `helm` call without changing the cluster. It installs the components in this order:
 
    | Component | Namespace | What it installs |
    |---|---|---|
-   | `nvke-base-config` | several | Namespaces, the NICo credentials and image pull Secrets, the node login Secret, the OpenID Connect (OIDC) certificate authority (CA) chain, and the cluster name for NKTP. |
+   | `nvke-base-config` | several | Namespaces, the NICo credentials Secret, the node login Secret, the OpenID Connect (OIDC) certificate authority (CA) chain, and the cluster name for NKTP. |
    | `spire-tpm-pubhashes`, `spire-server-nodeport`, `spire-oidc-provider-nodeport` | `spire-server` | The TPM allowlist that NVKE fills as nodes are created, and NodePorts 30440 (SPIRE server) and 30443 (OIDC discovery). |
-   | `capnico` | `capnico-system` | CAPNICo `v0.0.45`, with the reboot and repair annotations NVKE uses. |
+   | `capnico` | `capnico-system` | CAPNICo, with the reboot and repair annotations NVKE uses. |
    | `nktp` | `nktp` | NKTP telemetry and the monitoring custom resource definitions. |
    | `postgresql`, `spire-crds`, `temporal`, `spire` | `postgres`, `spire-server`, `temporal`, `spire-server` and `spire-system` | The management plane's database, workflow service and identity services. |
    | `controller` | `nke-controller` | The NVKE API and controllers, release `nke-controller`, with the API on NodePort 30080. |
 
-3. Give the Cluster API controllers a SPIFFE identity.
+   The SPIFFE trust domain, the SPIRE server address and the TPM attestor checksum for `controllerStack.arch` all come from the site spec; you do not set them by hand.
+
+4. Apply your OS release resources.
 
    ```bash
-   bash nvke/controller/hack/apply-capi-spiffe-exec-auth.sh
+   kubectl --kubeconfig ../<CLUSTER_NAME>.kubeconfig apply --server-side -f ../releases/
    ```
 
-   The script patches the Cluster API controller Deployments so that they reach workload clusters with a SPIFFE token rather than a stored admin kubeconfig. Run it after the install, because it waits for the patched controllers only once SPIRE's CSI driver exists. It prints `skip capd-system/capd-controller-manager (not installed)`, which is expected.
+   `releases/` holds the `MachineImage`, `ClusterRelease` and `NodePoolRelease` resources you wrote in [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md). The controller chart installed their custom resource definitions in step 3. NVKE resolves the `osProfile` of a workload cluster or node pool from them, so you cannot create a cluster until they exist.
 
-4. Apply the OS profile resources that you generated in [Build node images with NVKR](build-node-images.md).
+5. Give the Cluster API controllers a SPIFFE identity.
 
    ```bash
-   kubectl apply --server-side -f example-releases
+   controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig ../<CLUSTER_NAME>.kubeconfig
    ```
 
-   `example-releases` holds a `MachineImage`, a `ClusterRelease` and a `NodePoolRelease` for each OS profile. The controller chart installed their custom resource definitions. NVKE resolves the `osProfile` of a workload cluster or node pool from them, so you cannot create a cluster until they exist.
+   The script patches the Cluster API controller Deployments so that they reach workload clusters with a SPIFFE token rather than a stored admin kubeconfig. Run it after step 3, because it checks the rollout only once SPIRE's CSI driver is registered. `clusterctl upgrade` removes the patch; run the script again after an upgrade.
+
+6. Admit your client networks to the NVKE API. The chart admits the API only from pods in the cluster. Save this NetworkPolicy as `../nvke-api-clients.yaml`, with one `ipBlock` for each network your operators and automation call the API from:
+
+   ```yaml
+   apiVersion: networking.k8s.io/v1
+   kind: NetworkPolicy
+   metadata:
+     name: nvke-api-clients
+     namespace: nke-controller
+   spec:
+     podSelector:
+       matchLabels:
+         app.kubernetes.io/name: nke-controller
+     policyTypes:
+       - Ingress
+     ingress:
+       - from:
+           - ipBlock:
+               cidr: <CLIENT_CIDR>
+         ports:
+           - port: 8080
+             protocol: TCP
+   ```
 
    ```bash
-   kubectl get machineimages,clusterreleases,nodepoolreleases
+   kubectl --kubeconfig ../<CLUSTER_NAME>.kubeconfig apply -f ../nvke-api-clients.yaml
    ```
 
-   Each profile has all three resources, with the same name.
+   Which networks may reach the API is your decision. Until you complete [Secure the NVKE API](api-authentication.md), any caller you admit can call every endpoint.
+
+7. Point `nvkectl` at the NVKE API.
+
+   ```bash
+   nvkectl config set-site --name <CLUSTER_NAME> --url http://<MANAGEMENT_ADDRESS>:30080 --kubeconfig "$PWD/../<CLUSTER_NAME>.kubeconfig"
+   ```
+
+   `<MANAGEMENT_ADDRESS>` is the management cluster's API virtual IP address (VIP), or the node IP of a single-node cluster.
 
 ## If the install fails
 
-The script stops at the component that failed and prints the `helm` or `kubectl` error. Fix the cause and run the same command again: completed components are upgraded in place and manifests are re-applied.
+The script stops at the component that failed and prints the `helm` or `kubectl` error.
+
+1. Collect what the failure left in the cluster.
+
+   ```bash
+   deploy/check-site.sh --kubeconfig ../<CLUSTER_NAME>.kubeconfig --diagnostics
+   ```
+
+   The command writes the nodes, pods, events, Helm releases and controller logs under `$XDG_STATE_HOME/nvke/diagnostics/`.
+
+2. If a Helm release failed, uninstall it before you run the install again.
+
+   ```bash
+   helm --kubeconfig ../<CLUSTER_NAME>.kubeconfig uninstall <RELEASE> -n <NAMESPACE>
+   ```
+
+3. Fix the cause and run step 3 again. Completed components are upgraded in place and manifests are re-applied.
+
+Common causes:
 
 - **A volume claim stays `Pending`.** The cluster has no default StorageClass.
-- **The `controller` component times out with the pod in `ImagePullBackOff`.** The image reference or the pull Secret in `controller.yaml` is wrong.
-- **`spire-server` restarts with `checksums did not match`.** `<TPM_ATTESTOR_CHECKSUM>` does not match the nodes' architecture.
+- **A pod stays in `ImagePullBackOff`.** The nodes cannot reach the registry the release or `controllerStack.images` names.
+- **The render refuses the release.** The release lacks an artifact the deploy path names; the error lists every missing one.
 
 Install on a cluster that has never had an earlier revision of this deploy path. The install does not take over or migrate an earlier installation. For deeper diagnosis, see [Troubleshoot](troubleshoot.md).
 
@@ -229,12 +227,12 @@ Install on a cluster that has never had an earlier revision of this deploy path.
 1. Check that the management plane is running.
 
    ```bash
-   kubectl rollout status deployment/nke-controller -n nke-controller
+   kubectl --kubeconfig ../<CLUSTER_NAME>.kubeconfig rollout status deployment/nke-controller -n nke-controller
    ```
 
    The output ends with `successfully rolled out`.
 
-2. Check that the NVKE API answers and that its dependencies are reachable.
+2. From a machine in a network you admitted, check that the NVKE API answers and that its dependencies are reachable.
 
    ```bash
    curl http://<MANAGEMENT_ADDRESS>:30080/readyz
@@ -242,19 +240,15 @@ Install on a cluster that has never had an earlier revision of this deploy path.
 
    The response is `{"status":"ok","checks":{"database":"ok","temporal":"ok"}}`.
 
-3. Point `nvkectl` at the NVKE API and list clusters.
+3. List the infrastructure providers.
 
    ```bash
-   nvkectl config set-site --name <CLUSTER_NAME> --url http://<MANAGEMENT_ADDRESS>:30080 --kubeconfig <CLUSTER_NAME>.kubeconfig
+   nvkectl get providers
    ```
 
-   ```bash
-   nvkectl get clusters
-   ```
+   CAPNICo is listed. [Configure an infrastructure provider: NICo](provider-nico.md) describes its states.
 
-   The command prints the column headings `NAME`, `KUBERNETES VERSION`, `CNI`, `STATUS`, `ID` and `AGE`, and no clusters.
-
-The NVKE API now serves plain HTTP on port 30080 of every management node, with API authentication off. Any caller that reaches the port can call every endpoint until you complete [Secure the NVKE API](api-authentication.md).
+The NVKE API serves plain HTTP on port 30080, with API authentication off. Any caller in a network you admitted can call every endpoint until you complete [Secure the NVKE API](api-authentication.md).
 
 ## Next steps
 

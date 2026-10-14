@@ -14,7 +14,7 @@ A management cluster with an odd number of nodes, each a control-plane node that
 
 | Step | What you do | Page |
 |---|---|---|
-| 1. Build | Build the NVKE controller image and the node OS image with NVIDIA Kubernetes Recipes (NVKR), and package the OS profiles. | [Build node images with NVKR](build-node-images.md) |
+| 1. Build | Build the NVKE controller image and the node OS image with NVIDIA Kubernetes Recipes (NVKR), and package the OS profiles. | [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md) |
 | 2. Prepare nodes | Boot the management cluster's nodes from the node image with cloud-init user data, and record each node's TPM thumbprint. | [Prepare nodes](prepare-nodes.md) |
 | 3. Bootstrap | Run `nvkectl bootstrap site` to form the management cluster. | [Bootstrap the management cluster](bootstrap-management-cluster.md) |
 | 4. Install | Install Cluster API, CAPNICo, SPIRE, telemetry and the NVKE API and controllers. | [Install management-plane services](install-management-plane-services.md) |
@@ -66,12 +66,12 @@ All connections are TCP; traffic between the nodes of one cluster is not listed.
 ### Identity and trust
 
 - **A SPIFFE trust domain**, such as `mgmt.example.com`.
-- **Your own SPIRE certificate authority (CA)**: a certificate and key as files. The certificate goes into every management node's user data; both files go on the bootstrap host. Management nodes built from the node image cannot attest without it. Workload cluster nodes do not use it: they trust the management cluster's SPIRE server, which signs with a CA it creates itself, and NVKE puts that server's trust bundle in each node's user data.
+- **Your own SPIRE certificate authority (CA)**: a certificate and key as files. The certificate goes into every management node's user data; both files go on the bootstrap host. Management nodes built from the node image cannot attest without it. The install also makes it the upstream authority of the management cluster's SPIRE server, which workload cluster nodes trust through the bundle NVKE puts in their user data.
 
 ### Registries
 
 - **A container registry you control**, with an account that can push to it, for the controller image and the profile content image. If pulling needs credentials, the management cluster needs them too.
-- **A GitHub account and a token with `read:packages`**, for CAPNICo's image on `ghcr.io`. The install builds a pull Secret from them and does not run if either is empty.
+- CAPNICo's image is public on `ghcr.io`, or comes from your NVKR release, so it needs no credentials.
 
 ### Hosts and tools
 
@@ -79,7 +79,7 @@ All connections are TCP; traffic between the nodes of one cluster is not listed.
 |---|---|
 | NVKR build host | Linux AMD64 with Docker, Git, GNU Make, `jq` and the Go version NVKR pins. For the node OS image, also Kernel-based Virtual Machine (KVM) access, 8 CPUs, 10 GiB of memory and 64 GiB of free disk. |
 | Bootstrap host | Linux, run as root, with rootful `nerdctl` and containerd, `kind`, `helm`, `kubectl`, `clusterctl`, Go and GNU Make. Docker is not supported. It can be a management cluster node. |
-| Install host | `helm`, `kubectl`, `clusterctl`, `python3` and `git`. It can be the bootstrap host. |
+| Install host | `nvkectl`, `helm` v4.2.4, `kubectl`, `clusterctl` v1.13.6, `curl`, `python3` and `git`. It can be the bootstrap host. |
 | API workstation | `nvkectl`, `curl` and `jq`; with API authentication, also the `kubectl oidc-login` plugin and `python3`. |
 
 ### Identity provider
@@ -126,20 +126,20 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 | Address the nodes use to reach the bootstrap host | `<BOOTSTRAP_HOST_IP>` | Prepare nodes | |
 | SPIFFE trust domain | `<TRUST_DOMAIN>` | Prepare nodes, Bootstrap, Install | |
 | SPIRE CA certificate and key files; the certificate in PEM | `<CA_CERT_PATH>`, `<CA_KEY_PATH>`; `<SPIRE_CA_CERT_PEM>` | Bootstrap; Prepare nodes | |
-| TPM attestor checksum for the node architecture | `<TPM_ATTESTOR_CHECKSUM>` | Install | |
+| CPU architecture of the management nodes, `amd64` or `arm64` | `<ARCH>` | Install | |
 
 ### Registries and images
 
 | Value | Placeholder | Used on | Your value |
 |---|---|---|---|
 | Registry host and namespace | `<REGISTRY_HOST>`, `<NAMESPACE>` | Build, Bootstrap, Install | |
-| Registry account that can push | `<REGISTRY_USER>`, `<REGISTRY_TOKEN>` | Build, Install | |
-| Controller image, the `cwe` output | `<CONTROLLER_IMAGE>`; `<CONTROLLER_IMAGE_REPOSITORY>`, `<CONTROLLER_IMAGE_DIGEST>`, `<CONTROLLER_IMAGE_TAG>` | Bootstrap; Install | |
+| Registry account that can push | `<REGISTRY_USER>`, `<REGISTRY_TOKEN>` | Build | |
+| NVKR release reference, and its exported description `release.json` | `<RELEASE_REF>` | Build, Install | |
+| Controller image, the release's `cwe` artifact | `<CONTROLLER_IMAGE>` | Bootstrap; Install without a release | |
 | Provisioned infrastructure provider image | `<PROVISIONED_PROVIDER_IMAGE>` | Bootstrap | |
-| Profile content image tag and digest | `<TAG>`; `<PROFILES_DIGEST>` | Build; Build, Install | |
-| OS profile values in the example bundle | `REPLACE_` values | Build | |
-| For signed Releases: GitHub organization, signing identity, `cosign` path and digest | `<GITHUB_ORG>`, `<IDENTITY_REGEXP>`, `<COSIGN_PATH>`, `<COSIGN_DIGEST>` | Build | |
-| GitHub account for CAPNICo's image | `<GITHUB_USER>`, `<GITHUB_TOKEN>` | Install | |
+| Profile content image, the release's `controller-profiles` artifact | `controllerStack.images.profiles` | Install without a release | |
+| OS release resources, `MachineImage`, `ClusterRelease` and `NodePoolRelease` | `releases/` | Build, Install | |
+| For `nvkr release verify`: the accepted signer identity and OIDC issuer, and a `cosign` path and digest | `<IDENTITY_REGEXP>`, `<OIDC_ISSUER>`, `<COSIGN_PATH>`, `<COSIGN_DIGEST>` | Build | |
 
 ### NICo
 
@@ -147,7 +147,7 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 |---|---|---|---|
 | API endpoint | `<NICO_ENDPOINT>` | Install, Configure NICo | |
 | Organization ID | `<NICO_ORG_ID>` | Install, Configure NICo, Create | |
-| API token | `<NICO_TOKEN>` | Install | |
+| API token, in a file only you can read | `nico-token` | Install | |
 | API name | `<NICO_API_NAME>` | Install, Configure NICo | |
 | Site ID and VPC ID | `<NICO_SITE_ID>`, `<NICO_VPC_ID>` | Create | |
 | Instance type IDs for control-plane and worker nodes | `<CP_INSTANCE_TYPE_ID>`, `<WORKER_INSTANCE_TYPE_ID>` | Create, Manage node pools | |
@@ -158,8 +158,8 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 
 | Value | Placeholder | Used on | Your value |
 |---|---|---|---|
-| Login account written into every workload cluster node's user data | `<NODE_USER>`, `<NODE_PASSWORD>` | Install | |
-| Database password | `<DB_PASSWORD>` | Install | |
+| Login account written into every workload cluster node's user data; the password in a file | `<NODE_USER>`, `tenant-password` | Install | |
+| Database password file; the install generates the password if the file does not exist | `db-password` | Install | |
 | Issuer URL | `<ISSUER_URL>` | Secure the API | |
 | Signing-key URL | `<JWKS_URI>` | Secure the API | |
 | OIDC client ID for `nvkectl` | `<CLIENT_ID>` | Secure the API | |
@@ -190,4 +190,4 @@ Your plan is complete when every row in [Fill in your values](#fill-in-your-valu
 
 ## Next steps
 
-- [Build node images with NVKR](build-node-images.md).
+- [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md).

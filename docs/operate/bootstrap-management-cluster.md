@@ -80,6 +80,8 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
 
    If you omit a `--set` line, the field keeps its default: `k8sVersion` `1.34.2`, `podCidr` `192.168.0.0/16`, `serviceCidr` `10.96.0.0/12`, `systemReservedMemory` `16Gi`. If the reserved memory is close to a node's total memory, the node has nothing left to schedule and never reaches `Ready`. The CNI defaults to `ovn-kubernetes`, and etcd encryption at rest is on. Encryption can only be chosen at bootstrap: a cluster built with `--set cluster.etcdEncryption=false` stays unencrypted.
 
+   `generate sitespec` also writes a `controllerStack` section, with every value a `REPLACE_*` placeholder. The bootstrap does not read it, and ends by listing the placeholders still in the file. You fill it in before you [install the management-plane services](install-management-plane-services.md#fill-in-the-controller-stack-settings).
+
    `generate sitespec` validates every field before it writes the file. `bootstrap site` also reads environment variables, such as `CLUSTER_POD_CIDR`, that override fields in the file; [Site Spec](../../cli/docs/sitespec.md) lists them. Unset them before you run the bootstrap unless you mean to override the file.
 
 3. Validate the site spec without touching any node.
@@ -94,7 +96,7 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
 
 The bootstrap deploys two NVKE images into the seed cluster: the controller and the provisioned infrastructure provider. By default it uses `nke-controller:latest` and `cluster-api-provider-provisioned:latest` from the bootstrap host's local image store.
 
-To use images you published to your registry, for example with NVKR as described in [Build node images with NVKR](build-node-images.md), log in to the registry and name the images when you run the bootstrap.
+To use images you published to your registry, for example with NVKR as described in [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md), log in to the registry and name the images when you run the bootstrap.
 
 ```bash
 nerdctl login <REGISTRY_HOST>
@@ -130,11 +132,13 @@ To build both images from the repository on the bootstrap host instead, run `mak
 
    | File | Contents |
    |---|---|
-   | `<CLUSTER_NAME>.kubeconfig` | Admin kubeconfig for the management cluster. Change the path with `--kubeconfig-out`. |
+   | `<CLUSTER_NAME>.kubeconfig` | A break-glass admin kubeconfig for the management cluster: a client certificate in the group `nvke:breakglass`, which the bootstrap binds to `cluster-admin`. The certificate is requested for one year. Change the path with `--kubeconfig-out`. |
    | `<CLUSTER_NAME>-etcd-encryption-key.json` | The etcd encryption key, as a Secret manifest. Written only when etcd encryption is on. Change the path with `--encryption-key-out`. |
    | `clusterstaticentry-crd.yaml` and `clusterstaticentries.yaml` | The SPIRE registration CRD and entries exported from the seed cluster. Written next to the kubeconfig unless you ran with `--disable-mtls`. |
 
-   The kubeconfig and the key file are secrets. Every control-plane node holds the etcd key, so the running cluster does not depend on the file, and installing the management-plane services does not use it. It is the only copy of the key that is not on a node. After you finish [Verify](#verify), copy both files to secure storage and delete them from the bootstrap host.
+   The kubeconfig and the key file are secrets. Every control-plane node holds the etcd key, so the running cluster does not depend on the file, and installing the management-plane services does not use it. It is the only copy of the key that is not on a node. After you finish [Verify](#verify), copy the key file to secure storage and delete it from the bootstrap host.
+
+   Keep `<CLUSTER_NAME>.kubeconfig` on the host you install from. [Install management-plane services](install-management-plane-services.md), [Configure an infrastructure provider: NICo](provider-nico.md) and [Secure the NVKE API](api-authentication.md) all use it. When you finish those pages, copy it to secure storage and delete it from that host.
 
 ## What happens during the bootstrap
 

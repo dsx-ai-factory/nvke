@@ -12,10 +12,18 @@ API authentication is off by default: until you turn it on, the API serves every
 
 NVKE does no authorization. Every caller that NVKE admits can call every endpoint, including the ones that create and delete workload clusters.
 
+> **Warning:** The NVKE API serves plain HTTP on NodePort 30080, and neither NVKE nor its chart serves it over TLS. Every bearer token a caller sends to `http://<MANAGEMENT_ADDRESS>:30080` crosses the network unencrypted, and anyone who captures it can call the API until it expires. Send tokens only to a TLS endpoint that you put in front of the API, such as a reverse proxy that terminates TLS and forwards to port 30080, or admit to the API, in the NetworkPolicy from [Install management-plane services](install-management-plane-services.md), only clients on a trusted, isolated network.
+
 ## Before you begin
 
 - You have completed [Install management-plane services](install-management-plane-services.md). You can do this before or after [Configure an infrastructure provider: NICo](provider-nico.md).
-- You run the Helm and `kubectl` commands on the host you installed from, with `helm` and `kubectl` on `PATH` and `KUBECONFIG` set to `<CLUSTER_NAME>.kubeconfig`, from the directory that holds the same `nvke/` checkout. The install created the Helm release `nke-controller` from the chart in `nvke/controller/deploy/charts/controller`, and the Deployment `nke-controller`, both in the `nke-controller` namespace.
+- You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it, as in [Install management-plane services](install-management-plane-services.md). Set `KUBECONFIG` for `kubectl`:
+
+  ```bash
+  export KUBECONFIG="$PWD/../<CLUSTER_NAME>.kubeconfig"
+  ```
+
+  The install created the Helm release `nke-controller` and the Deployment `nke-controller`, both in the `nke-controller` namespace.
 - Your IdP publishes an OIDC discovery document over HTTPS, and the management cluster can reach its signing-key endpoint.
 - Your IdP has a group for the people and automation allowed to call the NVKE API, and puts it in a token claim named `groups`, a list of strings. NVKE reads group membership only from that claim.
 - Your IdP has an OIDC client for `nvkectl` that needs no client secret.
@@ -56,7 +64,7 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
 
 ## Turn on authentication in permissive mode
 
-1. Write the Helm values to a file named `auth-values.yaml`.
+1. Write the Helm values to a file named `auth-values.yaml`, in the directory above the `nvke/` checkout.
 
    ```yaml
    apiAuth:
@@ -103,13 +111,17 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
 
    Merge these keys into the file from step 1: `extraFiles` under `configMap`, and `caBundlePath` under the existing issuer's `jwks`, rather than adding a second `apiAuth` block or issuer. Without `caBundlePath`, NVKE trusts the system CAs.
 
-3. Apply the values to the NVKE controller release.
+3. Run the install command from [Install management-plane services](install-management-plane-services.md) again, with the same flags and `--values-for controller=../auth-values.yaml` added.
 
    ```bash
-   helm upgrade nke-controller nvke/controller/deploy/charts/controller --namespace nke-controller --reuse-values -f auth-values.yaml
+   deploy/nvke-deploy.sh install --deploy-path deploy/nico \
+     --sitespec ../sitespec.yaml \
+     --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
+     --release ../release.json \
+     --values-for controller=../auth-values.yaml
    ```
 
-   The chart refuses to render if `config` is set without `create`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
+   Keep the `--release` and `--nvkr-run-dir` flags exactly as you installed, or leave them out if you installed without them, so that the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart refuses to render if `config` is set without `create`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
 
 4. Wait for the new pods and check the startup log.
 
@@ -127,7 +139,7 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
 
 ## Call the API
 
-Configure your callers now, while NVKE still serves every request. From the moment the upgrade creates the authentication configuration, `nvkectl` configured with `<CLUSTER_NAME>.kubeconfig` fails before it sends a request, with an error that contains `minting token for nke-clients/nke-client`: with that kubeconfig it requests a token for a service account that the install does not create.
+Configure your callers now, while NVKE still serves every request. From the moment the install creates the authentication configuration, `nvkectl` configured with `<CLUSTER_NAME>.kubeconfig` fails before it sends a request, with an error that contains `minting token for nke-clients/nke-client`: with that kubeconfig it requests a token for a service account that the install does not create.
 
 ### With nvkectl
 
@@ -148,7 +160,7 @@ Configure your callers now, while NVKE still serves every request. From the mome
    nvkectl config set-site --name <CLUSTER_NAME> --url <API_URL> --kubeconfig oidc.kubeconfig
    ```
 
-   `<API_URL>` is the base address of the NVKE API without `/api`: `http://<MANAGEMENT_ADDRESS>:30080`, as in [Install management-plane services](install-management-plane-services.md). That address serves plain HTTP, so a token sent to it crosses the network unencrypted. `nvkectl get kubeconfig` and `nvkectl get providers` read the management cluster's Kubernetes API directly with this kubeconfig. The bootstrap does not configure that API server to accept tokens from your IdP, so both commands fail. Use `kubectl` with `<CLUSTER_NAME>.kubeconfig` for them instead, as described in [Access a workload cluster](../workload-clusters/access.md#get-the-admin-kubeconfig) and [Create a workload cluster](../workload-clusters/create.md#before-you-begin).
+   `<API_URL>` is the base address of the NVKE API without `/api`: `http://<MANAGEMENT_ADDRESS>:30080`, as in [Install management-plane services](install-management-plane-services.md), or the `https` address of the TLS endpoint you put in front of it. A token sent to the `http` address crosses the network unencrypted; see the warning at the top of this page. `nvkectl get kubeconfig`, `nvkectl get providers`, and the machine image, cluster release and node pool release commands, such as `nvkectl get nodepoolreleases`, read the management cluster's Kubernetes API directly with this kubeconfig. The bootstrap does not configure that API server to accept tokens from your IdP, so these commands fail. Use `kubectl` with `<CLUSTER_NAME>.kubeconfig` for them instead, as described in [Access a workload cluster](../workload-clusters/access.md#get-the-admin-kubeconfig) and [Create a workload cluster](../workload-clusters/create.md#before-you-begin).
 
 3. Call the API.
 
@@ -168,7 +180,7 @@ Configure your callers now, while NVKE still serves every request. From the mome
 
    Automation that gets its tokens another way works the same, as long as each token carries an accepted `aud` and an admitted group.
 
-2. Call the API with the token in the `Authorization` header. `<API_URL>` is `http://<MANAGEMENT_ADDRESS>:30080`. Other pages write this header as `-H "Authorization: Bearer <TOKEN>"`, where `<TOKEN>` is a token like the one in `TOKEN`.
+2. Call the API with the token in the `Authorization` header. `<API_URL>` is `http://<MANAGEMENT_ADDRESS>:30080`, or the `https` address of the TLS endpoint you put in front of it. Other pages write this header as `-H "Authorization: Bearer <TOKEN>"`, where `<TOKEN>` is a token like the one in `TOKEN`.
 
    ```bash
    curl -H "Authorization: Bearer ${TOKEN}" <API_URL>/api/clusters
@@ -216,10 +228,14 @@ Continue when `would_reject` stops increasing.
 
 ## Switch to enforcing mode
 
-1. In `auth-values.yaml`, set `permissive: false`, then apply the file again.
+1. In `auth-values.yaml`, set `permissive: false`, then run the install again with the same flags as in [Turn on authentication in permissive mode](#turn-on-authentication-in-permissive-mode), step 3.
 
    ```bash
-   helm upgrade nke-controller nvke/controller/deploy/charts/controller --namespace nke-controller --reuse-values -f auth-values.yaml
+   deploy/nvke-deploy.sh install --deploy-path deploy/nico \
+     --sitespec ../sitespec.yaml \
+     --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
+     --release ../release.json \
+     --values-for controller=../auth-values.yaml
    ```
 
 2. Wait for the rollout.
@@ -234,7 +250,7 @@ Continue when `would_reject` stops increasing.
 
 NVKE reads the authentication configuration once, at startup. If you later change only `apiAuth.config`, restart the Deployment with `kubectl -n nke-controller rollout restart deploy/nke-controller`. Add a new issuer in permissive mode first, because an issuer whose keys NVKE cannot fetch stops an enforcing NVKE from starting.
 
-The install's own values turn authentication off. If you run the install again, add `--values-for controller=auth-values.yaml` after `--values-for controller=controller.yaml`.
+The deploy path's own values turn authentication off. Every time you run the install again, for any reason, add `--values-for controller=../auth-values.yaml`.
 
 ## Verify
 

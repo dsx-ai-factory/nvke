@@ -200,35 +200,35 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 
 The install stops at the component that failed. Fix the cause and run the same command again, as described in [Install management-plane services](install-management-plane-services.md#if-the-install-fails).
 
-### The install refuses a configuration field
+### The site spec still has placeholders
 
-- **Symptom:** `render-template: <FILE>: {{ .<FIELD> }} is empty.` or `{{ .<FIELD> }} has no value in the config.`
-- **Cause:** `install-config.json` lacks a field a component needs, such as `Nico.Token`.
-- **Fix:** Set the field. `--dry-run` checks the file without changing the cluster.
+- **Symptom:** `nvkectl validate sitespec` or the install reports `controllerStack.<FIELD> is still a REPLACE_* placeholder; fill it in`, or `controllerStack.<FIELD> is required`.
+- **Cause:** The `controllerStack` section of the site spec is not filled in. The bootstrap does not read it, so a site spec that bootstrapped the cluster can still fail here.
+- **Fix:** Fill in the field as described in [Install management-plane services](install-management-plane-services.md#fill-in-the-controller-stack-settings), then run `nvkectl validate sitespec -f sitespec.yaml` until it reports no placeholders.
+
+### The install refuses the release
+
+- **Symptom:** The install stops before it changes the cluster with `<ITEM>: <ROLE> <ARTIFACT> is not in the release`, for example for `controller-profiles` or `capnico-controller`.
+- **Cause:** The release description does not carry an artifact that the deploy path names, for the architecture in `controllerStack.arch`.
+- **Fix:** Use a release that carries the artifact, or install without `--release` and name the images in `controllerStack.images`, as described in [Choose where the artifacts come from](install-management-plane-services.md#choose-where-the-artifacts-come-from).
 
 ### A volume claim stays Pending
 
 - **Symptom:** `kubectl get pvc -A` shows a claim in `Pending`, and the component that owns it times out.
-- **Cause:** The management cluster has no default StorageClass. The bootstrap installs none.
+- **Cause:** The management cluster has no default StorageClass. The bootstrap installs none. `deploy/check-site.sh` reports this as a `FAIL`.
 - **Fix:** Install a storage provisioner, mark its StorageClass as the default, and run the install again.
 
 ### An image cannot be pulled
 
-- **Symptom:** The `controller` or `capnico` component times out, and its pod in `nke-controller` or `capnico-system` is in `ImagePullBackOff`.
-- **Cause:** For `controller`, the image reference or `imagePullSecrets` in `controller.yaml` is wrong. For `capnico`, the `Registry` credentials in `install-config.json` cannot pull from `ghcr.io`; they need a token with `read:packages`.
-- **Fix:** Read the registry's error with `kubectl describe pod`, correct the values and run the install again.
-
-### A schema job fails with password authentication failed
-
-- **Symptom:** The `temporal` component's schema job fails with `password authentication failed`, and the install stops.
-- **Cause:** `<DB_PASSWORD>` is missing from one of the two places in `temporal.yaml`.
-- **Fix:** Set the same `<DB_PASSWORD>` in `controller.yaml`, `postgresql.yaml` and both places in `temporal.yaml`, as in [Install management-plane services](install-management-plane-services.md#write-the-install-configuration).
+- **Symptom:** A component times out, and its pod is in `ImagePullBackOff`.
+- **Cause:** The nodes cannot reach or authenticate to the registry that the release or `controllerStack.images` names.
+- **Fix:** Read the registry's error with `kubectl describe pod`, make the registry reachable from the nodes, and run the install again.
 
 ### spire-server restarts with checksums did not match
 
 - **Symptom:** The `spire-server` pod restarts, and its log contains `checksums did not match`.
-- **Cause:** `<TPM_ATTESTOR_CHECKSUM>` in `spire.yaml` does not match the management nodes' architecture.
-- **Fix:** Use the checksum for your architecture from [Install management-plane services](install-management-plane-services.md#write-the-install-configuration).
+- **Cause:** `controllerStack.arch` does not match the management nodes' architecture. The install selects SPIRE's TPM attestor checksum from it.
+- **Fix:** Correct `controllerStack.arch`. `deploy/check-site.sh` compares it with the nodes. Then run the install again.
 
 ## Infrastructure provider
 
