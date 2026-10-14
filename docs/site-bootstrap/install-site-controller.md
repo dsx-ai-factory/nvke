@@ -8,7 +8,7 @@ The install takes three inputs.
 |---|---|
 | The site spec | What is specific to this site. The same file `nvkectl bootstrap site` read, with its `controllerStack` section filled in. See [Site Spec](../../cli/docs/sitespec.md) |
 | The release description | Which published artifacts to use, each by OCI reference and digest: the `nvkr.dev/release-description/v1` JSON that `nvkr release export` writes. Optional. See [Release](#release) |
-| The deploy path, [`deploy/nico/`](https://github.com/dsx-ai-factory/nvke/tree/main/deploy/nico) | What to install and in which order. See [Deploy Repository](deploy-repository.md) |
+| The deploy path, [`deploy/nico/`](https://github.com/dsx-ai-factory/nvke/tree/main/deploy/nico) | What to install and in which order. See [Deploy Path](deploy-repository.md) |
 
 One command does the whole install:
 
@@ -100,7 +100,7 @@ The scripted install above is the baseline. Every item in `deploy/nico/nvke-depl
 - **Secrets.** The `nvke-base-config` item renders two Secrets: `nico-credentials` and `dgxc-tenant-credentials`. Under GitOps those come from the operator's secret store. The namespaces and the Certificate chain in the same item are plain YAML and stay in git.
 - **Imperative steps.** `clusterctl init` and `controller/hack/apply-capi-spiffe-exec-auth.sh` stay imperative, outside GitOps. The other steps do not change.
 
-The per-site values the render writes belong in your own repository or your secret store. [Deploy Repository](deploy-repository.md) describes the `argocd` item type for a deploy path that carries Argo CD Applications.
+The per-site values the render writes belong in your own repository or your secret store. [Deploy Path](deploy-repository.md) describes the `argocd` item type for a deploy path that carries Argo CD Applications.
 
 ## Next Steps
 

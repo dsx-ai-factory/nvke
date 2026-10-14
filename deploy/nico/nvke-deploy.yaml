@@ -45,8 +45,8 @@
 #                  not assume. The public release asset is.
 #   persistence    the e2e lane runs Postgres on emptyDir because it is
 #                  disposable. A site must not.
-#   secrets        four of them carry real credentials, so they are template
-#                  items rendered from BootstrapConfig rather than committed.
+#   secrets        two of them carry real credentials, so they are template
+#                  items rendered from the site spec rather than committed.
 #
 # The nktp item installs the monitoring CRDs, so it has
 # to precede every item that creates a monitor: temporal, spire and controller

@@ -58,7 +58,7 @@ After bootstrap completes:
   what `clusterctl init` installs: Cluster API and cert-manager come from
   `github.com` and their images from their own registries
 
-If you are targeting a self-managed cluster, prepare your release manifest and site config for the [deploy path](deploy-repository.md) ahead of time.
+If you are targeting a self-managed cluster, prepare the release description and the site spec's `controllerStack` section for the [deploy path](deploy-repository.md) ahead of time.
 
 ## Step 1: Prepare All Nodes
 

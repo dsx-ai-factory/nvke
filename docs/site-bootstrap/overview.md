@@ -56,5 +56,5 @@ If you are running a self-managed site (with NICo as the infrastructure provider
 - [Configuration](configuration.md) — write your site site spec file
 - [Pre-Provisioned Nodes](pre-provisioned-nodes.md) — prepare nodes and run the bootstrap
 - [Custom Base OS](custom-base-os.md) — cloud-init based node preparation
-- [Deploy Repository](deploy-repository.md) — the format of the directory the NVKE services are installed from
+- [Deploy Path](deploy-repository.md) — the format of the directory the NVKE services are installed from
 - [Infrastructure Providers](infrastructure-providers.md) — install Cluster API and CAPNICo before CWE

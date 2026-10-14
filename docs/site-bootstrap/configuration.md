@@ -126,4 +126,4 @@ The site spec's `controllerStack:` section is the input for the controller stack
 
 ## What's Next After Bootstrap
 
-After the site controller cluster is up, install Cluster API and an infrastructure provider on it before deploying the NVKE services (CWE, Temporal, CNPG) — see [Infrastructure Providers](infrastructure-providers.md). The NVKE services deployment uses a GitOps-based deploy repository and ArgoCD; see [Deploy Repository](deploy-repository.md) for the structure and application manifests.
+After the site controller cluster is up, `deploy/nvke-deploy.sh install` installs Cluster API, the infrastructure provider and the NVKE services on it in one run; see [Install the Site Controller](install-site-controller.md). [Infrastructure Providers](infrastructure-providers.md) describes the provider it installs, and [Deploy Path](deploy-repository.md) the format of the directory the services are installed from.

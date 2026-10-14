@@ -119,7 +119,7 @@ it. `deploy/nico/nvke-deploy.yaml` lists the items in install order, and each
 item directory holds its chart pin, values and overlay, or its manifests;
 `--dry-run` prints every kubectl, helm and clusterctl call the script would
 make. An operator can apply the same items with their own tooling or through
-GitOps; [Deploy Repository](../../docs/site-bootstrap/deploy-repository.md)
+GitOps; [Deploy Path](../../docs/site-bootstrap/deploy-repository.md)
 describes the format.
 
 ### 5. Point the CLI at the site controller
