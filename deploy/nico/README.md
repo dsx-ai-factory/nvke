@@ -39,9 +39,9 @@ What the node needs, all present on the reference instance type:
 - to install for a site: `nvkectl` (`make -C cli build` writes
   `cli/bin/nvkectl`; `NVKECTL` names it, else PATH). `deploy/nvke-deploy.sh
   install --sitespec sitespec.yaml --kubeconfig site.kubeconfig` runs the
-  steps: readiness, prepare the cluster, Cluster API, this deploy path
-  rendered for the site from the spec's `controllerStack` section and
-  applied, secure and register. The render lives in a private scratch
+  steps: readiness, Cluster API, this deploy path rendered for the site
+  from the spec's `controllerStack` section and applied, the SPIRE
+  exec-auth patch. The render lives in a private scratch
   directory and is removed when the script exits, so no rendered credential
   is left behind. `deploy/nvke-deploy.sh apply --deploy-path deploy/nico
   --sitespec sitespec.yaml` applies this deploy path alone. Without a

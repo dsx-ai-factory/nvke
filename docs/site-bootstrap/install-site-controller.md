@@ -42,17 +42,22 @@ One command does the whole install:
 
 ```bash
 deploy/nvke-deploy.sh install --sitespec sitespec.yaml --kubeconfig site.kubeconfig \
-  --release release.json --site-releases releases/ --api-client-cidrs "10.0.0.0/8"
+  --release release.json --site-releases releases/
 ```
 
-It runs six steps in order and stops at the first failure, with diagnostics under `$XDG_STATE_HOME/nvke/diagnostics/`. Every step is safe to repeat: fix the cause and run the same command again. `--dry-run` prints every kubectl, helm and clusterctl argv and changes nothing in the cluster. The [deploy README](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/README.md) lists every flag and variable.
+It does what is NVKE's to do and reports or prints what is the site's: the StorageClass, who may reach the controller API, and the CLI on your machine stay yours. It runs five steps in order and stops at the first failure, with diagnostics under `$XDG_STATE_HOME/nvke/diagnostics/`. Every step is safe to repeat: fix the cause and run the same command again. `--dry-run` prints every kubectl, helm and clusterctl argv and changes nothing in the cluster. The [deploy README](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/README.md) lists every flag and variable.
 
-1. **Checks readiness.** The tools and the `helm` pin, the checkout, the site spec, the release description, the run directory, the cluster API, the node count and architecture, a control-plane taint the bootstrap should have removed, and egress. A failed check names the fix. Nothing is changed.
-2. **Prepares the cluster.** Installs rancher local-path-provisioner as the default StorageClass when none is default; a site with its own CSI driver sets `SKIP_STORAGECLASS=1` and annotates its own class `storageclass.kubernetes.io/is-default-class=true` instead.
-3. **Installs Cluster API.** `clusterctl init` with the core and kubeadm providers at `CAPI_VERSION` from `make/tool-versions.mk`. cert-manager comes with it. A Cluster API of another version is an error: `clusterctl init` does not upgrade. See [Upgrade](../operations/upgrade.md).
-4. **Installs the site controller.** Renders `deploy/nico` for the site and against the release into a private scratch directory, applies it item by item, and removes the scratch directory. Applies the site's `MachineImage`, `ClusterRelease` and `NodePoolRelease` resources from `--site-releases`. Waits for CAPNICo and the controller and asks the controller's `/readyz` for its database and Temporal.
-5. **Secures and registers.** Patches the Cluster API controllers with the SPIRE exec-auth plugin (`controller/hack/apply-capi-spiffe-exec-auth.sh`), registers the site with `nvkectl config set-site`, and, with `--api-client-cidrs`, applies a NetworkPolicy that admits those networks to the controller API. The chart admits the API from pods in the cluster only, so a client off the nodes needs its network listed. `clusterctl upgrade` drops the exec-auth patch; rerun the install after it.
-6. **Verifies.** Calls `/api/version` from the machine running the install, when `--api-client-cidrs` admits it.
+1. **Checks readiness.** The tools and the `helm` pin, the checkout, the site spec, the release description, the run directory, the cluster API, the node count and architecture, a control-plane taint the bootstrap should have removed, exactly one default StorageClass, and egress. A failed check names the fix. Nothing is changed. The StorageClass is yours to bring: which provisioner is right is a property of the hardware, so install the CSI driver for it and annotate its class `storageclass.kubernetes.io/is-default-class=true`; a lab can use rancher local-path-provisioner.
+2. **Installs Cluster API.** `clusterctl init` with the core and kubeadm providers at `CAPI_VERSION` from `make/tool-versions.mk`. cert-manager comes with it. A Cluster API of another version is an error: `clusterctl init` does not upgrade. See [Upgrade](../operations/upgrade.md).
+3. **Installs the site controller.** Renders `deploy/nico` for the site and against the release into a private scratch directory, applies it item by item, and removes the scratch directory. Applies the site's `MachineImage`, `ClusterRelease` and `NodePoolRelease` resources from `--site-releases`. Waits for CAPNICo and the controller and asks the controller's `/readyz` for its database and Temporal.
+4. **Secures.** Patches the Cluster API controllers with the SPIRE exec-auth plugin (`controller/hack/apply-capi-spiffe-exec-auth.sh`). `clusterctl upgrade` drops the patch; rerun the install after it.
+5. **Verifies.** Asks the controller for `/api/version` from inside the cluster, then prints what you do next by hand.
+
+After the install, on your own machine and under your own policy:
+
+- **Register the site with the CLI.** `nvkectl config set-site --name <site> --url http://<VIP>:30080 --kubeconfig site.kubeconfig`. The install prints the exact command.
+- **Admit your client networks.** The chart admits the controller API from pods in the cluster only. A NetworkPolicy in `nke-controller` selecting `app.kubernetes.io/name: nke-controller` that admits your CIDRs on port 8080 opens it to your machines.
+- **Publish the release resources** if you did not pass `--site-releases`: a `MachineImage`, a `ClusterRelease` and a `NodePoolRelease`, as [Your first cluster](../first-cluster.md#7-publish-a-release) shows.
 
 A failed helm release is uninstalled before the rerun:
 
@@ -63,14 +68,15 @@ deploy/nvke-deploy.sh install ...
 
 ### Option 2: By Hand
 
-The same six steps, run by you. Take the script apart as far as you like: `deploy/nvke-deploy.sh install --dry-run` prints the exact commands for your site, in order, and nothing below is hidden in it.
+The same steps, run by you. Take the script apart as far as you like: `deploy/nvke-deploy.sh install --dry-run` prints the exact commands for your site, in order, and nothing below is hidden in it.
 
-1. **Prepare the cluster.** Make sure a default StorageClass exists. The bootstrap already removed the control-plane `NoSchedule` taint.
+1. **Prepare the cluster.** Make sure exactly one StorageClass is default. The bootstrap already removed the control-plane `NoSchedule` taint.
 2. **Install Cluster API.** `clusterctl init --core cluster-api:<version> --bootstrap kubeadm:<version> --control-plane kubeadm:<version>`, with the version `make/tool-versions.mk` pins.
 3. **Render the deploy path.** `nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --release release.json --out <dir>` writes a copy resolved for the site and the release into a directory only you can read. It holds the site's credentials; delete it when the install is done.
 4. **Apply the items** in the order `nvke-deploy.yaml` lists them. A manifest item is `kubectl apply --server-side -f` on each of its files, or on `kubectl kustomize` of the directory when the render wrote a `kustomization.yaml`. A helm item is `helm upgrade --install <release> <chart> -n <namespace> --wait` with the item's values files in order; the item's `release.yaml` names the chart, release, values and `requires`. Wait for each `requires` entry with `kubectl wait` before its chart. Then apply the site's release resources with `kubectl apply --server-side -f releases/`.
-5. **Secure and register.** Run `controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig site.kubeconfig`, then `nvkectl config set-site --name <site> --url http://<VIP>:30080 --kubeconfig site.kubeconfig`. Add a NetworkPolicy in `nke-controller` that admits your client networks to the controller API if you reach it from off the nodes.
-6. **Verify.** `curl http://<VIP>:30080/api/version`, and `nvkectl get providers`.
+5. **Secure.** Run `controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig site.kubeconfig`.
+6. **Register and admit.** `nvkectl config set-site --name <site> --url http://<VIP>:30080 --kubeconfig site.kubeconfig`, and a NetworkPolicy in `nke-controller` that admits your client networks to the controller API.
+7. **Verify.** `curl http://<VIP>:30080/api/version` from an admitted machine, and `nvkectl get providers`.
 
 ### Option 3: GitOps
 

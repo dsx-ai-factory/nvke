@@ -17,8 +17,8 @@ the reference it points at.
 | `nvkectl validate sitespec -f sitespec.yaml` | Checks the whole site spec and reports by section: the bootstrap fields, then `controllerStack:` with the placeholders still to fill in. `--bootstrap-only` before the section is filled in. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
 | `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts and images come from this checkout. | Not in the CLI |
-| `deploy/nvke-deploy.sh install --sitespec sitespec.yaml --kubeconfig <path> [--release release.json]` | Installs the controller stack on the bootstrapped cluster in one run: readiness checks, the cluster's taint and StorageClass, Cluster API, the `deploy/nico` deploy path rendered for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller), the SPIRE exec-auth patch, and `config set-site`. See [Install the Site Controller](../../docs/site-bootstrap/install-site-controller.md). | Not in the CLI |
-| `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at a site controller. The install runs it; run it yourself for a site installed another way. `use-site` switches between entries, `view` prints the config. | Available |
+| `deploy/nvke-deploy.sh install --sitespec sitespec.yaml --kubeconfig <path> [--release release.json]` | Installs the controller stack on the bootstrapped cluster in one run: readiness checks, the cluster's taint and StorageClass, Cluster API, the `deploy/nico` deploy path rendered for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller), and the SPIRE exec-auth patch, then prints the `config set-site` command. See [Install the Site Controller](../../docs/site-bootstrap/install-site-controller.md). | Not in the CLI |
+| `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at a site controller; the install prints the command. `use-site` switches between entries, `view` prints the config. | Available |
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
 | `nvkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
 | `nvkectl get clusters [name ...]` | Lists tenant clusters. Names narrow to those clusters. `-o json\|yaml` changes the format. | Available |
@@ -105,14 +105,15 @@ section of the site spec still needs. Fill that in and run
 
 ```bash
 deploy/nvke-deploy.sh install --sitespec sitespec.yaml --kubeconfig my-tier0-site.kubeconfig \
-  --release release.json --site-releases releases/ --api-client-cidrs "10.0.0.0/8"
+  --release release.json --site-releases releases/
 ```
 
-One command: it checks the inputs and the cluster, prepares the cluster,
-installs Cluster API, renders the `deploy/nico` deploy path for the site and
-the release and applies it, item by item, then patches the Cluster API
-controllers for SPIRE and registers the site with `config set-site`. Every
-step is safe to repeat; after a failure, fix the cause and run it again.
+One command: it checks the inputs and the cluster, installs Cluster API,
+renders the `deploy/nico` deploy path for the site and the release and
+applies it, item by item, then patches the Cluster API controllers for
+SPIRE. It ends by printing what is yours to do by hand: register the site
+with the CLI and admit your networks to the controller API. Every step is
+safe to repeat; after a failure, fix the cause and run it again.
 [Install the Site Controller](../../docs/site-bootstrap/install-site-controller.md)
 describes each step, the inputs, removal and upgrade.
 
@@ -126,8 +127,7 @@ describes the format.
 
 ### 5. Point the CLI at the site controller
 
-The install has already run this; after an install done another way, or to
-reach the site from a second machine:
+The install prints this command; run it on the machine the CLI lives on:
 
 ```bash
 nvkectl config set-site --name my-tier0-site \

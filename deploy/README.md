@@ -19,19 +19,18 @@ The site spec names credential files; it holds no credential itself. `nvkectl` r
 ```bash
 deploy/nvke-deploy.sh install --sitespec sitespec.yaml --kubeconfig site.kubeconfig \
   [--release release.json [--nvkr-run-dir .nvkr/runs/<attempt>]] \
-  [--site-releases releases/] [--api-client-cidrs "10.0.0.0/8"] [--dry-run]
+  [--site-releases releases/] [--dry-run]
 ```
 
-One run, six steps, in this order. The first failure stops the run and writes diagnostics under `$XDG_STATE_HOME/nvke/diagnostics/`. Every step is safe to repeat: fix the cause and run the same command again. `--dry-run` prints every kubectl, helm and clusterctl argv and changes nothing in the cluster.
+One run, five steps, in this order. The install does what is NVKE's and reports or prints what is the site's: the StorageClass, who may reach the controller API and the CLI on your machine stay yours. The first failure stops the run and writes diagnostics under `$XDG_STATE_HOME/nvke/diagnostics/`. Every step is safe to repeat: fix the cause and run the same command again. `--dry-run` prints every kubectl, helm and clusterctl argv and changes nothing in the cluster.
 
 | Step | Does |
 |---|---|
-| check readiness | tools on `PATH` and `helm` at the pin; the checkout; `nvkectl validate sitespec`; the release description parses; the run directory; the cluster API, an odd node count, the node architecture against `controllerStack.arch`; egress to the chart repositories and registries. Changes nothing |
-| prepare the cluster | installs rancher local-path-provisioner as the default StorageClass when none is default (`SKIP_STORAGECLASS=1` leaves storage alone); fails unless exactly one class is default |
+| check readiness | tools on `PATH` and `helm` at the pin; the checkout; `nvkectl validate sitespec`; the release description parses; the run directory; the cluster API, an odd node count, the node architecture against `controllerStack.arch`, no control-plane taint, exactly one default StorageClass; egress to the chart repositories and registries. Changes nothing |
 | install Cluster API | `clusterctl init` with the core and kubeadm providers at `CAPI_VERSION` from `make/tool-versions.mk`; cert-manager comes with it. Another installed version is an error |
 | install the site controller | `apply` of `deploy/nico` rendered for the site and against the release; the site's release resources from `--site-releases`; waits for CAPNICo and the controller and asks the controller's `/readyz` |
-| secure and register | `controller/hack/apply-capi-spiffe-exec-auth.sh`; `nvkectl config set-site`; a NetworkPolicy admitting `--api-client-cidrs` to the controller API |
-| verify | `GET /api/version` from this machine, when `--api-client-cidrs` admits it |
+| secure | `controller/hack/apply-capi-spiffe-exec-auth.sh` |
+| verify | `GET /api/version` from inside the cluster, then the next steps for the operator: `nvkectl config set-site`, a NetworkPolicy for their client networks, the release resources if none were passed |
 
 ## apply
 
@@ -55,14 +54,12 @@ A chart comes from `chart.path` (a checkout directory, `helm dependency build` f
 | Variable | Default | Purpose |
 |---|---|---|
 | `NVKECTL` | `nvkectl` on `PATH` | The binary that reads the deploy path and renders. `make -C cli build` writes `cli/bin/nvkectl` |
-| `NVKE_STATE_DIR` | `$XDG_STATE_HOME/nvke` | Render scratch, the API client policy, diagnostics. Never a shared temp directory |
+| `NVKE_STATE_DIR` | `$XDG_STATE_HOME/nvke` | Render scratch and diagnostics. Never a shared temp directory |
 | `CTR` | `ctr` | The containerd import command for `images.txt` |
 | `PHASE_TIMEOUT`, `--timeout` | `15m` | `helm --wait` timeout per release |
 | `REQUIRE_TIMEOUT` | `180s` | `kubectl wait` and rollout timeout |
 | `CAPI_VERSION` | `make/tool-versions.mk` | The Cluster API version the install installs |
 | `CONTROLLER_NAMESPACE` | `nke-controller` | Where the install reads the controller |
-| `SKIP_STORAGECLASS` | unset | The install leaves StorageClasses alone |
-| `LOCAL_PATH_VERSION` | `v0.0.31` | The local-path-provisioner release the install uses |
 
 ## Test
 
