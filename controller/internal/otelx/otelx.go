@@ -105,7 +105,8 @@ func newResource(ctx context.Context, serviceName string, export bool, logger *s
 }
 
 // exportTarget returns the endpoint spans are exported to, and false when
-// export is disabled or no endpoint is set. It logs which of the two applies.
+// export is disabled or no endpoint is set. It logs a warning when export is
+// enabled without an endpoint, since the spans then go nowhere.
 func exportTarget(cfg config.TracingConfig, getenv func(string) string, logger *slog.Logger) (otlpTarget, bool) {
 	if !cfg.Enabled {
 		logger.Info("OpenTelemetry span export disabled; trace IDs are still created")
@@ -113,7 +114,7 @@ func exportTarget(cfg config.TracingConfig, getenv func(string) string, logger *
 	}
 	target, ok := resolveOTLPTarget(cfg, getenv)
 	if !ok {
-		logger.Info("OpenTelemetry span export enabled, but neither tracing.endpoint nor the environment sets an OTLP endpoint; trace IDs are still created")
+		logger.Warn("tracing.enabled is true but no OTLP endpoint is set, so spans will not be exported; set tracing.endpoint or OTEL_EXPORTER_OTLP_ENDPOINT")
 	}
 	return target, ok
 }
