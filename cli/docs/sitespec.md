@@ -96,7 +96,7 @@ is a file `bootstrap site` accepts.
 | `controllerStack.mirror` | string | no | Registry the external images are pulled from instead of upstream, `host[:port][/prefix]`, no scheme. |
 | `controllerStack.nktpValuesFile` | string | no | Values file for the nktp release, applied last. |
 
-A site spec written before the stack install dropped its registry credential still carries a `controllerStack.pullSecret` block. Delete the block: the file has no unknown-field tolerance, and nothing reads it. CAPNICo's image is public on GHCR, or comes from the release.
+A site spec with a `controllerStack.pullSecret` block does not load; delete the block. The file has no unknown-field tolerance, and nothing reads it. CAPNICo's image is public on GHCR, or comes from the release.
 
 The version (image/chart tag) is baked into the `nvkectl` build, so it is not
 part of the site spec.

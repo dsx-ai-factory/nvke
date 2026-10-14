@@ -61,13 +61,11 @@ Operators can port-forward Temporal's web UI to inspect running workflows or dia
 
 ---
 
-## CloudNative-PG (CNPG)
+## PostgreSQL
 
-CloudNative-PG is a Kubernetes operator for running PostgreSQL. NVKE deploys CNPG clusters on the site controller for CWE and Temporal rather than running standalone database processes. CNPG handles HA failover, backup, and certificate management.
+The controller and Temporal keep their state in PostgreSQL. The deploy path installs it as the `postgresql` item, the Bitnami chart in the `postgres` namespace, with a persistent volume from the cluster's default StorageClass. Database credentials come from the site spec's `controllerStack` section when the install renders the deploy path; no values file in the repository holds one.
 
-Database credentials come from the site spec's `controllerStack` section when the install renders the deploy path; no values file in the repository holds one.
-
-**Learn more:** https://cloudnative-pg.io/documentation/
+**Learn more:** https://www.postgresql.org/docs/
 
 ---
 
@@ -93,9 +91,9 @@ In NVKE, every node and every workload gets a SPIFFE identity backed by TPM atte
 
 ---
 
-## GitOps and the Deploy Repository
+## GitOps and the Deploy Path
 
-GitOps is the practice of using a git repository as the single source of truth for infrastructure state. You declare what you want in git; a controller (ArgoCD in NVKE's case) makes the cluster match it.
+GitOps is the practice of using a git repository as the single source of truth for infrastructure state. You declare what you want in git; a controller makes the cluster match it.
 
 NVKE ships a **deploy path**, `deploy/nico`: a directory that lists the NVKE services in install order, each as a Helm chart with values or as plain manifests. After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` applies it, one step of a short list of commands. A GitOps tool such as ArgoCD can deliver the same items and own ongoing reconciliation. See [Deploy Path](site-bootstrap/deploy-repository.md) for the format and [Install the Site Controller](site-bootstrap/install-site-controller.md) for the install.
 

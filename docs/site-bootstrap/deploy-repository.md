@@ -96,7 +96,7 @@ stringData:
 
 Files are applied in name order. Use numeric prefixes (`00-`, `20-`, `40-`) so that namespaces exist before anything lands in them.
 
-Without a site spec, `apply --config <file>` renders the templates from a JSON document with the same field names. The e2e lanes do this; a site install does not need it.
+Without a site spec, `install --config <file>` renders the templates from a JSON document with the same field names. The e2e lanes do this; a site install does not need it.
 
 ### `manifest`: plain Kubernetes manifests
 
@@ -142,7 +142,7 @@ requires:
 | `chart.artifact`, `chart.imageArtifact`, `chart.profilesArtifact` | Bind the item to an NVKR release by NVKR's output names: the chart, the image the chart runs, and its profiles content image. |
 | `chart.setFile` | Files the operator holds, passed to helm as `--set-file`. The deploy path carries the path, never the content. |
 | `release.name`, `release.namespace` | The Helm release. The namespace must already exist; `nvke-base-config` creates the ones `deploy/nico` uses. |
-| `values` | Values files in the item directory, applied in order. A render appends `site-values.yaml`, and `release-images.yaml` when the release carries the item's images. `apply --values-for <item>=<file>` adds a file after those. |
+| `values` | Values files in the item directory, applied in order. A render appends `site-values.yaml`, and `release-images.yaml` when the release carries the item's images. `install --values-for <item>=<file>` adds a file after those. |
 | `requires` | Objects that must exist and reach a condition before the chart installs. `helm --wait` waits on workloads only, so a Certificate issued by an earlier item is declared here and waited on with `kubectl wait`. |
 
 The install runs `helm upgrade --install --wait` for each item, with the item's namespace and values, and retries a chart download that fails with a server error. With a release, the release decides the version of every chart it carries, and a `release.yaml` that pins another version gets a warning. The pin decides only for a chart the release lacks.

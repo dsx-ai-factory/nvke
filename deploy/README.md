@@ -29,7 +29,7 @@ nvkectl create machineimage -f machineimage.yaml && nvkectl create clusterreleas
 
 ## check-site.sh
 
-One line per finding, PASS, WARN, SKIP or FAIL with the fix, and a non-zero exit on any FAIL. It changes nothing. When everything passes it prints the `clusterctl init` and `nvke-deploy.sh install` commands with the given paths.
+One line per finding, PASS, WARN, SKIP or FAIL with the fix, and a non-zero exit on any FAIL. It changes nothing. When everything passes it prints the commands that remain, `clusterctl init` when Cluster API is not installed yet and `nvke-deploy.sh install`, with the given paths.
 
 | Finding | What it checks |
 |---|---|
@@ -51,7 +51,7 @@ deploy/nvke-deploy.sh install --deploy-path DIR [--sitespec FILE] [--release FIL
   [--config bootstrap-config.json] [--values-for ITEM=FILE]... [--kubeconfig PATH] [--timeout 15m] [--dry-run] [-- helm args]
 ```
 
-The executor: it walks `nvke-deploy.yaml` and applies the items in list order. With `--sitespec` or `--release` it first renders the deploy path for the site and against the release into a private scratch directory under `NVKE_STATE_DIR`, installs from there and removes it when it exits, so no rendered credential is left behind. `--dry-run` prints every kubectl and helm argv instead. The e2e lanes install `controller/deploy/capd-e2e` and `capnico-e2e` with it, and `controller/hack/ci/kind-stack-from-release.sh` brings `deploy/nico` up on a kind node from a release through the whole list above.
+The executor: it walks `nvke-deploy.yaml` and applies the items in list order. With `--sitespec` or `--release` it first renders the deploy path for the site and against the release into a private scratch directory under `NVKE_STATE_DIR`, installs from there and removes it when it exits, so no rendered credential is left behind. `--dry-run` prints every kubectl and helm argv instead. The e2e lanes install `controller/deploy/capd-e2e` and `capnico-e2e` with it, and `controller/hack/ci/kind-stack-from-release.sh` brings `deploy/nico` up on a kind node from a release through steps 1 to 4 of that list.
 
 | Type | What happens |
 |---|---|
@@ -70,8 +70,8 @@ A chart comes from `chart.path` (a checkout directory, `helm dependency build` f
 | `CTR` | `ctr` | The containerd import command for `images.txt` |
 | `PHASE_TIMEOUT`, `--timeout` | `15m` | `helm --wait` timeout per release |
 | `REQUIRE_TIMEOUT` | `180s` | `kubectl wait` and rollout timeout |
-| `CAPI_VERSION` | `make/tool-versions.mk` | The Cluster API version the install installs |
-| `CONTROLLER_NAMESPACE` | `nke-controller` | Where the install reads the controller |
+| `CAPI_VERSION` | `make/tool-versions.mk` | The Cluster API version `check-site.sh` expects and prints the `clusterctl init` for |
+| `CONTROLLER_NAMESPACE` | `nke-controller` | Where `check-site.sh --diagnostics` reads the controller logs |
 
 ## Test
 

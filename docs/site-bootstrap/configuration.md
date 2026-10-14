@@ -122,6 +122,7 @@ REGISTRY_API_KEY="nvapi-xxxx" nvkectl bootstrap site -f sitespec.yaml
 ```console
 $ nvkectl validate sitespec -f sitespec.yaml
 bootstrap: valid; nvkectl bootstrap site can run with this file
+spire.trustDomain: not set; a bootstrap with the default cluster name and the controller stack install both use nvkectl-bootstrap.nke.local
 controllerStack: 8 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint, ...
 ```
 

@@ -101,9 +101,9 @@ autoinstall:
       # clusterctl here. nvkectl checks for nerdctl before it starts; a missing kind
       # fails pre-flight, and helm, kubectl or clusterctl fail mid-bootstrap.
 
-      # TODO: Replace with real release URL once the repo is public.
-      # Download and install nvkectl (bootstrap host only)
-      - [sh, -c, "curl -fsSL -o /usr/local/bin/nvkectl https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-linux-amd64 && chmod +x /usr/local/bin/nvkectl"]
+      # nvkectl comes from the NVKR release or a build of the clone, as
+      # docs/site-bootstrap/installation.md describes; put it at
+      # /usr/local/bin/nvkectl on the bootstrap host before this runs.
 
       # Run bootstrap (bootstrap host only). --disable-mtls matches the plaintext
       # agents configured above; this is the development-only mode, not a
