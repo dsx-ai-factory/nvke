@@ -6,9 +6,9 @@ This page lists the failures you are most likely to meet when you install NVIDIA
 
 ### Bootstrap diagnostics
 
-When `nkectl bootstrap site` fails, it writes diagnostics from the seed cluster to `cluster-diagnostics/`, or to the directory `--diagnostics-dir` names: one directory per namespace with object state and every pod's log (the management plane's under `nke-controller/`), plus `all-resources.txt`, `pods-described.txt` and `helm-releases.txt`.
+When `nvkectl bootstrap site` fails, it writes diagnostics from the seed cluster to `cluster-diagnostics/`, or to the directory `--diagnostics-dir` names: one directory per namespace with object state and every pod's log (the management plane's under `nke-controller/`), plus `all-resources.txt`, `pods-described.txt` and `helm-releases.txt`.
 
-If the run failed after it requested the cluster, `nkectl` keeps the seed cluster, and its NVKE API answers on the bootstrap host without authentication. List the management cluster's nodes and the step each one is on:
+If the run failed after it requested the cluster, `nvkectl` keeps the seed cluster, and its NVKE API answers on the bootstrap host without authentication. List the management cluster's nodes and the step each one is on:
 
 ```bash
 curl -s http://127.0.0.1:30080/api/nodes | jq -r '.nodes[] | [.name, .conditions.provisioned.status, .conditions.provisioning.message] | @tsv'
@@ -17,7 +17,7 @@ curl -s http://127.0.0.1:30080/api/nodes | jq -r '.nodes[] | [.name, .conditions
 To use `kubectl` against the seed cluster, write its kubeconfig:
 
 ```bash
-KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name nkectl-bootstrap > seed.kubeconfig
+KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name nvkectl-bootstrap > seed.kubeconfig
 ```
 
 ### Management-plane logs
@@ -36,7 +36,7 @@ kubectl logs deployment/nke-controller -n nke-controller --since=1h \
 1. Read the conditions of a cluster that is not `Provisioned`. The `message` of each condition usually names the cause.
 
    ```bash
-   nkectl get clusters <WORKLOAD_CLUSTER> -o yaml
+   nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml
    ```
 
    `<WORKLOAD_CLUSTER>` is the workload cluster's name.
@@ -67,7 +67,7 @@ kubectl logs deployment/controller-manager -n capnico-system --since=1h
 On a node, as root:
 
 ```bash
-journalctl -u nke-agent -n 100
+journalctl -u nvke-agent -n 100
 ```
 
 ```bash
@@ -83,7 +83,7 @@ cloud-init status --long
 Record these before you report a problem.
 
 ```bash
-nkectl version
+nvkectl version
 ```
 
 ```bash
@@ -96,7 +96,7 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 
 ## Building artifacts
 
-### nkdctl does not build
+### nvkr does not build
 
 - **Symptom:** `make build` in the NVIDIA Kubernetes Recipes (NVKR) repository prints `Go go<VERSION> does not match pinned go1.27.1`.
 - **Fix:** NVKR builds only with the exact Go version in its `.go-version` file. Install Go 1.27.1, or let Go fetch it:
@@ -107,15 +107,15 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 
 ### The bootstrap fails at clusterctl init
 
-- **Symptom:** The bootstrap fails with `cwedeploy: clusterctl init:` and `clusterctl dev must be on PATH`, and `nkectl version` prints `dev`.
-- **Cause:** `nkectl` was built with `go build`. Only the Makefile stamps the version and the Cluster API version into the binary.
-- **Fix:** Build with `make -C nke/cli build`. If the message names a real version, `clusterctl` is missing from `PATH` or the host cannot reach `github.com`.
+- **Symptom:** The bootstrap fails with `cwedeploy: clusterctl init:` and `clusterctl dev must be on PATH`, and `nvkectl version` prints `dev`.
+- **Cause:** `nvkectl` was built with `go build`. Only the Makefile stamps the version and the Cluster API version into the binary.
+- **Fix:** Build with `make -C nvke/cli build`. If the message names a real version, `clusterctl` is missing from `PATH` or the host cannot reach `github.com`.
 
 ## Preparing nodes
 
 ### The SPIRE agent configuration is missing
 
-- **Symptom:** `/etc/spire-agent/agent.conf` does not exist, and `journalctl -u nke-spire-configure` shows `nke-spire-configure: missing /etc/nke/spire.env`, `nke-spire-configure: missing /etc/nke/trust-bundle.pem`, or a line ending in `is required`.
+- **Symptom:** `/etc/spire-agent/agent.conf` does not exist, and `journalctl -u nvke-spire-configure` shows `nvke-spire-configure: missing /etc/nke/spire.env`, `nvke-spire-configure: missing /etc/nke/trust-bundle.pem`, or a line ending in `is required`.
 - **Cause:** The node's user data did not write the file or value named, so the SPIRE agent never starts.
 - **Fix:** Correct the user data and boot the node again, as described in [Prepare nodes](prepare-nodes.md).
 
@@ -125,7 +125,7 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 
 ### A seed cluster from an earlier run is still running
 
-- **Symptom:** `bootstrap cluster "nkectl-bootstrap" from an earlier run is still running`.
+- **Symptom:** `bootstrap cluster "nvkectl-bootstrap" from an earlier run is still running`.
 - **Cause:** An earlier run kept its seed cluster, which can hold the only copy of that cluster's etcd encryption key.
 - **Fix:** Save every `etcd-encryption-key-*` Secret the message lists, then delete the seed cluster as in the retry steps. Keep the `KIND_EXPERIMENTAL_PROVIDER=nerdctl` prefix, or `kind` deletes nothing and the next run stops on the same message.
 
@@ -145,7 +145,7 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 
 - **Symptom:** `image <IMAGE> is not in the local image store`, or a `nerdctl pull` error that ends with `if this is an authentication failure, log in to the image's registry`.
 - **Cause:** The `--controller-image` or `--provisioned-provider-image` reference has no registry host and was never built on this host, or the registry refused the pull.
-- **Fix:** Build the images with `make -C nke/cli images`, or pass full image references. For a refused pull, run `nerdctl login <REGISTRY_HOST>` first.
+- **Fix:** Build the images with `make -C nvke/cli images`, or pass full image references. For a refused pull, run `nerdctl login <REGISTRY_HOST>` first.
 
 ### A required tool is missing
 
@@ -156,16 +156,16 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 ### The bootstrap times out waiting for the cluster
 
 - **Symptom:** After `--timeout`, 30 minutes by default, the bootstrap fails with `did not report provisioned within` or `only <N> of <M> control plane nodes of cluster <ID> finished provisioning within`, and keeps the seed cluster.
-- **Cause:** A node's SPIRE agent cannot attest, so `nke-agent` never starts, or the bootstrap host cannot reach `nke-agent`.
+- **Cause:** A node's SPIRE agent cannot attest, so `nvke-agent` never starts, or the bootstrap host cannot reach `nvke-agent`.
 - **Fix:**
-  1. List the nodes and their step with the `curl` command in [Bootstrap diagnostics](#bootstrap-diagnostics). `Waiting for node preflight to succeed` is followed by the last error from `nke-agent`.
+  1. List the nodes and their step with the `curl` command in [Bootstrap diagnostics](#bootstrap-diagnostics). `Waiting for node preflight to succeed` is followed by the last error from `nvke-agent`.
   2. On each node that is not ready, check that the SPIRE agent attested.
 
      ```bash
      journalctl -u spire-agent | grep 'Node attestation was successful'
      ```
 
-     Until it attests, `nke-agent` logs `timed out waiting for SPIFFE workload API socket`. If nothing prints, check that the node's TPM thumbprint in `hosts.csv` matches `get_tpm_pubhash` on the node, that `trust_domain` in `/etc/spire-agent/agent.conf` equals `spire.trustDomain` in the site spec, that `/etc/nke/trust-bundle.pem` holds the certificate you passed as `spire.caCertFile`, and that the node reaches the bootstrap host on port 30081.
+     Until it attests, `nvke-agent` logs `timed out waiting for SPIFFE workload API socket`. If nothing prints, check that the node's TPM thumbprint in `hosts.csv` matches `get_tpm_pubhash` on the node, that `trust_domain` in `/etc/spire-agent/agent.conf` equals `spire.trustDomain` in the site spec, that `/etc/nke/trust-bundle.pem` holds the certificate you passed as `spire.caCertFile`, and that the node reaches the bootstrap host on port 30081.
   3. From the bootstrap host, check that each node accepts connections on port 15005.
 
      ```bash
@@ -232,9 +232,9 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 ## Infrastructure provider
 
-### nkectl get providers does not show CONFIGURED
+### nvkectl get providers does not show CONFIGURED
 
-- **Symptom:** The `nico` row of `nkectl get providers` shows `NOT-INSTALLED`, `NOT-CONFIGURED`, `DEGRADED` or `UNKNOWN`. The `DETAIL` column says why.
+- **Symptom:** The `nico` row of `nvkectl get providers` shows `NOT-INSTALLED`, `NOT-CONFIGURED`, `DEGRADED` or `UNKNOWN`. The `DETAIL` column says why.
 - **Fix:** [Configure an infrastructure provider: NICo](provider-nico.md#confirm-that-capnico-is-running) gives the action for each state.
 
 ### Machines are not delivered
@@ -255,36 +255,36 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `nkectl` fails with `minting token for nke-clients/nke-client`. | `nkectl` uses the management cluster's admin kubeconfig after authentication is configured. | Use an OpenID Connect (OIDC) kubeconfig, as in [With nkectl](api-authentication.md#with-nkectl). |
+| `nvkectl` fails with `minting token for nke-clients/nke-client`. | `nvkectl` uses the management cluster's admin kubeconfig after authentication is configured. | Use an OpenID Connect (OIDC) kubeconfig, as in [With nvkectl](api-authentication.md#with-nvkectl). |
 | `401`, or `403` with `Not admitted: the authenticated identity matches no admission rule.` | Enforcing mode rejected the token or the caller. | Search the management-plane log for `rejected request` in enforcing mode, or `authentication would have rejected this request` in permissive mode, then see [Find callers that enforcing mode would reject](api-authentication.md#find-callers-that-enforcing-mode-would-reject). |
 | The `nke-controller` pod does not become ready, and logs `Failed to set up API authentication`. | In enforcing mode NVKE cannot fetch an issuer's signing keys at startup. | Fix the issuer setting the error names, or return to permissive mode until the log shows `fetched issuer signing keys` for each issuer. |
 | A change to `apiAuth.config` has no effect, or authentication is off after you re-run the install. | NVKE reads the configuration only at startup, and the install's values turn authentication off. | See [Switch to enforcing mode](api-authentication.md#switch-to-enforcing-mode). |
 
 ## Creating clusters
 
-### nkectl create cluster returns an error
+### nvkectl create cluster returns an error
 
-- **Symptom:** `nkectl create cluster` prints `creating cluster:` with a `400` and a message such as `controlPlaneConfig.nico.osProfile is required for a nico cluster control plane`.
+- **Symptom:** `nvkectl create cluster` prints `creating cluster:` with a `400` and a message such as `controlPlaneConfig.nico.osProfile is required for a nico cluster control plane`.
 - **Cause:** The cluster spec is invalid. Nothing was created.
 - **Fix:** Correct the field the message names. [Create a workload cluster](../workload-clusters/create.md#create-the-cluster) lists the common causes.
 
 ### The cluster stays in Provisioning
 
-- **Symptom:** `nkectl get clusters` shows `Provisioning` long after you created the cluster.
+- **Symptom:** `nvkectl get clusters` shows `Provisioning` long after you created the cluster.
 - **Cause:** A control-plane node has not finished provisioning.
 - **Fix:** List the cluster's nodes with the command in [Cluster and node state](#cluster-and-node-state), and act on the step the stuck node is on:
 
   | Node message | What is wrong | Next check |
   |---|---|---|
   | `Waiting for infrastructure allocation` (`pending`) or `Waiting for CAPI machine to be ready` | NICo has not delivered or booted a machine. | [Machines are not delivered](#machines-are-not-delivered), then the CAPNICo logs. |
-  | `Waiting for node preflight to succeed` | The machine booted, but `nke-agent` is unreachable or cloud-init has not finished. | The `-- last error:` text, then the node logs. |
+  | `Waiting for node preflight to succeed` | The machine booted, but `nvke-agent` is unreachable or cloud-init has not finished. | The `-- last error:` text, then the node logs. |
   | `Workflow failed:` | Provisioning of the node stopped with the error that follows. | The error text and the management-plane log. |
 
 ### Nodes do not progress because of the OS profile
 
 - **Symptom:** Nodes do not progress, and the management-plane log contains `resolving OSProfile "<NAME>"`.
 - **Cause:** The control plane must name an existing cluster release and each node pool an existing node pool release.
-- **Fix:** Check the names with `nkectl get clusterreleases` and `nkectl get nodepoolreleases`. Apply the missing releases as in [Install management-plane services](install-management-plane-services.md), or delete the cluster and create it again with names that exist.
+- **Fix:** Check the names with `nvkectl get clusterreleases` and `nvkectl get nodepoolreleases`. Apply the missing releases as in [Install management-plane services](install-management-plane-services.md), or delete the cluster and create it again with names that exist.
 
 ### The cluster shows ProvisioningFailed
 
@@ -294,7 +294,7 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 ### A cluster patch fails
 
-- **Symptom:** `nkectl patch cluster` fails with `409` and `cluster update rejected: <OPERATION> in progress since <TIME>`, or `STATUS` becomes `UpdateFailed`.
+- **Symptom:** `nvkectl patch cluster` fails with `409` and `cluster update rejected: <OPERATION> in progress since <TIME>`, or `STATUS` becomes `UpdateFailed`.
 - **Cause:** Only one operation runs on a cluster at a time. `UpdateFailed` means the last day-2 operation failed; its condition message gives the cause.
 - **Fix:** For `409`, wait for `Provisioned`. Then, or for `UpdateFailed`, send the same patch again, as in [Create a workload cluster](../workload-clusters/create.md#change-cluster-settings-after-creation).
 
@@ -308,17 +308,17 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 ### A node was replaced after two hours
 
-- **Symptom:** A provisioning worker node is replaced, and `nke_controller_node_provisioning_giveups_total` increases.
+- **Symptom:** A provisioning worker node is replaced, and `nvke_controller_node_provisioning_giveups_total` increases.
 - **Cause:** The node provisioned for longer than the timeout, 2 hours by default.
 - **Fix:** Fix what the replacement node's step message waits on. To keep a stuck node for diagnosis, set `provisioningMonitorDisabled` on the pool, as described in [Manage node pools](../workload-clusters/node-pools.md#control-automatic-node-replacement).
 
 ## Workload cluster access
 
-### nkectl get kubeconfig fails
+### nvkectl get kubeconfig fails
 
 - **Symptom:** `admin kubeconfig secret nke-system/<WORKLOAD_CLUSTER>-admin-kubeconfig not found`, or `not allowed to read secret nke-system/<WORKLOAD_CLUSTER>-admin-kubeconfig`.
-- **Cause:** For `not found`, the name is wrong or the cluster is not provisioned yet. For `not allowed`, the kubeconfig set with `nkectl config set-site` lacks `get` on Secrets in `nke-system`.
-- **Fix:** Check the name with `nkectl get clusters` and wait for `Provisioned`, or use a kubeconfig with that permission.
+- **Cause:** For `not found`, the name is wrong or the cluster is not provisioned yet. For `not allowed`, the kubeconfig set with `nvkectl config set-site` lacks `get` on Secrets in `nke-system`.
+- **Fix:** Check the name with `nvkectl get clusters` and wait for `Provisioned`, or use a kubeconfig with that permission.
 
 ### kubectl times out against the workload cluster
 
@@ -328,7 +328,7 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 ## Get help
 
-Report bugs and documentation gaps in [GitHub Issues](https://github.com/dsx-ai-factory/nke/issues), after searching the existing issues. Review every file and log before you attach it, and remove addresses, host names, tokens, passwords and other values specific to your site. Include:
+Report bugs and documentation gaps in [GitHub Issues](https://github.com/dsx-ai-factory/nvke/issues), after searching the existing issues. Review every file and log before you attach it, and remove addresses, host names, tokens, passwords and other values specific to your site. Include:
 
 - The output of the commands in [Versions](#versions).
 - The command you ran and its full error.

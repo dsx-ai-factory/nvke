@@ -8,7 +8,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 
 | Item | Supported | Notes |
 |---|---|---|
-| Kubernetes versions | 1.34.2, 1.35.3, 1.36.3 | Pinned. The node image stages one `nke-kubeadm-distro` package for each version. A version not listed, including another patch release of the same minor version, is not on the node. |
+| Kubernetes versions | 1.34.2, 1.35.3, 1.36.3 | Pinned. The node image stages one `nvke-kubeadm-distro` package for each version. A version not listed, including another patch release of the same minor version, is not on the node. |
 | Version format | `X.Y.Z`, with no leading `v` | The API and the site spec reject any other format. |
 | Management cluster | One of the versions above, 1.34.2 by default | Set once, in the site spec's `k8sVersion` field, at bootstrap. The management cluster does not upgrade itself. |
 | Workload cluster | One of the versions above | `controlPlaneKubernetesVersion` is required and has no default. The API accepts any `X.Y.Z`, but nodes run only a version their node image carries. |
@@ -31,9 +31,9 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | Provider | Version | Notes |
 |---|---|---|
 | NVIDIA Infra Controller (NICo), through CAPNICo | CAPNICo v0.0.45 | Pinned. The only infrastructure provider for workload clusters. The install deploys this CAPNICo release with the reboot and repair settings NVKE uses. The local quickstart builds a development CAPNICo version from source instead. |
-| Cluster API core, kubeadm bootstrap and kubeadm control plane | v1.12.3 | Pinned. One version covers `clusterctl`, the providers that `clusterctl init` installs on the management cluster, and the providers `nkectl` installs in the seed cluster. |
+| Cluster API core, kubeadm bootstrap and kubeadm control plane | v1.12.3 | Pinned. One version covers `clusterctl`, the providers that `clusterctl init` installs on the management cluster, and the providers `nvkectl` installs in the seed cluster. |
 | cert-manager | v1.19.3 | Pinned by Cluster API v1.12.3, which installs it during `clusterctl init`. |
-| Provisioned infrastructure provider | Built from the same NVKE source as `nkectl` | Runs only in the seed cluster during bootstrap, to form the management cluster. |
+| Provisioned infrastructure provider | Built from the same NVKE source as `nvkectl` | Runs only in the seed cluster during bootstrap, to form the management cluster. |
 
 ## Node operating system
 
@@ -44,7 +44,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | Kernel | `linux-nvidia` on amd64, `linux-nvidia-64k` on arm64 | Ubuntu's NVIDIA-tuned kernel flavors. |
 | Full-disk encryption | Not supported | The NVKR node image has no full-disk encryption. |
 | SPIFFE Runtime Environment (SPIRE) agent | 1.14.1, with TPM plugin 1.9.0 | Pinned. Installed on the node image for TPM node attestation. |
-| Node agent (`nke-agent`) | Built from the NVKE source NVKR pins | Installed and enabled on the node image. Listens on port 15005. |
+| Node agent (`nvke-agent`) | Built from the NVKE source NVKR pins | Installed and enabled on the node image. Listens on port 15005. |
 
 See [Build node images with NVKR](../operate/build-node-images.md) for the build host requirements.
 
@@ -58,12 +58,12 @@ See [Build node images with NVKR](../operate/build-node-images.md) for the build
 | `kubectl` | v1.36.0 | Pinned for CI. The bootstrap does not check the version. |
 | `clusterctl` | v1.12.3 | Pinned. Match the Cluster API version above. |
 | Helm | v4.2.4 | Pinned for CI. The local quickstart needs Helm 4. The bootstrap and the install do not check the version. |
-| Go, to build `nkectl` and the NVKE images | 1.27.2 or later | Range. An older Go downloads 1.27.2 unless `GOTOOLCHAIN=local` is set. Also needs GNU Make. |
-| Go, to build `nkdctl` (NVKR) | 1.27.1 | Pinned. NVKR builds with `GOTOOLCHAIN=local`. |
-| `nkectl` | Linux and macOS, amd64 and arm64 | `nkectl bootstrap site` runs only on a Linux bootstrap host. |
-| Management cluster nodes | amd64 | The install uses the controller image that NVKR's `nke-v1` Definition builds, and `nke-v1` builds the controller image, its Helm chart and `nkectl` for linux/amd64 only. The NVKE source also builds the controller image for arm64, but the install does not use that image. |
+| Go, to build `nvkectl` and the NVKE images | 1.27.2 or later | Range. An older Go downloads 1.27.2 unless `GOTOOLCHAIN=local` is set. Also needs GNU Make. |
+| Go, to build `nvkr` (NVKR) | 1.27.1 | Pinned. NVKR builds with `GOTOOLCHAIN=local`. |
+| `nvkectl` | Linux and macOS, amd64 and arm64 | `nvkectl bootstrap site` runs only on a Linux bootstrap host. |
+| Management cluster nodes | amd64 | The install uses the controller image that NVKR's `nvke-v1` Definition builds, and `nvke-v1` builds the controller image, its Helm chart and `nvkectl` for linux/amd64 only. The NVKE source also builds the controller image for arm64, but the install does not use that image. |
 | Local quickstart host | Linux, amd64 or arm64 | See [Quickstart: evaluate locally with mock-NICo](../get-started/quickstart-local.md). |
 
-## nkectl compatibility
+## nvkectl compatibility
 
-`nkectl` is versioned on its own `cli/vX.Y.Z` tags, separately from the management plane. The [nkectl compatibility policy](../../cli/docs/compatibility.md) defines which commands, flags, exit codes and output formats are stable across releases. Build `nkectl` from the same release as the management plane.
+`nvkectl` is versioned on its own `cli/vX.Y.Z` tags, separately from the management plane. The [nvkectl compatibility policy](../../cli/docs/compatibility.md) defines which commands, flags, exit codes and output formats are stable across releases. Build `nvkectl` from the same release as the management plane.

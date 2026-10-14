@@ -1,11 +1,11 @@
 # Create a workload cluster
 
-This page describes how to create an NVIDIA Kubernetes Engine (NVKE) workload cluster for a customer with `nkectl`, watch it until its nodes are ready, change its day-2 settings, and delete it. You create workload clusters after you configure the infrastructure provider, and before you give the customer access.
+This page describes how to create an NVIDIA Kubernetes Engine (NVKE) workload cluster for a customer with `nvkectl`, watch it until its nodes are ready, change its day-2 settings, and delete it. You create workload clusters after you configure the infrastructure provider, and before you give the customer access.
 
 ## Before you begin
 
 - You have completed [Install management-plane services](../operate/install-management-plane-services.md) and [Configure an infrastructure provider: NICo](../operate/provider-nico.md).
-- `nkectl` points at your management plane, set with `nkectl config set-site`, and `nkectl get providers` reports the `nico` row as `CONFIGURED`. If you turned on API authentication, `nkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](../operate/api-authentication.md). `nkectl get providers` reads the management cluster's Kubernetes API with that kubeconfig, which the bootstrap does not configure to accept tokens from your identity provider, so the command fails. Check the provider with the management cluster's admin kubeconfig instead:
+- `nvkectl` points at your management plane, set with `nvkectl config set-site`, and `nvkectl get providers` reports the `nico` row as `CONFIGURED`. If you turned on API authentication, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](../operate/api-authentication.md). `nvkectl get providers` reads the management cluster's Kubernetes API with that kubeconfig, which the bootstrap does not configure to accept tokens from your identity provider, so the command fails. Check the provider with the management cluster's admin kubeconfig instead:
 
   ```bash
   kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig -n capnico-system get deploy,secret
@@ -13,13 +13,13 @@ This page describes how to create an NVIDIA Kubernetes Engine (NVKE) workload cl
 
   The Deployment `controller-manager` shows all replicas ready, and the Secret `nico-credentials` is listed. `<CLUSTER_NAME>` is the management cluster's name.
 - You have the NVIDIA Infra Controller (NICo) identifiers listed in [Collect the NICo identifiers](../operate/provider-nico.md#collect-the-nico-identifiers): the organization, site and virtual private cloud (VPC) IDs, the instance type IDs, the VPC prefix or subnet IDs, and optionally SSH key group IDs.
-- The OS profiles you plan to use exist on the management cluster. The control plane names a cluster release and each node pool names a node pool release. List them with `nkectl get clusterreleases` and `nkectl get nodepoolreleases`.
+- The OS profiles you plan to use exist on the management cluster. The control plane names a cluster release and each node pool names a node pool release. List them with `nvkectl get clusterreleases` and `nvkectl get nodepoolreleases`.
 - If the cluster has more than one control-plane node, you have an unused, routable IPv4 address on the control-plane network for the Kubernetes API virtual IP address (VIP).
 - `curl` and `jq` are installed, for the REST calls on this page.
 
 ## Write the cluster spec
 
-The cluster spec is a YAML file that describes the cluster, its control plane and its initial worker node pools. Its fields are those of the `CreateClusterRequest` in the NVKE REST API reference, and `nkectl` rejects any field the schema does not define.
+The cluster spec is a YAML file that describes the cluster, its control plane and its initial worker node pools. Its fields are those of the `CreateClusterRequest` in the NVKE REST API reference, and `nvkectl` rejects any field the schema does not define.
 
 1. Write the spec and save it as `cluster.yaml`.
 
@@ -103,7 +103,7 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
 1. Create the cluster from the spec.
 
    ```bash
-   nkectl create cluster -f cluster.yaml
+   nvkectl create cluster -f cluster.yaml
    ```
 
    The command prints `Cluster "<WORKLOAD_CLUSTER>" created (id: <CLUSTER_ID>)` and returns before provisioning finishes. `-f -` reads the spec from standard input.
@@ -127,7 +127,7 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
 1. Check the cluster's status.
 
    ```bash
-   nkectl get clusters <WORKLOAD_CLUSTER>
+   nvkectl get clusters <WORKLOAD_CLUSTER>
    ```
 
    `STATUS` reads `Provisioning`, then `Provisioned`. The `ID` column holds `<CLUSTER_ID>`, which REST calls use.
@@ -144,7 +144,7 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
 2. If the status stays `Provisioning`, read the condition messages.
 
    ```bash
-   nkectl get clusters <WORKLOAD_CLUSTER> -o yaml
+   nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml
    ```
 
    Each condition under `conditions` has a `status`, a `lastTransitionTime` and a `message`. NVKE keeps waiting for a control-plane machine that does not become ready, so a NICo instance type without capacity shows as a cluster that stays in `Provisioning`. See [Troubleshoot](../operate/troubleshoot.md).
@@ -152,7 +152,7 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
 3. Check the node pools.
 
    ```bash
-   nkectl get nodepools --cluster <WORKLOAD_CLUSTER>
+   nvkectl get nodepools --cluster <WORKLOAD_CLUSTER>
    ```
 
    Each pool's `STATUS` reads `Provisioned` once the cluster is provisioned. Its nodes can still be joining.
@@ -171,14 +171,14 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
 2. Check the cluster's status.
 
    ```bash
-   nkectl get clusters <WORKLOAD_CLUSTER>
+   nvkectl get clusters <WORKLOAD_CLUSTER>
    ```
 
    `STATUS` reads `Provisioned`.
 
 ## Change cluster settings after creation
 
-You change three cluster settings after creation with `nkectl patch cluster`, which sends a patch document in YAML or JSON to `PATCH /api/clusters/<CLUSTER_ID>`. Fields you leave out keep their values.
+You change three cluster settings after creation with `nvkectl patch cluster`, which sends a patch document in YAML or JSON to `PATCH /api/clusters/<CLUSTER_ID>`. Fields you leave out keep their values.
 
 | Field | Effect | Reversible |
 |---|---|---|
@@ -191,7 +191,7 @@ You change three cluster settings after creation with `nkectl patch cluster`, wh
 1. Apply the change. For example, to turn on etcd encryption:
 
    ```bash
-   nkectl patch cluster <WORKLOAD_CLUSTER> --patch 'enableEtcdEncryption: true'
+   nvkectl patch cluster <WORKLOAD_CLUSTER> --patch 'enableEtcdEncryption: true'
    ```
 
    The command prints `Cluster "<WORKLOAD_CLUSTER>" patched (id: <CLUSTER_ID>)` and returns before the rollout finishes. Use `--patch 'enableOidc: true'` or `--patch 'enableCPNodeRecycling: true'` for the other settings, or `--patch-file` to read the document from a file.
@@ -199,10 +199,10 @@ You change three cluster settings after creation with `nkectl patch cluster`, wh
 2. Wait for `STATUS` to return to `Provisioned`.
 
    ```bash
-   nkectl get clusters <WORKLOAD_CLUSTER>
+   nvkectl get clusters <WORKLOAD_CLUSTER>
    ```
 
-   After etcd encryption, `nkectl get clusters <WORKLOAD_CLUSTER> -o yaml` shows `etcdEncrypted: true`. If `STATUS` reads `UpdateFailed`, send the same patch again to retry.
+   After etcd encryption, `nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml` shows `etcdEncrypted: true`. If `STATUS` reads `UpdateFailed`, send the same patch again to retry.
 
 `enableOidc` requires Kubernetes 1.30.0 or later and a management plane installed with the `nkeOIDCAuth.issuerURL` chart value set. A cluster created while `nkeOIDCAuth.enabled` is `true` has OIDC from the start. The install in [Install management-plane services](../operate/install-management-plane-services.md) sets `nkeOIDCAuth.enabled` to `false` and `nkeOIDCAuth.issuerURL` to `https://nke.site-controller.internal`, and sets no `nkeOIDCAuth.discoveryURL`. New clusters therefore start without OIDC, and the `enableOidc` patch is accepted. The cluster's API server then fetches the issuer's discovery document from that host name, which the install does not make resolvable, so try `enableOidc` on one cluster before you rely on it.
 
@@ -213,7 +213,7 @@ The same `PATCH` also takes `controlPlaneKubernetesVersion`, to upgrade the cont
 1. Delete the cluster.
 
    ```bash
-   nkectl delete cluster <WORKLOAD_CLUSTER>
+   nvkectl delete cluster <WORKLOAD_CLUSTER>
    ```
 
    The command asks for no confirmation. It prints `Cluster "<WORKLOAD_CLUSTER>" deletion started (id: <CLUSTER_ID>)` and returns. The REST equivalent is `DELETE /api/clusters/<CLUSTER_ID>`, which returns `202`. You can delete a cluster in any state, including while it provisions or upgrades.
@@ -221,7 +221,7 @@ The same `PATCH` also takes `controlPlaneKubernetesVersion`, to upgrade the cont
 2. Wait for the cluster to disappear.
 
    ```bash
-   nkectl get clusters
+   nvkectl get clusters
    ```
 
    The cluster shows `Deleting` until teardown finishes, then is no longer listed.

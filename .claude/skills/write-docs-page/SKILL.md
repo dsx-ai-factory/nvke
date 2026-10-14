@@ -43,7 +43,7 @@ This page describes how to <task>. <When you do it: after which page, before whi
 
 ## Before you begin
 
-- <Pages the reader must have completed, in path order, first: "You have read [Plan your installation](...)".>
+- <Pages the reader must have completed, in path order, first: "You have read Plan your installation", as a link to that page.>
 - <Then each remaining prerequisite, with a link to the page that satisfies it.>
 
 ## <Step group, if the task has phases>
@@ -100,8 +100,8 @@ Explanation and reference pages follow the model page.
 
 | Use | Not | Notes |
 |---|---|---|
-| NVIDIA Kubernetes Engine (NVKE) on first use, then NVKE | NKE | Product name in prose. |
-| NVIDIA Kubernetes Recipes (NVKR) on first use, then NVKR | NKE Recipes, NKD | Build system. |
+| NVIDIA Kubernetes Engine (NVKE) on first use, then NVKE | the pre-rename product name | Product name in prose. |
+| NVIDIA Kubernetes Recipes (NVKR) on first use, then NVKR | the pre-rename build-system names, NKD | Build system. |
 | operator | admin, SRE | The AI factory team that installs and runs NVKE. |
 | customer | tenant, end user | The person or team that receives a workload cluster. |
 | management cluster | site controller, site cluster, seed | The cluster that runs the management plane. |
@@ -114,7 +114,7 @@ Explanation and reference pages follow the model page.
 
 **Code literals keep their real names.** Commands, binaries, packages, flags,
 API fields and repository names are written exactly as they exist in the code
-(`nkectl`, `nke-agent`, `nkdctl`, `cniPlugin`, `dsx-ai-factory/nke`), in
+(`nvkectl`, `nvke-agent`, `nvkr`, `cniPlugin`, `dsx-ai-factory/nvke`), in
 backticks. Never rename a literal to match the product name.
 
 Do not describe implementation internals that operators do not act on: the
@@ -134,7 +134,8 @@ trackers or hostnames. Do not describe air-gapped or offline installation.
 - Diagrams are Mermaid code blocks. Every diagram has one sentence above it
   saying what it shows.
 - Link to other pages with relative paths to the `.md` file
-  (`[Prepare nodes](../operate/prepare-nodes.md)`). Use the target page's
+  (from a page in `docs/workload-clusters/`, Prepare nodes is
+  `../operate/prepare-nodes.md`). Use the target page's
   title as the link text. Do not link to a page that is not in the
   navigation; `fern check` treats broken links as errors.
 - Code blocks have a language (`bash`, `yaml`, `json`, `text`). One command
@@ -159,6 +160,9 @@ Before you finish:
 3. Run the terminology check if your session has it, and search the page for
    the "Not" column above.
 4. Every link resolves to a page in the navigation.
+5. A new page has a row in `docs/README.md` and an entry in `docs/index.yml`.
+6. `make docs-check` and `python3 -B hack/name-check.py --mode fail` pass.
+   Both are merge-gate jobs; `make preflight` runs neither.
 
 ## 7. What to return
 

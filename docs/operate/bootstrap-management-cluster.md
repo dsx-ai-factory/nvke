@@ -1,30 +1,30 @@
 # Bootstrap the management cluster
 
-This page describes how to turn your prepared nodes into the management cluster, the Kubernetes cluster that runs the NVIDIA Kubernetes Engine (NVKE) management plane. You run one command, `nkectl bootstrap site`, after the nodes are prepared and before you install the management-plane services.
+This page describes how to turn your prepared nodes into the management cluster, the Kubernetes cluster that runs the NVIDIA Kubernetes Engine (NVKE) management plane. You run one command, `nvkectl bootstrap site`, after the nodes are prepared and before you install the management-plane services.
 
 ## Before you begin
 
 - You have read [Plan your installation](plan-installation.md).
-- Your nodes are prepared as described in [Prepare nodes](prepare-nodes.md): each has `nke-agent` enabled, has the Kubernetes packages installed, and has `spire-agent` configured with your SPIFFE trust domain and the SPIRE address of the bootstrap host. `nke-agent` starts once the bootstrap's SPIRE server attests the node.
+- Your nodes are prepared as described in [Prepare nodes](prepare-nodes.md): each has `nvke-agent` enabled, has the Kubernetes packages installed, and has `spire-agent` configured with your SPIFFE trust domain and the SPIRE address of the bootstrap host. `nvke-agent` starts once the bootstrap's SPIRE server attests the node.
 - You have an odd number of nodes, such as one, three or five, and you know each node's name, IP address and TPM endorsement-key (EK) thumbprint.
 - You have an IPv4 virtual IP address (VIP) for the Kubernetes API, routed to the nodes over BGP. A single-node cluster can omit it and use its node's IP.
 - You have your SPIRE CA certificate and key as files on the bootstrap host, and the certificate is already on each node.
-- You have a Linux bootstrap host that reaches every node on the `nke-agent` port (15005 by default) and reaches the Kubernetes API address on 6443. Nodes with a TPM thumbprint must reach the bootstrap host on 30081. You can use one of the nodes as the bootstrap host.
+- You have a Linux bootstrap host that reaches every node on the `nvke-agent` port (15005 by default) and reaches the Kubernetes API address on 6443. Nodes with a TPM thumbprint must reach the bootstrap host on 30081. You can use one of the nodes as the bootstrap host.
 - The bootstrap host has rootful `nerdctl` with containerd, plus `kind`, `helm`, `kubectl` and `clusterctl` on `PATH`. Docker is not supported. Only `nerdctl` is checked before the run starts, so a missing `helm`, `kubectl` or `clusterctl` fails the run part-way through.
-- The bootstrap host has Go and GNU Make to build `nkectl`, and outbound access to the registries and chart repositories the bootstrap pulls from.
+- The bootstrap host has Go and GNU Make to build `nvkectl`, and outbound access to the registries and chart repositories the bootstrap pulls from.
 
 Run every command on this page on the bootstrap host, as root, in a session that survives a disconnect, such as `tmux`.
 
-## Install nkectl
+## Install nvkectl
 
-1. Clone the repository and build `nkectl` with Make.
+1. Clone the repository and build `nvkectl` with Make.
 
    ```bash
-   git clone https://github.com/dsx-ai-factory/nke.git
+   git clone https://github.com/dsx-ai-factory/nvke.git
    ```
 
    ```bash
-   make -C nke/cli build
+   make -C nvke/cli build
    ```
 
    Build with `make`, not `go build`. The Makefile stamps the version and the Cluster API version into the binary, and a binary built without them fails later when it installs Cluster API.
@@ -32,18 +32,18 @@ Run every command on this page on the bootstrap host, as root, in a session that
 2. Put the binary on your `PATH` and check the version.
 
    ```bash
-   export PATH="$PWD/nke/cli/bin:$PATH"
+   export PATH="$PWD/nvke/cli/bin:$PATH"
    ```
 
    ```bash
-   nkectl version
+   nvkectl version
    ```
 
    The output shows a version string, not `dev`.
 
 ## Write the site spec
 
-The site spec is a YAML file that lists the nodes and the Kubernetes settings for the management cluster. `nkectl generate sitespec` writes it from a CSV of your nodes. The full schema is in [Site Spec](../../cli/docs/sitespec.md).
+The site spec is a YAML file that lists the nodes and the Kubernetes settings for the management cluster. `nvkectl generate sitespec` writes it from a CSV of your nodes. The full schema is in [Site Spec](../../cli/docs/sitespec.md).
 
 1. Write a CSV with one row per node.
 
@@ -59,7 +59,7 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
 2. Generate the site spec.
 
    ```bash
-   nkectl generate sitespec <CLUSTER_NAME> --nodes hosts.csv \
+   nvkectl generate sitespec <CLUSTER_NAME> --nodes hosts.csv \
      --set cluster.k8sVersion=<K8S_VERSION> \
      --set cluster.controlPlaneVIP=<API_VIP> \
      --set cluster.podCidr=<POD_CIDR> \
@@ -85,7 +85,7 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
 3. Validate the site spec without touching any node.
 
    ```bash
-   nkectl bootstrap site -f sitespec.yaml --dry-run
+   nvkectl bootstrap site -f sitespec.yaml --dry-run
    ```
 
    The command prints the site spec with defaults applied, then `Dry run: site spec is valid. No workflow dispatched.` If the file is invalid, it lists every problem in one error. Read the printed values before you continue.
@@ -102,25 +102,25 @@ nerdctl login <REGISTRY_HOST>
 
 `<REGISTRY_HOST>` is the host name of your registry. You pass the image references with `--controller-image` and `--provisioned-provider-image` in the next section.
 
-To build both images from the repository on the bootstrap host instead, run `make -C nke/cli images`.
+To build both images from the repository on the bootstrap host instead, run `make -C nvke/cli images`.
 
 ## Run the bootstrap
 
 1. Start the bootstrap.
 
    ```bash
-   nkectl bootstrap site -f sitespec.yaml \
+   nvkectl bootstrap site -f sitespec.yaml \
      --controller-image <CONTROLLER_IMAGE> \
      --provisioned-provider-image <PROVISIONED_PROVIDER_IMAGE>
    ```
 
-   `<CONTROLLER_IMAGE>` and `<PROVISIONED_PROVIDER_IMAGE>` are full references that include your registry host. Omit both flags to use the local images. `NKECTL_CONTROLLER_IMAGE` and `NKECTL_CAPI_PROVISIONED_IMAGE` set the same values from the environment, and a flag wins over its variable.
+   `<CONTROLLER_IMAGE>` and `<PROVISIONED_PROVIDER_IMAGE>` are full references that include your registry host. Omit both flags to use the local images. `NVKECTL_CONTROLLER_IMAGE` and `NVKECTL_CAPI_PROVISIONED_IMAGE` set the same values from the environment, and a flag wins over its variable.
 
    Before it creates anything, the command refuses to start if a seed cluster from an earlier run still exists, if the etcd encryption key file it would write already exists, if any node already accepts connections on port 6443, or if a local image is missing.
 
 2. Wait for the command to finish.
 
-   The wait for the nodes to provision and join is bounded by `--timeout`, 30 minutes by default (`NKECTL_BOOTSTRAP_CLUSTER_TIMEOUT` sets the default). Raise it for a larger cluster, for example `--timeout 45m`.
+   The wait for the nodes to provision and join is bounded by `--timeout`, 30 minutes by default (`NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT` sets the default). Raise it for a larger cluster, for example `--timeout 45m`.
 
    On success the command prints that the cluster is ready and the `kubectl` command to reach it.
 
@@ -138,17 +138,17 @@ To build both images from the repository on the bootstrap host instead, run `mak
 
 ## What happens during the bootstrap
 
-`nkectl` forms the management cluster with a temporary copy of the management plane running in a seed cluster on the bootstrap host. The sequence below shows the order of operations.
+`nvkectl` forms the management cluster with a temporary copy of the management plane running in a seed cluster on the bootstrap host. The sequence below shows the order of operations.
 
 ```mermaid
 sequenceDiagram
     participant Op as Operator
-    participant Ctl as nkectl (bootstrap host)
+    participant Ctl as nvkectl (bootstrap host)
     participant Seed as Seed cluster
-    participant Agent as nke-agent (each node)
+    participant Agent as nvke-agent (each node)
     participant Mgmt as Management cluster
 
-    Op->>Ctl: nkectl bootstrap site -f sitespec.yaml
+    Op->>Ctl: nvkectl bootstrap site -f sitespec.yaml
     Ctl->>Ctl: Validate the site spec and run pre-flight checks
     Ctl->>Seed: Create the seed cluster (single-node kind)
     Ctl->>Seed: Install SPIRE, Cluster API and the management plane
@@ -160,14 +160,14 @@ sequenceDiagram
     Ctl->>Seed: Delete the seed cluster
 ```
 
-The management plane in the seed cluster drives each node through `nke-agent`, so the bootstrap needs no SSH access to the nodes. It chooses which node runs `kubeadm init`; the site spec does not. Every node in the site spec becomes a control-plane node, and `nkectl` removes the control-plane `NoSchedule` taint so that the management-plane services can run on them.
+The management plane in the seed cluster drives each node through `nvke-agent`, so the bootstrap needs no SSH access to the nodes. It chooses which node runs `kubeadm init`; the site spec does not. Every node in the site spec becomes a control-plane node, and `nvkectl` removes the control-plane `NoSchedule` taint so that the management-plane services can run on them.
 
 ## If the bootstrap fails
 
 Each failure message says what to do next. How you retry depends on when the run failed.
 
-- **Before the cluster was requested**, for example an image pull or a component that did not become healthy: `nkectl` writes diagnostics to `cluster-diagnostics/` (`--diagnostics-dir` changes it), deletes the seed cluster, and exits. Fix the cause and run the bootstrap again.
-- **After the cluster was requested**: `nkectl` writes diagnostics and keeps the seed cluster, because it holds the state needed for recovery. The error names the seed cluster, its kubeconfig and the command that deletes it.
+- **Before the cluster was requested**, for example an image pull or a component that did not become healthy: `nvkectl` writes diagnostics to `cluster-diagnostics/` (`--diagnostics-dir` changes it), deletes the seed cluster, and exits. Fix the cause and run the bootstrap again.
+- **After the cluster was requested**: `nvkectl` writes diagnostics and keeps the seed cluster, because it holds the state needed for recovery. The error names the seed cluster, its kubeconfig and the command that deletes it.
 
 To retry after the second case:
 
@@ -176,7 +176,7 @@ To retry after the second case:
 2. Delete the seed cluster. The `KIND_EXPERIMENTAL_PROVIDER` prefix is required: without it, `kind` looks for the cluster in Docker and exits successfully without deleting anything.
 
    ```bash
-   KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nkectl-bootstrap
+   KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap
    ```
 
 3. On every node that has `/etc/kubernetes/manifests`, reset kubeadm.
@@ -219,7 +219,7 @@ To retry after the second case:
    KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get clusters
    ```
 
-   `nkectl-bootstrap` is not listed.
+   `nvkectl-bootstrap` is not listed.
 
 The management cluster is a plain Kubernetes cluster at this point. It does not upgrade, scale or replace its own nodes; see [Preview status and known limitations](../overview/preview-status.md).
 

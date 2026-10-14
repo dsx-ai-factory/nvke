@@ -16,7 +16,7 @@ A management cluster with an odd number of nodes, each a control-plane node that
 |---|---|---|
 | 1. Build | Build the NVKE controller image and the node OS image with NVIDIA Kubernetes Recipes (NVKR), and package the OS profiles. | [Build node images with NVKR](build-node-images.md) |
 | 2. Prepare nodes | Boot the management cluster's nodes from the node image with cloud-init user data, and record each node's TPM thumbprint. | [Prepare nodes](prepare-nodes.md) |
-| 3. Bootstrap | Run `nkectl bootstrap site` to form the management cluster. | [Bootstrap the management cluster](bootstrap-management-cluster.md) |
+| 3. Bootstrap | Run `nvkectl bootstrap site` to form the management cluster. | [Bootstrap the management cluster](bootstrap-management-cluster.md) |
 | 4. Install | Install Cluster API, CAPNICo, SPIRE, telemetry and the NVKE API and controllers. | [Install management-plane services](install-management-plane-services.md) |
 | 5. Configure NICo | Confirm that CAPNICo is running, and collect the NICo identifiers each workload cluster needs. | [Configure an infrastructure provider: NICo](provider-nico.md) |
 | 6. Secure the API | Make the NVKE API require a token from your identity provider. | [Secure the NVKE API](api-authentication.md) |
@@ -51,13 +51,13 @@ All connections are TCP; traffic between the nodes of one cluster is not listed.
 
 | Source | Destination | Port | Purpose |
 |---|---|---|---|
-| Bootstrap host | Each management cluster node | 15005 | `nke-agent`, which the bootstrap drives. |
+| Bootstrap host | Each management cluster node | 15005 | `nvke-agent`, which the bootstrap drives. |
 | Each management cluster node | Bootstrap host | 30081 | SPIRE server, for TPM node attestation during the bootstrap. |
 | Bootstrap host and install host | Management cluster API address | 6443 | Kubernetes API. |
 | Each control-plane node with a VIP | The node's default gateway | 179 | BGP, to advertise the VIP. |
 | API callers | Management address | 30080 | NVKE API, plain HTTP. |
 | Workload cluster nodes | Management address | 30440 | SPIRE server, for node attestation. |
-| Management cluster | Each workload cluster node | 15005 | `nke-agent`, which the management plane drives. |
+| Management cluster | Each workload cluster node | 15005 | `nvke-agent`, which the management plane drives. |
 | Management cluster | Each workload cluster API address | 6443 | Cluster lifecycle operations. |
 | Management cluster | NICo API endpoint | The port in the endpoint URL | Requesting machines. |
 | Management cluster | Your identity provider's signing-key URL | The port in that URL | Fetching token signing keys, if you secure the API. |
@@ -80,7 +80,7 @@ All connections are TCP; traffic between the nodes of one cluster is not listed.
 | NVKR build host | Linux AMD64 with Docker, Git, GNU Make, `jq` and the Go version NVKR pins. For the node OS image, also Kernel-based Virtual Machine (KVM) access, 8 CPUs, 10 GiB of memory and 64 GiB of free disk. |
 | Bootstrap host | Linux, run as root, with rootful `nerdctl` and containerd, `kind`, `helm`, `kubectl`, `clusterctl`, Go and GNU Make. Docker is not supported. It can be a management cluster node. |
 | Install host | `helm`, `kubectl`, `clusterctl`, `python3` and `git`. It can be the bootstrap host. |
-| API workstation | `nkectl`, `curl` and `jq`; with API authentication, also the `kubectl oidc-login` plugin and `python3`. |
+| API workstation | `nvkectl`, `curl` and `jq`; with API authentication, also the `kubectl oidc-login` plugin and `python3`. |
 
 ### Identity provider
 
@@ -89,7 +89,7 @@ API authentication is off by default: any caller that reaches port 30080 can cal
 - Publishes an OIDC discovery document over HTTPS, with a signing-key endpoint the management cluster can reach.
 - Signs tokens with an asymmetric algorithm, such as `RS256` or `ES256`.
 - Puts group membership in a token claim named `groups`.
-- Has an OIDC client for `nkectl` that needs no client secret.
+- Has an OIDC client for `nvkectl` that needs no client secret.
 
 NVKE admits callers by group but does no authorization: every admitted caller can call every endpoint.
 
@@ -100,7 +100,7 @@ NVKE admits callers by group but does no authorization: every admitted caller ca
 | Management cluster node count | Bootstrap | An odd number. The management cluster cannot add or replace nodes, so size it for the life of the installation. |
 | Management cluster etcd encryption | Bootstrap | On by default. A management cluster bootstrapped without it stays unencrypted. |
 | Management cluster API VIP | Bootstrap | Required for more than one node. |
-| SPIFFE trust domain | Node preparation | One value in the node user data, the site spec and the install values. If the site spec leaves it unset, `nkectl` uses `nkectl-bootstrap.nke.local`, which does not match your nodes. |
+| SPIFFE trust domain | Node preparation | One value in the node user data, the site spec and the install values. If the site spec leaves it unset, `nvkectl` uses `nvkectl-bootstrap.nke.local`, which does not match your nodes. |
 | Node CPU architecture | Image build | The node image and the SPIRE TPM attestor checksum are per architecture. |
 | Workload cluster Container Network Interface (CNI) plugin and networks | Cluster creation | `ovn-kubernetes`, the default, or `calico`. Custom pod and service ranges require `ovn-kubernetes`; `calico` requires the defaults, `192.168.0.0/16` and `10.96.0.0/12`. |
 | Workload cluster etcd encryption | Cluster creation | `etcdEncrypted` has no default. You can turn encryption on later, never off. |
@@ -162,7 +162,7 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 | Database password | `<DB_PASSWORD>` | Install | |
 | Issuer URL | `<ISSUER_URL>` | Secure the API | |
 | Signing-key URL | `<JWKS_URI>` | Secure the API | |
-| OIDC client ID for `nkectl` | `<CLIENT_ID>` | Secure the API | |
+| OIDC client ID for `nvkectl` | `<CLIENT_ID>` | Secure the API | |
 | Token audience | `<AUDIENCE>` | Secure the API | |
 | Group allowed to call the API | `<ADMITTED_GROUP>` | Secure the API | |
 | Extra scopes your IdP needs to release the `groups` claim, if any | `<SCOPE>` | Secure the API | |

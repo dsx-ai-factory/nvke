@@ -8,7 +8,7 @@ NICo is the only infrastructure provider NVKE supports at preview; see [Preview 
 
 - You have completed [Install management-plane services](install-management-plane-services.md). That procedure installs CAPNICo in the `capnico-system` namespace and writes your NICo API details from `install-config.json` to the `nico-credentials` Secret, before it installs the management plane.
 - You have the management cluster kubeconfig, `<CLUSTER_NAME>.kubeconfig`, and `kubectl` on `PATH`. The kubeconfig must be able to read Secrets in the `capnico-system` namespace.
-- `nkectl` points at your management plane, as set in [Install management-plane services](install-management-plane-services.md) with `nkectl config set-site`.
+- `nvkectl` points at your management plane, as set in [Install management-plane services](install-management-plane-services.md) with `nvkectl config set-site`.
 - In NICo, you have:
   - A site, with machines enrolled.
   - A virtual private cloud (VPC) in that site, and either VPC prefixes or subnets in it for the nodes.
@@ -26,10 +26,10 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
 1. Check the provider state.
 
    ```bash
-   nkectl get providers
+   nvkectl get providers
    ```
 
-   The `nico` row reads `CONFIGURED`: the CAPNICo custom resource definitions (CRDs) are established, the CAPNICo controller is available and the `nico-credentials` Secret exists. `NOT-INSTALLED` or `NOT-CONFIGURED` means the install did not complete; run it again as described in [Install management-plane services](install-management-plane-services.md). `DEGRADED` means the CAPNICo controller is not available; check the `controller-manager` Deployment in `capnico-system`. `UNKNOWN` usually means the kubeconfig that `nkectl` uses cannot read Secrets in `capnico-system`.
+   The `nico` row reads `CONFIGURED`: the CAPNICo custom resource definitions (CRDs) are established, the CAPNICo controller is available and the `nico-credentials` Secret exists. `NOT-INSTALLED` or `NOT-CONFIGURED` means the install did not complete; run it again as described in [Install management-plane services](install-management-plane-services.md). `DEGRADED` means the CAPNICo controller is not available; check the `controller-manager` Deployment in `capnico-system`. `UNKNOWN` usually means the kubeconfig that `nvkectl` uses cannot read Secrets in `capnico-system`.
 
 2. Check that the management plane started its NICo controllers.
 
@@ -112,7 +112,7 @@ The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is cre
 1. Check the provider state.
 
    ```bash
-   nkectl get providers
+   nvkectl get providers
    ```
 
    The `nico` row reads `CONFIGURED`.
@@ -125,7 +125,7 @@ The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is cre
 
    The `Data` section lists `apiName`, `endpoint`, `orgID` and `token`, each with a non-zero size. The command does not print the values.
 
-If `nkectl get providers` reports another state, see [Troubleshoot](troubleshoot.md).
+If `nvkectl get providers` reports another state, see [Troubleshoot](troubleshoot.md).
 
 ## Next steps
 

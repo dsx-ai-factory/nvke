@@ -4,9 +4,9 @@ This page describes how to add, scale and delete the worker node pools of an NVI
 
 ## Before you begin
 
-- You have completed [Configure an infrastructure provider: NICo](../operate/provider-nico.md) and [Create a workload cluster](create.md), and the cluster's status in `nkectl get clusters` is `Provisioned`.
-- `nkectl` points at your management plane, set with `nkectl config set-site`.
-- You have `curl` and `jq`. Listing nodes, deleting a node and changing auto-mode settings use the NVKE API directly, because `nkectl` has no commands for them.
+- You have completed [Configure an infrastructure provider: NICo](../operate/provider-nico.md) and [Create a workload cluster](create.md), and the cluster's status in `nvkectl get clusters` is `Provisioned`.
+- `nvkectl` points at your management plane, set with `nvkectl config set-site`.
+- You have `curl` and `jq`. Listing nodes, deleting a node and changing auto-mode settings use the NVKE API directly, because `nvkectl` has no commands for them.
 - You know `<API_URL>`, the base address of the NVKE API without `/api`: `http://<MANAGEMENT_ADDRESS>:30080`, where `<MANAGEMENT_ADDRESS>` is the management cluster's API virtual IP address (VIP), or the node IP of a single-node management cluster. If API authentication is on, add `-H "Authorization: Bearer <TOKEN>"` to each `curl` command that calls `/api/`, where `<TOKEN>` is a JSON Web Token (JWT) from your identity provider, as described in [Secure the NVKE API](../operate/api-authentication.md).
 
 ## List node pools and nodes
@@ -14,7 +14,7 @@ This page describes how to add, scale and delete the worker node pools of an NVI
 1. List the node pools of the cluster.
 
    ```bash
-   nkectl get nodepools --cluster <WORKLOAD_CLUSTER>
+   nvkectl get nodepools --cluster <WORKLOAD_CLUSTER>
    ```
 
    `<WORKLOAD_CLUSTER>` is the workload cluster's name. The table shows each pool's `NAME`, `DESIRED` node count, `K8S VERSION`, `STATUS` (`Provisioning`, `Provisioned`, `Deleting` or `Unknown`) and `ID`. Add `-o yaml` and a pool name to see one pool's full settings, including its `nico` block.
@@ -35,10 +35,10 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
 1. Find the values the pool needs.
 
    ```bash
-   nkectl get clusters <WORKLOAD_CLUSTER> -o json | jq -r '.[0].id'
+   nvkectl get clusters <WORKLOAD_CLUSTER> -o json | jq -r '.[0].id'
    ```
 
-   The output is the cluster ID. You also need the NICo instance type ID for the GPU machines, from NICo, and the name of a node pool release you have published as a worker OS profile, which `nkectl get nodepoolreleases` lists. Copy the `vpcPrefixIDs` or `subnetIDs` from an existing pool with `nkectl get nodepools <POOL_NAME> --cluster <WORKLOAD_CLUSTER> -o yaml`.
+   The output is the cluster ID. You also need the NICo instance type ID for the GPU machines, from NICo, and the name of a node pool release you have published as a worker OS profile, which `nvkectl get nodepoolreleases` lists. Copy the `vpcPrefixIDs` or `subnetIDs` from an existing pool with `nvkectl get nodepools <POOL_NAME> --cluster <WORKLOAD_CLUSTER> -o yaml`.
 
 2. Write the node pool spec and save it as `pool.yaml`.
 
@@ -68,7 +68,7 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
 3. Create the pool.
 
    ```bash
-   nkectl create nodepool -f pool.yaml
+   nvkectl create nodepool -f pool.yaml
    ```
 
    The command prints `Node pool "gpu-workers-b" created` with the pool's ID and returns while provisioning continues. The API rejects the request if the name is already used in the cluster, if `instanceTypeID` or `osProfile` is missing, or if the cluster's pod CIDR has no room for the requested nodes.
@@ -76,7 +76,7 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
 4. Watch the nodes join.
 
    ```bash
-   nkectl get nodepools gpu-workers-b --cluster <WORKLOAD_CLUSTER>
+   nvkectl get nodepools gpu-workers-b --cluster <WORKLOAD_CLUSTER>
    ```
 
    On a provisioned cluster the pool's status reads `Provisioned` within moments, before its nodes join. Follow the nodes by listing them as in [List node pools and nodes](#list-node-pools-and-nodes). A node waits as pending until NICo allocates it a machine of the instance type.
@@ -88,10 +88,10 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
 1. Set the new count.
 
    ```bash
-   nkectl patch nodepool <POOL_NAME> --cluster <WORKLOAD_CLUSTER> --patch 'desiredNodeCount: 8'
+   nvkectl patch nodepool <POOL_NAME> --cluster <WORKLOAD_CLUSTER> --patch 'desiredNodeCount: 8'
    ```
 
-   `desiredNodeCount` is the only field `nkectl patch nodepool` accepts. The command prints `Node pool "<POOL_NAME>" patched` and returns. The API rejects a higher count if the cluster's pod CIDR has no room for the extra nodes.
+   `desiredNodeCount` is the only field `nvkectl patch nodepool` accepts. The command prints `Node pool "<POOL_NAME>" patched` and returns. The API rejects a higher count if the cluster's pod CIDR has no room for the extra nodes.
 
 2. If you raised the count, watch the new nodes join as in [Add a node pool](#add-a-node-pool), step 4.
 
@@ -130,7 +130,7 @@ Before it removes a worker, NVKE cordons the node and evicts its pods through th
 1. Delete the pool.
 
    ```bash
-   nkectl delete nodepool <POOL_NAME> --cluster <WORKLOAD_CLUSTER>
+   nvkectl delete nodepool <POOL_NAME> --cluster <WORKLOAD_CLUSTER>
    ```
 
    The command prints that deletion started and returns. NVKE removes every node in the pool, each drained as described in [Replace a node](#replace-a-node).
@@ -138,7 +138,7 @@ Before it removes a worker, NVKE cordons the node and evicts its pods through th
 2. Check progress.
 
    ```bash
-   nkectl get nodepools --cluster <WORKLOAD_CLUSTER>
+   nvkectl get nodepools --cluster <WORKLOAD_CLUSTER>
    ```
 
    The pool shows `Deleting`, then disappears from the list.
@@ -155,7 +155,7 @@ Auto mode works as follows:
 
 NVSentinel can also request a reboot or a replacement of a faulty node, and NVKE carries it out.
 
-To change auto-mode settings, send an update request to the pool. `nkectl patch nodepool` does not accept these fields.
+To change auto-mode settings, send an update request to the pool. `nvkectl patch nodepool` does not accept these fields.
 
 1. Set the budget.
 
@@ -189,7 +189,7 @@ Two related settings take the same request:
 1. Check the pools.
 
    ```bash
-   nkectl get nodepools --cluster <WORKLOAD_CLUSTER>
+   nvkectl get nodepools --cluster <WORKLOAD_CLUSTER>
    ```
 
    Every pool you kept shows `Provisioned` with the `DESIRED` count you set.
@@ -197,7 +197,7 @@ Two related settings take the same request:
 2. Check the nodes from inside the cluster.
 
    ```bash
-   nkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file <WORKLOAD_CLUSTER>.kubeconfig
+   nvkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file <WORKLOAD_CLUSTER>.kubeconfig
    ```
 
    ```bash

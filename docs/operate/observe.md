@@ -4,7 +4,7 @@ This page describes how to check the health of the NVIDIA Kubernetes Engine (NVK
 
 ## Before you begin
 
-- You have completed [Install management-plane services](install-management-plane-services.md), and `nkectl config set-site` points `nkectl` at your NVKE API and the management cluster's kubeconfig.
+- You have completed [Install management-plane services](install-management-plane-services.md), and `nvkectl config set-site` points `nvkectl` at your NVKE API and the management cluster's kubeconfig.
 - `kubectl` uses the management cluster's admin kubeconfig, for example with `export KUBECONFIG=<CLUSTER_NAME>.kubeconfig`, where `<CLUSTER_NAME>` is the management cluster's name.
 - You have `curl` and `jq`.
 - You know `<MANAGEMENT_ADDRESS>`, the management cluster's API virtual IP address (VIP), or the node IP of a single-node management cluster. The NVKE API is at `http://<MANAGEMENT_ADDRESS>:30080`. If API authentication is on, add `-H "Authorization: Bearer <TOKEN>"` to each `curl` command that calls `/api/`, where `<TOKEN>` is a JSON Web Token (JWT) from your identity provider, as described in [Secure the NVKE API](api-authentication.md). `/healthz` and `/readyz` need no token.
@@ -38,7 +38,7 @@ This page describes how to check the health of the NVIDIA Kubernetes Engine (NVK
 4. Check the infrastructure provider.
 
    ```bash
-   nkectl get providers
+   nvkectl get providers
    ```
 
    The `nico` row, for NVIDIA Infra Controller (NICo), reads `CONFIGURED` and `REPLICAS` reads `1/1` or more. `CONFIGURED` means the provider's resource definitions exist, its controller is available and its credentials Secret exists. It does not test the credentials against NICo. `DEGRADED` means the provider's controller is not available, and `UNKNOWN` usually means your kubeconfig cannot read Secrets in the provider's namespace.
@@ -85,21 +85,21 @@ The management plane serves Prometheus metrics at `/metrics` on port 9090 of its
 2. In a second shell, list the NVKE series.
 
    ```bash
-   curl -s http://127.0.0.1:9090/metrics | grep '^nke_'
+   curl -s http://127.0.0.1:9090/metrics | grep '^nvke_'
    ```
 
 The series that answer the most common questions:
 
 | Metric | Labels | What it tells you |
 |---|---|---|
-| `nke_controller_cluster_info` | `name`, `status`, `kubernetes_version`, `cni_plugin`, `etcd_encrypted` | One series per workload cluster. `status` is `provisioning`, `provisioned`, `deleting`, `control_plane_upgrading`, `cp_nodes_recycling` or `unknown`. |
-| `nke_controller_node_pool_desired_count`, `nke_controller_node_pool_actual_count`, `nke_controller_node_pool_pending_count` | `tenant_cluster`, `node_pool_name`, `node_pool_id` | Desired, created and pending nodes in each node pool. |
-| `nke_controller_node_condition` | `tenant_cluster`, `node`, `condition`, `status` | Each node condition the API reports, such as `kubernetesReady`, with value 1. |
-| `nke_controller_node_lifecycle_elapsed_seconds` | `tenant_cluster`, `node`, `node_type`, `state` | How long a node has been in `pending`, `provisioning`, `deleting` or `markedForRecycling`. A value that keeps growing is a stuck node. |
-| `nke_controller_node_provision_duration_seconds`, `nke_controller_node_provision_total` | `tenant_cluster`, `node_type`, `result` | Node provisioning time and outcomes. `result` is `success` or `failure`. |
-| `nke_controller_node_provisioning_giveups_total` | `cluster_name`, `node_pool_name` | Worker nodes that NVKE deleted because provisioning took longer than its timeout. |
-| `nke_controller_node_teardown_duration_seconds`, `nke_controller_node_teardown_total` | `tenant_cluster`, `node_type`, `result` | Node deletion time and outcomes. |
-| `nke_auth_requests_total`, `nke_auth_enabled` | `outcome`, `reason`, `issuer`; `mode` | API authentication decisions and the active mode. See [Secure the NVKE API](api-authentication.md). |
+| `nvke_controller_cluster_info` | `name`, `status`, `kubernetes_version`, `cni_plugin`, `etcd_encrypted` | One series per workload cluster. `status` is `provisioning`, `provisioned`, `deleting`, `control_plane_upgrading`, `cp_nodes_recycling` or `unknown`. |
+| `nvke_controller_node_pool_desired_count`, `nvke_controller_node_pool_actual_count`, `nvke_controller_node_pool_pending_count` | `tenant_cluster`, `node_pool_name`, `node_pool_id` | Desired, created and pending nodes in each node pool. |
+| `nvke_controller_node_condition` | `tenant_cluster`, `node`, `condition`, `status` | Each node condition the API reports, such as `kubernetesReady`, with value 1. |
+| `nvke_controller_node_lifecycle_elapsed_seconds` | `tenant_cluster`, `node`, `node_type`, `state` | How long a node has been in `pending`, `provisioning`, `deleting` or `markedForRecycling`. A value that keeps growing is a stuck node. |
+| `nvke_controller_node_provision_duration_seconds`, `nvke_controller_node_provision_total` | `tenant_cluster`, `node_type`, `result` | Node provisioning time and outcomes. `result` is `success` or `failure`. |
+| `nvke_controller_node_provisioning_giveups_total` | `cluster_name`, `node_pool_name` | Worker nodes that NVKE deleted because provisioning took longer than its timeout. |
+| `nvke_controller_node_teardown_duration_seconds`, `nvke_controller_node_teardown_total` | `tenant_cluster`, `node_type`, `result` | Node deletion time and outcomes. |
+| `nvke_auth_requests_total`, `nvke_auth_enabled` | `outcome`, `reason`, `issuer`; `mode` | API authentication decisions and the active mode. See [Secure the NVKE API](api-authentication.md). |
 
 `node_type` is `cp` for control-plane nodes and `worker` for workers. The `tenant_cluster` label holds the workload cluster's name.
 
@@ -110,7 +110,7 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 1. List the workload clusters.
 
    ```bash
-   nkectl get clusters
+   nvkectl get clusters
    ```
 
    A healthy cluster's `STATUS` is `Provisioned`. `Provisioning`, `Updating`, `Upgrading`, `Recycling` and `Deleting` mean an operation is running. `ProvisioningFailed` and `UpdateFailed` mean the last operation failed. [Create a workload cluster](../workload-clusters/create.md) describes each status.
@@ -118,7 +118,7 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 2. Read the conditions of a cluster whose status is not `Provisioned`.
 
    ```bash
-   nkectl get clusters <WORKLOAD_CLUSTER> -o yaml
+   nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml
    ```
 
    `<WORKLOAD_CLUSTER>` is the workload cluster's name. Each entry under `conditions` has a `status`, a `lastTransitionTime` and a `message`. The `message` of the condition that last changed usually names the cause.
@@ -126,7 +126,7 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 3. List the cluster's node pools.
 
    ```bash
-   nkectl get nodepools --cluster <WORKLOAD_CLUSTER>
+   nvkectl get nodepools --cluster <WORKLOAD_CLUSTER>
    ```
 
    Each pool's `STATUS` is `Provisioned` once the cluster is provisioned, even while its nodes join. `DESIRED` is the node count you asked for.
@@ -138,7 +138,7 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
      | jq -r '.nodes[] | [.name, .conditions.provisioned.status, .conditions.kubernetesReady.status, .conditions.nodeAgentReady.status, .conditions.markedForRecycling.status, .conditions.markedForRepair.status] | @tsv'
    ```
 
-   A healthy node reads `True`, `True`, `True`, `False`, `False`: provisioned, `Ready` in Kubernetes, `nke-agent` healthy, and not marked for replacement or repair. A node is marked for replacement or repair when its Kubernetes node carries the condition `nke.nvidia.com/NeedsRecycle` or `nke.nvidia.com/NeedsRepair`, for example set by NVSentinel. [Manage node pools](../workload-clusters/node-pools.md) describes what NVKE does next.
+   A healthy node reads `True`, `True`, `True`, `False`, `False`: provisioned, `Ready` in Kubernetes, `nvke-agent` healthy, and not marked for replacement or repair. A node is marked for replacement or repair when its Kubernetes node carries the condition `nke.nvidia.com/NeedsRecycle` or `nke.nvidia.com/NeedsRepair`, for example set by NVSentinel. [Manage node pools](../workload-clusters/node-pools.md) describes what NVKE does next.
 
 5. Check the Cluster API objects behind the cluster.
 
@@ -151,7 +151,7 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 6. Check the nodes from inside the workload cluster.
 
    ```bash
-   nkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file <WORKLOAD_CLUSTER>.kubeconfig
+   nvkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file <WORKLOAD_CLUSTER>.kubeconfig
    ```
 
    ```bash
@@ -180,9 +180,9 @@ The repository includes three Grafana dashboards for NVKE in `controller/deploy/
 
 | File | Title in Grafana | What it shows | Data it needs |
 |---|---|---|---|
-| `nke-site-controller-health-reference.json` | `Reference - NKE Site Controller Health` | Management cluster workloads, SPIRE, cert-manager and node readiness. | kube-state-metrics, from NKTP. |
-| `nke-provisioning-duration-reference.json` | `Reference - NKE Provisioning Duration` | Node provisioning and teardown time, success against give-up rate, and nodes in progress. | Management plane metrics. |
-| `nke-cluster-upgrade-overview-reference.json` | `Reference - NKE Cluster Upgrade Overview` | Kubelet versions per cluster, and control-plane and OS profile panels. | kube-state-metrics; management plane metrics for the optional panels. It shows only clusters that export telemetry to the same backend. |
+| `nvke-site-controller-health-reference.json` | `Reference - NVKE Site Controller Health` | Management cluster workloads, SPIRE, cert-manager and node readiness. | kube-state-metrics, from NKTP. |
+| `nvke-provisioning-duration-reference.json` | `Reference - NVKE Provisioning Duration` | Node provisioning and teardown time, success against give-up rate, and nodes in progress. | Management plane metrics. |
+| `nvke-cluster-upgrade-overview-reference.json` | `Reference - NVKE Cluster Upgrade Overview` | Kubelet versions per cluster, and control-plane and OS profile panels. | kube-state-metrics; management plane metrics for the optional panels. It shows only clusters that export telemetry to the same backend. |
 
 1. In Grafana, open **Dashboards**, then **New**, then **Import**.
 2. Upload a file from `controller/deploy/dashboards/`.
@@ -196,12 +196,12 @@ The `$cluster` variable lists the values of the `k8s_cluster_name` label, which 
 1. In Grafana, open **Explore**, select the Prometheus data source, and run this query:
 
    ```text
-   nke_controller_cluster_info
+   nvke_controller_cluster_info
    ```
 
-   The result has one series for each workload cluster that `nkectl get clusters` lists.
+   The result has one series for each workload cluster that `nvkectl get clusters` lists.
 
-2. Open `Reference - NKE Site Controller Health` and select the management cluster's name in the `$cluster` list. The panels show data.
+2. Open `Reference - NVKE Site Controller Health` and select the management cluster's name in the `$cluster` list. The panels show data.
 
 ## Next steps
 

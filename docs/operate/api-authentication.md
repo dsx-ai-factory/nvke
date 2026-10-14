@@ -15,10 +15,10 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
 ## Before you begin
 
 - You have completed [Install management-plane services](install-management-plane-services.md). You can do this before or after [Configure an infrastructure provider: NICo](provider-nico.md).
-- You run the Helm and `kubectl` commands on the host you installed from, with `helm` and `kubectl` on `PATH` and `KUBECONFIG` set to `<CLUSTER_NAME>.kubeconfig`, from the directory that holds the same `nke/` checkout. The install created the Helm release `nke-controller` from the chart in `nke/controller/deploy/charts/controller`, and the Deployment `nke-controller`, both in the `nke-controller` namespace.
+- You run the Helm and `kubectl` commands on the host you installed from, with `helm` and `kubectl` on `PATH` and `KUBECONFIG` set to `<CLUSTER_NAME>.kubeconfig`, from the directory that holds the same `nvke/` checkout. The install created the Helm release `nke-controller` from the chart in `nvke/controller/deploy/charts/controller`, and the Deployment `nke-controller`, both in the `nke-controller` namespace.
 - Your IdP publishes an OIDC discovery document over HTTPS, and the management cluster can reach its signing-key endpoint.
 - Your IdP has a group for the people and automation allowed to call the NVKE API, and puts it in a token claim named `groups`, a list of strings. NVKE reads group membership only from that claim.
-- Your IdP has an OIDC client for `nkectl` that needs no client secret.
+- Your IdP has an OIDC client for `nvkectl` that needs no client secret.
 - The `kubectl oidc-login` plugin, `jq` and `python3` are installed on the workstation you call the API from.
 
 ## Collect the identity provider values
@@ -47,7 +47,7 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
    echo "$TOKEN" | cut -d. -f2 | python3 -c 'import sys,base64,json; s=sys.stdin.read().strip(); print(json.dumps(json.loads(base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))), indent=2))'
    ```
 
-   `<CLIENT_ID>` is the ID of the OIDC client for `nkectl`. `kubectl oidc-login` asks you to log in to the IdP the first time.
+   `<CLIENT_ID>` is the ID of the OIDC client for `nvkectl`. `kubectl oidc-login` asks you to log in to the IdP the first time.
 
    Record two claims:
 
@@ -106,7 +106,7 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
 3. Apply the values to the NVKE controller release.
 
    ```bash
-   helm upgrade nke-controller nke/controller/deploy/charts/controller --namespace nke-controller --reuse-values -f auth-values.yaml
+   helm upgrade nke-controller nvke/controller/deploy/charts/controller --namespace nke-controller --reuse-values -f auth-values.yaml
    ```
 
    The chart refuses to render if `config` is set without `create`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
@@ -127,14 +127,14 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
 
 ## Call the API
 
-Configure your callers now, while NVKE still serves every request. From the moment the upgrade creates the authentication configuration, `nkectl` configured with `<CLUSTER_NAME>.kubeconfig` fails before it sends a request, with an error that contains `minting token for nke-clients/nke-client`: with that kubeconfig it requests a token for a service account that the install does not create.
+Configure your callers now, while NVKE still serves every request. From the moment the upgrade creates the authentication configuration, `nvkectl` configured with `<CLUSTER_NAME>.kubeconfig` fails before it sends a request, with an error that contains `minting token for nke-clients/nke-client`: with that kubeconfig it requests a token for a service account that the install does not create.
 
-### With nkectl
+### With nvkectl
 
 1. Generate a kubeconfig that gets tokens from your IdP.
 
    ```bash
-   nkectl generate oidc-kubeconfig --kubeconfig <CLUSTER_NAME>.kubeconfig \
+   nvkectl generate oidc-kubeconfig --kubeconfig <CLUSTER_NAME>.kubeconfig \
      --oidc-issuer-url <ISSUER_URL> \
      --oidc-client-id <CLIENT_ID> \
      --output-file oidc.kubeconfig
@@ -142,18 +142,18 @@ Configure your callers now, while NVKE still serves every request. From the mome
 
    The command copies the cluster address and CA from `<CLUSTER_NAME>.kubeconfig` and replaces the user with `kubectl oidc-login`. Add `--oidc-extra-scope <SCOPE>` for each scope your IdP needs to release the `groups` claim.
 
-2. Point `nkectl` at the API with that kubeconfig.
+2. Point `nvkectl` at the API with that kubeconfig.
 
    ```bash
-   nkectl config set-site --name <CLUSTER_NAME> --url <API_URL> --kubeconfig oidc.kubeconfig
+   nvkectl config set-site --name <CLUSTER_NAME> --url <API_URL> --kubeconfig oidc.kubeconfig
    ```
 
-   `<API_URL>` is the base address of the NVKE API without `/api`: `http://<MANAGEMENT_ADDRESS>:30080`, as in [Install management-plane services](install-management-plane-services.md). That address serves plain HTTP, so a token sent to it crosses the network unencrypted. `nkectl get kubeconfig` and `nkectl get providers` read the management cluster's Kubernetes API directly with this kubeconfig. The bootstrap does not configure that API server to accept tokens from your IdP, so both commands fail. Use `kubectl` with `<CLUSTER_NAME>.kubeconfig` for them instead, as described in [Access a workload cluster](../workload-clusters/access.md#get-the-admin-kubeconfig) and [Create a workload cluster](../workload-clusters/create.md#before-you-begin).
+   `<API_URL>` is the base address of the NVKE API without `/api`: `http://<MANAGEMENT_ADDRESS>:30080`, as in [Install management-plane services](install-management-plane-services.md). That address serves plain HTTP, so a token sent to it crosses the network unencrypted. `nvkectl get kubeconfig` and `nvkectl get providers` read the management cluster's Kubernetes API directly with this kubeconfig. The bootstrap does not configure that API server to accept tokens from your IdP, so both commands fail. Use `kubectl` with `<CLUSTER_NAME>.kubeconfig` for them instead, as described in [Access a workload cluster](../workload-clusters/access.md#get-the-admin-kubeconfig) and [Create a workload cluster](../workload-clusters/create.md#before-you-begin).
 
 3. Call the API.
 
    ```bash
-   nkectl get clusters
+   nvkectl get clusters
    ```
 
    `kubectl oidc-login` asks you to log in to the IdP if it has no valid token, then the command lists the workload clusters.
@@ -183,11 +183,11 @@ Leave NVKE in permissive mode while your existing callers keep working, and watc
 1. Read the authentication counter.
 
    ```bash
-   kubectl -n nke-controller exec deploy/nke-controller -- curl -s http://127.0.0.1:9090/metrics | grep '^nke_auth_requests_total'
+   kubectl -n nke-controller exec deploy/nke-controller -- curl -s http://127.0.0.1:9090/metrics | grep '^nvke_auth_requests_total'
    ```
 
    ```text
-   nke_auth_requests_total{issuer="unknown",outcome="would_reject",reason="no_token"} 7
+   nvke_auth_requests_total{issuer="unknown",outcome="would_reject",reason="no_token"} 7
    ```
 
    Requests that pass are counted with `outcome="authenticated"`. Every `would_reject` series is a caller that enforcing mode would break. The counter is per pod, so if the Deployment runs more than one replica, run the command once per pod, replacing `deploy/nke-controller` with each pod name from `kubectl -n nke-controller get pods`.
@@ -219,7 +219,7 @@ Continue when `would_reject` stops increasing.
 1. In `auth-values.yaml`, set `permissive: false`, then apply the file again.
 
    ```bash
-   helm upgrade nke-controller nke/controller/deploy/charts/controller --namespace nke-controller --reuse-values -f auth-values.yaml
+   helm upgrade nke-controller nvke/controller/deploy/charts/controller --namespace nke-controller --reuse-values -f auth-values.yaml
    ```
 
 2. Wait for the rollout.
@@ -241,10 +241,10 @@ The install's own values turn authentication off. If you run the install again, 
 1. Check the mode the controller reports.
 
    ```bash
-   kubectl -n nke-controller exec deploy/nke-controller -- curl -s http://127.0.0.1:9090/metrics | grep '^nke_auth_enabled'
+   kubectl -n nke-controller exec deploy/nke-controller -- curl -s http://127.0.0.1:9090/metrics | grep '^nvke_auth_enabled'
    ```
 
-   The output is `nke_auth_enabled{mode="enforcing"} 1`.
+   The output is `nvke_auth_enabled{mode="enforcing"} 1`.
 
 2. Call the API without a token.
 

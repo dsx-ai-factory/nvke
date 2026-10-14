@@ -26,7 +26,7 @@ The example passwords, the simulated NICo and the Tilt-managed management plane 
 1. Clone the repository and change into it.
 
    ```bash
-   git clone https://github.com/dsx-ai-factory/nke.git
+   git clone https://github.com/dsx-ai-factory/nvke.git
    ```
 
    ```bash
@@ -43,7 +43,7 @@ The example passwords, the simulated NICo and the Tilt-managed management plane 
 
    The output includes `ensure-vtpm-proxy: /dev/vtpmx ready`, or `ensure-vtpm-proxy: /dev/vtpmx already present` if the module was already loaded.
 
-3. Build `nkectl` and put it on your `PATH`.
+3. Build `nvkectl` and put it on your `PATH`.
 
    ```bash
    make -C cli build
@@ -146,18 +146,18 @@ Open a second terminal in the `nke` directory for the rest of this page, and run
 
 ## Create a workload cluster
 
-1. Point `nkectl` at the management plane.
+1. Point `nvkectl` at the management plane.
 
    ```bash
-   nkectl config set-site --name local --url http://localhost:8080 --kubeconfig ~/.kube/config
+   nvkectl config set-site --name local --url http://localhost:8080 --kubeconfig ~/.kube/config
    ```
 
-   The output is `Site "local" configured (url: http://localhost:8080)`. `--kubeconfig` is the management cluster's kubeconfig, which `kind` wrote to `~/.kube/config`. Tilt turns on NVKE API authentication, and `nkectl` uses this kubeconfig to get an API token for each request, so you do not handle tokens yourself.
+   The output is `Site "local" configured (url: http://localhost:8080)`. `--kubeconfig` is the management cluster's kubeconfig, which `kind` wrote to `~/.kube/config`. Tilt turns on NVKE API authentication, and `nvkectl` uses this kubeconfig to get an API token for each request, so you do not handle tokens yourself.
 
 2. Check that CAPNICo is ready.
 
    ```bash
-   nkectl get providers
+   nvkectl get providers
    ```
 
    The `nico` row shows `CONFIGURED`. Other rows show `NOT-INSTALLED` and do not affect this page. If `nico` shows `NOT-CONFIGURED` or `DEGRADED`, wait for the Tilt resources to finish and run the command again.
@@ -165,14 +165,14 @@ Open a second terminal in the `nke` directory for the rest of this page, and run
 3. Create the cluster from the example request.
 
    ```bash
-   nkectl create cluster -f cli/examples/nico-mock-cluster.yaml
+   nvkectl create cluster -f cli/examples/nico-mock-cluster.yaml
    ```
 
    The request creates `my-cluster`: Kubernetes 1.34.2, one control-plane node and a node pool named `worker` with one node, on mock-NICo's seeded site. Its `controlPlaneVIP`, `172.31.2.1`, is routed on your machine by the local Border Gateway Protocol (BGP) peer that Tilt started. The output is:
 
    ```text
    Cluster "my-cluster" created (id: <CLUSTER_ID>)
-   Provisioning is async — run 'nkectl get clusters' to check status.
+   Provisioning is async — run 'nvkectl get clusters' to check status.
    ```
 
    `<CLUSTER_ID>` is the ID NVKE assigned to the cluster.
@@ -180,7 +180,7 @@ Open a second terminal in the `nke` directory for the rest of this page, and run
 4. Check the cluster's status, and run the command again until `STATUS` is `Provisioned`.
 
    ```bash
-   nkectl get clusters
+   nvkectl get clusters
    ```
 
    ```text
@@ -195,7 +195,7 @@ Open a second terminal in the `nke` directory for the rest of this page, and run
 1. Write the cluster's admin kubeconfig to a file.
 
    ```bash
-   nkectl get kubeconfig my-cluster --output-file my-cluster.kubeconfig
+   nvkectl get kubeconfig my-cluster --output-file my-cluster.kubeconfig
    ```
 
    The output is `kubeconfig written to my-cluster.kubeconfig`. The file is an admin credential for the cluster.
@@ -213,10 +213,10 @@ Open a second terminal in the `nke` directory for the rest of this page, and run
 1. Delete the workload cluster.
 
    ```bash
-   nkectl delete cluster my-cluster
+   nvkectl delete cluster my-cluster
    ```
 
-   The output starts with `Cluster "my-cluster" deletion started`. Run `nkectl get clusters` until `my-cluster` is no longer listed. Delete the cluster before you stop Tilt, because mock-NICo removes the node containers.
+   The output starts with `Cluster "my-cluster" deletion started`. Run `nvkectl get clusters` until `my-cluster` is no longer listed. Delete the cluster before you stop Tilt, because mock-NICo removes the node containers.
 
 2. Stop Tilt with Ctrl+C in the first terminal.
 
@@ -240,7 +240,7 @@ Open a second terminal in the `nke` directory for the rest of this page, and run
 
    `kind-down` ends with `✅ Kind management cluster deleted`.
 
-4. Delete the repository, the CAPNICo copy, the mock-NICo binary and the `nkectl` configuration.
+4. Delete the repository, the CAPNICo copy, the mock-NICo binary and the `nvkectl` configuration.
 
    ```bash
    cd ..
@@ -255,7 +255,7 @@ Open a second terminal in the `nke` directory for the rest of this page, and run
    ```
 
    ```bash
-   rm -rf ~/.config/nkectl ~/.cache/nkectl
+   rm -rf ~/.config/nvkectl ~/.cache/nvkectl
    ```
 
    The `nke` directory holds the other files this page created, including `my-cluster.kubeconfig`, `controller/.env.tilt` and the build output in `controller/.local`.

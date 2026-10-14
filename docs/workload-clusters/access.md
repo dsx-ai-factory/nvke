@@ -4,8 +4,8 @@ This page describes how to get the admin kubeconfig for a workload cluster, give
 
 ## Before you begin
 
-- You have completed [Create a workload cluster](create.md), and `nkectl get clusters <WORKLOAD_CLUSTER>` shows the cluster with status `Provisioned`.
-- The operator has configured `nkectl` for the management plane with `nkectl config set-site`, as described in [Install management-plane services](../operate/install-management-plane-services.md). `nkectl get kubeconfig` reads a Secret on the management cluster with the kubeconfig given to `set-site --kubeconfig`, which must allow `get` on Secrets in the `nke-system` namespace. The management cluster's admin kubeconfig, `<CLUSTER_NAME>.kubeconfig`, allows it. The OIDC kubeconfig from [Secure the NVKE API](../operate/api-authentication.md) does not, because the bootstrap does not configure the management cluster's Kubernetes API server to accept tokens from your identity provider; with API authentication on, use the `kubectl` alternative in step 1.
+- You have completed [Create a workload cluster](create.md), and `nvkectl get clusters <WORKLOAD_CLUSTER>` shows the cluster with status `Provisioned`.
+- The operator has configured `nvkectl` for the management plane with `nvkectl config set-site`, as described in [Install management-plane services](../operate/install-management-plane-services.md). `nvkectl get kubeconfig` reads a Secret on the management cluster with the kubeconfig given to `set-site --kubeconfig`, which must allow `get` on Secrets in the `nke-system` namespace. The management cluster's admin kubeconfig, `<CLUSTER_NAME>.kubeconfig`, allows it. The OIDC kubeconfig from [Secure the NVKE API](../operate/api-authentication.md) does not, because the bootstrap does not configure the management cluster's Kubernetes API server to accept tokens from your identity provider; with API authentication on, use the `kubectl` alternative in step 1.
 - The machine where you run `kubectl` has a network route to the cluster's Kubernetes API address on port 6443. See [How clients reach the Kubernetes API](#how-clients-reach-the-kubernetes-api).
 - `kubectl` is installed on that machine.
 
@@ -16,14 +16,14 @@ The operator runs these steps.
 1. Download the admin kubeconfig.
 
    ```bash
-   nkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file <WORKLOAD_CLUSTER>.kubeconfig
+   nvkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file <WORKLOAD_CLUSTER>.kubeconfig
    ```
 
-   `<WORKLOAD_CLUSTER>` is the cluster's name as `nkectl get clusters` lists it. The command prints `kubeconfig written to <WORKLOAD_CLUSTER>.kubeconfig` and creates the file readable only by you. Without `--output-file`, it prints the kubeconfig to standard output.
+   `<WORKLOAD_CLUSTER>` is the cluster's name as `nvkectl get clusters` lists it. The command prints `kubeconfig written to <WORKLOAD_CLUSTER>.kubeconfig` and creates the file readable only by you. Without `--output-file`, it prints the kubeconfig to standard output.
 
-   `nkectl` reads the kubeconfig from the `value` key of the `<WORKLOAD_CLUSTER>-admin-kubeconfig` Secret in the `nke-system` namespace of the management cluster. NVIDIA Kubernetes Engine (NVKE) publishes that Secret once a control-plane node has joined. If the command reports that the Secret is not found, check the cluster name, or wait for the cluster to finish provisioning. If it reports that it is not allowed to read the Secret, use a management-cluster kubeconfig with `get` on Secrets in `nke-system`.
+   `nvkectl` reads the kubeconfig from the `value` key of the `<WORKLOAD_CLUSTER>-admin-kubeconfig` Secret in the `nke-system` namespace of the management cluster. NVIDIA Kubernetes Engine (NVKE) publishes that Secret once a control-plane node has joined. If the command reports that the Secret is not found, check the cluster name, or wait for the cluster to finish provisioning. If it reports that it is not allowed to read the Secret, use a management-cluster kubeconfig with `get` on Secrets in `nke-system`.
 
-   If `nkectl` uses an OIDC kubeconfig because API authentication is on, read the same Secret with `kubectl` and the management cluster's admin kubeconfig instead:
+   If `nvkectl` uses an OIDC kubeconfig because API authentication is on, read the same Secret with `kubectl` and the management cluster's admin kubeconfig instead:
 
    ```bash
    kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig -n nke-system get secret <WORKLOAD_CLUSTER>-admin-kubeconfig -o jsonpath='{.data.value}' | base64 -d > <WORKLOAD_CLUSTER>.kubeconfig
@@ -103,7 +103,7 @@ The operator manages the rest through the NVKE API, and the customer asks the op
 
 ## How clients reach the Kubernetes API
 
-Clients connect directly to the address in the kubeconfig. Neither the management plane nor `nkectl` proxies Kubernetes API traffic.
+Clients connect directly to the address in the kubeconfig. Neither the management plane nor `nvkectl` proxies Kubernetes API traffic.
 
 When the cluster has a `controlPlaneVIP`, every control-plane node runs `kube-vip`, which advertises the VIP over Border Gateway Protocol (BGP) and withdraws it when that node's API server fails its readiness check. Traffic to the VIP on port 6443 reaches a healthy control-plane node. Without a VIP, the API address is the first control-plane node's IP address, and the API is unavailable whenever that node is.
 
@@ -119,7 +119,7 @@ To see when your copy expires, run:
 kubectl --kubeconfig <WORKLOAD_CLUSTER>.kubeconfig config view --raw --minify -o jsonpath='{.users[0].user.client-certificate-data}' | base64 -d | openssl x509 -noout -enddate
 ```
 
-In the last 30 days before that date, after NVKE has renewed the certificates, the operator runs `nkectl get kubeconfig` again, runs the same check on the new file to confirm a later date, and sends the customer the new file.
+In the last 30 days before that date, after NVKE has renewed the certificates, the operator runs `nvkectl get kubeconfig` again, runs the same check on the new file to confirm a later date, and sends the customer the new file.
 
 ## Verify
 

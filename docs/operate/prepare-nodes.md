@@ -1,6 +1,6 @@
 # Prepare nodes
 
-This page describes how to bring the management cluster's nodes from a first boot of your node image to the state that `nkectl bootstrap site` requires. You do it after you build the node image and before you bootstrap the management cluster.
+This page describes how to bring the management cluster's nodes from a first boot of your node image to the state that `nvkectl bootstrap site` requires. You do it after you build the node image and before you bootstrap the management cluster.
 
 ## Before you begin
 
@@ -9,8 +9,8 @@ This page describes how to bring the management cluster's nodes from a first boo
 - You have an odd number of machines, such as one, three or five, that meet [Supported platforms and versions](../overview/supported-platforms.md). Each has a TPM 2.0 device, and your provisioning system can boot it from the image and pass it cloud-init user data.
 - Each node keeps the same IP address across reboots. The image configures every `e*` network interface with DHCP and disables cloud-init network configuration, so reserve each node's address in DHCP.
 - You have chosen the bootstrap host and know the IP address the nodes use to reach it. It can be one of the nodes.
-- You have chosen a SPIFFE trust domain, such as `mgmt.example.com`, and have your SPIRE certificate authority (CA) certificate and key as files. The node image's SPIRE agent does not start without a trust bundle, and the SPIRE server that `nkectl` deploys has no certificate the nodes could trust until the bootstrap runs, so nodes that attest with their TPM need a CA you bring. Workload cluster nodes do not use this CA; see [Build node images with NVKR](build-node-images.md#what-nvke-puts-in-the-user-data).
-- Your network lets the bootstrap host reach every node on the `nke-agent` port (15005 by default), and lets every node reach the bootstrap host on 30081.
+- You have chosen a SPIFFE trust domain, such as `mgmt.example.com`, and have your SPIRE certificate authority (CA) certificate and key as files. The node image's SPIRE agent does not start without a trust bundle, and the SPIRE server that `nvkectl` deploys has no certificate the nodes could trust until the bootstrap runs, so nodes that attest with their TPM need a CA you bring. Workload cluster nodes do not use this CA; see [Build node images with NVKR](build-node-images.md#what-nvke-puts-in-the-user-data).
+- Your network lets the bootstrap host reach every node on the `nvke-agent` port (15005 by default), and lets every node reach the bootstrap host on 30081.
 
 ## What the image provides
 
@@ -18,9 +18,9 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
 
 | Component | In the image | What you add |
 |---|---|---|
-| `nke-agent` | Installed and enabled, with mutual TLS (mTLS) on and listening on 15005. It starts once the SPIRE agent has an identity. | Nothing. |
+| `nvke-agent` | Installed and enabled, with mutual TLS (mTLS) on and listening on 15005. It starts once the SPIRE agent has an identity. | Nothing. |
 | `spire-agent`, its TPM attestor and `get_tpm_pubhash` | Installed and enabled. | The SPIRE server address, trust domain and trust bundle, in user data. |
-| Kubernetes packages: kubeadm, kubelet, kubectl and containerd | Staged in a local package repository at `/usr/lib/nke/debs`, one `nke-kubeadm-distro-<version>` package per Kubernetes version. | Install the package for your Kubernetes version. |
+| Kubernetes packages: kubeadm, kubelet, kubectl and containerd | Staged in a local package repository at `/usr/lib/nvke/debs`, one `nvke-kubeadm-distro-<version>` package per Kubernetes version. | Install the package for your Kubernetes version. |
 | OVN-Kubernetes CNI packages | Staged in the same repository, for version 1.4.0. | Install the charts and images packages. |
 | Calico CNI packages | For version 3.30.1: the manifests package is installed and the images package is staged. | Nothing. The management cluster uses OVN-Kubernetes by default. |
 | Open vSwitch (`openvswitch-switch`) | Installed. | Nothing. |
@@ -43,12 +43,12 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
        content: |
          <SPIRE_CA_CERT_PEM>
    runcmd:
-     - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-kubeadm-distro-<K8S_VERSION>
-     - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-1.4.0 nke-cni-ovn-charts-1.4.0
+     - DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-kubeadm-distro-<K8S_VERSION>
+     - DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-cni-ovn-images-1.4.0 nvke-cni-ovn-charts-1.4.0
    ```
 
    - `<BOOTSTRAP_HOST_IP>`: the IP address the nodes use to reach the bootstrap host. During the bootstrap, the SPIRE server listens there on port 30081.
-   - `<TRUST_DOMAIN>`: your SPIFFE trust domain. Set the same value as `spire.trustDomain` in the site spec. If the site spec leaves it unset, `nkectl` uses `nkectl-bootstrap.nke.local`, so set it explicitly in both places.
+   - `<TRUST_DOMAIN>`: your SPIFFE trust domain. Set the same value as `spire.trustDomain` in the site spec. If the site spec leaves it unset, `nvkectl` uses `nvkectl-bootstrap.nke.local`, so set it explicitly in both places.
    - `<SPIRE_CA_CERT_PEM>`: the PEM contents of the CA certificate you pass as `spire.caCertFile`, with every line indented to match the placeholder.
    - `<K8S_VERSION>`: the Kubernetes version you set as `cluster.k8sVersion` in the site spec, without a leading `v`, such as `1.34.2`. The image stages 1.34.2, 1.35.3 and 1.36.3.
 
@@ -78,15 +78,15 @@ Each component the bootstrap needs is a Debian package. If a check in [Verify](#
 
 | Component | Package |
 |---|---|
-| Node agent | `nke-agent` |
+| Node agent | `nvke-agent` |
 | SPIRE agent, TPM attestor and `get_tpm_pubhash` | `spire-agent` |
-| Kubernetes for one version | `nke-kubeadm-distro-<K8S_VERSION>` |
-| OVN-Kubernetes | `nke-cni-ovn-charts-1.4.0` and `nke-cni-ovn-images-1.4.0` |
+| Kubernetes for one version | `nvke-kubeadm-distro-<K8S_VERSION>` |
+| OVN-Kubernetes | `nvke-cni-ovn-charts-1.4.0` and `nvke-cni-ovn-images-1.4.0` |
 | Open vSwitch | `openvswitch-switch` |
 
-If `nke-kubeadm-distro-<K8S_VERSION>` is the missing package, the image was built without that Kubernetes version. Choose a staged version, or rebuild the image with it.
+If `nvke-kubeadm-distro-<K8S_VERSION>` is the missing package, the image was built without that Kubernetes version. Choose a staged version, or rebuild the image with it.
 
-Do not add `--disable-mtls` to `AGENT_ARGS` in `/etc/default/nke-agent` to work around a missing SPIRE agent. Plaintext gRPC is for development only.
+Do not add `--disable-mtls` to `AGENT_ARGS` in `/etc/default/nvke-agent` to work around a missing SPIRE agent. Plaintext gRPC is for development only.
 
 ## Verify
 
@@ -103,10 +103,10 @@ Run these checks on every node, as root.
 2. Check that the packages are installed.
 
    ```bash
-   dpkg -l nke-agent spire-agent openvswitch-switch 'nke-kubeadm-distro-*' 'nke-cni-ovn-*'
+   dpkg -l nvke-agent spire-agent openvswitch-switch 'nvke-kubeadm-distro-*' 'nvke-cni-ovn-*'
    ```
 
-   Each package is listed with status `ii`, including `nke-kubeadm-distro-<K8S_VERSION>`, `nke-cni-ovn-charts-1.4.0` and `nke-cni-ovn-images-1.4.0`. A staged package that is not installed is not listed, and `dpkg` reports that no package matches.
+   Each package is listed with status `ii`, including `nvke-kubeadm-distro-<K8S_VERSION>`, `nvke-cni-ovn-charts-1.4.0` and `nvke-cni-ovn-images-1.4.0`. A staged package that is not installed is not listed, and `dpkg` reports that no package matches.
 
    ```bash
    kubeadm version -o short
@@ -128,7 +128,7 @@ Run these checks on every node, as root.
    grep -E 'server_address|server_port|trust_domain' /etc/spire-agent/agent.conf
    ```
 
-   The output shows the bootstrap host's address, port `30081` and your trust domain. If the file is missing, check that `/etc/nke/spire.env` and `/etc/nke/trust-bundle.pem` exist, then run `journalctl -u nke-spire-configure`, which names any missing file or value.
+   The output shows the bootstrap host's address, port `30081` and your trust domain. If the file is missing, check that `/etc/nke/spire.env` and `/etc/nke/trust-bundle.pem` exist, then run `journalctl -u nvke-spire-configure`, which names any missing file or value.
 
 5. Check that the SPIRE agent is running.
 
@@ -136,9 +136,9 @@ Run these checks on every node, as root.
    systemctl is-active spire-agent
    ```
 
-   The output is `active`: the agent runs and retries attestation until the bootstrap's SPIRE server answers. If the output is `activating` or `failed`, the agent cannot start; `journalctl -u spire-agent` shows the error. Until the bootstrap, `nke-agent` keeps restarting while it waits for the SPIFFE workload API socket. That is expected.
+   The output is `active`: the agent runs and retries attestation until the bootstrap's SPIRE server answers. If the output is `activating` or `failed`, the agent cannot start; `journalctl -u spire-agent` shows the error. Until the bootstrap, `nvke-agent` keeps restarting while it waits for the SPIFFE workload API socket. That is expected.
 
-During the bootstrap, each node's SPIRE agent logs `Node attestation was successful` and `nke-agent` starts. To watch for it, run `journalctl -u spire-agent -f` on a node.
+During the bootstrap, each node's SPIRE agent logs `Node attestation was successful` and `nvke-agent` starts. To watch for it, run `journalctl -u spire-agent -f` on a node.
 
 Workload-cluster nodes are not prepared this way. NVIDIA Infra Controller (NICo) provisions them from your node image, and the management plane supplies their user data from the OS profile, including the Kubernetes and CNI packages to install; see [Build node images with NVKR](build-node-images.md).
 

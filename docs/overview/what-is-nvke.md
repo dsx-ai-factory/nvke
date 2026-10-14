@@ -12,11 +12,11 @@ One NVKE installation manages a fleet of clusters inside a single data center. E
 
 To offer managed Kubernetes as a service an AI factory must deliver cluster provisioning, node identity, upgrades and failure handling for GPU hardware, and keep the software current with each GPU generation. NVKE provides these features:
 
-- **An API for managed clusters.** You request a cluster by Kubernetes version, node pools and network settings. NVKE hides Cluster API, kubeadm and node configuration behind the API and the `nkectl` CLI.
+- **An API for managed clusters.** You request a cluster by Kubernetes version, node pools and network settings. NVKE hides Cluster API, kubeadm and node configuration behind the API and the `nvkectl` CLI.
 - **Artifacts you build and verify yourself.** NVKR builds every node image and NVKE component from pinned sources, and each Release carries signatures and build evidence. You check a Release against your own verification policy before it reaches a cluster, and you can rebuild it at any time without depending on an NVIDIA-hosted image.
 - **Nodes that prove their identity before they join.** On bare metal, each node attests with its TPM through SPIFFE/SPIRE before it receives a join credential. etcd encryption at rest is available per cluster.
 - **GPU-aware day-2 operations.** NVKE upgrades and replaces nodes through node pools. When NVSentinel detects a GPU fault, NVKE runs the reboot or node replacement it requests.
-- **Built on open standards.** NVKE uses upstream Kubernetes, kubeadm and Cluster API, so clusters are standard Kubernetes and you can use `kubectl` and `clusterctl` alongside `nkectl`.
+- **Built on open standards.** NVKE uses upstream Kubernetes, kubeadm and Cluster API, so clusters are standard Kubernetes and you can use `kubectl` and `clusterctl` alongside `nvkectl`.
 
 ## Who NVKE is for
 
@@ -30,7 +30,7 @@ To offer managed Kubernetes as a service an AI factory must deliver cluster prov
 
 - **Management cluster.** The Kubernetes cluster the operator bootstraps first. It runs the NVKE management plane. At preview, the management cluster does not upgrade, scale or replace its own nodes.
 - **Management plane.** The NVKE API and controllers running on the management cluster. It holds the inventory of clusters, node pools and nodes, and drives every lifecycle operation.
-- **Seed cluster.** A temporary single-node kind cluster that `nkectl` starts during bootstrap to form the management cluster. `nkectl` deletes it when bootstrap succeeds.
+- **Seed cluster.** A temporary single-node kind cluster that `nvkectl` starts during bootstrap to form the management cluster. `nvkectl` deletes it when bootstrap succeeds.
 - **NVKE cluster (workload cluster).** A Kubernetes cluster that NVKE creates and manages for a customer. Each has its own control plane, etcd and node pools.
 - **Node pool.** A group of nodes in an NVKE cluster that share an instance type, OS profile, labels and taints, and Kubernetes version. You scale and upgrade nodes by node pool.
 - **Infrastructure provider.** The system that supplies machines to NVKE through Cluster API. At preview, NVKE supports NVIDIA Infra Controller (NICo).
@@ -45,7 +45,7 @@ The diagram shows how artifacts and requests flow from NVKR to a customer's clus
 ```mermaid
 flowchart LR
     nvkr["NVKR<br/>Definition → Run → Release"] --> reg["Operator registries"]
-    op["Operator<br/>nkectl or NVKE API"] --> mp["NVKE management plane<br/>on the management cluster"]
+    op["Operator<br/>nvkectl or NVKE API"] --> mp["NVKE management plane<br/>on the management cluster"]
     reg --> mp
     mp --> capnico["CAPNICo"] --> nico["NICo"] --> hw["GPU machines"]
     hw --> wc["Workload cluster<br/>control plane and node pools"]
@@ -58,7 +58,7 @@ flowchart LR
 | Stage | What happens | Read more |
 |---|---|---|
 | **Build** | The operator runs NVKR to build node OS images, packages and NVKE components from pinned sources, verifies each Release, and publishes the artifacts to its own registries. The operator repeats this stage for each new Kubernetes version or security fix. | [Build node images with NVKR](../operate/build-node-images.md) |
-| **Day 0: Bootstrap** | The operator prepares the management cluster's nodes. `nkectl` starts a seed cluster, uses it to form the management cluster with kubeadm, then deletes it. The operator installs the NVKE management plane and the Cluster API controllers onto the management cluster. | [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md), [Install management-plane services](../operate/install-management-plane-services.md) |
+| **Day 0: Bootstrap** | The operator prepares the management cluster's nodes. `nvkectl` starts a seed cluster, uses it to form the management cluster with kubeadm, then deletes it. The operator installs the NVKE management plane and the Cluster API controllers onto the management cluster. | [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md), [Install management-plane services](../operate/install-management-plane-services.md) |
 | **Day 1: Configure** | The operator connects the management plane to the infrastructure provider, configures API authentication, and registers the NVKR-built node images and profiles that clusters will use. | [Configure an infrastructure provider: NICo](../operate/provider-nico.md), [Secure the NVKE API](../operate/api-authentication.md) |
 | **Day 2: Run clusters** | The operator creates NVKE clusters through the API, installs the accelerated runtime, and gives customers access. NVKE scales node pools, upgrades the control plane and workers to new NVKR-built images, replaces nodes and renews certificates. With NVSentinel installed, NVKE reboots or replaces nodes that NVSentinel reports as faulty. | [Create a workload cluster](../workload-clusters/create.md), [Manage node pools](../workload-clusters/node-pools.md) |
 
@@ -66,10 +66,10 @@ flowchart LR
 
 | Component | What it does | Read more |
 |---|---|---|
-| NVKR | NVIDIA Kubernetes Recipes. The build system and published Definitions for NVKE node OS images, packages and components. Its CLI is `nkdctl`. Separate repository: [dsx-ai-factory/nke-recipes](https://github.com/dsx-ai-factory/nke-recipes). | [Build node images with NVKR](../operate/build-node-images.md) |
-| `nkectl` | The command-line client. Bootstraps the management cluster, and creates and operates NVKE clusters and node pools through the NVKE API. | [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md) |
+| NVKR | NVIDIA Kubernetes Recipes. The build system and published Definitions for NVKE node OS images, packages and components. Its CLI is `nvkr`. Separate repository: [dsx-ai-factory/nvkr](https://github.com/dsx-ai-factory/nvkr). | [Build node images with NVKR](../operate/build-node-images.md) |
+| `nvkectl` | The command-line client. Bootstraps the management cluster, and creates and operates NVKE clusters and node pools through the NVKE API. | [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md) |
 | Management plane | The NVKE REST API and controllers on the management cluster. Holds the inventory of clusters, node pools and nodes, and drives every lifecycle operation. | [Install management-plane services](../operate/install-management-plane-services.md) |
-| Node agent (`nke-agent`) | A service on every node. The management plane calls it to run kubeadm, configure encryption and install components such as the CNI, without SSH. | [Prepare nodes](../operate/prepare-nodes.md) |
+| Node agent (`nvke-agent`) | A service on every node. The management plane calls it to run kubeadm, configure encryption and install components such as the CNI, without SSH. | [Prepare nodes](../operate/prepare-nodes.md) |
 | CAPNICo | The Cluster API infrastructure provider for NICo. Turns each machine NVKE requests into a NICo bare-metal instance. Separate repository: [dsx-ai-factory/cluster-api-provider-nico](https://github.com/dsx-ai-factory/cluster-api-provider-nico). | [Configure an infrastructure provider: NICo](../operate/provider-nico.md) |
 | NKTP | NVIDIA Kubernetes Telemetry Pipeline. OpenTelemetry pipelines for metrics, logs and traces from the management cluster and NVKE clusters. | [Observe NVKE and its clusters](../operate/observe.md) |
 
