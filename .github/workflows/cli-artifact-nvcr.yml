@@ -150,8 +150,12 @@ jobs:
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
-          elif [[ "${GITHUB_REF}" == refs/tags/* && ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
-            # A bare beta tag only triggers the run; it must not become an alias.
+          elif [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            # A bare beta tag only triggers the run; it must not become an
+            # alias. The build is named by its describe version instead, the
+            # one the binary reports, so qualification can pull it by version.
+            aliases+=("${version}")
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             aliases+=("${GITHUB_REF_NAME#cli/}")
           fi
 
