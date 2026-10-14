@@ -123,7 +123,7 @@ sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" -e "s|@NKTP_VALUES@|${WO
   "${HERE}/sitespec.yaml.tmpl" >"${WORK}/site/sitespec.yaml"
 "${NVKECTL}" validate sitespec -f "${WORK}/site/sitespec.yaml"
 
-# 4. The site runbook, in the order docs/site-bootstrap/install-site-controller.md
+# 4. The site runbook, in the order docs/operate/install-management-plane-services.md
 # gives it. nvkectl bootstrap site untaints a real site's nodes; kind does
 # not, so the lane does it here. kind ships a default StorageClass.
 kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
