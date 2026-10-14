@@ -53,8 +53,9 @@ name: OS Image Artifact
 # The Release is cut by the "release" job, not by a matrix leg: legs run
 # concurrently and none can see another's checksums.
 #
-# A bare vX.Y.Z-beta.N tag only triggers the run. It bakes that commit and
-# versions it by the os-image/v* describe, like any other build of it: GHCR gets
+# A bare vX.Y.Z-beta.N tag only triggers the run. It bakes that commit on the
+# golden path only -- Ubuntu 24.04, non-FDE, amd64 and arm64 -- and versions it
+# by the os-image/v* describe, like any other build of it: GHCR gets
 # sha-<commit> and the describe version, NVCR and the non-prod S3 path get the
 # describe version. The beta tag name is not published, and there is no Release.
 #
@@ -204,6 +205,7 @@ jobs:
         env:
           # Empty on a tag push, so a tag builds both.
           WANT: ${{ github.event.inputs.arch }}
+          BETA: ${{ startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.') }}
         run: |
           set -euo pipefail
           amd64='{"arch":"amd64"}'
@@ -219,11 +221,17 @@ jobs:
           # 24.04 existed. Keep that default in step with UBUNTU_RELEASE in the
           # packer Makefile: its amd64 non-FDE build also carries the shared
           # release assets.
-          legs="$(jq -c -n --argjson arches "${arches}" '
+          #
+          # A beta is qualified on the golden path only -- Ubuntu 24.04,
+          # non-FDE, on both arches -- so it keeps just those legs. The shared
+          # release assets are not missed: they feed the Release, which a beta
+          # does not cut.
+          legs="$(jq -c -n --argjson arches "${arches}" --argjson beta "${BETA:-false}" '
             [{ubuntu_release:"26.04.1",tag_suffix:""},
              {ubuntu_release:"24.04.5",tag_suffix:"-ubuntu24.04"}] as $flavors
             | [$arches[] as $a | $flavors[] as $f | ("fde","non-fde") as $v
-               | $a + $f + {variant:$v, timeout_minutes:90}]')"
+               | $a + $f + {variant:$v, timeout_minutes:90}]
+            | if $beta then map(select(.tag_suffix == "-ubuntu24.04" and .variant == "non-fde")) else . end')"
           echo "legs=${legs}" >> "$GITHUB_OUTPUT"
           echo "building: ${legs}"
 
