@@ -334,17 +334,6 @@ type Config struct {
 	// environment; doing so would misroute production nodes to the DinD contract.
 	LocalDevForceDockerMachineBootstrap bool `env:"LOCAL_DEV_FORCE_DOCKER_MACHINE_BOOTSTRAP" default:"false"`
 
-	// ProvisionControlPlaneWithControlPlaneController routes control-plane node
-	// provisioning through the control-plane controller, which creates no-nodepool
-	// control-plane nodes. When enabled, the node set controller stops creating
-	// pending nodes for control-plane node pools so the two controllers never both
-	// create control-plane nodes. When false, control-plane nodes continue to be
-	// created by the node set controller from their node pool.
-	//
-	// On by default: the control-plane controller path is now the standard way to
-	// provision control-plane nodes.
-	ProvisionControlPlaneWithControlPlaneController bool `env:"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER" default:"true"`
-
 	// InstallCNIAfterInit installs CNI after kubeadm init, from a Debian package
 	// rather than a bundle server. It needs the charts package on the node, which
 	// Forge user-data installs as of #398.
@@ -542,13 +531,6 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("SPIRE_SERVER_API_ADDRESS is required")
 	}
 	return nil
-}
-
-// UseControlPlaneControllerForControlPlane reports whether provisioning
-// of all control-plane nodes should be routed through the control-plane
-// controller path.
-func (c Config) UseControlPlaneControllerForControlPlane() bool {
-	return c.ProvisionControlPlaneWithControlPlaneController
 }
 
 // EffectiveRunbooksDir returns the configured profile-hook runbook directory.

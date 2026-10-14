@@ -435,16 +435,8 @@ func nicoForgeTenant() testSpec {
 	return testSpec{
 		buildSpec: nicoForgeSpec,
 		shape: clusterShape{
-			// Cluster-level rather than a control-plane node pool, because the
-			// site's own controller rejects such a pool at create. #1054 turned
-			// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER on by
-			// default, and the controller chart does not set the variable, so
-			// that default is what a site controller runs with.
-			//
-			// Not nvkectl, despite it forcing the same flag on: that one
-			// reaches only the ephemeral Kind bootstrap controller, which builds the
-			// site cluster. The tenant is created against the site's controller,
-			// which controllerdeploy never touches.
+			// Cluster-level rather than a control-plane node pool: the site's controller
+			// rejects such a pool at create.
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
@@ -1218,8 +1210,7 @@ func capdSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSp
 
 // capdControlPlaneControllerSpec builds a CAPD topology whose control plane is
 // provisioned by the cluster-level control-plane controller: no control-plane
-// node pool, a cluster-level control plane config instead. Requires CWE deployed
-// with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true.
+// node pool, a cluster-level control plane config instead.
 func capdControlPlaneControllerSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSpec {
 	spec := capdSpec(cfg, name, shape)
 	spec.ControlPlane.Pools = nil

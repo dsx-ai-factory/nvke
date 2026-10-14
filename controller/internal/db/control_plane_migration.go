@@ -81,15 +81,12 @@ func hasActiveControlPlaneNodePool(pools []NodePool) bool {
 }
 
 // MigrateControlPlaneToController re-parents legacy node-pool-managed
-// control-plane nodes onto the control-plane controller when the site has opted
-// in via PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER.
+// control-plane nodes onto the control-plane controller.
 //
-// It is a temporary, boot-time, flag-gated, idempotent sweep: it runs once per
-// process start, after schema migrations and before the controllers and worker
-// start, so nothing mutates nodes while ownership is rewritten. It is a no-op
-// when the flag is off (nothing is recorded, so a later flag flip runs it on the
-// next boot). Re-parenting is pure metadata: pooled control-plane nodes have
-// their node_pool_id/node_set_id cleared and are pinned to a control-plane
+// It is a temporary, boot-time, idempotent sweep: it runs once per process
+// start, after schema migrations and before the controllers and worker start, so
+// nothing mutates nodes while ownership is rewritten. Re-parenting is pure
+// metadata: pooled control-plane nodes have their node_pool_id/node_set_id cleared and are pinned to a control-plane
 // configuration snapshot — the cluster's current one, except a deprecated node
 // generation left by an in-flight upgrade gets a freshly minted snapshot so the
 // controller still finishes its rollout — then the emptied pools and node sets
@@ -102,13 +99,9 @@ func hasActiveControlPlaneNodePool(pools []NodePool) bool {
 // snapshot (inject skipped the pool-create sync); without that the fail-closed
 // leftover check would abort startup.
 //
-// Remove this and its worker call site once every site is migrated and the flag
-// is on by default.
-func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB, useController bool) error {
-	if !useController {
-		return nil
-	}
-
+// Runs on every boot, so a cluster that cannot be migrated blocks worker startup.
+// Remove this and its worker call site once every site is migrated.
+func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB) error {
 	if err := SyncMissingControlPlaneConfigsFromCPNodePools(ctx, bunDB); err != nil {
 		return err
 	}

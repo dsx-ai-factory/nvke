@@ -38,7 +38,6 @@ func TestUnit_Reconcile(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	siteID := uuid.New()
 	clusterID := uuid.New()
 	nodePoolID := uuid.New()
 	nodeSetID := uuid.New()
@@ -48,8 +47,7 @@ func TestUnit_Reconcile(t *testing.T) {
 	baseNodePool := db.NodePool{
 		ID:                    nodePoolID,
 		ClusterID:             clusterID,
-		ControlPlane:          true,
-		NodeNamePrefix:        "cp",
+		NodeNamePrefix:        "w",
 		CurrentNodeSetID:      &nodeSetID,
 		AutoProvisionDisabled: false,
 		Conditions:            db.NodePoolConditions{},
@@ -57,22 +55,13 @@ func TestUnit_Reconcile(t *testing.T) {
 	baseNodePool.SetNico(db.NicoNodePoolProvider{
 		InstanceTypeID: instanceTypeID,
 	})
+	controlPlaneNodePool := baseNodePool
+	controlPlaneNodePool.ControlPlane = true
 	baseNodeSet := db.NodeSet{
 		ID:           nodeSetID,
 		NodePoolID:   nodePoolID,
 		DesiredCount: 1,
 	}
-	baseCluster := db.Cluster{
-		ID:           clusterID,
-		Name:         "test-cluster",
-		ProviderType: db.ProviderTypeNico,
-		Nico: &db.NicoClusterProvider{
-			SiteID: siteID,
-			OrgID:  "test-org",
-			VpcID:  uuid.New(),
-		},
-	}
-
 	type parameters struct {
 		nodeSet db.NodeSet
 		cfg     config.Config
@@ -81,38 +70,14 @@ func TestUnit_Reconcile(t *testing.T) {
 	}
 
 	tests := map[string]parameters{
-		"creates control plane node when control plane controller is disabled": {
+		"skips control plane node set creation": {
 			nodeSet: baseNodeSet,
-			cfg: config.Config{
-				ProvisionControlPlaneWithControlPlaneController: false,
-			},
+			cfg:     config.Config{},
 			setup: func(mockDB *testutil.MockDB, mockTx *testutil.MockTx, nodeSet db.NodeSet) {
 				mockDB.MockTx = mockTx
 				mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 				mockTx.On("GetNodeSet", mock.Anything, nodeSet.ID).Return(nodeSet, nil)
-				mockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(baseNodePool, nil)
-				mockTx.On("ListNodes", mock.Anything, db.NodeFilters{NodeSetID: &nodeSetID}).Return([]db.Node{}, nil)
-				mockTx.On("GetCluster", mock.Anything, clusterID).Return(baseCluster, nil)
-				mockTx.On("ListClusterNodeNames", mock.Anything, clusterID).Return([]string{"existing-cp"}, nil)
-				mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
-					return node.ClusterID == clusterID &&
-						node.NodePoolID == nodePoolID &&
-						node.NodeSetID == nodeSetID &&
-						node.ControlPlane &&
-						node.NicoInstanceTypeID() == instanceTypeID
-				})).Return(db.Node{}, nil).Once()
-			},
-		},
-		"skips control plane creation when control plane controller is enabled": {
-			nodeSet: baseNodeSet,
-			cfg: config.Config{
-				ProvisionControlPlaneWithControlPlaneController: true,
-			},
-			setup: func(mockDB *testutil.MockDB, mockTx *testutil.MockTx, nodeSet db.NodeSet) {
-				mockDB.MockTx = mockTx
-				mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
-				mockTx.On("GetNodeSet", mock.Anything, nodeSet.ID).Return(nodeSet, nil)
-				mockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(baseNodePool, nil)
+				mockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(controlPlaneNodePool, nil)
 			},
 			verify: func(t *testing.T, _ *testutil.MockDB, mockTx *testutil.MockTx) {
 				t.Helper()
@@ -123,20 +88,18 @@ func TestUnit_Reconcile(t *testing.T) {
 				mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
 			},
 		},
-		"skips control plane deletion when control plane controller is enabled": {
+		"skips control plane node set deletion": {
 			nodeSet: db.NodeSet{
 				ID:           nodeSetID,
 				NodePoolID:   nodePoolID,
 				DesiredCount: 0,
 			},
-			cfg: config.Config{
-				ProvisionControlPlaneWithControlPlaneController: true,
-			},
+			cfg: config.Config{},
 			setup: func(mockDB *testutil.MockDB, mockTx *testutil.MockTx, nodeSet db.NodeSet) {
 				mockDB.MockTx = mockTx
 				mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 				mockTx.On("GetNodeSet", mock.Anything, nodeSet.ID).Return(nodeSet, nil)
-				mockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(baseNodePool, nil)
+				mockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(controlPlaneNodePool, nil)
 			},
 			verify: func(t *testing.T, _ *testutil.MockDB, mockTx *testutil.MockTx) {
 				t.Helper()

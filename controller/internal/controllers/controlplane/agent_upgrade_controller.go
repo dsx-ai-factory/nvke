@@ -34,7 +34,7 @@ const (
 )
 
 func (c *Controller) reconcileNodeAgentUpgrade(ctx context.Context, cluster db.Cluster) (reconcile.Result, error) {
-	if !c.cfg.UseControlPlaneControllerForControlPlane() || cluster.ID == uuid.Nil || cluster.Conditions.Deleting.Status == db.ConditionStatusTrue ||
+	if cluster.ID == uuid.Nil || cluster.Conditions.Deleting.Status == db.ConditionStatusTrue ||
 		(cluster.ControlPlaneConfig.NodeAgentConfig.Version == "" && cluster.NodeAgentUpgrade == nil && cluster.CertificateRenewal == nil) {
 		return reconcile.Result{}, nil
 	}

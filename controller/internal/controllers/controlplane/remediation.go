@@ -53,18 +53,15 @@ func (r *reconciler) remediateMachines(ctx context.Context, cluster db.Cluster, 
 
 	log.Info("Starting control plane node deletion as part of remediation")
 
-	// Same path as a user-initiated delete when the control-plane controller owns
-	// the control plane: record the intent and let reconcileRequestedDeletes start
-	// the teardown. Both kinds of delete then queue in one place, so serializing
-	// them is a property of that loop rather than something each caller has to
-	// re-check before acting.
+	// Same path as a user-initiated delete: record the intent and let
+	// reconcileRequestedDeletes start the teardown, so both kinds of delete
+	// serialize in that loop.
 	if err := nodes.DeleteWithTx(ctx, r.db, nodeToRemediate.ID,
 		nodes.WithReason("Control plane node remediation"),
 		nodes.WithAllowCPNode(true),
 		// Controllers enforce their own preconditions; skip the live-API guard
 		// (also avoids SELECT FOR UPDATE, which SQLite unit tests cannot run).
 		nodes.WithSkipLiveDeleteGuard(),
-		nodes.WithControlPlaneControllerDelete(r.cfg.UseControlPlaneControllerForControlPlane()),
 		// canStartRemediation already ran the etcd-quorum check against live node
 		// health, and this delete is a replacement rather than a shrink.
 		nodes.WithSkipQuorumFloor(),

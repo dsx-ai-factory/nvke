@@ -5,8 +5,6 @@ package server
 
 import (
 	"strings"
-
-	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 const (
@@ -36,14 +34,4 @@ func validateControlPlaneRollout(controlPlaneVIP string, rolloutRequired bool) e
 		return newBadRequestErrorf("%s", controlPlaneVIPRolloutMessage)
 	}
 	return nil
-}
-
-func desiredControlPlaneNodeCount(nodePools []db.NodePool) int {
-	count := 0
-	for i := range nodePools {
-		if nodePools[i].ControlPlane {
-			count += nodePools[i].DesiredCount
-		}
-	}
-	return count
 }

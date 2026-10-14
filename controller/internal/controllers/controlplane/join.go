@@ -76,11 +76,6 @@ type joinCandidate struct {
 // control plane has finished growing, so a cluster that is both adding and removing
 // a member does the addition first.
 func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.Cluster, cp *controlPlane) (bool, error) {
-	// The control-plane controller only owns joins when it owns the control
-	// plane; otherwise control-plane nodes auto-join inline in ProvisionNode.
-	if !r.cfg.UseControlPlaneControllerForControlPlane() {
-		return false, nil
-	}
 	if r.controllerTemporalClient == nil {
 		return false, nil
 	}

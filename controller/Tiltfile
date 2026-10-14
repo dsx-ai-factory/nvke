@@ -1018,18 +1018,8 @@ _cwe_chart_extra_env = []
 for _name in _cwe_chart_extra_env_names:
     if _name in _tilt_env:
         _cwe_chart_extra_env.append({"name": _name, "value": _tilt_env[_name]})
-# PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER is honored from the
-# process environment first (with the .env.tilt value as a fallback) so CI lanes
-# can toggle control-plane-controller provisioning per run without editing a file.
-_cwe_provision_cp_with_controller = os.getenv(
-    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER",
-    _tilt_env.get("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", ""))
-if _cwe_provision_cp_with_controller != "":
-    _cwe_chart_extra_env.append({
-        "name": "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER",
-        "value": _cwe_provision_cp_with_controller,
-    })
-# Same process-env-first pattern as above, so CI can disable soft reboot without touching the
+# NODE_REBOOT_SOFT_REBOOT_ENABLED is honored from the process environment first (with the
+# .env.tilt value as a fallback) so CI can disable soft reboot without touching the
 # production default.
 _cwe_node_reboot_soft_reboot_enabled = os.getenv(
     "NODE_REBOOT_SOFT_REBOOT_ENABLED",

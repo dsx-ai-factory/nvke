@@ -229,12 +229,9 @@ func TestPodCIDRNodePoolsWithClusterCP(t *testing.T) {
 	nodePools := []db.NodePool{{DesiredCount: 3, MaxSurge: 1}}
 	cluster := db.Cluster{ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3, MaxSurge: 1}}
 
-	// Flag off: node pools are returned unchanged, matching origin behavior.
-	assert.Equal(t, nodePools, podCIDRNodePoolsWithClusterCP(false, cluster, nodePools))
-
-	// Flag on: a synthetic control-plane pool carries the cluster-level desired
-	// count (MaxSurge stays zero because CP surge is supplied via clusterMaxSurge).
-	augmented := podCIDRNodePoolsWithClusterCP(true, cluster, nodePools)
+	// A synthetic control-plane pool carries the cluster-level desired count
+	// (MaxSurge stays zero because CP surge is supplied via clusterMaxSurge).
+	augmented := podCIDRNodePoolsWithClusterCP(cluster, nodePools)
 	assert.Len(t, augmented, len(nodePools)+1)
 	cp := augmented[len(augmented)-1]
 	assert.True(t, cp.ControlPlane)

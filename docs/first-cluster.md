@@ -520,10 +520,7 @@ matching the cluster's own. [`nico-cluster.yaml`](../cli/examples/nico-cluster.y
 [`nico-mock-cluster.yaml`](../cli/examples/nico-mock-cluster.yaml) and
 [`capd-cluster.yaml`](../cli/examples/capd-cluster.yaml) are complete requests.
 
-A site controller deployed with
-`PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=false` takes the older
-shape instead: a node pool with `controlPlane: true`, and no
-`controlPlaneConfig`. Each rejects the other's shape.
+A node pool with `controlPlane: true` is rejected.
 
 ## See also
 

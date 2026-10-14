@@ -178,10 +178,8 @@ func main() {
 	}
 
 	// Re-parent legacy node-pool-managed control planes onto the control-plane
-	// controller when this site has opted in. No-op when the flag is off; fails
-	// closed on a half-migrated fleet. Temporary — remove once the flag is on by
-	// default everywhere.
-	if err := db.MigrateControlPlaneToController(ctx, bunDB, cfg.UseControlPlaneControllerForControlPlane()); err != nil {
+	// controller. Fails closed on a half-migrated fleet.
+	if err := db.MigrateControlPlaneToController(ctx, bunDB); err != nil {
 		logger.Error("Failed to migrate control plane to controller", "error", err)
 		os.Exit(1)
 	}

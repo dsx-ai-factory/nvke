@@ -51,7 +51,6 @@ func TestRefreshControlPlaneRolloutRequiredCondition(t *testing.T) {
 				driftedID: drifted,
 			},
 			clusterControlPlaneConfig: clusterWithCurrentSnapshot(desired, 0).ControlPlaneConfig,
-			useController:             true,
 		}
 	}
 
@@ -122,7 +121,7 @@ func TestReconcileControlPlaneRolloutRequiredCondition(t *testing.T) {
 
 	newReconcilerAndCP := func(mockTx *testutil.MockTx, nodes []db.Node) (*reconciler, *controlPlane) {
 		r := &reconciler{
-			cfg:    config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+			cfg:    config.Config{},
 			logger: slog.New(slog.DiscardHandler),
 			db:     mockTx,
 		}
@@ -133,7 +132,6 @@ func TestReconcileControlPlaneRolloutRequiredCondition(t *testing.T) {
 				driftedID: drifted,
 			},
 			clusterControlPlaneConfig: clusterWithCurrentSnapshot(desired, 0).ControlPlaneConfig,
-			useController:             true,
 		}
 		return r, cp
 	}

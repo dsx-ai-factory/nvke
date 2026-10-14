@@ -128,10 +128,6 @@ func NewServer(
 		resp := map[string]any{
 			"version":           version.Version,
 			"temporalNamespace": cfg.TemporalNamespace,
-			// Exposes the control-plane-controller provisioning feature flag so the
-			// UI can switch between cluster-level control plane config mode and the
-			// legacy control-plane node-pool mode. The server validates regardless.
-			"provisionControlPlaneWithControlPlaneController": cfg.UseControlPlaneControllerForControlPlane(),
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			logger.Error("Failed to write /api/version response", "error", err)
@@ -238,7 +234,6 @@ func NewServerImpl(
 		database,
 		cfg.Teleport,
 		cfg.SupportedInfraProviders,
-		cfg.UseControlPlaneControllerForControlPlane(),
 	)
 	nodePoolService.allowlistedLabelKeys = cfg.NodeMetadataAllowlistedLabelKeys
 
@@ -250,7 +245,6 @@ func NewServerImpl(
 		cfg.NvkeOIDCAuth.Enabled,
 		cfg.SupportedInfraProviders,
 		o.allowLegacyCalicoClusterCreation,
-		cfg.UseControlPlaneControllerForControlPlane(),
 		cfg.NodeAgent.UpdateMethod,
 	)
 	clusterService.allowlistedLabelKeys = cfg.NodeMetadataAllowlistedLabelKeys
@@ -260,7 +254,7 @@ func NewServerImpl(
 		clusterService:       *clusterService,
 		nodePoolService:      *nodePoolService,
 		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
-		nodeService:          *NewNodeService(logger, database, cfg.UseControlPlaneControllerForControlPlane()),
+		nodeService:          *NewNodeService(logger, database),
 		osProfileService:     *NewOSProfileService(logger, k8sReader),
 		configProfileService: *NewConfigProfileService(cfg, logger),
 	}

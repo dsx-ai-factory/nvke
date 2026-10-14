@@ -131,9 +131,7 @@ cwe_tag="${NKE_CONTROLLER_IMAGE##*:}"
 TRUST_DOMAIN="${KIND_CLUSTER_NAME}.nke.local"
 
 # The env list the controller container needs, assembled the way
-# controller/Tiltfile assembles _cwe_chart_extra_env. Four sources:
-#   * PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER, when the caller sets
-#     it; the e2e lanes leave it unset, so the controller takes its default
+# controller/Tiltfile assembles _cwe_chart_extra_env. Three sources:
 #   * the five credentials the Tiltfile treats as required
 #   * NODE_REBOOT_SOFT_REBOOT_ENABLED, which backend-e2e.yml does set
 #   * the remaining optional names (LOG_LEVEL, FORGE_URL, ...) which nothing on
@@ -161,9 +159,6 @@ import json, os
 # "produced zero addresses", which is what stalled tenant provisioning.
 env = [{"name": "SPIRE_SERVER_API_ADDRESS",
         "value": os.environ["SPIRE_SERVER_API_ADDRESS"]}]
-flag = os.environ.get("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", "")
-if flag:
-    env.append({"name": "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", "value": flag})
 # backend-e2e.yml sets this and only Tilt was forwarding it. Left out, the controller takes
 # its "true" default and reboots a container node in-guest, which never restarts.
 soft_reboot = os.environ.get("NODE_REBOOT_SOFT_REBOOT_ENABLED", "")

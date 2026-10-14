@@ -55,7 +55,7 @@ func TestAgentVersionChangeDoesNotReplaceNodes(t *testing.T) {
 }
 
 func TestNodeAgentVersionPatchPreservesOmittedAndClearsEmpty(t *testing.T) {
-	service := clusterService{useControlPlaneController: true, nodeAgentUpdateMethod: "apt"}
+	service := clusterService{nodeAgentUpdateMethod: "apt"}
 	ctx := context.Background()
 	spec := db.ControlPlaneConfigSpec{NodeAgentConfig: db.NodeAgentConfig{Version: "v1.2.3"}}
 	cluster := db.Cluster{}
@@ -69,10 +69,6 @@ func TestNodeAgentVersionPatchPreservesOmittedAndClearsEmpty(t *testing.T) {
 	empty := ""
 	require.NoError(t, service.applyClusterLevelControlPlaneSpecUpdate(ctx, &cluster, &api.UpdateClusterControlPlaneConfig{NodeAgentConfig: &api.NodeAgentConfig{Version: &empty}}, &spec))
 	require.Empty(t, spec.NodeAgentConfig.Version)
-	legacy := clusterService{}
-	tx := &testutil.MockTx{}
-	tx.On("GetCluster", mock.Anything, mock.Anything).Maybe().Return(cluster, nil)
-	require.ErrorIs(t, legacy.applyClusterControlPlaneConfigUpdate(ctx, tx, &cluster, &api.UpdateClusterControlPlaneConfig{NodeAgentConfig: &api.NodeAgentConfig{Version: &downgrade}}), errControlPlaneConfigNotEnabled)
 }
 
 func TestClusterDeletionLeavesAcceptedAgentUpgradeAlone(t *testing.T) {

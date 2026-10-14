@@ -239,27 +239,20 @@ func TestDeploy_RequiresKubeconfigAndImage(t *testing.T) {
 }
 
 func TestCWEEnvArgs(t *testing.T) {
-	const cpControllerEnv = "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER"
-
 	for _, tc := range []struct {
 		name string
 		cfg  Config
 		want []string
 	}{{
-		name: "the control-plane mode is sent with nothing else configured",
+		name: "nothing is sent when nothing is configured",
 		cfg:  Config{},
-		want: []string{
-			"--set-string", "env[0].name=" + cpControllerEnv,
-			"--set-string", "env[0].value=true",
-		},
+		want: nil,
 	}, {
-		name: "the node agent port is numbered after it",
+		name: "the node agent port is sent as the first env entry",
 		cfg:  Config{NodeAgentPort: "15005"},
 		want: []string{
-			"--set-string", "env[0].name=" + cpControllerEnv,
-			"--set-string", "env[0].value=true",
-			"--set-string", "env[1].name=NODE_AGENT_PORT",
-			"--set-string", "env[1].value=15005",
+			"--set-string", "env[0].name=NODE_AGENT_PORT",
+			"--set-string", "env[0].value=15005",
 		},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -192,7 +192,7 @@ func certificateRenewalTerminalResult(
 // Temporal workflow does not block upgrades. Both callers use the cluster row
 // so an agent restart cannot begin between this check and the renewal RPC.
 func (a *Activities) reserveCertificateRenewal(ctx context.Context, node db.Node, input *KubernetesCertificateRenewalInput) error {
-	if !a.cfg.UseControlPlaneControllerForControlPlane() || !node.IsManagedByControlPlaneController() {
+	if !node.IsManagedByControlPlaneController() {
 		return nil
 	}
 	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
@@ -225,7 +225,7 @@ func (a *Activities) reserveCertificateRenewal(ctx context.Context, node db.Node
 }
 
 func (a *Activities) releaseCertificateRenewal(ctx context.Context, node db.Node, operationID string) error {
-	if !a.cfg.UseControlPlaneControllerForControlPlane() || !node.IsManagedByControlPlaneController() {
+	if !node.IsManagedByControlPlaneController() {
 		return nil
 	}
 	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {

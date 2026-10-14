@@ -236,8 +236,7 @@ render runbooks-path-with-profiles-image \
 # Tilt and nvkectl bootstrap pass, and refuses what it does.
 render env-passthrough \
   --set-string 'env[0].name=LOG_LEVEL' --set-string 'env[0].value=debug' \
-  --set-string 'env[1].name=PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER' --set-string 'env[1].value=true' \
-  --set-string 'env[2].name=NODE_AGENT_PORT' --set-string 'env[2].value=50051'
+  --set-string 'env[1].name=NODE_AGENT_PORT' --set-string 'env[1].value=50051'
 if refusal="$(helm template cwe "${CHART}" \
   --set nvkeOIDCAuth.enabled=true --set spiffe.enabled=true --set-string spiffe.trustDomain=example.test \
   --set-string 'env[0].name=NKE_OIDC_AUTH_ISSUER_URL' --set-string 'env[0].value=https://oidc.example.test' 2>&1)"; then

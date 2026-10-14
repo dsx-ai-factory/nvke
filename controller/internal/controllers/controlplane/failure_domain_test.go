@@ -78,7 +78,6 @@ func TestReadFailureDomains(t *testing.T) {
 		}
 		k8sClient := &listCountingClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()}
 		r := &reconciler{
-			cfg:       config.Config{ProvisionControlPlaneWithControlPlaneController: true},
 			k8sClient: k8sClient,
 		}
 
@@ -106,7 +105,6 @@ func TestReadFailureDomains(t *testing.T) {
 			},
 		).Build()}
 		r := &reconciler{
-			cfg:       config.Config{ProvisionControlPlaneWithControlPlaneController: true},
 			k8sClient: k8sClient,
 		}
 
@@ -135,27 +133,20 @@ func TestReadFailureDomainsWithoutAPlacementView(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		cfg       config.Config
 		k8sClient func() client.Client
 		wantErr   string
 	}{
-		"controller does not own the control plane": {
-			cfg: config.Config{},
-		},
 		"kubernetes client is not configured": {
-			cfg:       config.Config{ProvisionControlPlaneWithControlPlaneController: true},
 			k8sClient: func() client.Client { return nil },
 			wantErr:   "kubernetes client is not configured",
 		},
 		"capi cluster is missing": {
-			cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
 			k8sClient: func() client.Client {
 				return fake.NewClientBuilder().WithScheme(scheme).Build()
 			},
 			wantErr: "get CAPI cluster for failure-domain discovery",
 		},
 		"machine listing fails": {
-			cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
 			k8sClient: func() client.Client {
 				return &listErrorClient{
 					Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(readyCluster).Build(),
@@ -174,7 +165,7 @@ func TestReadFailureDomainsWithoutAPlacementView(t *testing.T) {
 			if tc.k8sClient != nil {
 				k8sClient = tc.k8sClient()
 			}
-			r := &reconciler{cfg: tc.cfg, k8sClient: k8sClient}
+			r := &reconciler{k8sClient: k8sClient}
 
 			domains, err := r.readFailureDomains(context.Background(), db.Cluster{ID: clusterID, Name: clusterName})
 
@@ -229,7 +220,6 @@ func TestControllerReturnsErrorWhileClusterInfrastructureIsNotReady(t *testing.T
 	mockTx := &testutil.MockTx{}
 	mockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(cluster, nil).Once()
 	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
-	mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Once()
 	mockDB := &testutil.MockDB{MockTx: mockTx}
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
 
@@ -239,7 +229,7 @@ func TestControllerReturnsErrorWhileClusterInfrastructureIsNotReady(t *testing.T
 		ObjectMeta: metav1.ObjectMeta{Name: cluster.Name, Namespace: constants.NamespaceNVKESystem},
 	}).Build()
 	controller := NewController(
-		config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		config.Config{},
 		slog.Default(),
 		dbwrapper.New(mockDB, slog.Default()),
 		nil,
@@ -356,7 +346,7 @@ func TestReconcilePlacesTheNodesItCreatedInTheSamePass(t *testing.T) {
 			},
 		}).Build()
 		r := newReconciler(
-			config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+			config.Config{},
 			slog.New(slog.DiscardHandler),
 			tx,
 			nil,

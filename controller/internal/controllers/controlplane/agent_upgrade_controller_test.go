@@ -124,7 +124,7 @@ func agentUpgradeTestController(nodes ...db.Node) (*Controller, *upgradeDatabase
 	for _, node := range nodes {
 		database.nodes[node.ID] = node
 	}
-	return &Controller{cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true, NodeAgent: config.NodeAgentConfig{UpdateMethod: "apt"}}, db: dbwrapper.New(database, slog.Default())}, database
+	return &Controller{cfg: config.Config{NodeAgent: config.NodeAgentConfig{UpdateMethod: "apt"}}, db: dbwrapper.New(database, slog.Default())}, database
 }
 
 func TestAgentUpgradeRetriesOneNodeAndAppliesLaterDesiredVersion(t *testing.T) {

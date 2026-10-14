@@ -25,7 +25,7 @@ import (
 )
 
 func TestRenewKubernetesCertificatesTypedHappyPath(t *testing.T) {
-	node := certificateRenewalTestNode()
+	node := pooledCertificateRenewalTestNode()
 	database := &testutil.MockDB{}
 	database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 	fakeAgent := &agenttest.FakeClient{
@@ -95,7 +95,7 @@ func TestRenewKubernetesCertificatesFallbackBoundary(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			node := certificateRenewalTestNode()
+			node := pooledCertificateRenewalTestNode()
 			database := &testutil.MockDB{}
 			database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 			cfg := config.Config{}
@@ -195,6 +195,14 @@ func certificateRenewalTestNode() db.Node {
 	}
 }
 
+// pooledCertificateRenewalTestNode is not managed by the control-plane controller,
+// so the renewal skips cluster admission and the test exercises the agent RPC only.
+func pooledCertificateRenewalTestNode() db.Node {
+	node := certificateRenewalTestNode()
+	node.NodePoolID = uuid.New()
+	return node
+}
+
 func TestRenewalAdmissionAndRecovery(t *testing.T) {
 	for _, test := range []struct {
 		name         string
@@ -235,7 +243,7 @@ func TestRenewalAdmissionAndRecovery(t *testing.T) {
 					return nil, status.Error(codes.Unavailable, "connection lost")
 				},
 			}
-			a := &Activities{cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true}, db: database, nodeAgentClient: fake}
+			a := &Activities{cfg: config.Config{}, db: database, nodeAgentClient: fake}
 			_, err := executeCertificateRenewalActivity(t, a, KubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "new-operation", ThresholdDays: 14})
 			if test.wantError == "" {
 				require.NoError(t, err)

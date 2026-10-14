@@ -601,11 +601,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 // arguments over the chart's generic `env` list. A setting left at its zero
 // value is omitted, leaving the controller's own default in place.
 func cweEnvArgs(cfg Config) []string {
-	vars := [][2]string{
-		// Unconditional: sitecluster.ClusterRequest builds only the cluster-level
-		// control plane, which the controller rejects without this.
-		{"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", "true"},
-	}
+	var vars [][2]string
 	if cfg.NodeAgentPort != "" {
 		vars = append(vars, [2]string{"NODE_AGENT_PORT", cfg.NodeAgentPort})
 	}

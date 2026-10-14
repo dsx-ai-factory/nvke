@@ -186,7 +186,6 @@ func TestControlPlaneQuorumFloor(t *testing.T) {
 
 			err := nodes.DeleteWithTx(ctx, mockTx, target.ID,
 				nodes.WithSkipLiveDeleteGuard(),
-				nodes.WithControlPlaneControllerDelete(true),
 			)
 
 			if !tt.wantRefuse {
@@ -231,7 +230,6 @@ func TestControlPlaneDeleteRecordsIntentWithoutStartingTeardown(t *testing.T) {
 
 	require.NoError(t, nodes.DeleteWithTx(ctx, mockTx, target.ID,
 		nodes.WithSkipLiveDeleteGuard(),
-		nodes.WithControlPlaneControllerDelete(true),
 		nodes.WithReason("API"),
 		nodes.WithAllowCPNode(true),
 		nodes.WithForceUnreachable(true),
@@ -285,7 +283,6 @@ func TestUnhealthyControlPlaneDeleteRecordsForceUnreachable(t *testing.T) {
 
 	require.NoError(t, nodes.DeleteWithTx(ctx, mockTx, target.ID,
 		nodes.WithSkipLiveDeleteGuard(),
-		nodes.WithControlPlaneControllerDelete(true),
 		nodes.WithReason("API"),
 		nodes.WithAllowCPNode(true),
 	))
@@ -322,34 +319,6 @@ func TestWorkerDeleteIgnoresControlPlaneControllerFlag(t *testing.T) {
 
 	require.NoError(t, nodes.DeleteWithTx(ctx, mockTx, workerID,
 		nodes.WithSkipLiveDeleteGuard(),
-		nodes.WithControlPlaneControllerDelete(true),
-	))
-	mockTx.AssertExpectations(t)
-}
-
-// TestControlPlaneDeleteWithFlagOffStaysDirect guards the legacy path: with the
-// flag off a control-plane delete still starts its teardown inline.
-func TestControlPlaneDeleteWithFlagOffStaysDirect(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	target := joinedCPNode(cpNodeIDs(1)[0])
-
-	mockTx := &testutil.MockTx{}
-	mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
-	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(updated *db.Node) bool {
-		return nodes.IsDeleting(*updated) && !nodes.IsDeleteRequested(*updated)
-	})).Return(target, nil)
-	mockTx.On("CreateWorkflowOutboxEntry",
-		mock.Anything,
-		constants.TeardownNodeWorkflowType,
-		constants.TeardownNodeWorkflowPrefix+target.ID.String(),
-		mock.Anything,
-	).Return(db.WorkflowOutbox{}, nil)
-
-	require.NoError(t, nodes.DeleteWithTx(ctx, mockTx, target.ID,
-		nodes.WithSkipLiveDeleteGuard(),
-		nodes.WithControlPlaneControllerDelete(false),
 	))
 	mockTx.AssertExpectations(t)
 }
@@ -380,46 +349,9 @@ func TestUnjoinedControlPlaneDeleteSkipsTheQuorumFloor(t *testing.T) {
 
 	require.NoError(t, nodes.DeleteWithTx(ctx, mockTx, pending.ID,
 		nodes.WithSkipLiveDeleteGuard(),
-		nodes.WithControlPlaneControllerDelete(true),
 	))
 	require.True(t, nodes.IsDeleteRequested(written),
 		"deleting a never-joined control-plane node must not hit the quorum floor")
-}
-
-// TestFlagOffAbsorbsAPendingDeleteRequest: if the control-plane-controller path
-// is turned off while a request is recorded, nothing would ever promote it, so
-// the direct delete must take it over rather than refuse it forever.
-func TestFlagOffAbsorbsAPendingDeleteRequest(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	target := joinedCPNode(cpNodeIDs(1)[0])
-	target.Conditions.DeleteRequested = db.NewCondition(true, "Delete accepted")
-	target.DeleteRequest = []byte(`{"NodeID":"` + target.ID.String() + `"}`)
-
-	mockTx := &testutil.MockTx{}
-	mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
-
-	var written db.Node
-	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(updated *db.Node) bool {
-		written = *updated
-		return true
-	})).Return(target, nil)
-	mockTx.On("CreateWorkflowOutboxEntry",
-		mock.Anything,
-		constants.TeardownNodeWorkflowType,
-		constants.TeardownNodeWorkflowPrefix+target.ID.String(),
-		mock.Anything,
-	).Return(db.WorkflowOutbox{}, nil)
-
-	require.NoError(t, nodes.DeleteWithTx(ctx, mockTx, target.ID,
-		nodes.WithSkipLiveDeleteGuard(),
-		nodes.WithControlPlaneControllerDelete(false),
-	))
-	require.True(t, nodes.IsDeleting(written))
-	require.False(t, nodes.IsDeleteRequested(written), "the stale request should be cleared, not left set")
-	require.Nil(t, written.DeleteRequest)
-	mockTx.AssertExpectations(t)
 }
 
 // TestControlPlaneDeleteIsIdempotent covers a repeated DELETE: the second call
@@ -436,7 +368,6 @@ func TestControlPlaneDeleteIsIdempotent(t *testing.T) {
 
 	err := nodes.DeleteWithTx(ctx, mockTx, target.ID,
 		nodes.WithSkipLiveDeleteGuard(),
-		nodes.WithControlPlaneControllerDelete(true),
 	)
 	require.ErrorIs(t, err, nodes.ErrDeleteAlreadyRequested)
 	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)

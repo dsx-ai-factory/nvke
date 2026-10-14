@@ -135,8 +135,8 @@ func controlPlaneRolloutSummary(
 }
 
 // validateCreateClusterLevelControlPlane validates the cluster-level control
-// plane configuration supplied on cluster create when control-plane controller
-// provisioning is enabled. It rejects control-plane node pools and applies the
+// plane configuration supplied on cluster create. It rejects control-plane node
+// pools and applies the
 // Forge vs CAPI field-split rules that mirror node pools. The Forge
 // subnet/VPC-prefix native-networking rules are validated separately (they
 // require a Forge site lookup).
@@ -154,7 +154,7 @@ func validateCreateClusterLevelControlPlane(
 
 	ccpc := req.ControlPlaneConfig
 	if ccpc == nil {
-		return fmt.Errorf("controlPlaneConfig is required when control-plane controller provisioning is enabled")
+		return fmt.Errorf("controlPlaneConfig is required")
 	}
 	if ccpc.DesiredCount < 1 {
 		return fmt.Errorf("controlPlaneConfig.desiredCount must be at least 1")

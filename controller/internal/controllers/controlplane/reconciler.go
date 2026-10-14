@@ -70,7 +70,7 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return fmt.Errorf("resolving provider client: %w", err)
 	}
 
-	controlPlane, err := readControlPlane(ctx, r.db, cluster, r.cfg.UseControlPlaneControllerForControlPlane())
+	controlPlane, err := readControlPlane(ctx, r.db, cluster)
 	if err != nil {
 		return fmt.Errorf("reading control plane: %w", err)
 	}
@@ -88,13 +88,7 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	if err != nil {
 		return fmt.Errorf("discovering control-plane failure domains: %w", err)
 	}
-	// Only controller-managed control planes seed the allocator with eligible
-	// domains. Legacy node-pool mode uses the zero value, so its surge nodes
-	// request no specific domain.
-	allocator := domainAllocator{}
-	if controlPlane.useController {
-		allocator = newControlPlaneDomainAllocator(controlPlane.nodes, failureDomains)
-	}
+	allocator := newControlPlaneDomainAllocator(controlPlane.nodes, failureDomains)
 
 	// Host creation only. A pending or in-flight delete must not stall it: the
 	// replacement host is exactly what lets the control plane shrink safely.
@@ -111,7 +105,7 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	// still proceed, because they do not require the upgrade to finish.
 	if !agentUpgradeBlocksNodeWork(cluster, controlPlane.nodes) {
 		// ConfigMap changes only.
-		if err := r.reconcileK8sUpgrade(ctx, cluster, controlPlane, provider.NodePoolUpgradeConfig()); err != nil {
+		if err := r.reconcileK8sUpgrade(ctx, cluster, controlPlane); err != nil {
 			return fmt.Errorf("reconciling k8s upgrade: %w", err)
 		}
 
@@ -190,10 +184,6 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	allocator domainAllocator,
 	newNodeProvider clients.NewNodeProvider,
 ) error {
-	if !r.cfg.UseControlPlaneControllerForControlPlane() {
-		return nil
-	}
-
 	deficit := cluster.ControlPlaneConfig.DesiredCount - controlPlane.size()
 	if deficit <= 0 {
 		return nil

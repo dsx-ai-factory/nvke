@@ -577,7 +577,6 @@ NODE_AGENT_REPO_PATH=/path/to/baseline/agent \
 NODE_AGENT_VERSION=v0.1.990 \
 LOCAL_NVKE_E2E_NODE_AGENT_UPGRADE=true \
 LOCAL_NKE_E2E_LABEL_FILTER=node-agent-upgrade \
-PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true \
 flox activate -- bash controller/hack/local-backend-e2e.sh
 ```
 
