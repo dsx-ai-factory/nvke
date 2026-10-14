@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
+	"github.com/dsx-ai-factory/nvke/cli/internal/mgmtcluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/util"
 )
 
@@ -31,7 +32,7 @@ type KubeconfigFetcher interface {
 // MgmtClientFactory builds a KubeconfigFetcher from a management cluster
 // kubeconfig path. The caller typically wraps mgmtcluster.New, whose
 // *mgmtcluster.Client return type satisfies KubeconfigFetcher.
-type MgmtClientFactory func(kubeconfigPath string) (KubeconfigFetcher, error)
+type MgmtClientFactory func(kubeconfigPath, namespace string) (KubeconfigFetcher, error)
 
 // NewGetKubeconfigCmd returns "nvkectl get kubeconfig <cluster-name>".
 //
@@ -39,7 +40,7 @@ type MgmtClientFactory func(kubeconfigPath string) (KubeconfigFetcher, error)
 // the management cluster, using the active site's configured kubeconfig
 // (--site overrides which site is active, the same as every other command).
 func NewGetKubeconfigCmd(siteFn SiteFn, newMgmtClient MgmtClientFactory) *cobra.Command {
-	var outputFile string
+	var outputFile, namespace string
 
 	cmd := &cobra.Command{
 		Use:   "kubeconfig <cluster-name>",
@@ -49,7 +50,9 @@ func NewGetKubeconfigCmd(siteFn SiteFn, newMgmtClient MgmtClientFactory) *cobra.
 The kubeconfig is read from the Secret that the NVKE tenantaccess controller
 publishes into the management cluster at:
 
-  nke-system/<cluster-name>-admin-kubeconfig  (key: value)
+  <namespace>/<cluster-name>-admin-kubeconfig  (key: value)
+
+The namespace is nke-system unless the site renamed it; pass --namespace to match.
 
 The management cluster kubeconfig is the active site's configured kubeconfig
 (see 'nvkectl config set-site --kubeconfig'); use --site to target a
@@ -71,7 +74,7 @@ Example:
 				return err
 			}
 
-			mc, err := newMgmtClient(siteCfg.Kubeconfig)
+			mc, err := newMgmtClient(siteCfg.Kubeconfig, namespace)
 			if err != nil {
 				return err
 			}
@@ -95,6 +98,8 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write kubeconfig to file instead of stdout")
+	cmd.Flags().StringVar(&namespace, "namespace", mgmtcluster.DefaultSecretsNamespace,
+		"Management cluster namespace that holds the kubeconfig Secrets")
 
 	return cmd
 }

@@ -58,6 +58,6 @@ components "clusterctl init" installs, and the kindest/node image.`,
 
 // newMgmtClient adapts mgmtcluster.New's concrete return type to
 // mgmtcommand.MgmtClientFactory.
-func newMgmtClient(kubeconfigPath string) (mgmtcommand.KubeconfigFetcher, error) {
-	return mgmtcluster.New(kubeconfigPath)
+func newMgmtClient(kubeconfigPath, namespace string) (mgmtcommand.KubeconfigFetcher, error) {
+	return mgmtcluster.New(kubeconfigPath, mgmtcluster.WithSecretsNamespace(namespace))
 }

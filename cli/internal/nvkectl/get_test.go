@@ -34,7 +34,7 @@ func TestNewMgmtClientBuildsFromValidKubeconfig(t *testing.T) {
 		t.Fatalf("writing test kubeconfig: %v", err)
 	}
 
-	fetcher, err := newMgmtClient(path)
+	fetcher, err := newMgmtClient(path, "")
 	if err != nil {
 		t.Fatalf("newMgmtClient: %v", err)
 	}

@@ -47,7 +47,7 @@ func newTestClient(t *testing.T, objs ...runtime.Object) *Client {
 
 func TestGetClusterKubeconfigReturnsAdminSecretData(t *testing.T) {
 	c := newTestClient(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-admin-kubeconfig", Namespace: secretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-admin-kubeconfig", Namespace: DefaultSecretsNamespace},
 		Data:       map[string][]byte{kubeconfigSecretKey: []byte("fake-kubeconfig-bytes")},
 	})
 
@@ -65,7 +65,7 @@ func TestGetClusterKubeconfigIgnoresNonAdminSecret(t *testing.T) {
 	// exec-auth kubeconfig on an OIDC-enabled cluster) — GetClusterKubeconfig
 	// must not fall back to it.
 	c := newTestClient(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-kubeconfig", Namespace: secretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-kubeconfig", Namespace: DefaultSecretsNamespace},
 		Data:       map[string][]byte{kubeconfigSecretKey: []byte("spire-exec-auth-kubeconfig")},
 	})
 
@@ -103,7 +103,7 @@ func TestGetClusterKubeconfigErrorsWhenForbidden(t *testing.T) {
 
 func TestGetClusterKubeconfigErrorsWhenDataKeyMissing(t *testing.T) {
 	c := newTestClient(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-admin-kubeconfig", Namespace: secretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-admin-kubeconfig", Namespace: DefaultSecretsNamespace},
 		Data:       map[string][]byte{"unexpected-key": []byte("x")},
 	})
 

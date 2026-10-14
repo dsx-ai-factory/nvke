@@ -34,7 +34,7 @@ func newTestKubeconfigCmd(fetcher KubeconfigFetcher, siteErr error) (*cobra.Comm
 		}
 		return config.SiteConfig{Kubeconfig: "/dev/null"}, nil
 	}
-	factory := func(string) (KubeconfigFetcher, error) { return fetcher, nil }
+	factory := func(string, string) (KubeconfigFetcher, error) { return fetcher, nil }
 
 	cmd := NewGetKubeconfigCmd(siteFn, factory)
 	out := &bytes.Buffer{}
@@ -73,6 +73,35 @@ func TestGetKubeconfigCmdWritesOutputFile(t *testing.T) {
 	}
 	if !bytes.Contains(out.Bytes(), []byte(path)) {
 		t.Errorf("stdout = %q, want the output path", out)
+	}
+}
+
+func TestGetKubeconfigCmdPassesNamespaceToFactory(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "defaults to nke-system", args: []string{"my-cluster"}, want: "nke-system"},
+		{name: "flag overrides", args: []string{"my-cluster", "--namespace", "nvke-system"}, want: "nvke-system"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got string
+			factory := func(_, namespace string) (KubeconfigFetcher, error) {
+				got = namespace
+				return fakeKubeconfigFetcher{"my-cluster": []byte("x")}, nil
+			}
+			siteFn := func() (config.SiteConfig, error) { return config.SiteConfig{Kubeconfig: "/dev/null"}, nil }
+			cmd := NewGetKubeconfigCmd(siteFn, factory)
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetArgs(tc.args)
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("namespace passed to factory = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
