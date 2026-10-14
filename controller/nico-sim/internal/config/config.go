@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/vm"
 )
 
 func envOrDefault(key, defaultVal string) string {
@@ -53,6 +55,8 @@ type Config struct {
 	LibvirtURI                      string
 	LibvirtNetwork                  string
 	QEMUSystemPath                  string
+	QEMUAccelerator                 string
+	GuestNetworkConfig              string
 	BridgeName                      string
 	BridgeCIDR                      string
 	BaseImage                       string
@@ -166,6 +170,8 @@ func Parse(logger *slog.Logger) (Config, error) {
 		LibvirtURI:                      envOrDefault("NICO_VMS_LIBVIRT_URI", "qemu:///session"),
 		LibvirtNetwork:                  os.Getenv("NICO_VMS_LIBVIRT_NETWORK"),
 		QEMUSystemPath:                  os.Getenv("NICO_VMS_QEMU_SYSTEM_PATH"),
+		QEMUAccelerator:                 os.Getenv("NICO_VMS_QEMU_ACCELERATOR"),
+		GuestNetworkConfig:              envOrDefault("NICO_VMS_GUEST_NETWORK_CONFIG", "seed"),
 		BridgeName:                      envOrDefault("NICO_VMS_BRIDGE_NAME", "cwebr0"), // Kept as cwebr0 until a follow-up rename: changing it leaves the old bridge behind on existing nico-vms hosts.
 		BridgeCIDR:                      os.Getenv("NICO_VMS_BRIDGE_CIDR"),
 		BaseImage:                       envOrDefault("NICO_VMS_BASE_IMAGE", "images/ubuntu-cloud.qcow2"),
@@ -205,6 +211,13 @@ func Parse(logger *slog.Logger) (Config, error) {
 		ContainerRequireHealth:          strings.EqualFold(envOrDefault("NICO_CONTAINERS_REQUIRE_HEALTHY", "false"), "true"),
 	}
 
+	// Accelerator admission precedes normalization, which may probe vmnet.
+	if err := cfg.validateQEMUAccelerator(); err != nil {
+		return Config{}, err
+	}
+	if err := cfg.validateGuestNetworkConfig(); err != nil {
+		return Config{}, err
+	}
 	if err := cfg.normalize(logger); err != nil {
 		return Config{}, err
 	}
@@ -217,6 +230,12 @@ func Parse(logger *slog.Logger) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if err := c.validateQEMUAccelerator(); err != nil {
+		return err
+	}
+	if err := c.validateGuestNetworkConfig(); err != nil {
+		return err
+	}
 	if c.ListenAddr == "" {
 		return fmt.Errorf("NICO_SIM_LISTEN_ADDR is required")
 	}
@@ -286,6 +305,25 @@ func (c Config) Validate() error {
 	}
 
 	return nil
+}
+
+func (c Config) validateQEMUAccelerator() error {
+	if _, err := vm.ResolveQEMUAccelerator(c.QEMUAccelerator); err != nil {
+		return fmt.Errorf("NICO_VMS_QEMU_ACCELERATOR: %w", err)
+	}
+	if c.QEMUAccelerator != "" && c.EffectiveVMBackend() != VMBackendDarwinQEMU {
+		return fmt.Errorf("NICO_VMS_QEMU_ACCELERATOR requires the %q backend", VMBackendDarwinQEMU)
+	}
+	return nil
+}
+
+func (c Config) validateGuestNetworkConfig() error {
+	switch c.GuestNetworkConfig {
+	case "", "seed", "nvke-userdata":
+		return nil
+	default:
+		return fmt.Errorf("NICO_VMS_GUEST_NETWORK_CONFIG must be seed or nvke-userdata")
+	}
 }
 
 func (c Config) hasMockLibvirtURI() bool {

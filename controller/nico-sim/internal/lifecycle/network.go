@@ -74,13 +74,70 @@ func newNetworkManager(cfg config.Config, rt vmruntime.Runtime) NetworkManager {
 			libvirtURI:  cfg.LibvirtURI,
 		}
 	}
-	return nicoNetwork{
+	network := nicoNetwork{
 		runtime:    rt,
 		bridgeName: cfg.BridgeName,
 		bridgeCIDR: cfg.BridgeCIDR,
 		hostsDir:   cfg.DHCPHostsDir,
 		leaseFile:  cfg.DHCPLeaseFile,
 	}
+	if cfg.EffectiveVMBackend() == config.VMBackendDarwinQEMU && cfg.GuestNetworkConfig == "nvke-userdata" {
+		return nativeIPAMNetwork{nicoNetwork: network}
+	}
+	return network
+}
+
+// nativeIPAMNetwork uses the existing store's static IPAM and the explicitly
+// selected NVKE user-data network handoff. iPXE still selects the exact image;
+// it does not select Linux dnsmasq on a Darwin host. vmnet owns the shared
+// interface, while the guest receives its allocated address through Netplan.
+type nativeIPAMNetwork struct{ nicoNetwork }
+
+func (e *Engine) prepareInstanceNetwork(ctx context.Context, instance state.Instance, nicMAC string, log *slog.Logger) (string, error) {
+	if e.cfg.EffectiveVMBackend() == config.VMBackendDarwinQEMU && e.net.NeedsDHCP(instance) {
+		return "", fmt.Errorf("native iPXE instances require explicit nvke-userdata IPAM networking")
+	}
+	if e.net.NeedsDHCP(instance) && !e.artifacts.MockMode {
+		e.registerDHCPInstance(ctx, instance, instance.Interfaces, nicMAC, log)
+		return "", nil
+	}
+	// Reuse the store's idempotent IPAM; its address is projected into the
+	// seed before VM creation. The iPXE script continues to own image choice.
+	firstIP, addressErr := firstInterfaceIP(instance.Interfaces)
+	native := e.cfg.EffectiveVMBackend() == config.VMBackendDarwinQEMU
+	if native && addressErr != nil {
+		return "", fmt.Errorf("native IPAM requires a usable primary interface: %w", addressErr)
+	}
+	if firstIP == "" && len(instance.Interfaces) > 0 {
+		ips, err := e.store.AllocateAndStoreIPs(ctx, instance.Interfaces[0], instance.ID)
+		if err != nil {
+			return "", fmt.Errorf("IPAM allocation failed: %w", err)
+		}
+		if len(ips) > 0 {
+			firstIP = ips[0]
+		}
+		log.Info("Allocated static IP", "ip", firstIP)
+	}
+	if native && firstIP == "" {
+		return "", fmt.Errorf("native IPAM did not allocate a guest address")
+	}
+	return firstIP, nil
+}
+
+func (nativeIPAMNetwork) NeedsDHCP(state.Instance) bool { return false }
+
+func (nativeIPAMNetwork) WriteReservation(_, _, _, _ string, _ *slog.Logger) {}
+
+func (nativeIPAMNetwork) LookupLease(context.Context, string) (string, bool, error) {
+	return "", false, fmt.Errorf("native IPAM networking requires an allocated address, not a DHCP lease")
+}
+
+func (n nativeIPAMNetwork) MetadataAddrs() []string {
+	gw, err := netutil.GatewayIP(n.bridgeCIDR)
+	if err != nil {
+		return nil
+	}
+	return []string{net.JoinHostPort(gw, "7777")}
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +184,14 @@ func (n nicoNetwork) MetadataAddrs() []string {
 	return addrs
 }
 
-func (n nicoNetwork) Teardown(_ context.Context) error { return nil }
+func (n nicoNetwork) Teardown(ctx context.Context) error {
+	if owner, ok := n.runtime.(interface {
+		TeardownNetwork(ctx context.Context) error
+	}); ok {
+		return owner.TeardownNetwork(ctx)
+	}
+	return nil
+}
 
 // ---------------------------------------------------------------------------
 // libvirtNetwork — libvirt-network mode (shared GitLab runner)

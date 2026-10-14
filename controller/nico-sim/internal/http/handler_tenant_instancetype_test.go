@@ -267,6 +267,30 @@ func TestTenantAndInstanceTypeRequireAuth(t *testing.T) {
 	}
 }
 
+func TestSupportedAPINameTenantCompatibility(t *testing.T) {
+	h := newTestHandler(t)
+	for _, apiName := range []string{"carbide", "forge", "nico"} {
+		t.Run(apiName, func(t *testing.T) {
+			path := "/v2/org/" + testOrgID + "/" + apiName + "/tenant/current"
+			rw := authedGet(t, h, path)
+			var tenant nicosdk.Tenant
+			if rw.Code != nethttp.StatusOK || json.Unmarshal(rw.Body.Bytes(), &tenant) != nil || tenant.GetId() != testTenantID {
+				t.Fatalf("supported SDK path failed: status=%d body=%s", rw.Code, rw.Body.String())
+			}
+			req := httptest.NewRequest(nethttp.MethodGet, path, nil)
+			rw = httptest.NewRecorder()
+			h.ServeHTTP(rw, req)
+			if rw.Code != nethttp.StatusUnauthorized {
+				t.Fatalf("supported SDK path bypassed authentication: status=%d", rw.Code)
+			}
+			rw = authedGet(t, h, "/v2/org/"+testOrgBID+"/"+apiName+"/tenant/current")
+			if rw.Code != nethttp.StatusNotFound {
+				t.Fatalf("supported SDK path leaked another org's tenant: status=%d", rw.Code)
+			}
+		})
+	}
+}
+
 // TestHandleGetVPCOrgIsolation proves vpc/{vpcId} is constrained to the org in
 // the request path: each org reads only its own VPC, and a VPC that exists but
 // belongs to another org 404s with a response byte-identical to the 404 for an ID

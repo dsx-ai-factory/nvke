@@ -26,7 +26,10 @@ var (
 
 func TestMain(m *testing.M) {
 	code := m.Run()
-	closeSuite()
+	if err := closeSuite(); err != nil {
+		fmt.Fprintf(os.Stderr, "native suite shutdown failed: %v\n", err)
+		code = 1
+	}
 	os.Exit(code)
 }
 
@@ -57,13 +60,16 @@ func sharedSuite(t *testing.T) (*testutil.TestEnv, testutil.RuntimeProfile) {
 	return suiteEnv, suiteProfile
 }
 
-func closeSuite() {
+func closeSuite() error {
 	if suiteEnv != nil {
-		suiteEnv.Close()
+		if err := suiteEnv.Close(); err != nil {
+			return err
+		}
 		if dbPath := strings.TrimSpace(suiteProfile.Config.DBPath); dbPath != "" {
 			_ = os.RemoveAll(filepath.Dir(dbPath))
 		}
 	}
+	return nil
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

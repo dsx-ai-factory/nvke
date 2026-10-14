@@ -7,6 +7,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -205,7 +206,7 @@ func Setup(ctx context.Context, cfg config.Config, seedDoc seed.Document, logger
 }
 
 // Close shuts down all components in dependency order.
-func (a *App) Close() {
+func (a *App) Close() error {
 	// 1. Stop Promtail targets writer (queries the store, so must stop before store closes)
 	if a.targetsWriter != nil {
 		a.targetsWriter.Wait()
@@ -226,13 +227,13 @@ func (a *App) Close() {
 	// 3.5. Clean up network-mode-specific resources (e.g. libvirt DNS host entry)
 	teardownCtx, teardownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer teardownCancel()
-	a.Engine.Teardown(teardownCtx)
+	teardownErr := a.Engine.Teardown(teardownCtx)
 	// 4. Stop console SSH
 	if a.ConsoleSSH != nil {
 		a.ConsoleSSH.Wait()
 	}
 	// 5. Close store last — everything above may depend on it
-	_ = a.Store.Close()
+	return errors.Join(teardownErr, a.Store.Close())
 }
 
 // startMetadataServers starts the cloud-init metadata HTTP listeners on the

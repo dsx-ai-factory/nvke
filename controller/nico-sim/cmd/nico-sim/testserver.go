@@ -34,7 +34,8 @@ import (
 //
 //	NICO_SIM_URL=http://localhost:<port>
 //
-// All log output goes to stderr. The server shuts down on SIGINT/SIGTERM.
+// All log output goes to stderr. Interrupt, TERM, terminal hangup and a lost
+// output pipe enter the same scoped application shutdown.
 func runTestServer() {
 	fs := flag.NewFlagSet("test-server", flag.ExitOnError)
 	listenAddr := fs.String("listen-addr", ":0", "address to listen on (use :0 for auto-assigned port)")
@@ -86,7 +87,7 @@ func runTestServer() {
 		os.Exit(1)
 	}
 
-	runCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	runCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGPIPE)
 	defer cancel()
 
 	application, err := app.Setup(runCtx, cfg, seedDoc, logger)
@@ -94,7 +95,12 @@ func runTestServer() {
 		logger.Error("failed to setup app", "error", err)
 		os.Exit(1)
 	}
-	defer application.Close()
+	defer func() {
+		if err := application.Close(); err != nil {
+			logger.Error("test server shutdown failed", "error", err)
+			os.Exit(1)
+		}
+	}()
 
 	ln, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {

@@ -56,7 +56,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	runCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	runCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGPIPE)
 	defer cancel()
 
 	application, err := app.Setup(runCtx, cfg, seedDoc, logger)
@@ -64,7 +64,13 @@ func main() {
 		logger.Error("failed to start application", "error", err)
 		os.Exit(1)
 	}
-	defer application.Close()
+	defer func() {
+		if err := application.Close(); err != nil {
+			logger.Error("nico-sim shutdown failed", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("nico-sim stopped")
+	}()
 
 	server := &nethttp.Server{
 		Addr:    cfg.ListenAddr,
@@ -93,6 +99,4 @@ func main() {
 		logger.Error("http server failed", "error", err)
 		cancel()
 	}
-
-	logger.Info("nico-sim stopped")
 }

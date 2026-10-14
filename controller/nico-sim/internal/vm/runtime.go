@@ -4,7 +4,31 @@
 // Package vm defines the Runtime interface shared by all VM backends.
 package vm
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
+
+// QEMUAccelerator names an explicitly admitted native QEMU execution mode.
+type QEMUAccelerator string
+
+const (
+	QEMUAcceleratorHVF QEMUAccelerator = "hvf"
+	QEMUAcceleratorTCG QEMUAccelerator = "tcg"
+)
+
+// ResolveQEMUAccelerator preserves HVF as the default and rejects unrecognised
+// modes. Selection never silently falls back to another accelerator.
+func ResolveQEMUAccelerator(value string) (QEMUAccelerator, error) {
+	switch QEMUAccelerator(value) {
+	case "", QEMUAcceleratorHVF:
+		return QEMUAcceleratorHVF, nil
+	case QEMUAcceleratorTCG:
+		return QEMUAcceleratorTCG, nil
+	default:
+		return "", fmt.Errorf("QEMU accelerator must be %q or %q (got %q)", QEMUAcceleratorHVF, QEMUAcceleratorTCG, value)
+	}
+}
 
 // MachineState describes the observed hypervisor state of a VM.
 type MachineState string

@@ -42,7 +42,7 @@ var catalog = []CatalogItem{
 	},
 	{
 		ID: "cloud-init-logs", Name: "Cloud-Init Logs", Type: "log", Follow: false,
-		cmd: "sudo journalctl -b -u cloud-init --no-pager -o cat",
+		cmd: "sudo journalctl -b -u cloud-init -u cloud-init-local -u cloud-init-network -u cloud-config -u cloud-final --no-pager -n 500 -o cat",
 	},
 	{
 		ID: "spire-agent-logs", Name: "SPIRE Agent Logs", Type: "log", Follow: true,

@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/cloudinit"
 )
 
 type Builder struct {
@@ -31,6 +33,11 @@ type BuildInput struct {
 	PrefixLength int
 	BaseImage    string // per-instance override; if empty, uses Builder.BaseImage
 	DiskGiB      int    // required: disk size in GiB for the instance
+	// PreserveInterfaceName keeps the kernel's existing name while matching the
+	// exact NIC MAC. Darwin guests may already have an active enp0s1 interface
+	// when cloud-init applies the seed; renaming it then fails with EBUSY.
+	PreserveInterfaceName    bool
+	NetworkConfigViaUserData bool // explicit NVKE image contract: the image disables NoCloud network-config
 }
 
 type BuildOutput struct {
@@ -39,10 +46,6 @@ type BuildOutput struct {
 }
 
 func (b Builder) Build(ctx context.Context, in BuildInput) (BuildOutput, error) {
-	if err := os.MkdirAll(in.WorkingDir, 0o755); err != nil {
-		return BuildOutput{}, fmt.Errorf("failed to create working directory: %w", err)
-	}
-
 	diskPath := filepath.Join(in.WorkingDir, "disk.qcow2")
 	seedISOPath := filepath.Join(in.WorkingDir, "seed.iso")
 	userDataPath := filepath.Join(in.WorkingDir, "user-data")
@@ -52,14 +55,12 @@ func (b Builder) Build(ctx context.Context, in BuildInput) (BuildOutput, error) 
 	if in.UserData == "" {
 		in.UserData = "#cloud-config\n"
 	}
-	if err := os.WriteFile(userDataPath, []byte(in.UserData), 0o644); err != nil {
-		return BuildOutput{}, fmt.Errorf("failed to write user-data: %w", err)
-	}
 	metaData := fmt.Sprintf("instance-id: %s\nlocal-hostname: %s\nasn: 4294967000\n", in.InstanceID, in.Hostname)
-	if err := os.WriteFile(metaDataPath, []byte(metaData), 0o644); err != nil {
-		return BuildOutput{}, fmt.Errorf("failed to write meta-data: %w", err)
-	}
 	var networkConfig string
+	setName := "    set-name: eth0\n"
+	if in.PreserveInterfaceName {
+		setName = ""
+	}
 	if in.IPAddress == "" {
 		// DHCP mode: VM gets its IP from dnsmasq.
 		networkConfig = fmt.Sprintf(`version: 2
@@ -67,9 +68,8 @@ ethernets:
   eth0:
     match:
       macaddress: "%s"
-    set-name: eth0
-    dhcp4: true
-`, in.NICMAC)
+%s    dhcp4: true
+`, in.NICMAC, setName)
 	} else {
 		// Static mode: IP baked into seed ISO from IPAM allocation.
 		// DNS points to the bridge gateway where dnsmasq listens.
@@ -78,8 +78,7 @@ ethernets:
   eth0:
     match:
       macaddress: "%s"
-    set-name: eth0
-    addresses:
+%s    addresses:
       - %s/%d
     nameservers:
       addresses:
@@ -87,10 +86,38 @@ ethernets:
     routes:
       - to: default
         via: %s
-`, in.NICMAC, in.IPAddress, in.PrefixLength, in.GatewayIP, in.GatewayIP)
+`, in.NICMAC, setName, in.IPAddress, in.PrefixLength, in.GatewayIP, in.GatewayIP)
+	}
+	if in.NetworkConfigViaUserData {
+		var err error
+		if in.PreserveInterfaceName {
+			in.UserData, err = cloudinit.InjectNativeNVKENetwork(in.UserData, networkConfig, in.GatewayIP)
+		} else {
+			in.UserData, err = cloudinit.InjectNVKENetwork(in.UserData, networkConfig)
+		}
+		if err != nil {
+			return BuildOutput{}, fmt.Errorf("NVKE guest network configuration: %w", err)
+		}
+		if in.PreserveInterfaceName {
+			// The explicit native user-data handoff owns the Netplan file.
+			// Cloud-init also accepts a datasource-level disabled configuration
+			// (26.1 stages.Init._find_networking_config). Do not emit a second
+			// static definition that it renders as 50-cloud-init.yaml when the
+			// selected historical image lacks the recipe's system disable file.
+			networkConfig = "config: disabled\n"
+		}
+	}
+	if err := os.MkdirAll(in.WorkingDir, 0o755); err != nil {
+		return BuildOutput{}, fmt.Errorf("failed to create working directory: %w", err)
+	}
+	if err := os.WriteFile(metaDataPath, []byte(metaData), 0o644); err != nil {
+		return BuildOutput{}, fmt.Errorf("failed to write meta-data: %w", err)
 	}
 	if err := os.WriteFile(networkConfigPath, []byte(networkConfig), 0o644); err != nil {
 		return BuildOutput{}, fmt.Errorf("failed to write network-config: %w", err)
+	}
+	if err := os.WriteFile(userDataPath, []byte(in.UserData), 0o644); err != nil {
+		return BuildOutput{}, fmt.Errorf("failed to write user-data: %w", err)
 	}
 
 	if b.MockMode {

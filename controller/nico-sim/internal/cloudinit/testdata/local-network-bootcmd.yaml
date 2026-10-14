@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#cloud-config
+bootcmd:
+  - |
+    set -eu
+    uplink=
+    for device in /sys/class/net/*; do
+      test -e "$device/device" || continue
+      candidate="${device##*/}"
+      case "$candidate" in eth0|enp1s0) ;; *) exit 1 ;; esac
+      test -z "$uplink"
+      uplink="$candidate"
+    done
+    test -n "$uplink"
+    test ! -L /etc/systemd/network
+    test -d /etc/systemd/network
+    directory="/etc/systemd/network/10-netplan-$uplink.link.d"
+    test ! -L "$directory"
+    mkdir -p "$directory"
+    link="$directory/10-nkd-local-name.conf"
+    link_expected="$(printf "[Link]\\nNamePolicy=\\nName=%s\\n" "$uplink")"
+    test ! -L "$link"
+    if [ -e "$link" ]; then
+      test -f "$link"
+      test "$(cat "$link")" = "$link_expected"
+    else
+      printf "%s\n" "$link_expected" > "$link"
+    fi
+    file=/etc/default/grub.d/zz-nkd-local-network.cfg
+    expected='GRUB_CMDLINE_LINUX="${GRUB_CMDLINE_LINUX} net.ifnames=1 network-config=disabled"'
+    test ! -L "$file"
+    if [ -e "$file" ]; then
+      test -f "$file"
+      test "$(cat "$file")" = "$expected"
+    else
+      printf "%s\n" "$expected" > "$file"
+    fi
+    update-grub

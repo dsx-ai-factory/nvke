@@ -145,10 +145,8 @@ func (e *Engine) MetadataAddrs() []string {
 }
 
 // Teardown cleans up network-mode-specific resources. Call after Wait().
-func (e *Engine) Teardown(ctx context.Context) {
-	if err := e.net.Teardown(ctx); err != nil {
-		e.logger.Error("network teardown failed", "error", err)
-	}
+func (e *Engine) Teardown(ctx context.Context) error {
+	return e.net.Teardown(ctx)
 }
 
 func (e *Engine) dispatcher(ctx context.Context) {
@@ -282,7 +280,9 @@ func (e *Engine) reconcileAbsent(ctx context.Context, instance state.Instance, l
 
 	// Remove DHCP host/lease entry.
 	nicMAC := nicMACForInstance(instance.ID)
-	removeDHCPHostEntry(e.cfg.DHCPHostsDir, e.cfg.DHCPLeaseFile, instance.ID, nicMAC)
+	if e.net.NeedsDHCP(instance) {
+		removeDHCPHostEntry(e.cfg.DHCPHostsDir, e.cfg.DHCPLeaseFile, instance.ID, nicMAC)
+	}
 
 	if instance.MachineID != "" {
 		log.Info("Deleting VM")
@@ -343,24 +343,9 @@ func (e *Engine) reconcileProvisioning(ctx context.Context, instance state.Insta
 		return e.markError(ctx, instance.ID, fmt.Errorf("failed to derive gateway IP: %w", err))
 	}
 
-	// Allocate IP or configure DHCP based on networking mode.
-	var firstIP string
-	if e.net.NeedsDHCP(instance) && !e.artifacts.MockMode {
-		// DHCP: no IP yet. VM will get one from dnsmasq. Register MAC + host entry.
-		e.registerDHCPInstance(ctx, instance, instance.Interfaces, nicMAC, log)
-	} else {
-		// Static: allocate IP via IPAM (idempotent — skips if already allocated).
-		firstIP, _ = firstInterfaceIP(instance.Interfaces)
-		if firstIP == "" && len(instance.Interfaces) > 0 {
-			ips, allocErr := e.store.AllocateAndStoreIPs(ctx, instance.Interfaces[0], instance.ID)
-			if allocErr != nil {
-				return e.markError(ctx, instance.ID, fmt.Errorf("IPAM allocation failed: %w", allocErr))
-			}
-			if len(ips) > 0 {
-				firstIP = ips[0]
-			}
-			log.Info("Allocated static IP", "ip", firstIP)
-		}
+	firstIP, err := e.prepareInstanceNetwork(ctx, instance, nicMAC, log)
+	if err != nil {
+		return e.markError(ctx, instance.ID, err)
 	}
 
 	// Resolve boot image: parse iPXE script, download image, inject bootcmd.
@@ -414,7 +399,7 @@ func (e *Engine) reconcileProvisioning(ctx context.Context, instance state.Insta
 
 	// Build artifacts. IPAddress empty → DHCP network-config in seed ISO.
 	workingDir := filepath.Join(e.cfg.WorkingDirectory(), instance.ID)
-	artifactsOut, err := e.artifacts.Build(ctx, artifacts.BuildInput{
+	artifactsOut, err := e.buildVMArtifacts(ctx, artifacts.BuildInput{
 		WorkingDir:   workingDir,
 		InstanceID:   instance.ID,
 		Hostname:     instance.Name,
@@ -485,7 +470,7 @@ func (e *Engine) reconcileProvisioning(ctx context.Context, instance state.Insta
 		return fmt.Errorf("marking instance as running: %w", err)
 	}
 
-	if instance.UsesDHCP() {
+	if e.net.NeedsDHCP(instance) {
 		log.Info("Waiting for DHCP lease", "mac", nicMAC)
 		return nil
 	}
@@ -684,6 +669,12 @@ func (e *Engine) storeNow() time.Time {
 	return time.Now().UTC()
 }
 
+func (e *Engine) buildVMArtifacts(ctx context.Context, input artifacts.BuildInput) (artifacts.BuildOutput, error) {
+	input.PreserveInterfaceName = e.cfg.EffectiveVMBackend() == config.VMBackendDarwinQEMU
+	input.NetworkConfigViaUserData = e.cfg.GuestNetworkConfig == "nvke-userdata"
+	return e.artifacts.Build(ctx, input)
+}
+
 // resolveBootImage determines the base image and UEFI setting for an instance.
 // For iPXE instances, parses the script, downloads the image, and injects bootcmd.
 // For non-iPXE instances, returns the default base image.
@@ -867,7 +858,7 @@ func newRuntime(cfg config.Config) vm.Runtime {
 	case config.VMBackendMock:
 		return vm.NewMockRuntime()
 	case config.VMBackendDarwinQEMU:
-		return darwinqemu.New(cfg.EffectiveQEMUSystemPath(), cfg.WorkingDirectory())
+		return darwinqemu.New(cfg.EffectiveQEMUSystemPath(), cfg.WorkingDirectory(), cfg.QEMUAccelerator)
 	default:
 		return libvirt.New(cfg.LibvirtURI)
 	}

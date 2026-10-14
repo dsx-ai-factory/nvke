@@ -53,7 +53,11 @@ func NewTestEnv(t *testing.T, seedDoc seed.Document, profile RuntimeProfile) *Te
 		t.Fatalf("app.Setup failed: %v", err)
 	}
 	env.T = t
-	t.Cleanup(env.Close)
+	t.Cleanup(func() {
+		if err := env.Close(); err != nil {
+			t.Errorf("test environment shutdown: %v", err)
+		}
+	})
 	return env
 }
 
@@ -87,10 +91,10 @@ func (e *TestEnv) WithT(t *testing.T) *TestEnv {
 	return &cloned
 }
 
-func (e *TestEnv) Close() {
+func (e *TestEnv) Close() error {
 	e.Server.Close()
 	e.Cancel()
-	e.App.Close()
+	return e.App.Close()
 }
 
 func (e *TestEnv) Endpoint(suffix string) string {

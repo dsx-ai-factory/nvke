@@ -737,13 +737,85 @@ The server also detects orphaned VMs on startup. Set `NICO_VMS_CLEANUP_ORPHANED_
 
 ### macOS
 
-One command installs all dependencies (QEMU, vmnet-helper, cloud-localds):
+One command installs QEMU, vmnet-helper, mkisofs and the software TPM tools:
 
 ```bash
 make install-deps-homebrew
 ```
 
-The `darwin-qemu` backend runs QEMU via `vmnet-client --unprivileged` — no sudo needed on macOS 26+. On macOS 15 and earlier, vmnet-client uses sudo only to create the vmnet interface, then drops privileges.
+The existing seed builder uses mkisofs directly when cloud-localds is absent;
+setup does not download and rewrite a cloud-localds script.
+
+The `darwin-qemu` backend runs QEMU through vmnet-helper's `vmnet-run` launcher,
+called `vmnet-client` before vmnet-helper v0.11.0. Current installations use
+`vmnet-run` without sudo on macOS 26+. Legacy installations retain their
+`vmnet-client --unprivileged` invocation. On macOS 15 and earlier, the legacy
+launcher uses sudo only to create the vmnet interface, then drops privileges.
+
+HVF remains the default. To test an exact disk with software emulation, set
+`NICO_VMS_QEMU_ACCELERATOR=tcg` with `NICO_VMS_VM_BACKEND=darwin-qemu`.
+TCG selects QEMU's emulated `max` CPU; HVF selects `host`. An invalid accelerator
+or an explicit accelerator on another backend fails before vmnet probing.
+The selected accelerator does not establish guest boot, node readiness,
+networking, TPM support or complete NVKE demo acceptance. The production ARM
+FDE integration test remains skipped on macOS.
+
+NVKE's current image recipe disables NoCloud `network-config` and installs
+`/etc/netplan/00-dhcp-all.yaml`. A plain-image fixture that needs the simulator's
+declared static IP selects `NICO_VMS_GUEST_NETWORK_CONFIG=nvke-userdata` explicitly.
+This changes the boot configuration, preserving the selected base disk bytes.
+With the Darwin backend this explicit handoff uses the existing IPAM to assign
+addresses even when iPXE selects the image. It does not read Linux dnsmasq
+leases or write Linux DHCP reservations. Native iPXE with the default `seed`
+handoff fails before guest creation; its lease discovery is unsupported.
+Darwin seeds match the exact NIC MAC while retaining its kernel name.
+With explicit native `nvke-userdata`, the datasource network seed declares
+`config: disabled`; the user-data Netplan file owns static configuration and
+activation. This prevents a second `50-cloud-init.yaml` definition on historical
+images without the current recipe's system disable file. Cloud-init 26.1's
+[network selection](https://github.com/canonical/cloud-init/blob/26.1/cloudinit/stages.py#L903-L980)
+recognizes this datasource setting. Ordinary seed and Linux handoffs retain
+their existing behavior; no existing guest file is deleted by this projection.
+The native `nvke-userdata` handoff also recognizes the exact local plain profile's boot
+command, whose blob SHA-256 is
+`8770a832057f672f8318d064aaa69c19ab8be0a943831995dbe377370bd04900`.
+That command originally accepts only `eth0` and `enp1s0`; native QEMU's observed
+`enp0s1` is added to its interface guard in the generated user data. The rest of
+the command, including single-interface, foreign-file and symlink refusals,
+is retained. Changed variants of that named command fail before artifact
+creation. This explicit runtime projection preserves historical image and
+profile artifact bytes; it does not produce a fresh Run output or disable
+cloud-init preflight. Other caller commands and the Linux handoff are retained.
+The same explicit native handoff relocates the profile's exact
+`http://169.254.169.254:7777/latest/meta-data/phone_home` callback to the declared
+gateway's existing metadata handler. Its post fields and retry policy are
+retained. The native server binds the gateway, so keeping the original
+link-local callback would leave cloud-init waiting for an unavailable endpoint.
+Other callback URLs and the Linux handoff are retained.
+The backend holds the declared shared subnet before starting metadata listeners.
+Its live owner keeps process handles for status and joined deletion; a saved PID
+file does not grant cleanup authority after restarting NICoSim. Retained owner
+recovery remains separate from the native boot fixture.
+
+On October 12, 2026, an Apple Silicon Terminal-launched fixture passed
+`TestNativeNVKENetwork` with SSH readiness and a returned TPM EK certificate,
+then `TestVMToVMConnectivity` with two real guests exchanging data in both
+directions and completing deletion. The first A-to-B send needed two retries.
+The modified development checkout used TCG, the explicit `nvke-userdata`
+handoff, and historical disk SHA-256
+`1e713f925c78d8ffba23a521f7040d26785bec5bab7d5ca103854d333cda4659`.
+This proves scoped guest feasibility, not Kubernetes node-agent readiness,
+authenticated TPM attestation, a fresh complete artifact Run, or the full
+zero-retry NVKE demo. A separate network probe was denied when launched through
+the ChatGPT helper but had a satisfied path from Terminal; the responsible
+permission component remains unconfirmed.
+
+The same Terminal-launched tests subsequently passed with the explicitly
+selected upstream OVN disk SHA-256
+`1af29c66b7de88532ee98b6cc6f99a975cb5caef554aaaa6a35ff3cc077e9a61`:
+SSH/TPM readiness took 82.80 seconds; two-guest bidirectional data exchange and
+completed deletion took 125.85 seconds. The first A-to-B send needed two retries.
+These tests do not install OVN or establish Kubernetes readiness.
 
 ### Linux
 

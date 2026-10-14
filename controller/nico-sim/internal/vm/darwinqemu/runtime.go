@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package darwinqemu implements a vm.Runtime backed by QEMU on macOS
-// using vmnet-client for networking and QMP for machine control.
+// using vmnet-helper's launcher for networking and QMP for machine control.
 package darwinqemu
 
 import (
@@ -14,30 +14,38 @@ import (
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/vm"
 )
 
-// New returns a vm.Runtime backed by QEMU on macOS with vmnet-client networking.
-func New(qemuSystemPath, instancesDir string) vm.Runtime {
+// New returns a vm.Runtime backed by QEMU on macOS with vmnet-helper networking.
+func New(qemuSystemPath, instancesDir, accelerator string) vm.Runtime {
 	return &darwinQEMU{
 		qemuSystemPath:  qemuSystemPath,
-		vmnetClientPath: findVMNetClient(),
+		vmnetClientPath: findVMNetLauncher(),
 		instancesDir:    instancesDir,
+		accelerator:     accelerator,
 	}
 }
 
 // darwinQEMU manages QEMU VMs directly on macOS using vmnet-client for
-// networking. All runtime state (PIDs, launch args) is persisted to disk
-// so that VMs survive process restarts.
+// networking. Live process handles own status and termination. Saved PIDs and
+// launch arguments are descriptions and do not grant ownership after a restart.
 type darwinQEMU struct {
 	qemuSystemPath  string
 	vmnetClientPath string
 	instancesDir    string
+	accelerator     string
+	networkMu       sync.Mutex
+	network         *vmnetNetwork
+	machines        map[string]*ownedProcess
+	tpms            map[string]*nativeTPM
 }
 
 // darwinInstancePaths holds all file paths for a darwin-qemu VM instance,
@@ -64,18 +72,24 @@ func (r *darwinQEMU) pathsForInstance(instanceID string) darwinInstancePaths {
 	}
 }
 
-// darwinRuntimeManifest is persisted alongside each VM so that Reboot can
-// re-launch vmnet-client with the original arguments after a process restart.
+// darwinRuntimeManifest records diagnostic launch arguments. It does not
+// grant authority to reconstruct ownership after a process restart.
 type darwinRuntimeManifest struct {
 	LaunchPath string   `json:"launch_path"`
 	LaunchArgs []string `json:"launch_args"`
 }
 
-func (r *darwinQEMU) EnsureBridge(ctx context.Context, _, _ string) error {
+func (r *darwinQEMU) EnsureBridge(ctx context.Context, _, bridgeCIDR string) error {
 	if goruntime.GOOS != "darwin" {
 		return fmt.Errorf("darwin-qemu backend requires darwin host, found %s", goruntime.GOOS)
 	}
-	return r.preflightVMNetClient(ctx)
+	if _, err := vm.ResolveQEMUAccelerator(r.accelerator); err != nil {
+		return err
+	}
+	if err := r.preflightVMNetClient(ctx); err != nil {
+		return err
+	}
+	return r.ensureNetwork(ctx, bridgeCIDR)
 }
 
 func (r *darwinQEMU) preflightVMNetClient(_ context.Context) error {
@@ -87,7 +101,7 @@ func (r *darwinQEMU) requireVMNetClient() (string, error) {
 	vmnetClientPath := strings.TrimSpace(r.vmnetClientPath)
 	if vmnetClientPath == "" {
 		return "", fmt.Errorf(
-			"darwin-qemu requires vmnet-client (nirs/vmnet-helper); run `make install-deps-homebrew` or install vmnet-helper so vmnet-client is available",
+			"darwin-qemu requires vmnet-run or legacy vmnet-client (nirs/vmnet-helper); run `make install-deps-homebrew` or install vmnet-helper",
 		)
 	}
 	info, err := os.Stat(vmnetClientPath)
@@ -104,17 +118,37 @@ func (r *darwinQEMU) CreateAndStart(ctx context.Context, spec vm.InstanceSpec) (
 	if goruntime.GOOS != "darwin" {
 		return "", fmt.Errorf("darwin-qemu backend requires darwin host, found %s", goruntime.GOOS)
 	}
+	machine, cpu, firmwareArg, err := platformArgs(r.qemuSystemPath, r.accelerator)
+	if err != nil {
+		return "", err
+	}
 	vmnetClientPath, err := r.requireVMNetClient()
 	if err != nil {
 		return "", err
 	}
+	clientArgs, err := vmnetLauncherArgs(vmnetClientPath)
+	if err != nil {
+		return "", err
+	}
+	r.networkMu.Lock()
+	defer r.networkMu.Unlock()
+	if r.network == nil {
+		return "", fmt.Errorf("native VM creation requires an owned shared network; call EnsureBridge first")
+	}
+	select {
+	case <-r.network.done:
+		return "", fmt.Errorf("owned native shared network exited")
+	default:
+	}
+	if _, exists := r.machines[spec.InstanceID]; exists {
+		return "", fmt.Errorf("native VM %s already has an owned process", spec.InstanceID)
+	}
+	clientArgs = append(clientArgs, r.network.args...)
 
 	paths := r.pathsForInstance(spec.InstanceID)
 	_ = os.Remove(paths.PIDFile)
 	_ = os.Remove(paths.VMNetClientPIDFile)
 	_ = os.Remove(paths.QMPSock)
-
-	machine, cpu, firmwareArg := platformArgs(r.qemuSystemPath)
 
 	baseArgs := []string{
 		"-name", spec.DomainName,
@@ -131,6 +165,17 @@ func (r *darwinQEMU) CreateAndStart(ctx context.Context, spec vm.InstanceSpec) (
 		"-no-shutdown",
 	}
 	baseArgs = append(baseArgs, firmwareArg...)
+	tpm, err := prepareNativeTPM(ctx, paths.Dir)
+	if err != nil && !errors.Is(err, errNativeTPMUnavailable) {
+		return "", err
+	}
+	if tpm != nil {
+		if r.tpms == nil {
+			r.tpms = make(map[string]*nativeTPM)
+		}
+		r.tpms[spec.InstanceID] = tpm
+		baseArgs = append(baseArgs, tpm.qemuArgs(r.qemuSystemPath)...)
+	}
 	deviceArg := "virtio-net-pci,netdev=net0"
 	if strings.TrimSpace(spec.NICMAC) != "" {
 		deviceArg = fmt.Sprintf("%s,mac=%s", deviceArg, spec.NICMAC)
@@ -141,18 +186,37 @@ func (r *darwinQEMU) CreateAndStart(ctx context.Context, spec vm.InstanceSpec) (
 		"-netdev", "dgram,id=net0,local.type=fd,local.str=4",
 		"-device", deviceArg,
 	)
-	clientArgs := []string{"--unprivileged", "--operation-mode", "shared"}
 	clientArgs = append(clientArgs, "--")
 	clientArgs = append(clientArgs, r.qemuSystemPath)
 	clientArgs = append(clientArgs, qemuArgs...)
 
-	vmnetPID, err := launchVMNetClient(vmnetClientPath, clientArgs, paths.VMNetClientLog)
+	process, err := launchVMNetClient(vmnetClientPath, clientArgs, paths.VMNetClientLog)
 	if err != nil {
+		if tpm != nil {
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancel()
+			_ = tpm.process.stop(cleanup)
+		}
 		return "", err
 	}
+	if r.machines == nil {
+		r.machines = make(map[string]*ownedProcess)
+	}
+	r.machines[spec.InstanceID] = process
+	cleanupStarted := func() {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_ = process.stop(cleanup)
+		delete(r.machines, spec.InstanceID)
+		if tpm != nil {
+			_ = tpm.process.stop(cleanup)
+			delete(r.tpms, spec.InstanceID)
+		}
+	}
+	vmnetPID := process.command.Process.Pid
 
 	if err := writePIDFile(paths.VMNetClientPIDFile, vmnetPID); err != nil {
-		_ = stopProcessGroup(vmnetPID)
+		cleanupStarted()
 		return "", fmt.Errorf("failed to write vmnet-client pid file: %w", err)
 	}
 
@@ -160,12 +224,12 @@ func (r *darwinQEMU) CreateAndStart(ctx context.Context, spec vm.InstanceSpec) (
 		LaunchPath: vmnetClientPath,
 		LaunchArgs: append([]string{}, clientArgs...),
 	}); err != nil {
-		_ = stopProcessGroup(vmnetPID)
+		cleanupStarted()
 		return "", fmt.Errorf("failed to write runtime manifest: %w", err)
 	}
 
 	if err := waitForPIDFile(paths.PIDFile, 10*time.Second); err != nil {
-		_ = stopProcessGroup(vmnetPID)
+		cleanupStarted()
 		logBytes, _ := os.ReadFile(paths.VMNetClientLog)
 		return "", fmt.Errorf("qemu did not start (pidfile %s): %w; log: %s", paths.PIDFile, err, truncateForDebug(string(logBytes), 2000))
 	}
@@ -174,25 +238,60 @@ func (r *darwinQEMU) CreateAndStart(ctx context.Context, spec vm.InstanceSpec) (
 }
 
 func (r *darwinQEMU) Reboot(_ context.Context, machineID string) error {
+	r.networkMu.Lock()
+	defer r.networkMu.Unlock()
+	process, owned := r.machines[machineID]
+	if !owned {
+		return fmt.Errorf("native VM %s has no live process ownership", machineID)
+	}
+	select {
+	case <-process.done:
+		return fmt.Errorf("owned native VM %s exited", machineID)
+	default:
+	}
 	paths := r.pathsForInstance(machineID)
 	return qmpReboot(paths.QMPSock)
 }
 
-func (r *darwinQEMU) TPMEKCert(context.Context, string) (string, error) { return "", nil }
-
-func (r *darwinQEMU) Delete(_ context.Context, machineID string) error {
-	paths := r.pathsForInstance(machineID)
-
-	if vmnetPID, err := readPIDFile(paths.VMNetClientPIDFile); err == nil {
-		if stopErr := stopProcessGroup(vmnetPID); stopErr != nil {
-			if pidErr := stopPIDFileProcess(paths.PIDFile); pidErr != nil {
-				return fmt.Errorf("failed stopping process group (pgid %d): %w; pidfile fallback also failed: %v",
-					vmnetPID, stopErr, pidErr)
-			}
-		}
-	} else {
-		_ = stopPIDFileProcess(paths.PIDFile)
+func (r *darwinQEMU) TPMEKCert(_ context.Context, machineID string) (string, error) {
+	r.networkMu.Lock()
+	defer r.networkMu.Unlock()
+	tpm := r.tpms[machineID]
+	if tpm == nil {
+		return "", nil
 	}
+	if _, owned := r.machines[machineID]; !owned {
+		return "", fmt.Errorf("TPM certificate has no owned native VM")
+	}
+	select {
+	case <-tpm.process.done:
+		return "", fmt.Errorf("owned TPM exited: %v", tpm.process.err)
+	default:
+		return tpm.cert, nil
+	}
+}
+
+func (r *darwinQEMU) Delete(ctx context.Context, machineID string) error {
+	paths := r.pathsForInstance(machineID)
+	r.networkMu.Lock()
+	defer r.networkMu.Unlock()
+	process, owned := r.machines[machineID]
+	if !owned {
+		if _, err := os.Stat(paths.PIDFile); errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("native VM %s has no live process ownership; refusing PID-file cleanup", machineID)
+	}
+	if err := process.stop(ctx); err != nil {
+		return fmt.Errorf("join owned native VM: %w", err)
+	}
+	if tpm := r.tpms[machineID]; tpm != nil {
+		if err := tpm.process.stop(ctx); err != nil {
+			return err
+		}
+		delete(r.tpms, machineID)
+	}
+	delete(r.machines, machineID)
 
 	_ = os.Remove(paths.PIDFile)
 	_ = os.Remove(paths.VMNetClientPIDFile)
@@ -203,21 +302,21 @@ func (r *darwinQEMU) Delete(_ context.Context, machineID string) error {
 
 func (r *darwinQEMU) GetState(_ context.Context, machineID string) (vm.MachineState, error) {
 	paths := r.pathsForInstance(machineID)
-	pid, err := readPIDFile(paths.PIDFile)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+	r.networkMu.Lock()
+	defer r.networkMu.Unlock()
+	process, owned := r.machines[machineID]
+	if !owned {
+		if _, err := os.Stat(paths.PIDFile); errors.Is(err, os.ErrNotExist) {
 			return vm.MachineStateShutOff, nil
 		}
-		return vm.MachineStateNotFound, err
+		return vm.MachineStateNotFound, fmt.Errorf("native VM %s has no live process ownership", machineID)
 	}
-	alive, err := isPIDAlive(pid)
-	if err != nil {
-		return vm.MachineStateNotFound, err
-	}
-	if alive {
+	select {
+	case <-process.done:
+		return vm.MachineStateCrashed, nil
+	default:
 		return vm.MachineStateRunning, nil
 	}
-	return vm.MachineStateCrashed, nil
 }
 
 func (r *darwinQEMU) IsRunning(ctx context.Context, machineID string) (bool, error) {
@@ -230,29 +329,17 @@ func (r *darwinQEMU) SupportsTCPProbe() bool {
 }
 
 func (r *darwinQEMU) ListMachines(_ context.Context) ([]string, error) {
-	entries, err := os.ReadDir(r.instancesDir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read instances dir: %w", err)
-	}
+	r.networkMu.Lock()
+	defer r.networkMu.Unlock()
 	var machines []string
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		instanceID := entry.Name()
-		paths := r.pathsForInstance(instanceID)
-		pid, pidErr := readPIDFile(paths.PIDFile)
-		if pidErr != nil {
-			continue
-		}
-		alive, _ := isPIDAlive(pid)
-		if alive {
-			machines = append(machines, instanceID)
+	for id, process := range r.machines {
+		select {
+		case <-process.done:
+		default:
+			machines = append(machines, id)
 		}
 	}
+	slices.Sort(machines)
 	return machines, nil
 }
 
@@ -265,49 +352,24 @@ func (r *darwinQEMU) LookupDHCPLease(context.Context, string, string) (string, b
 
 // --- process helpers ---
 
-// stopVMProcesses tears down the vmnet-client process group (which includes
-// QEMU) and cleans up stale PID/socket files in preparation for a relaunch.
-func stopVMProcesses(paths darwinInstancePaths) {
-	if vmnetPID, err := readPIDFile(paths.VMNetClientPIDFile); err == nil {
-		if stopErr := stopProcessGroup(vmnetPID); stopErr != nil {
-			_ = stopPIDFileProcess(paths.PIDFile)
-		}
-	} else {
-		_ = stopPIDFileProcess(paths.PIDFile)
-	}
-	_ = os.Remove(paths.QMPSock)
-	_ = os.Remove(paths.PIDFile)
-	_ = os.Remove(paths.VMNetClientPIDFile)
-}
-
 // launchVMNetClient starts vmnet-client as a long-running foreground process.
 // vmnet-client manages both vmnet-helper and QEMU as children; QEMU must NOT
 // use -daemonize so that vmnet-helper stays alive for the VM's lifetime.
 //
 // The process is started in its own process group (Setpgid) so that
-// stopProcessGroup can tear down the entire tree (vmnet-client + vmnet-helper
-// + qemu) in one shot.  Returns the vmnet-client PID (== PGID).
-func launchVMNetClient(vmnetClientPath string, clientArgs []string, logPath string) (int, error) {
-	logFile, err := os.Create(logPath)
+// the launcher can terminate and join its children on shutdown. Returns
+// the package-issued live process handle.
+func launchVMNetClient(vmnetClientPath string, clientArgs []string, logPath string) (*ownedProcess, error) {
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
-		return 0, fmt.Errorf("failed to create vmnet-client log %s: %w", logPath, err)
+		return nil, fmt.Errorf("failed to create vmnet launcher log %s: %w", logPath, err)
 	}
 
 	cmd := exec.Command(vmnetClientPath, clientArgs...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		logFile.Close()
-		return 0, fmt.Errorf("vmnet-client start failed: %w", err)
-	}
-
-	pid := cmd.Process.Pid
-	go func() {
-		_ = cmd.Wait()
-		logFile.Close()
-	}()
-	return pid, nil
+	return startOwnedProcess(cmd, logFile)
 }
 
 func waitForPIDFile(path string, timeout time.Duration) error {
@@ -345,122 +407,17 @@ func writeRuntimeManifest(path string, manifest darwinRuntimeManifest) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-func readRuntimeManifest(path string) (darwinRuntimeManifest, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return darwinRuntimeManifest{}, err
-	}
-	var m darwinRuntimeManifest
-	if err := json.Unmarshal(data, &m); err != nil {
-		return darwinRuntimeManifest{}, err
-	}
-	return m, nil
-}
-
-func isPIDAlive(pid int) (bool, error) {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false, err
-	}
-	err = proc.Signal(syscall.Signal(0))
-	switch {
-	case err == nil:
-		return true, nil
-	case errors.Is(err, syscall.EPERM):
-		return true, nil
-	case errors.Is(err, syscall.ESRCH):
-		return false, nil
-	default:
-		return false, nil
-	}
-}
-
-// stopProcessGroup kills a process and all members of its process group.
-// The target must have been started with Setpgid: true so its PGID equals
-// its PID.  Sends SIGTERM to the group first, escalating to SIGKILL.
-func stopProcessGroup(pgid int) error {
-	if pgid <= 0 {
-		return nil
-	}
-	alive, err := isPIDAlive(pgid)
-	if err != nil || !alive {
-		return nil
-	}
-	_ = syscall.Kill(-pgid, syscall.SIGTERM)
-
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		alive, err := isPIDAlive(pgid)
-		if err != nil {
-			return err
-		}
-		if !alive {
-			return nil
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	_ = syscall.Kill(-pgid, syscall.SIGKILL)
-	for i := 0; i < 10; i++ {
-		alive, err := isPIDAlive(pgid)
-		if err != nil {
-			return err
-		}
-		if !alive {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return fmt.Errorf("process group %d still running after SIGKILL", pgid)
-}
-
-func stopProcess(pid int) error {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return err
-	}
-	_ = proc.Signal(syscall.SIGTERM)
-
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		alive, aliveErr := isPIDAlive(pid)
-		if aliveErr != nil {
-			return aliveErr
-		}
-		if !alive {
-			return nil
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	_ = proc.Signal(syscall.SIGKILL)
-	for i := 0; i < 10; i++ {
-		alive, aliveErr := isPIDAlive(pid)
-		if aliveErr != nil {
-			return aliveErr
-		}
-		if !alive {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return fmt.Errorf("process %d still running after SIGKILL", pid)
-}
-
-func stopPIDFileProcess(pidFile string) error {
-	pid, err := readPIDFile(pidFile)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	return stopProcess(pid)
-}
-
 // --- platform helpers ---
 
-func platformArgs(qemuSystemPath string) (machine, cpu string, firmwareArgs []string) {
+func platformArgs(qemuSystemPath, accelerator string) (machine, cpu string, firmwareArgs []string, err error) {
+	selected, err := vm.ResolveQEMUAccelerator(accelerator)
+	if err != nil {
+		return "", "", nil, err
+	}
+	cpu = "host"
+	if selected == vm.QEMUAcceleratorTCG {
+		cpu = "max"
+	}
 	base := strings.ToLower(filepath.Base(qemuSystemPath))
 	if strings.Contains(base, "aarch64") || strings.Contains(base, "arm64") {
 		firmware := firstExistingFile(
@@ -468,9 +425,9 @@ func platformArgs(qemuSystemPath string) (machine, cpu string, firmwareArgs []st
 			"/usr/local/share/qemu/edk2-aarch64-code.fd",
 		)
 		if firmware != "" {
-			return "virt,accel=hvf", "host", []string{"-bios", firmware}
+			return "virt,accel=" + string(selected), cpu, []string{"-bios", firmware}, nil
 		}
-		return "virt,accel=hvf", "host", nil
+		return "virt,accel=" + string(selected), cpu, nil, nil
 	}
 	// x86_64: try OVMF for UEFI boot (required for production qcow2 images)
 	firmware := firstExistingFile(
@@ -478,9 +435,9 @@ func platformArgs(qemuSystemPath string) (machine, cpu string, firmwareArgs []st
 		"/usr/local/share/qemu/edk2-x86_64-code.fd",
 	)
 	if firmware != "" {
-		return "q35,accel=hvf", "host", []string{"-bios", firmware}
+		return "q35,accel=" + string(selected), cpu, []string{"-bios", firmware}, nil
 	}
-	return "q35,accel=hvf", "host", nil
+	return "q35,accel=" + string(selected), cpu, nil, nil
 }
 
 func firstExistingFile(paths ...string) string {
@@ -528,10 +485,27 @@ func qmpReboot(socketPath string) error {
 	return c.GracefulReboot(20 * time.Second)
 }
 
-// findVMNetClient returns the path to the vmnet-client binary from
-// nirs/vmnet-helper if installed, or empty string if not found.
-func findVMNetClient() string {
+// vmnetLauncherArgs uses the source-owned command interface for each launcher.
+// vmnet-run replaced vmnet-client in vmnet-helper v0.11.0 and runs unprivileged
+// on macOS 26 without the legacy --unprivileged option.
+func vmnetLauncherArgs(path string) ([]string, error) {
+	switch filepath.Base(path) {
+	case "vmnet-run":
+		return []string{"--operation-mode", "shared"}, nil
+	case "vmnet-client":
+		return []string{"--unprivileged", "--operation-mode", "shared"}, nil
+	default:
+		return nil, fmt.Errorf("unsupported vmnet launcher %q", path)
+	}
+}
+
+// findVMNetLauncher prefers the current vmnet-run from nirs/vmnet-helper and
+// supports legacy vmnet-client installations without modifying either tool.
+func findVMNetLauncher() string {
 	candidates := []string{
+		"/opt/vmnet-helper/bin/vmnet-run",
+		"/opt/homebrew/opt/vmnet-helper/libexec/vmnet-run",
+		"/usr/local/opt/vmnet-helper/libexec/vmnet-run",
 		"/opt/vmnet-helper/bin/vmnet-client",
 		"/opt/homebrew/opt/vmnet-helper/libexec/vmnet-client",
 		"/usr/local/opt/vmnet-helper/libexec/vmnet-client",

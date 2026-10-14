@@ -66,11 +66,12 @@ func NewHandler(store *state.Store, containers ContainerService, logger *slog.Lo
 
 	mux := nethttp.NewServeMux()
 
-	// registerV2 registers a handler under both "carbide" and "forge" API
-	// names so that the NCX SDK's /v2/org/{org}/carbide/... paths are served
-	// alongside the existing /v2/org/{org}/forge/... paths.
+	// registerV2 shares handlers across the NCX SDK's "carbide" prefix,
+	// Forge's "forge" prefix and the earlier infra-controller SDK's "nico"
+	// prefix. Authentication and organisation scoping remain in the common
+	// middleware and handlers, including for retained provider binaries.
 	registerV2 := func(mux *nethttp.ServeMux, method, suffix string, handler nethttp.HandlerFunc) {
-		for _, apiName := range []string{"carbide", "forge"} {
+		for _, apiName := range []string{"carbide", "forge", "nico"} {
 			mux.HandleFunc(method+" /v2/org/{org}/"+apiName+"/"+suffix, handler)
 		}
 	}
