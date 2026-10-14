@@ -72,6 +72,11 @@ jobs:
     runs-on: ubuntu-latest
     environment: nvcr
     timeout-minutes: 20
+    env:
+      # A beta is not promoted to DSX, so nothing is published there for one: the
+      # images and chart a beta nvkectl would deploy never reach that org. The
+      # leg still starts, but every step from the registry login on is skipped.
+      SKIP_PUBLISH: ${{ matrix.destination == 'dsx' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.') }}
     permissions:
       contents: read
       actions: read  # upload-sarif reads the workflow run
@@ -179,6 +184,7 @@ jobs:
 
       # `$oauthtoken` is NGC's literal username, not a shell variable.
       - name: Log in to NVCR
+        if: env.SKIP_PUBLISH != 'true'
         shell: bash
         env:
           NGC_TOKEN: ${{ secrets[matrix.token_secret_var_name] || secrets[matrix.token_secret_fallback_var_name] }}
@@ -195,6 +201,7 @@ jobs:
             --username '$oauthtoken' --password-stdin
 
       - name: Push per-platform artifacts
+        if: env.SKIP_PUBLISH != 'true'
         shell: bash
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -226,6 +233,7 @@ jobs:
           done
 
       - name: Show published artifact
+        if: env.SKIP_PUBLISH != 'true'
         shell: bash
         env:
           REPO: ${{ steps.meta.outputs.repo }}
@@ -239,6 +247,7 @@ jobs:
       # binaries to different orgs, and two legs uploading
       # release-digest-nkectl-nvcr would collide.
       - name: Record the published digests
+        if: env.SKIP_PUBLISH != 'true'
         uses: ./.github/actions/record-digest
         with:
           references: |
