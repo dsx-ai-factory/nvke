@@ -72,22 +72,15 @@ spec:
     - name: forge-l40s-amd64-ubuntu-26.04-kube-1.36
       capabilities: {provider: forge, gpu: l40s, arch: amd64, ubuntu: "26.04", kube: "1.36"}
 
-    # The DSX datahall. No gpu: az51-dev2-dh2 offers one machine for the
-    # site controller and one instance type for the tenant, both amd64 CPU,
-    # so a stream asking for an accelerator here resolves to nothing.
+    # The DSX datahall, redstone-dev1-dh2, which is aarch64 throughout. No gpu:
+    # it places both halves of a run on CPU machines, so a stream asking for an
+    # accelerator here resolves to nothing.
     #
-    # kube 1.36 matches the Forge streams. The az51 exercise reached CoreDNS
-    # on a 1.34.2 tenant, so 1.36 is unproven on this substrate and the first
-    # run is where that shows.
-    - name: dsx-amd64-ubuntu-24.04-kube-1.36
-      capabilities: {provider: dsx, arch: amd64, ubuntu: "24.04", kube: "1.36"}
-
-    # The second datahall, redstone-dev1-dh2, which is aarch64 throughout. Arch
-    # is what separates the two DSX streams: the resolver searches every
-    # declared site, and only one of them answers each.
+    # arm64 because that is what the hardware is, not a choice --- every machine
+    # the datahall owns is Grace. A datahall offering amd64 would be a second
+    # site and a second stream beside this one.
     #
-    # Unproven on hardware, as the amd64 stream is. It also needs an instance
-    # type bound to that datahall's CPU machines, which does not exist yet ---
-    # until it does the site is skipped and this stream resolves to nothing.
+    # kube 1.36 matches the Forge streams. The recorded DSX exercise reached
+    # CoreDNS on a 1.34.2 tenant, so 1.36 is unproven on this substrate.
     - name: dsx-arm64-ubuntu-24.04-kube-1.36
       capabilities: {provider: dsx, arch: arm64, ubuntu: "24.04", kube: "1.36"}

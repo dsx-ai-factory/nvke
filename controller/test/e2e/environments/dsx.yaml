@@ -35,94 +35,17 @@ infrastructure:
     # carbide-rest-api-<key>.dev.dsx.nvidia.com, so there is no GET /site
     # lookup the way Forge needs one.
     #
-    # Every identifier below belongs to this datahall and only this one.
-    # az51-dev2-dh2 and az51-dev3-dh1 hold completely disjoint UUIDs for the
-    # same kinds of object, and nothing in an API response says which one an id
-    # came from. The az51 run log is itself named for dh1 while recording a dh2
-    # run, which is how close that mistake sits.
-    az51-dev2-dh2:
-      id: "${DSX_AZ51_DEV2_DH2_SITE_ID:-}"
-      tenantID: "${DSX_AZ51_DEV2_DH2_TENANT_ID:-}"
-      vpcID: "${DSX_AZ51_DEV2_DH2_VPC_ID:-}"
-
-      # A prefix, never a subnet: this fabric is FNN, which exposes prefixes
-      # only. Each instance takes a /31 and lands on the odd address, so the
-      # /29 behind this id holds four nodes --- and leaves no spare address for
-      # a control-plane VIP, which is why a site controller here takes none.
-      vpcPrefixID: "${DSX_AZ51_DEV2_DH2_VPC_PREFIX_ID:-}"
-
-      # Governs Serial-over-LAN console access, not the OS account's
-      # authorized_keys, so this grants no shell on a node. One group per
-      # datahall, created when the datahall was stood up and associated with
-      # the site afterwards --- an unassociated group is rejected at create.
-      sshKeyGroupID: "${DSX_AZ51_DEV2_DH2_SSH_KEY_GROUP_ID:-}"
-
-      # The account the image bakes, which is the login every session uses.
-      # Empty, so it falls through to the os-image default the same way Forge
-      # does -- the lane boots the OSS os-image release for both providers, and
-      # os-image/packer/nvke-node-non-fde.pkr.hcl bakes `ubuntu`.
-      #
-      # This defaulted to dgxc-admin, which is what the manual az51 procedure
-      # uses because that boots an internal-pipeline image. The lane does not:
-      # it resolves its image from the release registry. The mismatch writes
-      # authorized_keys for an account that does not exist on the booted image,
-      # and the run spends its whole ReachTimeout being refused on publickey
-      # with nothing saying why -- the dial is what failed, so there is no
-      # session to collect cloud-init diagnostics over.
-      #
-      # Set the variable only for a datahall that genuinely bakes something
-      # else, and only alongside the image that bakes it.
-      nodeUser: "${DSX_AZ51_DEV2_DH2_NODE_USER:-}"
-
-      # How the lane reaches the machines it provisions: they sit behind this
-      # jump host and are not Teleport-enrolled themselves. Named outright
-      # rather than derived from the key --- the naming happens to be regular
-      # today and that is not a property worth depending on.
-      jumpHost: "${DSX_AZ51_DEV2_DH2_JUMP_HOST:-}"
-      teleportLogin: "${DSX_AZ51_DEV2_DH2_TELEPORT_LOGIN:-}"
-
-      # No machines declared, so the create carries an instanceTypeId and the
-      # datahall picks a host that is free and healthy -- the same way Forge
-      # does, and what a lane needs.
-      #
-      # Pinning one is still supported, and is what a hand bring-up wants:
-      # declare `machines:` with a name, an id and `provides: {arch: ...}` and
-      # it wins over the type below. It needs the tenant's
-      # targetedInstanceCreation capability, which an instance type does not.
-      #
-      # It was pinned, to DSX_AZ51_DEV2_DH2_CP_MACHINE_ID, because that is what
-      # the manual az51 procedure does. In a lane it is a liability: on
-      # 2026-10-12 one pinned machine sat held by a teardown that would not
-      # finish, and every run failed on `409 ... is assigned to an Instance`
-      # while six other machines in the datahall were free and idle.
-
-      # Where BOTH halves of a run are placed: the site controller, created by
-      # the suite with no machine pinned above, and the tenant nodes, which the
-      # site controller's own CWE places --- a node pool names an instance type
-      # and has no machine field, so it has no other option.
-      #
-      # An instance type here is not abstract sizing --- it is a named
-      # allowlist of specific machines, bound one at a time. A datahall can
-      # ship none at all, so an id here states that someone has already created
-      # the type and bound hosts to it.
-      #
-      # It held two on 2026-10-12: J701L6EG and J701L43T. That is enough for a
-      # provision run, which takes one. A full run needs three at once --- a
-      # site controller, a tenant control plane and a tenant worker --- so more
-      # have to be bound to this type before one can pass, however many free
-      # machines the datahall shows.
-      instanceTypes:
-        - name: az51-dev2-dh2-nvke-tenant
-          id: "${DSX_AZ51_DEV2_DH2_INSTANCE_TYPE_ID:-}"
-          provides: {machineType: cpu, arch: amd64}
-
-    # The second datahall, and the one that makes the resolver's site search
-    # mean something: every machine redstone-dev1-dh2 owns is aarch64 --- the
-    # VR NVL72 trays and both CPU boxes alike --- so it answers arm64 where
-    # az51-dev2-dh2 answers amd64 and the two never compete for a stream.
+    # Every identifier below belongs to one datahall and only that one. Two
+    # datahalls at one site hold completely disjoint UUIDs for the same kinds of
+    # object, and nothing in an API response says which one an id came from --
+    # the az51 run log is itself named for dh1 while recording a dh2 run, which
+    # is how close that mistake sits. A second datahall is a second key here,
+    # and the resolver picks between them on capabilities.
     #
-    # Nothing is shared with az51-dev2-dh2. Same kinds of object, disjoint
-    # UUIDs, different API host.
+    # Every machine redstone-dev1-dh2 owns is aarch64 --- the VR NVL72 trays
+    # and both CPU boxes alike --- which is why the stream it answers is arm64.
+    # A datahall offering amd64 would be a second key beside this one, with its
+    # own disjoint UUIDs and its own API host; nothing here is shared.
     redstone-dev1-dh2:
       id: "${DSX_REDSTONE_DEV1_DH2_SITE_ID:-}"
       tenantID: "${DSX_REDSTONE_DEV1_DH2_TENANT_ID:-}"
