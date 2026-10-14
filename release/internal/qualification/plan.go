@@ -50,10 +50,15 @@ type ComponentVersion struct {
 	Version string `json:"version,omitempty"`
 	URL     string `json:"url,omitempty"`
 
-	// Strategy is what resolved this, as the registry names it. A plan read
-	// later says how each value was arrived at, which matters most where one
-	// entry can resolve two ways and the version alone does not say which.
-	Strategy string `json:"strategy,omitempty"`
+	// VersionStrategy and LocationStrategy are what answered each half, as the
+	// registry names them. A plan read later says how each value was arrived
+	// at, which matters most where one entry can resolve two ways and the
+	// version alone does not say which.
+	//
+	// An entry that takes another entry's version has no VersionStrategy,
+	// because nothing resolved one for it.
+	VersionStrategy  string `json:"versionStrategy,omitempty"`
+	LocationStrategy string `json:"locationStrategy,omitempty"`
 }
 
 // Stream is one stream of a combination, with what resolved for it.

@@ -3,11 +3,6 @@
 
 package resolve
 
-import (
-	"fmt"
-	"strings"
-)
-
 // GitTagOrCommitDescribe resolves a component from the repository's tags, or by describing
 // it at a named commit.
 //
@@ -46,9 +41,9 @@ type GitTagOrCommitDescribe struct {
 // anywhere else would make the same override mean two things depending on a
 // mode the person naming it did not choose.
 func (t GitTagOrCommitDescribe) Resolve(inputs map[string]string) (map[string]string, error) {
-	resolver, strategy := Resolver(t.Tag), StrategyGitTag
+	resolver, strategy := Resolver(t.Tag), VersionStrategyGitTag
 	if commit := inputs[InputCommitKey]; commit != "" && inputs[InputOverrideKey] == "" {
-		resolver, strategy = t.Describe.At(commit), StrategyCommitDescribe
+		resolver, strategy = t.Describe.At(commit), VersionStrategyCommitDescribe
 	}
 
 	got, err := resolver.Resolve(inputs)
@@ -56,19 +51,7 @@ func (t GitTagOrCommitDescribe) Resolve(inputs map[string]string) (map[string]st
 		return nil, err
 	}
 	got[ResultStrategyKey] = strategy
-	if url, ok := t.artifact(got[ResultVersionKey]); ok {
-		got[ResultURLKey] = url
-	}
 	return got, nil
-}
-
-// artifact names the published artifact for a resolved version. A component
-// that declares no base has none to name, which is not a failure.
-func (t GitTagOrCommitDescribe) artifact(version string) (string, bool) {
-	if t.Base == "" || t.Repository == "" || version == "" {
-		return "", false
-	}
-	return fmt.Sprintf("%s/%s:%s", strings.TrimSuffix(t.Base, "/"), t.Repository, version), true
 }
 
 // Validate holds the declared inputs to the tag resolver. Both arms answer the

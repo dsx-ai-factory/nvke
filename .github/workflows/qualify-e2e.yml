@@ -426,7 +426,8 @@ jobs:
                   os_image_amd64: value($all; "os-image-amd64"),
                   os_image_arm64: value($all; "os-image-arm64"),
                   os_image_bootloader_amd64: value($all; "os-image-bootloader-amd64"),
-                  os_image_bootloader_arm64: value($all; "os-image-bootloader-arm64")
+                  os_image_bootloader_arm64: value($all; "os-image-bootloader-arm64"),
+                  cli_ref: url($all; "cli-" + $s.capabilities.arch)
                 }
             ]}' plan.json)"
           {
@@ -568,10 +569,11 @@ jobs:
       SITE_STAGE: ${{ inputs.stage || vars.QUALIFY_E2E_STAGE || 'full' }}
       # A dry run joins no Teleport and runs no suite. Decided by the plan job.
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
-      # The commit the components were described at, empty when they came from
-      # their tags. It is what names the nvkectl artifact, which is tagged by
-      # commit and platform rather than by version.
-      PLAN_COMMIT: ${{ needs.plan.outputs.commit }}
+      # Where the nvkectl artifact for this stream's architecture is. The plan
+      # names it, because nvkectl is published as one artifact per platform and
+      # the cli version below names none of them. Resolving it there is also
+      # what lets the verify job confirm it before a machine is taken.
+      CLI_REF: ${{ matrix.cli_ref }}
       # Empty asks for a build from this checkout; the resolve step fills it
       # in. Every use of it downstream -- the image site-inputs stages, the
       # NVKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
@@ -985,10 +987,10 @@ jobs:
       # step only names the artifact and where the staged binary lands, which
       # is the Makefile's SITE_NVKECTL.
       #
-      # The artifact is tagged <alias>-<os>-<arch>, where the alias is the
-      # commit for a run that described one and the version for a run that
-      # resolved from tags. The described version is an annotation on it and
-      # names nothing, which is why the commit is what addresses it.
+      # The reference comes from the plan rather than being built here, so the
+      # artifact this pulls is the one the verify job already waited for. Every
+      # location in a plan carries a scheme and oras takes a bare reference, so
+      # the scheme is dropped.
       - name: Resolve the nvkectl version
         shell: bash
         run: |
@@ -1004,16 +1006,17 @@ jobs:
             exit 0
           fi
 
-          alias="${CLI_VERSION}"
-          if [ -n "${PLAN_COMMIT}" ]; then
-            alias="sha-${PLAN_COMMIT}"
+          if [ -z "${CLI_REF}" ]; then
+            echo "::error::no cli-${SITE_ARCH} in the plan, so there is no nvkectl artifact to stage for ${CLI_VERSION}"
+            exit 1
           fi
+          ref="${CLI_REF#oci://}"
           {
             echo "SITE_CLI_BUILD=0"
-            echo "SITE_CLI_REF=${SITE_IMAGES}/nvkectl:${alias}-linux-${SITE_ARCH}"
+            echo "SITE_CLI_REF=${ref}"
             echo "SITE_NVKECTL=${SITE_INPUTS}/nvkectl/nvkectl-linux-${SITE_ARCH}"
           } >> "${GITHUB_ENV}"
-          echo "staging the published nvkectl ${CLI_VERSION} as ${alias}"
+          echo "staging the published nvkectl ${CLI_VERSION} from ${ref}"
 
       # No stored identity: tbot joins with the repository's OIDC token
       # against a join token named by FORGE_TELEPORT_JOIN_TOKEN, whose bot
@@ -1273,6 +1276,7 @@ jobs:
             "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|QUALIFY_E2E_STAGE"
             "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|QUALIFY_E2E_CONTROLLER_VERSION"
             "nvkectl version|CLI_VERSION|IN_CLI_VERSION|VAR_CLI_VERSION|QUALIFY_E2E_CLI_VERSION"
+            "nvkectl artifact|SITE_CLI_REF|||"
             "dry run|DRY_RUN|IN_DRY_RUN||"
             "keep the node|KEEP_SITE|IN_KEEP_SITE|VAR_KEEP_SITE|QUALIFY_E2E_KEEP_SITE"
             "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|QUALIFY_E2E_IMAGE_REGISTRY"
@@ -1390,7 +1394,7 @@ jobs:
               # What the plan resolved, which is where each of these comes
               # from when no override named it.
               case "${resolved}" in
-                SITE_CONTROLLER_VERSION|CLI_VERSION|CAPI_PROVISIONED_VERSION|KUBERNETES_VERSION|CNI_OVN_VERSION|KIND_VERSION|CLUSTERCTL_VERSION|NERDCTL_VERSION|OS_IMAGE_*|ARCH|GPU|STREAM|COMBINATION)
+                SITE_CONTROLLER_VERSION|CLI_VERSION|SITE_CLI_REF|CAPI_PROVISIONED_VERSION|KUBERNETES_VERSION|CNI_OVN_VERSION|KIND_VERSION|CLUSTERCTL_VERSION|NERDCTL_VERSION|OS_IMAGE_*|ARCH|GPU|STREAM|COMBINATION)
                   if [ "${source}" = "workflow default" ]; then
                     source="qualification plan"
                   fi

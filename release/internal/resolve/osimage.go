@@ -12,8 +12,7 @@ import (
 //
 // An image is published once per release, architecture and Ubuntu point
 // release, so its URL is built from those and never browsed for. The bucket does
-// not list, so building is the only way to name it. The built URL is handed to
-// URL, which checks it exists and returns it.
+// not list, so building is the only way to name it.
 type OSImage struct {
 	// Base is the location the images are published under.
 	Base string
@@ -21,9 +20,6 @@ type OSImage struct {
 	// Path is the directory under Base the release directories sit in. It may be
 	// empty.
 	Path string
-
-	// From names the component whose version is the release tag.
-	From string
 
 	// Arch is the architecture of the image.
 	Arch string
@@ -36,22 +32,21 @@ type OSImage struct {
 	CheckExists bool
 }
 
-// Resolve returns the image's URL and the release tag it was built from.
+// Resolve returns the image's URL.
 //
 // The point release is part of the file name and cannot be derived from the
 // Ubuntu series, so it is the highest of InputReleasesKey that matches
 // InputConstraintKey, which is the series. With InputOverrideKey the URL a person
-// gave is returned in place of the built one, and the image's release is then
-// not known.
+// gave is returned in place of the built one.
 func (o OSImage) Resolve(inputs map[string]string) (map[string]string, error) {
 	url := URL{CheckExists: o.CheckExists}
 	if inputs[InputOverrideKey] != "" {
 		return url.Resolve(inputs)
 	}
 
-	tag := inputs[o.From]
+	tag := inputs[InputVersionKey]
 	if tag == "" {
-		return nil, fmt.Errorf("no %s given, so there is no release to build an image URL for", o.From)
+		return nil, fmt.Errorf("no %s given, so there is no release to build an image URL for", InputVersionKey)
 	}
 	series := inputs[InputConstraintKey]
 	if series == "" {
@@ -70,42 +65,14 @@ func (o OSImage) Resolve(inputs map[string]string) (map[string]string, error) {
 	if o.Path != "" {
 		under += "/" + strings.Trim(o.Path, "/")
 	}
-	// Every image published since the rename carries the nvke filename. A
-	// release cut before it is still in the bucket under the old one, and the
-	// bucket does not list, so the name that answers is the one that was
-	// published. This asks with its own check rather than the caller's, because
-	// here the answer selects the filename rather than confirming it.
-	//
-	// Transitional, and it goes when the first release published since the
-	// rename is the highest one a run resolves. A run describing a commit
-	// already skips it: anything built now carries the new name, and its image
-	// may still be baking, so asking would fail a plan for a reason the wait
-	// exists to absorb.
-	name := o.imageObjectURL(under, tag, release, "nvke")
-	if inputs[InputCommitKey] == "" {
-		probe := URL{CheckExists: true}
-		if _, err := probe.Resolve(map[string]string{InputValueKey: name}); err != nil {
-			legacy := o.imageObjectURL(under, tag, release, "nke")
-			if _, err := probe.Resolve(map[string]string{InputValueKey: legacy}); err == nil {
-				name = legacy
-			}
-		}
-	}
-
-	got, err := url.Resolve(map[string]string{InputValueKey: name})
-	if err != nil {
-		return nil, err
-	}
-	got[ResultVersionKey] = tag
-	return got, nil
+	return url.Resolve(map[string]string{InputValueKey: o.imageObjectURL(under, tag, release)})
 }
 
 // imageObjectURL is the qcow2 published for one release, architecture and point
-// release. prefix is nvke for an image built after the rename and nke for one
-// published before it.
-func (o OSImage) imageObjectURL(under, tag, release, prefix string) string {
-	return fmt.Sprintf("%s/os-image/releases/%s/%s/%s-node-%s-ubuntu-%s-%s.qcow2",
-		under, tag, o.Arch, prefix, o.Variant, release, o.Arch)
+// release.
+func (o OSImage) imageObjectURL(under, tag, release string) string {
+	return fmt.Sprintf("%s/os-image/releases/%s/%s/nvke-node-%s-ubuntu-%s-%s.qcow2",
+		under, tag, o.Arch, o.Variant, release, o.Arch)
 }
 
 // Validate requires the series and the releases, and that one of the releases

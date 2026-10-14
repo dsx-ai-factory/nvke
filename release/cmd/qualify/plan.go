@@ -80,8 +80,8 @@ is private, so a missing artifact and a network that is not allowed both answer
 				registryAt = filepath.Join(root, "release", "registry.yaml")
 			}
 
-			if resolution != resolve.StrategyGitTag && resolution != resolve.StrategyCommitDescribe {
-				return fmt.Errorf("--resolution %q is neither %q nor %q", resolution, resolve.StrategyGitTag, resolve.StrategyCommitDescribe)
+			if resolution != resolve.VersionStrategyGitTag && resolution != resolve.VersionStrategyCommitDescribe {
+				return fmt.Errorf("--resolution %q is neither %q nor %q", resolution, resolve.VersionStrategyGitTag, resolve.VersionStrategyCommitDescribe)
 			}
 
 			p, err := qualification.LoadPolicy(policyAt)
@@ -92,7 +92,7 @@ is private, so a missing artifact and a network that is not allowed both answer
 			if err != nil {
 				return err
 			}
-			resolvers, err := buildResolvers(reg, root, resolve.Options{CheckExists: checkExists})
+			versionResolvers, locationResolvers, err := buildResolvers(reg, root, resolve.Options{CheckExists: checkExists})
 			if err != nil {
 				return err
 			}
@@ -102,12 +102,13 @@ is private, so a missing artifact and a network that is not allowed both answer
 			}
 
 			planner := &qualification.Planner{
-				Policy:          p,
-				Registry:        reg,
-				Resolvers:       resolvers,
-				Root:            root,
-				Overrides:       chosen,
-				ResolveAtCommit: resolution == resolve.StrategyCommitDescribe,
+				Policy:            p,
+				Registry:          reg,
+				VersionResolvers:  versionResolvers,
+				LocationResolvers: locationResolvers,
+				Root:              root,
+				Overrides:         chosen,
+				ResolveAtCommit:   resolution == resolve.VersionStrategyCommitDescribe,
 			}
 
 			result, err := planner.Plan(subject, version, scope)
@@ -132,30 +133,45 @@ is private, so a missing artifact and a network that is not allowed both answer
 	f.StringVar(&registryAt, "registry", "", "release registry file (default: <root>/release/registry.yaml)")
 	// The values are the strategies the plan records under each component, so
 	// what a run asked for and what answered are the same word.
-	f.StringVar(&resolution, "resolution", resolve.StrategyGitTag,
-		`how to resolve the components, "`+resolve.StrategyGitTag+`" or "`+resolve.StrategyCommitDescribe+`"`)
+	f.StringVar(&resolution, "resolution", resolve.VersionStrategyGitTag,
+		`how to resolve the components, "`+resolve.VersionStrategyGitTag+`" or "`+resolve.VersionStrategyCommitDescribe+`"`)
 	f.BoolVar(&checkExists, "check-exists", false, "require every location this resolves to be published already")
 
 	_ = cmd.MarkFlagRequired("subject")
 	_ = cmd.RegisterFlagCompletionFunc("resolution", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-		return []string{resolve.StrategyGitTag, resolve.StrategyCommitDescribe}, cobra.ShellCompDirectiveNoFileComp
+		return []string{resolve.VersionStrategyGitTag, resolve.VersionStrategyCommitDescribe}, cobra.ShellCompDirectiveNoFileComp
 	})
 	return cmd
 }
 
-// buildResolvers makes one resolver for each registry component. This is the one
-// place that names a strategy, which is what lets the planner be tested with
-// fakes.
-func buildResolvers(reg *qualification.Registry, root string, opts resolve.Options) (map[string]resolve.Resolver, error) {
-	resolvers := make(map[string]resolve.Resolver, len(reg.Spec.Components))
+// buildResolvers makes a resolver for each half each registry component
+// declares. This is the one place that names a strategy, which is what lets the
+// planner be tested with fakes.
+//
+// A half a component does not declare has no entry, which is how the planner
+// tells "this entry has no location" from "its location failed to build".
+func buildResolvers(reg *qualification.Registry, root string, opts resolve.Options) (version, location map[string]resolve.Resolver, err error) {
+	version = make(map[string]resolve.Resolver, len(reg.Spec.Components))
+	location = make(map[string]resolve.Resolver, len(reg.Spec.Components))
 	for _, c := range reg.Spec.Components {
-		r, err := resolve.New(c.Resolve.Strategy, reg.StrategyConfig(c), root, opts)
-		if err != nil {
-			return nil, fmt.Errorf("component %s: %w", c.Name, err)
+		// A version taken from another entry names no strategy, so there is
+		// nothing to build and the planner reads it from the inputs.
+		if v := c.Resolve.Version; v != nil && v.Strategy != "" {
+			r, err := resolve.NewVersion(v.Strategy, reg.StrategyConfig(v), root)
+			if err != nil {
+				return nil, nil, fmt.Errorf("component %s, version: %w", c.Name, err)
+			}
+			version[c.Name] = r
 		}
-		resolvers[c.Name] = r
+		if l := c.Resolve.Location; l != nil {
+			r, err := resolve.NewLocation(l.Strategy, reg.StrategyConfig(l), opts)
+			if err != nil {
+				return nil, nil, fmt.Errorf("component %s, location: %w", c.Name, err)
+			}
+			location[c.Name] = r
+		}
 	}
-	return resolvers, nil
+	return version, location, nil
 }
 
 // write emits the plan as indented JSON, to stdout or to a file.

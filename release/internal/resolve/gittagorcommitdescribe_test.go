@@ -10,12 +10,10 @@ import (
 
 // newGitTagOrCommitDescribe builds the resolver New builds for a registry entry, so the
 // tests exercise the composition the registry actually produces.
-func newGitTagOrCommitDescribe(dir, prefix, base, repository string) GitTagOrCommitDescribe {
+func newGitTagOrCommitDescribe(dir, prefix string) GitTagOrCommitDescribe {
 	return GitTagOrCommitDescribe{
-		Tag:        GitTag{Dir: dir, TagPrefix: prefix},
-		Describe:   CommitDescribe{Dir: dir, TagPrefix: prefix},
-		Base:       base,
-		Repository: repository,
+		Tag:      GitTag{Dir: dir, TagPrefix: prefix},
+		Describe: CommitDescribe{Dir: dir, TagPrefix: prefix},
 	}
 }
 
@@ -58,7 +56,7 @@ func TestTagOrCommitChoosesAnArm(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := newGitTagOrCommitDescribe(dir, "controller/", "", "").Resolve(tc.inputs)
+			got, err := newGitTagOrCommitDescribe(dir, "controller/").Resolve(tc.inputs)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -77,7 +75,7 @@ func TestTagOrCommitOverrideFailsTheSameWay(t *testing.T) {
 	tag(t, dir, "controller/v0.2.0-rc.1")
 	sha := head(t, dir)
 
-	resolver := newGitTagOrCommitDescribe(dir, "controller/", "", "")
+	resolver := newGitTagOrCommitDescribe(dir, "controller/")
 	want := "has no version v0.9.9"
 
 	for _, inputs := range []map[string]string{
@@ -88,67 +86,5 @@ func TestTagOrCommitOverrideFailsTheSameWay(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("with commit %q: err = %v, want it to contain %q", inputs[InputCommitKey], err, want)
 		}
-	}
-}
-
-func TestTagOrCommitNamesTheArtifact(t *testing.T) {
-	dir := newRepo(t)
-	tag(t, dir, "controller/v0.2.0-rc.1")
-
-	for _, tc := range []struct {
-		name       string
-		base       string
-		repository string
-		want       string
-	}{
-		{
-			name:       "a base and a repository name the artifact",
-			base:       "oci://ghcr.io/dsx-ai-factory/nvke",
-			repository: "nvke-controller",
-			want:       "oci://ghcr.io/dsx-ai-factory/nvke/nvke-controller:v0.2.0-rc.1",
-		},
-		{
-			name:       "a trailing slash does not double",
-			base:       "oci://ghcr.io/dsx-ai-factory/nvke/",
-			repository: "nvke-controller",
-			want:       "oci://ghcr.io/dsx-ai-factory/nvke/nvke-controller:v0.2.0-rc.1",
-		},
-		{
-			name: "a component that publishes nowhere this can name has no url",
-			want: "",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := newGitTagOrCommitDescribe(dir, "controller/", tc.base, tc.repository).Resolve(nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got[ResultURLKey] != tc.want {
-				t.Errorf("url = %q, want %q", got[ResultURLKey], tc.want)
-			}
-		})
-	}
-}
-
-// The url carries whichever version resolved, so the artifact a commit-resolved
-// run checks is the one it will pull.
-func TestTagOrCommitNamesTheArtifactAtACommit(t *testing.T) {
-	dir := newRepo(t)
-	tag(t, dir, "controller/v0.2.0-rc.1")
-	commit(t, dir, "after the release")
-	sha := head(t, dir)
-
-	got, err := newGitTagOrCommitDescribe(dir, "controller/", "oci://nvcr.io/org", "nvke-controller").
-		Resolve(map[string]string{InputCommitKey: sha})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	want := "oci://nvcr.io/org/nvke-controller:" + got[ResultVersionKey]
-	if got[ResultURLKey] != want {
-		t.Errorf("url = %q, want %q", got[ResultURLKey], want)
-	}
-	if !strings.Contains(got[ResultURLKey], "-1-g") {
-		t.Errorf("url = %q, want it to carry the described version", got[ResultURLKey])
 	}
 }

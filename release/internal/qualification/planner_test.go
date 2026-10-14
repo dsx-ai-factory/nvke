@@ -77,7 +77,7 @@ func testPolicy() *Policy {
 func testRegistry() *Registry {
 	r := &Registry{APIVersion: APIVersion, Kind: KindRegistry}
 	for _, name := range []string{"nvke", "os-image", "cli", "controller", "kube", "cni-ovn", "kind"} {
-		r.Spec.Components = append(r.Spec.Components, Component{Name: name, Resolve: Resolve{Strategy: "fake"}})
+		r.Spec.Components = append(r.Spec.Components, Component{Name: name, Resolve: Resolve{Version: &Rule{Strategy: "fake"}}})
 	}
 	return r
 }
@@ -125,11 +125,18 @@ func newPlanner(t *testing.T, subject string, r resolvers) *Planner {
 		t.Fatal(err)
 	}
 
-	rs := make(map[string]resolve.Resolver, len(r))
+	// Each fake is offered as both halves. The registry says which half an
+	// entry declares, so the planner only ever asks for the one it has, and a
+	// test states one fake per name rather than two.
+	version := make(map[string]resolve.Resolver, len(r))
+	location := make(map[string]resolve.Resolver, len(r))
 	for name, f := range r {
-		rs[name] = f
+		version[name], location[name] = f, f
 	}
-	return &Planner{Policy: testPolicy(), Registry: testRegistry(), Resolvers: rs, Root: root}
+	return &Planner{
+		Policy: testPolicy(), Registry: testRegistry(),
+		VersionResolvers: version, LocationResolvers: location, Root: root,
+	}
 }
 
 func versionsOf(es []ComponentVersion) string {

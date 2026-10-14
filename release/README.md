@@ -84,54 +84,56 @@ $ go run ./release/cmd/qualify plan --subject nvke --version v0.21.0 --scope ful
     {
       "id": "capi-provisioned-v0.1.0_cli-v0.1.0_controller-v0.1.1_os-image-v0.1.0",
       "components": [
-        { "name": "controller",       "version": "v0.1.1", "url": "oci://nvcr.io/<org>/nvke-controller:v0.1.1", "strategy": "gitTag" },
-        { "name": "cli",              "version": "v0.1.0", "strategy": "gitTag" },
-        { "name": "os-image",         "version": "v0.1.0", "strategy": "gitTag" },
-        { "name": "capi-provisioned", "version": "v0.1.0", "url": "oci://nvcr.io/<org>/cluster-api-provider-provisioned:v0.1.0", "strategy": "gitTag" }
+        { "name": "controller",       "version": "v0.1.1", "url": "oci://nvcr.io/<org>/nvke-controller:v0.1.1", "versionStrategy": "gitTag", "locationStrategy": "ociArtifact" },
+        { "name": "cli",              "version": "v0.1.0", "versionStrategy": "gitTag" },
+        { "name": "os-image",         "version": "v0.1.0", "versionStrategy": "gitTag" },
+        { "name": "capi-provisioned", "version": "v0.1.0", "url": "oci://nvcr.io/<org>/cluster-api-provider-provisioned:v0.1.0", "versionStrategy": "gitTag", "locationStrategy": "ociArtifact" }
       ],
       "dependencies": [
-        { "name": "cni-ovn",               "version": "1.4.0", "strategy": "lockedPackage" },
-        { "name": "os-image-bootloader-amd64", "url": "https://cdn.example/nke-isos/qcow/efi/x86_64/qcow-imager.efi", "strategy": "url" },
-        { "name": "os-image-bootloader-arm64", "url": "https://cdn.example/nke-isos/qcow/efi/aarch64/qcow-imager.efi", "strategy": "url" },
-        { "name": "kind",                      "version": "v0.32.0", "strategy": "makeVar" },
-        { "name": "clusterctl",                "version": "v1.12.3", "strategy": "makeVar" },
-        { "name": "nerdctl",                   "version": "2.3.5", "strategy": "makeVar" }
+        { "name": "cni-ovn",               "version": "1.4.0", "versionStrategy": "lockedPackage" },
+        { "name": "os-image-bootloader-amd64", "url": "https://cdn.example/nke-isos/qcow/efi/x86_64/qcow-imager.efi", "locationStrategy": "url" },
+        { "name": "os-image-bootloader-arm64", "url": "https://cdn.example/nke-isos/qcow/efi/aarch64/qcow-imager.efi", "locationStrategy": "url" },
+        { "name": "cli-amd64",                 "version": "v0.1.0", "url": "oci://nvcr.io/<org>/nvkectl:v0.1.0-linux-amd64", "locationStrategy": "ociArtifact" },
+        { "name": "cli-arm64",                 "version": "v0.1.0", "url": "oci://nvcr.io/<org>/nvkectl:v0.1.0-linux-arm64", "locationStrategy": "ociArtifact" },
+        { "name": "kind",                      "version": "v0.32.0", "versionStrategy": "makeVar" },
+        { "name": "clusterctl",                "version": "v1.12.3", "versionStrategy": "makeVar" },
+        { "name": "nerdctl",                   "version": "2.3.5", "versionStrategy": "makeVar" }
       ],
       "streams": [
         {
           "name": "forge-gb200-amd64-ubuntu-24.04-kube-1.36",
           "capabilities": { "arch": "amd64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "24.04" },
           "dependencies": [
-            { "name": "kube",           "version": "1.36.3", "strategy": "lockedPackage" },
-            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2", "strategy": "osImage" },
-            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-24.04.5-arm64.qcow2", "strategy": "osImage" }
+            { "name": "kube",           "version": "1.36.3", "versionStrategy": "lockedPackage" },
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2", "locationStrategy": "osImage" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-24.04.5-arm64.qcow2", "locationStrategy": "osImage" }
           ]
         },
         {
           "name": "forge-gb200-arm64-ubuntu-24.04-kube-1.36",
           "capabilities": { "arch": "arm64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "24.04" },
           "dependencies": [
-            { "name": "kube",           "version": "1.36.3", "strategy": "lockedPackage" },
-            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2", "strategy": "osImage" },
-            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-24.04.5-arm64.qcow2", "strategy": "osImage" }
+            { "name": "kube",           "version": "1.36.3", "versionStrategy": "lockedPackage" },
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2", "locationStrategy": "osImage" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-24.04.5-arm64.qcow2", "locationStrategy": "osImage" }
           ]
         },
         {
           "name": "forge-gb200-amd64-ubuntu-26.04-kube-1.36",
           "capabilities": { "arch": "amd64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "26.04" },
           "dependencies": [
-            { "name": "kube",           "version": "1.36.3", "strategy": "lockedPackage" },
-            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2", "strategy": "osImage" },
-            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "strategy": "osImage" }
+            { "name": "kube",           "version": "1.36.3", "versionStrategy": "lockedPackage" },
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2", "locationStrategy": "osImage" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "locationStrategy": "osImage" }
           ]
         },
         {
           "name": "forge-gb200-arm64-ubuntu-26.04-kube-1.36",
           "capabilities": { "arch": "arm64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "26.04" },
           "dependencies": [
-            { "name": "kube",           "version": "1.36.3", "strategy": "lockedPackage" },
-            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2", "strategy": "osImage" },
-            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "strategy": "osImage" }
+            { "name": "kube",           "version": "1.36.3", "versionStrategy": "lockedPackage" },
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2", "locationStrategy": "osImage" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "locationStrategy": "osImage" }
           ]
         }
       ]
@@ -214,8 +216,9 @@ beats `v0.1.0`. One choice of versions for all four is a
 **combination**, which is what a plan is organised by.
 
 `dependencies` are the other versions a run needs: Kubernetes, the OVN CNI, the
-tools, and the node image and its bootloader for every architecture, whatever the
-stream's own. Each image or bootloader is named by the key the e2e suite reads.
+tools, the nvkectl artifact for each architecture, and the node image and its
+bootloader for every architecture, whatever the stream's own. Each image or
+bootloader is named by the key the e2e suite reads.
 They have no selectors, because the components determine them or a pin file does.
 A dependency says what to resolve with four fields, each with one meaning:
 
@@ -231,23 +234,55 @@ with a `constraintFrom` is resolved once per stream, with that stream's value.
 Which of the two it is comes from that field and nothing else. So the images are
 per stream and the bootloaders are per combination.
 
-A resolved entry in the plan has a `version`, a `url`, or both, and the
-`strategy` that answered. A `version` is always a version and a `url` is always a
+A resolved entry in the plan has a `version`, a `url`, or both, and the strategy
+that answered each. A `version` is always a version and a `url` is always a
 location. An image carries the `os-image` release it was built from and the URL
 of the qcow, a bootloader carries only its URL, and a component published to a
-registry carries the reference to pull. `strategy` is the registry's name for
-what resolved it, or which arm answered where one entry can resolve two ways.
+registry carries the reference to pull.
+
+`versionStrategy` is the registry's name for what resolved the version, or which
+arm answered where one entry can resolve two ways. An entry that takes another
+entry's version has none, because no strategy answered. `locationStrategy` is
+the registry's name for what built the URL.
 
 Quote a version in the file. YAML reads an unquoted `1.40` as a number and the
 constraint becomes `1.4`.
 
-| Component | Where its version comes from |
-|---|---|
-| `nvke`, `controller`, `cli`, `capi-provisioned`, `os-image` | Git tags, under each component's tag prefix |
-| `kube`, `cni-ovn` | The lock files the image's packages commit, read at the `os-image` tag the combination resolved. A node installs these from the image's own apt repository, so the lock files are the versions it can offer |
-| `os-image-amd64`, `os-image-arm64` | Built from the `os-image` tag, the architecture and the Ubuntu point release the stream's series picks from `releases` |
-| `os-image-bootloader-amd64`, `os-image-bootloader-arm64` | A path declared in `qualification.yaml` under the registry's `artifact-cdn` source, because nothing derives it |
-| `kind`, `clusterctl`, `nerdctl` | `make/tool-versions.mk`, which owns every tool pin |
+## The two questions an entry answers
+
+`registry.yaml` gives each entry a `resolve` with two keys, because what a
+version is and where it is published are separate questions.
+
+```yaml
+- name: controller
+  resolve:
+    version:  {strategy: gitTagOrCommitDescribe, with: {tagPrefix: "controller/"}}
+    location: {strategy: ociArtifact, with: {source: artifact-registry, repository: nvke-controller}}
+```
+
+A `version` block answers with a `strategy` of its own or takes one `from`
+another entry, and the two are mutually exclusive. A `location` block is
+optional and always names a strategy. An entry may declare either half alone: a
+bootloader is a location with no version, and a tool pin is a version with no
+location this names.
+
+A version can be taken only from a **component**. Components resolve first and
+each is offered to every dependency, which a dependency's own result is not.
+
+An override names what a strategy would have produced, so it goes to the half
+that has one, and to the version half when both do. `--overrides
+controller=v0.1.1` names a version and `--overrides os-image-amd64=<url>` names
+a location, without either declaring which it is.
+
+| Component | Version | Location |
+|---|---|---|
+| `nvke`, `cli`, `os-image` | Git tags, under each component's tag prefix | none this names |
+| `controller`, `capi-provisioned` | the same | `<artifact-registry>/<repository>:<version>` |
+| `kube`, `cni-ovn` | The lock files the image's packages commit, read at the `os-image` tag the combination resolved. A node installs these from the image's own apt repository, so the lock files are the versions it can offer | none |
+| `os-image-amd64`, `os-image-arm64` | taken from `os-image` | Built from that release, the architecture and the Ubuntu point release the stream's series picks from `releases` |
+| `cli-amd64`, `cli-arm64` | taken from `cli` | `<artifact-registry>/nvkectl:<version>-linux-<arch>`. nvkectl is published as one tag per platform with no index above them, so the `cli` version alone names none of them |
+| `os-image-bootloader-amd64`, `os-image-bootloader-arm64` | none, a declared path has no version behind it | A path declared in `qualification.yaml` under the `artifact-cdn` source, because nothing derives it |
+| `kind`, `clusterctl`, `nerdctl` | `make/tool-versions.mk`, which owns every tool pin | none |
 
 The resolvers know none of this vocabulary. They receive plain values and return
 plain values, and the planner is the only code that knows where those came from.

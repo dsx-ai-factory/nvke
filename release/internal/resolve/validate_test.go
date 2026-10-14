@@ -11,7 +11,7 @@ import (
 // Each strategy says what it takes and needs among the inputs a subject can
 // declare, so the code that reads a subject does not have to.
 func TestValidate(t *testing.T) {
-	image := OSImage{Base: "https://cdn.example", From: "os-image", Arch: "amd64", Variant: "non-fde"}
+	image := OSImage{Base: "https://cdn.example", Arch: "amd64", Variant: "non-fde"}
 
 	for _, tc := range []struct {
 		name   string
