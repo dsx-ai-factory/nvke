@@ -42,7 +42,9 @@ Global flags: `--site <name>` overrides the active site for one invocation,
 
 NVKR builds and publishes NVKE's artifacts. Verify a published release under
 your policy, then export its description; the install takes that file as
-`--release` and pulls every chart and image it carries by digest.
+`--release` and pulls every chart and image it carries by digest. The
+release also carries `nvkectl` itself; [Download and Install nvkectl](../../docs/site-bootstrap/installation.md)
+shows how to take it from there.
 
 ```bash
 nvkr release verify --reference <repo@digest> --lane pipeline-attested --scope artifact-publication \
