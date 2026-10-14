@@ -54,22 +54,25 @@ nothing pointing back here. Observed on three consecutive az61 runs and
 reproduced by hand. Waiting for the name costs nothing when it already
 resolves.
 
-The apt coordinates say nke-, not nvke-, because that is what publishes them:
-nke/packages/apt-publisher pins APTLY_PREFIX=nke-apt and APT_DISTRO_PREFIX=nke-,
-so the live objects are nke-apt-public.key and nke-apt-<codename> serving suite
-nke-<codename>. #1518 renamed these to nvke- ahead of the publisher, which is a
-403 on the curl below -- the bucket denies ListBucket, so a missing key reads as
-AccessDenied rather than 404 -- and that kills the block before apt runs. Moving
-them back needs the publisher to move first, or to dual-publish; it is not a
-rename this repository can make on its own.
+The apt coordinates are nvke-, and the packages are split. Both halves are
+measured against the live repository, not inferred, because the rename landed
+in three pieces that completed at different times.
 
-The package names say nke- for the same reason, and #1548 renamed them here
-ahead of the same publisher. The suite nke-noble holds 94 nke-* packages and
-no nvke-* package at all, so an install of nvke-kubeadm-distro-<ver> resolves
-to nothing -- a later failure than the 403, and a quieter one. The renamed
-packages Provide their old names (see hack/name-check-allowlist.txt), so the
-dependency runs one way: asking for nke- works against either corpus, asking
-for nvke- works against neither until one is published.
+nvke-apt-public.key and nvke-apt-<codename> serving suite nvke-<codename> are
+published and answer 200. nke/packages/apt-publisher now mirrors into both, so
+the nvke suite is a superset: it carries the renamed packages AND the ones
+still spelled the old way. Pointing at it is therefore strictly better than the
+old repo, which has only the old names.
+
+nvke-kubeadm-distro-<ver> is published there -- 1.36.3 confirmed in both noble
+and resolute on 2026-10-14 -- so it moved with the coordinates.
+
+nke-cni-ovn-images and nke-cni-ovn-charts have NOT. The builder MRs are merged
+but the tags that publish them have not been pushed, so the nvke suite holds
+nke-cni-ovn-*-1.4.0 and no nvke-cni-ovn-* at all. Asking for the new name is a
+"no candidate" that terminates ProvisionCluster through
+InstallCNIPreconditionFailed, which does not retry. These two move when the
+packages exist, and they resolve today because the nvke suite serves them.
 
 The unit and its environment file are nke- for a third turn of the same
 screw. #1565 renamed them to nvke-agent.service and /etc/default/nvke-agent,
@@ -107,11 +110,11 @@ set -eu
 timeout 300s sh -c 'until ip -4 route list default | grep -q .; do echo "waiting for an IPv4 default route"; sleep 5; done'
 install -d -m 0755 /etc/apt/keyrings
 timeout 300s sh -c 'until getent hosts nke-prod-assets.s3.us-west-2.amazonaws.com >/dev/null 2>&1; do echo "waiting for name resolution"; sleep 5; done'
-curl -fsSL -o /etc/apt/keyrings/nke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-public.key
-echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-{{ .AptSuite }} nke-{{ .AptSuite }} main' > /etc/apt/sources.list.d/nke-apt.list
+curl -fsSL -o /etc/apt/keyrings/nvke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-public.key
+echo 'deb [signed-by=/etc/apt/keyrings/nvke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-{{ .AptSuite }} nvke-{{ .AptSuite }} main' > /etc/apt/sources.list.d/nvke-apt.list
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-kubeadm-distro-{{ .KubernetesVersion }}
-DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-cni-ovn-images-{{ .CNIVersion }} nvke-cni-ovn-charts-{{ .CNIVersion }}
+DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-{{ .CNIVersion }} nke-cni-ovn-charts-{{ .CNIVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y openvswitch-switch
 printf 'AGENT_ARGS="{{ .AgentArgs }}"\n' > /etc/default/nke-agent
 sysctl --system

@@ -62,8 +62,10 @@ func TestBuildForgeNodePayloadsRendersEveryInput(t *testing.T) {
 	joined := strings.Join(payloads.PreKubeadmCommands, "\n")
 	for _, want := range []string{
 		"nvke-kubeadm-distro-" + inputs.KubernetesVersion,
-		"nvke-cni-ovn-images-" + inputs.CNIVersion,
-		"nvke-cni-ovn-charts-" + inputs.CNIVersion,
+		// nke-, not nvke-: the suite serves both generations, and no
+		// nvke-cni-ovn-* has been published yet. See #1600.
+		"nke-cni-ovn-images-" + inputs.CNIVersion,
+		"nke-cni-ovn-charts-" + inputs.CNIVersion,
 		"openvswitch-switch",
 	} {
 		if !strings.Contains(joined, want) {
@@ -347,8 +349,8 @@ func TestBuildForgeNodePayloadsBootParametersFollowTheArch(t *testing.T) {
 // the 24.04 suite finds no packages.
 func TestBuildForgeNodePayloadsAptSuiteFollowsTheImage(t *testing.T) {
 	for _, tc := range []struct{ arch, url, want, wantAbsent string }{
-		{"amd64", "https://cdn.invalid/nvke-node-non-fde-ubuntu-24.04.1-amd64.qcow2", "nke-noble", "resolute"},
-		{"arm64", "https://cdn.invalid/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "nke-resolute", "noble"},
+		{"amd64", "https://cdn.invalid/nvke-node-non-fde-ubuntu-24.04.1-amd64.qcow2", "nvke-noble", "resolute"},
+		{"arm64", "https://cdn.invalid/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "nvke-resolute", "noble"},
 	} {
 		t.Run(tc.want, func(t *testing.T) {
 			inputs := completeForgeInputs()
@@ -401,7 +403,7 @@ func TestBuildForgeNodePayloadsExplicitAptSuiteWins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("building payloads: %v", err)
 	}
-	if joined := strings.Join(payloads.PreKubeadmCommands, "\n"); !strings.Contains(joined, "nke-resolute") {
+	if joined := strings.Join(payloads.PreKubeadmCommands, "\n"); !strings.Contains(joined, "nvke-resolute") {
 		t.Errorf("should install from the stated suite, got:\n%s", joined)
 	}
 }
@@ -627,7 +629,7 @@ func TestBuildForgeNodePayloadsWaitsForNameResolutionBeforeFetchingTheAptKey(t *
 		}
 		return -1
 	}
-	wait, fetch := index("getent hosts"), index("/etc/apt/keyrings/nke.asc")
+	wait, fetch := index("getent hosts"), index("/etc/apt/keyrings/nvke.asc")
 	if wait < 0 {
 		t.Fatalf("no wait for name resolution, got:\n%s", strings.Join(payloads.PreKubeadmCommands, "\n"))
 	}
