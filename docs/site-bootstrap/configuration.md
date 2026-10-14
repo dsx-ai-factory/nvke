@@ -138,7 +138,7 @@ nvkectl validate sitespec -f sitespec.yaml --bootstrap-only
 nvkectl bootstrap site -f sitespec.yaml --dry-run
 ```
 
-`nvkectl bootstrap site` ends by listing the `REPLACE_*` values still in the file, and the install refuses one. Tokens and passwords are paths to files that hold them, so the site spec holds no credential.
+`nvkectl bootstrap site` ends by listing the `REPLACE_*` values still in the file, and the install refuses one. The `controllerStack` tokens and passwords are paths to files that hold them, so that section holds no credential; `registry.apiKey` stays out of the file the way the section above says.
 
 ## What's Next After Bootstrap
 

@@ -171,7 +171,7 @@ Every item is a Helm chart with values, or plain YAML, so another tool can deliv
 1. Apply the items in list order; stop at the first failure.
 2. Render the template items first. Under GitOps, the Secrets they produce come from your secret store instead.
 3. Wait for each `requires` entry before its chart. In GitOps that is a sync-wave boundary or a health check on the object.
-4. With a local NVKR Run (`--nvkr-run-dir`), import the images `images.txt` names into the node's containerd before the first item.
+4. With a local NVKR Run (`--nvkr-run-dir`), import the images listed in `images.txt` into the node's containerd before the first item.
 
 The [GitOps option](install-site-controller.md#option-3-gitops) of the install guide maps these onto a GitOps tool. The steps around the deploy path, such as `clusterctl init` and the SPIRE exec-auth patch, are in the same guide and stay imperative.
 

@@ -139,7 +139,7 @@ nvkectl config set-site --name my-tier0-site \
 nvkectl config view
 ```
 
-`--url` is the controller's API. `--kubeconfig` is the site cluster's kubeconfig; `get
+`--url` is the controller's API. Port 30080 is the plain-HTTP NodePort the chart exposes, and the CLI sends a bearer token to it, so use it from a trusted network only, or put a TLS endpoint in front of it and name that. `--kubeconfig` is the site cluster's kubeconfig; `get
 providers` and `get kubeconfig` read the cluster directly and need it.
 
 Controller API commands (`get`/`create`/`patch`/`delete` clusters) use that

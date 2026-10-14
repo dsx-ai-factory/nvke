@@ -6,7 +6,7 @@ NVKR builds `nvkectl` from the same source commit as the controller image and pu
 
 ## From the NVKR Release
 
-Verify the release and export its description, as [Install the Site Controller](install-site-controller.md#release) describes. The description names an executable output per architecture. Pull it and unpack the binary:
+Verify the release and export its description, as [Install the Site Controller](install-site-controller.md#release) describes. The description names an executable output per architecture. With `jq` and [`oras`](https://oras.land/docs/installation) on the machine, pull it and unpack the binary:
 
 ```bash
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')

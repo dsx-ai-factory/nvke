@@ -78,7 +78,10 @@ helm uninstall postgres -n postgres
 helm uninstall nktp -n nktp
 kubectl delete -f deploy/nico/capnico/capnico.yaml
 clusterctl delete --all
+kubectl delete namespace nke-controller nke-system nktp postgres temporal spire-server spire-system capnico-system
 ```
+
+The last line removes what the manifest and template items created and what Helm leaves behind: the `nico-credentials` and `dgxc-tenant-credentials` Secrets, the `nktp-cluster` ConfigMap, the SPIRE Services and TPM hashes, the Certificate chain, and the PersistentVolumeClaims, whose volumes go with them under the default reclaim policy. `cert-manager` belongs to Cluster API and stays until `clusterctl delete --all --include-crd` or your own cleanup. The `capi-spiffe-exec-auth` patch goes with the Cluster API controllers.
 
 Helm leaves PersistentVolumeClaims behind. Delete the `postgres` and `spire-server` PVCs yourself when the data is no longer needed.
 
