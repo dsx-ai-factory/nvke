@@ -34,10 +34,12 @@ while [[ $# -gt 0 ]]; do
   --kubeconfig)
     [[ $# -ge 2 ]] || usage
     kubeconfig="$2"
+    [[ -n "${kubeconfig}" ]] || usage
     shift 2
     ;;
   --kubeconfig=*)
     kubeconfig="${1#--kubeconfig=}"
+    [[ -n "${kubeconfig}" ]] || usage
     shift
     ;;
   -h | --help) usage ;;

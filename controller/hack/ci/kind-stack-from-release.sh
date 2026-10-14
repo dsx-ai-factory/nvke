@@ -108,7 +108,7 @@ vip="$(docker inspect -f '{{with index .NetworkSettings.Networks "kind"}}{{.IPAd
 
 # 3. The site spec and its credential files. The credentials are placeholders:
 # nothing in this lane reaches NICo or a private registry.
-for f in nico-token registry-token tenant-password; do printf 'smoke-%s\n' "${f}" >"${WORK}/site/${f}"; done
+for f in nico-token tenant-password; do printf 'smoke-%s\n' "${f}" >"${WORK}/site/${f}"; done
 # nktp sized for one kind node: nktp's own kind values, plus a ceiling of one
 # replica on the autoscaled collectors. The whole stack shares this node, so a
 # scale-up on a startup CPU burst would leave a replica Pending.

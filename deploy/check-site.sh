@@ -25,8 +25,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=lib/common.sh
 . "${SCRIPT_DIR}/lib/common.sh"
 
-# shellcheck disable=SC2034  # read by lib/common.sh: kq never runs in a dry run
-DRY_RUN=""
 SITESPEC=""
 RELEASE=""
 RUN_DIR=""
@@ -39,6 +37,7 @@ CONTROLLER_NAMESPACE="${CONTROLLER_NAMESPACE:-nke-controller}"
 CAPI_VERSION="${CAPI_VERSION:-$(mk_var CAPI_VERSION)}"
 SITE_ARCH=""
 CAPI_INIT=""
+HAVE_NVKECTL=""
 
 EGRESS_URLS=(
   https://ghcr.io/v2/
@@ -109,7 +108,13 @@ for tool in kubectl helm clusterctl curl python3; do
     check_fail "tool ${tool}: not found in PATH"
   fi
 done
-command -v "${NVKECTL}" >/dev/null 2>&1 || die "nvkectl reads the site spec; set NVKECTL or put it on PATH (make -C cli build)"
+if command -v "${NVKECTL}" >/dev/null 2>&1; then
+  check_pass "tool nvkectl: $(command -v "${NVKECTL}")"
+  HAVE_NVKECTL=1
+else
+  check_fail "tool nvkectl: ${NVKECTL} not found; set NVKECTL or put it on PATH (make -C cli build). The site spec and the release are not checked without it"
+  HAVE_NVKECTL=""
+fi
 pin="$(mk_var HELM_VERSION)"
 have="$(helm version --template '{{.Version}}' 2>/dev/null || true)"
 if [[ -z "${pin}" || "${have}" == "${pin}" ]]; then
@@ -135,14 +140,18 @@ binary="$(clusterctl version -o short 2>/dev/null || true)"
 
 # --- the inputs --------------------------------------------------------------
 
-if "${NVKECTL}" validate sitespec -f "${SITESPEC}" >/dev/null 2>&1; then
+if [[ -z "${HAVE_NVKECTL}" ]]; then
+  check_skip "site spec: ${SITESPEC} (no nvkectl)"
+elif "${NVKECTL}" validate sitespec -f "${SITESPEC}" >/dev/null 2>&1; then
   check_pass "site spec: ${SITESPEC} is valid for the controller stack"
   site_vars="$("${NVKECTL}" inspect sitespec "${SITESPEC}")" || die "cannot read ${SITESPEC}"
   eval "${site_vars}"
 else
   check_fail "site spec: ${SITESPEC} is not ready; run: ${NVKECTL} validate sitespec -f ${SITESPEC}"
 fi
-if [[ -n "${RELEASE}" ]]; then
+if [[ -n "${RELEASE}" && -z "${HAVE_NVKECTL}" ]]; then
+  check_skip "release: ${RELEASE} (no nvkectl)"
+elif [[ -n "${RELEASE}" ]]; then
   # The description says what the release holds, not that it was verified;
   # nvkr release verify decides that for the same reference.
   unset REFERENCE QUALIFICATION
@@ -187,7 +196,7 @@ else
     fi
     # nvkectl bootstrap site removes the control-plane taint; nothing
     # schedules while it is on.
-    tainted="$(printf '%s\n' "${nodes}" | awk -F'\t' '$3 ~ /NoSchedule/ { print $1 }' | tr '\n' ' ')"
+    tainted="$(printf '%s\n' "${nodes}" | awk -F'\t' '$3 ~ /(^| )NoSchedule( |$)/ { print $1 }' | tr '\n' ' ')"
     if [[ -z "${tainted}" ]]; then
       check_pass "cluster: no node carries the control-plane NoSchedule taint"
     else
@@ -210,14 +219,30 @@ else
   fi
   # clusterctl init does not upgrade, so a Cluster API of another version is
   # a finding, not something to install over. Only NotFound means absent.
-  CAPI_INIT="clusterctl init --kubeconfig ${KUBECONFIG_PATH} --core cluster-api:${CAPI_VERSION} --bootstrap kubeadm:${CAPI_VERSION} --control-plane kubeadm:${CAPI_VERSION} --wait-providers"
+  CAPI_INIT="$(printf '%q ' clusterctl init --kubeconfig "${KUBECONFIG_PATH}" --core "cluster-api:${CAPI_VERSION}" --bootstrap "kubeadm:${CAPI_VERSION}" --control-plane "kubeadm:${CAPI_VERSION}" --wait-providers)"
+  CAPI_INIT="${CAPI_INIT% }"
   if image="$(kread -n capi-system get deployment capi-controller-manager -o jsonpath='{.spec.template.spec.containers[0].image}')"; then
-    if [[ "${image##*:}" == "${CAPI_VERSION}" ]]; then
-      check_pass "Cluster API: ${CAPI_VERSION} already installed"
+    # The tag, without a digest suffix or a registry port.
+    tag="${image%@*}"; tag="${tag##*/}"; tag="${tag##*:}"
+    if [[ "${tag}" != "${CAPI_VERSION}" ]]; then
+      check_fail "Cluster API: ${tag} is installed; the stack is tested with ${CAPI_VERSION}, and clusterctl init does not upgrade. Run: clusterctl upgrade apply --kubeconfig ${KUBECONFIG_PATH} --core cluster-api:${CAPI_VERSION} --bootstrap kubeadm:${CAPI_VERSION} --control-plane kubeadm:${CAPI_VERSION}"
       CAPI_INIT=""
     else
-      check_fail "Cluster API: ${image##*:} is installed; the stack is tested with ${CAPI_VERSION}, and clusterctl init does not upgrade. Run: clusterctl upgrade apply --kubeconfig ${KUBECONFIG_PATH} --core cluster-api:${CAPI_VERSION} --bootstrap kubeadm:${CAPI_VERSION} --control-plane kubeadm:${CAPI_VERSION}"
-      CAPI_INIT=""
+      # The kubeadm providers come with the same init; a core without them is
+      # a partial install the stack cannot use.
+      missing=""
+      for d in capi-kubeadm-bootstrap-system/capi-kubeadm-bootstrap-controller-manager capi-kubeadm-control-plane-system/capi-kubeadm-control-plane-controller-manager; do
+        if ! kread -n "${d%%/*}" get deployment "${d#*/}" -o name >/dev/null; then
+          if grep -q 'NotFound' "${KREAD_ERR}"; then missing="${missing}${d} "; else check_fail "cluster: cannot read deployment ${d}: $(kread_err)"; fi
+        fi
+      done
+      if [[ -z "${missing}" ]]; then
+        check_pass "Cluster API: ${CAPI_VERSION} already installed"
+        CAPI_INIT=""
+      else
+        check_fail "Cluster API: ${CAPI_VERSION} core is installed without ${missing% }; run: ${CAPI_INIT}"
+        CAPI_INIT=""
+      fi
     fi
   elif grep -q 'NotFound' "${KREAD_ERR}"; then
     check_pass "Cluster API: not installed yet; run: ${CAPI_INIT}"
@@ -245,5 +270,8 @@ fi
 [[ "${CHECK_FAILURES}" -eq 0 ]] || die "${CHECK_FAILURES} finding(s) to fix before the stack installs"
 printf 'ready. Next:\n'
 [[ -z "${CAPI_INIT:-}" ]] || printf '  %s\n' "${CAPI_INIT}"
-printf '  %s/nvke-deploy.sh install --deploy-path %s --sitespec %s --kubeconfig %s%s%s\n' \
-  "${SCRIPT_DIR}" "${DEPLOY_PATH}" "${SITESPEC}" "${KUBECONFIG_PATH}" "${RELEASE:+ --release ${RELEASE}}" "${RUN_DIR:+ --nvkr-run-dir ${RUN_DIR}}"
+install_cmd=("${SCRIPT_DIR}/nvke-deploy.sh" install --deploy-path "${DEPLOY_PATH}" --sitespec "${SITESPEC}" --kubeconfig "${KUBECONFIG_PATH}")
+[[ -z "${RELEASE}" ]] || install_cmd+=(--release "${RELEASE}")
+[[ -z "${RUN_DIR}" ]] || install_cmd+=(--nvkr-run-dir "${RUN_DIR}")
+install_line="$(printf '%q ' "${install_cmd[@]}")"
+printf '  %s\n' "${install_line% }"
