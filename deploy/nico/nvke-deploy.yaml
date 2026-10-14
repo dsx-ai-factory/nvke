@@ -22,8 +22,8 @@
 #                  embed an Issuer and a Certificate.
 #   image staging  the node IS the cluster, so images imported into its
 #                  containerd resolve with imagePullPolicy: IfNotPresent. This
-#                  is why a site needs no registry credentials except the one
-#                  for CAPNICo, whose manifest names a remote image.
+#                  is why a site needs no registry credential; CAPNICo's image
+#                  is public on GHCR or comes from the release by digest.
 #   a default StorageClass  a bare site ships none, so every PVC sits Pending.
 #                  Deliberately not an item: which provisioner is right is a
 #                  property of the hardware, not of NVKE. That run installed

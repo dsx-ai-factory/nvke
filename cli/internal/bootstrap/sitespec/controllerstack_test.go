@@ -14,7 +14,7 @@ func filledStack(t *testing.T) *ControllerStack {
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{}
-	for _, name := range []string{"nico-token", "registry-token", "tenant-password"} {
+	for _, name := range []string{"nico-token", "tenant-password"} {
 		path := filepath.Join(dir, name)
 		if err := os.WriteFile(path, []byte("placeholder\n"), 0o600); err != nil {
 			t.Fatal(err)
@@ -22,11 +22,10 @@ func filledStack(t *testing.T) *ControllerStack {
 		files[name] = path
 	}
 	return &ControllerStack{
-		Arch:       "arm64",
-		Nico:       StackNico{Endpoint: "https://nico.example.com", OrgID: "org-1", APIName: "forge", TokenFile: files["nico-token"]},
-		PullSecret: StackPullSecret{Server: "ghcr.io", Username: "robot", TokenFile: files["registry-token"]},
-		Tenant:     StackTenant{User: "nke", PasswordFile: files["tenant-password"]},
-		Database:   StackDatabase{PasswordFile: filepath.Join(dir, "db-password")},
+		Arch:     "arm64",
+		Nico:     StackNico{Endpoint: "https://nico.example.com", OrgID: "org-1", APIName: "forge", TokenFile: files["nico-token"]},
+		Tenant:   StackTenant{User: "nke", PasswordFile: files["tenant-password"]},
+		Database: StackDatabase{PasswordFile: filepath.Join(dir, "db-password")},
 	}
 }
 
@@ -54,7 +53,6 @@ func TestTemplate_ControllerStackPlaceholdersPassBootstrapValidation(t *testing.
 	left := spec.ControllerStackPlaceholders()
 	want := []string{
 		"controllerStack.arch", "controllerStack.nico.endpoint", "controllerStack.nico.orgID", "controllerStack.nico.apiName", "controllerStack.nico.tokenFile",
-		"controllerStack.pullSecret.server", "controllerStack.pullSecret.username", "controllerStack.pullSecret.tokenFile",
 		"controllerStack.tenant.user", "controllerStack.tenant.passwordFile", "controllerStack.database.passwordFile",
 	}
 	if strings.Join(left, " ") != strings.Join(want, " ") {
@@ -170,22 +168,19 @@ func TestEffectiveTrustDomainAndEndpoint(t *testing.T) {
 // not from wherever the command runs.
 func TestValidateControllerStackReferences_RelativeToTheSpec(t *testing.T) {
 	specDir := t.TempDir()
-	for _, name := range []string{"nico-token", "registry-token", "tenant-password"} {
+	for _, name := range []string{"nico-token", "tenant-password"} {
 		if err := os.WriteFile(filepath.Join(specDir, name), []byte("x\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	body := strings.NewReplacer(
 		"REPLACE_NICO_TOKEN_PATH", "nico-token",
-		"REPLACE_REGISTRY_TOKEN_PATH", "registry-token",
 		"REPLACE_TENANT_PASSWORD_PATH", "tenant-password",
 		"REPLACE_DB_PASSWORD_PATH", "db-password",
 		"REPLACE_ARCH", "arm64",
 		"REPLACE_NICO_ENDPOINT", "https://nico.example.com",
 		"REPLACE_NICO_ORG_ID", "org",
 		"REPLACE_NICO_API_NAME", "forge",
-		"REPLACE_REGISTRY_SERVER", "ghcr.io",
-		"REPLACE_REGISTRY_USERNAME", "robot",
 		"REPLACE_TENANT_USER", "nke",
 		"  # controlPlaneVIP: \"10.0.0.100\"", "  controlPlaneVIP: \"10.0.0.100\"",
 	).Replace(string(templateYAML))

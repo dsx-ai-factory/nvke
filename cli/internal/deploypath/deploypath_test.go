@@ -118,7 +118,7 @@ func filledSiteSpec(t *testing.T, withCA bool, extra map[string]string) *sitespe
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, content := range map[string]string{"nico-token": "nico-secret", "registry-token": "registry-secret", "tenant-password": "tenant-secret", "ca.crt": "CERT", "ca.key": "KEY", "db-password": "db-secret"} {
+	for name, content := range map[string]string{"nico-token": "nico-secret", "tenant-password": "tenant-secret", "ca.crt": "CERT", "ca.key": "KEY", "db-password": "db-secret"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -126,7 +126,6 @@ func filledSiteSpec(t *testing.T, withCA bool, extra map[string]string) *sitespe
 	values := map[string]string{
 		"REPLACE_ARCH": "arm64", "REPLACE_NICO_ENDPOINT": "https://nico.example.com", "REPLACE_NICO_ORG_ID": "org-1",
 		"REPLACE_NICO_API_NAME": "forge", "REPLACE_NICO_TOKEN_PATH": "nico-token",
-		"REPLACE_REGISTRY_SERVER": "ghcr.io", "REPLACE_REGISTRY_USERNAME": "robot", "REPLACE_REGISTRY_TOKEN_PATH": "registry-token",
 		"REPLACE_TENANT_USER": "nvke", "REPLACE_TENANT_PASSWORD_PATH": "tenant-password", "REPLACE_DB_PASSWORD_PATH": "db-password",
 	}
 	for k, v := range extra {
@@ -309,7 +308,7 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	// rendered Secret manifests; spire's values hold none. The tree ignores
 	// itself for git.
 	want := []string{"controller/site-values.yaml", "postgresql/site-values.yaml", "temporal/site-values.yaml"}
-	for _, f := range []string{"20-nico-credentials.yaml", "30-ghcr-imagepull.yaml", "35-dgxc-tenant-credentials.yaml"} {
+	for _, f := range []string{"20-nico-credentials.yaml", "35-dgxc-tenant-credentials.yaml"} {
 		want = append(want, "nvke-base-config/"+f)
 	}
 	if strings.Join(result.Credentials, " ") != strings.Join(want, " ") {

@@ -112,13 +112,6 @@ controllerStack:
     apiName: REPLACE_NICO_API_NAME
     # File holding the NICo API token.
     tokenFile: REPLACE_NICO_TOKEN_PATH
-  # The registry credential for the CAPNICo image pull secret.
-  pullSecret:
-    # For example ghcr.io.
-    server: REPLACE_REGISTRY_SERVER
-    username: REPLACE_REGISTRY_USERNAME
-    # File holding the registry token. A fine-grained token with read:packages is enough.
-    tokenFile: REPLACE_REGISTRY_TOKEN_PATH
   # Login rendered into every tenant node's cloud-init.
   tenant:
     user: REPLACE_TENANT_USER

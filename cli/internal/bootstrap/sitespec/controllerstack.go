@@ -24,8 +24,6 @@ type ControllerStack struct {
 	Arch string `yaml:"arch"`
 	// Nico is the NICo API CAPNICo calls.
 	Nico StackNico `yaml:"nico"`
-	// PullSecret is the registry credential for the CAPNICo image pull secret.
-	PullSecret StackPullSecret `yaml:"pullSecret"`
 	// Tenant is the login rendered into every tenant node's cloud-init.
 	Tenant StackTenant `yaml:"tenant"`
 	// Images overrides the controller and profiles images, which default to
@@ -46,13 +44,6 @@ type StackNico struct {
 	Endpoint  string `yaml:"endpoint"`
 	OrgID     string `yaml:"orgID"`
 	APIName   string `yaml:"apiName"`
-	TokenFile string `yaml:"tokenFile"`
-}
-
-// StackPullSecret is the registry credential for the CAPNICo image pull secret.
-type StackPullSecret struct {
-	Server    string `yaml:"server"`
-	Username  string `yaml:"username"`
 	TokenFile string `yaml:"tokenFile"`
 }
 
@@ -89,9 +80,6 @@ func (in *ControllerStack) stackFields() [][2]string {
 		{"controllerStack.nico.orgID", in.Nico.OrgID},
 		{"controllerStack.nico.apiName", in.Nico.APIName},
 		{"controllerStack.nico.tokenFile", in.Nico.TokenFile},
-		{"controllerStack.pullSecret.server", in.PullSecret.Server},
-		{"controllerStack.pullSecret.username", in.PullSecret.Username},
-		{"controllerStack.pullSecret.tokenFile", in.PullSecret.TokenFile},
 		{"controllerStack.tenant.user", in.Tenant.User},
 		{"controllerStack.tenant.passwordFile", in.Tenant.PasswordFile},
 		{"controllerStack.images.controller", in.Images.Controller},
@@ -105,8 +93,7 @@ func (in *ControllerStack) stackFields() [][2]string {
 // requiredStackFields are the fields the controller stack install cannot do without.
 var requiredStackFields = map[string]bool{
 	"controllerStack.arch": true, "controllerStack.nico.endpoint": true, "controllerStack.nico.orgID": true, "controllerStack.nico.apiName": true,
-	"controllerStack.nico.tokenFile": true, "controllerStack.pullSecret.server": true, "controllerStack.pullSecret.username": true,
-	"controllerStack.pullSecret.tokenFile": true, "controllerStack.tenant.user": true, "controllerStack.tenant.passwordFile": true,
+	"controllerStack.nico.tokenFile": true, "controllerStack.tenant.user": true, "controllerStack.tenant.passwordFile": true,
 	"controllerStack.database.passwordFile": true,
 }
 
@@ -212,7 +199,6 @@ func (inv *SiteSpec) ValidateControllerStackReferences() error {
 func (in *ControllerStack) fileFields() [][2]string {
 	return [][2]string{
 		{"controllerStack.nico.tokenFile", in.Nico.TokenFile},
-		{"controllerStack.pullSecret.tokenFile", in.PullSecret.TokenFile},
 		{"controllerStack.tenant.passwordFile", in.Tenant.PasswordFile},
 		{"controllerStack.nktpValuesFile", in.NktpValuesFile},
 	}

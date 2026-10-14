@@ -146,9 +146,8 @@ image:
 
 # EMPTY, and it must stay empty. The controller image is staged into the node's
 # containerd before the install -- the node IS the cluster, so it resolves under
-# pullPolicy: IfNotPresent with no credential. The only pull secret this path
-# renders is ghcr-imagepull, and it lives in capnico-system for CAPNICo's image;
-# naming it here would reference a Secret that does not exist in this namespace.
+# pullPolicy: IfNotPresent with no credential. This path renders no pull
+# secret at all.
 #
 # A site that pulls the controller from a registry instead needs its own secret
 # in nke-controller, supplied with --values-for.
