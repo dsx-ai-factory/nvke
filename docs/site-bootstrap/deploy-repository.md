@@ -177,7 +177,7 @@ Every item is a Helm chart with values, or plain YAML, so another tool can deliv
 3. Wait for each `requires` entry before its chart. In GitOps that is a sync-wave boundary or a health check on the object.
 4. With a local NVKR Run (`--nvkr-run-dir`), import the images `images.txt` names into the node's containerd before the first item.
 
-The [Extend to GitOps](install-site-controller.md#extend-to-gitops) section of the install guide maps these onto Argo CD. The steps around the deploy path, such as `clusterctl init` and the SPIRE exec-auth patch, are in the same guide and stay imperative.
+The [GitOps option](install-site-controller.md#option-3-gitops) of the install guide maps these onto Argo CD. The steps around the deploy path, such as `clusterctl init` and the SPIRE exec-auth patch, are in the same guide and stay imperative.
 
 ## Adding an Item
 
