@@ -104,6 +104,7 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 						Summary:      summary,
 						RunURL:       runURLFromEnv(),
 						Capabilities: strm.Capabilities,
+						Dependencies: strm.Dependencies,
 					}},
 				},
 			)

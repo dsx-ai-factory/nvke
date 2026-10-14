@@ -66,12 +66,19 @@ type ResultCombination struct {
 // the already-published record -- it does not need to re-read plan.json
 // itself.
 type ResultStream struct {
-	Name         string            `json:"name"`
-	Scope        string            `json:"scope"`
-	Result       string            `json:"result"`
-	Summary      string            `json:"summary"`
-	RunURL       string            `json:"runUrl,omitempty"`
+	Name    string `json:"name"`
+	Scope   string `json:"scope"`
+	Result  string `json:"result"`
+	Summary string `json:"summary"`
+	RunURL  string `json:"runUrl,omitempty"`
+
 	Capabilities map[string]string `json:"capabilities,omitempty"`
+
+	// Dependencies are this stream's resolved per-stream dependency
+	// versions, copied from its plan.json Stream.Dependencies -- the exact
+	// kube patch, OS image build, and similar that ConstraintFrom resolves
+	// once per stream rather than once for the whole combination.
+	Dependencies []ComponentVersion `json:"dependencies,omitempty"`
 }
 
 // ResultIdentity is where this result came from, read from the GitHub
