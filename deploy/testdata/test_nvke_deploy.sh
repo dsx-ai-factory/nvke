@@ -339,7 +339,7 @@ expect "a digest-pinned image is compared by its tag, and a core without the kub
 out="$(PATH="${stubs}:${PATH}" NVKECTL=/nonexistent/nvkectl NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site without nvkectl exited 0"
 expect "a missing nvkectl is a finding, and the spec checks are skipped" '^FAIL  tool nvkectl: /nonexistent/nvkectl not found' "${out}"
 expect "the site spec is skipped without nvkectl" '^SKIP  site spec: ' "${out}"
-expect "the verdict carries the check'"'"'s own name" '^check-site.sh: [0-9]+ finding\(s\) to fix' "${out}"
+expect "the verdict carries the check's own name" '^check-site.sh: [0-9]+ finding\(s\) to fix' "${out}"
 # The executor refuses an unknown item type before it applies anything.
 mkdir -p "${WORK}/badpath/x"; printf 'items:\n  - {name: x, type: bogus}\n' >"${WORK}/badpath/nvke-deploy.yaml"; printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: x\n' >"${WORK}/badpath/x/a.yaml"
 out="$(bash "${EXECUTOR}" install --deploy-path "${WORK}/badpath" --dry-run 2>&1)" && fail "an unknown item type exited 0"
