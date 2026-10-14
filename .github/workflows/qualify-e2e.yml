@@ -493,7 +493,14 @@ jobs:
           # A commit-resolved plan may have been made by the tag push that
           # started the publishers, so give them time. A tag-resolved one asks
           # once.
-          WAIT: ${{ needs.plan.outputs.commit != '' && '90m' || '0' }}
+          #
+          # A dry run asks once either way. The wait is there to keep a run from
+          # failing on an artifact that is still publishing, and a dry run takes
+          # no machine to protect, so waiting out a bake would only make the
+          # cheap way of exercising this the slow one.
+          WAIT: >-
+            ${{ (needs.plan.outputs.dry-run != 'true'
+                 && needs.plan.outputs.commit != '' && '90m') || '0' }}
         run: |
           set -euo pipefail
           go run ./release/cmd/qualify verify --plan plan.json --wait "${WAIT}"
