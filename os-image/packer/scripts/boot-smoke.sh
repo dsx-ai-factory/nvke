@@ -162,6 +162,16 @@ fi
 for unit in apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service; do
   test "$(systemctl is-enabled "${unit}")" = masked
 done
+# Kata's erofs snapshotter on 26.04: erofs and dm-verity loaded at boot,
+# mkfs.erofs 1.8.2 or later, and fs-verity on the root filesystem that holds
+# /var/lib/containerd.
+if [[ "$(. /etc/os-release && echo "${VERSION_ID}")" == 26.04 ]]; then
+  test -d /sys/module/erofs
+  test -d /sys/module/dm_verity
+  mkfs.erofs -V
+  dpkg --compare-versions "$(dpkg-query -W -f='${Version}' erofs-utils)" ge 1.8.2
+  sudo tune2fs -l "$(findmnt -n -o SOURCE /)" | grep -E '^Filesystem features:' | grep -qw verity
+fi
 test -x /usr/local/bin/nvke-agent
 test -x /usr/local/bin/nvke-agent-updater
 # The mode bits say nothing about whether the binary runs: -version exits 0

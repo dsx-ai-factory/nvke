@@ -81,7 +81,7 @@ ARCH ?= amd64
 # directly: its SHA256SUMS has no arm64 entry at all, which is why
 # prepare-installer-iso.sh fails with an empty EXPECTED_SHA256 for an
 # ARCH=arm64 build pointed at it. arm64 (and every other non-amd64 arch)
-# is published under cdimage.ubuntu.com/releases/<version>/release/
+# is published under cdimage.ubuntu.com/ubuntu/releases/<version>/release/
 # instead, with its own separate SHA256SUMS there.
 #
 # Use 26.04.1 to avoid the GA installer's intermittent overlayfs crash
@@ -99,8 +99,8 @@ ARCH ?= amd64
 UBUNTU_RELEASE ?= 26.04.1
 override UBUNTU_SERIES := $(word 1,$(subst ., ,$(UBUNTU_RELEASE))).$(word 2,$(subst ., ,$(UBUNTU_RELEASE)))
 ifeq ($(ARCH),arm64)
-  ISO_URL      ?= https://cdimage.ubuntu.com/releases/$(UBUNTU_SERIES)/release/ubuntu-$(UBUNTU_RELEASE)-live-server-arm64.iso
-  ISO_CHECKSUM ?= file:https://cdimage.ubuntu.com/releases/$(UBUNTU_SERIES)/release/SHA256SUMS
+  ISO_URL      ?= https://cdimage.ubuntu.com/ubuntu/releases/$(UBUNTU_SERIES)/release/ubuntu-$(UBUNTU_RELEASE)-live-server-arm64.iso
+  ISO_CHECKSUM ?= file:https://cdimage.ubuntu.com/ubuntu/releases/$(UBUNTU_SERIES)/release/SHA256SUMS
 else
   ISO_URL      ?= https://releases.ubuntu.com/$(UBUNTU_SERIES)/ubuntu-$(UBUNTU_RELEASE)-live-server-$(ARCH).iso
   ISO_CHECKSUM ?= file:https://releases.ubuntu.com/$(UBUNTU_SERIES)/SHA256SUMS
@@ -288,6 +288,12 @@ prepare-installer-iso: preflight
 	@case "$(notdir $(ISO_URL))" in \
 		ubuntu-*-live-server-$(ARCH).iso) ;; \
 		*) echo "ISO_URL does not identify an $(ARCH) Ubuntu installer: $(ISO_URL)" >&2; exit 1 ;; \
+	esac
+	@# Packer and the package builder take the series from UBUNTU_RELEASE, so an
+	@# overridden ISO_URL must be the same series.
+	@case "$(UBUNTU_VERSION)" in \
+		$(UBUNTU_SERIES)|$(UBUNTU_SERIES).*) ;; \
+		*) echo "ISO_URL is Ubuntu $(UBUNTU_VERSION), not UBUNTU_RELEASE's $(UBUNTU_SERIES) series: $(ISO_URL)" >&2; exit 1 ;; \
 	esac
 	mkdir -p $(ISO_CACHE)
 	ISO_URL=$(ISO_URL) ISO_CHECKSUM=$(ISO_CHECKSUM) OUT_DIR=$(ISO_CACHE) ./scripts/prepare-installer-iso.sh
@@ -539,6 +545,7 @@ _os-image-fde: prepare-image-build
 	$(PACKER_BUILD) \
 		-only=$(PACKER_BUILD_FDE) \
 		-var "architecture=$(ARCH)" \
+		-var "ubuntu_series=$(UBUNTU_SERIES)" \
 		-var "material_manifest=$(MATERIAL_MANIFEST)" \
 		-var "output_directory=$(PACKER_OUTPUT_DIRECTORY_FDE)" \
 		-var "build_log_directory=$(BUILD_LOGS)" \
@@ -580,6 +587,7 @@ _os-image-non-fde: prepare-image-build
 	$(PACKER_BUILD) \
 		-only=$(PACKER_BUILD_NON_FDE) \
 		-var "architecture=$(ARCH)" \
+		-var "ubuntu_series=$(UBUNTU_SERIES)" \
 		-var "material_manifest=$(MATERIAL_MANIFEST)" \
 		-var "output_directory=$(PACKER_OUTPUT_DIRECTORY_NON_FDE)" \
 		-var "build_log_directory=$(BUILD_LOGS)" \
