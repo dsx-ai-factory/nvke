@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
 )
@@ -30,10 +31,23 @@ type Uploader interface {
 // Destination is the TestGrid Destination.
 type Destination struct {
 	Uploader Uploader
+
+	// Now returns the current time, used to stamp the build name's ordering
+	// prefix at upload time. nil means time.Now; a test sets it to a fixed
+	// clock for a deterministic build name.
+	Now func() time.Time
 }
 
 // Name is the --destination value that selects this Destination.
 func (d *Destination) Name() string { return "testgrid" }
+
+// now is d.Now if set, else time.Now.
+func (d *Destination) now() time.Time {
+	if d.Now != nil {
+		return d.Now()
+	}
+	return time.Now()
+}
 
 type started struct {
 	Timestamp int64 `json:"timestamp"`
@@ -178,12 +192,19 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 // the track the SPA derives this subject's "nvke-release" release source
 // from.
 //
-// build is {run_id}-{run_attempt}-{short hash of combination ID}: GitHub run
-// IDs increase monotonically, which the updater's build-discovery (by name
-// order, not timestamp) depends on, and combination IDs can run 68-84 chars
-// (an unbounded name-version join) -- hashed down to keep the object path
-// short, with the full ID still in metadata. The hash is what keeps two
-// combinations sharing a stream's gpu/kube from colliding.
+// build is {upload time as 19-digit nanoseconds}-{run_id}-{run_attempt}-
+// {short hash of combination ID}. The updater drops any build whose name
+// sorts <= the highest one it has already processed (pkg/updater/read.go,
+// ListBuilds), so the sort key has to track the order builds actually land
+// in GCS -- not run_id, which two overlapping runs on different refs, or a
+// retried older attempt publishing after a newer one already did, can put
+// out of order. A fixed-width zero-padded UnixNano, taken right before this
+// leg's own upload sequence starts, sorts lexicographically the same as it
+// sorts numerically and stays monotonic across retries, since a retry always
+// uploads later than the attempt it is retrying. run_id/run_attempt/hash
+// stay in the name after the timestamp for a human reading the build list
+// and to keep two combinations sharing a stream's gpu/kube from colliding
+// even if their timestamps tie.
 func (d *Destination) buildPrefix(result *qualification.Result) (string, error) {
 	combo := result.Status.Combinations[0]
 	stream := combo.Streams[0]
@@ -197,7 +218,10 @@ func (d *Destination) buildPrefix(result *qualification.Result) (string, error) 
 	group := fmt.Sprintf("%s-prod", provider)
 	dashboard := fmt.Sprintf("%s-v%s-nvke-e2e", gpu, kube)
 
-	build := result.Spec.Identity.RunID
+	build := fmt.Sprintf("%019d", d.now().UTC().UnixNano())
+	if result.Spec.Identity.RunID != "" {
+		build += "-" + result.Spec.Identity.RunID
+	}
 	if result.Spec.Identity.RunAttempt != "" {
 		build += "-" + result.Spec.Identity.RunAttempt
 	}

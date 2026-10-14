@@ -6,15 +6,23 @@ package testgrid
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
 )
+
+// fixedClock is a Destination.Now that always returns t, for a build name
+// test's timestamp to be reproducible instead of racing the real clock.
+func fixedClock(t time.Time) func() time.Time {
+	return func() time.Time { return t }
+}
 
 // newFormatDashboard mirrors testgrid's own tools/config-gen/main.go
 // isNewFormatDashboard regex. config-gen silently drops any discovered
@@ -43,13 +51,14 @@ func testResult(subject, combinationID, streamName, runID, runAttempt string, ca
 
 func TestBuildPrefix(t *testing.T) {
 	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
-	d := &Destination{}
+	clock := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
+	d := &Destination{Now: fixedClock(clock)}
 
 	got, err := d.buildPrefix(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "groups/forge-prod/h100-v1.34-nvke-e2e/amd64-1.34/12345-" + shortHash("cli-v1.0.0") + "/"
+	want := fmt.Sprintf("groups/forge-prod/h100-v1.34-nvke-e2e/amd64-1.34/%019d-12345-%s/", clock.UnixNano(), shortHash("cli-v1.0.0"))
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -57,15 +66,43 @@ func TestBuildPrefix(t *testing.T) {
 
 func TestBuildPrefixRunAttemptIsAppendedToBuild(t *testing.T) {
 	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "2", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
-	d := &Destination{}
+	clock := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
+	d := &Destination{Now: fixedClock(clock)}
 
 	got, err := d.buildPrefix(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "groups/forge-prod/h100-v1.34-nvke-e2e/amd64-1.34/12345-2-" + shortHash("cli-v1.0.0") + "/"
+	want := fmt.Sprintf("groups/forge-prod/h100-v1.34-nvke-e2e/amd64-1.34/%019d-12345-2-%s/", clock.UnixNano(), shortHash("cli-v1.0.0"))
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// The updater drops any build whose name sorts <= the highest one already
+// processed -- so a later publish must always sort after an earlier one,
+// even when the later publish carries a lower run_id (an older attempt
+// retried after a newer run already published).
+func TestBuildPrefixBuildNameSortsByUploadTimeNotRunID(t *testing.T) {
+	capabilities := map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"}
+	earlier := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
+	later := earlier.Add(time.Nanosecond)
+
+	dEarlier := &Destination{Now: fixedClock(earlier)}
+	earlierBuild, err := dEarlier.buildPrefix(testResult("nvke", "cli-v1.0.0", "amd64-1.34", "99999", "", capabilities))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dLater := &Destination{Now: fixedClock(later)}
+	laterBuild, err := dLater.buildPrefix(testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", capabilities))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	names := []string{laterBuild, earlierBuild}
+	sort.Strings(names)
+	if names[0] != earlierBuild || names[1] != laterBuild {
+		t.Errorf("sorted names = %v, want the earlier-published build (run 99999) before the later one (run 12345) despite its lower run_id", names)
 	}
 }
 
@@ -130,7 +167,8 @@ func TestBuildPrefixDashboardMatchesConfigGenNewFormat(t *testing.T) {
 // these collided and silently overwrote each other's evidence.
 func TestBuildPrefixDoesNotCollideAcrossCombinations(t *testing.T) {
 	capabilities := map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"}
-	d := &Destination{}
+	clock := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
+	d := &Destination{Now: fixedClock(clock)}
 
 	a, err := d.buildPrefix(testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", capabilities))
 	if err != nil {
@@ -220,7 +258,7 @@ func TestPublishUploadsInOrderWithTheRightPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	uploader := &fakeUploader{}
-	d := &Destination{Uploader: uploader}
+	d := &Destination{Uploader: uploader, Now: fixedClock(time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC))}
 
 	if err := d.Publish(context.Background(), result, junitPath); err != nil {
 		t.Fatal(err)
