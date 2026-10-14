@@ -86,8 +86,8 @@ func hasActiveControlPlaneNodePool(pools []NodePool) bool {
 //
 // The sweep is idempotent and runs in one transaction on every worker boot,
 // after schema migrations and before the controllers start. It returns an error
-// if any non-deleting cluster cannot be fully migrated; the worker then refuses
-// to start. Temporary: remove it and its worker call site once every site is migrated.
+// if a non-deleting cluster with a control-plane snapshot source cannot be fully
+// migrated; the worker then refuses to start. Temporary: remove it and its worker call site once every site is migrated.
 func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB) error {
 	if err := SyncMissingControlPlaneConfigsFromCPNodePools(ctx, bunDB); err != nil {
 		return err
@@ -222,6 +222,8 @@ func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB) error {
 	// 6. Safety net: any non-deleting cluster still holding pooled CP nodes could
 	//    not be migrated (missing snapshot). Fail loudly so the worker refuses to
 	//    start and retries next boot rather than serve a half-migrated fleet.
+	//    A cluster with no snapshot and no active CP pool has nothing to snapshot
+	//    from, so it is skipped.
 	var leftover int
 	if err := tx.NewRaw(`
 		SELECT count(*)
@@ -230,6 +232,15 @@ func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB) error {
 		WHERE n.control_plane = TRUE
 		  AND n.node_pool_id IS NOT NULL
 		  AND COALESCE(c.conditions->'deleting'->>'status', '') <> 'True'
+		  AND (
+		      c.configuration_id IS NOT NULL
+		      OR EXISTS (
+		          SELECT 1 FROM node_pools p
+		          WHERE p.cluster_id = c.id
+		            AND p.control_plane = TRUE
+		            AND COALESCE(p.conditions->'deleting'->>'status', '') <> 'True'
+		      )
+		  )
 	`).Scan(ctx, &leftover); err != nil {
 		return fmt.Errorf("verify control-plane migration completeness: %w", err)
 	}
