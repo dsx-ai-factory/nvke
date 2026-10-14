@@ -4,10 +4,10 @@ This directory holds release and qualification tooling: the orchestration that
 takes a candidate set of already-built artifacts and resolves what a
 qualification run would cover.
 
-> `qualify plan` resolves a real plan from the repository's tags and the
-> artifact bucket and writes it as `plan.json`. The
-> [`qualify-e2e` workflow](../.github/workflows/qualify-e2e.yml) runs it and
-> qualifies one job per stream.
+> `qualify plan` resolves a real plan from the repository's tags and writes it as
+> `plan.json`, and `qualify verify` checks that everything the plan names is
+> published. The [`qualify-e2e` workflow](../.github/workflows/qualify-e2e.yml)
+> runs both and qualifies one job per stream.
 
 ## Usage
 
@@ -26,6 +26,12 @@ $ go run ./release/cmd/qualify plan --subject nvke --version v0.22.0-beta.1 --ov
 
 # Write the plan to a file instead of stdout
 $ go run ./release/cmd/qualify plan --subject nvke --output plan.json
+
+# Qualify a beta: describe every component at the commit the tag marks
+$ go run ./release/cmd/qualify plan --subject nvke --version v0.22.0-beta.1 --resolution commitDescribe
+
+# Check that everything the plan names is published, waiting for any still building
+$ go run ./release/cmd/qualify verify --plan plan.json --wait 90m
 ```
 
 | Flag | Default | Meaning |
@@ -35,6 +41,8 @@ $ go run ./release/cmd/qualify plan --subject nvke --output plan.json
 | `--overrides` | none | Values to use in place of what resolves, as `name=value` pairs separated by commas |
 | `--scope` | `full` | How much of the matrix to cover, a scope from `policy.yaml` |
 | `--output` | `-` | Where to write the plan. `-` is stdout |
+| `--resolution` | `gitTag` | How to resolve the components, named for the strategy that answers. `gitTag` takes each from its own release tags. `commitDescribe` describes each at the commit the subject's version points at |
+| `--check-exists` | off | Ask for each location this resolves and require it to be published. Off keeps planning to git alone |
 | `--root`, `--policy`, `--registry` | the enclosing checkout and the files under `release/` | Where to read the repository and the two files from |
 
 Without `--version` the subject resolves the way every component does, to the
@@ -47,70 +55,83 @@ a bootloader such as `os-image-amd64` is a dependency whose override is a URL, s
 it is overridden by name too. The names that were overridden are listed under
 `overrides` in the plan.
 
-Every image and bootloader URL is asked for with `HEAD` and has to answer 200.
-The bucket is private, so a missing artifact and a network that is not allowed
-both answer 403, and `plan` needs a network that can reach it. The check can
-confirm that an artifact exists and cannot say that it does not. The plan looks
-like this:
+A source's base can name a `${VARIABLE}`, which is substituted from the
+environment when the file is read. The registry under which artifacts sit names
+one organization's account rather than anything about NVKE, so the file states
+the shape and a run supplies the value. An unset or empty variable fails on the
+file that asked for it, with every missing name at once, rather than producing a
+plan that names an artifact under no org.
+
+Planning reaches nothing but git. Whether each artifact is published is asked
+once, by `qualify verify`, for everything the plan names. `--check-exists` asks
+during resolution instead, which needs a network that can reach the bucket: it is
+private, so a missing artifact and a network that is not allowed both answer 403,
+and the check can confirm that an artifact exists but not that it does not.
+
+A release is qualified with `--resolution gitTag`, which takes each component from
+its own release tags. A beta is qualified with `--resolution commitDescribe`: a
+beta tag names a commit and carries no component tags, so the tags would answer
+with the last release rather than what was built there. The commit is derived from
+the version being qualified rather than given. The plan looks like this:
 
 ```console
-$ go run ./release/cmd/qualify plan --subject nvke --scope full
+$ go run ./release/cmd/qualify plan --subject nvke --version v0.21.0 --scope full
 {
   "subject": "nvke",
-  "version": "v0.22.0-beta.1",
+  "version": "v0.21.0",
   "scope": "full",
   "combinations": [
     {
       "id": "capi-provisioned-v0.1.0_cli-v0.1.0_controller-v0.1.1_os-image-v0.1.0",
       "components": [
-        { "name": "controller",       "version": "v0.1.1" },
-        { "name": "cli",              "version": "v0.1.0" },
-        { "name": "os-image",         "version": "v0.1.0" },
-        { "name": "capi-provisioned", "version": "v0.1.0" }
+        { "name": "controller",       "version": "v0.1.1", "url": "oci://nvcr.io/<org>/nvke-controller:v0.1.1", "strategy": "gitTag" },
+        { "name": "cli",              "version": "v0.1.0", "strategy": "gitTag" },
+        { "name": "os-image",         "version": "v0.1.0", "strategy": "gitTag" },
+        { "name": "capi-provisioned", "version": "v0.1.0", "url": "oci://nvcr.io/<org>/cluster-api-provider-provisioned:v0.1.0", "strategy": "gitTag" }
       ],
       "dependencies": [
-        { "name": "cni-ovn",               "version": "1.4.0" },
-        { "name": "os-image-bootloader-amd64", "url": "https://cdn.example/nke-isos/qcow/efi/x86_64/qcow-imager.efi" },
-        { "name": "os-image-bootloader-arm64", "url": "https://cdn.example/nke-isos/qcow/efi/aarch64/qcow-imager.efi" },
-        { "name": "kind",                      "version": "v0.32.0" },
-        { "name": "clusterctl",                "version": "v1.12.3" },
-        { "name": "nerdctl",                   "version": "2.3.5" }
+        { "name": "cni-ovn",               "version": "1.4.0", "strategy": "lockedPackage" },
+        { "name": "os-image-bootloader-amd64", "url": "https://cdn.example/nke-isos/qcow/efi/x86_64/qcow-imager.efi", "strategy": "url" },
+        { "name": "os-image-bootloader-arm64", "url": "https://cdn.example/nke-isos/qcow/efi/aarch64/qcow-imager.efi", "strategy": "url" },
+        { "name": "kind",                      "version": "v0.32.0", "strategy": "makeVar" },
+        { "name": "clusterctl",                "version": "v1.12.3", "strategy": "makeVar" },
+        { "name": "nerdctl",                   "version": "2.3.5", "strategy": "makeVar" }
       ],
       "streams": [
         {
           "name": "forge-gb200-amd64-ubuntu-24.04-kube-1.36",
           "capabilities": { "arch": "amd64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "24.04" },
           "dependencies": [
-            { "name": "kube",           "version": "1.36.3" },
-            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2" },
-            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-24.04.5-arm64.qcow2" }
+            { "name": "kube",           "version": "1.36.3", "strategy": "lockedPackage" },
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2", "strategy": "osImage" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-24.04.5-arm64.qcow2", "strategy": "osImage" }
           ]
         },
         {
           "name": "forge-gb200-arm64-ubuntu-24.04-kube-1.36",
           "capabilities": { "arch": "arm64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "24.04" },
           "dependencies": [
-            { "name": "kube",           "version": "1.36.3" },
-            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2" },
-            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-24.04.5-arm64.qcow2" }
+            { "name": "kube",           "version": "1.36.3", "strategy": "lockedPackage" },
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2", "strategy": "osImage" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-24.04.5-arm64.qcow2", "strategy": "osImage" }
           ]
         },
         {
           "name": "forge-gb200-amd64-ubuntu-26.04-kube-1.36",
           "capabilities": { "arch": "amd64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "26.04" },
           "dependencies": [
-            { "name": "kube",           "version": "1.36.3" },
-            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2" },
-            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2" }
+            { "name": "kube",           "version": "1.36.3", "strategy": "lockedPackage" },
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2", "strategy": "osImage" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "strategy": "osImage" }
           ]
         },
         {
           "name": "forge-gb200-arm64-ubuntu-26.04-kube-1.36",
           "capabilities": { "arch": "arm64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "26.04" },
           "dependencies": [
-            { "name": "kube",           "version": "1.36.3" },
-            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2" },
-            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2" }
+            { "name": "kube",           "version": "1.36.3", "strategy": "lockedPackage" },
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/amd64/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2", "strategy": "osImage" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nvke-packages/os-image/releases/v0.1.0/arm64/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "strategy": "osImage" }
           ]
         }
       ]
@@ -127,7 +148,12 @@ $ go run ./release/cmd/qualify plan --subject nvke --scope full
 - The `plan` job runs `qualify plan --subject nvke`. The dispatch inputs and
   `QUALIFY_E2E_*` repository variables that name a version are passed as
   `--overrides`, so the plan records them and a job never has to guess which of
-  the two it was handed. The plan is uploaded as an artifact.
+  the two it was handed. A beta tag push passes `--resolution commitDescribe`.
+  The plan is uploaded as an artifact.
+- The `verify` job runs `qualify verify` on that plan before any machine is
+  taken, so an artifact that was never published fails there rather than an hour
+  into a run. It waits when the plan resolved at a commit, because the publishers
+  may still be running.
 - The `qualify-matrix` job runs once for each stream of each combination. Its
   versions, architecture and GPU model are that stream's entry in the plan, so
   every stream qualifies exactly what the plan resolved. Each job is named by
@@ -161,9 +187,10 @@ publications; it does not replace them.
 | [`registry.yaml`](registry.yaml) | How each component resolves to a version, and the named locations artifacts are published under. It holds the rule that finds a version, never a version |
 | [`policy.yaml`](policy.yaml) | The streams that exist and the scopes over them |
 | [`qualification.yaml`](qualification.yaml) | What is qualified when NVKE is qualified as a whole: the components tested together, and the other versions a run needs |
-| [`cmd/qualify/`](cmd/qualify/) | The binary. `plan` is the only verb |
+| [`cmd/qualify/`](cmd/qualify/) | The binary. `plan` resolves what to qualify, `verify` checks that it is published |
 | [`internal/qualification/`](internal/qualification/) | Reading and checking the three files, and turning them into a plan |
 | [`internal/resolve/`](internal/resolve/) | The resolution strategies. It imports nothing from this repository |
+| [`internal/artifact/`](internal/artifact/) | Asking whether a location holds something, over HTTPS or a registry, and waiting for one that is still publishing |
 
 Each file has one concern. A component that is qualified on its own would carry
 its own `<component>/qualification.yaml` next to its code, using the same
@@ -204,10 +231,12 @@ with a `constraintFrom` is resolved once per stream, with that stream's value.
 Which of the two it is comes from that field and nothing else. So the images are
 per stream and the bootloaders are per combination.
 
-A resolved entry in the plan has a `version`, a `url`, or both. A `version` is
-always a version and a `url` is always a location. An image carries the
-`os-image` release it was built from and the URL of the qcow, and a bootloader
-carries only its URL.
+A resolved entry in the plan has a `version`, a `url`, or both, and the
+`strategy` that answered. A `version` is always a version and a `url` is always a
+location. An image carries the `os-image` release it was built from and the URL
+of the qcow, a bootloader carries only its URL, and a component published to a
+registry carries the reference to pull. `strategy` is the registry's name for
+what resolved it, or which arm answered where one entry can resolve two ways.
 
 Quote a version in the file. YAML reads an unquoted `1.40` as a number and the
 constraint becomes `1.4`.

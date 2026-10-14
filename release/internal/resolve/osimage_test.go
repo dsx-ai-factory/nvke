@@ -34,8 +34,10 @@ func everything(t *testing.T) *httptest.Server {
 	return srv
 }
 
+// newOSImage builds the resolver with the existence check on, because the
+// tests below are about that check. A planner leaves it off.
 func newOSImage(base, arch string) OSImage {
-	return OSImage{Base: base, From: "os-image", Arch: arch, Variant: "non-fde"}
+	return OSImage{Base: base, From: "os-image", Arch: arch, Variant: "non-fde", CheckExists: true}
 }
 
 // imageInputs are what the planner gives an image: the release tag, the series
@@ -140,10 +142,10 @@ func TestOSImageOverride(t *testing.T) {
 
 func TestNewOSImageAndURL(t *testing.T) {
 	with := map[string]string{"base": "https://cdn.example/p", "from": "os-image", "arch": "amd64", "variant": "non-fde"}
-	if _, err := New(StrategyOSImage, with, "."); err != nil {
+	if _, err := New(StrategyOSImage, with, ".", Options{}); err != nil {
 		t.Fatalf("a complete configuration should build: %v", err)
 	}
-	if _, err := New(StrategyURL, nil, "."); err != nil {
+	if _, err := New(StrategyURL, nil, ".", Options{}); err != nil {
 		t.Fatalf("url takes no configuration: %v", err)
 	}
 
@@ -165,7 +167,7 @@ func TestNewOSImageAndURL(t *testing.T) {
 				}
 			}
 			tc.change(bad)
-			_, err := New(tc.strategy, bad, ".")
+			_, err := New(tc.strategy, bad, ".", Options{})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want it to contain %q", err, tc.want)
 			}
@@ -191,8 +193,8 @@ func TestOSImageLegacyFilename(t *testing.T) {
 	}
 }
 
-// The URL is always asked for, and a missing one fails with both explanations of
-// a 403.
+// Asked to check, the URL is fetched, and a missing one fails with both
+// explanations of a 403.
 func TestOSImageChecksTheURLExists(t *testing.T) {
 	const image = "/os-image/releases/v0.1.1-rc.1/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"
 	srv := server(t, image)
@@ -241,7 +243,7 @@ func TestURL(t *testing.T) {
 		{"absent", map[string]string{InputValueKey: srv.URL + "/efi/gone.efi"}, "", "HTTP 403"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := URL{}.Resolve(tc.inputs)
+			got, err := URL{CheckExists: true}.Resolve(tc.inputs)
 			if tc.wantEr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantEr) {
 					t.Fatalf("err = %v, want it to contain %q", err, tc.wantEr)
@@ -352,5 +354,30 @@ func TestLockedPackageRejectsReleases(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "takes no releases") {
 		t.Errorf("err = %v, want it to say it takes no releases", err)
+	}
+}
+
+// Planning reaches nothing but git. The check is what made a plan need the
+// network the artifacts are on, and a run that cannot reach it should still be
+// able to say what it would qualify.
+func TestURLDoesNotCheckByDefault(t *testing.T) {
+	// A port nothing listens on, so a request would fail rather than hang.
+	const unreachable = "http://127.0.0.1:1/efi/qcow-imager.efi"
+
+	got, err := URL{}.Resolve(map[string]string{InputValueKey: unreachable})
+	if err != nil {
+		t.Fatalf("resolving asked whether the URL exists: %v", err)
+	}
+	if got[ResultURLKey] != unreachable {
+		t.Errorf("url = %q, want %q", got[ResultURLKey], unreachable)
+	}
+
+	image, err := OSImage{Base: "http://127.0.0.1:1", From: "os-image", Arch: "amd64", Variant: "non-fde"}.
+		Resolve(imageInputs())
+	if err != nil {
+		t.Fatalf("building an image URL asked whether it exists: %v", err)
+	}
+	if image[ResultURLKey] == "" {
+		t.Error("the image resolved to no URL")
 	}
 }

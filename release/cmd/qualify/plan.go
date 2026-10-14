@@ -19,14 +19,16 @@ import (
 
 func planCmd() *cobra.Command {
 	var (
-		subject    string
-		version    string
-		overrides  string
-		scope      string
-		output     string
-		root       string
-		policyAt   string
-		registryAt string
+		subject     string
+		version     string
+		overrides   string
+		scope       string
+		output      string
+		root        string
+		policyAt    string
+		registryAt  string
+		resolution  string
+		checkExists bool
 	)
 
 	cmd := &cobra.Command{
@@ -46,10 +48,22 @@ to, as comma-separated name=value pairs, the format the e2e suite's -e2e.version
 The names it replaces are listed in the plan under overrides. An image or a
 bootloader such as os-image-amd64 is a dependency, and its override is a URL.
 
-An image or a bootloader URL is asked for with HEAD and must answer 200. The
-bucket is private, so a missing artifact and a network that is not allowed both
-answer 403, and the check can confirm that something exists but not that it does
-not, so plan needs a network that can reach it.`,
+--resolution chooses how the components are resolved, and names the strategy that
+will answer. "gitTag" takes each from its own release tags, which is how a release
+is qualified. "commitDescribe" describes each at the commit the subject's version
+points at, which is how a beta is qualified: a beta tag carries no component tags,
+so the tags would name the newest release rather than what was built there.
+
+The commit is derived from the version being qualified rather than given. Either
+way, the components that are not built here, such as the Kubernetes and OVN
+packages an image carries, are read from that commit's files, and an override
+still names a tag.
+
+--check-exists asks for each location this resolves and requires it to be
+published. It is off by default, so planning reaches nothing but git, and the
+plan is checked as a whole afterwards instead. With it on, note that the bucket
+is private, so a missing artifact and a network that is not allowed both answer
+403, and the check can confirm that something exists but not that it does not.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -66,6 +80,10 @@ not, so plan needs a network that can reach it.`,
 				registryAt = filepath.Join(root, "release", "registry.yaml")
 			}
 
+			if resolution != resolve.StrategyGitTag && resolution != resolve.StrategyCommitDescribe {
+				return fmt.Errorf("--resolution %q is neither %q nor %q", resolution, resolve.StrategyGitTag, resolve.StrategyCommitDescribe)
+			}
+
 			p, err := qualification.LoadPolicy(policyAt)
 			if err != nil {
 				return err
@@ -74,7 +92,7 @@ not, so plan needs a network that can reach it.`,
 			if err != nil {
 				return err
 			}
-			resolvers, err := buildResolvers(reg, root)
+			resolvers, err := buildResolvers(reg, root, resolve.Options{CheckExists: checkExists})
 			if err != nil {
 				return err
 			}
@@ -84,11 +102,12 @@ not, so plan needs a network that can reach it.`,
 			}
 
 			planner := &qualification.Planner{
-				Policy:    p,
-				Registry:  reg,
-				Resolvers: resolvers,
-				Root:      root,
-				Overrides: chosen,
+				Policy:          p,
+				Registry:        reg,
+				Resolvers:       resolvers,
+				Root:            root,
+				Overrides:       chosen,
+				ResolveAtCommit: resolution == resolve.StrategyCommitDescribe,
 			}
 
 			result, err := planner.Plan(subject, version, scope)
@@ -111,18 +130,26 @@ not, so plan needs a network that can reach it.`,
 	f.StringVar(&root, "root", "", "repository root (default: the enclosing git checkout)")
 	f.StringVar(&policyAt, "policy", "", "release policy file (default: <root>/release/policy.yaml)")
 	f.StringVar(&registryAt, "registry", "", "release registry file (default: <root>/release/registry.yaml)")
+	// The values are the strategies the plan records under each component, so
+	// what a run asked for and what answered are the same word.
+	f.StringVar(&resolution, "resolution", resolve.StrategyGitTag,
+		`how to resolve the components, "`+resolve.StrategyGitTag+`" or "`+resolve.StrategyCommitDescribe+`"`)
+	f.BoolVar(&checkExists, "check-exists", false, "require every location this resolves to be published already")
 
 	_ = cmd.MarkFlagRequired("subject")
+	_ = cmd.RegisterFlagCompletionFunc("resolution", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return []string{resolve.StrategyGitTag, resolve.StrategyCommitDescribe}, cobra.ShellCompDirectiveNoFileComp
+	})
 	return cmd
 }
 
 // buildResolvers makes one resolver for each registry component. This is the one
 // place that names a strategy, which is what lets the planner be tested with
 // fakes.
-func buildResolvers(reg *qualification.Registry, root string) (map[string]resolve.Resolver, error) {
+func buildResolvers(reg *qualification.Registry, root string, opts resolve.Options) (map[string]resolve.Resolver, error) {
 	resolvers := make(map[string]resolve.Resolver, len(reg.Spec.Components))
 	for _, c := range reg.Spec.Components {
-		r, err := resolve.New(c.Resolve.Strategy, reg.StrategyConfig(c), root)
+		r, err := resolve.New(c.Resolve.Strategy, reg.StrategyConfig(c), root, opts)
 		if err != nil {
 			return nil, fmt.Errorf("component %s: %w", c.Name, err)
 		}

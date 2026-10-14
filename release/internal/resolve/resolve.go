@@ -32,6 +32,11 @@ const (
 	// ResultURLKey holds a location, for a strategy whose answer is something to
 	// fetch and not a version.
 	ResultURLKey = "url"
+
+	// ResultStrategyKey names what actually answered, for a resolver that is
+	// more than one thing. A resolver that is only itself leaves it unset, and
+	// the name the registry gave it stands.
+	ResultStrategyKey = "strategy"
 )
 
 // Input keys a caller may pass.
@@ -60,6 +65,11 @@ const (
 	// InputValueKey is a declared answer that nothing derives, such as the path
 	// of a bootloader.
 	InputValueKey = "value"
+
+	// InputCommitKey asks a strategy that can for the component as it is at this
+	// commit, rather than at whatever its tags say. A strategy that cannot
+	// ignores it, the way one that does not choose ignores InputSelectKey.
+	InputCommitKey = "commit"
 )
 
 // SelectCandidate asks for the highest release candidate and ignores releases.
@@ -67,11 +77,18 @@ const SelectCandidate = "candidate"
 
 // Strategy names, as written in the registry.
 const (
-	StrategyGitTag        = "gitTag"
-	StrategyLockedPackage = "lockedPackage"
-	StrategyMakeVar       = "makeVar"
-	StrategyOSImage       = "osImage"
-	StrategyURL           = "url"
+	StrategyGitTag = "gitTag"
+
+	// StrategyCommitDescribe is never written in the registry, because nothing
+	// resolves only this way. It names the arm of gitTagOrCommitDescribe that answered, in
+	// a plan and in the errors below.
+	StrategyCommitDescribe = "commitDescribe"
+
+	StrategyGitTagOrCommitDescribe = "gitTagOrCommitDescribe"
+	StrategyLockedPackage          = "lockedPackage"
+	StrategyMakeVar                = "makeVar"
+	StrategyOSImage                = "osImage"
+	StrategyURL                    = "url"
 )
 
 // Resolver turns inputs into the values a plan records.
@@ -123,18 +140,40 @@ func needs(inputs map[string]string, keys ...string) error {
 	return nil
 }
 
+// Options are the choices a caller makes about every resolver it builds, as
+// opposed to the per-component configuration that comes from the registry.
+type Options struct {
+	// CheckExists asks the strategies whose answer is a location to confirm it
+	// holds something. Off is the default, which keeps planning to git alone and
+	// leaves the question to whoever checks the whole plan.
+	CheckExists bool
+}
+
 // New builds the resolver a registry entry names. repo is the repository root
 // that git and file reads are made against.
 //
 // Unknown keys in with are rejected as well as missing ones, so a misspelling
 // cannot read as an omission.
-func New(strategy string, with map[string]string, repo string) (Resolver, error) {
+func New(strategy string, with map[string]string, repo string, opts Options) (Resolver, error) {
 	switch strategy {
 	case StrategyGitTag:
 		if err := checkWith(strategy, with, []string{"tagPrefix"}, nil); err != nil {
 			return nil, err
 		}
 		return GitTag{Dir: repo, TagPrefix: with["tagPrefix"]}, nil
+	case StrategyGitTagOrCommitDescribe:
+		if err := checkWith(strategy, with, []string{"tagPrefix"}, []string{"base", "repository"}); err != nil {
+			return nil, err
+		}
+		if (with["base"] == "") != (with["repository"] == "") {
+			return nil, fmt.Errorf("strategy %s takes base and repository together, or neither", strategy)
+		}
+		return GitTagOrCommitDescribe{
+			Tag:        GitTag{Dir: repo, TagPrefix: with["tagPrefix"]},
+			Describe:   CommitDescribe{Dir: repo, TagPrefix: with["tagPrefix"]},
+			Base:       with["base"],
+			Repository: with["repository"],
+		}, nil
 	case StrategyLockedPackage:
 		if err := checkWith(strategy, with, []string{"lockDir", "from"}, nil); err != nil {
 			return nil, err
@@ -156,12 +195,13 @@ func New(strategy string, with map[string]string, repo string) (Resolver, error)
 		return OSImage{
 			Base: with["base"], Path: with["path"], From: with["from"],
 			Arch: with["arch"], Variant: with["variant"],
+			CheckExists: opts.CheckExists,
 		}, nil
 	case StrategyURL:
 		if err := checkWith(strategy, with, nil, []string{"base"}); err != nil {
 			return nil, err
 		}
-		return URL{Base: with["base"]}, nil
+		return URL{Base: with["base"], CheckExists: opts.CheckExists}, nil
 	case "":
 		return nil, fmt.Errorf("no strategy named")
 	default:
@@ -170,7 +210,10 @@ func New(strategy string, with map[string]string, repo string) (Resolver, error)
 }
 
 func strategies() []string {
-	return []string{StrategyGitTag, StrategyLockedPackage, StrategyMakeVar, StrategyOSImage, StrategyURL}
+	return []string{
+		StrategyGitTag, StrategyGitTagOrCommitDescribe, StrategyLockedPackage,
+		StrategyMakeVar, StrategyOSImage, StrategyURL,
+	}
 }
 
 // checkWith rejects a with map that lacks a required key or carries a key the

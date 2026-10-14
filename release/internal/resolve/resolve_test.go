@@ -70,7 +70,7 @@ func TestNewRejects(t *testing.T) {
 		{"make var needs var", StrategyMakeVar, map[string]string{}, `needs "var"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := New(tc.strategy, tc.with, ".")
+			_, err := New(tc.strategy, tc.with, ".", Options{})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want it to contain %q", err, tc.want)
 			}
@@ -79,7 +79,7 @@ func TestNewRejects(t *testing.T) {
 }
 
 func TestNewAcceptsAnEmptyTagPrefix(t *testing.T) {
-	if _, err := New(StrategyGitTag, map[string]string{"tagPrefix": ""}, "."); err != nil {
+	if _, err := New(StrategyGitTag, map[string]string{"tagPrefix": ""}, ".", Options{}); err != nil {
 		t.Errorf("an empty prefix names the repository's own tags: %v", err)
 	}
 }

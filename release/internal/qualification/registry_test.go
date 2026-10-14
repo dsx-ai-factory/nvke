@@ -11,7 +11,7 @@ import (
 
 const validRegistry = `
 apiVersion: nvke.nvidia.com/v1alpha1
-kind: Registry
+kind: QualificationRegistry
 spec:
   components:
     - {name: controller, resolve: {strategy: gitTag, with: {tagPrefix: "controller/"}}}
@@ -57,7 +57,7 @@ func TestLoadRegistryRejects(t *testing.T) {
 		{"no name", strings.Replace(validRegistry, "{name: kind,", "{name: \"\",", 1), "has no name"},
 		{
 			"no components",
-			"apiVersion: nvke.nvidia.com/v1alpha1\nkind: Registry\nspec:\n  components: []\n",
+			"apiVersion: nvke.nvidia.com/v1alpha1\nkind: QualificationRegistry\nspec:\n  components: []\n",
 			"spec.components is empty",
 		},
 	} {
@@ -70,10 +70,10 @@ func TestLoadRegistryRejects(t *testing.T) {
 
 const sourcedRegistry = `
 apiVersion: nvke.nvidia.com/v1alpha1
-kind: Registry
+kind: QualificationRegistry
 spec:
   sources:
-    - {name: artifacts, url: "https://cdn.example"}
+    - {name: artifacts, base: "https://cdn.example"}
   components:
     - {name: image, resolve: {strategy: osImage, with: {source: artifacts, path: p, from: os-image, arch: amd64, variant: non-fde}}}
     - {name: loader, resolve: {strategy: url, with: {source: artifacts}}}
@@ -114,12 +114,13 @@ func TestLoadRegistryRejectsBadSources(t *testing.T) {
 	for _, tc := range []struct{ name, from, to, want string }{
 		{
 			"a duplicate source",
-			`    - {name: artifacts, url: "https://cdn.example"}`,
-			"    - {name: artifacts, url: \"https://cdn.example\"}\n    - {name: artifacts, url: \"https://other.example\"}",
+			`    - {name: artifacts, base: "https://cdn.example"}`,
+			"    - {name: artifacts, base: \"https://cdn.example\"}\n    - {name: artifacts, base: \"https://other.example\"}",
 			`source "artifacts" is listed twice`,
 		},
-		{"a source with no name", `{name: artifacts, url: "https://cdn.example"}`, `{name: "", url: "https://cdn.example"}`, "a source has no name"},
-		{"a source that is not a URL", `url: "https://cdn.example"`, `url: "cdn.example"`, `has url "cdn.example", which is not a URL`},
+		{"a source with no name", `{name: artifacts, base: "https://cdn.example"}`, `{name: "", base: "https://cdn.example"}`, "a source has no name"},
+		{"a source with no scheme", `base: "https://cdn.example"`, `base: "cdn.example"`, `has base "cdn.example", which names no scheme`},
+		{"a source with a scheme nothing can check", `base: "https://cdn.example"`, `base: "ftp://cdn.example"`, `names no scheme`},
 		{"a component naming a source that is not listed", "{source: artifacts}", "{source: elsewhere}", `names source "elsewhere", which is not listed`},
 		{"a source beside a base", "{source: artifacts}", "{source: artifacts, base: https://x.example}", "names both a source and a base"},
 	} {
@@ -127,5 +128,14 @@ func TestLoadRegistryRejectsBadSources(t *testing.T) {
 			_, err := LoadRegistry(write(t, "registry.yaml", strings.Replace(sourcedRegistry, tc.from, tc.to, 1)))
 			wantError(t, err, tc.want)
 		})
+	}
+}
+
+// A registry is a location like any other, so a source can name one and the
+// components published there resolve against it.
+func TestLoadRegistryAcceptsAnOCISource(t *testing.T) {
+	yaml := strings.Replace(sourcedRegistry, `base: "https://cdn.example"`, `base: "oci://registry.example/org"`, 1)
+	if _, err := LoadRegistry(write(t, "registry.yaml", yaml)); err != nil {
+		t.Errorf("an oci source is a location: %v", err)
 	}
 }

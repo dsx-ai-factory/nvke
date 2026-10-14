@@ -28,10 +28,11 @@
 # tests, for a future site whose jump host is not Teleport-enrolled; giving
 # the suite a JUMP_HOST_PASSWORD is still what selects it.
 #
-# NEVER AUTOMATIC. A run takes a bare-metal machine for up to an hour, so it
-# starts only when a person asks: a workflow_dispatch, or the `qualify-e2e`
-# label on a pull request from this repository. Three reasons it is not on a
-# schedule and not on every push:
+# ASKED FOR, OR A BETA TAG. A run takes a bare-metal machine for up to an hour,
+# so it starts only when a person asks, by workflow_dispatch or the
+# `qualify-e2e` label on a pull request from this repository, or when a
+# `vX.Y.Z-beta.N` tag is pushed. It is still not on a schedule and not on every
+# push, for three reasons, and the beta tag answers each of them:
 #
 #   Capacity.  The site's cpu.himem.t1 pool was fully allocated by a single
 #   site controller, which forced that run's tenant onto the GPU pool. See
@@ -40,13 +41,15 @@
 #   Secrets.  A fork pull request cannot reach FORGE_API_KEY, and the
 #   Teleport join token deliberately does not cover forks either. The label
 #   gate below requires the head repository to be this one, so a fork PR
-#   carrying the label still does not run.
+#   carrying the label still does not run. A tag is pushed to this repository
+#   by someone who can already push to it, so it is not a fork.
 #
 #   Cost of a leak.  Teardown is the suite's, from a defer. If the job is
 #   cancelled or hits `timeout-minutes`, the runner dies before teardown and
 #   a bare-metal instance stays allocated with nothing left to delete it.
 #   `cancel-in-progress: false` and the go-test timeout below both exist for
-#   that reason, and a cancelled run still needs someone to check Forge.
+#   that reason, and a cancelled run still needs someone to check Forge. A
+#   beta tag is cut once a night, so it adds one run and not a stream of them.
 #
 # NO NODE PASSWORD. The image's baked `dgxc-admin` account is how a person
 # reaches these nodes, and how the manual procedure does it. The harness does
@@ -86,6 +89,14 @@ on:
         description: "The nvke tag to qualify, e.g. v0.22.0-beta.1. It must be an existing tag. QUALIFY_E2E_NVKE_VERSION supplies it when this is empty, and the plan takes the highest nke version when neither is set."
         type: string
         required: false
+      resolution:
+        description: "How to resolve the components, named for the strategy that answers. gitTag takes each from its own release tags, which is how a release is qualified. commitDescribe describes each at the commit the nvke-version points at, which is how a beta is qualified, because a beta tag carries no component tags. A beta tag push uses commitDescribe."
+        type: choice
+        required: false
+        default: gitTag
+        options:
+          - gitTag
+          - commitDescribe
       scope:
         description: "How much of the matrix to cover, a scope from release/policy.yaml. One job runs for each stream the scope selects."
         type: string
@@ -150,10 +161,10 @@ on:
         required: false
         default: false
       image-registry:
-        description: Where the published controller and capi-provisioned images are pulled from. nvcr needs the NGC_API_KEY secret and the QUALIFY_E2E_NGC_ORG variable.
+        description: Where the published controller and capi-provisioned images are pulled from. nvcr is the default and needs the NGC_API_KEY secret and the QUALIFY_E2E_NGC_ORG variable.
         type: choice
         required: false
-        default: ghcr
+        default: nvcr
         options:
           - ghcr
           - nvcr
@@ -174,6 +185,14 @@ on:
   pull_request:
     types: [labeled]
     branches: [main]
+
+  # A nightly beta tag qualifies itself. The tag names a commit and carries no
+  # component versions, so this path asks for resolution: commitDescribe, and
+  # every component is described at the commit the tag marks rather than from
+  # the component tags, which still name the last release.
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
 
 permissions: {}
 
@@ -204,13 +223,15 @@ jobs:
   plan:
     name: plan
     runs-on: arc-amd64-cpu16
-    # The same gate as the lanes: a dispatch is deliberate, and a pull_request
-    # run has to be asked for with the `qualify-e2e` label, or the
-    # `qualify-e2e-dry-run` label for a dry run, from a branch in this
-    # repository. The lanes need this job, so they are skipped with it.
+    # The same gate as the lanes: a dispatch is deliberate, a beta tag was
+    # pushed to this repository, and a pull_request run has to be asked for with
+    # the `qualify-e2e` label, or the `qualify-e2e-dry-run` label for a dry run,
+    # from a branch in this repository. The lanes need this job, so they are
+    # skipped with it.
     if: >-
       github.repository_id == '1323115536' &&
       (github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'push' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
         contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run"]'), github.event.label.name)))
     timeout-minutes: 15
@@ -224,10 +245,29 @@ jobs:
       # What the plan resolved for the run as a whole.
       nvke-version: ${{ steps.matrix.outputs.nvke-version }}
       scope: ${{ steps.matrix.outputs.scope }}
+      # The commit the components were resolved at, empty when they came from
+      # their tags. Read by the verify job to decide whether a missing artifact
+      # means not yet or never.
+      commit: ${{ steps.matrix.outputs.commit }}
     env:
       DRY_RUN: ${{ (inputs.dry-run == true || github.event.label.name == 'qualify-e2e-dry-run') && 'true' || 'false' }}
-      NVKE_VERSION: ${{ inputs.nvke-version || vars.QUALIFY_E2E_NVKE_VERSION }}
+      # A tag push qualifies the tag it was pushed for. Its ref_name is only
+      # read on that event, so a dispatch from a branch is unaffected.
+      NVKE_VERSION: >-
+        ${{ inputs.nvke-version
+            || (github.event_name == 'push' && github.ref_name)
+            || vars.QUALIFY_E2E_NVKE_VERSION }}
+      # A beta tag is pushed to be qualified as what that commit built, so the
+      # tag push asks for commitDescribe without anyone selecting it.
+      RESOLUTION: >-
+        ${{ inputs.resolution
+            || (github.event_name == 'push' && 'commitDescribe')
+            || 'gitTag' }}
       SCOPE: ${{ inputs.scope || vars.QUALIFY_E2E_SCOPE || 'golden-path' }}
+      # The registry.yaml base names this, so the plan fails here when it is
+      # unset rather than naming an artifact under no org. The same variable
+      # the lanes build SITE_IMAGES from.
+      QUALIFY_E2E_NGC_ORG: ${{ vars.QUALIFY_E2E_NGC_ORG }}
       # The names are the registry's, which are the keys the suite reads.
       OVERRIDE_CONTROLLER: ${{ inputs.controller-version || vars.QUALIFY_E2E_CONTROLLER_VERSION }}
       OVERRIDE_CLI: ${{ inputs.cli-version || vars.QUALIFY_E2E_CLI_VERSION }}
@@ -291,6 +331,10 @@ jobs:
             args+=(--overrides "${overrides}")
           fi
 
+          # The commit is not passed. It is derived from the version this is
+          # qualifying, so one run describes everything at one commit.
+          args+=(--resolution "${RESOLUTION}")
+
           go run ./release/cmd/qualify "${args[@]}"
 
       # The plan as tables on the run page, so what will be qualified can be
@@ -339,19 +383,28 @@ jobs:
           ' plan.json >> "${GITHUB_STEP_SUMMARY}"
 
       # One entry per stream of every combination, carrying what that lane
-      # needs. A value is the url when the entry has one and the version when
-      # it does not, which is what the suite takes under that key. The keyed
-      # os-image component's own version is a release tag and its bare name is
-      # the suite's fallback key for an image URL, so it is not passed.
+      # needs.
+      #
+      # A dependency is passed as its url when it has one and its version when
+      # it does not, which is what the suite takes under that key. A component
+      # is always passed as its version, because its url names where the
+      # artifact is and the lane needs what to call it: the image tag it pulls,
+      # the ref the deploy path is read at, and the version the deployed
+      # controller reports back.
+      #
+      # The keyed os-image component's own version is a release tag and its
+      # bare name is the suite's fallback key for an image URL, so it is not
+      # passed.
       - name: Build the matrix
         id: matrix
         shell: bash
         run: |
           set -Eeuo pipefail
           matrix="$(jq -c '
-            def value($all; $name):
-              ([$all[] | select(.name == $name)] | first) as $e
-              | ($e.url // $e.version // "");
+            def entry($all; $name): ([$all[] | select(.name == $name)] | first);
+            def value($all; $name): entry($all; $name) as $e | ($e.url // $e.version // "");
+            def version($all; $name): entry($all; $name) as $e | ($e.version // "");
+            def url($all; $name): entry($all; $name) as $e | ($e.url // "");
             {include: [
               .combinations[] as $c
               | $c.streams[] as $s
@@ -361,12 +414,12 @@ jobs:
                   stream: $s.name,
                   arch: $s.capabilities.arch,
                   gpu: ($s.capabilities.gpu // ""),
-                  controller: value($all; "controller"),
-                  cli: value($all; "cli"),
-                  capi_provisioned: value($all; "capi-provisioned"),
+                  controller: version($all; "controller"),
+                  cli: version($all; "cli"),
+                  capi_provisioned: version($all; "capi-provisioned"),
                   kube: value($all; "kube"),
                   cni_ovn: value($all; "cni-ovn"),
-                  os_image: value($all; "os-image"),
+                  os_image: version($all; "os-image"),
                   kind: value($all; "kind"),
                   clusterctl: value($all; "clusterctl"),
                   nerdctl: value($all; "nerdctl"),
@@ -380,6 +433,7 @@ jobs:
             echo "matrix=${matrix}"
             echo "nvke-version=$(jq -r .version plan.json)"
             echo "scope=$(jq -r .scope plan.json)"
+            echo "commit=$(jq -r '.commit // ""' plan.json)"
             echo "dry-run=${DRY_RUN}"
           } >> "${GITHUB_OUTPUT}"
           echo "${matrix}" | jq .
@@ -392,13 +446,65 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Confirms every artifact the plan names is published, before any machine is
+  # taken. A plan that names something unpublished otherwise fails an hour in,
+  # on hardware, with the failure looking like a provisioning fault.
+  #
+  # It asks the registry for the locations the plan recorded, so what it
+  # confirms is that the run can pull them.
+  #
+  # Always, in both modes, because nothing else asks. What the mode changes is
+  # the budget: a release's artifacts were published when it was cut, so a miss
+  # is a fault to report now, while a beta's publishers may still be running, so
+  # a miss means not yet. The os-image bake is the long pole at roughly ninety
+  # minutes.
+  verify:
+    name: verify artifacts
+    needs: plan
+    runs-on: arc-amd64-cpu16
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: release/go.mod
+          cache-dependency-path: release/go.sum
+
+      - name: Download the plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: qualify-plan-${{ github.run_id }}
+
+      - name: Check every artifact the plan names
+        shell: bash
+        env:
+          # Both registries hold private repositories, so neither answers
+          # anonymously. These are the same credentials the lanes log in with.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
+          # A commit-resolved plan may have been made by the tag push that
+          # started the publishers, so give them time. A tag-resolved one asks
+          # once.
+          WAIT: ${{ needs.plan.outputs.commit != '' && '90m' || '0' }}
+        run: |
+          set -euo pipefail
+          go run ./release/cmd/qualify verify --plan plan.json --wait "${WAIT}"
+
   # One job per stream of the plan.
   qualify-matrix:
     # Named for the stream, which names its provider, GPU model, architecture,
     # Ubuntu series and Kubernetes minor, so the shape is readable from the
     # checks list without opening the run.
     name: ${{ matrix.stream }}${{ needs.plan.outputs.dry-run == 'true' && ' (dry run)' || '' }}
-    needs: plan
+    needs: [plan, verify]
     strategy:
       # Never cancel a sibling. A cancelled lane dies before its teardown and
       # leaks a bare-metal instance, so one stream failing must not take the
@@ -449,9 +555,16 @@ jobs:
       # Nothing about a stage or an OS image is Forge's -- only the access
       # path to the hardware is, which is why FORGE_JUMP_HOST and the
       # Teleport and Forge resource variables below keep their prefix.
-      SITE_STAGE: ${{ inputs.stage || vars.QUALIFY_E2E_STAGE || 'provision' }}
+      # full, so a run that names no stage qualifies the whole thing. A label run
+      # and a tag push carry no dispatch input, and a beta that stopped at a
+      # booted node would have qualified none of what it was cut for.
+      SITE_STAGE: ${{ inputs.stage || vars.QUALIFY_E2E_STAGE || 'full' }}
       # A dry run joins no Teleport and runs no suite. Decided by the plan job.
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
+      # The commit the components were described at, empty when they came from
+      # their tags. It is what names the nvkectl artifact, which is tagged by
+      # commit and platform rather than by version.
+      PLAN_COMMIT: ${{ needs.plan.outputs.commit }}
       # Empty asks for a build from this checkout; the resolve step fills it
       # in. Every use of it downstream -- the image site-inputs stages, the
       # NVKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
@@ -519,7 +632,8 @@ jobs:
       # staged onto the node as an archive. The node's own pull is CAPNICo,
       # which is published to GHCR alone, so the GHCR login below stays either
       # way.
-      SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || vars.QUALIFY_E2E_IMAGE_REGISTRY || 'ghcr' }}
+      # NVCR holds every build, so a commit between releases has an image.
+      SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || vars.QUALIFY_E2E_IMAGE_REGISTRY || 'nvcr' }}
       # One value for the archive site-inputs pulls and the reference the suite
       # bootstraps with. Named for the component, as -e2e.versions and the
       # config field are; the make variable it feeds keeps the SITE_ prefix its
@@ -708,18 +822,21 @@ jobs:
             echo "::add-mask::${FORGE_YTL_JUMP_HOST}"
           fi
 
-          # The join token allows refs/heads/main and refs/pull/*/merge and
-          # nothing else, so a dispatch from any other branch mints nothing.
-          # Checked here because the join failure names neither the ref nor
-          # the rule, and the dispatch UI offers every branch.
+          # The join token allows refs/heads/main, refs/pull/*/merge and a
+          # repo-wide beta tag, and nothing else, so a dispatch from any other
+          # branch mints nothing. Checked here because the join failure names
+          # neither the ref nor the rule, and the dispatch UI offers every
+          # branch. The patterns are the token's own, so a change there is a
+          # change here.
           #
           # A dry run joins no Teleport, so it can run from any branch.
           if [ "${DRY_RUN}" != "true" ]; then
             case "${REF}" in
-              refs/heads/main | refs/pull/*/merge) ;;
+              refs/heads/main | refs/pull/*/merge | refs/tags/v*-beta.*) ;;
               *)
                 echo "::error::running from ${REF}; the Teleport join token allows only" \
-                     "refs/heads/main and refs/pull/*/merge. Dispatch from main, or label a pull request."
+                     "refs/heads/main, refs/pull/*/merge and refs/tags/v*-beta.*." \
+                     "Dispatch from main, label a pull request, or push a beta tag."
                 exit 1
                 ;;
             esac
@@ -855,17 +972,18 @@ jobs:
           done
           echo "OS_IMAGE_VERSIONS=${versions#,}" >> "${GITHUB_ENV}"
 
-      # A named version stages the nvkectl that release shipped rather than
-      # one built here, so a candidate can pair a published CLI with a
-      # published CWE. site-inputs does the download and the checks
-      # (hack/fetch-nvkectl.sh); this step only decides which, and names the
-      # binary the config points at. The path is the Makefile's SITE_NVKECTL.
-      # It does look the release up, so a mistyped version fails here rather
-      # than after the Teleport and registry logins.
+      # A named version stages the published nvkectl rather than one built
+      # here, so a candidate can pair a published CLI with a published CWE.
+      # site-inputs does the pull and the checks (hack/fetch-nvkectl.sh); this
+      # step only names the artifact and where the staged binary lands, which
+      # is the Makefile's SITE_NVKECTL.
+      #
+      # The artifact is tagged <alias>-<os>-<arch>, where the alias is the
+      # commit for a run that described one and the version for a run that
+      # resolved from tags. The described version is an annotation on it and
+      # names nothing, which is why the commit is what addresses it.
       - name: Resolve the nvkectl version
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           if [ -z "${CLI_VERSION}" ]; then
@@ -878,23 +996,17 @@ jobs:
             echo "building nvkectl from ${version}"
             exit 0
           fi
-          # The two shapes release.yml publishes a cli/<version> tag in. Also
-          # what keeps the value inert in the URL below and in site-inputs.
-          if [[ ! "${CLI_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
-            echo "::error::cli-version '${CLI_VERSION}' is neither vX.Y.Z nor vX.Y.Z-rc.N"
-            exit 1
-          fi
-          if ! curl -fsS -o /dev/null --retry 3 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases/tags/cli/${CLI_VERSION}"; then
-            echo "::error::no published cli/${CLI_VERSION} release"
-            exit 1
+
+          alias="${CLI_VERSION}"
+          if [ -n "${PLAN_COMMIT}" ]; then
+            alias="sha-${PLAN_COMMIT}"
           fi
           {
             echo "SITE_CLI_BUILD=0"
+            echo "SITE_CLI_REF=${SITE_IMAGES}/nvkectl:${alias}-linux-${SITE_ARCH}"
             echo "SITE_NVKECTL=${SITE_INPUTS}/nvkectl/nvkectl-linux-${SITE_ARCH}"
           } >> "${GITHUB_ENV}"
-          echo "staging the published nvkectl ${CLI_VERSION}"
+          echo "staging the published nvkectl ${CLI_VERSION} as ${alias}"
 
       # No stored identity: tbot joins with the repository's OIDC token
       # against a join token named by FORGE_TELEPORT_JOIN_TOKEN, whose bot
@@ -986,6 +1098,14 @@ jobs:
       # Separate from FORGE_API_KEY because NGC cannot scope one key to both
       # the Forge tenant and the registry. The runner is the only thing that
       # pulls with it: nothing on the node pulls from NVCR.
+      # The pin every tool version comes from, read once so the setup below and
+      # a local run cannot disagree.
+      - name: Read the pinned ORAS version
+        id: oras
+        if: env.SITE_CLI_REF != ''
+        shell: bash
+        run: echo "version=$(make --no-print-directory print-ORAS_VERSION)" >> "${GITHUB_OUTPUT}"
+
       - name: Log in to NVCR
         if: env.SITE_IMAGE_REGISTRY == 'nvcr'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -994,6 +1114,14 @@ jobs:
           # `$oauthtoken` is NGC's literal username, not a variable reference.
           username: $oauthtoken
           password: ${{ secrets.NGC_API_KEY }}
+
+      # Only a run staging nvkectl by reference needs it, and that is the run
+      # that has no release to download from.
+      - name: Set up ORAS
+        if: env.SITE_CLI_REF != ''
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        with:
+          version: ${{ steps.oras.outputs.version }}
 
       # nvkectl for the node's architecture, the three image archives, and the
       # deploy path out of the checkout. The node has no access to this
@@ -1043,7 +1171,7 @@ jobs:
           site:
             images:
               controller:
-                repository: ${SITE_IMAGES}/nke-controller
+                repository: ${SITE_IMAGES}/nvke-controller
                 archive: ${SITE_INPUTS}/controller.tar
               capi-provisioned:
                 repository: ${SITE_IMAGES}/cluster-api-provider-provisioned

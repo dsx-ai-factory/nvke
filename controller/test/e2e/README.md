@@ -498,13 +498,18 @@ newest CWE on GHCR predates #850 and rejects this checkout's nvkectl at
 once one is cut past #850.
 
 To stage a published nvkectl instead, set `SITE_CLI_BUILD=0` and name the
-version. `site-inputs` downloads `nvkectl-linux-$(SITE_ARCH)` from its
-`cli/<version>` GitHub Release into `$(SITE_INPUTS)/nvkectl/`, checks it against
-the release's `checksums.txt`, and, when the binary is for the host it runs on,
-checks it reports that version. It needs `GITHUB_TOKEN` and `jq`:
+artifact. `site-inputs` pulls `nvkectl-linux-$(SITE_ARCH)` out of it into
+`$(SITE_INPUTS)/nvkectl/` and, when the binary is for the host it runs on,
+checks it reports `SITE_CLI_VERSION`. The manifest digest covers the bytes.
+
+nvkectl is published per alias and platform, so the reference is
+`<registry>/nvkectl:<alias>-linux-<arch>`, where the alias is a version for a
+release and `sha-<commit>` for a commit between releases. It needs `oras` and a
+`docker login` to the registry:
 
 ```bash
-GITHUB_TOKEN=... gmake site-inputs SITE_CLI_BUILD=0 SITE_CLI_VERSION=v0.1.0 SITE_CONTROLLER_VERSION=...
+gmake site-inputs SITE_CLI_BUILD=0 SITE_CONTROLLER_VERSION=... \
+  SITE_CLI_VERSION=v0.1.0 SITE_CLI_REF=nvcr.io/<org>/nvkectl:v0.1.0-linux-amd64
 # and in e2e-config.yaml, site.nvkectl: <SITE_INPUTS>/nvkectl/nvkectl-linux-<arch>
 # and on the suite, -e2e.versions=...,cli=<version>
 ```

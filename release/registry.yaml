@@ -13,7 +13,7 @@
 # carries no prefix because its directory is the repository root.
 
 apiVersion: nvke.nvidia.com/v1alpha1
-kind: Registry
+kind: QualificationRegistry
 metadata:
   name: nvke
   description: How each component resolves to a version.
@@ -21,14 +21,46 @@ spec:
   # Where artifacts are published. A component names a source in its resolve.with,
   # so the location is stated once and appears in no other file.
   sources:
-    - {name: artifact-cdn, url: https://d1veq6e8nuk2fy.cloudfront.net}
+    - {name: artifact-cdn, base: https://d1veq6e8nuk2fy.cloudfront.net}
+    # Where the images are pulled from. It holds every build, so a commit
+    # between releases has something to pull. The org names one organization's
+    # registry rather than anything about NVKE, so a run supplies it and an
+    # unset variable fails here rather than against the registry later.
+    - {name: artifact-registry, base: "oci://nvcr.io/${QUALIFY_E2E_NGC_ORG}"}
 
+  # gitTagOrCommitDescribe resolves from the tags under the prefix, or describes a named
+  # commit when a run names one. A commit between releases carries no tag, so the
+  # tags would answer with the newest release rather than what was built there.
+  #
+  # repository is the component's name under the artifact-registry source, and is
+  # given only for the ones published there. os-image is reached through
+  # os-image-amd64 and os-image-arm64 below, which build CDN URLs instead.
   components:
-    - {name: nvke,              resolve: {strategy: gitTag, with: {tagPrefix: ""}}}
-    - {name: controller,       resolve: {strategy: gitTag, with: {tagPrefix: "controller/"}}}
-    - {name: cli,              resolve: {strategy: gitTag, with: {tagPrefix: "cli/"}}}
-    - {name: capi-provisioned, resolve: {strategy: gitTag, with: {tagPrefix: "cluster-api-provider-provisioned/"}}}
-    - {name: os-image,         resolve: {strategy: gitTag, with: {tagPrefix: "os-image/"}}}
+    # The subject stays gitTag. Its version is what the run is called and what a
+    # qualification is recorded against, so it is a release that was cut and
+    # never a description of a commit. The components are what a run resolves at
+    # a commit; the thing being qualified is still a version.
+    - {name: nvke,     resolve: {strategy: gitTag, with: {tagPrefix: ""}}}
+    - {name: os-image, resolve: {strategy: gitTagOrCommitDescribe, with: {tagPrefix: "os-image/"}}}
+    - name: controller
+      resolve:
+        strategy: gitTagOrCommitDescribe
+        with: {tagPrefix: "controller/", source: artifact-registry, repository: nvke-controller}
+    # No repository, although nvkectl is published to the same registry. Its
+    # artifact is tagged per platform from the aliases, "sha-<commit>-linux-amd64"
+    # and not the version, so the version does not name it and a url built from
+    # one would point at nothing.
+    - name: cli
+      resolve:
+        strategy: gitTagOrCommitDescribe
+        with: {tagPrefix: "cli/"}
+    - name: capi-provisioned
+      resolve:
+        strategy: gitTagOrCommitDescribe
+        with:
+          tagPrefix: "cluster-api-provider-provisioned/"
+          source: artifact-registry
+          repository: cluster-api-provider-provisioned
 
     # A run needs the image and its bootloader for every architecture, whatever
     # the stream's own. Each is named by the key the e2e suite reads and resolves

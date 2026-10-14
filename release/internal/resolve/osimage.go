@@ -5,7 +5,6 @@ package resolve
 
 import (
 	"fmt"
-	"net/http"
 	"strings"
 )
 
@@ -32,9 +31,9 @@ type OSImage struct {
 	// Variant is the image flavour in the file name, such as non-fde.
 	Variant string
 
-	// Client is used to check the URL exists. Nil means a client with a short
-	// timeout.
-	Client *http.Client
+	// CheckExists is passed to the URL this builds, so an image is held to the
+	// same opt-in check as a declared one.
+	CheckExists bool
 }
 
 // Resolve returns the image's URL and the release tag it was built from.
@@ -45,7 +44,7 @@ type OSImage struct {
 // gave is returned in place of the built one, and the image's release is then
 // not known.
 func (o OSImage) Resolve(inputs map[string]string) (map[string]string, error) {
-	url := URL{Client: o.Client}
+	url := URL{CheckExists: o.CheckExists}
 	if inputs[InputOverrideKey] != "" {
 		return url.Resolve(inputs)
 	}
@@ -71,21 +70,31 @@ func (o OSImage) Resolve(inputs map[string]string) (map[string]string, error) {
 	if o.Path != "" {
 		under += "/" + strings.Trim(o.Path, "/")
 	}
-	// New images publish under the nvke filename. Releases already in the bucket
-	// keep the previous filename, and the bucket does not list, so the name that
-	// answers is the one that was published. A release that has neither reports
-	// the new name, which is what a new image is published as.
-	got, err := url.Resolve(map[string]string{
-		InputValueKey: o.imageObjectURL(under, tag, release, "nvke"),
-	})
-	if err != nil {
-		legacy, legacyErr := url.Resolve(map[string]string{
-			InputValueKey: o.imageObjectURL(under, tag, release, "nke"),
-		})
-		if legacyErr != nil {
-			return nil, err
+	// Every image published since the rename carries the nvke filename. A
+	// release cut before it is still in the bucket under the old one, and the
+	// bucket does not list, so the name that answers is the one that was
+	// published. This asks with its own check rather than the caller's, because
+	// here the answer selects the filename rather than confirming it.
+	//
+	// Transitional, and it goes when the first release published since the
+	// rename is the highest one a run resolves. A run describing a commit
+	// already skips it: anything built now carries the new name, and its image
+	// may still be baking, so asking would fail a plan for a reason the wait
+	// exists to absorb.
+	name := o.imageObjectURL(under, tag, release, "nvke")
+	if inputs[InputCommitKey] == "" {
+		probe := URL{CheckExists: true}
+		if _, err := probe.Resolve(map[string]string{InputValueKey: name}); err != nil {
+			legacy := o.imageObjectURL(under, tag, release, "nke")
+			if _, err := probe.Resolve(map[string]string{InputValueKey: legacy}); err == nil {
+				name = legacy
+			}
 		}
-		got = legacy
+	}
+
+	got, err := url.Resolve(map[string]string{InputValueKey: name})
+	if err != nil {
+		return nil, err
 	}
 	got[ResultVersionKey] = tag
 	return got, nil

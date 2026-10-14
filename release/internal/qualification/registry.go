@@ -5,7 +5,8 @@ package qualification
 
 import (
 	"fmt"
-	"strings"
+
+	"github.com/dsx-ai-factory/nvke/release/internal/artifact"
 )
 
 // Registry is release/registry.yaml: how each component resolves to a version.
@@ -28,10 +29,16 @@ type RegistrySpec struct {
 	Components []Component `json:"components"`
 }
 
-// Source is a named location. It holds no version, only where something is.
+// Source is a named location that components are published under. It holds no
+// version, only where things are.
+//
+// It is a base and never a whole location: a component names the source and
+// supplies the rest, a path under it for the CDN and a repository and version
+// for a registry. StrategyConfig hands it to a strategy as "base", which is
+// what the strategies call it.
 type Source struct {
 	Name string `json:"name"`
-	URL  string `json:"url"`
+	Base string `json:"base"`
 }
 
 // Component is one resolvable thing and the strategy that resolves it. A
@@ -76,7 +83,7 @@ func (r *Registry) StrategyConfig(c Component) map[string]string {
 		delete(with, "source")
 		for _, src := range r.Spec.Sources {
 			if src.Name == name {
-				with["base"] = src.URL
+				with["base"] = src.Base
 			}
 		}
 	}
@@ -109,8 +116,9 @@ func (r *Registry) validate(path string) error {
 			return fmt.Errorf("%s: a source has no name", path)
 		case sources[src.Name]:
 			return fmt.Errorf("%s: source %q is listed twice", path, src.Name)
-		case !strings.HasPrefix(src.URL, "https://") && !strings.HasPrefix(src.URL, "http://"):
-			return fmt.Errorf("%s: source %q has url %q, which is not a URL", path, src.Name, src.URL)
+		case !artifact.IsScheme(src.Base):
+			return fmt.Errorf("%s: source %q has base %q, which names no scheme a location can be "+
+				"checked under", path, src.Name, src.Base)
 		}
 		sources[src.Name] = true
 	}

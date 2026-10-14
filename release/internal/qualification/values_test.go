@@ -70,7 +70,7 @@ func strategies(t *testing.T, r *Registry) map[string]resolve.Resolver {
 		if c.Resolve.Strategy == "fake" {
 			continue
 		}
-		built, err := resolve.New(c.Resolve.Strategy, r.StrategyConfig(c), ".")
+		built, err := resolve.New(c.Resolve.Strategy, r.StrategyConfig(c), ".", resolve.Options{})
 		if err != nil {
 			t.Fatalf("%s: %v", c.Name, err)
 		}

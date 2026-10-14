@@ -37,6 +37,23 @@ type Planner struct {
 	// by name. Each replaces what the strategy would have resolved, and goes
 	// through the same resolver so that it is checked there.
 	Overrides map[string]string
+
+	// ResolveAtCommit describes the components at the subject's commit rather
+	// than resolving them from their own tags.
+	//
+	// The commit is not given, it is derived from the version being qualified,
+	// so nothing can name a version and a commit that disagree. A beta tag
+	// carries no component tags, so its components have to be described at the
+	// commit it marks or they resolve to the last release instead.
+	//
+	// The commit is offered to every resolver, and the ones with no
+	// commit-shaped answer ignore it, the way a resolver that does not choose
+	// ignores a select. An override still wins, so a version a person named
+	// means the same thing either way.
+	ResolveAtCommit bool
+
+	// commit is what ResolveAtCommit resolved to, kept for the plan to record.
+	commit string
 }
 
 // Plan resolves one subject at one version over one scope.
@@ -69,8 +86,17 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 		return nil, err
 	}
 
-	if version, err = p.subjectVersion(subject, version); err != nil {
+	var ref string
+	if version, ref, err = p.subjectVersion(subject, version); err != nil {
 		return nil, err
+	}
+	if p.ResolveAtCommit {
+		// From the ref the subject resolved to, whether a person named the
+		// version or the tags answered, so one run has one commit and it is
+		// always the one the version points at.
+		if p.commit, err = resolve.CommitOf(p.Root, ref); err != nil {
+			return nil, fmt.Errorf("the commit to describe %s at: %w", subject, err)
+		}
 	}
 
 	combinations, err := p.combinations(s, streams)
@@ -87,6 +113,7 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 		Subject:      subject,
 		Version:      version,
 		Scope:        scope,
+		Commit:       p.commit,
 		Overrides:    overrides,
 		Combinations: combinations,
 	}, nil
@@ -94,20 +121,20 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 
 // subjectVersion resolves the subject through the registry exactly as any
 // other component resolves. An empty version is the highest version of any kind.
-func (p *Planner) subjectVersion(subject, version string) (string, error) {
+func (p *Planner) subjectVersion(subject, version string) (resolved, ref string, err error) {
 	inputs := map[string]string{}
 	if version != "" {
-		inputs = map[string]string{resolve.InputOverrideKey: version}
+		inputs[resolve.InputOverrideKey] = version
 	}
 
 	got, err := p.resolver(subject).Resolve(inputs)
 	if err != nil {
 		if version == "" {
-			return "", fmt.Errorf("resolving %s: %w", subject, err)
+			return "", "", fmt.Errorf("resolving %s: %w", subject, err)
 		}
-		return "", fmt.Errorf("checking %s %s: %w", subject, version, err)
+		return "", "", fmt.Errorf("checking %s %s: %w", subject, version, err)
 	}
-	return got[resolve.ResultVersionKey], nil
+	return got[resolve.ResultVersionKey], got[resolve.ResultRefKey], nil
 }
 
 // streams expands the scope's selector over the policy's stream list, then
@@ -193,10 +220,21 @@ func (p *Planner) combinations(s *Subject, streams []StreamDefinition) ([]Combin
 	return out, nil
 }
 
+// inputs are what every resolution starts from, before the component's own
+// override. One place builds them so that a run cannot resolve one component at
+// the commit and another from its tags.
+func (p *Planner) inputs() map[string]string {
+	inputs := map[string]string{}
+	if p.commit != "" {
+		inputs[resolve.InputCommitKey] = p.commit
+	}
+	return inputs
+}
+
 // resolveComponent turns one component's selectors into the versions to
 // qualify, in selector order and without repeats.
 func (p *Planner) resolveComponent(c SubjectComponent) ([]pick, error) {
-	inputs := map[string]string{}
+	inputs := p.inputs()
 	if v, ok := p.Overrides[c.Name]; ok {
 		inputs[resolve.InputOverrideKey] = v
 	}
@@ -230,7 +268,7 @@ func (p *Planner) combination(s *Subject, picked []pick, streams []StreamDefinit
 	// strategy returned is available as "<name>.<key>".
 	base := map[string]string{}
 	for i, c := range picked {
-		components[i] = ComponentVersion{Name: c.name, Version: c.result[resolve.ResultVersionKey]}
+		components[i] = p.componentVersion(c.name, c.result)
 		base[c.name] = c.result[resolve.ResultVersionKey]
 		for k, v := range c.result {
 			if k != resolve.ResultVersionKey {
@@ -284,13 +322,29 @@ func (p *Planner) resolveDependencies(s *Subject, base map[string]string, stream
 		if err != nil {
 			return nil, fmt.Errorf("resolving %s for %s: %w", d.Name, s.Spec.Subject, err)
 		}
-		out = append(out, ComponentVersion{
-			Name:    d.Name,
-			Version: got[resolve.ResultVersionKey],
-			URL:     got[resolve.ResultURLKey],
-		})
+		out = append(out, p.componentVersion(d.Name, got))
 	}
 	return out, nil
+}
+
+// componentVersion records what one name resolved to.
+//
+// The strategy is the one the resolver reported, so that an entry which can
+// resolve two ways says which it did. One that reports nothing is only itself,
+// and the registry's name for it is the honest answer.
+func (p *Planner) componentVersion(name string, got map[string]string) ComponentVersion {
+	strategy := got[resolve.ResultStrategyKey]
+	if strategy == "" {
+		if c, ok := p.Registry.Component(name); ok {
+			strategy = c.Resolve.Strategy
+		}
+	}
+	return ComponentVersion{
+		Name:     name,
+		Version:  got[resolve.ResultVersionKey],
+		URL:      got[resolve.ResultURLKey],
+		Strategy: strategy,
+	}
 }
 
 // resolver returns the resolver for a component. A missing one is a wiring

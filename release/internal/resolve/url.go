@@ -4,10 +4,11 @@
 package resolve
 
 import (
+	"context"
 	"fmt"
-	"net/http"
 	"strings"
-	"time"
+
+	"github.com/dsx-ai-factory/nvke/release/internal/artifact"
 )
 
 // URL returns a location, which is what the e2e suite takes for an image or a
@@ -21,9 +22,12 @@ type URL struct {
 	// a whole URL.
 	Base string
 
-	// Client is used to check the URL exists. Nil means a client with a short
-	// timeout.
-	Client *http.Client
+	// CheckExists asks whether the URL holds something before returning it.
+	//
+	// It is off by default so that planning needs nothing but git. Resolution
+	// answers what a run qualifies, and whether each artifact is published is
+	// asked once, later, for every artifact in the plan.
+	CheckExists bool
 }
 
 // Resolve returns the URL under ResultURLKey.
@@ -50,44 +54,21 @@ func (u URL) Resolve(inputs map[string]string) (map[string]string, error) {
 	return u.finish(strings.TrimSuffix(u.Base, "/") + "/" + strings.TrimPrefix(value, "/"))
 }
 
-// finish checks a URL exists and returns it.
+// finish returns a URL, having checked it exists when asked to.
 func (u URL) finish(url string) (map[string]string, error) {
 	if !isURL(url) {
 		return nil, fmt.Errorf("%q is not a URL", url)
 	}
-	if err := u.exists(url); err != nil {
-		return nil, err
+	if u.CheckExists {
+		if err := artifact.Exists(context.Background(), url); err != nil {
+			return nil, err
+		}
 	}
 	return map[string]string{ResultURLKey: url}, nil
 }
 
 func isURL(s string) bool {
 	return strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "http://")
-}
-
-// exists asks for the URL with HEAD and requires a 200.
-//
-// The bucket is private and does not list, so a missing object answers 403 as
-// well, and so does a request from a network that is not allowed. The check can
-// confirm that something exists and cannot say that it does not, so a failure
-// names both explanations.
-func (u URL) exists(url string) error {
-	client := u.Client
-	if client == nil {
-		client = &http.Client{Timeout: 20 * time.Second}
-	}
-
-	resp, err := client.Head(url)
-	if err != nil {
-		return fmt.Errorf("could not confirm %s exists: %w", url, err)
-	}
-	resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("could not confirm %s exists: HTTP %d. A missing artifact and a network that is "+
-			"not allowed both answer 403, so check both", url, resp.StatusCode)
-	}
-	return nil
 }
 
 // Validate requires a value and takes nothing else. A value is a path under the
