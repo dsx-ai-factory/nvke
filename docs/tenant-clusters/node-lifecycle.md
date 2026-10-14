@@ -49,6 +49,19 @@ NVKE does not automatically terminate healthy in-service nodes only because desi
 
 Auto-mode gradually replaces worker nodes in deprecated NodeSets. The controller marks eligible nodes with `nke.nvidia.com/NeedsRecycle`, and [NVSentinel](https://github.com/NVIDIA/NVSentinel) (or your break-fix system) decides when those nodes can be cordoned, drained, and terminated.
 
+## Label Domain
+
+The labels, annotations, taints, and node conditions the controller reads and writes (`reboot`, `terminate`, `NeedsRecycle`, `machine-health-issue`, `provisioning`, and the rest) live under the `nke.nvidia.com` key domain. A site that needs another domain sets `identity.labelDomain` in the controller chart. Left empty, it is `nke.nvidia.com`, and nothing changes.
+
+Both domains are read. A node that carries `nke.nvidia.com/reboot` still triggers a reboot after the domain is changed, and a request raised under either domain is seen. Writes go to the configured domain, and a label or taint the controller clears is cleared in both forms. Nothing has to be relabeled when the domain changes.
+
+Two things the controller does not do for you:
+
+- **Tooling that raises requests.** [NVSentinel](https://github.com/NVIDIA/NVSentinel) and other break-fix systems keep writing the keys they were configured with. Both domains are read, so they keep working. Move them when you want the configured domain to be the only one in use.
+- **capnico.** It writes the instance labels and watches the reboot and repair annotations under its own flags (`--topology-label-domain`, `--reboot-annotation`, `--repair-annotation`). Set them to the same domain, or the two sides stop agreeing on a key. `--topology-label-domain` needs a capnico release that includes it; `deploy/nico/capnico/capnico.yaml` does not pass it yet.
+
+The management namespace (`nke-system` by default) is set with `nkeSystemNamespace.name`. Unlike labels, it is not dual-read: Secrets already in the old namespace are not found in the new one, so an existing site keeps `nke-system`. `nvkectl get kubeconfig --namespace` reads from a renamed one.
+
 ## Rebooting a Node
 
 If rebooting a node is required, use one of the following approaches:
