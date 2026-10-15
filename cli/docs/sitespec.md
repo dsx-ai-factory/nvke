@@ -77,9 +77,10 @@ both.
 
 The Kind cluster holds the CAPNICo, the `nico-credentials` Secret (the NICo
 token) and the `dgxc-tenant-credentials` Secret (the tenant password). It is
-deleted when the bootstrap ends, except in two cases: when you pass
-`--keep-bootstrap-cluster`, and when the run fails after the site cluster was
-created. In both, the cluster and those Secrets stay on the bootstrap host until
+deleted when the bootstrap ends, except in three cases: when you pass
+`--keep-bootstrap-cluster`, when the run fails after the site cluster was
+created, and when the create request got no answer, so the controller may have
+created it. In each, the cluster and those Secrets stay on the bootstrap host until
 you delete the cluster with
 `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`
 (the failure message prints the command). Treat the host as holding the tokens
@@ -103,7 +104,7 @@ would be a sibling of it, so nothing here changes when one is added.
 |---|---|---|---|
 | `infra.provider` | string | no | `provisioned` (default) or `nico`. `NVKECTL_INFRA_PROVIDER` overrides it. |
 | `infra.nico.orgID` | string | with `nico` | The NICo organization the machines are created in. |
-| `infra.nico.remote.endpoint` | string | with `nico` | The existing NICo's API base URL, an http or https URL. |
+| `infra.nico.remote.endpoint` | string | with `nico` | The existing NICo's API base URL. The bootstrap sends the NICo token to it, so `bootstrap site` and `validate sitespec --bootstrap-only` require https unless `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT=1` is set, for a local or simulated NICo. |
 | `infra.nico.remote.siteID`, `vpcID` | UUID | with `nico` | The NICo site and the VPC the cluster is created in. |
 | `infra.nico.controlPlane.count` | int | with `nico` | Odd, at least 1. Takes the place of the length of `cluster.nodes`. |
 | `infra.nico.controlPlane.instanceTypePreference` | UUID list | with `nico` | Ordered; index 0 is the first choice. |
@@ -171,15 +172,18 @@ bump in the deploy path is a bump here. It is not the Helm chart: the manifest
 carries the reboot and repair annotation prefixes the controller writes, which
 the chart does not, and needs only `kubectl`.
 
-By default the image is the tag the manifest names. Pass `--release <file>` to
+By default the image is the digest that `bootstrap-manifest.yaml` lists for the
+tag the manifest names (`nvkectl get bootstrap-manifest`), so a retagged image
+does not change what runs. Pass `--release <file>` to
 pin it to an NVKR release's `capnico-controller` artifact instead, as
 `nvkectl render deploy-path --release` does for the site controller's CAPNICo:
 the manifest's one image is replaced with the artifact's `repository@digest`.
 The release description is not verified, here or there: run `nvkr release
 verify` on the same reference first.
 `--arch` (default the bootstrap host's) picks the artifact's architecture, since
-the bootstrap CAPNICo runs in the Kind cluster on that host. It is refused with
-the `provisioned` provider, where no CAPNICo is installed. The Kind node pulls
+the bootstrap CAPNICo runs in the Kind cluster on that host. It is refused
+without `--release`, whatever the provider, and `--release` is itself refused
+with the `provisioned` provider, where no CAPNICo is installed. The Kind node pulls
 the image anonymously, so the release's `capnico-controller` image must be
 publicly pullable; staging images from a release run directory, as the deploy path does for the
 node, is not supported here. The Kind host must reach `ghcr.io`
@@ -315,7 +319,9 @@ them from there and they are not repeated in `controllerStack:`.
   `validate sitespec --bootstrap-only` check; a full `validate sitespec`
   reports them; `render deploy-path` does not); with `provisioned` `infra.nico` is rejected. `spire.externalAddress` is required with
   `nico` unless `--disable-mtls`, which `bootstrap site` and
-  `validate sitespec --bootstrap-only` both check.
+  `validate sitespec --bootstrap-only` both check. Pass `--disable-mtls` to
+  `validate sitespec` as you will to `bootstrap site`, and the file is checked
+  as that run would: `spire.externalAddress` is not required.
 
 CLI acceptance does not prove bootstrap or network reachability. The controller
 chooses the first control-plane node ready to join, which need not be the first

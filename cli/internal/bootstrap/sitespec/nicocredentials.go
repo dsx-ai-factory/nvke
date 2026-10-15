@@ -17,6 +17,11 @@ const (
 	// the credentials never enter the site spec.
 	NicoCredentialsEnv = "NVKECTL_NICO_CREDENTIALS"
 
+	// NicoInsecureEndpointEnv, set to 1, lets infra.nico.remote.endpoint be an
+	// http URL. The bootstrap sends the NICo bearer token to that endpoint, so
+	// without it only https is accepted; it is for a local or simulated NICo.
+	NicoInsecureEndpointEnv = "NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT"
+
 	// DefaultNicoAPIName is the API name in the NICo API path that CAPNICo is
 	// given, which the credentials file does not carry today.
 	DefaultNicoAPIName = "forge"

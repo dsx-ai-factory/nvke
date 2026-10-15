@@ -1176,6 +1176,42 @@ func TestValidateBootstrapReferences_TenantPasswordMustHoldAPassword(t *testing.
 	}
 }
 
+// TestValidateBootstrapReferences_HTTPEndpointNeedsOptIn: the bootstrap sends
+// the NICo token to infra.nico.remote.endpoint, so an http one is refused on the
+// host that holds the token unless the operator opts in. Load still accepts it:
+// the same file is valid for commands that never send the token.
+func TestValidateBootstrapReferences_HTTPEndpointNeedsOptIn(t *testing.T) {
+	path := writeNicoTemp(t, strings.Replace(nicoYAML, "endpoint: https://nico.example", "endpoint: http://nico.example:18080", 1))
+	inv, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load must accept an http endpoint: %v", err)
+	}
+	t.Setenv(NicoCredentialsEnv, filepath.Join(filepath.Dir(path), "nico.token"))
+
+	t.Setenv(NicoInsecureEndpointEnv, "")
+	err = inv.ValidateBootstrapReferences()
+	for _, want := range []string{"infra.nico.remote.endpoint", "http://nico.example:18080", "cleartext", NicoInsecureEndpointEnv + "=1"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("ValidateBootstrapReferences error = %v, want it to contain %q", err, want)
+		}
+	}
+
+	t.Setenv(NicoInsecureEndpointEnv, "1")
+	if err := inv.ValidateBootstrapReferences(); err != nil && strings.Contains(err.Error(), "cleartext") {
+		t.Errorf("ValidateBootstrapReferences with the opt-in = %v, want no endpoint error", err)
+	}
+
+	// https needs no opt-in.
+	httpsInv, err := Load(writeNicoTemp(t, nicoYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(NicoInsecureEndpointEnv, "")
+	if err := httpsInv.ValidateBootstrapReferences(); err != nil && strings.Contains(err.Error(), "cleartext") {
+		t.Errorf("an https endpoint was refused as cleartext: %v", err)
+	}
+}
+
 // TestReadNicoToken: the credentials file's format is told from its content. A
 // bare token is the bearer token; the client-credentials form is recognised and
 // refused until CAPNICo can take it; anything else is not a token.

@@ -5,6 +5,7 @@ package sitespec
 
 import (
 	"encoding/json"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -271,6 +272,7 @@ func (v *validator) checkNicoCredentials(inv *SiteSpec) {
 	if !inv.IsNico() {
 		return
 	}
+	v.checkNicoEndpointScheme(inv)
 	path := NicoCredentialsPath()
 	if path == "" {
 		v.addf("%s must name the file holding the NICo token: the bootstrap CAPNICo needs it, and it is not in the site spec",
@@ -279,5 +281,20 @@ func (v *validator) checkNicoCredentials(inv *SiteSpec) {
 	}
 	if _, err := ReadNicoToken(path); err != nil {
 		v.addf("%s: %v", NicoCredentialsEnv, err)
+	}
+}
+
+// checkNicoEndpointScheme refuses an http infra.nico.remote.endpoint unless
+// NicoInsecureEndpointEnv is 1: the bootstrap sends the NICo bearer token there.
+// It is checked beside the token, on the host that holds it, because the same
+// site spec is valid for the stack install, which does not send this token.
+func (v *validator) checkNicoEndpointScheme(inv *SiteSpec) {
+	n := inv.Infra.Nico
+	if n == nil || n.Remote == nil || os.Getenv(NicoInsecureEndpointEnv) == "1" {
+		return
+	}
+	if u, err := url.Parse(n.Remote.Endpoint); err == nil && u.Scheme == "http" {
+		v.addf("%s.endpoint %q is http, so the NICo token would be sent in cleartext; use https, or set %s=1 for a local or simulated NICo",
+			pathNicoRemote, n.Remote.Endpoint, NicoInsecureEndpointEnv)
 	}
 }

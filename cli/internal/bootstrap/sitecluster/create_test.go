@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +18,8 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"github.com/dsx-ai-factory/nvke/cli/internal/clients"
+	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
@@ -129,6 +133,69 @@ func TestCreate_PropagatesTheAPIError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "orgID must be omitted") {
 		t.Errorf("error %q does not carry what the controller said", err)
+	}
+}
+
+// TestCreate_MarksAnUnconfirmedCreate: the controller commits a cluster before it
+// answers, so only a refusal or a connection never made proves it created
+// nothing. Everything else is marked ErrCreateUnconfirmed.
+func TestCreate_MarksAnUnconfirmedCreate(t *testing.T) {
+	tests := []struct {
+		name        string
+		handler     http.HandlerFunc
+		closed      bool
+		unconfirmed bool
+	}{
+		{
+			name: "a 4xx refusal created nothing",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"message":"orgID must be omitted"}`))
+			},
+		},
+		{
+			name: "a 5xx may follow a committed create",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+			unconfirmed: true,
+		},
+		{
+			name: "a connection dropped before the answer may follow a committed create",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				conn, _, err := w.(http.Hijacker).Hijack()
+				if err == nil {
+					_ = conn.Close()
+				}
+			},
+			unconfirmed: true,
+		},
+		{
+			name:   "a connection never made created nothing",
+			closed: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(tt.handler)
+			if tt.closed {
+				srv.Close()
+			} else {
+				defer srv.Close()
+			}
+			client, err := clients.New(config.SiteConfig{URL: srv.URL})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = Create(context.Background(), client, testSiteSpec(), quietLogger())
+			if err == nil {
+				t.Fatal("expected Create to fail")
+			}
+			if got := errors.Is(err, ErrCreateUnconfirmed); got != tt.unconfirmed {
+				t.Errorf("errors.Is(%q, ErrCreateUnconfirmed) = %v, want %v", err, got, tt.unconfirmed)
+			}
+		})
 	}
 }
 

@@ -39,6 +39,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/controllerdeploy"
 	bootstrapengine "github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/engine"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
@@ -1741,6 +1742,48 @@ func TestRequireNoSiteAtVIPSkipsAnEmptyVIP(t *testing.T) {
 	}
 }
 
+// TestCreateSiteCluster_KeepsKindAfterAnUnconfirmedNicoCreate: with nico, a
+// create the controller may have committed may be allocating NICo instances,
+// so the bootstrap cluster is kept. A refusal created nothing, and the
+// provisioned provider allocates nothing, so both leave it to be deleted.
+func TestCreateSiteCluster_KeepsKindAfterAnUnconfirmedNicoCreate(t *testing.T) {
+	nico, err := sitespec.Load(nicoSiteSpecFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provisioned, err := sitespec.Load(writeSiteSpec(t, validSiteSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name     string
+		inv      *sitespec.SiteSpec
+		status   int
+		wantKept bool
+	}{
+		{name: "nico, a 5xx", inv: nico, status: http.StatusInternalServerError, wantKept: true},
+		{name: "nico, a 4xx refusal", inv: nico, status: http.StatusBadRequest},
+		{name: "provisioned, a 5xx", inv: provisioned, status: http.StatusInternalServerError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+			}))
+			defer srv.Close()
+			port := srv.Listener.Addr().(*net.TCPAddr).Port
+
+			kept, err := createSiteCluster(context.Background(), nil, tt.inv, &bootstrapSiteOptions{}, int32(port), slog.New(slog.DiscardHandler))
+			if err == nil {
+				t.Fatal("expected createSiteCluster to fail")
+			}
+			if kept != tt.wantKept {
+				t.Errorf("createSiteCluster kept the bootstrap cluster = %v, want %v (err %v)", kept, tt.wantKept, err)
+			}
+		})
+	}
+}
+
 // TestRetainedClusterError: the advice after a failure past CreateCluster. With
 // nico it leads with releasing the instances; with provisioned it is unchanged.
 func TestRetainedClusterError(t *testing.T) {
@@ -1768,6 +1811,26 @@ func TestRetainedClusterError(t *testing.T) {
 		}
 		if strings.Index(msg, "nvkectl delete cluster") > strings.Index(msg, "kind delete cluster") {
 			t.Errorf("advice %q deletes the Kind cluster before it releases the instances", msg)
+		}
+	})
+	// The create may have been committed without its answer arriving: the advice
+	// says to check for the cluster before releasing it, then delete Kind.
+	t.Run("nico with the create unconfirmed", func(t *testing.T) {
+		unconfirmed := fmt.Errorf("sitecluster: creating cluster %q: %w: %w", "nvke-site", sitecluster.ErrCreateUnconfirmed, cause)
+		msg := retainedClusterError(unconfirmed, nico, cluster, 30080).Error()
+		for _, want := range []string{
+			"no answer from the controller confirmed or refused the create",
+			"`nvkectl config set-site --name nvkectl-bootstrap --url http://127.0.0.1:30080 --kubeconfig /tmp/kc`",
+			"run `nvkectl get clusters`; if it lists nvke-site", "leaves them allocated and unmanaged",
+			"`nvkectl delete cluster nvke-site`", "nvkectl config use-site",
+			"then delete the bootstrap cluster with `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`",
+		} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("unconfirmed-create advice %q does not contain %q", msg, want)
+			}
+		}
+		if strings.Index(msg, "nvkectl get clusters") > strings.Index(msg, "nvkectl delete cluster") {
+			t.Errorf("advice %q deletes the site cluster before checking it exists", msg)
 		}
 	})
 	// After every node joined the site cluster is working: following the release

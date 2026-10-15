@@ -90,6 +90,8 @@ Any field can be supplied or overridden via an environment variable. A set varia
 | `NVKECTL_SPIFFE_TRUST_DOMAIN` | `spire.trustDomain` |
 | `NVKECTL_SPIRE_EXTERNAL_ADDRESS` | `spire.externalAddress` |
 | `NVKECTL_INFRA_PROVIDER` | `infra.provider` — `provisioned` or `nico` |
+| `NVKECTL_NICO_CREDENTIALS` | Not a site spec field: the path of the file holding the NICo API token, read on the bootstrap host. Required with `infra.provider: nico` by `bootstrap site` and `validate sitespec --bootstrap-only` |
+| `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT` | Not a site spec field: set to `1` to let `infra.nico.remote.endpoint` be an http URL. The bootstrap sends the NICo token there, so https is required without it; for a local or simulated NICo |
 | `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
 | `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
 | `NVKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
@@ -118,6 +120,7 @@ REGISTRY_API_KEY="nvapi-xxxx" nvkectl bootstrap site -f sitespec.yaml
 ```bash
 nvkectl validate sitespec -f sitespec.yaml
 nvkectl validate sitespec -f sitespec.yaml --bootstrap-only   # before the controllerStack section is filled in
+nvkectl validate sitespec -f sitespec.yaml --disable-mtls     # as "bootstrap site --disable-mtls" would: no spire.externalAddress needed with nico
 ```
 
 `bootstrap site --dry-run` loads and validates the bootstrap fields and prints the resolved inventory without dispatching any workflow or touching any node. All validation errors are reported together in one pass.

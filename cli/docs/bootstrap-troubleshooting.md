@@ -75,8 +75,10 @@ and `nke-controller`.
 ### The retained bootstrap cluster
 
 Bootstrap normally deletes its Kind cluster. It keeps it when you pass
-`--keep-bootstrap-cluster` or when a failure occurs after the controller
-accepts the site cluster request and before the outputs are saved. A failed
+`--keep-bootstrap-cluster`, when a failure occurs after the controller
+accepts the site cluster request and before the outputs are saved, or, with
+`infra.provider: nico`, when the create request got no answer, so the
+controller may have created the site cluster. A failed
 cleanup can also leave it behind. The logs report retention and, when
 available, the kubeconfig path.
 
@@ -140,6 +142,15 @@ The URL port is `NVKECTL_CONTROLLER_PORT`, `30080` by default. `set-site` makes
 `nvkectl config use-site <name>`. A cluster can be deleted in any state, and it
 stays listed as `Deleting` until every machine is released. Only then delete the
 Kind cluster. The failure message prints these steps.
+
+The same applies when the create request got no answer: a timeout, an
+interrupt, a dropped connection or a `5xx`. The controller commits the cluster
+and starts provisioning it before it answers, so with `nico` the cluster may
+exist and CAPNICo may be allocating its instances. The bootstrap cluster is
+then kept, and the failure message says the create was not confirmed. Run
+`set-site` as above, then `nvkectl get clusters`. If it lists `<clusterName>`,
+delete it and wait as above. If it does not, nothing was allocated. Either way,
+then delete the Kind cluster.
 
 None of this applies once every control-plane node joined, whether the run then
 failed writing the kubeconfig or saving the key, or succeeded and was kept with
@@ -437,11 +448,12 @@ With the `provisioned` provider the existing-cluster and port-6443 preflight
 checks catch common leftovers; they do not prove a node is clean or safe to
 reset.
 
-With `infra.provider: nico` only the existing-cluster check applies. The nodes
-are allocated rather than listed, so there is no host to probe, and the
-preflight cannot see the NICo instances an earlier run allocated. It stops a
-re-run while the retained Kind cluster exists; once that cluster is deleted,
-nothing stops one, and each re-run allocates another
+With `infra.provider: nico` the existing-cluster check applies, and a probe of
+`cluster.controlPlaneVIP` on port 6443. The nodes are allocated rather than
+listed, so there is no host to probe, and the preflight cannot see the NICo
+instances an earlier run allocated. It stops a re-run while the retained Kind
+cluster exists, or while a site cluster answers on the VIP; once that cluster is
+deleted and nothing answers on the VIP, nothing stops one, and each re-run allocates another
 `infra.nico.controlPlane.count` machines. So release the instances before you
 delete the Kind cluster, and check NICo for instances left by a cluster you
 already deleted.

@@ -364,6 +364,61 @@ func TestInstallCAPNICo_AppliesSecretsThenTheManifest(t *testing.T) {
 	}
 }
 
+// TestInstallCAPNICo_RunsTheManifestsDigestByDefault: the embedded manifest
+// names the image by tag, which a registry can move, and the manager can read
+// cluster Secrets. With no --release the install applies the digest the
+// bootstrap manifest lists; a release's image still replaces it.
+func TestInstallCAPNICo_RunsTheManifestsDigestByDefault(t *testing.T) {
+	listed := manifest.Load().Components[manifest.ComponentCAPNICo].Images[manifest.ImageCAPNICo]
+	wantImage := "ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller@" + listed.Digest
+
+	runner := &fakeRunner{}
+	if err := New(runner, nil).installCAPNICo(context.Background(), "/tmp/kubeconfig", nicoTestConfig(t), time.Minute); err != nil {
+		t.Fatalf("installCAPNICo: %v", err)
+	}
+	var applied string
+	for _, doc := range runner.applied {
+		if strings.Contains(doc, "image: ") {
+			applied = doc
+		}
+	}
+	if !strings.Contains(applied, "        image: "+wantImage+"\n") {
+		t.Errorf("the applied manifest does not run %s", wantImage)
+	}
+	if strings.Contains(applied, "controller:v") {
+		t.Error("the applied manifest still runs the image by tag")
+	}
+
+	const release = "registry.example/capnico/controller@sha256:" +
+		"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	cfg := nicoTestConfig(t)
+	cfg.CAPNICoImage = release
+	runner = &fakeRunner{}
+	if err := New(runner, nil).installCAPNICo(context.Background(), "/tmp/kubeconfig", cfg, time.Minute); err != nil {
+		t.Fatalf("installCAPNICo with a release image: %v", err)
+	}
+	found := false
+	for _, doc := range runner.applied {
+		found = found || strings.Contains(doc, "        image: "+release+"\n")
+	}
+	if !found {
+		t.Errorf("the release's image %s was not applied", release)
+	}
+}
+
+// TestPinnedCAPNICoImage: the repository without its tag, then the digest, and
+// a refusal when the bootstrap manifest lists no digest.
+func TestPinnedCAPNICoImage(t *testing.T) {
+	got, err := pinnedCAPNICoImage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := manifest.Load().Components[manifest.ComponentCAPNICo].Images[manifest.ImageCAPNICo]
+	if !strings.HasSuffix(got, "@"+listed.Digest) || strings.Contains(strings.TrimSuffix(got, "@"+listed.Digest), ":") {
+		t.Errorf("pinnedCAPNICoImage = %q, want the repository, no tag, then @%s", got, listed.Digest)
+	}
+}
+
 // TestCAPNICoSecretsManifest: the Secrets carry the names, keys and namespace
 // CAPNICo and its manifest expect, which are the ones the deploy path's
 // 20-nico-credentials template renders, that no pull secret is created for the
@@ -486,6 +541,26 @@ func TestBootstrapManifest_NamesTheEmbeddedCAPNICoImage(t *testing.T) {
 	listed := manifest.Load().Components[manifest.ComponentCAPNICo].Images[manifest.ImageCAPNICo].Ref
 	if got := string(lines[0][2]); listed != got {
 		t.Errorf("bootstrap-manifest.yaml lists the CAPNICo image %q, the embedded manifest runs %q; update the manifest entry and its digest", listed, got)
+	}
+}
+
+// TestBootstrapManifest_CAPNICoDigestIsTheTagsDigest: the default install runs
+// the digest bootstrap-manifest.yaml lists, not the tag the embedded manifest
+// names, and nothing offline can resolve a tag. So the tag and the digest are
+// written down together here: a bump that edits the tag in capnico.yaml and the
+// manifest ref, or the digest alone, fails until this pair is updated too. Take
+// the digest from the registry, for the multi-architecture index:
+//
+//	crane digest <ref>
+func TestBootstrapManifest_CAPNICoDigestIsTheTagsDigest(t *testing.T) {
+	const (
+		ref    = "ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.0.45"
+		digest = "sha256:bca9d77a25e605a5c39faf0a71b45b484d363edc4535f8a37aa811a639738595"
+	)
+	listed := manifest.Load().Components[manifest.ComponentCAPNICo].Images[manifest.ImageCAPNICo]
+	if listed.Ref != ref || listed.Digest != digest {
+		t.Errorf("bootstrap-manifest.yaml lists CAPNICo %s@%s, this test pins %s@%s; after a bump, check the digest with `crane digest <ref>` and update both",
+			listed.Ref, listed.Digest, ref, digest)
 	}
 }
 

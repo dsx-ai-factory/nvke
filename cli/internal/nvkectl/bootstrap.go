@@ -614,7 +614,10 @@ func createSiteCluster(
 	}
 	created, err := sitecluster.Create(ctx, client, inv, logger)
 	if err != nil {
-		return false, err
+		// With nico, a create the controller may have accepted may already be
+		// allocating NICo instances, which deleting the bootstrap cluster would
+		// leave unmanaged; it is kept as after any failure past the create.
+		return inv.IsNico() && errors.Is(err, sitecluster.ErrCreateUnconfirmed), err
 	}
 
 	// One budget spans both waits, because --timeout bounds the whole
@@ -824,10 +827,29 @@ func siteKubeconfigPath(clusterName string, opts *bootstrapSiteOptions) string {
 func nicoReleaseSteps(siteCluster, bootstrapCluster, kubeconfig string, port int32) string {
 	return fmt.Sprintf("release the NICo instances CAPNICo allocated first, because deleting the bootstrap cluster does not "+
 		"(it leaves them allocated and unmanaged, with the tenant login in their user data): point nvkectl at this "+
-		"cluster's controller with `nvkectl config set-site --name %s --url http://127.0.0.1:%d --kubeconfig %s`, run "+
+		"cluster's controller with %s, run "+
 		"`nvkectl delete cluster %s`, and wait until `nvkectl get clusters` no longer lists it; set-site made %s the "+
 		"active site, so switch back afterwards with `nvkectl config use-site <name>`",
-		bootstrapCluster, port, kubeconfig, siteCluster, bootstrapCluster)
+		nicoSetSiteCommand(bootstrapCluster, kubeconfig, port), siteCluster, bootstrapCluster)
+}
+
+// nicoUnconfirmedSteps says what to do when the create request may have reached
+// the controller without its answer reaching nvkectl: find out whether the site
+// cluster exists and, if it does, release its NICo instances as nicoReleaseSteps
+// does.
+func nicoUnconfirmedSteps(siteCluster, bootstrapCluster, kubeconfig string, port int32) string {
+	return fmt.Sprintf("point nvkectl at this cluster's controller with %s and run `nvkectl get clusters`; if it lists %s, "+
+		"release the NICo instances CAPNICo may be allocating for it, because deleting the bootstrap cluster does not "+
+		"(it leaves them allocated and unmanaged, with the tenant login in their user data): run `nvkectl delete cluster %s` "+
+		"and wait until `nvkectl get clusters` no longer lists it; set-site made %s the active site, so switch back "+
+		"afterwards with `nvkectl config use-site <name>`",
+		nicoSetSiteCommand(bootstrapCluster, kubeconfig, port), siteCluster, siteCluster, bootstrapCluster)
+}
+
+// nicoSetSiteCommand is the command that points nvkectl at the bootstrap
+// cluster's controller.
+func nicoSetSiteCommand(bootstrapCluster, kubeconfig string, port int32) string {
+	return fmt.Sprintf("`nvkectl config set-site --name %s --url http://127.0.0.1:%d --kubeconfig %s`", bootstrapCluster, port, kubeconfig)
 }
 
 // retainedClusterError wraps err, from a failure after the site cluster was
@@ -865,6 +887,13 @@ func retainedClusterError(err error, inv *sitespec.SiteSpec, cluster *bootstrape
 		return &recoveryError{fmt.Errorf("%w; every control-plane node joined, so the site cluster is up and is not to be deleted; "+
 			"bootstrap cluster %q was retained to recover what this run could not write (kubeconfig: %s); once you have, delete only "+
 			"the bootstrap cluster with `%s`", err, cluster.Name, cluster.KubeconfigPath, deleteCommand)}
+	}
+	if release != "" && errors.Is(err, sitecluster.ErrCreateUnconfirmed) {
+		return &recoveryError{fmt.Errorf("%w; no answer from the controller confirmed or refused the create, so site cluster %q "+
+			"may exist and be allocating NICo instances, and bootstrap cluster %q was retained (kubeconfig: %s); %s; then delete "+
+			"the bootstrap cluster with `%s`",
+			err, inv.ClusterName, cluster.Name, cluster.KubeconfigPath,
+			nicoUnconfirmedSteps(inv.ClusterName, cluster.Name, cluster.KubeconfigPath, port), deleteCommand)}
 	}
 	if release != "" {
 		return &recoveryError{fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+

@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
 )
 
 // capiVersion is injected by cli/Makefile from CAPI_VERSION in
@@ -128,7 +130,13 @@ func (e *Engine) installCAPNICo(ctx context.Context, kubeconfigPath string, cfg 
 	if err != nil {
 		return fmt.Errorf("controllerdeploy: reading the embedded CAPNICo manifest: %w", err)
 	}
-	raw, err = capnicoManifest(raw, cfg.CAPNICoImage)
+	image := cfg.CAPNICoImage
+	if image == "" {
+		if image, err = pinnedCAPNICoImage(); err != nil {
+			return err
+		}
+	}
+	raw, err = capnicoManifest(raw, image)
 	if err != nil {
 		return err
 	}
@@ -147,7 +155,7 @@ func (e *Engine) installCAPNICo(ctx context.Context, kubeconfigPath string, cfg 
 	}
 	defer cleanupManifest()
 
-	e.log.Info("installing CAPNICo", "namespace", capnicoNamespace, "imageOverride", cfg.CAPNICoImage)
+	e.log.Info("installing CAPNICo", "namespace", capnicoNamespace, "image", image, "release", cfg.CAPNICoImage != "")
 	for _, file := range []string{secretsFile, manifestFile} {
 		// Server-side apply: the CRDs are large enough that a client-side apply
 		// can exceed the last-applied-configuration annotation limit. It also
@@ -163,6 +171,27 @@ func (e *Engine) installCAPNICo(ctx context.Context, kubeconfigPath string, cfg 
 		return fmt.Errorf("controllerdeploy: waiting for CAPNICo: %w\n%s", err, out)
 	}
 	return nil
+}
+
+// pinnedCAPNICoImage returns the repository and digest of the CAPNICo image the
+// bootstrap manifest lists, as repository@digest: the form a release's artifact
+// is applied in. The embedded manifest names the image by tag, which a registry
+// can move, and the manager can read cluster Secrets, so the default install runs
+// the digest instead. It fails when the manifest lists none rather than fall
+// back to the tag.
+func pinnedCAPNICoImage() (string, error) {
+	img := manifest.Load().Components[manifest.ComponentCAPNICo].Images[manifest.ImageCAPNICo]
+	if !strings.HasPrefix(img.Digest, "sha256:") {
+		return "", fmt.Errorf("controllerdeploy: bootstrap-manifest.yaml lists no sha256 digest for the CAPNICo image %q", img.Ref)
+	}
+	repo := img.Ref
+	if at := strings.IndexByte(repo, '@'); at >= 0 {
+		repo = repo[:at]
+	}
+	if colon := strings.LastIndexByte(repo, ':'); colon > strings.LastIndexByte(repo, '/') {
+		repo = repo[:colon]
+	}
+	return repo + "@" + img.Digest, nil
 }
 
 // capnicoImageLine matches an image: line of the manifest.
