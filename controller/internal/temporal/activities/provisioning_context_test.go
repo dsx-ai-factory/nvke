@@ -33,6 +33,7 @@ func TestProvisioningContextKeepsAgentSnapshotThroughJoin(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "v0.1.2", first.NodeAgentVersion)
 	require.Equal(t, "apt", first.NodeAgentUpdateMethod)
+	require.True(t, first.ControlPlane)
 	// A later desired target and site setting do not replace this node's snapshot.
 	database.MockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil).Once()
 	a.cfg.NodeAgent.UpdateMethod = "bundle"
