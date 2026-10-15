@@ -85,7 +85,7 @@ missing in silence even if the restart were removed. These move when an image
 carrying the renamed unit is published, not before.
 
 set -eu is the first command for the reason the site node has it
-(internal/infra/forge/userdata.go): cloud-init runs these as one /bin/sh
+(internal/infra/provision/userdata.go): cloud-init runs these as one /bin/sh
 script and reports the exit status of the last one, which is the
 touch at the end. Without the guard a failed apt step still writes the
 success sentinel, so the node reports a clean cloud-init while missing the

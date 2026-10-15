@@ -148,9 +148,10 @@ token:^nke\.io/($|k8s-api-encryption-(configured|rewrite-complete))
 token:^nke\.io$
 
 # Names this image rename kept on purpose, plus the build-guest and nix names
-# that are still spelled the old way. The e2e lane's pin to nke-kubeadm-distro
-# and nke-cni-* rides on this entry and is tracked by #1600. The packages Provide nke-kubeadm-distro
-# and nke-cni-* so apt requests for those names still resolve. nke-calico-* is
+# that are still spelled the old way. The e2e lane's pin to nke-cni-* rides on
+# this entry and is tracked by #1600; the lane installs nvke-kubeadm-distro and
+# pins nothing there. The packages Provide nke-kubeadm-distro and nke-cni-* so
+# apt requests for those names still resolve. nke-calico-* is
 # the legacy pkg-builder layout. nke-spire-* is the SPIRE client, not the
 # nvke-spire-configure unit. nke-node-agent and nke-nodepool belong to the
 # other rename issues; the pattern stops there so a leftover nke-node-*.qcow2

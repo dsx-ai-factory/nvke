@@ -7,7 +7,7 @@
 # component resolves to a version is in registry.yaml.
 #
 # The streams below are the ones that exist: the Forge lanes on GB200 and L40S
-# capacity.
+# capacity, and the DSX lane on the redstone-dev1-dh2 datahall's CPU hardware.
 # A policy naming capabilities no runner has produces plans that nothing can
 # schedule, so a stream is added with the runner that backs it.
 
@@ -43,8 +43,11 @@ spec:
   # node images a run needs.
   #
   # A stream is named <provider>-<gpu>-<arch>-ubuntu-<series>-kube-<minor>, so
-  # two streams that differ only in GPU model do not share a name. The name is
-  # the key of everything recorded for a stream.
+  # two streams that differ only in GPU model do not share a name. A stream
+  # that declares no gpu omits that segment rather than inventing a value for
+  # it --- the DSX lane below is named dsx-arm64-..., and a `none` or `cpu`
+  # there would read as a capability no stream selects on. The name is the key
+  # of everything recorded for a stream.
   streams:
     - name: forge-gb200-amd64-ubuntu-24.04-kube-1.36
       capabilities: {provider: forge, gpu: gb200, arch: amd64, ubuntu: "24.04", kube: "1.36"}
