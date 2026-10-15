@@ -233,7 +233,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' ||
        github.event_name == 'push' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
-        contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run","qualify-e2e-smoke","qualify-e2e-dsx"]'), github.event.label.name)))
+        contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run","qualify-e2e-dsx"]'), github.event.label.name)))
     timeout-minutes: 15
     permissions:
       contents: read
