@@ -150,10 +150,24 @@ func TestValidateNamesEveryMissingField(t *testing.T) {
 	if err == nil {
 		t.Fatal("a site declaring nothing should not validate")
 	}
-	for _, want := range []string{"id", "tenantID", "vpcID", "vpcPrefixID", "sshKeyGroupID", "instanceTypes"} {
+	for _, want := range []string{"tenantID", "vpcID", "vpcPrefixID", "sshKeyGroupID", "instanceTypes"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should name %s, got %v", want, err)
 		}
+	}
+}
+
+// `id` is declared and recorded but nothing sends it: the API host comes from
+// the key. Requiring it would skip an otherwise usable datahall over a
+// variable no request carries, which is how an onboarding fails for a reason
+// that does not exist.
+func TestValidateDoesNotRequireTheSiteID(t *testing.T) {
+	site := completeSite()
+	site.Key = "dh"
+	site.ID = ""
+
+	if err := site.validate(); err != nil {
+		t.Errorf("a site with every sent field but no id should validate, got %v", err)
 	}
 }
 

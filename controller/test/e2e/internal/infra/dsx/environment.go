@@ -70,8 +70,13 @@ type Site struct {
 	// derived one.
 	API string `json:"api"`
 
-	// ID is the site id, which a create request carries even though the host
-	// already names the datahall.
+	// ID is the site id. Recorded, not sent: the host derived from Key already
+	// names the datahall, and no request this package builds carries it. Kept
+	// because it is what the datahall is called in the DSX APIs and in a
+	// bring-up procedure, so a reader comparing the two has it.
+	//
+	// Not required, for that reason --- requiring a field nothing reads would
+	// skip an otherwise usable datahall over a variable no run needs.
 	ID string `json:"id"`
 
 	// TenantID is the tenant every object is created under. Declared rather
@@ -236,7 +241,6 @@ func (d *Environment) Site(name string) (Site, error) {
 func (s Site) validate() error {
 	missing := make([]string, 0, 8)
 	for _, field := range []struct{ name, value string }{
-		{"id", s.ID},
 		{"tenantID", s.TenantID},
 		{"vpcID", s.VpcID},
 		{"vpcPrefixID", s.VpcPrefixID},
