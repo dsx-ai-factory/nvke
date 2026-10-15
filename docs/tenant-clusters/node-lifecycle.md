@@ -72,8 +72,10 @@ a duplicate reboot. A removed reboot label, a deletion timestamp, or a terminati
 label cancels escalation. The controller does not uncordon the node during this flow.
 Your break-fix system controls workload recovery and uncordoning.
 
-Existing Temporal executions retain their recorded reboot strategy after an upgrade.
-Start a new reboot workflow to use timeout escalation for those nodes.
+This change does not preserve replay compatibility for active reboot workflows.
+Before the controller upgrade, cancel active reboot workflows.
+Wait for cancellation and cleanup to finish.
+After the upgrade, start new reboot workflows for nodes that still need recovery.
 
 ## Terminating a Node
 
