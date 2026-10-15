@@ -86,14 +86,16 @@ spec:
     # the stream's own. Each is named by the key the e2e suite reads. The image
     # is built from the os-image release, and the bootloader is declared because
     # nothing derives it, which is why it has a location and no version.
+    # namePrefix is nke because v0.2.0-rc.1 predates the packer rename in #1548.
+    # Drop the key with the first release built after it; nvke is the default.
     - name: os-image-amd64
       resolve:
         version:  {from: os-image}
-        location: {strategy: osImage, with: {arch: amd64, variant: non-fde, source: artifact-cdn, path: nvke-packages}}
+        location: {strategy: osImage, with: {arch: amd64, variant: non-fde, source: artifact-cdn, path: nvke-packages, namePrefix: nke}}
     - name: os-image-arm64
       resolve:
         version:  {from: os-image}
-        location: {strategy: osImage, with: {arch: arm64, variant: non-fde, source: artifact-cdn, path: nvke-packages}}
+        location: {strategy: osImage, with: {arch: arm64, variant: non-fde, source: artifact-cdn, path: nvke-packages, namePrefix: nke}}
     - name: os-image-bootloader-amd64
       resolve:
         location: {strategy: url, with: {source: artifact-cdn}}

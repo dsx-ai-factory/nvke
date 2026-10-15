@@ -230,12 +230,13 @@ func NewLocation(strategy string, with map[string]string, opts Options) (Resolve
 			OS: os, Arch: with["arch"],
 		}, nil
 	case LocationStrategyOSImage:
-		if err := checkWith(strategy, with, []string{"base", "arch", "variant"}, []string{"path"}); err != nil {
+		if err := checkWith(strategy, with, []string{"base", "arch", "variant"}, []string{"path", "namePrefix"}); err != nil {
 			return nil, err
 		}
 		return OSImage{
 			Base: with["base"], Path: with["path"],
 			Arch: with["arch"], Variant: with["variant"],
+			NamePrefix:  with["namePrefix"],
 			CheckExists: opts.CheckExists,
 		}, nil
 	case LocationStrategyURL:

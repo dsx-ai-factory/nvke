@@ -360,3 +360,30 @@ func TestURLDoesNotCheckByDefault(t *testing.T) {
 		t.Error("the image resolved to no URL")
 	}
 }
+
+// Which prefix answers belongs to the release, so it is declared rather than
+// guessed: resolution is network-free, and a wrong name surfaces at verify as
+// a missing artifact rather than a misspelt one.
+func TestOSImageTakesTheNamePrefixFromTheRegistry(t *testing.T) {
+	srv := everything(t)
+
+	for name, tc := range map[string]struct{ prefix, want string }{
+		"empty defaults to nvke":                   {prefix: "", want: "nvke-node-non-fde"},
+		"nvke is explicit":                         {prefix: "nvke", want: "nvke-node-non-fde"},
+		"nke is a release built before the rename": {prefix: "nke", want: "nke-node-non-fde"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			image := newOSImage(srv.URL, "arm64")
+			image.NamePrefix = tc.prefix
+
+			got, err := image.Resolve(imageInputs())
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := srv.URL + "/os-image/releases/v0.1.1-rc.1/arm64/" + tc.want + "-ubuntu-24.04.5-arm64.qcow2"
+			if got[ResultURLKey] != want {
+				t.Errorf("url = %q, want %q", got[ResultURLKey], want)
+			}
+		})
+	}
+}

@@ -27,6 +27,11 @@ type OSImage struct {
 	// Variant is the image flavour in the file name, such as non-fde.
 	Variant string
 
+	// NamePrefix is what the file name starts with, before "-node-". A release
+	// keeps the name the build that produced it gave, so this belongs to the
+	// release rather than to this repository. Empty means nvke.
+	NamePrefix string
+
 	// CheckExists is passed to the URL this builds, so an image is held to the
 	// same opt-in check as a declared one.
 	CheckExists bool
@@ -71,8 +76,12 @@ func (o OSImage) Resolve(inputs map[string]string) (map[string]string, error) {
 // imageObjectURL is the qcow2 published for one release, architecture and point
 // release.
 func (o OSImage) imageObjectURL(under, tag, release string) string {
-	return fmt.Sprintf("%s/os-image/releases/%s/%s/nvke-node-%s-ubuntu-%s-%s.qcow2",
-		under, tag, o.Arch, o.Variant, release, o.Arch)
+	prefix := o.NamePrefix
+	if prefix == "" {
+		prefix = "nvke"
+	}
+	return fmt.Sprintf("%s/os-image/releases/%s/%s/%s-node-%s-ubuntu-%s-%s.qcow2",
+		under, tag, o.Arch, prefix, o.Variant, release, o.Arch)
 }
 
 // Validate requires the series and the releases, and that one of the releases
