@@ -69,7 +69,8 @@ type Options struct {
 	// under. Empty resolves to the only one declared.
 	SiteName string
 
-	// Issuer is the SSA token endpoint. Empty takes SSA_ISSUER from the
+	// Issuer is the SSA issuer base url, which the exchange appends "/token"
+	// to --- not the token endpoint itself. Empty takes SSA_ISSUER from the
 	// environment, and a run with neither fails before anything is created.
 	Issuer string
 

@@ -231,10 +231,11 @@ id came from — so a second datahall is a second key, never a reused one.
 the issuer in `SSA_ISSUER`. A client scoped to one datahall cannot be picked up
 by a run against another, and a second datahall needs no code.
 
-**The lane is provision-only.** The tenant half of a `full` run decodes the
-environment as a Forge declaration, so a DSX run at `-e2e.site-stage full` is
-refused before a machine is taken. Run DSX at `provision` or `bootstrap` until
-a tenant spec for it exists.
+**`full` is refused.** The tenant half of a `full` run decodes the environment
+as a Forge declaration, so a DSX run at `-e2e.site-stage full` fails before a
+machine is taken. `provision` and `bootstrap` both run; the `qualify-e2e-dsx`
+label pins `provision`, which is what the datahall's bound capacity can place.
+The dsx stream is kept out of the `full` scope for the same reason.
 
 Capability matching is the provider's job rather than generic code, which is
 what makes this work: a provider that has no concept of an "instance type" is

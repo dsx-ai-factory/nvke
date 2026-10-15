@@ -72,8 +72,10 @@ infrastructure:
       # no session to collect cloud-init diagnostics over.
       nodeUser: "${DSX_REDSTONE_DEV1_DH2_NODE_USER:-}"
 
-      # rel-eng-redstone-jump-host, enrolled 2026-10-13. The nodes this lane
-      # creates are not Teleport-enrolled and sit behind it.
+      # Enrolled in Teleport 2026-10-13. Named by the variable rather than
+      # here: the workflow holds the host as a secret and scrubs it from
+      # uploaded artifacts, which writing it down would undo. The nodes this
+      # lane creates are not enrolled themselves and sit behind it.
       jumpHost: "${DSX_REDSTONE_DEV1_DH2_JUMP_HOST:-}"
       teleportLogin: "${DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN:-}"
 

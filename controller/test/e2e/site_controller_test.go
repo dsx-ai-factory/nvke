@@ -422,12 +422,6 @@ func newInfraProvider(cfg config.Config) (infra.Provider, error) {
 	}
 }
 
-// newDeployConfig builds what the Cluster API provider the stack installs
-// authenticates to its infrastructure with.
-//
-// The other factory. It shares an account and a credential with the provider
-// above and nothing else: this one outlives the run, as a Secret in the
-// cluster the run leaves behind.
 // fullStageSupported reports whether a full run can build this provider's
 // tenant, which is what separates it from bootstrap.
 //
@@ -452,6 +446,13 @@ func fullStageSupported(provider string) error {
 		"the tenant half decodes the environment as a Forge declaration, which a %s environment is not. "+
 		"Run this provider at stage provision or bootstrap until a tenant spec for it exists", provider, provider)
 }
+
+// newDeployConfig builds what the Cluster API provider the stack installs
+// authenticates to its infrastructure with.
+//
+// The other factory. It shares an account and a credential with the provider
+// above and nothing else: this one outlives the run, as a Secret in the
+// cluster the run leaves behind.
 
 func newDeployConfig() (site.CAPIProviderConfig, error) {
 	env, err := runEnvironment()

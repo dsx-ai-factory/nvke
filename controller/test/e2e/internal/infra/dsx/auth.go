@@ -24,9 +24,13 @@ const (
 	// ClientEnvNames.
 	envPrefix = "DSX_"
 
-	// EnvIssuer is the SSA token endpoint. It has no default: the issuer names
-	// infrastructure this repository does not, so a run supplies it the same
-	// way it supplies a site id.
+	// EnvIssuer names the SSA issuer BASE url, not the token endpoint: the
+	// exchange posts to issuer + "/token". Setting it to the endpoint posts to
+	// .../token/token, which answers as a rejected client and so reads as a
+	// bad credential rather than a bad URL.
+	//
+	// It has no default: the issuer names infrastructure this repository does
+	// not, so a run supplies it the same way it supplies a site id.
 	EnvIssuer = "SSA_ISSUER"
 
 	// tokenScope is what a nico token is minted for.
