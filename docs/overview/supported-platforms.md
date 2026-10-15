@@ -18,6 +18,19 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | OpenID Connect (OIDC) on a workload cluster | 1.30.0 or later | Range. Applies to `enableOidc` and `nvkeOIDCAuth`. |
 | Fleet-wide OIDC providers on a workload cluster | 1.34.0 or later | Range. Applies to `oidc.providers`. A cluster created on an earlier version gets none. |
 
+### Kubernetes feature gates
+
+NVKE runs every Kubernetes component with the upstream default feature gates for its Kubernetes version. On the supported version, NVKE sets no `--feature-gates` flag on `kube-apiserver`, `kube-controller-manager` or `kube-scheduler`, and no `featureGates` in the kubelet or kube-proxy configuration. The same applies to the management cluster and to workload clusters.
+
+| Feature stage | State in NVKE | Notes |
+|---|---|---|
+| General availability (GA) | Enabled | Kubernetes locks most GA gates on, and removes them in a later release. |
+| Beta | The upstream default | Most beta gates are on by default upstream, and some are off. NVKE does not change either. |
+| Alpha | Disabled | Alpha gates are off by default upstream. NVKE does not enable any. |
+| Beta API versions | The upstream default | NVKE does not set `--runtime-config`, so beta API versions that are off by default upstream stay off. |
+
+The NVKE API and the site spec have no field to change a feature gate. The [Kubernetes feature gates reference](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/) lists each gate's stage and default for every Kubernetes version.
+
 ## Container networking
 
 | Plugin or setting | Version | Notes |
