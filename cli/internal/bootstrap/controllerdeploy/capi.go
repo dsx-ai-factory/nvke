@@ -115,9 +115,7 @@ type CAPNICoAccess struct {
 // reboot and repair annotation prefixes the controller writes. Without it,
 // every reboot and repair request is silently ignored.
 //
-// The manifest's Deployment names a ghcr-imagepull pull secret that this does
-// not create: the image is public, and the kubelet pulls anonymously when the
-// reference is missing.
+// The manifest names no pull secret and this creates none: the image is public.
 //
 // The credentials are applied first, in a file with their namespace, because
 // the manager reads them as soon as the manifest starts it.

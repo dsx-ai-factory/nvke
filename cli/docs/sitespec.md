@@ -157,9 +157,8 @@ controller stack install creates it, from `controllerStack.nico`.
 The bootstrap installs CAPNICo into its Kind cluster the way the site
 controller's deploy path does: the published release manifest
 (`deploy/nico/capnico/capnico.yaml`), with the `nico-credentials` Secret in
-`capnico-system`. No registry credential is created: the image is public, and
-the manifest's `ghcr-imagepull` reference is left unresolved, which the kubelet
-tolerates. It is the same file at the
+`capnico-system`. No registry credential is created: the image is public and the
+manifest names no pull secret. It is the same file at the
 same pin, embedded in `nvkectl` by `make -C cli capnico-manifest`, so a CAPNICo
 bump in the deploy path is a bump here. It is not the Helm chart: the manifest
 carries the reboot and repair annotation prefixes the controller writes, which
