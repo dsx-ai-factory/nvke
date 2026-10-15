@@ -127,7 +127,7 @@ func TestUnit_ReconcileMarksDeprecatedNodesWithinBudget(t *testing.T) {
 	mockTx.On(
 		"CreateWorkflowOutboxEntry",
 		mock.Anything,
-		workflows.ApplyK8sNodeConditionWorkflowName,
+		workflows.ApplyK8sNodeConditionWorkflowType,
 		constants.ApplyK8sNodeConditionWorkflowPrefix+recyclingNode.ID.String(),
 		mock.MatchedBy(func(input workflows.ApplyK8sNodeConditionInput) bool {
 			return input.NodeID == recyclingNode.ID &&

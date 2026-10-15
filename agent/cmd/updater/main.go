@@ -15,14 +15,14 @@ import (
 	"github.com/dsx-ai-factory/nvke/agent/pkg/agentupgrade"
 )
 
-const defaultOperationRoot = "/var/lib/nvke/agent-upgrades"
+const defaultOperationRoot = agentupgrade.DefaultRoot
 
 // version is set at build time via -ldflags "-X main.version=<version>".
 var version = "dev"
 
 func main() {
 	versionFlag := flag.Bool("version", false, "Print the version and exit")
-	operationID := flag.String("operation-id", "", "durable node-agent upgrade operation ID")
+	requestKey := flag.String("request", "", "target version and installation method, separated by an underscore")
 	operationRoot := flag.String("operation-root", defaultOperationRoot, "durable node-agent upgrade operation root")
 	flag.Parse()
 	if *versionFlag {
@@ -32,8 +32,8 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
-	if err := agentupgrade.ValidateOperationID(*operationID); err != nil {
-		slog.Error("invalid node-agent upgrade operation", "operationID", *operationID, "err", err)
+	if err := agentupgrade.ValidateRequestKey(*requestKey); err != nil {
+		slog.Error("invalid node-agent upgrade operation", "requestKey", *requestKey, "err", err)
 		os.Exit(2)
 	}
 
@@ -41,9 +41,9 @@ func main() {
 	defer stop()
 	store := agentupgrade.NewStore(*operationRoot)
 	updater := agentupgrade.NewUpdater(store)
-	if err := updater.Run(ctx, *operationID); err != nil {
-		slog.Error("node-agent updater operation failed", "operationID", *operationID, "err", err)
+	if err := updater.Run(ctx, *requestKey); err != nil {
+		slog.Error("node-agent updater operation failed", "requestKey", *requestKey, "err", err)
 		os.Exit(1)
 	}
-	slog.Info("node-agent updater operation completed", "operationID", *operationID)
+	slog.Info("node-agent updater operation completed", "requestKey", *requestKey)
 }

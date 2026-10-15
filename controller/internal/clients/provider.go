@@ -15,7 +15,6 @@ import (
 type ProviderClient interface {
 	ClusterScaffold() ClusterScaffold
 	MachineMaterialization() MachineMaterialization
-	NodePoolUpgradeConfig() NodePoolUpgradeConfig
 	KubeVIPConfig() KubeVIPConfig
 	NodeSetProvider() NodeSetProvider
 	ControlPlaneConfigNodeProvider() ControlPlaneConfigNodeProvider
@@ -27,7 +26,6 @@ type ProviderClient interface {
 type providerClient struct {
 	scaffold              ClusterScaffold
 	machine               MachineMaterialization
-	nodePoolCfg           NodePoolUpgradeConfig
 	kubeVIP               KubeVIPConfig
 	nodeSet               NodeSetProvider
 	controlPlaneNode      ControlPlaneConfigNodeProvider
@@ -38,7 +36,6 @@ type providerClient struct {
 
 func (p *providerClient) ClusterScaffold() ClusterScaffold               { return p.scaffold }
 func (p *providerClient) MachineMaterialization() MachineMaterialization { return p.machine }
-func (p *providerClient) NodePoolUpgradeConfig() NodePoolUpgradeConfig   { return p.nodePoolCfg }
 func (p *providerClient) KubeVIPConfig() KubeVIPConfig                   { return p.kubeVIP }
 func (p *providerClient) NodeSetProvider() NodeSetProvider               { return p.nodeSet }
 func (p *providerClient) ControlPlaneConfigNodeProvider() ControlPlaneConfigNodeProvider {
@@ -63,10 +60,6 @@ func GetProviderClient(cluster db.Cluster) (ProviderClient, error) {
 		return nil, err
 	}
 	machine, err := GetMachineMaterialization(cluster)
-	if err != nil {
-		return nil, err
-	}
-	nodePoolCfg, err := GetNodePoolUpgradeConfig(cluster)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +90,6 @@ func GetProviderClient(cluster db.Cluster) (ProviderClient, error) {
 	return &providerClient{
 		scaffold:              scaffold,
 		machine:               machine,
-		nodePoolCfg:           nodePoolCfg,
 		kubeVIP:               kubeVIP,
 		nodeSet:               nodeSet,
 		controlPlaneNode:      controlPlaneNode,

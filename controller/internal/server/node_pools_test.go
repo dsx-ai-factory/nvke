@@ -227,7 +227,7 @@ func TestNodePoolService_ListNodePools(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("ListNodePools", mock.Anything, tt.filters).Return(tt.dbNodePools, tt.dbError)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil, false)
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil)
 
 			resp, err := service.ListNodePools(context.Background(), api.ListNodePoolsRequestObject{
 				Params: api.ListNodePoolsParams{
@@ -482,7 +482,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil, false)
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil)
 
 			resp, err := service.CreateNodePool(context.Background(), api.CreateNodePoolRequestObject{
 				Body: &tt.request,
@@ -585,7 +585,7 @@ func TestNodePoolService_GetNodePool(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("GetNodePool", mock.Anything, tt.nodePoolID).Return(tt.dbNodePool, tt.dbError)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil, false)
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil)
 
 			resp, err := service.GetNodePool(context.Background(), api.GetNodePoolRequestObject{
 				NodePoolID: tt.nodePoolID,
@@ -1154,7 +1154,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			).Maybe().Return([]db.NodePool{{ID: nodePoolID}}, nil)
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Maybe().Return(nil)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil, false)
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil)
 
 			resp, err := service.UpdateNodePool(context.Background(), api.UpdateNodePoolRequestObject{
 				NodePoolID: tt.nodePoolID,
@@ -1223,7 +1223,7 @@ func TestNodePoolService_UpdateNodePool_RejectsPodCIDRCapacityExceeded(t *testin
 	}}, nil)
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil, false)
+	service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil)
 	resp, err := service.UpdateNodePool(context.Background(), api.UpdateNodePoolRequestObject{
 		NodePoolID: nodePoolID,
 		Body: &api.UpdateNodePoolRequest{
@@ -1407,7 +1407,7 @@ func TestNodePoolService_DeleteNodePool(t *testing.T) {
 
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil, false)
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil)
 
 			resp, err := service.DeleteNodePool(context.Background(), api.DeleteNodePoolRequestObject{
 				NodePoolID: tt.nodePoolID,

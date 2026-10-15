@@ -8,7 +8,7 @@ nameOverride: nke-controller
 serviceAccount:
   name: nke-controller
 
-nkeSystemNamespace:
+nvkeSystemNamespace:
   create: false
 
 image:

@@ -18,9 +18,11 @@ import (
 )
 
 func newRenderCmd() *cobra.Command {
+	// Internal: deploy/nvke-deploy.sh runs it with --sitespec and --release.
 	cmd := &cobra.Command{
-		Use:   "render",
-		Short: "Write a resolved copy of an input, ready to apply",
+		Use:    "render",
+		Short:  "Write a resolved copy of an input, ready to apply",
+		Hidden: true,
 	}
 	cmd.AddCommand(newRenderDeployPathCmd())
 	return cmd
@@ -34,6 +36,7 @@ type renderDeployPathOptions struct {
 	arch       string
 	runDir     string
 	plainHTTP  []string
+	ephemeral  bool
 }
 
 func newRenderDeployPathCmd() *cobra.Command {
@@ -50,17 +53,23 @@ login, the database password file, and optionally a mirror, image overrides
 and an nktp values file. A missing database password file is created with a
 generated password. Items get a site-values.yaml; template items become
 manifests. SPIRE gets the bootstrap CA by file reference: helm reads it at
-install time. Paths under controllerStack resolve from the spec's directory;
+install time. The stack joins the bootstrap's trust domain: spire.trustDomain,
+set once before the bootstrap, else the default both commands share, with a
+warning. Paths under controllerStack resolve from the spec's directory;
 spire.caCertFile and spire.caKeyFile from the working directory, as
 "nvkectl bootstrap site" reads them.
 
-With --release, the nvkr.dev/release/v4 JSON "nvkr release verify" prints
-(bare or wrapped), each item's release.yaml names its artifacts:
-chart.artifact (default: the item name), chart.imageArtifact,
-chart.profilesArtifact, or a manifest item's artifact. Charts are pulled by
-digest into charts/<item>/; images go into release-images.yaml or a
-kustomization.yaml; images.txt lists them. A chart the release lacks stays
-as committed. --arch selects artifacts (default: the site spec's
+--release takes the nvkr.dev/release-description/v1 JSON that "nvkr release
+export --reference <release>" writes. The export describes the release and
+verifies nothing: run "nvkr release verify" on the same reference first.
+Each item's release.yaml names its artifacts: chart.artifact (default: the
+item name), chart.imageArtifact, chart.profilesArtifact, or a manifest
+item's artifact. Charts are pulled by digest into charts/<item>/; images go
+into release-images.yaml or a kustomization.yaml; images.txt lists them. A
+chart the release lacks stays as committed. The release decides the version
+of every chart it carries, with a warning when release.yaml pins another;
+the pin decides only for a chart the release lacks. --arch selects
+artifacts (default: the site spec's
 controllerStack.arch, else this machine's). --nvkr-run-dir reads a
 completed NVKR Run or a directory of OCI layouts instead of a registry.
 
@@ -88,6 +97,7 @@ deploy/nvke-deploy.sh install --deploy-path OUT.`,
 	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH, "Architecture to select release artifacts for; default: the site spec's controllerStack.arch, else this machine's")
 	cmd.Flags().StringVar(&opts.runDir, "nvkr-run-dir", "", "A completed NVKR Run or a directory of OCI layouts to read artifacts from instead of a registry")
 	cmd.Flags().StringSliceVar(&opts.plainHTTP, "plain-http-registries", nil, "Registry hosts served over plain HTTP; nothing is probed")
+	cmd.Flags().BoolVar(&opts.ephemeral, "ephemeral", false, "The caller removes --out when it is done; the summary does not ask the operator to")
 	for _, flag := range []string{"deploy-path", "out"} {
 		_ = cmd.MarkFlagRequired(flag)
 	}
@@ -126,7 +136,7 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 		}
 		ro.Release, ro.ReleasePath, ro.Arch, ro.RunDir = release, opts.release, opts.arch, opts.runDir
 		ro.Registry = deploypath.Registries(opts.plainHTTP)
-		inputs = append(inputs, "release "+release.Subject)
+		inputs = append(inputs, "release "+release.Reference)
 	}
 	result, err := deploypath.Render(cmd.Context(), ro)
 	if err != nil {
@@ -141,6 +151,10 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 		}
 		fmt.Fprintf(out, "images: %s\n", strings.Join(refs, ", "))
 	}
-	fmt.Fprintf(out, "%s holds this site's credentials: %s. Delete it after the install.\n", opts.out, strings.Join(result.Credentials, ", "))
+	if opts.ephemeral {
+		fmt.Fprintf(out, "%s holds this site's credentials: %s; it is removed when the install ends.\n", opts.out, strings.Join(result.Credentials, ", "))
+	} else {
+		fmt.Fprintf(out, "%s holds this site's credentials: %s. Delete it after the install.\n", opts.out, strings.Join(result.Credentials, ", "))
+	}
 	return nil
 }

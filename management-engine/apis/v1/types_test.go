@@ -31,10 +31,10 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		verify func(t *testing.T, decoded runtime.Object)
 	}{
 		{
-			resource: "nkeclusters", kind: "NKECluster",
-			object: &NKECluster{
+			resource: "nvkeclusters", kind: "NVKECluster",
+			object: &NVKECluster{
 				Name: "demo", Namespace: "org-demo",
-				Spec: NKEClusterSpec{
+				Spec: NVKEClusterSpec{
 					ClusterNetwork: ClusterNetwork{
 						Pods:          NetworkRanges{CIDRBlocks: []NetworkCIDR{"10.244.0.0/16"}},
 						Services:      NetworkRanges{CIDRBlocks: []NetworkCIDR{"10.96.0.0/12"}},
@@ -53,7 +53,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 				},
 			},
 			verify: func(t *testing.T, decoded runtime.Object) {
-				if replicas := decoded.(*NKECluster).Spec.NodePools[0].Replicas; replicas == nil || *replicas != 0 {
+				if replicas := decoded.(*NVKECluster).Spec.NodePools[0].Replicas; replicas == nil || *replicas != 0 {
 					t.Fatal("explicit zero replicas lost during round-trip")
 				}
 			},
@@ -113,7 +113,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		})
 	}
 
-	for _, kind := range []string{"NKEClusterList", "MachineImageList", "ClusterReleaseList", "NodePoolReleaseList"} {
+	for _, kind := range []string{"NVKEClusterList", "MachineImageList", "ClusterReleaseList", "NodePoolReleaseList"} {
 		if _, err := scheme.New(GroupVersion.WithKind(kind)); err != nil {
 			t.Fatal(err)
 		}
@@ -130,7 +130,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 // edits something unrelated and writes it back must not look like an
 // authentication change just because the value passed through the Go types.
 func TestAuthenticationRoundTripPreservesImmutability(t *testing.T) {
-	schema := loadResourceSchema(t, "nkeclusters")
+	schema := loadResourceSchema(t, "nvkeclusters")
 
 	for _, tt := range []struct {
 		name string
@@ -152,13 +152,13 @@ func TestAuthenticationRoundTripPreservesImmutability(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			old := baseResource(t, "nkeclusters")
+			old := baseResource(t, "nvkeclusters")
 			if tt.auth != "" {
 				setField(old, []string{"spec", "authentication"}, decodeJSON[map[string]any](t, []byte(tt.auth)))
 			}
 			schema.admit(t, old, nil)
 
-			cluster := decodeJSON[NKECluster](t, encodeJSON(t, old))
+			cluster := decodeJSON[NVKECluster](t, encodeJSON(t, old))
 			cluster.Spec.APIServerAccess.PublicAccessEnabled = true
 			updated := decodeJSON[map[string]any](t, encodeJSON(t, cluster))
 			if errs := schema.validate(updated, old); len(errs) != 0 {

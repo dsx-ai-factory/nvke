@@ -1,0 +1,58 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package nodecontract
+
+import "testing"
+
+func TestForAgentVersionBoundary(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    Contracts
+	}{
+		{"empty is old", "", oldForm()},
+		{"whitespace is old", "  ", oldForm()},
+		{"unparseable is old", "not-a-version", oldForm()},
+		{"far older is old", "v0.1.26", oldForm()},
+		{"just below cutover is old", "0.2.99", oldForm()},
+		{"prefixed release below cutover is old", "v0.2.0", oldForm()},
+		{"cutover is new", "0.3.0", newForm()},
+		{"prefixed cutover is new", "v0.3.0", newForm()},
+		{"cutover release candidate is new", "v0.3.0-rc.1", newForm()},
+		{"cutover git describe is new", "v0.3.0-3-gabc1234", newForm()},
+		{"dirty cutover is new", "v0.3.0-dirty", newForm()},
+		{"older git describe is old", "v0.2.0-7-gabc1234", oldForm()},
+		{"later is new", "v1.0.0", newForm()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ForAgentVersion(tt.version); got != tt.want {
+				t.Fatalf("ForAgentVersion(%q) = %+v, want %+v", tt.version, got, tt.want)
+			}
+		})
+	}
+}
+
+// Each of the five contracts is checked at the boundary, including the empty
+// version, so a field that is not wired to the gate cannot hide behind the others.
+func TestEveryContractFlipsAtTheBoundary(t *testing.T) {
+	for _, version := range []string{"", "0.2.9"} {
+		got := ForAgentVersion(version)
+		if got.URN != "urn:nvidia:nke:controller" ||
+			got.UnitName != "nke-agent.service" ||
+			got.EnvFilePath != "/etc/default/nke-agent" ||
+			got.CNIPackagePrefix != "nke-cni-" ||
+			got.ControllerCABundlePath != "/etc/nke/controller-ca.crt" {
+			t.Errorf("version %q: not every contract is the old form: %+v", version, got)
+		}
+	}
+	got := ForAgentVersion(NewFormMinAgentVersion)
+	if got.URN != "urn:nvidia:nvke:controller" ||
+		got.UnitName != "nvke-agent.service" ||
+		got.EnvFilePath != "/etc/default/nvke-agent" ||
+		got.CNIPackagePrefix != "nvke-cni-" ||
+		got.ControllerCABundlePath != "/etc/nvke/controller-ca.crt" {
+		t.Errorf("cutover version: not every contract is the new form: %+v", got)
+	}
+}

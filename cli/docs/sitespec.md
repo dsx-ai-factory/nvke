@@ -67,7 +67,7 @@ is a file `bootstrap site` accepts.
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Unique across all nodes. |
 | `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. See below. |
 | `cluster.k8sVersion` | string | yes | Plain semantic version, e.g. `1.32.0` (no leading `v`). |
-| `cluster.cniName` | string | no | Defaults to `ovn-kubernetes`. `calico` is accepted for development. |
+| `cluster.cniName` | string | no | Defaults to and must be `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the node-agent default. |
 | `cluster.controlPlaneVIP` | string | for multiple nodes | IPv4 control-plane VIP. Required when `cluster.nodes` has more than one entry. A single-node cluster may omit it and use that node's IP as its fixed endpoint. See below. |
 | `cluster.podCidr` | string | yes | Valid CIDR. A comma-separated list of CIDRs is allowed. Must not overlap `serviceCidr`. |
@@ -75,10 +75,11 @@ is a file `bootstrap site` accepts.
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
 | `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. See below. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
+| `cluster.oidcProviders` | list | no | OIDC providers for site cluster. Cannot be modified afterwards. Ignored when absent. Rejected when `cluster.k8sVersion` is older than `1.34.0`. Each entry needs `name`, `issuerURL`, `audiences`, `usernameClaim`, `usernamePrefix`, and `caBundle` (inline PEM). Optional: `groupsClaim`, `groupsPrefix`, `requiredClaims`.|
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never defaulted — see below. |
-| `spire.trustDomain` | string | no | SPIFFE trust domain. Defaults to `<bootstrap-cluster>.nke.local`. Use the same value for the permanent site SPIRE server. |
+| `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `nvkectl-bootstrap.nke.local`, and the install says so. A bootstrap run with `NVKECTL_BOOTSTRAP_CLUSTER_NAME` set derives another, so set it then. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to. See below. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Required with `caCertFile`. |
 | `controllerStack` | section | for the stack install | Read by the controller stack install, not by `bootstrap site`. `generate sitespec` writes it with `REPLACE_*` placeholders; the install refuses a placeholder. See below. |
@@ -87,9 +88,6 @@ is a file `bootstrap site` accepts.
 | `controllerStack.nico.orgID` | string | yes, in `controllerStack` | NICo organisation ID. |
 | `controllerStack.nico.apiName` | string | yes, in `controllerStack` | NICo API name, for example `forge`. |
 | `controllerStack.nico.tokenFile` | string | yes, in `controllerStack` | Path to a file holding the NICo API token. |
-| `controllerStack.pullSecret.server` | string | yes, in `controllerStack` | Registry host for the CAPNICo image pull secret, for example `ghcr.io`. |
-| `controllerStack.pullSecret.username` | string | yes, in `controllerStack` | Registry username. |
-| `controllerStack.pullSecret.tokenFile` | string | yes, in `controllerStack` | Path to a file holding the registry token. |
 | `controllerStack.tenant.user` | string | yes, in `controllerStack` | Login user rendered into every tenant node's cloud-init. |
 | `controllerStack.tenant.passwordFile` | string | yes, in `controllerStack` | Path to a file holding that user's password. |
 | `controllerStack.images.controller` | string | no | Overrides the controller image; defaults to the release file's `controller` item. |
@@ -97,6 +95,8 @@ is a file `bootstrap site` accepts.
 | `controllerStack.database.passwordFile` | string | yes, in `controllerStack` | Path to a file holding the Postgres password. The render creates it with a generated password when it does not exist. |
 | `controllerStack.mirror` | string | no | Registry the external images are pulled from instead of upstream, `host[:port][/prefix]`, no scheme. |
 | `controllerStack.nktpValuesFile` | string | no | Values file for the nktp release, applied last. |
+
+A site spec with a `controllerStack.pullSecret` block does not load; delete the block. The file has no unknown-field tolerance, and nothing reads it. CAPNICo's image is public on GHCR, or comes from the release.
 
 The version (image/chart tag) is baked into the `nvkectl` build, so it is not
 part of the site spec.
@@ -114,7 +114,9 @@ refuses a value that is still a placeholder.
 
 `nvkectl validate sitespec -f sitespec.yaml` checks both halves of the file
 and lists what is still a placeholder; `--bootstrap-only` checks only what
-`bootstrap site` reads.
+`bootstrap site` reads. A file whose bootstrap half is valid can bootstrap
+the cluster before the `controllerStack` section is filled in; the output
+says so.
 
 The section is filled in by hand. `generate sitespec --set` reaches only the
 bootstrap fields listed under "Environment variable overrides", not
@@ -213,10 +215,12 @@ visible reason.
 
 ## The SPIRE CA
 
-`spire.trustDomain` sets the SPIFFE trust domain for the bootstrap server. It
-must be a lowercase DNS name. If it is absent, `nvkectl` uses
-`<bootstrap-cluster>.nke.local`. A permanent site SPIRE server that replaces
-the bootstrap server must use the same value.
+`spire.trustDomain` sets the SPIFFE trust domain for the bootstrap server and
+for the controller stack install. It must be a lowercase DNS name. If it is
+absent, both use `<bootstrap-cluster>.nke.local`, which is
+`nvkectl-bootstrap.nke.local` unless `NVKECTL_BOOTSTRAP_CLUSTER_NAME` renames
+the bootstrap cluster; then set the field so the install matches. The site
+SPIRE server that replaces the bootstrap server uses the same value.
 
 `spire.caCertFile` and `spire.caKeyFile` name a CA the operator brings to the
 bootstrap. `nvkectl` configures SPIRE to chain its own CA to it, so a node that

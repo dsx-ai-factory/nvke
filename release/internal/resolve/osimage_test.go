@@ -34,15 +34,17 @@ func everything(t *testing.T) *httptest.Server {
 	return srv
 }
 
+// newOSImage builds the resolver with the existence check on, because the
+// tests below are about that check. A planner leaves it off.
 func newOSImage(base, arch string) OSImage {
-	return OSImage{Base: base, From: "os-image", Arch: arch, Variant: "non-fde"}
+	return OSImage{Base: base, Arch: arch, Variant: "non-fde", CheckExists: true}
 }
 
 // imageInputs are what the planner gives an image: the release tag, the series
 // of the stream and the point releases the subject declares.
 func imageInputs() map[string]string {
 	return map[string]string{
-		"os-image":         "v0.1.1-rc.1",
+		InputVersionKey:    "v0.1.1-rc.1",
 		InputConstraintKey: "24.04",
 		InputReleasesKey:   "24.04.5",
 	}
@@ -61,9 +63,6 @@ func TestOSImageBuildsTheImageURL(t *testing.T) {
 			want := srv.URL + "/nke-packages/os-image/releases/v0.1.1-rc.1/" + tc + "/nvke-node-non-fde-ubuntu-24.04.5-" + tc + ".qcow2"
 			if got[ResultURLKey] != want {
 				t.Errorf("url = %q, want %q", got[ResultURLKey], want)
-			}
-			if got[ResultVersionKey] != "v0.1.1-rc.1" {
-				t.Errorf("version = %q, want the release tag", got[ResultVersionKey])
 			}
 		})
 	}
@@ -99,7 +98,7 @@ func TestOSImageRejectsMissingInputs(t *testing.T) {
 		change func(map[string]string)
 		want   string
 	}{
-		{"no release tag", func(m map[string]string) { delete(m, "os-image") }, "no os-image given"},
+		{"no release tag", func(m map[string]string) { delete(m, InputVersionKey) }, "no version given"},
 		{"no series", func(m map[string]string) { delete(m, InputConstraintKey) }, "no constraint given"},
 		{"no releases", func(m map[string]string) { delete(m, InputReleasesKey) }, "no releases given"},
 		{"no release in the series", func(m map[string]string) { m[InputConstraintKey] = "26.04" }, "none of the releases 24.04.5 matches Ubuntu 26.04"},
@@ -115,8 +114,8 @@ func TestOSImageRejectsMissingInputs(t *testing.T) {
 	}
 }
 
-// A URL a person gave replaces the built one and is checked like it. The image's
-// release is then not known, so there is no version.
+// A URL a person gave replaces the built one and is checked like it. The
+// version half is resolved separately, so an override moves the location alone.
 func TestOSImageOverride(t *testing.T) {
 	srv := everything(t)
 	in := map[string]string{InputOverrideKey: srv.URL + "/custom.qcow2"}
@@ -128,7 +127,7 @@ func TestOSImageOverride(t *testing.T) {
 		t.Errorf("url = %q", got[ResultURLKey])
 	}
 	if v, ok := got[ResultVersionKey]; ok {
-		t.Errorf("an override has no release to name, got version %q", v)
+		t.Errorf("a location names no version, got %q", v)
 	}
 
 	in[InputOverrideKey] = "v0.1.1-rc.1"
@@ -139,11 +138,11 @@ func TestOSImageOverride(t *testing.T) {
 }
 
 func TestNewOSImageAndURL(t *testing.T) {
-	with := map[string]string{"base": "https://cdn.example/p", "from": "os-image", "arch": "amd64", "variant": "non-fde"}
-	if _, err := New(StrategyOSImage, with, "."); err != nil {
+	with := map[string]string{"base": "https://cdn.example/p", "arch": "amd64", "variant": "non-fde"}
+	if _, err := NewLocation(LocationStrategyOSImage, with, Options{}); err != nil {
 		t.Fatalf("a complete configuration should build: %v", err)
 	}
-	if _, err := New(StrategyURL, nil, "."); err != nil {
+	if _, err := NewLocation(LocationStrategyURL, nil, Options{}); err != nil {
 		t.Fatalf("url takes no configuration: %v", err)
 	}
 
@@ -153,19 +152,19 @@ func TestNewOSImageAndURL(t *testing.T) {
 		change   func(map[string]string)
 		want     string
 	}{
-		{"a missing key", StrategyOSImage, func(m map[string]string) { delete(m, "arch") }, `needs "arch"`},
-		{"a key it does not take", StrategyOSImage, func(m map[string]string) { m["extra"] = "x" }, "does not take extra"},
-		{"url takes only a base", StrategyURL, func(m map[string]string) { m["path"] = "x" }, "does not take path"},
+		{"a missing key", LocationStrategyOSImage, func(m map[string]string) { delete(m, "arch") }, `needs "arch"`},
+		{"a key it does not take", LocationStrategyOSImage, func(m map[string]string) { m["extra"] = "x" }, "does not take extra"},
+		{"url takes only a base", LocationStrategyURL, func(m map[string]string) { m["path"] = "x" }, "does not take path"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bad := map[string]string{}
-			if tc.strategy == StrategyOSImage {
+			if tc.strategy == LocationStrategyOSImage {
 				for k, v := range with {
 					bad[k] = v
 				}
 			}
 			tc.change(bad)
-			_, err := New(tc.strategy, bad, ".")
+			_, err := NewLocation(tc.strategy, bad, Options{})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want it to contain %q", err, tc.want)
 			}
@@ -173,26 +172,8 @@ func TestNewOSImageAndURL(t *testing.T) {
 	}
 }
 
-// A release published before the rename keeps its original filename. When the
-// new name is not there, Resolve returns that one.
-func TestOSImageLegacyFilename(t *testing.T) {
-	legacy := newOSImage("", "amd64").imageObjectURL("", "v0.1.1-rc.1", "24.04.5", "nke")
-	srv := server(t, legacy)
-
-	got, err := newOSImage(srv.URL, "amd64").Resolve(imageInputs())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got[ResultURLKey] != srv.URL+legacy {
-		t.Errorf("url = %q, want the filename published before the rename", got[ResultURLKey])
-	}
-	if got[ResultVersionKey] != "v0.1.1-rc.1" {
-		t.Errorf("version = %q, want the release tag", got[ResultVersionKey])
-	}
-}
-
-// The URL is always asked for, and a missing one fails with both explanations of
-// a 403.
+// Asked to check, the URL is fetched, and a missing one fails with both
+// explanations of a 403.
 func TestOSImageChecksTheURLExists(t *testing.T) {
 	const image = "/os-image/releases/v0.1.1-rc.1/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"
 	srv := server(t, image)
@@ -241,7 +222,7 @@ func TestURL(t *testing.T) {
 		{"absent", map[string]string{InputValueKey: srv.URL + "/efi/gone.efi"}, "", "HTTP 403"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := URL{}.Resolve(tc.inputs)
+			got, err := URL{CheckExists: true}.Resolve(tc.inputs)
 			if tc.wantEr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantEr) {
 					t.Fatalf("err = %v, want it to contain %q", err, tc.wantEr)
@@ -347,10 +328,35 @@ func TestHighestMatching(t *testing.T) {
 
 // A strategy that reads its versions from a source does not take a list.
 func TestLockedPackageRejectsReleases(t *testing.T) {
-	_, err := LockedPackage{LockDir: "x/lock", From: "os-image"}.Resolve(map[string]string{
+	_, err := LockedPackage{LockDir: "x/lock", At: "os-image"}.Resolve(map[string]string{
 		InputConstraintKey: "1.36", InputReleasesKey: "1.36.3",
 	})
 	if err == nil || !strings.Contains(err.Error(), "takes no releases") {
 		t.Errorf("err = %v, want it to say it takes no releases", err)
+	}
+}
+
+// Planning reaches nothing but git. The check is what made a plan need the
+// network the artifacts are on, and a run that cannot reach it should still be
+// able to say what it would qualify.
+func TestURLDoesNotCheckByDefault(t *testing.T) {
+	// A port nothing listens on, so a request would fail rather than hang.
+	const unreachable = "http://127.0.0.1:1/efi/qcow-imager.efi"
+
+	got, err := URL{}.Resolve(map[string]string{InputValueKey: unreachable})
+	if err != nil {
+		t.Fatalf("resolving asked whether the URL exists: %v", err)
+	}
+	if got[ResultURLKey] != unreachable {
+		t.Errorf("url = %q, want %q", got[ResultURLKey], unreachable)
+	}
+
+	image, err := OSImage{Base: "http://127.0.0.1:1", Arch: "amd64", Variant: "non-fde"}.
+		Resolve(imageInputs())
+	if err != nil {
+		t.Fatalf("building an image URL asked whether it exists: %v", err)
+	}
+	if image[ResultURLKey] == "" {
+		t.Error("the image resolved to no URL")
 	}
 }

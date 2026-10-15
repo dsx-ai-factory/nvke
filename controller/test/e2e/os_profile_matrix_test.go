@@ -122,7 +122,6 @@ func nicoVMSOSProfileTestSpec(profile nicoVMSOSProfileEntry, index int) testSpec
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			kubernetesVersion: kubernetesVersion,
-			cniPlugin:         CNIPluginCalico,
 			// The profile under test is the worker's. The control plane takes the
 			// nico-vms default instance, which leaves room for the controller's kubelet
 			// reservation (see nicoVMSSpec).
@@ -210,8 +209,8 @@ func otherArchProfiles(index osProfileMetadataIndex) int {
 }
 
 const (
-	annotationKubernetesVersion         = "internal.nke.nvidia.com/machine-init-kubernetes-version"
-	annotationKubernetesVersionInjected = "internal.nke.nvidia.com/machine-init-kubernetes-version-injected"
+	annotationKubernetesVersion         = "internal.nvke.nvidia.com/machine-init-kubernetes-version"
+	annotationKubernetesVersionInjected = "internal.nvke.nvidia.com/machine-init-kubernetes-version-injected"
 	kindMachineImage                    = "MachineImage"
 	kindNodePoolRelease                 = "NodePoolRelease"
 )

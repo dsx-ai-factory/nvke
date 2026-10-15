@@ -6,8 +6,9 @@
 // A resolver sees a flat map of plain values and nothing else. It has no
 // notion of a stream, a capability or a qualification subject, so the code
 // that does know those things stays in one place and the strategies stay
-// testable with a map literal. The package imports nothing from this
-// repository.
+// testable with a map literal. The only package it takes from this repository
+// is internal/artifact, which answers whether a location holds something, for
+// the strategies asked to check.
 package resolve
 
 import (
@@ -32,6 +33,11 @@ const (
 	// ResultURLKey holds a location, for a strategy whose answer is something to
 	// fetch and not a version.
 	ResultURLKey = "url"
+
+	// ResultStrategyKey names what actually answered, for a resolver that is
+	// more than one thing. A resolver that is only itself leaves it unset, and
+	// the name the registry gave it stands.
+	ResultStrategyKey = "strategy"
 )
 
 // Input keys a caller may pass.
@@ -60,18 +66,40 @@ const (
 	// InputValueKey is a declared answer that nothing derives, such as the path
 	// of a bootloader.
 	InputValueKey = "value"
+
+	// InputVersionKey is the version a location strategy is naming the artifact
+	// for. The version half of an entry resolves it and the planner passes it
+	// here, so a location strategy never resolves a version of its own.
+	InputVersionKey = "version"
+
+	// InputCommitKey asks a strategy that can for the component as it is at this
+	// commit, rather than at whatever its tags say. A strategy that cannot
+	// ignores it, the way one that does not choose ignores InputSelectKey.
+	InputCommitKey = "commit"
 )
 
 // SelectCandidate asks for the highest release candidate and ignores releases.
 const SelectCandidate = "candidate"
 
-// Strategy names, as written in the registry.
+// Version strategy names, as written in a registry entry's version block.
 const (
-	StrategyGitTag        = "gitTag"
-	StrategyLockedPackage = "lockedPackage"
-	StrategyMakeVar       = "makeVar"
-	StrategyOSImage       = "osImage"
-	StrategyURL           = "url"
+	VersionStrategyGitTag = "gitTag"
+
+	// VersionStrategyCommitDescribe is never written in the registry, because
+	// nothing resolves only this way. It names the arm of
+	// gitTagOrCommitDescribe that answered, in a plan and in the errors below.
+	VersionStrategyCommitDescribe = "commitDescribe"
+
+	VersionStrategyGitTagOrCommitDescribe = "gitTagOrCommitDescribe"
+	VersionStrategyLockedPackage          = "lockedPackage"
+	VersionStrategyMakeVar                = "makeVar"
+)
+
+// Location strategy names, as written in a registry entry's location block.
+const (
+	LocationStrategyOCIArtifact = "ociArtifact"
+	LocationStrategyOSImage     = "osImage"
+	LocationStrategyURL         = "url"
 )
 
 // Resolver turns inputs into the values a plan records.
@@ -123,24 +151,45 @@ func needs(inputs map[string]string, keys ...string) error {
 	return nil
 }
 
-// New builds the resolver a registry entry names. repo is the repository root
-// that git and file reads are made against.
+// Options are the choices a caller makes about every resolver it builds, as
+// opposed to the per-component configuration that comes from the registry.
+type Options struct {
+	// CheckExists asks the strategies whose answer is a location to confirm it
+	// holds something. Off is the default, which keeps planning to git alone and
+	// leaves the question to whoever checks the whole plan.
+	CheckExists bool
+}
+
+// NewVersion builds the resolver a registry entry's version block names. repo
+// is the repository root that git and file reads are made against.
+//
+// A location strategy named here is rejected rather than built. It would
+// resolve a location and the planner would read no version from it, which is a
+// misconfiguration that should fail at the line that wrote it.
 //
 // Unknown keys in with are rejected as well as missing ones, so a misspelling
 // cannot read as an omission.
-func New(strategy string, with map[string]string, repo string) (Resolver, error) {
+func NewVersion(strategy string, with map[string]string, repo string) (Resolver, error) {
 	switch strategy {
-	case StrategyGitTag:
+	case VersionStrategyGitTag:
 		if err := checkWith(strategy, with, []string{"tagPrefix"}, nil); err != nil {
 			return nil, err
 		}
 		return GitTag{Dir: repo, TagPrefix: with["tagPrefix"]}, nil
-	case StrategyLockedPackage:
-		if err := checkWith(strategy, with, []string{"lockDir", "from"}, nil); err != nil {
+	case VersionStrategyGitTagOrCommitDescribe:
+		if err := checkWith(strategy, with, []string{"tagPrefix"}, nil); err != nil {
 			return nil, err
 		}
-		return LockedPackage{Dir: repo, LockDir: with["lockDir"], From: with["from"]}, nil
-	case StrategyMakeVar:
+		return GitTagOrCommitDescribe{
+			Tag:      GitTag{Dir: repo, TagPrefix: with["tagPrefix"]},
+			Describe: CommitDescribe{Dir: repo, TagPrefix: with["tagPrefix"]},
+		}, nil
+	case VersionStrategyLockedPackage:
+		if err := checkWith(strategy, with, []string{"lockDir", "at"}, nil); err != nil {
+			return nil, err
+		}
+		return LockedPackage{Dir: repo, LockDir: with["lockDir"], At: with["at"]}, nil
+	case VersionStrategyMakeVar:
 		if err := checkWith(strategy, with, []string{"var"}, []string{"path"}); err != nil {
 			return nil, err
 		}
@@ -149,28 +198,87 @@ func New(strategy string, with map[string]string, repo string) (Resolver, error)
 			path = DefaultToolVersions
 		}
 		return MakeVar{Dir: repo, Path: path, Var: with["var"]}, nil
-	case StrategyOSImage:
-		if err := checkWith(strategy, with, []string{"base", "from", "arch", "variant"}, []string{"path"}); err != nil {
-			return nil, err
-		}
-		return OSImage{
-			Base: with["base"], Path: with["path"], From: with["from"],
-			Arch: with["arch"], Variant: with["variant"],
-		}, nil
-	case StrategyURL:
-		if err := checkWith(strategy, with, nil, []string{"base"}); err != nil {
-			return nil, err
-		}
-		return URL{Base: with["base"]}, nil
-	case "":
-		return nil, fmt.Errorf("no strategy named")
 	default:
-		return nil, fmt.Errorf("strategy %q is not one of %s", strategy, strings.Join(strategies(), ", "))
+		return nil, unknownStrategy("version", strategy, versionStrategies(), locationStrategies())
 	}
 }
 
-func strategies() []string {
-	return []string{StrategyGitTag, StrategyLockedPackage, StrategyMakeVar, StrategyOSImage, StrategyURL}
+// NewLocation builds the resolver a registry entry's location block names.
+//
+// opts carries the choices a caller makes about every resolver it builds, as
+// opposed to the per-entry configuration that comes from the registry. Only the
+// location strategies take any, because only a location can be asked whether it
+// holds something.
+func NewLocation(strategy string, with map[string]string, opts Options) (Resolver, error) {
+	switch strategy {
+	case LocationStrategyOCIArtifact:
+		if err := checkWith(strategy, with, []string{"base", "repository"}, []string{"os", "arch"}); err != nil {
+			return nil, err
+		}
+		// An os with no arch would build "<repository>:<version>-linux", which
+		// is a tag nothing publishes, so it is a misconfiguration and not a
+		// third shape.
+		if with["arch"] == "" && with["os"] != "" {
+			return nil, fmt.Errorf("strategy %s takes os only with arch", strategy)
+		}
+		os := with["os"]
+		if os == "" && with["arch"] != "" {
+			os = DefaultOS
+		}
+		return OCIArtifact{
+			Base: with["base"], Repository: with["repository"],
+			OS: os, Arch: with["arch"],
+		}, nil
+	case LocationStrategyOSImage:
+		if err := checkWith(strategy, with, []string{"base", "arch", "variant"}, []string{"path"}); err != nil {
+			return nil, err
+		}
+		return OSImage{
+			Base: with["base"], Path: with["path"],
+			Arch: with["arch"], Variant: with["variant"],
+			CheckExists: opts.CheckExists,
+		}, nil
+	case LocationStrategyURL:
+		if err := checkWith(strategy, with, nil, []string{"base"}); err != nil {
+			return nil, err
+		}
+		return URL{Base: with["base"], CheckExists: opts.CheckExists}, nil
+	default:
+		return nil, unknownStrategy("location", strategy, locationStrategies(), versionStrategies())
+	}
+}
+
+// unknownStrategy reports a strategy this half does not have. A name that is a strategy
+// of the other half is said to be so, because the fix is then to move it rather
+// than to look for a spelling that does not exist.
+func unknownStrategy(half, strategy string, mine, theirs []string) error {
+	switch {
+	case strategy == "":
+		return fmt.Errorf("no strategy named")
+	case slices.Contains(theirs, strategy):
+		other := "location"
+		if half == "location" {
+			other = "version"
+		}
+		return fmt.Errorf("strategy %q is a %s strategy, and this is a %s", strategy, other, half)
+	default:
+		// The candidate list names the half, so saying it again here would
+		// repeat whatever the caller already said about which block it read.
+		return fmt.Errorf("%q is not one of %s", strategy, strings.Join(mine, ", "))
+	}
+}
+
+func versionStrategies() []string {
+	return []string{
+		VersionStrategyGitTag, VersionStrategyGitTagOrCommitDescribe,
+		VersionStrategyLockedPackage, VersionStrategyMakeVar,
+	}
+}
+
+func locationStrategies() []string {
+	return []string{
+		LocationStrategyOCIArtifact, LocationStrategyOSImage, LocationStrategyURL,
+	}
 }
 
 // checkWith rejects a with map that lacks a required key or carries a key the

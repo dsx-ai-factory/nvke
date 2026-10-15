@@ -22,14 +22,14 @@ func TestInspectNVKRRelease_Artifacts(t *testing.T) {
 		t.Fatalf("lines: %d", len(lines))
 	}
 	aaaa := "sha256:" + strings.Repeat("a", 64)
-	if lines[0] != "cwe\toci\tghcr.io/example/recipes/cwe@"+aaaa+"\t"+aaaa+"\t" {
+	if lines[0] != "cwe\toci\tghcr.io/example/recipes/cwe@"+aaaa+"\t"+aaaa+"\tlinux/amd64,linux/arm64\t" {
 		t.Errorf("first line: %q", lines[0])
 	}
-	if !strings.HasPrefix(lines[2], "capnico-controller-arm64\toci\t") || !strings.HasSuffix(lines[2], "\tlinux/arm64") {
+	if !strings.HasPrefix(lines[2], "capnico-controller-arm64\toci\t") || !strings.HasSuffix(lines[2], "\tlinux/arm64\t") {
 		t.Errorf("arch column: %q", lines[2])
 	}
 	stdout, _, err = runGenerate(t, "inspect", "nvkr-release", valid, "--artifacts", "--kind", "helm-oci")
-	if err != nil || strings.Count(stdout, "\n") != 6 || !strings.HasPrefix(stdout, "controller-chart\thelm-oci\t") {
+	if err != nil || strings.Count(stdout, "\n") != 6 || !strings.HasPrefix(stdout, "controller-chart\thelm-oci\t") || !strings.Contains(stdout, "\t0.1.1\n") {
 		t.Errorf("--kind helm-oci: %q %v", stdout, err)
 	}
 	for _, args := range [][]string{{"--kind", "oci"}, {}, {"--artifacts", "--meta"}, {"--select", "cwe"}, {"--arch", "linux/arm64"}} {
@@ -40,12 +40,13 @@ func TestInspectNVKRRelease_Artifacts(t *testing.T) {
 }
 
 func TestInspectNVKRRelease_Meta(t *testing.T) {
-	stdout, _, err := runGenerate(t, "inspect", "nvkr-release", filepath.Join(releaseFixtures, "wrapped.json"), "--meta")
+	stdout, _, err := runGenerate(t, "inspect", "nvkr-release", filepath.Join(releaseFixtures, "valid.json"), "--meta")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "SUBJECT='ghcr.io/example/recipes/releases@sha256:" + strings.Repeat("0", 64) + "'\n" +
-		"LANE='pipeline-attested'\nSCOPE='artifact-publication'\nCONTENT_SUBJECT='sha256:" + strings.Repeat("c", 64) + "'\n"
+	want := "REFERENCE='ghcr.io/example/recipes/releases@sha256:" + strings.Repeat("0", 64) + "'\n" +
+		"ROOT_DIGEST='sha256:" + strings.Repeat("0", 64) + "'\n" +
+		"QUALIFICATION='pipeline-attested'\nCONTENT_SUBJECT='sha256:" + strings.Repeat("c", 64) + "'\n"
 	if stdout != want {
 		t.Errorf("meta:\n%s", stdout)
 	}

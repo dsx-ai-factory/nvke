@@ -7,6 +7,7 @@ on:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
       - '*/v[0-9]*'
   workflow_dispatch:
 
@@ -58,6 +59,7 @@ jobs:
       # one build rather than four.
       component_dir: ${{ steps.component.outputs.dir }}
       dist_artifact: cli-dist-${{ github.run_id }}-${{ github.run_attempt }}
+      beta: ${{ steps.component.outputs.beta }}
     if: ${{ !startsWith(github.ref_name, 'agent/') && !startsWith(github.ref_name, 'os-image/') && !startsWith(github.ref_name, 'nktp/') && !startsWith(github.ref_name, 'cluster-api-provider-provisioned/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -106,15 +108,26 @@ jobs:
           # glob cannot spell "vX.Y.Z", so the rule is enforced here instead.
           # It fails rather than skips: a tighter glob would let a malformed tag
           # push do nothing at all, and silence reads as success.
-          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+          # A bare vX.Y.Z-beta.N is not a release: it only triggers a build of the
+          # CLI, with no GitHub release. nvkectl is versioned like any other build of
+          # that commit, by the cli/v* describe, not by the beta tag name.
+          BETA=false
+          if [[ -z "${DIR}" && "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            BETA=true
+            VERSION="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+            VERSION="${VERSION#cli/}"
+          elif [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
             echo "::error::${TAG} carries version '${VERSION}', which is neither vX.Y.Z nor vX.Y.Z-rc.N."
             echo "A release candidate needs the dot: v0.1.0-rc.0, not v0.1.0-rc0."
             echo "Delete the tag, then push a corrected one."
             exit 1
           fi
 
-          echo "dir=${DIR}"         >> "${GITHUB_OUTPUT}"
-          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "beta=${BETA}"
+            echo "dir=${DIR}"
+            echo "version=${VERSION}"
+          } >> "${GITHUB_OUTPUT}"
           echo "Releasing ${TAG}: module='${DIR:-<repository>}' version=${VERSION}"
 
       # go.work, not cli/go.mod, like every other workflow here. setup-go pins
@@ -150,9 +163,14 @@ jobs:
         shell: bash
         env:
           DIR: ${{ steps.component.outputs.dir }}
+          BETA: ${{ steps.component.outputs.beta }}
         run: |
           set -euo pipefail
           mkdir -p dist
+
+          if [[ "${BETA}" == true ]]; then
+            DIR=cli
+          fi
 
           case "${DIR}" in
             cli)
@@ -210,7 +228,7 @@ jobs:
       # than each running build-cross again. checksums.txt beside them then
       # describes what every channel ships, not one of four builds.
       - name: Upload the built binaries for the publishers
-        if: steps.component.outputs.dir == 'cli'
+        if: steps.component.outputs.dir == 'cli' || steps.component.outputs.beta == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cli-dist-${{ github.run_id }}-${{ github.run_attempt }}
@@ -221,7 +239,7 @@ jobs:
       # from the tag, and nothing tied the two together. The runner is
       # linux/amd64, so the shipped binary can be asked directly.
       - name: Check nvkectl reports the tag version
-        if: steps.component.outputs.dir == 'cli'
+        if: steps.component.outputs.dir == 'cli' || steps.component.outputs.beta == 'true'
         shell: bash
         env:
           VERSION: ${{ steps.component.outputs.version }}
@@ -274,7 +292,7 @@ jobs:
       # RELEASE.md, "Verifying a release".
       - name: Attest the release checksums
         id: attest
-        if: steps.artifacts.outputs.has_files == 'true'
+        if: steps.artifacts.outputs.has_files == 'true' && steps.component.outputs.beta != 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/checksums.txt
@@ -284,7 +302,7 @@ jobs:
       # the API. Added after the count above, which verify-release-assets
       # treats as a minimum -- an extra asset is fine, a missing one is not.
       - name: Attach the attestation bundle
-        if: steps.artifacts.outputs.has_files == 'true'
+        if: steps.artifacts.outputs.has_files == 'true' && steps.component.outputs.beta != 'true'
         shell: bash
         env:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
@@ -294,6 +312,7 @@ jobs:
 
       - name: Extract changelog section for this tag
         id: changelog
+        if: steps.component.outputs.beta != 'true'
         shell: bash
         env:
           # The resolved version, not the raw ref. CHANGELOG.md headings carry
@@ -321,6 +340,7 @@ jobs:
       # Do not remove that step.
       - name: Create GitHub release
         id: release
+        if: steps.component.outputs.beta != 'true'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           # A bare tag releases the product, so its title says so; a module
@@ -340,7 +360,7 @@ jobs:
       # match the three sibling repositories, whose release jobs run on a
       # self-hosted runner where gh may not be installed.
       - name: Verify the release assets
-        if: steps.artifacts.outputs.has_files == 'true'
+        if: steps.artifacts.outputs.has_files == 'true' && steps.component.outputs.beta != 'true'
         uses: ./.github/actions/verify-release-assets
         with:
           release-id: ${{ steps.release.outputs.id }}
@@ -351,6 +371,7 @@ jobs:
       # Only after the step above, which fails the job and leaves the draft
       # in place rather than publishing something it could not verify.
       - name: Publish the release
+        if: steps.component.outputs.beta != 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           RELEASE_ID: ${{ steps.release.outputs.id }}
@@ -368,6 +389,9 @@ jobs:
             }
             core.info(`Published ${context.ref.replace('refs/tags/', '')} with ${rel.assets.length} assets.`);
 
+  # A bare vX.Y.Z-beta.N reaches only cli-nvcr and cli-s3, which publish it
+  # under the cli/v* describe version; cli-ghcr and the GitHub release are skipped.
+  #
   # The three cli channels. They used to trigger on the cli/v* tag themselves,
   # which meant four independent build-cross runs claiming to be one release,
   # and three publish paths that never waited for license-checks. Calling them
@@ -386,7 +410,7 @@ jobs:
 
   cli-nvcr:
     needs: [release]
-    if: ${{ needs.release.outputs.component_dir == 'cli' }}
+    if: ${{ needs.release.outputs.component_dir == 'cli' || needs.release.outputs.beta == 'true' }}
     uses: ./.github/workflows/cli-artifact-nvcr.yml
     permissions:
       contents: read
@@ -400,7 +424,7 @@ jobs:
 
   cli-s3:
     needs: [release]
-    if: ${{ needs.release.outputs.component_dir == 'cli' }}
+    if: ${{ needs.release.outputs.component_dir == 'cli' || needs.release.outputs.beta == 'true' }}
     uses: ./.github/workflows/cli-s3-publish.yml
     permissions:
       contents: read

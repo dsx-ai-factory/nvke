@@ -106,7 +106,7 @@ version after creation. It uses the same `nodeAgentConfig` shape as
 
 | Setting | Required | Values | Purpose |
 |---|---|---|---|
-| `NODE_AGENT_UPDATE_METHOD` | Yes | `apt` or `bundle` | How agents are installed |
+| `nodeAgent.updateMethod` | Yes | `apt` or `bundle` | How agents are installed |
 
 Control plane nodes always upgrade one at a time per cluster. This is not
 configurable.
@@ -268,14 +268,12 @@ transaction to select and record work.
 3. Defer conflicting joins, Kubernetes upgrades, rolling replacements, and
    deletions while the agent upgrade runs. Unrelated observation and host
    provisioning can continue. Deletion and remediation can cancel the upgrade
-   before proceeding.
+   before proceeding. Cluster deletion does not require an agent response.
 4. Operations started outside this controller, such as certificate renewal,
    must use the same scheduling checks. They must not overlap with an agent
    upgrade on the same node.
 
-The controller also publishes the desired version and observed upgrade state
-on existing control-plane CAPI Machine objects. It continues to use controller
-records for upgrade decisions. It does not consume Machine state yet.
+The controller uses its database records for upgrade decisions.
 
 ### Example: a desired version changes during join
 

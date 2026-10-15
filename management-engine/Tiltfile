@@ -49,6 +49,6 @@ k8s_resource(
     resource_deps=["management-state"],
     port_forwards=[metrics_port + ":8443"] if metrics_port else [],
     links=[
-        link(controller_log_url + "nkecluster%22", "NKECluster logs"),
+        link(controller_log_url + "nvkecluster%22", "NVKECluster logs"),
     ],
 )

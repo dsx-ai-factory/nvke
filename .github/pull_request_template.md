@@ -49,6 +49,8 @@ Related: <!-- #123 or N/A -->
 ```bash
 # Commands run. `make preflight` lints and tests the modules you changed;
 # see docs/development.md for what it does not cover.
+# When the workspace is touched it also runs `work-check`, which can rewrite
+# go.mod, go.sum and go.work.sum, and needs network on a cold module cache.
 make preflight
 ```
 

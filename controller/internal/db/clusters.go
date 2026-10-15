@@ -77,6 +77,9 @@ type Cluster struct {
 	Conditions ClusterConditions `bun:"type:jsonb"` // JSONB field keys use camelCase across all sub-structs for consistency (see ClusterConditions below)
 	CreatedAt  time.Time         `bun:"type:timestamptz,notnull,default:current_timestamp"`
 	UpdatedAt  time.Time         `bun:"type:timestamptz,notnull,default:current_timestamp"`
+
+	NodeAgentUpgrade   *NodeAgentUpgrade            `bun:"node_agent_upgrade,type:jsonb"`
+	CertificateRenewal *NodeAgentCertificateRenewal `bun:"certificate_renewal,type:jsonb"`
 }
 
 func (c *Cluster) NicoProvider() (NicoClusterProvider, error) {

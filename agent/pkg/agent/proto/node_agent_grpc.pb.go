@@ -63,7 +63,6 @@ const (
 	NodeAgent_InstallCollection_FullMethodName                            = "/proto.NodeAgent/InstallCollection"
 	NodeAgent_StartNodeAgentUpgrade_FullMethodName                        = "/proto.NodeAgent/StartNodeAgentUpgrade"
 	NodeAgent_GetNodeAgentUpgradeStatus_FullMethodName                    = "/proto.NodeAgent/GetNodeAgentUpgradeStatus"
-	NodeAgent_StartNodeAgentRollback_FullMethodName                       = "/proto.NodeAgent/StartNodeAgentRollback"
 	NodeAgent_InstallPackages_FullMethodName                              = "/proto.NodeAgent/InstallPackages"
 	NodeAgent_ListPackages_FullMethodName                                 = "/proto.NodeAgent/ListPackages"
 	NodeAgent_RemovePackages_FullMethodName                               = "/proto.NodeAgent/RemovePackages"
@@ -238,9 +237,6 @@ type NodeAgentClient interface {
 	// GetNodeAgentUpgradeStatus returns durable updater state that survives an
 	// nvke-agent restart.
 	GetNodeAgentUpgradeStatus(ctx context.Context, in *GetNodeAgentUpgradeStatusRequest, opts ...grpc.CallOption) (*GetNodeAgentUpgradeStatusResponse, error)
-	// StartNodeAgentRollback restores the exact artifact retained by a prior
-	// successful StartNodeAgentUpgrade operation.
-	StartNodeAgentRollback(ctx context.Context, in *StartNodeAgentRollbackRequest, opts ...grpc.CallOption) (*StartNodeAgentRollbackResponse, error)
 	InstallPackages(ctx context.Context, in *InstallPackagesRequest, opts ...grpc.CallOption) (*InstallPackagesResponse, error)
 	ListPackages(ctx context.Context, in *ListPackagesRequest, opts ...grpc.CallOption) (*ListPackagesResponse, error)
 	RemovePackages(ctx context.Context, in *RemovePackagesRequest, opts ...grpc.CallOption) (*RemovePackagesResponse, error)
@@ -753,16 +749,6 @@ func (c *nodeAgentClient) GetNodeAgentUpgradeStatus(ctx context.Context, in *Get
 	return out, nil
 }
 
-func (c *nodeAgentClient) StartNodeAgentRollback(ctx context.Context, in *StartNodeAgentRollbackRequest, opts ...grpc.CallOption) (*StartNodeAgentRollbackResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(StartNodeAgentRollbackResponse)
-	err := c.cc.Invoke(ctx, NodeAgent_StartNodeAgentRollback_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *nodeAgentClient) InstallPackages(ctx context.Context, in *InstallPackagesRequest, opts ...grpc.CallOption) (*InstallPackagesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(InstallPackagesResponse)
@@ -1016,9 +1002,6 @@ type NodeAgentServer interface {
 	// GetNodeAgentUpgradeStatus returns durable updater state that survives an
 	// nvke-agent restart.
 	GetNodeAgentUpgradeStatus(context.Context, *GetNodeAgentUpgradeStatusRequest) (*GetNodeAgentUpgradeStatusResponse, error)
-	// StartNodeAgentRollback restores the exact artifact retained by a prior
-	// successful StartNodeAgentUpgrade operation.
-	StartNodeAgentRollback(context.Context, *StartNodeAgentRollbackRequest) (*StartNodeAgentRollbackResponse, error)
 	InstallPackages(context.Context, *InstallPackagesRequest) (*InstallPackagesResponse, error)
 	ListPackages(context.Context, *ListPackagesRequest) (*ListPackagesResponse, error)
 	RemovePackages(context.Context, *RemovePackagesRequest) (*RemovePackagesResponse, error)
@@ -1192,9 +1175,6 @@ func (UnimplementedNodeAgentServer) StartNodeAgentUpgrade(context.Context, *Star
 }
 func (UnimplementedNodeAgentServer) GetNodeAgentUpgradeStatus(context.Context, *GetNodeAgentUpgradeStatusRequest) (*GetNodeAgentUpgradeStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetNodeAgentUpgradeStatus not implemented")
-}
-func (UnimplementedNodeAgentServer) StartNodeAgentRollback(context.Context, *StartNodeAgentRollbackRequest) (*StartNodeAgentRollbackResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StartNodeAgentRollback not implemented")
 }
 func (UnimplementedNodeAgentServer) InstallPackages(context.Context, *InstallPackagesRequest) (*InstallPackagesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InstallPackages not implemented")
@@ -1985,24 +1965,6 @@ func _NodeAgent_GetNodeAgentUpgradeStatus_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NodeAgent_StartNodeAgentRollback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(StartNodeAgentRollbackRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAgentServer).StartNodeAgentRollback(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAgent_StartNodeAgentRollback_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAgentServer).StartNodeAgentRollback(ctx, req.(*StartNodeAgentRollbackRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _NodeAgent_InstallPackages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(InstallPackagesRequest)
 	if err := dec(in); err != nil {
@@ -2327,10 +2289,6 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetNodeAgentUpgradeStatus",
 			Handler:    _NodeAgent_GetNodeAgentUpgradeStatus_Handler,
-		},
-		{
-			MethodName: "StartNodeAgentRollback",
-			Handler:    _NodeAgent_StartNodeAgentRollback_Handler,
 		},
 		{
 			MethodName: "InstallPackages",

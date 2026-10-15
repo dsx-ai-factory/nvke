@@ -18,12 +18,11 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
-// cpControllerReconciler returns a reconciler with the control-plane-controller
-// feature flag ON. The snapshot-based helpers are pure and read from cp.nodePinnedControlPlaneConfigs,
-// so no DB is needed.
+// cpControllerReconciler returns a reconciler for the snapshot-based helpers, which
+// are pure and read from cp.nodePinnedControlPlaneConfigs, so no DB is needed.
 func cpControllerReconciler() *reconciler {
 	return &reconciler{
-		cfg:    config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		cfg:    config.Config{},
 		logger: slog.New(slog.DiscardHandler),
 	}
 }
@@ -100,7 +99,6 @@ func TestReadControlPlane_PreloadsControlPlaneConfigs(t *testing.T) {
 	mockTx.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
 		return f.ClusterID != nil && *f.ClusterID == clusterID && f.ControlPlane != nil && *f.ControlPlane
 	})).Return(nodes, nil).Once()
-	mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Once()
 	// Exactly one batch read, with the distinct (deduped) configuration IDs.
 	mockTx.On("ListControlPlaneConfigurationsByIDs", mock.Anything, mock.MatchedBy(func(ids []uuid.UUID) bool {
 		return len(ids) == 2 &&
@@ -111,12 +109,11 @@ func TestReadControlPlane_PreloadsControlPlaneConfigs(t *testing.T) {
 		{ID: configB, Config: specB},
 	}, nil).Once()
 
-	cp, err := readControlPlane(context.Background(), mockTx, db.Cluster{ID: clusterID}, true)
+	cp, err := readControlPlane(context.Background(), mockTx, db.Cluster{ID: clusterID})
 	require.NoError(t, err)
 	require.Len(t, cp.nodePinnedControlPlaneConfigs, 2)
 	assert.Equal(t, specA, cp.nodePinnedControlPlaneConfigs[configA])
 	assert.Equal(t, specB, cp.nodePinnedControlPlaneConfigs[configB])
-	assert.True(t, cp.useController)
 	mockTx.AssertExpectations(t)
 }
 
@@ -129,9 +126,8 @@ func TestReadControlPlane_SkipsConfigLoadWithoutCPControllerNodes(t *testing.T) 
 
 	mockTx := &testutil.MockTx{}
 	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{poolNode}, nil).Once()
-	mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Once()
 
-	cp, err := readControlPlane(context.Background(), mockTx, db.Cluster{ID: clusterID}, false)
+	cp, err := readControlPlane(context.Background(), mockTx, db.Cluster{ID: clusterID})
 	require.NoError(t, err)
 	assert.Empty(t, cp.nodePinnedControlPlaneConfigs)
 	mockTx.AssertNotCalled(t, "ListControlPlaneConfigurationsByIDs", mock.Anything, mock.Anything)
@@ -297,7 +293,7 @@ func TestIsControlPlaneUpgradeComplete_CPController(t *testing.T) {
 			if tt.recycling {
 				cluster.Conditions.CPNodesRecycling = db.NewCondition(true, "recycling")
 			}
-			cp := &controlPlane{nodes: tt.nodes, nodePinnedControlPlaneConfigs: configs, clusterControlPlaneConfig: cluster.ControlPlaneConfig, useController: true}
+			cp := &controlPlane{nodes: tt.nodes, nodePinnedControlPlaneConfigs: configs, clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
 			assert.Equal(t, tt.want, r.isControlPlaneUpgradeComplete(cluster, cp, slog.New(slog.DiscardHandler)))
 		})
@@ -323,7 +319,6 @@ func TestExpectedControlPlaneCount_CPController(t *testing.T) {
 			},
 			nodePinnedControlPlaneConfigs: configs,
 			clusterControlPlaneConfig:     clusterWithCurrentSnapshot(currentSpec, 0).ControlPlaneConfig,
-			useController:                 true,
 		}
 
 		assert.Equal(t, 3, cp.expectedCount())
@@ -339,7 +334,6 @@ func TestExpectedControlPlaneCount_CPController(t *testing.T) {
 			},
 			nodePinnedControlPlaneConfigs: configs,
 			clusterControlPlaneConfig:     clusterWithCurrentSnapshot(currentSpec, 1).ControlPlaneConfig,
-			useController:                 true,
 		}
 
 		assert.Equal(t, 4, cp.expectedCount(), "desired 3 + min(maxSurge 1, deprecated 1)")
@@ -368,10 +362,10 @@ func TestCanStartRemediation_CPControllerWaitsForReplacement(t *testing.T) {
 	desired3 := db.ControlPlaneConfig{DesiredCount: 3}
 
 	// desired=3 with only 2 nodes present: replacement not yet created -> wait.
-	cpWaiting := &controlPlane{nodes: []db.Node{nodeToRemove, healthy("cp-2")}, clusterControlPlaneConfig: desired3, useController: true}
+	cpWaiting := &controlPlane{nodes: []db.Node{nodeToRemove, healthy("cp-2")}, clusterControlPlaneConfig: desired3}
 	assert.False(t, canStartRemediation(log, cpWaiting, nodeToRemove))
 
 	// desired=3 with 3 nodes present: replacement created -> can proceed.
-	cpReady := &controlPlane{nodes: []db.Node{nodeToRemove, healthy("cp-2"), healthy("cp-3")}, clusterControlPlaneConfig: desired3, useController: true}
+	cpReady := &controlPlane{nodes: []db.Node{nodeToRemove, healthy("cp-2"), healthy("cp-3")}, clusterControlPlaneConfig: desired3}
 	assert.True(t, canStartRemediation(log, cpReady, nodeToRemove))
 }

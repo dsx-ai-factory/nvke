@@ -50,13 +50,13 @@ if [[ -n "${NKE_E2E_STACK_CHART:-}" ]]; then
   echo "Each component is its own release, named in controller/deploy/${DEPLOY_TARGET:-capd-e2e}." >&2
   exit 1
 fi
-# A published chart's version has nowhere to go now: nvke-deploy.sh resolves a
-# chart from a path, so helm needs no --version, and the item's own release.yaml
-# carries the version the artifact was cut with. Refuse rather than accept a
-# value and ignore it -- a silently dropped pin is how you end up testing a
-# different chart than the one you named.
+# A published chart's version has nowhere to go now: nvke-deploy.sh resolves
+# a path chart from the checkout and a release's chart by digest; neither
+# takes a --version. Refuse rather than accept a value and ignore it -- a
+# silently dropped pin is how you end up testing a different chart than the
+# one you named.
 if [[ -n "${NKE_E2E_STACK_VERSION:-}" ]]; then
-  echo "NKE_E2E_STACK_VERSION is set but no longer used: component versions are pinned in each item's release.yaml." >&2
+  echo "NKE_E2E_STACK_VERSION is set but no longer used: component versions come from the checkout or the release, not from this variable." >&2
   exit 1
 fi
 
@@ -131,12 +131,10 @@ cwe_tag="${NKE_CONTROLLER_IMAGE##*:}"
 TRUST_DOMAIN="${KIND_CLUSTER_NAME}.nke.local"
 
 # The env list the controller container needs, assembled the way
-# controller/Tiltfile assembles _cwe_chart_extra_env. Four sources:
-#   * PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER, when the caller sets
-#     it; the e2e lanes leave it unset, so the controller takes its default
+# controller/Tiltfile assembles _cwe_chart_extra_env. Three sources:
 #   * the five credentials the Tiltfile treats as required
 #   * NODE_REBOOT_SOFT_REBOOT_ENABLED, which backend-e2e.yml does set
-#   * the remaining optional names (LOG_LEVEL, FORGE_URL, ...) which nothing on
+#   * the remaining optional names (LOG_LEVEL, NODE_PROVISIONING_TIMEOUT, ...) which nothing on
 #     this path sets, so they are absent rather than empty
 #
 # Passed as JSON for the same reason Tilt uses --set-json: a list of
@@ -161,9 +159,6 @@ import json, os
 # "produced zero addresses", which is what stalled tenant provisioning.
 env = [{"name": "SPIRE_SERVER_API_ADDRESS",
         "value": os.environ["SPIRE_SERVER_API_ADDRESS"]}]
-flag = os.environ.get("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", "")
-if flag:
-    env.append({"name": "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", "value": flag})
 # backend-e2e.yml sets this and only Tilt was forwarding it. Left out, the controller takes
 # its "true" default and reboots a container node in-guest, which never restarts.
 soft_reboot = os.environ.get("NODE_REBOOT_SOFT_REBOOT_ENABLED", "")
@@ -244,7 +239,7 @@ image:
   tag: "${cwe_tag}"
 appDb:
   postgresPassword: "${CNPG_SUPERUSER_PASSWORD:-example-password}"
-nkeOIDCAuth:
+nvkeOIDCAuth:
   discoveryURL: "https://${MANAGEMENT_VIP}:30443/.well-known/openid-configuration"
 spiffe:
   trustDomain: "${TRUST_DOMAIN}"
@@ -340,7 +335,7 @@ NKE_CONTROLLER_RELEASES_DIR="${NKE_CONTROLLER_RELEASES_DIR:-/workspace/cloud-wor
 apply_releases() {
   local crd
   for crd in machineimages clusterreleases nodepoolreleases; do
-    local name="${crd}.internal.nke.nvidia.com" _
+    local name="${crd}.internal.nvke.nvidia.com" _
     for _ in $(seq 1 450); do
       kubectl get crd "${name}" >/dev/null 2>&1 && break
       sleep 2

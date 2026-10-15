@@ -245,6 +245,36 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 				assert.Equal(t, []string{"echo prepare agent", "systemctl restart nke-agent", "systemctl restart nke-agent.service"}, rendered.RunCmd)
 			},
 		},
+		"empty agent version restarts the old unit": {
+			config: config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}},
+			node:   nodeWithAgentVersion(config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}}, ""),
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				var rendered cloudInitConfig
+				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
+				assert.Equal(t, []string{"systemctl restart nke-agent.service"}, rendered.RunCmd)
+			},
+		},
+		"agent version below the cutover restarts the old unit": {
+			config: config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}},
+			node:   nodeWithAgentVersion(config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}}, "v0.2.0"),
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				var rendered cloudInitConfig
+				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
+				assert.Equal(t, []string{"systemctl restart nke-agent.service"}, rendered.RunCmd)
+			},
+		},
+		"agent version at the cutover restarts the new unit": {
+			config: config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}},
+			node:   nodeWithAgentVersion(config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}}, "v0.3.0"),
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				var rendered cloudInitConfig
+				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
+				assert.Equal(t, []string{"systemctl restart nvke-agent.service"}, rendered.RunCmd)
+			},
+		},
 		"agent restarts without caller commands": {
 			config: config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}},
 			verify: func(t *testing.T, userData string) {
@@ -466,4 +496,10 @@ func TestUnit_RenderGenericCloudInitFilesTemplate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func nodeWithAgentVersion(cfg config.Config, agentVersion string) *db.Node {
+	node := nodeForBootstrapConfig(cfg)
+	node.AgentVersion = agentVersion
+	return &node
 }

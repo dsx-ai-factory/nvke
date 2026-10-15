@@ -64,16 +64,19 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "bootstrap: valid")
+	fmt.Fprintln(out, "bootstrap: valid; nvkectl bootstrap site can run with this file")
 	if opts.bootstrapOnly {
 		return nil
 	}
 
 	if spec.ControllerStack == nil {
 		fmt.Fprintln(out, "controllerStack: missing; nvkectl generate sitespec writes the section to fill in")
-		return errors.New("the site spec is not ready for the controller stack install")
+		return errors.New("the site spec is not ready for the controller stack install; the bootstrap can run now")
 	}
 	ready := true
+	if domain, defaulted := spec.TrustDomain(); defaulted {
+		fmt.Fprintf(out, "spire.trustDomain: not set; a bootstrap with the default cluster name and the controller stack install both use %s\n", domain)
+	}
 	if left := spec.ControllerStackPlaceholders(); len(left) > 0 {
 		ready = false
 		fmt.Fprintf(out, "controllerStack: %d values still to fill in: %s\n", len(left), strings.Join(left, ", "))
@@ -85,7 +88,7 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 		}
 	}
 	if !ready {
-		return errors.New("the site spec is not ready for the controller stack install")
+		return errors.New("the site spec is not ready for the controller stack install; the bootstrap can run now")
 	}
 	fmt.Fprintln(out, "controllerStack: valid")
 	return nil

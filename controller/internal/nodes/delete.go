@@ -12,6 +12,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 )
 
 // DeleteOptions are the options for deleting a node.
@@ -32,12 +33,6 @@ type DeleteOptions struct {
 	// Tearing down a control-plane node is not allowed by default,
 	// But we do want to allow deleting control-plane nodes from the API.
 	AllowCPNode bool
-
-	// ControlPlaneControllerDelete routes a control-plane node delete through the
-	// control-plane controller: the delete is recorded as intent and the
-	// controller starts the teardown, one node at a time. Worker nodes are
-	// unaffected. Set from UseControlPlaneControllerForControlPlane().
-	ControlPlaneControllerDelete bool
 
 	// SkipQuorumFloor exempts a controller-initiated delete from the
 	// fault-tolerant floor. The floor refuses a delete that would leave fewer
@@ -94,15 +89,6 @@ func WithAllowCPNode(allow bool) DeleteOpt {
 func WithForceUnreachable(forceUnreachable bool) DeleteOpt {
 	return func(o *DeleteOptions) {
 		o.ForceUnreachable = forceUnreachable
-	}
-}
-
-// WithControlPlaneControllerDelete records a control-plane node delete as intent
-// for the control-plane controller to act on instead of starting the teardown
-// inline. It has no effect on worker nodes.
-func WithControlPlaneControllerDelete(useController bool) DeleteOpt {
-	return func(o *DeleteOptions) {
-		o.ControlPlaneControllerDelete = useController
 	}
 }
 
@@ -169,21 +155,13 @@ func DeleteWithTx(ctx context.Context, tx db.Tx, nodeID uuid.UUID, opts ...Delet
 		}
 	}
 
-	// Control-plane deletes are owned by the control-plane controller when the
-	// flag is on: record the intent and let it start the teardown, one node at a
-	// time. Worker deletes stay direct, and so do control-plane deletes with the
-	// flag off.
-	if options.ControlPlaneControllerDelete && dbNode.ControlPlane {
+	// Control-plane deletes are recorded as intent and started by the
+	// control-plane controller, one node at a time. Worker deletes are direct.
+	if dbNode.ControlPlane {
 		return recordControlPlaneDeleteRequest(ctx, tx, dbNode, options)
 	}
 
 	dbNode.Conditions.Deleting = db.NewCondition(true, "Node deletion in progress")
-	// A request recorded while the control-plane-controller path was on is
-	// absorbed here rather than refused: with the flag off nothing would ever
-	// promote it, so the node would sit marked forever. The direct delete is that
-	// promotion.
-	dbNode.Conditions.DeleteRequested = db.NewCondition(false, "Teardown started")
-	dbNode.DeleteRequest = nil
 
 	if _, err := tx.UpdateNode(ctx, &dbNode); err != nil {
 		return fmt.Errorf("failed to update node: %w", err)
@@ -194,7 +172,17 @@ func DeleteWithTx(ctx context.Context, tx db.Tx, nodeID uuid.UUID, opts ...Delet
 	input := options.toWorkflowInput()
 	input.NodeID = dbNode.ID
 
-	if _, err = tx.CreateWorkflowOutboxEntry(ctx, constants.TeardownNodeWorkflowType, workflowID, input); err != nil {
+	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowEnqueue, otelx.WorkflowAttributes{
+		WorkflowType: constants.TeardownNodeWorkflowType,
+		WorkflowID:   workflowID,
+		ClusterID:    dbNode.ClusterID,
+		NodePoolID:   dbNode.NodePoolID,
+		NodeID:       dbNode.ID,
+		NodeName:     dbNode.Name,
+	})
+	_, err = tx.CreateWorkflowOutboxEntry(ctx, constants.TeardownNodeWorkflowType, workflowID, input)
+	otelx.EndWorkflowSpan(span, err)
+	if err != nil {
 		return fmt.Errorf("failed to create workflow outbox entry: %w", err)
 	}
 
@@ -225,9 +213,18 @@ func DeleteNodePoolWithTx(ctx context.Context, tx db.Tx, nodePoolID uuid.UUID) e
 	}
 
 	workflowID := constants.TeardownNodePoolWorkflowPrefix + dbNodePool.ID.String()
-	if _, err = tx.CreateWorkflowOutboxEntry(ctx, "TeardownNodePool", workflowID, map[string]interface{}{
+	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowEnqueue, otelx.WorkflowAttributes{
+		WorkflowType: "TeardownNodePool",
+		WorkflowID:   workflowID,
+		ClusterID:    dbNodePool.ClusterID,
+		NodePoolID:   dbNodePool.ID,
+		NodePoolName: dbNodePool.Name,
+	})
+	_, err = tx.CreateWorkflowOutboxEntry(ctx, "TeardownNodePool", workflowID, map[string]interface{}{
 		"nodePoolID": dbNodePool.ID,
-	}); err != nil {
+	})
+	otelx.EndWorkflowSpan(span, err)
+	if err != nil {
 		return fmt.Errorf("failed to create workflow outbox entry: %w", err)
 	}
 

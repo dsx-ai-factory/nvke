@@ -8,16 +8,16 @@
 # repository owns the chart, and the checkout this path is installed from
 # carries the version it was written against. The published chart is on an
 # internal registry that would need a login this path does not have. The
-# version below is only reported; the path decides what installs. The chart's
-# dependency archives are not committed, so nvke-deploy.sh builds them from its
-# Chart.lock first.
+# chart's dependency archives are not committed, so nvke-deploy.sh builds them
+# from its Chart.lock first.
 #
 # Early, straight after capnico: it installs the monitoring CRDs, and the
 # temporal, spire and controller items each create a monitor that needs them.
 # Installing it first also means the rest of the install is observed.
 chart:
   name: nktp
-  version: "0.0.0"
+  # No version: the chart at path carries its own, and a release that
+  # carries the chart decides.
   path: ../../nktp/deploy/charts/nktp
 release:
   name: nktp

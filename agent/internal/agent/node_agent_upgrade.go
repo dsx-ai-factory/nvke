@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -23,17 +24,23 @@ import (
 var canonicalAgentVersionPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
 type agentUpgradeLauncher interface {
-	Start(operationID string) error
+	Start(requestKey string) error
 }
 
 type systemdAgentUpgradeLauncher struct {
 	runner nvkeutils.CommandRunner
 }
 
-func (l systemdAgentUpgradeLauncher) Start(operationID string) error {
+func (l systemdAgentUpgradeLauncher) Start(requestKey string) error {
+	if _, err := os.Stat(filepath.Join(agentupgrade.DefaultRoot, requestKey, "updater.py")); err == nil {
+		// The bootstrap runbook owns this attempt until it writes final status.
+		// Starting the packaged updater for it would race the bootstrap process.
+		_, err := l.runner.Run("systemctl", []string{"start", "--no-block", "nvke-agent-upgrade-" + requestKey + ".service"}, nil)
+		return err
+	}
 	_, err := l.runner.Run(
 		"systemctl",
-		[]string{"start", "--no-block", "nvke-agent-updater@" + operationID + ".service"},
+		[]string{"start", "--no-block", "nvke-agent-updater@" + requestKey + ".service"},
 		nil,
 	)
 	if err != nil {
@@ -52,10 +59,6 @@ func (s *NodeAgentServer) StartNodeAgentUpgrade(
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
-	operationID := strings.TrimSpace(req.GetOperationId())
-	if err := agentupgrade.ValidateOperationID(operationID); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
 	targetVersion, err := parseCanonicalAgentVersion(req.GetTargetVersion())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -70,6 +73,24 @@ func (s *NodeAgentServer) StartNodeAgentUpgrade(
 
 	s.agentUpgradeMu.Lock()
 	defer s.agentUpgradeMu.Unlock()
+	unlock, lockErr := s.AgentUpgradeStore.Lock()
+	if lockErr != nil {
+		return nil, status.Errorf(codes.Internal, "locking upgrade admission: %v", lockErr)
+	}
+	defer unlock()
+	current, err := s.AgentUpgradeStore.Current()
+	if err != nil {
+		return nil, upgradeStoreError(err)
+	}
+	if current != nil && !current.Terminal() && (current.TargetVersion != req.GetTargetVersion() || current.Method != method) {
+		return nil, status.Error(codes.FailedPrecondition, "another agent upgrade is active")
+	}
+	if current == nil || current.Terminal() {
+		if err := s.AgentUpgradeStore.Prune(); err != nil {
+			return nil, upgradeStoreError(err)
+		}
+	}
+	requestKey := (agentupgrade.Request{TargetVersion: req.GetTargetVersion(), Method: method}).Key()
 
 	s.mu.Lock()
 	previousVersion := strings.TrimSpace(s.NodeStatus.AgentVersion)
@@ -78,9 +99,10 @@ func (s *NodeAgentServer) StartNodeAgentUpgrade(
 	if previousVersion == "" {
 		return nil, status.Error(codes.FailedPrecondition, "current node-agent version is unknown")
 	}
+	if previousVersion == req.GetTargetVersion() && (current == nil || current.Terminal()) {
+		return &pb.StartNodeAgentUpgradeResponse{Operation: &pb.NodeAgentUpgradeOperation{TargetVersion: previousVersion, Method: req.GetMethod(), Phase: pb.NodeAgentUpgradePhase_NODE_AGENT_UPGRADE_PHASE_SUCCEEDED, Step: "already at requested version"}}, nil
+	}
 	request := agentupgrade.Operation{
-		ID:              operationID,
-		Action:          agentupgrade.ActionUpgrade,
 		TargetVersion:   req.GetTargetVersion(),
 		PreviousVersion: previousVersion,
 		Method:          method,
@@ -88,18 +110,9 @@ func (s *NodeAgentServer) StartNodeAgentUpgrade(
 	if existing, found, loadErr := s.AgentUpgradeStore.Existing(request); loadErr != nil {
 		return nil, upgradeStoreError(loadErr)
 	} else if found {
-		if existing.Phase == agentupgrade.PhasePending {
-			if launchErr := s.AgentUpgradeLauncher.Start(operationID); launchErr != nil {
-				existing, err = s.AgentUpgradeStore.SetStatus(
-					operationID,
-					agentupgrade.PhaseFailedRestored,
-					"updater launch failed",
-					launchErr.Error(),
-				)
-				if err != nil {
-					return nil, status.Errorf(codes.Internal, "restarting updater: %v; persisting failure: %v", launchErr, err)
-				}
-			}
+		existing, err = s.launchNodeAgentUpdater(existing)
+		if err != nil {
+			return nil, err
 		}
 		return &pb.StartNodeAgentUpgradeResponse{Operation: upgradeOperationToProto(existing)}, nil
 	}
@@ -135,23 +148,20 @@ func (s *NodeAgentServer) StartNodeAgentUpgrade(
 		return &pb.StartNodeAgentUpgradeResponse{Operation: upgradeOperationToProto(op)}, nil
 	}
 	if previousVersion == req.GetTargetVersion() {
-		op, err = s.AgentUpgradeStore.SetStatus(operationID, agentupgrade.PhaseSucceeded, "already at requested version", "")
+		op, err = s.AgentUpgradeStore.SetStatus(requestKey, agentupgrade.PhaseSucceeded, "already at requested version", "")
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "persisting converged upgrade operation: %v", err)
 		}
 		return &pb.StartNodeAgentUpgradeResponse{Operation: upgradeOperationToProto(op)}, nil
 	}
-	if err := s.AgentUpgradeLauncher.Start(operationID); err != nil {
-		op, persistErr := s.AgentUpgradeStore.SetStatus(operationID, agentupgrade.PhaseFailedRestored, "updater launch failed", err.Error())
-		if persistErr != nil {
-			return nil, status.Errorf(codes.Internal, "starting updater: %v; persisting failure: %v", err, persistErr)
-		}
-		return &pb.StartNodeAgentUpgradeResponse{Operation: upgradeOperationToProto(op)}, nil
+	op, err = s.launchNodeAgentUpdater(op)
+	if err != nil {
+		return nil, err
 	}
 	return &pb.StartNodeAgentUpgradeResponse{Operation: upgradeOperationToProto(op)}, nil
 }
 
-// GetNodeAgentUpgradeStatus returns the durable state of an upgrade or rollback.
+// GetNodeAgentUpgradeStatus returns the durable state of a version change.
 func (s *NodeAgentServer) GetNodeAgentUpgradeStatus(
 	ctx context.Context,
 	req *pb.GetNodeAgentUpgradeStatusRequest,
@@ -160,82 +170,43 @@ func (s *NodeAgentServer) GetNodeAgentUpgradeStatus(
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
-	operationID := strings.TrimSpace(req.GetOperationId())
-	if err := agentupgrade.ValidateOperationID(operationID); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
 	if s.AgentUpgradeStore == nil {
 		return nil, status.Error(codes.FailedPrecondition, "node-agent updater is not configured")
 	}
-	op, err := s.AgentUpgradeStore.Load(operationID)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, status.Errorf(codes.NotFound, "node-agent upgrade operation %s not found", operationID)
-	}
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "loading node-agent upgrade operation: %v", err)
-	}
-	return &pb.GetNodeAgentUpgradeStatusResponse{Operation: upgradeOperationToProto(op)}, nil
-}
-
-// StartNodeAgentRollback restores the exact artifact retained by a prior
-// successful node-agent upgrade.
-func (s *NodeAgentServer) StartNodeAgentRollback(
-	ctx context.Context,
-	req *pb.StartNodeAgentRollbackRequest,
-) (*pb.StartNodeAgentRollbackResponse, error) {
-	defer logRPCSpan(ctx, "StartNodeAgentRollback")()
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request is required")
-	}
-	operationID := strings.TrimSpace(req.GetOperationId())
-	upgradeOperationID := strings.TrimSpace(req.GetUpgradeOperationId())
-	if err := agentupgrade.ValidateOperationID(operationID); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	if err := agentupgrade.ValidateOperationID(upgradeOperationID); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "upgrade_operation_id: %v", err)
-	}
-	if s.AgentUpgradeStore == nil || s.AgentUpgradeLauncher == nil {
-		return nil, status.Error(codes.FailedPrecondition, "node-agent updater is not configured")
-	}
-
 	s.agentUpgradeMu.Lock()
 	defer s.agentUpgradeMu.Unlock()
-	original, err := s.AgentUpgradeStore.Load(upgradeOperationID)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, status.Errorf(codes.NotFound, "upgrade operation %s not found", upgradeOperationID)
-	}
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "loading upgrade operation: %v", err)
-	}
-	if original.Action != agentupgrade.ActionUpgrade || original.Phase != agentupgrade.PhaseSucceeded {
-		return nil, status.Errorf(codes.FailedPrecondition, "operation %s is not a successful upgrade", upgradeOperationID)
-	}
-
-	s.mu.Lock()
-	currentVersion := strings.TrimSpace(s.NodeStatus.AgentVersion)
-	s.mu.Unlock()
-	op, created, err := s.AgentUpgradeStore.Create(agentupgrade.Operation{
-		ID:                     operationID,
-		Action:                 agentupgrade.ActionRollback,
-		TargetVersion:          original.PreviousVersion,
-		PreviousVersion:        currentVersion,
-		Method:                 original.Method,
-		RestoreFromOperationID: original.ID,
-	})
+	unlock, err := s.AgentUpgradeStore.Lock()
 	if err != nil {
 		return nil, upgradeStoreError(err)
 	}
-	if created || op.Phase == agentupgrade.PhasePending {
-		if launchErr := s.AgentUpgradeLauncher.Start(operationID); launchErr != nil {
-			op, persistErr := s.AgentUpgradeStore.SetStatus(operationID, agentupgrade.PhaseFailedNotRestored, "updater launch failed", launchErr.Error())
-			if persistErr != nil {
-				return nil, status.Errorf(codes.Internal, "starting rollback updater: %v; persisting failure: %v", launchErr, persistErr)
-			}
-			return &pb.StartNodeAgentRollbackResponse{Operation: upgradeOperationToProto(op)}, nil
-		}
+	defer unlock()
+	current, err := s.AgentUpgradeStore.Current()
+	if err != nil {
+		return nil, upgradeStoreError(err)
 	}
-	return &pb.StartNodeAgentRollbackResponse{Operation: upgradeOperationToProto(op)}, nil
+	if current == nil {
+		return &pb.GetNodeAgentUpgradeStatusResponse{}, nil
+	}
+	return &pb.GetNodeAgentUpgradeStatusResponse{Operation: upgradeOperationToProto(*current)}, nil
+}
+
+// launchNodeAgentUpdater reasserts the service start and persists launch failures.
+func (s *NodeAgentServer) launchNodeAgentUpdater(op agentupgrade.Operation) (agentupgrade.Operation, error) {
+	if op.Phase != agentupgrade.PhasePending && op.Phase != agentupgrade.PhaseRunning {
+		return op, nil
+	}
+	if err := s.AgentUpgradeLauncher.Start(op.Key()); err != nil {
+		phase := agentupgrade.PhaseFailedNotRestored
+		if op.Phase == agentupgrade.PhasePending {
+			phase = agentupgrade.PhaseFailedRestored
+		}
+		updated, persistErr := s.AgentUpgradeStore.SetStatus(op.Key(), phase, "updater launch failed", err.Error())
+		if persistErr != nil {
+			return op, status.Errorf(codes.Internal, "starting updater: %v; persisting failure: %v", err, persistErr)
+		}
+		return updated, nil
+	}
+	return op, nil
 }
 
 func parseCanonicalAgentVersion(value string) (*semver.Version, error) {
@@ -264,7 +235,6 @@ func upgradeMethodFromProto(method pb.NodeAgentUpgradeMethod) (agentupgrade.Meth
 
 func upgradeOperationToProto(op agentupgrade.Operation) *pb.NodeAgentUpgradeOperation {
 	return &pb.NodeAgentUpgradeOperation{
-		OperationId:     op.ID,
 		TargetVersion:   op.TargetVersion,
 		PreviousVersion: op.PreviousVersion,
 		Method:          upgradeMethodToProto(op.Method),
@@ -304,8 +274,6 @@ func upgradePhaseToProto(phase agentupgrade.Phase) pb.NodeAgentUpgradePhase {
 
 func upgradeStoreError(err error) error {
 	switch {
-	case errors.Is(err, agentupgrade.ErrOperationConflict):
-		return status.Error(codes.AlreadyExists, err.Error())
 	case errors.Is(err, agentupgrade.ErrOperationActive):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	default:

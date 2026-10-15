@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 )
 
@@ -44,9 +45,11 @@ type fakeRunner struct {
 	// that release's helm install was pointed at. See captureChart.
 	chartFiles map[string]map[string]bool
 
-	// valuesFiles holds, per release, the contents of the --values file its
-	// helm install was pointed at. See captureValues.
-	valuesFiles map[string]string
+	// valuesFiles holds, per release, the contents of the first --values file
+	// its helm install was pointed at. extraValuesFiles holds any that follow.
+	// See captureValues.
+	valuesFiles      map[string]string
+	extraValuesFiles map[string][]string
 }
 
 type fakeOutput struct {
@@ -132,17 +135,24 @@ func (f *fakeRunner) captureValues(name string, args []string) {
 		return
 	}
 	for i, arg := range args {
-		if arg == "--values" && i+1 < len(args) {
-			body, err := os.ReadFile(args[i+1])
-			if err != nil {
-				return
-			}
-			if f.valuesFiles == nil {
-				f.valuesFiles = map[string]string{}
-			}
-			f.valuesFiles[release] = string(body)
+		if arg != "--values" || i+1 >= len(args) {
+			continue
+		}
+		body, err := os.ReadFile(args[i+1])
+		if err != nil {
 			return
 		}
+		if f.valuesFiles == nil {
+			f.valuesFiles = map[string]string{}
+		}
+		if _, ok := f.valuesFiles[release]; !ok {
+			f.valuesFiles[release] = string(body)
+			continue
+		}
+		if f.extraValuesFiles == nil {
+			f.extraValuesFiles = map[string][]string{}
+		}
+		f.extraValuesFiles[release] = append(f.extraValuesFiles[release], string(body))
 	}
 }
 
@@ -229,27 +239,20 @@ func TestDeploy_RequiresKubeconfigAndImage(t *testing.T) {
 }
 
 func TestCWEEnvArgs(t *testing.T) {
-	const cpControllerEnv = "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER"
-
 	for _, tc := range []struct {
 		name string
 		cfg  Config
 		want []string
 	}{{
-		name: "the control-plane mode is sent with nothing else configured",
+		name: "nothing is sent when nothing is configured",
 		cfg:  Config{},
-		want: []string{
-			"--set-string", "env[0].name=" + cpControllerEnv,
-			"--set-string", "env[0].value=true",
-		},
+		want: nil,
 	}, {
-		name: "the node agent port is numbered after it",
+		name: "the node agent port is sent as the first env entry",
 		cfg:  Config{NodeAgentPort: "15005"},
 		want: []string{
-			"--set-string", "env[0].name=" + cpControllerEnv,
-			"--set-string", "env[0].value=true",
-			"--set-string", "env[1].name=NODE_AGENT_PORT",
-			"--set-string", "env[1].value=15005",
+			"--set-string", "env[0].name=NODE_AGENT_PORT",
+			"--set-string", "env[0].value=15005",
 		},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -366,6 +369,57 @@ func TestDeploy_EnablesPostInitCNI(t *testing.T) {
 	cwe := helmCalls(runner)[4]
 	if !strings.Contains(cwe, "cni.installAfterInit=true") {
 		t.Errorf("controller helm call = %q, want post-init CNI enabled", cwe)
+	}
+}
+
+func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
+	embedded, err := fs.ReadFile(manifestsFS, cweValuesFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+	if got := runner.valuesFiles[cweReleaseName]; got != string(embedded) {
+		t.Errorf("controller --values file differs from the embedded %s", cweValuesFile)
+	}
+	if strings.Count(helmCalls(runner)[4], "--values") != 1 {
+		t.Errorf("controller helm call = %q, want one --values when no providers are set", helmCalls(runner)[4])
+	}
+
+	cfg := testConfig(t)
+	cfg.OIDCProviders = []sitespec.OIDCProvider{{
+		Name:           "corp",
+		IssuerURL:      "https://login.example.com",
+		Audiences:      []string{"nvke"},
+		UsernameClaim:  "email",
+		UsernamePrefix: "corp:",
+		CABundle:       "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+	}}
+	runner = &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+	if got := runner.valuesFiles[cweReleaseName]; got != string(embedded) {
+		t.Errorf("embedded controller values changed when providers were set")
+	}
+	extra := runner.extraValuesFiles[cweReleaseName]
+	if len(extra) != 1 {
+		t.Fatalf("oidc values files = %d, want 1", len(extra))
+	}
+	for _, want := range []string{"name: corp", "issuerURL: https://login.example.com", "providers:"} {
+		if !strings.Contains(extra[0], want) {
+			t.Errorf("oidc values missing %q:\n%s", want, extra[0])
+		}
+	}
+	if strings.Contains(extra[0], "fullnameOverride") {
+		t.Errorf("oidc values include the embedded controller values:\n%s", extra[0])
+	}
+	cwe := helmCalls(runner)[4]
+	if strings.Count(cwe, "--values") != 2 {
+		t.Errorf("controller helm call has %d --values, want 2: %s", strings.Count(cwe, "--values"), cwe)
 	}
 }
 

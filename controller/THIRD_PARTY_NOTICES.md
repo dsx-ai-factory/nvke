@@ -129,8 +129,8 @@ notices-check` verifies it is up to date.
 | `go.opentelemetry.io/otel/sdk` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/sdk@v1.47.0` | https://github.com/open-telemetry/opentelemetry-go/blob/sdk/v1.47.0/sdk/LICENSE |
 | `go.opentelemetry.io/otel/trace` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/trace@v1.47.0` | https://github.com/open-telemetry/opentelemetry-go/blob/trace/v1.47.0/trace/LICENSE |
 | `go.opentelemetry.io/proto/otlp` | Apache-2.0 | `go.opentelemetry.io/proto/otlp@v1.11.0` | https://github.com/open-telemetry/opentelemetry-proto-go/blob/otlp/v1.11.0/otlp/LICENSE |
-| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.63.6` | https://github.com/temporalio/api-go/blob/v1.63.6/LICENSE |
-| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.63.6` | https://github.com/temporalio/api-go/blob/v1.63.6/internal/protojson/LICENSE |
+| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.63.7` | https://github.com/temporalio/api-go/blob/v1.63.7/LICENSE |
+| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.63.7` | https://github.com/temporalio/api-go/blob/v1.63.7/internal/protojson/LICENSE |
 | `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.49.0` | https://github.com/temporalio/sdk-go/blob/v1.49.0/LICENSE |
 | `go.temporal.io/sdk/contrib/opentelemetry` | MIT | `go.temporal.io/sdk/contrib/opentelemetry@v0.8.1` | https://github.com/temporalio/sdk-go/blob/contrib/opentelemetry/v0.8.1/contrib/opentelemetry/LICENSE |
 | `go.temporal.io/sdk/contrib/tally` | MIT | `go.temporal.io/sdk/contrib/tally@v0.2.0` | https://github.com/temporalio/sdk-go/blob/contrib/tally/v0.2.0/contrib/tally/LICENSE |
@@ -13759,7 +13759,7 @@ _Apache-2.0 — go.opentelemetry.io/proto/otlp@v1.11.0_
 
 ### go.temporal.io/api
 
-_MIT — go.temporal.io/api@v1.63.6_
+_MIT — go.temporal.io/api@v1.63.7_
 
 #### LICENSE
 
@@ -13789,7 +13789,7 @@ THE SOFTWARE.
 
 ### go.temporal.io/api/internal/protojson
 
-_BSD-3-Clause — go.temporal.io/api@v1.63.6_
+_BSD-3-Clause — go.temporal.io/api@v1.63.7_
 
 #### LICENSE
 

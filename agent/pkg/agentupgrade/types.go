@@ -7,6 +7,9 @@ package agentupgrade
 
 import "time"
 
+// DefaultRoot is the durable directory shared by the agent and its updater.
+const DefaultRoot = "/var/lib/nvke/agent-upgrades"
+
 // Method selects how the updater obtains and installs the target artifact.
 type Method string
 
@@ -15,16 +18,6 @@ const (
 	MethodAPT Method = "apt"
 	// MethodBundle installs an exact agent bundle resolved by nvke-agent.
 	MethodBundle Method = "bundle"
-)
-
-// Action distinguishes an upgrade from a restore of a prior operation.
-type Action string
-
-const (
-	// ActionUpgrade applies the requested target artifact.
-	ActionUpgrade Action = "upgrade"
-	// ActionRollback restores the artifact retained by a prior upgrade.
-	ActionRollback Action = "rollback"
 )
 
 // Phase is the durable lifecycle state of an updater operation.
@@ -46,15 +39,12 @@ const (
 // Operation is persisted below /var/lib/nvke/agent-upgrades and is intentionally
 // independent of the nvke-agent state file so it survives service replacement.
 type Operation struct {
-	ID                     string    `json:"id"`
-	Action                 Action    `json:"action"`
 	TargetVersion          string    `json:"targetVersion"`
 	PreviousVersion        string    `json:"previousVersion"`
 	PreviousPackageName    string    `json:"previousPackageName,omitempty"`
 	PreviousPackageVersion string    `json:"previousPackageVersion,omitempty"`
 	Method                 Method    `json:"method"`
 	ArtifactURL            string    `json:"artifactUrl,omitempty"`
-	RestoreFromOperationID string    `json:"restoreFromOperationId,omitempty"`
 	Phase                  Phase     `json:"phase"`
 	Step                   string    `json:"step"`
 	ErrorMessage           string    `json:"errorMessage,omitempty"`
@@ -73,3 +63,20 @@ func (o Operation) Terminal() bool {
 		return false
 	}
 }
+
+// Request identifies an installation by its exact target version and method.
+type Request struct {
+	TargetVersion string `json:"targetVersion"`
+	Method        Method `json:"method"`
+}
+
+// Key returns the filesystem and systemd name derived from the request pair.
+func (r Request) Key() string { return r.TargetVersion + "_" + string(r.Method) }
+
+// Request returns the installation pair for this operation.
+func (o Operation) Request() Request {
+	return Request{TargetVersion: o.TargetVersion, Method: o.Method}
+}
+
+// Key returns the filesystem and systemd name derived from the request pair.
+func (o Operation) Key() string { return o.Request().Key() }

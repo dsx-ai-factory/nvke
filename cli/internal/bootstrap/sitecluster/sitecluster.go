@@ -148,10 +148,8 @@ func provisionedMachineTemplate() map[string]interface{} {
 // clusterNetwork passes the site spec's CIDRs through, or nil when it named
 // neither and the controller's own defaults apply.
 //
-// The controller rejects non-default CIDRs for any CNI plugin other than ovn-kubernetes,
-// so a site spec that sets them with calico fails at create time with that
-// message. That check belongs to the controller, which owns the rule; restating it here
-// would be a second copy to keep in step.
+// Site-spec validation permits only OVN-Kubernetes. The controller still owns
+// the CIDR rules; restating them here would be a second copy to keep in step.
 func clusterNetwork(inv *sitespec.SiteSpec) *api.ClusterNetworkCreateConfig {
 	if inv.Cluster.PodCidr == "" && inv.Cluster.ServiceCidr == "" {
 		return nil

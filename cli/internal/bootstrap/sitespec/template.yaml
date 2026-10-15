@@ -34,11 +34,10 @@ cluster:
   # Kubernetes version to install — plain semantic version, no leading "v".
   k8sVersion: "1.34.2"
 
-  # CNI plugin: "ovn-kubernetes". "calico" is accepted for development.
+  # CNI plugin. New site-controller clusters use "ovn-kubernetes".
   cniName: "ovn-kubernetes"
   # Optional CNI plugin version. Empty uses the node-agent's built-in default.
-  # The value is plugin-specific — a Calico version such as "3.31.4" is not
-  # meaningful for ovn-kubernetes.
+  # The value must be an OVN-Kubernetes version.
   # cniVersion: ""
 
   # Pod network CIDR. Multiple CIDRs may be given as a comma-separated string.
@@ -72,8 +71,10 @@ cluster:
 # certificate already exists as a file because it has to be delivered to each
 # node. Both or neither — omitting them leaves SPIRE self-signed.
 # spire:
-#   # Optional SPIFFE trust domain. Defaults to <bootstrap-cluster>.nke.local.
-#   # Use this exact value for the permanent site SPIRE server.
+#   # SPIFFE trust domain, shared by the bootstrap and the controller stack
+#   # install. Set it once, before the bootstrap, or leave it unset: both
+#   # then use nvkectl-bootstrap.nke.local. A bootstrap run with
+#   # NVKECTL_BOOTSTRAP_CLUSTER_NAME set derives another, so set it then.
 #   trustDomain: "site.example.com"
 #   caCertFile: "/etc/nke/spire-ca.crt"
 #   caKeyFile: "/etc/nke/spire-ca.key"
@@ -111,13 +112,6 @@ controllerStack:
     apiName: REPLACE_NICO_API_NAME
     # File holding the NICo API token.
     tokenFile: REPLACE_NICO_TOKEN_PATH
-  # The registry credential for the CAPNICo image pull secret.
-  pullSecret:
-    # For example ghcr.io.
-    server: REPLACE_REGISTRY_SERVER
-    username: REPLACE_REGISTRY_USERNAME
-    # File holding the registry token. A fine-grained token with read:packages is enough.
-    tokenFile: REPLACE_REGISTRY_TOKEN_PATH
   # Login rendered into every tenant node's cloud-init.
   tenant:
     user: REPLACE_TENANT_USER

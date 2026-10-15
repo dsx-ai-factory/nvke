@@ -167,6 +167,24 @@ controller treats an empty variable. sprig's default would also replace false an
 {{- end }}
 
 {{/*
+Refuse a values file that still sets a key this chart renamed. Helm ignores an
+unknown key without a word, so the old key would leave the chart on its defaults:
+for nkeOIDCAuth, tenant-cluster OIDC quietly reverting to disabled.
+
+Keyed off key presence, not truth: an explicitly supplied empty map is false in
+a Helm condition, and would otherwise slip past. The old keys are absent from
+values.yaml so that presence only ever comes from the caller. Emits nothing.
+*/}}
+{{- define "controller.renamedValues.validate" -}}
+{{- if hasKey .Values "nkeSystemNamespace" -}}
+{{- fail "nkeSystemNamespace was renamed to nvkeSystemNamespace and is no longer read. Move its settings (create, annotations) under nvkeSystemNamespace." -}}
+{{- end -}}
+{{- if hasKey .Values "nkeOIDCAuth" -}}
+{{- fail "nkeOIDCAuth was renamed to nvkeOIDCAuth and is no longer read. Move its settings (enabled, tenantRbacName, issuerURL, discoveryURL, caBundleSecret) under nvkeOIDCAuth." -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Refuse the ways apiAuth's values can disagree with each other or with the chart,
 each of which otherwise renders clean and does the wrong thing silently.
 

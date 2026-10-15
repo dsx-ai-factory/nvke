@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
 
@@ -86,6 +87,7 @@ certRenewal:
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
 installCNIAfterInit: false
+allowLegacyCalicoClusterCreation: true
 nicoControllersEnabled: true
 profilesDir: ./profiles
 runbooksDir: ""
@@ -166,6 +168,7 @@ permissiveMode: false
 	assert.Equal(t, []string{"nico"}, cfg.SupportedInfraProviders)
 	assert.Equal(t, 12*time.Hour, cfg.CertRenewal.Interval.Duration)
 	assert.Equal(t, 30, cfg.CertRenewal.ThresholdDays)
+	assert.True(t, cfg.AllowLegacyCalicoClusterCreation)
 	assert.Equal(t, "dsxImds", cfg.NodeAgent.SpireAttestationMethod)
 	assert.Equal(t, "acme", cfg.NodeAgent.DSXImds.OperatorTenant)
 	assert.Equal(t, exampleChecksum, cfg.NodeAgent.DSXImds.PluginChecksum)
@@ -844,6 +847,74 @@ oidc:
 	})
 }
 
+// A provider's discoveryURL gets the checks kube-apiserver applies to it, so a
+// value it would reject stops the controller at startup instead of failing
+// every new cluster's control plane.
+func TestValidateOIDCProviderDiscoveryURL(t *testing.T) {
+	t.Parallel()
+
+	provider := func(name, issuerURL, discoveryURL string) string {
+		return fmt.Sprintf(`    - name: %s
+      issuerURL: %s
+      discoveryURL: %q
+      usernameClaim: sub
+      audiences: ["tenant"]
+      caBundle: pem
+`, name, issuerURL, discoveryURL)
+	}
+	const (
+		issuer   = "https://login.example.com"
+		internal = "https://login.internal.example/.well-known/openid-configuration"
+	)
+	shared := func(enabled bool) string {
+		return fmt.Sprintf(`  managementOIDCAuth:
+    enabled: %t
+    issuerURL: https://management.example.com
+    discoveryURL: %s
+`, enabled, internal)
+	}
+
+	tests := []struct {
+		name    string
+		oidc    string
+		wantErr string
+	}{
+		{name: "an https URL other than the issuer loads", oidc: "  providers:\n" + provider("corporate", issuer, internal)},
+		{name: "http fails", oidc: "  providers:\n" + provider("corporate", issuer, "http://login.internal.example/discovery"), wantErr: "must be an absolute https URL"},
+		{name: "a relative URL fails", oidc: "  providers:\n" + provider("corporate", issuer, "/.well-known/openid-configuration"), wantErr: "must be an absolute https URL"},
+		{name: "a port with no hostname fails", oidc: "  providers:\n" + provider("corporate", issuer, "https://:443/.well-known/openid-configuration"), wantErr: "must be an absolute https URL"},
+		{name: "credentials fail", oidc: "  providers:\n" + provider("corporate", issuer, "https://user:secret@login.internal.example/discovery"), wantErr: "must not contain a username or password"},
+		{name: "a query fails", oidc: "  providers:\n" + provider("corporate", issuer, "https://login.internal.example/discovery?tenant=a"), wantErr: "must not contain a query or fragment"},
+		{name: "the issuerURL itself fails", oidc: "  providers:\n" + provider("corporate", issuer, issuer+"/"), wantErr: "must differ from issuerURL"},
+		{name: "padding fails", oidc: "  providers:\n" + provider("corporate", issuer, " "+internal), wantErr: "leading or trailing whitespace"},
+		{
+			name:    "the same URL on two providers fails",
+			oidc:    "  providers:\n" + provider("corporate", issuer, internal) + provider("other", "https://other.example.com", internal),
+			wantErr: "duplicate discoveryURL",
+		},
+		{
+			name:    "the discoveryURL of the enabled managementOIDCAuth fails",
+			oidc:    shared(true) + "  providers:\n" + provider("corporate", issuer, internal),
+			wantErr: "already used by managementOIDCAuth",
+		},
+		{name: "the discoveryURL of a disabled managementOIDCAuth loads", oidc: shared(false) + "  providers:\n" + provider("corporate", issuer, internal)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := controllerconfig.Load(writeConfig(t, minimalConfig+"oidc:\n"+tt.oidc))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, cfg.OIDC.Providers, 1)
+			assert.Equal(t, internal, cfg.OIDC.Providers[0].DiscoveryURL)
+		})
+	}
+}
+
 func TestValidateSupportedInfraProviders(t *testing.T) {
 	t.Parallel()
 
@@ -878,6 +949,94 @@ func TestValidateSupportedInfraProviders(t *testing.T) {
 			}
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestValidateNodeMetadataAllowlistedLabelKeys(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		line    string // appended after minimalConfig's supportedInfraProviders line
+		want    []string
+		wantErr string
+	}{
+		{name: "omitted allows none"},
+		{name: "empty list allows none", line: "nodeMetadataAllowlistedLabelKeys: []\n", want: []string{}},
+		{
+			name: "accepts k8s.io and a kubernetes.io subdomain",
+			line: "nodeMetadataAllowlistedLabelKeys: [k8s.io/custom, node-role.kubernetes.io/worker]\n",
+			want: []string{"k8s.io/custom", "node-role.kubernetes.io/worker"},
+		},
+		{
+			name: "accepts a key outside the reserved domains",
+			line: "nodeMetadataAllowlistedLabelKeys: [nvidia.com/gpu, nodegroup]\n",
+			want: []string{"nvidia.com/gpu", "nodegroup"},
+		},
+		{
+			name: "accepts a lookalike internal domain",
+			line: "nodeMetadataAllowlistedLabelKeys: [mynke.io/rack]\n",
+			want: []string{"mynke.io/rack"},
+		},
+		{
+			name:    "rejects an empty key",
+			line:    `nodeMetadataAllowlistedLabelKeys: [node.kubernetes.io/custom, ""]` + "\n",
+			wantErr: "nodeMetadataAllowlistedLabelKeys: [1] must not be empty",
+		},
+		{
+			name:    "rejects a padded key",
+			line:    `nodeMetadataAllowlistedLabelKeys: [" node.kubernetes.io/custom"]` + "\n",
+			wantErr: `[0] " node.kubernetes.io/custom" has leading or trailing whitespace`,
+		},
+		{
+			name:    "rejects an invalid key",
+			line:    `nodeMetadataAllowlistedLabelKeys: ["bad key"]` + "\n",
+			wantErr: `[0] "bad key" is not a valid label key`,
+		},
+		{
+			name:    "rejects the control-plane role",
+			line:    "nodeMetadataAllowlistedLabelKeys: [node-role.kubernetes.io/control-plane]\n",
+			wantErr: `[0] "node-role.kubernetes.io/control-plane" is managed by core bootstrap components and cannot be allowlisted`,
+		},
+		{
+			name:    "rejects an nke.nvidia.com key",
+			line:    "nodeMetadataAllowlistedLabelKeys: [nke.nvidia.com/terminate]\n",
+			wantErr: `[0] "nke.nvidia.com/terminate" is under reserved domain "nke.nvidia.com" and cannot be allowlisted`,
+		},
+		{
+			name:    "rejects an nke.io key",
+			line:    "nodeMetadataAllowlistedLabelKeys: [nke.io/k8s-api-encryption-configured]\n",
+			wantErr: `[0] "nke.io/k8s-api-encryption-configured" is under reserved domain "nke.io" and cannot be allowlisted`,
+		},
+		{
+			name:    "rejects an internal subdomain key",
+			line:    "nodeMetadataAllowlistedLabelKeys: [agent.nvke.nvidia.com/state]\n",
+			wantErr: `[0] "agent.nvke.nvidia.com/state" is under reserved domain "nvke.nvidia.com" and cannot be allowlisted`,
+		},
+		{
+			name:    "rejects a duplicate",
+			line:    "nodeMetadataAllowlistedLabelKeys: [node.kubernetes.io/custom, node.kubernetes.io/custom]\n",
+			wantErr: `[1] "node.kubernetes.io/custom" duplicates [0]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			yaml := strings.Replace(minimalConfig, "supportedInfraProviders: [nico]\n", "supportedInfraProviders: [nico]\n"+tt.line, 1)
+			file, err := controllerconfig.Load(writeConfig(t, yaml))
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+
+			var cfg config.Config
+			file.ApplyTo(&cfg)
+			assert.Equal(t, tt.want, cfg.NodeMetadataAllowlistedLabelKeys)
 		})
 	}
 }

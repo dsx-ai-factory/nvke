@@ -37,12 +37,16 @@ sync:
       defaultDirectoryMode: 0755
     ignore:
       paths:
-        # Prefer root-anchored ignores. Unanchored "logs/" also matches
-        # nested source directories with the same name.
-        - "/bin/"
-        - "/var/"
-        - "/.dev/"
-        - "/logs/"
+        # The sync root is the nvke/ monorepo root, so anchored ignores must
+        # include the module directory (a bare "/bin/" only matches nvke/bin/).
+        # Prefer anchored ignores. Unanchored "logs/" also matches nested
+        # source directories with the same name (vendor/k8s.io/component-base/logs/).
+        - "/controller/bin/"
+        - "/controller/var/"
+        - "/controller/.dev/"
+        - "/controller/nico-sim/.dev/"
+        - "/controller/logs/"
+        - "/agent/bin/"
         - "release/"
         - "images/"
         - ".gocache/"

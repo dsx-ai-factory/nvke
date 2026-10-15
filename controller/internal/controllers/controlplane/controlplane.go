@@ -15,16 +15,13 @@ import (
 )
 
 // controlPlane represents a control plane in the database.
-// It is a read-only view of the control plane nodes and node pools.
+// It is a read-only view of the control plane nodes.
 type controlPlane struct {
-	nodes     []db.Node
-	nodePools []nodePool
-	nodeSets  []db.NodeSet
+	nodes []db.Node
 	// nodePinnedControlPlaneConfigs maps each CP-controller node's pinned config ID
 	// to its spec, preloaded once per reconcile.
 	nodePinnedControlPlaneConfigs map[uuid.UUID]db.ControlPlaneConfigSpec
 	clusterControlPlaneConfig     db.ControlPlaneConfig
-	useController                 bool
 }
 
 func controlPlaneReplacementBlocked(cluster db.Cluster) bool {
@@ -32,7 +29,7 @@ func controlPlaneReplacementBlocked(cluster db.Cluster) bool {
 }
 
 // readControlPlane reads the control plane from the database.
-func readControlPlane(ctx context.Context, database db.Queries, cluster db.Cluster, useController bool) (*controlPlane, error) {
+func readControlPlane(ctx context.Context, database db.Queries, cluster db.Cluster) (*controlPlane, error) {
 	cpTrue := true
 	nodes, err := database.ListNodes(ctx, db.NodeFilters{
 		ClusterID:    &cluster.ID,
@@ -40,42 +37,6 @@ func readControlPlane(ctx context.Context, database db.Queries, cluster db.Clust
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing control plane nodes: %w", err)
-	}
-
-	dbNodePools, err := database.ListNodePools(ctx, db.NodePoolFilters{
-		ClusterID:    &cluster.ID,
-		ControlPlane: &cpTrue,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing control plane node pools: %w", err)
-	}
-
-	// Build node pools with their associated node sets and nodes
-	nodePools := make([]nodePool, 0, len(dbNodePools))
-	allNodeSets := []db.NodeSet{}
-
-	for _, np := range dbNodePools {
-		dbNodeSets, err := database.ListNodeSets(ctx, db.NodeSetFilters{NodePoolID: &np.ID})
-		if err != nil {
-			return nil, fmt.Errorf("listing node sets for node pool %s: %w", np.ID, err)
-		}
-
-		// Add to flat list
-		allNodeSets = append(allNodeSets, dbNodeSets...)
-
-		// Build node sets with their associated nodes
-		nodeSets := make([]nodeSet, 0, len(dbNodeSets))
-		for _, ns := range dbNodeSets {
-			var nsNodes []db.Node
-			for _, node := range nodes {
-				if node.NodeSetID == ns.ID {
-					nsNodes = append(nsNodes, node)
-				}
-			}
-			nodeSets = append(nodeSets, nodeSet{NodeSet: ns, nodes: nsNodes})
-		}
-
-		nodePools = append(nodePools, nodePool{NodePool: np, nodeSets: nodeSets})
 	}
 
 	// Preload CP-controller nodes' pinned config snapshots (batched).
@@ -86,11 +47,8 @@ func readControlPlane(ctx context.Context, database db.Queries, cluster db.Clust
 
 	return &controlPlane{
 		nodes:                         nodes,
-		nodePools:                     nodePools,
-		nodeSets:                      allNodeSets,
 		nodePinnedControlPlaneConfigs: configs,
 		clusterControlPlaneConfig:     cluster.ControlPlaneConfig,
-		useController:                 useController,
 	}, nil
 }
 
@@ -156,18 +114,6 @@ func (c *controlPlane) nodesForRemediation() []db.Node {
 	return nodes
 }
 
-// nodeSet combines a node set with its associated nodes.
-type nodeSet struct {
-	db.NodeSet
-	nodes []db.Node
-}
-
-// nodePool combines a node pool with its associated node sets.
-type nodePool struct {
-	db.NodePool
-	nodeSets []nodeSet
-}
-
 // surgeBudget is how many surge nodes the rollout may run concurrently,
 // bounded by the number of nodes still needing rollout.
 func (c *controlPlane) surgeBudget() int {
@@ -175,28 +121,26 @@ func (c *controlPlane) surgeBudget() int {
 		len(c.nodesNeedingRollout(c.clusterControlPlaneConfig.ControlPlaneConfigSpec)))
 }
 
+// countControllerManagedNodes returns the number of control plane nodes owned by
+// the control-plane controller.
+func (c *controlPlane) countControllerManagedNodes() int {
+	count := 0
+	for _, node := range c.nodes {
+		if node.IsManagedByControlPlaneController() {
+			count++
+		}
+	}
+	return count
+}
+
 // expectedCount returns the expected number of control plane nodes.
 func (c *controlPlane) expectedCount() int {
-	if c.useController {
-		return c.clusterControlPlaneConfig.DesiredCount + c.surgeBudget()
-	}
-	total := 0
-	for _, np := range c.nodePools {
-		total += np.expectedCount()
-	}
-	return total
+	return c.clusterControlPlaneConfig.DesiredCount + c.surgeBudget()
 }
 
 // countDesiredNodes returns the total desired number of control plane nodes (without surge).
 func (c *controlPlane) countDesiredNodes() int {
-	if c.useController {
-		return c.clusterControlPlaneConfig.DesiredCount
-	}
-	total := 0
-	for _, np := range c.nodePools {
-		total += np.DesiredCount
-	}
-	return total
+	return c.clusterControlPlaneConfig.DesiredCount
 }
 
 // countHealthyNodes returns the number of healthy control plane nodes.
@@ -215,64 +159,10 @@ func (c *controlPlane) countHealthyNodes() int {
 	return count
 }
 
-// countNodesNeedingRollout returns the total count of control plane nodes
-// needing rollout across all control plane node pools.
+// countNodesNeedingRollout returns the number of control plane nodes whose pinned
+// snapshot differs from the cluster's current one in a field that requires replacement.
 func (c *controlPlane) countNodesNeedingRollout() int {
-	if c.useController {
-		return len(c.nodesNeedingRollout(c.clusterControlPlaneConfig.ControlPlaneConfigSpec))
-	}
-	total := 0
-	for _, np := range c.nodePools {
-		total += np.countDeprecatedNodes()
-	}
-	return total
-}
-
-// nodesOffVersion returns the node-pool nodes whose NodeSet pins a Kubernetes
-// version other than target, their pools, and whether any such pool has
-// auto-provision disabled. Those pools never get a new NodeSet, so the count
-// cannot fall on its own.
-func (c *controlPlane) nodesOffVersion(target string) (int, []uuid.UUID, bool) {
-	count := 0
-	stuck := false
-	var pools []uuid.UUID
-	for _, np := range c.nodePools {
-		poolCount := 0
-		for _, ns := range np.nodeSets {
-			if ns.KubernetesVersion != "" && ns.KubernetesVersion != target {
-				poolCount += len(ns.nodes)
-			}
-		}
-		if poolCount == 0 {
-			continue
-		}
-		count += poolCount
-		pools = append(pools, np.ID)
-		if np.AutoProvisionDisabled {
-			stuck = true
-		}
-	}
-	return count, pools, stuck
-}
-
-// expectedCount returns the expected number of nodes for this node pool.
-// This accounts for surge nodes during upgrades:
-// - Normal operation (no deprecated nodes): expectedCount = DesiredCount
-// - During upgrade (has deprecated nodes): expectedCount = DesiredCount + min(MaxSurge, deprecatedCount)
-func (np *nodePool) expectedCount() int {
-	return np.DesiredCount + min(np.MaxSurge, np.countDeprecatedNodes())
-}
-
-// countDeprecatedNodes returns the number of nodes in deprecated node sets.
-// This indicates an upgrade/migration is in progress where surge nodes may be expected.
-func (np *nodePool) countDeprecatedNodes() int {
-	count := 0
-	for _, ns := range np.nodeSets {
-		if !np.IsCurrentNodeSet(ns.ID) {
-			count += len(ns.nodes)
-		}
-	}
-	return count
+	return len(c.nodesNeedingRollout(c.clusterControlPlaneConfig.ControlPlaneConfigSpec))
 }
 
 // nodesNeedingRollout returns CP-controller nodes whose pinned snapshot differs

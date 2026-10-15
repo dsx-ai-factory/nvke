@@ -17,9 +17,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ../../../management-engine/config/crd/bases/internal.nke.nvidia.com_machineimages.yaml
-  - ../../../management-engine/config/crd/bases/internal.nke.nvidia.com_clusterreleases.yaml
-  - ../../../management-engine/config/crd/bases/internal.nke.nvidia.com_nodepoolreleases.yaml
+  - ../../../management-engine/config/crd/bases/internal.nvke.nvidia.com_machineimages.yaml
+  - ../../../management-engine/config/crd/bases/internal.nvke.nvidia.com_clusterreleases.yaml
+  - ../../../management-engine/config/crd/bases/internal.nvke.nvidia.com_nodepoolreleases.yaml
 commonAnnotations:
   helm.sh/resource-policy: keep
   argocd.argoproj.io/sync-wave: "-2"

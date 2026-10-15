@@ -252,7 +252,18 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := dumpSiteSpec(out, inv); err != nil {
 		return err
 	}
-	noteControllerStackSection(out, inv, bootstrapengine.DefaultConfig().ClusterName)
+	noteControllerStackSection(out, inv)
+	// Said as soon as the default is known, dry run included: the controller
+	// stack install shares it only for the default bootstrap cluster name.
+	if inv.Spire.TrustDomain == "" {
+		bootstrapCluster := bootstrapengine.DefaultConfig().ClusterName
+		if bootstrapCluster == sitespec.DefaultBootstrapClusterName {
+			logger.Info("spire.trustDomain is not set; using the default the controller stack install shares", "trustDomain", inv.EffectiveTrustDomain(bootstrapCluster))
+		} else {
+			logger.Warn("spire.trustDomain is not set; derived from the bootstrap cluster name. Set spire.trustDomain to this value before the controller stack install, whose default differs",
+				"trustDomain", inv.EffectiveTrustDomain(bootstrapCluster), "installDefault", inv.EffectiveTrustDomain(sitespec.DefaultBootstrapClusterName))
+		}
+	}
 
 	if opts.dryRun {
 		fmt.Fprintln(out, "\nDry run: site spec is valid. No workflow dispatched.")
@@ -281,7 +292,6 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err != nil {
 		return err
 	}
-
 	// The controller API has to be reachable from this host: this command deploys it
 	// and then calls it. A host port mapping rather than the node container's
 	// own address, because that address is not routable from the host on
@@ -869,6 +879,7 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	// How the hosts were configured when they were provisioned, which is why it
 	// is in the site spec and not in the environment.
 	cfg.NodeAgentPort = inv.Cluster.NodeAgentPort
+	cfg.OIDCProviders = inv.Cluster.OIDCProviders
 
 	return cfg, nil
 }
@@ -1061,12 +1072,7 @@ func dumpSiteSpec(out io.Writer, inv *sitespec.SiteSpec) error {
 // the controller stack install: the whole controllerStack: section, or the
 // placeholders left in it. The bootstrap does not read the section, so this
 // is the moment to say so.
-func noteControllerStackSection(out io.Writer, inv *sitespec.SiteSpec, bootstrapClusterName string) {
-	if inv.Spire.TrustDomain == "" {
-		fmt.Fprintf(out, "\nThe SPIFFE trust domain of this bootstrap is %s, derived from the bootstrap cluster name. "+
-			"Set spire.trustDomain to it in the site spec so the controller stack install uses the same one.\n",
-			inv.EffectiveTrustDomain(bootstrapClusterName))
-	}
+func noteControllerStackSection(out io.Writer, inv *sitespec.SiteSpec) {
 	switch left := inv.ControllerStackPlaceholders(); {
 	case inv.ControllerStack == nil:
 		fmt.Fprintf(out, "\nBefore installing the controller stack, add the controllerStack: section to the site spec. "+

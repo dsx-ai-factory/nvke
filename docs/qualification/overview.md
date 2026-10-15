@@ -59,15 +59,26 @@ parts are the way they are.
 
 ## Running one
 
-The lane never starts on its own. It runs on a `workflow_dispatch`, or when
-the `qualify-e2e` label is applied to a pull request from this repository. It is
-deliberately not on a schedule or on push: it costs hardware, and a run nobody
-is watching is a run nobody acts on.
+The lane runs on a `workflow_dispatch`, when the `qualify-e2e` label is applied
+to a pull request from this repository, and when a `vX.Y.Z-beta.N` tag is pushed.
+It is deliberately not on a schedule or on every push: it costs hardware, and a
+run nobody is watching is a run nobody acts on. A beta tag is cut once a night,
+so it adds one run rather than a stream of them.
 
-A run starts with a `plan` job that runs `qualify plan` and uploads `plan.json`,
-and then runs one job for each stream of the plan's scope. The versions, the
-architecture and the GPU model of a job are the plan's, and the dispatch inputs
-that name a version override what the plan resolves.
+A run starts with a `plan` job that runs `qualify plan` and uploads `plan.json`.
+A `verify` job then checks that everything the plan names is published, before
+any machine is taken, and one job runs for each stream of the plan's scope. The
+versions, the architecture and the GPU model of a job are the plan's, and the
+dispatch inputs that name a version override what the plan resolves.
+
+**Qualifying a beta.** A beta tag names a commit and carries no component tags,
+so resolving the components from their own tags would answer with the last
+release rather than with what that commit built. A tag push therefore asks for
+`resolution: commitDescribe`, which describes each component at the commit the
+tag marks, and the commit is derived from the version being qualified rather
+than given. A dispatch can select the same resolution for an existing beta tag.
+The plan records the commit and, for each component, the strategy that answered,
+so a run says afterwards how every version was arrived at.
 
 A **dry run** does everything except join Teleport and run the suite, so it
 takes no Forge machine. It is the `dry-run` dispatch input, or the

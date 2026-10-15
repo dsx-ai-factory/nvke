@@ -29,22 +29,20 @@ const parallelClusterStagger = time.Minute
 // (sequential), so this is the only coverage of concurrent multi-cluster
 // lifecycle.
 //
-// nke-e2e used three fixed clusters differing by CNI (Calico 3.30.1, Calico
-// 3.31.4, OVN). The controller's API has no CNI-version field, so the Calico version
-// matrix cannot be reproduced here; CNI-plugin diversity (OVN + Calico) is used
-// instead. Opt in with the "parallel-lifecycle" label — it is the most
-// expensive scenario (multiple clusters provisioning at once).
+// Both clusters use OVN-Kubernetes. Opt in with the "parallel-lifecycle"
+// label — it is the most expensive scenario (multiple clusters provisioning
+// at once).
 var _ = Describe("Parallel tenant cluster lifecycle", Ordered, ContinueOnFailure,
 	Label("nico-vms", "extended", "parallel-lifecycle"), func() {
 		shapes := []clusterShape{
 			{
-				// Needs an image carrying OVN debs; one built here has none.
+				// Needs an image carrying OVN debs.
 				cniPlugin:         CNIPluginOVN,
 				controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 				workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 			},
 			{
-				cniPlugin:         CNIPluginCalico,
+				cniPlugin:         CNIPluginOVN,
 				controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 				workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 			},

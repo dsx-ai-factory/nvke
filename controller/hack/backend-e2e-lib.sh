@@ -45,6 +45,45 @@ e2e_attestation_method() {
   fi
 }
 
+# Docker has no timeout flag of its own, so a call that reaches a registry is
+# bounded with coreutils `timeout` instead. --foreground keeps the command in the
+# terminal's process group, so Ctrl-C reaches a slow pull in a hand run rather
+# than being dropped. `timeout` is absent from a stock macOS, where the
+# entrypoints are also run by hand, so without a `timeout` that takes the flag
+# fall back to running unbounded rather than failing outright.
+: "${DOCKER_PULL_TIMEOUT:=10m}"
+if timeout --foreground 1 true >/dev/null 2>&1; then
+  bounded() { timeout --foreground "$@"; }
+else
+  bounded() { shift; "$@"; }
+fi
+
+# Reports through the sourcing script's log when it defines one. The bare
+# `bash -c` in Makefile.dev's bundle-mirror target does not.
+e2e_note() {
+  if declare -F log >/dev/null; then
+    log "$@"
+  else
+    printf '%s\n' "$*"
+  fi >&2
+}
+
+# The Docker Hub mirror sometimes 404s a blob it has not cached yet; a second pull
+# gets it. Progress goes to stdout and retries to stderr, so a caller capturing
+# its own output can send this to stderr or /dev/null.
+pull_with_retry() {
+  local image=$1 attempt
+  for attempt in 1 2 3; do
+    bounded "${DOCKER_PULL_TIMEOUT}" docker pull "${image}" && return 0
+    if ((attempt == 3)); then
+      e2e_note "docker pull failed after ${attempt} attempts: ${image}"
+      return 1
+    fi
+    e2e_note "docker pull attempt ${attempt} failed, retrying: ${image}"
+    sleep 15
+  done
+}
+
 # Prefixes an official Docker Hub image with NKE_E2E_DOCKERHUB_MIRROR when that
 # is set, so a host `docker run` or `docker create` of it is not an anonymous
 # Hub pull from the runner's address. Bare names only: `alpine:3.22`, not
@@ -60,7 +99,15 @@ dockerhub_image() {
 # a volume rather than a host path keeps this working where the Docker daemon
 # does not share the host filesystem, as on Colima.
 e2e_start_bundle_mirror() {
-  local name="$1" volume="$2" dir="$3" loader="$1-loader" ip
+  local name="$1" volume="$2" dir="$3" loader="$1-loader" ip image
+  # A missing image is pulled first, with retries: docker create and docker run
+  # pull it once, and fail on the mirror's 404. A cached one is used as is, as
+  # docker itself would, so a host that cannot reach the registry still starts
+  # the mirror. Not to stdout, which returns the address.
+  for image in "$(dockerhub_image alpine:3.22)" "$(dockerhub_image nginx:alpine)"; do
+    docker image inspect "${image}" >/dev/null 2>&1 && continue
+    pull_with_retry "${image}" >&2 || return 1
+  done
   docker volume create "${volume}" >/dev/null || return 1
   docker create --name "${loader}" -v "${volume}:/bundle" "$(dockerhub_image alpine:3.22)" true >/dev/null || return 1
   docker cp "${dir}/." "${loader}:/bundle/" >/dev/null || return 1

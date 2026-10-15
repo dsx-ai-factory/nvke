@@ -266,6 +266,10 @@ func BuildOperatorJWTAuthenticator(
 			},
 		},
 	}
+	if provider.DiscoveryURL != "" {
+		discoveryURL := provider.DiscoveryURL
+		authenticator.Issuer.DiscoveryURL = &discoveryURL
+	}
 
 	if provider.GroupsClaim != "" {
 		groupsPrefix := provider.GroupsPrefix

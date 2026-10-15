@@ -63,8 +63,8 @@ func TestExampleMatchesTemplate(t *testing.T) {
 func TestBuildRoundTrip(t *testing.T) {
 	sets := []string{
 		"cluster.k8sVersion=1.33.1",
-		"cluster.cniName=calico",
-		"cluster.cniVersion=3.31.4",
+		"cluster.cniName=ovn-kubernetes",
+		"cluster.cniVersion=1.4.0",
 		"cluster.controlPlaneVIP=10.0.0.5",
 		"cluster.podCidr=10.100.0.0/16",
 		"cluster.serviceCidr=10.200.0.0/16",

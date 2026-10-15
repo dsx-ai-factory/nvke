@@ -10,59 +10,56 @@ tabs:
 navigation:
   - tab: documentation
     layout:
-      - page: Overview
-        path: overview.md
-
-      - page: NVKE in the DSX Stack
-        path: dsx-stack.md
-
-      - section: Getting Started
+      - section: Overview
         contents:
-          - page: Your First Cluster
-            path: first-cluster.md
-          - page: Day 0 → Day 1 → Day 2 Lifecycle
-            path: lifecycle.md
+          - page: What is NVKE
+            path: overview/what-is-nvke.md
+          - page: Preview status and known limitations
+            path: overview/preview-status.md
+          - page: Supported platforms and versions
+            path: overview/supported-platforms.md
 
-      - page: Key Concepts
-        path: concepts.md
-
-      - page: Architecture
-        path: architecture.md
-
-      - section: Site Controller Bootstrap
+      - section: Get started
         contents:
-          - page: Overview
-            path: site-bootstrap/overview.md
-          - page: Installation
-            path: site-bootstrap/installation.md
-          - page: Configuration
-            path: site-bootstrap/configuration.md
-          - page: Deploy Repository
-            path: site-bootstrap/deploy-repository.md
-          - page: Infrastructure Providers
-            path: site-bootstrap/infrastructure-providers.md
-          - page: Pre-Provisioned Nodes
-            path: site-bootstrap/pre-provisioned-nodes.md
-          - page: Custom Base OS
-            path: site-bootstrap/custom-base-os.md
+          - page: "Quickstart: evaluate locally with mock-NICo"
+            path: get-started/quickstart-local.md
 
-      - section: Tenant Clusters
+      - section: Install NVKE
         contents:
-          - page: Node Lifecycle
-            path: tenant-clusters/node-lifecycle.md
-          - page: Kubernetes API Access
-            path: tenant-clusters/kubernetes-api-access.md
-          - page: OIDC Authentication
-            path: tenant-clusters/oidc-authentication.md
+          - page: Plan your installation
+            path: operate/plan-installation.md
+          - page: Get NVKE artifacts and OS profiles built with NVKR
+            path: operate/build-node-images.md
+          - page: Prepare nodes
+            path: operate/prepare-nodes.md
+          - page: Bootstrap the management cluster
+            path: operate/bootstrap-management-cluster.md
+          - page: Install management-plane services
+            path: operate/install-management-plane-services.md
+          - page: "Configure an infrastructure provider: NICo"
+            path: operate/provider-nico.md
+          - page: Secure the NVKE API
+            path: operate/api-authentication.md
 
-      - section: Operations
+      - section: Run workload clusters
         contents:
-          - page: Tenant Cluster Kubernetes Upgrades
-            path: operations/upgrade.md
-          - page: Observability
-            path: operations/observability.md
-          - page: Troubleshooting and FAQ
-            path: operations/faq.md
+          - page: Create a workload cluster
+            path: workload-clusters/create.md
+          - page: Access a workload cluster
+            path: workload-clusters/access.md
+          - page: Configure OIDC for workload clusters
+            path: workload-clusters/oidc.md
+          - page: Manage node pools
+            path: workload-clusters/node-pools.md
+
+      - section: Operate
+        contents:
+          - page: Observe NVKE and its clusters
+            path: operate/observe.md
+          - page: Troubleshoot
+            path: operate/troubleshoot.md
+          - page: Migrate CRs to the NVKE CRD group
+            path: operations/crd-group-migration.md
 
       - section: Telemetry (NKTP)
         contents:

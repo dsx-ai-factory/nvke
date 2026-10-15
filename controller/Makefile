@@ -17,6 +17,7 @@ SETUP_ENVTEST			?= $(shell go env GOPATH)/bin/setup-envtest
 # Explicit store, so CI can cache a known path instead of guessing setup-envtest's
 # platform-dependent default.
 ENVTEST_BIN_DIR			?= $(CURDIR)/.go/envtest
+OIDC_LIVE_CAPD_NODE_IMAGE	?= cwe-capd-kindest-node:oidc-acceptance-jointoken
 gofail_e2e_cluster_crds		= $(or $(NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS),$(CWE_GOFAIL_E2E_CLUSTER_CRDS),$(shell go env GOMODCACHE)/sigs.k8s.io/cluster-api@$(shell go list -m -f '{{.Version}}' sigs.k8s.io/cluster-api)/config/crd/bases)
 gofail_e2e_capnico_crds		= $(or $(NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS),$(CWE_GOFAIL_E2E_CAPNICO_CRDS),$(shell go env GOMODCACHE)/github.com/dsx-ai-factory/cluster-api-provider-nico@$(shell go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)/config/crd/bases)
 
@@ -70,14 +71,9 @@ lint: ## Lint source files. (run by the merge gate)
 
 ##@ MachineImage and releases
 
-# OS profiles are being replaced by MachineImage, ClusterRelease and
-# NodePoolRelease custom resources, generated from an OS profile tree (Argo CD
-# applies the fleet's, see nke-site-deploy/cwe-profiles/releases). The generator
-# validates each manifest against the CRDs before it writes anything.
-
-.PHONY: fixture-releases
-fixture-releases: ## Regenerate test/fixtures/releases from test/fixtures/profiles.
-	go run ./hack/osprofiles-to-crs --profiles test/fixtures/profiles --output test/fixtures/releases --license Apache-2.0 --gitops=false
+# OS images and releases are MachineImage, ClusterRelease and NodePoolRelease
+# custom resources. Argo CD applies the fleet's; the manifests under
+# test/fixtures/releases are this repository's own set, maintained by hand.
 
 RELEASE_CRD_DIR		?= $(REPO_ROOT)/management-engine/config/crd/bases
 RELEASE_CRD_NAMES	?= machineimages clusterreleases nodepoolreleases
@@ -87,8 +83,8 @@ RELEASES_DIR		?= $(CURDIR)/test/fixtures/releases
 releases-install: ## Install the release CRDs and apply RELEASES_DIR to the cluster in KUBECONFIG (for CWE run outside the chart).
 	@set -eu; \
 	for name in $(RELEASE_CRD_NAMES); do \
-		kubectl apply --server-side --field-manager=releases -f "$(RELEASE_CRD_DIR)/internal.nke.nvidia.com_$$name.yaml"; \
-		kubectl wait --for=condition=Established --timeout=60s "crd/$$name.internal.nke.nvidia.com"; \
+		kubectl apply --server-side --field-manager=releases -f "$(RELEASE_CRD_DIR)/internal.nvke.nvidia.com_$$name.yaml"; \
+		kubectl wait --for=condition=Established --timeout=60s "crd/$$name.internal.nvke.nvidia.com"; \
 	done; \
 	kubectl apply --server-side --field-manager=releases -f "$(RELEASES_DIR)"
 
@@ -256,6 +252,7 @@ test-integration-teleport: ## Execute Teleport client integration tests (require
 
 E2E_DIR := test/e2e
 E2E_TIMEOUT ?= 2h
+OIDC_ACCEPTANCE_LABEL_FILTER ?= oidc-acceptance
 # Ginkgo CLI flags, e.g. ARGS='--label-filter="nico-vms && happy-path"'
 ARGS ?=
 
@@ -280,6 +277,61 @@ test-e2e-capd: ## Run CAPD happy-path e2e tests
 .PHONY: test-e2e-capd-local
 test-e2e-capd-local: ## Run all CAPD e2e tests with local CWE and agent source. macOS bootstraps Colima; Linux uses the host Docker daemon.
 	./hack/local-backend-e2e.sh
+
+.PHONY: oidc-envtest-assets test-oidc-reference test-oidc-acceptance-live
+oidc-envtest-assets: ## Install the pinned setup-envtest and resolve the pinned Kubernetes assets.
+	@mkdir -p "$(dir $(SETUP_ENVTEST))" "$(ENVTEST_BIN_DIR)"
+	@GOBIN="$(dir $(SETUP_ENVTEST))" go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
+	@"$(SETUP_ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(ENVTEST_BIN_DIR)" -p path
+
+test-oidc-reference: oidc-envtest-assets ## Run the production-rendered OIDC config against envtest.
+	@set -euo pipefail; \
+	KUBEBUILDER_ASSETS="$$($(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir "$(ENVTEST_BIN_DIR)" -p path)"; \
+	test -n "$$KUBEBUILDER_ASSETS" || { echo "setup-envtest selected no Kubernetes $(ENVTEST_K8S_VERSION) assets" >&2; exit 1; }; \
+	output_file="$$(mktemp)"; \
+	trap 'rm -f "$$output_file"' EXIT; \
+	status=0; \
+	ENVTEST_K8S_VERSION="$(ENVTEST_K8S_VERSION)" KUBEBUILDER_ASSETS="$$KUBEBUILDER_ASSETS" go test -v -tags=oidc_integration -count=1 ./test/oidctest/... 2>&1 | tee "$$output_file" || status=$$?; \
+	test "$$status" -eq 0 || exit "$$status"; \
+	grep -Fq -- "--- PASS: TestReferenceOIDCAuthenticationMatrix (" "$$output_file" && \
+		grep -Eq -- "--- PASS: TestReferenceOIDCAuthenticationMatrix/[^/]+/[^/]+ [(]" "$$output_file" || \
+		{ echo "OIDC reference matrix and its cases must run and pass" >&2; exit 1; }
+
+test-oidc-acceptance-live: ## Run the tagged OIDC lifecycle on a fresh local CAPD management cluster.
+	@set -eu; \
+	if [ "$$(uname -s)" = Darwin ]; then \
+		export COLIMA_CPUS="$${COLIMA_CPUS:-10}" COLIMA_MEMORY_GIB="$${COLIMA_MEMORY_GIB:-24}" COLIMA_DISK_GIB="$${COLIMA_DISK_GIB:-150}"; \
+		export DOCKER_HOST="$${DOCKER_HOST:-$(COLIMA_DOCKER_HOST)}"; \
+		export COLIMA_DOCKER_HOST="$$DOCKER_HOST"; \
+		$(MAKE) host-up; \
+	fi; \
+	if ! docker image inspect "$(OIDC_LIVE_CAPD_NODE_IMAGE)" >/dev/null 2>&1; then \
+		$(MAKE) capd-image \
+			COLIMA_DOCKER_HOST="$${DOCKER_HOST:-$(COLIMA_DOCKER_HOST)}" \
+			CAPD_KINDEST_NODE_IMAGE="$(OIDC_LIVE_CAPD_NODE_IMAGE)" \
+			CAPD_SPIRE_ATTESTATION_METHOD=joinToken \
+			INSTALL_CNI_AFTER_INIT=true; \
+	fi; \
+	run_id="$$(date +%s)-$$$$"; \
+	kind_cluster_name="nke-oidc-live-$$run_id"; \
+	providers="$${LOCAL_NKE_E2E_PROVIDERS:-}"; \
+	if test -z "$$providers" && \
+		test "$$(docker inspect --format '{{.State.Running}}' "$${BGP_CONTAINER_NAME:-bgp-containers}" 2>/dev/null || true)" = true; then \
+		providers='["capi_core","capd","capd-reboot-controller"]'; \
+	fi; \
+	KIND_CLUSTER_NAME="$$kind_cluster_name" \
+	CAPD_KINDEST_NODE_IMAGE="$(OIDC_LIVE_CAPD_NODE_IMAGE)" \
+	CAPD_NODE_IMAGE="$(OIDC_LIVE_CAPD_NODE_IMAGE)" \
+	CAPD_SPIRE_ATTESTATION_METHOD=joinToken \
+	LOCAL_NKE_E2E_REUSE_CAPD_NODE_IMAGE=true \
+	LOCAL_NKE_E2E_STATE_DIR="$(CURDIR)/.local/nke-oidc-live-$$run_id" \
+	LOCAL_NKE_E2E_KUBECONFIG="$(CURDIR)/.local/nke-oidc-live-$$run_id/management.kubeconfig" \
+	LOCAL_NKE_E2E_BUILD_TAGS=oidc_acceptance \
+	LOCAL_NKE_E2E_LABEL_FILTER="$(OIDC_ACCEPTANCE_LABEL_FILTER)" \
+	LOCAL_NKE_E2E_PROVIDERS="$$providers" \
+	INSTALL_CNI_AFTER_INIT=true \
+	./hack/local-backend-e2e.sh; \
+	kind delete cluster --name "$$kind_cluster_name"
 
 .PHONY: test-e2e-nico-vms
 test-e2e-nico-vms: ## Run NICo VMs happy-path e2e tests

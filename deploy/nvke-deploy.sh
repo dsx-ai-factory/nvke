@@ -30,6 +30,15 @@ PHASE_TIMEOUT="${PHASE_TIMEOUT:-15m}"
 REQUIRE_TIMEOUT="${REQUIRE_TIMEOUT:-180s}"
 PASSTHROUGH=()
 CONFIG=""
+SITESPEC=""
+RELEASE=""
+RUN_DIR=""
+NVKECTL="${NVKECTL:-nvkectl}"
+# The state directory holds the render scratch: a rendered deploy path
+# carries the site's credentials, so it lives under a directory only this
+# user can read, never a shared temp directory, and is removed on exit.
+STATE_DIR="${NVKE_STATE_DIR:-${XDG_STATE_HOME:-${HOME}/.local/state}/nvke}"
+SCRATCH=""
 VALUES_FOR=()
 DEPLOY_PATH=""
 # CTR imports images into the node's containerd for a deploy path rendered
@@ -45,15 +54,24 @@ usage() {
   cat >&2 <<'USAGE'
 usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
 
-  The deploy path is the committed one, or one rendered against an NVKR
-  release with `nvkectl render deploy-path`: then charts come from the
-  archives it carries, items run the release's images, and images.txt lists
-  images to import into the node's containerd when they come from a local
-  Run's OCI layouts (CTR names the import command).
+  With --sitespec or --release, the deploy path is first rendered for the
+  site and against the release (nvkectl does the rendering) into a private
+  scratch directory under NVKE_STATE_DIR (default $XDG_STATE_HOME/nvke),
+  installed from there, and the scratch directory is removed when the
+  install ends, so no rendered credential is left behind.
 
   --deploy-path DIR   the deploy path to install: a directory holding
                       nvke-deploy.yaml and one directory per item, e.g.
                       deploy/nico or controller/deploy/capd-e2e
+  --sitespec FILE     render for this site first (needs nvkectl: NVKECTL or PATH)
+  --release FILE      render against this NVKR release description first;
+                      with --sitespec, which names the architecture
+  --nvkr-run-dir DIR  with --release, for a Run that was not published (a
+                      local build, the CI lane): read charts and images from
+                      this completed NVKR Run's OCI layouts instead of a
+                      registry; images.txt then names them and they are
+                      imported into the node's containerd (CTR names the
+                      import command)
   --config PATH       BootstrapConfig, as JSON. Required by a template item;
                       its fields are the context those templates render against.
   --values-for ITEM=PATH
@@ -62,7 +80,9 @@ usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
                       single component: with one release per chart the keys are
                       no longer prefixed, so a value meant for the controller
                       cannot be broadcast to every item. Repeatable.
-  --dry-run           print the argv each step would run, and exit
+  --dry-run           print the argv each step would run, and exit. The
+                      render still runs, so it may create the database
+                      password file the site spec names
   --kubeconfig PATH   passed to every kubectl call
   --                  everything after is forwarded to helm verbatim
 USAGE
@@ -130,14 +150,6 @@ docs/site-bootstrap/deploy-repository.md for the field names."
   python3 "${RENDER_PY}" "${CONFIG}" "${dir}" "${out}" >/dev/null
   apply_manifest_item "${out}"
   rm -rf "${out}"
-}
-
-# apply_argocd_item creates the Application. Server-side apply of the CR rather
-# than `argocd app create --upsert`: same object, no binary, no login.
-apply_argocd_item() {
-  local dir="$1"
-  [[ -f "${dir}/application.yaml" ]] || die "argocd item ${dir} has no application.yaml"
-  kubectl_run apply --server-side -f "${dir}/application.yaml"
 }
 
 # wait_for_requires blocks on the preconditions a phase declares but the chart
@@ -262,7 +274,7 @@ install_helm_item() {
     values_args+=(--set-file "${entry}")
   done
 
-  log "item ${item} -> release ${release} (${chart_name} ${version}) in ${namespace}"
+  log "item ${item} -> release ${release} (${chart_name}${version:+ ${version}}) in ${namespace}"
   helm_install "${release}" "${ref[@]}" \
     ${KUBECONFIG_PATH:+--kubeconfig "${KUBECONFIG_PATH}"} \
     --namespace "${namespace}" \
@@ -305,6 +317,26 @@ import_images() {
   done
 }
 
+# render_deploy_path renders DEPLOY_PATH for the site and the release and
+# points DEPLOY_PATH at the result, a private scratch directory under the
+# state directory (never a shared temp directory, which the render refuses)
+# that is removed when this script exits.
+render_deploy_path() {
+  command -v "${NVKECTL}" >/dev/null 2>&1 || die "nvkectl is needed to render; set NVKECTL or put it on PATH"
+  local args=(render deploy-path --deploy-path "${DEPLOY_PATH}" --ephemeral)
+  [[ -z "${SITESPEC}" ]] || args+=(--sitespec "${SITESPEC}")
+  [[ -z "${RELEASE}" ]] || args+=(--release "${RELEASE}")
+  [[ -z "${RUN_DIR}" ]] || args+=(--nvkr-run-dir "${RUN_DIR}")
+  local base="${STATE_DIR}/renders"
+  (umask 077 && mkdir -p "${base}") || die "cannot create ${base}; NVKE_STATE_DIR names the state directory"
+  SCRATCH="$(mktemp -d "${base}/install.XXXXXX")"
+  # Removed however this script ends: a die, a failed render, a signal.
+  trap 'rm -rf "${SCRATCH}"' EXIT
+  log "rendering ${DEPLOY_PATH}"
+  "${NVKECTL}" "${args[@]}" --out "${SCRATCH}/rendered" || die "the render failed"
+  DEPLOY_PATH="${SCRATCH}/rendered"
+}
+
 install() {
   [[ -n "${DEPLOY_PATH}" ]] || die "--deploy-path is required"
   [[ -f "${DEPLOY_PATH}/nvke-deploy.yaml" ]] \
@@ -324,7 +356,6 @@ install() {
     log "item ${name} (${type})"
     case "${type}" in
       manifest) apply_manifest_item "${dir}" ;;
-      argocd)   apply_argocd_item "${dir}" ;;
       helm)     install_helm_item "${dir}" "${name}" ;;
       template) render_template_item "${dir}" "${name}" ;;
       *) die "item ${name} has unknown type ${type}" ;;
@@ -341,6 +372,9 @@ esac
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --deploy-path) DEPLOY_PATH="${2%/}"; shift 2 ;;
+    --sitespec) SITESPEC="$2"; shift 2 ;;
+    --release) RELEASE="$2"; shift 2 ;;
+    --nvkr-run-dir) RUN_DIR="$2"; shift 2 ;;
     --config) CONFIG="$2"; shift 2 ;;
     --values-for) VALUES_FOR+=("$2"); shift 2 ;;
     --kubeconfig) KUBECONFIG_PATH="$2"; shift 2 ;;
@@ -352,4 +386,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+[[ -z "${RUN_DIR}" || -n "${RELEASE}" ]] || die "--nvkr-run-dir holds a release's artifacts; pass --release"
+[[ -z "${RELEASE}" || -n "${SITESPEC}" ]] || die "--release needs --sitespec: the site spec names the architecture"
+if [[ -n "${SITESPEC}${RELEASE}" ]]; then
+  [[ -n "${DEPLOY_PATH}" ]] || die "--deploy-path is required"
+  render_deploy_path
+fi
 install

@@ -17,14 +17,18 @@ func fixture(name string) string {
 
 func TestLoad_BadFixturesNameTheProblem(t *testing.T) {
 	cases := map[string]string{
-		"bad-schema.json":                `schemaVersion is "nvkr.dev/release/v2"`,
-		"missing-digest.json":            "artifacts[0]: name, kind and digest are required",
-		"bad-digest.json":                "artifact cwe: digest is not sha256:<64 hex>",
-		"bad-reference.json":             "artifact cwe: reference is not an OCI reference",
+		"bad-schema.json":                `schemaVersion is "nvkr.dev/release/v2", expected nvkr.dev/release-description/v1`,
+		"release-v4.json":                "not the output of `nvkr release verify`",
+		"verification-result.json":       `schemaVersion is "nvkr.dev/release-verification-result/v1"`,
+		"filtered.json":                  `the description is filtered to "cwe"; export the whole release`,
+		"empty-index.json":               "output cwe: imageIndex has no children",
+		"missing-digest.json":            "outputs[0]: name, kind and digest are required",
+		"bad-digest.json":                "output cwe: digest is not sha256:<64 hex>",
+		"bad-reference.json":             "output cwe: reference is not an OCI reference",
 		"reference-digest-mismatch.json": "does not end in its digest",
-		"duplicate-name.json":            "duplicate artifact name: cwe",
-		"bad-arch.json":                  "artifact capnico-controller: arch linux/x86 is not one of",
-		"no-artifacts.json":              "artifacts is empty",
+		"duplicate-name.json":            "duplicate output name: cwe",
+		"bad-arch.json":                  `output capnico-controller: platform "linux/x86 64" is not os/arch`,
+		"no-artifacts.json":              "outputs is empty",
 		"not-json.json":                  "not a JSON document",
 	}
 	for file, want := range cases {
@@ -38,29 +42,106 @@ func TestLoad_BadFixturesNameTheProblem(t *testing.T) {
 	}
 }
 
-func TestLoad_ValidAndWrapped(t *testing.T) {
-	for _, file := range []string{"valid.json", "wrapped.json", "legacy-v3.json"} {
+func TestParse_ReferenceAndRootDigestAgree(t *testing.T) {
+	d := "sha256:" + strings.Repeat("a", 64)
+	out := `"outputs":[{"name":"cwe","kind":"oci","digest":"` + d + `"}]`
+	cases := map[string]string{
+		`{"schemaVersion":"nvkr.dev/release-description/v1","rootDigest":"` + d + `",` + out + `}`:                                                                  "reference is empty",
+		`{"schemaVersion":"nvkr.dev/release-description/v1","reference":"r.example/x@` + d + `","rootDigest":"sha256:0",` + out + `}`:                               "rootDigest is not sha256:<64 hex>",
+		`{"schemaVersion":"nvkr.dev/release-description/v1","reference":"r.example/x@` + d + `","rootDigest":"sha256:` + strings.Repeat("b", 64) + `",` + out + `}`: "does not end in rootDigest",
+	}
+	for doc, want := range cases {
+		if _, err := Parse([]byte(doc)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("want %q, got %v", want, err)
+		}
+	}
+}
+
+func TestParse_RefusesMalformedOutputs(t *testing.T) {
+	d := "sha256:" + strings.Repeat("a", 64)
+	head := `{"schemaVersion":"nvkr.dev/release-description/v1","reference":"r.example/x@` + d + `","rootDigest":"` + d + `",`
+	cases := map[string]string{
+		`"outputs":[{"name":"a b","kind":"oci","digest":"` + d + `"}]`:                                                                                                                       `output name must be a token: "a b"`,
+		`"outputs":[{"name":"x","kind":"helm oci","digest":"` + d + `"}]`:                                                                                                                    `output x: kind must be a token`,
+		`"outputs":[{"name":"x","kind":"helm-oci","digest":"` + d + `","chartVersion":"1.0 beta"}]`:                                                                                          `output x: chartVersion is not a version`,
+		`"outputs":[{"name":"x","kind":"oci","digest":"` + d + `","reference":"not-a-ref@` + d + `"}]`:                                                                                       `output x: reference is not an OCI reference`,
+		`"outputs":[{"name":"x","kind":"oci","digest":"` + d + `","os":"linux"}]`:                                                                                                            `output x: os "linux" without arch`,
+		`"outputs":[{"name":"x","kind":"oci","digest":"` + d + `","os":"windows","arch":"linux/amd64"}]`:                                                                                     `output x: os "windows" disagrees with arch`,
+		`"outputs":[{"name":"x","kind":"oci","digest":"` + d + `","arch":"amd64","imageIndex":{"children":[{"platform":"linux/amd64","manifestDigest":"` + d + `"}]}}]`:                      `output x: both arch and imageIndex are set`,
+		`"outputs":[{"name":"x","kind":"oci","digest":"` + d + `","imageIndex":{"children":[{"platform":"linux/amd64","manifestDigest":"sha256:0"}]}}]`:                                      `output x: image index child "linux/amd64": manifestDigest is not sha256:<64 hex>`,
+		`"outputs":[{"name":"x","kind":"oci","digest":"` + d + `","imageIndex":{"children":[{"platform":"","manifestDigest":"` + d + `"}]}}]`:                                                `output x: platform "" is not os/arch`,
+		`"outputs":[{"name":"x","kind":"oci","digest":"` + d + `","imageIndex":{"children":[{"platform":"linux riscv64","manifestDigest":"` + d + `"}]}}]`:                                   `output x: platform "linux riscv64" is not os/arch`,
+		`"outputs":[{"name":"x","kind":"oci","digest":"` + d + `","imageIndex":{"requiredPlatforms":["linux/arm64"],"children":[{"platform":"linux/amd64","manifestDigest":"` + d + `"}]}}]`: `output x: imageIndex requires platform linux/arm64 but lists no child`,
+		`"totalOutputs":2,"outputs":[{"name":"x","kind":"oci","digest":"` + d + `"}]`:                                                                                                        `totalOutputs is 2 but 1 outputs are listed`,
+		`"inspectionDetails":{"outputSelection":"filtered"},"outputs":[{"name":"x","kind":"oci","digest":"` + d + `"}]`:                                                                      `the description is filtered to "filtered"`,
+	}
+	for body, want := range cases {
+		if _, err := Parse([]byte(head + body + "}")); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("want %q, got %v\n%s", want, err, body)
+		}
+	}
+	// A platform outside Archs is well formed: the output is simply for
+	// another architecture, which Select reports for the output asked for.
+	r, err := Parse([]byte(head + `"outputs":[{"name":"x","kind":"oci","digest":"` + d + `","reference":"r.example/x@` + d + `","os":"linux","arch":"riscv64"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Select("x", "linux/amd64"); err == nil || !strings.Contains(err.Error(), "published only for other architectures: x (linux/riscv64)") {
+		t.Errorf("riscv64 output: %v", err)
+	}
+}
+
+// The no-* fixtures each lack one output the deploy path binds; the tagged
+// one references its images as repository:tag@digest.
+func TestLoad_FixturesLackingOneOutput(t *testing.T) {
+	for file, missing := range map[string]string{
+		"no-cwe.json": "cwe", "no-capnico.json": "capnico-controller", "no-controller-chart.json": "controller-chart",
+		"no-nktp.json": "nktp", "no-profiles.json": "controller-profiles", "no-spire.json": "spire",
+	} {
 		r, err := Load(fixture(file))
 		if err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
-		if r.Lane != "pipeline-attested" || r.Scope != "artifact-publication" || len(r.Artifacts) != 15 {
-			t.Errorf("%s: lane %q scope %q artifacts %d", file, r.Lane, r.Scope, len(r.Artifacts))
-		}
-		if !strings.HasSuffix(r.Subject, "/releases@sha256:"+strings.Repeat("0", 64)) {
-			t.Errorf("%s: subject %s", file, r.Subject)
+		if _, err := r.Select(missing, "linux/arm64"); !errors.Is(err, ErrNotPublished) {
+			t.Errorf("%s: Select(%s) = %v, want ErrNotPublished", file, missing, err)
 		}
 	}
-	r, _ := Load(fixture("valid.json"))
-	if charts := r.OfKind("helm-oci"); len(charts) != 6 || charts[0].Name != "controller-chart" {
-		t.Errorf("helm-oci artifacts: %+v", charts)
+	r, err := Load(fixture("tagged-capnico.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := r.Select("capnico-controller", "linux/arm64"); a.Repository() != "ghcr.io/example/recipes/capnico-controller-arm64" || !strings.Contains(a.Reference, ":v0.0.45@") {
+		t.Errorf("tagged reference: %+v", a)
+	}
+}
+
+func TestLoad_Valid(t *testing.T) {
+	r, err := Load(fixture("valid.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.DeclaredQualification != "pipeline-attested" || len(r.Outputs) != 15 {
+		t.Errorf("qualification %q outputs %d", r.DeclaredQualification, len(r.Outputs))
+	}
+	if !strings.HasSuffix(r.Reference, "/releases@sha256:"+strings.Repeat("0", 64)) || r.RootDigest != "sha256:"+strings.Repeat("0", 64) {
+		t.Errorf("reference %s root %s", r.Reference, r.RootDigest)
+	}
+	if r.Metadata.ContentSubject != "sha256:"+strings.Repeat("c", 64) {
+		t.Errorf("content subject: %q", r.Metadata.ContentSubject)
+	}
+	if charts := r.OfKind("helm-oci"); len(charts) != 6 || charts[0].Name != "controller-chart" || charts[0].ChartVersion != "0.1.1" {
+		t.Errorf("helm-oci outputs: %+v", charts)
 	}
 	cwe, ok := r.Artifact("cwe")
 	if !ok || cwe.Repository() != "ghcr.io/example/recipes/cwe" || cwe.Platform() != "" {
 		t.Errorf("cwe: %+v %v", cwe, ok)
 	}
-	if a, _ := r.Artifact("capnico-controller-arm64"); a.Platform() != "linux/arm64" {
-		t.Errorf("platform: %q", a.Platform())
+	// The multi-arch image names its platforms through the index.
+	if got := strings.Join(cwe.Platforms(), ","); got != "linux/amd64,linux/arm64" {
+		t.Errorf("cwe platforms: %s", got)
+	}
+	if a, _ := r.Artifact("capnico-controller-arm64"); a.Platform() != "linux/arm64" || len(a.Platforms()) != 1 {
+		t.Errorf("platform: %q %v", a.Platform(), a.Platforms())
 	}
 	tagged := Artifact{Reference: "registry.example.test:5000/nvke/cwe:v1@sha256:" + strings.Repeat("a", 64)}
 	if tagged.Repository() != "registry.example.test:5000/nvke/cwe" {
@@ -106,18 +187,50 @@ func TestSelect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := nr.Select("cwe", "linux/arm64"); err == nil || !strings.Contains(err.Error(), "artifact cwe has no reference") {
+	if _, err := nr.Select("cwe", "linux/arm64"); err == nil || !strings.Contains(err.Error(), "output cwe has no reference") {
 		t.Errorf("no reference: %v", err)
+	}
+}
+
+func TestSelect_ImageIndexNamesThePlatforms(t *testing.T) {
+	d := "sha256:" + strings.Repeat("a", 64)
+	amd := ImageIndexChild{Platform: "linux/amd64", ManifestDigest: "sha256:" + strings.Repeat("1", 64)}
+	r := &Release{Outputs: []Artifact{
+		{Name: "x", Kind: "oci", Digest: d, Reference: "r.example/x@" + d, ImageIndex: &ImageIndex{Children: []ImageIndexChild{amd}}},
+	}}
+	if got, err := r.Select("x", "linux/amd64"); err != nil || got.Name != "x" {
+		t.Errorf("amd64: %q %v", got.Name, err)
+	}
+	// An index that lacks the architecture is not a fallback for it.
+	if _, err := r.Select("x", "linux/arm64"); err == nil || !strings.Contains(err.Error(), "published only for other architectures: x (linux/amd64)") {
+		t.Errorf("arm64: %v", err)
+	}
+}
+
+// A child platform may carry a variant; the architecture is what is asked for.
+func TestSelect_VariantIsTheArchitecture(t *testing.T) {
+	d := "sha256:" + strings.Repeat("a", 64)
+	r, err := Parse([]byte(`{"schemaVersion":"nvkr.dev/release-description/v1","reference":"r.example/x@` + d + `","rootDigest":"` + d + `",` +
+		`"outputs":[{"name":"x","kind":"oci","digest":"` + d + `","reference":"r.example/x@` + d + `",` +
+		`"imageIndex":{"requiredPlatforms":["linux/arm64"],"children":[{"platform":"linux/arm64/v8","manifestDigest":"` + d + `"}]}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := r.Select("x", "linux/arm64"); err != nil || got.Name != "x" {
+		t.Errorf("arm64 via v8 child: %q %v", got.Name, err)
+	}
+	if _, err := r.Select("x", "linux/amd64"); err == nil || !strings.Contains(err.Error(), "published only for other architectures: x (linux/arm64/v8)") {
+		t.Errorf("amd64: %v", err)
 	}
 }
 
 func TestSelect_SuffixBeatsAnArchlessName(t *testing.T) {
 	d := "sha256:" + strings.Repeat("a", 64)
-	r := &Release{Artifacts: []Artifact{
+	r := &Release{Outputs: []Artifact{
 		{Name: "x", Kind: "oci", Digest: d, Reference: "r.example/x@" + d},
 		{Name: "x-arm64", Kind: "oci", Digest: d, Reference: "r.example/x-arm64@" + d},
 	}}
-	// Without arch fields the suffix is the only signal: the suffixed name is
+	// Without platforms the suffix is the only signal: the suffixed name is
 	// the one built for arm64, and the plain name serves amd64.
 	if got, err := r.Select("x", "linux/arm64"); err != nil || got.Name != "x-arm64" {
 		t.Errorf("arm64: %q %v", got.Name, err)
@@ -125,11 +238,43 @@ func TestSelect_SuffixBeatsAnArchlessName(t *testing.T) {
 	if got, err := r.Select("x", "linux/amd64"); err != nil || got.Name != "x" {
 		t.Errorf("amd64: %q %v", got.Name, err)
 	}
-	// With arch fields the name no longer matters.
-	r.Artifacts[0].Arch = "linux/arm64"
-	r.Artifacts[1].Arch = "linux/amd64"
+	// A suffixed name asked for directly is still only for its architecture.
+	if got, err := r.Select("x-arm64", "linux/arm64"); err != nil || got.Name != "x-arm64" {
+		t.Errorf("direct arm64: %q %v", got.Name, err)
+	}
+	if _, err := r.Select("x-arm64", "linux/amd64"); err == nil || !strings.Contains(err.Error(), "published only for other architectures: x-arm64 (linux/arm64)") {
+		t.Errorf("direct amd64: %v", err)
+	}
+	// With os and arch the name no longer matters.
+	r.Outputs[0].OS, r.Outputs[0].Arch = "linux", "arm64"
+	r.Outputs[1].OS, r.Outputs[1].Arch = "linux", "amd64"
 	if got, err := r.Select("x", "linux/arm64"); err != nil || got.Name != "x" {
 		t.Errorf("arch field wins: %q %v", got.Name, err)
+	}
+}
+
+func TestSelect_Precedence(t *testing.T) {
+	d := "sha256:" + strings.Repeat("a", 64)
+	both := &ImageIndex{Children: []ImageIndexChild{{Platform: "linux/amd64", ManifestDigest: d}, {Platform: "linux/arm64", ManifestDigest: d}}}
+	// The exact name covering arch beats a suffixed output that also covers it.
+	r := &Release{Outputs: []Artifact{
+		{Name: "x", Kind: "oci", Digest: d, Reference: "r.example/x@" + d, ImageIndex: both},
+		{Name: "x-arm64", Kind: "oci", Digest: d, Reference: "r.example/x-arm64@" + d, OS: "linux", Arch: "arm64"},
+	}}
+	if got, err := r.Select("x", "linux/arm64"); err != nil || got.Name != "x" {
+		t.Errorf("exact beats suffixed: %q %v", got.Name, err)
+	}
+	// Two suffixed outputs both covering arch: the one named for it wins,
+	// whatever the document order.
+	r = &Release{Outputs: []Artifact{
+		{Name: "y-amd64", Kind: "oci", Digest: d, Reference: "r.example/y-amd64@" + d, ImageIndex: both},
+		{Name: "y-arm64", Kind: "oci", Digest: d, Reference: "r.example/y-arm64@" + d, ImageIndex: both},
+	}}
+	if got, err := r.Select("y", "linux/amd64"); err != nil || got.Name != "y-amd64" {
+		t.Errorf("suffix for arch wins: %q %v", got.Name, err)
+	}
+	if got, err := r.Select("y", "linux/arm64"); err != nil || got.Name != "y-arm64" {
+		t.Errorf("suffix for arch wins: %q %v", got.Name, err)
 	}
 }
 

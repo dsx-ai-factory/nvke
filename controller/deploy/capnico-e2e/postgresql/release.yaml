@@ -11,7 +11,6 @@
 # this deploy path.
 chart:
   name: postgresql
-  version: "0.1.0"
   path: ../charts/postgresql
 release:
   name: postgresql

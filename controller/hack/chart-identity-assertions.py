@@ -44,9 +44,9 @@ import yaml
 RELEASE = "cloud-workflow-engine"
 
 EXPECTED_NAMES = {
-    ("CustomResourceDefinition", "clusterreleases.internal.nke.nvidia.com"),
-    ("CustomResourceDefinition", "machineimages.internal.nke.nvidia.com"),
-    ("CustomResourceDefinition", "nodepoolreleases.internal.nke.nvidia.com"),
+    ("CustomResourceDefinition", "clusterreleases.internal.nvke.nvidia.com"),
+    ("CustomResourceDefinition", "machineimages.internal.nvke.nvidia.com"),
+    ("CustomResourceDefinition", "nodepoolreleases.internal.nvke.nvidia.com"),
     ("ClusterRole", "cloud-workflow-engine-releases"),
     ("ClusterRoleBinding", "cloud-workflow-engine-releases"),
     ("Namespace", "nke-system"),
@@ -93,7 +93,7 @@ def check_greenfield(chart: str) -> list[str]:
             "--set",
             f"spiffe.trustDomain={GREENFIELD_TRUST_DOMAIN}",
             "--set",
-            "nkeOIDCAuth.enabled=true",
+            "nvkeOIDCAuth.enabled=true",
             "--set",
             "tenantAccess.enabled=true",
         ],

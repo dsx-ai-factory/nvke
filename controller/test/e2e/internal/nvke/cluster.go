@@ -161,3 +161,15 @@ func (c *Client) UpdateOIDC(ctx context.Context, id openapi_types.UUID, enable b
 	}
 	return resp, nil
 }
+
+// UpdateNodeAgentVersion changes the desired control-plane agent version.
+func (c *Client) UpdateNodeAgentVersion(ctx context.Context, id openapi_types.UUID, version string) (*api.Cluster, error) {
+	response, err := c.api.UpdateClusterWithResponse(ctx, id, api.UpdateClusterRequest{ControlPlaneConfig: &api.UpdateClusterControlPlaneConfig{NodeAgentConfig: &api.NodeAgentConfig{Version: &version}}})
+	if err != nil {
+		return nil, fmt.Errorf("updating desired agent version: %w", err)
+	}
+	if response.StatusCode() != 200 || response.JSON200 == nil {
+		return nil, fmt.Errorf("updating desired agent version: %s: %s", response.Status(), response.Body)
+	}
+	return response.JSON200, nil
+}

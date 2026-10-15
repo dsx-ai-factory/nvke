@@ -20,22 +20,12 @@ import (
 type nodeService struct {
 	logger *slog.Logger
 	db     db.DB
-
-	// useControlPlaneController makes DeleteNode record a control-plane node
-	// delete as intent for the control-plane controller instead of starting the
-	// teardown inline. Worker deletes are unaffected either way.
-	useControlPlaneController bool
 }
 
-func NewNodeService(
-	logger *slog.Logger,
-	database db.DB,
-	useControlPlaneController bool,
-) *nodeService {
+func NewNodeService(logger *slog.Logger, database db.DB) *nodeService {
 	return &nodeService{
-		logger:                    logger,
-		db:                        database,
-		useControlPlaneController: useControlPlaneController,
+		logger: logger,
+		db:     database,
 	}
 }
 
@@ -105,7 +95,6 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 			nodes.WithAllowCPNode(true),
 			nodes.WithMachineHealthIssue(machineHealthIssue),
 			nodes.WithForceUnreachable(forceUnreachable),
-			nodes.WithControlPlaneControllerDelete(s.useControlPlaneController),
 		)
 	})
 	if err != nil {

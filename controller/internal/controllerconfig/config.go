@@ -19,6 +19,7 @@ import (
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	yamlv3 "gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/api/validate/content"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 	kjson "sigs.k8s.io/json"
@@ -32,26 +33,28 @@ import (
 // and AUTH_CONFIG_PATH. The package tests hold the full classification and fail
 // when config.Config gains a field it does not cover.
 type Config struct {
-	AgentReadiness          AgentReadinessConfig `json:"agentReadiness"`
-	FieldManager            FieldManagerConfig   `json:"fieldManager"`
-	ManagedByLabelValue     string               `json:"managedByLabelValue"`
-	MetricsListenAddress    string               `json:"metricsListenAddress"`
-	SupportedInfraProviders []string             `json:"supportedInfraProviders"`
-	Tracing                 TracingConfig        `json:"tracing"`
-	CertRenewal             CertRenewalConfig    `json:"certRenewal"`
-	KubeadmImageRepository  string               `json:"kubeadmImageRepository"`
-	CNIImageRegistry        string               `json:"cniImageRegistry"`
-	InstallCNIAfterInit     bool                 `json:"installCNIAfterInit"`
-	NicoControllersEnabled  bool                 `json:"nicoControllersEnabled"`
-	ProfilesDir             string               `json:"profilesDir"`
-	RunbooksDir             string               `json:"runbooksDir"`
-	TenantAccessEnabled     bool                 `json:"tenantAccessEnabled"`
-	NodeAgent               NodeAgentConfig      `json:"nodeAgent"`
-	OIDC                    OIDCConfig           `json:"oidc"`
-	Temporal                TemporalConfig       `json:"temporal"`
-	Spire                   SpireConfig          `json:"spire"`
-	Teleport                TeleportConfig       `json:"teleport"`
-	PermissiveMode          bool                 `json:"permissiveMode"`
+	AgentReadiness                   AgentReadinessConfig `json:"agentReadiness"`
+	FieldManager                     FieldManagerConfig   `json:"fieldManager"`
+	ManagedByLabelValue              string               `json:"managedByLabelValue"`
+	MetricsListenAddress             string               `json:"metricsListenAddress"`
+	SupportedInfraProviders          []string             `json:"supportedInfraProviders"`
+	NodeMetadataAllowlistedLabelKeys []string             `json:"nodeMetadataAllowlistedLabelKeys"`
+	Tracing                          TracingConfig        `json:"tracing"`
+	CertRenewal                      CertRenewalConfig    `json:"certRenewal"`
+	KubeadmImageRepository           string               `json:"kubeadmImageRepository"`
+	CNIImageRegistry                 string               `json:"cniImageRegistry"`
+	InstallCNIAfterInit              bool                 `json:"installCNIAfterInit"`
+	AllowLegacyCalicoClusterCreation bool                 `json:"allowLegacyCalicoClusterCreation"`
+	NicoControllersEnabled           bool                 `json:"nicoControllersEnabled"`
+	ProfilesDir                      string               `json:"profilesDir"`
+	RunbooksDir                      string               `json:"runbooksDir"`
+	TenantAccessEnabled              bool                 `json:"tenantAccessEnabled"`
+	NodeAgent                        NodeAgentConfig      `json:"nodeAgent"`
+	OIDC                             OIDCConfig           `json:"oidc"`
+	Temporal                         TemporalConfig       `json:"temporal"`
+	Spire                            SpireConfig          `json:"spire"`
+	Teleport                         TeleportConfig       `json:"teleport"`
+	PermissiveMode                   bool                 `json:"permissiveMode"`
 }
 
 // FieldManagerConfig groups the Server-Side-Apply field manager names, mirroring
@@ -62,7 +65,7 @@ type FieldManagerConfig struct {
 	MachineHealthIssueName string `json:"machineHealthIssueName"`
 }
 
-// TracingConfig configures OpenTelemetry tracing export, mirroring
+// TracingConfig configures OpenTelemetry span export, mirroring
 // config.TracingConfig.
 type TracingConfig struct {
 	Enabled     bool   `json:"enabled"`
@@ -86,6 +89,7 @@ type NodeAgentConfig struct {
 	DSXImds                DSXImdsConfig `json:"dsxImds"`
 	TLSJWT                 TLSJWTConfig  `json:"tlsJWT"`
 	ExternalMTLSEnabled    bool          `json:"externalMTLSEnabled"`
+	UpdateMethod           string        `json:"updateMethod"`
 }
 
 // DSXImdsConfig mirrors config.DSXImdsConfig.
@@ -151,6 +155,7 @@ type OIDCProvider struct {
 	GroupsPrefix   string            `json:"groupsPrefix,omitempty"`
 	RequiredClaims map[string]string `json:"requiredClaims,omitempty"`
 	CABundle       string            `json:"caBundle"`
+	DiscoveryURL   string            `json:"discoveryURL,omitempty"`
 }
 
 // MaxOIDCProviders is the fleet-wide provider cap: AuthenticationConfiguration
@@ -315,6 +320,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("supportedInfraProviders: %w", err)
 	}
 
+	if err := validateNodeMetadataAllowlistedLabelKeys(c.NodeMetadataAllowlistedLabelKeys); err != nil {
+		return fmt.Errorf("nodeMetadataAllowlistedLabelKeys: %w", err)
+	}
+
 	if err := c.AgentReadiness.validate(); err != nil {
 		return fmt.Errorf("agentReadiness: %w", err)
 	}
@@ -348,10 +357,69 @@ func validateSupportedInfraProviders(providers []string) error {
 	return nil
 }
 
+const (
+	// NodeMetadataControlPlaneRoleKey is written by core bootstrap components when a
+	// node joins as a control plane. Callers cannot set it as a label or a taint, and
+	// nodeMetadataAllowlistedLabelKeys cannot list it.
+	NodeMetadataControlPlaneRoleKey = "node-role.kubernetes.io/control-plane"
+)
+
+// NodeMetadataReservedInternalDomains and their subdomains are reserved for internal components. Callers cannot
+// set label or taint keys under them, and nodeMetadataAllowlistedLabelKeys cannot list them.
+func NodeMetadataReservedInternalDomains() []string {
+	return []string{"nke.nvidia.com", "nke.io", "nvke.nvidia.com"}
+}
+
+// validateNodeMetadataAllowlistedLabelKeys refuses an entry the server would never honor: the
+// control-plane role key, or a key under NodeMetadataReservedInternalDomains. An empty
+// list is valid and allows no keys under the reserved Kubernetes domains.
+func validateNodeMetadataAllowlistedLabelKeys(keys []string) error {
+	seen := make(map[string]int, len(keys))
+	for i, key := range keys {
+		if strings.TrimSpace(key) == "" {
+			return fmt.Errorf("[%d] must not be empty", i)
+		}
+		if err := requireUnpadded(fmt.Sprintf("[%d]", i), key); err != nil {
+			return err
+		}
+		if errs := content.IsLabelKey(key); len(errs) > 0 {
+			return fmt.Errorf("[%d] %q is not a valid label key: %s", i, key, strings.Join(errs, "; "))
+		}
+		if key == NodeMetadataControlPlaneRoleKey {
+			return fmt.Errorf("[%d] %q is managed by core bootstrap components and cannot be allowlisted", i, key)
+		}
+		if domain, isReserved := reservedDomain(key, NodeMetadataReservedInternalDomains()); isReserved {
+			return fmt.Errorf("[%d] %q is under reserved domain %q and cannot be allowlisted", i, key, domain)
+		}
+		if prev, dup := seen[key]; dup {
+			return fmt.Errorf("[%d] %q duplicates [%d]", i, key, prev)
+		}
+		seen[key] = i
+	}
+	return nil
+}
+
+// reservedDomain returns the entry of domains that key's prefix equals or is a subdomain of. A bare key has no prefix.
+func reservedDomain(key string, domains []string) (string, bool) {
+	prefix, _, prefixed := strings.Cut(key, "/")
+	if !prefixed {
+		return "", false
+	}
+	for _, domain := range domains {
+		if prefix == domain || strings.HasSuffix(prefix, "."+domain) {
+			return domain, true
+		}
+	}
+	return "", false
+}
+
 // validate mirrors the node-agent rules in config.Config.Validate. joinToken,
 // dsxImds, and TLS/JWT all read spire.spiffeEnabled, which lives outside this
 // struct, so it is passed in.
 func (n *NodeAgentConfig) validate(spiffeEnabled bool) error {
+	if n.UpdateMethod != "" && n.UpdateMethod != "apt" && n.UpdateMethod != "bundle" {
+		return fmt.Errorf("updateMethod must be apt or bundle")
+	}
 	switch n.SpireAttestationMethod {
 	case SpireAttestationMethodTPM:
 	case SpireAttestationMethodJoinToken:
@@ -477,6 +545,7 @@ func (o *OIDCConfig) validate() error {
 
 	seenNames := make(map[string]int, len(o.Providers))
 	seenIssuers := make(map[string]int, len(o.Providers))
+	seenDiscoveryURLs := make(map[string]int, len(o.Providers))
 	for i, p := range o.Providers {
 		name := strings.TrimSpace(p.Name)
 		if name == "" {
@@ -499,6 +568,19 @@ func (o *OIDCConfig) validate() error {
 		}
 		seenIssuers[issuerURL] = i
 
+		if p.DiscoveryURL != "" {
+			if err := validateDiscoveryURL(issuerURL, p.DiscoveryURL); err != nil {
+				return fmt.Errorf("providers[%d] (%s): %w", i, name, err)
+			}
+			if prev, dup := seenDiscoveryURLs[p.DiscoveryURL]; dup {
+				return fmt.Errorf("providers[%d] (%s): duplicate discoveryURL %q, already used by providers[%d]", i, name, p.DiscoveryURL, prev)
+			}
+			if o.ManagementOIDCAuth.Enabled && p.DiscoveryURL == strings.TrimSpace(o.ManagementOIDCAuth.DiscoveryURL) {
+				return fmt.Errorf("providers[%d] (%s): duplicate discoveryURL %q, already used by managementOIDCAuth", i, name, p.DiscoveryURL)
+			}
+			seenDiscoveryURLs[p.DiscoveryURL] = i
+		}
+
 		if strings.TrimSpace(p.UsernameClaim) == "" {
 			return fmt.Errorf("providers[%d] (%s): usernameClaim is required and must not be empty", i, name)
 		}
@@ -516,6 +598,30 @@ func (o *OIDCConfig) validate() error {
 		if strings.TrimSpace(p.CABundle) == "" {
 			return fmt.Errorf("providers[%d] (%s): caBundle is required and must not be empty", i, name)
 		}
+	}
+	return nil
+}
+
+// validateDiscoveryURL applies kube-apiserver's checks on a JWT issuer's
+// discoveryURL, so a bad value stops the controller at startup rather than
+// every control-plane node of each new cluster at bootstrap.
+func validateDiscoveryURL(issuerURL, discoveryURL string) error {
+	if err := requireUnpadded("discoveryURL", discoveryURL); err != nil {
+		return err
+	}
+	u, err := url.Parse(discoveryURL)
+	if err != nil {
+		return fmt.Errorf("discoveryURL %q is not a URL: %w", discoveryURL, err)
+	}
+	switch {
+	case u.Scheme != "https" || u.Hostname() == "":
+		return fmt.Errorf("discoveryURL %q must be an absolute https URL", discoveryURL)
+	case u.User != nil:
+		return fmt.Errorf("discoveryURL %q must not contain a username or password", discoveryURL)
+	case u.RawQuery != "" || u.Fragment != "":
+		return fmt.Errorf("discoveryURL %q must not contain a query or fragment", discoveryURL)
+	case strings.TrimRight(discoveryURL, "/") == strings.TrimRight(issuerURL, "/"):
+		return fmt.Errorf("discoveryURL %q must differ from issuerURL; leave it unset to use the issuer's own discovery document", discoveryURL)
 	}
 	return nil
 }

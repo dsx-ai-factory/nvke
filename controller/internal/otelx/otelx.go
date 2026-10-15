@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package otelx initializes OpenTelemetry tracing for cloud-workflow-engine.
+// Package otelx initializes OpenTelemetry trace context and span export for
+// cloud-workflow-engine.
 package otelx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -24,33 +26,66 @@ import (
 )
 
 // ShutdownFunc flushes and shuts down the tracer provider. It is safe to call
-// even when Init returned a no-op (disabled) setup.
+// even when Init returned an error.
 type ShutdownFunc func(context.Context) error
 
-// Init configures the global TracerProvider when tracing is enabled. Spans go
-// to cfg.Endpoint, or, when that is empty, to the OTLP endpoint the environment
-// sets, which is how the OpenTelemetry Operator's inject-sdk supplies a
-// localhost sidecar. With neither, Init is a no-op so local runs do not dial a
-// collector.
+// Init installs the global TracerProvider and the W3C trace context
+// propagator, so every request and workflow gets a trace ID whatever the
+// configuration.
+//
+// Spans are exported only when cfg.Enabled is true and an endpoint is set:
+// cfg.Endpoint, or the OTEL_EXPORTER_OTLP_* variables the OpenTelemetry
+// Operator injects. Otherwise they are discarded when they end.
 func Init(ctx context.Context, cfg config.TracingConfig, logger *slog.Logger) (ShutdownFunc, error) {
 	noop := ShutdownFunc(func(context.Context) error { return nil })
-
-	if !cfg.Enabled {
-		logger.Info("OpenTelemetry tracing disabled")
-		return noop, nil
-	}
-
-	target, ok := resolveOTLPTarget(cfg, os.Getenv)
-	if !ok {
-		logger.Info("OpenTelemetry tracing enabled, but neither tracing.endpoint nor the environment sets an OTLP endpoint; skipping exporter setup")
-		return noop, nil
-	}
 
 	serviceName := strings.TrimSpace(cfg.ServiceName)
 	if serviceName == "" {
 		serviceName = "cloud-workflow-engine"
 	}
 
+	target, export := exportTarget(cfg, os.Getenv, logger)
+	res, err := newResource(ctx, serviceName, export, logger)
+	if err != nil {
+		return noop, err
+	}
+
+	opts := []sdktrace.TracerProviderOption{sdktrace.WithResource(res)}
+	if export {
+		// The SDK also reads OTEL_EXPORTER_OTLP_* itself, and an endpoint's scheme
+		// sets its transport security. Passing the resolved endpoint as a URL sets
+		// both, so an injected http:// endpoint cannot downgrade a secure
+		// tracing.endpoint, and an endpoint the SDK cannot parse as a URL, such as
+		// a bare IP:port, still reaches the exporter.
+		exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithEndpointURL(target.url()))
+		if err != nil {
+			return noop, fmt.Errorf("create OTLP gRPC trace exporter: %w", err)
+		}
+		opts = append(opts, sdktrace.WithBatcher(exporter))
+	}
+
+	tp := sdktrace.NewTracerProvider(opts...)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	logger.Info("OpenTelemetry trace context initialized",
+		"export", export,
+		"endpoint", target.endpoint,
+		"endpointFromEnvironment", target.fromEnv,
+		"insecure", target.insecure,
+		"serviceName", serviceName,
+	)
+
+	return tp.Shutdown, nil
+}
+
+// newResource builds the resource attached to every span. A malformed
+// OTEL_RESOURCE_ATTRIBUTES entry is an error when export is true. Otherwise it
+// is logged as a warning and the entries that parsed are kept.
+func newResource(ctx context.Context, serviceName string, export bool, logger *slog.Logger) (*resource.Resource, error) {
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			semconv.ServiceName(serviceName),
@@ -61,37 +96,27 @@ func Init(ctx context.Context, cfg config.TracingConfig, logger *slog.Logger) (S
 		resource.WithHost(),
 	)
 	if err != nil {
-		return noop, fmt.Errorf("create OpenTelemetry resource: %w", err)
+		if export || !errors.Is(err, resource.ErrPartialResource) {
+			return nil, fmt.Errorf("create OpenTelemetry resource: %w", err)
+		}
+		logger.Warn("OpenTelemetry resource attributes are partly invalid; keeping the valid ones", "error", err)
 	}
+	return res, nil
+}
 
-	// The SDK also reads OTEL_EXPORTER_OTLP_* itself, and an endpoint's scheme
-	// sets its transport security. Passing the resolved endpoint as a URL sets
-	// both, so an injected http:// endpoint cannot downgrade a secure
-	// tracing.endpoint, and an endpoint the SDK cannot parse as a URL, such as
-	// a bare IP:port, still reaches the exporter.
-	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithEndpointURL(target.url()))
-	if err != nil {
-		return noop, fmt.Errorf("create OTLP gRPC trace exporter: %w", err)
+// exportTarget returns the endpoint spans are exported to, and false when
+// export is disabled or no endpoint is set. It logs a warning when export is
+// enabled without an endpoint, since the spans then go nowhere.
+func exportTarget(cfg config.TracingConfig, getenv func(string) string, logger *slog.Logger) (otlpTarget, bool) {
+	if !cfg.Enabled {
+		logger.Info("OpenTelemetry span export disabled; trace IDs are still created")
+		return otlpTarget{}, false
 	}
-
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(res),
-	)
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-		propagation.TraceContext{},
-		propagation.Baggage{},
-	))
-
-	logger.Info("OpenTelemetry tracing initialized",
-		"endpoint", target.endpoint,
-		"endpointFromEnvironment", target.fromEnv,
-		"insecure", target.insecure,
-		"serviceName", serviceName,
-	)
-
-	return tp.Shutdown, nil
+	target, ok := resolveOTLPTarget(cfg, getenv)
+	if !ok {
+		logger.Warn("tracing.enabled is true but no OTLP endpoint is set, so spans will not be exported; set tracing.endpoint or OTEL_EXPORTER_OTLP_ENDPOINT")
+	}
+	return target, ok
 }
 
 // otlpTarget is where the exporter sends spans.

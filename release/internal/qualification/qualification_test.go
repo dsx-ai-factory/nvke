@@ -42,6 +42,10 @@ func wantError(t *testing.T, err error, want string) {
 // reaches CI as a scope that silently selects nothing or a plan that cannot
 // resolve.
 func TestRepositoryFilesAreValid(t *testing.T) {
+	// The registry names the org its artifacts sit under rather than stating
+	// it, so loading it needs one the way a run does.
+	t.Setenv("QUALIFY_E2E_NGC_ORG", "an-org")
+
 	p, err := LoadPolicy(filepath.Join(repoRoot, "release", "policy.yaml"))
 	if err != nil {
 		t.Fatalf("release/policy.yaml: %v", err)
@@ -55,20 +59,60 @@ func TestRepositoryFilesAreValid(t *testing.T) {
 		t.Fatalf("release/qualification.yaml: %v", err)
 	}
 
-	// Every registry entry has to build, which holds its strategy to the set
-	// that exists and its configuration to the keys that strategy takes.
-	resolvers := map[string]resolve.Resolver{}
+	// Every half of every registry entry has to build, which holds its strategy
+	// to the half it is written in, to the set that exists and to the keys that
+	// strategy takes.
+	version := map[string]resolve.Resolver{}
+	location := map[string]resolve.Resolver{}
 	for _, c := range r.Spec.Components {
-		built, err := resolve.New(c.Resolve.Strategy, r.StrategyConfig(c), repoRoot)
-		if err != nil {
-			t.Errorf("registry component %s: %v", c.Name, err)
-			continue
+		if v := c.Resolve.Version; v != nil && v.Strategy != "" {
+			built, err := resolve.NewVersion(v.Strategy, r.StrategyConfig(v), repoRoot)
+			if err != nil {
+				t.Errorf("registry component %s, version: %v", c.Name, err)
+			} else {
+				version[c.Name] = built
+			}
 		}
-		resolvers[c.Name] = built
+		if l := c.Resolve.Location; l != nil {
+			built, err := resolve.NewLocation(l.Strategy, r.StrategyConfig(l), resolve.Options{})
+			if err != nil {
+				t.Errorf("registry component %s, location: %v", c.Name, err)
+			} else {
+				location[c.Name] = built
+			}
+		}
 	}
 
 	// What the subject declares has to suit each strategy it is declared for.
-	if err := Check(p, r, s, resolvers); err != nil {
+	if err := Check(p, r, s, version, location); err != nil {
 		t.Error(err)
+	}
+}
+
+// An identifier the file names but the run does not supply fails at the file
+// that asked for it, with every missing name at once, rather than later
+// against a registry that was asked for an artifact under no org.
+func TestExpandRequiresEveryName(t *testing.T) {
+	t.Setenv("QUALIFY_TEST_SET", "a-value")
+	t.Setenv("QUALIFY_TEST_EMPTY", "")
+
+	got, err := expand([]byte("base: oci://registry.example/${QUALIFY_TEST_SET}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "base: oci://registry.example/a-value\n"; string(got) != want {
+		t.Errorf("= %q, want %q", got, want)
+	}
+
+	// Set but empty counts as unset: an unset repository variable reaches a
+	// workflow as the empty string rather than as absent.
+	_, err = expand([]byte("a: ${QUALIFY_TEST_EMPTY}\nb: ${QUALIFY_TEST_MISSING}\n"))
+	if err == nil {
+		t.Fatal("expected an error, got none")
+	}
+	for _, want := range []string{"QUALIFY_TEST_EMPTY", "QUALIFY_TEST_MISSING"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not name %q: %v", want, err)
+		}
 	}
 }

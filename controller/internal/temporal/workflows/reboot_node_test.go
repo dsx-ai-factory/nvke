@@ -4,6 +4,7 @@
 package workflows
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -11,13 +12,173 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
+
+func TestRebootAndWaitCAPINode(t *testing.T) {
+	timeoutErr := temporal.NewTimeoutError(enums.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil)
+	for _, test := range []struct {
+		name        string
+		softErr     error
+		waitErr     error
+		lateBoot    bool
+		withdrawn   bool
+		deleting    bool
+		terminating bool
+		hardErr     error
+		wantHard    bool
+		wantErr     bool
+	}{
+		{name: "accepted soft reboot completes"},
+		{name: "verification deadline escalates", waitErr: timeoutErr, wantHard: true},
+		{name: "late boot avoids duplicate reboot", waitErr: timeoutErr, lateBoot: true},
+		{name: "withdrawn request cancels escalation", waitErr: timeoutErr, withdrawn: true, wantErr: true},
+		{name: "deleting node cancels escalation", waitErr: timeoutErr, deleting: true, wantErr: true},
+		{name: "termination request cancels escalation", waitErr: timeoutErr, terminating: true, wantErr: true},
+		{name: "canceled verification avoids hard reboot", waitErr: temporal.NewCanceledError(), wantErr: true},
+		{name: "verification failure does not prove timeout", waitErr: temporal.NewNonRetryableApplicationError("cannot read boot state", "read", nil), wantErr: true},
+		{name: "soft scheduling failure escalates", softErr: errors.New("agent rejected reboot"), wantHard: true},
+		{name: "canceled scheduling avoids hard reboot", softErr: temporal.NewCanceledError(), wantErr: true},
+		{name: "hard fallback failure is returned", waitErr: timeoutErr, hardErr: temporal.NewNonRetryableApplicationError("provider unavailable", "provider", nil), wantHard: true, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env, a := setupRebootNodeWorkflowEnv(t)
+			input := RebootNodeInput{
+				NodeID: uuid.New(), InitialTimeout: 30 * time.Minute,
+				MaxTimeout: time.Hour, PollingInterval: time.Minute, SoftRebootEnabled: true,
+			}
+			env.OnActivity(a.UpdateNodeConditions, mock.Anything, mock.Anything).Return(nil)
+			env.OnActivity(a.SoftRebootNode, mock.Anything, mock.Anything).Return(activities.SoftRebootNodeResult{}, test.softErr).Once()
+			if test.softErr == nil {
+				env.OnActivity(a.WaitForNodeReboot, mock.Anything, mock.MatchedBy(func(in activities.WaitForNodeRebootInput) bool {
+					return in.PollingInterval == 10*time.Second && in.PreviousBootID == "old-boot"
+				})).Return(func(ctx context.Context, _ activities.WaitForNodeRebootInput) (activities.WaitForNodeRebootResult, error) {
+					require.Equal(t, 30*time.Minute, activity.GetInfo(ctx).ScheduleToCloseTimeout)
+					return activities.WaitForNodeRebootResult{}, test.waitErr
+				}).Once()
+			}
+			if (test.softErr != nil && !temporal.IsCanceledError(test.softErr)) || isRebootVerificationTimeout(test.waitErr) {
+				node := rebootTestKubeNode("old-boot")
+				if test.lateBoot {
+					node.Status.NodeInfo.BootID = "new-boot"
+				}
+				if test.withdrawn {
+					delete(node.Labels, constants.LabelKeyNodeLabelReboot)
+				}
+				if test.deleting {
+					ts := metav1.Now()
+					node.DeletionTimestamp = &ts
+				}
+				if test.terminating {
+					node.Labels[constants.LabelKeyNodeLabelTerminate] = "repair"
+				}
+				env.OnActivity(a.GetKubeNode, mock.Anything, mock.Anything).Return(activities.GetKubeNodeResult{Node: node}, nil).Once()
+			}
+			if test.wantHard {
+				env.OnActivity(a.ApplyCAPIMachineRebootAnnotation, mock.Anything, mock.Anything).Return(
+					activities.ApplyCAPIMachineRebootAnnotationResult{RebootStartedTime: time.Now()}, test.hardErr,
+				).Once()
+				if test.hardErr == nil {
+					env.OnActivity(a.WaitForNodeReboot, mock.Anything, mock.MatchedBy(func(in activities.WaitForNodeRebootInput) bool {
+						return in.PollingInterval == time.Minute && in.PreviousBootID == "old-boot"
+					})).Return(activities.WaitForNodeRebootResult{BootID: "new-boot"}, nil).Once()
+				}
+			}
+			env.ExecuteWorkflow(testRebootAndWaitCAPINodeWorkflow, input)
+			require.True(t, env.IsWorkflowCompleted())
+			if test.wantErr {
+				require.Error(t, env.GetWorkflowError())
+			} else {
+				require.NoError(t, env.GetWorkflowError())
+			}
+			env.AssertExpectations(t)
+			if !test.wantHard {
+				env.AssertNotCalled(t, "ApplyCAPIMachineRebootAnnotation", mock.Anything, mock.Anything)
+			}
+		})
+	}
+}
+
+func testRebootAndWaitCAPINodeWorkflow(ctx workflow.Context, input RebootNodeInput) error {
+	return rebootAndWaitCAPINode(ctx, input, 1, "old-boot")
+}
+
+func TestSoftRebootVerificationWindow(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		initial time.Duration
+		want    time.Duration
+	}{
+		{name: "short configured window", initial: 45 * time.Second, want: 45 * time.Second},
+		{name: "long configured window is capped", initial: time.Hour, want: 30 * time.Minute},
+		{name: "missing window uses default", want: 30 * time.Minute},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env, a := setupRebootNodeWorkflowEnv(t)
+			env.OnActivity(a.UpdateNodeConditions, mock.Anything, mock.Anything).Return(nil).Once()
+			env.OnActivity(a.SoftRebootNode, mock.Anything, mock.Anything).Return(activities.SoftRebootNodeResult{}, nil).Once()
+			env.OnActivity(a.WaitForNodeReboot, mock.Anything, mock.Anything).Return(
+				func(ctx context.Context, _ activities.WaitForNodeRebootInput) (activities.WaitForNodeRebootResult, error) {
+					require.Equal(t, test.want, activity.GetInfo(ctx).ScheduleToCloseTimeout)
+					return activities.WaitForNodeRebootResult{BootID: "new-boot"}, nil
+				},
+			).Once()
+			env.ExecuteWorkflow(testRebootAndWaitCAPINodeWorkflow, RebootNodeInput{NodeID: uuid.New(), InitialTimeout: test.initial, SoftRebootEnabled: true})
+			require.NoError(t, env.GetWorkflowError())
+			env.AssertExpectations(t)
+		})
+	}
+}
+
+func rebootTestKubeNode(bootID string) corev1.Node {
+	return corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker", Labels: map[string]string{constants.LabelKeyNodeLabelReboot: "repair"}},
+		Status:     corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{BootID: bootID}},
+	}
+}
+
+func TestRebootNodeTimeoutEscalationRetainsHardStrategy(t *testing.T) {
+	env, a := setupRebootNodeWorkflowEnv(t)
+	env.RegisterActivity(a.GetNodePoolForNode)
+	env.RegisterActivity(a.LabelNode)
+	env.RegisterActivity(a.DeleteCAPIMachineRebootAnnotation)
+	env.OnActivity(a.GetNodePoolForNode, mock.Anything, mock.Anything).Return(db.NodePool{}, nil).Once()
+	env.OnActivity(a.LabelNode, mock.Anything, mock.Anything).Return(activities.LabelNodeResult{}, nil)
+	env.OnActivity(a.UpdateNodeConditions, mock.Anything, mock.Anything).Return(nil)
+	env.OnActivity(a.GetKubeNode, mock.Anything, mock.Anything).Return(activities.GetKubeNodeResult{Node: rebootTestKubeNode("old-boot")}, nil)
+	env.OnActivity(a.DeleteCAPIMachineRebootAnnotation, mock.Anything, mock.Anything).Return(nil).Once()
+	env.OnActivity(a.SoftRebootNode, mock.Anything, mock.Anything).Return(activities.SoftRebootNodeResult{}, nil).Once()
+	timeoutErr := temporal.NewTimeoutError(enums.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil)
+	env.OnActivity(a.WaitForNodeReboot, mock.Anything, mock.MatchedBy(func(in activities.WaitForNodeRebootInput) bool {
+		return in.PollingInterval == 10*time.Second
+	})).Return(activities.WaitForNodeRebootResult{}, timeoutErr).Once()
+	env.OnActivity(a.ApplyCAPIMachineRebootAnnotation, mock.Anything, mock.Anything).Return(
+		activities.ApplyCAPIMachineRebootAnnotationResult{RebootStartedTime: time.Now()}, nil,
+	).Twice()
+	hardInput := mock.MatchedBy(func(in activities.WaitForNodeRebootInput) bool {
+		return in.PollingInterval == time.Minute
+	})
+	env.OnActivity(a.WaitForNodeReboot, mock.Anything, hardInput).Return(activities.WaitForNodeRebootResult{}, timeoutErr).Once()
+	env.OnActivity(a.WaitForNodeReboot, mock.Anything, hardInput).Return(activities.WaitForNodeRebootResult{BootID: "new-boot"}, nil).Once()
+	env.ExecuteWorkflow(RebootNode, RebootNodeInput{
+		NodeID: uuid.New(), InitialTimeout: 30 * time.Minute, TimeoutIncrement: 15 * time.Minute,
+		MaxTimeout: time.Hour, PollingInterval: time.Minute, SoftRebootEnabled: true,
+	})
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
 
 func TestRebootCAPINode_SoftRebootSucceeds_NoHardFallback(t *testing.T) {
 	nodeID := uuid.New()
@@ -128,6 +289,7 @@ func setupRebootNodeWorkflowEnv(t *testing.T) (*testsuite.TestWorkflowEnvironmen
 	env.RegisterActivity(a.SoftRebootNode)
 	env.RegisterActivity(a.ApplyCAPIMachineRebootAnnotation)
 	env.RegisterActivity(a.WaitForNodeReboot)
+	env.RegisterActivity(a.GetKubeNode)
 
 	return env, a
 }

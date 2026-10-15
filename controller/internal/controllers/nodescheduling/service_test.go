@@ -15,12 +15,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 )
 
@@ -73,12 +75,17 @@ func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T
 	var logs bytes.Buffer
 	service := NewService(
 		config.Config{TemporalTaskQueue: "test-task-queue"},
-		slog.New(slog.NewJSONHandler(&logs, nil)),
+		slog.New(otelx.LogHandler{Handler: slog.NewJSONHandler(&logs, nil)}),
 		nil,
 		temporalClient,
 	)
 
-	_, err := service.ScheduleCAPIInfraNodes(t.Context(), slog.Default(), []db.Node{{
+	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	})
+	ctx := trace.ContextWithSpanContext(t.Context(), spanContext)
+	_, err := service.ScheduleCAPIInfraNodes(ctx, slog.Default(), []db.Node{{
 		ID:         nodeID,
 		NodePoolID: nodePoolID,
 		ClusterID:  clusterID,
@@ -90,12 +97,14 @@ func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T
 	var record map[string]any
 	require.NoError(t, json.Unmarshal(logs.Bytes(), &record))
 	require.Equal(t, "Started (or already running) ProvisionNode workflow", record["msg"])
-	require.Equal(t, clusterID.String(), record["clusterID"])
-	require.Equal(t, nodePoolID.String(), record["nodePoolID"])
-	require.Equal(t, nodeID.String(), record["nodeID"])
-	require.Equal(t, "test-node", record["nodeName"])
-	require.Equal(t, workflowID, record["workflowID"])
-	require.Equal(t, runID, record["runID"])
+	require.Equal(t, clusterID.String(), record["cluster_id"])
+	require.Equal(t, nodePoolID.String(), record["node_pool_id"])
+	require.Equal(t, nodeID.String(), record["node_id"])
+	require.Equal(t, "test-node", record["node_name"])
+	require.Equal(t, workflowID, record["workflow_id"])
+	require.Equal(t, runID, record["run_id"])
+	require.Equal(t, spanContext.TraceID().String(), record["trace_id"])
+	require.Equal(t, spanContext.SpanID().String(), record["span_id"])
 }
 
 func TestUnit_ServiceScheduleCAPIInfraNodesReportsNodeWhenWorkflowStartFails(t *testing.T) {

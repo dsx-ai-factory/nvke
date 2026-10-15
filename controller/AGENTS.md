@@ -141,8 +141,7 @@ All metric names use the `nvke_controller_` prefix — never `cwe_` (legacy) (e.
 │       ├── activities/     # Temporal activity implementations
 │       └── workflows/      # Temporal workflow implementations
 ├── profiles/
-│   ├── configProfiles/     # Kubernetes config profiles (YAML)
-│   └── osProfiles/         # OS provisioning profiles
+│   └── configProfiles/     # Kubernetes config profiles (YAML)
 └── integration-test/       # End-to-end integration tests
 ```
 
@@ -211,7 +210,7 @@ Settings in the file that local work most often changes:
 | Key | Description |
 |-----|-------------|
 | `temporal.hostPort` | Temporal server for controller workflows |
-| `profilesDir` | Directory for OS/config profiles. Fleet profile content is maintained outside this repository and supplied at deploy time; this repo ships only example profiles. The directory may be empty: the controller starts without a profiles tree, and one is needed to provision a node, not to come up. |
+| `profilesDir` | Directory for config profiles and the runbooks their hooks reference. Fleet profile content is maintained outside this repository and supplied at deploy time; this repo ships only example profiles. The directory may be empty: the controller starts without a profiles tree, and one is needed to provision a node, not to come up. |
 | `spire.spiffeEnabled`, `spire.spiffeEndpointSocket` | SPIFFE identity, from the SPIRE agent socket (for example `unix:///tmp/spire-agent/agent.sock`) |
 | `permissiveMode` | Only read when `AUTH_CONFIG_PATH` is set. `true` evaluates, logs and counts every request, then serves it anyway — nothing is rejected. |
 

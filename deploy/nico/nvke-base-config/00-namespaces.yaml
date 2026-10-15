@@ -56,8 +56,8 @@ metadata:
   name: temporal
 ---
 # CAPNICo's controller. ../capnico/capnico.yaml declares this Namespace too --
-# the release asset carries one -- but that item installs later, and both
-# nico-credentials and ghcr-imagepull land here first. Two server-side applies
+# the release asset carries one -- but that item installs later, and
+# nico-credentials lands here first. Two server-side applies
 # of the same bare Namespace is not a conflict; neither claims a field the
 # other owns.
 #

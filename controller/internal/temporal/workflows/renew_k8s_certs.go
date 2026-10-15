@@ -15,6 +15,10 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
+const (
+	RenewK8sCertsWorkflowType = "RenewK8sCerts"
+)
+
 type RenewK8sCertsInput struct {
 	ClusterID     uuid.UUID `json:"clusterID"`
 	ThresholdDays int       `json:"thresholdDays"`

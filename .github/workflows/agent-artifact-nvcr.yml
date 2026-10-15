@@ -19,6 +19,10 @@ name: Agent Artifact NVCR
 # below share one resolved value via steps.meta.outputs.repo. An NKE-org path
 # has no team segment; compare cluster-api-provider-nico's NVCR_NKE_IMAGE.
 #
+# A bare vX.Y.Z-beta.N tag only triggers the run. The artifact is versioned and
+# tagged like any other build of that commit (the agent/v* describe version and
+# sha-<commit>); the beta tag name is not added as an alias.
+#
 on:
   push:
     branches:
@@ -26,6 +30,7 @@ on:
     tags:
       - "agent/v[0-9]+.[0-9]+.[0-9]+"
       - "agent/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
   workflow_dispatch: {}
 
 permissions: {}
@@ -104,7 +109,8 @@ jobs:
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
-          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+          elif [[ "${GITHUB_REF}" == refs/tags/* && ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            # A bare beta tag only triggers the run; it must not become an alias.
             aliases+=("${GITHUB_REF_NAME#agent/}")
           fi
 

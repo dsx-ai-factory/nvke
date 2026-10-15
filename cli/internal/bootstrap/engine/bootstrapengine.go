@@ -31,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 )
 
@@ -118,7 +119,7 @@ type Config struct {
 // has a working default for a local or CI run.
 func DefaultConfig() Config {
 	return Config{
-		ClusterName: envOr("NVKECTL_BOOTSTRAP_CLUSTER_NAME", "nvkectl-bootstrap"),
+		ClusterName: envOr("NVKECTL_BOOTSTRAP_CLUSTER_NAME", sitespec.DefaultBootstrapClusterName),
 		NodeImage:   envalias.Get("NVKECTL_BOOTSTRAP_NODE_IMAGE"),
 		WaitReady:   envDuration("NVKECTL_BOOTSTRAP_WAIT_READY", 3*time.Minute),
 

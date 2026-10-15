@@ -46,11 +46,16 @@ func imagePolicy() *Policy {
 func imageRegistry() *Registry {
 	r := testRegistry()
 	image := func(arch string) Resolve {
-		return Resolve{Strategy: resolve.StrategyOSImage, With: map[string]string{
-			"base": "https://cdn.example", "from": "os-image", "arch": arch, "variant": "non-fde",
-		}}
+		return Resolve{
+			Version: &Rule{From: "os-image"},
+			Location: &Rule{Strategy: resolve.LocationStrategyOSImage, With: map[string]string{
+				"base": "https://cdn.example", "arch": arch, "variant": "non-fde",
+			}},
+		}
 	}
-	bootloader := Resolve{Strategy: resolve.StrategyURL, With: map[string]string{"base": "https://cdn.example"}}
+	bootloader := Resolve{Location: &Rule{
+		Strategy: resolve.LocationStrategyURL, With: map[string]string{"base": "https://cdn.example"},
+	}}
 	r.Spec.Components = append(r.Spec.Components,
 		Component{Name: "os-image-amd64", Resolve: image("amd64")},
 		Component{Name: "os-image-arm64", Resolve: image("arm64")},
@@ -60,23 +65,38 @@ func imageRegistry() *Registry {
 	return r
 }
 
-// strategies builds the real resolver for each registry component whose strategy
-// validates its inputs, which is what Check asks. The planner tests use fakes, so
-// these are only for the tests of what Check holds a subject to.
-func strategies(t *testing.T, r *Registry) map[string]resolve.Resolver {
+// checked builds the registry's resolvers and asks Check, so a caller states
+// the three files once rather than naming the registry twice.
+func checked(t *testing.T, p *Policy, r *Registry, s *Subject) error {
 	t.Helper()
-	out := map[string]resolve.Resolver{}
+	version, location := strategies(t, r)
+	return Check(p, r, s, version, location)
+}
+
+// strategies builds the real resolver for each half of each registry component
+// whose strategy validates its inputs, which is what Check asks. The planner
+// tests use fakes, so these are only for the tests of what Check holds a
+// subject to.
+func strategies(t *testing.T, r *Registry) (version, location map[string]resolve.Resolver) {
+	t.Helper()
+	version, location = map[string]resolve.Resolver{}, map[string]resolve.Resolver{}
 	for _, c := range r.Spec.Components {
-		if c.Resolve.Strategy == "fake" {
-			continue
+		if v := c.Resolve.Version; v != nil && v.Strategy != "" && v.Strategy != "fake" {
+			built, err := resolve.NewVersion(v.Strategy, r.StrategyConfig(v), ".")
+			if err != nil {
+				t.Fatalf("%s, version: %v", c.Name, err)
+			}
+			version[c.Name] = built
 		}
-		built, err := resolve.New(c.Resolve.Strategy, r.StrategyConfig(c), ".")
-		if err != nil {
-			t.Fatalf("%s: %v", c.Name, err)
+		if l := c.Resolve.Location; l != nil && l.Strategy != "fake" {
+			built, err := resolve.NewLocation(l.Strategy, r.StrategyConfig(l), resolve.Options{})
+			if err != nil {
+				t.Fatalf("%s, location: %v", c.Name, err)
+			}
+			location[c.Name] = built
 		}
-		out[c.Name] = built
 	}
-	return out
+	return version, location
 }
 
 // imageResolvers stands in for the strategies. An image answers with the release
@@ -95,8 +115,8 @@ func imageResolvers() resolvers {
 				return nil, fmt.Errorf("no release matches %s", in[resolve.InputConstraintKey])
 			}
 			return map[string]string{
-				resolve.ResultVersionKey: in["os-image"],
-				resolve.ResultURLKey:     fmt.Sprintf("https://cdn.example/%s/%s/%s", in["os-image"], release, arch),
+				resolve.ResultURLKey: fmt.Sprintf("https://cdn.example/%s/%s/%s",
+					in[resolve.InputVersionKey], release, arch),
 			}, nil
 		}}
 	}
@@ -247,7 +267,7 @@ func TestCheckRejectsAStreamNoReleaseMatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantError(t, Check(p, imageRegistry(), s, strategies(t, imageRegistry())), `stream "arm64-26": none of the releases 24.04.5, 24.04.10, 26.04.1 matches Ubuntu 22.04`)
+	wantError(t, checked(t, p, imageRegistry(), s), `stream "arm64-26": none of the releases 24.04.5, 24.04.10, 26.04.1 matches Ubuntu 22.04`)
 }
 
 func TestCheckReleasesNeedACapabilityEveryStreamHas(t *testing.T) {
@@ -257,7 +277,7 @@ func TestCheckReleasesNeedACapabilityEveryStreamHas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantError(t, Check(p, imageRegistry(), s, strategies(t, imageRegistry())), `stream amd64-24 does not declare capability "ubuntu"`)
+	wantError(t, checked(t, p, imageRegistry(), s), `stream amd64-24 does not declare capability "ubuntu"`)
 }
 
 // A literal constraint is held to the releases too, since it would fail at plan
@@ -270,7 +290,7 @@ func TestCheckRejectsALiteralNoReleaseMatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantError(t, Check(imagePolicy(), imageRegistry(), s, strategies(t, imageRegistry())), `none of the releases 24.04.5, 24.04.10, 26.04.1 matches Ubuntu 22.04`)
+	wantError(t, checked(t, imagePolicy(), imageRegistry(), s), `none of the releases 24.04.5, 24.04.10, 26.04.1 matches Ubuntu 22.04`)
 }
 
 // Each strategy takes the inputs it takes. One handed an input it ignores would
@@ -328,7 +348,7 @@ func TestCheckHoldsInputsToTheStrategy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantError(t, Check(imagePolicy(), imageRegistry(), s, strategies(t, imageRegistry())), tc.want)
+			wantError(t, checked(t, imagePolicy(), imageRegistry(), s), tc.want)
 		})
 	}
 
@@ -341,12 +361,12 @@ func TestCheckHoldsInputsToTheStrategy(t *testing.T) {
 		r := imageRegistry()
 		for i := range r.Spec.Components {
 			if r.Spec.Components[i].Name == "kube" {
-				r.Spec.Components[i].Resolve = Resolve{
-					Strategy: resolve.StrategyLockedPackage,
-					With:     map[string]string{"lockDir": "os-image/packages/kubeadm-distro/lock", "from": "os-image"},
-				}
+				r.Spec.Components[i].Resolve = Resolve{Version: &Rule{
+					Strategy: resolve.VersionStrategyLockedPackage,
+					With:     map[string]string{"lockDir": "os-image/packages/kubeadm-distro/lock", "at": "os-image"},
+				}}
 			}
 		}
-		wantError(t, Check(imagePolicy(), r, s, strategies(t, r)), "needs constraint")
+		wantError(t, checked(t, imagePolicy(), r, s), "needs constraint")
 	})
 }

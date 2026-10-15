@@ -15,9 +15,9 @@ metadata:
     argocd.argoproj.io/sync-wave: "-2"
     controller-gen.kubebuilder.io/version: v0.20.1
     helm.sh/resource-policy: keep
-  name: clusterreleases.internal.nke.nvidia.com
+  name: clusterreleases.internal.nvke.nvidia.com
 spec:
-  group: internal.nke.nvidia.com
+  group: internal.nvke.nvidia.com
   names:
     kind: ClusterRelease
     listKind: ClusterReleaseList
@@ -152,9 +152,9 @@ metadata:
     argocd.argoproj.io/sync-wave: "-2"
     controller-gen.kubebuilder.io/version: v0.20.1
     helm.sh/resource-policy: keep
-  name: machineimages.internal.nke.nvidia.com
+  name: machineimages.internal.nvke.nvidia.com
 spec:
-  group: internal.nke.nvidia.com
+  group: internal.nvke.nvidia.com
   names:
     kind: MachineImage
     listKind: MachineImageList
@@ -290,9 +290,9 @@ metadata:
     argocd.argoproj.io/sync-wave: "-2"
     controller-gen.kubebuilder.io/version: v0.20.1
     helm.sh/resource-policy: keep
-  name: nodepoolreleases.internal.nke.nvidia.com
+  name: nodepoolreleases.internal.nvke.nvidia.com
 spec:
-  group: internal.nke.nvidia.com
+  group: internal.nvke.nvidia.com
   names:
     kind: NodePoolRelease
     listKind: NodePoolReleaseList

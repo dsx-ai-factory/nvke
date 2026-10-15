@@ -27,8 +27,14 @@ const (
 	NodeAgentExternalTLSCertPath = "/etc/nke/node-agent-client-tls/tls.crt"
 	NodeAgentExternalTLSKeyPath  = "/etc/nke/node-agent-client-tls/tls.key"
 	NodeAgentExternalTLSCAPath   = "/etc/nke/node-agent-client-tls/ca.crt"
-	NodeAgentConfigPath          = "/etc/default/nke-agent"
-	NodeAgentControllerCAPath    = "/etc/nke/controller-ca.crt"
+	// NodeAgentExternalTLSNVKECertPath and ...KeyPath are an optional second client
+	// identity whose URI SAN is the new-form controller URN. When present, nodes whose
+	// agent speaks the new form are dialed with it; otherwise the first identity is
+	// used for every node.
+	NodeAgentExternalTLSNVKECertPath = "/etc/nke/node-agent-client-tls/nvke-tls.crt"
+	NodeAgentExternalTLSNVKEKeyPath  = "/etc/nke/node-agent-client-tls/nvke-tls.key"
+	NodeAgentConfigPath              = "/etc/default/nke-agent"
+	NodeAgentControllerCAPath        = "/etc/nke/controller-ca.crt"
 )
 
 // SpireAttestationMethod selects the SPIRE node attestation method pinned at node creation.
@@ -92,6 +98,9 @@ type NodeAgentConfig struct {
 
 	// TLSJWT contains TLS/JWT transport settings.
 	TLSJWT TLSJWTConfig
+
+	// UpdateMethod selects apt or bundle installation for opted-in clusters.
+	UpdateMethod string `controllerconfig:"nodeAgent.updateMethod"`
 }
 
 // Config is the controller's configuration. A field with an env tag comes from
@@ -173,19 +182,25 @@ type Config struct {
 	// subnet-based NICo pools use the static Forge peer ASN.
 	KubeVipFMDSEndpoint string `env:"KUBE_VIP_FMDS_ENDPOINT"`
 
-	// ProfilesDir is the directory from which to read osProfiles and configProfiles
+	// ProfilesDir is the directory from which to read configProfiles
 	ProfilesDir string `controllerconfig:"profilesDir"`
 
 	// SupportedInfraProviders is the list of provider payload keys this controller
 	// deployment advertises for cluster specs.
 	SupportedInfraProviders []string `controllerconfig:"supportedInfraProviders"`
 
+	// NodeMetadataAllowlistedLabelKeys is the optional allowlist of label keys a caller
+	// may set under the reserved Kubernetes domains (kubernetes.io, k8s.io). Empty, no
+	// keys in those domains are allowed. It does not apply to taints.
+	NodeMetadataAllowlistedLabelKeys []string `controllerconfig:"nodeMetadataAllowlistedLabelKeys"`
+
 	// RunbooksDir is the optional directory containing config-profile hook scripts.
 	// When omitted, hook execution looks under ProfilesDir/runbooks before falling
 	// back to controller-owned embedded runbooks.
 	RunbooksDir string `controllerconfig:"runbooksDir"`
 
-	// NodeRebootInitialTimeout is the initial timeout for the node reboot workflow.
+	// NodeRebootInitialTimeout is the initial reboot verification timeout. Soft
+	// verification uses this duration capped at 30 minutes, without retry increments.
 	NodeRebootInitialTimeout time.Duration `env:"NODE_REBOOT_INITIAL_TIMEOUT" default:"30m"`
 
 	// NodeRebootTimeoutIncrement is the increment for the node reboot workflow timeout by each attempt.
@@ -198,8 +213,8 @@ type Config struct {
 	NodeRebootPollingInterval time.Duration `env:"NODE_REBOOT_POLLING_INTERVAL" default:"1m"`
 
 	// NodeRebootSoftRebootEnabled selects a CAPI node reboot's strategy: true tries the in-guest
-	// soft reboot RPC first, falling back to a hard reboot only on RPC error - matching behavior
-	// from before this flag existed. false skips straight to the hard CAPI Machine reboot
+	// soft reboot RPC first, falling back to a hard reboot on RPC error or after at most 30 minutes
+	// without a verified boot change. false skips straight to the hard CAPI Machine reboot
 	// annotation, for any backend where the in-guest reboot path can never produce a real,
 	// detectable boot change.
 	NodeRebootSoftRebootEnabled bool `env:"NODE_REBOOT_SOFT_REBOOT_ENABLED" default:"true"`
@@ -320,17 +335,6 @@ type Config struct {
 	// environment; doing so would misroute production nodes to the DinD contract.
 	LocalDevForceDockerMachineBootstrap bool `env:"LOCAL_DEV_FORCE_DOCKER_MACHINE_BOOTSTRAP" default:"false"`
 
-	// ProvisionControlPlaneWithControlPlaneController routes control-plane node
-	// provisioning through the control-plane controller, which creates no-nodepool
-	// control-plane nodes. When enabled, the node set controller stops creating
-	// pending nodes for control-plane node pools so the two controllers never both
-	// create control-plane nodes. When false, control-plane nodes continue to be
-	// created by the node set controller from their node pool.
-	//
-	// On by default: the control-plane controller path is now the standard way to
-	// provision control-plane nodes.
-	ProvisionControlPlaneWithControlPlaneController bool `env:"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER" default:"true"`
-
 	// InstallCNIAfterInit installs CNI after kubeadm init, from a Debian package
 	// rather than a bundle server. It needs the charts package on the node, which
 	// Forge user-data installs as of #398.
@@ -378,18 +382,18 @@ type Config struct {
 	// AuthConfigPath is unset.
 	PermissiveMode bool `controllerconfig:"permissiveMode"`
 
-	// Tracing configures OpenTelemetry distributed tracing. When Enabled, the
-	// controller exports OTLP gRPC spans to Endpoint, or, when Endpoint is empty,
-	// to the OTEL_EXPORTER_OTLP_* variables the OpenTelemetry Operator injects.
+	// Tracing configures the export of OpenTelemetry spans to an OTLP collector.
 	Tracing TracingConfig
 }
 
-// TracingConfig configures OpenTelemetry tracing export.
+// TracingConfig configures OpenTelemetry span export.
 type TracingConfig struct {
-	// Enabled gates TracerProvider initialization and transport instrumentation.
+	// Enabled turns on span export and per-query database spans.
 	Enabled bool `controllerconfig:"tracing.enabled"`
-	// Endpoint is the OTLP gRPC collector host:port (scheme optional). With
-	// operator sidecar injection this is typically localhost:4317.
+	// Endpoint is the OTLP gRPC collector host:port (scheme optional) that
+	// spans are exported to. When empty, the OTEL_EXPORTER_OTLP_* variables the
+	// OpenTelemetry Operator injects are used; with a sidecar this is typically
+	// localhost:4317.
 	Endpoint string `controllerconfig:"tracing.endpoint"`
 	// Insecure uses plaintext OTLP (required for localhost sidecar / in-cluster collectors).
 	Insecure bool `controllerconfig:"tracing.insecure"`
@@ -528,13 +532,6 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("SPIRE_SERVER_API_ADDRESS is required")
 	}
 	return nil
-}
-
-// UseControlPlaneControllerForControlPlane reports whether provisioning
-// of all control-plane nodes should be routed through the control-plane
-// controller path.
-func (c Config) UseControlPlaneControllerForControlPlane() bool {
-	return c.ProvisionControlPlaneWithControlPlaneController
 }
 
 // EffectiveRunbooksDir returns the configured profile-hook runbook directory.

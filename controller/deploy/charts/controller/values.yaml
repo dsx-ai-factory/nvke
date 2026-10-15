@@ -92,6 +92,8 @@ nodeAgent:
     interval: "2m"
     # -- Symmetric fractional scheduling variation. Set 0 to disable jitter.
     jitter: 0.1
+  # -- Installation method for agent convergence: apt or bundle. Required when clusters opt in.
+  updateMethod: ""
   # -- SPIRE node attestation method pinned to newly created nodes. Changing
   # this deployment default does not reconfigure existing nodes; keep their
   # attestation plugins available until those nodes are retired or migrated.
@@ -146,6 +148,12 @@ nodeAgent:
       privateKeyKey: tls.key
       # -- Secret key containing the PEM-encoded issuing CA bundle.
       caBundleKey: ca.crt
+      # -- Optional Secret key containing the new-form PEM-encoded client
+      # certificate chain. Set together with newPrivateKeyKey; leave empty for
+      # nodes that only use the original identity.
+      newCertificateKey: ""
+      # -- Optional Secret key containing the new-form PEM-encoded client private key.
+      newPrivateKeyKey: ""
 
 # identity configures the strings this controller compiles into
 # Server-Side-Apply field managers and the nke.nvidia.com/managed-by label
@@ -162,7 +170,11 @@ identity:
   # controller owns, and the value the tenant Secret reconciler filters on.
   managedByLabelValue: "cloud-workflow-engine"
 
-nkeSystemNamespace:
+# nkeSystemNamespace is the older name for nvkeSystemNamespace. It is absent
+# here on purpose: the guard in _helpers.tpl keys off its presence, so setting
+# it at all fails the render naming the new key, rather than letting Helm drop
+# an unknown key silently and fall back to the nvkeSystemNamespace defaults.
+nvkeSystemNamespace:
   # -- Create the shared nke-system namespace. The object always carries
   # helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and
   # argocd.argoproj.io/sync-options: Prune=false,Delete=false so an Argo prune or
@@ -243,8 +255,8 @@ metrics:
     additionalNamespaces: []
 
 tracing:
-  # -- Enable OpenTelemetry tracing in the controller binary (TracerProvider + transport hooks).
-  # Keep false in chart defaults; enable per environment against an OTLP collector.
+  # -- Export OpenTelemetry spans to an OTLP collector, at tracing.endpoint or the endpoint
+  # the OpenTelemetry Operator injects. Keep false in chart defaults; enable per environment.
   enabled: false
   # OpenTelemetry Operator injection. When enabled (with tracing.enabled), add
   # standard Operator annotations so inject-sdk / sidecar inject can supply
@@ -318,8 +330,16 @@ resources: {}
 # -- Comma-separated API provider blocks accepted by mutating cluster and node-pool requests. The chart defaults the deployed controller to Nico only; set to "nico,infra" only for deployments that should accept generic CAPI-backed provider payloads.
 supportedInfraProviders: "nico"
 
+nodeMetadata:
+  # -- Allowlist of label keys under the reserved kubernetes.io and k8s.io domains. Intended for operators whose deployments specifically need labels from these domains.
+  # Use with care: these keys can conflict with Kubernetes core components.
+  # `node-role.kubernetes.io/control-plane` and keys under the internal NVKE domains cannot be listed.
+  # The controller validates the allowlist and refuses to start if an entry is one of the above forbidden keys, or is empty, padded, not a valid label key, or a duplicate.
+  allowlistedLabelKeys: []
+
 # -- Additional environment variables to inject into the controller container. A
 # variable nke-controller-config carries is refused; set its chart value instead.
+# CONTROLLER_CONFIG_PATH is refused too: the chart sets it to the mounted file.
 env: []
 # - name: EXAMPLE
 #   value: example
@@ -387,6 +407,12 @@ kubeadm:
   imageRepository: registry.k8s.io
 
 cni:
+  # -- Permit new tenant clusters to use the legacy Calico CNI. Existing Calico
+  # clusters remain manageable when false. Legacy fleets that still create
+  # Calico clusters must set this before upgrading the controller. This
+  # compatibility setting is for legacy fleets only. New deployments must use
+  # OVN-Kubernetes.
+  allowLegacyCalicoClusterCreation: false
   # -- Optional OCI registry prefix for CNI component images. Empty uses chart defaults.
   imageRegistry: ""
   # -- Install CNI after kubeadm init through the agent's InstallCNI RPC, which
@@ -401,7 +427,11 @@ tenantAccess:
   # and its cleanup activity, and the Secret grant they depend on.
   enabled: true
 
-nkeOIDCAuth:
+# nkeOIDCAuth is the older name for nvkeOIDCAuth. It is absent here on purpose:
+# the guard in _helpers.tpl keys off its presence, so setting it at all fails
+# the render naming the new key, rather than letting Helm drop an unknown key
+# silently and leave OIDC at enabled: false.
+nvkeOIDCAuth:
   # -- Enable OIDC authentication from NVKE management identities to tenant cluster kube-apiservers.
   enabled: false
   # -- Name of the ClusterRole/Role/Binding objects the tenant-access controller
@@ -420,12 +450,14 @@ nkeOIDCAuth:
     key: ""
 
 oidc:
-  # -- Fleet-wide OIDC providers that clusters trust alongside nkeOIDCAuth; a
+  # -- Fleet-wide OIDC providers that clusters trust alongside nvkeOIDCAuth; a
   # cluster keeps the list it was created with, and one created on a
   # Kubernetes version earlier than 1.34 gets none. At most five, each with
   # name, issuerURL, audiences, usernameClaim, usernamePrefix and caBundle
-  # (inline PEM), and optionally groupsClaim, groupsPrefix and requiredClaims
-  # (claim name to required value). For example:
+  # (inline PEM), and optionally groupsClaim, groupsPrefix, requiredClaims
+  # (claim name to required value) and discoveryURL (where tenant API servers
+  # fetch the issuer's discovery document when they cannot reach issuerURL).
+  # For example:
   #   - name: corp
   #     issuerURL: https://login.example.com
   #     audiences: [nke]
@@ -608,7 +640,7 @@ spiffe:
   # tenant clusters trust the exchange's issuer, otherwise the controller's calls
   # to them will start failing authentication.
   jwtExchangeEndpoint: ""
-  # -- Subject the nkeOIDCAuth.tenantRbacName RBAC bindings name in tenant clusters. Defaults to this
+  # -- Subject the nvkeOIDCAuth.tenantRbacName RBAC bindings name in tenant clusters. Defaults to this
   # controller's own SPIFFE ID, spiffe://<trustDomain>/nke-service/cloud-workflow-engine,
   # which is what a tenant sees when no exchange is in play. Set it whenever
   # jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust
@@ -637,8 +669,8 @@ spiffe:
   # when CAPD uses an exchanged tenant kubeconfig.
   capdManagerSubject: ""
   # -- SPIRE trust domain. When set, the chart renders ConfigMap nke-rbac.
-  # Required when nkeOIDCAuth.enabled is true: builds the
-  # nkeOIDCAuth.tenantRbacName SPIFFE subject ID in that ConfigMap. Must equal the
+  # Required when nvkeOIDCAuth.enabled is true: builds the
+  # nvkeOIDCAuth.tenantRbacName SPIFFE subject ID in that ConfigMap. Must equal the
   # SPIRE server's trust domain (the spire chart's global.spire.trustDomain) so the
   # RBAC principals match issued identities.
   trustDomain: ""

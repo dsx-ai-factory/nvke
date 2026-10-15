@@ -20,7 +20,7 @@ if [[ -n "$existing" ]]; then
 fi
 release="engine-smoke-$$"
 org_namespace="$release-org"
-sample=config/samples/internal_v1_nkecluster.yaml
+sample=config/samples/internal_v1_nvkecluster.yaml
 umask 077
 scratch=$(mktemp -d)
 forward_pid=""
@@ -53,19 +53,19 @@ host_crds=$("${host[@]}" get --ignore-not-found -f config/crd/bases -o name)
 [[ -z "$host_lease" && -z "$host_crds" ]] || { echo "State resources were found on the management cluster." >&2; exit 1; }
 identity="system:serviceaccount:$state_namespace:management-engine-controller-manager"
 [[ $("${state[@]}" auth can-i get leases --as="$identity" -n "$state_namespace") == yes ]]
-[[ $("${state[@]}" auth can-i get /apis/internal.nke.nvidia.com/v1 --as="$identity") == yes ]]
+[[ $("${state[@]}" auth can-i get /apis/internal.nvke.nvidia.com/v1 --as="$identity") == yes ]]
 # Metadata patches include finalizers. Status writes use the status subresource.
 for verb in get list watch patch; do
-  [[ $("${state[@]}" auth can-i "$verb" nkeclusters.internal.nke.nvidia.com --as="$identity" -n "$org_namespace") == yes ]]
+  [[ $("${state[@]}" auth can-i "$verb" nvkeclusters.internal.nvke.nvidia.com --as="$identity" -n "$org_namespace") == yes ]]
 done
 for verb in update patch; do
-  [[ $("${state[@]}" auth can-i "$verb" nkeclusters.internal.nke.nvidia.com --subresource=status --as="$identity" -n "$org_namespace") == yes ]]
+  [[ $("${state[@]}" auth can-i "$verb" nvkeclusters.internal.nvke.nvidia.com --subresource=status --as="$identity" -n "$org_namespace") == yes ]]
 done
 for verb in create update delete deletecollection; do
-  [[ $("${state[@]}" auth can-i "$verb" nkeclusters.internal.nke.nvidia.com --as="$identity" -n "$org_namespace") == no ]]
+  [[ $("${state[@]}" auth can-i "$verb" nvkeclusters.internal.nvke.nvidia.com --as="$identity" -n "$org_namespace") == no ]]
 done
-[[ $("${state[@]}" auth can-i get nkeclusters.internal.nke.nvidia.com --subresource=status --as="$identity" -n "$org_namespace") == no ]]
-[[ $("${state[@]}" auth can-i update nkeclusters.internal.nke.nvidia.com --subresource=finalizers --as="$identity" -n "$org_namespace") == no ]]
+[[ $("${state[@]}" auth can-i get nvkeclusters.internal.nvke.nvidia.com --subresource=status --as="$identity" -n "$org_namespace") == no ]]
+[[ $("${state[@]}" auth can-i update nvkeclusters.internal.nvke.nvidia.com --subresource=finalizers --as="$identity" -n "$org_namespace") == no ]]
 # Credentials and bindings arrive through mounts, so no API access is needed.
 for resource in secrets configmaps; do
   for verb in get list watch create update patch delete deletecollection; do
@@ -84,7 +84,7 @@ while IFS= read -r resource; do
   "${state[@]}" -n "$org_namespace" wait "$resource" \
     --for='jsonpath={.status.conditions[?(@.type=="Synced")].reason}=ProvisioningNotConfigured' --timeout=60s
   "${state[@]}" -n "$org_namespace" patch "$resource" --as="$identity" --type=merge --dry-run=server \
-    -p '{"metadata":{"finalizers":["internal.nke.nvidia.com/rbac-check"]}}'
+    -p '{"metadata":{"finalizers":["internal.nvke.nvidia.com/rbac-check"]}}'
 done <<<"$resources"
 
 # Secure metrics authenticate against the datastore API. Bind a temporary scraper

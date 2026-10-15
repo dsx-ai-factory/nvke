@@ -74,3 +74,15 @@ docs/ @dsx-ai-factory/nvke-write @TerryHowe @j-griffith @danbudris @jedimt
 
 # SECURITY.md, GOVERNANCE.md, MAINTAINERS.md, CODE_OF_CONDUCT.md and LICENSE are
 # area/docs, covered by `/*.md` and `/LICENSE` above.
+
+# area/deps a third time: the two generated manifests under management-engine.
+# The management-engine rule above is the one line in this file that drops
+# @dsx-ai-factory/nvke-write, so the management-engine team reviews its own
+# source. Dependabot's weekly gomod run updates every module in the workspace
+# at once, so management-engine/go.mod and go.sum ride along in a pull request
+# that is otherwise all deps, and that gate held the whole tree behind a
+# four-person review -- #1558. Keep the gate on source, lift it off the two
+# manifests. The team stays on the line, so it is still requested and can
+# still object.
+/management-engine/go.mod @dsx-ai-factory/nvke-write @dsx-ai-factory/nvke-team-management-engine @TerryHowe @rbever-nvidia
+/management-engine/go.sum @dsx-ai-factory/nvke-write @dsx-ai-factory/nvke-team-management-engine @TerryHowe @rbever-nvidia

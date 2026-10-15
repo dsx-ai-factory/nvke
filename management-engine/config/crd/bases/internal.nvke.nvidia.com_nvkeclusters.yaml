@@ -1,0 +1,778 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: nvkeclusters.internal.nvke.nvidia.com
+spec:
+  group: internal.nvke.nvidia.com
+  names:
+    kind: NVKECluster
+    listKind: NVKEClusterList
+    plural: nvkeclusters
+    singular: nvkecluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: NVKECluster manages a Kubernetes control plane and its node pools
+          as one cluster.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NVKEClusterSpec configures a cluster's control plane and
+              node pools.
+            properties:
+              acceleratedRuntime:
+                description: AcceleratedRuntime selects an accelerated runtime bundle.
+                  Use name "none" to opt out.
+                properties:
+                  name:
+                    description: ResourceName is a Kubernetes DNS subdomain name,
+                      not a provider identifier.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  version:
+                    description: Version is an OCI tag. It need not be a semantic
+                      version.
+                    maxLength: 128
+                    minLength: 1
+                    pattern: ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: version is required for a runtime release and must be omitted
+                    for none
+                  rule: 'self.name == ''none'' ? !has(self.version) : has(self.version)'
+              apiServerAccess:
+                description: APIServerAccess controls access to the cluster's Kubernetes
+                  API server from outside the VPC.
+                properties:
+                  publicAccessCidrs:
+                    description: PublicAccessCIDRs lists the source networks allowed
+                      to use public API server access.
+                    items:
+                      description: PublicAccessCIDR is an allowed source network and
+                        optional description.
+                      properties:
+                        cidr:
+                          description: CIDR is an IPv4 or IPv6 source network in CIDR
+                            notation.
+                          maxLength: 49
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must be an IPv4 or IPv6 CIDR
+                            rule: isCIDR(self)
+                        description:
+                          description: Description is an optional label for the source
+                            network.
+                          maxLength: 256
+                          type: string
+                      required:
+                      - cidr
+                      type: object
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - cidr
+                    x-kubernetes-list-type: map
+                  publicAccessEnabled:
+                    description: PublicAccessEnabled enables public access to the
+                      Kubernetes API server.
+                    type: boolean
+                required:
+                - publicAccessEnabled
+                type: object
+              authentication:
+                description: |-
+                  Authentication configures additional JWT issuers for cluster access.
+                  It can only be set when creating the cluster.
+                properties:
+                  jwt:
+                    items:
+                      description: JWTAuthenticator maps a trusted issuer's claims
+                        to Kubernetes identities.
+                      properties:
+                        claimMappings:
+                          description: JWTClaimMappings maps the token's username
+                            and optional groups claims.
+                          properties:
+                            groups:
+                              description: |-
+                                ClaimMapping selects a claim and optionally specifies its identity prefix.
+                                An empty prefix is meaningful and must remain distinct from an omitted prefix.
+                              properties:
+                                claim:
+                                  maxLength: 256
+                                  minLength: 1
+                                  type: string
+                                prefix:
+                                  maxLength: 256
+                                  type: string
+                              required:
+                              - claim
+                              type: object
+                            username:
+                              description: |-
+                                ClaimMapping selects a claim and optionally specifies its identity prefix.
+                                An empty prefix is meaningful and must remain distinct from an omitted prefix.
+                              properties:
+                                claim:
+                                  maxLength: 256
+                                  minLength: 1
+                                  type: string
+                                prefix:
+                                  maxLength: 256
+                                  type: string
+                              required:
+                              - claim
+                              type: object
+                          required:
+                          - username
+                          type: object
+                        claimValidationRules:
+                          items:
+                            description: ClaimValidationRule requires a claim to equal
+                              a configured string.
+                            properties:
+                              claim:
+                                maxLength: 256
+                                minLength: 1
+                                type: string
+                              requiredValue:
+                                maxLength: 256
+                                type: string
+                            required:
+                            - claim
+                            - requiredValue
+                            type: object
+                          maxItems: 32
+                          minItems: 1
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        issuer:
+                          description: JWTIssuer identifies an HTTPS issuer and the
+                            audiences accepted from it.
+                          properties:
+                            audiences:
+                              items:
+                                description: Audience is a nonempty JWT audience identifier.
+                                maxLength: 256
+                                minLength: 1
+                                type: string
+                              maxItems: 16
+                              minItems: 1
+                              type: array
+                              x-kubernetes-list-type: set
+                            url:
+                              maxLength: 2048
+                              pattern: ^https://[^/?#]+[^#]*$
+                              type: string
+                          required:
+                          - audiences
+                          - url
+                          type: object
+                      required:
+                      - claimMappings
+                      - issuer
+                      type: object
+                    maxItems: 60
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                    x-kubernetes-validations:
+                    - message: issuer URLs must be unique
+                      rule: self.all(x, self.filter(y, y.issuer.url == x.issuer.url).size()
+                        == 1)
+                type: object
+              clusterNetwork:
+                description: ClusterNetwork describes the pod/service networks and
+                  cluster DNS domain.
+                properties:
+                  pods:
+                    description: Pods specifies the address ranges used by pods.
+                    properties:
+                      cidrBlocks:
+                        description: |-
+                          CIDRBlocks contains one address range, or one IPv4 and one IPv6 range for dual-stack.
+                          The first range selects the default IP family.
+                        items:
+                          description: NetworkCIDR is an IPv4 or IPv6 network in CIDR
+                            notation.
+                          maxLength: 49
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must be an IPv4 or IPv6 CIDR
+                            rule: isCIDR(self)
+                        maxItems: 2
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-type: atomic
+                        x-kubernetes-validations:
+                        - message: CIDRs must be distinct
+                          rule: self.size() < 2 || self[0] != self[1]
+                        - message: CIDRs must be of different IP families
+                          rule: self.size() < 2 || cidr(self[0]).ip().family() !=
+                            cidr(self[1]).ip().family()
+                    required:
+                    - cidrBlocks
+                    type: object
+                  serviceDomain:
+                    description: ServiceDomain is the DNS domain used by cluster services.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  services:
+                    description: Services specifies the address ranges used by cluster
+                      services.
+                    properties:
+                      cidrBlocks:
+                        description: |-
+                          CIDRBlocks contains one address range, or one IPv4 and one IPv6 range for dual-stack.
+                          The first range selects the default IP family.
+                        items:
+                          description: NetworkCIDR is an IPv4 or IPv6 network in CIDR
+                            notation.
+                          maxLength: 49
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must be an IPv4 or IPv6 CIDR
+                            rule: isCIDR(self)
+                        maxItems: 2
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-type: atomic
+                        x-kubernetes-validations:
+                        - message: CIDRs must be distinct
+                          rule: self.size() < 2 || self[0] != self[1]
+                        - message: CIDRs must be of different IP families
+                          rule: self.size() < 2 || cidr(self[0]).ip().family() !=
+                            cidr(self[1]).ip().family()
+                    required:
+                    - cidrBlocks
+                    type: object
+                required:
+                - pods
+                - serviceDomain
+                - services
+                type: object
+              controlPlaneClass:
+                description: ControlPlaneClass names the class that determines control-plane
+                  sizing and configuration.
+                maxLength: 253
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                type: string
+              network:
+                description: Network selects the existing VPC shared by the node pools.
+                properties:
+                  vpcID:
+                    description: VPCID is the ID of the VPC in which node pools are
+                      provisioned. The VPC must already exist.
+                    format: uuid
+                    maxLength: 36
+                    type: string
+                required:
+                - vpcID
+                type: object
+              nodePools:
+                description: |-
+                  NodePools configures groups of nodes in the cluster. Omission requests
+                  a control plane without worker nodes. Names identify pools across updates.
+                items:
+                  description: NodePool configures a named group of machines that
+                    join the cluster as worker nodes.
+                  properties:
+                    instanceType:
+                      description: InstanceType selects the machine type used by the
+                        pool and cannot change after creation.
+                      maxLength: 253
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                      type: string
+                      x-kubernetes-validations:
+                      - message: instanceType is immutable
+                        rule: self == oldSelf
+                    name:
+                      description: Name uniquely identifies this pool within the cluster,
+                        including across updates.
+                      maxLength: 253
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                      type: string
+                    nodeProfile:
+                      description: NodeProfile selects the machine image and startup
+                        configuration as <profile>:<tag>.
+                      maxLength: 382
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*:[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$
+                      type: string
+                      x-kubernetes-validations:
+                      - message: profile name must be at most 253 characters
+                        rule: self.split(':')[0].size() <= 253
+                    replicas:
+                      description: Replicas is the required number of nodes requested
+                        for this pool. Zero requests no nodes.
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    rollout:
+                      description: Rollout configures node replacement when the node
+                        profile changes.
+                      properties:
+                        strategy:
+                          description: RolloutStrategy selects the replacement method
+                            and disruption limits.
+                          properties:
+                            disruption:
+                              description: Disruption limits how many nodes may be
+                                disrupted during replacement.
+                              properties:
+                                budgets:
+                                  description: Budgets apply the smallest active limit.
+                                    Percentages round up to whole nodes.
+                                  items:
+                                    description: DisruptionBudget limits disruption
+                                      continuously or during a scheduled window.
+                                    properties:
+                                      duration:
+                                        description: Duration is the active window
+                                          length, expressed in hours, minutes or seconds,
+                                          such as 8h or 30m.
+                                        maxLength: 32
+                                        minLength: 1
+                                        pattern: ^([0-9]+h)?([0-9]+m)?([0-9]+s)?$
+                                        type: string
+                                        x-kubernetes-validations:
+                                        - message: duration must be positive
+                                          rule: duration(self) > duration('0s')
+                                      nodes:
+                                        description: Nodes is a nonnegative count
+                                          or a percentage from 0% to 100%. Zero blocks
+                                          disruption.
+                                        maxLength: 10
+                                        pattern: ^((0|[1-9][0-9]*)|([0-9]|[1-9][0-9]|100)%)$
+                                        type: string
+                                        x-kubernetes-validations:
+                                        - message: node count must not exceed 2147483647
+                                          rule: self.endsWith('%') || int(self) <=
+                                            2147483647
+                                      schedule:
+                                        description: |-
+                                          Schedule starts each active window using five-field cron or a standard alias such as @daily.
+                                          Omit for a continuous budget.
+                                        maxLength: 256
+                                        minLength: 1
+                                        pattern: ^[[:space:]]*(@(annually|yearly|monthly|weekly|daily|midnight|hourly)|([^[:space:]]+[[:space:]]+){4}[^[:space:]]+)[[:space:]]*$
+                                        type: string
+                                    required:
+                                    - nodes
+                                    type: object
+                                    x-kubernetes-validations:
+                                    - message: schedule and duration must be set together
+                                      rule: has(self.schedule) == has(self.duration)
+                                  maxItems: 64
+                                  minItems: 1
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              required:
+                              - budgets
+                              type: object
+                            type:
+                              enum:
+                              - RollingUpdate
+                              type: string
+                          required:
+                          - disruption
+                          - type
+                          type: object
+                      required:
+                      - strategy
+                      type: object
+                    userParams:
+                      description: UserParams configures labels and taints for the
+                        pool's nodes.
+                      properties:
+                        labels:
+                          additionalProperties:
+                            description: LabelValue follows Kubernetes label value
+                              syntax.
+                            maxLength: 63
+                            pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
+                            type: string
+                          description: |-
+                            Labels specifies node labels. The prefixes nke.nvidia.com, kubernetes.io,
+                            k8s.io and their subdomains are reserved.
+                          maxProperties: 128
+                          type: object
+                          x-kubernetes-validations:
+                          - message: label keys must be Kubernetes qualified names
+                            rule: 'self.all(k, k.size() <= 317 && k.matches(''^([a-z0-9]([-a-z0-9]*[a-z0-9])?([.][a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$'')
+                              && (k.split(''/'').size() == 1 ? k.size() <= 63 : k.split(''/'')[0].size()
+                              <= 253 && k.split(''/'')[1].size() <= 63))'
+                          - message: platform label prefixes are reserved
+                            rule: self.all(k, !k.matches('(^|[.])(nke[.]nvidia[.]com|kubernetes[.]io|k8s[.]io)/'))
+                        taints:
+                          description: Taints specifies node taints that control which
+                            pods can be scheduled on these nodes.
+                          items:
+                            description: NodeTaint uses Kubernetes label and scheduling
+                              conventions.
+                            properties:
+                              effect:
+                                enum:
+                                - NoSchedule
+                                - PreferNoSchedule
+                                - NoExecute
+                                type: string
+                              key:
+                                description: QualifiedName is a Kubernetes label or
+                                  taint key, with an optional DNS prefix.
+                                maxLength: 317
+                                minLength: 1
+                                pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
+                                type: string
+                                x-kubernetes-validations:
+                                - message: key name must be at most 63 characters
+                                    and its DNS prefix at most 253
+                                  rule: 'self.split(''/'').size() == 1 ? self.size()
+                                    <= 63 : self.split(''/'')[0].size() <= 253 &&
+                                    self.split(''/'')[1].size() <= 63'
+                              value:
+                                description: LabelValue follows Kubernetes label value
+                                  syntax.
+                                maxLength: 63
+                                pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
+                                type: string
+                            required:
+                            - effect
+                            - key
+                            type: object
+                          maxItems: 64
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - key
+                          - effect
+                          x-kubernetes-list-type: map
+                      type: object
+                    vpcSubnetID:
+                      description: VPCSubnetID identifies an existing subnet within
+                        spec.network.vpcID for this pool's nodes.
+                      format: uuid
+                      maxLength: 36
+                      type: string
+                  required:
+                  - instanceType
+                  - name
+                  - nodeProfile
+                  - replicas
+                  - vpcSubnetID
+                  type: object
+                maxItems: 64
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              release:
+                description: ReleaseSelection selects the release channel used for
+                  the control plane.
+                properties:
+                  channel:
+                    description: ReleaseChannelReference selects a release channel
+                      and an optional version within it.
+                    properties:
+                      name:
+                        description: Name identifies the release channel.
+                        maxLength: 253
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                        type: string
+                      version:
+                        description: Version optionally selects a version within the
+                          release channel.
+                        maxLength: 128
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - channel
+                type: object
+            required:
+            - apiServerAccess
+            - clusterNetwork
+            - controlPlaneClass
+            - release
+            type: object
+            x-kubernetes-validations:
+            - message: authentication is only configurable at cluster creation
+              rule: has(self.authentication) == has(oldSelf.authentication) && (!has(self.authentication)
+                || self.authentication == oldSelf.authentication)
+            - message: network is required when nodePools are configured
+              rule: '!has(self.nodePools) || self.nodePools.size() == 0 || has(self.network)'
+          status:
+            description: NVKEClusterStatus reports the observed state of the control
+              plane and node pools.
+            properties:
+              conditions:
+                description: |-
+                  Conditions report readiness and progress, with details in reason and message.
+                  A missing condition means its state is unknown.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              nodePools:
+                description: NodePools reports the observed state of each pool, identified
+                  by its name in spec.nodePools.
+                items:
+                  description: NodePoolStatus reports the observed state of a cluster's
+                    node pool.
+                  properties:
+                    conditions:
+                      description: Conditions report pool readiness and progress,
+                        with details in reason and message.
+                      items:
+                        description: Condition contains details for one aspect of
+                          the current state of this API Resource.
+                        properties:
+                          lastTransitionTime:
+                            description: |-
+                              lastTransitionTime is the last time the condition transitioned from one status to another.
+                              This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                            format: date-time
+                            type: string
+                          message:
+                            description: |-
+                              message is a human readable message indicating details about the transition.
+                              This may be an empty string.
+                            maxLength: 32768
+                            type: string
+                          observedGeneration:
+                            description: |-
+                              observedGeneration represents the .metadata.generation that the condition was set based upon.
+                              For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                              with respect to the current state of the instance.
+                            format: int64
+                            minimum: 0
+                            type: integer
+                          reason:
+                            description: |-
+                              reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                              Producers of specific condition types may define expected values and meanings for this field,
+                              and whether the values are considered a guaranteed API.
+                              The value should be a CamelCase string.
+                              This field may not be empty.
+                            maxLength: 1024
+                            minLength: 1
+                            pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                            type: string
+                          status:
+                            description: status of the condition, one of True, False,
+                              Unknown.
+                            enum:
+                            - "True"
+                            - "False"
+                            - Unknown
+                            type: string
+                          type:
+                            description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                            maxLength: 316
+                            pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                            type: string
+                        required:
+                        - lastTransitionTime
+                        - message
+                        - reason
+                        - status
+                        - type
+                        type: object
+                      maxItems: 32
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - type
+                      x-kubernetes-list-type: map
+                    name:
+                      description: Name identifies the corresponding pool in spec.nodePools.
+                      maxLength: 253
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                      type: string
+                    observedGeneration:
+                      description: ObservedGeneration refers to the enclosing NVKECluster's
+                        generation.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    readyReplicas:
+                      description: ReadyReplicas is the number of nodes that are ready.
+                        Omitted means unknown.
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    replicas:
+                      description: Replicas is the observed number of nodes in the
+                        pool. Omitted means unknown.
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    updatedReplicas:
+                      description: |-
+                        UpdatedReplicas is the number of nodes matching the requested pool configuration.
+                        Omitted means unknown.
+                      format: int32
+                      minimum: 0
+                      type: integer
+                  required:
+                  - name
+                  type: object
+                maxItems: 64
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration identifies the cluster generation
+                  reflected in this status.
+                format: int64
+                minimum: 0
+                type: integer
+              provisioning:
+                description: Provisioning preserves creation identity across retries
+                  and spec changes.
+                properties:
+                  endpoint:
+                    description: Endpoint pins the service so configuration changes
+                      cannot redirect an existing cluster.
+                    maxLength: 2048
+                    minLength: 1
+                    type: string
+                  generation:
+                    description: Generation records the spec used to initiate creation,
+                      not merely observed by reconciliation.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  id:
+                    description: ID identifies the created cluster. It is absent until
+                      creation is confirmed.
+                    format: uuid
+                    type: string
+                required:
+                - endpoint
+                - generation
+                type: object
+              resolvedRelease:
+                description: ResolvedRelease identifies the control-plane release
+                  selected for this cluster.
+                properties:
+                  name:
+                    description: ResourceName is a Kubernetes DNS subdomain name,
+                      not a provider identifier.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  version:
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - version
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

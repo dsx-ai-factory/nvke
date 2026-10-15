@@ -40,6 +40,14 @@ data:
       {{- range splitList "," (.Values.supportedInfraProviders | default "nico") }}
       - {{ trim . | quote }}
       {{- end }}
+    {{- with .Values.nodeMetadata.allowlistedLabelKeys }}
+    nodeMetadataAllowlistedLabelKeys:
+      {{- range . }}
+      - {{ trim . | quote }}
+      {{- end }}
+    {{- else }}
+    nodeMetadataAllowlistedLabelKeys: []
+    {{- end }}
     tracing:
       enabled: {{ if $tracing.enabled }}true{{ else }}false{{ end }}
       endpoint: {{ if $traceToEndpoint }}{{ $tracing.endpoint | quote }}{{ else }}""{{ end }}
@@ -52,11 +60,13 @@ data:
     kubeadmImageRepository: {{ .Values.kubeadm.imageRepository | default "registry.k8s.io" | quote }}
     cniImageRegistry: {{ .Values.cni.imageRegistry | quote }}
     installCNIAfterInit: {{ .Values.cni.installAfterInit }}
+    allowLegacyCalicoClusterCreation: {{ .Values.cni.allowLegacyCalicoClusterCreation }}
     nicoControllersEnabled: {{ include "controller.controllerConfig.orGoDefault" (list .Values.controllers.nico.enabled true) }}
     profilesDir: {{ .Values.profiles.path | default "./profiles" | quote }}
     runbooksDir: {{ include "controller.runbooksDir" . | quote }}
     tenantAccessEnabled: {{ .Values.tenantAccess.enabled }}
     nodeAgent:
+      updateMethod: {{ .Values.nodeAgent.updateMethod | quote }}
       spireAttestationMethod: {{ .Values.nodeAgent.spireAttestationMethod | quote }}
       dsxImds:
         endpoint: {{ if $dsxImds }}{{ trim .Values.nodeAgent.dsxImds.endpoint | quote }}{{ else }}"http://169.254.169.254"{{ end }}
@@ -74,13 +84,13 @@ data:
       externalMTLSEnabled: {{ .Values.nodeAgent.externalMTLS.enabled }}
     oidc:
       managementOIDCAuth:
-        enabled: {{ .Values.nkeOIDCAuth.enabled }}
-        issuerURL: {{ .Values.nkeOIDCAuth.issuerURL | quote }}
-        discoveryURL: {{ .Values.nkeOIDCAuth.discoveryURL | quote }}
+        enabled: {{ .Values.nvkeOIDCAuth.enabled }}
+        issuerURL: {{ .Values.nvkeOIDCAuth.issuerURL | quote }}
+        discoveryURL: {{ .Values.nvkeOIDCAuth.discoveryURL | quote }}
         caBundleSecretRef:
-          namespace: {{ .Values.nkeOIDCAuth.caBundleSecret.namespace | quote }}
-          name: {{ .Values.nkeOIDCAuth.caBundleSecret.name | quote }}
-          key: {{ .Values.nkeOIDCAuth.caBundleSecret.key | quote }}
+          namespace: {{ .Values.nvkeOIDCAuth.caBundleSecret.namespace | quote }}
+          name: {{ .Values.nvkeOIDCAuth.caBundleSecret.name | quote }}
+          key: {{ .Values.nvkeOIDCAuth.caBundleSecret.key | quote }}
       {{- with $oidcProviders }}
       providers:
         {{- toYaml . | nindent 8 }}

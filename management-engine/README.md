@@ -105,13 +105,13 @@ Stop deployed replicas before debugging with
 
 ## API conventions
 
-All types use `internal.nke.nvidia.com/v1`. Public tenant and operator contracts
+All types use `internal.nvke.nvidia.com/v1`. Public tenant and operator contracts
 (`nke.nvidia.com` and `operator.nke.nvidia.com`) are separately versioned
 projections; do not expose internal structs directly.
 
 | Resource | Scope | Definition and example |
 | --- | --- | --- |
-| NKECluster | Org namespace | [Cluster configuration](apis/v1/nkecluster_types.go), [sample](config/samples/internal_v1_nkecluster.yaml) |
+| NVKECluster | Org namespace | [Cluster configuration](apis/v1/nvkecluster_types.go), [sample](config/samples/internal_v1_nvkecluster.yaml) |
 | MachineImage | Cluster | [Immutable image identity and NICo boot contract](apis/v1/machineimage_types.go) |
 | ClusterRelease | Cluster | [Control-plane image and initialization](apis/v1/clusterrelease_types.go) |
 | ClusterReleaseChannel | Cluster | [Release catalog](apis/v1/clusterreleasechannel_types.go), [sample](config/samples/internal_v1_clusterreleasechannel.yaml) |
@@ -124,7 +124,7 @@ projections; do not expose internal structs directly.
 | Concurrency | Preserve opaque `resourceVersion` and field ownership. Spec expresses desired state; controllers report progress through status. |
 | Conditions | Use `metav1.Condition` and `observedGeneration`. Missing or stale conditions do not establish readiness. Unknown counts are absent; observed zero counts are explicit. |
 | References | Resolve tenant references within the org namespace and pin lifecycle ownership by UID. Release references select operator-published configuration. |
-| Node pools | `spec.nodePools` embeds [worker configuration](apis/v1/nodepool_types.go) within NKECluster; see the [cluster sample](config/samples/internal_v1_nkecluster.yaml). |
+| Node pools | `spec.nodePools` embeds [worker configuration](apis/v1/nodepool_types.go) within NVKECluster; see the [cluster sample](config/samples/internal_v1_nvkecluster.yaml). |
 | Replicas | `spec.nodePools[].replicas` expresses desired worker count; zero requests zero workers. Rollout policy controls replacement. |
 | Deletion | Use deletion timestamps and controller-owned finalizers. |
 

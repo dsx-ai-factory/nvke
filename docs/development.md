@@ -72,6 +72,14 @@ the workspace and licence-header checks when your change touched what they cover
 It prints what it is about to run, and what it is not covering, before it runs
 anything.
 
+When your change touches the workspace, preflight runs `make work-check`. That is
+not read-only: it runs `go work sync` and `go mod tidy` in every module, so it can
+rewrite `go.mod`, `go.sum` and `go.work.sum` under you. It reaches a Go module
+proxy whenever the module or checksum data it needs is not already in your
+module cache, so on a cold cache it needs network access. Commit what it
+changes, or stash first if you want a clean tree. See
+[go-workspace.md](go-workspace.md).
+
 Scope it yourself when you want to:
 
 ```bash

@@ -82,6 +82,12 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
 	// nodes for its scale, rotation, and certificate checks; the core lane only
 	// proves that the deployed controller's control-plane path can create a usable
 	// cluster and delete it again.
+	Entry("CAPD node-agent convergence", Ordered, ContinueOnFailure, Label("node-agent-upgrade"), testSpec{
+		buildSpec: capdSpec,
+		shape:     clusterShape{controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3, NodeAgentVersion: "v0.1.991", SystemReservedMemory: "1Gi"}, workerPools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}}},
+		options:   nvke.Options{Provision: 15 * time.Minute, Delete: 5 * time.Minute, Poll: 2 * time.Second},
+		validate:  validations{provisioningOnly: true, nodeAgentUpgrade: true},
+	}),
 	Entry("CAPD core", Ordered, ContinueOnFailure, Label("core", "core-docker"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
@@ -298,9 +304,9 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			kubernetesVersion: "1.34.2",
-			// Calico, so no openVSwitch assertion here; the "nico-vms ovn" entry
-			// below carries it. Large instances kept: cpu2-mem2gb was sized
-			// against ovnkube-node.
+			// OVN-Kubernetes, via the nico-vms default. Open vSwitch is asserted
+			// on the "nico-vms ovn" entry below. Large instances kept:
+			// cpu2-mem2gb was sized against ovnkube-node.
 			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
 			workerPools:       []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
@@ -363,7 +369,6 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
 	Entry("nico-vms OS profiles", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "os-profiles"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			cniPlugin:         CNIPluginCalico, // Simply to make this test run faster (520s vs 1011s).
 			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 			workerPools: []nvke.NodePoolSpec{
 				// Old agent image pins the agent version to 0.1.22, which is before the new nvkeproto.CheckCloudInitStatus was introduced in version 0.1.24.
@@ -430,16 +435,8 @@ func nicoForgeTenant() testSpec {
 	return testSpec{
 		buildSpec: nicoForgeSpec,
 		shape: clusterShape{
-			// Cluster-level rather than a control-plane node pool, because the
-			// site's own controller rejects such a pool at create. #1054 turned
-			// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER on by
-			// default, and the controller chart does not set the variable, so
-			// that default is what a site controller runs with.
-			//
-			// Not nvkectl, despite it forcing the same flag on: that one
-			// reaches only the ephemeral Kind bootstrap controller, which builds the
-			// site cluster. The tenant is created against the site's controller,
-			// which controllerdeploy never touches.
+			// Cluster-level rather than a control-plane node pool: the site's controller
+			// rejects such a pool at create.
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
@@ -493,7 +490,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			// AfterAll below spent a second full budget on the same cluster.
 			// It stays false when the delete request itself failed, so the
 			// AfterAll still retries a delete the controller never took.
-			deleteAccepted bool
+			deleteAccepted      bool
+			previousAgentMethod string
+			agentMethodChanged  bool
 		)
 
 		// Record any spec failure so the cluster delete can honor preserveOnFailure.
@@ -517,6 +516,12 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				By("Creating the brownfield cluster with the controller OIDC create-default turned off")
 				Expect(nvke.SetOIDCEnabled(ctx, test.k8sClient, false)).To(Succeed())
 			}
+			if spec.validate.nodeAgentUpgrade {
+				Expect(os.Getenv("NVKE_E2E_NODE_AGENT_UPGRADE")).To(Equal("true"), "requires isolated node-agent fixtures")
+				var methodErr error
+				previousAgentMethod, agentMethodChanged, methodErr = nvke.SetNodeAgentUpdateMethod(ctx, test.k8sClient, "bundle")
+				Expect(methodErr).NotTo(HaveOccurred())
+			}
 			test.initCluster(ctx, spec)
 		}, Label("lifecycle"), NodeTimeout(2*time.Hour))
 
@@ -533,6 +538,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			validateNodeReadinessPostCreate(&test)
 			if spec.validate.tpmAttestation {
 				validateTPMAttestationPostCreate(&test)
+			}
+			if spec.validate.nodeAgentUpgrade {
+				validateNodeAgentUpgrade(&test)
 			}
 			if spec.validate.openVSwitch {
 				validateOpenVSwitchPostCreate(&test)
@@ -626,7 +634,11 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				Skip("Preserving the cluster after a failure")
 			}
 
-			test.deleteClusterAndWait(ctx, &deleteAccepted)
+			if spec.validate.nodeAgentUpgrade {
+				deleteClusterWithAgentDrain(ctx, &test, &deleteAccepted)
+			} else {
+				test.deleteClusterAndWait(ctx, &deleteAccepted)
+			}
 			deleted = true
 		}, Label("lifecycle"), NodeTimeout(80*time.Minute))
 
@@ -650,6 +662,12 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 		})
 
 		AfterAll(func(ctx context.Context) {
+			defer func() {
+				if agentMethodChanged && test.k8sClient != nil {
+					_, _, err := nvke.SetNodeAgentUpdateMethod(ctx, test.k8sClient, previousAgentMethod)
+					Expect(err).NotTo(HaveOccurred())
+				}
+			}()
 			// Named once so the delete below and the nvkectl sweep cannot disagree
 			// about when the cluster should outlive the run.
 			keepCluster := test.cfg.Lifecycle.ReuseCluster != "" ||
@@ -770,6 +788,7 @@ type validations struct {
 	// provisioningOnly limits the lifecycle to create, node readiness, delete,
 	// and the shared tenant-access cleanup check.
 	provisioningOnly bool
+	nodeAgentUpgrade bool
 	// postReadyChecks verifies intended cluster state after the initial CAPD
 	// cluster and all desired nodes are Ready.
 	postReadyChecks bool
@@ -1081,7 +1100,6 @@ func (t *tenantTest) deleteClusterAndWait(ctx context.Context, accepted *bool) {
 const (
 	clusterNamePrefix        = "e2e" // CreateCluster appends the backend and a timestamp
 	defaultKubernetesVersion = "1.34.2"
-	CNIPluginCalico          = "calico"
 	CNIPluginOVN             = "ovn-kubernetes"
 	capdControlPlaneVIP      = "172.31.1.1"
 
@@ -1195,8 +1213,7 @@ func capdSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSp
 
 // capdControlPlaneControllerSpec builds a CAPD topology whose control plane is
 // provisioned by the cluster-level control-plane controller: no control-plane
-// node pool, a cluster-level control plane config instead. Requires CWE deployed
-// with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true.
+// node pool, a cluster-level control plane config instead.
 func capdControlPlaneControllerSpec(cfg config.Config, name string, shape clusterShape) nvke.ClusterSpec {
 	spec := capdSpec(cfg, name, shape)
 	spec.ControlPlane.Pools = nil

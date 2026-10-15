@@ -22,6 +22,8 @@ import (
 type HookType string
 
 const (
+	ProvisionNodeWorkflowType = "ProvisionNode"
+
 	BeforeJoinNode   HookType = "before-join"
 	AfterJoinNode    HookType = "after-join"
 	BeforeRemoveNode HookType = "before-remove"
@@ -79,7 +81,7 @@ func ProvisionNode(ctx workflow.Context, input ProvisionNodeInput) error {
 	}
 	recordPhase("capi_create", infraProvisionStart, workflow.Now(ctx))
 
-	if err := provisionNode(ctx, input, labels); err != nil {
+	if err := provisionNode(ctx, input, labels, nodeCtx); err != nil {
 		// Best effort to update the node conditions to indicate the provisioning workflow failed
 		if err := updateNodeProvisioningMessage(ctx, input.NodeID, fmt.Sprintf("Workflow failed: %s", err)); err != nil {
 			logger.Error("failed to update node conditions", "error", err)
@@ -186,7 +188,34 @@ func getNodeProvisioningContext(ctx workflow.Context, nodeID uuid.UUID) (activit
 	return nodeCtx, nil
 }
 
-func provisionNode(ctx workflow.Context, input ProvisionNodeInput, labels nodeMetricLabels) error {
+func ensureNodeAgentVersion(ctx workflow.Context, nodeCtx activities.NodeProvisioningContext) error {
+	// GetVersion checks workflow history, not the node-agent version.
+	// Existing workflows must replay without this new activity.
+	historyVersion := workflow.GetVersion(ctx, "node-agent-before-preflight", workflow.DefaultVersion, 1)
+	if historyVersion == workflow.DefaultVersion {
+		return nil
+	}
+	if nodeCtx.NodeAgentVersion == "" {
+		return nil
+	}
+	var a *activities.Activities
+	input := activities.EnsureNodeAgentVersionInput{
+		NodeID:  nodeCtx.NodeID,
+		Version: nodeCtx.NodeAgentVersion,
+		Method:  nodeCtx.NodeAgentUpdateMethod,
+	}
+	options := workflow.ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval: 10 * time.Second,
+			MaximumInterval: time.Minute,
+			MaximumAttempts: 0, // Retry until the desired agent version runs.
+		},
+	}
+	return workflow.ExecuteActivity(workflow.WithActivityOptions(ctx, options), a.EnsureNodeAgentVersion, input).Get(ctx, nil)
+}
+
+func provisionNode(ctx workflow.Context, input ProvisionNodeInput, labels nodeMetricLabels, nodeCtx activities.NodeProvisioningContext) error {
 	recordPhase := func(phase string, start, end time.Time) {
 		if !workflow.IsReplaying(ctx) {
 			metrics.RecordProvisionPhase(labels.ClusterName, labels.NodeType, phase, end.Sub(start))
@@ -203,6 +232,9 @@ func provisionNode(ctx workflow.Context, input ProvisionNodeInput, labels nodeMe
 	hostPrepStart := workflow.Now(ctx)
 	endHostPrep := func() { recordPhase("host_preparation", hostPrepStart, workflow.Now(ctx)) }
 
+	if err := ensureNodeAgentVersion(ctx, nodeCtx); err != nil {
+		return fmt.Errorf("converging node agent before preflight: %w", err)
+	}
 	if err := waitForNodePreflight(ctx, input.NodeID); err != nil {
 		endHostPrep()
 		return fmt.Errorf("failed to wait for node preflight to succeed: %w", err)

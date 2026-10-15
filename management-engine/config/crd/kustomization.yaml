@@ -3,11 +3,11 @@
 
 # Included by config/state for installation on the datastore cluster.
 resources:
-- bases/internal.nke.nvidia.com_clusterreleases.yaml
-- bases/internal.nke.nvidia.com_machineimages.yaml
-- bases/internal.nke.nvidia.com_nkeclusters.yaml
-- bases/internal.nke.nvidia.com_nodepoolreleases.yaml
-- bases/internal.nke.nvidia.com_clusterreleasechannels.yaml
+- bases/internal.nvke.nvidia.com_clusterreleases.yaml
+- bases/internal.nvke.nvidia.com_machineimages.yaml
+- bases/internal.nvke.nvidia.com_nvkeclusters.yaml
+- bases/internal.nvke.nvidia.com_nodepoolreleases.yaml
+- bases/internal.nvke.nvidia.com_clusterreleasechannels.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

@@ -10,21 +10,20 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"syscall"
 	"time"
 )
 
 const operationFileName = "operation.json"
 
 var (
-	operationIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
+	requestKeyPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)_(apt|bundle)$`)
 
-	// ErrOperationConflict means an operation ID was reused for a different request.
-	ErrOperationConflict = errors.New("node-agent upgrade operation conflicts with existing request")
 	// ErrOperationActive means another non-terminal node-agent operation owns the node.
 	ErrOperationActive = errors.New("another node-agent upgrade operation is active")
 )
 
-// Store persists updater operations in one directory per caller-provided ID.
+// Store persists updater state in one directory per target version and method.
 type Store struct {
 	Root string
 }
@@ -34,29 +33,29 @@ func NewStore(root string) *Store {
 	return &Store{Root: root}
 }
 
-// ValidateOperationID rejects values that cannot safely be used as systemd
+// ValidateRequestKey rejects values that cannot safely be used as systemd
 // instance names and operation-directory names.
-func ValidateOperationID(id string) error {
-	if !operationIDPattern.MatchString(id) {
-		return fmt.Errorf("operation_id must match %s", operationIDPattern.String())
+func ValidateRequestKey(key string) error {
+	if !requestKeyPattern.MatchString(key) {
+		return fmt.Errorf("request pair must match %s", requestKeyPattern.String())
 	}
 	return nil
 }
 
 // OperationDir returns the validated directory for an operation.
-func (s *Store) OperationDir(id string) (string, error) {
-	if err := ValidateOperationID(id); err != nil {
+func (s *Store) OperationDir(key string) (string, error) {
+	if err := ValidateRequestKey(key); err != nil {
 		return "", err
 	}
 	if s == nil || s.Root == "" {
 		return "", errors.New("node-agent upgrade store root is empty")
 	}
-	return filepath.Join(s.Root, id), nil
+	return filepath.Join(s.Root, key), nil
 }
 
 // Create persists op, returning an identical existing request idempotently.
 func (s *Store) Create(op Operation) (Operation, bool, error) {
-	dir, err := s.OperationDir(op.ID)
+	dir, err := s.OperationDir(op.Key())
 	if err != nil {
 		return Operation{}, false, err
 	}
@@ -71,9 +70,14 @@ func (s *Store) Create(op Operation) (Operation, bool, error) {
 		return Operation{}, false, err
 	}
 	if active != nil {
-		return Operation{}, false, fmt.Errorf("%w: %s is %s", ErrOperationActive, active.ID, active.Phase)
+		return Operation{}, false, fmt.Errorf("%w: %s is %s", ErrOperationActive, active.Key(), active.Phase)
 	}
 
+	// A completed request can be retried with a new artifact. Retain only files
+	// captured for this installation, so restoration cannot use an older retry.
+	if err := os.RemoveAll(dir); err != nil {
+		return Operation{}, false, fmt.Errorf("clearing completed request files: %w", err)
+	}
 	now := time.Now().UTC()
 	op.Phase = PhasePending
 	op.Step = "queued"
@@ -92,22 +96,22 @@ func (s *Store) Create(op Operation) (Operation, bool, error) {
 // Existing returns an idempotently matching operation before the caller does
 // artifact resolution or other external work.
 func (s *Store) Existing(request Operation) (Operation, bool, error) {
-	existing, err := s.Load(request.ID)
+	existing, err := s.Load(request.Key())
 	if errors.Is(err, os.ErrNotExist) {
 		return Operation{}, false, nil
 	}
 	if err != nil {
 		return Operation{}, false, err
 	}
-	if !sameRequest(existing, request) {
-		return Operation{}, false, ErrOperationConflict
+	if existing.Terminal() {
+		return Operation{}, false, nil
 	}
 	return existing, true, nil
 }
 
 // Load reads a persisted operation.
-func (s *Store) Load(id string) (Operation, error) {
-	dir, err := s.OperationDir(id)
+func (s *Store) Load(key string) (Operation, error) {
+	dir, err := s.OperationDir(key)
 	if err != nil {
 		return Operation{}, err
 	}
@@ -117,10 +121,10 @@ func (s *Store) Load(id string) (Operation, error) {
 	}
 	var op Operation
 	if err := json.Unmarshal(data, &op); err != nil {
-		return Operation{}, fmt.Errorf("decoding operation %s: %w", id, err)
+		return Operation{}, fmt.Errorf("decoding operation %s: %w", key, err)
 	}
-	if op.ID != id {
-		return Operation{}, fmt.Errorf("operation file for %s contains id %q", id, op.ID)
+	if op.Key() != key {
+		return Operation{}, fmt.Errorf("operation file for %s contains request pair %q", key, op.Key())
 	}
 	return op, nil
 }
@@ -135,7 +139,7 @@ func (s *Store) Active() (*Operation, error) {
 		return nil, fmt.Errorf("listing node-agent upgrade operations: %w", err)
 	}
 	for _, entry := range entries {
-		if !entry.IsDir() || ValidateOperationID(entry.Name()) != nil {
+		if !entry.IsDir() || ValidateRequestKey(entry.Name()) != nil {
 			continue
 		}
 		op, loadErr := s.Load(entry.Name())
@@ -153,8 +157,8 @@ func (s *Store) Active() (*Operation, error) {
 }
 
 // SetStatus atomically updates the operation phase, step, and error message.
-func (s *Store) SetStatus(id string, phase Phase, step, errorMessage string) (Operation, error) {
-	op, err := s.Load(id)
+func (s *Store) SetStatus(key string, phase Phase, step, errorMessage string) (Operation, error) {
+	op, err := s.Load(key)
 	if err != nil {
 		return Operation{}, err
 	}
@@ -168,9 +172,9 @@ func (s *Store) SetStatus(id string, phase Phase, step, errorMessage string) (Op
 	return op, nil
 }
 
-// SetPreviousPackage records the exact Debian package retained for rollback.
-func (s *Store) SetPreviousPackage(id, name, version string) (Operation, error) {
-	op, err := s.Load(id)
+// SetPreviousPackage records the exact Debian package retained for restoration.
+func (s *Store) SetPreviousPackage(key, name, version string) (Operation, error) {
+	op, err := s.Load(key)
 	if err != nil {
 		return Operation{}, err
 	}
@@ -184,13 +188,13 @@ func (s *Store) SetPreviousPackage(id, name, version string) (Operation, error) 
 }
 
 func (s *Store) write(op Operation) error {
-	dir, err := s.OperationDir(op.ID)
+	dir, err := s.OperationDir(op.Key())
 	if err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(op, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encoding operation %s: %w", op.ID, err)
+		return fmt.Errorf("encoding operation %s: %w", op.Key(), err)
 	}
 	tmp, err := os.CreateTemp(dir, ".operation-*.json")
 	if err != nil {
@@ -219,16 +223,115 @@ func (s *Store) write(op Operation) error {
 	return nil
 }
 
-func sameRequest(existing, requested Operation) bool {
-	if existing.ID != requested.ID || existing.Action != requested.Action {
-		return false
+// Current returns the newest durable operation, including completed attempts.
+func (s *Store) Current() (*Operation, error) {
+	active, err := s.Active()
+	if err != nil || active != nil {
+		return active, err
 	}
-	switch existing.Action {
-	case ActionUpgrade:
-		return existing.TargetVersion == requested.TargetVersion && existing.Method == requested.Method
-	case ActionRollback:
-		return existing.RestoreFromOperationID == requested.RestoreFromOperationID
-	default:
-		return false
+	entries, err := os.ReadDir(s.Root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
 	}
+	if err != nil {
+		return nil, fmt.Errorf("listing upgrade status: %w", err)
+	}
+	var current *Operation
+	for _, entry := range entries {
+		if !entry.IsDir() || ValidateRequestKey(entry.Name()) != nil {
+			continue
+		}
+		op, err := s.Load(entry.Name())
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if current == nil || op.CreatedAt.After(current.CreatedAt) {
+			current = &op
+		}
+	}
+	return current, nil
+}
+
+// Lock serializes admission with the bootstrap updater in another process.
+func (s *Store) Lock() (func(), error) {
+	if err := os.MkdirAll(s.Root, 0o700); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(filepath.Join(s.Root, "upgrade.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	return func() { _ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN); _ = file.Close() }, nil
+}
+
+// Prune bounds completed attempts and retains assets for active and recent requests.
+// Callers must hold Lock while pruning and admitting a new attempt.
+func (s *Store) Prune() error {
+	operations, err := s.operations()
+	if err != nil {
+		return err
+	}
+	keep := map[string]bool{}
+	latest := map[string]Operation{}
+	for _, op := range operations {
+		if !op.Terminal() {
+			keep[op.Key()] = true
+			continue
+		}
+		category := "failure"
+		if op.Phase == PhaseSucceeded {
+			category = "success"
+		}
+		if previous, ok := latest[category]; !ok || op.CreatedAt.After(previous.CreatedAt) {
+			latest[category] = op
+		}
+	}
+	for _, op := range latest {
+		keep[op.Key()] = true
+	}
+	for _, op := range operations {
+		if keep[op.Key()] {
+			continue
+		}
+		dir, err := s.OperationDir(op.Key())
+		if err != nil {
+			return err
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("pruning completed upgrade: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Store) operations() ([]Operation, error) {
+	entries, err := os.ReadDir(s.Root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing upgrade attempts: %w", err)
+	}
+	var operations []Operation
+	for _, entry := range entries {
+		if !entry.IsDir() || ValidateRequestKey(entry.Name()) != nil {
+			continue
+		}
+		op, err := s.Load(entry.Name())
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		operations = append(operations, op)
+	}
+	return operations, nil
 }

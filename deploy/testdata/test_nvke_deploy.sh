@@ -4,7 +4,7 @@
 #
 # Tests for nvke-deploy.sh against deploy/nico, committed and rendered for a
 # site, in --dry-run: the item order, where each chart comes from, and the
-# refusals. Needs python3 and nvkectl: NVKECTL names the binary, else the
+# refusals, and check-site.sh against stub tools. Needs python3 and nvkectl: NVKECTL names the binary, else the
 # one on PATH; make -C deploy test builds it.
 #
 # Usage: ./test_nvke_deploy.sh
@@ -65,21 +65,21 @@ expect "a template item is rendered by the executor when --config is given" "kub
 # site values and renders the template items, and the executor installs the
 # result with no --config and no knowledge of the site.
 mkdir -p "${WORK}/site"
-for f in nico-token registry-token tenant-password; do printf 'secret-%s\n' "$f" >"${WORK}/site/$f"; done
+for f in nico-token tenant-password; do printf 'secret-%s\n' "$f" >"${WORK}/site/$f"; done
 sed -e 's|REPLACE_ARCH|arm64|; s|REPLACE_NICO_ENDPOINT|https://nico.example.com|; s|REPLACE_NICO_ORG_ID|org-1|; s|REPLACE_NICO_API_NAME|forge|' \
-    -e "s|REPLACE_NICO_TOKEN_PATH|${WORK}/site/nico-token|; s|REPLACE_REGISTRY_SERVER|ghcr.io|; s|REPLACE_REGISTRY_USERNAME|robot|" \
-    -e "s|REPLACE_REGISTRY_TOKEN_PATH|${WORK}/site/registry-token|; s|REPLACE_TENANT_USER|nvke|; s|REPLACE_TENANT_PASSWORD_PATH|${WORK}/site/tenant-password|" \
+    -e "s|REPLACE_NICO_TOKEN_PATH|${WORK}/site/nico-token|" \
+    -e "s|REPLACE_TENANT_USER|nvke|; s|REPLACE_TENANT_PASSWORD_PATH|${WORK}/site/tenant-password|" \
     -e "s|REPLACE_DB_PASSWORD_PATH|${WORK}/site/db-password|" \
     "${REPO}/cli/examples/sitespec.yaml" >"${WORK}/site/sitespec.yaml"
 # deploy/nico enables profiles.image without a pin, so the spec names the image.
 sed -i.bak 's|^  # images:$|  images:|; s|^  #   profiles: ""$|    profiles: ghcr.io/example/controller-profiles:v1|' "${WORK}/site/sitespec.yaml" && rm -f "${WORK}/site/sitespec.yaml.bak"
 printf -- '-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n' >"${WORK}/site/ca.crt"
 printf -- '-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n' >"${WORK}/site/ca.key"
-printf 'spire:\n  caCertFile: %s\n  caKeyFile: %s\n' "${WORK}/site/ca.crt" "${WORK}/site/ca.key" >>"${WORK}/site/sitespec.yaml"
+printf 'spire:\n  trustDomain: nvke-site.nke.local\n  caCertFile: %s\n  caKeyFile: %s\n' "${WORK}/site/ca.crt" "${WORK}/site/ca.key" >>"${WORK}/site/sitespec.yaml"
 rendered="${WORK}/rendered"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${rendered}" 2>&1)" || fail "render exited $?: ${out}"
 expect "render reports the site values" '^controller: site values written$' "${out}"
-expect "render reports the templates" '^nvke-base-config: 4 templates rendered; applies as a manifest item$' "${out}"
+expect "render reports the templates" '^nvke-base-config: 3 templates rendered; applies as a manifest item$' "${out}"
 expect "a missing database password file is created" "^database password generated and written to ${WORK}/site/db-password$" "${out}"
 [[ -s "${WORK}/site/db-password" && ! -e "${rendered}/db-password" ]] && pass "the password lives in the operator's file, not the tree" || fail "db password placement"
 find "${rendered}" -maxdepth 0 -perm 0700 | grep -q . && pass "the rendered tree is private" || fail "rendered tree mode"
@@ -88,7 +88,7 @@ grep -q '^  - site-values.yaml$' "${rendered}/controller/release.yaml" && pass "
 grep -q 'token: "secret-nico-token"' "${rendered}/nvke-base-config/20-nico-credentials.yaml" && pass "the NICo Secret is rendered from the token file" || fail "nico credentials"
 [[ -z "$(ls "${rendered}/nvke-base-config/"*.tmpl 2>/dev/null)" ]] && pass "no template is left in the rendered item" || fail "templates left"
 grep -q 'name: nvke-base-config, type: manifest' "${rendered}/nvke-deploy.yaml" && pass "the template item became a manifest item" || fail "item list: $(cat "${rendered}/nvke-deploy.yaml")"
-grep -q '^SITE_NAME=nvke-site$' "${rendered}/site.env" && pass "site.env names the site" || fail "site.env"
+grep -q '^SITE_NAME=nvke-site$' "${rendered}/site.env" && grep -q '^SITE_TRUST_DOMAIN=nvke-site.nke.local$' "${rendered}/site.env" && pass "site.env names the site and its trust domain" || fail "site.env"
 expect "the operator is told which files hold credentials" "^${rendered} holds this site's credentials: controller/site-values.yaml, postgresql/site-values.yaml, temporal/site-values.yaml, nvke-base-config/20-nico-credentials.yaml, .*\. Delete it after the install\.$" "${out}"
 [[ "$(cat "${rendered}/.gitignore")" == "*" ]] && pass "the rendered tree ignores itself for git" || fail ".gitignore"
 
@@ -149,12 +149,13 @@ d_cwe="$(fake_layout "${packages}" cwe '{"schemaVersion":2,"config":{"digest":"s
 d_capnico="$(fake_layout "${packages}" capnico-controller-arm64 '{"schemaVersion":2,"config":{"digest":"sha256:1"},"layers":[]}')"
 d_profiles="$(fake_layout "${packages}" controller-profiles '{"schemaVersion":2,"config":{"digest":"sha256:2"},"layers":[]}')"
 d_temporal="$(fake_layout "${packages}" temporal "{\"schemaVersion\":2,\"layers\":[{\"mediaType\":\"application/vnd.cncf.helm.chart.content.v1.tar+gzip\",\"digest\":\"sha256:${layer}\",\"size\":$(wc -c <"${WORK}/chart.tgz" | tr -d ' ')}]}" "${WORK}/chart.tgz")"
+# The shape nvkr release export writes, with the fields the render reads.
 art() { printf '{"name":"%s","kind":"%s","digest":"%s","reference":"nvkr.local/nvke/%s@%s"%s}' "$1" "$2" "$3" "$1" "$3" "${4:-}"; }
 zeros="$(printf '0%.0s' $(seq 1 64))"
 cat >"${WORK}/local.json" <<JSON
-{"schemaVersion":"nvkr.dev/release/v4","subject":"nvkr.local/nvke/releases@sha256:${zeros}","lane":"unqualified-local-execution","scope":"none",
- "artifacts":[$(art cwe oci "${d_cwe}"),$(art capnico-controller-arm64 oci "${d_capnico}" ',"arch":"linux/arm64"'),$(art controller-profiles oci "${d_profiles}"),$(art temporal helm-oci "${d_temporal}")],
- "contentSubject":"sha256:${zeros}","policyDigest":"sha256:${zeros}"}
+{"schemaVersion":"nvkr.dev/release-description/v1","reference":"nvkr.local/nvke/releases@sha256:${zeros}","rootDigest":"sha256:${zeros}",
+ "declaredQualification":"unqualified-local-execution","metadata":{"contentSubject":"sha256:${zeros}"},
+ "outputs":[$(art cwe oci "${d_cwe}"),$(art capnico-controller-arm64 oci "${d_capnico}" ',"os":"linux","arch":"arm64"'),$(art controller-profiles oci "${d_profiles}"),$(art temporal helm-oci "${d_temporal}" ',"chartVersion":"0.74.0"')]}
 JSON
 rendered="${WORK}/rendered-release"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/local.json" --nvkr-run-dir "${run_dir}" --arch linux/arm64 --out "${rendered}" 2>&1)" || fail "render exited $?: ${out}"
@@ -200,18 +201,44 @@ mv "${packages}/cwe.gone" "${packages}/cwe"
 
 # Render refuses, naming every problem at once, and leaves nothing behind.
 cat >"${WORK}/no-cwe.json" <<JSON
-{"schemaVersion":"nvkr.dev/release/v4","subject":"nvkr.local/nvke/releases@sha256:${zeros}","lane":"unqualified-local-execution","scope":"none",
- "artifacts":[$(art capnico-controller-arm64 oci "${d_capnico}" ',"arch":"linux/arm64"'),$(art controller-profiles oci "${d_profiles}")],
- "contentSubject":"sha256:${zeros}","policyDigest":"sha256:${zeros}"}
+{"schemaVersion":"nvkr.dev/release-description/v1","reference":"nvkr.local/nvke/releases@sha256:${zeros}","rootDigest":"sha256:${zeros}",
+ "declaredQualification":"unqualified-local-execution","metadata":{"contentSubject":"sha256:${zeros}"},
+ "outputs":[$(art capnico-controller-arm64 oci "${d_capnico}" ',"os":"linux","arch":"arm64"'),$(art controller-profiles oci "${d_profiles}")]}
 JSON
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/no-cwe.json" --nvkr-run-dir "${run_dir}" --arch linux/amd64 --out "${WORK}/refused" 2>&1)" && fail "render without cwe exited 0"
 expect "the missing image artifact is named" 'controller: image cwe is not in the release' "${out}"
 expect "the wrong architecture is named" 'capnico: image: capnico-controller is published only for other architectures' "${out}"
 [[ ! -e "${WORK}/refused" ]] && pass "a refused render leaves no output" || fail "refused output left behind"
+# The release decides the version of a chart it carries: the difference from
+# the pin is a warning, and the rendered copy records the release's version.
+cat >"${WORK}/other-chart.json" <<JSON
+{"schemaVersion":"nvkr.dev/release-description/v1","reference":"nvkr.local/nvke/releases@sha256:${zeros}","rootDigest":"sha256:${zeros}",
+ "declaredQualification":"unqualified-local-execution","metadata":{"contentSubject":"sha256:${zeros}"},
+ "outputs":[$(art cwe oci "${d_cwe}"),$(art capnico-controller-arm64 oci "${d_capnico}" ',"os":"linux","arch":"arm64"'),$(art controller-profiles oci "${d_profiles}"),$(art temporal helm-oci "${d_temporal}" ',"chartVersion":"9.9.9"')]}
+JSON
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/other-chart.json" --nvkr-run-dir "${run_dir}" --arch linux/arm64 --out "${WORK}/other-chart" 2>&1)" || fail "render with another chart version exited $?: ${out}"
+expect "the chart version difference is a warning" '^warning: temporal: the release carries temporal 9.9.9, release.yaml pins 0.74.0' "${out}"
+grep -q '^  version: "9.9.9"$' "${WORK}/other-chart/temporal/release.yaml" && pass "the rendered copy records the release chart version" || fail "temporal version not recorded"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${HERE}/nvkr-release/bad-schema.json" --out "${WORK}/bad" 2>&1)" && fail "bad description exited 0"
 expect "a bad description is named" 'bad-schema.json' "${out}"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/local.json" --nvkr-run-dir "${run_dir}" --arch linux/arm64 --out "${rendered}" 2>&1)" && fail "existing --out exited 0"
 expect "an existing --out is refused" 'exists; render writes a new directory' "${out}"
+
+# The executor renders by itself when given the site spec, into a private
+# scratch directory that is gone when it exits.
+state="${WORK}/state"
+renders="${state}/renders"
+out="$(NVKE_STATE_DIR="${state}" bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --dry-run 2>&1)" || fail "wrapped render dry run exited $?: ${out}"
+expect "the executor renders before installing" "^=== rendering ${NICO}$" "${out}"
+expect "and installs the rendered tree" "helm upgrade --install nke-controller .*--values ${renders}/install\.[A-Za-z0-9]+/rendered/controller/site-values.yaml" "${out}"
+[[ -z "$(ls -A "${renders}" 2>/dev/null)" ]] && pass "the scratch render is removed when the install ends" || fail "scratch left: $(ls -A "${renders}")"
+find "${state}" -maxdepth 0 -perm 0700 | grep -q . && pass "the state directory is private" || fail "state directory mode"
+out="$(NVKE_STATE_DIR="${state}" bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --release "${HERE}/nvkr-release/bad-schema.json" --dry-run 2>&1)" && fail "failed render exited 0"
+[[ -z "$(ls -A "${renders}" 2>/dev/null)" ]] && pass "a failed render leaves no scratch behind" || fail "scratch left after a failed render: $(ls -A "${renders}")"
+out="$(NVKECTL=/nonexistent/nvkectl bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --dry-run 2>&1)" && fail "render without nvkectl exited 0"
+expect "a render without nvkectl is named" 'nvkectl is needed to render' "${out}"
+out="$(bash "${EXECUTOR}" install --deploy-path "${NICO}" --release "${WORK}/local.json" --dry-run 2>&1)" && fail "release without sitespec exited 0"
+expect "a release without the site spec is refused" 'release needs --sitespec' "${out}"
 
 # A parser failure stops the install before anything is applied.
 mkdir -p "${WORK}/broken-list"
@@ -232,6 +259,103 @@ out="$(bash "${EXECUTOR}" install --config "${CONFIG}" --dry-run 2>&1)" && fail 
 expect "missing --deploy-path is named" 'deploy-path is required' "${out}"
 out="$(bash "${EXECUTOR}" install --deploy-path "${NICO}" --dry-run 2>&1)" && fail "template item without --config exited 0"
 expect "template item needs --config" 'needs --config' "${out}"
+
+# check-site.sh against stub tools: every finding passes on a ready cluster
+# and names the fix on one that is not. The stubs answer the exact reads the
+# check makes; STUB_* switch the answers.
+CHECK="${DEPLOY_DIR}/check-site.sh"
+stubs="${WORK}/stubs"
+mkdir -p "${stubs}"
+cat >"${stubs}/kubectl" <<'STUB'
+#!/usr/bin/env bash
+# Every call is logged; a mutating verb fails, so "changes nothing" is a
+# fact about the calls made, not about the output.
+[[ -z "${STUB_LOG:-}" ]] || printf '%s\n' "$*" >>"${STUB_LOG}"
+case " $* " in
+  *" apply "*|*" create "*|*" delete "*|*" patch "*|*" taint "*|*" annotate "*|*" label "*|*" replace "*|*" edit "*) echo "stub kubectl: mutating verb refused: $*" >&2; exit 97 ;;
+esac
+if [[ -n "${STUB_API_DOWN:-}" && "$1" == "--kubeconfig" && "$3" == "version" ]]; then
+  echo 'The connection to the server 10.0.0.100:6443 was refused' >&2; exit 1
+fi
+if [[ -n "${STUB_DENY:-}" && "$*" == *" get "* ]]; then
+  echo 'Error from server (Forbidden): nodes is forbidden: User "stub" cannot list resource "nodes"' >&2
+  exit 1
+fi
+case "$*" in
+  *"get nodes"*)
+    printf 'node-1\t%s\t%s\n' "${STUB_ARCH:-arm64}" "${STUB_TAINT:-}"
+    [[ -z "${STUB_SECOND_NODE:-}" ]] || printf 'node-2\t%s\t\n' "${STUB_ARCH:-arm64}" ;;
+  *"get storageclass"*)
+    [[ -n "${STUB_NO_SC:-}" ]] || printf 'local-path\ttrue\n'
+    [[ -z "${STUB_SECOND_SC:-}" ]] || printf 'nvme\ttrue\n' ;;
+  *"capi-controller-manager"*)
+    if [[ -n "${STUB_CAPI_IMAGE:-}" ]]; then printf '%s' "${STUB_CAPI_IMAGE}"; else
+      echo 'Error from server (NotFound): deployments.apps "capi-controller-manager" not found' >&2; exit 1; fi ;;
+  *"capi-kubeadm-"*)
+    if [[ -n "${STUB_DENY_KUBEADM:-}" ]]; then echo 'Error from server (Forbidden): deployments.apps is forbidden' >&2; exit 1; fi
+    if [[ -n "${STUB_NO_KUBEADM:-}" ]]; then echo 'Error from server (NotFound): deployments.apps not found' >&2; exit 1; else printf 'deployment.apps/x'; fi ;;
+esac
+exit 0
+STUB
+printf '#!/usr/bin/env bash\ncase "$1" in version) printf "v4.2.4" ;; esac\nexit 0\n' >"${stubs}/helm"
+printf '#!/usr/bin/env bash\nexit 0\n' >"${stubs}/clusterctl"
+printf '#!/usr/bin/env bash\nexit 0\n' >"${stubs}/curl"
+chmod +x "${stubs}"/*
+: >"${WORK}/stub.kubeconfig"
+: >"${WORK}/stub.log"
+out="$(PATH="${stubs}:${PATH}" STUB_LOG="${WORK}/stub.log" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" --release "${WORK}/local.json" --nvkr-run-dir "${run_dir}" 2>&1)" || fail "check-site on a ready cluster exited $?: ${out}"
+grep -qE ' (apply|create|delete|patch|taint|annotate) ' "${WORK}/stub.log" && fail "check-site made a mutating kubectl call: $(grep -E ' (apply|create|delete|patch|taint|annotate) ' "${WORK}/stub.log")" || pass "check-site made no mutating kubectl call ($(wc -l <"${WORK}/stub.log" | tr -d ' ') reads)"
+reject "no trace id line between findings" '^Trace ID: ' "${out}"
+expect "the site spec passes" '^PASS  site spec: .* is valid for the controller stack$' "${out}"
+expect "the release is named with its verify command" '^PASS  release: .* verify it with: nvkr release verify --reference ' "${out}"
+expect "the architecture matches" '^PASS  cluster: node architecture arm64 matches controllerStack.arch$' "${out}"
+expect "no taint" '^PASS  cluster: no node carries the control-plane NoSchedule taint$' "${out}"
+expect "one default StorageClass" '^PASS  cluster: default StorageClass local-path$' "${out}"
+expect "Cluster API is not installed yet and the init command is printed" '^PASS  Cluster API: not installed yet; run: clusterctl init .*--core cluster-api:v[0-9.]+ --bootstrap kubeadm:v[0-9.]+ --control-plane kubeadm:v[0-9.]+ --wait-providers$' "${out}"
+expect "the check ends ready with the init command" '^  clusterctl init --kubeconfig .* --wait-providers$' "${out}"
+expect "the check ends ready with the executor command, by its resolved path" "^  ${DEPLOY_DIR}/nvke-deploy.sh install --deploy-path ${NICO} --sitespec ${WORK}/site/sitespec.yaml --kubeconfig ${WORK}/stub.kubeconfig --release ${WORK}/local.json --nvkr-run-dir ${run_dir}$" "${out}"
+out="$(PATH="${stubs}:${PATH}" STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller:$(sed -n 's/^CAPI_VERSION[[:space:]]*?=[[:space:]]*//p' "${DEPLOY_DIR}/../make/tool-versions.mk")" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" || fail "check-site with Cluster API installed exited $?: ${out}"
+expect "Cluster API at the pinned version passes" '^PASS  Cluster API: v[0-9.]+ already installed$' "${out}"
+reject "no init command is printed when Cluster API is installed" '^  clusterctl init' "${out}"
+out="$(PATH="${stubs}:${PATH}" STUB_DENY=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with denied reads exited 0"
+expect "a denied node read is a finding, not a pass" '^FAIL  cluster: cannot list nodes: Error from server \(Forbidden\)' "${out}"
+expect "a denied StorageClass read is a finding" '^FAIL  cluster: cannot list StorageClasses: ' "${out}"
+expect "a denied Cluster API read is a finding, not an init hint" '^FAIL  cluster: cannot read deployment capi-system/capi-controller-manager: ' "${out}"
+reject "no init hint on a denied read" 'not installed yet' "${out}"
+reject "the check changes nothing" '^(PASS|WARN|SKIP|FAIL)  .*(taint nodes |apply |helm upgrade)' "${out}"
+out="$(PATH="${stubs}:${PATH}" STUB_TAINT=NoSchedule STUB_NO_SC=1 STUB_CAPI_IMAGE=registry.k8s.io/cluster-api/cluster-api-controller:v0.0.1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site on an unready cluster exited 0"
+expect "the taint is a finding with the fix" '^FAIL  cluster: node-1 still carries the control-plane NoSchedule taint, which the bootstrap removes; run: kubectl taint nodes' "${out}"
+expect "the missing StorageClass is a finding with the fix" '^FAIL  cluster: no default StorageClass; Postgres and SPIRE need persistent volumes' "${out}"
+expect "another Cluster API version is a finding with the upgrade command" '^FAIL  Cluster API: v0.0.1 is installed; the stack is tested with v[0-9.]+, and clusterctl init does not upgrade\. Run: clusterctl upgrade apply ' "${out}"
+expect "the failures are counted" '3 finding\(s\) to fix before the stack installs' "${out}"
+out="$(PATH="${stubs}:${PATH}" STUB_ARCH=amd64 STUB_SECOND_NODE=1 STUB_SECOND_SC=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site on a mismatched cluster exited 0"
+expect "an even node count is a finding" '^FAIL  cluster: 2 node\(s\); expected an odd number, at least 1$' "${out}"
+expect "an architecture mismatch is a finding" '^FAIL  cluster: node architecture amd64; the site spec says arm64$' "${out}"
+expect "two default StorageClasses are a finding" '^FAIL  cluster: 2 default StorageClasses; the stack needs exactly one$' "${out}"
+out="$(PATH="${stubs}:${PATH}" STUB_API_DOWN=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with the API down exited 0"
+expect "an unreachable API is a finding" "^FAIL  cluster: API not reachable with ${WORK}/stub.kubeconfig$" "${out}"
+reject "no node findings when the API is down" '^(PASS|FAIL)  cluster: .*node' "${out}"
+out="$(PATH="${stubs}:${PATH}" STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller:$(sed -n 's/^CAPI_VERSION[[:space:]]*?=[[:space:]]*//p' "${DEPLOY_DIR}/../make/tool-versions.mk")@sha256:0000000000000000000000000000000000000000000000000000000000000000" STUB_NO_KUBEADM=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with a core-only Cluster API exited 0"
+expect "a digest-pinned image is compared by its tag, and a core without the kubeadm providers is a finding" '^FAIL  Cluster API: v[0-9.]+ core is installed without capi-kubeadm-bootstrap-system/capi-kubeadm-bootstrap-controller-manager capi-kubeadm-control-plane-system/capi-kubeadm-control-plane-controller-manager; run: clusterctl init' "${out}"
+PIN="$(sed -n 's/^CAPI_VERSION[[:space:]]*?=[[:space:]]*//p' "${DEPLOY_DIR}/../make/tool-versions.mk")"
+out="$(PATH="${stubs}:${PATH}" STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller:${PIN}" STUB_DENY_KUBEADM=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with a denied kubeadm read exited 0"
+expect "a denied kubeadm-provider read is a finding" '^FAIL  cluster: cannot read deployment capi-kubeadm-bootstrap-system/' "${out}"
+reject "no 'already installed' pass after a denied provider read" 'already installed' "${out}"
+out="$(PATH="${stubs}:${PATH}" STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller@sha256:0000000000000000000000000000000000000000000000000000000000000000" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with a digest-only Cluster API image exited 0"
+expect "a digest-only image is reported as such, not by its repository" '^FAIL  Cluster API: registry.k8s.io/cluster-api/cluster-api-controller@sha256:0+ is installed, pinned by digest; its version cannot be read' "${out}"
+out="$(PATH="${stubs}:${PATH}" NVKECTL=/nonexistent/nvkectl NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site without nvkectl exited 0"
+expect "a missing nvkectl is a finding, and the spec checks are skipped" '^FAIL  tool nvkectl: /nonexistent/nvkectl not found' "${out}"
+expect "the site spec is skipped without nvkectl" '^SKIP  site spec: ' "${out}"
+expect "the verdict carries the check's own name" '^check-site.sh: [0-9]+ finding\(s\) to fix' "${out}"
+# The executor refuses an unknown item type before it applies anything.
+mkdir -p "${WORK}/badpath/x"; printf 'items:\n  - {name: x, type: bogus}\n' >"${WORK}/badpath/nvke-deploy.yaml"; printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: x\n' >"${WORK}/badpath/x/a.yaml"
+out="$(bash "${EXECUTOR}" install --deploy-path "${WORK}/badpath" --dry-run 2>&1)" && fail "an unknown item type exited 0"
+expect "an unknown item type is refused by the parser" 'unrecognised:.*type: bogus' "${out}"
+reject "nothing is applied before the refusal" 'kubectl .*apply' "${out}"
+out="$(bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site without --sitespec exited 0"
+expect "the site spec is required" '^usage: check-site.sh' "${out}"
+PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" --diagnostics >/dev/null 2>&1 || fail "check-site --diagnostics exited $?"
+[[ -f "${WORK}/check-state/diagnostics/nodes.txt" ]] && pass "diagnostics are written under the state directory" || fail "no diagnostics: $(ls -R "${WORK}/check-state" 2>/dev/null)"
 
 if [[ "${failures}" -eq 0 ]]; then
   echo "all nvke-deploy tests passed"

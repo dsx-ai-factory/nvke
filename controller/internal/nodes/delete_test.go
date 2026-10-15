@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -104,7 +105,11 @@ func TestDelete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID: trace.TraceID{1},
+				SpanID:  trace.SpanID{1},
+			})
+			ctx := trace.ContextWithSpanContext(t.Context(), spanContext)
 			mockTx := &testutil.MockTx{}
 
 			if tt.wantErr != nil {
@@ -119,7 +124,9 @@ func TestDelete(t *testing.T) {
 				})).Return(node, nil)
 				mockTx.On(
 					"CreateWorkflowOutboxEntry",
-					mock.Anything,
+					mock.MatchedBy(func(ctx context.Context) bool {
+						return trace.SpanContextFromContext(ctx).IsValid()
+					}),
 					constants.TeardownNodeWorkflowType,
 					constants.TeardownNodeWorkflowPrefix+tt.nodeID.String(),
 					mock.MatchedBy(func(input workflows.TeardownNodeInput) bool {

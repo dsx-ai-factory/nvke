@@ -70,13 +70,18 @@ token:nke-cloud-workflow-engine|nke-stack
 # the nkeOIDCAuth values key.
 token:nke-system|nkeSystemNamespace|NkeOIDCAuth
 
-# Label, annotation, taint and condition keys, the CRD group
-# internal.nke.nvidia.com, and the *.nke.nvidia.com trust
-# domains of existing sites.
+# Label, annotation, taint and condition keys, and the *.nke.nvidia.com trust
+# domains of existing sites. The management-engine CRD group is now
+# internal.nvke.nvidia.com and no longer needs this entry.
 token:(^|[./])nke\.nvidia\.com|\.labels\.nke$
 
-# The NKECluster and NKENodePool kinds, their plurals, fields, controllers and
-# testdata, and the CSR approval reason recorded on tenant clusters.
+# The NKECluster, NKENodePool and nkeClusterRef names of the DGXC platform API
+# (compute.private.x-dgxc.nvidia.com), which this repository emits CRs for in
+# controller/scripts/cwe-to-platform-crs.sh but does not own; the NKECluster
+# shape the name-check self-test feeds its own detector (hack/test_name_check.py);
+# and the CSR approval reason recorded on the tenant clusters of existing sites.
+# The management-engine kind and its plural are now NVKECluster and nvkeclusters
+# and no longer need this entry.
 token:NKECluster|nkecluster|NKENodePool|nkenodepool|nkeClusterRef|NKEValidatedNodeIdentity
 
 # The nke-rbac ConfigMap, the nke: ClusterRole prefix the tenant apiserver
@@ -116,6 +121,10 @@ token:^urn:nvidia:nke
 # the Flox environment.
 token:^nke$
 
+# The site spec constant for the reserved OIDC prefix "nke:". The prefix
+# string is already covered by ^nke:; this is the Go identifier that names it.
+token:^oidcPrefixNKE$
+
 # ---- Tier 2: the node (PR5) and the OS image and packages (PR6) ----
 
 # One-release compatibility inputs: the old package guard, rollback artifact
@@ -131,6 +140,9 @@ token:(^|/)(var/lib|etc|opt|usr/local|usr/share|run|tmp|var/log)/nke|^/nke/|\.nk
 
 # Old encryption labels are read once and migrated; never write this domain.
 token:^nke\.io/($|k8s-api-encryption-(configured|rewrite-complete))
+
+# The controller API validates that this legacy label domain is reserved and cannot be set with labels and taints
+token:^nke\.io$
 
 # Names this image rename kept on purpose, plus the build-guest and nix names
 # that are still spelled the old way. The packages Provide nke-kubeadm-distro
@@ -201,6 +213,5 @@ token:^nke-cluster-bringup$
 path:controller/profiles/*
 
 # Image URLs inside the two synthetic fixture profiles. Their MachineImage specs
-# are published fixtures, and osprofiles-to-crs refuses to change a published
-# spec under the same name.
+# are published fixtures, and published release content is immutable.
 token:^https://example\.test/nke/

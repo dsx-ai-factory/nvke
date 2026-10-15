@@ -22,8 +22,8 @@ cluster:
     - name: node3
       ip: 10.0.0.3
   k8sVersion: "1.32.0"
-  cniName: calico
-  cniVersion: "3.31.4"
+  cniName: ovn-kubernetes
+  cniVersion: "1.4.0"
   controlPlaneVIP: "10.0.0.100"
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
@@ -123,10 +123,10 @@ cluster:
     - name: node1
       ip: 10.0.0.1
   k8sVersion: "1.32.0"
-  cniName: calico
+  cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
-  cniVersionn: "3.31.4"
+  cniVersionn: "1.4.0"
 registry:
   bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
   bootstrapChart: "cloud-workflow-engine"
@@ -158,7 +158,7 @@ func TestValidateInvalidInputs(t *testing.T) {
 			Cluster: Cluster{
 				Nodes:         []Node{{Name: "node1", IP: "10.0.0.1"}},
 				K8sVersion:    "1.32.0",
-				CniName:       "calico",
+				CniName:       "ovn-kubernetes",
 				PodCidr:       "10.100.0.0/16",
 				ServiceCidr:   "10.200.0.0/16",
 				NodeAgentPort: DefaultNodeAgentPort,
@@ -193,6 +193,7 @@ func TestValidateInvalidInputs(t *testing.T) {
 		{"missing k8sVersion", func(i *SiteSpec) { i.Cluster.K8sVersion = "" }, pathK8sVersion},
 		{"bad k8sVersion", func(i *SiteSpec) { i.Cluster.K8sVersion = "v1.32" }, pathK8sVersion},
 		{"missing cni", func(i *SiteSpec) { i.Cluster.CniName = "" }, pathCniName},
+		{"legacy calico cni", func(i *SiteSpec) { i.Cluster.CniName = "calico" }, pathCniName},
 		{"unsupported cni", func(i *SiteSpec) { i.Cluster.CniName = "flannel" }, pathCniName},
 		{"missing podCidr", func(i *SiteSpec) { i.Cluster.PodCidr = "" }, pathPodCidr},
 		{"bad podCidr", func(i *SiteSpec) { i.Cluster.PodCidr = "10.100.0.0" }, pathPodCidr},
@@ -236,6 +237,28 @@ func TestValidateInvalidInputs(t *testing.T) {
 		{"missing bootstrapRepo", func(i *SiteSpec) { i.Registry.BootstrapRepo = "" }, pathBootstrapRepo},
 		{"missing bootstrapChart", func(i *SiteSpec) { i.Registry.BootstrapChart = "" }, pathBootstrapChart},
 		{"whitespace in bootstrapRepo", func(i *SiteSpec) { i.Registry.BootstrapRepo = "bad repo" }, pathBootstrapRepo},
+		{"oidc providers before 1.34", func(i *SiteSpec) {
+			i.Cluster.K8sVersion = "1.33.4"
+			i.Cluster.OIDCProviders = []OIDCProvider{validOIDCProvider()}
+		}, pathOIDCProviders},
+		{"oidc provider missing caBundle", func(i *SiteSpec) {
+			i.Cluster.K8sVersion = "1.34.0"
+			p := validOIDCProvider()
+			p.CABundle = ""
+			i.Cluster.OIDCProviders = []OIDCProvider{p}
+		}, "cluster.oidcProviders[0].caBundle"},
+		{"oidc provider http issuer", func(i *SiteSpec) {
+			i.Cluster.K8sVersion = "1.34.0"
+			p := validOIDCProvider()
+			p.IssuerURL = "http://login.example.com"
+			i.Cluster.OIDCProviders = []OIDCProvider{p}
+		}, "cluster.oidcProviders[0].issuerURL"},
+		{"oidc provider caBundle is not a certificate", func(i *SiteSpec) {
+			i.Cluster.K8sVersion = "1.34.0"
+			p := validOIDCProvider()
+			p.CABundle = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+			i.Cluster.OIDCProviders = []OIDCProvider{p}
+		}, "cluster.oidcProviders[0].caBundle"},
 	}
 
 	for _, tc := range tests {
@@ -250,6 +273,67 @@ func TestValidateInvalidInputs(t *testing.T) {
 				t.Errorf("error %q does not mention %q", err.Error(), tc.wantSub)
 			}
 		})
+	}
+}
+
+func validOIDCProvider() OIDCProvider {
+	return OIDCProvider{
+		Name:           "corp",
+		IssuerURL:      "https://login.example.com",
+		Audiences:      []string{"nvke"},
+		UsernameClaim:  "email",
+		UsernamePrefix: "corp:",
+		CABundle: `-----BEGIN CERTIFICATE-----
+MIIDCTCCAfGgAwIBAgIUfGXirJ1/KK2sS+M1ktcL2jKHJOcwDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEAwwJb2lkYy10ZXN0MB4XDTI2MTAxMzE5NDA0NloXDTM2MTAx
+MDE5NDA0NlowFDESMBAGA1UEAwwJb2lkYy10ZXN0MIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEAsqiBv8u0Am0ovLJ9XUkB2tfz2aLvw7V/Iur00XOzPKhp
+Hx4MgMQPSgRL/GmrvqwvjFC7ts+1ngTdMPnFo7iWlVKaiRQ+jgOaWc326HsanFsx
+duFJQ3VQYwAcw6vCaIACN7nMQuqmC3VtX4odVLMCrxsJXsHqhTriI0E8So4GzAv1
+Od3uA9QX1hAtevNTe7bpXyDca+p9xLr7JsY94LvvzjuXesAYmK4QcnggPEMR0hPv
+mn/M5YxzKxVjf2HwyddIyCdX10h9i7isTTxkPa/hJ/pbVQ8IB69URbUO/cySbl6A
+OpTz1gfxJEqepGt7SaY6SKY852khpE+oY6WDLJJMsQIDAQABo1MwUTAdBgNVHQ4E
+FgQUOQ4fTXchQ4yvOvssmBJ45QJuRgIwHwYDVR0jBBgwFoAUOQ4fTXchQ4yvOvss
+mBJ45QJuRgIwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAMXM0
+aTT9nSY4lMAn07bSyMg6JF7MCz3MHqPCj9IrzkXk0eH5S9rrDOqwFJCa74pTzLsD
+3gC8AmcaOmTRuBeEmu+CoO73n3fveR3moh1dupT61PRohfpdM47g+d5F1l0UdsWg
+OXjHThCq0+PDR/w6/aYkW2nF1eyIYVS3FQlZUl+DvQDJsJqyNePtKCjMr+D3yywl
+liNqG/bR3JXrwDCBLwbWzVRE1acA6frIzr8mR8skKm2DPmcsxUX5eO64XsNIYpxc
+co5hU70BGb6ZUvwExLA5obJZPx3gFDtKVqJodwOFna2Df1Ai2Tuhztv+yVbz6M1s
+f0pVwhs7o5oqIpjTuQ==
+-----END CERTIFICATE-----
+`,
+	}
+}
+
+func TestValidate_OIDCProviders(t *testing.T) {
+	absent := func() *SiteSpec {
+		inv := &SiteSpec{
+			ClusterName: "nvke-site",
+			Cluster: Cluster{
+				Nodes:         []Node{{Name: "node1", IP: "10.0.0.1"}},
+				K8sVersion:    "1.32.0",
+				CniName:       "ovn-kubernetes",
+				PodCidr:       "10.100.0.0/16",
+				ServiceCidr:   "10.200.0.0/16",
+				NodeAgentPort: DefaultNodeAgentPort,
+			},
+			Registry: Registry{
+				BootstrapRepo:  "nvcr.io/org/cloud-workflow-engine",
+				BootstrapChart: "cloud-workflow-engine",
+			},
+		}
+		return inv
+	}
+	if err := absent().Validate(); err != nil {
+		t.Fatalf("Validate rejected a 1.32 site spec with no oidc providers: %v", err)
+	}
+
+	withProviders := absent()
+	withProviders.Cluster.K8sVersion = "1.34.0"
+	withProviders.Cluster.OIDCProviders = []OIDCProvider{validOIDCProvider()}
+	if err := withProviders.Validate(); err != nil {
+		t.Fatalf("Validate rejected oidc providers on 1.34.0: %v", err)
 	}
 }
 
@@ -388,7 +472,7 @@ const noNodesYAML = `
 clusterName: nvke-site
 cluster:
   k8sVersion: "1.32.0"
-  cniName: calico
+  cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
 registry:

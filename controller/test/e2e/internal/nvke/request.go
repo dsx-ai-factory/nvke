@@ -77,8 +77,9 @@ type ControlPlane struct {
 // CAPD supplies the CAPI machine template from an embedded skeleton. NICo VMs
 // fill the Forge fields below instead.
 type ControlPlaneConfigSpec struct {
-	DesiredCount int
-	MaxSurge     *int
+	NodeAgentVersion string
+	DesiredCount     int
+	MaxSurge         *int
 
 	InstanceTypeID       string
 	OSProfile            string
@@ -505,6 +506,9 @@ func buildCAPDControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControlPla
 	var cfg api.CreateClusterControlPlaneConfig
 	if err := json.Unmarshal(capdControlPlaneConfigJSON, &cfg); err != nil {
 		return nil, fmt.Errorf("unmarshaling control plane config skeleton: %w", err)
+	}
+	if spec.ControlPlane.Config.NodeAgentVersion != "" {
+		cfg.NodeAgentConfig = &api.NodeAgentConfig{Version: &spec.ControlPlane.Config.NodeAgentVersion}
 	}
 	cfg.DesiredCount = spec.ControlPlane.Config.DesiredCount
 	cfg.MaxSurge = spec.ControlPlane.Config.MaxSurge

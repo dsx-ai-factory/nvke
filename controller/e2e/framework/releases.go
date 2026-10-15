@@ -30,15 +30,14 @@ func releaseCRDPaths(t testing.TB) []string {
 }
 
 // installReleases creates every manifest of the committed fixture releases
-// (test/fixtures/releases, generated from test/fixtures/profiles) through the
-// API server.
+// (test/fixtures/releases) through the API server.
 func installReleases(t testing.TB, cfg *rest.Config) {
 	t.Helper()
 
 	dir := filepath.Join(RepoRoot(t), "test", "fixtures", "releases")
 	paths, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 	require.NoError(t, err)
-	require.NotEmpty(t, paths, "expected the fixture releases under %s; run `make fixture-releases`", dir)
+	require.NotEmpty(t, paths, "expected the fixture releases under %s", dir)
 	sort.Strings(paths)
 
 	api, err := client.New(cfg, client.Options{})

@@ -124,7 +124,7 @@ and configured afterward by NVKE (controller → `nvke-agent`):
 | Component | Why post-provision |
 |-----------|-------------------|
 | **kubeadm / Kubernetes distro packages** | Versioned with the cluster, not the OS image. Coupling them to golden images has been a long-standing pain point. |
-| **CNI packages / chart images** (OVN, Calico, …) | Cluster network choice and version belong to cluster config, not the OS. |
+| **CNI packages / chart images** (OVN-Kubernetes, …) | Cluster network choice and version belong to cluster config, not the OS. |
 | **Teleport** (and similar ops agents) | Site/env policy applied by NVKE bootstrap once the agent can install packages and write config securely. |
 | Other cluster-scoped packages | Anything whose version or presence depends on the cluster profile rather than “can this node speak to the controller?” |
 

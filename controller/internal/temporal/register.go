@@ -95,13 +95,13 @@ func NewClient(cfg config.Config, logger *slog.Logger) (client.Client, error) {
 		DataConverter:  NewDataConverter(),
 	}
 
-	if cfg.Tracing.Enabled {
-		tracingInterceptor, err := newTracingInterceptor()
-		if err != nil {
-			return nil, err
-		}
-		opts.Interceptors = []interceptor.ClientInterceptor{tracingInterceptor}
+	// Always installed: it carries the request's trace context into workflow
+	// headers, which puts the trace ID on workflow and activity logs.
+	tracingInterceptor, err := newTracingInterceptor()
+	if err != nil {
+		return nil, err
 	}
+	opts.Interceptors = []interceptor.ClientInterceptor{tracingInterceptor}
 
 	return client.Dial(opts)
 }

@@ -27,7 +27,6 @@ const (
 	TypeTemplate = "template"
 	TypeManifest = "manifest"
 	TypeHelm     = "helm"
-	TypeArgoCD   = "argocd"
 )
 
 // tokenPattern is an item name: letters, digits, `-`, `_` and inner dots.
@@ -65,7 +64,7 @@ func Items(dir string) ([]Item, error) {
 			return nil, fmt.Errorf("%s: item %q: names are tokens", path, item.Name)
 		}
 		switch item.Type {
-		case TypeTemplate, TypeManifest, TypeHelm, TypeArgoCD:
+		case TypeTemplate, TypeManifest, TypeHelm:
 		default:
 			return nil, fmt.Errorf("%s: item %q has unknown type %q", path, item.Name, item.Type)
 		}
@@ -165,11 +164,16 @@ func (r *Release) validate() error {
 		}
 		return nil
 	}
-	if r.Chart.Name == "" || r.Chart.Version == "" {
-		return errors.New("chart.name and chart.version are required")
+	if r.Chart.Name == "" {
+		return errors.New("chart.name is required")
 	}
 	if r.Chart.Repository != "" && r.Chart.Path != "" {
 		return errors.New("chart has both repository and path; name one source")
+	}
+	// A repository chart is selected by its version. A path chart carries
+	// its own, and a release that carries the chart decides it.
+	if r.Chart.Path == "" && r.Chart.Version == "" {
+		return errors.New("chart.version is required for a repository chart")
 	}
 	if r.Release == nil || r.Release.Name == "" || r.Release.Namespace == "" {
 		return errors.New("release.name and release.namespace are required")
@@ -187,10 +191,14 @@ func (r *Release) validate() error {
 func (r *Release) Marshal() []byte {
 	var b strings.Builder
 	if r.Chart != nil {
+		version := ""
+		if r.Chart.Version != "" {
+			version = quote(r.Chart.Version)
+		}
 		b.WriteString("chart:\n")
 		for _, kv := range [][2]string{
 			{"name", r.Chart.Name},
-			{"version", quote(r.Chart.Version)},
+			{"version", version},
 			{"repository", r.Chart.Repository},
 			{"path", r.Chart.Path},
 			{"artifact", r.Chart.Artifact},

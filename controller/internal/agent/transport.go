@@ -6,9 +6,11 @@ package agent
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 
 	"github.com/spiffe/go-spiffe/v2/spiffegrpc/grpccredentials"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
@@ -21,6 +23,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodecontract"
 )
 
 // Transport dials node agents using each node's pinned authentication profile.
@@ -37,6 +40,9 @@ type Transport struct {
 	tlsJWTVerifier            *auth.Verifier
 	logger                    *slog.Logger
 	externalClientCertificate *tls.Certificate
+	// externalClientCertificateNewURN carries the new-form controller URN. It is
+	// optional: nil means every node is dialed with externalClientCertificate.
+	externalClientCertificateNewURN *tls.Certificate
 }
 
 // NewTransport builds the node-agent transport for this deployment. When
@@ -71,7 +77,7 @@ func NewTransport(
 		tlsJWTVerifier = verifier
 	}
 
-	var externalClientCertificate *tls.Certificate
+	var externalClientCertificate, newURNCertificate *tls.Certificate
 	if cfg.NodeAgentExternalMTLSEnabled {
 		certificate, err := tls.LoadX509KeyPair(
 			config.NodeAgentExternalTLSCertPath,
@@ -81,14 +87,23 @@ func NewTransport(
 			return nil, fmt.Errorf("loading external node-agent client identity: %w", err)
 		}
 		externalClientCertificate = &certificate
+
+		newURNCertificate, err = loadOptionalClientCertificate(
+			config.NodeAgentExternalTLSNVKECertPath,
+			config.NodeAgentExternalTLSNVKEKeyPath,
+		)
+		if err != nil && !errors.Is(err, errClientCertificateAbsent) {
+			return nil, err
+		}
 	}
 
 	return &Transport{
-		cfg:                       cfg,
-		trustDomain:               trustDomain,
-		tlsJWTVerifier:            tlsJWTVerifier,
-		logger:                    tlsJWTLogger,
-		externalClientCertificate: externalClientCertificate,
+		cfg:                             cfg,
+		trustDomain:                     trustDomain,
+		tlsJWTVerifier:                  tlsJWTVerifier,
+		logger:                          tlsJWTLogger,
+		externalClientCertificate:       externalClientCertificate,
+		externalClientCertificateNewURN: newURNCertificate,
 	}, nil
 }
 
@@ -113,7 +128,7 @@ func (t *Transport) Dial(ctx context.Context, node db.Node) (*grpc.ClientConn, f
 		if t.externalClientCertificate == nil {
 			return nil, nil, fmt.Errorf("external mTLS client certificate is unavailable for node %s", node.ID)
 		}
-		baseTransportCredentials = credentials.NewTLS(t.externalTLSConfig())
+		baseTransportCredentials = credentials.NewTLS(t.externalTLSConfig(node))
 		baseSupportsTLSJWT = true
 	case !node.SpiffeEnabled:
 		baseTransportCredentials = insecure.NewCredentials()
@@ -161,10 +176,35 @@ func (t *Transport) Dial(ctx context.Context, node db.Node) (*grpc.ClientConn, f
 	return conn, cleanup, nil
 }
 
-func (t *Transport) externalTLSConfig() *tls.Config {
+// externalClientCertificateFor picks the controller identity whose URI SAN the
+// node's agent accepts: the new-form URN only for an agent version that speaks
+// it, and only when that identity is deployed.
+func (t *Transport) externalClientCertificateFor(node db.Node) *tls.Certificate {
+	if t.externalClientCertificateNewURN != nil && nodecontract.IsNewForm(node.AgentVersion) {
+		return t.externalClientCertificateNewURN
+	}
+	return t.externalClientCertificate
+}
+
+// errClientCertificateAbsent reports that an optional client certificate file does not exist.
+var errClientCertificateAbsent = errors.New("client certificate file does not exist")
+
+// loadOptionalClientCertificate returns errClientCertificateAbsent when the certificate file does not exist.
+func loadOptionalClientCertificate(certPath, keyPath string) (*tls.Certificate, error) {
+	if _, err := os.Stat(certPath); errors.Is(err, os.ErrNotExist) {
+		return nil, errClientCertificateAbsent
+	}
+	certificate, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading new-URN external node-agent client identity: %w", err)
+	}
+	return &certificate, nil
+}
+
+func (t *Transport) externalTLSConfig(node db.Node) *tls.Config {
 	return &tls.Config{
 		MinVersion:         tls.VersionTLS12,
-		Certificates:       []tls.Certificate{*t.externalClientCertificate},
+		Certificates:       []tls.Certificate{*t.externalClientCertificateFor(node)},
 		InsecureSkipVerify: true, //nolint:gosec // The agent presents an intentionally unverified self-signed server certificate.
 	}
 }

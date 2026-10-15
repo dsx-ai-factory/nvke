@@ -9,8 +9,8 @@
 #
 # A manifest, not a helm item, and not built from source. A site has no provider
 # checkout, and the published chart needs a `helm registry login ghcr.io` this
-# path does not assume. The release asset needs only the image, and the image
-# needs only a pull secret.
+# path does not assume. The release asset needs only the image, which is
+# public on GHCR or comes from the release by digest.
 #
 # The most useful finding from that run: CAPNICo needs neither GitLab nor NGC
 # org access. The management-software CI fetches the same
@@ -18,23 +18,16 @@
 # nvcr.io/j7sbcjl3qgta only because sites hold that org's credentials -- not
 # because the public path does not exist.
 #
-# TWO EDITS against the upstream asset, both of ci/capnico's three that still
-# matter here:
+# ONE EDIT against the upstream asset, the one of ci/capnico's three that
+# still matters here:
 #
 #  1. the manager's args. Upstream defaults the reboot and repair annotations
 #     to nico.nvidia.com/*; the controller writes nke.nvidia.com/*. A mismatch is not an
 #     error anywhere -- every reboot and repair request is silently ignored.
-#  2. imagePullSecrets: ghcr-imagepull. The upstream asset carries none. The
-#     Secret is rendered by ../nvke-base-config/30-ghcr-imagepull.yaml.tmpl,
-#     which the first item applies. That run patched the Deployment after
-#     applying instead; a manifest item has no patch step, so it is baked in
-#     here.
-#
-#     The package is public as of 2026-09-24 -- an anonymous ghcr.io token
-#     fetches this manifest -- so the Secret is belt and braces rather than
-#     the requirement an earlier version of this comment described. Keep it:
-#     the package's visibility is not ours to depend on, and a private
-#     sibling image added later would need it.
+#  2. nothing else: the image is pulled from ghcr.io, whose package is public
+#     (an anonymous token fetches the manifest), or comes from a release by
+#     digest. A site whose registry needs a credential adds its own pull
+#     secret here.
 #
 # The third edit ci/capnico applies -- repointing the image at nvcr.io -- is
 # deliberately NOT made.
@@ -1654,7 +1647,5 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      imagePullSecrets:
-      - name: ghcr-imagepull
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10

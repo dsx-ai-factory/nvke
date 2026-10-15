@@ -32,12 +32,21 @@ SITE_ARCH ?= amd64
 SITE_INPUTS ?= $(HOME)/.cache/nke-e2e/site
 SITE_CONTROLLER_VERSION ?=
 SITE_PROVISIONED_VERSION ?= v0.1.0-rc.1
-# Where the published images are pulled from. Both registries carry them under
-# the same names: GHCR at ghcr.io/dsx-ai-factory/nvke, NVCR at nvcr.io/<NGC org>
-# (see image-nvcr.yml and image-provisioned-nvcr.yml). NVCR needs a docker
-# login with an NGC key; the username is the literal $oauthtoken.
+# Where the published images are pulled from: GHCR at ghcr.io/dsx-ai-factory/nvke,
+# NVCR at nvcr.io/<NGC org>. NVCR needs a docker login with an NGC key, and the
+# username is the literal $oauthtoken.
+#
+# The controller is nvke-controller on NVCR and nke-controller on GHCR
+# (image-nvcr.yml publishes both), so the repository follows the registry.
+# capi-provisioned carries the same name on both.
+#
+# The controller name also has to match what qualify-e2e.yml writes into the
+# e2e config as site.images.controller.repository. The node's containerd knows
+# the image only by the name inside controller.tar, so a disagreement leaves
+# the Helm values asking for an image that is not on the node.
 SITE_IMAGE_REGISTRY ?= ghcr.io/dsx-ai-factory/nvke
-SITE_CONTROLLER_IMAGE ?= $(SITE_IMAGE_REGISTRY)/nke-controller:$(SITE_CONTROLLER_VERSION)
+SITE_CONTROLLER_REPOSITORY ?= $(if $(findstring ghcr.io,$(SITE_IMAGE_REGISTRY)),nke-controller,nvke-controller)
+SITE_CONTROLLER_IMAGE ?= $(SITE_IMAGE_REGISTRY)/$(SITE_CONTROLLER_REPOSITORY):$(SITE_CONTROLLER_VERSION)
 SITE_PROVISIONED_IMAGE ?= $(SITE_IMAGE_REGISTRY)/cluster-api-provider-provisioned:$(SITE_PROVISIONED_VERSION)
 SITE_PROFILES_IMAGE ?= nke-e2e-profiles:local
 
@@ -57,15 +66,23 @@ SITE_PROFILES_IMAGE ?= nke-e2e-profiles:local
 SITE_CONTROLLER_BUILD ?= 1
 
 # Build nvkectl from this checkout. Set to 0 to stage the published
-# SITE_CLI_VERSION instead: hack/fetch-nvkectl.sh downloads
-# nvkectl-linux-$(SITE_ARCH) from its cli/<version> GitHub Release, which needs
-# GITHUB_TOKEN and jq. Either way site.nvkectl in e2e-config.yaml points at
+# SITE_CLI_REF instead: hack/fetch-nvkectl.sh pulls nvkectl-linux-$(SITE_ARCH)
+# from the artifact it names, which needs oras and the registry credentials
+# docker login wrote. Either way site.nvkectl in e2e-config.yaml points at
 # SITE_NVKECTL.
 SITE_CLI_BUILD ?= 1
+# The version the staged binary has to report, which is what catches the right
+# artifact carrying the wrong build. It does not address the artifact: a run
+# that described a commit resolves a version no tag carries.
 SITE_CLI_VERSION ?=
 # Read by the recipe from the environment, never expanded into it: a value
 # carrying a quote would otherwise end the argument and run as shell.
 export SITE_CLI_VERSION
+# The artifact SITE_CLI_BUILD=0 stages, whole. nvkectl is published per alias
+# and platform, so the caller is what knows whether the alias is a version or a
+# commit.
+SITE_CLI_REF ?=
+export SITE_CLI_REF
 ifeq ($(SITE_CLI_BUILD),1)
 SITE_NVKECTL = $(REPO_ROOT)/cli/dist/nvkectl-linux-$(SITE_ARCH)
 else
@@ -98,7 +115,7 @@ site-inputs: ## Build the nvkectl and image archives the site lane stages. Needs
 ifeq ($(SITE_CLI_BUILD),1)
 	$(MAKE) -C "$(REPO_ROOT)/cli" build-cross NVKECTL_PLATFORMS=linux/$(SITE_ARCH)
 else
-	@test -n "$${SITE_CLI_VERSION}" || { echo "SITE_CLI_BUILD=0 stages a published nvkectl and needs SITE_CLI_VERSION, e.g. v0.1.0" >&2; exit 1; }
+	@test -n "$${SITE_CLI_REF}" || { echo "SITE_CLI_BUILD=0 stages a published nvkectl and needs SITE_CLI_REF, e.g. nvcr.io/<org>/nvkectl:v0.1.0-linux-amd64" >&2; exit 1; }
 	"$(CURDIR)/hack/fetch-nvkectl.sh" "$${SITE_CLI_VERSION}" "$(SITE_ARCH)" "$(dir $(SITE_NVKECTL))"
 endif
 ifeq ($(SITE_CONTROLLER_BUILD),1)

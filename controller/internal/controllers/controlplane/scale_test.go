@@ -19,95 +19,6 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
-func TestDeleteNode_UnhealthySkips(t *testing.T) {
-	t.Parallel()
-
-	clusterID := uuid.New()
-	nodeSetID := uuid.New()
-	nodePoolID := uuid.New()
-	cluster := db.Cluster{
-		ID:                 clusterID,
-		ControlPlaneConfig: db.ControlPlaneConfig{MaxSurge: 1},
-	}
-	surgeNode := makeSurgeHealthyNode()
-	surgeNode.ClusterID = clusterID
-	poolNode := makePoolHealthyNode("pool-1", nodeSetID, nodePoolID)
-	poolNode.ClusterID = clusterID
-	pools := []db.NodePool{
-		{ClusterID: clusterID, ControlPlane: true, DesiredCount: 2, MaxSurge: 0},
-	}
-
-	mockTx := &testutil.MockTx{}
-	mockTx.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
-		return f.ClusterID != nil && *f.ClusterID == clusterID && f.ControlPlane != nil && *f.ControlPlane
-	})).Return([]db.Node{surgeNode, poolNode}, nil)
-	mockTx.On("ListNodePools", mock.Anything, mock.MatchedBy(func(f db.NodePoolFilters) bool {
-		return f.ClusterID != nil && *f.ClusterID == clusterID
-	})).Return(pools, nil)
-
-	r := &reconciler{db: mockTx, logger: slog.Default()}
-	cp := &controlPlane{clusterControlPlaneConfig: cluster.ControlPlaneConfig}
-	got, err := r.deleteNode(context.Background(), cluster, cp, surgeNode, "test", slog.Default())
-	// An unhealthy control plane is a reason to wait, not a reconcile failure, so
-	// this reports "did not start" rather than returning an error.
-	require.NoError(t, err)
-	assert.False(t, got)
-	mockTx.AssertExpectations(t)
-}
-
-func TestScaleDownSurgeNodes_SkipsWhenNotClusterLevelSurge(t *testing.T) {
-	t.Parallel()
-
-	clusterID := uuid.New()
-	cluster := db.Cluster{
-		ID:                 clusterID,
-		ControlPlaneConfig: db.ControlPlaneConfig{MaxSurge: 1},
-	}
-	cpNodePools := []db.NodePool{
-		{ClusterID: clusterID, ControlPlane: true, DesiredCount: 2, MaxSurge: 1},
-	}
-
-	r := &reconciler{logger: slog.Default()}
-	cp := &controlPlane{clusterControlPlaneConfig: cluster.ControlPlaneConfig}
-	handled, err := r.scaleDownSurgeNodes(context.Background(), cluster, cp, cpNodePools, slog.Default())
-	require.NoError(t, err)
-	assert.False(t, handled)
-}
-
-func TestScaleDownSurgeNodes_UnhealthySkips(t *testing.T) {
-	t.Parallel()
-
-	clusterID := uuid.New()
-	nodeSetID := uuid.New()
-	nodePoolID := uuid.New()
-	cluster := db.Cluster{
-		ID:                 clusterID,
-		ControlPlaneConfig: db.ControlPlaneConfig{MaxSurge: 1},
-	}
-	surgeNode := makeSurgeHealthyNode()
-	surgeNode.ClusterID = clusterID
-	poolNode := makePoolHealthyNode("pool-1", nodeSetID, nodePoolID)
-	poolNode.ClusterID = clusterID
-	cpNodePools := []db.NodePool{
-		{ClusterID: clusterID, ControlPlane: true, DesiredCount: 2, MaxSurge: 0},
-	}
-
-	mockTx := &testutil.MockTx{}
-	mockTx.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
-		return f.ClusterID != nil && *f.ClusterID == clusterID && f.ControlPlane != nil && *f.ControlPlane
-	})).Return([]db.Node{surgeNode, poolNode}, nil)
-	mockTx.On("ListNodePools", mock.Anything, mock.MatchedBy(func(f db.NodePoolFilters) bool {
-		return f.ClusterID != nil && *f.ClusterID == clusterID
-	})).Return(cpNodePools, nil)
-
-	r := &reconciler{db: mockTx, logger: slog.Default()}
-	cp := &controlPlane{clusterControlPlaneConfig: cluster.ControlPlaneConfig}
-	handled, err := r.scaleDownSurgeNodes(context.Background(), cluster, cp, cpNodePools, slog.Default())
-	require.NoError(t, err)
-	assert.False(t, handled)
-	mockTx.AssertExpectations(t)
-}
-
 func TestCreatePendingNode_RequiresControlPlaneConfigurationID(t *testing.T) {
 	t.Parallel()
 
@@ -222,7 +133,7 @@ func TestReconcile_SkipsClusterBeingDeleted(t *testing.T) {
 
 	mockTx := &testutil.MockTx{}
 	r := &reconciler{
-		cfg:    config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		cfg:    config.Config{},
 		db:     mockTx,
 		logger: slog.Default(),
 	}
@@ -241,32 +152,7 @@ func TestReconcile_SkipsClusterBeingDeleted(t *testing.T) {
 	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
 }
 
-func TestReconcileControlPlaneScaleUp_FeatureFlagDisabled(t *testing.T) {
-	t.Parallel()
-
-	mockTx := &testutil.MockTx{}
-	r := &reconciler{
-		cfg:    config.Config{ProvisionControlPlaneWithControlPlaneController: false},
-		db:     mockTx,
-		logger: slog.Default(),
-	}
-
-	cluster := db.Cluster{
-		ID: uuid.New(),
-		ControlPlaneConfig: db.ControlPlaneConfig{
-			ConfigurationID: uuid.New(),
-			DesiredCount:    3,
-		},
-	}
-	cp := &controlPlane{}
-
-	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, domainAllocator{}, nil)
-	require.NoError(t, err)
-	mockTx.AssertNotCalled(t, "ListClusterNodeNames", mock.Anything, mock.Anything)
-	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
-}
-
-func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
+func TestReconcileControlPlaneScaleUp_CreatesDeficit(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -287,9 +173,7 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
 	})).Return(db.Node{}, nil).Twice()
 
 	r := &reconciler{
-		cfg: config.Config{
-			ProvisionControlPlaneWithControlPlaneController: true,
-		},
+		cfg:    config.Config{},
 		db:     mockTx,
 		logger: slog.Default(),
 	}
@@ -438,7 +322,7 @@ func TestReconcileControlPlaneScaleUp_Deficit(t *testing.T) {
 			}
 
 			r := &reconciler{
-				cfg:    config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+				cfg:    config.Config{},
 				db:     mockTx,
 				logger: slog.Default(),
 			}

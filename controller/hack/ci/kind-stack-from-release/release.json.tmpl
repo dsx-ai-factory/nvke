@@ -1,0 +1,59 @@
+{
+ "schemaVersion": "nvkr.dev/release-description/v1",
+ "inspection": "metadata inspection; payloads, signatures and policy not verified",
+ "totalOutputs": 3,
+ "reference": "nvkr.local/nvke/releases@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "rootDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "declaredQualification": "unqualified-local-execution",
+ "metadata": {
+  "definitionDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "environmentDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "planDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "contentSubject": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+ },
+ "outputs": [
+  {
+   "name": "cwe",
+   "kind": "oci",
+   "digest": "@CWE_DIGEST@",
+   "reference": "nvkr.local/nvke/cwe@@CWE_DIGEST@",
+   "os": "linux",
+   "arch": "amd64",
+   "buildDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+   "components": [
+    "nke-controller"
+   ],
+   "artifactType": "application/vnd.oci.image.manifest.v1+json",
+   "buildSubjects": []
+  },
+  {
+   "name": "controller-profiles",
+   "kind": "oci",
+   "digest": "@PROFILES_DIGEST@",
+   "reference": "nvkr.local/nvke/controller-profiles@@PROFILES_DIGEST@",
+   "os": "linux",
+   "arch": "amd64",
+   "buildDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+   "components": [
+    "controller-profiles"
+   ],
+   "artifactType": "application/vnd.oci.image.manifest.v1+json",
+   "buildSubjects": []
+  },
+  {
+   "name": "capnico-controller",
+   "kind": "oci",
+   "digest": "@CAPNICO_DIGEST@",
+   "reference": "nvkr.local/nvke/capnico-controller@@CAPNICO_DIGEST@",
+   "os": "linux",
+   "arch": "amd64",
+   "buildDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+   "components": [
+    "capnico-controller"
+   ],
+   "artifactType": "application/vnd.oci.image.manifest.v1+json",
+   "buildSubjects": []
+  }
+ ],
+ "evidence": []
+}

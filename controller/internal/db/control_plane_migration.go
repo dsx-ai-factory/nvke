@@ -6,14 +6,23 @@ package db
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 )
 
+// pooledControlPlaneCluster summarizes a non-deleting cluster's pooled
+// control-plane nodes after the migration's re-parenting steps.
+type pooledControlPlaneCluster struct {
+	ClusterID         uuid.UUID `bun:"cluster_id"`
+	ClusterName       string    `bun:"cluster_name"`
+	Nodes             int       `bun:"nodes"`
+	HasSnapshotSource bool      `bun:"has_snapshot_source"`
+}
+
 // deprecatedControlPlaneNodeSet is a control-plane node set that is no longer
-// its pool's current node set but still owns pooled control-plane nodes — i.e. a
-// generation left behind by an in-flight rolling upgrade.
+// its pool's current node set but still owns pooled control-plane nodes.
 type deprecatedControlPlaneNodeSet struct {
 	NodeSetID         uuid.UUID `bun:"node_set_id"`
 	ClusterID         uuid.UUID `bun:"cluster_id"`
@@ -80,35 +89,16 @@ func hasActiveControlPlaneNodePool(pools []NodePool) bool {
 	return false
 }
 
-// MigrateControlPlaneToController re-parents legacy node-pool-managed
-// control-plane nodes onto the control-plane controller when the site has opted
-// in via PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER.
+// MigrateControlPlaneToController enrolls every non-deleting cluster in the
+// control-plane controller by re-parenting its pooled control-plane nodes onto
+// the cluster's control-plane configuration snapshot, then deleting the emptied
+// node pools and node sets.
 //
-// It is a temporary, boot-time, flag-gated, idempotent sweep: it runs once per
-// process start, after schema migrations and before the controllers and worker
-// start, so nothing mutates nodes while ownership is rewritten. It is a no-op
-// when the flag is off (nothing is recorded, so a later flag flip runs it on the
-// next boot). Re-parenting is pure metadata: pooled control-plane nodes have
-// their node_pool_id/node_set_id cleared and are pinned to a control-plane
-// configuration snapshot — the cluster's current one, except a deprecated node
-// generation left by an in-flight upgrade gets a freshly minted snapshot so the
-// controller still finishes its rollout — then the emptied pools and node sets
-// are deleted. Deleting clusters are skipped. The sweep is one transaction and
-// fails closed: if any non-deleting cluster cannot be fully migrated it errors so
-// the worker refuses to start rather than serve a half-migrated fleet.
-//
-// Before rewriting ownership it fills missing clusters.configuration_id from
-// active CP node pools. Self-imported site controllers often have a pool but no
-// snapshot (inject skipped the pool-create sync); without that the fail-closed
-// leftover check would abort startup.
-//
-// Remove this and its worker call site once every site is migrated and the flag
-// is on by default.
-func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB, useController bool) error {
-	if !useController {
-		return nil
-	}
-
+// The sweep is idempotent and runs in one transaction on every worker boot,
+// after schema migrations and before the controllers start. It returns an error
+// if a non-deleting cluster with a control-plane snapshot source cannot be fully
+// migrated; the worker then refuses to start. Temporary: remove it and its worker call site once every site is migrated.
+func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB, logger *slog.Logger) error {
 	if err := SyncMissingControlPlaneConfigsFromCPNodePools(ctx, bunDB); err != nil {
 		return err
 	}
@@ -242,16 +232,39 @@ func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB, useCont
 	// 6. Safety net: any non-deleting cluster still holding pooled CP nodes could
 	//    not be migrated (missing snapshot). Fail loudly so the worker refuses to
 	//    start and retries next boot rather than serve a half-migrated fleet.
-	var leftover int
+	//    A cluster with no snapshot and no active CP pool has nothing to snapshot
+	//    from, so it is skipped with a warning.
+	var pooled []pooledControlPlaneCluster
 	if err := tx.NewRaw(`
-		SELECT count(*)
+		SELECT c.id    AS cluster_id,
+		       c.name  AS cluster_name,
+		       count(*) AS nodes,
+		       (c.configuration_id IS NOT NULL OR EXISTS (
+		           SELECT 1 FROM node_pools p
+		           WHERE p.cluster_id = c.id
+		             AND p.control_plane = TRUE
+		             AND COALESCE(p.conditions->'deleting'->>'status', '') <> 'True'
+		       )) AS has_snapshot_source
 		FROM nodes n
 		JOIN clusters c ON c.id = n.cluster_id
 		WHERE n.control_plane = TRUE
 		  AND n.node_pool_id IS NOT NULL
 		  AND COALESCE(c.conditions->'deleting'->>'status', '') <> 'True'
-	`).Scan(ctx, &leftover); err != nil {
+		GROUP BY c.id, c.name, c.configuration_id
+	`).Scan(ctx, &pooled); err != nil {
 		return fmt.Errorf("verify control-plane migration completeness: %w", err)
+	}
+	leftover := 0
+	for _, c := range pooled {
+		if c.HasSnapshotSource {
+			leftover += c.Nodes
+			continue
+		}
+		logger.Warn("control-plane migration skipped cluster with no snapshot source",
+			"clusterID", c.ClusterID,
+			"clusterName", c.ClusterName,
+			"pooledControlPlaneNodes", c.Nodes,
+		)
 	}
 	if leftover > 0 {
 		return fmt.Errorf("control-plane migration incomplete: %d pooled control-plane node(s) remain; cluster missing configuration_id?", leftover)

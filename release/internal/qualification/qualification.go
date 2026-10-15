@@ -15,6 +15,9 @@ package qualification
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"sort"
+	"strings"
 
 	"sigs.k8s.io/yaml"
 )
@@ -25,9 +28,11 @@ import (
 // fields that were the reason for the bump.
 const APIVersion = "nvke.nvidia.com/v1alpha1"
 
-// Kinds.
+// Kinds. Each names qualification, because the group does not: these are the
+// qualification tool's files rather than Kubernetes objects, and a bare
+// "Registry" in a product group says nothing about which registry it is.
 const (
-	KindRegistry            = "Registry"
+	KindRegistry            = "QualificationRegistry"
 	KindQualificationPolicy = "QualificationPolicy"
 	KindQualification       = "Qualification"
 )
@@ -47,10 +52,61 @@ func readStrict(path string, into any) error {
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", path, err)
 	}
+	if b, err = expand(b); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
 	if err := yaml.UnmarshalStrict(b, into); err != nil {
 		return fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return nil
+}
+
+// reference matches ${NAME}. Only the braced form is recognized: a bare $NAME
+// would also match prose in a comment, and expansion happens before the YAML
+// is parsed, so a comment is not yet a comment when this runs.
+var reference = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// expand substitutes ${NAME} from the process environment.
+//
+// What a component is and how it resolves is engineering content and lives in
+// the file. The identifiers of the account its artifacts sit in are not: they
+// name one organization's registry, and this repository is the staging ground
+// for a public one. So they are supplied at run time, which is already how the
+// lane reaches that registry at all.
+//
+// An unset variable is an error rather than an empty string. Substituting
+// nothing would produce a file that parses, and a plan would then name an
+// artifact under no org, which fails later against a registry rather than here
+// against the file that asked for it. Every missing name is collected, so one
+// run reports the whole list.
+//
+// Set but empty counts as unset, because that is the shape a caller produces:
+// an unset repository variable reaches a workflow as the empty string, not as
+// absent.
+//
+// This mirrors the convention the e2e environments already use, so one file
+// does not state an identifier a different file asks for.
+func expand(data []byte) ([]byte, error) {
+	missing := map[string]struct{}{}
+
+	expanded := reference.ReplaceAllFunc(data, func(match []byte) []byte {
+		name := string(reference.FindSubmatch(match)[1])
+		if value := os.Getenv(name); value != "" {
+			return []byte(value)
+		}
+		missing[name] = struct{}{}
+		return match
+	})
+
+	if len(missing) > 0 {
+		names := make([]string, 0, len(missing))
+		for name := range missing {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		return nil, fmt.Errorf("unset or empty: %s", strings.Join(names, ", "))
+	}
+	return expanded, nil
 }
 
 func checkTypeMeta(path, apiVersion, kind, wantKind string) error {

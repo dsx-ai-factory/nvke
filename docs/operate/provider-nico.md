@@ -1,0 +1,141 @@
+# Configure an infrastructure provider: NICo
+
+This page describes how to confirm that the NVIDIA Kubernetes Engine (NVKE) management plane can request bare-metal machines from NVIDIA Infra Controller (NICo), how to manage the credentials it uses, and which NICo identifiers each workload cluster request needs. NVKE requests machines through CAPNICo, the Cluster API (CAPI) infrastructure provider for NICo, which runs on the management cluster and calls the NICo API with your credentials. You do this after you install the management-plane services and before you create the first workload cluster.
+
+NICo is the only infrastructure provider NVKE supports at preview; see [Preview status and known limitations](../overview/preview-status.md).
+
+## Before you begin
+
+- You have completed [Install management-plane services](install-management-plane-services.md). That procedure installs CAPNICo in the `capnico-system` namespace and writes your NICo API details from the `controllerStack.nico` section of the site spec to the `nico-credentials` Secret, before it installs the management plane.
+- You have the management cluster kubeconfig, `<CLUSTER_NAME>.kubeconfig`, and `kubectl` on `PATH`. The kubeconfig must be able to read Secrets in the `capnico-system` namespace.
+- `nvkectl` points at your management plane, as set in [Install management-plane services](install-management-plane-services.md) with `nvkectl config set-site`. If API authentication is on, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](api-authentication.md), and `nvkectl get providers` fails with it, because it reads the management cluster's Kubernetes API, which does not accept your identity provider's tokens. The steps that use it give a `kubectl` alternative.
+- In NICo, you have:
+  - A site, with machines enrolled.
+  - A virtual private cloud (VPC) in that site, and either VPC prefixes or subnets in it for the nodes.
+  - One or more instance types, each with an allocation for your organization. An instance type with no allocation looks healthy and provisions nothing: machines wait with the reason `InstanceTypeUnavailable`.
+  - An SSH key group for node access, if you want SSH access to nodes.
+
+Run the commands on this page with `KUBECONFIG` set:
+
+```bash
+export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
+```
+
+## Confirm that CAPNICo is running
+
+1. Check the provider state.
+
+   ```bash
+   nvkectl get providers
+   ```
+
+   The `nico` row reads `CONFIGURED`: the CAPNICo custom resource definitions (CRDs) are established, the CAPNICo controller is available and the `nico-credentials` Secret exists. `NOT-INSTALLED` or `NOT-CONFIGURED` means the install did not complete; run it again as described in [Install management-plane services](install-management-plane-services.md). `DEGRADED` means the CAPNICo controller is not available; check the `controller-manager` Deployment in `capnico-system`. `UNKNOWN` usually means the kubeconfig that `nvkectl` uses cannot read Secrets in `capnico-system`.
+
+   With API authentication on, this command fails. Check CAPNICo with `kubectl` instead:
+
+   ```bash
+   kubectl -n capnico-system get deploy,secret
+   ```
+
+   The Deployment `controller-manager` shows all replicas ready, and the Secret `nico-credentials` is listed.
+
+2. Check that the management plane started its NICo controllers.
+
+   ```bash
+   kubectl logs deployment/nke-controller -n nke-controller | grep 'NicoMachine CRD not installed'
+   ```
+
+   The command prints nothing. The management plane checks for the `NicoMachine` CRD once, when it starts, and the install puts CAPNICo in place first. If the command prints the message, CAPNICo was installed after the management plane started: restart the management plane.
+
+   ```bash
+   kubectl rollout restart deployment/nke-controller -n nke-controller
+   ```
+
+`CONFIGURED` does not mean the credentials work. Nothing checks the token or reaches the NICo API until you create the first workload cluster.
+
+## Manage the NICo credentials
+
+CAPNICo authenticates to the NICo API with a bearer token from the Secret `nico-credentials` in the `capnico-system` namespace. The name, the namespace and the four keys are fixed.
+
+| Key | Value | Site spec field |
+|---|---|---|
+| `endpoint` | The NICo API base URL. | `controllerStack.nico.endpoint` |
+| `orgID` | Your NICo organization ID. | `controllerStack.nico.orgID` |
+| `token` | Your NICo API token. | The contents of the file that `controllerStack.nico.tokenFile` names. |
+| `apiName` | The API name in the NICo API path that your NICo deployment serves, such as `forge`. | `controllerStack.nico.apiName` |
+
+To rotate the token or change any other value:
+
+1. Write the Secret to a file named `nico-credentials.yaml`.
+
+   ```yaml
+   apiVersion: v1
+   kind: Secret
+   metadata:
+     name: nico-credentials
+     namespace: capnico-system
+   type: Opaque
+   stringData:
+     endpoint: "<NICO_ENDPOINT>"
+     orgID: "<NICO_ORG_ID>"
+     token: "REDACTED"
+     apiName: "<NICO_API_NAME>"
+   ```
+
+   Set all four keys. Replace `<NICO_ENDPOINT>`, `<NICO_ORG_ID>` and `<NICO_API_NAME>` with the values described in the table above, and `REDACTED` with the new token.
+
+2. Apply the Secret, then delete the file.
+
+   ```bash
+   kubectl apply --server-side -f nico-credentials.yaml
+   ```
+
+   ```bash
+   rm nico-credentials.yaml
+   ```
+
+   The Secret is read on each reconcile, so the change takes effect without a restart.
+
+3. Put the same values in the site spec: write the new token into the file that `controllerStack.nico.tokenFile` names, and update `endpoint`, `orgID` and `apiName` under `controllerStack.nico` if they changed. If you run the install again, it writes the Secret from the site spec and overwrites your change.
+
+## Collect the NICo identifiers
+
+The management plane holds no site-wide NICo settings. Each workload cluster request carries the NICo identifiers it uses, in a `nico` object on the cluster, the control plane and each node pool. Record these values from NICo before you create a cluster:
+
+| Field | Where it goes | Value |
+|---|---|---|
+| `orgID` | Cluster `nico` | Your NICo organization ID. |
+| `siteID` | Cluster `nico` | The NICo site ID, a UUID. |
+| `vpcID` | Cluster `nico` | The NICo VPC ID, a UUID. |
+| `instanceTypePreference` | Control plane `nico` | An ordered list of instance type IDs. The first one that has capacity is used. |
+| `instanceTypeID` | Node pool `nico` | One instance type ID. Fixed when the node pool is created. |
+| `vpcPrefixIDs` or `subnetIDs` | Control plane and node pool `nico` | Exactly one of the two: VPC prefixes for a site with native networking, subnets otherwise. |
+| `sshKeyGroupIDs` | Control plane and node pool `nico` | Optional. SSH key groups for node access. |
+| `infinibandPartitionID`, `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An InfiniBand partition and an NVLink logical partition. Fixed when the node pool is created. |
+
+The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and node pools also name an OS profile, `osProfile`, one of the profiles you applied in [Install management-plane services](install-management-plane-services.md), and optionally a config profile, `configProfile`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
+
+## Verify
+
+1. Check the provider state.
+
+   ```bash
+   nvkectl get providers
+   ```
+
+   The `nico` row reads `CONFIGURED`. With API authentication on, run `kubectl -n capnico-system get deploy,secret` instead, as in [Confirm that CAPNICo is running](#confirm-that-capnico-is-running).
+
+2. Check that the Secret has all four keys.
+
+   ```bash
+   kubectl describe secret nico-credentials -n capnico-system
+   ```
+
+   The `Data` section lists `apiName`, `endpoint`, `orgID` and `token`, each with a non-zero size. The command does not print the values.
+
+If `nvkectl get providers` reports another state, see [Troubleshoot](troubleshoot.md).
+
+## Next steps
+
+- [Secure the NVKE API](api-authentication.md).
+- [Create a workload cluster](../workload-clusters/create.md) with the NICo identifiers you collected.

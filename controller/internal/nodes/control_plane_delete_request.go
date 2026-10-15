@@ -13,6 +13,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 )
 
 // MinFaultTolerantControlPlaneNodes is the smallest control plane that still
@@ -212,7 +213,7 @@ func StartRequestedTeardown(ctx context.Context, tx db.Tx, nodeID uuid.UUID) err
 
 	return StartTeardown(ctx, tx, node, TeardownNodeInput{
 		Reason:             recorded.Reason,
-		ForceUnreachable:   recorded.ForceUnreachable,
+		ForceUnreachable:   recorded.ForceUnreachable || !isHealthyControlPlaneNode(node),
 		MachineHealthIssue: recorded.MachineHealthIssue,
 	}, "Node deletion in progress")
 }
@@ -270,7 +271,17 @@ func StartTeardown(ctx context.Context, tx db.Tx, node db.Node, input TeardownNo
 	}
 
 	workflowID := constants.TeardownNodeWorkflowPrefix + node.ID.String()
-	if _, err := tx.CreateWorkflowOutboxEntry(ctx, constants.TeardownNodeWorkflowType, workflowID, input); err != nil {
+	ctx, span := otelx.StartWorkflowSpan(ctx, otelx.WorkflowEnqueue, otelx.WorkflowAttributes{
+		WorkflowType: constants.TeardownNodeWorkflowType,
+		WorkflowID:   workflowID,
+		ClusterID:    node.ClusterID,
+		NodePoolID:   node.NodePoolID,
+		NodeID:       node.ID,
+		NodeName:     node.Name,
+	})
+	_, err = tx.CreateWorkflowOutboxEntry(ctx, constants.TeardownNodeWorkflowType, workflowID, input)
+	otelx.EndWorkflowSpan(span, err)
+	if err != nil {
 		return fmt.Errorf("failed to create workflow outbox entry: %w", err)
 	}
 	return nil

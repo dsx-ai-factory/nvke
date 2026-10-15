@@ -1,0 +1,92 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: clusterreleasechannels.internal.nvke.nvidia.com
+spec:
+  group: internal.nvke.nvidia.com
+  names:
+    kind: ClusterReleaseChannel
+    listKind: ClusterReleaseChannelList
+    plural: clusterreleasechannels
+    singular: clusterreleasechannel
+  scope: Cluster
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: ClusterReleaseChannel is an operator-managed catalog of control-plane
+          releases.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ClusterReleaseChannelSpec lists the releases available through
+              a channel.
+            properties:
+              releases:
+                additionalProperties:
+                  description: ClusterReleaseReferences lists the releases available
+                    for one Kubernetes minor version.
+                  items:
+                    description: ClusterReleaseReference names a cluster-scoped ClusterRelease.
+                    properties:
+                      minimumUpgradeAge:
+                        description: MinimumUpgradeAge is the minimum time since this
+                          release was created before it is eligible for automatic
+                          adoption.
+                        maxLength: 32
+                        type: string
+                        x-kubernetes-validations:
+                        - message: minimumUpgradeAge must be a nonnegative duration
+                          rule: duration(self) >= duration('0s')
+                      name:
+                        description: ResourceName is a Kubernetes DNS subdomain name,
+                          not a provider identifier.
+                        maxLength: 253
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                        type: string
+                    required:
+                    - minimumUpgradeAge
+                    - name
+                    type: object
+                  minItems: 1
+                  type: array
+                  x-kubernetes-list-map-keys:
+                  - name
+                  x-kubernetes-list-type: map
+                description: Releases maps Kubernetes major.minor versions to their
+                  available releases.
+                minProperties: 1
+                type: object
+                x-kubernetes-validations:
+                - message: release keys must be Kubernetes major.minor versions
+                  rule: self.all(version, version.matches('^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$'))
+            required:
+            - releases
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true

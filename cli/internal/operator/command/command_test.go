@@ -244,7 +244,7 @@ func TestCreateRejectsTheDocumentBeforeAnyClientIsBuilt(t *testing.T) {
 	clientFn := func() (operator.Client, error) { built = true; return newFakeClient(), nil }
 
 	_, _, err := run(t, "create", func() []*cobra.Command { return NewCreateCmds(clientFn) }, "",
-		"machineimage", "-f", writeFile(t, "apiVersion: internal.nke.nvidia.com/v1\n"+imageDoc))
+		"machineimage", "-f", writeFile(t, "apiVersion: internal.nvke.nvidia.com/v1\n"+imageDoc))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown field "apiVersion"`)
@@ -354,7 +354,7 @@ func TestCreateDryRunClientPrintsAManifestAndNeedsNoSite(t *testing.T) {
 	require.NoError(t, err)
 	var got map[string]any
 	require.NoError(t, yaml.Unmarshal([]byte(out), &got), "defaults to YAML")
-	assert.Equal(t, "internal.nke.nvidia.com/v1", got["apiVersion"])
+	assert.Equal(t, "internal.nvke.nvidia.com/v1", got["apiVersion"])
 	assert.Equal(t, "MachineImage", got["kind"])
 	assert.Equal(t, map[string]any{"name": "img-1"}, got["metadata"], "no GitOps annotations: that is not nvkectl's concern")
 	assert.Contains(t, out, "ipxeScript: |", "multi-line scripts stay readable")

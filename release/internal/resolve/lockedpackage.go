@@ -25,8 +25,10 @@ type LockedPackage struct {
 	// architecture.
 	LockDir string
 
-	// From names the component whose ref the lock files are read at.
-	From string
+	// At names the component whose ref the lock files are read at. This is not
+	// that component's version: the lock files say what the image built at that
+	// ref carries, which is a different version entirely.
+	At string
 }
 
 // constraintPattern is one to three numeric parts, such as 1.34 or 1.34.2.
@@ -40,7 +42,7 @@ var constraintPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+){0,2}$`)
 // matches it. An override that did not match would put a Kubernetes minor on a
 // stream that is not qualifying it.
 //
-// The ref comes from the input "<From>.ref". A version that exists for one
+// The ref comes from the input "<At>.ref". A version that exists for one
 // architecture only is not offered, because an image carries both and a plan
 // naming it would fail on the architecture that lacks it.
 func (l LockedPackage) Resolve(inputs map[string]string) (map[string]string, error) {
@@ -55,7 +57,7 @@ func (l LockedPackage) Resolve(inputs map[string]string) (map[string]string, err
 		return nil, fmt.Errorf("constraint %q is not a version prefix such as 1.34", constraint)
 	}
 
-	refKey := l.From + "." + ResultRefKey
+	refKey := l.At + "." + ResultRefKey
 	ref := inputs[refKey]
 	if ref == "" {
 		return nil, fmt.Errorf("no %s given, so there is no ref to read %s at", refKey, l.LockDir)

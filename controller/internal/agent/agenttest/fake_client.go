@@ -295,3 +295,9 @@ type InstallCNICall struct {
 	Node    db.Node
 	Request *nvkeproto.InstallCNIRequest
 }
+
+// ConvergeNodeAgent implements the agent convergence test surface.
+func (f *FakeClient) ConvergeNodeAgent(ctx context.Context, node db.Node, target, _ string) (string, bool, error) {
+	version, err := f.GetAgentVersion(ctx, node)
+	return version, version == target || target == "", err
+}

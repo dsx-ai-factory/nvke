@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -511,6 +512,8 @@ func TestGetAdminClientReadsPublishedKubeconfigAndRegistersVerifierSchemes(t *te
 		corev1.SchemeGroupVersion.WithKind("Pod"),
 		networkingv1.SchemeGroupVersion.WithKind("NetworkPolicy"),
 		policyv1.SchemeGroupVersion.WithKind("PodDisruptionBudget"),
+		rbacv1.SchemeGroupVersion.WithKind("Role"),
+		rbacv1.SchemeGroupVersion.WithKind("RoleBinding"),
 	} {
 		if !tenantClient.Scheme().Recognizes(gvk) {
 			t.Errorf("GetAdminClient() scheme does not recognize %s", gvk)

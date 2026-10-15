@@ -51,7 +51,7 @@ tenantAccess:
 # nvke-base-config still publishes oidc-provider-upstream-ca -- the spire item
 # waits on that Certificate regardless. So turning this true is a one-line
 # change once the SPIRE half is proven, with nothing else to reassemble.
-nkeOIDCAuth:
+nvkeOIDCAuth:
   enabled: false
   # Logical issuer, string-compared against the JWT's iss claim; it does not
   # have to resolve. discoveryURL does, and is VIP-derived, so it is passed in.
@@ -69,7 +69,7 @@ cni:
   installAfterInit: true
 
 # Empty on this path: none of the optional variables the Tiltfile forwards
-# (LOG_LEVEL, FORGE_URL, ...) are set by backend-e2e.sh.
+# (LOG_LEVEL, NODE_PROVISIONING_TIMEOUT, ...) are set by backend-e2e.sh.
 env: []
 
 # ---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ nameOverride: nke-controller
 serviceAccount:
   name: nke-controller
 
-nkeSystemNamespace:
+nvkeSystemNamespace:
   create: false
 
 # PINNED, unlike the e2e targets. A site is not building the controller from
@@ -146,9 +146,8 @@ image:
 
 # EMPTY, and it must stay empty. The controller image is staged into the node's
 # containerd before the install -- the node IS the cluster, so it resolves under
-# pullPolicy: IfNotPresent with no credential. The only pull secret this path
-# renders is ghcr-imagepull, and it lives in capnico-system for CAPNICo's image;
-# naming it here would reference a Secret that does not exist in this namespace.
+# pullPolicy: IfNotPresent with no credential. This path renders no pull
+# secret at all.
 #
 # A site that pulls the controller from a registry instead needs its own secret
 # in nke-controller, supplied with --values-for.

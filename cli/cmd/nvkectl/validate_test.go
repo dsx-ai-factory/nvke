@@ -31,7 +31,7 @@ func filledSiteSpec(t *testing.T, edits map[string]string) string {
 	t.Helper()
 	path := generatedSiteSpec(t)
 	dir := filepath.Dir(path)
-	for _, name := range []string{"nico-token", "registry-token", "tenant-password"} {
+	for _, name := range []string{"nico-token", "tenant-password"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("placeholder\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -39,7 +39,6 @@ func filledSiteSpec(t *testing.T, edits map[string]string) string {
 	values := map[string]string{
 		"REPLACE_ARCH": "arm64", "REPLACE_NICO_ENDPOINT": "https://nico.example.com", "REPLACE_NICO_ORG_ID": "org-1",
 		"REPLACE_NICO_API_NAME": "forge", "REPLACE_NICO_TOKEN_PATH": filepath.Join(dir, "nico-token"),
-		"REPLACE_REGISTRY_SERVER": "ghcr.io", "REPLACE_REGISTRY_USERNAME": "robot", "REPLACE_REGISTRY_TOKEN_PATH": filepath.Join(dir, "registry-token"),
 		"REPLACE_TENANT_USER": "nke", "REPLACE_TENANT_PASSWORD_PATH": filepath.Join(dir, "tenant-password"),
 		"REPLACE_DB_PASSWORD_PATH": filepath.Join(dir, "db-password"),
 		// deploy/nico enables profiles.image without a pin.
@@ -52,7 +51,8 @@ func filledSiteSpec(t *testing.T, edits map[string]string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(body)
+	// The trust domain goes in before the edits, so a case can take it out.
+	text := string(body) + "spire:\n  trustDomain: my-tier0-site.nke.local\n"
 	for placeholder, value := range values {
 		text = strings.ReplaceAll(text, placeholder, value)
 	}
@@ -67,20 +67,28 @@ func TestValidateSiteSpec_GeneratedFileListsPlaceholders(t *testing.T) {
 	if err == nil {
 		t.Fatal("a generated site spec validated as ready")
 	}
-	if !strings.Contains(stdout, "bootstrap: valid\n") {
+	if !strings.Contains(stdout, "bootstrap: valid; nvkectl bootstrap site can run with this file\n") {
 		t.Errorf("bootstrap section not reported valid:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "controllerStack: 11 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint") {
+	if !strings.Contains(stdout, "controllerStack: 8 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint") {
 		t.Errorf("placeholders not listed:\n%s", stdout)
+	}
+	// generate sitespec leaves the spire block commented out; the default
+	// trust domain is reported, not required.
+	if !strings.Contains(stdout, "spire.trustDomain: not set; a bootstrap with the default cluster name and the controller stack install both use nvkectl-bootstrap.nke.local") {
+		t.Errorf("default trust domain not reported:\n%s", stdout)
 	}
 	if strings.Contains(stdout, "is required") {
 		t.Errorf("placeholders reported as errors too:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "bootstrap: valid; nvkectl bootstrap site can run with this file") || !strings.Contains(err.Error(), "the bootstrap can run now") {
+		t.Errorf("the output does not say the bootstrap can run:\n%s\n%v", stdout, err)
 	}
 }
 
 func TestValidateSiteSpec_BootstrapOnly(t *testing.T) {
 	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", generatedSiteSpec(t), "--bootstrap-only")
-	if err != nil || stdout != "bootstrap: valid\n" {
+	if err != nil || stdout != "bootstrap: valid; nvkectl bootstrap site can run with this file\n" {
 		t.Errorf("--bootstrap-only: %q %v", stdout, err)
 	}
 }
@@ -89,6 +97,11 @@ func TestValidateSiteSpec_Filled(t *testing.T) {
 	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", filledSiteSpec(t, nil))
 	if err != nil || !strings.HasSuffix(stdout, "controllerStack: valid\n") {
 		t.Errorf("filled site spec: %q %v", stdout, err)
+	}
+	// Without a trust domain the file is still ready: both commands default it.
+	stdout, _, err = runGenerate(t, "validate", "sitespec", "-f", filledSiteSpec(t, map[string]string{"spire:\n  trustDomain: my-tier0-site.nke.local\n": ""}))
+	if err != nil || !strings.Contains(stdout, "spire.trustDomain: not set") || !strings.HasSuffix(stdout, "controllerStack: valid\n") {
+		t.Errorf("filled site spec without a trust domain: %q %v", stdout, err)
 	}
 }
 

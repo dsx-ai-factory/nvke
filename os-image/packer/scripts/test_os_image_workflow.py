@@ -171,6 +171,48 @@ class OSImageWorkflowTest(unittest.TestCase):
             ),
         )
 
+    @unittest.skipUnless(shutil.which("jq"), "the matrix step needs jq")
+    def test_beta_tag_bakes_only_the_golden_path(self):
+        # A beta is qualified on Ubuntu 24.04 non-FDE alone, so baking the rest
+        # of the matrix would hold KVM runners for images nothing reads.
+        pick = self.step("      - name: Pick\n", "\n  validate-packer:")
+        script = textwrap.dedent(pick.split("run: |\n", 1)[1])
+        with tempfile.NamedTemporaryFile() as output:
+            subprocess.run(
+                ["bash", "-c", script],
+                env={**os.environ, "WANT": "", "BETA": "true", "GITHUB_OUTPUT": output.name},
+                check=True,
+                capture_output=True,
+            )
+            legs = json.loads(Path(output.name).read_text().split("=", 1)[1])
+        self.assertEqual(
+            sorted(legs, key=lambda leg: leg["arch"]),
+            [
+                {
+                    "arch": arch,
+                    "ubuntu_release": "24.04.5",
+                    "tag_suffix": "-ubuntu24.04",
+                    "variant": "non-fde",
+                    "timeout_minutes": 90,
+                }
+                for arch in ("amd64", "arm64")
+            ],
+        )
+
+    def test_pushed_beta_tag_publishes_to_the_prod_bucket(self):
+        # Qualification reads a beta from the prod CDN. Losing the beta clause
+        # sends it to non-prod, which qualification sees only as a 403.
+        publish_s3 = self.step("\n  publish-s3:", "\n  release:")
+        environment = re.search(r"^    environment: (.+)$", publish_s3, re.M)
+        self.assertIsNotNone(environment)
+        self.assertEqual(
+            environment.group(1),
+            "${{ github.event_name == 'push' && "
+            "(startsWith(github.ref, 'refs/tags/os-image/') || "
+            "(startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.'))) "
+            "&& 's3-publish' || 's3-publish-non-prod' }}",
+        )
+
     def test_each_variant_bakes_and_checks_only_its_own_image(self):
         # A dropped or mistyped guard rebakes both variants in every job, or
         # skips one, and nothing fails until a later step.

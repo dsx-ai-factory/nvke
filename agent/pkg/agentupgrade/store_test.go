@@ -4,99 +4,47 @@
 package agentupgrade
 
 import (
-	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestStoreCreateIsIdempotentAndSerial(t *testing.T) {
+func TestStoreUsesVersionAndMethodForIdempotenceAndSerialAdmission(t *testing.T) {
 	store := NewStore(t.TempDir())
-	request := Operation{
-		ID:              "cluster-node-1",
-		Action:          ActionUpgrade,
-		TargetVersion:   "v0.1.2",
-		PreviousVersion: "v0.1.1",
-		Method:          MethodAPT,
-	}
-
+	request := Operation{TargetVersion: "v0.1.2", PreviousVersion: "v0.1.1", Method: MethodAPT}
 	created, wasCreated, err := store.Create(request)
 	require.NoError(t, err)
-	assert.True(t, wasCreated)
-	assert.Equal(t, PhasePending, created.Phase)
-
+	require.True(t, wasCreated)
 	retry := request
 	retry.PreviousVersion = "v0.1.2"
 	existing, wasCreated, err := store.Create(retry)
 	require.NoError(t, err)
-	assert.False(t, wasCreated)
-	assert.Equal(t, created, existing)
-
-	_, _, err = store.Create(Operation{
-		ID:              "cluster-node-2",
-		Action:          ActionUpgrade,
-		TargetVersion:   "v0.1.2",
-		PreviousVersion: "v0.1.1",
-		Method:          MethodAPT,
-	})
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrOperationActive)
-
-	_, err = store.SetStatus(request.ID, PhaseSucceeded, "verified", "")
+	require.False(t, wasCreated)
+	require.Equal(t, created, existing)
+	competing := request
+	competing.Method = MethodBundle
+	_, _, err = store.Create(competing)
+	require.ErrorIs(t, err, ErrOperationActive)
+	_, err = store.SetStatus(request.Key(), PhaseFailedRestored, "restored", "bad artifact")
 	require.NoError(t, err)
-	_, wasCreated, err = store.Create(Operation{
-		ID:              "cluster-node-2",
-		Action:          ActionUpgrade,
-		TargetVersion:   "v0.1.2",
-		PreviousVersion: "v0.1.1",
-		Method:          MethodAPT,
-	})
+	retried, wasCreated, err := store.Create(request)
 	require.NoError(t, err)
-	assert.True(t, wasCreated)
+	require.True(t, wasCreated)
+	require.Equal(t, created.Key(), retried.Key())
+	require.Equal(t, PhasePending, retried.Phase)
+	require.Empty(t, retried.ErrorMessage)
+	_, err = store.SetStatus(request.Key(), PhaseSucceeded, "verified", "")
+	require.NoError(t, err)
+	_, wasCreated, err = store.Create(competing)
+	require.NoError(t, err)
+	require.True(t, wasCreated)
 }
 
-func TestStoreRejectsOperationIDReuseForDifferentRequest(t *testing.T) {
-	store := NewStore(t.TempDir())
-	_, _, err := store.Create(Operation{
-		ID:              "same-id",
-		Action:          ActionUpgrade,
-		TargetVersion:   "v0.1.2",
-		PreviousVersion: "v0.1.1",
-		Method:          MethodAPT,
-	})
-	require.NoError(t, err)
-
-	_, _, err = store.Create(Operation{
-		ID:              "same-id",
-		Action:          ActionUpgrade,
-		TargetVersion:   "v0.1.3",
-		PreviousVersion: "v0.1.1",
-		Method:          MethodAPT,
-	})
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrOperationConflict))
-}
-
-func TestValidateOperationID(t *testing.T) {
-	tests := []struct {
-		name      string
-		id        string
-		wantError bool
-	}{
-		{name: "valid", id: "cluster.node-1_upgrade", wantError: false},
-		{name: "empty", id: "", wantError: true},
-		{name: "path traversal", id: "../escape", wantError: true},
-		{name: "systemd escape", id: "node@upgrade", wantError: true},
+func TestValidateRequestKey(t *testing.T) {
+	for _, key := range []string{"v0.1.2_apt", "v0.1.2_bundle"} {
+		require.NoError(t, ValidateRequestKey(key))
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := ValidateOperationID(test.id)
-			if test.wantError {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-		})
+	for _, key := range []string{"", "../escape", "v0.1.2@apt", "v01.1.2_apt", "v0.1.2_other"} {
+		require.Error(t, ValidateRequestKey(key))
 	}
 }

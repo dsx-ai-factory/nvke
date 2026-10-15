@@ -50,7 +50,7 @@ func stored(kind Kind, name string, spec map[string]any) *unstructured.Unstructu
 			"creationTimestamp": time.Now().Add(-3 * time.Hour).UTC().Format(time.RFC3339),
 			"annotations": map[string]any{
 				"kubectl.kubernetes.io/last-applied-configuration": "{}",
-				"internal.nke.nvidia.com/note":                     "kept",
+				"internal.nvke.nvidia.com/note":                    "kept",
 			},
 			"managedFields": []any{map[string]any{"manager": "kubectl"}},
 		},
@@ -87,7 +87,7 @@ func TestDynamicCreateSendsAManifestWithStrictValidation(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, gotObject)
-	assert.Equal(t, "internal.nke.nvidia.com/v1", gotObject.GetAPIVersion())
+	assert.Equal(t, "internal.nvke.nvidia.com/v1", gotObject.GetAPIVersion())
 	assert.Equal(t, "ClusterRelease", gotObject.GetKind())
 	assert.Equal(t, "rel-1", gotObject.GetName())
 	assert.Equal(t, map[string]string{"a": "b"}, gotObject.GetAnnotations())
@@ -122,7 +122,7 @@ func TestDynamicGetProjectsToPortableShape(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, Metadata{
 		Name:        "rel-1",
-		Annotations: map[string]string{"internal.nke.nvidia.com/note": "kept"},
+		Annotations: map[string]string{"internal.nvke.nvidia.com/note": "kept"},
 	}, got.Metadata, "kubectl bookkeeping, uid, resourceVersion and managedFields are not part of the portable form")
 	assert.Equal(t, releaseSpec(true), got.Spec)
 	assert.WithinDuration(t, time.Now().Add(-3*time.Hour), got.CreatedAt, time.Minute)
@@ -251,7 +251,7 @@ func TestDynamicErrors(t *testing.T) {
 			name:    "an admission rejection keeps the server's message",
 			verb:    "create",
 			apiErr:  apierrors.NewInvalid(schema.GroupKind{Group: enginev1.GroupName, Kind: "ClusterRelease"}, "rel-1", nil),
-			wantMsg: "ClusterRelease.internal.nke.nvidia.com",
+			wantMsg: "ClusterRelease.internal.nvke.nvidia.com",
 			call: func(c *Dynamic) error {
 				_, err := c.Create(context.Background(), KindClusterRelease, Resource{Metadata: Metadata{Name: "rel-1"}, Spec: map[string]any{}})
 				return err

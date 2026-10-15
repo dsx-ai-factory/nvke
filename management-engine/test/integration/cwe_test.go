@@ -37,10 +37,10 @@ var bindingFixture []byte
 
 const pollInterval = 2 * time.Second
 
-var _ = Describe("NKECluster through the local CWE API", func() {
+var _ = Describe("NVKECluster through the local CWE API", func() {
 	It("persists cluster intent, dispatches Temporal, and creates CAPI resources", func(ctx SpecContext) {
 		env := loadEnvironment()
-		var cluster internalv1.NKECluster
+		var cluster internalv1.NVKECluster
 		Expect(yaml.UnmarshalStrict(clusterFixture, &cluster)).To(Succeed())
 		var bindings []struct {
 			Template api.CreateClusterRequest `json:"template"`
@@ -69,7 +69,7 @@ var _ = Describe("NKECluster through the local CWE API", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(annotations).To(HaveKeyWithValue(clusterv1.PausedAnnotation, "true"))
 
-		By("creating an NKECluster in the state cluster")
+		By("creating an NVKECluster in the state cluster")
 		Expect(env.state.Create(ctx, &cluster)).To(Succeed())
 		remoteName := "nke-" + string(cluster.UID)
 		evidence := integrationEvidence{
@@ -77,7 +77,7 @@ var _ = Describe("NKECluster through the local CWE API", func() {
 			TemporalNamespace: env.temporalNamespace,
 		}
 		saveEvidence(env.resultsDir, evidence)
-		GinkgoWriter.Printf("NKECluster %s/%s; CWE name %s\n", cluster.Namespace, cluster.Name, remoteName)
+		GinkgoWriter.Printf("NVKECluster %s/%s; CWE name %s\n", cluster.Namespace, cluster.Name, remoteName)
 
 		By("observing the independent CWE API representation")
 		var observedCluster *api.Cluster

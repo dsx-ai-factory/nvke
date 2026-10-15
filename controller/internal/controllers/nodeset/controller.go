@@ -100,13 +100,9 @@ func (c *Controller) reconcileNodeSet(ctx context.Context, tx db.Tx, nodeSet db.
 		"nodePoolID", nodePool.ID,
 	)
 
-	// When the control-plane controller manages control-plane provisioning it
-	// fully owns the control-plane node lifecycle (create and delete), tracking
-	// them as cluster-level no-nodepool nodes. Skip control-plane node sets
-	// entirely so the two controllers never both act on them; any legacy
-	// nodepool/node-set control-plane nodes are migrated to the control-plane
-	// controller.
-	if nodePool.ControlPlane && c.cfg.UseControlPlaneControllerForControlPlane() {
+	// The control-plane controller owns the control-plane node lifecycle, so
+	// control-plane node sets are never reconciled here.
+	if nodePool.ControlPlane {
 		nsLogger.Debug("Control-plane node set fully managed by control-plane controller; skipping")
 		return nil
 	}
