@@ -690,6 +690,9 @@ func (s *nodePoolService) validateUpdateNodePoolRequest(cluster db.Cluster, req 
 }
 
 func validateUpdateLaunchLayerNodePoolRequest(req *api.UpdateNodePoolRequest) error {
+	if req == nil {
+		return nil
+	}
 	if req.Nico != nil {
 		return fmt.Errorf("nico is not supported, please use launchLayer")
 	}

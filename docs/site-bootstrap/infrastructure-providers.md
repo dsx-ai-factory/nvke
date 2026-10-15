@@ -173,7 +173,8 @@ The site controller then has to accept LaunchLayer requests. Until it does, it r
 | Value | Setting |
 |---|---|
 | `supportedInfraProviders` | Add `launchLayer`, for example `"nico,launchLayer"` |
-| `capi.rbac.launchLayer` | `true`, the default. Grants CWE access to LaunchLayer's CRDs |
+| `capi.rbac.create` | `true`. It defaults to `false`, and the chart renders no CAPI or LaunchLayer RBAC without it |
+| `capi.rbac.launchLayer` | `true`, the default. Grants CWE access to LaunchLayer's CRDs when `capi.rbac.create` is `true` |
 | `nodeAgent.spireAttestationMethod` | `dsxImds`, when `spiffe.enabled` is `true`. A LaunchLayer node attests to SPIRE only through DSX IMDS, so a SPIFFE-enabled deployment using any other method rejects LaunchLayer requests with 400 |
 
 The ordering rule above applies here too: CWE checks for the `LaunchLayerMachine` CRD once, at process start, and skips the LaunchLayer SPIFFE controller when it is absent. Install CAPLL before CWE, or restart CWE after it.
