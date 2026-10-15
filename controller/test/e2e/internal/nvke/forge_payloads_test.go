@@ -64,6 +64,11 @@ func TestBuildForgeNodePayloadsRendersEveryInput(t *testing.T) {
 		"nvke-kubeadm-distro-" + inputs.KubernetesVersion,
 		"nvke-cni-ovn-images-" + inputs.CNIVersion,
 		"nvke-cni-ovn-charts-" + inputs.CNIVersion,
+		// The old spelling as the fallback: neither package declares Provides,
+		// and the suite carries only the old one at the version CNIVersion
+		// resolves to today.
+		"nke-cni-ovn-images-" + inputs.CNIVersion,
+		"nke-cni-ovn-charts-" + inputs.CNIVersion,
 		"openvswitch-switch",
 	} {
 		if !strings.Contains(joined, want) {
