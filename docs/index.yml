@@ -58,12 +58,12 @@ navigation:
             path: operate/observe.md
           - page: Troubleshoot
             path: operate/troubleshoot.md
-          - page: Migrate CRs to the NVKE CRD group
+          - page: Migrating CRs to the internal.nvke.nvidia.com group
             path: operations/crd-group-migration.md
 
       - section: Telemetry (NKTP)
         contents:
-          - page: Getting Started
+          - page: Getting started with NKTP
             path: nktp/getting-started.md
           - page: Send Telemetry to NKTP
             path: nktp/guides/send-telemetry.md
@@ -111,29 +111,29 @@ navigation:
                 path: nktp/design-principles.md
               - page: Required Target Allocation
                 path: nktp/designs/target-allocation.md
-              - page: kube-state-metrics Scaling
+              - page: kube-state-metrics
                 path: nktp/designs/kube-state-metrics.md
 
       - section: Site Telemetry (NKTP)
         contents:
-          - page: Getting Started
+          - page: Telemetry on a site controller: getting started
             path: nktp/site-telemetry/getting-started.md
-          - page: Configuration
+          - page: Telemetry on a site controller: configuration
             path: nktp/site-telemetry/configuration.md
-          - page: Monitoring Your Service
+          - page: Telemetry on a site controller: monitoring your service
             path: nktp/site-telemetry/monitoring-a-service.md
-          - page: Verification
+          - page: Telemetry on a site controller: verification
             path: nktp/site-telemetry/verification.md
-          - page: Troubleshooting
+          - page: Telemetry on a site controller: troubleshooting
             path: nktp/site-telemetry/troubleshooting.md
 
       - section: Reference
         contents:
-          - page: nvkectl CLI
+          - page: Site and Tenant Cluster Flow
             path: ../cli/docs/user-flow.md
           - page: nvkectl Compatibility Policy
             path: ../cli/docs/compatibility.md
-          - page: Site Spec
+          - page: nvkectl bootstrap site — site spec file spec
             path: ../cli/docs/sitespec.md
           - page: Configuring API Authentication
             path: ../controller/docs/configuring-api-authentication.md

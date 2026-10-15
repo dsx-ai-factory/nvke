@@ -3,14 +3,14 @@
 NKTP is one Helm chart that collects a Kubernetes cluster's metrics, logs and
 traces and exports them over OTLP. This guide installs it, connects it to a
 backend, and covers the settings that most often differ from one cluster to the
-next. The [chart README](../../nktp/deploy/charts/nktp/README.md) summarizes what the chart
+next. The [chart README](https://github.com/dsx-ai-factory/nvke/blob/main/nktp/deploy/charts/nktp/README.md) summarizes what the chart
 deploys, and the [topology](architecture/topology.md) links the page that covers
 each component and its values. On an NVKE site controller, `deploy/nico` deploys
 NKTP for you; see [Telemetry on a site controller](site-telemetry/getting-started.md).
 
 ## Before you install
 
-The full list is in [Prerequisites](../../nktp/deploy/charts/nktp/README.md#prerequisites). The ones
+The full list is in [Prerequisites](https://github.com/dsx-ai-factory/nvke/blob/main/nktp/deploy/charts/nktp/README.md#prerequisites). The ones
 that most often need preparing:
 
 - **cert-manager.** Required with default values; install it separately using
@@ -65,7 +65,7 @@ helm install nktp ./nktp/deploy/charts/nktp --namespace nktp --values my-values.
 - **`my-values.yaml`** holds your settings from the sections below. Leave it
   out to install with the defaults.
 - **Versions:** each release is an `nktp/vX.Y.Z` tag; see
-  [RELEASE.md](../../RELEASE.md).
+  [RELEASE.md](https://github.com/dsx-ai-factory/nvke/blob/main/RELEASE.md).
 
 <details>
 <summary>Example Collector and certificate readiness with cert-manager installed</summary>
@@ -108,7 +108,7 @@ localhost:
 kubectl -n nktp port-forward svc/lgtm 3000:3000 --address 127.0.0.1
 ```
 
-See [the default dashboards](../../nktp/deploy/charts/nktp/dashboards/README.md#default-autoloaded-into-lgtm)
+See [the default dashboards](https://github.com/dsx-ai-factory/nvke/blob/main/nktp/deploy/charts/nktp/dashboards/README.md#default-autoloaded-into-lgtm)
 for the dashboards that are included by default.
 
 ## Set a backend

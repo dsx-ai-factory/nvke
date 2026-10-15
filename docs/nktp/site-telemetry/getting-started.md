@@ -12,8 +12,8 @@ cover [configuration](configuration.md), [verification](verification.md) and
 
 ## What you get
 
-The `nktp` item in [`deploy/nico`](../../../deploy/nico/README.md)
-installs the [NKTP chart](../../../nktp/deploy/charts/nktp/README.md) from the
+The `nktp` item in [`deploy/nico`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/README.md)
+installs the [NKTP chart](https://github.com/dsx-ai-factory/nvke/blob/main/nktp/deploy/charts/nktp/README.md) from the
 same checkout, into namespace `nktp`:
 
 - **The OpenTelemetry Operator** and its CRDs, plus the Prometheus monitoring
@@ -64,7 +64,7 @@ The state of all their Pods still arrives through kube-state-metrics.
 
 The deploy path installs NKTP with the rest of the management plane, so its
 prerequisites are the path's own
-([Before this runs](../../../deploy/nico/README.md#before-this-runs)),
+([Before this runs](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/README.md#before-this-runs)),
 plus:
 
 - **cert-manager.** `clusterctl init` installs it. It issues the Operator's
@@ -133,7 +133,7 @@ pipeline itself is healthy.
 
 ### NVKE reference dashboards
 
-NVKE also ships [reference Grafana dashboards](../../../controller/deploy/dashboards/README.md)
+NVKE also ships [reference Grafana dashboards](https://github.com/dsx-ai-factory/nvke/blob/main/controller/deploy/dashboards/README.md)
 as JSON files. These are starting points for investigating a site, not a
 complete monitoring or alerting setup. Review their **Requirements and scope**
 panels, check that your backend collects the required metrics, and adapt the
@@ -146,7 +146,7 @@ The files are not installed automatically with the site controller. You can
 import them into the bundled `lgtm` Grafana while developing, but import them
 into your [real telemetry backend](configuration.md#connecting-a-real-backend)
 for site operations: `lgtm` keeps data in memory and has no authentication.
-See the [dashboard README](../../../controller/deploy/dashboards/README.md)
+See the [dashboard README](https://github.com/dsx-ai-factory/nvke/blob/main/controller/deploy/dashboards/README.md)
 for the full catalog and import details.
 
 For the full checklist, see [verification](verification.md).

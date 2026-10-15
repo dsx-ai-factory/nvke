@@ -1,4 +1,4 @@
-# Migrating CRs to the `internal.nvke.nvidia.com` Group
+# Migrating CRs to the internal.nvke.nvidia.com group
 
 The management-engine's internal API group changed from `internal.nke.nvidia.com`
 to `internal.nvke.nvidia.com`, and its cluster kind from `NKECluster` to
