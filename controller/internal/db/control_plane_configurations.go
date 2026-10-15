@@ -50,32 +50,6 @@ type NicoControlPlaneProvider struct {
 	SSHKeyGroupIDs         []uuid.UUID           `json:"ssh_key_group_ids,omitempty"`
 }
 
-// MarshalJSON writes the release under both the release and os_profile keys.
-// See NicoNodePoolProvider.MarshalJSON for why the mirror exists.
-func (n NicoControlPlaneProvider) MarshalJSON() ([]byte, error) {
-	type alias NicoControlPlaneProvider
-	return json.Marshal(struct {
-		alias
-		OSProfileLegacy string `json:"os_profile,omitempty"`
-	}{alias(n), n.Release})
-}
-
-// UnmarshalJSON reads the release from either key, preferring release.
-func (n *NicoControlPlaneProvider) UnmarshalJSON(data []byte) error {
-	type alias NicoControlPlaneProvider
-	aux := struct {
-		*alias
-		OSProfileLegacy string `json:"os_profile,omitempty"`
-	}{alias: (*alias)(n)}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	if n.Release == "" {
-		n.Release = aux.OSProfileLegacy
-	}
-	return nil
-}
-
 type CAPIControlPlaneProvider struct {
 	InfraMachineTemplatePreferences []json.RawMessage      `json:"infra_machine_template_preferences,omitempty"`
 	SpireAttestationMethod          SpireAttestationMethod `json:"spire_attestation_method,omitempty"`

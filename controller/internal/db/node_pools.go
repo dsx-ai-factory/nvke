@@ -44,38 +44,6 @@ type NicoNodePoolProvider struct {
 	DiskSelectionStrategy    DiskSelectionStrategy `json:"disk_selection_strategy,omitempty"`
 }
 
-// MarshalJSON writes the release under both the release and os_profile keys.
-// A CWE predating the rename rewrites the whole nico payload from its own
-// struct, so a pod still draining during an upgrade would erase a payload
-// carrying only the release key.
-//
-// Drop the mirror once no such pod can run, and backfill release from
-// os_profile before doing so: nothing has rewritten the rows that predate this
-// change, and they carry os_profile alone.
-func (n NicoNodePoolProvider) MarshalJSON() ([]byte, error) {
-	type alias NicoNodePoolProvider
-	return json.Marshal(struct {
-		alias
-		OSProfileLegacy string `json:"os_profile,omitempty"`
-	}{alias(n), n.Release})
-}
-
-// UnmarshalJSON reads the release from either key, preferring release.
-func (n *NicoNodePoolProvider) UnmarshalJSON(data []byte) error {
-	type alias NicoNodePoolProvider
-	aux := struct {
-		*alias
-		OSProfileLegacy string `json:"os_profile,omitempty"`
-	}{alias: (*alias)(n)}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	if n.Release == "" {
-		n.Release = aux.OSProfileLegacy
-	}
-	return nil
-}
-
 type CAPINodePoolProvider struct {
 	InfraMachineTemplate   json.RawMessage        `json:"infra_machine_template,omitempty"`
 	BootstrapFiles         []CloudInitFile        `json:"bootstrap_files,omitempty"`
