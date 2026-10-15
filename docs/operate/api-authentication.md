@@ -170,7 +170,7 @@ Configure your callers now, while NVKE still serves every request. From the mome
    nvkectl get clusters
    ```
 
-   `kubectl oidc-login` asks you to log in to the IdP if it has no valid token, then the command lists the workload clusters. A kubeconfig generated with `--headless` prints a URL to open on another machine.
+   `kubectl oidc-login` asks you to log in to the IdP if it has no valid token, then the command lists the workload clusters.
 
 ### With curl
 

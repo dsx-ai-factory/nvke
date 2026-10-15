@@ -320,6 +320,8 @@ NVKE reads group membership only from the token's `groups` claim.
 
 ### 1. Write the issuer
 
+Add this issuer to a configuration that already contains at least one top-level `audiences` value. The block below is not a complete configuration. NVKE refuses to start when `audiences` is missing.
+
 ```yaml
 issuers:
   - name: example-idp
