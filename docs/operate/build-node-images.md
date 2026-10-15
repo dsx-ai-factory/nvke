@@ -1,84 +1,39 @@
-# Get NVKE artifacts and OS profiles built with NVKR
+# Build node images and write OS profiles
 
-This page describes where the artifacts that NVIDIA Kubernetes Engine (NVKE) installs come from, how to hand them to the install, and how to write the OS profiles that the management plane provisions nodes from. Do it after you plan the installation and before you prepare the nodes.
-
-NVIDIA Kubernetes Recipes (NVKR) builds the artifacts NVKE runs: the controller image and chart, the charts NVKE installs alongside it, `nvkectl`, and the node OS image. NVKR's own documentation covers building, publishing and verifying them. NVKE owns the OS profiles, which are Kubernetes resources you write and apply to the management cluster.
+This page describes how to build the reference node OS image, serve its boot artifacts over HTTP(S), and write the OS profiles that NVIDIA Kubernetes Engine (NVKE) provisions nodes from. Do it after you plan the installation and before you prepare the nodes.
 
 ## Before you begin
 
 - You have read [Plan your installation](plan-installation.md).
-- You have a published NVKR Release reference, as `<REGISTRY>/<REPOSITORY>@sha256:<DIGEST>`, or a completed local NVKR Run. To produce either, follow the NVKR documentation linked in [Get the artifacts from NVKR](#get-the-artifacts-from-nvkr).
 - You have a checkout of `dsx-ai-factory/nvke` in `nvke/`, at the release you install.
+- You have the build tools listed in [Build the OS image](../../os-image/README.md#build-the-os-image).
 - You have `nvkectl` on this host, from [Install nvkectl](bootstrap-management-cluster.md#install-nvkectl), to check the release resources before you publish them.
 - To build your own profile content image, you have Docker and a container registry that the management cluster's nodes can pull from.
 
-## Get the artifacts from NVKR
+## Build the node OS image
 
-NVKR builds every artifact from a Definition, a YAML file that names each output and the pinned sources it is built from. A Run executes a Definition, and a published Run is a Release: one digest-pinned reference for the whole set. Use these NVKR pages for the procedures:
+The reference image is an Ubuntu disk image in QEMU copy-on-write (QCOW2) format. [Build the OS image](../../os-image/README.md#build-the-os-image) documents its prerequisites, package-builder modes and build options. From the root of the NVKE checkout, build and smoke-test a non-encrypted `amd64` image on a matching Linux host with Kernel-based Virtual Machine (KVM) access:
 
-| Task | NVKR documentation |
-|---|---|
-| Install `nvkr` and run a first build | [Quickstart](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/quickstart.md) |
-| Plan, run, publish and inspect a Run | [Definition, Run, and Release workflow](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/lifecycle.md) |
-| Browse, verify and export a Release | [Browse, export and verify a release](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/release-quickstart.md) |
-| The maintained NVKE Definition | [Combined NVKE M2 candidate](https://github.com/dsx-ai-factory/nvkr/blob/main/definitions/nvke-m2/README.md) |
-| Build the node OS image | [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/definitions/nvke-os/README.md) and [Build a node image from component materials](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/node-images.md) |
+```bash
+make -C os-image image-native ARCH=amd64 VARIANT=non-fde
+make -C os-image boot-smoke REQUIRE_ACCELERATION=1
+```
 
-### What the install takes from a Release
+The build writes `os-image/packer/output-non-fde/nvke-node-non-fde-ubuntu-<VERSION>-amd64.qcow2`, where `<VERSION>` is the Ubuntu point release selected by `UBUNTU_RELEASE` in `os-image/packer/Makefile` (currently `26.04.1`). `ARCH=arm64` builds for an `arm64` host. The [FDE build instructions](../../os-image/README.md#full-disk-encryption-fde-variant) cover `VARIANT=fde`, its passphrase settings and separate verification; the `boot-smoke` target above checks the non-FDE image.
 
-The install reads a Release by output name. Each item of the `deploy/nico` deploy path names the outputs it uses:
+For a source-built EFI imager, see [Build qcow-imager.efi](../../os-image/efi/README.md#building) and its [compatibility limitations](../../os-image/efi/README.md#what-this-does-not-build). Its Makefile provides `make -C os-image/efi build-efi-x86` and `make -C os-image/efi build-efi-arm64`, which write `os-image/efi/output/x86_64/qcow-imager.efi` and `os-image/efi/output/aarch64/qcow-imager.efi`. Use an imager and script validated together for your NICo site; the source-built EFI is not interchangeable with the fleet imager.
 
-| Output | What it is | Used by |
-|---|---|---|
-| `cwe` | The NVKE controller image. | The `controller` item. |
-| `controller-chart` | The NVKE controller Helm chart. | The `controller` item. |
-| `controller-profiles` | The profile content image, which holds config profiles and hook scripts. | The `controller` item. |
-| `capnico-controller` | The Cluster API provider for NVIDIA Infra Controller (NICo) image. | The `capnico` item. |
-| `postgresql`, `spire-crds`, `spire`, `temporal`, `nktp` | Helm charts. | The item of the same name. |
-
-The install selects each output for the site's architecture, `controllerStack.arch` in the site spec. An output name may carry an `-amd64` or `-arm64` suffix. A chart the Release does not carry comes from the checkout or from its public repository. An image the Release does not carry stops the render, which names every missing image.
-
-### Hand the Release to the install
-
-1. Verify the Release under your policy, as described in [Verify against an accepted policy](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/release-quickstart.md#verify-against-an-accepted-policy).
-
-2. Export the Release description.
-
-   ```bash
-   nvkr release export --reference <RELEASE_REF> > release.json
-   ```
-
-   `<RELEASE_REF>` is the Release reference you verified in step 1. The file is `nvkr.dev/release-description/v1` JSON that lists every output with its digest-pinned reference. `export` verifies nothing, so run it only on a reference that `verify` accepted. See [Export the complete description](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/release-quickstart.md#export-the-complete-description).
-
-3. Keep `release.json`. You pass it to the install as `--release` in [Install management-plane services](install-management-plane-services.md). For a local Run that was never published, also pass `--nvkr-run-dir .nvkr/runs/<ATTEMPT>`: the install then reads charts and images from the Run's OCI layouts instead of a registry, and imports the images into the node's containerd.
-
-> **Note:** NVKR's maintained M2 Definition (`definitions/nvke-m2`) does not build the `controller-profiles` or `capnico-controller` outputs, so the install refuses a Release built from it. Install without `--release` instead. The controller chart then comes from your checkout, and the site spec names the controller and profiles images in `controllerStack.images.controller` and `controllerStack.images.profiles`, each as `repository:tag` or `repository@sha256:<DIGEST>`. To use the Release's controller image, take the `cwe` output's `Derived artifact reference:` from `nvkr release browse`. To build the profiles image, see [Build the profile content image](#build-the-profile-content-image).
-
-### What a Release proves
-
-NVKR records an evidence lane for every plan, Run and Release. No lane qualifies a Release.
-
-| Lane | Comes from | Signed |
-|---|---|---|
-| `static-unqualified` | A plan or a dry run. Nothing is built. | No |
-| `unqualified-local-execution` | A Run on your own host. | No |
-| `pipeline-attested` | A Run of the hosted pipeline that NVKR generates. It publishes signatures and build provenance that `nvkr release verify` checks. | Yes |
-
-See [Preview status and known limitations](../overview/preview-status.md).
-
-### The node OS image
-
-NVKR builds the node OS image, `nvke-node-image-<ARCH>.qcow2`: Ubuntu 26.04.1 in QEMU copy-on-write (QCOW2) format, for `amd64` or `arm64`. A local build runs NVKR's `scripts/nvke-os-local.sh` with `NVKE_OS_ARCH` set to the architecture, on native Linux with Kernel-based Virtual Machine (KVM) access, at least 8 CPUs, 10 GiB of memory and 64 GiB of free disk space. It writes `.nvkr/runs/<ATTEMPT>/outputs/nvke-node-image-<ARCH>.qcow2`, which is unsigned and unqualified. The maintained M2 Definition also builds node images for both architectures in the hosted pipeline. [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/definitions/nvke-os/README.md) has the procedure. [Serve the boot artifacts over HTTP(S)](#serve-the-boot-artifacts-over-https), then [Prepare nodes](prepare-nodes.md) from the image.
+After building, [serve the boot artifacts over HTTP(S)](#serve-the-boot-artifacts-over-https), then [Prepare nodes](prepare-nodes.md) from the image.
 
 ## Serve the boot artifacts over HTTP(S)
 
-For the NICo iPXE boot flow described here, publish the boot artifacts at HTTP or HTTPS URLs that the machines can reach before their installed OS starts. You provide the endpoint, for example an object store with an HTTP interface, a site-local web server, or an Amazon S3 bucket served through CloudFront. NVKE passes the boot instructions to NICo; it does not upload these files or create a server for them.
+For the NICo iPXE boot flow described here, publish the boot artifacts at HTTP or HTTPS URLs that the machines can reach before their installed OS starts. Any endpoint that serves the files to these boot clients can provide this interface: a site-local web server, an object store with an HTTP(S) frontend, or a CDN. You choose and operate the hosting service. NVKE passes the boot instructions to NICo; it does not upload these files or create a server for them.
 
 The files to publish depend on your boot method:
 
 | Boot method | Files served over HTTP(S) | What downloads them |
 |---|---|---|
-| Write the NVKR QCOW2 image to disk | The architecture-matched EFI imager, such as `qcow-imager.efi`, and `nvke-node-image-<ARCH>.qcow2`. | iPXE chainloads the EFI imager; the imager downloads the QCOW2 and writes it to disk. Use an imager and script validated for your NICo site, including its disk-selection parameters. |
+| Write the QCOW2 image to disk | The architecture-matched EFI imager, such as `qcow-imager.efi`, and `nvke-node-<VARIANT>-ubuntu-<VERSION>-<ARCH>.qcow2`. | iPXE chainloads the EFI imager; the imager downloads the QCOW2 and writes it to disk. Use an imager and script validated for your NICo site, including its disk-selection parameters. |
 | Install from an Ubuntu ISO | The matching `vmlinuz`, `initrd` and installer ISO. | iPXE loads the kernel and initrd; the installer downloads the ISO. This is the method in the example MachineImage. |
 
 The `MachineImage.spec.nico.ipxeScript` field holds the script itself. If your script chains another `.ipxe` script, publish that file at a reachable HTTP(S) URL too. A QCOW2 is a disk image, not an EFI executable: the script must launch an imager to install it.
@@ -87,34 +42,36 @@ An OCI registry can store the artifacts, but iPXE has [no native OCI pull suppor
 
 Use a separate path for each image build and architecture, and keep its files available for future node creation and replacement. Configure DNS, routing and firewall access from the provisioning network to the endpoint's port, usually TCP 80 or 443. For HTTPS, both iPXE and the imager or installer must support TLS and trust the endpoint's certificate. Registry logins and AWS credentials on the publishing host are not automatically available to these boot clients; configure read access that they can use.
 
-### Example: upload to Amazon S3 and serve over HTTPS
+### Example: Amazon S3 with CloudFront
 
-This example uses an existing bucket and the [AWS CLI](https://docs.aws.amazon.com/cli/latest/reference/s3/cp.html) on the publishing host. Replace the bucket, Region, build ID and local paths below. `QCOW2_PATH` is the image from your NVKR Run; `EFI_PATH` is a compatible imager supplied by your site. The example uploads files only: the bucket or HTTP frontend must already allow the boot clients to read them.
+S3 with CloudFront is one hosting example; NVKE requires neither service. This example uses an existing private S3 bucket, a CloudFront distribution with that bucket's REST endpoint as its origin, and the [AWS CLI](https://docs.aws.amazon.com/cli/latest/reference/s3/cp.html) on the publishing host. Configure [CloudFront origin access control](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html) so CloudFront can read the bucket, and viewer access so the boot clients can fetch the files over HTTPS. The upload commands below do not configure that access.
+
+Replace the bucket, Region, build ID and local paths below. `QCOW2_PATH` is the image from [Build the node OS image](#build-the-node-os-image); `EFI_PATH` is a compatible imager supplied by your site. Run the commands from the NVKE checkout root.
 
 ```bash
 BOOT_BUCKET="amzn-s3-demo-bucket"
 BOOT_REGION="us-west-2"
 BOOT_PREFIX="nvke/build-001/amd64"
-QCOW2_PATH="/path/to/nvke-node-image-amd64.qcow2"
+QCOW2_PATH="os-image/packer/output-non-fde/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2"
 EFI_PATH="/path/to/site-compatible/qcow-imager.efi"
 
 aws s3 cp "$QCOW2_PATH" \
-  "s3://${BOOT_BUCKET}/${BOOT_PREFIX}/nvke-node-image-amd64.qcow2" \
+  "s3://${BOOT_BUCKET}/${BOOT_PREFIX}/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2" \
   --region "$BOOT_REGION"
 aws s3 cp "$EFI_PATH" \
   "s3://${BOOT_BUCKET}/${BOOT_PREFIX}/qcow-imager.efi" \
   --region "$BOOT_REGION"
 ```
 
-If the bucket permits direct reads from the boot clients, its [regional S3 object endpoint](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) gives these HTTPS URLs:
+Use your CloudFront distribution's hostname, or its configured custom hostname, to form the boot URLs. Keep the object prefix in the URL; this example assumes the distribution has no additional origin path:
 
 ```bash
-BOOT_BASE_URL="https://${BOOT_BUCKET}.s3.${BOOT_REGION}.amazonaws.com/${BOOT_PREFIX}"
+BOOT_BASE_URL="https://<CLOUDFRONT_HOST>/${BOOT_PREFIX}"
 BOOT_LOADER_URL="${BOOT_BASE_URL}/qcow-imager.efi"
-IMAGE_URL="${BOOT_BASE_URL}/nvke-node-image-amd64.qcow2"
+IMAGE_URL="${BOOT_BASE_URL}/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2"
 ```
 
-To keep the bucket private, you can instead serve it through [CloudFront with origin access control](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html), configure viewer access for the boot clients, and use the CloudFront hostname in `BOOT_BASE_URL`. A site-local object store or web server can provide the same HTTP(S) interface. S3 static website hosting is not required; its [website endpoints support HTTP only](https://docs.aws.amazon.com/AmazonS3/latest/userguide/WebsiteEndpoints.html).
+For another object store or a web server, upload the same files and set `BOOT_BASE_URL` to that service's HTTP(S) base URL. The boot flow is the same. S3 static website hosting is not required for this example; its [website endpoints support HTTP only](https://docs.aws.amazon.com/AmazonS3/latest/userguide/WebsiteEndpoints.html).
 
 Put the final URLs into your site's validated iPXE script in `MachineImage.spec.nico.ipxeScript`: the EFI URL is the chainload target, and the QCOW2 URL is an input to the imager. Keep the imager's required parameters and NICo's cloud-init datasource in that script. These URL assignments alone are not a complete imaging script; this release has no reference QCOW2 boot script.
 
@@ -124,8 +81,8 @@ From a host on the same provisioning network as the machines, download both file
 
 ```bash
 curl --fail --location --output /tmp/nvke-qcow-imager.efi "$BOOT_LOADER_URL"
-curl --fail --location --output /tmp/nvke-node-image-amd64.qcow2 "$IMAGE_URL"
-sha256sum /tmp/nvke-qcow-imager.efi /tmp/nvke-node-image-amd64.qcow2
+curl --fail --location --output /tmp/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2 "$IMAGE_URL"
+sha256sum /tmp/nvke-qcow-imager.efi /tmp/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2
 ```
 
 Compare the downloaded files' SHA-256 digests with the verified source artifacts before using them. Check every URL in an installer or chained-script flow in the same way. This checks network access and file integrity; a successful machine boot is still needed to validate firmware TLS support, imager compatibility, disk selection and first-boot user data.
@@ -136,11 +93,13 @@ The `osProfile` field of a workload cluster or node pool names a release that th
 
 | Resource | What it holds |
 |---|---|
-| `MachineImage` | The image a node boots: its operating system, architecture, build date, and the iPXE script that tells NICo how to boot the machine. |
-| `ClusterRelease` | For control-plane nodes: the `MachineImage` to boot and the cloud-init user data the node runs on first boot. |
-| `NodePoolRelease` | The same, for worker nodes. |
+| [`MachineImage`](../../cli/examples/machineimage.yaml) | The image a node boots: its operating system, architecture, build date, and the iPXE script that tells NICo how to boot the machine. |
+| [`ClusterRelease`](../../cli/examples/clusterrelease.yaml) | For control-plane nodes: the `MachineImage` to boot and the cloud-init user data the node runs on first boot. |
+| [`NodePoolRelease`](../../cli/examples/nodepoolrelease.yaml) | The same, for worker nodes. |
 
-A control-plane node pool resolves its `osProfile` to a `ClusterRelease`, and a worker node pool to a `NodePoolRelease`. Give all three resources one name, and use that name as the `osProfile`. The specs are immutable once applied: to change an image or its user data, apply new resources with a new name.
+A control-plane node pool resolves its `osProfile` to a `ClusterRelease`, and a worker node pool to a `NodePoolRelease`. This example gives all three resources one name and uses that name as the `osProfile`. The `MachineImage` spec and each release's `machineImageRef` and `machineInit` are immutable once applied: to change an image or its user data, create resources with new names. A release's `lifecycle.deprecated` field can change separately.
+
+Run the file-preparation commands below from the directory containing your `nvke/` checkout. The resulting `releases/` directory is the input you publish after installing the management plane.
 
 1. Copy the examples into a `releases` directory.
 
@@ -158,15 +117,15 @@ A control-plane node pool resolves its `osProfile` to a `ClusterRelease`, and a 
 
    | Field | Value |
    |---|---|
-   | `spec.operatingSystem.family`, `spec.operatingSystem.version` | The distribution, such as `ubuntu` and `"26.04"` for the NVKR node image. |
+   | `spec.operatingSystem.family`, `spec.operatingSystem.version` | The distribution, such as `ubuntu` and `"26.04"` for the reference node image. |
    | `spec.architecture` | `amd64` or `arm64`. |
    | `spec.buildDate` | The date you built the image, as `YYYY-MM-DD`. |
    | `spec.variant` | Optional. Distinguishes images built from the same operating system for another purpose, such as `fde`. |
    | `spec.nico.ipxeScript` | The script NICo runs to boot the machine. It starts with a `#!ipxe` line of its own. |
 
-   The example's `ipxeScript` installs Ubuntu 24.04 from the installer ISO; replace its `boot.example.com` and `releases.example.com` URLs with hosts that your NICo machines reach. To boot the NVKR node image instead, `ipxeScript` must write the QCOW2 file to the machine's disk with a loader your NICo site provides. Publish the files and verify their URLs as described in [Serve the boot artifacts over HTTP(S)](#serve-the-boot-artifacts-over-https). This release has no reference QCOW2 boot script.
+   The example's `ipxeScript` installs Ubuntu 24.04 from the installer ISO; replace its `boot.example.com` and `releases.example.com` URLs with hosts that your NICo machines reach. To boot the reference node image instead, `ipxeScript` must write the QCOW2 file to the machine's disk with a loader your NICo site provides. Publish the files and verify their URLs as described in [Serve the boot artifacts over HTTP(S)](#serve-the-boot-artifacts-over-https). This release has no reference QCOW2 boot script.
 
-4. Write the first-boot user data in `spec.machineInit.userDataTemplate` of both releases. It starts with a cloud-init header such as `#cloud-config`, and it can reference the values in [What NVKE puts in the user data](#what-nvke-puts-in-the-user-data). In the example, replace the `apt.example.com` repository line with a command that adds an apt repository serving the NVKE node packages; NVKE publishes no such repository. A profile for the NVKR node image installs the packages the image stages, as [Prepare nodes](prepare-nodes.md) does, and writes the SPIRE files shown below.
+4. Write the first-boot user data in `spec.machineInit.userDataTemplate` of both releases. It starts with a cloud-init header such as `#cloud-config`, and it can reference the values in [What NVKE puts in the user data](#what-nvke-puts-in-the-user-data). In the example, replace the `apt.example.com` repository line with a command that adds an apt repository serving the NVKE node packages; NVKE publishes no such repository. A profile for the reference node image installs the packages the image stages, as [Prepare nodes](prepare-nodes.md) does, and writes the SPIRE files shown below.
 
 5. Set the Kubernetes version annotations on both releases. Both are required.
 
@@ -203,7 +162,7 @@ NVKE renders `userDataTemplate` as a Go template for each node it creates, with 
 
 `ipxeScript` is rendered the same way with one value, `{{ .DiskSelectionStrategy }}`: the node pool's `diskSelectionStrategy`, `smallest` or `largest`.
 
-NVKE reads the SPIRE server's current trust bundle each time it creates a node and passes it in `{{ .TrustBundle }}`, so the profile carries no CA. A profile for the NVKR node image writes the SPIRE values to the files the image reads on first boot. Indent the block to match the rest of your `write_files` list:
+NVKE reads the SPIRE server's current trust bundle each time it creates a node and passes it in `{{ .TrustBundle }}`, so the profile carries no CA. A profile for the reference node image writes the SPIRE values to the files the image reads on first boot. Indent the block to match the rest of your `write_files` list:
 
 ```yaml
 write_files:
@@ -225,7 +184,7 @@ write_files:
 
 The optional `configProfile` field of a node pool names a config profile, which sets node labels and the hook scripts that run before a node joins. The controller reads config profiles from a profile content image that an init container, `materialize-profiles`, copies into the controller pod at startup. NVKE looks up `configProfiles/<NAME>.yaml` in that image, and the hook scripts under `runbooks/`.
 
-With a Release, the profile content image is the Release's `controller-profiles` output. Without one, or to use your own config profiles, build the image and name it in the site spec's `controllerStack.images.profiles`, which overrides the Release's.
+Build the profile content image and name it in the site spec's `controllerStack.images.profiles`.
 
 ### Build the profile content image
 
@@ -267,24 +226,55 @@ With a Release, the profile content image is the Release's `controller-profiles`
 
 ## Verify
 
-1. Confirm that the Release description lists the outputs the install needs.
+Confirm that each release resource is a document `nvkectl` accepts.
+
+```bash
+nvkectl create machineimage -f releases/machineimage.yaml --dry-run=client
+```
+
+The command prints the complete `MachineImage` manifest, with its API version and kind, and contacts no cluster. It checks document structure; the management cluster enforces required fields and value rules when you create the resource. Repeat it with the other two files:
+
+```bash
+nvkectl create clusterrelease -f releases/clusterrelease.yaml --dry-run=client
+nvkectl create nodepoolrelease -f releases/nodepoolrelease.yaml --dry-run=client
+```
+
+## Create the image and release resources
+
+Preparing the YAML files and uploading the boot artifacts does not create Kubernetes resources. There are two separate steps:
+
+1. **Install the CRD schemas.** Follow [Install management-plane services](install-management-plane-services.md). The NVKE controller chart installs the `MachineImage`, `ClusterRelease` and `NodePoolRelease` CustomResourceDefinitions by default (`releaseCRDs.install: true`). These define the cluster-scoped types in `internal.nvke.nvidia.com/v1`; they do not create your image or releases. If you disable that chart setting, you must install the schemas separately before publishing resources.
+
+2. **Publish your objects.** After the install registers the site with `nvkectl config set-site`, use a site configuration whose kubeconfig can write these resources on the management cluster. From the directory containing your `releases/` files, create the image first, then its control-plane and worker releases:
 
    ```bash
-   jq -r '.outputs[].name' release.json
+   nvkectl create machineimage -f releases/machineimage.yaml
+   nvkectl create clusterrelease -f releases/clusterrelease.yaml
+   nvkectl create nodepoolrelease -f releases/nodepoolrelease.yaml
    ```
 
-   The list includes `cwe`, `controller-chart`, `controller-profiles` and `capnico-controller`, each possibly with an architecture suffix. Skip this step if you install without `--release`.
+   `nvkectl` supplies `apiVersion` and `kind` and writes each object directly to the management cluster's Kubernetes API using the active site's kubeconfig. Each release's `spec.machineImageRef.name` must name an existing `MachineImage`; the CLI checks that reference before creating the release. These commands register metadata and boot instructions; they do not build, upload or download the image files.
 
-2. Confirm that each release resource is a document `nvkectl` accepts.
+Confirm that the objects exist:
 
-   ```bash
-   nvkectl create machineimage -f releases/machineimage.yaml --dry-run=client
-   ```
+```bash
+nvkectl get machineimages
+nvkectl get clusterreleases
+nvkectl get nodepoolreleases
+```
 
-   The command prints the complete `MachineImage` manifest, with its API version and kind, and contacts no cluster. Repeat it with `clusterrelease` and `nodepoolrelease` for the other two files.
+These commands also use the management cluster's Kubernetes API. If the site's kubeconfig is configured only for NVKE API authentication, use the management cluster's admin kubeconfig instead, for example:
+
+```bash
+kubectl --kubeconfig <MANAGEMENT_KUBECONFIG> get machineimages,clusterreleases,nodepoolreleases
+```
+
+When you [create a workload cluster](../workload-clusters/create.md), set `controlPlaneConfig.osProfile` to the `ClusterRelease` name and each worker node pool's `osProfile` to its `NodePoolRelease` name. NVKE resolves the selected release to its `MachineImage`, renders that image's iPXE script and the release's user data, and passes them through CAPNICo to NICo for provisioning.
+
+To change an image's boot instructions or a release's image reference or user data, publish new objects under new names and select those releases for subsequent provisioning. These fields are immutable; uploading different bytes at an existing URL would bypass that versioning, so keep published artifact paths stable too.
 
 ## Next steps
 
 - [Prepare nodes](prepare-nodes.md) from the node image.
 - [Bootstrap the management cluster](bootstrap-management-cluster.md).
-- [Install management-plane services](install-management-plane-services.md) with `release.json` and the `releases` directory.
+- [Install management-plane services](install-management-plane-services.md) and publish the resources in the `releases` directory.

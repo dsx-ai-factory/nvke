@@ -14,7 +14,7 @@ A management cluster with an odd number of nodes, each a control-plane node that
 
 | Step | What you do | Page |
 |---|---|---|
-| 1. Build | Build the NVKE controller image and the node OS image with NVIDIA Kubernetes Recipes (NVKR), and package the OS profiles. | [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md) |
+| 1. Build | Build the reference node OS image, publish its boot artifacts over HTTP(S), and write the OS profiles. | [Build node images and write OS profiles](build-node-images.md) |
 | 2. Prepare nodes | Boot the management cluster's nodes from the node image with cloud-init user data, and record each node's TPM thumbprint. | [Prepare nodes](prepare-nodes.md) |
 | 3. Bootstrap | Run `nvkectl bootstrap site` to form the management cluster. | [Bootstrap the management cluster](bootstrap-management-cluster.md) |
 | 4. Install | Install Cluster API, CAPNICo, SPIRE, telemetry and the NVKE API and controllers. | [Install management-plane services](install-management-plane-services.md) |
@@ -73,13 +73,13 @@ All connections are TCP; traffic between the nodes of one cluster is not listed.
 ### Registries
 
 - **A container registry you control**, with an account that can push to it, for the controller image and the profile content image. If pulling needs credentials, the management cluster needs them too.
-- CAPNICo's image is public on `ghcr.io`, or comes from your NVKR release, so it needs no credentials.
+- CAPNICo's published image is public on `ghcr.io`, so it needs no credentials.
 
 ### Hosts and tools
 
 | Host | Needs |
 |---|---|
-| NVKR build host | Linux AMD64 with Docker, Git, GNU Make, `jq` and the Go version NVKR pins. For the node OS image, also Kernel-based Virtual Machine (KVM) access, 8 CPUs, 10 GiB of memory and 64 GiB of free disk. |
+| Node-image build host | Linux matching the target architecture, with KVM access and the tools listed in [Build the OS image](../../os-image/README.md#build-the-os-image). |
 | Bootstrap host | Linux, run as root, with rootful `nerdctl` and containerd, `kind`, `helm`, `kubectl`, `clusterctl`, Go and GNU Make. Docker is not supported. It can be a management cluster node. |
 | Install host | `nvkectl`, `helm` v4.2.4, `kubectl`, `clusterctl` v1.13.6, `curl`, `python3` and `git`. It can be the bootstrap host. |
 | API workstation | `nvkectl`, `curl` and `jq`; with API authentication, also the `kubectl oidc-login` plugin and `python3`. |
@@ -136,12 +136,11 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 |---|---|---|---|
 | Registry host and namespace | `<REGISTRY_HOST>`, `<NAMESPACE>` | Build, Bootstrap, Install | |
 | Registry account that can push | `<REGISTRY_USER>`, `<REGISTRY_TOKEN>` | Build | |
-| NVKR release reference, and its exported description `release.json` | `<RELEASE_REF>` | Build, Install | |
-| Controller image, the release's `cwe` artifact | `<CONTROLLER_IMAGE>` | Bootstrap; Install without a release | |
+| Optional release description; see [Choose where the artifacts come from](install-management-plane-services.md#choose-where-the-artifacts-come-from) | `release.json` | Install | |
+| Controller image reference | `<CONTROLLER_IMAGE>` | Bootstrap; Install without a release | |
 | Provisioned infrastructure provider image | `<PROVISIONED_PROVIDER_IMAGE>` | Bootstrap | |
-| Profile content image, the release's `controller-profiles` artifact | `controllerStack.images.profiles` | Install without a release | |
+| Profile content image reference | `controllerStack.images.profiles` | Install without a release | |
 | OS release resources, `MachineImage`, `ClusterRelease` and `NodePoolRelease` | `releases/` | Build, Install | |
-| For `nvkr release verify`: the accepted signer identity and OIDC issuer, and a `cosign` path and digest | `<IDENTITY_REGEXP>`, `<OIDC_ISSUER>`, `<COSIGN_PATH>`, `<COSIGN_DIGEST>` | Build | |
 
 ### NICo
 
@@ -192,4 +191,4 @@ Your plan is complete when every row in [Fill in your values](#fill-in-your-valu
 
 ## Next steps
 
-- [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md).
+- [Build node images and write OS profiles](build-node-images.md).
