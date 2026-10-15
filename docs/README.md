@@ -12,8 +12,8 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | Document | Contents |
 |---|---|
 | [overview/what-is-nvke.md](overview/what-is-nvke.md) | What NVKE is, its parts, and who does what from Day 0 to Day 2 |
-| [overview/preview-status.md](overview/preview-status.md) | What the preview supports and its known limitations |
 | [overview/supported-platforms.md](overview/supported-platforms.md) | The Kubernetes versions, networking, infrastructure providers, node OS and tools this release supports |
+| [overview/preview-status.md](overview/preview-status.md) | What the preview supports and its known limitations |
 | [get-started/quickstart-local.md](get-started/quickstart-local.md) | Evaluate NVKE on one Linux host with mock-NICo |
 | [operate/plan-installation.md](operate/plan-installation.md) | What to decide and gather before installing |
 | [operate/build-node-images.md](operate/build-node-images.md) | Where NVKE's artifacts come from in NVKR, and writing the OS release resources |
