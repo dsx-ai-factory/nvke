@@ -58,6 +58,18 @@ NODE_COUNT="${NVKECTL_E2E_NICO_NODES:-1}"
 NODE_NETWORK="${NVKECTL_E2E_NICO_NETWORK:-nvkectl-e2e-nico-nodes}"
 NODE_SUBNET="${NVKECTL_E2E_NICO_SUBNET:-172.28.0.0/24}"
 
+# More than one control-plane node needs kube-vip, so a VIP outside the node
+# subnet, which nodes reach through the BGP-learned /32 on the host. See run.sh
+# and bgp-lib.sh. An explicit empty value disables it, for one node only.
+CONTROL_PLANE_VIP="${NVKECTL_E2E_CONTROL_PLANE_VIP-}"
+if [ -z "${CONTROL_PLANE_VIP}" ] && (( NODE_COUNT > 1 )); then
+  CONTROL_PLANE_VIP=172.26.1.1
+fi
+BGP_CONTAINER="nvkectl-e2e-nico-bgp"
+FRR_IMAGE="${NVKECTL_E2E_FRR_IMAGE:-quay.io/frrouting/frr:9.1.0}"
+BGP_FILES_DIR="${REPO_ROOT}/controller/hack/bgp-containers"
+BGP_RENDER_DIR="${SCRIPT_DIR}/.bgp-nico"
+
 SIM_PORT="${NVKECTL_E2E_NICO_SIM_PORT:-18080}"
 SIM_BIN="${CLI_DIR}/.local/nico-sim"
 SIM_STATE_DIR="$(mktemp -d)"
@@ -104,6 +116,9 @@ CNI_BUNDLE_DIR="$(mktemp -d)"
 # What the site spec's infra.nico, infra.nico.tenant and infra.nico.releases name.
 TOKEN_FILE="${SIM_STATE_DIR}/bootstrap-nico.token"
 TENANT_PASSWORD_FILE="${SIM_STATE_DIR}/bootstrap-tenant.password"
+# The command refuses to overwrite a key file, so each run writes its own, which
+# SIM_STATE_DIR's cleanup removes.
+ETCD_KEY_FILE="${SIM_STATE_DIR}/etcd-encryption-key.json"
 RELEASES_DIR="${SIM_STATE_DIR}/releases"
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -122,6 +137,9 @@ fail() {
 # reverse order. Register the teardown *before* the operation it undoes.
 DEFERRED=()
 defer() { DEFERRED+=("$*"); }
+
+# shellcheck source=bgp-lib.sh
+source "${SCRIPT_DIR}/bgp-lib.sh"
 
 collect_diagnostics() {
   log "collecting diagnostics"
@@ -150,7 +168,7 @@ cleanup() {
     chown -R "${SUDO_UID}:${SUDO_GID:-${SUDO_UID}}" "${DIAGNOSTICS_DIR}" || true
   fi
   rm -f "${TENANT_KUBECONFIG}" "${RENDERED_SITESPEC}" "${BOOTSTRAP_LOG}"
-  rm -rf "${KUBECONFIG_DIR}" "${CNI_BUNDLE_DIR}" "${SIM_STATE_DIR}"
+  rm -rf "${KUBECONFIG_DIR}" "${CNI_BUNDLE_DIR}" "${SIM_STATE_DIR}" "${BGP_RENDER_DIR}"
 }
 trap cleanup EXIT
 
@@ -320,9 +338,8 @@ for kind in machineimage clusterrelease; do
 done
 
 vip_line=""
-if (( NODE_COUNT > 1 )); then
-  : "${NVKECTL_E2E_CONTROL_PLANE_VIP:?NVKECTL_E2E_CONTROL_PLANE_VIP must be set for more than one control-plane node}"
-  vip_line="  controlPlaneVIP: ${NVKECTL_E2E_CONTROL_PLANE_VIP}"
+if [ -n "${CONTROL_PLANE_VIP}" ]; then
+  vip_line="  controlPlaneVIP: ${CONTROL_PLANE_VIP}"
 fi
 
 cat >"${RENDERED_SITESPEC}" <<EOF
@@ -371,12 +388,21 @@ log "validating the site spec: nvkectl bootstrap site --dry-run"
 
 # See run.sh for why this runs in the background: the networks have to be
 # bridged *during* the run, once the Kind cluster exists.
+# Before bootstrap, so the nodes can reach the VIP as they join. The nodes' default
+# gateway is this host on the node network, which is where kube-vip peers.
+if [ -n "${CONTROL_PLANE_VIP}" ]; then
+  command -v jq >/dev/null 2>&1 || fail "jq is required for the control-plane VIP checks"
+  log "starting the FRR BGP speaker for control-plane VIP ${CONTROL_PLANE_VIP}"
+  start_bgp_speaker || exit 1
+fi
+
 log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 25m" \
   "(NVKECTL_CONTROLLER_IMAGE=${NVKECTL_CONTROLLER_IMAGE}, NVKECTL_CONTROLLER_PROFILES_IMAGE=${NVKECTL_CONTROLLER_PROFILES_IMAGE})"
 defer teardown_bootstrap_cluster
 setsid "${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" \
   --keep-bootstrap-cluster \
-  --timeout 25m --kubeconfig-out "${TENANT_KUBECONFIG}" >"${BOOTSTRAP_LOG}" 2>&1 &
+  --timeout 25m --kubeconfig-out "${TENANT_KUBECONFIG}" \
+  --encryption-key-out "${ETCD_KEY_FILE}" >"${BOOTSTRAP_LOG}" 2>&1 &
 bootstrap_pid=$!
 
 abort_bootstrap() {
@@ -395,6 +421,9 @@ bridge_of() {
   id="$(nerdctl network inspect --format '{{.Id}}' "$1")" || return 1
   printf 'br-%s' "${id:0:12}"
 }
+remove_vip_forward_rule() {
+  iptables -D FORWARD -i "$1" -o "$1" -j ACCEPT 2>/dev/null || true
+}
 permit_cross_bridge_forwarding() {
   local node_bridge kind_bridge
   node_bridge="$(bridge_of "${NODE_NETWORK}")" || return 1
@@ -404,6 +433,11 @@ permit_cross_bridge_forwarding() {
   defer "remove_forward_rules ${kind_bridge} ${node_bridge}"
   iptables -I FORWARD 1 -i "${kind_bridge}" -o "${node_bridge}" -j ACCEPT || return 1
   iptables -I FORWARD 1 -i "${node_bridge}" -o "${kind_bridge}" -j ACCEPT || return 1
+  # VIP traffic enters and leaves the same node bridge.
+  if [ -n "${CONTROL_PLANE_VIP}" ]; then
+    defer "remove_vip_forward_rule ${node_bridge}"
+    iptables -I FORWARD 1 -i "${node_bridge}" -o "${node_bridge}" -j ACCEPT || return 1
+  fi
 }
 
 log "waiting for the bootstrap cluster to become ready, to bridge it to the node network"
@@ -505,5 +539,36 @@ while read -r h; do
     fail "no SPIRE agent attested by TPM with hash ${h}" "${agents}"
 done <<<"${hashes}"
 log "PASS: every node's spire-agent attested to the bootstrap SPIRE server over TPM"
+
+if [ -n "${CONTROL_PLANE_VIP}" ]; then
+  cp_node_ips="$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes \
+    -o 'jsonpath={range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' | sed '/^$/d' | sort -u)"
+  server="$(grep -E '^[[:space:]]*server:' "${TENANT_KUBECONFIG}" | head -n1 | awk '{print $2}')"
+  [ "${server}" = "https://${CONTROL_PLANE_VIP}:6443" ] ||
+    fail "the written kubeconfig's API server is ${server}, expected https://${CONTROL_PLANE_VIP}:6443"
+  log "PASS: the written kubeconfig's API server is ${server}"
+
+  log "waiting for FRR to learn ${CONTROL_PLANE_VIP}/32 with next-hops: $(echo "${cp_node_ips}" | tr '\n' ' ')"
+  learned_hops=""
+  hops_deadline=$((SECONDS + ${NVKECTL_E2E_VIP_BGP_TIMEOUT_SECONDS:-180}))
+  while [ "${SECONDS}" -lt "${hops_deadline}" ]; do
+    learned_hops="$(bgp_vip_nexthops)"
+    [ "${learned_hops}" = "${cp_node_ips}" ] && break
+    sleep 3
+  done
+  if [ "${learned_hops}" != "${cp_node_ips}" ]; then
+    nerdctl exec "${BGP_CONTAINER}" vtysh -c 'show bgp summary' 2>&1 | sed 's/^/  /' || true
+    fail "FRR next-hops for ${CONTROL_PLANE_VIP}/32 did not converge to the node set" \
+      "expected: $(echo "${cp_node_ips}" | tr '\n' ' ')" "learned:  $(echo "${learned_hops}" | tr '\n' ' ')"
+  fi
+  log "PASS: FRR learned ${CONTROL_PLANE_VIP}/32 with one next-hop per control-plane node"
+
+  vip_readyz() {
+    kubectl --kubeconfig "${TENANT_KUBECONFIG}" --server "https://${CONTROL_PLANE_VIP}:6443" get --raw /readyz >/dev/null 2>&1
+  }
+  wait_until "${NVKECTL_E2E_VIP_READYZ_TIMEOUT_SECONDS:-60}" 3 vip_readyz ||
+    fail "the API server did not answer /readyz through the VIP https://${CONTROL_PLANE_VIP}:6443"
+  log "PASS: the API server answered /readyz through the VIP https://${CONTROL_PLANE_VIP}:6443"
+fi
 
 log "PASS: the nico lane built a site cluster from machines CAPNICo allocated"
