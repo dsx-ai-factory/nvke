@@ -224,6 +224,30 @@ func TestGenerateOIDCKubeconfigWritesToStdout(t *testing.T) {
 	if strings.Contains(stdout, "kubernetes-admin") {
 		t.Errorf("admin identity leaked into generated kubeconfig:\n%s", stdout)
 	}
+	if strings.Contains(stdout, "device-code") || strings.Contains(stdout, "skip-open-browser") {
+		t.Errorf("default kubeconfig stamped headless args:\n%s", stdout)
+	}
+}
+
+func TestGenerateOIDCKubeconfigHeadless(t *testing.T) {
+	stdout, _, err := runGenerate(t,
+		"generate", "oidc-kubeconfig",
+		"--kubeconfig", writeAdminKubeconfig(t),
+		"--oidc-issuer-url", "https://idp.example/realms/nke",
+		"--oidc-client-id", "nvke-cli",
+		"--headless",
+	)
+	if err != nil {
+		t.Fatalf("generate oidc-kubeconfig: %v", err)
+	}
+	for _, want := range []string{
+		"--grant-type=device-code",
+		"--skip-open-browser",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("generated kubeconfig is missing %q:\n%s", want, stdout)
+		}
+	}
 }
 
 func TestGenerateOIDCKubeconfigWritesFile(t *testing.T) {
