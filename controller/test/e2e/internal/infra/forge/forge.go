@@ -558,6 +558,11 @@ func (p *Provider) release(ctx context.Context, id string) error {
 	if resp != nil && resp.StatusCode == http.StatusNotFound {
 		return nil
 	}
+	// Forge accepts with a plain-text body the SDK cannot decode, so the
+	// status is what says whether the delete was taken.
+	if resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("deleting instance %s: %w", id, apiError(err))
 	}

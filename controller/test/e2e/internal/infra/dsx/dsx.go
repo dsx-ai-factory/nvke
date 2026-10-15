@@ -437,6 +437,11 @@ func (p *Provider) release(ctx context.Context, id string) error {
 	if resp != nil && resp.StatusCode == http.StatusNotFound {
 		return nil
 	}
+	// The API accepts with a plain-text body the SDK cannot decode, so the
+	// status is what says whether the delete was taken.
+	if resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
 	if err != nil {
 		// A delete here can take 45 minutes and holds the name while it does,
 		// so a caller that needs the name again should take a new one rather

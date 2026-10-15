@@ -86,7 +86,11 @@ func (f *fakeForge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(body + "}"))
 	case r.Method == http.MethodDelete && r.URL.Path == base+"/instance/"+testInstance:
 		f.deleted++
+		// What az61 answers: plain text, which the SDK cannot decode as
+		// the MessageResponse it declares.
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("Deletion request was accepted"))
 	default:
 		f.t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		w.WriteHeader(http.StatusNotFound)
