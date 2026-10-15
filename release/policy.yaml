@@ -29,9 +29,20 @@ spec:
     dsx:
       selector: {provider: dsx}
 
-    # No selector, so every stream. What the weekly run covers. Adding a minor
-    # is adding streams, not editing scopes.
-    full: {}
+    # Every Forge stream. What the weekly run covers, and adding a Forge minor
+    # is adding a stream rather than editing this.
+    #
+    # It selects on provider rather than carrying no selector, which is what it
+    # used to do, because `full` also decides the stage: a dispatch defaults to
+    # stage full, and the suite refuses a full run on any provider whose tenant
+    # it cannot build --- today that is everything except Forge. A scope that
+    # matched every stream therefore put a lane into every weekly run that
+    # could only fail, whatever the versions under test.
+    #
+    # So this is not "every stream" but "every stream a full run can finish".
+    # The day a DSX tenant spec exists, the selector comes off.
+    full:
+      selector: {provider: forge}
 
   # A stream names capabilities, not the infrastructure that satisfies them.
   # Which runner label, site, or subnet a capability resolves to is an
