@@ -703,6 +703,9 @@ func validateUpdateCAPINodePoolRequest(cluster db.Cluster, req *api.UpdateNodePo
 	if req.Nico != nil {
 		return fmt.Errorf("nico is not supported, please use infra")
 	}
+	if req.LaunchLayer != nil {
+		return fmt.Errorf("launchLayer is not supported, please use infra")
+	}
 	if req.Infra != nil && req.Infra.MachineTemplate != nil {
 		if isEmptyManifestObject(req.Infra.MachineTemplate) {
 			return fmt.Errorf("infra.machineTemplate cannot be empty")
@@ -732,6 +735,9 @@ func validateUpdateCAPINodePoolRequest(cluster db.Cluster, req *api.UpdateNodePo
 func validateUpdateNicoNodePoolRequest(_ db.Cluster, req *api.UpdateNodePoolRequest) error {
 	if req.Infra != nil {
 		return fmt.Errorf("infra is not supported, please use nico")
+	}
+	if req.LaunchLayer != nil {
+		return fmt.Errorf("launchLayer is not supported, please use nico")
 	}
 	// Disk selection strategy content-validity (and the subnet/VPC-prefix
 	// exclusivity checked below) is re-checked against the full merged

@@ -175,6 +175,14 @@ func TestValidateUpdateNodePoolRequest_CAPIRejectsForgeSpecificFieldsIndividuall
 
 		require.EqualError(t, err, "nico is not supported, please use infra")
 	})
+
+	t.Run("launchLayer provider shape", func(t *testing.T) {
+		err := service.validateUpdateNodePoolRequest(db.Cluster{ProviderType: db.ProviderTypeCAPI}, &api.UpdateNodePoolRequest{
+			LaunchLayer: &api.LaunchLayerNodePoolProviderUpdate{},
+		})
+
+		require.EqualError(t, err, "launchLayer is not supported, please use infra")
+	})
 }
 
 func TestValidateUpdateNodePoolRequest_ForgeRejectsCAPISpecificFieldsIndividually(t *testing.T) {
@@ -188,6 +196,14 @@ func TestValidateUpdateNodePoolRequest_ForgeRejectsCAPISpecificFieldsIndividuall
 		})
 
 		require.EqualError(t, err, "infra is not supported, please use nico")
+	})
+
+	t.Run("launchLayer provider shape", func(t *testing.T) {
+		err := service.validateUpdateNodePoolRequest(db.Cluster{ProviderType: db.ProviderTypeNico, Nico: &db.NicoClusterProvider{SiteID: uuid.New()}}, &api.UpdateNodePoolRequest{
+			LaunchLayer: &api.LaunchLayerNodePoolProviderUpdate{},
+		})
+
+		require.EqualError(t, err, "launchLayer is not supported, please use nico")
 	})
 }
 
