@@ -653,9 +653,7 @@ func (s *NodeAgentServer) processKubeadmJoin(args []string, req *pb.KubeadmJoinR
 	}
 
 	if err != nil {
-		credentials := joinCredentials(req)
-		credentials.AddArgs(args)
-		loggable := credentials.String(string(output))
+		loggable := joinCredentials(req).String(string(output))
 		slog.Error("join failed", "err", err, "output", loggable)
 		ns.Status = ErrorStatus
 		ns.CurrentMessage = err.Error()
@@ -879,7 +877,7 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 			slog.Info("already initialized, kubeadm returned 'in use'")
 			return
 		}
-		loggable := initOutputCredentials(req, args).String(string(output))
+		loggable := initCredentials(req).String(string(output))
 		slog.Error("init failed", "err", err, "stdout", loggable)
 		ns.Status = ErrorStatus
 		ns.ErrorMessage = "kubeadm init failed: " + err.Error()
@@ -889,7 +887,7 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 		// leaving it at "Node is initializing" reports the failure as progress:
 		// the orchestrator prints "kubeadm init failed: Node is initializing",
 		// which names neither the phase nor the reason.
-		ns.CurrentMessage = kubeadmFailureMessage(err, output, initOutputCredentials(req, args))
+		ns.CurrentMessage = kubeadmFailureMessage(err, output, initCredentials(req))
 		return
 	}
 
@@ -901,7 +899,7 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 	}
 	cpJoin, workerJoin := parseJoinCmds(string(output))
 	if cpJoin == "" && workerJoin == "" {
-		loggable := initOutputCredentials(req, args).String(string(output))
+		loggable := initCredentials(req).String(string(output))
 		slog.Error("failed to parse join strings from output", "output", loggable)
 		ns.Status = ErrorStatus
 		ns.ErrorMessage = "failed to parse join strings from output of kubeadm init: " + loggable
@@ -1182,14 +1180,6 @@ func (s *NodeAgentServer) installCNIPlugin(req *pb.InstallCNIPluginRequest) erro
 	default:
 		return fmt.Errorf("unsupported CNI plugin %q", req.GetPluginName())
 	}
-}
-
-// initOutputCredentials returns the credentials known for a kubeadm init run: those
-// in its request and in the arguments it was run with.
-func initOutputCredentials(req *pb.KubeadmInitRequest, args []string) *redact.Credentials {
-	credentials := initCredentials(req)
-	credentials.AddArgs(args)
-	return credentials
 }
 
 func parseJoinCmds(s string) (string, string) {
