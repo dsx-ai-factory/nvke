@@ -73,9 +73,9 @@ func (v *Validator) NodeMetricsServed() Check {
 	return v.allOf("metrics-server serves node metrics", gvr("metrics.k8s.io", "v1beta1", "nodes"), "", func(unstructured.Unstructured) string { return "" })
 }
 
-// allOf lists the resource and holds when there is at least one and failing
-// returns "" for each. Otherwise it names the rest with failing's reasons.
-func (v *Validator) allOf(name string, resource schema.GroupVersionResource, namespace string, failing func(unstructured.Unstructured) string) Check {
+// allOf lists the resource and holds when there is at least one and reason
+// returns "" for each. Otherwise it names the rest with their reasons.
+func (v *Validator) allOf(name string, resource schema.GroupVersionResource, namespace string, reason func(unstructured.Unstructured) string) Check {
 	return Check{Name: name, Probe: func(ctx context.Context) error {
 		items, err := v.list(ctx, resource, namespace)
 		if err != nil {
@@ -83,8 +83,8 @@ func (v *Validator) allOf(name string, resource schema.GroupVersionResource, nam
 		}
 		var failed []string
 		for _, item := range items {
-			if reason := failing(item); reason != "" {
-				failed = append(failed, item.GetName()+" ("+reason+")")
+			if why := reason(item); why != "" {
+				failed = append(failed, item.GetName()+" ("+why+")")
 			}
 		}
 		if len(failed) > 0 {

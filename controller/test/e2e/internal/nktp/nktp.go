@@ -8,7 +8,7 @@
 // Baseline is what NKTP delivers on any cluster, mirroring
 // nktp/hack/e2e-validate.sh; the other constructors are for what a particular
 // installation wires up. Each returns one Check, so a spec's list reads as an
-// inventory, and the spec polls the list with Failing under Gomega.
+// inventory, and the spec polls Missing and Unwanted over it under Gomega.
 package nktp
 
 import (
@@ -36,13 +36,14 @@ const (
 	attemptTimeout      = 30 * time.Second
 )
 
-// Check is one assertion. A Hold check passes trivially on an empty backend,
-// so a spec runs it once the others have seen the signals arrive, and then has
-// it keep holding.
+// Check is one assertion. A presence check waits for a signal to show up. An
+// absence check passes trivially on an empty backend, so a spec polls it only
+// once the presence checks hold, and then has it keep holding.
 type Check struct {
 	Name  string
-	Hold  bool
 	Probe func(ctx context.Context) error
+	// absence marks the checks Unwanted runs; Missing runs the rest.
+	absence bool
 }
 
 // Validator builds and runs checks against one installation.

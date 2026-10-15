@@ -295,12 +295,12 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			// Signals get eight minutes to show up. The "nothing bad" checks then
 			// get three to hold, so failures from a rollout age out of their
 			// window, and must keep holding for one more.
-			Eventually(v.Failing).WithContext(ctx).WithArguments(nktp.Arrive(checks)).WithTimeout(8*time.Minute).WithPolling(10*time.Second).
-				Should(BeEmpty(), "NKTP should deliver the site's metrics, logs and traces")
-			Eventually(v.Failing).WithContext(ctx).WithArguments(nktp.Hold(checks)).WithTimeout(3*time.Minute).WithPolling(10*time.Second).
-				Should(BeEmpty(), "NKTP should deliver nothing it must not")
-			Consistently(v.Failing).WithContext(ctx).WithArguments(nktp.Hold(checks)).WithTimeout(time.Minute).WithPolling(10*time.Second).
-				Should(BeEmpty(), "NKTP should keep delivering nothing it must not")
+			Eventually(v.Missing).WithContext(ctx).WithArguments(checks).WithTimeout(8*time.Minute).WithPolling(10*time.Second).
+				Should(BeEmpty(), "every signal should arrive")
+			Eventually(v.Unwanted).WithContext(ctx).WithArguments(checks).WithTimeout(3*time.Minute).WithPolling(10*time.Second).
+				Should(BeEmpty(), "nothing NKTP must not deliver should be arriving")
+			Consistently(v.Unwanted).WithContext(ctx).WithArguments(checks).WithTimeout(time.Minute).WithPolling(10*time.Second).
+				Should(BeEmpty(), "nothing NKTP must not deliver should start arriving")
 		}, NodeTimeout(20*time.Minute))
 	}
 

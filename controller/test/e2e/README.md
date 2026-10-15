@@ -534,9 +534,10 @@ release tag, which has to be fetched in a shallow clone. Set
 The `full` stage checks that NKTP delivers the site's telemetry by querying its
 backend, not by reading Pod status: a Collector can be Ready and export nothing.
 `internal/nktp` runs the same checks as `nktp/hack/e2e-validate.sh` does on
-Kind, plus what only a site wires up: the control plane, controller, Temporal
-and SPIRE metrics and logs, the API server's audit log, a trace of a request the
-spec itself makes to the controller, and the site's name on every signal.
+Kind, a span it pushes through the node Collector itself, and what only a site
+wires up: the control plane, controller, Temporal and SPIRE metrics and logs,
+the API server's audit log, a trace of a request the spec itself makes to the
+controller, and the site's name on every signal.
 `siteTelemetry` in `site_nktp_test.go` lists the site-specific checks by
 component, one line per expectation.
 

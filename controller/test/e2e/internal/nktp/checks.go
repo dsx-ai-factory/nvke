@@ -4,7 +4,8 @@
 package nktp
 
 // Baseline is what NKTP delivers on any cluster: what nktp/hack/e2e-validate.sh
-// checks on Kind, one Check per expectation so a failure names it.
+// checks on Kind, plus a span pushed through the node Collector, one Check per
+// expectation so a failure names it.
 func (v *Validator) Baseline() []Check {
 	return []Check{
 		// The installation itself.
@@ -40,6 +41,10 @@ func (v *Validator) Baseline() []Check {
 		v.GatewayRefusesAnonymous("gateway-logs"),
 		v.GatewayRefusesAnonymous("gateway-metrics"),
 		v.GatewayRefusesAnonymous("gateway-traces"),
+
+		// Ingest: what a workload pushes to the node Collector arrives, with
+		// the cluster's name added on the way.
+		v.PushedTraceArrives(),
 
 		// Autoscaling, through metrics-server.
 		v.NodeMetricsServed(),

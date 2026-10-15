@@ -46,8 +46,8 @@ func (v *Validator) GatewayRefusesAnonymous(gateway string) Check {
 	}}
 }
 
-// internalCA is the CA the gateways present, from the Secret cert-manager
-// issued it into.
+// internalCA returns the CA that signs NKTP's internal mTLS certificates,
+// loaded from the Secret managed by cert-manager.
 func (v *Validator) internalCA(ctx context.Context) (*x509.CertPool, error) {
 	name := chartRelease + "-internal-ca"
 	secret, err := v.clientset.CoreV1().Secrets(chartNamespace).Get(ctx, name, metav1.GetOptions{})
