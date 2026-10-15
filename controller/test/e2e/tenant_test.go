@@ -456,12 +456,15 @@ func nicoForgeTenant() testSpec {
 		// that the time ran out. The wait also gives up when the message
 		// stops changing, which ends a stuck one sooner than either number.
 		//
-		// Delete is 45 minutes because Forge takes 20 to 40 to actually
-		// release a machine, and the cluster is not gone until both of its
-		// machines are. Run 36051890151 failed the delete at 1800.306s
-		// against the 30 minutes this used to be, while the instances were
-		// still reporting Terminating.
-		options: nvke.Options{Provision: 45 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
+		// Delete is 75 minutes because Forge takes 20 to 40 to actually
+		// release a machine, and sometimes much longer, and the cluster is not
+		// gone until both of its machines are. Run 36051890151 failed the
+		// delete at 30 minutes, and run 38690403898 on az61 L40S still had the
+		// control plane releasing after 45 plus the sweep's 15. It is capped
+		// by the suite's 150-minute -ginkgo.timeout: the delete starts about
+		// 42 minutes in, and the site sweep and release still need about 25
+		// after it.
+		options: nvke.Options{Provision: 45 * time.Minute, Delete: 75 * time.Minute, Poll: 30 * time.Second},
 		// Provisioning only, because that is the path this lane exercises:
 		// a tenant is created on real hardware, its nodes reach Ready, and it
 		// is deleted. The rest assert against a running cluster and belong to
@@ -625,7 +628,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 
 			test.deleteClusterAndWait(ctx, &deleteAccepted)
 			deleted = true
-		}, Label("lifecycle"), NodeTimeout(1*time.Hour))
+		}, Label("lifecycle"), NodeTimeout(80*time.Minute))
 
 		Describe("after cluster deletion", func() {
 			BeforeEach(func() {
