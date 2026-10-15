@@ -745,7 +745,6 @@ jobs:
       FORGE_YTL_SSH_KEY_GROUP_ID: ${{ vars.FORGE_YTL_SSH_KEY_GROUP_ID }}
       FORGE_YTL_JUMP_HOST: ${{ vars.FORGE_YTL_JUMP_HOST }}
       DSX_ORG_ID: ${{ vars.DSX_ORG_ID }}
-      SSA_ISSUER: ${{ secrets.SSA_ISSUER }}
       DSX_REDSTONE_DEV1_DH2_SITE_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_SITE_ID }}
       DSX_REDSTONE_DEV1_DH2_TENANT_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_TENANT_ID }}
       DSX_REDSTONE_DEV1_DH2_VPC_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_VPC_ID }}
@@ -755,8 +754,6 @@ jobs:
       DSX_REDSTONE_DEV1_DH2_NODE_USER: ${{ vars.DSX_REDSTONE_DEV1_DH2_NODE_USER }}
       DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN: ${{ vars.DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN }}
       DSX_REDSTONE_DEV1_DH2_JUMP_HOST: ${{ secrets.DSX_REDSTONE_DEV1_DH2_JUMP_HOST }}
-      DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID: ${{ secrets.DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID }}
-      DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET: ${{ secrets.DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET }}
       # root for the same reason as FORGE_TELEPORT_LOGIN: the same bot reaches
       # both jump hosts through rg-k8aas-bot-ssh-root, whose only login is
       # root. Unset falls back to tsh's default, the runner's local user,
@@ -1251,13 +1248,14 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          # The jump host is not asserted here. Both providers declare more
-          # than one site, each with its own jump host, and which one a run
-          # reaches is decided inside the suite by capability -- so a check up
-          # here can only name a site and be wrong about the rest. forge.New
-          # and dsx.New each validate the jump host of the site that actually
-          # resolved, name that site in the error, and do it before anything is
-          # created, which is the check this step was reaching for.
+          # The jump host is not asserted here. A provider can declare more
+          # than one site, each with its own jump host -- forge.yaml does
+          # today -- and which one a run reaches is decided inside the suite by
+          # capability, so a check up here can only name a site and be wrong
+          # about the rest. forge.New and dsx.New each validate the jump host
+          # of the site that actually resolved, name that site in the error,
+          # and do it before anything is created, which is the check this step
+          # was reaching for.
           # The repositories are the ones site-inputs pulled or tagged, so the
           # references the suite hands the bootstrap and the deploy path are
           # the ones the archives carry.
@@ -1409,6 +1407,7 @@ jobs:
             "DSX SSH key group|DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID||DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID|DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID"
             "DSX instance type|DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID||DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID|DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID"
             "DSX Teleport login|DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN||DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN|DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN"
+            "DSX node user|DSX_REDSTONE_DEV1_DH2_NODE_USER||DSX_REDSTONE_DEV1_DH2_NODE_USER|DSX_REDSTONE_DEV1_DH2_NODE_USER"
             "ytl site|FORGE_YTL_SITE_ID||FORGE_YTL_SITE_ID|FORGE_YTL_SITE_ID"
             "ytl VPC|FORGE_YTL_VPC_ID||FORGE_YTL_VPC_ID|FORGE_YTL_VPC_ID"
             "ytl VPC prefix|FORGE_YTL_VPC_PREFIX_ID||FORGE_YTL_VPC_PREFIX_ID|FORGE_YTL_VPC_PREFIX_ID"
@@ -1435,11 +1434,13 @@ jobs:
           # because the name the controller is installed under is read by the
           # suite from the environment variables it already honours, so it
           # carries no QUALIFY_E2E_ prefix of its own. CWE_ is its deprecated
-          # alias; #1399 removes it.
+          # alias; #1399 removes it. DSX_ is the second provider's, and is
+          # listed for the same reason the others are: a prefix missing here
+          # is a variable the table silently stops covering.
           missing=()
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f5,7 | tr '|' '\n' | grep -qx "${name}" || missing+=("vars.${name}")
-          done < <(grep -oE 'vars\.(FORGE|QUALIFY_E2E|NKE_CONTROLLER|CWE)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
+          done < <(grep -oE 'vars\.(FORGE|QUALIFY_E2E|NKE_CONTROLLER|CWE|DSX)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f3 |
               grep -qx "IN_$(printf '%s' "${name}" | tr 'a-z-' 'A-Z_')" || missing+=("inputs.${name}")
@@ -1555,6 +1556,14 @@ jobs:
         working-directory: controller/test/e2e
         env:
           FORGE_API_KEY: ${{ secrets.FORGE_API_KEY }}
+          # The DSX credential, scoped here for the same reason the Forge key
+          # is: this is the only step that reads it, and a job-level secret is
+          # one every step sees -- checkout, setup-go, docker login, the
+          # artifact upload. The identifiers stay at job level because the
+          # provenance step reads them back by name.
+          SSA_ISSUER: ${{ secrets.SSA_ISSUER }}
+          DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID: ${{ secrets.DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID }}
+          DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET: ${{ secrets.DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET }}
           # JUMP_HOST_PASSWORD is deliberately absent: its presence is what
           # switches the suite off the Teleport relay and onto plain SSH.
         run: |
@@ -1618,30 +1627,37 @@ jobs:
           fi
 
       # The suite names the jump host in its own errors ("not reachable
-      # through ..."), and those land in the log and the JUnit report. GitHub
-      # masks a secret in the job log, not in an uploaded artifact.
+      # through ..."), and the SSA token exchange names its issuer in the
+      # errors it returns. Both land in the log and the JUnit report, and
+      # GitHub masks a secret in the job log but not in an uploaded artifact.
       #
       # Every declared host: a run reaches one of them, and which one is not
       # worth branching on here. Discovered by suffix rather than listed, so a
       # datahall added to environments/dsx.yaml is withheld by having named its
       # secret *_JUMP_HOST, with nothing to update here. A hand-written list
-      # fails the other way: the host it omits is the one the suite names in
+      # fails the other way: the value it omits is the one the suite names in
       # its errors and the artifact then publishes, with no error to notice.
-      - name: Withhold the jump host from the run log
+      #
+      # SSA_ISSUER is named outright because it is one value with one name,
+      # and it is passed to this step rather than left at job level for the
+      # same reason the suite step holds the client secret.
+      - name: Withhold credentials from the run log
         if: always()
         shell: bash
         working-directory: controller/test/e2e
+        env:
+          SSA_ISSUER: ${{ secrets.SSA_ISSUER }}
         run: |
           set -Eeuo pipefail
           while IFS= read -r var; do
             raw="${!var}"
             [ -n "${raw}" ] || continue
-            host="$(printf '%s' "${raw}" | sed 's/[][\.*^$/]/\\&/g')"
+            value="$(printf '%s' "${raw}" | sed 's/[][\.*^$/]/\\&/g')"
             for f in qualify-e2e.log qualify-e2e.junit.xml tenant-diagnostics.json site-cluster-state.txt; do
               [ -f "${f}" ] || continue
-              sed -i "s/${host}/<jump host>/g" "${f}"
+              sed -i "s/${value}/<withheld>/g" "${f}"
             done
-          done < <(compgen -v | grep -E '_JUMP_HOST$' || true)
+          done < <(compgen -v | grep -E '_JUMP_HOST$|^SSA_ISSUER$' || true)
 
       # The Ginkgo log carries every phase boundary, remote command and
       # failure. An hour-long run is worth more than a scroll-back in the job
