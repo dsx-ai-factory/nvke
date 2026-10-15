@@ -68,10 +68,10 @@ func TestRenderDeployPath_ArchFromSiteSpec(t *testing.T) {
 	}
 }
 
-// nicoStackSiteSpec writes the nico example with a filled controllerStack
-// section borrowed from a generated spec, so it is a spec the stack install can
-// read. edit changes the example's text first; the files the bootstrap names are
-// not written.
+// nicoStackSiteSpec writes the nico example with its placeholder
+// controllerStack section replaced by a filled one borrowed from a generated
+// spec, so it is a spec the stack install can read. edit changes the example's
+// text first; the files the bootstrap names are not written.
 func nicoStackSiteSpec(t *testing.T, edit func(string) string) string {
 	t.Helper()
 	example, err := os.ReadFile(filepath.Join("..", "..", "examples", "sitespec-nico.yaml"))
@@ -82,6 +82,13 @@ func nicoStackSiteSpec(t *testing.T, edit func(string) string) string {
 	if edit != nil {
 		text = edit(text)
 	}
+	// The example ends with its placeholder controllerStack section and the
+	// comment above it; drop both so the filled section is the only one.
+	cut := strings.Index(text, "\n# Input for the controller stack install")
+	if cut < 0 || !strings.Contains(text[cut:], "\ncontrollerStack:\n") {
+		t.Fatal("the nico example's controllerStack section moved; update nicoStackSiteSpec")
+	}
+	text = text[:cut+1]
 	filled, err := os.ReadFile(filledSiteSpec(t, nil))
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +140,7 @@ func TestRenderDeployPath_NicoSpecNeedsNoBootstrapFiles(t *testing.T) {
 	// Nothing the bootstrap reads sits beside the spec, and the credentials
 	// variable is unset, as on the site node.
 	t.Setenv("NVKECTL_NICO_CREDENTIALS", "")
-	for _, name := range []string{"bootstrap-tenant.password", "releases"} {
+	for _, name := range []string{"bootstrap-tenant.password", "bootstrap-releases"} {
 		if _, err := os.Stat(filepath.Join(filepath.Dir(spec), name)); err == nil {
 			t.Fatalf("%s exists beside the spec; the test needs it absent", name)
 		}

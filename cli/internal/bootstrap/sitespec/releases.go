@@ -86,6 +86,11 @@ func (v *validator) checkBootstrapReleases(inv *SiteSpec) {
 				v.addf("%s %q is not valid YAML: %v", pathNicoReleases, file, err)
 				return
 			}
+			// An empty document, such as one holding only a comment, is skipped
+			// here as kubectl skips it.
+			if trimmed := bytes.TrimSpace(raw); len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+				continue
+			}
 			var meta metav1.TypeMeta
 			if err := json.Unmarshal(raw, &meta); err != nil {
 				v.addf("%s %q is not a Kubernetes manifest: %v", pathNicoReleases, file, err)
@@ -95,6 +100,14 @@ func (v *validator) checkBootstrapReleases(inv *SiteSpec) {
 			// can apply, whatever its kind says.
 			if (meta.Kind == "ClusterRelease" || meta.Kind == "MachineImage") && meta.APIVersion != releaseAPIVersion {
 				v.addf("%s %q holds a %s with apiVersion %q, want %q", pathNicoReleases, file, meta.Kind, meta.APIVersion, releaseAPIVersion)
+				return
+			}
+			// kubectl apply refuses any other document without these, after the
+			// bootstrap cluster is built: a request document for nvkectl create,
+			// say, left beside the manifests.
+			if meta.APIVersion == "" || meta.Kind == "" {
+				v.addf("%s %q holds a document without apiVersion and kind, which kubectl cannot apply; "+
+					"write each with nvkectl create --dry-run=client -o yaml", pathNicoReleases, file)
 				return
 			}
 			switch meta.Kind {

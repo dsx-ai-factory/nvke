@@ -1596,16 +1596,41 @@ func nicoSiteSpecFile(t *testing.T) string {
 		}
 	}
 	t.Setenv(sitespec.NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
-	if err := os.Mkdir(filepath.Join(dir, "releases"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(dir, "bootstrap-releases"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	const releases = "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n" +
-		"---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\n" +
+		"---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-ubuntu-24.04-amd64\n" +
 		"spec:\n  machineImageRef:\n    name: img\n"
-	if err := os.WriteFile(filepath.Join(dir, "releases", "r.yaml"), []byte(releases), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "bootstrap-releases", "r.yaml"), []byte(releases), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// TestRunBootstrapSiteDryRunReportsBootstrapProblemsTogether: the dry run is the
+// complete pre-flight, so a missing SPIRE address does not hide the NICo token
+// the bootstrap host also lacks.
+func TestRunBootstrapSiteDryRunReportsBootstrapProblemsTogether(t *testing.T) {
+	example, err := os.ReadFile("../../examples/sitespec-nico.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Replace(string(example), `  externalAddress: "192.0.2.10"`, "", 1)
+	if text == string(example) {
+		t.Fatal("the example no longer sets spire.externalAddress; update this test")
+	}
+	t.Setenv(sitespec.NicoCredentialsEnv, "")
+
+	err = runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{siteSpec: writeSiteSpec(t, text), dryRun: true})
+	if err == nil {
+		t.Fatal("the dry run passed a spec with no SPIRE address and no NICo token")
+	}
+	for _, want := range []string{"spire.externalAddress is required", sitespec.NicoCredentialsEnv + " must name"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
 }
 
 // TestRunBootstrapSiteNicoLeftoverClusterSaysToReleaseInstancesFirst: with nico
@@ -2371,7 +2396,7 @@ func TestDumpSiteSpecNamesTheNicoControlPlaneAsDocumented(t *testing.T) {
 		t.Fatalf("dumpSiteSpec: %v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{"count: 3", "instanceTypePreference:", "vpcPrefixIDs:", "sshKeyGroupIDs:", "osProfile: example-os-profile"} {
+	for _, want := range []string{"count: 3", "instanceTypePreference:", "vpcPrefixIDs:", "sshKeyGroupIDs:", "osProfile: example-ubuntu-24.04-amd64"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the dump lacks %q:\n%s", want, out)
 		}

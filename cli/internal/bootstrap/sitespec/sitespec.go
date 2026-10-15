@@ -917,6 +917,19 @@ func (inv *SiteSpec) CheckBootstrapMode(disableMTLS bool) error {
 	return nil
 }
 
+// NicoVIPWarning returns a warning for a nico site spec that leaves
+// cluster.controlPlaneVIP unset, or "" for any other site spec. The bootstrap
+// builds such a site cluster, but the controller stack install refuses the spec,
+// and the VIP cannot be added once the site cluster exists.
+func (inv *SiteSpec) NicoVIPWarning() string {
+	if !inv.IsNico() || inv.Cluster.ControlPlaneVIP != "" {
+		return ""
+	}
+	return pathControlPlaneVIP + " is not set: the bootstrap can build this one-node site cluster, but the controller stack " +
+		"install needs the VIP, and it cannot be added once the site cluster exists (kube-vip is set up only when the cluster " +
+		"is created with one); set it now unless this site will not get the controller stack"
+}
+
 // checkTrustDomain validates the DNS-name form required for a SPIFFE trust
 // domain. Schemes, paths, ports, empty labels, and uppercase characters are
 // rejected by the same label rules used for the other DNS-shaped fields.

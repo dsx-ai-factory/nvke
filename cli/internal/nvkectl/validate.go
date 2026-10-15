@@ -82,24 +82,28 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 	// password and the release manifests, and the SPIRE address the nodes dial.
 	// The controller stack install runs this command without them, so a full
 	// check reports them and judges the file by the controllerStack section.
-	var bootstrapErr error
-	var lifts string
-	if err := spec.CheckBootstrapMode(opts.disableMTLS); err != nil {
-		bootstrapErr, lifts = err, " (--disable-mtls lifts this)"
-	} else if err := spec.ValidateBootstrapReferences(); err != nil {
-		bootstrapErr = err
+	// Both checks run, so one pass reports every problem.
+	modeErr := spec.CheckBootstrapMode(opts.disableMTLS)
+	if modeErr != nil {
+		modeErr = fmt.Errorf("%w (--disable-mtls lifts this)", modeErr)
 	}
+	bootstrapErr := errors.Join(modeErr, spec.ValidateBootstrapReferences())
 	switch {
 	case bootstrapErr != nil && opts.bootstrapOnly:
-		fmt.Fprintf(out, "bootstrap: %v%s\n", bootstrapErr, lifts)
-		return errors.New("the site spec is not ready for nvkectl bootstrap site")
+		fmt.Fprintf(out, "bootstrap: %v\n", bootstrapErr)
 	case bootstrapErr != nil:
-		fmt.Fprintf(out, "bootstrap: not ready for nvkectl bootstrap site on this host: %v%s "+
-			"(not part of the controller stack verdict below; --bootstrap-only fails on it)\n", bootstrapErr, lifts)
+		fmt.Fprintf(out, "bootstrap: not ready for nvkectl bootstrap site on this host: %v "+
+			"(not part of the controller stack verdict below; --bootstrap-only fails on it)\n", bootstrapErr)
 	default:
 		fmt.Fprintln(out, "bootstrap: valid; nvkectl bootstrap site can run with this file")
 	}
+	if warning := spec.NicoVIPWarning(); warning != "" {
+		fmt.Fprintf(out, "bootstrap: warning: %s\n", warning)
+	}
 	if opts.bootstrapOnly {
+		if bootstrapErr != nil {
+			return errors.New("the site spec is not ready for nvkectl bootstrap site")
+		}
 		return nil
 	}
 

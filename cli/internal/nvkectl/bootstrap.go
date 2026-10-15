@@ -303,12 +303,13 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 	logger.Info("loaded site spec", "path", opts.siteSpec, "cluster", inv.ClusterName)
-	// Checked before the dry-run return so --dry-run is the complete pre-flight.
-	if err := inv.CheckBootstrapMode(opts.disableMTLS); err != nil {
-		return err
-	}
-	if err := inv.ValidateBootstrapReferences(); err != nil {
+	// Checked before the dry-run return so --dry-run is the complete pre-flight,
+	// and together so one run reports every problem.
+	if err := errors.Join(inv.CheckBootstrapMode(opts.disableMTLS), inv.ValidateBootstrapReferences()); err != nil {
 		return fmt.Errorf("site spec file %s: %w", opts.siteSpec, err)
+	}
+	if warning := inv.NicoVIPWarning(); warning != "" {
+		logger.Warn(warning)
 	}
 	// Resolved here too, so a bad --release or --arch fails the dry run.
 	capnicoImage, err := capnicoReleaseImage(inv, opts.release, opts.arch)

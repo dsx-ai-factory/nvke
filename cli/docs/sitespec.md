@@ -210,13 +210,28 @@ and the bootstrap applies them to the Kind cluster after the controller's CRDs
 exist and before it creates the site cluster. `bootstrap site` and
 `nvkectl validate sitespec --bootstrap-only` fail, before any Kind cluster exists,
 if the files cannot be read or hold no `ClusterRelease` named for the `osProfile` or not the
-`MachineImage` it references. Each must be a full manifest, with
-`apiVersion: internal.nvke.nvidia.com/v1` and its `kind`: the portable request
-documents in `examples/clusterrelease.yaml` and `machineimage.yaml` carry
-neither, because `nvkectl create` adds them, so they do not work here as they
-are. Loading the file for any other command, such as
-`render deploy-path` on the site node, does not read them. Relative paths
-resolve from the site spec's directory.
+`MachineImage` it references. A relative `infra.nico.releases` resolves from
+the site spec's directory. Loading the site spec for any other command, such as
+`render deploy-path` on the site node, does not read the manifests.
+
+Each document must be a full manifest, with
+`apiVersion: internal.nvke.nvidia.com/v1` and its `kind`; a document missing
+either is refused, because `kubectl apply` cannot apply it. The request
+documents that page has you edit in `releases/` carry neither, because
+`nvkectl create` adds them when it publishes them, so they do not work here as
+they are. From the directory that holds `releases/`, have `nvkectl create` write
+the full manifests into a directory of their own, and point
+`infra.nico.releases` at that one:
+
+```bash
+mkdir bootstrap-releases
+nvkectl create machineimage -f releases/machineimage.yaml --dry-run=client -o yaml > bootstrap-releases/machineimage.yaml
+nvkectl create clusterrelease -f releases/clusterrelease.yaml --dry-run=client -o yaml > bootstrap-releases/clusterrelease.yaml
+```
+
+Keep the two directories apart. `releases/` keeps the request documents that
+`nvkectl create` publishes to the finished site controller, and the bootstrap
+applies every file in `infra.nico.releases`.
 
 ## Schema
 
@@ -230,7 +245,7 @@ resolve from the site spec's directory.
 | `cluster.k8sVersion` | string | yes | Plain semantic version, e.g. `1.32.0` (no leading `v`). |
 | `cluster.cniName` | string | no | Defaults to and must be `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the node-agent default. |
-| `cluster.controlPlaneVIP` | string | for multiple nodes | IPv4 control-plane VIP. Required when `cluster.nodes` has more than one entry, or `infra.nico.controlPlane.count` is more than one. A single-node cluster may omit it and use that node's IP as its fixed endpoint, except with `nico`: the node has no address until NICo allocates it, so the controller stack install needs the VIP even for one node (the bootstrap does not). `validate sitespec` reports it missing in the `controllerStack` section. See below. |
+| `cluster.controlPlaneVIP` | string | for multiple nodes | IPv4 control-plane VIP. Required when `cluster.nodes` has more than one entry, or `infra.nico.controlPlane.count` is more than one. A single-node cluster may omit it and use that node's IP as its fixed endpoint, except with `nico`: the node has no address until NICo allocates it, so the controller stack install needs the VIP even for one node (the bootstrap does not, and warns). Set it before the bootstrap: it cannot be added once the site cluster exists. `validate sitespec` reports it missing in the `controllerStack` section. See below. |
 | `cluster.podCidr` | string | yes | Valid CIDR. A comma-separated list of CIDRs is allowed. Must not overlap `serviceCidr`. |
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
@@ -275,9 +290,10 @@ refuses a value that is still a placeholder.
 
 `nvkectl validate sitespec -f sitespec.yaml` checks both halves of the file
 and lists what is still a placeholder; `--bootstrap-only` checks only what
-`bootstrap site` reads. The exit status of the full check is the controller
-stack's, because the install gates on it from a host that does not hold what
-only the bootstrap host does: with `nico`, the token file, the tenant password
+`bootstrap site` reads. A site spec field that is invalid fails either check.
+Otherwise the exit status of the full check is the controller stack's, because
+the install gates on it from a host that does not hold what only the bootstrap
+host does: with `nico`, the token file, the tenant password
 and release manifests, and `spire.externalAddress`. The full check reports
 those; `--bootstrap-only` fails on them. A file whose bootstrap half is valid can bootstrap
 the cluster before the `controllerStack` section is filled in; the output
@@ -311,7 +327,9 @@ them from there and they are not repeated in `controllerStack:`.
 - `controlPlaneVIP` is required when `cluster.nodes` contains more than one
   node, or `infra.nico.controlPlane.count` is more than one. With `nico` it is
   needed for one node too: the bootstrap runs without it, but the controller
-  stack install is refused.
+  stack install is refused, and the VIP cannot be added once the site cluster
+  exists, because kube-vip is set up only when the cluster is created with one.
+  `bootstrap site` and `validate sitespec` warn about it.
 - With `nico`: `infra.nico` (its `orgID`, `remote`, `controlPlane`, `tenant` and
   `releases`) is required, and the files it names, and the file
   `NVKECTL_NICO_CREDENTIALS` names, must exist when the bootstrap runs, and

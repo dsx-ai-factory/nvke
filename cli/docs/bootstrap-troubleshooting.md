@@ -70,7 +70,7 @@ retained, so read its controller logs and the nodes' journals instead.
 For a deployment failure, start with `all-resources.txt`, then check the
 failing pod in `pods-described.txt` and its `logs.txt`. Key namespaces are
 `postgres`, `temporal`, `spire-server`, `capi-system`, `provisioned-system`
-and `nke-controller`.
+(`capnico-system` with `infra.provider: nico`) and `nke-controller`.
 
 ### The retained bootstrap cluster
 
@@ -223,7 +223,9 @@ first. With `infra.provider: nico`, if the earlier run failed before every
 control-plane node joined, [release the NICo instances](#release-the-nico-instances-first)
 it allocated before you delete the cluster: deleting it alone leaves them
 allocated. If it succeeded, or failed after every node joined, the site cluster
-is working: do not delete it. Bootstrap does not reuse an existing Kind cluster.
+is working: recover from the Kind cluster whatever that run did not write,
+delete only the Kind cluster, and do not re-run, because a re-run allocates
+another set of NICo machines. Bootstrap does not reuse an existing Kind cluster.
 
 **`the control-plane VIP ... is accepting connections on port 6443`**
 
@@ -449,7 +451,8 @@ checks catch common leftovers; they do not prove a node is clean or safe to
 reset.
 
 With `infra.provider: nico` the existing-cluster check applies, and a probe of
-`cluster.controlPlaneVIP` on port 6443. The nodes are allocated rather than
+`cluster.controlPlaneVIP` on port 6443 when the VIP is set; a one-node spec
+without one has nothing to probe. The nodes are allocated rather than
 listed, so there is no host to probe, and the preflight cannot see the NICo
 instances an earlier run allocated. It stops a re-run while the retained Kind
 cluster exists, or while a site cluster answers on the VIP; once that cluster is

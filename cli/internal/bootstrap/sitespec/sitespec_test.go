@@ -1340,13 +1340,39 @@ func TestNicoExampleLoads(t *testing.T) {
 		t.Fatalf("read cli/examples/sitespec-nico.yaml: %v", err)
 	}
 	path := writeTemp(t, string(example))
-	writeNicoFiles(t, filepath.Dir(path), "nico.token", "bootstrap-tenant.password", "releases")
+	writeNicoFiles(t, filepath.Dir(path), "nico.token", "bootstrap-tenant.password", "bootstrap-releases")
 	inv, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if !inv.IsNico() || inv.ControlPlaneCount() != 3 || inv.Infra.Nico == nil {
 		t.Errorf("example loaded as %+v", inv)
+	}
+}
+
+// TestNicoVIPWarning: only a nico site spec without cluster.controlPlaneVIP is
+// warned about, since its stack install is refused and the VIP cannot be added
+// once the site cluster exists.
+func TestNicoVIPWarning(t *testing.T) {
+	tests := []struct {
+		name string
+		spec SiteSpec
+		want bool
+	}{
+		{name: "provisioned without a VIP", spec: SiteSpec{}},
+		{name: "nico with a VIP", spec: SiteSpec{Infra: Infra{Provider: ProviderNico}, Cluster: Cluster{ControlPlaneVIP: "10.0.0.100"}}},
+		{name: "nico without a VIP", spec: SiteSpec{Infra: Infra{Provider: ProviderNico}}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.spec.NicoVIPWarning()
+			if tt.want != (got != "") {
+				t.Fatalf("NicoVIPWarning() = %q, want a warning: %v", got, tt.want)
+			}
+			if tt.want && (!strings.Contains(got, pathControlPlaneVIP) || !strings.Contains(got, "cannot be added once the site cluster exists")) {
+				t.Errorf("NicoVIPWarning() = %q; want it to name %s and say it cannot be added later", got, pathControlPlaneVIP)
+			}
+		})
 	}
 }
 
@@ -1487,6 +1513,17 @@ func TestLoad_BootstrapReleases(t *testing.T) {
 			docs:    "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\nspec: nope\n",
 			wantErr: "holds an invalid MachineImage",
 		},
+		"a request document beside the manifests": {
+			docs: "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n" +
+				"---\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n",
+			wantErr: "holds a document without apiVersion and kind",
+		},
+		"a document with a kind and no apiVersion": {
+			docs: "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n" +
+				"---\nkind: NodePoolRelease\nmetadata:\n  name: example-os-profile\n",
+			wantErr: "holds a document without apiVersion and kind",
+		},
+		"empty documents are skipped": {docs: "# releases\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n---\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n---\n# trailing\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := writeNicoTemp(t, nicoYAML)
