@@ -6,6 +6,7 @@ package agent
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
+	"github.com/dsx-ai-factory/nvke/agent/internal/redact"
 	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
@@ -126,178 +128,6 @@ func assertNoCredentials(t *testing.T, got string) {
 	assert.NotContains(t, got, testCertificateKey, "the certificate key is in %q", got)
 }
 
-func TestRedactJoinString(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{
-			name: "a worker join command keeps the token ID and the CA hash",
-			in:   fmt.Sprintf("kubeadm join 10.0.0.1:6443 --token %s --discovery-token-ca-cert-hash %s", testToken, testCACertHash),
-			want: fmt.Sprintf("kubeadm join 10.0.0.1:6443 --token %s.<redacted> --discovery-token-ca-cert-hash %s", testTokenID, testCACertHash),
-		},
-		{
-			name: "a control plane join command also loses the certificate key",
-			in: fmt.Sprintf("kubeadm join 10.0.0.1:6443 --token %s --discovery-token-ca-cert-hash %s --control-plane --certificate-key %s",
-				testToken, testCACertHash, testCertificateKey),
-			want: fmt.Sprintf("kubeadm join 10.0.0.1:6443 --token %s.<redacted> --discovery-token-ca-cert-hash %s --control-plane --certificate-key <redacted>",
-				testTokenID, testCACertHash),
-		},
-		{
-			name: "the --flag=value form",
-			in:   fmt.Sprintf("join --token=%s --certificate-key=%s", testToken, testCertificateKey),
-			want: fmt.Sprintf("join --token=%s.<redacted> --certificate-key=<redacted>", testTokenID),
-		},
-		{
-			name: "the other flags that take a token, and flags that look like them but are not",
-			in: fmt.Sprintf("join --discovery-token %s --tls-bootstrap-token=%s --token-ttl 24h "+
-				"--discovery-token-unsafe-skip-ca-verification --node-name gpu-01", testToken, testToken),
-			want: fmt.Sprintf("join --discovery-token %[1]s.<redacted> --tls-bootstrap-token=%[1]s.<redacted> --token-ttl 24h "+
-				"--discovery-token-unsafe-skip-ca-verification --node-name gpu-01", testTokenID),
-		},
-		{
-			name: "kubeadm's line continuations",
-			in:   fmt.Sprintf("kubeadm join 10.0.0.1:6443 --token %s \\\n    --control-plane --certificate-key %s", testToken, testCertificateKey),
-			want: fmt.Sprintf("kubeadm join 10.0.0.1:6443 --token %s.<redacted> \\\n    --control-plane --certificate-key <redacted>", testTokenID),
-		},
-		{
-			name: "a value that is not a token shape is redacted whole",
-			in:   "join --token not-a-token-shape",
-			want: "join --token <redacted>",
-		},
-		{
-			name: "a command with no credentials is unchanged",
-			in:   "kubeadm join 10.0.0.1:6443 --control-plane",
-			want: "kubeadm join 10.0.0.1:6443 --control-plane",
-		},
-		{name: "an empty string is unchanged", in: "", want: ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := redactJoinString(tc.in)
-
-			assert.Equal(t, tc.want, got)
-			assertNoCredentials(t, got)
-			assert.Equal(t, got, redactJoinString(got), "redacting twice changes nothing")
-		})
-	}
-}
-
-func TestRedactJoinArgs(t *testing.T) {
-	args := []string{
-		"join", "10.0.0.1:6443", "--token", testToken, "--discovery-token-ca-cert-hash", testCACertHash,
-		"--control-plane", "--certificate-key", testCertificateKey,
-	}
-	original := append([]string(nil), args...)
-
-	got := redactJoinArgs(args)
-
-	assert.Equal(t, []string{
-		"join", "10.0.0.1:6443", "--token", testTokenID + ".<redacted>", "--discovery-token-ca-cert-hash", testCACertHash,
-		"--control-plane", "--certificate-key", "<redacted>",
-	}, got)
-	assert.Equal(t, original, args, "the input must not be modified")
-
-	t.Run("the --flag=value form", func(t *testing.T) {
-		got := redactJoinArgs([]string{"join", "--token=" + testToken, "--certificate-key=" + testCertificateKey})
-		assert.Equal(t, []string{"join", "--token=" + testTokenID + ".<redacted>", "--certificate-key=<redacted>"}, got)
-	})
-	t.Run("the other flags that take a token", func(t *testing.T) {
-		redactedToken := testTokenID + ".<redacted>"
-
-		got := redactJoinArgs([]string{"join", "--discovery-token", testToken, "--tls-bootstrap-token=" + testToken, "--token-ttl", "24h"})
-
-		assert.Equal(t, []string{"join", "--discovery-token", redactedToken, "--tls-bootstrap-token=" + redactedToken, "--token-ttl", "24h"}, got)
-	})
-	t.Run("a flag with no value is left alone", func(t *testing.T) {
-		assert.Equal(t, []string{"join", "--token"}, redactJoinArgs([]string{"join", "--token"}))
-	})
-	t.Run("no arguments", func(t *testing.T) {
-		assert.Empty(t, redactJoinArgs(nil))
-	})
-}
-
-func TestRedactKubeadmConfig(t *testing.T) {
-	join := fmt.Sprintf(`apiVersion: kubeadm.k8s.io/v1beta4
-kind: JoinConfiguration
-discovery:
-  bootstrapToken:
-    apiServerEndpoint: 10.0.0.1:6443
-    token: %s
-    caCertHashes:
-    - %s
-  timeout: 5m0s
-  tlsBootstrapToken: %s
-controlPlane:
-  certificateKey: "%s"
-  localAPIEndpoint:
-    advertiseAddress: 10.0.0.2
-`, testToken, testCACertHash, testToken, testCertificateKey)
-	init := fmt.Sprintf(`apiVersion: kubeadm.k8s.io/v1beta4
-kind: InitConfiguration
-bootstrapTokens:
-- token: '%s'
-  ttl: 24h0m0s
-  tokenTTL: not-a-credential
-certificateKey: %s
-`, testToken, testCertificateKey)
-
-	t.Run("a join configuration", func(t *testing.T) {
-		got := redactKubeadmConfig(join)
-
-		assertNoCredentials(t, got)
-		assert.Contains(t, got, "token: "+testTokenID+".<redacted>\n")
-		assert.Contains(t, got, "tlsBootstrapToken: "+testTokenID+".<redacted>\n")
-		assert.Contains(t, got, `certificateKey: "<redacted>"`)
-		assert.Equal(t, strings.Count(join, "\n"), strings.Count(got, "\n"), "every line is still there")
-		for _, kept := range []string{"apiServerEndpoint: 10.0.0.1:6443", testCACertHash, "timeout: 5m0s", "advertiseAddress: 10.0.0.2"} {
-			assert.Contains(t, got, kept)
-		}
-	})
-	t.Run("an init configuration, with the token in a list item and quoted", func(t *testing.T) {
-		got := redactKubeadmConfig(init)
-
-		assertNoCredentials(t, got)
-		assert.Contains(t, got, "- token: '"+testTokenID+".<redacted>'")
-		assert.Contains(t, got, "certificateKey: <redacted>")
-		assert.Contains(t, got, "tokenTTL: not-a-credential", "a key that only starts with token is not a credential")
-		assert.Contains(t, got, "ttl: 24h0m0s")
-	})
-	t.Run("a configuration with no credentials is unchanged", func(t *testing.T) {
-		const plain = "kind: InitConfiguration\nnodeRegistration:\n  name: node-1\n"
-		assert.Equal(t, plain, redactKubeadmConfig(plain))
-	})
-	t.Run("redacting twice changes nothing", func(t *testing.T) {
-		once := redactKubeadmConfig(join)
-		assert.Equal(t, once, redactKubeadmConfig(once))
-	})
-}
-
-func TestRedactKubeadmOutput(t *testing.T) {
-	out := fmt.Sprintf(`[bootstrap-token] Using token: %s
-[upload-certs] Using certificate key:
-%s
-
-Then you can join any number of worker nodes by running the following on each as root:
-
-kubeadm join 10.0.0.1:6443 --token %s \
-    --discovery-token-ca-cert-hash %s \
-    --control-plane --certificate-key %s
-`, testToken, testCertificateKey, testToken, testCACertHash, testCertificateKey)
-
-	got := redactKubeadmOutput(out)
-
-	assertNoCredentials(t, got)
-	assert.Contains(t, got, "Using token: "+testTokenID+".<redacted>")
-	assert.Contains(t, got, "Using certificate key:\n<redacted>")
-	assert.Contains(t, got, "--token "+testTokenID+".<redacted>")
-	assert.Contains(t, got, testCACertHash, "the CA hash is public and is kept")
-	assert.Contains(t, got, "Then you can join any number of worker nodes", "the prose is kept")
-	assert.Equal(t, got, redactKubeadmOutput(got), "redacting twice changes nothing")
-	assert.Equal(t, "error execution phase preflight: [preflight] failed", redactKubeadmOutput("error execution phase preflight: [preflight] failed"))
-}
-
 func TestLoggableRequestsRedactJoinCredentials(t *testing.T) {
 	joinString := fmt.Sprintf("kubeadm join 10.0.0.1:6443 --token %s --discovery-token-ca-cert-hash %s --control-plane --certificate-key %s",
 		testToken, testCACertHash, testCertificateKey)
@@ -334,6 +164,19 @@ func TestLoggableRequestsRedactJoinCredentials(t *testing.T) {
 		assert.Equal(t, initConfig, req.GetInitConfig(), "the request itself must be untouched")
 		assertRequestLogHasNoCredentials(t, "issuing kubeadm init call", logged)
 	})
+	t.Run("init extra arguments and an inline configuration", func(t *testing.T) {
+		req := &pb.KubeadmInitRequest{
+			ExtraArgs:  []string{"--token=" + testToken, "--node-name", "gpu-01"},
+			InitConfig: fmt.Sprintf("kind: InitConfiguration\nbootstrapTokens: [{token: %s, ttl: 24h0m0s}]\n", testToken),
+		}
+
+		logged := loggableInitRequest(req)
+
+		assert.Equal(t, []string{"--token=" + testTokenID + ".<redacted>", "--node-name", "gpu-01"}, logged.GetExtraArgs())
+		assert.Equal(t, "kind: InitConfiguration\nbootstrapTokens: [{token: "+testTokenID+".<redacted>, ttl: 24h0m0s}]\n", logged.GetInitConfig())
+		assert.Equal(t, []string{"--token=" + testToken, "--node-name", "gpu-01"}, req.GetExtraArgs(), "the request itself must be untouched")
+		assertRequestLogHasNoCredentials(t, "issuing kubeadm init call", logged)
+	})
 	t.Run("a request with nothing to redact is returned as it is", func(t *testing.T) {
 		join := &pb.KubeadmJoinRequest{KubeadmJoinString: "kubeadm join 10.0.0.1:6443 --control-plane"}
 		init := &pb.KubeadmInitRequest{InitConfig: "kind: InitConfiguration\n"}
@@ -352,4 +195,37 @@ func assertRequestLogHasNoCredentials(t *testing.T, msg string, request any) {
 
 	require.True(t, json.Valid(buf.Bytes()), "log line is not JSON: %s", buf.String())
 	assertNoCredentials(t, buf.String())
+}
+
+func TestKubeadmFailureMessageRedactsBeforeTruncating(t *testing.T) {
+	creds := redact.New()
+	creds.AddToken(testToken)
+	// The token starts a few characters before the 300 character limit, so cutting
+	// the line first would leave its first characters, which are no longer a token.
+	const prefix = "error execution phase kubelet-start: "
+	line := prefix + strings.Repeat("x", 300-len(prefix)-12) + " " + testToken + " rejected"
+
+	got := kubeadmFailureMessage(errors.New("exit status 1"), []byte("noise\n"+line+"\n"), creds)
+
+	assert.NotContains(t, got, "bbb", "no part of the token's secret is left")
+	assert.Contains(t, got, "error execution phase kubelet-start:")
+	assert.Contains(t, got, testTokenID+".<r", "the token ID is kept")
+}
+
+func TestProcessKubeadmJoinFailureKeepsTheReasonAndRedactsTheCredentials(t *testing.T) {
+	server := newKubeadmFileTestServer(t)
+	server.NodeStatus = &NodeStatus{Status: PendingStatus, Phase: JoinPhase, Role: ControlPlaneRole}
+	server.Runner = &MockRunner{
+		Output: []byte("kubeadm join 10.0.0.1:6443 --token " + testToken + " --certificate-key " + testCertificateKey +
+			"\nerror execution phase kubelet-start: lookup node01.abcdefghijklmnop.example: no such host\n"),
+		Err: errors.New("exit status 1"),
+	}
+	req := &pb.KubeadmJoinRequest{CertificateKey: testCertificateKey}
+
+	server.processKubeadmJoin([]string{"join", "10.0.0.1:6443", "--token", testToken, "--certificate-key", testCertificateKey}, req)
+
+	assert.Equal(t, ErrorStatus, server.NodeStatus.Status)
+	assertNoCredentials(t, server.NodeStatus.KubeadmErrorMessage)
+	assert.Contains(t, server.NodeStatus.KubeadmErrorMessage, "lookup node01.abcdefghijklmnop.example: no such host", "the reason is kept as it was")
+	assert.Equal(t, testCertificateKey, req.GetCertificateKey(), "execution inputs are untouched")
 }

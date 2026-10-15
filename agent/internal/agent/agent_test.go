@@ -1603,7 +1603,7 @@ To see the stack trace of this error execute with --v=5 or higher
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := kubeadmFailureMessage(tc.err, []byte(tc.output))
+			got := kubeadmFailureMessage(tc.err, []byte(tc.output), nil)
 			if got != tc.want {
 				t.Errorf("kubeadmFailureMessage() = %q, want %q", got, tc.want)
 			}
@@ -1615,7 +1615,7 @@ To see the stack trace of this error execute with --v=5 or higher
 
 	t.Run("bounded", func(t *testing.T) {
 		long := "error: " + strings.Repeat("x", 1000)
-		if got := kubeadmFailureMessage(errors.New("boom"), []byte(long)); len(got) > 350 {
+		if got := kubeadmFailureMessage(errors.New("boom"), []byte(long), nil); len(got) > 350 {
 			t.Errorf("message is %d bytes; status fields should stay bounded", len(got))
 		}
 	})
