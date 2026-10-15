@@ -93,9 +93,9 @@ func (c *Combination) FindStream(name string) (*Stream, bool) {
 	return nil, false
 }
 
-// CombinationStream is the error-checked pair lookup both `qualify result`
-// and `qualify publish` need: find the named stream within the named
-// combination, or say which one was missing.
+// CombinationStream is the error-checked pair lookup `qualify result` needs:
+// find the named stream within the named combination, or say which one was
+// missing.
 func CombinationStream(plan *Plan, combinationID, streamName string) (*Combination, *Stream, error) {
 	combo, ok := plan.FindCombination(combinationID)
 	if !ok {

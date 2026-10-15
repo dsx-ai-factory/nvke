@@ -117,10 +117,10 @@ func NewResult(spec ResultSpec, combination ResultCombination) *Result {
 }
 
 // LoadResult reads a Result written by `qualify result`, the same way
-// LoadSubject and LoadPlan read their own files: readStrict rejects a
-// record carrying an unknown field rather than silently dropping it, and
-// checkTypeMeta rejects one whose apiVersion or kind do not match what
-// `qualify publish` expects, rather than only checking kind.
+// LoadSubject reads its own file: readStrict rejects a record carrying an
+// unknown field rather than silently dropping it, and checkTypeMeta rejects
+// one whose apiVersion or kind do not match what `qualify publish` expects,
+// rather than only checking kind.
 func LoadResult(path string) (*Result, error) {
 	var r Result
 	if err := readStrict(path, &r); err != nil {

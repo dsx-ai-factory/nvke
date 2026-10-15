@@ -24,9 +24,10 @@ import (
 var version = "dev"
 
 // commandTimeout bounds the whole command, most relevantly the GCS calls
-// `qualify publish` makes through cmd.Context(). plan and result are local
-// file I/O and do not read the context at all, so this only ever caps a
-// stalled network call (a hung TLS handshake, a silent partition) from
+// `qualify publish` makes through cmd.Context(). plan and result do not read
+// the context at all -- plan's own HEAD requests and git calls are bounded
+// by its own 20s client, not this one -- so this only ever caps a stalled
+// network call in publish (a hung TLS handshake, a silent partition) from
 // blocking indefinitely instead of erroring -- well above any realistic
 // publish, which uploads at most three small files with its own bounded
 // retry/backoff.

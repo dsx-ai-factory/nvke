@@ -133,7 +133,7 @@ when the failure was discovered.`,
 	f.StringVar(&combination, "combination", "", "the combination id this leg ran (required if the plan has more than one)")
 	f.StringVar(&stream, "stream", "", "the stream name this leg ran (required)")
 	f.StringVar(&output, "output", "-", "where to write the result, - is stdout")
-	f.StringVar(&startedAt, "started-at", "", "RFC3339 time the job started, used as StartedAt only when --report is missing or unreadable (default: now, which is a near-zero-duration guess)")
+	f.StringVar(&startedAt, "started-at", "", "RFC3339 time the job started, used as StartedAt only when --report is missing (default: now, which is a near-zero-duration guess)")
 
 	for _, name := range []string{"plan", "report", "stream"} {
 		_ = cmd.MarkFlagRequired(name)
@@ -160,15 +160,15 @@ func loadGinkgoReport(path string) (types.Report, error) {
 }
 
 // summarizeGinkgoReport renders a short pass-count summary from a Ginkgo
-// report's own spec states, counting only It leaf nodes -- report.SpecReports
-// also carries an entry for BeforeSuite/AfterSuite/cleanup nodes, which would
-// otherwise inflate the total, and a stream that runs under Ginkgo's own
-// focus/skip filtering (common for per-stream subsets of a shared suite
-// binary) would read as a mostly-failing run instead of a fully-passing one
-// restricted to a handful of specs.
+// report's own spec states. The denominator is PreRunStats.SpecsThatWillRun,
+// not a count of It leaf nodes: SpecReports carries an entry for every It in
+// the suite binary, including ones a stream's own -ginkgo.label-filter
+// excluded (recorded as skipped, not absent), so counting It nodes directly
+// would read a fully-passing filtered run as mostly failing instead of
+// correctly sized to the handful of specs the filter actually selected.
 func summarizeGinkgoReport(report types.Report) string {
 	its := report.SpecReports.WithLeafNodeType(types.NodeTypeIt)
-	total := len(its)
+	total := report.PreRunStats.SpecsThatWillRun
 	passed := its.CountWithState(types.SpecStatePassed)
 	return fmt.Sprintf("%d/%d passed", passed, total)
 }

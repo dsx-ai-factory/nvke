@@ -58,7 +58,8 @@ func writeGinkgoReport(t *testing.T, succeeded bool) string {
 		SuiteSucceeded: succeeded,
 		StartTime:      start,
 		EndTime:        start.Add(5 * time.Minute),
-		SpecReports:    types.SpecReports{{State: state}},
+		PreRunStats:    types.PreRunStats{SpecsThatWillRun: 1},
+		SpecReports:    types.SpecReports{{LeafNodeType: types.NodeTypeIt, State: state}},
 	}
 	b, err := json.Marshal([]types.Report{report})
 	if err != nil {
@@ -361,11 +362,16 @@ func TestResultCmdRejectsMissingPlan(t *testing.T) {
 
 // A suite running under Ginkgo's own focus/skip filtering -- the normal case
 // for a per-stream subset of a shared suite binary -- must read as a
-// fully-passing run restricted to a handful of specs, not a mostly-failing
-// one. SpecReports also carries a BeforeSuite/AfterSuite entry, which must
-// not inflate the denominator either.
-func TestSummarizeGinkgoReportCountsOnlyItNodes(t *testing.T) {
+// fully-passing run restricted to the specs the filter selected, not a
+// mostly-failing run sized to the whole suite binary: SpecReports carries an
+// entry for every It in the binary, including the ones the filter excluded
+// (recorded skipped, not absent), so the denominator has to come from
+// PreRunStats.SpecsThatWillRun, not a count of It leaf nodes. SpecReports
+// also carries a BeforeSuite/AfterSuite entry, which must not inflate the
+// passed count either.
+func TestSummarizeGinkgoReportCountsAgainstSpecsThatWillRun(t *testing.T) {
 	report := types.Report{
+		PreRunStats: types.PreRunStats{SpecsThatWillRun: 2},
 		SpecReports: types.SpecReports{
 			{LeafNodeType: types.NodeTypeBeforeSuite, State: types.SpecStatePassed},
 			{LeafNodeType: types.NodeTypeIt, State: types.SpecStatePassed},
@@ -375,7 +381,7 @@ func TestSummarizeGinkgoReportCountsOnlyItNodes(t *testing.T) {
 		},
 	}
 	got := summarizeGinkgoReport(report)
-	if got != "2/3 passed" {
-		t.Errorf("summarizeGinkgoReport = %q, want %q (2 passed Its out of 3 total Its, suite nodes excluded)", got, "2/3 passed")
+	if got != "2/2 passed" {
+		t.Errorf("summarizeGinkgoReport = %q, want %q (2 passed Its against the 2 specs the filter selected, not the whole suite binary)", got, "2/2 passed")
 	}
 }
