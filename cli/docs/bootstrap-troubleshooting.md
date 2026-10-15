@@ -87,35 +87,10 @@ level=WARN msg="bootstrap failed after site cluster creation; retaining the boot
 With `infra.provider: nico`, the kept cluster also holds the
 NICo token and the tenant password as Secrets (`nico-credentials` in
 `capnico-system`, `dgxc-tenant-credentials` in `nke-controller`), so delete it
-when you are done:
-`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`.
-
-#### Release the NICo instances first
-
-After a failure past the point where the site cluster was created, the
-retained cluster also holds the Cluster API machines for the NICo instances
-CAPNICo allocated. Deleting a Kind cluster runs no finalizers, so deleting it
-now leaves those instances allocated and unmanaged, with the tenant login in
-their user data, and nothing in NICo or in a re-run will find them. Release them
-first, by deleting the site cluster through the retained cluster's controller,
-which deletes each node's machine and so releases its instance:
-
-```bash
-nvkectl config set-site --name nvkectl-bootstrap --url http://127.0.0.1:30080 \
-  --kubeconfig /tmp/nvkectl-bootstrap-kubeconfig-.../config   # the path in the log line above
-nvkectl delete cluster <clusterName>                          # clusterName from your site spec
-nvkectl get clusters                                          # repeat until it is no longer listed
-```
-
-The URL port is `NVKECTL_CONTROLLER_PORT`, `30080` by default. `set-site` makes
-`nvkectl-bootstrap` the active site; switch back with
-`nvkectl config use-site <name>`. A cluster can be deleted in any state, and it
-stays listed as `Deleting` until every machine is released. Only then delete the
-Kind cluster. The failure message prints these steps.
-
-None of this applies to a run that succeeded and was kept with
-`--keep-bootstrap-cluster`: the instances are then the new cluster's nodes, so
-delete only the Kind cluster.
+when you are done. After a failure past site cluster creation it also holds the
+machines for the NICo instances CAPNICo allocated, and those must be released
+before the cluster is deleted: see
+[Release the NICo instances first](#release-the-nico-instances-first).
 
 Use that kubeconfig to look at the live state, which is more than the dump
 captures:
@@ -139,7 +114,38 @@ If no kubeconfig path was printed, retrieve it:
 Keep this cluster until recovery is complete: it may hold active workflows
 and the only saved copy of the etcd encryption key. See
 [The encryption key was not saved](#the-encryption-key-was-not-saved).
-When it is safe to delete it, use the same provider that created it:
+
+#### Release the NICo instances first
+
+With `infra.provider: nico`, after a failure past the point where the site
+cluster was created, the retained cluster also holds the Cluster API machines
+for the NICo instances CAPNICo allocated. Deleting a Kind cluster runs no finalizers, so deleting it
+now leaves those instances allocated and unmanaged, with the tenant login in
+their user data, and nothing in NICo or in a re-run will find them. Release them
+first, by deleting the site cluster through the retained cluster's controller,
+which deletes each node's machine and so releases its instance:
+
+```bash
+nvkectl config set-site --name nvkectl-bootstrap --url http://127.0.0.1:30080 \
+  --kubeconfig /tmp/nvkectl-bootstrap-kubeconfig-.../config   # the path in the log line above
+nvkectl delete cluster <clusterName>                          # clusterName from your site spec
+nvkectl get clusters                                          # repeat until it is no longer listed
+```
+
+The URL port is `NVKECTL_CONTROLLER_PORT`, `30080` by default. `set-site` makes
+`nvkectl-bootstrap` the active site; switch back with
+`nvkectl config use-site <name>`. A cluster can be deleted in any state, and it
+stays listed as `Deleting` until every machine is released. Only then delete the
+Kind cluster. The failure message prints these steps.
+
+None of this applies to a run that succeeded and was kept with
+`--keep-bootstrap-cluster`: the instances are then the new cluster's nodes, so
+delete only the Kind cluster.
+
+#### Delete the cluster
+
+When it is safe to delete it, which with `nico` is after the instances are
+released, use the same provider that created it:
 
 ```bash
 KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap
@@ -195,12 +201,15 @@ from source, `make -C cli images` builds the default local images.
 
 Inspect the retained cluster before deleting it. If the earlier run created
 a site cluster, follow the [recovery guidance](#when-it-is-safe-to-run-bootstrap-again)
-first. Bootstrap does not reuse an existing Kind cluster.
+first. With `infra.provider: nico`, [release the NICo instances](#release-the-nico-instances-first)
+the earlier run allocated before you delete the cluster: deleting it alone
+leaves them allocated. Bootstrap does not reuse an existing Kind cluster.
 
 **`port 6443, the Kubernetes API port, is accepting connections on: <node> (<ip>)`**
 
 A host in the site spec already has something listening on the Kubernetes API
-port. Confirm the host belongs to this bootstrap and inspect
+port. This check applies to `provisioned` only: with `nico` the machines are
+allocated, so there is no host to probe. Confirm the host belongs to this bootstrap and inspect
 `/etc/kubernetes/manifests` and `/var/log/nvke-agent-audit.log` on it. Do not
 reset a host belonging to another cluster. For remnants of a failed attempt,
 follow the [recovery guidance](#when-it-is-safe-to-run-bootstrap-again).
@@ -392,15 +401,29 @@ What to do per failure phase is in the table under [How to read the error](#how-
 To abandon a failed site-provisioning attempt:
 
 1. Save the logs, diagnostics and any [encryption key](#the-encryption-key-was-not-saved).
-2. Delete the bootstrap cluster to stop further workflow dispatch.
+2. Delete the bootstrap cluster to stop further workflow dispatch. With
+   `infra.provider: nico`, first [release the NICo instances](#release-the-nico-instances-first):
+   deleting the Kind cluster runs no finalizers, so it leaves them allocated and
+   unmanaged.
 3. Confirm no provisioning commands are still running on the affected hosts.
    Reset only nodes belonging to this failed attempt, using `sudo kubeadm reset -f`
    where kubeadm left state. Resetting a control-plane node removes its local
-   etcd member.
+   etcd member. With `nico` the release in step 2 resets and releases the nodes,
+   so this step applies to `provisioned` only.
 4. Check the node prerequisites and fix the original cause before retrying.
 
-The existing-cluster and port-6443 preflight checks catch common leftovers;
-they do not prove a node is clean or safe to reset.
+With the `provisioned` provider the existing-cluster and port-6443 preflight
+checks catch common leftovers; they do not prove a node is clean or safe to
+reset.
+
+With `infra.provider: nico` only the existing-cluster check applies. The nodes
+are allocated rather than listed, so there is no host to probe, and the
+preflight cannot see the NICo instances an earlier run allocated. It stops a
+re-run while the retained Kind cluster exists; once that cluster is deleted,
+nothing stops one, and each re-run allocates another
+`infra.nico.controlPlane.count` machines. So release the instances before you
+delete the Kind cluster, and check NICo for instances left by a cluster you
+already deleted.
 
 ## See also
 
