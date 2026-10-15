@@ -44,7 +44,7 @@ Run the file-preparation commands below from the directory containing your `nvke
    | `spec.variant` | Optional. Distinguishes images built from the same operating system for another purpose, such as `fde`. |
    | `spec.nico.ipxeScript` | The script NICo runs to boot the machine. It starts with a `#!ipxe` line of its own. |
 
-   The example's `ipxeScript` installs Ubuntu 24.04 from the installer ISO; replace its `boot.example.com` and `releases.example.com` URLs with hosts that your NICo machines reach. To boot the reference node image instead, `ipxeScript` must write the QCOW2 file to the machine's disk by chainloading an EFI imager that downloads and writes the QCOW2. Use an imager and script validated together for your NICo site. Publish the files and verify their URLs as described in [Serve the boot artifacts over HTTP(S)](#serve-the-boot-artifacts-over-https). This release has no reference QCOW2 boot script.
+   The example's `ipxeScript` installs Ubuntu 24.04 from the installer ISO; replace its `boot.example.com` and `releases.example.com` URLs with hosts that your NICo machines reach. To boot the reference node image instead, `ipxeScript` must write the QCOW2 file to the machine's disk by chainloading an EFI imager that downloads and writes the QCOW2. Use an imager and script validated together for your NICo site. Publish the files and verify their URLs as described in [Serve the boot artifacts over HTTP(S)](build-node-images.md#serve-the-boot-artifacts-over-https). This release has no reference QCOW2 boot script.
 
 4. Write the first-boot user data in `spec.machineInit.userDataTemplate` of both releases. It starts with a cloud-init header such as `#cloud-config`, and it can reference the values in [What NVKE puts in the user data](#what-nvke-puts-in-the-user-data). In the example, replace the `apt.example.com` repository line with a command that adds an apt repository serving the NVKE node packages; NVKE publishes no such repository. A release for the reference node image installs the packages the image stages, as [Prepare nodes](prepare-nodes.md) does, and writes the SPIRE files shown below.
 
@@ -55,7 +55,7 @@ Run the file-preparation commands below from the directory containing your `nvke
    | `"true"` | `""` | The template installs `nvke-kubeadm-distro-{{ trimPrefix .KubernetesVersion "v" }}`, so the release serves any Kubernetes version. |
    | `"false"` | The version, such as `"1.36.3"` | The template installs one version, such as `nvke-kubeadm-distro-1.36.3`. |
 
-   Both annotations take the prefix `internal.nvke.nvidia.com/`. When you upgrade a node pool whose release has `"false"`, NVKE moves it to the newest release, by `buildDate`, whose version annotation matches the target version and whose image matches the current image's architecture, variant and operating system. It skips releases deprecated with `nvkectl deprecate`.
+   Both annotations take the prefix `internal.nvke.nvidia.com/`. When you upgrade a node pool whose release has `"false"`, NVKE selects the newest eligible configuration by its image's `buildDate`. A candidate must either name the target Kubernetes version or enable version injection so its template receives the target version at node creation. Its image must match the current image's architecture, variant and operating system. NVKE skips configurations deprecated with `nvkectl deprecate`.
 
 6. Confirm that no example host remains.
 
@@ -146,7 +146,7 @@ These commands also use the management cluster's Kubernetes API. If the site's k
 kubectl --kubeconfig <MANAGEMENT_KUBECONFIG> get machineimages,clusterreleases,nodepoolreleases
 ```
 
-When you [create a workload cluster](../workload-clusters/create.md), set `controlPlaneConfig.release` to the `ClusterRelease` name and each worker node pool's `release` to its `NodePoolRelease` name. NVKE resolves the selected release to its `MachineImage`, renders that image's iPXE script and the release's user data, and passes them through CAPNICo to NICo for provisioning.
+When you [create a workload cluster](../workload-clusters/create.md), set `controlPlaneConfig.nico.release` to the `ClusterRelease` name and `nodePools[].nico.release` to each worker pool's `NodePoolRelease` name. NVKE resolves the selected configuration to its `MachineImage`, renders that image's iPXE script and the configuration's user data, and passes them through CAPNICo to NICo for provisioning.
 
 To change an image's boot instructions or a release's image reference or user data, create new objects under new names and select those releases for subsequent provisioning. These fields are immutable; uploading different bytes at an existing URL would bypass that versioning, so keep published artifact paths stable too.
 
