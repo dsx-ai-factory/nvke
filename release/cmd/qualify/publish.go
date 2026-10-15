@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -13,6 +14,16 @@ import (
 	"github.com/dsx-ai-factory/nvke/release/internal/publish/testgrid"
 	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
 )
+
+// publishTimeout bounds the GCS calls this command makes -- not the whole
+// process the way main's root context used to. plan and verify both need
+// the opposite of a short bound (verify's own --wait can run up to 90m in
+// CI, see qualify-e2e.yml), so this is scoped to publish's RunE instead of
+// wrapping root().ExecuteContext(), which would cut verify's wait off at two
+// minutes regardless of what --wait asked for. Two minutes is well above any
+// realistic publish, which uploads at most three small files with its own
+// bounded retry/backoff.
+const publishTimeout = 2 * time.Minute
 
 func publishCmd() *cobra.Command {
 	var (
@@ -55,7 +66,10 @@ so routing is built from the record itself.`,
 				return nil
 			}
 
-			dest, closeDest, err := buildDestination(cmd.Context(), destination)
+			ctx, cancel := context.WithTimeout(cmd.Context(), publishTimeout)
+			defer cancel()
+
+			dest, closeDest, err := buildDestination(ctx, destination)
 			if err != nil {
 				return err
 			}
@@ -63,7 +77,7 @@ so routing is built from the record itself.`,
 				defer closeDest()
 			}
 
-			if err := dest.Publish(cmd.Context(), result, junitPath); err != nil {
+			if err := dest.Publish(ctx, result, junitPath); err != nil {
 				return fmt.Errorf("publishing to %s: %w", dest.Name(), err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "published %s/%s to %s\n", combo.ID, stream, dest.Name())

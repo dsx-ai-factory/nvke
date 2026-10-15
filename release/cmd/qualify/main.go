@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -24,21 +23,9 @@ import (
 // and it does so silently.
 var version = "dev"
 
-// commandTimeout bounds the whole command, most relevantly the GCS calls
-// `qualify publish` makes through cmd.Context(). plan and result do not read
-// the context at all -- plan's own HEAD requests and git calls are bounded
-// by its own 20s client, not this one -- so this only ever caps a stalled
-// network call in publish (a hung TLS handshake, a silent partition) from
-// blocking indefinitely instead of erroring -- well above any realistic
-// publish, which uploads at most three small files with its own bounded
-// retry/backoff.
-const commandTimeout = 2 * time.Minute
-
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
-	defer cancel()
 
 	if err := root().ExecuteContext(ctx); err != nil {
 		// Cobra has already printed usage errors. Anything else is ours and
