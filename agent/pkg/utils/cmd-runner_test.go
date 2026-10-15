@@ -398,8 +398,9 @@ func TestExecRunnerLogsRedactedArguments(t *testing.T) {
 	key := strings.Repeat("c", 64)
 	args := []string{"--token", token, "--certificate-key=" + key, "--node-name", "gpu-01"}
 	var logs bytes.Buffer
+	previousOutput := log.Writer()
 	log.SetOutput(&logs)
-	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	t.Cleanup(func() { log.SetOutput(previousOutput) })
 	runner := &ExecRunner{}
 
 	output, err := runner.Run("echo", args, nil)
