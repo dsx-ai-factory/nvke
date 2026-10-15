@@ -16,11 +16,13 @@
 package redact
 
 import (
+	"errors"
+	"io"
 	"regexp"
 	"sort"
 	"strings"
 
-	"sigs.k8s.io/yaml"
+	"gopkg.in/yaml.v2"
 )
 
 // Redacted replaces a credential in a logged value.
@@ -47,8 +49,9 @@ var (
 	// tokenShape is a bootstrap token: a 6 character ID, a dot and a 16 character secret.
 	tokenShape = regexp.MustCompile(`^([a-z0-9]{6})\.[a-z0-9]{16}$`)
 
-	// documentSeparator splits a multi-document YAML configuration.
-	documentSeparator = regexp.MustCompile(`(?m)^---[ \t]*$`)
+	// quotedScalar matches a double or single quoted YAML scalar, which can write a
+	// character as an escape sequence.
+	quotedScalar = regexp.MustCompile(`"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'`)
 
 	// credentialLine matches a credential key and its value on one line of YAML
 	// that could not be parsed. The values are not empty and do not span lines.
@@ -113,26 +116,53 @@ func (c *Credentials) AddJoinString(joinString string) {
 
 // AddConfig records the credentials in a kubeadm configuration, which can hold
 // several YAML documents. Each document is parsed, so any YAML representation of
-// a credential key is found. A document that does not parse is searched line by
-// line instead.
+// a credential key is found. A configuration that does not parse is searched line
+// by line instead.
 func (c *Credentials) AddConfig(config string) {
-	for _, doc := range documentSeparator.Split(config, -1) {
-		var parsed any
-		if err := yaml.Unmarshal([]byte(doc), &parsed); err != nil {
-			for _, m := range credentialLine.FindAllStringSubmatch(doc, -1) {
+	decoder := yaml.NewDecoder(strings.NewReader(config))
+	for {
+		var doc any
+		err := decoder.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			for _, m := range credentialLine.FindAllStringSubmatch(config, -1) {
 				c.AddSecret(m[2])
 			}
+			break
+		}
+		c.addFromParsed(doc)
+	}
+	c.addWrittenForms(config)
+}
+
+// addWrittenForms records the way each known credential is written in config when
+// that differs from its value. Parsing decodes escape sequences, such as \u0061 for
+// "a", but the text that is logged still has them.
+func (c *Credentials) addWrittenForms(config string) {
+	if len(c.replacements) == 0 {
+		return
+	}
+	for _, scalar := range quotedScalar.FindAllString(config, -1) {
+		var decoded string
+		if err := yaml.Unmarshal([]byte(scalar), &decoded); err != nil {
 			continue
 		}
-		c.addFromParsed(parsed)
+		replacement, known := c.replacements[decoded]
+		if !known {
+			continue
+		}
+		c.add(scalar[1:len(scalar)-1], replacement)
 	}
 }
 
 func (c *Credentials) addFromParsed(node any) {
 	switch n := node.(type) {
-	case map[string]any:
+	case map[any]any:
 		for key, value := range n {
-			if isToken, ok := credentialKeys[key]; ok {
+			name, _ := key.(string)
+			if isToken, ok := credentialKeys[name]; ok {
 				if s, isString := value.(string); isString {
 					if isToken {
 						c.AddToken(s)

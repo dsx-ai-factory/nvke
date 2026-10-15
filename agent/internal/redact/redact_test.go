@@ -109,6 +109,18 @@ func TestAddConfig(t *testing.T) {
 			kept:   []string{"kind: ClusterConfiguration"},
 		},
 		{
+			name:   "documents after a separator with a comment, and Windows line endings",
+			config: fmt.Sprintf("kind: ClusterConfiguration\r\n--- # the join configuration\r\nkind: JoinConfiguration\r\ndiscovery:\r\n  tlsBootstrapToken: %s\r\n", token),
+			secret: token,
+			kept:   []string{"kind: ClusterConfiguration", "--- # the join configuration"},
+		},
+		{
+			name:   "a value written with an escape sequence",
+			config: fmt.Sprintf("kind: JoinConfiguration\ndiscovery:\n  tlsBootstrapToken: \"%s\\u0061.%s\"\n", tokenID[:5], tokenSecret),
+			secret: tokenID[:5] + `\u0061.` + tokenSecret,
+			kept:   []string{"kind: JoinConfiguration"},
+		},
+		{
 			name:   "a document that does not parse is searched line by line",
 			config: fmt.Sprintf("kind: JoinConfiguration\n\tbad: [\ncertificateKey: %s\n", certificateKey),
 			secret: certificateKey,
@@ -123,7 +135,7 @@ func TestAddConfig(t *testing.T) {
 			got := c.String(tc.config)
 
 			replacement := Redacted
-			if tc.secret == token {
+			if strings.HasSuffix(tc.secret, tokenSecret) {
 				replacement = redactedToken
 			}
 			assert.NotContains(t, got, tc.secret)
