@@ -48,16 +48,14 @@ func newRenderDeployPathCmd() *cobra.Command {
 NVKR release, or both. The committed deploy path is never edited.
 
 With --sitespec, the spec's controllerStack section fills in what the stack
-needs from the site: architecture, NICo API and token, pull secret, tenant
-login, the database password file, and optionally a mirror, image overrides
-and an nktp values file. A missing database password file is created with a
-generated password. Items get a site-values.yaml; template items become
-manifests. SPIRE gets the bootstrap CA by file reference: helm reads it at
-install time. The stack joins the bootstrap's trust domain: spire.trustDomain,
-set once before the bootstrap, else the default both commands share, with a
-warning. Paths under controllerStack resolve from the spec's directory;
-spire.caCertFile and spire.caKeyFile from the working directory, as
-"nvkectl bootstrap site" reads them.
+needs from the site: architecture, NICo API, and optionally a mirror and
+image overrides. The credentials come from NVKECTL_NICO_TOKEN,
+NVKECTL_NODE_USER, NVKECTL_NODE_PASSWORD and NVKECTL_DATABASE_PASSWORD.
+Items get a site-values.yaml; template items become manifests. SPIRE gets
+the CA named by NVKECTL_SPIRE_CA_CERT_FILE and NVKECTL_SPIRE_CA_KEY_FILE by
+file reference: helm reads it at install time. The stack joins the
+bootstrap's trust domain: spire.trustDomain, set once before the bootstrap,
+else the default both commands share, with a warning.
 
 --release takes the nvkr.dev/release-description/v1 JSON that "nvkr release
 export --reference <release>" writes. The export describes the release and

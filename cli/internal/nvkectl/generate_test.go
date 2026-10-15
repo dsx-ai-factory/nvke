@@ -135,7 +135,7 @@ func TestGenerateSiteSpecRejects(t *testing.T) {
 			[]string{"generate", "sitespec", "s", "--nodes", valid, "--set", "cluster.nope=1"}, "unknown field",
 		},
 		"--set the registry credential": {
-			[]string{"generate", "sitespec", "s", "--nodes", valid, "--set", "registry.apiKey=x"}, "committed",
+			[]string{"generate", "sitespec", "s", "--nodes", valid, "--set", "registry.apiKey=x"}, "nerdctl login",
 		},
 		"unsupported cni": {
 			[]string{"generate", "sitespec", "s", "--nodes", valid, "--set", "cluster.cniName=cilium"}, "cniName",

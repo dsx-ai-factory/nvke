@@ -63,6 +63,7 @@ the controller logs under NVKE_STATE_DIR/diagnostics (default
 $XDG_STATE_HOME/nvke/diagnostics).
 
   --sitespec FILE     the site spec, with its controllerStack section filled in
+                      and the NVKECTL_* credentials it needs exported
   --kubeconfig PATH   the bootstrapped site cluster
   --release FILE      the NVKR release description the install will use
   --nvkr-run-dir DIR  with --release, the local NVKR Run the artifacts come from
@@ -152,7 +153,7 @@ elif "${NVKECTL}" validate sitespec -f "${SITESPEC}" >/dev/null 2>&1; then
     check_fail "site spec: cannot read ${SITESPEC}; run: $(q "${NVKECTL}") inspect sitespec $(q "${SITESPEC}")"
   fi
 else
-  check_fail "site spec: ${SITESPEC} is not ready; run: $(q "${NVKECTL}") validate sitespec -f $(q "${SITESPEC}")"
+  check_fail "site spec: ${SITESPEC} or the NVKECTL_* credentials it needs are not ready; run: $(q "${NVKECTL}") validate sitespec -f $(q "${SITESPEC}")"
 fi
 if [[ -n "${RELEASE}" && -z "${HAVE_NVKECTL}" ]]; then
   check_skip "release: ${RELEASE} (no nvkectl)"
@@ -287,3 +288,4 @@ install_cmd=("${SCRIPT_DIR}/nvke-deploy.sh" install --deploy-path "${DEPLOY_PATH
 [[ -z "${RUN_DIR}" ]] || install_cmd+=(--nvkr-run-dir "${RUN_DIR}")
 install_line="$(printf '%q ' "${install_cmd[@]}")"
 printf '  %s\n' "${install_line% }"
+printf '  # with your own telemetry backend, add: --values-for nktp=<file>\n'

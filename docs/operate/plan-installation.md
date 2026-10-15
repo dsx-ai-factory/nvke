@@ -125,7 +125,7 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 | Memory reserved for the system | `<RESERVED_MEMORY>` | Bootstrap | |
 | Address the nodes use to reach the bootstrap host | `<BOOTSTRAP_HOST_IP>` | Prepare nodes | |
 | SPIFFE trust domain | `<TRUST_DOMAIN>` | Prepare nodes, Bootstrap, Install | |
-| SPIRE CA certificate and key files; the certificate in PEM | `<CA_CERT_PATH>`, `<CA_KEY_PATH>`; `<SPIRE_CA_CERT_PEM>` | Bootstrap; Prepare nodes | |
+| SPIRE CA certificate and key files, passed as `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` with `spire.upstreamCA: true` in the site spec; the certificate in PEM | `<CA_CERT_PATH>`, `<CA_KEY_PATH>`; `<SPIRE_CA_CERT_PEM>` | Bootstrap, Install; Prepare nodes | |
 | CPU architecture of the management nodes, `amd64` or `arm64` | `<ARCH>` | Install | |
 
 ### Registries and images
@@ -147,7 +147,7 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 |---|---|---|---|
 | API endpoint | `<NICO_ENDPOINT>` | Install, Configure NICo | |
 | Organization ID | `<NICO_ORG_ID>` | Install, Configure NICo, Create | |
-| API token, in a file only you can read | `nico-token` | Install | |
+| API token | `NVKECTL_NICO_TOKEN` | Install | |
 | API name | `<NICO_API_NAME>` | Install, Configure NICo | |
 | Site ID and VPC ID | `<NICO_SITE_ID>`, `<NICO_VPC_ID>` | Create | |
 | Instance type IDs for control-plane and worker nodes | `<CP_INSTANCE_TYPE_ID>`, `<WORKER_INSTANCE_TYPE_ID>` | Create, Manage node pools | |
@@ -158,8 +158,8 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 
 | Value | Placeholder | Used on | Your value |
 |---|---|---|---|
-| Login account written into every workload cluster node's user data; the password in a file | `<NODE_USER>`, `tenant-password` | Install | |
-| Database password file; the install generates the password if the file does not exist | `db-password` | Install | |
+| Login account written into every workload cluster node's user data, and its password | `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` | Install | |
+| Database password, chosen once and kept in your secret manager | `NVKECTL_DATABASE_PASSWORD` | Install | |
 | Issuer URL | `<ISSUER_URL>` | Secure the API | |
 | Signing-key URL | `<JWKS_URI>` | Secure the API | |
 | OIDC client ID for `nvkectl` | `<CLIENT_ID>` | Secure the API | |

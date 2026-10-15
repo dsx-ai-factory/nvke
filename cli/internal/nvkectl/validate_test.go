@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 )
 
 // generatedSiteSpec writes what `generate sitespec` produces, so the tests
@@ -26,21 +28,17 @@ func generatedSiteSpec(t *testing.T) string {
 }
 
 // filledSiteSpec replaces every controllerStack placeholder with a value and
-// creates the secret files the section names.
+// sets the secrets the install reads from the environment.
 func filledSiteSpec(t *testing.T, edits map[string]string) string {
 	t.Helper()
 	path := generatedSiteSpec(t)
-	dir := filepath.Dir(path)
-	for _, name := range []string{"nico-token", "tenant-password"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("placeholder\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	t.Setenv(sitespec.EnvNicoToken, "placeholder")
+	t.Setenv(sitespec.EnvNodeUser, "placeholder")
+	t.Setenv(sitespec.EnvNodePassword, "placeholder")
+	t.Setenv(sitespec.EnvDatabasePassword, "placeholder")
 	values := map[string]string{
 		"REPLACE_ARCH": "arm64", "REPLACE_NICO_ENDPOINT": "https://nico.example.com", "REPLACE_NICO_ORG_ID": "org-1",
-		"REPLACE_NICO_API_NAME": "forge", "REPLACE_NICO_TOKEN_PATH": filepath.Join(dir, "nico-token"),
-		"REPLACE_TENANT_USER": "nke", "REPLACE_TENANT_PASSWORD_PATH": filepath.Join(dir, "tenant-password"),
-		"REPLACE_DB_PASSWORD_PATH": filepath.Join(dir, "db-password"),
+		"REPLACE_NICO_API_NAME": "forge",
 		// deploy/nico enables profiles.image without a pin.
 		"  # images:\n  #   controller: \"\"\n  #   profiles: \"\"": "  images:\n    profiles: ghcr.io/example/controller-profiles:v1",
 	}
@@ -70,7 +68,7 @@ func TestValidateSiteSpec_GeneratedFileListsPlaceholders(t *testing.T) {
 	if !strings.Contains(stdout, "bootstrap: valid; nvkectl bootstrap site can run with this file\n") {
 		t.Errorf("bootstrap section not reported valid:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "controllerStack: 8 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint") {
+	if !strings.Contains(stdout, "controllerStack: 4 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint") {
 		t.Errorf("placeholders not listed:\n%s", stdout)
 	}
 	// generate sitespec leaves the spire block commented out; the default
@@ -112,8 +110,7 @@ func TestValidateSiteSpec_Problems(t *testing.T) {
 	}{
 		"bad arch":       {map[string]string{"REPLACE_ARCH": "x86"}, `controllerStack.arch "x86" must be one of amd64, arm64`},
 		"bad endpoint":   {map[string]string{"REPLACE_NICO_ENDPOINT": "nico.example.com"}, "controllerStack.nico.endpoint"},
-		"missing secret": {map[string]string{"REPLACE_TENANT_PASSWORD_PATH": "/nonexistent/password"}, "controllerStack.tenant.passwordFile \"/nonexistent/password\" cannot be read"},
-		"empty required": {map[string]string{"REPLACE_TENANT_USER": `""`}, "controllerStack.tenant.user is required"},
+		"empty required": {map[string]string{"REPLACE_NICO_ORG_ID": `""`}, "controllerStack.nico.orgID is required"},
 		"half filled":    {map[string]string{"REPLACE_ARCH": "REPLACE_ARCH"}, "1 values still to fill in: controllerStack.arch"},
 	}
 	for name, tc := range cases {
@@ -126,6 +123,26 @@ func TestValidateSiteSpec_Problems(t *testing.T) {
 				t.Errorf("want %q in:\n%s", tc.want, stdout)
 			}
 		})
+	}
+}
+
+// TestValidateSiteSpec_UnrenderableSecret: a credential the render refuses is
+// reported by validate too, not passed as valid.
+func TestValidateSiteSpec_UnrenderableSecret(t *testing.T) {
+	path := filledSiteSpec(t, nil)
+	t.Setenv(sitespec.EnvNicoToken, `tok"en`)
+	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", path)
+	if err == nil || !strings.Contains(stdout, sitespec.EnvNicoToken+": the value holds a character") {
+		t.Errorf("quoted token: %q %v", stdout, err)
+	}
+}
+
+func TestValidateSiteSpec_MissingSecret(t *testing.T) {
+	path := filledSiteSpec(t, nil)
+	t.Setenv(sitespec.EnvNodePassword, "")
+	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", path)
+	if err == nil || !strings.Contains(stdout, sitespec.EnvNodePassword+" is not set") {
+		t.Errorf("unset secret: %q %v", stdout, err)
 	}
 }
 

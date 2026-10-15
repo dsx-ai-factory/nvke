@@ -6,51 +6,38 @@ package sitespec
 import (
 	"errors"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
+	"unicode"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 )
 
 // ControllerStack is the input the controller stack install reads from the site
 // spec. `nvkectl bootstrap site` does not read it. The site name, the trust
-// domain, the control-plane VIP and the SPIRE CA come from the rest of the
-// site spec and are not repeated here.
+// domain and the control-plane VIP come from the rest of the site spec and are
+// not repeated here.
 //
-// Tokens and passwords are paths to files that hold them, one secret per
-// file, relative paths resolved from the site spec, so the site spec itself
-// holds no credential.
+// The install reads its credentials from the environment (see
+// StackCredentialsFromEnv), and the SPIRE CA from NVKECTL_SPIRE_CA_CERT_FILE and
+// NVKECTL_SPIRE_CA_KEY_FILE.
 type ControllerStack struct {
 	// Arch is the node CPU architecture, amd64 or arm64.
 	Arch string `yaml:"arch"`
 	// Nico is the NICo API CAPNICo calls.
 	Nico StackNico `yaml:"nico"`
-	// Tenant is the login rendered into every tenant node's cloud-init.
-	Tenant StackTenant `yaml:"tenant"`
 	// Images overrides the controller and profiles images, which default to
 	// the release file's items.
 	Images StackImages `yaml:"images,omitempty"`
-	// Database names the file holding the Postgres password. The render
-	// creates the file with a generated password when it does not exist.
-	Database StackDatabase `yaml:"database"`
 	// Mirror is a registry the external images are pulled from instead of
 	// their upstream registries, as host[:port][/prefix], no scheme.
 	Mirror string `yaml:"mirror,omitempty"`
-	// NktpValuesFile is a values file for the nktp release, applied last.
-	NktpValuesFile string `yaml:"nktpValuesFile,omitempty"`
 }
 
 // StackNico is the NICo API CAPNICo calls.
 type StackNico struct {
-	Endpoint  string `yaml:"endpoint"`
-	OrgID     string `yaml:"orgID"`
-	APIName   string `yaml:"apiName"`
-	TokenFile string `yaml:"tokenFile"`
-}
-
-// StackTenant is the login rendered into every tenant node's cloud-init.
-type StackTenant struct {
-	User         string `yaml:"user"`
-	PasswordFile string `yaml:"passwordFile"`
+	Endpoint string `yaml:"endpoint"`
+	OrgID    string `yaml:"orgID"`
+	APIName  string `yaml:"apiName"`
 }
 
 // StackImages overrides images that default to the release file.
@@ -59,9 +46,65 @@ type StackImages struct {
 	Profiles   string `yaml:"profiles,omitempty"`
 }
 
-// StackDatabase names the file holding the Postgres password.
-type StackDatabase struct {
-	PasswordFile string `yaml:"passwordFile"`
+// The environment variables the controller stack install reads its credentials from.
+const (
+	EnvNicoToken        = "NVKECTL_NICO_TOKEN" //nolint:gosec // G101: an env var name, not a credential
+	EnvNodeUser         = "NVKECTL_NODE_USER"
+	EnvNodePassword     = "NVKECTL_NODE_PASSWORD"     //nolint:gosec // G101: an env var name, not a credential
+	EnvDatabasePassword = "NVKECTL_DATABASE_PASSWORD" //nolint:gosec // G101: an env var name, not a credential
+)
+
+// StackCredentials are the controller stack install's credentials. NodeUser
+// and NodePassword are the login rendered into every tenant node's cloud-init.
+type StackCredentials struct {
+	NicoToken        string
+	NodeUser         string
+	NodePassword     string
+	DatabasePassword string
+}
+
+// envs pairs each credential's environment variable with its value.
+func (s *StackCredentials) envs() [][2]string {
+	return [][2]string{
+		{EnvNicoToken, s.NicoToken},
+		{EnvNodeUser, s.NodeUser},
+		{EnvNodePassword, s.NodePassword},
+		{EnvDatabasePassword, s.DatabasePassword},
+	}
+}
+
+// TemplateSafe reports whether value can go into the deploy path templates,
+// which carry no escaping: no quote, backslash or control character.
+func TemplateSafe(value string) bool {
+	return !strings.ContainsAny(value, "\"\\") && !strings.ContainsFunc(value, unicode.IsControl)
+}
+
+// StackCredentialsFromEnv reads the controller stack install's credentials
+// from the environment, trimmed, and names every one that is unset, one
+// problem per line. The NICo token and the node login land in templates that
+// carry no escaping, so a quote, a backslash or a control character in them is
+// refused too.
+func StackCredentialsFromEnv() (StackCredentials, error) {
+	s := StackCredentials{
+		NicoToken:        strings.TrimSpace(envalias.Get(EnvNicoToken)),
+		NodeUser:         strings.TrimSpace(envalias.Get(EnvNodeUser)),
+		NodePassword:     strings.TrimSpace(envalias.Get(EnvNodePassword)),
+		DatabasePassword: strings.TrimSpace(envalias.Get(EnvDatabasePassword)),
+	}
+	v := &validator{}
+	templated := map[string]bool{EnvNicoToken: true, EnvNodeUser: true, EnvNodePassword: true}
+	for _, env := range s.envs() {
+		switch {
+		case env[1] == "":
+			v.addf("%s is not set", env[0])
+		case templated[env[0]] && !TemplateSafe(env[1]):
+			v.addf("%s: the value holds a character the templates cannot carry (a quote, a backslash or a control character)", env[0])
+		}
+	}
+	if len(v.errs) > 0 {
+		return s, errors.New(strings.Join(v.errs, "\n"))
+	}
+	return s, nil
 }
 
 // PlaceholderPrefix marks a value `nvkectl generate sitespec` left for the
@@ -79,22 +122,15 @@ func (in *ControllerStack) stackFields() [][2]string {
 		{"controllerStack.nico.endpoint", in.Nico.Endpoint},
 		{"controllerStack.nico.orgID", in.Nico.OrgID},
 		{"controllerStack.nico.apiName", in.Nico.APIName},
-		{"controllerStack.nico.tokenFile", in.Nico.TokenFile},
-		{"controllerStack.tenant.user", in.Tenant.User},
-		{"controllerStack.tenant.passwordFile", in.Tenant.PasswordFile},
 		{"controllerStack.images.controller", in.Images.Controller},
 		{"controllerStack.images.profiles", in.Images.Profiles},
-		{"controllerStack.database.passwordFile", in.Database.PasswordFile},
 		{"controllerStack.mirror", in.Mirror},
-		{"controllerStack.nktpValuesFile", in.NktpValuesFile},
 	}
 }
 
 // requiredStackFields are the fields the controller stack install cannot do without.
 var requiredStackFields = map[string]bool{
 	"controllerStack.arch": true, "controllerStack.nico.endpoint": true, "controllerStack.nico.orgID": true, "controllerStack.nico.apiName": true,
-	"controllerStack.nico.tokenFile": true, "controllerStack.tenant.user": true, "controllerStack.tenant.passwordFile": true,
-	"controllerStack.database.passwordFile": true,
 }
 
 // ControllerStackPlaceholders returns the controllerStack field paths whose
@@ -116,8 +152,7 @@ func (inv *SiteSpec) ControllerStackPlaceholders() []string {
 // ValidateControllerStack checks the controllerStack section the controller
 // stack install reads: present, no placeholder left, every required field
 // set, the architecture and the NICo endpoint well-formed. It reads nothing
-// outside the SiteSpec; ValidateControllerStackReferences checks the files it
-// names.
+// outside the SiteSpec; StackCredentialsFromEnv checks the credentials.
 func (inv *SiteSpec) ValidateControllerStack() error {
 	if inv.ControllerStack == nil {
 		return errors.New("the site spec has no controllerStack: section; nvkectl generate sitespec writes one to fill in")
@@ -170,55 +205,6 @@ func (in *ControllerStack) appendValueChecks(v *validator) {
 	if in.Mirror != "" && strings.Contains(in.Mirror, "://") {
 		v.addf("controllerStack.mirror %q is a host[:port][/prefix], not a URL", in.Mirror)
 	}
-}
-
-// ValidateControllerStackReferences checks that every file the controllerStack section
-// names can be read, relative paths resolved from the site spec's directory.
-// Call it where the install runs; a machine that only writes the site spec
-// may not hold the secrets.
-func (inv *SiteSpec) ValidateControllerStackReferences() error {
-	if inv.ControllerStack == nil {
-		return errors.New("the site spec has no controllerStack: section")
-	}
-	v := &validator{}
-	for _, field := range inv.ControllerStack.fileFields() {
-		path, file := field[0], field[1]
-		if file == "" || strings.HasPrefix(file, PlaceholderPrefix) {
-			continue
-		}
-		if _, err := os.Stat(inv.ResolvePath(file)); err != nil {
-			v.addf("%s %q cannot be read: %v", path, file, err)
-		}
-	}
-	return v.err()
-}
-
-// fileFields pairs each controllerStack field that names a file that must
-// exist with its value, in file order. database.passwordFile is not one: the
-// render creates it when it is missing.
-func (in *ControllerStack) fileFields() [][2]string {
-	return [][2]string{
-		{"controllerStack.nico.tokenFile", in.Nico.TokenFile},
-		{"controllerStack.tenant.passwordFile", in.Tenant.PasswordFile},
-		{"controllerStack.nktpValuesFile", in.NktpValuesFile},
-	}
-}
-
-// ResolvePath returns path made absolute: as given when absolute, else
-// joined onto the directory the site spec was loaded from, else onto the
-// working directory. The install reads every file the controllerStack
-// section names through this.
-func (inv *SiteSpec) ResolvePath(path string) string {
-	if path == "" || filepath.IsAbs(path) {
-		return path
-	}
-	if inv.dir != "" {
-		return filepath.Join(inv.dir, path)
-	}
-	if abs, err := filepath.Abs(path); err == nil {
-		return abs
-	}
-	return path
 }
 
 // DefaultBootstrapClusterName is the cluster name `nvkectl bootstrap site`

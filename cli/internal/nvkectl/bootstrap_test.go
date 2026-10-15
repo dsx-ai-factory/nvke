@@ -339,9 +339,6 @@ cluster:
   cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
-registry:
-  bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
-  bootstrapChart: "cloud-workflow-engine"
 `
 
 const threeNodeSiteSpec = `
@@ -359,9 +356,6 @@ cluster:
   cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
-registry:
-  bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
-  bootstrapChart: "cloud-workflow-engine"
 `
 
 // TestBootstrapSiteCommandWired verifies the command tree exposes
@@ -417,9 +411,6 @@ cluster:
   cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
-registry:
-  bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
-  bootstrapChart: "cloud-workflow-engine"
 `
 	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{siteSpec: writeSiteSpec(t, bad)})
 	if err == nil {
@@ -1067,41 +1058,6 @@ func writeSiteSpec(t *testing.T, content string) string {
 		t.Fatalf("write site spec: %v", err)
 	}
 	return path
-}
-
-// TestDumpSiteSpecRedactsRegistryAPIKey covers the one branch in this package
-// that exists purely to keep a credential out of the terminal. Nothing else
-// asserted it: every other site spec in these tests omits apiKey, so the
-// redaction line had an execution count of zero and a regression that printed
-// the key verbatim would have passed.
-func TestDumpSiteSpecRedactsRegistryAPIKey(t *testing.T) {
-	const secret = "nvapi-do-not-print-me"
-
-	inv, err := sitespec.Load(writeSiteSpec(t, validSiteSpec+"  apiKey: "+secret+"\n"))
-	if err != nil {
-		t.Fatalf("load site spec: %v", err)
-	}
-	if inv.Registry.APIKey != secret {
-		t.Fatalf("fixture did not set the api key: got %q, want %q", inv.Registry.APIKey, secret)
-	}
-
-	var buf bytes.Buffer
-	if err := dumpSiteSpec(&buf, inv); err != nil {
-		t.Fatalf("dumpSiteSpec: %v", err)
-	}
-	out := buf.String()
-
-	if strings.Contains(out, secret) {
-		t.Errorf("dumpSiteSpec printed the registry credential:\n%s", out)
-	}
-	if !strings.Contains(out, "***redacted***") {
-		t.Errorf("dumpSiteSpec did not mark the credential as redacted:\n%s", out)
-	}
-	// Redaction works on a copy, so the caller's site spec must be left intact:
-	// whatever runs next still needs the real credential.
-	if inv.Registry.APIKey != secret {
-		t.Errorf("dumpSiteSpec mutated the caller's site spec: api key is now %q", inv.Registry.APIKey)
-	}
 }
 
 // TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures guards the distinction the

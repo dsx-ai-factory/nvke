@@ -12,20 +12,9 @@ import (
 
 func filledStack(t *testing.T) *ControllerStack {
 	t.Helper()
-	dir := t.TempDir()
-	files := map[string]string{}
-	for _, name := range []string{"nico-token", "tenant-password"} {
-		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte("placeholder\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		files[name] = path
-	}
 	return &ControllerStack{
-		Arch:     "arm64",
-		Nico:     StackNico{Endpoint: "https://nico.example.com", OrgID: "org-1", APIName: "forge", TokenFile: files["nico-token"]},
-		Tenant:   StackTenant{User: "nke", PasswordFile: files["tenant-password"]},
-		Database: StackDatabase{PasswordFile: filepath.Join(dir, "db-password")},
+		Arch: "arm64",
+		Nico: StackNico{Endpoint: "https://nico.example.com", OrgID: "org-1", APIName: "forge"},
 	}
 }
 
@@ -52,8 +41,7 @@ func TestTemplate_ControllerStackPlaceholdersPassBootstrapValidation(t *testing.
 	}
 	left := spec.ControllerStackPlaceholders()
 	want := []string{
-		"controllerStack.arch", "controllerStack.nico.endpoint", "controllerStack.nico.orgID", "controllerStack.nico.apiName", "controllerStack.nico.tokenFile",
-		"controllerStack.tenant.user", "controllerStack.tenant.passwordFile", "controllerStack.database.passwordFile",
+		"controllerStack.arch", "controllerStack.nico.endpoint", "controllerStack.nico.orgID", "controllerStack.nico.apiName",
 	}
 	if strings.Join(left, " ") != strings.Join(want, " ") {
 		t.Errorf("placeholders:\n got %v\nwant %v", left, want)
@@ -100,9 +88,6 @@ func TestValidateControllerStack_Filled(t *testing.T) {
 	if err := spec.ValidateControllerStack(); err != nil {
 		t.Errorf("filled section rejected: %v", err)
 	}
-	if err := spec.ValidateControllerStackReferences(); err != nil {
-		t.Errorf("existing files rejected, or the absent database password file was: %v", err)
-	}
 }
 
 func TestValidateControllerStack_Checks(t *testing.T) {
@@ -112,9 +97,6 @@ func TestValidateControllerStack_Checks(t *testing.T) {
 	}{
 		"bad arch":           {func(in *ControllerStack) { in.Arch = "x86" }, `controllerStack.arch "x86" must be one of amd64, arm64`},
 		"bad endpoint":       {func(in *ControllerStack) { in.Nico.Endpoint = "nico.example.com" }, "controllerStack.nico.endpoint"},
-		"missing token":      {func(in *ControllerStack) { in.Nico.TokenFile = "" }, "controllerStack.nico.tokenFile is required"},
-		"missing user":       {func(in *ControllerStack) { in.Tenant.User = "" }, "controllerStack.tenant.user is required"},
-		"missing db file":    {func(in *ControllerStack) { in.Database.PasswordFile = "" }, "controllerStack.database.passwordFile is required"},
 		"mirror with scheme": {func(in *ControllerStack) { in.Mirror = "https://mirror.example.com" }, "controllerStack.mirror"},
 	}
 	for name, tc := range cases {
@@ -130,13 +112,35 @@ func TestValidateControllerStack_Checks(t *testing.T) {
 	}
 }
 
-func TestValidateControllerStackReferences_MissingFile(t *testing.T) {
-	spec := baseSpec(t)
-	spec.ControllerStack = filledStack(t)
-	spec.ControllerStack.Tenant.PasswordFile = filepath.Join(t.TempDir(), "absent")
-	err := spec.ValidateControllerStackReferences()
-	if err == nil || !strings.Contains(err.Error(), "controllerStack.tenant.passwordFile") || !strings.Contains(err.Error(), "cannot be read") {
-		t.Errorf("missing file: %v", err)
+func TestStackCredentialsFromEnv(t *testing.T) {
+	t.Setenv(EnvNicoToken, " token\n")
+	t.Setenv(EnvNodeUser, "nke")
+	t.Setenv(EnvNodePassword, "")
+	t.Setenv(EnvDatabasePassword, "db")
+	creds, err := StackCredentialsFromEnv()
+	if err == nil || !strings.Contains(err.Error(), EnvNodePassword+" is not set") {
+		t.Errorf("unset password: %v", err)
+	}
+	if creds.NicoToken != "token" || creds.NodeUser != "nke" || creds.DatabasePassword != "db" {
+		t.Errorf("secrets not read and trimmed: %+v", creds)
+	}
+	t.Setenv(EnvNodePassword, "pw")
+	if _, err := StackCredentialsFromEnv(); err != nil {
+		t.Errorf("all set: %v", err)
+	}
+	// The templated credentials refuse what the templates cannot carry; the
+	// database password, written through YAML, does not.
+	t.Setenv(EnvDatabasePassword, `d"b\`)
+	if _, err := StackCredentialsFromEnv(); err != nil {
+		t.Errorf("database password with a quote: %v", err)
+	}
+	for _, name := range []string{EnvNicoToken, EnvNodeUser, EnvNodePassword} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(name, `a"b`)
+			if _, err := StackCredentialsFromEnv(); err == nil || !strings.Contains(err.Error(), name+": the value holds a character") {
+				t.Errorf("quote in %s: %v", name, err)
+			}
+		})
 	}
 }
 
@@ -164,47 +168,66 @@ func TestEffectiveTrustDomainAndEndpoint(t *testing.T) {
 	}
 }
 
-// Relative file paths in the section resolve from the site spec's directory,
-// not from wherever the command runs.
-func TestValidateControllerStackReferences_RelativeToTheSpec(t *testing.T) {
-	specDir := t.TempDir()
-	for _, name := range []string{"nico-token", "tenant-password"} {
-		if err := os.WriteFile(filepath.Join(specDir, name), []byte("x\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+// A loaded, filled-in spec renders back to itself.
+func TestRender_LoadedSpecWithTheSection(t *testing.T) {
 	body := strings.NewReplacer(
-		"REPLACE_NICO_TOKEN_PATH", "nico-token",
-		"REPLACE_TENANT_PASSWORD_PATH", "tenant-password",
-		"REPLACE_DB_PASSWORD_PATH", "db-password",
 		"REPLACE_ARCH", "arm64",
 		"REPLACE_NICO_ENDPOINT", "https://nico.example.com",
 		"REPLACE_NICO_ORG_ID", "org",
 		"REPLACE_NICO_API_NAME", "forge",
-		"REPLACE_TENANT_USER", "nke",
 		"  # controlPlaneVIP: \"10.0.0.100\"", "  controlPlaneVIP: \"10.0.0.100\"",
 	).Replace(string(templateYAML))
-	path := filepath.Join(specDir, "sitespec.yaml")
+	path := filepath.Join(t.TempDir(), "sitespec.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Chdir(t.TempDir())
 	spec, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := spec.ValidateControllerStackReferences(); err != nil {
-		t.Errorf("relative secret paths not resolved from the spec: %v", err)
-	}
-	if got := spec.ResolvePath("nico-token"); got != filepath.Join(specDir, "nico-token") {
-		t.Errorf("ResolvePath: %s", got)
-	}
-	if got := spec.ResolvePath("/abs/x"); got != "/abs/x" {
-		t.Errorf("ResolvePath absolute: %s", got)
-	}
-	// A loaded, filled-in spec renders back to itself.
 	if _, err := spec.Render(); err != nil {
 		t.Errorf("Render of a loaded spec with a filled controllerStack: %v", err)
+	}
+}
+
+// Each field that used to name a file or hold a secret is refused with what replaced it.
+func TestLoad_RejectsRemovedFields(t *testing.T) {
+	cases := map[string]struct{ from, to, want string }{
+		"registry":       {"\ncontrollerStack:\n", "\nregistry:\n  bootstrapRepo: x\n\ncontrollerStack:\n", "nerdctl login"},
+		"tokenFile":      {"    apiName: REPLACE_NICO_API_NAME\n", "    apiName: REPLACE_NICO_API_NAME\n    tokenFile: t\n", EnvNicoToken},
+		"tenant":         {"    apiName: REPLACE_NICO_API_NAME\n", "    apiName: REPLACE_NICO_API_NAME\n  tenant:\n    user: u\n", EnvNodeUser},
+		"database":       {"  # mirror: \"\"\n", "  database:\n    passwordFile: db.password\n", EnvDatabasePassword + " to the contents of "},
+		"nktpValuesFile": {"  # mirror: \"\"", "  nktpValuesFile: n.yaml", "--values-for nktp="},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if !strings.Contains(string(templateYAML), tc.from) {
+				t.Fatalf("template has no %q", tc.from)
+			}
+			path := filepath.Join(t.TempDir(), "sitespec.yaml")
+			if err := os.WriteFile(path, []byte(strings.Replace(string(templateYAML), tc.from, tc.to, 1)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(path)
+			if err == nil || !strings.Contains(err.Error(), "no longer accepted") || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("want a removed-field error naming %s, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+// TestLoad_DatabasePasswordFileResolved: the removed-field message names the
+// old password file resolved from the spec's directory, as main read it.
+func TestLoad_DatabasePasswordFileResolved(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sitespec.yaml")
+	body := strings.Replace(string(templateYAML), "  # mirror: \"\"\n", "  database:\n    passwordFile: db.password\n", 1)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if want := "contents of " + filepath.Join(dir, "db.password"); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("Load() error = %v, want it to name %s", err, want)
 	}
 }
 

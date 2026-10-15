@@ -65,27 +65,24 @@ expect "a template item is rendered by the executor when --config is given" "kub
 # site values and renders the template items, and the executor installs the
 # result with no --config and no knowledge of the site.
 mkdir -p "${WORK}/site"
-for f in nico-token tenant-password; do printf 'secret-%s\n' "$f" >"${WORK}/site/$f"; done
+export NVKECTL_NICO_TOKEN=secret-nico-token NVKECTL_NODE_USER=nvke NVKECTL_NODE_PASSWORD=secret-tenant-password NVKECTL_DATABASE_PASSWORD=secret-db-password
 sed -e 's|REPLACE_ARCH|arm64|; s|REPLACE_NICO_ENDPOINT|https://nico.example.com|; s|REPLACE_NICO_ORG_ID|org-1|; s|REPLACE_NICO_API_NAME|forge|' \
-    -e "s|REPLACE_NICO_TOKEN_PATH|${WORK}/site/nico-token|" \
-    -e "s|REPLACE_TENANT_USER|nvke|; s|REPLACE_TENANT_PASSWORD_PATH|${WORK}/site/tenant-password|" \
-    -e "s|REPLACE_DB_PASSWORD_PATH|${WORK}/site/db-password|" \
     "${REPO}/cli/examples/sitespec.yaml" >"${WORK}/site/sitespec.yaml"
 # deploy/nico enables profiles.image without a pin, so the spec names the image.
 sed -i.bak 's|^  # images:$|  images:|; s|^  #   profiles: ""$|    profiles: ghcr.io/example/controller-profiles:v1|' "${WORK}/site/sitespec.yaml" && rm -f "${WORK}/site/sitespec.yaml.bak"
 printf -- '-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n' >"${WORK}/site/ca.crt"
 printf -- '-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n' >"${WORK}/site/ca.key"
-printf 'spire:\n  trustDomain: nvke-site.nke.local\n  caCertFile: %s\n  caKeyFile: %s\n' "${WORK}/site/ca.crt" "${WORK}/site/ca.key" >>"${WORK}/site/sitespec.yaml"
+export NVKECTL_SPIRE_CA_CERT_FILE="${WORK}/site/ca.crt" NVKECTL_SPIRE_CA_KEY_FILE="${WORK}/site/ca.key"
+printf 'spire:\n  trustDomain: nvke-site.nke.local\n  upstreamCA: true\n' >>"${WORK}/site/sitespec.yaml"
 rendered="${WORK}/rendered"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${rendered}" 2>&1)" || fail "render exited $?: ${out}"
 expect "render reports the site values" '^controller: site values written$' "${out}"
 expect "render reports the templates" '^nvke-base-config: 3 templates rendered; applies as a manifest item$' "${out}"
-expect "a missing database password file is created" "^database password generated and written to ${WORK}/site/db-password$" "${out}"
-[[ -s "${WORK}/site/db-password" && ! -e "${rendered}/db-password" ]] && pass "the password lives in the operator's file, not the tree" || fail "db password placement"
+grep -q 'postgresPassword: secret-db-password' "${rendered}/controller/site-values.yaml" && pass "the database password comes from NVKECTL_DATABASE_PASSWORD" || fail "db password"
 find "${rendered}" -maxdepth 0 -perm 0700 | grep -q . && pass "the rendered tree is private" || fail "rendered tree mode"
 [[ ! -e "${NICO}/site.env" && ! -e "${NICO}/controller/site-values.yaml" ]] && pass "nothing was written into the committed deploy path" || fail "committed deploy path written"
 grep -q '^  - site-values.yaml$' "${rendered}/controller/release.yaml" && pass "the controller's values list ends with site-values.yaml" || fail "controller release.yaml: $(cat "${rendered}/controller/release.yaml")"
-grep -q 'token: "secret-nico-token"' "${rendered}/nvke-base-config/20-nico-credentials.yaml" && pass "the NICo Secret is rendered from the token file" || fail "nico credentials"
+grep -q 'token: "secret-nico-token"' "${rendered}/nvke-base-config/20-nico-credentials.yaml" && pass "the NICo Secret is rendered from NVKECTL_NICO_TOKEN" || fail "nico credentials"
 [[ -z "$(ls "${rendered}/nvke-base-config/"*.tmpl 2>/dev/null)" ]] && pass "no template is left in the rendered item" || fail "templates left"
 grep -q 'name: nvke-base-config, type: manifest' "${rendered}/nvke-deploy.yaml" && pass "the template item became a manifest item" || fail "item list: $(cat "${rendered}/nvke-deploy.yaml")"
 grep -q '^SITE_NAME=nvke-site$' "${rendered}/site.env" && grep -q '^SITE_TRUST_DOMAIN=nvke-site.nke.local$' "${rendered}/site.env" && pass "site.env names the site and its trust domain" || fail "site.env"
@@ -104,12 +101,8 @@ expect "postgresql still comes from its public repository" 'helm upgrade --insta
 expect "a committed chart path is absolute in the rendered tree, so it resolves from anywhere" "helm upgrade --install nktp ${REPO}/nktp/deploy/charts/nktp " "${out}"
 expect "the controller chart too" "helm upgrade --install nke-controller ${REPO}/controller/deploy/charts/controller " "${out}"
 # A secret that cannot be written into a quoted YAML value is refused.
-mkdir -p "${WORK}/bad-site"
-cp "${WORK}/site/"* "${WORK}/bad-site/"
-printf 'tok"en\n' >"${WORK}/bad-site/nico-token"
-sed "s|${WORK}/site/|${WORK}/bad-site/|g" "${WORK}/site/sitespec.yaml" >"${WORK}/bad-site/sitespec.yaml"
-out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/bad-site/sitespec.yaml" --out "${WORK}/bad-rendered" 2>&1)" && fail "a quote in a token exited 0"
-expect "the unescapable token is refused by field" 'controllerStack.nico.tokenFile: the value holds a character the templates cannot carry' "${out}"
+out="$(NVKECTL_NICO_TOKEN='tok"en' "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${WORK}/bad-rendered" 2>&1)" && fail "a quote in a token exited 0"
+expect "the unescapable token is refused by variable" 'NVKECTL_NICO_TOKEN: the value holds a character the templates cannot carry' "${out}"
 
 # Without the allowance, an --out under a temp directory is refused.
 out="$(env -u NVKECTL_RENDER_ALLOW_TEMP_OUT "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${WORK}/refused-temp" 2>&1)" && fail "temp --out exited 0"
@@ -117,7 +110,7 @@ expect "a temp --out is refused" 'is under a shared temp directory' "${out}"
 [[ ! -e "${WORK}/refused-temp" ]] && pass "a refused temp --out is not created" || fail "temp out created"
 
 # Render refuses a site spec with placeholders, naming them, and leaves nothing.
-out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${REPO}/cli/examples/sitespec.yaml" --out "${WORK}/refused" 2>&1)" && fail "render with placeholders exited 0"
+out="$(env -u NVKECTL_SPIRE_CA_CERT_FILE -u NVKECTL_SPIRE_CA_KEY_FILE "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${REPO}/cli/examples/sitespec.yaml" --out "${WORK}/refused" 2>&1)" && fail "render with placeholders exited 0"
 expect "placeholders are named" 'controllerStack.arch is still a REPLACE_\* placeholder' "${out}"
 [[ ! -e "${WORK}/refused" ]] && pass "a refused render leaves no output" || fail "refused output left behind"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${rendered}" 2>&1)" && fail "existing --out exited 0"

@@ -39,11 +39,6 @@ import (
 const (
 	// siteSubcommand is the name of the "bootstrap site" subcommand.
 	siteSubcommand = "site"
-
-	// registryAPIKeyEnv is the environment variable consulted for the registry
-	// credential when it is not passed on the command line. Keeping the secret
-	// out of the site spec file lets the file be committed and shared safely.
-	registryAPIKeyEnv = "REGISTRY_API_KEY" //nolint:gosec // G101: this is an env var name, not a credential
 )
 
 // newBootstrapCmd is the "bootstrap" command group. Site bootstrap is the only
@@ -59,9 +54,8 @@ func newBootstrapCmd() *cobra.Command {
 
 // bootstrapSiteOptions holds the flag values for "bootstrap site".
 type bootstrapSiteOptions struct {
-	siteSpec       string
-	dryRun         bool
-	registryAPIKey string
+	siteSpec string
+	dryRun   bool
 	// controllerImage and provisionedProviderImage are the --controller-image and
 	// --provisioned-provider-image flags. A flag wins over its variable.
 	controllerImage          string
@@ -163,9 +157,6 @@ site spec file format.`,
   # Validate only — load, check, and print the site spec without dispatching
   nvkectl bootstrap site -f sitespec.yaml --dry-run
 
-  # Supply the registry credential without putting it in the file
-  REGISTRY_API_KEY=... nvkectl bootstrap site -f sitespec.yaml
-
   # Deploy images you pushed to a registry instead of the local build
   nvkectl bootstrap site -f sitespec.yaml \
     --controller-image nvcr.io/<org>/nvke-controller:edge \
@@ -185,8 +176,6 @@ site spec file format.`,
 	_ = cmd.MarkFlagRequired("sitespec")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false,
 		"Load and validate the site spec and print it, but do not dispatch any workflow")
-	cmd.Flags().StringVar(&opts.registryAPIKey, "registry-api-key", "",
-		"Container registry credential (overrides registry.apiKey and the "+registryAPIKeyEnv+" env var)")
 	cmd.Flags().StringVar(&opts.controllerImage, "controller-image", "",
 		"Controller image to deploy (overrides NVKECTL_CONTROLLER_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.provisionedProviderImage, "provisioned-provider-image", "",
@@ -273,12 +262,8 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 	logger.Info("loaded site spec", "path", opts.siteSpec, "cluster", inv.ClusterName)
-
-	// An explicit --registry-api-key flag wins over the value the loader
-	// resolved (the site spec file or the REGISTRY_API_KEY env var). The
-	// credential is never logged or printed.
-	if opts.registryAPIKey != "" {
-		inv.Registry.APIKey = opts.registryAPIKey
+	if inv.Spire.CACertFile != "" {
+		logger.Info("SPIRE upstream CA from the environment", "cert", inv.Spire.CACertFile, "key", inv.Spire.CAKeyFile)
 	}
 
 	if err := dumpSiteSpec(out, inv); err != nil {
@@ -891,8 +876,7 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 		cfg.SPIFFETrustDomain = clusterName + ".nke.local"
 	}
 
-	// The CA SPIRE chains to, straight from the site spec, which is where an
-	// operator declares what this bootstrap is entitled to trust.
+	// The CA SPIRE chains to, from NVKECTL_SPIRE_CA_CERT_FILE and NVKECTL_SPIRE_CA_KEY_FILE.
 	cfg.SPIFFEUpstreamCACertPath = inv.Spire.CACertFile
 	cfg.SPIFFEUpstreamCAKeyPath = inv.Spire.CAKeyFile
 
@@ -1085,13 +1069,9 @@ func missingLocalImageError(image string, err error, out string) error {
 }
 
 // dumpSiteSpec prints the loaded, defaulted site spec as YAML so the operator
-// can see exactly what was parsed. The registry credential is redacted.
+// can see exactly what was parsed.
 func dumpSiteSpec(out io.Writer, inv *sitespec.SiteSpec) error {
-	redacted := *inv
-	if redacted.Registry.APIKey != "" {
-		redacted.Registry.APIKey = "***redacted***"
-	}
-	y, err := yaml.Marshal(&redacted)
+	y, err := yaml.Marshal(inv)
 	if err != nil {
 		return fmt.Errorf("marshal site spec: %w", err)
 	}

@@ -173,10 +173,10 @@ rendered path, after `site-values.yaml`.
 | TPM attestor **server** checksum | pinned per `controllerStack.arch` | pinned per arch in `resolve_tpm_checksum()` |
 | OIDC domains / IP SANs | the overlay's hostnames plus the VIP | VIP plus the kind gateway |
 | discovery URL | `https://<VIP>:30443/.well-known/openid-configuration` | the same shape |
-| Postgres / Temporal password | `controllerStack.database.passwordFile`, on both Temporal datastores; the controller reads its connection string from a Secret | generated per run |
+| Postgres / Temporal password | `NVKECTL_DATABASE_PASSWORD`, on both Temporal datastores; the controller reads its connection string from a Secret | generated per run |
 | controller image | the release, or `controllerStack.images.controller` | built per run |
 | profiles image | the release, or `controllerStack.images.profiles` | built per run |
-| telemetry backend | `controllerStack.nktpValuesFile`, else the chart's bundled development backend | not installed |
+| telemetry backend | `--values-for nktp=<file>`, else the chart's bundled development backend | not installed |
 | telemetry `k8s.cluster.name` | `clusterName`, through the `nvke-base-config` template | not installed |
 
 The TPM checksum is easy to confuse: the value in `spire/values.yaml`
@@ -240,11 +240,9 @@ must be set; an empty name stops the install at that template.
 
 Everything exports to the chart's bundled development backend by default. It
 keeps data in memory and has no authentication, so it is for evaluation. A site
-with a real backend names a values file in `controllerStack.nktpValuesFile`;
-the render applies it after the item's own values. `--values-for nktp=<file>`
-is the same thing for an install without a site spec, and applies on top of a
-rendered path. The chart README's "The backend" section lists the keys that
-file sets.
+with a real backend passes `--values-for nktp=<file>` to the install, which
+applies it after the item's own values, with or without a site spec. The chart
+README's "The backend" section lists the keys that file sets.
 
 Not scraped yet: the Postgres item runs no metrics exporter; CAPI core and the
 kubeadm providers serve metrics only to a caller with a bearer token, which the

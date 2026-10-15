@@ -66,8 +66,7 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
      --set cluster.serviceCidr=<SERVICE_CIDR> \
      --set cluster.kubeletConfig.systemReservedMemory=<RESERVED_MEMORY> \
      --set spire.trustDomain=<TRUST_DOMAIN> \
-     --set spire.caCertFile=<CA_CERT_PATH> \
-     --set spire.caKeyFile=<CA_KEY_PATH> > sitespec.yaml
+     --set spire.upstreamCA=true > sitespec.yaml
    ```
 
    - `<CLUSTER_NAME>`: the management cluster's name, a lowercase RFC 1123 label such as `example-mgmt`.
@@ -76,7 +75,7 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
    - `<POD_CIDR>` and `<SERVICE_CIDR>`: the cluster networks. They must not overlap each other or your node network.
    - `<RESERVED_MEMORY>`: memory the kubelet reserves for the system, such as `16Gi`.
    - `<TRUST_DOMAIN>`: the SPIFFE trust domain configured on every node's `spire-agent`, such as `mgmt.example.com`.
-   - `<CA_CERT_PATH>` and `<CA_KEY_PATH>`: your SPIRE CA files. Nodes built from the node image need them: without them SPIRE uses a self-signed CA that no node can trust in advance, and the nodes cannot attest.
+   - `spire.upstreamCA=true`: the site's SPIRE chains to your SPIRE CA. The bootstrap and every later install then require `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`.
 
    If you omit a `--set` line, the field keeps its default: `k8sVersion` `1.34.2`, `podCidr` `192.168.0.0/16`, `serviceCidr` `10.96.0.0/12`, `systemReservedMemory` `16Gi`. If the reserved memory is close to a node's total memory, the node has nothing left to schedule and never reaches `Ready`. The CNI defaults to `ovn-kubernetes`, and etcd encryption at rest is on. Encryption can only be chosen at bootstrap: a cluster built with `--set cluster.etcdEncryption=false` stays unencrypted.
 
@@ -87,8 +86,11 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
 3. Validate the site spec without touching any node.
 
    ```bash
+   export NVKECTL_SPIRE_CA_CERT_FILE=<CA_CERT_PATH> NVKECTL_SPIRE_CA_KEY_FILE=<CA_KEY_PATH>
    nvkectl bootstrap site -f sitespec.yaml --dry-run
    ```
+
+   `<CA_CERT_PATH>` and `<CA_KEY_PATH>` are your SPIRE CA files. Nodes built from the node image need them: without them SPIRE uses a self-signed CA that no node can trust in advance, and the nodes cannot attest. The site spec sets `spire.upstreamCA`, so the dry run and the bootstrap both require them; keep them exported in the shell you run the bootstrap from.
 
    The command prints the site spec with defaults applied, then `Dry run: site spec is valid. No workflow dispatched.` If the file is invalid, it lists every problem in one error. Read the printed values before you continue.
 
@@ -116,7 +118,7 @@ To build both images from the repository on the bootstrap host instead, run `mak
      --provisioned-provider-image <PROVISIONED_PROVIDER_IMAGE>
    ```
 
-   `<CONTROLLER_IMAGE>` and `<PROVISIONED_PROVIDER_IMAGE>` are full references that include your registry host. Omit both flags to use the local images. `NVKECTL_CONTROLLER_IMAGE` and `NVKECTL_CAPI_PROVISIONED_IMAGE` set the same values from the environment, and a flag wins over its variable.
+   Run it in the shell where you exported the SPIRE CA variables to validate the site spec. `<CONTROLLER_IMAGE>` and `<PROVISIONED_PROVIDER_IMAGE>` are full references that include your registry host. Omit both flags to use the local images. `NVKECTL_CONTROLLER_IMAGE` and `NVKECTL_CAPI_PROVISIONED_IMAGE` set the same values from the environment, and a flag wins over its variable.
 
    Before it creates anything, the command refuses to start if a seed cluster from an earlier run still exists, if the etcd encryption key file it would write already exists, if any node already accepts connections on port 6443, or if a local image is missing.
 

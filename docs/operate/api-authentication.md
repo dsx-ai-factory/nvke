@@ -24,6 +24,7 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
   ```
 
   The install created the Helm release `nke-controller` and the Deployment `nke-controller`, both in the `nke-controller` namespace.
+- The shell you run the install from has the `NVKECTL_*` variables from [Fill in the controller stack settings](install-management-plane-services.md#fill-in-the-controller-stack-settings) exported, as described in [Run the install again](install-management-plane-services.md#run-the-install-again).
 - Your IdP publishes an OIDC discovery document over HTTPS, and the management cluster can reach its signing-key endpoint.
 - Your IdP has a group for the people and automation allowed to call the NVKE API, and puts it in a token claim named `groups`, a list of strings. NVKE reads group membership only from that claim.
 - Your IdP has an OIDC client for `nvkectl` that needs no client secret.
@@ -111,7 +112,7 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
 
    Merge these keys into the file from step 1: `extraFiles` under `configMap`, and `caBundlePath` under the existing issuer's `jwks`, rather than adding a second `apiAuth` block or issuer. Without `caBundlePath`, NVKE trusts the system CAs.
 
-3. Run the install command from [Install management-plane services](install-management-plane-services.md) again, with the same flags and `--values-for controller=../auth-values.yaml` added.
+3. Run the install command from [Install management-plane services](install-management-plane-services.md) again, with the same flags, including any `--values-for nktp=<FILE>`, and `--values-for controller=../auth-values.yaml` added.
 
    ```bash
    deploy/nvke-deploy.sh install --deploy-path deploy/nico \
@@ -250,7 +251,7 @@ Continue when `would_reject` stops increasing.
 
 NVKE reads the authentication configuration once, at startup. If you later change only `apiAuth.config`, restart the Deployment with `kubectl -n nke-controller rollout restart deploy/nke-controller`. Add a new issuer in permissive mode first, because an issuer whose keys NVKE cannot fetch stops an enforcing NVKE from starting.
 
-The deploy path's own values turn authentication off. Every time you run the install again, for any reason, add `--values-for controller=../auth-values.yaml`.
+The deploy path's own values turn authentication off. Every time you run the install again, for any reason, add `--values-for controller=../auth-values.yaml`, along with the other inputs listed in [Run the install again](install-management-plane-services.md#run-the-install-again).
 
 ## Verify
 

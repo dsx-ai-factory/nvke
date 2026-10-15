@@ -206,13 +206,10 @@ type Config struct {
 	SPIFFETrustDomain string
 
 	// SPIFFEUpstreamCACertPath and SPIFFEUpstreamCAKeyPath are a CA the
-	// operator brings to the bootstrap, from the site spec's spire section.
-	// SPIRE chains its own CA to it, so a host that was given the certificate
-	// ahead of time can verify the server the first time it speaks to it,
-	// instead of trusting it blindly.
-	//
-	// Not read from the environment: this describes the site, so the site spec
-	// is the one place it comes from.
+	// operator brings to the bootstrap, from NVKECTL_SPIRE_CA_CERT_FILE and
+	// NVKECTL_SPIRE_CA_KEY_FILE. SPIRE chains its own CA to it, so a host that was
+	// given the certificate ahead of time can verify the server the first time
+	// it speaks to it, instead of trusting it blindly.
 	SPIFFEUpstreamCACertPath string
 	SPIFFEUpstreamCAKeyPath  string
 

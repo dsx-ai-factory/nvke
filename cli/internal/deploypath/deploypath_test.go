@@ -109,8 +109,8 @@ func TestReadRelease_Problems(t *testing.T) {
 }
 
 // filledSiteSpec writes the example site spec with every controllerStack
-// placeholder filled in and the secret files it names, plus a SPIRE CA when
-// withCA is set, and loads it.
+// placeholder filled in, sets the secrets in the environment, adds a SPIRE CA
+// when withCA is set, and loads it.
 func filledSiteSpec(t *testing.T, withCA bool, extra map[string]string) *sitespec.SiteSpec {
 	t.Helper()
 	dir := t.TempDir()
@@ -118,15 +118,15 @@ func filledSiteSpec(t *testing.T, withCA bool, extra map[string]string) *sitespe
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, content := range map[string]string{"nico-token": "nico-secret", "tenant-password": "tenant-secret", "ca.crt": "CERT", "ca.key": "KEY", "db-password": "db-secret"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(content+"\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	t.Setenv(sitespec.EnvNicoToken, "nico-secret")
+	t.Setenv(sitespec.EnvNodeUser, "nvke")
+	t.Setenv(sitespec.EnvNodePassword, "tenant-secret")
+	t.Setenv(sitespec.EnvDatabasePassword, "db-secret")
+	t.Setenv(sitespec.EnvSpireCACertFile, "")
+	t.Setenv(sitespec.EnvSpireCAKeyFile, "")
 	values := map[string]string{
 		"REPLACE_ARCH": "arm64", "REPLACE_NICO_ENDPOINT": "https://nico.example.com", "REPLACE_NICO_ORG_ID": "org-1",
-		"REPLACE_NICO_API_NAME": "forge", "REPLACE_NICO_TOKEN_PATH": "nico-token",
-		"REPLACE_TENANT_USER": "nvke", "REPLACE_TENANT_PASSWORD_PATH": "tenant-password", "REPLACE_DB_PASSWORD_PATH": "db-password",
+		"REPLACE_NICO_API_NAME": "forge",
 	}
 	for k, v := range extra {
 		values[k] = v
@@ -138,9 +138,14 @@ func filledSiteSpec(t *testing.T, withCA bool, extra map[string]string) *sitespe
 	// The trust domain is the bootstrap's; set here so the render does not default it.
 	body += "spire:\n  trustDomain: my-tier0-site.nke.local\n"
 	if withCA {
-		// The bootstrap resolves the CA paths from the working directory, so
-		// they are absolute here.
-		body += "  caCertFile: " + filepath.Join(dir, "ca.crt") + "\n  caKeyFile: " + filepath.Join(dir, "ca.key") + "\n"
+		body += "  upstreamCA: true\n"
+		for name, content := range map[string]string{"ca.crt": "CERT\n", "ca.key": "KEY\n"} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		t.Setenv(sitespec.EnvSpireCACertFile, filepath.Join(dir, "ca.crt"))
+		t.Setenv(sitespec.EnvSpireCAKeyFile, filepath.Join(dir, "ca.key"))
 	}
 	path := filepath.Join(dir, "sitespec.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
@@ -223,7 +228,7 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	}
 	password, _ := dig(ctl, "appDb", "postgresPassword").(string)
 	if password != "db-secret" {
-		t.Errorf("database password not read from the site spec's file: %q", password)
+		t.Errorf("database password not read from %s: %q", sitespec.EnvDatabasePassword, password)
 	}
 	pg := readValues(t, filepath.Join(out, "postgresql", SiteValuesFile))
 	tp := readValues(t, filepath.Join(out, "temporal", SiteValuesFile))
@@ -325,13 +330,8 @@ func TestRender_FromSiteSpec(t *testing.T) {
 }
 
 func TestRender_SiteSpecOptions(t *testing.T) {
-	// No CA, a mirror, an image override and an nktp values file.
+	// No CA, a mirror and an image override.
 	spec := filledSiteSpec(t, false, nil)
-	dir := filepath.Dir(spec.ResolvePath("x"))
-	if err := os.WriteFile(filepath.Join(dir, "nktp.yaml"), []byte("gateway:\n  enabled: true\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	spec.ControllerStack.NktpValuesFile = "nktp.yaml"
 	spec.ControllerStack.Mirror = "mirror.example.test:5000"
 	spec.ControllerStack.Images.Controller = "mirror.example.test:5000/cwe@sha256:" + strings.Repeat("a", 64)
 	out := filepath.Join(t.TempDir(), "rendered")
@@ -363,49 +363,19 @@ func TestRender_SiteSpecOptions(t *testing.T) {
 		dig(tp, "server", "config", "persistence", "visibility", "sql", "password") != "db-secret" {
 		t.Errorf("the mirror dropped temporal's passwords: %v", tp["server"])
 	}
-	nktp, _ := os.ReadFile(filepath.Join(out, "nktp", SiteValuesFile))
-	if string(nktp) != "gateway:\n  enabled: true\n" {
-		t.Errorf("nktp passthrough: %q", nktp)
+	if _, err := os.Stat(filepath.Join(out, "nktp", SiteValuesFile)); err == nil {
+		t.Error("nktp got site values; its overrides come from --values-for")
 	}
 }
 
 func TestRender_DatabasePassword(t *testing.T) {
-	// A missing password file is created, private, and the one password
-	// lands in every item that needs it.
-	spec := filledSiteSpec(t, false, map[string]string{"REPLACE_DB_PASSWORD_PATH": "state/db-password"})
-	path := spec.ResolvePath("state/db-password")
+	// Without the variable the render refuses and leaves nothing.
+	spec := filledSiteSpec(t, false, nil)
+	t.Setenv(sitespec.EnvDatabasePassword, "")
 	out := filepath.Join(t.TempDir(), "rendered")
-	var log strings.Builder
-	_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out, Log: &log})
-	if err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("generated password file: %v %v", info, err)
-	}
-	stored, _ := os.ReadFile(path)
-	password := strings.TrimSpace(string(stored))
-	ctl := readValues(t, filepath.Join(out, "controller", SiteValuesFile))
-	pg := readValues(t, filepath.Join(out, "postgresql", SiteValuesFile))
-	tp := readValues(t, filepath.Join(out, "temporal", SiteValuesFile))
-	if password == "" || dig(ctl, "appDb", "postgresPassword") != password || dig(pg, "auth", "password") != password ||
-		dig(tp, "server", "config", "persistence", "visibility", "sql", "password") != password {
-		t.Errorf("generated password %q is not the one in the values", password)
-	}
-	if !strings.Contains(log.String(), "database password generated and written to "+path) {
-		t.Errorf("log:\n%s", log.String())
-	}
-	if _, err := os.Stat(filepath.Join(out, "db-password")); err == nil {
-		t.Error("the rendered tree holds a password copy")
-	}
-	// Without the field the render refuses and leaves nothing.
-	spec = filledSiteSpec(t, false, nil)
-	spec.ControllerStack.Database.PasswordFile = ""
-	out = filepath.Join(t.TempDir(), "rendered")
-	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
-	if err == nil || !strings.Contains(err.Error(), "controllerStack.database.passwordFile is required") {
-		t.Errorf("unset password file: %v", err)
+	_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
+	if err == nil || !strings.Contains(err.Error(), sitespec.EnvDatabasePassword+" is not set") {
+		t.Errorf("unset password: %v", err)
 	}
 	if _, statErr := os.Stat(out); statErr == nil {
 		t.Error("a refused render left its output behind")
@@ -428,20 +398,21 @@ func TestRender_RefusesSharedTemp(t *testing.T) {
 
 func TestRender_SiteSpecRefusals(t *testing.T) {
 	// Placeholders left, every problem at once, nothing left behind.
-	spec := filledSiteSpec(t, false, map[string]string{"REPLACE_ARCH": "REPLACE_ARCH", "REPLACE_TENANT_USER": "REPLACE_TENANT_USER"})
+	spec := filledSiteSpec(t, false, map[string]string{"REPLACE_ARCH": "REPLACE_ARCH", "REPLACE_NICO_ORG_ID": "REPLACE_NICO_ORG_ID"})
 	out := filepath.Join(t.TempDir(), "rendered")
 	_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
-	if err == nil || !strings.Contains(err.Error(), "controllerStack.arch is still a REPLACE_* placeholder") || !strings.Contains(err.Error(), "controllerStack.tenant.user is still") {
+	if err == nil || !strings.Contains(err.Error(), "controllerStack.arch is still a REPLACE_* placeholder") || !strings.Contains(err.Error(), "controllerStack.nico.orgID is still") {
 		t.Errorf("placeholders: %v", err)
 	}
 	if _, statErr := os.Stat(out); statErr == nil {
 		t.Error("a refused render left its output behind")
 	}
-	// A secret file that is missing.
-	spec = filledSiteSpec(t, false, map[string]string{"REPLACE_NICO_TOKEN_PATH": "/nonexistent/token"})
+	// A secret that is not set.
+	spec = filledSiteSpec(t, false, nil)
+	t.Setenv(sitespec.EnvNicoToken, "")
 	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
-	if err == nil || !strings.Contains(err.Error(), "controllerStack.nico.tokenFile") {
-		t.Errorf("missing token file: %v", err)
+	if err == nil || !strings.Contains(err.Error(), sitespec.EnvNicoToken+" is not set") {
+		t.Errorf("unset token: %v", err)
 	}
 	// --out must not exist, and an existing one is left alone.
 	if err := os.MkdirAll(filepath.Join(out, "keep"), 0o755); err != nil {
@@ -478,29 +449,31 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 		}
 	}
 	caSpec.Spire.CACertFile, caSpec.Spire.CAKeyFile = filepath.Join(caDir, "ca.crt"), filepath.Join(caDir, "ca.key")
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: caSpec, Out: filepath.Join(t.TempDir(), "r")}); err == nil || !strings.Contains(err.Error(), "spire.caCertFile: the path") || !strings.Contains(err.Error(), "holds whitespace") {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: caSpec, Out: filepath.Join(t.TempDir(), "r")}); err == nil || !strings.Contains(err.Error(), sitespec.EnvSpireCACertFile+": the path") || !strings.Contains(err.Error(), "holds whitespace") {
 		t.Errorf("CA path with a space: %v", err)
 	}
-	// A secret the templates cannot carry is refused by field.
+	// A secret the templates cannot carry is refused by variable.
 	for name, content := range map[string]string{"quote": "tok\"en", "newline": "abc\ndef", "backslash": "a\\b"} {
 		spec := filledSiteSpec(t, false, nil)
-		if err := os.WriteFile(spec.ResolvePath("tenant-password"), []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		t.Setenv(sitespec.EnvNodePassword, content)
 		_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: filepath.Join(t.TempDir(), "r")})
-		if err == nil || !strings.Contains(err.Error(), "controllerStack.tenant.passwordFile: the value holds a character") {
+		if err == nil || !strings.Contains(err.Error(), sitespec.EnvNodePassword+": the value holds a character") {
 			t.Errorf("%s in a password: %v", name, err)
 		}
 	}
-	// Refusals by field: no profiles image while the deploy path enables it, an
-	// empty secret file, a non-secret value the templates cannot carry, an
-	// image override with no pin.
+	// A whitespace-only secret is trimmed to nothing and refused as unset.
+	blank := filledSiteSpec(t, false, nil)
+	t.Setenv(sitespec.EnvNicoToken, " \n")
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: blank, Out: filepath.Join(t.TempDir(), "r")}); err == nil || !strings.Contains(err.Error(), "environment: "+sitespec.EnvNicoToken+" is not set") {
+		t.Errorf("whitespace-only token: %v", err)
+	}
+	// Refusals by field: no profiles image while the deploy path enables it, a
+	// non-secret value the templates cannot carry, an image override with no pin.
 	for name, tc := range map[string]struct {
 		mutate func(*sitespec.SiteSpec)
 		want   string
 	}{
 		"profiles image": {func(s *sitespec.SiteSpec) { s.ControllerStack.Images.Profiles = "" }, "controllerStack.images.profiles is required"},
-		"empty secret":   {func(s *sitespec.SiteSpec) { _ = os.WriteFile(s.ResolvePath("nico-token"), []byte(" \n"), 0o600) }, "controllerStack.nico.tokenFile is empty"},
 		"quoted orgID":   {func(s *sitespec.SiteSpec) { s.ControllerStack.Nico.OrgID = "org\"x" }, "controllerStack.nico.orgID: the value holds a character"},
 		"unpinned image": {func(s *sitespec.SiteSpec) { s.ControllerStack.Images.Controller = "mirror.example.test/cwe" }, "controllerStack.images.controller: \"mirror.example.test/cwe\" names neither a tag nor a digest"},
 	} {
@@ -586,28 +559,6 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	}
 	if _, err := Items(typed); err == nil || !strings.Contains(err.Error(), "unknown type") {
 		t.Errorf("unknown item type: %v", err)
-	}
-	// nktpValuesFile without an nktp item is a problem, not a silent skip.
-	spec = filledSiteSpec(t, false, nil)
-	spec.ControllerStack.NktpValuesFile = "nktp.yaml"
-	bare := filepath.Join(t.TempDir(), "nico")
-	if err := copyTree(nico, bare); err != nil {
-		t.Fatal(err)
-	}
-	list, _ := os.ReadFile(filepath.Join(bare, "nvke-deploy.yaml"))
-	withoutNktp := strings.ReplaceAll(string(list), "  - {name: nktp, type: helm}\n", "")
-	if withoutNktp == string(list) {
-		t.Fatal("nktp item not found in the deploy path")
-	}
-	if err := os.WriteFile(filepath.Join(bare, "nvke-deploy.yaml"), []byte(withoutNktp), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(spec.ResolvePath("nktp.yaml"), []byte("a: b\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: bare, Site: spec, Out: filepath.Join(t.TempDir(), "r")})
-	if err == nil || !strings.Contains(err.Error(), "no nktp helm item") {
-		t.Errorf("nktp values without the item: %v", err)
 	}
 }
 

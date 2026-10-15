@@ -134,7 +134,7 @@ NVKE renders `userDataTemplate` as a Go template for each node it creates, with 
 | Template value | What NVKE fills in |
 |---|---|
 | `{{ .Hostname }}` | The node's name. |
-| `{{ .Username }}`, `{{ .HashedPassword }}` | The node login account, `controllerStack.tenant.user` and the password in `controllerStack.tenant.passwordFile` from the site spec, with the password as a SHA-512 crypt hash. |
+| `{{ .Username }}`, `{{ .HashedPassword }}` | The node login account from `NVKECTL_NODE_USER` and `NVKECTL_NODE_PASSWORD`, with the password as a SHA-512 crypt hash. |
 | `{{ .Files }}` | The `nvke-agent` files to write with `write_files`, including `/etc/default/nke-agent`, which sets the agent's arguments and port. `{{ .NodeAgentPort }}` is the port alone. |
 | `{{ .KubernetesVersion }}` | The Kubernetes version of the cluster or node pool. |
 | `{{ .CNIImagePackage }}`, `{{ .CNIChartsPackage }}` | The CNI packages for the cluster's `cniPlugin` and `cniVersion`, such as `nvke-cni-ovn-images-1.4.0` and `nvke-cni-ovn-charts-1.4.0`. `{{ .OvnEnabled }}` is true for OVN-Kubernetes. |
