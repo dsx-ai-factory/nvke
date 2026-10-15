@@ -43,20 +43,7 @@ func openAPIForgeCreateClusterRequest() api.CreateClusterRequest {
 		CniPlugin:                     "ovn-kubernetes",
 		EtcdEncrypted:                 false,
 		ControlPlaneKubernetesVersion: "1.29.7",
-		NodePools: &[]api.NodePoolCreateConfig{
-			{
-				Name:           "cp",
-				NodeNamePrefix: "cp-prefix",
-				Nico: &api.NicoNodePoolProvider{
-					InstanceTypeID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440004"),
-					OSProfile:      "ubuntu",
-					ConfigProfile:  "default",
-					SubnetIDs:      []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440003")},
-				},
-				ControlPlane:     true,
-				DesiredNodeCount: 1,
-			},
-		},
+		ControlPlaneConfig:            nicoCreateControlPlaneConfig(1, false),
 	}
 }
 
@@ -68,6 +55,11 @@ func stubOpenAPICreateClusterTx(mockDB *testutil.MockDB) {
 		db.Cluster{ID: uuid.New(), Name: "test-cluster", KubernetesVersion: "1.29.7"},
 		nil,
 	).Maybe()
+	mockDB.MockTx.On("CreateControlPlaneConfiguration", mock.Anything, mock.Anything).Return(
+		db.ControlPlaneConfiguration{ID: uuid.New()},
+		nil,
+	).Maybe()
+	mockDB.MockTx.On("UpdateCluster", mock.Anything, mock.Anything).Return(db.Cluster{}, nil).Maybe()
 	mockDB.MockTx.On("CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		db.WorkflowOutbox{},
 		nil,
@@ -254,6 +246,7 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 		mockDB.MockTx = &testutil.MockTx{}
 		mockDB.GetTx = func() db.Tx { return mockDB.MockTx }
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Maybe()
+		stubOpenAPICreateClusterTx(mockDB)
 
 		handler := newTestServerWithValidator(t, mockDB)
 
@@ -474,9 +467,8 @@ func TestOpenAPIValidator_CreateClusterControlPlaneConfig(t *testing.T) {
 			rr := httptest.NewRecorder()
 			newTestServerWithValidator(t, &testutil.MockDB{}).ServeHTTP(rr, req)
 
-			// The accepted case still fails in the handler, because this test server
-			// has no control-plane controller provisioning enabled. Distinguish the
-			// two by the message rather than the status code.
+			// The accepted case may still fail in the handler; assert on the message
+			// rather than the status code.
 			if tt.expectReject {
 				assert.Contains(t, rr.Body.String(), "diskSelectionStrategy")
 				return
@@ -596,9 +588,7 @@ func TestOpenAPIValidator_CreateRequiresExactlyOneProvider(t *testing.T) {
 			rr := httptest.NewRecorder()
 			newTestServerWithValidator(t, &testutil.MockDB{}).ServeHTTP(rr, req)
 
-			// The accepted case still fails in the handler, because this test server
-			// has no control-plane controller provisioning enabled. Distinguish a
-			// schema rejection from a handler rejection by the validator's message.
+			// Distinguish a schema rejection from a handler rejection by the validator's message.
 			if tt.expectReject {
 				assert.Equal(t, http.StatusBadRequest, rr.Code, "body: %s", rr.Body.String())
 				assert.Contains(t, rr.Body.String(), "request body has an error",

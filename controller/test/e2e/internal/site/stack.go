@@ -142,13 +142,6 @@ func (n Nico) Validate() error {
 	return nil
 }
 
-// Registry is the credential the site pulls private images with.
-type Registry struct {
-	Server   string `json:"Server"`
-	Username string `json:"Username"`
-	Token    string `json:"Token"`
-}
-
 // Tenant is the credential CWE creates tenant clusters' admin with.
 type Tenant struct {
 	User     string `json:"User"`
@@ -180,7 +173,6 @@ type Stack struct {
 	// infrastructure. Required: a stack with no way to create machines
 	// deploys and then cannot do its job.
 	Provider CAPIProviderConfig
-	Registry Registry
 	Tenant   Tenant
 
 	// Arch is the node's architecture, as uname -m reports it. It selects the
@@ -546,9 +538,13 @@ func (d Stack) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, e
 	// kubeadm configuration names every cluster "kubernetes".
 	config, err := json.MarshalIndent(map[string]any{
 		d.Provider.ConfigKey(): d.Provider,
-		"Registry":             d.Registry,
 		"Tenant":               d.Tenant,
 		"ClusterName":          t.SiteName,
+		// Controller releases that still carry nvke-base-config's
+		// ghcr-imagepull template render a pull Secret from .Registry. The
+		// server is not a registry any image uses, so no pull sends these
+		// values and the public GHCR image is pulled anonymously.
+		"Registry": map[string]string{"Server": "placeholder.invalid", "Username": "unused", "Token": "unused"},
 	}, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("render bootstrap config: %w", err)

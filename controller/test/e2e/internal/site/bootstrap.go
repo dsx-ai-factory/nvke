@@ -248,16 +248,10 @@ func (b bootstrap) bootstrapSite(ctx context.Context) error {
 // env is the image references nvkectl reads from the environment. The mapping
 // from a reference to the variable that carries it lives here, so a caller
 // states what it is qualifying and not how nvkectl is told.
-//
-// The controller image goes under both its names: the staged nvkectl may be a
-// published release from before NVKECTL_CONTROLLER_IMAGE, which reads only
-// NVKECTL_CWE_IMAGE. A current nvkectl prefers the new name and, with it set,
-// does not warn about the old one.
 func (b bootstrap) env() string {
 	var sb strings.Builder
 	for _, v := range []struct{ key, value string }{
 		{"NVKECTL_CONTROLLER_IMAGE", b.spec.ControllerImage},
-		{"NVKECTL_CWE_IMAGE", b.spec.ControllerImage},
 		{"NVKECTL_CAPI_PROVISIONED_IMAGE", b.spec.CAPIProvisionedImage},
 	} {
 		if v.value != "" {

@@ -9,10 +9,14 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
@@ -24,9 +28,14 @@ type NodeAgentCall struct {
 // NodeAgentServer is a test fixture reached through the controller's production agent client.
 type NodeAgentServer struct {
 	nvkeproto.UnimplementedNodeAgentServer
-	address    string
-	calls      chan NodeAgentCall
-	kubeconfig string
+	address       string
+	calls         chan NodeAgentCall
+	kubeconfig    string
+	rebootMu      sync.Mutex
+	rebootEnabled bool
+	rebootErr     error
+	rebootCalls   int
+	reboots       chan time.Time
 }
 
 func StartNodeAgentServer(t testing.TB) *NodeAgentServer {
@@ -38,6 +47,7 @@ func StartNodeAgentServer(t testing.TB) *NodeAgentServer {
 	fixture := &NodeAgentServer{
 		address: listener.Addr().String(),
 		calls:   make(chan NodeAgentCall, 32),
+		reboots: make(chan time.Time, 32),
 	}
 	server := grpc.NewServer()
 	nvkeproto.RegisterNodeAgentServer(server, fixture)
@@ -46,6 +56,47 @@ func StartNodeAgentServer(t testing.TB) *NodeAgentServer {
 	}()
 	t.Cleanup(server.Stop)
 	return fixture
+}
+
+// SetRebootError enables typed reboot requests without changing boot state.
+// A nil error models an accepted request whose reboot never completes.
+func (s *NodeAgentServer) SetRebootError(err error) {
+	s.rebootMu.Lock()
+	defer s.rebootMu.Unlock()
+	s.rebootEnabled = true
+	s.rebootErr = err
+}
+
+// RebootCalls returns the number of typed reboot requests received.
+func (s *NodeAgentServer) RebootCalls() int {
+	s.rebootMu.Lock()
+	defer s.rebootMu.Unlock()
+	return s.rebootCalls
+}
+
+// WaitForReboot waits for a typed reboot request and returns its receipt time.
+func (s *NodeAgentServer) WaitForReboot(ctx context.Context) (time.Time, error) {
+	select {
+	case at := <-s.reboots:
+		return at, nil
+	case <-ctx.Done():
+		return time.Time{}, fmt.Errorf("wait for reboot request: %w", ctx.Err())
+	}
+}
+
+// ScheduleNodeReboot simulates scheduling independently of host boot progress.
+func (s *NodeAgentServer) ScheduleNodeReboot(_ context.Context, _ *nvkeproto.ScheduleNodeRebootRequest) (*nvkeproto.ScheduleNodeRebootResponse, error) {
+	s.rebootMu.Lock()
+	defer s.rebootMu.Unlock()
+	if !s.rebootEnabled {
+		return nil, status.Error(codes.Unimplemented, "typed reboot fixture is disabled")
+	}
+	s.rebootCalls++
+	s.reboots <- time.Now()
+	if s.rebootErr != nil {
+		return nil, s.rebootErr
+	}
+	return &nvkeproto.ScheduleNodeRebootResponse{}, nil
 }
 
 func (s *NodeAgentServer) Port(t testing.TB) string {

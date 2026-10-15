@@ -160,3 +160,27 @@ func TestSetControllerSettingReportsTheWrite(t *testing.T) {
 		})
 	}
 }
+
+func TestNodeAgentMethodReportsWriteWhenRestartFails(t *testing.T) {
+	t.Parallel()
+	scheme := runtime.NewScheme()
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Namespace: controller.Namespace(), Name: ControllerConfigMap},
+		Data:       map[string]string{controllerConfigKey: "nodeAgent:\n  updateMethod: apt\npermissiveMode: false\n"},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build()
+	previous, written, err := SetNodeAgentUpdateMethod(t.Context(), c, "bundle")
+	require.ErrorContains(t, err, "getting NVKE deployment")
+	require.True(t, written, "cleanup must restore the old method after a failed restart")
+	require.Equal(t, "apt", previous)
+	var stored corev1.ConfigMap
+	require.NoError(t, c.Get(t.Context(), client.ObjectKeyFromObject(cm), &stored))
+	method, err := ControllerSetting(stored.Data, "nodeAgent.updateMethod")
+	require.NoError(t, err)
+	require.Equal(t, "bundle", method)
+	mode, err := ControllerSetting(stored.Data, permissiveModeKey)
+	require.NoError(t, err)
+	require.Equal(t, false, mode)
+}

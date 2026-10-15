@@ -25,12 +25,12 @@ type aptUpdaterRunner struct {
 	installedVersions []string
 }
 
-func (r *aptUpdaterRunner) Run(_ context.Context, name string, args []string, _ string) ([]byte, error) {
+func (r *aptUpdaterRunner) Run(_ context.Context, name string, args []string, dir string) ([]byte, error) {
 	switch name {
 	case "apt-get":
-		if containsArg(args, "--download-only") {
+		if len(args) > 0 && args[0] == "download" {
 			pkg, version, _ := strings.Cut(args[len(args)-1], "=")
-			assetsDir := strings.TrimPrefix(valueAfter(args, "-o"), "Dir::Cache::archives=")
+			assetsDir := dir
 			path := filepath.Join(assetsDir, fmt.Sprintf("%s_%s_native.deb", pkg, version))
 			if err := os.WriteFile(path, []byte("test package"), 0o600); err != nil {
 				return nil, err
@@ -136,8 +136,6 @@ func TestUpdaterAPTUpgradeAndAutomaticRestore(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			store := NewStore(t.TempDir())
 			_, _, err := store.Create(Operation{
-				ID:              "upgrade-1",
-				Action:          ActionUpgrade,
 				TargetVersion:   "v0.1.2",
 				PreviousVersion: "v0.1.1",
 				Method:          MethodAPT,
@@ -154,13 +152,13 @@ func TestUpdaterAPTUpgradeAndAutomaticRestore(t *testing.T) {
 			updater.Runner = runner
 			updater.VerifyAttempts = 1
 
-			err = updater.Run(context.Background(), "upgrade-1")
+			err = updater.Run(context.Background(), "v0.1.2_apt")
 			if test.wantError {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}
-			operation, loadErr := store.Load("upgrade-1")
+			operation, loadErr := store.Load("v0.1.2_apt")
 			require.NoError(t, loadErr)
 			assert.Equal(t, test.wantPhase, operation.Phase)
 			assert.Equal(t, "0.1.1", operation.PreviousPackageVersion)
@@ -210,34 +208,34 @@ func TestParseAgentVersion(t *testing.T) {
 	assert.Empty(t, parseAgentVersion("NVKE Agent Updater Version: v0.3.0"))
 }
 
-func TestAPTRollbackPreservesPackageNameAtSameVersion(t *testing.T) {
+func TestAPTRestorationPreservesPackageNameAtSameVersion(t *testing.T) {
 	store := NewStore(t.TempDir())
-	_, _, err := store.Create(Operation{ID: "rename", Action: ActionUpgrade, Method: MethodAPT, TargetVersion: "v0.1.1", PreviousVersion: "v0.1.1"})
+	_, _, err := store.Create(Operation{Method: MethodAPT, TargetVersion: "v0.1.1", PreviousVersion: "v0.1.1"})
 	require.NoError(t, err)
 	runner := &aptUpdaterRunner{currentPackage: legacyAgentPackageName, targetPackage: agentPackageName, currentVersion: "v0.1.1", currentDebVersion: "0.1.1"}
 	updater := NewUpdater(store)
 	updater.Runner, updater.VerifyAttempts = runner, 1
-	require.NoError(t, updater.Run(context.Background(), "rename"))
+	require.NoError(t, updater.Run(context.Background(), "v0.1.1_apt"))
 	assert.Equal(t, agentPackageName, runner.currentPackage)
-	_, _, err = store.Create(Operation{ID: "restore", Action: ActionRollback, RestoreFromOperationID: "rename"})
+	op, err := store.Load("v0.1.1_apt")
 	require.NoError(t, err)
-	require.NoError(t, updater.Run(context.Background(), "restore"))
+	require.NoError(t, updater.restoreUpgrade(context.Background(), op))
 	assert.Equal(t, legacyAgentPackageName, runner.currentPackage)
 	assert.Equal(t, "0.1.1", runner.currentDebVersion)
 }
 
-func TestAPTResumeKeepsOriginalRollbackPackage(t *testing.T) {
+func TestAPTResumeKeepsOriginalRestorationPackage(t *testing.T) {
 	store := NewStore(t.TempDir())
-	_, _, err := store.Create(Operation{ID: "resume", Action: ActionUpgrade, Method: MethodAPT, TargetVersion: "v0.1.2", PreviousVersion: "v0.1.1"})
+	_, _, err := store.Create(Operation{Method: MethodAPT, TargetVersion: "v0.1.2", PreviousVersion: "v0.1.1"})
 	require.NoError(t, err)
-	_, err = store.SetPreviousPackage("resume", legacyAgentPackageName, "0.1.1")
+	_, err = store.SetPreviousPackage("v0.1.2_apt", legacyAgentPackageName, "0.1.1")
 	require.NoError(t, err)
 	// The renamed target is installed when a prior updater process is interrupted.
 	runner := &aptUpdaterRunner{currentPackage: agentPackageName, targetPackage: agentPackageName, currentVersion: "v0.1.2", currentDebVersion: "0.1.2", failTargetInstall: true}
 	updater := NewUpdater(store)
 	updater.Runner, updater.VerifyAttempts = runner, 1
-	require.Error(t, updater.Run(context.Background(), "resume"))
-	op, err := store.Load("resume")
+	require.Error(t, updater.Run(context.Background(), "v0.1.2_apt"))
+	op, err := store.Load("v0.1.2_apt")
 	require.NoError(t, err)
 	assert.Equal(t, PhaseFailedRestored, op.Phase)
 	assert.Equal(t, legacyAgentPackageName, op.PreviousPackageName)

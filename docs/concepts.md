@@ -31,9 +31,9 @@ You don't run `kubeadm` directly. NVKE runs it for you. But understanding what i
 
 ## Helm
 
-Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NVKE's own services (CWE, Temporal, CloudNative-PG) are deployed as Helm charts from the NGC Helm registry.
+Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NVKE's own services (the controller, Temporal, Postgres, SPIRE, NKTP) are installed as Helm charts, from the NVKR release or their public repositories.
 
-After `nvkectl` bootstraps the cluster, you deploy NVKE's services onto it using ArgoCD Application manifests that point at Helm charts and supply values.
+After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` installs them from the `deploy/nico` deploy path, one step of a short list of commands: each item is a chart with its values, or plain manifests. See [Install management-plane services](operate/install-management-plane-services.md).
 
 **Learn more:** https://helm.sh/docs/intro/using_helm/
 
@@ -41,9 +41,9 @@ After `nvkectl` bootstraps the cluster, you deploy NVKE's services onto it using
 
 ## ArgoCD
 
-ArgoCD is a GitOps continuous delivery tool for Kubernetes. It watches a git repository for Kubernetes manifests and keeps the cluster in sync with what's declared there. When you push a change to your deploy repository, ArgoCD detects the drift and reconciles the cluster.
+ArgoCD is a GitOps continuous delivery tool for Kubernetes. It watches a git repository for Kubernetes manifests and keeps the cluster in sync with what's declared there. When you push a change, ArgoCD detects the drift and reconciles the cluster.
 
-NVKE uses ArgoCD to manage the site controller stack. After `nvkectl` bootstraps the cluster, you install ArgoCD and apply your deploy repository to bring up NVKE's services. Once deployed, ArgoCD owns ongoing reconciliation — you don't apply manifests by hand.
+NVKE does not require ArgoCD. The deploy path is Helm charts with values and plain manifests, so a GitOps tool can deliver the same items and own ongoing reconciliation; [Deploy Path](site-bootstrap/deploy-repository.md#applying-it-another-way) lists what an executor has to do.
 
 **Learn more:** https://argo-cd.readthedocs.io/en/stable/core_concepts/
 
@@ -61,13 +61,11 @@ Operators can port-forward Temporal's web UI to inspect running workflows or dia
 
 ---
 
-## CloudNative-PG (CNPG)
+## PostgreSQL
 
-CloudNative-PG is a Kubernetes operator for running PostgreSQL. NVKE deploys CNPG clusters on the site controller for CWE and Temporal rather than running standalone database processes. CNPG handles HA failover, backup, and certificate management.
+The controller and Temporal keep their state in PostgreSQL. The deploy path installs it as the `postgresql` item, the Bitnami chart in the `postgres` namespace, with a persistent volume from the cluster's default StorageClass. Database credentials come from the site spec's `controllerStack` section when the install renders the deploy path; no values file in the repository holds one.
 
-Database credentials are configured in your ArgoCD application manifests during the post-bootstrap deployment step. CNPG creates and manages the actual PostgreSQL instances.
-
-**Learn more:** https://cloudnative-pg.io/documentation/
+**Learn more:** https://www.postgresql.org/docs/
 
 ---
 
@@ -93,11 +91,11 @@ In NVKE, every node and every workload gets a SPIFFE identity backed by TPM atte
 
 ---
 
-## GitOps and the Deploy Repository
+## GitOps and the Deploy Path
 
-GitOps is the practice of using a git repository as the single source of truth for infrastructure state. You declare what you want in git; a controller (ArgoCD in NVKE's case) makes the cluster match it.
+GitOps is the practice of using a git repository as the single source of truth for infrastructure state. You declare what you want in git; a controller makes the cluster match it.
 
-NVKE requires a **deploy repository** — a git repo you own and maintain, structured so ArgoCD can discover and apply its contents. After `nvkectl` bootstraps the cluster, you install ArgoCD and point it at the deploy repository to bring up the NVKE services stack. ArgoCD then owns ongoing reconciliation. See [Deploy Repository](site-bootstrap/deploy-repository.md) for the structure.
+NVKE ships a **deploy path**, `deploy/nico`: a directory that lists the NVKE services in install order, each as a Helm chart with values or as plain manifests. After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` applies it, one step of a short list of commands. A GitOps tool such as ArgoCD can deliver the same items and own ongoing reconciliation. See [Deploy Path](site-bootstrap/deploy-repository.md) for the format and [Install management-plane services](operate/install-management-plane-services.md) for the install.
 
 ---
 

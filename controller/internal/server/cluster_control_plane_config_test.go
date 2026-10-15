@@ -46,8 +46,8 @@ func validForgeCreateClusterRequest() *api.CreateClusterRequest {
 	}
 }
 
-// validForgeNodePoolCreateConfig returns a minimal valid embedded node pool for
-// a Forge-backed cluster.
+// validForgeNodePoolCreateConfig returns a minimal valid embedded worker node
+// pool for a Forge-backed cluster.
 func validForgeNodePoolCreateConfig(name string) api.NodePoolCreateConfig {
 	return api.NodePoolCreateConfig{
 		Name:           name,
@@ -58,35 +58,25 @@ func validForgeNodePoolCreateConfig(name string) api.NodePoolCreateConfig {
 			OSProfile:      "ubuntu",
 			ConfigProfile:  "default",
 		},
-		ControlPlane:     true,
 		DesiredNodeCount: 1,
 	}
 }
 
-func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testing.T) {
-	t.Run("flag OFF rejects cluster-level controlPlaneConfig", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: false}
+func TestValidateCreateClusterRequestFields_ControlPlaneConfig(t *testing.T) {
+	t.Run("rejects control-plane node pools", func(t *testing.T) {
+		svc := clusterService{}
 		req := validForgeCreateClusterRequest()
 		req.ControlPlaneConfig = validForgeControlPlaneConfig()
-		// Provide a control-plane node pool so the legacy "must have a CP node" rule passes.
-		req.NodePools = &[]api.NodePoolCreateConfig{validForgeNodePoolCreateConfig("cp")}
-
-		err := svc.ValidateCreateClusterRequestFields(req)
-		require.ErrorIs(t, err, errControlPlaneConfigNotEnabled)
-	})
-
-	t.Run("flag ON rejects control-plane node pools", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: true}
-		req := validForgeCreateClusterRequest()
-		req.ControlPlaneConfig = validForgeControlPlaneConfig()
-		req.NodePools = &[]api.NodePoolCreateConfig{validForgeNodePoolCreateConfig("control-plane")}
+		cpPool := validForgeNodePoolCreateConfig("control-plane")
+		cpPool.ControlPlane = true
+		req.NodePools = &[]api.NodePoolCreateConfig{cpPool}
 
 		err := svc.ValidateCreateClusterRequestFields(req)
 		require.ErrorIs(t, err, errControlPlaneNodePoolNotAllowed)
 	})
 
-	t.Run("flag ON requires controlPlaneConfig", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: true}
+	t.Run("requires controlPlaneConfig", func(t *testing.T) {
+		svc := clusterService{}
 		req := validForgeCreateClusterRequest()
 
 		err := svc.ValidateCreateClusterRequestFields(req)
@@ -94,8 +84,8 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		require.Contains(t, err.Error(), "controlPlaneConfig is required")
 	})
 
-	t.Run("flag ON rejects desiredCount below 1", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: true}
+	t.Run("rejects desiredCount below 1", func(t *testing.T) {
+		svc := clusterService{}
 		req := validForgeCreateClusterRequest()
 		cp := validForgeControlPlaneConfig()
 		cp.DesiredCount = 0
@@ -106,8 +96,50 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		require.Contains(t, err.Error(), "desiredCount must be at least 1")
 	})
 
-	t.Run("flag ON accepts a valid Forge cluster-level control plane with no node pools", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: true}
+	t.Run("rejects a reserved control-plane label", func(t *testing.T) {
+		svc := clusterService{}
+		req := validForgeCreateClusterRequest()
+		cp := validForgeControlPlaneConfig()
+		cp.DesiredCount = 1
+		cp.NodeLabels = map[string]string{"node-role.kubernetes.io/control-plane": ""}
+		req.ControlPlaneConfig = cp
+
+		err := svc.ValidateCreateClusterRequestFields(req)
+		require.EqualError(t, err, `controlPlaneConfig: nodeLabels: key "node-role.kubernetes.io/control-plane" is managed by core bootstrap components and cannot be set`)
+	})
+
+	t.Run("uses the label allowlist for control-plane labels", func(t *testing.T) {
+		svc := clusterService{allowlistedLabelKeys: []string{"node.kubernetes.io/custom"}}
+		req := validForgeCreateClusterRequest()
+		cp := validForgeControlPlaneConfig()
+		cp.DesiredCount = 1
+		cp.NodeLabels = map[string]string{"node.kubernetes.io/custom": "true"}
+		req.ControlPlaneConfig = cp
+		require.NoError(t, svc.ValidateCreateClusterRequestFields(req))
+
+		cp.NodeLabels = map[string]string{"node.kubernetes.io/instance-type": "h100"}
+		require.EqualError(t, svc.ValidateCreateClusterRequestFields(req),
+			`controlPlaneConfig: nodeLabels: key "node.kubernetes.io/instance-type" is under reserved domain "kubernetes.io"; labels in this domain cannot be set`)
+	})
+
+	t.Run("uses the label allowlist for node pool labels", func(t *testing.T) {
+		svc := clusterService{allowlistedLabelKeys: []string{"node.kubernetes.io/custom"}}
+		req := validForgeCreateClusterRequest()
+		cp := validForgeControlPlaneConfig()
+		cp.DesiredCount = 1
+		req.ControlPlaneConfig = cp
+		pool := validForgeNodePoolCreateConfig("cp")
+		pool.NodeLabels = map[string]string{"node.kubernetes.io/custom": "true"}
+		req.NodePools = &[]api.NodePoolCreateConfig{pool}
+		require.NoError(t, svc.ValidateCreateClusterRequestFields(req))
+
+		(*req.NodePools)[0].NodeLabels = map[string]string{"node.kubernetes.io/instance-type": "h100"}
+		require.EqualError(t, svc.ValidateCreateClusterRequestFields(req),
+			`invalid node pool "cp": nodeLabels: key "node.kubernetes.io/instance-type" is under reserved domain "kubernetes.io"; labels in this domain cannot be set`)
+	})
+
+	t.Run("accepts a valid Forge cluster-level control plane with no node pools", func(t *testing.T) {
+		svc := clusterService{}
 		req := validForgeCreateClusterRequest()
 		cp := validForgeControlPlaneConfig()
 		cp.DesiredCount = 1
@@ -117,8 +149,8 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		require.NoError(t, err)
 	})
 
-	t.Run("flag ON rejects multiple control-plane nodes without a VIP", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: true}
+	t.Run("rejects multiple control-plane nodes without a VIP", func(t *testing.T) {
+		svc := clusterService{}
 		req := validForgeCreateClusterRequest()
 		req.ControlPlaneConfig = validForgeControlPlaneConfig()
 
@@ -127,8 +159,8 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		require.Contains(t, err.Error(), "controlPlaneVIP")
 	})
 
-	t.Run("flag ON accepts multiple control-plane nodes with a VIP", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: true}
+	t.Run("accepts multiple control-plane nodes with a VIP", func(t *testing.T) {
+		svc := clusterService{}
 		req := validForgeCreateClusterRequest()
 		req.ControlPlaneVIP = "172.31.0.10"
 		req.ControlPlaneConfig = validForgeControlPlaneConfig()
@@ -137,41 +169,8 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		require.NoError(t, err)
 	})
 
-	t.Run("flag OFF accepts one control-plane node without a VIP", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: false}
-		req := validForgeCreateClusterRequest()
-		req.NodePools = &[]api.NodePoolCreateConfig{validForgeNodePoolCreateConfig("cp")}
-
-		err := svc.ValidateCreateClusterRequestFields(req)
-		require.NoError(t, err)
-	})
-
-	t.Run("flag OFF rejects aggregate control-plane capacity above one without a VIP", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: false}
-		req := validForgeCreateClusterRequest()
-		first := validForgeNodePoolCreateConfig("cp-a")
-		second := validForgeNodePoolCreateConfig("cp-b")
-		req.NodePools = &[]api.NodePoolCreateConfig{first, second}
-
-		err := svc.ValidateCreateClusterRequestFields(req)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "controlPlaneVIP")
-	})
-
-	t.Run("flag OFF accepts aggregate control-plane capacity above one with a VIP", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: false}
-		req := validForgeCreateClusterRequest()
-		req.ControlPlaneVIP = "172.31.0.10"
-		first := validForgeNodePoolCreateConfig("cp-a")
-		second := validForgeNodePoolCreateConfig("cp-b")
-		req.NodePools = &[]api.NodePoolCreateConfig{first, second}
-
-		err := svc.ValidateCreateClusterRequestFields(req)
-		require.NoError(t, err)
-	})
-
-	t.Run("flag ON rejects a nil instance type ID in instanceTypePreference", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: true}
+	t.Run("rejects a nil instance type ID in instanceTypePreference", func(t *testing.T) {
+		svc := clusterService{}
 		req := validForgeCreateClusterRequest()
 		cp := validForgeControlPlaneConfig()
 		// A nil UUID passes the length check but would be silently dropped by
@@ -184,8 +183,8 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		require.Contains(t, err.Error(), "invalid nil instance type ID")
 	})
 
-	t.Run("flag ON rejects a Forge control plane payload on a CAPI cluster", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: true}
+	t.Run("rejects a Forge control plane payload on a CAPI cluster", func(t *testing.T) {
+		svc := clusterService{}
 		req := &api.CreateClusterRequest{
 			Name:                          "capi-cluster",
 			CniPlugin:                     "ovn-kubernetes",
@@ -209,7 +208,7 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 }
 
 func TestApplyClusterLevelControlPlaneSpecUpdate_DesiredCount(t *testing.T) {
-	svc := clusterService{useControlPlaneController: true}
+	svc := clusterService{}
 	ctx := context.Background()
 
 	newCAPICluster := func(current int, vip string) *db.Cluster {
@@ -283,7 +282,7 @@ func TestApplyClusterLevelControlPlaneSpecUpdate_DesiredCount(t *testing.T) {
 }
 
 func TestApplyClusterControlPlaneConfigUpdate_MaxSurgeWithoutVIP(t *testing.T) {
-	svc := clusterService{useControlPlaneController: true}
+	svc := clusterService{}
 	cluster := &db.Cluster{
 		ID: uuid.New(),
 		ControlPlaneConfig: db.ControlPlaneConfig{
@@ -349,7 +348,7 @@ func TestApplyClusterControlPlaneConfigUpdate_RolloutRequiresVIP(t *testing.T) {
 				createConfigCall.Once()
 			}
 
-			svc := clusterService{useControlPlaneController: true}
+			svc := clusterService{}
 			err := svc.applyClusterControlPlaneConfigUpdate(context.Background(), tx, cluster, &api.UpdateClusterControlPlaneConfig{
 				Nico: &api.NicoControlPlaneProviderUpdate{ConfigProfile: &newProfile},
 			})
@@ -376,7 +375,7 @@ func TestCreateNodePool_RejectsControlPlanePoolWhenControllerEnabled(t *testing.
 		},
 	}, nil)
 
-	service := NewNodePoolService(slog.Default(), mockDB, config.TeleportConfig{}, nil, true)
+	service := NewNodePoolService(slog.Default(), mockDB, config.TeleportConfig{}, nil)
 
 	resp, err := service.CreateNodePool(context.Background(), api.CreateNodePoolRequestObject{
 		Body: &api.CreateNodePoolRequest{
@@ -629,7 +628,7 @@ func TestApplyClusterControlPlaneConfigUpdate_RejectsClearingRequiredField(t *te
 
 	applyUpdate := func(t *testing.T, cluster *db.Cluster, req *api.UpdateClusterControlPlaneConfig) error {
 		t.Helper()
-		svc := clusterService{useControlPlaneController: true}
+		svc := clusterService{}
 		return svc.applyClusterControlPlaneConfigUpdate(ctx, nil, cluster, req)
 	}
 

@@ -401,7 +401,7 @@ func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniIma
 		Runner:            runner,
 		FileWriter:        &nvkeutils.OSFileWriter{},
 		Persister:         &JSONFilePersister{Path: StateFile},
-		AgentUpgradeStore: agentupgrade.NewStore(filepath.Join(NVKEDir, "agent-upgrades")),
+		AgentUpgradeStore: agentupgrade.NewStore(agentupgrade.DefaultRoot),
 		AgentUpgradeLauncher: systemdAgentUpgradeLauncher{
 			runner: runner,
 		},

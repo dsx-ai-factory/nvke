@@ -34,12 +34,6 @@ type DeleteOptions struct {
 	// But we do want to allow deleting control-plane nodes from the API.
 	AllowCPNode bool
 
-	// ControlPlaneControllerDelete routes a control-plane node delete through the
-	// control-plane controller: the delete is recorded as intent and the
-	// controller starts the teardown, one node at a time. Worker nodes are
-	// unaffected. Set from UseControlPlaneControllerForControlPlane().
-	ControlPlaneControllerDelete bool
-
 	// SkipQuorumFloor exempts a controller-initiated delete from the
 	// fault-tolerant floor. The floor refuses a delete that would leave fewer
 	// than three joined control-plane nodes, which is right for a user shrinking
@@ -95,15 +89,6 @@ func WithAllowCPNode(allow bool) DeleteOpt {
 func WithForceUnreachable(forceUnreachable bool) DeleteOpt {
 	return func(o *DeleteOptions) {
 		o.ForceUnreachable = forceUnreachable
-	}
-}
-
-// WithControlPlaneControllerDelete records a control-plane node delete as intent
-// for the control-plane controller to act on instead of starting the teardown
-// inline. It has no effect on worker nodes.
-func WithControlPlaneControllerDelete(useController bool) DeleteOpt {
-	return func(o *DeleteOptions) {
-		o.ControlPlaneControllerDelete = useController
 	}
 }
 
@@ -170,21 +155,13 @@ func DeleteWithTx(ctx context.Context, tx db.Tx, nodeID uuid.UUID, opts ...Delet
 		}
 	}
 
-	// Control-plane deletes are owned by the control-plane controller when the
-	// flag is on: record the intent and let it start the teardown, one node at a
-	// time. Worker deletes stay direct, and so do control-plane deletes with the
-	// flag off.
-	if options.ControlPlaneControllerDelete && dbNode.ControlPlane {
+	// Control-plane deletes are recorded as intent and started by the
+	// control-plane controller, one node at a time. Worker deletes are direct.
+	if dbNode.ControlPlane {
 		return recordControlPlaneDeleteRequest(ctx, tx, dbNode, options)
 	}
 
 	dbNode.Conditions.Deleting = db.NewCondition(true, "Node deletion in progress")
-	// A request recorded while the control-plane-controller path was on is
-	// absorbed here rather than refused: with the flag off nothing would ever
-	// promote it, so the node would sit marked forever. The direct delete is that
-	// promotion.
-	dbNode.Conditions.DeleteRequested = db.NewCondition(false, "Teardown started")
-	dbNode.DeleteRequest = nil
 
 	if _, err := tx.UpdateNode(ctx, &dbNode); err != nil {
 		return fmt.Errorf("failed to update node: %w", err)

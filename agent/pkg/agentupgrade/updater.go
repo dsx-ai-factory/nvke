@@ -73,42 +73,38 @@ func NewUpdater(store *Store) *Updater {
 	}
 }
 
-// Run executes or resumes the operation with id.
-func (u *Updater) Run(ctx context.Context, id string) error {
-	op, err := u.Store.Load(id)
+// Run executes or resumes the version-change request.
+func (u *Updater) Run(ctx context.Context, key string) error {
+	op, err := u.Store.Load(key)
 	if err != nil {
 		return fmt.Errorf("loading node-agent upgrade operation: %w", err)
 	}
 	if op.Terminal() {
 		return nil
 	}
-	if _, err := u.Store.SetStatus(id, PhaseRunning, "starting", ""); err != nil {
+	if _, err := u.Store.SetStatus(key, PhaseRunning, "starting", ""); err != nil {
 		return fmt.Errorf("marking node-agent upgrade running: %w", err)
-	}
-
-	if op.Action == ActionRollback {
-		return u.runRollback(ctx, op)
 	}
 
 	mutated, runErr := u.runUpgrade(ctx, op)
 	if runErr == nil {
-		_, err = u.Store.SetStatus(id, PhaseSucceeded, "verified", "")
+		_, err = u.Store.SetStatus(key, PhaseSucceeded, "verified", "")
 		return err
 	}
 
 	if !mutated {
-		_, statusErr := u.Store.SetStatus(id, PhaseFailedRestored, "failed before replacement", runErr.Error())
+		_, statusErr := u.Store.SetStatus(key, PhaseFailedRestored, "failed before replacement", runErr.Error())
 		return errors.Join(runErr, statusErr)
 	}
 
-	_, _ = u.Store.SetStatus(id, PhaseRunning, "restoring previous version", runErr.Error())
+	_, _ = u.Store.SetStatus(key, PhaseRunning, "restoring previous version", runErr.Error())
 	restoreErr := u.restoreUpgrade(ctx, op)
 	if restoreErr == nil {
-		_, statusErr := u.Store.SetStatus(id, PhaseFailedRestored, "previous version restored", runErr.Error())
+		_, statusErr := u.Store.SetStatus(key, PhaseFailedRestored, "previous version restored", runErr.Error())
 		return errors.Join(runErr, statusErr)
 	}
 	message := fmt.Sprintf("upgrade failed: %v; restore failed: %v", runErr, restoreErr)
-	_, statusErr := u.Store.SetStatus(id, PhaseFailedNotRestored, "restore failed", message)
+	_, statusErr := u.Store.SetStatus(key, PhaseFailedNotRestored, "restore failed", message)
 	return errors.Join(runErr, restoreErr, statusErr)
 }
 
@@ -124,7 +120,7 @@ func (u *Updater) runUpgrade(ctx context.Context, op Operation) (bool, error) {
 }
 
 func (u *Updater) runAPTUpgrade(ctx context.Context, op Operation) (bool, error) {
-	if _, err := u.Store.SetStatus(op.ID, PhaseRunning, "refreshing apt metadata", ""); err != nil {
+	if _, err := u.Store.SetStatus(op.Key(), PhaseRunning, "refreshing apt metadata", ""); err != nil {
 		return false, err
 	}
 	if _, err := u.Runner.Run(ctx, "apt-get", []string{"update"}, ""); err != nil {
@@ -138,14 +134,14 @@ func (u *Updater) runAPTUpgrade(ctx context.Context, op Operation) (bool, error)
 		if err != nil {
 			return false, err
 		}
-		if _, err := u.Store.SetPreviousPackage(op.ID, previousPackageName, previousPackageVersion); err != nil {
+		if _, err := u.Store.SetPreviousPackage(op.Key(), previousPackageName, previousPackageVersion); err != nil {
 			return false, err
 		}
 	} else if previousPackageName == "" {
 		previousPackageName = legacyAgentPackageName
 	}
 
-	assetsDir, err := u.assetsDir(op.ID)
+	assetsDir, err := u.assetsDir(op.Key())
 	if err != nil {
 		return false, err
 	}
@@ -153,7 +149,7 @@ func (u *Updater) runAPTUpgrade(ctx context.Context, op Operation) (bool, error)
 		return false, fmt.Errorf("creating APT staging directory: %w", err)
 	}
 	targetPackageVersion := strings.TrimPrefix(op.TargetVersion, "v")
-	if _, err := u.Store.SetStatus(op.ID, PhaseRunning, "downloading exact apt packages", ""); err != nil {
+	if _, err := u.Store.SetStatus(op.Key(), PhaseRunning, "downloading exact apt packages", ""); err != nil {
 		return false, err
 	}
 	targetPackageName, err := u.availablePackage(ctx, targetPackageVersion)
@@ -162,12 +158,9 @@ func (u *Updater) runAPTUpgrade(ctx context.Context, op Operation) (bool, error)
 	}
 	packages := uniqueStrings(targetPackageName+"="+targetPackageVersion, previousPackageName+"="+previousPackageVersion)
 	for _, pkg := range packages {
-		args := []string{
-			aptAssumeYesFlag, "--download-only", aptReinstallFlag, aptAllowDowngradesFlag,
-			"-o", "Dir::Cache::archives=" + assetsDir,
-			installCommand, pkg,
-		}
-		if _, err := u.Runner.Run(ctx, "apt-get", args, ""); err != nil {
+		// download retains exact artifacts even when the repository uses a file URL.
+		args := []string{"download", pkg}
+		if _, err := u.Runner.Run(ctx, "apt-get", args, assetsDir); err != nil {
 			return false, fmt.Errorf("staging %s: %w", pkg, err)
 		}
 	}
@@ -177,10 +170,10 @@ func (u *Updater) runAPTUpgrade(ctx context.Context, op Operation) (bool, error)
 		return false, err
 	}
 	if _, err := u.findDebianPackage(ctx, assetsDir, previousPackageName, previousPackageVersion); err != nil {
-		return false, fmt.Errorf("retaining previous package for rollback: %w", err)
+		return false, fmt.Errorf("retaining previous package for restoration: %w", err)
 	}
 
-	if _, err := u.Store.SetStatus(op.ID, PhaseRunning, "installing exact apt package", ""); err != nil {
+	if _, err := u.Store.SetStatus(op.Key(), PhaseRunning, "installing exact apt package", ""); err != nil {
 		return false, err
 	}
 	installArgs := []string{aptAssumeYesFlag, aptReinstallFlag, aptAllowDowngradesFlag, installCommand, targetDeb}
@@ -194,20 +187,20 @@ func (u *Updater) runBundleUpgrade(ctx context.Context, op Operation) (bool, err
 	if op.ArtifactURL == "" {
 		return false, errors.New("bundle operation is missing artifact URL")
 	}
-	assetsDir, err := u.assetsDir(op.ID)
+	assetsDir, err := u.assetsDir(op.Key())
 	if err != nil {
 		return false, err
 	}
 	if err := os.MkdirAll(assetsDir, 0o700); err != nil {
 		return false, fmt.Errorf("creating bundle staging directory: %w", err)
 	}
-	if err := u.snapshotInstalledFiles(op.ID); err != nil {
+	if err := u.snapshotInstalledFiles(op.Key()); err != nil {
 		return false, err
 	}
 
 	archive := filepath.Join(assetsDir, "target.tgz")
 	extractDir := filepath.Join(assetsDir, "target")
-	if _, err := u.Store.SetStatus(op.ID, PhaseRunning, "downloading exact bundle", ""); err != nil {
+	if _, err := u.Store.SetStatus(op.Key(), PhaseRunning, "downloading exact bundle", ""); err != nil {
 		return false, err
 	}
 	if _, err := u.Runner.Run(ctx, "curl", []string{"--fail", "--location", "--output", archive, op.ArtifactURL}, ""); err != nil {
@@ -219,7 +212,7 @@ func (u *Updater) runBundleUpgrade(ctx context.Context, op Operation) (bool, err
 	if _, err := u.Runner.Run(ctx, "tar", []string{"-xzf", archive, "-C", extractDir}, ""); err != nil {
 		return false, err
 	}
-	if _, err := u.Store.SetStatus(op.ID, PhaseRunning, "installing exact bundle", ""); err != nil {
+	if _, err := u.Store.SetStatus(op.Key(), PhaseRunning, "installing exact bundle", ""); err != nil {
 		return false, err
 	}
 	if err := u.installBundleFiles(ctx, extractDir); err != nil {
@@ -228,32 +221,12 @@ func (u *Updater) runBundleUpgrade(ctx context.Context, op Operation) (bool, err
 	return true, u.verifyVersion(ctx, op.TargetVersion)
 }
 
-func (u *Updater) runRollback(ctx context.Context, op Operation) error {
-	original, err := u.Store.Load(op.RestoreFromOperationID)
-	if err != nil {
-		return u.failRollback(op.ID, fmt.Errorf("loading upgrade operation to restore: %w", err))
-	}
-	if original.Phase != PhaseSucceeded {
-		return u.failRollback(op.ID, fmt.Errorf("upgrade operation %s is %s, not Succeeded", original.ID, original.Phase))
-	}
-	if _, err := u.Store.SetStatus(op.ID, PhaseRunning, "restoring retained artifact", ""); err != nil {
-		return err
-	}
-	if err := u.restoreUpgrade(ctx, original); err != nil {
-		return u.failRollback(op.ID, err)
-	}
-	if _, err := u.Store.SetStatus(op.ID, PhaseSucceeded, "previous version restored", ""); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (u *Updater) restoreUpgrade(ctx context.Context, op Operation) error {
 	switch op.Method {
 	case MethodAPT:
 		return u.restoreAPT(ctx, op)
 	case MethodBundle:
-		if err := u.restoreSnapshot(ctx, op.ID); err != nil {
+		if err := u.restoreSnapshot(ctx, op.Key()); err != nil {
 			return err
 		}
 		return u.verifyVersion(ctx, op.PreviousVersion)
@@ -263,14 +236,14 @@ func (u *Updater) restoreUpgrade(ctx context.Context, op Operation) error {
 }
 
 func (u *Updater) restoreAPT(ctx context.Context, op Operation) error {
-	stored, err := u.Store.Load(op.ID)
+	stored, err := u.Store.Load(op.Key())
 	if err != nil {
 		return err
 	}
 	if stored.PreviousPackageVersion == "" {
 		return errors.New("previous Debian package version was not retained")
 	}
-	assetsDir, err := u.assetsDir(op.ID)
+	assetsDir, err := u.assetsDir(op.Key())
 	if err != nil {
 		return err
 	}
@@ -348,19 +321,19 @@ func (u *Updater) findDebianPackage(ctx context.Context, dir, name, version stri
 	return "", fmt.Errorf("staged %s=%s package not found", name, version)
 }
 
-func (u *Updater) snapshotInstalledFiles(operationID string) error {
+func (u *Updater) snapshotInstalledFiles(requestKey string) error {
 	_, binaryErr := os.Stat(u.AgentBinary)
 	_, unitErr := os.Stat(filepath.Join(u.SystemdUnitDir, u.AgentService))
 	if errors.Is(binaryErr, os.ErrNotExist) || errors.Is(unitErr, os.ErrNotExist) {
 		u.usePackageName(legacyAgentPackageName)
 	}
-	assetsDir, err := u.assetsDir(operationID)
+	assetsDir, err := u.assetsDir(requestKey)
 	if err != nil {
 		return err
 	}
 	backupDir := filepath.Join(assetsDir, "previous")
 	if err := os.MkdirAll(backupDir, 0o700); err != nil {
-		return fmt.Errorf("creating bundle rollback directory: %w", err)
+		return fmt.Errorf("creating bundle restoration directory: %w", err)
 	}
 	marker := filepath.Join(backupDir, ".snapshot-complete")
 	if _, err := os.Stat(marker); err == nil {
@@ -397,7 +370,13 @@ func (u *Updater) snapshotInstalledFiles(operationID string) error {
 		files = append(files, u.MigrationScript)
 	}
 	for _, source := range files {
-		if err := copyRegularFile(source, filepath.Join(backupDir, filepath.Base(source))); err != nil {
+		destination := filepath.Join(backupDir, filepath.Base(source))
+		if _, err := os.Stat(destination); err == nil {
+			continue
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := copyRegularFileAtomically(source, destination); err != nil {
 			return fmt.Errorf("retaining %s: %w", source, err)
 		}
 	}
@@ -405,26 +384,26 @@ func (u *Updater) snapshotInstalledFiles(operationID string) error {
 }
 
 func (u *Updater) installBundleFiles(ctx context.Context, extractDir string) error {
-	agent, err := findFile(extractDir, agentPackageName, legacyAgentPackageName)
+	agent, err := findFile(extractDir, true, agentPackageName, legacyAgentPackageName)
 	if err != nil {
 		return err
 	}
 	packageName := filepath.Base(agent)
-	updater, err := findFile(extractDir, packageName+"-updater")
+	updater, err := findFile(extractDir, false, packageName+"-updater")
 	if err != nil {
 		return err
 	}
-	agentUnit, err := findFile(extractDir, packageName+".service")
+	agentUnit, err := findFile(extractDir, true, packageName+".service")
 	if err != nil {
 		return err
 	}
-	updaterUnit, err := findFile(extractDir, packageName+"-updater@.service")
+	updaterUnit, err := findFile(extractDir, false, packageName+"-updater@.service")
 	if err != nil {
 		return err
 	}
 	migrationScript := ""
 	if packageName == agentPackageName {
-		migrationScript, err = findFile(extractDir, "migrate-agent-paths.sh")
+		migrationScript, err = findFile(extractDir, true, "migrate-agent-paths.sh")
 		if err != nil {
 			return err
 		}
@@ -443,14 +422,22 @@ func (u *Updater) installBundleFiles(ctx context.Context, extractDir string) err
 	}
 	if u.AgentService != packageName+".service" {
 		// A regular legacy unit would prevent systemd from creating the new
-		// unit's Alias. The snapshot already retained these files for rollback.
-		for _, name := range []string{u.AgentService, filepath.Base(u.UpdaterBinary) + "@.service"} {
+		// unit's Alias. The snapshot already retained these files for restoration.
+		replacedUnits := []string{u.AgentService}
+		if updaterUnit != "" {
+			replacedUnits = append(replacedUnits, filepath.Base(u.UpdaterBinary)+"@.service")
+		}
+		for _, name := range replacedUnits {
 			if err := os.Remove(filepath.Join(u.SystemdUnitDir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("removing replaced unit %s: %w", name, err)
 			}
 		}
 	}
+	previousUpdater := u.UpdaterBinary
 	u.usePackageName(packageName)
+	if updater == "" {
+		u.UpdaterBinary = previousUpdater
+	}
 	// Old retained bundles predate the migration; aliases survive their restore.
 	if migrationScript != "" {
 		if _, err := u.Runner.Run(ctx, "bash", []string{migrationScript}, ""); err != nil {
@@ -473,6 +460,9 @@ func (u *Updater) installBundleFiles(ctx context.Context, extractDir string) err
 		{source: updaterUnit, target: filepath.Join(u.SystemdUnitDir, filepath.Base(u.UpdaterBinary)+"@.service"), mode: "0644"},
 		{source: agentUnit, target: filepath.Join(u.SystemdUnitDir, u.AgentService), mode: "0644"},
 	} {
+		if file.source == "" {
+			continue
+		}
 		if _, err := u.Runner.Run(ctx, installCommand, []string{"-m", file.mode, file.source, file.target}, ""); err != nil {
 			return err
 		}
@@ -496,8 +486,8 @@ func (u *Updater) installBundleFiles(ctx context.Context, extractDir string) err
 	return err
 }
 
-func (u *Updater) restoreSnapshot(ctx context.Context, operationID string) error {
-	assetsDir, err := u.assetsDir(operationID)
+func (u *Updater) restoreSnapshot(ctx context.Context, requestKey string) error {
+	assetsDir, err := u.assetsDir(requestKey)
 	if err != nil {
 		return err
 	}
@@ -529,17 +519,12 @@ func (u *Updater) verifyVersion(ctx context.Context, expected string) error {
 	return fmt.Errorf("nvke-agent did not become active at version %s", expected)
 }
 
-func (u *Updater) assetsDir(operationID string) (string, error) {
-	dir, err := u.Store.OperationDir(operationID)
+func (u *Updater) assetsDir(requestKey string) (string, error) {
+	dir, err := u.Store.OperationDir(requestKey)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, "assets"), nil
-}
-
-func (u *Updater) failRollback(operationID string, operationErr error) error {
-	_, statusErr := u.Store.SetStatus(operationID, PhaseFailedNotRestored, "rollback failed", operationErr.Error())
-	return errors.Join(operationErr, statusErr)
 }
 
 func parseAgentVersion(output string) string {
@@ -565,7 +550,7 @@ func uniqueStrings(values ...string) []string {
 	return result
 }
 
-func findFile(root string, names ...string) (string, error) {
+func findFile(root string, required bool, names ...string) (string, error) {
 	var matches []string
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -578,6 +563,9 @@ func findFile(root string, names ...string) (string, error) {
 	})
 	if err != nil {
 		return "", fmt.Errorf("searching bundle for %v: %w", names, err)
+	}
+	if len(matches) == 0 && !required {
+		return "", nil
 	}
 	if len(matches) != 1 {
 		return "", fmt.Errorf("bundle must contain exactly one of %v, found %d", names, len(matches))
@@ -611,4 +599,28 @@ func copyRegularFile(source, target string) error {
 		return err
 	}
 	return output.Close()
+}
+
+func copyRegularFileAtomically(source, target string) error {
+	file, err := os.CreateTemp(filepath.Dir(target), ".backup-*")
+	if err != nil {
+		return err
+	}
+	temporary := file.Name()
+	defer os.Remove(temporary)
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := copyRegularFile(source, temporary); err != nil {
+		return err
+	}
+	if err := os.Rename(temporary, target); err != nil {
+		return err
+	}
+	directory, err := os.Open(filepath.Dir(target))
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }

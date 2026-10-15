@@ -28,6 +28,11 @@ on:
       - cli/internal/bootstrap/sitespec/**
       - cli/internal/bootstrap/controllerdeploy/**
       - cli/cmd/nvkectl/validate.go
+      - cli/cmd/nvkectl/inspect_sitespec.go
+      - cli/cmd/nvkectl/nvkr_release.go
+      - cli/cmd/nvkectl/root.go
+      - controller/hack/apply-capi-spiffe-exec-auth.sh
+      - controller/deploy/k8s/capi-spiffe-exec-auth/**
       - nktp/deploy/charts/**
       - .github/actions/setup-kind/**
       - cli/cmd/nvkectl/render.go

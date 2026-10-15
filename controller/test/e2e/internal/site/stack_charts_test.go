@@ -380,7 +380,6 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		}
 		for file, wants := range map[string][]string{
 			"20-nico-credentials.yaml":        {"https://forge.example", "org", "tok", "forge"},
-			"30-ghcr-imagepull.yaml":          {`"ghcr.io"`, `"username":"u"`, `"password":"r"`},
 			"35-dgxc-tenant-credentials.yaml": {`user: "admin"`, `password: "p"`},
 		} {
 			for _, want := range wants {

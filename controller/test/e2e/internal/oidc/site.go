@@ -183,7 +183,9 @@ func (s *Site) Apply(ctx context.Context, providers []Provider, shared bool) err
 func (s *Site) WaitForStartupProviderCount(ctx context.Context, expected int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	err := wait.PollUntilContextTimeout(ctx, s.config.PollInterval, s.config.ReadyTimeout, true, func(ctx context.Context) (bool, error) {
+	pollCtx, cancel := context.WithTimeout(ctx, s.config.ReadyTimeout)
+	defer cancel()
+	err := wait.PollUntilContextCancel(pollCtx, s.config.PollInterval, true, func(ctx context.Context) (bool, error) {
 		deployment, err := s.client.AppsV1().Deployments(s.config.Namespace).Get(ctx, s.config.Deployment, metav1.GetOptions{})
 		if err != nil {
 			return false, fmt.Errorf("get controller Deployment: %w", err)
@@ -225,10 +227,25 @@ func (s *Site) WaitForStartupProviderCount(ctx context.Context, expected int) er
 		return matched == wanted, nil
 	})
 	if err != nil {
+		err = deadlineExceededAfter(pollCtx, err)
 		return fmt.Errorf("wait up to %s for controller %s/%s pods to report startup OIDC provider count %d: %w",
 			s.config.ReadyTimeout, s.config.Namespace, s.config.Deployment, expected, err)
 	}
 	return nil
+}
+
+// deadlineExceededAfter reports a request that failed once ctx's deadline
+// had passed as context.DeadlineExceeded. client-go's rate limiter refuses
+// a request whose wait would cross the deadline with its own error, which
+// does not wrap context.DeadlineExceeded, before ctx itself is done.
+func deadlineExceededAfter(ctx context.Context, err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return fmt.Errorf("%w: %w", context.DeadlineExceeded, err)
+	}
+	return err
 }
 
 // Restore puts the exact original bytes and deployment fields back.

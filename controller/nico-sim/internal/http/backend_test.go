@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/apierr"
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/seed"
@@ -345,7 +345,8 @@ func containerCreateRequest(instanceTypeID string) nicosdk.InstanceCreateRequest
 	iface := nicosdk.NewInterfaceCreateRequest()
 	iface.SetSubnetId(testContainerSubnetID)
 	iface.SetIpAddress("172.18.0.99")
-	request := *nicosdk.NewInstanceCreateRequest("nico-node", dispatchTestTenantID, testContainerVPCID, []nicosdk.InterfaceCreateRequest{*iface})
+	request := *nicosdk.NewInstanceCreateRequest("nico-node", dispatchTestTenantID, testContainerVPCID)
+	request.SetInterfaces([]nicosdk.InterfaceCreateRequest{*iface})
 	request.SetInstanceTypeId(instanceTypeID)
 	request.SetSshKeyGroupIds([]string{testContainerSSHGroupID})
 	return request
@@ -354,7 +355,8 @@ func containerCreateRequest(instanceTypeID string) nicosdk.InstanceCreateRequest
 func vmCreateRequest() nicosdk.InstanceCreateRequest {
 	iface := nicosdk.NewInterfaceCreateRequest()
 	iface.SetSubnetId(testVMSubnetID)
-	request := *nicosdk.NewInstanceCreateRequest("vm-node", dispatchTestTenantID, testVMVPCID, []nicosdk.InterfaceCreateRequest{*iface})
+	request := *nicosdk.NewInstanceCreateRequest("vm-node", dispatchTestTenantID, testVMVPCID)
+	request.SetInterfaces([]nicosdk.InterfaceCreateRequest{*iface})
 	request.SetInstanceTypeId(testVMInstanceTypeID)
 	request.SetSshKeyGroupIds([]string{testVMSSHGroupID})
 	return request

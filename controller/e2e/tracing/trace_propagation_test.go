@@ -66,7 +66,6 @@ func TestTraceContinuesThroughOutbox(t *testing.T) {
 		OutboxPollingInterval:   100 * time.Millisecond,
 		OutboxBatchSize:         100,
 		SupportedInfraProviders: []string{"infra"},
-		ProvisionControlPlaneWithControlPlaneController: true,
 		// Export is off, the chart default: the trace ID on the logs and the span
 		// tree must not depend on it. This runs once because the controller
 		// registers its metrics on the process-global registry.

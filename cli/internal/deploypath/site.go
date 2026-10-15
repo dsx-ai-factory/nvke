@@ -46,7 +46,6 @@ var temporalImages = map[string]string{"server": "temporalio/server", "admintool
 type TemplateContext struct {
 	ClusterName string
 	Nico        struct{ Endpoint, OrgID, Token, APIName string }
-	Registry    struct{ Server, Username, Token string }
 	Tenant      struct{ User, Password string }
 }
 
@@ -101,9 +100,6 @@ func (r *renderer) site() {
 	ctx.Nico.OrgID = check("controllerStack.nico.orgID", cs.Nico.OrgID)
 	ctx.Nico.APIName = check("controllerStack.nico.apiName", cs.Nico.APIName)
 	ctx.Nico.Token = read("controllerStack.nico.tokenFile", stackPath(cs.Nico.TokenFile))
-	ctx.Registry.Server = check("controllerStack.pullSecret.server", cs.PullSecret.Server)
-	ctx.Registry.Username = check("controllerStack.pullSecret.username", cs.PullSecret.Username)
-	ctx.Registry.Token = read("controllerStack.pullSecret.tokenFile", stackPath(cs.PullSecret.TokenFile))
 	ctx.Tenant.User = check("controllerStack.tenant.user", cs.Tenant.User)
 	ctx.Tenant.Password = read("controllerStack.tenant.passwordFile", stackPath(cs.Tenant.PasswordFile))
 	if len(r.problems) > 0 {

@@ -122,8 +122,7 @@ with the same `DEV_NAME`.
 
 Provide `--cwe-endpoint` and `--cwe-bindings` together, plus `--cwe-token-file`
 for bearer authentication. Without CWE configuration the manager runs without
-provisioning. CWE must have control-plane-controller provisioning enabled
-(`PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true`).
+provisioning.
 
 Bindings are a JSON array selecting `namespace`, `channel`, optional `version`,
 and `controlPlaneClass`, with a `template` containing an existing CWE cluster

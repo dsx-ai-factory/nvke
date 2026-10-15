@@ -36,8 +36,7 @@
 # builds nvkectl and the image archives below, pulling the published images
 # from SITE_IMAGE_REGISTRY: GHCR by default, or nvcr.io/<NGC org> after a
 # `docker login nvcr.io` with an NGC key. Secrets come only from the
-# environment: FORGE_API_KEY, and GHCR_USERNAME/GHCR_TOKEN for the full stage,
-# which the node pulls CAPNICo with.
+# environment: FORGE_API_KEY.
 #
 # This block names only where artifacts come from. Component versions are
 # -e2e.versions keys (controller, capi-provisioned, os-image,

@@ -309,8 +309,8 @@ bootstrap side-loads them by default. To use images you pushed to a registry
 instead, name them:
 
 ```bash
-export NKECTL_CONTROLLER_IMAGE=<nke-controller image>
-export NKECTL_CAPI_PROVISIONED_IMAGE=<provisioned provider image>
+export NVKECTL_CONTROLLER_IMAGE=<nke-controller image>
+export NVKECTL_CAPI_PROVISIONED_IMAGE=<provisioned provider image>
 ```
 
 The `--controller-image` and `--provisioned-provider-image` flags do the same for one
@@ -332,9 +332,9 @@ fetches. It leaves out the kind node image and what `clusterctl init` installs.
 the listed images into a local or private registry. To change where they come
 from:
 
-- `NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR=<host>` pulls the Docker Hub images from a mirror.
-- `NKECTL_CONTROLLER_TEMPORAL_CHART`, `NKECTL_CONTROLLER_SPIRE_CHART` and
-  `NKECTL_CONTROLLER_SPIRE_CRDS_CHART` take an OCI reference or a local path.
+- `NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR=<host>` pulls the Docker Hub images from a mirror.
+- `NVKECTL_CONTROLLER_TEMPORAL_CHART`, `NVKECTL_CONTROLLER_SPIRE_CHART` and
+  `NVKECTL_CONTROLLER_SPIRE_CRDS_CHART` take an OCI reference or a local path.
 
 Images from `ghcr.io`, `registry.k8s.io` and `cgr.dev` come from those
 registries. Cluster API and cert-manager come from `github.com` through
@@ -371,38 +371,29 @@ common failures with their fixes.
 
 ### 5. Install an infrastructure provider
 
-Install Cluster API and CAPNICo onto the site cluster **before** the site
-controller. CWE reads the `Machine` and `NicoMachine` CRDs once, at process
-start, and silently skips three of its controllers when they are absent — so
-installing it first means restarting it afterward, or losing them until you do.
-
-The control-plane nodes must be schedulable first or every `--wait` hangs.
-`nvkectl bootstrap site` removes the taint; check with
-`kubectl --kubeconfig ./my-site.kubeconfig get nodes -o jsonpath='{.items[*].spec.taints}'`,
-and if it is still there run
-`kubectl --kubeconfig ./my-site.kubeconfig taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-`.
-Full steps, both a Helm and a `clusterctl` route, and how to verify the result
-with `kubectl`: [Infrastructure Providers](site-bootstrap/infrastructure-providers.md).
+Cluster API and CAPNICo are part of the next step: the install's list of
+commands installs Cluster API with `clusterctl init` and CAPNICo from the
+`deploy/nico` deploy path, in that order and before CWE. Do not install them
+separately first; [Configure an infrastructure provider: NICo](operate/provider-nico.md)
+explains how to prove the NICo credentials once the site is up.
 
 ### 6. Install the site controller
 
 The bootstrap leaves you a plain Kubernetes cluster. Installing CWE onto it is a
 separate job, and the largest step here — `nvkectl` has no command for it.
 
-**There is no storage class.** CWE's database and SPIRE both want a volume and
-sit `Pending` on `no persistent volumes available for this claim and no storage
-class is set`. Install a provisioner, or run them without persistence.
-
-Use the chart in
-[`controller/deploy/charts/controller`](https://github.com/dsx-ai-factory/nvke/tree/main/controller/deploy/charts/controller).
-It installs **CWE and its dependent CRDs**, against a database and a Temporal
-you provide, and defaults to a ClusterIP service with ingress off, so nothing
-reaches the API until you change that.
+Follow [Install management-plane services](operate/install-management-plane-services.md).
+It installs the whole management plane, Postgres, Temporal, SPIRE, CAPNICo,
+NKTP and CWE, with the commands that page lists, from the `deploy/nico`
+deploy path, the site spec and an NVKR release description.
 
 ```bash
-nvkectl config set-site --name my-site --url https://<cwe-url> \
+nvkectl config set-site --name my-site --url http://<VIP>:30080 \
   --kubeconfig ./my-site.kubeconfig
 ```
+
+Port 30080 is the plain-HTTP NodePort the chart exposes, and the CLI sends a
+bearer token to it, so use it from a trusted network only.
 
 That kubeconfig is also how `nvkectl` authenticates to CWE once the site has API
 authentication on. The CLI always mints for `nke-clients/nke-client` and reads
@@ -412,8 +403,8 @@ account, admit it, and grant the kubeconfig identity the permissions in
 [Configuring NVKE API Authentication](../controller/docs/configuring-api-authentication.md).
 Without them, `get clusters` fails at minting or CWE returns 403.
 
-With the site registered, `nvkectl` can report on the provider you installed in
-step 5:
+With the site registered, `nvkectl` can report on the provider the install put
+in place:
 
 ```bash
 nvkectl get providers      # nico must read CONFIGURED before you create anything
@@ -421,8 +412,9 @@ nvkectl get providers      # nico must read CONFIGURED before you create anythin
 
 ### 7. Publish a release
 
-Step 6 installed the three release CRDs with the chart, but no releases. Publish
-one with `nvkectl` before you create a cluster.
+Step 6 ended by publishing a release through the install guide. To add another,
+for a second image or a changed user data, publish a new set under a new name;
+`nvkectl create` refuses an existing one.
 
 Copy the three examples —
 [`machineimage.yaml`](../cli/examples/machineimage.yaml),
@@ -528,10 +520,7 @@ matching the cluster's own. [`nico-cluster.yaml`](../cli/examples/nico-cluster.y
 [`nico-mock-cluster.yaml`](../cli/examples/nico-mock-cluster.yaml) and
 [`capd-cluster.yaml`](../cli/examples/capd-cluster.yaml) are complete requests.
 
-A site controller deployed with
-`PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=false` takes the older
-shape instead: a node pool with `controlPlane: true`, and no
-`controlPlaneConfig`. Each rejects the other's shape.
+A node pool with `controlPlane: true` is rejected.
 
 ## See also
 
@@ -540,5 +529,5 @@ shape instead: a node pool with `controlPlane: true`, and no
 - [architecture.md](architecture.md) — how CWE, the agent and CAPI fit together
 - [../cli/docs/sitespec.md](../cli/docs/sitespec.md) — every site spec field
 - [../cli/docs/user-flow.md](../cli/docs/user-flow.md) — the command reference
-- [site-bootstrap/infrastructure-providers.md](site-bootstrap/infrastructure-providers.md)
-  — the full CAPNICo install: order, both routes, and what stalls it
+- [operate/provider-nico.md](operate/provider-nico.md)
+  — proving the NICo credentials and what CAPNICo's states mean

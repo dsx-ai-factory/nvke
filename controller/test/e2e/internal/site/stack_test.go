@@ -63,7 +63,6 @@ func testSBOM() Stack {
 		Controller: Image{Repository: "nvcr.io/nvke/cwe", Tag: "v1.2.3"},
 		Profiles:   Image{Repository: "nvcr.io/nvke/profiles", Tag: "run-42"},
 		Provider:   NewNico("https://forge.example", "org", "tok"),
-		Registry:   Registry{Server: "ghcr.io", Username: "u", Token: "r"},
 		Tenant:     Tenant{User: "admin", Password: "p"},
 		Arch:       "arm64",
 	}
@@ -173,14 +172,13 @@ func TestSBOMRender(t *testing.T) {
 
 	var config struct {
 		Nico        map[string]string `json:"Nico"`
-		Registry    map[string]string `json:"Registry"`
 		Tenant      map[string]string `json:"Tenant"`
 		ClusterName string            `json:"ClusterName"`
 	}
 	if err := json.Unmarshal(files["bootstrap-config.json"], &config); err != nil {
 		t.Fatal(err)
 	}
-	if config.Nico["APIName"] != "forge" || config.Nico["Token"] != "tok" || config.Registry["Server"] != "ghcr.io" ||
+	if config.Nico["APIName"] != "forge" || config.Nico["Token"] != "tok" ||
 		config.Tenant["User"] != "admin" || config.ClusterName != "e2e-site" {
 		t.Errorf("bootstrap config = %+v", config)
 	}
@@ -244,6 +242,7 @@ func TestSBOMDeploy(t *testing.T) {
 	}
 	install := s.cmd(t, "nvke-deploy.sh")
 	for _, want := range []string{
+		"nvke-deploy.sh install ",
 		"--deploy-path /var/lib/nke-e2e/assets/deploy/nico",
 		"--config",
 		"controller=/var/lib/nke-e2e/values/controller.yaml",

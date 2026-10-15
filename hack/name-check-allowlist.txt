@@ -100,11 +100,9 @@ token:nke-auth-|nkeOIDCAuth|NKE_OIDC_AUTH|nke-oidc|nke-spire-client|nke-static|n
 # The pull secret is an NGC service account that keeps its name.
 token:^svc-nke-ngc
 
-# deploy/nico pins a controller tag that exists only under the old NVCR
-# repository and moves to nvke-controller once a release tag exists there.
 # The agent sample is from the GitLab era and names an image this repository
 # does not publish.
-token:^nvcr\.io/j7sbcjl3qgta/nke-controller$|^nvcr\.io/nvidian/nke/
+token:^nvcr\.io/nvidian/nke/
 
 # The old metric names, queried beside the new ones for one release (D9).
 token:^nke_controller_|^nke_auth_
@@ -140,6 +138,9 @@ token:(^|/)(var/lib|etc|opt|usr/local|usr/share|run|tmp|var/log)/nke|^/nke/|\.nk
 
 # Old encryption labels are read once and migrated; never write this domain.
 token:^nke\.io/($|k8s-api-encryption-(configured|rewrite-complete))
+
+# The controller API validates that this legacy label domain is reserved and cannot be set with labels and taints
+token:^nke\.io$
 
 # Names this image rename kept on purpose, plus the build-guest and nix names
 # that are still spelled the old way. The packages Provide nke-kubeadm-distro

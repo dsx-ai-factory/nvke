@@ -9,6 +9,7 @@ NVIDIA Kubernetes Recipes (NVKR) builds the artifacts NVKE runs: the controller 
 - You have read [Plan your installation](plan-installation.md).
 - You have a published NVKR Release reference, as `<REGISTRY>/<REPOSITORY>@sha256:<DIGEST>`, or a completed local NVKR Run. To produce either, follow the NVKR documentation linked in [Get the artifacts from NVKR](#get-the-artifacts-from-nvkr).
 - You have a checkout of `dsx-ai-factory/nvke` in `nvke/`, at the release you install.
+- You have `nvkectl` on this host, from [Install nvkectl](bootstrap-management-cluster.md#install-nvkectl), to check the release resources before you publish them.
 - To build your own profile content image, you have Docker and a container registry that the management cluster's nodes can pull from.
 
 ## Get the artifacts from NVKR
@@ -91,18 +92,9 @@ A control-plane node pool resolves its `osProfile` to a `ClusterRelease`, and a 
    cp nvke/cli/examples/machineimage.yaml nvke/cli/examples/clusterrelease.yaml nvke/cli/examples/nodepoolrelease.yaml releases/
    ```
 
-2. Add the API version and kind at the top of each file, above `metadata`. In `releases/machineimage.yaml`:
+2. Set the name. Replace `example-ubuntu-24.04-amd64` in `metadata.name` of all three files and in `spec.machineImageRef.name` of both releases with one name of your own, such as `example-ubuntu-26.04-amd64`.
 
-   ```yaml
-   apiVersion: internal.nvke.nvidia.com/v1
-   kind: MachineImage
-   ```
-
-   Use `kind: ClusterRelease` in `releases/clusterrelease.yaml` and `kind: NodePoolRelease` in `releases/nodepoolrelease.yaml`, with the same `apiVersion`.
-
-3. Set the name. Replace `example-ubuntu-24.04-amd64` in `metadata.name` of all three files and in `spec.machineImageRef.name` of both releases with one name of your own, such as `example-ubuntu-26.04-amd64`.
-
-4. Describe the image in `releases/machineimage.yaml`.
+3. Describe the image in `releases/machineimage.yaml`.
 
    | Field | Value |
    |---|---|
@@ -114,9 +106,9 @@ A control-plane node pool resolves its `osProfile` to a `ClusterRelease`, and a 
 
    The example's `ipxeScript` installs Ubuntu 24.04 from the installer ISO; replace its `boot.example.com` and `releases.example.com` URLs with hosts that your NICo machines reach. To boot the NVKR node image instead, `ipxeScript` must write the QCOW2 file to the machine's disk with a loader your NICo site provides. This release has no reference script.
 
-5. Write the first-boot user data in `spec.machineInit.userDataTemplate` of both releases. It starts with a cloud-init header such as `#cloud-config`, and it can reference the values in [What NVKE puts in the user data](#what-nvke-puts-in-the-user-data). In the example, replace the `apt.example.com` repository line with a command that adds an apt repository serving the NVKE node packages; NVKE publishes no such repository. A profile for the NVKR node image installs the packages the image stages, as [Prepare nodes](prepare-nodes.md) does, and writes the SPIRE files shown below.
+4. Write the first-boot user data in `spec.machineInit.userDataTemplate` of both releases. It starts with a cloud-init header such as `#cloud-config`, and it can reference the values in [What NVKE puts in the user data](#what-nvke-puts-in-the-user-data). In the example, replace the `apt.example.com` repository line with a command that adds an apt repository serving the NVKE node packages; NVKE publishes no such repository. A profile for the NVKR node image installs the packages the image stages, as [Prepare nodes](prepare-nodes.md) does, and writes the SPIRE files shown below.
 
-6. Set the Kubernetes version annotations on both releases. Both are required.
+5. Set the Kubernetes version annotations on both releases. Both are required.
 
    | `machine-init-kubernetes-version-injected` | `machine-init-kubernetes-version` | Meaning |
    |---|---|---|
@@ -125,7 +117,7 @@ A control-plane node pool resolves its `osProfile` to a `ClusterRelease`, and a 
 
    Both annotations take the prefix `internal.nvke.nvidia.com/`. When you upgrade a node pool whose release has `"false"`, NVKE moves it to the newest release, by `buildDate`, whose version annotation matches the target version and whose image matches the current image's architecture, variant and operating system. It skips releases with `spec.lifecycle.deprecated` set.
 
-7. Confirm that no example host remains.
+6. Confirm that no example host remains.
 
    ```bash
    grep -n 'example.com' releases/*.yaml
@@ -133,7 +125,7 @@ A control-plane node pool resolves its `osProfile` to a `ClusterRelease`, and a 
 
    The command prints nothing when every placeholder host is replaced.
 
-You apply the `releases` directory to the management cluster with `kubectl apply --server-side -f releases/` in [Install management-plane services](install-management-plane-services.md), after the controller chart has installed the custom resource definitions.
+The files hold `metadata` and `spec` only; `nvkectl` supplies the API version and kind when it publishes them. You publish the three resources with `nvkectl create` in [Install management-plane services](install-management-plane-services.md), after `nvkectl config set-site` records the management cluster's kubeconfig, with the machine image first because both releases reference it.
 
 ### What NVKE puts in the user data
 
@@ -145,7 +137,7 @@ NVKE renders `userDataTemplate` as a Go template for each node it creates, with 
 | `{{ .Username }}`, `{{ .HashedPassword }}` | The node login account, `controllerStack.tenant.user` and the password in `controllerStack.tenant.passwordFile` from the site spec, with the password as a SHA-512 crypt hash. |
 | `{{ .Files }}` | The `nvke-agent` files to write with `write_files`, including `/etc/default/nke-agent`, which sets the agent's arguments and port. `{{ .NodeAgentPort }}` is the port alone. |
 | `{{ .KubernetesVersion }}` | The Kubernetes version of the cluster or node pool. |
-| `{{ .CNIImagePackage }}`, `{{ .CNIChartsPackage }}` | The CNI packages for the cluster's `cniPlugin` and `cniVersion`, such as `nvke-cni-ovn-images-1.4.0` and `nvke-cni-ovn-charts-1.4.0`. `{{ .OvnEnabled }}` and `{{ .CalicoEnabled }}` say which plugin. |
+| `{{ .CNIImagePackage }}`, `{{ .CNIChartsPackage }}` | The CNI packages for the cluster's `cniPlugin` and `cniVersion`, such as `nvke-cni-ovn-images-1.4.0` and `nvke-cni-ovn-charts-1.4.0`. `{{ .OvnEnabled }}` is true for OVN-Kubernetes. |
 | `{{ .SpireServerAddress }}`, `{{ .SpireServerPort }}` | Where the node reaches the management cluster's SPIRE server: the management cluster's virtual IP address (VIP) from the site spec's `cluster.controlPlaneVIP`, or its only node's IP address, and port `30440`. |
 | `{{ .TrustDomain }}`, `{{ .TrustBundle }}` | The management plane's SPIFFE trust domain, and the PEM trust bundle of the management cluster's SPIRE server. Empty when the node does not use SPIFFE. |
 
@@ -223,13 +215,13 @@ With a Release, the profile content image is the Release's `controller-profiles`
 
    The list includes `cwe`, `controller-chart`, `controller-profiles` and `capnico-controller`, each possibly with an architecture suffix. Skip this step if you install without `--release`.
 
-2. Confirm that each release resource has its API version, kind and name.
+2. Confirm that each release resource is a document `nvkectl` accepts.
 
    ```bash
-   grep -h -A3 '^apiVersion' releases/*.yaml
+   nvkectl create machineimage -f releases/machineimage.yaml --dry-run=client
    ```
 
-   Each file shows `apiVersion: internal.nvke.nvidia.com/v1`, its `kind`, and the same `metadata.name`.
+   The command prints the complete `MachineImage` manifest, with its API version and kind, and contacts no cluster. Repeat it with `clusterrelease` and `nodepoolrelease` for the other two files.
 
 ## Next steps
 

@@ -17,12 +17,12 @@ import (
 )
 
 type recordingAgentUpgradeLauncher struct {
-	operationIDs []string
-	err          error
+	requests []string
+	err      error
 }
 
-func (l *recordingAgentUpgradeLauncher) Start(operationID string) error {
-	l.operationIDs = append(l.operationIDs, operationID)
+func (l *recordingAgentUpgradeLauncher) Start(requestKey string) error {
+	l.requests = append(l.requests, requestKey)
 	return l.err
 }
 
@@ -35,7 +35,6 @@ func TestStartNodeAgentUpgradePersistsBeforeLaunching(t *testing.T) {
 		AgentUpgradeLauncher: launcher,
 	}
 	req := &pb.StartNodeAgentUpgradeRequest{
-		OperationId:   "cluster-node-1",
 		TargetVersion: "v0.1.2",
 		Method:        pb.NodeAgentUpgradeMethod_NODE_AGENT_UPGRADE_METHOD_APT,
 	}
@@ -44,8 +43,9 @@ func TestStartNodeAgentUpgradePersistsBeforeLaunching(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetOperation())
 	assert.Equal(t, pb.NodeAgentUpgradePhase_NODE_AGENT_UPGRADE_PHASE_PENDING, resp.GetOperation().GetPhase())
-	assert.Equal(t, []string{"cluster-node-1"}, launcher.operationIDs)
-	persisted, err := store.Load("cluster-node-1")
+	require.Len(t, launcher.requests, 1)
+	attempt := launcher.requests[0]
+	persisted, err := store.Load(attempt)
 	require.NoError(t, err)
 	assert.Equal(t, agentupgrade.PhasePending, persisted.Phase)
 	assert.Equal(t, "v0.1.1", persisted.PreviousVersion)
@@ -54,7 +54,7 @@ func TestStartNodeAgentUpgradePersistsBeforeLaunching(t *testing.T) {
 	resp, err = server.StartNodeAgentUpgrade(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, pb.NodeAgentUpgradePhase_NODE_AGENT_UPGRADE_PHASE_PENDING, resp.GetOperation().GetPhase())
-	assert.Equal(t, []string{"cluster-node-1", "cluster-node-1"}, launcher.operationIDs, "pending retry must reassert the idempotent systemd start")
+	assert.Equal(t, []string{attempt, attempt}, launcher.requests, "pending retry must reassert the idempotent systemd start")
 }
 
 func TestStartNodeAgentUpgradeRejectsNonCanonicalVersion(t *testing.T) {
@@ -65,7 +65,6 @@ func TestStartNodeAgentUpgradeRejectsNonCanonicalVersion(t *testing.T) {
 	}
 
 	_, err := server.StartNodeAgentUpgrade(context.Background(), &pb.StartNodeAgentUpgradeRequest{
-		OperationId:   "cluster-node-1",
 		TargetVersion: "0.1.2",
 		Method:        pb.NodeAgentUpgradeMethod_NODE_AGENT_UPGRADE_METHOD_APT,
 	})
@@ -80,40 +79,10 @@ func TestInstallBundleRejectsNodeAgentReplacement(t *testing.T) {
 	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
 }
 
-func TestStartNodeAgentRollbackReferencesSuccessfulUpgrade(t *testing.T) {
-	store := agentupgrade.NewStore(t.TempDir())
-	_, _, err := store.Create(agentupgrade.Operation{
-		ID:              "upgrade-1",
-		Action:          agentupgrade.ActionUpgrade,
-		TargetVersion:   "v0.1.2",
-		PreviousVersion: "v0.1.1",
-		Method:          agentupgrade.MethodAPT,
-	})
+func TestGetNodeAgentUpgradeStatusReturnsEmptyResponseWithoutAnUpgrade(t *testing.T) {
+	server := &NodeAgentServer{AgentUpgradeStore: agentupgrade.NewStore(t.TempDir())}
+	response, err := server.GetNodeAgentUpgradeStatus(t.Context(), &pb.GetNodeAgentUpgradeStatusRequest{})
 	require.NoError(t, err)
-	_, err = store.SetStatus("upgrade-1", agentupgrade.PhaseSucceeded, "verified", "")
-	require.NoError(t, err)
-	launcher := &recordingAgentUpgradeLauncher{}
-	server := &NodeAgentServer{
-		NodeStatus:           &NodeStatus{AgentVersion: "v0.1.2"},
-		AgentUpgradeStore:    store,
-		AgentUpgradeLauncher: launcher,
-	}
-
-	resp, err := server.StartNodeAgentRollback(context.Background(), &pb.StartNodeAgentRollbackRequest{
-		OperationId:        "rollback-1",
-		UpgradeOperationId: "upgrade-1",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "v0.1.1", resp.GetOperation().GetTargetVersion())
-	assert.Equal(t, []string{"rollback-1"}, launcher.operationIDs)
-	rollback, err := store.Load("rollback-1")
-	require.NoError(t, err)
-	assert.Equal(t, "upgrade-1", rollback.RestoreFromOperationID)
-
-	_, err = server.StartNodeAgentRollback(context.Background(), &pb.StartNodeAgentRollbackRequest{
-		OperationId:        "rollback-1",
-		UpgradeOperationId: "upgrade-1",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"rollback-1", "rollback-1"}, launcher.operationIDs, "pending rollback retry must reassert the idempotent systemd start")
+	require.NotNil(t, response)
+	require.Nil(t, response.GetOperation())
 }

@@ -38,6 +38,10 @@ name: CLI Artifact NVCR
 #
 # workflow_dispatch still works and still builds: dist_artifact is empty there,
 # so the build step below runs instead of the download.
+#
+# A bare vX.Y.Z-beta.N tag only triggers the run. The artifact is versioned and
+# tagged like any other build of that commit (the cli/v* describe version and
+# sha-<commit>); the beta tag name is not added as an alias.
 on:
   workflow_call:
     inputs:
@@ -68,6 +72,11 @@ jobs:
     runs-on: ubuntu-latest
     environment: nvcr
     timeout-minutes: 20
+    env:
+      # A beta is not promoted to DSX, so nothing is published there for one: the
+      # images and chart a beta nvkectl would deploy never reach that org. The
+      # leg still starts, but every step from the registry login on is skipped.
+      SKIP_PUBLISH: ${{ matrix.destination == 'dsx' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.') }}
     permissions:
       contents: read
       actions: read  # upload-sarif reads the workflow run
@@ -141,6 +150,11 @@ jobs:
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
+          elif [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            # A bare beta tag only triggers the run; it must not become an
+            # alias. The build is named by its describe version instead, the
+            # one the binary reports, so qualification can pull it by version.
+            aliases+=("${version}")
           elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             aliases+=("${GITHUB_REF_NAME#cli/}")
           fi
@@ -174,6 +188,7 @@ jobs:
 
       # `$oauthtoken` is NGC's literal username, not a shell variable.
       - name: Log in to NVCR
+        if: env.SKIP_PUBLISH != 'true'
         shell: bash
         env:
           NGC_TOKEN: ${{ secrets[matrix.token_secret_var_name] || secrets[matrix.token_secret_fallback_var_name] }}
@@ -190,6 +205,7 @@ jobs:
             --username '$oauthtoken' --password-stdin
 
       - name: Push per-platform artifacts
+        if: env.SKIP_PUBLISH != 'true'
         shell: bash
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -221,6 +237,7 @@ jobs:
           done
 
       - name: Show published artifact
+        if: env.SKIP_PUBLISH != 'true'
         shell: bash
         env:
           REPO: ${{ steps.meta.outputs.repo }}
@@ -234,6 +251,7 @@ jobs:
       # binaries to different orgs, and two legs uploading
       # release-digest-nkectl-nvcr would collide.
       - name: Record the published digests
+        if: env.SKIP_PUBLISH != 'true'
         uses: ./.github/actions/record-digest
         with:
           references: |

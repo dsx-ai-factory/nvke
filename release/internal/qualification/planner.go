@@ -26,9 +26,11 @@ type Planner struct {
 	// Registry says how each component resolves.
 	Registry *Registry
 
-	// Resolvers holds one resolver per registry component, built by the
-	// caller. The planner never names a strategy, so tests substitute fakes.
-	Resolvers map[string]resolve.Resolver
+	// VersionResolvers and LocationResolvers hold one resolver per registry
+	// component that declares that half, built by the caller. The planner never
+	// names a strategy, so tests substitute fakes.
+	VersionResolvers  map[string]resolve.Resolver
+	LocationResolvers map[string]resolve.Resolver
 
 	// Root is the repository root, where subject files are found.
 	Root string
@@ -37,6 +39,23 @@ type Planner struct {
 	// by name. Each replaces what the strategy would have resolved, and goes
 	// through the same resolver so that it is checked there.
 	Overrides map[string]string
+
+	// ResolveAtCommit describes the components at the subject's commit rather
+	// than resolving them from their own tags.
+	//
+	// The commit is not given, it is derived from the version being qualified,
+	// so nothing can name a version and a commit that disagree. A beta tag
+	// carries no component tags, so its components have to be described at the
+	// commit it marks or they resolve to the last release instead.
+	//
+	// The commit is offered to every resolver, and the ones with no
+	// commit-shaped answer ignore it, the way a resolver that does not choose
+	// ignores a select. An override still wins, so a version a person named
+	// means the same thing either way.
+	ResolveAtCommit bool
+
+	// commit is what ResolveAtCommit resolved to, kept for the plan to record.
+	commit string
 }
 
 // Plan resolves one subject at one version over one scope.
@@ -51,7 +70,7 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 	if s.Spec.Subject != subject {
 		return nil, fmt.Errorf("%s describes %q, not %q", SubjectPath(p.Root, subject), s.Spec.Subject, subject)
 	}
-	if err := Check(p.Policy, p.Registry, s, p.Resolvers); err != nil {
+	if err := Check(p.Policy, p.Registry, s, p.VersionResolvers, p.LocationResolvers); err != nil {
 		return nil, err
 	}
 	if err := checkOverrides(s, p.Overrides); err != nil {
@@ -69,8 +88,17 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 		return nil, err
 	}
 
-	if version, err = p.subjectVersion(subject, version); err != nil {
+	var ref string
+	if version, ref, err = p.subjectVersion(subject, version); err != nil {
 		return nil, err
+	}
+	if p.ResolveAtCommit {
+		// From the ref the subject resolved to, whether a person named the
+		// version or the tags answered, so one run has one commit and it is
+		// always the one the version points at.
+		if p.commit, err = resolve.CommitOf(p.Root, ref); err != nil {
+			return nil, fmt.Errorf("the commit to describe %s at: %w", subject, err)
+		}
 	}
 
 	combinations, err := p.combinations(s, streams)
@@ -87,6 +115,7 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 		Subject:      subject,
 		Version:      version,
 		Scope:        scope,
+		Commit:       p.commit,
 		Overrides:    overrides,
 		Combinations: combinations,
 	}, nil
@@ -94,20 +123,20 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 
 // subjectVersion resolves the subject through the registry exactly as any
 // other component resolves. An empty version is the highest version of any kind.
-func (p *Planner) subjectVersion(subject, version string) (string, error) {
+func (p *Planner) subjectVersion(subject, version string) (resolved, ref string, err error) {
 	inputs := map[string]string{}
 	if version != "" {
-		inputs = map[string]string{resolve.InputOverrideKey: version}
+		inputs[resolve.InputOverrideKey] = version
 	}
 
-	got, err := p.resolver(subject).Resolve(inputs)
+	got, err := p.versionResolver(subject).Resolve(inputs)
 	if err != nil {
 		if version == "" {
-			return "", fmt.Errorf("resolving %s: %w", subject, err)
+			return "", "", fmt.Errorf("resolving %s: %w", subject, err)
 		}
-		return "", fmt.Errorf("checking %s %s: %w", subject, version, err)
+		return "", "", fmt.Errorf("checking %s %s: %w", subject, version, err)
 	}
-	return got[resolve.ResultVersionKey], nil
+	return got[resolve.ResultVersionKey], got[resolve.ResultRefKey], nil
 }
 
 // streams expands the scope's selector over the policy's stream list, then
@@ -193,10 +222,21 @@ func (p *Planner) combinations(s *Subject, streams []StreamDefinition) ([]Combin
 	return out, nil
 }
 
+// inputs are what every resolution starts from, before the component's own
+// override. One place builds them so that a run cannot resolve one component at
+// the commit and another from its tags.
+func (p *Planner) inputs() map[string]string {
+	inputs := map[string]string{}
+	if p.commit != "" {
+		inputs[resolve.InputCommitKey] = p.commit
+	}
+	return inputs
+}
+
 // resolveComponent turns one component's selectors into the versions to
 // qualify, in selector order and without repeats.
 func (p *Planner) resolveComponent(c SubjectComponent) ([]pick, error) {
-	inputs := map[string]string{}
+	inputs := p.inputs()
 	if v, ok := p.Overrides[c.Name]; ok {
 		inputs[resolve.InputOverrideKey] = v
 	}
@@ -207,7 +247,7 @@ func (p *Planner) resolveComponent(c SubjectComponent) ([]pick, error) {
 			return nil, fmt.Errorf("selector %q is not one this understands, the only selector is %q",
 				sel, SelectorLatest)
 		}
-		got, err := p.resolver(c.Name).Resolve(maps.Clone(inputs))
+		got, err := p.resolveEntry(c.Name, maps.Clone(inputs))
 		if err != nil {
 			return nil, err
 		}
@@ -230,7 +270,7 @@ func (p *Planner) combination(s *Subject, picked []pick, streams []StreamDefinit
 	// strategy returned is available as "<name>.<key>".
 	base := map[string]string{}
 	for i, c := range picked {
-		components[i] = ComponentVersion{Name: c.name, Version: c.result[resolve.ResultVersionKey]}
+		components[i] = p.componentVersion(c.name, c.result)
 		base[c.name] = c.result[resolve.ResultVersionKey]
 		for k, v := range c.result {
 			if k != resolve.ResultVersionKey {
@@ -280,28 +320,112 @@ func (p *Planner) resolveDependencies(s *Subject, base map[string]string, stream
 			inputs[resolve.InputOverrideKey] = v
 		}
 
-		got, err := p.resolver(d.Name).Resolve(inputs)
+		got, err := p.resolveEntry(d.Name, inputs)
 		if err != nil {
 			return nil, fmt.Errorf("resolving %s for %s: %w", d.Name, s.Spec.Subject, err)
 		}
-		out = append(out, ComponentVersion{
-			Name:    d.Name,
-			Version: got[resolve.ResultVersionKey],
-			URL:     got[resolve.ResultURLKey],
-		})
+		out = append(out, p.componentVersion(d.Name, got))
 	}
 	return out, nil
 }
 
-// resolver returns the resolver for a component. A missing one is a wiring
-// error and not a user error, because Check has already held every name to the
-// registry.
-func (p *Planner) resolver(name string) resolve.Resolver {
-	r, ok := p.Resolvers[name]
+// componentVersion records what one name resolved to, and how each half
+// answered.
+//
+// The version strategy is the one the resolver reported, so that an entry which
+// can resolve two ways says which it did. One that reports nothing is only
+// itself, and the registry's name for it is the honest answer. An entry that
+// takes another's version names no strategy, because none answered.
+//
+// The location strategy is the registry's name alone. No location strategy has
+// arms to choose between.
+func (p *Planner) componentVersion(name string, got map[string]string) ComponentVersion {
+	out := ComponentVersion{
+		Name:            name,
+		Version:         got[resolve.ResultVersionKey],
+		URL:             got[resolve.ResultURLKey],
+		VersionStrategy: got[resolve.ResultStrategyKey],
+	}
+
+	c, ok := p.Registry.Component(name)
+	if !ok {
+		return out
+	}
+	if out.VersionStrategy == "" && c.Resolve.Version != nil {
+		out.VersionStrategy = c.Resolve.Version.Strategy
+	}
+	if c.Resolve.Location != nil {
+		out.LocationStrategy = c.Resolve.Location.Strategy
+	}
+	return out
+}
+
+// versionResolver returns the resolver for a component's version half. A
+// missing one is a wiring error and not a user error, because Check has already
+// held every name to the registry.
+func (p *Planner) versionResolver(name string) resolve.Resolver {
+	r, ok := p.VersionResolvers[name]
 	if !ok {
 		return missing{name}
 	}
 	return r
+}
+
+// resolveEntry answers both questions about one registry entry.
+//
+// The version half answers first, either with a strategy of its own or by
+// taking another entry's version from inputs, and the location half is then
+// told which version it is naming. An entry may declare either half alone.
+//
+// An override names what a strategy would have produced, so it goes to the half
+// that has one, and to the version half when both do. That is what makes
+// --overrides controller=<version> a version and --overrides
+// os-image-amd64=<url> a location without anything declaring which it is.
+func (p *Planner) resolveEntry(name string, inputs map[string]string) (map[string]string, error) {
+	c, ok := p.Registry.Component(name)
+	if !ok {
+		return nil, fmt.Errorf("%s is not a component in the registry", name)
+	}
+
+	override := inputs[resolve.InputOverrideKey]
+	delete(inputs, resolve.InputOverrideKey)
+
+	got := map[string]string{}
+	switch {
+	case c.Resolve.Version == nil:
+	case c.Resolve.Version.From != "":
+		got[resolve.ResultVersionKey] = inputs[c.Resolve.Version.From]
+	default:
+		in := maps.Clone(inputs)
+		if override != "" {
+			in[resolve.InputOverrideKey] = override
+			override = ""
+		}
+		var err error
+		if got, err = p.versionResolver(name).Resolve(in); err != nil {
+			return nil, err
+		}
+	}
+
+	if c.Resolve.Location == nil {
+		return got, nil
+	}
+
+	in := maps.Clone(inputs)
+	in[resolve.InputVersionKey] = got[resolve.ResultVersionKey]
+	if override != "" {
+		in[resolve.InputOverrideKey] = override
+	}
+	r, ok := p.LocationResolvers[name]
+	if !ok {
+		r = missing{name}
+	}
+	located, err := r.Resolve(in)
+	if err != nil {
+		return nil, err
+	}
+	got[resolve.ResultURLKey] = located[resolve.ResultURLKey]
+	return got, nil
 }
 
 // missing is the resolver for a component nobody built one for. It fails on

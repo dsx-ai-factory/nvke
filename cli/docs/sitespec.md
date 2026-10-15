@@ -67,7 +67,7 @@ is a file `bootstrap site` accepts.
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Unique across all nodes. |
 | `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. See below. |
 | `cluster.k8sVersion` | string | yes | Plain semantic version, e.g. `1.32.0` (no leading `v`). |
-| `cluster.cniName` | string | no | Defaults to and must be `ovn-kubernetes`. New site-controller clusters cannot use Calico. |
+| `cluster.cniName` | string | no | Defaults to and must be `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the node-agent default. |
 | `cluster.controlPlaneVIP` | string | for multiple nodes | IPv4 control-plane VIP. Required when `cluster.nodes` has more than one entry. A single-node cluster may omit it and use that node's IP as its fixed endpoint. See below. |
 | `cluster.podCidr` | string | yes | Valid CIDR. A comma-separated list of CIDRs is allowed. Must not overlap `serviceCidr`. |
@@ -88,16 +88,15 @@ is a file `bootstrap site` accepts.
 | `controllerStack.nico.orgID` | string | yes, in `controllerStack` | NICo organisation ID. |
 | `controllerStack.nico.apiName` | string | yes, in `controllerStack` | NICo API name, for example `forge`. |
 | `controllerStack.nico.tokenFile` | string | yes, in `controllerStack` | Path to a file holding the NICo API token. |
-| `controllerStack.pullSecret.server` | string | yes, in `controllerStack` | Registry host for the CAPNICo image pull secret, for example `ghcr.io`. |
-| `controllerStack.pullSecret.username` | string | yes, in `controllerStack` | Registry username. |
-| `controllerStack.pullSecret.tokenFile` | string | yes, in `controllerStack` | Path to a file holding the registry token. |
 | `controllerStack.tenant.user` | string | yes, in `controllerStack` | Login user rendered into every tenant node's cloud-init. |
 | `controllerStack.tenant.passwordFile` | string | yes, in `controllerStack` | Path to a file holding that user's password. |
-| `controllerStack.images.controller` | string | no | Overrides the controller image; defaults to the release file's `controller` item. |
+| `controllerStack.images.controller` | string | no | Overrides the controller image; defaults to the release file's `controller` item, or without a release to the overlay's pinned image (the newest controller release). |
 | `controllerStack.images.profiles` | string | no | Overrides the profiles content image; defaults to the release file's `profiles` item. |
 | `controllerStack.database.passwordFile` | string | yes, in `controllerStack` | Path to a file holding the Postgres password. The render creates it with a generated password when it does not exist. |
 | `controllerStack.mirror` | string | no | Registry the external images are pulled from instead of upstream, `host[:port][/prefix]`, no scheme. |
 | `controllerStack.nktpValuesFile` | string | no | Values file for the nktp release, applied last. |
+
+A site spec with a `controllerStack.pullSecret` block does not load; delete the block. The file has no unknown-field tolerance, and nothing reads it. CAPNICo's image is public on GHCR, or comes from the release.
 
 The version (image/chart tag) is baked into the `nvkectl` build, so it is not
 part of the site spec.

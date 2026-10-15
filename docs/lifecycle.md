@@ -34,14 +34,14 @@ The cluster at this point is a plain kubeadm cluster. No NVKE services are insta
 
 This phase installs everything that makes the cluster an NVKE site:
 
-1. **Deploy the NVKE component stack** — the NVKE SBOM (Software Bill of Materials) is the versioned bundle of NVKE components: the controller, Temporal, PostgreSQL, SPIRE, and supporting services. Deploy it via ArgoCD or your GitOps tooling. See [Deploy Repository](site-bootstrap/deploy-repository.md).
-2. **Configure CAPNICo** — install the `cluster-api-provider-nico` chart and connect it to your NICo site with a `nico-credentials` Secret. Run `nvkectl get providers` to confirm `nico: CONFIGURED`.
+1. **Deploy the NVKE component stack** — the controller, Temporal, PostgreSQL, SPIRE, NKTP and CAPNICo, as the `deploy/nico` deploy path lists them. `deploy/nvke-deploy.sh` installs it from the site spec and an NVKR release description, one step of a short list of commands; your GitOps tooling can deliver the same items. See [Install management-plane services](operate/install-management-plane-services.md) and [Deploy Path](site-bootstrap/deploy-repository.md).
+2. **Configure CAPNICo** — the deploy path installed it in step 1; connect it to your NICo site with the `nico-credentials` Secret the same step rendered. Run `nvkectl get providers` to confirm `nico: CONFIGURED`.
 3. **Ingest the site into NVKE** — the NVKE team registers the site and applies the etcd encryption key from Day 0. This step requires coordination with the NVKE team; contact your NVKE onboarding contact with your site's kubeconfig and the etcd encryption key file from Day 0.
-4. **Create your first tenant cluster** — `nvkectl create cluster -f cluster.yaml`. See [Your First Cluster — Path C, Step 7](first-cluster.md#7-create-a-tenant-cluster).
+4. **Create your first tenant cluster** — `nvkectl create cluster -f cluster.yaml`. See [Your First Cluster — Path C, Step 8](first-cluster.md#8-create-a-tenant-cluster).
 
 **What Day 1 requires:**
 - A working NICo site with capacity allocated for the instance types your cluster spec uses
-- An ArgoCD-compatible deploy repository with your environment's SBOM values
+- The site spec with its `controllerStack` section filled in, and the NVKR release description if you install from a release
 - The etcd encryption key from Day 0
 
 **See:** [Your First Cluster](first-cluster.md) · [NICo documentation](https://docs.nvidia.com/infra-controller/documentation/home)

@@ -32,6 +32,11 @@ name: Image Provisioned NVCR
 # check-img-repo, so this workflow can only ever push to the destination
 # resolved here.
 #
+# A bare vX.Y.Z-beta.N tag only triggers the build. It publishes like any other
+# build of that commit: sha-<commit> and the cluster-api-provider-provisioned/v*
+# describe version. The beta tag name is not published, and a beta is not
+# promoted to GHCR or DSX.
+#
 # A workflow_dispatch from a non-main branch publishes only `sha-*` tags — a
 # safe smoke-test mode that never moves `edge`.
 #
@@ -52,6 +57,7 @@ on:
     tags:
       - "cluster-api-provider-provisioned/v[0-9]+.[0-9]+.[0-9]+"
       - "cluster-api-provider-provisioned/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
   workflow_dispatch: {}
 
 permissions: {}
@@ -482,7 +488,7 @@ jobs:
 
   promote-dsx:
     name: Promote to DSX
-    if: github.repository_id == '1323115536'
+    if: github.repository_id == '1323115536' && !(startsWith(github.ref, 'refs/tags/v') && contains(github.ref, '-beta.'))
     runs-on: linux-amd64-cpu8
     needs: [manifest]
     environment: nvcr

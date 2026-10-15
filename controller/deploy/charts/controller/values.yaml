@@ -92,6 +92,8 @@ nodeAgent:
     interval: "2m"
     # -- Symmetric fractional scheduling variation. Set 0 to disable jitter.
     jitter: 0.1
+  # -- Installation method for agent convergence: apt or bundle. Required when clusters opt in.
+  updateMethod: ""
   # -- SPIRE node attestation method pinned to newly created nodes. Changing
   # this deployment default does not reconfigure existing nodes; keep their
   # attestation plugins available until those nodes are retired or migrated.
@@ -328,8 +330,16 @@ resources: {}
 # -- Comma-separated API provider blocks accepted by mutating cluster and node-pool requests. The chart defaults the deployed controller to Nico only; set to "nico,infra" only for deployments that should accept generic CAPI-backed provider payloads.
 supportedInfraProviders: "nico"
 
+nodeMetadata:
+  # -- Allowlist of label keys under the reserved kubernetes.io and k8s.io domains. Intended for operators whose deployments specifically need labels from these domains.
+  # Use with care: these keys can conflict with Kubernetes core components.
+  # `node-role.kubernetes.io/control-plane` and keys under the internal NVKE domains cannot be listed.
+  # The controller validates the allowlist and refuses to start if an entry is one of the above forbidden keys, or is empty, padded, not a valid label key, or a duplicate.
+  allowlistedLabelKeys: []
+
 # -- Additional environment variables to inject into the controller container. A
 # variable nke-controller-config carries is refused; set its chart value instead.
+# CONTROLLER_CONFIG_PATH is refused too: the chart sets it to the mounted file.
 env: []
 # - name: EXAMPLE
 #   value: example
@@ -444,8 +454,10 @@ oidc:
   # cluster keeps the list it was created with, and one created on a
   # Kubernetes version earlier than 1.34 gets none. At most five, each with
   # name, issuerURL, audiences, usernameClaim, usernamePrefix and caBundle
-  # (inline PEM), and optionally groupsClaim, groupsPrefix and requiredClaims
-  # (claim name to required value). For example:
+  # (inline PEM), and optionally groupsClaim, groupsPrefix, requiredClaims
+  # (claim name to required value) and discoveryURL (where tenant API servers
+  # fetch the issuer's discovery document when they cannot reach issuerURL).
+  # For example:
   #   - name: corp
   #     issuerURL: https://login.example.com
   #     audiences: [nke]

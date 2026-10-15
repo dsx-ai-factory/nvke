@@ -43,9 +43,7 @@ const (
 // Secrets the site controller run reads from the environment. They are never written to
 // the config file, a values file on the runner, or a command line.
 const (
-	envForgeAPIKey   = "FORGE_API_KEY"
-	envRegistryUser  = "GHCR_USERNAME"
-	envRegistryToken = "GHCR_TOKEN"
+	envForgeAPIKey = "FORGE_API_KEY"
 	// envJumpHostPassword selects the plain-SSH route to the jump host.
 	// Unset uses Teleport.
 	envJumpHostPassword = "JUMP_HOST_PASSWORD"
@@ -82,13 +80,6 @@ const (
 	// also decides the node agent's arguments, which cloud-init writes
 	// before the node, and so its thumbprint, exists. See nodeInputs.
 	siteDisableMTLS = true
-
-	// siteCAPNICoRegistry is the one registry the node pulls from itself:
-	// CAPNICo's manifest is its published release asset, which names a GHCR
-	// image, and the deploy path's ghcr-imagepull Secret carries one
-	// registry. Everything else is staged. The credential is envRegistryUser
-	// and envRegistryToken.
-	siteCAPNICoRegistry = "ghcr.io"
 )
 
 var (
@@ -771,10 +762,6 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 
 	images := cfg.Site.Images
 	profiles := site.Image{Repository: images.Profiles.Repository, Tag: images.Profiles.Tag}
-	user, token := os.Getenv(envRegistryUser), os.Getenv(envRegistryToken)
-	if user == "" || token == "" {
-		return site.Stack{}, nil, fmt.Errorf("%s and %s are required for the node to pull CAPNICo from %s", envRegistryUser, envRegistryToken, siteCAPNICoRegistry)
-	}
 	tenantPassword, err := randomHex(16)
 	if err != nil {
 		return site.Stack{}, nil, err
@@ -790,7 +777,6 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 		Controller: controller,
 		Profiles:   profiles,
 		Provider:   deployConfig,
-		Registry:   site.Registry{Server: siteCAPNICoRegistry, Username: user, Token: token},
 		// The login baked into tenant nodes' user-data. Nothing outside the
 		// run needs it.
 		Tenant: site.Tenant{User: "nvke-tenant", Password: tenantPassword},
@@ -798,7 +784,7 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 		// value is one the redaction list can name.
 		DatabasePassword: dbPassword,
 		Arch:             unameArch,
-	}, []string{os.Getenv(envForgeAPIKey), token, tenantPassword, dbPassword}, nil
+	}, []string{os.Getenv(envForgeAPIKey), tenantPassword, dbPassword}, nil
 }
 
 // apiServerReachable reports whether the forwarded kubeconfig reaches the

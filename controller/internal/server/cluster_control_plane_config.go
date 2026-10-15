@@ -135,8 +135,8 @@ func controlPlaneRolloutSummary(
 }
 
 // validateCreateClusterLevelControlPlane validates the cluster-level control
-// plane configuration supplied on cluster create when control-plane controller
-// provisioning is enabled. It rejects control-plane node pools and applies the
+// plane configuration supplied on cluster create. It rejects control-plane node
+// pools and applies the
 // Forge vs CAPI field-split rules that mirror node pools. The Forge
 // subnet/VPC-prefix native-networking rules are validated separately (they
 // require a Forge site lookup).
@@ -144,6 +144,7 @@ func validateCreateClusterLevelControlPlane(
 	req *api.CreateClusterRequest,
 	nodePools []api.NodePoolCreateConfig,
 	providerType db.ProviderType,
+	allowlistedLabelKeys []string,
 ) error {
 	for _, np := range nodePools {
 		if np.ControlPlane {
@@ -153,10 +154,13 @@ func validateCreateClusterLevelControlPlane(
 
 	ccpc := req.ControlPlaneConfig
 	if ccpc == nil {
-		return fmt.Errorf("controlPlaneConfig is required when control-plane controller provisioning is enabled")
+		return fmt.Errorf("controlPlaneConfig is required")
 	}
 	if ccpc.DesiredCount < 1 {
 		return fmt.Errorf("controlPlaneConfig.desiredCount must be at least 1")
+	}
+	if err := validateNodeLabels(ccpc.NodeLabels, allowlistedLabelKeys); err != nil {
+		return fmt.Errorf("controlPlaneConfig: %w", err)
 	}
 	if ccpc.MaxSurge != nil && *ccpc.MaxSurge > 1 {
 		return errClusterMaxSurgeTooHigh
@@ -299,6 +303,9 @@ func controlPlaneConfigSpecFromCreateAPI(
 		KubernetesVersion:           kubernetesVersion,
 	}
 
+	if c.NodeAgentConfig != nil && c.NodeAgentConfig.Version != nil {
+		spec.NodeAgentConfig.Version = *c.NodeAgentConfig.Version
+	}
 	switch providerType {
 	case db.ProviderTypeNico:
 		nicoControlPlaneProvider := db.NicoControlPlaneProvider{

@@ -22,7 +22,6 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
 | `spire-agent`, its TPM attestor and `get_tpm_pubhash` | Installed and enabled. | The SPIRE server address, trust domain and trust bundle, in user data. |
 | Kubernetes packages: kubeadm, kubelet, kubectl and containerd | Staged in a local package repository at `/usr/lib/nvke/debs`, one `nvke-kubeadm-distro-<version>` package per Kubernetes version. | Install the package for your Kubernetes version. |
 | OVN-Kubernetes CNI packages | Staged in the same repository, for version 1.4.0. | Install the charts and images packages. |
-| Calico CNI packages | For version 3.30.1: the manifests package is installed and the images package is staged. | Nothing. The management cluster uses OVN-Kubernetes by default. |
 | Open vSwitch (`openvswitch-switch`) | Installed. | Nothing. |
 
 ## Write the user data
@@ -52,7 +51,7 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
    - `<SPIRE_CA_CERT_PEM>`: the PEM contents of the CA certificate you pass as `spire.caCertFile`, with every line indented to match the placeholder.
    - `<K8S_VERSION>`: the Kubernetes version you set as `cluster.k8sVersion` in the site spec, without a leading `v`, such as `1.34.2`. The image stages 1.34.2, 1.35.3 and 1.36.3.
 
-   The image stages OVN-Kubernetes 1.4.0, the version the bootstrap uses when the site spec leaves `cluster.cniVersion` unset, and Calico 3.30.1.
+   The image stages OVN-Kubernetes 1.4.0, the version the bootstrap uses when the site spec leaves `cluster.cniVersion` unset.
 
    Do not set `SPIRE_JOIN_TOKEN`. Without it, the SPIRE agent attests with the node's TPM, which is how the bootstrap's SPIRE server admits nodes; it issues no join tokens. Install the Kubernetes package before the CNI images package: the images package loads its image into containerd, which the Kubernetes package provides.
 

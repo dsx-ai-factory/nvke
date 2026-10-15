@@ -55,7 +55,7 @@ func writeFiles(t *testing.T, dir string, files map[string]string) {
 	}
 }
 
-func TestNewRejects(t *testing.T) {
+func TestNewVersionRejects(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		strategy string
@@ -63,14 +63,64 @@ func TestNewRejects(t *testing.T) {
 		want     string
 	}{
 		{"no strategy", "", nil, "no strategy"},
-		{"unknown strategy", "aptPackage", nil, "is not one of"},
-		{"missing key", StrategyGitTag, map[string]string{}, `needs "tagPrefix"`},
-		{"unknown key", StrategyGitTag, map[string]string{"tagPrefix": "", "tagPrefx": "x"}, "does not take tagPrefx"},
-		{"locked package needs from", StrategyLockedPackage, map[string]string{"lockDir": "a"}, `needs "from"`},
-		{"make var needs var", StrategyMakeVar, map[string]string{}, `needs "var"`},
+		{"unknown strategy", "aptPackage", nil, `"aptPackage" is not one of`},
+		{"missing key", VersionStrategyGitTag, map[string]string{}, `needs "tagPrefix"`},
+		{"unknown key", VersionStrategyGitTag, map[string]string{"tagPrefix": "", "tagPrefx": "x"}, "does not take tagPrefx"},
+		{"locked package needs at", VersionStrategyLockedPackage, map[string]string{"lockDir": "a"}, `needs "at"`},
+		{"make var needs var", VersionStrategyMakeVar, map[string]string{}, `needs "var"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := New(tc.strategy, tc.with, ".")
+			_, err := NewVersion(tc.strategy, tc.with, ".")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// A strategy of the other half is a misplacement rather than a misspelling, and
+// the error says so, because the fix is to move the line and not to hunt for a
+// name that does not exist.
+func TestNewNamesTheOtherHalf(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func() error
+		want string
+	}{
+		{
+			"a location strategy in a version block",
+			func() error { _, err := NewVersion(LocationStrategyURL, nil, "."); return err },
+			`"url" is a location strategy, and this is a version`,
+		},
+		{
+			"a version strategy in a location block",
+			func() error { _, err := NewLocation(VersionStrategyGitTag, nil, Options{}); return err },
+			`"gitTag" is a version strategy, and this is a location`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.call()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestNewLocationRejects(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		strategy string
+		with     map[string]string
+		want     string
+	}{
+		{"no strategy", "", nil, "no strategy"},
+		{"unknown strategy", "cdnObject", nil, `"cdnObject" is not one of`},
+		{"missing key", LocationStrategyOSImage, map[string]string{"base": "https://cdn.example"}, `needs "arch"`},
+		{"unknown key", LocationStrategyURL, map[string]string{"path": "x"}, "does not take path"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewLocation(tc.strategy, tc.with, Options{})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want it to contain %q", err, tc.want)
 			}
@@ -79,7 +129,7 @@ func TestNewRejects(t *testing.T) {
 }
 
 func TestNewAcceptsAnEmptyTagPrefix(t *testing.T) {
-	if _, err := New(StrategyGitTag, map[string]string{"tagPrefix": ""}, "."); err != nil {
+	if _, err := NewVersion(VersionStrategyGitTag, map[string]string{"tagPrefix": ""}, "."); err != nil {
 		t.Errorf("an empty prefix names the repository's own tags: %v", err)
 	}
 }
@@ -173,7 +223,7 @@ func TestLockedPackageResolve(t *testing.T) {
 	inputs := func(constraint string) map[string]string {
 		return map[string]string{InputConstraintKey: constraint, "os-image.ref": "os-image/v0.1.1-rc.1"}
 	}
-	l := LockedPackage{Dir: dir, LockDir: "pkg/lock", From: "os-image"}
+	l := LockedPackage{Dir: dir, LockDir: "pkg/lock", At: "os-image"}
 
 	for _, tc := range []struct {
 		constraint string
@@ -214,7 +264,7 @@ func TestLockedPackageNeedsEveryArchitecture(t *testing.T) {
 		"amd64": {"v1.34.20", "v1.34.2", "v1.34.11"},
 		"arm64": {"v1.34.2", "v1.34.11"},
 	})
-	l := LockedPackage{Dir: dir, LockDir: "pkg/lock", From: "os-image"}
+	l := LockedPackage{Dir: dir, LockDir: "pkg/lock", At: "os-image"}
 
 	got, err := l.Resolve(map[string]string{InputConstraintKey: "1.34", "os-image.ref": "os-image/v0.1.1-rc.1"})
 	if err != nil {
@@ -227,7 +277,7 @@ func TestLockedPackageNeedsEveryArchitecture(t *testing.T) {
 
 func TestLockedPackageRejects(t *testing.T) {
 	dir := lockRepo(t, "os-image/v0.1.1-rc.1", map[string][]string{"amd64": {"v1.34.2"}})
-	l := LockedPackage{Dir: dir, LockDir: "pkg/lock", From: "os-image"}
+	l := LockedPackage{Dir: dir, LockDir: "pkg/lock", At: "os-image"}
 
 	for _, tc := range []struct {
 		name   string
@@ -247,7 +297,7 @@ func TestLockedPackageRejects(t *testing.T) {
 	}
 
 	t.Run("no lock files", func(t *testing.T) {
-		empty := LockedPackage{Dir: dir, LockDir: "missing", From: "os-image"}
+		empty := LockedPackage{Dir: dir, LockDir: "missing", At: "os-image"}
 		_, err := empty.Resolve(map[string]string{InputConstraintKey: "1.34", "os-image.ref": "os-image/v0.1.1-rc.1"})
 		if err == nil || !strings.Contains(err.Error(), "holds no lock files") {
 			t.Errorf("err = %v, want it to say there are no lock files", err)
@@ -313,7 +363,7 @@ func TestLockedPackageOverride(t *testing.T) {
 		"amd64": {"v1.34.2", "v1.35.3", "v1.36.3", "v1.36.9"},
 		"arm64": {"v1.34.2", "v1.35.3", "v1.36.3"},
 	})
-	l := LockedPackage{Dir: dir, LockDir: "pkg/lock", From: "os-image"}
+	l := LockedPackage{Dir: dir, LockDir: "pkg/lock", At: "os-image"}
 	ref := "os-image/v0.1.1-rc.1"
 
 	for _, tc := range []struct {

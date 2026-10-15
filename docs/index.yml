@@ -47,6 +47,8 @@ navigation:
             path: workload-clusters/create.md
           - page: Access a workload cluster
             path: workload-clusters/access.md
+          - page: Configure OIDC for workload clusters
+            path: workload-clusters/oidc.md
           - page: Manage node pools
             path: workload-clusters/node-pools.md
 

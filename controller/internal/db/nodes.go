@@ -44,10 +44,11 @@ type Node struct {
 	// accepted but not yet started. It is set only on the control-plane-controller
 	// delete path, where the API records intent and the control-plane controller
 	// starts the teardown one node at a time; nil everywhere else.
-	DeleteRequest json.RawMessage   `bun:"delete_request,type:jsonb,nullzero"`
-	CreatedAt     time.Time         `bun:"type:timestamptz,notnull,default:current_timestamp"`
-	UpdatedAt     time.Time         `bun:"type:timestamptz,notnull,default:current_timestamp"`
-	Nico          *NicoNodeProvider `bun:"nico,type:jsonb"`
+	DeleteRequest      json.RawMessage     `bun:"delete_request,type:jsonb,nullzero"`
+	CreatedAt          time.Time           `bun:"type:timestamptz,notnull,default:current_timestamp"`
+	UpdatedAt          time.Time           `bun:"type:timestamptz,notnull,default:current_timestamp"`
+	Nico               *NicoNodeProvider   `bun:"nico,type:jsonb"`
+	NodeAgentLifecycle *NodeAgentLifecycle `bun:"node_agent_lifecycle,type:jsonb"`
 }
 
 type NicoNodeProvider struct {

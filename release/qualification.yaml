@@ -56,6 +56,12 @@ spec:
     - {name: os-image-bootloader-amd64, value: nke-isos/qcow/efi/x86_64/2026-06-25/1782410681/qcow-imager.efi}
     - {name: os-image-bootloader-arm64, value: nke-isos/qcow/efi/aarch64/2026-06-25/1782410719/qcow-imager.efi}
 
+    # nvkectl is published as one artifact per platform, so the cli version
+    # above does not name one. These do, and a run stages the one its site
+    # needs.
+    - {name: cli-amd64}
+    - {name: cli-arm64}
+
     - {name: kind}
     - {name: clusterctl}
     - {name: nerdctl}

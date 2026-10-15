@@ -79,10 +79,8 @@ func (s *Service) startProvisionNodeWorkflow(ctx context.Context, pendingNode db
 		NodeID:                         pendingNode.ID,
 		RebootNodeWaitForUptimeTimeout: s.cfg.NodeRebootMaxTimeout,
 		// Control-plane nodes defer join to the control-plane controller, which
-		// serializes joins one node at a time. Only when the control-plane
-		// controller owns the control plane; otherwise control-plane nodes
-		// auto-join inline like workers, preserving the pre-controller behavior.
-		SkipJoin: pendingNode.ControlPlane && s.cfg.UseControlPlaneControllerForControlPlane(),
+		// serializes joins one node at a time.
+		SkipJoin: pendingNode.ControlPlane,
 	})
 	otelx.EndWorkflowSpan(span, err)
 	if err != nil {

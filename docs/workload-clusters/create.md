@@ -74,14 +74,14 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
 
    | Field | Default | Notes |
    |---|---|---|
-   | `cniPlugin` | `ovn-kubernetes` | `calico` is the alternative. `cniVersion` defaults to `1.4.0` for `ovn-kubernetes` and `3.30.1` for `calico`, the versions the node image carries. |
+   | `cniPlugin` | `ovn-kubernetes` | `cniVersion` defaults to `1.4.0`, the version the node image carries. |
    | `etcdEncrypted` | None, required | Encrypts etcd at rest. You can turn encryption on later, but not off. |
    | `controlPlaneVIP` | None | Without a VIP, the API endpoint is the first control-plane node's IP, `desiredCount` must be `1`, and you cannot later scale the control plane above one node, upgrade it or replace its nodes. Recreate the cluster to add a VIP. |
    | `network.podCIDR` | `192.168.0.0/16` | Private IPv4 CIDRs, comma-separated, each `/12` to `/23`. Needs one `/24` for every node in the request, plus one. |
    | `network.serviceCIDR` | `10.96.0.0/12` | Private IPv4, `/12` to `/24`. |
    | `nico.orgID`, `siteID`, `vpcID` | None, required | Fixed for the life of the cluster. |
 
-   Custom pod or service CIDRs require `ovn-kubernetes`: with `calico`, the API accepts only the defaults. The network cannot be changed after creation.
+   The network cannot be changed after creation.
 
 3. Review the control-plane and node pool settings.
 
@@ -204,7 +204,7 @@ You change three cluster settings after creation with `nvkectl patch cluster`, w
 
    After etcd encryption, `nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml` shows `etcdEncrypted: true`. If `STATUS` reads `UpdateFailed`, send the same patch again to retry.
 
-`enableOidc` requires Kubernetes 1.30.0 or later and a management plane installed with the `nkeOIDCAuth.issuerURL` chart value set. A cluster created while `nkeOIDCAuth.enabled` is `true` has OIDC from the start. The install in [Install management-plane services](../operate/install-management-plane-services.md) sets `nkeOIDCAuth.enabled` to `false` and `nkeOIDCAuth.issuerURL` to `https://nke.site-controller.internal`, and sets no `nkeOIDCAuth.discoveryURL`. New clusters therefore start without OIDC, and the `enableOidc` patch is accepted. The cluster's API server then fetches the issuer's discovery document from that host name, which the install does not make resolvable, so try `enableOidc` on one cluster before you rely on it.
+`enableOidc` requires Kubernetes 1.30.0 or later and turns on the shared OIDC provider that the `nvkeOIDCAuth` chart values configure. The install in [Install management-plane services](../operate/install-management-plane-services.md) configures it for the management cluster's SPIRE server and sets `nvkeOIDCAuth.enabled` to `false`, so new clusters start without it and the `enableOidc` patch is accepted. Try `enableOidc` on one cluster before you rely on it. [Configure OIDC for workload clusters](oidc.md) describes the shared provider, and the fleet-wide providers that a cluster gets only at creation.
 
 The same `PATCH` also takes `controlPlaneKubernetesVersion`, to upgrade the control plane, and `controlPlaneConfig`, to change the control-plane node count or OS profile. An upgrade, a node count above one and an OS profile change each require `controlPlaneVIP`.
 

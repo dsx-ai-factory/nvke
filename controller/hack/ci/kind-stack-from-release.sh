@@ -108,7 +108,7 @@ vip="$(docker inspect -f '{{with index .NetworkSettings.Networks "kind"}}{{.IPAd
 
 # 3. The site spec and its credential files. The credentials are placeholders:
 # nothing in this lane reaches NICo or a private registry.
-for f in nico-token registry-token tenant-password; do printf 'smoke-%s\n' "${f}" >"${WORK}/site/${f}"; done
+for f in nico-token tenant-password; do printf 'smoke-%s\n' "${f}" >"${WORK}/site/${f}"; done
 # nktp sized for one kind node: nktp's own kind values, plus a ceiling of one
 # replica on the autoscaled collectors. The whole stack shares this node, so a
 # scale-up on a startup CPU burst would leave a replica Pending.
@@ -123,14 +123,15 @@ sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" -e "s|@NKTP_VALUES@|${WO
   "${HERE}/sitespec.yaml.tmpl" >"${WORK}/site/sitespec.yaml"
 "${NVKECTL}" validate sitespec -f "${WORK}/site/sitespec.yaml"
 
-# 4. What deploy/nico expects before it runs: an untainted node, a default
-# StorageClass (kind ships one), cert-manager and Cluster API.
+# 4. The site runbook, in the order docs/operate/install-management-plane-services.md
+# gives it. nvkectl bootstrap site untaints a real site's nodes; kind does
+# not, so the lane does it here. kind ships a default StorageClass.
 kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
-kubectl get storageclass -o jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}' | grep -q . \
-  || die "the kind cluster has no default StorageClass"
+log "checking the site"
+NVKECTL="${NVKECTL}" bash "${REPO}/deploy/check-site.sh" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${KUBECONFIG}" \
+  --release "${WORK}/release.json" --nvkr-run-dir "${RUN}"
 log "installing Cluster API ${CAPI_VERSION}"
-clusterctl init --core "cluster-api:${CAPI_VERSION}" --bootstrap "kubeadm:${CAPI_VERSION}" --control-plane "kubeadm:${CAPI_VERSION}"
-kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=5m
+clusterctl init --core "cluster-api:${CAPI_VERSION}" --bootstrap "kubeadm:${CAPI_VERSION}" --control-plane "kubeadm:${CAPI_VERSION}" --wait-providers
 kubectl rollout status deployment/cert-manager-webhook -n cert-manager --timeout=5m
 
 # 5. Render and install in one go: the executor renders deploy/nico for the
@@ -158,6 +159,10 @@ NVKECTL="${NVKECTL}" NVKE_STATE_DIR="${STATE}" CTR="docker exec -i ${node} ctr" 
 if leftovers="$(find "${STATE}" \( -name site-values.yaml -o -name site.env -o -name '*.yaml.tmpl' -o -name images.txt \) 2>/dev/null)" && [[ -n "${leftovers}" ]]; then
   die "rendered files outlived the install: ${leftovers}"
 fi
+# After the deploy path: the SPIRE exec-auth patch for the Cluster API
+# controllers, which waits for the rollout once csi.spiffe.io is registered.
+log "patching the Cluster API controllers with the SPIRE exec-auth plugin"
+bash "${REPO}/controller/hack/apply-capi-spiffe-exec-auth.sh" --kubeconfig "${KUBECONFIG}"
 
 # 6. Assert: the images are in containerd under the release's names, every
 # pod is Ready, and the controller and CAPNICo run the release digests.

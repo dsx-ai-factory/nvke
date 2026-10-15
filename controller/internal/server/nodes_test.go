@@ -283,7 +283,7 @@ func TestNodeService_ListNodes(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("ListNodes", mock.Anything, tt.filters).Return(tt.dbNodes, tt.dbError)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, false)
+			service := server.NewNodeService(&slog.Logger{}, mockDB)
 
 			resp, err := service.ListNodes(context.Background(), api.ListNodesRequestObject{
 				Params: api.ListNodesParams{
@@ -381,7 +381,7 @@ func TestNodeService_GetNode(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("GetNode", mock.Anything, tt.nodeID).Return(tt.dbNode, tt.dbError)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, false)
+			service := server.NewNodeService(&slog.Logger{}, mockDB)
 
 			resp, err := service.GetNode(context.Background(), api.GetNodeRequestObject{
 				NodeID: tt.nodeID,
@@ -497,7 +497,7 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			want400Contains: "last joined control-plane node",
 		},
 		{
-			name:   "success control-plane node when another joined CP remains",
+			name:   "success control-plane node records delete request when another joined CP remains",
 			nodeID: nodeID,
 			setupMockCalls: func(tx *mockTx) {
 				otherCP := uuid.MustParse("550e8400-e29b-41d4-a716-446655440021")
@@ -532,10 +532,14 @@ func TestNodeService_DeleteNode(t *testing.T) {
 						},
 					},
 				}, nil)
-				tx.On("UpdateNode", mock.Anything, mock.Anything).Return(db.Node{}, nil)
-				tx.On("CreateWorkflowOutboxEntry", mock.Anything, constants.TeardownNodeWorkflowType, mock.Anything, mock.MatchedBy(func(input workflows.TeardownNodeInput) bool {
-					return input.NodeID == nodeID
-				})).Return(db.WorkflowOutbox{}, nil)
+				tx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(n *db.Node) bool {
+					return n.ID == nodeID && n.Conditions.DeleteRequested.Status == db.ConditionStatusTrue && n.DeleteRequest != nil
+				})).Return(db.Node{}, nil)
+			},
+			verifyConditions: func(t *testing.T, conditions db.NodeConditions) {
+				t.Helper()
+				assert.Equal(t, db.ConditionStatusTrue, conditions.DeleteRequested.Status)
+				assert.NotEqual(t, db.ConditionStatusTrue, conditions.Deleting.Status)
 			},
 		},
 		{
@@ -697,7 +701,7 @@ func TestNodeService_DeleteNode(t *testing.T) {
 
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, false)
+			service := server.NewNodeService(&slog.Logger{}, mockDB)
 
 			var body *api.DeleteNodeJSONRequestBody
 			if tt.machineHealthIssue != nil || tt.forceUnreachable {
@@ -976,7 +980,7 @@ func TestNodeService_ListNodes_ControlPlaneRollout(t *testing.T) {
 		}, nil,
 	)
 
-	service := server.NewNodeService(&slog.Logger{}, mockDB, false)
+	service := server.NewNodeService(&slog.Logger{}, mockDB)
 
 	resp, err := service.ListNodes(context.Background(), api.ListNodesRequestObject{})
 	require.NoError(t, err)
@@ -1050,7 +1054,7 @@ func TestNodeService_GetNode_ControlPlaneRollout(t *testing.T) {
 		[]db.ControlPlaneConfiguration{{ID: driftedCfgID, Config: driftedSpec}}, nil,
 	)
 
-	service := server.NewNodeService(&slog.Logger{}, mockDB, false)
+	service := server.NewNodeService(&slog.Logger{}, mockDB)
 
 	resp, err := service.GetNode(context.Background(), api.GetNodeRequestObject{NodeID: nodeID})
 	require.NoError(t, err)
@@ -1071,7 +1075,7 @@ func TestNodeService_GetNode_ControlPlaneRollout(t *testing.T) {
 }
 
 // TestNodeService_DeleteControlPlaneNodeThroughController covers the API half of
-// the controller-owned delete: with the flag on, a control-plane delete is
+// the controller-owned delete: a control-plane delete is
 // accepted as intent (202, no teardown queued) or refused at the quorum floor
 // (400), while a worker delete keeps starting its teardown inline.
 func TestNodeService_DeleteControlPlaneNodeThroughController(t *testing.T) {
@@ -1146,7 +1150,7 @@ func TestNodeService_DeleteControlPlaneNodeThroughController(t *testing.T) {
 			mockDB := &mockDB{MockTx: tx}
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, true)
+			service := server.NewNodeService(&slog.Logger{}, mockDB)
 
 			resp, err := service.DeleteNode(context.Background(), api.DeleteNodeRequestObject{
 				NodeID: tt.target.ID,

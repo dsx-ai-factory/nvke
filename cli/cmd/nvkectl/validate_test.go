@@ -31,7 +31,7 @@ func filledSiteSpec(t *testing.T, edits map[string]string) string {
 	t.Helper()
 	path := generatedSiteSpec(t)
 	dir := filepath.Dir(path)
-	for _, name := range []string{"nico-token", "registry-token", "tenant-password"} {
+	for _, name := range []string{"nico-token", "tenant-password"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("placeholder\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -39,7 +39,6 @@ func filledSiteSpec(t *testing.T, edits map[string]string) string {
 	values := map[string]string{
 		"REPLACE_ARCH": "arm64", "REPLACE_NICO_ENDPOINT": "https://nico.example.com", "REPLACE_NICO_ORG_ID": "org-1",
 		"REPLACE_NICO_API_NAME": "forge", "REPLACE_NICO_TOKEN_PATH": filepath.Join(dir, "nico-token"),
-		"REPLACE_REGISTRY_SERVER": "ghcr.io", "REPLACE_REGISTRY_USERNAME": "robot", "REPLACE_REGISTRY_TOKEN_PATH": filepath.Join(dir, "registry-token"),
 		"REPLACE_TENANT_USER": "nke", "REPLACE_TENANT_PASSWORD_PATH": filepath.Join(dir, "tenant-password"),
 		"REPLACE_DB_PASSWORD_PATH": filepath.Join(dir, "db-password"),
 		// deploy/nico enables profiles.image without a pin.
@@ -71,7 +70,7 @@ func TestValidateSiteSpec_GeneratedFileListsPlaceholders(t *testing.T) {
 	if !strings.Contains(stdout, "bootstrap: valid; nvkectl bootstrap site can run with this file\n") {
 		t.Errorf("bootstrap section not reported valid:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "controllerStack: 11 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint") {
+	if !strings.Contains(stdout, "controllerStack: 8 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint") {
 		t.Errorf("placeholders not listed:\n%s", stdout)
 	}
 	// generate sitespec leaves the spire block commented out; the default

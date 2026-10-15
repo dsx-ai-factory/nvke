@@ -53,6 +53,12 @@ name: OS Image Artifact
 # The Release is cut by the "release" job, not by a matrix leg: legs run
 # concurrently and none can see another's checksums.
 #
+# A bare vX.Y.Z-beta.N tag only triggers the run. It bakes that commit on the
+# golden path only -- Ubuntu 24.04, non-FDE, amd64 and arm64 -- and versions it
+# by the os-image/v* describe, like any other build of it: GHCR gets
+# sha-<commit> and the describe version, NVCR and the prod S3 path get the
+# describe version. The beta tag name is not published, and there is no Release.
+#
 # Distinct from image.yml, which compiles controller Dockerfiles and pushes
 # nothing. Distinct from image-nvcr.yml, which publishes the controller
 # container.
@@ -61,6 +67,7 @@ on:
     tags:
       - "os-image/v[0-9]+.[0-9]+.[0-9]+"
       - "os-image/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
     # The mirror branch, not pull_request: self-hosted runners get no
     # pull_request events. Path-filtered, because a full bake is not cheap.
     # main publishes (see the GHCR push step), so the e2e lanes get an image
@@ -140,11 +147,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      contents: read
       packages: read
     outputs:
       legs: ${{ steps.pick.outputs.legs }}
       skip: ${{ steps.existing.outputs.skip }}
+      version: ${{ steps.version.outputs.version }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # describe needs the tags.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The one place the version is resolved. The bake, and the NVCR copy and S3
+      # publish of a tagged build, all take it, so they cannot disagree. A beta
+      # tag matches no os-image/v* tag, so it resolves by describe like a branch.
+      - name: Resolve the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/os-image/* ]]; then
+            version="${GITHUB_REF_NAME#os-image/}"
+          else
+            version="$(git describe --match 'os-image/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+            version="${version#os-image/}"
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
       # A scheduled run, or a re-run of a main push, on a commit whose
       # default-flavor non-FDE images are already published has nothing to
       # add. A tag, a mirror-branch push or a dispatch always bakes. Fails
@@ -173,6 +205,7 @@ jobs:
         env:
           # Empty on a tag push, so a tag builds both.
           WANT: ${{ github.event.inputs.arch }}
+          BETA: ${{ startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.') }}
         run: |
           set -euo pipefail
           amd64='{"arch":"amd64"}'
@@ -188,11 +221,17 @@ jobs:
           # 24.04 existed. Keep that default in step with UBUNTU_RELEASE in the
           # packer Makefile: its amd64 non-FDE build also carries the shared
           # release assets.
-          legs="$(jq -c -n --argjson arches "${arches}" '
+          #
+          # A beta is qualified on the golden path only -- Ubuntu 24.04,
+          # non-FDE, on both arches -- so it keeps just those legs. The shared
+          # release assets are not missed: they feed the Release, which a beta
+          # does not cut.
+          legs="$(jq -c -n --argjson arches "${arches}" --argjson beta "${BETA:-false}" '
             [{ubuntu_release:"26.04.1",tag_suffix:""},
              {ubuntu_release:"24.04.5",tag_suffix:"-ubuntu24.04"}] as $flavors
             | [$arches[] as $a | $flavors[] as $f | ("fde","non-fde") as $v
-               | $a + $f + {variant:$v, timeout_minutes:90}]')"
+               | $a + $f + {variant:$v, timeout_minutes:90}]
+            | if $beta then map(select(.tag_suffix == "-ubuntu24.04" and .variant == "non-fde")) else . end')"
           echo "legs=${legs}" >> "$GITHUB_OUTPUT"
           echo "building: ${legs}"
 
@@ -374,15 +413,12 @@ jobs:
       - name: Resolve version and tags
         id: meta
         shell: bash
+        env:
+          VERSION: ${{ needs.matrix.outputs.version }}
         run: |
           set -euo pipefail
 
-          if [[ "${GITHUB_REF}" == refs/tags/os-image/* ]]; then
-            version="${GITHUB_REF_NAME#os-image/}"
-          else
-            version="$(git describe --match 'os-image/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
-            version="${version#os-image/}"
-          fi
+          version="${VERSION}"
 
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
@@ -804,6 +840,7 @@ jobs:
         if: >-
           github.event.inputs.dry_run != 'true' &&
           (startsWith(github.ref, 'refs/tags/os-image/') ||
+           (startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.')) ||
            github.event_name == 'workflow_dispatch' ||
            github.event_name == 'schedule' ||
            (github.event_name == 'push' && github.ref == 'refs/heads/main'))
@@ -836,6 +873,7 @@ jobs:
         if: >-
           github.event.inputs.dry_run != 'true' &&
           (startsWith(github.ref, 'refs/tags/os-image/') ||
+           (startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.')) ||
            github.event_name == 'workflow_dispatch' ||
            github.event_name == 'schedule' ||
            (github.event_name == 'push' && github.ref == 'refs/heads/main'))
@@ -891,6 +929,7 @@ jobs:
       github.repository_id == '1323115536' &&
       github.event.inputs.dry_run != 'true' &&
       (startsWith(github.ref, 'refs/tags/os-image/') ||
+       (startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.')) ||
        github.event_name == 'workflow_dispatch')
     name: Publish to NVCR (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }}, ${{ matrix.variant }})
     runs-on: ubuntu-latest
@@ -925,6 +964,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
           SUFFIX: ${{ matrix.tag_suffix }}
           NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
+          VERSION: ${{ needs.matrix.outputs.version }}
         run: |
           set -euo pipefail
           if [[ -z "${NVKE_NGC_ORG}" ]]; then
@@ -933,7 +973,7 @@ jobs:
           fi
           tag="sha-${GITHUB_SHA}${SUFFIX}-${ARCH}"
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            tag="${GITHUB_REF_NAME#os-image/}${SUFFIX}-${ARCH}"
+            tag="${VERSION}${SUFFIX}-${ARCH}"
           fi
           {
             echo "tag=${tag}"
@@ -970,10 +1010,14 @@ jobs:
       github.repository_id == '1323115536' &&
       github.event.inputs.dry_run != 'true' &&
       (startsWith(github.ref, 'refs/tags/os-image/') ||
+       (startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.')) ||
        github.event_name == 'workflow_dispatch')
     name: Publish to S3 (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }}, ${{ matrix.variant }})
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/os-image/') && 's3-publish' || 's3-publish-non-prod' }}
+    # Pushed os-image/v* and beta tags both publish to prod, where qualification
+    # reads a beta from, so s3-publish's deployment policy must admit both. A
+    # manual run stays on non-prod whatever ref it names.
+    environment: ${{ github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/os-image/') || (startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.'))) && 's3-publish' || 's3-publish-non-prod' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -1018,6 +1062,7 @@ jobs:
           ROLE_ARN: ${{ vars.S3_PUBLISH_AWS_ROLE_ARN }}
           REGION: ${{ vars.S3_PUBLISH_AWS_REGION }}
           CF_DOMAIN: ${{ vars.S3_PUBLISH_CLOUDFRONT_DOMAIN }}
+          VERSION: ${{ needs.matrix.outputs.version }}
         run: |
           set -euo pipefail
           if [[ -z "${S3_URI}" || -z "${ROLE_ARN}" || -z "${CF_DOMAIN}" ]]; then
@@ -1025,8 +1070,8 @@ jobs:
             exit 1
           fi
           release="sha-${GITHUB_SHA}"
-          if [[ "${GITHUB_REF}" == refs/tags/os-image/* ]]; then
-            release="${GITHUB_REF_NAME#os-image/}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            release="${VERSION}"
           fi
           tag="${release}${SUFFIX}-${ARCH}"
           mkdir -p dist

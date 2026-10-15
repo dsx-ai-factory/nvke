@@ -113,13 +113,13 @@ if "nico-vm" in _provider_names and "nico-vms" not in _provider_names:
          "in the provider list: it points nico-credentials at that backend and depends on " +
          "its Tilt resource by name.")
 
-# 'nico' and 'nico-vms' are mutually exclusive Forge backends for the controller: both set
-# FORGE_URL and both bind host port 18080 (nico-mock's port-forward vs nico-vms's
-# listener). Enable at most one. (capd is orthogonal and may accompany either.)
+# 'nico' and 'nico-vms' are mutually exclusive Forge backends for the controller: both
+# bind host port 18080 (nico-mock's port-forward vs nico-vms's listener). Enable at
+# most one. (capd is orthogonal and may accompany either.)
 if "nico" in _provider_names and "nico-vms" in _provider_names:
     fail("Providers 'nico' (nico-mock, container-backed nodes) and 'nico-vms' (real " +
-         "KVM/libvirt VMs) are mutually exclusive controller backends: both set the controller's FORGE_URL " +
-         "and bind host port 18080. Enable only one (capd may accompany either).")
+         "KVM/libvirt VMs) are mutually exclusive controller backends: both bind host port 18080. " +
+         "Enable only one (capd may accompany either).")
 
 # 'nico' and 'nico-vm' are mutually exclusive ways to get a CAPNICo
 # controller: both install one into the capnico-system namespace and own the
@@ -1005,8 +1005,6 @@ _cwe_permissive_mode = os.getenv(
     "NKE_PERMISSIVE_MODE", _tilt_env.get("NKE_PERMISSIVE_MODE", "false")) == "true"
 
 _cwe_chart_extra_env_names = [
-    "NODE_HEALTH_CHECK_POLLING_INTERVAL",
-    "NODE_HEALTH_CHECK_INTERVAL",
     "NODE_PROVISIONING_TIMEOUT",
     "NODE_REBOOT_POLLING_INTERVAL",
     "LOG_LEVEL",
@@ -1018,18 +1016,8 @@ _cwe_chart_extra_env = []
 for _name in _cwe_chart_extra_env_names:
     if _name in _tilt_env:
         _cwe_chart_extra_env.append({"name": _name, "value": _tilt_env[_name]})
-# PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER is honored from the
-# process environment first (with the .env.tilt value as a fallback) so CI lanes
-# can toggle control-plane-controller provisioning per run without editing a file.
-_cwe_provision_cp_with_controller = os.getenv(
-    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER",
-    _tilt_env.get("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", ""))
-if _cwe_provision_cp_with_controller != "":
-    _cwe_chart_extra_env.append({
-        "name": "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER",
-        "value": _cwe_provision_cp_with_controller,
-    })
-# Same process-env-first pattern as above, so CI can disable soft reboot without touching the
+# NODE_REBOOT_SOFT_REBOOT_ENABLED is honored from the process environment first (with the
+# .env.tilt value as a fallback) so CI can disable soft reboot without touching the
 # production default.
 _cwe_node_reboot_soft_reboot_enabled = os.getenv(
     "NODE_REBOOT_SOFT_REBOOT_ENABLED",

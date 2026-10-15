@@ -35,10 +35,6 @@ func (r *reconciler) reconcileRequestedDeletes(
 	cluster db.Cluster,
 	cp *controlPlane,
 ) (bool, error) {
-	if !r.cfg.UseControlPlaneControllerForControlPlane() {
-		return false, nil
-	}
-
 	requested := cp.nodesWithDeleteRequested()
 
 	logger := r.logger.With(

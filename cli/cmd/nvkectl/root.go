@@ -163,6 +163,7 @@ var queryCommands = map[string]bool{ //nolint:gochecknoglobals // constant looku
 	"config":   true,
 	"generate": true,
 	"render":   true,
+	"inspect":  true,
 }
 
 // topLevel returns the name of the command directly under the root that cmd

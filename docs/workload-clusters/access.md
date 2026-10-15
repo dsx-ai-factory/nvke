@@ -65,6 +65,8 @@ You cannot revoke a copy you hand over. It stays valid until its certificate exp
 
 `enableOidc`, described in [Create a workload cluster](create.md), does not connect the customer's identity provider. It makes the cluster's API server accept OpenID Connect (OIDC) tokens from the single issuer configured for the management plane, which the management plane and the Cluster API controllers use to reach the cluster. The admin kubeconfig is still published with OIDC on, and it is still how the customer gets access. NVKE does not issue per-user credentials to customers; see [Preview status and known limitations](../overview/preview-status.md).
 
+A fleet-wide OIDC provider, described in [Configure OIDC for workload clusters](oidc.md), makes the API server of every cluster created afterward accept tokens from an identity provider you choose. It is the same for every such cluster, and NVKE binds no roles to its users and groups: the customer's administrators bind them with the admin kubeconfig.
+
 ## Connect with kubectl
 
 The customer runs these steps with the kubeconfig the operator sent.
@@ -103,7 +105,7 @@ The operator manages the rest through the NVKE API, and the customer asks the op
 
 - Nodes: the node count, instance type, labels, taints and Kubernetes version of each node pool. See [Manage node pools](node-pools.md).
 - The control plane, including the `kube-vip` static Pod that serves the API address, and the cluster's Container Network Interface (CNI) plugin and network settings.
-- On clusters with OIDC turned on, the RBAC objects NVKE applies for its own access: `nke:cwe` and `nke:capi-cluster-admin`. Deleting or editing them blocks the management plane from operating the cluster.
+- On clusters with OIDC turned on, the RBAC objects NVKE applies for its own access: `nvke:cwe` and `nvke:capi-cluster-admin`. Deleting or editing them blocks the management plane from operating the cluster.
 
 ## How clients reach the Kubernetes API
 

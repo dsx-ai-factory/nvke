@@ -28,10 +28,6 @@ type failureDomains struct {
 // its active control-plane Machines. A discovery error is returned with a nil
 // snapshot and aborts reconciliation.
 func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster) (*failureDomains, error) {
-	if !r.cfg.UseControlPlaneControllerForControlPlane() {
-		return &failureDomains{}, nil
-	}
-
 	if r.k8sClient == nil {
 		return nil, fmt.Errorf("kubernetes client is not configured")
 	}

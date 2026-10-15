@@ -55,7 +55,6 @@ var (
 	errOIDCWithKubernetesUpgrade                = errors.New("cannot enable OIDC authentication and update the Kubernetes version in the same request")
 	errOIDCWithEtcdEncryption                   = errors.New("cannot enable OIDC authentication and etcd encryption in the same request")
 	errClusterMaxSurgeTooHigh                   = errors.New("maxSurge should be max 1 for cluster-level control plane config")
-	errControlPlaneConfigNotEnabled             = errors.New("cluster-level controlPlaneConfig requires control-plane controller provisioning to be enabled; configure the control plane via a control-plane node pool")
 	cniVersionPattern                           = regexp.MustCompile(`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`)
 )
 
@@ -86,14 +85,8 @@ type clusterService struct {
 	fleetOIDC                        *controllerconfig.OIDCConfig
 	providers                        providerSupport
 	allowLegacyCalicoClusterCreation bool
-	// useControlPlaneController mirrors the controller feature flag
-	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true, the
-	// cluster-level controlPlaneConfig is authoritative: it is required on
-	// create, control-plane node pools are rejected, and the config is persisted
-	// as cluster-level desiredCount + a control plane config snapshot. When
-	// false, the control plane is provisioned from a control-plane node pool and
-	// supplying controlPlaneConfig.desiredCount/spec is rejected.
-	useControlPlaneController bool
+	nodeAgentUpdateMethod            string
+	allowlistedLabelKeys             []string
 }
 
 func NewClusterService(
@@ -104,7 +97,7 @@ func NewClusterService(
 	oidcAuthEnabled bool,
 	supportedInfraProviders []string,
 	allowLegacyCalicoClusterCreation bool,
-	useControlPlaneController bool,
+	updateMethod string,
 ) *clusterService {
 	return &clusterService{
 		logger:                           logger,
@@ -114,7 +107,7 @@ func NewClusterService(
 		oidcAuthEnabled:                  oidcAuthEnabled,
 		providers:                        newProviderSupport(supportedInfraProviders),
 		allowLegacyCalicoClusterCreation: allowLegacyCalicoClusterCreation,
-		useControlPlaneController:        useControlPlaneController,
+		nodeAgentUpdateMethod:            updateMethod,
 	}
 }
 
@@ -200,11 +193,9 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 		dbCluster.PodCIDR = network.podCIDR
 		dbCluster.ServiceCIDR = network.serviceCIDR.String()
 
-		// In control-plane controller provisioning mode the cluster-level control
-		// plane config is authoritative. Persist the desired count and max surge as
-		// columns up front; the config snapshot row is created after the cluster row
-		// exists (it needs the cluster ID).
-		if s.useControlPlaneController && req.Body.ControlPlaneConfig != nil {
+		// Persist the desired count and max surge as columns up front; the config
+		// snapshot row is created after the cluster row exists (it needs the cluster ID).
+		if req.Body.ControlPlaneConfig != nil {
 			dbCluster.ControlPlaneConfig.DesiredCount = req.Body.ControlPlaneConfig.DesiredCount
 			if req.Body.ControlPlaneConfig.MaxSurge != nil {
 				dbCluster.ControlPlaneConfig.MaxSurge = *req.Body.ControlPlaneConfig.MaxSurge
@@ -216,7 +207,7 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 			return fmt.Errorf("failed to create cluster: %w", err)
 		}
 
-		if s.useControlPlaneController && req.Body.ControlPlaneConfig != nil {
+		if req.Body.ControlPlaneConfig != nil {
 			spec := controlPlaneConfigSpecFromCreateAPI(
 				req.Body.ControlPlaneConfig,
 				createdCluster.KubernetesVersion,
@@ -291,9 +282,8 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 	}
 	cpSurge := 0
 	// Include the cluster-level control plane node count (and its surge) in the
-	// pod-CIDR capacity check when the control plane is provisioned from the
-	// cluster-level controlPlaneConfig rather than a node pool.
-	if s.useControlPlaneController && req.ControlPlaneConfig != nil {
+	// pod-CIDR capacity check.
+	if req.ControlPlaneConfig != nil {
 		desiredNodes += req.ControlPlaneConfig.DesiredCount
 		if req.ControlPlaneConfig.MaxSurge != nil {
 			cpSurge = *req.ControlPlaneConfig.MaxSurge
@@ -311,7 +301,7 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 
 	// When the control plane is configured at the cluster level for a Forge
 	// cluster, enforce the same subnet/VPC-prefix native-networking rules used
-	if s.useControlPlaneController && req.ControlPlaneConfig != nil && req.Nico != nil {
+	if req.ControlPlaneConfig != nil && req.Nico != nil {
 		if req.ControlPlaneConfig.Nico == nil {
 			return resolvedClusterNetwork{}, newBadRequestErrorf(
 				"controlPlaneConfig.nico is required for a nico cluster control plane",
@@ -365,33 +355,24 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		return fmt.Errorf("exactly one provider must be set")
 	}
 
-	if s.useControlPlaneController {
-		// Cluster-level control plane config is authoritative: control-plane node
-		// pools are rejected and the control plane is described by controlPlaneConfig.
-		if err := validateCreateClusterLevelControlPlane(req, nodePools, providerType); err != nil {
+	if req.ControlPlaneConfig != nil && req.ControlPlaneConfig.NodeAgentConfig != nil && req.ControlPlaneConfig.NodeAgentConfig.Version != nil {
+		version, err := canonicalNodeAgentVersion(*req.ControlPlaneConfig.NodeAgentConfig.Version)
+		if err != nil {
 			return err
 		}
-		if err := validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, req.ControlPlaneConfig.DesiredCount); err != nil {
-			return err
+		if version != "" && s.nodeAgentUpdateMethod == "" {
+			return fmt.Errorf("nodeAgent.updateMethod is required for agent convergence")
 		}
-	} else {
-		// Legacy mode: the control plane is provided via a control-plane node pool,
-		// and a cluster-level controlPlaneConfig is not accepted.
-		if req.ControlPlaneConfig != nil {
-			return errControlPlaneConfigNotEnabled
-		}
-		controlPlaneNodeCount := 0
-		for _, nodePool := range nodePools {
-			if nodePool.ControlPlane {
-				controlPlaneNodeCount += nodePool.DesiredNodeCount
-			}
-		}
-		if controlPlaneNodeCount == 0 {
-			return fmt.Errorf("cluster must have at least one control plane node")
-		}
-		if err := validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, controlPlaneNodeCount); err != nil {
-			return err
-		}
+		req.ControlPlaneConfig.NodeAgentConfig.Version = &version
+	}
+	if err := validateCreateClusterLevelControlPlane(req, nodePools, providerType, s.allowlistedLabelKeys); err != nil {
+		return err
+	}
+	if req.ControlPlaneConfig == nil {
+		return fmt.Errorf("controlPlaneConfig is required")
+	}
+	if err := validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, req.ControlPlaneConfig.DesiredCount); err != nil {
+		return err
 	}
 
 	dbCniPlugin := db.EffectiveCNIPlugin(db.CniPlugin(req.CniPlugin))
@@ -416,8 +397,11 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		if err := naming.ValidateNodeNamePrefix(req.Name, nodePool.NodeNamePrefix); err != nil {
 			return fmt.Errorf("invalid node pool %q: %w", nodePool.Name, err)
 		}
-		if nodePool.ControlPlane && len(nodePool.NodeTaints) > 0 {
-			return fmt.Errorf("invalid node pool %q: nodeTaints are not allowed on a control-plane pool", nodePool.Name)
+		if err := validateNodeLabels(nodePool.NodeLabels, s.allowlistedLabelKeys); err != nil {
+			return fmt.Errorf("invalid node pool %q: %w", nodePool.Name, err)
+		}
+		if err := validateNodeTaints(nodePool.NodeTaints, nodePool.ControlPlane); err != nil {
+			return fmt.Errorf("invalid node pool %q: %w", nodePool.Name, err)
 		}
 	}
 
@@ -564,6 +548,9 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 				message:   uip.Message,
 			}
 		}
+		if agentUpgradeBlocksMaintenance(dbCluster, req.Body) {
+			return errAgentUpgradeInProgress
+		}
 		// Reject a controlPlaneConfig provider block that doesn't match the cluster before
 		// any field is touched.
 		if cpConfig := req.Body.ControlPlaneConfig; cpConfig != nil {
@@ -660,9 +647,8 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 			return api.UpdateCluster404Response{}, nil
 		}
 		// Return 409 when another mutually-exclusive operation is already running.
-		var uipErr *updateInProgressError
-		if errors.As(err, &uipErr) {
-			return api.UpdateCluster409JSONResponse{Message: uipErr.Error()}, nil
+		if response := updateClusterConflictResponse(err); response != nil {
+			return response, nil
 		}
 		var badRequestErr *badRequestError
 		if errors.As(err, &badRequestErr) {
@@ -713,8 +699,7 @@ func isUpdateClusterClientError(err error) bool {
 		errors.Is(err, errOIDCDuringDeletion) ||
 		errors.Is(err, errOIDCWithKubernetesUpgrade) ||
 		errors.Is(err, errOIDCWithEtcdEncryption) ||
-		errors.Is(err, errClusterMaxSurgeTooHigh) ||
-		errors.Is(err, errControlPlaneConfigNotEnabled)
+		errors.Is(err, errClusterMaxSurgeTooHigh)
 }
 
 func hasNonEtcdEncryptionMutation(req *api.UpdateClusterRequest) bool {
@@ -724,17 +709,13 @@ func hasNonEtcdEncryptionMutation(req *api.UpdateClusterRequest) bool {
 		req.ControlPlaneConfig != nil
 }
 
-// podCIDRNodePoolsWithClusterCP returns nodePools augmented, when control-plane
-// controller provisioning is enabled, with a synthetic control-plane pool that
-// carries the cluster-level ControlPlaneConfig.DesiredCount. In that mode the
-// control plane is not a node pool, so this is how its nodes enter the pod-CIDR
+// podCIDRNodePoolsWithClusterCP returns nodePools augmented with a synthetic
+// control-plane pool that carries the cluster-level ControlPlaneConfig.DesiredCount.
+// The control plane is not a node pool, so this is how its nodes enter the pod-CIDR
 // capacity accounting. CP MaxSurge is supplied separately as the clusterMaxSurge
 // argument to the capacity helpers, so the synthetic pool leaves MaxSurge zero to
 // avoid double-counting.
-func podCIDRNodePoolsWithClusterCP(useControlPlaneController bool, cluster db.Cluster, nodePools []db.NodePool) []db.NodePool {
-	if !useControlPlaneController {
-		return nodePools
-	}
+func podCIDRNodePoolsWithClusterCP(cluster db.Cluster, nodePools []db.NodePool) []db.NodePool {
 	return append(append([]db.NodePool(nil), nodePools...), db.NodePool{
 		ControlPlane: true,
 		DesiredCount: cluster.ControlPlaneConfig.DesiredCount,
@@ -771,8 +752,8 @@ func (s *clusterService) applyControlPlaneConfigUpdateWithCIDRCheck(
 	if err != nil {
 		return fmt.Errorf("failed to list node pools for pod CIDR capacity validation: %w", err)
 	}
-	currentNodePools := podCIDRNodePoolsWithClusterCP(s.useControlPlaneController, *cluster, nodePools)
-	previousNodePools := podCIDRNodePoolsWithClusterCP(s.useControlPlaneController, previousCluster, nodePools)
+	currentNodePools := podCIDRNodePoolsWithClusterCP(*cluster, nodePools)
+	previousNodePools := podCIDRNodePoolsWithClusterCP(previousCluster, nodePools)
 	if requiredPodCIDRNodeBlocks(currentNodePools, cluster.ControlPlaneConfig.MaxSurge) >
 		requiredPodCIDRNodeBlocks(previousNodePools, previousCluster.ControlPlaneConfig.MaxSurge) {
 		if err := validateStoredPodCIDRCapacity(*cluster, currentNodePools); err != nil {
@@ -804,13 +785,6 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 		}
 		cluster.ControlPlaneConfig.MaxSurge = *req.MaxSurge
 	}
-	if !s.useControlPlaneController &&
-		cluster.ControlPlaneConfig.ConfigurationID == uuid.Nil &&
-		req.ProvisioningMonitorDisabled == nil &&
-		!hasClusterLevelControlPlaneUpdate(req) {
-		return nil
-	}
-
 	controlPlaneConfigSpec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
 	// KubernetesVersion lives in the spec row and should track the current
 	// cluster control-plane version selected in this PATCH.
@@ -833,13 +807,7 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 		controlPlaneConfigSpec.SetNico(nicoProvider)
 	}
 
-	// desiredCount and the full control-plane spec are only honored in
-	// control-plane controller provisioning mode. In legacy mode the control
-	// plane is defined by control-plane node pools, so these updates are rejected.
 	if hasClusterLevelControlPlaneUpdate(req) {
-		if !s.useControlPlaneController {
-			return errControlPlaneConfigNotEnabled
-		}
 		if err := s.applyClusterLevelControlPlaneSpecUpdate(ctx, cluster, req, &controlPlaneConfigSpec); err != nil {
 			return err
 		}
@@ -850,8 +818,7 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 	// capiInfraMachineTemplate). instanceTypePreference is merged above and is not
 	// covered by hasClusterLevelControlPlaneUpdate, so gate on it explicitly;
 	// maxSurge- and k8s-version-only updates leave these fields untouched.
-	if s.useControlPlaneController &&
-		(hasClusterLevelControlPlaneUpdate(req) || hasInstanceTypePreferences) {
+	if hasClusterLevelControlPlaneUpdate(req) || hasInstanceTypePreferences {
 		if err := validateMergedClusterControlPlaneSpec(*cluster, controlPlaneConfigSpec); err != nil {
 			return err
 		}
@@ -874,13 +841,13 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 }
 
 // hasClusterLevelControlPlaneUpdate reports whether the update touches any of the
-// cluster-level control plane fields that require control-plane controller
-// provisioning (i.e. everything beyond the legacy maxSurge /
-// provisioningMonitorDisabled knobs).
+// cluster-level control plane fields beyond the maxSurge /
+// provisioningMonitorDisabled knobs.
 //
 // Provider fields are read directly from the nested payloads.
 func hasClusterLevelControlPlaneUpdate(req *api.UpdateClusterControlPlaneConfig) bool {
-	if req.DesiredCount != nil ||
+	if req.NodeAgentConfig != nil ||
+		req.DesiredCount != nil ||
 		req.SystemReservedMemory != nil ||
 		req.TeleportEnabled != nil ||
 		req.Infra != nil {
@@ -929,6 +896,16 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		cluster.ControlPlaneConfig.DesiredCount = *req.DesiredCount
 	}
 
+	if req.NodeAgentConfig != nil && req.NodeAgentConfig.Version != nil {
+		version, err := canonicalNodeAgentVersion(*req.NodeAgentConfig.Version)
+		if err != nil {
+			return newBadRequestErrorf("%s", err)
+		}
+		if version != "" && s.nodeAgentUpdateMethod == "" {
+			return newBadRequestErrorf("nodeAgent.updateMethod is required for agent convergence")
+		}
+		spec.NodeAgentConfig.Version = version
+	}
 	if req.SystemReservedMemory != nil {
 		spec.SystemReservedMemory = *req.SystemReservedMemory
 	}
@@ -1037,6 +1014,7 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 		TeleportEnabled:             &teleportEnabled,
 		Nico:                        apiNicoControlPlaneProviderFromDB(cfg.Nico),
 		Infra:                       apiInfraControlPlaneProviderFromDB(cfg.Capi),
+		NodeAgentConfig:             apiNodeAgentConfigFromDB(cfg.NodeAgentConfig),
 	}
 }
 
@@ -1135,6 +1113,7 @@ func (s *clusterService) DeleteCluster(ctx context.Context, req api.DeleteCluste
 			return fmt.Errorf("failed to get cluster: %w", err)
 		}
 
+		// Cluster deletion stops controller-side agent upgrades.
 		dbCluster.Conditions.Deleting = db.NewCondition(true, "Cluster deletion is pending")
 
 		if _, err := tx.UpdateCluster(ctx, &dbCluster); err != nil {
@@ -1217,7 +1196,8 @@ func APIClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 		Nico:  apiNicoClusterProviderFromDB(dbCluster.Nico),
 		Infra: apiInfraClusterProviderFromDB(dbCluster.Capi),
 
-		Conditions: conditions,
+		Conditions:       conditions,
+		NodeAgentUpgrade: apiNodeAgentUpgradeFromDB(dbCluster.NodeAgentUpgrade),
 	}
 }
 
@@ -1386,4 +1366,37 @@ func parseKubernetesVersion(version string) (int, int, int, error) {
 		return 0, 0, 0, fmt.Errorf("invalid patch version: %w", err)
 	}
 	return major, minor, patch, nil
+}
+
+func apiNodeAgentUpgradeFromDB(upgrade *db.NodeAgentUpgrade) *api.NodeAgentUpgradeStatus {
+	if upgrade == nil {
+		return nil
+	}
+	phase := api.NodeAgentUpgradeStatusPhase("Running")
+	if upgrade.Phase == "Pending" {
+		phase = "Pending"
+	}
+	return &api.NodeAgentUpgradeStatus{NodeID: upgrade.NodeID, TargetVersion: upgrade.TargetVersion, Method: upgrade.Method, Phase: phase, ErrorMessage: upgrade.ErrorMessage}
+}
+
+func apiNodeAgentConfigFromDB(config db.NodeAgentConfig) *api.NodeAgentConfig {
+	if config.Version == "" {
+		return nil
+	}
+	return &api.NodeAgentConfig{Version: &config.Version}
+}
+
+func agentUpgradeBlocksMaintenance(cluster db.Cluster, request *api.UpdateClusterJSONRequestBody) bool {
+	return cluster.NodeAgentUpgrade != nil && (request.EnableEtcdEncryption != nil && *request.EnableEtcdEncryption || request.EnableOidc != nil && *request.EnableOidc)
+}
+
+func updateClusterConflictResponse(err error) api.UpdateClusterResponseObject {
+	if errors.Is(err, errAgentUpgradeInProgress) {
+		return api.UpdateCluster409JSONResponse{Message: err.Error()}
+	}
+	var uipErr *updateInProgressError
+	if errors.As(err, &uipErr) {
+		return api.UpdateCluster409JSONResponse{Message: uipErr.Error()}
+	}
+	return nil
 }

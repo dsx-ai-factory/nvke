@@ -29,21 +29,23 @@ starts from nothing.
 Step 3 runs ON the node, not against it from a workstation. That is what makes
 the image story cheap: the node's containerd IS the cluster's containerd, so
 an image imported there resolves with `imagePullPolicy: IfNotPresent` and needs
-no registry credential. CAPNICo is the one exception, and the one pull secret.
+no registry credential, and CAPNICo's image is public on GHCR or comes from
+the release by digest, so this path renders no pull secret.
 
 What the node needs, all present on the reference instance type:
 
 - `helm`, `kubectl`, `git`, `python3` (the executor's item parser and template
   renderer are Python), plus `clusterctl` for the prerequisites
 - to install for a site: `nvkectl` (`make -C cli build` writes
-  `cli/bin/nvkectl`; `NVKECTL` names it, else PATH). `deploy/nvke-deploy.sh
-  install --deploy-path deploy/nico --sitespec sitespec.yaml` renders a copy
-  of this deploy path with the site's values filled in from the spec's
-  `controllerStack` section into a private scratch directory, installs it,
-  and removes it, so no rendered credential is left behind; it needs no
-  `--config`. Without a release, the spec
-  sets `controllerStack.images.profiles`: this deploy path enables the
-  profiles content image without naming it
+  `cli/bin/nvkectl`; `NVKECTL` names it, else PATH). `deploy/check-site.sh --sitespec
+  sitespec.yaml --kubeconfig site.kubeconfig` reports what is still missing;
+  `deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec
+  sitespec.yaml --kubeconfig site.kubeconfig` renders this deploy path for
+  the site from the spec's `controllerStack` section and applies it. The
+  render lives in a private scratch directory and is removed when the
+  script exits, so no rendered credential is left behind. Without a
+  release, the spec sets `controllerStack.images.profiles`: this deploy path
+  enables the profiles content image without naming it
 - a checkout laid out so that `deploy/` and `controller/` are siblings --
   `controller/release.yaml` reaches its chart as
   `../../controller/deploy/charts/controller`
@@ -74,14 +76,13 @@ What the node needs, all present on the reference instance type:
 ## Before this runs
 
 `deploy/nvke-deploy.sh` installs the items below and nothing else. Five things must
-already be true, all of them outside the deploy path:
+be true before it runs and one after, all of them outside the deploy path:
 
 1. **The control plane is untainted.** A bootstrap cluster is all
    control-plane, and nothing schedules while the `NoSchedule` taint is on
    the nodes; `clusterctl init` times out on cert-manager with no hint why.
-   `nvkectl bootstrap site` removes the taint. Check with
-   `kubectl get nodes -o jsonpath='{.items[*].spec.taints}'` and remove it by
-   hand if the bootstrap reported that it could not.
+   `nvkectl bootstrap site` removes the taint, and `deploy/check-site.sh`
+   reports a node that still carries it, with the command that clears it.
 2. **`clusterctl init` has run**, bringing cert-manager, CAPI core and the
    kubeadm providers. cert-manager first because CAPI's manifests embed an
    Issuer and a Certificate.
@@ -125,11 +126,12 @@ already be true, all of them outside the deploy path:
    Temporal names. Helm cannot take over the old release's objects, and
    Postgres runs its `initdb` scripts only on an empty volume. Nothing
    migrates the old database: install on a fresh cluster.
-6. **The site's release CRDs and resources are installed.** CWE reads its OS
-   images, user init scripts and so on from `MachineImage`, `ClusterRelease`
-   and `NodePoolRelease` resources. The chart installs the CRDs. From a second
-   shell, once the CRDs exist, run
-   `kubectl apply --server-side -f <the site's releases directory>`.
+6. **The site's release resources are published afterwards.** CWE reads its
+   OS images, user init scripts and so on from `MachineImage`,
+   `ClusterRelease` and `NodePoolRelease` resources. The chart installs the
+   CRDs; after `nvkectl config set-site`, publish the resources with
+   `nvkectl create machineimage|clusterrelease|nodepoolrelease -f <file>`,
+   as docs/operate/install-management-plane-services.md shows.
 
 ## After this runs
 
@@ -144,8 +146,8 @@ the deploy path, on the NICo lane as well as CAPD -- and a site with
 `spiffe.enabled=true` needs it for the same reason.
 
 It is not an item, and cannot be: it patches Deployments `clusterctl init`
-owns, which this deploy path does not install. It belongs with untaint and
-`clusterctl init`, except that it runs AFTER rather than before -- the script
+owns, which this deploy path does not install. It belongs with `clusterctl init`,
+except that it runs AFTER rather than before -- the script
 skips its rollout wait until `csi.spiffe.io` is registered, and that CSIDriver
 arrives with the spire item. Run before the install it patches and moves on,
 leaving the rollout unverified; run after, it is checked.

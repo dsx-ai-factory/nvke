@@ -102,15 +102,15 @@ func TestBundleRenameUpgradeAndRestore(t *testing.T) {
 					bundleDir := filepath.Join(root, "bundle")
 					writeBundleLayout(t, bundleDir, bundleDir, target, "v0.3.0")
 					store := NewStore(filepath.Join(root, "operations"))
-					_, _, err := store.Create(Operation{ID: "rename", Action: ActionUpgrade, Method: MethodBundle, TargetVersion: "v0.3.0", PreviousVersion: "v0.2.0", ArtifactURL: "https://example.test/agent.tgz"})
+					_, _, err := store.Create(Operation{Method: MethodBundle, TargetVersion: "v0.3.0", PreviousVersion: "v0.2.0", ArtifactURL: "https://example.test/agent.tgz"})
 					require.NoError(t, err)
 					runner := &bundleRenameRunner{bundleDir: bundleDir, activeService: previous + ".service", failTarget: failTarget}
 					updater := NewUpdater(store)
 					updater.Runner, updater.AgentBinary, updater.UpdaterBinary, updater.SystemdUnitDir = runner, filepath.Join(binDir, agentPackageName), filepath.Join(binDir, agentPackageName+"-updater"), unitDir
 					updater.MigrationScript = filepath.Join(binDir, "migrate-agent-paths.sh")
 					updater.VerifyAttempts = 1
-					err = updater.Run(context.Background(), "rename")
-					op, loadErr := store.Load("rename")
+					err = updater.Run(context.Background(), "v0.3.0_bundle")
+					op, loadErr := store.Load("v0.3.0_bundle")
 					require.NoError(t, loadErr)
 					if failTarget {
 						require.Error(t, err)
@@ -120,10 +120,13 @@ func TestBundleRenameUpgradeAndRestore(t *testing.T) {
 						require.NoError(t, err)
 						assert.Equal(t, PhaseSucceeded, op.Phase)
 						assert.Equal(t, target+".service", runner.activeService)
-						// Explicit rollback works with retained files named by either release.
-						_, _, err = store.Create(Operation{ID: "rollback", Action: ActionRollback, RestoreFromOperationID: "rename"})
+						// A downgrade installs the older artifact through the same request path.
+						downgradeDir := filepath.Join(root, "downgrade")
+						writeBundleLayout(t, downgradeDir, downgradeDir, previous, "v0.2.0")
+						runner.bundleDir = downgradeDir
+						_, _, err = store.Create(Operation{TargetVersion: "v0.2.0", PreviousVersion: "v0.3.0", Method: MethodBundle, ArtifactURL: "https://example.test/older-agent.tgz"})
 						require.NoError(t, err)
-						require.NoError(t, updater.Run(context.Background(), "rollback"))
+						require.NoError(t, updater.Run(context.Background(), "v0.2.0_bundle"))
 						assert.Equal(t, previous+".service", runner.activeService)
 					}
 					data, err := os.ReadFile(filepath.Join(binDir, previous))
@@ -144,7 +147,7 @@ func TestBundleRenameResumeRetainsOriginalLayout(t *testing.T) {
 			bundleDir := filepath.Join(root, "bundle")
 			writeBundleLayout(t, bundleDir, bundleDir, agentPackageName, "v0.3.0")
 			store := NewStore(filepath.Join(root, "operations"))
-			_, _, err := store.Create(Operation{ID: "interrupted", Action: ActionUpgrade, Method: MethodBundle, TargetVersion: "v0.3.0", PreviousVersion: "v0.2.0", ArtifactURL: "https://example.test/agent.tgz"})
+			_, _, err := store.Create(Operation{Method: MethodBundle, TargetVersion: "v0.3.0", PreviousVersion: "v0.2.0", ArtifactURL: "https://example.test/agent.tgz"})
 			require.NoError(t, err)
 			runner := &bundleRenameRunner{bundleDir: bundleDir, activeService: legacyAgentPackageName + ".service"}
 			newUpdater := func() *Updater {
@@ -154,17 +157,17 @@ func TestBundleRenameResumeRetainsOriginalLayout(t *testing.T) {
 				return updater
 			}
 			first := newUpdater()
-			require.NoError(t, first.snapshotInstalledFiles("interrupted"))
+			require.NoError(t, first.snapshotInstalledFiles("v0.3.0_bundle"))
 			if legacySnapshot {
-				assets, err := first.assetsDir("interrupted")
+				assets, err := first.assetsDir("v0.3.0_bundle")
 				require.NoError(t, err)
 				require.NoError(t, os.Remove(filepath.Join(assets, "previous", ".snapshot-complete")))
 			}
 			require.NoError(t, first.installBundleFiles(context.Background(), bundleDir))
 			// Simulate a process interruption after replacement and a failed retry.
 			runner.failTarget = true
-			require.Error(t, newUpdater().Run(context.Background(), "interrupted"))
-			op, err := store.Load("interrupted")
+			require.Error(t, newUpdater().Run(context.Background(), "v0.3.0_bundle"))
+			op, err := store.Load("v0.3.0_bundle")
 			require.NoError(t, err)
 			assert.Equal(t, PhaseFailedRestored, op.Phase)
 			assert.Equal(t, legacyAgentPackageName+".service", runner.activeService)

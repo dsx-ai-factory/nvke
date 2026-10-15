@@ -17,7 +17,7 @@ import (
 )
 
 func TestValidateCreateNodePoolRequest_CAPICloudInitInputs(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil)
 
 	req := &api.CreateNodePoolRequest{
 		Name:             "worker",
@@ -36,7 +36,7 @@ func TestValidateCreateNodePoolRequest_CAPICloudInitInputs(t *testing.T) {
 }
 
 func TestValidateCreateNodePoolRequest_CAPIAllowsMissingConfigProfile(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil)
 
 	req := &api.CreateNodePoolRequest{
 		Name:             "worker",
@@ -51,7 +51,7 @@ func TestValidateCreateNodePoolRequest_CAPIAllowsMissingConfigProfile(t *testing
 }
 
 func TestValidateCreateNodePoolRequest_CAPIRejectsNicoPayload(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil)
 
 	err := service.validateCreateNodePoolRequest(capiCluster(), &api.CreateNodePoolRequest{
 		Name:             "worker",
@@ -63,7 +63,7 @@ func TestValidateCreateNodePoolRequest_CAPIRejectsNicoPayload(t *testing.T) {
 }
 
 func TestValidateCreateNodePoolRequest_ForgeRejectsCAPICloudInitInputs(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil)
 
 	err := service.validateCreateNodePoolRequest(forgeCluster(), &api.CreateNodePoolRequest{
 		Name:             "worker",
@@ -83,7 +83,7 @@ func TestValidateCreateNodePoolRequest_ForgeRejectsCAPICloudInitInputs(t *testin
 }
 
 func TestValidateCreateNodePoolRequest_ForgeConfigProfileIsOptional(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil)
 
 	req := &api.CreateNodePoolRequest{
 		Name:             "worker",

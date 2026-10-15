@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package forge provisions the machine a site controller is built on, on
-// Forge, through the ncx-infra-controller-rest SDK.
+// Forge, through the infra-controller rest-api SDK.
 package forge
 
 import (
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	"github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
@@ -288,7 +288,8 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		return infra.Node{}, nil, err
 	}
 
-	create := standard.NewInstanceCreateRequest(req.Name, tenantID, p.site.VpcID, p.interfaces())
+	create := standard.NewInstanceCreateRequest(req.Name, tenantID, p.site.VpcID)
+	create.SetInterfaces(p.interfaces())
 	create.SetInstanceTypeId(instanceType.ID)
 	create.SetIpxeScript(ipxe)
 	create.SetUserData(userData)
@@ -542,7 +543,8 @@ func (p *Provider) waitReady(ctx context.Context, id string) (string, error) {
 				standard.INSTANCESTATUS_PROVISIONING,
 				standard.INSTANCESTATUS_CONFIGURING,
 				standard.INSTANCESTATUS_UPDATING,
-				standard.INSTANCESTATUS_REBOOTING:
+				standard.INSTANCESTATUS_REBOOTING,
+				standard.INSTANCESTATUS_REPAIRING:
 			}
 		}
 		select {
@@ -583,7 +585,7 @@ func (p *Provider) release(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := p.client.InstanceAPI.DeleteInstance(ctx, p.opts.Env.Org.ID, id).Execute()
+	_, resp, err := p.client.InstanceAPI.DeleteInstance(ctx, p.opts.Env.Org.ID, id).Execute()
 	closeBody(resp)
 	if resp != nil && resp.StatusCode == http.StatusNotFound {
 		return nil

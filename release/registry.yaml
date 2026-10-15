@@ -1,9 +1,21 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# How each component resolves to a version. This file holds the rule that
-# finds a version and never a version itself, so nothing here goes stale when
-# something is tagged or bumped.
+# How each component resolves. This file holds the rule that finds a version and
+# never a version itself, so nothing here goes stale when something is tagged or
+# bumped.
+#
+# An entry answers two questions, and they are separate questions.
+#
+#   version   what version is this, by naming a strategy or taking another
+#             entry's with "from"
+#   location  where that version is published
+#
+# Most entries answer only the first. One published somewhere this can name
+# answers both. A bootloader answers only the second, because a declared path
+# has no version behind it. An entry taking a version from another can only
+# take it from a component, because components resolve first and dependencies
+# never see each other.
 #
 # A component's name is also its key in the e2e suite's -e2e.versions flag, so
 # the plan can hand the suite what it resolved without a mapping in between.
@@ -13,52 +25,109 @@
 # carries no prefix because its directory is the repository root.
 
 apiVersion: nvke.nvidia.com/v1alpha1
-kind: Registry
+kind: QualificationRegistry
 metadata:
   name: nvke
-  description: How each component resolves to a version.
+  description: How each component resolves to a version and a location.
 spec:
-  # Where artifacts are published. A component names a source in its resolve.with,
-  # so the location is stated once and appears in no other file.
+  # Where artifacts are published. A location names a source, so each is stated
+  # once and appears in no other file.
   sources:
-    - {name: artifact-cdn, url: https://d1veq6e8nuk2fy.cloudfront.net}
+    - {name: artifact-cdn, base: https://d1veq6e8nuk2fy.cloudfront.net}
+    # Where the images are pulled from. It holds every build, so a commit
+    # between releases has something to pull. The org names one organization's
+    # registry rather than anything about NVKE, so a run supplies it and an
+    # unset variable fails here rather than against the registry later.
+    - {name: artifact-registry, base: "oci://nvcr.io/${QUALIFY_E2E_NGC_ORG}"}
 
+  # gitTagOrCommitDescribe resolves from the tags under the prefix, or describes
+  # a named commit when a run names one. A commit between releases carries no
+  # tag, so the tags would answer with the newest release rather than what was
+  # built there.
+  #
+  # repository is the component's name under the artifact-registry source. The
+  # names belong to the registry and differ between them: the controller is
+  # nvke-controller on NVCR and nke-controller on GHCR, and nvkectl is cli on
+  # GHCR. GHCR also carries released tags only, so a described commit has
+  # nothing there. Moving the source means revisiting these.
   components:
-    - {name: nvke,              resolve: {strategy: gitTag, with: {tagPrefix: ""}}}
-    - {name: controller,       resolve: {strategy: gitTag, with: {tagPrefix: "controller/"}}}
-    - {name: cli,              resolve: {strategy: gitTag, with: {tagPrefix: "cli/"}}}
-    - {name: capi-provisioned, resolve: {strategy: gitTag, with: {tagPrefix: "cluster-api-provider-provisioned/"}}}
-    - {name: os-image,         resolve: {strategy: gitTag, with: {tagPrefix: "os-image/"}}}
+    # The subject stays gitTag. Its version is what the run is called and what a
+    # qualification is recorded against, so it is a release that was cut and
+    # never a description of a commit. The components are what a run resolves at
+    # a commit; the thing being qualified is still a version.
+    - name: nvke
+      resolve:
+        version: {strategy: gitTag, with: {tagPrefix: ""}}
+
+    - name: controller
+      resolve:
+        version:  {strategy: gitTagOrCommitDescribe, with: {tagPrefix: "controller/"}}
+        location: {strategy: ociArtifact, with: {source: artifact-registry, repository: nvke-controller}}
+
+    - name: capi-provisioned
+      resolve:
+        version:  {strategy: gitTagOrCommitDescribe, with: {tagPrefix: "cluster-api-provider-provisioned/"}}
+        location: {strategy: ociArtifact, with: {source: artifact-registry, repository: cluster-api-provider-provisioned}}
+
+    # No location, although nvkectl is published to the artifact-registry. Its
+    # artifact is tagged per platform with no index above the tags, so no single
+    # location names it. cli-amd64 and cli-arm64 below name one each.
+    - name: cli
+      resolve:
+        version: {strategy: gitTagOrCommitDescribe, with: {tagPrefix: "cli/"}}
+
+    # No location either. The image is reached through os-image-amd64 and
+    # os-image-arm64 below, which build CDN URLs from this version.
+    - name: os-image
+      resolve:
+        version: {strategy: gitTagOrCommitDescribe, with: {tagPrefix: "os-image/"}}
 
     # A run needs the image and its bootloader for every architecture, whatever
-    # the stream's own. Each is named by the key the e2e suite reads and resolves
-    # to a URL. The image is built from the os-image release, and the bootloader
-    # is declared because nothing derives it.
+    # the stream's own. Each is named by the key the e2e suite reads. The image
+    # is built from the os-image release, and the bootloader is declared because
+    # nothing derives it, which is why it has a location and no version.
     - name: os-image-amd64
       resolve:
-        strategy: osImage
-        with: {from: os-image, arch: amd64, variant: non-fde, source: artifact-cdn, path: nvke-packages}
+        version:  {from: os-image}
+        location: {strategy: osImage, with: {arch: amd64, variant: non-fde, source: artifact-cdn, path: nvke-packages}}
     - name: os-image-arm64
       resolve:
-        strategy: osImage
-        with: {from: os-image, arch: arm64, variant: non-fde, source: artifact-cdn, path: nvke-packages}
-    - {name: os-image-bootloader-amd64, resolve: {strategy: url, with: {source: artifact-cdn}}}
-    - {name: os-image-bootloader-arm64, resolve: {strategy: url, with: {source: artifact-cdn}}}
+        version:  {from: os-image}
+        location: {strategy: osImage, with: {arch: arm64, variant: non-fde, source: artifact-cdn, path: nvke-packages}}
+    - name: os-image-bootloader-amd64
+      resolve:
+        location: {strategy: url, with: {source: artifact-cdn}}
+    - name: os-image-bootloader-arm64
+      resolve:
+        location: {strategy: url, with: {source: artifact-cdn}}
+
+    # nvkectl for each architecture. A run stages the one its site needs, and
+    # both are resolved so that whichever it takes was checked before a machine
+    # was. arch is what says the artifact is tagged per platform.
+    - name: cli-amd64
+      resolve:
+        version:  {from: cli}
+        location: {strategy: ociArtifact, with: {arch: amd64, source: artifact-registry, repository: nvkectl}}
+    - name: cli-arm64
+      resolve:
+        version:  {from: cli}
+        location: {strategy: ociArtifact, with: {arch: arm64, source: artifact-registry, repository: nvkectl}}
 
     # What an image carries is read from the lock files its release commits, at
     # the os-image tag the combination resolved. A node installs these from the
     # image's own apt repository, so the lock files are the versions it can
     # offer.
+    #
+    # "at" and not "from": these take no version from os-image, they read files
+    # out of the tree it points at and resolve a package version of their own.
     - name: kube
       resolve:
-        strategy: lockedPackage
-        with: {lockDir: os-image/packages/kubeadm-distro/lock, from: os-image}
+        version: {strategy: lockedPackage, with: {lockDir: os-image/packages/kubeadm-distro/lock, at: os-image}}
     - name: cni-ovn
       resolve:
-        strategy: lockedPackage
-        with: {lockDir: os-image/packages/cni-ovn/lock, from: os-image}
+        version: {strategy: lockedPackage, with: {lockDir: os-image/packages/cni-ovn/lock, at: os-image}}
 
     # Read from make/tool-versions.mk, which owns every tool pin.
-    - {name: kind,             resolve: {strategy: makeVar, with: {var: KIND_VERSION}}}
-    - {name: clusterctl,       resolve: {strategy: makeVar, with: {var: CAPI_VERSION}}}
-    - {name: nerdctl,          resolve: {strategy: makeVar, with: {var: NERDCTL_VERSION}}}
+    - {name: kind,       resolve: {version: {strategy: makeVar, with: {var: KIND_VERSION}}}}
+    - {name: clusterctl, resolve: {version: {strategy: makeVar, with: {var: CAPI_VERSION}}}}
+    - {name: nerdctl,    resolve: {version: {strategy: makeVar, with: {var: NERDCTL_VERSION}}}}

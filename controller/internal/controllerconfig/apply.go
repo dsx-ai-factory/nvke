@@ -40,7 +40,7 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.ManagedByLabelValue = c.ManagedByLabelValue
 	cfg.MetricsListenAddress = c.MetricsListenAddress
 	cfg.SupportedInfraProviders = slices.Clone(c.SupportedInfraProviders)
-
+	cfg.NodeMetadataAllowlistedLabelKeys = slices.Clone(c.NodeMetadataAllowlistedLabelKeys)
 	cfg.Tracing.Enabled = c.Tracing.Enabled
 	cfg.Tracing.Endpoint = c.Tracing.Endpoint
 	cfg.Tracing.Insecure = c.Tracing.Insecure
@@ -58,6 +58,7 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.RunbooksDir = c.RunbooksDir
 	cfg.TenantAccessEnabled = c.TenantAccessEnabled
 
+	cfg.NodeAgent.UpdateMethod = c.NodeAgent.UpdateMethod
 	cfg.NodeAgent.SpireAttestationMethod = config.SpireAttestationMethod(c.NodeAgent.SpireAttestationMethod)
 	cfg.NodeAgent.DSXImds.Endpoint = c.NodeAgent.DSXImds.Endpoint
 	cfg.NodeAgent.DSXImds.PluginChecksum = c.NodeAgent.DSXImds.PluginChecksum

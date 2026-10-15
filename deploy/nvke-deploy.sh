@@ -152,14 +152,6 @@ docs/site-bootstrap/deploy-repository.md for the field names."
   rm -rf "${out}"
 }
 
-# apply_argocd_item creates the Application. Server-side apply of the CR rather
-# than `argocd app create --upsert`: same object, no binary, no login.
-apply_argocd_item() {
-  local dir="$1"
-  [[ -f "${dir}/application.yaml" ]] || die "argocd item ${dir} has no application.yaml"
-  kubectl_run apply --server-side -f "${dir}/application.yaml"
-}
-
 # wait_for_requires blocks on the preconditions a phase declares but the chart
 # does not own. helm --wait cannot do this: it waits on workloads, and a
 # Certificate is not one, so it would return before the CA is issued.
@@ -364,7 +356,6 @@ install() {
     log "item ${name} (${type})"
     case "${type}" in
       manifest) apply_manifest_item "${dir}" ;;
-      argocd)   apply_argocd_item "${dir}" ;;
       helm)     install_helm_item "${dir}" "${name}" ;;
       template) render_template_item "${dir}" "${name}" ;;
       *) die "item ${name} has unknown type ${type}" ;;

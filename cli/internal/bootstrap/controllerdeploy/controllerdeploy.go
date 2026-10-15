@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -325,6 +326,25 @@ func DeprecatedSettings() []envalias.Renamed {
 	return envalias.Deprecated(Settings...)
 }
 
+// RemovedSettings returns, sorted by old name, every NKECTL_CWE_* variable that
+// is set. nkectl cli/v0.1.x read the NVKECTL_CONTROLLER_* settings under those
+// names; DefaultConfig does not read them. New is the setting that replaces
+// each one.
+func RemovedSettings() []envalias.Renamed {
+	var found []envalias.Renamed
+	for _, name := range Settings {
+		suffix, ok := strings.CutPrefix(name, "NVKECTL_CONTROLLER_")
+		if !ok {
+			continue
+		}
+		if old := "NKECTL_CWE_" + suffix; os.Getenv(old) != "" {
+			found = append(found, envalias.Renamed{Old: old, New: name})
+		}
+	}
+	slices.SortFunc(found, func(a, b envalias.Renamed) int { return strings.Compare(a.Old, b.Old) })
+	return found
+}
+
 // getenv returns the setting's value, or, when it is unset or empty, the value
 // under its previous name.
 func getenv(name string) string {
@@ -601,11 +621,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 // arguments over the chart's generic `env` list. A setting left at its zero
 // value is omitted, leaving the controller's own default in place.
 func cweEnvArgs(cfg Config) []string {
-	vars := [][2]string{
-		// Unconditional: sitecluster.ClusterRequest builds only the cluster-level
-		// control plane, which the controller rejects without this.
-		{"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", "true"},
-	}
+	var vars [][2]string
 	if cfg.NodeAgentPort != "" {
 		vars = append(vars, [2]string{"NODE_AGENT_PORT", cfg.NodeAgentPort})
 	}

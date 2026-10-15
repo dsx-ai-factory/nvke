@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
@@ -200,7 +201,6 @@ func TestCanStartRemediation(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 
 	currentNodeSetID := uuid.New()
-	deprecatedNodeSetID := uuid.New()
 	nodeToRemove := makeNodeToRemove(currentNodeSetID)
 
 	tests := []struct {
@@ -213,7 +213,7 @@ func TestCanStartRemediation(t *testing.T) {
 			name: "cannot remediate with less than 2 control plane nodes",
 			controlPlane: func() *controlPlane {
 				nodes := []db.Node{nodeToRemove}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 1, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 1}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: false,
@@ -222,7 +222,7 @@ func TestCanStartRemediation(t *testing.T) {
 			name: "cannot remediate when current size is less than expected count",
 			controlPlane: func() *controlPlane {
 				nodes := []db.Node{nodeToRemove, makeHealthyNode("healthy-node", currentNodeSetID)}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 3, nodes)} // expected 3 but only have 2
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3}} // expected 3 but only have 2
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: false,
@@ -238,7 +238,7 @@ func TestCanStartRemediation(t *testing.T) {
 						Deleting:           db.Condition{Status: db.ConditionStatusFalse},
 					}},
 				}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 2, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 2}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: false,
@@ -253,7 +253,7 @@ func TestCanStartRemediation(t *testing.T) {
 						KubernetesReady: db.Condition{Status: db.ConditionStatusTrue},
 					}},
 				}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 2, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 2}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: false,
@@ -269,7 +269,7 @@ func TestCanStartRemediation(t *testing.T) {
 						Deleting:        db.Condition{Status: db.ConditionStatusFalse},
 					}},
 				}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 2, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 2}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: false,
@@ -286,7 +286,7 @@ func TestCanStartRemediation(t *testing.T) {
 						Deleting:        db.Condition{Status: db.ConditionStatusFalse},
 					}},
 				}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 3, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: false,
@@ -295,7 +295,7 @@ func TestCanStartRemediation(t *testing.T) {
 			name: "can remediate with 2 healthy nodes",
 			controlPlane: func() *controlPlane {
 				nodes := []db.Node{nodeToRemove, makeHealthyNode("healthy-node", currentNodeSetID)}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 2, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 2}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: true,
@@ -308,7 +308,7 @@ func TestCanStartRemediation(t *testing.T) {
 					makeHealthyNode("healthy-node-1", currentNodeSetID),
 					makeHealthyNode("healthy-node-2", currentNodeSetID),
 				}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 3, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: true,
@@ -334,7 +334,7 @@ func TestCanStartRemediation(t *testing.T) {
 						MarkedForRecycling: db.Condition{Status: db.ConditionStatusTrue},
 					}},
 				}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 5, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 5}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: false, // 4 members, quorum=3, only 2 healthy = cannot remove
@@ -356,7 +356,7 @@ func TestCanStartRemediation(t *testing.T) {
 						MarkedForRecycling: db.Condition{Status: db.ConditionStatusTrue},
 					}},
 				}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 5, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 5}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: true, // 4 members, quorum=3, 3 healthy = can remove
@@ -375,7 +375,7 @@ func TestCanStartRemediation(t *testing.T) {
 						MarkedForRecycling: db.Condition{Status: db.ConditionStatusTrue},
 					}},
 				}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 3, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: true, // pending node not counted, 1 healthy member remaining, quorum=1
@@ -384,7 +384,7 @@ func TestCanStartRemediation(t *testing.T) {
 			name: "node to remove not counted in quorum calculation",
 			controlPlane: func() *controlPlane {
 				nodes := []db.Node{nodeToRemove, makeHealthyNode("healthy-node", currentNodeSetID)}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 2, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 2}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: true, // node to remove excluded, 1 healthy member, quorum=1
@@ -398,15 +398,8 @@ func TestCanStartRemediation(t *testing.T) {
 					makeHealthyNode("healthy-1", currentNodeSetID),
 				}
 				return &controlPlane{
-					nodes: nodes,
-					nodePools: []nodePool{{
-						NodePool: db.NodePool{
-							DesiredCount:     3,
-							MaxSurge:         0,
-							CurrentNodeSetID: &currentNodeSetID,
-						},
-						nodeSets: []nodeSet{{NodeSet: db.NodeSet{ID: currentNodeSetID}, nodes: nodes}},
-					}},
+					nodes:                     nodes,
+					clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3},
 				}
 			}(),
 			nodeToRemove:   nodeToRemove,
@@ -421,15 +414,8 @@ func TestCanStartRemediation(t *testing.T) {
 					makeHealthyNode("healthy-2", currentNodeSetID),
 				}
 				return &controlPlane{
-					nodes: nodes,
-					nodePools: []nodePool{{
-						NodePool: db.NodePool{
-							DesiredCount:     3,
-							MaxSurge:         0,
-							CurrentNodeSetID: &currentNodeSetID,
-						},
-						nodeSets: []nodeSet{{NodeSet: db.NodeSet{ID: currentNodeSetID}, nodes: nodes}},
-					}},
+					nodes:                     nodes,
+					clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3},
 				}
 			}(),
 			nodeToRemove:   nodeToRemove,
@@ -445,98 +431,49 @@ func TestCanStartRemediation(t *testing.T) {
 					makeHealthyNode("healthy-3", currentNodeSetID),
 				}
 				return &controlPlane{
-					nodes: nodes,
-					nodePools: []nodePool{{
-						NodePool: db.NodePool{
-							DesiredCount:     3,
-							MaxSurge:         0,
-							CurrentNodeSetID: &currentNodeSetID,
-						},
-						nodeSets: []nodeSet{{NodeSet: db.NodeSet{ID: currentNodeSetID}, nodes: nodes}},
-					}},
+					nodes:                     nodes,
+					clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3},
 				}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: true, // 4 nodes but expected 3
 		},
 		{
-			name: "accounts for surge when deprecated nodes exist",
+			name: "accounts for surge when nodes need rollout",
 			controlPlane: func() *controlPlane {
-				//nolint:prealloc // exact-capacity literal is deliberate: the slice is also appended to below, and spare capacity would alias the shared backing array.
-				currentNodes := []db.Node{nodeToRemove, makeHealthyNode("healthy-1", currentNodeSetID)}
-				deprecatedNodes := []db.Node{makeHealthyNode("deprecated-1", deprecatedNodeSetID)}
+				staleID, currentID := uuid.New(), uuid.New()
+				currentSpec := nicoCPSpec("nvke-1.34.2", "", "1.34.2")
 				return &controlPlane{
-					nodes: append(currentNodes, deprecatedNodes...),
-					nodePools: []nodePool{{
-						NodePool: db.NodePool{
-							DesiredCount:     3,
-							MaxSurge:         1,
-							CurrentNodeSetID: &currentNodeSetID,
-						},
-						nodeSets: []nodeSet{
-							{NodeSet: db.NodeSet{ID: currentNodeSetID}, nodes: currentNodes},
-							{NodeSet: db.NodeSet{ID: deprecatedNodeSetID}, nodes: deprecatedNodes},
-						},
-					}},
+					nodes: []db.Node{
+						nodeToRemove,
+						makeCPControllerNode("current-1", currentID),
+						makeCPControllerNode("stale-1", staleID),
+					},
+					nodePinnedControlPlaneConfigs: map[uuid.UUID]db.ControlPlaneConfigSpec{staleID: staleCPSpec(t, currentSpec), currentID: currentSpec},
+					clusterControlPlaneConfig:     clusterWithCurrentSnapshot(currentSpec, 1).ControlPlaneConfig,
 				}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: false, // 3 nodes but expected 4 (3 + 1 surge)
 		},
 		{
-			name: "can remediate during upgrade when size equals expected with surge",
+			name: "can remediate during rollout when size equals expected with surge",
 			controlPlane: func() *controlPlane {
-				//nolint:prealloc // exact-capacity literal is deliberate: the slice is also appended to below, and spare capacity would alias the shared backing array.
-				currentNodes := []db.Node{nodeToRemove, makeHealthyNode("healthy-1", currentNodeSetID), makeHealthyNode("healthy-2", currentNodeSetID)}
-				deprecatedNodes := []db.Node{makeHealthyNode("deprecated-1", deprecatedNodeSetID)}
+				staleID, currentID := uuid.New(), uuid.New()
+				currentSpec := nicoCPSpec("nvke-1.34.2", "", "1.34.2")
 				return &controlPlane{
-					nodes: append(currentNodes, deprecatedNodes...),
-					nodePools: []nodePool{{
-						NodePool: db.NodePool{
-							DesiredCount:     3,
-							MaxSurge:         1,
-							CurrentNodeSetID: &currentNodeSetID,
-						},
-						nodeSets: []nodeSet{
-							{NodeSet: db.NodeSet{ID: currentNodeSetID}, nodes: currentNodes},
-							{NodeSet: db.NodeSet{ID: deprecatedNodeSetID}, nodes: deprecatedNodes},
-						},
-					}},
+					nodes: []db.Node{
+						nodeToRemove,
+						makeCPControllerNode("current-1", currentID),
+						makeCPControllerNode("current-2", currentID),
+						makeCPControllerNode("stale-1", staleID),
+					},
+					nodePinnedControlPlaneConfigs: map[uuid.UUID]db.ControlPlaneConfigSpec{staleID: staleCPSpec(t, currentSpec), currentID: currentSpec},
+					clusterControlPlaneConfig:     clusterWithCurrentSnapshot(currentSpec, 1).ControlPlaneConfig,
 				}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: true, // 4 nodes and expected 4 (3 + 1 surge)
-		},
-		{
-			name: "multiple node pools - both must satisfy expected count",
-			controlPlane: func() *controlPlane {
-				//nolint:prealloc // exact-capacity literal is deliberate: the slice is also appended to below, and spare capacity would alias the shared backing array.
-				pool1Nodes := []db.Node{nodeToRemove, makeHealthyNode("pool1-healthy-1", currentNodeSetID)}
-				pool2Nodes := []db.Node{makeHealthyNode("pool2-healthy-1", deprecatedNodeSetID)}
-				return &controlPlane{
-					nodes: append(pool1Nodes, pool2Nodes...),
-					nodePools: []nodePool{
-						{
-							NodePool: db.NodePool{
-								DesiredCount:     2,
-								MaxSurge:         0,
-								CurrentNodeSetID: &currentNodeSetID,
-							},
-							nodeSets: []nodeSet{{NodeSet: db.NodeSet{ID: currentNodeSetID}, nodes: pool1Nodes}},
-						},
-						{
-							NodePool: db.NodePool{
-								DesiredCount:     2,
-								MaxSurge:         0,
-								CurrentNodeSetID: &deprecatedNodeSetID,
-							},
-							nodeSets: []nodeSet{{NodeSet: db.NodeSet{ID: deprecatedNodeSetID}, nodes: pool2Nodes}},
-						},
-					},
-				}
-			}(),
-			nodeToRemove:   nodeToRemove,
-			expectedResult: false, // 3 nodes but expected 4 (2 + 2)
 		},
 		// Pre-condition 5: Enough healthy nodes to bootstrap another node
 		// A healthy node must be KubernetesReady, Provisioned, and NodeAgentReady
@@ -553,7 +490,7 @@ func TestCanStartRemediation(t *testing.T) {
 						Deleting:        db.Condition{Status: db.ConditionStatusFalse},
 					}},
 				}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 2, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 2}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: false, // node is not fully healthy (missing NodeAgentReady)
@@ -571,7 +508,7 @@ func TestCanStartRemediation(t *testing.T) {
 						Deleting:        db.Condition{Status: db.ConditionStatusFalse},
 					}},
 				}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 2, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 2}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: false, // node is not fully healthy (missing Provisioned)
@@ -590,7 +527,7 @@ func TestCanStartRemediation(t *testing.T) {
 						MarkedForRecycling: db.Condition{Status: db.ConditionStatusTrue}, // marked for recycling to pass hasHealthyNodesProvisioning
 					}},
 				}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 2, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 2}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: false, // node is not fully healthy (missing KubernetesReady)
@@ -612,7 +549,7 @@ func TestCanStartRemediation(t *testing.T) {
 						MarkedForRecycling: db.Condition{Status: db.ConditionStatusTrue},
 					}},
 				}
-				return &controlPlane{nodes: nodes, nodePools: makeNodePool(currentNodeSetID, 3, nodes)}
+				return &controlPlane{nodes: nodes, clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3}}
 			}(),
 			nodeToRemove:   nodeToRemove,
 			expectedResult: true, // one fully healthy node is enough
@@ -625,17 +562,6 @@ func TestCanStartRemediation(t *testing.T) {
 			assert.Equal(t, tt.expectedResult, result)
 		})
 	}
-}
-
-func makeNodePool(currentNodeSetID uuid.UUID, desiredCount int, nodes []db.Node) []nodePool {
-	return []nodePool{{
-		NodePool: db.NodePool{
-			DesiredCount:     desiredCount,
-			MaxSurge:         0,
-			CurrentNodeSetID: &currentNodeSetID,
-		},
-		nodeSets: []nodeSet{{NodeSet: db.NodeSet{ID: currentNodeSetID}, nodes: nodes}},
-	}}
 }
 
 func makeHealthyNode(name string, nodeSetID uuid.UUID) db.Node {
@@ -669,85 +595,55 @@ func makeNodeToRemove(nodeSetID uuid.UUID) db.Node {
 }
 
 // TestRemediateMachinesRecordsIntentUnderTheController pins the path remediation
-// takes. With the control-plane controller owning the control plane, remediation
-// records the delete the same way a user-initiated one does and leaves
+// takes: it records the delete the same way a user-initiated one does and leaves
 // reconcileRequestedDeletes to start the teardown, so both kinds queue in one
-// place. With the flag off it still tears down inline, unchanged.
+// place.
 func TestRemediateMachinesRecordsIntentUnderTheController(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name            string
-		useController   bool
-		wantIntent      bool
-		wantOutboxEntry bool
-	}{
-		{name: "controller owns the control plane: record intent", useController: true, wantIntent: true},
-		{name: "flag off: tear down inline as before", useController: false, wantOutboxEntry: true},
+	clusterID := uuid.New()
+	cluster := db.Cluster{ID: clusterID, Name: "test-cluster", ControlPlaneVIP: "10.0.0.100"}
+
+	// Three healthy nodes, one of them marked: enough for canStartRemediation,
+	// and deliberately at the quorum floor so the exemption is exercised.
+	healthy := func(name string) db.Node {
+		return db.Node{
+			ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, Name: name,
+			Conditions: db.NodeConditions{
+				Joined:          db.NewCondition(true, "Joined"),
+				Provisioned:     db.NewCondition(true, "Provisioned"),
+				KubernetesReady: db.NewCondition(true, "Ready"),
+				NodeAgentReady:  db.NewCondition(true, "Ready"),
+			},
+		}
+	}
+	a, b := healthy("cp-a"), healthy("cp-b")
+	marked := healthy("cp-marked")
+	marked.Conditions.MarkedForRecycling = db.NewCondition(true, "Marked")
+
+	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNodeForUpdate", mock.Anything, marked.ID).Return(marked, nil)
+	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{a, b, marked}, nil).Maybe()
+
+	var written db.Node
+	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(n *db.Node) bool {
+		written = *n
+		return true
+	})).Return(marked, nil)
+
+	r := &reconciler{cfg: config.Config{}, db: mockTx, logger: slog.Default()}
+	cp := &controlPlane{
+		nodes:                     []db.Node{a, b, marked},
+		clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			clusterID := uuid.New()
-			cluster := db.Cluster{ID: clusterID, Name: "test-cluster", ControlPlaneVIP: "10.0.0.100"}
-
-			// Three healthy nodes, one of them marked: enough for canStartRemediation,
-			// and deliberately at the quorum floor so the exemption is exercised.
-			healthy := func(name string) db.Node {
-				return db.Node{
-					ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, Name: name,
-					Conditions: db.NodeConditions{
-						Joined:          db.NewCondition(true, "Joined"),
-						Provisioned:     db.NewCondition(true, "Provisioned"),
-						KubernetesReady: db.NewCondition(true, "Ready"),
-						NodeAgentReady:  db.NewCondition(true, "Ready"),
-					},
-				}
-			}
-			a, b := healthy("cp-a"), healthy("cp-b")
-			marked := healthy("cp-marked")
-			marked.Conditions.MarkedForRecycling = db.NewCondition(true, "Marked")
-
-			mockTx := &testutil.MockTx{}
-			mockTx.On("GetNodeForUpdate", mock.Anything, marked.ID).Return(marked, nil)
-			mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Maybe()
-			mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{a, b, marked}, nil).Maybe()
-
-			var written db.Node
-			mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(n *db.Node) bool {
-				written = *n
-				return true
-			})).Return(marked, nil)
-			mockTx.On("CreateWorkflowOutboxEntry",
-				mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-			).Return(db.WorkflowOutbox{}, nil).Maybe()
-
-			r := &reconciler{cfg: cpControllerConfig(tt.useController), db: mockTx, logger: slog.Default()}
-			cp := &controlPlane{
-				nodes:                     []db.Node{a, b, marked},
-				clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3},
-				useController:             tt.useController,
-			}
-
-			requeue, err := r.remediateMachines(context.Background(), cluster, cp)
-			require.NoError(t, err, "the quorum floor must not refuse a replacement at three nodes")
-			assert.True(t, requeue)
-
-			if tt.wantIntent {
-				assert.True(t, nodes.IsDeleteRequested(written), "remediation should record intent")
-				assert.False(t, nodes.IsDeleting(written), "the teardown must wait for the serialized loop")
-				mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry",
-					mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-			}
-			if tt.wantOutboxEntry {
-				assert.True(t, nodes.IsDeleting(written), "the legacy path still tears down inline")
-				mockTx.AssertCalled(t, "CreateWorkflowOutboxEntry",
-					mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-			}
-		})
-	}
+	requeue, err := r.remediateMachines(context.Background(), cluster, cp)
+	require.NoError(t, err, "the quorum floor must not refuse a replacement at three nodes")
+	assert.True(t, requeue)
+	assert.True(t, nodes.IsDeleteRequested(written), "remediation should record intent")
+	assert.False(t, nodes.IsDeleting(written), "the teardown must wait for the serialized loop")
+	mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestRemediateMachinesWithoutControlPlaneVIPDoesNotReplaceNode(t *testing.T) {

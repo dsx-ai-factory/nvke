@@ -90,9 +90,11 @@ checkout, and do not stub a dependency to make the build pass.
 | `controller/deploy/charts/controller/files/crds.yaml` | `make chart-crds` output (kustomize over the `management-engine` CRDs) | **No — regenerate** |
 | `agent/pkg/agent/proto/*.pb.go` | buf/protoc output | **No — regenerate** |
 | `agent/THIRD_PARTY_NOTICES.md` | go-licenses output | **No — regenerate** |
-| `controller/deploy/charts/` | Helm charts | Yes. Do not bump `Chart.yaml`: its `0.0.0` is a placeholder and the release workflows set the version from the `controller/vX.Y.Z` tag |
+| `controller/deploy/charts/` | Helm charts | Yes. Preserve the version placeholders; see below. |
 | `nktp/deploy/charts/` | NKTP telemetry Helm chart | Yes, but bump the chart version. Read `nktp/AGENTS.md` |
 | `controller/deploy/dashboards/` | Grafana reference dashboards (JSON import) | Yes — read that directory's `AGENTS.md`. Do not bump the Helm chart for dashboard-only edits |
+
+Keep the controller chart's `version`, `appVersion`, and README version badge at `0.0.0`.
 
 ## What agents may do
 
@@ -171,6 +173,8 @@ checkout, and do not stub a dependency to make the build pass.
   every parameter on its own line.
 - Exported types and functions carry doc comments starting with the identifier
   name.
+- Append new fields after existing fields in handwritten structs and struct
+  initializers. Keep `ID` and other existing fields in their current order.
 
 ### Preferred and deprecated patterns
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
@@ -32,8 +33,8 @@ type RebootNodeInput struct {
 	MaxTimeout       time.Duration
 	PollingInterval  time.Duration
 
-	// SoftRebootEnabled selects between the in-guest soft reboot RPC (falling back to hard only
-	// on RPC error) and going straight to the hard CAPI Machine reboot annotation, for any
+	// SoftRebootEnabled selects between the in-guest soft reboot RPC (falling back to hard on
+	// RPC error or boot verification timeout) and the hard CAPI Machine reboot annotation, for any
 	// backend where the in-guest reboot path can never produce a real, detectable boot change.
 	SoftRebootEnabled bool
 }
@@ -111,10 +112,9 @@ func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 			return fmt.Errorf("failed to get node: %w", err)
 		}
 
-		// If the reboot label is not present, assume the user wishes to cancel the reboot.
-		if node.Labels[constants.LabelKeyNodeLabelReboot] == "" {
-			logger.Info("Node reboot label removed, canceling workflow", "nodeID", input.NodeID, "nodeName", node.Name)
-			return workflow.ErrCanceled // Cancel the workflow cleanup happens in defer
+		if !rebootRequestActive(node) {
+			logger.Info("Node reboot request withdrawn or node terminating, canceling workflow", "nodeID", input.NodeID, "nodeName", node.Name)
+			return workflow.ErrCanceled
 		}
 
 		if !workflow.IsReplaying(ctx) {
@@ -129,17 +129,17 @@ func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 
 		// Reboot the node/instance via CAPI
 		logger.Info("Rebooting node", "nodeID", input.NodeID, "nodeName", node.Name, "rebootAttempt", rebootAttempt, "reason", input.Reason)
-		rebootStartedTime, err := rebootCAPINode(ctx, input, rebootAttempt)
+		// Once the soft attempt fails, subsequent attempts stay on the hard path.
+		attemptInput := input
+		attemptInput.SoftRebootEnabled = input.SoftRebootEnabled && rebootAttempt == 1
+		err = rebootAndWaitCAPINode(ctx, attemptInput, rebootAttempt, node.Status.NodeInfo.BootID)
 		if err != nil {
-			return fmt.Errorf("failed to reboot node: %w", err)
-		}
-
-		// Wait for the node to reboot
-		currentBootID := node.Status.NodeInfo.BootID
-		if err := waitForNodeReboot(ctx, input, rebootAttempt, currentBootID, rebootStartedTime); err != nil {
 			// If the workflow was canceled, return the error to the caller
-			if errors.Is(ctx.Err(), workflow.ErrCanceled) {
-				return ctx.Err()
+			if errors.Is(ctx.Err(), workflow.ErrCanceled) || errors.Is(err, workflow.ErrCanceled) || temporal.IsCanceledError(err) {
+				return workflow.ErrCanceled
+			}
+			if !isRebootVerificationTimeout(err) {
+				return err
 			}
 			// Otherwise, log the error and continue to the next attempt
 			logger.Error("failed to wait for node reboot", "error", err, "nodeID", input.NodeID, "nodeName", node.Name, "rebootAttempt", rebootAttempt)
@@ -153,6 +153,72 @@ func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 			rebootAttempt:     rebootAttempt,
 		})
 	}
+}
+
+// rebootAndWaitCAPINode gives one soft attempt a bounded verification window, then
+// uses the existing CAPI hard-reboot path. Unknown scheduling outcomes receive the
+// same window as accepted requests, because the reboot may already be in progress.
+func rebootAndWaitCAPINode(ctx workflow.Context, input RebootNodeInput, rebootAttempt int, previousBootID string) error {
+	logger := workflow.GetLogger(ctx)
+	if input.SoftRebootEnabled {
+		message := fmt.Sprintf("Soft rebooting node (attempt: %d): %s", rebootAttempt, input.Reason)
+		if err := updateNodeRebootingCondition(ctx, input.NodeID, db.ConditionStatusTrue, message); err != nil {
+			return fmt.Errorf("failed to update node conditions: %w", err)
+		}
+		started := workflow.Now(ctx).UTC()
+		err := softRebootNode(ctx, input.NodeID, rebootAttempt, started, 1)
+		if err == nil {
+			softInput := input
+			if softInput.PollingInterval <= 0 || softInput.PollingInterval > 10*time.Second {
+				softInput.PollingInterval = 10 * time.Second
+			}
+			softTimeout := 30 * time.Minute
+			if input.InitialTimeout > 0 {
+				softTimeout = min(softTimeout, input.InitialTimeout)
+			}
+			err = waitForBootChange(ctx, softInput, previousBootID, started, softTimeout)
+			if err == nil {
+				return nil
+			}
+			if !isRebootVerificationTimeout(err) {
+				return err
+			}
+		}
+		if errors.Is(ctx.Err(), workflow.ErrCanceled) || temporal.IsCanceledError(err) {
+			return workflow.ErrCanceled
+		}
+
+		// Re-read before escalating so a late boot or withdrawn request cannot
+		// turn into a second disruptive action.
+		node, readErr := getNode(ctx, input.NodeID)
+		if readErr != nil {
+			return fmt.Errorf("failed to inspect node before hard reboot: %w", readErr)
+		}
+		if !rebootRequestActive(node) {
+			return workflow.ErrCanceled
+		}
+		if node.Status.NodeInfo.BootID != "" && node.Status.NodeInfo.BootID != previousBootID {
+			return nil
+		}
+		logger.Warn("Soft reboot did not complete, falling back to CAPI hard reboot", "nodeID", input.NodeID, "error", err)
+	}
+
+	input.SoftRebootEnabled = false
+	started, err := rebootCAPINode(ctx, input, rebootAttempt)
+	if err != nil {
+		return fmt.Errorf("failed to initiate hard reboot: %w", err)
+	}
+	return waitForNodeReboot(ctx, input, rebootAttempt, previousBootID, started)
+}
+
+func rebootRequestActive(node corev1.Node) bool {
+	_, terminating := node.Labels[constants.LabelKeyNodeLabelTerminate]
+	return node.Labels[constants.LabelKeyNodeLabelReboot] != "" && node.DeletionTimestamp.IsZero() && !terminating
+}
+
+func isRebootVerificationTimeout(err error) bool {
+	var timeoutErr *temporal.TimeoutError
+	return errors.As(err, &timeoutErr) && timeoutErr.TimeoutType() == enums.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE
 }
 
 type rebootSuccessDetails struct {

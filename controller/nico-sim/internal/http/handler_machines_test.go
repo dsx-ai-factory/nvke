@@ -10,7 +10,7 @@ import (
 	nethttp "net/http"
 	"testing"
 
-	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 )
 
 // TestUnit_HandleListMachinesReturnsEmptyInventory verifies both API names return an empty machine inventory.

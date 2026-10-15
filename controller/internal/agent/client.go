@@ -51,6 +51,7 @@ type Client interface {
 	GetEncryptedObjectsRewriteStatus(ctx context.Context, node db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error)
 	RemovePlainTextSecondaryEncryptionEntry(ctx context.Context, node db.Node) error
 	StartKubeVIPRestore(ctx context.Context, node db.Node, operationID string) (*nvkeproto.NodeAgentOperationStatus, error)
+	ConvergeNodeAgent(ctx context.Context, node db.Node, target, method string) (string, bool, error)
 }
 
 type NodeAgentClient struct {

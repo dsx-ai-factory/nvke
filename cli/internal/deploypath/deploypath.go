@@ -27,7 +27,6 @@ const (
 	TypeTemplate = "template"
 	TypeManifest = "manifest"
 	TypeHelm     = "helm"
-	TypeArgoCD   = "argocd"
 )
 
 // tokenPattern is an item name: letters, digits, `-`, `_` and inner dots.
@@ -65,7 +64,7 @@ func Items(dir string) ([]Item, error) {
 			return nil, fmt.Errorf("%s: item %q: names are tokens", path, item.Name)
 		}
 		switch item.Type {
-		case TypeTemplate, TypeManifest, TypeHelm, TypeArgoCD:
+		case TypeTemplate, TypeManifest, TypeHelm:
 		default:
 			return nil, fmt.Errorf("%s: item %q has unknown type %q", path, item.Name, item.Type)
 		}

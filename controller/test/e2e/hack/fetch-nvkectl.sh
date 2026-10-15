@@ -2,24 +2,29 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Stage a published nvkectl for the site lane: download the linux-<arch> binary
-# from the cli/<version> GitHub Release, check it against that release's
-# checksums.txt, and check it reports the version it was asked for.
+# Stage a published nvkectl for the site lane: pull the artifact SITE_CLI_REF
+# names, and check the binary reports the version it was asked for.
 #
-#   fetch-nvkectl.sh <version> <arch> <dir>
+#   SITE_CLI_REF=<registry>/nvkectl:<version>-linux-<arch> \
+#     fetch-nvkectl.sh <version> <arch> <dir>
 #
 # Writes <dir>/nvkectl-linux-<arch>. `make site-inputs SITE_CLI_BUILD=0` runs
-# this; the Forge workflow is one caller of that.
+# this, and the Forge workflow is one caller of that.
 #
-# Releases cut while the binary was called nkectl carry nkectl-linux-<arch>,
-# and the first release after the rename carries both names. The new name is
-# preferred, the old one accepted, and the result is always staged under the
-# new name.
+# nvkectl carries no index above its platform tags, so the artifact is tagged
+# <version>-<os>-<arch>. The caller supplies the whole reference, which the
+# qualification plan resolved.
 #
-# The repository is private, so the assets come through the API with a token
-# rather than their browser URLs. GITHUB_TOKEN is required; GITHUB_REPOSITORY
-# and GITHUB_API_URL default to this repository on github.com, and Actions
-# sets all three.
+# What the pull guarantees, exactly: oras checks each blob against the manifest
+# the registry served for that tag, so a truncated or corrupted transfer fails.
+# It does not pin the tag. Nothing here compares that manifest with a digest
+# recorded independently of it, so an artifact republished under the same tag
+# pulls cleanly, and the binary then runs on the site node. The version check
+# below is a separate claim, that the binary is the one asked for rather than
+# that it is intact.
+#
+# oras reads the registry credentials docker login wrote, so a caller that can
+# pull the images can pull this.
 set -Eeuo pipefail
 
 if [ "$#" -ne 3 ]; then
@@ -30,95 +35,60 @@ version="$1"
 arch="$2"
 dir="$3"
 
-# The two shapes release.yml publishes a cli/<version> tag in.
-if [[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
-	echo "version '${version}' is neither vX.Y.Z nor vX.Y.Z-rc.N, so no cli/ release carries it" >&2
+[ -n "${SITE_CLI_REF:-}" ] || {
+	echo "SITE_CLI_REF is required: it names the artifact to stage" >&2
 	exit 1
-fi
+}
 case "${arch}" in
 amd64 | arm64) ;;
 *)
-	echo "unsupported arch ${arch}; nvkectl releases ship linux/amd64 and linux/arm64" >&2
+	echo "unsupported arch ${arch}; nvkectl publishes linux/amd64 and linux/arm64" >&2
 	exit 1
 	;;
 esac
-[ -n "${GITHUB_TOKEN:-}" ] || {
-	echo "GITHUB_TOKEN is required to read the cli/${version} release assets" >&2
-	exit 1
-}
-command -v jq >/dev/null || {
-	echo "jq is not installed, so the release assets cannot be located" >&2
+command -v oras >/dev/null || {
+	echo "oras is not installed, so ${SITE_CLI_REF} cannot be pulled" >&2
 	exit 1
 }
 
 out="nvkectl-linux-${arch}"
-tag="cli/${version}"
-api="${GITHUB_API_URL:-https://api.github.com}/repos/${GITHUB_REPOSITORY:-dsx-ai-factory/nvke}"
 mkdir -p "${dir}"
 
-# site.nvkectl points at this path, so a binary that fails any check below
-# must not be left there for a later suite run to pick up.
-trap '[ "$?" -eq 0 ] || rm -f "${dir}/${out}" "${dir}/nkectl-linux-${arch}"' EXIT
+# site.nvkectl points at this path, so a binary that fails any check below must
+# not be left there for a later suite run to pick up.
+trap '[ "$?" -eq 0 ] || rm -f "${dir}/${out}"' EXIT
 
-if ! release="$(curl -fsSL --retry 3 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-	-H "Accept: application/vnd.github+json" "${api}/releases/tags/${tag}")"; then
-	echo "no published ${tag} release" >&2
+if ! oras pull --output "${dir}" "${SITE_CLI_REF}"; then
+	echo "no artifact at ${SITE_CLI_REF}" >&2
 	exit 1
 fi
-
-asset=""
-for candidate in "${out}" "nkectl-linux-${arch}"; do
-	id="$(jq -r --arg n "${candidate}" '.assets[] | select(.name == $n) | .id' <<<"${release}")"
-	if [ -n "${id}" ]; then
-		asset="${candidate}"
-		break
-	fi
-done
-if [ -z "${asset}" ]; then
-	echo "the ${tag} release has neither ${out} nor nkectl-linux-${arch}" >&2
-	exit 1
-fi
-for name in "${asset}" checksums.txt; do
-	id="$(jq -r --arg n "${name}" '.assets[] | select(.name == $n) | .id' <<<"${release}")"
-	if [ -z "${id}" ]; then
-		echo "the ${tag} release has no ${name}" >&2
-		exit 1
-	fi
-	curl -fsSL --retry 3 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-		-H "Accept: application/octet-stream" -o "${dir}/${name}" "${api}/releases/assets/${id}"
-done
-
-# checksums.txt is sha256sum's own output, one line per asset.
-(cd "${dir}" && grep -E "^[0-9a-f]{64}  ${asset}\$" checksums.txt | sha256sum -c -) || {
-	echo "${asset} does not match the ${tag} checksums.txt" >&2
+[ -f "${dir}/${out}" ] || {
+	echo "${SITE_CLI_REF} carries no ${out}, it holds:" >&2
+	ls -1 "${dir}" >&2
 	exit 1
 }
-if [ "${asset}" != "${out}" ]; then
-	mv "${dir}/${asset}" "${dir}/${out}"
-fi
 chmod 0755 "${dir}/${out}"
 
-# Only a binary for this host can be run. For any other the checksum above is
-# the whole check, and the bootstrap is the first thing to execute it.
+# Only a binary for this host can be run. For any other the digest is the whole
+# check, and the bootstrap is the first thing to execute it.
 host_arch="$(uname -m)"
 case "${host_arch}" in
 x86_64) host_arch=amd64 ;;
 aarch64 | arm64) host_arch=arm64 ;;
 esac
 if [ "$(uname -s)" != Linux ] || [ "${host_arch}" != "${arch}" ]; then
-	echo "staged ${out} ${version} (checksum verified; not run, this host is $(uname -s)/${host_arch})"
+	echo "staged ${out} ${version} from ${SITE_CLI_REF} (not run, this host is $(uname -s)/${host_arch})"
 	exit 0
 fi
 if ! out_version="$("${dir}/${out}" version 2>&1)"; then
 	echo "${out} version exited non-zero: ${out_version}" >&2
 	exit 1
 fi
-# The trailing space stops v0.1.0 accepting a v0.1.0-rc.1 binary. A release
-# from before the rename reports its old name.
+# The trailing space stops v0.1.0 accepting a v0.1.0-rc.1 binary.
 case "${out_version}" in
-"nvkectl ${version} "* | "nkectl ${version} "*) ;;
+"nvkectl ${version} "*) ;;
 *)
-	echo "asked for ${version}, and the ${tag} binary reports: ${out_version}" >&2
+	echo "asked for ${version}, and ${SITE_CLI_REF} reports: ${out_version}" >&2
 	exit 1
 	;;
 esac

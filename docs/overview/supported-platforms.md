@@ -15,14 +15,14 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | Control-plane upgrade | One minor version up, or a later patch release | Range. Downgrades and requests for the current version are rejected. The cluster must have a `controlPlaneVIP`, and only one upgrade runs at a time. |
 | Worker node pool skew | Up to 3 minor versions behind the control plane | Range. Checked when you upgrade the control plane. A new node pool starts at the cluster's version. |
 | Upgrade target on NICo | A registered OS profile for the target version | The upgrade selects an OS profile for the target Kubernetes version with the same architecture, variant and Ubuntu version as the current one. It fails if none is registered, unless the current OS profile sets the Kubernetes version at provisioning time. |
-| OpenID Connect (OIDC) on a workload cluster | 1.30.0 or later | Range. Applies to `enableOidc` and `nkeOIDCAuth`. |
+| OpenID Connect (OIDC) on a workload cluster | 1.30.0 or later | Range. Applies to `enableOidc` and `nvkeOIDCAuth`. |
+| Fleet-wide OIDC providers on a workload cluster | 1.34.0 or later | Range. Applies to `oidc.providers`. A cluster created on an earlier version gets none. |
 
 ## Container networking
 
 | Plugin or setting | Version | Notes |
 |---|---|---|
-| `ovn-kubernetes` | 1.4.0 | Pinned. The default Container Network Interface (CNI) plugin for workload clusters and the management cluster. The node image stages its charts and images packages. |
-| `calico` | 3.30.1 | Pinned. Set `cniPlugin: calico` on a workload cluster; the API then accepts only the default pod and service CIDRs. On the management cluster, the site spec's `cniName` accepts it for development. The node image installs its manifests package and stages its images package. |
+| `ovn-kubernetes` | 1.4.0 | Pinned. The Container Network Interface (CNI) plugin for workload clusters and the management cluster. The node image stages its charts and images packages. |
 | Other `cniVersion` values | Not in the node image | The node agent installs the CNI from packages on the node, so another version needs a node image built with it. |
 | IP family | IPv4 | Pod and service CIDRs are private IPv4 ranges, fixed when the cluster is created: `/12` to `/23` for pods, `/12` to `/24` for services. The defaults are `192.168.0.0/16` and `10.96.0.0/12`. The API virtual IP address (VIP) is IPv4. |
 

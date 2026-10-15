@@ -13,7 +13,6 @@ cwe_environment() {
   export CWE_API_URL="http://127.0.0.1:$CWE_HTTP_PORT/api" CWE_TOKEN_FILE="$cwe_dir/token"
   export CWE_RESULTS_DIR="$cwe_dir/results"
   export NKE_AUTH_ENABLED=true NKE_PERMISSIVE_MODE=false
-  export PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true
   export TENANT_ACCESS_ENABLED=false NKE_OIDC_AUTH_ENABLED=false
   export CWE_PROFILES_DIR="$PWD/../controller/test/fixtures/profiles"
   if [[ -z ${DOCKER_HOST:-} ]]; then

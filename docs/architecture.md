@@ -102,6 +102,28 @@ runs a REST API backed by Postgres, a Temporal worker, and a set of Kubernetes
 reconcilers. Reading only the workflows, or only the reconcilers, gives an
 incomplete picture of what reacts to a change.
 
+### Configuration
+
+The controller reads its settings once, at startup, from `nke-controller-config`,
+a ConfigMap that the Helm chart renders from its values and mounts at the path
+`CONTROLLER_CONFIG_PATH` names. `internal/controllerconfig` loads and validates
+it, and an invalid file stops the controller from starting rather than falling
+back to defaults. The settings the file does not carry, such as the database
+connection string and the API authentication file, come from environment
+variables (`internal/config/config.go`). The chart refuses an `env` entry that
+sets a variable the file replaced; `files/controller-config-env.yaml` in the
+chart lists each one with the key that replaces it.
+
+The `oidc` section configures how workload cluster API servers authenticate:
+the shared provider the management plane uses (`oidc.managementOIDCAuth`) and
+up to five fleet-wide providers (`oidc.providers`). The create handler copies
+the fleet-wide list into the cluster record (`clusters.oidc_providers`), and
+`kubeadm init`, later control-plane joins and the `enableOidc` rollout render
+the API server's authentication configuration from that copy, never from the
+live file. [Configure OIDC for workload clusters](workload-clusters/oidc.md)
+describes both, and the identities the API server refuses from a fleet-wide
+provider.
+
 ## nvke-agent
 
 The agent runs as a systemd service on each managed node. It is a **gRPC
