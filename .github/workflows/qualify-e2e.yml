@@ -1302,6 +1302,10 @@ jobs:
           WORKFLOW: .github/workflows/qualify-e2e.yml
           OUT: ${{ runner.temp }}/run-inputs.txt
           IN_STAGE: ${{ inputs.stage }}
+          # Which label started this run, so the chain below can say that a
+          # label named a value. Without it a label run credits the repository
+          # variable or the workflow default, neither of which produced it.
+          EVENT_LABEL: ${{ github.event.label.name }}
           IN_CONTROLLER_VERSION: ${{ inputs.controller-version }}
           IN_CLI_VERSION: ${{ inputs.cli-version }}
           IN_CAPI_PROVISIONED_VERSION: ${{ inputs.capi-provisioned-version }}
@@ -1486,6 +1490,10 @@ jobs:
                 source="dispatch input"
               elif [ "${input}" = IN_CONTROLLER_NAME ] && [ -n "${IN_CWE_NAME:-}" ]; then
                 source="dispatch input cwe-name (deprecated, rename to controller-name)"
+              elif [ "${EVENT_LABEL:-}" = qualify-e2e-dsx ] && { [ "${resolved}" = SITE_STAGE ] || [ "${resolved}" = SCOPE ]; }; then
+                # The label names both outright, ahead of the variables, so it
+                # is what produced the value whenever it is the trigger.
+                source="label ${EVENT_LABEL}"
               elif [ -n "${var}" ] && [ -n "${!var:-}" ]; then
                 source="repository variable ${varname}"
               elif [ -n "${wasvar}" ] && [ -n "${!wasvar:-}" ]; then
@@ -1652,10 +1660,18 @@ jobs:
           while IFS= read -r var; do
             raw="${!var}"
             [ -n "${raw}" ] || continue
-            value="$(printf '%s' "${raw}" | sed 's/[][\.*^$/]/\\&/g')"
-            for f in qualify-e2e.log qualify-e2e.junit.xml tenant-diagnostics.json site-cluster-state.txt; do
-              [ -f "${f}" ] || continue
-              sed -i "s/${value}/<withheld>/g" "${f}"
+            # Both spellings. auth.go trims whitespace and a trailing slash
+            # from the issuer before it uses one, so an issuer stored with a
+            # slash reaches an error without it and a single literal match
+            # would leave that form in the artifact.
+            trimmed="$(printf '%s' "${raw}" | sed 's#^[[:space:]]*##; s#[[:space:]]*$##; s#/*$##')"
+            for form in "${raw}" "${trimmed}"; do
+              [ -n "${form}" ] || continue
+              value="$(printf '%s' "${form}" | sed 's/[][\.*^$/]/\\&/g')"
+              for f in qualify-e2e.log qualify-e2e.junit.xml tenant-diagnostics.json site-cluster-state.txt; do
+                [ -f "${f}" ] || continue
+                sed -i "s/${value}/<withheld>/g" "${f}"
+              done
             done
           done < <(compgen -v | grep -E '_JUMP_HOST$|^SSA_ISSUER$' || true)
 
