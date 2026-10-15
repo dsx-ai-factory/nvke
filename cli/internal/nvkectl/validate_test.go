@@ -284,3 +284,31 @@ func TestValidateSiteSpec_NicoStackVerdictNeedsNoBootstrapInputs(t *testing.T) {
 		t.Fatalf("--bootstrap-only: err = %v, output %q; want it to fail without the inputs", err, out.String())
 	}
 }
+
+// TestValidateSiteSpec_NotReadyBootstrapDoesNotSayItCanRun: the final error
+// says the bootstrap can run only when the bootstrap check passed. A nico spec
+// with no token and no controllerStack section fails the stack verdict, and
+// must not contradict the "bootstrap: not ready" line above it.
+func TestValidateSiteSpec_NotReadyBootstrapDoesNotSayItCanRun(t *testing.T) {
+	example, err := os.ReadFile(filepath.Join("..", "..", "examples", "sitespec-nico.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "sitespec.yaml")
+	if err := os.WriteFile(path, example, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("NVKECTL_NICO_CREDENTIALS", "")
+
+	var out strings.Builder
+	err = runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path})
+	if err == nil {
+		t.Fatalf("full validate passed a spec with no controllerStack section:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "bootstrap: not ready for nvkectl bootstrap site on this host") {
+		t.Fatalf("the bootstrap inputs were not reported:\n%s", out.String())
+	}
+	if strings.Contains(err.Error(), "the bootstrap can run now") {
+		t.Errorf("error %q says the bootstrap can run, after the output reported it cannot", err)
+	}
+}

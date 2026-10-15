@@ -1635,6 +1635,110 @@ func TestRunBootstrapSiteNicoLeftoverClusterSaysToReleaseInstancesFirst(t *testi
 	if strings.Index(msg, "nvkectl delete cluster") > strings.Index(msg, "kind delete cluster") {
 		t.Errorf("error %q tells the operator to delete the Kind cluster before it releases the instances", msg)
 	}
+	// A leftover may hold a working site cluster, for which "delete it and
+	// re-run" allocates a second set of machines behind the same VIP.
+	for _, want := range []string{"succeeded, or failed after every control-plane node joined", "delete only this cluster", "do not re-run", "second control plane"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q does not contain %q", msg, want)
+		}
+	}
+}
+
+// TestRunBootstrapSiteNicoSpireDumpFailureIsAdvisedAsAJoinedCluster: the SPIRE
+// export runs after the site cluster is built. A failure there leaves a working
+// site, so the error says to delete only the bootstrap cluster, not to release
+// the NICo instances (which would delete the site and its machines).
+func TestRunBootstrapSiteNicoSpireDumpFailureIsAdvisedAsAJoinedCluster(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPIWithNodes(t, true, 3, 3)
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:            nicoSiteSpecFile(t),
+		bootstrapRunner:     runner,
+		cweRunner:           newFakeCWERunner(t),
+		kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) {
+			return 0, errors.New("dump failed")
+		},
+	})
+	if err == nil {
+		t.Fatal("expected the SPIRE dump failure")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"writing SPIRE bootstrap resources", "the site cluster is up and is not to be deleted",
+		"delete only the bootstrap cluster with `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q does not contain %q", msg, want)
+		}
+	}
+	for _, reject := range []string{"nvkectl delete cluster", "release the NICo instances", "set-site"} {
+		if strings.Contains(msg, reject) {
+			t.Errorf("error %q contains %q, which would delete a working site cluster", msg, reject)
+		}
+	}
+	if runner.sawArgs("delete", "cluster") {
+		t.Error("bootstrap cluster was deleted after the SPIRE copy failed")
+	}
+}
+
+// TestRunBootstrapSiteNicoRefusesWhenTheVIPAlreadyAnswers: the one address a
+// nico site's control plane is known by before it exists. When it answers, a
+// site for this spec is running, and a second bootstrap would allocate another
+// set of NICo machines behind the same VIP. Nothing is built before the refusal.
+func TestRunBootstrapSiteNicoRefusesWhenTheVIPAlreadyAnswers(t *testing.T) {
+	setBootstrapEnv(t)
+
+	var dialed []string
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:         nicoSiteSpecFile(t),
+		bootstrapRunner:  runner,
+		cweRunner:        newFakeCWERunner(t),
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		lookPath:         runtimeOnPath,
+		dialContext: func(_ context.Context, _, address string) (net.Conn, error) {
+			dialed = append(dialed, address)
+			if address != "10.0.0.100:6443" {
+				return nil, errors.New("connection refused")
+			}
+			client, server := net.Pipe()
+			_ = server.Close()
+			return client, nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected an error when the control-plane VIP already answers")
+	}
+	for _, want := range []string{"10.0.0.100", "6443", "do not re-run", "another set of NICo machines"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+	if !slices.Equal(dialed, []string{"10.0.0.100:6443"}) {
+		t.Errorf("dialed %v, want only the VIP: a nico spec lists no hosts", dialed)
+	}
+	if runner.sawArgs("create", "cluster") {
+		t.Errorf("the bootstrap kind cluster was created although the VIP already answers; calls: %v", runner.calls)
+	}
+}
+
+// TestRequireNoSiteAtVIPSkipsAnEmptyVIP: a one-node nico spec may have no VIP,
+// and then there is nothing to dial.
+func TestRequireNoSiteAtVIPSkipsAnEmptyVIP(t *testing.T) {
+	dial := func(context.Context, string, string) (net.Conn, error) {
+		t.Error("dialed with no VIP configured")
+		return nil, errors.New("unexpected dial")
+	}
+	if err := requireNoSiteAtVIP(context.Background(), "", dial); err != nil {
+		t.Fatalf("requireNoSiteAtVIP with no VIP: %v", err)
+	}
 }
 
 // TestRetainedClusterError: the advice after a failure past CreateCluster. With

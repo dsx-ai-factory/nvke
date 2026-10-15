@@ -396,11 +396,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// attempt, and may hold that attempt's encryption key.
 	releaseSteps := ""
 	if inv.IsNico() {
-		// The leftover may be one kept after success, or one that failed after
-		// every node joined; either holds a working site cluster.
-		releaseSteps = "if that run failed before every control-plane node joined, " +
-			nicoReleaseSteps(inv.ClusterName, cfg.ClusterName, "<its kubeconfig file>", cweCfg.CWEPort) +
-			" (skip that when it succeeded or failed later: the site cluster is working, and deleting it destroys it and its NICo machines), "
+		releaseSteps = nicoReleaseSteps(inv.ClusterName, cfg.ClusterName, "<its kubeconfig file>", cweCfg.CWEPort)
 	}
 	if err := requireNoBootstrapCluster(ctx, engine, cfg.ClusterName, releaseSteps); err != nil {
 		return err
@@ -422,6 +418,11 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		if err := requireNoControlPlane(ctx, inv.Cluster.Nodes, opts.dialContext); err != nil {
 			return err
 		}
+	} else if err := requireNoSiteAtVIP(ctx, inv.Cluster.ControlPlaneVIP, opts.dialContext); err != nil {
+		// The VIP is the one address a nico site's control plane is known by
+		// before it exists, and the only thing that tells a second bootstrap of
+		// the same spec from a first.
+		return err
 	}
 	// The two images this repository builds are side-loaded, not pulled. A
 	// build that was never made fails here, before the cluster exists.
@@ -503,7 +504,12 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 			ctx, opts, cluster.KubeconfigPath, filepath.Dir(siteKubeconfigPath(inv.ClusterName, opts)),
 		)
 		if dumpErr != nil {
-			return fmt.Errorf("writing SPIRE bootstrap resources: %w", dumpErr)
+			// The site cluster is built: the failure is advised on like any other
+			// after it, so a nico run is not told to release a working site.
+			return retainedClusterError(
+				&clusterJoinedError{fmt.Errorf("writing SPIRE bootstrap resources: %w", dumpErr)},
+				inv, cluster, cweCfg.CWEPort,
+			)
 		}
 		logger.Info("wrote SPIRE bootstrap resources", "clusterStaticEntries", count)
 	}
@@ -879,10 +885,12 @@ func retainedClusterError(err error, inv *sitespec.SiteSpec, cluster *bootstrape
 // the natural response to "already exists" is the delete that loses it. The
 // message leads with saving the key. Nothing is deleted or reused here.
 //
-// With nico this is the only re-run guard: the machines are allocated, not
-// listed, so there is no host to probe. releaseSteps, when set, is
-// nicoReleaseSteps for this cluster, so the "delete it and re-run" the message
-// ends with does not orphan the instances an earlier run allocated.
+// With nico this is the re-run guard for a bootstrap that never got as far as a
+// VIP to probe, and the leftover may hold a working site cluster rather than a
+// failed one. releaseSteps, when set, is nicoReleaseSteps for this cluster: the
+// message then separates a run that failed before every control-plane node
+// joined, which is released and re-run, from one that succeeded or failed
+// later, which is not re-run at all.
 func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engine, name, releaseSteps string) error {
 	exists, err := engine.Exists(ctx, name)
 	if err != nil {
@@ -891,12 +899,55 @@ func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engi
 	if !exists {
 		return nil
 	}
-	return fmt.Errorf("bootstrap cluster %q from an earlier run is still running. If that run built an encrypted "+
+	deleteCommand := "KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name " + name
+	saveKey := fmt.Sprintf("bootstrap cluster %q from an earlier run is still running. If that run built an encrypted "+
 		"site cluster and did not save its key, the key is in this cluster: get its kubeconfig with "+
 		"`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name %s`, save every etcd-encryption-key-* Secret it "+
-		"holds from the namespace it is in (`kubectl get secrets -A | grep etcd-encryption-key-`), %sthen delete it with "+
-		"`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s` and re-run",
-		name, name, releaseSteps, name)
+		"holds from the namespace it is in (`kubectl get secrets -A | grep etcd-encryption-key-`), ", name, name)
+	if releaseSteps == "" {
+		return fmt.Errorf("%sthen delete it with `%s` and re-run", saveKey, deleteCommand)
+	}
+	return fmt.Errorf("%sthen: if that run failed before every control-plane node joined, %s, delete the bootstrap cluster with "+
+		"`%s`, and re-run; if it succeeded, or failed after every control-plane node joined, the site cluster is working: "+
+		"recover from this cluster whatever that run did not write, delete only this cluster with `%s`, and do not re-run, "+
+		"because a re-run allocates another set of NICo machines and brings up a second control plane advertising the "+
+		"same controlPlaneVIP", saveKey, releaseSteps, deleteCommand, deleteCommand)
+}
+
+// requireNoSiteAtVIP refuses to bootstrap a nico site whose control-plane VIP
+// already accepts connections on the Kubernetes API port.
+//
+// A nico bootstrap allocates its machines, so there is no host to probe; the VIP
+// is the one address the site's control plane is known by. When it answers, a
+// site cluster for this spec is most likely already running, and another
+// bootstrap allocates another controlPlane.count NICo machines and brings up a
+// second control plane whose kube-vip advertises the same address. An empty vip
+// (a one-node spec without one) has nothing to probe; a dial error of any kind
+// counts as nothing answering, as in requireNoControlPlane.
+func requireNoSiteAtVIP(
+	ctx context.Context,
+	vip string,
+	dial func(ctx context.Context, network, address string) (net.Conn, error),
+) error {
+	if vip == "" {
+		return nil
+	}
+	if dial == nil {
+		dial = (&net.Dialer{}).DialContext
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, hostProbeTimeout)
+	defer cancel()
+	conn, err := dial(probeCtx, "tcp", net.JoinHostPort(vip, kubeAPIServerPort))
+	if err != nil {
+		return nil
+	}
+	_ = conn.Close()
+	return fmt.Errorf("the control-plane VIP %s is accepting connections on port %s, the Kubernetes API port: a site cluster "+
+		"is most likely already running there, and bootstrapping again would allocate another set of NICo machines and bring "+
+		"up a second control plane advertising the same VIP. If that is your site, do not re-run. If it is a half-built "+
+		"one from a failed bootstrap, release its NICo instances first (see docs/bootstrap-troubleshooting.md), and re-run "+
+		"once the VIP stops answering. If something else holds the address, change cluster.controlPlaneVIP in the site spec",
+		vip, kubeAPIServerPort)
 }
 
 // requireNoControlPlane refuses to bootstrap over a host that already accepts

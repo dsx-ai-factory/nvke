@@ -113,7 +113,7 @@ REGISTRY_API_KEY="nvapi-xxxx" nvkectl bootstrap site -f sitespec.yaml
 
 ## Validating the Site Spec
 
-`nvkectl validate sitespec` checks the whole file and reports by section: the fields `bootstrap site` reads, then the `controllerStack:` section the controller stack install reads, with the `REPLACE_*` values still to fill in listed apart from errors. It exits 0 only when the file is ready for both. The two halves are used in sequence: once the bootstrap section is valid, `nvkectl bootstrap site` can run with the file, and the `controllerStack:` section is filled in before the stack install. The output says so.
+`nvkectl validate sitespec` checks the whole file and reports by section: the fields `bootstrap site` reads, then the `controllerStack:` section the controller stack install reads, with the `REPLACE_*` values still to fill in listed apart from errors. It exits 0 when the `controllerStack:` section is ready. The bootstrap section is reported but does not change the exit status, because the controller stack install runs this command on a host that lacks the bootstrap host's inputs (with `infra.provider nico`: the NICo token, the tenant password and release files, and `spire.externalAddress`); add `--bootstrap-only` to fail on the bootstrap section instead. The two halves are used in sequence: once the bootstrap section is valid, `nvkectl bootstrap site` can run with the file, and the `controllerStack:` section is filled in before the stack install. The output says so.
 
 ```bash
 nvkectl validate sitespec -f sitespec.yaml

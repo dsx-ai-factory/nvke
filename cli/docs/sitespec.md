@@ -47,10 +47,12 @@ nvkectl generate sitespec my-tier0-site --nodes hosts.csv \
   --set cluster.podCidr=10.244.0.0/16 > sitespec.yaml
 ```
 
-Two fields are deliberately not settable. `cluster.nodes` comes from `--nodes`.
+Four fields are deliberately not settable. `cluster.nodes` comes from `--nodes`.
 `registry.apiKey` is a credential and this file is meant to be committed — pass
 it to `nvkectl bootstrap site` with `--registry-api-key` or `REGISTRY_API_KEY`
-instead.
+instead. `infra.provider` and `spire.externalAddress` belong to a nico site spec,
+which `generate sitespec` does not write: it writes a `provisioned` one from
+`--nodes`, so write a nico file by hand from `examples/sitespec-nico.yaml`.
 
 Unlike `bootstrap site`, `generate sitespec` ignores the environment variables
 listed below, so a generated file never carries a value nobody typed. Every
@@ -81,10 +83,14 @@ created. In both, the cluster and those Secrets stay on the bootstrap host until
 you delete the cluster with
 `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`
 (the failure message prints the command). Treat the host as holding the tokens
-until then. After a failure, release the NICo instances CAPNICo allocated before
-you delete the cluster, as the failure message and
+until then. After a failure before every control-plane node joined, release the
+NICo instances CAPNICo allocated before you delete the cluster, as the failure
+message and
 [the retained bootstrap cluster](bootstrap-troubleshooting.md#release-the-nico-instances-first)
 describe: deleting the Kind cluster alone leaves them allocated and unmanaged.
+After every control-plane node joined the site cluster is working and its NICo
+machines belong to it, so release nothing: recover the kubeconfig and key, then
+delete only the Kind cluster.
 
 `infra.nico.controlPlane` is built from the struct the controller's REST API
 takes for a NICo control plane (`api.NicoControlPlaneProviderCreate`), with the
@@ -198,8 +204,8 @@ the manifests, written as in
 [Get NVKE artifacts and OS profiles built with NVKR](../../docs/operate/build-node-images.md),
 and the bootstrap applies them to the Kind cluster after the controller's CRDs
 exist and before it creates the site cluster. `bootstrap site` and
-`nvkectl validate sitespec` fail, before any Kind cluster exists, if the files
-cannot be read or hold no `ClusterRelease` named for the `osProfile` or not the
+`nvkectl validate sitespec --bootstrap-only` fail, before any Kind cluster exists,
+if the files cannot be read or hold no `ClusterRelease` named for the `osProfile` or not the
 `MachineImage` it references. Each must be a full manifest, with
 `apiVersion: internal.nvke.nvidia.com/v1` and its `kind`: the portable request
 documents in `examples/clusterrelease.yaml` and `machineimage.yaml` carry

@@ -214,6 +214,17 @@ it allocated before you delete the cluster: deleting it alone leaves them
 allocated. If it succeeded, or failed after every node joined, the site cluster
 is working: do not delete it. Bootstrap does not reuse an existing Kind cluster.
 
+**`the control-plane VIP ... is accepting connections on port 6443`**
+
+With `infra.provider: nico` there are no hosts to probe, so the bootstrap dials
+`cluster.controlPlaneVIP` on port 6443 before it builds anything. An answer
+means a site cluster for this spec is most likely running: a second bootstrap
+would allocate another set of NICo machines and bring up a second control plane
+advertising the same VIP. If that cluster is yours, do not re-run. If it is a
+half-built one from a failed bootstrap, [release its NICo
+instances](#release-the-nico-instances-first) and re-run once the VIP stops
+answering. If something else holds the address, change `cluster.controlPlaneVIP`.
+
 **`port 6443, the Kubernetes API port, is accepting connections on: <node> (<ip>)`**
 
 A host in the site spec already has something listening on the Kubernetes API

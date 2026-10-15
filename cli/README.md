@@ -270,8 +270,10 @@ registries (`NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` covers Docker Hub), and
 these: `--keep-bootstrap-cluster`; a failure after CWE has accepted the site
 cluster, when the cluster is retained for recovery and the error says what to do
 next (the `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster` command, preceded
-with `nico` by the steps that release the NICo instances CAPNICo allocated, or,
-when the etcd encryption key was not saved, the command that saves it first);
+with `nico`, for a failure before every control-plane node joined, by the steps that
+release the NICo instances CAPNICo allocated, and, after they joined, by saying to
+delete only the Kind cluster, because the site cluster is working; or, when the etcd
+encryption key was not saved, the command that saves it first);
 and a `kind create cluster` that succeeded but whose kubeconfig export or mirror
 configuration failed, which is left for you to delete. In the ordinary failure
 case, then, by the time the error reaches you there is nothing left to ask. To

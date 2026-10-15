@@ -103,9 +103,15 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 		return nil
 	}
 
+	// What the failure adds to the controller stack verdict: only a spec whose
+	// bootstrap check passed can say the bootstrap can run.
+	notReady := "the site spec is not ready for the controller stack install"
+	if bootstrapErr == nil {
+		notReady += "; the bootstrap can run now"
+	}
 	if spec.ControllerStack == nil {
 		fmt.Fprintln(out, "controllerStack: missing; nvkectl generate sitespec writes the section to fill in")
-		return errors.New("the site spec is not ready for the controller stack install; the bootstrap can run now")
+		return errors.New(notReady)
 	}
 	ready := true
 	if domain, defaulted := spec.TrustDomain(); defaulted {
@@ -122,7 +128,7 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 		}
 	}
 	if !ready {
-		return errors.New("the site spec is not ready for the controller stack install; the bootstrap can run now")
+		return errors.New(notReady)
 	}
 	fmt.Fprintln(out, "controllerStack: valid")
 	return nil
