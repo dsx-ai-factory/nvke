@@ -172,7 +172,7 @@ func main() {
 	}()
 
 	// Run any new DB migrations
-	if err := migrations.Migrate(ctx, bunDB); err != nil {
+	if err := migrations.Migrate(ctx, bunDB, cfg.ProfilesDir); err != nil {
 		logger.Error("Failed to migrate database", "error", err)
 		os.Exit(1)
 	}

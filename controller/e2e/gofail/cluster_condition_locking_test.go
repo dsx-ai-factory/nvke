@@ -30,7 +30,7 @@ func TestClusterConditionLocking(t *testing.T) {
 	bunDB, err := db.NewBunDB(config.Config{DBConnectionString: dsn, DBMaxOpenConnections: 4}, logger)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, bunDB.Close()) })
-	require.NoError(t, migrations.Migrate(t.Context(), bunDB))
+	require.NoError(t, migrations.Migrate(t.Context(), bunDB, ""))
 	database := db.NewDB(bunDB)
 	updateFailed := db.Condition{Status: db.ConditionStatusFalse, Message: "Cluster update failed", LastTransitionTime: time.Now().UTC()}
 	provisioned := db.Condition{Status: db.ConditionStatusTrue, Message: "Provisioned", LastTransitionTime: time.Now().UTC()}
