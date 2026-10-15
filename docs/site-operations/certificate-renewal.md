@@ -1,10 +1,10 @@
 # Renew site-management cluster certificates
 
-This runbook is for operators maintaining an NKE fleet. Use it during planned
+This runbook is for operators maintaining an NVKE fleet. Use it during planned
 site maintenance to renew the site-management cluster's kubeadm-managed **leaf
 certificates** under its existing certificate authorities (CAs).
 
-The site-management cluster hosts the NKE controller, Temporal, databases, and
+The site-management cluster hosts the NVKE controller, Temporal, databases, and
 other site services. Its API and control-plane restarts can interrupt fleet
 management operations at that site. Schedule the work with the site's owners
 and verify those services before returning the site to normal operation.
@@ -42,7 +42,7 @@ selected control-plane node. Keep a separate operator terminal for API checks.
 
 Select the site from your fleet inventory. Have its current administrative
 kubeconfig, control-plane node inventory, approved privileged access, and
-backup and recovery instructions available. NKE bootstrap produces a
+backup and recovery instructions available. NVKE bootstrap produces a
 `<clusterName>.kubeconfig`; use the current credential held by your site's
 secret-management process.
 
@@ -71,10 +71,10 @@ kubectl --context "$SITE_CONTEXT" get deployments,statefulsets -A
 ```
 
 Record the `kube-system` UID, node names/IPs, API endpoint, and workload
-readiness against the selected site's inventory. Verify the NKE controller
+readiness against the selected site's inventory. Verify the NVKE controller
 API, Temporal workers, database, infrastructure provider, and site identity
 services using your deployment's health checks. See
-[Observability](../operations/observability.md) for NKE service diagnostics.
+[Observability](../operations/observability.md) for NVKE service diagnostics.
 
 **Operator machine — connect to a control-plane node.** Use your fleet's remote
 access method. With ordinary SSH, for example:
@@ -111,7 +111,7 @@ Stop if a required certificate, CA key, or client key is absent, a certificate
 is expired or externally managed, or any node, static pod, or management
 workload is unhealthy. Use the site's etcd tools to
 check the actual member list and health of **every** endpoint; a count of Ready
-Kubernetes nodes is not an etcd quorum check. For NKE's default stacked-etcd
+Kubernetes nodes is not an etcd quorum check. For NVKE's default stacked-etcd
 container, use the node's containerd CRI socket and select the site
 `kube-system` static pod by its Kubernetes labels. A node can also run other etcd
 containers for site workloads. **Control-plane node — etcd health.** Inspect
@@ -169,7 +169,7 @@ Before any renewal, verify a recent **off-node etcd snapshot** and that the
 recovery owner has the matching encryption configuration/key, CA keys, and
 restore instructions. A YAML export or filesystem copy of `/var/lib/etcd` is
 not a substitute. See [etcd recovery](https://etcd.io/docs/v3.7/op-guide/recovery/)
-and [NKE's encryption-key notes](../site-bootstrap/pre-provisioned-nodes.md).
+and [NVKE's encryption-key notes](../site-bootstrap/pre-provisioned-nodes.md).
 
 Also back up the selected node's `/etc/kubernetes` tree **off-node** before
 renewing it. From the operator machine, with approved SSH and noninteractive
@@ -368,7 +368,7 @@ is a separate recovery decision, not a routine renewal step.
 ## 5. Return the site to service
 
 After the final control-plane node, repeat the site-wide API, etcd, workload,
-and client checks. Confirm the NKE controller API, Temporal workers, database,
+and client checks. Confirm the NVKE controller API, Temporal workers, database,
 infrastructure provider, and identity services have returned to their healthy
 baseline. Check for failed or stalled fleet operations during the maintenance
 window using the site's monitoring and Temporal workflow history.
