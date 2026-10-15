@@ -80,7 +80,7 @@ type Controller struct {
 	nodeAgentClient      agent.Client
 	tenantManagers       TenantManagerSet
 	tenantClientFor      func(adminConf []byte) (ctrlclient.Client, error)
-	issueAdminKubeconfig func(ctx context.Context, adminConf []byte, clusterName string, existing []byte) ([]byte, error)
+	issueAdminKubeconfig func(ctx context.Context, adminConf []byte, cluster db.Cluster, existing []byte) ([]byte, error)
 	scheme               *runtime.Scheme
 }
 
@@ -235,10 +235,7 @@ func (c *Controller) publish(ctx context.Context, cluster db.Cluster, adminConf 
 	} else {
 		publishErr = c.upsertKubeconfigSecret(ctx, live, KubeconfigSecretName(live.Name), adminConf, constants.LabelValueKubeconfigModeAdmin)
 	}
-	if err := c.publishBreakglass(ctx, live, adminConf); publishErr == nil {
-		return err
-	}
-	return publishErr
+	return errors.Join(publishErr, c.publishBreakglass(ctx, live, adminConf))
 }
 
 // publishBreakglass stores the nvke:breakglass kubeconfig in the admin Secret.
@@ -247,7 +244,7 @@ func (c *Controller) publishBreakglass(ctx context.Context, live db.Cluster, adm
 	if err != nil {
 		return err
 	}
-	adminKubeconfig, err := c.issueAdminKubeconfig(ctx, adminConf, live.Name, existing)
+	adminKubeconfig, err := c.issueAdminKubeconfig(ctx, adminConf, live, existing)
 	if err != nil {
 		return fmt.Errorf("issuing breakglass kubeconfig for cluster %s: %w", live.Name, err)
 	}

@@ -67,12 +67,14 @@ endpoint.
 The `nvke:breakglass` client certificate is valid for one year. Tenant-access
 checks it whenever it reconciles the cluster, which the database resync does
 about every 15 minutes. When the remaining lifetime is less than
-`certRenewal.thresholdDays` (30 by default), it signs a new certificate with
-the node's `admin.conf` and replaces the Secret. That node's `admin.conf` is
-kept valid by the separate 12-hour kubeadm certificate renewal. Renewal
-updates the Secret, not kubeconfig files that operators have already
-downloaded. Operators must retrieve a refreshed kubeconfig before the
-certificate in their local copy expires.
+`scheduledMaintenance.certRenewal.thresholdDays` (30 by default), it submits a
+certificate signing request named `nvke-breakglass` and approves it.
+kube-controller-manager issues the certificate, and tenant-access replaces the
+Secret. The node's `admin.conf` is used to approve the request and to copy the
+server URL and cluster CA. That `admin.conf` is kept valid by the separate
+12-hour kubeadm certificate renewal. Renewal updates the Secret, not kubeconfig
+files that operators have already downloaded. Operators must retrieve a
+refreshed kubeconfig before the certificate in their local copy expires.
 
 ## Service Identity and Tenant OIDC
 

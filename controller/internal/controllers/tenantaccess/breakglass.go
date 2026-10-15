@@ -4,6 +4,7 @@
 package tenantaccess
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/ecdsa"
@@ -26,7 +27,12 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/client-go/util/cert"
 	"k8s.io/client-go/util/keyutil"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 const (
@@ -43,7 +49,7 @@ const (
 	breakglassRoleKind = "ClusterRole"
 	breakglassRoleName = "cluster-admin"
 
-	// defaultRenewBeforeDays is the chart default for certRenewal.thresholdDays.
+	// defaultRenewBeforeDays is the chart default for scheduledMaintenance.certRenewal.thresholdDays.
 	defaultRenewBeforeDays = 30
 
 	// breakglassCSRName is the one in-flight client CSR on a tenant cluster.
@@ -52,24 +58,22 @@ const (
 
 	// breakglassKeySecretKey is the private key on the admin Secret while the CSR
 	// is in flight. The CSR returns a certificate, not this key, and the
-	// kubeconfig needs both. It is removed once value holds the kubeconfig.
+	// kubeconfig needs both. The key is cleared before value is written, so a
+	// failed write mints a new key.
 	breakglassKeySecretKey = "breakglass-key"
 
 	certLifetime = int32(365 * 24 * 3600)
 )
 
 // issueAdminBreakglass returns the kubeconfig to store in the admin Secret.
-// A still-valid nvke:breakglass client cert is reused. Otherwise the node
-// admin.conf is used to ensure the binding and sign a new client cert.
-func (c *Controller) issueAdminBreakglass(ctx context.Context, adminConf []byte, clusterName string, existing []byte) ([]byte, error) {
+// A still-valid client cert is reused when the CA in admin.conf is unchanged.
+// A server change keeps that cert. A CA change is reissued. A certificate
+// already on the CSR is kept only when it chains to that CA.
+func (c *Controller) issueAdminBreakglass(ctx context.Context, adminConf []byte, cluster db.Cluster, existing []byte) ([]byte, error) {
 	days := c.cfg.CertRenewalThresholdDays
 	if days <= 0 {
 		days = defaultRenewBeforeDays
 	}
-	if isValidBreakglassKubeconfig(existing, time.Now(), time.Duration(days)*24*time.Hour) {
-		return existing, nil
-	}
-
 	client, err := c.tenantClientFor(adminConf)
 	if err != nil {
 		return nil, err
@@ -77,7 +81,17 @@ func (c *Controller) issueAdminBreakglass(ctx context.Context, adminConf []byte,
 	if err := applyBreakglassBinding(ctx, client); err != nil {
 		return nil, err
 	}
-	certPEM, keyPEM, err := c.reconcileBreakglassCSR(ctx, client, clusterName)
+	if isValidBreakglassKubeconfig(existing, time.Now(), time.Duration(days)*24*time.Hour) {
+		reused, ok, err := reuseBreakglassKubeconfig(existing, adminConf)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return reused, nil
+		}
+	}
+
+	certPEM, keyPEM, err := c.reconcileBreakglassCSR(ctx, client, cluster)
 	if err != nil {
 		return nil, err
 	}
@@ -85,18 +99,26 @@ func (c *Controller) issueAdminBreakglass(ctx context.Context, adminConf []byte,
 }
 
 // reconcileBreakglassCSR moves the one nvke-breakglass CSR forward.
-// The certificate is issued by kube-apiserver after approval, so a reconcile
+// The certificate is issued by kube-controller-manager after approval, so a reconcile
 // that creates or approves the CSR returns before the certificate is there.
-// The next reconcile observes it. The CSR is deleted once the certificate has
-// been copied into the kubeconfig, or when the certificate is signed but the
-// private key is gone, so the name can be used again.
-func (c *Controller) reconcileBreakglassCSR(ctx context.Context, client ctrlclient.Client, clusterName string) ([]byte, []byte, error) {
+// The next reconcile observes it. Once the certificate is present, the CSR is
+// deleted and the stored key is cleared before the caller writes the kubeconfig,
+// so a failed write mints a new CSR. A signed CSR whose private key is already
+// gone is deleted so the name can be used again.
+func (c *Controller) reconcileBreakglassCSR(ctx context.Context, client ctrlclient.Client, cluster db.Cluster) ([]byte, []byte, error) {
+	clusterName := cluster.Name
 	csr := &certificatesv1.CertificateSigningRequest{}
 	err := client.Get(ctx, types.NamespacedName{Name: breakglassCSRName}, csr)
 	if apierrors.IsNotFound(err) {
-		csr, err = c.createBreakglassCSR(ctx, client, clusterName)
+		csr, err = c.createBreakglassCSR(ctx, client, cluster)
 	}
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := c.trustedBreakglassCSR(ctx, clusterName, csr); err != nil {
+		if delErr := client.Delete(ctx, csr); delErr != nil && !apierrors.IsNotFound(delErr) {
+			return nil, nil, fmt.Errorf("%w; deleting untrusted client CSR %s: %w", err, csr.Name, delErr)
+		}
 		return nil, nil, err
 	}
 	if cond := cmp.Or(csrCondition(csr, certificatesv1.CertificateDenied), csrCondition(csr, certificatesv1.CertificateFailed)); cond != nil {
@@ -129,12 +151,13 @@ func (c *Controller) reconcileBreakglassCSR(ctx context.Context, client ctrlclie
 	return csr.Status.Certificate, keyPEM, nil
 }
 
-func (c *Controller) createBreakglassCSR(ctx context.Context, client ctrlclient.Client, clusterName string) (*certificatesv1.CertificateSigningRequest, error) {
+func (c *Controller) createBreakglassCSR(ctx context.Context, client ctrlclient.Client, cluster db.Cluster) (*certificatesv1.CertificateSigningRequest, error) {
+	clusterName := cluster.Name
 	key, keyPEM, err := generatePrivateKey()
 	if err != nil {
 		return nil, err
 	}
-	if err := c.saveBreakglassClientKey(ctx, clusterName, keyPEM); err != nil {
+	if err := c.saveBreakglassClientKey(ctx, cluster, keyPEM); err != nil {
 		return nil, err
 	}
 	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
@@ -191,6 +214,41 @@ func approveBreakglassCSR(ctx context.Context, client ctrlclient.Client, csr *ce
 	return nil
 }
 
+// trustedBreakglassCSR reports whether csr is the client request this controller
+// stored a key for: the breakglass subject, the kube-apiserver client signer,
+// client-auth usage, and the same public key as breakglass-key.
+func (c *Controller) trustedBreakglassCSR(ctx context.Context, clusterName string, csr *certificatesv1.CertificateSigningRequest) error {
+	if csr.Spec.SignerName != certificatesv1.KubeAPIServerClientSignerName {
+		return fmt.Errorf("client CSR %s signer is %q", csr.Name, csr.Spec.SignerName)
+	}
+	if len(csr.Spec.Usages) != 1 || csr.Spec.Usages[0] != certificatesv1.UsageClientAuth {
+		return fmt.Errorf("client CSR %s usages are %v", csr.Name, csr.Spec.Usages)
+	}
+	block, _ := pem.Decode(csr.Spec.Request)
+	if block == nil {
+		return fmt.Errorf("client CSR %s request is not PEM", csr.Name)
+	}
+	req, err := x509.ParseCertificateRequest(block.Bytes)
+	if err != nil {
+		return fmt.Errorf("parsing client CSR %s request: %w", csr.Name, err)
+	}
+	if err := req.CheckSignature(); err != nil {
+		return fmt.Errorf("client CSR %s request signature: %w", csr.Name, err)
+	}
+	wantCN := fmt.Sprintf("%s:%s", breakglassGroup, clusterName)
+	if req.Subject.CommonName != wantCN || !slices.Equal(req.Subject.Organization, []string{breakglassGroup}) {
+		return fmt.Errorf("client CSR %s subject is %s", csr.Name, req.Subject)
+	}
+	keyPEM, err := c.breakglassClientKey(ctx, clusterName)
+	if err != nil {
+		return err
+	}
+	if !sameECDSAPublicKey(req.PublicKey, keyPEM) {
+		return fmt.Errorf("client CSR %s public key does not match the stored breakglass key", csr.Name)
+	}
+	return nil
+}
+
 func csrCondition(csr *certificatesv1.CertificateSigningRequest, conditionType certificatesv1.RequestConditionType) *certificatesv1.CertificateSigningRequestCondition {
 	for i := range csr.Status.Conditions {
 		cond := &csr.Status.Conditions[i]
@@ -233,13 +291,17 @@ func breakglassCertMatches(cert *x509.Certificate, keyPEM []byte) bool {
 	if !slices.Contains(cert.Subject.Organization, breakglassGroup) {
 		return false
 	}
+	return sameECDSAPublicKey(cert.PublicKey, keyPEM)
+}
+
+func sameECDSAPublicKey(pub any, keyPEM []byte) bool {
 	key, err := keyutil.ParsePrivateKeyPEM(keyPEM)
 	priv, ok := key.(*ecdsa.PrivateKey)
 	if err != nil || !ok {
 		return false
 	}
-	pub, ok := cert.PublicKey.(*ecdsa.PublicKey)
-	return ok && pub.Equal(&priv.PublicKey)
+	got, ok := pub.(*ecdsa.PublicKey)
+	return ok && got.Equal(&priv.PublicKey)
 }
 
 func applyBreakglassBinding(ctx context.Context, client ctrlclient.Client) error {
@@ -263,30 +325,30 @@ func applyBreakglassBinding(ctx context.Context, client ctrlclient.Client) error
 	return nil
 }
 
-func (c *Controller) saveBreakglassClientKey(ctx context.Context, clusterName string, keyPEM []byte) error {
-	secret, err := c.adminKubeconfigSecret(ctx, clusterName)
-	if apierrors.IsNotFound(err) {
-		secret = &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      AdminKubeconfigSecretName(clusterName),
-				Namespace: SecretsNamespace,
+func (c *Controller) saveBreakglassClientKey(ctx context.Context, cluster db.Cluster, keyPEM []byte) error {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      AdminKubeconfigSecretName(cluster.Name),
+			Namespace: SecretsNamespace,
+			Labels: map[string]string{
+				clusterv1.ClusterNameLabel: cluster.Name,
 			},
-			Data: map[string][]byte{breakglassKeySecretKey: keyPEM},
-		}
-		if err := c.k8sClient.Create(ctx, secret); err != nil {
-			return fmt.Errorf("creating breakglass key for cluster %s: %w", clusterName, err)
-		}
-		return nil
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{breakglassKeySecretKey: keyPEM},
 	}
-	if err != nil {
+	capi.SetSecretOwnership(secret, cluster, constants.LabelValueKubeconfigModeAdmin, c.cfg.ManagedByLabelValue)
+	if err := c.upsertSecret(ctx, cluster, secret); err != nil {
 		return err
 	}
-	if secret.Data == nil {
-		secret.Data = map[string][]byte{}
+	// upsertSecret skips the write when the cluster has started deleting, and
+	// reports that as success. Do not submit a CSR unless this key is stored.
+	stored, err := c.breakglassClientKey(ctx, cluster.Name)
+	if err != nil {
+		return fmt.Errorf("storing breakglass key for cluster %s: %w", cluster.Name, err)
 	}
-	secret.Data[breakglassKeySecretKey] = keyPEM
-	if err := c.k8sClient.Update(ctx, secret); err != nil {
-		return fmt.Errorf("saving breakglass key for cluster %s: %w", clusterName, err)
+	if !bytes.Equal(stored, keyPEM) {
+		return fmt.Errorf("storing breakglass key for cluster %s: secret was not updated", cluster.Name)
 	}
 	return nil
 }
@@ -336,6 +398,58 @@ func (c *Controller) adminKubeconfigSecret(ctx context.Context, clusterName stri
 	return secret, nil
 }
 
+// reuseBreakglassKubeconfig returns the kubeconfig to keep. The boolean is false
+// when admin.conf's CA differs, so the caller reissues the client cert.
+func reuseBreakglassKubeconfig(existing, adminConf []byte) ([]byte, bool, error) {
+	cfg, err := clientcmd.Load(existing)
+	if err != nil {
+		return nil, false, fmt.Errorf("parsing breakglass kubeconfig: %w", err)
+	}
+	admin, err := clientcmd.Load(adminConf)
+	if err != nil {
+		return nil, false, fmt.Errorf("parsing admin kubeconfig: %w", err)
+	}
+	server, ca, err := getClusterAccess(cfg)
+	adminServer, adminCA, adminErr := getClusterAccess(admin)
+	if adminErr != nil {
+		return nil, false, adminErr
+	}
+	if err != nil || !bytes.Equal(ca, adminCA) {
+		return nil, false, nil
+	}
+	if server == adminServer {
+		return existing, true, nil
+	}
+	cfg.Clusters[cfg.Contexts[cfg.CurrentContext].Cluster].Server = adminServer
+	raw, err := clientcmd.Write(*cfg)
+	if err != nil {
+		return nil, false, err
+	}
+	return raw, true, nil
+}
+
+func issuedBreakglassCertChains(certPEM, caPEM []byte) error {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return fmt.Errorf("issued client certificate does not chain to the current cluster CA")
+	}
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	roots := x509.NewCertPool()
+	if err == nil && !roots.AppendCertsFromPEM(caPEM) {
+		err = fmt.Errorf("cluster CA is not PEM")
+	}
+	if err == nil {
+		_, err = leaf.Verify(x509.VerifyOptions{
+			Roots:     roots,
+			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		})
+	}
+	if err != nil {
+		return fmt.Errorf("issued client certificate does not chain to the current cluster CA: %w", err)
+	}
+	return nil
+}
+
 func assembleBreakglassKubeconfig(adminKubeconfig, certPEM, keyPEM []byte) ([]byte, error) {
 	cfg, err := clientcmd.Load(adminKubeconfig)
 	if err != nil {
@@ -343,6 +457,12 @@ func assembleBreakglassKubeconfig(adminKubeconfig, certPEM, keyPEM []byte) ([]by
 	}
 	server, ca, err := getClusterAccess(cfg)
 	if err != nil {
+		return nil, err
+	}
+
+	// The CSR may already hold a certificate signed before this admin.conf CA.
+	// Writing that pair makes the CA bytes match, so later reconciles keep it.
+	if err := issuedBreakglassCertChains(certPEM, ca); err != nil {
 		return nil, err
 	}
 
