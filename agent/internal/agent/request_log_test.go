@@ -150,6 +150,13 @@ func TestRedactJoinString(t *testing.T) {
 			want: fmt.Sprintf("join --token=%s.<redacted> --certificate-key=<redacted>", testTokenID),
 		},
 		{
+			name: "the other flags that take a token, and flags that look like them but are not",
+			in: fmt.Sprintf("join --discovery-token %s --tls-bootstrap-token=%s --token-ttl 24h "+
+				"--discovery-token-unsafe-skip-ca-verification --node-name gpu-01", testToken, testToken),
+			want: fmt.Sprintf("join --discovery-token %[1]s.<redacted> --tls-bootstrap-token=%[1]s.<redacted> --token-ttl 24h "+
+				"--discovery-token-unsafe-skip-ca-verification --node-name gpu-01", testTokenID),
+		},
+		{
 			name: "kubeadm's line continuations",
 			in:   fmt.Sprintf("kubeadm join 10.0.0.1:6443 --token %s \\\n    --control-plane --certificate-key %s", testToken, testCertificateKey),
 			want: fmt.Sprintf("kubeadm join 10.0.0.1:6443 --token %s.<redacted> \\\n    --control-plane --certificate-key <redacted>", testTokenID),
@@ -159,7 +166,11 @@ func TestRedactJoinString(t *testing.T) {
 			in:   "join --token not-a-token-shape",
 			want: "join --token <redacted>",
 		},
-		{name: "a command with no credentials is unchanged", in: "kubeadm join 10.0.0.1:6443 --control-plane", want: "kubeadm join 10.0.0.1:6443 --control-plane"},
+		{
+			name: "a command with no credentials is unchanged",
+			in:   "kubeadm join 10.0.0.1:6443 --control-plane",
+			want: "kubeadm join 10.0.0.1:6443 --control-plane",
+		},
 		{name: "an empty string is unchanged", in: "", want: ""},
 	}
 	for _, tc := range cases {
@@ -191,6 +202,13 @@ func TestRedactJoinArgs(t *testing.T) {
 	t.Run("the --flag=value form", func(t *testing.T) {
 		got := redactJoinArgs([]string{"join", "--token=" + testToken, "--certificate-key=" + testCertificateKey})
 		assert.Equal(t, []string{"join", "--token=" + testTokenID + ".<redacted>", "--certificate-key=<redacted>"}, got)
+	})
+	t.Run("the other flags that take a token", func(t *testing.T) {
+		redactedToken := testTokenID + ".<redacted>"
+
+		got := redactJoinArgs([]string{"join", "--discovery-token", testToken, "--tls-bootstrap-token=" + testToken, "--token-ttl", "24h"})
+
+		assert.Equal(t, []string{"join", "--discovery-token", redactedToken, "--tls-bootstrap-token=" + redactedToken, "--token-ttl", "24h"}, got)
 	})
 	t.Run("a flag with no value is left alone", func(t *testing.T) {
 		assert.Equal(t, []string{"join", "--token"}, redactJoinArgs([]string{"join", "--token"}))

@@ -27,8 +27,10 @@ const redacted = "<redacted>"
 
 var (
 	// tokenFlag and certificateKeyFlag match kubeadm's flags and their values, as
-	// "--token VALUE" or "--token=VALUE".
-	tokenFlag          = regexp.MustCompile(`(--token(?:=|\s+))(\S+)`)
+	// "--token VALUE" or "--token=VALUE". kubeadm join also takes a bootstrap token
+	// as --discovery-token and --tls-bootstrap-token, but not --token-ttl or
+	// --discovery-token-ca-cert-hash, which are not credentials.
+	tokenFlag          = regexp.MustCompile(`(--(?:token|discovery-token|tls-bootstrap-token)(?:=|\s+))(\S+)`)
 	certificateKeyFlag = regexp.MustCompile(`(--certificate-key(?:=|\s+))(\S+)`)
 
 	// configToken and configCertificateKey match the keys of a kubeadm
@@ -44,6 +46,9 @@ var (
 	// tokenShape is a bootstrap token: a 6 character ID, a dot and a 16 character secret.
 	tokenShape = regexp.MustCompile(`^([a-z0-9]{6})\.[a-z0-9]{16}$`)
 )
+
+// tokenFlagNames are the kubeadm join flags whose value is a bootstrap token.
+var tokenFlagNames = map[string]bool{"--token": true, "--discovery-token": true, "--tls-bootstrap-token": true}
 
 // redactToken returns token with its secret part replaced and its ID kept, or the
 // whole value replaced if it is not a bootstrap token. It leaves an already
@@ -80,15 +85,16 @@ func redactJoinArgs(args []string) []string {
 	out := make([]string, len(args))
 	copy(out, args)
 	for i, arg := range out {
+		name, value, hasValue := strings.Cut(arg, "=")
 		switch {
-		case arg == "--token" && i+1 < len(out):
+		case tokenFlagNames[name] && hasValue:
+			out[i] = name + "=" + redactToken(value)
+		case tokenFlagNames[arg] && i+1 < len(out):
 			out[i+1] = redactToken(out[i+1])
+		case name == "--certificate-key" && hasValue:
+			out[i] = name + "=" + redacted
 		case arg == "--certificate-key" && i+1 < len(out):
 			out[i+1] = redacted
-		case strings.HasPrefix(arg, "--token="):
-			out[i] = "--token=" + redactToken(strings.TrimPrefix(arg, "--token="))
-		case strings.HasPrefix(arg, "--certificate-key="):
-			out[i] = "--certificate-key=" + redacted
 		}
 	}
 	return out
