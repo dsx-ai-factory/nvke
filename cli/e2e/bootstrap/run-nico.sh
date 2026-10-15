@@ -58,13 +58,10 @@ NODE_COUNT="${NVKECTL_E2E_NICO_NODES:-1}"
 NODE_NETWORK="${NVKECTL_E2E_NICO_NETWORK:-nvkectl-e2e-nico-nodes}"
 NODE_SUBNET="${NVKECTL_E2E_NICO_SUBNET:-172.28.0.0/24}"
 
-# More than one control-plane node needs kube-vip, so a VIP outside the node
-# subnet, which nodes reach through the BGP-learned /32 on the host. See run.sh
-# and bgp-lib.sh. An explicit empty value disables it, for one node only.
-CONTROL_PLANE_VIP="${NVKECTL_E2E_CONTROL_PLANE_VIP-}"
-if [ -z "${CONTROL_PLANE_VIP}" ] && (( NODE_COUNT > 1 )); then
-  CONTROL_PLANE_VIP=172.26.1.1
-fi
+# A nico site always has a control-plane VIP, even with one node, so the lane
+# always runs one: outside the node subnet, reached through the BGP-learned /32
+# on the host. See run.sh and bgp-lib.sh.
+CONTROL_PLANE_VIP="${NVKECTL_E2E_CONTROL_PLANE_VIP:-172.26.1.1}"
 BGP_CONTAINER="nvkectl-e2e-nico-bgp"
 FRR_IMAGE="${NVKECTL_E2E_FRR_IMAGE:-quay.io/frrouting/frr:9.1.0}"
 BGP_FILES_DIR="${REPO_ROOT}/controller/hack/bgp-containers"
