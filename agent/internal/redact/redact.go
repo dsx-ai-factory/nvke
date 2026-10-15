@@ -38,8 +38,12 @@ var (
 	// --token-ttl and --discovery-token-ca-cert-hash are not credentials.
 	tokenFlagNames = map[string]bool{"--token": true, "--discovery-token": true, "--tls-bootstrap-token": true}
 
-	tokenFlag          = regexp.MustCompile(`(--(?:token|discovery-token|tls-bootstrap-token)(?:=|\s+))(\S+)`)
-	certificateKeyFlag = regexp.MustCompile(`(--certificate-key(?:=|\s+))(\S+)`)
+	// tokenFlag and certificateKeyFlag match a flag and a value of the shape kubeadm
+	// generates. Matching the shape, and not any word after the flag, leaves prose
+	// that names a flag alone, as in "flag --token is required". Values that were
+	// given to the agent are known from its inputs, and are replaced whatever their shape.
+	tokenFlag          = regexp.MustCompile(`(?m)((?:^|[\s\["'(])--(?:token|discovery-token|tls-bootstrap-token)(?:=|[ \t]+))([a-z0-9]{6}\.[a-z0-9]{16})`)
+	certificateKeyFlag = regexp.MustCompile(`(?m)((?:^|[\s\["'(])--certificate-key(?:=|[ \t]+))([0-9a-fA-F]{64})`)
 
 	// usingToken and usingCertificateKey match the lines kubeadm init and
 	// upload-certs print the credentials they generate on.
@@ -53,9 +57,10 @@ var (
 	// character as an escape sequence.
 	quotedScalar = regexp.MustCompile(`"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'`)
 
-	// credentialLine matches a credential key and its value on one line of YAML
-	// that could not be parsed. The values are not empty and do not span lines.
-	credentialLine = regexp.MustCompile(`(?m)^([ \t]*(?:-[ \t]+)?(?:token|tlsBootstrapToken|certificateKey)[ \t]*:[ \t]*["']?)([^\s"'#]+)`)
+	// credentialLine matches a credential key, in block or flow style, and its value
+	// in YAML that could not be parsed. The value is not empty and ends at a space or
+	// at the end of a flow collection.
+	credentialLine = regexp.MustCompile(`(?m)(?:^|[\s{,])[ \t]*(?:-[ \t]+)?(token|tlsBootstrapToken|certificateKey)[ \t]*:[ \t]*["']?([^\s"'#,}\]]+)`)
 )
 
 // credentialKeys are the keys of a kubeadm configuration that hold a credential,
@@ -127,8 +132,8 @@ func (credentials *Credentials) AddConfig(config string) {
 			break
 		}
 		if err != nil {
-			for _, line := range credentialLine.FindAllStringSubmatch(config, -1) {
-				credentials.AddSecret(line[2])
+			for _, match := range credentialLine.FindAllStringSubmatch(config, -1) {
+				credentials.addCredential(match[1], match[2])
 			}
 			break
 		}
@@ -157,20 +162,31 @@ func (credentials *Credentials) addWrittenForms(config string) {
 	}
 }
 
+// isCredentialKey reports whether key is a key of a kubeadm configuration that
+// holds a credential.
+func isCredentialKey(key string) bool {
+	_, ok := credentialKeys[key]
+	return ok
+}
+
+// addCredential records value, held by the configuration key key, as a token or as
+// a secret that is replaced whole.
+func (credentials *Credentials) addCredential(key, value string) {
+	if credentialKeys[key] {
+		credentials.AddToken(value)
+		return
+	}
+	credentials.AddSecret(value)
+}
+
 func (credentials *Credentials) addFromParsed(node any) {
 	switch typed := node.(type) {
 	case map[any]any:
 		for key, value := range typed {
 			name, _ := key.(string)
-			if isToken, ok := credentialKeys[name]; ok {
-				if text, isString := value.(string); isString {
-					if isToken {
-						credentials.AddToken(text)
-					} else {
-						credentials.AddSecret(text)
-					}
-					continue
-				}
+			if text, isString := value.(string); isString && isCredentialKey(name) {
+				credentials.addCredential(name, text)
+				continue
 			}
 			credentials.addFromParsed(value)
 		}

@@ -47,9 +47,9 @@ func TestStringRedactsByContext(t *testing.T) {
 			want: fmt.Sprintf("[bootstrap-token] Using token: %s\n[upload-certs] Using certificate key:\n<redacted>\n", redactedToken),
 		},
 		{
-			name: "a value that is not a token is redacted whole",
-			in:   "join --token not-a-token",
-			want: "join --token <redacted>",
+			name: "prose that names a flag is left alone",
+			in:   "error: flag --token is required\nunknown flag: --certificate-key\nSee 'kubeadm join --help'",
+			want: "error: flag --token is required\nunknown flag: --certificate-key\nSee 'kubeadm join --help'",
 		},
 		{
 			name: "token-shaped text with no credential context is left alone",
@@ -68,13 +68,20 @@ func TestStringRedactsByContext(t *testing.T) {
 }
 
 func TestStringRedactsKnownValues(t *testing.T) {
-	c := New()
-	c.AddJoinString(fmt.Sprintf("kubeadm join 10.0.0.1:6443 --token %s --certificate-key %s", token, certificateKey))
-	c.AddSecret("short")
+	credentials := New()
+	credentials.AddJoinString(fmt.Sprintf("kubeadm join 10.0.0.1:6443 --token %s --certificate-key %s", token, certificateKey))
+	credentials.AddSecret("short")
 
-	got := c.String(fmt.Sprintf("token %s is invalid, key %s, node01.abcdefghijklmnop.example, a short value", token, certificateKey))
+	got := credentials.String(fmt.Sprintf("token %s is invalid, key %s, node01.abcdefghijklmnop.example, a short value", token, certificateKey))
 
 	assert.Equal(t, fmt.Sprintf("token %s is invalid, key <redacted>, node01.abcdefghijklmnop.example, a short value", redactedToken), got)
+
+	t.Run("a value given to the agent is replaced whatever its shape", func(t *testing.T) {
+		given := New()
+		given.AddJoinString("kubeadm join 10.0.0.1:6443 --token not-a-token-shape")
+
+		assert.Equal(t, "kubeadm join 10.0.0.1:6443 --token <redacted>", given.String("kubeadm join 10.0.0.1:6443 --token not-a-token-shape"))
+	})
 }
 
 func TestAddConfig(t *testing.T) {
@@ -126,13 +133,19 @@ func TestAddConfig(t *testing.T) {
 			secret: certificateKey,
 			kept:   []string{"\tbad: ["},
 		},
+		{
+			name:   "flow style, keeping the token ID, in a document that does not parse",
+			config: fmt.Sprintf("kind: JoinConfiguration\n\tbad: [\ndiscovery: {bootstrapToken: {token: %s, apiServerEndpoint: 10.0.0.1:6443}}\n", token),
+			secret: token,
+			kept:   []string{"\tbad: [", "apiServerEndpoint: 10.0.0.1:6443}}"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := New()
-			c.AddConfig(tc.config)
+			credentials := New()
+			credentials.AddConfig(tc.config)
 
-			got := c.String(tc.config)
+			got := credentials.String(tc.config)
 
 			replacement := Redacted
 			if strings.HasSuffix(tc.secret, tokenSecret) {
@@ -148,10 +161,10 @@ func TestAddConfig(t *testing.T) {
 
 	t.Run("an empty credential does not take the next field with it", func(t *testing.T) {
 		const config = "bootstrapTokens:\n- token:\n  ttl: 24h0m0s\n"
-		c := New()
-		c.AddConfig(config)
+		credentials := New()
+		credentials.AddConfig(config)
 
-		assert.Equal(t, config, c.String(config))
+		assert.Equal(t, config, credentials.String(config))
 	})
 }
 
