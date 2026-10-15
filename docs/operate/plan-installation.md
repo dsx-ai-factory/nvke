@@ -14,7 +14,7 @@ A management cluster with an odd number of nodes, each a control-plane node that
 
 | Step | What you do | Page |
 |---|---|---|
-| 1. Build | Build the reference node OS image, publish its boot artifacts over HTTP(S), and define the machine image and release resources. | [Build node images and publish releases](build-node-images.md) |
+| 1. Build | Build the reference node OS image and host its boot files over HTTP(S). | [Build and host node OS images](build-node-images.md) |
 | 2. Prepare nodes | Boot the management cluster's nodes from the node image with cloud-init user data, and record each node's TPM thumbprint. | [Prepare nodes](prepare-nodes.md) |
 | 3. Bootstrap | Run `nvkectl bootstrap site` to form the management cluster. | [Bootstrap the management cluster](bootstrap-management-cluster.md) |
 | 4. Install | Install Cluster API, CAPNICo, SPIRE, telemetry and the NVKE API and controllers. | [Install management-plane services](install-management-plane-services.md) |
@@ -140,7 +140,7 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 | Controller image reference | `<CONTROLLER_IMAGE>` | Bootstrap; Install without a release | |
 | Provisioned infrastructure provider image | `<PROVISIONED_PROVIDER_IMAGE>` | Bootstrap | |
 | Profile content image reference | `controllerStack.images.profiles` | Install without a release | |
-| OS release resources, `MachineImage`, `ClusterRelease` and `NodePoolRelease` | `releases/` | Build, Install | |
+| Node provisioning configuration files; see [Register node images for provisioning](register-node-images.md) | `node-config/` | After Install | |
 
 ### NICo
 
@@ -191,4 +191,4 @@ Your plan is complete when every row in [Fill in your values](#fill-in-your-valu
 
 ## Next steps
 
-- [Build node images and publish releases](build-node-images.md).
+- [Build and host node OS images](build-node-images.md).

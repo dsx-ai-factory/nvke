@@ -16,10 +16,11 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [overview/supported-platforms.md](overview/supported-platforms.md) | The Kubernetes versions, networking, infrastructure providers, node OS and tools this release supports |
 | [get-started/quickstart-local.md](get-started/quickstart-local.md) | Evaluate NVKE on one Linux host with mock-NICo |
 | [operate/plan-installation.md](operate/plan-installation.md) | What to decide and gather before installing |
-| [operate/build-node-images.md](operate/build-node-images.md) | Building node images, serving boot artifacts over HTTP(S), and writing the OS release resources |
+| [operate/build-node-images.md](operate/build-node-images.md) | Building node OS images, hosting their boot files over HTTP(S), and checking downloads |
 | [operate/prepare-nodes.md](operate/prepare-nodes.md) | Bringing the management cluster's nodes from first boot to what `nvkectl bootstrap site` requires |
 | [operate/bootstrap-management-cluster.md](operate/bootstrap-management-cluster.md) | Writing the site spec and running `nvkectl bootstrap site` |
 | [operate/install-management-plane-services.md](operate/install-management-plane-services.md) | Installing Cluster API, CAPNICo and the NVKE API and controllers |
+| [operate/register-node-images.md](operate/register-node-images.md) | Registering a hosted node image and its first-boot settings for workload-cluster provisioning |
 | [operate/provider-nico.md](operate/provider-nico.md) | Confirming the management plane can request machines from NICo, its credentials, and the NICo IDs a cluster request needs |
 | [operate/api-authentication.md](operate/api-authentication.md) | Turning on OIDC authentication for the NVKE API |
 | [workload-clusters/create.md](workload-clusters/create.md) | Creating a workload cluster |

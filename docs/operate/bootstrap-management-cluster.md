@@ -92,31 +92,56 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
 
    The command prints the site spec with defaults applied, then `Dry run: site spec is valid. No workflow dispatched.` If the file is invalid, it lists every problem in one error. Read the printed values before you continue.
 
-## Choose the NVKE images
+## Prepare the bootstrap container images
 
-The bootstrap deploys two NVKE images into the seed cluster: the controller and the provisioned infrastructure provider. By default it uses `nke-controller:latest` and `cluster-api-provider-provisioned:latest` from the bootstrap host's local image store.
+The temporary seed cluster runs two containers: the NVKE controller and the provisioned infrastructure provider. These use OCI container images, separate from the QCOW2 disk image you used earlier to prepare the nodes. Choose one of the following ways to supply the two container images.
 
-To use images you published to your registry, log in to the registry and name the images when you run the bootstrap.
+### Build the containers on the bootstrap host
+
+From the directory containing your `nvke/` checkout, run:
 
 ```bash
-nerdctl login <REGISTRY_HOST>
+make -C nvke/cli images
 ```
 
-`<REGISTRY_HOST>` is the host name of your registry. You pass the image references with `--controller-image` and `--provisioned-provider-image` in the next section.
+This builds `nke-controller:latest` and `cluster-api-provider-provisioned:latest` in the bootstrap host's local containerd image store using `nerdctl`. The bootstrap uses those names by default. In the next step, run `nvkectl bootstrap site` without image flags.
 
-To build both images from the repository on the bootstrap host instead, run `make -C nvke/cli images`.
+### Use containers already stored in a registry
+
+If the two container images have already been built and pushed to a registry, obtain their complete image references. Each reference includes the registry host, repository and tag or digest. For example:
+
+```bash
+CONTROLLER_IMAGE="registry.example.com/nvke/controller:<TAG>"
+PROVISIONED_PROVIDER_IMAGE="registry.example.com/nvke/cluster-api-provider-provisioned:<TAG>"
+```
+
+Replace these examples with the references for the NVKE version you are installing. If that registry requires authentication, log in on the bootstrap host:
+
+```bash
+nerdctl login registry.example.com
+```
+
+Replace `registry.example.com` with the host in your image references. In the next step, pass the two references with `--controller-image` and `--provisioned-provider-image`. The bootstrap pulls a registry image if it is absent locally, then loads it into the seed cluster. This step selects existing container images; it does not build or publish them.
 
 ## Run the bootstrap
 
-1. Start the bootstrap.
+1. Start the bootstrap using the container images you prepared above.
+
+   For the local build:
+
+   ```bash
+   nvkectl bootstrap site -f sitespec.yaml
+   ```
+
+   For existing registry images, use the two variables from the registry example:
 
    ```bash
    nvkectl bootstrap site -f sitespec.yaml \
-     --controller-image <CONTROLLER_IMAGE> \
-     --provisioned-provider-image <PROVISIONED_PROVIDER_IMAGE>
+     --controller-image "$CONTROLLER_IMAGE" \
+     --provisioned-provider-image "$PROVISIONED_PROVIDER_IMAGE"
    ```
 
-   `<CONTROLLER_IMAGE>` and `<PROVISIONED_PROVIDER_IMAGE>` are full references that include your registry host. Omit both flags to use the local images. `NVKECTL_CONTROLLER_IMAGE` and `NVKECTL_CAPI_PROVISIONED_IMAGE` set the same values from the environment, and a flag wins over its variable.
+   `NVKECTL_CONTROLLER_IMAGE` and `NVKECTL_CAPI_PROVISIONED_IMAGE` can also select the images from the environment; explicit flags take precedence. For the local-build command, leave those variables unset to use the default local image names.
 
    Before it creates anything, the command refuses to start if a seed cluster from an earlier run still exists, if the etcd encryption key file it would write already exists, if any node already accepts connections on port 6443, or if a local image is missing.
 

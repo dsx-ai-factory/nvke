@@ -28,7 +28,7 @@ navigation:
         contents:
           - page: Plan your installation
             path: operate/plan-installation.md
-          - page: Build node images and publish releases
+          - page: Build and host node OS images
             path: operate/build-node-images.md
           - page: Prepare nodes
             path: operate/prepare-nodes.md
@@ -36,6 +36,8 @@ navigation:
             path: operate/bootstrap-management-cluster.md
           - page: Install management-plane services
             path: operate/install-management-plane-services.md
+          - page: Register node images for provisioning
+            path: operate/register-node-images.md
           - page: "Configure an infrastructure provider: NICo"
             path: operate/provider-nico.md
           - page: Secure the NVKE API

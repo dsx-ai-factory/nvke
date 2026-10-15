@@ -57,7 +57,7 @@ flowchart LR
 
 | Stage | What happens | Read more |
 |---|---|---|
-| **Build** | The operator builds the reference node image with the repository's Make targets, serves boot artifacts over HTTP(S), and publishes MachineImage and release resources. NVKR remains a separate source for component and package artifacts. Repeat the image build and validation for each new Kubernetes version or security fix. | [Build node images and publish releases](../operate/build-node-images.md) |
+| **Build** | The operator builds the reference node image with the repository's Make targets, serves boot artifacts over HTTP(S), and registers the image for node provisioning. NVKR remains a separate source for component and package artifacts. Repeat the image build and validation for each new Kubernetes version or security fix. | [Build and host node OS images](../operate/build-node-images.md) |
 | **Day 0: Bootstrap** | The operator prepares the management cluster's nodes. `nvkectl` starts a seed cluster, uses it to form the management cluster with kubeadm, then deletes it. The operator installs the NVKE management plane and the Cluster API controllers onto the management cluster. | [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md), [Install management-plane services](../operate/install-management-plane-services.md) |
 | **Day 1: Configure** | The operator connects the management plane to the infrastructure provider, configures API authentication, and publishes the machine images and releases that clusters will use. | [Configure an infrastructure provider: NICo](../operate/provider-nico.md), [Secure the NVKE API](../operate/api-authentication.md) |
 | **Day 2: Run clusters** | The operator creates NVKE clusters through the API, gives customers access, and installs the accelerated runtime with [NVIDIA AI Cluster Runtime (AICR)](https://docs.nvidia.com/aicr). NVKE scales node pools, upgrades the control plane and workers to new releases, replaces nodes and renews certificates. With NVSentinel installed, NVKE reboots or replaces nodes that NVSentinel reports as faulty. | [Create a workload cluster](../workload-clusters/create.md), [Manage node pools](../workload-clusters/node-pools.md) |
@@ -66,7 +66,7 @@ flowchart LR
 
 | Component | What it does | Read more |
 |---|---|---|
-| NVKR | NVIDIA Kubernetes Recipes. A separate build system and published Definitions for component and package artifacts. Its CLI is `nvkr`. Separate repository: [dsx-ai-factory/nvkr](https://github.com/dsx-ai-factory/nvkr). | [Build node images and publish releases](../operate/build-node-images.md) |
+| NVKR | NVIDIA Kubernetes Recipes. A separate build system and published Definitions for component and package artifacts. Its CLI is `nvkr`. Separate repository: [dsx-ai-factory/nvkr](https://github.com/dsx-ai-factory/nvkr). | [Build and host node OS images](../operate/build-node-images.md) |
 | `nvkectl` | The command-line client. Bootstraps the management cluster, and creates and operates NVKE clusters and node pools through the NVKE API. | [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md) |
 | Management plane | The NVKE REST API and controllers on the management cluster. Holds the inventory of clusters, node pools and nodes, and drives every lifecycle operation. | [Install management-plane services](../operate/install-management-plane-services.md) |
 | Node agent (`nvke-agent`) | A service on every node. The management plane calls it to run kubeadm, configure encryption and install components such as the CNI, without SSH. | [Prepare nodes](../operate/prepare-nodes.md) |
@@ -112,6 +112,6 @@ NVKE is the Kubernetes layer of DSX OS, NVIDIA's software stack for AI factories
 ## Next steps
 
 - **Try NVKE without hardware:** [Quickstart: evaluate locally with mock-NICo](../get-started/quickstart-local.md).
-- **Build your first artifacts:** [Build node images and publish releases](../operate/build-node-images.md).
+- **Build your first artifacts:** [Build and host node OS images](../operate/build-node-images.md).
 - **Install on your hardware:** [Plan your installation](../operate/plan-installation.md).
 - **Check what preview supports:** [Preview status and known limitations](preview-status.md) and [Supported platforms and versions](supported-platforms.md).

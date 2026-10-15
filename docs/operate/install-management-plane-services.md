@@ -95,7 +95,7 @@ The install takes its charts and images from one of three places. The commands i
 | A local NVKR Run | `--release ../release.json --nvkr-run-dir <NVKR_CHECKOUT>/.nvkr/runs/<ATTEMPT>` | Charts and images come out of the Run's OCI layouts and are imported into the nodes' container runtime. No registry is involved. |
 | No release | Neither flag | Every chart comes from the checkout and the public repositories. Set `controllerStack.images.controller` and `controllerStack.images.profiles` in the site spec, each as `repository:tag` or `repository@sha256:<digest>`. Without `controllerStack.images.controller` the install uses the overlay's pinned image, the newest controller release. |
 
-Machine images and their release resources do not require a profile content image. The `deploy/nico` deploy path still enables a separate content image for optional config profiles and hook scripts, so that install path needs an image reference even when you do not customize it. If you need custom config-profile content, its build procedure is in [Supply config profiles to the controller](../../controller/profiles/README.md).
+`MachineImage`, `ClusterRelease` and `NodePoolRelease` do not require a profile content image. The `deploy/nico` deploy path still enables a separate content image for optional config profiles and hook scripts, so that install path needs an image reference even when you do not customize it. If you need custom config-profile content, its build procedure is in [Supply config profiles to the controller](../../controller/profiles/README.md).
 
 The install refuses a release that lacks an image artifact the deploy path names: the controller image `cwe`, the profile content image `controller-profiles` or the CAPNICo image `capnico-controller`. See [Preview status and known limitations](../overview/preview-status.md).
 
@@ -188,21 +188,9 @@ The install refuses a release that lacks an image artifact the deploy path names
 
    `<MANAGEMENT_ADDRESS>` is the management cluster's API virtual IP address (VIP), or the node IP of a single-node cluster.
 
-7. Publish your OS release resources, the machine image first because both releases reference it.
+7. Register the images that NVKE will use for workload-cluster nodes.
 
-   ```bash
-   nvkectl create machineimage -f ../releases/machineimage.yaml
-   ```
-
-   ```bash
-   nvkectl create clusterrelease -f ../releases/clusterrelease.yaml
-   ```
-
-   ```bash
-   nvkectl create nodepoolrelease -f ../releases/nodepoolrelease.yaml
-   ```
-
-   The files are the ones you wrote in [Build node images and publish releases](build-node-images.md). `nvkectl` writes the resources to the management cluster through the kubeconfig of the previous step and supplies their API version and kind; the controller chart installed their custom resource definitions in step 3. `nvkectl get machineimages` lists what you published.
+   Follow [Register node images for provisioning](register-node-images.md). It explains how to prepare the boot instructions and first-boot settings, create them on the management cluster, and select them when you create a workload cluster.
 
 ## If the install fails
 
