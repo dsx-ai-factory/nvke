@@ -6,22 +6,25 @@ set -euo pipefail
 
 output_dir="${1:?usage: prepare-ovn-assets.sh OUTPUT_DIR}"
 workspace_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-version=1.4.0
+version=1.6.0
 arch="${BUNDLE_ARCH:-amd64}"
 # The reference package builder needs Linux. Local macOS runs already have
 # Docker/Colima; use a Linux builder there while CI builds directly on its host.
+# The OVN image is built through the host daemon, whose socket is at this path
+# inside the Docker VM.
 if [[ "$(uname -s)" == Darwin ]]; then
   mkdir -p "${output_dir}"
   output_dir="$(cd "${output_dir}" && pwd)"
   go_version="$(awk '/^go / {print $2; exit}' "${workspace_root}/go.work")"
   exec docker run --rm \
     -v "${workspace_root}:/workspace:ro" -v "${output_dir}:/output" \
-    -e "BUNDLE_ARCH=${arch}" -e OVN_TOOLS_DIR=/tmp/ovn-tools \
-    "golang:${go_version}-bookworm" \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -e "BUNDLE_ARCH=${arch}" -e OVN_TOOLS_DIR=/tmp/ovn-tools -e OVN_KUBERNETES_TOKEN -e GITHUB_TOKEN \
+    "golang:${go_version}-trixie" \
     bash -c '
       set -euo pipefail
       apt-get update -qq
-      apt-get install -y -qq dpkg-dev
+      apt-get install -y -qq dpkg-dev docker-cli docker-buildx
       exec bash /workspace/controller/hack/ci/prepare-ovn-assets.sh /output
     '
 fi

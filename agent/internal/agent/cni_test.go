@@ -270,7 +270,7 @@ func TestInstallCNIOVNRequiresHostOpenVSwitch(t *testing.T) {
 		CniVariant:     pb.CniVariant_CNI_VARIANT_OVN,
 		PodNetworkCidr: "10.244.0.0/16",
 		ServiceCidr:    "10.96.0.0/12",
-	}, "nvke-cni-ovn-charts-1.4.0")
+	}, "nvke-cni-ovn-charts-1.6.0")
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, errOvnRequiresHostOpenVSwitch), "got %v", err)
 }
@@ -300,7 +300,7 @@ func TestNvkeCniAptSpec(t *testing.T) {
 
 	spec, err = nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_UNSPECIFIED, pb.CniAptRole_CNI_APT_ROLE_CHARTS, "")
 	assert.NoError(t, err)
-	assert.Equal(t, "nvke-cni-ovn-charts-1.4.0", spec)
+	assert.Equal(t, "nvke-cni-ovn-charts-1.6.0", spec)
 
 	spec, err = nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_CALICO, pb.CniAptRole_CNI_APT_ROLE_IMAGES, "")
 	assert.NoError(t, err)
@@ -616,19 +616,19 @@ func TestOVNHelmArgsImageRegistry(t *testing.T) {
 	const podCIDR = "10.244.0.0/16"
 	const svcCIDR = "10.96.0.0/12"
 
-	const upstream = "ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu"
+	const upstream = "localhost/nvke"
 
 	t.Run("image registry replaces the upstream host, keeps the path", func(t *testing.T) {
 		args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podCIDR, svcCIDR, "my-mirror.example.com/nvke/", upstream, nil)
 		joined := strings.Join(args, " ")
-		assert.Contains(t, joined, "--set global.image.repository=my-mirror.example.com/nvke/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu")
+		assert.Contains(t, joined, "--set global.imageRepositoryPrefix=my-mirror.example.com/nvke/nvke")
 		assert.Equal(t, "m.example.com/a/b", ovnImageRepository("m.example.com", "quay.io/a/b"))
 	})
 
-	t.Run("empty image registry produces no global.image.repository arg", func(t *testing.T) {
+	t.Run("empty image registry produces no global.imageRepositoryPrefix arg", func(t *testing.T) {
 		args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podCIDR, svcCIDR, "", "", nil)
 		joined := strings.Join(args, " ")
-		assert.NotContains(t, joined, "global.image.repository")
+		assert.NotContains(t, joined, "global.imageRepositoryPrefix")
 	})
 
 	t.Run("CniConfig global.registry overrides server-level registry", func(t *testing.T) {
@@ -637,8 +637,8 @@ func TestOVNHelmArgsImageRegistry(t *testing.T) {
 			map[string]string{"global.registry": "request-mirror.example.com"})
 		joined := strings.Join(args, " ")
 		assert.NotContains(t, joined, "global.registry=", "the wire key must not reach helm untranslated")
-		serverIdx := strings.Index(joined, "server-mirror.example.com/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu")
-		requestIdx := strings.Index(joined, "request-mirror.example.com/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu")
+		serverIdx := strings.Index(joined, "server-mirror.example.com/nvke")
+		requestIdx := strings.Index(joined, "request-mirror.example.com/nvke")
 		require.GreaterOrEqual(t, serverIdx, 0)
 		require.GreaterOrEqual(t, requestIdx, 0)
 		assert.Greater(t, requestIdx, serverIdx, "per-request registry must appear after server-level registry so it takes precedence")
@@ -652,25 +652,21 @@ func TestOVNKubernetesCNIConfig(t *testing.T) {
 		config := ovnKubernetesCNIConfig(request, "netdev")
 
 		assert.Equal(t, ovnDummyGatewayBridgeEnabled, config[ovnDummyGatewayBridgeHelmValue])
-		assert.Equal(t, ovnLocalGatewayMode, config[ovnGatewayModeHelmValue])
 		assert.Equal(t, ovnDummyGatewayOpts, config[ovnGatewayOptsHelmValue])
 		assert.Equal(t, "Never", config["global.image.pullPolicy"])
 		assert.NotContains(t, request, ovnDummyGatewayBridgeHelmValue)
-		assert.NotContains(t, request, ovnGatewayModeHelmValue)
 		assert.NotContains(t, request, ovnGatewayOptsHelmValue)
 	})
 
 	t.Run("explicit gateway settings win", func(t *testing.T) {
 		request := map[string]string{
 			ovnDummyGatewayBridgeHelmValue: "false",
-			ovnGatewayModeHelmValue:        "shared",
 			ovnGatewayOptsHelmValue:        "--gateway-interface=custom0 --allow-no-uplink",
 		}
 
 		config := ovnKubernetesCNIConfig(request, "netdev")
 
 		assert.Equal(t, "false", config[ovnDummyGatewayBridgeHelmValue])
-		assert.Equal(t, "shared", config[ovnGatewayModeHelmValue])
 		assert.Equal(t, "--gateway-interface=custom0 --allow-no-uplink", config[ovnGatewayOptsHelmValue])
 	})
 
@@ -680,7 +676,6 @@ func TestOVNKubernetesCNIConfig(t *testing.T) {
 		config := ovnKubernetesCNIConfig(request, "system")
 
 		assert.Equal(t, ovnDummyGatewayBridgeEnabled, config[ovnDummyGatewayBridgeHelmValue])
-		assert.Equal(t, ovnLocalGatewayMode, config[ovnGatewayModeHelmValue])
 		assert.Equal(t, ovnDummyGatewayOpts, config[ovnGatewayOptsHelmValue])
 		assert.Equal(t, "Never", config["global.image.pullPolicy"])
 		assert.NotContains(t, request, ovnDummyGatewayBridgeHelmValue)
@@ -693,14 +688,12 @@ func TestOVNKubernetesCNIConfig(t *testing.T) {
 
 		assert.Equal(t, request, config)
 		assert.NotContains(t, config, ovnDummyGatewayBridgeHelmValue)
-		assert.NotContains(t, config, ovnGatewayModeHelmValue)
 		assert.NotContains(t, config, ovnGatewayOptsHelmValue)
 	})
 }
 
-// The upstream chart's defaults are values-single-node-zone.yaml (it ships no values.yaml today);
-// values-nke.yaml must come last so its pinned tag beats the "master" tag there, and a values.yaml
-// upstream might add later must not land between them and reset the subchart tags.
+// The chart's defaults are values.yaml; values-nke.yaml must come last so its image tag beats the
+// one pinned there, and an optional values-single-node-zone.yaml must not land after it.
 func TestHelmValuesFileArgs(t *testing.T) {
 	chartDir := t.TempDir()
 	for _, name := range []string{"Chart.yaml", "values.yaml", "values-single-node-zone.yaml", "values-single-node-zone-dpu.yaml", "values-nke.yaml"} {
@@ -718,12 +711,12 @@ func TestOvnStagedImageRepository(t *testing.T) {
 	write := func(body string) {
 		require.NoError(t, os.WriteFile(filepath.Join(chartDir, "values-nke.yaml"), []byte(body), 0o644))
 	}
-	write("tags:\n  ovs-node: false\nglobal:\n  image:\n    repository: ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu\n    tag: release-1.4\n")
+	write("tags:\n  ovs-node: false\nglobal:\n  imageRepositoryPrefix: localhost/nvke\n")
 	repo, err := ovnStagedImageRepository(chartDir)
 	require.NoError(t, err)
-	assert.Equal(t, "ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu", repo)
+	assert.Equal(t, "localhost/nvke", repo)
 
-	write("global:\n  image:\n    repository: nohost\n")
+	write("global:\n  imageRepositoryPrefix: nohost\n")
 	_, err = ovnStagedImageRepository(chartDir)
 	assert.Error(t, err)
 }
@@ -907,7 +900,7 @@ func TestOVNValuesRenameCompatibility(t *testing.T) {
 		legacyOVNValuesFilename: "example.test/legacy/ovn",
 		ovnValuesFilename:       "example.test/nvke/ovn",
 	} {
-		body := "global:\n  image:\n    repository: " + repository + "\n"
+		body := "global:\n  imageRepositoryPrefix: " + repository + "\n"
 		require.NoError(t, os.WriteFile(filepath.Join(chartDir, name), []byte(body), 0o644))
 	}
 	repository, err := ovnStagedImageRepository(chartDir)

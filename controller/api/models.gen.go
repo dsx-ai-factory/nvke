@@ -406,7 +406,7 @@ type CreateClusterRequest struct {
 	// CniPlugin CNI plugin. Defaults to ovn-kubernetes when omitted. calico is a disabled-by-default legacy override.
 	CniPlugin CreateClusterRequestCniPlugin `json:"cniPlugin,omitempty"`
 
-	// CniVersion CNI version, as X.Y.Z. Defaults to 3.30.1 for legacy calico or 1.4.0 for ovn-kubernetes.
+	// CniVersion CNI version, as X.Y.Z. Defaults to 3.30.1 for legacy calico or 1.6.0 for ovn-kubernetes.
 	CniVersion *string `json:"cniVersion,omitempty"`
 
 	// EtcdEncrypted Encrypt etcd at rest. Can be turned on later with `enableEtcdEncryption`; cannot be turned off.

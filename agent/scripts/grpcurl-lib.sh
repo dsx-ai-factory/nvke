@@ -96,7 +96,7 @@ grpcurl_cni_stream() {
 		return 0
 	fi
 	case "$(echo "$variant" | tr '[:upper:]' '[:lower:]')" in
-	ovn) echo "1.4.0" ;;
+	ovn) echo "1.6.0" ;;
 	calico) echo "3.30.1" ;;
 	*) grpcurl_die "unknown cni variant: $variant" ;;
 	esac

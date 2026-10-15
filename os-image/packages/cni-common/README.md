@@ -5,7 +5,7 @@ Shared by [`cni-calico/`](../cni-calico/README.md) and
 
 | File | Role |
 |---|---|
-| `bundle-lib.sh` | Sourced by each `bundle.sh`: arguments, the lock file, and the images pulled by digest and repacked deterministically |
+| `bundle-lib.sh` | Sourced by each `bundle.sh`: arguments, the lock file, and the images, pulled by digest or built from source, repacked deterministically |
 | `build-deb.sh` | Builds the content deb from the package's own spec and the images deb from the spec here |
 | `deb.mk` | The targets: `debs`, `bundle`, `lock`, `repro-check`, the pinned `crane` and `nfpm`, host checks |
 | `nfpm-images.yaml`, `postinst` | The images deb: one docker-archive under `/usr/lib/nvke/<cni>/<stream>/`, imported into containerd |
@@ -13,11 +13,13 @@ Shared by [`cni-calico/`](../cni-calico/README.md) and
 A package is four things: a `Makefile` that sets `CNI`, `PRODUCT`, `VERSIONS`,
 `CONTENT_SPEC` and `CONTENT_KIND` and includes `deb.mk`; a `bundle.sh` that
 stages its artifacts with `fetch` and `verify_artifact`, then calls
-`stage_images` and `finish_bundle`; the content deb's nfpm spec under
+`stage_images` (pull by digest) or `build_image` and `repack_archive` (build
+from source, as `cni-ovn` does), and `finish_bundle`; the content deb's nfpm spec under
 `packaging/`; and `lock/<arch>/<version>.lock`.
 
-The lock has one `artifact <name> <sha256> <url>` line per fetched file and one
-`image <ref> <digest>` line per image. `make lock` rewrites the digests from
+The lock has one `artifact <name> <sha256> <url>` line per fetched file, one
+`image <ref> <digest>` line per pulled image, and for a package built from a
+git source one `source <repo> <commit>` line. `make lock` rewrites the digests from
 upstream, with the image list seeded by hand.
 
 A build fetches images at the digest the lock names and never resolves the tag,

@@ -115,7 +115,7 @@ spec:
       {{- end }}
       {{- if .OvnEnabled }}
         # The charts package is what the post-init CNI install reads.
-        - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nvke-cni-ovn-images-1.4.0 nvke-cni-ovn-charts-1.4.0
+        - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nvke-cni-ovn-images-1.6.0 nvke-cni-ovn-charts-1.6.0
       {{- end }}
         - sysctl --system
         - systemctl daemon-reload
