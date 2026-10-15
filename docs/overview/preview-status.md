@@ -4,7 +4,7 @@ NVIDIA Kubernetes Engine (NVKE) is available as a preview. APIs, configuration a
 
 ## Supported at preview
 
-- Build reference node OS images with the repository Make targets and serve the boot artifacts over HTTP(S): [Build node images and write OS profiles](../operate/build-node-images.md).
+- Build reference node OS images with the repository Make targets and serve the boot artifacts over HTTP(S): [Build node images and publish releases](../operate/build-node-images.md).
 - Prepare nodes and bootstrap a management cluster from them with `nvkectl`: [Prepare nodes](../operate/prepare-nodes.md) and [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md).
 - Install the management plane on the management cluster: [Install management-plane services](../operate/install-management-plane-services.md).
 - Provision workload cluster nodes through NVIDIA Infra Controller (NICo): [Configure an infrastructure provider: NICo](../operate/provider-nico.md).
@@ -22,7 +22,7 @@ NVIDIA Kubernetes Engine (NVKE) is available as a preview. APIs, configuration a
 - **The management cluster does not manage itself.** It does not upgrade, scale or replace its own nodes.
 - **No management-plane upgrade procedure.** NVKE provides no procedure to move the management-plane services to a later NVKE release.
 - **No backup or restore procedure.** NVKE provides no procedure to back up or restore the management cluster or the management plane's state. Keep the kubeconfig and etcd encryption key file from the bootstrap in secure storage: the key file is the only copy of the management cluster's etcd encryption key that is not on a node.
-- **Management cluster nodes built from the node image need your own SPIRE certificate authority (CA).** Without your CA files at bootstrap, SPIRE uses a self-signed CA that no node can trust in advance, so the nodes cannot attest and cannot join. Supply your CA files as described in [Prepare nodes](../operate/prepare-nodes.md). Workload cluster nodes do not use this CA: NVKE puts the management cluster's SPIRE trust bundle in their user data, as described in [Build node images and write OS profiles](../operate/build-node-images.md#what-nvke-puts-in-the-user-data).
+- **Management cluster nodes built from the node image need your own SPIRE certificate authority (CA).** Without your CA files at bootstrap, SPIRE uses a self-signed CA that no node can trust in advance, so the nodes cannot attest and cannot join. Supply your CA files as described in [Prepare nodes](../operate/prepare-nodes.md). Workload cluster nodes do not use this CA: NVKE puts the management cluster's SPIRE trust bundle in their user data, as described in [Build node images and publish releases](../operate/build-node-images.md#what-nvke-puts-in-the-user-data).
 - **NICo is the only infrastructure provider.** NVKE provisions workload cluster nodes only through NICo.
 
 ### API and access
@@ -39,9 +39,9 @@ NVIDIA Kubernetes Engine (NVKE) is available as a preview. APIs, configuration a
 
 ### Building artifacts
 
-- **A local image build is not a qualified release.** The Make build and smoke test do not validate a real NICo boot, disk selection or the complete first-boot configuration. Validate the image and imager together on your target hardware before using them. See [Build node images and write OS profiles](../operate/build-node-images.md#build-the-node-os-image).
+- **A local image build is not a qualified release.** The Make build and smoke test do not validate a real NICo boot, disk selection or the complete first-boot configuration. Validate the image and imager together on your target hardware before using them. See [Build node images and publish releases](../operate/build-node-images.md#build-the-node-os-image).
 - **The install needs controller and profile image references.** For an install without a release description, name them in the site spec as described in [Choose where the artifacts come from](../operate/install-management-plane-services.md#choose-where-the-artifacts-come-from).
-- **No reference iPXE script boots the reference QCOW2 image through NICo.** To provision workload cluster nodes from the image, an OS profile's `ipxeScript` must write the image, a QEMU copy-on-write (QCOW2) file, to the machine's disk with a loader your NICo site provides. The example OS profile installs Ubuntu 24.04 from the installer ISO instead. See [Build node images and write OS profiles](../operate/build-node-images.md).
+- **No reference iPXE script boots the reference QCOW2 image through NICo.** To provision workload cluster nodes from the image, an OS profile's `ipxeScript` must write the image, a QEMU copy-on-write (QCOW2) file, to the machine's disk with a loader your NICo site provides. The example OS profile installs Ubuntu 24.04 from the installer ISO instead. See [Build node images and publish releases](../operate/build-node-images.md).
 
 ### Telemetry
 

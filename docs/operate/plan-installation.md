@@ -14,7 +14,7 @@ A management cluster with an odd number of nodes, each a control-plane node that
 
 | Step | What you do | Page |
 |---|---|---|
-| 1. Build | Build the reference node OS image, publish its boot artifacts over HTTP(S), and write the OS profiles. | [Build node images and write OS profiles](build-node-images.md) |
+| 1. Build | Build the reference node OS image, publish its boot artifacts over HTTP(S), and define the machine image and release resources. | [Build node images and publish releases](build-node-images.md) |
 | 2. Prepare nodes | Boot the management cluster's nodes from the node image with cloud-init user data, and record each node's TPM thumbprint. | [Prepare nodes](prepare-nodes.md) |
 | 3. Bootstrap | Run `nvkectl bootstrap site` to form the management cluster. | [Bootstrap the management cluster](bootstrap-management-cluster.md) |
 | 4. Install | Install Cluster API, CAPNICo, SPIRE, telemetry and the NVKE API and controllers. | [Install management-plane services](install-management-plane-services.md) |
@@ -191,4 +191,4 @@ Your plan is complete when every row in [Fill in your values](#fill-in-your-valu
 
 ## Next steps
 
-- [Build node images and write OS profiles](build-node-images.md).
+- [Build node images and publish releases](build-node-images.md).

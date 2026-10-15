@@ -1,6 +1,6 @@
-# Build node images and write OS profiles
+# Build node images and publish releases
 
-This page describes how to build the reference node OS image, serve its boot artifacts over HTTP(S), and write the OS profiles that NVIDIA Kubernetes Engine (NVKE) provisions nodes from. Do it after you plan the installation and before you prepare the nodes.
+This page describes how to build the reference node OS image, serve its boot artifacts over HTTP(S), and publish the machine image and release resources that NVIDIA Kubernetes Engine (NVKE) provisions nodes from. Do it after you plan the installation and before you prepare the nodes.
 
 ## Before you begin
 
@@ -87,9 +87,11 @@ sha256sum /tmp/nvke-qcow-imager.efi /tmp/nvke-node-non-fde-ubuntu-26.04.1-amd64.
 
 Compare the downloaded files' SHA-256 digests with the verified source artifacts before using them. Check every URL in an installer or chained-script flow in the same way. This checks network access and file integrity; a successful machine boot is still needed to validate firmware TLS support, imager compatibility, disk selection and first-boot user data.
 
-## Write the OS profiles
+## Define MachineImage and release resources
 
-The `osProfile` field of a workload cluster or node pool names a release that the management plane provisions its nodes from. NVKE reads releases only from three cluster-scoped custom resources in the API group `internal.nvke.nvidia.com/v1`:
+The former filesystem OS profile bundles under `profiles/osProfiles/` have [been removed](https://github.com/dsx-ai-factory/nvke/pull/1590). Define image and bootstrap content with Kubernetes resources instead. The API field `osProfile` remains: it selects a release resource by name, not a directory of profile files.
+
+NVKE reads image and release content from three cluster-scoped custom resources in the API group `internal.nvke.nvidia.com/v1`:
 
 | Resource | What it holds |
 |---|---|

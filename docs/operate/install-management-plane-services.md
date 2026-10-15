@@ -200,7 +200,7 @@ The install refuses a release that lacks an image artifact the deploy path names
    nvkectl create nodepoolrelease -f ../releases/nodepoolrelease.yaml
    ```
 
-   The files are the ones you wrote in [Build node images and write OS profiles](build-node-images.md). `nvkectl` writes the resources to the management cluster through the kubeconfig of the previous step and supplies their API version and kind; the controller chart installed their custom resource definitions in step 3. `nvkectl get machineimages` lists what you published.
+   The files are the ones you wrote in [Build node images and publish releases](build-node-images.md). `nvkectl` writes the resources to the management cluster through the kubeconfig of the previous step and supplies their API version and kind; the controller chart installed their custom resource definitions in step 3. `nvkectl get machineimages` lists what you published.
 
 ## If the install fails
 

@@ -28,7 +28,7 @@ navigation:
         contents:
           - page: Plan your installation
             path: operate/plan-installation.md
-          - page: Build node images and write OS profiles
+          - page: Build node images and publish releases
             path: operate/build-node-images.md
           - page: Prepare nodes
             path: operate/prepare-nodes.md
