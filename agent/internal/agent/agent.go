@@ -1183,7 +1183,7 @@ func (s *NodeAgentServer) installCNIPlugin(req *pb.InstallCNIPluginRequest) erro
 }
 
 func parseJoinCmds(s string) (string, string) {
-	slog.Debug("executing parseJoinCmds", "input", redact.Output(s))
+	slog.Debug("executing parseJoinCmds", "input", redact.New().String(s))
 	strNormailized := regexp.MustCompile("\r\n").ReplaceAllString(s, "\n")
 	parsed := regexp.MustCompile(`\n\s*\n`).Split(strNormailized, -1)
 
@@ -1583,7 +1583,7 @@ func (s *NodeAgentServer) UpdateAndFetchKubeAdmJoinStrings(
 	tokenArgs := []string{"token", "create", "--print-join-command"}
 	output, err := s.Runner.Run("kubeadm", tokenArgs, &nvkeutils.CommandOptions{})
 	if err != nil {
-		loggable := redact.Output(string(output))
+		loggable := redact.New().String(string(output))
 		slog.Error("failed to create new join string", "err", err, "output", loggable)
 		return nil, fmt.Errorf("kubeadm token create: %w: %s", err, strings.TrimSpace(loggable))
 	}
@@ -1616,12 +1616,12 @@ func (s *NodeAgentServer) uploadControlPlaneCerts() (string, error) {
 	output, err := s.Runner.Run("kubeadm", args, &nvkeutils.CommandOptions{})
 	out := strings.TrimSpace(string(output))
 	if err != nil {
-		return "", fmt.Errorf("%s: %w: %s", cmd, err, redact.Output(out))
+		return "", fmt.Errorf("%s: %w: %s", cmd, err, redact.New().String(out))
 	}
 	_, after, found := strings.Cut(out, "Using certificate key:")
 	fields := strings.Fields(after)
 	if !found || len(fields) == 0 {
-		return "", fmt.Errorf("%s: no certificate key in output: %s", cmd, redact.Output(out))
+		return "", fmt.Errorf("%s: no certificate key in output: %s", cmd, redact.New().String(out))
 	}
 	// kubeadm join applies the same check: the key is the hex encoding of a 32-byte AES key.
 	key, err := hex.DecodeString(fields[0])

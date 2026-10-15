@@ -236,12 +236,6 @@ func Args(args []string) []string {
 	return credentials.Args(args)
 }
 
-// Output returns the output of a kubeadm command with the credentials it prints
-// redacted.
-func Output(output string) string {
-	return (*Credentials)(nil).String(output)
-}
-
 // redactToken returns token with its secret part replaced and its ID kept, or the
 // whole value replaced if it is not a bootstrap token. A redacted value is left as
 // it is.

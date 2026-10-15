@@ -59,10 +59,10 @@ func TestStringRedactsByContext(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := Output(tc.in)
+			got := New().String(tc.in)
 
 			assert.Equal(t, tc.want, got)
-			assert.Equal(t, got, Output(got), "redacting twice changes nothing")
+			assert.Equal(t, got, New().String(got), "redacting twice changes nothing")
 		})
 	}
 }
