@@ -130,9 +130,8 @@ token:^oidcPrefixNKE$
 # Old fleet profiles still contain these names until reprovisioned.
 #
 # It also covers the unit and environment file the e2e lane restarts and
-# writes. #1565 renamed those to nvke-, but a run boots an os-image release
-# and the newest bakes nke-agent.service, so the lane pins the old names.
-# Tracked by #1600, which is where the pin is removed.
+# writes, which stay nke- permanently: nvke-agent.service aliases the old name
+# and reads both environment files, so the old spelling works on every image.
 token:(^|/)nke-agent([._:@-]|$)
 
 # Node filesystem paths and files the agent, the image and cloud-init write,
@@ -148,10 +147,8 @@ token:^nke\.io/($|k8s-api-encryption-(configured|rewrite-complete))
 token:^nke\.io$
 
 # Names this image rename kept on purpose, plus the build-guest and nix names
-# that are still spelled the old way. The e2e lane's pin to nke-cni-* rides on
-# this entry and is tracked by #1600; the lane installs nvke-kubeadm-distro and
-# pins nothing there. The packages Provide nke-kubeadm-distro and nke-cni-* so
-# apt requests for those names still resolve. nke-calico-* is
+# that are still spelled the old way. The packages Provide nke-kubeadm-distro
+# and nke-cni-* so apt requests for those names still resolve. nke-calico-* is
 # the legacy pkg-builder layout. nke-spire-* is the SPIRE client, not the
 # nvke-spire-configure unit. nke-node-agent and nke-nodepool belong to the
 # other rename issues; the pattern stops there so a leftover nke-node-*.qcow2
@@ -164,10 +161,7 @@ token:nke-kubeadm-distro|nke-cni-|nke-calico-|nke-spire|nke-node-agent|nke-nodep
 # the build guest, `nke-apt` the agent's example repository URLs and the
 # image's acquisitions tarball.
 #
-# The apt suites are no longer here: the lane installs from nvke-<codename>,
-# which apt-publisher now serves and which carries both naming generations.
-# What the lane still pins is the two CNI packages and the agent unit, covered
-# by the entries above and tracked by #1600.
+# The apt suites are no longer here: the lane installs from nvke-<codename>.
 token:nke_bundles|nke-isos|nke-apt|nke-packages|nke-prod-assets|nke-non-prod-assets|nke-github-apt-intake
 
 # ---- The CLI's old name, kept for one release (D10, D27) ----

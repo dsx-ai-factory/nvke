@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Generate clients, gateway handlers and OpenAPI from the same reviewed public contract.
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: ../gen
+    opt: module=github.com/dsx-ai-factory/nvke/management-engine/public/tenant/gen
+  - local: protoc-gen-go-grpc
+    out: ../gen
+    opt: module=github.com/dsx-ai-factory/nvke/management-engine/public/tenant/gen
+  - local: protoc-gen-grpc-gateway
+    out: ../gen
+    opt:
+      - module=github.com/dsx-ai-factory/nvke/management-engine/public/tenant/gen
+      - grpc_api_configuration=cluster/v1/gateway.yaml
+  - local: protoc-gen-openapiv2
+    out: ../gen
+    strategy: all
+    opt:
+      - allow_merge=true
+      - merge_file_name=cluster/v1/openapi
+      - output_format=yaml
+      - grpc_api_configuration=cluster/v1/gateway.yaml
+      - json_names_for_fields=true
+      - omit_enum_default_value=true
+      - openapi_configuration=cluster/v1/openapi-options.yaml

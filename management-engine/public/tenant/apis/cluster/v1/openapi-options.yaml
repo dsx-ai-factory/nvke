@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+# Configure shared OpenAPI metadata for the complete generated API description:
+# public/tenant/gen/cluster/v1/openapi.yaml
+openapiOptions:
+  file:
+    - file: cluster/v1/cluster.proto
+      option: &public_api
+        info:
+          title: Tenant Cluster API
+          version: v1
+          description: >-
+            Tenant projection of workload clusters. Requests use snake_case;
+            unknown fields, explicit nulls, duplicate JSON keys, and undocumented
+            query parameters are rejected. Create and replace persist the requested
+            configuration; success does not establish cluster readiness. Read the
+            returned status and its observed_generation to assess readiness.
+            Replacement requires the exact resource_version from a current read;
+            a version conflict requires reading again before retrying.
+            Create accepts exactly one canonical IPv4 CIDR each for pods and
+            services; the ranges must not overlap. Read schemas can represent
+            broader stored networking configurations without permitting their creation.
+            Parameter descriptions define additional required limits where schema
+            keywords are absent.
+          license:
+            name: Apache-2.0
+            url: https://www.apache.org/licenses/LICENSE-2.0
+    - file: cluster/v1/spec.proto
+      option: *public_api

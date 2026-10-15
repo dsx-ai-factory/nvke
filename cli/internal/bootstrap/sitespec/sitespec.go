@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -64,12 +65,8 @@ const (
 	pathSystemReservedMemory = "cluster.kubeletConfig.systemReservedMemory"
 	pathNodeAgentPort        = "cluster.nodeAgentPort"
 	pathEtcdEncryption       = "cluster.etcdEncryption"
-	pathBootstrapRepo        = "registry.bootstrapRepo"
-	pathBootstrapChart       = "registry.bootstrapChart"
-	pathAPIKey               = "registry.apiKey"
 	pathSpireTrustDomain     = "spire.trustDomain"
-	pathSpireCACertFile      = "spire.caCertFile"
-	pathSpireCAKeyFile       = "spire.caKeyFile"
+	pathSpireUpstreamCA      = "spire.upstreamCA"
 	pathOIDCProviders        = "cluster.oidcProviders"
 
 	// maxOIDCProviders matches controllerconfig.MaxOIDCProviders.
@@ -89,7 +86,30 @@ const (
 	oidcPrefixNKE     = "nke:"
 	oidcPrefixNVKE    = "nvke:"
 	oidcPrefixNVIDIA  = "nvidia:"
+
+	// The SPIRE CA comes from the environment, so the site spec can be committed.
+	EnvSpireCACertFile = "NVKECTL_SPIRE_CA_CERT_FILE" //nolint:gosec // G101: an env var name, not a credential
+	EnvSpireCAKeyFile  = "NVKECTL_SPIRE_CA_KEY_FILE"  //nolint:gosec // G101: an env var name, not a credential
 )
+
+// removedSpireCAEnv pairs the CA variables main bound to the removed spec fields
+// with their replacements. Setting one is refused, so a script that still
+// exports it does not get a self-signed SPIRE.
+var removedSpireCAEnv = [][2]string{
+	{"SPIRE_CA_CERT_FILE", EnvSpireCACertFile},
+	{"SPIRE_CA_KEY_FILE", EnvSpireCAKeyFile},
+}
+
+// removedFields maps each removed field to what replaced it.
+var removedFields = map[string]string{
+	"registry":                       "the bootstrap takes its images from --controller-image and --provisioned-provider-image; log in to a private registry with nerdctl login",
+	"spire.caCertFile":               "set " + EnvSpireCACertFile + " and spire.upstreamCA: true",
+	"spire.caKeyFile":                "set " + EnvSpireCAKeyFile + " and spire.upstreamCA: true",
+	"controllerStack.nico.tokenFile": "set " + EnvNicoToken,
+	"controllerStack.tenant":         "set " + EnvNodeUser + " and " + EnvNodePassword,
+	"controllerStack.database":       "set " + EnvDatabasePassword + "; an installed site sets it to the password its Postgres was initialized with",
+	"controllerStack.nktpValuesFile": "pass --values-for nktp=<file> to nvke-deploy.sh install",
+}
 
 var (
 	oidcReservedPrefixes = []string{
@@ -124,21 +144,12 @@ type SiteSpec struct {
 	ClusterName string `yaml:"clusterName"`
 	// Cluster holds the node inventory and Kubernetes settings.
 	Cluster Cluster `yaml:"cluster"`
-	// Registry holds the container-registry settings for the bootstrap engine
-	// image. The field names are registry-agnostic so the file can be
-	// open-sourced (tier-0 used NVIDIA-specific "ngcApiKey"/"sweImageTag").
-	Registry Registry `yaml:"registry"`
 	// Spire holds the identity-plane settings for the bootstrap.
 	Spire Spire `yaml:"spire"`
 	// ControllerStack is the input the controller stack install reads. The
 	// bootstrap does not read it; ValidateControllerStack checks it at install
 	// time.
 	ControllerStack *ControllerStack `yaml:"controllerStack,omitempty"`
-
-	// dir is the directory the file was loaded from, which relative paths in
-	// the controllerStack section are resolved against. Empty for a spec that
-	// was built rather than loaded.
-	dir string `yaml:"-"`
 }
 
 // Spire describes the identity plane `nvkectl bootstrap site` stands up.
@@ -148,21 +159,18 @@ type Spire struct {
 	// site SPIRE server that replaces it.
 	TrustDomain string `yaml:"trustDomain,omitempty"`
 
-	// CACertFile and CAKeyFile point at a CA the operator brings to the
-	// bootstrap. SPIRE chains its own CA to it, so a node that was given the
-	// certificate ahead of time can verify the server the first time it speaks
-	// to it, instead of trusting whatever answers.
-	//
-	// They are paths rather than inline PEM for two reasons: a private key does
-	// not belong in a file meant to be committed, and the same certificate has
-	// to be delivered to each node by whatever provisions it — for DSX, the
-	// ansible runbook over SSH — so it already exists as a file.
-	//
-	// Both or neither. Omitting them leaves SPIRE self-signed, which is fine
-	// when nothing outside the cluster has to verify it, and means nodes cannot
-	// be given a trust anchor in advance.
-	CACertFile string `yaml:"caCertFile,omitempty"`
-	CAKeyFile  string `yaml:"caKeyFile,omitempty"`
+	// UpstreamCA records that the site's SPIRE chains to an operator CA, so
+	// every run requires the CA variables instead of falling back to a
+	// self-signed root.
+	UpstreamCA bool `yaml:"upstreamCA,omitempty"`
+
+	// CACertFile and CAKeyFile are a CA the operator brings to the bootstrap,
+	// from NVKECTL_SPIRE_CA_CERT_FILE and NVKECTL_SPIRE_CA_KEY_FILE. SPIRE
+	// chains its own CA to it, so a node given the certificate ahead of time
+	// verifies the server on first contact. Both with UpstreamCA, neither
+	// without it; neither leaves SPIRE self-signed.
+	CACertFile string `yaml:"-"`
+	CAKeyFile  string `yaml:"-"`
 }
 
 // Cluster describes the target Kubernetes cluster and its nodes.
@@ -270,24 +278,6 @@ type KubeletConfig struct {
 	SystemReservedMemory string `yaml:"systemReservedMemory"`
 }
 
-// Registry holds the settings for pulling the bootstrap engine chart. The
-// version (chart tag) is baked into the nvkectl build, so it is not part of the
-// sitespec. The controller image the chart deploys is published separately, to
-// <registry>/<org>/controller, and is not addressed by these fields.
-type Registry struct {
-	// BootstrapRepo is the OCI repository that holds the bootstrap engine chart
-	// (e.g. "nvcr.io/org").
-	BootstrapRepo string `yaml:"bootstrapRepo"`
-	// BootstrapChart is the bootstrap engine chart name within BootstrapRepo
-	// (e.g. "controller-chart" on NVCR, which has no path segment to keep the
-	// chart from colliding with the controller image's repository).
-	BootstrapChart string `yaml:"bootstrapChart"`
-	// APIKey is an optional registry credential. It is never defaulted: a
-	// secret is only ever used when the operator supplies one, via this field,
-	// a CLI flag, or an environment variable. See the SetDefaults note.
-	APIKey string `yaml:"apiKey,omitempty"`
-}
-
 // envBindings maps environment variable names to their site spec field paths.
 // A set variable overrides the matching field from the file, so existing
 // tier-0 / DS9 scripts can drive the site spec through the environment.
@@ -303,12 +293,7 @@ func envBindings() map[string]string {
 		"CLUSTER_SYSTEM_RESERVED_MEMORY": pathSystemReservedMemory,
 		"CLUSTER_NODE_AGENT_PORT":        pathNodeAgentPort,
 		"CLUSTER_ETCD_ENCRYPTION":        pathEtcdEncryption,
-		"REGISTRY_BOOTSTRAP_REPO":        pathBootstrapRepo,
-		"REGISTRY_BOOTSTRAP_CHART":       pathBootstrapChart,
-		"REGISTRY_API_KEY":               pathAPIKey,
 		"NVKECTL_SPIFFE_TRUST_DOMAIN":    pathSpireTrustDomain,
-		"SPIRE_CA_CERT_FILE":             pathSpireCACertFile,
-		"SPIRE_CA_KEY_FILE":              pathSpireCAKeyFile,
 	}
 }
 
@@ -317,6 +302,12 @@ func envBindings() map[string]string {
 var Settings = []string{
 	"NVKECTL_SPIFFE_TRUST_DOMAIN",
 	"NVKECTL_CLUSTER_NODES",
+	EnvSpireCACertFile,
+	EnvSpireCAKeyFile,
+	EnvNicoToken,
+	EnvNodeUser,
+	EnvNodePassword,
+	EnvDatabasePassword,
 }
 
 // newInventoryViper returns a Viper that reads a YAML site spec file with the
@@ -368,13 +359,15 @@ func Load(path string) (*SiteSpec, error) {
 			path, pathEtcdEncryption, raw)
 	}
 
+	if err := rejectRemovedFields(v, path); err != nil {
+		return nil, fmt.Errorf("site spec file %s: %w", path, err)
+	}
+
 	var inv SiteSpec
 	if err := v.Unmarshal(&inv, useYAMLTags, rejectUnknownFields); err != nil {
 		return nil, fmt.Errorf("site spec file %s: %w", path, err)
 	}
-	if abs, err := filepath.Abs(path); err == nil {
-		inv.dir = filepath.Dir(abs)
-	}
+	inv.Spire.CACertFile, inv.Spire.CAKeyFile = envalias.Get(EnvSpireCACertFile), envalias.Get(EnvSpireCAKeyFile)
 
 	inv.SetDefaults()
 
@@ -387,6 +380,30 @@ func Load(path string) (*SiteSpec, error) {
 		return nil, fmt.Errorf("site spec file %s: %w", path, err)
 	}
 	return &inv, nil
+}
+
+// rejectRemovedFields names the replacement for each removed field the file sets.
+func rejectRemovedFields(v *viper.Viper, specPath string) error {
+	var errs []string
+	for field, instead := range removedFields {
+		if field == "controllerStack.database" {
+			if file := v.GetString("controllerStack.database.passwordFile"); file != "" {
+				if !filepath.IsAbs(file) {
+					file = filepath.Join(filepath.Dir(specPath), file)
+				}
+				instead = fmt.Sprintf("set %s to the contents of %s, the password this site's Postgres was initialized with",
+					EnvDatabasePassword, file)
+			}
+		}
+		if v.InConfig(field) {
+			errs = append(errs, fmt.Sprintf("%s is no longer accepted: %s", field, instead))
+		}
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	sort.Strings(errs)
+	return fmt.Errorf("validation failed:\n  - %s", strings.Join(errs, "\n  - "))
 }
 
 // useYAMLTags makes viper decode using the structs' existing yaml tags.
@@ -460,7 +477,6 @@ func (inv *SiteSpec) appendDataChecks(v *validator) {
 	v.checkCIDRsDisjoint(inv.Cluster)
 	v.checkControlPlaneVIP(inv.Cluster)
 	v.checkNodeAgentPort(inv.Cluster.NodeAgentPort)
-	v.checkRegistry(inv.Registry)
 	v.checkSpire(inv.Spire)
 	v.checkOIDCProviders(inv.Cluster)
 }
@@ -480,7 +496,7 @@ func (inv *SiteSpec) ValidateReferences() error {
 // appendReferenceChecks runs every check that reads the filesystem, adding each
 // problem to v. See appendDataChecks for why it takes the validator.
 func (inv *SiteSpec) appendReferenceChecks(v *validator) {
-	v.checkSpireFiles(inv.Spire)
+	v.checkSpireCA(inv.Spire)
 }
 
 // validator accumulates field-level errors so the caller sees every problem
@@ -778,26 +794,10 @@ func (v *validator) checkNodeAgentPort(port string) {
 	}
 }
 
-func (v *validator) checkRegistry(r Registry) {
-	v.checkRegistryRef(pathBootstrapRepo, r.BootstrapRepo)
-	v.checkRegistryRef(pathBootstrapChart, r.BootstrapChart)
-}
-
-// checkSpire validates the shape of the bootstrap CA, if one was given: both
-// files or neither. Whether the files exist is checkSpireFiles' concern.
+// checkSpire validates the trust domain.
 func (v *validator) checkSpire(s Spire) {
 	if s.TrustDomain != "" {
 		v.checkTrustDomain(s.TrustDomain)
-	}
-
-	switch {
-	case s.CACertFile == "" && s.CAKeyFile == "":
-		return
-	case s.CACertFile == "":
-		v.addf("%s is required when %s is set", pathSpireCACertFile, pathSpireCAKeyFile)
-	case s.CAKeyFile == "":
-		v.addf("%s is required when %s is set: SPIRE needs the key to sign with, "+
-			"not just the certificate to chain to", pathSpireCAKeyFile, pathSpireCACertFile)
 	}
 }
 
@@ -817,38 +817,43 @@ func (v *validator) checkTrustDomain(domain string) {
 	}
 }
 
-// checkSpireFiles reports a bootstrap CA that cannot be read.
-//
-// Existence is checked before the bootstrap rather than left to the deploy
-// because this is the last point at which nothing has been touched. A missing
-// or unreadable CA otherwise surfaces several minutes in, as a helm failure
-// that names a temporary file rather than the site spec field that was wrong.
-//
-// A half-specified CA is checkSpire's error to report, so nothing is checked
-// here unless both fields are set.
-func (v *validator) checkSpireFiles(s Spire) {
-	if s.CACertFile == "" || s.CAKeyFile == "" {
-		return
-	}
-
-	for path, file := range map[string]string{
-		pathSpireCACertFile: s.CACertFile,
-		pathSpireCAKeyFile:  s.CAKeyFile,
-	} {
-		if _, err := os.Stat(file); err != nil {
-			v.addf("%s %q cannot be read: %v", path, file, err)
+// checkSpireCA reports a half-specified or unreadable CA from the
+// environment, before anything has been touched.
+func (v *validator) checkSpireCA(s Spire) {
+	for _, pair := range removedSpireCAEnv {
+		if os.Getenv(pair[0]) != "" {
+			v.addf("%s is no longer accepted: unset it; set %s and %s: true", pair[0], pair[1], pathSpireUpstreamCA)
 		}
 	}
-}
-
-// checkRegistryRef validates a required, whitespace-free registry reference.
-// The API key is intentionally not checked here — it is optional and never
-// defaulted.
-func (v *validator) checkRegistryRef(path, value string) {
+	certEnv, keyEnv := EnvSpireCACertFile, EnvSpireCAKeyFile
 	switch {
-	case value == "":
-		v.addf("%s is required", path)
-	case strings.ContainsAny(value, " \t"):
-		v.addf("%s %q must not contain whitespace", path, value)
+	case s.CACertFile == "" && s.CAKeyFile == "":
+		if s.UpstreamCA {
+			v.addf("%s is true, so %s and %s are required: every run of this site needs the CA it was set up with",
+				pathSpireUpstreamCA, certEnv, keyEnv)
+		}
+		return
+	case !s.UpstreamCA:
+		v.addf("%s or %s is set but %s is not true: set it in the site spec so every later run requires the CA",
+			certEnv, keyEnv, pathSpireUpstreamCA)
+		return
+	case s.CACertFile == "":
+		v.addf("%s is required when %s is set", certEnv, keyEnv)
+		return
+	case s.CAKeyFile == "":
+		v.addf("%s is required when %s is set: SPIRE needs the key to sign with", keyEnv, certEnv)
+		return
+	}
+	for _, f := range [][2]string{{certEnv, s.CACertFile}, {keyEnv, s.CAKeyFile}} {
+		file, err := os.Open(f[1])
+		if err != nil {
+			v.addf("%s %q cannot be read: %v", f[0], f[1], err)
+			continue
+		}
+		info, err := file.Stat()
+		_ = file.Close()
+		if err == nil && !info.Mode().IsRegular() {
+			v.addf("%s %q is not a regular file", f[0], f[1])
+		}
 	}
 }

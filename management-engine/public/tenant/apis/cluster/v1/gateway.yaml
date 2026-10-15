@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Bind public RPCs to HTTP routes so the gateway and OpenAPI share one routing contract.
+type: google.api.Service
+config_version: 3
+http:
+  rules:
+    - selector: cluster.v1.ClusterService.CreateCluster
+      post: /v1/clusters
+      body: "*"
+    - selector: cluster.v1.ClusterService.GetCluster
+      get: /v1/clusters/{name}
+    - selector: cluster.v1.ClusterService.ListClusters
+      get: /v1/clusters
+    - selector: cluster.v1.ClusterService.ReplaceCluster
+      put: /v1/clusters/{name}
+      body: "*"

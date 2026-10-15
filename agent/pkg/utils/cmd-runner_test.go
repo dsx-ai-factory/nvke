@@ -5,6 +5,7 @@ package utils
 
 import (
 	"bytes"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -389,4 +390,25 @@ func TestExecRunnerRunWithSpecialCharacters(t *testing.T) {
 	assert.NoError(t, err)
 	// echo should preserve the literal string
 	assert.Contains(t, string(output), specialChars)
+}
+
+func TestExecRunnerLogsRedactedArguments(t *testing.T) {
+	// The values are built from repeated characters so no test holds a real-looking credential.
+	token := "aaaaaa." + strings.Repeat("b", 16)
+	key := strings.Repeat("c", 64)
+	args := []string{"--token", token, "--certificate-key=" + key, "--node-name", "gpu-01"}
+	var logs bytes.Buffer
+	previousOutput := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previousOutput) })
+	runner := &ExecRunner{}
+
+	output, err := runner.Run("echo", args, nil)
+
+	assert.NoError(t, err)
+	assert.Equal(t, strings.Join(args, " ")+"\n", string(output), "the command runs with the original arguments")
+	assert.NotContains(t, logs.String(), strings.Repeat("b", 16))
+	assert.NotContains(t, logs.String(), key)
+	assert.Contains(t, logs.String(), "aaaaaa.<redacted>")
+	assert.Contains(t, logs.String(), "--node-name gpu-01")
 }

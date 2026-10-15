@@ -67,22 +67,15 @@ old repo, which has only the old names.
 nvke-kubeadm-distro-<ver> is published there -- 1.36.3 confirmed in both noble
 and resolute on 2026-10-14 -- so it moved with the coordinates.
 
-nke-cni-ovn-images and nke-cni-ovn-charts have NOT. The builder MRs are merged
-but the tags that publish them have not been pushed, so the nvke suite holds
-nke-cni-ovn-*-1.4.0 and no nvke-cni-ovn-* at all. Asking for the new name is a
-"no candidate" that terminates ProvisionCluster through
-InstallCNIPreconditionFailed, which does not retry. These two move when the
-packages exist, and they resolve today because the nvke suite serves them.
+nvke-cni-ovn-images and nvke-cni-ovn-charts are published by #1560. Until that
+lands the suite serves only nke-cni-ovn-*, and asking for a name it does not
+serve is a "no candidate" that terminates ProvisionCluster through
+InstallCNIPreconditionFailed, which does not retry.
 
-The unit and its environment file are nke- for a third turn of the same
-screw. #1565 renamed them to nvke-agent.service and /etc/default/nvke-agent,
-but the image a run boots is an os-image release, and the newest one --
-v0.2.0-rc.1, tagged 2026-10-11 -- predates that merge, so it bakes
-nke-agent.service. The restart then fails with "Unit nvke-agent.service not
-found" and takes the whole block with it, while the write to the renamed
-environment file succeeds and is simply never read, so AgentArgs would go
-missing in silence even if the restart were removed. These move when an image
-carrying the renamed unit is published, not before.
+The unit and its environment file stay nke-, permanently. nvke-agent.service
+declares Alias=nke-agent.service and reads both environment files, so the old
+spelling works on images built before and after #1565 and the new one only
+after. Do not "finish" this rename.
 
 set -eu is the first command for the reason the site node has it
 (internal/infra/provision/userdata.go): cloud-init runs these as one /bin/sh
@@ -114,7 +107,7 @@ curl -fsSL -o /etc/apt/keyrings/nvke.asc https://nke-prod-assets.s3.us-west-2.am
 echo 'deb [signed-by=/etc/apt/keyrings/nvke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-{{ .AptSuite }} nvke-{{ .AptSuite }} main' > /etc/apt/sources.list.d/nvke-apt.list
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-kubeadm-distro-{{ .KubernetesVersion }}
-DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-{{ .CNIVersion }} nke-cni-ovn-charts-{{ .CNIVersion }}
+DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-cni-ovn-images-{{ .CNIVersion }} nvke-cni-ovn-charts-{{ .CNIVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y openvswitch-switch
 printf 'AGENT_ARGS="{{ .AgentArgs }}"\n' > /etc/default/nke-agent
 sysctl --system

@@ -1,0 +1,222 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+// Define public operations, resource envelopes and lifecycle states independently of internal storage types.
+
+syntax = "proto3";
+
+package cluster.v1;
+
+import "cluster/v1/spec.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+option go_package = "github.com/dsx-ai-factory/nvke/management-engine/public/tenant/gen/cluster/v1;clusterv1";
+
+// ClusterService manages cluster configuration and reports lifecycle assessments.
+// Successful mutations persist configuration. They do not wait for provisioning.
+service ClusterService {
+  // CreateCluster persists a new named configuration so provisioning can begin.
+  // It returns initial status without waiting for readiness.
+  rpc CreateCluster(CreateClusterRequest) returns (Cluster);
+  // GetCluster returns the current configuration and latest lifecycle assessment.
+  // A cluster that does not exist produces a not-found error.
+  rpc GetCluster(GetClusterRequest) returns (Cluster);
+  // ListClusters returns a page so callers can traverse the collection with bounded responses.
+  // Continue with next_page_token. Restart without a token if a continuation is rejected.
+  rpc ListClusters(ListClustersRequest) returns (ListClustersResponse);
+  // ReplaceCluster persists the complete writable configuration before provisioning starts.
+  // It rejects stale resource versions and deleting clusters to avoid unsafe updates.
+  rpc ReplaceCluster(ReplaceClusterRequest) returns (Cluster);
+}
+
+// Cluster is a stored cluster configuration and its latest lifecycle assessment.
+// All fields in this response are output only. Mutation requests use separate types.
+message Cluster {
+  // Cluster name, unique within the service's cluster collection.
+  // Lowercase letters, digits, hyphens and dots form a DNS subdomain of 1 to 253 characters.
+  string name = 1 [(grpc.gateway.protoc_gen_openapiv2.options.openapiv2_field) = {
+    min_length: 1
+    max_length: 253
+    pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+  }];
+  // Opaque version used to prevent replacing a cluster that changed after a read.
+  // Preserve this string exactly; it is not an API version or a sortable number.
+  string resource_version = 2 [json_name = "resource_version"];
+  // Current stored configuration, including supported defaults.
+  ClusterSpec spec = 3;
+  // Latest lifecycle assessment. Missing or unknown status does not establish readiness.
+  ClusterStatus status = 4;
+  // Unique identity of this cluster, unchanged for its lifetime.
+  // A different cluster created later with the same name has a different identity.
+  string uid = 5;
+  // Configuration generation, increased when the desired configuration changes.
+  // Encoded in JSON as a decimal string because this is a protobuf int64.
+  // Compare with status.observed_generation to determine whether its assessment is current.
+  int64 generation = 6;
+}
+
+// ClusterStatus describes the cluster's observed lifecycle state.
+// These fields are output only; create and replace requests cannot set status.
+// READY confirms control-plane provisioning and acceptance of the current
+// configuration; it does not assess worker capacity or workload health.
+// Clients must handle future enum values without assuming readiness or success.
+message ClusterStatus {
+  option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+    json_schema: {
+      required: ["state"]
+    }
+  };
+
+  // State describes the current public lifecycle observation.
+  enum State {
+    // Default value, never returned by the service.
+    STATE_UNSPECIFIED = 0;
+    // The current configuration has not yet been confirmed ready.
+    STATE_PENDING = 1;
+    // The control plane is provisioned and the current configuration is accepted.
+    STATE_READY = 2;
+    // A failure prevents the current configuration from becoming ready.
+    STATE_FAILED = 3;
+    // Deletion has been requested, including when cleanup is blocked.
+    STATE_DELETING = 4;
+    // The cluster's readiness cannot currently be determined.
+    STATE_UNKNOWN = 5;
+  }
+
+  // Reason supplies additional detail when the state alone is insufficient.
+  // Ordinary READY and DELETING states have no additional reason.
+  enum Reason {
+    // No additional reason. The field is normally omitted from JSON for this value.
+    REASON_UNSPECIFIED = 0;
+    // An assessment of the current configuration is not yet available.
+    REASON_AWAITING_STATUS = 1;
+    // Provisioning has been reported but has not completed; progress is not guaranteed.
+    REASON_PROVISIONING = 2;
+    // Cluster creation was rejected after the configuration was accepted.
+    REASON_CREATION_REJECTED = 3;
+    // The requested configuration is not supported.
+    REASON_UNSUPPORTED_CONFIGURATION = 4;
+    // The requested update is not supported.
+    REASON_UNSUPPORTED_UPDATE = 5;
+    // Provisioning did not complete successfully.
+    REASON_PROVISIONING_FAILED = 6;
+    // Deletion cannot complete safely while the creation outcome is unknown.
+    REASON_DELETION_BLOCKED = 7;
+    // Readiness or deletion progress cannot currently be determined.
+    REASON_STATUS_UNAVAILABLE = 8;
+  }
+
+  // Lifecycle state; the service returns a concrete value other than STATE_UNSPECIFIED.
+  State state = 1;
+  // Additional detail, omitted when there is no reason beyond the state itself.
+  // An unfamiliar reason does not change the meaning of a recognized state.
+  Reason reason = 2;
+  // Configuration generation of the available assessment, or zero if none is available.
+  // A value different from generation means the assessment is not current.
+  // Deletion can be reported before a current assessment is available.
+  // Encoded in JSON as a decimal string; zero is normally omitted.
+  int64 observed_generation = 3 [json_name = "observed_generation"];
+}
+
+// CreateClusterRequest supplies the name and initial configuration of a new cluster.
+message CreateClusterRequest {
+  option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+    json_schema: {
+      required: [
+        "name",
+        "spec"
+      ]
+    }
+  };
+
+  // Required unused cluster name: a lowercase DNS subdomain of 1 to 253 characters.
+  string name = 1 [(grpc.gateway.protoc_gen_openapiv2.options.openapiv2_field) = {
+    min_length: 1
+    max_length: 253
+    pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+  }];
+  // Required initial configuration. Fields unavailable during replacement are set here.
+  CreateClusterSpec spec = 2;
+}
+
+// GetClusterRequest identifies the cluster to read.
+message GetClusterRequest {
+  option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+    json_schema: {
+      required: ["name"]
+    }
+  };
+
+  // Required cluster name: a lowercase DNS subdomain of 1 to 253 characters.
+  string name = 1 [(grpc.gateway.protoc_gen_openapiv2.options.openapiv2_field) = {
+    min_length: 1
+    max_length: 253
+    pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+  }];
+}
+
+// ListClustersRequest selects a page using an optional continuation token.
+message ListClustersRequest {
+  // Maximum number of clusters to return, from 1 to 100.
+  // Zero or omission uses 50 for the first page and the previous
+  // page size for a continuation. A nonzero size must match the token's page size.
+  int32 page_size = 1 [
+    json_name = "page_size",
+    (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_field) = {
+      // A scalar minimum of zero is omitted by the pinned OpenAPI generator.
+      minimum: -1
+      exclusive_minimum: true
+      maximum: 100
+    }
+  ];
+  // Opaque next_page_token from a prior response, up to 16384 bytes.
+  // Omit or leave empty to start listing. Tokens can expire; restart listing if
+  // a token is rejected. Reuse a token only with the service that issued it.
+  string page_token = 2 [
+    json_name = "page_token",
+    (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_field) = {max_length: 16384}
+  ];
+}
+
+// ListClustersResponse contains one page and an optional continuation token.
+message ListClustersResponse {
+  // Clusters in this page, at most the requested page size; omitted when empty.
+  repeated Cluster clusters = 1;
+  // Opaque token for the next page. Absent or empty means listing is complete.
+  // Pass it unchanged as page_token; omit page_size or repeat the preceding size.
+  string next_page_token = 2 [json_name = "next_page_token"];
+}
+
+// ReplaceClusterRequest supplies the complete writable configuration and its precondition.
+message ReplaceClusterRequest {
+  option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+    json_schema: {
+      required: [
+        "name",
+        "resource_version",
+        "spec"
+      ]
+    }
+  };
+
+  // Required cluster name: a lowercase DNS subdomain of 1 to 253 characters.
+  // For HTTP, the URL supplies this field; any name in the body must match it.
+  string name = 1 [(grpc.gateway.protoc_gen_openapiv2.options.openapiv2_field) = {
+    min_length: 1
+    max_length: 253
+    pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+  }];
+  // Required resource_version from the latest read, preserved exactly.
+  // This opaque string is 1 to 1024 bytes, has no surrounding whitespace, and
+  // cannot consist entirely of zeroes. A changed version causes a conflict.
+  string resource_version = 2 [
+    json_name = "resource_version",
+    (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_field) = {
+      min_length: 1
+      max_length: 1024
+    }
+  ];
+  // Required complete writable configuration; omitted optional fields are cleared.
+  // Create-only configuration is retained and must not be included here.
+  ReplaceClusterSpec spec = 3;
+}

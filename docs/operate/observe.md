@@ -7,6 +7,7 @@ This page describes how to check the health of the NVIDIA Kubernetes Engine (NVK
 - You have completed [Install management-plane services](install-management-plane-services.md), and `nvkectl config set-site` points `nvkectl` at your NVKE API and the management cluster's kubeconfig. If API authentication is on, `nvkectl` points at an OpenID Connect (OIDC) kubeconfig instead, as described in [Secure the NVKE API](api-authentication.md). With that kubeconfig, `nvkectl get providers` and `nvkectl get kubeconfig` fail, because they read the management cluster's Kubernetes API, which does not accept your identity provider's tokens; the steps that use them give a `kubectl` alternative.
 - `kubectl` uses the management cluster's admin kubeconfig, for example with `export KUBECONFIG=<CLUSTER_NAME>.kubeconfig`, where `<CLUSTER_NAME>` is the management cluster's name.
 - You have `curl` and `jq`.
+- If you change the management plane's values below, run the install from a shell with the `NVKECTL_*` variables exported, as described in [Run the install again](install-management-plane-services.md#run-the-install-again).
 - You know `<MANAGEMENT_ADDRESS>`, the management cluster's API virtual IP address (VIP), or the node IP of a single-node management cluster. The NVKE API is at `http://<MANAGEMENT_ADDRESS>:30080`. If API authentication is on, add `-H "Authorization: Bearer <TOKEN>"` to each `curl` command that calls `/api/`, where `<TOKEN>` is a JSON Web Token (JWT) from your identity provider, as described in [Secure the NVKE API](api-authentication.md). `/healthz` and `/readyz` need no token.
 
 ## Check the management plane
@@ -78,7 +79,7 @@ env:
     value: debug
 ```
 
-Then run the install command from [Install management-plane services](install-management-plane-services.md) again, with the same flags and `--values-for controller=../controller-log.yaml` added. Your `env` list replaces the deploy path's list, which sets `NODE_AGENT_PORT`, so keep that entry. `LOG_LEVEL` accepts `debug`, `info`, `warn` and `error`. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
+Then run the install command from [Install management-plane services](install-management-plane-services.md) again, with the same flags and `--values-for controller=../controller-log.yaml` added. Your `env` list replaces the deploy path's list, which sets `NODE_AGENT_PORT`, so keep that entry. `LOG_LEVEL` accepts `debug`, `info`, `warn` and `error`. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md). If you passed `--values-for nktp=<FILE>` when you installed, pass it again, or NKTP goes back to the bundled development backend.
 
 ### Read the management plane metrics
 
@@ -111,7 +112,7 @@ The series that answer the most common questions:
 
 `node_type` is `cp` for control-plane nodes and `worker` for workers. The `tenant_cluster` label holds the workload cluster's name.
 
-A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces, including `monitoring`, and from the namespaces in the `metrics.networkPolicy.additionalNamespaces` value, which the deploy path sets to `nktp`. To scrape from a Prometheus in another namespace, write that value, with `nktp` and the new namespace in the list, to a values file, and run the install again with `--values-for controller=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
+A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces, including `monitoring`, and from the namespaces in the `metrics.networkPolicy.additionalNamespaces` value, which the deploy path sets to `nktp`. To scrape from a Prometheus in another namespace, write that value, with `nktp` and the new namespace in the list, to a values file, and run the install again with `--values-for controller=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md). If you passed `--values-for nktp=<FILE>` when you installed, pass it again, or NKTP goes back to the bundled development backend.
 
 ## Check workload clusters and node pools
 
@@ -182,7 +183,7 @@ By default NKTP exports to a bundled development backend, with Grafana, Promethe
 kubectl -n nktp port-forward svc/lgtm 3000:3000 --address 127.0.0.1
 ```
 
-To keep the data, send it to your own backend: write a values file as described under "Set a backend" in [Getting started with NKTP](../nktp/getting-started.md), set `controllerStack.nktpValuesFile` in the site spec to its path, and run the install from [Install management-plane services](install-management-plane-services.md) again. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
+To keep the data, send it to your own backend: write a values file as described under "Set a backend" in [Getting started with NKTP](../nktp/getting-started.md), and run the install from [Install management-plane services](install-management-plane-services.md) again with `--values-for nktp=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
 
 NVKE installs neither NKTP nor cert-manager in workload clusters. NKTP collects only from the management cluster, where the install deploys it; for workload clusters you have the management plane's metrics, which describe each cluster, node pool and node as NVKE tracks them. [Getting started with NKTP](../nktp/getting-started.md) describes NKTP itself.
 

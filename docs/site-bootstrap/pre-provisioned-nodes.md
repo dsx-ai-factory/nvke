@@ -204,7 +204,8 @@ sudo systemctl status nvke-agent
 > `nvkectl bootstrap site` has to be run with `--disable-mtls` as well — CWE
 > otherwise dials the agents over mTLS and never connects. `nvkectl` labels this
 > mode development only. For the attested path — `spire-agent` on every node, a
-> TPM EK thumbprint per host in the CSV, and a SPIRE CA in the site spec — follow
+> TPM EK thumbprint per host in the CSV, and a SPIRE CA from
+> `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` — follow
 > [Your First Cluster, Real Site](../first-cluster.md#real-site).
 
 ### Install Open vSwitch (OVN-Kubernetes only)
@@ -248,7 +249,6 @@ reaches `Ready`.
 nvkectl bootstrap site -f sitespec.yaml --dry-run
 
 # Run bootstrap. --disable-mtls matches the plaintext agents from Step 1.
-REGISTRY_API_KEY="<your-registry-api-key>" \
 NKECTL_CONTROLLER_IMAGE="nvcr.io/<org>/nvke-controller:edge" \
 NKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
   nvkectl bootstrap site -f sitespec.yaml --disable-mtls

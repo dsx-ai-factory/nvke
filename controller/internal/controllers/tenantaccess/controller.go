@@ -53,8 +53,8 @@ const (
 // kubeconfig the controller consumes to access tenant clusters.
 func KubeconfigSecretName(clusterName string) string { return clusterName + "-kubeconfig" }
 
-// AdminKubeconfigSecretName returns the Secret name that always holds the
-// verbatim control-plane admin.conf
+// AdminKubeconfigSecretName returns the Secret name that holds the
+// nvke:breakglass admin kubeconfig.
 func AdminKubeconfigSecretName(clusterName string) string {
 	return clusterName + "-admin-kubeconfig"
 }
@@ -73,14 +73,15 @@ type TenantManagerSet interface {
 // Controller publishes one cluster's access material into the tenant-access
 // Secret plane for each cluster-keyed reconciliation.
 type Controller struct {
-	cfg             config.Config
-	logger          *slog.Logger
-	db              *dbwrapper.DB
-	k8sClient       ctrlclient.Client
-	nodeAgentClient agent.Client
-	tenantManagers  TenantManagerSet
-	tenantClientFor func(adminConf []byte) (ctrlclient.Client, error)
-	scheme          *runtime.Scheme
+	cfg                  config.Config
+	logger               *slog.Logger
+	db                   *dbwrapper.DB
+	k8sClient            ctrlclient.Client
+	nodeAgentClient      agent.Client
+	tenantManagers       TenantManagerSet
+	tenantClientFor      func(adminConf []byte) (ctrlclient.Client, error)
+	issueAdminKubeconfig func(ctx context.Context, adminConf []byte, cluster db.Cluster, existing []byte) ([]byte, error)
+	scheme               *runtime.Scheme
 }
 
 // NewController creates a new TenantAccessController.
@@ -92,7 +93,7 @@ func NewController(
 	nodeAgentClient agent.Client,
 	tenantManagers TenantManagerSet,
 ) *Controller {
-	return &Controller{
+	c := &Controller{
 		cfg:             cfg,
 		logger:          logger.With("controller", "tenant-access"),
 		db:              dbInstance,
@@ -101,6 +102,8 @@ func NewController(
 		tenantManagers:  tenantManagers,
 		tenantClientFor: newTenantClient,
 	}
+	c.issueAdminKubeconfig = c.issueAdminBreakglass
+	return c
 }
 
 // SetupWithManager registers the CAPI-Cluster-scoped tenant-access
@@ -191,7 +194,8 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 // reconcileCluster fetches a control-plane node's admin kubeconfig and publishes
-// it into the tenant-access Secret plane (admin.conf, or SPIRE when OIDC is on).
+// tenant access from it. The admin Secret gets an nvke:breakglass kubeconfig.
+// The controller Secret gets admin.conf, or a SPIRE kubeconfig when OIDC is on.
 func (c *Controller) reconcileCluster(ctx context.Context, cluster db.Cluster) error {
 	adminConf, ready, err := c.fetchAdminKubeconfig(ctx, cluster)
 	if err != nil {
@@ -225,15 +229,43 @@ func (c *Controller) publish(ctx context.Context, cluster db.Cluster, adminConf 
 		return err
 	}
 
-	if err := c.upsertKubeconfigSecret(ctx, live, AdminKubeconfigSecretName(live.Name), adminConf, constants.LabelValueKubeconfigModeAdmin); err != nil {
+	var publishErr error
+	if live.OIDCAuthEnabled {
+		publishErr = c.publishSPIRE(ctx, live, adminConf)
+	} else {
+		publishErr = c.upsertKubeconfigSecret(ctx, live, KubeconfigSecretName(live.Name), adminConf, constants.LabelValueKubeconfigModeAdmin)
+	}
+	return errors.Join(publishErr, c.publishBreakglass(ctx, live, adminConf))
+}
+
+// publishBreakglass stores the nvke:breakglass kubeconfig in the admin Secret.
+func (c *Controller) publishBreakglass(ctx context.Context, live db.Cluster, adminConf []byte) error {
+	existing, err := c.currentAdminKubeconfig(ctx, live.Name)
+	if err != nil {
 		return err
 	}
-
-	if live.OIDCAuthEnabled {
-		return c.publishSPIRE(ctx, live, adminConf)
+	adminKubeconfig, err := c.issueAdminKubeconfig(ctx, adminConf, live, existing)
+	if err != nil {
+		return fmt.Errorf("issuing breakglass kubeconfig for cluster %s: %w", live.Name, err)
 	}
+	return c.upsertKubeconfigSecret(ctx, live, AdminKubeconfigSecretName(live.Name), adminKubeconfig, constants.LabelValueKubeconfigModeAdmin)
+}
 
-	return c.upsertKubeconfigSecret(ctx, live, KubeconfigSecretName(live.Name), adminConf, constants.LabelValueKubeconfigModeAdmin)
+// currentAdminKubeconfig returns the admin Secret payload, or nil when it
+// does not exist yet.
+func (c *Controller) currentAdminKubeconfig(ctx context.Context, clusterName string) ([]byte, error) {
+	secret := &corev1.Secret{}
+	err := c.k8sClient.Get(ctx, types.NamespacedName{
+		Name:      AdminKubeconfigSecretName(clusterName),
+		Namespace: SecretsNamespace,
+	}, secret)
+	if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting admin kubeconfig secret for cluster %s: %w", clusterName, err)
+	}
+	return secret.Data[KubeconfigSecretKey], nil
 }
 
 // upsertKubeconfigSecret upserts one Opaque kubeconfig Secret in SecretsNamespace.

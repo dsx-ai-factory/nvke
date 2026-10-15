@@ -86,7 +86,11 @@ func (f *fakeForge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(body + "}"))
 	case r.Method == http.MethodDelete && r.URL.Path == base+"/instance/"+testInstance:
 		f.deleted++
+		// What az61 answers: plain text, which the SDK cannot decode as
+		// the MessageResponse it declares.
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("Deletion request was accepted"))
 	default:
 		f.t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		w.WriteHeader(http.StatusNotFound)
@@ -434,6 +438,140 @@ func TestCreateFailureSaysTheInstanceMayExist(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not mention %q, so nobody will go looking for the instance:\n%v", want, err)
 		}
+	}
+}
+
+func TestRequireCapacity(t *testing.T) {
+	const (
+		cpuID = "cpu-type-uuid"
+		gpuID = "gpu-type-uuid"
+	)
+	env := testEnv()
+	env.Sites["default"] = Site{
+		Key:           "default",
+		ID:            "site-uuid",
+		VpcID:         "vpc-uuid",
+		SubnetID:      "subnet-uuid",
+		SSHKeyGroupID: "keygroup-uuid",
+		InstanceTypes: []InstanceType{
+			{Name: "cpu.himem.t1", ID: cpuID, Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
+			{Name: "gpu.gb200", ID: gpuID, Provides: map[string]string{"machineType": "gpu", "arch": "arm64", "gpu": "gb200"}},
+		},
+	}
+	stats := map[string]string{
+		cpuID: `{"total":4,"used":0,"unused":4,"unusedUsable":4}`,
+		gpuID: `{"total":14,"used":0,"unused":14,"unusedUsable":0}`,
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer nvapi-test" {
+			t.Errorf("Authorization = %q", got)
+		}
+		if r.URL.Query().Get("includeAllocationStats") != "true" {
+			t.Errorf("%s requested allocation stats as %q", r.URL.Path, r.URL.Query().Get("includeAllocationStats"))
+		}
+		id := strings.TrimPrefix(r.URL.Path, "/v2/org/"+testOrg+"/forge/instance/type/")
+		body, ok := stats[id]
+		if !ok || r.Method != http.MethodGet {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"` + id + `","allocationStats":` + body + `}`))
+	}))
+	t.Cleanup(srv.Close)
+	p, err := New(Options{
+		Env:      env,
+		APIKey:   "nvapi-test",
+		Endpoint: srv.URL,
+		JumpHost: testJumpHost,
+		Images: func(string, string) (string, string, error) {
+			return "https://example.invalid/imager.efi", "https://example.invalid/node.qcow2", nil
+		},
+		Dialer:     &fakeDialer{},
+		Tools:      provision.HostTools{NerdctlVersion: "2.3.5", KindVersion: "v0.32.0", ClusterctlVersion: "v1.12.3"},
+		HTTPClient: srv.Client(),
+	})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+
+	err = p.RequireCapacity(context.Background(), map[string]string{"arch": "amd64", "gpu": "gb200"}, 2, 1)
+	if err == nil {
+		t.Fatal("a GPU shape with unusedUsable=0 was accepted")
+	}
+	for _, want := range []string{"gpu.gb200", gpuID, "need 1", "unusedUsable=0", "total=14", "used=0", "unused=14"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not mention %q:\n%v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "cpu.himem.t1") {
+		t.Errorf("the CPU shape has room and was reported as a shortfall:\n%v", err)
+	}
+
+	stats[gpuID] = `{"total":14,"used":1,"unused":13,"unusedUsable":2}`
+	if err := p.RequireCapacity(context.Background(), map[string]string{"arch": "amd64", "gpu": "gb200"}, 2, 1); err != nil {
+		t.Fatalf("usable allocations for both shapes: %v", err)
+	}
+}
+
+func TestWaitTerminating(t *testing.T) {
+	var mu sync.Mutex
+	status := map[string]string{
+		"cp-uuid":     "Ready",
+		"worker-uuid": "Terminating",
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/v2/org/"+testOrg+"/forge/instance/")
+		mu.Lock()
+		s, ok := status[id]
+		mu.Unlock()
+		if r.Method != http.MethodGet || !ok {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		if s == "" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"` + id + `","status":"` + s + `"}`))
+	}))
+	t.Cleanup(srv.Close)
+	p, err := New(Options{
+		Env:      testEnv(),
+		APIKey:   "nvapi-test",
+		Endpoint: srv.URL,
+		JumpHost: testJumpHost,
+		Images: func(string, string) (string, string, error) {
+			return "https://example.invalid/imager.efi", "https://example.invalid/node.qcow2", nil
+		},
+		Dialer:       &fakeDialer{},
+		Tools:        provision.HostTools{NerdctlVersion: "2.3.5", KindVersion: "v0.32.0", ClusterctlVersion: "v1.12.3"},
+		HTTPClient:   srv.Client(),
+		PollInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	ids := []string{"cp-uuid", "worker-uuid", "cp-uuid"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err = p.WaitTerminating(ctx, ids)
+	if err == nil {
+		t.Fatal("an instance still Ready was accepted as terminating")
+	}
+	if !strings.Contains(err.Error(), "cp-uuid (last Ready)") || strings.Contains(err.Error(), "worker-uuid") {
+		t.Errorf("the error should name only the Ready instance and its status:\n%v", err)
+	}
+
+	mu.Lock()
+	status["cp-uuid"] = ""
+	mu.Unlock()
+	if err := p.WaitTerminating(context.Background(), ids); err != nil {
+		t.Fatalf("one Terminating and one gone: %v", err)
 	}
 }
 

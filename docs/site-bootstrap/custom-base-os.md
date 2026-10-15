@@ -70,9 +70,6 @@ autoinstall:
             podCidr: "192.168.0.0/16"
             serviceCidr: "10.96.0.0/12"
             nodeAgentPort: "15005"
-          registry:
-            bootstrapRepo: "nvcr.io/org"
-            bootstrapChart: "controller-chart"
     runcmd:
       # Expand root LVM volume
       - [sh, -c, "lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv"]
@@ -109,7 +106,7 @@ autoinstall:
       # agents configured above; this is the development-only mode, not a
       # production path. The two images are named by flag because this host has
       # no local build to side-load; nvkectl pulls them with nerdctl.
-      - [sh, -c, "REGISTRY_API_KEY=<your-registry-api-key> nvkectl bootstrap site -f /etc/nvkectl/sitespec.yaml --controller-image <controller-image> --provisioned-provider-image <provisioned-provider-image> --disable-mtls --encryption-key-out /root/nvke-site-etcd-encryption-key.json >> /var/log/nvkectl-bootstrap.log 2>&1"]
+      - [sh, -c, "nvkectl bootstrap site -f /etc/nvkectl/sitespec.yaml --controller-image <controller-image> --provisioned-provider-image <provisioned-provider-image> --disable-mtls --encryption-key-out /root/nvke-site-etcd-encryption-key.json >> /var/log/nvkectl-bootstrap.log 2>&1"]
 ```
 
 The bootstrap writes the cluster's etcd encryption key to the path given by
@@ -124,7 +121,7 @@ finished and delete it from the host. See
 - **nvke-agent**: Installed from the NVKE apt repository; configured with `--disable-mtls` and `--secure-server-port 15005` for pre-provisioned node bootstrap.
 - **nvkectl**: Install it only on the **bootstrap host**, together with its container runtime and CLI dependencies. It is run with `--disable-mtls` to match the agents, and with the two image flags set. Omit the nvkectl download and bootstrap commands on other nodes.
 
-> **Plaintext mode is development only.** With `--disable-mtls` on both sides there is no SPIRE and no attestation. For the attested path — `spire-agent` on every node, a TPM EK thumbprint per host, a SPIRE CA in the site spec — follow [Your First Cluster, Real Site](../first-cluster.md#real-site).
+> **Plaintext mode is development only.** With `--disable-mtls` on both sides there is no SPIRE and no attestation. For the attested path — `spire-agent` on every node, a TPM EK thumbprint per host, a SPIRE CA from `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` — follow [Your First Cluster, Real Site](../first-cluster.md#real-site).
 
 ## Bootstrap Host and Other Nodes
 
@@ -142,9 +139,7 @@ On other nodes, omit the `write_files` section and the last two `runcmd` lines
 ## Customizing
 
 - Update `cluster.nodes` with your actual node names and IPs
-- Set `registry.bootstrapRepo` and `registry.bootstrapChart` to your NVKE controller registry path
-- Supply `REGISTRY_API_KEY` via your secrets management (not hardcoded in cloud-init)
-- Log the bootstrap host in to your image registry (`nerdctl login nvcr.io`) the same way; `nvkectl` pulls the two images with nerdctl
+- Log the bootstrap host in to your image registry (`nerdctl login nvcr.io`) through your secrets management; `nvkectl` pulls the two images with nerdctl
 - Update the Kubernetes repository minor version to match `cluster.k8sVersion` in the site spec
 - Update hostnames, passwords, and SSH authorized keys for your environment
 

@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+
+	"github.com/dsx-ai-factory/nvke/agent/internal/redact"
 )
 
 type CommandRunner interface {
@@ -64,7 +66,7 @@ func (r *ExecRunner) Run(name string, args []string, opts *CommandOptions) ([]by
 */
 
 func (r *ExecRunner) Run(name string, args []string, opts *CommandOptions) ([]byte, error) {
-	log.Printf("attempting to run command: name=%s, args=%v\n", name, args)
+	log.Printf("attempting to run command: name=%s, args=%v\n", name, redact.Args(args))
 	log.Printf("cmd CommandOptions: %v\n", opts)
 
 	cmd := exec.Command(name, args...)
@@ -88,7 +90,7 @@ func (r *ExecRunner) Run(name string, args []string, opts *CommandOptions) ([]by
 }
 
 func (r *ExecRunner) RunSplitOutput(name string, args []string, opts *CommandOptions) (CommandOutput, error) {
-	log.Printf("attempting to run command: name=%s, args=%v\n", name, args)
+	log.Printf("attempting to run command: name=%s, args=%v\n", name, redact.Args(args))
 	log.Printf("cmd CommandOptions: %v\n", opts)
 
 	cmd := exec.Command(name, args...)
@@ -117,7 +119,7 @@ func (r *ExecRunner) RunSplitOutput(name string, args []string, opts *CommandOpt
 }
 
 func (r *ExecRunner) RunDetached(name string, args []string, opts *CommandOptions) error {
-	log.Printf("starting detached command: name=%s, args=%s\n", name, args)
+	log.Printf("starting detached command: name=%s, args=%s\n", name, redact.Args(args))
 
 	cmd := exec.Command(name, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

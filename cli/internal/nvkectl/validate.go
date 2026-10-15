@@ -36,11 +36,16 @@ func newValidateSiteSpecCmd() *cobra.Command {
 		Long: `Check the whole site spec and report by section.
 
 The bootstrap section is what "nvkectl bootstrap site" reads: every field is
-checked, and the SPIRE CA files must exist. The controllerStack section is
-what the controller stack install reads: the REPLACE_* values still to fill
-in are listed apart from errors, every required field must be set, the
-architecture and the NICo endpoint must be well-formed, and the files the
-section names must exist.
+checked. With spire.upstreamCA: true, NVKECTL_SPIRE_CA_CERT_FILE and
+NVKECTL_SPIRE_CA_KEY_FILE must both name readable files; without it, they
+must be unset.
+
+The controllerStack section is what the controller stack install reads: the
+REPLACE_* values still to fill in are listed apart from errors, every required
+field must be set, and the architecture and the NICo endpoint must be
+well-formed. NVKECTL_NICO_TOKEN, NVKECTL_NODE_USER, NVKECTL_NODE_PASSWORD and
+NVKECTL_DATABASE_PASSWORD must be set; the token and the node login must hold
+no quote, backslash or control character.
 
 The command exits 0 only when the file is ready for both. --bootstrap-only
 checks the bootstrap section alone, for a file whose controllerStack section
@@ -81,10 +86,14 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 		ready = false
 		fmt.Fprintf(out, "controllerStack: %d values still to fill in: %s\n", len(left), strings.Join(left, ", "))
 	}
-	for _, check := range []func() error{spec.ValidateControllerStackValues, spec.ValidateControllerStackReferences} {
-		if err := check(); err != nil {
-			ready = false
-			fmt.Fprintf(out, "controllerStack: %v\n", err)
+	if err := spec.ValidateControllerStackValues(); err != nil {
+		ready = false
+		fmt.Fprintf(out, "controllerStack: %v\n", err)
+	}
+	if _, err := sitespec.StackCredentialsFromEnv(); err != nil {
+		ready = false
+		for _, line := range strings.Split(err.Error(), "\n") {
+			fmt.Fprintf(out, "environment: %s\n", line)
 		}
 	}
 	if !ready {

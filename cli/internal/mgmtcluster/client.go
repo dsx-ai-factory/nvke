@@ -22,12 +22,12 @@ const (
 	// tenantaccess controller publishes per-cluster kubeconfig Secrets.
 	secretsNamespace = "nke-system"
 
-	// adminKubeconfigSecretSuffix names the Secret that always holds the
-	// verbatim control-plane admin.conf, regardless of OIDC mode (mirrors
+	// adminKubeconfigSecretSuffix names the Secret that holds the
+	// nvke:breakglass admin kubeconfig, regardless of OIDC mode (mirrors
 	// tenantaccess.AdminKubeconfigSecretName in the controller). This is
 	// distinct from the "<cluster>-kubeconfig" Secret, which is the controller's and CAPI's
 	// own consumed kubeconfig and holds a SPIRE exec-auth kubeconfig instead
-	// of admin.conf when OIDC auth is enabled on the cluster.
+	// of the node admin.conf when OIDC auth is enabled on the cluster.
 	adminKubeconfigSecretSuffix = "-admin-kubeconfig"
 
 	// kubeconfigSecretKey is the data key inside the kubeconfig Secret

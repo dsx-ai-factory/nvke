@@ -175,6 +175,13 @@ func (f *ServiceForwarder) BaseURL() string { return f.baseURL }
 // sets no headers of its own.
 func (f *ServiceForwarder) HTTPClient() *http.Client { return f.client }
 
+// Dial opens a raw TCP connection through the forward, for a caller that speaks
+// something other than plain HTTP to the Service, such as its own TLS
+// handshake. It reconnects exactly as a request through HTTPClient would.
+func (f *ServiceForwarder) Dial(ctx context.Context) (net.Conn, error) {
+	return f.dialContext(ctx, "tcp", "")
+}
+
 // Get performs a GET of path through the forward. Any response is data; the
 // error is non-nil only for transport failures.
 func (f *ServiceForwarder) Get(ctx context.Context, path string) (int, []byte, error) {

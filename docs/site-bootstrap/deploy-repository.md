@@ -66,15 +66,15 @@ The script reads the item list and an item's `release.yaml` through `deploy/lib/
 
 A template item holds `.yaml.tmpl` files, and may hold plain `.yaml` files beside them. Each `.yaml.tmpl` is rendered with Go's [`text/template`](https://pkg.go.dev/text/template), the plain files are copied, and the result is applied as a manifest item. This is how the deploy path creates the Secrets the stack needs without committing a credential.
 
-The template context is what the site spec's `controllerStack` section supplies:
+The template context is what the site spec's `controllerStack` section and the install's environment supply:
 
 | Expression | Taken from |
 |------------|------------|
 | `.ClusterName` | `clusterName` |
 | `.Nico.Endpoint`, `.Nico.OrgID`, `.Nico.APIName` | `controllerStack.nico.endpoint`, `.orgID`, `.apiName` |
-| `.Nico.Token` | The file `controllerStack.nico.tokenFile` names |
-| `.Tenant.User` | `controllerStack.tenant.user` |
-| `.Tenant.Password` | The file `controllerStack.tenant.passwordFile` names |
+| `.Nico.Token` | `NVKECTL_NICO_TOKEN` |
+| `.Tenant.User` | `NVKECTL_NODE_USER` |
+| `.Tenant.Password` | `NVKECTL_NODE_PASSWORD` |
 
 A template that names another field is refused, and so is an empty value: it would render an empty credential. A value that holds a quote, a backslash or a control character is refused too, because every value lands inside a quoted YAML scalar.
 

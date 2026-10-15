@@ -24,28 +24,26 @@ import (
 //go:embed template.yaml
 var templateYAML []byte
 
-// deniedPaths are the field paths --set must refuse.
-//
-// registry.apiKey is a credential: the site spec is meant to be committed, so
-// the secret is supplied at bootstrap time instead. cluster.nodes comes from
+// deniedPaths are the field paths --set must refuse. cluster.nodes comes from
 // the node CSV, which carries per-node fields a dotted path cannot express.
 func deniedPaths() map[string]string {
 	return map[string]string{
-		pathAPIKey: "a registry credential does not belong in a file meant to be committed; " +
-			"pass it to \"nvkectl bootstrap site\" with --registry-api-key or " + registryAPIKeyEnvName,
 		pathNodes: "nodes come from --nodes",
 	}
 }
 
-// registryAPIKeyEnvName is named here rather than imported from the command
-// package so the error can point at it without inverting the dependency.
-const registryAPIKeyEnvName = "REGISTRY_API_KEY"
+// fileOnlyPaths are settable fields with no environment variable: a record of
+// the site that the environment must not override.
+func fileOnlyPaths() []string {
+	return []string{pathSpireUpstreamCA}
+}
 
 // SettablePaths returns the field paths --set accepts, sorted.
 //
 // It is derived from the environment bindings rather than listed separately, so
 // a field that gains an environment variable becomes settable with it, and an
-// exclusion has to be written down in deniedPaths to take effect.
+// exclusion has to be written down in deniedPaths to take effect. Fields with no
+// environment variable are added from fileOnlyPaths.
 func SettablePaths() []string {
 	denied := deniedPaths()
 	paths := make([]string, 0, len(envBindings()))
@@ -55,6 +53,7 @@ func SettablePaths() []string {
 		}
 		paths = append(paths, path)
 	}
+	paths = append(paths, fileOnlyPaths()...)
 	sort.Strings(paths)
 	return paths
 }

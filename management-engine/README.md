@@ -4,7 +4,7 @@ The management engine is designed to manage NVKE workload clusters through
 declarative APIs and reconciliation built on Cluster API (CAPI) conventions.
 Its architecture separates user and operator APIs from internal Kubernetes
 resources and lifecycle controllers. This module provides the internal resource
-types, generated CRDs, and controller-manager runtime.
+types, generated CRDs, controller-manager runtime, and tenant API contract generation.
 
 | Path | Purpose |
 | --- | --- |
@@ -12,6 +12,8 @@ types, generated CRDs, and controller-manager runtime.
 | `config/crd/bases` | Generated CRDs |
 | `cmd` | Connection configuration and manager startup |
 | `controllers` | Reconcilers |
+| [`public/tenant`](public/tenant/README.md) | Tenant contract inputs in `apis/`; generated clients, HTTP bindings, and references in `gen/` |
+| `hack/public-api`, `internal/public/tenant/apis/cluster/mapping` | Exposure compiler and generated spec mappings with their helpers |
 
 ## Development
 

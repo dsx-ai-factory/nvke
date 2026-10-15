@@ -13,7 +13,7 @@ the reference it points at.
 |---|---|---|
 | `nvkectl generate sitespec <name> --nodes hosts.csv` | Writes a site spec for `bootstrap site` from a node CSV. `--set path=value` fills in what the CSV does not carry. | Available |
 | `nvkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running the NVKE controller, has the controller create the site cluster on the spec's hosts through `nvke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down on success. `--dry-run` validates the spec only. | Available |
-| Fill in the `controllerStack:` section of the site spec | The controller stack install reads it: node architecture, the NICo API, the tenant login, and paths to the files that hold the tokens and passwords. `generate sitespec` writes the section with `REPLACE_*` placeholders; the install refuses a placeholder. Not read by `bootstrap site`. | Available |
+| Fill in the `controllerStack:` section of the site spec | The controller stack install reads it: node architecture and the NICo API. The install reads the tokens and passwords from `NVKECTL_*` variables. `generate sitespec` writes the section with `REPLACE_*` placeholders; the install refuses a placeholder. Not read by `bootstrap site`. | Available |
 | `nvkectl validate sitespec -f sitespec.yaml` | Checks the whole site spec and reports by section: the bootstrap fields, then `controllerStack:` with the placeholders still to fill in. `--bootstrap-only` before the section is filled in. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
 | `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts come from this checkout and the images from `controllerStack.images`. | Not in the CLI |
@@ -89,8 +89,8 @@ is in [examples/sitespec.yaml](../examples/sitespec.yaml).
 # Validate only: load, check and print the spec, touch nothing
 nvkectl bootstrap site -f sitespec.yaml --dry-run
 
-# Bootstrap. The registry credential comes from the environment, not the file.
-REGISTRY_API_KEY=... nvkectl bootstrap site -f sitespec.yaml
+# Bootstrap
+nvkectl bootstrap site -f sitespec.yaml
 ```
 
 The command needs nerdctl and containerd on the host, plus `kind`, `helm`,

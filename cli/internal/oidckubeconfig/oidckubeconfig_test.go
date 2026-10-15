@@ -196,6 +196,30 @@ func TestGenerateAppendsOptionalExecArgs(t *testing.T) {
 			t.Errorf("exec args missing %q: %s", want, args)
 		}
 	}
+	if strings.Contains(args, "device-code") {
+		t.Errorf("default exec args stamped headless grant: %s", args)
+	}
+}
+
+func TestGenerateHeadlessStampsDeviceCode(t *testing.T) {
+	path := writeAdminKubeconfig(t, adminConfig())
+	data, err := Generate(path, Options{
+		IssuerURL: "https://idp.example",
+		ClientID:  "nvke-cli",
+		Headless:  true,
+	})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	out, err := clientcmd.Load(data)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := strings.Join(out.AuthInfos["oidc"].Exec.Args, " ")
+	want := "oidc-login get-token --oidc-issuer-url=https://idp.example --oidc-client-id=nvke-cli --grant-type=device-code --skip-open-browser"
+	if got != want {
+		t.Errorf("exec args = %q, want %q", got, want)
+	}
 }
 
 func TestGenerateRejects(t *testing.T) {

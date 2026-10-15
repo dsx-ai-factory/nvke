@@ -419,7 +419,8 @@ without it the lane is skipped:
 
 - `provision`: provision the node over the site's jump host and check its egress.
 - `bootstrap`: also run `nvkectl bootstrap site` and wait for the API server.
-- `full`: also deploy the SBOM stack, wait for CWE, then create and delete a tenant.
+- `full`: also deploy the SBOM stack, wait for CWE, check that NKTP delivers the
+  site's telemetry (below), then create and delete a tenant.
 
 Both lanes create the same `nico-forge` tenant and both entries carry that
 label, so pick between them with `site-controller`, which only the lane that
@@ -428,13 +429,13 @@ builds a site carries. Measured against this tree with `-ginkgo.dry-run` and
 
 | label filter | specs | which |
 |---|---|---|
-| `nico-forge && !site-controller` | 4 | the tenant, against the site controller in the kube context |
-| `site-controller` | 7 | the lane that builds a site, tenant included |
-| `nico-forge` | 8 | both |
+| `nico-forge && !site-controller` | 5 | the tenant, against the site controller in the kube context |
+| `site-controller` | 12 | the lane that builds a site, tenant included |
+| `nico-forge` | 10 | both |
 
 `-e2e.site-stage`, not the label, is what decides whether a machine is
 provisioned: the site lane's tenant entries are built only when it is set, so
-a bare `nico-forge` without it selects 4 specs and reaches no hardware.
+a bare `nico-forge` without it selects 5 specs and reaches no hardware.
 
 The node is torn down afterwards (tenants are deleted first). `-e2e.keep-site`, or
 `lifecycle.preserveOnFailure` with a failed spec, keeps it.
@@ -562,6 +563,26 @@ controller's chart and overlay, so it follows `-e2e.versions=controller=`: that
 commit when the controller was built from one, else its `controller/<version>`
 release tag, which has to be fetched in a shallow clone. Set
 `site.deployPathRef` only when developing the deploy path itself.
+
+### NKTP on the built site
+
+The `full` stage checks that NKTP delivers the site's telemetry by querying its
+backend, not by reading Pod status: a Collector can be Ready and export nothing.
+`internal/nktp` runs the same checks as `nktp/hack/e2e-validate.sh` does on
+Kind, a span it pushes through the node Collector itself, and what only a site
+wires up: the control plane, controller, Temporal and SPIRE metrics and logs,
+the API server's audit log, a trace of a request the spec itself makes to the
+controller, and the site's name on every signal.
+`siteTelemetry` in `site_nktp_test.go` lists the site-specific checks by
+component, one line per expectation.
+
+The checks run in two stages, each polling its checks concurrently. First
+every signal has to arrive, within eight minutes. Then the checks that nothing
+bad arrives, which pass trivially on an empty backend, have three minutes to
+hold and must keep holding for one more. The spec therefore takes the slowest
+check of each stage in turn: a few minutes when healthy, and at most about
+twelve when a signal never arrives. The failure names every check that did not
+hold and what it last saw.
 
 ### Reaching the jump host
 

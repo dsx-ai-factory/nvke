@@ -47,10 +47,8 @@ nvkectl generate sitespec my-tier0-site --nodes hosts.csv \
   --set cluster.podCidr=10.244.0.0/16 > sitespec.yaml
 ```
 
-Two fields are deliberately not settable. `cluster.nodes` comes from `--nodes`.
-`registry.apiKey` is a credential and this file is meant to be committed — pass
-it to `nvkectl bootstrap site` with `--registry-api-key` or `REGISTRY_API_KEY`
-instead.
+`cluster.nodes` is deliberately not settable; it comes from `--nodes`.
+Credentials and the SPIRE CA come from the environment: see "Credential handling".
 
 Unlike `bootstrap site`, `generate sitespec` ignores the environment variables
 listed below, so a generated file never carries a value nobody typed. Every
@@ -76,25 +74,16 @@ is a file `bootstrap site` accepts.
 | `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. See below. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
 | `cluster.oidcProviders` | list | no | OIDC providers for site cluster. Cannot be modified afterwards. Ignored when absent. Rejected when `cluster.k8sVersion` is older than `1.34.0`. Each entry needs `name`, `issuerURL`, `audiences`, `usernameClaim`, `usernamePrefix`, and `caBundle` (inline PEM). Optional: `groupsClaim`, `groupsPrefix`, `requiredClaims`.|
-| `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
-| `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
-| `registry.apiKey` | string | no | Registry credential. Never defaulted — see below. |
+| `spire.upstreamCA` | bool | no | `true` when the site's SPIRE chains to a CA you bring. Every `bootstrap site`, `validate sitespec` and install run then requires `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`, and the variables are refused without it. See "The SPIRE CA". |
 | `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `nvkectl-bootstrap.nke.local`, and the install says so. A bootstrap run with `NVKECTL_BOOTSTRAP_CLUSTER_NAME` set derives another, so set it then. |
-| `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to. See below. |
-| `spire.caKeyFile` | string | no | Path to that CA's private key. Required with `caCertFile`. |
 | `controllerStack` | section | for the stack install | Read by the controller stack install, not by `bootstrap site`. `generate sitespec` writes it with `REPLACE_*` placeholders; the install refuses a placeholder. See below. |
 | `controllerStack.arch` | string | yes, in `controllerStack` | Node CPU architecture: `amd64` or `arm64`. |
 | `controllerStack.nico.endpoint` | string | yes, in `controllerStack` | NICo API base URL CAPNICo calls, `http` or `https`. |
 | `controllerStack.nico.orgID` | string | yes, in `controllerStack` | NICo organisation ID. |
 | `controllerStack.nico.apiName` | string | yes, in `controllerStack` | NICo API name, for example `forge`. |
-| `controllerStack.nico.tokenFile` | string | yes, in `controllerStack` | Path to a file holding the NICo API token. |
-| `controllerStack.tenant.user` | string | yes, in `controllerStack` | Login user rendered into every tenant node's cloud-init. |
-| `controllerStack.tenant.passwordFile` | string | yes, in `controllerStack` | Path to a file holding that user's password. |
 | `controllerStack.images.controller` | string | no | Overrides the controller image; defaults to the release file's `controller` item, or without a release to the overlay's pinned image (the newest controller release). |
 | `controllerStack.images.profiles` | string | no | Overrides the profiles content image; defaults to the release file's `profiles` item. |
-| `controllerStack.database.passwordFile` | string | yes, in `controllerStack` | Path to a file holding the Postgres password. The render creates it with a generated password when it does not exist. |
 | `controllerStack.mirror` | string | no | Registry the external images are pulled from instead of upstream, `host[:port][/prefix]`, no scheme. |
-| `controllerStack.nktpValuesFile` | string | no | Values file for the nktp release, applied last. |
 
 A site spec with a `controllerStack.pullSecret` block does not load; delete the block. The file has no unknown-field tolerance, and nothing reads it. CAPNICo's image is public on GHCR, or comes from the release.
 
@@ -102,7 +91,14 @@ The version (image/chart tag) is baked into the `nvkectl` build, so it is not
 part of the site spec.
 
 Unknown fields are rejected. A typo in a field name fails the load rather than
-being silently ignored.
+being silently ignored. Removed fields,
+`registry`, `spire.caCertFile`, `spire.caKeyFile`,
+`controllerStack.nico.tokenFile`, `controllerStack.tenant`,
+`controllerStack.database.passwordFile` and `controllerStack.nktpValuesFile`,
+are refused with the name of what replaced them. So are the
+`SPIRE_CA_CERT_FILE` and `SPIRE_CA_KEY_FILE` variables: a run with either set
+fails, naming `NVKECTL_SPIRE_CA_CERT_FILE`, `NVKECTL_SPIRE_CA_KEY_FILE` and
+`spire.upstreamCA`.
 
 ## The controllerStack section
 
@@ -118,15 +114,17 @@ and lists what is still a placeholder; `--bootstrap-only` checks only what
 the cluster before the `controllerStack` section is filled in; the output
 says so.
 
-The section is filled in by hand. `generate sitespec --set` reaches only the
-bootstrap fields listed under "Environment variable overrides", not
-`controllerStack.*`.
+The section is filled in by hand. `generate sitespec --set` reaches the
+bootstrap fields listed under "Environment variable overrides" and
+`spire.upstreamCA`, not `controllerStack.*`.
 
-Tokens and passwords are paths to files that hold them, one secret per file,
-relative paths resolved from the site spec, so the site spec holds no
-credential and can be committed. The site name, the trust domain, the
-control-plane VIP and the SPIRE CA are the fields above; the install reads
-them from there and they are not repeated in `controllerStack:`.
+The install reads the NICo token, the node login and the Postgres password
+from `NVKECTL_NICO_TOKEN`, `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` and
+`NVKECTL_DATABASE_PASSWORD`, and the SPIRE CA from
+`NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` (see "Credential
+handling"). The site name, the trust domain and the control-plane VIP are the
+fields above; the install reads them from there and they are not repeated in
+`controllerStack:`.
 
 ## Validation rules
 
@@ -159,8 +157,9 @@ network.
 
 ## Environment variable overrides
 
-Any field can be supplied — or overridden — through an environment variable, so
-existing tier-0 / DS9 scripts can drive the site spec without editing the file.
+The bootstrap fields below can be supplied — or overridden — through an
+environment variable, so existing tier-0 / DS9 scripts can drive the site spec
+without editing the file.
 A set variable takes precedence over the file value.
 
 | Environment variable | Field |
@@ -175,12 +174,7 @@ A set variable takes precedence over the file value.
 | `CLUSTER_SYSTEM_RESERVED_MEMORY` | `cluster.kubeletConfig.systemReservedMemory` |
 | `CLUSTER_NODE_AGENT_PORT` | `cluster.nodeAgentPort` |
 | `CLUSTER_ETCD_ENCRYPTION` | `cluster.etcdEncryption` |
-| `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
-| `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
-| `REGISTRY_API_KEY` | `registry.apiKey` |
 | `NVKECTL_SPIFFE_TRUST_DOMAIN` | `spire.trustDomain` |
-| `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
-| `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
 | `NVKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
 
 A malformed `NVKECTL_CLUSTER_NODES` entry fails the load rather than being
@@ -222,21 +216,38 @@ absent, both use `<bootstrap-cluster>.nke.local`, which is
 the bootstrap cluster; then set the field so the install matches. The site
 SPIRE server that replaces the bootstrap server uses the same value.
 
-`spire.caCertFile` and `spire.caKeyFile` name a CA the operator brings to the
-bootstrap. `nvkectl` configures SPIRE to chain its own CA to it, so a node that
-was given that certificate ahead of time — for DSX, delivered by the ansible
-runbook over SSH — verifies the server the first time it speaks to it, rather
-than trusting whatever answers.
+`NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` name a CA the
+operator brings to the bootstrap, on the machine that runs `bootstrap site` or
+the stack install. `nvkectl` configures SPIRE to
+chain its own CA to it, so a node that was given that certificate ahead of
+time — for DSX, delivered by the ansible runbook over SSH — verifies the server
+the first time it speaks to it, rather than trusting whatever answers.
 
-They are paths, not inline PEM. A private key does not belong in a file meant to
-be committed, and the same certificate has to be delivered to each node by
-whatever provisions it, so it already exists as a file.
+`spire.upstreamCA: true` records in the site spec that the site uses such a
+CA. With it, every run requires both variables, so an install run from a shell
+without them fails instead of moving SPIRE to a self-signed root that nodes
+given the CA cannot trust. Without it, the variables are refused. Omitting both
+leaves SPIRE self-signed, which is fine when nothing outside the cluster has to
+verify it — and means nodes cannot be given a trust anchor in advance. Both
+files are checked at load, while nothing has been touched yet.
 
-Both or neither. Omitting them leaves SPIRE self-signed, which is fine when
-nothing outside the cluster has to verify it — and means nodes cannot be given a
-trust anchor in advance. Both files are checked for existence at load, while
-nothing has been touched yet: otherwise a wrong path surfaces minutes later as a
-helm failure naming a temporary file rather than the field that was wrong.
+## OIDC providers
+
+`cluster.oidcProviders` is the OpenID Connect (OIDC) configuration of the management cluster's API server. `bootstrap site` applies the list when it creates the management cluster. You cannot change the list after creation. Omit the field to configure no OIDC providers.
+
+A non-empty list requires `cluster.k8sVersion` `1.34.0` or newer and contains at most five providers. Each provider has these fields:
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | yes | Name of this provider. Unique in the list. |
+| `issuerURL` | yes | Issuer URL. An `https` URL, unique in the list. The API server compares it with the token's `iss` claim. |
+| `audiences` | yes | `aud` values the API server accepts. At least one, and none empty. |
+| `usernameClaim` | yes | Claim the API server uses as the username. |
+| `usernamePrefix` | yes | Text the API server puts in front of the username. It must not start with `system:`, `kubeadm:`, `nvke:`, or `nvidia:`. |
+| `groupsClaim` | no | Claim the API server uses as the user's groups. |
+| `groupsPrefix` | no | Text the API server puts in front of each group. The reserved prefixes are the same as for `usernamePrefix`. |
+| `requiredClaims` | no | Map of claim name to the value that claim must hold. |
+| `caBundle` | yes | PEM-encoded certificates the API server trusts for this provider. |
 
 ## etcd encryption at rest
 
@@ -314,17 +325,24 @@ so operators do not need to relearn them. The subset of settings our main user
 
 The differences from tier-0 are deliberate and make the file open-sourceable:
 
-- **Generic registry fields.** tier-0's NVIDIA-specific `registry.ngcApiKey` /
-  `registry.sweImageTag` become the registry-agnostic `registry.apiKey`,
-  `registry.bootstrapRepo`, and `registry.bootstrapChart`. The image/chart tag
-  is baked into the `nvkectl` build rather than set in the file.
+- **Images from the command line.** tier-0's `registry.ngcApiKey` and
+  `registry.sweImageTag` give way to `--controller-image` and
+  `--provisioned-provider-image`, with registry access from `nerdctl login`.
+  The chart versions are baked into the `nvkectl` build.
 - **No deploy-time fields.** `argocd`, `repos`, `skipDeploy`, Forge/baremetal,
   and node-injection blocks are out of scope for the M0 bootstrap and are not
   part of this schema.
 
 ## Credential handling
 
-`registry.apiKey` is resolved from, in order of precedence: the
-`--registry-api-key` flag, the `REGISTRY_API_KEY` environment variable, then the
-file. Keeping the secret out of the file lets the site spec be committed and
-shared safely. The credential is never logged or printed.
+Credentials come from the environment of the command that needs them, so the
+site spec can be committed and used unchanged from any machine. The secret
+values are never logged or printed.
+
+| Environment variable | Read by | What |
+|---|---|---|
+| `NVKECTL_SPIRE_CA_CERT_FILE`, `NVKECTL_SPIRE_CA_KEY_FILE` | `bootstrap site`, `validate sitespec`, the stack install | Paths to the SPIRE CA certificate and its private key. Required with `spire.upstreamCA: true`, refused without it. See "The SPIRE CA". |
+| `NVKECTL_NICO_TOKEN` | `validate sitespec`, the stack install | NICo API token. |
+| `NVKECTL_NODE_USER` | `validate sitespec`, the stack install | Login account rendered into every tenant node's cloud-init. |
+| `NVKECTL_NODE_PASSWORD` | `validate sitespec`, the stack install | Password for `NVKECTL_NODE_USER`. |
+| `NVKECTL_DATABASE_PASSWORD` | `validate sitespec`, the stack install | Postgres password the controller and Temporal share. Keep it: every install of the same site needs the same value. A site installed with `controllerStack.database.passwordFile` sets this variable to that file's contents; the site spec no longer accepts the field. |

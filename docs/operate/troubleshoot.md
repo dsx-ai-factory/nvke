@@ -165,7 +165,7 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
      journalctl -u spire-agent | grep 'Node attestation was successful'
      ```
 
-     Until it attests, `nvke-agent` logs `timed out waiting for SPIFFE workload API socket`. If nothing prints, check that the node's TPM thumbprint in `hosts.csv` matches `get_tpm_pubhash` on the node, that `trust_domain` in `/etc/spire-agent/agent.conf` equals `spire.trustDomain` in the site spec, that `/etc/nke/trust-bundle.pem` holds the certificate you passed as `spire.caCertFile`, and that the node reaches the bootstrap host on port 30081.
+     Until it attests, `nvke-agent` logs `timed out waiting for SPIFFE workload API socket`. If nothing prints, check that the node's TPM thumbprint in `hosts.csv` matches `get_tpm_pubhash` on the node, that `trust_domain` in `/etc/spire-agent/agent.conf` equals `spire.trustDomain` in the site spec, that `/etc/nke/trust-bundle.pem` holds the certificate you passed as `NVKECTL_SPIRE_CA_CERT_FILE`, and that the node reaches the bootstrap host on port 30081.
   3. From the bootstrap host, check that each node accepts connections on port 15005.
 
      ```bash

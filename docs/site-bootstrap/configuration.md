@@ -30,12 +30,6 @@ cluster:
 
   kubeletConfig:
     systemReservedMemory: "16Gi"
-
-registry:
-  bootstrapRepo: "nvcr.io/org"
-  bootstrapChart: "controller-chart"
-  # Leave apiKey empty and supply it at runtime via --registry-api-key
-  # or the REGISTRY_API_KEY env var so the file can be committed safely.
 ```
 
 ## Field Reference
@@ -57,12 +51,8 @@ registry:
 | `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`, which is also the template default. kubelet subtracts it from capacity, so on a node with 16Gi or less nothing is allocatable and the node never reaches `Ready`; set it to fit the hardware. |
 | `cluster.oidcProviders` | list | no | OIDC providers for site cluster. Cannot be modified afterwards. Ignored when absent. Rejected when `cluster.k8sVersion` is older than `1.34.0`. Each entry needs `name`, `issuerURL`, `audiences`, `usernameClaim`, `usernamePrefix`, and `caBundle` (inline PEM). Optional: `groupsClaim`, `groupsPrefix`, `requiredClaims`.|
-| `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
-| `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
-| `registry.apiKey` | string | no | Registry credential. Never logged or printed. See below. |
+| `spire.upstreamCA` | bool | no | `true` when the site's SPIRE chains to a CA you bring. Every bootstrap, validation and install run then requires `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`, and the variables are refused without it. |
 | `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `nvkectl-bootstrap.nke.local`, and the install says so. A bootstrap run with `NVKECTL_BOOTSTRAP_CLUSTER_NAME` set derives another, so set it then. |
-| `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to, so a node given that certificate when it was provisioned verifies the server on first contact. Without it SPIRE is self-signed. |
-| `spire.caKeyFile` | string | no | Path to that CA's private key. Both or neither; both files are checked for existence at load. |
 
 Unknown fields are rejected. A typo in a field name fails the load rather than being silently ignored.
 
@@ -82,12 +72,7 @@ Any field can be supplied or overridden via an environment variable. A set varia
 | `CLUSTER_SYSTEM_RESERVED_MEMORY` | `cluster.kubeletConfig.systemReservedMemory` |
 | `CLUSTER_NODE_AGENT_PORT` | `cluster.nodeAgentPort` |
 | `CLUSTER_ETCD_ENCRYPTION` | `cluster.etcdEncryption` |
-| `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
-| `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
-| `REGISTRY_API_KEY` | `registry.apiKey` |
 | `NVKECTL_SPIFFE_TRUST_DOMAIN` | `spire.trustDomain` |
-| `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
-| `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
 | `NVKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
 
 `INIT_NODE_IP` and `INIT_NODE_NAME` are not supported. The inventory does not
@@ -95,21 +80,22 @@ select a node for `kubeadm init`; the bootstrap process selects it downstream.
 
 ## Credential Handling
 
-`registry.apiKey` is resolved in this order:
-
-1. `--registry-api-key` flag
-2. `REGISTRY_API_KEY` environment variable
-3. `registry.apiKey` field in the file
-
-Keep the secret out of the file so the site spec can be committed and shared safely:
+The bootstrap reads the SPIRE CA from the environment, so the site spec can be committed and used unchanged from any machine. `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` name the files of a CA for SPIRE to chain its own to, so a node given that certificate when it was provisioned verifies the server on first contact. Set `spire.upstreamCA: true` in the site spec with them, so every later run requires them; both files are checked at load. Without them SPIRE is self-signed.
 
 ```bash
-REGISTRY_API_KEY="nvapi-xxxx" nvkectl bootstrap site -f sitespec.yaml
+NVKECTL_SPIRE_CA_CERT_FILE=/etc/nke/spire-ca.crt NVKECTL_SPIRE_CA_KEY_FILE=/etc/nke/spire-ca.key \
+  nvkectl bootstrap site -f sitespec.yaml
 ```
+
+Images from a private registry are pulled with nerdctl, so log in to the
+registry with `nerdctl login <registry>` before the bootstrap.
+
+The controller stack install's credentials are listed in
+[the site spec reference](../../cli/docs/sitespec.md#credential-handling).
 
 ## Validating the Site Spec
 
-`nvkectl validate sitespec` checks the whole file and reports by section: the fields `bootstrap site` reads, then the `controllerStack:` section the controller stack install reads, with the `REPLACE_*` values still to fill in listed apart from errors. It exits 0 only when the file is ready for both. The two halves are used in sequence: once the bootstrap section is valid, `nvkectl bootstrap site` can run with the file, and the `controllerStack:` section is filled in before the stack install. The output says so.
+`nvkectl validate sitespec` checks the whole file and reports by section: the fields `bootstrap site` reads, then the `controllerStack:` section the controller stack install reads, with the `REPLACE_*` values still to fill in listed apart from errors. It exits 0 only when the file is ready for both. It also checks the environment: the SPIRE CA variables `spire.upstreamCA` requires, and, for the `controllerStack:` section, the install's credentials. The two halves are used in sequence: once the bootstrap section is valid, `nvkectl bootstrap site` can run with the file, and the `controllerStack:` section is filled in before the stack install. The output says so.
 
 ```bash
 nvkectl validate sitespec -f sitespec.yaml
@@ -122,7 +108,7 @@ nvkectl validate sitespec -f sitespec.yaml --bootstrap-only   # before the contr
 nvkectl bootstrap site -f sitespec.yaml --dry-run
 ```
 
-The site spec's `controllerStack:` section is the input for the controller stack install. `nvkectl generate sitespec` writes it with `REPLACE_*` placeholders, `nvkectl bootstrap site` ends by listing the ones still in the file, and the install refuses a placeholder. Fill it in before installing the stack. Tokens and passwords are paths to files that hold them, so the site spec holds no credential.
+The site spec's `controllerStack:` section is the input for the controller stack install. `nvkectl generate sitespec` writes it with `REPLACE_*` placeholders, `nvkectl bootstrap site` ends by listing the ones still in the file, and the install refuses a placeholder. Fill it in before installing the stack. The install reads the NICo token, the node login and the PostgreSQL password from `NVKECTL_NICO_TOKEN`, `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` and `NVKECTL_DATABASE_PASSWORD`, so the site spec holds no credential.
 
 ## What's Next After Bootstrap
 

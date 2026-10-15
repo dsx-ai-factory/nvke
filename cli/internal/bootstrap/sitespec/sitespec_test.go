@@ -6,6 +6,7 @@ package sitespec
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -29,9 +30,6 @@ cluster:
   serviceCidr: "10.200.0.0/16"
   kubeletConfig:
     systemReservedMemory: "16Gi"
-registry:
-  bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
-  bootstrapChart: "cloud-workflow-engine"
 `
 
 func TestLoadValidSiteConfig(t *testing.T) {
@@ -51,12 +49,6 @@ func TestLoadValidSiteConfig(t *testing.T) {
 	if inv.Cluster.Nodes[0].IP != "10.0.0.1" {
 		t.Errorf("Nodes[0].IP = %q, want %q", inv.Cluster.Nodes[0].IP, "10.0.0.1")
 	}
-	if inv.Registry.BootstrapRepo != "nvcr.io/org/cloud-workflow-engine" {
-		t.Errorf("Registry.BootstrapRepo = %q, want %q", inv.Registry.BootstrapRepo, "nvcr.io/org/cloud-workflow-engine")
-	}
-	if inv.Registry.BootstrapChart != "cloud-workflow-engine" {
-		t.Errorf("Registry.BootstrapChart = %q, want %q", inv.Registry.BootstrapChart, "cloud-workflow-engine")
-	}
 	// NodeAgentPort is optional and should be defaulted.
 	if inv.Cluster.NodeAgentPort != DefaultNodeAgentPort {
 		t.Errorf("NodeAgentPort = %q, want default %q", inv.Cluster.NodeAgentPort, DefaultNodeAgentPort)
@@ -74,9 +66,6 @@ cluster:
   cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
-registry:
-  bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
-  bootstrapChart: "cloud-workflow-engine"
 `
 	inv, err := Load(writeTemp(t, singleNode))
 	if err != nil {
@@ -87,14 +76,9 @@ registry:
 	}
 }
 
-func TestSetDefaultsNeverInjectsAPIKey(t *testing.T) {
-	// Regression guard for the tier-0 known issue: SetDefaults must not fill
-	// in credentials. A missing registry.apiKey stays empty.
+func TestSetDefaults(t *testing.T) {
 	inv := &SiteSpec{}
 	inv.SetDefaults()
-	if inv.Registry.APIKey != "" {
-		t.Errorf("SetDefaults set Registry.APIKey = %q, want empty", inv.Registry.APIKey)
-	}
 	if inv.Cluster.NodeAgentPort != DefaultNodeAgentPort {
 		t.Errorf("SetDefaults NodeAgentPort = %q, want %q", inv.Cluster.NodeAgentPort, DefaultNodeAgentPort)
 	}
@@ -127,9 +111,6 @@ cluster:
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
   cniVersionn: "1.4.0"
-registry:
-  bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
-  bootstrapChart: "cloud-workflow-engine"
 `
 	if _, err := Load(writeTemp(t, typo)); err == nil {
 		t.Fatal("Load accepted a site spec with an unknown field; want error")
@@ -162,10 +143,6 @@ func TestValidateInvalidInputs(t *testing.T) {
 				PodCidr:       "10.100.0.0/16",
 				ServiceCidr:   "10.200.0.0/16",
 				NodeAgentPort: DefaultNodeAgentPort,
-			},
-			Registry: Registry{
-				BootstrapRepo:  "nvcr.io/org/cloud-workflow-engine",
-				BootstrapChart: "cloud-workflow-engine",
 			},
 		}
 	}
@@ -234,9 +211,6 @@ func TestValidateInvalidInputs(t *testing.T) {
 		{"vip multicast", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "224.0.0.1" }, pathControlPlaneVIP},
 		{"vip link-local", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "169.254.1.1" }, pathControlPlaneVIP},
 		{"bad nodeAgentPort", func(i *SiteSpec) { i.Cluster.NodeAgentPort = "70000" }, pathNodeAgentPort},
-		{"missing bootstrapRepo", func(i *SiteSpec) { i.Registry.BootstrapRepo = "" }, pathBootstrapRepo},
-		{"missing bootstrapChart", func(i *SiteSpec) { i.Registry.BootstrapChart = "" }, pathBootstrapChart},
-		{"whitespace in bootstrapRepo", func(i *SiteSpec) { i.Registry.BootstrapRepo = "bad repo" }, pathBootstrapRepo},
 		{"oidc providers before 1.34", func(i *SiteSpec) {
 			i.Cluster.K8sVersion = "1.33.4"
 			i.Cluster.OIDCProviders = []OIDCProvider{validOIDCProvider()}
@@ -317,10 +291,6 @@ func TestValidate_OIDCProviders(t *testing.T) {
 				PodCidr:       "10.100.0.0/16",
 				ServiceCidr:   "10.200.0.0/16",
 				NodeAgentPort: DefaultNodeAgentPort,
-			},
-			Registry: Registry{
-				BootstrapRepo:  "nvcr.io/org/cloud-workflow-engine",
-				BootstrapChart: "cloud-workflow-engine",
 			},
 		}
 		return inv
@@ -433,7 +403,7 @@ func TestValidateAggregatesErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate accepted an empty site spec; want error")
 	}
-	for _, want := range []string{pathClusterName, pathNodes, pathK8sVersion, pathBootstrapRepo} {
+	for _, want := range []string{pathClusterName, pathNodes, pathK8sVersion} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("aggregated error missing %q; got:\n%s", want, err.Error())
 		}
@@ -456,10 +426,6 @@ func TestValidValidatesClean(t *testing.T) {
 			ServiceCidr:   "10.200.0.0/16",
 			NodeAgentPort: "15005",
 		},
-		Registry: Registry{
-			BootstrapRepo:  "nvcr.io/org/cloud-workflow-engine",
-			BootstrapChart: "cloud-workflow-engine",
-		},
 	}
 	if err := inv.Validate(); err != nil {
 		t.Errorf("Validate rejected a valid site spec: %v", err)
@@ -475,9 +441,6 @@ cluster:
   cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"
-registry:
-  bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
-  bootstrapChart: "cloud-workflow-engine"
 `
 
 func TestLoadEnvOverridesFile(t *testing.T) {
@@ -638,36 +601,6 @@ func minimalValid() *SiteSpec {
 			ServiceCidr:   "10.200.0.0/16",
 			NodeAgentPort: "15005",
 		},
-		Registry: Registry{
-			BootstrapRepo:  "nvcr.io/org/cloud-workflow-engine",
-			BootstrapChart: "cloud-workflow-engine",
-		},
-	}
-}
-
-// TestValidate_SpireCA covers the both-or-neither rule on the CA the operator
-// brings to the bootstrap. It is a pure-data rule, so it holds whether or not
-// the files exist yet.
-func TestValidate_SpireCA(t *testing.T) {
-	cert, key, missing := spireCAFiles(t)
-
-	for name, tc := range map[string]struct {
-		spire   Spire
-		wantErr bool
-	}{
-		"neither is fine, SPIRE stays self-signed": {Spire{}, false},
-		"both, and readable":                       {Spire{CACertFile: cert, CAKeyFile: key}, false},
-		"cert without key":                         {Spire{CACertFile: cert}, true},
-		"key without cert":                         {Spire{CAKeyFile: key}, true},
-		"both named, neither on disk yet":          {Spire{CACertFile: missing, CAKeyFile: missing}, false},
-	} {
-		t.Run(name, func(t *testing.T) {
-			v := &validator{}
-			v.checkSpire(tc.spire)
-			if gotErr := v.err() != nil; gotErr != tc.wantErr {
-				t.Errorf("checkSpire(%+v) error = %v, want error: %v", tc.spire, v.err(), tc.wantErr)
-			}
-		})
 	}
 }
 
@@ -694,42 +627,29 @@ func TestValidate_SpireTrustDomain(t *testing.T) {
 	}
 }
 
-// TestValidate_IgnoresMissingCAFiles is the point of separating Validate from
-// ValidateReferences: a site spec can be judged complete and well-formed on a
-// machine where the CA it names has not been placed yet.
-func TestValidate_IgnoresMissingCAFiles(t *testing.T) {
-	_, _, missing := spireCAFiles(t)
-
-	inv := minimalValid()
-	inv.Spire = Spire{CACertFile: missing, CAKeyFile: missing}
-	inv.SetDefaults()
-
-	if err := inv.Validate(); err != nil {
-		t.Errorf("Validate() with a CA that is not on disk yet = %v, want nil", err)
-	}
-}
-
-// TestValidateReferences covers the check Validate deliberately leaves out:
-// that the CA the site spec names can actually be read.
+// TestValidateReferences covers the CA from the environment: both or
+// neither, and both readable.
 func TestValidateReferences(t *testing.T) {
 	cert, key, missing := spireCAFiles(t)
-
 	for name, tc := range map[string]struct {
 		spire     Spire
 		wantErr   bool
 		wantField string
 	}{
-		"no CA named":     {Spire{}, false, ""},
-		"both readable":   {Spire{CACertFile: cert, CAKeyFile: key}, false, ""},
-		"cert unreadable": {Spire{CACertFile: missing, CAKeyFile: key}, true, pathSpireCACertFile},
-		"key unreadable":  {Spire{CACertFile: cert, CAKeyFile: missing}, true, pathSpireCAKeyFile},
-		"neither on disk": {Spire{CACertFile: missing, CAKeyFile: missing}, true, pathSpireCACertFile},
-		"only one named":  {Spire{CACertFile: cert}, false, ""},
+		"no CA":               {Spire{}, false, ""},
+		"both readable":       {Spire{UpstreamCA: true, CACertFile: cert, CAKeyFile: key}, false, ""},
+		"cert without key":    {Spire{UpstreamCA: true, CACertFile: cert}, true, EnvSpireCAKeyFile},
+		"key without cert":    {Spire{UpstreamCA: true, CAKeyFile: key}, true, EnvSpireCACertFile},
+		"cert unreadable":     {Spire{UpstreamCA: true, CACertFile: missing, CAKeyFile: key}, true, EnvSpireCACertFile},
+		"key unreadable":      {Spire{UpstreamCA: true, CACertFile: cert, CAKeyFile: missing}, true, EnvSpireCAKeyFile},
+		"upstreamCA, no CA":   {Spire{UpstreamCA: true}, true, EnvSpireCACertFile},
+		"CA, no upstreamCA":   {Spire{CACertFile: cert, CAKeyFile: key}, true, pathSpireUpstreamCA},
+		"key, no upstreamCA":  {Spire{CAKeyFile: key}, true, pathSpireUpstreamCA},
+		"cert is a directory": {Spire{UpstreamCA: true, CACertFile: filepath.Dir(cert), CAKeyFile: key}, true, EnvSpireCACertFile + " " + strconv.Quote(filepath.Dir(cert)) + " is not a regular file"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			inv := minimalValid()
 			inv.Spire = tc.spire
-
 			err := inv.ValidateReferences()
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Fatalf("ValidateReferences(%+v) error = %v, want error: %v", tc.spire, err, tc.wantErr)
@@ -741,38 +661,60 @@ func TestValidateReferences(t *testing.T) {
 	}
 }
 
-// TestLoad_StillChecksCAExistence guards the failure mode this split invites:
-// separating the checks and then forgetting to run the second one from Load,
-// silently dropping the fail-early guarantee bootstrap site relies on.
-func TestLoad_StillChecksCAExistence(t *testing.T) {
-	_, _, missing := spireCAFiles(t)
-	path := writeTemp(t, validYAML+"\nspire:\n  caCertFile: \""+missing+"\"\n  caKeyFile: \""+missing+"\"\n")
-
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("Load() with a CA that cannot be read = nil, want an error")
+// TestLoad_ReadsCAFromEnv: Load takes the CA paths from the environment, checks
+// them, and reports them alongside data problems.
+func TestLoad_ReadsCAFromEnv(t *testing.T) {
+	cert, key, missing := spireCAFiles(t)
+	t.Setenv(EnvSpireCACertFile, cert)
+	t.Setenv(EnvSpireCAKeyFile, key)
+	withCA := validYAML + "\nspire:\n  upstreamCA: true\n"
+	inv, err := Load(writeTemp(t, withCA))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
 	}
-	if !strings.Contains(err.Error(), pathSpireCACertFile) {
-		t.Errorf("Load() error = %q, want it to name %q", err, pathSpireCACertFile)
+	if inv.Spire.CACertFile != cert || inv.Spire.CAKeyFile != key {
+		t.Errorf("CA not read from the environment: %+v", inv.Spire)
+	}
+
+	t.Setenv(EnvSpireCACertFile, missing)
+	t.Setenv(EnvSpireCAKeyFile, missing)
+	body := strings.Replace(withCA, `podCidr: "10.100.0.0/16"`, `podCidr: "NOT-A-CIDR"`, 1)
+	_, err = Load(writeTemp(t, body))
+	for _, want := range []string{pathPodCidr, EnvSpireCACertFile} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Load() error = %v, want it to name %q", err, want)
+		}
 	}
 }
 
-// TestLoad_AggregatesDataAndReferenceErrors guards the other half of the split:
-// separating the checks must not cost the operator a round trip. A file with a
-// data problem and an unreadable CA has to report both at once, as it did when
-// one validator ran everything.
-func TestLoad_AggregatesDataAndReferenceErrors(t *testing.T) {
-	_, _, missing := spireCAFiles(t)
-	body := strings.Replace(validYAML, `podCidr: "10.100.0.0/16"`, `podCidr: "NOT-A-CIDR"`, 1) +
-		"\nspire:\n  caCertFile: \"" + missing + "\"\n  caKeyFile: \"" + missing + "\"\n"
-
-	_, err := Load(writeTemp(t, body))
-	if err == nil {
-		t.Fatal("Load() with a bad CIDR and an unreadable CA = nil, want an error")
+// TestLoad_RefusesRemovedCAEnv: a CA variable main read is refused, alone or
+// beside its replacement, rather than leaving SPIRE self-signed.
+func TestLoad_RefusesRemovedCAEnv(t *testing.T) {
+	cert, key, _ := spireCAFiles(t)
+	withCA := validYAML + "\nspire:\n  upstreamCA: true\n"
+	for _, pair := range removedSpireCAEnv {
+		for name, body := range map[string]string{"alone": validYAML, "beside the new names": withCA} {
+			t.Run(pair[0]+" "+name, func(t *testing.T) {
+				t.Setenv(pair[0], cert)
+				if name != "alone" {
+					t.Setenv(EnvSpireCACertFile, cert)
+					t.Setenv(EnvSpireCAKeyFile, key)
+				}
+				_, err := Load(writeTemp(t, body))
+				if err == nil || !strings.Contains(err.Error(), pair[0]+" is no longer accepted: unset it; set "+pair[1]) {
+					t.Errorf("Load() error = %v, want %s refused", err, pair[0])
+				}
+			})
+		}
 	}
-	for _, want := range []string{pathPodCidr, pathSpireCACertFile} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("Load() error = %q, want it to name %q — both problems must surface in one pass", err, want)
+}
+
+// TestLoad_RejectsCAInTheFile: a CA in the file is rejected, naming the variables.
+func TestLoad_RejectsCAInTheFile(t *testing.T) {
+	_, err := Load(writeTemp(t, validYAML+"\nspire:\n  caCertFile: /x\n  caKeyFile: /y\n"))
+	for _, want := range []string{EnvSpireCACertFile, EnvSpireCAKeyFile, "no longer accepted"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Load() error = %v, want it to name %q", err, want)
 		}
 	}
 }

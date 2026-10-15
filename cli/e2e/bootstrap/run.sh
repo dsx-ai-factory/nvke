@@ -394,11 +394,17 @@ export $(NVKECTL_E2E_HOSTS_CSV="${HOSTS_CSV}" \
   make -C "${CLI_DIR}" --no-print-directory nodes-hosts | xargs)
 
 # Both or neither. Without a CA, SPIRE self-signs — a supported configuration,
-# so the lane does not require one.
-spire_set=()
+# so the lane does not require one. The CA reaches bootstrap site through the
+# environment.
 if [[ -n "${NVKECTL_E2E_SPIRE_CA_CERT:-}" && -n "${NVKECTL_E2E_SPIRE_CA_KEY:-}" ]]; then
-  spire_set=(--set "spire.caCertFile=${NVKECTL_E2E_SPIRE_CA_CERT}"
-             --set "spire.caKeyFile=${NVKECTL_E2E_SPIRE_CA_KEY}")
+  export NVKECTL_SPIRE_CA_CERT_FILE="${NVKECTL_E2E_SPIRE_CA_CERT}"
+  export NVKECTL_SPIRE_CA_KEY_FILE="${NVKECTL_E2E_SPIRE_CA_KEY}"
+fi
+
+# The spec records that the site uses a CA, so later runs require it.
+ca_set=()
+if [[ -n "${NVKECTL_SPIRE_CA_CERT_FILE:-}" ]]; then
+  ca_set=(--set spire.upstreamCA=true)
 fi
 
 # Omit the VIP field when disabled.
@@ -418,18 +424,14 @@ RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.rendered.yaml"
   --set cluster.serviceCidr=10.96.0.0/12 \
   --set cluster.kubeletConfig.systemReservedMemory=512Mi \
   --set "spire.trustDomain=${SPIRE_TRUST_DOMAIN}" \
-  "${spire_set[@]}" \
   "${vip_set[@]}" \
+  "${ca_set[@]}" \
   > "${RENDERED_SITESPEC}"
 
 # One thumbprint per node, init node included; stage 4 expects that many nodes.
 expected_nodes=$(grep -cE '^[[:space:]]+tpmEkThumbprint:' "${RENDERED_SITESPEC}" || true)
 if [ "${expected_nodes}" -eq 0 ]; then
   fail "no TPM EK thumbprints reached ${RENDERED_SITESPEC}"
-fi
-if [[ ${#spire_set[@]} -gt 0 ]]; then
-  grep -qE '^[[:space:]]*caCertFile:' "${RENDERED_SITESPEC}" ||
-    fail "a bootstrap CA was supplied but did not reach ${RENDERED_SITESPEC}"
 fi
 grep -qE "^[[:space:]]*trustDomain:[[:space:]]*['\"]?${SPIRE_TRUST_DOMAIN}['\"]?[[:space:]]*$" \
   "${RENDERED_SITESPEC}" ||
@@ -665,6 +667,9 @@ fi
 if [ ! -s "${TENANT_KUBECONFIG}" ]; then
   fail "no kubeconfig was written to ${TENANT_KUBECONFIG}"
 fi
+if [[ -n "${NVKECTL_SPIRE_CA_CERT_FILE:-}" ]] && ! grep -q "SPIRE upstream CA from the environment" <<<"${output}"; then
+  fail "a bootstrap CA was supplied but bootstrap site did not pick it up"
+fi
 log "PASS: bootstrap site created the site cluster through the controller API"
 
 # The controller reached this point by answering /readyz through its Service
@@ -688,6 +693,12 @@ spiffe_id="spiffe://${SPIRE_TRUST_DOMAIN}/nke-service/${CONTROLLER_NAME}"
 bk -n spire-server exec spire-server-0 -c spire-server -- \
   /opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" | grep -q "Entry ID" ||
   fail "SPIRE has no entry for ${spiffe_id}"
+# With a supplied CA, it is the root SPIRE publishes to the agents.
+if [[ -n "${NVKECTL_SPIRE_CA_CERT_FILE:-}" ]]; then
+  ca_line="$(sed -n 2p "${NVKECTL_SPIRE_CA_CERT_FILE}")"
+  bk -n spire-server exec spire-server-0 -c spire-server -- /opt/spire/bin/spire-server bundle show |
+    grep -qF "${ca_line}" || fail "SPIRE's bundle does not hold the CA from NVKECTL_SPIRE_CA_CERT_FILE"
+fi
 rm -f "${bootstrap_kubeconfig}"
 log "PASS: the controller runs as ${CONTROLLER_NAME} and SPIRE issues ${spiffe_id}"
 

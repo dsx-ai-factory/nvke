@@ -106,9 +106,11 @@ fi
 vip="$(docker inspect -f '{{with index .NetworkSettings.Networks "kind"}}{{.IPAddress}}{{end}}' "${node}")"
 [[ -n "${vip}" ]] || die "cannot read the kind node's address"
 
-# 3. The site spec and its credential files. The credentials are placeholders:
+# 3. The site spec and its credentials. The credentials are placeholders:
 # nothing in this lane reaches NICo or a private registry.
-for f in nico-token tenant-password; do printf 'smoke-%s\n' "${f}" >"${WORK}/site/${f}"; done
+export NVKECTL_NICO_TOKEN=smoke-nico-token NVKECTL_NODE_USER=nvke NVKECTL_NODE_PASSWORD=smoke-tenant-password
+NVKECTL_DATABASE_PASSWORD="$(openssl rand -hex 16)"
+export NVKECTL_DATABASE_PASSWORD
 # nktp sized for one kind node: nktp's own kind values, plus a ceiling of one
 # replica on the autoscaled collectors. The whole stack shares this node, so a
 # scale-up on a startup CPU burst would leave a replica Pending.
@@ -119,7 +121,7 @@ else
       maxReplicas: 1' "${REPO}/nktp/hack/e2e-values.yaml" >"${WORK}/site/nktp-values.yaml"
 fi
 grep -qE '^ *maxReplicas: 1$' "${WORK}/site/nktp-values.yaml" || die "the nktp kind values changed shape; check nktp/hack/e2e-values.yaml"
-sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" -e "s|@NKTP_VALUES@|${WORK}/site/nktp-values.yaml|g" \
+sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" \
   "${HERE}/sitespec.yaml.tmpl" >"${WORK}/site/sitespec.yaml"
 "${NVKECTL}" validate sitespec -f "${WORK}/site/sitespec.yaml"
 
@@ -154,7 +156,8 @@ grep -q 'the render failed' <<<"${probe}" || die "the probe did not reach the re
 log "rendering and installing deploy/nico"
 NVKECTL="${NVKECTL}" NVKE_STATE_DIR="${STATE}" CTR="docker exec -i ${node} ctr" bash "${REPO}/deploy/nvke-deploy.sh" install \
   --deploy-path "${REPO}/deploy/nico" --sitespec "${WORK}/site/sitespec.yaml" \
-  --release "${WORK}/release.json" --nvkr-run-dir "${RUN}" --kubeconfig "${KUBECONFIG}" --timeout 15m
+  --release "${WORK}/release.json" --nvkr-run-dir "${RUN}" --kubeconfig "${KUBECONFIG}" --timeout 15m \
+  --values-for "nktp=${WORK}/site/nktp-values.yaml"
 [[ -z "$(ls -A "${STATE}/renders" 2>/dev/null)" ]] || die "the install left its render behind: $(ls -A "${STATE}/renders")"
 if leftovers="$(find "${STATE}" \( -name site-values.yaml -o -name site.env -o -name '*.yaml.tmpl' -o -name images.txt \) 2>/dev/null)" && [[ -n "${leftovers}" ]]; then
   die "rendered files outlived the install: ${leftovers}"

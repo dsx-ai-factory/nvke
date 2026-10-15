@@ -36,6 +36,11 @@ func templateDoc() (*yaml.Node, error) {
 
 // checkSettable reports whether --set may write path.
 func checkSettable(path string) error {
+	for field, instead := range removedFields {
+		if path == field || strings.HasPrefix(path, field+".") {
+			return fmt.Errorf("--set %s: %s is no longer accepted: %s", path, field, instead)
+		}
+	}
 	if reason, denied := deniedPaths()[path]; denied {
 		return fmt.Errorf("--set %s: %s", path, reason)
 	}
@@ -53,7 +58,7 @@ func checkSettable(path string) error {
 // a quoted string does not decode into a bool, so the rendered file would not
 // load.
 func boolPaths() map[string]bool {
-	return map[string]bool{pathEtcdEncryption: true}
+	return map[string]bool{pathEtcdEncryption: true, pathSpireUpstreamCA: true}
 }
 
 // setValue writes an operator-supplied string at a dotted path, as the field's
@@ -164,8 +169,6 @@ func applySpec(root *yaml.Node, spec *SiteSpec) error {
 		{pathPodCidr, spec.Cluster.PodCidr},
 		{pathServiceCidr, spec.Cluster.ServiceCidr},
 		{pathSystemReservedMemory, spec.Cluster.KubeletConfig.SystemReservedMemory},
-		{pathBootstrapRepo, spec.Registry.BootstrapRepo},
-		{pathBootstrapChart, spec.Registry.BootstrapChart},
 	} {
 		if err := setScalar(root, f.path, f.value); err != nil {
 			return err
@@ -187,8 +190,6 @@ func applySpec(root *yaml.Node, spec *SiteSpec) error {
 		{pathControlPlaneVIP, spec.Cluster.ControlPlaneVIP},
 		{pathNodeAgentPort, nodeAgentPort},
 		{pathSpireTrustDomain, spec.Spire.TrustDomain},
-		{pathSpireCACertFile, spec.Spire.CACertFile},
-		{pathSpireCAKeyFile, spec.Spire.CAKeyFile},
 	} {
 		if f.value == "" {
 			continue
@@ -201,6 +202,11 @@ func applySpec(root *yaml.Node, spec *SiteSpec) error {
 	// off is worth writing down.
 	if !spec.Cluster.EtcdEncryptionEnabled() {
 		if err := setBool(root, pathEtcdEncryption, false); err != nil {
+			return err
+		}
+	}
+	if spec.Spire.UpstreamCA {
+		if err := setBool(root, pathSpireUpstreamCA, true); err != nil {
 			return err
 		}
 	}
@@ -257,9 +263,10 @@ func decodeBytes(b []byte) (*SiteSpec, error) {
 
 // specDiff returns a human-readable difference between two site specs, or "".
 func specDiff(got, want *SiteSpec) string {
-	// The directory a spec was loaded from is not part of what it says.
+	// The CA files come from the environment.
 	g, w := *got, *want
-	g.dir, w.dir = "", ""
+	g.Spire.CACertFile, w.Spire.CACertFile = "", ""
+	g.Spire.CAKeyFile, w.Spire.CAKeyFile = "", ""
 	if reflect.DeepEqual(&g, &w) {
 		return ""
 	}

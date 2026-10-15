@@ -40,7 +40,7 @@ or `make capd-up` if Keycloak started first — it will then wire the cluster.
 | Audience | `https://nke.tilt.local` |
 | Group | `nke-operators` |
 | User | `nke-dev` / `nke-dev` |
-| Public client | `nke-cli` (authorization code + PKCE, localhost redirects, password grant) |
+| Public client | `nke-cli` (authorization code, device grant, localhost redirects, password grant) |
 | Static client | `nke-static` / `nke-static-lab-secret` (password and client-credentials grants) |
 
 Mint a token without a browser:
