@@ -544,10 +544,13 @@ func keepFailedNode(cfg config.Config) bool {
 // newDSXProvider projects the environment into DSX's dialect and builds a
 // provider from it.
 //
-// It takes no credential. A DSX site keeps its own SSA client in its cluster
-// and the provider reads it, so SSA_CLIENT_ID and SSA_CLIENT_SECRET are an
-// override rather than a requirement -- which is what lets this run on a
-// workstation with nothing set, and on a runner with no Kubernetes access.
+// It takes no credential as an argument, but one is required: the provider
+// mints its own token from DSX_<DATAHALL>_SSA_CLIENT_ID and _SECRET, named for
+// the key the resolved site is filed under, and fails naming both when either
+// is empty. A datahall also keeps a bootstrap client of its own in its cluster,
+// which both recorded manual runs borrowed, but the provider does not read it:
+// that identity belongs to the site rather than to whoever is running, it needs
+// Kubernetes access, and it bypasses the org scoping a run stays inside.
 func newDSXProvider(cfg config.Config, env *environment.Environment) (infra.Provider, error) {
 	dsxEnv, err := dsx.Decode(env.Infrastructure)
 	if err != nil {
