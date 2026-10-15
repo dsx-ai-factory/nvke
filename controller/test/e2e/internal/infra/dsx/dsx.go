@@ -397,6 +397,12 @@ func (p *Provider) waitAddressed(ctx context.Context, id string) (string, error)
 			switch last {
 			case standard.INSTANCESTATUS_ERROR, standard.INSTANCESTATUS_TERMINATING:
 				return "", fmt.Errorf("dsx: instance %s went to %s while provisioning", id, last)
+			// Repairing is the datahall working on the machine. Not fatal, so
+			// the poll continues, but no address is taken from it either: an
+			// instance under repair is not one to hand a run. If it never
+			// leaves, the timeout below names Repairing, which says what to
+			// look at.
+			case standard.INSTANCESTATUS_REPAIRING:
 			// Every other status can carry an address, including Ready --
 			// which here means only that the datahall handed the machine over.
 			case standard.INSTANCESTATUS_PENDING,
