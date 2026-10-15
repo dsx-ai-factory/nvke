@@ -122,6 +122,20 @@ func TestPublishCmdRejectsStreamMismatch(t *testing.T) {
 	}
 }
 
+// An unknown --environment has no bucket to resolve to, so this must stop
+// before buildDestination ever runs -- same contract as publishArgs'
+// other rejection tests, none of which touch a real GCS bucket.
+func TestPublishCmdRejectsUnknownEnvironment(t *testing.T) {
+	resultPath := writeFile(t, "qualify-result.json", publishTestResult)
+	junitPath := writeFile(t, "qualify-e2e.junit.xml", "<testsuites/>")
+
+	args := append(publishArgs(t, resultPath, junitPath, "amd64-1.34"), "--environment", "not-a-real-environment")
+	_, err := runPublishCmd(t, args...)
+	if err == nil || !strings.Contains(err.Error(), "unknown --environment") {
+		t.Errorf("err = %v, want it to name the bad environment", err)
+	}
+}
+
 // An errored result (Ginkgo never ran) has no suite to tab it under, so
 // publish must skip it before ever reaching buildDestination -- which would
 // otherwise try to open a real GCS client.
@@ -139,7 +153,7 @@ func TestPublishCmdSkipsErroredResult(t *testing.T) {
 }
 
 func TestBuildDestinationRejectsUnknownDestination(t *testing.T) {
-	_, _, err := buildDestination(nil, "not-a-real-destination") //nolint:staticcheck // ctx unused before the error path
+	_, _, err := buildDestination(nil, "not-a-real-destination", "dgxc-testgrid") //nolint:staticcheck // ctx unused before the error path
 	if err == nil || !strings.Contains(err.Error(), "unknown --destination") {
 		t.Errorf("err = %v, want it to name the bad destination", err)
 	}

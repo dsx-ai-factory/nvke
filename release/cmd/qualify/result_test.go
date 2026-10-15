@@ -308,6 +308,53 @@ func TestResultCmdInfrastructureFailureUsesStartedAtFlag(t *testing.T) {
 	}
 }
 
+// A suite interrupted or aborted before Ginkgo wrote EndTime (a wedged
+// runner killed mid-suite, not the "report missing entirely" infra-failure
+// path) must not let a zero EndTime overwrite FinishedAt with 0001-01-01 --
+// that would make buildPrefix reject the publish and bury exactly the run
+// that most needs to show up red.
+func TestResultCmdFallsBackWhenGinkgoEndTimeIsZero(t *testing.T) {
+	plan := writeTestPlan(t)
+	report := types.Report{
+		SuiteDescription: "NVKE E2E Suite",
+		SuiteSucceeded:   false,
+		StartTime:        time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC),
+		EndTime:          time.Time{},
+		PreRunStats:      types.PreRunStats{SpecsThatWillRun: 1},
+		SpecReports:      types.SpecReports{{LeafNodeType: types.NodeTypeIt, State: types.SpecStateFailed}},
+	}
+	b, err := json.Marshal([]types.Report{report})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportPath := filepath.Join(t.TempDir(), "report.json")
+	if err := os.WriteFile(reportPath, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, err := runResultCmd(t,
+		"--plan", plan,
+		"--report", reportPath,
+		"--combination", "cli-v1.0.0",
+		"--stream", "amd64-1.34",
+		"--output", "-",
+	)
+	if err != nil {
+		t.Fatalf("RunE returned an error, want a written result: %v", err)
+	}
+
+	var result qualification.Result
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Spec.FinishedAt.IsZero() {
+		t.Error("finishedAt is zero, want it to keep the default (qualify result's own run time) instead of Ginkgo's zero EndTime")
+	}
+	if !result.Spec.StartedAt.Equal(report.StartTime) {
+		t.Errorf("startedAt = %v, want Ginkgo's own non-zero StartTime %v", result.Spec.StartedAt, report.StartTime)
+	}
+}
+
 func TestResultCmdRejectsMalformedStartedAt(t *testing.T) {
 	plan := writeTestPlan(t)
 

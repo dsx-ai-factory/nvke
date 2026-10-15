@@ -24,12 +24,6 @@ const (
 	retryBaseWait    = 2 * time.Second
 )
 
-// Bucket is the one GCS bucket TestGrid publishes to. Not configurable:
-// buildPrefix's own group/dashboard naming already assumes the prod bucket
-// is the only one anything reads, so a second bucket would need a second
-// destination, not a flag on this one.
-const Bucket = "dgxc-testgrid"
-
 // GCSUploader writes to one GCS bucket, using whatever credentials are
 // already in the environment (Application Default Credentials -- the
 // workflow's google-github-actions/auth step sets these up before this
@@ -50,13 +44,13 @@ type GCSUploader struct {
 }
 
 // NewGCSUploader opens a GCS client against Application Default Credentials,
-// writing to Bucket.
-func NewGCSUploader(ctx context.Context) (*GCSUploader, error) {
+// writing to bucket.
+func NewGCSUploader(ctx context.Context, bucket string) (*GCSUploader, error) {
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("opening GCS client: %w", err)
 	}
-	u := &GCSUploader{Bucket: Bucket, Client: client, sleep: ctxSleep}
+	u := &GCSUploader{Bucket: bucket, Client: client, sleep: ctxSleep}
 	u.doUpload = u.uploadOnce
 	return u, nil
 }

@@ -98,7 +98,18 @@ when the failure was discovered.`,
 					resultState = qualification.ResultPassed
 				}
 				summary = summarizeGinkgoReport(ginkgoReport)
-				runStartedAt, runFinishedAt = ginkgoReport.StartTime, ginkgoReport.EndTime
+				// A suite interrupted or aborted before it wrote StartTime/
+				// EndTime (which this run most needs to show up red for)
+				// leaves one or both zero -- keep the infra-failure defaults
+				// rather than overwrite them with 0001-01-01, which would
+				// make buildPrefix's zero-FinishedAt guard reject the
+				// publish and bury the run entirely.
+				if !ginkgoReport.StartTime.IsZero() {
+					runStartedAt = ginkgoReport.StartTime
+				}
+				if !ginkgoReport.EndTime.IsZero() {
+					runFinishedAt = ginkgoReport.EndTime
+				}
 				suite = ginkgoReport.SuiteDescription
 			}
 

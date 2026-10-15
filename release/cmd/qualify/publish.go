@@ -25,12 +25,26 @@ import (
 // bounded retry/backoff.
 const publishTimeout = 2 * time.Minute
 
+// testGridBuckets is the TestGrid bucket for each environment --environment
+// picks, not a raw bucket name a typo could point anywhere. "prod" is the
+// one real TestGrid actually reads from today; "staging" exists for a
+// caller who wants to inspect what would have been published without
+// touching prod, not because anything renders it -- config-gen's staging
+// instance reads its raw results from the *prod* bucket too (its own
+// --source-bucket), so a staging publish is visible only via
+// `gcloud storage ls`, never on any TestGrid dashboard.
+var testGridBuckets = map[string]string{
+	"staging": "dgxc-testgrid-staging",
+	"prod":    "dgxc-testgrid",
+}
+
 func publishCmd() *cobra.Command {
 	var (
 		resultPath  string
 		junitPath   string
 		stream      string
 		destination string
+		environment string
 	)
 
 	cmd := &cobra.Command{
@@ -40,7 +54,10 @@ func publishCmd() *cobra.Command {
 
 Reads the Result at --result and the JUnit report at --junit and ships them
 to --destination. testgrid is the only destination today; --destination
-exists so a second one is additive rather than a rewrite.
+exists so a second one is additive rather than a rewrite. --environment
+picks which bucket within that destination: prod (the default, and the only
+one any TestGrid dashboard actually reads) or staging (visible only via
+` + "`gcloud storage ls`" + `, not any dashboard -- see testGridBuckets).
 
 If the Result is errored (Ginkgo never ran -- a Forge provisioning failure, a
 wedged runner), this is a no-op: there is no suite name to tab the record
@@ -66,10 +83,15 @@ so routing is built from the record itself.`,
 				return nil
 			}
 
+			bucket, ok := testGridBuckets[environment]
+			if !ok {
+				return fmt.Errorf("unknown --environment=%s, have: staging, prod", environment)
+			}
+
 			ctx, cancel := context.WithTimeout(cmd.Context(), publishTimeout)
 			defer cancel()
 
-			dest, closeDest, err := buildDestination(ctx, destination)
+			dest, closeDest, err := buildDestination(ctx, destination, bucket)
 			if err != nil {
 				return err
 			}
@@ -90,6 +112,7 @@ so routing is built from the record itself.`,
 	f.StringVar(&junitPath, "junit", "", "path to the qualify-e2e.junit.xml this leg wrote, if any (required)")
 	f.StringVar(&stream, "stream", "", "the stream name being published (required)")
 	f.StringVar(&destination, "destination", "testgrid", "where to publish: testgrid")
+	f.StringVar(&environment, "environment", "prod", "which bucket to publish to: prod or staging (staging renders on no TestGrid dashboard)")
 
 	for _, name := range []string{"result", "junit", "stream"} {
 		_ = cmd.MarkFlagRequired(name)
@@ -97,13 +120,13 @@ so routing is built from the record itself.`,
 	return cmd
 }
 
-// buildDestination constructs the named Destination. The returned func
-// closes whatever the destination opened (a GCS client today); nil if there
-// is nothing to close.
-func buildDestination(ctx context.Context, name string) (publish.Destination, func(), error) {
+// buildDestination constructs the named Destination, writing to bucket. The
+// returned func closes whatever the destination opened (a GCS client
+// today); nil if there is nothing to close.
+func buildDestination(ctx context.Context, name, bucket string) (publish.Destination, func(), error) {
 	switch name {
 	case "testgrid":
-		uploader, err := testgrid.NewGCSUploader(ctx)
+		uploader, err := testgrid.NewGCSUploader(ctx, bucket)
 		if err != nil {
 			return nil, nil, err
 		}
