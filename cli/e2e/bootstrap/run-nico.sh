@@ -2,11 +2,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# `nvkectl bootstrap site` e2e for `infrastructure: nico`: the control-plane
+# `nvkectl bootstrap site` e2e for `infra.provider: nico`: the control-plane
 # machines are allocated by CAPNICo from a NICo site instead of taken from a
-# hardcoded list. The sibling of run.sh, which covers `infrastructure:
+# hardcoded list. The sibling of run.sh, which covers `infra.provider:
 # provisioned`; same host requirements (see run.sh), plus a Go toolchain to
-# build nico-sim, and network access to ghcr.io for the CAPNICo chart.
+# build nico-sim, and network access to ghcr.io for the CAPNICo image.
 #
 # Stages:
 #   1. Images: the CAPD node image nico-sim creates its nodes from, and a
@@ -23,11 +23,11 @@
 #      admitted it was filled in by CWE from the NicoMachine, not by the site spec.
 #
 # Three inputs the site spec supplies and this script prepares:
-#   - bootstrapNico: the token file for nico-sim's API.
-#   - bootstrapTenant: the login the controller puts on each node, with throwaway
+#   - NVKECTL_NICO_CREDENTIALS: the token file for nico-sim's API.
+#   - infra.nico.tenant: the login the controller puts on each node, with throwaway
 #     values. `bootstrap site` creates the Secret that carries it.
-#   - bootstrapReleases: the MachineImage and ClusterRelease the controller
-#     resolves cluster.nico.controlPlane.osProfile from, copied from the in-repo
+#   - infra.nico.releases: the MachineImage and ClusterRelease the controller
+#     resolves infra.nico.controlPlane.osProfile from, copied from the in-repo
 #     fixtures. `bootstrap site` applies them before it creates the cluster.
 # One thing it does not supply, which this script hands it through an env hook:
 #   - NVKECTL_CONTROLLER_PROFILES_IMAGE: the config profile a cluster request
@@ -82,7 +82,7 @@ CONFIG_PROFILE="${NVKECTL_E2E_NICO_CONFIG_PROFILE:-dev-only-empty}"
 
 SPIRE_TRUST_DOMAIN="${NVKECTL_E2E_SPIRE_TRUST_DOMAIN:-nvkectl-e2e.example.test}"
 # The controller's namespace in the bootstrap cluster, and the Secret
-# `bootstrap site` creates there from bootstrapTenant.
+# `bootstrap site` creates there from infra.nico.tenant.
 CONTROLLER_NAMESPACE=nke-controller
 TENANT_SECRET=dgxc-tenant-credentials
 
@@ -101,7 +101,7 @@ KUBECONFIG_DIR="$(mktemp -d)"
 export KUBECONFIG="${KUBECONFIG_DIR}/config"
 export KUBECACHEDIR="${KUBECONFIG_DIR}/cache"
 CNI_BUNDLE_DIR="$(mktemp -d)"
-# What the site spec's bootstrapNico, bootstrapTenant and bootstrapReleases name.
+# What the site spec's infra.nico, infra.nico.tenant and infra.nico.releases name.
 TOKEN_FILE="${SIM_STATE_DIR}/bootstrap-nico.token"
 TENANT_PASSWORD_FILE="${SIM_STATE_DIR}/bootstrap-tenant.password"
 RELEASES_DIR="${SIM_STATE_DIR}/releases"
@@ -310,6 +310,7 @@ umask 077
 printf 'nico-simctl-token' >"${TOKEN_FILE}"
 printf 'nvke-e2e' >"${TENANT_PASSWORD_FILE}"
 umask 022
+export NVKECTL_NICO_CREDENTIALS="${TOKEN_FILE}"
 
 # Only the release pair the OS profile names, not every fixture release.
 mkdir -p "${RELEASES_DIR}"
@@ -326,15 +327,16 @@ fi
 
 cat >"${RENDERED_SITESPEC}" <<EOF
 clusterName: ${E2E_CLUSTER_NAME}
-infrastructure: nico
-cluster:
+infra:
+  provider: nico
   nico:
-    nodeCount: ${NODE_COUNT}
-    provider:
-      orgID: ${NICO_ORG_ID}
+    orgID: ${NICO_ORG_ID}
+    remote:
+      endpoint: http://${GATEWAY}:${SIM_PORT}
       siteID: ${NICO_SITE_ID}
       vpcID: ${NICO_VPC_ID}
     controlPlane:
+      count: ${NODE_COUNT}
       instanceTypePreference:
         - ${NICO_INSTANCE_TYPE_ID}
       subnetIDs:
@@ -343,6 +345,11 @@ cluster:
         - ${NICO_SSH_KEY_GROUP_ID}
       osProfile: ${OS_PROFILE}
       configProfile: ${CONFIG_PROFILE}
+    tenant:
+      user: nvke-e2e
+      passwordFile: ${TENANT_PASSWORD_FILE}
+    releases: ${RELEASES_DIR}
+cluster:
 ${vip_line}
   k8sVersion: "1.34.8"
   cniName: ovn-kubernetes
@@ -354,15 +361,6 @@ ${vip_line}
 spire:
   trustDomain: ${SPIRE_TRUST_DOMAIN}
   externalAddress: ${GATEWAY}
-bootstrapNico:
-  endpoint: http://${GATEWAY}:${SIM_PORT}
-  orgID: ${NICO_ORG_ID}
-  apiName: forge
-  tokenFile: ${TOKEN_FILE}
-bootstrapTenant:
-  user: nvke-e2e
-  passwordFile: ${TENANT_PASSWORD_FILE}
-bootstrapReleases: ${RELEASES_DIR}
 registry:
   bootstrapRepo: "nvcr.io/org"
   bootstrapChart: "controller-chart"
@@ -445,12 +443,12 @@ KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_
 defer "rm -f ${bootstrap_kubeconfig}"
 bk() { kubectl --kubeconfig "${bootstrap_kubeconfig}" "$@"; }
 
-# What the site spec's bootstrapTenant and bootstrapReleases asked for, which the
+# What the site spec's infra.nico.tenant and infra.nico.releases asked for, which the
 # controller needed to create the first node at all.
 bk get clusterrelease "${OS_PROFILE}" >/dev/null 2>&1 ||
-  fail "the ClusterRelease ${OS_PROFILE} bootstrapReleases names was not applied to the bootstrap cluster"
+  fail "the ClusterRelease ${OS_PROFILE} infra.nico.releases names was not applied to the bootstrap cluster"
 bk -n "${CONTROLLER_NAMESPACE}" get secret "${TENANT_SECRET}" >/dev/null 2>&1 ||
-  fail "the tenant credentials Secret ${CONTROLLER_NAMESPACE}/${TENANT_SECRET} bootstrapTenant names was not created"
+  fail "the tenant credentials Secret ${CONTROLLER_NAMESPACE}/${TENANT_SECRET} infra.nico.tenant names was not created"
 log "PASS: bootstrap site applied ${OS_PROFILE} and created the tenant credentials Secret"
 
 sim_nodes="$(nerdctl ps -q --filter "label=${SIM_LABEL}" | wc -l | tr -d ' ')"

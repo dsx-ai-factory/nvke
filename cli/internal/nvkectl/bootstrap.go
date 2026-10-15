@@ -1153,8 +1153,9 @@ func deployAndWaitForCWE(
 // into the Kind cluster. The provisioned provider is among them only when it is
 // the infrastructure provider in use.
 func nvkeImages(cfg controllerdeploy.Config) []string {
-	if cfg.NicoInfrastructure {
-		return []string{cfg.CWEImage}
+	images := []string{cfg.CWEImage}
+	if !cfg.NicoInfrastructure {
+		images = append(images, cfg.ProvisionedProviderImage)
 	}
 	if cfg.ProfilesImage != "" {
 		images = append(images, cfg.ProfilesImage)

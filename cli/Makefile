@@ -161,7 +161,7 @@ test: ## Run this module's tests. (run by the merge gate)
 test-e2e-bootstrap: build
 	./e2e/bootstrap/run.sh
 
-# The same suite for `infrastructure: nico`: CAPNICo allocates the nodes from a
+# The same suite for `infra.provider: nico`: CAPNICo allocates the nodes from a
 # nico-sim running on the host, instead of fake hosts being listed in the site
 # spec. Needs everything run.sh does, plus a Go toolchain and gcc to build
 # nico-sim and network access to ghcr.io. See e2e/bootstrap/run-nico.sh.

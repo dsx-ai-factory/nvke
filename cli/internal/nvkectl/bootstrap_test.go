@@ -2276,7 +2276,7 @@ func TestNvkeImages(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := controllerdeploy.Config{CWEImage: "cwe:1", ProvisionedProviderImage: "prov:1", NicoInfrastructure: tt.nico}
+			cfg := controllerdeploy.Config{CWEImage: "cwe:1", ProvisionedProviderImage: "prov:1", NicoInfrastructure: tt.nico, ProfilesImage: tt.profiles}
 			if got := nvkeImages(cfg); !slices.Equal(got, tt.want) {
 				t.Errorf("nvkeImages = %v, want %v", got, tt.want)
 			}
