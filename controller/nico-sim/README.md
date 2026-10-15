@@ -582,7 +582,7 @@ http://localhost:18080/files/images/custom-image.qcow2
 http://localhost:18080/files/agent/nvke-agent
 ```
 
-The nico-vms dev OS profile uses `carbide-pxe.forge` inside the VM, so the
+The nico-vms dev release uses `carbide-pxe.forge` inside the VM, so the
 same agent URL becomes:
 
 ```text

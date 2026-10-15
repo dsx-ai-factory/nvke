@@ -8,7 +8,6 @@ This page describes how to build the reference node OS image, serve its boot art
 - You have a checkout of `dsx-ai-factory/nvke` in `nvke/`, at the release you install.
 - You have the build tools listed in [Build the OS image](../../os-image/README.md#build-the-os-image).
 - You have `nvkectl` on this host, from [Install nvkectl](bootstrap-management-cluster.md#install-nvkectl), to check the release resources before you publish them.
-- To build your own profile content image, you have Docker and a container registry that the management cluster's nodes can pull from.
 
 ## Build the node OS image
 
@@ -89,7 +88,7 @@ Compare the downloaded files' SHA-256 digests with the verified source artifacts
 
 ## Define MachineImage and release resources
 
-The former filesystem OS profile bundles under `profiles/osProfiles/` have [been removed](https://github.com/dsx-ai-factory/nvke/pull/1590). Define image and bootstrap content with Kubernetes resources instead. The API field `osProfile` remains: it selects a release resource by name, not a directory of profile files.
+The `release` field of a workload cluster or node pool selects a release resource by name. Define the image and first-boot content with the Kubernetes resources below.
 
 NVKE reads image and release content from three cluster-scoped custom resources in the API group `internal.nvke.nvidia.com/v1`:
 
@@ -99,7 +98,7 @@ NVKE reads image and release content from three cluster-scoped custom resources 
 | [`ClusterRelease`](../../cli/examples/clusterrelease.yaml) | For control-plane nodes: the `MachineImage` to boot and the cloud-init user data the node runs on first boot. |
 | [`NodePoolRelease`](../../cli/examples/nodepoolrelease.yaml) | The same, for worker nodes. |
 
-A control-plane node pool resolves its `osProfile` to a `ClusterRelease`, and a worker node pool to a `NodePoolRelease`. This example gives all three resources one name and uses that name as the `osProfile`. The `MachineImage` spec and each release's `machineImageRef` and `machineInit` are immutable once applied: to change an image or its user data, create resources with new names. A release's `lifecycle.deprecated` field can change separately.
+A control-plane node pool resolves its `release` to a `ClusterRelease`, and a worker node pool to a `NodePoolRelease`. This example gives all three resources one name and uses that name as the `release`. The `MachineImage` spec and each release's `machineImageRef` and `machineInit` are immutable once applied: to change an image or its user data, create resources with new names. To deprecate a release, use the CLI commands in [Deprecate a release](#deprecate-a-release).
 
 Run the file-preparation commands below from the directory containing your `nvke/` checkout. The resulting `releases/` directory is the input you publish after installing the management plane.
 
@@ -125,18 +124,18 @@ Run the file-preparation commands below from the directory containing your `nvke
    | `spec.variant` | Optional. Distinguishes images built from the same operating system for another purpose, such as `fde`. |
    | `spec.nico.ipxeScript` | The script NICo runs to boot the machine. It starts with a `#!ipxe` line of its own. |
 
-   The example's `ipxeScript` installs Ubuntu 24.04 from the installer ISO; replace its `boot.example.com` and `releases.example.com` URLs with hosts that your NICo machines reach. To boot the reference node image instead, `ipxeScript` must write the QCOW2 file to the machine's disk with a loader your NICo site provides. Publish the files and verify their URLs as described in [Serve the boot artifacts over HTTP(S)](#serve-the-boot-artifacts-over-https). This release has no reference QCOW2 boot script.
+   The example's `ipxeScript` installs Ubuntu 24.04 from the installer ISO; replace its `boot.example.com` and `releases.example.com` URLs with hosts that your NICo machines reach. To boot the reference node image instead, `ipxeScript` must write the QCOW2 file to the machine's disk by chainloading an EFI imager that downloads and writes the QCOW2. Use an imager and script validated together for your NICo site. Publish the files and verify their URLs as described in [Serve the boot artifacts over HTTP(S)](#serve-the-boot-artifacts-over-https). This release has no reference QCOW2 boot script.
 
-4. Write the first-boot user data in `spec.machineInit.userDataTemplate` of both releases. It starts with a cloud-init header such as `#cloud-config`, and it can reference the values in [What NVKE puts in the user data](#what-nvke-puts-in-the-user-data). In the example, replace the `apt.example.com` repository line with a command that adds an apt repository serving the NVKE node packages; NVKE publishes no such repository. A profile for the reference node image installs the packages the image stages, as [Prepare nodes](prepare-nodes.md) does, and writes the SPIRE files shown below.
+4. Write the first-boot user data in `spec.machineInit.userDataTemplate` of both releases. It starts with a cloud-init header such as `#cloud-config`, and it can reference the values in [What NVKE puts in the user data](#what-nvke-puts-in-the-user-data). In the example, replace the `apt.example.com` repository line with a command that adds an apt repository serving the NVKE node packages; NVKE publishes no such repository. A release for the reference node image installs the packages the image stages, as [Prepare nodes](prepare-nodes.md) does, and writes the SPIRE files shown below.
 
 5. Set the Kubernetes version annotations on both releases. Both are required.
 
    | `machine-init-kubernetes-version-injected` | `machine-init-kubernetes-version` | Meaning |
    |---|---|---|
    | `"true"` | `""` | The template installs `nvke-kubeadm-distro-{{ trimPrefix .KubernetesVersion "v" }}`, so the release serves any Kubernetes version. |
-   | `"false"` | The version, such as `"1.34.8"` | The template installs one version, such as `nvke-kubeadm-distro-1.34.8`. |
+   | `"false"` | The version, such as `"1.36.3"` | The template installs one version, such as `nvke-kubeadm-distro-1.36.3`. |
 
-   Both annotations take the prefix `internal.nvke.nvidia.com/`. When you upgrade a node pool whose release has `"false"`, NVKE moves it to the newest release, by `buildDate`, whose version annotation matches the target version and whose image matches the current image's architecture, variant and operating system. It skips releases with `spec.lifecycle.deprecated` set.
+   Both annotations take the prefix `internal.nvke.nvidia.com/`. When you upgrade a node pool whose release has `"false"`, NVKE moves it to the newest release, by `buildDate`, whose version annotation matches the target version and whose image matches the current image's architecture, variant and operating system. It skips releases deprecated with `nvkectl deprecate`.
 
 6. Confirm that no example host remains.
 
@@ -164,7 +163,7 @@ NVKE renders `userDataTemplate` as a Go template for each node it creates, with 
 
 `ipxeScript` is rendered the same way with one value, `{{ .DiskSelectionStrategy }}`: the node pool's `diskSelectionStrategy`, `smallest` or `largest`.
 
-NVKE reads the SPIRE server's current trust bundle each time it creates a node and passes it in `{{ .TrustBundle }}`, so the profile carries no CA. A profile for the reference node image writes the SPIRE values to the files the image reads on first boot. Indent the block to match the rest of your `write_files` list:
+NVKE reads the SPIRE server's current trust bundle each time it creates a node and passes it in `{{ .TrustBundle }}`, so the release carries no CA. A release for the reference node image writes the SPIRE values to the files the image reads on first boot. Indent the block to match the rest of your `write_files` list:
 
 ```yaml
 write_files:
@@ -181,50 +180,6 @@ write_files:
 ```
 
 `indent 6` adds six spaces to each line of the bundle so that it sits under `content`. The image renders the SPIRE agent configuration from these files, and the agent attests with the node's TPM. The install turns SPIFFE on, so the management plane reaches `nvke-agent` over mutual TLS with a SPIFFE identity: a node whose SPIRE agent cannot attest never becomes reachable.
-
-## Config profiles and the profile content image
-
-The optional `configProfile` field of a node pool names a config profile, which sets node labels and the hook scripts that run before a node joins. The controller reads config profiles from a profile content image that an init container, `materialize-profiles`, copies into the controller pod at startup. NVKE looks up `configProfiles/<NAME>.yaml` in that image, and the hook scripts under `runbooks/`.
-
-Build the profile content image and name it in the site spec's `controllerStack.images.profiles`.
-
-### Build the profile content image
-
-1. Copy the example bundle.
-
-   ```bash
-   cp -R nvke/controller/profiles/example example-profiles
-   ```
-
-   The bundle holds one config profile, `profiles/configProfiles/example-worker.yaml`, its hook script `runbooks/example-sysctl.sh`, and a `Dockerfile` that copies both into `/profiles`.
-
-2. Replace `REPLACE_SYSCTL_VALUE` in `example-profiles/profiles/configProfiles/example-worker.yaml`, the value the hook script writes for `net.ipv4.ip_forward`, and add your own profiles. Then confirm that no placeholder remains.
-
-   ```bash
-   test -z "$(grep -R 'REPLACE_' example-profiles)"
-   ```
-
-3. Build and push the image.
-
-   ```bash
-   docker build -t <REGISTRY_HOST>/<NAMESPACE>/nvke-profiles:<TAG> example-profiles
-   ```
-
-   ```bash
-   docker push <REGISTRY_HOST>/<NAMESPACE>/nvke-profiles:<TAG>
-   ```
-
-   `<REGISTRY_HOST>/<NAMESPACE>` is your registry path, such as `registry.example.com/nvke`, and `<TAG>` is a version you choose, such as `v1`. Note the digest that `docker push` prints.
-
-4. Set the image in the site spec.
-
-   ```yaml
-   controllerStack:
-     images:
-       profiles: <REGISTRY_HOST>/<NAMESPACE>/nvke-profiles@<PROFILES_DIGEST>
-   ```
-
-   `<PROFILES_DIGEST>` is the `sha256:` digest from step 3. A digest pin restarts the controller when the profiles change; `repository:tag` also works.
 
 ## Verify
 
@@ -271,9 +226,20 @@ These commands also use the management cluster's Kubernetes API. If the site's k
 kubectl --kubeconfig <MANAGEMENT_KUBECONFIG> get machineimages,clusterreleases,nodepoolreleases
 ```
 
-When you [create a workload cluster](../workload-clusters/create.md), set `controlPlaneConfig.osProfile` to the `ClusterRelease` name and each worker node pool's `osProfile` to its `NodePoolRelease` name. NVKE resolves the selected release to its `MachineImage`, renders that image's iPXE script and the release's user data, and passes them through CAPNICo to NICo for provisioning.
+When you [create a workload cluster](../workload-clusters/create.md), set `controlPlaneConfig.release` to the `ClusterRelease` name and each worker node pool's `release` to its `NodePoolRelease` name. NVKE resolves the selected release to its `MachineImage`, renders that image's iPXE script and the release's user data, and passes them through CAPNICo to NICo for provisioning.
 
 To change an image's boot instructions or a release's image reference or user data, publish new objects under new names and select those releases for subsequent provisioning. These fields are immutable; uploading different bytes at an existing URL would bypass that versioning, so keep published artifact paths stable too.
+
+## Deprecate a release
+
+Use the CLI to deprecate a published control-plane or worker release:
+
+```bash
+nvkectl deprecate clusterrelease <RELEASE_NAME>
+nvkectl deprecate nodepoolrelease <RELEASE_NAME>
+```
+
+Run the command for the release type you want to retire. The CLI updates its lifecycle metadata; do not edit `spec.lifecycle.deprecated` by hand. Existing clusters and node pools can still resolve a deprecated release for provisioning and scaling, but it is not selected as a Kubernetes upgrade target. Choose a current release when creating new clusters or pools. `MachineImage` has no deprecation command.
 
 ## Next steps
 

@@ -32,7 +32,7 @@ KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
 CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}"
 WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-0}"
-OS_PROFILE="${OS_PROFILE:-nvke-local-dev-kindest-arm64}"
+RELEASE="${RELEASE:-nvke-local-dev-kindest-arm64}"
 CONFIG_PROFILE="${CONFIG_PROFILE:-dev-only-empty}"
 SYSTEM_RESERVED_MEMORY="${SYSTEM_RESERVED_MEMORY:-1Gi}"
 
@@ -56,7 +56,7 @@ BODY=$(cat <<EOF
         "subnetIDs": ["${MOCK_SUBNET_ID}"],
         "instanceTypeID": "${MOCK_INSTANCE_TYPE_ID}",
         "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
-        "osProfile": "${OS_PROFILE}",
+        "release": "${RELEASE}",
         "configProfile": "${CONFIG_PROFILE}"
       },
       "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",
@@ -74,7 +74,7 @@ BODY=$(cat <<EOF
         "subnetIDs": ["${MOCK_SUBNET_ID}"],
         "instanceTypeID": "${MOCK_INSTANCE_TYPE_ID}",
         "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
-        "osProfile": "${OS_PROFILE}",
+        "release": "${RELEASE}",
         "configProfile": "${CONFIG_PROFILE}"
       },
       "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",

@@ -139,7 +139,7 @@ Run these checks on every node, as root.
 
 During the bootstrap, each node's SPIRE agent logs `Node attestation was successful` and `nvke-agent` starts. To watch for it, run `journalctl -u spire-agent -f` on a node.
 
-Workload-cluster nodes are not prepared this way. NVIDIA Infra Controller (NICo) provisions them from your node image, and the management plane supplies their user data from the OS profile, including the Kubernetes and CNI packages to install; see [Build node images and publish releases](build-node-images.md).
+Workload-cluster nodes are not prepared this way. NVIDIA Infra Controller (NICo) provisions them from your node image, and the management plane supplies their user data from the release, including the Kubernetes and CNI packages to install; see [Build node images and publish releases](build-node-images.md).
 
 ## Next steps
 

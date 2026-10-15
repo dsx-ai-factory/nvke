@@ -28,7 +28,7 @@ import (
 
 func TestClient_CreateMachine_MissingRelease(t *testing.T) {
 	nodeSet := db.NodeSet{KubernetesVersion: "1.32.1"}
-	nodeSet.SetNico(db.NicoNodePoolProvider{OSProfile: "test-os", DiskSelectionStrategy: db.DiskSelectionStrategySmallest})
+	nodeSet.SetNico(db.NicoNodePoolProvider{Release: "test-os", DiskSelectionStrategy: db.DiskSelectionStrategySmallest})
 	nodePool := db.NodePool{}
 	nodePool.SetNico(db.NicoNodePoolProvider{
 		InstanceTypeID: uuid.MustParse("70000000-0000-0000-0000-000000000005"),
@@ -104,7 +104,7 @@ func TestClient_CreateMachine_ResolvesByRole(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			nodeSet := db.NodeSet{KubernetesVersion: "1.32.1"}
-			nodeSet.SetNico(db.NicoNodePoolProvider{OSProfile: name, DiskSelectionStrategy: db.DiskSelectionStrategySmallest})
+			nodeSet.SetNico(db.NicoNodePoolProvider{Release: name, DiskSelectionStrategy: db.DiskSelectionStrategySmallest})
 			nodePool := db.NodePool{ControlPlane: tt.controlPlane}
 			nodePool.SetNico(db.NicoNodePoolProvider{
 				InstanceTypeID: uuid.MustParse("70000000-0000-0000-0000-000000000005"),

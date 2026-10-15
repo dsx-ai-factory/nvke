@@ -73,7 +73,7 @@ case "$(uname -m)" in
     exit 1
     ;;
 esac
-OS_PROFILE="${OS_PROFILE:-nvke-nico-vms-24.04-${PROFILE_ARCH}-fde}"
+RELEASE="${RELEASE:-nvke-nico-vms-24.04-${PROFILE_ARCH}-fde}"
 CP_CONFIG_PROFILE="${CP_CONFIG_PROFILE:-nico-vms-cp}"
 WORKER_CONFIG_PROFILE="${WORKER_CONFIG_PROFILE:-nico-vms-worker}"
 SYSTEM_RESERVED_MEMORY="${SYSTEM_RESERVED_MEMORY:-1Gi}"
@@ -112,7 +112,7 @@ BODY=$(cat <<EOF
     "nico": {
       "instanceTypePreference": ["${INSTANCE_TYPE_ID}"],
       "vpcPrefixIDs": ["${VPC_PREFIX_ID}"],
-      "osProfile": "${OS_PROFILE}",
+      "release": "${RELEASE}",
       "configProfile": "${CP_CONFIG_PROFILE}"
     }
   },
@@ -123,7 +123,7 @@ BODY=$(cat <<EOF
       "nico": {
         "vpcPrefixIDs": ["${VPC_PREFIX_ID}"],
         "instanceTypeID": "${INSTANCE_TYPE_ID}",
-        "osProfile": "${OS_PROFILE}",
+        "release": "${RELEASE}",
         "configProfile": "${WORKER_CONFIG_PROFILE}"
       },
       "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",

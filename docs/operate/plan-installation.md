@@ -108,7 +108,7 @@ NVKE admits callers by group but does no authorization: every admitted caller ca
 | Workload cluster etcd encryption | Cluster creation | `etcdEncrypted` has no default. You can turn encryption on later, never off. |
 | Workload cluster API VIP | Cluster creation | Without one, the control plane has one node that you cannot scale, upgrade or replace. Adding a VIP means recreating the cluster. |
 | NICo identifiers | Cluster or node pool creation | A cluster's `orgID`, `siteID` and `vpcID`, and a node pool's `instanceTypeID`, InfiniBand partition and NVLink logical partition. |
-| OS profiles | When applied | `MachineImage`, `ClusterRelease` and `NodePoolRelease` resources are immutable. To change an image or its user data, publish a profile with a new name. |
+| Releases | When applied | `MachineImage`, `ClusterRelease` and `NodePoolRelease` resources are immutable. To change an image or its user data, publish a release with a new name. |
 
 ## Fill in your values
 
@@ -182,7 +182,7 @@ The workload cluster pages name each cluster `<WORKLOAD_CLUSTER>`. [Create a wor
 | Pod and service networks, if not the defaults | `network.podCIDR`, `network.serviceCIDR` | |
 | CNI | `cniPlugin` | |
 | etcd encryption | `etcdEncrypted` | |
-| OS profiles for the control plane and the workers | `<CP_OS_PROFILE>`, `<WORKER_OS_PROFILE>` | |
+| Releases for the control plane and the workers | `<CP_RELEASE>`, `<WORKER_RELEASE>` | |
 | Each node pool's name | `<POOL_NAME>` | |
 
 ## Verify

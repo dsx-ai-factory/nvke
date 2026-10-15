@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	clienttesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/util/flowcontrol"
 	"sigs.k8s.io/yaml"
 )
 
@@ -563,8 +564,9 @@ func TestStartupProviderCountReadsBoundedPodLogs(t *testing.T) {
 				_, _ = w.Write(body)
 			}))
 			t.Cleanup(server.Close)
-			// Frequent local polling should not spend the deadline waiting for client throttling.
-			clientConfig := &rest.Config{Host: server.URL, QPS: 1000, Burst: 1000}
+			// No client-side throttling: with the deadline almost spent, the token bucket answers with its own
+			// "would exceed context deadline" error, which is not context.DeadlineExceeded.
+			clientConfig := &rest.Config{Host: server.URL, RateLimiter: flowcontrol.NewFakeAlwaysRateLimiter()}
 			client, err := kubernetes.NewForConfig(clientConfig)
 			require.NoError(t, err)
 			site, err := NewSite(client, SiteConfig{

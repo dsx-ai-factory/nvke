@@ -255,7 +255,7 @@ func NewServerImpl(
 		nodePoolService:      *nodePoolService,
 		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
 		nodeService:          *NewNodeService(logger, database),
-		osProfileService:     *NewOSProfileService(logger, k8sReader),
+		releaseService:       *NewReleaseService(logger, k8sReader),
 		configProfileService: *NewConfigProfileService(cfg, logger),
 	}
 }
@@ -265,6 +265,6 @@ type serverImpl struct {
 	nodePoolService
 	nodeSetService
 	nodeService
-	osProfileService
+	releaseService
 	configProfileService
 }

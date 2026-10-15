@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	forgesdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/test/integration/testutil"
 )
@@ -96,7 +96,7 @@ boot
 			createPayload := &forgesdk.InstanceCreateRequest{
 				Name:             instanceName,
 				TenantId:         "d282929f-49d5-4dec-8d27-21ceb30ade19",
-				InstanceTypeId:   forgesdk.PtrString("itype-mock-001"),
+				InstanceTypeId:   *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 				VpcId:            "vpc-mock-001",
 				Labels:           map[string]string{"nke.nvidia.com/node-id": instanceName},
 				IpxeScript:       *forgesdk.NewNullableString(forgesdk.PtrString(ipxeScript)),

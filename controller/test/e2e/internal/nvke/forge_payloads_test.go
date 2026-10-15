@@ -62,8 +62,10 @@ func TestBuildForgeNodePayloadsRendersEveryInput(t *testing.T) {
 	joined := strings.Join(payloads.PreKubeadmCommands, "\n")
 	for _, want := range []string{
 		"nvke-kubeadm-distro-" + inputs.KubernetesVersion,
-		"nvke-cni-ovn-images-" + inputs.CNIVersion,
-		"nvke-cni-ovn-charts-" + inputs.CNIVersion,
+		// nke-, not nvke-: the suite serves both generations, and no
+		// nvke-cni-ovn-* has been published yet. See #1600.
+		"nke-cni-ovn-images-" + inputs.CNIVersion,
+		"nke-cni-ovn-charts-" + inputs.CNIVersion,
 		"openvswitch-switch",
 	} {
 		if !strings.Contains(joined, want) {
@@ -566,9 +568,9 @@ func TestBuildForgeNodePayloadsWaitsForTheNetworkFirst(t *testing.T) {
 	}
 }
 
-// The image builds nvke-agent from this checkout's agent/ source at bake time,
+// The image builds nke-agent from this checkout's agent/ source at bake time,
 // so the installed agent is the build under qualification. Installing the apt
-// repository's unpinned nvke-agent over it would swap that for whichever build
+// repository's unpinned nke-agent over it would swap that for whichever build
 // the suite currently holds, and the run would still report the baked version.
 //
 // Asserted rather than left to dpkg. A bake version sorts above a release tag
@@ -584,8 +586,12 @@ func TestBuildForgeNodePayloadsDoesNotInstallNvkeAgent(t *testing.T) {
 			continue
 		}
 		for _, field := range strings.Fields(command) {
-			if field == "nvke-agent" {
-				t.Errorf("the node's own nvke-agent should be left alone, got:\n%s", command)
+			// Both spellings. The guard is about not installing the agent over
+			// the one the image carries, which is true whichever name that
+			// image gives it -- and the name changes with the image, so
+			// checking one spelling goes half-blind the moment it moves.
+			if field == "nke-agent" || field == "nvke-agent" {
+				t.Errorf("the node's own agent should be left alone, got:\n%s", command)
 			}
 		}
 	}
@@ -627,7 +633,7 @@ func TestBuildForgeNodePayloadsWaitsForNameResolutionBeforeFetchingTheAptKey(t *
 		}
 		return -1
 	}
-	wait, fetch := index("getent hosts"), index("/etc/apt/keyrings/nke.asc")
+	wait, fetch := index("getent hosts"), index("/etc/apt/keyrings/nvke.asc")
 	if wait < 0 {
 		t.Fatalf("no wait for name resolution, got:\n%s", strings.Join(payloads.PreKubeadmCommands, "\n"))
 	}

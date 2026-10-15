@@ -14,7 +14,9 @@ provider. [hardware-lane.md](hardware-lane.md) covers what happens after a
 machine is chosen.
 
 Files live in `controller/test/e2e/environments/`, one per environment, named
-by the value of `-e2e.environment`. Today there is exactly one, `forge.yaml`.
+by the value of `-e2e.environment`. There are two: `forge.yaml`, and `dsx.yaml`
+for the DSX datahalls. One file per *provider* — a datahall or site is an
+entry inside one, not a file of its own.
 
 ## The shape
 
@@ -195,6 +197,45 @@ A second provider is a second implementation of `infra.Provider` plus an
 environment file in its own vocabulary. Nothing above that interface changes,
 and there is no schema to agree on — the loader only reads `provider` and hands
 the rest over.
+
+`dsx.yaml` is the worked example, and it is worth reading beside `forge.yaml`
+for how little the two have in common below `provider:`:
+
+```yaml
+provider: dsx
+
+infrastructure:
+  org:
+    id: "${DSX_ORG_ID:-ncx}"          # a name, where Forge's is numeric
+  sites:
+    redstone-dev1-dh2:                # the key IS the API host
+      id:          "${DSX_REDSTONE_DEV1_DH2_SITE_ID:-}"
+      tenantID:    "${DSX_REDSTONE_DEV1_DH2_TENANT_ID:-}"   # no Forge equivalent
+      vpcPrefixID: "${DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID:-}"
+      instanceTypes:
+        - name: redstone-dev1-dh2-nvke-tenant
+          id: "${DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID:-}"
+          provides: {machineType: cpu, arch: arm64}
+```
+
+Three differences are load-bearing rather than cosmetic.
+
+**The key is the API host.** A request goes to
+`carbide-rest-api-<key>.dev.dsx.nvidia.com`, so there is no site-lookup call
+the way Forge needs one. Two datahalls at one site hold completely disjoint
+UUIDs for the same kinds of object, and nothing in a response says which one an
+id came from — so a second datahall is a second key, never a reused one.
+
+**Credentials are per datahall.** The names are derived from the key:
+`DSX_<DATAHALL>_SSA_CLIENT_ID` and `_SECRET`, exchanged for a bearer token at
+the issuer in `SSA_ISSUER`. A client scoped to one datahall cannot be picked up
+by a run against another, and a second datahall needs no code.
+
+**`full` is refused.** The tenant half of a `full` run decodes the environment
+as a Forge declaration, so a DSX run at `-e2e.site-stage full` fails before a
+machine is taken. `provision` and `bootstrap` both run; the `qualify-e2e-dsx`
+label pins `provision`, which is what the datahall's bound capacity can place.
+The dsx stream is kept out of the `full` scope for the same reason.
 
 Capability matching is the provider's job rather than generic code, which is
 what makes this work: a provider that has no concept of an "instance type" is

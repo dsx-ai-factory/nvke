@@ -56,7 +56,7 @@ func TestGetNodeContext_NoNodePoolControlPlane(t *testing.T) {
 	// Empty DiskSelectionStrategy: ControlPlaneConfigNodeContext defaults it to smallest
 	// when populating the synthetic NodeSet Nico payload.
 	snapshotCfg.SetNico(db.NicoControlPlaneProvider{
-		OSProfile:             "os",
+		Release:               "os",
 		ConfigProfile:         "cfg",
 		DiskSelectionStrategy: "",
 	})
@@ -106,7 +106,7 @@ func TestControlPlaneConfigNodeContext_UsesSnapshotDiskStrategyOverride(t *testi
 	var snapshotCfg db.ControlPlaneConfigSpec
 	snapshotCfg.KubeReservedMemory = "250Mi"
 	snapshotCfg.SetNico(db.NicoControlPlaneProvider{
-		OSProfile:             "os",
+		Release:               "os",
 		ConfigProfile:         "cfg",
 		DiskSelectionStrategy: db.DiskSelectionStrategyLargest,
 	})
@@ -140,7 +140,7 @@ func TestControlPlaneConfigNodeContext_PreservesNicoProviderPayload(t *testing.T
 
 	var snapshotCfg db.ControlPlaneConfigSpec
 	snapshotCfg.SetNico(db.NicoControlPlaneProvider{
-		OSProfile:             "os",
+		Release:               "os",
 		ConfigProfile:         "cfg",
 		DiskSelectionStrategy: db.DiskSelectionStrategyLargest,
 		SubnetIDs:             []uuid.UUID{subnetID},
@@ -152,7 +152,7 @@ func TestControlPlaneConfigNodeContext_PreservesNicoProviderPayload(t *testing.T
 
 	nicoNodeSetProvider, err := nodeSet.NicoProvider()
 	require.NoError(t, err)
-	assert.Equal(t, "os", nicoNodeSetProvider.OSProfile)
+	assert.Equal(t, "os", nicoNodeSetProvider.Release)
 	assert.Equal(t, "cfg", nicoNodeSetProvider.ConfigProfile)
 	assert.Equal(t, db.DiskSelectionStrategyLargest, nicoNodeSetProvider.DiskSelectionStrategy)
 	assert.Equal(t, []uuid.UUID{subnetID}, nicoNodeSetProvider.SubnetIDs)
@@ -160,7 +160,7 @@ func TestControlPlaneConfigNodeContext_PreservesNicoProviderPayload(t *testing.T
 	nicoNodePoolProvider, err := nodePool.NicoProvider()
 	require.NoError(t, err)
 	assert.Equal(t, node.NicoInstanceTypeID(), nicoNodePoolProvider.InstanceTypeID)
-	assert.Equal(t, "os", nicoNodePoolProvider.OSProfile)
+	assert.Equal(t, "os", nicoNodePoolProvider.Release)
 	assert.Equal(t, "cfg", nicoNodePoolProvider.ConfigProfile)
 	assert.Equal(t, db.DiskSelectionStrategyLargest, nicoNodePoolProvider.DiskSelectionStrategy)
 	assert.Equal(t, []uuid.UUID{subnetID}, nicoNodePoolProvider.SubnetIDs)
@@ -205,7 +205,7 @@ func TestControlPlaneConfigNodeContext_DefaultsDiskStrategy(t *testing.T) {
 	node := nicoNode(uuid.New())
 	var snapshotCfg db.ControlPlaneConfigSpec
 	snapshotCfg.SetNico(db.NicoControlPlaneProvider{
-		OSProfile:             "os",
+		Release:               "os",
 		ConfigProfile:         "cfg",
 		DiskSelectionStrategy: "",
 	})

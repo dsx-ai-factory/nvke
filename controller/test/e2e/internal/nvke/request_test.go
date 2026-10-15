@@ -189,7 +189,7 @@ func TestBuildNicoVMSNodePoolKubeReservedMemory(t *testing.T) {
 		InstanceTypeID:     uuid.NewString(),
 		VpcPrefixIDs:       []string{uuid.NewString()},
 		SSHKeyGroupIDs:     []string{uuid.NewString()},
-		OSProfile:          "nvke-test",
+		Release:            "nvke-test",
 		ConfigProfile:      "test-config",
 		KubeReservedMemory: "250Mi",
 	}
@@ -271,7 +271,7 @@ func TestUnit_BuildNicoVMSRequestControlPlaneVIP(t *testing.T) {
 				InstanceTypeID:        "a1b2c3d4-0005-4000-8000-000000000001",
 				VpcPrefixIDs:          []string{"a1b2c3d4-0004-4000-8000-000000000001"},
 				SSHKeyGroupIDs:        []string{"a1b2c3d4-0006-4000-8000-000000000001"},
-				OSProfile:             "nvke-nico-vms-24.04-amd64-fde",
+				Release:               "nvke-nico-vms-24.04-amd64-fde",
 				ConfigProfile:         "nico-vms-cp",
 				DiskSelectionStrategy: "smallest",
 			}},
@@ -319,7 +319,7 @@ func TestUnit_BuildNicoVMSRequestControlPlaneConfig(t *testing.T) {
 			Config: &ControlPlaneConfigSpec{
 				DesiredCount:         1,
 				InstanceTypeID:       "a1b2c3d4-0005-4000-8000-000000000003",
-				OSProfile:            "nvke-nico-vms-24.04-amd64-fde",
+				Release:              "nvke-nico-vms-24.04-amd64-fde",
 				ConfigProfile:        "nico-vms-cp",
 				VpcPrefixIDs:         []string{"a1b2c3d4-0004-4000-8000-000000000001"},
 				SSHKeyGroupIDs:       []string{"a1b2c3d4-0006-4000-8000-000000000001"},
@@ -333,7 +333,7 @@ func TestUnit_BuildNicoVMSRequestControlPlaneConfig(t *testing.T) {
 			InstanceTypeID:        "a1b2c3d4-0005-4000-8000-000000000003",
 			VpcPrefixIDs:          []string{"a1b2c3d4-0004-4000-8000-000000000001"},
 			SSHKeyGroupIDs:        []string{"a1b2c3d4-0006-4000-8000-000000000001"},
-			OSProfile:             "nvke-nico-vms-24.04-amd64-fde",
+			Release:               "nvke-nico-vms-24.04-amd64-fde",
 			ConfigProfile:         "nico-vms-worker",
 			DiskSelectionStrategy: "smallest",
 		}},
@@ -352,8 +352,8 @@ func TestUnit_BuildNicoVMSRequestControlPlaneConfig(t *testing.T) {
 	if req.ControlPlaneConfig.Nico == nil {
 		t.Fatal("ControlPlaneConfig.Nico is nil")
 	}
-	if req.ControlPlaneConfig.Nico.OSProfile != "nvke-nico-vms-24.04-amd64-fde" {
-		t.Fatalf("Nico.OSProfile = %q", req.ControlPlaneConfig.Nico.OSProfile)
+	if req.ControlPlaneConfig.Nico.Release != "nvke-nico-vms-24.04-amd64-fde" {
+		t.Fatalf("Nico.Release = %q", req.ControlPlaneConfig.Nico.Release)
 	}
 	if len(req.ControlPlaneConfig.Nico.InstanceTypePreference) != 1 {
 		t.Fatalf("Nico.InstanceTypePreference len = %d, want 1", len(req.ControlPlaneConfig.Nico.InstanceTypePreference))

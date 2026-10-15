@@ -55,7 +55,7 @@ type NodePoolSpec struct {
 	SubnetIDs             []string
 	VpcPrefixIDs          []string
 	SSHKeyGroupIDs        []string
-	OSProfile             string
+	Release               string
 	ConfigProfile         string
 	DiskSelectionStrategy string // "smallest" | "largest"
 }
@@ -82,7 +82,7 @@ type ControlPlaneConfigSpec struct {
 	MaxSurge         *int
 
 	InstanceTypeID       string
-	OSProfile            string
+	Release              string
 	ConfigProfile        string
 	VpcPrefixIDs         []string
 	SubnetIDs            []string
@@ -168,6 +168,16 @@ func containerCAPIReadyCommands() []string {
 	var commands []string
 	// Cloud-init replaces the agent arguments baked into the container node image.
 	// Restore the E2E bundle source before kubeadm init needs it for CNI installation.
+	//
+	// nvke-, where the bare-metal template says nke-, and the difference is not
+	// an oversight: this image is BUILT FROM THIS CHECKOUT at bake time, so it
+	// carries whatever #1565 renamed the unit to, while a bare-metal run boots a
+	// published os-image release that predates that rename. Pinning nke- here
+	// restarts a unit the container does not have, sh -ec takes the block with
+	// it, cloud-init never reaches multi-user.target, and the control-plane
+	// machine never gets a nodeRef -- a ten-minute provisioning timeout whose
+	// message says nothing about an agent. See #1600 for where the bare-metal
+	// pin is removed; this half moves with the image it is built from.
 	bundleServerURL := strings.TrimRight(strings.TrimSpace(os.Getenv("NKE_E2E_BUNDLE_SERVER_URL")), "/")
 	if bundleServerURL != "" {
 		commands = append(commands, fmt.Sprintf(
@@ -244,7 +254,7 @@ func buildNicoForgeRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires a %s iPXE script: without one the instance boots nothing", role.name)
 		}
 		if len(role.payloads.PreKubeadmCommands) == 0 {
-			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires %s pre-kubeadm commands: without them the node has no nvke-agent", role.name)
+			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires %s pre-kubeadm commands: without them the node has no nke-agent", role.name)
 		}
 	}
 
@@ -633,8 +643,8 @@ func buildNicoVMSControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControl
 	if len(vpcPrefixIDs) == 0 {
 		return nil, fmt.Errorf("control plane config requires vpcPrefixIDs")
 	}
-	if cp.OSProfile == "" || cp.ConfigProfile == "" {
-		return nil, fmt.Errorf("control plane config requires osProfile and configProfile")
+	if cp.Release == "" || cp.ConfigProfile == "" {
+		return nil, fmt.Errorf("control plane config requires release and configProfile")
 	}
 
 	teleportDisabled := false
@@ -649,7 +659,7 @@ func buildNicoVMSControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControl
 			InstanceTypePreference: []uuid.UUID{instanceTypeID},
 			VpcPrefixIDs:           vpcPrefixIDs,
 			SSHKeyGroupIDs:         sshKeyGroupIDs,
-			OSProfile:              cp.OSProfile,
+			Release:                cp.Release,
 			ConfigProfile:          cp.ConfigProfile,
 		},
 		SystemReservedMemory: systemReserved,
@@ -690,7 +700,7 @@ func buildNicoVMSNodePool(spec NodePoolSpec) (api.NodePoolCreateConfig, error) {
 			InstanceTypeID:        instanceTypeID,
 			VpcPrefixIDs:          vpcPrefixIDs,
 			SSHKeyGroupIDs:        &sshKeyGroupIDs,
-			OSProfile:             spec.OSProfile,
+			Release:               spec.Release,
 			ConfigProfile:         spec.ConfigProfile,
 			DiskSelectionStrategy: api.DiskSelectionStrategyCreate(spec.DiskSelectionStrategy),
 		},

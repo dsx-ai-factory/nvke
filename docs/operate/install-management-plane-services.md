@@ -15,7 +15,7 @@ The install is a short list of commands that you run in order. Each one stands o
 - You have completed [Bootstrap the management cluster](bootstrap-management-cluster.md). You have its kubeconfig, `<CLUSTER_NAME>.kubeconfig`, and its site spec, `sitespec.yaml`, in your working directory. The cluster has an odd number of nodes, all control-plane, and none carries the control-plane `NoSchedule` taint.
 - The management cluster has exactly one default StorageClass. `kubectl get storageclass` lists one marked `(default)`. The bootstrap installs none, and PostgreSQL and SPIRE need persistent volumes. Install the Container Storage Interface (CSI) driver for your storage hardware and annotate its class `storageclass.kubernetes.io/is-default-class=true`. A lab can use the rancher local-path-provisioner.
 - You have the NICo API endpoint, your organization ID, an API token and the API name. [Configure an infrastructure provider: NICo](provider-nico.md) explains each value.
-- You have the image references to install, or a release description as described in [Choose where the artifacts come from](#choose-where-the-artifacts-come-from).
+- You have the image references to install, a published release description, or a completed local artifact run together with its release description and run directory, as described in [Choose where the artifacts come from](#choose-where-the-artifacts-come-from).
 - You run the commands on a Linux host that reaches the management cluster's Kubernetes API, such as the bootstrap host. It has the `nvke/` checkout from the bootstrap, at the same release as `nvkectl`, and these tools on `PATH`:
   - `nvkectl`. The install reads the deploy path and renders it with it. `NVKECTL` names another binary.
   - `helm` `v4.2.4`. Helm 3 cannot install these charts.
@@ -93,7 +93,9 @@ The install takes its charts and images from one of three places. The commands i
 |---|---|---|
 | A published NVKR release | `--release ../release.json` | The charts the release carries are installed by digest, and the images are pinned by digest. A chart the release does not carry comes from the checkout or its public repository. |
 | A local NVKR Run | `--release ../release.json --nvkr-run-dir <NVKR_CHECKOUT>/.nvkr/runs/<ATTEMPT>` | Charts and images come out of the Run's OCI layouts and are imported into the nodes' container runtime. No registry is involved. |
-| No release | Neither flag | Every chart comes from the checkout and the public repositories. Set `controllerStack.images.controller` and `controllerStack.images.profiles` in the site spec, each as `repository:tag` or `repository@sha256:<digest>`. |
+| No release | Neither flag | Every chart comes from the checkout and the public repositories. Set `controllerStack.images.controller` and `controllerStack.images.profiles` in the site spec, each as `repository:tag` or `repository@sha256:<digest>`. Without `controllerStack.images.controller` the install uses the overlay's pinned image, the newest controller release. |
+
+Machine images and their release resources do not require a profile content image. The `deploy/nico` deploy path still enables a separate content image for optional config profiles and hook scripts, so that install path needs an image reference even when you do not customize it. If you need custom config-profile content, its build procedure is in [Supply config profiles to the controller](../../controller/profiles/README.md).
 
 The install refuses a release that lacks an image artifact the deploy path names: the controller image `cwe`, the profile content image `controller-profiles` or the CAPNICo image `capnico-controller`. See [Preview status and known limitations](../overview/preview-status.md).
 

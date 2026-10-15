@@ -26,7 +26,9 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/environment"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/dsx"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/forge"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/provision"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/teleport"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
@@ -35,7 +37,7 @@ import (
 
 // The stages of the site controller run, each doing everything the one before it did.
 const (
-	siteStageProvision = "provision" // a Forge node, reachable, then released
+	siteStageProvision = "provision" // a node, reachable, then released
 	siteStageBootstrap = "bootstrap" // plus vanilla Kubernetes from nvkectl
 	siteStageFull      = "full"      // plus the NVKE stack, the controller, and a tenant
 )
@@ -49,7 +51,7 @@ const (
 	envJumpHostPassword = "JUMP_HOST_PASSWORD"
 )
 
-// The versions a Forge run is given in -e2e.versions, all required. A run that
+// The versions a site run is given in -e2e.versions, all required. A run that
 // names none of a version has not said what it qualifies, so the suite fails
 // before a machine exists instead of falling back to a constant the record
 // cannot see.
@@ -89,7 +91,7 @@ var (
 
 func init() {
 	flag.StringVar(&siteStage, "e2e.site-stage", "",
-		"build a site controller on Forge up to this stage: provision, bootstrap or full (empty skips the site controller)")
+		"build a site controller up to this stage: provision, bootstrap or full (empty skips the site controller)")
 	flag.BoolVar(&keepSite, "e2e.keep-site", false,
 		"keep the site controller's node after the run, for debugging")
 }
@@ -116,7 +118,7 @@ var siteReaches = []string{
 // shape every stream in release/policy.yaml names. On the container rather
 // than the tenant entry because the site outlives every spec beneath it, and
 // the provider takes the maximum per machine type, not the sum.
-var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("site-controller", "needs:cpu=2", "needs:gpu=1"), func() {
+var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-controller", "needs:cpu=2", "needs:gpu=1"), func() {
 	var (
 		cfg config.Config
 		// provider creates the site node. Settled before anything is created,
@@ -161,7 +163,11 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		switch siteStage {
 		case "":
 			Skip("-e2e.site-stage is not set")
-		case siteStageProvision, siteStageBootstrap, siteStageFull:
+		case siteStageProvision, siteStageBootstrap:
+		case siteStageFull:
+			if err := fullStageSupported(expectSucceed(runEnvironment()).Provider); err != nil {
+				Fail(err.Error())
+			}
 		default:
 			Fail(fmt.Sprintf("-e2e.site-stage %q is not provision, bootstrap or full", siteStage))
 		}
@@ -192,7 +198,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			Capabilities: capabilities,
 			Labels:       map[string]string{"purpose": "nke-e2e-site-controller"},
 		})
-		Expect(err).NotTo(HaveOccurred(), "should provision and reach a Forge node")
+		Expect(err).NotTo(HaveOccurred(), "should provision and reach a node")
 		GinkgoLogr.Info("site node", "name", node.Name, "ip", node.IP, "tpmEkThumbprint", node.TPMEkThumbprint)
 
 		out, err := session.Run(ctx, "uname -srm && . /etc/os-release && echo \"$PRETTY_NAME\"")
@@ -331,7 +337,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			GinkgoLogr.Info("keeping the site controller", "name", node.Name, "ip", node.IP,
 				"kubeconfig", cluster.Kubeconfig,
 				"reason", keepReason(keepSite, cfg.Lifecycle.SkipDelete))
-			GinkgoLogr.Info("the Forge instance survives this run and must be released by hand", "name", node.Name)
+			GinkgoLogr.Info("the instance survives this run and must be released by hand", "name", node.Name)
 			return
 		}
 		detached := context.WithoutCancel(ctx)
@@ -409,9 +415,36 @@ func newInfraProvider(cfg config.Config) (infra.Provider, error) {
 	switch env.Provider {
 	case forge.ProviderName:
 		return newForgeProvider(cfg, env)
+	case dsx.ProviderName:
+		return newDSXProvider(cfg, env)
 	default:
 		return nil, fmt.Errorf("environment %q names provider %q, which this suite does not implement", env.Name, env.Provider)
 	}
+}
+
+// fullStageSupported reports whether a full run can build this provider's
+// tenant, which is what separates it from bootstrap.
+//
+// The tenant half is nicoForgeSpec, and it decodes the environment as a Forge
+// declaration with unknown fields rejected. A DSX environment carries
+// tenantID and nodeUser, which that decoder refuses, so the tenant fails every
+// time however healthy the datahall is.
+//
+// Checked here because the cost is the point. Without it a full run takes a
+// machine, provisions it and installs the whole stack --- forty minutes, and
+// on redstone-dev1-dh2 the only CPU machine there is, so nothing else can run
+// meanwhile --- to reach a failure that was certain before it started.
+//
+// Not Forge rather than is-DSX: the limitation is that the tenant spec speaks
+// one dialect, so a third provider meets the same wall, and naming DSX would
+// wave it through to the same deterministic failure.
+func fullStageSupported(provider string) error {
+	if provider == forge.ProviderName {
+		return nil
+	}
+	return fmt.Errorf("-e2e.site-stage full needs a tenant spec for provider %q, and the only one is Forge's: "+
+		"the tenant half decodes the environment as a Forge declaration, which a %s environment is not. "+
+		"Run this provider at stage provision or bootstrap until a tenant spec for it exists", provider, provider)
 }
 
 // newDeployConfig builds what the Cluster API provider the stack installs
@@ -420,6 +453,7 @@ func newInfraProvider(cfg config.Config) (infra.Provider, error) {
 // The other factory. It shares an account and a credential with the provider
 // above and nothing else: this one outlives the run, as a Secret in the
 // cluster the run leaves behind.
+
 func newDeployConfig() (site.CAPIProviderConfig, error) {
 	env, err := runEnvironment()
 	if err != nil {
@@ -428,6 +462,8 @@ func newDeployConfig() (site.CAPIProviderConfig, error) {
 	switch env.Provider {
 	case forge.ProviderName:
 		return newNicoConfig(env)
+	case dsx.ProviderName:
+		return newDSXNicoConfig(env)
 	default:
 		return nil, fmt.Errorf("environment %q names provider %q, which this suite does not implement", env.Name, env.Provider)
 	}
@@ -444,7 +480,7 @@ func newNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, error
 	if apiKey == "" {
 		return nil, fmt.Errorf("%s is not set", envForgeAPIKey)
 	}
-	return site.NewNico(forge.DefaultEndpoint, forgeEnv.Org.ID, apiKey), nil
+	return site.NewNico(forge.DefaultEndpoint, forgeEnv.Org.ID, apiKey, forge.APIName), nil
 }
 
 // newForgeProvider projects the environment into Forge's dialect and builds a
@@ -508,19 +544,129 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 		Images: func(_, arch string) (string, string, error) {
 			return requireNodeArtifacts(arch)
 		},
-		Dialer: forge.Teleport(dialer),
+		Dialer: provision.Teleport(dialer),
 		Node:   nodeInputs(versions[versionKube], versions[versionCNIOVN]),
-		Tools: forge.HostTools{
+		Tools: provision.HostTools{
 			NerdctlVersion:    versions[versionNerdctl],
 			KindVersion:       versions[versionKind],
 			ClusterctlVersion: versions[versionClusterctl],
 		},
-		DisableMTLS: siteDisableMTLS,
+		KeepOnFailure: keepFailedNode(cfg),
+		DisableMTLS:   siteDisableMTLS,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return provider, nil
+}
+
+// keepFailedNode reports whether a node that fails to provision should be left
+// in place. A failed provision is the one case the node itself can answer --
+// whether cloud-init ran, what it wrote, what the console saw -- and the
+// provider releases it by default, which destroys that.
+//
+// Both settings mean it: -e2e.keep-site keeps whatever the run made, and
+// preserveOnFailure keeps a failed run's machines, which this is one of.
+func keepFailedNode(cfg config.Config) bool {
+	return keepSite || cfg.Lifecycle.SkipDelete || cfg.Lifecycle.PreserveOnFailure
+}
+
+// newDSXProvider projects the environment into DSX's dialect and builds a
+// provider from it.
+//
+// It takes no credential as an argument, but one is required: the provider
+// mints its own token from DSX_<DATAHALL>_SSA_CLIENT_ID and _SECRET, named for
+// the key the resolved site is filed under, and fails naming both when either
+// is empty. A datahall also keeps a bootstrap client of its own in its cluster,
+// which both recorded manual runs borrowed, but the provider does not read it:
+// that identity belongs to the site rather than to whoever is running, it needs
+// Kubernetes access, and it bypasses the org scoping a run stays inside.
+func newDSXProvider(cfg config.Config, env *environment.Environment) (infra.Provider, error) {
+	dsxEnv, err := dsx.Decode(env.Infrastructure)
+	if err != nil {
+		return nil, fmt.Errorf("environment %q: %w", env.Name, err)
+	}
+	capabilities, err := runCapabilities()
+	if err != nil {
+		return nil, err
+	}
+	// Resolved here for the same reason Forge resolves here: capabilities
+	// nothing can satisfy fail before a machine exists.
+	selection, err := dsxEnv.Resolve(capabilities)
+	if err != nil {
+		return nil, err
+	}
+	dsxSite := selection.Site
+
+	dialer := &teleport.Dialer{
+		Login:        dsxSite.TeleportLogin,
+		IdentityFile: cfg.Runner.TeleportIdentityFile,
+	}
+	if password := os.Getenv(envJumpHostPassword); password != "" {
+		if jerr := dialer.JumpOverSSH(teleport.SSHJumpHost{
+			User:               cmp.Or(dsxSite.JumpHostUser, dsxSite.TeleportLogin),
+			Password:           password,
+			HostKeyFingerprint: dsxSite.JumpHostKeyFingerprint,
+		}); jerr != nil {
+			return nil, jerr
+		}
+	}
+
+	versions, err := requireVersions(versionKube, versionCNIOVN, versionNerdctl, versionKind, versionClusterctl)
+	if err != nil {
+		return nil, err
+	}
+	return dsx.New(dsx.Options{
+		Env:      dsxEnv,
+		SiteName: dsxSite.Key,
+		// The site node boots the OS image built for its own architecture,
+		// which is the same image a tenant control plane of that architecture
+		// boots. A GPU tenant's workers boot a different one.
+		Images: func(_, arch string) (string, string, error) {
+			return requireNodeArtifacts(arch)
+		},
+		Dialer: provision.Teleport(dialer),
+		Node:   nodeInputs(versions[versionKube], versions[versionCNIOVN]),
+		Tools: provision.HostTools{
+			NerdctlVersion:    versions[versionNerdctl],
+			KindVersion:       versions[versionKind],
+			ClusterctlVersion: versions[versionClusterctl],
+		},
+		KeepOnFailure: keepFailedNode(cfg),
+		DisableMTLS:   siteDisableMTLS,
+	})
+}
+
+// newDSXNicoConfig is how the site's CAPNICo reaches the same datahall the
+// provider created the site node in.
+//
+// The token is minted once and written into a Secret, where it lives as a
+// static string. On this substrate it expires in fifteen minutes, and CAPNICo
+// has no refresh path: the install itself needs no live authentication, so it
+// completes, but a tenant create afterwards will fail on an expired token
+// until the Secret is patched. The fix is a credential that outlives the
+// run, which is a provisioning question rather than a code one -- see the
+// note on dsx.MintToken.
+func newDSXNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, error) {
+	dsxEnv, err := dsx.Decode(env.Infrastructure)
+	if err != nil {
+		return nil, fmt.Errorf("environment %q: %w", env.Name, err)
+	}
+	capabilities, err := runCapabilities()
+	if err != nil {
+		return nil, err
+	}
+	selection, err := dsxEnv.Resolve(capabilities)
+	if err != nil {
+		return nil, err
+	}
+	dsxSite := selection.Site
+
+	token, err := dsx.MintToken(context.Background(), dsxSite)
+	if err != nil {
+		return nil, err
+	}
+	return site.NewNico(dsxSite.Endpoint(), dsxEnv.Org.ID, token, dsx.APIName), nil
 }
 
 // keepReason names which setting held the node, so the log says what to
@@ -784,7 +930,11 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 		// value is one the redaction list can name.
 		DatabasePassword: dbPassword,
 		Arch:             unameArch,
-	}, []string{os.Getenv(envForgeAPIKey), tenantPassword, dbPassword}, nil
+		// The provider configuration names its own credential, so a DSX run's
+		// minted token is redacted the same way the Forge key is. Asked of the
+		// config rather than listed here: this function cannot know which
+		// field of a provider it does not name is a secret.
+	}, append([]string{os.Getenv(envForgeAPIKey), tenantPassword, dbPassword}, deployConfig.Credentials()...), nil
 }
 
 // apiServerReachable reports whether the forwarded kubeconfig reaches the

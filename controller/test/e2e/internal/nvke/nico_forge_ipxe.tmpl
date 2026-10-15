@@ -24,7 +24,7 @@ Do not derive it from the amd64 line. Three of its parameters do not follow:
 intel_iommu=on names a controller no ARM machine has and is absent, iommu=pt is
 spelled the same rather than as iommu.passthrough=1, and pci=realloc=off is
 present despite reading as x86-only. ip=dhcp and fb=false appear on this
-hardware and nowhere else. The arm64 OS profile fixture in
+hardware and nowhere else. The arm64 release fixture in
 controller/test/fixtures disagrees with all of this, and is not evidence here:
 it describes a virtual machine under nico-sim, not a Grace node.
 

@@ -3,7 +3,7 @@ module github.com/dsx-ai-factory/nvke/controller/test/e2e
 go 1.27.2
 
 require (
-	github.com/NVIDIA/ncx-infra-controller-rest v1.3.0
+	github.com/NVIDIA/infra-controller/rest-api/sdk/standard v0.0.0-20261015145118-9ff268b2d54c
 	github.com/dsx-ai-factory/nvke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
@@ -79,6 +79,7 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
+	gopkg.in/validator.v2 v2.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.37.1 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect

@@ -28,7 +28,7 @@ func (*Client) ApplyControlPlaneConfigPayloads(node db.Node, snapshotCfg db.Cont
 	nodeSet.SetNico(db.NicoNodePoolProvider{
 		SubnetIDs:             append([]uuid.UUID(nil), snapshotCfg.Nico.SubnetIDs...),
 		VpcPrefixIDs:          append([]uuid.UUID(nil), snapshotCfg.Nico.VpcPrefixIDs...),
-		OSProfile:             snapshotCfg.Nico.OSProfile,
+		Release:               snapshotCfg.Nico.Release,
 		ConfigProfile:         snapshotCfg.Nico.ConfigProfile,
 		DiskSelectionStrategy: diskSelectionStrategy,
 	})
@@ -37,7 +37,7 @@ func (*Client) ApplyControlPlaneConfigPayloads(node db.Node, snapshotCfg db.Cont
 		SubnetIDs:             append([]uuid.UUID(nil), snapshotCfg.Nico.SubnetIDs...),
 		VpcPrefixIDs:          append([]uuid.UUID(nil), snapshotCfg.Nico.VpcPrefixIDs...),
 		SSHKeyGroupIDs:        append([]uuid.UUID(nil), snapshotCfg.Nico.SSHKeyGroupIDs...),
-		OSProfile:             snapshotCfg.Nico.OSProfile,
+		Release:               snapshotCfg.Nico.Release,
 		ConfigProfile:         snapshotCfg.Nico.ConfigProfile,
 		DiskSelectionStrategy: diskSelectionStrategy,
 	})

@@ -39,9 +39,41 @@ type NicoNodePoolProvider struct {
 	InfinibandPartitionID    *uuid.UUID            `json:"infiniband_partition_id,omitempty"`
 	NvLinkLogicalPartitionID *uuid.UUID            `json:"nvlink_logical_partition_id,omitempty"`
 	SSHKeyGroupIDs           []uuid.UUID           `json:"ssh_key_group_ids,omitempty"`
-	OSProfile                string                `json:"os_profile,omitempty"`
+	Release                  string                `json:"release,omitempty"`
 	ConfigProfile            string                `json:"config_profile,omitempty"`
 	DiskSelectionStrategy    DiskSelectionStrategy `json:"disk_selection_strategy,omitempty"`
+}
+
+// MarshalJSON writes the release under both the release and os_profile keys.
+// A CWE predating the rename rewrites the whole nico payload from its own
+// struct, so a pod still draining during an upgrade would erase a payload
+// carrying only the release key.
+//
+// Drop the mirror once no such pod can run, and backfill release from
+// os_profile before doing so: nothing has rewritten the rows that predate this
+// change, and they carry os_profile alone.
+func (n NicoNodePoolProvider) MarshalJSON() ([]byte, error) {
+	type alias NicoNodePoolProvider
+	return json.Marshal(struct {
+		alias
+		OSProfileLegacy string `json:"os_profile,omitempty"`
+	}{alias(n), n.Release})
+}
+
+// UnmarshalJSON reads the release from either key, preferring release.
+func (n *NicoNodePoolProvider) UnmarshalJSON(data []byte) error {
+	type alias NicoNodePoolProvider
+	aux := struct {
+		*alias
+		OSProfileLegacy string `json:"os_profile,omitempty"`
+	}{alias: (*alias)(n)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if n.Release == "" {
+		n.Release = aux.OSProfileLegacy
+	}
+	return nil
 }
 
 type CAPINodePoolProvider struct {
@@ -54,7 +86,7 @@ type CAPINodePoolProvider struct {
 // Equal reports whether two NicoNodePoolProvider values represent the same configuration.
 // SubnetIDs and VpcPrefixIDs are compared as sets (order-independent).
 func (n NicoNodePoolProvider) Equal(other NicoNodePoolProvider) bool {
-	return n.OSProfile == other.OSProfile &&
+	return n.Release == other.Release &&
 		n.ConfigProfile == other.ConfigProfile &&
 		n.DiskSelectionStrategy == other.DiskSelectionStrategy &&
 		uuidSlicesSetEqual(n.SubnetIDs, other.SubnetIDs) &&
@@ -241,7 +273,7 @@ func cloneNicoNodePoolProvider(provider NicoNodePoolProvider) *NicoNodePoolProvi
 		InfinibandPartitionID:    cloneUUIDPtr(provider.InfinibandPartitionID),
 		NvLinkLogicalPartitionID: cloneUUIDPtr(provider.NvLinkLogicalPartitionID),
 		SSHKeyGroupIDs:           append([]uuid.UUID(nil), provider.SSHKeyGroupIDs...),
-		OSProfile:                provider.OSProfile,
+		Release:                  provider.Release,
 		ConfigProfile:            provider.ConfigProfile,
 		DiskSelectionStrategy:    provider.DiskSelectionStrategy,
 	}

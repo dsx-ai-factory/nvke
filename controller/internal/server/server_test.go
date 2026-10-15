@@ -449,7 +449,7 @@ func TestOpenAPIValidator_CreateClusterControlPlaneConfig(t *testing.T) {
 	}{
 		{
 			name: "settable nested fields are accepted",
-			nico: `{"osProfile":"ubuntu","configProfile":"default"}`,
+			nico: `{"release":"ubuntu","configProfile":"default"}`,
 		},
 		{
 			name:         "nico.diskSelectionStrategy is rejected",
@@ -493,12 +493,12 @@ func TestOpenAPIValidator_CreateRequiresExactlyOneProvider(t *testing.T) {
 		clusterInfra = `"infra":{"cluster":{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1",` +
 			`"kind":"DockerCluster","metadata":{"name":"test-cluster"}}}`
 		cpNico = `"nico":{"instanceTypePreference":["550e8400-e29b-41d4-a716-446655440003"],` +
-			`"osProfile":"ubuntu","configProfile":"default"}`
+			`"release":"ubuntu","configProfile":"default"}`
 		cpInfra = `"infra":{"machineTemplate":{` +
 			`"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1",` +
 			`"kind":"DockerMachineTemplate","metadata":{"name":"cp"}}}`
 		poolNico = `"nico":{"instanceTypeID":"550e8400-e29b-41d4-a716-446655440004",` +
-			`"osProfile":"ubuntu","configProfile":"default"}`
+			`"release":"ubuntu","configProfile":"default"}`
 		poolInfra = `"infra":{"machineTemplate":{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1",` +
 			`"kind":"DockerMachineTemplate","metadata":{"name":"worker"}}}`
 	)
@@ -615,7 +615,7 @@ func TestOpenAPIValidator_UpdateClusterControlPlaneConfig(t *testing.T) {
 	}{
 		{
 			name:         "configurable nested fields are accepted",
-			body:         `{"controlPlaneConfig":{"nico":{"osProfile":"ubuntu","configProfile":"default"}}}`,
+			body:         `{"controlPlaneConfig":{"nico":{"release":"ubuntu","configProfile":"default"}}}`,
 			expectReject: false,
 		},
 		{
@@ -678,7 +678,7 @@ func TestOpenAPIValidator_UpdateNodePool(t *testing.T) {
 	}{
 		{
 			name:         "mutable nested fields are accepted",
-			body:         `{"nico":{"subnetIDs":["550e8400-e29b-41d4-a716-446655440001"],"osProfile":"ubuntu","configProfile":"default"}}`,
+			body:         `{"nico":{"subnetIDs":["550e8400-e29b-41d4-a716-446655440001"],"release":"ubuntu","configProfile":"default"}}`,
 			expectReject: false,
 		},
 		{
@@ -703,7 +703,7 @@ func TestOpenAPIValidator_UpdateNodePool(t *testing.T) {
 		},
 		{
 			name:         "a full nico object echoed from GET is rejected",
-			body:         `{"nico":{"subnetIDs":[],"vpcPrefixIDs":[],"instanceTypeID":"550e8400-e29b-41d4-a716-446655440002","sshKeyGroupIDs":[],"osProfile":"ubuntu","configProfile":"default"}}`,
+			body:         `{"nico":{"subnetIDs":[],"vpcPrefixIDs":[],"instanceTypeID":"550e8400-e29b-41d4-a716-446655440002","sshKeyGroupIDs":[],"release":"ubuntu","configProfile":"default"}}`,
 			expectReject: true,
 		},
 	}

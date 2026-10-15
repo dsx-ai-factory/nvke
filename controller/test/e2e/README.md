@@ -189,7 +189,7 @@ make test-e2e-core-nico-containers
 make test-e2e-happy-path
 make test-e2e-capd
 make test-e2e-nico-vms
-make test-e2e-nico-vms-os-profiles
+make test-e2e-nico-vms-releases
 make test-e2e E2E_TIMEOUT=3h ARGS='--label-filter=capd'
 ```
 
@@ -232,9 +232,9 @@ To iterate faster, run a single filter instead:
 LOCAL_NKE_E2E_LABEL_FILTER="capd && cp-controller" make test-e2e-capd-local
 ```
 
-### OS profile provisioning matrix
+### Release provisioning matrix
 
-The `nico-vms && os-profiles` matrix gives each supported active OS profile an
+The `nico-vms && releases` matrix gives each supported active release an
 isolated sanity lifecycle: create a one-control-plane/one-worker tenant cluster,
 wait for both nodes to become Ready in CWE, and delete the cluster. The matrix
 reads active release names, architectures, and Kubernetes versions from the
@@ -258,14 +258,14 @@ Run the complete matrix with a longer suite timeout because entries run
 sequentially:
 
 ```bash
-make test-e2e-nico-vms-os-profiles
+make test-e2e-nico-vms-releases
 ```
 
-Every entry also carries its full profile name as a label, so a new or failing
-profile can be validated independently:
+Every entry also carries its full release name as a label, so a new or failing
+release can be validated independently:
 
 ```bash
-make test-e2e ARGS='--label-filter="os-profiles && nke-260625-24.04-x86-fde"'
+make test-e2e ARGS='--label-filter="releases && nke-260625-24.04-x86-fde"'
 ```
 
 When adding a release:
@@ -276,7 +276,7 @@ When adding a release:
 2. For a tenant profile, no separate e2e list update is required; the matrix
    includes it automatically on a runner of its architecture.
 3. If nico-vms cannot support it, add it to
-   `nicoVMSOSProfileExclusions` in `test/e2e/os_profile_matrix_test.go` with
+   `nicoVMSReleaseExclusions` in `test/e2e/release_matrix_test.go` with
    the concrete reason and an owning follow-up ticket when one can remove the
    limitation.
 4. Run the focused matrix test and then the new profile's label before running
@@ -288,7 +288,7 @@ profile, so an amd64 runner boots the amd64 profiles and an arm64 runner boots
 the arm64 ones. A profile for the other architecture is left out without an
 exclusion entry.
 
-`nicoVMSOSProfileExclusions` holds the profiles no runner can boot:
+`nicoVMSReleaseExclusions` holds the profiles no runner can boot:
 
 - the arm64 `nvke-local-dev-kindest` placeholder, because it is not a tenant OS
   profile; and
@@ -442,7 +442,42 @@ The node is torn down afterwards (tenants are deleted first). `-e2e.keep-site`, 
 Prerequisites: a way to reach the jump host (below), the jump host in
 `FORGE_JUMP_HOST` (read by `environments/forge.yaml`) and `FORGE_API_KEY`.
 Neither the proxy nor the jump host is checked in; secrets are read only from
-the environment. Build the inputs, then run; with the `site-inputs` defaults
+the environment.
+
+**On DSX** (`-e2e.environment=dsx`) the credential is different and the stage
+is limited. Each datahall carries its own SSA client, named for the key it is
+filed under in `environments/dsx.yaml`:
+
+```bash
+export SSA_ISSUER=…                                  # issuer BASE url; the
+export DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID=…         # suite appends /token
+export DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET=…     # 15-minute TTL
+export DSX_REDSTONE_DEV1_DH2_JUMP_HOST=…             # the rest are identifiers
+export DSX_REDSTONE_DEV1_DH2_SITE_ID=… DSX_REDSTONE_DEV1_DH2_TENANT_ID=…
+export DSX_REDSTONE_DEV1_DH2_VPC_ID=… DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID=…
+export DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID=… DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID=…
+```
+
+There is no cluster fallback: an unset client fails the run naming both
+variables. The names derive from the datahall key, so a credential scoped to
+one datahall cannot be picked up by a run against another.
+
+Use `-e2e.site-stage=provision` or `bootstrap`. `full` is refused before a
+machine is taken: its tenant half decodes the environment as a Forge
+declaration, which a DSX one is not.
+
+redstone-dev1-dh2 is **arm64 only**, and an absent `arch` capability defaults
+to amd64, so a hand-run has to ask for arm64 and stage arm64 OS images --- the
+command above passes no `-e2e.capabilities` and would fail in `Resolve` with
+"no declared site offers a amd64 CPU shape":
+
+```bash
+go test -timeout 5h . -args \
+  -ginkgo.label-filter=site-controller -ginkgo.v \
+  -e2e.config=e2e-config.yaml -e2e.environment=dsx -e2e.site-stage=provision \
+  -e2e.capabilities=arch=arm64 \
+  -e2e.versions=controller=<…>,os-image=<arm64 url>,os-image-bootloader=<arm64 url>,…
+``` Build the inputs, then run; with the `site-inputs` defaults
 no `site:` block is needed at all:
 
 ```bash

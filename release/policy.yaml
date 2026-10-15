@@ -7,7 +7,7 @@
 # component resolves to a version is in registry.yaml.
 #
 # The streams below are the ones that exist: the Forge lanes on GB200 and L40S
-# capacity.
+# capacity, and the DSX lane on the redstone-dev1-dh2 datahall's CPU hardware.
 # A policy naming capabilities no runner has produces plans that nothing can
 # schedule, so a stream is added with the runner that backs it.
 
@@ -22,9 +22,27 @@ spec:
     # it.
     golden-path:
       selector: {ubuntu: "24.04", gpu: gb200}
-    # No selector, so every stream. What the weekly run covers. Adding a minor
-    # is adding streams, not editing scopes.
-    full: {}
+    # The DSX datahall on its own. The dsx stream declares no gpu, so
+    # golden-path does not reach it, and `full` would take four contended GB200
+    # machines to exercise one CPU substrate. A provider selector is the only
+    # one that separates the two lanes, which is what this scope is for.
+    dsx:
+      selector: {provider: dsx}
+
+    # Every Forge stream. What the weekly run covers, and adding a Forge minor
+    # is adding a stream rather than editing this.
+    #
+    # It selects on provider rather than carrying no selector, which is what it
+    # used to do, because `full` also decides the stage: a dispatch defaults to
+    # stage full, and the suite refuses a full run on any provider whose tenant
+    # it cannot build --- today that is everything except Forge. A scope that
+    # matched every stream therefore put a lane into every weekly run that
+    # could only fail, whatever the versions under test.
+    #
+    # So this is not "every stream" but "every stream a full run can finish".
+    # The day a DSX tenant spec exists, the selector comes off.
+    full:
+      selector: {provider: forge}
 
   # A stream names capabilities, not the infrastructure that satisfies them.
   # Which runner label, site, or subnet a capability resolves to is an
@@ -36,8 +54,11 @@ spec:
   # node images a run needs.
   #
   # A stream is named <provider>-<gpu>-<arch>-ubuntu-<series>-kube-<minor>, so
-  # two streams that differ only in GPU model do not share a name. The name is
-  # the key of everything recorded for a stream.
+  # two streams that differ only in GPU model do not share a name. A stream
+  # that declares no gpu omits that segment rather than inventing a value for
+  # it --- the DSX lane below is named dsx-arm64-..., and a `none` or `cpu`
+  # there would read as a capability no stream selects on. The name is the key
+  # of everything recorded for a stream.
   streams:
     - name: forge-gb200-amd64-ubuntu-24.04-kube-1.36
       capabilities: {provider: forge, gpu: gb200, arch: amd64, ubuntu: "24.04", kube: "1.36"}
@@ -51,3 +72,16 @@ spec:
       capabilities: {provider: forge, gpu: l40s, arch: amd64, ubuntu: "24.04", kube: "1.36"}
     - name: forge-l40s-amd64-ubuntu-26.04-kube-1.36
       capabilities: {provider: forge, gpu: l40s, arch: amd64, ubuntu: "26.04", kube: "1.36"}
+
+    # The DSX datahall, redstone-dev1-dh2, which is aarch64 throughout. No gpu:
+    # it places both halves of a run on CPU machines, so a stream asking for an
+    # accelerator here resolves to nothing.
+    #
+    # arm64 because that is what the hardware is, not a choice --- every machine
+    # the datahall owns is Grace. A datahall offering amd64 would be a second
+    # site and a second stream beside this one.
+    #
+    # kube 1.36 matches the Forge streams. The recorded DSX exercise reached
+    # CoreDNS on a 1.34.2 tenant, so 1.36 is unproven on this substrate.
+    - name: dsx-arm64-ubuntu-24.04-kube-1.36
+      capabilities: {provider: dsx, arch: arm64, ubuntu: "24.04", kube: "1.36"}

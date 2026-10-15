@@ -121,7 +121,7 @@ func seedTeardownScenarioTx(ctx context.Context, tx db.Tx, scenario TeardownScen
 	}
 	nodePool.SetNico(db.NicoNodePoolProvider{
 		InstanceTypeID:        instanceTypeID,
-		OSProfile:             "test",
+		Release:               "test",
 		ConfigProfile:         TeardownHookConfigProfile,
 		SubnetIDs:             []uuid.UUID{},
 		VpcPrefixIDs:          []uuid.UUID{},
@@ -140,7 +140,7 @@ func seedTeardownScenarioTx(ctx context.Context, tx db.Tx, scenario TeardownScen
 		SystemReservedMemory: "16Gi",
 	}
 	nodeSet.SetNico(db.NicoNodePoolProvider{
-		OSProfile:             "test",
+		Release:               "test",
 		ConfigProfile:         TeardownHookConfigProfile,
 		SubnetIDs:             []uuid.UUID{},
 		VpcPrefixIDs:          []uuid.UUID{},

@@ -20,7 +20,7 @@ import (
 
 	"github.com/lmittmann/tint"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	forgesdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/app"
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/seed"

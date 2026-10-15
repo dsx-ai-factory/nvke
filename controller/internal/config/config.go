@@ -312,7 +312,7 @@ type Config struct {
 	// of selecting transport from each node's SPIFFE setting.
 	NodeAgentExternalMTLSEnabled bool `controllerconfig:"nodeAgent.externalMTLSEnabled"`
 
-	// DgxcTenantUser is the DGXC tenant SSH username injected into OS profile userData templates.
+	// DgxcTenantUser is the DGXC tenant SSH username injected into release userData templates.
 	DgxcTenantUser string `env:"DGXC_TENANT_USER"`
 
 	// DgxcTenantPassword is the DGXC tenant SSH plaintext password. The controller hashes it at provision time

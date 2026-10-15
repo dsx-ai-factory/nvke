@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/apierr"
 )
@@ -80,7 +80,7 @@ func (s *Service) loadInstance(ctx context.Context, containerID string) (*nicosd
 	} else if len(interfaces) > 0 {
 		instance.SetInfinibandInterfaces(instanceInfiniBandInterfacesFromCreateRequests(interfaces))
 	}
-	if interfaces, err := decodeLabelValue[[]nicosdk.NVLinkInterfaceCreateRequest](labels[labelNVLinkInterfaces]); err != nil {
+	if interfaces, err := decodeLabelValue[[]nicosdk.NVLinkInterfaceCreateOrUpdateRequest](labels[labelNVLinkInterfaces]); err != nil {
 		return nil, fmt.Errorf("decode NVLink interfaces label: %w", err)
 	} else if len(interfaces) > 0 {
 		instance.SetNvLinkInterfaces(instanceNVLinkInterfacesFromCreateRequests(interfaces))
@@ -237,11 +237,11 @@ func instanceInfiniBandInterfacesFromCreateRequests(requests []nicosdk.InfiniBan
 	return interfaces
 }
 
-func instanceNVLinkInterfacesFromCreateRequests(requests []nicosdk.NVLinkInterfaceCreateRequest) []nicosdk.NVLinkInterface {
+func instanceNVLinkInterfacesFromCreateRequests(requests []nicosdk.NVLinkInterfaceCreateOrUpdateRequest) []nicosdk.NVLinkInterface {
 	interfaces := make([]nicosdk.NVLinkInterface, 0, len(requests))
 	for _, request := range requests {
 		iface := nicosdk.NewNVLinkInterface()
-		if partitionID := request.GetNvLinklogicalPartitionId(); partitionID != "" {
+		if partitionID := request.GetNvLinkLogicalPartitionId(); partitionID != "" {
 			iface.SetNvLinkLogicalPartitionId(partitionID)
 		}
 		if deviceInstance, ok := request.GetDeviceInstanceOk(); ok && deviceInstance != nil {

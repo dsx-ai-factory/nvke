@@ -4,22 +4,28 @@
 package controllerdeploy
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
+	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
 )
 
 // fakeCall records one CommandRunner.Run invocation.
@@ -154,6 +160,31 @@ func (f *fakeRunner) captureValues(name string, args []string) {
 		}
 		f.extraValuesFiles[release] = append(f.extraValuesFiles[release], string(body))
 	}
+}
+
+// secretValue returns the value at path in the --values files release was
+// installed with, or "" when none sets it.
+func (f *fakeRunner) secretValue(t *testing.T, release string, path ...string) string {
+	t.Helper()
+	for _, body := range append([]string{f.valuesFiles[release]}, f.extraValuesFiles[release]...) {
+		var doc map[string]any
+		if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
+			t.Fatalf("a %s values file is not YAML: %v", release, err)
+		}
+		var cur any = doc
+		for _, key := range path {
+			m, ok := cur.(map[string]any)
+			if !ok {
+				cur = nil
+				break
+			}
+			cur = m[key]
+		}
+		if v, ok := cur.(string); ok {
+			return v
+		}
+	}
+	return ""
 }
 
 func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string, error) {
@@ -385,8 +416,9 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	if got := runner.valuesFiles[cweReleaseName]; got != string(embedded) {
 		t.Errorf("controller --values file differs from the embedded %s", cweValuesFile)
 	}
-	if strings.Count(helmCalls(runner)[4], "--values") != 1 {
-		t.Errorf("controller helm call = %q, want one --values when no providers are set", helmCalls(runner)[4])
+	// The embedded values, then the file holding the generated password.
+	if strings.Count(helmCalls(runner)[4], "--values") != 2 {
+		t.Errorf("controller helm call = %q, want two --values when no providers are set", helmCalls(runner)[4])
 	}
 
 	cfg := testConfig(t)
@@ -405,21 +437,27 @@ func TestDeploy_ControllerValuesCarryOIDCProviders(t *testing.T) {
 	if got := runner.valuesFiles[cweReleaseName]; got != string(embedded) {
 		t.Errorf("embedded controller values changed when providers were set")
 	}
+	// After the embedded values come the generated password's file, then the
+	// providers' last.
 	extra := runner.extraValuesFiles[cweReleaseName]
-	if len(extra) != 1 {
-		t.Fatalf("oidc values files = %d, want 1", len(extra))
+	if len(extra) != 2 {
+		t.Fatalf("extra controller values files = %d, want the password's and the oidc one", len(extra))
 	}
+	oidc := extra[1]
 	for _, want := range []string{"name: corp", "issuerURL: https://login.example.com", "providers:"} {
-		if !strings.Contains(extra[0], want) {
-			t.Errorf("oidc values missing %q:\n%s", want, extra[0])
+		if !strings.Contains(oidc, want) {
+			t.Errorf("oidc values missing %q:\n%s", want, oidc)
 		}
 	}
-	if strings.Contains(extra[0], "fullnameOverride") {
-		t.Errorf("oidc values include the embedded controller values:\n%s", extra[0])
+	if strings.Contains(oidc, "fullnameOverride") {
+		t.Errorf("oidc values include the embedded controller values:\n%s", oidc)
+	}
+	if strings.Contains(oidc, "postgresPassword") {
+		t.Errorf("oidc values include the generated password:\n%s", oidc)
 	}
 	cwe := helmCalls(runner)[4]
-	if strings.Count(cwe, "--values") != 2 {
-		t.Errorf("controller helm call has %d --values, want 2: %s", strings.Count(cwe, "--values"), cwe)
+	if strings.Count(cwe, "--values") != 3 {
+		t.Errorf("controller helm call has %d --values, want 3: %s", strings.Count(cwe, "--values"), cwe)
 	}
 }
 
@@ -455,8 +493,8 @@ func TestDeploy_InstallsPostgresFromTheEmbeddedChart(t *testing.T) {
 	if got := runner.valuesFiles[postgresReleaseName]; got != string(want) {
 		t.Errorf("postgres --values file = %q, want the embedded %s", got, postgresValuesFile)
 	}
-	if !strings.Contains(postgres, "auth.password=test-password") {
-		t.Errorf("postgres call = %q, want the password supplied per run", postgres)
+	if got := runner.secretValue(t, postgresReleaseName, "auth", "password"); got != "test-password" {
+		t.Errorf("postgres auth.password in its values files = %q, want the password supplied per run", got)
 	}
 }
 
@@ -491,16 +529,18 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	if !strings.Contains(postgres, "upgrade --install postgres "+chartArgOf(t, postgres, postgresReleaseName)) {
 		t.Errorf("postgres call = %q, want the postgres release/chart", postgres)
 	}
-	if !strings.Contains(postgres, "auth.password=test-password") {
-		t.Errorf("postgres call = %q, want the postgres password set", postgres)
+	if got := runner.secretValue(t, postgresReleaseName, "auth", "password"); got != "test-password" {
+		t.Errorf("postgres auth.password in its values files = %q, want the postgres password set", got)
 	}
 
 	if !strings.Contains(temporal, "upgrade --install temporal temporal --repo https://go.temporal.io/helm-charts") ||
 		!hasArgs(temporal, "--version", "0.74.0") {
 		t.Errorf("temporal call = %q, want the temporal release/chart/repo/version", temporal)
 	}
-	if !strings.Contains(temporal, "server.config.persistence.default.sql.password=test-password") {
-		t.Errorf("temporal call = %q, want the shared postgres password set on both persistence stores", temporal)
+	for _, store := range []string{"default", "visibility"} {
+		if got := runner.secretValue(t, temporalReleaseName, "server", "config", "persistence", store, "sql", "password"); got != "test-password" {
+			t.Errorf("temporal %s store password in its values files = %q, want the shared postgres password", store, got)
+		}
 	}
 
 	if !strings.Contains(spireCRDs, "upgrade --install spire-crds spire-crds") ||
@@ -730,15 +770,24 @@ func TestDumpDiagnostics(t *testing.T) {
 
 	New(runner, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
 
-	var dumped bool
+	// The dump goes into a private directory outside dir, so nothing unscrubbed
+	// is ever written to the directory that gets shared.
+	var dumpedTo string
 	for _, call := range runner.calls {
-		if strings.Contains(joinArgs(call.args), "cluster-info dump") &&
-			strings.Contains(joinArgs(call.args), "--output-directory "+dir) {
-			dumped = true
+		if !strings.Contains(joinArgs(call.args), "cluster-info dump") {
+			continue
+		}
+		for i, arg := range call.args {
+			if arg == "--output-directory" && i+1 < len(call.args) {
+				dumpedTo = call.args[i+1]
+			}
 		}
 	}
-	if !dumped {
-		t.Errorf("no cluster-info dump into %s; calls were %+v", dir, runner.calls)
+	if dumpedTo == "" {
+		t.Fatalf("no cluster-info dump with an output directory; calls were %+v", runner.calls)
+	}
+	if dumpedTo == dir || strings.HasPrefix(dumpedTo, dir+string(filepath.Separator)) {
+		t.Errorf("the dump went into %s, which is inside %s", dumpedTo, dir)
 	}
 	for _, name := range []string{"all-resources.txt", "pods-described.txt", "helm-releases.txt"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
@@ -1316,4 +1365,800 @@ func TestHelmRetriesChartDownloadServerErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fakeValue stands in for the generated password. It is deliberately plain.
+const fakeValue = "aaaa-bbbb-cccc"
+
+// failingHelmRunner fails the failAt-th helm call, with output that echoes the
+// password as helm can, and records the rest.
+type failingHelmRunner struct {
+	*fakeRunner
+	failAt int
+	helms  int
+}
+
+func (r *failingHelmRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	out, err := r.fakeRunner.Run(ctx, name, args...)
+	if name != "helm" {
+		return out, err
+	}
+	r.helms++
+	if r.helms-1 == r.failAt {
+		return "Error: INSTALLATION FAILED: " + fakeValue + " rejected", errors.New("exit status 1")
+	}
+	return out, err
+}
+
+// TestDeploy_PasswordsAreNotArguments checks where the generated password goes:
+// into a values file for each of the three releases that receive it, and into no
+// command-line argument, where it would show in `ps` and in the command an
+// error prints.
+func TestDeploy_PasswordsAreNotArguments(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.PostgresPassword = fakeValue
+	runner := &fakeRunner{}
+
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+
+	for _, call := range runner.calls {
+		for _, arg := range call.args {
+			if strings.Contains(arg, fakeValue) {
+				t.Errorf("%s argument %q holds the password", call.name, arg)
+			}
+		}
+	}
+	for release, path := range map[string][]string{
+		postgresReleaseName: {"auth", "password"},
+		cweReleaseName:      {"appDb", "postgresPassword"},
+	} {
+		if got := runner.secretValue(t, release, path...); got != fakeValue {
+			t.Errorf("%s %v in its values files = %q, want the generated password", release, path, got)
+		}
+	}
+	for _, store := range []string{"default", "visibility"} {
+		if got := runner.secretValue(t, temporalReleaseName, "server", "config", "persistence", store, "sql", "password"); got != fakeValue {
+			t.Errorf("temporal %s store password in its values files = %q, want the generated password", store, got)
+		}
+	}
+}
+
+// TestDeploy_ControllerReadsItsDatabaseURLFromASecret guards the flag that keeps
+// the password out of the controller's pod spec, and so out of the diagnostics
+// dump: the chart then builds the URL into a Secret and the pod refers to it.
+func TestDeploy_ControllerReadsItsDatabaseURLFromASecret(t *testing.T) {
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	var controller string
+	for _, call := range helmCalls(runner) {
+		if strings.Contains(call, "upgrade --install "+cweReleaseName+" ") {
+			controller = call
+		}
+	}
+	if !hasArgs(controller, "--set", "secrets.createDbSecret=true") {
+		t.Errorf("controller call = %q, want --set secrets.createDbSecret=true", controller)
+	}
+}
+
+// TestDeploy_FailedInstallPrintsNoPassword fails each of the three releases that
+// receive the generated password, with helm output that echoes it, and checks
+// the error, which reaches the terminal, does not hold it.
+func TestDeploy_FailedInstallPrintsNoPassword(t *testing.T) {
+	for _, tc := range []struct {
+		release string
+		failAt  int // index of the helm call that fails
+	}{
+		{"postgres", 0},
+		{"temporal", 1},
+		{"controller", 4},
+	} {
+		t.Run(tc.release, func(t *testing.T) {
+			cfg := testConfig(t)
+			cfg.PostgresPassword = fakeValue
+			runner := &failingHelmRunner{fakeRunner: &fakeRunner{}, failAt: tc.failAt}
+
+			err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg)
+			if err == nil {
+				t.Fatal("expected the install to fail")
+			}
+			if strings.Contains(err.Error(), fakeValue) {
+				t.Errorf("the error holds the password:\n%s", err)
+			}
+			if !strings.Contains(err.Error(), "--namespace") {
+				t.Errorf("the failed command should stay readable:\n%s", err)
+			}
+			if !strings.Contains(err.Error(), redact.Placeholder) {
+				t.Errorf("helm's output echoed the password, so the error should show it masked:\n%s", err)
+			}
+		})
+	}
+}
+
+// dumpingRunner makes `kubectl cluster-info dump` write files that hold a
+// credential, as the controller's pod spec would, so a test can check that
+// DumpDiagnostics scrubs what the cluster gave it.
+type dumpingRunner struct {
+	*fakeRunner
+}
+
+func (r *dumpingRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	out, err := r.fakeRunner.Run(ctx, name, args...)
+	for i, a := range args {
+		if a != "--output-directory" || i+1 >= len(args) {
+			continue
+		}
+		sub := filepath.Join(args[i+1], "nke-controller")
+		if mkErr := os.MkdirAll(sub, 0o750); mkErr != nil {
+			return out, mkErr
+		}
+		pod := `{"env":[{"name":"DATABASE_URL","value":"postgres://u:` + fakeValue + `@h/db"}],"keep":"host=db"}`
+		other := `{"env":[{"name":"DATABASE_URL","value":"postgres://u:not-registered@h/db"}]}`
+		for file, body := range map[string]string{"pods.json": pod, "other.json": other} {
+			if wErr := os.WriteFile(filepath.Join(sub, file), []byte(body), 0o600); wErr != nil {
+				return out, wErr
+			}
+		}
+	}
+	return out, err
+}
+
+// TestDumpDiagnostics_ScrubsCredentials guards the scrub that runs after the
+// dump. The files CI uploads are what it protects: with the call removed, every
+// other test still passes.
+func TestDumpDiagnostics_ScrubsCredentials(t *testing.T) {
+	redact.RegisterSecret(fakeValue)
+	dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
+
+	New(&dumpingRunner{fakeRunner: &fakeRunner{}}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+
+	for file, mustNotHold := range map[string]string{
+		"pods.json":  fakeValue,        // a registered password, in a URL
+		"other.json": "not-registered", // any password in a database URL
+	} {
+		body, err := os.ReadFile(filepath.Join(dir, "nke-controller", file))
+		if err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		if strings.Contains(string(body), mustNotHold) {
+			t.Errorf("%s still holds %q after the dump:\n%s", file, mustNotHold, body)
+		}
+		if !strings.Contains(string(body), "@h/db") {
+			t.Errorf("%s lost more than the password:\n%s", file, body)
+		}
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "nke-controller", "pods.json"))
+	if err != nil || !strings.Contains(string(body), `"keep":"host=db"`) {
+		t.Errorf("an unrelated field did not survive: %q, %v", body, err)
+	}
+}
+
+// The credentials are in values files, so no argument should carry one. If a
+// future change puts one back, in any argument shape, the command an error prints
+// must still not show it.
+func TestHelm_MasksARegisteredCredentialInAnArgument(t *testing.T) {
+	redact.RegisterSecret(fakeValue)
+	runner := &failingHelmRunner{fakeRunner: &fakeRunner{}, failAt: 0}
+
+	_, err := New(runner, nil).helm(context.Background(), "/tmp/kubeconfig",
+		"upgrade", "--install", "demo", "chart", "--set", "a=1,db.pw="+fakeValue, "--set-json=x="+fakeValue)
+	if err == nil {
+		t.Fatal("expected helm to fail")
+	}
+	if strings.Contains(err.Error(), fakeValue) {
+		t.Errorf("the error holds the credential:\n%s", err)
+	}
+	if !strings.Contains(err.Error(), "--install demo chart") {
+		t.Errorf("the rest of the command should stay readable:\n%s", err)
+	}
+}
+
+// --diagnostics-dir can be any directory, including one that holds the caller's
+// own files. The scrub must leave those alone: it rewrites every file it visits.
+func TestDumpDiagnostics_LeavesOtherFilesInTheDirectoryAlone(t *testing.T) {
+	redact.RegisterSecret(fakeValue)
+	dir := t.TempDir()
+	others := map[string]string{
+		"app.env":          "DATABASE_URL=postgres://u:p@h/db\n",
+		"old.log":          "rejected " + fakeValue + "\n",
+		"sub/notes.txt":    "postgresql://dev:hunter2@localhost/app\n",
+		"nke-controller/x": "a file in a directory the bundle also uses\n",
+	}
+	for name, body := range others {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stale := filepath.Join(dir, "all-resources.txt")
+	if err := os.WriteFile(stale, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	New(&dumpingRunner{fakeRunner: &fakeRunner{}}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+
+	for name, want := range others {
+		got, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil || string(got) != want {
+			t.Errorf("%s = %q, %v; want it untouched: %q", name, got, err, want)
+		}
+	}
+	if got, _ := os.ReadFile(stale); string(got) == "stale" {
+		t.Error("a bundle file did not replace the file of the same name")
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "nke-controller", "pods.json"))
+	if err != nil {
+		t.Fatalf("the bundle was not published into dir: %v", err)
+	}
+	if strings.Contains(string(body), fakeValue) {
+		t.Errorf("a published bundle file still holds the credential: %s", body)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".nvkectl-dump-") {
+			t.Errorf("the staging directory %s was left behind", e.Name())
+		}
+	}
+}
+
+// A directory the caller cannot read is theirs, not part of the bundle, so it is
+// not a reason for the scrub to complain or for the bundle to go missing.
+func TestDumpDiagnostics_IgnoresAnUnreadableDirectoryAlreadyThere(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: file permissions do not stop it")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	if err := os.Mkdir(locked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+
+	New(&fakeRunner{}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+
+	if _, err := os.Stat(filepath.Join(dir, "helm-releases.txt")); err != nil {
+		t.Errorf("the bundle was not published: %v", err)
+	}
+}
+
+// readOnlyRunner makes `kubectl cluster-info dump` write a file that holds the
+// credential and cannot be rewritten, next to one that can.
+type readOnlyRunner struct{ *fakeRunner }
+
+func (r readOnlyRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	out, err := r.fakeRunner.Run(ctx, name, args...)
+	for i, a := range args {
+		if a != "--output-directory" || i+1 >= len(args) {
+			continue
+		}
+		body := `{"u":"postgres://x:` + fakeValue + `@h/db"}`
+		for file, mode := range map[string]os.FileMode{"locked.json": 0o400, "fine.json": 0o600} {
+			if wErr := os.WriteFile(filepath.Join(args[i+1], file), []byte(body), mode); wErr != nil {
+				return out, wErr
+			}
+		}
+	}
+	return out, err
+}
+
+// A file the scrub could not rewrite still holds the credential, so it must not
+// reach the directory that gets shared.
+func TestDumpDiagnostics_WithholdsAFileItCouldNotScrub(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: file permissions do not stop it")
+	}
+	redact.RegisterSecret(fakeValue)
+	dir := t.TempDir()
+
+	New(readOnlyRunner{&fakeRunner{}}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+
+	if _, err := os.Stat(filepath.Join(dir, "locked.json")); err == nil {
+		t.Error("a file that could not be scrubbed was published")
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "fine.json"))
+	if err != nil {
+		t.Fatalf("a scrubbed file was not published: %v", err)
+	}
+	if strings.Contains(string(got), fakeValue) {
+		t.Errorf("a published file still holds the credential: %s", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "helm-releases.txt")); err != nil {
+		t.Errorf("the rest of the bundle was not published: %v", err)
+	}
+	var leaked []string
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if b, _ := os.ReadFile(path); strings.Contains(string(b), fakeValue) {
+				leaked = append(leaked, path)
+			}
+		}
+		return nil
+	})
+	if len(leaked) > 0 {
+		t.Errorf("the credential reached %v", leaked)
+	}
+}
+
+// lockedDirRunner makes `kubectl cluster-info dump` write a non-empty directory
+// that cannot be read, which blocks removing the staging directory and which the
+// scrub cannot look inside.
+type lockedDirRunner struct{ *fakeRunner }
+
+func (r lockedDirRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	out, err := r.fakeRunner.Run(ctx, name, args...)
+	for i, a := range args {
+		if a != "--output-directory" || i+1 >= len(args) {
+			continue
+		}
+		locked := filepath.Join(args[i+1], "locked")
+		if mkErr := os.MkdirAll(locked, 0o700); mkErr != nil {
+			return out, mkErr
+		}
+		body := `{"u":"postgres://x:` + fakeValue + `@h/db"}`
+		if wErr := os.WriteFile(filepath.Join(locked, "raw.json"), []byte(body), 0o600); wErr != nil {
+			return out, wErr
+		}
+		if cErr := os.Chmod(locked, 0); cErr != nil {
+			return out, cErr
+		}
+	}
+	return out, err
+}
+
+// The dump holds credentials until it is scrubbed, so it must never be left
+// where it gets shared. A directory the cluster produced that cannot be read
+// must neither be published nor stop the staging directory being deleted.
+func TestDumpDiagnostics_LeavesNoRawDumpBehind(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: file permissions do not stop it")
+	}
+	redact.RegisterSecret(fakeValue)
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	dir := t.TempDir()
+
+	New(lockedDirRunner{&fakeRunner{}}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".nvkectl-") || e.Name() == "locked" {
+			t.Errorf("%s was left in the shared directory", e.Name())
+		}
+	}
+	if left, _ := os.ReadDir(tmp); len(left) != 0 {
+		t.Errorf("the staging directory was not removed: %v", left)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "helm-releases.txt")); err != nil {
+		t.Errorf("the rest of the bundle was not published: %v", err)
+	}
+}
+
+// If the staging directory cannot be deleted, the caller has to be told where it
+// is, since it holds the dump as the cluster produced it.
+func TestRemoveStaging_NamesADirectoryItCannotDelete(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: file permissions do not stop it")
+	}
+	parent := t.TempDir()
+	staging := filepath.Join(parent, "staging")
+	if err := os.MkdirAll(filepath.Join(staging, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A directory that cannot be written to cannot have its entries removed.
+	if err := os.Chmod(parent, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
+	var logs bytes.Buffer
+
+	New(&fakeRunner{}, slog.New(slog.NewTextHandler(&logs, nil))).removeStaging(staging)
+
+	if !strings.Contains(logs.String(), "level=ERROR") || !strings.Contains(logs.String(), staging) {
+		t.Errorf("the failure to remove %s was not reported with its path:\n%s", staging, logs.String())
+	}
+}
+
+// modeRunner makes `kubectl cluster-info dump` write a file with a mode that no
+// default would give it.
+type modeRunner struct{ *fakeRunner }
+
+func (r modeRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	out, err := r.fakeRunner.Run(ctx, name, args...)
+	for i, a := range args {
+		if a != "--output-directory" || i+1 >= len(args) {
+			continue
+		}
+		path := filepath.Join(args[i+1], "plain.txt")
+		if wErr := os.WriteFile(path, []byte("nothing secret"), 0o600); wErr != nil {
+			return out, wErr
+		}
+		if cErr := os.Chmod(path, 0o640); cErr != nil {
+			return out, cErr
+		}
+	}
+	return out, err
+}
+
+// A published file keeps the mode the dump gave it, and no temporary copy is left
+// next to it.
+func TestDumpDiagnostics_PublishesFilesWithTheirModes(t *testing.T) {
+	dir := t.TempDir()
+
+	New(modeRunner{&fakeRunner{}}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+
+	info, err := os.Stat(filepath.Join(dir, "plain.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o640 {
+		t.Errorf("plain.txt mode = %o, want 640", info.Mode().Perm())
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".nvkectl-") {
+			t.Errorf("%s was left behind", e.Name())
+		}
+	}
+}
+
+// symlinkRunner makes `kubectl cluster-info dump` write a symlink to a file
+// outside the dump.
+type symlinkRunner struct {
+	*fakeRunner
+	target string
+}
+
+func (r symlinkRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	out, err := r.fakeRunner.Run(ctx, name, args...)
+	for i, a := range args {
+		if a == "--output-directory" && i+1 < len(args) {
+			if lErr := os.Symlink(r.target, filepath.Join(args[i+1], "link.json")); lErr != nil {
+				return out, lErr
+			}
+		}
+	}
+	return out, err
+}
+
+// The scrub does not look at a symlink, and copying one would publish whatever
+// it points at, so a symlink in the dump must not reach the directory.
+func TestDumpDiagnostics_DoesNotFollowASymlinkInTheDump(t *testing.T) {
+	redact.RegisterSecret(fakeValue)
+	outside := filepath.Join(t.TempDir(), "elsewhere.txt")
+	if err := os.WriteFile(outside, []byte("a file elsewhere on the host: "+fakeValue), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+
+	New(symlinkRunner{&fakeRunner{}, outside}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+
+	if _, err := os.Lstat(filepath.Join(dir, "link.json")); err == nil {
+		t.Error("a symlink in the dump was published")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "helm-releases.txt")); err != nil {
+		t.Errorf("the rest of the bundle was not published: %v", err)
+	}
+}
+
+// The password is on disk while an install runs, so it must be gone however the
+// install ends, including when an install fails and Deploy returns early.
+func TestDeploy_RemovesTheSecretValuesFilesWhenAnInstallFails(t *testing.T) {
+	for _, tc := range []struct {
+		release string
+		failAt  int // index of the helm call that fails
+	}{
+		{"postgres", 0},
+		{"temporal", 1},
+		{"controller", 4},
+	} {
+		t.Run(tc.release, func(t *testing.T) {
+			tmp := t.TempDir()
+			t.Setenv("TMPDIR", tmp)
+			cfg := testConfig(t)
+			cfg.PostgresPassword = fakeValue
+
+			err := New(&failingHelmRunner{fakeRunner: &fakeRunner{}, failAt: tc.failAt}, nil).
+				Deploy(context.Background(), "/tmp/kubeconfig", cfg)
+			if err == nil {
+				t.Fatal("expected the install to fail")
+			}
+			var left []string
+			_ = filepath.WalkDir(tmp, func(path string, d fs.DirEntry, err error) error {
+				if err == nil && d.Type().IsRegular() {
+					if b, _ := os.ReadFile(path); strings.Contains(string(b), fakeValue) {
+						left = append(left, path)
+					}
+				}
+				return nil
+			})
+			if len(left) > 0 {
+				t.Errorf("files holding the password were left behind: %v", left)
+			}
+		})
+	}
+}
+
+func TestWriteSecretValues_IsPrivateAndRemovedByItsCleanup(t *testing.T) {
+	path, cleanup, err := writeSecretValues(map[string]any{"auth": map[string]any{"password": fakeValue}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %o, want 600: the file holds the password", info.Mode().Perm())
+	}
+	cleanup()
+	if _, err := os.Stat(path); err == nil {
+		t.Error("the file was not removed by its cleanup")
+	}
+}
+
+// A symlink already in the diagnostics directory, where the bundle wants a
+// directory, must not carry the bundle to somewhere else: files outside the
+// directory are not ours to replace or add to.
+func TestDumpDiagnostics_DoesNotWriteThroughASymlinkInTheDirectory(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		make func(t *testing.T, dir, elsewhere string)
+	}{
+		{"a symlink to a directory", func(t *testing.T, dir, elsewhere string) {
+			if err := os.Symlink(elsewhere, filepath.Join(dir, "nke-controller")); err != nil {
+				t.Skipf("no symlinks here: %v", err)
+			}
+		}},
+		{"a file where a directory is wanted", func(t *testing.T, dir, _ string) {
+			if err := os.WriteFile(filepath.Join(dir, "nke-controller"), []byte("not a directory"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			elsewhere := t.TempDir()
+			unrelated := filepath.Join(elsewhere, "pods.json")
+			const before = "an unrelated file that must not change"
+			if err := os.WriteFile(unrelated, []byte(before), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			dir := t.TempDir()
+			tc.make(t, dir, elsewhere)
+
+			New(&dumpingRunner{fakeRunner: &fakeRunner{}}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+
+			if got, _ := os.ReadFile(unrelated); string(got) != before {
+				t.Errorf("a file outside the diagnostics directory was changed: %q", got)
+			}
+			if entries, _ := os.ReadDir(elsewhere); len(entries) != 1 {
+				t.Errorf("files were written outside the diagnostics directory: %v", entries)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "helm-releases.txt")); err != nil {
+				t.Errorf("the rest of the bundle was not published: %v", err)
+			}
+		})
+	}
+}
+
+// --diagnostics-dir is the caller's own, so it may itself be a symlink: only what
+// is under it is not trusted.
+func TestDumpDiagnostics_PublishesIntoADirectoryThatIsASymlink(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "real")
+	if err := os.Mkdir(target, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "diagnostics")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+
+	New(&dumpingRunner{fakeRunner: &fakeRunner{}}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", link)
+
+	for _, name := range []string{"helm-releases.txt", filepath.Join("nke-controller", "pods.json")} {
+		if _, err := os.Stat(filepath.Join(target, name)); err != nil {
+			t.Errorf("%s was not published into the directory the symlink points at: %v", name, err)
+		}
+	}
+}
+
+func TestDestination(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		rel     string
+		setup   func(root, elsewhere string)
+		wantErr bool
+		// needsPerms skips the case as root, which permissions do not stop.
+		needsPerms bool
+	}{
+		{name: "a top-level file", rel: "a.txt"},
+		{name: "nested, nothing there yet", rel: "ns/pod/logs.txt"},
+		{
+			name: "nested, the directories are already there",
+			rel:  "ns/pod/logs.txt",
+			setup: func(r, _ string) {
+				_ = os.MkdirAll(filepath.Join(r, "ns", "pod"), 0o750)
+			},
+		},
+		{
+			name:    "a directory on the way is a symlink to a directory",
+			rel:     "ns/logs.txt",
+			wantErr: true,
+			setup: func(r, e string) {
+				_ = os.Symlink(e, filepath.Join(r, "ns"))
+			},
+		},
+		{
+			name:    "a deeper directory is a symlink",
+			rel:     "ns/pod/logs.txt",
+			wantErr: true,
+			setup: func(r, e string) {
+				_ = os.MkdirAll(filepath.Join(r, "ns"), 0o750)
+				_ = os.Symlink(e, filepath.Join(r, "ns", "pod"))
+			},
+		},
+		{
+			name:    "a directory on the way is a dangling symlink",
+			rel:     "ns/logs.txt",
+			wantErr: true,
+			setup: func(r, _ string) {
+				_ = os.Symlink(filepath.Join(r, "missing"), filepath.Join(r, "ns"))
+			},
+		},
+		{
+			name:    "a directory on the way is a regular file",
+			rel:     "ns/logs.txt",
+			wantErr: true,
+			setup: func(r, _ string) {
+				_ = os.WriteFile(filepath.Join(r, "ns"), []byte("x"), 0o600)
+			},
+		},
+		{
+			name:       "a directory on the way cannot be entered",
+			rel:        "ns/pod/logs.txt",
+			wantErr:    true,
+			needsPerms: true,
+			setup: func(r, _ string) {
+				_ = os.Mkdir(filepath.Join(r, "ns"), 0o750)
+				_ = os.Chmod(filepath.Join(r, "ns"), 0)
+			},
+		},
+		{
+			name:       "the root cannot be written to",
+			rel:        "ns/logs.txt",
+			wantErr:    true,
+			needsPerms: true,
+			setup: func(r, _ string) {
+				_ = os.Chmod(r, 0o500)
+			},
+		},
+		{name: "a name too long for the filesystem", rel: strings.Repeat("a", 300) + "/logs.txt", wantErr: true},
+		{name: "a path that climbs out", rel: "../escaped/logs.txt", wantErr: true},
+		{name: "a path that climbs out after a directory", rel: "ns/../../escaped.txt", wantErr: true},
+		{name: "an absolute path", rel: "/etc/passwd", wantErr: true},
+		{name: "an empty path", rel: "", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.needsPerms && os.Geteuid() == 0 {
+				t.Skip("running as root: file permissions do not stop it")
+			}
+			parent := t.TempDir()
+			root, elsewhere := filepath.Join(parent, "root"), filepath.Join(parent, "elsewhere")
+			for _, d := range []string{root, elsewhere} {
+				if err := os.Mkdir(d, 0o750); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.setup != nil {
+				tc.setup(root, elsewhere)
+			}
+			t.Cleanup(func() {
+				_ = filepath.WalkDir(parent, func(p string, _ fs.DirEntry, _ error) error { _ = os.Chmod(p, 0o700); return nil })
+			})
+
+			dst, err := destination(root, tc.rel)
+
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("destination(%q) error = %v, want an error: %v", tc.rel, err, tc.wantErr)
+			}
+			if err == nil && !strings.HasPrefix(dst, root+string(filepath.Separator)) {
+				t.Errorf("destination(%q) = %s, which is not inside %s", tc.rel, dst, root)
+			}
+			if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
+				t.Errorf("something was created outside the root: %v", entries)
+			}
+		})
+	}
+}
+
+// Two processes can publish into the same directory at once. Finding a directory
+// that someone else just made must not count as a failure.
+func TestDestination_ConcurrentWritersSharingDirectories(t *testing.T) {
+	for round := 0; round < 100; round++ {
+		root := t.TempDir()
+		var wg sync.WaitGroup
+		errs := make(chan error, 8)
+		start := make(chan struct{})
+		for w := 0; w < 8; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				if _, err := destination(root, filepath.Join("ns", "pod", "logs.txt")); err != nil {
+					errs <- err
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			t.Fatalf("round %d: %v", round, err)
+		}
+	}
+}
+
+// The name a bundle file is published under can already hold something else.
+// A directory is not the caller's to lose, so it stays and the file is skipped;
+// a symlink is replaced as a name, and what it pointed at is left alone.
+func TestDumpDiagnostics_WhatAlreadyHasTheFinalName(t *testing.T) {
+	t.Run("a directory is left as it was", func(t *testing.T) {
+		dir := t.TempDir()
+		keep := filepath.Join(dir, "all-resources.txt", "mine", "keep.txt")
+		if err := os.MkdirAll(filepath.Dir(keep), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(keep, []byte("keep"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		New(&fakeRunner{}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+
+		if got, err := os.ReadFile(keep); err != nil || string(got) != "keep" {
+			t.Errorf("the caller's file under the directory = %q, %v", got, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "helm-releases.txt")); err != nil {
+			t.Errorf("the rest of the bundle was not published: %v", err)
+		}
+		if stray, _ := filepath.Glob(filepath.Join(dir, ".nvkectl-copy-*")); len(stray) != 0 {
+			t.Errorf("temporary copies were left behind: %v", stray)
+		}
+	})
+
+	t.Run("a symlink is replaced and its target is left alone", func(t *testing.T) {
+		dir := t.TempDir()
+		target := filepath.Join(t.TempDir(), "target.txt")
+		if err := os.WriteFile(target, []byte("target content"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, filepath.Join(dir, "helm-releases.txt")); err != nil {
+			t.Skipf("no symlinks here: %v", err)
+		}
+
+		New(&fakeRunner{}, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+
+		if got, _ := os.ReadFile(target); string(got) != "target content" {
+			t.Errorf("the file the symlink pointed at was changed: %q", got)
+		}
+		if info, err := os.Lstat(filepath.Join(dir, "helm-releases.txt")); err != nil || !info.Mode().IsRegular() {
+			t.Errorf("the name should now hold the published file: %v, %v", info, err)
+		}
+	})
 }

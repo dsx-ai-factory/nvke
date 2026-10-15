@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -201,6 +202,47 @@ func pooledCertificateRenewalTestNode() db.Node {
 	node := certificateRenewalTestNode()
 	node.NodePoolID = uuid.New()
 	return node
+}
+
+func TestRenewalWaitsForAnotherNodesReservation(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		release   bool
+		wantError string
+	}{
+		{name: "reserves once the other node releases", release: true},
+		{name: "gives up after the wait", wantError: "waited"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			node := certificateRenewalTestNode()
+			other := uuid.New()
+			database := &agentAdmissionDatabase{node: node, cluster: db.Cluster{
+				ID:                 node.ClusterID,
+				CertificateRenewal: &db.NodeAgentCertificateRenewal{NodeID: other, OperationID: "other-operation"},
+			}}
+			if test.release {
+				go func() {
+					time.Sleep(20 * time.Millisecond)
+					database.mu.Lock()
+					database.cluster.CertificateRenewal = nil
+					database.mu.Unlock()
+				}()
+			}
+			a := &Activities{db: database}
+			input := KubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "new-operation", ThresholdDays: 14}
+
+			err := a.awaitCertificateRenewalReservation(t.Context(), node, &input, time.Millisecond, 2*time.Second)
+
+			if test.wantError == "" {
+				require.NoError(t, err)
+				require.Equal(t, node.ID, database.cluster.CertificateRenewal.NodeID)
+				return
+			}
+			require.ErrorIs(t, err, errCertificateRenewalBusy)
+			require.ErrorContains(t, err, test.wantError)
+			require.Equal(t, other, database.cluster.CertificateRenewal.NodeID)
+		})
+	}
 }
 
 func TestRenewalAdmissionAndRecovery(t *testing.T) {

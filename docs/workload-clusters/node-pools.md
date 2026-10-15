@@ -30,7 +30,7 @@ This page describes how to add, scale and delete the worker node pools of an NVI
 
 ## Add a node pool
 
-A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NICo) instance type, an OS profile and a Kubernetes version. A new pool takes the cluster's Kubernetes version.
+A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NICo) instance type, a node pool release and a Kubernetes version. A new pool takes the cluster's Kubernetes version.
 
 1. Find the values the pool needs.
 
@@ -41,7 +41,7 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
    The output is the cluster ID. You also need:
 
    - The NICo instance type ID for the GPU machines, from NICo.
-   - The name of a node pool release you have published as a worker OS profile, which `nvkectl get nodepoolreleases` lists. With API authentication on, list them with `kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig get nodepoolreleases` instead.
+   - The name of a node pool release you have published, which `nvkectl get nodepoolreleases` lists. With API authentication on, list them with `kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig get nodepoolreleases` instead.
    - The `vpcPrefixIDs` or `subnetIDs` for the pool's nodes. If the cluster already has a worker pool, copy them from it with `nvkectl get nodepools <POOL_NAME> --cluster <WORKLOAD_CLUSTER> -o yaml`. For a cluster created without `nodePools`, use the VPC prefix or subnet IDs you recorded in [Collect the NICo identifiers](../operate/provider-nico.md#collect-the-nico-identifiers).
 
 2. Write the node pool spec and save it as `pool.yaml`.
@@ -54,7 +54,7 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
    recycleBudget: 1
    nico:
      instanceTypeID: <WORKER_INSTANCE_TYPE_ID>
-     osProfile: <WORKER_OS_PROFILE>
+     release: <WORKER_RELEASE>
      vpcPrefixIDs:
        - <VPC_PREFIX_ID>
    ```
@@ -63,7 +63,7 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
    - `name`: unique within the cluster, lowercase, and fixed once created.
    - `nodeNamePrefix`: nodes are named `<WORKLOAD_CLUSTER>-<nodeNamePrefix>-<NNNN>`, at most 63 characters in total.
    - `<WORKER_INSTANCE_TYPE_ID>`: the NICo instance type. It is fixed at creation; to change machine type, add a new pool.
-   - `<WORKER_OS_PROFILE>`: the name of a node pool release.
+   - `<WORKER_RELEASE>`: the name of a node pool release.
    - `<VPC_PREFIX_ID>`: a NICo virtual private cloud (VPC) prefix. Give exactly one of `vpcPrefixIDs` (sites with native networking) or `subnetIDs`.
    - `recycleBudget`: how many nodes auto mode may replace at once. See [Control automatic node replacement](#control-automatic-node-replacement).
 
@@ -75,7 +75,7 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
    nvkectl create nodepool -f pool.yaml
    ```
 
-   The command prints `Node pool "gpu-workers-b" created` with the pool's ID and returns while provisioning continues. The API rejects the request if the name is already used in the cluster, if `instanceTypeID` or `osProfile` is missing, or if the cluster's pod CIDR has no room for the requested nodes.
+   The command prints `Node pool "gpu-workers-b" created` with the pool's ID and returns while provisioning continues. The API rejects the request if the name is already used in the cluster, if `instanceTypeID` or `release` is missing, or if the cluster's pod CIDR has no room for the requested nodes.
 
 4. Watch the nodes join.
 
@@ -149,7 +149,7 @@ Before it removes a worker, NVKE cordons the node and evicts its pods through th
 
 ## Control automatic node replacement
 
-Auto mode moves a pool onto a new node configuration by marking outdated nodes for replacement, a few at a time. A node becomes outdated when you change the pool's node configuration, such as its OS profile or Kubernetes version, after the node was built. Upgrading a pool's Kubernetes version is not covered on this page.
+Auto mode moves a pool onto a new node configuration by marking outdated nodes for replacement, a few at a time. A node becomes outdated when you change the pool's node configuration, such as its release or Kubernetes version, after the node was built. Upgrading a pool's Kubernetes version is not covered on this page.
 
 Auto mode works as follows:
 

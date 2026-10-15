@@ -6,7 +6,7 @@ package http
 import (
 	nethttp "net/http"
 
-	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 )
 
 func (s *Server) handleListSubnets(w nethttp.ResponseWriter, r *nethttp.Request) {

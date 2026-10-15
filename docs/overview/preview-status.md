@@ -41,7 +41,7 @@ NVIDIA Kubernetes Engine (NVKE) is available as a preview. APIs, configuration a
 
 - **A local image build is not a qualified release.** The Make build and smoke test do not validate a real NICo boot, disk selection or the complete first-boot configuration. Validate the image and imager together on your target hardware before using them. See [Build node images and publish releases](../operate/build-node-images.md#build-the-node-os-image).
 - **The install needs controller and profile image references.** For an install without a release description, name them in the site spec as described in [Choose where the artifacts come from](../operate/install-management-plane-services.md#choose-where-the-artifacts-come-from).
-- **No reference iPXE script boots the reference QCOW2 image through NICo.** To provision workload cluster nodes from the image, an OS profile's `ipxeScript` must write the image, a QEMU copy-on-write (QCOW2) file, to the machine's disk with a loader your NICo site provides. The example OS profile installs Ubuntu 24.04 from the installer ISO instead. See [Build node images and publish releases](../operate/build-node-images.md).
+- **No reference iPXE script boots the reference QCOW2 image through NICo.** To provision workload cluster nodes from the image, the `MachineImage.spec.nico.ipxeScript` must chainload an EFI imager that downloads the QEMU copy-on-write (QCOW2) file and writes it to the machine's disk. Use an imager and script validated together for your NICo site. The example MachineImage installs Ubuntu 24.04 from the installer ISO instead. See [Build node images and publish releases](../operate/build-node-images.md).
 
 ### Telemetry
 

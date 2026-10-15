@@ -253,7 +253,7 @@ func seedControllerGofailDBTx(ctx context.Context, database db.Tx) error {
 	}
 	nodePool.SetNico(db.NicoNodePoolProvider{
 		InstanceTypeID:        controllerGofailInstanceID,
-		OSProfile:             "test",
+		Release:               "test",
 		ConfigProfile:         "test",
 		SubnetIDs:             []uuid.UUID{},
 		VpcPrefixIDs:          []uuid.UUID{},
@@ -272,7 +272,7 @@ func seedControllerGofailDBTx(ctx context.Context, database db.Tx) error {
 		SystemReservedMemory: "16Gi",
 	}
 	nodeSet.SetNico(db.NicoNodePoolProvider{
-		OSProfile:             "test",
+		Release:               "test",
 		ConfigProfile:         "test",
 		SubnetIDs:             []uuid.UUID{},
 		VpcPrefixIDs:          []uuid.UUID{},

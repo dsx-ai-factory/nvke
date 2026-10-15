@@ -71,7 +71,7 @@ func (te *collectorTestEnv) createNodePool(ctx context.Context, t *testing.T, cl
 			VpcPrefixIDs:   []uuid.UUID{uuid.New()},
 			InstanceTypeID: uuid.New(),
 			SSHKeyGroupIDs: []uuid.UUID{},
-			OSProfile:      "test-os",
+			Release:        "test-os",
 			ConfigProfile:  "test-config",
 		},
 	}
@@ -88,7 +88,7 @@ func (te *collectorTestEnv) createNodeSet(ctx context.Context, t *testing.T, np 
 		SystemReservedMemory: "16Gi",
 		TeleportEnabled:      teleportEnabled,
 		Nico: &db.NicoNodePoolProvider{
-			OSProfile:     "test-os",
+			Release:       "test-os",
 			ConfigProfile: "test-config",
 		},
 	}

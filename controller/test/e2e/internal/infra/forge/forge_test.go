@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/provision"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/teleport"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
@@ -134,7 +135,7 @@ type fakeDialer struct {
 	targets  []teleport.Target
 }
 
-func (d *fakeDialer) Dial(_ context.Context, target teleport.Target) (Conn, error) {
+func (d *fakeDialer) Dial(_ context.Context, target teleport.Target) (provision.Conn, error) {
 	d.targets = append(d.targets, target)
 	if len(d.targets) <= d.refusals {
 		return nil, errors.New("connection refused")
@@ -160,7 +161,7 @@ func testEnv() *Environment {
 	}
 }
 
-func newTestProvider(t *testing.T, forge *fakeForge, dialer Dialer) *Provider {
+func newTestProvider(t *testing.T, forge *fakeForge, dialer provision.Dialer) *Provider {
 	t.Helper()
 	srv := httptest.NewServer(forge)
 	t.Cleanup(srv.Close)
@@ -177,7 +178,7 @@ func newTestProvider(t *testing.T, forge *fakeForge, dialer Dialer) *Provider {
 			KubernetesVersion: "1.34.2",
 			CNIVersion:        "1.4.0",
 		},
-		Tools:        completeTools(),
+		Tools:        provision.HostTools{NerdctlVersion: "2.3.5", KindVersion: "v0.32.0", ClusterctlVersion: "v1.12.3"},
 		HTTPClient:   srv.Client(),
 		ReadyTimeout: 2 * time.Second,
 		ReachTimeout: 2 * time.Second,
@@ -247,7 +248,7 @@ func TestProvisionNode(t *testing.T) {
 		t.Errorf("dialed %d times, want retries until the node answered", len(dialer.targets))
 	}
 	target := dialer.targets[len(dialer.targets)-1]
-	if target.JumpHost != testJumpHost || target.Address != "10.0.0.7" || target.User != defaultNodeUser || target.Signer == nil {
+	if target.JumpHost != testJumpHost || target.Address != "10.0.0.7" || target.User != provision.DefaultNodeUser || target.Signer == nil {
 		t.Errorf("dial target = %+v", target)
 	}
 	wantRan := []string{
@@ -363,7 +364,7 @@ func TestProvisionNodeRejectsUnmatchedCapabilities(t *testing.T) {
 // newSlowCreateProvider is newTestProvider with the two timeouts that matter
 // here set apart: everything runs under a cap shorter than the create delay,
 // and create runs under one longer than it.
-func newSlowCreateProvider(t *testing.T, forge *fakeForge, dialer Dialer, perRequest, create time.Duration) *Provider {
+func newSlowCreateProvider(t *testing.T, forge *fakeForge, dialer provision.Dialer, perRequest, create time.Duration) *Provider {
 	t.Helper()
 	srv := httptest.NewServer(forge)
 	t.Cleanup(srv.Close)
@@ -382,7 +383,7 @@ func newSlowCreateProvider(t *testing.T, forge *fakeForge, dialer Dialer, perReq
 			KubernetesVersion: "1.34.2",
 			CNIVersion:        "1.4.0",
 		},
-		Tools:         completeTools(),
+		Tools:         provision.HostTools{NerdctlVersion: "2.3.5", KindVersion: "v0.32.0", ClusterctlVersion: "v1.12.3"},
 		HTTPClient:    client,
 		ReadyTimeout:  5 * time.Second,
 		ReachTimeout:  5 * time.Second,
@@ -438,11 +439,37 @@ func TestCreateFailureSaysTheInstanceMayExist(t *testing.T) {
 
 func TestNewRequiresJumpHost(t *testing.T) {
 	_, err := New(Options{
-		Env: testEnv(), APIKey: "nvapi-test", Tools: completeTools(),
+		Env: testEnv(), APIKey: "nvapi-test", Tools: provision.HostTools{NerdctlVersion: "2.3.5", KindVersion: "v0.32.0", ClusterctlVersion: "v1.12.3"},
 		Images: func(string, string) (string, string, error) { return "", "", nil },
 		Dialer: &fakeDialer{},
 	})
 	if err == nil || !strings.Contains(err.Error(), "jump host") {
 		t.Errorf("err = %v, want a missing jump host reported", err)
+	}
+}
+
+func TestProvisionNodeKeepsTheMachineOnFailure(t *testing.T) {
+	// The case the whole option exists for: a node that answers sshd and
+	// refuses the key is indistinguishable from a dozen other causes, and
+	// only the node itself can say which. Releasing it ends that.
+	forge := &fakeForge{t: t, statuses: []string{"Ready"}}
+	dialer := &fakeDialer{refusals: 100, conn: &fakeConn{}}
+	provider := newTestProvider(t, forge, dialer)
+	provider.opts.KeepOnFailure = true
+	provider.opts.ReachTimeout = 10 * time.Millisecond
+
+	_, _, err := provider.ProvisionNode(context.Background(), testRequest())
+	if err == nil {
+		t.Fatal("an unreachable node should fail the run")
+	}
+	if forge.deleted != 0 {
+		t.Errorf("deleted %d times, want 0 -- the machine was supposed to be kept", forge.deleted)
+	}
+	// Useless if a reader cannot find it again, so the message carries both
+	// the name and where it answered.
+	for _, want := range []string{"KEPT", testInstance, "released by hand", "10.0.0.7"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %s, got %v", want, err)
+		}
 	}
 }

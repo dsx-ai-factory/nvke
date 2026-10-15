@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	forgesdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/test/integration/testutil"
 )
@@ -27,7 +27,7 @@ func TestPatchLabelsAndRebootFlow(t *testing.T) {
 	createPayload := &forgesdk.InstanceCreateRequest{
 		Name:           instanceName,
 		TenantId:       "d282929f-49d5-4dec-8d27-21ceb30ade19",
-		InstanceTypeId: forgesdk.PtrString("itype-mock-001"),
+		InstanceTypeId: *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 		VpcId:          "vpc-mock-001",
 		Labels:         map[string]string{"nke.nvidia.com/node-id": instanceName},
 		Interfaces: []forgesdk.InterfaceCreateRequest{
@@ -65,7 +65,7 @@ func TestDuplicateCreateReturnsConflictMessage(t *testing.T) {
 	createPayload := &forgesdk.InstanceCreateRequest{
 		Name:           "node-dup-1",
 		TenantId:       "d282929f-49d5-4dec-8d27-21ceb30ade19",
-		InstanceTypeId: forgesdk.PtrString("itype-mock-001"),
+		InstanceTypeId: *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 		VpcId:          "vpc-mock-001",
 		Labels:         map[string]string{"nke.nvidia.com/node-id": "node-dup-1-owner-a"},
 		Interfaces: []forgesdk.InterfaceCreateRequest{
@@ -77,7 +77,7 @@ func TestDuplicateCreateReturnsConflictMessage(t *testing.T) {
 	conflictPayload := &forgesdk.InstanceCreateRequest{
 		Name:           "node-dup-1",
 		TenantId:       "d282929f-49d5-4dec-8d27-21ceb30ade19",
-		InstanceTypeId: forgesdk.PtrString("itype-mock-001"),
+		InstanceTypeId: *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 		VpcId:          "vpc-mock-001",
 		Labels:         map[string]string{"nke.nvidia.com/node-id": "node-dup-1-owner-b"},
 		Interfaces: []forgesdk.InterfaceCreateRequest{
@@ -109,7 +109,7 @@ func TestExhaustionErrorMessages(t *testing.T) {
 	createSubnetPayload := &forgesdk.InstanceCreateRequest{
 		Name:           "node-subnet-a",
 		TenantId:       "d282929f-49d5-4dec-8d27-21ceb30ade19",
-		InstanceTypeId: forgesdk.PtrString("itype-mock-001"),
+		InstanceTypeId: *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 		VpcId:          "vpc-mock-001",
 		Labels:         map[string]string{"nke.nvidia.com/node-id": "node-subnet-a"},
 		Interfaces: []forgesdk.InterfaceCreateRequest{
@@ -123,7 +123,7 @@ func TestExhaustionErrorMessages(t *testing.T) {
 	createSubnetPayloadB := &forgesdk.InstanceCreateRequest{
 		Name:           "node-subnet-b",
 		TenantId:       "d282929f-49d5-4dec-8d27-21ceb30ade19",
-		InstanceTypeId: forgesdk.PtrString("itype-mock-001"),
+		InstanceTypeId: *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 		VpcId:          "vpc-mock-001",
 		Labels:         map[string]string{"nke.nvidia.com/node-id": "node-subnet-b"},
 		Interfaces: []forgesdk.InterfaceCreateRequest{

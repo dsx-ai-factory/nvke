@@ -23,7 +23,15 @@ import (
 const (
 	legacyKubernetesCertificateRenewalRunbook = "k8s-cert-renewal"
 	certificateRenewalStatusPollInterval      = 5 * time.Second
+	// A cluster renews one node at a time, and the scheduled renewal and an
+	// operator-started one can overlap, so a held reservation is worth waiting
+	// for: about one node's renewal, far longer than the activity's three attempts.
+	certificateRenewalReservationPollInterval = 5 * time.Second
+	certificateRenewalReservationWait         = 20 * time.Minute
 )
+
+// errCertificateRenewalBusy reports a renewal reservation held by another node.
+var errCertificateRenewalBusy = errors.New("certificate renewal is in progress on another node")
 
 // KubernetesCertificateRenewalInput identifies one node-local renewal
 // operation. OperationID must remain stable across Temporal activity retries.
@@ -59,7 +67,7 @@ func (a *Activities) RenewKubernetesCertificates(
 	if input.ThresholdDays <= 0 || input.ThresholdDays > math.MaxInt32 {
 		return KubernetesCertificateRenewalResult{}, fmt.Errorf("threshold days must be between 1 and %d", math.MaxInt32)
 	}
-	if err := a.reserveCertificateRenewal(ctx, node, &input); err != nil {
+	if err := a.awaitCertificateRenewalReservation(ctx, node, &input, certificateRenewalReservationPollInterval, certificateRenewalReservationWait); err != nil {
 		return KubernetesCertificateRenewalResult{}, err
 	}
 	response, err := a.nodeAgentClient.StartKubernetesCertificateRenewal(ctx, node, &nvkeproto.StartKubernetesCertificateRenewalRequest{
@@ -188,6 +196,29 @@ func certificateRenewalTerminalResult(
 	}
 }
 
+// awaitCertificateRenewalReservation retries the reservation while another
+// node holds it, for at most wait, so two RenewK8sCerts workflows on one
+// cluster serialize instead of the later one failing.
+func (a *Activities) awaitCertificateRenewalReservation(ctx context.Context, node db.Node, input *KubernetesCertificateRenewalInput, poll, wait time.Duration) error {
+	deadline := time.Now().Add(wait)
+	for {
+		err := a.reserveCertificateRenewal(ctx, node, input)
+		if !errors.Is(err, errCertificateRenewalBusy) {
+			return err
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("waited %s: %w", wait, err)
+		}
+		timer := time.NewTimer(poll)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
 // reserveCertificateRenewal admits actual agent work. Merely scheduling the
 // Temporal workflow does not block upgrades. Both callers use the cluster row
 // so an agent restart cannot begin between this check and the renewal RPC.
@@ -212,7 +243,7 @@ func (a *Activities) reserveCertificateRenewal(ctx context.Context, node db.Node
 		}
 		if active := cluster.CertificateRenewal; active != nil {
 			if active.NodeID != node.ID {
-				return fmt.Errorf("certificate renewal is in progress on another node")
+				return fmt.Errorf("%w (node %s)", errCertificateRenewalBusy, active.NodeID)
 			}
 			// A later activity attempt reattaches even if its workflow run changed.
 			input.OperationID = active.OperationID

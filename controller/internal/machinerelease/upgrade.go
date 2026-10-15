@@ -79,7 +79,7 @@ func SelectUpgradeTarget(
 	}
 
 	if bestImage == nil {
-		return "", nil, fmt.Errorf("no OSProfile found for Kubernetes version %s (architecture: %s, variant: %s, ubuntuVersion: %s)",
+		return "", nil, fmt.Errorf("no release found for Kubernetes version %s (architecture: %s, variant: %s, ubuntuVersion: %s)",
 			kubernetesVersion, want.Architecture, want.Variant, want.OperatingSystem.Version)
 	}
 	return bestName, bestImage, nil

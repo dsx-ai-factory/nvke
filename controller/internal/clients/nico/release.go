@@ -32,13 +32,13 @@ func resolveRelease(ctx context.Context, reader ctrlclient.Reader, controlPlane 
 	if controlPlane {
 		release, image, err := machinerelease.ResolveClusterRelease(ctx, reader, name)
 		if err != nil {
-			return resolvedRelease{}, fmt.Errorf("resolving OSProfile %q: %w", name, err)
+			return resolvedRelease{}, fmt.Errorf("resolving release %q: %w", name, err)
 		}
 		return resolvedRelease{release: release, userDataTemplate: release.Spec.MachineInit.UserDataTemplate, image: image}, nil
 	}
 	release, image, err := machinerelease.ResolveNodePoolRelease(ctx, reader, name)
 	if err != nil {
-		return resolvedRelease{}, fmt.Errorf("resolving OSProfile %q: %w", name, err)
+		return resolvedRelease{}, fmt.Errorf("resolving release %q: %w", name, err)
 	}
 	return resolvedRelease{release: release, userDataTemplate: release.Spec.MachineInit.UserDataTemplate, image: image}, nil
 }

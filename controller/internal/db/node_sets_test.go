@@ -22,7 +22,7 @@ func TestNodeSetProviderSetters(t *testing.T) {
 	nodeSet.SetNico(db.NicoNodePoolProvider{
 		SubnetIDs:             []uuid.UUID{subnetID},
 		VpcPrefixIDs:          []uuid.UUID{vpcPrefixID},
-		OSProfile:             "nke-260318",
+		Release:               "nke-260318",
 		ConfigProfile:         "gpu",
 		DiskSelectionStrategy: db.DiskSelectionStrategyLargest,
 	})
@@ -30,7 +30,7 @@ func TestNodeSetProviderSetters(t *testing.T) {
 	require.Equal(t, []uuid.UUID{subnetID}, nodeSet.Nico.SubnetIDs)
 	require.Nil(t, nodeSet.Capi)
 	require.Equal(t, []uuid.UUID{vpcPrefixID}, nodeSet.Nico.VpcPrefixIDs)
-	require.Equal(t, "nke-260318", nodeSet.Nico.OSProfile)
+	require.Equal(t, "nke-260318", nodeSet.Nico.Release)
 	require.Equal(t, "gpu", nodeSet.Nico.ConfigProfile)
 	require.Equal(t, db.DiskSelectionStrategyLargest, nodeSet.Nico.DiskSelectionStrategy)
 
@@ -75,7 +75,7 @@ func TestNodePoolNeedsNewNodeSet(t *testing.T) {
 		KubeReservedMemory:   "512Mi",
 		TeleportEnabled:      true,
 		Nico: &db.NicoNodePoolProvider{
-			OSProfile:     "os-v1",
+			Release:       "os-v1",
 			ConfigProfile: "cfg-v1",
 		},
 	}
@@ -86,7 +86,7 @@ func TestNodePoolNeedsNewNodeSet(t *testing.T) {
 		KubeReservedMemory:   "512Mi",
 		TeleportEnabled:      true,
 		Nico: &db.NicoNodePoolProvider{
-			OSProfile:     "os-v1",
+			Release:       "os-v1",
 			ConfigProfile: "cfg-v1",
 		},
 	}

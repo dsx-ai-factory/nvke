@@ -35,7 +35,7 @@ func TestSyncMissingControlPlaneConfigsFromCPNodePools(t *testing.T) {
 	existingSnapshot, err := dbImpl.CreateControlPlaneConfiguration(ctx, &db.ControlPlaneConfiguration{
 		ClusterID: alreadySynced.ID,
 		Config: db.ControlPlaneConfigSpec{
-			Nico: &db.NicoControlPlaneProvider{OSProfile: "existing-os"},
+			Nico: &db.NicoControlPlaneProvider{Release: "existing-os"},
 		},
 		ChangeReason: "already present",
 	})
@@ -71,7 +71,7 @@ func TestSyncMissingControlPlaneConfigsFromCPNodePools(t *testing.T) {
 	assert.NotEqual(t, uuid.Nil, healed.ControlPlaneConfig.ConfigurationID)
 	assert.Equal(t, 1, healed.ControlPlaneConfig.DesiredCount)
 	require.NotNil(t, healed.ControlPlaneConfig.Nico)
-	assert.Equal(t, "nvke-sc-os", healed.ControlPlaneConfig.Nico.OSProfile)
+	assert.Equal(t, "nvke-sc-os", healed.ControlPlaneConfig.Nico.Release)
 	assert.Equal(t, "nvke-sc-cp", healed.ControlPlaneConfig.Nico.ConfigProfile)
 
 	unchanged, err := dbImpl.GetCluster(ctx, alreadySynced.ID)
@@ -100,7 +100,7 @@ func importedControlPlanePool(clusterID uuid.UUID, desired int) db.NodePool {
 		},
 	}
 	pool.SetNico(db.NicoNodePoolProvider{
-		OSProfile:             "nvke-sc-os",
+		Release:               "nvke-sc-os",
 		ConfigProfile:         "nvke-sc-cp",
 		InstanceTypeID:        uuid.MustParse("00000000-0000-4000-8000-000000000008"),
 		SubnetIDs:             []uuid.UUID{uuid.MustParse("00000000-0000-4000-8000-000000000003")},

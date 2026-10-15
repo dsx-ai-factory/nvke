@@ -15,7 +15,7 @@
 #
 #   selector   the labels the controller chart puts on its pods. The release name
 #              and nameOverride in controller-values.yaml fix both, so these are stable.
-#   port       Config.CWEPort in controllerdeploy.go. cmd/nvkectl/bootstrap.go uses the
+#   port       Config.CWEPort in controllerdeploy.go. internal/nvkectl/bootstrap.go uses the
 #              same value for both sides of the kind cluster's port mapping.
 #
 # The namespace is deliberately absent: it is applied into the namespace

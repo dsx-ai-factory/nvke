@@ -13,9 +13,9 @@
 #     looks healthy and provisions nothing.
 #
 # Every UUID below is site-specific. Replace all of them. The profile names are
-# placeholders too. osProfile names a release the site holds; publish one from
+# placeholders too. `release` names one the site holds; publish it from
 # machineimage.yaml, clusterrelease.yaml and nodepoolrelease.yaml beside this
-# file. List what a site accepts with the API's /api/osProfiles, which serves
+# file. List what a site accepts with the API's /api/releases, which serves
 # every release that is not deprecated.
 # Config profile content is maintained outside this repository and supplied at
 # deploy time; /api/configProfiles lists what your site serves.
@@ -53,7 +53,7 @@ controlPlaneConfig:
       - 00000000-0000-0000-0000-000000000000
     sshKeyGroupIDs:
       - 00000000-0000-0000-0000-000000000000
-    osProfile: nke-260625-24.04-x86-fde
+    release: nke-260625-24.04-x86-fde
     configProfile: default-cp
 
 nodePools:
@@ -68,5 +68,5 @@ nodePools:
         - 00000000-0000-0000-0000-000000000000
       sshKeyGroupIDs:
         - 00000000-0000-0000-0000-000000000000
-      osProfile: nke-260625-24.04-x86-fde
+      release: nke-260625-24.04-x86-fde
       configProfile: default-worker

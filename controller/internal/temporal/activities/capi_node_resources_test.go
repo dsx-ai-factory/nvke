@@ -111,7 +111,7 @@ func TestActivities_CreateCAPIInfraMachineForNode_TemplatelessNico_Idempotent(t 
 		KubernetesVersion: "1.32.1",
 	}
 	nodeSet.SetNico(db.NicoNodePoolProvider{
-		OSProfile:             "test-os",
+		Release:               "test-os",
 		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
 	})
 	nodePool := db.NodePool{
