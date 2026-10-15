@@ -42,7 +42,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | Operating system | Ubuntu 26.04.1 LTS | Pinned. NVKR builds the node image from the Ubuntu 26.04.1 server installer, pinned by digest. |
 | CPU architectures | amd64, arm64 | NVKR has a node image Definition for each architecture. |
 | Kernel | `linux-nvidia` on amd64, `linux-nvidia-64k` on arm64 | Ubuntu's NVIDIA-tuned kernel flavors. |
-| Full-disk encryption | Not supported | The NVKR node image has no full-disk encryption. |
+| Full-disk encryption (FDE) | FDE node image, amd64 and arm64, for evaluation only | NVKR's hosted pipeline builds `nvke-node-fde-amd64` and `nvke-node-fde-arm64`, with the root volume on LUKS2. A local NVKR build produces only the image without FDE. Every FDE image shares one disk encryption key, so it does not protect data at rest; see [Preview status and known limitations](preview-status.md#building-artifacts). |
 | SPIFFE Runtime Environment (SPIRE) agent | 1.14.1, with TPM plugin 1.9.0 | Pinned. Installed on the node image for TPM node attestation. |
 | Node agent (`nvke-agent`) | Built from the NVKE source NVKR pins | Installed and enabled on the node image. Listens on port 15005. |
 
