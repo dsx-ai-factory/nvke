@@ -14,16 +14,12 @@ import (
 	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
-// The kubeadm init and join requests carry the cluster's etcd encryption key and
-// the credentials a node joins with: the bootstrap token, and for a control
-// plane node the certificate key that decrypts the control plane's certificates.
-// Both requests are logged on arrival, and the journal is copied into support
-// bundles, so the credentials are removed from the logged copy. The etcd key is
-// replaced by its digest, logged beside it. A bootstrap token keeps its ID, which
-// is not secret and identifies it in `kubeadm token list`.
+// The kubeadm init and join requests carry the cluster's etcd encryption key, and
+// both are logged on arrival. The journal is copied into support bundles, so the
+// key is removed from the logged copy and its digest logged beside it. The join
+// credentials in the requests are redacted from the copy as well.
 
-// joinCredentials returns the credentials in a kubeadm join request, for
-// redacting what is logged about the join.
+// joinCredentials returns the credentials in a kubeadm join request.
 func joinCredentials(req *pb.KubeadmJoinRequest) *redact.Credentials {
 	credentials := redact.New()
 	credentials.AddJoinString(req.GetKubeadmJoinString())
@@ -32,8 +28,7 @@ func joinCredentials(req *pb.KubeadmJoinRequest) *redact.Credentials {
 	return credentials
 }
 
-// initCredentials returns the credentials in a kubeadm init request, for
-// redacting what is logged about the init.
+// initCredentials returns the credentials in a kubeadm init request.
 func initCredentials(req *pb.KubeadmInitRequest) *redact.Credentials {
 	credentials := redact.New()
 	credentials.AddConfig(req.GetInitConfig())
@@ -41,9 +36,8 @@ func initCredentials(req *pb.KubeadmInitRequest) *redact.Credentials {
 	return credentials
 }
 
-// loggableInitRequest returns req with the etcd encryption key removed and the
-// credentials in its init configuration and extra arguments redacted. It returns
-// req itself when there is nothing to remove.
+// loggableInitRequest returns req with the etcd encryption key removed and its
+// credentials redacted. It returns req itself when there is nothing to change.
 func loggableInitRequest(req *pb.KubeadmInitRequest) *pb.KubeadmInitRequest {
 	credentials := initCredentials(req)
 	initConfig := credentials.String(req.GetInitConfig())
@@ -58,10 +52,8 @@ func loggableInitRequest(req *pb.KubeadmInitRequest) *pb.KubeadmInitRequest {
 	return out
 }
 
-// loggableJoinRequest returns req with the etcd encryption key removed and the
-// join credentials redacted: the token and certificate key in the join command and
-// the join configuration, and the certificate key field. It returns req itself
-// when there is nothing to remove.
+// loggableJoinRequest returns req with the etcd encryption key removed and its
+// credentials redacted. It returns req itself when there is nothing to change.
 func loggableJoinRequest(req *pb.KubeadmJoinRequest) *pb.KubeadmJoinRequest {
 	credentials := joinCredentials(req)
 	joinString := credentials.String(req.GetKubeadmJoinString())

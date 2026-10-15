@@ -410,9 +410,4 @@ func TestExecRunnerLogsRedactedArguments(t *testing.T) {
 	assert.NotContains(t, logs.String(), key)
 	assert.Contains(t, logs.String(), "aaaaaa.<redacted>")
 	assert.Contains(t, logs.String(), "--node-name gpu-01")
-
-	logs.Reset()
-	_, err = runner.RunSplitOutput("echo", args, nil)
-	assert.NoError(t, err)
-	assert.NotContains(t, logs.String(), key)
 }

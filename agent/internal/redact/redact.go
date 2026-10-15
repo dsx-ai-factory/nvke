@@ -25,7 +25,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// Redacted replaces a credential in a logged value.
+// Redacted is what replaces a credential in a logged value.
 const Redacted = "<redacted>"
 
 // minKnownLength is the shortest known value that is replaced wherever it appears.
