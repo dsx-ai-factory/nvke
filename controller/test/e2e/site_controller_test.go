@@ -32,6 +32,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/provision"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/teleport"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nktp"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/site"
 )
@@ -295,6 +296,29 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		validateSitePostDeploy(func() (site.Cluster, site.Spec, bool) {
 			return cluster, spec, deployed
 		})
+
+		It("delivers the site's telemetry through NKTP", func(ctx SpecContext) {
+			if !deployed {
+				Skip("the stack was not deployed")
+			}
+			restConfig := expectSucceed(kube.RESTConfig(cluster.Kubeconfig, ""))
+			// This spec's own request, so a trace the install left cannot pass.
+			traceID, err := site.ControllerTraceID(ctx, cluster.Kubeconfig)
+			Expect(err).NotTo(HaveOccurred(), "the controller should trace a request")
+			v, err := nktp.New(ctx, restConfig, spec.Name, GinkgoLogr)
+			Expect(err).NotTo(HaveOccurred(), "the NKTP backend should be reachable")
+			DeferCleanup(v.Close)
+			checks := siteTelemetry(v, traceID)
+			// Signals get eight minutes to show up. The "nothing bad" checks then
+			// get three to hold, so failures from a rollout age out of their
+			// window, and must keep holding for one more.
+			Eventually(v.Missing).WithContext(ctx).WithArguments(checks).WithTimeout(8*time.Minute).WithPolling(10*time.Second).
+				Should(BeEmpty(), "every signal should arrive")
+			Eventually(v.Unwanted).WithContext(ctx).WithArguments(checks).WithTimeout(3*time.Minute).WithPolling(10*time.Second).
+				Should(BeEmpty(), "nothing NKTP must not deliver should be arriving")
+			Consistently(v.Unwanted).WithContext(ctx).WithArguments(checks).WithTimeout(time.Minute).WithPolling(10*time.Second).
+				Should(BeEmpty(), "nothing NKTP must not deliver should start arriving")
+		}, NodeTimeout(20*time.Minute))
 	}
 
 	if siteStage == siteStageFull {

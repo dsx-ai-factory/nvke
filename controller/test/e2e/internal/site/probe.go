@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
@@ -88,11 +89,7 @@ func probeOnce(ctx context.Context, each time.Duration, probe func(context.Conte
 var errUnhealthy = errors.New("controller unhealthy")
 
 func probeController(ctx context.Context, kubeconfig string) (string, error) {
-	restConfig, err := kube.RESTConfig(kubeconfig, "")
-	if err != nil {
-		return "", err
-	}
-	forwarder, err := kube.NewServiceForwarder(restConfig, controller.Namespace(), controller.Service(), controller.Port())
+	forwarder, err := controllerForwarder(kubeconfig)
 	if err != nil {
 		return "", err
 	}
@@ -119,4 +116,40 @@ func probeController(ctx context.Context, kubeconfig string) (string, error) {
 		return "", fmt.Errorf("decode /api/version: %w", err)
 	}
 	return v.Version, nil
+}
+
+// ControllerTraceID makes a request the controller traces and returns the
+// trace ID it reports in X-Trace-ID: /api/version is traced, the probes are
+// not.
+func ControllerTraceID(ctx context.Context, kubeconfig string) (string, error) {
+	forwarder, err := controllerForwarder(kubeconfig)
+	if err != nil {
+		return "", err
+	}
+	defer forwarder.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, forwarder.BaseURL()+"/api/version", http.NoBody)
+	if err != nil {
+		return "", err
+	}
+	resp, err := forwarder.HTTPClient().Do(req)
+	if err != nil {
+		return "", fmt.Errorf("GET /api/version: %w", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GET /api/version returned %d", resp.StatusCode)
+	}
+	id := resp.Header.Get("X-Trace-ID")
+	if id == "" {
+		return "", errors.New("the controller sent no X-Trace-ID, so it is not tracing")
+	}
+	return id, nil
+}
+
+func controllerForwarder(kubeconfig string) (*kube.ServiceForwarder, error) {
+	restConfig, err := kube.RESTConfig(kubeconfig, "")
+	if err != nil {
+		return nil, err
+	}
+	return kube.NewServiceForwarder(restConfig, controller.Namespace(), controller.Service(), controller.Port())
 }

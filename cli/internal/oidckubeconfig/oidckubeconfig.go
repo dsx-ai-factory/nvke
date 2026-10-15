@@ -26,6 +26,10 @@ type Options struct {
 	IssuerURL   string
 	ClientID    string
 	ExtraScopes []string
+	// Headless stamps the device-code grant so login does not open a browser
+	// on the machine running kubectl. The identity provider client must allow
+	// the device authorization grant.
+	Headless bool
 }
 
 // Generate writes a kubeconfig whose cluster stanza is taken from the current
@@ -135,6 +139,9 @@ func execArgs(opts Options) []string {
 		"get-token",
 		"--oidc-issuer-url=" + opts.IssuerURL,
 		"--oidc-client-id=" + opts.ClientID,
+	}
+	if opts.Headless {
+		args = append(args, "--grant-type=device-code", "--skip-open-browser")
 	}
 	for _, scope := range opts.ExtraScopes {
 		args = append(args, "--oidc-extra-scope="+scope)
