@@ -163,7 +163,11 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		switch siteStage {
 		case "":
 			Skip("-e2e.site-stage is not set")
-		case siteStageProvision, siteStageBootstrap, siteStageFull:
+		case siteStageProvision, siteStageBootstrap:
+		case siteStageFull:
+			if err := fullStageSupported(expectSucceed(runEnvironment()).Provider); err != nil {
+				Fail(err.Error())
+			}
 		default:
 			Fail(fmt.Sprintf("-e2e.site-stage %q is not provision, bootstrap or full", siteStage))
 		}
@@ -424,6 +428,31 @@ func newInfraProvider(cfg config.Config) (infra.Provider, error) {
 // The other factory. It shares an account and a credential with the provider
 // above and nothing else: this one outlives the run, as a Secret in the
 // cluster the run leaves behind.
+// fullStageSupported reports whether a full run can build this provider's
+// tenant, which is what separates it from bootstrap.
+//
+// The tenant half is nicoForgeSpec, and it decodes the environment as a Forge
+// declaration with unknown fields rejected. A DSX environment carries
+// tenantID and nodeUser, which that decoder refuses, so the tenant fails every
+// time however healthy the datahall is.
+//
+// Checked here because the cost is the point. Without it a full run takes a
+// machine, provisions it and installs the whole stack --- forty minutes, and
+// on redstone-dev1-dh2 the only CPU machine there is, so nothing else can run
+// meanwhile --- to reach a failure that was certain before it started.
+//
+// Not Forge rather than is-DSX: the limitation is that the tenant spec speaks
+// one dialect, so a third provider meets the same wall, and naming DSX would
+// wave it through to the same deterministic failure.
+func fullStageSupported(provider string) error {
+	if provider == forge.ProviderName {
+		return nil
+	}
+	return fmt.Errorf("-e2e.site-stage full needs a tenant spec for provider %q, and the only one is Forge's: "+
+		"the tenant half decodes the environment as a Forge declaration, which a %s environment is not. "+
+		"Run this provider at stage provision or bootstrap until a tenant spec for it exists", provider, provider)
+}
+
 func newDeployConfig() (site.CAPIProviderConfig, error) {
 	env, err := runEnvironment()
 	if err != nil {
@@ -900,7 +929,11 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 		// value is one the redaction list can name.
 		DatabasePassword: dbPassword,
 		Arch:             unameArch,
-	}, []string{os.Getenv(envForgeAPIKey), tenantPassword, dbPassword}, nil
+		// The provider configuration names its own credential, so a DSX run's
+		// minted token is redacted the same way the Forge key is. Asked of the
+		// config rather than listed here: this function cannot know which
+		// field of a provider it does not name is a secret.
+	}, append([]string{os.Getenv(envForgeAPIKey), tenantPassword, dbPassword}, deployConfig.Credentials()...), nil
 }
 
 // apiServerReachable reports whether the forwarded kubeconfig reaches the

@@ -362,3 +362,32 @@ func TestCheckControllerName(t *testing.T) {
 		}
 	})
 }
+
+// The diagnostics archive is uploaded whatever the run did, so every
+// credential the provider configuration puts on the node has to be nameable
+// for redaction. A DSX run's is a minted SSA bearer token, which is live for
+// fifteen minutes after the archive is published.
+func TestNicoNamesItsTokenAsACredential(t *testing.T) {
+	t.Run("the token is named", func(t *testing.T) {
+		got := NewNico("https://carbide-rest-api-dh.example", "ncx", "ssa-bearer-token", "nico").Credentials()
+		if len(got) != 1 || got[0] != "ssa-bearer-token" {
+			t.Errorf("Credentials() = %v, want just the token", got)
+		}
+	})
+
+	t.Run("nothing else is", func(t *testing.T) {
+		for _, c := range NewNico("https://carbide-rest-api-dh.example", "ncx", "tok", "nico").Credentials() {
+			if strings.Contains(c, "carbide-rest-api-dh.example") || c == "ncx" || c == "nico" {
+				t.Errorf("Credentials() names %q, which is infrastructure rather than a secret", c)
+			}
+		}
+	})
+
+	t.Run("an empty token names nothing", func(t *testing.T) {
+		// Redacting the empty string would rewrite every character of the
+		// archive, so a configuration without a token names none.
+		if got := NewNico("https://forge.example", "org", "", "forge").Credentials(); len(got) != 0 {
+			t.Errorf("Credentials() = %v, want none", got)
+		}
+	})
+}

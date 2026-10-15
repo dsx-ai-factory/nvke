@@ -111,6 +111,13 @@ type CAPIProviderConfig interface {
 	// before the deploy stages anything, so a missing credential fails the
 	// run rather than the controller that reads the Secret.
 	Validate() error
+
+	// Credentials is every secret this configuration puts on the node, for
+	// redacting the diagnostics archive. On the interface rather than read off
+	// a concrete type, so a provider added later cannot be forgotten here:
+	// whoever writes the type is the one who knows which of its fields is a
+	// credential, and the archive is uploaded whatever the run did.
+	Credentials() []string
 }
 
 // Nico is where the site's CAPNICo reaches the NICo API.
@@ -130,6 +137,17 @@ type Nico struct {
 // default, because the wrong one fails as a 404 against a URL nothing printed.
 func NewNico(endpoint, orgID, token, apiName string) Nico {
 	return Nico{Endpoint: endpoint, OrgID: orgID, Token: token, APIName: apiName}
+}
+
+// Credentials implements CAPIProviderConfig. The token is the whole of it:
+// the endpoint, org and API name are infrastructure, and the token is what
+// reaches the node, both in bootstrap-config.json and in the Secret the
+// credentials template renders from it.
+func (n Nico) Credentials() []string {
+	if n.Token == "" {
+		return nil
+	}
+	return []string{n.Token}
 }
 
 // ConfigKey implements CAPIProviderConfig. "Nico" is what
