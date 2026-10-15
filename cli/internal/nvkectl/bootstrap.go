@@ -216,6 +216,7 @@ site spec file format.`,
 	cmd.Flags().StringVar(&opts.release, "release", "",
 		"NVKR release description whose "+controllerdeploy.CAPNICoArtifact+" artifact replaces the bootstrap CAPNICo image "+
 			"with its pinned digest, as \"render deploy-path --release\" does for the site controller's CAPNICo. "+
+			"The release description is not verified: run \"nvkr release verify\" on the same reference first. "+
 			"Only with infra.provider nico.")
 	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH,
 		"Architecture of the release artifact to use: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. "+
@@ -395,7 +396,11 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// attempt, and may hold that attempt's encryption key.
 	releaseSteps := ""
 	if inv.IsNico() {
-		releaseSteps = nicoReleaseSteps(inv.ClusterName, cfg.ClusterName, "<its kubeconfig file>", cweCfg.CWEPort) + ", "
+		// The leftover may be one kept after success, or one that failed after
+		// every node joined; either holds a working site cluster.
+		releaseSteps = "if that run failed before every control-plane node joined, " +
+			nicoReleaseSteps(inv.ClusterName, cfg.ClusterName, "<its kubeconfig file>", cweCfg.CWEPort) +
+			" (skip that when it succeeded or failed later: the site cluster is working, and deleting it destroys it and its NICo machines), "
 	}
 	if err := requireNoBootstrapCluster(ctx, engine, cfg.ClusterName, releaseSteps); err != nil {
 		return err
@@ -639,7 +644,7 @@ func createSiteCluster(
 	// the operator holding the admin credential of the cluster that was built.
 	kubeconfigPath, err := writeTenantKubeconfig(ctx, bootstrapCluster, created.Name, opts, logger)
 	if err != nil {
-		return true, err
+		return true, &clusterJoinedError{err}
 	}
 
 	// Every control-plane node holds the key now, and this is the last moment
@@ -738,6 +743,14 @@ type recoveryError struct{ err error }
 func (e *recoveryError) Error() string { return e.err.Error() }
 func (e *recoveryError) Unwrap() error { return e.err }
 
+// clusterJoinedError marks a failure after every control-plane node joined: the
+// site cluster is up and working, so what is left to recover is its outputs.
+// A keyCaptureError is the same, and is not wrapped in this.
+type clusterJoinedError struct{ err error }
+
+func (e *clusterJoinedError) Error() string { return e.err.Error() }
+func (e *clusterJoinedError) Unwrap() error { return e.err }
+
 // keyCaptureError is a bootstrap that built and encrypted its cluster and then
 // failed to save the key.
 type keyCaptureError struct {
@@ -813,22 +826,17 @@ func nicoReleaseSteps(siteCluster, bootstrapCluster, kubeconfig string, port int
 
 // retainedClusterError wraps err, from a failure after the site cluster was
 // created, with what to do about the bootstrap cluster that was kept for
-// recovery. With nico the advice leads with releasing the allocated instances.
+// recovery. With nico the advice leads with releasing the allocated instances,
+// but only for a failure before every control-plane node joined: after that the
+// site cluster is working, and deleting it would destroy it and its NICo
+// machines, so the advice is to recover the outputs and delete only Kind.
 func retainedClusterError(err error, inv *sitespec.SiteSpec, cluster *bootstrapengine.Cluster, port int32) error {
-	release := ""
-	if inv.IsNico() {
-		release = nicoReleaseSteps(inv.ClusterName, cluster.Name, cluster.KubeconfigPath, port)
-	}
-	// The advice below ends with the command that deletes the bootstrap
-	// cluster. When the key was not saved, that cluster holds the only copy
-	// the operator does not have, and the error says so instead.
 	var capture *keyCaptureError
-	if errors.As(err, &capture) {
-		kept := fmt.Errorf("%w (bootstrap cluster %q kept; its kubeconfig is %s)", err, cluster.Name, cluster.KubeconfigPath)
-		if release != "" {
-			kept = fmt.Errorf("%w; once the key is saved, %s", kept, release)
-		}
-		return &recoveryError{kept}
+	var joined *clusterJoinedError
+	built := errors.As(err, &capture) || errors.As(err, &joined)
+	release := ""
+	if inv.IsNico() && !built {
+		release = nicoReleaseSteps(inv.ClusterName, cluster.Name, cluster.KubeconfigPath, port)
 	}
 	// The env prefix is not optional: kind resolves a cluster through the
 	// provider that created it, so without it the command reports the
@@ -836,6 +844,22 @@ func retainedClusterError(err error, inv *sitespec.SiteSpec, cluster *bootstrape
 	deleteCommand := fmt.Sprintf(
 		"KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s", cluster.Name,
 	)
+	// The advice below ends with the command that deletes the bootstrap
+	// cluster. When the key was not saved, that cluster holds the only copy
+	// the operator does not have, and the error says so instead.
+	if capture != nil {
+		kept := fmt.Errorf("%w (bootstrap cluster %q kept; its kubeconfig is %s)", err, cluster.Name, cluster.KubeconfigPath)
+		if inv.IsNico() {
+			kept = fmt.Errorf("%w; once the key is saved, delete only the bootstrap cluster with `%s`: the site cluster is up "+
+				"and its NICo machines belong to it", kept, deleteCommand)
+		}
+		return &recoveryError{kept}
+	}
+	if joined != nil && inv.IsNico() {
+		return &recoveryError{fmt.Errorf("%w; every control-plane node joined, so the site cluster is up and is not to be deleted; "+
+			"bootstrap cluster %q was retained to recover what this run could not write (kubeconfig: %s); once you have, delete only "+
+			"the bootstrap cluster with `%s`", err, cluster.Name, cluster.KubeconfigPath, deleteCommand)}
+	}
 	if release != "" {
 		return &recoveryError{fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
 			"(kubeconfig: %s); %s; then delete it with `%s`",
@@ -987,7 +1011,7 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	cfg.SPIREExternalAddress = inv.Spire.ExternalAddress
 	// CAPNICo comes from its own manifest, so the provisioned provider's image is not used.
 	if cfg.ProvisionedProviderImage == "" && !cfg.NicoInfrastructure {
-		return cfg, errors.New("--provisioned-provider-image and NVKECTL_CAPI_PROVISIONED_IMAGE is not set and the bootstrap manifest carries no default provisioned-provider image")
+		return cfg, errors.New("--provisioned-provider-image and NVKECTL_CAPI_PROVISIONED_IMAGE are not set and the bootstrap manifest carries no default provisioned-provider image")
 	}
 
 	// SPIRE is told the Kind cluster's own name. The identity trust domain comes

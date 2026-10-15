@@ -4,9 +4,13 @@
 package sitespec
 
 import (
+	"encoding/json"
 	"os"
+	"strconv"
+	"strings"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	"gopkg.in/yaml.v3"
 
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
@@ -84,6 +88,37 @@ type NicoControlPlane struct {
 	// one, like the length of the hardcoded list it stands in for.
 	Count                              int `yaml:"count"`
 	api.NicoControlPlaneProviderCreate `yaml:",inline"`
+}
+
+// MarshalYAML writes the block with the API's own field names, in the API's
+// order and omitting what is unset: the embedded struct carries json tags only,
+// which yaml.v3 would lower-case and write out empty.
+func (c NicoControlPlane) MarshalYAML() (any, error) {
+	body, err := json.Marshal(c.NicoControlPlaneProviderCreate)
+	if err != nil {
+		return nil, err
+	}
+	// JSON is YAML, so parsing it keeps the fields in order.
+	var doc yaml.Node
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		return nil, err
+	}
+	block := doc.Content[0]
+	clearStyle(block)
+	count := []*yaml.Node{
+		{Kind: yaml.ScalarNode, Tag: "!!str", Value: "count"},
+		{Kind: yaml.ScalarNode, Tag: "!!int", Value: strconv.Itoa(c.Count)},
+	}
+	block.Content = append(count, block.Content...)
+	return block, nil
+}
+
+// clearStyle puts n and what it holds back to block style, as written by hand.
+func clearStyle(n *yaml.Node) {
+	n.Style = 0
+	for _, child := range n.Content {
+		clearStyle(child)
+	}
 }
 
 // IsNico reports whether the cluster's machines are allocated through CAPNICo.
@@ -220,8 +255,11 @@ func (v *validator) checkNicoFiles(inv *SiteSpec) {
 		return
 	}
 	if n.Tenant != nil && n.Tenant.PasswordFile != "" {
-		if _, err := os.Stat(inv.ResolvePath(n.Tenant.PasswordFile)); err != nil {
+		// Read and non-empty, as the bootstrap reads it: it refuses an empty one.
+		if data, err := os.ReadFile(inv.ResolvePath(n.Tenant.PasswordFile)); err != nil {
 			v.addf("%s.passwordFile %q cannot be read: %v", pathNicoTenant, n.Tenant.PasswordFile, err)
+		} else if strings.TrimSpace(string(data)) == "" {
+			v.addf("%s.passwordFile %q is empty", pathNicoTenant, n.Tenant.PasswordFile)
 		}
 	}
 	v.checkBootstrapReleases(inv)

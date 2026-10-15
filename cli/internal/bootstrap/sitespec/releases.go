@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
@@ -25,7 +24,8 @@ var releaseAPIVersion = enginev1.SchemeGroupVersion.String()
 
 // releaseFiles lists the manifest files infra.nico.releases names: the file
 // itself, or the .yaml, .yml and .json files directly inside the directory, as
-// `kubectl apply -f <dir>` reads it.
+// `kubectl apply -f <dir>` reads it: the extension is matched exactly, so
+// release.YAML is skipped there and here.
 func releaseFiles(path string) ([]string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -40,7 +40,7 @@ func releaseFiles(path string) ([]string, error) {
 	}
 	var files []string
 	for _, e := range entries {
-		switch strings.ToLower(filepath.Ext(e.Name())) {
+		switch filepath.Ext(e.Name()) {
 		case ".yaml", ".yml", ".json":
 			if !e.IsDir() {
 				files = append(files, filepath.Join(path, e.Name()))

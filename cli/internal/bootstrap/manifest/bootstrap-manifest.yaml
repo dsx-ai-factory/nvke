@@ -61,7 +61,8 @@ components:
       sha256: ce982e63fc375e392b014fc99e621a55442ab886052413e9bb052f72d66580a8
 
   # Upstream release. tpm-attestor is pulled only when the site spec lists TPM
-  # thumbprints.
+  # thumbprints, or with infra.provider nico, whose nodes' keys CWE adds to the
+  # allowlist as CAPNICo allocates them.
   spire:
     chart:
       repo: https://spiffe.github.io/helm-charts-hardened/

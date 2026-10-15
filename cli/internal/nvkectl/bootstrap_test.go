@@ -1666,11 +1666,31 @@ func TestRetainedClusterError(t *testing.T) {
 			t.Errorf("advice %q deletes the Kind cluster before it releases the instances", msg)
 		}
 	})
+	// After every node joined the site cluster is working: following the release
+	// steps would delete it and its NICo machines, so they are not given.
 	t.Run("nico with the key unsaved", func(t *testing.T) {
 		capture := &keyCaptureError{clusterName: "nvke-site", keyPath: "k.json", kubeconfigPath: "/tmp/kc", recover: "save-it", err: cause}
 		msg := retainedClusterError(capture, nico, cluster, 30080).Error()
-		if !strings.Contains(msg, "once the key is saved, release the NICo instances") || !strings.Contains(msg, "nvkectl delete cluster nvke-site") {
-			t.Errorf("key-unsaved advice lacks the release step: %q", msg)
+		for _, reject := range []string{"nvkectl delete cluster", "release the NICo instances", "set-site"} {
+			if strings.Contains(msg, reject) {
+				t.Errorf("key-unsaved advice %q contains %q, which would delete a working site cluster", msg, reject)
+			}
+		}
+		if !strings.Contains(msg, "once the key is saved, delete only the bootstrap cluster with `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`") {
+			t.Errorf("key-unsaved advice does not say to delete only the bootstrap cluster: %q", msg)
+		}
+	})
+	t.Run("nico with the kubeconfig unwritten", func(t *testing.T) {
+		msg := retainedClusterError(&clusterJoinedError{cause}, nico, cluster, 30080).Error()
+		for _, reject := range []string{"nvkectl delete cluster", "release the NICo instances", "set-site"} {
+			if strings.Contains(msg, reject) {
+				t.Errorf("post-join advice %q contains %q, which would delete a working site cluster", msg, reject)
+			}
+		}
+		for _, want := range []string{"site cluster is up", "delete only the bootstrap cluster", "kind delete cluster --name nvkectl-bootstrap"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("post-join advice %q does not contain %q", msg, want)
+			}
 		}
 	})
 }
@@ -2168,5 +2188,31 @@ func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
 	nico.Infra.Nico.Tenant.PasswordFile = filepath.Join(dir, "absent")
 	if _, err := cweDeployConfig(nico, "c", true, "", ""); err == nil || !strings.Contains(err.Error(), "infra.nico.tenant.passwordFile") {
 		t.Errorf("missing password file: err = %v, want infra.nico.tenant.passwordFile", err)
+	}
+}
+
+// TestDumpSiteSpecNamesTheNicoControlPlaneAsDocumented: the block embeds the
+// API's struct, which has json tags only, so the dump has to write the API's
+// camelCase names and leave out what is unset, not yaml.v3's lower-cased ones.
+func TestDumpSiteSpecNamesTheNicoControlPlaneAsDocumented(t *testing.T) {
+	inv, err := sitespec.Load(nicoSiteSpecFile(t))
+	if err != nil {
+		t.Fatalf("load site spec: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := dumpSiteSpec(&buf, inv); err != nil {
+		t.Fatalf("dumpSiteSpec: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"count: 3", "instanceTypePreference:", "vpcPrefixIDs:", "sshKeyGroupIDs:", "osProfile: example-os-profile"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the dump lacks %q:\n%s", want, out)
+		}
+	}
+	// The example sets vpcPrefixIDs and no subnetIDs, and leaves configProfile out.
+	for _, reject := range []string{"osprofile", "sshkeygroupids", "vpcprefixids", "instancetypepreference", "configprofile", "subnetids", "subnetIDs", "configProfile"} {
+		if strings.Contains(out, reject) {
+			t.Errorf("the dump has %q, which is lower-cased or unset:\n%s", reject, out)
+		}
 	}
 }

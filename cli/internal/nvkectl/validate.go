@@ -38,17 +38,22 @@ func newValidateSiteSpecCmd() *cobra.Command {
 
 The bootstrap section is what "nvkectl bootstrap site" reads: every field is
 checked, and the SPIRE CA files must exist. With infra.provider nico, the
-files infra.nico names and the file NVKECTL_NICO_CREDENTIALS names must exist, and
-spire.externalAddress is required unless --disable-mtls is given, as it is for
-"nvkectl bootstrap site". The controllerStack section is
+files infra.nico names and the file NVKECTL_NICO_CREDENTIALS names must exist
+on the bootstrap host, and spire.externalAddress is required unless
+--disable-mtls is given, as it is for "nvkectl bootstrap site". The
+controllerStack section is
 what the controller stack install reads: the REPLACE_* values still to fill
 in are listed apart from errors, every required field must be set, the
 architecture and the NICo endpoint must be well-formed, and the files the
 section names must exist.
 
-The command exits 0 only when the file is ready for both. --bootstrap-only
-checks the bootstrap section alone, for a file whose controllerStack section
-is not filled in yet.`,
+The command exits 0 when the controllerStack section is ready, which is what
+the controller stack install gates on. What only the bootstrap host holds, that
+is NVKECTL_NICO_CREDENTIALS, the files infra.nico names and
+spire.externalAddress, is reported but does not fail that run: the install
+host does not have them. --bootstrap-only checks the bootstrap section alone,
+and fails on those, for a file whose controllerStack section is not filled in
+yet.`,
 		Example: `  nvkectl validate sitespec -f sitespec.yaml
   nvkectl validate sitespec -f sitespec.yaml --bootstrap-only
   nvkectl validate sitespec -f sitespec.yaml --disable-mtls`,
@@ -71,17 +76,29 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 	if err != nil {
 		return err
 	}
-	// The same check bootstrap site applies before its dry-run return, so a file
-	// this command passes is one that command accepts.
+	// The same checks bootstrap site applies before its dry-run return, so a file
+	// this command passes with --bootstrap-only is one that command accepts. They
+	// read what only the bootstrap host holds: the NICo token, the tenant
+	// password and the release manifests, and the SPIRE address the nodes dial.
+	// The controller stack install runs this command without them, so a full
+	// check reports them and judges the file by the controllerStack section.
+	var bootstrapErr error
+	var lifts string
 	if err := spec.CheckBootstrapMode(opts.disableMTLS); err != nil {
-		fmt.Fprintf(out, "bootstrap: %v (--disable-mtls lifts this)\n", err)
-		return errors.New("the site spec is not ready for nvkectl bootstrap site")
+		bootstrapErr, lifts = err, " (--disable-mtls lifts this)"
+	} else if err := spec.ValidateBootstrapReferences(); err != nil {
+		bootstrapErr = err
 	}
-	if err := spec.ValidateBootstrapReferences(); err != nil {
-		fmt.Fprintf(out, "bootstrap: %v\n", err)
+	switch {
+	case bootstrapErr != nil && opts.bootstrapOnly:
+		fmt.Fprintf(out, "bootstrap: %v%s\n", bootstrapErr, lifts)
 		return errors.New("the site spec is not ready for nvkectl bootstrap site")
+	case bootstrapErr != nil:
+		fmt.Fprintf(out, "bootstrap: not ready for nvkectl bootstrap site on this host: %v%s "+
+			"(not part of the controller stack verdict below; --bootstrap-only fails on it)\n", bootstrapErr, lifts)
+	default:
+		fmt.Fprintln(out, "bootstrap: valid; nvkectl bootstrap site can run with this file")
 	}
-	fmt.Fprintln(out, "bootstrap: valid; nvkectl bootstrap site can run with this file")
 	if opts.bootstrapOnly {
 		return nil
 	}

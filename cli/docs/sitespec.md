@@ -141,8 +141,9 @@ given their SPIRE address when they were provisioned.
 
 The token is not in the site spec. `NVKECTL_NICO_CREDENTIALS` names a file that
 holds it, read on the host that runs the bootstrap, relative to the working
-directory. `bootstrap site` and `validate sitespec` require it with `nico`; it is
-not read by commands that never run the bootstrap, such as
+directory. `bootstrap site` and `validate sitespec --bootstrap-only` require it
+with `nico`; a full `validate sitespec` reports it without failing on it, and it
+is not read by commands that never run the bootstrap, such as
 `render deploy-path`. The bootstrap creates the `nico-credentials` Secret in the
 Kind cluster from it, with `infra.nico.remote.endpoint` and `infra.nico.orgID`
 from the spec and the API name `forge`.
@@ -168,6 +169,8 @@ By default the image is the tag the manifest names. Pass `--release <file>` to
 pin it to an NVKR release's `capnico-controller` artifact instead, as
 `nvkectl render deploy-path --release` does for the site controller's CAPNICo:
 the manifest's one image is replaced with the artifact's `repository@digest`.
+The release description is not verified, here or there: run `nvkr release
+verify` on the same reference first.
 `--arch` (default the bootstrap host's) picks the artifact's architecture, since
 the bootstrap CAPNICo runs in the Kind cluster on that host. It is refused with
 the `provisioned` provider, where no CAPNICo is installed. The Kind node pulls
@@ -175,7 +178,10 @@ the image anonymously, so the release's `capnico-controller` image must be
 publicly pullable; staging images from a release run directory, as the deploy path does for the
 node, is not supported here. The Kind host must reach `ghcr.io`
 and the NICo API and each new node's agent port, and the nodes must reach the
-SPIRE server the bootstrap publishes on the host.
+SPIRE server the bootstrap publishes on the host. After every node joins, the
+bootstrap calls the site's Kubernetes API to write the kubeconfig, so the host
+must also reach the control-plane endpoint, `cluster.controlPlaneVIP` or the
+node's address, on port 6443.
 
 `infra.nico.tenant` is the same struct as `controllerStack.tenant`. The bootstrap
 puts it in a `dgxc-tenant-credentials` Secret in the controller's namespace and
@@ -259,7 +265,11 @@ refuses a value that is still a placeholder.
 
 `nvkectl validate sitespec -f sitespec.yaml` checks both halves of the file
 and lists what is still a placeholder; `--bootstrap-only` checks only what
-`bootstrap site` reads. A file whose bootstrap half is valid can bootstrap
+`bootstrap site` reads. The exit status of the full check is the controller
+stack's, because the install gates on it from a host that does not hold what
+only the bootstrap host does: with `nico`, the token file, the tenant password
+and release manifests, and `spire.externalAddress`. The full check reports
+those; `--bootstrap-only` fails on them. A file whose bootstrap half is valid can bootstrap
 the cluster before the `controllerStack` section is filled in; the output
 says so.
 
@@ -289,14 +299,17 @@ them from there and they are not repeated in `controllerStack:`.
   and must not fall inside `podCidr` or `serviceCidr`. It may equal a declared
   node IP.
 - `controlPlaneVIP` is required when `cluster.nodes` contains more than one
-  node, or `infra.nico.controlPlane.count` is more than one.
+  node, or `infra.nico.controlPlane.count` is more than one. With `nico` it is
+  needed for one node too: the bootstrap runs without it, but the controller
+  stack install is refused.
 - With `nico`: `infra.nico` (its `orgID`, `remote`, `controlPlane`, `tenant` and
   `releases`) is required, and the files it names, and the file
-  `NVKECTL_NICO_CREDENTIALS` names, must exist when the bootstrap runs
-  (`bootstrap site` and `validate sitespec` check; `render deploy-path` does
-  not); with `provisioned` `infra.nico` is rejected. `spire.externalAddress` is required with
-  `nico` unless `--disable-mtls`, which `nvkectl validate sitespec` and
-  `bootstrap site` both check.
+  `NVKECTL_NICO_CREDENTIALS` names, must exist when the bootstrap runs, and
+  the tenant password file must hold a password (`bootstrap site` and
+  `validate sitespec --bootstrap-only` check; a full `validate sitespec`
+  reports them; `render deploy-path` does not); with `provisioned` `infra.nico` is rejected. `spire.externalAddress` is required with
+  `nico` unless `--disable-mtls`, which `bootstrap site` and
+  `validate sitespec --bootstrap-only` both check.
 
 CLI acceptance does not prove bootstrap or network reachability. The controller
 chooses the first control-plane node ready to join, which need not be the first
@@ -449,8 +462,11 @@ kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- \
 every control-plane node. It is required when `cluster.nodes` contains more than
 one node, or `infra.nico.controlPlane.count` is more than one with `nico`. When set, the controller runs kube-vip on each node,
 kubeadm uses the VIP as the `controlPlaneEndpoint`, and the kubeconfig `bootstrap
-site` writes points at it. A single-node cluster may leave it empty and use that
-node's IP as its fixed endpoint. The controller selects a control-plane node that reports
+site` writes points at it. A single-node cluster with `provisioned` may leave it
+empty and use that node's IP as its fixed endpoint; with `nico` it needs the VIP
+even for one node, because the node has no address until NICo allocates it and
+the controller stack install refuses a site with nothing to reach the controller
+at. The controller selects a control-plane node that reports
 ready to join, so the endpoint does not necessarily use the first node listed in
 the site spec.
 

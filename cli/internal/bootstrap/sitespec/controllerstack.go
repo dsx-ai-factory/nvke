@@ -53,13 +53,6 @@ func validHTTPEndpoint(ep string) bool {
 	return err == nil && u.Host != "" && (u.Scheme == "http" || u.Scheme == "https")
 }
 
-// StackPullSecret is the registry credential for the CAPNICo image pull secret.
-type StackPullSecret struct {
-	Server    string `yaml:"server"`
-	Username  string `yaml:"username"`
-	TokenFile string `yaml:"tokenFile"`
-}
-
 // StackTenant is the login rendered into every tenant node's cloud-init.
 type StackTenant struct {
 	User         string `yaml:"user"`

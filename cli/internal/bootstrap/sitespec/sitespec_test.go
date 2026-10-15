@@ -1159,6 +1159,23 @@ func TestValidateBootstrapReferences_FilesMustExist(t *testing.T) {
 	}
 }
 
+// TestValidateBootstrapReferences_TenantPasswordMustHoldAPassword: the bootstrap
+// refuses an empty password file when it reads it, so the check says so first.
+func TestValidateBootstrapReferences_TenantPasswordMustHoldAPassword(t *testing.T) {
+	path := writeNicoTemp(t, nicoYAML)
+	inv, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	t.Setenv(NicoCredentialsEnv, filepath.Join(filepath.Dir(path), "nico.token"))
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "tenant.password"), []byte(" \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := inv.ValidateBootstrapReferences(); err == nil || !strings.Contains(err.Error(), `infra.nico.tenant.passwordFile "tenant.password" is empty`) {
+		t.Fatalf("ValidateBootstrapReferences error = %v, want the empty password file reported", err)
+	}
+}
+
 // TestReadNicoToken: the credentials file's format is told from its content. A
 // bare token is the bearer token; the client-credentials form is recognised and
 // refused until CAPNICo can take it; anything else is not a token.
@@ -1456,6 +1473,27 @@ func TestLoad_BootstrapReleases(t *testing.T) {
 			}
 		})
 	}
+
+	// kubectl apply -f <dir> reads only the exact extensions .json, .yaml and
+	// .yml, so a ClusterRelease in release.YAML is never applied.
+	t.Run("an upper-case extension is not counted", func(t *testing.T) {
+		path := writeNicoTemp(t, nicoYAML)
+		dir := filepath.Join(filepath.Dir(path), "releases")
+		if err := os.Rename(filepath.Join(dir, "release.yaml"), filepath.Join(dir, "release.YAML")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "image.yaml"),
+			[]byte("apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		inv, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if err := inv.ValidateBootstrapReferences(); err == nil || !strings.Contains(err.Error(), `no ClusterRelease named "example-os-profile"`) {
+			t.Fatalf("ValidateBootstrapReferences error = %v, want the ClusterRelease in release.YAML not counted", err)
+		}
+	})
 
 	t.Run("missing path", func(t *testing.T) {
 		path := writeNicoTemp(t, nicoYAML)

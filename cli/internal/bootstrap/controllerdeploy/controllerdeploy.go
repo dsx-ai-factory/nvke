@@ -463,21 +463,21 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 			"(e.g. nvcr.io/<org>/nvke-controller:edge -- see .github/workflows/image-nvcr.yml)")
 	}
 	if cfg.NicoInfrastructure && !cfg.DisableMTLS && cfg.SPIREExternalAddress == "" {
-		return errors.New("cwedeploy: Config.SPIREExternalAddress is required with NicoInfrastructure; " +
+		return errors.New("controllerdeploy: Config.SPIREExternalAddress is required with NicoInfrastructure; " +
 			"nodes created by CAPNICo read the SPIRE server's address from their userdata, " +
 			"and the in-cluster name does not reach them")
 	}
 	if cfg.NicoInfrastructure && (cfg.DGXCTenant.User == "" || cfg.DGXCTenant.Password == "") {
-		return errors.New("cwedeploy: Config.DGXCTenant is required with NicoInfrastructure; " +
+		return errors.New("controllerdeploy: Config.DGXCTenant is required with NicoInfrastructure; " +
 			"the controller refuses to render a node's user data without DGXC_TENANT_USER and DGXC_TENANT_PASSWORD")
 	}
 	if cfg.NicoInfrastructure && cfg.ReleasesPath == "" {
-		return errors.New("cwedeploy: Config.ReleasesPath is required with NicoInfrastructure; " +
+		return errors.New("controllerdeploy: Config.ReleasesPath is required with NicoInfrastructure; " +
 			"the controller cannot resolve the control plane's osProfile without the release manifests")
 	}
 	if cfg.ProvisionedProviderImage == "" && !cfg.NicoInfrastructure {
-		return errors.New("cwedeploy: Config.ProvisionedProviderImage is required; the CAPI " +
-			"objects CWE writes for a site cluster have no controller without it " +
+		return errors.New("controllerdeploy: Config.ProvisionedProviderImage is required; the CAPI " +
+			"objects the NVKE controller writes for a site cluster go unreconciled without it " +
 			"(see Config.ProvisionedProviderImage)")
 	}
 
@@ -1104,9 +1104,12 @@ func spireInstallArgs(cfg Config, chart manifest.Chart, valuesPath, clusterName,
 
 // tpmAttestorArgs turns the EK allowlist into chart values.
 //
-// No fingerprints means no TPM attestor: a bootstrap that has not been told
-// which hardware it is entitled to admit must not admit any, and the hosts on
-// that path run without a SPIRE identity at all.
+// No fingerprints means no TPM attestor, except with NicoInfrastructure: a
+// bootstrap that has not been told which hardware it is entitled to admit must
+// not admit any, and the hosts on that path run without a SPIRE identity at
+// all. With nico the attestor is on without any, and the allowlist starts
+// empty: CWE adds each node's key as CAPNICo allocates the machine, so the
+// hardware admitted is what NICo handed this site.
 //
 // Reaching the server from outside is a separate concern, handled by
 // spire-server-nodeport.yaml rather than by the chart's own Service.

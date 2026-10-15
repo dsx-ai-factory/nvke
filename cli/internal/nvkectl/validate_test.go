@@ -254,3 +254,33 @@ func TestValidateSiteSpec_BootstrapFilesAreCheckedInTheBootstrapSection(t *testi
 		t.Fatalf("err = %v, output %q; want the credentials variable and the missing files reported", err, out.String())
 	}
 }
+
+// TestValidateSiteSpec_NicoStackVerdictNeedsNoBootstrapInputs: the controller
+// stack install runs validate sitespec without NVKECTL_NICO_CREDENTIALS, the
+// bootstrap's tenant password and release manifests, and the SPIRE address the
+// bootstrap's nodes dial. A filled-in nico spec still gets its controllerStack
+// verdict and exits 0; --bootstrap-only is where those inputs fail.
+func TestValidateSiteSpec_NicoStackVerdictNeedsNoBootstrapInputs(t *testing.T) {
+	path := nicoStackSiteSpec(t, func(text string) string {
+		out := strings.Replace(text, `  externalAddress: "192.0.2.10"`, "", 1)
+		if out == text {
+			t.Fatal("the example no longer sets spire.externalAddress; update this test")
+		}
+		return out
+	})
+	t.Setenv("NVKECTL_NICO_CREDENTIALS", "")
+
+	var out strings.Builder
+	if err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path}); err != nil {
+		t.Fatalf("full validate: %v\n%s", err, out.String())
+	}
+	if got := out.String(); !strings.HasSuffix(got, "controllerStack: valid\n") || !strings.Contains(got, "bootstrap: not ready for nvkectl bootstrap site on this host") {
+		t.Errorf("output %q; want the bootstrap inputs reported and the controllerStack valid", got)
+	}
+
+	out.Reset()
+	err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
+	if err == nil || strings.Contains(out.String(), "can run with this file") {
+		t.Fatalf("--bootstrap-only: err = %v, output %q; want it to fail without the inputs", err, out.String())
+	}
+}

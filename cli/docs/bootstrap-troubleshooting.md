@@ -87,10 +87,12 @@ level=WARN msg="bootstrap failed after site cluster creation; retaining the boot
 With `infra.provider: nico`, the kept cluster also holds the
 NICo token and the tenant password as Secrets (`nico-credentials` in
 `capnico-system`, `dgxc-tenant-credentials` in `nke-controller`), so delete it
-when you are done. After a failure past site cluster creation it also holds the
-machines for the NICo instances CAPNICo allocated, and those must be released
-before the cluster is deleted: see
-[Release the NICo instances first](#release-the-nico-instances-first).
+when you are done. After a failure past site cluster creation but before every
+control-plane node joined, it also holds the machines for the NICo instances
+CAPNICo allocated, and those must be released before the cluster is deleted: see
+[Release the NICo instances first](#release-the-nico-instances-first). After
+every node joined the site cluster is up and working: recover what the run could
+not write and delete only the bootstrap cluster.
 
 Use that kubeconfig to look at the live state, which is more than the dump
 captures:
@@ -118,7 +120,8 @@ and the only saved copy of the etcd encryption key. See
 #### Release the NICo instances first
 
 With `infra.provider: nico`, after a failure past the point where the site
-cluster was created, the retained cluster also holds the Cluster API machines
+cluster was created and before every control-plane node joined, the retained
+cluster also holds the Cluster API machines
 for the NICo instances CAPNICo allocated. Deleting a Kind cluster runs no finalizers, so deleting it
 now leaves those instances allocated and unmanaged, with the tenant login in
 their user data, and nothing in NICo or in a re-run will find them. Release them
@@ -138,9 +141,13 @@ The URL port is `NVKECTL_CONTROLLER_PORT`, `30080` by default. `set-site` makes
 stays listed as `Deleting` until every machine is released. Only then delete the
 Kind cluster. The failure message prints these steps.
 
-None of this applies to a run that succeeded and was kept with
-`--keep-bootstrap-cluster`: the instances are then the new cluster's nodes, so
-delete only the Kind cluster.
+None of this applies once every control-plane node joined, whether the run then
+failed writing the kubeconfig or saving the key, or succeeded and was kept with
+`--keep-bootstrap-cluster`: the instances are then the new cluster's nodes, and
+`nvkectl delete cluster` would destroy the working site cluster and its NICo
+machines. Recover the kubeconfig and the
+[encryption key](#the-encryption-key-was-not-saved) from the retained cluster,
+then delete only the Kind cluster. The failure message says which case you are in.
 
 #### Delete the cluster
 
@@ -201,9 +208,11 @@ from source, `make -C cli images` builds the default local images.
 
 Inspect the retained cluster before deleting it. If the earlier run created
 a site cluster, follow the [recovery guidance](#when-it-is-safe-to-run-bootstrap-again)
-first. With `infra.provider: nico`, [release the NICo instances](#release-the-nico-instances-first)
-the earlier run allocated before you delete the cluster: deleting it alone
-leaves them allocated. Bootstrap does not reuse an existing Kind cluster.
+first. With `infra.provider: nico`, if the earlier run failed before every
+control-plane node joined, [release the NICo instances](#release-the-nico-instances-first)
+it allocated before you delete the cluster: deleting it alone leaves them
+allocated. If it succeeded, or failed after every node joined, the site cluster
+is working: do not delete it. Bootstrap does not reuse an existing Kind cluster.
 
 **`port 6443, the Kubernetes API port, is accepting connections on: <node> (<ip>)`**
 
@@ -402,7 +411,8 @@ To abandon a failed site-provisioning attempt:
 
 1. Save the logs, diagnostics and any [encryption key](#the-encryption-key-was-not-saved).
 2. Delete the bootstrap cluster to stop further workflow dispatch. With
-   `infra.provider: nico`, first [release the NICo instances](#release-the-nico-instances-first):
+   `infra.provider: nico` and a failure before every control-plane node joined,
+   first [release the NICo instances](#release-the-nico-instances-first):
    deleting the Kind cluster runs no finalizers, so it leaves them allocated and
    unmanaged.
 3. Confirm no provisioning commands are still running on the affected hosts.
