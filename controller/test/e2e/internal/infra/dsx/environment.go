@@ -300,10 +300,15 @@ func (d *Environment) siteNames() []string {
 
 // Selection is what one run resolves to at one datahall.
 //
-// Three members rather than Forge's two, because DSX places the site
-// controller and the tenant by different mechanisms: the site controller is a
-// machine targeted by id, and the tenant's nodes are instance types its node
-// pools name. A run needs both, and they are not interchangeable.
+// Three members rather than Forge's two, because DSX can place the site
+// controller and the tenant by different mechanisms: a site may pin the site
+// controller to a machine targeted by id, while the tenant's nodes are always
+// instance types its node pools name.
+//
+// Machine is optional and usually empty. A site that declares no machines ---
+// which is what a lane wants, so a held or unhealthy host does not wedge every
+// run --- places the site controller on the CPU instance type too, and Place
+// returns that. See Resolve and Place.
 type Selection struct {
 	Site Site
 
@@ -441,10 +446,16 @@ type Placement struct {
 }
 
 // Place chooses where the site controller goes: a pinned machine when the site
-// declares any, otherwise an instance type providing the architecture.
+// declares any, otherwise a CPU instance type of the requested architecture.
 //
 // Machines win when present so a datahall can still pin deliberately, and the
 // file is expected to leave them out.
+//
+// CPU, not merely the architecture: a GPU type declares an architecture too,
+// so matching on arch alone can put a site controller on accelerator hardware
+// whenever a datahall declares a GPU type of that arch first. That is also the
+// shape Resolve selected on, so asking for less here would place the run
+// somewhere Resolve did not agree to.
 func (s Site) Place(arch string) (Placement, error) {
 	if len(s.Machines) > 0 {
 		machine, err := s.MatchMachine(arch)
@@ -453,7 +464,7 @@ func (s Site) Place(arch string) (Placement, error) {
 		}
 		return Placement{MachineID: machine.ID, Arch: machine.Arch(), Name: machine.Name}, nil
 	}
-	instanceType, err := s.MatchInstanceType(map[string]string{infra.CapabilityArch: arch})
+	instanceType, err := s.MatchCPU(arch)
 	if err != nil {
 		return Placement{}, err
 	}

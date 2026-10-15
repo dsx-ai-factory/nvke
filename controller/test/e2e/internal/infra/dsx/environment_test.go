@@ -180,6 +180,31 @@ func TestValidateRequiresInstanceTypesAndNotMachines(t *testing.T) {
 	})
 }
 
+// A datahall may declare a GPU type, and nothing orders the file: a type
+// providing {machineType: gpu, arch: amd64} can sit above the CPU one and
+// still answer an amd64 request. Matching on architecture alone put the site
+// controller on it -- accelerator hardware the GB200 streams exist to
+// exercise, taken by a run that asked for a plain machine. Resolve already
+// selected the site on its CPU shape, so Place asking for less also placed the
+// run somewhere Resolve had not agreed to.
+func TestPlaceSkipsAGPUTypeOfTheSameArch(t *testing.T) {
+	site := completeSite()
+	site.Key = "dh"
+	site.Machines = nil
+	// First, so a match on arch alone returns it.
+	site.InstanceTypes = append([]InstanceType{
+		{Name: "tenant-gpu", ID: "g1", Provides: map[string]string{infra.CapabilityMachineType: "gpu", infra.CapabilityArch: "amd64", infra.CapabilityGPU: "gb200"}},
+	}, site.InstanceTypes...)
+
+	place, err := site.Place("amd64")
+	if err != nil {
+		t.Fatalf("placing with a GPU type declared first: %v", err)
+	}
+	if place.InstanceTypeID != "t1" {
+		t.Errorf("placed on %q (%s), want the CPU type t1 -- a site controller must not take accelerator hardware", place.InstanceTypeID, place.Name)
+	}
+}
+
 // Place is the whole point of making machines optional: with none declared the
 // create carries an instanceTypeId and the datahall chooses the host, which is
 // what Forge does and what a lane needs. A pinned machine still wins, so a
