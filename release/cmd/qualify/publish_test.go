@@ -122,17 +122,17 @@ func TestPublishCmdRejectsStreamMismatch(t *testing.T) {
 	}
 }
 
-// An unknown --environment has no bucket to resolve to, so this must stop
-// before buildDestination ever runs -- same contract as publishArgs'
-// other rejection tests, none of which touch a real GCS bucket.
-func TestPublishCmdRejectsUnknownEnvironment(t *testing.T) {
-	resultPath := writeFile(t, "qualify-result.json", publishTestResult)
-	junitPath := writeFile(t, "qualify-e2e.junit.xml", "<testsuites/>")
+func TestResolveBucketDefaultsToAICR(t *testing.T) {
+	t.Setenv(testGridBucketEnvVar, "")
+	if got := resolveBucket(); got != defaultTestGridBucket {
+		t.Errorf("resolveBucket() = %q, want the default %q", got, defaultTestGridBucket)
+	}
+}
 
-	args := append(publishArgs(t, resultPath, junitPath, "amd64-1.34"), "--environment", "not-a-real-environment")
-	_, err := runPublishCmd(t, args...)
-	if err == nil || !strings.Contains(err.Error(), "unknown --environment") {
-		t.Errorf("err = %v, want it to name the bad environment", err)
+func TestResolveBucketReadsEnvVar(t *testing.T) {
+	t.Setenv(testGridBucketEnvVar, "some-other-bucket")
+	if got := resolveBucket(); got != "some-other-bucket" {
+		t.Errorf("resolveBucket() = %q, want the env var's value", got)
 	}
 }
 
