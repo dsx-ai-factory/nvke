@@ -413,7 +413,7 @@ func siteCapabilities(run map[string]string) map[string]string {
 // CPU shape, and one worker on the worker shape.
 func requireRunCapacity(ctx context.Context, provider infra.Provider) error {
 	checker, ok := provider.(interface {
-		RequireCapacity(context.Context, map[string]string, int, int) error
+		RequireCapacity(ctx context.Context, selector map[string]string, cpu, workers int) error
 	})
 	if !ok {
 		return fmt.Errorf("provider %T cannot check Forge allocation stats", provider)

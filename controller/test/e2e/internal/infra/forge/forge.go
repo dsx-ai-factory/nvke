@@ -423,7 +423,8 @@ func (p *Provider) RequireCapacity(ctx context.Context, capabilities map[string]
 		if usable < d.need {
 			problems = append(problems, fmt.Sprintf(
 				"%s (%s): need %d, unusedUsable=%d (total=%d used=%d unused=%d)",
-				d.name, d.id, d.need, usable, stats.GetTotal(), stats.GetUsed(), stats.GetUnused()))
+				d.name, d.id, d.need, usable, stats.GetTotal(), stats.GetUsed(), stats.GetUnused(),
+			))
 		}
 	}
 	if len(problems) > 0 {
