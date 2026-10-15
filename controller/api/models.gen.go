@@ -424,8 +424,7 @@ type CreateClusterControlPlaneConfig struct {
 
 	// LaunchLayer LaunchLayer settings for the control-plane nodes. Same shape as
 	// LaunchLayerNodePoolProvider — control-plane nodes are still
-	// LaunchLayer machines. All fields become immutable once CAPLL submits
-	// a Compute request for the first control-plane node.
+	// LaunchLayer machines. Fixed at creation.
 	LaunchLayer *LaunchLayerControlPlaneProvider `json:"launchLayer,omitempty"`
 
 	// MachineAnnotations Annotations applied to control-plane CAPI Machines at creation, including scale-out and replacement Machines. Fixed at cluster creation and not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
@@ -557,7 +556,7 @@ type CreateNodePoolRequest struct {
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
 
 	// LaunchLayer LaunchLayer settings for a node pool. instanceType is required, and
-	// exactly one of hostOSProfile and vmProfile may be set.
+	// at most one of hostOSProfile and vmProfile may be set.
 	LaunchLayer *LaunchLayerNodePoolProvider `json:"launchLayer,omitempty"`
 
 	// MachineAnnotations Annotations set on CAPI Machines only when they are created, including Machines created during scale-out or replacement. Fixed at node-pool creation. Not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
@@ -718,8 +717,7 @@ type LaunchLayerClusterProviderVpcType string
 
 // LaunchLayerControlPlaneProvider LaunchLayer settings for the control-plane nodes. Same shape as
 // LaunchLayerNodePoolProvider — control-plane nodes are still
-// LaunchLayer machines. All fields become immutable once CAPLL submits
-// a Compute request for the first control-plane node.
+// LaunchLayer machines. Fixed at creation.
 type LaunchLayerControlPlaneProvider struct {
 	// FulfillmentStrategy Controls how the Compute Allocation Operator places the request.
 	FulfillmentStrategy *LaunchLayerControlPlaneProviderFulfillmentStrategy `json:"fulfillmentStrategy,omitempty"`
@@ -749,7 +747,7 @@ type LaunchLayerControlPlaneProviderFulfillmentStrategy string
 type LaunchLayerControlPlaneProviderUpdate = map[string]interface{}
 
 // LaunchLayerNodePoolProvider LaunchLayer settings for a node pool. instanceType is required, and
-// exactly one of hostOSProfile and vmProfile may be set.
+// at most one of hostOSProfile and vmProfile may be set.
 type LaunchLayerNodePoolProvider struct {
 	// FulfillmentStrategy Controls how the Compute Allocation Operator places the request.
 	FulfillmentStrategy *LaunchLayerNodePoolProviderFulfillmentStrategy `json:"fulfillmentStrategy,omitempty"`
@@ -1309,7 +1307,7 @@ type NodePoolCreateConfig struct {
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
 
 	// LaunchLayer LaunchLayer settings for a node pool. instanceType is required, and
-	// exactly one of hostOSProfile and vmProfile may be set.
+	// at most one of hostOSProfile and vmProfile may be set.
 	LaunchLayer *LaunchLayerNodePoolProvider `json:"launchLayer,omitempty"`
 
 	// MachineAnnotations Annotations set on CAPI Machines only when they are created, including Machines created during scale-out or replacement. Fixed at node-pool creation. Not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.

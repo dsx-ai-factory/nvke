@@ -4,7 +4,7 @@
 
 A tenant cluster is created on a Cluster API **infrastructure provider**: a controller running on the site cluster that holds credentials for a backend and creates machines there. `nvkectl` never installs one. You do it once per site, before the first `nvkectl create cluster`.
 
-This page covers [CAPNICo](https://github.com/dsx-ai-factory/cluster-api-provider-nico), the NICo provider, which is the only provider supported for tenant clusters today. It links out to CAPNICo's own documentation rather than restating it.
+This page covers [CAPNICo](https://github.com/dsx-ai-factory/cluster-api-provider-nico), the NICo provider, which the site controller accepts by default. [LaunchLayer](#launchlayer) is the other supported provider; a deployment accepts it only once you enable it. Both sections link out to the provider's own documentation rather than restating it.
 
 ## Prerequisites
 
@@ -164,11 +164,24 @@ To prove the credentials actually work before committing hardware, follow CAPNIC
 
 For provider-side conditions — `WaitingForBootstrapData`, `WaitingForIdentitySecret` and the rest — see CAPNICo's **[7. When It Stalls](https://github.com/dsx-ai-factory/cluster-api-provider-nico/blob/main/docs/getting-started.md#7-when-it-stalls)** section.
 
+## LaunchLayer
+
+[CAPLL](https://github.com/dsx-ai-factory/cluster-api-provider-launchlayer) runs tenant clusters on LaunchLayer compute. Install Cluster API as in step 2, then install CAPLL and point it at your LaunchLayer deployment as its [README](https://github.com/dsx-ai-factory/cluster-api-provider-launchlayer#against-a-real-launchlayer-deployment) describes: the manager needs `--base-url` and an `--identity-secret` holding its OAuth2 client credentials. NVKE supplies neither.
+
+The site controller then has to accept LaunchLayer requests. Until it does, it rejects them with 400. Set these chart values:
+
+| Value | Setting |
+|---|---|
+| `supportedInfraProviders` | Add `launchLayer`, for example `"nico,launchLayer"` |
+| `capi.rbac.launchLayer` | `true`, the default. Grants CWE access to LaunchLayer's CRDs |
+| `nodeAgent.spireAttestationMethod` | `dsxImds`, when `spiffe.enabled` is `true`. A LaunchLayer node attests to SPIRE only through DSX IMDS, so a SPIFFE-enabled deployment using any other method rejects LaunchLayer requests with 400 |
+
+The ordering rule above applies here too: CWE checks for the `LaunchLayerMachine` CRD once, at process start, and skips the LaunchLayer SPIFFE controller when it is absent. Install CAPLL before CWE, or restart CWE after it.
+
 ## What This Page Does Not Cover
 
 - **The management plane (CWE) install.** Separate step, and it must come after this one.
 - **`cluster-api-provider-provisioned`.** It ships in this repository but is not a tenant-cluster infrastructure provider and is not installed on a site cluster.
-- **LaunchLayer.** `nvkectl get providers` reports on it, but it is not supported for tenant clusters today.
 - **Installing the GPU runtime on a tenant cluster.** Once a tenant cluster exists, drivers, operators and system configuration are installed with [NVIDIA AI Cluster Runtime](https://github.com/NVIDIA/aicr), a separate project.
 
 ## Next Steps

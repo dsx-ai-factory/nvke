@@ -109,12 +109,17 @@ tags:
       A Kubernetes cluster. Holds the Kubernetes version, network, CNI, etcd
       encryption, control-plane configuration and conditions.
 
-      **Infrastructure provider.** Clusters in this release run on NVIDIA Infra
-      Controller (NICo) bare-metal infrastructure. Each cluster, control plane
-      and node pool carries a `nico` object with the NICo identifiers it uses:
-      organization, site and VPC at the cluster level; instance type,
-      networking, SSH key groups and release at the control-plane and node
-      pool level. A cluster's provider is fixed at creation.
+      **Infrastructure provider.** Each cluster, control plane and node pool
+      carries exactly one provider object. `nico` runs the cluster on NVIDIA
+      Infra Controller (NICo) bare-metal infrastructure: organization, site
+      and VPC at the cluster level; instance type, networking, SSH key groups
+      and release at the control-plane and node pool level. `launchLayer`
+      runs it on LaunchLayer compute: VPC or organization, site and security
+      groups at the cluster level; instance type and host OS or VM profile at
+      the control-plane and node pool level. A deployment accepts only the
+      providers its operator enables (`supportedInfraProviders`, NICo by
+      default) and rejects any other with 400. A cluster's provider is fixed
+      at creation.
 
       **Kubernetes versions.** Versions are semantic-version cores (X.Y.Z) with
       no leading `v`. Control-plane upgrades move forward one minor version at a
@@ -2837,7 +2842,7 @@ components:
       additionalProperties: false
       description: |
         LaunchLayer settings for a node pool. instanceType is required, and
-        exactly one of hostOSProfile and vmProfile may be set.
+        at most one of hostOSProfile and vmProfile may be set.
       properties:
         instanceType:
           type: string
@@ -3120,8 +3125,7 @@ components:
       description: |
         LaunchLayer settings for the control-plane nodes. Same shape as
         LaunchLayerNodePoolProvider — control-plane nodes are still
-        LaunchLayer machines. All fields become immutable once CAPLL submits
-        a Compute request for the first control-plane node.
+        LaunchLayer machines. Fixed at creation.
       properties:
         instanceType:
           type: string
