@@ -24,8 +24,8 @@ import (
 
 // labelNodeTestWorkflow is a thin wrapper so the unexported labelNode helper can
 // be driven through the Temporal test environment.
-func labelNodeTestWorkflow(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bool) error {
-	return labelNode(ctx, nodeID, addConfigProfileLabels)
+func labelNodeTestWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
+	return labelNode(ctx, nodeID)
 }
 
 // cleanBeforeControlPlaneRejoinTestWorkflow exposes the unexported cleanup
@@ -189,7 +189,7 @@ func TestLabelNode(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			testEnv := params.setup(t)
 
-			testEnv.env.ExecuteWorkflow(labelNodeTestWorkflow, testEnv.nodeID, false)
+			testEnv.env.ExecuteWorkflow(labelNodeTestWorkflow, testEnv.nodeID)
 
 			require.True(t, testEnv.env.IsWorkflowCompleted())
 			require.NoError(t, testEnv.env.GetWorkflowError())

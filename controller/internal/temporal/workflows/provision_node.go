@@ -286,7 +286,6 @@ func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activit
 		}
 	}
 
-	hasConfigProfile := nodeCtx.ConfigProfile != ""
 	configProfile, err := getConfigProfile(ctx, nodeID)
 	if err != nil {
 		return fmt.Errorf("failed to get config profile: %w", err)
@@ -331,20 +330,20 @@ func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activit
 	postJoinStart := workflow.Now(ctx)
 	endPostJoin := func() { recordPhase("post_join", postJoinStart, workflow.Now(ctx)) }
 
-	if err := labelNode(ctx, nodeID, hasConfigProfile); err != nil {
+	if err := labelNode(ctx, nodeID); err != nil {
 		endPostJoin()
 		return fmt.Errorf("failed to label node: %w", err)
 	}
 
-	// Runs after labelNode so labels requested through the API win over config-profile and computed labels,
+	// Runs after labelNode so labels requested through the API win over computed labels,
 	// and before the provisioning taint is removed so requested labels and taints are in place before workloads can schedule.
 	if err := applyNodeMetadata(ctx, nodeID); err != nil {
 		endPostJoin()
 		return fmt.Errorf("failed to apply node labels and taints: %w", err)
 	}
 
-	// Config profiles that set the control-plane role label explicitly are being phased out, and the API rejects it as a
-	// label, so kubeadm's join is the only source that can be relied on. Internal components such as the node agent rely
+	// Config profiles no longer supply labels, and the API rejects the control-plane role label,
+	// so kubeadm's join is the only source that can be relied on. Internal components such as the node agent rely
 	// on this label, so this is a precautionary check to avoid a node becoming schedulable without it.
 	if nodeCtx.ControlPlane {
 		if err := verifyControlPlaneRoleLabel(ctx, nodeID); err != nil {
@@ -768,7 +767,7 @@ func cleanBeforeControlPlaneRejoin(ctx workflow.Context, nodeID uuid.UUID) {
 	}
 }
 
-func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bool) error {
+func labelNode(ctx workflow.Context, nodeID uuid.UUID) error {
 	var a *activities.Activities
 
 	activityOptions := workflow.ActivityOptions{
@@ -815,7 +814,7 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 		labels = append(labels, "k8s.ovn.org/zone-name="+node.Name)
 	}
 
-	if !addConfigProfileLabels && len(labels) == 0 {
+	if len(labels) == 0 {
 		return nil
 	}
 
@@ -823,7 +822,6 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 		workflow.WithActivityOptions(ctx, activityOptions),
 		a.LabelNode,
 		activities.LabelNodeInput{
-			AddConfigProfileLabels:           addConfigProfileLabels,
 			Labels:                           labels,
 			NodeID:                           nodeID,
 			NodeProvisioningConditionMessage: "Labeling node",
