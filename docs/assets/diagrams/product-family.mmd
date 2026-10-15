@@ -1,0 +1,45 @@
+%% SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+%% SPDX-License-Identifier: Apache-2.0
+%% Structure source for product-family.svg. Keep the two in sync.
+%% Arrows point from the side that starts the interaction. Dashed = optional or asynchronous.
+flowchart BT
+    nico["NICo<br/>bare-metal machine lifecycle"]:::nv
+    nvkr["NVKR<br/>builds and signs"]:::nvkr
+    reg["Registry<br/>Releases"]:::tp
+    op(["Operator<br/>nvkectl or NVKE API"]):::actor
+    cust(["Customer<br/>runs AI workloads"]):::actor
+
+    subgraph mgmt["Management cluster"]
+        mp["NVKE management plane<br/>API, controllers and workflows"]:::nvke
+        capnico["CAPNICo<br/>Cluster API provider"]:::nvke
+        obs["NVKE observability<br/>telemetry"]:::nvke
+    end
+
+    subgraph wc["Workload cluster"]
+        cp["Kubernetes control plane<br/>API server, etcd"]:::tp
+        rt["Accelerated runtime<br/>produced by AICR"]:::opt
+        wobs["NVKE observability<br/>telemetry"]:::nvkeopt
+        nodes["NVIDIA GPU machines<br/>Kubernetes nodes running nvke-agent"]:::hw
+    end
+
+    op -- builds --> nvkr
+    op -- manages clusters --> mp
+    cust -- kubectl --> cp
+    nvkr -- publishes --> reg
+    op -- installs --> mgmt
+    reg -- charts, images --> mgmt
+    mp -- requests machines --> capnico
+    mp -- drives clusters --> wc
+    obs -- scrapes --> mp
+    capnico -- requests instances --> nico
+    reg -- node OS image --> nico
+    nico -- provisions as nodes --> nodes
+
+    classDef nvke fill:#76B900,stroke:#76B900,color:#000000
+    classDef nvkr fill:#952FC6,stroke:#952FC6,color:#FFFFFF
+    classDef nv fill:#FFFFFF,stroke:#4B4B4B,color:#1A1A1A
+    classDef opt fill:#FFFFFF,stroke:#4B4B4B,stroke-dasharray:5 4,color:#1A1A1A
+    classDef nvkeopt fill:#FFFFFF,stroke:#3F8500,stroke-dasharray:5 4,color:#1A1A1A
+    classDef tp fill:#E0E0E0,stroke:#E0E0E0,color:#1A1A1A
+    classDef hw fill:#4B4B4B,stroke:#4B4B4B,color:#FFFFFF
+    classDef actor fill:#FFFFFF,stroke:#757575,color:#1A1A1A

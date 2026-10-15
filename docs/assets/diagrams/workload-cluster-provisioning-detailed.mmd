@@ -1,0 +1,38 @@
+%% SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+%% SPDX-License-Identifier: Apache-2.0
+%% Structure source for workload-cluster-provisioning-detailed.svg. Keep the two in sync.
+%% The SVG numbers requests only; the 201 reply is unnumbered there.
+sequenceDiagram
+    autonumber
+    participant Op as Operator (nvkectl or API)
+    box Management cluster
+        participant Ctl as NVKE controller (API, reconcilers)
+        participant Tmp as Temporal (workflows)
+        participant CAPI as CAPNICo (with Cluster API)
+        participant Spire as SPIRE server
+    end
+    participant NICo as NICo (bare metal)
+    participant Node as Workload node (nvke-agent)
+    participant Cust as Customer (kubectl)
+
+    Op->>Ctl: POST /api/clusters
+    Ctl->>Ctl: store cluster, queue work
+    Ctl-->>Op: 201 Provisioning
+    Ctl--)Tmp: ProvisionCluster
+    Tmp->>CAPI: Cluster, NicoCluster
+    loop For each node
+        Ctl--)Tmp: ProvisionNode
+        Tmp->>CAPI: NicoMachine, Machine
+        CAPI->>NICo: create instance
+        NICo->>Node: boot node OS image
+        Node->>Spire: attest with TPM
+        Tmp->>Node: preflight, Open vSwitch
+    end
+    Tmp->>Node: kubeadm init, install CNI
+    Tmp->>Tmp: cluster Provisioned
+    Tmp->>Node: kubeadm join (other nodes)
+    Ctl->>Node: fetch admin kubeconfig
+    Ctl->>Ctl: store as Secret
+    Op->>Ctl: get kubeconfig
+    Op--)Cust: hand over kubeconfig
+    Cust->>Node: kubectl

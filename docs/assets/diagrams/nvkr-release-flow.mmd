@@ -1,0 +1,39 @@
+%% SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+%% SPDX-License-Identifier: Apache-2.0
+%% Structure source for nvkr-release-flow.svg. Keep the two in sync.
+%% Dashed = optional or asynchronous. "Planned" = not available yet.
+flowchart LR
+    subgraph inputs["Authored inputs"]
+        cat["Catalog<br/>pinned sources, tools"]:::nvkr
+        def["Definition<br/>named outputs"]:::nvkr
+        env["Environment<br/>registry, signing"]:::nvkr
+    end
+
+    hosted["Hosted Run<br/>GitHub Actions, signed"]:::nvkr
+    local["Local Run<br/>your host, unsigned"]:::nvkr
+    qual["Qualification (Planned)<br/>evidence checks"]:::planned
+
+    subgraph registry["Registry"]
+        rel["Release<br/>signed, digest-pinned"]:::nvkr
+    end
+
+    verify["Verify and export<br/>your Verification Policy"]:::nvkr
+    mgmt["Management cluster<br/>charts, images by digest"]:::nvke
+    nico["NICo<br/>provisions nodes"]:::nv
+    nodes["Workload cluster nodes<br/>boot the node OS image"]:::nvke
+
+    inputs -- Plan --> hosted
+    inputs -- Plan --> local
+    hosted -.-> qual
+    hosted --> rel
+    rel --> verify
+    verify -- release description --> mgmt
+    rel --> mgmt
+    rel -- node OS image --> nico
+    nico --> nodes
+    local -. run directory, unsigned .-> mgmt
+
+    classDef nvke fill:#76B900,stroke:#76B900,color:#000000
+    classDef nvkr fill:#952FC6,stroke:#952FC6,color:#FFFFFF
+    classDef nv fill:#FFFFFF,stroke:#4B4B4B,color:#1A1A1A
+    classDef planned fill:#FFFFFF,stroke:#952FC6,stroke-dasharray:5 4,color:#1A1A1A

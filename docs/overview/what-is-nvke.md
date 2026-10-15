@@ -40,20 +40,9 @@ To offer managed Kubernetes as a service an AI factory must deliver cluster prov
 
 The operator brings NVIDIA GPU machines, networks, registries holding NVKR-built artifacts, and an infrastructure provider. NVKE connects to the infrastructure provider through Cluster API (CAPI) to provision machines with your node images, then uses the NVKE node agent on each machine to form and configure the Kubernetes cluster. The operator calls the NVKE API to create clusters, and customers receive a Kubernetes API endpoint for their cluster.
 
-The diagram shows how artifacts and requests flow from NVKR to a customer's cluster.
+The diagram shows the NVKE product family, how it sits on NICo and your GPU machines, and which components talk to each other.
 
-```mermaid
-flowchart LR
-    nvkr["NVKR<br/>Definition → Run → Release"] --> reg["Operator registries"]
-    op["Operator<br/>nvkectl or NVKE API"] --> mp["NVKE management plane<br/>on the management cluster"]
-    reg --> mp
-    mp --> capnico["CAPNICo"] --> nico["NICo"] --> hw["GPU machines"]
-    hw --> wc["Workload cluster<br/>control plane and node pools"]
-    reg --> wc
-    wc --> cust["Customer<br/>kubectl"]
-    aicr["AICR"] -. "accelerated runtime" .-> wc
-    nvs["NVSentinel"] -. "remediation requests" .-> mp
-```
+![NVKE product family. NVKR builds and signs artifacts and publishes them to a registry. The operator installs the management cluster's components, the NVKE management plane, CAPNICo and NVKE observability, from the charts and images in the registry. The management plane requests machines through CAPNICo, which calls NICo, and drives each workload cluster. NICo provisions NVIDIA GPU machines from the node OS image, and those machines become the workload cluster's Kubernetes nodes, each running nvke-agent, under the cluster's Kubernetes control plane. The accelerated runtime produced by AICR and NVKE observability are optional in the workload cluster. The customer uses kubectl against the control plane.](../assets/diagrams/product-family.svg)
 
 | Stage | What happens | Read more |
 |---|---|---|

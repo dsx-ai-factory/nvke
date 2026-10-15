@@ -18,6 +18,10 @@ engineers integrating against that control plane.
 
 ## Overview
 
+The diagram shows the NVKE product family, how it sits on NICo and your GPU machines, and which components talk to each other.
+
+![NVKE product family. NVKR builds and signs artifacts and publishes them to a registry. The operator installs the management cluster's components, the NVKE management plane, CAPNICo and NVKE observability, from the charts and images in the registry. The management plane requests machines through CAPNICo, which calls NICo, and drives each workload cluster. NICo provisions NVIDIA GPU machines from the node OS image, and those machines become the workload cluster's Kubernetes nodes, each running nvke-agent, under the cluster's Kubernetes control plane. The accelerated runtime produced by AICR and NVKE observability are optional in the workload cluster. The customer uses kubectl against the control plane.](docs/assets/diagrams/product-family.svg)
+
 NVKE is not a Kubernetes distribution and not a Cluster API flavour. It is a
 **self-hosting factory for Kubernetes clusters**: a throwaway seed cluster
 stands up a highly available, self-managing control plane, and that control

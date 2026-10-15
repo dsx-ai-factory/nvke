@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Structure is kept in sync with nvkr-release-flow.mmd. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 992 520" role="img" aria-labelledby="nvkr-release-flow-title nvkr-release-flow-desc">
+  <title id="nvkr-release-flow-title">NVKR release flow</title>
+  <desc id="nvkr-release-flow-desc">Left to right. Authored inputs, the Catalog, Definition and Environment, are compiled into a Plan. The Plan runs as a hosted Run in GitHub Actions, which signs its outputs, or as a local Run on your own host, which is unsigned. A hosted Run publishes a Release to the registry the Environment names. The operator verifies the Release against their Verification Policy and exports its release description. The management cluster install reads the release description and pulls charts and images by digest from the registry; it can instead read a local Run directory. NICo provisions workload cluster nodes from the node OS image in the Release. Release qualification is planned.</desc>
+  <style>
+    text { font-family: "NVIDIA Sans", Arial, Helvetica, sans-serif; }
+    .bg { fill: #FFFFFF; stroke: #E0E0E0; stroke-width: 1; }
+    .t { fill: #1A1A1A; }
+    .tm { fill: #4B4B4B; }
+    .tw { fill: #FFFFFF; }
+    .tk { fill: #000000; }
+    .l { font-size: 14px; font-weight: 600; }
+    .s { font-size: 13px; font-weight: 400; }
+    .gl { font-size: 13px; font-weight: 600; }
+    .k-nvke { fill: #76B900; }
+    .k-nvkr { fill: #952FC6; }
+    .k-nv { fill: #FFFFFF; stroke: #4B4B4B; stroke-width: 1.5; }
+    .k-tp { fill: #E0E0E0; }
+    .k-hw { fill: #4B4B4B; }
+    .k-actor { fill: #FFFFFF; stroke: #757575; stroke-width: 1.5; }
+    .k-nvke-o { fill: #FFFFFF; stroke: #3F8500; stroke-width: 1.5; }
+    .k-nvkr-o { fill: #FFFFFF; stroke: #952FC6; stroke-width: 1.5; }
+    .dash { stroke-dasharray: 5 4; }
+    .g { fill: none; stroke: #757575; stroke-width: 1.5; }
+    .e { fill: none; stroke: #4B4B4B; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+    .ah { fill: #4B4B4B; }
+    .ko { fill: #FFFFFF; }
+    .ll { stroke: #A7A7A7; stroke-width: 1.5; stroke-dasharray: 2 5; stroke-linecap: round; }
+    .band { fill: none; stroke: #757575; stroke-width: 1.5; stroke-dasharray: 5 4; }
+    .badge { fill: #F9C500; }
+    .num { fill: #FFFFFF; stroke: #4B4B4B; stroke-width: 1.5; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1A1A1A; stroke: #313131; }
+      .t { fill: #FFFFFF; }
+      .tm { fill: #A7A7A7; }
+      .k-nv { fill: #1A1A1A; stroke: #A7A7A7; }
+      .k-tp { fill: #313131; }
+      .k-hw { fill: #757575; }
+      .k-actor { fill: #1A1A1A; stroke: #A7A7A7; }
+      .k-nvke-o { fill: #1A1A1A; stroke: #76B900; }
+      .k-nvkr-o { fill: #1A1A1A; stroke: #C359EF; }
+      .g { stroke: #757575; }
+      .e { stroke: #A7A7A7; }
+      .ah { fill: #A7A7A7; }
+      .ko { fill: #1A1A1A; }
+      .ll { stroke: #757575; }
+      .num { fill: #1A1A1A; stroke: #A7A7A7; }
+    }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto">
+      <path class="ah" d="M1,1.5 L9,5 L1,8.5 Z"/>
+    </marker>
+    <marker id="ahs" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto">
+      <path class="ah" d="M9,1.5 L1,5 L9,8.5 Z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0.5" y="0.5" width="991" height="519" rx="16"/>
+  <g class="group">
+    <rect class="g" x="12" y="100" width="196" height="300" rx="12"/>
+    <text class="gl tm" x="26" y="122">Authored inputs</text>
+  </g>
+  <g class="group">
+    <rect class="g" x="496" y="108" width="208" height="92" rx="12"/>
+    <text class="gl tm" x="510" y="130">Registry</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M192,164 L232,164"/>
+  </g>
+  <g class="edge">
+    <path class="e" d="M192,260 L232,260"/>
+  </g>
+  <g class="edge">
+    <path class="e" d="M192,356 L232,356"/>
+  </g>
+  <g class="edge">
+    <path class="e" d="M232,164 L264,164" marker-end="url(#ah)"/>
+  </g>
+  <g class="edge">
+    <path class="e" d="M232,356 L264,356" marker-end="url(#ah)"/>
+  </g>
+  <g class="edge">
+    <path class="e dash" d="M356,136 L356,88" marker-end="url(#ah)"/>
+  </g>
+  <g class="edge">
+    <path class="e" d="M448,164 L512,164" marker-end="url(#ah)"/>
+  </g>
+  <g class="edge">
+    <path class="e" d="M600,108 L600,88" marker-end="url(#ah)"/>
+  </g>
+  <g class="edge">
+    <path class="e" d="M688,60 L830,60 Q836,60 836,66 L836,136" marker-end="url(#ah)"/>
+    <rect class="ko" x="691.3" y="40" width="141.4" height="18" rx="3"/>
+    <text class="s tm elabel" x="762" y="53" text-anchor="middle">release description</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M704,164 L744,164" marker-end="url(#ah)"/>
+  </g>
+  <g class="edge">
+    <path class="e" d="M600,200 L600,254 Q600,260 606,260 L744,260" marker-end="url(#ah)"/>
+    <rect class="ko" x="622.4" y="240" width="99.3" height="18" rx="3"/>
+    <text class="s tm elabel" x="672" y="253" text-anchor="middle">node OS image</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M836,288 L836,328" marker-end="url(#ah)"/>
+  </g>
+  <g class="edge">
+    <path class="e dash" d="M356,384 L356,426 Q356,432 362,432 L954,432 Q960,432 960,426 L960,170 Q960,164 954,164 L928,164" marker-end="url(#ah)"/>
+    <rect class="ko" x="575.3" y="424" width="169.5" height="18" rx="3"/>
+    <text class="s tm elabel" x="660" y="437" text-anchor="middle">run directory, unsigned</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvkr" x="28" y="136" width="164" height="56" rx="8"/>
+    <text class="l tw" x="110" y="160" text-anchor="middle">Catalog</text>
+    <text class="s tw" x="110" y="177" text-anchor="middle">pinned sources, tools</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvkr" x="28" y="232" width="164" height="56" rx="8"/>
+    <text class="l tw" x="110" y="256" text-anchor="middle">Definition</text>
+    <text class="s tw" x="110" y="273" text-anchor="middle">named outputs</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvkr" x="28" y="328" width="164" height="56" rx="8"/>
+    <text class="l tw" x="110" y="352" text-anchor="middle">Environment</text>
+    <text class="s tw" x="110" y="369" text-anchor="middle">registry, signing</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvkr-o dash" x="264" y="32" width="184" height="56" rx="8"/>
+    <text class="l t" x="356" y="56" text-anchor="middle">Qualification</text>
+    <text class="s tm" x="356" y="73" text-anchor="middle">evidence checks</text>
+    <rect class="badge" x="392" y="21" width="62" height="20" rx="10"/>
+    <text class="s tk" x="423" y="35.5" text-anchor="middle">Planned</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvkr" x="264" y="136" width="184" height="56" rx="8"/>
+    <text class="l tw" x="356" y="160" text-anchor="middle">Hosted Run</text>
+    <text class="s tw" x="356" y="177" text-anchor="middle">GitHub Actions, signed</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvkr" x="264" y="328" width="184" height="56" rx="8"/>
+    <text class="l tw" x="356" y="352" text-anchor="middle">Local Run</text>
+    <text class="s tw" x="356" y="369" text-anchor="middle">your host, unsigned</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvkr" x="512" y="136" width="176" height="56" rx="8"/>
+    <text class="l tw" x="600" y="160" text-anchor="middle">Release</text>
+    <text class="s tw" x="600" y="177" text-anchor="middle">signed, digest-pinned</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvkr" x="512" y="32" width="176" height="56" rx="8"/>
+    <text class="l tw" x="600" y="56" text-anchor="middle">Verify and export</text>
+    <text class="s tw" x="600" y="73" text-anchor="middle">your Verification Policy</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvke" x="744" y="136" width="184" height="56" rx="8"/>
+    <text class="l tk" x="836" y="160" text-anchor="middle">Management cluster</text>
+    <text class="s tk" x="836" y="177" text-anchor="middle">charts, images by digest</text>
+  </g>
+  <g class="node">
+    <rect class="k-nv" x="744" y="232" width="184" height="56" rx="8"/>
+    <text class="l t" x="836" y="256" text-anchor="middle">NICo</text>
+    <text class="s tm" x="836" y="273" text-anchor="middle">provisions nodes</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvke" x="744" y="328" width="184" height="56" rx="8"/>
+    <text class="l tk" x="836" y="352" text-anchor="middle">Workload cluster nodes</text>
+    <text class="s tk" x="836" y="369" text-anchor="middle">boot the node OS image</text>
+  </g>
+  <path class="e" d="M232,164 V356"/>
+  <text class="s tm" x="240" y="255" text-anchor="start">Plan</text>
+  <g class="legend">
+    <rect class="k-nvkr" x="24" y="477" width="22" height="16" rx="4"/>
+    <text class="s t" x="54" y="490">NVKR</text>
+    <rect class="k-nvke" x="104.08" y="477" width="22" height="16" rx="4"/>
+    <text class="s t" x="134.07999999999998" y="490">NVKE</text>
+    <rect class="k-nv" x="184.16" y="477" width="22" height="16" rx="4"/>
+    <text class="s t" x="214.16" y="490">Other NVIDIA software</text>
+    <rect class="badge" x="383.58000000000004" y="477" width="22" height="16" rx="8"/>
+    <text class="s t" x="413.58000000000004" y="490">Planned</text>
+    <path class="e" d="M484.72,485 H514.72" marker-end="url(#ah)"/>
+    <text class="s t" x="522.72" y="490">Control or data path</text>
+    <path class="e dash" d="M685.12,485 H715.12" marker-end="url(#ah)"/>
+    <text class="s t" x="723.12" y="490">Optional or asynchronous</text>
+  </g>
+</svg>
