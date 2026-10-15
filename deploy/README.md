@@ -8,11 +8,11 @@ Two scripts: `check-site.sh` reports what the site still needs, `nvke-deploy.sh`
 
 | Input | From | Says |
 |---|---|---|
-| The site spec | `nvkectl generate sitespec`, filled in | What is specific to this site: the nodes and VIP, the SPIRE trust domain and CA, and under `controllerStack` the architecture, the NICo API and token, the tenant login, the database password file, optional image overrides, mirror and nktp values. [docs/sitespec.md](../cli/docs/sitespec.md) |
+| The site spec | `nvkectl generate sitespec`, filled in | What is specific to this site: the nodes and VIP, the SPIRE trust domain, and under `controllerStack` the architecture, the NICo API, optional image overrides and mirror. [docs/sitespec.md](../cli/docs/sitespec.md) |
 | The release description | `nvkr release export --reference <repo@digest>` | Which published artifacts to use, each by OCI reference and digest: `nvkr.dev/release-description/v1` JSON. It describes the release and verifies nothing; run `nvkr release verify` on the same reference first. Optional; without it the charts come from this checkout and the public repositories, and the site spec names the images |
 | The deploy path, [`nico/`](nico/) | This checkout | What to install and in which order. `nvke-deploy.yaml` lists the items; each item directory holds its chart pin (`release.yaml`), values and overlay, or its manifests. [deploy-repository.md](../docs/site-bootstrap/deploy-repository.md) |
 
-The credentials the install reads, the NICo token, the tenant password and the database password, are file paths in the site spec, so the spec holds none of them; `registry.apiKey` is the bootstrap's and comes from the environment, as [Bootstrap the management cluster](../docs/operate/bootstrap-management-cluster.md#write-the-site-spec) says. `nvkectl` reads the deploy path and renders it for the site and against the release into a private scratch directory under `$XDG_STATE_HOME/nvke/renders` (`~/.local/state/nvke/renders`); the script removes it when it exits.
+The install reads the NICo token, the node login and the database password from `NVKECTL_NICO_TOKEN`, `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` and `NVKECTL_DATABASE_PASSWORD`, and the SPIRE CA from the files `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` name, which a site spec with `spire.upstreamCA: true` requires. `nvkectl` reads the deploy path and renders it for the site and against the release into a private scratch directory under `$XDG_STATE_HOME/nvke/renders` (`~/.local/state/nvke/renders`); the script removes it when it exits.
 
 ## Run
 

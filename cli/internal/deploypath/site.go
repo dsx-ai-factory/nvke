@@ -5,11 +5,7 @@ package deploypath
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/base64"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,8 +52,11 @@ func (r *renderer) site() {
 		r.problem("site spec: %v", err)
 		return
 	}
-	if err := spec.ValidateControllerStackReferences(); err != nil {
-		r.problem("site spec: %v", err)
+	creds, err := sitespec.StackCredentialsFromEnv()
+	if err != nil {
+		for _, line := range strings.Split(err.Error(), "\n") {
+			r.problem("environment: %s", line)
+		}
 		return
 	}
 	cs := spec.ControllerStack
@@ -76,32 +75,19 @@ func (r *renderer) site() {
 			r.problem("site spec: %s is empty", what)
 			return ""
 		}
-		if strings.ContainsAny(value, "\"\\") || strings.ContainsFunc(value, unicode.IsControl) {
+		if !sitespec.TemplateSafe(value) {
 			r.problem("site spec: %s: the value holds a character the templates cannot carry (a quote, a backslash or a control character)", what)
 			return ""
 		}
 		return value
 	}
-	read := func(what, path string) string {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			r.problem("site spec: %s: %v", what, err)
-			return ""
-		}
-		return check(what, strings.TrimSpace(string(data)))
-	}
-	// controllerStack paths resolve from the site spec's directory; the
-	// bootstrap's spire.ca*File resolve from the working directory, as
-	// "nvkectl bootstrap site" reads them, so both commands embed one CA.
-	stackPath := spec.ResolvePath
 	var ctx TemplateContext
 	ctx.ClusterName = spec.ClusterName
 	ctx.Nico.Endpoint = check("controllerStack.nico.endpoint", cs.Nico.Endpoint)
 	ctx.Nico.OrgID = check("controllerStack.nico.orgID", cs.Nico.OrgID)
 	ctx.Nico.APIName = check("controllerStack.nico.apiName", cs.Nico.APIName)
-	ctx.Nico.Token = read("controllerStack.nico.tokenFile", stackPath(cs.Nico.TokenFile))
-	ctx.Tenant.User = check("controllerStack.tenant.user", cs.Tenant.User)
-	ctx.Tenant.Password = read("controllerStack.tenant.passwordFile", stackPath(cs.Tenant.PasswordFile))
+	// StackCredentialsFromEnv applies the same rule to the credentials.
+	ctx.Nico.Token, ctx.Tenant.User, ctx.Tenant.Password = creds.NicoToken, creds.NodeUser, creds.NodePassword
 	if len(r.problems) > 0 {
 		return
 	}
@@ -119,12 +105,8 @@ func (r *renderer) site() {
 		r.problem("site spec: controllerStack.arch %q has no TPM attestor checksum", cs.Arch)
 		return
 	}
-	// May write the operator's password file. A later refusal leaves it in
-	// place: it is the operator's, and the next render reads it back.
-	password := r.dbPassword(spec)
-	if len(r.problems) > 0 {
-		return
-	}
+	// Only YAML-encoded values carry it, so it needs no template character check.
+	password := creds.DatabasePassword
 
 	// controller: the database password, the OIDC discovery URL and the SPIRE
 	// server, all VIP-derived; the images only when the site spec overrides them.
@@ -155,8 +137,8 @@ func (r *renderer) site() {
 	r.credential(filepath.Join("controller", SiteValuesFile))
 
 	// spire: site identity, the controller's admin ID, the TPM attestor
-	// checksum for the architecture, the bootstrap CA when the spec names
-	// one, and the OIDC provider published on the VIP.
+	// checksum for the architecture, the bootstrap CA when the environment
+	// names one, and the OIDC provider published on the VIP.
 	global := map[string]any{"trustDomain": trustDomain, "clusterName": spec.ClusterName}
 	if cs.Mirror != "" {
 		global["image"] = map[string]any{"registry": cs.Mirror}
@@ -169,8 +151,8 @@ func (r *renderer) site() {
 	// through chart.setFile. A self-signed root is its own bundle.
 	var caFiles []string
 	if spec.Spire.CACertFile != "" && spec.Spire.CAKeyFile != "" {
-		cert := secretPath(r, "spire.caCertFile", spec.Spire.CACertFile)
-		key := secretPath(r, "spire.caKeyFile", spec.Spire.CAKeyFile)
+		cert := secretPath(r, sitespec.EnvSpireCACertFile, spec.Spire.CACertFile)
+		key := secretPath(r, sitespec.EnvSpireCAKeyFile, spec.Spire.CAKeyFile)
 		server["upstreamAuthority"] = map[string]any{"disk": map[string]any{"enabled": true}}
 		const prefix = "spire-server.upstreamAuthority.disk.secret.data."
 		caFiles = []string{prefix + "certificate=" + cert, prefix + "key=" + key, prefix + "bundle=" + cert}
@@ -222,18 +204,6 @@ func (r *renderer) site() {
 	r.siteValues("temporal", temporal)
 	r.credential(filepath.Join("temporal", SiteValuesFile))
 
-	// nktp: the operator's values file, passed through.
-	if cs.NktpValuesFile != "" {
-		if !r.hasItem("nktp", TypeHelm) {
-			r.problem("site spec: controllerStack.nktpValuesFile is set, but the deploy path has no nktp helm item")
-		} else if data, err := os.ReadFile(stackPath(cs.NktpValuesFile)); err != nil {
-			r.problem("site spec: controllerStack.nktpValuesFile: %v", err)
-		} else {
-			r.appendValues("nktp", SiteValuesFile, data)
-			r.note("nktp: values from %s", cs.NktpValuesFile)
-		}
-	}
-
 	for _, item := range r.items {
 		if item.Type == TypeTemplate {
 			r.template(item.Name, &ctx)
@@ -261,43 +231,6 @@ func (r *renderer) siteValues(item string, values map[string]any) {
 	}
 	r.appendValues(item, SiteValuesFile, b.Bytes())
 	r.note("%s: site values written", item)
-}
-
-// dbPassword is the database password from controllerStack.database.passwordFile.
-// A missing file is created with a generated password, so the operator's
-// file is the only copy.
-func (r *renderer) dbPassword(spec *sitespec.SiteSpec) string {
-	file := spec.ControllerStack.Database.PasswordFile
-	if file == "" {
-		r.problem("site spec: controllerStack.database.passwordFile is required; the render keeps no password")
-		return ""
-	}
-	path := spec.ResolvePath(file)
-	data, err := os.ReadFile(path)
-	if err == nil {
-		if value := strings.TrimSpace(string(data)); value != "" {
-			return value
-		}
-		r.problem("site spec: controllerStack.database.passwordFile: %s is empty", path)
-		return ""
-	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		r.problem("site spec: controllerStack.database.passwordFile: %v", err)
-		return ""
-	}
-	raw := make([]byte, 24)
-	if _, err := rand.Read(raw); err != nil {
-		r.problem("generating a database password: %v", err)
-		return ""
-	}
-	password := base64.RawURLEncoding.EncodeToString(raw)
-	if err := writePrivate(path, []byte(password+"\n")); err != nil {
-		r.problem("site spec: controllerStack.database.passwordFile: %v", err)
-		return ""
-	}
-	// Said at once, not noted: the file exists whether or not the render goes on.
-	fmt.Fprintf(r.opts.Log, "database password generated and written to %s\n", path)
-	return password
 }
 
 // template renders an item's .yaml.tmpl files against ctx into the rendered
@@ -471,21 +404,21 @@ func oidcDomains(overlay, vip string) ([]string, error) {
 	return domains, nil
 }
 
-// secretPath returns the absolute path of a file the site spec names for
-// the install to read. A missing file, or a path the deploy path reader
-// cannot carry, is a problem naming the field.
+// secretPath returns the absolute path of a file an environment variable
+// names for the install to read. A missing file, or a path the deploy path
+// reader cannot carry, is a problem naming the variable.
 func secretPath(r *renderer, what, path string) string {
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		r.problem("site spec: %s: %v", what, err)
+		r.problem("environment: %s: %v", what, err)
 		return ""
 	}
 	if _, err := os.Stat(abs); err != nil {
-		r.problem("site spec: %s: %v", what, err)
+		r.problem("environment: %s: %v", what, err)
 		return ""
 	}
 	if strings.ContainsFunc(abs, unicode.IsSpace) {
-		r.problem("site spec: %s: the path %q holds whitespace, which the deploy path reader cannot carry; move the file to a path without spaces", what, abs)
+		r.problem("environment: %s: the path %q holds whitespace, which the deploy path reader cannot carry; move the file to a path without spaces", what, abs)
 		return ""
 	}
 	return abs

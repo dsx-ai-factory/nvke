@@ -1,5 +1,5 @@
 # Site spec for the kind smoke lane. The one node is the kind control plane;
-# the credentials are placeholders written by kind-stack-from-release.sh.
+# the credentials are placeholders kind-stack-from-release.sh exports.
 clusterName: "@CLUSTER@"
 cluster:
   nodes:
@@ -11,9 +11,6 @@ cluster:
   podCidr: "192.168.0.0/16"
   serviceCidr: "10.96.0.0/12"
   controlPlaneVIP: "@VIP@"
-registry:
-  bootstrapRepo: "nvcr.io/org"
-  bootstrapChart: "controller-chart"
 spire:
   trustDomain: "@CLUSTER@.nke.local"
 controllerStack:
@@ -22,12 +19,3 @@ controllerStack:
     endpoint: http://127.0.0.1:18080
     orgID: smoke
     apiName: forge
-    tokenFile: nico-token
-  tenant:
-    user: nvke
-    passwordFile: tenant-password
-  database:
-    passwordFile: db-password
-  # The nktp values the kind lanes use: one replica per collector, small
-  # requests, and metrics-server trusting the kind kubelet's certificate.
-  nktpValuesFile: @NKTP_VALUES@

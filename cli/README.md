@@ -144,15 +144,19 @@ restriction: CWE accepts any infrastructure manifest written by hand.
 
 ## Configuration
 
-What a bootstrap is allowed to trust describes the *site*, so it comes from the
-site spec file rather than from flags or the environment. See
-[`docs/sitespec.md`](docs/sitespec.md).
+Which nodes may attest describes the *site*, so it comes from the site spec
+file. See [`docs/sitespec.md`](docs/sitespec.md).
 
 | Field | |
 |---|---|
+<<<<<<< HEAD
 | `cluster.*.tpmEkThumbprint` | Which nodes may attest to SPIRE. No node listed, no node admitted; a site spec with none deploys no TPM attestor at all. `provisioned` only: with `nico` the attestor is always on and CAPNICo supplies each machine's key. |
 | `infra.provider`, `infra.nico` | `nico` allocates the control-plane machines from a NICo site instead of listing hosts. The NICo here is for bootstrap only; see [`docs/sitespec.md`](docs/sitespec.md#where-the-machines-come-from). |
 | `spire.caCertFile` / `caKeyFile` | A CA for SPIRE to chain its own to, so a node given that certificate when it was provisioned verifies the server on first contact. Without it SPIRE is self-signed. |
+=======
+| `cluster.*.tpmEkThumbprint` | Which nodes may attest to SPIRE. No node listed, no node admitted; a site spec with none deploys no TPM attestor at all. |
+| `spire.upstreamCA` | `true` when SPIRE chains to a CA you bring, from `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`. Every run then requires the two variables. |
+>>>>>>> origin/main
 
 ### What gets installed
 
@@ -202,7 +206,12 @@ write it (see [SPIRE with NICo nodes](docs/sitespec.md#spire-with-nico-nodes)). 
 | Variable | Default | Purpose |
 |---|---|---|
 | `NVKECTL_SPIFFE_TRUST_DOMAIN` | `<cluster>.nke.local` | Trust domain for the identities issued; the controller stack install defaults to the same value for the default cluster name |
+<<<<<<< HEAD
 | `NVKECTL_SPIRE_EXTERNAL_ADDRESS` | unset | Overrides `spire.externalAddress`: the address nodes created by CAPNICo use to reach the bootstrap SPIRE server on NodePort 30081. Required with `infra.provider: nico` unless `--disable-mtls`, and rejected with `provisioned`. |
+=======
+| `NVKECTL_SPIRE_CA_CERT_FILE` | unset | Certificate of a CA for SPIRE to chain its own to, so a node given that certificate when it was provisioned verifies the server on first contact. Set with `NVKECTL_SPIRE_CA_KEY_FILE` and `spire.upstreamCA: true` in the site spec; without them, SPIRE is self-signed. |
+| `NVKECTL_SPIRE_CA_KEY_FILE` | unset | Private key of that CA. Set with `NVKECTL_SPIRE_CA_CERT_FILE`. |
+>>>>>>> origin/main
 
 The cluster name SPIRE is told is the ephemeral cluster's own name, from
 `NVKECTL_BOOTSTRAP_CLUSTER_NAME` — there is no separate SPIFFE variable for it,

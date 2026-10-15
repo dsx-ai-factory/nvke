@@ -34,17 +34,22 @@ cd nvke
 
 `nvkectl generate sitespec` wrote a `controllerStack` section into `sitespec.yaml`, with every value a `REPLACE_*` placeholder. The bootstrap does not read it; the install does, and refuses to run while a placeholder is left.
 
-1. Write each secret to its own file, readable only by you. The site spec holds paths to these files, not the secrets, so you can keep the site spec in version control.
+1. Export the install's secrets. The install reads them from the environment, so you can keep the site spec in version control and use it from any machine.
 
    ```bash
-   install -m 600 /dev/null ../nico-token
+   read -rs NVKECTL_NICO_TOKEN && export NVKECTL_NICO_TOKEN
+   export NVKECTL_NODE_USER=<NODE_USER>
+   read -rs NVKECTL_NODE_PASSWORD && export NVKECTL_NODE_PASSWORD
+   read -rs NVKECTL_DATABASE_PASSWORD && export NVKECTL_DATABASE_PASSWORD
+   export NVKECTL_SPIRE_CA_CERT_FILE=<CA_CERT_PATH> NVKECTL_SPIRE_CA_KEY_FILE=<CA_KEY_PATH>
    ```
 
-   ```bash
-   install -m 600 /dev/null ../tenant-password
-   ```
+   `read -s` keeps each value out of your terminal and shell history. Type the NICo API token, the node login password and the PostgreSQL password in turn.
 
-   Write the NICo API token into `../nico-token` and the node login password into `../tenant-password` with an editor, so that neither value reaches your shell history.
+   - `NVKECTL_NICO_TOKEN`: the NICo API token. The install writes it, with the NICo details below, to the `nico-credentials` Secret that CAPNICo reads.
+   - `NVKECTL_NODE_USER` and `NVKECTL_NODE_PASSWORD`: the login account NVKE writes into the cloud-init user data of every workload-cluster node.
+   - `NVKECTL_DATABASE_PASSWORD`: the PostgreSQL password the management plane and Temporal share. Choose it once and store it in your secret manager: every later install of this site needs the same value. A site installed with `controllerStack.database.passwordFile` in its site spec already has one: use the contents of that file.
+   - `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`: the SPIRE CA certificate and key you gave the bootstrap. Every install of a site with `spire.upstreamCA: true` requires them. Leave both unset if the bootstrap ran without a CA.
 
 2. Fill in the `controllerStack` section of `../sitespec.yaml`.
 
@@ -55,25 +60,16 @@ cd nvke
        endpoint: <NICO_ENDPOINT>
        orgID: <NICO_ORG_ID>
        apiName: <NICO_API_NAME>
-       tokenFile: nico-token
-     tenant:
-       user: <NODE_USER>
-       passwordFile: tenant-password
-     database:
-       passwordFile: db-password
    ```
 
    - `<ARCH>`: the CPU architecture of the management nodes, `amd64` or `arm64`. The install selects the release's artifacts for it.
-   - `<NICO_ENDPOINT>`, `<NICO_ORG_ID>` and `<NICO_API_NAME>`: your NICo API details. The API name is, for example, `forge`. The install writes them, with the token, to the `nico-credentials` Secret that CAPNICo reads.
-   - `<NODE_USER>` and the password file: the login account NVKE writes into the cloud-init user data of every workload-cluster node.
-   - `database.passwordFile`: the PostgreSQL password that the management plane and Temporal share. When the file does not exist, the install creates it with a generated password.
+   - `<NICO_ENDPOINT>`, `<NICO_ORG_ID>` and `<NICO_API_NAME>`: your NICo API details. The API name is, for example, `forge`.
 
-   Relative paths are resolved from the site spec's directory. The site name, the SPIFFE trust domain, the control-plane VIP and the SPIRE certificate authority come from the bootstrap fields of the same file, so they are not repeated here.
+   The site name, the SPIFFE trust domain and the control-plane VIP come from the bootstrap fields of the same file. The SPIRE certificate authority comes from `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` (step 1).
 
-   Two optional fields:
+   One optional field, `mirror`: a registry to pull the external images from instead of their upstream registries, as `host[:port][/prefix]`, with no scheme.
 
-   - `nktpValuesFile`: a values file for NKTP. Without it, NKTP sends telemetry to a bundled development backend that keeps data in memory and has no authentication. To send it to your own backend, write the file as described in [Getting started with NKTP](../nktp/getting-started.md).
-   - `mirror`: a registry to pull the external images from instead of their upstream registries, as `host[:port][/prefix]`, with no scheme.
+   NKTP sends telemetry to a bundled development backend that keeps data in memory and has no authentication. To send it to your own backend, write a values file as described in [Getting started with NKTP](../nktp/getting-started.md) and pass `--values-for nktp=<FILE>` to every install run.
 
    [Site Spec](../../cli/docs/sitespec.md) lists every field.
 
@@ -201,6 +197,13 @@ The install refuses a release that lacks an image artifact the deploy path names
    ```
 
    The files are the ones you wrote in [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md). `nvkectl` writes the resources to the management cluster through the kubeconfig of the previous step and supplies their API version and kind; the controller chart installed their custom resource definitions in step 3. `nvkectl get machineimages` lists what you published.
+
+## Run the install again
+
+Other pages, such as [Secure the NVKE API](api-authentication.md), have you run the install command again to change the site's values. Each run renders the site from scratch, so give it the same inputs as the first:
+
+- the `NVKECTL_*` variables from step 1 of [Fill in the controller stack settings](#fill-in-the-controller-stack-settings), exported in the shell you run it from, with the same values. A site spec with `spire.upstreamCA: true` refuses to render without the SPIRE CA variables.
+- the same flags, including every `--values-for` file you passed before, such as `--values-for nktp=<FILE>`. A file you leave out stops applying: without the `nktp` file, NKTP goes back to the bundled development backend.
 
 ## If the install fails
 

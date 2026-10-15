@@ -63,7 +63,9 @@ usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
   --deploy-path DIR   the deploy path to install: a directory holding
                       nvke-deploy.yaml and one directory per item, e.g.
                       deploy/nico or controller/deploy/capd-e2e
-  --sitespec FILE     render for this site first (needs nvkectl: NVKECTL or PATH)
+  --sitespec FILE     render for this site first (needs nvkectl: NVKECTL or PATH,
+                      and the NVKECTL_* credentials exported; see
+                      cli/docs/sitespec.md, "Credential handling")
   --release FILE      render against this NVKR release description first;
                       with --sitespec, which names the architecture
   --nvkr-run-dir DIR  with --release, for a Run that was not published (a
@@ -81,8 +83,7 @@ usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
                       no longer prefixed, so a value meant for the controller
                       cannot be broadcast to every item. Repeatable.
   --dry-run           print the argv each step would run, and exit. The
-                      render still runs, so it may create the database
-                      password file the site spec names
+                      render still runs
   --kubeconfig PATH   passed to every kubectl call
   --                  everything after is forwarded to helm verbatim
 USAGE

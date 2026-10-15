@@ -156,11 +156,6 @@ token:^nke\.io$
 # material schema now say nvke.
 token:nke-kubeadm-distro|nke-cni-|nke-calico-|nke-spire|nke-node-agent|nke-nodepool|nke-packer-|nke-\d\d\.\d\d-|nke-rootfs|nke-builder|nke-builds|nke-package-builder|nke-ubuntu|nke-multiarch|nke\.ssh|nke-efi|nke-boot-smoke|nke-run-|nke_find_firmware|nke_arch_from|nke-image|nke-iso|\.cache/nke|\.nke-kubeadm-file|^/nke-$|^nke-k8s-installer$
 
-# The qualify lane's fallback to the only OS image release published so far,
-# which predates the qcow2 rename. Pinned to that release so a newer one is not
-# exempt. Remove with the REVERT-WHEN-NVKE-NODE fallback in qualify-e2e.yml.
-token:/releases/v0\.2\.0-rc\.1/(amd64|arm64)/nke-node-non-fde-ubuntu-24\.04\.5-(amd64|arm64)\.qcow2$
-
 # S3 buckets, the CloudFront bundle path, the ISO prefix and the IAM role keep
 # their names (D16); `nke-packages` is the local package cache on nodes and in
 # the build guest, `nke-apt` the agent's example repository URLs and the

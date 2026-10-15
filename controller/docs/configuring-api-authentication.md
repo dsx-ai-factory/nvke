@@ -26,6 +26,11 @@ last one gives a 403: the token was real, the caller just isn't on the list.
 
 NVKE does no authorization. Every admitted caller can call every endpoint.
 
+`issuers` is a list. Add an entry for each identity provider. `name` and `issuer`
+are each unique in the file. An issuer's `audiences` replaces the top-level
+list for that issuer. An issuer carries one of `serviceAccounts`, `spiffe`, or
+`groups`.
+
 ## Before you start
 
 You need permission to set Helm values on the NVKE release, and a cluster running
@@ -307,6 +312,34 @@ spire-server jwt mint \
 ```
 
 `-ttl` takes a duration like `10m`, not a number of seconds.
+
+## Recipe: an external identity provider
+
+Use this when callers get tokens from an identity provider you already run.
+NVKE reads group membership only from the token's `groups` claim.
+
+### 1. Write the issuer
+
+Add this issuer to a configuration that already contains at least one top-level `audiences` value. The block below is not a complete configuration. NVKE refuses to start when `audiences` is missing.
+
+```yaml
+issuers:
+  - name: example-idp
+    issuer: "https://idp.example.com/realms/example"
+    jwks:
+      uri: "https://idp.example.com/keys"
+    algorithms: [RS256]
+    admit:
+      groups:
+        - nke-operators
+```
+
+A token is admitted when its `groups` claim contains any listed group. The
+group names are matched exactly.
+
+When the identity provider's certificate is signed by a private CA, put the
+bundle in `extraFiles` and set `jwks.caBundlePath`, as in the SPIRE recipe.
+Omit `caBundlePath` when a public CA signs the certificate.
 
 ## Going enforcing without breaking callers
 
