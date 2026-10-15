@@ -585,7 +585,7 @@ func (s *NodeAgentServer) ExecuteKubeadmJoin(
 	s.Persister.Persist(&statusCopy) //nolint:all
 
 	args := strings.Fields(req.KubeadmJoinString) //[1:]
-	slog.Info("issuing kubeadm join command", "args", args)
+	slog.Info("issuing kubeadm join command", "args", redactJoinArgs(args))
 	go s.processKubeadmJoin(args, req)
 	return response, nil
 }
@@ -652,10 +652,11 @@ func (s *NodeAgentServer) processKubeadmJoin(args []string, req *pb.KubeadmJoinR
 	}
 
 	if err != nil {
-		slog.Error("join failed", "err", err, "output", string(output))
+		loggable := redactKubeadmOutput(string(output))
+		slog.Error("join failed", "err", err, "output", loggable)
 		ns.Status = ErrorStatus
 		ns.CurrentMessage = err.Error()
-		ns.KubeadmErrorMessage = string(output)
+		ns.KubeadmErrorMessage = loggable
 		ns.KubeadmStatus = joinFailedStatus
 
 	} else {
@@ -814,7 +815,7 @@ func kubeadmFailureMessage(err error, output []byte) string {
 	if len(best) > limit {
 		best = best[:limit] + "..."
 	}
-	return "kubeadm init failed: " + best
+	return "kubeadm init failed: " + redactKubeadmOutput(best)
 }
 
 // processKubeadmInit runs kubeadm init with args and records the outcome in the node status.
@@ -872,10 +873,11 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 			slog.Info("already initialized, kubeadm returned 'in use'")
 			return
 		}
-		slog.Error("init failed", "err", err, "stdout", string(output))
+		loggable := redactKubeadmOutput(string(output))
+		slog.Error("init failed", "err", err, "stdout", loggable)
 		ns.Status = ErrorStatus
 		ns.ErrorMessage = "kubeadm init failed: " + err.Error()
-		ns.KubeadmErrorMessage = string(output)
+		ns.KubeadmErrorMessage = loggable
 		ns.KubeadmStatus = "init failed"
 		// CurrentMessage is the only one of these the status RPC returns, so
 		// leaving it at "Node is initializing" reports the failure as progress:
@@ -893,9 +895,10 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 	}
 	cpJoin, workerJoin := parseJoinCmds(string(output))
 	if cpJoin == "" && workerJoin == "" {
-		slog.Error("failed to parse join strings from output", "output", string(output))
+		loggable := redactKubeadmOutput(string(output))
+		slog.Error("failed to parse join strings from output", "output", loggable)
 		ns.Status = ErrorStatus
-		ns.ErrorMessage = "failed to parse join strings from output of kubeadm init: " + string(output)
+		ns.ErrorMessage = "failed to parse join strings from output of kubeadm init: " + loggable
 		return
 	}
 
@@ -1176,7 +1179,7 @@ func (s *NodeAgentServer) installCNIPlugin(req *pb.InstallCNIPluginRequest) erro
 }
 
 func parseJoinCmds(s string) (string, string) {
-	slog.Debug("executing parseJoinCmds", "input", s)
+	slog.Debug("executing parseJoinCmds", "input", redactKubeadmOutput(s))
 	strNormailized := regexp.MustCompile("\r\n").ReplaceAllString(s, "\n")
 	parsed := regexp.MustCompile(`\n\s*\n`).Split(strNormailized, -1)
 
@@ -1576,8 +1579,9 @@ func (s *NodeAgentServer) UpdateAndFetchKubeAdmJoinStrings(
 	tokenArgs := []string{"token", "create", "--print-join-command"}
 	output, err := s.Runner.Run("kubeadm", tokenArgs, &nvkeutils.CommandOptions{})
 	if err != nil {
-		slog.Error("failed to create new join string", "err", err, "output", string(output))
-		return nil, fmt.Errorf("kubeadm token create: %w: %s", err, strings.TrimSpace(string(output)))
+		loggable := redactKubeadmOutput(string(output))
+		slog.Error("failed to create new join string", "err", err, "output", loggable)
+		return nil, fmt.Errorf("kubeadm token create: %w: %s", err, strings.TrimSpace(loggable))
 	}
 	newJoinString := strings.TrimSpace(string(output))
 
@@ -1608,17 +1612,17 @@ func (s *NodeAgentServer) uploadControlPlaneCerts() (string, error) {
 	output, err := s.Runner.Run("kubeadm", args, &nvkeutils.CommandOptions{})
 	out := strings.TrimSpace(string(output))
 	if err != nil {
-		return "", fmt.Errorf("%s: %w: %s", cmd, err, out)
+		return "", fmt.Errorf("%s: %w: %s", cmd, err, redactKubeadmOutput(out))
 	}
 	_, after, found := strings.Cut(out, "Using certificate key:")
 	fields := strings.Fields(after)
 	if !found || len(fields) == 0 {
-		return "", fmt.Errorf("%s: no certificate key in output: %s", cmd, out)
+		return "", fmt.Errorf("%s: no certificate key in output: %s", cmd, redactKubeadmOutput(out))
 	}
 	// kubeadm join applies the same check: the key is the hex encoding of a 32-byte AES key.
 	key, err := hex.DecodeString(fields[0])
 	if err != nil || len(key) != 32 {
-		return "", fmt.Errorf("%s: %q is not a 32-byte hex certificate key", cmd, fields[0])
+		return "", fmt.Errorf("%s: the certificate key in the output is not a 32-byte hex string", cmd)
 	}
 	return fields[0], nil
 }
