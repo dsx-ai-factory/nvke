@@ -116,15 +116,15 @@ navigation:
 
       - section: Site Telemetry (NKTP)
         contents:
-          - page: Telemetry on a site controller: getting started
+          - page: "Telemetry on a site controller: getting started"
             path: nktp/site-telemetry/getting-started.md
-          - page: Telemetry on a site controller: configuration
+          - page: "Telemetry on a site controller: configuration"
             path: nktp/site-telemetry/configuration.md
-          - page: Telemetry on a site controller: monitoring your service
+          - page: "Telemetry on a site controller: monitoring your service"
             path: nktp/site-telemetry/monitoring-a-service.md
-          - page: Telemetry on a site controller: verification
+          - page: "Telemetry on a site controller: verification"
             path: nktp/site-telemetry/verification.md
-          - page: Telemetry on a site controller: troubleshooting
+          - page: "Telemetry on a site controller: troubleshooting"
             path: nktp/site-telemetry/troubleshooting.md
 
       - section: Reference
