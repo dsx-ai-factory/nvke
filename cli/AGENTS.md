@@ -24,6 +24,30 @@ address to a bridge — so run it under `sudo`.
 After a dependency change, run `go mod tidy` in `cli/` and `make work-sync` at
 the repository root.
 
+## The command reference
+
+`docs/reference/` is generated from the command tree, one page per public
+command. After any change to a command — a new command or subcommand, a
+renamed flag, a changed default, edited help text, an added alias, a
+deprecation — run:
+
+```bash
+make -C cli docs
+```
+
+and commit the result with the change that caused it. `make -C cli docs-check`
+verifies it, and the merge gate fails when the committed pages do not match the
+tree.
+
+Do not edit the generated pages. A page says what the command's own metadata
+says, so change the `Short`, `Long`, `Example`, `Args`, `Aliases`,
+`Deprecated` or flag usage string on the command itself.
+
+A constraint enforced only inside `RunE` is invisible to cobra, so it never
+reaches the reference on its own. State it in the command's `Long` text or in
+the flag's usage string, the way `--nodes` and `--sitespec` already say
+`(required)`.
+
 ## Go documentation comments
 
 - Start each exported declaration comment with the declaration name.

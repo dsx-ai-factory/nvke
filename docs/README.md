@@ -64,6 +64,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [site-bootstrap/deploy-repository.md](site-bootstrap/deploy-repository.md) | The deploy repository and what it holds |
 | [site-bootstrap/infrastructure-providers.md](site-bootstrap/infrastructure-providers.md) | Installing Cluster API and an infrastructure provider on a site cluster |
 | [../cli/docs/sitespec.md](../cli/docs/sitespec.md) | Every field of the site spec file, with its type |
+| [../cli/docs/reference/README.md](../cli/docs/reference/README.md) | Every `nvkectl` command and flag, generated from the CLI itself |
 | [../cli/docs/bootstrap-troubleshooting.md](../cli/docs/bootstrap-troubleshooting.md) | Where a failed bootstrap leaves its evidence, how to read the error, common failures and when to re-run |
 
 ## Running tenant clusters

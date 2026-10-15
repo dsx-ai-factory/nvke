@@ -62,9 +62,9 @@ the proxy on every request.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&url, "url", "", "Controller API base URL (e.g. http://localhost:8080)")
-	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to the management cluster kubeconfig")
-	cmd.Flags().StringVar(&name, "name", "default", "Name for this site entry")
+	cmd.Flags().StringVar(&url, "url", "", "Controller API base URL, e.g. http://localhost:8080 (required)")
+	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to the management cluster kubeconfig (required)")
+	cmd.Flags().StringVar(&name, "name", "default", "Name for this site entry. Must not be empty")
 	cmd.Flags().StringVar(&proxyClientCert, "proxy-client-cert", "", "Path to the proxy TLS client certificate")
 	cmd.Flags().StringVar(&proxyClientKey, "proxy-client-key", "", "Path to the private key matching --proxy-client-cert")
 	cmd.MarkFlagsRequiredTogether("proxy-client-cert", "proxy-client-key")

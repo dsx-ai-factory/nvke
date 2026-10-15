@@ -3,7 +3,9 @@
 What `nvkectl` does today, in the order an operator uses it, with the two
 steps that are not CLI commands marked: getting a release from NVKR and
 installing the controller stack with the deploy script.
-`nvkectl <command> --help` is the authoritative reference for flags. The
+The [command reference](https://github.com/dsx-ai-factory/nvke/blob/main/cli/docs/reference/README.md)
+lists every command and flag; it is generated from the CLI, so it says the same
+as `nvkectl <command> --help`. The
 walkthrough is [Your first cluster](https://github.com/dsx-ai-factory/nvke/blob/main/docs/first-cluster.md); this page is
 the reference it points at.
 

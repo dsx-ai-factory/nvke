@@ -31,6 +31,12 @@ chmod +x nvkectl && sudo mv nvkectl /usr/local/bin/
 nvkectl version
 ```
 
+## Command reference
+
+[**Every command and flag**](docs/reference/README.md), one page per command,
+generated from the command tree this binary runs. The quick reference below is
+the short list of what operators reach for most.
+
 ## Quick reference
 
 ```bash
@@ -378,6 +384,7 @@ in a patch release. Match on the exit code, not on error text.
 
 ## Related docs
 
+- [Command reference](docs/reference/README.md) — every public command and flag
 - [Compatibility and deprecation policy](docs/compatibility.md)
 - [Management cluster bootstrap](../docs/site-bootstrap/overview.md)
 - [Architecture](../docs/architecture.md)

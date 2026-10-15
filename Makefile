@@ -400,12 +400,13 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 	              git diff --cached --name-only; \
 	              git diff --name-only; \
 	              git ls-files --others --exclude-standard; } | sort -u ); \
-	build_system=no; workflows=no; shell=no; chart=no; nktp=no; workspace=no; licences=no; provider_manifest=no; \
+	build_system=no; workflows=no; shell=no; chart=no; nktp=no; workspace=no; licences=no; provider_manifest=no; cli_docs=no; \
 	printf '%s\n' "$$changed" | grep -qE '^Makefile$$|^make/[^/]+\.mk$$' && build_system=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^\.github/workflows/.*\.ya?ml$$' && workflows=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^controller/deploy/charts/|^controller/hack/chart-.*-assertions\.(py|sh)$$|^controller/internal/(config|controllerconfig)/|^\.github/workflows/chart\.yml$$' && chart=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^nktp/deploy/charts/|^nktp/hack/chart-.*\.sh$$|^\.github/workflows/nktp-chart\.yml$$' && nktp=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '^cluster-api-provider-provisioned/config/|^cli/internal/bootstrap/controllerdeploy/manifests/(provisioned-provider|capnico)\.yaml$$|^deploy/nico/capnico/capnico\.yaml$$' && provider_manifest=yes || true; \
+	printf '%s\n' "$$changed" | grep -qE '^cli/' && cli_docs=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '(^|/)(go\.mod|go\.sum)$$|^go\.work|^vendor/' && workspace=yes || true; \
 	printf '%s\n' "$$changed" | grep -qE '\.(go|sh|py|js|css|html|ya?ml)$$' && licences=yes || true; \
 	for f in $$changed; do \
@@ -415,7 +416,7 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 		esac; \
 	done; \
 	if [ "$$build_system" = yes ]; then \
-		workflows=yes; shell=yes; chart=yes; nktp=yes; workspace=yes; licences=yes; provider_manifest=yes; \
+		workflows=yes; shell=yes; chart=yes; nktp=yes; workspace=yes; licences=yes; provider_manifest=yes; cli_docs=yes; \
 	fi; \
 	if [ -n "$(MODULES)" ]; then \
 		mods="$(MODULES)"; \
@@ -450,6 +451,7 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 	[ "$$chart" = yes ] && echo "  chart-check          (chart or build-system changes)" || true; \
 	[ "$$nktp" = yes ] && echo "  nktp-chart-check     (NKTP chart or build-system changes)" || true; \
 	[ "$$provider_manifest" = yes ] && echo "  provider-manifest-check (the provisioned provider's or CAPNICo's manifests changed)" || true; \
+	[ "$$cli_docs" = yes ] && echo "  cli docs-check       (the CLI changed, so its reference may be stale)" || true; \
 	echo; \
 	echo "Will NOT run, and is not covered:"; \
 	echo "  - the e2e lanes (kind, Docker; CAPD additionally needs Linux amd64)"; \
@@ -501,6 +503,10 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 	if [ "$$provider_manifest" = yes ]; then \
 		echo "==> provider-manifest-check"; \
 		$(MAKE) --no-print-directory -C cli provider-manifest-check || failed="$$failed provider-manifest"; \
+	fi; \
+	if [ "$$cli_docs" = yes ]; then \
+		echo "==> cli docs-check"; \
+		$(MAKE) --no-print-directory -C cli docs-check || failed="$$failed cli-docs"; \
 	fi; \
 	echo; \
 	if [ -n "$$failed" ]; then \
