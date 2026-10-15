@@ -586,9 +586,7 @@ func (s *NodeAgentServer) ExecuteKubeadmJoin(
 	s.Persister.Persist(&statusCopy) //nolint:all
 
 	args := strings.Fields(req.KubeadmJoinString) //[1:]
-	creds := joinCredentials(req)
-	creds.AddArgs(args)
-	slog.Info("issuing kubeadm join command", "args", creds.Args(args))
+	slog.Info("issuing kubeadm join command", "args", redact.Args(args))
 	go s.processKubeadmJoin(args, req)
 	return response, nil
 }
