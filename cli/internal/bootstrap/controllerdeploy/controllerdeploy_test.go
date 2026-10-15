@@ -1113,7 +1113,7 @@ var renamedSettingCases = []struct {
 }
 
 // TestDefaultConfig_RenamedSettings: each NVKECTL_CONTROLLER_* setting is
-// read; its old NVKECTL_CWE_* name is read when the new one is unset and is
+// read; its NKECTL_* name is read when the new one is unset and is
 // then reported as deprecated; with both set the new one wins and nothing is
 // reported.
 func TestDefaultConfig_RenamedSettings(t *testing.T) {
@@ -1171,6 +1171,54 @@ func TestDeprecatedSettings_SortedByOldName(t *testing.T) {
 	}
 	if got := DeprecatedSettings(); !slices.Equal(got, want) {
 		t.Errorf("DeprecatedSettings = %v, want %v", got, want)
+	}
+}
+
+// removedSettingNames is every controller setting name nkectl cli/v0.1.x read.
+var removedSettingNames = []string{
+	"NKECTL_CWE_HELM_TIMEOUT",
+	"NKECTL_CWE_IMAGE",
+	"NKECTL_CWE_PORT",
+	"NKECTL_CWE_READY_TIMEOUT",
+	"NKECTL_CWE_SPIRE_CHART",
+	"NKECTL_CWE_SPIRE_CRDS_CHART",
+	"NKECTL_CWE_TEMPORAL_CHART",
+}
+
+// TestRemovedSettings: every cli/v0.1.x name that is set comes back, sorted,
+// with the setting that replaces it; one that is unset does not, and setting
+// its replacement does not hide it.
+func TestRemovedSettings(t *testing.T) {
+	for _, old := range removedSettingNames {
+		t.Setenv(old, "")
+	}
+	if got := RemovedSettings(); len(got) != 0 {
+		t.Fatalf("RemovedSettings with nothing set = %v", got)
+	}
+
+	t.Setenv("NKECTL_CWE_SPIRE_CHART", "oci://old.example.com/spire")
+	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/old:1")
+	t.Setenv("NVKECTL_CONTROLLER_IMAGE", "nvcr.io/org/new:1")
+	want := []envalias.Renamed{
+		{Old: "NKECTL_CWE_IMAGE", New: "NVKECTL_CONTROLLER_IMAGE"},
+		{Old: "NKECTL_CWE_SPIRE_CHART", New: "NVKECTL_CONTROLLER_SPIRE_CHART"},
+	}
+	if got := RemovedSettings(); !slices.Equal(got, want) {
+		t.Errorf("RemovedSettings = %v, want %v", got, want)
+	}
+
+	for _, old := range removedSettingNames {
+		t.Setenv(old, "x")
+	}
+	var olds []string
+	for _, r := range RemovedSettings() {
+		if !slices.Contains(Settings, r.New) {
+			t.Errorf("%s maps to %s, which DefaultConfig does not read", r.Old, r.New)
+		}
+		olds = append(olds, r.Old)
+	}
+	if !slices.Equal(olds, removedSettingNames) {
+		t.Errorf("RemovedSettings covers %v, want %v", olds, removedSettingNames)
 	}
 }
 

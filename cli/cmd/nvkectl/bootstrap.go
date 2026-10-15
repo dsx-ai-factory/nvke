@@ -225,6 +225,35 @@ func bootstrapSettings() []string {
 	return names
 }
 
+// checkRemovedSettings returns an error naming every NKECTL_CWE_* variable that
+// is set while its replacement is not, and logs a warning for each one whose
+// replacement is set, as a variable or as the flag that overrides it.
+// bootstrap site does not read those names, so without this a value set for
+// nkectl cli/v0.1.x would be dropped without a word.
+func checkRemovedSettings(logger *slog.Logger, opts *bootstrapSiteOptions) error {
+	flags := map[string]struct{ name, value string }{
+		"NVKECTL_CONTROLLER_IMAGE": {"--controller-image", opts.controllerImage},
+	}
+	var unreplaced []string
+	for _, s := range controllerdeploy.RemovedSettings() {
+		replacement := ""
+		if f := flags[s.New]; f.value != "" {
+			replacement = f.name
+		} else if envalias.Get(s.New) != "" {
+			replacement = s.New
+		}
+		if replacement != "" {
+			logger.Warn(s.Old+" is not read; "+replacement+" is set and is used instead", "ignored", s.Old, "replacement", replacement)
+			continue
+		}
+		unreplaced = append(unreplaced, s.Old+" is no longer read; set "+s.New+" instead")
+	}
+	if len(unreplaced) > 0 {
+		return errors.New(strings.Join(unreplaced, "; "))
+	}
+	return nil
+}
+
 // cleanupTimeout bounds each post-failure cleanup step. The steps run on a
 // context detached from the command's, so they need a stop of their own.
 const cleanupTimeout = 2 * time.Minute
@@ -233,6 +262,9 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	logger := slog.Default().With("component", "bootstrap-site")
 	for _, s := range envalias.Deprecated(bootstrapSettings()...) {
 		logger.Warn(s.Warning(), "deprecated", s.Old, "replacement", s.New)
+	}
+	if err := checkRemovedSettings(logger, opts); err != nil {
+		return err
 	}
 
 	// Step 1: load and validate the sitespec. Fail fast on any problem.

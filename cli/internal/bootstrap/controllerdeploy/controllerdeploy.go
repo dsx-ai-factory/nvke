@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -323,6 +324,25 @@ var Settings = []string{
 // the point DefaultConfig runs.
 func DeprecatedSettings() []envalias.Renamed {
 	return envalias.Deprecated(Settings...)
+}
+
+// RemovedSettings returns, sorted by old name, every NKECTL_CWE_* variable that
+// is set. nkectl cli/v0.1.x read the NVKECTL_CONTROLLER_* settings under those
+// names; DefaultConfig does not read them. New is the setting that replaces
+// each one.
+func RemovedSettings() []envalias.Renamed {
+	var found []envalias.Renamed
+	for _, name := range Settings {
+		suffix, ok := strings.CutPrefix(name, "NVKECTL_CONTROLLER_")
+		if !ok {
+			continue
+		}
+		if old := "NKECTL_CWE_" + suffix; os.Getenv(old) != "" {
+			found = append(found, envalias.Renamed{Old: old, New: name})
+		}
+	}
+	slices.SortFunc(found, func(a, b envalias.Renamed) int { return strings.Compare(a.Old, b.Old) })
+	return found
 }
 
 // getenv returns the setting's value, or, when it is unset or empty, the value

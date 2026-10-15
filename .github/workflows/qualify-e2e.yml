@@ -600,7 +600,7 @@ jobs:
       PLAN_COMMIT: ${{ needs.plan.outputs.commit }}
       # Empty asks for a build from this checkout; the resolve step fills it
       # in. Every use of it downstream -- the image site-inputs stages, the
-      # NVKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
+      # NVKECTL_CONTROLLER_IMAGE the bootstrap runs, and the tag the SBOM deploys --
       # reads this one value, which is what keeps them the same image.
       SITE_CONTROLLER_VERSION: ${{ matrix.controller }}
       # The same shape for nvkectl: empty builds it from this checkout, a
