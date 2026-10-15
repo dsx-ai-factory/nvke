@@ -1525,6 +1525,12 @@ jobs:
               if [ "${resolved}" = "DRY_RUN" ] && [ "${DRY_RUN}" = "true" ] && [ -z "${IN_DRY_RUN:-}" ]; then
                 source="label qualify-e2e-dry-run"
               fi
+              # A push carries no inputs, so the tag selected commitDescribe
+              # and neither arm above named it.
+              if [ "${resolved}" = "RESOLUTION" ] && [ -z "${IN_RESOLUTION:-}" ] &&
+                 [ "${GITHUB_EVENT_NAME}" = push ]; then
+                source="beta tag push"
+              fi
               # The resolve steps fill these in from the checkout when no
               # published version was asked for, so neither arm above named it.
               if { [ "${resolved}" = "SITE_CONTROLLER_VERSION" ] && [ "${SITE_CONTROLLER_BUILD}" = "1" ]; } ||
