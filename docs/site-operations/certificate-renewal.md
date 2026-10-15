@@ -89,7 +89,8 @@ After connecting, run `bash` on the node if its login shell is not Bash.
 **Control-plane node — preflight checks.** In that remote Bash session, check
 that its `/etc/kubernetes/admin.conf` reaches the recorded UID. Check that the
 installed kubeadm uses the cluster's Kubernetes minor version and that all
-certificates and required CA keys are present:
+certificates, the required CA keys, and the etcd health-check client
+certificate and key are present:
 
 ```bash
 sudo kubeadm version -o short
@@ -99,11 +100,16 @@ sudo kubeadm certs check-expiration
 sudo test -f /etc/kubernetes/pki/ca.key
 sudo test -f /etc/kubernetes/pki/front-proxy-ca.key
 sudo test -f /etc/kubernetes/pki/etcd/ca.key
+sudo test -f /etc/kubernetes/pki/etcd/healthcheck-client.crt
+sudo test -f /etc/kubernetes/pki/etcd/healthcheck-client.key
 ```
 
-Stop if a required certificate or CA key is absent, a certificate is expired or
-externally managed, or any node, static pod, or management workload is unhealthy.
-Use the site's etcd tools to
+Every etcd health command below needs the health-check client pair, so a
+missing file would otherwise fail the procedure partway through.
+
+Stop if a required certificate, CA key, or client key is absent, a certificate
+is expired or externally managed, or any node, static pod, or management
+workload is unhealthy. Use the site's etcd tools to
 check the actual member list and health of **every** endpoint; a count of Ready
 Kubernetes nodes is not an etcd quorum check. For NKE's default stacked-etcd
 container, use the node's containerd CRI socket and select the site
@@ -178,10 +184,13 @@ NODE_SSH=operator@control-plane-host  # SSH user and host for that same node.
 BACKUP_DIR=/secure/site-certificate-backups
 mkdir -p -m 0700 "$BACKUP_DIR"
 ssh "$NODE_SSH" 'sudo -n tar -C / -cpf - etc/kubernetes' > "$BACKUP_DIR/$NODE-kubernetes.tar" && \
-  tar -tf "$BACKUP_DIR/$NODE-kubernetes.tar" >/dev/null
+  tar -tf "$BACKUP_DIR/$NODE-kubernetes.tar" >/dev/null || \
+  { rm -f "$BACKUP_DIR/$NODE-kubernetes.tar"; false; }
 ```
 
-Continue only if the SSH backup and archive check both succeed. Keep the
+Continue only if the SSH backup and archive check both succeed. If either
+fails, the command deletes the archive so no truncated copy of the CA keys
+stays on disk; fix the cause and repeat. Keep the
 archive on encrypted, access-restricted storage outside the repository; it
 contains live credentials and CA keys.
 Repeat this file backup for each node immediately before its renewal. The file
@@ -224,8 +233,8 @@ preflight expiration output to compare with the renewed certificates:
 **Control-plane node — renew certificates:**
 
 ```bash
-sudo kubeadm certs renew all
-sudo kubeadm certs check-expiration
+sudo kubeadm certs renew all && \
+  sudo kubeadm certs check-expiration
 ```
 
 `renew all` renews unconditionally. If it fails, stop and investigate. A
@@ -269,18 +278,20 @@ limit, interrupt this loop with Ctrl-C and investigate before continuing.
   api get --raw=/readyz
   # Restore each dependency before restarting its users; maintain only this node.
   for component in etcd kube-apiserver kube-controller-manager kube-scheduler; do
-    old=$(container "$component")
+    # A failed crictl call must not exit silently under set -e; the check below reports it.
+    old=$(container "$component") || true
     # Empty means no match; whitespace means multiple IDs. Both require investigation.
     [[ -n "$old" && "$old" != *[[:space:]]* ]] || { echo "Expected one $component container." >&2; exit 1; }
     echo "Restarting $component ($old)"
     deadline=$((SECONDS + RECOVERY_TIMEOUT))
     # Kubelet recreates the stopped container and loads the renewed certificate files.
-    cri stop "$old"
+    # Allow 30 seconds for a graceful shutdown; the default (-t 0) sends SIGKILL at once.
+    cri stop -t 30 "$old"
     last_probe="No unique replacement container is running yet."
     while :; do
       # Retry short readiness failures quietly; show the last result if recovery times out.
       (( SECONDS < deadline )) || { printf '%s recovery timed out.\n%s\n' "$component" "$last_probe" >&2; exit 1; }
-      new=$(container "$component")
+      new=$(container "$component") || true  # Treat a failed lookup as "not yet running" and retry.
       # A new ID proves replacement. Also require API and pod readiness; merely
       # seeing a Running container or an old Ready mirror pod is insufficient.
       [[ -n "$new" && "$new" != "$old" && "$new" != *[[:space:]]* ]] &&
@@ -307,7 +318,9 @@ limit, interrupt this loop with Ctrl-C and investigate before continuing.
 ```
 
 `crictl stop` makes kubelet recreate the container with the renewed files; no
-`crictl start` or manifest move is needed. See
+`crictl start` or manifest move is needed. Its default timeout of 0 kills the
+container immediately, so the loop passes `-t 30` to let etcd and the API server
+shut down gracefully. See
 [Kubernetes' static-pod restart example](https://kubernetes.io/docs/tasks/configure-pod-container/static-pod/#observe-static-pod-behavior).
 Deleting the mirror pod with `kubectl` does not restart the container.
 
@@ -323,7 +336,24 @@ restarted after this renewal and its health checks passed, start the list with
 
 Repeat the site health checks from Section 1 and review the API monitor.
 The post-renewal `kubeadm certs check-expiration` output must show later expiry
-for the renewed leaf certificates; the CAs are not renewed. Recheck application
+for the renewed leaf certificates; the CAs are not renewed. That command only
+reads the files on disk, so also confirm that the API server **serves** the
+renewed certificate. In the node session where `NODE` is set (use the node's
+`InternalIP` if `NODE` does not resolve), compare the served leaf with the file
+kubeadm renewed:
+
+**Control-plane node — served API server certificate:**
+
+```bash
+disk=$(sudo openssl x509 -in /etc/kubernetes/pki/apiserver.crt -noout -fingerprint -sha256)
+served=$(echo | timeout 10 openssl s_client -connect "$NODE:6443" 2>/dev/null |
+  openssl x509 -noout -fingerprint -sha256)
+[[ -n "$served" && "$served" == "$disk" ]] && echo "OK: serving the renewed certificate" ||
+  echo "STOP: served certificate is missing or differs from apiserver.crt" >&2
+```
+
+A mismatch means the API server still serves its old certificate or is not
+reachable; investigate before moving on. Recheck application
 clients and aggregated APIs used by the site. Copies of `admin.conf` do **not**
 update automatically; distribute renewed admin credentials through the site's
 secret-management process. See
