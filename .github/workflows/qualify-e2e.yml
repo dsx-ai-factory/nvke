@@ -29,8 +29,9 @@
 # the suite a JUMP_HOST_PASSWORD is still what selects it.
 #
 # ASKED FOR, OR A BETA TAG. A run takes a bare-metal machine for up to an hour,
-# so it starts only when a person asks, by workflow_dispatch or the
-# `qualify-e2e` label on a pull request from this repository, or when a
+# so it starts only when a person asks, by workflow_dispatch or one of the
+# `qualify-e2e`, `qualify-e2e-l40s` or `qualify-e2e-dsx` labels on a pull
+# request from this repository (docs/qualification/overview.md), or when a
 # `vX.Y.Z-beta.N` tag is pushed. It is still not on a schedule and not on every
 # push, for three reasons, and the beta tag answers each of them:
 #
@@ -1502,8 +1503,9 @@ jobs:
                 source="dispatch input"
               elif [ "${input}" = IN_CONTROLLER_NAME ] && [ -n "${IN_CWE_NAME:-}" ]; then
                 source="dispatch input cwe-name (deprecated, rename to controller-name)"
-              elif [ "${EVENT_LABEL:-}" = qualify-e2e-dsx ] && { [ "${resolved}" = SITE_STAGE ] || [ "${resolved}" = SCOPE ]; }; then
-                # The label names both outright, ahead of the variables, so it
+              elif { [ "${EVENT_LABEL:-}" = qualify-e2e-dsx ] && { [ "${resolved}" = SITE_STAGE ] || [ "${resolved}" = SCOPE ]; }; } ||
+                   { [ "${EVENT_LABEL:-}" = qualify-e2e-l40s ] && [ "${resolved}" = SCOPE ]; }; then
+                # The label names these outright, ahead of the variables, so it
                 # is what produced the value whenever it is the trigger.
                 source="label ${EVENT_LABEL}"
               elif [ -n "${var}" ] && [ -n "${!var:-}" ]; then
