@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package cwe
+package controller
 
 import (
 	"context"
@@ -132,11 +132,11 @@ func TestTLSVerificationAndCancellation(t *testing.T) {
 
 func TestEndpointConfiguration(t *testing.T) {
 	for _, test := range []struct{ input, want string }{
-		{input: "https://cwe.example", want: "https://cwe.example/api"},
+		{input: "https://controller.example", want: "https://controller.example/api"},
 		{input: "http://localhost:8080/", want: "http://localhost:8080/api"},
-		{input: "https://cwe.example/api/", want: "https://cwe.example/api"},
-		{input: "https://cwe.example/site/api", want: "https://cwe.example/site/api"},
-		{input: "https://cwe.example/site/", want: "https://cwe.example/site/api"},
+		{input: "https://controller.example/api/", want: "https://controller.example/api"},
+		{input: "https://controller.example/site/api", want: "https://controller.example/site/api"},
+		{input: "https://controller.example/site/", want: "https://controller.example/site/api"},
 	} {
 		t.Run(test.input, func(t *testing.T) {
 			client := newTestClient(t, test.input, "")
@@ -145,12 +145,12 @@ func TestEndpointConfiguration(t *testing.T) {
 			}
 		})
 	}
-	for _, endpoint := range []string{"", "/api", "ftp://cwe.example", "https:///api", "https://user:REDACTED@cwe.example", "https://cwe.example?token=REDACTED", "https://cwe.example?", "https://cwe.example#fragment"} {
+	for _, endpoint := range []string{"", "/api", "ftp://controller.example", "https:///api", "https://user:REDACTED@controller.example", "https://controller.example?token=REDACTED", "https://controller.example?", "https://controller.example#fragment"} {
 		if _, err := New(Config{Endpoint: endpoint}); err == nil || strings.Contains(err.Error(), "REDACTED") {
 			t.Errorf("unsafe endpoint must fail without sensitive details: %v", err)
 		}
 	}
-	if _, err := New(Config{Endpoint: "https://cwe.example", TokenFile: filepath.Join(t.TempDir(), "missing")}); err == nil {
+	if _, err := New(Config{Endpoint: "https://controller.example", TokenFile: filepath.Join(t.TempDir(), "missing")}); err == nil {
 		t.Error("missing configured token file should fail at startup")
 	}
 }

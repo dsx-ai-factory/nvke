@@ -3,18 +3,17 @@ items:
 - apiVersion: internal.nvke.nvidia.com/v1
   kind: NVKECluster
   metadata:
+    annotations:
+      cluster.x-k8s.io/paused: "true"
     creationTimestamp: null
     finalizers:
     - internal.nvke.nvidia.com/cluster-cleanup
-    generation: 2
+    generation: 1
     name: cluster-1
     namespace: default
   spec:
     apiServerAccess:
-      publicAccessCidrs:
-      - cidr: 192.0.2.0/24
-        description: documentation network
-      publicAccessEnabled: true
+      publicAccessEnabled: false
     clusterNetwork:
       pods:
         cidrBlocks:
@@ -31,34 +30,31 @@ items:
     conditions:
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: Waiting for control-plane provisioning
-      observedGeneration: 2
+      observedGeneration: 1
       reason: NotAvailable
       status: "False"
       type: Available
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: Waiting for control-plane provisioning
-      observedGeneration: 2
+      observedGeneration: 1
       reason: Provisioning
       status: "False"
       type: ControlPlaneReady
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: |-
-        Waiting for control-plane provisioning
-        Changes to an existing cluster are not supported; observing the original request
-      observedGeneration: 2
+      message: Waiting for control-plane provisioning
+      observedGeneration: 1
       reason: NotReady
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: Changes to an existing cluster are not supported; observing the original
-        request
-      observedGeneration: 2
-      reason: UnsupportedUpdate
-      status: "False"
+      message: Cluster configuration has been accepted
+      observedGeneration: 1
+      reason: Synced
+      status: "True"
       type: Synced
-    observedGeneration: 2
+    observedGeneration: 1
     provisioning:
-      endpoint: https://cwe.example.com/api
+      endpoint: https://controller.example.com/api
       generation: 1
       id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
 metadata: {}

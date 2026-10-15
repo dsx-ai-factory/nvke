@@ -74,8 +74,8 @@ var _ = fixture.DescribeCaseSet(controllerCaseSet(
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
 		})
 		ginkgo.It("reconciles the deleted NVKECluster", func(ctx ginkgo.SpecContext) {
-			if input, exists := tc.Input("input_cwe.yaml"); exists {
-				var config cweFixtureConfig
+			if input, exists := tc.Input("input_controller.yaml"); exists {
+				var config controllerFixtureConfig
 				gomega.Expect(yaml.UnmarshalStrict([]byte(input), &config)).To(gomega.Succeed())
 				if config.DeletePending {
 					gomega.Eventually(func(g gomega.Gomega) {

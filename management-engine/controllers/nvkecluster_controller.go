@@ -28,8 +28,8 @@ const (
 	defaultPollInterval  = 10 * time.Second
 )
 
-// CWEClient is the existing REST API surface used by cluster reconciliation.
-type CWEClient interface {
+// ControllerClient is the existing REST API surface used by cluster reconciliation.
+type ControllerClient interface {
 	Endpoint() string
 	FindByName(ctx context.Context, name string) (*api.Cluster, error)
 	Get(ctx context.Context, id string) (*api.Cluster, error)
@@ -40,8 +40,8 @@ type CWEClient interface {
 // NVKEClusterReconciler coordinates cluster provisioning from declarative intent.
 type NVKEClusterReconciler struct {
 	client.Client
-	CWE          CWEClient
-	Bindings     []CWEBinding
+	Controller   ControllerClient
+	Bindings     []ControllerBinding
 	PollInterval time.Duration
 }
 
@@ -75,7 +75,7 @@ func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}()
 
-	if r.CWE == nil {
+	if r.Controller == nil {
 		setLifecycleConditions(&cluster, metav1.ConditionUnknown, metav1.ConditionUnknown, "ProvisioningNotConfigured", "Cluster provisioning is not configured")
 		return ctrl.Result{}, nil
 	}

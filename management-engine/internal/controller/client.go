@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package cwe adapts the existing CWE cluster API for reconciliation.
+// Package controller adapts the existing NVKE controller cluster API for reconciliation.
 // This will be removed with the migration to CAPI.
-package cwe
+package controller
 
 import (
 	"context"
@@ -27,9 +27,9 @@ const maxResponseBytes = 1 << 20
 
 var (
 	// ErrNotFound means the requested cluster does not exist.
-	ErrNotFound = errors.New("CWE cluster not found")
+	ErrNotFound = errors.New("NVKE controller cluster not found")
 	// ErrInvalidResponse means a successful response cannot identify the requested cluster.
-	ErrInvalidResponse = errors.New("CWE returned an invalid cluster response")
+	ErrInvalidResponse = errors.New("NVKE controller returned an invalid cluster response")
 )
 
 // HTTPError reports a rejected request without exposing response contents.
@@ -38,16 +38,16 @@ type HTTPError struct {
 }
 
 func (e *HTTPError) Error() string {
-	return fmt.Sprintf("CWE request returned HTTP %d", e.StatusCode)
+	return fmt.Sprintf("NVKE controller request returned HTTP %d", e.StatusCode)
 }
 
-// Config selects the operator-controlled CWE endpoint and optional bearer token file.
+// Config selects the operator-controlled NVKE controller endpoint and optional bearer token file.
 type Config struct {
 	Endpoint  string
 	TokenFile string
 }
 
-// Client validates cluster identity and redacts failures from generated CWE requests.
+// Client validates cluster identity and redacts failures from generated NVKE controller requests.
 type Client struct {
 	api      *api.Client
 	endpoint string
@@ -85,7 +85,7 @@ func New(cfg Config) (*Client, error) {
 		},
 	))
 	if err != nil {
-		return nil, errors.New("could not construct CWE API client")
+		return nil, errors.New("could not construct NVKE controller API client")
 	}
 	return &Client{api: raw, endpoint: endpoint}, nil
 }
@@ -96,7 +96,7 @@ func (c *Client) Endpoint() string { return c.endpoint }
 // FindByName finds a single exact-name match. It does not establish ownership.
 func (c *Client) FindByName(ctx context.Context, name string) (*api.Cluster, error) {
 	if name == "" {
-		return nil, errors.New("CWE cluster name is required")
+		return nil, errors.New("NVKE controller cluster name is required")
 	}
 	response, err := c.api.ListClusters(ctx, &api.ListClustersParams{Name: &name})
 	var result api.ListClustersResponse
@@ -132,10 +132,10 @@ func (c *Client) Get(ctx context.Context, id string) (*api.Cluster, error) {
 	return &result, nil
 }
 
-// Create submits the existing CWE request. Callers must persist intent before calling it.
+// Create submits the existing NVKE controller request. Callers must persist intent before calling it.
 func (c *Client) Create(ctx context.Context, request api.CreateClusterRequest) (*api.Cluster, error) {
 	if request.Name == "" {
-		return nil, errors.New("CWE cluster name is required")
+		return nil, errors.New("NVKE controller cluster name is required")
 	}
 	response, err := c.api.CreateCluster(ctx, request)
 	var result api.Cluster
@@ -166,12 +166,12 @@ func readResponse(response *http.Response, requestErr error, expected int, targe
 	if requestErr != nil {
 		// Transport errors can contain credentials. Preserve only safe context error identities.
 		if errors.Is(requestErr, context.Canceled) {
-			return fmt.Errorf("CWE request canceled: %w", context.Canceled)
+			return fmt.Errorf("NVKE controller request canceled: %w", context.Canceled)
 		}
 		if errors.Is(requestErr, context.DeadlineExceeded) {
-			return fmt.Errorf("CWE request timed out: %w", context.DeadlineExceeded)
+			return fmt.Errorf("NVKE controller request timed out: %w", context.DeadlineExceeded)
 		}
-		return errors.New("CWE request failed before a response was received")
+		return errors.New("NVKE controller request failed before a response was received")
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == http.StatusNotFound {
@@ -193,7 +193,7 @@ func readResponse(response *http.Response, requestErr error, expected int, targe
 func parseID(id string) (uuid.UUID, error) {
 	parsed, err := uuid.Parse(id)
 	if err != nil || parsed == uuid.Nil {
-		return uuid.Nil, errors.New("CWE cluster ID must be a nonzero UUID")
+		return uuid.Nil, errors.New("NVKE controller cluster ID must be a nonzero UUID")
 	}
 	return parsed, nil
 }
@@ -201,11 +201,11 @@ func parseID(id string) (uuid.UUID, error) {
 func readToken(filename string) (string, error) {
 	contents, err := os.ReadFile(filename)
 	if err != nil {
-		return "", errors.New("could not read CWE bearer token file")
+		return "", errors.New("could not read NVKE controller bearer token file")
 	}
 	token := strings.TrimSpace(string(contents))
 	if token == "" || strings.ContainsAny(token, " \t\r\n") {
-		return "", errors.New("CWE bearer token file is empty or malformed")
+		return "", errors.New("NVKE controller bearer token file is empty or malformed")
 	}
 	return token, nil
 }
@@ -214,7 +214,7 @@ func normalizeEndpoint(endpoint string) (string, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" ||
 		parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
-		return "", errors.New("CWE endpoint must be an absolute HTTP(S) URL without credentials, query or fragment")
+		return "", errors.New("NVKE controller endpoint must be an absolute HTTP(S) URL without credentials, query or fragment")
 	}
 	parsed.Path = strings.TrimRight(path.Clean(parsed.Path), "/")
 	if parsed.Path == "." {

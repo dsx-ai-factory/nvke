@@ -4,8 +4,6 @@ items:
   kind: NVKECluster
   metadata:
     creationTimestamp: null
-    deletionGracePeriodSeconds: 0
-    deletionTimestamp: "1970-01-01T00:00:00Z"
     finalizers:
     - internal.nvke.nvidia.com/cluster-cleanup
     generation: 2
@@ -13,7 +11,10 @@ items:
     namespace: default
   spec:
     apiServerAccess:
-      publicAccessEnabled: false
+      publicAccessCidrs:
+      - cidr: 192.0.2.0/24
+        description: documentation network
+      publicAccessEnabled: true
     clusterNetwork:
       pods:
         cidrBlocks:
@@ -29,32 +30,34 @@ items:
   status:
     conditions:
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: Waiting for cluster deletion
+      message: Control-plane provisioning completed
       observedGeneration: 2
-      reason: AvailableUnknown
-      status: Unknown
+      reason: Available
+      status: "True"
       type: Available
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: Waiting for cluster deletion
+      message: Control-plane provisioning completed
       observedGeneration: 2
-      reason: Deleting
-      status: Unknown
+      reason: Provisioned
+      status: "True"
       type: ControlPlaneReady
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: Cluster deletion is in progress
+      message: Changes to an existing cluster are not supported; observing the original
+        request
       observedGeneration: 2
-      reason: Deleting
+      reason: NotReady
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: Waiting for cluster deletion
+      message: Changes to an existing cluster are not supported; observing the original
+        request
       observedGeneration: 2
-      reason: Deleting
+      reason: UnsupportedUpdate
       status: "False"
       type: Synced
     observedGeneration: 2
     provisioning:
-      endpoint: https://cwe.example.com/api
+      endpoint: https://controller.example.com/api
       generation: 1
       id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
 metadata: {}

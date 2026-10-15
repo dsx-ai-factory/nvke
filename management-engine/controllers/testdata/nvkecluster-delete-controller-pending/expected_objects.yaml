@@ -4,9 +4,11 @@ items:
   kind: NVKECluster
   metadata:
     creationTimestamp: null
+    deletionGracePeriodSeconds: 0
+    deletionTimestamp: "1970-01-01T00:00:00Z"
     finalizers:
     - internal.nvke.nvidia.com/cluster-cleanup
-    generation: 1
+    generation: 2
     name: cluster-1
     namespace: default
   spec:
@@ -27,32 +29,32 @@ items:
   status:
     conditions:
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: Waiting for control-plane provisioning
-      observedGeneration: 1
-      reason: NotAvailable
-      status: "False"
+      message: Waiting for cluster deletion
+      observedGeneration: 2
+      reason: AvailableUnknown
+      status: Unknown
       type: Available
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: Waiting for control-plane provisioning
-      observedGeneration: 1
-      reason: Provisioning
-      status: "False"
+      message: Waiting for cluster deletion
+      observedGeneration: 2
+      reason: Deleting
+      status: Unknown
       type: ControlPlaneReady
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: Waiting for control-plane provisioning
-      observedGeneration: 1
-      reason: NotReady
+      message: Cluster deletion is in progress
+      observedGeneration: 2
+      reason: Deleting
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: Cluster configuration has been accepted
-      observedGeneration: 1
-      reason: Synced
-      status: "True"
+      message: Waiting for cluster deletion
+      observedGeneration: 2
+      reason: Deleting
+      status: "False"
       type: Synced
-    observedGeneration: 1
+    observedGeneration: 2
     provisioning:
-      endpoint: https://cwe.example.com/api
+      endpoint: https://controller.example.com/api
       generation: 1
       id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
 metadata: {}
