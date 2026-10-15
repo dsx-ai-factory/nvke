@@ -5,7 +5,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,12 +16,12 @@ import (
 const publishTestResult = `{
   "apiVersion": "nvke.nvidia.com/v1alpha1",
   "kind": "QualificationResult",
-  "spec": {"subject": "nvke", "type": "site-controller", "version": "v1.0.0"},
+  "spec": {"subject": "nvke", "version": "v1.0.0"},
   "status": {
-    "combinations": [{
+    "combination": {
       "id": "cli-v1.0.0",
-      "streams": [{"name": "amd64-1.34", "result": "PASS"}]
-    }]
+      "stream": {"name": "amd64-1.34", "result": "passed"}
+    }
   }
 }`
 
@@ -33,31 +32,6 @@ func writeFile(t *testing.T, name, content string) string {
 		t.Fatal(err)
 	}
 	return path
-}
-
-// publishTestResultValue is publishTestResult's one combination/one stream,
-// as a Go value.
-func publishTestResultValue() qualification.Result {
-	return qualification.Result{
-		APIVersion: "nvke.nvidia.com/v1alpha1",
-		Kind:       qualification.KindQualificationResult,
-		Spec:       qualification.ResultSpec{Subject: "nvke", Type: "site-controller", Version: "v1.0.0"},
-		Status: qualification.ResultStatus{
-			Combinations: []qualification.ResultCombination{{
-				ID:      "cli-v1.0.0",
-				Streams: []qualification.ResultStream{{Name: "amd64-1.34", Result: "PASS"}},
-			}},
-		},
-	}
-}
-
-func writeResult(t *testing.T, result qualification.Result) string {
-	t.Helper()
-	b, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return writeFile(t, "qualify-result.json", string(b))
 }
 
 func TestLoadResultAccepts(t *testing.T) {
@@ -129,51 +103,12 @@ func runPublishCmd(t *testing.T, args ...string) (stdout string, err error) {
 // so each rejection test only has to override the one flag/file it means to
 // break -- all of these stop before buildDestination ever runs, so none of
 // them touch a real GCS bucket.
-func publishArgs(t *testing.T, resultPath, junitPath, combination, stream string) []string {
+func publishArgs(t *testing.T, resultPath, junitPath, stream string) []string {
 	t.Helper()
 	return []string{
 		"--result", resultPath,
 		"--junit", junitPath,
-		"--combination", combination,
 		"--stream", stream,
-	}
-}
-
-func TestPublishCmdRejectsTooManyCombinations(t *testing.T) {
-	result := publishTestResultValue()
-	result.Status.Combinations = append(result.Status.Combinations, qualification.ResultCombination{
-		ID:      "other",
-		Streams: []qualification.ResultStream{{Name: "x", Result: "PASS"}},
-	})
-	resultPath := writeResult(t, result)
-	junitPath := writeFile(t, "qualify-e2e.junit.xml", "<testsuites/>")
-
-	_, err := runPublishCmd(t, publishArgs(t, resultPath, junitPath, "cli-v1.0.0", "amd64-1.34")...)
-	if err == nil || !strings.Contains(err.Error(), "want exactly 1") {
-		t.Errorf("err = %v, want it to say want exactly 1 combination", err)
-	}
-}
-
-func TestPublishCmdRejectsTooManyStreams(t *testing.T) {
-	result := publishTestResultValue()
-	result.Status.Combinations[0].Streams = append(result.Status.Combinations[0].Streams,
-		qualification.ResultStream{Name: "arm64-1.34", Result: "PASS"})
-	resultPath := writeResult(t, result)
-	junitPath := writeFile(t, "qualify-e2e.junit.xml", "<testsuites/>")
-
-	_, err := runPublishCmd(t, publishArgs(t, resultPath, junitPath, "cli-v1.0.0", "amd64-1.34")...)
-	if err == nil || !strings.Contains(err.Error(), "want exactly 1") {
-		t.Errorf("err = %v, want it to say want exactly 1 stream", err)
-	}
-}
-
-func TestPublishCmdRejectsCombinationMismatch(t *testing.T) {
-	resultPath := writeFile(t, "qualify-result.json", publishTestResult)
-	junitPath := writeFile(t, "qualify-e2e.junit.xml", "<testsuites/>")
-
-	_, err := runPublishCmd(t, publishArgs(t, resultPath, junitPath, "some-other-combination", "amd64-1.34")...)
-	if err == nil || !strings.Contains(err.Error(), "does not match the result record's combination") {
-		t.Errorf("err = %v, want it to name the combination mismatch", err)
 	}
 }
 
@@ -181,14 +116,14 @@ func TestPublishCmdRejectsStreamMismatch(t *testing.T) {
 	resultPath := writeFile(t, "qualify-result.json", publishTestResult)
 	junitPath := writeFile(t, "qualify-e2e.junit.xml", "<testsuites/>")
 
-	_, err := runPublishCmd(t, publishArgs(t, resultPath, junitPath, "cli-v1.0.0", "some-other-stream")...)
+	_, err := runPublishCmd(t, publishArgs(t, resultPath, junitPath, "some-other-stream")...)
 	if err == nil || !strings.Contains(err.Error(), "does not match the result record's stream") {
 		t.Errorf("err = %v, want it to name the stream mismatch", err)
 	}
 }
 
 func TestBuildDestinationRejectsUnknownDestination(t *testing.T) {
-	_, _, err := buildDestination(nil, "not-a-real-destination", "staging") //nolint:staticcheck // ctx unused before the error path
+	_, _, err := buildDestination(nil, "not-a-real-destination") //nolint:staticcheck // ctx unused before the error path
 	if err == nil || !strings.Contains(err.Error(), "unknown --destination") {
 		t.Errorf("err = %v, want it to name the bad destination", err)
 	}

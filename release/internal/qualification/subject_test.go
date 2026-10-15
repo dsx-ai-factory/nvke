@@ -16,7 +16,6 @@ metadata:
   name: nvke
 spec:
   subject: nvke
-  type: site-controller
   components:
     - {name: controller, selectors: [latest]}
     - {name: cli, selectors: [latest]}
@@ -35,9 +34,6 @@ func TestLoadSubjectAccepts(t *testing.T) {
 	if got := len(s.Spec.Components); got != 2 {
 		t.Errorf("got %d components, want 2", got)
 	}
-	if s.Spec.Type != "site-controller" {
-		t.Errorf("spec.type is %q, want site-controller", s.Spec.Type)
-	}
 
 	kube, ovn, kind := s.Spec.Dependencies[0], s.Spec.Dependencies[1], s.Spec.Dependencies[2]
 	if kube.ConstraintFrom == nil || kube.ConstraintFrom.Capability != "kube" || kube.Constraint != "" || !kube.perStream() {
@@ -48,20 +44,6 @@ func TestLoadSubjectAccepts(t *testing.T) {
 	}
 	if kind.Constraint != "" || kind.ConstraintFrom != nil || kind.perStream() {
 		t.Errorf("kind takes %+v, want no constraint", kind)
-	}
-}
-
-// A subject with no spec.type must still load -- `qualify plan` never reads
-// Type, and a future per-component subject that never declares one must not
-// be blocked from planning.
-func TestLoadSubjectAcceptsNoType(t *testing.T) {
-	body := strings.Replace(validSubject, "  type: site-controller\n", "", 1)
-	s, err := LoadSubject(write(t, "qualification.yaml", body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if s.Spec.Type != "" {
-		t.Errorf("spec.type is %q, want empty", s.Spec.Type)
 	}
 }
 

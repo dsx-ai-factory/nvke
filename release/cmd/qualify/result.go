@@ -23,7 +23,6 @@ func resultCmd() *cobra.Command {
 		combination string
 		stream      string
 		output      string
-		root        string
 		startedAt   string
 	)
 
@@ -40,41 +39,34 @@ Reads --combination and --stream from plan.json (components, dependencies),
 and --report (Ginkgo's JSON report) for the outcome -- pass/fail and a summary
 come from the Ginkgo report, not a second re-derivation from JUnit.
 
-If --report is missing or unreadable (the suite never ran -- a Forge
-provisioning failure, a wedged runner), this still writes a Result: FAIL,
-with a summary saying so, rather than erroring. A run that fails this early
-still needs a red entry in TestGrid, not silence. On that path, StartedAt
-comes from --started-at if the workflow passed one (the job's own start
-time), since there is no Ginkgo report to read it from; FinishedAt is still
-` + "`qualify result`" + `'s own run time, which is accurate -- that is genuinely
-when the failure was discovered.
+--combination may be omitted when the plan holds exactly one, which every
+real plan does today -- its id is a generated string long enough that typing
+it out is never worth it when there is nothing to disambiguate.
 
-Type comes from the subject's own qualification.yaml (spec.type).`,
+If --report is missing (the suite never ran -- a Forge provisioning failure,
+a wedged runner), this still writes a Result: errored, with a summary saying
+so, rather than erroring out itself. A run that fails this early still needs
+a red entry in TestGrid, not silence. On that path, StartedAt comes from
+--started-at if the workflow passed one (the job's own start time), since
+there is no Ginkgo report to read it from; FinishedAt is still
+` + "`qualify result`" + `'s own run time, which is accurate -- that is genuinely
+when the failure was discovered.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if root == "" {
-				var err error
-				if root, err = repoRoot(); err != nil {
-					return err
-				}
-			}
-
 			p, err := qualification.LoadPlan(plan)
 			if err != nil {
 				return fmt.Errorf("--plan: %w", err)
 			}
+			if combination == "" {
+				if len(p.Combinations) != 1 {
+					return fmt.Errorf("%s: plan has %d combinations, --combination is required", plan, len(p.Combinations))
+				}
+				combination = p.Combinations[0].ID
+			}
 			combo, strm, err := qualification.CombinationStream(p, combination, stream)
 			if err != nil {
 				return err
-			}
-
-			subject, err := qualification.LoadSubject(qualification.SubjectPath(root, p.Subject))
-			if err != nil {
-				return err
-			}
-			if subject.Spec.Type == "" {
-				return fmt.Errorf("%s: spec.type is empty, so this result would not say what kind of thing it qualified", qualification.SubjectPath(root, p.Subject))
 			}
 
 			infraFailureStart := time.Now().UTC()
@@ -86,7 +78,7 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 				infraFailureStart = t.UTC()
 			}
 
-			resultState, summary, runStartedAt, runFinishedAt := qualification.ResultFail, "", infraFailureStart, time.Now().UTC()
+			resultState, summary, runStartedAt, runFinishedAt := qualification.ResultErrored, "", infraFailureStart, time.Now().UTC()
 			ginkgoReport, err := loadGinkgoReport(report)
 			switch {
 			case errors.Is(err, os.ErrNotExist):
@@ -97,12 +89,13 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 				// The report exists but is unreadable -- a bug in how it was
 				// written, or a corrupted artifact. Distinct from the suite
 				// itself failing, so this is a command error, not a quiet
-				// FAIL result that would bury it.
+				// errored result that would bury it.
 				return fmt.Errorf("--report: %w", err)
-			case ginkgoReport.SuiteSucceeded:
-				resultState = qualification.ResultPass
-				fallthrough
 			default:
+				resultState = qualification.ResultFailed
+				if ginkgoReport.SuiteSucceeded {
+					resultState = qualification.ResultPassed
+				}
 				summary = summarizeGinkgoReport(ginkgoReport)
 				runStartedAt, runFinishedAt = ginkgoReport.StartTime, ginkgoReport.EndTime
 			}
@@ -110,7 +103,6 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 			result := qualification.NewResult(
 				qualification.ResultSpec{
 					Subject:      p.Subject,
-					Type:         subject.Spec.Type,
 					Version:      p.Version,
 					Dependencies: combo.Dependencies,
 					StartedAt:    runStartedAt,
@@ -120,7 +112,7 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 				qualification.ResultCombination{
 					ID:         combo.ID,
 					Components: combo.Components,
-					Streams: []qualification.ResultStream{{
+					Stream: qualification.ResultStream{
 						Name:         strm.Name,
 						Scope:        p.Scope,
 						Result:       resultState,
@@ -128,7 +120,7 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 						RunURL:       runURLFromEnv(),
 						Capabilities: strm.Capabilities,
 						Dependencies: strm.Dependencies,
-					}},
+					},
 				},
 			)
 			return write(cmd, output, result)
@@ -138,13 +130,12 @@ Type comes from the subject's own qualification.yaml (spec.type).`,
 	f := cmd.Flags()
 	f.StringVar(&plan, "plan", "", "path to the plan.json this leg ran from (required)")
 	f.StringVar(&report, "report", "", "path to the Ginkgo JSON report from this leg's run (required)")
-	f.StringVar(&combination, "combination", "", "the combination id this leg ran (required)")
+	f.StringVar(&combination, "combination", "", "the combination id this leg ran (required if the plan has more than one)")
 	f.StringVar(&stream, "stream", "", "the stream name this leg ran (required)")
 	f.StringVar(&output, "output", "-", "where to write the result, - is stdout")
-	f.StringVar(&root, "root", "", "repository root (default: the enclosing git checkout)")
 	f.StringVar(&startedAt, "started-at", "", "RFC3339 time the job started, used as StartedAt only when --report is missing or unreadable (default: now, which is a near-zero-duration guess)")
 
-	for _, name := range []string{"plan", "report", "combination", "stream"} {
+	for _, name := range []string{"plan", "report", "stream"} {
 		_ = cmd.MarkFlagRequired(name)
 	}
 	return cmd
@@ -197,8 +188,8 @@ func runURLFromEnv() string {
 // identityFromEnv reads the run's identity from the GitHub Actions
 // environment. Empty outside a GitHub Actions run, which is fine for local
 // testing -- an identity of all-empty strings is still valid JSON.
-func identityFromEnv() qualification.ResultIdentity {
-	return qualification.ResultIdentity{
+func identityFromEnv() qualification.RunIdentity {
+	return qualification.RunIdentity{
 		Repository: os.Getenv("GITHUB_REPOSITORY"),
 		RunID:      os.Getenv("GITHUB_RUN_ID"),
 		RunAttempt: os.Getenv("GITHUB_RUN_ATTEMPT"),

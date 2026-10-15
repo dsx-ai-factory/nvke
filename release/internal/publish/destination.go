@@ -19,10 +19,10 @@ type Destination interface {
 	Name() string
 
 	// Publish ships result and the JUnit report at junitPath. result's own
-	// Status.Combinations[0].Streams[0].Capabilities (gpu/kube and similar)
-	// carries whatever routing data a destination needs -- stamped there by
-	// `qualify result`, not looked up separately. Implementations own their
-	// own evidence shape; Publish must not mutate result or the file at
+	// Status.Combination.Stream.Capabilities (gpu/kube and similar) carries
+	// whatever routing data a destination needs -- stamped there by `qualify
+	// result`, not looked up separately. Implementations own their own
+	// evidence shape; Publish must not mutate result or the file at
 	// junitPath.
 	Publish(ctx context.Context, result *qualification.Result, junitPath string) error
 }

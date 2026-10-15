@@ -33,14 +33,6 @@ type SubjectSpec struct {
 	// version.
 	Subject string `json:"subject"`
 
-	// Type classifies what this subject qualifies, e.g. "site-controller".
-	// Authored, like Subject, not computed -- apiVersion/kind/spec carries
-	// declared data, status would carry observed data, and this is neither.
-	// Optional here: only `qualify result` needs it, and requiring it for
-	// every subject would also block `qualify plan` for a future
-	// per-component subject that never reads Type at all.
-	Type string `json:"type,omitempty"`
-
 	// Components move together in this qualification, and the combination is
 	// keyed by them.
 	Components []SubjectComponent `json:"components"`

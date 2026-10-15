@@ -22,7 +22,6 @@ metadata:
   name: nvke
 spec:
   subject: nvke
-  type: site-controller
   components:
     - {name: os-image, selectors: [latest]}
     - {name: cli, selectors: [latest]}

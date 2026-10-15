@@ -18,10 +18,8 @@ func publishCmd() *cobra.Command {
 	var (
 		resultPath  string
 		junitPath   string
-		combination string
 		stream      string
 		destination string
-		bucket      string
 	)
 
 	cmd := &cobra.Command{
@@ -46,21 +44,12 @@ so routing is built from the record itself.`,
 			if err != nil {
 				return err
 			}
-			if len(result.Status.Combinations) != 1 {
-				return fmt.Errorf("%s: has %d combinations, want exactly 1", resultPath, len(result.Status.Combinations))
-			}
-			combo := result.Status.Combinations[0]
-			if len(combo.Streams) != 1 {
-				return fmt.Errorf("%s: combination %q has %d streams, want exactly 1", resultPath, combo.ID, len(combo.Streams))
-			}
-			if combo.ID != combination {
-				return fmt.Errorf("--combination=%s does not match the result record's combination %q", combination, combo.ID)
-			}
-			if combo.Streams[0].Name != stream {
-				return fmt.Errorf("--stream=%s does not match the result record's stream %q", stream, combo.Streams[0].Name)
+			combo := result.Status.Combination
+			if combo.Stream.Name != stream {
+				return fmt.Errorf("--stream=%s does not match the result record's stream %q", stream, combo.Stream.Name)
 			}
 
-			dest, closeDest, err := buildDestination(cmd.Context(), destination, bucket)
+			dest, closeDest, err := buildDestination(cmd.Context(), destination)
 			if err != nil {
 				return err
 			}
@@ -71,7 +60,7 @@ so routing is built from the record itself.`,
 			if err := dest.Publish(cmd.Context(), result, junitPath); err != nil {
 				return fmt.Errorf("publishing to %s: %w", dest.Name(), err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "published %s/%s to %s\n", combination, stream, dest.Name())
+			fmt.Fprintf(cmd.OutOrStdout(), "published %s/%s to %s\n", combo.ID, stream, dest.Name())
 			return nil
 		},
 	}
@@ -79,12 +68,10 @@ so routing is built from the record itself.`,
 	f := cmd.Flags()
 	f.StringVar(&resultPath, "result", "", "path to the qualify-result.json this leg wrote (required)")
 	f.StringVar(&junitPath, "junit", "", "path to the qualify-e2e.junit.xml this leg wrote, if any (required)")
-	f.StringVar(&combination, "combination", "", "the combination id being published (required)")
 	f.StringVar(&stream, "stream", "", "the stream name being published (required)")
 	f.StringVar(&destination, "destination", "testgrid", "where to publish: testgrid")
-	f.StringVar(&bucket, "bucket", "dgxc-testgrid", "the GCS bucket testgrid publishes to")
 
-	for _, name := range []string{"result", "junit", "combination", "stream"} {
+	for _, name := range []string{"result", "junit", "stream"} {
 		_ = cmd.MarkFlagRequired(name)
 	}
 	return cmd
@@ -93,10 +80,10 @@ so routing is built from the record itself.`,
 // buildDestination constructs the named Destination. The returned func
 // closes whatever the destination opened (a GCS client today); nil if there
 // is nothing to close.
-func buildDestination(ctx context.Context, name, bucket string) (publish.Destination, func(), error) {
+func buildDestination(ctx context.Context, name string) (publish.Destination, func(), error) {
 	switch name {
 	case "testgrid":
-		uploader, err := testgrid.NewGCSUploader(ctx, bucket)
+		uploader, err := testgrid.NewGCSUploader(ctx)
 		if err != nil {
 			return nil, nil, err
 		}

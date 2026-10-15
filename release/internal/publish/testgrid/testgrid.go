@@ -50,10 +50,15 @@ type finished struct {
 
 // releaseStream is the Release Source value config-gen's ColumnHeader
 // surfaces on every build (tools/config-gen/main.go), and the one the
-// Qualification Matrix's SPA groups under its own project entry. Fixed, not
-// derived from Subject, because the project grouping it feeds is a fixed
-// taxonomy decision, not a per-subject one.
-const releaseStream = "nvke-release"
+// Qualification Matrix's SPA groups under its own project entry. Derived
+// from subject, not fixed: Subject's own doc already anticipates a second,
+// per-component subject beside the release-wide one at
+// release/qualification.yaml, and a fixed value would stamp that subject's
+// results as "nvke-release" too, indistinguishable from nvke's own in the
+// Qualification Matrix.
+func releaseStream(subject string) string {
+	return subject + "-release"
+}
 
 // meta is the subset of TestGrid's started.json/finished.json metadata this
 // Destination fills, from the QualificationResult's own fields.
@@ -102,19 +107,19 @@ type meta struct {
 // (in that order -- finished.json is never written unless everything ahead of
 // it uploaded successfully) under a build prefix derived from result's
 // combination and stream. Capabilities (gpu/kube/arch/ubuntu) come from
-// result's own Status.Combinations[0].Streams[0].Capabilities, stamped there
-// by `qualify result` -- not looked up separately.
+// result's own Status.Combination.Stream.Capabilities, stamped there by
+// `qualify result` -- not looked up separately.
 //
 // junitPath may not exist: a run that never produced a Ginkgo report (a Forge
 // provisioning failure, a wedged runner) has no JUnit either, and `qualify
-// result` already wrote a FAIL record with an infrastructure-failure summary
+// result` already wrote an errored record with an infrastructure-failure summary
 // for exactly that case. Publish still uploads started.json/finished.json so
 // that record reaches TestGrid instead of silently never publishing; it just
 // skips the junit.xml artifact, since there is genuinely nothing to upload.
 func (d *Destination) Publish(ctx context.Context, result *qualification.Result, junitPath string) error {
-	combo := result.Status.Combinations[0]
-	stream := combo.Streams[0]
-	passed := stream.Result == qualification.ResultPass
+	combo := result.Status.Combination
+	stream := combo.Stream
+	passed := stream.Result == qualification.ResultPassed
 	capabilities := stream.Capabilities
 
 	m := meta{
@@ -127,7 +132,7 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 		RunAttempt:    result.Spec.Identity.RunAttempt,
 		SHA:           result.Spec.Identity.SHA,
 		Actor:         result.Spec.Identity.Actor,
-		ReleaseStream: releaseStream,
+		ReleaseStream: releaseStream(result.Spec.Subject),
 		ReleaseTag:    releaseTag(result.Spec.Version),
 		Provider:      capabilities["provider"],
 		GPU:           capabilities["gpu"],
@@ -157,7 +162,7 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 	junitBytes, err := os.ReadFile(junitPath)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		// Nothing ran, so there is nothing to upload -- the FAIL record
+		// Nothing ran, so there is nothing to upload -- the errored record
 		// above already carries why.
 	case err != nil:
 		return fmt.Errorf("reading JUnit report: %w", err)
@@ -196,8 +201,8 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 //
 // dashboard is {gpu}-v{kube}-nvke-e2e: the {track}-e2e suffix is required
 // for config-gen to discover and render the dashboard at all, and "nvke" is
-// the track the SPA derives this subject's "nvke-release" release source
-// from.
+// the track the SPA derives this subject's "{subject}-release" release
+// source from (today, "nvke-release").
 //
 // build is {FinishedAt as 19-digit nanoseconds}-{run_id}-{run_attempt}-
 // {short hash of combination ID}. The updater drops any build whose name
@@ -217,8 +222,8 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 // upload-time clock would make every retry start a fresh, permanently
 // incomplete build instead.
 func (d *Destination) buildPrefix(result *qualification.Result) (string, error) {
-	combo := result.Status.Combinations[0]
-	stream := combo.Streams[0]
+	combo := result.Status.Combination
+	stream := combo.Stream
 	capabilities := stream.Capabilities
 
 	provider, gpu, kube := capabilities["provider"], capabilities["gpu"], capabilities["kube"]

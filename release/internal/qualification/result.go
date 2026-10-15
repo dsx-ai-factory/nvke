@@ -12,8 +12,8 @@ const KindQualificationResult = "QualificationResult"
 // Result is what `qualify result` writes and `qualify publish` reads,
 // alongside the JUnit report from the same run. One Result covers exactly one
 // (combination, stream) leg -- the unit `qualify result` is invoked for --
-// so Status.Combinations always holds exactly one entry, with exactly one
-// entry in its own Streams.
+// so Status holds exactly one Combination, with exactly one Stream of its
+// own.
 type Result struct {
 	APIVersion string       `json:"apiVersion"`
 	Kind       string       `json:"kind"`
@@ -25,10 +25,6 @@ type Result struct {
 // ResultSpec is the body of a QualificationResult: what was qualified.
 type ResultSpec struct {
 	Subject string `json:"subject"`
-
-	// Type classifies what was qualified, e.g. "site-controller". Read from
-	// the subject's own qualification.yaml (spec.type).
-	Type    string `json:"type"`
 	Version string `json:"version"`
 
 	// Dependencies are this leg's resolved dependency versions, copied from
@@ -38,28 +34,37 @@ type ResultSpec struct {
 	StartedAt  time.Time `json:"startedAt"`
 	FinishedAt time.Time `json:"finishedAt"`
 
-	Identity ResultIdentity `json:"identity"`
+	Identity RunIdentity `json:"identity"`
 }
 
-// ResultStatus is the body of a QualificationResult: what happened.
+// ResultStatus is the body of a QualificationResult: what happened. One
+// Combination, not a slice: a Result covers exactly one (combination,
+// stream) leg, so a slice here would let a value disagree with its own
+// invariant instead of making the shape itself unrepresentable.
 type ResultStatus struct {
-	Combinations []ResultCombination `json:"combinations"`
+	Combination ResultCombination `json:"combination"`
 }
 
-// ResultCombination is one plan combination's outcome. ID is the plan's own
-// identifier (Combination.ID) -- the same string a plan.json names, so a
-// result and the plan that produced it join without either side re-deriving
-// the other's key.
+// ResultCombination is the plan combination this leg's result came from. ID
+// is the plan's own identifier (Combination.ID) -- the same string a
+// plan.json names, so a result and the plan that produced it join without
+// either side re-deriving the other's key.
 type ResultCombination struct {
 	ID         string             `json:"id"`
 	Components []ComponentVersion `json:"components,omitempty"`
-	Streams    []ResultStream     `json:"streams"`
+	Stream     ResultStream       `json:"stream"`
 }
 
-// ResultPass and ResultFail are the two values ResultStream.Result takes.
+// ResultPassed, ResultFailed and ResultErrored are the three values
+// ResultStream.Result takes. ResultErrored is distinct from ResultFailed: it
+// means the suite never ran at all -- a Forge provisioning failure, a wedged
+// runner -- so a dashboard can tell a product regression (ResultFailed) apart
+// from infrastructure noise (ResultErrored) instead of both reading as the
+// same red entry.
 const (
-	ResultPass = "PASS"
-	ResultFail = "FAIL"
+	ResultPassed  = "passed"
+	ResultFailed  = "failed"
+	ResultErrored = "errored"
 )
 
 // ResultStream is one stream's outcome within a combination. Result and
@@ -74,7 +79,7 @@ const (
 type ResultStream struct {
 	Name    string `json:"name"`
 	Scope   string `json:"scope"`
-	Result  string `json:"result"` // ResultPass or ResultFail
+	Result  string `json:"result"` // ResultPassed, ResultFailed, or ResultErrored
 	Summary string `json:"summary"`
 	RunURL  string `json:"runUrl,omitempty"`
 
@@ -87,9 +92,11 @@ type ResultStream struct {
 	Dependencies []ComponentVersion `json:"dependencies,omitempty"`
 }
 
-// ResultIdentity is where this result came from, read from the GitHub
-// Actions run's own environment.
-type ResultIdentity struct {
+// RunIdentity is the run this result came from, read from the GitHub
+// Actions run's own environment -- not part of the result itself, which is
+// why it does not carry the Result prefix its siblings ResultSpec and
+// ResultStatus do.
+type RunIdentity struct {
 	Repository string `json:"repository"`
 	RunID      string `json:"runID"`
 	RunAttempt string `json:"runAttempt"`
@@ -105,7 +112,7 @@ func NewResult(spec ResultSpec, combination ResultCombination) *Result {
 		APIVersion: APIVersion,
 		Kind:       KindQualificationResult,
 		Spec:       spec,
-		Status:     ResultStatus{Combinations: []ResultCombination{combination}},
+		Status:     ResultStatus{Combination: combination},
 	}
 }
 

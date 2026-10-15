@@ -31,7 +31,6 @@ metadata:
   description: How NVKE as a whole is qualified.
 spec:
   subject: nvke
-  type: site-controller
 
   components:
     - {name: controller,       selectors: [latest]}

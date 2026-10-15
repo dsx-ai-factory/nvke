@@ -36,16 +36,16 @@ func testResult(subject, combinationID, streamName, runID, runAttempt string, ca
 		Spec: qualification.ResultSpec{
 			Subject:    subject,
 			FinishedAt: testResultFinishedAt,
-			Identity: qualification.ResultIdentity{
+			Identity: qualification.RunIdentity{
 				RunID:      runID,
 				RunAttempt: runAttempt,
 			},
 		},
 		Status: qualification.ResultStatus{
-			Combinations: []qualification.ResultCombination{{
-				ID:      combinationID,
-				Streams: []qualification.ResultStream{{Name: streamName, Capabilities: capabilities}},
-			}},
+			Combination: qualification.ResultCombination{
+				ID:     combinationID,
+				Stream: qualification.ResultStream{Name: streamName, Capabilities: capabilities},
+			},
 		},
 	}
 }
@@ -262,9 +262,9 @@ func publishTestResult(t *testing.T, passed bool) *qualification.Result {
 	t.Helper()
 	started := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
 	finished := started.Add(45 * time.Minute)
-	resultState := "FAIL"
+	resultState := "failed"
 	if passed {
-		resultState = "PASS"
+		resultState = "passed"
 	}
 	return &qualification.Result{
 		Spec: qualification.ResultSpec{
@@ -272,7 +272,7 @@ func publishTestResult(t *testing.T, passed bool) *qualification.Result {
 			Version:    "v1.0.0",
 			StartedAt:  started,
 			FinishedAt: finished,
-			Identity: qualification.ResultIdentity{
+			Identity: qualification.RunIdentity{
 				Repository: "dsx-ai-factory/nvke",
 				RunID:      "12345",
 				RunAttempt: "1",
@@ -281,17 +281,17 @@ func publishTestResult(t *testing.T, passed bool) *qualification.Result {
 			},
 		},
 		Status: qualification.ResultStatus{
-			Combinations: []qualification.ResultCombination{{
+			Combination: qualification.ResultCombination{
 				ID: "cli-v1.0.0",
-				Streams: []qualification.ResultStream{{
+				Stream: qualification.ResultStream{
 					Name:   "amd64-1.34",
 					Result: resultState,
 					RunURL: "https://github.com/dsx-ai-factory/nvke/actions/runs/12345",
 					Capabilities: map[string]string{
 						"provider": "forge", "gpu": "h100", "kube": "1.34", "arch": "amd64", "ubuntu": "24.04",
 					},
-				}},
-			}},
+				},
+			},
 		},
 	}
 }
@@ -358,9 +358,9 @@ func TestPublishIsIdempotentAcrossRetries(t *testing.T) {
 }
 
 // A run that never produced a Ginkgo report has no JUnit file either -- the
-// FAIL record `qualify result` already wrote still needs to reach TestGrid,
-// so Publish must not error just because the artifact it would have carried
-// never existed.
+// errored record `qualify result` already wrote still needs to reach
+// TestGrid, so Publish must not error just because the artifact it would
+// have carried never existed.
 func TestPublishSkipsJUnitWhenMissing(t *testing.T) {
 	result := publishTestResult(t, false)
 	junitPath := filepath.Join(t.TempDir(), "does-not-exist.xml")
@@ -481,9 +481,35 @@ func TestPublishMetadataFlattensCapabilitiesAndFixesReleaseStream(t *testing.T) 
 	}
 }
 
+// A second subject must not render as nvke's own release stream in the
+// Qualification Matrix -- that is the whole reason releaseStream derives
+// from Spec.Subject instead of being a fixed "nvke-release" constant.
+func TestPublishDerivesReleaseStreamFromSubject(t *testing.T) {
+	result := publishTestResult(t, true)
+	result.Spec.Subject = "widget"
+	junitPath := filepath.Join(t.TempDir(), "qualify-e2e.junit.xml")
+	if err := os.WriteFile(junitPath, []byte("<testsuites/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uploader := &fakeUploader{}
+	d := &Destination{Uploader: uploader}
+
+	if err := d.Publish(context.Background(), result, junitPath); err != nil {
+		t.Fatal(err)
+	}
+
+	var got started
+	if err := json.Unmarshal(uploader.calls[0].data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Metadata.ReleaseStream != "widget-release" {
+		t.Errorf("release_stream = %q, want widget-release", got.Metadata.ReleaseStream)
+	}
+}
+
 func TestPublishPropagatesBuildPrefixErrors(t *testing.T) {
 	result := publishTestResult(t, true)
-	result.Status.Combinations[0].Streams[0].Capabilities = nil // no gpu/kube
+	result.Status.Combination.Stream.Capabilities = nil // no gpu/kube
 	junitPath := filepath.Join(t.TempDir(), "qualify-e2e.junit.xml")
 	uploader := &fakeUploader{}
 	d := &Destination{Uploader: uploader}
