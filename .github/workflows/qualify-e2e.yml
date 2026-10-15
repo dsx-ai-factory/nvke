@@ -290,11 +290,8 @@ jobs:
       OVERRIDE_KUBE: ${{ inputs.kubernetes-version || vars.QUALIFY_E2E_KUBERNETES_VERSION }}
       OVERRIDE_CNI_OVN: ${{ inputs.cni-ovn-version || vars.QUALIFY_E2E_CNI_OVN_VERSION }}
       OVERRIDE_OS_IMAGE: ${{ inputs.os-image-version || vars.QUALIFY_E2E_OS_IMAGE_VERSION }}
-      # REVERT-WHEN-NVKE-NODE: the plan names nvke-node-* images, and the newest
-      # OS image release (v0.2.0-rc.1) predates that rename. Drop both
-      # fallbacks when a release carrying nvke-node-* exists.
-      OVERRIDE_OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 || vars.QUALIFY_E2E_OS_IMAGE_AMD64 || 'https://d1veq6e8nuk2fy.cloudfront.net/nvke-packages/os-image/releases/v0.2.0-rc.1/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2' }}
-      OVERRIDE_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 || vars.QUALIFY_E2E_OS_IMAGE_ARM64 || 'https://d1veq6e8nuk2fy.cloudfront.net/nvke-packages/os-image/releases/v0.2.0-rc.1/arm64/nke-node-non-fde-ubuntu-24.04.5-arm64.qcow2' }}
+      OVERRIDE_OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 || vars.QUALIFY_E2E_OS_IMAGE_AMD64 }}
+      OVERRIDE_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 || vars.QUALIFY_E2E_OS_IMAGE_ARM64 }}
       OVERRIDE_OS_IMAGE_BOOTLOADER_AMD64: ${{ inputs.os-image-bootloader-amd64 || vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
       OVERRIDE_OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 || vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
     steps:
