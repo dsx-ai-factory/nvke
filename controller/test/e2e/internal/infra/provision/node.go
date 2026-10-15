@@ -246,7 +246,10 @@ func WithTimeout(c *http.Client, timeout time.Duration) *http.Client {
 	if c == nil {
 		return &http.Client{Timeout: timeout}
 	}
-	if c.Timeout >= timeout {
+	// Zero is "no timeout", not "the shortest one": a caller that left it
+	// unset wants the request bounded by its context alone, and raising it to
+	// `timeout` would be lowering it from infinity.
+	if c.Timeout == 0 || c.Timeout >= timeout {
 		return c
 	}
 	clone := *c
