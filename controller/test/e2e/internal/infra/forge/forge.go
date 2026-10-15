@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -488,6 +489,78 @@ func (p *Provider) interfaces() []standard.InterfaceCreateRequest {
 	}
 	iface.SetIsPhysical(true)
 	return []standard.InterfaceCreateRequest{*iface}
+}
+
+// RequireCapacity fails when a shape this run will create has fewer usable
+// allocations than it needs. cpuCount is the site node plus the tenant
+// control plane. workerCount is the tenant's workers, taken on the GPU shape
+// when the run asked for one and on the CPU shape otherwise.
+//
+// CAPNICo refuses the create while unusedUsable is zero. Checked here, before
+// any instance exists, because the suite would otherwise hold the machines it
+// did get until the provision timeout.
+func (p *Provider) RequireCapacity(ctx context.Context, capabilities map[string]string, cpuCount, workerCount int) error {
+	selection, err := p.opts.Env.Resolve(capabilities)
+	if err != nil {
+		return fmt.Errorf("forge: %w", err)
+	}
+	type demand struct {
+		name string
+		id   string
+		need int
+	}
+	needs := map[string]demand{}
+	add := func(t InstanceType, n int) {
+		if n <= 0 || t.ID == "" {
+			return
+		}
+		d := needs[t.ID]
+		d.name = t.Name
+		d.id = t.ID
+		d.need += n
+		needs[t.ID] = d
+	}
+	add(selection.CPU, cpuCount)
+	if workerCount > 0 {
+		add(selection.WorkerType(), workerCount)
+	}
+	if len(needs) == 0 {
+		return nil
+	}
+
+	ctx, err = p.authorize(ctx)
+	if err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(needs))
+	for id := range needs {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	problems := make([]string, 0)
+	for _, id := range ids {
+		d := needs[id]
+		item, resp, err := p.client.InstanceTypeAPI.GetInstanceType(ctx, p.opts.Env.Org.ID, d.id).
+			IncludeAllocationStats(true).Execute()
+		closeBody(resp)
+		if err != nil {
+			return fmt.Errorf("forge: reading allocation stats for %s (%s): %w", d.name, d.id, apiError(err))
+		}
+		if !item.HasAllocationStats() {
+			return fmt.Errorf("forge: instance type %s (%s) returned no allocation stats", d.name, d.id)
+		}
+		stats := item.GetAllocationStats()
+		usable := int(stats.GetUnusedUsable())
+		if usable < d.need {
+			problems = append(problems, fmt.Sprintf(
+				"%s (%s): need %d, unusedUsable=%d (total=%d used=%d unused=%d)",
+				d.name, d.id, d.need, usable, stats.GetTotal(), stats.GetUsed(), stats.GetUnused()))
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("forge has no usable allocation for this run:\n%s", strings.Join(problems, "\n"))
+	}
+	return nil
 }
 
 func (p *Provider) authorize(ctx context.Context) (context.Context, error) {

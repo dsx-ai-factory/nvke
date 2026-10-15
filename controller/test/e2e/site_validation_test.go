@@ -37,9 +37,15 @@ type siteNamespace struct {
 }
 
 // siteNamespaces is every namespace the site validation requires a workload
-// in. The platform ones come from nvkectl bootstrap site; the rest are the
-// namespaces deploy/nico/nvke-deploy.yaml installs into, which
+// in. kube-system comes from kubeadm. cert-manager and capi-system come from
+// the stack's clusterctl init. The rest are the namespaces
+// deploy/nico/nvke-deploy.yaml installs into, which
 // TestUnit_SiteNamespacesCoverTheDeployPath keeps this list in step with.
+//
+// provisioned-system is absent on purpose. nvkectl bootstrap site installs
+// cluster-api-provider-provisioned into the ephemeral Kind cluster and tears
+// that cluster down. The cluster this check reads is the hardware site, and
+// its infrastructure controller is CAPNICo in capnico-system.
 //
 // Required by name because a namespace with nothing in it passes every
 // readiness check: an item that installed nothing would otherwise read as
@@ -47,8 +53,7 @@ type siteNamespace struct {
 var siteNamespaces = []siteNamespace{
 	{name: kubeSystemNamespace, source: "kubeadm"},
 	{name: "cert-manager", source: "cert-manager's default namespace, installed with CAPI"},
-	{name: "capi-system", source: "nvkectl's CAPI install"},
-	{name: "provisioned-system", source: "the provisioned infrastructure provider"},
+	{name: "capi-system", source: "clusterctl init, before the deploy path"},
 	{name: "capnico-system", source: "deploy path item capnico"},
 	{name: "postgres", source: "deploy path item postgresql"},
 	{name: "temporal", source: "deploy path item temporal"},

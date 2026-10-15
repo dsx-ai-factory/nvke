@@ -187,8 +187,14 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		// controller name, the tag it is exported from, the Forge API key and
 		// the registry credentials. Resolved here so a misconfigured run fails
 		// before a machine is provisioned rather than twenty minutes into one.
+		//
+		// Capacity is the same kind of check. CAPNICo will not create an
+		// instance while unusedUsable is zero, and the tenant wait then spends
+		// its whole provision timeout reporting that. The site node has not
+		// been asked for yet, so a shortfall here releases nothing.
 		if siteStage == siteStageFull {
 			stack, secrets = expectSucceed2(newStack(cfg, capabilities[infra.CapabilityArch]))
+			Expect(requireRunCapacity(context.Background(), provider)).To(Succeed())
 		}
 	})
 
@@ -400,6 +406,23 @@ func siteCapabilities(run map[string]string) map[string]string {
 	node[infra.CapabilityArch] = cmp.Or(node[infra.CapabilityArch], infra.DefaultArch)
 	node[infra.CapabilityMachineType] = infra.MachineTypeCPU
 	return node
+}
+
+// requireRunCapacity asks Forge whether the shapes this full run will create
+// have usable allocations: the site node and the tenant control plane on the
+// CPU shape, and one worker on the worker shape.
+func requireRunCapacity(ctx context.Context, provider infra.Provider) error {
+	checker, ok := provider.(interface {
+		RequireCapacity(context.Context, map[string]string, int, int) error
+	})
+	if !ok {
+		return fmt.Errorf("provider %T cannot check Forge allocation stats", provider)
+	}
+	capabilities, err := runCapabilities()
+	if err != nil {
+		return err
+	}
+	return checker.RequireCapacity(ctx, capabilities, 2, 1)
 }
 
 // newInfraProvider builds what creates this run's site node, as the run's
