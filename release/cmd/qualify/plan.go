@@ -59,11 +59,15 @@ way, the components that are not built here, such as the Kubernetes and OVN
 packages an image carries, are read from that commit's files, and an override
 still names a tag.
 
---check-exists asks for each location this resolves and requires it to be
-published. It is off by default, so planning reaches nothing but git, and the
-plan is checked as a whole afterwards instead. With it on, note that the bucket
-is private, so a missing artifact and a network that is not allowed both answer
-403, and the check can confirm that something exists but not that it does not.`,
+--check-exists requires the CDN locations this resolves to be published
+already, which is the images and the bootloaders. It does not reach the
+registry, because asking there needs credentials and planning is meant to
+reach nothing but git. "qualify verify" checks every location a plan names,
+registry included, and is what a run uses.
+
+It is off by default. With it on, note that the bucket is private, so a
+missing artifact and a network that is not allowed both answer 403, and the
+check can confirm that something exists but not that it does not.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -135,7 +139,7 @@ is private, so a missing artifact and a network that is not allowed both answer
 	// what a run asked for and what answered are the same word.
 	f.StringVar(&resolution, "resolution", resolve.VersionStrategyGitTag,
 		`how to resolve the components, "`+resolve.VersionStrategyGitTag+`" or "`+resolve.VersionStrategyCommitDescribe+`"`)
-	f.BoolVar(&checkExists, "check-exists", false, "require every location this resolves to be published already")
+	f.BoolVar(&checkExists, "check-exists", false, "require the CDN locations this resolves to be published already. qualify verify checks the registry ones")
 
 	_ = cmd.MarkFlagRequired("subject")
 	_ = cmd.RegisterFlagCompletionFunc("resolution", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {

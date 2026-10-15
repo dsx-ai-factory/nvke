@@ -125,3 +125,38 @@ func TestWaitForGivesUpAtTheBudget(t *testing.T) {
 		t.Errorf("error does not say the budget ran out:\n%s", err)
 	}
 }
+
+// A credential the registry rejects is not a publisher that has not finished,
+// so the wait ends on it rather than re-reading the same answer until the
+// budget runs out.
+func TestWaitForStopsOnASettledFailure(t *testing.T) {
+	// TLS, because ociExists reaches a registry over https. A plain server
+	// fails to connect instead, which is a transient answer and would be
+	// waited on, so the test would prove the opposite of what it means to.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	t.Cleanup(srv.Close)
+	host := strings.TrimPrefix(srv.URL, "https://")
+
+	var out bytes.Buffer
+	start := time.Now()
+	err := Checker{Client: srv.Client()}.WaitFor(context.Background(), &out,
+		[]Location{{URL: "oci://" + host + "/org/thing:v1", Wanted: []string{"thing"}}},
+		time.Hour, time.Minute)
+
+	if err == nil {
+		t.Fatal("expected an error, got none")
+	}
+	if !strings.Contains(err.Error(), "waiting will not change that") {
+		t.Errorf("err = %v, want it to say waiting does not help", err)
+	}
+	// The budget is an hour and the interval a minute, so anything that waited
+	// would still be sleeping.
+	if elapsed := time.Since(start); elapsed > 30*time.Second {
+		t.Errorf("took %v, want it to give up at once", elapsed)
+	}
+	if strings.Contains(out.String(), "asking again") {
+		t.Errorf("it announced a retry:\n%s", out.String())
+	}
+}

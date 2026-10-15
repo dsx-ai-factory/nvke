@@ -12,6 +12,7 @@ package artifact
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -63,9 +64,20 @@ func (c Checker) Exists(ctx context.Context, location string) error {
 	case strings.HasPrefix(location, schemeHTTPS), strings.HasPrefix(location, schemeHTTP):
 		return c.httpExists(ctx, location)
 	default:
-		return fmt.Errorf("%q names no scheme this understands, expected %s or %s", location, schemeOCI, schemeHTTPS)
+		return fmt.Errorf("%q names no scheme this understands, expected %s or %s: %w",
+			location, schemeOCI, schemeHTTPS, ErrSettled)
 	}
 }
+
+// ErrSettled marks a failure that asking again cannot change: credentials a
+// registry rejects, a reference that is not a location. A caller waiting for
+// something to be published stops on one of these rather than spending its
+// whole budget re-reading the same answer.
+//
+// The opposite is not an assertion that the artifact is absent. A private
+// bucket answers the same way for a missing object and a disallowed network,
+// so "keep asking" is the honest reading of anything not marked here.
+var ErrSettled = errors.New("asking again will not change this")
 
 // IsScheme reports whether location is one Exists can check, so a caller can
 // skip an entry that names no location rather than failing on it.

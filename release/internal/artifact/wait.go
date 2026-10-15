@@ -5,6 +5,7 @@ package artifact
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -45,13 +46,27 @@ func (c Checker) WaitFor(
 		var missing []Location
 		var reasons []string
 
+		var settled []string
 		for _, l := range pending {
 			if err := c.Exists(ctx, l.URL); err != nil {
+				reason := fmt.Sprintf("  %s (%s)\n    %v", l.URL, strings.Join(l.Wanted, ", "), err)
+				if errors.Is(err, ErrSettled) {
+					settled = append(settled, reason)
+					continue
+				}
 				missing = append(missing, l)
-				reasons = append(reasons, fmt.Sprintf("  %s (%s)\n    %v", l.URL, strings.Join(l.Wanted, ", "), err))
+				reasons = append(reasons, reason)
 				continue
 			}
 			fmt.Fprintf(out, "published: %s (%s)\n", l.URL, strings.Join(l.Wanted, ", "))
+		}
+
+		// Waiting cannot turn these into a different answer, so the budget is
+		// spent for nothing and the run learns an hour and a half late that a
+		// credential was wrong.
+		if len(settled) > 0 {
+			return fmt.Errorf("%d of the %d artifacts the plan names cannot be confirmed, and waiting "+
+				"will not change that:\n%s", len(settled), len(want), strings.Join(settled, "\n"))
 		}
 
 		if len(missing) == 0 {

@@ -62,9 +62,12 @@ func (c Checker) ociExists(ctx context.Context, reference string) error {
 	case http.StatusNotFound:
 		return fmt.Errorf("%s is not published: the registry has no %s under %s", reference, version, repository)
 	case http.StatusUnauthorized, http.StatusForbidden:
+		// Settled: the registry answers 404 for an artifact it does not have,
+		// so being refused here is about the credentials rather than about
+		// whether the publisher has finished.
 		return fmt.Errorf("could not confirm %s exists: HTTP %d. Credentials that cannot read %s and an "+
-			"artifact that is not there answer the same way, so check both",
-			reference, resp.StatusCode, repository)
+			"artifact that is not there answer the same way, so check both: %w",
+			reference, resp.StatusCode, repository, ErrSettled)
 	default:
 		return fmt.Errorf("could not confirm %s exists: HTTP %d", reference, resp.StatusCode)
 	}
