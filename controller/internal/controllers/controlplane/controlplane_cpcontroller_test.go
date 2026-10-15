@@ -49,19 +49,19 @@ func makeCPControllerNode(name string, configID uuid.UUID) db.Node {
 // nicoCPSpec builds the control-plane snapshot a stored Nico cluster carries.
 // The os and config profiles live in the nested nico payload, so a spec written
 // as a bare literal with root-level profiles would compare as having none.
-func nicoCPSpec(osProfile, configProfile, kubernetesVersion string) db.ControlPlaneConfigSpec {
+func nicoCPSpec(release, configProfile, kubernetesVersion string) db.ControlPlaneConfigSpec {
 	spec := db.ControlPlaneConfigSpec{KubernetesVersion: kubernetesVersion}
-	spec.SetNico(db.NicoControlPlaneProvider{OSProfile: osProfile, ConfigProfile: configProfile})
+	spec.SetNico(db.NicoControlPlaneProvider{Release: release, ConfigProfile: configProfile})
 	return spec
 }
 
-// staleCPSpec returns spec carrying an older OS profile, which is what makes a
+// staleCPSpec returns spec carrying an older release, which is what makes a
 // node's pinned snapshot stale relative to the cluster's current one.
 func staleCPSpec(t *testing.T, spec db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
 	t.Helper()
 	nico, err := spec.NicoProvider()
 	require.NoError(t, err)
-	nico.OSProfile = "nvke-1.33.6"
+	nico.Release = "nvke-1.33.6"
 	spec.SetNico(nico)
 	return spec
 }
@@ -176,7 +176,7 @@ func TestNodesNeedingRollout_TemplateVsLabelOnly(t *testing.T) {
 	// Same replacing template as current, but a non-replacing (label-only) delta.
 	labelOnlySpec := currentSpec
 	labelOnlySpec.NodeLabels = map[string]string{"role": "cp"}
-	// Replacing delta: different OS profile.
+	// Replacing delta: different release.
 	replacingSpec := staleCPSpec(t, currentSpec)
 
 	replacingID := uuid.New()

@@ -25,7 +25,7 @@ import (
 // node set's and node pool's NICo provider payloads. Machine materialization
 // and bootstrap rendering both need it.
 type NodeConfig struct {
-	OSProfile                string
+	Release                  string
 	DiskSelectionStrategy    db.DiskSelectionStrategy
 	KubernetesVersion        string
 	TeleportEnabled          bool
@@ -54,7 +54,7 @@ func ResolveNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool) (NodeConfig, er
 	}
 
 	return NodeConfig{
-		OSProfile:                nicoNodeSetProvider.OSProfile,
+		Release:                  nicoNodeSetProvider.Release,
 		DiskSelectionStrategy:    nicoNodeSetProvider.DiskSelectionStrategy,
 		KubernetesVersion:        nodeSet.KubernetesVersion,
 		TeleportEnabled:          nodeSet.TeleportEnabled,
@@ -84,7 +84,7 @@ func (*Client) renderInfraMachine(ipxeScriptTemplate, namespace string, node db.
 
 	ipxeScript, err := renderIpxeScript(ipxeScriptTemplate, string(config.DiskSelectionStrategy))
 	if err != nil {
-		return nil, fmt.Errorf("failed to render iPXE script for OS profile %s: %w", config.OSProfile, err)
+		return nil, fmt.Errorf("failed to render iPXE script for release %s: %w", config.Release, err)
 	}
 
 	instanceLabels := BuildInstanceLabels(node, cluster, config.NodePoolID)
@@ -123,7 +123,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 	}
 	// Resolve once for both renderers below: two GETs per node instead of four,
 	// and the iPXE script and the user data come from the same read.
-	resolved, err := resolveRelease(ctx, deps.K8sClient, config.IsControlPlaneRole, config.OSProfile)
+	resolved, err := resolveRelease(ctx, deps.K8sClient, config.IsControlPlaneRole, config.Release)
 	if err != nil {
 		return err
 	}

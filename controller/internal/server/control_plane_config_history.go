@@ -57,7 +57,7 @@ func (s *clusterService) GetClusterControlPlaneConfigHistory(
 }
 
 // controlPlaneConfigDiff returns the config fields that changed between prev and
-// curr. It reports the rollout-relevant fields (OS profile, config profile,
+// curr. It reports the rollout-relevant fields (release, config profile,
 // Kubernetes version) plus the flat scheduling/behavior knobs, and deliberately
 // omits provider blobs (bootstrap files, pre-kubeadm commands, machine
 // templates) so the history stays a safe, readable summary. Returns an empty
@@ -82,7 +82,7 @@ func controlPlaneConfigDiff(prev, curr *db.ControlPlaneConfigSpec) []api.Control
 	// value and the profile comparisons are a no-op for it.
 	prevNico, _ := prev.NicoProvider()
 	currNico, _ := curr.NicoProvider()
-	addIfChanged("osProfile", prevNico.OSProfile, currNico.OSProfile)
+	addIfChanged("release", prevNico.Release, currNico.Release)
 	addIfChanged("configProfile", prevNico.ConfigProfile, currNico.ConfigProfile)
 	addIfChanged("kubernetesVersion", prev.KubernetesVersion, curr.KubernetesVersion)
 	addIfChanged("systemReservedMemory", prev.SystemReservedMemory, curr.SystemReservedMemory)

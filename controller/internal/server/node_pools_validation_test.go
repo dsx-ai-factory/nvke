@@ -70,7 +70,7 @@ func TestValidateCreateNodePoolRequest_NicoRejectsInfraPayloadWhateverItCarries(
 				DesiredNodeCount: 1,
 				Nico: &api.NicoNodePoolProvider{
 					InstanceTypeID: uuid.New(),
-					OSProfile:      "ubuntu",
+					Release:        "ubuntu",
 					ConfigProfile:  "default",
 				},
 				Infra: tc.infra,
@@ -107,7 +107,7 @@ func TestValidateCreateNodePoolRequest_RejectsUnsupportedParentProvider(t *testi
 			Nico: &api.NicoNodePoolProvider{
 				SubnetIDs:      []uuid.UUID{uuid.New()},
 				InstanceTypeID: uuid.New(),
-				OSProfile:      "ubuntu",
+				Release:        "ubuntu",
 				ConfigProfile:  "default",
 			},
 		})
@@ -341,15 +341,15 @@ func TestValidateCreateClusterRequest_NodeNamePrefixLength(t *testing.T) {
 func TestValidateUpdateNodePoolRequest_WrongProvider(t *testing.T) {
 	svc := &nodePoolService{}
 	req := &api.UpdateNodePoolRequest{
-		Nico: &api.NicoNodePoolProviderUpdate{OSProfile: ptrString("os")},
+		Nico: &api.NicoNodePoolProviderUpdate{Release: ptrString("os")},
 	}
 	err := svc.validateUpdateNodePoolRequest(capiCluster(), req)
 	require.EqualError(t, err, "nico is not supported, please use infra")
 }
 
-// Clearing the OS profile is expressible in the request, and rejected: a Forge
+// Clearing the release is expressible in the request, and rejected: a Forge
 // node pool always has one. The config profile is optional and may be cleared.
-func TestValidateUpdateForgeNodePoolRequest_RejectsClearedOSProfile(t *testing.T) {
+func TestValidateUpdateForgeNodePoolRequest_RejectsClearedRelease(t *testing.T) {
 	svc := &nodePoolService{}
 	cases := []struct {
 		name string
@@ -357,9 +357,9 @@ func TestValidateUpdateForgeNodePoolRequest_RejectsClearedOSProfile(t *testing.T
 		want string
 	}{
 		{
-			name: "osProfile",
-			req:  &api.UpdateNodePoolRequest{Nico: &api.NicoNodePoolProviderUpdate{OSProfile: ptrString("")}},
-			want: "nico.osProfile cannot be cleared for a nico node pool",
+			name: "release",
+			req:  &api.UpdateNodePoolRequest{Nico: &api.NicoNodePoolProviderUpdate{Release: ptrString("")}},
+			want: "nico.release cannot be cleared for a nico node pool",
 		},
 	}
 	for _, tc := range cases {

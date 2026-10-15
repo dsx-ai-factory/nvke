@@ -13,7 +13,7 @@ This page describes how to create an NVIDIA Kubernetes Engine (NVKE) workload cl
 
   The Deployment `controller-manager` shows all replicas ready, and the Secret `nico-credentials` is listed. `<CLUSTER_NAME>` is the management cluster's name.
 - You have the NVIDIA Infra Controller (NICo) identifiers listed in [Collect the NICo identifiers](../operate/provider-nico.md#collect-the-nico-identifiers): the organization, site and virtual private cloud (VPC) IDs, the instance type IDs, the VPC prefix or subnet IDs, and optionally SSH key group IDs.
-- The OS profiles you plan to use exist on the management cluster. The control plane names a cluster release and each node pool names a node pool release. List them with `nvkectl get clusterreleases` and `nvkectl get nodepoolreleases`.
+- The releases you plan to use exist on the management cluster. The control plane names a cluster release and each node pool names a node pool release. List them with `nvkectl get clusterreleases` and `nvkectl get nodepoolreleases`.
 - If the cluster has more than one control-plane node, you have an unused, routable IPv4 address on the control-plane network for the Kubernetes API virtual IP address (VIP).
 - `curl` and `jq` are installed, for the REST calls on this page.
 
@@ -47,7 +47,7 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
          - <VPC_PREFIX_ID>
        sshKeyGroupIDs:
          - <SSH_KEY_GROUP_ID>
-       osProfile: <CP_OS_PROFILE>
+       release: <CP_RELEASE>
    nodePools:
      - name: gpu-workers
        nodeNamePrefix: w
@@ -58,17 +58,17 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
            - <VPC_PREFIX_ID>
          sshKeyGroupIDs:
            - <SSH_KEY_GROUP_ID>
-         osProfile: <WORKER_OS_PROFILE>
+         release: <WORKER_RELEASE>
    ```
 
    - `<WORKLOAD_CLUSTER>`: a lowercase DNS label of at most 55 characters, unique on the management plane, such as `example-customer-a`. Node names are built from it.
-   - `<K8S_VERSION>`: the Kubernetes version as `X.Y.Z` with no leading `v`, such as `1.34.2`. Use a version your OS profiles' node images carry; see [Supported platforms and versions](../overview/supported-platforms.md).
+   - `<K8S_VERSION>`: the Kubernetes version as `X.Y.Z` with no leading `v`, such as `1.34.2`. Use a version your releases' node images carry; see [Supported platforms and versions](../overview/supported-platforms.md).
    - `<API_VIP>`: the Kubernetes API VIP. It must be outside the pod and service CIDRs.
    - `<NICO_ORG_ID>`, `<NICO_SITE_ID>` and `<NICO_VPC_ID>`: your NICo organization ID, and the site and VPC IDs. Every NICo ID in the spec except the organization ID is a UUID.
    - `<CP_INSTANCE_TYPE_ID>` and `<WORKER_INSTANCE_TYPE_ID>`: NICo instance type IDs. `instanceTypePreference` is a required, ordered list: add more IDs after the first as fallbacks.
    - `<VPC_PREFIX_ID>`: a NICo VPC prefix ID. On a site without native networking, use `subnetIDs` with subnet IDs instead. Each `nico` object takes exactly one of the two.
    - `<SSH_KEY_GROUP_ID>`: a NICo SSH key group for node access. Optional; omit `sshKeyGroupIDs` to add none.
-   - `<CP_OS_PROFILE>`: the name of a cluster release. `<WORKER_OS_PROFILE>`: the name of a node pool release.
+   - `<CP_RELEASE>`: the name of a cluster release. `<WORKER_RELEASE>`: the name of a node pool release.
 
 2. Review the settings that are fixed at creation.
 
@@ -108,9 +108,9 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
 
    The command prints `Cluster "<WORKLOAD_CLUSTER>" created (id: <CLUSTER_ID>)` and returns before provisioning finishes. `-f -` reads the spec from standard input.
 
-   If the request is invalid, the command prints the API's error and creates nothing. Common causes are a duplicate name, a missing `nico.orgID`, `siteID` or `vpcID`, a missing control-plane `osProfile`, `maxSurge` above `1`, a pod CIDR too small for the nodes, and a VIP inside the pod or service CIDR.
+   If the request is invalid, the command prints the API's error and creates nothing. Common causes are a duplicate name, a missing `nico.orgID`, `siteID` or `vpcID`, a missing control-plane `release`, `maxSurge` above `1`, a pod CIDR too small for the nodes, and a VIP inside the pod or service CIDR.
 
-   The API does not check OS profile names at creation. A name with no matching release fails when the first node provisions.
+   The API does not check release names at creation. A name with no matching release fails when the first node provisions.
 
 The equivalent REST call sends the same fields as JSON to `POST /api/clusters`. Here `cluster.json` is `cluster.yaml` converted to JSON:
 
@@ -206,7 +206,7 @@ You change three cluster settings after creation with `nvkectl patch cluster`, w
 
 `enableOidc` requires Kubernetes 1.30.0 or later and turns on the shared OIDC provider that the `nvkeOIDCAuth` chart values configure. The install in [Install management-plane services](../operate/install-management-plane-services.md) configures it for the management cluster's SPIRE server and sets `nvkeOIDCAuth.enabled` to `false`, so new clusters start without it and the `enableOidc` patch is accepted. Try `enableOidc` on one cluster before you rely on it. [Configure OIDC for workload clusters](oidc.md) describes the shared provider, and the fleet-wide providers that a cluster gets only at creation.
 
-The same `PATCH` also takes `controlPlaneKubernetesVersion`, to upgrade the control plane, and `controlPlaneConfig`, to change the control-plane node count or OS profile. An upgrade, a node count above one and an OS profile change each require `controlPlaneVIP`.
+The same `PATCH` also takes `controlPlaneKubernetesVersion`, to upgrade the control plane, and `controlPlaneConfig`, to change the control-plane node count or release. An upgrade, a node count above one and a release change each require `controlPlaneVIP`.
 
 ## Delete a workload cluster
 

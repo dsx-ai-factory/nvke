@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/dsx-ai-factory/nvke/benchmarks/schemas/scenario.schema.json",
+  "$id": "https://github.com/dsx-ai-factory/nvke/raw/main/benchmarks/schemas/scenario.schema.json",
   "title": "Benchmark scenario",
   "description": "A scenario is one pinned, runnable recipe for a workload at a specific software stack. A workload is the thing measured and groups scenarios; a scenario validates. Two scenarios sharing a slug but pinning different stacks are the comparable pair.",
   "type": "object",

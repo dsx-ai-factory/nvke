@@ -7,7 +7,7 @@ The install is a short list of commands that you run in order. Each one stands o
 | Input | What it says |
 |---|---|
 | The site spec | What is specific to this site. It is the file you wrote for the bootstrap, with its `controllerStack` section filled in. |
-| The release description | Which published artifacts to install, each by OCI reference and digest: the `release.json` file from [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md). Optional; see [Choose where the artifacts come from](#choose-where-the-artifacts-come-from). |
+| The release description | Which published artifacts to install, each by OCI reference and digest: the `release.json` file from [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md). Optional; see [Choose where the artifacts come from](#choose-where-the-artifacts-come-from). |
 | The deploy path, `deploy/nico` | What to install, in which order, with which values. It is in the `nvke/` checkout. |
 
 ## Before you begin
@@ -15,7 +15,7 @@ The install is a short list of commands that you run in order. Each one stands o
 - You have completed [Bootstrap the management cluster](bootstrap-management-cluster.md). You have its kubeconfig, `<CLUSTER_NAME>.kubeconfig`, and its site spec, `sitespec.yaml`, in your working directory. The cluster has an odd number of nodes, all control-plane, and none carries the control-plane `NoSchedule` taint.
 - The management cluster has exactly one default StorageClass. `kubectl get storageclass` lists one marked `(default)`. The bootstrap installs none, and PostgreSQL and SPIRE need persistent volumes. Install the Container Storage Interface (CSI) driver for your storage hardware and annotate its class `storageclass.kubernetes.io/is-default-class=true`. A lab can use the rancher local-path-provisioner.
 - You have the NICo API endpoint, your organization ID, an API token and the API name. [Configure an infrastructure provider: NICo](provider-nico.md) explains each value.
-- You have a release description from [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md), or a completed local NVKR Run, or the image references to install without either.
+- You have a release description from [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md), or a completed local NVKR Run, or the image references to install without either.
 - You run the commands on a Linux host that reaches the management cluster's Kubernetes API, such as the bootstrap host. It has the `nvke/` checkout from the bootstrap, at the same release as `nvkectl`, and these tools on `PATH`:
   - `nvkectl`. The install reads the deploy path and renders it with it. `NVKECTL` names another binary.
   - `helm` `v4.2.4`. Helm 3 cannot install these charts.
@@ -200,7 +200,7 @@ The install refuses a release that lacks an image artifact the deploy path names
    nvkectl create nodepoolrelease -f ../releases/nodepoolrelease.yaml
    ```
 
-   The files are the ones you wrote in [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md). `nvkectl` writes the resources to the management cluster through the kubeconfig of the previous step and supplies their API version and kind; the controller chart installed their custom resource definitions in step 3. `nvkectl get machineimages` lists what you published.
+   The files are the ones you wrote in [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md). `nvkectl` writes the resources to the management cluster through the kubeconfig of the previous step and supplies their API version and kind; the controller chart installed their custom resource definitions in step 3. `nvkectl get machineimages` lists what you published.
 
 ## If the install fails
 

@@ -29,18 +29,18 @@ func TestControlPlaneRolloutRequiredMessage(t *testing.T) {
 
 	msg := controlPlaneRolloutRequiredMessage([]db.ControlPlaneRolloutChange{
 		{Field: "kubernetesVersion", From: "1.33.6", To: "1.34.2"},
-		{Field: "osProfile", From: "os-v1", To: "os-v2"},
+		{Field: "release", From: "os-v1", To: "os-v2"},
 	})
 	assert.Contains(t, msg, "differs from desired")
 	assert.Contains(t, msg, "kubernetesVersion 1.33.6->1.34.2")
-	assert.Contains(t, msg, "osProfile os-v1->os-v2")
+	assert.Contains(t, msg, "release os-v1->os-v2")
 }
 
 func TestRefreshControlPlaneRolloutRequiredCondition(t *testing.T) {
 	desired := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
-	desired.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v2"})
+	desired.SetNico(db.NicoControlPlaneProvider{Release: "os-v2", ConfigProfile: "cfg-v2"})
 	drifted := db.ControlPlaneConfigSpec{KubernetesVersion: "1.33.6"}
-	drifted.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v1", ConfigProfile: "cfg-v1"})
+	drifted.SetNico(db.NicoControlPlaneProvider{Release: "os-v1", ConfigProfile: "cfg-v1"})
 	desiredID := uuid.New()
 	driftedID := uuid.New()
 
@@ -113,9 +113,9 @@ func TestRefreshControlPlaneRolloutRequiredCondition(t *testing.T) {
 
 func TestReconcileControlPlaneRolloutRequiredCondition(t *testing.T) {
 	desired := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
-	desired.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v2"})
+	desired.SetNico(db.NicoControlPlaneProvider{Release: "os-v2", ConfigProfile: "cfg-v2"})
 	drifted := db.ControlPlaneConfigSpec{KubernetesVersion: "1.33.6"}
-	drifted.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v1", ConfigProfile: "cfg-v1"})
+	drifted.SetNico(db.NicoControlPlaneProvider{Release: "os-v1", ConfigProfile: "cfg-v1"})
 	desiredID := uuid.New()
 	driftedID := uuid.New()
 

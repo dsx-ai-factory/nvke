@@ -61,7 +61,7 @@ func nodePoolKeysForNode(_ context.Context, node db.Node) ([]dbreconcile.Key, er
 // Reconcile a NodePool:
 // - Create a new Current NodeSet If:
 //   - A current NodeSet doesn't exist.
-//   - The NodePool's OSProfile or ConfigProfile has changed.
+//   - The NodePool's Release or ConfigProfile has changed.
 //
 // - Distribute the desired count of the NodePool to the NodeSets.
 //   - Set the DesiredCount of the current NodeSet to be the DesiredCount of the NodePool

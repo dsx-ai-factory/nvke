@@ -58,7 +58,7 @@ info:
     |---|---|
     | Field omitted | Unchanged. |
     | `null` | Rejected with 400. No field is nullable, and `null` does not clear a value. |
-    | `""` (empty string) | Stored as empty for `description` and `systemReservedMemory`. For `kubeReservedMemory`, restores the default. Rejected for `nico.osProfile`. |
+    | `""` (empty string) | Stored as empty for `description` and `systemReservedMemory`. For `kubeReservedMemory`, restores the default. Rejected for `nico.release`. |
     | `[]` (empty array) | Clears the list. UUID arrays are de-duplicated. |
     | `nico` sub-object | Merged field by field, not replaced. |
 
@@ -113,7 +113,7 @@ tags:
       Controller (NICo) bare-metal infrastructure. Each cluster, control plane
       and node pool carries a `nico` object with the NICo identifiers it uses:
       organization, site and VPC at the cluster level; instance type,
-      networking, SSH key groups and OS profile at the control-plane and node
+      networking, SSH key groups and release at the control-plane and node
       pool level. A cluster's provider is fixed at creation.
 
       **Kubernetes versions.** Versions are semantic-version cores (X.Y.Z) with
@@ -144,7 +144,7 @@ tags:
 
       - **Size.** `controlPlaneConfig.desiredCount` sets the number of
         control-plane nodes. It is required when you create a cluster.
-      - **Rollouts.** When the control-plane configuration changes (OS profile
+      - **Rollouts.** When the control-plane configuration changes (release
         or Kubernetes version), NVKE compares each control-plane node with the
         desired configuration and replaces drifted nodes. `maxSurge` (0 or 1)
         controls whether a replacement node is added before the old one is
@@ -162,15 +162,14 @@ tags:
       changed through `PATCH /clusters/{clusterID}`. Its configuration history is
       an ordered list of snapshots of control-plane configuration changes.
 
-      **OS profiles (`osProfile`).** The OS and first-boot configuration for
-      every node come from an OS profile the Operator supplies to the management
-      plane, optionally together with a config profile for the node's role.
-      Control-plane and node pool requests select them by name in
-      `nico.osProfile` and `nico.configProfile`. Changing `osProfile` on a node pool or on the control
-      plane triggers a rollout of the affected nodes to the new profile.
+      **Releases (`release`).** The OS and first-boot configuration for
+      every node come from a release the Operator supplies to the management
+      plane. Control-plane and node pool requests select them by name in
+      `nico.release`. Changing `release` on a node pool or on the control
+      plane triggers a rollout of the affected nodes to the new release.
   - name: Node pools
     description: |
-      A group of worker nodes sharing an instance type, OS profile and
+      A group of worker nodes sharing an instance type, release and
       Kubernetes version. Node pool names are unique within a cluster. The
       configuration history of a node pool is an ordered list of snapshots of
       its configuration changes.
@@ -220,7 +219,7 @@ paths:
 
         Returns 400 for, among others: a duplicate cluster name; missing
         `nico.orgID`, `siteID` or `vpcID`; an unsupported `cniPlugin`; a
-        missing `controlPlaneConfig.nico.osProfile`; a
+        missing `controlPlaneConfig.nico.release`; a
         control-plane `maxSurge` greater than 1; a pod CIDR too small for the
         requested nodes plus surge; a `controlPlaneVIP` inside the pod or
         service CIDR.
@@ -250,8 +249,7 @@ paths:
                   instanceTypePreference: [1c3e5a7f-9b1d-4f3e-a5c7-e9b1d3f5a7c9]
                   vpcPrefixIDs: [2d4f6b8a-0c2e-4a4f-b6d8-f0c2e4a6b8d0]
                   sshKeyGroupIDs: [3e5a7c9b-1d3f-4b5a-c7e9-a1d3f5b7c9e1]
-                  osProfile: example-ubuntu-24.04-amd64
-                  configProfile: example-control-plane
+                  release: example-ubuntu-24.04-amd64
               nodePools:
                 - name: gpu-workers
                   nodeNamePrefix: w
@@ -268,8 +266,7 @@ paths:
                     instanceTypeID: 0d2f4a6c-8e0b-4d2f-9a4c-6e8b0d2f4a6c
                     vpcPrefixIDs: [2d4f6b8a-0c2e-4a4f-b6d8-f0c2e4a6b8d0]
                     sshKeyGroupIDs: [3e5a7c9b-1d3f-4b5a-c7e9-a1d3f5b7c9e1]
-                    osProfile: example-ubuntu-24.04-amd64
-                    configProfile: example-worker
+                    release: example-ubuntu-24.04-amd64
       responses:
         "201":
           description: Cluster created; provisioning has started
@@ -353,12 +350,12 @@ paths:
                 value:
                   enableOidc: true
               controlPlaneChange:
-                summary: Resize the control plane and move it to a new OS profile
+                summary: Resize the control plane and move it to a new release
                 value:
                   controlPlaneConfig:
                     desiredCount: 5
                     nico:
-                      osProfile: example-ubuntu-24.04-amd64-r2
+                      release: example-ubuntu-24.04-amd64-r2
       responses:
         "200":
           description: Update accepted
@@ -514,7 +511,7 @@ paths:
 
         Returns 400 for, among others: parent cluster not found; a duplicate
         pool name in the cluster; missing `nico.instanceTypeID`
-        or `nico.osProfile`; not exactly one of
+        or `nico.release`; not exactly one of
         `subnetIDs` and `vpcPrefixIDs`; a pod CIDR too small for the requested
         nodes.
       requestBody:
@@ -543,8 +540,7 @@ paths:
                 instanceTypeID: 9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b
                 vpcPrefixIDs: [2d4f6b8a-0c2e-4a4f-b6d8-f0c2e4a6b8d0]
                 sshKeyGroupIDs: [3e5a7c9b-1d3f-4b5a-c7e9-a1d3f5b7c9e1]
-                osProfile: example-ubuntu-24.04-amd64
-                configProfile: example-worker
+                release: example-ubuntu-24.04-amd64
                 diskSelectionStrategy: largest
       responses:
         "201":
@@ -604,12 +600,12 @@ paths:
       summary: Update a node pool
       operationId: updateNodePool
       description: |
-        All fields are optional. Changes to the Kubernetes version, OS profile
+        All fields are optional. Changes to the Kubernetes version, release
         or other node configuration create a new NodeSet and roll the pool's
         nodes to it.
 
         Returns 400 for, among others: sending a field that is fixed at
-        creation (for example `instanceTypeID`); `nico.osProfile: ""`.
+        creation (for example `instanceTypeID`); `nico.release: ""`.
       requestBody:
         required: true
         description: The fields to change. All are optional.
@@ -629,10 +625,10 @@ paths:
                   maxSurge: 2
                   recycleBudget: 2
               newRelease:
-                summary: Move to a new OS profile and restore the default kube-reserved memory
+                summary: Move to a new release and restore the default kube-reserved memory
                 value:
                   nico:
-                    osProfile: example-ubuntu-24.04-amd64-r2
+                    release: example-ubuntu-24.04-amd64-r2
                   kubeReservedMemory: ''
       responses:
         "200":
@@ -864,20 +860,20 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
-  /osProfiles:
+  /releases:
     get:
       x-fern-ignore: true
       tags: [Catalog]
-      summary: List OS profiles
-      operationId: listOSProfiles
-      description: Lists the OS profiles available to the management plane.
+      summary: List releases
+      operationId: listReleases
+      description: Lists the releases available to the management plane.
       responses:
         "200":
-          description: A list of OS profiles
+          description: A list of releases
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ListOSProfilesResponse"
+                $ref: "#/components/schemas/ListReleasesResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1245,7 +1241,7 @@ components:
       not:
         required: [nico, infra]
       description: |
-        Changes to `osProfile` or the Kubernetes version start a control-plane
+        Changes to `release` or the Kubernetes version start a control-plane
         rollout. All fields are optional. A provider payload that does not match the
         cluster's provider is rejected with 400.
         Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
@@ -1710,7 +1706,7 @@ components:
           x-fern-ignore: true
           $ref: "#/components/schemas/InfraNodePoolProviderUpdate"
     NodePool:
-      description: A group of worker nodes sharing an instance type, OS profile and Kubernetes version.
+      description: A group of worker nodes sharing an instance type, release and Kubernetes version.
       type: object
       required:
         - id
@@ -2053,7 +2049,7 @@ components:
       properties:
         field:
           type: string
-          description: The rollout-relevant field that changed (e.g. kubernetesVersion, osProfile, configProfile).
+          description: The rollout-relevant field that changed (e.g. kubernetesVersion, release).
           x-order: 1
         from:
           type: string
@@ -2067,7 +2063,7 @@ components:
     ControlPlaneRolloutStatus:
       type: object
       description: |
-        Control-plane nodes only. Drift is computed on the OS profile (osProfile) and
+        Control-plane nodes only. Drift is computed on the release and
         the Kubernetes version. Resolve pinnedConfigurationID and desiredConfigurationID
         with GET /clusters/{clusterID}/control-plane/configHistory.
       required:
@@ -2085,7 +2081,7 @@ components:
         changes:
           type: array
           description: |
-            Each with field, from, to as plain strings. Drift is computed on the OS profile (osProfile) and the Kubernetes version.
+            Each with field, from, to as plain strings. Drift is computed on the release and the Kubernetes version.
           items:
             $ref: "#/components/schemas/ControlPlaneRolloutChange"
           x-go-type-skip-optional-pointer: true
@@ -2413,16 +2409,16 @@ components:
           example: A cluster already exists with the name "tenant-a-prod"
           x-order: 1
 
-    OSProfile:
+    Release:
       x-fern-ignore: true
-      description: An OS profile available to the management plane.
+      description: A release available to the management plane.
       type: object
       required:
         - name
       properties:
         name:
           type: string
-          description: The name of the OS profile
+          description: The name of the release
           x-order: 1
 
     ConfigProfile:
@@ -2477,8 +2473,8 @@ components:
       type: object
       additionalProperties: false
       description: |
-        NICo settings for a node pool. instanceTypeID and osProfile are required,
-        configProfile is optional, and exactly one of subnetIDs and vpcPrefixIDs.
+        NICo settings for a node pool. instanceTypeID and release are required,
+        and exactly one of subnetIDs and vpcPrefixIDs is required.
       properties:
         subnetIDs:
           type: array
@@ -2513,15 +2509,17 @@ components:
             type: string
             format: uuid
           description: SSH key groups for node access. Fixed at creation.
-        osProfile:
+        release:
           type: string
-          description: Name of an OS profile the Operator has supplied to the management plane.
+          description: Name of a release the Operator has supplied to the management plane.
           example: example-ubuntu-24.04-amd64
-          x-go-name: OSProfile
+          x-go-name: Release
           x-go-type-skip-optional-pointer: true
         configProfile:
+          x-fern-ignore: true
           type: string
-          description: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
+          description: |
+            Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
@@ -2548,16 +2546,17 @@ components:
             format: uuid
           description: Replaces the list; [] clears it. VPC prefixes, for sites with native networking.
           x-go-type-skip-optional-pointer: true
-        osProfile:
+        release:
           type: string
           description: |
-            Name of an OS profile. Changing it rolls the pool's nodes to the new profile. An
-            empty string is rejected: a pool always has an OS profile.
-          x-go-name: OSProfile
+            Name of a release. Changing it rolls the pool's nodes to the new release. An
+            empty string is rejected: a pool always has a release.
+          x-go-name: Release
         configProfile:
+          x-fern-ignore: true
           type: string
           description: |
-            Config profile name for the pool's nodes. An empty string clears it; a pool
+            Deprecated: Config profile name for the pool's nodes. An empty string clears it; a pool
             may have no config profile.
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategy"
@@ -2581,15 +2580,17 @@ components:
             format: uuid
           description: VPC prefixes, for sites with native networking.
           x-go-type-skip-optional-pointer: true
-        osProfile:
+        release:
           type: string
-          description: Name of an OS profile the Operator has supplied to the management plane.
+          description: Name of a release the Operator has supplied to the management plane.
           example: example-ubuntu-24.04-amd64
-          x-go-name: OSProfile
+          x-go-name: Release
           x-go-type-skip-optional-pointer: true
         configProfile:
+          x-fern-ignore: true
           type: string
-          description: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
+          description: |
+            Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
@@ -2698,11 +2699,11 @@ components:
             format: uuid
           description: VPC prefixes, for sites with native networking.
           x-go-type-skip-optional-pointer: true
-        osProfile:
+        release:
           type: string
-          description: Name of an OS profile the Operator has supplied to the management plane.
+          description: Name of a release the Operator has supplied to the management plane.
           example: example-ubuntu-24.04-amd64
-          x-go-name: OSProfile
+          x-go-name: Release
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           readOnly: true
@@ -2710,8 +2711,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/DiskSelectionStrategyCreate"
         configProfile:
+          x-fern-ignore: true
           type: string
-          description: Config profile name for the control-plane nodes.
+          description: |
+            Deprecated: Config profile name for the control-plane nodes.
           x-go-type-skip-optional-pointer: true
         sshKeyGroupIDs:
           type: array
@@ -2725,8 +2728,8 @@ components:
       type: object
       additionalProperties: false
       description: |
-        NICo settings for control-plane nodes at creation. osProfile is required,
-        configProfile is optional, and exactly one of subnetIDs and vpcPrefixIDs.
+        NICo settings for control-plane nodes at creation. release is required,
+        and exactly one of subnetIDs and vpcPrefixIDs is required.
       properties:
         instanceTypePreference:
           type: array
@@ -2749,15 +2752,17 @@ components:
             format: uuid
           description: VPC prefixes, for sites with native networking.
           x-go-type-skip-optional-pointer: true
-        osProfile:
+        release:
           type: string
-          description: Name of an OS profile the Operator has supplied to the management plane.
+          description: Name of a release the Operator has supplied to the management plane.
           example: example-ubuntu-24.04-amd64
-          x-go-name: OSProfile
+          x-go-name: Release
           x-go-type-skip-optional-pointer: true
         configProfile:
+          x-fern-ignore: true
           type: string
-          description: Config profile name for the control-plane nodes. Optional; when omitted the nodes run no config profile hooks or labels.
+          description: |
+            Deprecated: Config profile name for the control-plane nodes. Optional; when omitted the nodes run no config profile hooks or labels.
           x-go-type-skip-optional-pointer: true
         sshKeyGroupIDs:
           type: array
@@ -2795,13 +2800,15 @@ components:
             format: uuid
           description: VPC prefixes, for sites with native networking.
           x-go-type-skip-optional-pointer: true
-        osProfile:
+        release:
           type: string
-          description: Name of an OS profile. Changing it starts a control-plane rollout.
-          x-go-name: OSProfile
+          description: Name of a release. Changing it starts a control-plane rollout.
+          x-go-name: Release
         configProfile:
+          x-fern-ignore: true
           type: string
-          description: Config profile name for the control-plane nodes.
+          description: |
+            Deprecated: Config profile name for the control-plane nodes.
         sshKeyGroupIDs:
           type: array
           items:
@@ -2895,18 +2902,18 @@ components:
       description: Which disk the OS is installed on. Default smallest.
       x-go-type-skip-optional-pointer: true
 
-    ListOSProfilesResponse:
+    ListReleasesResponse:
       x-fern-ignore: true
-      description: A list of OS profiles.
+      description: A list of releases.
       type: object
       required:
-        - osProfiles
+        - releases
       properties:
-        osProfiles:
+        releases:
           type: array
           items:
-            $ref: "#/components/schemas/OSProfile"
-          description: The list of OS profiles
+            $ref: "#/components/schemas/Release"
+          description: The list of releases
 
     ListConfigProfilesResponse:
       x-fern-ignore: true

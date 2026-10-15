@@ -148,13 +148,13 @@ for cluster_id in "${CLUSTER_IDS[@]}"; do
 
     cluster_name=$(echo "$cluster_json" | jq -r '.name')
     # Org ID and site ID must be present on the cluster detail from the controller API
-    org_id=$(echo "$cluster_json" | jq -r '.orgID // empty')
-    site_id=$(uuid_from_json "$(echo "$cluster_json" | jq -c '.siteID')")
+    org_id=$(echo "$cluster_json" | jq -r '.nico.orgID // empty')
+    site_id=$(uuid_from_json "$(echo "$cluster_json" | jq -c '.nico.siteID')")
     if [[ -z "$org_id" ]] || [[ -z "$site_id" ]]; then
         echo "Error: cluster $cluster_id is missing orgID or siteID in the controller API response; cannot generate CRs"
         exit 1
     fi
-    vpc_id=$(uuid_from_json "$(echo "$cluster_json" | jq -c '.vpcID')")
+    vpc_id=$(uuid_from_json "$(echo "$cluster_json" | jq -c '.nico.vpcID')")
     control_plane_k8s_version=$(echo "$cluster_json" | jq -r '.controlPlaneKubernetesVersion')
     cni_plugin=$(normalize_cni "$(echo "$cluster_json" | jq -r '.cniPlugin')")
     control_plane_vip=$(echo "$cluster_json" | jq -r '.controlPlaneVIP // empty')
@@ -266,9 +266,9 @@ ${cluster_spec}
         np=$(echo "$nodepools_json" | jq -c ".[$idx]")
         np_name=$(echo "$np" | jq -r '.name // empty')
         np_prefix=$(echo "$np" | jq -r '.nodeNamePrefix // empty')
-        np_instance_type=$(uuid_from_json "$(echo "$np" | jq -c '.instanceTypeID // empty')")
-        np_os_profile=$(echo "$np" | jq -r '.osProfile // empty')
-        np_config_profile=$(echo "$np" | jq -r '.configProfile // empty')
+        np_instance_type=$(uuid_from_json "$(echo "$np" | jq -c '.nico.instanceTypeID // empty')")
+        np_os_profile=$(echo "$np" | jq -r '.nico.release // empty')
+        np_config_profile=$(echo "$np" | jq -r '.nico.configProfile // empty')
         np_desired=$(echo "$np" | jq -r '.desiredNodeCount // 1')
         np_control_plane=$(echo "$np" | jq -r '.controlPlane // false')
         np_node_type="Worker"
@@ -279,8 +279,8 @@ ${cluster_spec}
         np_recycle_budget=$(echo "$np" | jq -r '.recycleBudget // 0')
         np_max_surge=$(echo "$np" | jq -r '.maxSurge // 0')
         # Validate required fields; skip node pools with missing or zero UUIDs (controller data issue)
-        if [[ -z "$np_name" ]] || [[ -z "$np_prefix" ]] || [[ -z "$np_os_profile" ]] || [[ -z "$np_config_profile" ]]; then
-            echo "  Warning: skipping node pool (missing name, nodeNamePrefix, osProfile, or configProfile): $np"
+        if [[ -z "$np_name" ]] || [[ -z "$np_prefix" ]] || [[ -z "$np_os_profile" ]]; then
+            echo "  Warning: skipping node pool (missing name, nodeNamePrefix, or release): $np"
             continue
         fi
         if [[ -z "$np_instance_type" ]] || [[ "$np_instance_type" == "$ZERO_UUID" ]] || [[ "$np_instance_type" == "null" ]]; then
@@ -288,24 +288,27 @@ ${cluster_spec}
             continue
         fi
         extra_spec=""
-        subnet_ids=$(echo "$np" | jq -r '(.subnetIDs // [])[] | tostring' 2>/dev/null)
+        subnet_ids=$(echo "$np" | jq -r '(.nico.subnetIDs // [])[] | tostring' 2>/dev/null)
         if [[ -n "$subnet_ids" ]]; then
             extra_spec="  subnetIDs:"$'\n'
             while IFS= read -r s; do [[ -n "$s" ]] && [[ "$s" != "null" ]] && extra_spec="${extra_spec}    - ${s}"$'\n'; done <<< "$subnet_ids"
         fi
-        vpc_prefix_ids=$(echo "$np" | jq -r '(.vpcPrefixIDs // [])[] | tostring' 2>/dev/null)
+        vpc_prefix_ids=$(echo "$np" | jq -r '(.nico.vpcPrefixIDs // [])[] | tostring' 2>/dev/null)
         if [[ -n "$vpc_prefix_ids" ]]; then
             extra_spec="${extra_spec}  vpcPrefixIDs:"$'\n'
             while IFS= read -r v; do [[ -n "$v" ]] && [[ "$v" != "null" ]] && extra_spec="${extra_spec}    - ${v}"$'\n'; done <<< "$vpc_prefix_ids"
         fi
-        ssh_ids=$(echo "$np" | jq -r '(.sshKeyGroupIDs // [])[] | tostring' 2>/dev/null)
+        ssh_ids=$(echo "$np" | jq -r '(.nico.sshKeyGroupIDs // [])[] | tostring' 2>/dev/null)
         if [[ -n "$ssh_ids" ]]; then
             extra_spec="${extra_spec}  sshKeyGroupIDs:"$'\n'
             while IFS= read -r k; do [[ -n "$k" ]] && [[ "$k" != "null" ]] && extra_spec="${extra_spec}    - ${k}"$'\n'; done <<< "$ssh_ids"
         fi
-        np_ib=$(uuid_from_json "$(echo "$np" | jq -c '.infinibandPartitionID // empty')")
+        np_ib=$(uuid_from_json "$(echo "$np" | jq -c '.nico.infinibandPartitionID // empty')")
         if [[ -n "$np_ib" ]] && [[ "$np_ib" != "null" ]] && [[ "$np_ib" != "$ZERO_UUID" ]]; then
             extra_spec="${extra_spec}  infinibandPartitionID: ${np_ib}"$'\n'
+        fi
+        if [[ -n "$np_config_profile" ]]; then
+            extra_spec="${extra_spec}  configProfile: ${np_config_profile}"$'\n'
         fi
         # Optional CRD fields (match platform CRD defaults when not set)
         extra_spec="${extra_spec}  autoProvisionDisabled: ${np_auto_provision_disabled}"$'\n'
@@ -324,7 +327,6 @@ spec:
   nodeNamePrefix: ${np_prefix}
   instanceTypeID: ${np_instance_type}
   osProfile: ${np_os_profile}
-  configProfile: ${np_config_profile}
   desiredNodeCount: ${np_desired}
   systemReservedMemory: ${np_system_mem}
 ${extra_spec}"

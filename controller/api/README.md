@@ -53,7 +53,7 @@ of the documentation site from this file, leaves them out. Swagger UI at
 `/api/docs/` loads `GET /openapi-public.yaml`, which drops the same surface.
 `GET /openapi.yaml` and the generated Go keep it. Today that is the `infra`
 provider, `teleportEnabled`, the legacy `controlPlane` node-pool flag, and the
-`/osProfiles` and `/configProfiles` endpoints.
+`/releases` and `/configProfiles` endpoints.
 
 Commit the changed `*.gen.go` files with the specification change. They are
 checked in on purpose, so that consumers do not need the generator.
@@ -177,7 +177,7 @@ Mostly it is not: the entries below are the cases where it is.
 
 - **Surface marked `x-fern-ignore: true`.** It is not customer-facing — today
   the `infra` provider, `teleportEnabled`, the legacy `controlPlane` node-pool
-  flag, and `/osProfiles` and `/configProfiles`. The gate still sees a break,
+  flag, and `/releases` and `/configProfiles`. The gate still sees a break,
   because the specification is one document; the blast radius is in-tree.
 - **A field that never shipped**, added and removed between two published tags.
 - **A deliberate break the team has agreed to take**, where the waiver is the

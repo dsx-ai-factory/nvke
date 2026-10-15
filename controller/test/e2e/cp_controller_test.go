@@ -83,7 +83,7 @@ func validateControllerManagedControlPlaneUpdate(test *tenantTest) {
 
 // controlPlaneControllerRollKubernetesVersion is the version the rolling update
 // spec upgrades a CAPI control plane to. The control-plane controller treats only
-// kubernetesVersion, osProfile and configProfile as replacing fields, and the
+// kubernetesVersion, release and configProfile as replacing fields, and the
 // latter two are Nico-only, so the version is the sole roll trigger a CAPI caller
 // can reach. It must stay within the minor of the CAPD node image's base
 // (KINDEST_NODE_TAG in hack/capd-kindest-node/Dockerfile), because that base

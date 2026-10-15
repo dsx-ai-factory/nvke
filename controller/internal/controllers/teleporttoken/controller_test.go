@@ -104,7 +104,7 @@ func setupTestEnv(ctx context.Context, t *testing.T) *testEnv {
 		VpcPrefixIDs:   []uuid.UUID{uuid.New()},
 		InstanceTypeID: uuid.New(),
 		SSHKeyGroupIDs: []uuid.UUID{},
-		OSProfile:      "test-os",
+		Release:        "test-os",
 		ConfigProfile:  "test-config",
 	})
 	_, err = database.CreateNodePool(ctx, &nodePool)
@@ -117,7 +117,7 @@ func setupTestEnv(ctx context.Context, t *testing.T) *testEnv {
 		TeleportEnabled:      true,
 	}
 	nodeSet.SetNico(db.NicoNodePoolProvider{
-		OSProfile:     "test-os",
+		Release:       "test-os",
 		ConfigProfile: "test-config",
 	})
 	_, err = database.CreateNodeSet(ctx, &nodeSet)
@@ -792,7 +792,7 @@ func TestCreateTokenForNode(t *testing.T) {
 			SSHKeyGroupIDs: []uuid.UUID{},
 			SubnetIDs:      []uuid.UUID{uuid.New()},
 			VpcPrefixIDs:   []uuid.UUID{uuid.New()},
-			OSProfile:      "test-os",
+			Release:        "test-os",
 			ConfigProfile:  "test-config",
 		})
 		_, err := te.bunDB.NewInsert().Model(&orphanPool).Exec(ctx)
@@ -1197,7 +1197,7 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 		SystemReservedMemory: "16Gi",
 		TeleportEnabled:      true,
 		Nico: &db.NicoNodePoolProvider{
-			OSProfile:     "test-os",
+			Release:       "test-os",
 			ConfigProfile: "test-config",
 		},
 	}

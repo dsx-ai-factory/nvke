@@ -11,9 +11,9 @@
 # what Engine.Deploy installs it as -- if that ever changes, this file and
 # Engine.Deploy's release name must move together.
 #
-# server.config.persistence.{default,visibility}.sql.password is supplied on
-# the `helm upgrade --install` command line, not hardcoded here, same as the
-# source file.
+# server.config.persistence.{default,visibility}.sql.password is not set here.
+# Engine.Deploy passes it in a 0600 values file after this one, as it does for
+# the other releases, so it is neither hardcoded nor on the helm command line.
 server:
   configMapsToMount: sprig
   setConfigFilePath: true

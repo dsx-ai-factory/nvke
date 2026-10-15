@@ -361,7 +361,7 @@ func (c *Collector) collectNodeInfo(ctx context.Context, ch chan<- prometheus.Me
 			info.AgentVersion,
 			strconv.FormatBool(info.SpiffeEnabled),
 			info.ForgeMachineID,
-			info.OSProfile,
+			info.Release,
 			info.ConfigProfile,
 		)
 	}
@@ -468,7 +468,7 @@ func (c *Collector) emitNodePoolInfo(ch chan<- prometheus.Metric, ctx *clusterIn
 	infinibandPartitionID := ""
 	nvLinkLogicalPartitionID := ""
 	sshKeyGroupIDs := ""
-	osProfile := ""
+	release := ""
 	configProfile := ""
 	diskSelectionStrategy := ""
 
@@ -479,7 +479,7 @@ func (c *Collector) emitNodePoolInfo(ch chan<- prometheus.Metric, ctx *clusterIn
 		infinibandPartitionID = optionalUUID(nicoNodePoolProvider.InfinibandPartitionID)
 		nvLinkLogicalPartitionID = optionalUUID(nicoNodePoolProvider.NvLinkLogicalPartitionID)
 		sshKeyGroupIDs = uuidSliceToString(nicoNodePoolProvider.SSHKeyGroupIDs)
-		osProfile = nicoNodePoolProvider.OSProfile
+		release = nicoNodePoolProvider.Release
 		configProfile = nicoNodePoolProvider.ConfigProfile
 		diskSelectionStrategy = string(nicoNodePoolProvider.DiskSelectionStrategy)
 	}
@@ -503,7 +503,7 @@ func (c *Collector) emitNodePoolInfo(ch chan<- prometheus.Metric, ctx *clusterIn
 		infinibandPartitionID,
 		nvLinkLogicalPartitionID,
 		sshKeyGroupIDs,
-		osProfile,
+		release,
 		configProfile,
 		nodePool.SystemReservedMemory,
 		nodePool.KubeReservedMemory,
@@ -527,14 +527,14 @@ func (c *Collector) emitNodePoolInfo(ch chan<- prometheus.Metric, ctx *clusterIn
 func (c *Collector) emitNodeSetInfo(ch chan<- prometheus.Metric, ctx *nodeSetParentContext, nodeSet db.NodeSet) {
 	subnetIDs := ""
 	vpcPrefixIDs := ""
-	osProfile := ""
+	release := ""
 	configProfile := ""
 	diskSelectionStrategy := ""
 
 	if nicoNodeSetProvider, err := nodeSet.NicoProvider(); err == nil {
 		subnetIDs = uuidSliceToString(nicoNodeSetProvider.SubnetIDs)
 		vpcPrefixIDs = uuidSliceToString(nicoNodeSetProvider.VpcPrefixIDs)
-		osProfile = nicoNodeSetProvider.OSProfile
+		release = nicoNodeSetProvider.Release
 		configProfile = nicoNodeSetProvider.ConfigProfile
 		diskSelectionStrategy = string(nicoNodeSetProvider.DiskSelectionStrategy)
 	}
@@ -548,7 +548,7 @@ func (c *Collector) emitNodeSetInfo(ch chan<- prometheus.Metric, ctx *nodeSetPar
 		nodeSet.ID.String(),
 		nodeSet.NodePoolID.String(),
 		strconv.Itoa(nodeSet.DesiredCount),
-		osProfile,
+		release,
 		configProfile,
 		nodeSet.KubernetesVersion,
 		nodeSet.SystemReservedMemory,

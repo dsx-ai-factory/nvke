@@ -27,7 +27,7 @@ const ProductionImageURL = "https://d3mq564cn7sth7.cloudfront.net/nke-isos/qcow/
 //
 // Only the qcow2s are fetched. ipxe.Parse drops the boot-loader URL and
 // engine.go downloads spec.ImageURL alone, so the EFI pins exist to keep these
-// scripts verbatim copies of the production osProfiles. Changing one cannot
+// scripts verbatim copies of the production releases. Changing one cannot
 // change what a test boots.
 const (
 	productionARM64ImageURL      = "https://d3mq564cn7sth7.cloudfront.net/nke-isos/qcow/images/24.04/aarch64/lvm/2026-03-04/1772595122/nke-24.04-aarch64-lvm-2026-03-04-1772595122.qcow2"

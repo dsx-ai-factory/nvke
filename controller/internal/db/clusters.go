@@ -30,7 +30,7 @@ var (
 type ProviderType string
 
 const (
-	// When ProviderType is Nico, the caller gives OS profile / instance-type preference / subnets / etc/ and the controller generates the infra machine template for each node.
+	// When ProviderType is Nico, the caller gives release / instance-type preference / subnets / etc/ and the controller generates the infra machine template for each node.
 	ProviderTypeNico ProviderType = "nico"
 
 	// When ProviderType is CAPI, the user specifies the infra machine template and the controller clones it for each node.
@@ -181,7 +181,7 @@ func ControlPlaneConfigFromNodePool(np *NodePool) *ControlPlaneConfig {
 			InstanceTypePreference: orderedInstanceTypePreferences([]NodePool{*np}),
 			SubnetIDs:              nicoNodePoolProvider.SubnetIDs,
 			VpcPrefixIDs:           nicoNodePoolProvider.VpcPrefixIDs,
-			OSProfile:              nicoNodePoolProvider.OSProfile,
+			Release:                nicoNodePoolProvider.Release,
 			DiskSelectionStrategy:  nicoNodePoolProvider.DiskSelectionStrategy,
 			ConfigProfile:          nicoNodePoolProvider.ConfigProfile,
 			SSHKeyGroupIDs:         nicoNodePoolProvider.SSHKeyGroupIDs,
@@ -291,14 +291,14 @@ func MergeControlPlaneConfigFromNodePools(pools []NodePool) *ControlPlaneConfig 
 	}
 
 	// Rebuild provider payloads with aggregated list fields, preserving scalar
-	// fields (OSProfile, ConfigProfile, etc.) already set from the primary pool.
+	// fields (Release, ConfigProfile, etc.) already set from the primary pool.
 	if cfg.Nico != nil {
 		cfg.SetNico(NicoControlPlaneProvider{
 			InstanceTypePreference: instPref,
 			SubnetIDs:              subnets,
 			VpcPrefixIDs:           vpcPrefixes,
 			SSHKeyGroupIDs:         sshKeys,
-			OSProfile:              cfg.Nico.OSProfile,
+			Release:                cfg.Nico.Release,
 			DiskSelectionStrategy:  cfg.Nico.DiskSelectionStrategy,
 			ConfigProfile:          cfg.Nico.ConfigProfile,
 		})

@@ -246,6 +246,9 @@ jobs:
       # What the plan resolved for the run as a whole.
       nvke-version: ${{ steps.matrix.outputs.nvke-version }}
       scope: ${{ steps.matrix.outputs.scope }}
+      # Which strategy answered for the component versions, so a lane can
+      # record how the run resolved and not only what it resolved.
+      resolution: ${{ steps.matrix.outputs.resolution }}
       # The commit the components were resolved at, empty when they came from
       # their tags. Read by the verify job to decide whether a missing artifact
       # means not yet or never.
@@ -467,6 +470,7 @@ jobs:
             echo "matrix=${matrix}"
             echo "nvke-version=$(jq -r .version plan.json)"
             echo "scope=$(jq -r .scope plan.json)"
+            echo "resolution=${RESOLUTION}"
             echo "commit=$(jq -r '.commit // ""' plan.json)"
             echo "dry-run=${DRY_RUN}"
           } >> "${GITHUB_OUTPUT}"
@@ -1357,6 +1361,7 @@ jobs:
           # come from its matrix entry, which is in the env above.
           NVKE_VERSION: ${{ needs.plan.outputs.nvke-version }}
           SCOPE: ${{ needs.plan.outputs.scope }}
+          RESOLUTION: ${{ needs.plan.outputs.resolution }}
           STREAM: ${{ matrix.stream }}
           COMBINATION: ${{ matrix.combination }}
           VAR_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
@@ -1405,8 +1410,8 @@ jobs:
             "stream|STREAM|||"
             "combination|COMBINATION|||"
             "nvke version|NVKE_VERSION|IN_NVKE_VERSION|VAR_NVKE_VERSION|QUALIFY_E2E_NVKE_VERSION"
-            "resolution|CONTROLLER_VERSION_STRATEGY|IN_RESOLUTION||"
             "scope|SCOPE|IN_SCOPE|VAR_SCOPE|QUALIFY_E2E_SCOPE"
+            "resolution|RESOLUTION|IN_RESOLUTION||"
             "cpu arch|ARCH|||"
             "gpu model|GPU|||"
             "DSX org|DSX_ORG_ID||DSX_ORG_ID|DSX_ORG_ID"
@@ -1524,6 +1529,12 @@ jobs:
               # its label.
               if [ "${resolved}" = "DRY_RUN" ] && [ "${DRY_RUN}" = "true" ] && [ -z "${IN_DRY_RUN:-}" ]; then
                 source="label qualify-e2e-dry-run"
+              fi
+              # A push carries no inputs, so the tag selected commitDescribe
+              # and neither arm above named it.
+              if [ "${resolved}" = "RESOLUTION" ] && [ -z "${IN_RESOLUTION:-}" ] &&
+                 [ "${GITHUB_EVENT_NAME}" = push ]; then
+                source="beta tag push"
               fi
               # The resolve steps fill these in from the checkout when no
               # published version was asked for, so neither arm above named it.

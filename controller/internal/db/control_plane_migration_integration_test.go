@@ -80,13 +80,13 @@ func (f *cpMigrationFixture) insertCluster(name string, deleting bool) db.Cluste
 	return cluster
 }
 
-func (f *cpMigrationFixture) setSnapshot(cluster *db.Cluster, osProfile, k8sVersion string) uuid.UUID {
+func (f *cpMigrationFixture) setSnapshot(cluster *db.Cluster, release, k8sVersion string) uuid.UUID {
 	f.t.Helper()
 	snapshot := db.ControlPlaneConfiguration{
 		ClusterID: cluster.ID,
 		Config: db.ControlPlaneConfigSpec{
 			KubernetesVersion: k8sVersion,
-			Nico:              &db.NicoControlPlaneProvider{OSProfile: osProfile, ConfigProfile: "cp-config"},
+			Nico:              &db.NicoControlPlaneProvider{Release: release, ConfigProfile: "cp-config"},
 		},
 		ChangeReason: "test",
 	}
@@ -123,10 +123,10 @@ func (f *cpMigrationFixture) insertPool(clusterID uuid.UUID, controlPlane, delet
 	return pool, set
 }
 
-func (f *cpMigrationFixture) insertNodeSet(pool db.NodePool, osProfile, k8sVersion string) db.NodeSet {
+func (f *cpMigrationFixture) insertNodeSet(pool db.NodePool, release, k8sVersion string) db.NodeSet {
 	f.t.Helper()
 	provider := *pool.Nico
-	provider.OSProfile = osProfile
+	provider.Release = release
 	set := db.NodeSet{
 		ID:                   uuid.New(),
 		NodePoolID:           pool.ID,
@@ -233,7 +233,7 @@ func TestMigrateControlPlaneToController(t *testing.T) {
 		assert.True(t, node.IsManagedByControlPlaneController())
 		assert.Equal(t, uuid.Nil, node.NodeSetID)
 		assert.Equal(t, cluster.ControlPlaneConfig.ConfigurationID, node.ControlPlaneConfigurationID)
-		assert.Equal(t, "nvke-sc-os", f.snapshot(node.ControlPlaneConfigurationID).Config.Nico.OSProfile)
+		assert.Equal(t, "nvke-sc-os", f.snapshot(node.ControlPlaneConfigurationID).Config.Nico.Release)
 	})
 
 	t.Run("current generation pins to the cluster snapshot", func(t *testing.T) {
@@ -250,7 +250,7 @@ func TestMigrateControlPlaneToController(t *testing.T) {
 		snap := f.snapshot(node.ControlPlaneConfigurationID)
 		assert.Equal(t, upgrading.ID, snap.ClusterID)
 		assert.Equal(t, "1.34.2", snap.Config.KubernetesVersion)
-		assert.Equal(t, "old-os", snap.Config.Nico.OSProfile)
+		assert.Equal(t, "old-os", snap.Config.Nico.Release)
 		assert.Equal(t, "nvke-sc-cp", snap.Config.Nico.ConfigProfile)
 	})
 

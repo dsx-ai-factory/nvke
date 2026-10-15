@@ -55,7 +55,7 @@ The operator runs these steps.
 
    The nodes that have joined the cluster are listed. Other nodes can still be joining after the cluster reaches `Provisioned`. If the command times out, your machine has no route to `<API_ADDRESS>`; the download in step 1 only proves access to the management cluster.
 
-The kubeconfig is a secret. It holds a client certificate and private key for the user `kubernetes-admin` in the group `kubeadm:cluster-admins`, which has `cluster-admin` on the workload cluster. Anyone who holds the file and reaches the API address has full control of the cluster. Do not commit it to a repository, paste it into a ticket, or give it to an application.
+The kubeconfig is a secret. It holds a client certificate and private key for the user `nvke:breakglass:<WORKLOAD_CLUSTER>` in the group `nvke:breakglass`, which is bound to `cluster-admin` on the workload cluster. Anyone who holds the file and reaches the API address has full control of the cluster. Do not commit it to a repository, paste it into a ticket, or give it to an application.
 
 ## Give the customer access
 
@@ -83,7 +83,7 @@ The customer runs these steps with the kubeconfig the operator sent.
    kubectl --kubeconfig <WORKLOAD_CLUSTER>.kubeconfig auth whoami
    ```
 
-   The output shows the username `kubernetes-admin` and the group `kubeadm:cluster-admins`.
+   The output shows the username `nvke:breakglass:<WORKLOAD_CLUSTER>` and the group `nvke:breakglass`.
 
 3. List the nodes.
 
@@ -93,7 +93,7 @@ The customer runs these steps with the kubeconfig the operator sent.
 
    The nodes that have joined the cluster are listed with status `Ready`. If the command times out, ask your operator how your network reaches the cluster's API address.
 
-Every NVKE workload cluster's admin kubeconfig uses the cluster name `kubernetes` and the context `kubernetes-admin@kubernetes`. If you hold kubeconfigs for more than one cluster, pass each file with `--kubeconfig` instead of merging them, or rename the cluster and context entries when you merge.
+Every NVKE workload cluster's admin kubeconfig uses the cluster name `cluster` and the context `nvke-breakglass`. If you hold kubeconfigs for more than one cluster, pass each file with `--kubeconfig` instead of merging them, or rename the cluster and context entries when you merge.
 
 ## What the customer manages
 
@@ -105,6 +105,7 @@ The operator manages the rest through the NVKE API, and the customer asks the op
 
 - Nodes: the node count, instance type, labels, taints and Kubernetes version of each node pool. See [Manage node pools](node-pools.md).
 - The control plane, including the `kube-vip` static Pod that serves the API address, and the cluster's Container Network Interface (CNI) plugin and network settings.
+- On every workload cluster, the ClusterRoleBinding `nvke:breakglass`. It binds the group `nvke:breakglass` to `cluster-admin`, which is the access the admin kubeconfig uses. NVKE creates the binding when it is absent and does not update an existing one. Deleting it causes the next reconcile to create it again with `cluster-admin`. Changing its subjects leaves that change in place, so the admin kubeconfig may no longer have `cluster-admin`. Its `roleRef` cannot be changed in place; pointing it at another role means replacing the binding.
 - On clusters with OIDC turned on, the RBAC objects NVKE applies for its own access: `nvke:cwe` and `nvke:capi-cluster-admin`. Deleting or editing them blocks the management plane from operating the cluster.
 
 ## How clients reach the Kubernetes API
@@ -117,7 +118,7 @@ NVKE does not create a public endpoint or an external load balancer for the API.
 
 ## Keep the kubeconfig current
 
-The client certificate in the admin kubeconfig is valid for one year. NVKE checks each workload cluster's control-plane certificates every 12 hours and renews them when less than 30 days remain. Renewal updates the certificates on the control-plane nodes, including the one NVKE publishes, but not copies already downloaded.
+The client certificate in the admin kubeconfig is valid for one year. The NVKE controller checks it each time it reconciles the cluster, about every 15 minutes. When fewer than `scheduledMaintenance.certRenewal.thresholdDays` remain (30 by default), the controller submits a certificate signing request named `nvke-breakglass` and approves it. kube-controller-manager issues the certificate, and the controller replaces the Secret with it. Renewal updates the Secret, not copies already downloaded.
 
 To see when your copy expires, run:
 
@@ -125,7 +126,7 @@ To see when your copy expires, run:
 kubectl --kubeconfig <WORKLOAD_CLUSTER>.kubeconfig config view --raw --minify -o jsonpath='{.users[0].user.client-certificate-data}' | base64 -d | openssl x509 -noout -enddate
 ```
 
-In the last 30 days before that date, after NVKE has renewed the certificates, the operator runs `nvkectl get kubeconfig` again, runs the same check on the new file to confirm a later date, and sends the customer the new file.
+In the last 30 days before that date, after the controller has reissued the certificate, the operator runs `nvkectl get kubeconfig` again, runs the same check on the new file to confirm a later date, and sends the customer the new file.
 
 ## Verify
 

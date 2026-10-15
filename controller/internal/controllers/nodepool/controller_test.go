@@ -47,7 +47,7 @@ func setupProfilesDir(t *testing.T, configProfile string) string {
 
 func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 	ctx := context.Background()
-	osProfile := "test-os-profile"
+	release := "test-os-profile"
 	configProfile := "test-config-profile"
 
 	t.Run("node_pool_not_found", func(t *testing.T) {
@@ -81,7 +81,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			Conditions:   db.NodePoolConditions{},
 		}
 		pool.SetNico(db.NicoNodePoolProvider{
-			OSProfile:     osProfile,
+			Release:       release,
 			ConfigProfile: configProfile,
 			SubnetIDs:     []uuid.UUID{subnetID},
 			VpcPrefixIDs:  []uuid.UUID{},
@@ -107,7 +107,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockTx.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, ProviderType: db.ProviderTypeNico}, nil)
 		mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
 			nico, err := ns.NicoProvider()
-			return err == nil && ns.NodePoolID == poolID && nico.OSProfile == osProfile && nico.ConfigProfile == configProfile
+			return err == nil && ns.NodePoolID == poolID && nico.Release == release && nico.ConfigProfile == configProfile
 		})).Return(newNodeSet, nil)
 		mockTx.On("GetNodePool", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
@@ -142,7 +142,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			Conditions:            db.NodePoolConditions{},
 		}
 		pool.SetNico(db.NicoNodePoolProvider{
-			OSProfile:     osProfile,
+			Release:       release,
 			ConfigProfile: configProfile,
 		})
 
@@ -175,7 +175,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			},
 		}
 		pool.SetNico(db.NicoNodePoolProvider{
-			OSProfile:     osProfile,
+			Release:       release,
 			ConfigProfile: configProfile,
 		})
 
@@ -212,7 +212,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			Conditions:           db.NodePoolConditions{},
 		}
 		pool.SetNico(db.NicoNodePoolProvider{
-			OSProfile:     osProfile,
+			Release:       release,
 			ConfigProfile: configProfile,
 			SubnetIDs:     []uuid.UUID{subnetID},
 			VpcPrefixIDs:  []uuid.UUID{},
@@ -272,7 +272,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			Conditions:       db.NodePoolConditions{},
 		}
 		pool.SetNico(db.NicoNodePoolProvider{
-			OSProfile:     osProfile,
+			Release:       release,
 			ConfigProfile: configProfile,
 			SubnetIDs:     []uuid.UUID{newSubnet},
 			VpcPrefixIDs:  []uuid.UUID{},
@@ -286,7 +286,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			SystemReservedMemory: "16Gi",
 		}
 		oldNodeSet.SetNico(db.NicoNodePoolProvider{
-			OSProfile:     osProfile,
+			Release:       release,
 			ConfigProfile: configProfile,
 			SubnetIDs:     []uuid.UUID{oldSubnet},
 			VpcPrefixIDs:  []uuid.UUID{},
@@ -356,7 +356,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			Conditions:       db.NodePoolConditions{},
 		}
 		pool.SetNico(db.NicoNodePoolProvider{
-			OSProfile:     osProfile,
+			Release:       release,
 			ConfigProfile: configProfile,
 			SubnetIDs:     []uuid.UUID{subnetID},
 			VpcPrefixIDs:  []uuid.UUID{newVpcPrefix},
@@ -371,7 +371,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			KubernetesVersion:    "",
 		}
 		oldNodeSet.SetNico(db.NicoNodePoolProvider{
-			OSProfile:     osProfile,
+			Release:       release,
 			ConfigProfile: configProfile,
 			SubnetIDs:     []uuid.UUID{subnetID},
 			VpcPrefixIDs:  []uuid.UUID{oldVpcPrefix},
@@ -442,7 +442,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			Conditions:           db.NodePoolConditions{},
 		}
 		pool.SetNico(db.NicoNodePoolProvider{
-			OSProfile:     osProfile,
+			Release:       release,
 			ConfigProfile: configProfile,
 			SubnetIDs:     []uuid.UUID{subnetID},
 			VpcPrefixIDs:  []uuid.UUID{},
@@ -509,7 +509,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			Conditions:           db.NodePoolConditions{},
 		}
 		pool.SetNico(db.NicoNodePoolProvider{
-			OSProfile:     osProfile,
+			Release:       release,
 			ConfigProfile: configProfile,
 			SubnetIDs:     []uuid.UUID{subnetID},
 			VpcPrefixIDs:  []uuid.UUID{},
@@ -725,8 +725,8 @@ func TestUnit_NodePoolControllerReplacementRequiresVIP(t *testing.T) {
 					current.KubernetesVersion = pool.KubernetesVersion
 				}
 				if provider == "nico" {
-					pool.SetNico(db.NicoNodePoolProvider{OSProfile: "test-os"})
-					current.SetNico(db.NicoNodePoolProvider{OSProfile: "test-os"})
+					pool.SetNico(db.NicoNodePoolProvider{Release: "test-os"})
+					current.SetNico(db.NicoNodePoolProvider{Release: "test-os"})
 				} else {
 					pool.SetCapi(db.CAPINodePoolProvider{})
 					current.SetCapi(db.CAPINodePoolProvider{})

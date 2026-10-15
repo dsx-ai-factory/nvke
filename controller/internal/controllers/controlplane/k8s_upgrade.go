@@ -127,7 +127,7 @@ func (r *reconciler) startK8sUpgrade(
 // isK8sVersionUpgradeNeeded checks if a cluster needs a Kubernetes version upgrade by comparing
 // each control-plane node's pinned snapshot version against the cluster's target.
 // FIXME: https://github.com/dsx-ai-factory/nvke/issues/937 - get k8s version with periodic
-// health checks instead of relying on the OSProfile version.
+// health checks instead of relying on the Release version.
 func (r *reconciler) isK8sVersionUpgradeNeeded(
 	cluster db.Cluster,
 	cp *controlPlane,

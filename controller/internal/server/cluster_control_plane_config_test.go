@@ -27,7 +27,7 @@ func validForgeControlPlaneConfig() *api.CreateClusterControlPlaneConfig {
 		DesiredCount: 3,
 		Nico: &api.NicoControlPlaneProviderCreate{
 			InstanceTypePreference: []uuid.UUID{uuid.New()},
-			OSProfile:              "ubuntu",
+			Release:                "ubuntu",
 			ConfigProfile:          "default",
 		},
 	}
@@ -55,7 +55,7 @@ func validForgeNodePoolCreateConfig(name string) api.NodePoolCreateConfig {
 		Nico: &api.NicoNodePoolProvider{
 			SubnetIDs:      []uuid.UUID{uuid.New()},
 			InstanceTypeID: uuid.New(),
-			OSProfile:      "ubuntu",
+			Release:        "ubuntu",
 			ConfigProfile:  "default",
 		},
 		DesiredNodeCount: 1,
@@ -197,7 +197,7 @@ func TestValidateCreateClusterRequestFields_ControlPlaneConfig(t *testing.T) {
 			},
 			ControlPlaneConfig: &api.CreateClusterControlPlaneConfig{
 				DesiredCount: 3,
-				Nico:         &api.NicoControlPlaneProviderCreate{OSProfile: "ubuntu"},
+				Nico:         &api.NicoControlPlaneProviderCreate{Release: "ubuntu"},
 			},
 		}
 
@@ -314,7 +314,7 @@ func TestApplyClusterControlPlaneConfigUpdate_RolloutRequiresVIP(t *testing.T) {
 			currentSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
 			currentSpec.SetNico(db.NicoControlPlaneProvider{
 				InstanceTypePreference: []uuid.UUID{instanceTypeID},
-				OSProfile:              "os-v1",
+				Release:                "os-v1",
 				ConfigProfile:          "cfg-v1",
 			})
 			cluster := &db.Cluster{
@@ -383,7 +383,7 @@ func TestCreateNodePool_RejectsControlPlanePoolWhenControllerEnabled(t *testing.
 			Name:           "cp",
 			NodeNamePrefix: "cp",
 			Nico: &api.NicoNodePoolProvider{
-				OSProfile:     "ubuntu",
+				Release:       "ubuntu",
 				ConfigProfile: "default",
 			},
 			ControlPlane:     true,
@@ -423,7 +423,7 @@ func TestGetClusterControlPlane(t *testing.T) {
 		}
 		cluster.ControlPlaneConfig.SetNico(db.NicoControlPlaneProvider{
 			InstanceTypePreference: []uuid.UUID{instanceType},
-			OSProfile:              "ubuntu",
+			Release:                "ubuntu",
 			ConfigProfile:          "default",
 		})
 		return cluster
@@ -463,7 +463,7 @@ func TestGetClusterControlPlane(t *testing.T) {
 		require.Equal(t, 3, out.Config.DesiredCount)
 		require.Equal(t, map[string]string{"role": "cp"}, out.Config.NodeLabels)
 		require.NotNil(t, out.Config.Nico)
-		require.Equal(t, "ubuntu", out.Config.Nico.OSProfile)
+		require.Equal(t, "ubuntu", out.Config.Nico.Release)
 		require.Equal(t, 2, out.Status.NodeCount)
 		require.Equal(t, 1, out.Status.ReadyNodeCount)
 		require.Equal(t, "1.29.0", out.Status.KubernetesVersion)
@@ -504,9 +504,9 @@ func TestGetClusterControlPlane(t *testing.T) {
 		desiredCfgID := uuid.MustParse("aaaaaaaa-0000-0000-0000-0000000000d1")
 		driftedCfgID := uuid.MustParse("aaaaaaaa-0000-0000-0000-0000000000d2")
 		desiredSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
-		desiredSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v2"})
+		desiredSpec.SetNico(db.NicoControlPlaneProvider{Release: "os-v2", ConfigProfile: "cfg-v2"})
 		driftedSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
-		driftedSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v1", ConfigProfile: "cfg-v2"})
+		driftedSpec.SetNico(db.NicoControlPlaneProvider{Release: "os-v1", ConfigProfile: "cfg-v2"})
 
 		cluster := newCluster()
 		cluster.EnableCPNodeRecycling = true
@@ -620,7 +620,7 @@ func TestApplyClusterControlPlaneConfigUpdate_RejectsClearingRequiredField(t *te
 		cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "test-org", SiteID: uuid.New()})
 		cluster.ControlPlaneConfig.SetNico(db.NicoControlPlaneProvider{
 			InstanceTypePreference: []uuid.UUID{uuid.New()},
-			OSProfile:              "ubuntu",
+			Release:                "ubuntu",
 			ConfigProfile:          "default",
 		})
 		return cluster
@@ -633,13 +633,13 @@ func TestApplyClusterControlPlaneConfigUpdate_RejectsClearingRequiredField(t *te
 	}
 
 	// tx is never reached: validation fails before the config row is persisted.
-	t.Run("clearing osProfile is rejected", func(t *testing.T) {
+	t.Run("clearing release is rejected", func(t *testing.T) {
 		empty := ""
 		err := applyUpdate(t, newForgeCluster(), &api.UpdateClusterControlPlaneConfig{
-			Nico: &api.NicoControlPlaneProviderUpdate{OSProfile: &empty},
+			Nico: &api.NicoControlPlaneProviderUpdate{Release: &empty},
 		})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "osProfile is required")
+		require.Contains(t, err.Error(), "release is required")
 	})
 
 	// instanceTypePreference is merged in the parent (not applyClusterLevelControlPlaneSpecUpdate),
@@ -675,7 +675,7 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 			Nico: &api.NicoControlPlaneProviderCreate{
 				InstanceTypePreference: prefs,
 				SubnetIDs:              []uuid.UUID{subnet},
-				OSProfile:              "os",
+				Release:                "os",
 				ConfigProfile:          "cfg",
 				SSHKeyGroupIDs:         []uuid.UUID{uuid.New()},
 			},
@@ -687,7 +687,7 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 		assert.Nil(t, spec.Capi)
 		assert.Equal(t, prefs, spec.Nico.InstanceTypePreference)
 		assert.Equal(t, []uuid.UUID{subnet}, spec.Nico.SubnetIDs)
-		assert.Equal(t, "os", spec.Nico.OSProfile)
+		assert.Equal(t, "os", spec.Nico.Release)
 		assert.Equal(t, "cfg", spec.Nico.ConfigProfile)
 		// The control plane always installs to the smallest disk; it is not
 		// configurable through the API.
@@ -741,7 +741,7 @@ func TestNicoControlPlaneConfigProfileIsOptional(t *testing.T) {
 		err := validateCreateForgeControlPlaneConfigFields(&api.CreateClusterControlPlaneConfig{
 			Nico: &api.NicoControlPlaneProviderCreate{
 				InstanceTypePreference: []uuid.UUID{uuid.New()},
-				OSProfile:              "ubuntu",
+				Release:                "ubuntu",
 			},
 		})
 		require.NoError(t, err)
@@ -751,7 +751,7 @@ func TestNicoControlPlaneConfigProfileIsOptional(t *testing.T) {
 		var spec db.ControlPlaneConfigSpec
 		spec.SetNico(db.NicoControlPlaneProvider{
 			InstanceTypePreference: []uuid.UUID{uuid.New()},
-			OSProfile:              "ubuntu",
+			Release:                "ubuntu",
 		})
 		require.NoError(t, validateMergedForgeControlPlaneSpec(spec))
 	})

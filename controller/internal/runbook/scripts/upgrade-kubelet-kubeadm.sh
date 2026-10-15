@@ -256,7 +256,7 @@ drain_node
 # Execute the upgrade based on mode
 if [ "$KUBEADM_UPGRADE_ONLY" = true ]; then
     log "Running in KUBEADM_UPGRADE_ONLY mode - will skip package downloads, kubelet updates and restart"
-    log "Assuming kubeadm is already at correct version from OS profile"
+    log "Assuming kubeadm is already at correct version from the release"
     # Phase 2 only: kubeadm upgrade apply (no package downloads)
     upgrade_kubernetes
 else

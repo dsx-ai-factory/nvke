@@ -10,7 +10,7 @@
 #
 # Notes:
 #   - The iPXE script comes from the releases in the cluster: the MachineImage
-#     that NodePoolRelease <NODEPOOL_RELEASE> references; nico-vms and CAPNICo
+#     that NodePoolRelease <RELEASE> references; nico-vms and CAPNICo
 #     only ever see the rendered text. `{{ .DiskSelectionStrategy }}` is the only
 #     template variable today and is rendered with sed; any surviving `{{` is a
 #     hard failure rather than a VM that silently fails to boot.
@@ -61,10 +61,10 @@ INSTANCE_NAME="${INSTANCE_NAME:-${DEFAULT_INSTANCE_NAME}}"
 BOOTSTRAP_SECRET_NAME="${BOOTSTRAP_SECRET_NAME:-${INSTANCE_NAME}-bootstrap}"
 
 if [[ -n "${OS_PROFILE:-}" ]]; then
-  echo "OS_PROFILE is no longer read; this script takes NODEPOOL_RELEASE (the NodePoolRelease name)." >&2
+  echo "OS_PROFILE is no longer read; this script takes RELEASE (the NodePoolRelease name)." >&2
   exit 1
 fi
-NODEPOOL_RELEASE="${NODEPOOL_RELEASE:-nke-260611-24.04-amd64-fde}"
+RELEASE="${RELEASE:-nke-260611-24.04-amd64-fde}"
 DISK_SELECTION_STRATEGY="${DISK_SELECTION_STRATEGY:-smallest}"
 
 # Seed resources for the selected backend.
@@ -166,23 +166,23 @@ esac
 # ---------------------------------------------------------------------------
 
 # The script is read from the releases in the cluster, the same place the controller
-# resolves it: the NodePoolRelease named NODEPOOL_RELEASE points at a MachineImage,
+# resolves it: the NodePoolRelease named RELEASE points at a MachineImage,
 # which carries the iPXE script. Nothing here reads a profiles directory.
-IMAGE_NAME="$(kubectl get nodepoolrelease "${NODEPOOL_RELEASE}" -o jsonpath='{.spec.machineImageRef.name}' 2>/dev/null || true)"
+IMAGE_NAME="$(kubectl get nodepoolrelease "${RELEASE}" -o jsonpath='{.spec.machineImageRef.name}' 2>/dev/null || true)"
 if [ -z "${IMAGE_NAME}" ]; then
-  echo "NodePoolRelease '${NODEPOOL_RELEASE}' is not installed in the cluster kubectl points at." >&2
+  echo "NodePoolRelease '${RELEASE}' is not installed in the cluster kubectl points at." >&2
   echo "Apply the releases first (nke-site-deploy/cwe-profiles/releases, or make releases-install)." >&2
   exit 1
 fi
 IPXE_TEMPLATE="$(kubectl get machineimage "${IMAGE_NAME}" -o jsonpath='{.spec.nico.ipxeScript}' 2>/dev/null || true)"
 if [ -z "${IPXE_TEMPLATE}" ]; then
-  echo "MachineImage '${IMAGE_NAME}' (from NodePoolRelease '${NODEPOOL_RELEASE}') has no iPXE script." >&2
+  echo "MachineImage '${IMAGE_NAME}' (from NodePoolRelease '${RELEASE}') has no iPXE script." >&2
   exit 1
 fi
 
 IPXE_SCRIPT="$(printf '%s\n' "${IPXE_TEMPLATE}" | sed "s|{{ \.DiskSelectionStrategy }}|${DISK_SELECTION_STRATEGY}|g")"
 if printf '%s\n' "${IPXE_SCRIPT}" | grep -q '{{'; then
-  echo "Unrendered template variables remain in the ${NODEPOOL_RELEASE} ipxeScript:" >&2
+  echo "Unrendered template variables remain in the ${RELEASE} ipxeScript:" >&2
   printf '%s\n' "${IPXE_SCRIPT}" | grep -n '{{' >&2
   exit 1
 fi

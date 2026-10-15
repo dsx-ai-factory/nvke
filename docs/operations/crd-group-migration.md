@@ -51,9 +51,9 @@ Two controllers reconciling the same clusters through different CRDs will fight.
 
 The `cloud-workflow-engine` (CWE) chart is also affected: it reads the
 `machineimages`, `clusterreleases` and `nodepoolreleases` CRs to resolve
-osProfile names, and its RBAC now grants only the new group. Until step 3 has
+release names, and its RBAC now grants only the new group. Until step 3 has
 applied the releases, a CWE running the new chart sees **no releases** and
-cannot resolve an osProfile for new provisioning. Existing tenant clusters are
+cannot resolve a release for new provisioning. Existing tenant clusters are
 not touched. So:
 
 - Run steps 1–5 before, or in the same maintenance window as, the chart upgrade,

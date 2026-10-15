@@ -32,9 +32,9 @@ To offer managed Kubernetes as a service an AI factory must deliver cluster prov
 - **Management plane.** The NVKE API and controllers running on the management cluster. It holds the inventory of clusters, node pools and nodes, and drives every lifecycle operation.
 - **Seed cluster.** A temporary single-node kind cluster that `nvkectl` starts during bootstrap to form the management cluster. `nvkectl` deletes it when bootstrap succeeds.
 - **NVKE cluster (workload cluster).** A Kubernetes cluster that NVKE creates and manages for a customer. Each has its own control plane, etcd and node pools.
-- **Node pool.** A group of nodes in an NVKE cluster that share an instance type, OS profile and Kubernetes version. You scale and upgrade nodes by node pool. A node pool also stores `nodeLabels` and `nodeTaints`, which NVKE does not apply to the Kubernetes nodes at preview; see [Preview status and known limitations](preview-status.md#workload-clusters-and-node-pools).
+- **Node pool.** A group of nodes in an NVKE cluster that share an instance type, a node pool release and a Kubernetes version. You scale and upgrade nodes by node pool. A node pool also stores `nodeLabels` and `nodeTaints`, which NVKE does not apply to the Kubernetes nodes at preview; see [Preview status and known limitations](preview-status.md#workload-clusters-and-node-pools).
 - **Infrastructure provider.** The system that supplies machines to NVKE through Cluster API. At preview, NVKE supports NVIDIA Infra Controller (NICo).
-- **Release (NVKR).** An immutable set of artifacts and the evidence of how they were built, available through one pinned reference. You deploy artifacts from a Release once it passes your verification policy.
+- **NVKR Release.** An immutable set of artifacts and the evidence of how they were built, available through one pinned reference. You deploy artifacts from an NVKR Release once it passes your verification policy.
 
 ## How NVKE works
 
@@ -57,7 +57,7 @@ flowchart LR
 
 | Stage | What happens | Read more |
 |---|---|---|
-| **Build** | The operator builds node OS images, packages and NVKE components from pinned sources with NVKR, in a local Run or in NVKR's hosted pipeline, verifies each Release, and publishes the artifacts to its own registries. The operator repeats this stage for each new Kubernetes version or security fix. | [Get NVKE artifacts and OS profiles built with NVKR](../operate/build-node-images.md) |
+| **Build** | The operator builds node OS images, packages and NVKE components from pinned sources with NVKR, in a local Run or in NVKR's hosted pipeline, verifies each Release, and publishes the artifacts to its own registries. The operator repeats this stage for each new Kubernetes version or security fix. | [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md) |
 | **Day 0: Bootstrap** | The operator prepares the management cluster's nodes. `nvkectl` starts a seed cluster, uses it to form the management cluster with kubeadm, then deletes it. The operator installs the NVKE management plane and the Cluster API controllers onto the management cluster. | [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md), [Install management-plane services](../operate/install-management-plane-services.md) |
 | **Day 1: Configure** | The operator connects the management plane to the infrastructure provider, configures API authentication, and registers the NVKR-built node images and profiles that clusters will use. | [Configure an infrastructure provider: NICo](../operate/provider-nico.md), [Secure the NVKE API](../operate/api-authentication.md) |
 | **Day 2: Run clusters** | The operator creates NVKE clusters through the API, gives customers access, and installs the accelerated runtime with [NVIDIA AI Cluster Runtime (AICR)](https://docs.nvidia.com/aicr). NVKE scales node pools, upgrades the control plane and workers to new NVKR-built images, replaces nodes and renews certificates. With NVSentinel installed, NVKE reboots or replaces nodes that NVSentinel reports as faulty. | [Create a workload cluster](../workload-clusters/create.md), [Manage node pools](../workload-clusters/node-pools.md) |
@@ -66,7 +66,7 @@ flowchart LR
 
 | Component | What it does | Read more |
 |---|---|---|
-| NVKR | NVIDIA Kubernetes Recipes. The build system and published Definitions for NVKE node OS images, packages and components. Its CLI is `nvkr`. Separate repository: [dsx-ai-factory/nvkr](https://github.com/dsx-ai-factory/nvkr). | [Get NVKE artifacts and OS profiles built with NVKR](../operate/build-node-images.md) |
+| NVKR | NVIDIA Kubernetes Recipes. The build system and published Definitions for NVKE node OS images, packages and components. Its CLI is `nvkr`. Separate repository: [dsx-ai-factory/nvkr](https://github.com/dsx-ai-factory/nvkr). | [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md) |
 | `nvkectl` | The command-line client. Bootstraps the management cluster, and creates and operates NVKE clusters and node pools through the NVKE API. | [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md) |
 | Management plane | The NVKE REST API and controllers on the management cluster. Holds the inventory of clusters, node pools and nodes, and drives every lifecycle operation. | [Install management-plane services](../operate/install-management-plane-services.md) |
 | Node agent (`nvke-agent`) | A service on every node. The management plane calls it to run kubeadm, configure encryption and install components such as the CNI, without SSH. | [Prepare nodes](../operate/prepare-nodes.md) |
@@ -112,6 +112,6 @@ NVKE is the Kubernetes layer of DSX OS, NVIDIA's software stack for AI factories
 ## Next steps
 
 - **Try NVKE without hardware:** [Quickstart: evaluate locally with mock-NICo](../get-started/quickstart-local.md).
-- **Build your first artifacts:** [Get NVKE artifacts and OS profiles built with NVKR](../operate/build-node-images.md).
+- **Build your first artifacts:** [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md).
 - **Install on your hardware:** [Plan your installation](../operate/plan-installation.md).
 - **Check what preview supports:** [Preview status and known limitations](preview-status.md) and [Supported platforms and versions](supported-platforms.md).

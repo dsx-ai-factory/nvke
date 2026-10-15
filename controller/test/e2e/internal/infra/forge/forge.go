@@ -524,7 +524,11 @@ func (p *Provider) WaitTerminating(ctx context.Context, ids []string) error {
 			switch {
 			case resp != nil && resp.StatusCode == http.StatusNotFound:
 			case err != nil:
-				last[id] = apiError(err).Error()
+				// A read cut off by our own deadline says nothing about the
+				// instance, so it does not replace what Forge last said.
+				if ctx.Err() == nil || last[id] == "" {
+					last[id] = apiError(err).Error()
+				}
 				next = append(next, id)
 			case inst.GetStatus() == standard.INSTANCESTATUS_TERMINATING:
 			default:
