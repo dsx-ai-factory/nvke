@@ -37,20 +37,13 @@ func newValidateSiteSpecCmd() *cobra.Command {
 		Long: `Check the whole site spec and report by section.
 
 The bootstrap section is what "nvkectl bootstrap site" reads: every field is
-<<<<<<< HEAD
-checked, and the SPIRE CA files must exist. With infra.provider nico, the
-files infra.nico names and the file NVKECTL_NICO_CREDENTIALS names must exist
-on the bootstrap host, and spire.externalAddress is required unless
---disable-mtls is given, as it is for "nvkectl bootstrap site". The
-controllerStack section is
-what the controller stack install reads: the REPLACE_* values still to fill
-in are listed apart from errors, every required field must be set, the
-architecture and the NICo endpoint must be well-formed, and the files the
-section names must exist.
-=======
 checked. With spire.upstreamCA: true, NVKECTL_SPIRE_CA_CERT_FILE and
 NVKECTL_SPIRE_CA_KEY_FILE must both name readable files; without it, they
-must be unset.
+must be unset. With infra.provider nico, the
+files infra.nico names and the file NVKECTL_NICO_CREDENTIALS names must exist
+on the bootstrap host, NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD must be
+set, and spire.externalAddress is required unless --disable-mtls is given, as
+it is for "nvkectl bootstrap site".
 
 The controllerStack section is what the controller stack install reads: the
 REPLACE_* values still to fill in are listed apart from errors, every required
@@ -58,7 +51,6 @@ field must be set, and the architecture and the NICo endpoint must be
 well-formed. NVKECTL_NICO_TOKEN, NVKECTL_NODE_USER, NVKECTL_NODE_PASSWORD and
 NVKECTL_DATABASE_PASSWORD must be set; the token and the node login must hold
 no quote, backslash or control character.
->>>>>>> origin/main
 
 The command exits 0 when the controllerStack section is ready, which is what
 the controller stack install gates on. What only the bootstrap host holds, that

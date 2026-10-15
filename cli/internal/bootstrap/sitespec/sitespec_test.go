@@ -812,9 +812,6 @@ infra:
         - 00000000-0000-0000-0000-000000000005
       release: example-os-profile
       configProfile: example-config-profile
-    tenant:
-      user: example-user
-      passwordFile: tenant.password
     releases: releases
 cluster:
   controlPlaneVIP: "10.0.0.100"
@@ -824,32 +821,28 @@ cluster:
   serviceCidr: "10.200.0.0/16"
 spire:
   externalAddress: 192.0.2.10
-registry:
-  bootstrapRepo: "nvcr.io/org"
-  bootstrapChart: "controller-chart"
 `
 
-// writeNicoTemp writes a site spec and the files it names beside it: the tenant
-// password and a releases directory holding the example-os-profile
-// ClusterRelease and its MachineImage. It also writes a NICo token file and
-// points NVKECTL_NICO_CREDENTIALS at it, as an operator running the bootstrap
-// would.
+// writeNicoTemp writes a site spec and the files it names beside it: a releases
+// directory holding the example-os-profile ClusterRelease and its MachineImage.
+// It also writes a NICo token file, points NVKECTL_NICO_CREDENTIALS at it and
+// sets the node login, as an operator running the bootstrap would.
 func writeNicoTemp(t *testing.T, content string) string {
 	t.Helper()
 	path := writeTemp(t, content)
 	dir := filepath.Dir(path)
-	writeNicoFiles(t, dir, "nico.token", "tenant.password", "releases")
+	writeNicoFiles(t, dir, "nico.token", "releases")
 	t.Setenv(NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
+	t.Setenv(EnvNodeUser, "example-user")
+	t.Setenv(EnvNodePassword, "example-password")
 	return path
 }
 
 // writeNicoFiles writes the files a nico site spec names into dir.
-func writeNicoFiles(t *testing.T, dir, token, password, releases string) {
+func writeNicoFiles(t *testing.T, dir, token, releases string) {
 	t.Helper()
-	for _, name := range []string{token, password} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
-			t.Fatalf("write %s: %v", name, err)
-		}
+	if err := os.WriteFile(filepath.Join(dir, token), []byte("example-token\n"), 0o600); err != nil {
+		t.Fatalf("write %s: %v", token, err)
 	}
 	if err := os.MkdirAll(filepath.Join(dir, releases), 0o755); err != nil {
 		t.Fatal(err)
@@ -899,16 +892,6 @@ func TestValidate_Infrastructure(t *testing.T) {
 			name:    "nico block with the provisioned provider",
 			mutate:  func(inv *SiteSpec) { inv.Infra.Nico = &NicoInfra{} },
 			wantErr: "infra.nico is only valid with infra.provider",
-		},
-		{
-			name:    "nico without a tenant",
-			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.Infra.Nico.Tenant = nil },
-			wantErr: "infra.nico.tenant is required",
-		},
-		{
-			name:    "tenant missing its password file",
-			mutate:  func(inv *SiteSpec) { makeNico(inv); inv.Infra.Nico.Tenant.PasswordFile = "" },
-			wantErr: "infra.nico.tenant.passwordFile is required",
 		},
 		{
 			name:    "nico without releases",
@@ -1043,7 +1026,6 @@ func validNico() *NicoInfra {
 				ConfigProfile:          "example-config-profile",
 			},
 		},
-		Tenant:   &StackTenant{User: "example-user", PasswordFile: "tenant.password"},
 		Releases: "releases",
 	}
 }
@@ -1088,8 +1070,10 @@ func TestValidateBootstrapReferences_FilesMustExist(t *testing.T) {
 	}
 
 	t.Setenv(NicoCredentialsEnv, "")
+	t.Setenv(EnvNodeUser, "")
+	t.Setenv(EnvNodePassword, "")
 	err = inv.ValidateBootstrapReferences()
-	for _, want := range []string{NicoCredentialsEnv + " must name", "infra.nico.tenant.passwordFile", "infra.nico.releases"} {
+	for _, want := range []string{NicoCredentialsEnv + " must name", EnvNodeUser + " is not set", EnvNodePassword + " is not set", "infra.nico.releases"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("ValidateBootstrapReferences error = %v, want it to report %q", err, want)
 		}
@@ -1101,20 +1085,13 @@ func TestValidateBootstrapReferences_FilesMustExist(t *testing.T) {
 	}
 }
 
-// TestValidateBootstrapReferences_TenantPasswordMustHoldAPassword: the bootstrap
-// refuses an empty password file when it reads it, so the check says so first.
-func TestValidateBootstrapReferences_TenantPasswordMustHoldAPassword(t *testing.T) {
-	path := writeNicoTemp(t, nicoYAML)
-	inv, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	t.Setenv(NicoCredentialsEnv, filepath.Join(filepath.Dir(path), "nico.token"))
-	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "tenant.password"), []byte(" \n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := inv.ValidateBootstrapReferences(); err == nil || !strings.Contains(err.Error(), `infra.nico.tenant.passwordFile "tenant.password" is empty`) {
-		t.Fatalf("ValidateBootstrapReferences error = %v, want the empty password file reported", err)
+// TestLoad_RejectsTheNicoTenantBlock: the node login is a credential, so it is
+// not in the site spec; a spec that still sets it is told where it went.
+func TestLoad_RejectsTheNicoTenantBlock(t *testing.T) {
+	path := writeNicoTemp(t, strings.Replace(nicoYAML, "    releases: releases", "    tenant:\n      user: u\n    releases: releases", 1))
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "infra.nico.tenant is no longer accepted") || !strings.Contains(err.Error(), EnvNodeUser) {
+		t.Errorf("Load = %v, want infra.nico.tenant refused, naming %s", err, EnvNodeUser)
 	}
 }
 
@@ -1284,7 +1261,7 @@ func TestNicoExampleLoads(t *testing.T) {
 		t.Fatalf("read cli/examples/sitespec-nico.yaml: %v", err)
 	}
 	path := writeTemp(t, string(example))
-	writeNicoFiles(t, filepath.Dir(path), "nico.token", "bootstrap-tenant.password", "bootstrap-releases")
+	writeNicoFiles(t, filepath.Dir(path), "nico.token", "bootstrap-releases")
 	inv, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)

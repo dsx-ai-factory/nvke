@@ -1552,6 +1552,8 @@ func nicoSiteSpecFile(t *testing.T) string {
 		}
 	}
 	t.Setenv(sitespec.NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
+	t.Setenv(sitespec.EnvNodeUser, "example-user")
+	t.Setenv(sitespec.EnvNodePassword, "example-password")
 	if err := os.Mkdir(filepath.Join(dir, "bootstrap-releases"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -2293,11 +2295,11 @@ func TestNvkeImages(t *testing.T) {
 }
 
 // TestCWEDeployConfig_NicoTenantLoginAndReleases: the controller config carries
-// the tenant login, with its password read from the file, and the release
+// the tenant login, read from NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD, and the release
 // manifests' path resolved from the site spec, for the nico provider only.
 func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"nico.token", "tenant.password"} {
+	for _, name := range []string{"nico.token"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-secret\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -2311,13 +2313,14 @@ func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
 	}
 
 	t.Setenv(sitespec.NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
+	t.Setenv(sitespec.EnvNodeUser, "example-user")
+	t.Setenv(sitespec.EnvNodePassword, "example-secret")
 	nico := &sitespec.SiteSpec{
 		Infra: sitespec.Infra{
 			Provider: sitespec.ProviderNico,
 			Nico: &sitespec.NicoInfra{
 				OrgID:    "o",
 				Remote:   &sitespec.NicoRemote{Endpoint: "https://nico.example"},
-				Tenant:   &sitespec.StackTenant{User: "example-user", PasswordFile: filepath.Join(dir, "tenant.password")},
 				Releases: filepath.Join(dir, "releases"),
 			},
 		},
@@ -2333,9 +2336,9 @@ func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
 		t.Errorf("ReleasesPath = %q", cfg.ReleasesPath)
 	}
 
-	nico.Infra.Nico.Tenant.PasswordFile = filepath.Join(dir, "absent")
-	if _, err := cweDeployConfig(nico, "c", true, "", ""); err == nil || !strings.Contains(err.Error(), "infra.nico.tenant.passwordFile") {
-		t.Errorf("missing password file: err = %v, want infra.nico.tenant.passwordFile", err)
+	t.Setenv(sitespec.EnvNodePassword, "")
+	if _, err := cweDeployConfig(nico, "c", true, "", ""); err == nil || !strings.Contains(err.Error(), sitespec.EnvNodePassword) {
+		t.Errorf("unset node password: err = %v, want %s", err, sitespec.EnvNodePassword)
 	}
 }
 
@@ -2362,5 +2365,26 @@ func TestDumpSiteSpecNamesTheNicoControlPlaneAsDocumented(t *testing.T) {
 		if strings.Contains(out, reject) {
 			t.Errorf("the dump has %q, which is lower-cased or unset:\n%s", reject, out)
 		}
+	}
+}
+
+// TestBootstrapPortMappings_ControllerAPIIsLoopbackOnly: the bootstrap
+// controller serves its API with no authentication, so Kind publishes it on
+// 127.0.0.1 alone; the SPIRE port stays on every address for the nodes.
+func TestBootstrapPortMappings_ControllerAPIIsLoopbackOnly(t *testing.T) {
+	cfg := controllerdeploy.Config{CWEPort: 30080, NicoInfrastructure: true}
+	got := bootstrapPortMappings(cfg)
+	if len(got) != 2 {
+		t.Fatalf("mappings = %+v, want the controller API and SPIRE", got)
+	}
+	if got[0].ContainerPort != 30080 || got[0].ListenAddress != "127.0.0.1" {
+		t.Errorf("controller API mapping = %+v, want port 30080 on 127.0.0.1", got[0])
+	}
+	if got[1].ContainerPort != controllerdeploy.SPIREServerNodePort || got[1].ListenAddress != "" {
+		t.Errorf("SPIRE mapping = %+v, want it on every address", got[1])
+	}
+	cfg.DisableMTLS = true
+	if got := bootstrapPortMappings(cfg); len(got) != 1 {
+		t.Errorf("mappings without the TPM attestor = %+v, want only the controller API", got)
 	}
 }

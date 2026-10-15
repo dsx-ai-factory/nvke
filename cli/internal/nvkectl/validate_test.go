@@ -205,6 +205,8 @@ func TestValidateSiteSpec_NicoNeedsTheSpireAddressUnlessMTLSIsOff(t *testing.T) 
 		}
 	}
 	t.Setenv("NVKECTL_NICO_CREDENTIALS", filepath.Join(dir, "nico.token"))
+	t.Setenv("NVKECTL_NODE_USER", "example-user")
+	t.Setenv("NVKECTL_NODE_PASSWORD", "example-password")
 	if err := os.Mkdir(filepath.Join(dir, "bootstrap-releases"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -236,6 +238,8 @@ func TestValidateSiteSpec_NicoOneNodeWithoutVIP(t *testing.T) {
 		}
 	}
 	t.Setenv("NVKECTL_NICO_CREDENTIALS", filepath.Join(dir, "nico.token"))
+	t.Setenv("NVKECTL_NODE_USER", "example-user")
+	t.Setenv("NVKECTL_NODE_PASSWORD", "example-password")
 	if err := os.Mkdir(filepath.Join(dir, "bootstrap-releases"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -314,6 +318,8 @@ func TestValidateSiteSpec_NicoExampleWithTheDocumentedReleases(t *testing.T) {
 		}
 	}
 	t.Setenv("NVKECTL_NICO_CREDENTIALS", filepath.Join(dir, "nico.token"))
+	t.Setenv("NVKECTL_NODE_USER", "example-user")
+	t.Setenv("NVKECTL_NODE_PASSWORD", "example-password")
 
 	// releases/ as docs/operate/build-node-images.md has the operator build it.
 	for _, sub := range []string{"releases", "bootstrap-releases"} {
@@ -383,9 +389,10 @@ func TestValidateSiteSpec_BootstrapFilesAreCheckedInTheBootstrapSection(t *testi
 		t.Fatal(err)
 	}
 	t.Setenv("NVKECTL_NICO_CREDENTIALS", "")
+	t.Setenv("NVKECTL_NODE_USER", "")
 	var out strings.Builder
 	err = runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
-	if err == nil || !strings.Contains(out.String(), "NVKECTL_NICO_CREDENTIALS must name") || !strings.Contains(out.String(), "infra.nico.tenant.passwordFile") || strings.Contains(out.String(), "can run with this file") {
+	if err == nil || !strings.Contains(out.String(), "NVKECTL_NICO_CREDENTIALS must name") || !strings.Contains(out.String(), "NVKECTL_NODE_USER is not set") || strings.Contains(out.String(), "can run with this file") {
 		t.Fatalf("err = %v, output %q; want the credentials variable and the missing files reported", err, out.String())
 	}
 }

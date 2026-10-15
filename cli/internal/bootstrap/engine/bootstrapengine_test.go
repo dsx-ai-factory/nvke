@@ -456,3 +456,20 @@ func TestDefaultConfig_IgnoresBootstrapProviderEnv(t *testing.T) {
 			kindExperimentalProviderEnv, got, RuntimeCLI)
 	}
 }
+
+func TestRenderKindConfig_WritesTheListenAddress(t *testing.T) {
+	body, err := renderKindConfig(Config{
+		ClusterName: "test-cluster",
+		ExtraPortMappings: []PortMapping{
+			{ContainerPort: 30080, HostPort: 30080, ListenAddress: "127.0.0.1"},
+			{ContainerPort: 30081, HostPort: 30081},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(body)
+	if strings.Count(out, "listenAddress:") != 1 || !strings.Contains(out, "listenAddress: 127.0.0.1") {
+		t.Errorf("want listenAddress on the first mapping only; got:\n%s", out)
+	}
+}

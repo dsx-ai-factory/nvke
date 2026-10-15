@@ -58,10 +58,6 @@ type NicoInfra struct {
 	// Remote is an existing NICo, which the bootstrap CAPNICo reaches at its
 	// endpoint with the credentials in NVKECTL_NICO_CREDENTIALS. Required.
 	Remote *NicoRemote `yaml:"remote,omitempty"`
-	// Tenant is the login the controller renders into the cloud-init of the
-	// nodes CAPNICo creates, the same struct as controllerStack.tenant. The
-	// controller refuses to render user data without it. Required.
-	Tenant *StackTenant `yaml:"tenant,omitempty"`
 	// Releases is a file, or a directory of files, holding the MachineImage and
 	// ClusterRelease manifests the bootstrap applies to the Kind cluster before
 	// it creates the site cluster. The controller resolves the control plane's
@@ -201,15 +197,6 @@ func (v *validator) checkNico(n *NicoInfra) {
 		v.checkUUID(pathNicoRemote+".vpcID", n.Remote.VpcID)
 	}
 	v.checkNicoControlPlane(n.ControlPlane)
-	if n.Tenant == nil {
-		v.addf("%s is required: the controller renders it into every node's user data and refuses to without it", pathNicoTenant)
-	} else {
-		for _, f := range [][2]string{{"user", n.Tenant.User}, {"passwordFile", n.Tenant.PasswordFile}} {
-			if f[1] == "" {
-				v.addf("%s.%s is required", pathNicoTenant, f[0])
-			}
-		}
-	}
 	if n.Releases == "" {
 		v.addf("%s is required: the controller resolves %s.release from the MachineImage and ClusterRelease manifests in it",
 			pathNicoReleases, pathNicoControlPlane)
@@ -255,14 +242,6 @@ func (v *validator) checkNicoFiles(inv *SiteSpec) {
 	if !inv.IsNico() || n == nil {
 		return
 	}
-	if n.Tenant != nil && n.Tenant.PasswordFile != "" {
-		// Read and non-empty, as the bootstrap reads it: it refuses an empty one.
-		if data, err := os.ReadFile(inv.ResolvePath(n.Tenant.PasswordFile)); err != nil {
-			v.addf("%s.passwordFile %q cannot be read: %v", pathNicoTenant, n.Tenant.PasswordFile, err)
-		} else if strings.TrimSpace(string(data)) == "" {
-			v.addf("%s.passwordFile %q is empty", pathNicoTenant, n.Tenant.PasswordFile)
-		}
-	}
 	v.checkBootstrapReleases(inv)
 }
 
@@ -273,6 +252,11 @@ func (v *validator) checkNicoCredentials(inv *SiteSpec) {
 		return
 	}
 	v.checkNicoEndpointScheme(inv)
+	if _, _, err := NodeLoginFromEnv(); err != nil {
+		for _, problem := range strings.Split(err.Error(), "\n") {
+			v.addf("%s", problem)
+		}
+	}
 	path := NicoCredentialsPath()
 	if path == "" {
 		v.addf("%s must name the file holding the NICo token: the bootstrap CAPNICo needs it, and it is not in the site spec",

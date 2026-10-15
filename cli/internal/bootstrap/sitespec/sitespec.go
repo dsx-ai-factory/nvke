@@ -61,7 +61,6 @@ const (
 	pathNico                 = "infra.nico"
 	pathNicoRemote           = "infra.nico.remote"
 	pathNicoControlPlane     = "infra.nico.controlPlane"
-	pathNicoTenant           = "infra.nico.tenant"
 	pathNicoReleases         = "infra.nico.releases"
 	pathK8sVersion           = "cluster.k8sVersion"
 	pathCniName              = "cluster.cniName"
@@ -116,6 +115,7 @@ var removedFields = map[string]string{
 	"spire.caKeyFile":                "set " + EnvSpireCAKeyFile + " and spire.upstreamCA: true",
 	"controllerStack.nico.tokenFile": "set " + EnvNicoToken,
 	"controllerStack.tenant":         "set " + EnvNodeUser + " and " + EnvNodePassword,
+	"infra.nico.tenant":              "set " + EnvNodeUser + " and " + EnvNodePassword,
 	"controllerStack.database":       "set " + EnvDatabasePassword + "; an installed site sets it to the password its Postgres was initialized with",
 	"controllerStack.nktpValuesFile": "pass --values-for nktp=<file> to nvke-deploy.sh install",
 }
@@ -162,6 +162,27 @@ type SiteSpec struct {
 	// bootstrap does not read it; ValidateControllerStack checks it at install
 	// time.
 	ControllerStack *ControllerStack `yaml:"controllerStack,omitempty"`
+
+	// dir is the directory the file was loaded from, which relative paths in
+	// infra.nico.releases are resolved against. Empty for a spec that was
+	// built rather than loaded.
+	dir string `yaml:"-"`
+}
+
+// ResolvePath returns path made absolute: as given when absolute, else joined
+// onto the directory the site spec was loaded from, else onto the working
+// directory.
+func (inv *SiteSpec) ResolvePath(path string) string {
+	if path == "" || filepath.IsAbs(path) {
+		return path
+	}
+	if inv.dir != "" {
+		return filepath.Join(inv.dir, path)
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
 }
 
 // Spire describes the identity plane `nvkectl bootstrap site` stands up.
@@ -392,6 +413,9 @@ func Load(path string) (*SiteSpec, error) {
 	var inv SiteSpec
 	if err := v.Unmarshal(&inv, useYAMLTags, decodeTextValues, rejectUnknownFields); err != nil {
 		return nil, fmt.Errorf("site spec file %s: %w", path, err)
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		inv.dir = filepath.Dir(abs)
 	}
 	inv.Spire.CACertFile, inv.Spire.CAKeyFile = envalias.Get(EnvSpireCACertFile), envalias.Get(EnvSpireCAKeyFile)
 

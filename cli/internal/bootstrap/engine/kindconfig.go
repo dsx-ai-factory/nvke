@@ -37,6 +37,7 @@ type kindPortEntry struct {
 	ContainerPort int32  `yaml:"containerPort"`
 	HostPort      int32  `yaml:"hostPort"`
 	Protocol      string `yaml:"protocol,omitempty"`
+	ListenAddress string `yaml:"listenAddress,omitempty"`
 }
 
 // renderKindConfig marshals cfg into a kind Cluster config YAML document.

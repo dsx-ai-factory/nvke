@@ -277,6 +277,26 @@ func checkRemovedSettings(logger *slog.Logger, opts *bootstrapSiteOptions) error
 // context detached from the command's, so they need a stop of their own.
 const cleanupTimeout = 2 * time.Minute
 
+// bootstrapPortMappings returns the host ports the Kind cluster publishes: the
+// controller API on 127.0.0.1 only, and the SPIRE server on every address when
+// the TPM attestor is enabled, since nodes outside the host dial it.
+func bootstrapPortMappings(cweCfg controllerdeploy.Config) []bootstrapengine.PortMapping {
+	// The bootstrap controller serves its API with no authentication and every
+	// caller dials 127.0.0.1, so it is not published to the network.
+	mappings := []bootstrapengine.PortMapping{{
+		ContainerPort: cweCfg.CWEPort,
+		HostPort:      cweCfg.CWEPort,
+		ListenAddress: "127.0.0.1",
+	}}
+	if cweCfg.TPMAttestorEnabled() {
+		mappings = append(mappings, bootstrapengine.PortMapping{
+			ContainerPort: controllerdeploy.SPIREServerNodePort,
+			HostPort:      controllerdeploy.SPIREServerNodePort,
+		})
+	}
+	return mappings
+}
+
 func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	logger := slog.Default().With("component", "bootstrap-site")
 	for _, s := range envalias.Deprecated(bootstrapSettings()...) {
@@ -292,7 +312,6 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 	logger.Info("loaded site spec", "path", opts.siteSpec, "cluster", inv.ClusterName)
-<<<<<<< HEAD
 	// Checked before the dry-run return so --dry-run is the complete pre-flight,
 	// and together so one run reports every problem.
 	if err := errors.Join(inv.CheckBootstrapMode(opts.disableMTLS), inv.ValidateBootstrapReferences()); err != nil {
@@ -306,16 +325,8 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err != nil {
 		return err
 	}
-
-	// An explicit --registry-api-key flag wins over the value the loader
-	// resolved (the site spec file or the REGISTRY_API_KEY env var). The
-	// credential is never logged or printed.
-	if opts.registryAPIKey != "" {
-		inv.Registry.APIKey = opts.registryAPIKey
-=======
 	if inv.Spire.CACertFile != "" {
 		logger.Info("SPIRE upstream CA from the environment", "cert", inv.Spire.CACertFile, "key", inv.Spire.CAKeyFile)
->>>>>>> origin/main
 	}
 
 	if err := dumpSiteSpec(out, inv); err != nil {
@@ -368,16 +379,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// and then calls it. A host port mapping rather than the node container's
 	// own address, because that address is not routable from the host on
 	// every platform this runs on.
-	cfg.ExtraPortMappings = append(cfg.ExtraPortMappings, bootstrapengine.PortMapping{
-		ContainerPort: cweCfg.CWEPort,
-		HostPort:      cweCfg.CWEPort,
-	})
-	if cweCfg.TPMAttestorEnabled() {
-		cfg.ExtraPortMappings = append(cfg.ExtraPortMappings, bootstrapengine.PortMapping{
-			ContainerPort: controllerdeploy.SPIREServerNodePort,
-			HostPort:      controllerdeploy.SPIREServerNodePort,
-		})
-	}
+	cfg.ExtraPortMappings = append(cfg.ExtraPortMappings, bootstrapPortMappings(cweCfg)...)
 
 	engine := bootstrapengine.New(opts.bootstrapRunner, logger)
 
@@ -1075,12 +1077,11 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	}
 	cfg.CAPNICo = access
 	if inv.IsNico() {
-		tenant := inv.Infra.Nico.Tenant
-		password, err := readTokenFile("infra.nico.tenant.passwordFile", inv.ResolvePath(tenant.PasswordFile))
+		user, password, err := sitespec.NodeLoginFromEnv()
 		if err != nil {
 			return cfg, err
 		}
-		cfg.DGXCTenant = controllerdeploy.TenantLogin{User: tenant.User, Password: password}
+		cfg.DGXCTenant = controllerdeploy.TenantLogin{User: user, Password: password}
 		cfg.ReleasesPath = inv.ResolvePath(inv.Infra.Nico.Releases)
 	}
 	cfg.SPIREExternalAddress = inv.Spire.ExternalAddress
@@ -1229,20 +1230,6 @@ func capnicoReleaseImage(inv *sitespec.SiteSpec, releasePath, arch string) (stri
 		return "", fmt.Errorf("--release %s: %w", releasePath, err)
 	}
 	return artifact.Repository() + "@" + artifact.Digest, nil
-}
-
-// readTokenFile returns the trimmed contents of a file holding one secret, and
-// refuses an empty one, which would render an empty credential.
-func readTokenFile(what, path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", what, err)
-	}
-	token := strings.TrimSpace(string(data))
-	if token == "" {
-		return "", fmt.Errorf("%s: %s is empty", what, path)
-	}
-	return token, nil
 }
 
 // waitForCWEHostEndpoint verifies the same host path that the create request

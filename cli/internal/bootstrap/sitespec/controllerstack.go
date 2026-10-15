@@ -85,6 +85,25 @@ func TemplateSafe(value string) bool {
 	return !strings.ContainsAny(value, "\"\\") && !strings.ContainsFunc(value, unicode.IsControl)
 }
 
+// NodeLoginFromEnv reads the login rendered into every node CAPNICo creates
+// from NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD, trimmed. It names each one
+// that is unset, so the bootstrap and the stack install take the same login
+// from the same place.
+func NodeLoginFromEnv() (user, password string, err error) {
+	user = strings.TrimSpace(envalias.Get(EnvNodeUser))
+	password = strings.TrimSpace(envalias.Get(EnvNodePassword))
+	var missing []string
+	for _, env := range [][2]string{{EnvNodeUser, user}, {EnvNodePassword, password}} {
+		if env[1] == "" {
+			missing = append(missing, env[0]+" is not set")
+		}
+	}
+	if len(missing) > 0 {
+		return "", "", errors.New(strings.Join(missing, "\n") + ": the controller refuses to render a node's user data without the login")
+	}
+	return user, password, nil
+}
+
 // StackCredentialsFromEnv reads the controller stack install's credentials
 // from the environment, trimmed, and names every one that is unset, one
 // problem per line. The NICo token and the node login land in templates that

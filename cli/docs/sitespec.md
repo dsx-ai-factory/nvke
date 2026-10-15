@@ -47,17 +47,11 @@ nvkectl generate sitespec my-tier0-site --nodes hosts.csv \
   --set cluster.podCidr=10.244.0.0/16 > sitespec.yaml
 ```
 
-<<<<<<< HEAD
-Four fields are deliberately not settable. `cluster.nodes` comes from `--nodes`.
-`registry.apiKey` is a credential and this file is meant to be committed — pass
-it to `nvkectl bootstrap site` with `--registry-api-key` or `REGISTRY_API_KEY`
-instead. `infra.provider` and `spire.externalAddress` belong to a nico site spec,
-which `generate sitespec` does not write: it writes a `provisioned` one from
-`--nodes`, so write a nico file by hand from `examples/sitespec-nico.yaml`.
-=======
 `cluster.nodes` is deliberately not settable; it comes from `--nodes`.
 Credentials and the SPIRE CA come from the environment: see "Credential handling".
->>>>>>> origin/main
+`infra.provider` and `spire.externalAddress` belong to a nico site spec, which
+`generate sitespec` does not write: it writes a `provisioned` one from `--nodes`,
+so write a nico file by hand from `examples/sitespec-nico.yaml`.
 
 Unlike `bootstrap site`, `generate sitespec` ignores the environment variables
 listed below, so a generated file never carries a value nobody typed. Every
@@ -117,7 +111,6 @@ would be a sibling of it, so nothing here changes when one is added.
 | `infra.nico.controlPlane.sshKeyGroupIDs` | UUID list | with `nico` | At least one. |
 | `infra.nico.controlPlane.release` | string | with `nico` | The `ClusterRelease` the nodes boot from, which `infra.nico.releases` must hold. See Release manifests. |
 | `infra.nico.controlPlane.configProfile` | string | no | A config profile name. The bootstrap controller starts with an empty profiles directory and serves none, so it treats any name as missing and logs a warning: its hooks and labels never reach the nodes. Leave it unset. |
-| `infra.nico.tenant` | `StackTenant` | with `nico` | The login the controller renders into the user data of every node CAPNICo creates: `user` and `passwordFile`. The controller refuses to render user data without it. See below. |
 | `infra.nico.releases` | path | with `nico` | A file, or a directory of `.yaml`, `.yml` and `.json` files, holding the `MachineImage` and `ClusterRelease` manifests. See below. |
 | `spire.externalAddress` | string | with `nico`, unless `--disable-mtls` | IP address or DNS name nodes use to reach the bootstrap host's SPIRE server, on NodePort 30081. See below. |
 
@@ -158,7 +151,7 @@ finished site controller fills in. The bootstrap controller fills in others:
 | `{{ .SpireServerAddress }}` | `spire.externalAddress` |
 | `{{ .SpireServerPort }}` | `30081` |
 | `{{ .TrustDomain }}`, `{{ .TrustBundle }}` | The bootstrap SPIRE server's trust domain and bundle |
-| `{{ .Username }}`, `{{ .HashedPassword }}` | `infra.nico.tenant.user` and the password in `infra.nico.tenant.passwordFile` |
+| `{{ .Username }}`, `{{ .HashedPassword }}` | `NVKECTL_NODE_USER` and the password in `NVKECTL_NODE_PASSWORD` |
 `nvkectl bootstrap site` requires it with `nico` unless `--disable-mtls` is
 passed, since nothing reads it without SPIRE. `--dry-run` applies the same check.
 Setting `spire.externalAddress` with `provisioned` is rejected: those hosts were
@@ -213,11 +206,13 @@ bootstrap calls the site's Kubernetes API to write the kubeconfig, so the host
 must also reach the control-plane endpoint, `cluster.controlPlaneVIP` or the
 node's address, on port 6443.
 
-`infra.nico.tenant` is the same struct as `controllerStack.tenant`. The bootstrap
-puts it in a `dgxc-tenant-credentials` Secret in the controller's namespace and
-points the controller chart at it (`secrets.dgxcTenantCredSecretName`); without
-it the controller fails every node's user-data rendering and no node is created.
-`passwordFile` is a path to a file holding the password, like the tokens.
+The node login comes from `NVKECTL_NODE_USER` and `NVKECTL_NODE_PASSWORD`, the
+same variables the controller stack install reads, so it is not in the site
+spec. The bootstrap puts it in a `dgxc-tenant-credentials` Secret in the
+controller's namespace and points the controller chart at it
+(`secrets.dgxcTenantCredSecretName`); without it the controller fails every
+node's user-data rendering and no node is created. A spec that still sets
+`infra.nico.tenant` is refused.
 
 ### Release manifests
 
@@ -291,7 +286,7 @@ part of the site spec.
 Unknown fields are rejected. A typo in a field name fails the load rather than
 being silently ignored. Removed fields,
 `registry`, `spire.caCertFile`, `spire.caKeyFile`,
-`controllerStack.nico.tokenFile`, `controllerStack.tenant`,
+`controllerStack.nico.tokenFile`, `controllerStack.tenant`, `infra.nico.tenant`,
 `controllerStack.database.passwordFile` and `controllerStack.nktpValuesFile`,
 are refused with the name of what replaced them. So are the
 `SPIRE_CA_CERT_FILE` and `SPIRE_CA_KEY_FILE` variables: a run with either set
@@ -311,7 +306,7 @@ and lists what is still a placeholder; `--bootstrap-only` checks only what
 `bootstrap site` reads. A site spec field that is invalid fails either check.
 Otherwise the exit status of the full check is the controller stack's, because
 the install gates on it from a host that does not hold what only the bootstrap
-host does: with `nico`, the token file, the tenant password
+host does: with `nico`, the token file, the node login
 and release manifests, and `spire.externalAddress`. The full check reports
 those; `--bootstrap-only` fails on them. A file whose bootstrap half is valid can bootstrap
 the cluster before the `controllerStack` section is filled in; the output
@@ -350,10 +345,10 @@ fields above; the install reads them from there and they are not repeated in
   stack install is refused, and the VIP cannot be added once the site cluster
   exists, because kube-vip is set up only when the cluster is created with one.
   `bootstrap site` and `validate sitespec` warn about it.
-- With `nico`: `infra.nico` (its `orgID`, `remote`, `controlPlane`, `tenant` and
+- With `nico`: `infra.nico` (its `orgID`, `remote`, `controlPlane` and
   `releases`) is required, and the files it names, and the file
   `NVKECTL_NICO_CREDENTIALS` names, must exist when the bootstrap runs, and
-  the tenant password file must hold a password (`bootstrap site` and
+  `NVKECTL_NODE_USER` and `NVKECTL_NODE_PASSWORD` must be set (`bootstrap site` and
   `validate sitespec --bootstrap-only` check; a full `validate sitespec`
   reports them; `render deploy-path` does not); with `provisioned` `infra.nico` is rejected. `spire.externalAddress` is required with
   `nico` unless `--disable-mtls`, which `bootstrap site` and
@@ -395,13 +390,8 @@ A set variable takes precedence over the file value.
 | `CLUSTER_NODE_AGENT_PORT` | `cluster.nodeAgentPort` |
 | `CLUSTER_ETCD_ENCRYPTION` | `cluster.etcdEncryption` |
 | `NVKECTL_SPIFFE_TRUST_DOMAIN` | `spire.trustDomain` |
-<<<<<<< HEAD
-| `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
-| `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
 | `NVKECTL_SPIRE_EXTERNAL_ADDRESS` | `spire.externalAddress` |
 | `NVKECTL_INFRA_PROVIDER` | `infra.provider` — `provisioned` or `nico` |
-=======
->>>>>>> origin/main
 | `NVKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
 
 A malformed `NVKECTL_CLUSTER_NODES` entry fails the load rather than being
