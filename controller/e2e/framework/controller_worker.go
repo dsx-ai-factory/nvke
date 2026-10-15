@@ -74,7 +74,7 @@ func ControllerWorkerBinary(t testing.TB) string {
 	binaryPath := getenvWithLegacy(ControllerGofailWorkerBinaryEnv, legacyWorkerBinaryEnv)
 	require.NotEmpty(t, binaryPath, "%s must point to the worker built by make e2e-gofail", ControllerGofailWorkerBinaryEnv)
 	_, err := os.Stat(binaryPath)
-	require.NoError(t, err, "CWE worker binary does not exist")
+	require.NoError(t, err, "controller worker binary does not exist")
 	return binaryPath
 }
 
@@ -106,7 +106,7 @@ func FreeLocalhostAddress(t testing.TB) string {
 	return ln.Addr().String()
 }
 
-// StartControllerWorkerBinary starts the production CWE command against e2e-owned dependencies.
+// StartControllerWorkerBinary starts the production controller command against e2e-owned dependencies.
 func StartControllerWorkerBinary(t testing.TB, cfg ControllerWorkerBinaryConfig) *Process {
 	t.Helper()
 

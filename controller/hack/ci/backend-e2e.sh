@@ -682,7 +682,7 @@ esac
 
 git_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse HEAD)"
 git_short_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse --short=12 HEAD)"
-# CWE_IMAGE and CWE_BUILD_VERSION are the deprecated names for these two.
+# CWE_IMAGE and CWE_BUILD_VERSION are the deprecated names for these two; #1399 removes them.
 NKE_CONTROLLER_IMAGE="${NKE_CONTROLLER_IMAGE:-${CWE_IMAGE:-cwe-e2e:${git_short_sha}}}"
 NKE_CONTROLLER_BUILD_VERSION="${NKE_CONTROLLER_BUILD_VERSION:-${CWE_BUILD_VERSION:-e2e-${git_short_sha}}}"
 NKE_CONTROLLER_PROFILES_TILT_IMAGE="docker.local/cwe-profiles:tilt"

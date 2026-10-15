@@ -211,10 +211,10 @@ CAPI_PROVISIONED_IMAGE ?= cluster-api-provider-provisioned:latest
 # CWE_IMAGE is set, `images` uses CWE_IMAGE and make prints a warning. When
 # both are set, CONTROLLER_IMAGE wins and there is no warning. `override` is
 # needed because an empty CONTROLLER_IMAGE= on the command line otherwise
-# blocks the assignment. CWE_IMAGE support is removed in a later release.
+# blocks the assignment. #1399 removes CWE_IMAGE support.
 ifneq ($(CWE_IMAGE),)
 ifeq ($(CONTROLLER_IMAGE),)
-$(warning CWE_IMAGE is deprecated and will be removed in a future release; set CONTROLLER_IMAGE instead)
+$(warning CWE_IMAGE is deprecated and #1399 removes it; set CONTROLLER_IMAGE instead)
 override CONTROLLER_IMAGE := $(CWE_IMAGE)
 endif
 endif

@@ -179,7 +179,7 @@ func TestConfigProfileRunbookReferencesArePackaged(t *testing.T) {
 
 // profilesDirForTest resolves fleet profiles and their sibling runbooks.
 // Order: NKE_CONTROLLER_PROFILES_DIR (the deprecated CWE_PROFILES_DIR still
-// works), sibling checkout, in-repo fixtures.
+// works until #1399), sibling checkout, in-repo fixtures.
 func profilesDirForTest(t *testing.T) string {
 	t.Helper()
 	if dir := cmp.Or(os.Getenv("NKE_CONTROLLER_PROFILES_DIR"), os.Getenv("CWE_PROFILES_DIR")); dir != "" {

@@ -4,7 +4,7 @@
 #
 # Generate a kubeconfig for an NVKE cluster running on nico-vms.
 #
-# Queries the CWE API for the cluster VIP and control plane node IPs,
+# Queries the controller API for the cluster VIP and control plane node IPs,
 # SSHes into a CP node, extracts the cluster CA, signs a short-lived
 # client certificate, and writes a kubeconfig file.
 #
@@ -13,7 +13,7 @@
 #   get-kubeconfig.sh --cluster-id <uuid>   [options]
 #
 # Options:
-#   --cluster-name  NAME    Cluster name (looked up via CWE API)
+#   --cluster-name  NAME    Cluster name (looked up via controller API)
 #   --cluster-id    UUID    Cluster ID (direct lookup)
 #   --controller-api URL    Controller API base URL (env NKE_CONTROLLER_API_URL; default: http://localhost:8080/api)
 #   --cwe-api       URL     Deprecated alias for --controller-api; #1399 removes it

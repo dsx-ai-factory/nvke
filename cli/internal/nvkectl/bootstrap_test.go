@@ -965,7 +965,8 @@ func TestMakefileImageTagsMatchTheManifest(t *testing.T) {
 // TestMakefileControllerImageFallsBackToTheOldName drives `make -n images`:
 // CONTROLLER_IMAGE wins, CWE_IMAGE is used with a warning when
 // CONTROLLER_IMAGE is unset or empty, from the environment or the command
-// line, and neither gives the manifest default.
+// line, and neither gives the manifest default. #1399 removes CWE_IMAGE and
+// this test with it.
 func TestMakefileControllerImageFallsBackToTheOldName(t *testing.T) {
 	makeBin, err := exec.LookPath("make")
 	if err != nil {

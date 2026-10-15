@@ -45,7 +45,7 @@ install -d -m 0755 -o spire -g spire /tmp/spire-agent /tmp/spire-agent/public
 
 install -m 0644 -o spire -g spire "${BUNDLE_SRC}" "${BUNDLE_DST}"
 
-# Pick the node attestor the same way CWE picks it for CAPI-backed nodes
+# Pick the node attestor the same way the NVKE controller picks it for CAPI-backed nodes
 # (controller/internal/temporal/activities/capi_spire_agent.conf.tmpl): a join
 # token when cloud-init supplied one, TPM otherwise. A site cluster always
 # attests by TPM and mints no token, so an image that only knew join_token could

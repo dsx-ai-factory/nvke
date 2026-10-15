@@ -22,7 +22,7 @@ const (
 
 // The overrides, which apply suite-wide so moving the controller moves
 // everything at once. The Legacy names are the deprecated spellings, still read
-// when the new name is unset.
+// when the new name is unset. #1399 removes them.
 const (
 	EnvNamespace = "NKE_CONTROLLER_NAMESPACE"
 	EnvService   = "NKE_CONTROLLER_SERVICE"

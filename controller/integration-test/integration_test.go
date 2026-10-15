@@ -3,7 +3,7 @@
 
 //go:build integration_test
 
-// This suite drives a RUNNING CWE deployment (see README.md in this
+// This suite drives a RUNNING controller deployment (see README.md in this
 // directory). Without a build tag it is picked up by a plain
 // `go test ./...`, which then fails on a connection refused to
 // localhost:8080 and names neither the cause nor the fix. `make test`

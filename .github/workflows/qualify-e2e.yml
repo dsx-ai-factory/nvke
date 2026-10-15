@@ -103,7 +103,7 @@ on:
         required: false
         default: golden-path
       controller-version:
-        description: "Overrides the published CWE tag the plan resolves, e.g. v0.1.1. QUALIFY_E2E_CONTROLLER_VERSION supplies it when this is empty."
+        description: "Overrides the published controller tag the plan resolves, e.g. v0.1.1. QUALIFY_E2E_CONTROLLER_VERSION supplies it when this is empty."
         type: string
         required: false
       cli-version:
@@ -115,7 +115,7 @@ on:
         type: string
         required: false
       kubernetes-version:
-        description: "Overrides the Kubernetes version the plan resolves for every stream, e.g. 1.36.3. It selects the nvke-kubeadm-distro package on every node and the version CWE builds the cluster with, so one value decides both."
+        description: "Overrides the Kubernetes version the plan resolves for every stream, e.g. 1.36.3. It selects the nvke-kubeadm-distro package on every node and the version the controller builds the cluster with, so one value decides both."
         type: string
         required: false
       cni-ovn-version:
@@ -844,7 +844,7 @@ jobs:
           if [ -n "${SITE_CONTROLLER_VERSION}" ]; then
             echo "SITE_CONTROLLER_BUILD=0" >> "${GITHUB_ENV}"
             echo "qualifying the published ${SITE_CONTROLLER_VERSION}"
-            echo "::warning::pulling a published CWE, ${SITE_CONTROLLER_VERSION}; if it predates #850 the bootstrap fails at \"creating the site cluster\""
+            echo "::warning::pulling a published controller, ${SITE_CONTROLLER_VERSION}; if it predates #850 the bootstrap fails at \"creating the site cluster\""
             auth="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 -w0)"
             echo "::add-mask::${auth}"
 
@@ -881,7 +881,7 @@ jobs:
             echo "SITE_CONTROLLER_BUILD=1"
             echo "SITE_CONTROLLER_VERSION=${version}"
           } >> "${GITHUB_ENV}"
-          echo "building the CWE from ${version}"
+          echo "building the controller from ${version}"
 
       # Two checks that each cost a second and each save a run: the ref the
       # join token will see, and the three values a pull_request event does
@@ -952,7 +952,7 @@ jobs:
           echo "SITE_IMAGES=${images}" >> "${GITHUB_ENV}"
           echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION} images=${images}"
 
-      # nvkectl is a client of the CWE it bootstraps, so the two have to agree
+      # nvkectl is a client of the controller it bootstraps, so the two have to agree
       # on the cluster API. By default both are built from this checkout,
       # which makes them one commit. A published pair has to be chosen to
       # agree: GHCR carries release tags only and its newest, v0.1.1-rc.8, is
@@ -1066,7 +1066,7 @@ jobs:
           echo "OS_IMAGE_VERSIONS=${versions#,}" >> "${GITHUB_ENV}"
 
       # A named version stages the published nvkectl rather than one built
-      # here, so a candidate can pair a published CLI with a published CWE.
+      # here, so a candidate can pair a published CLI with a published controller.
       # site-inputs does the pull and the checks (hack/fetch-nvkectl.sh); this
       # step only names the artifact and where the staged binary lands, which
       # is the Makefile's SITE_NVKECTL.
@@ -1219,7 +1219,7 @@ jobs:
       # deploy path out of the checkout. The node has no access to this
       # repository, so everything it runs has to be built here and staged.
       # SITE_CONTROLLER_BUILD and SITE_CLI_BUILD come from the resolve steps
-      # and decide whether the CWE archive and nvkectl are built here or were
+      # and decide whether the controller archive and nvkectl are built here or were
       # published.
       - name: Build the site inputs
         shell: bash
@@ -1686,9 +1686,9 @@ jobs:
       #
       # site-cluster-state.txt covers the gap that leaves. nvkectl writes
       # diagnostics when the bootstrap fails, so a run that bootstrapped and
-      # then never saw CWE answer gets none, and before this such a run
+      # then never saw the controller answer gets none, and before this such a run
       # recorded nothing beyond "did not become healthy within 10m0s". It
-      # carries the Service endpoints, so it says whether CWE was unready or
+      # carries the Service endpoints, so it says whether the controller was unready or
       # merely unreachable.
       - name: Upload the run log
         if: always()

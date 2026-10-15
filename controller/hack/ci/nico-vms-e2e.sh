@@ -359,7 +359,7 @@ export CNPG_TEMPORAL_PASSWORD="${CNPG_TEMPORAL_PASSWORD:-example-password}"
 export TENANT_ACCESS_ENABLED=true
 export NKE_OIDC_AUTH_ENABLED=true
 # Config profiles and runbooks only. OS images come from the releases below.
-# CWE_PROFILES_DIR is the deprecated name for NKE_CONTROLLER_PROFILES_DIR.
+# CWE_PROFILES_DIR is the deprecated name for NKE_CONTROLLER_PROFILES_DIR; #1399 removes it.
 export NKE_CONTROLLER_PROFILES_DIR="${NKE_CONTROLLER_PROFILES_DIR:-${CWE_PROFILES_DIR:-${CONTROLLER_ROOT}/test/fixtures/profiles}}"
 RELEASES_SRC="${NKE_CONTROLLER_RELEASES_DIR:-${CONTROLLER_ROOT}/test/fixtures/releases}"
 [[ -d "${RELEASES_SRC}" ]] || fail "releases not found at ${RELEASES_SRC}"
