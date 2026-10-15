@@ -90,6 +90,8 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
    - `algorithms`: the algorithms from step 1 that you accept.
    - `admit.groups`: a token is admitted if its `groups` claim contains any listed group.
 
+   `issuers` is a list. Add another entry for a second IdP. `name` and `issuer` are unique in the file. Set `audiences` on an issuer to replace the top-level `audiences` for that issuer.
+
    NVKE uses each value exactly as written. A value with leading or trailing whitespace stops NVKE from starting.
 
 2. If the IdP's certificate is signed by a private certificate authority (CA), add the CA certificate to the same file. The chart places it at `/etc/nke/auth/idp-ca.crt`.
@@ -152,7 +154,7 @@ Configure your callers now, while NVKE still serves every request. From the mome
      --output-file oidc.kubeconfig
    ```
 
-   The command copies the cluster address and CA from `<CLUSTER_NAME>.kubeconfig` and replaces the user with `kubectl oidc-login`. Add `--oidc-extra-scope <SCOPE>` for each scope your IdP needs to release the `groups` claim.
+   The command copies the cluster address and CA from `<CLUSTER_NAME>.kubeconfig` and replaces the user with `kubectl oidc-login`. Add `--oidc-extra-scope <SCOPE>` for each scope your IdP needs to release the `groups` claim. On a machine with no browser, add `--headless`. `kubectl oidc-login` then prints a URL to open on another machine. The IdP client must allow the device authorization grant.
 
 2. Point `nvkectl` at the API with that kubeconfig.
 
@@ -168,7 +170,7 @@ Configure your callers now, while NVKE still serves every request. From the mome
    nvkectl get clusters
    ```
 
-   `kubectl oidc-login` asks you to log in to the IdP if it has no valid token, then the command lists the workload clusters.
+   `kubectl oidc-login` asks you to log in to the IdP if it has no valid token, then the command lists the workload clusters. A kubeconfig generated with `--headless` prints a URL to open on another machine.
 
 ### With curl
 
