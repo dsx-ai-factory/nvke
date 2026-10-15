@@ -19,16 +19,16 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/oidc"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/tenantauth"
 )
 
 // The apiserver auth-config settings the brownfield write-back persists into
-// kube-system/kubeadm-config; must match internal/kubeadmconfig on the controller side.
+// kube-system/kubeadm-config, beside oidc.AuthConfigPath and
+// oidc.AuthConfigDir; must match internal/kubeadmconfig on the controller side.
 const (
 	oidcAuthConfigFlag       = "authentication-config"
-	oidcAuthConfigPath       = "/etc/kubernetes/oidc/auth-config.yaml"
 	oidcAuthConfigVolumeName = "oidc-auth-config"
-	oidcAuthConfigDir        = "/etc/kubernetes/oidc"
 )
 
 // validateBrownfieldOIDC turns OIDC on for an already-provisioned (OIDC-off)
@@ -113,22 +113,22 @@ func validateKubeadmOIDCConfig(ctx context.Context, tenantClient client.Client) 
 	if err != nil {
 		return err
 	}
-	if got := extraArgs[oidcAuthConfigFlag]; got != oidcAuthConfigPath {
+	if got := extraArgs[oidcAuthConfigFlag]; got != oidc.AuthConfigPath {
 		return fmt.Errorf("kubeadm apiServer.extraArgs[%q] = %q, want %q",
-			oidcAuthConfigFlag, got, oidcAuthConfigPath)
+			oidcAuthConfigFlag, got, oidc.AuthConfigPath)
 	}
 
 	volume, err := kubeadmAPIServerExtraVolume(clusterConfiguration, oidcAuthConfigVolumeName)
 	if err != nil {
 		return err
 	}
-	if got, _ := volume["hostPath"].(string); got != oidcAuthConfigDir {
+	if got, _ := volume["hostPath"].(string); got != oidc.AuthConfigDir {
 		return fmt.Errorf("kubeadm apiServer.extraVolumes[%q].hostPath = %q, want %q",
-			oidcAuthConfigVolumeName, got, oidcAuthConfigDir)
+			oidcAuthConfigVolumeName, got, oidc.AuthConfigDir)
 	}
-	if got, _ := volume["mountPath"].(string); got != oidcAuthConfigDir {
+	if got, _ := volume["mountPath"].(string); got != oidc.AuthConfigDir {
 		return fmt.Errorf("kubeadm apiServer.extraVolumes[%q].mountPath = %q, want %q",
-			oidcAuthConfigVolumeName, got, oidcAuthConfigDir)
+			oidcAuthConfigVolumeName, got, oidc.AuthConfigDir)
 	}
 	if readOnly, _ := volume["readOnly"].(bool); !readOnly {
 		return fmt.Errorf("kubeadm apiServer.extraVolumes[%q] should be readOnly", oidcAuthConfigVolumeName)
