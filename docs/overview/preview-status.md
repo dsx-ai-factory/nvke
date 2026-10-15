@@ -35,7 +35,7 @@ NVIDIA Kubernetes Engine (NVKE) is available as a preview. APIs, configuration a
 
 ### Workload clusters and node pools
 
-- **Node labels and taints cannot be updated, and are applied only when a node joins.** You cannot change a node pool's `nodeLabels` or `nodeTaints`, or the control plane's `controlPlaneConfig.nodeLabels`, after creation. They are applied at creation, after each node joins and does not restore one that is later removed from the Kubernetes node. To change them for a pool's nodes,  manually apply with kubectl.
+- **Node labels and taints are fixed at creation and applied only when a node joins.** You cannot update a node pool's `nodeLabels` or `nodeTaints`, or the control plane's `controlPlaneConfig.nodeLabels`, after you create them. NVKE applies them once, after each node joins the cluster. If a label or taint is later removed from a node, it is not added back. To change them on existing nodes, use `kubectl label` and `kubectl taint`.
 
 ### Building artifacts
 

@@ -14,8 +14,7 @@ import (
 //nolint:gochecknoglobals // migrations are global
 var migrations = migrate.NewMigrations()
 
-// profilesDirKey carries the controller's profiles directory to migrations that read config profiles,
-// since Bun migration functions receive only a context and the database.
+// profilesDirKey carries the controller's profiles directory to migrations that read config profiles
 type profilesDirKey struct{}
 
 // Migrate applies pending migrations. profilesDir is the controller's profilesDir setting, read by

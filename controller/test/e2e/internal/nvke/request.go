@@ -88,6 +88,7 @@ type ControlPlaneConfigSpec struct {
 	SubnetIDs            []string
 	SSHKeyGroupIDs       []string
 	SystemReservedMemory string
+	NodeLabels           map[string]string
 }
 
 // ClusterNetworkSpec describes the non-default network configuration to pass
@@ -381,6 +382,7 @@ func buildNicoControlPlaneConfig(clusterName string, vpcID uuid.UUID, spec Clust
 		DesiredCount:         cp.DesiredCount,
 		MaxSurge:             cp.MaxSurge,
 		SystemReservedMemory: pool.SystemReservedMemory,
+		NodeLabels:           cp.NodeLabels,
 		Infra: &api.InfraControlPlaneProvider{
 			PreKubeadmCommands: pool.Infra.PreKubeadmCommands,
 			MachineTemplate:    pool.Infra.MachineTemplate,
@@ -542,6 +544,7 @@ func buildCAPDControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControlPla
 	if spec.ControlPlane.Config.SystemReservedMemory != "" {
 		cfg.SystemReservedMemory = spec.ControlPlane.Config.SystemReservedMemory
 	}
+	cfg.NodeLabels = spec.ControlPlane.Config.NodeLabels
 	if cfg.Infra == nil {
 		return nil, fmt.Errorf("CAPD control plane config skeleton is missing infra.machineTemplate")
 	}
@@ -682,6 +685,7 @@ func buildNicoVMSControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControl
 		},
 		SystemReservedMemory: systemReserved,
 		TeleportEnabled:      &teleportDisabled,
+		NodeLabels:           cp.NodeLabels,
 	}, nil
 }
 

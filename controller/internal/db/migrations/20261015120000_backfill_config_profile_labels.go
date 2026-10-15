@@ -25,6 +25,8 @@ const (
 	// and the API rejects it as a node label. Storing it would look like it is owned by the node pool,
 	// when it is not
 	controlPlaneRoleLabel = "node-role.kubernetes.io/control-plane"
+	// backfillLabelsMigration identifies this migration in its logs.
+	backfillLabelsMigration = "20261015120000_backfill_config_profile_labels"
 )
 
 // Copy config-profile labels into node_pools.node_labels and into each control-plane
@@ -54,21 +56,29 @@ func init() {
 			if err != nil {
 				return err
 			}
+			if len(profileLabels) == 0 {
+				slog.Info("config profile label backfill: no config profiles referenced, nothing to backfill",
+					"migration", backfillLabelsMigration)
+			}
 			for _, profile := range slices.Sorted(maps.Keys(profileLabels)) {
+				if len(profileLabels[profile]) == 0 {
+					continue
+				}
 				labels, err := json.Marshal(profileLabels[profile])
 				if err != nil {
 					return fmt.Errorf("encoding labels for config profile %q: %w", profile, err)
 				}
 				// For a duplicate key, jsonb a || b keeps b's value, so profile labels win.
-				if _, err := tx.ExecContext(ctx, `
+				poolResult, err := tx.ExecContext(ctx, `
 					UPDATE node_pools
 					SET node_labels = node_labels || ?::jsonb
 					WHERE nico->>'config_profile' = ?`,
 					string(labels), profile,
-				); err != nil {
+				)
+				if err != nil {
 					return fmt.Errorf("backfilling node pool labels for config profile %q: %w", profile, err)
 				}
-				if _, err := tx.ExecContext(ctx, `
+				controlPlaneResult, err := tx.ExecContext(ctx, `
 					UPDATE control_plane_configurations
 					SET config = jsonb_set(
 						config,
@@ -77,9 +87,24 @@ func init() {
 					)
 					WHERE config->'nico'->>'config_profile' = ?`,
 					string(labels), profile,
-				); err != nil {
+				)
+				if err != nil {
 					return fmt.Errorf("backfilling control-plane configuration labels for config profile %q: %w", profile, err)
 				}
+				poolRows, err := poolResult.RowsAffected()
+				if err != nil {
+					return fmt.Errorf("counting node pools backfilled for config profile %q: %w", profile, err)
+				}
+				cpRows, err := controlPlaneResult.RowsAffected()
+				if err != nil {
+					return fmt.Errorf("counting control-plane configurations backfilled for config profile %q: %w", profile, err)
+				}
+				slog.Info("config profile label backfill: stored config profile labels",
+					"migration", backfillLabelsMigration,
+					"configProfile", profile,
+					"labels", profileLabels[profile],
+					"nodePoolsUpdatedCount", poolRows,
+					"controlPlaneConfigurationsUpdatedCount", cpRows)
 			}
 			return nil
 		})
@@ -111,14 +136,14 @@ func loadConfigProfileLabels(profilesDir string, profiles []string) (map[string]
 		return map[string]map[string]string{}, nil
 	}
 	if profilesDir == "" {
-		slog.Warn("config profiles are referenced but profilesDir is not set, backfilling no profile labels",
-			"configProfiles", profiles)
+		slog.Warn("config profile label backfill: config profiles are referenced but profilesDir is not set, backfilling no profile labels",
+			"migration", backfillLabelsMigration, "configProfiles", profiles)
 		return map[string]map[string]string{}, nil
 	}
 	configProfilesDir := filepath.Join(profilesDir, "configProfiles")
 	if _, err := os.Stat(configProfilesDir); errors.Is(err, os.ErrNotExist) {
-		slog.Warn("config profiles are referenced but the config profiles directory does not exist, backfilling no profile labels",
-			"configProfilesDir", configProfilesDir, "configProfiles", profiles)
+		slog.Warn("config profile label backfill: config profiles are referenced but the config profiles directory does not exist, backfilling no profile labels",
+			"migration", backfillLabelsMigration, "configProfilesDir", configProfilesDir, "configProfiles", profiles)
 		return map[string]map[string]string{}, nil
 	} else if err != nil {
 		return nil, fmt.Errorf("reading config profiles directory: %w", err)
@@ -132,7 +157,8 @@ func loadConfigProfileLabels(profilesDir string, profiles []string) (map[string]
 		}
 		if !found {
 			// The profile file is missing in profiles dir, it is considered retired and has no labels to store, similar to provisioning workflow.
-			slog.Warn("config profile file not found, backfilling no labels for it (profile retired)", "configProfile", profile)
+			slog.Warn("config profile label backfill: config profile file not found, backfilling no labels for it (profile retired)",
+				"migration", backfillLabelsMigration, "configProfile", profile)
 		}
 		profileLabels[profile] = labels
 	}
