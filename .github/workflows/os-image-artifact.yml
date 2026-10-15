@@ -56,7 +56,7 @@ name: OS Image Artifact
 # A bare vX.Y.Z-beta.N tag only triggers the run. It bakes that commit on the
 # golden path only -- Ubuntu 24.04, non-FDE, amd64 and arm64 -- and versions it
 # by the os-image/v* describe, like any other build of it: GHCR gets
-# sha-<commit> and the describe version, NVCR and the non-prod S3 path get the
+# sha-<commit> and the describe version, NVCR and the prod S3 path get the
 # describe version. The beta tag name is not published, and there is no Release.
 #
 # Distinct from image.yml, which compiles controller Dockerfiles and pushes
@@ -1014,7 +1014,10 @@ jobs:
        github.event_name == 'workflow_dispatch')
     name: Publish to S3 (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }}, ${{ matrix.variant }})
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/os-image/') && 's3-publish' || 's3-publish-non-prod' }}
+    # Pushed os-image/v* and beta tags both publish to prod, where qualification
+    # reads a beta from, so s3-publish's deployment policy must admit both. A
+    # manual run stays on non-prod whatever ref it names.
+    environment: ${{ github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/os-image/') || (startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.'))) && 's3-publish' || 's3-publish-non-prod' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
