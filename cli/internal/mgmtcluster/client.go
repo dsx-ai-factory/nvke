@@ -20,7 +20,7 @@ import (
 const (
 	// DefaultSecretsNamespace is the management-cluster namespace where the
 	// tenantaccess controller publishes per-cluster kubeconfig Secrets, unless
-	// the site renamed it (the controller chart's nkeSystemNamespace.name).
+	// the site renamed it (the controller chart's nvkeSystemNamespace.name).
 	DefaultSecretsNamespace = "nke-system"
 
 	// adminKubeconfigSecretSuffix names the Secret that holds the

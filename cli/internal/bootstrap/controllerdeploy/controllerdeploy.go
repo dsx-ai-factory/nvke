@@ -64,7 +64,7 @@ const (
 
 	// tenantSecretsNamespace is where the controller publishes each cluster's kubeconfig
 	// and where it puts the cluster's CAPI objects. It is the controller chart's
-	// default nkeSystemNamespace.name. The bootstrap installs the chart with
+	// default nvkeSystemNamespace.name. The bootstrap installs the chart with
 	// default values, so the namespace is a constant here; a site that renames it
 	// does so after bootstrap, and reads the Secrets with 'nvkectl get kubeconfig
 	// --namespace'.

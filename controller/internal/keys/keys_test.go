@@ -82,7 +82,28 @@ func TestValidate(t *testing.T) {
 	t.Parallel()
 
 	require.NoError(t, keys.Validate("", ""))
-	require.NoError(t, keys.Validate("nvke.example.com", "nvke-system"))
+	require.NoError(t, keys.Validate(keys.LegacyDomain, ""))
+	require.NoError(t, keys.Validate(keys.NVKEDomain, "nvke-system"))
 	require.Error(t, keys.Validate("Not_A_Domain/", ""))
 	require.Error(t, keys.Validate("", "Not.A.Namespace"))
+
+	// A syntactically valid domain outside the supported pair is rejected
+	// rather than silently splitting the fleet: dual-read only ever looks for
+	// LegacyDomain, and CAPNICo can only write these same two, so a third
+	// domain is a key nothing else writes and nothing else reads.
+	err := keys.Validate("nvke.example.com", "")
+	require.ErrorContains(t, err, "unsupported")
+	require.ErrorContains(t, err, keys.NVKEDomain)
+}
+
+// The keys themselves stay domain-generic: Validate constrains what an operator
+// may configure, not what the package can build. Tests elsewhere construct
+// keys.New with an arbitrary domain to prove no call site hardcodes NVKEDomain.
+func TestNewAcceptsAnyDomainIndependentlyOfValidate(t *testing.T) {
+	t.Parallel()
+
+	k := keys.New("nvke.example.com", "")
+	require.Equal(t, "nvke.example.com/machine-id", k.MachineID.String())
+	require.Equal(t, keys.LegacyDomain+"/machine-id", k.MachineID.Legacy())
+	require.Error(t, keys.Validate("nvke.example.com", ""))
 }

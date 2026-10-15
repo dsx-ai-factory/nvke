@@ -170,10 +170,13 @@ identity:
   # controller owns, and the value the tenant Secret reconciler filters on.
   managedByLabelValue: "cloud-workflow-engine"
   # -- Key domain of the labels, annotations, taints and node conditions the
-  # controller writes. Empty means nke.nvidia.com. Objects that still carry
+  # controller writes. Only "" (meaning nke.nvidia.com) and nvke.nvidia.com are
+  # accepted; any other value fails startup. Objects that still carry
   # nke.nvidia.com keys are read as well, so changing this relabels nothing by
-  # itself. Pass the same value to capnico as --topology-label-domain so it
-  # writes the matching instance labels.
+  # itself. Setting nvke.nvidia.com needs capnico moved with it: take a capnico
+  # image that writes the instance labels it owns under the same domain, and
+  # repoint --reboot-annotation and --repair-annotation at that domain too.
+  # A mismatch is silent: reboot and repair requests are simply ignored.
   labelDomain: ""
 
 # nkeSystemNamespace is the older name for nvkeSystemNamespace. It is absent

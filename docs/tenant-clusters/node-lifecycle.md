@@ -51,16 +51,22 @@ Auto-mode gradually replaces worker nodes in deprecated NodeSets. The controller
 
 ## Label Domain
 
-The labels, annotations, taints, and node conditions the controller reads and writes (`reboot`, `terminate`, `NeedsRecycle`, `machine-health-issue`, `provisioning`, and the rest) live under the `nke.nvidia.com` key domain. A site that needs another domain sets `identity.labelDomain` in the controller chart. Left empty, it is `nke.nvidia.com`, and nothing changes.
+The labels, annotations, taints, and node conditions the controller reads and writes (`reboot`, `terminate`, `NeedsRecycle`, `machine-health-issue`, `provisioning`, and the rest) live under the `nke.nvidia.com` key domain. A site moving to the NVKE domain sets `identity.labelDomain` in the controller chart. Left empty, it is `nke.nvidia.com`, and nothing changes.
+
+Only two values are accepted: empty (meaning `nke.nvidia.com`) and `nvke.nvidia.com`. Anything else fails startup rather than being taken literally, because nothing can read a third domain — the dual-read below always looks for `nke.nvidia.com`, and capnico only writes these same two.
 
 Both domains are read. A node that carries `nke.nvidia.com/reboot` still triggers a reboot after the domain is changed, and a request raised under either domain is seen. Writes go to the configured domain, and a label or taint the controller clears is cleared in both forms. Nothing has to be relabeled when the domain changes.
 
 Two things the controller does not do for you:
 
 - **Tooling that raises requests.** [NVSentinel](https://github.com/NVIDIA/NVSentinel) and other break-fix systems keep writing the keys they were configured with. Both domains are read, so they keep working. Move them when you want the configured domain to be the only one in use.
-- **capnico.** It writes the instance labels and watches the reboot and repair annotations under its own flags (`--topology-label-domain`, `--reboot-annotation`, `--repair-annotation`). Set them to the same domain, or the two sides stop agreeing on a key. `--topology-label-domain` needs a capnico release that includes it; `deploy/nico/capnico/capnico.yaml` does not pass it yet.
+- **capnico.** It writes the topology labels on NICo instances and watches the reboot and repair annotations. Move both with the domain, or the two sides stop agreeing on a key:
+  - The five instance topology labels (`machine-id`, `site-id`, `site-name`, `vpc-id`, `vpc-name`) move with the capnico image, which writes them under one domain at a time. NICo caps an instance at ten labels, so there is no room to carry both domains at once. Take a capnico release that writes them under `nvke.nvidia.com`.
+  - `--reboot-annotation` and `--repair-annotation` are separate string flags, defaulting to `nico.nvidia.com/*` and overridden to `nke.nvidia.com/*` in `deploy/nico/capnico/capnico.yaml` and `controller/hack/nico-provider/config/controller-manager.yaml`. A mismatch here is not an error anywhere — every reboot and repair request is silently ignored.
 
-The management namespace (`nke-system` by default) is set with `nkeSystemNamespace.name`. Unlike labels, it is not dual-read: Secrets already in the old namespace are not found in the new one, so an existing site keeps `nke-system`. `nvkectl get kubeconfig --namespace` reads from a renamed one.
+  Neither manifest has been repointed yet.
+
+The management namespace (`nke-system` by default) is set with `nvkeSystemNamespace.name`. Unlike labels, it is not dual-read: Secrets already in the old namespace are not found in the new one, so an existing site keeps `nke-system`. `nvkectl get kubeconfig --namespace` reads from a renamed one.
 
 ## Rebooting a Node
 

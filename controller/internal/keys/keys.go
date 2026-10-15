@@ -6,8 +6,8 @@
 //
 // The domain defaults to LegacyDomain, so an unconfigured install produces
 // exactly the keys it always has. A site that configures another domain writes
-// the new keys but still reads the legacy ones (dual-read): objects labelled
-// before the change keep working, and nothing has to be relabelled in lock
+// the new keys but still reads the legacy ones (dual-read): objects labeled
+// before the change keep working, and nothing has to be relabeled in lock
 // step. Each Key reports both forms; callers write String() and read Get().
 package keys
 
@@ -20,6 +20,10 @@ import (
 const (
 	// LegacyDomain is the key domain every existing site's objects carry.
 	LegacyDomain = "nke.nvidia.com"
+
+	// NVKEDomain is the domain the NVKE rename moves these keys to, and the
+	// only other domain a site may configure. See Validate.
+	NVKEDomain = "nvke.nvidia.com"
 
 	// LegacyManagementNamespace is the management-plane namespace every
 	// existing site uses.
@@ -213,12 +217,23 @@ func New(domain, managementNamespace string) Keys {
 }
 
 // Validate rejects a domain or namespace that Kubernetes would not accept as a
-// key prefix or a namespace name. Empty values are valid: they mean the legacy
-// default.
+// key prefix or a namespace name, and a domain outside the supported set.
+// Empty values are valid: they mean the legacy default.
+//
+// The domain is restricted to LegacyDomain and NVKEDomain because nothing can
+// read a third one. Dual-read is fixed to LegacyDomain (see newKey), and
+// CAPNICo writes the instance labels it owns under these same two domains,
+// selected by the image it runs. Any other value leaves the controller
+// writing keys that CAPNICo never writes and no reader looks for, which is
+// silent rather than noisy: the split only shows up as reboot and repair
+// requests that are quietly ignored.
 func Validate(domain, managementNamespace string) error {
 	if domain != "" {
 		if errs := validation.IsDNS1123Subdomain(domain); len(errs) > 0 {
 			return fmt.Errorf("label domain %q is invalid: %v", domain, errs)
+		}
+		if domain != LegacyDomain && domain != NVKEDomain {
+			return fmt.Errorf("label domain %q is unsupported: use %q or %q, or leave it empty for %[2]q", domain, LegacyDomain, NVKEDomain)
 		}
 	}
 	if managementNamespace != "" {
