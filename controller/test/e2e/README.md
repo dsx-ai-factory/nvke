@@ -448,11 +448,16 @@ backend, not by reading Pod status: a Collector can be Ready and export nothing.
 Kind, plus what only a site wires up: the control plane, controller, Temporal
 and SPIRE metrics and logs, the API server's audit log, a trace of a request the
 spec itself makes to the controller, and the site's name on every signal.
-`siteTelemetry` in `site_controller_test.go` lists the site-specific checks.
+`siteTelemetry` in `site_nktp_test.go` lists the site-specific checks by
+component, one line per expectation.
 
-The checks run concurrently, so the spec takes as long as its slowest check:
-a few minutes when healthy, and at most about twelve when a signal never
-arrives. The failure names every check that did not hold and what it last saw.
+The checks run in two stages, each polling its checks concurrently. First
+every signal has to arrive, within eight minutes. Then the checks that nothing
+bad arrives, which pass trivially on an empty backend, have three minutes to
+hold and must keep holding for one more. The spec therefore takes the slowest
+check of each stage in turn: a few minutes when healthy, and at most about
+twelve when a signal never arrives. The failure names every check that did not
+hold and what it last saw.
 
 Prerequisites: a way to reach the jump host (below), the jump host in
 `FORGE_JUMP_HOST` (read by `environments/forge.yaml`) and `FORGE_API_KEY`.

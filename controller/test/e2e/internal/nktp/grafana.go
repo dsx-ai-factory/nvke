@@ -14,7 +14,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -24,39 +23,45 @@ const (
 	datasourcePrometheus = "prometheus"
 	datasourceLoki       = "loki"
 	datasourceTempo      = "tempo"
-
-	errorExcerpt = 512
 )
 
 // grafana reaches the backend's datasources through Grafana's proxy, so every
-// query speaks the datasource's own API.
+// query speaks the datasource's own API. The proxies are listed once, by
+// datasource type: the UIDs are the backend image's to choose.
 type grafana struct {
-	client *http.Client
-	base   string
-
-	mu sync.Mutex
-	// proxy URL by datasource type, listed on first use: the UIDs are the
-	// backend image's to choose.
+	client  *http.Client
 	proxies map[string]string
 }
 
-func newGrafana(client *http.Client, base string) *grafana {
-	return &grafana{client: client, base: strings.TrimSuffix(base, "/")}
+func newGrafana(ctx context.Context, client *http.Client, base string) (*grafana, error) {
+	base = strings.TrimSuffix(base, "/")
+	var listed []struct {
+		UID  string `json:"uid"`
+		Type string `json:"type"`
+	}
+	if err := getJSON(ctx, client, base+"/api/datasources", &listed); err != nil {
+		return nil, fmt.Errorf("listing Grafana datasources: %w", err)
+	}
+	g := &grafana{client: client, proxies: make(map[string]string, len(listed))}
+	for _, ds := range listed {
+		if _, seen := g.proxies[ds.Type]; !seen {
+			g.proxies[ds.Type] = base + "/api/datasources/proxy/uid/" + url.PathEscape(ds.UID)
+		}
+	}
+	for _, datasource := range []string{datasourcePrometheus, datasourceLoki, datasourceTempo} {
+		if _, ok := g.proxies[datasource]; !ok {
+			return nil, fmt.Errorf("grafana has no %s datasource, only %s", datasource, strings.Join(slices.Sorted(maps.Keys(g.proxies)), ", "))
+		}
+	}
+	return g, nil
 }
 
-func (g *grafana) promQL(ctx context.Context, expr string) (model.Vector, error) {
-	return g.vector(ctx, datasourcePrometheus, "/api/v1/query", expr)
-}
-
-func (g *grafana) logQL(ctx context.Context, expr string) (model.Vector, error) {
-	return g.vector(ctx, datasourceLoki, "/loki/api/v1/query", expr)
-}
-
-// vector runs an instant query; Prometheus and Loki answer in the same format.
-func (g *grafana) vector(ctx context.Context, datasourceType, path, expr string) (model.Vector, error) {
-	proxy, err := g.proxy(ctx, datasourceType)
-	if err != nil {
-		return nil, err
+// vector runs an instant query against Prometheus or Loki, which answer in the
+// same format.
+func (g *grafana) vector(ctx context.Context, datasource, expr string) (model.Vector, error) {
+	path := "/api/v1/query"
+	if datasource == datasourceLoki {
+		path = "/loki/api/v1/query"
 	}
 	var response struct {
 		Data struct {
@@ -64,21 +69,18 @@ func (g *grafana) vector(ctx context.Context, datasourceType, path, expr string)
 			Result     model.Vector `json:"result"`
 		} `json:"data"`
 	}
-	if err := g.getJSON(ctx, proxy+path+"?"+url.Values{"query": {expr}}.Encode(), &response); err != nil {
-		return nil, fmt.Errorf("%s query %s: %w", datasourceType, expr, err)
+	if err := getJSON(ctx, g.client, g.proxies[datasource]+path+"?"+url.Values{"query": {expr}}.Encode(), &response); err != nil {
+		return nil, fmt.Errorf("%s query %s: %w", datasource, expr, err)
 	}
 	if response.Data.ResultType != model.ValVector.String() {
-		return nil, fmt.Errorf("%s query %s returned a %q, not a vector", datasourceType, expr, response.Data.ResultType)
+		return nil, fmt.Errorf("%s query %s returned a %q, not a vector", datasource, expr, response.Data.ResultType)
 	}
 	return response.Data.Result, nil
 }
 
-// traceQL counts the traces a search finds among those started within window.
-func (g *grafana) traceQL(ctx context.Context, query string, window time.Duration) (int, error) {
-	proxy, err := g.proxy(ctx, datasourceTempo)
-	if err != nil {
-		return 0, err
-	}
+// traces counts the traces a TraceQL search finds among those started within
+// window.
+func (g *grafana) traces(ctx context.Context, query string, window time.Duration) (int, error) {
 	now := time.Now()
 	params := url.Values{
 		"q":     {query},
@@ -88,46 +90,19 @@ func (g *grafana) traceQL(ctx context.Context, query string, window time.Duratio
 	var response struct {
 		Traces []json.RawMessage `json:"traces"`
 	}
-	if err := g.getJSON(ctx, proxy+"/api/search?"+params.Encode(), &response); err != nil {
+	if err := getJSON(ctx, g.client, g.proxies[datasourceTempo]+"/api/search?"+params.Encode(), &response); err != nil {
 		return 0, fmt.Errorf("TraceQL %s: %w", query, err)
 	}
 	return len(response.Traces), nil
 }
 
-func (g *grafana) proxy(ctx context.Context, datasourceType string) (string, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.proxies == nil {
-		var listed []struct {
-			UID  string `json:"uid"`
-			Type string `json:"type"`
-		}
-		if err := g.getJSON(ctx, g.base+"/api/datasources", &listed); err != nil {
-			return "", fmt.Errorf("listing Grafana datasources: %w", err)
-		}
-		proxies := make(map[string]string, len(listed))
-		for _, ds := range listed {
-			if _, seen := proxies[ds.Type]; !seen {
-				proxies[ds.Type] = g.base + "/api/datasources/proxy/uid/" + url.PathEscape(ds.UID)
-			}
-		}
-		g.proxies = proxies
-	}
-	proxy, ok := g.proxies[datasourceType]
-	if !ok {
-		return "", fmt.Errorf("grafana has no %s datasource, only %s",
-			datasourceType, strings.Join(slices.Sorted(maps.Keys(g.proxies)), ", "))
-	}
-	return proxy, nil
-}
-
-func (g *grafana) getJSON(ctx context.Context, rawURL string, out any) error {
+func getJSON(ctx context.Context, client *http.Client, rawURL string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
 		return fmt.Errorf("building the request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := g.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -138,18 +113,10 @@ func (g *grafana) getJSON(ctx context.Context, rawURL string, out any) error {
 		return fmt.Errorf("reading the response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, excerpt(body))
+		return fmt.Errorf("HTTP %d: %.512s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	if err := json.Unmarshal(body, out); err != nil {
-		return fmt.Errorf("decoding the response: %w: %s", err, excerpt(body))
+		return fmt.Errorf("decoding the response: %w: %.512s", err, body)
 	}
 	return nil
-}
-
-func excerpt(body []byte) string {
-	text := strings.TrimSpace(string(body))
-	if len(text) > errorExcerpt {
-		return text[:errorExcerpt] + "..."
-	}
-	return text
 }

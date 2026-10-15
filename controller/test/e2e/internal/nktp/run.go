@@ -4,66 +4,37 @@
 package nktp
 
 import (
-	"cmp"
 	"context"
-	"fmt"
+	"slices"
 	"sync"
-	"time"
-
-	"github.com/go-logr/logr"
-	"github.com/onsi/gomega"
 )
 
-// stage selects the checks whose hold matches and gives them one budget, and
-// optionally a window they must then keep holding for.
-type stage struct {
-	name   string
-	hold   bool
-	budget time.Duration
-	window time.Duration
-}
-
-// run runs the stage's checks concurrently and returns an error per check
-// that did not hold, nil for the rest.
-func run(ctx context.Context, log logr.Logger, t *target, checks []Check, s stage) []error {
-	failures := make([]error, len(checks))
+// Failing runs every check once, concurrently, and returns a line per check
+// that did not hold, for a spec to poll: Eventually over Arrive until every
+// signal has shown up, then Eventually and Consistently over Hold, so a
+// failure from a rollout ages out of its window and then has to stay out.
+func (v *Validator) Failing(ctx context.Context, checks []Check) []string {
+	failing := make([]string, len(checks))
 	var wg sync.WaitGroup
 	for i, c := range checks {
-		if c.hold != s.hold {
-			continue
-		}
 		wg.Go(func() {
-			if err := runCheck(ctx, t, s, c); err != nil {
-				failures[i] = fmt.Errorf("%s: %s: %w", s.name, c.name, err)
-				log.Info("NKTP check did not hold", "stage", s.name, "check", c.name, "error", err.Error())
-				return
+			attempt, cancel := context.WithTimeout(ctx, attemptTimeout)
+			defer cancel()
+			if err := c.Probe(attempt); err != nil {
+				failing[i] = c.Name + ": " + err.Error()
 			}
-			log.Info("NKTP check holds", "stage", s.name, "check", c.name)
 		})
 	}
 	wg.Wait()
-	return failures
+	return slices.DeleteFunc(failing, func(line string) bool { return line == "" })
 }
 
-// runCheck returns the probe's own last error rather than Gomega's, which
-// renders an error as a type and struct dump.
-func runCheck(ctx context.Context, t *target, s stage, c Check) error {
-	var lastErr error
-	probe := func(ctx context.Context) error {
-		ctx, cancel := context.WithTimeout(ctx, attemptTimeout)
-		defer cancel()
-		lastErr = c.probe(ctx, t)
-		return lastErr
-	}
-	g := gomega.NewGomega(func(string, ...int) {})
+// Arrive selects the checks that wait for a signal to show up.
+func Arrive(checks []Check) []Check { return withHold(checks, false) }
 
-	budgetCtx, cancel := context.WithTimeout(ctx, s.budget)
-	defer cancel()
-	if !g.Eventually(probe).WithContext(budgetCtx).WithTimeout(s.budget).WithPolling(pollInterval).Should(gomega.Succeed()) {
-		return fmt.Errorf("did not hold within %s: %w", s.budget, cmp.Or(lastErr, budgetCtx.Err()))
-	}
-	if s.window > 0 && !g.Consistently(probe).WithContext(ctx).WithTimeout(s.window).WithPolling(pollInterval).Should(gomega.Succeed()) {
-		return fmt.Errorf("held, then stopped holding within %s: %w", s.window, cmp.Or(lastErr, ctx.Err()))
-	}
-	return nil
+// Hold selects the checks that must keep holding once the signals have arrived.
+func Hold(checks []Check) []Check { return withHold(checks, true) }
+
+func withHold(checks []Check, hold bool) []Check {
+	return slices.DeleteFunc(slices.Clone(checks), func(c Check) bool { return c.Hold != hold })
 }

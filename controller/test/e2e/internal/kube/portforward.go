@@ -518,7 +518,7 @@ func pickReadyPod(pods []corev1.Pod) *corev1.Pod {
 	var first *corev1.Pod
 	for i := range pods {
 		pod := &pods[i]
-		if !PodIsReady(pod) {
+		if !podIsReady(pod) {
 			continue
 		}
 		if first == nil || pod.Name < first.Name {
@@ -528,8 +528,7 @@ func pickReadyPod(pods []corev1.Pod) *corev1.Pod {
 	return first
 }
 
-// PodIsReady reports whether pod is running, Ready and not being deleted.
-func PodIsReady(pod *corev1.Pod) bool {
+func podIsReady(pod *corev1.Pod) bool {
 	if pod.DeletionTimestamp != nil || pod.Status.Phase != corev1.PodRunning {
 		return false
 	}

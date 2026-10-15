@@ -4,22 +4,18 @@
 package nktp
 
 import (
+	"cmp"
 	"context"
-	"crypto/x509"
-	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
@@ -32,133 +28,96 @@ const (
 	probeUser   = 65534
 	stopTimeout = 30 * time.Second
 
-	listLimit = 10
+	statusField = "status"
+	listLimit   = 10
 )
 
-func certificatesResource() schema.GroupVersionResource {
-	return schema.GroupVersionResource{Group: "cert-manager.io", Version: "v1", Resource: "certificates"}
-}
-
-func collectorsResource() schema.GroupVersionResource {
-	return schema.GroupVersionResource{Group: "opentelemetry.io", Version: "v1beta1", Resource: "opentelemetrycollectors"}
-}
-
-func nodeMetricsResource() schema.GroupVersionResource {
-	return schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "nodes"}
-}
-
-// podsReady skips Pods that ran to completion.
-func podsReady(ctx context.Context, t *target) error {
-	pods, err := t.clientset.CoreV1().Pods(chartNamespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("listing Pods in %s: %w", chartNamespace, err)
-	}
-	if len(pods.Items) == 0 {
-		return fmt.Errorf("no Pods in %s", chartNamespace)
-	}
-	var notReady []string
-	for i := range pods.Items {
-		pod := &pods.Items[i]
-		if pod.Status.Phase == corev1.PodSucceeded || kube.PodIsReady(pod) {
-			continue
+// PodsReady holds when every Pod in the chart's namespace is Ready, skipping
+// Pods that ran to completion.
+func (v *Validator) PodsReady() Check {
+	return v.allOf("every Pod in "+chartNamespace+" is Ready", gvr("", "v1", "pods"), chartNamespace, func(pod unstructured.Unstructured) string {
+		phase, _, _ := unstructured.NestedString(pod.Object, statusField, "phase")
+		if phase == string(corev1.PodSucceeded) || (phase == string(corev1.PodRunning) && pod.GetDeletionTimestamp() == nil && conditionTrue(pod, "Ready")) {
+			return ""
 		}
-		notReady = append(notReady, fmt.Sprintf("%s (%s)", pod.Name, pod.Status.Phase))
-	}
-	if len(notReady) > 0 {
-		return fmt.Errorf("%d of %d Pods in %s are not Ready: %s", len(notReady), len(pods.Items), chartNamespace, list(notReady))
-	}
-	return nil
+		return phase
+	})
 }
 
-func certificatesReady(ctx context.Context, t *target) error {
-	certificates, err := t.dynamic.Resource(certificatesResource()).Namespace(chartNamespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("listing certificates in %s: %w", chartNamespace, err)
-	}
-	if len(certificates.Items) == 0 {
-		return fmt.Errorf("no certificates in %s", chartNamespace)
-	}
-	var notReady []string
-	for i := range certificates.Items {
-		if !conditionTrue(&certificates.Items[i], "Ready") {
-			notReady = append(notReady, certificates.Items[i].GetName())
+// CertificatesReady holds when cert-manager has issued every certificate in
+// the chart's namespace.
+func (v *Validator) CertificatesReady() Check {
+	return v.allOf("every certificate in "+chartNamespace+" is Ready", gvr("cert-manager.io", "v1", "certificates"), chartNamespace,
+		func(certificate unstructured.Unstructured) string {
+			if conditionTrue(certificate, "Ready") {
+				return ""
+			}
+			return "not Ready"
+		})
+}
+
+// HPAsReport fails on an HPA with no current metrics: metrics.k8s.io is
+// served but empty for it, so it cannot scale.
+func (v *Validator) HPAsReport() Check {
+	return v.allOf("every HPA in "+chartNamespace+" reports metrics", gvr("autoscaling", "v2", "horizontalpodautoscalers"), chartNamespace,
+		func(hpa unstructured.Unstructured) string {
+			if metrics, _, _ := unstructured.NestedSlice(hpa.Object, statusField, "currentMetrics"); len(metrics) > 0 {
+				return ""
+			}
+			return "no current metrics"
+		})
+}
+
+// NodeMetricsServed holds when metrics-server lists node metrics.
+func (v *Validator) NodeMetricsServed() Check {
+	return v.allOf("metrics-server serves node metrics", gvr("metrics.k8s.io", "v1beta1", "nodes"), "", func(unstructured.Unstructured) string { return "" })
+}
+
+// allOf lists the resource and holds when there is at least one and failing
+// returns "" for each. Otherwise it names the rest with failing's reasons.
+func (v *Validator) allOf(name string, resource schema.GroupVersionResource, namespace string, failing func(unstructured.Unstructured) string) Check {
+	return Check{Name: name, Probe: func(ctx context.Context) error {
+		items, err := v.list(ctx, resource, namespace)
+		if err != nil {
+			return err
 		}
-	}
-	if len(notReady) > 0 {
-		return fmt.Errorf("%d of %d certificates in %s are not Ready: %s", len(notReady), len(certificates.Items), chartNamespace, list(notReady))
-	}
-	return nil
+		var failed []string
+		for _, item := range items {
+			if reason := failing(item); reason != "" {
+				failed = append(failed, item.GetName()+" ("+reason+")")
+			}
+		}
+		if len(failed) > 0 {
+			return fmt.Errorf("%d of %d %s: %s", len(failed), len(items), resource.Resource, truncated(failed))
+		}
+		return nil
+	}}
 }
 
-func conditionTrue(object *unstructured.Unstructured, conditionType string) bool {
-	conditions, _, _ := unstructured.NestedSlice(object.Object, "status", "conditions")
+// list fails on an empty list: no check expects one.
+func (v *Validator) list(ctx context.Context, resource schema.GroupVersionResource, namespace string) ([]unstructured.Unstructured, error) {
+	listed, err := v.dynamic.Resource(resource).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("listing %s: %w", resource.Resource, err)
+	}
+	if len(listed.Items) == 0 {
+		return nil, fmt.Errorf("no %s in %s", resource.Resource, cmp.Or(namespace, "the cluster"))
+	}
+	return listed.Items, nil
+}
+
+func gvr(group, version, resource string) schema.GroupVersionResource {
+	return schema.GroupVersionResource{Group: group, Version: version, Resource: resource}
+}
+
+func conditionTrue(object unstructured.Unstructured, conditionType string) bool {
+	conditions, _, _ := unstructured.NestedSlice(object.Object, statusField, "conditions")
 	for _, raw := range conditions {
-		condition, ok := raw.(map[string]any)
-		if ok && condition["type"] == conditionType {
-			return condition["status"] == string(metav1.ConditionTrue)
+		if condition, ok := raw.(map[string]any); ok && condition["type"] == conditionType {
+			return condition[statusField] == string(metav1.ConditionTrue)
 		}
 	}
 	return false
-}
-
-func collectorNames(ctx context.Context, t *target) ([]string, error) {
-	collectors, err := t.dynamic.Resource(collectorsResource()).Namespace(chartNamespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("listing OpenTelemetryCollectors in %s: %w", chartNamespace, err)
-	}
-	names := make([]string, 0, len(collectors.Items))
-	for i := range collectors.Items {
-		names = append(names, collectors.Items[i].GetName())
-	}
-	slices.Sort(names)
-	return names, nil
-}
-
-// hpasReport fails on an HPA with no current metrics: metrics.k8s.io is
-// served but empty for it, so it cannot scale.
-func hpasReport(ctx context.Context, t *target) error {
-	hpas, err := t.clientset.AutoscalingV2().HorizontalPodAutoscalers(chartNamespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("listing HorizontalPodAutoscalers in %s: %w", chartNamespace, err)
-	}
-	if len(hpas.Items) == 0 {
-		return fmt.Errorf("no HorizontalPodAutoscalers in %s", chartNamespace)
-	}
-	var blind []string
-	for i := range hpas.Items {
-		if len(hpas.Items[i].Status.CurrentMetrics) == 0 {
-			blind = append(blind, hpas.Items[i].Name)
-		}
-	}
-	if len(blind) > 0 {
-		return fmt.Errorf("%d of %d HorizontalPodAutoscalers in %s report no current metrics: %s", len(blind), len(hpas.Items), chartNamespace, list(blind))
-	}
-	return nil
-}
-
-func nodeMetricsServed(ctx context.Context, t *target) error {
-	nodes, err := t.dynamic.Resource(nodeMetricsResource()).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("listing node metrics: %w", err)
-	}
-	if len(nodes.Items) == 0 {
-		return errors.New("metrics.k8s.io lists no node metrics")
-	}
-	return nil
-}
-
-func internalCA(ctx context.Context, clientset kubernetes.Interface, namespace, secret string) (*x509.CertPool, error) {
-	s, err := clientset.CoreV1().Secrets(namespace).Get(ctx, secret, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("reading the internal CA from Secret %s/%s: %w", namespace, secret, err)
-	}
-	pool := x509.NewCertPool()
-	for _, key := range []string{corev1.ServiceAccountRootCAKey, corev1.TLSCertKey} {
-		if pool.AppendCertsFromPEM(s.Data[key]) {
-			return pool, nil
-		}
-	}
-	return nil, fmt.Errorf("secret %s/%s holds no CA certificate under %s or %s", namespace, secret, corev1.ServiceAccountRootCAKey, corev1.TLSCertKey)
 }
 
 // redactionProbe is a Pod outside NKTP that logs a credential, which the node
@@ -171,19 +130,14 @@ type redactionProbe struct {
 
 // startRedactionProbe logs the line every few seconds rather than once, so a
 // Collector that starts reading late still sees one.
-func (t *target) startRedactionProbe(ctx context.Context, log logr.Logger) error {
-	t.redaction = redactionProbe{pod: probeName + "-" + uuid.NewString(), secret: "e2e-" + uuid.NewString()}
-	line := fmt.Sprintf("%s Authorization: Bearer %s", t.redaction.pod, t.redaction.secret)
+func (v *Validator) startRedactionProbe(ctx context.Context) error {
+	v.probe = redactionProbe{pod: probeName + "-" + uuid.NewString(), secret: "e2e-" + uuid.NewString()}
+	line := fmt.Sprintf("%s Authorization: Bearer %s", v.probe.pod, v.probe.secret)
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      t.redaction.pod,
-			Namespace: probeNamespace,
-			Labels:    map[string]string{"app.kubernetes.io/name": probeName},
-		},
+		ObjectMeta: metav1.ObjectMeta{Name: v.probe.pod, Namespace: probeNamespace, Labels: map[string]string{"app.kubernetes.io/name": probeName}},
 		Spec: corev1.PodSpec{
-			RestartPolicy:                 corev1.RestartPolicyNever,
-			TerminationGracePeriodSeconds: ptr.To[int64](0),
-			AutomountServiceAccountToken:  ptr.To(false),
+			RestartPolicy:                corev1.RestartPolicyNever,
+			AutomountServiceAccountToken: ptr.To(false),
 			SecurityContext: &corev1.PodSecurityContext{
 				RunAsNonRoot:   ptr.To(true),
 				RunAsUser:      ptr.To[int64](probeUser),
@@ -200,24 +154,24 @@ func (t *target) startRedactionProbe(ctx context.Context, log logr.Logger) error
 			}},
 		},
 	}
-	if _, err := t.clientset.CoreV1().Pods(probeNamespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
+	if _, err := v.clientset.CoreV1().Pods(probeNamespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
 		return fmt.Errorf("starting the NKTP redaction probe %s/%s: %w", probeNamespace, pod.Name, err)
 	}
-	log.Info("started the NKTP redaction probe", "pod", probeNamespace+"/"+pod.Name)
+	v.log.Info("started the NKTP redaction probe", "pod", probeNamespace+"/"+pod.Name)
 	return nil
 }
 
 // stopRedactionProbe runs after the checks, often on an expired context.
-func (t *target) stopRedactionProbe(ctx context.Context, log logr.Logger) {
+func (v *Validator) stopRedactionProbe(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stopTimeout)
 	defer cancel()
-	err := t.clientset.CoreV1().Pods(probeNamespace).Delete(ctx, t.redaction.pod, metav1.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)})
+	err := v.clientset.CoreV1().Pods(probeNamespace).Delete(ctx, v.probe.pod, metav1.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)})
 	if err != nil && !apierrors.IsNotFound(err) {
-		log.Error(err, "could not remove the NKTP redaction probe", "pod", probeNamespace+"/"+t.redaction.pod)
+		v.log.Error(err, "could not remove the NKTP redaction probe", "pod", probeNamespace+"/"+v.probe.pod)
 	}
 }
 
-func list(names []string) string {
+func truncated(names []string) string {
 	if len(names) <= listLimit {
 		return strings.Join(names, ", ")
 	}

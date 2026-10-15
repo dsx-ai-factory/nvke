@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -25,7 +24,6 @@ import (
 	"k8s.io/client-go/discovery"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/environment"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/forge"
@@ -290,8 +288,19 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			// This spec's own request, so a trace the install left cannot pass.
 			traceID, err := site.ControllerTraceID(ctx, cluster.Kubeconfig)
 			Expect(err).NotTo(HaveOccurred(), "the controller should trace a request")
-			Expect(nktp.Validate(ctx, restConfig, spec.Name, siteTelemetry(traceID), GinkgoLogr)).To(Succeed(),
-				"NKTP should deliver the site's metrics, logs and traces")
+			v, err := nktp.New(ctx, restConfig, spec.Name, GinkgoLogr)
+			Expect(err).NotTo(HaveOccurred(), "the NKTP backend should be reachable")
+			DeferCleanup(v.Close)
+			checks := siteTelemetry(v, traceID)
+			// Signals get eight minutes to show up. The "nothing bad" checks then
+			// get three to hold, so failures from a rollout age out of their
+			// window, and must keep holding for one more.
+			Eventually(v.Failing).WithContext(ctx).WithArguments(nktp.Arrive(checks)).WithTimeout(8*time.Minute).WithPolling(10*time.Second).
+				Should(BeEmpty(), "NKTP should deliver the site's metrics, logs and traces")
+			Eventually(v.Failing).WithContext(ctx).WithArguments(nktp.Hold(checks)).WithTimeout(3*time.Minute).WithPolling(10*time.Second).
+				Should(BeEmpty(), "NKTP should deliver nothing it must not")
+			Consistently(v.Failing).WithContext(ctx).WithArguments(nktp.Hold(checks)).WithTimeout(time.Minute).WithPolling(10*time.Second).
+				Should(BeEmpty(), "NKTP should keep delivering nothing it must not")
 		}, NodeTimeout(20*time.Minute))
 	}
 
@@ -691,7 +700,7 @@ func siteSpec(cfg config.Config, name string) (site.Spec, error) {
 		return site.Spec{}, err
 	}
 	images := cfg.Site.Images
-	controllerImage := site.Image{Repository: images.Controller.Repository, Tag: versions[versionController]}
+	controller := site.Image{Repository: images.Controller.Repository, Tag: versions[versionController]}
 	provisioned := site.Image{Repository: images.CAPIProvisioned.Repository, Tag: versions[versionCAPIProvisioned]}
 
 	return site.Spec{
@@ -704,7 +713,7 @@ func siteSpec(cfg config.Config, name string) (site.Spec, error) {
 		KubernetesVersion:    versions[versionKube],
 		CNI:                  siteCNI,
 		DisableMTLS:          siteDisableMTLS,
-		ControllerImage:      controllerImage.Ref(),
+		ControllerImage:      controller.Ref(),
 		CAPIProvisionedImage: provisioned.Ref(),
 	}, nil
 }
@@ -754,7 +763,7 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	if err != nil {
 		return site.Stack{}, nil, err
 	}
-	controllerImage := site.Image{Repository: cfg.Site.Images.Controller.Repository, Tag: version}
+	controller := site.Image{Repository: cfg.Site.Images.Controller.Repository, Tag: version}
 	repo, err := cloneRoot()
 	if err != nil {
 		return site.Stack{}, nil, err
@@ -786,10 +795,10 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 		return site.Stack{}, nil, err
 	}
 	unameArch := map[string]string{"amd64": "x86_64", "arm64": "arm64"}[arch]
-	GinkgoLogr.Info("deploying the stack", "controller", controllerImage.Ref(), "profiles", profiles.Ref())
+	GinkgoLogr.Info("deploying the stack", "controller", controller.Ref(), "profiles", profiles.Ref())
 	return site.Stack{
 		Assets:     assets,
-		Controller: controllerImage,
+		Controller: controller,
 		Profiles:   profiles,
 		Provider:   deployConfig,
 		// The login baked into tenant nodes' user-data. Nothing outside the
@@ -800,34 +809,6 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 		DatabasePassword: dbPassword,
 		Arch:             unameArch,
 	}, []string{os.Getenv(envForgeAPIKey), tenantPassword, dbPassword}, nil
-}
-
-// siteTelemetry is what NKTP on a site built from deploy/nico delivers beyond
-// the baseline. Each comment names the file under deploy/nico that wires it.
-func siteTelemetry(traceID string) []nktp.Check {
-	return slices.Concat(
-		nktp.Baseline(),
-		nktp.ScrapeJobsUp(
-			// kubeadm serves etcd's metrics on 0.0.0.0:2381, where Kind binds 127.0.0.1.
-			"kube-etcd",
-			// controller/overlay.yaml
-			controller.Service(),
-			// temporal/overlay.yaml
-			"temporal-frontend-headless", "temporal-history-headless", "temporal-matching-headless", "temporal-worker-headless",
-			// spire/overlay.yaml
-			"spire-server/spire-server", "spire-system/spire-agent",
-		),
-		nktp.MetricsArrive("etcd_server_has_leader", "nvke_controller_.+"),
-		nktp.PodLogsArrive(controller.Namespace(), "temporal", "spire-server", "spire-system"),
-		[]nktp.Check{
-			// nktp/values.yaml turns off every monitor a site cannot reach.
-			nktp.NoTargetDown(),
-			// nktp/values.yaml reads the audit log from the path kubeadm writes it to.
-			nktp.AuditLogArrives(),
-			// controller/overlay.yaml
-			nktp.TraceArrives(traceID, "nvke-controller"),
-		},
-	)
 }
 
 // apiServerReachable reports whether the forwarded kubeconfig reaches the

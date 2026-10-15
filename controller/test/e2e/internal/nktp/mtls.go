@@ -11,11 +11,57 @@ import (
 	"fmt"
 	"net"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
 const (
+	otlpGRPCPort   = "4317"
 	refusalTimeout = 15 * time.Second
 )
+
+// GatewayRefusesAnonymous passes only when the gateway refuses a
+// certificate-less client with a TLS alert. That leaves client-go logging
+// "error forwarding port 4317 ... broken pipe": the gateway hanging up afterwards.
+func (v *Validator) GatewayRefusesAnonymous(gateway string) Check {
+	service := chartRelease + "-" + gateway + "-collector"
+	return Check{Name: service + " refuses a client without a certificate", Probe: func(ctx context.Context) error {
+		roots, err := v.internalCA(ctx)
+		if err != nil {
+			return err
+		}
+		forwarder, err := kube.NewServiceForwarder(v.restConfig, chartNamespace, service, otlpGRPCPort)
+		if err != nil {
+			return err
+		}
+		defer forwarder.Close()
+		conn, err := forwarder.Dial(ctx)
+		if err != nil {
+			return err
+		}
+		return refusesAnonymousClient(ctx, conn, service+"."+chartNamespace+".svc", roots)
+	}}
+}
+
+// internalCA is the CA the gateways present, from the Secret cert-manager
+// issued it into.
+func (v *Validator) internalCA(ctx context.Context) (*x509.CertPool, error) {
+	name := chartRelease + "-internal-ca"
+	secret, err := v.clientset.CoreV1().Secrets(chartNamespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("reading the internal CA from Secret %s/%s: %w", chartNamespace, name, err)
+	}
+	pool := x509.NewCertPool()
+	for _, key := range []string{corev1.ServiceAccountRootCAKey, corev1.TLSCertKey} {
+		if pool.AppendCertsFromPEM(secret.Data[key]) {
+			return pool, nil
+		}
+	}
+	return nil, fmt.Errorf("secret %s/%s holds no CA certificate under %s or %s", chartNamespace, name, corev1.ServiceAccountRootCAKey, corev1.TLSCertKey)
+}
 
 // refusesAnonymousClient holds when the server on conn proves itself against
 // roots and then refuses a certificate-less client with a TLS alert. Only the
