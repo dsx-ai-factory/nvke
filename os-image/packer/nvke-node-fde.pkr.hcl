@@ -157,7 +157,7 @@ build {
   }
 
   provisioner "shell" {
-    environment_vars = ["ROOT_FS_LABEL=${var.root_fs_label}"]
+    environment_vars = ["ROOT_FS_LABEL=${var.root_fs_label}", "UBUNTU_SERIES=${var.ubuntu_series}"]
     script           = "${local.project_root}/scripts/provision.sh"
   }
 

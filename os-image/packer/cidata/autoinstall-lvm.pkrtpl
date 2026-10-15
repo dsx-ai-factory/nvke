@@ -91,8 +91,8 @@ autoinstall:
     - iptables
     - conntrack
 %{ if ubuntu_series == "26.04" ~}
-    # Kata Containers' hardened guest rootfs is an erofs image under dm-verity;
-    # it needs mkfs.erofs >= 1.8.2, which only 26.04 ships (24.04 has 1.7).
+    # containerd's erofs snapshotter (Kata) converts image layers with
+    # mkfs.erofs >= 1.8.2, which only 26.04 ships (24.04 has 1.7).
     - erofs-utils
 %{ endif ~}
     - socat
