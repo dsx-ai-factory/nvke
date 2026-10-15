@@ -708,7 +708,7 @@ type NicoControlPlaneProvider struct {
 // NicoControlPlaneProviderCreate NICo settings for control-plane nodes at creation. release is required,
 // and exactly one of subnetIDs and vpcPrefixIDs is required.
 type NicoControlPlaneProviderCreate struct {
-	// ConfigProfile Deprecated: Config profile name for the control-plane nodes. Optional; when omitted the nodes run no config profile hooks or labels.
+	// ConfigProfile Deprecated: Config profile name for the control-plane nodes. Optional; when omitted the nodes run no config profile hooks.
 	ConfigProfile string `json:"configProfile,omitempty"`
 
 	// InstanceTypePreference Ordered list of acceptable NICo instance types; index 0 is the highest priority.
@@ -752,7 +752,7 @@ type NicoControlPlaneProviderUpdate struct {
 // NicoNodePoolProvider NICo settings for a node pool. instanceTypeID and release are required,
 // and exactly one of subnetIDs and vpcPrefixIDs is required.
 type NicoNodePoolProvider struct {
-	// ConfigProfile Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
+	// ConfigProfile Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks.
 	ConfigProfile string `json:"configProfile,omitempty"`
 
 	// DiskSelectionStrategy Which disk the OS is installed on. Default smallest.
@@ -816,7 +816,7 @@ type NicoNodeProvider struct {
 
 // NicoNodeSetProvider NICo settings in a node set (read-only snapshot).
 type NicoNodeSetProvider struct {
-	// ConfigProfile Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
+	// ConfigProfile Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks.
 	ConfigProfile string `json:"configProfile,omitempty"`
 
 	// DiskSelectionStrategy Which disk the OS is installed on. Default smallest.

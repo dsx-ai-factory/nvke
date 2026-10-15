@@ -91,7 +91,7 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
    | `controlPlaneConfig.maxSurge` | `0` | Extra control-plane nodes allowed during a rollout: `0` or `1`. |
    | `controlPlaneConfig.systemReservedMemory` | `16Gi` | Memory the kubelet reserves for system daemons. |
    | `controlPlaneConfig.nodeLabels` | None | Stored with the cluster but not applied to the Kubernetes nodes; see [Preview status and known limitations](../overview/preview-status.md). |
-   | `nico.configProfile` (control plane or node pool) | None | Optional. Without one, the nodes run no config profile hooks or labels. |
+   | `nico.configProfile` (control plane or node pool) | None | Optional. Without one, the nodes run no config profile hooks. |
    | `nodePools[].nodeNamePrefix` | None, required | Node names are `<WORKLOAD_CLUSTER>-<nodeNamePrefix>-<NNNN>` and must fit in 63 characters. |
    | `nodePools[].systemReservedMemory` | `16Gi` | `kubeReservedMemory` defaults to `2Gi`. |
    | `nodePools[].nico.diskSelectionStrategy` | `smallest` | The disk the OS is installed on: `smallest` or `largest`. |

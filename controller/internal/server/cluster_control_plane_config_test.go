@@ -735,7 +735,7 @@ func TestApiCapiControlPlaneProviderFromDB_ExposesOnlyFirstPreference(t *testing
 
 // TestNicoControlPlaneConfigProfileIsOptional proves a nico control plane may
 // omit the config profile on create and may clear it on update. A node with no
-// config profile runs no config-profile hooks or labels.
+// config profile runs no config-profile hooks.
 func TestNicoControlPlaneConfigProfileIsOptional(t *testing.T) {
 	t.Run("create without configProfile is accepted", func(t *testing.T) {
 		err := validateCreateForgeControlPlaneConfigFields(&api.CreateClusterControlPlaneConfig{

@@ -20,7 +20,3 @@ hooks:
 # Kept on the worker so the pre-join reboot path still runs in a lane, one node.
 # The control planes skip it: see nico-vms-cp.yaml.
 preJoinNodeReboot: true
-labels:
-  - nodeGroup=worker
-  - node.kubernetes.io/instance-type=cpu
-  - nodeType=cpu
