@@ -1273,6 +1273,7 @@ jobs:
           IN_OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 }}
           IN_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 }}
           IN_NVKE_VERSION: ${{ inputs.nvke-version }}
+          IN_RESOLUTION: ${{ inputs.resolution }}
           IN_SCOPE: ${{ inputs.scope }}
           IN_DRY_RUN: ${{ inputs.dry-run }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
@@ -1352,6 +1353,7 @@ jobs:
             "stream|STREAM|||"
             "combination|COMBINATION|||"
             "nvke version|NVKE_VERSION|IN_NVKE_VERSION|VAR_NVKE_VERSION|QUALIFY_E2E_NVKE_VERSION"
+            "resolution|CONTROLLER_VERSION_STRATEGY|IN_RESOLUTION||"
             "scope|SCOPE|IN_SCOPE|VAR_SCOPE|QUALIFY_E2E_SCOPE"
             "cpu arch|ARCH|||"
             "gpu model|GPU|||"
