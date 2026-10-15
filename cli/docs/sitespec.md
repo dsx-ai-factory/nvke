@@ -238,6 +238,24 @@ trust anchor in advance. Both files are checked for existence at load, while
 nothing has been touched yet: otherwise a wrong path surfaces minutes later as a
 helm failure naming a temporary file rather than the field that was wrong.
 
+## OIDC providers
+
+`cluster.oidcProviders` is the OpenID Connect (OIDC) configuration of the management cluster's API server. `bootstrap site` applies the list when it creates the management cluster. You cannot change the list after creation. Omit the field to configure no OIDC providers.
+
+A non-empty list requires `cluster.k8sVersion` `1.34.0` or newer and contains at most five providers. Each provider has these fields:
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | yes | Name of this provider. Unique in the list. |
+| `issuerURL` | yes | Issuer URL. An `https` URL, unique in the list. The API server compares it with the token's `iss` claim. |
+| `audiences` | yes | `aud` values the API server accepts. At least one, and none empty. |
+| `usernameClaim` | yes | Claim the API server uses as the username. |
+| `usernamePrefix` | yes | Text the API server puts in front of the username. It must not start with `system:`, `kubeadm:`, `nvke:`, or `nvidia:`. |
+| `groupsClaim` | no | Claim the API server uses as the user's groups. |
+| `groupsPrefix` | no | Text the API server puts in front of each group. The reserved prefixes are the same as for `usernamePrefix`. |
+| `requiredClaims` | no | Map of claim name to the value that claim must hold. |
+| `caBundle` | yes | PEM-encoded certificates the API server trusts for this provider. |
+
 ## etcd encryption at rest
 
 `cluster.etcdEncryption` defaults to `true`. The first control-plane node's
