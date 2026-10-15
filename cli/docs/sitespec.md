@@ -75,7 +75,7 @@ is a file `bootstrap site` accepts.
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
 | `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. See below. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
-| `cluster.oidcProviders` | list | no | OIDC providers for site cluster. Cannot be modified afterwards. Ignored when absent. Rejected when `cluster.k8sVersion` is older than `1.34.0`. Each entry needs `name`, `issuerURL`, `audiences`, `usernameClaim`, `usernamePrefix`, and `caBundle` (inline PEM). Optional: `groupsClaim`, `groupsPrefix`, `requiredClaims`.|
+| `cluster.oidcProviders` | list | no | Fleet-wide OIDC providers. Absent or empty is ignored. See [OIDC providers](#oidc-providers).|
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never defaulted — see below. |
@@ -142,6 +142,8 @@ them from there and they are not repeated in `controllerStack:`.
   node IP.
 - `controlPlaneVIP` is required when `cluster.nodes` contains more than one
   node.
+- A non-empty `cluster.oidcProviders` is checked as described in
+  [OIDC providers](#oidc-providers).
 
 CLI acceptance does not prove bootstrap or network reachability. The controller
 chooses the first control-plane node ready to join, which need not be the first
@@ -237,6 +239,62 @@ nothing outside the cluster has to verify it — and means nodes cannot be given
 trust anchor in advance. Both files are checked for existence at load, while
 nothing has been touched yet: otherwise a wrong path surfaces minutes later as a
 helm failure naming a temporary file rather than the field that was wrong.
+
+## OIDC providers
+
+`cluster.oidcProviders` lists fleet-wide OpenID Connect (OIDC) providers.
+`bootstrap site` passes a non-empty list to the controller chart as
+`oidc.providers` when it installs the `nke-controller` release. The controller
+copies that list onto each workload cluster it creates. The management
+cluster's API server does not read this field.
+
+[Install management-plane services](../../docs/operate/install-management-plane-services.md)
+upgrades that same release. The install does not read `cluster.oidcProviders`,
+and its `helm upgrade --install` does not pass `--reuse-values`. The chart's
+`oidc.providers` defaults to an empty list. Workload clusters are created
+after that install, so pass the providers again with
+`--values-for controller=`, as described in
+[Configure OIDC for workload clusters](../../docs/workload-clusters/oidc.md).
+
+Leave the field unset unless you are passing the same providers on that
+install. There is no environment variable for it.
+
+A non-empty list requires `cluster.k8sVersion` `1.34.0` or newer, and at most
+five entries. Each entry has these fields:
+
+| Field | Required | Notes |
+|---|---|---|
+| `name` | yes | Unique in the list. |
+| `issuerURL` | yes | `https` URL with a host. Unique in the list. |
+| `audiences` | yes | At least one entry. No entry may be empty. |
+| `usernameClaim` | yes | Claim that holds the username. |
+| `usernamePrefix` | yes | Text put in front of every username. |
+| `groupsClaim` | no | Claim that holds the groups. |
+| `groupsPrefix` | no | Text put in front of every group. |
+| `requiredClaims` | no | Map of claim name to the value that claim must hold. |
+| `caBundle` | yes | Inline PEM certificates. A CA bundle is public, so it belongs in the file. |
+
+`usernamePrefix` and `groupsPrefix` must not start with `system:`, `kubeadm:`,
+`nke:`, `nvke:` or `nvidia:`. The site spec has no `discoveryURL` field. Set
+that in the values file on
+[Configure OIDC for workload clusters](../../docs/workload-clusters/oidc.md).
+
+```yaml
+cluster:
+  k8sVersion: "1.34.2"
+  oidcProviders:
+    - name: example-idp
+      issuerURL: https://idp.example.com/realms/example
+      audiences: ["example-nvke"]
+      usernameClaim: email
+      usernamePrefix: "example-idp:"
+      groupsClaim: groups
+      groupsPrefix: "example-idp:"
+      caBundle: |
+        -----BEGIN CERTIFICATE-----
+        ...
+        -----END CERTIFICATE-----
+```
 
 ## etcd encryption at rest
 

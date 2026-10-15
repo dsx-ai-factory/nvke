@@ -30,6 +30,8 @@ NVKE binds Kubernetes roles only to the management plane's own identities. A fle
 
 ## Add fleet-wide providers
 
+Set the providers in the values file below. `bootstrap site` copies a non-empty `cluster.oidcProviders` from the [site spec](../../cli/docs/sitespec.md#oidc-providers) into the controller release it installs. [Install management-plane services](../operate/install-management-plane-services.md) upgrades that release and does not read `cluster.oidcProviders`. Workload clusters are created after that install, so they follow the `oidc.providers` this install leaves in place.
+
 1. Write the providers to a values file named `oidc-values.yaml`, in the directory above the `nvke/` checkout.
 
    ```yaml

@@ -56,7 +56,7 @@ registry:
 | `cluster.nodeAgentPort` | string | no | gRPC port nvke-agent listens on. Defaults to `15005`. Set it only if you passed `--secure-server-port` to the agent. |
 | `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`, which is also the template default. kubelet subtracts it from capacity, so on a node with 16Gi or less nothing is allocatable and the node never reaches `Ready`; set it to fit the hardware. |
-| `cluster.oidcProviders` | list | no | OIDC providers for site cluster. Cannot be modified afterwards. Ignored when absent. Rejected when `cluster.k8sVersion` is older than `1.34.0`. Each entry needs `name`, `issuerURL`, `audiences`, `usernameClaim`, `usernamePrefix`, and `caBundle` (inline PEM). Optional: `groupsClaim`, `groupsPrefix`, `requiredClaims`.|
+| `cluster.oidcProviders` | list | no | Fleet-wide OIDC providers. Absent or empty is ignored. See [OIDC providers](#oidc-providers).|
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never logged or printed. See below. |
@@ -65,6 +65,19 @@ registry:
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Both or neither; both files are checked for existence at load. |
 
 Unknown fields are rejected. A typo in a field name fails the load rather than being silently ignored.
+
+## OIDC providers
+
+`cluster.oidcProviders` is the fleet-wide OpenID Connect (OIDC) provider list.
+`bootstrap site` passes a non-empty list to the controller as `oidc.providers`.
+The management cluster's API server does not read it.
+
+[Install management-plane services](../operate/install-management-plane-services.md)
+upgrades that controller and does not read this field. Pass the providers on
+that install, as described in
+[Configure OIDC for workload clusters](../workload-clusters/oidc.md). The
+[site spec reference](../../cli/docs/sitespec.md#oidc-providers) lists each
+entry's fields and the checks `nvkectl` applies.
 
 ## Environment Variable Overrides
 
