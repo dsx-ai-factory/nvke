@@ -54,9 +54,7 @@ type NodeInputs struct {
 
 	// KubernetesVersion selects the nvke-kubeadm-distro package, e.g. "1.34.2".
 	KubernetesVersion string
-	// CNIVersion selects the nke-cni-ovn-images package, e.g. "1.4.0".
-	// REVERT-WHEN-1600: the name goes back to nvke-cni-ovn-images with the pin
-	// in nico_forge_prekubeadm.tmpl.
+	// CNIVersion selects the nvke-cni-ovn-images package, e.g. "1.4.0".
 	CNIVersion string
 	// AptSuite is the NVKE apt suite the node installs its packages from, one
 	// per Ubuntu release. Empty derives it from ImageURL, which is where the

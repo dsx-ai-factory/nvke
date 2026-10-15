@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package forge
+package provision
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	// defaultNodeUser is the account the OSS os-image releases bake, from
+	// DefaultNodeUser is the account the OSS os-image releases bake, from
 	// os-image/packer/cidata/autoinstall-lvm.pkrtpl. The internal image
 	// pipeline bakes dgxc-admin instead, which is why this is an input
 	// rather than a constant: a run against the wrong one gets no
@@ -20,7 +20,7 @@ const (
 	// Cloud-init must not declare the account either way: a users: block
 	// would shadow the baked one and lock everyone out of the node
 	// bootstrap has to run on.
-	defaultNodeUser = "ubuntu"
+	DefaultNodeUser = "ubuntu"
 )
 
 // HostTools are the programs `nvkectl bootstrap site` needs on the host it
@@ -40,7 +40,7 @@ type HostTools struct {
 	ClusterctlVersion string
 }
 
-func (t HostTools) validate() error {
+func (t HostTools) Validate() error {
 	missing := make([]string, 0, 3)
 	for _, field := range []struct{ name, value string }{
 		{"NerdctlVersion", t.NerdctlVersion},
@@ -57,13 +57,13 @@ func (t HostTools) validate() error {
 	return nil
 }
 
-// userDataInputs is everything the bootstrap node's cloud-init is rendered
+// UserDataInputs is everything the bootstrap node's cloud-init is rendered
 // from.
-type userDataInputs struct {
+type UserDataInputs struct {
 	Hostname      string
 	AuthorizedKey string
 	Arch          string
-	// NodeUser is the account the image bakes. Empty is defaultNodeUser.
+	// NodeUser is the account the image bakes. Empty is DefaultNodeUser.
 	NodeUser string
 	// NodeCommands install the agent stack, shared with tenant nodes so the
 	// package list exists once.
@@ -87,7 +87,7 @@ type cloudConfig struct {
 	RunCmd           []string    `json:"runcmd"`
 }
 
-// renderUserData builds the cloud-init for a node `nvkectl bootstrap site`
+// RenderUserData builds the cloud-init for a node `nvkectl bootstrap site`
 // runs on. It is marshaled rather than templated: its commands are shell,
 // full of quotes and redirections, and YAML written by hand around them is
 // how a boot payload ends up subtly different from what was reviewed.
@@ -95,8 +95,8 @@ type cloudConfig struct {
 // It carries no phone_home block. The instance is created with phone-home
 // disabled, and Forge rewrites that block in a way that leaves cloud-init
 // reporting warnings, which node preflight reads as failure.
-func renderUserData(in userDataInputs) (string, error) {
-	if err := in.Tools.validate(); err != nil {
+func RenderUserData(in UserDataInputs) (string, error) {
+	if err := in.Tools.Validate(); err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(in.AuthorizedKey) == "" {
@@ -107,7 +107,7 @@ func renderUserData(in userDataInputs) (string, error) {
 	}
 	nodeUser := in.NodeUser
 	if strings.TrimSpace(nodeUser) == "" {
-		nodeUser = defaultNodeUser
+		nodeUser = DefaultNodeUser
 	}
 
 	run := make([]string, 0, len(in.NodeCommands)+13)

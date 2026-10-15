@@ -90,7 +90,7 @@ is a file `bootstrap site` accepts.
 | `controllerStack.nico.tokenFile` | string | yes, in `controllerStack` | Path to a file holding the NICo API token. |
 | `controllerStack.tenant.user` | string | yes, in `controllerStack` | Login user rendered into every tenant node's cloud-init. |
 | `controllerStack.tenant.passwordFile` | string | yes, in `controllerStack` | Path to a file holding that user's password. |
-| `controllerStack.images.controller` | string | no | Overrides the controller image; defaults to the release file's `controller` item. |
+| `controllerStack.images.controller` | string | no | Overrides the controller image; defaults to the release file's `controller` item, or without a release to the overlay's pinned image (the newest controller release). |
 | `controllerStack.images.profiles` | string | no | Overrides the profiles content image; defaults to the release file's `profiles` item. |
 | `controllerStack.database.passwordFile` | string | yes, in `controllerStack` | Path to a file holding the Postgres password. The render creates it with a generated password when it does not exist. |
 | `controllerStack.mirror` | string | no | Registry the external images are pulled from instead of upstream, `host[:port][/prefix]`, no scheme. |

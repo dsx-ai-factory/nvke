@@ -40,6 +40,7 @@ import (
 	bootstrapengine "github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/engine"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
@@ -1782,7 +1783,7 @@ func TestControllerImageOrder(t *testing.T) {
 	}
 }
 
-// TestRunBootstrapSiteWarnsAboutOldSettingNames: an old NVKECTL_CWE_* name set
+// TestRunBootstrapSiteWarnsAboutOldSettingNames: an old NKECTL_* name set
 // without its replacement is logged as a warning naming the replacement, before
 // anything else runs; a setting under its new name is not.
 func TestRunBootstrapSiteWarnsAboutOldSettingNames(t *testing.T) {
@@ -1808,5 +1809,90 @@ func TestRunBootstrapSiteWarnsAboutOldSettingNames(t *testing.T) {
 	}
 	if strings.Contains(logged, "HELM_TIMEOUT") {
 		t.Errorf("warned about a setting given under its new name:\n%s", logged)
+	}
+}
+
+// TestRunBootstrapSiteStopsOnRemovedSettings: an NKECTL_CWE_* name, which
+// nvkectl does not read, stops bootstrap site before the site spec is loaded
+// when its replacement is unset, and is only a warning when the replacement is
+// set under either of its names or through its flag.
+func TestRunBootstrapSiteStopsOnRemovedSettings(t *testing.T) {
+	for _, tc := range []struct {
+		desc            string
+		env             map[string]string
+		controllerImage string
+		wantErr         string
+		notInErr        string
+		wantWarning     string
+	}{
+		{
+			desc: "replacements unset",
+			env:  map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned", "NKECTL_CWE_PORT": "30181"},
+			wantErr: "NKECTL_CWE_IMAGE is no longer read; set NVKECTL_CONTROLLER_IMAGE instead; " +
+				"NKECTL_CWE_PORT is no longer read; set NVKECTL_CONTROLLER_PORT instead",
+		},
+		{
+			desc:        "replacement set under its new name",
+			env:         map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned", "NVKECTL_CONTROLLER_IMAGE": "new.example/c:pinned"},
+			wantErr:     "missing.yaml",
+			wantWarning: "NKECTL_CWE_IMAGE is not read; NVKECTL_CONTROLLER_IMAGE is set and is used instead",
+		},
+		{
+			desc:        "replacement set under its NKECTL_ name",
+			env:         map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned", "NKECTL_CONTROLLER_IMAGE": "new.example/c:pinned"},
+			wantErr:     "missing.yaml",
+			wantWarning: "NKECTL_CWE_IMAGE is not read; NVKECTL_CONTROLLER_IMAGE is set and is used instead",
+		},
+		{
+			desc:            "replacement given as --controller-image",
+			env:             map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned"},
+			controllerImage: "flag.example/c:pinned",
+			wantErr:         "missing.yaml",
+			wantWarning:     "NKECTL_CWE_IMAGE is not read; --controller-image is set and is used instead",
+		},
+		{
+			desc:            "one replaced by its flag, one not replaced",
+			env:             map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned", "NKECTL_CWE_PORT": "30181"},
+			controllerImage: "flag.example/c:pinned",
+			wantErr:         "NKECTL_CWE_PORT is no longer read; set NVKECTL_CONTROLLER_PORT instead",
+			notInErr:        "NKECTL_CWE_IMAGE",
+			wantWarning:     "NKECTL_CWE_IMAGE is not read; --controller-image is set and is used instead",
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			for _, name := range controllerdeploy.Settings {
+				t.Setenv(name, "")
+				t.Setenv(envalias.Old(name), "")
+				if suffix, ok := strings.CutPrefix(name, "NVKECTL_CONTROLLER_"); ok {
+					t.Setenv("NKECTL_CWE_"+suffix, "")
+				}
+			}
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+
+			var buf bytes.Buffer
+			prev := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+			t.Cleanup(func() { slog.SetDefault(prev) })
+
+			err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+				siteSpec:        filepath.Join(t.TempDir(), "missing.yaml"),
+				controllerImage: tc.controllerImage,
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("runBootstrapSite error = %v, want it to contain %q", err, tc.wantErr)
+			}
+			if tc.notInErr != "" && strings.Contains(err.Error(), tc.notInErr) {
+				t.Errorf("runBootstrapSite error = %v, want no mention of %s", err, tc.notInErr)
+			}
+			logged := buf.String()
+			if tc.wantWarning == "" && strings.Contains(logged, "NKECTL_CWE_") {
+				t.Errorf("warned instead of stopping:\n%s", logged)
+			}
+			if tc.wantWarning != "" && !strings.Contains(logged, tc.wantWarning) {
+				t.Errorf("no warning %q in:\n%s", tc.wantWarning, logged)
+			}
+		})
 	}
 }

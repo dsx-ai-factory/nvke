@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	forgesdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 )
 
 const (

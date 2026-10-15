@@ -35,8 +35,6 @@ const (
 	nodeAgentPort         = "15005"
 	spireServerAPIAddress = "spire-server.spire-server.svc.cluster.local:443"
 
-	defaultNicoAPIName = "forge"
-
 	// valuesCleanupTimeout bounds removing the rendered values files. Short on
 	// purpose: it is one rm over a session that was answering a moment ago.
 	valuesCleanupTimeout = 2 * time.Minute
@@ -113,6 +111,13 @@ type CAPIProviderConfig interface {
 	// before the deploy stages anything, so a missing credential fails the
 	// run rather than the controller that reads the Secret.
 	Validate() error
+
+	// Credentials is every secret this configuration puts on the node, for
+	// redacting the diagnostics archive. On the interface rather than read off
+	// a concrete type, so a provider added later cannot be forgotten here:
+	// whoever writes the type is the one who knows which of its fields is a
+	// credential, and the archive is uploaded whatever the run did.
+	Credentials() []string
 }
 
 // Nico is where the site's CAPNICo reaches the NICo API.
@@ -123,11 +128,26 @@ type Nico struct {
 	APIName  string `json:"APIName"`
 }
 
-// NewNico is the CAPNICo configuration, with the API name defaulted. The name
-// is the path segment the API is served under and is the same for every site,
-// so a caller states the three values that differ.
-func NewNico(endpoint, orgID, token string) Nico {
-	return Nico{Endpoint: endpoint, OrgID: orgID, Token: token, APIName: defaultNicoAPIName}
+// NewNico is the CAPNICo configuration.
+//
+// The API name is stated rather than defaulted. It is the path segment the API
+// is served under, and it is NOT the same for every site: hosted Forge serves
+// "forge" and a DSX site serves "nico". It was defaulted while Forge was the
+// only substrate, and a default that is right for one of two is worse than no
+// default, because the wrong one fails as a 404 against a URL nothing printed.
+func NewNico(endpoint, orgID, token, apiName string) Nico {
+	return Nico{Endpoint: endpoint, OrgID: orgID, Token: token, APIName: apiName}
+}
+
+// Credentials implements CAPIProviderConfig. The token is the whole of it:
+// the endpoint, org and API name are infrastructure, and the token is what
+// reaches the node, both in bootstrap-config.json and in the Secret the
+// credentials template renders from it.
+func (n Nico) Credentials() []string {
+	if n.Token == "" {
+		return nil
+	}
+	return []string{n.Token}
 }
 
 // ConfigKey implements CAPIProviderConfig. "Nico" is what

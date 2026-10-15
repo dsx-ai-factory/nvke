@@ -59,11 +59,24 @@ parts are the way they are.
 
 ## Running one
 
-The lane runs on a `workflow_dispatch`, when the `qualify-e2e` label is applied
-to a pull request from this repository, and when a `vX.Y.Z-beta.N` tag is pushed.
-It is deliberately not on a schedule or on every push: it costs hardware, and a
-run nobody is watching is a run nobody acts on. A beta tag is cut once a night,
-so it adds one run rather than a stream of them.
+The lane never starts on its own. It runs on a `workflow_dispatch`, when one of
+these labels is applied to a pull request from this repository, or when a
+`vX.Y.Z-beta.N` tag is pushed. It is deliberately not on a schedule or on every
+push: it costs hardware, and a run nobody is watching is a run nobody acts on.
+A beta tag is cut once a night, so it adds one run rather than a stream of them.
+
+| label | what it runs |
+|---|---|
+| `qualify-e2e` | `QUALIFY_E2E_SCOPE`, or `golden-path` when that is unset: Ubuntu 24.04 on GB200, both arches |
+| `qualify-e2e-dsx` | the `dsx` scope: the redstone-dev1-dh2 datahall, at stage `provision` |
+| `qualify-e2e-dry-run` | everything except joining Teleport and running the suite |
+
+The DSX label names its scope and stage outright, where `qualify-e2e` takes
+whatever `QUALIFY_E2E_SCOPE` says. The stage is pinned to `provision` because
+that datahall has one CPU machine bound, which is enough to place a node and
+reach it; a `full` run places three at once, and its tenant half speaks Forge
+only, so it is refused before a machine is taken. The dsx stream is outside the
+`full` scope for that reason.
 
 A run starts with a `plan` job that runs `qualify plan` and uploads `plan.json`.
 A `verify` job then checks that everything the plan names is published, before

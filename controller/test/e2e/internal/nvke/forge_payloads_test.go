@@ -62,7 +62,8 @@ func TestBuildForgeNodePayloadsRendersEveryInput(t *testing.T) {
 	joined := strings.Join(payloads.PreKubeadmCommands, "\n")
 	for _, want := range []string{
 		"nvke-kubeadm-distro-" + inputs.KubernetesVersion,
-		// REVERT-WHEN-1600: nke-, because nvke-cni-ovn-* is not in the suite yet.
+		// nke-, not nvke-: the suite serves both generations, and no
+		// nvke-cni-ovn-* has been published yet. See #1600.
 		"nke-cni-ovn-images-" + inputs.CNIVersion,
 		"nke-cni-ovn-charts-" + inputs.CNIVersion,
 		"openvswitch-switch",
@@ -567,11 +568,10 @@ func TestBuildForgeNodePayloadsWaitsForTheNetworkFirst(t *testing.T) {
 	}
 }
 
-// The image builds the agent from this checkout's agent/ source at bake time,
+// The image builds nke-agent from this checkout's agent/ source at bake time,
 // so the installed agent is the build under qualification. Installing the apt
 // repository's unpinned nke-agent over it would swap that for whichever build
 // the suite currently holds, and the run would still report the baked version.
-// REVERT-WHEN-1600: the published package name is nke-agent until #1600.
 //
 // Asserted rather than left to dpkg. A bake version sorts above a release tag
 // today, so apt declines the swap, which makes the bug invisible until the
@@ -586,6 +586,10 @@ func TestBuildForgeNodePayloadsDoesNotInstallNvkeAgent(t *testing.T) {
 			continue
 		}
 		for _, field := range strings.Fields(command) {
+			// Both spellings. The guard is about not installing the agent over
+			// the one the image carries, which is true whichever name that
+			// image gives it -- and the name changes with the image, so
+			// checking one spelling goes half-blind the moment it moves.
 			if field == "nke-agent" || field == "nvke-agent" {
 				t.Errorf("the node's own agent should be left alone, got:\n%s", command)
 			}

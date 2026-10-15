@@ -279,10 +279,13 @@ func TestBootstrap(t *testing.T) {
 		}
 	}
 	boot := s.cmd(t, "bootstrap site")
-	for _, want := range []string{"sudo -n -i sh -c ", "--disable-mtls", "--kubeconfig-out", "NVKECTL_CONTROLLER_IMAGE=nvcr.io/nvke/cwe:v1.2.3", "NVKECTL_CWE_IMAGE=nvcr.io/nvke/cwe:v1.2.3", "NVKECTL_CAPI_PROVISIONED_IMAGE="} {
+	for _, want := range []string{"sudo -n -i sh -c ", "--disable-mtls", "--kubeconfig-out", "NVKECTL_CONTROLLER_IMAGE=nvcr.io/nvke/cwe:v1.2.3", "NVKECTL_CAPI_PROVISIONED_IMAGE="} {
 		if !strings.Contains(boot, want) {
 			t.Errorf("bootstrap site lacks %s: %s", want, boot)
 		}
+	}
+	if strings.Contains(boot, "CWE_IMAGE") {
+		t.Errorf("bootstrap site sets a CWE_IMAGE name, which nvkectl does not read: %s", boot)
 	}
 	if !strings.Contains(s.cmd(t, "ctr -n k8s.io"), "ctr -n default images import") {
 		t.Error("image not imported into the default namespace")

@@ -243,8 +243,10 @@ through `KIND_EXPERIMENTAL_PROVIDER=nerdctl`, which `nvkectl` sets itself.
 Every `NVKECTL_*` variable above was named `NKECTL_*` while the binary was
 called `nkectl`. The old names still work for one release: when only the old
 name is set, `nvkectl` uses it and logs a warning naming the replacement. When
-both are set, the new name wins. The `NKECTL_CWE_*` names from the release
-before that are no longer read. Likewise `make -C cli images` reads
+both are set, the new name wins. nvkectl does not read the `NKECTL_CWE_*`
+names of cli/v0.1.x: `nvkectl bootstrap site` stops when one is set without
+its replacement, and warns when the replacement is set too. Likewise
+`make -C cli images` reads
 `CONTROLLER_IMAGE`, and still reads `CWE_IMAGE` with a warning.
 
 The controller and Postgres charts are carried in the binary and are never

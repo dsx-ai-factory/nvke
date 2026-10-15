@@ -442,7 +442,42 @@ The node is torn down afterwards (tenants are deleted first). `-e2e.keep-site`, 
 Prerequisites: a way to reach the jump host (below), the jump host in
 `FORGE_JUMP_HOST` (read by `environments/forge.yaml`) and `FORGE_API_KEY`.
 Neither the proxy nor the jump host is checked in; secrets are read only from
-the environment. Build the inputs, then run; with the `site-inputs` defaults
+the environment.
+
+**On DSX** (`-e2e.environment=dsx`) the credential is different and the stage
+is limited. Each datahall carries its own SSA client, named for the key it is
+filed under in `environments/dsx.yaml`:
+
+```bash
+export SSA_ISSUER=…                                  # issuer BASE url; the
+export DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID=…         # suite appends /token
+export DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET=…     # 15-minute TTL
+export DSX_REDSTONE_DEV1_DH2_JUMP_HOST=…             # the rest are identifiers
+export DSX_REDSTONE_DEV1_DH2_SITE_ID=… DSX_REDSTONE_DEV1_DH2_TENANT_ID=…
+export DSX_REDSTONE_DEV1_DH2_VPC_ID=… DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID=…
+export DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID=… DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID=…
+```
+
+There is no cluster fallback: an unset client fails the run naming both
+variables. The names derive from the datahall key, so a credential scoped to
+one datahall cannot be picked up by a run against another.
+
+Use `-e2e.site-stage=provision` or `bootstrap`. `full` is refused before a
+machine is taken: its tenant half decodes the environment as a Forge
+declaration, which a DSX one is not.
+
+redstone-dev1-dh2 is **arm64 only**, and an absent `arch` capability defaults
+to amd64, so a hand-run has to ask for arm64 and stage arm64 OS images --- the
+command above passes no `-e2e.capabilities` and would fail in `Resolve` with
+"no declared site offers a amd64 CPU shape":
+
+```bash
+go test -timeout 5h . -args \
+  -ginkgo.label-filter=site-controller -ginkgo.v \
+  -e2e.config=e2e-config.yaml -e2e.environment=dsx -e2e.site-stage=provision \
+  -e2e.capabilities=arch=arm64 \
+  -e2e.versions=controller=<…>,os-image=<arm64 url>,os-image-bootloader=<arm64 url>,…
+``` Build the inputs, then run; with the `site-inputs` defaults
 no `site:` block is needed at all:
 
 ```bash

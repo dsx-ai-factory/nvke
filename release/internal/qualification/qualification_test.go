@@ -116,3 +116,42 @@ func TestExpandRequiresEveryName(t *testing.T) {
 		}
 	}
 }
+
+// A scope decides which streams a run covers, and the stage decides how far
+// each goes. They are independent everywhere except here: a dispatch defaults
+// to stage full, and the e2e suite refuses a full run on a provider whose
+// tenant it cannot build. So a scope that reaches such a provider at that
+// stage schedules a lane that can only fail, whatever the versions under test.
+//
+// Forge is the only provider with a tenant spec today, so `full` selects on it.
+// This test is what stops the selector being dropped as redundant: it looks
+// redundant exactly until a second provider is added.
+func TestFullScopeReachesOnlyProvidersAFullRunCanFinish(t *testing.T) {
+	t.Setenv("QUALIFY_E2E_NGC_ORG", "an-org")
+
+	p, err := LoadPolicy(filepath.Join(repoRoot, "release", "policy.yaml"))
+	if err != nil {
+		t.Fatalf("release/policy.yaml: %v", err)
+	}
+
+	full, ok := p.Spec.Scopes["full"]
+	if !ok {
+		t.Fatal("release/policy.yaml declares no full scope")
+	}
+
+	var matched int
+	for _, stream := range p.Spec.Streams {
+		if !full.Matches(stream) {
+			continue
+		}
+		matched++
+		if got := stream.Capabilities["provider"]; got != "forge" {
+			t.Errorf("stream %q (provider %q) is in scope full, but a full run on it is refused "+
+				"before a machine is taken; give it a tenant spec or keep it out of this scope",
+				stream.Name, got)
+		}
+	}
+	if matched == 0 {
+		t.Error("scope full matched no stream at all, which cannot be right")
+	}
+}

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package forge
+package provision
 
 import (
 	"strings"
@@ -14,19 +14,19 @@ func completeTools() HostTools {
 	return HostTools{NerdctlVersion: "2.3.5", KindVersion: "v0.32.0", ClusterctlVersion: "v1.12.3"}
 }
 
-func completeUserData() userDataInputs {
-	return userDataInputs{
+func completeUserData() UserDataInputs {
+	return UserDataInputs{
 		Hostname:      "e2e-site-1",
 		AuthorizedKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample",
 		Arch:          "amd64",
-		NodeCommands:  []string{`printf 'AGENT_ARGS="--secure-server-port 15005"\n' > /etc/default/nvke-agent`, "touch /run/cloud-init.done"},
+		NodeCommands:  []string{`printf 'AGENT_ARGS="--secure-server-port 15005"\n' > /etc/default/nke-agent`, "touch /run/cloud-init.done"},
 		Tools:         completeTools(),
 	}
 }
 
 func TestRenderUserData(t *testing.T) {
 	in := completeUserData()
-	out, err := renderUserData(in)
+	out, err := RenderUserData(in)
 	if err != nil {
 		t.Fatalf("rendering: %v", err)
 	}
@@ -114,15 +114,15 @@ func TestRenderUserData(t *testing.T) {
 }
 
 func TestRenderUserDataRejectsIncompleteInputs(t *testing.T) {
-	for name, mutate := range map[string]func(*userDataInputs){
-		"no key":           func(in *userDataInputs) { in.AuthorizedKey = " " },
-		"no node commands": func(in *userDataInputs) { in.NodeCommands = nil },
-		"no kind version":  func(in *userDataInputs) { in.Tools.KindVersion = "" },
+	for name, mutate := range map[string]func(*UserDataInputs){
+		"no key":           func(in *UserDataInputs) { in.AuthorizedKey = " " },
+		"no node commands": func(in *UserDataInputs) { in.NodeCommands = nil },
+		"no kind version":  func(in *UserDataInputs) { in.Tools.KindVersion = "" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			in := completeUserData()
 			mutate(&in)
-			if _, err := renderUserData(in); err == nil {
+			if _, err := RenderUserData(in); err == nil {
 				t.Error("expected an error")
 			}
 		})
@@ -136,13 +136,13 @@ func TestRenderUserDataRejectsIncompleteInputs(t *testing.T) {
 // an account that did not exist.
 func TestRenderUserDataNodeUser(t *testing.T) {
 	for _, tc := range []struct{ name, set, want string }{
-		{"empty is the os-image default", "", defaultNodeUser},
+		{"empty is the os-image default", "", DefaultNodeUser},
 		{"an internal-pipeline image", "dgxc-admin", "dgxc-admin"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in := completeUserData()
 			in.NodeUser = tc.set
-			out, err := renderUserData(in)
+			out, err := RenderUserData(in)
 			if err != nil {
 				t.Fatalf("rendering: %v", err)
 			}
@@ -191,7 +191,7 @@ func TestRenderUserDataNodeUser(t *testing.T) {
 // The site node runs kind plus the whole stack on one machine, and the
 // 2026-09-29 ytl bootstrap needed this raised by hand before it completed.
 func TestRenderUserDataRaisesInotifyInstances(t *testing.T) {
-	out, err := renderUserData(completeUserData())
+	out, err := RenderUserData(completeUserData())
 	if err != nil {
 		t.Fatalf("rendering: %v", err)
 	}

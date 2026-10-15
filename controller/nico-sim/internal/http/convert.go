@@ -7,7 +7,7 @@ import (
 	"net"
 	"strings"
 
-	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/state"
 )
@@ -153,7 +153,7 @@ func toSDKInstanceType(row state.InstanceTypeRow, used int32) nicosdk.InstanceTy
 	ibCap.SetType("InfiniBand")
 	ibCap.SetName(fakeIBCapabilityName)
 	ibCap.SetCount(fakeIBCapabilityCount)
-	ibCap.SetInactiveDevices([]int32{})
+	ibCap.SetInactiveDevices([]uint32{})
 	item.SetMachineCapabilities([]nicosdk.MachineCapability{*ibCap})
 	item.SetCreated(row.CreatedAt)
 	item.SetUpdated(row.UpdatedAt)

@@ -93,7 +93,7 @@ The install takes its charts and images from one of three places. The commands i
 |---|---|---|
 | A published NVKR release | `--release ../release.json` | The charts the release carries are installed by digest, and the images are pinned by digest. A chart the release does not carry comes from the checkout or its public repository. |
 | A local NVKR Run | `--release ../release.json --nvkr-run-dir <NVKR_CHECKOUT>/.nvkr/runs/<ATTEMPT>` | Charts and images come out of the Run's OCI layouts and are imported into the nodes' container runtime. No registry is involved. |
-| No release | Neither flag | Every chart comes from the checkout and the public repositories. Set `controllerStack.images.controller` and `controllerStack.images.profiles` in the site spec, each as `repository:tag` or `repository@sha256:<digest>`. |
+| No release | Neither flag | Every chart comes from the checkout and the public repositories. Set `controllerStack.images.controller` and `controllerStack.images.profiles` in the site spec, each as `repository:tag` or `repository@sha256:<digest>`. Without `controllerStack.images.controller` the install uses the overlay's pinned image, the newest controller release. |
 
 The install refuses a release that lacks an image artifact the deploy path names: the controller image `cwe`, the profile content image `controller-profiles` or the CAPNICo image `capnico-controller`. See [Preview status and known limitations](../overview/preview-status.md).
 

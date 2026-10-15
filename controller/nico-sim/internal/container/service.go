@@ -11,7 +11,7 @@ import (
 	"log/slog"
 	"strings"
 
-	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/apierr"
 )

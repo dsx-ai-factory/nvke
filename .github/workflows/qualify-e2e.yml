@@ -234,7 +234,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' ||
        github.event_name == 'push' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
-        contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run","qualify-e2e-l40s"]'), github.event.label.name)))
+        contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run","qualify-e2e-l40s","qualify-e2e-dsx"]'), github.event.label.name)))
     timeout-minutes: 15
     permissions:
       contents: read
@@ -264,7 +264,15 @@ jobs:
         ${{ inputs.resolution
             || (github.event_name == 'push' && 'commitDescribe')
             || 'gitTag' }}
-      SCOPE: ${{ inputs.scope || (github.event.label.name == 'qualify-e2e-l40s' && 'l40s') || vars.QUALIFY_E2E_SCOPE || 'golden-path' }}
+      # A label run carries no inputs, so a scope other than the repository
+      # default was unreachable from a branch: dispatch is refused for one by
+      # the Teleport ref guard, and a label takes what the variables say.
+      # qualify-e2e-dsx is that missing input for the DSX stream, and exists
+      # because a workflow_dispatch from a branch cannot reach Teleport at all:
+      # the join token allows only refs/heads/main and refs/pull/*/merge. Until
+      # this lands on main a label is the only way to run the DSX stream.
+      # qualify-e2e-l40s is the same for the az61 L40S stream.
+      SCOPE: ${{ inputs.scope || (github.event.label.name == 'qualify-e2e-dsx' && 'dsx') || (github.event.label.name == 'qualify-e2e-l40s' && 'l40s') || vars.QUALIFY_E2E_SCOPE || 'golden-path' }}
       # The registry.yaml base names this, so the plan fails here when it is
       # unset rather than naming an artifact under no org. The same variable
       # the lanes build SITE_IMAGES from.
@@ -433,6 +441,7 @@ jobs:
                   combination: $c.id,
                   stream: $s.name,
                   arch: $s.capabilities.arch,
+                  provider: $s.capabilities.provider,
                   gpu: ($s.capabilities.gpu // ""),
                   controller: version($all; "controller"),
                   cli: version($all; "cli"),
@@ -586,7 +595,13 @@ jobs:
       # full, so a run that names no stage qualifies the whole thing. A label run
       # and a tag push carry no dispatch input, and a beta that stopped at a
       # booted node would have qualified none of what it was cut for.
-      SITE_STAGE: ${{ inputs.stage || vars.QUALIFY_E2E_STAGE || 'full' }}
+      #
+      # provision for the DSX label: it takes the node, reaches it, and
+      # releases it, which is what redstone-dev1-dh2 can place --- one machine
+      # is bound to its instance type, and a full run places three at once.
+      # A DSX run at full is refused by the suite before a machine is taken
+      # anyway, its tenant half speaking Forge only. See SCOPE in the plan job.
+      SITE_STAGE: ${{ inputs.stage || (github.event.label.name == 'qualify-e2e-dsx' && 'provision') || vars.QUALIFY_E2E_STAGE || 'full' }}
       # A dry run joins no Teleport and runs no suite. Decided by the plan job.
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
       # Where the nvkectl artifact for this stream's architecture is. The plan
@@ -601,7 +616,7 @@ jobs:
       PLAN_COMMIT: ${{ needs.plan.outputs.commit }}
       # Empty asks for a build from this checkout; the resolve step fills it
       # in. Every use of it downstream -- the image site-inputs stages, the
-      # NVKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
+      # NVKECTL_CONTROLLER_IMAGE the bootstrap runs, and the tag the SBOM deploys --
       # reads this one value, which is what keeps them the same image.
       SITE_CONTROLLER_VERSION: ${{ matrix.controller }}
       # The same shape for nvkectl: empty builds it from this checkout, a
@@ -655,6 +670,7 @@ jobs:
       # as -e2e.capabilities, which the step below assembles, and ARCH is
       # needed on its own anyway, for SITE_ARCH.
       ARCH: ${{ matrix.arch }}
+      PROVIDER: ${{ matrix.provider }}
       GPU: ${{ matrix.gpu }}
       # A label cannot carry a boolean, so a labelled run takes this from the
       # repository variable, as it does every other setting. Holding a Forge
@@ -730,6 +746,16 @@ jobs:
       FORGE_YTL_VPC_PREFIX_ID: ${{ vars.FORGE_YTL_VPC_PREFIX_ID }}
       FORGE_YTL_SSH_KEY_GROUP_ID: ${{ vars.FORGE_YTL_SSH_KEY_GROUP_ID }}
       FORGE_YTL_JUMP_HOST: ${{ vars.FORGE_YTL_JUMP_HOST }}
+      DSX_ORG_ID: ${{ vars.DSX_ORG_ID }}
+      DSX_REDSTONE_DEV1_DH2_SITE_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_SITE_ID }}
+      DSX_REDSTONE_DEV1_DH2_TENANT_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_TENANT_ID }}
+      DSX_REDSTONE_DEV1_DH2_VPC_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_VPC_ID }}
+      DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID }}
+      DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID }}
+      DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID }}
+      DSX_REDSTONE_DEV1_DH2_NODE_USER: ${{ vars.DSX_REDSTONE_DEV1_DH2_NODE_USER }}
+      DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN: ${{ vars.DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN }}
+      DSX_REDSTONE_DEV1_DH2_JUMP_HOST: ${{ secrets.DSX_REDSTONE_DEV1_DH2_JUMP_HOST }}
       # root for the same reason as FORGE_TELEPORT_LOGIN: the same bot reaches
       # both jump hosts through rg-k8aas-bot-ssh-root, whose only login is
       # root. Unset falls back to tsh's default, the runner's local user,
@@ -971,6 +997,20 @@ jobs:
           fi
           echo "SITE_ARCH=${arch}" >> "${GITHUB_ENV}"
 
+          # The stream names a provider; this names the file that describes
+          # that provider's infrastructure. Mapped rather than used as the
+          # filename directly: -e2e.environment names a file, not a backend,
+          # and collapsing the two would rule out a second environment for
+          # one provider -- a staging Forge beside the production one.
+          case "${PROVIDER}" in
+            forge) environment=forge ;;
+            dsx)   environment=dsx ;;
+            "")    echo "::error::the stream names no provider capability"; exit 1 ;;
+            *)     echo "::error::provider is ${PROVIDER}, which this workflow has no environment for"; exit 1 ;;
+          esac
+          echo "SITE_ENVIRONMENT=${environment}" >> "${GITHUB_ENV}"
+          echo "environment: ${environment}"
+
           # Joined here rather than taken as a string, so each key is set and
           # validated on its own. Empty keys are left out: the suite reads an
           # absent gpu as "the workers take the CPU shape", which is not the
@@ -1202,17 +1242,22 @@ jobs:
             SITE_INPUTS="${SITE_INPUTS}"
 
       # Where each staged image came from, and nothing else. Versions are
-      # -e2e.versions keys, the jump host is environments/forge.yaml's, and
-      # every secret is read from the environment by the suite itself -- see
-      # the const block at the top of site_controller_test.go.
+      # -e2e.versions keys, the jump host is the resolved site's and comes
+      # from that provider's environment file, and every secret is read from
+      # the environment by the suite itself -- see the const block at the top
+      # of site_controller_test.go.
       - name: Write the e2e config
         shell: bash
         run: |
           set -Eeuo pipefail
-          test -n "${FORGE_JUMP_HOST}" || {
-            echo "::error::the FORGE_JUMP_HOST repository secret is unset; the suite has no way to reach the node"
-            exit 1
-          }
+          # The jump host is not asserted here. A provider can declare more
+          # than one site, each with its own jump host -- forge.yaml does
+          # today -- and which one a run reaches is decided inside the suite by
+          # capability, so a check up here can only name a site and be wrong
+          # about the rest. forge.New and dsx.New each validate the jump host
+          # of the site that actually resolved, name that site in the error,
+          # and do it before anything is created, which is the check this step
+          # was reaching for.
           # The repositories are the ones site-inputs pulled or tagged, so the
           # references the suite hands the bootstrap and the deploy path are
           # the ones the archives carry.
@@ -1259,6 +1304,10 @@ jobs:
           WORKFLOW: .github/workflows/qualify-e2e.yml
           OUT: ${{ runner.temp }}/run-inputs.txt
           IN_STAGE: ${{ inputs.stage }}
+          # Which label started this run, so the chain below can say that a
+          # label named a value. Without it a label run credits the repository
+          # variable or the workflow default, neither of which produced it.
+          EVENT_LABEL: ${{ github.event.label.name }}
           IN_CONTROLLER_VERSION: ${{ inputs.controller-version }}
           IN_CLI_VERSION: ${{ inputs.cli-version }}
           IN_CAPI_PROVISIONED_VERSION: ${{ inputs.capi-provisioned-version }}
@@ -1357,6 +1406,16 @@ jobs:
             "scope|SCOPE|IN_SCOPE|VAR_SCOPE|QUALIFY_E2E_SCOPE"
             "cpu arch|ARCH|||"
             "gpu model|GPU|||"
+            "DSX org|DSX_ORG_ID||DSX_ORG_ID|DSX_ORG_ID"
+            "DSX jump host|DSX_REDSTONE_DEV1_DH2_JUMP_HOST|||"
+            "DSX site|DSX_REDSTONE_DEV1_DH2_SITE_ID||DSX_REDSTONE_DEV1_DH2_SITE_ID|DSX_REDSTONE_DEV1_DH2_SITE_ID"
+            "DSX tenant|DSX_REDSTONE_DEV1_DH2_TENANT_ID||DSX_REDSTONE_DEV1_DH2_TENANT_ID|DSX_REDSTONE_DEV1_DH2_TENANT_ID"
+            "DSX VPC|DSX_REDSTONE_DEV1_DH2_VPC_ID||DSX_REDSTONE_DEV1_DH2_VPC_ID|DSX_REDSTONE_DEV1_DH2_VPC_ID"
+            "DSX VPC prefix|DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID||DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID|DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID"
+            "DSX SSH key group|DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID||DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID|DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID"
+            "DSX instance type|DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID||DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID|DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID"
+            "DSX Teleport login|DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN||DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN|DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN"
+            "DSX node user|DSX_REDSTONE_DEV1_DH2_NODE_USER||DSX_REDSTONE_DEV1_DH2_NODE_USER|DSX_REDSTONE_DEV1_DH2_NODE_USER"
             "ytl site|FORGE_YTL_SITE_ID||FORGE_YTL_SITE_ID|FORGE_YTL_SITE_ID"
             "ytl VPC|FORGE_YTL_VPC_ID||FORGE_YTL_VPC_ID|FORGE_YTL_VPC_ID"
             "ytl VPC prefix|FORGE_YTL_VPC_PREFIX_ID||FORGE_YTL_VPC_PREFIX_ID|FORGE_YTL_VPC_PREFIX_ID"
@@ -1383,11 +1442,13 @@ jobs:
           # because the name the controller is installed under is read by the
           # suite from the environment variables it already honours, so it
           # carries no QUALIFY_E2E_ prefix of its own. CWE_ is its deprecated
-          # alias; #1399 removes it.
+          # alias; #1399 removes it. DSX_ is the second provider's, and is
+          # listed for the same reason the others are: a prefix missing here
+          # is a variable the table silently stops covering.
           missing=()
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f5,7 | tr '|' '\n' | grep -qx "${name}" || missing+=("vars.${name}")
-          done < <(grep -oE 'vars\.(FORGE|QUALIFY_E2E|NKE_CONTROLLER|CWE)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
+          done < <(grep -oE 'vars\.(FORGE|QUALIFY_E2E|NKE_CONTROLLER|CWE|DSX)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f3 |
               grep -qx "IN_$(printf '%s' "${name}" | tr 'a-z-' 'A-Z_')" || missing+=("inputs.${name}")
@@ -1419,8 +1480,11 @@ jobs:
               # the jump host and join token resolved and where they came
               # from, both of which survive. Whether each was set is the part
               # that is diagnostic.
+              # Matched by shape, not by name: a site added later is withheld
+              # by having named its secret the way the convention requires,
+              # and a list is one entry out of date the day someone forgets.
               case "${resolved}" in
-                FORGE_JUMP_HOST|FORGE_YTL_JUMP_HOST|FORGE_TELEPORT_JOIN_TOKEN) withhold=1 ;;
+                *_JUMP_HOST|*_TELEPORT_JOIN_TOKEN) withhold=1 ;;
                 *) withhold=0 ;;
               esac
               if [ "${withhold}" = 1 ] && [ "${value}" != "<unset>" ]; then
@@ -1430,6 +1494,10 @@ jobs:
                 source="dispatch input"
               elif [ "${input}" = IN_CONTROLLER_NAME ] && [ -n "${IN_CWE_NAME:-}" ]; then
                 source="dispatch input cwe-name (deprecated, rename to controller-name)"
+              elif [ "${EVENT_LABEL:-}" = qualify-e2e-dsx ] && { [ "${resolved}" = SITE_STAGE ] || [ "${resolved}" = SCOPE ]; }; then
+                # The label names both outright, ahead of the variables, so it
+                # is what produced the value whenever it is the trigger.
+                source="label ${EVENT_LABEL}"
               elif [ -n "${var}" ] && [ -n "${!var:-}" ]; then
                 source="repository variable ${varname}"
               elif [ -n "${wasvar}" ] && [ -n "${!wasvar:-}" ]; then
@@ -1500,6 +1568,14 @@ jobs:
         working-directory: controller/test/e2e
         env:
           FORGE_API_KEY: ${{ secrets.FORGE_API_KEY }}
+          # The DSX credential, scoped here for the same reason the Forge key
+          # is: this is the only step that reads it, and a job-level secret is
+          # one every step sees -- checkout, setup-go, docker login, the
+          # artifact upload. The identifiers stay at job level because the
+          # provenance step reads them back by name.
+          SSA_ISSUER: ${{ secrets.SSA_ISSUER }}
+          DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID: ${{ secrets.DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID }}
+          DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET: ${{ secrets.DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET }}
           # JUMP_HOST_PASSWORD is deliberately absent: its presence is what
           # switches the suite off the Teleport relay and onto plain SSH.
         run: |
@@ -1555,7 +1631,7 @@ jobs:
               -ginkgo.junit-report=qualify-e2e.junit.xml \
               -ginkgo.json-report=qualify-e2e.report.json \
               -e2e.config=e2e-config.yaml \
-              -e2e.environment=forge \
+              -e2e.environment="${SITE_ENVIRONMENT}" \
               -e2e.site-stage="${SITE_STAGE}" \
               -e2e.versions="controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
               -e2e.capabilities="${CAPABILITIES}" \
@@ -1563,25 +1639,45 @@ jobs:
           fi
 
       # The suite names the jump host in its own errors ("not reachable
-      # through ..."), and those land in the log and the JUnit report. GitHub
-      # masks a secret in the job log, not in an uploaded artifact.
+      # through ..."), and the SSA token exchange names its issuer in the
+      # errors it returns. Both land in the log and the JUnit report, and
+      # GitHub masks a secret in the job log but not in an uploaded artifact.
       #
-      # Both sites' hosts: a run reaches one of them, and which one is not
-      # worth branching on here.
-      - name: Withhold the jump host from the run log
+      # Every declared host: a run reaches one of them, and which one is not
+      # worth branching on here. Discovered by suffix rather than listed, so a
+      # datahall added to environments/dsx.yaml is withheld by having named its
+      # secret *_JUMP_HOST, with nothing to update here. A hand-written list
+      # fails the other way: the value it omits is the one the suite names in
+      # its errors and the artifact then publishes, with no error to notice.
+      #
+      # SSA_ISSUER is named outright because it is one value with one name,
+      # and it is passed to this step rather than left at job level for the
+      # same reason the suite step holds the client secret.
+      - name: Withhold credentials from the run log
         if: always()
         shell: bash
         working-directory: controller/test/e2e
+        env:
+          SSA_ISSUER: ${{ secrets.SSA_ISSUER }}
         run: |
           set -Eeuo pipefail
-          for raw in "${FORGE_JUMP_HOST}" "${FORGE_YTL_JUMP_HOST}"; do
+          while IFS= read -r var; do
+            raw="${!var}"
             [ -n "${raw}" ] || continue
-            host="$(printf '%s' "${raw}" | sed 's/[][\.*^$/]/\\&/g')"
-            for f in qualify-e2e.log qualify-e2e.junit.xml tenant-diagnostics.json site-cluster-state.txt; do
-              [ -f "${f}" ] || continue
-              sed -i "s/${host}/<jump host>/g" "${f}"
+            # Both spellings. auth.go trims whitespace and a trailing slash
+            # from the issuer before it uses one, so an issuer stored with a
+            # slash reaches an error without it and a single literal match
+            # would leave that form in the artifact.
+            trimmed="$(printf '%s' "${raw}" | sed 's#^[[:space:]]*##; s#[[:space:]]*$##; s#/*$##')"
+            for form in "${raw}" "${trimmed}"; do
+              [ -n "${form}" ] || continue
+              value="$(printf '%s' "${form}" | sed 's/[][\.*^$/]/\\&/g')"
+              for f in qualify-e2e.log qualify-e2e.junit.xml tenant-diagnostics.json site-cluster-state.txt; do
+                [ -f "${f}" ] || continue
+                sed -i "s/${value}/<withheld>/g" "${f}"
+              done
             done
-          done
+          done < <(compgen -v | grep -E '_JUMP_HOST$|^SSA_ISSUER$' || true)
 
       # The Ginkgo log carries every phase boundary, remote command and
       # failure. An hour-long run is worth more than a scroll-back in the job

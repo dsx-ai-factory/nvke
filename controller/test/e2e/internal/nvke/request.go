@@ -168,6 +168,16 @@ func containerCAPIReadyCommands() []string {
 	var commands []string
 	// Cloud-init replaces the agent arguments baked into the container node image.
 	// Restore the E2E bundle source before kubeadm init needs it for CNI installation.
+	//
+	// nvke-, where the bare-metal template says nke-, and the difference is not
+	// an oversight: this image is BUILT FROM THIS CHECKOUT at bake time, so it
+	// carries whatever #1565 renamed the unit to, while a bare-metal run boots a
+	// published os-image release that predates that rename. Pinning nke- here
+	// restarts a unit the container does not have, sh -ec takes the block with
+	// it, cloud-init never reaches multi-user.target, and the control-plane
+	// machine never gets a nodeRef -- a ten-minute provisioning timeout whose
+	// message says nothing about an agent. See #1600 for where the bare-metal
+	// pin is removed; this half moves with the image it is built from.
 	bundleServerURL := strings.TrimRight(strings.TrimSpace(os.Getenv("NKE_E2E_BUNDLE_SERVER_URL")), "/")
 	if bundleServerURL != "" {
 		commands = append(commands, fmt.Sprintf(
@@ -244,7 +254,7 @@ func buildNicoForgeRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires a %s iPXE script: without one the instance boots nothing", role.name)
 		}
 		if len(role.payloads.PreKubeadmCommands) == 0 {
-			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires %s pre-kubeadm commands: without them the node has no nvke-agent", role.name)
+			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires %s pre-kubeadm commands: without them the node has no nke-agent", role.name)
 		}
 	}
 

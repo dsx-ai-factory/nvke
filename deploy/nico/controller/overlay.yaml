@@ -116,32 +116,24 @@ nvkeSystemNamespace:
 # Staging a newer build, in the k8s.io namespace the kubelet reads:
 #   ctr -n k8s.io images import <saved-image>.tar
 #
+# Used only when the site spec leaves controllerStack.images.controller empty
+# or `nvke-deploy.sh install` runs with neither --sitespec nor --release; a
+# release's imageArtifact or the site spec wins otherwise. The tag is the
+# newest controller release on GHCR, not this checkout's build. Bump it when a
+# release is cut.
+#
 # NOTE THE REPOSITORY. #827 renamed the published image to nke-controller, so
 # rc.7 onward are at <registry>/nke-controller and rc.6 and earlier ONLY at
 # .../nke/controller. Moving between them changes both lines.
-#
-# NVCR, NOT GHCR, and that is about which builds exist rather than a preference.
-# GHCR publishes release tags only; NVCR publishes one per commit. #850 removed
-# infra.spireAttestationMethod from the cluster API and moved the choice to
-# nodeAgent.spireAttestationMethod below, and no release has been cut since --
-# GHCR's newest, rc.8, is revision 4c5dc9bc from 2026-09-20, 43 commits before
-# it. A site controller running rc.8 rejects this checkout's own nvkectl with
-#   400 Bad Request: infra.spireAttestationMethod is required
-# at "creating the site cluster". The tag below is this branch's merge base with
-# main, so the controller binary, this chart and nvkectl all come from one commit.
-# Repoint at a GHCR release tag once one is cut past #850.
 #
 # This block becomes redundant once the item installs a published chart rather
 # than ../charts/controller: the chart carries the repository as its default
 # and its appVersion as the tag, so one version would pin both. It cannot
 # switch yet -- no published chart has the NodePort Service template this path
 # relies on, and Helm ignores an unknown value silently.
-#
-# NKE_CONTROLLER_IMAGE overrides this for an unreleased build or another registry; the
-# SBOM is otherwise authoritative.
 image:
-  repository: nvcr.io/j7sbcjl3qgta/nke-controller
-  tag: v0.1.1-rc.8-51-g35019978
+  repository: ghcr.io/dsx-ai-factory/nvke/nke-controller
+  tag: v0.2.0-rc.2
   pullPolicy: IfNotPresent
 
 # EMPTY, and it must stay empty. The controller image is staged into the node's

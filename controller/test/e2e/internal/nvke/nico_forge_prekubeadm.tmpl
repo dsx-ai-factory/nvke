@@ -54,8 +54,38 @@ nothing pointing back here. Observed on three consecutive az61 runs and
 reproduced by hand. Waiting for the name costs nothing when it already
 resolves.
 
+The apt coordinates are nvke-, and the packages are split. Both halves are
+measured against the live repository, not inferred, because the rename landed
+in three pieces that completed at different times.
+
+nvke-apt-public.key and nvke-apt-<codename> serving suite nvke-<codename> are
+published and answer 200. nke/packages/apt-publisher now mirrors into both, so
+the nvke suite is a superset: it carries the renamed packages AND the ones
+still spelled the old way. Pointing at it is therefore strictly better than the
+old repo, which has only the old names.
+
+nvke-kubeadm-distro-<ver> is published there -- 1.36.3 confirmed in both noble
+and resolute on 2026-10-14 -- so it moved with the coordinates.
+
+nke-cni-ovn-images and nke-cni-ovn-charts have NOT. The builder MRs are merged
+but the tags that publish them have not been pushed, so the nvke suite holds
+nke-cni-ovn-*-1.4.0 and no nvke-cni-ovn-* at all. Asking for the new name is a
+"no candidate" that terminates ProvisionCluster through
+InstallCNIPreconditionFailed, which does not retry. These two move when the
+packages exist, and they resolve today because the nvke suite serves them.
+
+The unit and its environment file are nke- for a third turn of the same
+screw. #1565 renamed them to nvke-agent.service and /etc/default/nvke-agent,
+but the image a run boots is an os-image release, and the newest one --
+v0.2.0-rc.1, tagged 2026-10-11 -- predates that merge, so it bakes
+nke-agent.service. The restart then fails with "Unit nvke-agent.service not
+found" and takes the whole block with it, while the write to the renamed
+environment file succeeds and is simply never read, so AgentArgs would go
+missing in silence even if the restart were removed. These move when an image
+carrying the renamed unit is published, not before.
+
 set -eu is the first command for the reason the site node has it
-(internal/infra/forge/userdata.go): cloud-init runs these as one /bin/sh
+(internal/infra/provision/userdata.go): cloud-init runs these as one /bin/sh
 script and reports the exit status of the last one, which is the
 touch at the end. Without the guard a failed apt step still writes the
 success sentinel, so the node reports a clean cloud-init while missing the
@@ -75,14 +105,6 @@ cloud-init while an arm64 worker running these same commands passed, and the
 amd64 site node beside them passed only because its own user data waits for
 a route first. Bounded, so a node that never gets a route fails here with a
 line saying so rather than hanging the boot.
-
-REVERT-WHEN-1600: temporary pin for the hardware lane. The nvke-apt suite and
-nvke-kubeadm-distro are published. nvke-cni-ovn-* at the lane's version is not,
-and the newest published OS image (os-image/v0.2.0-rc.1) still bakes
-nke-agent.service and reads /etc/default/nke-agent. Asking for the renamed CNI
-packages is "no candidate" and does not retry; restarting nvke-agent.service
-fails the block under set -e. Drop this pin, and only this pin, when those
-artifacts exist. See https://github.com/dsx-ai-factory/nvke/issues/1600.
 */ -}}
 set -eu
 timeout 300s sh -c 'until ip -4 route list default | grep -q .; do echo "waiting for an IPv4 default route"; sleep 5; done'

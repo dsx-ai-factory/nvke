@@ -7,7 +7,7 @@ import (
 	"errors"
 	nethttp "net/http"
 
-	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 
 	"github.com/dsx-ai-factory/nvke/controller/nico-sim/internal/state"
 )
@@ -18,7 +18,7 @@ const (
 	// fakeIBCapabilityName is the simulated InfiniBand device name.
 	fakeIBCapabilityName = "mlx5"
 	// fakeIBCapabilityCount is the simulated InfiniBand device count.
-	fakeIBCapabilityCount = int32(1)
+	fakeIBCapabilityCount = uint32(1)
 )
 
 func (s *Server) handleListInstanceTypes(w nethttp.ResponseWriter, r *nethttp.Request) {
