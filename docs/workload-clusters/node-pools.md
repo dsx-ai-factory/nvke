@@ -67,7 +67,13 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
    - `<VPC_PREFIX_ID>`: a NICo virtual private cloud (VPC) prefix. Give exactly one of `vpcPrefixIDs` (sites with native networking) or `subnetIDs`.
    - `recycleBudget`: how many nodes auto mode may replace at once. See [Control automatic node replacement](#control-automatic-node-replacement).
 
-   Optional fields include `configProfile`, `sshKeyGroupIDs`, `systemReservedMemory` (default `16Gi`), `kubeReservedMemory` (default `2Gi`), `nodeLabels` and `nodeTaints`. Labels and taints are fixed at creation. At preview, NVKE stores `nodeLabels` and `nodeTaints` on the pool but does not apply them to the Kubernetes nodes; see [Preview status and known limitations](../overview/preview-status.md).
+   Optional fields include `configProfile`, `sshKeyGroupIDs`, `systemReservedMemory` (default `16Gi`), `kubeReservedMemory` (default `2Gi`), `nodeLabels` and `nodeTaints`.
+
+   - `nodeLabels` is a map of label keys to values, and `nodeTaints` a list of taints, each with a `key`, an optional `value` and an `effect` of `NoSchedule`, `PreferNoSchedule` or `NoExecute`. Both are fixed at creation.
+   - They are applied to each node after it joins, before workloads can schedule on it. NVKE does not correct changes made to them outside NVKE afterwards, such as a label removed with `kubectl`.
+   - Keys under `kubernetes.io`, `k8s.io`, `nvke.nvidia.com`, `nke.nvidia.com` and `nke.io`, and their subdomains, are reserved. An operator can allow specific label keys under `kubernetes.io` and `k8s.io` with the controller chart value `nodeMetadata.allowlistedLabelKeys`; no taint key under them can be allowed, and `node-role.kubernetes.io/control-plane` can never be set.
+
+   > **Warning:** A `NoExecute` taint also evicts pods already running on the node that do not tolerate it, including DaemonSet pods that started on the node before NVKE applied the taint. Give the DaemonSets every node needs a matching toleration.
 
 3. Create the pool.
 

@@ -32,7 +32,7 @@ To offer managed Kubernetes as a service an AI factory must deliver cluster prov
 - **Management plane.** The NVKE API and controllers running on the management cluster. It holds the inventory of clusters, node pools and nodes, and drives every lifecycle operation.
 - **Seed cluster.** A temporary single-node kind cluster that `nvkectl` starts during bootstrap to form the management cluster. `nvkectl` deletes it when bootstrap succeeds.
 - **NVKE cluster (workload cluster).** A Kubernetes cluster that NVKE creates and manages for a customer. Each has its own control plane, etcd and node pools.
-- **Node pool.** A group of nodes in an NVKE cluster that share an instance type, a node pool release and a Kubernetes version. You scale and upgrade nodes by node pool. A node pool also stores `nodeLabels` and `nodeTaints`, which NVKE does not apply to the Kubernetes nodes at preview; see [Preview status and known limitations](preview-status.md#workload-clusters-and-node-pools).
+- **Node pool.** A group of nodes in an NVKE cluster that share an instance type, a node pool release and a Kubernetes version. You scale and upgrade nodes by node pool.
 - **Infrastructure provider.** The system that supplies machines to NVKE through Cluster API. At preview, NVKE supports NVIDIA Infra Controller (NICo).
 - **NVKR Release.** An immutable set of artifacts and the evidence of how they were built, available through one pinned reference. You deploy artifacts from an NVKR Release once it passes your verification policy.
 
