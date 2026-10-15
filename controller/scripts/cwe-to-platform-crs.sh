@@ -148,13 +148,13 @@ for cluster_id in "${CLUSTER_IDS[@]}"; do
 
     cluster_name=$(echo "$cluster_json" | jq -r '.name')
     # Org ID and site ID must be present on the cluster detail from the controller API
-    org_id=$(echo "$cluster_json" | jq -r '.orgID // empty')
-    site_id=$(uuid_from_json "$(echo "$cluster_json" | jq -c '.siteID')")
+    org_id=$(echo "$cluster_json" | jq -r '.nico.orgID // empty')
+    site_id=$(uuid_from_json "$(echo "$cluster_json" | jq -c '.nico.siteID')")
     if [[ -z "$org_id" ]] || [[ -z "$site_id" ]]; then
         echo "Error: cluster $cluster_id is missing orgID or siteID in the controller API response; cannot generate CRs"
         exit 1
     fi
-    vpc_id=$(uuid_from_json "$(echo "$cluster_json" | jq -c '.vpcID')")
+    vpc_id=$(uuid_from_json "$(echo "$cluster_json" | jq -c '.nico.vpcID')")
     control_plane_k8s_version=$(echo "$cluster_json" | jq -r '.controlPlaneKubernetesVersion')
     cni_plugin=$(normalize_cni "$(echo "$cluster_json" | jq -r '.cniPlugin')")
     control_plane_vip=$(echo "$cluster_json" | jq -r '.controlPlaneVIP // empty')
@@ -279,8 +279,8 @@ ${cluster_spec}
         np_recycle_budget=$(echo "$np" | jq -r '.recycleBudget // 0')
         np_max_surge=$(echo "$np" | jq -r '.maxSurge // 0')
         # Validate required fields; skip node pools with missing or zero UUIDs (controller data issue)
-        if [[ -z "$np_name" ]] || [[ -z "$np_prefix" ]] || [[ -z "$np_os_profile" ]] || [[ -z "$np_config_profile" ]]; then
-            echo "  Warning: skipping node pool (missing name, nodeNamePrefix, release, or configProfile): $np"
+        if [[ -z "$np_name" ]] || [[ -z "$np_prefix" ]] || [[ -z "$np_os_profile" ]]; then
+            echo "  Warning: skipping node pool (missing name, nodeNamePrefix, or release): $np"
             continue
         fi
         if [[ -z "$np_instance_type" ]] || [[ "$np_instance_type" == "$ZERO_UUID" ]] || [[ "$np_instance_type" == "null" ]]; then
@@ -307,6 +307,9 @@ ${cluster_spec}
         if [[ -n "$np_ib" ]] && [[ "$np_ib" != "null" ]] && [[ "$np_ib" != "$ZERO_UUID" ]]; then
             extra_spec="${extra_spec}  infinibandPartitionID: ${np_ib}"$'\n'
         fi
+        if [[ -n "$np_config_profile" ]]; then
+            extra_spec="${extra_spec}  configProfile: ${np_config_profile}"$'\n'
+        fi
         # Optional CRD fields (match platform CRD defaults when not set)
         extra_spec="${extra_spec}  autoProvisionDisabled: ${np_auto_provision_disabled}"$'\n'
         extra_spec="${extra_spec}  autoModeDisabled: ${np_auto_mode_disabled}"$'\n'
@@ -324,7 +327,6 @@ spec:
   nodeNamePrefix: ${np_prefix}
   instanceTypeID: ${np_instance_type}
   osProfile: ${np_os_profile}
-  configProfile: ${np_config_profile}
   desiredNodeCount: ${np_desired}
   systemReservedMemory: ${np_system_mem}
 ${extra_spec}"
