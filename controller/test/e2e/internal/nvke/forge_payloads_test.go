@@ -586,8 +586,12 @@ func TestBuildForgeNodePayloadsDoesNotInstallNvkeAgent(t *testing.T) {
 			continue
 		}
 		for _, field := range strings.Fields(command) {
-			if field == "nke-agent" {
-				t.Errorf("the node's own nke-agent should be left alone, got:\n%s", command)
+			// Both spellings. The guard is about not installing the agent over
+			// the one the image carries, which is true whichever name that
+			// image gives it -- and the name changes with the image, so
+			// checking one spelling goes half-blind the moment it moves.
+			if field == "nke-agent" || field == "nvke-agent" {
+				t.Errorf("the node's own agent should be left alone, got:\n%s", command)
 			}
 		}
 	}
