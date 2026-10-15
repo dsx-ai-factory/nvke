@@ -41,9 +41,9 @@ spec:
   dependencies:
     # The Kubernetes version the image carries for the stream's minor.
     - {name: kube, constraintFrom: {capability: kube}}
-    # The OVN stream to qualify. A choice about what is tested, so it is stated
-    # here and not left to float to whatever the image carries newest.
-    - {name: cni-ovn, constraint: "1.4"}
+    # The OVN stream to qualify is OVN_STREAMS in the cni-ovn Makefile, which
+    # is the pin the agent is synced to. No constraint: the pin is the choice.
+    - {name: cni-ovn}
 
     # The image for each architecture depends on the stream's Ubuntu series. The
     # point release in its file name is the highest of the releases that series

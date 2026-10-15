@@ -270,7 +270,7 @@ func TestInstallCNIOVNRequiresHostOpenVSwitch(t *testing.T) {
 		CniVariant:     pb.CniVariant_CNI_VARIANT_OVN,
 		PodNetworkCidr: "10.244.0.0/16",
 		ServiceCidr:    "10.96.0.0/12",
-	}, "nvke-cni-ovn-charts-1.4.0")
+	}, "nvke-cni-ovn-charts-1.4.11")
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, errOvnRequiresHostOpenVSwitch), "got %v", err)
 }
@@ -300,7 +300,7 @@ func TestNvkeCniAptSpec(t *testing.T) {
 
 	spec, err = nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_UNSPECIFIED, pb.CniAptRole_CNI_APT_ROLE_CHARTS, "")
 	assert.NoError(t, err)
-	assert.Equal(t, "nvke-cni-ovn-charts-1.4.0", spec)
+	assert.Equal(t, "nvke-cni-ovn-charts-1.4.11", spec)
 
 	spec, err = nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_CALICO, pb.CniAptRole_CNI_APT_ROLE_IMAGES, "")
 	assert.NoError(t, err)

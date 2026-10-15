@@ -4,7 +4,7 @@
 # The ovn-kubernetes chart stream the agent installs by default
 # (defaultOvnCniChartStream in agent/internal/agent/cni.go). Bump here and run
 # `make lock`; see README.md.
-OVN_STREAMS ?= 1.4.0
+OVN_STREAMS ?= 1.4.11
 
 CNI := cni-ovn
 PRODUCT := OVN
