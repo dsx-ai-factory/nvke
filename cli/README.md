@@ -194,8 +194,9 @@ running the bootstrap. With `provisioned`, each node's `spire-agent` dials the
 SPIRE address it was given when the node was provisioned, so that address has to
 be a floating VIP the operator points at the bootstrap machine for the duration
 of the run; see [Your First Cluster](../docs/first-cluster.md#real-site). With
-`nico`, the nodes dial `spire.externalAddress`, which the controller writes into
-their user data. With `provisioned` and no thumbprints, or with
+`nico`, the nodes dial `spire.externalAddress`, which the controller passes to
+the user data template of the `ClusterRelease` they boot; that template has to
+write it (see [SPIRE with NICo nodes](docs/sitespec.md#spire-with-nico-nodes)). With `provisioned` and no thumbprints, or with
 `--disable-mtls`, nothing is published.
 
 | Variable | Default | Purpose |

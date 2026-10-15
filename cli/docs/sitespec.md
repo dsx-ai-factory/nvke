@@ -135,10 +135,25 @@ bootstrap SPIRE server reads (the `tpm-pubhashes` ConfigMap in `spire-server`).
 A node attests once that entry has synced into the SPIRE pod, which can take up
 to about a minute; its agent retries until then.
 
-CWE writes the SPIRE server's address into each node's userdata, so it has to be
-one a node can reach before any cluster exists. Set `spire.externalAddress` to
-the address of the host running the bootstrap, as seen from the network the nodes
-are created on. The bootstrap publishes the server there on NodePort 30081.
+CWE passes the SPIRE server's address to each node's user data template, so it
+has to be one a node can reach before any cluster exists. Set
+`spire.externalAddress` to the address of the host running the bootstrap, as
+seen from the network the nodes are created on. The bootstrap publishes the
+server there on NodePort 30081.
+
+The values reach a node only if the `ClusterRelease` in `infra.nico.releases`
+writes them: its `userDataTemplate` must carry the SPIRE `write_files` block in
+[What NVKE puts in the user data](../../docs/operate/build-node-images.md#what-nvke-puts-in-the-user-data),
+which `examples/clusterrelease.yaml` does not. Without it the nodes never attest
+and the bootstrap waits until `--timeout`. That page describes the values the
+finished site controller fills in. The bootstrap controller fills in others:
+
+| Template value | From the bootstrap |
+|---|---|
+| `{{ .SpireServerAddress }}` | `spire.externalAddress` |
+| `{{ .SpireServerPort }}` | `30081` |
+| `{{ .TrustDomain }}`, `{{ .TrustBundle }}` | The bootstrap SPIRE server's trust domain and bundle |
+| `{{ .Username }}`, `{{ .HashedPassword }}` | `infra.nico.tenant.user` and the password in `infra.nico.tenant.passwordFile` |
 `nvkectl bootstrap site` requires it with `nico` unless `--disable-mtls` is
 passed, since nothing reads it without SPIRE. `--dry-run` applies the same check.
 Setting `spire.externalAddress` with `provisioned` is rejected: those hosts were
@@ -205,7 +220,7 @@ With `nico` the controller resolves `infra.nico.controlPlane.release` from
 its own API: a `ClusterRelease` of that name and the `MachineImage` it names.
 The bootstrap controller starts with neither, so `infra.nico.releases` points at
 the manifests, written as in
-[Get NVKE artifacts and OS profiles built with NVKR](../../docs/operate/build-node-images.md),
+[Get NVKE artifacts from NVKR and write release manifests](../../docs/operate/build-node-images.md),
 and the bootstrap applies them to the Kind cluster after the controller's CRDs
 exist and before it creates the site cluster. `bootstrap site` and
 `nvkectl validate sitespec --bootstrap-only` fail, before any Kind cluster exists,

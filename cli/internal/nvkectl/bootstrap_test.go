@@ -2402,7 +2402,7 @@ func TestDumpSiteSpecNamesTheNicoControlPlaneAsDocumented(t *testing.T) {
 		}
 	}
 	// The example sets vpcPrefixIDs and no subnetIDs, and leaves configProfile out.
-	for _, reject := range []string{"osprofile", "sshkeygroupids", "vpcprefixids", "instancetypepreference", "configprofile", "subnetids", "subnetIDs", "configProfile"} {
+	for _, reject := range []string{"sshkeygroupids", "vpcprefixids", "instancetypepreference", "configprofile", "subnetids", "subnetIDs", "configProfile"} {
 		if strings.Contains(out, reject) {
 			t.Errorf("the dump has %q, which is lower-cased or unset:\n%s", reject, out)
 		}

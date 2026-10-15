@@ -1124,8 +1124,8 @@ func TestLoad_NicoBlocksAreTheAPIsStructs(t *testing.T) {
 		t.Errorf("infra.nico = %s, want %s", gotJSON, wantJSON)
 	}
 
-	_, err = Load(writeNicoTemp(t, strings.Replace(nicoYAML, "      release: example-os-profile", "      releas: typo", 1)))
-	if err == nil || !strings.Contains(err.Error(), "releas") {
+	_, err = Load(writeNicoTemp(t, strings.Replace(nicoYAML, "      release: example-os-profile", "      relaese: typo", 1)))
+	if err == nil || !strings.Contains(err.Error(), "relaese") {
 		t.Errorf("Load of a misspelled field = %v, want an error naming it", err)
 	}
 
@@ -1305,6 +1305,8 @@ func TestValidate_SpireExternalAddress(t *testing.T) {
 		{"nico without an address (required only with mTLS, checked by bootstrap)", true, "", ""},
 		{"nico with loopback", true, "127.0.0.1", "routable unicast"},
 		{"nico with the unspecified address", true, "0.0.0.0", "routable unicast"},
+		{"nico with a zoned IPv6 address", true, "2001:db8::1%eth0", "without a zone"},
+		{"nico with a zone carrying a helm value", true, "2001:db8::1%x,spiffe.enabled=false", "without a zone"},
 		{"nico with an upper-case name", true, "Bootstrap.Example.com", "IP address or a lowercase DNS name"},
 		{"nico with a name carrying a port", true, "bootstrap.example.com:30081", "IP address or a lowercase DNS name"},
 		{"provisioned without an address", false, "", ""},

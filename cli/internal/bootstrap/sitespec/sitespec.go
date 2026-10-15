@@ -892,8 +892,10 @@ func (v *validator) checkSpireExternalAddress(inv *SiteSpec) {
 	}
 	if ip, err := netip.ParseAddr(address); err == nil {
 		// Loopback and the unspecified address mean nothing from another machine.
-		if !ip.IsGlobalUnicast() {
-			v.addf("%s %q must be a routable unicast address", pathSpireExternalAddress, address)
+		// A zone means nothing either, and its text is not validated: it reaches
+		// helm --set-string, where a comma would set another value.
+		if !ip.IsGlobalUnicast() || ip.Zone() != "" {
+			v.addf("%s %q must be a routable unicast address without a zone", pathSpireExternalAddress, address)
 		}
 		return
 	}
