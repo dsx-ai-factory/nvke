@@ -68,7 +68,67 @@ See [Preview status and known limitations](../overview/preview-status.md).
 
 ### The node OS image
 
-NVKR builds the node OS image, `nvke-node-image-<ARCH>.qcow2`: Ubuntu 26.04.1 in QEMU copy-on-write (QCOW2) format, for `amd64` or `arm64`. A local build runs NVKR's `scripts/nvke-os-local.sh` with `NVKE_OS_ARCH` set to the architecture, on native Linux with Kernel-based Virtual Machine (KVM) access, at least 8 CPUs, 10 GiB of memory and 64 GiB of free disk space. It writes `.nvkr/runs/<ATTEMPT>/outputs/nvke-node-image-<ARCH>.qcow2`, which is unsigned and unqualified. The maintained M2 Definition also builds node images for both architectures in the hosted pipeline. [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/definitions/nvke-os/README.md) has the procedure. Copy the image to where your provisioning system serves images, then [Prepare nodes](prepare-nodes.md) from it.
+NVKR builds the node OS image, `nvke-node-image-<ARCH>.qcow2`: Ubuntu 26.04.1 in QEMU copy-on-write (QCOW2) format, for `amd64` or `arm64`. A local build runs NVKR's `scripts/nvke-os-local.sh` with `NVKE_OS_ARCH` set to the architecture, on native Linux with Kernel-based Virtual Machine (KVM) access, at least 8 CPUs, 10 GiB of memory and 64 GiB of free disk space. It writes `.nvkr/runs/<ATTEMPT>/outputs/nvke-node-image-<ARCH>.qcow2`, which is unsigned and unqualified. The maintained M2 Definition also builds node images for both architectures in the hosted pipeline. [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/definitions/nvke-os/README.md) has the procedure. [Serve the boot artifacts over HTTP(S)](#serve-the-boot-artifacts-over-https), then [Prepare nodes](prepare-nodes.md) from the image.
+
+## Serve the boot artifacts over HTTP(S)
+
+For the NICo iPXE boot flow described here, publish the boot artifacts at HTTP or HTTPS URLs that the machines can reach before their installed OS starts. You provide the endpoint, for example an object store with an HTTP interface, a site-local web server, or an Amazon S3 bucket served through CloudFront. NVKE passes the boot instructions to NICo; it does not upload these files or create a server for them.
+
+The files to publish depend on your boot method:
+
+| Boot method | Files served over HTTP(S) | What downloads them |
+|---|---|---|
+| Write the NVKR QCOW2 image to disk | The architecture-matched EFI imager, such as `qcow-imager.efi`, and `nvke-node-image-<ARCH>.qcow2`. | iPXE chainloads the EFI imager; the imager downloads the QCOW2 and writes it to disk. Use an imager and script validated for your NICo site, including its disk-selection parameters. |
+| Install from an Ubuntu ISO | The matching `vmlinuz`, `initrd` and installer ISO. | iPXE loads the kernel and initrd; the installer downloads the ISO. This is the method in the example MachineImage. |
+
+The `MachineImage.spec.nico.ipxeScript` field holds the script itself. If your script chains another `.ipxe` script, publish that file at a reachable HTTP(S) URL too. A QCOW2 is a disk image, not an EFI executable: the script must launch an imager to install it.
+
+An OCI registry can store the artifacts, but iPXE has [no native OCI pull support](https://github.com/ipxe/ipxe/blob/master/src/config/general.h). If your build publishes them to a registry, pull and extract the files on your publishing host, verify them under your release policy, and upload the resulting files to the HTTP(S) endpoint. Neither an `oci://` reference nor an `s3://` upload destination is a boot URL.
+
+Use a separate path for each image build and architecture, and keep its files available for future node creation and replacement. Configure DNS, routing and firewall access from the provisioning network to the endpoint's port, usually TCP 80 or 443. For HTTPS, both iPXE and the imager or installer must support TLS and trust the endpoint's certificate. Registry logins and AWS credentials on the publishing host are not automatically available to these boot clients; configure read access that they can use.
+
+### Example: upload to Amazon S3 and serve over HTTPS
+
+This example uses an existing bucket and the [AWS CLI](https://docs.aws.amazon.com/cli/latest/reference/s3/cp.html) on the publishing host. Replace the bucket, Region, build ID and local paths below. `QCOW2_PATH` is the image from your NVKR Run; `EFI_PATH` is a compatible imager supplied by your site. The example uploads files only: the bucket or HTTP frontend must already allow the boot clients to read them.
+
+```bash
+BOOT_BUCKET="amzn-s3-demo-bucket"
+BOOT_REGION="us-west-2"
+BOOT_PREFIX="nvke/build-001/amd64"
+QCOW2_PATH="/path/to/nvke-node-image-amd64.qcow2"
+EFI_PATH="/path/to/site-compatible/qcow-imager.efi"
+
+aws s3 cp "$QCOW2_PATH" \
+  "s3://${BOOT_BUCKET}/${BOOT_PREFIX}/nvke-node-image-amd64.qcow2" \
+  --region "$BOOT_REGION"
+aws s3 cp "$EFI_PATH" \
+  "s3://${BOOT_BUCKET}/${BOOT_PREFIX}/qcow-imager.efi" \
+  --region "$BOOT_REGION"
+```
+
+If the bucket permits direct reads from the boot clients, its [regional S3 object endpoint](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) gives these HTTPS URLs:
+
+```bash
+BOOT_BASE_URL="https://${BOOT_BUCKET}.s3.${BOOT_REGION}.amazonaws.com/${BOOT_PREFIX}"
+BOOT_LOADER_URL="${BOOT_BASE_URL}/qcow-imager.efi"
+IMAGE_URL="${BOOT_BASE_URL}/nvke-node-image-amd64.qcow2"
+```
+
+To keep the bucket private, you can instead serve it through [CloudFront with origin access control](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html), configure viewer access for the boot clients, and use the CloudFront hostname in `BOOT_BASE_URL`. A site-local object store or web server can provide the same HTTP(S) interface. S3 static website hosting is not required; its [website endpoints support HTTP only](https://docs.aws.amazon.com/AmazonS3/latest/userguide/WebsiteEndpoints.html).
+
+Put the final URLs into your site's validated iPXE script in `MachineImage.spec.nico.ipxeScript`: the EFI URL is the chainload target, and the QCOW2 URL is an input to the imager. Keep the imager's required parameters and NICo's cloud-init datasource in that script. These URL assignments alone are not a complete imaging script; this release has no reference QCOW2 boot script.
+
+### Verify the endpoint before provisioning
+
+From a host on the same provisioning network as the machines, download both files using the URLs and read-access method the boot clients will use. For an endpoint that permits unauthenticated reads:
+
+```bash
+curl --fail --location --output /tmp/nvke-qcow-imager.efi "$BOOT_LOADER_URL"
+curl --fail --location --output /tmp/nvke-node-image-amd64.qcow2 "$IMAGE_URL"
+sha256sum /tmp/nvke-qcow-imager.efi /tmp/nvke-node-image-amd64.qcow2
+```
+
+Compare the downloaded files' SHA-256 digests with the verified source artifacts before using them. Check every URL in an installer or chained-script flow in the same way. This checks network access and file integrity; a successful machine boot is still needed to validate firmware TLS support, imager compatibility, disk selection and first-boot user data.
 
 ## Write the OS profiles
 
@@ -104,7 +164,7 @@ A control-plane node pool resolves its `osProfile` to a `ClusterRelease`, and a 
    | `spec.variant` | Optional. Distinguishes images built from the same operating system for another purpose, such as `fde`. |
    | `spec.nico.ipxeScript` | The script NICo runs to boot the machine. It starts with a `#!ipxe` line of its own. |
 
-   The example's `ipxeScript` installs Ubuntu 24.04 from the installer ISO; replace its `boot.example.com` and `releases.example.com` URLs with hosts that your NICo machines reach. To boot the NVKR node image instead, `ipxeScript` must write the QCOW2 file to the machine's disk with a loader your NICo site provides. This release has no reference script.
+   The example's `ipxeScript` installs Ubuntu 24.04 from the installer ISO; replace its `boot.example.com` and `releases.example.com` URLs with hosts that your NICo machines reach. To boot the NVKR node image instead, `ipxeScript` must write the QCOW2 file to the machine's disk with a loader your NICo site provides. Publish the files and verify their URLs as described in [Serve the boot artifacts over HTTP(S)](#serve-the-boot-artifacts-over-https). This release has no reference QCOW2 boot script.
 
 4. Write the first-boot user data in `spec.machineInit.userDataTemplate` of both releases. It starts with a cloud-init header such as `#cloud-config`, and it can reference the values in [What NVKE puts in the user data](#what-nvke-puts-in-the-user-data). In the example, replace the `apt.example.com` repository line with a command that adds an apt repository serving the NVKE node packages; NVKE publishes no such repository. A profile for the NVKR node image installs the packages the image stages, as [Prepare nodes](prepare-nodes.md) does, and writes the SPIRE files shown below.
 

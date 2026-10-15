@@ -44,6 +44,7 @@ A management cluster with an odd number of nodes, each a control-plane node that
 - **Border Gateway Protocol (BGP) peering for each VIP.** Every control-plane node advertises the VIP from local autonomous system (AS) 65100 to the node's default gateway, with peer AS 4294967000. The local AS is fixed. The peer AS has two exceptions, both for workload clusters: a control plane that uses VPC prefix IDs reads its peer AS from NICo's metadata service on each node, and setting `KUBE_VIP_FMDS_ENDPOINT` in the management plane's `env` makes every workload cluster read it from that URL. Your network must accept the route and carry it to the cluster's API callers.
 - **Pod and service networks** for each cluster that do not overlap each other or your node network.
 - **Outbound access** from the bootstrap host and the management cluster to the registries and chart repositories listed in [Install management-plane services](install-management-plane-services.md).
+- **A boot-artifact HTTP(S) endpoint** reachable from the machines' provisioning network before the installed OS starts. For QCOW2 imaging, it serves the EFI imager and QCOW2; for an ISO install, it serves the kernel, initrd and ISO. See [Serve the boot artifacts over HTTP(S)](build-node-images.md#serve-the-boot-artifacts-over-https) for hosting, an S3 example and download checks.
 
 ### Ports
 
@@ -51,6 +52,7 @@ All connections are TCP; traffic between the nodes of one cluster is not listed.
 
 | Source | Destination | Port | Purpose |
 |---|---|---|---|
+| Machines being provisioned | Boot-artifact HTTP(S) endpoint | The port in the URL, usually 80 or 443 | Downloading boot scripts, EFI imagers and OS images before the installed OS starts. |
 | Bootstrap host | Each management cluster node | 15005 | `nvke-agent`, which the bootstrap drives. |
 | Each management cluster node | Bootstrap host | 30081 | SPIRE server, for TPM node attestation during the bootstrap. |
 | Bootstrap host and install host | Management cluster API address | 6443 | Kubernetes API. |
