@@ -82,24 +82,30 @@ func toAnySlice(in []string) []any {
 // reasoning as the CAPI client), and applies the generic CAPI Machine
 // pointing at the LaunchLayerMachine.
 //
-// Unlike CAPI, this never mints a SPIRE join token: CAPLL is the
-// production-target provider, and join-token attestation must not be
-// reachable for it even as a configurable option. renderBootstrapUserData
-// rejects a node configured for join-token attestation outright instead.
+// Unlike CAPI, this never mints a SPIRE join token. The API rejects a
+// LaunchLayer cluster or node pool on a deployment whose node-agent profile
+// ValidateNodeAgentProfile refuses, but a node is pinned to the profile in
+// force when it is created, which a deployment change can move after the
+// pool was accepted, so the node's own profile is checked again here.
+// Everything is validated and rendered before any object is applied, so a
+// rejected node leaves nothing behind.
 func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDeps, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) error {
+	if err := c.ValidateNodeAgentProfile(node); err != nil {
+		return fmt.Errorf("%w: node %s: %w", shared.ErrUnsupportedMachineConfig, node.ID, err)
+	}
 	infraMachine, err := buildInfraMachine(node, nodeSet, cluster, nodePool.ControlPlane)
 	if err != nil {
 		return err
 	}
 	infraMachine.SetNamespace(deps.Namespace)
 
-	if err := deps.K8sClient.Patch(ctx, infraMachine, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
-		return fmt.Errorf("failed to apply LaunchLayerMachine %s: %w", infraMachine.GetName(), err)
-	}
-
 	userData, err := c.renderBootstrapUserData(ctx, deps, node)
 	if err != nil {
 		return fmt.Errorf("failed to render LaunchLayer bootstrap user data: %w", err)
+	}
+
+	if err := deps.K8sClient.Patch(ctx, infraMachine, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
+		return fmt.Errorf("failed to apply LaunchLayerMachine %s: %w", infraMachine.GetName(), err)
 	}
 
 	bootstrapSecret := shared.BuildBootstrapSecret(node, cluster, deps.Namespace, userData)
@@ -108,7 +114,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 	}
 
 	machine, err := shared.BuildMachine(node, nodeSet, nodePool, cluster, deps.Namespace, bootstrapSecret.Name, clusterv1.ContractVersionedObjectReference{
-		APIGroup: "infrastructure.cluster.x-k8s.io",
+		APIGroup: infrastructureGroup,
 		Kind:     "LaunchLayerMachine",
 		Name:     infraMachine.GetName(),
 	})

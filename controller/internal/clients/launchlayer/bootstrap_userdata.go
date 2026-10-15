@@ -20,8 +20,8 @@ import (
 // Adapted from capi/capi_spire_agent.conf.tmpl, with the join_token stanza
 // and its NodeAttestor removed: CAPLL is the production-target provider,
 // and join-token attestation must not be reachable for it even as a
-// configurable option. renderBootstrapUserData rejects a node configured
-// for it before this template is ever rendered.
+// configurable option. CreateMachine rejects a node configured for it
+// before this template is ever rendered.
 //
 //go:embed launchlayer_spire_agent.conf.tmpl
 var spireAgentConfigTemplateText string
@@ -84,12 +84,6 @@ func (*Client) renderBootstrapUserData(
 	controllerFiles, err := deps.NodeAgentBootstrapFiles(node)
 	if err != nil {
 		return "", err
-	}
-	// CAPLL is the production-target provider, so join-token attestation
-	// must not be reachable for it even as a configurable option -- tpm and
-	// dsxImds are the only attestation methods a LaunchLayer node supports.
-	if node.SpireAttestationMethod == db.SpireAttestationMethodJoinToken {
-		return "", fmt.Errorf("launchlayer does not support SPIRE join-token attestation; configure tpm or dsxImds")
 	}
 
 	// A site stood up without SPIFFE has no SPIRE and no workload socket to

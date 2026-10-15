@@ -80,6 +80,7 @@ const (
 	// constants here. The NICo manager retains its existing identity when the
 	// controller starts managing DSX IMDS entries too, avoiding SSA ownership churn.
 	FieldManagerNicoSpiffe        = "nico-tpm-spiffe-controller"
+	FieldManagerLaunchLayerSpiffe = "launchlayer-spiffe-controller"
 	FieldManagerMachineSpireEntry = "machine-spire-entry-controller"
 
 	LabelValueTerminateStatusInProgress = "InProgress"

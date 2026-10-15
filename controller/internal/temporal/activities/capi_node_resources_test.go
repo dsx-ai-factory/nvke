@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -721,6 +722,61 @@ func testTemplateLessForgeCAPICfg(t *testing.T) config.Config {
 	}
 }
 
+// A LaunchLayer node records CAPLL's reported identifiers in its launchLayer
+// payload, never under nico.
+func TestActivities_WaitForCAPIMachineReady_StampsLaunchLayerIdentity(t *testing.T) {
+	nodeID := uuid.MustParse("71000000-0000-0000-0000-000000000011")
+	clusterID := uuid.MustParse("71000000-0000-0000-0000-000000000012")
+	node := db.Node{ID: nodeID, ClusterID: clusterID, ControlPlane: true, Name: "worker-0"}
+	node.SetLaunchLayer(db.LaunchLayerNodeProvider{})
+	cluster := db.Cluster{ID: clusterID, Name: "cluster-a", ProviderType: db.ProviderTypeLaunchLayer}
+	cluster.ControlPlaneConfig.KubernetesVersion = "1.32.1"
+	cluster.ControlPlaneConfig.SetLaunchLayer(db.LaunchLayerControlPlaneProvider{InstanceType: "gpu.b200.8x"})
+
+	launchLayerMachine := &unstructured.Unstructured{}
+	launchLayerMachine.SetAPIVersion("infrastructure.cluster.x-k8s.io/v1alpha1")
+	launchLayerMachine.SetKind("LaunchLayerMachine")
+	launchLayerMachine.SetNamespace(constants.NamespaceNVKESystem)
+	launchLayerMachine.SetName("worker-0")
+	launchLayerMachine.Object["status"] = map[string]any{
+		"instanceID": "instance-123",
+		"machineID":  "machine-456",
+		"rackID":     "rack-7",
+	}
+	machine := testCAPIMachineWithNicoInfraRef(clusterv1.MachineAddresses{{Type: clusterv1.MachineInternalIP, Address: "10.0.0.10"}})
+	machine.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{
+		APIGroup: "infrastructure.cluster.x-k8s.io",
+		Kind:     "LaunchLayerMachine",
+		Name:     "worker-0",
+	}
+	k8sClient := newCAPIMachineReadyClient(t, machine, launchLayerMachine, &apiextensionsv1.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "launchlayermachines.infrastructure.cluster.x-k8s.io",
+			Labels: map[string]string{"cluster.x-k8s.io/v1beta2": "v1alpha1"},
+		},
+	})
+
+	mockDB, mockTx := newCAPIMachineReadyDB(t, node, cluster)
+	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	mockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
+	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+		return nodeForUpdate.IP == ""
+	})).Return(node, nil).Maybe()
+	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+		return nodeForUpdate.IP == "10.0.0.10" &&
+			nodeForUpdate.Nico == nil &&
+			nodeForUpdate.LaunchLayer != nil &&
+			*nodeForUpdate.LaunchLayer == db.LaunchLayerNodeProvider{InstanceID: "instance-123", MachineID: "machine-456", RackID: "rack-7"}
+	})).Return(node, nil).Once()
+
+	a := &Activities{db: mockDB, k8sClient: k8sClient}
+
+	ipAddress, err := executeWaitForCAPIMachineReadyActivity(t, a, WaitForCAPIMachineReadyInput{NodeID: nodeID})
+	require.NoError(t, err)
+	assert.Equal(t, "10.0.0.10", ipAddress)
+	mockTx.AssertExpectations(t)
+}
+
 func newCAPIMachineReadyClient(t *testing.T, objects ...client.Object) client.Client {
 	t.Helper()
 
@@ -903,6 +959,41 @@ func TestCreateCAPIInfraMachineForNode_ClassifiesNodeLookupErrors(t *testing.T) 
 			mockDB.AssertExpectations(t)
 		})
 	}
+}
+
+func TestCreateCAPIInfraMachineForNode_UnsupportedMachineConfigIsNonRetryable(t *testing.T) {
+	nodeID := uuid.New()
+	clusterID := uuid.New()
+	nodePoolID := uuid.New()
+	nodeSetID := uuid.New()
+	node := db.Node{
+		ID:                     nodeID,
+		NodePoolID:             nodePoolID,
+		NodeSetID:              nodeSetID,
+		ClusterID:              clusterID,
+		Name:                   "worker",
+		SpiffeEnabled:          true,
+		SpireAttestationMethod: db.SpireAttestationMethodJoinToken,
+	}
+
+	mockDB := &testutil.MockDB{}
+	mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil)
+	mockDB.On("GetNodeSet", mock.Anything, nodeSetID).Return(db.NodeSet{ID: nodeSetID, NodePoolID: nodePoolID}, nil)
+	mockDB.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{ID: nodePoolID, ClusterID: clusterID}, nil)
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, ProviderType: db.ProviderTypeLaunchLayer}, nil)
+
+	a := &Activities{db: mockDB}
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestActivityEnvironment()
+	env.RegisterActivity(a.CreateCAPIInfraMachineForNode)
+
+	_, err := env.ExecuteActivity(a.CreateCAPIInfraMachineForNode, CreateCAPIInfraMachineForNodeInput{NodeID: nodeID})
+	require.Error(t, err)
+	var applicationErr *temporal.ApplicationError
+	require.ErrorAs(t, err, &applicationErr)
+	require.True(t, applicationErr.NonRetryable(),
+		"a node configured for an attestation method its provider rejects cannot succeed by retrying")
+	mockDB.AssertExpectations(t)
 }
 
 // TestApplyCAPIMachineRebootAnnotation_LaunchLayerUsesCAPLLKey proves the

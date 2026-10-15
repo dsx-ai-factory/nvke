@@ -26,8 +26,10 @@ func New() *Client {
 }
 
 const (
-	// infrastructureAPIVersion is the CAPLL CRDs' apiVersion.
-	infrastructureAPIVersion = "infrastructure.cluster.x-k8s.io/v1alpha1"
+	// infrastructureGroup and infrastructureAPIVersion are the CAPLL CRDs'
+	// API group and apiVersion.
+	infrastructureGroup      = "infrastructure.cluster.x-k8s.io"
+	infrastructureAPIVersion = infrastructureGroup + "/v1alpha1"
 	// nameKey is the metadata/security-group "name" JSON field, shared across
 	// every manifest this package builds.
 	nameKey = "name"

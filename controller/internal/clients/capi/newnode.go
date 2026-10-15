@@ -4,6 +4,9 @@
 package capi
 
 import (
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -16,3 +19,10 @@ func (*Client) ApplyNodePoolNodePayload(_ db.NodePool, _ *db.Node) error {
 // ApplyPlaceholderNodePayload is a no-op: CAPI nodes carry no per-node
 // provider payload the way NICo nodes do.
 func (*Client) ApplyPlaceholderNodePayload(_ *db.Node) {}
+
+// ApplyObservedNodeIdentity records Forge identity for the one CAPI case that
+// reports it: a cluster whose own template renders a NicoMachine (see
+// applyNicoMachineInstanceLabels). CAPD reports none, so nothing is stamped.
+func (*Client) ApplyObservedNodeIdentity(node *db.Node, infraMachine *unstructured.Unstructured) error {
+	return shared.StampForgeIdentity(node, infraMachine)
+}

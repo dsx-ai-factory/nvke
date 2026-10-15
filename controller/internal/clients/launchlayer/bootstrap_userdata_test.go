@@ -28,24 +28,13 @@ func testDeps(cfg config.Config, trustDomain, trustBundle string) shared.Machine
 	}
 }
 
-func TestRenderBootstrapUserData_RejectsJoinTokenAttestation(t *testing.T) {
+// The template has no join_token stanza or NodeAttestor to fall back on, so
+// CreateMachine's rejection is what keeps a misconfigured deployment from
+// handing a node an attestor-less agent config.
+func TestSpireAgentConfigTemplate_HasNoJoinTokenAttestor(t *testing.T) {
 	t.Parallel()
 
-	cfg := config.Config{
-		SpiffeEnabled: true,
-		NodeAgent:     config.NodeAgentConfig{SpireAttestationMethod: config.SpireAttestationMethodJoinToken},
-	}
-	node := db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodJoinToken}
-
-	_, err := (&Client{}).renderBootstrapUserData(context.Background(), testDeps(cfg, "example.org", "bundle"), node)
-	require.ErrorContains(t, err, "launchlayer does not support SPIRE join-token attestation")
-
-	// The rendered SPIRE agent config template has no join_token stanza or
-	// NodeAttestor at all to fall back on, so this rejection is the only
-	// thing standing between a misconfigured deployment and a broken
-	// (attestor-less) agent config reaching a real node.
 	assert.NotContains(t, spireAgentConfigTemplateText, "join_token")
-	assert.NotContains(t, spireAgentConfigTemplateText, `NodeAttestor "join_token"`)
 }
 
 func TestRenderBootstrapUserData_TPMAttestor(t *testing.T) {

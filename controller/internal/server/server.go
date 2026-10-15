@@ -24,6 +24,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/version"
 )
@@ -253,6 +254,7 @@ func NewServerImpl(
 	clusterService.machineAllowlistedLabelKeys = cfg.MachineMetadataAllowlistedLabelKeys
 	clusterService.machineAllowlistedAnnotationKeys = cfg.MachineMetadataAllowlistedAnnotationKeys
 	clusterService.fleetOIDC = o.fleetOIDC
+	nodes.PinAgentProfile(&clusterService.nodeAgentProfile, cfg)
 
 	return &serverImpl{
 		clusterService:       *clusterService,

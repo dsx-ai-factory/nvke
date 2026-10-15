@@ -19,6 +19,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	capiclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
 	nicoclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
@@ -89,6 +90,9 @@ type clusterService struct {
 	allowlistedLabelKeys             []string
 	machineAllowlistedLabelKeys      []string
 	machineAllowlistedAnnotationKeys []string
+	// nodeAgentProfile carries the node-agent settings nodes.PinAgentProfile
+	// stamps on every node this deployment creates.
+	nodeAgentProfile db.Node
 }
 
 func NewClusterService(
@@ -320,6 +324,19 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 	return network, nil
 }
 
+// validateNodeAgentProfile rejects a cluster whose nodes could never join
+// under this deployment's node-agent settings.
+func (s *clusterService) validateNodeAgentProfile(providerType db.ProviderType) error {
+	validator, err := clients.GetNodeAgentProfileValidator(db.Cluster{ProviderType: providerType})
+	if err != nil {
+		return err
+	}
+	if err := validator.ValidateNodeAgentProfile(s.nodeAgentProfile); err != nil {
+		return fmt.Errorf("this deployment's node-agent settings do not support the %s provider: %w", providerType, err)
+	}
+	return nil
+}
+
 func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClusterRequest) error {
 	if err := naming.ValidateClusterNameForNodeNaming(req.Name); err != nil {
 		return err
@@ -363,6 +380,9 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		providerType = db.ProviderTypeLaunchLayer
 	default:
 		return fmt.Errorf("exactly one provider must be set")
+	}
+	if err := s.validateNodeAgentProfile(providerType); err != nil {
+		return err
 	}
 
 	if req.ControlPlaneConfig != nil && req.ControlPlaneConfig.NodeAgentConfig != nil && req.ControlPlaneConfig.NodeAgentConfig.Version != nil {

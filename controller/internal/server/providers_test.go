@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 func TestProviderSupport_Require(t *testing.T) {
@@ -45,6 +46,44 @@ func TestProviderSupport_Require(t *testing.T) {
 			err := newProviderSupport(params.configured).require(params.provider)
 			if params.wantErr != "" {
 				require.EqualError(t, err, params.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestClusterService_ValidateNodeAgentProfile(t *testing.T) {
+	t.Parallel()
+
+	spiffeTPM := db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodTPM}
+	tests := map[string]struct {
+		profile  db.Node
+		provider db.ProviderType
+		wantErr  string
+	}{
+		"launchLayer on a SPIFFE tpm deployment is rejected": {
+			profile:  spiffeTPM,
+			provider: db.ProviderTypeLaunchLayer,
+			wantErr: "this deployment's node-agent settings do not support the launchlayer provider: " +
+				"SPIFFE-enabled LaunchLayer nodes require dsxImds SPIRE attestation, got tpm",
+		},
+		"launchLayer on a SPIFFE dsxImds deployment is accepted": {
+			profile:  db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS},
+			provider: db.ProviderTypeLaunchLayer,
+		},
+		"nico on a SPIFFE tpm deployment is accepted": {
+			profile:  spiffeTPM,
+			provider: db.ProviderTypeNico,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			err := (&clusterService{nodeAgentProfile: tt.profile}).validateNodeAgentProfile(tt.provider)
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
 				return
 			}
 			require.NoError(t, err)

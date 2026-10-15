@@ -6,6 +6,8 @@ package clients
 import (
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/launchlayer"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
@@ -27,6 +29,11 @@ type NewNodeProvider interface {
 	// infra provider or a later activity settles (e.g. an instance type)
 	// are left unset here.
 	ApplyPlaceholderNodePayload(node *db.Node)
+
+	// ApplyObservedNodeIdentity records the instance identity the infra
+	// provider reports on infraMachine, the node's infrastructure machine,
+	// once it is ready. A value already recorded is never overwritten.
+	ApplyObservedNodeIdentity(node *db.Node, infraMachine *unstructured.Unstructured) error
 }
 
 // GetNewNodeProvider selects the NewNodeProvider implementation for the
