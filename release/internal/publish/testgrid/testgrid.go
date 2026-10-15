@@ -213,6 +213,14 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 // out of order. A fixed-width zero-padded UnixNano sorts lexicographically
 // the same as it sorts numerically.
 //
+// run_id is required, not merely appended when present: Upload is
+// create-only, so two publishes that land on the same build path silently
+// agree -- the second is dropped, not an error -- and a timestamp alone is
+// not enough to rule that out. A result published outside GitHub Actions
+// (no GITHUB_RUN_ID) would otherwise collapse every later publish for the
+// same combination/stream onto one ambiguous path, each one printing
+// "published" while doing nothing.
+//
 // The timestamp comes from the Result record's own FinishedAt, not from
 // reading the clock when Publish runs: FinishedAt is set once by `qualify
 // result` and persisted to the file `qualify publish` reads, so a retried
@@ -232,6 +240,9 @@ func (d *Destination) buildPrefix(result *qualification.Result) (string, error) 
 	}
 	if result.Spec.FinishedAt.IsZero() {
 		return "", fmt.Errorf("result has no spec.finishedAt, so the build name has no ordering timestamp")
+	}
+	if result.Spec.Identity.RunID == "" {
+		return "", fmt.Errorf("result has no spec.identity.runID, so this leg's build name has nothing distinguishing it from another run of the same combination/stream -- Upload's create-only write would then silently drop a second, corrected publish instead of erroring or overwriting")
 	}
 
 	group := fmt.Sprintf("%s-prod", provider)

@@ -136,6 +136,18 @@ func TestBuildPrefixRejectsZeroFinishedAt(t *testing.T) {
 	}
 }
 
+// Without a run_id, Upload's create-only write would silently drop every
+// later publish for the same combination/stream instead of erroring, so
+// buildPrefix must reject an empty one up front.
+func TestBuildPrefixRejectsEmptyRunID(t *testing.T) {
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
+	d := &Destination{}
+
+	if _, err := d.buildPrefix(result); err == nil {
+		t.Fatal("buildPrefix returned nil, want an error for an empty run_id")
+	}
+}
+
 func TestBuildPrefixGroupUsesCapabilitiesProvider(t *testing.T) {
 	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "some-other-provider", "gpu": "h100", "kube": "1.34"})
 	d := &Destination{}
