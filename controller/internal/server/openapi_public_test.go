@@ -95,7 +95,7 @@ func TestPublicOpenAPIHidesTeleportFromTheClusterSpec(t *testing.T) {
 	require.NoError(t, doc.Validate(context.Background()))
 
 	assert.NotContains(t, strings.ToLower(string(got)), "teleport")
-	assert.NotContains(t, doc.Paths.Map(), "/osProfiles")
+	assert.NotContains(t, doc.Paths.Map(), "/releases")
 	assert.NotContains(t, doc.Paths.Map(), "/configProfiles")
 
 	cluster := doc.Components.Schemas["Cluster"].Value

@@ -65,7 +65,7 @@ type NicoInfra struct {
 	// Releases is a file, or a directory of files, holding the MachineImage and
 	// ClusterRelease manifests the bootstrap applies to the Kind cluster before
 	// it creates the site cluster. The controller resolves the control plane's
-	// osProfile from them. Required.
+	// release from them. Required.
 	Releases string `yaml:"releases,omitempty"`
 }
 
@@ -211,7 +211,7 @@ func (v *validator) checkNico(n *NicoInfra) {
 		}
 	}
 	if n.Releases == "" {
-		v.addf("%s is required: the controller resolves %s.osProfile from the MachineImage and ClusterRelease manifests in it",
+		v.addf("%s is required: the controller resolves %s.release from the MachineImage and ClusterRelease manifests in it",
 			pathNicoReleases, pathNicoControlPlane)
 	}
 }
@@ -239,8 +239,8 @@ func (v *validator) checkNicoControlPlane(cp NicoControlPlane) {
 	case len(cp.VpcPrefixIDs) > 0 && len(cp.SubnetIDs) > 0:
 		v.addf("%s must set only one of vpcPrefixIDs and subnetIDs", cpPath)
 	}
-	if cp.OSProfile == "" {
-		v.addf("%s.osProfile is required", cpPath)
+	if cp.Release == "" {
+		v.addf("%s.release is required", cpPath)
 	}
 	// configProfile is optional: the bootstrap controller reads profiles from an
 	// empty directory, so a name is passed on but never resolves, and none is

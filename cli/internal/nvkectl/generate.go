@@ -125,6 +125,7 @@ type generateOIDCKubeconfigOptions struct {
 	issuerURL   string
 	clientID    string
 	extraScopes []string
+	headless    bool
 	outputFile  string
 }
 
@@ -145,11 +146,16 @@ Nothing is sent to the cluster. After OIDC is enabled on the API server, the
 file can be passed to config set-site --kubeconfig.
 
 By default the kubeconfig is printed to stdout. Use --output-file to write it
-to a file instead.`,
+to a file instead.
+
+--headless stamps --grant-type=device-code and --skip-open-browser. kubectl
+prints a URL to open on another machine. The identity provider client must
+allow the device authorization grant.`,
 		Example: `  nvkectl generate oidc-kubeconfig \
     --kubeconfig ./cluster.kubeconfig \
     --oidc-issuer-url https://idp.example/realms/nke \
     --oidc-client-id nvke-cli \
+    --headless \
     --output-file ./oidc.kubeconfig
 
   nvkectl config set-site --name my-tier0-site \
@@ -166,6 +172,7 @@ to a file instead.`,
 	cmd.Flags().StringVar(&opts.issuerURL, "oidc-issuer-url", "", "OIDC issuer URL (required)")
 	cmd.Flags().StringVar(&opts.clientID, "oidc-client-id", "", "OIDC client ID (required)")
 	cmd.Flags().StringArrayVar(&opts.extraScopes, "oidc-extra-scope", nil, "Extra OIDC scope. Repeatable.")
+	cmd.Flags().BoolVar(&opts.headless, "headless", false, "Use the device authorization grant so login works without a local browser")
 	cmd.Flags().StringVar(&opts.outputFile, "output-file", "", "Write kubeconfig to file instead of stdout")
 	_ = cmd.MarkFlagRequired("kubeconfig")
 	_ = cmd.MarkFlagRequired("oidc-issuer-url")
@@ -179,6 +186,7 @@ func runGenerateOIDCKubeconfig(cmd *cobra.Command, opts *generateOIDCKubeconfigO
 		IssuerURL:   opts.issuerURL,
 		ClientID:    opts.clientID,
 		ExtraScopes: opts.extraScopes,
+		Headless:    opts.headless,
 	})
 	if err != nil {
 		return err

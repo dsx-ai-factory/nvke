@@ -127,7 +127,7 @@ func apiNicoNodeSetProviderFromDB(nicoNodeSetProvider *db.NicoNodePoolProvider) 
 	return &api.NicoNodeSetProvider{
 		SubnetIDs:             append([]uuid.UUID(nil), nicoNodeSetProvider.SubnetIDs...),
 		VpcPrefixIDs:          append([]uuid.UUID(nil), nicoNodeSetProvider.VpcPrefixIDs...),
-		OSProfile:             nicoNodeSetProvider.OSProfile,
+		Release:               nicoNodeSetProvider.Release,
 		ConfigProfile:         nicoNodeSetProvider.ConfigProfile,
 		DiskSelectionStrategy: api.DiskSelectionStrategyCreate(nicoNodeSetProvider.DiskSelectionStrategy),
 	}

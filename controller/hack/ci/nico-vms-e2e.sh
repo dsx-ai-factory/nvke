@@ -382,7 +382,7 @@ case "$(uname -m)" in
 esac
 
 # ── The agent the tenant nodes run ──────────────────────────────────────────
-# The OS profile's userData apt-installs nvke-agent from the bundle server, then
+# The release's userData apt-installs nvke-agent from the bundle server, then
 # replaces it with http://carbide-pxe.forge:18080/files/node-agent/nvke-agent
 # when that URL answers -- and silently keeps the packaged one otherwise. Build
 # it from this checkout and stage it at the path the template names. The file
@@ -390,7 +390,7 @@ esac
 # this script wipes.
 export NICO_SIM_FILES_DIR="${NICO_SIM_DIR}/var/files"
 # nico-sim boots guests of the host's architecture, so the specs use the
-# matching release. Keep this name in step with nicoVMSOSProfile in
+# matching release. Keep this name in step with nicoVMSRelease in
 # test/e2e/tenant_test.go.
 NODEPOOL_RELEASE="nvke-nico-vms-24.04-${host_arch}-fde"
 AGENT_URL_PATH="$(grep -oE 'files/[a-z-]+/nvke-agent' "${NKE_CONTROLLER_RELEASES_DIR}/${NODEPOOL_RELEASE}-nodepoolrelease.yaml" | head -1)"

@@ -22,6 +22,11 @@ spec:
     # it.
     golden-path:
       selector: {ubuntu: "24.04", gpu: gb200}
+    # Ubuntu 24.04 on L40S. One stream, amd64, and the only GPU shape az61
+    # offers. The qualify-e2e-l40s label selects this instead of golden-path.
+    l40s:
+      selector: {ubuntu: "24.04", gpu: l40s}
+
     # The DSX datahall on its own. The dsx stream declares no gpu, so
     # golden-path does not reach it, and `full` would take four contended GB200
     # machines to exercise one CPU substrate. A provider selector is the only

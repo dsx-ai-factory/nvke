@@ -330,7 +330,7 @@ func nicoSiteSpec() *sitespec.SiteSpec {
 				InstanceTypePreference: []openapi_types.UUID{{15: 3}, {15: 6}},
 				VpcPrefixIDs:           []openapi_types.UUID{{15: 4}},
 				SSHKeyGroupIDs:         []openapi_types.UUID{{15: 5}},
-				OSProfile:              "example-os-profile",
+				Release:                "example-os-profile",
 				ConfigProfile:          "example-config-profile",
 			},
 		},
@@ -376,8 +376,8 @@ func TestClusterRequest_NicoIsAForgeCluster(t *testing.T) {
 		t.Errorf("instanceTypePreference[0] = %s, want the first listed type to stay first",
 			cp.Nico.InstanceTypePreference[0])
 	}
-	if cp.Nico.OSProfile != "example-os-profile" || cp.Nico.ConfigProfile != "example-config-profile" {
-		t.Errorf("profiles = %q/%q, want the spec's", cp.Nico.OSProfile, cp.Nico.ConfigProfile)
+	if cp.Nico.Release != "example-os-profile" || cp.Nico.ConfigProfile != "example-config-profile" {
+		t.Errorf("profiles = %q/%q, want the spec's", cp.Nico.Release, cp.Nico.ConfigProfile)
 	}
 	if cp.SystemReservedMemory != "512Mi" {
 		t.Errorf("systemReservedMemory = %q, want the shared kubelet setting", cp.SystemReservedMemory)

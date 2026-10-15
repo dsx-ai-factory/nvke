@@ -868,7 +868,7 @@ infra:
         - 00000000-0000-0000-0000-000000000004
       sshKeyGroupIDs:
         - 00000000-0000-0000-0000-000000000005
-      osProfile: example-os-profile
+      release: example-os-profile
       configProfile: example-config-profile
     tenant:
       user: example-user
@@ -1052,7 +1052,7 @@ func TestValidate_NicoInfra(t *testing.T) {
 			func(n *NicoInfra) { n.ControlPlane.SubnetIDs = []openapi_types.UUID{id} },
 			"only one of vpcPrefixIDs and subnetIDs",
 		},
-		{"missing os profile", func(n *NicoInfra) { n.ControlPlane.OSProfile = "" }, "osProfile is required"},
+		{"missing release", func(n *NicoInfra) { n.ControlPlane.Release = "" }, "release is required"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1097,7 +1097,7 @@ func validNico() *NicoInfra {
 				InstanceTypePreference: []openapi_types.UUID{uid(3)},
 				VpcPrefixIDs:           []openapi_types.UUID{uid(4)},
 				SSHKeyGroupIDs:         []openapi_types.UUID{uid(5)},
-				OSProfile:              "example-os-profile",
+				Release:                "example-os-profile",
 				ConfigProfile:          "example-config-profile",
 			},
 		},
@@ -1124,8 +1124,8 @@ func TestLoad_NicoBlocksAreTheAPIsStructs(t *testing.T) {
 		t.Errorf("infra.nico = %s, want %s", gotJSON, wantJSON)
 	}
 
-	_, err = Load(writeNicoTemp(t, strings.Replace(nicoYAML, "      osProfile: example-os-profile", "      osProfle: typo", 1)))
-	if err == nil || !strings.Contains(err.Error(), "osprofle") {
+	_, err = Load(writeNicoTemp(t, strings.Replace(nicoYAML, "      release: example-os-profile", "      releas: typo", 1)))
+	if err == nil || !strings.Contains(err.Error(), "releas") {
 		t.Errorf("Load of a misspelled field = %v, want an error naming it", err)
 	}
 
@@ -1477,7 +1477,7 @@ func TestLoad_BootstrapReleases(t *testing.T) {
 		wantErr string
 	}{
 		"complete": {docs: "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-os-profile\nspec:\n  machineImageRef:\n    name: img\n"},
-		"no ClusterRelease for the osProfile": {
+		"no ClusterRelease for the release": {
 			docs:    "apiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: other\nspec:\n  machineImageRef:\n    name: img\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n",
 			wantErr: `no ClusterRelease named "example-os-profile"`,
 		},

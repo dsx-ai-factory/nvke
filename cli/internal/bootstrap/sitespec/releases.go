@@ -53,7 +53,7 @@ func releaseFiles(path string) ([]string, error) {
 
 // checkBootstrapReleases checks that the release manifests the bootstrap
 // applies to the Kind cluster hold the ClusterRelease the control plane's
-// osProfile names and the MachineImage that release boots. The controller
+// release names and the MachineImage that release boots. The controller
 // resolves both from its own API when it creates the first node, so a missing
 // one otherwise surfaces only after the bootstrap cluster is built.
 func (v *validator) checkBootstrapReleases(inv *SiteSpec) {
@@ -61,7 +61,7 @@ func (v *validator) checkBootstrapReleases(inv *SiteSpec) {
 		return
 	}
 	releases := inv.Infra.Nico.Releases
-	profile := inv.Infra.Nico.ControlPlane.OSProfile
+	profile := inv.Infra.Nico.ControlPlane.Release
 	path := inv.ResolvePath(releases)
 	files, err := releaseFiles(path)
 	if err != nil {
@@ -132,7 +132,7 @@ func (v *validator) checkBootstrapReleases(inv *SiteSpec) {
 	}
 	switch {
 	case !foundRelease:
-		v.addf("%s %q holds no ClusterRelease named %q, the infra.nico.controlPlane.osProfile; the controller cannot create a node without it",
+		v.addf("%s %q holds no ClusterRelease named %q, the infra.nico.controlPlane.release; the controller cannot create a node without it",
 			pathNicoReleases, releases, profile)
 	case !images[releaseImage]:
 		v.addf("%s %q holds ClusterRelease %q but not the MachineImage %q it names", pathNicoReleases, releases, profile, releaseImage)

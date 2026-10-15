@@ -202,7 +202,7 @@ func workerNodePoolRequest(test *tenantTest, name, nodeNamePrefix string) (api.C
 	}
 	if test.spec.Backend == nvke.BackendNicoVMS {
 		base.InstanceTypeID = nicoVMSLargeInstanceID
-		spec := nicoVMSNodePoolSpec(base, name, nodeNamePrefix, nicoVMSOSProfile, nicoVMSWConfigProfile)
+		spec := nicoVMSNodePoolSpec(base, name, nodeNamePrefix, nicoVMSRelease, nicoVMSWConfigProfile)
 		return nvke.NicoVMSNodePoolRequest(test.cluster.ID, spec)
 	}
 	if test.spec.Backend == nvke.BackendNicoContainers {

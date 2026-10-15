@@ -928,9 +928,9 @@ func TestNodeService_ListNodes_ControlPlaneRollout(t *testing.T) {
 	poolNodeID := uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000003")
 
 	desiredSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
-	desiredSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v2"})
+	desiredSpec.SetNico(db.NicoControlPlaneProvider{Release: "os-v2", ConfigProfile: "cfg-v2"})
 	driftedSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.33.6"}
-	driftedSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v1", ConfigProfile: "cfg-v1"})
+	driftedSpec.SetNico(db.NicoControlPlaneProvider{Release: "os-v1", ConfigProfile: "cfg-v1"})
 
 	now := time.Now()
 	dbNodes := []db.Node{
@@ -1003,7 +1003,7 @@ func TestNodeService_ListNodes_ControlPlaneRollout(t *testing.T) {
 	// the drift without enumerating fields itself.
 	assert.ElementsMatch(t, []api.ControlPlaneRolloutChange{
 		{Field: "kubernetesVersion", From: "1.33.6", To: "1.34.2"},
-		{Field: "osProfile", From: "os-v1", To: "os-v2"},
+		{Field: "release", From: "os-v1", To: "os-v2"},
 		{Field: "configProfile", From: "cfg-v1", To: "cfg-v2"},
 	}, drifted.ControlPlaneRollout.Changes)
 
@@ -1028,9 +1028,9 @@ func TestNodeService_GetNode_ControlPlaneRollout(t *testing.T) {
 	driftedCfgID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
 
 	desiredSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
-	desiredSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v2"})
+	desiredSpec.SetNico(db.NicoControlPlaneProvider{Release: "os-v2", ConfigProfile: "cfg-v2"})
 	driftedSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
-	driftedSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v1"})
+	driftedSpec.SetNico(db.NicoControlPlaneProvider{Release: "os-v2", ConfigProfile: "cfg-v1"})
 
 	now := time.Now()
 	dbNode := db.Node{

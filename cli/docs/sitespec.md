@@ -110,7 +110,7 @@ would be a sibling of it, so nothing here changes when one is added.
 | `infra.nico.controlPlane.instanceTypePreference` | UUID list | with `nico` | Ordered; index 0 is the first choice. |
 | `infra.nico.controlPlane.vpcPrefixIDs` / `subnetIDs` | UUID list | with `nico` | Exactly one of the two: native networking or not. |
 | `infra.nico.controlPlane.sshKeyGroupIDs` | UUID list | with `nico` | At least one. |
-| `infra.nico.controlPlane.osProfile` | string | with `nico` | The `ClusterRelease` the nodes boot from, which `infra.nico.releases` must hold. See Release manifests. |
+| `infra.nico.controlPlane.release` | string | with `nico` | The `ClusterRelease` the nodes boot from, which `infra.nico.releases` must hold. See Release manifests. |
 | `infra.nico.controlPlane.configProfile` | string | no | A config profile name. The bootstrap controller starts with an empty profiles directory and serves none, so it treats any name as missing and logs a warning: its hooks and labels never reach the nodes. Leave it unset. |
 | `infra.nico.tenant` | `StackTenant` | with `nico` | The login the controller renders into the user data of every node CAPNICo creates: `user` and `passwordFile`. The controller refuses to render user data without it. See below. |
 | `infra.nico.releases` | path | with `nico` | A file, or a directory of `.yaml`, `.yml` and `.json` files, holding the `MachineImage` and `ClusterRelease` manifests. See below. |
@@ -201,7 +201,7 @@ it the controller fails every node's user-data rendering and no node is created.
 
 ### Release manifests
 
-With `nico` the controller resolves `infra.nico.controlPlane.osProfile` from
+With `nico` the controller resolves `infra.nico.controlPlane.release` from
 its own API: a `ClusterRelease` of that name and the `MachineImage` it names.
 The bootstrap controller starts with neither, so `infra.nico.releases` points at
 the manifests, written as in
@@ -209,7 +209,7 @@ the manifests, written as in
 and the bootstrap applies them to the Kind cluster after the controller's CRDs
 exist and before it creates the site cluster. `bootstrap site` and
 `nvkectl validate sitespec --bootstrap-only` fail, before any Kind cluster exists,
-if the files cannot be read or hold no `ClusterRelease` named for the `osProfile` or not the
+if the files cannot be read or hold no `ClusterRelease` named for the `release` or not the
 `MachineImage` it references. A relative `infra.nico.releases` resolves from
 the site spec's directory. Loading the site spec for any other command, such as
 `render deploy-path` on the site node, does not read the manifests.

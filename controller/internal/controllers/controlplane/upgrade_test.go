@@ -96,9 +96,9 @@ func TestReconcileNodesNeedingRolloutWithoutControlPlaneVIPDoesNotReplaceNodes(t
 	clusterID := uuid.New()
 	oldConfigID := uuid.New()
 	desiredSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.31.0"}
-	desiredSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "new-os"})
+	desiredSpec.SetNico(db.NicoControlPlaneProvider{Release: "new-os"})
 	pinnedSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.31.0"}
-	pinnedSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "old-os"})
+	pinnedSpec.SetNico(db.NicoControlPlaneProvider{Release: "old-os"})
 	cluster := db.Cluster{
 		ID:                    clusterID,
 		Name:                  "single-no-vip",
@@ -142,9 +142,9 @@ func TestReconcileNodesNeedingRolloutWithoutControlPlaneVIPDeletesAfterSurgeExis
 	oldConfigID := uuid.New()
 	currentConfigID := uuid.New()
 	desiredSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.31.0"}
-	desiredSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "new-os"})
+	desiredSpec.SetNico(db.NicoControlPlaneProvider{Release: "new-os"})
 	pinnedSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.31.0"}
-	pinnedSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "old-os"})
+	pinnedSpec.SetNico(db.NicoControlPlaneProvider{Release: "old-os"})
 	cluster := db.Cluster{
 		ID:                    clusterID,
 		Name:                  "single-no-vip",

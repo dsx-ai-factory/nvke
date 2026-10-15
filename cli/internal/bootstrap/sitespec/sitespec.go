@@ -526,7 +526,7 @@ func (inv *SiteSpec) appendReferenceChecks(v *validator) {
 
 // ValidateBootstrapReferences checks what only the bootstrap reads: that
 // infra.nico.tenant's password file and the infra.nico.releases manifests can be
-// read, and the manifests hold the release the control plane's osProfile names,
+// read, and the manifests hold the release the control plane's release names,
 // with relative paths resolved from the site spec's directory; and that
 // NVKECTL_NICO_CREDENTIALS names a readable NICo token file.
 //

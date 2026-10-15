@@ -202,7 +202,7 @@ func TestClusterService_ListClusters(t *testing.T) {
 func nicoCreateControlPlaneConfig(desiredCount int, vpcPrefixes bool) *api.CreateClusterControlPlaneConfig {
 	nico := &api.NicoControlPlaneProviderCreate{
 		InstanceTypePreference: []uuid.UUID{uuid.New()},
-		OSProfile:              "ubuntu",
+		Release:                "ubuntu",
 		ConfigProfile:          "default",
 	}
 	if vpcPrefixes {
@@ -259,7 +259,7 @@ func TestClusterService_CreateCluster(t *testing.T) {
 							SubnetIDs:      []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440003")},
 							InstanceTypeID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440004"),
 							SSHKeyGroupIDs: &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-							OSProfile:      "ubuntu",
+							Release:        "ubuntu",
 							ConfigProfile:  "default",
 						},
 						NodeLabels:       map[string]string{"label1": "value1", "label2": "value2"},
@@ -330,7 +330,7 @@ func TestClusterService_CreateCluster(t *testing.T) {
 							VpcPrefixIDs:   []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440005")},
 							InstanceTypeID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440004"),
 							SSHKeyGroupIDs: &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-							OSProfile:      "ubuntu",
+							Release:        "ubuntu",
 							ConfigProfile:  "default",
 						},
 						NodeLabels:       map[string]string{"label1": "value1", "label2": "value2"},
@@ -1703,7 +1703,7 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig(t *testing.T) {
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			MaxSurge: 0,
 			ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
-				Nico: &db.NicoControlPlaneProvider{OSProfile: "ubuntu", ConfigProfile: "default"},
+				Nico: &db.NicoControlPlaneProvider{Release: "ubuntu", ConfigProfile: "default"},
 			},
 		},
 		Nico: &db.NicoClusterProvider{

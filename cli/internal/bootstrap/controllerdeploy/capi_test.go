@@ -264,7 +264,7 @@ func TestDeploy_CWEAcceptsTheProviderPayloadTheBootstrapSends(t *testing.T) {
 
 // TestDeploy_NicoGivesTheControllerTheTenantLoginAndReleases: the controller
 // refuses to render a node's user data without DGXC_TENANT_USER and
-// DGXC_TENANT_PASSWORD, and cannot resolve the osProfile without the release
+// DGXC_TENANT_PASSWORD, and cannot resolve the release without the release
 // manifests. So in nico mode the Secret exists before the controller installs,
 // the chart is told its name, the releases are applied after the chart, and none
 // of it is true in provisioned mode.

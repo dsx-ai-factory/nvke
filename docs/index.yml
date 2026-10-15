@@ -28,7 +28,7 @@ navigation:
         contents:
           - page: Plan your installation
             path: operate/plan-installation.md
-          - page: Get NVKE artifacts and OS profiles built with NVKR
+          - page: Get NVKE artifacts from NVKR and write release manifests
             path: operate/build-node-images.md
           - page: Prepare nodes
             path: operate/prepare-nodes.md

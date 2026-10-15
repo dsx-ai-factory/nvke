@@ -29,8 +29,9 @@
 # the suite a JUMP_HOST_PASSWORD is still what selects it.
 #
 # ASKED FOR, OR A BETA TAG. A run takes a bare-metal machine for up to an hour,
-# so it starts only when a person asks, by workflow_dispatch or the
-# `qualify-e2e` label on a pull request from this repository, or when a
+# so it starts only when a person asks, by workflow_dispatch or one of the
+# `qualify-e2e`, `qualify-e2e-l40s` or `qualify-e2e-dsx` labels on a pull
+# request from this repository (docs/qualification/overview.md), or when a
 # `vX.Y.Z-beta.N` tag is pushed. It is still not on a schedule and not on every
 # push, for three reasons, and the beta tag answers each of them:
 #
@@ -175,7 +176,8 @@ on:
   # which is one of the two refs the Teleport join token accepts.
   #
   # `labeled` and nothing else. Adding `qualify-e2e` is the request to run, and adding
-  # `qualify-e2e-dry-run` is the request for a dry run;
+  # `qualify-e2e-dry-run` is the request for a dry run. `qualify-e2e-l40s` runs
+  # the l40s scope (Ubuntu 24.04 on az61) instead of golden-path.
   # `synchronize` is deliberately absent so that pushing to a labelled PR
   # does not quietly take another machine. To run again, remove the label and
   # add it back, or use the re-run button.
@@ -225,15 +227,15 @@ jobs:
     runs-on: arc-amd64-cpu16
     # The same gate as the lanes: a dispatch is deliberate, a beta tag was
     # pushed to this repository, and a pull_request run has to be asked for with
-    # the `qualify-e2e` label, or the `qualify-e2e-dry-run` label for a dry run,
-    # from a branch in this repository. The lanes need this job, so they are
-    # skipped with it.
+    # the `qualify-e2e` label, the `qualify-e2e-l40s` label for the az61 L40S
+    # scope, or the `qualify-e2e-dry-run` label for a dry run, from a branch in
+    # this repository. The lanes need this job, so they are skipped with it.
     if: >-
       github.repository_id == '1323115536' &&
       (github.event_name == 'workflow_dispatch' ||
        github.event_name == 'push' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
-        contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run","qualify-e2e-dsx"]'), github.event.label.name)))
+        contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run","qualify-e2e-l40s","qualify-e2e-dsx"]'), github.event.label.name)))
     timeout-minutes: 15
     permissions:
       contents: read
@@ -245,6 +247,9 @@ jobs:
       # What the plan resolved for the run as a whole.
       nvke-version: ${{ steps.matrix.outputs.nvke-version }}
       scope: ${{ steps.matrix.outputs.scope }}
+      # Which strategy answered for the component versions, so a lane can
+      # record how the run resolved and not only what it resolved.
+      resolution: ${{ steps.matrix.outputs.resolution }}
       # The commit the components were resolved at, empty when they came from
       # their tags. Read by the verify job to decide whether a missing artifact
       # means not yet or never.
@@ -270,7 +275,8 @@ jobs:
       # because a workflow_dispatch from a branch cannot reach Teleport at all:
       # the join token allows only refs/heads/main and refs/pull/*/merge. Until
       # this lands on main a label is the only way to run the DSX stream.
-      SCOPE: ${{ inputs.scope || (github.event.label.name == 'qualify-e2e-dsx' && 'dsx') || vars.QUALIFY_E2E_SCOPE || 'golden-path' }}
+      # qualify-e2e-l40s is the same for the az61 L40S stream.
+      SCOPE: ${{ inputs.scope || (github.event.label.name == 'qualify-e2e-dsx' && 'dsx') || (github.event.label.name == 'qualify-e2e-l40s' && 'l40s') || vars.QUALIFY_E2E_SCOPE || 'golden-path' }}
       # The registry.yaml base names this, so the plan fails here when it is
       # unset rather than naming an artifact under no org. The same variable
       # the lanes build SITE_IMAGES from.
@@ -284,8 +290,11 @@ jobs:
       OVERRIDE_KUBE: ${{ inputs.kubernetes-version || vars.QUALIFY_E2E_KUBERNETES_VERSION }}
       OVERRIDE_CNI_OVN: ${{ inputs.cni-ovn-version || vars.QUALIFY_E2E_CNI_OVN_VERSION }}
       OVERRIDE_OS_IMAGE: ${{ inputs.os-image-version || vars.QUALIFY_E2E_OS_IMAGE_VERSION }}
-      OVERRIDE_OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 || vars.QUALIFY_E2E_OS_IMAGE_AMD64 }}
-      OVERRIDE_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 || vars.QUALIFY_E2E_OS_IMAGE_ARM64 }}
+      # REVERT-WHEN-NVKE-NODE: the plan names nvke-node-* images, and the newest
+      # OS image release (v0.2.0-rc.1) predates that rename. Drop both
+      # fallbacks when a release carrying nvke-node-* exists.
+      OVERRIDE_OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 || vars.QUALIFY_E2E_OS_IMAGE_AMD64 || 'https://d1veq6e8nuk2fy.cloudfront.net/nvke-packages/os-image/releases/v0.2.0-rc.1/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2' }}
+      OVERRIDE_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 || vars.QUALIFY_E2E_OS_IMAGE_ARM64 || 'https://d1veq6e8nuk2fy.cloudfront.net/nvke-packages/os-image/releases/v0.2.0-rc.1/arm64/nke-node-non-fde-ubuntu-24.04.5-arm64.qcow2' }}
       OVERRIDE_OS_IMAGE_BOOTLOADER_AMD64: ${{ inputs.os-image-bootloader-amd64 || vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
       OVERRIDE_OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 || vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
     steps:
@@ -462,6 +471,7 @@ jobs:
             echo "matrix=${matrix}"
             echo "nvke-version=$(jq -r .version plan.json)"
             echo "scope=$(jq -r .scope plan.json)"
+            echo "resolution=${RESOLUTION}"
             echo "commit=$(jq -r '.commit // ""' plan.json)"
             echo "dry-run=${DRY_RUN}"
           } >> "${GITHUB_OUTPUT}"
@@ -1320,6 +1330,7 @@ jobs:
           IN_OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 }}
           IN_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 }}
           IN_NVKE_VERSION: ${{ inputs.nvke-version }}
+          IN_RESOLUTION: ${{ inputs.resolution }}
           IN_SCOPE: ${{ inputs.scope }}
           IN_DRY_RUN: ${{ inputs.dry-run }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
@@ -1351,6 +1362,7 @@ jobs:
           # come from its matrix entry, which is in the env above.
           NVKE_VERSION: ${{ needs.plan.outputs.nvke-version }}
           SCOPE: ${{ needs.plan.outputs.scope }}
+          RESOLUTION: ${{ needs.plan.outputs.resolution }}
           STREAM: ${{ matrix.stream }}
           COMBINATION: ${{ matrix.combination }}
           VAR_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
@@ -1400,6 +1412,7 @@ jobs:
             "combination|COMBINATION|||"
             "nvke version|NVKE_VERSION|IN_NVKE_VERSION|VAR_NVKE_VERSION|QUALIFY_E2E_NVKE_VERSION"
             "scope|SCOPE|IN_SCOPE|VAR_SCOPE|QUALIFY_E2E_SCOPE"
+            "resolution|RESOLUTION|IN_RESOLUTION||"
             "cpu arch|ARCH|||"
             "gpu model|GPU|||"
             "DSX org|DSX_ORG_ID||DSX_ORG_ID|DSX_ORG_ID"
@@ -1490,8 +1503,9 @@ jobs:
                 source="dispatch input"
               elif [ "${input}" = IN_CONTROLLER_NAME ] && [ -n "${IN_CWE_NAME:-}" ]; then
                 source="dispatch input cwe-name (deprecated, rename to controller-name)"
-              elif [ "${EVENT_LABEL:-}" = qualify-e2e-dsx ] && { [ "${resolved}" = SITE_STAGE ] || [ "${resolved}" = SCOPE ]; }; then
-                # The label names both outright, ahead of the variables, so it
+              elif { [ "${EVENT_LABEL:-}" = qualify-e2e-dsx ] && { [ "${resolved}" = SITE_STAGE ] || [ "${resolved}" = SCOPE ]; }; } ||
+                   { [ "${EVENT_LABEL:-}" = qualify-e2e-l40s ] && [ "${resolved}" = SCOPE ]; }; then
+                # The label names these outright, ahead of the variables, so it
                 # is what produced the value whenever it is the trigger.
                 source="label ${EVENT_LABEL}"
               elif [ -n "${var}" ] && [ -n "${!var:-}" ]; then
@@ -1517,6 +1531,12 @@ jobs:
               # its label.
               if [ "${resolved}" = "DRY_RUN" ] && [ "${DRY_RUN}" = "true" ] && [ -z "${IN_DRY_RUN:-}" ]; then
                 source="label qualify-e2e-dry-run"
+              fi
+              # A push carries no inputs, so the tag selected commitDescribe
+              # and neither arm above named it.
+              if [ "${resolved}" = "RESOLUTION" ] && [ -z "${IN_RESOLUTION:-}" ] &&
+                 [ "${GITHUB_EVENT_NAME}" = push ]; then
+                source="beta tag push"
               fi
               # The resolve steps fill these in from the checkout when no
               # published version was asked for, so neither arm above named it.

@@ -96,7 +96,7 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
 
 The bootstrap deploys two NVKE images into the seed cluster: the controller and the provisioned infrastructure provider. By default it uses `nke-controller:latest` and `cluster-api-provider-provisioned:latest` from the bootstrap host's local image store.
 
-To use images you published to your registry, for example with NVKR as described in [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md), log in to the registry and name the images when you run the bootstrap.
+To use images you published to your registry, for example with NVKR as described in [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md), log in to the registry and name the images when you run the bootstrap.
 
 ```bash
 nerdctl login <REGISTRY_HOST>

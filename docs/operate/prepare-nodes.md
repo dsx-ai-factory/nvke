@@ -5,11 +5,11 @@ This page describes how to bring the management cluster's nodes from a first boo
 ## Before you begin
 
 - You have read [Plan your installation](plan-installation.md).
-- You have a node image built as described in [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md), for the CPU architecture of your nodes.
+- You have a node image built as described in [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md), for the CPU architecture of your nodes.
 - You have an odd number of machines, such as one, three or five, that meet [Supported platforms and versions](../overview/supported-platforms.md). Each has a TPM 2.0 device, and your provisioning system can boot it from the image and pass it cloud-init user data.
 - Each node keeps the same IP address across reboots. The image configures every `e*` network interface with DHCP and disables cloud-init network configuration, so reserve each node's address in DHCP.
 - You have chosen the bootstrap host and know the IP address the nodes use to reach it. It can be one of the nodes.
-- You have chosen a SPIFFE trust domain, such as `mgmt.example.com`, and have your SPIRE certificate authority (CA) certificate and key as files. The node image's SPIRE agent does not start without a trust bundle, and the SPIRE server that `nvkectl` deploys has no certificate the nodes could trust until the bootstrap runs, so nodes that attest with their TPM need a CA you bring. The install also makes this CA the upstream authority of the management cluster's SPIRE server, so workload cluster nodes trust it through the bundle NVKE puts in their user data; see [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md#what-nvke-puts-in-the-user-data).
+- You have chosen a SPIFFE trust domain, such as `mgmt.example.com`, and have your SPIRE certificate authority (CA) certificate and key as files. The node image's SPIRE agent does not start without a trust bundle, and the SPIRE server that `nvkectl` deploys has no certificate the nodes could trust until the bootstrap runs, so nodes that attest with their TPM need a CA you bring. The install also makes this CA the upstream authority of the management cluster's SPIRE server, so workload cluster nodes trust it through the bundle NVKE puts in their user data; see [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md#what-nvke-puts-in-the-user-data).
 - Your network lets the bootstrap host reach every node on the `nvke-agent` port (15005 by default), and lets every node reach the bootstrap host on 30081.
 
 ## What the image provides
@@ -73,7 +73,7 @@ The node image is not a ready Kubernetes node. It carries the node agent and the
 
 ## If the image lacks a component
 
-Each component the bootstrap needs is a Debian package. If a check in [Verify](#verify) shows one is missing, rebuild the image as described in [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md).
+Each component the bootstrap needs is a Debian package. If a check in [Verify](#verify) shows one is missing, rebuild the image as described in [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md).
 
 | Component | Package |
 |---|---|
@@ -139,7 +139,7 @@ Run these checks on every node, as root.
 
 During the bootstrap, each node's SPIRE agent logs `Node attestation was successful` and `nvke-agent` starts. To watch for it, run `journalctl -u spire-agent -f` on a node.
 
-Workload-cluster nodes are not prepared this way. NVIDIA Infra Controller (NICo) provisions them from your node image, and the management plane supplies their user data from the OS profile, including the Kubernetes and CNI packages to install; see [Get NVKE artifacts and OS profiles built with NVKR](build-node-images.md).
+Workload-cluster nodes are not prepared this way. NVIDIA Infra Controller (NICo) provisions them from your node image, and the management plane supplies their user data from the release, including the Kubernetes and CNI packages to install; see [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md).
 
 ## Next steps
 

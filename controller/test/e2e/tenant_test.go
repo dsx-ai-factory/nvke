@@ -75,7 +75,7 @@ type tenantTest struct {
 	cascadePoolID uuid.UUID
 }
 
-var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
+var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	tenantSubtree(configuredManagement),
 	// The pull-request smoke lane uses a separate, minimal topology instead of
 	// filtering the full CAPD row below. The full row needs three control-plane
@@ -228,7 +228,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{
 				DesiredCount:         1,
 				InstanceTypeID:       nicoVMSLargeInstanceID,
-				OSProfile:            nicoVMSOSProfile,
+				Release:              nicoVMSRelease,
 				ConfigProfile:        nicoVMSCPConfigProfile,
 				VpcPrefixIDs:         []string{nicoVMSVpcPrefixID},
 				SSHKeyGroupIDs:       []string{nicoVMSSSHKeyGroupID},
@@ -366,18 +366,18 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSOSProfileEntries(
 		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{brownfieldOIDC: true},
 	}),
-	Entry("nico-vms OS profiles", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "os-profiles"), testSpec{
+	Entry("nico-vms releases", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "releases"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 			workerPools: []nvke.NodePoolSpec{
 				// Old agent image pins the agent version to 0.1.22, which is before the new nvkeproto.CheckCloudInitStatus was introduced in version 0.1.24.
-				// So this osProfile test exists to prove that the controller can still provision nodePools that may still be pointed at older agent versions.
-				{Name: "worker-old-agent", NodeNamePrefix: "wold", DesiredNodeCount: 1, OSProfile: "nvke-nico-vms-24.04-amd64-fde-old-agent"},
+				// So this release test exists to prove that the controller can still provision nodePools that may still be pointed at older agent versions.
+				{Name: "worker-old-agent", NodeNamePrefix: "wold", DesiredNodeCount: 1, Release: "nvke-nico-vms-24.04-amd64-fde-old-agent"},
 				// nicoVMSNodePoolSpec defaults kube/system reserved memory to 250Mi so the
 				// default nico-vms instance type has enough allocatable memory.
-				{Name: "worker-260625-24.04", NodeNamePrefix: "w260625", DesiredNodeCount: 1, OSProfile: "nke-260625-24.04-x86-fde"},
-				{Name: "worker-260602-24.04", NodeNamePrefix: "w260602", DesiredNodeCount: 1, OSProfile: "nke-260602-24.04-x86-fde"},
+				{Name: "worker-260625-24.04", NodeNamePrefix: "w260625", DesiredNodeCount: 1, Release: "nke-260625-24.04-x86-fde"},
+				{Name: "worker-260602-24.04", NodeNamePrefix: "w260602", DesiredNodeCount: 1, Release: "nke-260602-24.04-x86-fde"},
 			},
 		},
 		options: nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
@@ -453,12 +453,15 @@ func nicoForgeTenant() testSpec {
 		// that the time ran out. The wait also gives up when the message
 		// stops changing, which ends a stuck one sooner than either number.
 		//
-		// Delete is 45 minutes because Forge takes 20 to 40 to actually
-		// release a machine, and the cluster is not gone until both of its
-		// machines are. Run 36051890151 failed the delete at 1800.306s
-		// against the 30 minutes this used to be, while the instances were
-		// still reporting Terminating.
-		options: nvke.Options{Provision: 45 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
+		// Delete is 75 minutes because Forge takes 20 to 40 to actually
+		// release a machine, and sometimes much longer, and the cluster is not
+		// gone until both of its machines are. Run 36051890151 failed the
+		// delete at 30 minutes, and run 38690403898 on az61 L40S still had the
+		// control plane releasing after 45 plus the sweep's 15. It is capped
+		// by the suite's 150-minute -ginkgo.timeout: the delete starts about
+		// 42 minutes in, and the site sweep and release still need about 25
+		// after it.
+		options: nvke.Options{Provision: 45 * time.Minute, Delete: 75 * time.Minute, Poll: 30 * time.Second},
 		// Provisioning only, because that is the path this lane exercises:
 		// a tenant is created on real hardware, its nodes reach Ready, and it
 		// is deleted. The rest assert against a running cluster and belong to
@@ -633,14 +636,17 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 
 			if spec.validate.nodeAgentUpgrade {
 				deleteClusterWithAgentDrain(ctx, &test, &deleteAccepted)
+				deleted = true
 			} else {
-				test.deleteClusterAndWait(ctx, &deleteAccepted)
+				deleted = test.deleteClusterAndWait(ctx, &deleteAccepted)
 			}
-			deleted = true
-		}, Label("lifecycle"), NodeTimeout(1*time.Hour))
+		}, Label("lifecycle"), NodeTimeout(80*time.Minute))
 
 		Describe("after cluster deletion", func() {
 			BeforeEach(func() {
+				if test.cluster != nil && terminatingTenants[test.cluster.ID] {
+					Skip("the tenant's instances are Terminating and its cluster is still being deleted; nothing is left behind to assert yet")
+				}
 				if !deleted {
 					Skip("Cluster was not deleted; skipping post-deletion validations")
 				}
@@ -708,7 +714,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				GinkgoLogr.Info("tenant delete already accepted but not complete; leaving it to the site sweep rather than waiting again",
 					"cluster", test.cluster.ID)
 			default:
-				test.deleteClusterAndWait(ctx, &deleteAccepted)
+				deleted = test.deleteClusterAndWait(ctx, &deleteAccepted)
 			}
 			// Sized to what this node can actually contain rather than to the
 			// suite: WaitForClusterDeleted is bounded by the entry's
@@ -727,8 +733,8 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 	}
 }
 
-func withNicoVMSOSProfileEntries(args ...any) []any {
-	for _, entry := range mustNicoVMSOSProfileTableEntries() {
+func withNicoVMSReleaseEntries(args ...any) []any {
+	for _, entry := range mustNicoVMSReleaseTableEntries() {
 		args = append(args, entry)
 	}
 	return args
@@ -879,7 +885,30 @@ type managementCluster struct {
 	// every other lane shares a network with its clusters, and nil leaves
 	// them talking to the published address directly.
 	Relay kube.EndpointRelay
+
+	// Instances ends the tenant delete wait once the tenant's machines are
+	// Terminating, rather than once they are gone. Only the Forge site lane
+	// sets it, because only there does the release outlast the controller's
+	// own teardown by most of an hour. Nil waits for the cluster to go.
+	Instances terminationWaiter
 }
+
+// terminationWaiter is the part of the Forge provider the delete wait needs.
+type terminationWaiter interface {
+	WaitTerminating(ctx context.Context, ids []string) error
+}
+
+// tenantTerminating budgets the wait for Forge to take a deleted tenant's
+// machines out of service. The controller deletes the CAPI Machines within a
+// minute of accepting the delete, and Forge marks an instance Terminating as
+// soon as it is asked to release it, so a quarter hour is far more than the
+// healthy path needs.
+const tenantTerminating = 15 * time.Minute
+
+// terminatingTenants are the tenant clusters whose machines Forge has already
+// confirmed Terminating. The site sweep reads it so it does not wait a second
+// time on a tenant whose release Forge already owns.
+var terminatingTenants = map[openapi_types.UUID]bool{}
 
 // managementResolver names the management cluster when a tenant lane starts.
 type managementResolver func() (managementCluster, error)
@@ -1082,13 +1111,55 @@ func validateTenantAccessSecretGCPostDelete(test *tenantTest) {
 // it gone (404). Shared by the delete spec and the AfterAll cleanup. accepted
 // is set once the controller takes the delete, so a failure in the wait leaves it true and
 // a failure in the request leaves it as it was.
-func (t *tenantTest) deleteClusterAndWait(ctx context.Context, accepted *bool) {
+//
+// With mgmt.Instances set it returns once Forge reports the tenant's machines
+// Terminating instead, and reports false: the cluster is still being deleted,
+// so the post-deletion specs, which read what a finished delete leaves
+// behind, have nothing to assert yet. The instance IDs are read before the
+// delete is sent, because the controller drops its node records within
+// seconds of taking it.
+func (t *tenantTest) deleteClusterAndWait(ctx context.Context, accepted *bool) bool {
 	GinkgoHelper()
+	var instances []string
+	if t.mgmt.Instances != nil {
+		instances = t.tenantInstances(ctx)
+	}
 	By("Deleting the tenant cluster")
 	Expect(t.lifecycle.DeleteCluster(ctx, t.cluster.ID)).To(Succeed())
 	*accepted = true
+	if len(instances) > 0 {
+		By("Waiting for Forge to report the tenant's instances Terminating")
+		waitCtx, cancel := context.WithTimeout(ctx, tenantTerminating)
+		defer cancel()
+		Expect(t.mgmt.Instances.WaitTerminating(waitCtx, instances)).To(Succeed())
+		terminatingTenants[t.cluster.ID] = true
+		t.log.Info("tenant instances are Terminating; Forge releases them from here", "cluster", t.cluster.ID, "instances", instances)
+		return false
+	}
 	By("Waiting for the tenant cluster to be deleted")
 	Expect(t.lifecycle.WaitForClusterDeleted(ctx, t.cluster.ID)).To(Succeed())
+	return true
+}
+
+// tenantInstances is the Forge instance behind every node of the tenant, or
+// nil when any node does not name one. Nil falls back to waiting for the
+// cluster itself, which is slower but cannot pass while a machine is still
+// in service.
+func (t *tenantTest) tenantInstances(ctx context.Context) []string {
+	nodes, err := t.nvke.ListClusterNodes(ctx, t.cluster.ID)
+	if err != nil {
+		t.log.Info("could not list the tenant's nodes; waiting for the cluster to be deleted instead", "error", err.Error())
+		return nil
+	}
+	ids := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Nico == nil || node.Nico.InstanceID == "" {
+			t.log.Info("a tenant node names no Forge instance; waiting for the cluster to be deleted instead", "node", node.Name)
+			return nil
+		}
+		ids = append(ids, node.Nico.InstanceID)
+	}
+	return ids
 }
 
 // Cluster shape is a property of the test, not the environment, so it lives in
@@ -1180,7 +1251,7 @@ func controlPlaneConfigFromPools(pools []nvke.NodePoolSpec) *nvke.ControlPlaneCo
 	return &nvke.ControlPlaneConfigSpec{
 		DesiredCount:         pool.DesiredNodeCount,
 		InstanceTypeID:       pool.InstanceTypeID,
-		OSProfile:            pool.OSProfile,
+		Release:              pool.Release,
 		ConfigProfile:        pool.ConfigProfile,
 		VpcPrefixIDs:         pool.VpcPrefixIDs,
 		SubnetIDs:            pool.SubnetIDs,
@@ -1294,7 +1365,7 @@ func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 			wantConfig: &nvke.ControlPlaneConfigSpec{
 				DesiredCount:         3,
 				InstanceTypeID:       nicoVMSLargeInstanceID,
-				OSProfile:            nicoVMSOSProfile,
+				Release:              nicoVMSRelease,
 				ConfigProfile:        nicoVMSCPConfigProfile,
 				VpcPrefixIDs:         []string{nicoVMSVpcPrefixID},
 				SSHKeyGroupIDs:       []string{nicoVMSSSHKeyGroupID},
@@ -1358,7 +1429,7 @@ func TestUnit_NicoVMSControlPlaneFitsKubeletReservation(t *testing.T) {
 
 	shapes := map[string]clusterShape{
 		"control plane with no instance type": {controlPlanePools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}}},
-		"OS profile matrix row":               nicoVMSOSProfileTestSpec(nicoVMSOSProfileEntry{name: "unit-profile"}, 0).shape,
+		"OS profile matrix row":               nicoVMSReleaseTestSpec(nicoVMSReleaseEntry{name: "unit-profile"}, 0).shape,
 	}
 	for name, shape := range shapes {
 		t.Run(name, func(t *testing.T) {
@@ -1720,10 +1791,10 @@ var nicoVMSInstanceMemory = map[string]string{
 	nicoVMSLargeInstanceID: "6Gi",
 }
 
-// nicoVMSOSProfile is the profile the nico-vms specs boot. nico-sim takes the
+// nicoVMSRelease is the profile the nico-vms specs boot. nico-sim takes the
 // guest architecture from the host it runs on, never from the profile, so the
 // profile has to match the runner. hack/ci/nico-vms-e2e.sh builds the same name.
-var nicoVMSOSProfile = "nvke-nico-vms-24.04-" + runtime.GOARCH + "-fde"
+var nicoVMSRelease = "nvke-nico-vms-24.04-" + runtime.GOARCH + "-fde"
 
 // nicoVMSSpec builds a nico-vms topology using the local emulator's seed
 // identifiers. kube-vip is left enabled (the nico-vms BGP speaker advertises
@@ -1744,13 +1815,13 @@ func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterS
 			// the pool's 250Mi, and that does not fit in 2 GiB.
 			Pools: nicoVMSNodePoolSpecs(
 				withDefaultInstanceType(shape.controlPlanePools, nicoVMSLargeInstanceID),
-				"control-plane", "cp", nicoVMSOSProfile, nicoVMSCPConfigProfile,
+				"control-plane", "cp", nicoVMSRelease, nicoVMSCPConfigProfile,
 			),
 			ControlPlaneVIP: shape.controlPlaneVIP,
 			EtcdEncrypted:   shape.etcdEncrypted,
 			Config:          shape.controlPlaneConfig,
 		},
-		Workers: nicoVMSNodePoolSpecs(shape.workerPools, "worker", "w", nicoVMSOSProfile, nicoVMSWConfigProfile),
+		Workers: nicoVMSNodePoolSpecs(shape.workerPools, "worker", "w", nicoVMSRelease, nicoVMSWConfigProfile),
 	})
 }
 
@@ -1765,15 +1836,15 @@ func withDefaultInstanceType(pools []nvke.NodePoolSpec, instanceTypeID string) [
 	return out
 }
 
-func nicoVMSNodePoolSpecs(pools []nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile string) []nvke.NodePoolSpec {
+func nicoVMSNodePoolSpecs(pools []nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultRelease, defaultConfigProfile string) []nvke.NodePoolSpec {
 	out := make([]nvke.NodePoolSpec, 0, len(pools))
 	for _, pool := range pools {
-		out = append(out, nicoVMSNodePoolSpec(pool, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile))
+		out = append(out, nicoVMSNodePoolSpec(pool, defaultName, defaultNodeNamePrefix, defaultRelease, defaultConfigProfile))
 	}
 	return out
 }
 
-func nicoVMSNodePoolSpec(pool nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile string) nvke.NodePoolSpec {
+func nicoVMSNodePoolSpec(pool nvke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultRelease, defaultConfigProfile string) nvke.NodePoolSpec {
 	return nvke.NodePoolSpec{
 		Name:                  cmp.Or(pool.Name, defaultName),
 		NodeNamePrefix:        cmp.Or(pool.NodeNamePrefix, defaultNodeNamePrefix),
@@ -1783,7 +1854,7 @@ func nicoVMSNodePoolSpec(pool nvke.NodePoolSpec, defaultName, defaultNodeNamePre
 		InstanceTypeID:        cmp.Or(pool.InstanceTypeID, nicoVMSInstanceTypeID),
 		VpcPrefixIDs:          defaultStrings(pool.VpcPrefixIDs, nicoVMSVpcPrefixID),
 		SSHKeyGroupIDs:        defaultStrings(pool.SSHKeyGroupIDs, nicoVMSSSHKeyGroupID),
-		OSProfile:             cmp.Or(pool.OSProfile, defaultOSProfile),
+		Release:               cmp.Or(pool.Release, defaultRelease),
 		ConfigProfile:         cmp.Or(pool.ConfigProfile, defaultConfigProfile),
 		DiskSelectionStrategy: cmp.Or(pool.DiskSelectionStrategy, "smallest"),
 	}

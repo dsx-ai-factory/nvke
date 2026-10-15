@@ -91,7 +91,7 @@ CAPNICo is not ready. Check:
 
 ### `nvkectl create cluster` returns 500
 
-The cluster spec YAML has a placeholder value that was not replaced. Common ones: `orgID`, `poolID`, the OS profile name, and the config profile name. These must exist on your NICo site and site controller respectively. Start from `cli/examples/nico-cluster.yaml` and replace every UUID and profile name for your environment.
+The cluster spec YAML has a placeholder value that was not replaced. Common ones: `orgID`, `poolID`, the release name, and the config profile name. These must exist on your NICo site and site controller respectively. Start from `cli/examples/nico-cluster.yaml` and replace every UUID and profile name for your environment.
 
 ### Cluster stuck in `Provisioning` with no progress
 

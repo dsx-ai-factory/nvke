@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -359,6 +360,79 @@ func (p *Provider) interfaces() []standard.InterfaceCreateRequest {
 	return []standard.InterfaceCreateRequest{*iface}
 }
 
+// RequireCapacity fails when a shape this run will create has fewer usable
+// allocations than it needs. cpuCount is the site node plus the tenant
+// control plane. workerCount is the tenant's workers, taken on the GPU shape
+// when the run asked for one and on the CPU shape otherwise.
+//
+// CAPNICo refuses the create while unusedUsable is zero. Checked here, before
+// any instance exists, because the suite would otherwise hold the machines it
+// did get until the provision timeout.
+func (p *Provider) RequireCapacity(ctx context.Context, capabilities map[string]string, cpuCount, workerCount int) error {
+	selection, err := p.opts.Env.Resolve(capabilities)
+	if err != nil {
+		return fmt.Errorf("forge: %w", err)
+	}
+	type demand struct {
+		name string
+		id   string
+		need int
+	}
+	needs := map[string]demand{}
+	add := func(t InstanceType, n int) {
+		if n <= 0 || t.ID == "" {
+			return
+		}
+		d := needs[t.ID]
+		d.name = t.Name
+		d.id = t.ID
+		d.need += n
+		needs[t.ID] = d
+	}
+	add(selection.CPU, cpuCount)
+	if workerCount > 0 {
+		add(selection.WorkerType(), workerCount)
+	}
+	if len(needs) == 0 {
+		return nil
+	}
+
+	ctx, err = p.authorize(ctx)
+	if err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(needs))
+	for id := range needs {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	problems := make([]string, 0)
+	for _, id := range ids {
+		d := needs[id]
+		item, resp, err := p.client.InstanceTypeAPI.GetInstanceType(ctx, p.opts.Env.Org.ID, d.id).
+			IncludeAllocationStats(true).Execute()
+		closeBody(resp)
+		if err != nil {
+			return fmt.Errorf("forge: reading allocation stats for %s (%s): %w", d.name, d.id, apiError(err))
+		}
+		if !item.HasAllocationStats() {
+			return fmt.Errorf("forge: instance type %s (%s) returned no allocation stats", d.name, d.id)
+		}
+		stats := item.GetAllocationStats()
+		usable := int(stats.GetUnusedUsable())
+		if usable < d.need {
+			problems = append(problems, fmt.Sprintf(
+				"%s (%s): need %d, unusedUsable=%d (total=%d used=%d unused=%d)",
+				d.name, d.id, d.need, usable, stats.GetTotal(), stats.GetUsed(), stats.GetUnused(),
+			))
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("forge has no usable allocation for this run:\n%s", strings.Join(problems, "\n"))
+	}
+	return nil
+}
+
 func (p *Provider) authorize(ctx context.Context) (context.Context, error) {
 	token, err := p.token.Token(ctx)
 	if err != nil {
@@ -426,6 +500,58 @@ func (p *Provider) waitReady(ctx context.Context, id string) (string, error) {
 	}
 }
 
+// WaitTerminating returns once Forge reports every one of ids as Terminating
+// or no longer has it. That is the point at which Forge owns the release: the
+// machine is out of the tenant's hands and comes back to the pool without
+// anything else asking, which takes 20 to 60 minutes more on bare metal.
+//
+// Polled by id for the reason waitReady is. An instance still in any other
+// state when ctx ends is reported with the last status Forge gave for it.
+func (p *Provider) WaitTerminating(ctx context.Context, ids []string) error {
+	pending := slices.Clone(ids)
+	slices.Sort(pending)
+	pending = slices.Compact(pending)
+	last := map[string]string{}
+	for {
+		actx, err := p.authorize(ctx)
+		if err != nil {
+			return err
+		}
+		var next []string
+		for _, id := range pending {
+			inst, resp, err := p.client.InstanceAPI.GetInstance(actx, p.opts.Env.Org.ID, id).Execute()
+			closeBody(resp)
+			switch {
+			case resp != nil && resp.StatusCode == http.StatusNotFound:
+			case err != nil:
+				// A read cut off by our own deadline says nothing about the
+				// instance, so it does not replace what Forge last said.
+				if ctx.Err() == nil || last[id] == "" {
+					last[id] = apiError(err).Error()
+				}
+				next = append(next, id)
+			case inst.GetStatus() == standard.INSTANCESTATUS_TERMINATING:
+			default:
+				last[id] = string(inst.GetStatus())
+				next = append(next, id)
+			}
+		}
+		pending = next
+		if len(pending) == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			states := make([]string, 0, len(pending))
+			for _, id := range pending {
+				states = append(states, fmt.Sprintf("%s (last %s)", id, last[id]))
+			}
+			return fmt.Errorf("forge: instances not terminating: %s: %w", strings.Join(states, ", "), ctx.Err())
+		case <-time.After(p.opts.PollInterval):
+		}
+	}
+}
+
 func (p *Provider) release(ctx context.Context, id string) error {
 	ctx, err := p.authorize(ctx)
 	if err != nil {
@@ -434,6 +560,11 @@ func (p *Provider) release(ctx context.Context, id string) error {
 	_, resp, err := p.client.InstanceAPI.DeleteInstance(ctx, p.opts.Env.Org.ID, id).Execute()
 	closeBody(resp)
 	if resp != nil && resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	// Forge accepts with a plain-text body the SDK cannot decode, so the
+	// status is what says whether the delete was taken.
+	if resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
 	if err != nil {

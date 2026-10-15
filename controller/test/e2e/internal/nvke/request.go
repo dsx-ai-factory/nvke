@@ -55,7 +55,7 @@ type NodePoolSpec struct {
 	SubnetIDs             []string
 	VpcPrefixIDs          []string
 	SSHKeyGroupIDs        []string
-	OSProfile             string
+	Release               string
 	ConfigProfile         string
 	DiskSelectionStrategy string // "smallest" | "largest"
 }
@@ -82,7 +82,7 @@ type ControlPlaneConfigSpec struct {
 	MaxSurge         *int
 
 	InstanceTypeID       string
-	OSProfile            string
+	Release              string
 	ConfigProfile        string
 	VpcPrefixIDs         []string
 	SubnetIDs            []string
@@ -643,8 +643,8 @@ func buildNicoVMSControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControl
 	if len(vpcPrefixIDs) == 0 {
 		return nil, fmt.Errorf("control plane config requires vpcPrefixIDs")
 	}
-	if cp.OSProfile == "" || cp.ConfigProfile == "" {
-		return nil, fmt.Errorf("control plane config requires osProfile and configProfile")
+	if cp.Release == "" || cp.ConfigProfile == "" {
+		return nil, fmt.Errorf("control plane config requires release and configProfile")
 	}
 
 	teleportDisabled := false
@@ -659,7 +659,7 @@ func buildNicoVMSControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControl
 			InstanceTypePreference: []uuid.UUID{instanceTypeID},
 			VpcPrefixIDs:           vpcPrefixIDs,
 			SSHKeyGroupIDs:         sshKeyGroupIDs,
-			OSProfile:              cp.OSProfile,
+			Release:                cp.Release,
 			ConfigProfile:          cp.ConfigProfile,
 		},
 		SystemReservedMemory: systemReserved,
@@ -700,7 +700,7 @@ func buildNicoVMSNodePool(spec NodePoolSpec) (api.NodePoolCreateConfig, error) {
 			InstanceTypeID:        instanceTypeID,
 			VpcPrefixIDs:          vpcPrefixIDs,
 			SSHKeyGroupIDs:        &sshKeyGroupIDs,
-			OSProfile:             spec.OSProfile,
+			Release:               spec.Release,
 			ConfigProfile:         spec.ConfigProfile,
 			DiskSelectionStrategy: api.DiskSelectionStrategyCreate(spec.DiskSelectionStrategy),
 		},

@@ -18,41 +18,41 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
-func TestListOSProfilesListsClusterReleasesAndSkipsDeprecated(t *testing.T) {
+func TestListReleasesListsClusterReleasesAndSkipsDeprecated(t *testing.T) {
 	t.Parallel()
 
-	svc := NewOSProfileService(slog.Default(), releaseClient(t,
+	svc := NewReleaseService(slog.Default(), releaseClient(t,
 		testClusterRelease("nvke-b", false),
 		testClusterRelease("nvke-a", false),
 		testClusterRelease("nvke-old", true),
 		testNodePoolRelease("nvke-worker-only", false),
 	))
 
-	resp, err := svc.ListOSProfiles(t.Context(), api.ListOSProfilesRequestObject{})
+	resp, err := svc.ListReleases(t.Context(), api.ListReleasesRequestObject{})
 	require.NoError(t, err)
-	ok, isOK := resp.(api.ListOSProfiles200JSONResponse)
+	ok, isOK := resp.(api.ListReleases200JSONResponse)
 	require.True(t, isOK)
-	assert.Equal(t, []api.OSProfile{{Name: "nvke-a"}, {Name: "nvke-b"}}, ok.OsProfiles)
+	assert.Equal(t, []api.Release{{Name: "nvke-a"}, {Name: "nvke-b"}}, ok.Releases)
 }
 
-func TestListOSProfilesNoReleasesReturnsEmptyList(t *testing.T) {
+func TestListReleasesNoReleasesReturnsEmptyList(t *testing.T) {
 	t.Parallel()
 
-	resp, err := NewOSProfileService(slog.Default(), releaseClient(t)).ListOSProfiles(t.Context(), api.ListOSProfilesRequestObject{})
+	resp, err := NewReleaseService(slog.Default(), releaseClient(t)).ListReleases(t.Context(), api.ListReleasesRequestObject{})
 	require.NoError(t, err)
-	ok, isOK := resp.(api.ListOSProfiles200JSONResponse)
+	ok, isOK := resp.(api.ListReleases200JSONResponse)
 	require.True(t, isOK)
-	assert.NotNil(t, ok.OsProfiles)
-	assert.Empty(t, ok.OsProfiles)
+	assert.NotNil(t, ok.Releases)
+	assert.Empty(t, ok.Releases)
 }
 
-func TestListOSProfilesFailsWithoutReaderOrOnListError(t *testing.T) {
+func TestListReleasesFailsWithoutReaderOrOnListError(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewOSProfileService(slog.Default(), nil).ListOSProfiles(t.Context(), api.ListOSProfilesRequestObject{})
+	_, err := NewReleaseService(slog.Default(), nil).ListReleases(t.Context(), api.ListReleasesRequestObject{})
 	require.ErrorContains(t, err, "release reader is not configured")
 
-	_, err = NewOSProfileService(slog.Default(), failingListClient(t, errors.New("boom"))).ListOSProfiles(t.Context(), api.ListOSProfilesRequestObject{})
+	_, err = NewReleaseService(slog.Default(), failingListClient(t, errors.New("boom"))).ListReleases(t.Context(), api.ListReleasesRequestObject{})
 	require.ErrorContains(t, err, "failed to list ClusterReleases: boom")
 }
 

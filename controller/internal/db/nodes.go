@@ -192,7 +192,7 @@ type NodeInfo struct {
 	AgentVersion   string    `bun:"agent_version"`
 	SpiffeEnabled  bool      `bun:"spiffe_enabled"`
 	ForgeMachineID string    `bun:"forge_machine_id"`
-	OSProfile      string    `bun:"os_profile"`
+	Release        string    `bun:"release"`
 	ConfigProfile  string    `bun:"config_profile"`
 }
 
@@ -414,7 +414,7 @@ func (q *queriesImpl) ListNodeInfo(ctx context.Context) ([]NodeInfo, error) {
 			n.agent_version,
 			n.spiffe_enabled,
 			COALESCE(n.nico->>'forge_machine_id', '') as forge_machine_id,
-			COALESCE(ns.nico->>'os_profile', '') as os_profile,
+			COALESCE(ns.nico->>'release', ns.nico->>'os_profile', '') as release,
 			COALESCE(ns.nico->>'config_profile', '') as config_profile
 		FROM nodes n
 		JOIN node_sets ns ON ns.id = n.node_set_id

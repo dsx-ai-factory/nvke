@@ -30,7 +30,7 @@ func TestNodePoolProviderGettersAndSetters(t *testing.T) {
 		InfinibandPartitionID:    &ibPartitionID,
 		NvLinkLogicalPartitionID: &nvlinkPartitionID,
 		SSHKeyGroupIDs:           []uuid.UUID{sshKeyGroupID},
-		OSProfile:                "nke-260318",
+		Release:                  "nke-260318",
 		ConfigProfile:            "gpu",
 		DiskSelectionStrategy:    db.DiskSelectionStrategyLargest,
 	})
@@ -42,7 +42,7 @@ func TestNodePoolProviderGettersAndSetters(t *testing.T) {
 	require.Equal(t, ibPartitionID, *nodePool.Nico.InfinibandPartitionID)
 	require.Equal(t, nvlinkPartitionID, *nodePool.Nico.NvLinkLogicalPartitionID)
 	require.Equal(t, []uuid.UUID{sshKeyGroupID}, nodePool.Nico.SSHKeyGroupIDs)
-	require.Equal(t, "nke-260318", nodePool.Nico.OSProfile)
+	require.Equal(t, "nke-260318", nodePool.Nico.Release)
 	require.Equal(t, "gpu", nodePool.Nico.ConfigProfile)
 	require.Equal(t, db.DiskSelectionStrategyLargest, nodePool.Nico.DiskSelectionStrategy)
 
@@ -78,12 +78,12 @@ func TestNodePoolProviderGettersAndSetters(t *testing.T) {
 	nodePool.SetNico(db.NicoNodePoolProvider{
 		SubnetIDs:             []uuid.UUID{nextSubnetID},
 		InstanceTypeID:        nextInstanceTypeID,
-		OSProfile:             "next-os",
+		Release:               "next-os",
 		ConfigProfile:         "next-config",
 		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
 	})
 	require.Equal(t, nextInstanceTypeID, nodePool.Nico.InstanceTypeID)
-	require.Equal(t, "next-os", nodePool.Nico.OSProfile)
+	require.Equal(t, "next-os", nodePool.Nico.Release)
 	require.Equal(t, "next-config", nodePool.Nico.ConfigProfile)
 	require.Equal(t, "32Gi", nodePool.SystemReservedMemory)
 }

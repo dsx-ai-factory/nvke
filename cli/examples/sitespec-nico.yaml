@@ -51,7 +51,7 @@ infra:
         - "00000000-0000-0000-0000-000000000005"
       # The name of the ClusterRelease in releases below, the name
       # examples/clusterrelease.yaml gives it.
-      osProfile: "example-ubuntu-24.04-amd64"
+      release: "example-ubuntu-24.04-amd64"
       # Optional. The bootstrap controller serves no config profiles, so a name
       # here is accepted but its hooks and labels never reach the nodes.
       # configProfile: "example-cp-profile"
@@ -64,7 +64,7 @@ infra:
 
     # MachineImage and ClusterRelease manifests (a file or a directory) applied to the
     # bootstrap cluster before the site cluster is created. They must include the
-    # ClusterRelease named by controlPlane.osProfile and its MachineImage, as full
+    # ClusterRelease named by controlPlane.release and its MachineImage, as full
     # manifests: docs/sitespec.md shows how nvkectl create writes them. Not the
     # releases/ directory of request documents.
     releases: "bootstrap-releases"

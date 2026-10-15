@@ -189,7 +189,7 @@ make test-e2e-core-nico-containers
 make test-e2e-happy-path
 make test-e2e-capd
 make test-e2e-nico-vms
-make test-e2e-nico-vms-os-profiles
+make test-e2e-nico-vms-releases
 make test-e2e E2E_TIMEOUT=3h ARGS='--label-filter=capd'
 ```
 
@@ -232,9 +232,9 @@ To iterate faster, run a single filter instead:
 LOCAL_NKE_E2E_LABEL_FILTER="capd && cp-controller" make test-e2e-capd-local
 ```
 
-### OS profile provisioning matrix
+### Release provisioning matrix
 
-The `nico-vms && os-profiles` matrix gives each supported active OS profile an
+The `nico-vms && releases` matrix gives each supported active release an
 isolated sanity lifecycle: create a one-control-plane/one-worker tenant cluster,
 wait for both nodes to become Ready in CWE, and delete the cluster. The matrix
 reads active release names, architectures, and Kubernetes versions from the
@@ -258,14 +258,14 @@ Run the complete matrix with a longer suite timeout because entries run
 sequentially:
 
 ```bash
-make test-e2e-nico-vms-os-profiles
+make test-e2e-nico-vms-releases
 ```
 
-Every entry also carries its full profile name as a label, so a new or failing
-profile can be validated independently:
+Every entry also carries its full release name as a label, so a new or failing
+release can be validated independently:
 
 ```bash
-make test-e2e ARGS='--label-filter="os-profiles && nke-260625-24.04-x86-fde"'
+make test-e2e ARGS='--label-filter="releases && nke-260625-24.04-x86-fde"'
 ```
 
 When adding a release:
@@ -276,7 +276,7 @@ When adding a release:
 2. For a tenant profile, no separate e2e list update is required; the matrix
    includes it automatically on a runner of its architecture.
 3. If nico-vms cannot support it, add it to
-   `nicoVMSOSProfileExclusions` in `test/e2e/os_profile_matrix_test.go` with
+   `nicoVMSReleaseExclusions` in `test/e2e/release_matrix_test.go` with
    the concrete reason and an owning follow-up ticket when one can remove the
    limitation.
 4. Run the focused matrix test and then the new profile's label before running
@@ -288,7 +288,7 @@ profile, so an amd64 runner boots the amd64 profiles and an arm64 runner boots
 the arm64 ones. A profile for the other architecture is left out without an
 exclusion entry.
 
-`nicoVMSOSProfileExclusions` holds the profiles no runner can boot:
+`nicoVMSReleaseExclusions` holds the profiles no runner can boot:
 
 - the arm64 `nvke-local-dev-kindest` placeholder, because it is not a tenant OS
   profile; and
@@ -419,7 +419,8 @@ without it the lane is skipped:
 
 - `provision`: provision the node over the site's jump host and check its egress.
 - `bootstrap`: also run `nvkectl bootstrap site` and wait for the API server.
-- `full`: also deploy the SBOM stack, wait for CWE, then create and delete a tenant.
+- `full`: also deploy the SBOM stack, wait for CWE, check that NKTP delivers the
+  site's telemetry (below), then create and delete a tenant.
 
 Both lanes create the same `nico-forge` tenant and both entries carry that
 label, so pick between them with `site-controller`, which only the lane that
@@ -428,13 +429,13 @@ builds a site carries. Measured against this tree with `-ginkgo.dry-run` and
 
 | label filter | specs | which |
 |---|---|---|
-| `nico-forge && !site-controller` | 4 | the tenant, against the site controller in the kube context |
-| `site-controller` | 7 | the lane that builds a site, tenant included |
-| `nico-forge` | 8 | both |
+| `nico-forge && !site-controller` | 5 | the tenant, against the site controller in the kube context |
+| `site-controller` | 12 | the lane that builds a site, tenant included |
+| `nico-forge` | 10 | both |
 
 `-e2e.site-stage`, not the label, is what decides whether a machine is
 provisioned: the site lane's tenant entries are built only when it is set, so
-a bare `nico-forge` without it selects 4 specs and reaches no hardware.
+a bare `nico-forge` without it selects 5 specs and reaches no hardware.
 
 The node is torn down afterwards (tenants are deleted first). `-e2e.keep-site`, or
 `lifecycle.preserveOnFailure` with a failed spec, keeps it.
@@ -562,6 +563,26 @@ controller's chart and overlay, so it follows `-e2e.versions=controller=`: that
 commit when the controller was built from one, else its `controller/<version>`
 release tag, which has to be fetched in a shallow clone. Set
 `site.deployPathRef` only when developing the deploy path itself.
+
+### NKTP on the built site
+
+The `full` stage checks that NKTP delivers the site's telemetry by querying its
+backend, not by reading Pod status: a Collector can be Ready and export nothing.
+`internal/nktp` runs the same checks as `nktp/hack/e2e-validate.sh` does on
+Kind, a span it pushes through the node Collector itself, and what only a site
+wires up: the control plane, controller, Temporal and SPIRE metrics and logs,
+the API server's audit log, a trace of a request the spec itself makes to the
+controller, and the site's name on every signal.
+`siteTelemetry` in `site_nktp_test.go` lists the site-specific checks by
+component, one line per expectation.
+
+The checks run in two stages, each polling its checks concurrently. First
+every signal has to arrive, within eight minutes. Then the checks that nothing
+bad arrives, which pass trivially on an empty backend, have three minutes to
+hold and must keep holding for one more. The spec therefore takes the slowest
+check of each stage in turn: a few minutes when healthy, and at most about
+twelve when a signal never arrives. The failure names every check that did not
+hold and what it last saw.
 
 ### Reaching the jump host
 

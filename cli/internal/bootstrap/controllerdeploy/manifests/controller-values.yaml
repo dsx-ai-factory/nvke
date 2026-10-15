@@ -13,8 +13,10 @@
 # in first) is a runtime decision, not a static value. profiles.path is set the
 # same way.
 #
-# appDb.postgresPassword is supplied on the `helm upgrade --install` command
-# line, not hardcoded here, matching postgres-values.yaml/temporal-values.yaml.
+# appDb.postgresPassword is not set here. Engine.Deploy generates it per run and
+# passes it in a 0600 values file after this one, so it is neither hardcoded nor
+# on the helm command line. postgres-values.yaml and temporal-values.yaml work
+# the same way.
 #
 # The four names below are controllerdeploy's cweNamespace. nameOverride sets the pod
 # label controller-nodeport.yaml selects on, and the chart pins serviceAccount.name

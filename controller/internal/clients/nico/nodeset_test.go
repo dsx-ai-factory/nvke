@@ -20,13 +20,13 @@ func TestClient_ApplyNodeSetProvider(t *testing.T) {
 
 	t.Run("sets the node set's nico payload from the node pool's", func(t *testing.T) {
 		nodePool := db.NodePool{}
-		nodePool.SetNico(db.NicoNodePoolProvider{OSProfile: "profile-a"})
+		nodePool.SetNico(db.NicoNodePoolProvider{Release: "profile-a"})
 
 		newNodeSet := &db.NodeSet{}
 		require.NoError(t, New().ApplyNodeSetProvider(nodePool, newNodeSet))
 
 		nicoProvider, err := newNodeSet.NicoProvider()
 		require.NoError(t, err)
-		assert.Equal(t, "profile-a", nicoProvider.OSProfile)
+		assert.Equal(t, "profile-a", nicoProvider.Release)
 	})
 }

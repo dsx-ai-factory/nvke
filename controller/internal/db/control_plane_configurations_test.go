@@ -30,7 +30,7 @@ func TestControlPlaneConfigSpecProviderSettersMirrorFlatFields(t *testing.T) {
 		InstanceTypePreference: []uuid.UUID{instanceTypeID},
 		SubnetIDs:              []uuid.UUID{subnetID},
 		VpcPrefixIDs:           []uuid.UUID{vpcPrefixID},
-		OSProfile:              "nke-260318",
+		Release:                "nke-260318",
 		DiskSelectionStrategy:  db.DiskSelectionStrategyLargest,
 		ConfigProfile:          "gpu",
 		SSHKeyGroupIDs:         []uuid.UUID{sshKeyGroupID},
@@ -41,7 +41,7 @@ func TestControlPlaneConfigSpecProviderSettersMirrorFlatFields(t *testing.T) {
 	assert.Equal(t, []uuid.UUID{instanceTypeID}, nicoCfg.Nico.InstanceTypePreference)
 	assert.Equal(t, []uuid.UUID{subnetID}, nicoCfg.Nico.SubnetIDs)
 	assert.Equal(t, []uuid.UUID{vpcPrefixID}, nicoCfg.Nico.VpcPrefixIDs)
-	assert.Equal(t, "nke-260318", nicoCfg.Nico.OSProfile)
+	assert.Equal(t, "nke-260318", nicoCfg.Nico.Release)
 	assert.Equal(t, db.DiskSelectionStrategyLargest, nicoCfg.Nico.DiskSelectionStrategy)
 	assert.Equal(t, "gpu", nicoCfg.Nico.ConfigProfile)
 	assert.Equal(t, []uuid.UUID{sshKeyGroupID}, nicoCfg.Nico.SSHKeyGroupIDs)
@@ -106,7 +106,7 @@ func TestCreateControlPlaneConfigRowIfChanged_StoresProviderPayload(t *testing.T
 	snapshotCfg.SetNico(db.NicoControlPlaneProvider{
 		InstanceTypePreference: []uuid.UUID{instanceTypeID},
 		SubnetIDs:              []uuid.UUID{subnetID},
-		OSProfile:              "nke-260318",
+		Release:                "nke-260318",
 		ConfigProfile:          "gpu",
 	})
 
@@ -120,14 +120,14 @@ func TestCreateControlPlaneConfigRowIfChanged_StoresProviderPayload(t *testing.T
 	require.Nil(t, row.Config.Capi)
 	assert.Equal(t, []uuid.UUID{instanceTypeID}, row.Config.Nico.InstanceTypePreference)
 	assert.Equal(t, []uuid.UUID{subnetID}, row.Config.Nico.SubnetIDs)
-	assert.Equal(t, "nke-260318", row.Config.Nico.OSProfile)
+	assert.Equal(t, "nke-260318", row.Config.Nico.Release)
 	assert.Equal(t, "gpu", row.Config.Nico.ConfigProfile)
 }
 
 // withNicoProfiles returns spec with the nico payload's OS and config profiles
 // replaced, which is where the rollout diff reads them from.
-func withNicoProfiles(spec db.ControlPlaneConfigSpec, osProfile, configProfile string) db.ControlPlaneConfigSpec {
-	spec.SetNico(db.NicoControlPlaneProvider{OSProfile: osProfile, ConfigProfile: configProfile})
+func withNicoProfiles(spec db.ControlPlaneConfigSpec, release, configProfile string) db.ControlPlaneConfigSpec {
+	spec.SetNico(db.NicoControlPlaneProvider{Release: release, ConfigProfile: configProfile})
 	return spec
 }
 
@@ -153,7 +153,7 @@ func TestIsControlPlaneRolloutRequired(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "os profile differs",
+			name: "release differs",
 			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
 				return withNicoProfiles(s, "os-v2", "cfg-v1")
 			},
@@ -209,11 +209,11 @@ func TestComputeControlPlaneRolloutChanges(t *testing.T) {
 			want: []db.ControlPlaneRolloutChange{{Field: "kubernetesVersion", From: "1.34.2", To: "1.34.3"}},
 		},
 		{
-			name: "os profile differs",
+			name: "release differs",
 			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
 				return withNicoProfiles(s, "os-v2", "cfg-v1")
 			},
-			want: []db.ControlPlaneRolloutChange{{Field: "osProfile", From: "os-v1", To: "os-v2"}},
+			want: []db.ControlPlaneRolloutChange{{Field: "release", From: "os-v1", To: "os-v2"}},
 		},
 		{
 			name: "config profile differs",
@@ -230,7 +230,7 @@ func TestComputeControlPlaneRolloutChanges(t *testing.T) {
 			},
 			want: []db.ControlPlaneRolloutChange{
 				{Field: "kubernetesVersion", From: "1.34.2", To: "1.34.3"},
-				{Field: "osProfile", From: "os-v1", To: "os-v2"},
+				{Field: "release", From: "os-v1", To: "os-v2"},
 				{Field: "configProfile", From: "cfg-v1", To: "cfg-v2"},
 			},
 		},

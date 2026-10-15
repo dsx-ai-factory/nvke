@@ -189,7 +189,7 @@ a node, which is the **agent** plugin. Both are per-architecture.
 `spiffe.enabled=true`, and the five SPIRE items are the same ones
 `capnico-e2e` installs and proves on every run.
 
-Node-side needs nothing built: the OS profile writes
+Node-side needs nothing built: the release writes
 `/etc/spire-agent/agent.conf` and `initial-trust-bundle.pem` into cloud-init,
 which is one of the two mutually exclusive paths `os-image/SPEC.md` allows --
 the other being `/etc/nke/spire.env` plus the image's renderer. A profile that

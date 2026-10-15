@@ -152,7 +152,7 @@ Configure your callers now, while NVKE still serves every request. From the mome
      --output-file oidc.kubeconfig
    ```
 
-   The command copies the cluster address and CA from `<CLUSTER_NAME>.kubeconfig` and replaces the user with `kubectl oidc-login`. Add `--oidc-extra-scope <SCOPE>` for each scope your IdP needs to release the `groups` claim.
+   The command copies the cluster address and CA from `<CLUSTER_NAME>.kubeconfig` and replaces the user with `kubectl oidc-login`. Add `--oidc-extra-scope <SCOPE>` for each scope your IdP needs to release the `groups` claim. On a machine with no browser, add `--headless`. `kubectl oidc-login` then prints a URL to open on another machine. The IdP client must allow the device authorization grant.
 
 2. Point `nvkectl` at the API with that kubeconfig.
 

@@ -53,7 +53,7 @@ nvkr release export --reference <repo@digest> > release.json
 ```
 
 `export` describes the release and verifies nothing, so run it only on a
-reference `verify` accepted. [Get NVKE artifacts and OS profiles built with NVKR](../../docs/operate/build-node-images.md)
+reference `verify` accepted. [Get NVKE artifacts from NVKR and write release manifests](../../docs/operate/build-node-images.md)
 explains what each command checks and writes. The release
 is optional: without it the install takes the charts from this checkout and
 their public repositories, and the site spec names the controller images.

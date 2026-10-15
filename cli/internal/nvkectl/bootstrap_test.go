@@ -2396,7 +2396,7 @@ func TestDumpSiteSpecNamesTheNicoControlPlaneAsDocumented(t *testing.T) {
 		t.Fatalf("dumpSiteSpec: %v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{"count: 3", "instanceTypePreference:", "vpcPrefixIDs:", "sshKeyGroupIDs:", "osProfile: example-ubuntu-24.04-amd64"} {
+	for _, want := range []string{"count: 3", "instanceTypePreference:", "vpcPrefixIDs:", "sshKeyGroupIDs:", "release: example-ubuntu-24.04-amd64"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the dump lacks %q:\n%s", want, out)
 		}

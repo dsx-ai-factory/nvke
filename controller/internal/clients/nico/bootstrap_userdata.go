@@ -43,7 +43,7 @@ func (*Client) renderBootstrapUserData(
 	}
 	userData, err := renderUserData(ctx, deps, userDataTemplate, node, provisioningConfig.DiskSelectionStrategy, provisioningConfig.KubernetesVersion, teleportCfg, cluster)
 	if err != nil {
-		return "", fmt.Errorf("failed to render user data for OS profile %s: %w", provisioningConfig.OSProfile, err)
+		return "", fmt.Errorf("failed to render user data for release %s: %w", provisioningConfig.Release, err)
 	}
 
 	return userData, nil
@@ -205,10 +205,10 @@ func renderUserData(
 
 func validateDgxcTenantCredentials(cfg config.Config) error {
 	if strings.TrimSpace(cfg.DgxcTenantUser) == "" {
-		return fmt.Errorf("DGXC_TENANT_USER is required for Forge OS profile user-data rendering")
+		return fmt.Errorf("DGXC_TENANT_USER is required for Forge release user-data rendering")
 	}
 	if strings.TrimSpace(cfg.DgxcTenantPassword) == "" {
-		return fmt.Errorf("DGXC_TENANT_PASSWORD is required for Forge OS profile user-data rendering")
+		return fmt.Errorf("DGXC_TENANT_PASSWORD is required for Forge release user-data rendering")
 	}
 	return nil
 }

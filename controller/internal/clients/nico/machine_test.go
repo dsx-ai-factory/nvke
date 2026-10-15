@@ -39,7 +39,7 @@ func TestClient_renderInfraMachine(t *testing.T) {
 
 	nodeSet := db.NodeSet{KubernetesVersion: "1.33.0"}
 	nodeSet.SetNico(db.NicoNodePoolProvider{
-		OSProfile:             "test-os",
+		Release:               "test-os",
 		DiskSelectionStrategy: db.DiskSelectionStrategyLargest,
 	})
 
@@ -96,7 +96,7 @@ func TestResolveNodeConfig(t *testing.T) {
 		TeleportEnabled:   true,
 	}
 	controlPlaneNodeSet.SetNico(db.NicoNodePoolProvider{
-		OSProfile:             "cp-os",
+		Release:               "cp-os",
 		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
 	})
 
@@ -105,7 +105,7 @@ func TestResolveNodeConfig(t *testing.T) {
 		TeleportEnabled:   true,
 	}
 	workerNodeSet.SetNico(db.NicoNodePoolProvider{
-		OSProfile:             "worker-os",
+		Release:               "worker-os",
 		DiskSelectionStrategy: db.DiskSelectionStrategyLargest,
 	})
 
@@ -120,7 +120,7 @@ func TestResolveNodeConfig(t *testing.T) {
 			nodeSet:  controlPlaneNodeSet,
 			nodePool: controlPlaneNodePool,
 			want: NodeConfig{
-				OSProfile:             "cp-os",
+				Release:               "cp-os",
 				DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
 				KubernetesVersion:     "1.32.1",
 				TeleportEnabled:       true,
@@ -135,7 +135,7 @@ func TestResolveNodeConfig(t *testing.T) {
 			nodeSet:  workerNodeSet,
 			nodePool: workerNodePool,
 			want: NodeConfig{
-				OSProfile:                "worker-os",
+				Release:                  "worker-os",
 				DiskSelectionStrategy:    db.DiskSelectionStrategyLargest,
 				KubernetesVersion:        "1.33.0",
 				TeleportEnabled:          true,

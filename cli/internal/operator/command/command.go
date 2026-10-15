@@ -46,12 +46,12 @@ var kindInfos = []kindInfo{
 	},
 	{
 		operator.KindClusterRelease, "clusterrelease", "cluster release",
-		"a cluster release: a control-plane osProfile",
+		"a cluster release: a control-plane release",
 		"a cluster still selects",
 	},
 	{
 		operator.KindNodePoolRelease, "nodepoolrelease", "node pool release",
-		"a node pool release: a worker osProfile",
+		"a node pool release: a worker release",
 		"a node pool still selects",
 	},
 }

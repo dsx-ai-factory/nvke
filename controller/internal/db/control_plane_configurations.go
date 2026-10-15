@@ -44,10 +44,36 @@ type NicoControlPlaneProvider struct {
 	InstanceTypePreference []uuid.UUID           `json:"instance_type_preference,omitempty"`
 	SubnetIDs              []uuid.UUID           `json:"subnet_ids,omitempty"`
 	VpcPrefixIDs           []uuid.UUID           `json:"vpc_prefix_ids,omitempty"`
-	OSProfile              string                `json:"os_profile,omitempty"`
+	Release                string                `json:"release,omitempty"`
 	DiskSelectionStrategy  DiskSelectionStrategy `json:"disk_selection_strategy,omitempty"`
 	ConfigProfile          string                `json:"config_profile,omitempty"`
 	SSHKeyGroupIDs         []uuid.UUID           `json:"ssh_key_group_ids,omitempty"`
+}
+
+// MarshalJSON writes the release under both the release and os_profile keys.
+// See NicoNodePoolProvider.MarshalJSON for why the mirror exists.
+func (n NicoControlPlaneProvider) MarshalJSON() ([]byte, error) {
+	type alias NicoControlPlaneProvider
+	return json.Marshal(struct {
+		alias
+		OSProfileLegacy string `json:"os_profile,omitempty"`
+	}{alias(n), n.Release})
+}
+
+// UnmarshalJSON reads the release from either key, preferring release.
+func (n *NicoControlPlaneProvider) UnmarshalJSON(data []byte) error {
+	type alias NicoControlPlaneProvider
+	aux := struct {
+		*alias
+		OSProfileLegacy string `json:"os_profile,omitempty"`
+	}{alias: (*alias)(n)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if n.Release == "" {
+		n.Release = aux.OSProfileLegacy
+	}
+	return nil
 }
 
 type CAPIControlPlaneProvider struct {
@@ -144,7 +170,7 @@ func cloneNicoControlPlaneProvider(provider *NicoControlPlaneProvider) *NicoCont
 		InstanceTypePreference: append([]uuid.UUID(nil), provider.InstanceTypePreference...),
 		SubnetIDs:              append([]uuid.UUID(nil), provider.SubnetIDs...),
 		VpcPrefixIDs:           append([]uuid.UUID(nil), provider.VpcPrefixIDs...),
-		OSProfile:              provider.OSProfile,
+		Release:                provider.Release,
 		DiskSelectionStrategy:  provider.DiskSelectionStrategy,
 		ConfigProfile:          provider.ConfigProfile,
 		SSHKeyGroupIDs:         append([]uuid.UUID(nil), provider.SSHKeyGroupIDs...),
@@ -177,7 +203,7 @@ func cloneRawMessages(in []json.RawMessage) []json.RawMessage {
 // ControlPlaneRolloutChange is a single rollout-relevant field that differs
 // between two control-plane config snapshots.
 type ControlPlaneRolloutChange struct {
-	Field string // "kubernetesVersion", "osProfile", or "configProfile"
+	Field string // "kubernetesVersion", "release", or "configProfile"
 	From  string
 	To    string
 }
@@ -197,8 +223,8 @@ func ComputeControlPlaneRolloutChanges(pinned, desired ControlPlaneConfigSpec) [
 	// zero value and the profile comparisons below are a no-op for it.
 	pinnedNico, _ := pinned.NicoProvider()
 	desiredNico, _ := desired.NicoProvider()
-	if pinnedNico.OSProfile != desiredNico.OSProfile {
-		changes = append(changes, ControlPlaneRolloutChange{Field: "osProfile", From: pinnedNico.OSProfile, To: desiredNico.OSProfile})
+	if pinnedNico.Release != desiredNico.Release {
+		changes = append(changes, ControlPlaneRolloutChange{Field: "release", From: pinnedNico.Release, To: desiredNico.Release})
 	}
 	if pinnedNico.ConfigProfile != desiredNico.ConfigProfile {
 		changes = append(changes, ControlPlaneRolloutChange{Field: "configProfile", From: pinnedNico.ConfigProfile, To: desiredNico.ConfigProfile})
@@ -208,7 +234,7 @@ func ComputeControlPlaneRolloutChanges(pinned, desired ControlPlaneConfigSpec) [
 
 // IsControlPlaneRolloutRequired reports whether two control-plane config snapshots
 // differ in a field that requires replacing (recycling) a control-plane node: the
-// Kubernetes version, the OS profile, or the config profile. It is a thin
+// Kubernetes version, the release, or the config profile. It is a thin
 // predicate over ComputeControlPlaneRolloutChanges, so the boolean and the
 // reported diff can never disagree. The common (unchanged) case allocates nothing,
 // since ComputeControlPlaneRolloutChanges returns a nil slice when the snapshots

@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 set -eu
 counts="$(kubectl --kubeconfig /kubeconfig/value get pods -n kube-system \
   -l component=kube-apiserver \

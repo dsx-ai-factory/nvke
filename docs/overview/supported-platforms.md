@@ -14,7 +14,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | Workload cluster | 1.36.3 | `controlPlaneKubernetesVersion` is required and has no default. The API accepts any `X.Y.Z`, but nodes run only a version their node image carries. |
 | Control-plane upgrade | One minor version up, or a later patch release | Range. Downgrades and requests for the current version are rejected. The cluster must have a `controlPlaneVIP`, and only one upgrade runs at a time. |
 | Worker node pool skew | Up to 3 minor versions behind the control plane | Range. Checked when you upgrade the control plane. A new node pool starts at the cluster's version. |
-| Upgrade target on NICo | A registered OS profile for the target version | The upgrade selects an OS profile for the target Kubernetes version with the same architecture, variant and Ubuntu version as the current one. It fails if none is registered, unless the current OS profile sets the Kubernetes version at provisioning time. |
+| Upgrade target on NICo | A registered release for the target version | The upgrade selects a release for the target Kubernetes version with the same architecture, variant and Ubuntu version as the current one. It fails if none is registered, unless the current release sets the Kubernetes version at provisioning time. |
 | OpenID Connect (OIDC) on a workload cluster | 1.30.0 or later | Range. Applies to `enableOidc` and `nvkeOIDCAuth`. |
 | Fleet-wide OIDC providers on a workload cluster | 1.34.0 or later | Range. Applies to `oidc.providers`. A cluster created on an earlier version gets none. |
 
@@ -46,7 +46,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | SPIFFE Runtime Environment (SPIRE) agent | 1.14.1, with TPM plugin 1.9.0 | Pinned. Installed on the node image for TPM node attestation. |
 | Node agent (`nvke-agent`) | Built from the NVKE source NVKR pins | Installed and enabled on the node image. Listens on port 15005. |
 
-NVKR's [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/definitions/nvke-os/README.md) lists the build host requirements; [Get NVKE artifacts and OS profiles built with NVKR](../operate/build-node-images.md) summarizes them.
+NVKR's [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/definitions/nvke-os/README.md) lists the build host requirements; [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md) summarizes them.
 
 ## Management and bootstrap tooling
 

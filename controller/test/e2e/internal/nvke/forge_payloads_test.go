@@ -62,10 +62,8 @@ func TestBuildForgeNodePayloadsRendersEveryInput(t *testing.T) {
 	joined := strings.Join(payloads.PreKubeadmCommands, "\n")
 	for _, want := range []string{
 		"nvke-kubeadm-distro-" + inputs.KubernetesVersion,
-		// nke-, not nvke-: the suite serves both generations, and no
-		// nvke-cni-ovn-* has been published yet. See #1600.
-		"nke-cni-ovn-images-" + inputs.CNIVersion,
-		"nke-cni-ovn-charts-" + inputs.CNIVersion,
+		"nvke-cni-ovn-images-" + inputs.CNIVersion,
+		"nvke-cni-ovn-charts-" + inputs.CNIVersion,
 		"openvswitch-switch",
 	} {
 		if !strings.Contains(joined, want) {

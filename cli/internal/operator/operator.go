@@ -3,7 +3,7 @@
 
 // Package operator is the nvkectl operator interface to a site's machine images
 // and releases: the MachineImage, ClusterRelease and NodePoolRelease resources
-// that the controller resolves every osProfile from.
+// that the controller resolves every release from.
 //
 // Operators describe a resource with a portable document that carries only a
 // metadata and a spec. The package supplies the group, version and kind, and
@@ -44,7 +44,7 @@ func (k Kind) SupportsDeprecation() bool {
 // resourceVersion are not part of it.
 type Metadata struct {
 	// Name is the resource name. A release is selected by this name, so it is
-	// the osProfile value that clusters and node pools store.
+	// the release value that clusters and node pools store.
 	Name string `json:"name"`
 	// Annotations are free-form key/value pairs the resource carries.
 	Annotations map[string]string `json:"annotations,omitempty"`
