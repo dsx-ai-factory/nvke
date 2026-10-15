@@ -45,8 +45,9 @@ it out is never worth it when there is nothing to disambiguate.
 
 If --report is missing (the suite never ran -- a Forge provisioning failure,
 a wedged runner), this still writes a Result: errored, with a summary saying
-so, rather than erroring out itself. A run that fails this early still needs
-a red entry in TestGrid, not silence. On that path, StartedAt comes from
+so, rather than erroring out itself -- the record is kept even though
+` + "`qualify publish`" + ` will not ship it to TestGrid, since Ginkgo never ran far
+enough to say which suite this was. On that path, StartedAt comes from
 --started-at if the workflow passed one (the job's own start time), since
 there is no Ginkgo report to read it from; FinishedAt is still
 ` + "`qualify result`" + `'s own run time, which is accurate -- that is genuinely
@@ -78,7 +79,7 @@ when the failure was discovered.`,
 				infraFailureStart = t.UTC()
 			}
 
-			resultState, summary, runStartedAt, runFinishedAt := qualification.ResultErrored, "", infraFailureStart, time.Now().UTC()
+			resultState, summary, suite, runStartedAt, runFinishedAt := qualification.ResultErrored, "", "", infraFailureStart, time.Now().UTC()
 			ginkgoReport, err := loadGinkgoReport(report)
 			switch {
 			case errors.Is(err, os.ErrNotExist):
@@ -98,6 +99,7 @@ when the failure was discovered.`,
 				}
 				summary = summarizeGinkgoReport(ginkgoReport)
 				runStartedAt, runFinishedAt = ginkgoReport.StartTime, ginkgoReport.EndTime
+				suite = ginkgoReport.SuiteDescription
 			}
 
 			result := qualification.NewResult(
@@ -117,6 +119,7 @@ when the failure was discovered.`,
 						Scope:        p.Scope,
 						Result:       resultState,
 						Summary:      summary,
+						Suite:        suite,
 						RunURL:       runURLFromEnv(),
 						Capabilities: strm.Capabilities,
 						Dependencies: strm.Dependencies,

@@ -3,11 +3,10 @@
 
 // Package testgrid is the TestGrid Destination: it writes started.json, a
 // copy of the JUnit report, then finished.json to the shape TestGrid's
-// updater reads (groups/{group}/{dashboard}/{tab}/{build}/), with dashboard
-// as {gpu}-v{kube}-nvke-e2e. The trailing -nvke-e2e is not cosmetic --
-// config-gen's isNewFormatDashboard only discovers and renders dashboards
-// whose name matches that {track}(e2e|tenant) suffix; anything else is
-// silently dropped from the UI while still sitting in the bucket.
+// updater reads (groups/{group}/{dashboard}/{tab}/{build}/), with group as
+// the subject, dashboard as the full stream name (e.g.
+// forge-gb200-amd64-ubuntu-24.04-kube-1.36), and tab as the Ginkgo suite
+// that ran, slugged.
 package testgrid
 
 import (
@@ -18,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
 )
@@ -193,16 +193,21 @@ func (d *Destination) Publish(ctx context.Context, result *qualification.Result,
 
 // buildPrefix is the group/dashboard/tab/build GCS path for this leg.
 //
-// group is {provider}-prod, matching autotest's real CSP-group convention
-// (testgrid_destination.py _publish_to_group) -- not a bare subject name.
-// "prod" is hardcoded, not a second environment: nothing reads any bucket
-// but the prod one (confirmed against the real config-gen deployment), and
-// Forge carries no staging/prod distinction of its own to put in its place.
+// group is the subject (e.g. "nvke"), the same derivation releaseStream
+// uses: a fixed value would stamp a second, per-component subject's results
+// under the first subject's group, indistinguishable from the one it
+// actually belongs to.
 //
-// dashboard is {gpu}-v{kube}-nvke-e2e: the {track}-e2e suffix is required
-// for config-gen to discover and render the dashboard at all, and "nvke" is
-// the track the SPA derives this subject's "{subject}-release" release
-// source from (today, "nvke-release").
+// dashboard is the stream's own name verbatim (e.g.
+// forge-gb200-amd64-ubuntu-24.04-kube-1.36) -- no required suffix on this
+// side; TestGrid's config-gen discovers dashboards by group rather than by a
+// dashboard-name pattern.
+//
+// tab is the Ginkgo suite that ran (stream.Suite, e.g. "NVKE E2E Suite"),
+// slugged. Not the stream name: multiple streams run the same suite, so
+// group+dashboard already disambiguates the configuration under test, and
+// tab is which suite ran against it -- a second suite later becomes a new
+// tab on the same dashboard rather than a new dashboard.
 //
 // build is {FinishedAt as 19-digit nanoseconds}-{run_id}-{run_attempt}-
 // {short hash of combination ID}. The updater drops any build whose name
@@ -238,6 +243,9 @@ func (d *Destination) buildPrefix(result *qualification.Result) (string, error) 
 	if provider == "" || gpu == "" || kube == "" {
 		return "", fmt.Errorf("stream %q capabilities have no provider/gpu/kube (got %v)", stream.Name, capabilities)
 	}
+	if stream.Suite == "" {
+		return "", fmt.Errorf("stream %q has no suite, so there is no tab to publish it under", stream.Name)
+	}
 	if result.Spec.FinishedAt.IsZero() {
 		return "", fmt.Errorf("result has no spec.finishedAt, so the build name has no ordering timestamp")
 	}
@@ -245,19 +253,37 @@ func (d *Destination) buildPrefix(result *qualification.Result) (string, error) 
 		return "", fmt.Errorf("result has no spec.identity.runID, so this leg's build name has nothing distinguishing it from another run of the same combination/stream -- Upload's create-only write would then silently drop a second, corrected publish instead of erroring or overwriting")
 	}
 
-	group := fmt.Sprintf("%s-prod", provider)
-	dashboard := fmt.Sprintf("%s-v%s-nvke-e2e", gpu, kube)
+	group := result.Spec.Subject
+	dashboard := stream.Name
+	tab := slug(stream.Suite)
 
-	build := fmt.Sprintf("%019d", result.Spec.FinishedAt.UTC().UnixNano())
-	if result.Spec.Identity.RunID != "" {
-		build += "-" + result.Spec.Identity.RunID
-	}
+	build := fmt.Sprintf("%019d-%s", result.Spec.FinishedAt.UTC().UnixNano(), result.Spec.Identity.RunID)
 	if result.Spec.Identity.RunAttempt != "" {
 		build += "-" + result.Spec.Identity.RunAttempt
 	}
 	build += "-" + shortHash(combo.ID)
 
-	return fmt.Sprintf("groups/%s/%s/%s/%s/", group, dashboard, stream.Name, build), nil
+	return fmt.Sprintf("groups/%s/%s/%s/%s/", group, dashboard, tab, build), nil
+}
+
+// slug lowercases s and replaces every run of characters that are not
+// lowercase letters, digits, or hyphens with a single hyphen, so a Ginkgo
+// SuiteDescription like "NVKE E2E Suite" becomes a valid GCS path segment:
+// "nvke-e2e-suite".
+func slug(s string) string {
+	var b strings.Builder
+	lastHyphen := false
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastHyphen = false
+		case !lastHyphen:
+			b.WriteByte('-')
+			lastHyphen = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 // shortHash is the first 8 hex characters of the SHA-256 of s -- enough to

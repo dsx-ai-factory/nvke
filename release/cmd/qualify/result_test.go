@@ -55,11 +55,12 @@ func writeGinkgoReport(t *testing.T, succeeded bool) string {
 	}
 	start := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
 	report := types.Report{
-		SuiteSucceeded: succeeded,
-		StartTime:      start,
-		EndTime:        start.Add(5 * time.Minute),
-		PreRunStats:    types.PreRunStats{SpecsThatWillRun: 1},
-		SpecReports:    types.SpecReports{{LeafNodeType: types.NodeTypeIt, State: state}},
+		SuiteDescription: "NVKE E2E Suite",
+		SuiteSucceeded:   succeeded,
+		StartTime:        start,
+		EndTime:          start.Add(5 * time.Minute),
+		PreRunStats:      types.PreRunStats{SpecsThatWillRun: 1},
+		SpecReports:      types.SpecReports{{LeafNodeType: types.NodeTypeIt, State: state}},
 	}
 	b, err := json.Marshal([]types.Report{report})
 	if err != nil {
@@ -107,6 +108,9 @@ func TestResultCmdSucceeds(t *testing.T) {
 	stream := result.Status.Combination.Stream
 	if stream.Result != "passed" {
 		t.Errorf("result = %q, want passed", stream.Result)
+	}
+	if stream.Suite != "NVKE E2E Suite" {
+		t.Errorf("suite = %q, want the Ginkgo report's own SuiteDescription", stream.Suite)
 	}
 	if stream.Capabilities["gpu"] != "h100" || stream.Capabilities["kube"] != "1.34" {
 		t.Errorf("capabilities = %v, want gpu=h100 kube=1.34 stamped from plan.json", stream.Capabilities)
@@ -220,6 +224,9 @@ func TestResultCmdReportsInfrastructureFailureOnMissingReport(t *testing.T) {
 	}
 	if !strings.Contains(stream.Summary, "infrastructure failure") {
 		t.Errorf("summary = %q, want it to say infrastructure failure", stream.Summary)
+	}
+	if stream.Suite != "" {
+		t.Errorf("suite = %q, want empty -- Ginkgo never ran far enough to say which suite this was", stream.Suite)
 	}
 	// Capabilities still come from the plan even when the report is missing --
 	// the plan load does not depend on the report.

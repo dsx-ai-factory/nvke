@@ -28,11 +28,12 @@ func publishCmd() *cobra.Command {
 		Long: `Ship one stream's qualification result to a destination.
 
 Reads the Result at --result and the JUnit report at --junit and ships them
-to --destination. --junit may point at a file that does not exist -- a run
-that never produced a report has no JUnit either, and the Result alone still
-carries the infrastructure-failure verdict. testgrid is the only destination
-today; --destination exists so a second one is additive rather than a
-rewrite.
+to --destination. testgrid is the only destination today; --destination
+exists so a second one is additive rather than a rewrite.
+
+If the Result is errored (Ginkgo never ran -- a Forge provisioning failure, a
+wedged runner), this is a no-op: there is no suite name to tab the record
+under, so nothing is published.
 
 Does not read plan.json: the Result record already carries this leg's
 Stream.Capabilities (gpu/kube and similar), stamped there by ` + "`qualify result`" + `,
@@ -47,6 +48,11 @@ so routing is built from the record itself.`,
 			combo := result.Status.Combination
 			if combo.Stream.Name != stream {
 				return fmt.Errorf("--stream=%s does not match the result record's stream %q", stream, combo.Stream.Name)
+			}
+
+			if combo.Stream.Result == qualification.ResultErrored {
+				fmt.Fprintf(cmd.OutOrStdout(), "skipping publish: %s/%s errored before Ginkgo ran, nothing to tab it under\n", combo.ID, stream)
+				return nil
 			}
 
 			dest, closeDest, err := buildDestination(cmd.Context(), destination)

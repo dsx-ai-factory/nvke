@@ -122,6 +122,22 @@ func TestPublishCmdRejectsStreamMismatch(t *testing.T) {
 	}
 }
 
+// An errored result (Ginkgo never ran) has no suite to tab it under, so
+// publish must skip it before ever reaching buildDestination -- which would
+// otherwise try to open a real GCS client.
+func TestPublishCmdSkipsErroredResult(t *testing.T) {
+	resultPath := writeFile(t, "qualify-result.json", strings.Replace(publishTestResult, `"result": "passed"`, `"result": "errored"`, 1))
+	junitPath := filepath.Join(t.TempDir(), "does-not-exist.xml")
+
+	stdout, err := runPublishCmd(t, publishArgs(t, resultPath, junitPath, "amd64-1.34")...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout, "skipping publish") {
+		t.Errorf("stdout = %q, want it to say the publish was skipped", stdout)
+	}
+}
+
 func TestBuildDestinationRejectsUnknownDestination(t *testing.T) {
 	_, _, err := buildDestination(nil, "not-a-real-destination") //nolint:staticcheck // ctx unused before the error path
 	if err == nil || !strings.Contains(err.Error(), "unknown --destination") {

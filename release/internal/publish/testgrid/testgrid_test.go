@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -17,13 +16,6 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
 )
-
-// newFormatDashboard mirrors testgrid's own tools/config-gen/main.go
-// isNewFormatDashboard regex. config-gen silently drops any discovered
-// dashboard that does not match this -- not an error, just never rendered in
-// the UI -- so a dashboard name that stops matching it is a regression this
-// test catches locally instead of only on a live TestGrid check.
-var newFormatDashboard = regexp.MustCompile(`-[a-z0-9]+-(e2e|tenant)(-(nclave|cpu))?$`)
 
 // testResultFinishedAt is the default FinishedAt testResult stamps -- the
 // build name's ordering source, so tests that are not specifically about
@@ -44,7 +36,7 @@ func testResult(subject, combinationID, streamName, runID, runAttempt string, ca
 		Status: qualification.ResultStatus{
 			Combination: qualification.ResultCombination{
 				ID:     combinationID,
-				Stream: qualification.ResultStream{Name: streamName, Capabilities: capabilities},
+				Stream: qualification.ResultStream{Name: streamName, Suite: "NVKE E2E Suite", Capabilities: capabilities},
 			},
 		},
 	}
@@ -58,7 +50,7 @@ func TestBuildPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := fmt.Sprintf("groups/forge-prod/h100-v1.34-nvke-e2e/amd64-1.34/%019d-12345-%s/", testResultFinishedAt.UnixNano(), shortHash("cli-v1.0.0"))
+	want := fmt.Sprintf("groups/nvke/amd64-1.34/nvke-e2e-suite/%019d-12345-%s/", testResultFinishedAt.UnixNano(), shortHash("cli-v1.0.0"))
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -72,7 +64,7 @@ func TestBuildPrefixRunAttemptIsAppendedToBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := fmt.Sprintf("groups/forge-prod/h100-v1.34-nvke-e2e/amd64-1.34/%019d-12345-2-%s/", testResultFinishedAt.UnixNano(), shortHash("cli-v1.0.0"))
+	want := fmt.Sprintf("groups/nvke/amd64-1.34/nvke-e2e-suite/%019d-12345-2-%s/", testResultFinishedAt.UnixNano(), shortHash("cli-v1.0.0"))
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -148,16 +140,57 @@ func TestBuildPrefixRejectsEmptyRunID(t *testing.T) {
 	}
 }
 
-func TestBuildPrefixGroupUsesCapabilitiesProvider(t *testing.T) {
-	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "some-other-provider", "gpu": "h100", "kube": "1.34"})
+func TestBuildPrefixGroupUsesSubject(t *testing.T) {
+	result := testResult("widget", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
 	d := &Destination{}
 
 	got, err := d.buildPrefix(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if group := strings.Split(got, "/")[1]; group != "some-other-provider-prod" {
-		t.Errorf("group is %q, want %q", group, "some-other-provider-prod")
+	if group := strings.Split(got, "/")[1]; group != "widget" {
+		t.Errorf("group is %q, want %q", group, "widget")
+	}
+}
+
+func TestBuildPrefixDashboardIsStreamNameVerbatim(t *testing.T) {
+	result := testResult("nvke", "cli-v1.0.0", "forge-gb200-amd64-ubuntu-24.04-kube-1.36", "12345", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
+	d := &Destination{}
+
+	got, err := d.buildPrefix(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboard := strings.Split(got, "/")[2]; dashboard != "forge-gb200-amd64-ubuntu-24.04-kube-1.36" {
+		t.Errorf("dashboard is %q, want %q", dashboard, "forge-gb200-amd64-ubuntu-24.04-kube-1.36")
+	}
+}
+
+func TestBuildPrefixTabIsSlugifiedSuite(t *testing.T) {
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
+	result.Status.Combination.Stream.Suite = "NVKE E2E Suite"
+	d := &Destination{}
+
+	got, err := d.buildPrefix(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tab := strings.Split(got, "/")[3]; tab != "nvke-e2e-suite" {
+		t.Errorf("tab is %q, want %q", tab, "nvke-e2e-suite")
+	}
+}
+
+// Without a suite name, there is nothing meaningful to tab the leg under --
+// this is the case `qualify publish` is supposed to skip before ever
+// reaching buildPrefix, but buildPrefix rejects it directly too rather than
+// trusting every caller to have done that check.
+func TestBuildPrefixRejectsEmptySuite(t *testing.T) {
+	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
+	result.Status.Combination.Stream.Suite = ""
+	d := &Destination{}
+
+	if _, err := d.buildPrefix(result); err == nil {
+		t.Fatal("buildPrefix returned nil, want an error for an empty suite")
 	}
 }
 
@@ -179,27 +212,6 @@ func TestBuildPrefixRejectsMissingCapabilities(t *testing.T) {
 				t.Fatal("buildPrefix returned nil, want an error for missing provider/gpu/kube")
 			}
 		})
-	}
-}
-
-// buildPrefix's dashboard segment must match config-gen's new-format
-// dashboard naming, or every result published here silently never appears in
-// the TestGrid UI while still sitting in the bucket.
-func TestBuildPrefixDashboardMatchesConfigGenNewFormat(t *testing.T) {
-	result := testResult("nvke", "cli-v1.0.0", "amd64-1.34", "12345", "", map[string]string{"provider": "forge", "gpu": "h100", "kube": "1.34"})
-	d := &Destination{}
-
-	prefix, err := d.buildPrefix(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	parts := strings.Split(strings.Trim(prefix, "/"), "/")
-	if len(parts) < 3 {
-		t.Fatalf("prefix %q does not have a dashboard segment", prefix)
-	}
-	dashboard := parts[2] // groups/{group}/{dashboard}/...
-	if !newFormatDashboard.MatchString(dashboard) {
-		t.Errorf("dashboard %q does not match config-gen's new-format regex %s", dashboard, newFormatDashboard)
 	}
 }
 
@@ -233,6 +245,20 @@ func TestShortHashIsStableAndEightChars(t *testing.T) {
 	}
 	if len(a) != 8 {
 		t.Errorf("shortHash is %d characters, want 8", len(a))
+	}
+}
+
+func TestSlug(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"NVKE E2E Suite", "nvke-e2e-suite"},
+		{"nvke-e2e-suite", "nvke-e2e-suite"},
+		{"  NVKE   E2E  Suite  ", "nvke-e2e-suite"},
+		{"NVKE_E2E.Suite!", "nvke-e2e-suite"},
+		{"", ""},
+	} {
+		if got := slug(tc.in); got != tc.want {
+			t.Errorf("slug(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
@@ -298,6 +324,7 @@ func publishTestResult(t *testing.T, passed bool) *qualification.Result {
 				Stream: qualification.ResultStream{
 					Name:   "amd64-1.34",
 					Result: resultState,
+					Suite:  "NVKE E2E Suite",
 					RunURL: "https://github.com/dsx-ai-factory/nvke/actions/runs/12345",
 					Capabilities: map[string]string{
 						"provider": "forge", "gpu": "h100", "kube": "1.34", "arch": "amd64", "ubuntu": "24.04",

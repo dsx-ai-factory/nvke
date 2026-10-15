@@ -76,11 +76,19 @@ const (
 // so `qualify publish` can build GCS routing (gpu/kube/provider) straight off
 // the already-published record -- it does not need to re-read plan.json
 // itself.
+//
+// Suite is the Ginkgo report's own SuiteDescription (e.g. "NVKE E2E Suite"),
+// not re-derived or guessed: it is only ever set when a report was actually
+// read, since that is the only place this name exists. A result with no
+// report (Result == ResultErrored) carries no Suite, and `qualify publish`
+// does not publish that leg at all -- there is nothing meaningful to tab it
+// under, since Ginkgo never ran far enough to say which suite this was.
 type ResultStream struct {
 	Name    string `json:"name"`
 	Scope   string `json:"scope"`
 	Result  string `json:"result"` // ResultPassed, ResultFailed, or ResultErrored
 	Summary string `json:"summary"`
+	Suite   string `json:"suite,omitempty"`
 	RunURL  string `json:"runUrl,omitempty"`
 
 	Capabilities map[string]string `json:"capabilities,omitempty"`
