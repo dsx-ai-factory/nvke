@@ -67,10 +67,15 @@ old repo, which has only the old names.
 nvke-kubeadm-distro-<ver> is published there -- 1.36.3 confirmed in both noble
 and resolute on 2026-10-14 -- so it moved with the coordinates.
 
-nvke-cni-ovn-images and nvke-cni-ovn-charts are published by #1560. Until that
-lands the suite serves only nke-cni-ovn-*, and asking for a name it does not
-serve is a "no candidate" that terminates ProvisionCluster through
-InstallCNIPreconditionFailed, which does not retry.
+nke-cni-ovn-images and nke-cni-ovn-charts are pinned to the old name because
+of the VERSION, not the name. nvke-cni-ovn-* is published at 1.4.11, 1.5.13
+and 1.5.18; CNIVersion resolves to 1.4.0 from the lock, and at 1.4.0 only the
+old spelling exists. bundle.sh takes versions matching X.Y.0 only -- it fetches the
+upstream tag v$VERSION, and v1.4.11 does not exist -- so no lockable version
+has an nvke- package. #1560 moves this to 1.6.0 from the fork, which is what
+resolves it. Asking for a name the suite does not serve is a "no candidate"
+that terminates ProvisionCluster through InstallCNIPreconditionFailed, which
+does not retry.
 
 The unit and its environment file stay nke-, permanently. nvke-agent.service
 declares Alias=nke-agent.service and reads both environment files, so the old
@@ -107,7 +112,7 @@ curl -fsSL -o /etc/apt/keyrings/nvke.asc https://nke-prod-assets.s3.us-west-2.am
 echo 'deb [signed-by=/etc/apt/keyrings/nvke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-{{ .AptSuite }} nvke-{{ .AptSuite }} main' > /etc/apt/sources.list.d/nvke-apt.list
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-kubeadm-distro-{{ .KubernetesVersion }}
-DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-cni-ovn-images-{{ .CNIVersion }} nvke-cni-ovn-charts-{{ .CNIVersion }}
+DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-{{ .CNIVersion }} nke-cni-ovn-charts-{{ .CNIVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y openvswitch-switch
 printf 'AGENT_ARGS="{{ .AgentArgs }}"\n' > /etc/default/nke-agent
 sysctl --system
