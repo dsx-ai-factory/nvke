@@ -653,9 +653,9 @@ func (s *NodeAgentServer) processKubeadmJoin(args []string, req *pb.KubeadmJoinR
 	}
 
 	if err != nil {
-		creds := joinCredentials(req)
-		creds.AddArgs(args)
-		loggable := creds.String(string(output))
+		credentials := joinCredentials(req)
+		credentials.AddArgs(args)
+		loggable := credentials.String(string(output))
 		slog.Error("join failed", "err", err, "output", loggable)
 		ns.Status = ErrorStatus
 		ns.CurrentMessage = err.Error()
@@ -803,7 +803,7 @@ func (s *NodeAgentServer) ExecuteKubeadmInit(
 // the orchestrator can see. kubeadm ends with the phase it failed in
 // ("error execution phase wait-control-plane: ..."), which is the single most
 // useful line, so prefer it and fall back to the process error.
-func kubeadmFailureMessage(err error, output []byte, creds *redact.Credentials) string {
+func kubeadmFailureMessage(err error, output []byte, credentials *redact.Credentials) string {
 	const limit = 300
 	best := ""
 	for _, line := range strings.Split(string(output), "\n") {
@@ -817,7 +817,7 @@ func kubeadmFailureMessage(err error, output []byte, creds *redact.Credentials) 
 	}
 	// Redact before truncating: cutting a credential short would leave part of it
 	// in a form that is no longer recognisable.
-	best = creds.String(best)
+	best = credentials.String(best)
 	if len(best) > limit {
 		best = best[:limit] + "..."
 	}
@@ -1187,9 +1187,9 @@ func (s *NodeAgentServer) installCNIPlugin(req *pb.InstallCNIPluginRequest) erro
 // initOutputCredentials returns the credentials known for a kubeadm init run: those
 // in its request and in the arguments it was run with.
 func initOutputCredentials(req *pb.KubeadmInitRequest, args []string) *redact.Credentials {
-	creds := initCredentials(req)
-	creds.AddArgs(args)
-	return creds
+	credentials := initCredentials(req)
+	credentials.AddArgs(args)
+	return credentials
 }
 
 func parseJoinCmds(s string) (string, string) {

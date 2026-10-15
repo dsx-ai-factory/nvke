@@ -73,28 +73,28 @@ type Credentials struct {
 func New() *Credentials { return &Credentials{} }
 
 // AddToken records a bootstrap token. Its ID is not secret and is kept.
-func (c *Credentials) AddToken(token string) {
-	c.add(token, redactToken(token))
+func (credentials *Credentials) AddToken(token string) {
+	credentials.add(token, redactToken(token))
 }
 
 // AddSecret records a secret that is replaced whole, such as a certificate key.
-func (c *Credentials) AddSecret(secret string) {
-	c.add(secret, Redacted)
+func (credentials *Credentials) AddSecret(secret string) {
+	credentials.add(secret, Redacted)
 }
 
-func (c *Credentials) add(value, replacement string) {
+func (credentials *Credentials) add(value, replacement string) {
 	if len(value) < minKnownLength || value == replacement {
 		return
 	}
-	if c.replacements == nil {
-		c.replacements = map[string]string{}
+	if credentials.replacements == nil {
+		credentials.replacements = map[string]string{}
 	}
-	c.replacements[value] = replacement
+	credentials.replacements[value] = replacement
 }
 
 // AddArgs records the values of the credential flags in args, in the "--flag value"
 // and "--flag=value" forms.
-func (c *Credentials) AddArgs(args []string) {
+func (credentials *Credentials) AddArgs(args []string) {
 	for i, arg := range args {
 		name, value, hasValue := strings.Cut(arg, "=")
 		if !hasValue && i+1 < len(args) {
@@ -102,23 +102,23 @@ func (c *Credentials) AddArgs(args []string) {
 		}
 		switch {
 		case tokenFlagNames[name]:
-			c.AddToken(value)
+			credentials.AddToken(value)
 		case name == "--certificate-key":
-			c.AddSecret(value)
+			credentials.AddSecret(value)
 		}
 	}
 }
 
 // AddJoinString records the credentials in a kubeadm join command.
-func (c *Credentials) AddJoinString(joinString string) {
-	c.AddArgs(strings.Fields(joinString))
+func (credentials *Credentials) AddJoinString(joinString string) {
+	credentials.AddArgs(strings.Fields(joinString))
 }
 
 // AddConfig records the credentials in a kubeadm configuration, which can hold
 // several YAML documents. Each document is parsed, so any YAML representation of
 // a credential key is found. A configuration that does not parse is searched line
 // by line instead.
-func (c *Credentials) AddConfig(config string) {
+func (credentials *Credentials) AddConfig(config string) {
 	decoder := yaml.NewDecoder(strings.NewReader(config))
 	for {
 		var doc any
@@ -127,21 +127,21 @@ func (c *Credentials) AddConfig(config string) {
 			break
 		}
 		if err != nil {
-			for _, m := range credentialLine.FindAllStringSubmatch(config, -1) {
-				c.AddSecret(m[2])
+			for _, line := range credentialLine.FindAllStringSubmatch(config, -1) {
+				credentials.AddSecret(line[2])
 			}
 			break
 		}
-		c.addFromParsed(doc)
+		credentials.addFromParsed(doc)
 	}
-	c.addWrittenForms(config)
+	credentials.addWrittenForms(config)
 }
 
 // addWrittenForms records the way each known credential is written in config when
 // that differs from its value. Parsing decodes escape sequences, such as \u0061 for
 // "a", but the text that is logged still has them.
-func (c *Credentials) addWrittenForms(config string) {
-	if len(c.replacements) == 0 {
+func (credentials *Credentials) addWrittenForms(config string) {
+	if len(credentials.replacements) == 0 {
 		return
 	}
 	for _, scalar := range quotedScalar.FindAllString(config, -1) {
@@ -149,69 +149,69 @@ func (c *Credentials) addWrittenForms(config string) {
 		if err := yaml.Unmarshal([]byte(scalar), &decoded); err != nil {
 			continue
 		}
-		replacement, known := c.replacements[decoded]
+		replacement, known := credentials.replacements[decoded]
 		if !known {
 			continue
 		}
-		c.add(scalar[1:len(scalar)-1], replacement)
+		credentials.add(scalar[1:len(scalar)-1], replacement)
 	}
 }
 
-func (c *Credentials) addFromParsed(node any) {
-	switch n := node.(type) {
+func (credentials *Credentials) addFromParsed(node any) {
+	switch typed := node.(type) {
 	case map[any]any:
-		for key, value := range n {
+		for key, value := range typed {
 			name, _ := key.(string)
 			if isToken, ok := credentialKeys[name]; ok {
-				if s, isString := value.(string); isString {
+				if text, isString := value.(string); isString {
 					if isToken {
-						c.AddToken(s)
+						credentials.AddToken(text)
 					} else {
-						c.AddSecret(s)
+						credentials.AddSecret(text)
 					}
 					continue
 				}
 			}
-			c.addFromParsed(value)
+			credentials.addFromParsed(value)
 		}
 	case []any:
-		for _, item := range n {
-			c.addFromParsed(item)
+		for _, item := range typed {
+			credentials.addFromParsed(item)
 		}
 	}
 }
 
-// String returns s with the known credentials, and the credentials its context
-// gives away, redacted. Everything else in s is unchanged.
-func (c *Credentials) String(s string) string {
-	s = redactFlag(s, tokenFlag, redactToken)
-	s = redactFlag(s, certificateKeyFlag, func(string) string { return Redacted })
-	s = usingToken.ReplaceAllStringFunc(s, func(m string) string {
-		g := usingToken.FindStringSubmatch(m)
-		return g[1] + redactToken(g[2])
+// String returns text with the known credentials, and the credentials its context
+// gives away, redacted. Everything else in text is unchanged.
+func (credentials *Credentials) String(text string) string {
+	text = redactFlag(text, tokenFlag, redactToken)
+	text = redactFlag(text, certificateKeyFlag, func(string) string { return Redacted })
+	text = usingToken.ReplaceAllStringFunc(text, func(match string) string {
+		groups := usingToken.FindStringSubmatch(match)
+		return groups[1] + redactToken(groups[2])
 	})
-	s = usingCertificateKey.ReplaceAllString(s, "${1}"+Redacted)
-	if c == nil {
-		return s
+	text = usingCertificateKey.ReplaceAllString(text, "${1}"+Redacted)
+	if credentials == nil {
+		return text
 	}
 	// Longest first, so a value that contains another is replaced whole.
-	known := make([]string, 0, len(c.replacements))
-	for value := range c.replacements {
+	known := make([]string, 0, len(credentials.replacements))
+	for value := range credentials.replacements {
 		known = append(known, value)
 	}
 	sort.Slice(known, func(i, j int) bool { return len(known[i]) > len(known[j]) })
 	for _, value := range known {
-		s = strings.ReplaceAll(s, value, c.replacements[value])
+		text = strings.ReplaceAll(text, value, credentials.replacements[value])
 	}
-	return s
+	return text
 }
 
 // Args returns a copy of args with the values of the credential flags redacted. The
 // input is not modified.
-func (c *Credentials) Args(args []string) []string {
-	out := make([]string, len(args))
+func (credentials *Credentials) Args(args []string) []string {
+	redactedArgs := make([]string, len(args))
 	for i, arg := range args {
-		out[i] = c.String(arg)
+		redactedArgs[i] = credentials.String(arg)
 	}
 	// A flag and its value are separate arguments, so the contextual match above
 	// does not see the pair.
@@ -221,19 +221,19 @@ func (c *Credentials) Args(args []string) []string {
 		}
 		switch {
 		case tokenFlagNames[arg]:
-			out[i+1] = redactToken(args[i+1])
+			redactedArgs[i+1] = redactToken(args[i+1])
 		case arg == "--certificate-key":
-			out[i+1] = Redacted
+			redactedArgs[i+1] = Redacted
 		}
 	}
-	return out
+	return redactedArgs
 }
 
 // Args returns a copy of args with the values of the credential flags redacted.
 func Args(args []string) []string {
-	c := New()
-	c.AddArgs(args)
-	return c.Args(args)
+	credentials := New()
+	credentials.AddArgs(args)
+	return credentials.Args(args)
 }
 
 // Output returns the output of a kubeadm command with the credentials it prints
@@ -246,8 +246,8 @@ func Output(output string) string {
 // whole value replaced if it is not a bootstrap token. A redacted value is left as
 // it is.
 func redactToken(token string) string {
-	if m := tokenShape.FindStringSubmatch(token); m != nil {
-		return m[1] + "." + Redacted
+	if groups := tokenShape.FindStringSubmatch(token); groups != nil {
+		return groups[1] + "." + Redacted
 	}
 	if token == Redacted || strings.HasSuffix(token, "."+Redacted) {
 		return token
@@ -255,11 +255,11 @@ func redactToken(token string) string {
 	return Redacted
 }
 
-// redactFlag replaces the value in each match of re, which has the flag and its
+// redactFlag replaces the value in each match of pattern, which has the flag and its
 // separator as its first group and the value as its second.
-func redactFlag(s string, re *regexp.Regexp, redact func(string) string) string {
-	return re.ReplaceAllStringFunc(s, func(match string) string {
-		groups := re.FindStringSubmatch(match)
-		return groups[1] + redact(groups[2])
+func redactFlag(text string, pattern *regexp.Regexp, redactValue func(string) string) string {
+	return pattern.ReplaceAllStringFunc(text, func(match string) string {
+		groups := pattern.FindStringSubmatch(match)
+		return groups[1] + redactValue(groups[2])
 	})
 }

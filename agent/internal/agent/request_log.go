@@ -6,6 +6,7 @@ package agent
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"slices"
 
 	"google.golang.org/protobuf/proto"
 
@@ -24,30 +25,30 @@ import (
 // joinCredentials returns the credentials in a kubeadm join request, for
 // redacting what is logged about the join.
 func joinCredentials(req *pb.KubeadmJoinRequest) *redact.Credentials {
-	c := redact.New()
-	c.AddJoinString(req.GetKubeadmJoinString())
-	c.AddConfig(req.GetJoinConfig())
-	c.AddSecret(req.GetCertificateKey())
-	return c
+	credentials := redact.New()
+	credentials.AddJoinString(req.GetKubeadmJoinString())
+	credentials.AddConfig(req.GetJoinConfig())
+	credentials.AddSecret(req.GetCertificateKey())
+	return credentials
 }
 
 // initCredentials returns the credentials in a kubeadm init request, for
 // redacting what is logged about the init.
 func initCredentials(req *pb.KubeadmInitRequest) *redact.Credentials {
-	c := redact.New()
-	c.AddConfig(req.GetInitConfig())
-	c.AddArgs(req.GetExtraArgs())
-	return c
+	credentials := redact.New()
+	credentials.AddConfig(req.GetInitConfig())
+	credentials.AddArgs(req.GetExtraArgs())
+	return credentials
 }
 
 // loggableInitRequest returns req with the etcd encryption key removed and the
 // credentials in its init configuration and extra arguments redacted. It returns
 // req itself when there is nothing to remove.
 func loggableInitRequest(req *pb.KubeadmInitRequest) *pb.KubeadmInitRequest {
-	creds := initCredentials(req)
-	initConfig := creds.String(req.GetInitConfig())
-	extraArgs := creds.Args(req.GetExtraArgs())
-	if req.GetApiEncryptionKey() == "" && initConfig == req.GetInitConfig() && equalStrings(extraArgs, req.GetExtraArgs()) {
+	credentials := initCredentials(req)
+	initConfig := credentials.String(req.GetInitConfig())
+	extraArgs := credentials.Args(req.GetExtraArgs())
+	if req.GetApiEncryptionKey() == "" && initConfig == req.GetInitConfig() && slices.Equal(extraArgs, req.GetExtraArgs()) {
 		return req
 	}
 	out, _ := proto.Clone(req).(*pb.KubeadmInitRequest)
@@ -62,9 +63,9 @@ func loggableInitRequest(req *pb.KubeadmInitRequest) *pb.KubeadmInitRequest {
 // the join configuration, and the certificate key field. It returns req itself
 // when there is nothing to remove.
 func loggableJoinRequest(req *pb.KubeadmJoinRequest) *pb.KubeadmJoinRequest {
-	creds := joinCredentials(req)
-	joinString := creds.String(req.GetKubeadmJoinString())
-	joinConfig := creds.String(req.GetJoinConfig())
+	credentials := joinCredentials(req)
+	joinString := credentials.String(req.GetKubeadmJoinString())
+	joinConfig := credentials.String(req.GetJoinConfig())
 	if req.GetApiEncryptionKey() == "" && req.GetCertificateKey() == "" &&
 		joinString == req.GetKubeadmJoinString() && joinConfig == req.GetJoinConfig() {
 		return req
@@ -77,18 +78,6 @@ func loggableJoinRequest(req *pb.KubeadmJoinRequest) *pb.KubeadmJoinRequest {
 	out.KubeadmJoinString = joinString
 	out.JoinConfig = joinConfig
 	return out
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // encryptionKeyDigest is the hex SHA-256 of key, or "" when there is none. It
