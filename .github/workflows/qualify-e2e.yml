@@ -1243,26 +1243,21 @@ jobs:
             SITE_INPUTS="${SITE_INPUTS}"
 
       # Where each staged image came from, and nothing else. Versions are
-      # -e2e.versions keys, the jump host is environments/forge.yaml's, and
-      # every secret is read from the environment by the suite itself -- see
-      # the const block at the top of site_controller_test.go.
+      # -e2e.versions keys, the jump host is the resolved site's and comes
+      # from that provider's environment file, and every secret is read from
+      # the environment by the suite itself -- see the const block at the top
+      # of site_controller_test.go.
       - name: Write the e2e config
         shell: bash
         run: |
           set -Eeuo pipefail
-          # The environment the stream selected decides which jump host the
-          # suite will dial, so that is the one to insist on. Asserting
-          # Forge's on every run passes for the wrong reason on a DSX stream
-          # and sends a reader to a setting that run never touches.
-          case "${SITE_ENVIRONMENT}" in
-            forge) jump_host_var=FORGE_JUMP_HOST ;;
-            dsx)   jump_host_var=DSX_REDSTONE_DEV1_DH2_JUMP_HOST ;;
-            *)     echo "::error::no jump host is declared for environment ${SITE_ENVIRONMENT}"; exit 1 ;;
-          esac
-          test -n "${!jump_host_var}" || {
-            echo "::error::the ${jump_host_var} repository secret is unset; the suite has no way to reach the node"
-            exit 1
-          }
+          # The jump host is not asserted here. Both providers declare more
+          # than one site, each with its own jump host, and which one a run
+          # reaches is decided inside the suite by capability -- so a check up
+          # here can only name a site and be wrong about the rest. forge.New
+          # and dsx.New each validate the jump host of the site that actually
+          # resolved, name that site in the error, and do it before anything is
+          # created, which is the check this step was reaching for.
           # The repositories are the ones site-inputs pulled or tagged, so the
           # references the suite hands the bootstrap and the deploy path are
           # the ones the archives carry.
@@ -1476,8 +1471,11 @@ jobs:
               # the jump host and join token resolved and where they came
               # from, both of which survive. Whether each was set is the part
               # that is diagnostic.
+              # Matched by shape, not by name: a site added later is withheld
+              # by having named its secret the way the convention requires,
+              # and a list is one entry out of date the day someone forgets.
               case "${resolved}" in
-                FORGE_JUMP_HOST|FORGE_YTL_JUMP_HOST|FORGE_TELEPORT_JOIN_TOKEN|DSX_REDSTONE_DEV1_DH2_JUMP_HOST) withhold=1 ;;
+                *_JUMP_HOST|*_TELEPORT_JOIN_TOKEN) withhold=1 ;;
                 *) withhold=0 ;;
               esac
               if [ "${withhold}" = 1 ] && [ "${value}" != "<unset>" ]; then
@@ -1624,22 +1622,26 @@ jobs:
       # masks a secret in the job log, not in an uploaded artifact.
       #
       # Every declared host: a run reaches one of them, and which one is not
-      # worth branching on here. A host missing from this list is one the
-      # suite names in its errors and the artifact then publishes.
+      # worth branching on here. Discovered by suffix rather than listed, so a
+      # datahall added to environments/dsx.yaml is withheld by having named its
+      # secret *_JUMP_HOST, with nothing to update here. A hand-written list
+      # fails the other way: the host it omits is the one the suite names in
+      # its errors and the artifact then publishes, with no error to notice.
       - name: Withhold the jump host from the run log
         if: always()
         shell: bash
         working-directory: controller/test/e2e
         run: |
           set -Eeuo pipefail
-          for raw in "${FORGE_JUMP_HOST}" "${FORGE_YTL_JUMP_HOST}" "${DSX_REDSTONE_DEV1_DH2_JUMP_HOST}"; do
+          while IFS= read -r var; do
+            raw="${!var}"
             [ -n "${raw}" ] || continue
             host="$(printf '%s' "${raw}" | sed 's/[][\.*^$/]/\\&/g')"
             for f in qualify-e2e.log qualify-e2e.junit.xml tenant-diagnostics.json site-cluster-state.txt; do
               [ -f "${f}" ] || continue
               sed -i "s/${host}/<jump host>/g" "${f}"
             done
-          done
+          done < <(compgen -v | grep -E '_JUMP_HOST$' || true)
 
       # The Ginkgo log carries every phase boundary, remote command and
       # failure. An hour-long run is worth more than a scroll-back in the job
