@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/discovery"
@@ -295,10 +296,12 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			if cluster.Kubeconfig == "" || session == nil {
 				return managementCluster{}, errors.New("the site controller was not built")
 			}
+			waiter, _ := provider.(terminationWaiter)
 			return managementCluster{
 				Kubeconfig:  cluster.Kubeconfig,
 				TrustDomain: site.TrustDomain(spec.Name),
 				Relay:       sessionRelay(session),
+				Instances:   waiter,
 			}, nil
 		}),
 			// Labeled nico-forge because it is: the same tenant the
@@ -855,7 +858,21 @@ func sweepSiteTenants(ctx context.Context, kubeconfig string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, sweepBudget)
 	defer cancel()
-	return site.SweepTenants(ctx, client)
+	return site.SweepTenants(ctx, terminatingAware{client})
+}
+
+// terminatingAware skips the wait for a tenant whose machines Forge already
+// reported Terminating. Releasing the site then strands nothing: Forge owns
+// those instances' release whether or not the controller that asked is still
+// there.
+type terminatingAware struct{ *nvke.Client }
+
+func (c terminatingAware) WaitForClusterDeleted(ctx context.Context, id openapi_types.UUID) error {
+	if terminatingTenants[id] {
+		GinkgoLogr.Info("tenant instances already Terminating; not waiting for the cluster to go", "cluster", id)
+		return nil
+	}
+	return c.Client.WaitForClusterDeleted(ctx, id)
 }
 
 func inRepo(repo, path string) string {

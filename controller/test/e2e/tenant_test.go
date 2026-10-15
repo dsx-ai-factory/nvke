@@ -636,14 +636,17 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 
 			if spec.validate.nodeAgentUpgrade {
 				deleteClusterWithAgentDrain(ctx, &test, &deleteAccepted)
+				deleted = true
 			} else {
-				test.deleteClusterAndWait(ctx, &deleteAccepted)
+				deleted = test.deleteClusterAndWait(ctx, &deleteAccepted)
 			}
-			deleted = true
 		}, Label("lifecycle"), NodeTimeout(80*time.Minute))
 
 		Describe("after cluster deletion", func() {
 			BeforeEach(func() {
+				if test.cluster != nil && terminatingTenants[test.cluster.ID] {
+					Skip("the tenant's instances are Terminating and its cluster is still being deleted; nothing is left behind to assert yet")
+				}
 				if !deleted {
 					Skip("Cluster was not deleted; skipping post-deletion validations")
 				}
@@ -711,7 +714,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				GinkgoLogr.Info("tenant delete already accepted but not complete; leaving it to the site sweep rather than waiting again",
 					"cluster", test.cluster.ID)
 			default:
-				test.deleteClusterAndWait(ctx, &deleteAccepted)
+				deleted = test.deleteClusterAndWait(ctx, &deleteAccepted)
 			}
 			// Sized to what this node can actually contain rather than to the
 			// suite: WaitForClusterDeleted is bounded by the entry's
@@ -882,7 +885,30 @@ type managementCluster struct {
 	// every other lane shares a network with its clusters, and nil leaves
 	// them talking to the published address directly.
 	Relay kube.EndpointRelay
+
+	// Instances ends the tenant delete wait once the tenant's machines are
+	// Terminating, rather than once they are gone. Only the Forge site lane
+	// sets it, because only there does the release outlast the controller's
+	// own teardown by most of an hour. Nil waits for the cluster to go.
+	Instances terminationWaiter
 }
+
+// terminationWaiter is the part of the Forge provider the delete wait needs.
+type terminationWaiter interface {
+	WaitTerminating(ctx context.Context, ids []string) error
+}
+
+// tenantTerminating budgets the wait for Forge to take a deleted tenant's
+// machines out of service. The controller deletes the CAPI Machines within a
+// minute of accepting the delete, and Forge marks an instance Terminating as
+// soon as it is asked to release it, so a quarter hour is far more than the
+// healthy path needs.
+const tenantTerminating = 15 * time.Minute
+
+// terminatingTenants are the tenant clusters whose machines Forge has already
+// confirmed Terminating. The site sweep reads it so it does not wait a second
+// time on a tenant whose release Forge already owns.
+var terminatingTenants = map[openapi_types.UUID]bool{}
 
 // managementResolver names the management cluster when a tenant lane starts.
 type managementResolver func() (managementCluster, error)
@@ -1085,13 +1111,55 @@ func validateTenantAccessSecretGCPostDelete(test *tenantTest) {
 // it gone (404). Shared by the delete spec and the AfterAll cleanup. accepted
 // is set once the controller takes the delete, so a failure in the wait leaves it true and
 // a failure in the request leaves it as it was.
-func (t *tenantTest) deleteClusterAndWait(ctx context.Context, accepted *bool) {
+//
+// With mgmt.Instances set it returns once Forge reports the tenant's machines
+// Terminating instead, and reports false: the cluster is still being deleted,
+// so the post-deletion specs, which read what a finished delete leaves
+// behind, have nothing to assert yet. The instance IDs are read before the
+// delete is sent, because the controller drops its node records within
+// seconds of taking it.
+func (t *tenantTest) deleteClusterAndWait(ctx context.Context, accepted *bool) bool {
 	GinkgoHelper()
+	var instances []string
+	if t.mgmt.Instances != nil {
+		instances = t.tenantInstances(ctx)
+	}
 	By("Deleting the tenant cluster")
 	Expect(t.lifecycle.DeleteCluster(ctx, t.cluster.ID)).To(Succeed())
 	*accepted = true
+	if len(instances) > 0 {
+		By("Waiting for Forge to report the tenant's instances Terminating")
+		waitCtx, cancel := context.WithTimeout(ctx, tenantTerminating)
+		defer cancel()
+		Expect(t.mgmt.Instances.WaitTerminating(waitCtx, instances)).To(Succeed())
+		terminatingTenants[t.cluster.ID] = true
+		t.log.Info("tenant instances are Terminating; Forge releases them from here", "cluster", t.cluster.ID, "instances", instances)
+		return false
+	}
 	By("Waiting for the tenant cluster to be deleted")
 	Expect(t.lifecycle.WaitForClusterDeleted(ctx, t.cluster.ID)).To(Succeed())
+	return true
+}
+
+// tenantInstances is the Forge instance behind every node of the tenant, or
+// nil when any node does not name one. Nil falls back to waiting for the
+// cluster itself, which is slower but cannot pass while a machine is still
+// in service.
+func (t *tenantTest) tenantInstances(ctx context.Context) []string {
+	nodes, err := t.nvke.ListClusterNodes(ctx, t.cluster.ID)
+	if err != nil {
+		t.log.Info("could not list the tenant's nodes; waiting for the cluster to be deleted instead", "error", err.Error())
+		return nil
+	}
+	ids := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Nico == nil || node.Nico.InstanceID == "" {
+			t.log.Info("a tenant node names no Forge instance; waiting for the cluster to be deleted instead", "node", node.Name)
+			return nil
+		}
+		ids = append(ids, node.Nico.InstanceID)
+	}
+	return ids
 }
 
 // Cluster shape is a property of the test, not the environment, so it lives in

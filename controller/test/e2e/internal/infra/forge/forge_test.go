@@ -510,6 +510,66 @@ func TestRequireCapacity(t *testing.T) {
 	}
 }
 
+func TestWaitTerminating(t *testing.T) {
+	var mu sync.Mutex
+	status := map[string]string{
+		"cp-uuid":     "Ready",
+		"worker-uuid": "Terminating",
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/v2/org/"+testOrg+"/forge/instance/")
+		mu.Lock()
+		s, ok := status[id]
+		mu.Unlock()
+		if r.Method != http.MethodGet || !ok {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		if s == "" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"` + id + `","status":"` + s + `"}`))
+	}))
+	t.Cleanup(srv.Close)
+	p, err := New(Options{
+		Env:      testEnv(),
+		APIKey:   "nvapi-test",
+		Endpoint: srv.URL,
+		JumpHost: testJumpHost,
+		Images: func(string, string) (string, string, error) {
+			return "https://example.invalid/imager.efi", "https://example.invalid/node.qcow2", nil
+		},
+		Dialer:       &fakeDialer{},
+		Tools:        completeTools(),
+		HTTPClient:   srv.Client(),
+		PollInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	ids := []string{"cp-uuid", "worker-uuid", "cp-uuid"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err = p.WaitTerminating(ctx, ids)
+	if err == nil {
+		t.Fatal("an instance still Ready was accepted as terminating")
+	}
+	if !strings.Contains(err.Error(), "cp-uuid (last Ready)") || strings.Contains(err.Error(), "worker-uuid") {
+		t.Errorf("the error should name only the Ready instance and its status:\n%v", err)
+	}
+
+	mu.Lock()
+	status["cp-uuid"] = ""
+	mu.Unlock()
+	if err := p.WaitTerminating(context.Background(), ids); err != nil {
+		t.Fatalf("one Terminating and one gone: %v", err)
+	}
+}
+
 func TestNewRequiresJumpHost(t *testing.T) {
 	_, err := New(Options{
 		Env: testEnv(), APIKey: "nvapi-test", Tools: completeTools(),

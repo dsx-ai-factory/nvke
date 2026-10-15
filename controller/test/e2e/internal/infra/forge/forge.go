@@ -651,6 +651,54 @@ func (p *Provider) waitReachable(ctx context.Context, target teleport.Target) (C
 	}
 }
 
+// WaitTerminating returns once Forge reports every one of ids as Terminating
+// or no longer has it. That is the point at which Forge owns the release: the
+// machine is out of the tenant's hands and comes back to the pool without
+// anything else asking, which takes 20 to 60 minutes more on bare metal.
+//
+// Polled by id for the reason waitReady is. An instance still in any other
+// state when ctx ends is reported with the last status Forge gave for it.
+func (p *Provider) WaitTerminating(ctx context.Context, ids []string) error {
+	pending := slices.Clone(ids)
+	slices.Sort(pending)
+	pending = slices.Compact(pending)
+	last := map[string]string{}
+	for {
+		actx, err := p.authorize(ctx)
+		if err != nil {
+			return err
+		}
+		var next []string
+		for _, id := range pending {
+			inst, resp, err := p.client.InstanceAPI.GetInstance(actx, p.opts.Env.Org.ID, id).Execute()
+			closeBody(resp)
+			switch {
+			case resp != nil && resp.StatusCode == http.StatusNotFound:
+			case err != nil:
+				last[id] = apiError(err).Error()
+				next = append(next, id)
+			case inst.GetStatus() == standard.INSTANCESTATUS_TERMINATING:
+			default:
+				last[id] = string(inst.GetStatus())
+				next = append(next, id)
+			}
+		}
+		pending = next
+		if len(pending) == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			states := make([]string, 0, len(pending))
+			for _, id := range pending {
+				states = append(states, fmt.Sprintf("%s (last %s)", id, last[id]))
+			}
+			return fmt.Errorf("forge: instances not terminating: %s: %w", strings.Join(states, ", "), ctx.Err())
+		case <-time.After(p.opts.PollInterval):
+		}
+	}
+}
+
 func (p *Provider) release(ctx context.Context, id string) error {
 	ctx, err := p.authorize(ctx)
 	if err != nil {
