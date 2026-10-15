@@ -47,6 +47,11 @@ navigation:
           - page: Secure the NVKE API
             path: operate/api-authentication.md
 
+      - section: Networking
+        contents:
+          - page: Configure OVN-Kubernetes networking
+            path: workload-clusters/ovn-kubernetes.md
+
       - section: Run workload clusters
         contents:
           - page: Create a workload cluster
