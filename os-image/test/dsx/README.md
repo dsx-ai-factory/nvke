@@ -14,9 +14,9 @@ checks the scaffold; it does not qualify an image.
 | `DSXFDEEndToEnd` | Verify the iPXE key handoff, real TPM attestation and binding, encrypted root, and FDE-backed cluster/workload health. |
 | `DSXUpgradeAndReboot` | Verify ordinary and FDE node reboot/power cycle without reimage, N-1 to N upgrade, preserved state, unattended FDE unseal, and recovered health. |
 
-Each test contains Ubuntu **24.04** and **26.04** subtests. There are **four CI
-jobs**, with two pending version results per job. Architectures and fabrics depend
-on the selected pool hardware; they are not additional CI matrix dimensions.
+Each test contains Ubuntu **24.04** and **26.04** subtests. There are **four functional tests**. CI runs one job per test per selected
+machine type, with two pending Ubuntu-version results per job. Architectures and
+fabrics depend on the selected pool hardware.
 Record actual hardware coverage when implementing the tests. Missing hardware
 capabilities must not be counted as passing.
 
@@ -48,7 +48,7 @@ dependency. All four functions can stay in one Go file and run independently.
 [DSX Machine Image Tests](../../../.github/workflows/dsx-machine-image-tests.yml)
 is a manually dispatched advisory workflow, restricted to this repository's
 `main` branch. It becomes dispatchable after landing on the default branch.
-The four matrix jobs each select one functional test, run both Ubuntu versions,
+The test and machine-type matrix jobs each select one functional test, run both Ubuntu versions,
 and publish a separate result artifact and pending-coverage summary. Jobs run
 serially on the same `arc-amd64-cpu16` runner class as RelEng qualification.
 The runner drives remote hardware; its architecture does not select the target.
@@ -59,6 +59,22 @@ and allocation settings. They reference the same repository secrets as
 Credentials are exposed only to the configuration check. No authentication is
 attempted, and no credentials are passed to Go tooling or uploaded artifacts.
 The result check requires two Ubuntu-version results for the selected test.
+
+The `machine_types` dispatch input is a JSON array of NICo instance type IDs
+available in the configured Redstone pool. Its default, `["configured"]`, uses
+`DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID`. Supply multiple IDs to run all four tests
+against each type: two types produce eight jobs. Job names, summaries, and test
+logs identify the requested type, and each job has a distinct artifact.
+`DSX_MACHINE_TYPE_ID` passes the selected ID to the shared test harness; the stubs
+record it, and future provisioning must use it. For a local invocation:
+
+```bash
+DSX_MACHINE_TYPE_ID=example-instance-type-id go test -v ./test/dsx
+```
+
+Machine type selection uses the existing pool's credentials and network settings.
+Testing another site will also require that site's allocation configuration. A
+new type does not require new test functions or a change to their Go file.
 
 ## Implementation boundaries
 

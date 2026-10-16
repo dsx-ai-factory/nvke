@@ -3,7 +3,10 @@
 
 package dsx_test
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 // TestDSXRecipeValidation reserves the RelEng acceptance suite from section 10
 // of the recipe validation requirements referenced by NKX-17988.
@@ -30,6 +33,9 @@ func TestDSXUpgradeAndReboot(t *testing.T) {
 // each functional test. Skipped cases are not qualification evidence.
 func pendingUbuntuVersions(t *testing.T, acceptance string) {
 	t.Helper()
+	if machineType := os.Getenv("DSX_MACHINE_TYPE_ID"); machineType != "" {
+		t.Logf("Requested NICo instance type: %s", machineType)
+	}
 	for _, ubuntu := range []string{"24.04", "26.04"} {
 		t.Run("ubuntu-"+ubuntu, func(t *testing.T) {
 			t.Skip("not implemented: " + acceptance)
