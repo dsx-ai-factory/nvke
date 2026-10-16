@@ -87,15 +87,16 @@ Forge, DSX or Teleport. The versions, the architecture and the GPU model of a
 job are the plan's, and the dispatch inputs that name a version override
 what the plan resolves.
 
-`qualify-run` is gated behind a GitHub environment from its first step, so a
-real run waits for approval before it can touch any credential -- including
-the NGC key it logs into NVCR with -- or a machine. A `workflow_dispatch` or
-a labelled pull request resolves `forge`, which carries a required reviewer.
-A beta tag push instead resolves `forge-nightly`, which carries the same
-secrets but no required reviewer -- an unattended nightly cannot wait on a
-person, so the control there is the deployment tag policy (`v*-beta.*`)
-rather than a reviewer. There is no ungated job left in this lane: a label or
-a dispatch alone cannot reach any credential without an approval.
+`qualify-run` is gated behind a GitHub environment from its first step, so
+every run -- dry or real -- waits for approval before it can touch any
+credential -- including the NGC key it logs into NVCR with -- or a machine.
+A `workflow_dispatch` or a labelled pull request resolves `forge`, which
+carries a required reviewer. A beta tag push instead resolves
+`forge-nightly`, which carries the same secrets but no required reviewer --
+an unattended nightly cannot wait on a person, so the control there is the
+deployment tag policy (`v*-beta.*`) rather than a reviewer. There is no
+ungated job and no ungated trigger left in this lane: a label or a dispatch
+alone, dry run included, cannot reach any credential without an approval.
 
 **Qualifying a beta.** A beta tag names a commit and carries no component tags,
 so resolving the components from their own tags would answer with the last
@@ -114,14 +115,16 @@ The plan records the commit and, for each component, the strategy that answered,
 so a run says afterwards how every version was arrived at.
 
 A **dry run** does everything except join Teleport and run the suite, so it
-takes no Forge machine and never reaches the `forge`/`forge-nightly`
-environment gate. It is the `dry-run` dispatch input, or the
-`qualify-e2e-dry-run` label on a pull request. Each stream's `qualify-run`
-still builds the site inputs, which confirms every image and archive exists
-(a real NGC_API_KEY-backed NVCR login, same as any other run), and still
-writes the e2e config. It then prints the `-e2e.versions` and
-`-e2e.capabilities` the suite would have been given into `qualify-e2e.log`. A
-dry run has its own concurrency group, so it does not wait behind a real run,
+takes no Forge machine, but it still reaches the same `forge`/`forge-nightly`
+environment gate a real run does and waits on the same approval -- it skips
+Teleport and the suite, not the credentials it needs to get that far. It is
+the `dry-run` dispatch input, or the `qualify-e2e-dry-run` label on a pull
+request. Each stream's `qualify-run` still builds the site inputs, which
+confirms every image and archive exists (a real NGC_API_KEY-backed NVCR
+login, same as any other run), and still writes the e2e config. It then
+prints the `-e2e.versions` and `-e2e.capabilities` the suite would have been
+given into `qualify-e2e.log`. A dry run has its own concurrency group, so it
+does not wait behind a real run,
 and its jobs are named `<stream> (dry run)`.
 
 `-e2e.site-stage` chooses how far to go, so you can pay for the part you need:

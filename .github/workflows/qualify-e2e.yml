@@ -66,23 +66,24 @@
 # inputs and QUALIFY_E2E_* variables that name a version are overrides of
 # what the plan resolves, not a second source of versions.
 #
-# EVERYTHING REAL IS GATED, NGC_API_KEY INCLUDED. A single job replaced the
-# old validate/run split: there is no ungated job left for a dispatch or
-# label to reach NGC_API_KEY (or anything else) through. `qualify-run` is
-# gated behind a GitHub environment from its first step, so a real run waits
-# for a required reviewer on `forge` before it can log into a registry or
-# touch a machine. A beta tag push instead resolves `forge-nightly`, which
-# carries the same secrets and no required reviewers -- an unattended
-# nightly cannot wait on a person, so the control is the deployment tag
-# policy (`v*-beta.*`) rather than a reviewer.
+# EVERYTHING IS GATED, NGC_API_KEY INCLUDED, DRY RUN TOO. A single job
+# replaced the old validate/run split: there is no ungated job and no ungated
+# trigger left for a dispatch or label to reach NGC_API_KEY (or anything
+# else) through. `qualify-run` is gated behind a GitHub environment from its
+# first step, so every run -- dry or real -- waits for a required reviewer
+# on `forge` before it can log into a registry or touch a machine. A beta
+# tag push instead resolves `forge-nightly`, which carries the same secrets
+# and no required reviewers -- an unattended nightly cannot wait on a
+# person, so the control is the deployment tag policy (`v*-beta.*`) rather
+# than a reviewer.
 #
 # DRY RUN. A `dry-run` dispatch input, or the `qualify-e2e-dry-run` label on a
 # pull request, does everything except join Teleport and run the suite: the
 # plan, the site inputs (so every image and archive is confirmed to exist,
 # which still means a real NGC_API_KEY-backed NVCR login) and the e2e config.
-# It never reaches the `forge`/`forge-nightly` gate -- `environment:` below
-# resolves to none on a dry run, same as before the split was undone, so the
-# NGC_API_KEY exposure on a dry run is unchanged from today, not new.
+# It reaches the same `forge`/`forge-nightly` gate a real run does and waits
+# on the same approval -- a dry run skips Teleport and the suite, not the
+# credentials it needs to get that far.
 name: Qualify e2e
 
 on:
@@ -521,15 +522,11 @@ jobs:
     # carries the same secrets, no required reviewers, and a deployment tag
     # policy of v*-beta.* -- the ref pattern is the control, not a person.
     #
-    # dry-run's branch has to be the outermost `&& ... || ''`, not chained
-    # after another `||`: its "then" value is itself '', which is falsy, so a
-    # `||` after it would silently fall through to the next clause and defeat
-    # the dry-run short-circuit entirely. Nesting the push/forge choice inside
-    # the `&&` keeps every intermediate value non-empty until the final `||`.
-    environment: >-
-      ${{ needs.plan.outputs.dry-run != 'true'
-          && (github.event_name == 'push' && 'forge-nightly' || 'forge')
-          || '' }}
+    # No dry-run exemption: a dry run still logs into NVCR and pulls real
+    # images with NGC_API_KEY (see "Check every artifact the plan names" and
+    # "Log in to NVCR" below), so it needs the same approval a real run does.
+    # Only Teleport and the suite itself skip on a dry run, not the gate.
+    environment: ${{ github.event_name == 'push' && 'forge-nightly' || 'forge' }}
     # Composed of two budgets that used to be separate jobs: up to 90 minutes
     # waiting for a commit-resolved plan's publishers (see "Check every
     # artifact the plan names"), plus the run budget below. Measured phases
