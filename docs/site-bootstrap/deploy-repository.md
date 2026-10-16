@@ -151,7 +151,8 @@ The install runs `helm upgrade --install --wait` for each item, with the item's 
 
 The committed deploy path is site-independent and names no digest. `nvkectl render deploy-path` writes a copy resolved for the site spec, the release, or both. The committed files are copied, never edited. The copy has:
 
-- `site-values.yaml` in every item that takes a site value, appended to its `values`: the trust domain, the management VIP, the node architecture's TPM plugin checksum, the database password, the controller and profiles images. [`deploy/nico/README.md`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/README.md#per-site-values) lists them.
+- `site-values.yaml` in every item that takes a site value, appended to its `values`: the trust domain, the management VIP, the node architecture's TPM plugin checksum, the controller and profiles images, and the name of the Secret each chart reads its credential from. No values file carries a credential. [`deploy/nico/README.md`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/README.md#per-site-values) lists them.
+- `site-credentials/secrets.yaml`, a manifest item the render adds right after the first item, once the namespaces exist: the `nvke-database` Secret in the postgresql, temporal and controller items' namespaces, with the database password and the controller's connection string, and `spire-upstream-ca` in the spire item's namespace when the site uses a CA.
 - Each template item rendered, as a manifest item.
 - `charts/<item>/` holding the chart archive pulled by digest, for every chart the release carries; the item's `chart.path` points at it. A chart the release lacks stays as committed.
 - `release-images.yaml` in every helm item whose image artifacts the release carries; `kustomization.yaml` in every manifest item bound to an image artifact.
@@ -164,12 +165,14 @@ nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --
   --arch linux/arm64 --release release.json --out ~/.local/state/nvke/renders/my-site
 ```
 
+For a tree that lives in a repository, add `--credentials external` to that command. The render then reads no credential variable and no CA file, writes no Secret and no `.gitignore`, and ends by listing the Secrets the cluster has to hold before the install: namespace, name, keys and, when it is not `Opaque`, the type. Your secret store delivers them; the charts name the same Secrets either way. `nvke-deploy.sh` has no such option: it always renders with the credentials and removes the tree.
+
 ## Applying It Another Way
 
 Every item is a Helm chart with values, or plain YAML, so another tool can deliver the same items. What the script does beyond `helm` and `kubectl apply` is small and listed here, so another executor can do the same:
 
 1. Apply the items in list order; stop at the first failure.
-2. Render the template items first. Under GitOps, the Secrets they produce come from your secret store instead.
+2. Render the template items first. Under GitOps, the Secrets they and the `site-credentials` item produce come from your secret store instead; `--credentials external` lists them.
 3. Wait for each `requires` entry before its chart. In GitOps that is a sync-wave boundary or a health check on the object.
 4. With a local NVKR Run (`--nvkr-run-dir`), import the images listed in `images.txt` into the node's containerd before the first item.
 

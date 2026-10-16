@@ -59,7 +59,17 @@ type RenderOptions struct {
 	Registry func(repository string) (oras.ReadOnlyTarget, error)
 	// Log receives one line per decision.
 	Log io.Writer
+	// Credentials is CredentialsRendered (Secret manifests in the
+	// site-credentials item, the default) or CredentialsExternal (none
+	// written; the Secrets the cluster must hold are listed).
+	Credentials string
 }
+
+// Credential placements for RenderOptions.Credentials.
+const (
+	CredentialsRendered = "rendered"
+	CredentialsExternal = "external"
+)
 
 // sharedTempDirs are the temp directories every user of a host can read.
 var sharedTempDirs = []string{"/tmp", "/var/tmp", "/private/tmp", "/private/var/tmp"}
@@ -89,6 +99,9 @@ type Rendered struct {
 	// Credentials lists the files under Out that carry a site credential,
 	// relative to Out, in the order they were written.
 	Credentials []string
+	// Expected lists the Secrets the cluster must hold, one line each,
+	// when the credentials are external.
+	Expected []string
 }
 
 // ImageSource is one image the rendered deploy path runs.
@@ -124,6 +137,13 @@ func Render(ctx context.Context, opts RenderOptions) (*Rendered, error) {
 	}
 	if opts.Site == nil && opts.Release == nil {
 		return nil, errors.New("a site spec or a release description is required")
+	}
+	switch opts.Credentials {
+	case "":
+		opts.Credentials = CredentialsRendered
+	case CredentialsRendered, CredentialsExternal:
+	default:
+		return nil, fmt.Errorf("credentials must be %s or %s, not %q", CredentialsRendered, CredentialsExternal, opts.Credentials)
 	}
 	if opts.Stack != nil && opts.Stack.Path() == "" {
 		return nil, errors.New("the stack config must be loaded by stackconfig.Load, which validates it")
@@ -329,28 +349,6 @@ func (r *renderer) appendValues(item, file string, data []byte) {
 		return
 	}
 	rel.Values = append(rel.Values, file)
-	if err := writePrivate(filepath.Join(dst, "release.yaml"), rel.Marshal()); err != nil {
-		r.problem("%s: %v", item, err)
-	}
-}
-
-// appendSetFile adds <helm key>=<absolute path> entries to an item's
-// chart.setFile.
-func (r *renderer) appendSetFile(item string, entries []string) {
-	if r.failed[item] {
-		return
-	}
-	dst := filepath.Join(r.opts.Out, item)
-	rel, err := ReadRelease(dst)
-	if err != nil {
-		r.problem("%s: %v", item, err)
-		return
-	}
-	if rel.Chart == nil {
-		r.problem("%s: release.yaml has no chart section", item)
-		return
-	}
-	rel.Chart.SetFile = append(rel.Chart.SetFile, entries...)
 	if err := writePrivate(filepath.Join(dst, "release.yaml"), rel.Marshal()); err != nil {
 		r.problem("%s: %v", item, err)
 	}
@@ -575,9 +573,12 @@ func (r *renderer) store(ctx context.Context, a nvkrrelease.Artifact) (oras.Read
 }
 
 func (r *renderer) finish() error {
-	// The tree holds credentials; a repository must not pick it up by accident.
-	if err := writePrivate(filepath.Join(r.opts.Out, ".gitignore"), []byte("*\n")); err != nil {
-		return err
+	// A tree with credentials must not reach a repository; an external one
+	// holds none and is meant for one.
+	if r.opts.Credentials != CredentialsExternal {
+		if err := writePrivate(filepath.Join(r.opts.Out, ".gitignore"), []byte("*\n")); err != nil {
+			return err
+		}
 	}
 	if len(r.out.Images) > 0 {
 		var b strings.Builder

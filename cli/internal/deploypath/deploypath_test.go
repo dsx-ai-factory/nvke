@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -207,6 +208,47 @@ func mustGlob(t *testing.T, pattern string) []string {
 	return matches
 }
 
+// readSecrets parses a multi-document Secret manifest into
+// namespace/name -> decoded data.
+func readSecrets(t *testing.T, path string) map[string]map[string]string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]map[string]string{}
+	for _, raw := range yamlDocuments(data) {
+		var doc struct {
+			Kind     string `yaml:"kind"`
+			Type     string `yaml:"type"`
+			Metadata struct {
+				Name, Namespace string
+			} `yaml:"metadata"`
+			StringData map[string]string `yaml:"stringData"`
+			Data       map[string]string `yaml:"data"`
+		}
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if doc.Kind != "Secret" {
+			continue
+		}
+		if doc.StringData != nil {
+			t.Errorf("%s: %s/%s uses stringData; server-side apply needs data", path, doc.Metadata.Namespace, doc.Metadata.Name)
+		}
+		values := map[string]string{}
+		for k, v := range doc.Data {
+			decoded, err := base64.StdEncoding.DecodeString(v)
+			if err != nil {
+				t.Fatalf("%s: %s is not base64: %v", path, k, err)
+			}
+			values[k] = string(decoded)
+		}
+		out[doc.Metadata.Namespace+"/"+doc.Metadata.Name] = values
+	}
+	return out
+}
+
 func dig(m map[string]any, path ...string) any {
 	var cur any = m
 	for _, p := range path {
@@ -245,21 +287,34 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	if _, has := ctl["image"]; has {
 		t.Error("controller image set without an override")
 	}
-	if dig(ctl, "secrets", "createDbSecret") != true {
-		t.Error("the controller does not take its connection string from a Secret")
+	// No values file carries a credential: every chart names the Secret.
+	if dig(ctl, "secrets", "dbSecretName") != "nvke-database" || ctl["appDb"] != nil {
+		t.Errorf("controller database values: %v %v", dig(ctl, "secrets"), ctl["appDb"])
 	}
 	if dig(ctl, "profiles", "image", "tag") != "v1" || dig(ctl, "profiles", "image", "digest") != "" {
 		t.Errorf("profiles image: %v", ctl["profiles"])
 	}
-	password, _ := dig(ctl, "appDb", "postgresPassword").(string)
-	if password != "db-secret" {
-		t.Errorf("database password not read from %s: %q", stackconfig.EnvDatabasePassword, password)
-	}
 	pg := readValues(t, filepath.Join(out, "postgresql", SiteValuesFile))
 	tp := readValues(t, filepath.Join(out, "temporal", SiteValuesFile))
-	if dig(pg, "auth", "postgresPassword") != password || dig(pg, "auth", "password") != password ||
-		dig(tp, "server", "config", "persistence", "default", "sql", "password") != password {
-		t.Errorf("the database password differs between items")
+	if dig(pg, "auth", "existingSecret") != "nvke-database" || dig(pg, "auth", "password") != nil ||
+		dig(tp, "server", "config", "persistence", "default", "sql", "existingSecret") != "nvke-database" ||
+		dig(tp, "server", "config", "persistence", "visibility", "sql", "existingSecret") != "nvke-database" {
+		t.Errorf("database Secret references: %v %v", pg["auth"], dig(tp, "server", "config", "persistence"))
+	}
+	// The Secrets themselves are an item of their own, right after the
+	// namespaces, in the namespaces the items' release.yaml name, with the
+	// password from the environment and the controller's connection string.
+	secrets := readSecrets(t, filepath.Join(out, "site-credentials", "secrets.yaml"))
+	if secrets["postgres/nvke-database"]["postgres-password"] != "db-secret" || secrets["postgres/nvke-database"]["password"] != "db-secret" ||
+		secrets["temporal/nvke-database"]["password"] != "db-secret" ||
+		secrets["nke-controller/nvke-database"]["database-connection-string"] != "postgresql://postgres:db-secret@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller?sslmode=disable" {
+		t.Errorf("site credentials: %v", secrets)
+	}
+	if secrets["spire-server/spire-upstream-ca"]["tls.crt"] != "CERT\n" || secrets["spire-server/spire-upstream-ca"]["tls.key"] != "KEY\n" || secrets["spire-server/spire-upstream-ca"]["bundle.crt"] != "CERT\n" {
+		t.Errorf("spire CA Secret: %v", secrets["spire-server/spire-upstream-ca"])
+	}
+	if items, err := Items(out); err != nil || len(items) < 2 || items[0].Name != "nvke-base-config" || items[1].Name != "site-credentials" || items[1].Type != TypeManifest {
+		t.Errorf("item list: %v %v", items, err)
 	}
 	if _, has := pg["global"]; has {
 		t.Error("postgresql mirror keys without a mirror")
@@ -277,14 +332,14 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	if dig(sp, "spire-server", "nodeAttestor", "tpmDirect", "checksum") != "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16" {
 		t.Errorf("arm64 TPM checksum: %v", dig(sp, "spire-server", "nodeAttestor", "tpmDirect", "checksum"))
 	}
-	// The CA is referenced, not copied: enabled in the values, the files in
-	// chart.setFile.
-	if dig(sp, "spire-server", "upstreamAuthority", "disk", "enabled") != true || dig(sp, "spire-server", "upstreamAuthority", "disk", "secret") != nil {
+	// The CA is a Secret the site-credentials item holds; the chart creates
+	// none and the values name it.
+	if dig(sp, "spire-server", "upstreamAuthority", "disk", "enabled") != true || dig(sp, "spire-server", "upstreamAuthority", "disk", "secret", "create") != false ||
+		dig(sp, "spire-server", "upstreamAuthority", "disk", "secret", "name") != "spire-upstream-ca" ||
+		dig(sp, "spire-server", "upstreamAuthority", "disk", "secret", "data", "bundle") == "" {
 		t.Errorf("upstream authority: %v", dig(sp, "spire-server", "upstreamAuthority"))
 	}
-	spireRel, _ := ReadRelease(filepath.Join(out, "spire"))
-	caPrefix := "spire-server.upstreamAuthority.disk.secret.data."
-	if want := []string{caPrefix + "certificate=" + spec.Spire.CACertFile, caPrefix + "key=" + spec.Spire.CAKeyFile, caPrefix + "bundle=" + spec.Spire.CACertFile}; strings.Join(spireRel.Chart.SetFile, " ") != strings.Join(want, " ") {
+	if spireRel, _ := ReadRelease(filepath.Join(out, "spire")); len(spireRel.Chart.SetFile) != 0 {
 		t.Errorf("spire setFile: %v", spireRel.Chart.SetFile)
 	}
 	if raw, _ := os.ReadFile(filepath.Join(out, "spire", SiteValuesFile)); strings.Contains(string(raw), "CERT") || strings.Contains(string(raw), "KEY") {
@@ -334,10 +389,9 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	if len(result.Notes) == 0 {
 		t.Error("no notes")
 	}
-	// The credential list names the values files that hold a secret and the
-	// rendered Secret manifests; spire's values hold none. The tree ignores
-	// itself for git.
-	want := []string{"controller/site-values.yaml", "postgresql/site-values.yaml", "temporal/site-values.yaml"}
+	// The credential list names the rendered Secret manifests and nothing
+	// else: no values file holds a secret. The tree ignores itself for git.
+	want := []string{"site-credentials/secrets.yaml"}
 	for _, f := range []string{"20-nico-credentials.yaml", "35-dgxc-tenant-credentials.yaml"} {
 		want = append(want, "nvke-base-config/"+f)
 	}
@@ -364,7 +418,7 @@ func TestRender_SiteSpecOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctl := readValues(t, filepath.Join(out, "controller", SiteValuesFile))
-	if dig(ctl, "appDb", "postgresPassword") != "db-secret" || dig(ctl, "image", "digest") != "sha256:"+strings.Repeat("a", 64) {
+	if dig(ctl, "image", "digest") != "sha256:"+strings.Repeat("a", 64) {
 		t.Errorf("controller values: %v", ctl)
 	}
 	sp := readValues(t, filepath.Join(out, "spire", SiteValuesFile))
@@ -384,9 +438,13 @@ func TestRender_SiteSpecOptions(t *testing.T) {
 		dig(tp, "web", "image", "repository") != "mirror.example.test:5000/temporalio/ui" {
 		t.Errorf("temporal mirror: %v", tp)
 	}
-	if dig(tp, "server", "config", "persistence", "default", "sql", "password") != "db-secret" ||
-		dig(tp, "server", "config", "persistence", "visibility", "sql", "password") != "db-secret" {
-		t.Errorf("the mirror dropped temporal's passwords: %v", tp["server"])
+	if dig(tp, "server", "config", "persistence", "default", "sql", "existingSecret") != "nvke-database" ||
+		dig(tp, "server", "config", "persistence", "visibility", "sql", "existingSecret") != "nvke-database" {
+		t.Errorf("the mirror dropped temporal's Secret references: %v", tp["server"])
+	}
+	secrets := readSecrets(t, filepath.Join(out, "site-credentials", "secrets.yaml"))
+	if len(secrets) != 3 || secrets["spire-server/spire-upstream-ca"] != nil {
+		t.Errorf("site credentials without a CA: %v", secrets)
 	}
 	if _, err := os.Stat(filepath.Join(out, "nktp", SiteValuesFile)); err == nil {
 		t.Error("nktp got site values; its overrides come from --values-for")
@@ -404,6 +462,135 @@ func TestRender_DatabasePassword(t *testing.T) {
 	}
 	if _, statErr := os.Stat(out); statErr == nil {
 		t.Error("a refused render left its output behind")
+	}
+}
+
+// With external credentials the tree holds no secret: no credential
+// variable is read, the site-credentials item is not written, the template
+// items' Secrets are dropped, and the render lists what the cluster has to
+// hold.
+func TestRender_ExternalCredentials(t *testing.T) {
+	spec, stack := filledInputs(t, true, nil)
+	for _, name := range []string{stackconfig.EnvNicoToken, stackconfig.EnvNodeUser, stackconfig.EnvNodePassword, stackconfig.EnvDatabasePassword} {
+		t.Setenv(name, "")
+	}
+	// The CA files are not read: emptied after the spec loaded, they are
+	// no problem here.
+	for _, f := range []string{spec.Spire.CACertFile, spec.Spire.CAKeyFile} {
+		if err := os.WriteFile(f, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := filepath.Join(t.TempDir(), "rendered")
+	opts := siteRender(spec, stack, out)
+	opts.Credentials = CredentialsExternal
+	result, err := Render(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(out, ".gitignore")); err == nil {
+		t.Error("an external render wrote .gitignore")
+	}
+	if len(result.Credentials) != 0 {
+		t.Errorf("credentials in an external render: %v", result.Credentials)
+	}
+	for _, f := range []string{"site-credentials", "nvke-base-config/20-nico-credentials.yaml", "nvke-base-config/35-dgxc-tenant-credentials.yaml"} {
+		if _, err := os.Stat(filepath.Join(out, f)); err == nil {
+			t.Errorf("%s written with external credentials", f)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(out, "nvke-base-config", "45-nktp-cluster.yaml")); err != nil {
+		t.Error("the non-secret template was not rendered")
+	}
+	items, _ := Items(out)
+	for _, item := range items {
+		if item.Name == "site-credentials" {
+			t.Error("site-credentials in the item list")
+		}
+	}
+	pg := readValues(t, filepath.Join(out, "postgresql", SiteValuesFile))
+	if dig(pg, "auth", "existingSecret") != "nvke-database" {
+		t.Errorf("the charts still name the Secret: %v", pg)
+	}
+	want := []string{
+		"Secret postgres/nvke-database with keys password, postgres-password",
+		"Secret temporal/nvke-database with keys password",
+		"Secret nke-controller/nvke-database with keys database-connection-string, the URL postgresql://postgres:<password>@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller?sslmode=disable with the password URL-escaped",
+		"Secret spire-server/spire-upstream-ca with keys bundle.crt, tls.crt, tls.key",
+		"Secret capnico-system/nico-credentials with keys apiName, endpoint, orgID, token",
+	}
+	for _, w := range want {
+		if !contains(result.Expected, w) {
+			t.Errorf("expected list lacks %q:\n%s", w, strings.Join(result.Expected, "\n"))
+		}
+	}
+	opts.Out, opts.Credentials = filepath.Join(t.TempDir(), "r"), "vault"
+	if _, err := Render(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "credentials must be rendered or external") {
+		t.Errorf("unknown credentials mode: %v", err)
+	}
+}
+
+// A template file may hold a Secret beside another resource, and an item
+// may install into a namespace of its own: each document is classified by
+// its kind, and each Secret goes where its item's release.yaml says.
+func TestRender_TemplateDocumentsAndNamespaces(t *testing.T) {
+	spec, stack := filledInputs(t, false, nil)
+	path := filepath.Join(t.TempDir(), "nico")
+	if err := copyTree(nico, path); err != nil {
+		t.Fatal(err)
+	}
+	mixed := "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: site-name\n  namespace: capnico-system\ndata:\n  name: \"{{ .ClusterName }}\"\n---\n" +
+		"apiVersion: v1\nkind: Secret\nmetadata:\n  name: registry-pull\n  namespace: capnico-system\ntype: kubernetes.io/dockerconfigjson\nstringData:\n  .dockerconfigjson: \"{{ .Nico.Token }}\"\n"
+	if err := os.WriteFile(filepath.Join(path, "nvke-base-config", "50-mixed.yaml.tmpl"), []byte(mixed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pgRelease := filepath.Join(path, "postgresql", "release.yaml")
+	data, err := os.ReadFile(pgRelease)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pgRelease, bytes.Replace(data, []byte("namespace: postgres\n"), []byte("namespace: db\n"), 1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "rendered")
+	opts := siteRender(spec, stack, out)
+	opts.DeployPath = path
+	result, err := Render(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, _ := os.ReadFile(filepath.Join(out, "nvke-base-config", "50-mixed.yaml"))
+	if !strings.Contains(string(rendered), "kind: ConfigMap") || !strings.Contains(string(rendered), `.dockerconfigjson: "nico-secret"`) {
+		t.Errorf("rendered mixed template:\n%s", rendered)
+	}
+	if !contains(result.Credentials, "nvke-base-config/50-mixed.yaml") {
+		t.Errorf("the mixed file is not listed as a credential: %v", result.Credentials)
+	}
+	secrets := readSecrets(t, filepath.Join(out, "site-credentials", "secrets.yaml"))
+	if secrets["db/nvke-database"]["password"] != "db-secret" || secrets["postgres/nvke-database"] != nil {
+		t.Errorf("the database Secret did not follow the postgresql item's namespace: %v", secrets)
+	}
+
+	for _, name := range []string{stackconfig.EnvNicoToken, stackconfig.EnvNodeUser, stackconfig.EnvNodePassword, stackconfig.EnvDatabasePassword} {
+		t.Setenv(name, "")
+	}
+	opts.Out, opts.Credentials = filepath.Join(t.TempDir(), "external"), CredentialsExternal
+	result, err = Render(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err = os.ReadFile(filepath.Join(opts.Out, "nvke-base-config", "50-mixed.yaml"))
+	if err != nil || !strings.Contains(string(rendered), "kind: ConfigMap") || strings.Contains(string(rendered), "kind: Secret") {
+		t.Errorf("external mixed template: %v\n%s", err, rendered)
+	}
+	for _, w := range []string{
+		"Secret capnico-system/registry-pull with keys .dockerconfigjson, type kubernetes.io/dockerconfigjson",
+		"Secret db/nvke-database with keys password, postgres-password",
+	} {
+		if !contains(result.Expected, w) {
+			t.Errorf("expected list lacks %q:\n%s", w, strings.Join(result.Expected, "\n"))
+		}
 	}
 }
 
@@ -480,20 +667,14 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	if _, statErr := os.Stat(inside); statErr == nil {
 		t.Error("nested out was created")
 	}
-	// A CA path with whitespace is refused: the deploy path reader cannot carry it.
+	// An empty CA file is refused by variable: the Secret would carry
+	// nothing.
 	caSpec, caStack := filledInputs(t, true, nil)
-	caDir := filepath.Join(t.TempDir(), "ca dir")
-	if err := os.MkdirAll(caDir, 0o700); err != nil {
+	if err := os.WriteFile(caSpec.Spire.CAKeyFile, []byte(" \n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{"ca.crt", "ca.key"} {
-		if err := os.WriteFile(filepath.Join(caDir, f), []byte("x\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	caSpec.Spire.CACertFile, caSpec.Spire.CAKeyFile = filepath.Join(caDir, "ca.crt"), filepath.Join(caDir, "ca.key")
-	if _, err := Render(context.Background(), siteRender(caSpec, caStack, filepath.Join(t.TempDir(), "r"))); err == nil || !strings.Contains(err.Error(), sitespec.EnvSpireCACertFile+": the path") || !strings.Contains(err.Error(), "holds whitespace") {
-		t.Errorf("CA path with a space: %v", err)
+	if _, err := Render(context.Background(), siteRender(caSpec, caStack, filepath.Join(t.TempDir(), "r"))); err == nil || !strings.Contains(err.Error(), sitespec.EnvSpireCAKeyFile+": ") || !strings.Contains(err.Error(), "is empty") {
+		t.Errorf("empty CA key: %v", err)
 	}
 	// A secret the templates cannot carry is refused by variable.
 	for name, content := range map[string]string{"quote": "tok\"en", "newline": "abc\ndef", "backslash": "a\\b"} {

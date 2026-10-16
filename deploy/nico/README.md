@@ -177,7 +177,8 @@ rendered path, after `site-values.yaml`.
 | TPM attestor **server** checksum | pinned per the nodes' architecture, `--arch` | pinned per arch in `resolve_tpm_checksum()` |
 | OIDC domains / IP SANs | the overlay's hostnames plus the VIP | VIP plus the kind gateway |
 | discovery URL | `https://<VIP>:30443/.well-known/openid-configuration` | the same shape |
-| Postgres / Temporal password | `NVKECTL_DATABASE_PASSWORD`, on both Temporal datastores; the controller reads its connection string from a Secret | generated per run |
+| Postgres / Temporal password | `NVKECTL_DATABASE_PASSWORD`, written into the `nvke-database` Secret of the postgres, temporal and nke-controller namespaces by the `site-credentials` item the render adds; every chart reads it from there and no values file carries it | generated per run |
+| SPIRE upstream CA | `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`, written into the `spire-upstream-ca` Secret in spire-server by the same item, when `spire.upstreamCA` is set | self-signed |
 | controller image | the release, or the stack config's `images.controller` | built per run |
 | profiles image | the release, or the stack config's `images.profiles` | built per run |
 | telemetry backend | `--values-for nktp=<file>`, else the chart's bundled development backend | not installed |

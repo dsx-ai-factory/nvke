@@ -49,7 +49,7 @@ The install reads what only the management plane needs from `stack-config.json`,
 
    - `NVKECTL_NICO_TOKEN`: the NICo API token. The install writes it, with the NICo details below, to the `nico-credentials` Secret that CAPNICo reads.
    - `NVKECTL_NODE_USER` and `NVKECTL_NODE_PASSWORD`: the login account NVKE writes into the cloud-init user data of every workload-cluster node.
-   - `NVKECTL_DATABASE_PASSWORD`: the PostgreSQL password the management plane and Temporal share. Choose it once and store it in your secret manager: every later install of this site needs the same value.
+   - `NVKECTL_DATABASE_PASSWORD`: the PostgreSQL password the management plane and Temporal share. The install writes it to the `nvke-database` Secret in the `postgres`, `temporal` and `nke-controller` namespaces; the charts read it from there. Choose it once and store it in your secret manager: every later install of this site needs the same value.
    - `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`: the SPIRE CA certificate and key you gave the bootstrap. Every install of a site with `spire.upstreamCA: true` requires them. Leave both unset if the bootstrap ran without a CA.
 
 2. Copy the example stack config.
@@ -137,6 +137,7 @@ The install refuses a release that lacks an image artifact the deploy path names
    | Component | Namespace | What it installs |
    |---|---|---|
    | `nvke-base-config` | several | Namespaces, the NICo credentials Secret, the node login Secret, the OpenID Connect (OIDC) certificate authority (CA) chain, and the cluster name for NKTP. |
+   | `site-credentials` | `postgres`, `temporal`, `nke-controller`, `spire-server` | The `nvke-database` Secret with the PostgreSQL password and the management plane's connection string, and the `spire-upstream-ca` Secret when the site uses a CA. The render adds this item; the charts below read these Secrets. |
    | `spire-tpm-pubhashes`, `spire-server-nodeport`, `spire-oidc-provider-nodeport` | `spire-server` | The TPM allowlist that NVKE fills as nodes are created, and NodePorts 30440 (SPIRE server) and 30443 (OIDC discovery). |
    | `capnico` | `capnico-system` | CAPNICo, with the reboot and repair annotations NVKE uses. |
    | `nktp` | `nktp` | NKTP telemetry and the monitoring custom resource definitions. |
