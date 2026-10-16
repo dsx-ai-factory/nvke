@@ -177,7 +177,7 @@ data:
           #     algorithms: [RS256]
           #     admit:
           #       spiffe:
-          #         trustDomain: cwe-capi.nke.local
+          #         trustDomain: controller-capi.nvke.local
           #         pathPrefixes: ["/nke-e2e/"]
 kind: ConfigMap
 metadata:

@@ -6,9 +6,8 @@ DSX_IDENTITY_EXCHANGE_CA_CONFIG_MAP = "dsx-identity-exchange-ca"
 
 def register(ctx):
     labels = ["1-infra"]
-    # Kept as cwe-capi until a follow-up rename: changing it forces every developer to recreate their kind cluster.
-    kind_cluster_name = os.getenv("KIND_CLUSTER_NAME", "cwe-capi")
-    trust_domain = "%s.nke.local" % kind_cluster_name
+    kind_cluster_name = os.getenv("KIND_CLUSTER_NAME", "controller-capi")
+    trust_domain = "%s.nvke.local" % kind_cluster_name
     site_address = ctx.cfg.get("site_controller_vip", "")
     if site_address == "":
         fail("dsx-identity-exchange requires tilt_config.json site_controller_vip")

@@ -339,7 +339,7 @@ issuers:
     algorithms: [RS256]
     admit:
       spiffe:
-        trustDomain: cwe-capi.nke.local
+        trustDomain: controller-capi.nvke.local
         pathPrefixes: ["/nke-e2e/"]
 `
 
@@ -351,7 +351,7 @@ issuers:
 		if got.Audience != "https://nke.tilt.local" {
 			t.Errorf("audience = %q", got.Audience)
 		}
-		if got.TrustDomain != "cwe-capi.nke.local" {
+		if got.TrustDomain != "controller-capi.nvke.local" {
 			t.Errorf("trustDomain = %q", got.TrustDomain)
 		}
 		if len(got.PathPrefixes) != 1 || got.PathPrefixes[0] != "/nke-e2e/" {
@@ -388,7 +388,7 @@ issuers:
 
 	t.Run("a SPIRE issuer with no spiffe rule is an error, not a skip", func(t *testing.T) {
 		broken := strings.Replace(full,
-			"      spiffe:\n        trustDomain: cwe-capi.nke.local\n        pathPrefixes: [\"/nke-e2e/\"]",
+			"      spiffe:\n        trustDomain: controller-capi.nvke.local\n        pathPrefixes: [\"/nke-e2e/\"]",
 			"      serviceAccounts:\n        - namespace: nke-clients", 1)
 		if _, _, err := parseSpireAdmission([]byte(broken)); err == nil {
 			t.Fatal("expected an error for a SPIRE issuer with no admit.spiffe rule")
@@ -398,9 +398,9 @@ issuers:
 
 // The wire format between deploy/k8s/nke-spire-client.yaml and the assertions.
 func TestParseProbeReport(t *testing.T) {
-	report := parseProbeReport("spiffe_id=spiffe://cwe-capi.nke.local/nke-e2e/nke-spire-client admitted=200 wrong_audience=401\n")
+	report := parseProbeReport("spiffe_id=spiffe://controller-capi.nvke.local/nke-e2e/nke-spire-client admitted=200 wrong_audience=401\n")
 	for key, want := range map[string]string{
-		"spiffe_id":      "spiffe://cwe-capi.nke.local/nke-e2e/nke-spire-client",
+		"spiffe_id":      "spiffe://controller-capi.nvke.local/nke-e2e/nke-spire-client",
 		"admitted":       "200",
 		"wrong_audience": "401",
 	} {

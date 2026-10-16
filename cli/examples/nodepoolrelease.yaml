@@ -13,8 +13,8 @@ metadata:
     # userDataTemplate below supports. They describe that template only.
     #   "" and "true":        the template takes the version from the controller, through
     #                         {{ .KubernetesVersion }}, so it supports any version.
-    #   "1.34.2" and "false": the template is written for that one version.
-    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    #   "1.36.3" and "false": the template is written for that one version.
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.3"
     internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
@@ -64,7 +64,7 @@ spec:
                 echo "deb [trusted=yes] https://apt.example.com/nvke stable main" > /etc/apt/sources.list.d/nke.list
                 apt-get update
                 install -d -m 0755 /etc/default
-                DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-agent nvke-kubeadm-distro-1.34.2 {{ .CNIImagePackage }} {{ .CNIChartsPackage }}
+                DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-agent nvke-kubeadm-distro-1.36.3 {{ .CNIImagePackage }} {{ .CNIChartsPackage }}
                 systemctl enable nvke-agent
                 systemctl restart nvke-agent
                 install -d -m 0755 /run/cluster-api

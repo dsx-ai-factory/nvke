@@ -65,7 +65,7 @@ autoinstall:
                 ip: "10.0.0.11"
               - name: "ctrl-3"
                 ip: "10.0.0.12"
-            k8sVersion: "1.34.2"
+            k8sVersion: "1.36.3"
             cniName: "ovn-kubernetes"
             podCidr: "192.168.0.0/16"
             serviceCidr: "10.96.0.0/12"

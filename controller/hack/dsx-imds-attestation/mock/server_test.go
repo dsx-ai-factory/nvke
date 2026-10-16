@@ -28,7 +28,7 @@ func TestIMDSServer_HandleIdentity(t *testing.T) {
 	tests := map[string]parameters{
 		"issues a signed host identity": {
 			metadataHeader: "true",
-			audience:       "spiffe://cwe-capi.nke.local/spire/server",
+			audience:       "spiffe://controller-capi.nvke.local/spire/server",
 			wantStatus:     http.StatusOK,
 			verify: func(t *testing.T, server *imdsServer, response *httptest.ResponseRecorder) {
 				t.Helper()
@@ -38,7 +38,7 @@ func TestIMDSServer_HandleIdentity(t *testing.T) {
 				require.NoError(t, parsed.Claims(server.publicKey.Key, &claims))
 				require.Equal(t, "https://ds9.dsx.nvid.id", claims["iss"])
 				require.Equal(t, "spiffe://operator-1.ds9.dsx.nvid.id/bm/host-6d99cbd08fc6c99c", claims["sub"])
-				require.Equal(t, "spiffe://cwe-capi.nke.local/spire/server", claims["aud"])
+				require.Equal(t, "spiffe://controller-capi.nvke.local/spire/server", claims["aud"])
 				require.Equal(t, "text/plain", response.Header().Get("Content-Type"))
 			},
 		},

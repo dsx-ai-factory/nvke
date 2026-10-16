@@ -9,7 +9,7 @@ set -euo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-cwe-capi}"
+KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-controller-capi}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-kind-${KIND_CLUSTER_NAME}}"
 HOSTNAME_NAME="${KEYCLOAK_HOSTNAME:-keycloak.nke.test}"
 COREFILE_BEGIN="# nke-keycloak-begin"

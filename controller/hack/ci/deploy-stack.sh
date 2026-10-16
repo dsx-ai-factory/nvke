@@ -128,7 +128,7 @@ cwe_tag="${NKE_CONTROLLER_IMAGE##*:}"
 # SPIRE issues match the adminID the controller presents.
 : "${MANAGEMENT_VIP:?MANAGEMENT_VIP is required}"
 : "${KIND_CLUSTER_NAME:?KIND_CLUSTER_NAME is required}"
-TRUST_DOMAIN="${KIND_CLUSTER_NAME}.nke.local"
+TRUST_DOMAIN="${KIND_CLUSTER_NAME}.nvke.local"
 
 # The env list the controller container needs, assembled the way
 # controller/Tiltfile assembles _cwe_chart_extra_env. Three sources:

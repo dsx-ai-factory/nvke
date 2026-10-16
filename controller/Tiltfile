@@ -177,8 +177,15 @@ def get_kind_cluster_name():
     return "kind-cluster-name-not-set"
 
 KIND_CLUSTER_NAME_VALUE = get_kind_cluster_name()
+# cwe-capi is the old default cluster. Its SPIRE server still issues
+# cwe-capi.nke.local identities, so the derived trust domain below would not
+# match them. An explicit KIND_CLUSTER_NAME=cwe-capi is a deliberate choice.
+if os.getenv("KIND_CLUSTER_NAME", "") == "" and KIND_CLUSTER_NAME_VALUE == "cwe-capi":
+    fail("Kind cluster 'cwe-capi' is the old dev cluster. The dev cluster is now 'controller-capi', with trust domain " +
+         "controller-capi.nvke.local. Delete the old cluster with 'kind delete cluster --name cwe-capi', then run " +
+         "'make capd-up' and 'tilt up' again.")
 EXPECTED_K8S_CONTEXT = "kind-%s" % KIND_CLUSTER_NAME_VALUE
-SPIRE_TRUST_DOMAIN = "%s.nke.local" % KIND_CLUSTER_NAME_VALUE
+SPIRE_TRUST_DOMAIN = "%s.nvke.local" % KIND_CLUSTER_NAME_VALUE
 NKE_OIDC_ISSUER_URL = "https://nke.site-controller.internal"
 SPIRE_CONTROLLER_ADMIN_PATH = "/nke-service/nke-controller"
 if DSX_IDENTITY_EXCHANGE_ENABLED:
