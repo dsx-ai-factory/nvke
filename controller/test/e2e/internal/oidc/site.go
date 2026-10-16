@@ -27,7 +27,7 @@ import (
 
 const (
 	startupMessage = "Loaded nke-controller-config"
-	defaultRestart = "e2e.nke.nvidia.com/oidc-restart"
+	defaultRestart = "e2e.nvke.nvidia.com/oidc-restart"
 	maxLogBytes    = 1 << 20
 	chartConfigMap = "nke-controller-config"
 	chartConfigKey = "config.yaml"

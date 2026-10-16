@@ -28,6 +28,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/e2e/framework"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 )
@@ -92,7 +93,7 @@ func TestRebootVerificationTimeoutEscalates(t *testing.T) {
 				},
 			}
 			require.NoError(t, api.Create(ctx, machine))
-			node.Labels = map[string]string{constants.LabelKeyNodeLabelReboot: "e2e-stalled-soft-reboot"}
+			node.Labels = map[string]string{keys.Reboot.String(): "e2e-stalled-soft-reboot"}
 			require.NoError(t, api.Update(ctx, node))
 			run, err := server.Client().ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 				ID: constants.RebootNodeWorkflowPrefix + workerNode.ID.String(), TaskQueue: taskQueue,
@@ -115,16 +116,16 @@ func TestRebootVerificationTimeoutEscalates(t *testing.T) {
 				// Any hard request before its deadline fails the regression.
 				for time.Since(waitStarted) < 44*time.Second {
 					require.NoError(t, api.Get(ctx, k8sclient.ObjectKeyFromObject(machine), machine))
-					require.Empty(t, machine.Annotations[constants.MachineAnnotationKeyReboot], "premature hard reboot")
+					require.Empty(t, machine.Annotations[keys.MachineReboot.String()], "premature hard reboot")
 					time.Sleep(time.Second)
 				}
 				require.Eventually(t, func() bool {
 					if err := api.Get(ctx, k8sclient.ObjectKeyFromObject(machine), machine); err != nil {
 						return false
 					}
-					return machine.Annotations[constants.MachineAnnotationKeyReboot] != ""
+					return machine.Annotations[keys.MachineReboot.String()] != ""
 				}, 30*time.Second, time.Second, "hard fallback was never requested:\n%s", worker.Output())
-				hardAt, err := time.Parse(time.RFC3339, machine.Annotations[constants.MachineAnnotationKeyReboot])
+				hardAt, err := time.Parse(time.RFC3339, machine.Annotations[keys.MachineReboot.String()])
 				require.NoError(t, err)
 				require.GreaterOrEqual(t, hardAt.Sub(waitStarted), 44*time.Second, "hard request preceded the 45-second deadline")
 				setRebootBootID(t, ctx, api, node, "hard-boot")
@@ -134,8 +135,8 @@ func TestRebootVerificationTimeoutEscalates(t *testing.T) {
 			require.Equal(t, 10*time.Second, pollingInterval)
 			require.NoError(t, api.Get(ctx, k8sclient.ObjectKeyFromObject(node), node))
 			require.True(t, node.Spec.Unschedulable, "reboot must leave the worker cordoned")
-			require.Equal(t, string(constants.RebootStatusCompleted), node.Labels[constants.LabelKeyNodeLabelRebootStatus])
-			require.Empty(t, node.Labels[constants.LabelKeyNodeLabelReboot])
+			require.Equal(t, string(constants.RebootStatusCompleted), node.Labels[keys.RebootStatus.String()])
+			require.Empty(t, node.Labels[keys.Reboot.String()])
 			if scenario.recoverSoft {
 				hardScheduled, err := activityScheduled(ctx, server.Client(), run, "ApplyCAPIMachineRebootAnnotation")
 				require.NoError(t, err)

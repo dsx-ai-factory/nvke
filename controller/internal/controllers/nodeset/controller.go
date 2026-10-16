@@ -70,7 +70,7 @@ func nodeSetKeysForNode(_ context.Context, node db.Node) ([]dbreconcile.Key, err
 //   - For non-current NodeSets the NodePoolController will have set the DesiredCount to 0.
 //   - So we will effectively delete all pending nodes from any non-current NodeSets.
 //
-// - (Future) Auto-deprovision down to desired count by applying the nke.nvidia.com/maintenance-required label.
+// - (Future) Auto-deprovision down to desired count by applying the nvke.nvidia.com/maintenance-required label.
 // - (Future) Perform in-place upgrades of existing node sets.
 //   - Only non-current node sets may be upgraded.
 func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {

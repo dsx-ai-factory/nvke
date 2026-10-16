@@ -28,6 +28,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
@@ -932,7 +933,9 @@ func TestApplyCAPIMachineRebootAnnotation(t *testing.T) {
 		Namespace: constants.NamespaceNVKESystem,
 		Name:      "worker-0",
 	}, storedMachine))
-	require.Contains(t, storedMachine.Annotations, constants.MachineAnnotationKeyReboot)
+	// Written in both domains while cluster-api-provider-nico deployments move over.
+	require.Contains(t, storedMachine.Annotations, keys.MachineReboot.String())
+	require.Contains(t, storedMachine.Annotations, keys.MachineReboot.Legacy())
 	mockDB.AssertExpectations(t)
 }
 
@@ -993,7 +996,8 @@ func TestDeleteCAPIMachineRebootAnnotation(t *testing.T) {
 		Namespace: constants.NamespaceNVKESystem,
 		Name:      "worker-1",
 	}, storedMachine))
-	require.NotContains(t, storedMachine.Annotations, constants.MachineAnnotationKeyReboot)
+	require.NotContains(t, storedMachine.Annotations, keys.MachineReboot.String())
+	require.NotContains(t, storedMachine.Annotations, keys.MachineReboot.Legacy())
 	mockDB.AssertExpectations(t)
 }
 

@@ -432,7 +432,7 @@ spec:
                             pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
                             type: string
                           description: |-
-                            Labels specifies node labels. The prefixes nke.nvidia.com, kubernetes.io,
+                            Labels specifies node labels. The prefixes nvke.nvidia.com, nke.nvidia.com, kubernetes.io,
                             k8s.io and their subdomains are reserved.
                           maxProperties: 128
                           type: object

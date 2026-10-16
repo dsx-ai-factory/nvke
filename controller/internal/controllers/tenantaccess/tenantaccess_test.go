@@ -42,6 +42,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -505,9 +506,9 @@ func TestController_ReconcileOIDC(t *testing.T) {
 		Namespace: SecretsNamespace,
 	}, tbSecret))
 	assert.Equal(t, []byte("test-ca"), tbSecret.Data[TrustBundleSecretKey])
-	assert.Equal(t, "cloud-workflow-engine", tbSecret.Labels[constants.LabelKeyNvkeManagedBy])
-	assert.Equal(t, oidcCluster.ID.String(), tbSecret.Labels[constants.LabelKeyClusterID])
-	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, kcSecret.Labels[constants.LabelKeyKubeconfigMode])
+	assert.Equal(t, "cloud-workflow-engine", tbSecret.Labels[keys.ManagedBy.String()])
+	assert.Equal(t, oidcCluster.ID.String(), tbSecret.Labels[keys.ClusterID.String()])
+	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, kcSecret.Labels[keys.KubeconfigMode.String()])
 	assert.Equal(t, corev1.SecretTypeOpaque, kcSecret.Type)
 	assertOwnedByCAPICluster(t, tbSecret, oidcCluster)
 
@@ -664,9 +665,9 @@ func assertSecret(t *testing.T, ctx context.Context, k8sClient ctrlclient.Client
 	assert.Equal(t, []byte(testKubeconfig), secret.Data[KubeconfigSecretKey])
 	assert.Equal(t, corev1.SecretTypeOpaque, secret.Type)
 	assert.Equal(t, cluster.Name, secret.Labels[clusterv1.ClusterNameLabel])
-	assert.Equal(t, "cloud-workflow-engine", secret.Labels[constants.LabelKeyNvkeManagedBy])
-	assert.Equal(t, cluster.ID.String(), secret.Labels[constants.LabelKeyClusterID])
-	assert.Equal(t, constants.LabelValueKubeconfigModeAdmin, secret.Labels[constants.LabelKeyKubeconfigMode])
+	assert.Equal(t, "cloud-workflow-engine", secret.Labels[keys.ManagedBy.String()])
+	assert.Equal(t, cluster.ID.String(), secret.Labels[keys.ClusterID.String()])
+	assert.Equal(t, constants.LabelValueKubeconfigModeAdmin, secret.Labels[keys.KubeconfigMode.String()])
 	assertOwnedByCAPICluster(t, secret, cluster)
 
 	assertAdminSecret(t, ctx, k8sClient, cluster, testKubeconfig)
@@ -683,9 +684,9 @@ func assertAdminSecret(t *testing.T, ctx context.Context, k8sClient ctrlclient.C
 	assert.Equal(t, []byte(wantKubeconfig), secret.Data[KubeconfigSecretKey])
 	assert.Equal(t, corev1.SecretTypeOpaque, secret.Type)
 	assert.Equal(t, cluster.Name, secret.Labels[clusterv1.ClusterNameLabel])
-	assert.Equal(t, "cloud-workflow-engine", secret.Labels[constants.LabelKeyNvkeManagedBy])
-	assert.Equal(t, cluster.ID.String(), secret.Labels[constants.LabelKeyClusterID])
-	assert.Equal(t, constants.LabelValueKubeconfigModeAdmin, secret.Labels[constants.LabelKeyKubeconfigMode])
+	assert.Equal(t, "cloud-workflow-engine", secret.Labels[keys.ManagedBy.String()])
+	assert.Equal(t, cluster.ID.String(), secret.Labels[keys.ClusterID.String()])
+	assert.Equal(t, constants.LabelValueKubeconfigModeAdmin, secret.Labels[keys.KubeconfigMode.String()])
 	assertOwnedByCAPICluster(t, secret, cluster)
 }
 
@@ -882,7 +883,7 @@ func TestController_PublishesOIDCWhenTenantAccessDisabled(t *testing.T) {
 		Name:      KubeconfigSecretName(oidcCluster.Name),
 		Namespace: SecretsNamespace,
 	}, kcSecret))
-	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, kcSecret.Labels[constants.LabelKeyKubeconfigMode])
+	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, kcSecret.Labels[keys.KubeconfigMode.String()])
 	assertAdminSecret(t, ctx, k8sClient, oidcCluster, testAdminConf)
 }
 
@@ -918,8 +919,8 @@ func TestPublish_RefusesWrongOwnerSecret(t *testing.T) {
 			Name:      KubeconfigSecretName(cluster.Name),
 			Namespace: SecretsNamespace,
 			Labels: map[string]string{
-				constants.LabelKeyClusterID:      otherID.String(),
-				constants.LabelKeyKubeconfigMode: constants.LabelValueKubeconfigModeSPIRE,
+				keys.ClusterID.String():      otherID.String(),
+				keys.KubeconfigMode.String(): constants.LabelValueKubeconfigModeSPIRE,
 			},
 		},
 	}
@@ -1071,9 +1072,9 @@ func TestPublish_RewritesAdminToSPIRE(t *testing.T) {
 			Name:      KubeconfigSecretName(cluster.Name),
 			Namespace: SecretsNamespace,
 			Labels: map[string]string{
-				constants.LabelKeyClusterID:      cluster.ID.String(),
-				constants.LabelKeyKubeconfigMode: constants.LabelValueKubeconfigModeAdmin,
-				clusterv1.ClusterNameLabel:       cluster.Name,
+				keys.ClusterID.String():      cluster.ID.String(),
+				keys.KubeconfigMode.String(): constants.LabelValueKubeconfigModeAdmin,
+				clusterv1.ClusterNameLabel:   cluster.Name,
 			},
 		},
 		Type: corev1.SecretTypeOpaque,
@@ -1093,7 +1094,7 @@ func TestPublish_RewritesAdminToSPIRE(t *testing.T) {
 		Name:      KubeconfigSecretName(cluster.Name),
 		Namespace: SecretsNamespace,
 	}, got))
-	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, got.Labels[constants.LabelKeyKubeconfigMode])
+	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, got.Labels[keys.KubeconfigMode.String()])
 	assert.Equal(t, corev1.SecretTypeOpaque, got.Type)
 	assert.Contains(t, string(got.Data[KubeconfigSecretKey]), "k8s-spiffe-workload-jwt-exec-auth")
 	assertOwnedByCAPICluster(t, got, cluster)
@@ -1143,7 +1144,7 @@ func TestPublish_UsesLiveOIDCAuthEnabled(t *testing.T) {
 		Name:      KubeconfigSecretName(live.Name),
 		Namespace: SecretsNamespace,
 	}, got))
-	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, got.Labels[constants.LabelKeyKubeconfigMode])
+	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, got.Labels[keys.KubeconfigMode.String()])
 	assert.Contains(t, string(got.Data[KubeconfigSecretKey]), "k8s-spiffe-workload-jwt-exec-auth")
 }
 

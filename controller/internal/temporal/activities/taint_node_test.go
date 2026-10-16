@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
@@ -114,6 +115,92 @@ func TestTaintNodeRemovesTaintIdempotently(t *testing.T) {
 	require.Equal(t, 2, provider.calls)
 	require.Equal(t, cluster, provider.cluster)
 	database.AssertExpectations(t)
+}
+
+// A node joined before the nvke.nvidia.com rename carries the provisioning
+// taint under the legacy domain, and the workflow that untaints it may be
+// running on a worker that now asks for the new key. Removal has to clear
+// both, or the node stays NoSchedule for good.
+func TestTaintNodeRemovesBothDomainsOfAnOwnedTaint(t *testing.T) {
+	for _, requested := range []string{keys.ProvisioningTaint.String(), keys.ProvisioningTaint.Legacy()} {
+		t.Run(requested, func(t *testing.T) {
+			nodeID := uuid.New()
+			clusterID := uuid.New()
+			node := db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-0"}
+			cluster := db.Cluster{ID: clusterID, Name: "cluster-a"}
+
+			database := &testutil.MockDB{}
+			database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Twice()
+			database.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil)
+
+			scheme := runtime.NewScheme()
+			require.NoError(t, corev1.AddToScheme(scheme))
+			tenantClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{Name: node.Name},
+					Spec: corev1.NodeSpec{Taints: []corev1.Taint{
+						{Key: "keep", Value: "unchanged", Effect: corev1.TaintEffectNoExecute},
+						{Key: keys.ProvisioningTaint.String(), Value: "true", Effect: corev1.TaintEffectNoSchedule},
+						{Key: keys.ProvisioningTaint.Legacy(), Value: "true", Effect: corev1.TaintEffectNoSchedule},
+					}},
+				}).
+				Build()
+			a := &Activities{db: database, tenantClientProvider: &fakeTenantClientProvider{tenantClient: tenantClient}}
+
+			_, err := executeTaintNodeActivity(t, a, TaintNodeInput{
+				NodeID:      nodeID,
+				TaintKey:    requested,
+				TaintEffect: string(corev1.TaintEffectNoSchedule) + "-",
+			})
+			require.NoError(t, err)
+
+			var updated corev1.Node
+			require.NoError(t, tenantClient.Get(context.Background(), client.ObjectKey{Name: node.Name}, &updated))
+			require.Equal(t, []corev1.Taint{
+				{Key: "keep", Value: "unchanged", Effect: corev1.TaintEffectNoExecute},
+			}, updated.Spec.Taints)
+		})
+	}
+}
+
+// A taint outside both domains is removed by exact key, untouched otherwise.
+func TestTaintNodeRemovalLeavesForeignTaintsAlone(t *testing.T) {
+	nodeID := uuid.New()
+	clusterID := uuid.New()
+	node := db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-0"}
+	cluster := db.Cluster{ID: clusterID, Name: "cluster-a"}
+
+	database := &testutil.MockDB{}
+	database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Twice()
+	database.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil)
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	tenantClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: node.Name},
+			Spec: corev1.NodeSpec{Taints: []corev1.Taint{
+				{Key: "example.com/other", Value: "true", Effect: corev1.TaintEffectNoSchedule},
+				{Key: "example.com/drop", Value: "true", Effect: corev1.TaintEffectNoSchedule},
+			}},
+		}).
+		Build()
+	a := &Activities{db: database, tenantClientProvider: &fakeTenantClientProvider{tenantClient: tenantClient}}
+
+	_, err := executeTaintNodeActivity(t, a, TaintNodeInput{
+		NodeID:      nodeID,
+		TaintKey:    "example.com/drop",
+		TaintEffect: string(corev1.TaintEffectNoSchedule) + "-",
+	})
+	require.NoError(t, err)
+
+	var updated corev1.Node
+	require.NoError(t, tenantClient.Get(context.Background(), client.ObjectKey{Name: node.Name}, &updated))
+	require.Equal(t, []corev1.Taint{
+		{Key: "example.com/other", Value: "true", Effect: corev1.TaintEffectNoSchedule},
+	}, updated.Spec.Taints)
 }
 
 func TestTaintNodeRetriesConflictAndPreservesConcurrentTaint(t *testing.T) {

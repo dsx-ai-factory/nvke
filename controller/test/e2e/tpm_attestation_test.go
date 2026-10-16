@@ -19,7 +19,7 @@ import (
 )
 
 // The controller's names for a Machine's SPIRE agent identity. They must match
-// constants.MachineAnnotationKeySpireAgentSpiffeIDPath, constants.TPMSpireAgentPath
+// keys.MachineSpireAgentSpiffeIDPath, constants.TPMSpireAgentPath
 // and constants.NamespaceNVKESystem in controller/internal/constants, which this
 // module does not import.
 const (

@@ -16,8 +16,8 @@ import (
 	"go.temporal.io/sdk/workflow"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
@@ -117,7 +117,7 @@ func TestLabelNode(t *testing.T) {
 				return labelNodeEnv{env: env, captured: captured, called: called, nodeID: res.nodeID}
 			},
 			wantCalled: true,
-			wantLabels: []string{constants.LabelKeyMachineID + "=machine-abc123"},
+			wantLabels: []string{keys.MachineID.String() + "=machine-abc123"},
 		},
 		"adds machine ID label from nico node provider": {
 			setup: func(t *testing.T) labelNodeEnv {
@@ -145,8 +145,8 @@ func TestLabelNode(t *testing.T) {
 				)
 			},
 			wantCalled:     true,
-			wantLabels:     []string{constants.LabelKeyMachineID + "=payload-machine"},
-			unwantedLabels: []string{constants.LabelKeyMachineID + "=legacy-machine"},
+			wantLabels:     []string{keys.MachineID.String() + "=payload-machine"},
+			unwantedLabels: []string{keys.MachineID.String() + "=legacy-machine"},
 		},
 		"skips machine ID label when empty": {
 			setup: func(t *testing.T) labelNodeEnv {
@@ -180,7 +180,7 @@ func TestLabelNode(t *testing.T) {
 			},
 			wantCalled:     true,
 			wantLabels:     []string{"k8s.ovn.org/zone-name=worker-0"},
-			unwantedLabels: []string{constants.LabelKeyMachineID + "=stray-machine"},
+			unwantedLabels: []string{keys.MachineID.String() + "=stray-machine"},
 		},
 	}
 

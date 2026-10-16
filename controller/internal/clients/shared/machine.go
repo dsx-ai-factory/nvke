@@ -24,8 +24,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // MachineCreateDeps bundles what Activities supplies so a provider client's
@@ -204,7 +204,7 @@ func MachineAnnotations(node db.Node) map[string]string {
 	// drain and volume-detach waits so Machine deletion is not blocked when the
 	// workload API is unreachable.
 	return map[string]string{
-		constants.MachineAnnotationKeyHostID:               node.ID.String(),
+		keys.MachineHostID.String():                        node.ID.String(),
 		clusterv1.ExcludeNodeDrainingAnnotation:            "cwe-controlled",
 		clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation: "cwe-controlled",
 	}

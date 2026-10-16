@@ -156,7 +156,7 @@ nodeAgent:
       newPrivateKeyKey: ""
 
 # identity configures the strings this controller compiles into
-# Server-Side-Apply field managers and the nke.nvidia.com/managed-by label
+# Server-Side-Apply field managers and the nvke.nvidia.com/managed-by label
 # value. Every value here defaults to today's literal, so an unset value is
 # today's behavior exactly.
 identity:
@@ -166,7 +166,7 @@ identity:
   fieldManagerRebootMachineName: "cloud-workflow-engine-reboot-machine"
   # -- Field manager used when patching a Machine's health-issue annotation.
   fieldManagerMachineHealthIssueName: "cloud-workflow-engine-machine-health-issue"
-  # -- Value written under the nke.nvidia.com/managed-by label on objects this
+  # -- Value written under the nvke.nvidia.com/managed-by label on objects this
   # controller owns, and the value the tenant Secret reconciler filters on.
   managedByLabelValue: "cloud-workflow-engine"
 

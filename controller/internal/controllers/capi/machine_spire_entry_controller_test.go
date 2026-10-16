@@ -20,8 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func TestMachineSpireEntryControllerReconcileCreatesClusterStaticEntry(t *testing.T) {
@@ -52,8 +52,8 @@ func TestMachineSpireEntryControllerReconcileCreatesClusterStaticEntry(t *testin
 					Name:      "worker-0",
 					Namespace: "cluster-test",
 					Annotations: map[string]string{
-						constants.MachineAnnotationKeyHostID:                 nodeID,
-						constants.MachineAnnotationKeySpireAgentSpiffeIDPath: "/spire/agent/tpm/test-hash",
+						keys.MachineHostID.String():                 nodeID,
+						keys.MachineSpireAgentSpiffeIDPath.String(): "/spire/agent/tpm/test-hash",
 					},
 				},
 			}
@@ -104,7 +104,7 @@ func TestMachineSpireEntryControllerReconcileDeletesClusterStaticEntryWhenMachin
 			Name:      "worker-0",
 			Namespace: "cluster-test",
 			Annotations: map[string]string{
-				constants.MachineAnnotationKeyHostID: "host-123",
+				keys.MachineHostID.String(): "host-123",
 			},
 			Finalizers:        []string{"test.finalizer"},
 			DeletionTimestamp: &metav1.Time{Time: metav1.Now().Time},

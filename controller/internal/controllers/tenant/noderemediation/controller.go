@@ -22,11 +22,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	dbfilters "github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/tenant"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // Reconciler starts node remediation workflows from tenant Kubernetes Node labels.
@@ -86,13 +86,13 @@ func nodeHasRemediationRequest(object ctrlclient.Object) bool {
 		return false
 	}
 	labels := node.GetLabels()
-	if _, hasTerminateRequest := labels[constants.LabelKeyNodeLabelTerminate]; hasTerminateRequest {
+	if _, hasTerminateRequest := keys.Terminate.Get(labels); hasTerminateRequest {
 		return true
 	}
-	if _, hasRebootRequest := labels[constants.LabelKeyNodeLabelReboot]; hasRebootRequest {
+	if _, hasRebootRequest := keys.Reboot.Get(labels); hasRebootRequest {
 		return true
 	}
-	_, hasMachineHealthIssue := node.GetAnnotations()[constants.NodeAnnotationKeyMachineHealthIssue]
+	_, hasMachineHealthIssue := keys.NodeMachineHealthIssue.Get(node.GetAnnotations())
 	return hasMachineHealthIssue
 }
 
@@ -105,9 +105,9 @@ func nodeRemediationRequestChanged(oldObject, newObject ctrlclient.Object) bool 
 	if !ok {
 		return false
 	}
-	return oldNode.GetLabels()[constants.LabelKeyNodeLabelTerminate] != newNode.GetLabels()[constants.LabelKeyNodeLabelTerminate] ||
-		oldNode.GetLabels()[constants.LabelKeyNodeLabelReboot] != newNode.GetLabels()[constants.LabelKeyNodeLabelReboot] ||
-		oldNode.GetAnnotations()[constants.NodeAnnotationKeyMachineHealthIssue] != newNode.GetAnnotations()[constants.NodeAnnotationKeyMachineHealthIssue]
+	return keys.Terminate.Value(oldNode.GetLabels()) != keys.Terminate.Value(newNode.GetLabels()) ||
+		keys.Reboot.Value(oldNode.GetLabels()) != keys.Reboot.Value(newNode.GetLabels()) ||
+		keys.NodeMachineHealthIssue.Value(oldNode.GetAnnotations()) != keys.NodeMachineHealthIssue.Value(newNode.GetAnnotations())
 }
 
 func controllerRegistration(clusterID uuid.UUID) (string, controller.Options) {

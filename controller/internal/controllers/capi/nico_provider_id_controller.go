@@ -19,7 +19,7 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
 )
 
@@ -159,34 +159,44 @@ func reconcileNodeMetadata(node *corev1.Node, nicoMachine *nicov1.NicoMachine) b
 		changed = true
 	}
 
-	desired := map[string]string{
-		constants.LabelKeyMachineID:    nicoMachine.Status.MachineID,
-		constants.LabelKeyNodeSiteID:   nicoMachine.Status.SiteID,
-		constants.LabelKeyNodeSiteName: kube.NormalizeLabelValue(nicoMachine.Status.SiteName),
-		constants.LabelKeyNodeVPCID:    nicoMachine.Status.VPCID,
-		constants.LabelKeyNodeVPCName:  kube.NormalizeLabelValue(nicoMachine.Status.VPCName),
+	desired := map[keys.Key]string{
+		keys.MachineID:    nicoMachine.Status.MachineID,
+		keys.NodeSiteID:   nicoMachine.Status.SiteID,
+		keys.NodeSiteName: kube.NormalizeLabelValue(nicoMachine.Status.SiteName),
+		keys.NodeVPCID:    nicoMachine.Status.VPCID,
+		keys.NodeVPCName:  kube.NormalizeLabelValue(nicoMachine.Status.VPCName),
 	}
-	managedTopologyLabelKeys := [...]string{
-		constants.LabelKeyMachineID,
-		constants.LabelKeyNodeSiteID,
-		constants.LabelKeyNodeSiteName,
-		constants.LabelKeyNodeVPCID,
-		constants.LabelKeyNodeVPCName,
+	managedTopologyLabelKeys := [...]keys.Key{
+		keys.MachineID,
+		keys.NodeSiteID,
+		keys.NodeSiteName,
+		keys.NodeVPCID,
+		keys.NodeVPCName,
 	}
 	for _, key := range managedTopologyLabelKeys {
 		value := desired[key]
 		if value == "" {
-			if _, exists := node.Labels[key]; exists {
-				delete(node.Labels, key)
-				changed = true
+			// Drop every form, not just the one this build writes: a Node
+			// labeled by an earlier build carries the legacy key and nothing
+			// else would ever remove it.
+			for _, name := range key.All() {
+				if _, exists := node.Labels[name]; exists {
+					delete(node.Labels, name)
+					changed = true
+				}
 			}
 			continue
 		}
 		if node.Labels == nil {
 			node.Labels = make(map[string]string)
 		}
-		if node.Labels[key] != value {
-			node.Labels[key] = value
+		if node.Labels[key.String()] != value {
+			node.Labels[key.String()] = value
+			changed = true
+		}
+		// Reconciling a Node that still carries the legacy key moves it over.
+		if _, legacy := node.Labels[key.Legacy()]; legacy {
+			delete(node.Labels, key.Legacy())
 			changed = true
 		}
 	}

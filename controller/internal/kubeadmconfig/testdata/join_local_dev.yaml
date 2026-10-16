@@ -17,7 +17,7 @@ nodeRegistration:
   name: worker-1
   taints:
   - effect: NoSchedule
-    key: nke.nvidia.com/provisioning
+    key: nvke.nvidia.com/provisioning
     value: "true"
 patches:
   directory: /etc/kubernetes/patches

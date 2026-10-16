@@ -17,9 +17,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/tenantaccess"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 type staticClusterReader struct {
@@ -182,8 +182,8 @@ func tenantAccessSecret(clusterID uuid.UUID, clusterName, uid, resourceVersion s
 			UID:             types.UID(uid),
 			ResourceVersion: resourceVersion,
 			Labels: map[string]string{
-				constants.LabelKeyNvkeManagedBy: "cloud-workflow-engine",
-				constants.LabelKeyClusterID:     clusterID.String(),
+				keys.ManagedBy.String(): "cloud-workflow-engine",
+				keys.ClusterID.String(): clusterID.String(),
 			},
 		},
 		Data: map[string][]byte{tenantaccess.KubeconfigSecretKey: kubeconfig},

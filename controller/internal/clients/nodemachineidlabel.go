@@ -11,7 +11,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
-// NodeMachineIDLabel resolves the value of the nke.nvidia.com/machine-id
+// NodeMachineIDLabel resolves the value of the nvke.nvidia.com/machine-id
 // label a provisioned node carries, so the provider's machine identity is
 // discoverable on the Kubernetes Node object. Each provider type has its own
 // implementation, selected by GetNodeMachineIDLabel.

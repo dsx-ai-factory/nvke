@@ -16,8 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // NodeConfig is the NICo-specific node provisioning data resolved from a
@@ -224,11 +224,11 @@ func buildMachine(
 // NicoMachine.
 func BuildInstanceLabels(node db.Node, cluster db.Cluster, nodePoolID uuid.UUID) map[string]string {
 	labels := map[string]string{
-		constants.LabelKeyNodeID:    node.ID.String(),
-		constants.LabelKeyClusterID: cluster.ID.String(),
+		keys.NodeID.String():    node.ID.String(),
+		keys.ClusterID.String(): cluster.ID.String(),
 	}
 	if nodePoolID != uuid.Nil {
-		labels[constants.LabelKeyNodePoolID] = nodePoolID.String()
+		labels[keys.NodePoolID.String()] = nodePoolID.String()
 	}
 	return labels
 }

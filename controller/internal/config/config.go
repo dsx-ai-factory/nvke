@@ -253,7 +253,7 @@ type Config struct {
 	FieldManagerMachineHealthIssueName string `controllerconfig:"fieldManager.machineHealthIssueName"`
 
 	// ManagedByLabelValue is the value written under the
-	// nke.nvidia.com/managed-by label key on objects this controller owns,
+	// nvke.nvidia.com/managed-by label key on objects this controller owns,
 	// and the value the tenant Secret reconciler filters incoming Secret
 	// events on. Both sides must agree, so this is read from one place.
 	ManagedByLabelValue string `controllerconfig:"managedByLabelValue"`

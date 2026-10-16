@@ -18,6 +18,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster db.Cluster, paused bool, fieldManagerName, managedByLabelValue string) error {
@@ -55,7 +56,7 @@ func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster 
 			Name:      cluster.Name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				constants.LabelKeyNvkeManagedBy: managedByLabelValue,
+				keys.ManagedBy.String(): managedByLabelValue,
 			},
 		},
 		Spec: clusterv1.ClusterSpec{

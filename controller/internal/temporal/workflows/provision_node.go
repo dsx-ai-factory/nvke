@@ -16,6 +16,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
@@ -350,7 +351,7 @@ func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activit
 		}
 	}
 
-	// Remove taint (nke.nvidia.com/provisioning=true:NoSchedule-)
+	// Remove taint (nvke.nvidia.com/provisioning=true:NoSchedule-)
 	// This taint is added via kubeadm join config.
 	// Hyphen at the end of the taint effect removes the taint
 	taintToRemove := constants.NodeTaintProvisioning()
@@ -788,7 +789,7 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 		return err
 	}
 	if machineID != "" {
-		labels = append(labels, constants.LabelKeyMachineID+"="+machineID)
+		labels = append(labels, keys.MachineID.Selector(machineID))
 	}
 
 	// If the cluster is using ovn cni, add zone-name label 'k8s.ovn.org/zone-name=<node-name>'

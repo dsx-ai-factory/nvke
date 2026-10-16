@@ -46,7 +46,7 @@ func RunCreatePollReadyAndDeleteFlow(t *testing.T, env *TestEnv, profile Runtime
 		TenantId:       "d282929f-49d5-4dec-8d27-21ceb30ade19",
 		InstanceTypeId: *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 		VpcId:          "vpc-mock-001",
-		Labels:         map[string]string{"nke.nvidia.com/node-id": instanceName},
+		Labels:         map[string]string{"nvke.nvidia.com/node-id": instanceName},
 		Interfaces: []forgesdk.InterfaceCreateRequest{
 			{SubnetId: forgesdk.PtrString("subnet-mock-001")},
 		},
@@ -89,7 +89,7 @@ func RunPatchLabelsAndRebootFlow(t *testing.T, env *TestEnv, profile RuntimeProf
 		TenantId:       "d282929f-49d5-4dec-8d27-21ceb30ade19",
 		InstanceTypeId: *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 		VpcId:          "vpc-mock-001",
-		Labels:         map[string]string{"nke.nvidia.com/node-id": instanceName},
+		Labels:         map[string]string{"nvke.nvidia.com/node-id": instanceName},
 		Interfaces: []forgesdk.InterfaceCreateRequest{
 			{SubnetId: forgesdk.PtrString("subnet-mock-001")},
 		},
@@ -122,13 +122,13 @@ func RunPatchLabelsAndRebootFlow(t *testing.T, env *TestEnv, profile RuntimeProf
 	t.Logf("Pre-reboot checks passed: marker written, boot count = %d", boots)
 
 	env.PatchInstance(created.GetId(), &forgesdk.InstanceUpdateRequest{
-		Labels:        map[string]string{"nke.nvidia.com/ip-address": "192.168.200.10"},
+		Labels:        map[string]string{"nvke.nvidia.com/ip-address": "192.168.200.10"},
 		TriggerReboot: *forgesdk.NewNullableBool(forgesdk.PtrBool(true)),
 	})
 
 	WaitForInstanceStateChange(t, env, profile, created.GetId(), "ready")
 	updated := WaitForInstanceState(t, env, profile, created.GetId(), "ready")
-	if updated.GetLabels()["nke.nvidia.com/ip-address"] != "192.168.200.10" {
+	if updated.GetLabels()["nvke.nvidia.com/ip-address"] != "192.168.200.10" {
 		t.Fatalf("[%s] instance %s reached ready without patched label", profile.Name, created.GetId())
 	}
 
@@ -174,7 +174,7 @@ func RunVMToVMConnectivityFlow(t *testing.T, env *TestEnv, profile RuntimeProfil
 			TenantId:       "d282929f-49d5-4dec-8d27-21ceb30ade19",
 			InstanceTypeId: *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 			VpcId:          "vpc-mock-001",
-			Labels:         map[string]string{"nke.nvidia.com/node-id": name},
+			Labels:         map[string]string{"nvke.nvidia.com/node-id": name},
 			Interfaces: []forgesdk.InterfaceCreateRequest{
 				{SubnetId: forgesdk.PtrString("subnet-mock-001")},
 			},
@@ -320,7 +320,7 @@ boot
 		TenantId:       "d282929f-49d5-4dec-8d27-21ceb30ade19",
 		InstanceTypeId: *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 		VpcId:          "vpc-mock-001",
-		Labels:         map[string]string{"nke.nvidia.com/node-id": instanceName},
+		Labels:         map[string]string{"nvke.nvidia.com/node-id": instanceName},
 		IpxeScript:     *forgesdk.NewNullableString(forgesdk.PtrString(ipxeScript)),
 		UserData:       *forgesdk.NewNullableString(forgesdk.PtrString(userData)),
 		Interfaces: []forgesdk.InterfaceCreateRequest{
@@ -457,7 +457,7 @@ boot
 		TenantId:         "d282929f-49d5-4dec-8d27-21ceb30ade19",
 		InstanceTypeId:   *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 		VpcId:            "vpc-mock-001",
-		Labels:           map[string]string{"nke.nvidia.com/node-id": instanceName},
+		Labels:           map[string]string{"nvke.nvidia.com/node-id": instanceName},
 		IpxeScript:       *forgesdk.NewNullableString(forgesdk.PtrString(productionAMD64Script)),
 		UserData:         *forgesdk.NewNullableString(forgesdk.PtrString(userData)),
 		PhoneHomeEnabled: forgesdk.PtrBool(true),
@@ -626,7 +626,7 @@ boot
 		TenantId:         "d282929f-49d5-4dec-8d27-21ceb30ade19",
 		InstanceTypeId:   *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 		VpcId:            "vpc-mock-001",
-		Labels:           map[string]string{"nke.nvidia.com/node-id": instanceName},
+		Labels:           map[string]string{"nvke.nvidia.com/node-id": instanceName},
 		IpxeScript:       *forgesdk.NewNullableString(forgesdk.PtrString(productionIPXEScript)),
 		UserData:         *forgesdk.NewNullableString(forgesdk.PtrString(userData)),
 		PhoneHomeEnabled: forgesdk.PtrBool(true),
@@ -800,7 +800,7 @@ func RunSSHVerificationFlow(t *testing.T, env *TestEnv, profile RuntimeProfile) 
 		InstanceTypeId: *forgesdk.NewNullableString(forgesdk.PtrString("itype-mock-001")),
 		VpcId:          "vpc-mock-001",
 		UserData:       *forgesdk.NewNullableString(forgesdk.PtrString(userData)),
-		Labels:         map[string]string{"nke.nvidia.com/node-id": instanceName},
+		Labels:         map[string]string{"nvke.nvidia.com/node-id": instanceName},
 		Interfaces: []forgesdk.InterfaceCreateRequest{
 			{SubnetId: forgesdk.PtrString("subnet-mock-001")},
 		},

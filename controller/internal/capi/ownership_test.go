@@ -15,6 +15,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func TestValidateSecretOwnership(t *testing.T) {
@@ -31,9 +32,9 @@ func TestValidateSecretOwnership(t *testing.T) {
 	t.Run("matching cluster-id passes", func(t *testing.T) {
 		t.Parallel()
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
-			constants.LabelKeyClusterID:      cluster.ID.String(),
-			constants.LabelKeyKubeconfigMode: constants.LabelValueKubeconfigModeSPIRE,
-			constants.LabelKeyNvkeManagedBy:  "cloud-workflow-engine",
+			keys.ClusterID.String():      cluster.ID.String(),
+			keys.KubeconfigMode.String(): constants.LabelValueKubeconfigModeSPIRE,
+			keys.ManagedBy.String():      "cloud-workflow-engine",
 		}}}
 		require.NoError(t, capi.ValidateSecretOwnership(secret, cluster))
 	})
@@ -43,7 +44,7 @@ func TestValidateSecretOwnership(t *testing.T) {
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 			Name:      "alpha-kubeconfig",
 			Namespace: constants.NamespaceNVKESystem,
-			Labels:    map[string]string{constants.LabelKeyClusterID: uuid.New().String()},
+			Labels:    map[string]string{keys.ClusterID.String(): uuid.New().String()},
 		}}
 		err := capi.ValidateSecretOwnership(secret, cluster)
 		require.Error(t, err)
@@ -56,8 +57,8 @@ func TestValidateSecretOwnership(t *testing.T) {
 			Name:      "alpha-kubeconfig",
 			Namespace: constants.NamespaceNVKESystem,
 			Labels: map[string]string{
-				constants.LabelKeyClusterID:      cluster.ID.String(),
-				constants.LabelKeyKubeconfigMode: constants.LabelValueKubeconfigModeAdmin,
+				keys.ClusterID.String():      cluster.ID.String(),
+				keys.KubeconfigMode.String(): constants.LabelValueKubeconfigModeAdmin,
 			},
 		}}
 		require.NoError(t, capi.ValidateSecretOwnership(secret, cluster))
@@ -70,9 +71,9 @@ func TestSetSecretOwnership(t *testing.T) {
 	cluster := db.Cluster{ID: uuid.New(), Name: "alpha"}
 	secret := &corev1.Secret{}
 	capi.SetSecretOwnership(secret, cluster, constants.LabelValueKubeconfigModeSPIRE, "cloud-workflow-engine")
-	assert.Equal(t, "cloud-workflow-engine", secret.Labels[constants.LabelKeyNvkeManagedBy])
-	assert.Equal(t, cluster.ID.String(), secret.Labels[constants.LabelKeyClusterID])
-	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, secret.Labels[constants.LabelKeyKubeconfigMode])
+	assert.Equal(t, "cloud-workflow-engine", secret.Labels[keys.ManagedBy.String()])
+	assert.Equal(t, cluster.ID.String(), secret.Labels[keys.ClusterID.String()])
+	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, secret.Labels[keys.KubeconfigMode.String()])
 }
 
 func TestIsSPIREExecKubeconfig(t *testing.T) {

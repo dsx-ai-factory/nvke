@@ -8,19 +8,19 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func applyKubernetesNodeHealth(controllerNode *db.Node, kubeNode *corev1.Node) {
 	controllerNode.Conditions.KubernetesReady = fromKubeCondition(controllerNode.Conditions.KubernetesReady, kubeNode, string(corev1.NodeReady))
 	controllerNode.Conditions.KubernetesUnschedulable = kubernetesUnschedulableCondition(controllerNode.Conditions.KubernetesUnschedulable, kubeNode)
 
-	needsRecycle := fromKubeCondition(controllerNode.Conditions.MarkedForRecycling, kubeNode, constants.NodeConditionTypeNeedsRecycle)
+	needsRecycle := fromKubeConditionKey(controllerNode.Conditions.MarkedForRecycling, kubeNode, keys.NeedsRecycle)
 	if needsRecycle.Status == db.ConditionStatusTrue {
 		controllerNode.Conditions.MarkedForRecycling = needsRecycle
 	}
-	needsRepair := fromKubeCondition(controllerNode.Conditions.MarkedForRepair, kubeNode, constants.NodeConditionTypeNeedsRepair)
+	needsRepair := fromKubeConditionKey(controllerNode.Conditions.MarkedForRepair, kubeNode, keys.NeedsRepair)
 	if needsRepair.Status == db.ConditionStatusTrue {
 		controllerNode.Conditions.MarkedForRepair = needsRepair
 	}
@@ -49,12 +49,23 @@ func describeConditionChanges(previous, current db.NodeConditions) []string {
 }
 
 func fromKubeCondition(existing db.Condition, kubeNode *corev1.Node, conditionType string) db.Condition {
+	return matchKubeCondition(existing, kubeNode, func(t string) bool { return t == conditionType }, conditionType)
+}
+
+// fromKubeConditionKey is fromKubeCondition for a condition this controller
+// owns, so a node still carrying the condition under the legacy domain is read
+// rather than reported as missing.
+func fromKubeConditionKey(existing db.Condition, kubeNode *corev1.Node, key keys.Key) db.Condition {
+	return matchKubeCondition(existing, kubeNode, key.Matches, key.String())
+}
+
+func matchKubeCondition(existing db.Condition, kubeNode *corev1.Node, matches func(string) bool, name string) db.Condition {
 	if kubeNode == nil {
 		return updatedCondition(existing, db.ConditionStatusUnknown, "Node data not available")
 	}
 
 	for _, condition := range kubeNode.Status.Conditions {
-		if string(condition.Type) == conditionType {
+		if matches(string(condition.Type)) {
 			return db.Condition{
 				Status:  dbStatusFromKubeStatus(condition.Status),
 				Message: condition.Message,
@@ -65,7 +76,7 @@ func fromKubeCondition(existing db.Condition, kubeNode *corev1.Node, conditionTy
 		}
 	}
 
-	return updatedCondition(existing, db.ConditionStatusUnknown, fmt.Sprintf("Condition %s not found on node", conditionType))
+	return updatedCondition(existing, db.ConditionStatusUnknown, fmt.Sprintf("Condition %s not found on node", name))
 }
 
 func kubernetesUnschedulableCondition(existing db.Condition, kubeNode *corev1.Node) db.Condition {

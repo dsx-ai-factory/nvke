@@ -36,9 +36,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
@@ -104,8 +104,8 @@ func TestIssueAdminBreakglassMints(t *testing.T) {
 	assert.NotEmpty(t, inflight.Data[breakglassKeySecretKey])
 	assert.Empty(t, inflight.Data[KubeconfigSecretKey])
 	assert.Equal(t, cluster.Name, inflight.Labels[clusterv1.ClusterNameLabel])
-	assert.Equal(t, "cloud-workflow-engine", inflight.Labels[constants.LabelKeyNvkeManagedBy])
-	assert.Equal(t, cluster.ID.String(), inflight.Labels[constants.LabelKeyClusterID])
+	assert.Equal(t, "cloud-workflow-engine", inflight.Labels[keys.ManagedBy.String()])
+	assert.Equal(t, cluster.ID.String(), inflight.Labels[keys.ClusterID.String()])
 	assertOwnedByCAPICluster(t, inflight, cluster)
 
 	got, err := c.issueAdminBreakglass(ctx, adminConf, cluster, nil)

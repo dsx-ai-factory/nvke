@@ -28,6 +28,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	dbfilters "github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 	"github.com/dsx-ai-factory/nvke/controller/internal/teleport"
@@ -146,7 +147,7 @@ func (c *Controller) nodeKeysForNicoMachine(ctx context.Context, nicoMachine *ni
 		return nil
 	}
 
-	hostID := machine.GetAnnotations()[constants.MachineAnnotationKeyHostID]
+	hostID := keys.MachineHostID.Value(machine.GetAnnotations())
 	nodeID, err := uuid.Parse(hostID)
 	if err != nil {
 		c.logger.Error("Machine has invalid host ID annotation, skipping Teleport token reconciliation",

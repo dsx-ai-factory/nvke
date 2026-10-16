@@ -912,6 +912,10 @@ func sameLogicalOwner(existingLabels, newLabels map[string]string) bool {
 }
 
 func ownerLabel(labels map[string]string) string {
+	if v := labels["nvke.nvidia.com/node-id"]; v != "" {
+		return v
+	}
+	// The controller wrote this key before the nvke.nvidia.com rename.
 	if v := labels["nke.nvidia.com/node-id"]; v != "" {
 		return v
 	}
