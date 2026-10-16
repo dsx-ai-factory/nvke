@@ -270,7 +270,7 @@ func TestInstallCNIOVNRequiresHostOpenVSwitch(t *testing.T) {
 		CniVariant:     pb.CniVariant_CNI_VARIANT_OVN,
 		PodNetworkCidr: "10.244.0.0/16",
 		ServiceCidr:    "10.96.0.0/12",
-	}, "nvke-cni-ovn-charts-1.6.0")
+	}, "nvke-cni-ovn-charts-2.4.2")
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, errOvnRequiresHostOpenVSwitch), "got %v", err)
 }
@@ -300,7 +300,7 @@ func TestNvkeCniAptSpec(t *testing.T) {
 
 	spec, err = nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_UNSPECIFIED, pb.CniAptRole_CNI_APT_ROLE_CHARTS, "")
 	assert.NoError(t, err)
-	assert.Equal(t, "nvke-cni-ovn-charts-1.6.0", spec)
+	assert.Equal(t, "nvke-cni-ovn-charts-2.4.2", spec)
 
 	spec, err = nvkeCniAptSpec(pb.CniVariant_CNI_VARIANT_CALICO, pb.CniAptRole_CNI_APT_ROLE_IMAGES, "")
 	assert.NoError(t, err)
@@ -653,21 +653,25 @@ func TestOVNKubernetesCNIConfig(t *testing.T) {
 
 		assert.Equal(t, ovnDummyGatewayBridgeEnabled, config[ovnDummyGatewayBridgeHelmValue])
 		assert.Equal(t, ovnDummyGatewayOpts, config[ovnGatewayOptsHelmValue])
+		assert.Equal(t, ovnPodHostPortDisabled, config[ovnPodHostPortHelmValue])
 		assert.Equal(t, "Never", config["global.image.pullPolicy"])
 		assert.NotContains(t, request, ovnDummyGatewayBridgeHelmValue)
 		assert.NotContains(t, request, ovnGatewayOptsHelmValue)
+		assert.NotContains(t, request, ovnPodHostPortHelmValue)
 	})
 
 	t.Run("explicit gateway settings win", func(t *testing.T) {
 		request := map[string]string{
 			ovnDummyGatewayBridgeHelmValue: "false",
 			ovnGatewayOptsHelmValue:        "--gateway-interface=custom0 --allow-no-uplink",
+			ovnPodHostPortHelmValue:        "true",
 		}
 
 		config := ovnKubernetesCNIConfig(request, "netdev")
 
 		assert.Equal(t, "false", config[ovnDummyGatewayBridgeHelmValue])
 		assert.Equal(t, "--gateway-interface=custom0 --allow-no-uplink", config[ovnGatewayOptsHelmValue])
+		assert.Equal(t, "true", config[ovnPodHostPortHelmValue])
 	})
 
 	t.Run("kernel container datapath selects a dummy gateway bridge", func(t *testing.T) {
@@ -677,6 +681,7 @@ func TestOVNKubernetesCNIConfig(t *testing.T) {
 
 		assert.Equal(t, ovnDummyGatewayBridgeEnabled, config[ovnDummyGatewayBridgeHelmValue])
 		assert.Equal(t, ovnDummyGatewayOpts, config[ovnGatewayOptsHelmValue])
+		assert.Equal(t, ovnPodHostPortDisabled, config[ovnPodHostPortHelmValue])
 		assert.Equal(t, "Never", config["global.image.pullPolicy"])
 		assert.NotContains(t, request, ovnDummyGatewayBridgeHelmValue)
 	})
@@ -689,6 +694,7 @@ func TestOVNKubernetesCNIConfig(t *testing.T) {
 		assert.Equal(t, request, config)
 		assert.NotContains(t, config, ovnDummyGatewayBridgeHelmValue)
 		assert.NotContains(t, config, ovnGatewayOptsHelmValue)
+		assert.NotContains(t, config, ovnPodHostPortHelmValue)
 	})
 }
 

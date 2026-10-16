@@ -26,7 +26,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
@@ -154,10 +153,6 @@ type fakeLocalClientRegistry struct {
 
 func (r *fakeLocalClientRegistry) Client() (kubernetes.Interface, error) {
 	return r.client, r.err
-}
-
-func (r *fakeLocalClientRegistry) DynamicClient() (dynamic.Interface, error) {
-	return nil, r.err
 }
 
 func (r *fakeLocalClientRegistry) LocalClient() (*kubernetes.Clientset, error) {

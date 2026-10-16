@@ -199,7 +199,7 @@ The central type. It embeds the generated `UnimplementedNodeAgentServer` and hol
 The RPC surface is split across many files by capability domain: `agent.go`
 (kubeadm/bundles/scripts/upload core), `cni.go`, `etcd_encryption_*.go`,
 `control_plane_graceful_shutdown.go`,
-`patch_apiserver_manifest.go`, `preflight.go`, `update_nke_rbac.go`,
+`patch_apiserver_manifest.go`, `preflight.go`,
 `operations.go` (async framework), `agent_deb.go` (apt).
 
 ### 6.2 State & persistence (`internal/agent/status.go`)
@@ -220,16 +220,14 @@ tolerant of older schemas (normalized on load).
 
 ### 6.3 Kubernetes clients (`internal/k8s/registry.go`)
 
-`ClientRegistry` lazily builds and caches three clients from the admin kubeconfig:
+`ClientRegistry` lazily builds and caches two clients from the admin kubeconfig:
 
 - `Client()` — typed clientset (cluster).
-- `DynamicClient()` — dynamic client (for RBAC apply, arbitrary objects).
 - `LocalClient()` — clientset pinned to `https://127.0.0.1:6443` with TLS
   verification disabled, so reload/readiness waits target *this* node's apiserver
   rather than the VIP.
 
-Kubeconfig read failures surface as a typed `KubeconfigAccessError` so RPCs can
-return `FailedPrecondition` (e.g. "not a control-plane node / no kubeconfig").
+Kubeconfig read and parse failures are returned with context.
 
 ### 6.4 Utilities (`pkg/`)
 
@@ -311,12 +309,9 @@ Kubeadm init/join validate arguments **synchronously** (fail before spawning the
 goroutine), set `phase=…, status=pending`, persist, then run kubeadm in a goroutine
 that updates status on completion. Callers poll `GetKubeadmStatus`.
 
-### 7.7 Allowlist + boundary enforcement
+### 7.7 Staged-file boundary enforcement
 
-Mutations that touch cluster/global state are constrained: `UpdateNKERBAC` accepts
-only a fixed `(kind, name)` allowlist under the `nvke:` or legacy `nke:` name prefix and validates the
-whole manifest before applying anything (all-or-nothing). Staged files are size- and
-path-constrained (absolute, canonical, ≤1 MiB).
+Staged files are size- and path-constrained (absolute, canonical, ≤1 MiB).
 
 ---
 
@@ -348,16 +343,13 @@ Defined in `pkg/agent/proto/node_agent.proto`. Grouped conceptually:
 `StartK8sControlPlaneNodeGracefulShutdown` + `Get…Status`, `StartKubeVipRestore`,
 `PatchAPIServerManifest`.
 
-**Cluster RBAC**
-`UpdateNKERBAC`.
-
 **Node config / ops / introspection**
 `WriteNodeAgentConfig`, `ExecuteScript`, `StreamExecuteScript`, `UploadFileBundle`,
 `GetSupportBundle`.
 
 > **API convention smell / debt:** many RPCs return `status="error"` inside a
 > gRPC-OK response instead of a gRPC error code (historical). Newer RPCs
-> (`UpdateNKERBAC`, `PatchAPIServerManifest`, encryption) use proper codes. A
+> (`PatchAPIServerManifest`, encryption) use proper codes. A
 > deliberate error-model convergence is a good future cleanup. `ExecuteNodePreflight`
 > intentionally returns OK-with-status so orchestrators can poll "not ready yet"
 > without retry storms — that one is by design.
@@ -439,8 +431,8 @@ the VIP back on `lo`. Manifest moves are the control mechanism (kubelet reacts t
   SVID to enumerate/call).
 - **Blast radius:** the agent runs as root and exposes `ExecuteScript` + file upload.
   This is powerful by design; the mTLS boundary + `/nke-service/` path constraint +
-  audit log are the controls. Cluster-touching RPCs add their own allowlists
-  (`UpdateNKERBAC`) and role checks (`isControlPlaneRole`).
+  audit log are the controls. Cluster-touching RPCs add their own role checks
+  (`isControlPlaneRole`).
 - **Secrets handling:** encryption keys and LUKS passphrases pass through RPCs; they
   are held in memory / passed via stdin to `cryptsetup`/`clevis`, not logged.
 

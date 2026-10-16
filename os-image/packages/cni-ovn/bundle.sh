@@ -5,13 +5,13 @@
 # Builds the ovn-kubernetes chart and image for the nvke-cni-ovn-<stream> debs
 # from the dsx-ai-factory/ovn-kubernetes source, pinned to a commit by the lock.
 #
-# Usage: bundle.sh --version 1.6.0 --dist DIR --lock-dir DIR --crane PATH
+# Usage: bundle.sh --version 2.4.2 --dist DIR --lock-dir DIR --crane PATH
 #                  [--arch amd64] [--write-lock]
 #
 # Env: OVN_KUBERNETES_TOKEN (else GITHUB_TOKEN) reads the source while the fork
 #      is not public.
-#      OVN_KUBERNETES_REF is the branch or commit --write-lock locks
-#      (default release-<version>). OVN_BUILDER_IMAGE and OVN_UBUNTU_BASE_IMAGE
+#      OVN_KUBERNETES_REF is the tag, branch or commit --write-lock locks
+#      (default v<version>, the release tag). OVN_BUILDER_IMAGE and OVN_UBUNTU_BASE_IMAGE
 #      override the image build's Go and runtime bases. OCI_BIN picks docker.
 #
 # The lock and archive handling is ../cni-common/bundle-lib.sh.
@@ -24,8 +24,8 @@ CNI=cni-ovn
 source "$(dirname "${BASH_SOURCE[0]}")/../cni-common/bundle-lib.sh"
 
 parse_bundle_args "$@"
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.0$ ]] ||
-  die "--version must be a bare chart version with patch 0, such as 1.6.0, got ${VERSION}"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+  die "--version must be a chart version such as 2.4.2, got ${VERSION}"
 
 REPO="${OVN_KUBERNETES_REPO:-dsx-ai-factory/ovn-kubernetes}"
 API="https://api.github.com/repos/${REPO}"
@@ -51,7 +51,7 @@ fi
 # --write-lock resolves the ref to a commit, the one place a moving ref is read.
 # A build fetches the commit the lock names.
 if [[ "$WRITE_LOCK" == true ]]; then
-  ref="${OVN_KUBERNETES_REF:-release-${VERSION}}"
+  ref="${OVN_KUBERNETES_REF:-v${VERSION}}"
   fetch_sha="${WORK}/ref.sha"
   CURL_CONFIG="${CURL_CONFIG}"$'\n''header = "Accept: application/vnd.github.sha"' \
     fetch "${API}/commits/${ref}" "$fetch_sha"
@@ -109,12 +109,15 @@ cp -R "$chart_src" "${STAGE}/charts/ovn-kubernetes"
 # the prefix to a registry-less repository such as "ovnkube".
 # Enabled by the chart's default tags. A new image key in the fork renders a
 # registry pull; the helm check below catches it at build time.
+# Pod hostPort is on (docs/features/hostport.md in the fork). It needs shared
+# gateway mode; the agent turns it off on container nodes, which run local.
 cat >"${STAGE}/charts/ovn-kubernetes/values-nke.yaml" <<EOF
 tags:
   ovs-node: false
 global:
   imageRepositoryPrefix: ${IMAGE_PREFIX}
   useImageDigest: false
+  enablePodHostPort: true
 ovnkube-control-plane:
   ovnkubeControlPlane:
     image:
@@ -140,12 +143,15 @@ EOF
 # The embedded image is the only one the node can run without a registry, so a
 # rendered image that is not it is a defect to catch here, not at cluster create.
 if command -v helm >/dev/null 2>&1; then
-  rendered="$(helm template ovn "${STAGE}/charts/ovn-kubernetes" \
+  manifest="$(helm template ovn "${STAGE}/charts/ovn-kubernetes" \
     -f "${STAGE}/charts/ovn-kubernetes/values.yaml" -f "${STAGE}/charts/ovn-kubernetes/values-nke.yaml" \
     --set k8sAPIServer=https://127.0.0.1:6443 --set-string podNetwork=10.244.0.0/16/24 \
-    --set serviceNetwork=10.96.0.0/16 --set global.corednsClusterIP=10.96.0.10 | awk '$1 == "image:" { print $2 }' | sort -u)"
+    --set serviceNetwork=10.96.0.0/16 --set global.corednsClusterIP=10.96.0.10)"
+  rendered="$(awk '$1 == "image:" { print $2 }' <<<"$manifest" | sort -u)"
   [[ "$rendered" == "$IMAGE_REF" ]] ||
     die "the chart renders images other than ${IMAGE_REF}: ${rendered//$'\n'/ }"
+  grep -A1 'name: OVNKUBE_POD_HOST_PORT_ENABLE' <<<"$manifest" | grep -q 'value: "true"' ||
+    die "the chart does not enable pod hostPort; check global.enablePodHostPort"
 else
   echo "${CNI}: note: helm not found; skipped checking that the chart renders only ${IMAGE_REF}" >&2
 fi

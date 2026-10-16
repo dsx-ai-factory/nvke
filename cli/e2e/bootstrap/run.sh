@@ -332,8 +332,8 @@ log "building the OVN packages for post-init CNI"
 BUNDLE_ARCH="$(go env GOARCH)"
 export BUNDLE_ARCH
 bash "${CLI_DIR}/../controller/hack/ci/prepare-capd-bundles.sh" "${CNI_BUNDLE_DIR}"
-CAPD_CNI_CHARTS_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-charts-1.6.0_1.6.0_${BUNDLE_ARCH}.deb"
-CAPD_CNI_IMAGES_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-images-1.6.0_1.6.0_${BUNDLE_ARCH}.deb"
+CAPD_CNI_CHARTS_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-charts-2.4.2_2.4.2_${BUNDLE_ARCH}.deb"
+CAPD_CNI_IMAGES_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-images-2.4.2_2.4.2_${BUNDLE_ARCH}.deb"
 CAPD_HELM_DEB_PATH="${CNI_BUNDLE_DIR}/nke-e2e-helm.deb"
 export CAPD_CNI_CHARTS_DEB_PATH CAPD_CNI_IMAGES_DEB_PATH CAPD_HELM_DEB_PATH
 if [ ! -f "${CAPD_CNI_CHARTS_DEB_PATH}" ] || [ ! -f "${CAPD_CNI_IMAGES_DEB_PATH}" ] || [ ! -f "${CAPD_HELM_DEB_PATH}" ]; then
@@ -419,7 +419,7 @@ RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.rendered.yaml"
   --nodes "${NVKECTL_E2E_HOSTS_CSV}" \
   --set cluster.k8sVersion=1.34.8 \
   --set cluster.cniName=ovn-kubernetes \
-  --set cluster.cniVersion=1.6.0 \
+  --set cluster.cniVersion=2.4.2 \
   --set cluster.podCidr=192.168.0.0/16 \
   --set cluster.serviceCidr=10.96.0.0/12 \
   --set cluster.kubeletConfig.systemReservedMemory=512Mi \

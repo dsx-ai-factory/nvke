@@ -26,7 +26,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/dsx-ai-factory/nvke/agent/internal/k8s"
 	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
@@ -1401,65 +1400,6 @@ func TestProcessKubeadmInit_DisablesRegistration(t *testing.T) {
 	var written map[string]interface{}
 	require.NoError(t, yaml.Unmarshal(writer.WrittenData, &written))
 	assert.Equal(t, false, written["registerNode"])
-}
-
-func TestUpdateNKERBACPreconditions(t *testing.T) {
-	t.Run("non-control-plane node is rejected", func(t *testing.T) {
-		server := &NodeAgentServer{
-			NodeStatus: &NodeStatus{Role: WorkerRole},
-		}
-
-		resp, err := server.UpdateNKERBAC(context.Background(), &pb.UpdateNKERBACRequest{
-			Manifest: []byte(allowedClusterRoleManifest),
-		})
-
-		require.Error(t, err)
-		assert.Nil(t, resp)
-		assert.Equal(t, codes.FailedPrecondition, status.Code(err))
-		require.ErrorContains(t, err, "UpdateNKERBAC: control-plane node required")
-		require.ErrorContains(t, err, `current role "worker"`)
-	})
-
-	t.Run("nil NodeStatus is rejected as non-control-plane", func(t *testing.T) {
-		server := &NodeAgentServer{}
-
-		resp, err := server.UpdateNKERBAC(context.Background(), &pb.UpdateNKERBACRequest{
-			Manifest: []byte(allowedClusterRoleManifest),
-		})
-
-		require.Error(t, err)
-		assert.Nil(t, resp)
-		assert.Equal(t, codes.FailedPrecondition, status.Code(err))
-		require.ErrorContains(t, err, "UpdateNKERBAC: control-plane node required")
-	})
-
-	t.Run("missing kubeconfig is rejected", func(t *testing.T) {
-		server := newUpdateRBACServer(k8s.NewClientRegistry("/missing/admin.conf"))
-
-		resp, err := server.UpdateNKERBAC(context.Background(), &pb.UpdateNKERBACRequest{
-			Manifest: []byte(allowedClusterRoleManifest),
-		})
-
-		require.Error(t, err)
-		assert.Nil(t, resp)
-		assert.Equal(t, codes.FailedPrecondition, status.Code(err))
-		require.ErrorContains(t, err, "UpdateNKERBAC: kubeconfig precondition failed")
-	})
-
-	t.Run("unparseable kubeconfig is internal", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "admin.conf")
-		require.NoError(t, os.WriteFile(path, []byte("not: [valid"), 0o600))
-		server := newUpdateRBACServer(k8s.NewClientRegistry(path))
-
-		resp, err := server.UpdateNKERBAC(context.Background(), &pb.UpdateNKERBACRequest{
-			Manifest: []byte(allowedClusterRoleManifest),
-		})
-
-		require.Error(t, err)
-		assert.Nil(t, resp)
-		assert.Equal(t, codes.Internal, status.Code(err))
-		require.ErrorContains(t, err, "UpdateNKERBAC: initializing Kubernetes client")
-	})
 }
 
 func TestSetIndexURLOptionalBundleServer(t *testing.T) {
