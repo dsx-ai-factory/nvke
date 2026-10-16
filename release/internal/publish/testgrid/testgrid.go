@@ -239,9 +239,16 @@ func (d *Destination) buildPrefix(result *qualification.Result) (string, error) 
 	stream := combo.Stream
 	capabilities := stream.Capabilities
 
-	provider, gpu, kube := capabilities["provider"], capabilities["gpu"], capabilities["kube"]
-	if provider == "" || gpu == "" || kube == "" {
-		return "", fmt.Errorf("stream %q capabilities have no provider/gpu/kube (got %v)", stream.Name, capabilities)
+	// gpu is deliberately not required here: neither it nor any other
+	// capability builds the path below (group/dashboard/tab come from
+	// Subject/stream.Name/stream.Suite, not Capabilities), and a CPU-only
+	// stream -- a DSX leg, confirmed live in run 38962892184 -- genuinely
+	// has no gpu value. GPU in meta is already omitempty for the same
+	// reason. provider and kube still gate: unlike gpu they have no
+	// omitempty on meta and are read by downstream TestGrid config.
+	provider, kube := capabilities["provider"], capabilities["kube"]
+	if provider == "" || kube == "" {
+		return "", fmt.Errorf("stream %q capabilities have no provider/kube (got %v)", stream.Name, capabilities)
 	}
 	if stream.Suite == "" {
 		return "", fmt.Errorf("stream %q has no suite, so there is no tab to publish it under", stream.Name)

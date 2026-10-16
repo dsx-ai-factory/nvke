@@ -200,7 +200,6 @@ func TestBuildPrefixRejectsMissingCapabilities(t *testing.T) {
 		capabilities map[string]string
 	}{
 		{"no provider", map[string]string{"gpu": "h100", "kube": "1.34"}},
-		{"no gpu", map[string]string{"provider": "forge", "kube": "1.34"}},
 		{"no kube", map[string]string{"provider": "forge", "gpu": "h100"}},
 		{"no capabilities at all", map[string]string{}},
 	} {
@@ -209,9 +208,22 @@ func TestBuildPrefixRejectsMissingCapabilities(t *testing.T) {
 			d := &Destination{}
 
 			if _, err := d.buildPrefix(result); err == nil {
-				t.Fatal("buildPrefix returned nil, want an error for missing provider/gpu/kube")
+				t.Fatal("buildPrefix returned nil, want an error for missing provider/kube")
 			}
 		})
+	}
+}
+
+// A CPU-only stream -- DSX, confirmed live in run 38962892184 -- has no gpu
+// capability at all. buildPrefix must not reject it: gpu builds no part of
+// the path (group/dashboard/tab come from Subject/stream.Name/stream.Suite),
+// so requiring it would just be refusing to publish a leg that ran fine.
+func TestBuildPrefixSucceedsWithoutGPU(t *testing.T) {
+	result := testResult("nvke", "cli-v1.0.0", "dsx-arm64-ubuntu-24.04-kube-1.36", "12345", "", map[string]string{"provider": "dsx", "kube": "1.36"})
+	d := &Destination{}
+
+	if _, err := d.buildPrefix(result); err != nil {
+		t.Fatalf("buildPrefix() = %v, want no error for a capability map with no gpu", err)
 	}
 }
 
