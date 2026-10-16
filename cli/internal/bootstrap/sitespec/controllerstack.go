@@ -87,19 +87,23 @@ func TemplateSafe(value string) bool {
 
 // NodeLoginFromEnv reads the login rendered into every node CAPNICo creates
 // from NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD, trimmed. It names each one
-// that is unset, so the bootstrap and the stack install take the same login
-// from the same place.
+// that is unset or holds a character the templates cannot carry, one problem
+// per line, applying the same rules as StackCredentialsFromEnv, so the
+// bootstrap and the stack install accept the same login.
 func NodeLoginFromEnv() (user, password string, err error) {
 	user = strings.TrimSpace(envalias.Get(EnvNodeUser))
 	password = strings.TrimSpace(envalias.Get(EnvNodePassword))
-	var missing []string
+	var problems []string
 	for _, env := range [][2]string{{EnvNodeUser, user}, {EnvNodePassword, password}} {
-		if env[1] == "" {
-			missing = append(missing, env[0]+" is not set")
+		switch {
+		case env[1] == "":
+			problems = append(problems, env[0]+" is not set: the controller refuses to render a node's user data without the login")
+		case !TemplateSafe(env[1]):
+			problems = append(problems, env[0]+": the value holds a character the templates cannot carry (a quote, a backslash or a control character)")
 		}
 	}
-	if len(missing) > 0 {
-		return "", "", errors.New(strings.Join(missing, "\n") + ": the controller refuses to render a node's user data without the login")
+	if len(problems) > 0 {
+		return "", "", errors.New(strings.Join(problems, "\n"))
 	}
 	return user, password, nil
 }

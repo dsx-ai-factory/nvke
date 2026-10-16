@@ -6,13 +6,13 @@ package sitespec
 import (
 	"encoding/json"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gopkg.in/yaml.v3"
 
+	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
@@ -274,7 +274,7 @@ func (v *validator) checkNicoCredentials(inv *SiteSpec) {
 // site spec is valid for the stack install, which does not send this token.
 func (v *validator) checkNicoEndpointScheme(inv *SiteSpec) {
 	n := inv.Infra.Nico
-	if n == nil || n.Remote == nil || os.Getenv(NicoInsecureEndpointEnv) == "1" {
+	if n == nil || n.Remote == nil || envalias.Get(NicoInsecureEndpointEnv) == "1" {
 		return
 	}
 	if u, err := url.Parse(n.Remote.Endpoint); err == nil && u.Scheme == "http" {

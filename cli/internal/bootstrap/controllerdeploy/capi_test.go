@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
+	"github.com/dsx-ai-factory/nvke/cli/internal/redact"
 )
 
 // TestInstallCAPI_InstallsCoreThenTheProvider pins the two things that are easy
@@ -217,6 +218,21 @@ func nicoTestConfig(t *testing.T) Config {
 	cfg.ReleasesPath = "/srv/releases"
 	cfg.SPIREExternalAddress = "192.0.2.10"
 	return cfg
+}
+
+// TestDeploy_RegistersTheNicoSecretsForRedaction: the NICo token and the node
+// password are masked in diagnostics, as the Postgres password is.
+func TestDeploy_RegistersTheNicoSecretsForRedaction(t *testing.T) {
+	const token, password = "redact-me-nico-token-7f3a", "redact-me-node-password-7f3a"
+	cfg := nicoTestConfig(t)
+	cfg.CAPNICo.Token = token
+	cfg.DGXCTenant.Password = password
+	if err := New(&fakeRunner{}, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	if got := redact.Text("log: " + token + " " + password); strings.Contains(got, token) || strings.Contains(got, password) {
+		t.Errorf("redact.Text = %q; want both secrets masked", got)
+	}
 }
 
 // TestDeploy_NicoInstallsCAPNICoInsteadOfTheProvisionedProvider covers both

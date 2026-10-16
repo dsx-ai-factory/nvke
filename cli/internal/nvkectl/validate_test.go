@@ -199,7 +199,7 @@ func TestValidateSiteSpec_NicoNeedsTheSpireAddressUnlessMTLSIsOff(t *testing.T) 
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"nico.token", "bootstrap-tenant.password"} {
+	for _, name := range []string{"nico.token"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -232,7 +232,7 @@ func TestValidateSiteSpec_NicoNeedsTheSpireAddressUnlessMTLSIsOff(t *testing.T) 
 func TestValidateSiteSpec_NicoOneNodeWithoutVIP(t *testing.T) {
 	path := nicoStackSiteSpec(t, oneNicoNodeNoVIP(t))
 	dir := filepath.Dir(path)
-	for _, name := range []string{"nico.token", "bootstrap-tenant.password"} {
+	for _, name := range []string{"nico.token"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -312,7 +312,7 @@ func TestValidateSiteSpec_NicoExampleWithTheDocumentedReleases(t *testing.T) {
 	if err := os.WriteFile(path, example, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"nico.token", "bootstrap-tenant.password"} {
+	for _, name := range []string{"nico.token"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -399,8 +399,8 @@ func TestValidateSiteSpec_BootstrapFilesAreCheckedInTheBootstrapSection(t *testi
 
 // TestValidateSiteSpec_NicoStackVerdictNeedsNoBootstrapInputs: the controller
 // stack install runs validate sitespec without NVKECTL_NICO_CREDENTIALS, the
-// bootstrap's tenant password and release manifests, and the SPIRE address the
-// bootstrap's nodes dial. A filled-in nico spec still gets its controllerStack
+// bootstrap's release manifests, and the SPIRE address the bootstrap's nodes
+// dial. A filled-in nico spec still gets its controllerStack
 // verdict and exits 0; --bootstrap-only is where those inputs fail.
 func TestValidateSiteSpec_NicoStackVerdictNeedsNoBootstrapInputs(t *testing.T) {
 	path := nicoStackSiteSpec(t, func(text string) string {

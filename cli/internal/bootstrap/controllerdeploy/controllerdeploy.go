@@ -510,6 +510,10 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		}
 	}
 	redact.RegisterSecret(password)
+	// The NICo token and the node password reach the cluster only as Secrets,
+	// but a pod that logged one would otherwise carry it into the diagnostics.
+	redact.RegisterSecret(cfg.CAPNICo.Token)
+	redact.RegisterSecret(cfg.DGXCTenant.Password)
 
 	helmTimeout := cfg.HelmTimeout
 	if helmTimeout <= 0 {

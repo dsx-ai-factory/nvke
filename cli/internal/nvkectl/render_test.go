@@ -133,14 +133,13 @@ func TestRenderDeployPath_NicoOneNodeWithoutVIP(t *testing.T) {
 
 // TestRenderDeployPath_NicoSpecNeedsNoBootstrapFiles: the controller stack
 // install on the site node renders from a nico site spec without the NICo token
-// credentials, the tenant password and the release manifests, which only the
-// bootstrap reads.
+// credentials file and the release manifests, which only the bootstrap reads.
 func TestRenderDeployPath_NicoSpecNeedsNoBootstrapFiles(t *testing.T) {
 	spec := nicoStackSiteSpec(t, nil)
 	// Nothing the bootstrap reads sits beside the spec, and the credentials
 	// variable is unset, as on the site node.
 	t.Setenv("NVKECTL_NICO_CREDENTIALS", "")
-	for _, name := range []string{"bootstrap-tenant.password", "bootstrap-releases"} {
+	for _, name := range []string{"bootstrap-releases"} {
 		if _, err := os.Stat(filepath.Join(filepath.Dir(spec), name)); err == nil {
 			t.Fatalf("%s exists beside the spec; the test needs it absent", name)
 		}

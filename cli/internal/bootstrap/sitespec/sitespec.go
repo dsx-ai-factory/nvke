@@ -565,11 +565,11 @@ func (inv *SiteSpec) appendReferenceChecks(v *validator) {
 	v.checkSpireCA(inv.Spire)
 }
 
-// ValidateBootstrapReferences checks what only the bootstrap reads: that
-// infra.nico.tenant's password file and the infra.nico.releases manifests can be
-// read, and the manifests hold the release the control plane's release names,
-// with relative paths resolved from the site spec's directory; and that
-// NVKECTL_NICO_CREDENTIALS names a readable NICo token file.
+// ValidateBootstrapReferences checks what the bootstrap reads besides the site
+// spec: that the infra.nico.releases manifests can be read and hold the release
+// the control plane's release names, with relative paths resolved from the site
+// spec's directory; that NVKECTL_NICO_CREDENTIALS names a readable NICo token
+// file; and that NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD are set.
 //
 // Load does not call it, because Load also serves commands that never run the
 // bootstrap: the controller stack install on the site node, through

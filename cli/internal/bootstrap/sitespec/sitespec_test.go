@@ -1172,6 +1172,47 @@ func TestReadNicoToken(t *testing.T) {
 	}
 }
 
+// TestNicoCredentials_OldNamesStillWork: the two NICo variables are read under
+// their NKECTL_ names too, as every NVKECTL_ variable is for one release.
+func TestNicoCredentials_OldNamesStillWork(t *testing.T) {
+	t.Setenv(NicoCredentialsEnv, "")
+	t.Setenv("NKECTL_NICO_CREDENTIALS", "/srv/nico.token")
+	if got := NicoCredentialsPath(); got != "/srv/nico.token" {
+		t.Errorf("NicoCredentialsPath() = %q; want the NKECTL_ name read", got)
+	}
+
+	path := writeNicoTemp(t, strings.Replace(nicoYAML, "endpoint: https://nico.example", "endpoint: http://nico.example:18080", 1))
+	inv, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(NicoCredentialsEnv, filepath.Join(filepath.Dir(path), "nico.token"))
+	t.Setenv(NicoInsecureEndpointEnv, "")
+	t.Setenv("NKECTL_NICO_ALLOW_INSECURE_ENDPOINT", "1")
+	if err := inv.ValidateBootstrapReferences(); err != nil && strings.Contains(err.Error(), "cleartext") {
+		t.Errorf("the NKECTL_ opt-in was not read: %v", err)
+	}
+}
+
+// TestNicoCredentials_ATokenInTheVariableIsNotPrinted: an operator who puts the
+// token itself in NVKECTL_NICO_CREDENTIALS, not the path of a file holding it,
+// gets an error that does not echo the token.
+func TestNicoCredentials_ATokenInTheVariableIsNotPrinted(t *testing.T) {
+	const token = "eyJhbGciOiJSUzI1NiJ9.sentinel-nico-token.c2lnbmF0dXJl"
+	if _, err := ReadNicoToken(token); err == nil || strings.Contains(err.Error(), token) || !strings.Contains(err.Error(), "not the token itself") {
+		t.Errorf("ReadNicoToken(token) error = %v; want one that says what is wrong without the token", err)
+	}
+
+	inv, err := Load(writeNicoTemp(t, nicoYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(NicoCredentialsEnv, token)
+	if err := inv.ValidateBootstrapReferences(); err == nil || strings.Contains(err.Error(), token) {
+		t.Errorf("ValidateBootstrapReferences error = %v; want an error without the token", err)
+	}
+}
+
 // TestValidateBootstrapReferences_NothingToCheckWithProvisioned: a provisioned
 // spec names none of those files.
 func TestValidateBootstrapReferences_NothingToCheckWithProvisioned(t *testing.T) {

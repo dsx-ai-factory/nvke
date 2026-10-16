@@ -1546,7 +1546,7 @@ func nicoSiteSpecFile(t *testing.T) string {
 	}
 	path := writeSiteSpec(t, string(example))
 	dir := filepath.Dir(path)
-	for _, name := range []string{"nico.token", "bootstrap-tenant.password"} {
+	for _, name := range []string{"nico.token"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}

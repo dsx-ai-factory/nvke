@@ -5,10 +5,12 @@ package sitespec
 
 import (
 	"errors"
-	"fmt"
+	"io/fs"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 )
 
 const (
@@ -33,7 +35,7 @@ var structuredCredentialKey = regexp.MustCompile(`(?im)(^|[{,])\s*"?(tokenURL|cl
 
 // NicoCredentialsPath returns the path NVKECTL_NICO_CREDENTIALS names, or "".
 func NicoCredentialsPath() string {
-	return os.Getenv(NicoCredentialsEnv)
+	return envalias.Get(NicoCredentialsEnv)
 }
 
 // ReadNicoToken returns the NICo bearer token from the credentials file at
@@ -41,20 +43,28 @@ func NicoCredentialsPath() string {
 // clientSecret is the client-credentials form, which is refused for now because
 // CAPNICo's credentials Secret takes only a bearer token; anything else is the
 // token itself, and must be one value with no whitespace inside it.
+//
+// The errors name neither path nor content: an operator who sets the variable
+// to the token itself, rather than to a file holding it, must not see the token
+// printed back.
 func ReadNicoToken(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", err
+		var pathErr *fs.PathError
+		if errors.As(err, &pathErr) {
+			err = pathErr.Err
+		}
+		return "", errors.New("the file it names cannot be read (" + err.Error() + "); it must be the path of a file that holds the NICo token, not the token itself")
 	}
 	content := strings.TrimSpace(string(data))
 	switch {
 	case content == "":
-		return "", fmt.Errorf("%s is empty", path)
+		return "", errors.New("the file it names is empty")
 	case structuredCredentialKey.MatchString(content):
-		return "", fmt.Errorf("%s holds tokenURL, clientID or clientSecret: the client-credentials form is not supported yet, "+
-			"because the bootstrap CAPNICo's nico-credentials Secret takes only a bearer token; put the token in the file", path)
+		return "", errors.New("the file it names holds tokenURL, clientID or clientSecret: the client-credentials form is not supported yet, " +
+			"because the bootstrap CAPNICo's nico-credentials Secret takes only a bearer token; put the token in the file")
 	case strings.ContainsAny(content, " \t\r\n"):
-		return "", errors.New(path + " must hold only the NICo token, one value with no whitespace in it")
+		return "", errors.New("the file it names must hold only the NICo token, one value with no whitespace in it")
 	}
 	return content, nil
 }

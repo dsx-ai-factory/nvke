@@ -93,6 +93,8 @@ NVKECTL_SPIRE_CA_CERT_FILE=/etc/nke/spire-ca.crt NVKECTL_SPIRE_CA_KEY_FILE=/etc/
   nvkectl bootstrap site -f sitespec.yaml
 ```
 
+With `infra.provider: nico` the bootstrap also reads the NICo token from the file `NVKECTL_NICO_CREDENTIALS` names, and the login it renders into every node from `NVKECTL_NODE_USER` and `NVKECTL_NODE_PASSWORD`; see [the CLI reference](../../cli/docs/sitespec.md#credential-handling).
+
 Images from a private registry are pulled with nerdctl, so log in to the
 registry with `nerdctl login <registry>` before the bootstrap.
 
@@ -101,7 +103,7 @@ The controller stack install's credentials are listed in
 
 ## Validating the Site Spec
 
-`nvkectl validate sitespec` checks the whole file and reports by section: the fields `bootstrap site` reads, then the `controllerStack:` section the controller stack install reads, with the `REPLACE_*` values still to fill in listed apart from errors. It exits 0 when the `controllerStack:` section is ready. A site spec field that is invalid fails it either way. What only the bootstrap host holds (with `infra.provider nico`: the NICo token, the node login, the release files, `spire.externalAddress`, and the https check on `infra.nico.remote.endpoint`) is reported but does not change the exit status, because the controller stack install runs this command on a host that lacks those inputs; add `--bootstrap-only` to fail on them instead. The two halves are used in sequence: once the bootstrap section is valid, `nvkectl bootstrap site` can run with the file, and the `controllerStack:` section is filled in before the stack install. The output says so. It also checks the environment: the SPIRE CA variables `spire.upstreamCA` requires, and, for the `controllerStack:` section, the install's credentials.
+`nvkectl validate sitespec` checks the whole file and reports by section: the fields `bootstrap site` reads, then the `controllerStack:` section the controller stack install reads, with the `REPLACE_*` values still to fill in listed apart from errors. It exits 0 when the `controllerStack:` section is ready. A site spec field that is invalid fails it either way. What only the bootstrap host holds (with `infra.provider nico`: the NICo token file, the release files, `spire.externalAddress`, and the https check on `infra.nico.remote.endpoint`) is reported but does not change the exit status, because the controller stack install runs this command on a host that lacks those inputs; add `--bootstrap-only` to fail on them instead. The two halves are used in sequence: once the bootstrap section is valid, `nvkectl bootstrap site` can run with the file, and the `controllerStack:` section is filled in before the stack install. The output says so. It also checks the environment: the SPIRE CA variables `spire.upstreamCA` requires, and, for the `controllerStack:` section, the install's credentials.
 
 ```bash
 nvkectl validate sitespec -f sitespec.yaml

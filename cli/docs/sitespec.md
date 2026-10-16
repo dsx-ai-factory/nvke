@@ -152,7 +152,8 @@ finished site controller fills in. The bootstrap controller fills in others:
 | `{{ .SpireServerPort }}` | `30081` |
 | `{{ .TrustDomain }}`, `{{ .TrustBundle }}` | The bootstrap SPIRE server's trust domain and bundle |
 | `{{ .Username }}`, `{{ .HashedPassword }}` | `NVKECTL_NODE_USER` and the password in `NVKECTL_NODE_PASSWORD` |
-`nvkectl bootstrap site` requires it with `nico` unless `--disable-mtls` is
+
+`nvkectl bootstrap site` requires `spire.externalAddress` with `nico` unless `--disable-mtls` is
 passed, since nothing reads it without SPIRE. `--dry-run` applies the same check.
 Setting `spire.externalAddress` with `provisioned` is rejected: those hosts were
 given their SPIRE address when they were provisioned.
@@ -306,9 +307,11 @@ and lists what is still a placeholder; `--bootstrap-only` checks only what
 `bootstrap site` reads. A site spec field that is invalid fails either check.
 Otherwise the exit status of the full check is the controller stack's, because
 the install gates on it from a host that does not hold what only the bootstrap
-host does: with `nico`, the token file, the node login
-and release manifests, and `spire.externalAddress`. The full check reports
-those; `--bootstrap-only` fails on them. A file whose bootstrap half is valid can bootstrap
+host does: with `nico`, the token file, the release manifests,
+`spire.externalAddress` and the https check on `infra.nico.remote.endpoint`.
+The full check reports those and `--bootstrap-only` fails on them. The node
+login is not among them: the stack install reads `NVKECTL_NODE_USER` and
+`NVKECTL_NODE_PASSWORD` too, so both checks fail without them. A file whose bootstrap half is valid can bootstrap
 the cluster before the `controllerStack` section is filled in; the output
 says so.
 
@@ -347,10 +350,12 @@ fields above; the install reads them from there and they are not repeated in
   `bootstrap site` and `validate sitespec` warn about it.
 - With `nico`: `infra.nico` (its `orgID`, `remote`, `controlPlane` and
   `releases`) is required, and the files it names, and the file
-  `NVKECTL_NICO_CREDENTIALS` names, must exist when the bootstrap runs, and
-  `NVKECTL_NODE_USER` and `NVKECTL_NODE_PASSWORD` must be set (`bootstrap site` and
-  `validate sitespec --bootstrap-only` check; a full `validate sitespec`
-  reports them; `render deploy-path` does not); with `provisioned` `infra.nico` is rejected. `spire.externalAddress` is required with
+  `NVKECTL_NICO_CREDENTIALS` names, must exist when the bootstrap runs
+  (`bootstrap site` and `validate sitespec --bootstrap-only` check; a full
+  `validate sitespec` reports them; `render deploy-path` does not). With `nico`,
+  `NVKECTL_NODE_USER` and `NVKECTL_NODE_PASSWORD` must be set for `bootstrap site`,
+  for both `validate sitespec` checks and for `render deploy-path`, since the
+  stack install reads them too. With `provisioned` `infra.nico` is rejected. `spire.externalAddress` is required with
   `nico` unless `--disable-mtls`, which `bootstrap site` and
   `validate sitespec --bootstrap-only` both check. Pass `--disable-mtls` to
   `validate sitespec` as you will to `bootstrap site`, and the file is checked
@@ -567,6 +572,7 @@ values are never logged or printed.
 |---|---|---|
 | `NVKECTL_SPIRE_CA_CERT_FILE`, `NVKECTL_SPIRE_CA_KEY_FILE` | `bootstrap site`, `validate sitespec`, the stack install | Paths to the SPIRE CA certificate and its private key. Required with `spire.upstreamCA: true`, refused without it. See "The SPIRE CA". |
 | `NVKECTL_NICO_TOKEN` | `validate sitespec`, the stack install | NICo API token. |
-| `NVKECTL_NODE_USER` | `validate sitespec`, the stack install | Login account rendered into every tenant node's cloud-init. |
-| `NVKECTL_NODE_PASSWORD` | `validate sitespec`, the stack install | Password for `NVKECTL_NODE_USER`. |
+| `NVKECTL_NODE_USER` | `bootstrap site` (with `nico`), `validate sitespec`, the stack install | Login account rendered into every node's cloud-init: the site's nodes with `nico`, and every tenant node. |
+| `NVKECTL_NODE_PASSWORD` | `bootstrap site` (with `nico`), `validate sitespec`, the stack install | Password for `NVKECTL_NODE_USER`. |
+| `NVKECTL_NICO_CREDENTIALS` | `bootstrap site` (with `nico`), `validate sitespec` | Path to the file holding the NICo token the bootstrap's CAPNICo uses. Not `NVKECTL_NICO_TOKEN`, which is the finished site controller's token. See "NICo credentials". |
 | `NVKECTL_DATABASE_PASSWORD` | `validate sitespec`, the stack install | Postgres password the controller and Temporal share. Keep it: every install of the same site needs the same value. A site installed with `controllerStack.database.passwordFile` sets this variable to that file's contents; the site spec no longer accepts the field. |

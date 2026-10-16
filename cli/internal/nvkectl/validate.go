@@ -54,9 +54,9 @@ no quote, backslash or control character.
 
 The command exits 0 when the controllerStack section is ready, which is what
 the controller stack install gates on. What only the bootstrap host holds, that
-is NVKECTL_NICO_CREDENTIALS, the files infra.nico names and
-spire.externalAddress, is reported but does not fail that run: the install
-host does not have them. --bootstrap-only checks the bootstrap section alone,
+is NVKECTL_NICO_CREDENTIALS, the files infra.nico names, spire.externalAddress
+and the https check on infra.nico.remote.endpoint, is reported but does not
+fail that run: the install host does not have them. --bootstrap-only checks the bootstrap section alone,
 and fails on those, for a file whose controllerStack section is not filled in
 yet.`,
 		Example: `  nvkectl validate sitespec -f sitespec.yaml
@@ -83,10 +83,12 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 	}
 	// The same checks bootstrap site applies before its dry-run return, so a file
 	// this command passes with --bootstrap-only is one that command accepts. They
-	// read what only the bootstrap host holds: the NICo token, the tenant
-	// password and the release manifests, and the SPIRE address the nodes dial.
-	// The controller stack install runs this command without them, so a full
-	// check reports them and judges the file by the controllerStack section.
+	// read what only the bootstrap host holds, the NICo token file, the release
+	// manifests and the SPIRE address the nodes dial, and the node login, which
+	// the stack install also reads. The controller stack install runs this
+	// command without the bootstrap-only inputs, so a full check reports this
+	// section and judges the file by the controllerStack section and its
+	// environment.
 	// Both checks run, so one pass reports every problem.
 	modeErr := spec.CheckBootstrapMode(opts.disableMTLS)
 	if modeErr != nil {
@@ -97,8 +99,8 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 	case bootstrapErr != nil && opts.bootstrapOnly:
 		fmt.Fprintf(out, "bootstrap: %v\n", bootstrapErr)
 	case bootstrapErr != nil:
-		fmt.Fprintf(out, "bootstrap: not ready for nvkectl bootstrap site on this host: %v "+
-			"(not part of the controller stack verdict below; --bootstrap-only fails on it)\n", bootstrapErr)
+		fmt.Fprintf(out, "bootstrap: not ready for nvkectl bootstrap site on this host "+
+			"(--bootstrap-only fails on this; the controller stack verdict below is judged separately): %v\n", bootstrapErr)
 	default:
 		fmt.Fprintln(out, "bootstrap: valid; nvkectl bootstrap site can run with this file")
 	}

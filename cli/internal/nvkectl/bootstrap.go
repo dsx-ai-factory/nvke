@@ -160,10 +160,11 @@ every NVKECTL_* variable.
 Every node becomes a control-plane node. Once the cluster is up, the
 control-plane NoSchedule taint is removed from each node so workloads can run.
 
-With nico, infra.nico names the NICo, the tenant login and the MachineImage and
-ClusterRelease manifests the controller needs; the NICo token is read from the
-file the NVKECTL_NICO_CREDENTIALS variable names; and spire.externalAddress is
-required unless --disable-mtls is set. The nodes'
+With nico, infra.nico names the NICo and the MachineImage and ClusterRelease
+manifests the controller needs; the NICo token is read from the file the
+NVKECTL_NICO_CREDENTIALS variable names; the login rendered into every node
+comes from NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD; and
+spire.externalAddress is required unless --disable-mtls is set. The nodes'
 names and addresses are not printed; read them with "kubectl get nodes -o wide"
 on the finished cluster.
 

@@ -144,6 +144,42 @@ func TestStackCredentialsFromEnv(t *testing.T) {
 	}
 }
 
+// TestNodeLoginFromEnv: the bootstrap reads the login the stack install reads,
+// by the same rules, so a value one accepts the other does not refuse.
+func TestNodeLoginFromEnv(t *testing.T) {
+	t.Setenv(EnvNodeUser, " nke\n")
+	t.Setenv(EnvNodePassword, "pw")
+	if user, password, err := NodeLoginFromEnv(); err != nil || user != "nke" || password != "pw" {
+		t.Errorf("NodeLoginFromEnv = %q, %q, %v; want the trimmed login", user, password, err)
+	}
+	t.Setenv(EnvNodeUser, "  ")
+	t.Setenv(EnvNodePassword, "")
+	_, _, err := NodeLoginFromEnv()
+	for _, want := range []string{EnvNodeUser + " is not set", EnvNodePassword + " is not set"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("unset login: error %v lacks %q", err, want)
+		}
+	}
+	for _, tt := range []struct{ name, value string }{
+		{EnvNodeUser, `a"b`},
+		{EnvNodePassword, `p\w`},
+		{EnvNodePassword, "p\x01w"},
+	} {
+		t.Run(tt.name+" "+tt.value, func(t *testing.T) {
+			t.Setenv(EnvNodeUser, "nke")
+			t.Setenv(EnvNodePassword, "pw")
+			t.Setenv(tt.name, tt.value)
+			_, _, err := NodeLoginFromEnv()
+			if err == nil || !strings.Contains(err.Error(), tt.name+": the value holds a character") {
+				t.Errorf("NodeLoginFromEnv error = %v; want %s refused as StackCredentialsFromEnv refuses it", err, tt.name)
+			}
+			if _, stackErr := StackCredentialsFromEnv(); stackErr == nil {
+				t.Errorf("StackCredentialsFromEnv accepted what NodeLoginFromEnv refuses")
+			}
+		})
+	}
+}
+
 func TestEffectiveTrustDomainAndEndpoint(t *testing.T) {
 	spec := baseSpec(t)
 	spec.Spire.TrustDomain = ""
