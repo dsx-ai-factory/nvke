@@ -172,6 +172,7 @@ func main() {
 	}()
 
 	// Run any new DB migrations
+	// Note: cfg.ProfilesDir feeds the config profile label backfill (20261016120000)
 	if err := migrations.Migrate(ctx, bunDB, cfg.ProfilesDir); err != nil {
 		logger.Error("Failed to migrate database", "error", err)
 		os.Exit(1)

@@ -20,6 +20,7 @@ type profilesDirKey struct{}
 // Migrate applies pending migrations. profilesDir is the controller's profilesDir setting, read by
 // migrations that backfill data from config profiles.
 func Migrate(ctx context.Context, db *bun.DB, profilesDir string) error {
+	// Note: profilesDir is read by 20261016120000_backfill_config_profile_labels.
 	ctx = context.WithValue(ctx, profilesDirKey{}, profilesDir)
 
 	// By default, When a migration fails, Bun still marks the migration as applied.

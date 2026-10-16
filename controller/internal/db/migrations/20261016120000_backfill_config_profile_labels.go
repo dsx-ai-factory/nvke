@@ -43,6 +43,10 @@ const (
 // the profile value is the one existing nodes carry, and new nodes must match.
 // Nothing is applied to existing nodes; they already carry their profile labels.
 //
+// Note: this migration is the reason Migrate takes profilesDir. Revisit it when profilesDir is removed from the
+// controller config or config profiles are no longer mounted. Once every site has applied it, it is safe to delete
+// this migration along with the profilesDir argument.
+//
 //nolint:gochecknoinits // Bun registers migrations at package initialization.
 func init() {
 	migrations.MustRegister(func(ctx context.Context, db *bun.DB) error {

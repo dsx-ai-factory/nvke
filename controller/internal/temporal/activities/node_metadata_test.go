@@ -5,6 +5,7 @@ package activities
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -16,6 +17,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -314,30 +317,61 @@ func TestApplyNodeMetadataControlPlaneConfigNode(t *testing.T) {
 	database.AssertExpectations(t)
 }
 
-func TestApplyNodeMetadataSkipsTenantAccess(t *testing.T) {
+func TestApplyNodeMetadataSkipsTenantAccessWithNothingToApply(t *testing.T) {
+	nodeID := uuid.New()
+	clusterID := uuid.New()
+	nodePoolID := uuid.New()
+	nodeSetID := uuid.New()
+	node := db.Node{ID: nodeID, ClusterID: clusterID, NodePoolID: nodePoolID, NodeSetID: nodeSetID, Name: "worker-0"}
+
+	database := &testutil.MockDB{}
+	database.On("GetNode", mock.Anything, nodeID).Return(node, nil)
+	database.On("GetNodeSet", mock.Anything, nodeSetID).Return(db.NodeSet{ID: nodeSetID, NodePoolID: nodePoolID}, nil)
+	database.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{ID: nodePoolID, ClusterID: clusterID}, nil)
+	provider := &fakeTenantClientProvider{}
+	a := &Activities{db: database, tenantClientProvider: provider}
+
+	result, err := executeApplyNodeMetadataActivity(t, a, ApplyNodeMetadataInput{NodeID: nodeID})
+	require.NoError(t, err)
+	require.Equal(t, "node/worker-0 has no labels or taints to apply", result.Output)
+	require.Equal(t, 0, provider.calls)
+	database.AssertExpectations(t)
+}
+
+func TestApplyNodeMetadataPatchErrors(t *testing.T) {
+	invalidLabels := apierrors.NewInvalid(schema.GroupKind{Kind: "Node"}, "worker-0", field.ErrorList{
+		field.Invalid(field.NewPath("metadata", "labels"), "bad key", "name part must consist of alphanumeric characters"),
+	})
+	invalidTaints := apierrors.NewInvalid(schema.GroupKind{Kind: "Node"}, "worker-0", field.ErrorList{
+		field.NotSupported(field.NewPath("spec", "taints").Index(0).Child("effect"), "Sometimes", []string{"NoSchedule", "PreferNoSchedule", "NoExecute"}),
+	})
 	tests := []struct {
 		name         string
 		poolLabels   map[string]string
 		poolTaints   []db.NodeTaint
-		wantOutput   string
+		patchErr     error
 		wantErr      string
 		wantNonRetry bool
 	}{
 		{
-			name:       "nothing to apply",
-			wantOutput: "node/worker-0 has no labels or taints to apply",
-		},
-		{
-			name:         "invalid stored taint",
-			poolTaints:   []db.NodeTaint{{Key: "example.com/gpu", Value: "true", Effect: "Sometimes"}},
-			wantErr:      `invalid taint effect "Sometimes"`,
-			wantNonRetry: true,
-		},
-		{
-			name:         "invalid stored label",
+			name:         "labels rejected as invalid fail without retry",
 			poolLabels:   map[string]string{"bad key": "value"},
-			wantErr:      `invalid label key "bad key"`,
+			patchErr:     invalidLabels,
+			wantErr:      "failed to apply labels to Kubernetes node worker-0",
 			wantNonRetry: true,
+		},
+		{
+			name:         "taints rejected as invalid fail without retry",
+			poolTaints:   []db.NodeTaint{{Key: "example.com/gpu", Value: "true", Effect: "Sometimes"}},
+			patchErr:     invalidTaints,
+			wantErr:      "failed to apply taints to Kubernetes node worker-0",
+			wantNonRetry: true,
+		},
+		{
+			name:       "other patch errors are retried",
+			poolLabels: map[string]string{"example.com/team": "ml"},
+			patchErr:   apierrors.NewServiceUnavailable("apiserver unavailable"),
+			wantErr:    "failed to apply labels to Kubernetes node worker-0",
 		},
 	}
 	for _, tt := range tests {
@@ -353,21 +387,30 @@ func TestApplyNodeMetadataSkipsTenantAccess(t *testing.T) {
 			database.On("GetNode", mock.Anything, nodeID).Return(node, nil)
 			database.On("GetNodeSet", mock.Anything, nodeSetID).Return(db.NodeSet{ID: nodeSetID, NodePoolID: nodePoolID}, nil)
 			database.On("GetNodePool", mock.Anything, nodePoolID).Return(nodePool, nil)
-			provider := &fakeTenantClientProvider{}
-			a := &Activities{db: database, tenantClientProvider: provider}
+			database.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "cluster-a"}, nil)
 
-			result, err := executeApplyNodeMetadataActivity(t, a, ApplyNodeMetadataInput{NodeID: nodeID})
-			if tt.wantErr != "" {
-				require.ErrorContains(t, err, tt.wantErr)
-				var appErr *temporal.ApplicationError
-				require.ErrorAs(t, err, &appErr)
-				require.Equal(t, tt.wantNonRetry, appErr.NonRetryable())
-			} else {
-				require.NoError(t, err)
-				require.Equal(t, tt.wantOutput, result.Output)
+			scheme := runtime.NewScheme()
+			require.NoError(t, corev1.AddToScheme(scheme))
+			baseClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: node.Name}}).Build()
+			tenantClient := interceptor.NewClient(baseClient, interceptor.Funcs{
+				Patch: func(context.Context, client.WithWatch, client.Object, client.Patch, ...client.PatchOption) error {
+					return tt.patchErr
+				},
+			})
+			a := &Activities{db: database, tenantClientProvider: &fakeTenantClientProvider{tenantClient: tenantClient}}
+
+			_, err := executeApplyNodeMetadataActivity(t, a, ApplyNodeMetadataInput{NodeID: nodeID})
+			require.ErrorContains(t, err, tt.wantErr)
+			// The node's provisioning condition shows this message, so it must carry the Kubernetes error once.
+			conditionMessage := messageForTemporalError(err)
+			require.Contains(t, conditionMessage, tt.wantErr)
+			require.Equal(t, 1, strings.Count(conditionMessage, tt.patchErr.Error()), conditionMessage)
+			var appErr *temporal.ApplicationError
+			require.ErrorAs(t, err, &appErr)
+			require.Equal(t, tt.wantNonRetry, appErr.NonRetryable())
+			if tt.wantNonRetry {
+				require.Equal(t, "InvalidNodeMetadata", appErr.Type())
 			}
-			require.Equal(t, 0, provider.calls)
-			database.AssertExpectations(t)
 		})
 	}
 }

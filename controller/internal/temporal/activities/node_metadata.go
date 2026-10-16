@@ -15,8 +15,8 @@ import (
 	"go.temporal.io/sdk/temporal"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	klabels "k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -77,10 +77,6 @@ func (a *Activities) applyNodeMetadata(ctx context.Context, input ApplyNodeMetad
 			taints = append(taints, corev1.Taint{Key: taint.Key, Value: taint.Value, Effect: corev1.TaintEffect(taint.Effect)})
 		}
 	}
-	if err := validateNodeMetadata(labels, taints); err != nil {
-		return ApplyNodeMetadataResult{}, temporal.NewNonRetryableApplicationError(err.Error(), "InvalidNodeMetadata", err)
-	}
-
 	if len(labels) == 0 && len(taints) == 0 {
 		return ApplyNodeMetadataResult{Output: fmt.Sprintf("node/%s has no labels or taints to apply", node.Name)}, nil
 	}
@@ -97,11 +93,11 @@ func (a *Activities) applyNodeMetadata(ctx context.Context, input ApplyNodeMetad
 
 	labelChanges, err := patchNodeLabels(ctx, tenantClient, node.Name, labels)
 	if err != nil {
-		return ApplyNodeMetadataResult{}, fmt.Errorf("failed to apply labels to Kubernetes node %s: %w", node.Name, err)
+		return ApplyNodeMetadataResult{}, nodeMetadataPatchError("labels", node.Name, err)
 	}
 	taintChanges, err := patchNodeTaints(ctx, tenantClient, node.Name, taints)
 	if err != nil {
-		return ApplyNodeMetadataResult{}, fmt.Errorf("failed to apply taints to Kubernetes node %s: %w", node.Name, err)
+		return ApplyNodeMetadataResult{}, nodeMetadataPatchError("taints", node.Name, err)
 	}
 
 	summary := summarizeNodeMetadata(node.Name, labelChanges, taintChanges)
@@ -262,31 +258,15 @@ func replaceNodeTaint(node *corev1.Node, taint corev1.Taint) {
 	}
 }
 
-// validateNodeMetadata rejects stored labels and taints that the API would not accept,
-// so bad data fails the activity instead of retrying against the Kubernetes API.
-func validateNodeMetadata(labels map[string]string, taints []corev1.Taint) error {
-	for key, value := range labels {
-		if errs := validation.IsQualifiedName(key); len(errs) > 0 {
-			return fmt.Errorf("invalid label key %q: %s", key, strings.Join(errs, "; "))
-		}
-		if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
-			return fmt.Errorf("invalid value %q for label %q: %s", value, key, strings.Join(errs, "; "))
-		}
+// nodeMetadataPatchError wraps a failed patch. When the Kubernetes API rejects the stored labels or taints
+// as invalid, retrying cannot succeed, so the error is non-retryable. The Kubernetes error is kept as the cause,
+// which the node's provisioning condition appends to the message.
+func nodeMetadataPatchError(kind, nodeName string, err error) error {
+	message := fmt.Sprintf("failed to apply %s to Kubernetes node %s", kind, nodeName)
+	if apierrors.IsInvalid(err) {
+		return temporal.NewNonRetryableApplicationError(message, "InvalidNodeMetadata", err)
 	}
-	for _, taint := range taints {
-		if errs := validation.IsQualifiedName(taint.Key); len(errs) > 0 {
-			return fmt.Errorf("invalid taint key %q: %s", taint.Key, strings.Join(errs, "; "))
-		}
-		if errs := validation.IsValidLabelValue(taint.Value); len(errs) > 0 {
-			return fmt.Errorf("invalid value %q for taint %q: %s", taint.Value, taint.Key, strings.Join(errs, "; "))
-		}
-		switch taint.Effect {
-		case corev1.TaintEffectNoSchedule, corev1.TaintEffectPreferNoSchedule, corev1.TaintEffectNoExecute:
-		default:
-			return fmt.Errorf("invalid taint effect %q for taint %q", taint.Effect, taint.Key)
-		}
-	}
-	return nil
+	return fmt.Errorf("%s: %w", message, err)
 }
 
 func setNodeLabels(node *corev1.Node, labels map[string]string) nodeLabelChanges {
