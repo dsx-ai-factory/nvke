@@ -37,7 +37,7 @@ IMAGE_REPO="localhost/nvke/ovnkube"
 IMAGE_PREFIX="${IMAGE_REPO%/*}"
 # Base images are pinned by index digest, so a moved tag cannot change the build.
 BUILDER_IMAGE="${OVN_BUILDER_IMAGE:-quay.io/projectquay/golang:1.26@sha256:506a668eb4c763a964ffc4d4ad0125d45d75aac899392be7e5d39380f8452564}"
-UBUNTU_BASE_IMAGE="${OVN_UBUNTU_BASE_IMAGE:-ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7}"
+UBUNTU_BASE_IMAGE="${OVN_UBUNTU_BASE_IMAGE:-docker.io/library/ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7}"
 
 # The fork is internal until it is published. A token never goes on a command
 # line: fetch feeds CURL_CONFIG to curl as a config file. curl drops the header
@@ -186,10 +186,11 @@ grep -q 'install -y --no-install-recommends firewalld iptables' "$dockerfile" ||
 
 # The build uses only public inputs: the Go and Ubuntu base images, the Ubuntu
 # archive and pkgs.k8s.io. Not dist/images' ubuntu-nv-image (Artifactory).
+# The Ubuntu base honours CNI_DOCKERHUB_MIRROR; the digest pins it either way.
 build_image "$src" "$dockerfile" "$IMAGE_REF" \
   --build-arg "OVN_KUBERNETES_DIR=." \
   --build-arg "BUILDER_IMAGE=${BUILDER_IMAGE}" \
   --build-arg "KUBECTL_MINOR=${kubectl_minor}" \
-  --build-arg "UBUNTU_BASE_IMAGE=${UBUNTU_BASE_IMAGE}"
+  --build-arg "UBUNTU_BASE_IMAGE=$(image_transport_ref "${UBUNTU_BASE_IMAGE}")"
 repack_archive
 finish_bundle
