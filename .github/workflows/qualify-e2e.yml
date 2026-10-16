@@ -91,10 +91,10 @@ on:
         type: string
         required: false
       resolution:
-        description: "How to resolve the components, named for the strategy that answers. gitTag takes each from its own release tags, which is how a release is qualified. commitDescribe describes each at the commit the nvke-version points at, which is how a beta is qualified, because a beta tag carries no component tags. A beta tag push uses commitDescribe."
+        description: "How to resolve the components, named for the strategy that answers. commitDescribe describes each at the commit the nvke-version points at, which is how a beta is qualified, because a beta tag carries no component tags. gitTag takes each from its own release tags, and a release qualification has to select it: left on the default a release resolves by describe and verifies the describe-named artifacts, which exist, so it passes while qualifying builds other than the release-tagged ones."
         type: choice
         required: false
-        default: gitTag
+        default: commitDescribe
         options:
           - gitTag
           - commitDescribe
@@ -262,12 +262,18 @@ jobs:
         ${{ inputs.nvke-version
             || (github.event_name == 'push' && github.ref_name)
             || vars.QUALIFY_E2E_NVKE_VERSION }}
-      # A beta tag is pushed to be qualified as what that commit built, so the
-      # tag push asks for commitDescribe without anyone selecting it.
+      # commitDescribe is the default because a beta is what this lane
+      # qualifies nightly, and a beta tag carries no component tags. A release
+      # qualification selects gitTag, by input or by the variable.
+      #
+      # The push arm sits ahead of the variable so a beta tag push resolves as
+      # what that commit built whatever the variable says. A variable left on
+      # gitTag would otherwise cost every nightly.
       RESOLUTION: >-
         ${{ inputs.resolution
             || (github.event_name == 'push' && 'commitDescribe')
-            || 'gitTag' }}
+            || vars.QUALIFY_E2E_RESOLUTION
+            || 'commitDescribe' }}
       # A label run carries no inputs, so a scope other than the repository
       # default was unreachable from a branch: dispatch is refused for one by
       # the Teleport ref guard, and a label takes what the variables say.
@@ -1331,6 +1337,7 @@ jobs:
           IN_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 }}
           IN_NVKE_VERSION: ${{ inputs.nvke-version }}
           IN_RESOLUTION: ${{ inputs.resolution }}
+          VAR_RESOLUTION: ${{ vars.QUALIFY_E2E_RESOLUTION }}
           IN_SCOPE: ${{ inputs.scope }}
           IN_DRY_RUN: ${{ inputs.dry-run }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
@@ -1412,7 +1419,7 @@ jobs:
             "combination|COMBINATION|||"
             "nvke version|NVKE_VERSION|IN_NVKE_VERSION|VAR_NVKE_VERSION|QUALIFY_E2E_NVKE_VERSION"
             "scope|SCOPE|IN_SCOPE|VAR_SCOPE|QUALIFY_E2E_SCOPE"
-            "resolution|RESOLUTION|IN_RESOLUTION||"
+            "resolution|RESOLUTION|IN_RESOLUTION|VAR_RESOLUTION|QUALIFY_E2E_RESOLUTION"
             "cpu arch|ARCH|||"
             "gpu model|GPU|||"
             "DSX org|DSX_ORG_ID||DSX_ORG_ID|DSX_ORG_ID"
