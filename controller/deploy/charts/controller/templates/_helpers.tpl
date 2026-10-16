@@ -12,6 +12,20 @@ Expand the name of the chart.
 {{- end }}
 
 {{/*
+The shared management-plane namespace: the Namespace object, the Roles and
+RoleBindings scoped to it, and the managementNamespace key the controller reads
+from nke-controller-config all come from here, so they cannot drift apart.
+
+The default is nvke-system. A site installed before this value existed holds its
+Secrets in nke-system and must pin nvkeSystemNamespace.name to it: the old
+namespace is not also read, so a site that moves leaves its published
+kubeconfigs behind.
+*/}}
+{{- define "controller.managementNamespace" -}}
+{{- .Values.nvkeSystemNamespace.name | default "nvke-system" -}}
+{{- end }}
+
+{{/*
 Allow the release namespace to be overridden for multi-namespace deployments in combined charts
 */}}
 {{- define "controller.namespace" -}}

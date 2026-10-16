@@ -175,12 +175,19 @@ identity:
 # it at all fails the render naming the new key, rather than letting Helm drop
 # an unknown key silently and fall back to the nvkeSystemNamespace defaults.
 nvkeSystemNamespace:
-  # -- Create the shared nke-system namespace. The object always carries
+  # -- Name of the shared management-plane namespace: the Namespace object, the
+  # Roles and RoleBindings in it, and the namespace the controller publishes
+  # tenant-access Secrets into and reads the nke-rbac ConfigMap from. Empty
+  # means nvke-system. A SITE INSTALLED BEFORE THIS VALUE EXISTED MUST PIN
+  # nke-system HERE: the old namespace is not also read, so a site that moves
+  # leaves its published kubeconfig and trust-bundle Secrets behind in it.
+  name: "nvke-system"
+  # -- Create the shared management namespace. The object always carries
   # helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and
   # argocd.argoproj.io/sync-options: Prune=false,Delete=false so an Argo prune or
   # Application delete does not either. Both are set by the template for default delete protection.
   create: true
-  # -- Extra annotations merged onto nke-system. This is useful for
+  # -- Extra annotations merged onto the namespace. This is useful for
   # adding additional annotations to the namespace to protect it from being deleted. Listing annotations that
   # template already defaults here duplicates the key in the rendered Namespace.
   annotations: {}
@@ -428,7 +435,8 @@ cni:
   installAfterInit: false
 
 tenantAccess:
-  # -- Publish each cluster's kubeconfig as a Secret in the nke-system namespace,
+  # -- Publish each cluster's kubeconfig as a Secret in the shared management
+  # namespace (nvkeSystemNamespace.name),
   # and remove those Secrets during cluster teardown. Gates both the controller
   # and its cleanup activity, and the Secret grant they depend on.
   enabled: true

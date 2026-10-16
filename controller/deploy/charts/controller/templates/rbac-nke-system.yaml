@@ -1,8 +1,9 @@
 {{- /*
-  nke-system grants for CAPI bootstrap Secrets, tenant-access
-  publish/repair/teardown, and tenant manager Secret reconciliation.
+  Management-namespace grants (nvkeSystemNamespace.name) for CAPI bootstrap
+  Secrets, tenant-access publish/repair/teardown, and tenant manager Secret
+  reconciliation.
 
-  Always rendered: nke-system exists unconditionally. Persisted-OIDC clusters
+  Always rendered: the namespace exists unconditionally. Persisted-OIDC clusters
   keep publishing from OIDCAuthEnabled after live nvkeOIDCAuth.enabled is
   flipped off, so ConfigMap get on nke-rbac is not gated on that flag.
   Teardown must still delete owned Secrets.
@@ -11,7 +12,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: {{ include "controller.fullname" . }}-nke-rbac
-  namespace: nke-system
+  namespace: {{ include "controller.managementNamespace" . }}
   labels:
     {{- include "controller.labels" . | nindent 4 }}
 rules:
@@ -32,7 +33,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ include "controller.fullname" . }}-nke-rbac
-  namespace: nke-system
+  namespace: {{ include "controller.managementNamespace" . }}
   labels:
     {{- include "controller.labels" . | nindent 4 }}
 roleRef:
