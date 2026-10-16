@@ -167,6 +167,8 @@ nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --
 
 For a tree that lives in a repository, add `--credentials external` to that command. The render then reads no credential variable and no CA file, writes no Secret and no `.gitignore`, and writes no path of this machine: a chart the release does not carry keeps its committed `chart.path`, which resolves from where the tree is installed, so render with `--release` to put every chart in the tree. It ends by listing the Secrets the cluster has to hold: namespace, name, keys and, when it is not `Opaque`, the type. The Secrets' namespaces are created by the first item, `nvke-base-config`, so your secret store delivers each Secret after that item and before the item that reads it, not before the install starts. The charts name the same Secrets either way. `nvke-deploy.sh` has no such option: it always renders with the credentials and removes the tree.
 
+`nvke-deploy.sh install --values-for ITEM=FILE` layers a file over an item's values. One key cannot be set that way: the controller reads its database connection string from the `nvke-database` Secret, which the render builds from the `appDb` values of the deploy path, so a file that sets `appDb` would be ignored. The executor refuses it before it applies anything. Change `appDb` in the deploy path, in `deploy/nico/controller/overlay.yaml`, and run the install again.
+
 ## Applying It Another Way
 
 Every item is a Helm chart with values, or plain YAML, so another tool can deliver the same items. What the script does beyond `helm` and `kubectl apply` is small and listed here, so another executor can do the same:

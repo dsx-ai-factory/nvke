@@ -187,6 +187,28 @@ expect "the controller takes its site values" "helm upgrade --install nke-contro
 expect "spire takes its site values" "helm upgrade --install spire .*--values ${rendered}/spire/site-values.yaml" "${out}"
 expect "the Secrets item is applied before the charts" "^kubectl apply --server-side -f ${rendered}/site-credentials/secrets.yaml" "${out}"
 reject "spire takes no --set-file" 'helm upgrade --install spire .*--set-file' "${out}"
+
+# The controller reads its connection string from the Secret the render built
+# from the deploy path's appDb values, so a --values-for file that sets appDb
+# would be ignored: the executor refuses it before it applies anything.
+printf 'appDb:\n  url: external-pg.example.test:6432\n  dbName: customdb\n' >"${WORK}/appdb-override.yaml"
+printf '{"appDb": {"url": "external-pg.example.test:6432"}}\n' >"${WORK}/appdb-override.json"
+printf 'image:\n  tag: v-test\n' >"${WORK}/image-override.yaml"
+for f in appdb-override.yaml appdb-override.json; do
+  appdb_out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run --values-for "controller=${WORK}/${f}" 2>&1)" && fail "a controller --values-for ${f} that sets appDb exited 0"
+  expect "a ${f} that sets appDb is refused" "^nvke-deploy: --values-for controller: ${WORK}/${f} sets appDb, but controller reads its database connection string from the Secret" "${appdb_out}"
+  reject "nothing is applied before the appDb refusal (${f})" 'kubectl .*apply|helm upgrade' "${appdb_out}"
+done
+expect "the refusal says where appDb is changed" 'change appDb in the deploy path \(for controller, its overlay.yaml\) and run again$' "${appdb_out}"
+appdb_out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run --values-for "controller=${WORK}/image-override.yaml" 2>&1)" || fail "a controller --values-for without appDb exited $?: ${appdb_out}"
+expect "a --values-for file without appDb is still applied" "helm upgrade --install nke-controller .*--values ${WORK}/image-override.yaml" "${appdb_out}"
+# A deploy path the render did not write holds no Secret: the chart builds the
+# connection string from the merged values, so an appDb override is applied.
+mkdir -p "${WORK}/handpath/ctl"
+printf 'items:\n  - {name: ctl, type: helm}\n' >"${WORK}/handpath/nvke-deploy.yaml"
+printf 'chart:\n  name: nke-controller\n  version: "1.0.0"\n  repository: oci://registry.example.test/charts\nrelease:\n  name: nke-controller\n  namespace: nke-controller\n' >"${WORK}/handpath/ctl/release.yaml"
+appdb_out="$(bash "${EXECUTOR}" install --deploy-path "${WORK}/handpath" --dry-run --values-for "ctl=${WORK}/appdb-override.yaml" 2>&1)" || fail "an appDb override on a deploy path with no Secret exited $?: ${appdb_out}"
+expect "an appDb override is applied where the chart reads appDb" "helm upgrade --install nke-controller .*--values ${WORK}/appdb-override.yaml" "${appdb_out}"
 ! grep -q 'BEGIN' "${rendered}/spire/site-values.yaml" && pass "the CA is not copied into the spire values" || fail "spire site values hold PEM"
 expect "the rendered Secret is applied as a manifest" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/20-nico-credentials.yaml" "${out}"
 expect "the namespaces manifest is applied too" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/00-namespaces.yaml" "${out}"

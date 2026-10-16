@@ -200,7 +200,9 @@ appDb:
   # values and NVKECTL_DATABASE_PASSWORD into the nvke-database Secret and
   # names it in secrets.dbSecretName. A hand install sets the password here
   # and on BOTH of temporal's datastores, or the Temporal schema job
-  # crash-loops with "password authentication failed".
+  # crash-loops with "password authentication failed". Change appDb here, not
+  # with --values-for: once the Secret is named, the chart ignores appDb, and
+  # nvke-deploy.sh refuses a --values-for file that sets it.
   sslMode: disable
 
 # The port nvke-agent listens on, and it has to agree with three other places:
