@@ -158,8 +158,6 @@ service NodeAgent {
 
   rpc StreamExecuteScript(ExecuteScriptRequest) returns (stream ScriptOutputChunk) {}
 
-  rpc SetUnsetIsMaster(SetUnsetIsMasterRequest) returns (SetUnsetIsMasterResponse) {}
-
   rpc InstallBundle(InstallBundleRequest) returns (InstallBundleResponse) {}
 
   rpc GetBundleStatus(GetBundleStatusRequest) returns (GetBundleStatusResponse) {}
@@ -675,15 +673,6 @@ message ScriptOutputChunk {
   string error = 2;
   int32 exit_code = 3; // Exit code (set in final chunk)
   bool is_complete = 4; // Indicates if this is the final chunk
-}
-
-message SetUnsetIsMasterRequest {
-  bool is_master = 1;
-}
-
-message SetUnsetIsMasterResponse {
-  string status = 1;
-  string error_message = 2;
 }
 
 message InstallBundleRequest {
