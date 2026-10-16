@@ -1,6 +1,6 @@
 # DSX qualification tests
 
-This is a draft scaffold for the four qualification categories named in NKX-17988.
+This is a draft scaffold for recipe and OS-image qualification on a shared DSX pool.
 It targets the existing shared bare-metal pool used by RelEng. Every Ubuntu-version
 subtest is explicitly unimplemented and skipped. A successful Go command only
 checks the scaffold; it does not qualify an image.

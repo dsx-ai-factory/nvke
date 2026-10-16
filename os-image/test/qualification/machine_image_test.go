@@ -9,7 +9,7 @@ import (
 )
 
 // TestDSXRecipeValidation reserves the RelEng acceptance suite from section 10
-// of the recipe validation requirements referenced by NKX-17988.
+// of the RelEng recipe validation requirements.
 func TestDSXRecipeValidation(t *testing.T) {
 	pendingUbuntuVersions(t, "run RelEng's section 10 acceptance criteria on the shared DSX pool and record the qualification results")
 }
