@@ -1,0 +1,125 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: DSX Machine Image Tests
+
+# Initial CI wiring for the pending OS-image hardware suite. Configuration
+# presence is checked, but no identity is minted and no hardware is allocated.
+# Keep this manual while the functional cases and shared-pool lock are pending.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: DSX Machine Image Tests-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  machine-image:
+    name: DSX image stubs (${{ matrix.ubuntu }}, ${{ matrix.arch }})
+    if: github.repository_id == '1323115536' && github.ref == 'refs/heads/main'
+    # The same remote-driving runner as qualify-e2e.yml for both target arches.
+    runs-on: arc-amd64-cpu16
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        ubuntu: ["24.04", "26.04"]
+        arch: [amd64, arm64]
+    env:
+      UBUNTU_RELEASE: ${{ matrix.ubuntu }}
+      IMAGE_ARCH: ${{ matrix.arch }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Check shared Redstone access configuration
+        shell: bash
+        env:
+          FORGE_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
+          FORGE_TELEPORT_JOIN_TOKEN: ${{ secrets.FORGE_TELEPORT_JOIN_TOKEN }}
+          SSA_ISSUER: ${{ secrets.SSA_ISSUER }}
+          DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID: ${{ secrets.DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID }}
+          DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET: ${{ secrets.DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET }}
+          DSX_REDSTONE_DEV1_DH2_JUMP_HOST: ${{ secrets.DSX_REDSTONE_DEV1_DH2_JUMP_HOST }}
+          DSX_ORG_ID: ${{ vars.DSX_ORG_ID }}
+          DSX_REDSTONE_DEV1_DH2_SITE_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_SITE_ID }}
+          DSX_REDSTONE_DEV1_DH2_TENANT_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_TENANT_ID }}
+          DSX_REDSTONE_DEV1_DH2_VPC_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_VPC_ID }}
+          DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID }}
+          DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID }}
+          DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID }}
+          DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN: ${{ vars.DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN }}
+        run: |
+          set -Eeuo pipefail
+          required=(
+            FORGE_TELEPORT_PROXY FORGE_TELEPORT_JOIN_TOKEN SSA_ISSUER
+            DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_ID DSX_REDSTONE_DEV1_DH2_SSA_CLIENT_SECRET
+            DSX_REDSTONE_DEV1_DH2_JUMP_HOST DSX_ORG_ID
+            DSX_REDSTONE_DEV1_DH2_SITE_ID DSX_REDSTONE_DEV1_DH2_TENANT_ID
+            DSX_REDSTONE_DEV1_DH2_VPC_ID DSX_REDSTONE_DEV1_DH2_VPC_PREFIX_ID
+            DSX_REDSTONE_DEV1_DH2_INSTANCE_TYPE_ID DSX_REDSTONE_DEV1_DH2_SSH_KEY_GROUP_ID
+            DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN
+          )
+          missing=0
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required access setting ${name} is not configured"
+              missing=1
+            fi
+          done
+          [ "${missing}" -eq 0 ]
+          echo "Configuration is present; authentication and hardware access are not tested by this scaffold."
+
+      - name: Enumerate the functional test stubs
+        shell: bash
+        working-directory: os-image
+        run: |
+          set -Eeuo pipefail
+          series_pattern="${UBUNTU_RELEASE//./[.]}"
+          go test -json -count=1 \
+            -run "^TestDSXMachineImages/ubuntu-${series_pattern}/${IMAGE_ARCH}$" \
+            ./test/dsx > "${RUNNER_TEMP}/dsx-machine-image-tests.jsonl"
+
+      - name: Report pending coverage
+        if: always()
+        shell: python
+        run: |
+          import collections
+          import json
+          import os
+          from pathlib import Path
+
+          report = Path(os.environ["RUNNER_TEMP"]) / "dsx-machine-image-tests.jsonl"
+          events = [json.loads(line) for line in report.read_text().splitlines()] if report.exists() else []
+          leaves = [event for event in events if event.get("Test", "").count("/") == 3]
+          counts = collections.Counter(event["Action"] for event in leaves)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("## DSX machine-image scaffold\n\n")
+              summary.write(f"Ubuntu {os.environ['UBUNTU_RELEASE']}, {os.environ['IMAGE_ARCH']}\n\n")
+              summary.write(f"Functional cases: {counts['skip']} pending, {counts['pass']} passed, {counts['fail']} failed.\n\n")
+              summary.write("**Scaffold only: no image was booted and no hardware qualification was performed.**\n")
+          print("::warning::DSX machine-image functional tests are unimplemented; this job does not qualify an image.")
+
+      - name: Upload test inventory
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dsx-image-stubs-ubuntu-${{ matrix.ubuntu }}-${{ matrix.arch }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/dsx-machine-image-tests.jsonl
+          if-no-files-found: warn
+          retention-days: 7

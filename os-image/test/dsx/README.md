@@ -40,9 +40,32 @@ go test -v ./test/dsx
 ```
 
 Expect every functional leaf to report **SKIP: not implemented**. No NICo calls,
-machine allocation, image baking, or hardware tests are performed. There is no
-new hardware workflow or secret configuration in this PR. The existing module
-test target discovers this package without a build tag or a new dependency.
+machine allocation, image baking, or hardware tests are performed. The existing
+module test target discovers this package without a build tag or a new dependency.
+
+## Initial CI jobs
+
+[DSX Machine Image Tests](../../../.github/workflows/dsx-machine-image-tests.yml)
+is a manually dispatched advisory workflow, restricted to this repository's
+`main` branch. It becomes dispatchable after the workflow lands on the default
+branch. Four matrix jobs enumerate the selected OS/architecture's 17 stubs on
+the same `arc-amd64-cpu16` runner class as RelEng qualification. ARM64 names the
+future remote target; the test driver itself runs on AMD64.
+
+The jobs check the presence of the existing Redstone SSA, Teleport, jump-host,
+and allocation settings. They reference the same repository secrets as
+`qualify-e2e.yml`; they do not copy secret values or create a new identity.
+Credentials are exposed only to the configuration check. No authentication is
+attempted, and no credentials are passed to Go tooling or uploaded artifacts.
+Each job publishes the test inventory and a summary that explicitly distinguishes
+pending cases from executed qualification.
+
+Hardware execution will require wiring those credentials into the actual test
+step and adding the Teleport OIDC join/renewal (`id-token: write`), SSA token
+exchange, node access, and cleanup. The current configuration-presence check does
+not verify token permissions, Teleport's workflow allowlist, or machine reachability.
+Redstone provides the ARM64 target; AMD64 hardware still needs a suitable site
+allocation rather than an architecture flag on Redstone.
 
 ## Implementation boundaries
 
