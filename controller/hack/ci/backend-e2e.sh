@@ -17,8 +17,7 @@ RUN_ID="${NKE_E2E_RUN_ID:-${GITHUB_RUN_ID:-local-$$}}"
 RUN_ID="${RUN_ID//[^a-zA-Z0-9_.-]/-}"
 RUN_ID="${RUN_ID:0:64}"
 STATE_DIR="${NKE_E2E_STATE_DIR:-${CONTROLLER_ROOT}/.local/backend-e2e/${RUN_ID}}"
-# Kept as cwe-capi until a follow-up rename: changing it forces every developer to recreate their kind cluster.
-KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-cwe-capi}"
+KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-controller-capi}"
 DOCKERHUB_MIRROR="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 # Names the backend in this script's own output. Both lanes share the script, so
 # without it a NICo run reports itself as CAPD.

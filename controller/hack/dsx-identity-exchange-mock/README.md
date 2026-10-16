@@ -64,7 +64,7 @@ There are two distinct trust relationships:
 The local workload identity has this form:
 
 ```text
-spiffe://<kind-cluster>.nke.local/tenant/nke/service/<service-account>/bm/cwe
+spiffe://<kind-cluster>.nvke.local/tenant/nke/service/<service-account>/bm/cwe
 ```
 
 The mock maps it to:

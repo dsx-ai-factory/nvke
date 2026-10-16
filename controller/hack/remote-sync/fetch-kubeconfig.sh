@@ -16,7 +16,7 @@
 # Usage:
 #   ./fetch-kubeconfig.sh [--update-mutagen] <ssh-host> [kind-cluster] [local-api-port]
 #
-# Defaults: kind-cluster=cwe-capi, local-api-port=16443
+# Defaults: kind-cluster=controller-capi, local-api-port=16443
 #
 # Examples:
 #   ./fetch-kubeconfig.sh colossus
@@ -38,7 +38,7 @@ for a in "$@"; do
 done
 
 HOST="${ARGS[0]:?usage: $0 [--update-mutagen] <ssh-host> [kind-cluster] [local-api-port]}"
-CLUSTER="${ARGS[1]:-cwe-capi}"
+CLUSTER="${ARGS[1]:-controller-capi}"
 LOCAL_PORT="${ARGS[2]:-16443}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
