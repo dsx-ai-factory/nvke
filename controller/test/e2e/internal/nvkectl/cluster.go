@@ -171,7 +171,7 @@ func (r *Runner) WaitForClusterReady(ctx context.Context, id openapi_types.UUID)
 // GetKubeconfig returns the tenant admin kubeconfig `nvkectl get kubeconfig`
 // prints for the named cluster.
 //
-// The command reads the nke-system/<cluster>-admin-kubeconfig Secret through the
+// The command reads the nvke-system/<cluster>-admin-kubeconfig Secret through the
 // site's own kubeconfig rather than the controller API. That Secret is published only
 // once the cluster has provisioned, so this fails against one that has not.
 func (r *Runner) GetKubeconfig(ctx context.Context, name string) ([]byte, error) {

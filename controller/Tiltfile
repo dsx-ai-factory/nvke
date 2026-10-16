@@ -849,12 +849,12 @@ local_resource(
 )
 
 
-k8s_yaml("deploy/k8s/nke-system-namespace.yaml")
+k8s_yaml("deploy/k8s/nvke-system-namespace.yaml")
 
 k8s_resource(
-    new_name="nke-system-namespace",
+    new_name="nvke-system-namespace",
     labels=["1-infra"],
-    objects=["nke-system:namespace"],
+    objects=["nvke-system:namespace"],
     resource_deps=["check-management-cluster"],
     pod_readiness="ignore",
 )
@@ -1098,7 +1098,7 @@ if CWE_IMAGE:
 
 _cwe_local_debug_active = os.path.exists(CONTROLLER_LOCAL_DEBUG_MARKER)
 _cwe_tilt_goarch = local_arch()
-_cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nke-system-namespace", "nke-auth-dev", "machine-engine-releases"] + _all_cwe_resource_deps
+_cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nvke-system-namespace", "nke-auth-dev", "machine-engine-releases"] + _all_cwe_resource_deps
 if _cwe_oidc_enabled:
     _cwe_resource_deps += ["spire-oidc-provider-nodeport", "oidc-upstream-ca-ready"]
 

@@ -37,7 +37,7 @@ func validateOIDCPostCreate(test *tenantTest) {
 		}
 
 		By("Asserting the OIDC kubeconfig + trust bundle exist")
-		// The controller publishes the nke-system secrets asynchronously, so poll
+		// The controller publishes the nvke-system secrets asynchronously, so poll
 		// rather than checking once.
 		Eventually(func() error {
 			return tenantauth.AssertKubeconfigAndTrustBundle(ctx, test.k8sClient, test.cluster.Name)

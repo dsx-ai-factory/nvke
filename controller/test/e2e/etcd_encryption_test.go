@@ -186,7 +186,7 @@ func readEtcdEncryptionKeyState(
 }
 
 func readKubeAPIServerRestartCounts(ctx context.Context, c client.Client, kubeconfigSecret string) (string, error) {
-	namespace := "nke-system"
+	namespace := "nvke-system"
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "e2e-kube-apiserver-restarts-",
@@ -375,7 +375,7 @@ func adminKubeconfigSecret(ctx context.Context, test *tenantTest) string {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "e2e-admin-kubeconfig-",
-			Namespace:    "nke-system",
+			Namespace:    "nvke-system",
 		},
 		Data: map[string][]byte{"value": kubeconfig},
 	}
@@ -387,7 +387,7 @@ func adminKubeconfigSecret(ctx context.Context, test *tenantTest) string {
 }
 
 func runEtcdEncryptionVerifier(ctx context.Context, c client.Client, kubeconfigSecret string) error {
-	namespace := "nke-system"
+	namespace := "nvke-system"
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "e2e-etcd-encryption-",

@@ -60,7 +60,7 @@ install -m 0755 k8s-spiffe-workload-jwt-exec-auth ` + pluginInstallPath + `
 	// parseable lines are written to /dev/termination-log so the host can read
 	// them from the Pod object (a controller-runtime client cannot stream logs).
 	verifyScript = `set -e
-kubectl get secret -n nke-system "${CLUSTER}-kubeconfig" \
+kubectl get secret -n nvke-system "${CLUSTER}-kubeconfig" \
   -o go-template='{{ index .data "value" | base64decode }}' > /work/kubeconfig
 KC="--kubeconfig /work/kubeconfig"
 set +e

@@ -73,7 +73,7 @@ func validateBrownfieldOIDC(test *tenantTest) {
 		Expect(validateKubeadmOIDCConfig(ctx, tenantClient)).To(Succeed())
 
 		By("Asserting the OIDC kubeconfig + trust bundle are published")
-		// The tenant-access controller publishes the nke-system secrets once it
+		// The tenant-access controller publishes the nvke-system secrets once it
 		// observes the flipped marker, so poll.
 		Eventually(func() error {
 			return tenantauth.AssertKubeconfigAndTrustBundle(ctx, test.k8sClient, test.cluster.Name)

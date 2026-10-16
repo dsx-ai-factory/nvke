@@ -48,7 +48,7 @@ import (
 const (
 	// tenantKubeconfigNamespace is where TenantAccessController publishes
 	// per-cluster kubeconfigs (see internal/controllers/tenantaccess).
-	tenantKubeconfigNamespace = "nke-system"
+	tenantKubeconfigNamespace = "nvke-system"
 	tenantKubeconfigKey       = "value"
 
 	spireServerNamespace = "spire-server"
@@ -141,7 +141,7 @@ func WithJWTExchangeCABundle(bundle []byte) TenantClientFactoryOption {
 
 // TenantClientFactory builds controller-runtime clients for tenant clusters.
 // It obtains the tenant endpoint, CA, and authentication mode from the
-// TenantAccessController-published kubeconfig in nke-system. Plain kubeconfig
+// TenantAccessController-published kubeconfig in nvke-system. Plain kubeconfig
 // credentials are preserved; the SPIRE exec plugin is replaced by a lazily
 // minted JWT-SVID for the controller's identity.
 type TenantClientFactory struct {

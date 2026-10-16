@@ -144,7 +144,7 @@ users:
 		},
 	} {
 		err := read()
-		require.EqualError(t, err, "parsing kubeconfig from secret nke-system/tenant-a-kubeconfig")
+		require.EqualError(t, err, "parsing kubeconfig from secret nvke-system/tenant-a-kubeconfig")
 		require.NotContains(t, err.Error(), "example-token")
 		require.NotContains(t, err.Error(), "example-password")
 		require.NoError(t, errors.Unwrap(err))

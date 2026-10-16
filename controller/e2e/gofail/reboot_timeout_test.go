@@ -46,7 +46,7 @@ func TestRebootVerificationTimeoutEscalates(t *testing.T) {
 	agent := framework.StartNodeAgentServer(t)
 	agent.SetKubeconfig(string(contents))
 	api := rebootAPIClient(t, kubeconfig)
-	require.NoError(t, api.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: constants.NamespaceNVKESystem}}))
+	require.NoError(t, api.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: constants.LegacyManagementNamespace}}))
 	taskQueue := framework.TaskQueueName("reboot-timeout", t.Name())
 	worker := framework.StartControllerWorkerBinary(t, framework.ControllerWorkerBinaryConfig{
 		BinaryPath: framework.ControllerWorkerBinary(t), DBConnectionString: dsn, KubeconfigPath: kubeconfig,
@@ -83,7 +83,7 @@ func TestRebootVerificationTimeoutEscalates(t *testing.T) {
 			node.Status.NodeInfo.BootID = "old-boot"
 			require.NoError(t, api.Status().Update(ctx, node))
 			machine := &clusterv1.Machine{
-				ObjectMeta: metav1.ObjectMeta{Name: node.Name, Namespace: constants.NamespaceNVKESystem},
+				ObjectMeta: metav1.ObjectMeta{Name: node.Name, Namespace: constants.LegacyManagementNamespace},
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "cwe-gofail-" + cluster.Name,
 					Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("unused-bootstrap")},

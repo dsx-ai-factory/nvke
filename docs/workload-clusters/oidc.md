@@ -133,10 +133,10 @@ The install configures the shared provider for the management cluster's SPIRE se
 2. Confirm that a cluster has the shared provider. On the management cluster, read the mode label of the cluster's management-plane kubeconfig.
 
    ```bash
-   kubectl -n nke-system get secret <WORKLOAD_CLUSTER>-kubeconfig -o jsonpath='{.metadata.labels.nke\.nvidia\.com/kubeconfig-mode}'
+   kubectl -n nvke-system get secret <WORKLOAD_CLUSTER>-kubeconfig -o jsonpath='{.metadata.labels.nke\.nvidia\.com/kubeconfig-mode}'
    ```
 
-   The output is `spire` when the management plane reaches the cluster with SPIFFE JWTs through the shared provider, and `admin` when it uses the admin kubeconfig. NVKE switches it to `spire` after it applies its own role bindings in the cluster. If it stays `admin` after the cluster is `Provisioned` or the rollout succeeds, the controller's log says why: NVKE could not read the `nke-rbac` ConfigMap in `nke-system` or could not apply the role bindings.
+   The output is `spire` when the management plane reaches the cluster with SPIFFE JWTs through the shared provider, and `admin` when it uses the admin kubeconfig. NVKE switches it to `spire` after it applies its own role bindings in the cluster. If it stays `admin` after the cluster is `Provisioned` or the rollout succeeds, the controller's log says why: NVKE could not read the `nke-rbac` ConfigMap in `nvke-system` or could not apply the role bindings.
 
 ## How NVKE applies the providers
 

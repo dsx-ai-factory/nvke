@@ -42,7 +42,7 @@ repository.
 
 An operator first configures `nvkectl` with a kubeconfig for the Site Controller
 cluster. That management-cluster identity must be allowed to read the tenant
-access Secret in `nke-system`.
+access Secret in `nvke-system`.
 
 ```bash
 nvkectl config set-site --name "$SITE_NAME" \
@@ -54,7 +54,7 @@ kubectl --kubeconfig tenant.kubeconfig get nodes
 ```
 
 `nvkectl get kubeconfig` reads
-`nke-system/<cluster>-admin-kubeconfig` from the Site Controller cluster. The
+`nvke-system/<cluster>-admin-kubeconfig` from the Site Controller cluster. The
 Secret contains an `nvke:breakglass` client certificate. The server URL and
 cluster CA come from a control-plane node's `admin.conf`; the client key does
 not. The resulting `kubectl` process then connects directly to the server URL
@@ -88,7 +88,7 @@ username. Kubernetes RBAC then authorizes that username. The OIDC discovery
 provider publishes discovery metadata and signing keys; it does not grant
 permissions.
 
-The NVKE Controller publishes a separate `nke-system/<cluster>-kubeconfig` for
+The NVKE Controller publishes a separate `nvke-system/<cluster>-kubeconfig` for
 its own use. On an OIDC-enabled cluster, this kubeconfig runs the SPIFFE
 exec-auth plugin to obtain a JWT. It is not the kubeconfig returned by
 `nvkectl get kubeconfig`.

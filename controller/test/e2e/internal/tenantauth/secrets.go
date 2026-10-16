@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	secretsNamespace     = "nke-system"
+	secretsNamespace     = "nvke-system"
 	kubeconfigSecretKey  = "value"
 	trustBundleSecretKey = "ca.crt"
 )

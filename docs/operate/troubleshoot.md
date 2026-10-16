@@ -52,10 +52,10 @@ kubectl logs deployment/nke-controller -n nke-controller --since=1h \
 
 ### Cluster API objects
 
-NVKE creates each workload cluster's Cluster API objects in the `nke-system` namespace of the management cluster, named after the cluster. The last command shows the logs of CAPNICo, the Cluster API infrastructure provider for NVIDIA Infra Controller (NICo).
+NVKE creates each workload cluster's Cluster API objects in the `nvke-system` namespace of the management cluster, named after the cluster. The last command shows the logs of CAPNICo, the Cluster API infrastructure provider for NVIDIA Infra Controller (NICo).
 
 ```bash
-clusterctl describe cluster <WORKLOAD_CLUSTER> -n nke-system
+clusterctl describe cluster <WORKLOAD_CLUSTER> -n nvke-system
 ```
 
 ```bash
@@ -245,7 +245,7 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 ### Machines are not delivered
 
-- **Symptom:** A node's `pending` message stays `Waiting for infrastructure allocation`, or its step stays `Waiting for CAPI machine to be ready`. `clusterctl describe cluster <WORKLOAD_CLUSTER> -n nke-system` may show a machine with the reason `InstanceTypeUnavailable`.
+- **Symptom:** A node's `pending` message stays `Waiting for infrastructure allocation`, or its step stays `Waiting for CAPI machine to be ready`. `clusterctl describe cluster <WORKLOAD_CLUSTER> -n nvke-system` may show a machine with the reason `InstanceTypeUnavailable`.
 - **Cause:** The NICo instance type has no allocation for your organization, or no free machine.
 - **Fix:** Add an allocation in NICo, or use an instance type with free capacity. The control plane can list fallback types in `instanceTypePreference`, as in [Create a workload cluster](../workload-clusters/create.md).
 
@@ -308,7 +308,7 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 - **Symptom:** The cluster stays `Deleting`, and its `deleting` condition message starts with `Workflow failed:`.
 - **Cause:** Teardown failed.
-- **Fix:** [Report the problem](#get-help) with the cluster's YAML, the management-plane log and the Cluster API objects. Do not delete the cluster's objects in `nke-system` by hand.
+- **Fix:** [Report the problem](#get-help) with the cluster's YAML, the management-plane log and the Cluster API objects. Do not delete the cluster's objects in `nvke-system` by hand.
 
 ## Node pools and nodes
 
@@ -322,9 +322,10 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 ### nvkectl get kubeconfig fails
 
-- **Symptom:** `admin kubeconfig secret nke-system/<WORKLOAD_CLUSTER>-admin-kubeconfig not found`, or `not allowed to read secret nke-system/<WORKLOAD_CLUSTER>-admin-kubeconfig`.
-- **Cause:** For `not found`, the name is wrong or the cluster is not provisioned yet. For `not allowed`, the kubeconfig set with `nvkectl config set-site` lacks `get` on Secrets in `nke-system`.
+- **Symptom:** `admin kubeconfig secret nvke-system/<WORKLOAD_CLUSTER>-admin-kubeconfig not found`, or `not allowed to read secret nvke-system/<WORKLOAD_CLUSTER>-admin-kubeconfig`.
+- **Cause:** For `not found`, the name is wrong or the cluster is not provisioned yet. For `not allowed`, the kubeconfig set with `nvkectl config set-site` lacks `get` on Secrets in `nvke-system`.
 - **Fix:** Check the name with `nvkectl get clusters` and wait for `Provisioned`, or use a kubeconfig with that permission.
+- **Note:** A management plane installed before the management namespace became configurable publishes into `nke-system`, not `nvke-system`. `nvkectl get kubeconfig` tries both, so the message naming only one means it found the Secret in neither. Pass `--namespace` if the site pins a name of its own.
 
 ### kubectl times out against the workload cluster
 

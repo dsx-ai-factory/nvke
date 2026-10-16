@@ -132,7 +132,7 @@ func TestClusterNotFoundIn(t *testing.T) {
 		{
 			// And for the Secret behind `get kubeconfig`.
 			name: "the admin kubeconfig secret is absent",
-			out:  `Error: admin kubeconfig secret nke-system/capd-cluster-20260914-admin-kubeconfig not found -- check the cluster name`,
+			out:  `Error: admin kubeconfig secret nvke-system/capd-cluster-20260914-admin-kubeconfig not found -- check the cluster name`,
 			want: false,
 		},
 		{

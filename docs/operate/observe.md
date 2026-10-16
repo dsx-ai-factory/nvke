@@ -154,10 +154,10 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 5. Check the Cluster API objects behind the cluster.
 
    ```bash
-   clusterctl describe cluster <WORKLOAD_CLUSTER> -n nke-system
+   clusterctl describe cluster <WORKLOAD_CLUSTER> -n nvke-system
    ```
 
-   NVKE creates each workload cluster's Cluster API objects in the `nke-system` namespace of the management cluster, named after the cluster. The output shows the readiness of the control plane and of each machine, with the reason for any that is not ready.
+   NVKE creates each workload cluster's Cluster API objects in the `nvke-system` namespace of the management cluster, named after the cluster. The output shows the readiness of the control plane and of each machine, with the reason for any that is not ready.
 
 6. Check the nodes from inside the workload cluster.
 

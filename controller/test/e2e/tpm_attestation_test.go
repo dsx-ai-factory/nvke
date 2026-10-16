@@ -20,15 +20,15 @@ import (
 )
 
 // The controller's names for a Machine's SPIRE agent identity. They must match
-// keys.MachineSpireAgentSpiffeIDPath, constants.TPMSpireAgentPath
-// and constants.NamespaceNVKESystem in controller/internal/constants, which this
-// module does not import.
+// keys.MachineSpireAgentSpiffeIDPath and constants.TPMSpireAgentPath in
+// controller/internal/constants, which this module does not import, and the
+// chart's nvkeSystemNamespace.name default.
 const (
 	spireAgentIDPathAnnotation = "nvke.nvidia.com/spire-agent-spiffe-id-path"
 	// Machines annotated before the nvke.nvidia.com rename carry the legacy key.
 	legacySpireAgentIDPathAnnotation = "nke.nvidia.com/spire-agent-spiffe-id-path"
 	tpmSpireAgentPath                = "/spire/agent/tpm/"
-	tenantMachineNamespace           = "nke-system"
+	tenantMachineNamespace           = "nvke-system"
 )
 
 // validateTPMAttestationPostCreate asserts that every node of the tenant

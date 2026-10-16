@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	nvkeRBACNamespace = "nke-system"
+	nvkeRBACNamespace = "nvke-system"
 	nvkeRBACConfigMap = "nke-rbac"
 	nvkeRBACKey       = "manifest.yaml"
 )

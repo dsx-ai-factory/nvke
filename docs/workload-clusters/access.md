@@ -5,7 +5,7 @@ This page describes how to get the admin kubeconfig for a workload cluster, give
 ## Before you begin
 
 - You have completed [Create a workload cluster](create.md), and `nvkectl get clusters <WORKLOAD_CLUSTER>` shows the cluster with status `Provisioned`.
-- The operator has configured `nvkectl` for the management plane with `nvkectl config set-site`, as described in [Install management-plane services](../operate/install-management-plane-services.md). `nvkectl get kubeconfig` reads a Secret on the management cluster with the kubeconfig given to `set-site --kubeconfig`, which must allow `get` on Secrets in the `nke-system` namespace. The management cluster's admin kubeconfig, `<CLUSTER_NAME>.kubeconfig`, allows it. The OIDC kubeconfig from [Secure the NVKE API](../operate/api-authentication.md) does not, because the bootstrap does not configure the management cluster's Kubernetes API server to accept tokens from your identity provider; with API authentication on, use the `kubectl` alternative in step 1.
+- The operator has configured `nvkectl` for the management plane with `nvkectl config set-site`, as described in [Install management-plane services](../operate/install-management-plane-services.md). `nvkectl get kubeconfig` reads a Secret on the management cluster with the kubeconfig given to `set-site --kubeconfig`, which must allow `get` on Secrets in the `nvke-system` namespace. The management cluster's admin kubeconfig, `<CLUSTER_NAME>.kubeconfig`, allows it. The OIDC kubeconfig from [Secure the NVKE API](../operate/api-authentication.md) does not, because the bootstrap does not configure the management cluster's Kubernetes API server to accept tokens from your identity provider; with API authentication on, use the `kubectl` alternative in step 1.
 - The machine where you run `kubectl` has a network route to the cluster's Kubernetes API address on port 6443. See [How clients reach the Kubernetes API](#how-clients-reach-the-kubernetes-api).
 - `kubectl` is installed on that machine.
 
@@ -21,7 +21,7 @@ The operator runs these steps.
 
    `<WORKLOAD_CLUSTER>` is the cluster's name as `nvkectl get clusters` lists it. The command prints `kubeconfig written to <WORKLOAD_CLUSTER>.kubeconfig` and creates the file readable only by you. Without `--output-file`, it prints the kubeconfig to standard output.
 
-   `nvkectl` reads the kubeconfig from the `value` key of the `<WORKLOAD_CLUSTER>-admin-kubeconfig` Secret in the `nke-system` namespace of the management cluster. NVIDIA Kubernetes Engine (NVKE) publishes that Secret once a control-plane node has joined. If the command reports that the Secret is not found, check the cluster name, or wait for the cluster to finish provisioning. If it reports that it is not allowed to read the Secret, use a management-cluster kubeconfig with `get` on Secrets in `nke-system`.
+   `nvkectl` reads the kubeconfig from the `value` key of the `<WORKLOAD_CLUSTER>-admin-kubeconfig` Secret in the `nvke-system` namespace of the management cluster. NVIDIA Kubernetes Engine (NVKE) publishes that Secret once a control-plane node has joined. If the command reports that the Secret is not found, check the cluster name, or wait for the cluster to finish provisioning. If it reports that it is not allowed to read the Secret, use a management-cluster kubeconfig with `get` on Secrets in `nvke-system`.
 
    If `nvkectl` uses an OIDC kubeconfig because API authentication is on, read the same Secret with `kubectl` and the management cluster's admin kubeconfig instead:
 
@@ -30,7 +30,7 @@ The operator runs these steps.
      set -euo pipefail
      tmp="$(mktemp <WORKLOAD_CLUSTER>.kubeconfig.XXXXXX)"
      trap 'rm -f "$tmp"' EXIT
-     kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig -n nke-system get secret <WORKLOAD_CLUSTER>-admin-kubeconfig -o jsonpath='{.data.value}' | base64 -d > "$tmp"
+     kubectl --kubeconfig <CLUSTER_NAME>.kubeconfig -n nvke-system get secret <WORKLOAD_CLUSTER>-admin-kubeconfig -o jsonpath='{.data.value}' | base64 -d > "$tmp"
      test -s "$tmp"
      chmod 600 "$tmp"
      mv "$tmp" <WORKLOAD_CLUSTER>.kubeconfig

@@ -525,7 +525,7 @@ func TestGetAdminClientReportsMissingKubeconfig(t *testing.T) {
 	factory := newTestTenantClientFactory(t)
 
 	_, err := factory.GetAdminClient(context.Background(), "tenant-a")
-	if err == nil || !strings.Contains(err.Error(), "getting tenant kubeconfig secret nke-system/tenant-a-kubeconfig") {
+	if err == nil || !strings.Contains(err.Error(), "getting tenant kubeconfig secret nvke-system/tenant-a-kubeconfig") {
 		t.Fatalf("GetAdminClient() error = %v, want contextual Secret error", err)
 	}
 }
@@ -655,7 +655,7 @@ func TestTenantRESTConfigReportsMissingKubeconfigSecret(t *testing.T) {
 	factory := newTestTenantClientFactory(t)
 
 	_, err := factory.tenantRESTConfig(context.Background(), "tenant-a")
-	if err == nil || !strings.Contains(err.Error(), "getting tenant kubeconfig secret nke-system/tenant-a-kubeconfig") {
+	if err == nil || !strings.Contains(err.Error(), "getting tenant kubeconfig secret nvke-system/tenant-a-kubeconfig") {
 		t.Fatalf("tenantRESTConfig() error = %v, want contextual Secret error", err)
 	}
 }
