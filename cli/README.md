@@ -167,7 +167,9 @@ Everything static about the deployment lives in
 [`internal/bootstrap/controllerdeploy/manifests/spire-values.yaml`](internal/bootstrap/controllerdeploy/manifests/spire-values.yaml).
 `nvkectl` sets only what it cannot know ahead of time: the trust domain and
 cluster name, CWE's admin identity, the CA to chain to, and the TPM thumbprints
-allowed to attest.
+allowed to attest, or, with `infra.provider: nico`, the `tpm-pubhashes`
+ConfigMap CWE fills as the attestor's allowlist (see
+[SPIRE with NICo nodes](docs/sitespec.md#spire-with-nico-nodes)).
 
 Two of the values it sets have to agree with CWE and are wrong by default on
 both sides, so both halves are set from one constant in
@@ -250,8 +252,9 @@ through `KIND_EXPERIMENTAL_PROVIDER=nerdctl`, which `nvkectl` sets itself.
 | `NVKECTL_CONTROLLER_READY_TIMEOUT` | `5m` | Bounds the wait for the controller's `/readyz` |
 | `NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR` | `cluster-diagnostics` | Where a failed bootstrap writes a cluster dump before tearing the cluster down (`--diagnostics-dir`) |
 
-Every `NVKECTL_*` variable above was named `NKECTL_*` while the binary was
-called `nkectl`. The old names still work for one release: when only the old
+Every `NVKECTL_*` variable above except `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT`,
+which turns a safety check off and so answers only to its own name, was named
+`NKECTL_*` while the binary was called `nkectl`. The old names still work for one release: when only the old
 name is set, `nvkectl` uses it and logs a warning naming the replacement. When
 both are set, the new name wins. nvkectl does not read the `NKECTL_CWE_*`
 names of cli/v0.1.x: `nvkectl bootstrap site` stops when one is set without

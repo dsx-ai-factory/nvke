@@ -63,7 +63,8 @@ is a file `bootstrap site` accepts.
 By default the file lists the hosts (`cluster.nodes`) and the bootstrap builds
 the cluster on them. Setting `infra.provider: nico` swaps that list for
 `infra.nico`: CAPNICo allocates the same number of control-plane machines from
-a NICo site, configured by the profiles the block names. Everything else in the
+a NICo site, with the instance types, network, SSH key groups and release the
+block names. Everything else in the
 file means what it did. [`examples/sitespec-nico.yaml`](../examples/sitespec-nico.yaml)
 is a complete example.
 

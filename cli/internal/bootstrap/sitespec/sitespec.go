@@ -345,6 +345,7 @@ var Settings = []string{
 	"NVKECTL_CLUSTER_NODES",
 	EnvSpireCACertFile,
 	EnvSpireCAKeyFile,
+	NicoCredentialsEnv,
 }
 
 // newInventoryViper returns a Viper that reads a YAML site spec file with the

@@ -1173,8 +1173,10 @@ func TestReadNicoToken(t *testing.T) {
 	}
 }
 
-// TestNicoCredentials_OldNamesStillWork: the two NICo variables are read under
-// their NKECTL_ names too, as every NVKECTL_ variable is for one release.
+// TestNicoCredentials_OldNamesStillWork: NVKECTL_NICO_CREDENTIALS is read under
+// its NKECTL_ name too, as every NVKECTL_ variable is for one release. The
+// cleartext opt-in is not: turning the https check off answers only to its
+// documented name.
 func TestNicoCredentials_OldNamesStillWork(t *testing.T) {
 	t.Setenv(NicoCredentialsEnv, "")
 	t.Setenv("NKECTL_NICO_CREDENTIALS", "/srv/nico.token")
@@ -1190,8 +1192,8 @@ func TestNicoCredentials_OldNamesStillWork(t *testing.T) {
 	t.Setenv(NicoCredentialsEnv, filepath.Join(filepath.Dir(path), "nico.token"))
 	t.Setenv(NicoInsecureEndpointEnv, "")
 	t.Setenv("NKECTL_NICO_ALLOW_INSECURE_ENDPOINT", "1")
-	if err := inv.ValidateBootstrapReferences(); err != nil && strings.Contains(err.Error(), "cleartext") {
-		t.Errorf("the NKECTL_ opt-in was not read: %v", err)
+	if err := inv.ValidateBootstrapReferences(); err == nil || !strings.Contains(err.Error(), "cleartext") {
+		t.Errorf("ValidateBootstrapReferences = %v; want the http endpoint refused despite NKECTL_NICO_ALLOW_INSECURE_ENDPOINT", err)
 	}
 }
 
