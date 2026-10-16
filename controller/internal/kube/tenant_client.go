@@ -20,7 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
-	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
@@ -110,34 +111,26 @@ func NewDBClusterTenantClientProvider(
 	}
 }
 
+// ClientForDBCluster returns a tenant client for cluster. The cluster's
+// provider decides how its tenant API is reached; this provider builds the
+// client for that access method.
 func (p *DBClusterTenantClientProvider) ClientForDBCluster(ctx context.Context, cluster db.Cluster) (client.Client, error) {
-	switch cluster.ProviderType {
-	case db.ProviderTypeCAPI:
-		provider, err := cluster.CAPIProvider()
-		if err != nil {
-			return nil, err
-		}
-		if capi.IsEmptyManifest(provider.InfraCluster) {
-			return nil, fmt.Errorf("cluster %s must define infra.cluster", cluster.ID)
-		}
+	provider, err := clients.GetProviderClient(cluster)
+	if err != nil {
+		return nil, err
+	}
 
+	switch method := provider.TenantAPIAccess().TenantAPIAccessMethod(p.tenantAccessEnabled); method {
+	case shared.TenantAPIAccessSecret:
 		return p.clientFromTenantAccessSecret(ctx, cluster)
-	case db.ProviderTypeNico:
-		if _, err := cluster.NicoProvider(); err != nil {
-			return nil, err
-		}
-
-		if p.tenantAccessEnabled {
-			return p.clientFromTenantAccessSecret(ctx, cluster)
-		}
-
+	case shared.TenantAPIAccessNodeAgent:
 		nodes, err := p.database.ListNodes(ctx, db.NodeFilters{ClusterID: &cluster.ID})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list nodes for cluster %s: %w", cluster.ID, err)
 		}
 		return p.clientFromControlPlaneNodeAgent(ctx, cluster, nodes)
 	default:
-		return nil, fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
+		return nil, fmt.Errorf("unsupported tenant API access method %q for cluster %s", method, cluster.ID)
 	}
 }
 

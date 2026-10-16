@@ -13,6 +13,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
@@ -776,18 +777,18 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 
 	// Label the node with its Forge/Carbide machine ID so the machine identity
 	// is discoverable directly on the K8s node object. Skipped when the node has
-	// no machine ID (e.g. non-Forge / CAPD-only nodes).
-	if cluster.ProviderType == db.ProviderTypeNico {
-		if _, err := cluster.NicoProvider(); err != nil {
-			return err
-		}
-		nicoNodeProvider, err := node.NicoProvider()
-		if err != nil {
-			return err
-		}
-		if nicoNodeProvider.ForgeMachineID != "" {
-			labels = append(labels, constants.LabelKeyMachineID+"="+nicoNodeProvider.ForgeMachineID)
-		}
+	// no machine ID (e.g. non-Forge / CAPD-only nodes). The capability call is
+	// a pure computation over the cluster and node rows, so it is safe here.
+	provider, err := clients.GetProviderClient(cluster)
+	if err != nil {
+		return err
+	}
+	machineID, err := provider.NodeMachineIDLabel().NodeMachineIDLabelValue(node)
+	if err != nil {
+		return err
+	}
+	if machineID != "" {
+		labels = append(labels, constants.LabelKeyMachineID+"="+machineID)
 	}
 
 	// If the cluster is using ovn cni, add zone-name label 'k8s.ovn.org/zone-name=<node-name>'
