@@ -348,12 +348,17 @@ kubeadm renewed:
 disk=$(sudo openssl x509 -in /etc/kubernetes/pki/apiserver.crt -noout -fingerprint -sha256)
 served=$(echo | timeout 10 openssl s_client -connect "$NODE:6443" 2>/dev/null |
   openssl x509 -noout -fingerprint -sha256)
-[[ -n "$served" && "$served" == "$disk" ]] && echo "OK: serving the renewed certificate" ||
+if [[ -n "$served" && "$served" == "$disk" ]]; then
+  echo "OK: serving the renewed certificate"
+else
   echo "STOP: served certificate is missing or differs from apiserver.crt" >&2
+  false
+fi
 ```
 
 A mismatch means the API server still serves its old certificate or is not
-reachable; investigate before moving on. Recheck application
+reachable. The block then exits nonzero so automation stops; investigate before
+moving on. Recheck application
 clients and aggregated APIs used by the site. Copies of `admin.conf` do **not**
 update automatically; distribute renewed admin credentials through the site's
 secret-management process. See
