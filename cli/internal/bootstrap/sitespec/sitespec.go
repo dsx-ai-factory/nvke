@@ -21,6 +21,7 @@
 package sitespec
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -38,6 +39,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/client-go/util/cert"
 
+	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 )
 
@@ -110,14 +112,10 @@ var removedSpireCAEnv = [][2]string{
 
 // removedFields maps each removed field to what replaced it.
 var removedFields = map[string]string{
-	"registry":                       "the bootstrap takes its images from --controller-image and --provisioned-provider-image; log in to a private registry with nerdctl login",
-	"spire.caCertFile":               "set " + EnvSpireCACertFile + " and spire.upstreamCA: true",
-	"spire.caKeyFile":                "set " + EnvSpireCAKeyFile + " and spire.upstreamCA: true",
-	"controllerStack.nico.tokenFile": "set " + EnvNicoToken,
-	"controllerStack.tenant":         "set " + EnvNodeUser + " and " + EnvNodePassword,
-	"infra.nico.tenant":              "set " + EnvNodeUser + " and " + EnvNodePassword,
-	"controllerStack.database":       "set " + EnvDatabasePassword + "; an installed site sets it to the password its Postgres was initialized with",
-	"controllerStack.nktpValuesFile": "pass --values-for nktp=<file> to nvke-deploy.sh install",
+	"registry":          "the bootstrap takes its images from --controller-image and --provisioned-provider-image; log in to a private registry with nerdctl login",
+	"spire.caCertFile":  "set " + EnvSpireCACertFile + " and spire.upstreamCA: true",
+	"spire.caKeyFile":   "set " + EnvSpireCAKeyFile + " and spire.upstreamCA: true",
+	"infra.nico.tenant": "set " + stackconfig.EnvNodeUser + " and " + stackconfig.EnvNodePassword,
 }
 
 var (
@@ -158,10 +156,6 @@ type SiteSpec struct {
 	Cluster Cluster `yaml:"cluster"`
 	// Spire holds the identity-plane settings for the bootstrap.
 	Spire Spire `yaml:"spire"`
-	// ControllerStack is the input the controller stack install reads. The
-	// bootstrap does not read it; ValidateControllerStack checks it at install
-	// time.
-	ControllerStack *ControllerStack `yaml:"controllerStack,omitempty"`
 
 	// dir is the directory the file was loaded from, which relative paths in
 	// infra.nico.releases are resolved against. Empty for a spec that was
@@ -351,10 +345,6 @@ var Settings = []string{
 	"NVKECTL_CLUSTER_NODES",
 	EnvSpireCACertFile,
 	EnvSpireCAKeyFile,
-	EnvNicoToken,
-	EnvNodeUser,
-	EnvNodePassword,
-	EnvDatabasePassword,
 }
 
 // newInventoryViper returns a Viper that reads a YAML site spec file with the
@@ -406,7 +396,7 @@ func Load(path string) (*SiteSpec, error) {
 			path, pathEtcdEncryption, raw)
 	}
 
-	if err := rejectRemovedFields(v, path); err != nil {
+	if err := rejectRemovedFields(v); err != nil {
 		return nil, fmt.Errorf("site spec file %s: %w", path, err)
 	}
 
@@ -433,18 +423,9 @@ func Load(path string) (*SiteSpec, error) {
 }
 
 // rejectRemovedFields names the replacement for each removed field the file sets.
-func rejectRemovedFields(v *viper.Viper, specPath string) error {
+func rejectRemovedFields(v *viper.Viper) error {
 	var errs []string
 	for field, instead := range removedFields {
-		if field == "controllerStack.database" {
-			if file := v.GetString("controllerStack.database.passwordFile"); file != "" {
-				if !filepath.IsAbs(file) {
-					file = filepath.Join(filepath.Dir(specPath), file)
-				}
-				instead = fmt.Sprintf("set %s to the contents of %s, the password this site's Postgres was initialized with",
-					EnvDatabasePassword, file)
-			}
-		}
 		if v.InConfig(field) {
 			errs = append(errs, fmt.Sprintf("%s is no longer accepted: %s", field, instead))
 		}
@@ -1012,4 +993,51 @@ func (v *validator) checkSpireCA(s Spire) {
 			v.addf("%s %q is not a regular file", f[0], f[1])
 		}
 	}
+}
+
+// DefaultBootstrapClusterName is the cluster name `nvkectl bootstrap site`
+// gives its bootstrap cluster unless NVKECTL_BOOTSTRAP_CLUSTER_NAME says
+// otherwise. The default trust domain derives from it.
+const DefaultBootstrapClusterName = "nvkectl-bootstrap"
+
+// EffectiveTrustDomain returns the SPIFFE trust domain the bootstrap used:
+// spire.trustDomain when set, else <bootstrapClusterName>.nke.local, the
+// default `nvkectl bootstrap site` derives from its cluster name.
+func (inv *SiteSpec) EffectiveTrustDomain(bootstrapClusterName string) string {
+	if inv.Spire.TrustDomain != "" {
+		return inv.Spire.TrustDomain
+	}
+	return bootstrapClusterName + ".nke.local"
+}
+
+// TrustDomain returns spire.trustDomain, or the trust domain a bootstrap with
+// the default cluster name derives, and whether that default was used. The
+// bootstrap and the controller stack install share it, so a site spec that
+// sets nothing still joins both to one domain.
+func (inv *SiteSpec) TrustDomain() (domain string, defaulted bool) {
+	if inv.Spire.TrustDomain != "" {
+		return inv.Spire.TrustDomain, false
+	}
+	return inv.EffectiveTrustDomain(DefaultBootstrapClusterName), true
+}
+
+// ControllerEndpoint returns the address the site controller is reached at:
+// the control-plane VIP, or the only node's IP when the spec has one node
+// and no VIP. With nico no node has an address until NICo allocates it, so
+// the VIP is the only source; the bootstrap itself does not need one for a
+// single node, which is why this is checked by the stack install and not
+// when the spec loads.
+func (inv *SiteSpec) ControllerEndpoint() (string, error) {
+	if inv.Cluster.ControlPlaneVIP != "" {
+		return inv.Cluster.ControlPlaneVIP, nil
+	}
+	if inv.IsNico() {
+		return "", errors.New("the controller stack install needs cluster.controlPlaneVIP with infra.provider nico: the " +
+			"nodes have no address until NICo allocates them, so there is nothing else to reach the controller at " +
+			"(the bootstrap itself does not need it with one node)")
+	}
+	if len(inv.Cluster.Nodes) == 1 {
+		return inv.Cluster.Nodes[0].IP, nil
+	}
+	return "", errors.New("the site spec has several nodes and no cluster.controlPlaneVIP")
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,10 +16,12 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath"
+	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 )
 
 func newRenderCmd() *cobra.Command {
-	// Internal: deploy/nvke-deploy.sh runs it with --sitespec and --release.
+	// Internal: deploy/nvke-deploy.sh runs it with --sitespec, --stack-config,
+	// --arch and --release.
 	cmd := &cobra.Command{
 		Use:    "render",
 		Short:  "Write a resolved copy of an input, ready to apply",
@@ -29,33 +32,41 @@ func newRenderCmd() *cobra.Command {
 }
 
 type renderDeployPathOptions struct {
-	deployPath string
-	siteSpec   string
-	release    string
-	out        string
-	arch       string
-	runDir     string
-	plainHTTP  []string
-	ephemeral  bool
+	deployPath  string
+	siteSpec    string
+	stackConfig string
+	release     string
+	out         string
+	arch        string
+	runDir      string
+	plainHTTP   []string
+	ephemeral   bool
 }
 
 func newRenderDeployPathCmd() *cobra.Command {
 	opts := &renderDeployPathOptions{}
 	cmd := &cobra.Command{
-		Use:   "deploy-path --deploy-path DIR (--sitespec FILE | --release FILE | both) --out DIR",
+		Use:   "deploy-path --deploy-path DIR (--sitespec FILE --stack-config FILE | --release FILE | both) --out DIR",
 		Short: "Resolve a deploy path for a site and against an NVKR release, and write the result",
 		Long: `Write a copy of a deploy path under --out, resolved for a site, against an
 NVKR release, or both. The committed deploy path is never edited.
 
-With --sitespec, the spec's controllerStack section fills in what the stack
-needs from the site: architecture, NICo API, and optionally a mirror and
-image overrides. The credentials come from NVKECTL_NICO_TOKEN,
-NVKECTL_NODE_USER, NVKECTL_NODE_PASSWORD and NVKECTL_DATABASE_PASSWORD.
-Items get a site-values.yaml; template items become manifests. SPIRE gets
-the CA named by NVKECTL_SPIRE_CA_CERT_FILE and NVKECTL_SPIRE_CA_KEY_FILE by
-file reference: helm reads it at install time. The stack joins the
-bootstrap's trust domain: spire.trustDomain, set once before the bootstrap,
-else the default both commands share, with a warning.
+With --sitespec and --stack-config, the two go together: the site spec
+supplies the site name, the control-plane VIP and the SPIRE trust domain;
+the stack config supplies what only the stack needs: the NICo API, and
+optionally a mirror and image overrides. The credentials come from
+NVKECTL_NICO_TOKEN, NVKECTL_NODE_USER, NVKECTL_NODE_PASSWORD and
+NVKECTL_DATABASE_PASSWORD. Items get a site-values.yaml; template items
+become manifests. SPIRE gets the CA named by NVKECTL_SPIRE_CA_CERT_FILE and
+NVKECTL_SPIRE_CA_KEY_FILE by file reference: helm reads it at install
+time. The stack joins the bootstrap's trust domain: spire.trustDomain, set
+once before the bootstrap, else the default both commands share, with a
+warning.
+
+--arch is the nodes' architecture, linux/amd64 or linux/arm64. It selects
+the release artifacts and the SPIRE TPM attestor checksum. deploy/nvke-deploy.sh
+reads it from the cluster's nodes and passes it; without the flag this
+machine's architecture is used, with a warning when a site is rendered.
 
 --release takes the nvkr.dev/release-description/v1 JSON that "nvkr release
 export --reference <release>" writes. The export describes the release and
@@ -66,9 +77,7 @@ item's artifact. Charts are pulled by digest into charts/<item>/; images go
 into release-images.yaml or a kustomization.yaml; images.txt lists them. A
 chart the release lacks stays as committed. The release decides the version
 of every chart it carries, with a warning when release.yaml pins another;
-the pin decides only for a chart the release lacks. --arch selects
-artifacts (default: the site spec's
-controllerStack.arch, else this machine's). --nvkr-run-dir reads a
+the pin decides only for a chart the release lacks. --nvkr-run-dir reads a
 completed NVKR Run or a directory of OCI layouts instead of a registry.
 
 --out holds the site's secrets: it is created 0700 and is for one install.
@@ -80,8 +89,8 @@ repository does not pick it up by accident. Committed chart paths are
 written absolute, so --out can live anywhere. Problems are reported all at
 once and nothing is left on failure. Then install it:
 deploy/nvke-deploy.sh install --deploy-path OUT.`,
-		Example: `  nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --release release.json --out ~/.local/state/nvke/renders/my-site
-  nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --release release.json --nvkr-run-dir .nvkr/runs/demo-01 --out ~/.local/state/nvke/renders/my-site`,
+		Example: `  nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json --arch linux/arm64 --release release.json --out ~/.local/state/nvke/renders/my-site
+  nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json --arch linux/amd64 --release release.json --nvkr-run-dir .nvkr/runs/demo-01 --out ~/.local/state/nvke/renders/my-site`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -89,10 +98,11 @@ deploy/nvke-deploy.sh install --deploy-path OUT.`,
 		},
 	}
 	cmd.Flags().StringVar(&opts.deployPath, "deploy-path", "", "The committed deploy path (required)")
-	cmd.Flags().StringVarP(&opts.siteSpec, "sitespec", "f", "", "The site spec whose controllerStack section describes the site")
+	cmd.Flags().StringVarP(&opts.siteSpec, "sitespec", "f", "", "The site spec: the site name, VIP and trust domain (with --stack-config)")
+	cmd.Flags().StringVar(&opts.stackConfig, "stack-config", "", "The stack config file: the stack's input for this site (with --sitespec)")
 	cmd.Flags().StringVar(&opts.release, "release", "", "The NVKR release description, JSON")
 	cmd.Flags().StringVar(&opts.out, "out", "", "Directory to write; must not exist and must not be under a shared temp directory (required)")
-	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH, "Architecture to select release artifacts for; default: the site spec's controllerStack.arch, else this machine's")
+	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH, "The nodes' architecture, linux/amd64 or linux/arm64; default: this machine's")
 	cmd.Flags().StringVar(&opts.runDir, "nvkr-run-dir", "", "A completed NVKR Run or a directory of OCI layouts to read artifacts from instead of a registry")
 	cmd.Flags().StringSliceVar(&opts.plainHTTP, "plain-http-registries", nil, "Registry hosts served over plain HTTP; nothing is probed")
 	cmd.Flags().BoolVar(&opts.ephemeral, "ephemeral", false, "The caller removes --out when it is done; the summary does not ask the operator to")
@@ -103,36 +113,46 @@ deploy/nvke-deploy.sh install --deploy-path OUT.`,
 }
 
 func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) error {
+	if opts.siteSpec != "" && opts.stackConfig == "" {
+		return errors.New("--sitespec needs --stack-config: the stack's input is the stack config file")
+	}
+	if opts.stackConfig != "" && opts.siteSpec == "" {
+		return errors.New("--stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec")
+	}
 	if opts.siteSpec == "" && opts.release == "" {
-		return errors.New("pass --sitespec, --release or both")
+		return errors.New("pass --sitespec with --stack-config, --release, or both")
 	}
 	if opts.runDir != "" && opts.release == "" {
 		return errors.New("--nvkr-run-dir holds a release's artifacts; pass --release")
 	}
-	ro := deploypath.RenderOptions{DeployPath: opts.deployPath, Out: opts.out, Log: cmd.ErrOrStderr(), AllowTempOut: os.Getenv("NVKECTL_RENDER_ALLOW_TEMP_OUT") == "1"}
+	if !slices.Contains(nvkrrelease.Archs, opts.arch) {
+		return fmt.Errorf("--arch %s is not one of %s", opts.arch, strings.Join(nvkrrelease.Archs, ", "))
+	}
+	ro := deploypath.RenderOptions{DeployPath: opts.deployPath, Out: opts.out, Arch: opts.arch, Log: cmd.ErrOrStderr(), AllowTempOut: os.Getenv("NVKECTL_RENDER_ALLOW_TEMP_OUT") == "1"}
 	var inputs []string
 	if opts.siteSpec != "" {
 		spec, err := sitespec.Load(opts.siteSpec)
 		if err != nil {
 			return err
 		}
-		ro.Site = spec
+		stack, err := stackconfig.Load(opts.stackConfig)
+		if err != nil {
+			return fmt.Errorf("stack config %s:\n%w", opts.stackConfig, err)
+		}
+		ro.Site, ro.Stack = spec, stack
 		inputs = append(inputs, spec.ClusterName)
+		// The cobra default equals the host's value, so only the flag tells
+		// a chosen architecture from a defaulted one.
+		if !cmd.Flags().Changed("arch") {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: --arch not given; rendering for the host's %s\n", opts.arch)
+		}
 	}
 	if opts.release != "" {
 		release, err := nvkrrelease.Load(opts.release)
 		if err != nil {
 			return err
 		}
-		if ro.Site != nil && ro.Site.ControllerStack != nil && ro.Site.ControllerStack.Arch != "" {
-			siteArch := "linux/" + ro.Site.ControllerStack.Arch
-			if !cmd.Flags().Changed("arch") {
-				opts.arch = siteArch
-			} else if opts.arch != siteArch {
-				return fmt.Errorf("--arch %s, but the site spec's controllerStack.arch is %s", opts.arch, ro.Site.ControllerStack.Arch)
-			}
-		}
-		ro.Release, ro.ReleasePath, ro.Arch, ro.RunDir = release, opts.release, opts.arch, opts.runDir
+		ro.Release, ro.ReleasePath, ro.RunDir = release, opts.release, opts.runDir
 		ro.Registry = deploypath.Registries(opts.plainHTTP)
 		inputs = append(inputs, "release "+release.Reference)
 	}

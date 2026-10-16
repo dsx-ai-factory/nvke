@@ -6,7 +6,7 @@
 # site controller stack. It changes nothing. Every finding is one line, PASS,
 # WARN, SKIP or FAIL, and a FAIL names the fix. Any FAIL fails the run.
 #
-#   check-site.sh --sitespec FILE --kubeconfig PATH [--release FILE] [--nvkr-run-dir DIR]
+#   check-site.sh --sitespec FILE --stack-config FILE --kubeconfig PATH [--release FILE] [--nvkr-run-dir DIR]
 #   check-site.sh --kubeconfig PATH --diagnostics
 #
 # --diagnostics writes what a failed step left in the cluster (nodes, pods,
@@ -26,6 +26,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 . "${SCRIPT_DIR}/lib/common.sh"
 
 SITESPEC=""
+STACK_CONFIG=""
 RELEASE=""
 RUN_DIR=""
 KUBECONFIG_PATH=""
@@ -35,7 +36,8 @@ DEPLOY_PATH="${SCRIPT_DIR}/nico"
 STATE_DIR="${NVKE_STATE_DIR:-${XDG_STATE_HOME:-${HOME}/.local/state}/nvke}"
 CONTROLLER_NAMESPACE="${CONTROLLER_NAMESPACE:-nke-controller}"
 CAPI_VERSION="${CAPI_VERSION:-$(mk_var CAPI_VERSION)}"
-SITE_ARCH=""
+SITE_NAME=""
+NODE_ARCH=""
 CAPI_INIT=""
 HAVE_NVKECTL=""
 
@@ -53,7 +55,7 @@ EGRESS_URLS=(
 
 usage() {
   cat >&2 <<'USAGE'
-usage: check-site.sh --sitespec FILE --kubeconfig PATH [--release FILE] [--nvkr-run-dir DIR]
+usage: check-site.sh --sitespec FILE --stack-config FILE --kubeconfig PATH [--release FILE] [--nvkr-run-dir DIR]
        check-site.sh --kubeconfig PATH --diagnostics
 
 Reports, one line per finding, whether this machine and the cluster are
@@ -62,8 +64,10 @@ FAIL. --diagnostics instead writes nodes, pods, events, helm releases and
 the controller logs under NVKE_STATE_DIR/diagnostics (default
 $XDG_STATE_HOME/nvke/diagnostics).
 
-  --sitespec FILE     the site spec, with its controllerStack section filled in
-                      and the NVKECTL_* credentials it needs exported
+  --sitespec FILE     the site spec the bootstrap ran with
+  --stack-config FILE the stack config, the stack's input for this site; start
+                      from deploy/examples/stack-config.json. The NVKECTL_*
+                      credentials the install reads must be exported
   --kubeconfig PATH   the bootstrapped site cluster
   --release FILE      the NVKR release description the install will use
   --nvkr-run-dir DIR  with --release, the local NVKR Run the artifacts come from
@@ -75,6 +79,7 @@ USAGE
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --sitespec) SITESPEC="$2"; shift 2 ;;
+    --stack-config) STACK_CONFIG="$2"; shift 2 ;;
     --kubeconfig) KUBECONFIG_PATH="$2"; shift 2 ;;
     --release) RELEASE="$2"; shift 2 ;;
     --nvkr-run-dir) RUN_DIR="$2"; shift 2 ;;
@@ -90,7 +95,9 @@ if [[ -n "${DIAGNOSTICS}" ]]; then
   diagnostics
   exit 0
 fi
-[[ -n "${SITESPEC}" ]] || usage
+[[ -n "${SITESPEC}${STACK_CONFIG}" ]] || usage
+[[ -z "${SITESPEC}" || -n "${STACK_CONFIG}" ]] || die "--sitespec needs --stack-config: the stack's input is the stack config file"
+[[ -z "${STACK_CONFIG}" || -n "${SITESPEC}" ]] || die "--stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec"
 [[ -z "${RUN_DIR}" || -n "${RELEASE}" ]] || die "--nvkr-run-dir holds a release's artifacts; pass --release"
 
 # kread is a kubectl read whose failure is a finding: a denied, timed-out or
@@ -115,7 +122,7 @@ if command -v "${NVKECTL}" >/dev/null 2>&1; then
   check_pass "tool nvkectl: $(command -v "${NVKECTL}")"
   HAVE_NVKECTL=1
 else
-  check_fail "tool nvkectl: ${NVKECTL} not found; set NVKECTL or put it on PATH (make -C cli build). The site spec and the release are not checked without it"
+  check_fail "tool nvkectl: ${NVKECTL} not found; set NVKECTL or put it on PATH (make -C cli build). The site spec, the stack config and the release are not checked without it"
   HAVE_NVKECTL=""
 fi
 pin="$(mk_var HELM_VERSION)"
@@ -143,17 +150,55 @@ binary="$(clusterctl version -o short 2>/dev/null || true)"
 
 # --- the inputs --------------------------------------------------------------
 
+# Both files are read first, so the pair this run uses is said before any
+# finding, with the facts a wrong file would get wrong: the site name and
+# the NICo endpoint and org.
+site_valid=""
+site_read=""
+stack_valid=""
+stack_problem=""
+unset STACK_NICO_ENDPOINT STACK_NICO_ORG_ID
+if [[ -n "${HAVE_NVKECTL}" ]]; then
+  if "${NVKECTL}" validate sitespec -f "${SITESPEC}" >/dev/null 2>&1; then
+    site_valid=1
+    if site_vars="$("${NVKECTL}" inspect sitespec "${SITESPEC}" 2>/dev/null)"; then
+      eval "${site_vars}"
+      site_read=1
+    fi
+  fi
+  # inspect stack-config checks the file and the NVKECTL_* credentials.
+  if stack_vars="$("${NVKECTL}" inspect stack-config "${STACK_CONFIG}" 2>"${KREAD_ERR}")"; then
+    eval "${stack_vars}"
+    stack_valid=1
+  else
+    # The first problem; the command names every one of them. A command
+    # that said nothing, killed or otherwise, is a finding too.
+    stack_problem="$(grep -v -e '^Error: ' -e '^Trace ID: ' "${KREAD_ERR}" | head -n 1 || true)"
+    [[ -n "${stack_problem}" ]] || stack_problem="nvkectl inspect stack-config exited non-zero without a reason"
+  fi
+fi
+inputs="site spec $(abspath "${SITESPEC}")"
+[[ -z "${SITE_NAME}" ]] || inputs="${inputs}, site ${SITE_NAME}"
+inputs="${inputs}, stack config $(abspath "${STACK_CONFIG}")"
+[[ -z "${STACK_NICO_ENDPOINT:-}" ]] || inputs="${inputs}, nico ${STACK_NICO_ENDPOINT} org ${STACK_NICO_ORG_ID:-}"
+check_info "inputs: ${inputs}"
+
 if [[ -z "${HAVE_NVKECTL}" ]]; then
   check_skip "site spec: ${SITESPEC} (no nvkectl)"
-elif "${NVKECTL}" validate sitespec -f "${SITESPEC}" >/dev/null 2>&1; then
-  check_pass "site spec: ${SITESPEC} is valid for the controller stack"
-  if site_vars="$("${NVKECTL}" inspect sitespec "${SITESPEC}" 2>/dev/null)"; then
-    eval "${site_vars}"
-  else
-    check_fail "site spec: cannot read ${SITESPEC}; run: $(q "${NVKECTL}") inspect sitespec $(q "${SITESPEC}")"
-  fi
+  check_skip "stack config: ${STACK_CONFIG} (no nvkectl)"
 else
-  check_fail "site spec: ${SITESPEC} or the NVKECTL_* credentials it needs are not ready; run: $(q "${NVKECTL}") validate sitespec -f $(q "${SITESPEC}")"
+  if [[ -z "${site_valid}" ]]; then
+    check_fail "site spec: ${SITESPEC} is not valid; run: $(q "${NVKECTL}") validate sitespec -f $(q "${SITESPEC}")"
+  elif [[ -z "${site_read}" ]]; then
+    check_fail "site spec: cannot read ${SITESPEC}; run: $(q "${NVKECTL}") inspect sitespec $(q "${SITESPEC}")"
+  else
+    check_pass "site spec: ${SITESPEC} is valid"
+  fi
+  if [[ -n "${stack_valid}" ]]; then
+    check_pass "stack config: ${STACK_CONFIG}"
+  else
+    check_fail "stack config: ${STACK_CONFIG} is not ready: ${stack_problem}; run: $(q "${NVKECTL}") inspect stack-config $(q "${STACK_CONFIG}")"
+  fi
 fi
 if [[ -n "${RELEASE}" && -z "${HAVE_NVKECTL}" ]]; then
   check_skip "release: ${RELEASE} (no nvkectl)"
@@ -191,14 +236,21 @@ else
     else
       check_fail "cluster: ${count} node(s); expected an odd number, at least 1"
     fi
-    archs="$(printf '%s\n' "${nodes}" | awk -F'\t' 'NF { print $2 }' | sort -u | tr '\n' ' ')"
+    # The stack installs for one architecture, read from the nodes: it
+    # selects the release artifacts and the SPIRE TPM attestor checksum. The
+    # executor makes the same read and passes the result to the render.
+    unlabelled="$(printf '%s\n' "${nodes}" | awk -F'\t' 'NF && $2 == "" { print $1 }' | tr '\n' ' ')"
+    archs="$(printf '%s\n' "${nodes}" | awk -F'\t' 'NF && $2 != "" { print $2 }' | sort -u | tr '\n' ' ')"
     archs="${archs% }"
-    if [[ -z "${SITE_ARCH}" ]]; then
-      check_skip "cluster: node architecture ${archs:-unknown}; the site spec did not load"
-    elif [[ "${archs}" == "${SITE_ARCH}" ]]; then
-      check_pass "cluster: node architecture ${archs} matches controllerStack.arch"
+    if [[ "${count}" -eq 0 ]]; then
+      check_fail "cluster: no nodes"
+    elif [[ -n "${unlabelled}" ]]; then
+      check_fail "cluster: node ${unlabelled% } has no kubernetes.io/arch label"
+    elif [[ "${archs}" == *" "* ]]; then
+      check_fail "cluster: nodes report ${archs}; the stack installs for one architecture"
     else
-      check_fail "cluster: node architecture ${archs:-unknown}; the site spec says ${SITE_ARCH}"
+      NODE_ARCH="${archs}"
+      check_pass "cluster: nodes are ${NODE_ARCH}"
     fi
     # nvkectl bootstrap site removes the control-plane taint; nothing
     # schedules while it is on.
@@ -283,7 +335,7 @@ fi
 [[ "${CHECK_FAILURES}" -eq 0 ]] || die "${CHECK_FAILURES} finding(s) to fix before the stack installs"
 printf 'ready. Next:\n'
 [[ -z "${CAPI_INIT:-}" ]] || printf '  %s\n' "${CAPI_INIT}"
-install_cmd=("${SCRIPT_DIR}/nvke-deploy.sh" install --deploy-path "${DEPLOY_PATH}" --sitespec "${SITESPEC}" --kubeconfig "${KUBECONFIG_PATH}")
+install_cmd=("${SCRIPT_DIR}/nvke-deploy.sh" install --deploy-path "${DEPLOY_PATH}" --sitespec "${SITESPEC}" --stack-config "${STACK_CONFIG}" --kubeconfig "${KUBECONFIG_PATH}")
 [[ -z "${RELEASE}" ]] || install_cmd+=(--release "${RELEASE}")
 [[ -z "${RUN_DIR}" ]] || install_cmd+=(--nvkr-run-dir "${RUN_DIR}")
 install_line="$(printf '%q ' "${install_cmd[@]}")"

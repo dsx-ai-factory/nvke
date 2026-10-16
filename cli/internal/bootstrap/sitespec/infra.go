@@ -16,6 +16,12 @@ import (
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
+// validHTTPEndpoint reports whether ep is an http or https URL with a host.
+func validHTTPEndpoint(ep string) bool {
+	u, err := url.Parse(ep)
+	return err == nil && u.Host != "" && (u.Scheme == "http" || u.Scheme == "https")
+}
+
 // Provider names where a site cluster's machines come from.
 type Provider string
 
@@ -37,8 +43,8 @@ type Infra struct {
 	Provider Provider `yaml:"provider,omitempty"`
 	// Nico describes the NICo the site controller's own machines are allocated
 	// from, during bootstrap only. Used only with ProviderNico. It is not the
-	// NICo the finished controller uses for tenant clusters, which
-	// controllerStack.nico describes.
+	// NICo the finished controller uses for tenant clusters, which the stack
+	// config describes.
 	Nico *NicoInfra `yaml:"nico,omitempty"`
 }
 

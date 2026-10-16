@@ -36,7 +36,7 @@ The install reads a Release by output name. Each item of the `deploy/nico` deplo
 | `capnico-controller` | The Cluster API provider for NVIDIA Infra Controller (NICo) image. | The `capnico` item. |
 | `postgresql`, `spire-crds`, `spire`, `temporal`, `nktp` | Helm charts. | The item of the same name. |
 
-The install selects each output for the site's architecture, `controllerStack.arch` in the site spec. An output name may carry an `-amd64` or `-arm64` suffix. A chart the Release does not carry comes from the checkout or from its public repository. An image the Release does not carry stops the render, which names every missing image.
+The install selects each output for the management nodes' CPU architecture, which it reads from the cluster. An output name may carry an `-amd64` or `-arm64` suffix. A chart the Release does not carry comes from the checkout or from its public repository. An image the Release does not carry stops the render, which names every missing image.
 
 ### Hand the NVKR Release to the install
 
@@ -52,7 +52,7 @@ The install selects each output for the site's architecture, `controllerStack.ar
 
 3. Keep `release.json`. You pass it to the install as `--release` in [Install management-plane services](install-management-plane-services.md). For a local Run that was never published, also pass `--nvkr-run-dir .nvkr/runs/<ATTEMPT>`: the install then reads charts and images from the Run's OCI layouts instead of a registry, and imports the images into the node's containerd.
 
-> **Note:** NVKR's maintained M2 Definition (`definitions/nvke-m2`) does not build the `controller-profiles` or `capnico-controller` outputs, so the install refuses a Release built from it. Install without `--release` instead. The controller chart then comes from your checkout, and the site spec names the controller and profiles images in `controllerStack.images.controller` and `controllerStack.images.profiles`, each as `repository:tag` or `repository@sha256:<DIGEST>`. To use the Release's controller image, take the `cwe` output's `Derived artifact reference:` from `nvkr release browse`. To build the profiles image, see [Build the profile content image](#build-the-profile-content-image).
+> **Note:** NVKR's maintained M2 Definition (`definitions/nvke-m2`) does not build the `controller-profiles` or `capnico-controller` outputs, so the install refuses a Release built from it. Install without `--release` instead. The controller chart then comes from your checkout, and the stack config names the profile content image in `images.profiles`, as `repository:tag` or `repository@sha256:<DIGEST>`; `images.controller` is optional in the same form and overrides the deploy path's pinned controller image. To use the Release's controller image, take the `cwe` output's `Derived artifact reference:` from `nvkr release browse`. To build the profiles image, see [Build the profile content image](#build-the-profile-content-image).
 
 ### What an NVKR Release proves
 
@@ -165,7 +165,7 @@ write_files:
 
 The optional `configProfile` field of a node pool names a config profile, which sets node labels and the hook scripts that run before a node joins. The controller reads config profiles from a profile content image that an init container, `materialize-profiles`, copies into the controller pod at startup. NVKE looks up `configProfiles/<NAME>.yaml` in that image, and the hook scripts under `runbooks/`.
 
-With a Release, the profile content image is the Release's `controller-profiles` output. Without one, or to use your own config profiles, build the image and name it in the site spec's `controllerStack.images.profiles`, which overrides the Release's.
+With a Release, the profile content image is the Release's `controller-profiles` output. Without one, or to use your own config profiles, build the image and name it in the stack config's `images.profiles`, which overrides the Release's.
 
 ### Build the profile content image
 
@@ -195,12 +195,13 @@ With a Release, the profile content image is the Release's `controller-profiles`
 
    `<REGISTRY_HOST>/<NAMESPACE>` is your registry path, such as `registry.example.com/nvke`, and `<TAG>` is a version you choose, such as `v1`. Note the digest that `docker push` prints.
 
-4. Set the image in the site spec.
+4. Set the image in the stack config, the file you write in [Install management-plane services](install-management-plane-services.md#write-the-stack-config).
 
-   ```yaml
-   controllerStack:
-     images:
-       profiles: <REGISTRY_HOST>/<NAMESPACE>/nvke-profiles@<PROFILES_DIGEST>
+   ```json
+   "images": {
+     "controller": "",
+     "profiles": "<REGISTRY_HOST>/<NAMESPACE>/nvke-profiles@<PROFILES_DIGEST>"
+   }
    ```
 
    `<PROFILES_DIGEST>` is the `sha256:` digest from step 3. A digest pin restarts the controller when the profiles change; `repository:tag` also works.

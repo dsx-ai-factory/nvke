@@ -25,11 +25,13 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 )
 
 var (
-	nico    = filepath.Join("..", "..", "..", "deploy", "nico")
-	example = filepath.Join("..", "..", "examples", "sitespec.yaml")
+	nico         = filepath.Join("..", "..", "..", "deploy", "nico")
+	example      = filepath.Join("..", "..", "examples", "sitespec.yaml")
+	stackExample = filepath.Join("..", "..", "..", "deploy", "examples", "stack-config.json")
 )
 
 func TestItemsAndReleases(t *testing.T) {
@@ -108,56 +110,79 @@ func TestReadRelease_Problems(t *testing.T) {
 	}
 }
 
-// filledSiteSpec writes the example site spec with every controllerStack
-// placeholder filled in, sets the secrets in the environment, adds a SPIRE CA
-// when withCA is set, and loads it.
-func filledSiteSpec(t *testing.T, withCA bool, extra map[string]string) *sitespec.SiteSpec {
+// filledInputs writes the two inputs of a site render under one temp
+// directory, in separate subdirectories so a test can tell which one a
+// value came from: the example site spec under site/, with a trust domain
+// and, when withCA is set, a SPIRE CA; the example stack config under
+// stack/, every placeholder filled in. extra replaces further text of the
+// stack config. The credentials are set in the environment. Both are loaded.
+func filledInputs(t *testing.T, withCA bool, extra map[string]string) (*sitespec.SiteSpec, *stackconfig.Config) {
 	t.Helper()
-	dir := t.TempDir()
-	text, err := os.ReadFile(example)
+	root := t.TempDir()
+	siteDir, stackDir := filepath.Join(root, "site"), filepath.Join(root, "stack")
+	for _, dir := range []string{siteDir, stackDir} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(stackconfig.EnvNicoToken, "nico-secret")
+	t.Setenv(stackconfig.EnvNodeUser, "nvke")
+	t.Setenv(stackconfig.EnvNodePassword, "tenant-secret")
+	t.Setenv(stackconfig.EnvDatabasePassword, "db-secret")
+	t.Setenv(sitespec.EnvSpireCACertFile, "")
+	t.Setenv(sitespec.EnvSpireCAKeyFile, "")
+	spec, err := os.ReadFile(example)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(sitespec.EnvNicoToken, "nico-secret")
-	t.Setenv(sitespec.EnvNodeUser, "nvke")
-	t.Setenv(sitespec.EnvNodePassword, "tenant-secret")
-	t.Setenv(sitespec.EnvDatabasePassword, "db-secret")
-	t.Setenv(sitespec.EnvSpireCACertFile, "")
-	t.Setenv(sitespec.EnvSpireCAKeyFile, "")
-	values := map[string]string{
-		"REPLACE_ARCH": "arm64", "REPLACE_NICO_ENDPOINT": "https://nico.example.com", "REPLACE_NICO_ORG_ID": "org-1",
-		"REPLACE_NICO_API_NAME": "forge",
-	}
-	for k, v := range extra {
-		values[k] = v
-	}
-	body := string(text)
-	for placeholder, value := range values {
-		body = strings.ReplaceAll(body, placeholder, value)
-	}
 	// The trust domain is the bootstrap's; set here so the render does not default it.
-	body += "spire:\n  trustDomain: my-tier0-site.nke.local\n"
+	body := string(spec) + "spire:\n  trustDomain: my-tier0-site.nke.local\n"
 	if withCA {
 		body += "  upstreamCA: true\n"
 		for name, content := range map[string]string{"ca.crt": "CERT\n", "ca.key": "KEY\n"} {
-			if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(siteDir, name), []byte(content), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}
-		t.Setenv(sitespec.EnvSpireCACertFile, filepath.Join(dir, "ca.crt"))
-		t.Setenv(sitespec.EnvSpireCAKeyFile, filepath.Join(dir, "ca.key"))
+		t.Setenv(sitespec.EnvSpireCACertFile, filepath.Join(siteDir, "ca.crt"))
+		t.Setenv(sitespec.EnvSpireCAKeyFile, filepath.Join(siteDir, "ca.key"))
 	}
-	path := filepath.Join(dir, "sitespec.yaml")
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+	specPath := filepath.Join(siteDir, "sitespec.yaml")
+	if err := os.WriteFile(specPath, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	spec, err := sitespec.Load(path)
+	site, err := sitespec.Load(specPath)
 	if err != nil {
-		t.Fatalf("load: %v\n%s", err, body)
+		t.Fatalf("load site spec: %v\n%s", err, body)
 	}
-	// deploy/nico enables profiles.image without a pin, so the spec names it.
-	spec.ControllerStack.Images.Profiles = "ghcr.io/example/controller-profiles:v1"
-	return spec
+	stackText, err := os.ReadFile(stackExample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{"REPLACE_NICO_ENDPOINT": "https://nico.example.com", "REPLACE_NICO_ORG_ID": "org-1", "REPLACE_NICO_API_NAME": "forge"}
+	for k, v := range extra {
+		values[k] = v
+	}
+	stackBody := string(stackText)
+	for placeholder, value := range values {
+		stackBody = strings.ReplaceAll(stackBody, placeholder, value)
+	}
+	stackPath := filepath.Join(stackDir, "stack-config.json")
+	if err := os.WriteFile(stackPath, []byte(stackBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stack, err := stackconfig.Load(stackPath)
+	if err != nil {
+		t.Fatalf("load stack config: %v\n%s", err, stackBody)
+	}
+	// deploy/nico enables profiles.image without a pin, so the config names it.
+	stack.Images.Profiles = "ghcr.io/example/controller-profiles:v1"
+	return site, stack
+}
+
+// siteRender is the RenderOptions of a site render into out.
+func siteRender(spec *sitespec.SiteSpec, stack *stackconfig.Config, out string) RenderOptions {
+	return RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Stack: stack, Arch: "linux/arm64", Out: out}
 }
 
 func readValues(t *testing.T, path string) map[string]any {
@@ -195,9 +220,9 @@ func dig(m map[string]any, path ...string) any {
 }
 
 func TestRender_FromSiteSpec(t *testing.T) {
-	spec := filledSiteSpec(t, true, nil)
+	spec, stack := filledInputs(t, true, nil)
 	out := filepath.Join(t.TempDir(), "rendered")
-	result, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
+	result, err := Render(context.Background(), siteRender(spec, stack, out))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +253,7 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	}
 	password, _ := dig(ctl, "appDb", "postgresPassword").(string)
 	if password != "db-secret" {
-		t.Errorf("database password not read from %s: %q", sitespec.EnvDatabasePassword, password)
+		t.Errorf("database password not read from %s: %q", stackconfig.EnvDatabasePassword, password)
 	}
 	pg := readValues(t, filepath.Join(out, "postgresql", SiteValuesFile))
 	tp := readValues(t, filepath.Join(out, "temporal", SiteValuesFile))
@@ -331,11 +356,11 @@ func TestRender_FromSiteSpec(t *testing.T) {
 
 func TestRender_SiteSpecOptions(t *testing.T) {
 	// No CA, a mirror and an image override.
-	spec := filledSiteSpec(t, false, nil)
-	spec.ControllerStack.Mirror = "mirror.example.test:5000"
-	spec.ControllerStack.Images.Controller = "mirror.example.test:5000/cwe@sha256:" + strings.Repeat("a", 64)
+	spec, stack := filledInputs(t, false, nil)
+	stack.Mirror = "mirror.example.test:5000"
+	stack.Images.Controller = "mirror.example.test:5000/cwe@sha256:" + strings.Repeat("a", 64)
 	out := filepath.Join(t.TempDir(), "rendered")
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out}); err != nil {
+	if _, err := Render(context.Background(), siteRender(spec, stack, out)); err != nil {
 		t.Fatal(err)
 	}
 	ctl := readValues(t, filepath.Join(out, "controller", SiteValuesFile))
@@ -370,11 +395,11 @@ func TestRender_SiteSpecOptions(t *testing.T) {
 
 func TestRender_DatabasePassword(t *testing.T) {
 	// Without the variable the render refuses and leaves nothing.
-	spec := filledSiteSpec(t, false, nil)
-	t.Setenv(sitespec.EnvDatabasePassword, "")
+	spec, stack := filledInputs(t, false, nil)
+	t.Setenv(stackconfig.EnvDatabasePassword, "")
 	out := filepath.Join(t.TempDir(), "rendered")
-	_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
-	if err == nil || !strings.Contains(err.Error(), sitespec.EnvDatabasePassword+" is not set") {
+	_, err := Render(context.Background(), siteRender(spec, stack, out))
+	if err == nil || !strings.Contains(err.Error(), stackconfig.EnvDatabasePassword+" is not set") {
 		t.Errorf("unset password: %v", err)
 	}
 	if _, statErr := os.Stat(out); statErr == nil {
@@ -383,10 +408,10 @@ func TestRender_DatabasePassword(t *testing.T) {
 }
 
 func TestRender_RefusesSharedTemp(t *testing.T) {
-	spec := filledSiteSpec(t, false, nil)
+	spec, stack := filledInputs(t, false, nil)
 	shared := filepath.Join("/tmp", fmt.Sprintf("nvke-render-refused-%d", os.Getpid()))
 	for _, out := range []string{shared, filepath.Join(t.TempDir(), "rendered")} {
-		_, err := Render(context.Background(), RenderOptions{DeployPath: nico, Site: spec, Out: out})
+		_, err := Render(context.Background(), RenderOptions{DeployPath: nico, Site: spec, Stack: stack, Arch: "linux/arm64", Out: out})
 		if err == nil || !strings.Contains(err.Error(), "is under a shared temp directory") {
 			t.Errorf("%s: %v", out, err)
 		}
@@ -397,28 +422,44 @@ func TestRender_RefusesSharedTemp(t *testing.T) {
 }
 
 func TestRender_SiteSpecRefusals(t *testing.T) {
-	// Placeholders left, every problem at once, nothing left behind.
-	spec := filledSiteSpec(t, false, map[string]string{"REPLACE_ARCH": "REPLACE_ARCH", "REPLACE_NICO_ORG_ID": "REPLACE_NICO_ORG_ID"})
+	// The two inputs go together, the stack config comes from Load, and the
+	// architecture is one of two; nothing is left behind.
+	spec, stack := filledInputs(t, false, nil)
 	out := filepath.Join(t.TempDir(), "rendered")
-	_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
-	if err == nil || !strings.Contains(err.Error(), "controllerStack.arch is still a REPLACE_* placeholder") || !strings.Contains(err.Error(), "controllerStack.nico.orgID is still") {
-		t.Errorf("placeholders: %v", err)
+	for name, tc := range map[string]struct {
+		opts RenderOptions
+		want string
+	}{
+		"site without stack":  {RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Arch: "linux/arm64", Out: out}, "--sitespec needs --stack-config: the stack's input is the stack config file"},
+		"stack without site":  {RenderOptions{AllowTempOut: true, DeployPath: nico, Stack: stack, Arch: "linux/arm64", Out: out}, "--stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec"},
+		"stack not loaded":    {RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Stack: &stackconfig.Config{Nico: stack.Nico}, Arch: "linux/arm64", Out: out}, "must be loaded by stackconfig.Load"},
+		"no architecture":     {RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Stack: stack, Out: out}, `the architecture "" is not one of linux/amd64, linux/arm64`},
+		"architecture suffix": {RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Stack: stack, Arch: "arm64", Out: out}, `the architecture "arm64" is not one of`},
+	} {
+		_, err := Render(context.Background(), tc.opts)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: want %q, got %v", name, tc.want, err)
+		}
+		if _, statErr := os.Stat(out); statErr == nil {
+			t.Errorf("%s: a refused render left its output behind", name)
+		}
+	}
+	// A secret that is not set.
+	spec, stack = filledInputs(t, false, nil)
+	t.Setenv(stackconfig.EnvNicoToken, "")
+	_, err := Render(context.Background(), siteRender(spec, stack, out))
+	if err == nil || !strings.Contains(err.Error(), "environment: "+stackconfig.EnvNicoToken+" is not set") {
+		t.Errorf("unset token: %v", err)
 	}
 	if _, statErr := os.Stat(out); statErr == nil {
 		t.Error("a refused render left its output behind")
-	}
-	// A secret that is not set.
-	spec = filledSiteSpec(t, false, nil)
-	t.Setenv(sitespec.EnvNicoToken, "")
-	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
-	if err == nil || !strings.Contains(err.Error(), sitespec.EnvNicoToken+" is not set") {
-		t.Errorf("unset token: %v", err)
 	}
 	// --out must not exist, and an existing one is left alone.
 	if err := os.MkdirAll(filepath.Join(out, "keep"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: filledSiteSpec(t, false, nil), Out: out}); err == nil || !strings.Contains(err.Error(), "exists") {
+	spec, stack = filledInputs(t, false, nil)
+	if _, err := Render(context.Background(), siteRender(spec, stack, out)); err == nil || !strings.Contains(err.Error(), "exists") {
 		t.Errorf("existing out accepted: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(out, "keep")); err != nil {
@@ -431,14 +472,16 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	inside := filepath.Join(copied, "rendered-inside")
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: copied, Site: filledSiteSpec(t, false, nil), Out: inside}); err == nil || !strings.Contains(err.Error(), "inside the deploy path") {
+	copiedOpts := siteRender(spec, stack, inside)
+	copiedOpts.DeployPath = copied
+	if _, err := Render(context.Background(), copiedOpts); err == nil || !strings.Contains(err.Error(), "inside the deploy path") {
 		t.Errorf("nested out accepted: %v", err)
 	}
 	if _, statErr := os.Stat(inside); statErr == nil {
 		t.Error("nested out was created")
 	}
 	// A CA path with whitespace is refused: the deploy path reader cannot carry it.
-	caSpec := filledSiteSpec(t, true, nil)
+	caSpec, caStack := filledInputs(t, true, nil)
 	caDir := filepath.Join(t.TempDir(), "ca dir")
 	if err := os.MkdirAll(caDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -449,38 +492,38 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 		}
 	}
 	caSpec.Spire.CACertFile, caSpec.Spire.CAKeyFile = filepath.Join(caDir, "ca.crt"), filepath.Join(caDir, "ca.key")
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: caSpec, Out: filepath.Join(t.TempDir(), "r")}); err == nil || !strings.Contains(err.Error(), sitespec.EnvSpireCACertFile+": the path") || !strings.Contains(err.Error(), "holds whitespace") {
+	if _, err := Render(context.Background(), siteRender(caSpec, caStack, filepath.Join(t.TempDir(), "r"))); err == nil || !strings.Contains(err.Error(), sitespec.EnvSpireCACertFile+": the path") || !strings.Contains(err.Error(), "holds whitespace") {
 		t.Errorf("CA path with a space: %v", err)
 	}
 	// A secret the templates cannot carry is refused by variable.
 	for name, content := range map[string]string{"quote": "tok\"en", "newline": "abc\ndef", "backslash": "a\\b"} {
-		spec := filledSiteSpec(t, false, nil)
-		t.Setenv(sitespec.EnvNodePassword, content)
-		_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: filepath.Join(t.TempDir(), "r")})
-		if err == nil || !strings.Contains(err.Error(), sitespec.EnvNodePassword+": the value holds a character") {
+		spec, stack := filledInputs(t, false, nil)
+		t.Setenv(stackconfig.EnvNodePassword, content)
+		_, err := Render(context.Background(), siteRender(spec, stack, filepath.Join(t.TempDir(), "r")))
+		if err == nil || !strings.Contains(err.Error(), stackconfig.EnvNodePassword+": the value holds a character") {
 			t.Errorf("%s in a password: %v", name, err)
 		}
 	}
 	// A whitespace-only secret is trimmed to nothing and refused as unset.
-	blank := filledSiteSpec(t, false, nil)
-	t.Setenv(sitespec.EnvNicoToken, " \n")
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: blank, Out: filepath.Join(t.TempDir(), "r")}); err == nil || !strings.Contains(err.Error(), "environment: "+sitespec.EnvNicoToken+" is not set") {
+	blank, blankStack := filledInputs(t, false, nil)
+	t.Setenv(stackconfig.EnvNicoToken, " \n")
+	if _, err := Render(context.Background(), siteRender(blank, blankStack, filepath.Join(t.TempDir(), "r"))); err == nil || !strings.Contains(err.Error(), "environment: "+stackconfig.EnvNicoToken+" is not set") {
 		t.Errorf("whitespace-only token: %v", err)
 	}
 	// Refusals by field: no profiles image while the deploy path enables it, a
 	// non-secret value the templates cannot carry, an image override with no pin.
 	for name, tc := range map[string]struct {
-		mutate func(*sitespec.SiteSpec)
+		mutate func(*stackconfig.Config)
 		want   string
 	}{
-		"profiles image": {func(s *sitespec.SiteSpec) { s.ControllerStack.Images.Profiles = "" }, "controllerStack.images.profiles is required"},
-		"quoted orgID":   {func(s *sitespec.SiteSpec) { s.ControllerStack.Nico.OrgID = "org\"x" }, "controllerStack.nico.orgID: the value holds a character"},
-		"unpinned image": {func(s *sitespec.SiteSpec) { s.ControllerStack.Images.Controller = "mirror.example.test/cwe" }, "controllerStack.images.controller: \"mirror.example.test/cwe\" names neither a tag nor a digest"},
+		"profiles image": {func(s *stackconfig.Config) { s.Images.Profiles = "" }, "stack config: images.profiles is required"},
+		"quoted orgID":   {func(s *stackconfig.Config) { s.Nico.OrgID = "org\"x" }, "stack config: nico.orgID: the value holds a character"},
+		"unpinned image": {func(s *stackconfig.Config) { s.Images.Controller = "mirror.example.test/cwe" }, "stack config: images.controller: \"mirror.example.test/cwe\" names neither a tag nor a digest"},
 	} {
-		spec := filledSiteSpec(t, false, nil)
-		tc.mutate(spec)
+		spec, stack := filledInputs(t, false, nil)
+		tc.mutate(stack)
 		out := filepath.Join(t.TempDir(), "r")
-		_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
+		_, err := Render(context.Background(), siteRender(spec, stack, out))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: want %q, got %v", name, tc.want, err)
 		}
@@ -497,7 +540,10 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(malformed, "temporal", "release.yaml"), []byte("chart:\n  name: [\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: malformed, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")})
+	spec, stack = filledInputs(t, false, nil)
+	malformedOpts := siteRender(spec, stack, filepath.Join(t.TempDir(), "r"))
+	malformedOpts.DeployPath = malformed
+	_, err = Render(context.Background(), malformedOpts)
 	if err == nil || strings.Count(err.Error(), "temporal/release.yaml") != 1 {
 		t.Errorf("malformed release.yaml should be reported once: %v", err)
 	}
@@ -509,7 +555,9 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(withoutTemporal, "nvke-deploy.yaml"), []byte(strings.Replace(string(itemList), "  - {name: temporal, type: helm}\n", "", 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: withoutTemporal, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")})
+	withoutTemporalOpts := siteRender(spec, stack, filepath.Join(t.TempDir(), "r"))
+	withoutTemporalOpts.DeployPath = withoutTemporal
+	_, err = Render(context.Background(), withoutTemporalOpts)
 	if err == nil || !strings.Contains(err.Error(), "no temporal helm item") {
 		t.Errorf("missing consumer item: %v", err)
 	}
@@ -523,7 +571,9 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: broken, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")}); err == nil || !strings.Contains(err.Error(), "no .yaml.tmpl file") {
+	brokenOpts := siteRender(spec, stack, filepath.Join(t.TempDir(), "r"))
+	brokenOpts.DeployPath = broken
+	if _, err := Render(context.Background(), brokenOpts); err == nil || !strings.Contains(err.Error(), "no .yaml.tmpl file") {
 		t.Errorf("template item without templates: %v", err)
 	}
 	for _, name := range []string{"..", ".", "a..b"} {
@@ -544,7 +594,9 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	if err := copyTree(nico, spaced); err != nil {
 		t.Fatal(err)
 	}
-	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: spaced, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")})
+	spacedOpts := siteRender(spec, stack, filepath.Join(t.TempDir(), "r"))
+	spacedOpts.DeployPath = spaced
+	_, err = Render(context.Background(), spacedOpts)
 	if err == nil || !strings.Contains(err.Error(), "holds whitespace") {
 		t.Errorf("deploy path with a space: %v", err)
 	}
@@ -674,11 +726,13 @@ func TestRender_ReleaseChartVersionWins(t *testing.T) {
 }
 
 func TestRender_TrustDomainDefaultsWithAWarning(t *testing.T) {
-	spec := filledSiteSpec(t, false, nil)
+	spec, stack := filledInputs(t, false, nil)
 	spec.Spire.TrustDomain = ""
 	out := filepath.Join(t.TempDir(), "r")
 	var log strings.Builder
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out, Log: &log}); err != nil {
+	opts := siteRender(spec, stack, out)
+	opts.Log = &log
+	if _, err := Render(context.Background(), opts); err != nil {
 		t.Fatal(err)
 	}
 	env, _ := os.ReadFile(filepath.Join(out, "site.env"))
@@ -903,9 +957,9 @@ func TestRender_SiteAndRelease(t *testing.T) {
 	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
 	release := &nvkrrelease.Release{Reference: repo + "/releases@" + digest([]byte("r")), Outputs: []nvkrrelease.Artifact{temporal, cwe, profiles, capARM}}
 	out := filepath.Join(t.TempDir(), "rendered")
-	spec := filledSiteSpec(t, false, nil)
-	spec.ControllerStack.Images.Controller = "mirror.example.test/nvke/cwe:v1.2.3"
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err != nil {
+	spec, stack := filledInputs(t, false, nil)
+	stack.Images.Controller = "mirror.example.test/nvke/cwe:v1.2.3"
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Stack: stack, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err != nil {
 		t.Fatal(err)
 	}
 	// A tag-only override replaces the release image completely: the site
@@ -932,5 +986,23 @@ func TestRender_SiteAndRelease(t *testing.T) {
 	items, _ := Items(out)
 	if items[0].Type != TypeManifest {
 		t.Errorf("template item not rendered: %+v", items[0])
+	}
+}
+
+// The TPM attestor checksum follows the architecture the render was given,
+// since the nodes' architecture lives in no file.
+func TestRender_ChecksumPerArchitecture(t *testing.T) {
+	for arch, want := range map[string]string{"linux/amd64": "46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc", "linux/arm64": "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16"} {
+		spec, stack := filledInputs(t, false, nil)
+		out := filepath.Join(t.TempDir(), "r")
+		opts := siteRender(spec, stack, out)
+		opts.Arch = arch
+		if _, err := Render(context.Background(), opts); err != nil {
+			t.Fatalf("%s: %v", arch, err)
+		}
+		sp := readValues(t, filepath.Join(out, "spire", SiteValuesFile))
+		if got := dig(sp, "spire-server", "nodeAttestor", "tpmDirect", "checksum"); got != want {
+			t.Errorf("%s: checksum %v, want %s", arch, got, want)
+		}
 	}
 }

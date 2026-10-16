@@ -13,6 +13,7 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
@@ -833,8 +834,8 @@ func writeNicoTemp(t *testing.T, content string) string {
 	dir := filepath.Dir(path)
 	writeNicoFiles(t, dir, "nico.token", "releases")
 	t.Setenv(NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
-	t.Setenv(EnvNodeUser, "example-user")
-	t.Setenv(EnvNodePassword, "example-password")
+	t.Setenv(stackconfig.EnvNodeUser, "example-user")
+	t.Setenv(stackconfig.EnvNodePassword, "example-password")
 	return path
 }
 
@@ -1070,10 +1071,10 @@ func TestValidateBootstrapReferences_FilesMustExist(t *testing.T) {
 	}
 
 	t.Setenv(NicoCredentialsEnv, "")
-	t.Setenv(EnvNodeUser, "")
-	t.Setenv(EnvNodePassword, "")
+	t.Setenv(stackconfig.EnvNodeUser, "")
+	t.Setenv(stackconfig.EnvNodePassword, "")
 	err = inv.ValidateBootstrapReferences()
-	for _, want := range []string{NicoCredentialsEnv + " must name", EnvNodeUser + " is not set", EnvNodePassword + " is not set", "infra.nico.releases"} {
+	for _, want := range []string{NicoCredentialsEnv + " must name", stackconfig.EnvNodeUser + " is not set", stackconfig.EnvNodePassword + " is not set", "infra.nico.releases"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("ValidateBootstrapReferences error = %v, want it to report %q", err, want)
 		}
@@ -1090,8 +1091,8 @@ func TestValidateBootstrapReferences_FilesMustExist(t *testing.T) {
 func TestLoad_RejectsTheNicoTenantBlock(t *testing.T) {
 	path := writeNicoTemp(t, strings.Replace(nicoYAML, "    releases: releases", "    tenant:\n      user: u\n    releases: releases", 1))
 	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "infra.nico.tenant is no longer accepted") || !strings.Contains(err.Error(), EnvNodeUser) {
-		t.Errorf("Load = %v, want infra.nico.tenant refused, naming %s", err, EnvNodeUser)
+	if err == nil || !strings.Contains(err.Error(), "infra.nico.tenant is no longer accepted") || !strings.Contains(err.Error(), stackconfig.EnvNodeUser) {
+		t.Errorf("Load = %v, want infra.nico.tenant refused, naming %s", err, stackconfig.EnvNodeUser)
 	}
 }
 
@@ -1543,4 +1544,140 @@ func TestLoad_BootstrapReleases(t *testing.T) {
 			t.Fatalf("ValidateBootstrapReferences error = %v, want infra.nico.releases reported", err)
 		}
 	})
+}
+
+// baseSpec is the generated three-node site spec: what an operator holds
+// after `nvkectl generate sitespec`.
+func baseSpec(t *testing.T) *SiteSpec {
+	t.Helper()
+	spec, err := Build("my-tier0-site", threeNodes(), []string{"cluster.controlPlaneVIP=10.0.0.5"})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	return spec
+}
+
+func TestEffectiveTrustDomainAndEndpoint(t *testing.T) {
+	spec := baseSpec(t)
+	spec.Spire.TrustDomain = ""
+	if got := spec.EffectiveTrustDomain("nvkectl-bootstrap"); got != "nvkectl-bootstrap.nke.local" {
+		t.Errorf("default trust domain: %s", got)
+	}
+	if domain, defaulted := spec.TrustDomain(); domain != "nvkectl-bootstrap.nke.local" || !defaulted {
+		t.Errorf("TrustDomain default: %s %v", domain, defaulted)
+	}
+	spec.Spire.TrustDomain = "site.example.com"
+	if got := spec.EffectiveTrustDomain("ignored"); got != "site.example.com" {
+		t.Errorf("explicit trust domain: %s", got)
+	}
+	if domain, defaulted := spec.TrustDomain(); domain != "site.example.com" || defaulted {
+		t.Errorf("TrustDomain explicit: %s %v", domain, defaulted)
+	}
+	spec.Cluster.ControlPlaneVIP = "10.0.0.5"
+	if ep, err := spec.ControllerEndpoint(); err != nil || ep != "10.0.0.5" {
+		t.Errorf("VIP endpoint: %q %v", ep, err)
+	}
+	spec.Cluster.ControlPlaneVIP = ""
+	if _, err := spec.ControllerEndpoint(); err == nil {
+		t.Error("several nodes without a VIP accepted")
+	}
+	spec.Cluster.Nodes = spec.Cluster.Nodes[:1]
+	if ep, err := spec.ControllerEndpoint(); err != nil || ep != spec.Cluster.Nodes[0].IP {
+		t.Errorf("single node endpoint: %q %v", ep, err)
+	}
+}
+
+// A removed field is refused with what replaced it.
+func TestLoad_RejectsRemovedFields(t *testing.T) {
+	cases := map[string]struct{ add, want string }{
+		"registry":   {"registry:\n  bootstrapRepo: x\n", "nerdctl login"},
+		"caCertFile": {"spire:\n  caCertFile: ca.crt\n", EnvSpireCACertFile},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "sitespec.yaml")
+			if err := os.WriteFile(path, []byte(string(templateYAML)+"\n"+tc.add), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(path)
+			if err == nil || !strings.Contains(err.Error(), "no longer accepted") || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("want a removed-field error naming %s, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+// The template renders as a site spec the loader accepts, with nothing but
+// the bootstrap's sections in it.
+func TestTemplate_IsABootstrapSpec(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sitespec.yaml")
+	body := strings.Replace(string(templateYAML), "  # controlPlaneVIP: \"10.0.0.100\"", "  controlPlaneVIP: \"10.0.0.100\"", 1)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := spec.Render(); err != nil {
+		t.Errorf("Render of a loaded spec: %v", err)
+	}
+}
+
+// TestNodeLoginFromEnv: the bootstrap reads the login the stack install reads,
+// by the same rules, so a value one accepts the other does not refuse.
+func TestNodeLoginFromEnv(t *testing.T) {
+	t.Setenv(stackconfig.EnvNodeUser, " nke\n")
+	t.Setenv(stackconfig.EnvNodePassword, "pw")
+	if user, password, err := NodeLoginFromEnv(); err != nil || user != "nke" || password != "pw" {
+		t.Errorf("NodeLoginFromEnv = %q, %q, %v; want the trimmed login", user, password, err)
+	}
+	t.Setenv(stackconfig.EnvNodeUser, "  ")
+	t.Setenv(stackconfig.EnvNodePassword, "")
+	_, _, err := NodeLoginFromEnv()
+	for _, want := range []string{stackconfig.EnvNodeUser + " is not set", stackconfig.EnvNodePassword + " is not set"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("unset login: error %v lacks %q", err, want)
+		}
+	}
+	for _, tt := range []struct{ name, value string }{
+		{stackconfig.EnvNodeUser, `a"b`},
+		{stackconfig.EnvNodePassword, `p\w`},
+		{stackconfig.EnvNodePassword, "p\x01w"},
+	} {
+		t.Run(tt.name+" "+tt.value, func(t *testing.T) {
+			t.Setenv(stackconfig.EnvNicoToken, "token")
+			t.Setenv(stackconfig.EnvDatabasePassword, "db")
+			t.Setenv(stackconfig.EnvNodeUser, "nke")
+			t.Setenv(stackconfig.EnvNodePassword, "pw")
+			t.Setenv(tt.name, tt.value)
+			_, _, err := NodeLoginFromEnv()
+			if err == nil || !strings.Contains(err.Error(), tt.name+": the value holds a character") {
+				t.Errorf("NodeLoginFromEnv error = %v; want %s refused as the stack install refuses it", err, tt.name)
+			}
+			if _, stackErr := stackconfig.CredentialsFromEnv(); stackErr == nil {
+				t.Errorf("stackconfig.CredentialsFromEnv accepted what NodeLoginFromEnv refuses")
+			}
+		})
+	}
+}
+
+// TestControllerEndpoint_NicoNeedsTheVIP: one nico node without a VIP
+// bootstraps, but the stack install has no address for the controller, and
+// says so for nico instead of claiming the spec has several nodes.
+func TestControllerEndpoint_NicoNeedsTheVIP(t *testing.T) {
+	spec := baseSpec(t)
+	makeNico(spec)
+	spec.Infra.Nico.ControlPlane.Count = 1
+	spec.Cluster.ControlPlaneVIP = ""
+	if err := spec.Validate(); err != nil {
+		t.Fatalf("one nico node without a VIP must validate for the bootstrap: %v", err)
+	}
+	if _, err := spec.ControllerEndpoint(); err == nil || !strings.Contains(err.Error(), "cluster.controlPlaneVIP") || strings.Contains(err.Error(), "several nodes") {
+		t.Errorf("ControllerEndpoint error = %v, want one naming cluster.controlPlaneVIP for nico", err)
+	}
+	spec.Cluster.ControlPlaneVIP = "10.0.0.5"
+	if ep, err := spec.ControllerEndpoint(); err != nil || ep != "10.0.0.5" {
+		t.Errorf("endpoint with a VIP: %q %v", ep, err)
+	}
 }

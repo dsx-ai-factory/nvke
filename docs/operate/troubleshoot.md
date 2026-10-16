@@ -200,17 +200,17 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 
 The install stops at the component that failed. Fix the cause and run the same command again, as described in [Install management-plane services](install-management-plane-services.md#if-the-install-fails).
 
-### The site spec still has placeholders
+### The stack config is not ready
 
-- **Symptom:** `nvkectl validate sitespec` or the install reports `controllerStack.<FIELD> is still a REPLACE_* placeholder; fill it in`, or `controllerStack.<FIELD> is required`.
-- **Cause:** The `controllerStack` section of the site spec is not filled in. The bootstrap does not read it, so a site spec that bootstrapped the cluster can still fail here.
-- **Fix:** Fill in the field as described in [Install management-plane services](install-management-plane-services.md#fill-in-the-controller-stack-settings), then run `nvkectl validate sitespec -f sitespec.yaml` until it reports no placeholders.
+- **Symptom:** `deploy/check-site.sh` reports `FAIL  stack config: <FILE> is not ready: <KEY>: <PROBLEM>`, or the install stops with `stack config <FILE>:` followed by one line per problem, such as `nico.endpoint: still a REPLACE_* placeholder; fill it in` or `environment: NVKECTL_NICO_TOKEN is not set`.
+- **Cause:** A value in the stack config is still a `REPLACE_*` placeholder, a required key is empty, the file carries a key it must not, or one of the `NVKECTL_*` variables is not exported in the shell you run from.
+- **Fix:** Edit the key or export the variable as described in [Install management-plane services](install-management-plane-services.md#write-the-stack-config), then run the check again until the stack config passes.
 
 ### The install refuses the release
 
 - **Symptom:** The install stops before it changes the cluster with `<ITEM>: <ROLE> <ARTIFACT> is not in the release`, for example for `controller-profiles` or `capnico-controller`.
-- **Cause:** The release description does not carry an artifact that the deploy path names, for the architecture in `controllerStack.arch`.
-- **Fix:** Use a release that carries the artifact, or install without `--release` and name the images in `controllerStack.images`, as described in [Choose where the artifacts come from](install-management-plane-services.md#choose-where-the-artifacts-come-from).
+- **Cause:** The release description does not carry an artifact that the deploy path names, for the management nodes' CPU architecture.
+- **Fix:** Use a release that carries the artifact, or install without `--release` and name the images in the stack config's `images`, as described in [Choose where the artifacts come from](install-management-plane-services.md#choose-where-the-artifacts-come-from).
 
 ### A volume claim stays Pending
 
@@ -221,14 +221,14 @@ The install stops at the component that failed. Fix the cause and run the same c
 ### An image cannot be pulled
 
 - **Symptom:** A component times out, and its pod is in `ImagePullBackOff`.
-- **Cause:** The nodes cannot reach or authenticate to the registry that the release or `controllerStack.images` names.
+- **Cause:** The nodes cannot reach or authenticate to the registry that the release or the stack config's `images` names.
 - **Fix:** Read the registry's error with `kubectl describe pod`, make the registry reachable from the nodes, and run the install again.
 
 ### spire-server restarts with checksums did not match
 
 - **Symptom:** The `spire-server` pod restarts, and its log contains `checksums did not match`.
-- **Cause:** `controllerStack.arch` does not match the management nodes' architecture. The install selects SPIRE's TPM attestor checksum from it.
-- **Fix:** Correct `controllerStack.arch`. `deploy/check-site.sh` compares it with the nodes. Then run the install again.
+- **Cause:** The install rendered SPIRE's TPM attestor checksum for another CPU architecture than the node that runs `spire-server`. The install reads the architecture from the management nodes, so this happens when the nodes do not all report one, or when `--arch` was passed to `deploy/nvke-deploy.sh` with the wrong value. `deploy/check-site.sh` fails on nodes that report two architectures or lack the `kubernetes.io/arch` label.
+- **Fix:** Give every management node the same architecture and the label, run the check, then run the install again without `--arch`.
 
 ## Infrastructure provider
 

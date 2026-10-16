@@ -103,12 +103,12 @@ The controller stack install's credentials are listed in
 
 ## Validating the Site Spec
 
-`nvkectl validate sitespec` checks the whole file and reports by section: the fields `bootstrap site` reads, then the `controllerStack:` section the controller stack install reads, with the `REPLACE_*` values still to fill in listed apart from errors. It exits 0 when the `controllerStack:` section is ready. A site spec field that is invalid fails it either way. What only the bootstrap host holds (with `infra.provider nico`: the NICo token file, the release files, `spire.externalAddress`, and the https check on `infra.nico.remote.endpoint`) is reported but does not change the exit status, because the controller stack install runs this command on a host that lacks those inputs; add `--bootstrap-only` to fail on them instead. The two halves are used in sequence: once the bootstrap section is valid, `nvkectl bootstrap site` can run with the file, and the `controllerStack:` section is filled in before the stack install. The output says so. It also checks the environment: the SPIRE CA variables `spire.upstreamCA` requires, and, for the `controllerStack:` section, the install's credentials.
+`nvkectl validate sitespec` checks the file the way `bootstrap site` reads it, including the SPIRE CA variables `spire.upstreamCA` requires, and prints `valid`. All problems are reported together in one pass. With `infra.provider: nico`, what only the bootstrap host holds (the NICo token file, the node login, the release files, `spire.externalAddress`, and the https check on `infra.nico.remote.endpoint`) is reported but does not change the exit status, because the controller stack install runs this command on a host that lacks those inputs; add `--bootstrap-only` to fail on them instead.
 
 ```bash
 nvkectl validate sitespec -f sitespec.yaml
-nvkectl validate sitespec -f sitespec.yaml --bootstrap-only   # before the controllerStack section is filled in
-nvkectl validate sitespec -f sitespec.yaml --disable-mtls     # as "bootstrap site --disable-mtls" would: no spire.externalAddress needed with nico
+nvkectl validate sitespec -f sitespec.yaml --bootstrap-only   # on the bootstrap host, with nico
+nvkectl validate sitespec -f sitespec.yaml --bootstrap-only --disable-mtls   # as "bootstrap site --disable-mtls" would: no spire.externalAddress needed with nico
 ```
 
 `bootstrap site --dry-run` loads and validates the bootstrap fields and prints the resolved inventory without dispatching any workflow or touching any node. All validation errors are reported together in one pass.
@@ -117,7 +117,7 @@ nvkectl validate sitespec -f sitespec.yaml --disable-mtls     # as "bootstrap si
 nvkectl bootstrap site -f sitespec.yaml --dry-run
 ```
 
-The site spec's `controllerStack:` section is the input for the controller stack install. `nvkectl generate sitespec` writes it with `REPLACE_*` placeholders, `nvkectl bootstrap site` ends by listing the ones still in the file, and the install refuses a placeholder. Fill it in before installing the stack. The install reads the NICo token, the node login and the PostgreSQL password from `NVKECTL_NICO_TOKEN`, `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` and `NVKECTL_DATABASE_PASSWORD`, so the site spec holds no credential.
+The controller stack install reads the site spec too, for the site name, the control-plane VIP and the SPIRE trust domain, and takes everything only the stack needs from a file of its own, the stack config; [deploy/README.md](../../deploy/README.md) describes it. The install reads the NICo token, the node login and the PostgreSQL password from `NVKECTL_NICO_TOKEN`, `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` and `NVKECTL_DATABASE_PASSWORD`, so neither file holds a credential.
 
 ## What's Next After Bootstrap
 

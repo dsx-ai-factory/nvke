@@ -119,6 +119,7 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
    ```bash
    deploy/nvke-deploy.sh install --deploy-path deploy/nico \
      --sitespec ../sitespec.yaml \
+     --stack-config ../stack-config.json \
      --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
      --release ../release.json \
      --values-for controller=../auth-values.yaml
@@ -236,6 +237,7 @@ Continue when `would_reject` stops increasing.
    ```bash
    deploy/nvke-deploy.sh install --deploy-path deploy/nico \
      --sitespec ../sitespec.yaml \
+     --stack-config ../stack-config.json \
      --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
      --release ../release.json \
      --values-for controller=../auth-values.yaml

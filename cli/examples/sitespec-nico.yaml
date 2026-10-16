@@ -7,7 +7,8 @@
 #
 # The NICo described here is used ONLY to bootstrap the site controller's own
 # nodes. The NICo the finished site controller uses for tenant clusters is
-# configured separately (controllerStack.nico) and may be a different one.
+# configured in the stack config the controller stack install reads
+# (deploy/examples/stack-config.json), and may be a different one.
 #
 # The NICo token is not in this file. Point NVKECTL_NICO_CREDENTIALS at a file
 # that holds it:
@@ -81,29 +82,3 @@ cluster:
 spire:
   externalAddress: "192.0.2.10"
 
-# Input for the controller stack install, read after the bootstrap. "nvkectl
-# bootstrap site" does not read it. FILL IN EVERY REPLACE_* VALUE BEFORE
-# INSTALLING THE STACK; the install refuses a value that is still a
-# placeholder. The install reads the NICo token, the node login and the
-# Postgres password from NVKECTL_NICO_TOKEN, NVKECTL_NODE_USER,
-# NVKECTL_NODE_PASSWORD and NVKECTL_DATABASE_PASSWORD. The site name, trust
-# domain, control-plane VIP and SPIRE CA come from the fields above and are not
-# repeated here. This NICo is the one the finished site controller uses for
-# tenant clusters; it may differ from infra.nico above.
-controllerStack:
-  # Node CPU architecture: amd64 or arm64.
-  arch: REPLACE_ARCH
-  # The NICo API CAPNICo calls.
-  nico:
-    endpoint: REPLACE_NICO_ENDPOINT
-    orgID: REPLACE_NICO_ORG_ID
-    # For example forge.
-    apiName: REPLACE_NICO_API_NAME
-  # Optional. Both default to the release file's items; set one only to
-  # override it, as repository:tag or repository@sha256:<digest>.
-  # images:
-  #   controller: ""
-  #   profiles: ""
-  # Optional. Registry the external images are pulled from instead of their
-  # upstream registries, as host[:port][/prefix], no scheme.
-  # mirror: ""

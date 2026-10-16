@@ -16,6 +16,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/controllerdeploy"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 )
 
 // SiteValuesFile is the values file render appends to an item for the site.
@@ -36,8 +37,8 @@ var temporalImages = map[string]string{"server": "temporalio/server", "admintool
 
 // TemplateContext is what a template item's .yaml.tmpl files render against:
 // the subset of the BootstrapConfig fields in
-// docs/site-bootstrap/deploy-repository.md that the site spec's
-// controllerStack section supplies. A template naming another field is
+// docs/site-bootstrap/deploy-repository.md that the site spec, the stack
+// config and the environment supply. A template naming another field is
 // refused.
 type TemplateContext struct {
 	ClusterName string
@@ -47,19 +48,14 @@ type TemplateContext struct {
 
 // site writes the site values and renders the template items.
 func (r *renderer) site() {
-	spec := r.opts.Site
-	if err := spec.ValidateControllerStack(); err != nil {
-		r.problem("site spec: %v", err)
-		return
-	}
-	creds, err := sitespec.StackCredentialsFromEnv()
+	spec, cs := r.opts.Site, r.opts.Stack
+	creds, err := stackconfig.CredentialsFromEnv()
 	if err != nil {
 		for _, line := range strings.Split(err.Error(), "\n") {
 			r.problem("environment: %s", line)
 		}
 		return
 	}
-	cs := spec.ControllerStack
 	vip, err := spec.ControllerEndpoint()
 	if err != nil {
 		r.problem("site spec: %v", err)
@@ -72,21 +68,21 @@ func (r *renderer) site() {
 	// credential.
 	check := func(what, value string) string {
 		if value == "" {
-			r.problem("site spec: %s is empty", what)
+			r.problem("stack config: %s is empty", what)
 			return ""
 		}
-		if !sitespec.TemplateSafe(value) {
-			r.problem("site spec: %s: the value holds a character the templates cannot carry (a quote, a backslash or a control character)", what)
+		if !stackconfig.TemplateSafe(value) {
+			r.problem("stack config: %s: the value holds a character the templates cannot carry (a quote, a backslash or a control character)", what)
 			return ""
 		}
 		return value
 	}
 	var ctx TemplateContext
 	ctx.ClusterName = spec.ClusterName
-	ctx.Nico.Endpoint = check("controllerStack.nico.endpoint", cs.Nico.Endpoint)
-	ctx.Nico.OrgID = check("controllerStack.nico.orgID", cs.Nico.OrgID)
-	ctx.Nico.APIName = check("controllerStack.nico.apiName", cs.Nico.APIName)
-	// StackCredentialsFromEnv applies the same rule to the credentials.
+	ctx.Nico.Endpoint = check("nico.endpoint", cs.Nico.Endpoint)
+	ctx.Nico.OrgID = check("nico.orgID", cs.Nico.OrgID)
+	ctx.Nico.APIName = check("nico.apiName", cs.Nico.APIName)
+	// CredentialsFromEnv applies the same rule to the credentials.
 	ctx.Nico.Token, ctx.Tenant.User, ctx.Tenant.Password = creds.NicoToken, creds.NodeUser, creds.NodePassword
 	if len(r.problems) > 0 {
 		return
@@ -100,9 +96,9 @@ func (r *renderer) site() {
 	if defaulted {
 		fmt.Fprintf(r.opts.Log, "warning: spire.trustDomain is not set; using %s, the domain a bootstrap with the default cluster name used. A bootstrap run under another cluster name printed a different one; the install has to use that.\n", trustDomain)
 	}
-	checksum := controllerdeploy.SpireTPMDirectChecksum(cs.Arch)
+	checksum := controllerdeploy.SpireTPMDirectChecksum(archOf(r.opts.Arch))
 	if checksum == "" {
-		r.problem("site spec: controllerStack.arch %q has no TPM attestor checksum", cs.Arch)
+		r.problem("the architecture %q has no TPM attestor checksum", r.opts.Arch)
 		return
 	}
 	// Only YAML-encoded values carry it, so it needs no template character check.
@@ -119,19 +115,19 @@ func (r *renderer) site() {
 		"spiffe":       map[string]any{"trustDomain": trustDomain, "spire": map[string]any{"serverAddress": vip}},
 	}
 	if cs.Images.Controller != "" {
-		controller["image"] = r.imageValues("controllerStack.images.controller", cs.Images.Controller)
+		controller["image"] = r.imageValues("images.controller", cs.Images.Controller)
 		if r.opts.Release != nil {
-			r.note("controller: controllerStack.images.controller overrides the release's image")
+			r.note("controller: images.controller in the stack config overrides the release's image")
 		}
 	}
 	if cs.Images.Profiles != "" {
-		controller["profiles"] = map[string]any{"image": r.imageValues("controllerStack.images.profiles", cs.Images.Profiles)}
+		controller["profiles"] = map[string]any{"image": r.imageValues("images.profiles", cs.Images.Profiles)}
 		if r.opts.Release != nil {
-			r.note("controller: controllerStack.images.profiles overrides the release's profiles image")
+			r.note("controller: images.profiles in the stack config overrides the release's profiles image")
 		}
 	} else if r.opts.Release == nil && r.profilesImageRequired() {
 		// With a release, the controller item's profilesArtifact names it.
-		r.problem("site spec: controllerStack.images.profiles is required: the deploy path enables profiles.image and nothing else names the image")
+		r.problem("stack config: images.profiles is required: the deploy path enables profiles.image and nothing else names the image")
 	}
 	r.siteValues("controller", controller)
 	r.credential(filepath.Join("controller", SiteValuesFile))
@@ -301,7 +297,7 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 func (r *renderer) imageValues(what, ref string) map[string]any {
 	values := imageValues(ref)
 	if values == nil {
-		r.problem("site spec: %s: %q names neither a tag nor a digest", what, ref)
+		r.problem("stack config: %s: %q names neither a tag nor a digest", what, ref)
 		return map[string]any{}
 	}
 	return values
@@ -323,7 +319,7 @@ func imageValues(ref string) map[string]any {
 }
 
 // profilesImageRequired reports whether the deploy path's controller values
-// enable profiles.image without naming a tag or digest, so the site spec
+// enable profiles.image without naming a tag or digest, so the stack config
 // must supply the image. The files are read as nodes: helm accepts a
 // repeated key, so the check does too.
 func (r *renderer) profilesImageRequired() bool {

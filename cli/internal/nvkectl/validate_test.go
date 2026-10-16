@@ -20,162 +20,99 @@ func generatedSiteSpec(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("generate sitespec: %v", err)
 	}
-	path := filepath.Join(t.TempDir(), "sitespec.yaml")
+	path := filepath.Join(t.TempDir(), "site", "sitespec.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(path, []byte(stdout), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
 }
 
-// filledSiteSpec replaces every controllerStack placeholder with a value and
-// sets the secrets the install reads from the environment.
-func filledSiteSpec(t *testing.T, edits map[string]string) string {
+// siteSpecWithTrustDomain is the generated site spec with spire.trustDomain
+// set, the way a bootstrapped site's spec reads.
+func siteSpecWithTrustDomain(t *testing.T) string {
 	t.Helper()
 	path := generatedSiteSpec(t)
-	t.Setenv(sitespec.EnvNicoToken, "placeholder")
-	t.Setenv(sitespec.EnvNodeUser, "placeholder")
-	t.Setenv(sitespec.EnvNodePassword, "placeholder")
-	t.Setenv(sitespec.EnvDatabasePassword, "placeholder")
-	values := map[string]string{
-		"REPLACE_ARCH": "arm64", "REPLACE_NICO_ENDPOINT": "https://nico.example.com", "REPLACE_NICO_ORG_ID": "org-1",
-		"REPLACE_NICO_API_NAME": "forge",
-		// deploy/nico enables profiles.image without a pin.
-		"  # images:\n  #   controller: \"\"\n  #   profiles: \"\"": "  images:\n    profiles: ghcr.io/example/controller-profiles:v1",
-	}
-	for k, v := range edits {
-		values[k] = v
-	}
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The trust domain goes in before the edits, so a case can take it out.
 	text := string(body) + "spire:\n  trustDomain: my-tier0-site.nke.local\n"
-	for placeholder, value := range values {
-		text = strings.ReplaceAll(text, placeholder, value)
-	}
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
 }
 
-func TestValidateSiteSpec_GeneratedFileListsPlaceholders(t *testing.T) {
+func TestValidateSiteSpec_GeneratedFile(t *testing.T) {
 	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", generatedSiteSpec(t))
-	if err == nil {
-		t.Fatal("a generated site spec validated as ready")
-	}
-	if !strings.Contains(stdout, "bootstrap: valid; nvkectl bootstrap site can run with this file\n") {
-		t.Errorf("bootstrap section not reported valid:\n%s", stdout)
-	}
-	if !strings.Contains(stdout, "controllerStack: 4 values still to fill in: controllerStack.arch, controllerStack.nico.endpoint") {
-		t.Errorf("placeholders not listed:\n%s", stdout)
+	if err != nil {
+		t.Fatalf("a generated site spec did not validate: %v\n%s", err, stdout)
 	}
 	// generate sitespec leaves the spire block commented out; the default
 	// trust domain is reported, not required.
 	if !strings.Contains(stdout, "spire.trustDomain: not set; a bootstrap with the default cluster name and the controller stack install both use nvkectl-bootstrap.nke.local") {
 		t.Errorf("default trust domain not reported:\n%s", stdout)
 	}
-	if strings.Contains(stdout, "is required") {
-		t.Errorf("placeholders reported as errors too:\n%s", stdout)
-	}
-	if !strings.Contains(stdout, "bootstrap: valid; nvkectl bootstrap site can run with this file") || !strings.Contains(err.Error(), "the bootstrap can run now") {
-		t.Errorf("the output does not say the bootstrap can run:\n%s\n%v", stdout, err)
+	if !strings.HasSuffix(stdout, "valid\n") {
+		t.Errorf("the output does not end with valid:\n%s", stdout)
 	}
 }
 
-func TestValidateSiteSpec_BootstrapOnly(t *testing.T) {
-	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", generatedSiteSpec(t), "--bootstrap-only")
-	if err != nil || stdout != "bootstrap: valid; nvkectl bootstrap site can run with this file\n" {
-		t.Errorf("--bootstrap-only: %q %v", stdout, err)
+func TestValidateSiteSpec_WithTrustDomain(t *testing.T) {
+	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", siteSpecWithTrustDomain(t))
+	if err != nil || stdout != "valid\n" {
+		t.Errorf("site spec with a trust domain: %q %v", stdout, err)
 	}
 }
 
-func TestValidateSiteSpec_Filled(t *testing.T) {
-	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", filledSiteSpec(t, nil))
-	if err != nil || !strings.HasSuffix(stdout, "controllerStack: valid\n") {
-		t.Errorf("filled site spec: %q %v", stdout, err)
+// The SPIRE CA from the environment is the one reference the spec has, and
+// validate reads it the way bootstrap site does.
+func TestValidateSiteSpec_SpireCA(t *testing.T) {
+	path := siteSpecWithTrustDomain(t)
+	body, _ := os.ReadFile(path)
+	if err := os.WriteFile(path, []byte(string(body)+"  upstreamCA: true\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	// Without a trust domain the file is still ready: both commands default it.
-	stdout, _, err = runGenerate(t, "validate", "sitespec", "-f", filledSiteSpec(t, map[string]string{"spire:\n  trustDomain: my-tier0-site.nke.local\n": ""}))
-	if err != nil || !strings.Contains(stdout, "spire.trustDomain: not set") || !strings.HasSuffix(stdout, "controllerStack: valid\n") {
-		t.Errorf("filled site spec without a trust domain: %q %v", stdout, err)
+	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", path)
+	if err == nil || !strings.Contains(err.Error(), sitespec.EnvSpireCACertFile) || strings.Contains(stdout, "valid") {
+		t.Errorf("upstreamCA without the variables: %q %v", stdout, err)
+	}
+	dir := t.TempDir()
+	for _, name := range []string{"ca.crt", "ca.key"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(sitespec.EnvSpireCACertFile, filepath.Join(dir, "ca.crt"))
+	t.Setenv(sitespec.EnvSpireCAKeyFile, filepath.Join(dir, "ca.key"))
+	if stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", path); err != nil || stdout != "valid\n" {
+		t.Errorf("upstreamCA with the variables: %q %v", stdout, err)
 	}
 }
 
 func TestValidateSiteSpec_Problems(t *testing.T) {
-	cases := map[string]struct {
-		edits map[string]string
-		want  string
-	}{
-		"bad arch":       {map[string]string{"REPLACE_ARCH": "x86"}, `controllerStack.arch "x86" must be one of amd64, arm64`},
-		"bad endpoint":   {map[string]string{"REPLACE_NICO_ENDPOINT": "nico.example.com"}, "controllerStack.nico.endpoint"},
-		"empty required": {map[string]string{"REPLACE_NICO_ORG_ID": `""`}, "controllerStack.nico.orgID is required"},
-		"half filled":    {map[string]string{"REPLACE_ARCH": "REPLACE_ARCH"}, "1 values still to fill in: controllerStack.arch"},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", filledSiteSpec(t, tc.edits))
-			if err == nil {
-				t.Fatalf("validated as ready:\n%s", stdout)
-			}
-			if !strings.Contains(stdout, tc.want) {
-				t.Errorf("want %q in:\n%s", tc.want, stdout)
-			}
-		})
-	}
-}
-
-// TestValidateSiteSpec_UnrenderableSecret: a credential the render refuses is
-// reported by validate too, not passed as valid.
-func TestValidateSiteSpec_UnrenderableSecret(t *testing.T) {
-	path := filledSiteSpec(t, nil)
-	t.Setenv(sitespec.EnvNicoToken, `tok"en`)
-	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", path)
-	if err == nil || !strings.Contains(stdout, sitespec.EnvNicoToken+": the value holds a character") {
-		t.Errorf("quoted token: %q %v", stdout, err)
-	}
-}
-
-func TestValidateSiteSpec_MissingSecret(t *testing.T) {
-	path := filledSiteSpec(t, nil)
-	t.Setenv(sitespec.EnvNodePassword, "")
-	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", path)
-	if err == nil || !strings.Contains(stdout, sitespec.EnvNodePassword+" is not set") {
-		t.Errorf("unset secret: %q %v", stdout, err)
-	}
-}
-
-func TestValidateSiteSpec_NoSection(t *testing.T) {
-	path := generatedSiteSpec(t)
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(body)
-	text = text[:strings.Index(text, "\ncontrollerStack:\n")+1]
-	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", path)
-	if err == nil || !strings.Contains(stdout, "controllerStack: missing") {
-		t.Errorf("missing section: %q %v", stdout, err)
-	}
-	if _, _, err := runGenerate(t, "validate", "sitespec", "-f", path, "--bootstrap-only"); err != nil {
-		t.Errorf("--bootstrap-only without the section: %v", err)
-	}
-}
-
-func TestValidateSiteSpec_BootstrapErrorsComeFirst(t *testing.T) {
-	path := filledSiteSpec(t, nil)
+	path := siteSpecWithTrustDomain(t)
 	body, _ := os.ReadFile(path)
 	text := strings.Replace(string(body), `k8sVersion: "`, `k8sVersion: "v`, 1)
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	stdout, _, err := runGenerate(t, "validate", "sitespec", "-f", path)
-	if err == nil || !strings.Contains(err.Error(), "k8sVersion") || strings.Contains(stdout, "bootstrap: valid") {
-		t.Errorf("bootstrap error: %q %v", stdout, err)
+	if err == nil || !strings.Contains(err.Error(), "k8sVersion") || strings.Contains(stdout, "valid") {
+		t.Errorf("k8sVersion error: %q %v", stdout, err)
+	}
+	// An unknown field is refused as one, whatever its name. The loader
+	// reports the key lowercased.
+	text = string(body) + "pullSecret: x\n"
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout, _, err = runGenerate(t, "validate", "sitespec", "-f", path)
+	if err == nil || !strings.Contains(err.Error(), "invalid keys: pullsecret") || strings.Contains(stdout, "valid") {
+		t.Errorf("unknown field: %q %v", stdout, err)
 	}
 	if _, _, err := runGenerate(t, "validate", "sitespec"); err == nil {
 		t.Error("missing -f accepted")
@@ -226,16 +163,14 @@ func TestValidateSiteSpec_NicoNeedsTheSpireAddressUnlessMTLSIsOff(t *testing.T) 
 	}
 }
 
-// TestValidateSiteSpec_NicoOneNodeWithoutVIP: the bootstrap can run, and the
-// controllerStack section is reported not ready, because render deploy-path
-// would have no address for the controller.
+// TestValidateSiteSpec_NicoOneNodeWithoutVIP: the file is valid and the
+// bootstrap can run, but the stack install needs a VIP that cannot be added
+// once the site cluster exists, so both checks warn.
 func TestValidateSiteSpec_NicoOneNodeWithoutVIP(t *testing.T) {
 	path := nicoStackSiteSpec(t, oneNicoNodeNoVIP(t))
 	dir := filepath.Dir(path)
-	for _, name := range []string{"nico.token"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.WriteFile(filepath.Join(dir, "nico.token"), []byte("example-token\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	t.Setenv("NVKECTL_NICO_CREDENTIALS", filepath.Join(dir, "nico.token"))
 	t.Setenv("NVKECTL_NODE_USER", "example-user")
@@ -248,20 +183,13 @@ func TestValidateSiteSpec_NicoOneNodeWithoutVIP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out strings.Builder
-	err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path})
-	got := out.String()
-	if err == nil || !strings.Contains(got, "bootstrap: valid") || !strings.Contains(got, "controllerStack: ") || !strings.Contains(got, "cluster.controlPlaneVIP") || strings.Contains(got, "controllerStack: valid\n") {
-		t.Fatalf("err = %v, output %q; want the bootstrap valid and the controllerStack section reporting the missing VIP", err, got)
-	}
-	// The bootstrap check passes, and warns that the VIP cannot be added later.
-	const warning = "bootstrap: warning: cluster.controlPlaneVIP is not set"
-	if !strings.Contains(got, warning) {
-		t.Errorf("full validate output %q lacks %q", got, warning)
-	}
-	out.Reset()
-	if err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true}); err != nil || !strings.Contains(out.String(), warning) {
-		t.Errorf("--bootstrap-only: err = %v, output %q; want it valid with %q", err, out.String(), warning)
+	const warning = "warning: cluster.controlPlaneVIP is not set"
+	for _, bootstrapOnly := range []bool{false, true} {
+		var out strings.Builder
+		err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: bootstrapOnly})
+		if got := out.String(); err != nil || !strings.Contains(got, warning) || !strings.HasSuffix(got, "valid\n") {
+			t.Errorf("bootstrapOnly=%v: err = %v, output %q; want it valid with %q", bootstrapOnly, err, got, warning)
+		}
 	}
 }
 
@@ -397,12 +325,12 @@ func TestValidateSiteSpec_BootstrapFilesAreCheckedInTheBootstrapSection(t *testi
 	}
 }
 
-// TestValidateSiteSpec_NicoStackVerdictNeedsNoBootstrapInputs: the controller
+// TestValidateSiteSpec_NicoSpecIsValidWithoutBootstrapInputs: the controller
 // stack install runs validate sitespec without NVKECTL_NICO_CREDENTIALS, the
-// bootstrap's release manifests, and the SPIRE address the bootstrap's nodes
-// dial. A filled-in nico spec still gets its controllerStack
-// verdict and exits 0; --bootstrap-only is where those inputs fail.
-func TestValidateSiteSpec_NicoStackVerdictNeedsNoBootstrapInputs(t *testing.T) {
+// node login, the bootstrap's release manifests and the SPIRE address the
+// bootstrap's nodes dial. The nico spec is still valid there, with those
+// reported; --bootstrap-only is where they fail.
+func TestValidateSiteSpec_NicoSpecIsValidWithoutBootstrapInputs(t *testing.T) {
 	path := nicoStackSiteSpec(t, func(text string) string {
 		out := strings.Replace(text, `  externalAddress: "192.0.2.10"`, "", 1)
 		if out == text {
@@ -411,47 +339,19 @@ func TestValidateSiteSpec_NicoStackVerdictNeedsNoBootstrapInputs(t *testing.T) {
 		return out
 	})
 	t.Setenv("NVKECTL_NICO_CREDENTIALS", "")
+	t.Setenv("NVKECTL_NODE_USER", "")
 
 	var out strings.Builder
 	if err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path}); err != nil {
-		t.Fatalf("full validate: %v\n%s", err, out.String())
+		t.Fatalf("validate: %v\n%s", err, out.String())
 	}
-	if got := out.String(); !strings.HasSuffix(got, "controllerStack: valid\n") || !strings.Contains(got, "bootstrap: not ready for nvkectl bootstrap site on this host") {
-		t.Errorf("output %q; want the bootstrap inputs reported and the controllerStack valid", got)
+	if got := out.String(); !strings.HasSuffix(got, "valid\n") || !strings.Contains(got, "bootstrap: not ready for nvkectl bootstrap site on this host") {
+		t.Errorf("output %q; want the bootstrap inputs reported and the file valid", got)
 	}
 
 	out.Reset()
 	err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
-	if err == nil || strings.Contains(out.String(), "can run with this file") {
+	if err == nil || strings.HasSuffix(out.String(), "valid\n") {
 		t.Fatalf("--bootstrap-only: err = %v, output %q; want it to fail without the inputs", err, out.String())
-	}
-}
-
-// TestValidateSiteSpec_NotReadyBootstrapDoesNotSayItCanRun: the final error
-// says the bootstrap can run only when the bootstrap check passed. A nico spec
-// with no token and a controllerStack section still holding placeholders fails
-// the stack verdict, and must not contradict the "bootstrap: not ready" line
-// above it.
-func TestValidateSiteSpec_NotReadyBootstrapDoesNotSayItCanRun(t *testing.T) {
-	example, err := os.ReadFile(filepath.Join("..", "..", "examples", "sitespec-nico.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(t.TempDir(), "sitespec.yaml")
-	if err := os.WriteFile(path, example, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("NVKECTL_NICO_CREDENTIALS", "")
-
-	var out strings.Builder
-	err = runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path})
-	if err == nil {
-		t.Fatalf("full validate passed a spec whose controllerStack section holds placeholders:\n%s", out.String())
-	}
-	if !strings.Contains(out.String(), "bootstrap: not ready for nvkectl bootstrap site on this host") {
-		t.Fatalf("the bootstrap inputs were not reported:\n%s", out.String())
-	}
-	if strings.Contains(err.Error(), "the bootstrap can run now") {
-		t.Errorf("error %q says the bootstrap can run, after the output reported it cannot", err)
 	}
 }

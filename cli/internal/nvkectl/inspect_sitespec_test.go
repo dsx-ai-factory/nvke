@@ -9,12 +9,12 @@ import (
 )
 
 func TestInspectSiteSpec(t *testing.T) {
-	spec := filledSiteSpec(t, nil)
+	spec := siteSpecWithTrustDomain(t)
 	stdout, _, err := runGenerate(t, "inspect", "sitespec", spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "SITE_NAME='my-tier0-site'\nSITE_VIP='10.10.50.10'\nSITE_TRUST_DOMAIN='my-tier0-site.nke.local'\nSITE_ARCH='arm64'\n"
+	want := "SITE_NAME='my-tier0-site'\nSITE_VIP='10.10.50.10'\nSITE_TRUST_DOMAIN='my-tier0-site.nke.local'\n"
 	if stdout != want {
 		t.Errorf("got:\n%s\nwant:\n%s", stdout, want)
 	}

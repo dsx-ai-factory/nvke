@@ -13,10 +13,10 @@ the reference it points at.
 |---|---|---|
 | `nvkectl generate sitespec <name> --nodes hosts.csv` | Writes a site spec for `bootstrap site` from a node CSV. `--set path=value` fills in what the CSV does not carry. | Available |
 | `nvkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running the NVKE controller, has the controller create the site cluster on the spec's hosts through `nvke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down on success. `--dry-run` validates the spec only. | Available |
-| Fill in the `controllerStack:` section of the site spec | The controller stack install reads it: node architecture and the NICo API. The install reads the tokens and passwords from `NVKECTL_*` variables. `generate sitespec` writes the section with `REPLACE_*` placeholders; the install refuses a placeholder. Not read by `bootstrap site`. | Available |
-| `nvkectl validate sitespec -f sitespec.yaml` | Checks the whole site spec and reports by section: the bootstrap fields, then `controllerStack:` with the placeholders still to fill in. `--bootstrap-only` before the section is filled in. | Available |
+| `nvkectl validate sitespec -f sitespec.yaml` | Checks the site spec the way `bootstrap site` reads it and prints `valid`. | Available |
+| Write the stack config, `stack-config.json` | The controller stack install reads it: the NICo API, and under `images` the profile content image (required without a release) and, optionally, the controller image. Copy `deploy/examples/stack-config.json` and fill in every `REPLACE_*` value; the install refuses a placeholder. The tokens and passwords come from `NVKECTL_*` variables. Not read by `bootstrap site`. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
-| `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts come from this checkout and the images from `controllerStack.images`. | Not in the CLI |
+| `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts come from this checkout, the profile content image from the stack config's `images.profiles`, and the controller image from `images.controller` or, when that is empty, the deploy path's pin. | Not in the CLI |
 | `deploy/check-site.sh`, `clusterctl init`, `deploy/nvke-deploy.sh install --deploy-path deploy/nico`, the exec-auth patch | The site controller install, a short list of commands run in order: the check reports what the cluster and this machine still need; `clusterctl init` installs Cluster API; the executor renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller) and applies it; the patch gives the Cluster API controllers SPIRE exec-auth. See [Install management-plane services](../../docs/operate/install-management-plane-services.md). | Not in the CLI |
 | `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
@@ -56,7 +56,9 @@ nvkr release export --reference <repo@digest> > release.json
 reference `verify` accepted. [Get NVKE artifacts from NVKR and write release manifests](../../docs/operate/build-node-images.md)
 explains what each command checks and writes. The release
 is optional: without it the install takes the charts from this checkout and
-their public repositories, and the site spec names the controller images.
+their public repositories, the stack config names the profile content image
+in `images.profiles`, and `images.controller` may override the deploy path's
+pinned controller image.
 
 ### 2. Describe the hosts and generate the site spec
 
@@ -96,16 +98,32 @@ nvkectl bootstrap site -f sitespec.yaml
 The command needs nerdctl and containerd on the host, plus `kind`, `helm`,
 `kubectl` and `clusterctl` on `PATH`, and network reach to the hosts'
 `nvke-agent` ports. It leaves a plain Kubernetes cluster and
-`my-tier0-site.kubeconfig`, and ends by listing what the `controllerStack:`
-section of the site spec still needs. Fill that in and run
-`nvkectl validate sitespec -f sitespec.yaml` before the next step.
+`my-tier0-site.kubeconfig`.
 
-### 4. Install the controller stack
+### 4. Write the stack config
+
+The install takes what only the stack needs from a file of its own, beside
+the site spec, and the credentials from the environment:
 
 ```bash
-deploy/check-site.sh --sitespec sitespec.yaml --kubeconfig my-tier0-site.kubeconfig --release release.json
+cp deploy/examples/stack-config.json stack-config.json
+read -rs NVKECTL_NICO_TOKEN && export NVKECTL_NICO_TOKEN
+export NVKECTL_NODE_USER=nvke
+read -rs NVKECTL_NODE_PASSWORD && export NVKECTL_NODE_PASSWORD
+read -rs NVKECTL_DATABASE_PASSWORD && export NVKECTL_DATABASE_PASSWORD
+```
+
+Fill in every `REPLACE_*` value: the NICo API endpoint, organization ID and
+API name. Without a release, name the profile content image in
+`images.profiles`. The file holds no secret, so it can sit next to the site
+spec. [deploy/README.md](../../deploy/README.md) lists every key.
+
+### 5. Install the controller stack
+
+```bash
+deploy/check-site.sh --sitespec sitespec.yaml --stack-config stack-config.json --kubeconfig my-tier0-site.kubeconfig --release release.json
 clusterctl init --kubeconfig my-tier0-site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
-deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --kubeconfig my-tier0-site.kubeconfig --release release.json
+deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json --kubeconfig my-tier0-site.kubeconfig --release release.json
 controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig my-tier0-site.kubeconfig
 kubectl --kubeconfig my-tier0-site.kubeconfig apply -f nvke-api-clients.yaml
 ```
@@ -113,11 +131,12 @@ kubectl --kubeconfig my-tier0-site.kubeconfig apply -f nvke-api-clients.yaml
 A list of commands, in this order: the check reports what the cluster and
 this machine still need, with the fix, and prints the commands that remain
 when everything passes; `clusterctl init` installs Cluster API at the
-pinned version; the executor renders the `deploy/nico` deploy path for the
-site and the release and applies it, item by item; the next script patches
+pinned version; the executor reads the nodes' architecture from the
+cluster, renders the `deploy/nico` deploy path for the site and the release
+and applies it, item by item; the next script patches
 the Cluster API controllers for SPIRE; the NetworkPolicy admits your client
 networks to the controller API, which the chart otherwise answers from
-in-cluster pods only. Then point the CLI at the site (step 5) and publish a `MachineImage`, `ClusterRelease` and `NodePoolRelease`
+in-cluster pods only. Then point the CLI at the site (step 6) and publish a `MachineImage`, `ClusterRelease` and `NodePoolRelease`
 with `nvkectl create`, as [Your first cluster](../../docs/first-cluster.md#7-publish-a-release)
 shows, before the first tenant cluster.
 [Install management-plane services](../../docs/operate/install-management-plane-services.md)
@@ -130,7 +149,7 @@ item directory holds its chart pin, values and overlay, or its manifests;
 GitOps; [Deploy Path](../../docs/site-bootstrap/deploy-repository.md)
 describes the format.
 
-### 5. Point the CLI at the site controller
+### 6. Point the CLI at the site controller
 
 On the machine the CLI lives on:
 
@@ -155,11 +174,11 @@ The kubeconfig identity needs `create` on `serviceaccounts/token` for
 `nke-client`. See
 [Configuring NVKE API Authentication](../../controller/docs/configuring-api-authentication.md).
 
-### 6. Check the infrastructure providers
+### 7. Check the infrastructure providers
 
 A tenant cluster is created on an infrastructure provider: a controller running
 on the site cluster that holds credentials for its backend and creates machines
-there. Once step 4 is done, confirm the site can use it:
+there. Once step 5 is done, confirm the site can use it:
 
 ```bash
 nvkectl get providers
@@ -170,14 +189,14 @@ can tell an uninstalled provider from a misconfigured one before creating a
 cluster on it. `CONFIGURED` means the provider's CRDs are established, its
 controller is running, and its credentials are in place; it does not prove the
 credentials work. Needs `kubectl` on `PATH` and the site kubeconfig from
-step 5.
+step 6.
 
 `nvkectl` only reads this state and never changes it, so it makes no difference
 whether Helm, Argo CD, or a person applied the provider — the same command
 reports it either way. On a site managed by Argo CD, that makes `get providers`
 the check that what Argo synced is something a provider can actually use.
 
-### 7. Create a tenant cluster
+### 8. Create a tenant cluster
 
 ```bash
 nvkectl create cluster -f examples/capd-cluster.yaml
@@ -190,7 +209,7 @@ The spec is a `CreateClusterRequest`; the schema is served at `/api/docs` on
 the site controller. [examples/capd-cluster.yaml](../examples/capd-cluster.yaml)
 is a starting point.
 
-### 8. Watch it come up
+### 9. Watch it come up
 
 ```bash
 nvkectl get clusters
@@ -198,7 +217,7 @@ nvkectl get clusters <cluster-name>
 nvkectl get clusters <cluster-name> -o yaml
 ```
 
-### 9. Get the tenant cluster's kubeconfig
+### 10. Get the tenant cluster's kubeconfig
 
 ```bash
 nvkectl get kubeconfig <cluster-name> --output-file ./tenant.kubeconfig
@@ -206,9 +225,9 @@ nvkectl get kubeconfig <cluster-name> --output-file ./tenant.kubeconfig
 
 Without `--output-file`, the kubeconfig is written to stdout. This reads the
 site cluster directly, the same as `get providers`, so it needs the site
-kubeconfig from step 5.
+kubeconfig from step 6.
 
-### 10. Patch the tenant cluster
+### 11. Patch the tenant cluster
 
 ```bash
 # Bump the Kubernetes version
@@ -221,7 +240,7 @@ nvkectl patch cluster my-cluster --patch-file patch.yaml
 Only the fields in the patch document are changed. `nvkectl patch cluster
 --help` covers `--patch`, `--patch-file`, and field clearing in full.
 
-### 11. Add a node pool
+### 12. Add a node pool
 
 ```bash
 nvkectl create nodepool -f pool.yaml
@@ -243,7 +262,7 @@ through the cluster's `controlPlaneConfig`.
 [examples/nico-mock-nodepool.yaml](../examples/nico-mock-nodepool.yaml) is a
 starting point. Provisioning is asynchronous, the same as cluster creation.
 
-### 12. Scale a node pool
+### 13. Scale a node pool
 
 ```bash
 nvkectl patch nodepool <nodepool-name> --cluster <cluster-name> --patch 'desiredNodeCount: 8'
@@ -264,7 +283,7 @@ the controller's own message. There is no confirmation prompt, so a lower count 
 removing nodes straight away.
 
 
-### 13. Delete a node pool
+### 14. Delete a node pool
 
 ```bash
 nvkectl delete nodepool <nodepool-name> --cluster <cluster-name>
@@ -277,7 +296,7 @@ on it. On a site controller with the control-plane controller off, deleting a
 cluster's last joined control-plane node pool is rejected with the NVKE controller's own
 message — delete the cluster instead.
 
-### 14. Delete the tenant cluster
+### 15. Delete the tenant cluster
 
 ```bash
 nvkectl delete cluster <cluster-name>

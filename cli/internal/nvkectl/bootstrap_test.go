@@ -41,6 +41,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
@@ -1552,8 +1553,8 @@ func nicoSiteSpecFile(t *testing.T) string {
 		}
 	}
 	t.Setenv(sitespec.NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
-	t.Setenv(sitespec.EnvNodeUser, "example-user")
-	t.Setenv(sitespec.EnvNodePassword, "example-password")
+	t.Setenv(stackconfig.EnvNodeUser, "example-user")
+	t.Setenv(stackconfig.EnvNodePassword, "example-password")
 	if err := os.Mkdir(filepath.Join(dir, "bootstrap-releases"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -2313,8 +2314,8 @@ func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
 	}
 
 	t.Setenv(sitespec.NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
-	t.Setenv(sitespec.EnvNodeUser, "example-user")
-	t.Setenv(sitespec.EnvNodePassword, "example-secret")
+	t.Setenv(stackconfig.EnvNodeUser, "example-user")
+	t.Setenv(stackconfig.EnvNodePassword, "example-secret")
 	nico := &sitespec.SiteSpec{
 		Infra: sitespec.Infra{
 			Provider: sitespec.ProviderNico,
@@ -2336,9 +2337,9 @@ func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
 		t.Errorf("ReleasesPath = %q", cfg.ReleasesPath)
 	}
 
-	t.Setenv(sitespec.EnvNodePassword, "")
-	if _, err := cweDeployConfig(nico, "c", true, "", ""); err == nil || !strings.Contains(err.Error(), sitespec.EnvNodePassword) {
-		t.Errorf("unset node password: err = %v, want %s", err, sitespec.EnvNodePassword)
+	t.Setenv(stackconfig.EnvNodePassword, "")
+	if _, err := cweDeployConfig(nico, "c", true, "", ""); err == nil || !strings.Contains(err.Error(), stackconfig.EnvNodePassword) {
+		t.Errorf("unset node password: err = %v, want %s", err, stackconfig.EnvNodePassword)
 	}
 }
 

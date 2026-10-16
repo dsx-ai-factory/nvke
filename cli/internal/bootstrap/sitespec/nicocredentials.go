@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 )
 
@@ -67,4 +68,27 @@ func ReadNicoToken(path string) (string, error) {
 		return "", errors.New("the file it names must hold only the NICo token, one value with no whitespace in it")
 	}
 	return content, nil
+}
+
+// NodeLoginFromEnv reads the login rendered into every node CAPNICo creates
+// from NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD, trimmed. It names each one
+// that is unset or holds a character the templates cannot carry, one problem
+// per line, applying the same rules as stackconfig.CredentialsFromEnv, so the
+// bootstrap and the stack install accept the same login.
+func NodeLoginFromEnv() (user, password string, err error) {
+	user = strings.TrimSpace(envalias.Get(stackconfig.EnvNodeUser))
+	password = strings.TrimSpace(envalias.Get(stackconfig.EnvNodePassword))
+	var problems []string
+	for _, env := range [][2]string{{stackconfig.EnvNodeUser, user}, {stackconfig.EnvNodePassword, password}} {
+		switch {
+		case env[1] == "":
+			problems = append(problems, env[0]+" is not set: the controller refuses to render a node's user data without the login")
+		case !stackconfig.TemplateSafe(env[1]):
+			problems = append(problems, env[0]+": the value holds a character the templates cannot carry (a quote, a backslash or a control character)")
+		}
+	}
+	if len(problems) > 0 {
+		return "", "", errors.New(strings.Join(problems, "\n"))
+	}
+	return user, password, nil
 }
