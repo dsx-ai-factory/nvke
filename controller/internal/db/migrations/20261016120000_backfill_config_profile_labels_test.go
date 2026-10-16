@@ -70,16 +70,16 @@ func TestLoadConfigProfileLabels(t *testing.T) {
 			want:     map[string]map[string]string{},
 		},
 		{
-			name:     "missing directory backfills nothing",
+			name:     "missing directory fails while profiles are referenced",
 			files:    nil,
 			profiles: []string{"cp"},
-			want:     map[string]map[string]string{},
+			wantErr:  "config profiles [cp] are referenced but",
 		},
 		{
-			name:             "unset profilesDir backfills nothing",
+			name:             "unset profilesDir fails while profiles are referenced",
 			unsetProfilesDir: true,
 			profiles:         []string{"cp", "gpu"},
-			want:             map[string]map[string]string{},
+			wantErr:          "config profiles [cp gpu] are referenced but profilesDir is not set",
 		},
 		{
 			name:     "label removal entry fails",

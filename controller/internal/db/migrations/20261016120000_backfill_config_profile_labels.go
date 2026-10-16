@@ -26,7 +26,7 @@ const (
 	// when it is not
 	controlPlaneRoleLabel = "node-role.kubernetes.io/control-plane"
 	// backfillLabelsMigration identifies this migration in its logs.
-	backfillLabelsMigration = "20261015120000_backfill_config_profile_labels"
+	backfillLabelsMigration = "20261016120000_backfill_config_profile_labels"
 )
 
 // Copy config-profile labels into node_pools.node_labels and into each control-plane
@@ -114,6 +114,8 @@ func init() {
 }
 
 // referencedConfigProfiles returns the config profiles that node pools and control-plane configurations reference.
+// A missing or empty config_profile is not a reference: there is no profile to look up, and no label to backfill.
+// COALESCE(..., ”) <> ” filters out both, since a missing key reads as NULL.
 func referencedConfigProfiles(ctx context.Context, tx bun.Tx) ([]string, error) {
 	var profiles []string
 	if err := tx.NewRaw(`
@@ -129,22 +131,21 @@ func referencedConfigProfiles(ctx context.Context, tx bun.Tx) ([]string, error) 
 // loadConfigProfileLabels reads the labels of each profile from profilesDir/configProfiles, falling back
 // to configProfiles/deprecated like provisioning does. A profile found in neither has been retired and
 // has no labels, which is also how provisioning treats it.
-// When profilesDir is unset or has no configProfiles directory, nothing is backfilled and a warning is
-// logged rather than failing startup: provisioning on such a controller applies no profile labels either.
+// When profiles are referenced but profilesDir is unset or has no configProfiles directory, it fails, so the
+// migration stays pending until the profiles are mounted: once applied it never runs again, and skipping it
+// would leave those pools without the labels their nodes carry.
 func loadConfigProfileLabels(profilesDir string, profiles []string) (map[string]map[string]string, error) {
 	if len(profiles) == 0 {
 		return map[string]map[string]string{}, nil
 	}
 	if profilesDir == "" {
-		slog.Warn("config profile label backfill: config profiles are referenced but profilesDir is not set, backfilling no profile labels",
-			"migration", backfillLabelsMigration, "configProfiles", profiles)
-		return map[string]map[string]string{}, nil
+		return nil, fmt.Errorf("config profiles %v are referenced but profilesDir is not set: "+
+			"mount the config profiles and set profilesDir so their labels can be backfilled", profiles)
 	}
 	configProfilesDir := filepath.Join(profilesDir, "configProfiles")
 	if _, err := os.Stat(configProfilesDir); errors.Is(err, os.ErrNotExist) {
-		slog.Warn("config profile label backfill: config profiles are referenced but the config profiles directory does not exist, backfilling no profile labels",
-			"migration", backfillLabelsMigration, "configProfilesDir", configProfilesDir, "configProfiles", profiles)
-		return map[string]map[string]string{}, nil
+		return nil, fmt.Errorf("config profiles %v are referenced but %s does not exist: "+
+			"mount the config profiles at profilesDir so their labels can be backfilled", profiles, configProfilesDir)
 	} else if err != nil {
 		return nil, fmt.Errorf("reading config profiles directory: %w", err)
 	}
