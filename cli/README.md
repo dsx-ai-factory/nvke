@@ -109,8 +109,11 @@ If neither namespace holds that ConfigMap, the CLI treats authentication as off 
 The kubeconfig identity needs:
 
 - `create` on `serviceaccounts/token` for `nke-client` in `nke-clients`
-- `get` on `secrets` in `nke-system`, for `nvkectl get kubeconfig`, which reads
-  the `<cluster>-admin-kubeconfig` Secret there directly rather than through CWE
+- `get` on `secrets` in the site's management namespace (`nvke-system`, or
+  `nke-system` on a site installed before it was configurable), for
+  `nvkectl get kubeconfig`, which reads the `<cluster>-admin-kubeconfig` Secret
+  there directly rather than through CWE. The command tries both and takes
+  `--namespace` for anything else
 - `list` on `customresourcedefinitions`, `list` on `deployments` across
   namespaces, and `get` on `secrets` in each provider manager's namespace
   (`capnico-system` and `capll-system` by default), for `nvkectl get providers`
