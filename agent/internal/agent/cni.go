@@ -56,10 +56,7 @@ var errOvnRequiresHostOpenVSwitch = errors.New(
 const (
 	ovnKubernetesHelmChartDir = "/etc/dgx/ovn-kubernetes"
 	// defaultOvnCniChartStream is the OVN Kubernetes chart stream baked into Debian package names
-	// when InstallCNIRequest.version is empty. An empty version means the caller wants whatever the
-	// node already has, which is what the image baked, so this tracks OVN_STREAMS in
-	// os-image/packages/cni-ovn/Makefile and not OVN_QUALIFY_STREAM. A caller that wants the
-	// published stream names it, as the qualification lane does.
+	// when InstallCNIRequest.version is empty. Sync with OVN_STREAMS in os-image/packages/cni-ovn/Makefile.
 	defaultOvnCniChartStream = "1.4.0"
 	// defaultCalicoCniStream is the Calico patch stream in Debian package names when version is empty.
 	// Sync with CALICO_STREAM in cni-packages debs/calico/BUILD.
