@@ -157,6 +157,8 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 		// moved to the new domain yet would drop every repair request. Both
 		// keys are owned by the same field manager, so clearing the annotation
 		// clears both.
+		// FIXME: https://github.com/dsx-ai-factory/nvke/issues/1718 -- write
+		// only the current domain once every deployment reads the new key.
 		machine.Annotations = map[string]string{}
 		for _, key := range keys.MachineHealthIssue.All() {
 			machine.Annotations[key] = *input.MachineHealthIssue
@@ -537,6 +539,8 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	if annotation != nil {
 		// Both domains, for the same reason as the repair annotation above:
 		// cluster-api-provider-nico reads only its --reboot-annotation key.
+		// FIXME: https://github.com/dsx-ai-factory/nvke/issues/1718 -- write
+		// only the current domain once every deployment reads the new key.
 		for _, key := range keys.MachineReboot.All() {
 			annotations[key] = *annotation
 		}

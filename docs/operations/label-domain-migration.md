@@ -52,7 +52,10 @@ manifests in this repository set the new values:
 ```
 
 If your site deploys CAPNICo from its own manifests, move those flags across at
-your convenience. Verify what is actually running:
+your convenience. The dual write goes away once every deployment has moved
+([#1718](https://github.com/dsx-ai-factory/nvke/issues/1718)), and after that a
+stale flag means reboot and repair requests are silently dropped. Verify what is
+actually running:
 
 ```sh
 kubectl -n capnico-system get deployment controller-manager \
