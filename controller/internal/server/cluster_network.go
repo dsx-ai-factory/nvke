@@ -31,7 +31,7 @@ type resolvedClusterNetwork struct {
 func (n resolvedClusterNetwork) validateCNI(cni db.CniPlugin) error {
 	usesDefaults := n.podCIDR == defaultClusterPodCIDR &&
 		n.serviceCIDR.String() == defaultClusterServiceCIDR
-	if cni != db.CNIOvnKubernetes && !usesDefaults {
+	if cni != db.CNIOvnKubernetes && cni != db.CNIOvnKubernetesDPUHost && !usesDefaults {
 		return fmt.Errorf("custom pod or service CIDRs require CNI plugin %q", db.CNIOvnKubernetes)
 	}
 	return nil

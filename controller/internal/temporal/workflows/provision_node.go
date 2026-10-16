@@ -797,6 +797,9 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 	if cluster.CniPlugin == db.CNIOvnKubernetes {
 		labels = append(labels, "k8s.ovn.org/zone-name="+node.Name)
 	}
+	if cluster.CniPlugin == db.CNIOvnKubernetesDPUHost {
+		labels = append(labels, "k8s.ovn.org/dpu-host=")
+	}
 
 	if !addConfigProfileLabels && len(labels) == 0 {
 		return nil

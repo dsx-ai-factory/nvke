@@ -181,6 +181,9 @@ func initConfiguration(config *InitConfig) (kubeadmv1beta3.InitConfiguration, er
 	if config.KubeadmContainerMode {
 		cfg.NodeRegistration.IgnorePreflightErrors = []string{"SystemVerification"}
 	}
+	if config.Labels != "" {
+		cfg.NodeRegistration.KubeletExtraArgs["node-labels"] = config.Labels
+	}
 
 	if config.Token != "" {
 		bootstrapToken, err := bootstraptokenv1.NewBootstrapTokenString(config.Token)

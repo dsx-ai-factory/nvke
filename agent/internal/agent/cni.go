@@ -220,6 +220,31 @@ const ovnRegistryHelmValue = "global.registry"
 // ovnImagePrefixHelmValue is the chart value every registry-less image.repository is prefixed with.
 const ovnImagePrefixHelmValue = "global.imageRepositoryPrefix"
 
+// ovnDpuHostConfigKey selects the packaged VMaaS profile without configuring host OVS.
+const ovnDpuHostConfigKey = "nke.ovnDpuHost"
+
+const (
+	cniConfigTrue  = "true"
+	helmValuesFlag = "-f"
+)
+
+func ovnDpuHostMode(config map[string]string) bool {
+	return config[ovnDpuHostConfigKey] == cniConfigTrue
+}
+
+func ovnHelmValuesFileArgs(chartDir string, dpuHost bool) []string {
+	if !dpuHost {
+		return helmValuesFileArgs(chartDir)
+	}
+	args := []string{helmValuesFlag, filepath.Join(chartDir, "values-images.yaml"), helmValuesFlag, filepath.Join(chartDir, "values-vmaas-nooverlay-dpu-host.yaml")}
+	if _, err := os.Stat(filepath.Join(chartDir, "values-nke.yaml")); err == nil {
+		args = append(args, helmValuesFlag, filepath.Join(chartDir, "values-nke.yaml"))
+	}
+	// Keep Helm release storage in the existing default namespace. The VMaaS
+	// chart creates and owns the ovn-kubernetes namespace as a chart resource.
+	return args
+}
+
 // ovnStagedImageRepository reads global.imageRepositoryPrefix from the values-nke.yaml bundle.sh wrote,
 // the one place the packaged image's registry path lives.
 func ovnStagedImageRepository(chartDir string) (string, error) {
@@ -302,7 +327,7 @@ func buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serv
 		"ovn-kubernetes",
 		chartDir,
 	}
-	args = append(args, helmValuesFileArgs(chartDir)...)
+	args = append(args, ovnHelmValuesFileArgs(chartDir, ovnDpuHostMode(cniConfig))...)
 	args = append(args,
 		"--set", "k8sAPIServer="+apiServer,
 		"--set-string", "podNetwork="+helmPodNetworkValue(podNetworkCidr),
@@ -312,7 +337,7 @@ func buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serv
 		args = append(args, "--set", ovnImagePrefixHelmValue+"="+ovnImageRepository(imageRegistry, upstreamRepo))
 	}
 	for key, value := range cniConfig {
-		if key == "" {
+		if key == "" || key == ovnDpuHostConfigKey {
 			continue
 		}
 		if key == ovnRegistryHelmValue {
@@ -369,6 +394,11 @@ func kubeadmPodNetworkCIDR(podNetworkCIDR string) string {
 }
 
 func (s *NodeAgentServer) runOvnKubernetesHelmInstallFromDir(chartDir, podNetworkCidr, serviceCidr string, cniConfig map[string]string) error {
+	if ovnDpuHostMode(cniConfig) {
+		if _, err := os.Stat(filepath.Join(chartDir, "values-vmaas-nooverlay-dpu-host.yaml")); err != nil {
+			return fmt.Errorf("DPU-host OVN profile is required in the charts package: %w", err)
+		}
+	}
 	apiServer, err := getKubeAPIServer(KubeConfig)
 	if err != nil {
 		return fmt.Errorf(
@@ -401,9 +431,11 @@ func (s *NodeAgentServer) runOvnKubernetesHelmInstallFromDir(chartDir, podNetwor
 func (s *NodeAgentServer) installOvnK8sCNIPlugin(req *pb.InstallCNIPluginRequest) error {
 	slog.Info("installing OVN Kubernetes CNI plugin")
 
-	if err := checkHostOpenVSwitchReady(s.Runner); err != nil {
-		slog.Error("OVS readiness check failed", "error", err)
-		return err
+	if !ovnDpuHostMode(req.GetCniConfig()) {
+		if err := checkHostOpenVSwitchReady(s.Runner); err != nil {
+			slog.Error("OVS readiness check failed", "error", err)
+			return err
+		}
 	}
 
 	versionStr := req.GetPluginVersion()
@@ -891,7 +923,7 @@ func (s *NodeAgentServer) installCNI(ctx context.Context, req *pb.InstallCNIRequ
 		return errors.New("invalid charts package spec")
 	}
 
-	if effectiveCniVariant(req.GetCniVariant()) == pb.CniVariant_CNI_VARIANT_OVN {
+	if effectiveCniVariant(req.GetCniVariant()) == pb.CniVariant_CNI_VARIANT_OVN && !ovnDpuHostMode(req.GetCniConfig()) {
 		if err := checkHostOpenVSwitchReady(s.Runner); err != nil {
 			slog.ErrorContext(ctx, "OVS readiness check failed", "error", err)
 			return err

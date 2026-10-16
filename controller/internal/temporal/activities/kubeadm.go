@@ -44,6 +44,26 @@ func (a *Activities) kubeadmContainerMode(ctx context.Context, cluster db.Cluste
 	return isKubeadmContainerMode, nil
 }
 
+func nodeLabels(labels []string) kubeadmconfig.KubeLabels {
+	out := kubeadmconfig.KubeLabels{}
+	for _, label := range labels {
+		key, value, ok := strings.Cut(label, "=")
+		if !ok || key == "" {
+			continue
+		}
+		out[key] = value
+	}
+	return out
+}
+
+func nodeLabelsForCNI(labels []string, plugin db.CniPlugin) kubeadmconfig.KubeLabels {
+	out := nodeLabels(labels)
+	if plugin == db.CNIOvnKubernetesDPUHost {
+		out["k8s.ovn.org/dpu-host"] = ""
+	}
+	return out
+}
+
 func toNodeAgentFiles(files []kubeadmconfig.File) []*nvkeproto.File {
 	out := make([]*nvkeproto.File, 0, len(files))
 	for _, file := range files {

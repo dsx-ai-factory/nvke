@@ -235,6 +235,9 @@ func joinConfiguration(config *JoinConfig) kubeadmv1beta3.JoinConfiguration {
 	if config.KubeadmContainerMode {
 		cfg.NodeRegistration.IgnorePreflightErrors = []string{"SystemVerification"}
 	}
+	if config.Labels != "" {
+		cfg.NodeRegistration.KubeletExtraArgs["node-labels"] = config.Labels
+	}
 
 	if config.ControlPlane {
 		cfg.ControlPlane = &kubeadmv1beta3.JoinControlPlane{
