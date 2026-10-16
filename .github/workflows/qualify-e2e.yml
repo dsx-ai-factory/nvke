@@ -569,10 +569,7 @@ jobs:
       # is bound to its instance type, and a full run places three at once.
       # A DSX run at full is refused by the suite before a machine is taken
       # anyway, its tenant half speaking Forge only. See SCOPE in the plan job.
-      # TEST: qualify-e2e-l40s added to the provision-stage exemption to keep
-      # this cheap while testing the gpu-present publish path. Revert to just
-      # qualify-e2e-dsx before merge.
-      SITE_STAGE: ${{ inputs.stage || ((github.event.label.name == 'qualify-e2e-dsx' || github.event.label.name == 'qualify-e2e-l40s') && 'provision') || vars.QUALIFY_E2E_STAGE || 'full' }}
+      SITE_STAGE: ${{ inputs.stage || (github.event.label.name == 'qualify-e2e-dsx' && 'provision') || vars.QUALIFY_E2E_STAGE || 'full' }}
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
       # Whether this run's ref is one the nvke WIF provider in the testgrid
       # repo actually trusts (main, or a v<digit> tag -- see wif-nvke.tf
