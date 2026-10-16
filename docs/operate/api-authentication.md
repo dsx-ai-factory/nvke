@@ -206,7 +206,7 @@ Leave NVKE in permissive mode while your existing callers keep working, and watc
    nvke_auth_requests_total{issuer="unknown",outcome="would_reject",reason="no_token"} 7
    ```
 
-   Requests that pass are counted with `outcome="authenticated"`. Every `would_reject` series is a caller that enforcing mode would break.
+   Requests that pass are counted with `outcome="authenticated"`. Each `would_reject` series represents requests that enforcing mode would reject. Use the logs to trace the source requests.
 
 2. Read the `reason` label and fix each caller.
 
