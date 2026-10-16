@@ -6,6 +6,7 @@ package nico
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,6 +14,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 )
 
 // stubVerifier counts calls and returns a fixed error.
@@ -88,4 +91,29 @@ func TestVerifyImageWrapsTheVerdict(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrImageVerificationFailed)
 	require.ErrorIs(t, err, verdictErr)
+}
+
+// TestEnforceDistinguishesRejectionFromOutage pins the retry contract of the
+// seam: a definitive verdict rejection (and a nil verifier — static
+// configuration) is permanent; an operational verifier failure still refuses
+// this attempt fail-closed but stays retryable.
+func TestEnforceDistinguishesRejectionFromOutage(t *testing.T) {
+	image := &enginev1.MachineImage{ObjectMeta: metav1.ObjectMeta{Name: "img-1"}}
+
+	rejection := fmt.Errorf("no passing verdict for digest: %w", ErrVerdictRejected)
+	err := verifyImage(context.Background(), ImageVerificationEnforce, &stubVerifier{err: rejection}, image)
+	require.ErrorIs(t, err, ErrImageVerificationFailed)
+	_, terminal := shared.AsTerminal(err)
+	assert.True(t, terminal, "a definitive rejection must be permanent")
+
+	err = verifyImage(context.Background(), ImageVerificationEnforce, nil, image)
+	require.ErrorIs(t, err, ErrImageVerificationFailed)
+	_, terminal = shared.AsTerminal(err)
+	assert.True(t, terminal, "a nil verifier is static configuration; retrying cannot help")
+
+	outage := errors.New("verdict store: connection refused")
+	err = verifyImage(context.Background(), ImageVerificationEnforce, &stubVerifier{err: outage}, image)
+	require.ErrorIs(t, err, ErrImageVerificationFailed, "an outage still refuses fail-closed")
+	_, terminal = shared.AsTerminal(err)
+	assert.False(t, terminal, "an operational failure must stay retryable")
 }

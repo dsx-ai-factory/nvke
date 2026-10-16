@@ -7,24 +7,19 @@ import (
 	"errors"
 )
 
-// TerminalError marks an error whose failure cannot change by re-running the
-// operation: a policy refusal, a validation verdict, an immutable-input
-// mismatch. The producer — the code that knows the failure is permanent —
-// wraps with Terminal; the Temporal activity boundary converts any error
-// carrying this marker into a non-retryable application failure, so a
-// permanent refusal fails the workflow with its reason instead of retrying
-// forever.
-//
-// This package stays workflow-engine-free on purpose: clients declare
-// permanence, adapters decide what permanence means to their engine.
+// TerminalError marks an error whose outcome cannot change by re-running the
+// operation. Producers wrap with Terminal where permanence is known; the
+// Temporal activity boundary converts the marker into a non-retryable
+// failure. This package stays workflow-engine-free: clients declare
+// permanence, adapters map it to their engine.
 type TerminalError struct {
 	code string
 	err  error
 }
 
-// Terminal wraps err as permanent. code becomes the application-error type at
-// the Temporal boundary (and is usable in RetryPolicy.NonRetryableErrorTypes),
-// so give it a stable, grep-able name such as "nico.ErrImageVerificationFailed".
+// Terminal wraps err as permanent. code becomes the application-error type
+// at the Temporal boundary (usable in RetryPolicy.NonRetryableErrorTypes);
+// give it a stable name such as "nico.ErrImageVerificationFailed".
 func Terminal(code string, err error) error {
 	if err == nil {
 		return nil
@@ -32,8 +27,7 @@ func Terminal(code string, err error) error {
 	return &TerminalError{code: code, err: err}
 }
 
-// Error reports the wrapped error unchanged: the marker adds semantics, not
-// message noise.
+// Error reports the wrapped error unchanged.
 func (e *TerminalError) Error() string { return e.err.Error() }
 
 // Unwrap keeps errors.Is and errors.As working through the marker.

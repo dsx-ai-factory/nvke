@@ -36,14 +36,22 @@ const (
 // resolved node image's validation verdict was missing or negative. Retrying
 // cannot change an immutable artifact's verdict, so callers in the activity
 // layer should treat this as non-retryable.
-var ErrImageVerificationFailed = errors.New("node image verification failed")
+var (
+	ErrImageVerificationFailed = errors.New("node image verification failed")
+
+	// ErrVerdictRejected is the definitive policy "no". Implementations wrap
+	// it when asking again cannot change the answer; any other error reads as
+	// operational — still refused fail-closed, but retryable.
+	ErrVerdictRejected = errors.New("image validation verdict rejected")
+)
 
 // ImageVerifier reports whether the resolved machine image carries a passing
 // validation verdict. The verifying implementation — checking a signed verdict
 // attestation against the image the node boots — ships with the validate
 // module's verify library; this interface is the seam it plugs into. A nil
 // verifier means no verdict source is configured, which warn mode reports and
-// enforce mode refuses.
+// enforce mode refuses. Implementations wrap definitive rejections in
+// ErrVerdictRejected; anything else reads as a retryable operational failure.
 type ImageVerifier interface {
 	VerifyImage(ctx context.Context, image *enginev1.MachineImage) error
 }
@@ -72,9 +80,13 @@ func verifyImage(ctx context.Context, mode string, verifier ImageVerifier, image
 			"image", image.Name, "err", err)
 		return nil
 	}
-	// Terminal: a verdict for an image digest cannot change by retrying the
-	// create, so the refusal must fail the workflow, not spin it.
-	return shared.Terminal("nico.ErrImageVerificationFailed", fmt.Errorf("%w: image %s: %w", ErrImageVerificationFailed, image.Name, err))
+	refusal := fmt.Errorf("%w: image %s: %w", ErrImageVerificationFailed, image.Name, err)
+	// Permanent only when the answer cannot change: a definitive rejection,
+	// or a nil verifier (static configuration). Outages stay retryable.
+	if verifier == nil || errors.Is(err, ErrVerdictRejected) {
+		return shared.Terminal("nico.ErrImageVerificationFailed", refusal)
+	}
+	return refusal
 }
 
 func verdict(ctx context.Context, verifier ImageVerifier, image *enginev1.MachineImage) error {
