@@ -122,16 +122,20 @@ func TestPublishCmdRejectsStreamMismatch(t *testing.T) {
 	}
 }
 
-func TestResolveBucketDefaultsToAICR(t *testing.T) {
+func TestResolveBucketRejectsUnset(t *testing.T) {
 	t.Setenv(testGridBucketEnvVar, "")
-	if got := resolveBucket(); got != defaultTestGridBucket {
-		t.Errorf("resolveBucket() = %q, want the default %q", got, defaultTestGridBucket)
+	if _, err := resolveBucket(); err == nil {
+		t.Fatal("resolveBucket() returned nil, want an error when TESTGRID_BUCKET is unset")
 	}
 }
 
 func TestResolveBucketReadsEnvVar(t *testing.T) {
 	t.Setenv(testGridBucketEnvVar, "some-other-bucket")
-	if got := resolveBucket(); got != "some-other-bucket" {
+	got, err := resolveBucket()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "some-other-bucket" {
 		t.Errorf("resolveBucket() = %q, want the env var's value", got)
 	}
 }
@@ -153,7 +157,7 @@ func TestPublishCmdSkipsErroredResult(t *testing.T) {
 }
 
 func TestBuildDestinationRejectsUnknownDestination(t *testing.T) {
-	_, _, err := buildDestination(nil, "not-a-real-destination", "dgxc-testgrid") //nolint:staticcheck // ctx unused before the error path
+	_, _, err := buildDestination(nil, "not-a-real-destination", "test-bucket") //nolint:staticcheck // ctx unused before the error path
 	if err == nil || !strings.Contains(err.Error(), "unknown --destination") {
 		t.Errorf("err = %v, want it to name the bad destination", err)
 	}

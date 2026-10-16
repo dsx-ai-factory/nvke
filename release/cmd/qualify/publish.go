@@ -29,22 +29,22 @@ const publishTimeout = 2 * time.Minute
 // testGridBucketEnvVar names the bucket qualify publish writes to. Read from
 // the environment rather than baked in as a literal: the bucket this
 // pipeline writes to has already moved once (DGXC's own TestGrid to AICR's),
-// and a compiled-in name means every future move needs a new build instead
-// of a workflow env change.
+// a compiled-in name means every future move needs a new build instead of a
+// workflow env change, and this repository is headed for a public mirror --
+// an internal bucket name does not belong in source there even though it is
+// not itself a secret.
 const testGridBucketEnvVar = "TESTGRID_BUCKET"
 
-// defaultTestGridBucket is what resolveBucket falls back to when
-// testGridBucketEnvVar is unset -- AICR's TestGrid bucket, the one this
-// pipeline's results are meant to land in today.
-const defaultTestGridBucket = "nv-aicr-testgrid"
-
-// resolveBucket reads testGridBucketEnvVar, falling back to
-// defaultTestGridBucket when it is unset or empty.
-func resolveBucket() string {
-	if b := os.Getenv(testGridBucketEnvVar); b != "" {
-		return b
+// resolveBucket reads testGridBucketEnvVar, erroring if it is unset or
+// empty rather than falling back to a compiled-in default -- see
+// testGridBucketEnvVar's own doc for why there is no default to fall back
+// to.
+func resolveBucket() (string, error) {
+	b := os.Getenv(testGridBucketEnvVar)
+	if b == "" {
+		return "", fmt.Errorf("%s is not set", testGridBucketEnvVar)
 	}
-	return defaultTestGridBucket
+	return b, nil
 }
 
 func publishCmd() *cobra.Command {
@@ -64,7 +64,8 @@ Reads the Result at --result and the JUnit report at --junit and ships them
 to --destination. testgrid is the only destination today; --destination
 exists so a second one is additive rather than a rewrite. Which bucket it
 writes to is read from ` + "`" + testGridBucketEnvVar + "`" + `, not a flag or a literal --
-unset, it defaults to ` + "`" + defaultTestGridBucket + "`" + `.
+this command errors if it is unset, rather than falling back to a bucket
+name baked into source.
 
 If the Result is errored (Ginkgo never ran -- a Forge provisioning failure, a
 wedged runner), this is a no-op: there is no suite name to tab the record
@@ -90,10 +91,15 @@ so routing is built from the record itself.`,
 				return nil
 			}
 
+			bucket, err := resolveBucket()
+			if err != nil {
+				return err
+			}
+
 			ctx, cancel := context.WithTimeout(cmd.Context(), publishTimeout)
 			defer cancel()
 
-			dest, closeDest, err := buildDestination(ctx, destination, resolveBucket())
+			dest, closeDest, err := buildDestination(ctx, destination, bucket)
 			if err != nil {
 				return err
 			}
