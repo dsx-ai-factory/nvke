@@ -47,6 +47,7 @@ const (
 	ReasonVerified     = "verified"
 	ReasonObserved     = "observed"
 	ReasonUnavailable  = "observation_unavailable"
+	ReasonNodeRetired  = "node_retired"
 
 	ActorAutomatic            = "automatic"
 	ActorOperatorUnattributed = "operator_unattributed"
@@ -143,7 +144,7 @@ func (e Event) Validate() error {
 	}
 	if !slices.Contains([]string{
 		ReasonAccepted, ReasonCompleted, ReasonUnchanged, ReasonFailed, ReasonRejected,
-		ReasonApprovalFail, ReasonHealthFailed, ReasonVerified, ReasonObserved, ReasonUnavailable,
+		ReasonApprovalFail, ReasonHealthFailed, ReasonVerified, ReasonObserved, ReasonUnavailable, ReasonNodeRetired,
 	}, e.Reason) {
 		return errors.New("invalid audit reason code")
 	}

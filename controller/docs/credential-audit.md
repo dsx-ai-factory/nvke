@@ -29,7 +29,7 @@ Secret names, or raw upstream error messages.
 
 Reason codes are `accepted`, `completed`, `unchanged`, `operation_failed`,
 `identity_not_approved`, `approval_update_failed`, `health_check_failed`,
-`verified`, `observed`, and `observation_unavailable`. Phases are `preflight`,
+`verified`, `observed`, `observation_unavailable`, and `node_retired`. Phases are `preflight`,
 `renew-node`, `postflight`, `prepare`, `add_secondary`, `promote_primary`,
 `rewrite`, `remove_old_keys`, and `finalize`. A reason describes the audited
 observation, not a replacement for the workflow or cluster's durable state.
@@ -65,6 +65,9 @@ The manual tool rejects mixed PEM bundles and private-key PEM blocks.
   correlate with the owning workflow. A phase `check/accepted` means that the
   checkpoint was entered; it does not prove that the phase's node mutations have
   completed. A final `rotate/success` follows successful completion persistence.
+  Retiring a permanently lost control-plane node from a failed rotation records
+  `rotate/success` with reason `node_retired`, the node and the failed phase;
+  refusals record `rotate/failure` and repeats `rotate/no_op`.
 - The kubelet-serving CSR controller records validation and approval
   success/failure. A skipped CSR is recorded only when its requestor resolves to
   a managed node; CSRs from other requestors are logged at debug level but never

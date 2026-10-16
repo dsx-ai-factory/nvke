@@ -5,6 +5,8 @@ package db
 
 import (
 	"errors"
+
+	"github.com/google/uuid"
 )
 
 // ErrControlPlaneMutationBlocked reports retained credential mutation ownership.
@@ -25,4 +27,16 @@ func ControlPlaneMutationBlocked(cluster Cluster) bool {
 	update := cluster.Conditions.UpdateInProgress
 	return update != nil && (update.Type == OperationTypeEtcdKeyRotation || update.Type == OperationTypeEtcdEncryption ||
 		update.Type == OperationTypeCertRenewal)
+}
+
+// ControlPlaneNodeRemovalBlocked is ControlPlaneMutationBlocked for steps that
+// only remove nodeID. The etcd key rotation lock admits removal of a node its
+// owner retired as permanently lost, so the rotation can converge on the
+// surviving members. Joins, scale-up and every other node stay fenced.
+func ControlPlaneNodeRemovalBlocked(cluster Cluster, nodeID uuid.UUID) bool {
+	if !ControlPlaneMutationBlocked(cluster) {
+		return false
+	}
+	return cluster.Conditions.UpdateInProgress.Type != OperationTypeEtcdKeyRotation ||
+		!cluster.Conditions.EtcdKeyRotation.RetiresNode(nodeID)
 }

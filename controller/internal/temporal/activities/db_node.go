@@ -137,7 +137,11 @@ func (a *Activities) UpdateNodeConditionsWithTx(ctx context.Context, tx db.Tx, u
 			if err != nil {
 				return fmt.Errorf("locking cluster for node mutation: %w", err)
 			}
-			if db.ControlPlaneMutationBlocked(cluster) {
+			blocked := db.ControlPlaneMutationBlocked(cluster)
+			if update.Conditions.onlyMarksDeleting() {
+				blocked = db.ControlPlaneNodeRemovalBlocked(cluster, update.NodeID)
+			}
+			if blocked {
 				return db.ErrControlPlaneMutationBlocked
 			}
 		}
@@ -196,7 +200,7 @@ func (a *Activities) DeleteNode(ctx context.Context, nodeID uuid.UUID) error {
 			}
 			return fmt.Errorf("reading node before deletion: %w", err)
 		}
-		if err := controlPlaneMutationLock(ctx, tx, node); err != nil {
+		if err := controlPlaneRemovalLock(ctx, tx, node); err != nil {
 			return err
 		}
 		if err := tx.DeleteNode(ctx, nodeID); err != nil {
@@ -205,6 +209,16 @@ func (a *Activities) DeleteNode(ctx context.Context, nodeID uuid.UUID) error {
 
 		return nil
 	})
+}
+
+// onlyMarksDeleting reports a teardown progress update that starts no other mutation.
+func (conditions NodeConditions) onlyMarksDeleting() bool {
+	for _, condition := range []*ConditionUpdate{conditions.Provisioning, conditions.Rebooting} {
+		if condition != nil && condition.Status == db.ConditionStatusTrue {
+			return false
+		}
+	}
+	return conditions.Deleting != nil && conditions.Deleting.Status == db.ConditionStatusTrue
 }
 
 // startsMutation excludes health observations and completion updates.
