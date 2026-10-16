@@ -10,6 +10,8 @@ import (
 	"log/slog"
 
 	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 )
 
 // Image-verification modes for config.Config.ImageVerificationMode. The
@@ -70,7 +72,9 @@ func verifyImage(ctx context.Context, mode string, verifier ImageVerifier, image
 			"image", image.Name, "err", err)
 		return nil
 	}
-	return fmt.Errorf("%w: image %s: %w", ErrImageVerificationFailed, image.Name, err)
+	// Terminal: a verdict for an image digest cannot change by retrying the
+	// create, so the refusal must fail the workflow, not spin it.
+	return shared.Terminal("nico.ErrImageVerificationFailed", fmt.Errorf("%w: image %s: %w", ErrImageVerificationFailed, image.Name, err))
 }
 
 func verdict(ctx context.Context, verifier ImageVerifier, image *enginev1.MachineImage) error {

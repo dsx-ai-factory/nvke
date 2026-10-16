@@ -435,6 +435,14 @@ kubeadm:
   # -- OCI registry kubeadm uses for control-plane component images.
   imageRepository: registry.k8s.io
 
+imageVerification:
+  # -- Node-image verification pre-flight on the NICo machine path:
+  # "off" (default, no behavior change), "warn" (log a failed or missing
+  # verdict and proceed), or "enforce" (refuse provisioning; fail-closed,
+  # including when no verdict source is configured). Keep the value quoted:
+  # bare off is YAML for false.
+  mode: "off"
+
 cni:
   # -- Permit new tenant clusters to use the legacy Calico CNI. Existing Calico
   # clusters remain manageable when false. Legacy fleets that still create

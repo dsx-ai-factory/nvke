@@ -95,9 +95,22 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 		if errors.Is(err, shared.ErrUnsupportedMachineConfig) {
 			return temporal.NewNonRetryableApplicationError("failed to create machine", "UnsupportedMachineConfig", err)
 		}
-		return err
+		return terminalToNonRetryable(err)
 	}
 	return nil
+}
+
+// terminalToNonRetryable adapts the client layer's permanence marker to this
+// engine: any error wrapped with shared.Terminal — a refusal that re-running
+// cannot change — becomes a non-retryable application failure carrying the
+// marker's code as its type, so the workflow fails with the named reason
+// instead of retrying forever. The producer declares permanence where it is
+// known; new permanent errors need no new classification here.
+func terminalToNonRetryable(err error) error {
+	if t, ok := shared.AsTerminal(err); ok {
+		return temporal.NewNonRetryableApplicationError(err.Error(), t.Code(), err)
+	}
+	return err
 }
 
 func (a *Activities) createCAPISpireJoinToken(ctx context.Context, node db.Node) (string, string, error) {
