@@ -6,7 +6,7 @@ NICo is the only infrastructure provider NVKE supports at preview; see [Preview 
 
 ## Before you begin
 
-- You have completed [Install management-plane services](install-management-plane-services.md). That procedure installs CAPNICo in the `capnico-system` namespace and writes your NICo API details from the `controllerStack.nico` section of the site spec to the `nico-credentials` Secret, before it installs the management plane.
+- You have completed [Install management-plane services](install-management-plane-services.md). That procedure installs CAPNICo in the `capnico-system` namespace and writes your NICo API details from the `nico` section of the stack config to the `nico-credentials` Secret, before it installs the management plane.
 - You have the management cluster kubeconfig, `<CLUSTER_NAME>.kubeconfig`, and `kubectl` on `PATH`. The kubeconfig must be able to read Secrets in the `capnico-system` namespace.
 - `nvkectl` points at your management plane, as set in [Install management-plane services](install-management-plane-services.md) with `nvkectl config set-site`. If API authentication is on, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](api-authentication.md), and `nvkectl get providers` fails with it, because it reads the management cluster's Kubernetes API, which does not accept your identity provider's tokens. The steps that use it give a `kubectl` alternative.
 - In NICo, you have:
@@ -57,12 +57,12 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
 
 CAPNICo authenticates to the NICo API with a bearer token from the Secret `nico-credentials` in the `capnico-system` namespace. The name, the namespace and the four keys are fixed.
 
-| Key | Value | Site spec field |
+| Key | Value | Where it comes from |
 |---|---|---|
-| `endpoint` | The NICo API base URL. | `controllerStack.nico.endpoint` |
-| `orgID` | Your NICo organization ID. | `controllerStack.nico.orgID` |
+| `endpoint` | The NICo API base URL. | `nico.endpoint` in the stack config |
+| `orgID` | Your NICo organization ID. | `nico.orgID` in the stack config |
 | `token` | Your NICo API token. | `NVKECTL_NICO_TOKEN` in the install's environment. |
-| `apiName` | The API name in the NICo API path that your NICo deployment serves, such as `forge`. | `controllerStack.nico.apiName` |
+| `apiName` | The API name in the NICo API path that your NICo deployment serves, such as `forge`. | `nico.apiName` in the stack config |
 
 To rotate the token or change any other value:
 
@@ -96,7 +96,7 @@ To rotate the token or change any other value:
 
    The Secret is read on each reconcile, so the change takes effect without a restart.
 
-3. Keep the install's inputs in step: set `NVKECTL_NICO_TOKEN` to the new token wherever you run the install, and update `endpoint`, `orgID` and `apiName` under `controllerStack.nico` in the site spec if they changed. If you run the install again, it writes the Secret from those inputs and overwrites your change.
+3. Keep the install's inputs in step: set `NVKECTL_NICO_TOKEN` to the new token wherever you run the install, and update `endpoint`, `orgID` and `apiName` under `nico` in the stack config if they changed. If you run the install again, it writes the Secret from those inputs and overwrites your change.
 
 ## Collect the NICo identifiers
 

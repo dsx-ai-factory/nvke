@@ -79,7 +79,7 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
 
    If you omit a `--set` line, the field keeps its default: `k8sVersion` `1.34.2`, `podCidr` `192.168.0.0/16`, `serviceCidr` `10.96.0.0/12`, `systemReservedMemory` `16Gi`. If the reserved memory is close to a node's total memory, the node has nothing left to schedule and never reaches `Ready`. The CNI defaults to `ovn-kubernetes`, and etcd encryption at rest is on. Encryption can only be chosen at bootstrap: a cluster built with `--set cluster.etcdEncryption=false` stays unencrypted.
 
-   `generate sitespec` also writes a `controllerStack` section, with every value a `REPLACE_*` placeholder. The bootstrap does not read it, and ends by listing the placeholders still in the file. You fill it in before you [install the management-plane services](install-management-plane-services.md#fill-in-the-controller-stack-settings).
+   The site spec carries the bootstrap's fields and nothing else. What the management plane needs beyond them goes in a file of its own, which you write before you [install the management-plane services](install-management-plane-services.md#write-the-stack-config).
 
    `generate sitespec` validates every field before it writes the file. `bootstrap site` also reads environment variables, such as `CLUSTER_POD_CIDR`, that override fields in the file; [Site Spec](../../cli/docs/sitespec.md) lists them. Unset them before you run the bootstrap unless you mean to override the file.
 

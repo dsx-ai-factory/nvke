@@ -137,7 +137,7 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 | NVKR release reference, and its exported description `release.json` | `<RELEASE_REF>` | Build, Install | |
 | Controller image, the release's `cwe` artifact | `<CONTROLLER_IMAGE>` | Bootstrap; Install without a release | |
 | Provisioned infrastructure provider image | `<PROVISIONED_PROVIDER_IMAGE>` | Bootstrap | |
-| Profile content image, the release's `controller-profiles` artifact | `controllerStack.images.profiles` | Install without a release | |
+| Profile content image, the release's `controller-profiles` artifact | `images.profiles` in the stack config | Install without a release | |
 | OS release resources, `MachineImage`, `ClusterRelease` and `NodePoolRelease` | `releases/` | Build, Install | |
 | For `nvkr release verify`: the accepted signer identity and OIDC issuer, and a `cosign` path and digest | `<IDENTITY_REGEXP>`, `<OIDC_ISSUER>`, `<COSIGN_PATH>`, `<COSIGN_DIGEST>` | Build | |
 

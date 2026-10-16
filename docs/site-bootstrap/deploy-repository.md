@@ -66,12 +66,12 @@ The script reads the item list and an item's `release.yaml` through `deploy/lib/
 
 A template item holds `.yaml.tmpl` files, and may hold plain `.yaml` files beside them. Each `.yaml.tmpl` is rendered with Go's [`text/template`](https://pkg.go.dev/text/template), the plain files are copied, and the result is applied as a manifest item. This is how the deploy path creates the Secrets the stack needs without committing a credential.
 
-The template context is what the site spec's `controllerStack` section and the install's environment supply:
+The template context is what the site spec, the stack config and the install's environment supply:
 
 | Expression | Taken from |
 |------------|------------|
 | `.ClusterName` | `clusterName` |
-| `.Nico.Endpoint`, `.Nico.OrgID`, `.Nico.APIName` | `controllerStack.nico.endpoint`, `.orgID`, `.apiName` |
+| `.Nico.Endpoint`, `.Nico.OrgID`, `.Nico.APIName` | The stack config's `nico.endpoint`, `.orgID`, `.apiName` |
 | `.Nico.Token` | `NVKECTL_NICO_TOKEN` |
 | `.Tenant.User` | `NVKECTL_NODE_USER` |
 | `.Tenant.Password` | `NVKECTL_NODE_PASSWORD` |
@@ -160,8 +160,8 @@ The committed deploy path is site-independent and names no digest. `nvkectl rend
 The copy holds the site's credentials. It is written readable by its owner only, and the render refuses an output under a shared temp directory. `nvke-deploy.sh` renders into a scratch directory under `NVKE_STATE_DIR` (default `$XDG_STATE_HOME/nvke`) and removes it when it exits, so no rendered credential is left behind. To read a render, run the command yourself:
 
 ```bash
-nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --release release.json \
-  --out ~/.local/state/nvke/renders/my-site
+nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json \
+  --arch linux/arm64 --release release.json --out ~/.local/state/nvke/renders/my-site
 ```
 
 ## Applying It Another Way
