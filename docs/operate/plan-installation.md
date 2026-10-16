@@ -128,7 +128,6 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 | Address the nodes use to reach the bootstrap host | `<BOOTSTRAP_HOST_IP>` | Prepare nodes | |
 | SPIFFE trust domain | `<TRUST_DOMAIN>` | Prepare nodes, Bootstrap, Install | |
 | SPIRE CA certificate and key files, passed as `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` with `spire.upstreamCA: true` in the site spec; the certificate in PEM | `<CA_CERT_PATH>`, `<CA_KEY_PATH>`; `<SPIRE_CA_CERT_PEM>` | Bootstrap, Install; Prepare nodes | |
-| CPU architecture of the management nodes, `amd64` or `arm64` | `<ARCH>` | Install | |
 
 ### Registries and images
 
@@ -139,7 +138,7 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 | Optional release description; see [Choose where the artifacts come from](install-management-plane-services.md#choose-where-the-artifacts-come-from) | `release.json` | Install | |
 | Controller image reference | `<CONTROLLER_IMAGE>` | Bootstrap; Install without a release | |
 | Provisioned infrastructure provider image | `<PROVISIONED_PROVIDER_IMAGE>` | Bootstrap | |
-| Profile content image reference | `controllerStack.images.profiles` | Install without a release | |
+| Profile content image reference | `images.profiles` in the stack config | Install without a release | |
 | Node provisioning configuration files; see [Register node images for provisioning](register-node-images.md) | `node-config/` | After Install | |
 
 ### NICo

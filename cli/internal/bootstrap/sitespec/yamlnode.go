@@ -210,34 +210,7 @@ func applySpec(root *yaml.Node, spec *SiteSpec) error {
 			return err
 		}
 	}
-	// The controllerStack section, when the spec has one: the template carries
-	// the required fields as placeholders, so writing them keeps a rendered
-	// file equal to the spec it came from; optional fields only when set.
-	if spec.ControllerStack != nil {
-		for _, f := range spec.ControllerStack.stackFields() {
-			if f[1] == "" && !requiredStackFields[f[0]] {
-				continue
-			}
-			if err := setScalar(root, f[0], f[1]); err != nil {
-				return err
-			}
-		}
-	} else {
-		// A spec that has no section renders without one, so a rendered file
-		// never says more than the spec it came from.
-		dropMapping(root, "controllerStack")
-	}
 	return nil
-}
-
-// dropMapping removes key and its value from mapping, if present.
-func dropMapping(mapping *yaml.Node, key string) {
-	for i := 0; i+1 < len(mapping.Content); i += 2 {
-		if mapping.Content[i].Value == key {
-			mapping.Content = append(mapping.Content[:i], mapping.Content[i+2:]...)
-			return
-		}
-	}
 }
 
 // decode reads a SiteSpec out of a node tree.
@@ -360,6 +333,12 @@ func takeCommentedExample(mapping *yaml.Node, key string) (at int, head string, 
 			node.FootComment = kept
 			return i + 2, taken, true
 		}
+	}
+	// An example after the last entry is the mapping's own foot comment; the
+	// key goes last, where the example stood.
+	if kept, taken, ok := splitCommentedExample(mapping.FootComment, key); ok {
+		mapping.FootComment = kept
+		return len(mapping.Content), taken, true
 	}
 	return 0, "", false
 }

@@ -269,7 +269,6 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := dumpSiteSpec(out, inv); err != nil {
 		return err
 	}
-	noteControllerStackSection(out, inv)
 	// Said as soon as the default is known, dry run included: the controller
 	// stack install shares it only for the default bootstrap cluster name.
 	if inv.Spire.TrustDomain == "" {
@@ -1078,19 +1077,4 @@ func dumpSiteSpec(out io.Writer, inv *sitespec.SiteSpec) error {
 	fmt.Fprintln(out, "Loaded site spec:")
 	fmt.Fprint(out, string(y))
 	return nil
-}
-
-// noteControllerStackSection tells the operator what the site spec still needs before
-// the controller stack install: the whole controllerStack: section, or the
-// placeholders left in it. The bootstrap does not read the section, so this
-// is the moment to say so.
-func noteControllerStackSection(out io.Writer, inv *sitespec.SiteSpec) {
-	switch left := inv.ControllerStackPlaceholders(); {
-	case inv.ControllerStack == nil:
-		fmt.Fprintf(out, "\nBefore installing the controller stack, add the controllerStack: section to the site spec. "+
-			"nvkectl generate sitespec writes one to fill in.\n")
-	case len(left) > 0:
-		fmt.Fprintf(out, "\nBefore installing the controller stack, fill in the controllerStack: section of the site spec. "+
-			"Still placeholders: %s.\n", strings.Join(left, ", "))
-	}
 }

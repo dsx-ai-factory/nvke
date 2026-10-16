@@ -76,55 +76,27 @@ is a file `bootstrap site` accepts.
 | `cluster.oidcProviders` | list | no | OIDC providers for site cluster. Cannot be modified afterwards. Ignored when absent. Rejected when `cluster.k8sVersion` is older than `1.34.0`. Each entry needs `name`, `issuerURL`, `audiences`, `usernameClaim`, `usernamePrefix`, and `caBundle` (inline PEM). Optional: `groupsClaim`, `groupsPrefix`, `requiredClaims`.|
 | `spire.upstreamCA` | bool | no | `true` when the site's SPIRE chains to a CA you bring. Every `bootstrap site`, `validate sitespec` and install run then requires `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`, and the variables are refused without it. See "The SPIRE CA". |
 | `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `nvkectl-bootstrap.nke.local`, and the install says so. A bootstrap run with `NVKECTL_BOOTSTRAP_CLUSTER_NAME` set derives another, so set it then. |
-| `controllerStack` | section | for the stack install | Read by the controller stack install, not by `bootstrap site`. `generate sitespec` writes it with `REPLACE_*` placeholders; the install refuses a placeholder. See below. |
-| `controllerStack.arch` | string | yes, in `controllerStack` | Node CPU architecture: `amd64` or `arm64`. |
-| `controllerStack.nico.endpoint` | string | yes, in `controllerStack` | NICo API base URL CAPNICo calls, `http` or `https`. |
-| `controllerStack.nico.orgID` | string | yes, in `controllerStack` | NICo organisation ID. |
-| `controllerStack.nico.apiName` | string | yes, in `controllerStack` | NICo API name, for example `forge`. |
-| `controllerStack.images.controller` | string | no | Overrides the controller image; defaults to the release file's `controller` item, or without a release to the overlay's pinned image (the newest controller release). |
-| `controllerStack.images.profiles` | string | no | Overrides the profiles content image; defaults to the release file's `profiles` item. |
-| `controllerStack.mirror` | string | no | Registry the external images are pulled from instead of upstream, `host[:port][/prefix]`, no scheme. |
-
-A site spec with a `controllerStack.pullSecret` block does not load; delete the block. The file has no unknown-field tolerance, and nothing reads it. CAPNICo's image is public on GHCR, or comes from the release.
-
 The version (image/chart tag) is baked into the `nvkectl` build, so it is not
 part of the site spec.
 
 Unknown fields are rejected. A typo in a field name fails the load rather than
 being silently ignored. Removed fields,
-`registry`, `spire.caCertFile`, `spire.caKeyFile`,
-`controllerStack.nico.tokenFile`, `controllerStack.tenant`,
-`controllerStack.database.passwordFile` and `controllerStack.nktpValuesFile`,
+`registry`, `spire.caCertFile` and `spire.caKeyFile`,
 are refused with the name of what replaced them. So are the
 `SPIRE_CA_CERT_FILE` and `SPIRE_CA_KEY_FILE` variables: a run with either set
 fails, naming `NVKECTL_SPIRE_CA_CERT_FILE`, `NVKECTL_SPIRE_CA_KEY_FILE` and
 `spire.upstreamCA`.
 
-## The controllerStack section
+## The controller stack install
 
-The controller stack install reads `controllerStack:` after the bootstrap; `bootstrap
-site` does not. `generate sitespec` writes the section with every value a
-`REPLACE_*` placeholder, and `bootstrap site` ends by listing the placeholders
-still in the file. Fill them in before installing the stack: the install
-refuses a value that is still a placeholder.
-
-`nvkectl validate sitespec -f sitespec.yaml` checks both halves of the file
-and lists what is still a placeholder; `--bootstrap-only` checks only what
-`bootstrap site` reads. A file whose bootstrap half is valid can bootstrap
-the cluster before the `controllerStack` section is filled in; the output
-says so.
-
-The section is filled in by hand. `generate sitespec --set` reaches the
-bootstrap fields listed under "Environment variable overrides" and
-`spire.upstreamCA`, not `controllerStack.*`.
-
-The install reads the NICo token, the node login and the Postgres password
-from `NVKECTL_NICO_TOKEN`, `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` and
-`NVKECTL_DATABASE_PASSWORD`, and the SPIRE CA from
-`NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` (see "Credential
-handling"). The site name, the trust domain and the control-plane VIP are the
-fields above; the install reads them from there and they are not repeated in
-`controllerStack:`.
+The controller stack install reads the site spec too, and changes nothing
+in it: the site name, the control-plane VIP and the SPIRE trust domain are
+the bootstrap's facts the stack must agree with. Everything only the stack
+needs lives in a separate file, the stack config, which starts from
+[`deploy/examples/stack-config.json`](../../deploy/examples/stack-config.json);
+[deploy/README.md](../../deploy/README.md) lists its keys. The credentials
+come from the environment (see "Credential handling"), and the nodes'
+architecture is in neither file: the install reads it from the cluster.
 
 ## Validation rules
 
@@ -342,7 +314,7 @@ values are never logged or printed.
 | Environment variable | Read by | What |
 |---|---|---|
 | `NVKECTL_SPIRE_CA_CERT_FILE`, `NVKECTL_SPIRE_CA_KEY_FILE` | `bootstrap site`, `validate sitespec`, the stack install | Paths to the SPIRE CA certificate and its private key. Required with `spire.upstreamCA: true`, refused without it. See "The SPIRE CA". |
-| `NVKECTL_NICO_TOKEN` | `validate sitespec`, the stack install | NICo API token. |
-| `NVKECTL_NODE_USER` | `validate sitespec`, the stack install | Login account rendered into every tenant node's cloud-init. |
-| `NVKECTL_NODE_PASSWORD` | `validate sitespec`, the stack install | Password for `NVKECTL_NODE_USER`. |
-| `NVKECTL_DATABASE_PASSWORD` | `validate sitespec`, the stack install | Postgres password the controller and Temporal share. Keep it: every install of the same site needs the same value. A site installed with `controllerStack.database.passwordFile` sets this variable to that file's contents; the site spec no longer accepts the field. |
+| `NVKECTL_NICO_TOKEN` | the stack install, which `deploy/check-site.sh` checks | NICo API token. |
+| `NVKECTL_NODE_USER` | the stack install | Login account rendered into every tenant node's cloud-init. |
+| `NVKECTL_NODE_PASSWORD` | the stack install | Password for `NVKECTL_NODE_USER`. |
+| `NVKECTL_DATABASE_PASSWORD` | the stack install | Postgres password the controller and Temporal share. Keep it: every install of the same site needs the same value. |

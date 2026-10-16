@@ -78,30 +78,3 @@ cluster:
 #   # The site uses the CA above. Every bootstrap and install run then
 #   # requires the two variables, so none falls back to a self-signed root.
 #   upstreamCA: true
-
-# Input for the controller stack install, read after the bootstrap. "nvkectl
-# bootstrap site" does not read it. FILL IN EVERY REPLACE_* VALUE BEFORE
-# INSTALLING THE STACK; the install refuses a value that is still a
-# placeholder. The install reads the NICo token, the node login and the
-# Postgres password from NVKECTL_NICO_TOKEN, NVKECTL_NODE_USER,
-# NVKECTL_NODE_PASSWORD and NVKECTL_DATABASE_PASSWORD, and the SPIRE CA from
-# NVKECTL_SPIRE_CA_CERT_FILE and NVKECTL_SPIRE_CA_KEY_FILE. The site name,
-# trust domain and control-plane VIP come from the fields above and are not
-# repeated here.
-controllerStack:
-  # Node CPU architecture: amd64 or arm64.
-  arch: REPLACE_ARCH
-  # The NICo API CAPNICo calls.
-  nico:
-    endpoint: REPLACE_NICO_ENDPOINT
-    orgID: REPLACE_NICO_ORG_ID
-    # For example forge.
-    apiName: REPLACE_NICO_API_NAME
-  # Optional. Both default to the release file's items; set one only to
-  # override it, as repository:tag or repository@sha256:<digest>.
-  # images:
-  #   controller: ""
-  #   profiles: ""
-  # Optional. Registry the external images are pulled from instead of their
-  # upstream registries, as host[:port][/prefix], no scheme.
-  # mirror: ""

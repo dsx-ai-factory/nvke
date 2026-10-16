@@ -71,6 +71,7 @@ NVKE binds Kubernetes roles only to the management plane's own identities. A fle
    ```bash
    deploy/nvke-deploy.sh install --deploy-path deploy/nico \
      --sitespec ../sitespec.yaml \
+     --stack-config ../stack-config.json \
      --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
      --release ../release.json \
      --values-for controller=../oidc-values.yaml

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 const threeHostCSV = `name,ip,tpm_ek_thumbprint
@@ -57,6 +59,18 @@ func TestGenerateSiteSpecWritesToStdout(t *testing.T) {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("generated site spec is missing %q:\n%s", want, stdout)
 		}
+	}
+	// The file carries the bootstrap's sections and nothing else.
+	var top yaml.Node
+	if err := yaml.Unmarshal([]byte(stdout), &top); err != nil || len(top.Content) != 1 {
+		t.Fatalf("generated site spec does not parse: %v", err)
+	}
+	var keys []string
+	for i := 0; i+1 < len(top.Content[0].Content); i += 2 {
+		keys = append(keys, top.Content[0].Content[i].Value)
+	}
+	if got := strings.Join(keys, " "); got != "clusterName cluster" {
+		t.Errorf("top-level keys: %s", got)
 	}
 }
 

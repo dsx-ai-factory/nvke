@@ -17,14 +17,14 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
 ## Before you begin
 
 - You have completed [Install management-plane services](install-management-plane-services.md). You can do this before or after [Configure an infrastructure provider: NICo](provider-nico.md).
-- You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it, as in [Install management-plane services](install-management-plane-services.md). Set `KUBECONFIG` for `kubectl`:
+- You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `stack-config.json`, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it, as in [Install management-plane services](install-management-plane-services.md). Set `KUBECONFIG` for `kubectl`:
 
   ```bash
   export KUBECONFIG="$PWD/../<CLUSTER_NAME>.kubeconfig"
   ```
 
   The install created the Helm release `nke-controller` and the Deployment `nke-controller`, both in the `nke-controller` namespace.
-- The shell you run the install from has the `NVKECTL_*` variables from [Fill in the controller stack settings](install-management-plane-services.md#fill-in-the-controller-stack-settings) exported, as described in [Run the install again](install-management-plane-services.md#run-the-install-again).
+- The shell you run the install from has the `NVKECTL_*` variables from [Write the stack config](install-management-plane-services.md#write-the-stack-config) exported, as described in [Run the install again](install-management-plane-services.md#run-the-install-again).
 - Your IdP publishes an OIDC discovery document over HTTPS, and the management cluster can reach its signing-key endpoint.
 - Your IdP has a group for the people and automation allowed to call the NVKE API, and puts it in a token claim named `groups`, a list of strings. NVKE reads group membership only from that claim.
 - Your IdP has an OIDC client for `nvkectl` that needs no client secret.
@@ -119,6 +119,7 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
    ```bash
    deploy/nvke-deploy.sh install --deploy-path deploy/nico \
      --sitespec ../sitespec.yaml \
+     --stack-config ../stack-config.json \
      --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
      --release ../release.json \
      --values-for controller=../auth-values.yaml
@@ -236,6 +237,7 @@ Continue when `would_reject` stops increasing.
    ```bash
    deploy/nvke-deploy.sh install --deploy-path deploy/nico \
      --sitespec ../sitespec.yaml \
+     --stack-config ../stack-config.json \
      --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
      --release ../release.json \
      --values-for controller=../auth-values.yaml

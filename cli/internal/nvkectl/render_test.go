@@ -8,19 +8,63 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 )
 
+// stackConfigExample is the operator's starting point for the stack config.
+var stackConfigExample = filepath.Join("..", "..", "..", "deploy", "examples", "stack-config.json")
+
+// filledStackConfig writes the example stack config with every placeholder
+// replaced, in a directory of its own, sets the install's credentials in
+// the environment, and returns the file's path. edits replace further text.
+func filledStackConfig(t *testing.T, edits map[string]string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "stack")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(stackconfig.EnvNicoToken, "placeholder")
+	t.Setenv(stackconfig.EnvNodeUser, "placeholder")
+	t.Setenv(stackconfig.EnvNodePassword, "placeholder")
+	t.Setenv(stackconfig.EnvDatabasePassword, "placeholder")
+	body, err := os.ReadFile(stackConfigExample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{
+		"REPLACE_NICO_ENDPOINT": "https://nico.example.com", "REPLACE_NICO_ORG_ID": "org-1", "REPLACE_NICO_API_NAME": "forge",
+		// deploy/nico enables profiles.image without a pin.
+		`"profiles": ""`: `"profiles": "ghcr.io/example/controller-profiles:v1"`,
+	}
+	for k, v := range edits {
+		values[k] = v
+	}
+	text := string(body)
+	for placeholder, value := range values {
+		text = strings.ReplaceAll(text, placeholder, value)
+	}
+	path := filepath.Join(dir, "stack-config.json")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestRenderDeployPath(t *testing.T) {
-	spec := filledSiteSpec(t, nil)
+	spec := siteSpecWithTrustDomain(t)
+	stack := filledStackConfig(t, nil)
 	out := filepath.Join(t.TempDir(), "rendered")
 	nico := filepath.Join("..", "..", "..", "deploy", "nico")
 	// A temp --out is refused unless the test-only allowance is set.
 	t.Setenv("NVKECTL_RENDER_ALLOW_TEMP_OUT", "")
-	if _, _, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--out", out); err == nil || !strings.Contains(err.Error(), "shared temp directory") {
+	if _, _, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--arch", "linux/arm64", "--out", out); err == nil || !strings.Contains(err.Error(), "shared temp directory") {
 		t.Errorf("temp --out: %v", err)
 	}
 	t.Setenv("NVKECTL_RENDER_ALLOW_TEMP_OUT", "1")
-	stdout, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--out", out)
+	stdout, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--arch", "linux/arm64", "--out", out)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, stderr)
 	}
@@ -33,37 +77,102 @@ func TestRenderDeployPath(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(out, "controller", "site-values.yaml")); err != nil {
 		t.Error("controller site values missing")
 	}
-	// A site spec with placeholders is refused, naming them, and leaves nothing.
+	// A stack config with placeholders is refused, naming the file and the
+	// placeholders, and leaves nothing.
 	out2 := filepath.Join(t.TempDir(), "rendered")
-	_, _, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", generatedSiteSpec(t), "--out", out2)
-	if err == nil || !strings.Contains(err.Error(), "REPLACE_* placeholder") {
+	_, _, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stackConfigExample, "--arch", "linux/arm64", "--out", out2)
+	if err == nil || !strings.Contains(err.Error(), "stack config "+stackConfigExample) || !strings.Contains(err.Error(), "nico.endpoint: still a REPLACE_* placeholder") {
 		t.Errorf("placeholders: %v", err)
 	}
 	if _, statErr := os.Stat(out2); statErr == nil {
 		t.Error("output left behind")
 	}
-	for _, args := range [][]string{{"--deploy-path", nico, "--out", out2}, {"--sitespec", spec, "--out", out2}, {"--deploy-path", nico, "--sitespec", spec}} {
-		if _, _, err := runGenerate(t, append([]string{"render", "deploy-path"}, args...)...); err == nil {
-			t.Errorf("accepted without a required flag: %v", args)
+	for name, tc := range map[string]struct {
+		args []string
+		want string
+	}{
+		"no --deploy-path":  {[]string{"--sitespec", spec, "--stack-config", stack, "--out", out2}, "deploy-path"},
+		"no --out":          {[]string{"--deploy-path", nico, "--sitespec", spec, "--stack-config", stack}, "out"},
+		"no input":          {[]string{"--deploy-path", nico, "--out", out2}, "pass --sitespec with --stack-config, --release, or both"},
+		"no --stack-config": {[]string{"--deploy-path", nico, "--sitespec", spec, "--out", out2}, "--sitespec needs --stack-config: the stack's input is the stack config file"},
+		"no --sitespec":     {[]string{"--deploy-path", nico, "--stack-config", stack, "--out", out2}, "--stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec"},
+	} {
+		_, _, err := runGenerate(t, append([]string{"render", "deploy-path"}, tc.args...)...)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: want %q, got %v", name, tc.want, err)
+		}
+		if _, statErr := os.Stat(out2); statErr == nil {
+			t.Errorf("%s: output left behind", name)
 		}
 	}
 }
 
-func TestRenderDeployPath_ArchFromSiteSpec(t *testing.T) {
+func TestRenderDeployPath_Arch(t *testing.T) {
 	t.Setenv("NVKECTL_RENDER_ALLOW_TEMP_OUT", "1")
-	spec := filledSiteSpec(t, nil) // controllerStack.arch: arm64
+	spec := siteSpecWithTrustDomain(t)
+	stack := filledStackConfig(t, nil)
 	nico := filepath.Join("..", "..", "..", "deploy", "nico")
 	release := filepath.Join(releaseFixtures, "valid.json") // capnico-controller for amd64 and -arm64
-	// Without --arch the site spec's architecture selects the artifacts,
-	// whatever machine renders. An empty run directory refuses, naming the
-	// artifact it looked for: the arm64 capnico digest (e...).
-	_, _, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--release", release, "--nvkr-run-dir", t.TempDir(), "--out", filepath.Join(t.TempDir(), "rendered"))
+	// --arch selects the release artifacts. An empty run directory refuses,
+	// naming the artifact it looked for: the arm64 capnico digest (e...).
+	_, _, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--arch", "linux/arm64", "--release", release, "--nvkr-run-dir", t.TempDir(), "--out", filepath.Join(t.TempDir(), "rendered"))
 	if err == nil || !strings.Contains(err.Error(), "no OCI layout") || !strings.Contains(err.Error(), strings.Repeat("e", 64)) {
-		t.Errorf("the arm64 capnico artifact was not selected from the site spec: %v", err)
+		t.Errorf("the arm64 capnico artifact was not selected from --arch: %v", err)
 	}
-	// A conflicting --arch is refused.
-	_, _, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--release", release, "--arch", "linux/amd64", "--out", filepath.Join(t.TempDir(), "r"))
-	if err == nil || !strings.Contains(err.Error(), "--arch linux/amd64, but the site spec's controllerStack.arch is arm64") {
-		t.Errorf("conflicting arch: %v", err)
+	// A value outside the two architectures is refused before anything is read.
+	_, _, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--arch", "linux/x86", "--out", filepath.Join(t.TempDir(), "r"))
+	if err == nil || !strings.Contains(err.Error(), "--arch linux/x86 is not one of linux/amd64, linux/arm64") {
+		t.Errorf("bad --arch: %v", err)
 	}
+	// The TPM attestor checksum follows --arch; without the flag the host's
+	// architecture is used and said so.
+	checksums := map[string]string{"linux/amd64": "46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc", "linux/arm64": "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16"}
+	for arch, want := range checksums {
+		out := filepath.Join(t.TempDir(), "rendered")
+		_, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--arch", arch, "--out", out)
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", arch, err, stderr)
+		}
+		if strings.Contains(stderr, "warning: --arch not given") {
+			t.Errorf("%s: the host-default warning fired with --arch given:\n%s", arch, stderr)
+		}
+		if got := tpmChecksum(t, out); got != want {
+			t.Errorf("%s: TPM checksum %s, want %s", arch, got, want)
+		}
+	}
+	out := filepath.Join(t.TempDir(), "rendered")
+	_, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--out", out)
+	if err != nil {
+		t.Fatalf("without --arch: %v\n%s", err, stderr)
+	}
+	if !strings.Contains(stderr, "warning: --arch not given; rendering for the host's linux/") {
+		t.Errorf("no host-default warning:\n%s", stderr)
+	}
+	// A release alone keeps rendering, as the deploy suite does, without a warning.
+	_, stderr, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--release", release, "--arch", "linux/arm64", "--nvkr-run-dir", t.TempDir(), "--out", filepath.Join(t.TempDir(), "r"))
+	if err == nil || !strings.Contains(err.Error(), "no OCI layout") || strings.Contains(stderr, "warning: --arch") {
+		t.Errorf("release alone: %v\n%s", err, stderr)
+	}
+}
+
+// tpmChecksum reads the SPIRE TPM attestor checksum from a rendered tree.
+func tpmChecksum(t *testing.T, out string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(out, "spire", "site-values.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values struct {
+		Server struct {
+			NodeAttestor struct {
+				TPMDirect struct {
+					Checksum string `yaml:"checksum"`
+				} `yaml:"tpmDirect"`
+			} `yaml:"nodeAttestor"`
+		} `yaml:"spire-server"`
+	}
+	if err := yaml.Unmarshal(data, &values); err != nil {
+		t.Fatal(err)
+	}
+	return values.Server.NodeAttestor.TPMDirect.Checksum
 }

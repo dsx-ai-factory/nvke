@@ -116,9 +116,9 @@ nvkeSystemNamespace:
 # Staging a newer build, in the k8s.io namespace the kubelet reads:
 #   ctr -n k8s.io images import <saved-image>.tar
 #
-# Used only when the site spec leaves controllerStack.images.controller empty
-# or `nvke-deploy.sh install` runs with neither --sitespec nor --release; a
-# release's imageArtifact or the site spec wins otherwise. The tag is the
+# Used only when the stack config leaves images.controller empty or
+# `nvke-deploy.sh install` runs with neither --sitespec nor --release; a
+# release's imageArtifact or the stack config wins otherwise. The tag is the
 # newest controller release on GHCR, not this checkout's build. Bump it when a
 # release is cut.
 #

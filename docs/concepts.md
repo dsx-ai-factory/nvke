@@ -63,7 +63,7 @@ Operators can port-forward Temporal's web UI to inspect running workflows or dia
 
 ## PostgreSQL
 
-The controller and Temporal keep their state in PostgreSQL. The deploy path installs it as the `postgresql` item, the Bitnami chart in the `postgres` namespace, with a persistent volume from the cluster's default StorageClass. Database credentials come from the site spec's `controllerStack` section when the install renders the deploy path; no values file in the repository holds one.
+The controller and Temporal keep their state in PostgreSQL. The deploy path installs it as the `postgresql` item, the Bitnami chart in the `postgres` namespace, with a persistent volume from the cluster's default StorageClass. The database password comes from the install's environment when it renders the deploy path; no values file in the repository holds one.
 
 **Learn more:** https://www.postgresql.org/docs/
 

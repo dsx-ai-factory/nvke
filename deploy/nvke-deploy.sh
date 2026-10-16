@@ -31,8 +31,12 @@ REQUIRE_TIMEOUT="${REQUIRE_TIMEOUT:-180s}"
 PASSTHROUGH=()
 CONFIG=""
 SITESPEC=""
+STACK_CONFIG=""
 RELEASE=""
 RUN_DIR=""
+# ARCH is the --arch override; NODE_ARCH is what the cluster's nodes report.
+ARCH=""
+NODE_ARCH=""
 NVKECTL="${NVKECTL:-nvkectl}"
 # The state directory holds the render scratch: a rendered deploy path
 # carries the site's credentials, so it lives under a directory only this
@@ -54,8 +58,8 @@ usage() {
   cat >&2 <<'USAGE'
 usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
 
-  With --sitespec or --release, the deploy path is first rendered for the
-  site and against the release (nvkectl does the rendering) into a private
+  With --sitespec and --stack-config, or --release, the deploy path is first
+  rendered for the site and against the release (nvkectl does the rendering) into a private
   scratch directory under NVKE_STATE_DIR (default $XDG_STATE_HOME/nvke),
   installed from there, and the scratch directory is removed when the
   install ends, so no rendered credential is left behind.
@@ -63,11 +67,16 @@ usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
   --deploy-path DIR   the deploy path to install: a directory holding
                       nvke-deploy.yaml and one directory per item, e.g.
                       deploy/nico or controller/deploy/capd-e2e
-  --sitespec FILE     render for this site first (needs nvkectl: NVKECTL or PATH,
-                      and the NVKECTL_* credentials exported; see
-                      cli/docs/sitespec.md, "Credential handling")
+  --sitespec FILE     render for this site first (needs nvkectl: NVKECTL or PATH);
+                      the site name, VIP and trust domain come from it
+  --stack-config FILE with --sitespec: the stack's input for this site, the NICo
+                      API and the optional images and mirror; start from
+                      deploy/examples/stack-config.json. The NVKECTL_*
+                      credentials must be exported; see deploy/README.md
+  --arch linux/ARCH   render for this architecture instead of the one the
+                      cluster's nodes report (linux/amd64 or linux/arm64)
   --release FILE      render against this NVKR release description first;
-                      with --sitespec, which names the architecture
+                      with --sitespec and --stack-config
   --nvkr-run-dir DIR  with --release, for a Run that was not published (a
                       local build, the CI lane): read charts and images from
                       this completed NVKR Run's OCI layouts instead of a
@@ -318,6 +327,66 @@ import_images() {
   done
 }
 
+# kubectl_read is a kubectl read that runs under --dry-run too: the facts
+# the render needs come from the cluster, and a dry run prints them rather
+# than the call. stderr is returned with the output.
+kubectl_read() {
+  kubectl ${KUBECONFIG_PATH:+--kubeconfig "${KUBECONFIG_PATH}"} "$@" 2>&1
+}
+
+# read_node_arch sets NODE_ARCH to the one architecture the cluster's nodes
+# report, as the render's --arch, linux/<arch>. The stack installs for one
+# architecture: it selects the release artifacts and the SPIRE TPM attestor
+# checksum. No nodes, a node without the label, or two values stop the
+# install, as check-site.sh reports them. An unreachable API stops it too,
+# except under --dry-run, where the render falls back to this machine's
+# architecture and says so.
+read_node_arch() {
+  local nodes unlabelled archs
+  if ! nodes="$(kubectl_read get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.kubernetes\.io/arch}{"\n"}{end}')"; then
+    if [[ -n "${DRY_RUN}" ]]; then
+      log "cannot list nodes; the dry run renders for this machine's architecture"
+      return 0
+    fi
+    die "cluster: cannot list nodes: $(printf '%s' "${nodes}" | tr -d '\n' | cut -c1-200)"
+  fi
+  [[ -n "$(printf '%s\n' "${nodes}" | sed '/^$/d')" ]] || die "cluster: no nodes"
+  unlabelled="$(printf '%s\n' "${nodes}" | awk -F'\t' 'NF && $2 == "" { print $1 }' | tr '\n' ' ')"
+  [[ -z "${unlabelled}" ]] || die "cluster: node ${unlabelled% } has no kubernetes.io/arch label"
+  archs="$(printf '%s\n' "${nodes}" | awk -F'\t' 'NF && $2 != "" { print $2 }' | sort -u | tr '\n' ' ')"
+  archs="${archs% }"
+  [[ "${archs}" != *" "* ]] || die "cluster: nodes report ${archs}; the stack installs for one architecture"
+  NODE_ARCH="linux/${archs}"
+}
+
+# read_inputs loads the facts the site spec and the stack config carry and
+# logs the pair this run uses, with its absolute paths, before anything is
+# rendered: the site name, the NICo endpoint and org. An input that does not
+# load is left to the render, which names every problem.
+read_inputs() {
+  local vars inputs
+  unset SITE_NAME STACK_NICO_ENDPOINT STACK_NICO_ORG_ID
+  if vars="$("${NVKECTL}" inspect sitespec "${SITESPEC}" 2>/dev/null)"; then eval "${vars}"; fi
+  if vars="$("${NVKECTL}" inspect stack-config "${STACK_CONFIG}" 2>/dev/null)"; then eval "${vars}"; fi
+  inputs="site spec $(abspath "${SITESPEC}")"
+  [[ -z "${SITE_NAME:-}" ]] || inputs="${inputs}, site ${SITE_NAME}"
+  inputs="${inputs}, stack config $(abspath "${STACK_CONFIG}")"
+  [[ -z "${STACK_NICO_ENDPOINT:-}" ]] || inputs="${inputs}, nico ${STACK_NICO_ENDPOINT} org ${STACK_NICO_ORG_ID:-}"
+  log "inputs: ${inputs}"
+}
+
+# abspath prints path made absolute against the working directory.
+abspath() {
+  local dir
+  if [[ "$1" == /* ]]; then
+    printf '%s' "$1"
+  elif dir="$(cd "$(dirname "$1")" 2>/dev/null && pwd)"; then
+    printf '%s/%s' "${dir}" "$(basename "$1")"
+  else
+    printf '%s/%s' "${PWD}" "$1"
+  fi
+}
+
 # render_deploy_path renders DEPLOY_PATH for the site and the release and
 # points DEPLOY_PATH at the result, a private scratch directory under the
 # state directory (never a shared temp directory, which the render refuses)
@@ -325,7 +394,12 @@ import_images() {
 render_deploy_path() {
   command -v "${NVKECTL}" >/dev/null 2>&1 || die "nvkectl is needed to render; set NVKECTL or put it on PATH"
   local args=(render deploy-path --deploy-path "${DEPLOY_PATH}" --ephemeral)
-  [[ -z "${SITESPEC}" ]] || args+=(--sitespec "${SITESPEC}")
+  if [[ -n "${SITESPEC}" ]]; then
+    read_inputs
+    [[ -n "${ARCH}" ]] || read_node_arch
+    args+=(--sitespec "${SITESPEC}" --stack-config "${STACK_CONFIG}")
+  fi
+  [[ -z "${ARCH:-${NODE_ARCH:-}}" ]] || args+=(--arch "${ARCH:-${NODE_ARCH}}")
   [[ -z "${RELEASE}" ]] || args+=(--release "${RELEASE}")
   [[ -z "${RUN_DIR}" ]] || args+=(--nvkr-run-dir "${RUN_DIR}")
   local base="${STATE_DIR}/renders"
@@ -374,6 +448,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --deploy-path) DEPLOY_PATH="${2%/}"; shift 2 ;;
     --sitespec) SITESPEC="$2"; shift 2 ;;
+    --stack-config) STACK_CONFIG="$2"; shift 2 ;;
+    --arch) ARCH="$2"; shift 2 ;;
     --release) RELEASE="$2"; shift 2 ;;
     --nvkr-run-dir) RUN_DIR="$2"; shift 2 ;;
     --config) CONFIG="$2"; shift 2 ;;
@@ -387,8 +463,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+[[ -z "${SITESPEC}" || -n "${STACK_CONFIG}" ]] || die "--sitespec needs --stack-config: the stack's input is the stack config file"
+[[ -z "${STACK_CONFIG}" || -n "${SITESPEC}" ]] || die "--stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec"
 [[ -z "${RUN_DIR}" || -n "${RELEASE}" ]] || die "--nvkr-run-dir holds a release's artifacts; pass --release"
-[[ -z "${RELEASE}" || -n "${SITESPEC}" ]] || die "--release needs --sitespec: the site spec names the architecture"
+[[ -z "${RELEASE}" || -n "${SITESPEC}" ]] || die "--release needs --sitespec and --stack-config"
+case "${ARCH}" in
+  "" | linux/amd64 | linux/arm64) ;;
+  *) die "--arch ${ARCH} is not linux/amd64 or linux/arm64" ;;
+esac
 if [[ -n "${SITESPEC}${RELEASE}" ]]; then
   [[ -n "${DEPLOY_PATH}" ]] || die "--deploy-path is required"
   render_deploy_path

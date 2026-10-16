@@ -1,5 +1,6 @@
 # Site spec for the kind smoke lane. The one node is the kind control plane;
-# the credentials are placeholders kind-stack-from-release.sh exports.
+# the stack config beside it names the NICo API; the credentials are
+# placeholders kind-stack-from-release.sh exports.
 clusterName: "@CLUSTER@"
 cluster:
   nodes:
@@ -13,9 +14,3 @@ cluster:
   controlPlaneVIP: "@VIP@"
 spire:
   trustDomain: "@CLUSTER@.nke.local"
-controllerStack:
-  arch: amd64
-  nico:
-    endpoint: http://127.0.0.1:18080
-    orgID: smoke
-    apiName: forge
