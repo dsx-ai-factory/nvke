@@ -72,7 +72,7 @@ All connections are TCP; traffic between the nodes of one cluster is not listed.
 
 ### Registries
 
-- **A container registry you control**, with an account that can push to it, for the controller image and the profile content image. If pulling needs credentials, the management cluster needs them too.
+- **A container registry you control**, only if you supply the controller or profile content image from one, with an account that can push to it. If pulling needs credentials, the management cluster needs them too.
 - CAPNICo's published image is public on `ghcr.io`, so it needs no credentials.
 
 ### Hosts and tools
