@@ -13,6 +13,7 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   "bgp-containers"          -- shared BGP router and default-site VIP pool for container nodes
 #   "capd"                    -- built-in CAPD support
 #   "nico"                    -- CAPNICo plus NICo endpoint (nico-sim by default)
+#   "launchlayer"             -- CAPLL plus its fake LaunchLayer API, from capll_source_dir
 #   "capd-reboot-controller"  -- CAPD reboot dev controller provider
 #   "capi-syscmp"             -- CAPI system component addon provider
 #   "dsx-identity-exchange"   -- DSX-compatible JWT exchange test double

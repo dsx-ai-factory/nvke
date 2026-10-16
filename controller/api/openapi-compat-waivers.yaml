@@ -130,7 +130,7 @@ waivers:
       shortcut around a fixable issue.
     owner: "Meet Vadaria"
     review: "2027-04-12"
-    baseline: "controller/api/v0.0.37"
+    baseline: "controller/api/v0.0.45"
   - change: "property_removed"
     path: "$.components.schemas['UpdateClusterControlPlaneConfig'].not"
     property: "required"
@@ -139,7 +139,7 @@ waivers:
       path, for the "nico" value of the removed `required` array.
     owner: "Meet Vadaria"
     review: "2027-04-12"
-    baseline: "controller/api/v0.0.37"
+    baseline: "controller/api/v0.0.45"
   - change: "property_removed"
     path: "$.components.schemas['UpdateNodePoolRequest'].not"
     property: "required"
@@ -152,7 +152,7 @@ waivers:
       invalid.
     owner: "Meet Vadaria"
     review: "2027-04-12"
-    baseline: "controller/api/v0.0.37"
+    baseline: "controller/api/v0.0.45"
   - change: "property_removed"
     path: "$.components.schemas['UpdateNodePoolRequest'].not"
     property: "required"
@@ -161,4 +161,4 @@ waivers:
       path, for the "nico" value of the removed `required` array.
     owner: "Meet Vadaria"
     review: "2027-04-12"
-    baseline: "controller/api/v0.0.37"
+    baseline: "controller/api/v0.0.45"

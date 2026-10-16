@@ -277,12 +277,14 @@ BuildKit.
 
 CAPLL has no published chart or image yet, so the `launchlayer` provider always
 builds it from a local `cluster-api-provider-launchlayer` checkout. It requires
-`capi_core`:
+`capi_core`, and with SPIFFE on it needs the `dsx-imds-attestation` provider
+too (see below):
 
 ```json
 {
-  "providers": ["capi_core", "launchlayer"],
-  "capll_source_dir": "../../cluster-api-provider-launchlayer"
+  "providers": ["capi_core", "launchlayer", "dsx-imds-attestation"],
+  "capll_source_dir": "../../cluster-api-provider-launchlayer",
+  "dsx_imds_attestation_source_dir": "../../dsx-identity"
 }
 ```
 
@@ -296,9 +298,14 @@ checkout so source changes retrigger the installation. Enabling the provider
 also adds `launchLayer` to the controller's `supportedInfraProviders`.
 
 Tilt runs the controller with SPIFFE enabled, and a SPIFFE-enabled LaunchLayer
-node attests to SPIRE only through DSX IMDS. Set
-`NODE_AGENT_SPIRE_ATTESTATION_METHOD=dsxImds` in `.env.tilt`; with the chart's
-default `tpm`, the controller rejects LaunchLayer requests with 400.
+node attests to SPIRE only through DSX IMDS; with the chart's default `tpm`,
+the controller rejects LaunchLayer requests with 400. The
+`dsx-imds-attestation` provider sets everything DSX IMDS needs: the
+controller's attestation method, `nodeAgent.dsxImds.operatorTenant` and
+`nodeAgent.dsxImds.endpoint`, and the SPIRE server's `dsx_imds` node attestor.
+Setting only the attestation method is not enough: the chart refuses to render
+without `operatorTenant`. See
+[hack/dsx-imds-attestation/README.md](hack/dsx-imds-attestation/README.md).
 
 ### TPM support in Docker
 

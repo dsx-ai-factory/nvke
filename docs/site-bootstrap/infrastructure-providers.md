@@ -4,7 +4,7 @@
 
 A tenant cluster is created on a Cluster API **infrastructure provider**: a controller running on the site cluster that holds credentials for a backend and creates machines there. `nvkectl` never installs one. You do it once per site, before the first `nvkectl create cluster`.
 
-This page covers [CAPNICo](https://github.com/dsx-ai-factory/cluster-api-provider-nico), the NICo provider, which the site controller accepts by default. [LaunchLayer](#launchlayer) is the other supported provider; a deployment accepts it only once you enable it. Both sections link out to the provider's own documentation rather than restating it.
+This page covers [CAPNICo](https://github.com/dsx-ai-factory/cluster-api-provider-nico), the NICo provider, which the management plane accepts by default. [LaunchLayer](#launchlayer) is the other supported provider; a deployment accepts it only once you enable it. Both sections link out to the provider's own documentation rather than restating it.
 
 ## Prerequisites
 
@@ -24,10 +24,10 @@ This page covers [CAPNICo](https://github.com/dsx-ai-factory/cluster-api-provide
 Install in this order:
 
 1. Cluster API core and the kubeadm providers
-2. CAPNICo
+2. The infrastructure providers: CAPNICo, [CAPLL](#launchlayer), or both
 3. The management plane (CWE)
 
-**CWE must come last.** It reads the `Machine` and `NicoMachine` CRDs once, at process start, and silently skips three controllers when they are absent — the machine SPIRE entry controller, the NICo TPM SPIFFE controller, and the NICo provider-ID controller. They are warnings, not failures, and there is no retry. If CWE is already running, restart it after the provider lands. Find it by the
+**CWE must come last.** It reads the `Machine`, `NicoMachine` and `LaunchLayerMachine` CRDs once, at process start, and silently skips four controllers when they are absent — the machine SPIRE entry controller, the NICo TPM SPIFFE controller, the NICo provider-ID controller, and the LaunchLayer SPIFFE controller. They are warnings, not failures, and there is no retry. If CWE is already running, restart it after the provider lands. Find it by the
 chart's own label rather than a hardcoded name, since the deployment name
 depends on the Helm release name your CWE install used:
 
@@ -168,14 +168,24 @@ For provider-side conditions — `WaitingForBootstrapData`, `WaitingForIdentityS
 
 [CAPLL](https://github.com/dsx-ai-factory/cluster-api-provider-launchlayer) runs tenant clusters on LaunchLayer compute. Install Cluster API as in step 2, then install CAPLL and point it at your LaunchLayer deployment as its [README](https://github.com/dsx-ai-factory/cluster-api-provider-launchlayer#against-a-real-launchlayer-deployment) describes: the manager needs `--base-url` and an `--identity-secret` holding its OAuth2 client credentials. NVKE supplies neither.
 
-The site controller then has to accept LaunchLayer requests. Until it does, it rejects them with 400. Set these chart values:
+The management plane then has to accept LaunchLayer requests. Until it does, it rejects them with 400. Set these chart values:
 
 | Value | Setting |
 |---|---|
-| `supportedInfraProviders` | Add `launchLayer`, for example `"nico,launchLayer"` |
+| `supportedInfraProviders` | Append `launchLayer` to the existing value rather than replacing it. The deploy overlay ships `"nico,infra"`, which becomes `"nico,infra,launchLayer"` |
 | `capi.rbac.create` | `true`. It defaults to `false`, and the chart renders no CAPI or LaunchLayer RBAC without it |
-| `capi.rbac.launchLayer` | `true`, the default. Grants CWE access to LaunchLayer's CRDs when `capi.rbac.create` is `true` |
+| `capi.rbac.launchLayer` | `true`, the default. Grants CWE access to LaunchLayer's CRDs when `capi.rbac.create` is `true`. Keep it `true` for as long as CAPLL's CRDs are installed, even after removing `launchLayer` from `supportedInfraProviders`: CWE runs the LaunchLayer SPIFFE controller whenever the `LaunchLayerMachine` CRD exists, so existing clusters' new machines still join, and without the grant its watch is refused and CWE exits |
+| `tenantAccess.enabled` | `true`, the default. CWE reaches a LaunchLayer cluster's API only through the kubeconfig Secret this publishes; with it off, LaunchLayer clusters stay `Provisioning` |
 | `nodeAgent.spireAttestationMethod` | `dsxImds`, when `spiffe.enabled` is `true`. A LaunchLayer node attests to SPIRE only through DSX IMDS, so a SPIFFE-enabled deployment using any other method rejects LaunchLayer requests with 400 |
+| `nodeAgent.dsxImds.operatorTenant` | Required with `dsxImds`; the chart refuses to render without it. Must match DSX Identity's `global.operatorTenant` |
+| `nodeAgent.dsxImds.endpoint` | Required with `dsxImds`. The metadata endpoint the node attestor queries; the default, `http://169.254.169.254`, is the standard link-local address |
+
+`nodeAgent.spireAttestationMethod` applies to every provider's new nodes, not only LaunchLayer's. NICo accepts any method, so on a site whose NICo nodes attest with TPM, setting `dsxImds` pins new NICo nodes to it as well, and they fail only when they attest. A TPM-attested NICo deployment cannot enable LaunchLayer this way.
+
+SPIRE needs the `dsx_imds` node attestor on both sides:
+
+- **Server.** Add the `dsx_imds` node attestor plugin to the SPIRE server, with `jwks_url` and `issuer` naming DSX Identity's signing keys and issuer, and `audience` set to `spiffe://<trust-domain>/spire/server`.
+- **Nodes.** The node image must install the agent plugin at `/usr/local/lib/spire-agent/dsx-imds-node-attestor-agent` and supply its checksum as `DSX_IMDS_PLUGIN_CHECKSUM` in `/etc/spire-agent/spire-agent.env`, or set `nodeAgent.dsxImds.pluginChecksum`. CWE writes the agent's attestor configuration itself.
 
 The ordering rule above applies here too: CWE checks for the `LaunchLayerMachine` CRD once, at process start, and skips the LaunchLayer SPIFFE controller when it is absent. Install CAPLL before CWE, or restart CWE after it.
 
