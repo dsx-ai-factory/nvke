@@ -8,6 +8,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -120,10 +121,7 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	rebootAnnotation := machine.Annotations[annotationReboot]
-	if rebootAnnotation == "" {
-		rebootAnnotation = machine.Annotations[legacyAnnotationReboot]
-	}
+	rebootAnnotation := cmp.Or(machine.Annotations[annotationReboot], machine.Annotations[legacyAnnotationReboot])
 	if rebootAnnotation == "" {
 		log.V(2).Info("no Machine reboot annotation found; skipping")
 		return ctrl.Result{}, nil
@@ -172,13 +170,10 @@ func rebootAlreadySignaled(machine *clusterv1.Machine, rebootAnnotation string) 
 		return false
 	}
 
-	raw := machine.Annotations[annotationRebootCompleteTimestamp]
-	if raw == "" {
-		// A reboot this controller completed before the nvke.nvidia.com rename
-		// signaled under the legacy key. Ignoring it would replay the
-		// simulated reboot and overwrite the completion already recorded.
-		raw = machine.Annotations[legacyAnnotationRebootCompleteTimestamp]
-	}
+	// A reboot this controller completed before the nvke.nvidia.com rename
+	// signaled under the legacy key. Ignoring it would replay the
+	// simulated reboot and overwrite the completion already recorded.
+	raw := cmp.Or(machine.Annotations[annotationRebootCompleteTimestamp], machine.Annotations[legacyAnnotationRebootCompleteTimestamp])
 	if raw == "" {
 		return false
 	}
