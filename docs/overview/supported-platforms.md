@@ -43,7 +43,7 @@ The NVKE API and the site spec have no field to change a feature gate. The [Kube
 
 | Provider | Version | Notes |
 |---|---|---|
-| NVIDIA Infra Controller (NICo), through CAPNICo | CAPNICo v0.0.45 | Pinned. The only infrastructure provider for workload clusters. The install deploys this CAPNICo release with the reboot and repair settings NVKE uses. The local quickstart builds a development CAPNICo version from source instead. |
+| NVIDIA Infra Controller (NICo), through CAPNICo | CAPNICo v0.0.45 | Pinned. The default infrastructure provider for workload clusters; LaunchLayer is also supported once enabled, see [Infrastructure Providers](../site-bootstrap/infrastructure-providers.md#launchlayer). The install deploys this CAPNICo release with the reboot and repair settings NVKE uses. The local quickstart builds a development CAPNICo version from source instead. |
 | Cluster API core, kubeadm bootstrap and kubeadm control plane | v1.13.6 | Pinned. One version covers `clusterctl`, the providers that `clusterctl init` installs on the management cluster, and the providers `nvkectl` installs in the seed cluster. |
 | cert-manager | The version Cluster API v1.13.6 installs | `clusterctl init` installs it. |
 | Provisioned infrastructure provider | Built from the same NVKE source as `nvkectl` | Runs only in the seed cluster during bootstrap, to form the management cluster. |

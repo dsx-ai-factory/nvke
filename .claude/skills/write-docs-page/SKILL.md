@@ -110,7 +110,7 @@ Explanation and reference pages follow the model page.
 | seed cluster | bootstrap cluster, kind cluster | The temporary cluster during bootstrap. |
 | workload cluster | tenant cluster | A cluster NVKE creates for a customer. "NVKE cluster" is acceptable in overview prose. |
 | node pool | node set, machine deployment | |
-| infrastructure provider | infra provider, backend | NICo is the only one at preview. |
+| infrastructure provider | infra provider, backend | NICo by default; LaunchLayer when a deployment enables it. |
 | NVIDIA Infra Controller (NICo) | Forge, Carbide | |
 
 **Code literals keep their real names.** Commands, binaries, packages, flags,

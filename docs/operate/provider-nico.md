@@ -2,7 +2,7 @@
 
 This page describes how to confirm that the NVIDIA Kubernetes Engine (NVKE) management plane can request bare-metal machines from NVIDIA Infra Controller (NICo), how to manage the credentials it uses, and which NICo identifiers each workload cluster request needs. NVKE requests machines through CAPNICo, the Cluster API (CAPI) infrastructure provider for NICo, which runs on the management cluster and calls the NICo API with your credentials. You do this after you install the management-plane services and before you create the first workload cluster.
 
-NICo is the only infrastructure provider NVKE supports at preview; see [Preview status and known limitations](../overview/preview-status.md).
+NICo is NVKE's default infrastructure provider; LaunchLayer is also supported once a deployment enables it, as described in [Infrastructure Providers](../site-bootstrap/infrastructure-providers.md#launchlayer). See also [Preview status and known limitations](../overview/preview-status.md).
 
 ## Before you begin
 

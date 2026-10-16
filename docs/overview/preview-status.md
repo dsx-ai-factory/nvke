@@ -25,7 +25,7 @@ This page lists what the NVIDIA Kubernetes Engine (NVKE) preview supports and ev
 - **No management-plane upgrade procedure.** NVKE provides no procedure to move the management-plane services to a later NVKE release.
 - **No backup or restore procedure.** NVKE provides no procedure to back up or restore the management cluster or the management plane's state. Keep the kubeconfig and etcd encryption key file from the bootstrap in secure storage: the key file is the only copy of the management cluster's etcd encryption key that is not on a node.
 - **Management cluster nodes built from the node image need your own SPIRE certificate authority (CA).** Without your CA files at bootstrap, SPIRE uses a self-signed CA that no node can trust in advance, so the nodes cannot attest and cannot join. Supply your CA files as described in [Prepare nodes](../operate/prepare-nodes.md). Workload cluster nodes do not use this CA: NVKE puts the management cluster's SPIRE trust bundle in their user data, as described in [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md#what-nvke-puts-in-the-user-data).
-- **NICo is the only infrastructure provider.** NVKE provisions workload cluster nodes only through NICo.
+- **NICo is the default infrastructure provider.** LaunchLayer is also supported once a deployment enables it; see [Infrastructure Providers](../site-bootstrap/infrastructure-providers.md#launchlayer).
 
 ### API and access
 
