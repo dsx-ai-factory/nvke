@@ -34,9 +34,9 @@ A chart the file does not carry, such as `postgresql`, `spire-crds`, `temporal` 
    make -C nvke local-stack-artifacts
    ```
 
-   The target builds the controller image and the profile content image from the repository's test fixtures, copies the CAPNICo image the deploy path pins, packages the two charts with their dependencies, and writes `nvke/dist/local-site/stack-artifacts.json` with one layout per artifact under `nvke/dist/local-site/images/`. `ARCH=amd64` or `ARCH=arm64` builds for the management nodes' architecture when it is not this host's; `OUT=<DIR>` writes elsewhere; `CONTAINER_CLI=nerdctl` builds without Docker. The output directory is replaced as a whole, so a failed build leaves the previous one as it was.
+   The target builds the controller image and the profile content image from the repository's test fixtures, copies the CAPNICo image the deploy path pins, packages the two charts with their dependencies, and writes `nvke/dist/local-site/stack-artifacts.json` with one layout per artifact under `nvke/dist/local-site/images/`. `PROFILES_SRC=<DIR>` builds the profile content image from your own `profiles/` and `runbooks/` directories instead of the test fixtures; `ARCH=amd64` or `ARCH=arm64` builds for the management nodes' architecture when it is not this host's; `OUT=<DIR>` writes elsewhere; `CONTAINER_CLI=nerdctl` builds without Docker. The output directory is replaced only by a complete build that loads, so a failed build leaves the previous one as it was.
 
-2. Keep the output directory on the install host. The install imports each layout into the node's containerd under the name the file gives it, `nvke.local/<NAME>@<DIGEST>`, so the nodes pull nothing from a registry for these artifacts. A layout reaches one node: the one whose containerd the install's `CTR` command talks to. On a management cluster with more than one node, name the artifacts in a registry instead, as the next section describes.
+2. Keep the output directory on the install host. The install imports each layout into the node's containerd under the name the file gives it: `nvke.local/<NAME>@<DIGEST>` for the artifacts built here, and the pinned repository with its digest for CAPNICo, so the nodes pull nothing from a registry for these artifacts. A layout reaches one node: the one whose containerd the install's `CTR` command talks to. On a management cluster with more than one node, name the artifacts in a registry instead, as the next section describes.
 
 ## Name artifacts in your registry
 
@@ -50,7 +50,27 @@ A chart the file does not carry, such as `postgresql`, `spire-crds`, `temporal` 
 
 3. Replace every `REPLACE_*` value with the reference of the artifact in your registry, as `<REGISTRY_HOST>/<NAMESPACE>/<REPOSITORY>@sha256:<DIGEST>`, and set each chart's `chartVersion` to the version you pushed. The `capnico-controller` entry names the image on `ghcr.io` that the deploy path pins; replace its digest with the one `oras resolve` prints, or point it at a copy in your registry.
 
-   The install pulls a chart from its reference with the credentials in your Docker configuration: run `docker login <REGISTRY_HOST>` or `oras login <REGISTRY_HOST>` on the install host first. The management cluster's nodes pull the images; if the registry needs credentials, pass a pull Secret to the controller chart with `--values-for controller=<FILE>` in [Install management-plane services](install-management-plane-services.md).
+   The install pulls a chart from its reference with the credentials in your Docker configuration: run `docker login <REGISTRY_HOST>` or `oras login <REGISTRY_HOST>` on the install host first. The management cluster's nodes pull the images; if the registry needs credentials, pass a pull Secret to the controller chart with `--values-for controller=<FILE>` in [Install management-plane services](install-management-plane-services.md). CAPNICo's manifest names no pull Secret: keep `capnico-controller` on its public `ghcr.io` repository or give it a `layout`, which the install imports into containerd; a private copy pulled by the nodes needs the registry credential configured in their containerd.
+
+## Convert an NVKR release
+
+NVIDIA Kubernetes Recipes (NVKR) builds and publishes NVKE's artifacts from pinned sources; its own documentation covers building, publishing and verifying a Release. The install does not read NVKR's release description directly: convert it to the stack artifacts file.
+
+1. Verify the Release under your policy, as described in [Browse, export and verify a release](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/release-quickstart.md). Nothing in NVKE verifies it.
+
+2. Export the Release description and convert it.
+
+   ```bash
+   nvkr release export --reference <RELEASE_REF> > release.json
+   ```
+
+   ```bash
+   python3 nvke/hack/nvkr-run-to-stack-artifacts.py --out stack-artifacts.json release.json
+   ```
+
+   `<RELEASE_REF>` is the Release reference you verified. Every output becomes an artifact; the Release reference and its declared qualification become the file's `source` block, which the install's check prints with the `nvkr release verify` command for it. For a Run that was not published, add `--run-dir <NVKR_CHECKOUT>/.nvkr/runs/<ATTEMPT>`: each artifact whose digest a layout under the Run lists gets that layout, and the install imports it instead of pulling. `--name-map <OLD>=<NEW>` renames an output whose name differs from the one the deploy path binds.
+
+   The converter refuses a filtered export, as `nvkr release browse --output` writes, and an export that lacks an image the deploy path binds is refused by the install's check, which names it. See [Preview status and known limitations](../overview/preview-status.md) for what NVKR's maintained Definition builds.
 
 ## Verify
 

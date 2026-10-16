@@ -29,6 +29,9 @@ on:
       - 'deploy/**'
       - 'build/**'
       - 'Makefile'
+      - 'hack/nvkr-run-to-stack-artifacts.py'
+      - 'hack/test_nvkr_run_to_stack_artifacts.py'
+      - 'hack/testdata/nvkr-release/**'
       - 'cli/**'
       - 'nktp/**'
       - 'controller/deploy/charts/**'
@@ -78,3 +81,8 @@ jobs:
 
       - name: Run the install tests
         run: make --no-print-directory -C deploy test
+
+      # The converter from an NVKR release export to the stack artifacts
+      # file: standard-library Python, tested against the export fixtures.
+      - name: Test the NVKR export converter
+        run: python3 -B hack/test_nvkr_run_to_stack_artifacts.py

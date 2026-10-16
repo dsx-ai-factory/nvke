@@ -21,6 +21,7 @@ on:
       - controller/hack/ci/kind-stack.sh
       - controller/hack/ci/kind-stack/**
       - build/stack-artifacts.sh
+      - hack/nvkr-run-to-stack-artifacts.py
       - Makefile
       - make/tool-versions.mk
       - deploy/**

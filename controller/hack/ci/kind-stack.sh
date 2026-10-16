@@ -69,6 +69,21 @@ cwe_ref="$(artifact_ref cwe)"; profiles_ref="$(artifact_ref controller-profiles)
 [[ -n "${cwe_ref}" && -n "${profiles_ref}" && -n "${capnico_ref}" ]] || die "the stack artifacts lack an image: $("${NVKECTL}" inspect stack-artifacts "${STACK_ARTIFACTS}" --artifacts)"
 log "artifacts: ${cwe_ref}, ${profiles_ref}, ${capnico_ref}"
 
+# 1b. The converter smoke: an NVKR export naming the same three images by
+# their real digests converts to a file whose layouts are the ones just
+# built, so an NVKR-produced release installs through the same path.
+log "converting an NVKR export of the three images"
+sed -e "s|@CWE_DIGEST@|${cwe_ref##*@}|g" -e "s|@PROFILES_DIGEST@|${profiles_ref##*@}|g" \
+  -e "s|@CAPNICO_DIGEST@|${capnico_ref##*@}|g" "${HERE}/release.json.tmpl" >"${WORK}/release.json"
+python3 -B "${REPO}/hack/nvkr-run-to-stack-artifacts.py" --run-dir "${ARTIFACTS}/images" --out "${WORK}/converted.json" "${WORK}/release.json"
+converted_meta="$("${NVKECTL}" inspect stack-artifacts "${WORK}/converted.json" --meta)"
+grep -q "^LAYOUTS='3'$" <<<"${converted_meta}" || die "the converted file does not name the three layouts: ${converted_meta}"
+grep -q "^LAYOUTS_MISSING=''$" <<<"${converted_meta}" || die "a converted layout does not resolve: ${converted_meta}"
+grep -q "^SOURCE_REFERENCE='nvkr.local/nvke/releases@" <<<"${converted_meta}" || die "the converted file lost its source: ${converted_meta}"
+diff <("${NVKECTL}" inspect stack-artifacts "${STACK_ARTIFACTS}" --artifacts --kind oci | cut -f1,4 | sort) \
+  <("${NVKECTL}" inspect stack-artifacts "${WORK}/converted.json" --artifacts | cut -f1,4 | sort) ||
+  die "the converted file's image digests differ from the built file's"
+
 # 2. The kind node. Images from Docker Hub go through a mirror when one is
 # named, as the other kind lanes do.
 log "creating kind cluster ${CLUSTER}"
