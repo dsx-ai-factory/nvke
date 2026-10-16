@@ -93,6 +93,7 @@ const (
 	VersionStrategyGitTagOrCommitDescribe = "gitTagOrCommitDescribe"
 	VersionStrategyLockedPackage          = "lockedPackage"
 	VersionStrategyMakeVar                = "makeVar"
+	VersionStrategyAptPackage             = "aptPackage"
 )
 
 // Location strategy names, as written in a registry entry's location block.
@@ -124,6 +125,18 @@ func Validate(r Resolver, inputs map[string]string) error {
 		return v.Validate(inputs)
 	}
 	return nil
+}
+
+// splitList reads a comma-separated configuration value, dropping the blanks a
+// trailing comma or a stray space would otherwise contribute.
+func splitList(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 // declared are the inputs a subject can declare for a dependency.
@@ -198,6 +211,16 @@ func NewVersion(strategy string, with map[string]string, repo string) (Resolver,
 			path = DefaultToolVersions
 		}
 		return MakeVar{Dir: repo, Path: path, Var: with["var"]}, nil
+	case VersionStrategyAptPackage:
+		if err := checkWith(strategy, with, []string{"base", "suites", "arches", "packages"}, nil); err != nil {
+			return nil, err
+		}
+		return AptPackage{
+			Base:     with["base"],
+			Suites:   splitList(with["suites"]),
+			Arches:   splitList(with["arches"]),
+			Packages: splitList(with["packages"]),
+		}, nil
 	default:
 		return nil, unknownStrategy("version", strategy, versionStrategies(), locationStrategies())
 	}
@@ -272,6 +295,7 @@ func versionStrategies() []string {
 	return []string{
 		VersionStrategyGitTag, VersionStrategyGitTagOrCommitDescribe,
 		VersionStrategyLockedPackage, VersionStrategyMakeVar,
+		VersionStrategyAptPackage,
 	}
 }
 
