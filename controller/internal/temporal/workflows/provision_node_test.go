@@ -84,6 +84,29 @@ func TestLabelNode(t *testing.T) {
 		unwantedLabels []string
 	}
 
+	// mockedLabelNodeEnv serves cluster and node from mocked activities, so
+	// a case can use provider payloads the seeded test database cannot.
+	mockedLabelNodeEnv := func(cluster db.Cluster, node db.Node) labelNodeEnv {
+		testSuite := &testsuite.WorkflowTestSuite{}
+		env := testSuite.NewTestWorkflowEnvironment()
+		env.SetWorkerOptions(worker.Options{DeadlockDetectionTimeout: 5 * time.Second})
+		env.RegisterWorkflow(labelNodeTestWorkflow)
+
+		var a *activities.Activities
+		captured := &activities.LabelNodeInput{}
+		wasCalled := false
+		env.OnActivity(a.GetClusterForNode, mock.Anything, node.ID).Return(cluster, nil)
+		env.OnActivity(a.GetNode, mock.Anything, node.ID).Return(node, nil)
+		env.OnActivity(a.LabelNode, mock.Anything, mock.Anything).
+			Return(activities.LabelNodeResult{}, nil).
+			Run(func(args mock.Arguments) {
+				wasCalled = true
+				*captured = args.Get(1).(activities.LabelNodeInput)
+			}).Maybe()
+
+		return labelNodeEnv{env: env, captured: captured, called: &wasCalled, nodeID: node.ID}
+	}
+
 	tests := map[string]parameters{
 		"adds machine ID label": {
 			setup: func(t *testing.T) labelNodeEnv {
@@ -100,45 +123,26 @@ func TestLabelNode(t *testing.T) {
 			setup: func(t *testing.T) labelNodeEnv {
 				t.Helper()
 
-				nodeID := uuid.MustParse("50000000-0000-0000-0000-000000000001")
 				clusterID := uuid.MustParse("50000000-0000-0000-0000-000000000002")
-				siteID := uuid.MustParse("50000000-0000-0000-0000-000000000003")
-				vpcID := uuid.MustParse("50000000-0000-0000-0000-000000000004")
-				node := db.Node{
-					ID:        nodeID,
-					ClusterID: clusterID,
-					Name:      "worker-0",
-					Nico: &db.NicoNodeProvider{
-						ForgeMachineID: "payload-machine",
+				return mockedLabelNodeEnv(
+					db.Cluster{
+						ID:           clusterID,
+						ProviderType: db.ProviderTypeNico,
+						Nico: &db.NicoClusterProvider{
+							OrgID:  "org-1",
+							SiteID: uuid.MustParse("50000000-0000-0000-0000-000000000003"),
+							VpcID:  uuid.MustParse("50000000-0000-0000-0000-000000000004"),
+						},
 					},
-				}
-				cluster := db.Cluster{
-					ID:           clusterID,
-					ProviderType: db.ProviderTypeNico,
-					Nico: &db.NicoClusterProvider{
-						OrgID:  "org-1",
-						SiteID: siteID,
-						VpcID:  vpcID,
+					db.Node{
+						ID:        uuid.MustParse("50000000-0000-0000-0000-000000000001"),
+						ClusterID: clusterID,
+						Name:      "worker-0",
+						Nico: &db.NicoNodeProvider{
+							ForgeMachineID: "payload-machine",
+						},
 					},
-				}
-				testSuite := &testsuite.WorkflowTestSuite{}
-				env := testSuite.NewTestWorkflowEnvironment()
-				env.SetWorkerOptions(worker.Options{DeadlockDetectionTimeout: 5 * time.Second})
-				env.RegisterWorkflow(labelNodeTestWorkflow)
-
-				var a *activities.Activities
-				captured := &activities.LabelNodeInput{}
-				wasCalled := false
-				env.OnActivity(a.GetClusterForNode, mock.Anything, nodeID).Return(cluster, nil)
-				env.OnActivity(a.GetNode, mock.Anything, nodeID).Return(node, nil)
-				env.OnActivity(a.LabelNode, mock.Anything, mock.Anything).
-					Return(activities.LabelNodeResult{}, nil).
-					Run(func(args mock.Arguments) {
-						wasCalled = true
-						*captured = args.Get(1).(activities.LabelNodeInput)
-					})
-
-				return labelNodeEnv{env: env, captured: captured, called: &wasCalled, nodeID: nodeID}
+				)
 			},
 			wantCalled:     true,
 			wantLabels:     []string{constants.LabelKeyMachineID + "=payload-machine"},
@@ -153,6 +157,30 @@ func TestLabelNode(t *testing.T) {
 				return labelNodeEnv{env: env, captured: captured, called: called, nodeID: res.nodeID}
 			},
 			wantCalled: false,
+		},
+		"capi adds no machine ID label": {
+			setup: func(t *testing.T) labelNodeEnv {
+				t.Helper()
+
+				clusterID := uuid.MustParse("50000000-0000-0000-0000-000000000022")
+				return mockedLabelNodeEnv(
+					db.Cluster{
+						ID:           clusterID,
+						ProviderType: db.ProviderTypeCAPI,
+						Capi:         &db.CAPIClusterProvider{InfraCluster: []byte(`{"kind":"DockerCluster"}`)},
+						CniPlugin:    db.CNIOvnKubernetes,
+					},
+					db.Node{
+						ID:        uuid.MustParse("50000000-0000-0000-0000-000000000021"),
+						ClusterID: clusterID,
+						Name:      "worker-0",
+						Nico:      &db.NicoNodeProvider{ForgeMachineID: "stray-machine"},
+					},
+				)
+			},
+			wantCalled:     true,
+			wantLabels:     []string{"k8s.ovn.org/zone-name=worker-0"},
+			unwantedLabels: []string{constants.LabelKeyMachineID + "=stray-machine"},
 		},
 	}
 

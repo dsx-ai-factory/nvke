@@ -4,7 +4,8 @@
 // Package shared holds machine-materialization pieces genuinely common to
 // every provider: the dependencies Activities supplies to a provider client's
 // CreateMachine, and the generic CAPI Machine/Secret builders neither
-// provider's rendering differs on. It exists so internal/clients/capi and
+// provider's rendering differs on. It also holds the value types a
+// capability interface returns, such as TenantAPIAccessMethod. It exists so internal/clients/capi and
 // internal/clients/nico can both depend on this without either importing the
 // other, and without internal/clients (which imports both, for the factory)
 // creating an import cycle.

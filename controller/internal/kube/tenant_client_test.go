@@ -132,8 +132,7 @@ func TestDBClusterTenantClientProviderErrorsForUnsupportedProviderType(t *testin
 	provider := NewDBClusterTenantClientProvider(nil, nil, nil, false)
 
 	_, err := provider.ClientForDBCluster(context.Background(), cluster)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unsupported provider type")
+	require.EqualError(t, err, `unsupported provider type "unknown" for cluster `+cluster.ID.String())
 }
 
 func TestDBClusterTenantClientProviderSharesClientByCluster(t *testing.T) {
