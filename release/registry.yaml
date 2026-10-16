@@ -125,7 +125,7 @@ spec:
         version: {strategy: lockedPackage, with: {lockDir: os-image/packages/kubeadm-distro/lock, at: os-image}}
     - name: cni-ovn
       resolve:
-        version: {strategy: makeVar, with: {path: os-image/packages/cni-ovn/Makefile, var: OVN_STREAMS}}
+        version: {strategy: makeVar, with: {path: os-image/packages/cni-ovn/Makefile, var: OVN_QUALIFY_STREAM}}
 
     # Read from make/tool-versions.mk, which owns every tool pin.
     - {name: kind,       resolve: {version: {strategy: makeVar, with: {var: KIND_VERSION}}}}
