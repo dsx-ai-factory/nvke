@@ -193,9 +193,8 @@ until the original workflow finishes. Cluster deletion is always accepted.
 For these retained-lock failures, first fix connectivity, authorization, reload,
 or rewrite prerequisites. Inspect the owning workflow and nodes while keeping
 the mutation lock. Do not delete the pending key, hand-edit encryption
-configuration, clear database conditions (except
-as described for a lost host below), start a competing rotation, or restore an
-old configuration after old keys were removed.
+configuration, edit database conditions, start a competing rotation, or
+restore an old configuration after old keys were removed.
 
 Prefer automatic activity retry while the original execution is running. If it
 has failed/canceled in `add_secondary` or later, recover by **resetting that same
@@ -283,33 +282,22 @@ Every phase, and every reset of it, needs all control-plane nodes in the
 rotation's snapshot to be reachable and ready. A recorded `prepare` failure
 releases the lock, allowing remediation to replace a lost host before starting
 a rotation with a new workflow ID. From `add_secondary` on, the retained lock
-prevents removing or replacing a node. Restore a lost host with the same node
-identity, then reset the workflow as described above.
+prevents replacing a node until the rotation completes: a replacement joins with
+the key Secret's active key alone, which stays the old key until finalization.
 
-If the host is permanently lost from `add_secondary` on, there is no supported
-recovery API yet. This is expert recovery: keep the lock, take etcd backups from
-the surviving nodes, and record the failed phase. Use this ownership-checked procedure, the same model
-as certificate renewal:
-
-1. Confirm the owning workflow is closed and no node key update or rewrite is
-   still running.
-2. If the recorded phase is `add_secondary`, no node uses the pending key as
-   its primary yet. An operator may then clear the `etcd_key_rotation` lock in
-   one database transaction under the cluster row
-   lock, checking both the lock type and the recorded `etcdKeyRotation`
-   workflow ID. Leave the key Secret unchanged; the next rotation reuses its
-   pending key. Remediation can then replace the lost node.
-3. From `promote_primary` on, do not clear the lock: a replacement would join
-   with the old key only. Restoring the host or the cluster from backup are the
-   only recovery paths.
+Keep the lock and take etcd backups from the surviving nodes. No database edit
+releases the lock, not even in `add_secondary`: the recorded phase can move
+back after a reset, so it does not prove that no node uses the new key. Restore
+the lost host with the same node identity and reset the workflow as described
+above, or restore the cluster from backup.
 
 Record the original and reset run IDs, chosen event ID, rationale, and results.
 Do not publish full history dumps from unrelated workflows; retain only reviewed,
 sanitized rotation evidence. If the pending/active key state no longer matches
 recorded history, retain the lock and perform expert recovery with backups.
 For retained-lock failures, there is no automatic recovery API or unattended
-lock-release procedure; the lost-host procedure above, for `add_secondary` only,
-is the only supported manual release.
+lock-release procedure, and no supported database edit releases the lock. Only
+successful completion of the owning workflow releases it.
 
 ## Prove completion and preexisting-object rewrite
 
