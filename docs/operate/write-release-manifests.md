@@ -1,74 +1,15 @@
-# Get NVKE artifacts from NVKR and write release manifests
+# Write release manifests
 
-This page describes where the artifacts that NVIDIA Kubernetes Engine (NVKE) installs come from, how to hand them to the install, and how to write the releases that the management plane provisions nodes from. Do it after you plan the installation and before you prepare the nodes.
+This page describes how to write the releases that the NVIDIA Kubernetes Engine (NVKE) management plane provisions workload-cluster nodes from, and where the node OS image and the profile content image come from. Do it after you get the NVKE artifacts and before you install the management-plane services.
 
-NVIDIA Kubernetes Recipes (NVKR) builds the artifacts NVKE runs: the controller image and chart, the charts NVKE installs alongside it, `nvkectl`, and the node OS image. NVKR's own documentation covers building, publishing and verifying them. NVKE owns the releases, which are Kubernetes resources you write and apply to the management cluster.
+NVKE owns the releases, which are Kubernetes resources you write and publish to the management cluster with `nvkectl`. NVIDIA Kubernetes Recipes (NVKR) builds the node OS image; its own documentation covers building, publishing and verifying it.
 
 ## Before you begin
 
 - You have read [Plan your installation](plan-installation.md).
-- You have a published NVKR Release reference, as `<REGISTRY>/<REPOSITORY>@sha256:<DIGEST>`, or a completed local NVKR Run. To produce either, follow the NVKR documentation linked in [Get the artifacts from NVKR](#get-the-artifacts-from-nvkr).
 - You have a checkout of `dsx-ai-factory/nvke` in `nvke/`, at the release you install.
 - You have `nvkectl` on this host, from [Install nvkectl](bootstrap-management-cluster.md#install-nvkectl), to check the release resources before you publish them.
 - To build your own profile content image, you have Docker and a container registry that the management cluster's nodes can pull from.
-
-## Get the artifacts from NVKR
-
-NVKR builds every artifact from a Definition, a YAML file that names each output and the pinned sources it is built from. A Run executes a Definition, and a published Run is a Release: one digest-pinned reference for the whole set. Use these NVKR pages for the procedures:
-
-| Task | NVKR documentation |
-|---|---|
-| Install `nvkr` and run a first build | [Quickstart](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/quickstart.md) |
-| Plan, run, publish and inspect a Run | [Definition, Run, and Release workflow](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/lifecycle.md) |
-| Browse, verify and export a Release | [Browse, export and verify a release](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/release-quickstart.md) |
-| The maintained NVKE Definition | [Combined NVKE M2 candidate](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/nvke/README.md) |
-| Build the node OS image | [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/diagnostics/README.md) and [Build a node image from component materials](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/node-images.md) |
-
-### What the install takes from an NVKR Release
-
-The install reads a Release by output name. Each item of the `deploy/nico` deploy path names the outputs it uses:
-
-| Output | What it is | Used by |
-|---|---|---|
-| `cwe` | The NVKE controller image. | The `controller` item. |
-| `controller-chart` | The NVKE controller Helm chart. | The `controller` item. |
-| `controller-profiles` | The profile content image, which holds config profiles and hook scripts. | The `controller` item. |
-| `capnico-controller` | The Cluster API provider for NVIDIA Infra Controller (NICo) image. | The `capnico` item. |
-| `postgresql`, `spire-crds`, `spire`, `temporal`, `nktp` | Helm charts. | The item of the same name. |
-
-The install selects each output for the management nodes' CPU architecture, which it reads from the cluster. An output name may carry an `-amd64` or `-arm64` suffix. A chart the Release does not carry comes from the checkout or from its public repository. An image the Release does not carry stops the render, which names every missing image.
-
-### Hand the NVKR Release to the install
-
-1. Verify the Release under your policy, as described in [Verify against an accepted policy](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/release-quickstart.md#verify-against-an-accepted-policy).
-
-2. Export the Release description.
-
-   ```bash
-   nvkr release export --reference <RELEASE_REF> > release.json
-   ```
-
-   `<RELEASE_REF>` is the Release reference you verified in step 1. The file is `nvkr.dev/release-description/v1` JSON that lists every output with its digest-pinned reference. `export` verifies nothing, so run it only on a reference that `verify` accepted. See [Export the complete description](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/release-quickstart.md#export-the-complete-description).
-
-3. Keep `release.json`. You pass it to the install as `--release` in [Install management-plane services](install-management-plane-services.md). For a local Run that was never published, also pass `--nvkr-run-dir .nvkr/runs/<ATTEMPT>`: the install then reads charts and images from the Run's OCI layouts instead of a registry, and imports the images into the node's containerd.
-
-> **Note:** NVKR's maintained M2 Definition (`inputs/definitions/nvke`) does not build the `controller-profiles` or `capnico-controller` outputs, so the install refuses a Release built from it. Install without `--release` instead. The controller chart then comes from your checkout, and the stack config names the profile content image in `images.profiles`, as `repository:tag` or `repository@sha256:<DIGEST>`; `images.controller` is optional in the same form and overrides the deploy path's pinned controller image. To use the Release's controller image, take the `cwe` output's `Derived artifact reference:` from `nvkr release browse`. To build the profiles image, see [Build the profile content image](#build-the-profile-content-image).
-
-### What an NVKR Release proves
-
-NVKR records an evidence lane for every plan, Run and Release. No lane qualifies a Release.
-
-| Lane | Comes from | Signed |
-|---|---|---|
-| `static-unqualified` | A plan or a dry run. Nothing is built. | No |
-| `unqualified-local-execution` | A Run on your own host. | No |
-| `pipeline-attested` | A Run of the hosted pipeline that NVKR generates. It publishes signatures and build provenance that `nvkr release verify` checks. | Yes |
-
-See [Preview status and known limitations](../overview/preview-status.md).
-
-### The node OS image
-
-NVKR builds the node OS image, `nvke-node-image-<ARCH>.qcow2`: Ubuntu 26.04.1 in QEMU copy-on-write (QCOW2) format, for `amd64` or `arm64`. A local build runs NVKR's `scripts/nvke-os-local.sh` with `NVKE_OS_ARCH` set to the architecture, on native Linux with Kernel-based Virtual Machine (KVM) access, at least 8 CPUs, 10 GiB of memory and 64 GiB of free disk space. It writes `.nvkr/runs/<ATTEMPT>/outputs/nvke-node-image-<ARCH>.qcow2`, which is unsigned and unqualified. The maintained M2 Definition also builds node images for both architectures in the hosted pipeline. [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/diagnostics/README.md) has the procedure. Copy the image to where your provisioning system serves images, then [Prepare nodes](prepare-nodes.md) from it.
 
 ## Write the release manifests
 
@@ -161,11 +102,15 @@ write_files:
 
 `indent 6` adds six spaces to each line of the bundle so that it sits under `content`. The image renders the SPIRE agent configuration from these files, and the agent attests with the node's TPM. The install turns SPIFFE on, so the management plane reaches `nvke-agent` over mutual TLS with a SPIFFE identity: a node whose SPIRE agent cannot attest never becomes reachable.
 
+## The node OS image
+
+NVKR builds the node OS image, `nvke-node-image-<ARCH>.qcow2`: Ubuntu 26.04.1 in QEMU copy-on-write (QCOW2) format, for `amd64` or `arm64`. A local build runs NVKR's `scripts/nvke-os-local.sh` with `NVKE_OS_ARCH` set to the architecture, on native Linux with Kernel-based Virtual Machine (KVM) access, at least 8 CPUs, 10 GiB of memory and 64 GiB of free disk space. It writes `.nvkr/runs/<ATTEMPT>/outputs/nvke-node-image-<ARCH>.qcow2`, which is unsigned and unqualified. The maintained M2 Definition also builds node images for both architectures in the hosted pipeline. [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/diagnostics/README.md) has the procedure. Copy the image to where your provisioning system serves images, then [Prepare nodes](prepare-nodes.md) from it.
+
 ## Config profiles and the profile content image
 
 The optional `configProfile` field of a node pool names a config profile, which sets the hook scripts that run before a node joins. The controller reads config profiles from a profile content image that an init container, `materialize-profiles`, copies into the controller pod at startup. NVKE looks up `configProfiles/<NAME>.yaml` in that image, and the hook scripts under `runbooks/`.
 
-With a Release, the profile content image is the Release's `controller-profiles` output. Without one, or to use your own config profiles, build the image and name it in the stack config's `images.profiles`, which overrides the Release's.
+The install takes the profile content image from the `controller-profiles` artifact of the stack artifacts file. `make local-stack-artifacts` builds one from the repository's test fixtures, which carry an empty config profile. To use your own config profiles, build the image and name it in the file.
 
 ### Build the profile content image
 
@@ -195,28 +140,21 @@ With a Release, the profile content image is the Release's `controller-profiles`
 
    `<REGISTRY_HOST>/<NAMESPACE>` is your registry path, such as `registry.example.com/nvke`, and `<TAG>` is a version you choose, such as `v1`. Note the digest that `docker push` prints.
 
-4. Set the image in the stack config, the file you write in [Install management-plane services](install-management-plane-services.md#write-the-stack-config).
+4. Name the image in the stack artifacts file, the file you write in [Get the NVKE artifacts](get-artifacts.md).
 
    ```json
-   "images": {
-     "controller": "",
-     "profiles": "<REGISTRY_HOST>/<NAMESPACE>/nvke-profiles@<PROFILES_DIGEST>"
+   {
+     "name": "controller-profiles",
+     "kind": "oci",
+     "reference": "<REGISTRY_HOST>/<NAMESPACE>/nvke-profiles@<PROFILES_DIGEST>"
    }
    ```
 
-   `<PROFILES_DIGEST>` is the `sha256:` digest from step 3. A digest pin restarts the controller when the profiles change; `repository:tag` also works.
+   `<PROFILES_DIGEST>` is the `sha256:` digest from step 3. The install pins the image by digest, so the controller restarts when the profiles change.
 
 ## Verify
 
-1. Confirm that the Release description lists the outputs the install needs.
-
-   ```bash
-   jq -r '.outputs[].name' release.json
-   ```
-
-   The list includes `cwe`, `controller-chart`, `controller-profiles` and `capnico-controller`, each possibly with an architecture suffix. Skip this step if you install without `--release`.
-
-2. Confirm that each release resource is a document `nvkectl` accepts.
+1. Confirm that each release resource is a document `nvkectl` accepts.
 
    ```bash
    nvkectl create machineimage -f releases/machineimage.yaml --dry-run=client
@@ -228,4 +166,4 @@ With a Release, the profile content image is the Release's `controller-profiles`
 
 - [Prepare nodes](prepare-nodes.md) from the node image.
 - [Bootstrap the management cluster](bootstrap-management-cluster.md).
-- [Install management-plane services](install-management-plane-services.md) with `release.json` and the `releases` directory.
+- [Install management-plane services](install-management-plane-services.md) with the `releases` directory.

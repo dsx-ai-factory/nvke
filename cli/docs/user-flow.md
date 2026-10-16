@@ -1,7 +1,7 @@
 # Site and Tenant Cluster Flow
 
 What `nvkectl` does today, in the order an operator uses it, with the two
-steps that are not CLI commands marked: getting a release from NVKR and
+steps that are not CLI commands marked: building the stack artifacts and
 installing the controller stack with the deploy script.
 `nvkectl <command> --help` is the authoritative reference for flags. The
 walkthrough is [Your first cluster](https://github.com/dsx-ai-factory/nvke/blob/main/docs/first-cluster.md); this page is
@@ -14,9 +14,9 @@ the reference it points at.
 | `nvkectl generate sitespec <name> --nodes hosts.csv` | Writes a site spec for `bootstrap site` from a node CSV. `--set path=value` fills in what the CSV does not carry. | Available |
 | `nvkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running the NVKE controller, has the controller create the site cluster on the spec's hosts through `nvke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down on success. `--dry-run` validates the spec only. | Available |
 | `nvkectl validate sitespec -f sitespec.yaml` | Checks the site spec the way `bootstrap site` reads it and prints `valid`. | Available |
-| Write the stack config, `stack-config.json` | The controller stack install reads it: the NICo API, and under `images` the profile content image (required without a release) and, optionally, the controller image. Copy `deploy/examples/stack-config.json` and fill in every `REPLACE_*` value; the install refuses a placeholder. The tokens and passwords come from `NVKECTL_*` variables. Not read by `bootstrap site`. | Available |
+| Write the stack config, `stack-config.json` | The controller stack install reads it: the NICo API. Copy `deploy/examples/stack-config.json` and fill in every `REPLACE_*` value; the install refuses a placeholder. The tokens and passwords come from `NVKECTL_*` variables. Not read by `bootstrap site`. | Available |
+| `make local-stack-artifacts` | Builds the images and charts the install needs from this checkout into OCI layouts and writes `dist/local-site/stack-artifacts.json`, the `--stack-artifacts` input of the install; `deploy/examples/stack-artifacts.json` is the starting point for a file naming artifacts in your registry. [stack-artifacts.md](stack-artifacts.md). | Not in the CLI |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
-| `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts come from this checkout, the profile content image from the stack config's `images.profiles`, and the controller image from `images.controller` or, when that is empty, the deploy path's pin. | Not in the CLI |
 | `deploy/check-site.sh`, `clusterctl init`, `deploy/nvke-deploy.sh install --deploy-path deploy/nico`, the exec-auth patch | The management plane install, a short list of commands run in order: the check reports what the cluster and this machine still need; `clusterctl init` installs Cluster API; the executor renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NVKE telemetry pipelines (NKTP), the controller) and applies it; the patch gives the Cluster API controllers SPIRE exec-auth. See [Install management-plane services](../../docs/operate/install-management-plane-services.md). | Not in the CLI |
 | `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at an NVKE management plane. `use-site` switches between entries, `view` prints the config. | Available |
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the management plane can use, with their state. Alpha. | Available |
@@ -38,27 +38,20 @@ Global flags: `--site <name>` overrides the active site for one invocation,
 
 ## Example
 
-### 1. Get a release
+### 1. Get the artifacts
 
-NVKR builds and publishes NVKE's artifacts. Verify a published release under
-your policy, then export its description; the install takes that file as
-`--release` and pulls every chart and image it carries by digest. The
-release also carries `nvkectl` itself; [Bootstrap the management cluster](../../docs/operate/bootstrap-management-cluster.md#install-nvkectl)
-shows how to take it from there.
+The install takes every image and chart from a stack artifacts file. Build
+them from this checkout:
 
 ```bash
-nvkr release verify --reference <repo@digest> --lane pipeline-attested --scope artifact-publication \
-  --identity <signer identity regexp> --issuer <OIDC issuer> --cosign <cosign> --cosign-digest <sha256>
-nvkr release export --reference <repo@digest> > release.json
+make local-stack-artifacts
 ```
 
-`export` describes the release and verifies nothing, so run it only on a
-reference `verify` accepted. [Get NVKE artifacts from NVKR and write release manifests](../../docs/operate/build-node-images.md)
-explains what each command checks and writes. The release
-is optional: without it the install takes the charts from this checkout and
-their public repositories, the stack config names the profile content image
-in `images.profiles`, and `images.controller` may override the deploy path's
-pinned controller image.
+The target writes `dist/local-site/stack-artifacts.json` and one OCI layout
+per artifact under `dist/local-site/images/`; the install imports the layouts
+into the node's containerd. A site that installs from its registry writes the
+file from `deploy/examples/stack-artifacts.json` instead.
+[Get the NVKE artifacts](../../docs/operate/get-artifacts.md) describes both.
 
 ### 2. Describe the hosts and generate the site spec
 
@@ -114,16 +107,15 @@ read -rs NVKECTL_DATABASE_PASSWORD && export NVKECTL_DATABASE_PASSWORD
 ```
 
 Fill in every `REPLACE_*` value: the NICo API endpoint, organization ID and
-API name. Without a release, name the profile content image in
-`images.profiles`. The file holds no secret, so it can sit next to the site
-spec. [deploy/README.md](../../deploy/README.md) lists every key.
+API name. The file holds no secret, so it can sit next to the site spec.
+[deploy/README.md](../../deploy/README.md) lists every key.
 
 ### 5. Install the controller stack
 
 ```bash
-deploy/check-site.sh --sitespec sitespec.yaml --stack-config stack-config.json --kubeconfig my-tier0-site.kubeconfig --release release.json
+deploy/check-site.sh --sitespec sitespec.yaml --stack-config stack-config.json --stack-artifacts dist/local-site/stack-artifacts.json --kubeconfig my-tier0-site.kubeconfig
 clusterctl init --kubeconfig my-tier0-site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
-deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json --kubeconfig my-tier0-site.kubeconfig --release release.json
+deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json --stack-artifacts dist/local-site/stack-artifacts.json --kubeconfig my-tier0-site.kubeconfig
 controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig my-tier0-site.kubeconfig
 kubectl --kubeconfig my-tier0-site.kubeconfig apply -f nvke-api-clients.yaml
 ```

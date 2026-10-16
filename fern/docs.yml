@@ -11,6 +11,8 @@ instances:
 redirects:
   - source: /nvke/index.html
     destination: /nvke
+  - source: /nvke/documentation/install-nvke/get-nvke-artifacts-from-nvkr-and-write-release-manifests
+    destination: /nvke/documentation/install-nvke/get-the-nvke-artifacts
 
 title: NVIDIA Kubernetes Engine
 
