@@ -57,7 +57,7 @@ With `--wait` it then retries each one for the whole budget before failing.
 | `--overrides` | none | Values to use in place of what resolves, as `name=value` pairs separated by commas |
 | `--scope` | `full` | How much of the matrix to cover, a scope from `policy.yaml` |
 | `--output` | `-` | Where to write the plan. `-` is stdout |
-| `--resolution` | `gitTag` | How to resolve the components, named for the strategy that answers. `gitTag` takes each from its own release tags, which is how a release is qualified. `commitDescribe` describes each at the commit the subject's version points at, which is how a beta is qualified. The qualify-e2e workflow defaults to `commitDescribe` instead, because a beta is what it qualifies nightly |
+| `--resolution` | `commitDescribe` | How to resolve the components, named for the strategy that answers. `commitDescribe` describes each at the commit the subject's version points at, which is how a beta is qualified. `gitTag` takes each from its own release tags, and a release qualification has to select it: left on the default a release verifies the describe-named artifacts, which exist, so it passes while qualifying builds other than the release-tagged ones |
 | `--check-exists` | off | Ask for each location this resolves and require it to be published. Off leaves the question to `qualify verify` |
 | `--root`, `--policy`, `--registry` | the enclosing checkout and the files under `release/` | Where to read the repository and the two files from |
 
