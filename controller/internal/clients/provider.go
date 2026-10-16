@@ -21,6 +21,8 @@ type ProviderClient interface {
 	NewNodeProvider() NewNodeProvider
 	NodePoolPayloadValidator() NodePoolPayloadValidator
 	ControlPlaneConfigPayloadValidator() ControlPlaneConfigPayloadValidator
+	TenantAPIAccess() TenantAPIAccess
+	NodeMachineIDLabel() NodeMachineIDLabel
 }
 
 type providerClient struct {
@@ -32,6 +34,8 @@ type providerClient struct {
 	newNode               NewNodeProvider
 	nodePoolValidator     NodePoolPayloadValidator
 	controlPlaneValidator ControlPlaneConfigPayloadValidator
+	tenantAPIAccess       TenantAPIAccess
+	nodeMachineIDLabel    NodeMachineIDLabel
 }
 
 func (p *providerClient) ClusterScaffold() ClusterScaffold               { return p.scaffold }
@@ -49,6 +53,10 @@ func (p *providerClient) NodePoolPayloadValidator() NodePoolPayloadValidator {
 func (p *providerClient) ControlPlaneConfigPayloadValidator() ControlPlaneConfigPayloadValidator {
 	return p.controlPlaneValidator
 }
+
+func (p *providerClient) TenantAPIAccess() TenantAPIAccess { return p.tenantAPIAccess }
+
+func (p *providerClient) NodeMachineIDLabel() NodeMachineIDLabel { return p.nodeMachineIDLabel }
 
 // GetProviderClient resolves every settled capability for cluster's
 // provider type by calling each capability's own factory. Adding a provider
@@ -87,6 +95,14 @@ func GetProviderClient(cluster db.Cluster) (ProviderClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	tenantAPIAccess, err := GetTenantAPIAccess(cluster)
+	if err != nil {
+		return nil, err
+	}
+	nodeMachineIDLabel, err := GetNodeMachineIDLabel(cluster)
+	if err != nil {
+		return nil, err
+	}
 	return &providerClient{
 		scaffold:              scaffold,
 		machine:               machine,
@@ -96,5 +112,7 @@ func GetProviderClient(cluster db.Cluster) (ProviderClient, error) {
 		newNode:               newNode,
 		nodePoolValidator:     nodePoolValidator,
 		controlPlaneValidator: controlPlaneValidator,
+		tenantAPIAccess:       tenantAPIAccess,
+		nodeMachineIDLabel:    nodeMachineIDLabel,
 	}, nil
 }
