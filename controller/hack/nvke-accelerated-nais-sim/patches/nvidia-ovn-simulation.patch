@@ -1,0 +1,170 @@
+--- a/go-controller/pkg/cni/cni_dpu.go
++++ b/go-controller/pkg/cni/cni_dpu.go
+@@ -47,0 +48,8 @@
++	// Veth-backed devices have no PCI parent or physical PF MAC.
++	if util.IsSimulatedDPU() {
++		return &util.DPUConnectionDetails{
++			PfId: fmt.Sprint(details.PfId), VfId: fmt.Sprint(details.FuncId),
++			SandboxId: pr.SandboxID, VfNetdevName: vfNetdevName,
++		}, nil
++	}
++
+--- a/go-controller/pkg/node/base_node_network_controller_dpu.go
++++ b/go-controller/pkg/node/base_node_network_controller_dpu.go
+@@ -47,0 +48,5 @@
++	}
++
++	// The simulated pairing is identified by the host node name checked above.
++	if util.IsSimulatedDPU() {
++		return dpuCD
+@@ -316,5 +321,7 @@
+-	err = util.GetSriovnetOps().SetRepresentorPeerMacAddress(vfRepName, ifInfo.MAC)
+-	if err != nil {
+-		_ = bnnc.delRepPort(pod, dpuCD, vfRepName, nadKey)
+-		return fmt.Errorf("failed to set the MAC address %s on VF reprentor %s: %v",
+-			ifInfo.MAC.String(), vfRepName, err)
++	if !util.IsSimulatedDPU() {
++		err = util.GetSriovnetOps().SetRepresentorPeerMacAddress(vfRepName, ifInfo.MAC)
++		if err != nil {
++			_ = bnnc.delRepPort(pod, dpuCD, vfRepName, nadKey)
++			return fmt.Errorf("failed to set the MAC address %s on VF reprentor %s: %v",
++				ifInfo.MAC.String(), vfRepName, err)
++		}
+@@ -327 +334 @@
+-	if ok && nadConf != nil {
++	if ok && nadConf != nil && !util.IsSimulatedDPU() {
+@@ -422 +429 @@
+-	if bnnc.totalMaxNewConnPPS == 0 || bnnc.DoSCheckStopChan != nil {
++	if util.IsSimulatedDPU() || bnnc.totalMaxNewConnPPS == 0 || bnnc.DoSCheckStopChan != nil {
+@@ -458,0 +466,3 @@
++	if util.IsSimulatedDPU() {
++		return nil
++	}
+--- a/go-controller/pkg/util/sriovnet_linux.go
++++ b/go-controller/pkg/util/sriovnet_linux.go
+@@ -265,0 +266,9 @@
++		links, err := GetNetLinkOps().LinkList()
++		if err != nil {
++			return nil, fmt.Errorf("listing simulated netdevices: %w", err)
++		}
++		for _, link := range links {
++			if link.Attrs().Name == deviceId || link.Attrs().Alias == deviceId {
++				return []string{link.Attrs().Name}, nil
++			}
++		}
+--- /dev/null
++++ b/go-controller/pkg/cni/nke_simulation_test.go
+@@ -0,0 +1,29 @@
++// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++// SPDX-License-Identifier: Apache-2.0
++
++//go:build linux
++
++package cni
++
++import (
++	ovncnitypes "github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/cni/types"
++	"github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/config"
++	types "github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/types"
++	"testing"
++)
++
++func TestNkeSimulatedDPUConnectionDetails(t *testing.T) {
++	previous := config.OvnKubeNode
++	defer func() { config.OvnKubeNode = previous }()
++	config.OvnKubeNode.Mode = types.NodeModeDPUHost
++	config.OvnKubeNode.SimulateDPU = true
++	pr := &PodRequest{SandboxID: "sandbox", CNIConf: &ovncnitypes.NetConf{}}
++	pr.CNIConf.DeviceID = "eth0-7"
++	got, err := pr.allocateDPUConnectionDetails("eth0-7")
++	if err != nil {
++		t.Fatal(err)
++	}
++	if got.PfId != "0" || got.VfId != "7" || got.PfMAC != "" || got.SandboxId != "sandbox" || got.VfNetdevName != "eth0-7" {
++		t.Fatalf("unexpected details: %+v", got)
++	}
++}
+--- /dev/null
++++ b/go-controller/pkg/node/nke_simulation_test.go
+@@ -0,0 +1,49 @@
++// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++// SPDX-License-Identifier: Apache-2.0
++
++//go:build linux
++
++package node
++
++import (
++	"github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/config"
++	types "github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/types"
++	"github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/util"
++	corev1 "k8s.io/api/core/v1"
++	"testing"
++)
++
++func TestNkeSimulatedDPUPodOwnership(t *testing.T) {
++	previous := config.OvnKubeNode
++	defer func() { config.OvnKubeNode = previous }()
++	for _, tc := range []struct {
++		name       string
++		simulation bool
++		node       string
++		annotation bool
++		want       bool
++	}{
++		{"simulated local pod without PF MAC", true, "host", true, true},
++		{"simulated foreign host", true, "other", true, false},
++		{"missing connection details", true, "host", false, false},
++		{"physical DPU still requires PF MAC", false, "host", true, false},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			config.OvnKubeNode.Mode = types.NodeModeDPU
++			config.OvnKubeNode.SimulateDPU = tc.simulation
++			pod := &corev1.Pod{Spec: corev1.PodSpec{NodeName: tc.node}}
++			if tc.annotation {
++				var err error
++				pod.Annotations, err = util.MarshalPodDPUConnDetails(nil, &util.DPUConnectionDetails{PfId: "0", VfId: "4", SandboxId: "sandbox"}, types.DefaultNetworkName)
++				if err != nil {
++					t.Fatal(err)
++				}
++			}
++			controller := &BaseNodeNetworkController{CommonNodeNetworkControllerInfo: CommonNodeNetworkControllerInfo{name: "host", pfMACs: []string{"52:54:00:00:00:00"}}}
++			got := controller.podReadyToAddDPU(pod, types.DefaultNetworkName)
++			if (got != nil) != tc.want {
++				t.Fatalf("claimed=%v want=%v", got != nil, tc.want)
++			}
++		})
++	}
++}
+--- /dev/null
++++ b/go-controller/pkg/util/nke_simulation_test.go
+@@ -0,0 +1,29 @@
++// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++// SPDX-License-Identifier: Apache-2.0
++
++//go:build linux
++
++package util
++
++import (
++	nadapi "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
++	"github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/config"
++	types "github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/types"
++	"github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/util/mocks"
++	"github.com/vishvananda/netlink"
++	"testing"
++)
++
++func TestNkeSimulatedRenamedManagementVF(t *testing.T) {
++	previous := config.OvnKubeNode
++	defer func() { config.OvnKubeNode = previous; ResetNetLinkOpMockInst() }()
++	config.OvnKubeNode.Mode = types.NodeModeDPUHost
++	config.OvnKubeNode.SimulateDPU = true
++	ops := mocks.NewNetLinkOps(t)
++	ops.On("LinkList").Return([]netlink.Link{&netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: "ovn-k8s-mp0", Alias: "eth0-2"}}}, nil)
++	SetNetLinkOpMockInst(ops)
++	got, err := GetNetdevNameFromDeviceId("eth0-2", nadapi.DeviceInfo{})
++	if err != nil || got != "ovn-k8s-mp0" {
++		t.Fatalf("got=%q err=%v", got, err)
++	}
++}

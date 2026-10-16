@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Layer after values-images.yaml and values-vmaas-nooverlay-dpu.yaml.
+# Runtime must substitute scoped credentials without saving them in Git.
+k8sAPIServer: https://192.0.2.10:6443
+podNetwork: 10.234.64.0/18/24
+serviceNetwork: 10.234.0.0/18
+k8sToken: example-token
+k8sCACertData: REDACTED
+global:
+  namespace: ovn-kubernetes-vmaas
+  skipCallToK8s: true
+  simulateDpu: true
+ovnkube-single-node-zone-dpu:
+  execInVrf: ""
+  ovnVtepIface: eth0
+  ovnGwInterface: eth1
+  # veth representors use kernel OVS; production BlueField uses netdev/DPDK.
+  ovnDatapathType: system
+  nodeSelector:
+    k8s.ovn.org/dpu: ""
+serviceDaemonSet:
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+      - key: k8s.ovn.org/dpu
+        operator: Exists

@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Full OVN owns the DPU cluster's pod network. VMaaS offload runs separately.
+tags:
+  ovs-node: false
+  ovnkube-identity: false
+  ovnkube-node-dpu-host: false
+  ovnkube-single-node-zone-dpu: false
+  ovnkube-control-plane: true
+  ovnkube-single-node-zone: true
+  ovnkube-crds: true
+mtu: 1400
+testHook:
+  enable: false
+global:
+  namespace: ovn-kubernetes
+  imageRepositoryPrefix: nvcr.io/fcypcg1knhby/vmaas-dev
+  imagePullSecretName: ""
+  skipCallToK8s: true
+  image:
+    repository: nke-vmaas-ovn-sim
+  enableOvnKubeIdentity: false
+  enableNgnExtension: false
+  simulateDpu: false
+  enableInterconnect: true
+  enableUplink: false
+  enableNoOverlay: false
+  enableRouteAdvertisements: false
+  enableDynamicUDNAllocation: false
+  enableNetworkConnect: false
+  enableEVPN: false
+  enableEgressIp: false
+  clusterDefaultNad: default/dpu-cluster-network
+ovnkube-control-plane:
+  replicas: 1
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+ovnkube-single-node-zone:
+  disableFirewalld: true
+  ovnkubeSingleNodeZone:
+    logging:
+      level: "2"
+  tolerations:
+  - operator: Exists

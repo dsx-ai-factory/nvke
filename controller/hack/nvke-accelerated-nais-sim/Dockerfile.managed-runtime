@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+FROM docker:29.1.3-cli
+COPY controller nico-sim /usr/local/bin/
+COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md /licenses/
+RUN mkdir -p /profiles /state
+ENTRYPOINT []
+CMD ["controller"]

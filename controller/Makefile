@@ -267,6 +267,28 @@ test-e2e-core-capd: ## Run the bounded CAPD create, readiness, and delete lifecy
 test-e2e-core-nico-containers: ## Run the bounded NICo containers create, readiness, and delete lifecycle.
 	make test-e2e ARGS='--fail-on-empty --label-filter="core-nico"'
 
+NVKE_NAIS_SIM_PYTHON ?= python3
+
+.PHONY: test-nvke-accelerated-nais-sim-chart prepare-nvke-accelerated-nais-sim test-nvke-accelerated-nais-sim-traffic
+test-nvke-accelerated-nais-sim-chart: ## Check VMaaS host/DPU chart profiles; pass OVN_DPU_CHART=/path/to/chart.tgz.
+	@test -n "$(OVN_DPU_CHART)" || { echo 'Set OVN_DPU_CHART to the pinned NVIDIA OVN chart archive.' >&2; exit 1; }
+	$(NVKE_NAIS_SIM_PYTHON) hack/nvke-accelerated-nais-sim/lab.py chart-check --chart "$(OVN_DPU_CHART)"
+
+prepare-nvke-accelerated-nais-sim: ## Acquire pinned VMaaS inputs and build simulation images (arm64).
+	@test -n "$(OVN_DPU_CHART)" || { echo 'Set OVN_DPU_CHART to the pinned NVIDIA OVN chart archive.' >&2; exit 1; }
+	$(NVKE_NAIS_SIM_PYTHON) hack/nvke-accelerated-nais-sim/prepare.py --chart "$(OVN_DPU_CHART)"
+
+test-nvke-accelerated-nais-sim-traffic: test-nvke-accelerated-nais-sim-managed ## Provision through NKE and verify routed OVN traffic; retain the simulation environment for inspection.
+
+.PHONY: prepare-nvke-accelerated-nais-sim-managed test-nvke-accelerated-nais-sim-managed
+prepare-nvke-accelerated-nais-sim-managed: ## Build simulator node/runtime images using the standard NKE build targets.
+	@test -n "$(OVN_DPU_CHART)" || { echo 'Set OVN_DPU_CHART to the pinned NVIDIA OVN chart archive.' >&2; exit 1; }
+	$(NVKE_NAIS_SIM_PYTHON) hack/nvke-accelerated-nais-sim/prepare.py --managed --chart "$(OVN_DPU_CHART)"
+
+test-nvke-accelerated-nais-sim-managed: ## Ask NKE to provision both DPU and secondary clusters, then verify routed traffic.
+	@test -n "$(OVN_DPU_CHART)" -a -n "$(CAPNICO_CHART)" || { echo 'Set OVN_DPU_CHART and CAPNICO_CHART.' >&2; exit 1; }
+	$(NVKE_NAIS_SIM_PYTHON) hack/nvke-accelerated-nais-sim/managed.py create --chart "$(OVN_DPU_CHART)" --provider-chart "$(CAPNICO_CHART)"
+
 test-e2e-happy-path: ## Run CAPD and NICo VMs happy-path e2e tests
 	make test-e2e ARGS='--label-filter="happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
 

@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+FROM cwe-capd-kindest-node:local
+COPY nke-agent /usr/local/bin/nke-agent
+COPY package /tmp/ovn-charts-package
+COPY images.tar /var/lib/nke-dpu-lab/images.tar
+COPY preload.sh /usr/local/bin/nke-dpu-preload
+RUN dpkg --remove nke-cni-ovn-charts-1.4.0 \
+    && dpkg-deb --build /tmp/ovn-charts-package /tmp/ovn-charts.deb \
+    && dpkg -i /tmp/ovn-charts.deb \
+    && rm -rf /tmp/ovn-charts-package /tmp/ovn-charts.deb \
+    && chmod 0755 /usr/local/bin/nke-dpu-preload \
+    && printf 'AGENT_ARGS="--disable-mtls --disable-mlx5-rescan --secure-server-port 15005"\nNKE_LOCAL_DEV=true\n' > /etc/default/nke-agent \
+    && rm -f /etc/systemd/system/ovs-vswitchd.service.d/userspace.conf \
+    && printf 'net.ipv6.conf.all.disable_ipv6 = 0\nnet.ipv6.conf.default.disable_ipv6 = 0\nnet.ipv6.conf.lo.disable_ipv6 = 0\n' > /etc/sysctl.d/99-nke-dpu-ipv6.conf \
+    && SYSTEMD_OFFLINE=1 systemctl disable spire-agent.service openvswitch-switch.service
+COPY preload.service /etc/systemd/system/nke-dpu-preload.service
+RUN mkdir -p /etc/systemd/system/nke-agent.service.d \
+    && printf '[Unit]\nRequires=nke-dpu-preload.service\nAfter=nke-dpu-preload.service\n' > /etc/systemd/system/nke-agent.service.d/preload.conf

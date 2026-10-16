@@ -1,0 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+FROM nvcr.io/fcypcg1knhby/vmaas-dev/ovnkube:a8b97898-69369865-2b600cc
+COPY ovnkube /usr/bin/ovnkube
+COPY ovn-k8s-cni-overlay /usr/libexec/cni/ovn-k8s-cni-overlay
