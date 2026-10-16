@@ -7,13 +7,13 @@
 # Kills any existing nico-vms dnsmasq before starting (takes ownership).
 #
 # Env vars (matching nico-vms config defaults):
-#   NICO_VMS_BRIDGE_NAME      (default: cwebr0)
+#   NICO_VMS_BRIDGE_NAME      (default: controllerbr0)
 #   NICO_VMS_BRIDGE_CIDR      (default: 172.30.0.0/24)
 #   NICO_VMS_DHCP_HOSTS_DIR   (default: /var/lib/nico-vms/dhcp-hosts)
 #   NICO_VMS_DHCP_LEASE_FILE  (default: /var/run/nico-vms-dnsmasq.leases)
 set -euo pipefail
 
-BRIDGE="${NICO_VMS_BRIDGE_NAME:-cwebr0}"
+BRIDGE="${NICO_VMS_BRIDGE_NAME:-controllerbr0}"
 CIDR="${NICO_VMS_BRIDGE_CIDR:-172.30.0.0/24}"
 HOSTS_DIR="${NICO_VMS_DHCP_HOSTS_DIR:-/var/lib/nico-vms/dhcp-hosts}"
 LEASE_FILE="${NICO_VMS_DHCP_LEASE_FILE:-/var/run/nico-vms-dnsmasq.leases}"
@@ -36,7 +36,7 @@ if [[ -f "$PID_FILE" ]]; then
     fi
     sudo rm -f "$PID_FILE"
 fi
-sudo pkill -f "dnsmasq.*${BRIDGE}" 2>/dev/null || true
+sudo pkill -f "[d]nsmasq.*${BRIDGE}" 2>/dev/null || true
 sleep 1
 
 sudo mkdir -p "$HOSTS_DIR"

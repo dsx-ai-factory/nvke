@@ -37,14 +37,14 @@
 #   bash controller/test/kubeadm/scripts/teardown-ci-host.sh
 #
 # Environment (all optional; defaults match setup-ci-host.sh):
-#   NICO_VMS_BRIDGE_NAME       bridge to remove          (default cwebr0)
+#   NICO_VMS_BRIDGE_NAME       bridge to remove          (default controllerbr0)
 #   NICO_VMS_BRIDGE_CIDR       bridge subnet             (default 172.30.0.0/24)
 #   NICO_VMS_LIBVIRT_URI       libvirt connection        (default qemu:///session)
 #   NICO_VMS_DHCP_HOSTS_DIR    dnsmasq hostsdir          (default /var/lib/nico-vms/dhcp-hosts)
 #   NICO_VMS_DHCP_LEASE_FILE   dnsmasq lease file        (default /var/run/nico-vms-dnsmasq.leases)
 #   NICO_SIM_DB_PATH           nico-vms SQLite path; its directory is where the
 #                              console logs are searched for first, because
-#                              config.go:310-312 puts the per-VM work dirs at
+#                              config.go:333-335 puts the per-VM work dirs at
 #                              <dirname(NICO_SIM_DB_PATH)>/instances/<id>/
 #   NKE_BRINGUP_ARTIFACT_DIR   where to write the bundle
 #                              (default <workspace>/.ci-artifacts/kubeadm-bringup)
@@ -53,8 +53,7 @@ set -uo pipefail
 
 log() { printf '[teardown-ci-host] %s\n' "$*"; }
 
-# Kept as cwebr0 until a follow-up rename: changing it leaves the old bridge behind on existing nico-vms hosts.
-BRIDGE_NAME="${NICO_VMS_BRIDGE_NAME:-cwebr0}"
+BRIDGE_NAME="${NICO_VMS_BRIDGE_NAME:-controllerbr0}"
 BRIDGE_CIDR="${NICO_VMS_BRIDGE_CIDR:-172.30.0.0/24}"
 DHCP_HOSTS_DIR="${NICO_VMS_DHCP_HOSTS_DIR:-/var/lib/nico-vms/dhcp-hosts}"
 DHCP_LEASE_FILE="${NICO_VMS_DHCP_LEASE_FILE:-/var/run/nico-vms-dnsmasq.leases}"
@@ -234,7 +233,7 @@ if [[ -f "${DNSMASQ_PID_FILE}" ]]; then
   run_priv rm -f "${DNSMASQ_PID_FILE}"
   log "Stopped nico-vms dnsmasq"
 fi
-run_priv pkill -f "dnsmasq.*--interface=${BRIDGE_NAME}" 2>/dev/null
+run_priv pkill -f "[d]nsmasq.*--interface=${BRIDGE_NAME}" 2>/dev/null
 run_priv rm -f "${DHCP_LEASE_FILE}"
 run_priv rm -rf "${DHCP_HOSTS_DIR}"
 
@@ -271,6 +270,12 @@ if ip link show "${BRIDGE_NAME}" >/dev/null 2>&1; then
   log "Deleted bridge ${BRIDGE_NAME}"
 else
   log "Bridge ${BRIDGE_NAME} not present"
+fi
+
+# Also the cwebr0 bridge an older nico-vms created. It needs sudo throughout.
+if [[ "${HAVE_SUDO}" == true ]]; then
+  bash "$(dirname "${BASH_SOURCE[0]}")/../../../nico-sim/scripts/remove-legacy-bridge.sh" "${BRIDGE_NAME}" ||
+    log "Could not remove the legacy cwebr0 bridge"
 fi
 
 log "Teardown complete (best effort; always exits 0)"

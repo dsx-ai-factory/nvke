@@ -24,14 +24,14 @@ import (
 const metadataHostname = "carbide-pxe.forge"
 
 // NetworkManager abstracts the two networking modes nico-vms supports:
-//   - nico/bridge mode (Colossus): creates cwebr0 + dnsmasq + iptables + BGP,
+//   - nico/bridge mode (Colossus): creates controllerbr0 + dnsmasq + iptables + BGP,
 //     runs a metadata server at 169.254.169.254:7777 and {bridge_gw}:7777.
 //   - libvirt-network mode (shared GitLab runner): attaches VMs to a pre-existing
 //     libvirt network (virbr0); adds a DNS host entry so the image's baked
 //     carbide-pxe.forge hostname resolves to the libvirt gateway where
 //     nico-vms's metadata server binds on port 80.
 type NetworkManager interface {
-	// EnsureSetup runs once at engine start. Bridge mode creates cwebr0;
+	// EnsureSetup runs once at engine start. Bridge mode creates controllerbr0;
 	// libvirt-network mode adds the carbide-pxe.forge DNS host entry to the
 	// libvirt network and records the gateway for MetadataAddr.
 	EnsureSetup(ctx context.Context) error

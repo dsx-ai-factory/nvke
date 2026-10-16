@@ -33,14 +33,14 @@
 #   creating the `default` network first -- i.e. creating exactly the host
 #   networking that mode exists to avoid, for strictly less capability.
 #
-#   Mode select is one variable: config.go:93 UseLibvirtNetwork() returns true
+#   Mode select is one variable: config.go:99 UseLibvirtNetwork() returns true
 #   iff NICO_VMS_LIBVIRT_NETWORK is set. This script leaves it unset.
 #
 # Usage:
 #   bash controller/test/kubeadm/scripts/setup-ci-host.sh
 #
 # Environment (all optional; defaults match nico-vms' own):
-#   NICO_VMS_BRIDGE_NAME       bridge to create        (default cwebr0)
+#   NICO_VMS_BRIDGE_NAME       bridge to create        (default controllerbr0)
 #   NICO_VMS_BRIDGE_CIDR       bridge subnet           (default 172.30.0.0/24)
 #   NICO_VMS_DHCP_HOSTS_DIR    dnsmasq hostsdir        (default /var/lib/nico-vms/dhcp-hosts)
 #   NICO_VMS_DHCP_LEASE_FILE   dnsmasq lease file      (default /var/run/nico-vms-dnsmasq.leases)
@@ -69,13 +69,12 @@ fail() {
 
 # Defaults are nico-vms' own, so the engine and this script agree without the
 # workflow having to set anything:
-#   NICO_VMS_BRIDGE_NAME -> config.go:163, envOrDefault(..., "cwebr0")
-#   NICO_VMS_BRIDGE_CIDR -> config.go:164 reads it with no default; the default
+#   NICO_VMS_BRIDGE_NAME -> config.go:169, envOrDefault(..., "controllerbr0")
+#   NICO_VMS_BRIDGE_CIDR -> config.go:170 reads it with no default; the default
 #                           is applied later during normalization, at
-#                           config.go:419-421 ("172.30.0.0/24"), for every
+#                           config.go:442-444 ("172.30.0.0/24"), for every
 #                           backend except darwin-qemu.
-# Kept as cwebr0 until a follow-up rename: changing it leaves the old bridge behind on existing nico-vms hosts.
-BRIDGE_NAME="${NICO_VMS_BRIDGE_NAME:-cwebr0}"
+BRIDGE_NAME="${NICO_VMS_BRIDGE_NAME:-controllerbr0}"
 BRIDGE_CIDR="${NICO_VMS_BRIDGE_CIDR:-172.30.0.0/24}"
 DHCP_HOSTS_DIR="${NICO_VMS_DHCP_HOSTS_DIR:-/var/lib/nico-vms/dhcp-hosts}"
 DHCP_LEASE_FILE="${NICO_VMS_DHCP_LEASE_FILE:-/var/run/nico-vms-dnsmasq.leases}"
@@ -152,14 +151,14 @@ fi
 # ── 3. Packages ─────────────────────────────────────────────────────────────
 # Trimmed from setup-linux.sh:157-176. Kept, with what needs each one:
 #   ${QEMU_SYSTEM_PKG}      the emulator libvirt launches
-#   qemu-utils              qemu-img, default of NICO_VMS_QEMU_IMG_PATH (config.go:168)
+#   qemu-utils              qemu-img, default of NICO_VMS_QEMU_IMG_PATH (config.go:174)
 #   libvirt-daemon-system   libvirtd/virtlogd; virtlogd writes the *.ttyS[01].log
 #                           serial logs declared in domain_xml.go:105-116
 #   libvirt-clients         virsh, the only libvirt interface nico-vms uses
 #                           (virsh.go:210); the default URI is qemu:///session
-#                           (config.go:160)
+#                           (config.go:166)
 #   cloud-image-utils       cloud-localds, default of NICO_VMS_CLOUD_LOCALDS_PATH
-#                           (config.go:169), builds the NoCloud seed ISO
+#                           (config.go:175), builds the NoCloud seed ISO
 #   genisoimage             the seed-ISO fallback when cloud-localds is missing
 #                           or produces nothing (artifacts.go:192-201)
 #   dnsmasq-base            section 5
@@ -294,6 +293,10 @@ have_addr() {
     awk -v want="$2" '$4 == want { found = 1 } END { exit !found }'
 }
 
+# A self-hosted runner persists, so it may still have the cwebr0 bridge an
+# older nico-vms created. That bridge holds the gateway address this one needs.
+bash "$(dirname "${BASH_SOURCE[0]}")/../../../nico-sim/scripts/remove-legacy-bridge.sh" "${BRIDGE_NAME}"
+
 log "Creating bridge ${BRIDGE_NAME} (${BRIDGE_CIDR}, gateway ${BRIDGE_GW})..."
 if ! ip link show "${BRIDGE_NAME}" >/dev/null 2>&1; then
   sudo ip link add name "${BRIDGE_NAME}" type bridge
@@ -332,15 +335,13 @@ sudo ip link set "${BRIDGE_NAME}" up
 
 # ── 4b. qemu-bridge-helper (required by qemu:///session) ────────────────────
 # Lifted from setup-linux.sh:364-381, and NOT optional: nico-vms defaults
-# NICO_VMS_LIBVIRT_URI to qemu:///session (config.go:160) and launch.go never
+# NICO_VMS_LIBVIRT_URI to qemu:///session (config.go:166) and launch.go never
 # overrides it, so QEMU runs as the unprivileged runner user. Attaching a tap
 # to an unmanaged host bridge from a session-mode domain goes through the
 # setuid qemu-bridge-helper, which refuses any bridge missing from
 # /etc/qemu/bridge.conf. Without both halves, domain start fails with an ACL
 # error rather than anything that names the bridge.
 #
-# setup-linux.sh:373-375 hardcodes "allow cwebr0" even though the bridge name
-# is configurable; this uses ${BRIDGE_NAME} so an overridden name still works.
 # `|| true` is required, not defensive: under `set -e` plus `pipefail`, find
 # exits non-zero when one of the two directories does not exist (and again on
 # SIGPIPE from `head -1`), which would abort the script on the assignment.
@@ -377,7 +378,7 @@ if [[ -f "${DNSMASQ_PID_FILE}" ]]; then
   sudo kill "$(cat "${DNSMASQ_PID_FILE}")" 2>/dev/null || true
   sudo rm -f "${DNSMASQ_PID_FILE}"
 fi
-sudo pkill -f "dnsmasq.*--interface=${BRIDGE_NAME}" 2>/dev/null || true
+sudo pkill -f "[d]nsmasq.*--interface=${BRIDGE_NAME}" 2>/dev/null || true
 
 # Host firewalls commonly default INPUT to DROP. Allow only what nico-vms
 # exposes to guests on its own bridge (setup-linux.sh:429-440), minus 10179:
@@ -730,7 +731,7 @@ log "  NICO_VMS_BRIDGE_NAME=${BRIDGE_NAME}"
 log "  NICO_VMS_BRIDGE_CIDR=${BRIDGE_CIDR}"
 log "  NICO_VMS_DHCP_HOSTS_DIR=${DHCP_HOSTS_DIR}"
 log "  NICO_VMS_DHCP_LEASE_FILE=${DHCP_LEASE_FILE}"
-log "  NICO_VMS_LIBVIRT_NETWORK unset (native bridge mode -- config.go:93)"
+log "  NICO_VMS_LIBVIRT_NETWORK unset (native bridge mode -- config.go:99)"
 if [[ "${FDE}" == true ]]; then
   log "  FDE image support on: ovmf, swtpm, carbide-pxe.forge -> ${BRIDGE_GW}, 169.254.169.254:7777 -> ${BRIDGE_GW}:7777"
 fi

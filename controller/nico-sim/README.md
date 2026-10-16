@@ -184,15 +184,15 @@ On startup the speaker installs a covering `blackhole` route for the VIP range (
 
 For shared hosts where nico-vms must not create host networking of its own — most notably a hostNetwork Kubernetes pod.
 
-By default nico-sim's VM backend **owns its networking**: `scripts/setup-linux.sh` creates the `cwebr0` bridge, runs a dnsmasq for DHCP, installs iptables MASQUERADE, and nico-sim runs a BGP speaker. That is ideal on a dedicated host (Colossus, a laptop). It is unsafe where nico-sim shares a host's network namespace with other workloads — most notably a **hostNetwork Kubernetes pod** (e.g. a shared GitLab libvirt runner), where a created bridge / iptables rule / dnsmasq leaks onto the node and can break neighbouring jobs or require a reboot.
+By default nico-sim's VM backend **owns its networking**: `scripts/setup-linux.sh` creates the `controllerbr0` bridge, runs a dnsmasq for DHCP, installs iptables MASQUERADE, and nico-sim runs a BGP speaker. That is ideal on a dedicated host (Colossus, a laptop). It is unsafe where nico-sim shares a host's network namespace with other workloads — most notably a **hostNetwork Kubernetes pod** (e.g. a shared GitLab libvirt runner), where a created bridge / iptables rule / dnsmasq leaks onto the node and can break neighbouring jobs or require a reboot.
 
-**Libvirt-network mode** flips this: nico-vms attaches each VM to a **pre-existing libvirt network** (e.g. the stock `default` / `virbr0` NAT network) instead of building its own. nico-vms adds zero host networking, so nothing can leak. Enable it by setting `NICO_VMS_LIBVIRT_NETWORK=<network-name>` (empty — the default — keeps the legacy `cwebr0` behavior).
+**Libvirt-network mode** flips this: nico-vms attaches each VM to a **pre-existing libvirt network** (e.g. the stock `default` / `virbr0` NAT network) instead of building its own. nico-vms adds zero host networking, so nothing can leak. Enable it by setting `NICO_VMS_LIBVIRT_NETWORK=<network-name>` (empty — the default — keeps the `controllerbr0` behavior).
 
-| | Default (`cwebr0`) mode | Libvirt-network mode |
+| | Default (`controllerbr0`) mode | Libvirt-network mode |
 |---|---|---|
-| Bridge + NAT | nico-vms creates `cwebr0` + iptables MASQUERADE (`setup-linux.sh`) | uses the libvirt network's own bridge + NAT; no bridge/iptables created |
+| Bridge + NAT | nico-vms creates `controllerbr0` + iptables MASQUERADE (`setup-linux.sh`) | uses the libvirt network's own bridge + NAT; no bridge/iptables created |
 | DHCP | nico-vms's own dnsmasq + lease file | libvirt's dnsmasq; leases read via `virsh net-dhcp-leases` |
-| Domain XML | `<interface>` on `cwebr0` | `<interface type='network'><source network='…'/>` |
+| Domain XML | `<interface>` on `controllerbr0` | `<interface type='network'><source network='…'/>` |
 | Metadata server | NoCloud/EC2 server serves user-data + `phone_home` | **none on the VM's network** → drive readiness by SSH, not `phone_home` |
 | BGP / VIPs | speaker installs host routes for kube-vip VIPs | **auto-skipped** when `NICO_VMS_LIBVIRT_NETWORK` is set (`app.go`) |
 | libvirt URI | `qemu:///session` (user session) | **`qemu:///system`** — the pre-existing network is system-owned |
@@ -260,7 +260,7 @@ Ranges used by a nico-vms deployment and the tenant clusters it creates — keep
 **Debugging:**
 
 - `ip route show <VIP>` — should be an ECMP `/32` with one nexthop per healthy CP (`ip route get <VIP>` picks one). If it's absent (falls through to the blackhole/default), no CP is currently announcing it.
-- The VIP is off-link, so it is *not* ARPable on `cwebr0`; reachability is via the BGP route, not ARP.
+- The VIP is off-link, so it is *not* ARPable on `controllerbr0`; reachability is via the BGP route, not ARP.
 - nico-sim logs: look for "BGP route announced" (working) or "BGP ignoring disallowed route" (misconfigured)
 
 ### Cloud-Init and User Data
@@ -501,8 +501,8 @@ All configuration is via environment variables. The server fails fast on invalid
 
 | Variable                    | Default                             | Description                                      |
 | --------------------------- | ----------------------------------- | ------------------------------------------------ |
-| `NICO_VMS_LIBVIRT_NETWORK` | *(unset)*                           | If set, attach VMs to this pre-existing libvirt network instead of creating `cwebr0`. Requires `NICO_VMS_LIBVIRT_URI=qemu:///system`. See [Libvirt-Network Mode](#libvirt-network-mode). |
-| `NICO_VMS_BRIDGE_NAME`     | `cwebr0`                            | Network bridge name                              |
+| `NICO_VMS_LIBVIRT_NETWORK` | *(unset)*                           | If set, attach VMs to this pre-existing libvirt network instead of creating `controllerbr0`. Requires `NICO_VMS_LIBVIRT_URI=qemu:///system`. See [Libvirt-Network Mode](#libvirt-network-mode). |
+| `NICO_VMS_BRIDGE_NAME`     | `controllerbr0`                     | Network bridge name                              |
 | `NICO_VMS_BRIDGE_CIDR`     | `172.30.0.0/24`                     | Bridge subnet (auto-detected on macOS via vmnet) |
 | `NICO_VMS_DHCP_HOSTS_DIR`  | `/var/lib/nico-vms/dhcp-hosts`     | dnsmasq hosts directory                          |
 | `NICO_VMS_DHCP_LEASE_FILE` | `/var/run/nico-vms-dnsmasq.leases` | dnsmasq lease file                               |
@@ -754,7 +754,7 @@ sudo ./scripts/setup-linux.sh
 This installs QEMU, libvirt, swtpm, and configures:
 
 - `/dev/vtpmx` for container nodes, through `controller/hack/ensure-vtpm-proxy.sh`
-- Bridge `cwebr0` with `172.30.0.0/24`
+- Bridge `controllerbr0` with `172.30.0.0/24`, after removing the `cwebr0` bridge an older nico-vms created
 - Metadata IP `169.254.169.254` on the bridge
 - dnsmasq DHCP on the bridge
 - iptables NAT + port 80→7777 redirect for the metadata server
@@ -786,7 +786,7 @@ make teardown   # or: bash ./scripts/teardown-linux.sh
 ```
 
 This stops the nico-vms dnsmasq, removes the bridge's iptables rules, deletes
-`cwebr0` (dropping its addresses and the BGP blackhole route), and wipes the
+`controllerbr0` and any leftover `cwebr0` (dropping their addresses and the BGP blackhole route), and wipes the
 nico-vms DB (`.dev/nico-sim.db`) so it re-seeds from the current bridge CIDR
 on next start. It leaves packages, groups, and the sudoers/qemu/AppArmor config
 in place (reused by the next setup).

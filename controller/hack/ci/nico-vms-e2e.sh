@@ -333,8 +333,7 @@ CAPNICO_SOURCE_DIR="${CAPNICO_SOURCE_DIR:-}"
 [[ -d "${CAPNICO_SOURCE_DIR}/config/default" ]] || fail "${CAPNICO_SOURCE_DIR} is not a cluster-api-provider-nico checkout (config/default is missing)"
 export CAPNICO_SOURCE_DIR
 
-# Kept as cwebr0 until a follow-up rename: changing it leaves the old bridge behind on existing nico-vms hosts.
-BRIDGE_NAME="${NICO_VMS_BRIDGE_NAME:-cwebr0}"
+BRIDGE_NAME="${NICO_VMS_BRIDGE_NAME:-controllerbr0}"
 ip link show "${BRIDGE_NAME}" >/dev/null 2>&1 ||
   fail "bridge ${BRIDGE_NAME} does not exist; run test/kubeadm/scripts/setup-ci-host.sh with NKE_CI_HOST_FDE=true first"
 if [[ -c /dev/kvm ]]; then

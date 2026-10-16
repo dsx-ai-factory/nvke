@@ -5,7 +5,7 @@
 # teardown-linux.sh — Tear down the nico-vms host networking and local state.
 #
 # Reverses the networking side of scripts/setup-linux.sh: stops the nico-vms
-# dnsmasq, removes the bridge iptables rules, deletes the cwebr0 bridge (which
+# dnsmasq, removes the bridge iptables rules, deletes the controllerbr0 bridge (which
 # drops its addresses and the BGP blackhole route), and wipes the nico-vms
 # SQLite DB so it re-seeds from the current bridge CIDR on next start.
 #
@@ -39,7 +39,7 @@ warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-BRIDGE_NAME="${NICO_VMS_BRIDGE_NAME:-cwebr0}"
+BRIDGE_NAME="${NICO_VMS_BRIDGE_NAME:-controllerbr0}"
 # Current bridge CIDR (matches setup-linux.sh default; override to match yours).
 BRIDGE_CIDR="${NICO_VMS_BRIDGE_CIDR:-172.30.0.0/24}"
 # Legacy CIDRs whose leftover rules we also clean, so a one-time migration from
@@ -102,7 +102,7 @@ if [ -f "$DNSMASQ_PID" ]; then
     sudo rm -f "$DNSMASQ_PID"
     info "Stopped nico-vms dnsmasq"
 fi
-sudo pkill -f "dnsmasq.*--interface=${BRIDGE_NAME}" 2>/dev/null || true
+sudo pkill -f "[d]nsmasq.*--interface=${BRIDGE_NAME}" 2>/dev/null || true
 sudo rm -f "$DNSMASQ_LEASE"
 sudo rm -f "${DHCP_HOSTS_DIR}"/* 2>/dev/null || true
 
@@ -129,6 +129,8 @@ if ip link show "$BRIDGE_NAME" >/dev/null 2>&1; then
 else
     info "Bridge $BRIDGE_NAME not present"
 fi
+# Also the cwebr0 bridge an older nico-vms created, with its rules and dnsmasq.
+bash "${SCRIPT_DIR}/remove-legacy-bridge.sh" "$BRIDGE_NAME"
 
 # ── 5. Wipe the nico-vms SQLite DB (re-seeds from bridge CIDR on next start) ─
 if [ -f "$DB_PATH" ]; then

@@ -93,7 +93,7 @@ type LaunchOpts struct {
 	// existing libvirt network: config.UseLibvirtNetwork() is simply
 	// `LibvirtNetwork != ""`. These must agree with whatever
 	// scripts/setup-ci-host.sh created. Empty values fall back to nico-vms's
-	// own defaults (cwebr0, and 172.30.0.0/24 on Linux).
+	// own defaults (controllerbr0, and 172.30.0.0/24 on Linux).
 	BridgeName string
 	BridgeCIDR string
 
