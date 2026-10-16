@@ -44,6 +44,56 @@ reject() {
   if grep -qE -- "${pattern}" <<<"${text}"; then fail "${what}: a line matches ${pattern}"; else pass "${what}"; fi
 }
 
+# Stub tools. The kubectl stub answers the exact reads check-site.sh and the
+# executor make; STUB_* switch the answers. Every executor run that may read
+# the cluster goes through it, so the suite never reaches a real one.
+CHECK="${DEPLOY_DIR}/check-site.sh"
+stubs="${WORK}/stubs"
+mkdir -p "${stubs}"
+cat >"${stubs}/kubectl" <<'STUB'
+#!/usr/bin/env bash
+# Every call is logged; a mutating verb fails, so "changes nothing" is a
+# fact about the calls made, not about the output.
+[[ -z "${STUB_LOG:-}" ]] || printf '%s\n' "$*" >>"${STUB_LOG}"
+case " $* " in
+  *" apply "*|*" create "*|*" delete "*|*" patch "*|*" taint "*|*" annotate "*|*" label "*|*" replace "*|*" edit "*) echo "stub kubectl: mutating verb refused: $*" >&2; exit 97 ;;
+esac
+if [[ -n "${STUB_API_DOWN:-}" ]]; then
+  echo 'The connection to the server 10.0.0.100:6443 was refused' >&2; exit 1
+fi
+if [[ -n "${STUB_DENY:-}" && "$*" == *" get "* ]]; then
+  echo 'Error from server (Forbidden): nodes is forbidden: User "stub" cannot list resource "nodes"' >&2
+  exit 1
+fi
+case "$*" in
+  *"get nodes"*)
+    if [[ -n "${STUB_NO_NODES:-}" ]]; then exit 0; fi
+    if [[ -n "${STUB_NO_ARCH_LABEL:-}" ]]; then printf 'node-1\t\t%s\n' "${STUB_TAINT:-}"; exit 0; fi
+    printf 'node-1\t%s\t%s\n' "${STUB_ARCH:-arm64}" "${STUB_TAINT:-}"
+    [[ -z "${STUB_SECOND_NODE:-}" ]] || printf 'node-2\t%s\t\n' "${STUB_ARCH:-arm64}"
+    [[ -z "${STUB_MIXED_ARCH:-}" ]] || printf 'node-2\tamd64\t\n' ;;
+  *"get storageclass"*)
+    [[ -n "${STUB_NO_SC:-}" ]] || printf 'local-path\ttrue\n'
+    [[ -z "${STUB_SECOND_SC:-}" ]] || printf 'nvme\ttrue\n' ;;
+  *"capi-controller-manager"*)
+    if [[ -n "${STUB_CAPI_IMAGE:-}" ]]; then printf '%s' "${STUB_CAPI_IMAGE}"; else
+      echo 'Error from server (NotFound): deployments.apps "capi-controller-manager" not found' >&2; exit 1; fi ;;
+  *"capi-kubeadm-"*)
+    if [[ -n "${STUB_DENY_KUBEADM:-}" ]]; then echo 'Error from server (Forbidden): deployments.apps is forbidden' >&2; exit 1; fi
+    if [[ -n "${STUB_NO_KUBEADM:-}" ]]; then echo 'Error from server (NotFound): deployments.apps not found' >&2; exit 1; else printf 'deployment.apps/x'; fi ;;
+esac
+exit 0
+STUB
+printf '#!/usr/bin/env bash\ncase "$1" in version) printf "v4.2.4" ;; esac\nexit 0\n' >"${stubs}/helm"
+printf '#!/usr/bin/env bash\nexit 0\n' >"${stubs}/clusterctl"
+printf '#!/usr/bin/env bash\nexit 0\n' >"${stubs}/curl"
+# nvkectl-log records every nvkectl invocation and runs the real one, so the
+# suite can see the arguments the executor passes to the render.
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"${NVKECTL_LOG}"\nexec "${REAL_NVKECTL}" "$@"\n' >"${stubs}/nvkectl-log"
+chmod +x "${stubs}"/*
+: >"${WORK}/stub.kubeconfig"
+: >"${WORK}/stub.log"
+
 # The committed deploy path: every chart comes from the checkout or its
 # repository, in list order; template items need --config.
 out="$(bash "${EXECUTOR}" install --deploy-path "${NICO}" --config "${CONFIG}" --dry-run 2>&1)" || fail "plain dry run exited $?"
@@ -63,21 +113,39 @@ expect "a template item is rendered by the executor when --config is given" "kub
 
 # A deploy path rendered for a site: nvkectl render deploy-path writes the
 # site values and renders the template items, and the executor installs the
-# result with no --config and no knowledge of the site.
-mkdir -p "${WORK}/site"
+# result with no --config and no knowledge of the site. The two inputs sit in
+# different directories, so a value from the wrong one is seen: the site spec
+# under site/, the stack config under stack/. The credentials come from the
+# environment.
+mkdir -p "${WORK}/site" "${WORK}/stack"
 export NVKECTL_NICO_TOKEN=secret-nico-token NVKECTL_NODE_USER=nvke NVKECTL_NODE_PASSWORD=secret-tenant-password NVKECTL_DATABASE_PASSWORD=secret-db-password
-sed -e 's|REPLACE_ARCH|arm64|; s|REPLACE_NICO_ENDPOINT|https://nico.example.com|; s|REPLACE_NICO_ORG_ID|org-1|; s|REPLACE_NICO_API_NAME|forge|' \
-    "${REPO}/cli/examples/sitespec.yaml" >"${WORK}/site/sitespec.yaml"
-# deploy/nico enables profiles.image without a pin, so the spec names the image.
-sed -i.bak 's|^  # images:$|  images:|; s|^  #   profiles: ""$|    profiles: ghcr.io/example/controller-profiles:v1|' "${WORK}/site/sitespec.yaml" && rm -f "${WORK}/site/sitespec.yaml.bak"
+cp "${REPO}/cli/examples/sitespec.yaml" "${WORK}/site/sitespec.yaml"
 printf -- '-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n' >"${WORK}/site/ca.crt"
 printf -- '-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n' >"${WORK}/site/ca.key"
 export NVKECTL_SPIRE_CA_CERT_FILE="${WORK}/site/ca.crt" NVKECTL_SPIRE_CA_KEY_FILE="${WORK}/site/ca.key"
 printf 'spire:\n  trustDomain: nvke-site.nke.local\n  upstreamCA: true\n' >>"${WORK}/site/sitespec.yaml"
+SITESPEC="${WORK}/site/sitespec.yaml"
+# The example, filled in. deploy/nico enables profiles.image without a pin,
+# so the config names the image.
+sed -e 's|REPLACE_NICO_ENDPOINT|https://nico.example.com|; s|REPLACE_NICO_ORG_ID|org-1|; s|REPLACE_NICO_API_NAME|forge|' \
+    -e 's|"profiles": ""|"profiles": "ghcr.io/example/controller-profiles:v1"|' \
+    "${REPO}/deploy/examples/stack-config.json" >"${WORK}/stack/stack-config.json"
+STACK="${WORK}/stack/stack-config.json"
+out="$("${NVKECTL}" inspect stack-config "${STACK}" 2>&1)" || fail "the filled example does not load: ${out}"
+expect "inspect stack-config prints the file" "^STACK_CONFIG='${STACK}'$" "${out}"
+expect "inspect stack-config prints the NICo endpoint" "^STACK_NICO_ENDPOINT='https://nico.example.com'$" "${out}"
+expect "and the org" "^STACK_NICO_ORG_ID='org-1'$" "${out}"
+out="$("${NVKECTL}" inspect stack-config "${REPO}/deploy/examples/stack-config.json" 2>&1 >"${WORK}/inspect.stdout")" && fail "the example with its placeholders loaded"
+[[ ! -s "${WORK}/inspect.stdout" ]] && pass "a bad stack config prints nothing on stdout" || fail "inspect stack-config wrote to stdout: $(cat "${WORK}/inspect.stdout")"
+expect "the first problem is on stderr" '^nico.endpoint: still a REPLACE_\* placeholder; fill it in$' "${out}"
+out="$(NVKECTL_NODE_PASSWORD='' "${NVKECTL}" inspect stack-config "${STACK}" 2>&1 >"${WORK}/inspect.stdout")" && fail "inspect stack-config without a credential exited 0"
+[[ ! -s "${WORK}/inspect.stdout" ]] && pass "a missing credential prints nothing on stdout" || fail "inspect stack-config wrote to stdout without a credential"
+expect "the missing credential is named as the environment's" '^environment: NVKECTL_NODE_PASSWORD is not set$' "${out}"
 rendered="${WORK}/rendered"
-out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${rendered}" 2>&1)" || fail "render exited $?: ${out}"
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --arch linux/arm64 --out "${rendered}" 2>&1)" || fail "render exited $?: ${out}"
 expect "render reports the site values" '^controller: site values written$' "${out}"
 expect "render reports the templates" '^nvke-base-config: 3 templates rendered; applies as a manifest item$' "${out}"
+reject "no host-default warning when --arch is given" 'warning: --arch not given' "${out}"
 grep -q 'postgresPassword: secret-db-password' "${rendered}/controller/site-values.yaml" && pass "the database password comes from NVKECTL_DATABASE_PASSWORD" || fail "db password"
 find "${rendered}" -maxdepth 0 -perm 0700 | grep -q . && pass "the rendered tree is private" || fail "rendered tree mode"
 [[ ! -e "${NICO}/site.env" && ! -e "${NICO}/controller/site-values.yaml" ]] && pass "nothing was written into the committed deploy path" || fail "committed deploy path written"
@@ -101,19 +169,31 @@ expect "postgresql still comes from its public repository" 'helm upgrade --insta
 expect "a committed chart path is absolute in the rendered tree, so it resolves from anywhere" "helm upgrade --install nktp ${REPO}/nktp/deploy/charts/nktp " "${out}"
 expect "the controller chart too" "helm upgrade --install nke-controller ${REPO}/controller/deploy/charts/controller " "${out}"
 # A secret that cannot be written into a quoted YAML value is refused.
-out="$(NVKECTL_NICO_TOKEN='tok"en' "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${WORK}/bad-rendered" 2>&1)" && fail "a quote in a token exited 0"
+out="$(NVKECTL_NICO_TOKEN='tok"en' "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --arch linux/arm64 --out "${WORK}/bad-rendered" 2>&1)" && fail "a quote in a token exited 0"
 expect "the unescapable token is refused by variable" 'NVKECTL_NICO_TOKEN: the value holds a character the templates cannot carry' "${out}"
 
 # Without the allowance, an --out under a temp directory is refused.
-out="$(env -u NVKECTL_RENDER_ALLOW_TEMP_OUT "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${WORK}/refused-temp" 2>&1)" && fail "temp --out exited 0"
+out="$(env -u NVKECTL_RENDER_ALLOW_TEMP_OUT "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --arch linux/arm64 --out "${WORK}/refused-temp" 2>&1)" && fail "temp --out exited 0"
 expect "a temp --out is refused" 'is under a shared temp directory' "${out}"
 [[ ! -e "${WORK}/refused-temp" ]] && pass "a refused temp --out is not created" || fail "temp out created"
 
-# Render refuses a site spec with placeholders, naming them, and leaves nothing.
-out="$(env -u NVKECTL_SPIRE_CA_CERT_FILE -u NVKECTL_SPIRE_CA_KEY_FILE "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${REPO}/cli/examples/sitespec.yaml" --out "${WORK}/refused" 2>&1)" && fail "render with placeholders exited 0"
-expect "placeholders are named" 'controllerStack.arch is still a REPLACE_\* placeholder' "${out}"
+# Render refuses a stack config with placeholders, naming the file and every
+# placeholder, and leaves nothing.
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${REPO}/deploy/examples/stack-config.json" --arch linux/arm64 --out "${WORK}/refused" 2>&1)" && fail "render with placeholders exited 0"
+expect "the stack config is named" "^Error: stack config ${REPO}/deploy/examples/stack-config.json:$" "${out}"
+expect "placeholders are named" '^nico.endpoint: still a REPLACE_\* placeholder; fill it in$' "${out}"
+expect "every placeholder is named" '^nico.apiName: still a REPLACE_\* placeholder; fill it in$' "${out}"
 [[ ! -e "${WORK}/refused" ]] && pass "a refused render leaves no output" || fail "refused output left behind"
-out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${rendered}" 2>&1)" && fail "existing --out exited 0"
+# The two inputs go together.
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${SITESPEC}" --out "${WORK}/refused" 2>&1)" && fail "render with --sitespec alone exited 0"
+expect "the render refuses --sitespec without --stack-config" "^Error: --sitespec needs --stack-config: the stack's input is the stack config file$" "${out}"
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --stack-config "${STACK}" --out "${WORK}/refused" 2>&1)" && fail "render with --stack-config alone exited 0"
+expect "the render refuses --stack-config without --sitespec" '^Error: --stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec$' "${out}"
+[[ ! -e "${WORK}/refused" ]] && pass "a refused render leaves no output" || fail "refused output left behind"
+# Without --arch the render uses this machine's architecture and says so.
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --out "${WORK}/host-arch" 2>&1)" || fail "render without --arch exited $?: ${out}"
+expect "the host-default warning fires without --arch" "^warning: --arch not given; rendering for the host's linux/" "${out}"
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --arch linux/arm64 --out "${rendered}" 2>&1)" && fail "existing --out exited 0"
 expect "an existing --out is refused" 'exists; render writes a new directory' "${out}"
 
 hex_of() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
@@ -217,21 +297,64 @@ expect "a bad description is named" 'bad-schema.json' "${out}"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --release "${WORK}/local.json" --nvkr-run-dir "${run_dir}" --arch linux/arm64 --out "${rendered}" 2>&1)" && fail "existing --out exited 0"
 expect "an existing --out is refused" 'exists; render writes a new directory' "${out}"
 
-# The executor renders by itself when given the site spec, into a private
-# scratch directory that is gone when it exits.
+# The executor renders by itself when given the two inputs, into a private
+# scratch directory that is gone when it exits. --arch stands in for the
+# node read here: there is no cluster.
 state="${WORK}/state"
 renders="${state}/renders"
-out="$(NVKE_STATE_DIR="${state}" bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --dry-run 2>&1)" || fail "wrapped render dry run exited $?: ${out}"
+out="$(PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${state}" bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --arch linux/arm64 --dry-run 2>&1)" || fail "wrapped render dry run exited $?: ${out}"
+expect "the executor logs the inputs before it renders" "^=== inputs: site spec ${SITESPEC}, site nvke-site, stack config ${STACK}, nico https://nico.example.com org org-1$" "${out}"
 expect "the executor renders before installing" "^=== rendering ${NICO}$" "${out}"
 expect "and installs the rendered tree" "helm upgrade --install nke-controller .*--values ${renders}/install\.[A-Za-z0-9]+/rendered/controller/site-values.yaml" "${out}"
 [[ -z "$(ls -A "${renders}" 2>/dev/null)" ]] && pass "the scratch render is removed when the install ends" || fail "scratch left: $(ls -A "${renders}")"
 find "${state}" -maxdepth 0 -perm 0700 | grep -q . && pass "the state directory is private" || fail "state directory mode"
-out="$(NVKE_STATE_DIR="${state}" bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --release "${HERE}/nvkr-release/bad-schema.json" --dry-run 2>&1)" && fail "failed render exited 0"
+out="$(PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${state}" bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --arch linux/arm64 --release "${HERE}/nvkr-release/bad-schema.json" --dry-run 2>&1)" && fail "failed render exited 0"
 [[ -z "$(ls -A "${renders}" 2>/dev/null)" ]] && pass "a failed render leaves no scratch behind" || fail "scratch left after a failed render: $(ls -A "${renders}")"
-out="$(NVKECTL=/nonexistent/nvkectl bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --dry-run 2>&1)" && fail "render without nvkectl exited 0"
+out="$(PATH="${stubs}:${PATH}" NVKECTL=/nonexistent/nvkectl bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --arch linux/arm64 --dry-run 2>&1)" && fail "render without nvkectl exited 0"
 expect "a render without nvkectl is named" 'nvkectl is needed to render' "${out}"
 out="$(bash "${EXECUTOR}" install --deploy-path "${NICO}" --release "${WORK}/local.json" --dry-run 2>&1)" && fail "release without sitespec exited 0"
-expect "a release without the site spec is refused" 'release needs --sitespec' "${out}"
+expect "a release without the two inputs is refused" '^nvke-deploy: --release needs --sitespec and --stack-config$' "${out}"
+out="$(bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${SITESPEC}" --dry-run 2>&1)" && fail "--sitespec alone exited 0"
+expect "the executor refuses --sitespec without --stack-config" "^nvke-deploy: --sitespec needs --stack-config: the stack's input is the stack config file$" "${out}"
+out="$(bash "${EXECUTOR}" install --deploy-path "${NICO}" --stack-config "${STACK}" --dry-run 2>&1)" && fail "--stack-config alone exited 0"
+expect "the executor refuses --stack-config without --sitespec" '^nvke-deploy: --stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec$' "${out}"
+out="$(bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --arch arm64 --dry-run 2>&1)" && fail "a bare --arch exited 0"
+expect "the executor refuses an --arch outside linux/amd64 and linux/arm64" '^nvke-deploy: --arch arm64 is not linux/amd64 or linux/arm64$' "${out}"
+# A stack config with placeholders stops the render; nothing is applied.
+out="$(PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${state}" bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${REPO}/deploy/examples/stack-config.json" --arch linux/arm64 --dry-run 2>&1)" && fail "executor with placeholders exited 0"
+expect "the executor's render names the placeholders" '^nico.endpoint: still a REPLACE_\* placeholder; fill it in$' "${out}"
+reject "nothing is applied after a refused render" '^(kubectl|helm) ' "${out}"
+
+# The node architecture: the executor reads it from the cluster on every run,
+# and on a dry run too when the API answers, and passes it to the render as
+# --arch. The stub kubectl is the cluster; the nvkectl-log wrapper records
+# what the render was given.
+nvkectl_log="${WORK}/nvkectl.log"
+real_nvkectl="${NVKECTL}"
+exec_arch() {
+  : >"${nvkectl_log}"
+  PATH="${stubs}:${PATH}" NVKECTL="${stubs}/nvkectl-log" REAL_NVKECTL="${real_nvkectl}" NVKECTL_LOG="${nvkectl_log}" NVKE_STATE_DIR="${state}" \
+    bash "${EXECUTOR}" install --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --kubeconfig "${WORK}/stub.kubeconfig" "$@" 2>&1
+}
+out="$(STUB_ARCH=amd64 exec_arch --dry-run)" || fail "dry run with the stub cluster exited $?: ${out}"
+expect "the nodes' architecture reaches the render" 'render deploy-path .* --arch linux/amd64( |$)' "$(cat "${nvkectl_log}")"
+reject "no host-default warning when the nodes were read" 'warning: --arch not given' "${out}"
+out="$(STUB_ARCH=amd64 exec_arch --arch linux/arm64 --dry-run)" || fail "dry run with --arch exited $?: ${out}"
+expect "--arch on the executor overrides the nodes" 'render deploy-path .* --arch linux/arm64( |$)' "$(cat "${nvkectl_log}")"
+out="$(STUB_MIXED_ARCH=1 exec_arch --dry-run)" && fail "mixed architectures exited 0"
+expect "mixed architectures stop the install" '^nvke-deploy: cluster: nodes report amd64 arm64; the stack installs for one architecture$' "${out}"
+reject "nothing is rendered on mixed architectures" 'render deploy-path' "$(cat "${nvkectl_log}")"
+out="$(STUB_NO_ARCH_LABEL=1 exec_arch --dry-run)" && fail "an unlabelled node exited 0"
+expect "an unlabelled node stops the install" '^nvke-deploy: cluster: node node-1 has no kubernetes.io/arch label$' "${out}"
+out="$(STUB_NO_NODES=1 exec_arch --dry-run)" && fail "no nodes exited 0"
+expect "no nodes stops the install" '^nvke-deploy: cluster: no nodes$' "${out}"
+out="$(STUB_API_DOWN=1 exec_arch --dry-run)" || fail "dry run with the API down exited $?: ${out}"
+expect "a dry run with the API down says it renders for this machine" "^=== cannot list nodes; the dry run renders for this machine's architecture$" "${out}"
+reject "and passes no --arch" ' --arch ' "$(cat "${nvkectl_log}")"
+expect "so the render warns" "^warning: --arch not given; rendering for the host's linux/" "${out}"
+out="$(STUB_API_DOWN=1 exec_arch)" && fail "an install with the API down exited 0"
+expect "an install with the API down stops at the node read" '^nvke-deploy: cluster: cannot list nodes: The connection to the server' "${out}"
+reject "nothing is applied when the API is down" '^(kubectl|helm) ' "${out}"
 
 # A parser failure stops the install before anything is applied.
 mkdir -p "${WORK}/broken-list"
@@ -253,100 +376,87 @@ expect "missing --deploy-path is named" 'deploy-path is required' "${out}"
 out="$(bash "${EXECUTOR}" install --deploy-path "${NICO}" --dry-run 2>&1)" && fail "template item without --config exited 0"
 expect "template item needs --config" 'needs --config' "${out}"
 
-# check-site.sh against stub tools: every finding passes on a ready cluster
-# and names the fix on one that is not. The stubs answer the exact reads the
-# check makes; STUB_* switch the answers.
-CHECK="${DEPLOY_DIR}/check-site.sh"
-stubs="${WORK}/stubs"
-mkdir -p "${stubs}"
-cat >"${stubs}/kubectl" <<'STUB'
-#!/usr/bin/env bash
-# Every call is logged; a mutating verb fails, so "changes nothing" is a
-# fact about the calls made, not about the output.
-[[ -z "${STUB_LOG:-}" ]] || printf '%s\n' "$*" >>"${STUB_LOG}"
-case " $* " in
-  *" apply "*|*" create "*|*" delete "*|*" patch "*|*" taint "*|*" annotate "*|*" label "*|*" replace "*|*" edit "*) echo "stub kubectl: mutating verb refused: $*" >&2; exit 97 ;;
-esac
-if [[ -n "${STUB_API_DOWN:-}" && "$1" == "--kubeconfig" && "$3" == "version" ]]; then
-  echo 'The connection to the server 10.0.0.100:6443 was refused' >&2; exit 1
-fi
-if [[ -n "${STUB_DENY:-}" && "$*" == *" get "* ]]; then
-  echo 'Error from server (Forbidden): nodes is forbidden: User "stub" cannot list resource "nodes"' >&2
-  exit 1
-fi
-case "$*" in
-  *"get nodes"*)
-    printf 'node-1\t%s\t%s\n' "${STUB_ARCH:-arm64}" "${STUB_TAINT:-}"
-    [[ -z "${STUB_SECOND_NODE:-}" ]] || printf 'node-2\t%s\t\n' "${STUB_ARCH:-arm64}" ;;
-  *"get storageclass"*)
-    [[ -n "${STUB_NO_SC:-}" ]] || printf 'local-path\ttrue\n'
-    [[ -z "${STUB_SECOND_SC:-}" ]] || printf 'nvme\ttrue\n' ;;
-  *"capi-controller-manager"*)
-    if [[ -n "${STUB_CAPI_IMAGE:-}" ]]; then printf '%s' "${STUB_CAPI_IMAGE}"; else
-      echo 'Error from server (NotFound): deployments.apps "capi-controller-manager" not found' >&2; exit 1; fi ;;
-  *"capi-kubeadm-"*)
-    if [[ -n "${STUB_DENY_KUBEADM:-}" ]]; then echo 'Error from server (Forbidden): deployments.apps is forbidden' >&2; exit 1; fi
-    if [[ -n "${STUB_NO_KUBEADM:-}" ]]; then echo 'Error from server (NotFound): deployments.apps not found' >&2; exit 1; else printf 'deployment.apps/x'; fi ;;
-esac
-exit 0
-STUB
-printf '#!/usr/bin/env bash\ncase "$1" in version) printf "v4.2.4" ;; esac\nexit 0\n' >"${stubs}/helm"
-printf '#!/usr/bin/env bash\nexit 0\n' >"${stubs}/clusterctl"
-printf '#!/usr/bin/env bash\nexit 0\n' >"${stubs}/curl"
-chmod +x "${stubs}"/*
-: >"${WORK}/stub.kubeconfig"
-: >"${WORK}/stub.log"
-out="$(PATH="${stubs}:${PATH}" STUB_LOG="${WORK}/stub.log" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" --release "${WORK}/local.json" --nvkr-run-dir "${run_dir}" 2>&1)" || fail "check-site on a ready cluster exited $?: ${out}"
+# check-site.sh against the stub tools: every finding passes on a ready
+# cluster and names the fix on one that is not.
+check() { PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --kubeconfig "${WORK}/stub.kubeconfig" "$@" 2>&1; }
+out="$(STUB_LOG="${WORK}/stub.log" check --release "${WORK}/local.json" --nvkr-run-dir "${run_dir}")" || fail "check-site on a ready cluster exited $?: ${out}"
 grep -qE ' (apply|create|delete|patch|taint|annotate) ' "${WORK}/stub.log" && fail "check-site made a mutating kubectl call: $(grep -E ' (apply|create|delete|patch|taint|annotate) ' "${WORK}/stub.log")" || pass "check-site made no mutating kubectl call ($(wc -l <"${WORK}/stub.log" | tr -d ' ') reads)"
 reject "no trace id line between findings" '^Trace ID: ' "${out}"
-expect "the site spec passes" '^PASS  site spec: .* is valid for the controller stack$' "${out}"
+expect "the inputs are said first, with their absolute paths and facts" "^INFO  inputs: site spec ${SITESPEC}, site nvke-site, stack config ${STACK}, nico https://nico.example.com org org-1$" "${out}"
+[[ "$(grep -n '^INFO  inputs:' <<<"${out}" | cut -d: -f1)" -lt "$(grep -n '^PASS  site spec:' <<<"${out}" | cut -d: -f1)" ]] && pass "the inputs line comes before the input findings" || fail "inputs line order"
+expect "the site spec passes" "^PASS  site spec: ${SITESPEC} is valid$" "${out}"
+expect "the stack config passes" "^PASS  stack config: ${STACK}$" "${out}"
 expect "the release is named with its verify command" '^PASS  release: .* verify it with: nvkr release verify --reference ' "${out}"
-expect "the architecture matches" '^PASS  cluster: node architecture arm64 matches controllerStack.arch$' "${out}"
+expect "the nodes' architecture is reported" '^PASS  cluster: nodes are arm64$' "${out}"
 expect "no taint" '^PASS  cluster: no node carries the control-plane NoSchedule taint$' "${out}"
 expect "one default StorageClass" '^PASS  cluster: default StorageClass local-path$' "${out}"
 expect "Cluster API is not installed yet and the init command is printed" '^PASS  Cluster API: not installed yet; run: clusterctl init .*--core cluster-api:v[0-9.]+ --bootstrap kubeadm:v[0-9.]+ --control-plane kubeadm:v[0-9.]+ --wait-providers$' "${out}"
 expect "the check ends ready with the init command" '^  clusterctl init --kubeconfig .* --wait-providers$' "${out}"
-expect "the check ends ready with the executor command, by its resolved path" "^  ${DEPLOY_DIR}/nvke-deploy.sh install --deploy-path ${NICO} --sitespec ${WORK}/site/sitespec.yaml --kubeconfig ${WORK}/stub.kubeconfig --release ${WORK}/local.json --nvkr-run-dir ${run_dir}$" "${out}"
-out="$(PATH="${stubs}:${PATH}" STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller:$(sed -n 's/^CAPI_VERSION[[:space:]]*?=[[:space:]]*//p' "${DEPLOY_DIR}/../make/tool-versions.mk")" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" || fail "check-site with Cluster API installed exited $?: ${out}"
+expect "the check ends ready with the executor command, by its resolved path" "^  ${DEPLOY_DIR}/nvke-deploy.sh install --deploy-path ${NICO} --sitespec ${SITESPEC} --stack-config ${STACK} --kubeconfig ${WORK}/stub.kubeconfig --release ${WORK}/local.json --nvkr-run-dir ${run_dir}$" "${out}"
+out="$(STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller:$(sed -n 's/^CAPI_VERSION[[:space:]]*?=[[:space:]]*//p' "${DEPLOY_DIR}/../make/tool-versions.mk")" check)" || fail "check-site with Cluster API installed exited $?: ${out}"
 expect "Cluster API at the pinned version passes" '^PASS  Cluster API: v[0-9.]+ already installed$' "${out}"
 reject "no init command is printed when Cluster API is installed" '^  clusterctl init' "${out}"
-out="$(PATH="${stubs}:${PATH}" STUB_DENY=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with denied reads exited 0"
+out="$(STUB_DENY=1 check)" && fail "check-site with denied reads exited 0"
 expect "a denied node read is a finding, not a pass" '^FAIL  cluster: cannot list nodes: Error from server \(Forbidden\)' "${out}"
 expect "a denied StorageClass read is a finding" '^FAIL  cluster: cannot list StorageClasses: ' "${out}"
 expect "a denied Cluster API read is a finding, not an init hint" '^FAIL  cluster: cannot read deployment capi-system/capi-controller-manager: ' "${out}"
 reject "no init hint on a denied read" 'not installed yet' "${out}"
 reject "the check changes nothing" '^(PASS|WARN|SKIP|FAIL)  .*(taint nodes |apply |helm upgrade)' "${out}"
-out="$(PATH="${stubs}:${PATH}" STUB_TAINT=NoSchedule STUB_NO_SC=1 STUB_CAPI_IMAGE=registry.k8s.io/cluster-api/cluster-api-controller:v0.0.1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site on an unready cluster exited 0"
+out="$(STUB_TAINT=NoSchedule STUB_NO_SC=1 STUB_CAPI_IMAGE=registry.k8s.io/cluster-api/cluster-api-controller:v0.0.1 check)" && fail "check-site on an unready cluster exited 0"
 expect "the taint is a finding with the fix" '^FAIL  cluster: node-1 still carries the control-plane NoSchedule taint, which the bootstrap removes; run: kubectl taint nodes' "${out}"
 expect "the missing StorageClass is a finding with the fix" '^FAIL  cluster: no default StorageClass; Postgres and SPIRE need persistent volumes' "${out}"
 expect "another Cluster API version is a finding with the upgrade command" '^FAIL  Cluster API: v0.0.1 is installed; the stack is tested with v[0-9.]+, and clusterctl init does not upgrade\. Run: clusterctl upgrade apply ' "${out}"
 expect "the failures are counted" '3 finding\(s\) to fix before the stack installs' "${out}"
-out="$(PATH="${stubs}:${PATH}" STUB_ARCH=amd64 STUB_SECOND_NODE=1 STUB_SECOND_SC=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site on a mismatched cluster exited 0"
+out="$(STUB_MIXED_ARCH=1 STUB_SECOND_SC=1 check)" && fail "check-site on a mixed cluster exited 0"
 expect "an even node count is a finding" '^FAIL  cluster: 2 node\(s\); expected an odd number, at least 1$' "${out}"
-expect "an architecture mismatch is a finding" '^FAIL  cluster: node architecture amd64; the site spec says arm64$' "${out}"
+expect "mixed architectures are a finding" '^FAIL  cluster: nodes report amd64 arm64; the stack installs for one architecture$' "${out}"
 expect "two default StorageClasses are a finding" '^FAIL  cluster: 2 default StorageClasses; the stack needs exactly one$' "${out}"
-out="$(PATH="${stubs}:${PATH}" STUB_API_DOWN=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with the API down exited 0"
+out="$(STUB_NO_ARCH_LABEL=1 check)" && fail "check-site with an unlabelled node exited 0"
+expect "an unlabelled node is a finding" '^FAIL  cluster: node node-1 has no kubernetes.io/arch label$' "${out}"
+out="$(STUB_NO_NODES=1 check)" && fail "check-site with no nodes exited 0"
+expect "no nodes is a finding" '^FAIL  cluster: no nodes$' "${out}"
+# A bad stack config is a finding naming the first problem; the executor is not run.
+out="$(PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${SITESPEC}" --stack-config "${REPO}/deploy/examples/stack-config.json" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with a bad stack config exited 0"
+expect "a bad stack config is a finding with its first problem" "^FAIL  stack config: ${REPO}/deploy/examples/stack-config.json is not ready: nico.endpoint: still a REPLACE_\* placeholder; fill it in; run: $(printf '%q' "${NVKECTL}") inspect stack-config ${REPO}/deploy/examples/stack-config.json$" "${out}"
+expect "the inputs line leaves out what the bad file could not give" "^INFO  inputs: site spec ${SITESPEC}, site nvke-site, stack config ${REPO}/deploy/examples/stack-config.json$" "${out}"
+reject "the executor command is not printed on a FAIL" 'nvke-deploy.sh install' "${out}"
+# A missing credential is a stack config finding too.
+out="$(NVKECTL_NODE_PASSWORD='' check)" && fail "check-site without a credential exited 0"
+expect "a missing credential is a finding" "^FAIL  stack config: ${STACK} is not ready: environment: NVKECTL_NODE_PASSWORD is not set; run: " "${out}"
+# An inspect that fails without a word is a finding, not an aborted check.
+printf '#!/usr/bin/env bash\nif [[ "$1 $2" == "inspect stack-config" ]]; then exit 1; fi\nexec "${REAL_NVKECTL}" "$@"\n' >"${stubs}/nvkectl-silent"
+chmod +x "${stubs}/nvkectl-silent"
+out="$(NVKECTL="${stubs}/nvkectl-silent" REAL_NVKECTL="${real_nvkectl}" check)" && fail "check-site with a silent inspect failure exited 0"
+expect "a silent inspect failure is a finding" "^FAIL  stack config: ${STACK} is not ready: nvkectl inspect stack-config exited non-zero without a reason; run: " "${out}"
+expect "and the check runs to its verdict" '^check-site.sh: [0-9]+ finding\(s\) to fix' "${out}"
+out="$(bash "${CHECK}" --sitespec "${SITESPEC}" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with --sitespec alone exited 0"
+expect "the check refuses --sitespec without --stack-config" "^check-site.sh: --sitespec needs --stack-config: the stack's input is the stack config file$" "${out}"
+out="$(bash "${CHECK}" --stack-config "${STACK}" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with --stack-config alone exited 0"
+expect "the check refuses --stack-config without --sitespec" '^check-site.sh: --stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec$' "${out}"
+out="$(STUB_API_DOWN=1 check)" && fail "check-site with the API down exited 0"
 expect "an unreachable API is a finding" "^FAIL  cluster: API not reachable with ${WORK}/stub.kubeconfig$" "${out}"
 reject "no node findings when the API is down" '^(PASS|FAIL)  cluster: .*node' "${out}"
-out="$(PATH="${stubs}:${PATH}" STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller:$(sed -n 's/^CAPI_VERSION[[:space:]]*?=[[:space:]]*//p' "${DEPLOY_DIR}/../make/tool-versions.mk")@sha256:0000000000000000000000000000000000000000000000000000000000000000" STUB_NO_KUBEADM=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with a core-only Cluster API exited 0"
+out="$(STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller:$(sed -n 's/^CAPI_VERSION[[:space:]]*?=[[:space:]]*//p' "${DEPLOY_DIR}/../make/tool-versions.mk")@sha256:0000000000000000000000000000000000000000000000000000000000000000" STUB_NO_KUBEADM=1 check)" && fail "check-site with a core-only Cluster API exited 0"
 expect "a digest-pinned image is compared by its tag, and a core without the kubeadm providers is a finding" '^FAIL  Cluster API: v[0-9.]+ core is installed without capi-kubeadm-bootstrap-system/capi-kubeadm-bootstrap-controller-manager capi-kubeadm-control-plane-system/capi-kubeadm-control-plane-controller-manager; run: clusterctl init' "${out}"
 PIN="$(sed -n 's/^CAPI_VERSION[[:space:]]*?=[[:space:]]*//p' "${DEPLOY_DIR}/../make/tool-versions.mk")"
-out="$(PATH="${stubs}:${PATH}" STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller:${PIN}" STUB_DENY_KUBEADM=1 NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with a denied kubeadm read exited 0"
+out="$(STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller:${PIN}" STUB_DENY_KUBEADM=1 check)" && fail "check-site with a denied kubeadm read exited 0"
 expect "a denied kubeadm-provider read is a finding" '^FAIL  cluster: cannot read deployment capi-kubeadm-bootstrap-system/' "${out}"
 reject "no 'already installed' pass after a denied provider read" 'already installed' "${out}"
-out="$(PATH="${stubs}:${PATH}" STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller@sha256:0000000000000000000000000000000000000000000000000000000000000000" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site with a digest-only Cluster API image exited 0"
+out="$(STUB_CAPI_IMAGE="registry.k8s.io/cluster-api/cluster-api-controller@sha256:0000000000000000000000000000000000000000000000000000000000000000" check)" && fail "check-site with a digest-only Cluster API image exited 0"
 expect "a digest-only image is reported as such, not by its repository" '^FAIL  Cluster API: registry.k8s.io/cluster-api/cluster-api-controller@sha256:0+ is installed, pinned by digest; its version cannot be read' "${out}"
-out="$(PATH="${stubs}:${PATH}" NVKECTL=/nonexistent/nvkectl NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site without nvkectl exited 0"
-expect "a missing nvkectl is a finding, and the spec checks are skipped" '^FAIL  tool nvkectl: /nonexistent/nvkectl not found' "${out}"
-expect "the site spec is skipped without nvkectl" '^SKIP  site spec: ' "${out}"
+out="$(NVKECTL=/nonexistent/nvkectl check)" && fail "check-site without nvkectl exited 0"
+expect "a missing nvkectl is a finding, and the input checks are skipped" '^FAIL  tool nvkectl: /nonexistent/nvkectl not found' "${out}"
+expect "the site spec is skipped without nvkectl" "^SKIP  site spec: ${SITESPEC} \(no nvkectl\)$" "${out}"
+expect "the stack config is skipped without nvkectl" "^SKIP  stack config: ${STACK} \(no nvkectl\)$" "${out}"
+expect "the inputs line is printed without nvkectl, paths only" "^INFO  inputs: site spec ${SITESPEC}, stack config ${STACK}$" "${out}"
 expect "the verdict carries the check's own name" '^check-site.sh: [0-9]+ finding\(s\) to fix' "${out}"
 # The executor refuses an unknown item type before it applies anything.
 mkdir -p "${WORK}/badpath/x"; printf 'items:\n  - {name: x, type: bogus}\n' >"${WORK}/badpath/nvke-deploy.yaml"; printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: x\n' >"${WORK}/badpath/x/a.yaml"
 out="$(bash "${EXECUTOR}" install --deploy-path "${WORK}/badpath" --dry-run 2>&1)" && fail "an unknown item type exited 0"
 expect "an unknown item type is refused by the parser" 'unrecognised:.*type: bogus' "${out}"
 reject "nothing is applied before the refusal" 'kubectl .*apply' "${out}"
-out="$(bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site without --sitespec exited 0"
-expect "the site spec is required" '^usage: check-site.sh' "${out}"
+out="$(bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "check-site without the inputs exited 0"
+expect "the inputs are required" '^usage: check-site.sh' "${out}"
 PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" --diagnostics >/dev/null 2>&1 || fail "check-site --diagnostics exited $?"
 [[ -f "${WORK}/check-state/diagnostics/nodes.txt" ]] && pass "diagnostics are written under the state directory" || fail "no diagnostics: $(ls -R "${WORK}/check-state" 2>/dev/null)"
 

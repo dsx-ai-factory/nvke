@@ -38,14 +38,17 @@ What the node needs, all present on the reference instance type:
   renderer are Python), plus `clusterctl` for the prerequisites
 - to install for a site: `nvkectl` (`make -C cli build` writes
   `cli/bin/nvkectl`; `NVKECTL` names it, else PATH). `deploy/check-site.sh --sitespec
-  sitespec.yaml --kubeconfig site.kubeconfig` reports what is still missing;
-  `deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec
-  sitespec.yaml --kubeconfig site.kubeconfig` renders this deploy path for
-  the site from the spec's `controllerStack` section and applies it. The
-  render lives in a private scratch directory and is removed when the
-  script exits, so no rendered credential is left behind. Without a
-  release, the spec sets `controllerStack.images.profiles`: this deploy path
-  enables the profiles content image without naming it
+  sitespec.yaml --stack-config stack-config.json --kubeconfig site.kubeconfig`
+  reports what is still missing; `deploy/nvke-deploy.sh install --deploy-path
+  deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json
+  --kubeconfig site.kubeconfig` renders this deploy path for the site from
+  the two files and applies it: the site spec gives the site name, VIP and
+  trust domain, the stack config (`deploy/examples/stack-config.json`,
+  filled in) the NICo API and the optional images and mirror. The render
+  lives in a private scratch directory and is removed when the script
+  exits, so no rendered credential is left behind. Without a release, the
+  stack config sets `images.profiles`: this deploy path enables the
+  profiles content image without naming it
 - a checkout laid out so that `deploy/` and `controller/` are siblings --
   `controller/release.yaml` reaches its chart as
   `../../controller/deploy/charts/controller`
@@ -66,8 +69,9 @@ What the node needs, all present on the reference instance type:
   the item pins another; the pin decides only for a chart the release
   lacks. Each item's `release.yaml` names its artifacts: `chart.artifact`
   (default: the item name), `chart.imageArtifact`, `chart.profilesArtifact`,
-  or a manifest item's `artifact`. Artifacts are selected for the site
-  spec's `controllerStack.arch`. The render refuses, naming every problem,
+  or a manifest item's `artifact`. Artifacts are selected for the
+  architecture the cluster's nodes report, which the executor reads and
+  passes to the render as `--arch`. The render refuses, naming every problem,
   when an image artifact is missing. With `--nvkr-run-dir
   .nvkr/runs/<attempt>`, charts and images come from the Run's OCI layouts
   and the images are imported into the node's containerd (`CTR` names the
@@ -170,12 +174,12 @@ rendered path, after `site-values.yaml`.
 | trust domain | `spire.trustDomain`, else `nvkectl-bootstrap.nke.local` with a warning | `${KIND_CLUSTER_NAME}.nke.local` |
 | management VIP | `cluster.controlPlaneVIP`, or the only node's IP | kind control-plane IP |
 | SPIRE admin path | a constant, `/nke-service/nke-controller` | the same |
-| TPM attestor **server** checksum | pinned per `controllerStack.arch` | pinned per arch in `resolve_tpm_checksum()` |
+| TPM attestor **server** checksum | pinned per the nodes' architecture, `--arch` | pinned per arch in `resolve_tpm_checksum()` |
 | OIDC domains / IP SANs | the overlay's hostnames plus the VIP | VIP plus the kind gateway |
 | discovery URL | `https://<VIP>:30443/.well-known/openid-configuration` | the same shape |
 | Postgres / Temporal password | `NVKECTL_DATABASE_PASSWORD`, on both Temporal datastores; the controller reads its connection string from a Secret | generated per run |
-| controller image | the release, or `controllerStack.images.controller` | built per run |
-| profiles image | the release, or `controllerStack.images.profiles` | built per run |
+| controller image | the release, or the stack config's `images.controller` | built per run |
+| profiles image | the release, or the stack config's `images.profiles` | built per run |
 | telemetry backend | `--values-for nktp=<file>`, else the chart's bundled development backend | not installed |
 | telemetry `k8s.cluster.name` | `clusterName`, through the `nvke-base-config` template | not installed |
 

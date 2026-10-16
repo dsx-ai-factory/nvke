@@ -19,14 +19,29 @@ mk_var() {
   sed -n "s/^$1[[:space:]]*?=[[:space:]]*//p" "${file}" | head -n 1
 }
 
-# The check prints one line per finding and counts the failures.
+# The check prints one line per finding and counts the failures. INFO is
+# not a finding: it says which inputs the run uses.
 CHECK_FAILURES=0
+check_info() { printf 'INFO  %s\n' "$*"; }
 check_pass() { printf 'PASS  %s\n' "$*"; }
 check_warn() { printf 'WARN  %s\n' "$*"; }
 check_skip() { printf 'SKIP  %s\n' "$*"; }
 check_fail() {
   printf 'FAIL  %s\n' "$*"
   CHECK_FAILURES=$((CHECK_FAILURES + 1))
+}
+
+# abspath prints path made absolute against the working directory. The
+# file need not exist.
+abspath() {
+  local dir
+  if [[ "$1" == /* ]]; then
+    printf '%s' "$1"
+  elif dir="$(cd "$(dirname "$1")" 2>/dev/null && pwd)"; then
+    printf '%s/%s' "${dir}" "$(basename "$1")"
+  else
+    printf '%s/%s' "${PWD}" "$1"
+  fi
 }
 
 # diagnostics writes what a failed step leaves behind in the cluster into

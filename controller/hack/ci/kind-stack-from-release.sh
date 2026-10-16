@@ -106,8 +106,8 @@ fi
 vip="$(docker inspect -f '{{with index .NetworkSettings.Networks "kind"}}{{.IPAddress}}{{end}}' "${node}")"
 [[ -n "${vip}" ]] || die "cannot read the kind node's address"
 
-# 3. The site spec and its credentials. The credentials are placeholders:
-# nothing in this lane reaches NICo or a private registry.
+# 3. The site spec, the stack config and the credentials. The credentials are
+# placeholders: nothing in this lane reaches NICo or a private registry.
 export NVKECTL_NICO_TOKEN=smoke-nico-token NVKECTL_NODE_USER=nvke NVKECTL_NODE_PASSWORD=smoke-tenant-password
 NVKECTL_DATABASE_PASSWORD="$(openssl rand -hex 16)"
 export NVKECTL_DATABASE_PASSWORD
@@ -123,15 +123,17 @@ fi
 grep -qE '^ *maxReplicas: 1$' "${WORK}/site/nktp-values.yaml" || die "the nktp kind values changed shape; check nktp/hack/e2e-values.yaml"
 sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" \
   "${HERE}/sitespec.yaml.tmpl" >"${WORK}/site/sitespec.yaml"
+cp "${HERE}/stack-config.json.tmpl" "${WORK}/site/stack-config.json"
 "${NVKECTL}" validate sitespec -f "${WORK}/site/sitespec.yaml"
+"${NVKECTL}" inspect stack-config "${WORK}/site/stack-config.json" >/dev/null
 
 # 4. The site runbook, in the order docs/operate/install-management-plane-services.md
 # gives it. nvkectl bootstrap site untaints a real site's nodes; kind does
 # not, so the lane does it here. kind ships a default StorageClass.
 kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
 log "checking the site"
-NVKECTL="${NVKECTL}" bash "${REPO}/deploy/check-site.sh" --sitespec "${WORK}/site/sitespec.yaml" --kubeconfig "${KUBECONFIG}" \
-  --release "${WORK}/release.json" --nvkr-run-dir "${RUN}"
+NVKECTL="${NVKECTL}" bash "${REPO}/deploy/check-site.sh" --sitespec "${WORK}/site/sitespec.yaml" --stack-config "${WORK}/site/stack-config.json" \
+  --kubeconfig "${KUBECONFIG}" --release "${WORK}/release.json" --nvkr-run-dir "${RUN}"
 log "installing Cluster API ${CAPI_VERSION}"
 clusterctl init --core "cluster-api:${CAPI_VERSION}" --bootstrap "kubeadm:${CAPI_VERSION}" --control-plane "kubeadm:${CAPI_VERSION}" --wait-providers
 kubectl rollout status deployment/cert-manager-webhook -n cert-manager --timeout=5m
@@ -145,7 +147,7 @@ kubectl rollout status deployment/cert-manager-webhook -n cert-manager --timeout
 STATE="${WORK}/state"
 log "a failed render leaves nothing behind"
 if probe="$(NVKECTL="${NVKECTL}" NVKE_STATE_DIR="${STATE}" bash "${REPO}/deploy/nvke-deploy.sh" install \
-  --deploy-path "${REPO}/deploy/nico" --sitespec "${WORK}/site/sitespec.yaml" \
+  --deploy-path "${REPO}/deploy/nico" --sitespec "${WORK}/site/sitespec.yaml" --stack-config "${WORK}/site/stack-config.json" \
   --release "${WORK}/release.json" --nvkr-run-dir "${WORK}/no-such-run" --kubeconfig "${KUBECONFIG}" 2>&1)"; then
   die "an install with a missing run directory exited 0"
 fi
@@ -155,7 +157,7 @@ grep -q 'the render failed' <<<"${probe}" || die "the probe did not reach the re
 [[ -z "$(ls -A "${STATE}/renders" 2>/dev/null)" ]] || die "a failed render left scratch behind: $(ls -A "${STATE}/renders")"
 log "rendering and installing deploy/nico"
 NVKECTL="${NVKECTL}" NVKE_STATE_DIR="${STATE}" CTR="docker exec -i ${node} ctr" bash "${REPO}/deploy/nvke-deploy.sh" install \
-  --deploy-path "${REPO}/deploy/nico" --sitespec "${WORK}/site/sitespec.yaml" \
+  --deploy-path "${REPO}/deploy/nico" --sitespec "${WORK}/site/sitespec.yaml" --stack-config "${WORK}/site/stack-config.json" \
   --release "${WORK}/release.json" --nvkr-run-dir "${RUN}" --kubeconfig "${KUBECONFIG}" --timeout 15m \
   --values-for "nktp=${WORK}/site/nktp-values.yaml"
 [[ -z "$(ls -A "${STATE}/renders" 2>/dev/null)" ]] || die "the install left its render behind: $(ls -A "${STATE}/renders")"

@@ -29,6 +29,7 @@ on:
       - cli/internal/bootstrap/controllerdeploy/**
       - cli/internal/nvkectl/validate.go
       - cli/internal/nvkectl/inspect_sitespec.go
+      - cli/internal/nvkectl/inspect_stack_config.go
       - cli/internal/nvkectl/nvkr_release.go
       - cli/internal/nvkectl/root.go
       - controller/hack/apply-capi-spiffe-exec-auth.sh
