@@ -4,10 +4,8 @@
 package nvkectl
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -24,34 +22,21 @@ func newValidateCmd() *cobra.Command {
 }
 
 type validateSiteSpecOptions struct {
-	siteSpec      string
-	bootstrapOnly bool
+	siteSpec string
 }
 
 func newValidateSiteSpecCmd() *cobra.Command {
 	opts := &validateSiteSpecOptions{}
 	cmd := &cobra.Command{
 		Use:   "sitespec",
-		Short: "Check a site spec for the bootstrap and the controller stack install",
-		Long: `Check the whole site spec and report by section.
-
-The bootstrap section is what "nvkectl bootstrap site" reads: every field is
-checked. With spire.upstreamCA: true, NVKECTL_SPIRE_CA_CERT_FILE and
-NVKECTL_SPIRE_CA_KEY_FILE must both name readable files; without it, they
-must be unset.
-
-The controllerStack section is what the controller stack install reads: the
-REPLACE_* values still to fill in are listed apart from errors, every required
-field must be set, and the architecture and the NICo endpoint must be
-well-formed. NVKECTL_NICO_TOKEN, NVKECTL_NODE_USER, NVKECTL_NODE_PASSWORD and
-NVKECTL_DATABASE_PASSWORD must be set; the token and the node login must hold
-no quote, backslash or control character.
-
-The command exits 0 only when the file is ready for both. --bootstrap-only
-checks the bootstrap section alone, for a file whose controllerStack section
-is not filled in yet.`,
-		Example: `  nvkectl validate sitespec -f sitespec.yaml
-  nvkectl validate sitespec -f sitespec.yaml --bootstrap-only`,
+		Short: "Check a site spec the way nvkectl bootstrap site reads it",
+		Long: `Check a site spec: every field is validated. With spire.upstreamCA: true,
+NVKECTL_SPIRE_CA_CERT_FILE and NVKECTL_SPIRE_CA_KEY_FILE must both name
+readable files; without it, they must be unset. The command prints "valid"
+and exits 0 when the file is ready for "nvkectl bootstrap site", and reports
+every problem otherwise. It says so when spire.trustDomain is not set, since
+the bootstrap and the controller stack install then both use the default.`,
+		Example:      `  nvkectl validate sitespec -f sitespec.yaml`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -60,7 +45,6 @@ is not filled in yet.`,
 	}
 	cmd.Flags().StringVarP(&opts.siteSpec, "sitespec", "f", "", "Path to the site spec (required)")
 	_ = cmd.MarkFlagRequired("sitespec")
-	cmd.Flags().BoolVar(&opts.bootstrapOnly, "bootstrap-only", false, "Check only the fields bootstrap site reads")
 	return cmd
 }
 
@@ -69,36 +53,9 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "bootstrap: valid; nvkectl bootstrap site can run with this file")
-	if opts.bootstrapOnly {
-		return nil
-	}
-
-	if spec.ControllerStack == nil {
-		fmt.Fprintln(out, "controllerStack: missing; nvkectl generate sitespec writes the section to fill in")
-		return errors.New("the site spec is not ready for the controller stack install; the bootstrap can run now")
-	}
-	ready := true
 	if domain, defaulted := spec.TrustDomain(); defaulted {
 		fmt.Fprintf(out, "spire.trustDomain: not set; a bootstrap with the default cluster name and the controller stack install both use %s\n", domain)
 	}
-	if left := spec.ControllerStackPlaceholders(); len(left) > 0 {
-		ready = false
-		fmt.Fprintf(out, "controllerStack: %d values still to fill in: %s\n", len(left), strings.Join(left, ", "))
-	}
-	if err := spec.ValidateControllerStackValues(); err != nil {
-		ready = false
-		fmt.Fprintf(out, "controllerStack: %v\n", err)
-	}
-	if _, err := sitespec.StackCredentialsFromEnv(); err != nil {
-		ready = false
-		for _, line := range strings.Split(err.Error(), "\n") {
-			fmt.Fprintf(out, "environment: %s\n", line)
-		}
-	}
-	if !ready {
-		return errors.New("the site spec is not ready for the controller stack install; the bootstrap can run now")
-	}
-	fmt.Fprintln(out, "controllerStack: valid")
+	fmt.Fprintln(out, "valid")
 	return nil
 }

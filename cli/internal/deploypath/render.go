@@ -21,21 +21,29 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 )
 
 // RenderOptions drive Render.
 type RenderOptions struct {
 	// DeployPath is the committed deploy path; it is never written.
 	DeployPath string
-	// Site is the site spec whose controllerStack section describes the
-	// site the stack is installed for. Optional.
+	// Site is the site spec of the site the stack is installed for: the
+	// cluster name, the control-plane VIP, the SPIRE trust domain and CA.
+	// Optional; Stack goes with it.
 	Site *sitespec.SiteSpec
+	// Stack is the stack config, loaded by stackconfig.Load: the NICo API
+	// and the optional image overrides and mirror. Required with Site,
+	// refused without it. The credentials come from the environment.
+	Stack *stackconfig.Config
 	// Release is the NVKR release description nvkr release export writes,
 	// and ReleasePath where it was read from, copied into the output as
 	// nvkr-release.json. Optional.
 	Release     *nvkrrelease.Release
 	ReleasePath string
-	// Arch selects release artifacts: linux/amd64 or linux/arm64.
+	// Arch is the nodes' architecture, linux/amd64 or linux/arm64. It
+	// selects the release artifacts and the SPIRE TPM attestor checksum, and
+	// is required with Site.
 	Arch string
 	// RunDir, when set, is a completed NVKR Run (or a directory of OCI
 	// layouts): charts and images are read from it and nothing is pulled.
@@ -108,8 +116,20 @@ func Render(ctx context.Context, opts RenderOptions) (*Rendered, error) {
 	if opts.Log == nil {
 		opts.Log = io.Discard
 	}
+	if opts.Site != nil && opts.Stack == nil {
+		return nil, errors.New("--sitespec needs --stack-config: the stack's input is the stack config file")
+	}
+	if opts.Stack != nil && opts.Site == nil {
+		return nil, errors.New("--stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec")
+	}
 	if opts.Site == nil && opts.Release == nil {
 		return nil, errors.New("a site spec or a release description is required")
+	}
+	if opts.Stack != nil && opts.Stack.Path() == "" {
+		return nil, errors.New("the stack config must be loaded by stackconfig.Load, which validates it")
+	}
+	if opts.Site != nil && !contains(nvkrrelease.Archs, opts.Arch) {
+		return nil, fmt.Errorf("the architecture %q is not one of %s", opts.Arch, strings.Join(nvkrrelease.Archs, ", "))
 	}
 	if opts.Release != nil && opts.RunDir == "" && opts.Registry == nil {
 		opts.Registry = Registries(nil)
@@ -657,6 +677,11 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// archOf returns the CPU architecture of a platform: linux/arm64 is arm64.
+func archOf(platform string) string {
+	return strings.TrimPrefix(platform, "linux/")
 }
 
 func firstNonEmpty(values ...string) string {

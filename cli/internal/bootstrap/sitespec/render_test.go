@@ -340,7 +340,6 @@ func TestRenderPlacesOptionalFieldsInPosition(t *testing.T) {
 		{"controlPlaneVIP:", "nodeAgentPort:"},
 		{"nodeAgentPort:", "kubeletConfig:"},
 		{"cluster:", "spire:"},
-		{"spire:", "controllerStack:"},
 	} {
 		before, after := strings.Index(out, order[0]), strings.Index(out, order[1])
 		if before < 0 || after < 0 || before > after {
@@ -354,10 +353,6 @@ func TestRenderPlacesOptionalFieldsInPosition(t *testing.T) {
 	identity := strings.Index(out, "Identity plane")
 	if identity < 0 || identity > spire {
 		t.Errorf("the SPIRE explanation should introduce spire:, not follow it:\n%s", out)
-	}
-	stack := strings.Index(out, "\ncontrollerStack:")
-	if c := strings.Index(out, "Input for the controller stack install"); c < 0 || c > stack || c < spire {
-		t.Errorf("controllerStack should keep its own comment, between spire: and controllerStack::\n%s", out)
 	}
 
 	// The example is replaced, not duplicated.

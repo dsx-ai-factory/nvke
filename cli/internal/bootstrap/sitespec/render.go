@@ -209,9 +209,15 @@ func (spec *SiteSpec) Render() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := applySpec(doc.Content[0], spec); err != nil {
+	// A commented example at the end of the file hangs off the document, not
+	// off an entry. Lend it to the mapping so a key written for it lands
+	// there, with its prose, and hand what is left back for the encoder.
+	root := doc.Content[0]
+	root.FootComment, doc.FootComment = doc.FootComment, ""
+	if err := applySpec(root, spec); err != nil {
 		return nil, err
 	}
+	doc.FootComment, root.FootComment = root.FootComment, ""
 
 	var buf bytes.Buffer
 	encoder := yaml.NewEncoder(&buf)

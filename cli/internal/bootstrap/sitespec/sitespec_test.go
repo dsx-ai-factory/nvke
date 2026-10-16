@@ -786,3 +786,81 @@ func TestControlPlaneSchedulable(t *testing.T) {
 		t.Error("ControlPlaneSchedulable() = false for a site spec with no worker nodes, want true")
 	}
 }
+
+// baseSpec is the generated three-node site spec: what an operator holds
+// after `nvkectl generate sitespec`.
+func baseSpec(t *testing.T) *SiteSpec {
+	t.Helper()
+	spec, err := Build("my-tier0-site", threeNodes(), []string{"cluster.controlPlaneVIP=10.0.0.5"})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	return spec
+}
+
+func TestEffectiveTrustDomainAndEndpoint(t *testing.T) {
+	spec := baseSpec(t)
+	spec.Spire.TrustDomain = ""
+	if got := spec.EffectiveTrustDomain("nvkectl-bootstrap"); got != "nvkectl-bootstrap.nke.local" {
+		t.Errorf("default trust domain: %s", got)
+	}
+	if domain, defaulted := spec.TrustDomain(); domain != "nvkectl-bootstrap.nke.local" || !defaulted {
+		t.Errorf("TrustDomain default: %s %v", domain, defaulted)
+	}
+	spec.Spire.TrustDomain = "site.example.com"
+	if got := spec.EffectiveTrustDomain("ignored"); got != "site.example.com" {
+		t.Errorf("explicit trust domain: %s", got)
+	}
+	if domain, defaulted := spec.TrustDomain(); domain != "site.example.com" || defaulted {
+		t.Errorf("TrustDomain explicit: %s %v", domain, defaulted)
+	}
+	spec.Cluster.ControlPlaneVIP = "10.0.0.5"
+	if ep, err := spec.ControllerEndpoint(); err != nil || ep != "10.0.0.5" {
+		t.Errorf("VIP endpoint: %q %v", ep, err)
+	}
+	spec.Cluster.ControlPlaneVIP = ""
+	if _, err := spec.ControllerEndpoint(); err == nil {
+		t.Error("several nodes without a VIP accepted")
+	}
+	spec.Cluster.Nodes = spec.Cluster.Nodes[:1]
+	if ep, err := spec.ControllerEndpoint(); err != nil || ep != spec.Cluster.Nodes[0].IP {
+		t.Errorf("single node endpoint: %q %v", ep, err)
+	}
+}
+
+// A removed field is refused with what replaced it.
+func TestLoad_RejectsRemovedFields(t *testing.T) {
+	cases := map[string]struct{ add, want string }{
+		"registry":   {"registry:\n  bootstrapRepo: x\n", "nerdctl login"},
+		"caCertFile": {"spire:\n  caCertFile: ca.crt\n", EnvSpireCACertFile},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "sitespec.yaml")
+			if err := os.WriteFile(path, []byte(string(templateYAML)+"\n"+tc.add), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(path)
+			if err == nil || !strings.Contains(err.Error(), "no longer accepted") || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("want a removed-field error naming %s, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+// The template renders as a site spec the loader accepts, with nothing but
+// the bootstrap's sections in it.
+func TestTemplate_IsABootstrapSpec(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sitespec.yaml")
+	body := strings.Replace(string(templateYAML), "  # controlPlaneVIP: \"10.0.0.100\"", "  controlPlaneVIP: \"10.0.0.100\"", 1)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := spec.Render(); err != nil {
+		t.Errorf("Render of a loaded spec: %v", err)
+	}
+}
