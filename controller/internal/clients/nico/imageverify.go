@@ -32,10 +32,10 @@ const (
 	ImageVerificationEnforce = "enforce"
 )
 
-// ErrImageVerificationFailed marks a machine creation refused because the
-// resolved node image's validation verdict was missing or negative. Retrying
-// cannot change an immutable artifact's verdict, so callers in the activity
-// layer should treat this as non-retryable.
+// ErrImageVerificationFailed marks a machine creation refused by the image
+// pre-flight. Whether the refusal is retryable is carried separately: a
+// definitive rejection is wrapped shared.Terminal, an operational failure is
+// not.
 var (
 	ErrImageVerificationFailed = errors.New("node image verification failed")
 
