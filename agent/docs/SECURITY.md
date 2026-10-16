@@ -66,7 +66,8 @@ SPIFFE mTLS authenticates and coarsely authorizes the calling NVKE service.
 Possession of an authorized `/nke-service/` identity grants access to the full
 gRPC service; the agent does not implement per-caller or per-RPC roles.
 Individual RPCs add validation where applicable, such as control-plane role
-checks and file path and size constraints.
+checks, file path and size constraints, and the fixed resource allowlist in
+`UpdateNKERBAC`.
 
 This broad authority is intentional because the NVKE controller is the trusted
 cluster orchestrator. Compromise of an authorized controller identity must therefore be
