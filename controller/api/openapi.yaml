@@ -2615,7 +2615,7 @@ components:
           x-fern-ignore: true
           type: string
           description: |
-            Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks.
+            Deprecated: Config profile name for the pool's nodes. Optional; when omitted, no config profile hooks run on the nodes.
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
@@ -2686,7 +2686,7 @@ components:
           x-fern-ignore: true
           type: string
           description: |
-            Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks.
+            Deprecated: Config profile name for the pool's nodes. Optional; when omitted, no config profile hooks run on the nodes.
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
@@ -2858,7 +2858,7 @@ components:
           x-fern-ignore: true
           type: string
           description: |
-            Deprecated: Config profile name for the control-plane nodes. Optional; when omitted the nodes run no config profile hooks.
+            Deprecated: Config profile name for the control-plane nodes. Optional; when omitted, no config profile hooks run on the nodes.
           x-go-type-skip-optional-pointer: true
         sshKeyGroupIDs:
           type: array
