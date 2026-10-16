@@ -24,10 +24,13 @@
 #
 # Three inputs the site spec supplies and this script prepares:
 #   - NVKECTL_NICO_CREDENTIALS: the token file for nico-sim's API.
-#   - infra.nico.tenant: the login the controller puts on each node, with throwaway
-#     values. `bootstrap site` creates the Secret that carries it.
+#   - NVKECTL_NODE_USER, NVKECTL_NODE_PASSWORD: the login the controller puts on
+#     each node, with throwaway values. `bootstrap site` creates the Secret that
+#     carries it.
+#   - NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT: nico-sim serves http, which the
+#     bootstrap refuses for a NICo it sends the token to unless told.
 #   - infra.nico.releases: the MachineImage and ClusterRelease the controller
-#     resolves infra.nico.controlPlane.osProfile from, copied from the in-repo
+#     resolves infra.nico.controlPlane.release from, copied from the in-repo
 #     fixtures. `bootstrap site` applies them before it creates the cluster.
 # One thing it does not supply, which this script hands it through an env hook:
 #   - NVKECTL_CONTROLLER_PROFILES_IMAGE: the config profile a cluster request
@@ -91,7 +94,7 @@ CONFIG_PROFILE="${NVKECTL_E2E_NICO_CONFIG_PROFILE:-dev-only-empty}"
 
 SPIRE_TRUST_DOMAIN="${NVKECTL_E2E_SPIRE_TRUST_DOMAIN:-nvkectl-e2e.example.test}"
 # The controller's namespace in the bootstrap cluster, and the Secret
-# `bootstrap site` creates there from infra.nico.tenant.
+# `bootstrap site` creates there from the node login.
 CONTROLLER_NAMESPACE=nke-controller
 TENANT_SECRET=dgxc-tenant-credentials
 
@@ -110,9 +113,8 @@ KUBECONFIG_DIR="$(mktemp -d)"
 export KUBECONFIG="${KUBECONFIG_DIR}/config"
 export KUBECACHEDIR="${KUBECONFIG_DIR}/cache"
 CNI_BUNDLE_DIR="$(mktemp -d)"
-# What the site spec's infra.nico, infra.nico.tenant and infra.nico.releases name.
+# What the site spec's infra.nico and infra.nico.releases name.
 TOKEN_FILE="${SIM_STATE_DIR}/bootstrap-nico.token"
-TENANT_PASSWORD_FILE="${SIM_STATE_DIR}/bootstrap-tenant.password"
 # The command refuses to overwrite a key file, so each run writes its own, which
 # SIM_STATE_DIR's cleanup removes.
 ETCD_KEY_FILE="${SIM_STATE_DIR}/etcd-encryption-key.json"
@@ -230,8 +232,8 @@ log "building the OVN packages for post-init CNI"
 BUNDLE_ARCH="$(go env GOARCH)"
 export BUNDLE_ARCH
 bash "${REPO_ROOT}/controller/hack/ci/prepare-capd-bundles.sh" "${CNI_BUNDLE_DIR}"
-CAPD_CNI_CHARTS_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-charts-1.4.0_1.4.0_${BUNDLE_ARCH}.deb"
-CAPD_CNI_IMAGES_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-images-1.4.0_1.4.0_${BUNDLE_ARCH}.deb"
+CAPD_CNI_CHARTS_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-charts-1.6.0_1.6.0_${BUNDLE_ARCH}.deb"
+CAPD_CNI_IMAGES_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-images-1.6.0_1.6.0_${BUNDLE_ARCH}.deb"
 CAPD_HELM_DEB_PATH="${CNI_BUNDLE_DIR}/nke-e2e-helm.deb"
 export CAPD_CNI_CHARTS_DEB_PATH CAPD_CNI_IMAGES_DEB_PATH CAPD_HELM_DEB_PATH
 if [ ! -f "${CAPD_CNI_CHARTS_DEB_PATH}" ] || [ ! -f "${CAPD_CNI_IMAGES_DEB_PATH}" ] || [ ! -f "${CAPD_HELM_DEB_PATH}" ]; then
@@ -323,9 +325,11 @@ log "PASS: nico-sim is up on :${SIM_PORT}"
 # the site spec, so no credential is on a command line.
 umask 077
 printf 'nico-simctl-token' >"${TOKEN_FILE}"
-printf 'nvke-e2e' >"${TENANT_PASSWORD_FILE}"
 umask 022
 export NVKECTL_NICO_CREDENTIALS="${TOKEN_FILE}"
+export NVKECTL_NODE_USER=nvke-e2e
+export NVKECTL_NODE_PASSWORD=nvke-e2e
+export NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT=1
 
 # Only the release pair the OS profile names, not every fixture release.
 mkdir -p "${RELEASES_DIR}"
@@ -357,17 +361,14 @@ infra:
         - ${NICO_SUBNET_ID}
       sshKeyGroupIDs:
         - ${NICO_SSH_KEY_GROUP_ID}
-      osProfile: ${OS_PROFILE}
+      release: ${OS_PROFILE}
       configProfile: ${CONFIG_PROFILE}
-    tenant:
-      user: nvke-e2e
-      passwordFile: ${TENANT_PASSWORD_FILE}
     releases: ${RELEASES_DIR}
 cluster:
 ${vip_line}
   k8sVersion: "1.34.8"
   cniName: ovn-kubernetes
-  cniVersion: "1.4.0"
+  cniVersion: "1.6.0"
   podCidr: "192.168.0.0/16"
   serviceCidr: "10.96.0.0/12"
   kubeletConfig:
@@ -375,9 +376,6 @@ ${vip_line}
 spire:
   trustDomain: ${SPIRE_TRUST_DOMAIN}
   externalAddress: ${GATEWAY}
-registry:
-  bootstrapRepo: "nvcr.io/org"
-  bootstrapChart: "controller-chart"
 EOF
 
 log "validating the site spec: nvkectl bootstrap site --dry-run"
@@ -474,12 +472,12 @@ KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_
 defer "rm -f ${bootstrap_kubeconfig}"
 bk() { kubectl --kubeconfig "${bootstrap_kubeconfig}" "$@"; }
 
-# What the site spec's infra.nico.tenant and infra.nico.releases asked for, which the
+# What the node login and infra.nico.releases asked for, which the
 # controller needed to create the first node at all.
 bk get clusterrelease "${OS_PROFILE}" >/dev/null 2>&1 ||
   fail "the ClusterRelease ${OS_PROFILE} infra.nico.releases names was not applied to the bootstrap cluster"
 bk -n "${CONTROLLER_NAMESPACE}" get secret "${TENANT_SECRET}" >/dev/null 2>&1 ||
-  fail "the tenant credentials Secret ${CONTROLLER_NAMESPACE}/${TENANT_SECRET} infra.nico.tenant names was not created"
+  fail "the tenant credentials Secret ${CONTROLLER_NAMESPACE}/${TENANT_SECRET} the node login asks for was not created"
 log "PASS: bootstrap site applied ${OS_PROFILE} and created the tenant credentials Secret"
 
 sim_nodes="$(nerdctl ps -q --filter "label=${SIM_LABEL}" | wc -l | tr -d ' ')"
