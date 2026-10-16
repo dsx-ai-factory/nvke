@@ -1001,61 +1001,13 @@ fi
 
 # ── Stage 4b: etcd data is encrypted, and the saved key is the nodes' key ──
 #
-# Two checks. The first reads a Secret straight out of etcd and looks at the
-# bytes: secretbox envelope present, plaintext absent. It is the only way to
-# tell "encryption configured" from "data encrypted". The second compares the
-# key `bootstrap site` saved with the one each control-plane node runs on, by
-# digest: the file is what an operator keeps, and it has to be the right key.
-# Neither check prints key material or ciphertext.
-log "checking that etcd data is encrypted at rest"
-[ -f "${ETCD_KEY_FILE}" ] || fail "bootstrap site did not write ${ETCD_KEY_FILE}"
-key_mode=$(stat -c '%a' "${ETCD_KEY_FILE}")
-[ "${key_mode}" = "600" ] || fail "${ETCD_KEY_FILE} has mode ${key_mode}, want 600"
-
-probe_name="nvkectl-e2e-encryption-probe"
-plaintext_marker="nvkectl-e2e-plaintext-marker-$(date +%s)"
-kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n default create secret generic "${probe_name}" \
-  --from-literal=probe="${plaintext_marker}" >/dev/null
-etcd_pod=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n kube-system get pods -l component=etcd \
-  -o jsonpath='{.items[0].metadata.name}')
-[ -n "${etcd_pod}" ] || fail "no etcd pod found in kube-system"
-# The raw value goes to a file, not a variable, so its bytes never reach the
-# log. Removed on exit like everything else this suite creates.
-raw_value=$(mktemp)
-defer rm -f "${raw_value}"
-kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n kube-system exec "${etcd_pod}" -c etcd -- \
-  etcdctl --endpoints=https://127.0.0.1:2379 \
-    --cacert=/etc/kubernetes/pki/etcd/ca.crt \
-    --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \
-    --key=/etc/kubernetes/pki/etcd/healthcheck-client.key \
-    get "/registry/secrets/default/${probe_name}" --print-value-only >"${raw_value}" 2>/dev/null ||
-  fail "could not read the probe Secret out of etcd"
-# Positive control first: an empty read would pass the plaintext check for the
-# wrong reason.
-[ -s "${raw_value}" ] || fail "the probe Secret's etcd value is empty"
-! grep -a -F -q "${plaintext_marker}" "${raw_value}" ||
-  fail "the probe Secret is stored in etcd as plaintext"
-grep -a -q 'k8s:enc:secretbox:v1:' "${raw_value}" ||
-  fail "the probe Secret's etcd value does not carry the secretbox envelope"
-rm -f "${raw_value}"
-kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n default delete secret "${probe_name}" >/dev/null
-log "PASS: Secrets are stored in etcd under the secretbox envelope"
-
-log "checking that the saved key is the key every control-plane node runs on"
-# The manifest is what `bootstrap site` wrote, so its shape is known: the key
-# is the base64 "active" field. Digests are compared, never values.
-saved_active=$(sed -n 's/.*"active": "\([^"]*\)".*/\1/p' "${ETCD_KEY_FILE}" | head -1)
-[ -n "${saved_active}" ] || fail "${ETCD_KEY_FILE} carries no active key"
-saved_digest=$(printf '%s' "${saved_active}" | base64 -d | sha256sum | cut -d' ' -f1)
+# The checks are in etcd-lib.sh, shared with run-nico.sh.
+check_etcd_encrypted_at_rest "${TENANT_KUBECONFIG}" "${ETCD_KEY_FILE}"
+control_plane_containers=()
 for ((i = 1; i <= NODE_COUNT; i++)); do
-  node="nvkectl-e2e-${NODE_PREFIX}${i}"
-  node_digest=$(nerdctl exec "${node}" \
-    awk '/secret:/ {printf "%s", $2; exit}' /etc/kubernetes/kube-api-encryption/encryption-config.yaml \
-    | sha256sum | cut -d' ' -f1)
-  [ "${node_digest}" = "${saved_digest}" ] ||
-    fail "${node} runs a different etcd encryption key than ${ETCD_KEY_FILE} holds"
+  control_plane_containers+=("nvkectl-e2e-${NODE_PREFIX}${i}")
 done
-log "PASS: the saved etcd encryption key matches all ${NODE_COUNT} control-plane nodes"
+check_saved_key_matches_nodes "${ETCD_KEY_FILE}" "${control_plane_containers[@]}"
 
 # hello_world_served is the stage 5 condition. whoami answers with the request
 # it received, so "Hostname:" in the body is the pod talking, not Traefik's own

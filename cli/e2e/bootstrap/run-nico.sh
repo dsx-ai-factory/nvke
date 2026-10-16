@@ -36,6 +36,18 @@
 #   - NVKECTL_CONTROLLER_PROFILES_IMAGE: the config profile a cluster request
 #     names. The controller deploys with an empty profiles directory.
 #
+# Beyond building the cluster the lane checks what the bootstrap promises around
+# it: the binary refuses a bad token file, an http endpoint without the opt-in
+# and a removed spec field before it touches anything; the site spec hands off to
+# the stack render; the etcd key it saves is the nodes' key; no credential reaches
+# the logs; a second bootstrap is refused while the first site answers; and the
+# documented release-first teardown releases every instance. That teardown
+# destroys the site, so it runs last.
+#
+# NVKECTL_E2E_NICO_DISABLE_MTLS=1 runs the same lane with `--disable-mtls`: no
+# SPIRE, so the TPM and allowlist checks give way to a check that none was
+# deployed.
+#
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit.
 
@@ -58,6 +70,10 @@ BOOTSTRAP_CONTROL_PLANE="${BOOTSTRAP_KIND_CLUSTER}-control-plane"
 # How many control-plane nodes CAPNICo is asked for. Odd, like the hosts list it
 # stands in for.
 NODE_COUNT="${NVKECTL_E2E_NICO_NODES:-1}"
+# 1 runs the lane without SPIFFE (`bootstrap site --disable-mtls`).
+DISABLE_MTLS="${NVKECTL_E2E_NICO_DISABLE_MTLS:-0}"
+mtls_flags=()
+if [ "${DISABLE_MTLS}" = 1 ]; then mtls_flags+=(--disable-mtls); fi
 NODE_NETWORK="${NVKECTL_E2E_NICO_NETWORK:-nvkectl-e2e-nico-nodes}"
 NODE_SUBNET="${NVKECTL_E2E_NICO_SUBNET:-172.28.0.0/24}"
 
@@ -91,6 +107,9 @@ NICO_INSTANCE_TYPE_ID="00000000-0000-0000-0000-000000000005"
 # file pair there; the config profile comes from the profiles image.
 OS_PROFILE="${NVKECTL_E2E_NICO_OS_PROFILE:-nvke-local-dev-kindest-arm64}"
 CONFIG_PROFILE="${NVKECTL_E2E_NICO_CONFIG_PROFILE:-dev-only-empty}"
+# The controller's API port on the bootstrap host, and the isolated nvkectl
+# config the teardown check writes its site entry to.
+CWE_PORT=30080
 
 SPIRE_TRUST_DOMAIN="${NVKECTL_E2E_SPIRE_TRUST_DOMAIN:-nvkectl-e2e.example.test}"
 # The controller's namespace in the bootstrap cluster, and the Secret
@@ -122,6 +141,14 @@ RELEASES_DIR="${SIM_STATE_DIR}/releases"
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
+# Throwaway credentials, distinct and unguessable, so finding one in a log means
+# it leaked and not that it matched a common word. nico-sim accepts any token.
+random_hex() { od -An -N8 -tx1 /dev/urandom | tr -d ' \n'; }
+NICO_TOKEN_VALUE="e2e-nico-token-$(random_hex)"
+NODE_USER_VALUE="nvke-e2e"
+NODE_PASSWORD_VALUE="e2e-node-password-$(random_hex)"
+DATABASE_PASSWORD_VALUE="e2e-db-password-$(random_hex)"
+
 log() { printf '[nvkectl-bootstrap-nico-e2e] %s\n' "$*"; }
 
 fail() {
@@ -139,6 +166,8 @@ defer() { DEFERRED+=("$*"); }
 
 # shellcheck source=bgp-lib.sh
 source "${SCRIPT_DIR}/bgp-lib.sh"
+# shellcheck source=etcd-lib.sh
+source "${SCRIPT_DIR}/etcd-lib.sh"
 
 collect_diagnostics() {
   log "collecting diagnostics"
@@ -324,11 +353,11 @@ log "PASS: nico-sim is up on :${SIM_PORT}"
 # nico-sim accepts any non-empty bearer token. The throwaway files are named by
 # the site spec, so no credential is on a command line.
 umask 077
-printf 'nico-simctl-token' >"${TOKEN_FILE}"
+printf '%s' "${NICO_TOKEN_VALUE}" >"${TOKEN_FILE}"
 umask 022
 export NVKECTL_NICO_CREDENTIALS="${TOKEN_FILE}"
-export NVKECTL_NODE_USER=nvke-e2e
-export NVKECTL_NODE_PASSWORD=nvke-e2e
+export NVKECTL_NODE_USER="${NODE_USER_VALUE}"
+export NVKECTL_NODE_PASSWORD="${NODE_PASSWORD_VALUE}"
 export NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT=1
 
 # Only the release pair the OS profile names, not every fixture release.
@@ -341,6 +370,13 @@ done
 vip_line=""
 if [ -n "${CONTROL_PLANE_VIP}" ]; then
   vip_line="  controlPlaneVIP: ${CONTROL_PLANE_VIP}"
+fi
+
+# The address nodes reach the bootstrap SPIRE server at; nothing reads it
+# without SPIRE.
+external_address_line=""
+if [ "${DISABLE_MTLS}" != 1 ]; then
+  external_address_line="  externalAddress: ${GATEWAY}"
 fi
 
 cat >"${RENDERED_SITESPEC}" <<EOF
@@ -375,11 +411,100 @@ ${vip_line}
     systemReservedMemory: "1Gi"
 spire:
   trustDomain: ${SPIRE_TRUST_DOMAIN}
-  externalAddress: ${GATEWAY}
+${external_address_line}
 EOF
 
 log "validating the site spec: nvkectl bootstrap site --dry-run"
-"${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --dry-run >/dev/null || fail "the nico site spec did not validate"
+"${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --dry-run "${mtls_flags[@]+"${mtls_flags[@]}"}" >/dev/null ||
+  fail "the nico site spec did not validate"
+
+# ── Stage 3a: what the binary refuses before it touches anything ───────────
+#
+# Each case breaks one input of the spec that just passed and runs the same
+# dry run (or `validate sitespec --bootstrap-only`), which stands nothing up. A
+# dry run that stopped refusing would otherwise surface as a 25 minute bootstrap
+# that fails late, or worse, one that sends a token over http.
+
+# expect_refusal WHAT NEEDLE CMD...: CMD exits non-zero and its output holds NEEDLE.
+expect_refusal() {
+  local what="$1" needle="$2" out rc=0
+  shift 2
+  out="$("$@" 2>&1)" || rc=$?
+  [ "${rc}" -ne 0 ] || fail "${what}: the command accepted it, expected a refusal" "${out}"
+  grep -qF -- "${needle}" <<<"${out}" || fail "${what}: the refusal does not say ${needle}" "${out}"
+}
+dry_run() { "${NVKECTL}" bootstrap site --dry-run "${mtls_flags[@]+"${mtls_flags[@]}"}" -f "$@"; }
+
+http_endpoint_refusal="NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT"
+expect_refusal "an http NICo endpoint without the opt-in" "${http_endpoint_refusal}" \
+  env -u NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT "${NVKECTL}" bootstrap site --dry-run "${mtls_flags[@]+"${mtls_flags[@]}"}" -f "${RENDERED_SITESPEC}"
+expect_refusal "an http NICo endpoint without the opt-in, validate sitespec" "${http_endpoint_refusal}" \
+  env -u NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT "${NVKECTL}" validate sitespec --bootstrap-only "${mtls_flags[@]+"${mtls_flags[@]}"}" -f "${RENDERED_SITESPEC}"
+
+expect_refusal "no NICo token file named" "NVKECTL_NICO_CREDENTIALS must name" \
+  env NVKECTL_NICO_CREDENTIALS= "${NVKECTL}" bootstrap site --dry-run "${mtls_flags[@]+"${mtls_flags[@]}"}" -f "${RENDERED_SITESPEC}"
+expect_refusal "a NICo token file that does not exist" "NVKECTL_NICO_CREDENTIALS:" \
+  env NVKECTL_NICO_CREDENTIALS="${SIM_STATE_DIR}/no-such.token" "${NVKECTL}" bootstrap site --dry-run "${mtls_flags[@]+"${mtls_flags[@]}"}" -f "${RENDERED_SITESPEC}"
+: >"${SIM_STATE_DIR}/empty.token"
+expect_refusal "an empty NICo token file" "is empty" \
+  env NVKECTL_NICO_CREDENTIALS="${SIM_STATE_DIR}/empty.token" "${NVKECTL}" bootstrap site --dry-run "${mtls_flags[@]+"${mtls_flags[@]}"}" -f "${RENDERED_SITESPEC}"
+printf 'clientID: example\nclientSecret: example\n' >"${SIM_STATE_DIR}/client-credentials.token"
+expect_refusal "a client-credentials NICo token file" "client-credentials form is not supported" \
+  env NVKECTL_NICO_CREDENTIALS="${SIM_STATE_DIR}/client-credentials.token" "${NVKECTL}" bootstrap site --dry-run "${mtls_flags[@]+"${mtls_flags[@]}"}" -f "${RENDERED_SITESPEC}"
+
+expect_refusal "no node login password" "NVKECTL_NODE_PASSWORD is not set" \
+  env -u NVKECTL_NODE_PASSWORD "${NVKECTL}" bootstrap site --dry-run "${mtls_flags[@]+"${mtls_flags[@]}"}" -f "${RENDERED_SITESPEC}"
+
+# A node login in the site spec is a credential in a file meant to be committed.
+sed 's#^    releases: #    tenant:\n      user: example\n    releases: #' "${RENDERED_SITESPEC}" >"${SIM_STATE_DIR}/spec-tenant.yaml"
+grep -q '^    tenant:' "${SIM_STATE_DIR}/spec-tenant.yaml" || fail "the test spec did not gain an infra.nico.tenant block"
+expect_refusal "infra.nico.tenant in the site spec" "infra.nico.tenant is no longer accepted" dry_run "${SIM_STATE_DIR}/spec-tenant.yaml"
+
+sed "s#^    releases: .*#    releases: ${SIM_STATE_DIR}/no-such-releases#" "${RENDERED_SITESPEC}" >"${SIM_STATE_DIR}/spec-releases.yaml"
+expect_refusal "an infra.nico.releases path that does not exist" "infra.nico.releases" dry_run "${SIM_STATE_DIR}/spec-releases.yaml"
+
+if [ "${DISABLE_MTLS}" != 1 ]; then
+  grep -v '^  externalAddress:' "${RENDERED_SITESPEC}" >"${SIM_STATE_DIR}/spec-no-address.yaml"
+  expect_refusal "no spire.externalAddress with mTLS" "spire.externalAddress" dry_run "${SIM_STATE_DIR}/spec-no-address.yaml"
+fi
+log "PASS: the binary refuses a bad token file, an http endpoint without the opt-in, a spec-borne node login and bad paths"
+
+# ── Stage 3b: the site spec hands off to the stack install ─────────────────
+#
+# The controller stack install reads the same site spec the bootstrap did, plus
+# a stack config and the credentials from the environment. Render it, without
+# installing, and check what the render carried across: the site's name, VIP
+# and trust domain, and the credentials the install creates its Secrets from.
+STACK_CONFIG_FILE="${SIM_STATE_DIR}/stack-config.json"
+cat >"${STACK_CONFIG_FILE}" <<EOF
+{
+  "nico": {"endpoint": "http://${GATEWAY}:${SIM_PORT}", "orgID": "${NICO_ORG_ID}", "apiName": "forge"},
+  "images": {"controller": "registry.example.com/nke/controller:e2e", "profiles": "registry.example.com/nke/profiles:e2e"},
+  "mirror": ""
+}
+EOF
+stack_env=(NVKECTL_NICO_TOKEN="${NICO_TOKEN_VALUE}" NVKECTL_NODE_USER="${NODE_USER_VALUE}"
+  NVKECTL_NODE_PASSWORD="${NODE_PASSWORD_VALUE}" NVKECTL_DATABASE_PASSWORD="${DATABASE_PASSWORD_VALUE}")
+stack_org="$(env "${stack_env[@]}" "${NVKECTL}" inspect stack-config "${STACK_CONFIG_FILE}" | sed -n "s/^STACK_NICO_ORG_ID='\(.*\)'$/\1/p")"
+[ "${stack_org}" = "${NICO_ORG_ID}" ] || fail "inspect stack-config read org ${stack_org:-<none>}, expected ${NICO_ORG_ID}"
+expect_refusal "a stack config without the credentials in the environment" "NVKECTL_DATABASE_PASSWORD" \
+  env -u NVKECTL_DATABASE_PASSWORD "${NVKECTL}" inspect stack-config "${STACK_CONFIG_FILE}"
+
+STACK_RENDER_DIR="${CLI_DIR}/.local/nico-stack-render"
+rm -rf "${STACK_RENDER_DIR}"
+defer rm -rf "${STACK_RENDER_DIR}"
+env "${stack_env[@]}" "${NVKECTL}" render deploy-path --deploy-path "${REPO_ROOT}/deploy/nico" \
+  --sitespec "${RENDERED_SITESPEC}" --stack-config "${STACK_CONFIG_FILE}" --arch "linux/$(go env GOARCH)" \
+  --out "${STACK_RENDER_DIR}" >/dev/null 2>&1 || fail "render deploy-path did not accept the nico site spec"
+for want in "SITE_NAME=${E2E_CLUSTER_NAME}" "SITE_VIP=${CONTROL_PLANE_VIP}" "SITE_TRUST_DOMAIN=${SPIRE_TRUST_DOMAIN}"; do
+  grep -qxF -- "${want}" "${STACK_RENDER_DIR}/site.env" ||
+    fail "the stack render did not carry ${want} across from the site spec" "$(cat "${STACK_RENDER_DIR}/site.env")"
+done
+grep -rqF -- "${NODE_PASSWORD_VALUE}" "${STACK_RENDER_DIR}/nvke-base-config" ||
+  fail "the stack render did not put the node login password into its tenant credentials"
+grep -rqF -- "${NICO_TOKEN_VALUE}" "${STACK_RENDER_DIR}/nvke-base-config" ||
+  fail "the stack render did not put the NICo token into its NICo credentials"
+log "PASS: the nico site spec renders for the stack install, carrying its site name, VIP, trust domain and credentials"
 
 # See run.sh for why this runs in the background: the networks have to be
 # bridged *during* the run, once the Kind cluster exists.
@@ -395,7 +520,7 @@ log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cl
   "(NVKECTL_CONTROLLER_IMAGE=${NVKECTL_CONTROLLER_IMAGE}, NVKECTL_CONTROLLER_PROFILES_IMAGE=${NVKECTL_CONTROLLER_PROFILES_IMAGE})"
 defer teardown_bootstrap_cluster
 setsid "${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" \
-  --keep-bootstrap-cluster \
+  --keep-bootstrap-cluster "${mtls_flags[@]+"${mtls_flags[@]}"}" \
   --timeout 25m --kubeconfig-out "${TENANT_KUBECONFIG}" \
   --encryption-key-out "${ETCD_KEY_FILE}" >"${BOOTSTRAP_LOG}" 2>&1 &
 bootstrap_pid=$!
@@ -499,41 +624,49 @@ if ! wait_until "${NVKECTL_E2E_NODE_READY_TIMEOUT_SECONDS:-600}" 5 nodes_ready; 
 fi
 log "PASS: all ${NODE_COUNT} node(s) are Ready in the cluster nvkectl built"
 
-# The address CWE wrote into each node's userdata is the one nodes can reach
-# before any cluster exists: the host on the node network, on the NodePort the
-# bootstrap publishes SPIRE on, not the in-cluster name.
-for node in $(nerdctl ps -q --filter "label=${SIM_LABEL}"); do
-  agent_conf="$(nerdctl exec "${node}" cat /etc/spire-agent/agent.conf 2>/dev/null)" ||
-    fail "could not read /etc/spire-agent/agent.conf on node ${node}"
-  grep -q "${GATEWAY}" <<<"${agent_conf}" ||
-    fail "node ${node}'s spire-agent is not configured for ${GATEWAY} (spire.externalAddress)" "${agent_conf}"
-  grep -q "30081" <<<"${agent_conf}" ||
-    fail "node ${node}'s spire-agent is not configured for the published SPIRE NodePort 30081" "${agent_conf}"
-done
-log "PASS: each node's spire-agent points at spire.externalAddress ${GATEWAY}, on NodePort 30081"
+if [ "${DISABLE_MTLS}" != 1 ]; then
+  # The address CWE wrote into each node's userdata is the one nodes can reach
+  # before any cluster exists: the host on the node network, on the NodePort the
+  # bootstrap publishes SPIRE on, not the in-cluster name.
+  for node in $(nerdctl ps -q --filter "label=${SIM_LABEL}"); do
+    agent_conf="$(nerdctl exec "${node}" cat /etc/spire-agent/agent.conf 2>/dev/null)" ||
+      fail "could not read /etc/spire-agent/agent.conf on node ${node}"
+    grep -q "${GATEWAY}" <<<"${agent_conf}" ||
+      fail "node ${node}'s spire-agent is not configured for ${GATEWAY} (spire.externalAddress)" "${agent_conf}"
+    grep -q "30081" <<<"${agent_conf}" ||
+      fail "node ${node}'s spire-agent is not configured for the published SPIRE NodePort 30081" "${agent_conf}"
+  done
+  log "PASS: each node's spire-agent points at spire.externalAddress ${GATEWAY}, on NodePort 30081"
 
-# The allowlist is the point of the dynamic path: nothing in the site spec
-# lists a thumbprint, so every hash SPIRE admits came from a NicoMachine.
-hashes="$(bk get nicomachines.infrastructure.cluster.x-k8s.io -A \
-  -o 'jsonpath={range .items[*]}{.status.tpmEkPubHash}{"\n"}{end}' | sed '/^$/d' | sort -u)"
-hash_count="$(printf '%s\n' "${hashes}" | sed '/^$/d' | wc -l | tr -d ' ')"
-[ "${hash_count}" -eq "${NODE_COUNT}" ] ||
-  fail "${hash_count} NicoMachine(s) report a TPM EK hash, expected ${NODE_COUNT}"
-allowlist="$(bk -n spire-server get configmap tpm-pubhashes -o 'jsonpath={.data}' 2>/dev/null)"
-while read -r h; do
-  [ -z "${h}" ] && continue
-  grep -q "${h}" <<<"${allowlist}" || fail "the tpm-pubhashes allowlist is missing ${h}, which a NicoMachine reported"
-done <<<"${hashes}"
-log "PASS: CWE filled the SPIRE allowlist with the ${hash_count} EK hash(es) the NicoMachine(s) reported"
+  # The allowlist is the point of the dynamic path: nothing in the site spec
+  # lists a thumbprint, so every hash SPIRE admits came from a NicoMachine.
+  hashes="$(bk get nicomachines.infrastructure.cluster.x-k8s.io -A \
+    -o 'jsonpath={range .items[*]}{.status.tpmEkPubHash}{"\n"}{end}' | sed '/^$/d' | sort -u)"
+  hash_count="$(printf '%s\n' "${hashes}" | sed '/^$/d' | wc -l | tr -d ' ')"
+  [ "${hash_count}" -eq "${NODE_COUNT}" ] ||
+    fail "${hash_count} NicoMachine(s) report a TPM EK hash, expected ${NODE_COUNT}"
+  allowlist="$(bk -n spire-server get configmap tpm-pubhashes -o 'jsonpath={.data}' 2>/dev/null)"
+  while read -r h; do
+    [ -z "${h}" ] && continue
+    grep -q "${h}" <<<"${allowlist}" || fail "the tpm-pubhashes allowlist is missing ${h}, which a NicoMachine reported"
+  done <<<"${hashes}"
+  log "PASS: CWE filled the SPIRE allowlist with the ${hash_count} EK hash(es) the NicoMachine(s) reported"
 
-agents="$(bk -n spire-server exec spire-server-0 -c spire-server -- \
-  /opt/spire/bin/spire-server agent list 2>/dev/null)"
-while read -r h; do
-  [ -z "${h}" ] && continue
-  grep -q "spiffe://${SPIRE_TRUST_DOMAIN}/spire/agent/tpm/${h}" <<<"${agents}" ||
-    fail "no SPIRE agent attested by TPM with hash ${h}" "${agents}"
-done <<<"${hashes}"
-log "PASS: every node's spire-agent attested to the bootstrap SPIRE server over TPM"
+  agents="$(bk -n spire-server exec spire-server-0 -c spire-server -- \
+    /opt/spire/bin/spire-server agent list 2>/dev/null)"
+  while read -r h; do
+    [ -z "${h}" ] && continue
+    grep -q "spiffe://${SPIRE_TRUST_DOMAIN}/spire/agent/tpm/${h}" <<<"${agents}" ||
+      fail "no SPIRE agent attested by TPM with hash ${h}" "${agents}"
+  done <<<"${hashes}"
+  log "PASS: every node's spire-agent attested to the bootstrap SPIRE server over TPM"
+else
+  # Without mTLS there is no SPIRE to attest to: none may have been deployed.
+  if bk get namespace spire-server >/dev/null 2>&1; then
+    fail "the bootstrap deployed SPIRE (namespace spire-server) with --disable-mtls"
+  fi
+  log "PASS: --disable-mtls deployed no SPIRE; the nodes joined without attestation"
+fi
 
 if [ -n "${CONTROL_PLANE_VIP}" ]; then
   cp_node_ips="$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes \
@@ -567,3 +700,92 @@ if [ -n "${CONTROL_PLANE_VIP}" ]; then
 fi
 
 log "PASS: the nico lane built a site cluster from machines CAPNICo allocated"
+
+# ── Stage 5: etcd data is encrypted, and the saved key is the nodes' key ───
+
+mapfile -t cp_containers < <(nerdctl ps -q --filter "label=${SIM_LABEL}")
+check_etcd_encrypted_at_rest "${TENANT_KUBECONFIG}" "${ETCD_KEY_FILE}"
+check_saved_key_matches_nodes "${ETCD_KEY_FILE}" "${cp_containers[@]}"
+
+# ── Stage 6: the credentials went where they belong, and nowhere else ──────
+#
+# The Secrets hold what the environment held; and neither value appears in what
+# nvkectl printed or in what the controller and CAPNICo logged, which is where a
+# credential that took the wrong path would show.
+
+secret_value() { bk -n "$1" get secret "$2" -o "jsonpath={.data.$3}" | base64 -d; }
+[ "$(secret_value capnico-system nico-credentials token)" = "${NICO_TOKEN_VALUE}" ] ||
+  fail "the capnico-system/nico-credentials Secret does not hold the token the environment named"
+[ "$(secret_value "${CONTROLLER_NAMESPACE}" "${TENANT_SECRET}" user)" = "${NODE_USER_VALUE}" ] ||
+  fail "the ${TENANT_SECRET} Secret does not hold the node user the environment named"
+[ "$(secret_value "${CONTROLLER_NAMESPACE}" "${TENANT_SECRET}" password)" = "${NODE_PASSWORD_VALUE}" ] ||
+  fail "the ${TENANT_SECRET} Secret does not hold the node password the environment named"
+log "PASS: the NICo token and node login Secrets hold the values the environment named"
+
+pod_logs="${SIM_STATE_DIR}/pod-logs.txt"
+: >"${pod_logs}"
+for ns in "${CONTROLLER_NAMESPACE}" capnico-system; do
+  for pod in $(bk -n "${ns}" get pods -o name); do
+    bk -n "${ns}" logs "${pod}" --all-containers --tail=-1 >>"${pod_logs}" 2>&1 || true
+  done
+done
+[ -s "${pod_logs}" ] || fail "collected no controller or CAPNICo logs to check for credentials"
+for leak_file in "${BOOTSTRAP_LOG}" "${pod_logs}"; do
+  for secret in "${NICO_TOKEN_VALUE}" "${NODE_PASSWORD_VALUE}"; do
+    if grep -qF -- "${secret}" "${leak_file}"; then
+      fail "a credential reached $(basename "${leak_file}")"
+    fi
+  done
+done
+log "PASS: neither the NICo token nor the node password is in what nvkectl, the controller or CAPNICo logged"
+
+# ── Stage 7: a second bootstrap is refused while the first site answers ────
+#
+# A re-run allocates another set of NICo machines and a second control plane
+# advertising the same VIP, so the command refuses twice over: while the first
+# bootstrap cluster is still there, and, under another name that would not
+# collide, because the VIP already answers. Neither may stand anything up.
+
+sim_node_count() { nerdctl ps -q --filter "label=${SIM_LABEL}" | wc -l | tr -d ' '; }
+nodes_before="$(sim_node_count)"
+rerun_args=(bootstrap site -f "${RENDERED_SITESPEC}" "${mtls_flags[@]+"${mtls_flags[@]}"}" --timeout 2m
+  --kubeconfig-out "${SIM_STATE_DIR}/rerun.kubeconfig" --encryption-key-out "${SIM_STATE_DIR}/rerun-key.json")
+expect_refusal "a re-run with the first bootstrap cluster still there" "do not re-run" "${NVKECTL}" "${rerun_args[@]}"
+expect_refusal "a re-run over a site whose VIP answers" "another set of NICo machines" \
+  env NVKECTL_BOOTSTRAP_CLUSTER_NAME=nvkectl-e2e-rerun "${NVKECTL}" "${rerun_args[@]}"
+if KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get clusters 2>/dev/null | grep -qx nvkectl-e2e-rerun; then
+  fail "the refused re-run created a bootstrap cluster"
+fi
+[ ! -e "${SIM_STATE_DIR}/rerun-key.json" ] && [ ! -e "${SIM_STATE_DIR}/rerun.kubeconfig" ] ||
+  fail "the refused re-run wrote its outputs"
+[ "$(sim_node_count)" = "${nodes_before}" ] ||
+  fail "the refused re-run changed the number of NICo machines: ${nodes_before} before, $(sim_node_count) after"
+log "PASS: a second bootstrap is refused, and allocates no machines"
+
+# ── Stage 8: the documented release-first teardown releases every instance ─
+#
+# Deleting the bootstrap Kind cluster runs no finalizers and would leave the
+# instances allocated. The recovery docs say to point nvkectl at the bootstrap
+# cluster's controller and delete the site cluster through it first. Follow
+# them, in an nvkectl config of this run's own, then check the machines are
+# released and the site is gone. This destroys the site, so it is last.
+
+export XDG_CONFIG_HOME="${SIM_STATE_DIR}/xdg"
+"${NVKECTL}" config set-site --name "${BOOTSTRAP_KIND_CLUSTER}" --url "http://127.0.0.1:${CWE_PORT}" \
+  --kubeconfig "${bootstrap_kubeconfig}" >/dev/null || fail "nvkectl config set-site did not accept the bootstrap controller"
+site_listed() { "${NVKECTL}" --site "${BOOTSTRAP_KIND_CLUSTER}" get clusters 2>/dev/null | grep -qw -- "${E2E_CLUSTER_NAME}"; }
+site_listed || fail "the bootstrap controller does not list ${E2E_CLUSTER_NAME} before it is deleted"
+"${NVKECTL}" --site "${BOOTSTRAP_KIND_CLUSTER}" delete cluster "${E2E_CLUSTER_NAME}" >/dev/null ||
+  fail "nvkectl delete cluster ${E2E_CLUSTER_NAME} failed against the bootstrap controller"
+site_unlisted() { ! site_listed; }
+wait_until "${NVKECTL_E2E_RELEASE_TIMEOUT_SECONDS:-900}" 5 site_unlisted ||
+  fail "the bootstrap controller still lists ${E2E_CLUSTER_NAME} after delete cluster"
+nodes_released() { [ "$(sim_node_count)" = 0 ]; }
+wait_until "${NVKECTL_E2E_RELEASE_TIMEOUT_SECONDS:-900}" 5 nodes_released ||
+  fail "delete cluster left $(sim_node_count) NICo machine(s) allocated"
+log "PASS: the release-first teardown deleted the site and released every NICo machine"
+site_unreachable() { ! vip_readyz; }
+if [ -n "${CONTROL_PLANE_VIP}" ]; then
+  wait_until 120 3 site_unreachable || fail "the API server still answers through the VIP after the site was deleted"
+  log "PASS: the VIP no longer answers"
+fi
