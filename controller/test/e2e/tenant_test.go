@@ -1633,7 +1633,11 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nvke.Cluste
 		KubernetesVersion: kubernetesVersion,
 		// OVN, matching the nvke-cni-ovn-images package the pre-kubeadm
 		// commands install. Calico here would install one CNI and run another.
-		CNIPlugin:    cmp.Or(shape.cniPlugin, CNIPluginOVN),
+		CNIPlugin: cmp.Or(shape.cniPlugin, CNIPluginOVN),
+		// The same stream those commands installed. Left unset, the controller
+		// would fill in its own default and the agent would check for the
+		// stream a node image bakes, which is not what this lane installed.
+		CNIVersion:   versions[versionCNIOVN],
 		OrgID:        forgeEnv.Org.ID,
 		SiteID:       site.ID,
 		VpcID:        site.VpcID,

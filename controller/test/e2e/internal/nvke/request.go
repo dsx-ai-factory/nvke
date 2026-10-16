@@ -106,6 +106,7 @@ type ClusterSpec struct {
 	Backend            Backend
 	KubernetesVersion  string              // e.g. "1.34.2"
 	CNIPlugin          string              // empty defaults to ovn-kubernetes; "calico" is an explicit override
+	CNIVersion         string              // empty lets the controller default decide; a lane that installs a different stream names it
 	CAPDNodeImage      string              // CAPD only: capd customImage, e.g. "cwe-capd-kindest-node:local"
 	CAPDFailureDomains []CAPDFailureDomain // CAPD only: domains advertised by DockerCluster
 	ControlPlane       ControlPlane
@@ -223,6 +224,20 @@ func requestedCNIPlugin(plugin string) api.CreateClusterRequestCniPlugin {
 	return api.CreateClusterRequestCniPlugin(plugin)
 }
 
+// requestedCNIVersion returns version for the request, or nil when it is empty
+// so the controller supplies its own default.
+//
+// A lane that installs the CNI itself has to name what it installed. The agent
+// resolves an empty version to its own baked default, which is the stream the
+// node image carries, so leaving this unset on a lane that installed a
+// different one fails the charts presence check rather than the install.
+func requestedCNIVersion(version string) *string {
+	if version == "" {
+		return nil
+	}
+	return &version
+}
+
 // buildNicoRequest builds a CAPI request whose infrastructure manifests are
 // consumed by CAPNico. The fixed mock identifiers are supplied by the caller
 // through spec so this builder remains independent of a particular test seed.
@@ -301,6 +316,7 @@ func buildCAPNicoRequest(spec ClusterSpec, payloads func(controlPlane bool) Node
 		Name:                          name,
 		ControlPlaneKubernetesVersion: spec.KubernetesVersion,
 		CniPlugin:                     requestedCNIPlugin(spec.CNIPlugin),
+		CniVersion:                    requestedCNIVersion(spec.CNIVersion),
 		EtcdEncrypted:                 spec.ControlPlane.EtcdEncrypted,
 		ControlPlaneVIP:               spec.ControlPlane.ControlPlaneVIP,
 		Infra: &api.InfraClusterProvider{
@@ -466,6 +482,7 @@ func buildCAPDRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	req.Name = timestampedName(spec.Name)
 	req.ControlPlaneKubernetesVersion = spec.KubernetesVersion
 	req.CniPlugin = requestedCNIPlugin(spec.CNIPlugin)
+	req.CniVersion = requestedCNIVersion(spec.CNIVersion)
 	req.EtcdEncrypted = spec.ControlPlane.EtcdEncrypted
 	req.ControlPlaneVIP = spec.ControlPlane.ControlPlaneVIP
 	applyNetworkConfig(&req, spec.Network)
@@ -590,6 +607,7 @@ func buildNicoVMSRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		Name:                          timestampedName(spec.Name),
 		ControlPlaneKubernetesVersion: spec.KubernetesVersion,
 		CniPlugin:                     requestedCNIPlugin(spec.CNIPlugin),
+		CniVersion:                    requestedCNIVersion(spec.CNIVersion),
 		EtcdEncrypted:                 spec.ControlPlane.EtcdEncrypted,
 		ControlPlaneVIP:               spec.ControlPlane.ControlPlaneVIP,
 		TeleportEnabled:               &teleportDisabled,
