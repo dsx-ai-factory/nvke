@@ -33,8 +33,10 @@ const (
 	annotationReboot                  = "nvke.nvidia.com/reboot"
 
 	// The controller writes the reboot request under both domains while sites
-	// move over, and an older build wrote only this one.
-	legacyAnnotationReboot         = "nke.nvidia.com/reboot"
+	// move over, and an older build wrote only these. Read, never written.
+	legacyAnnotationReboot                  = "nke.nvidia.com/reboot"
+	legacyAnnotationRebootCompleteTimestamp = "nke.nvidia.com/reboot-complete-timestamp"
+
 	reasonRebootComplete           = "RebootComplete"
 	fieldOwnerCapdRebootController = "capd-reboot-controller"
 	defaultSleepDuration           = 10 * time.Second
@@ -171,6 +173,12 @@ func rebootAlreadySignaled(machine *clusterv1.Machine, rebootAnnotation string) 
 	}
 
 	raw := machine.Annotations[annotationRebootCompleteTimestamp]
+	if raw == "" {
+		// A reboot this controller completed before the nvke.nvidia.com rename
+		// signaled under the legacy key. Ignoring it would replay the
+		// simulated reboot and overwrite the completion already recorded.
+		raw = machine.Annotations[legacyAnnotationRebootCompleteTimestamp]
+	}
 	if raw == "" {
 		return false
 	}

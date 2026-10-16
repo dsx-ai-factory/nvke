@@ -49,34 +49,49 @@ func describeConditionChanges(previous, current db.NodeConditions) []string {
 }
 
 func fromKubeCondition(existing db.Condition, kubeNode *corev1.Node, conditionType string) db.Condition {
-	return matchKubeCondition(existing, kubeNode, func(t string) bool { return t == conditionType }, conditionType)
+	if kubeNode == nil {
+		return updatedCondition(existing, db.ConditionStatusUnknown, "Node data not available")
+	}
+	if condition, found := lookupKubeCondition(kubeNode, conditionType); found {
+		return condition
+	}
+	return updatedCondition(existing, db.ConditionStatusUnknown, fmt.Sprintf("Condition %s not found on node", conditionType))
 }
 
 // fromKubeConditionKey is fromKubeCondition for a condition this controller
 // owns, so a node still carrying the condition under the legacy domain is read
 // rather than reported as missing.
+//
+// The domains are tried in order rather than matched together, because a node
+// can carry both: a stale legacy condition left by an earlier build and the
+// current one. Matching either would take whichever happens to come first in
+// Status.Conditions, so a legacy False could mask a current True and lose the
+// request it records. Key.All() puts the current domain first.
 func fromKubeConditionKey(existing db.Condition, kubeNode *corev1.Node, key keys.Key) db.Condition {
-	return matchKubeCondition(existing, kubeNode, key.Matches, key.String())
-}
-
-func matchKubeCondition(existing db.Condition, kubeNode *corev1.Node, matches func(string) bool, name string) db.Condition {
 	if kubeNode == nil {
 		return updatedCondition(existing, db.ConditionStatusUnknown, "Node data not available")
 	}
+	for _, conditionType := range key.All() {
+		if condition, found := lookupKubeCondition(kubeNode, conditionType); found {
+			return condition
+		}
+	}
+	return updatedCondition(existing, db.ConditionStatusUnknown, fmt.Sprintf("Condition %s not found on node", key))
+}
 
+func lookupKubeCondition(kubeNode *corev1.Node, conditionType string) (db.Condition, bool) {
 	for _, condition := range kubeNode.Status.Conditions {
-		if matches(string(condition.Type)) {
+		if string(condition.Type) == conditionType {
 			return db.Condition{
 				Status:  dbStatusFromKubeStatus(condition.Status),
 				Message: condition.Message,
 				// metav1.Time decodes into the local zone, so normalize to keep
 				// what is persisted to JSONB in the same shape it is read back in.
 				LastTransitionTime: condition.LastTransitionTime.Time.UTC(),
-			}
+			}, true
 		}
 	}
-
-	return updatedCondition(existing, db.ConditionStatusUnknown, fmt.Sprintf("Condition %s not found on node", name))
+	return db.Condition{}, false
 }
 
 func kubernetesUnschedulableCondition(existing db.Condition, kubeNode *corev1.Node) db.Condition {

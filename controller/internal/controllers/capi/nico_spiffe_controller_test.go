@@ -143,7 +143,7 @@ func TestUnit_NicoSpiffeControllerReconcile(t *testing.T) {
 			gotMachine := &clusterv1.Machine{}
 			require.NoError(t, controller.k8sClient.Get(t.Context(), client.ObjectKeyFromObject(machine), gotMachine))
 			if params.wantPath == "" {
-				require.NotContains(t, gotMachine.Annotations, keys.MachineSpireAgentSpiffeIDPath)
+				require.NotContains(t, gotMachine.Annotations, keys.MachineSpireAgentSpiffeIDPath.String())
 				return
 			}
 			require.Equal(t, params.wantPath, gotMachine.Annotations[keys.MachineSpireAgentSpiffeIDPath.String()])
