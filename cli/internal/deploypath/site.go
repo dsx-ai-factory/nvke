@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -477,14 +478,66 @@ const (
 	spireCASecret = "spire-upstream-ca"
 )
 
-// siteSecret is one Secret the site-credentials item holds.
+// connectionStringKey is the key the controller reads its database URL from.
+const connectionStringKey = "database-connection-string"
+
+// siteSecret is one Secret the site-credentials item holds, or with external
+// credentials one the cluster has to hold: with external credentials the
+// values are empty, except the connection string's, which is its shape.
 type siteSecret struct {
 	namespace, name string
 	data            map[string]string
 }
 
+// mergeSecrets joins the Secrets that share a namespace and a name, in the
+// order each first appears, with the union of their keys. A Secret is one
+// document: server-side apply gives a later document for the same Secret
+// ownership of only its own keys and drops the rest.
+func mergeSecrets(secrets []siteSecret) ([]siteSecret, error) {
+	var merged []siteSecret
+	index := map[string]int{}
+	for _, sec := range secrets {
+		id := sec.namespace + "/" + sec.name
+		i, seen := index[id]
+		if !seen {
+			index[id] = len(merged)
+			merged = append(merged, siteSecret{sec.namespace, sec.name, maps.Clone(sec.data)})
+			continue
+		}
+		for k, v := range sec.data {
+			if have, ok := merged[i].data[k]; ok && have != v {
+				return nil, fmt.Errorf("the items that share the Secret %s give its key %s different values", id, k)
+			}
+			merged[i].data[k] = v
+		}
+	}
+	return merged, nil
+}
+
+// expectedLine describes a Secret the cluster has to hold: namespace, name,
+// keys and, for the connection string, the shape of its value.
+func (s siteSecret) expectedLine() string {
+	keys := make([]string, 0, len(s.data))
+	for k := range s.data {
+		if k != connectionStringKey {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	shape, hasURL := s.data[connectionStringKey]
+	if hasURL {
+		keys = append(keys, connectionStringKey)
+	}
+	line := "Secret " + s.namespace + "/" + s.name + " with keys " + strings.Join(keys, ", ")
+	if hasURL {
+		line += ", the URL " + shape + " with the password URL-escaped"
+	}
+	return line
+}
+
 // siteCredentials writes the site-credentials item, or with external
-// credentials lists the Secrets it would hold.
+// credentials lists the Secrets it would hold. The items that read the same
+// Secret name in one namespace share one Secret holding every key they read.
 func (r *renderer) siteCredentials(password string, hasCA bool, caCert, caKey []byte) {
 	for _, item := range r.items {
 		if item.Name == credentialsItem {
@@ -500,33 +553,32 @@ func (r *renderer) siteCredentials(password string, hasCA bool, caCert, caKey []
 		}
 		namespaces[item] = ns
 	}
-	if r.opts.Credentials == CredentialsExternal {
-		// For the controller, the shape of the connection string too.
-		shape, ok := r.controllerConnectionString("")
-		if !ok {
-			return
-		}
-		r.out.Expected = append(r.out.Expected,
-			"Secret "+namespaces["postgresql"]+"/"+databaseSecret+" with keys password, postgres-password",
-			"Secret "+namespaces["temporal"]+"/"+databaseSecret+" with keys password",
-			"Secret "+namespaces["controller"]+"/"+databaseSecret+" with keys database-connection-string, the URL "+shape+" with the password URL-escaped")
-		if hasCA {
-			r.out.Expected = append(r.out.Expected, "Secret "+namespaces["spire"]+"/"+spireCASecret+" with keys bundle.crt, tls.crt, tls.key")
-		}
-		return
-	}
+	// With external credentials the password is empty and the controller's
+	// value is the shape of the connection string.
 	conn, ok := r.controllerConnectionString(password)
 	if !ok {
 		return
 	}
+	external := r.opts.Credentials == CredentialsExternal
 	secrets := []siteSecret{
 		{namespaces["postgresql"], databaseSecret, map[string]string{"postgres-password": password, "password": password}},
 		{namespaces["temporal"], databaseSecret, map[string]string{"password": password}},
-		{namespaces["controller"], databaseSecret, map[string]string{"database-connection-string": conn}},
+		{namespaces["controller"], databaseSecret, map[string]string{connectionStringKey: conn}},
 	}
-	if caCert != nil && caKey != nil {
+	if hasCA && (external || caCert != nil && caKey != nil) {
 		// A self-signed root is its own bundle.
 		secrets = append(secrets, siteSecret{namespaces["spire"], spireCASecret, map[string]string{"tls.crt": string(caCert), "tls.key": string(caKey), "bundle.crt": string(caCert)}})
+	}
+	secrets, err := mergeSecrets(secrets)
+	if err != nil {
+		r.problem("%s: %v", credentialsItem, err)
+		return
+	}
+	if external {
+		for _, sec := range secrets {
+			r.out.Expected = append(r.out.Expected, sec.expectedLine())
+		}
+		return
 	}
 	var b bytes.Buffer
 	b.WriteString("# Written by nvkectl render deploy-path: the Secrets the charts read.\n")

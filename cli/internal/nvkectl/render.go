@@ -67,10 +67,11 @@ set once before the bootstrap, else the default both commands share, with a
 warning.
 
 --credentials external renders for a tree that lives in a repository: no
-credential variable is read, no Secret is written and no .gitignore, and
-the command ends by listing the Secrets the cluster has to hold before the
-install, namespace, name, keys and type. The operator's secret store
-delivers them.
+credential variable is read, no Secret is written, no .gitignore and no path
+of this machine, and the command ends by listing the Secrets the cluster has
+to hold, namespace, name, keys and type. The install creates their
+namespaces in its first item, nvke-base-config, so the operator's secret
+store delivers each Secret after that item and before the one that reads it.
 
 --arch is the nodes' architecture, linux/amd64 or linux/arm64. It selects
 the release artifacts and the SPIRE TPM attestor checksum. deploy/nvke-deploy.sh
@@ -95,9 +96,10 @@ use a directory only you can read, for example
 --out holds the site's secrets and is for one install: the command ends by
 naming the files under --out that hold a credential, --out gets a
 .gitignore that ignores everything, and you delete --out after the install.
-Committed chart paths are written absolute, so --out can live anywhere.
-Problems are reported all at once and nothing is left on failure. Then
-install it: deploy/nvke-deploy.sh install --deploy-path OUT.`,
+Committed chart paths are written absolute, so --out can live anywhere; an
+external tree keeps them as committed. Problems are reported all at once and
+nothing is left on failure. Then install it:
+deploy/nvke-deploy.sh install --deploy-path OUT.`,
 		Example: `  nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json --arch linux/arm64 --release release.json --out ~/.local/state/nvke/renders/my-site
   nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json --arch linux/amd64 --release release.json --nvkr-run-dir .nvkr/runs/demo-01 --out ~/.local/state/nvke/renders/my-site`,
 		Args:         cobra.NoArgs,
@@ -185,7 +187,7 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 		fmt.Fprintf(out, "images: %s\n", strings.Join(refs, ", "))
 	}
 	for _, e := range result.Expected {
-		fmt.Fprintf(out, "expected in the cluster before the install: %s\n", e)
+		fmt.Fprintf(out, "expected in the cluster once its namespace exists and before the item that reads it: %s\n", e)
 	}
 	switch {
 	case len(result.Credentials) == 0:

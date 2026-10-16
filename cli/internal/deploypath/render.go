@@ -283,8 +283,12 @@ func realPath(path string) string {
 // absoluteChartPaths rewrites a committed chart.path, relative to the
 // deploy path, as an absolute path in the rendered copy: the executor
 // resolves chart.path against the deploy path it installs, and the rendered
-// tree lives elsewhere.
+// tree lives elsewhere. An external tree is meant for a repository, so it
+// keeps the committed path and no path of this machine.
 func (r *renderer) absoluteChartPaths() {
+	if r.opts.Credentials == CredentialsExternal {
+		return
+	}
 	for _, item := range r.items {
 		if item.Type != TypeHelm {
 			continue
@@ -573,6 +577,9 @@ func (r *renderer) store(ctx context.Context, a nvkrrelease.Artifact) (oras.Read
 }
 
 func (r *renderer) finish() error {
+	if r.opts.Credentials == CredentialsExternal {
+		r.noteCommittedChartPaths()
+	}
 	// A tree with credentials must not reach a repository; an external one
 	// holds none and is meant for one.
 	if r.opts.Credentials != CredentialsExternal {
@@ -583,7 +590,12 @@ func (r *renderer) finish() error {
 	if len(r.out.Images) > 0 {
 		var b strings.Builder
 		for _, img := range r.out.Images {
-			fmt.Fprintf(&b, "%s\t%s\n", img.Reference, img.Layout)
+			layout := img.Layout
+			if r.opts.Credentials == CredentialsExternal {
+				// A layout is a directory of this machine; the install pulls the image.
+				layout = ""
+			}
+			fmt.Fprintf(&b, "%s\t%s\n", img.Reference, layout)
 		}
 		if err := writePrivate(filepath.Join(r.opts.Out, "images.txt"), []byte(b.String())); err != nil {
 			return err
@@ -596,11 +608,30 @@ func (r *renderer) finish() error {
 	}
 	if r.itemsChanged {
 		header := "Rendered by nvkectl render deploy-path from " + r.opts.DeployPath + ". Template items are rendered and apply as manifests."
+		if r.opts.Credentials == CredentialsExternal {
+			header = "Rendered by nvkectl render deploy-path with external credentials. Template items are rendered and apply as manifests."
+		}
 		if err := writePrivate(filepath.Join(r.opts.Out, "nvke-deploy.yaml"), MarshalItems(r.items, header)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// noteCommittedChartPaths says which charts an external tree still names by a
+// committed path that leaves the tree: it resolves from where the tree is
+// installed, not from where it was rendered.
+func (r *renderer) noteCommittedChartPaths() {
+	for _, item := range r.items {
+		if item.Type != TypeHelm {
+			continue
+		}
+		rel, err := ReadRelease(filepath.Join(r.opts.Out, item.Name))
+		if err != nil || rel.Chart == nil || !strings.HasPrefix(rel.Chart.Path, "..") {
+			continue
+		}
+		r.note("%s: chart.path %s stays as committed and resolves from where the tree is installed; render with --release to put the chart in the tree", item.Name, rel.Chart.Path)
+	}
 }
 
 // releaseImageValues renders the generated values file: nested keys from dotted ones.

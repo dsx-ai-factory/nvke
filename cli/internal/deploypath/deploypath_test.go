@@ -248,7 +248,11 @@ func readSecrets(t *testing.T, path string) map[string]map[string]string {
 			}
 			values[k] = string(decoded)
 		}
-		out[doc.Metadata.Namespace+"/"+doc.Metadata.Name] = values
+		id := doc.Metadata.Namespace + "/" + doc.Metadata.Name
+		if _, dup := out[id]; dup {
+			t.Errorf("%s: a second document for Secret %s; server-side apply keeps only the keys of the last", path, id)
+		}
+		out[id] = values
 	}
 	return out
 }
@@ -598,6 +602,157 @@ func TestRender_TemplateDocumentsAndNamespaces(t *testing.T) {
 		if !contains(result.Expected, w) {
 			t.Errorf("expected list lacks %q:\n%s", w, strings.Join(result.Expected, "\n"))
 		}
+	}
+}
+
+// Items that read the one Secret name from one namespace share a single
+// Secret holding every key they read: a second document for it would, under
+// server-side apply, take away the keys the first one set.
+func TestRender_SecretsSharingANamespace(t *testing.T) {
+	spec, stack := filledInputs(t, true, nil)
+	path := filepath.Join(t.TempDir(), "nico")
+	if err := copyTree(nico, path); err != nil {
+		t.Fatal(err)
+	}
+	for item, namespace := range map[string]string{"temporal": "temporal", "controller": "nke-controller"} {
+		release := filepath.Join(path, item, "release.yaml")
+		data, err := os.ReadFile(release)
+		if err != nil {
+			t.Fatal(err)
+		}
+		moved := bytes.Replace(data, []byte("  namespace: "+namespace+"\n"), []byte("  namespace: postgres\n"), 1)
+		if bytes.Equal(moved, data) {
+			t.Fatalf("%s: release.yaml names no namespace %s", item, namespace)
+		}
+		if err := os.WriteFile(release, moved, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out := filepath.Join(t.TempDir(), "rendered")
+	opts := siteRender(spec, stack, out)
+	opts.DeployPath = path
+	if _, err := Render(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(out, "site-credentials", "secrets.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs, err := yamlDocuments(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docs) != 2 {
+		t.Errorf("secrets.yaml holds %d documents, want the shared database Secret and the CA Secret:\n%s", len(docs), raw)
+	}
+	shared := readSecrets(t, filepath.Join(out, "site-credentials", "secrets.yaml"))["postgres/nvke-database"]
+	if shared["postgres-password"] != "db-secret" || shared["password"] != "db-secret" ||
+		shared[connectionStringKey] != "postgresql://postgres:db-secret@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller?sslmode=disable" || len(shared) != 3 {
+		t.Errorf("the shared Secret does not hold every key: %v", shared)
+	}
+
+	opts.Out, opts.Credentials = filepath.Join(t.TempDir(), "external"), CredentialsExternal
+	result, err := Render(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Secret postgres/nvke-database with keys password, postgres-password, database-connection-string, the URL " +
+		"postgresql://postgres:<password>@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller?sslmode=disable with the password URL-escaped"
+	var lines []string
+	for _, e := range result.Expected {
+		if strings.HasPrefix(e, "Secret postgres/nvke-database ") {
+			lines = append(lines, e)
+		}
+	}
+	if len(lines) != 1 || lines[0] != want {
+		t.Errorf("expected lines for the shared Secret:\n%s\nwant one:\n%s", strings.Join(lines, "\n"), want)
+	}
+}
+
+// mergeSecrets joins by namespace and name in first-seen order and refuses
+// two values for one key.
+func TestMergeSecrets(t *testing.T) {
+	got, err := mergeSecrets([]siteSecret{
+		{"a", "s", map[string]string{"x": "1"}},
+		{"b", "s", map[string]string{"x": "1"}},
+		{"a", "s", map[string]string{"y": "2", "x": "1"}},
+	})
+	if err != nil || len(got) != 2 || got[0].namespace != "a" || got[1].namespace != "b" ||
+		len(got[0].data) != 2 || got[0].data["y"] != "2" || len(got[1].data) != 1 {
+		t.Errorf("merged: %+v %v", got, err)
+	}
+	if _, err := mergeSecrets([]siteSecret{{"a", "s", map[string]string{"x": "1"}}, {"a", "s", map[string]string{"x": "2"}}}); err == nil ||
+		!strings.Contains(err.Error(), "a/s") || !strings.Contains(err.Error(), "x") {
+		t.Errorf("one key, two values: %v", err)
+	}
+}
+
+// An external tree is meant for a repository: no file in it names a path of
+// the machine that rendered it, and a committed chart path stays as committed.
+func TestRender_ExternalTreeHoldsNoLocalPath(t *testing.T) {
+	spec, stack := filledInputs(t, true, nil)
+	out := filepath.Join(t.TempDir(), "rendered")
+	opts := siteRender(spec, stack, out)
+	opts.Credentials = CredentialsExternal
+	result, err := Render(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	abs, err := filepath.Abs(nico)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkNoLocalPath(t, out, repositoryRoots(t, abs)...)
+	release, err := ReadRelease(filepath.Join(out, "controller"))
+	if err != nil || release.Chart == nil || release.Chart.Path != "../../controller/deploy/charts/controller" {
+		t.Errorf("controller chart path: %+v %v", release, err)
+	}
+	if !contains(result.Notes, "controller: chart.path ../../controller/deploy/charts/controller stays as committed and resolves from where the tree is installed; render with --release to put the chart in the tree") {
+		t.Errorf("notes: %v", result.Notes)
+	}
+	// The rendered default keeps writing the path absolute.
+	rendered := filepath.Join(t.TempDir(), "rendered")
+	if _, err := Render(context.Background(), siteRender(spec, stack, rendered)); err != nil {
+		t.Fatal(err)
+	}
+	release, err = ReadRelease(filepath.Join(rendered, "controller"))
+	if err != nil || release.Chart == nil || !filepath.IsAbs(release.Chart.Path) {
+		t.Errorf("rendered controller chart path: %+v %v", release, err)
+	}
+}
+
+// repositoryRoots names the spellings of the directory above deploy/ for a
+// deploy path: as given and with symlinks resolved.
+func repositoryRoots(t *testing.T, deployPath string) []string {
+	t.Helper()
+	roots := []string{filepath.Dir(filepath.Dir(deployPath))}
+	if resolved, err := filepath.EvalSymlinks(deployPath); err == nil {
+		roots = append(roots, filepath.Dir(filepath.Dir(resolved)))
+	}
+	return roots
+}
+
+// checkNoLocalPath fails for every file under dir that contains one of paths.
+func checkNoLocalPath(t *testing.T, dir string, paths ...string) {
+	t.Helper()
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, p := range paths {
+			if bytes.Contains(data, []byte(p)) {
+				t.Errorf("%s names the local path %s", path, p)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -1121,6 +1276,19 @@ func TestRender_FromRun(t *testing.T) {
 	if len(result.Images) != 3 || result.Images[0].Layout == "" {
 		t.Errorf("images: %+v", result.Images)
 	}
+	// An external tree names the images and no layout: a layout is a
+	// directory of this machine.
+	externalOut := filepath.Join(t.TempDir(), "external")
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", RunDir: run, Out: externalOut, Credentials: CredentialsExternal}); err != nil {
+		t.Fatal(err)
+	}
+	externalImages, _ := os.ReadFile(filepath.Join(externalOut, "images.txt"))
+	wantExternal := ref("capnico-controller-arm64", capDigest) + "\t\n" + ref("cwe", cweDigest) + "\t\n" + ref("controller-profiles", profDigest) + "\t\n"
+	if string(externalImages) != wantExternal {
+		t.Errorf("external images.txt:\n%s\nwant:\n%s", externalImages, wantExternal)
+	}
+	abs, _ := filepath.Abs(nico)
+	checkNoLocalPath(t, externalOut, append(repositoryRoots(t, abs), run)...)
 	// A layout the Run lacks is refused, nothing left behind.
 	if err := os.RemoveAll(filepath.Join(packages, "cwe")); err != nil {
 		t.Fatal(err)

@@ -165,14 +165,14 @@ nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --
   --arch linux/arm64 --release release.json --out ~/.local/state/nvke/renders/my-site
 ```
 
-For a tree that lives in a repository, add `--credentials external` to that command. The render then reads no credential variable and no CA file, writes no Secret and no `.gitignore`, and ends by listing the Secrets the cluster has to hold before the install: namespace, name, keys and, when it is not `Opaque`, the type. Your secret store delivers them; the charts name the same Secrets either way. `nvke-deploy.sh` has no such option: it always renders with the credentials and removes the tree.
+For a tree that lives in a repository, add `--credentials external` to that command. The render then reads no credential variable and no CA file, writes no Secret and no `.gitignore`, and writes no path of this machine: a chart the release does not carry keeps its committed `chart.path`, which resolves from where the tree is installed, so render with `--release` to put every chart in the tree. It ends by listing the Secrets the cluster has to hold: namespace, name, keys and, when it is not `Opaque`, the type. The Secrets' namespaces are created by the first item, `nvke-base-config`, so your secret store delivers each Secret after that item and before the item that reads it, not before the install starts. The charts name the same Secrets either way. `nvke-deploy.sh` has no such option: it always renders with the credentials and removes the tree.
 
 ## Applying It Another Way
 
 Every item is a Helm chart with values, or plain YAML, so another tool can deliver the same items. What the script does beyond `helm` and `kubectl apply` is small and listed here, so another executor can do the same:
 
 1. Apply the items in list order; stop at the first failure.
-2. Render the template items first. Under GitOps, the Secrets they and the `site-credentials` item produce come from your secret store instead; `--credentials external` lists them.
+2. Render the template items first. Under GitOps, the Secrets they and the `site-credentials` item produce come from your secret store instead; `--credentials external` lists them. Each must exist in its namespace after `nvke-base-config` has created it and before the first item that reads it: in a sync-wave setup, a wave between the two.
 3. Wait for each `requires` entry before its chart. In GitOps that is a sync-wave boundary or a health check on the object.
 4. With a local NVKR Run (`--nvkr-run-dir`), import the images listed in `images.txt` into the node's containerd before the first item.
 
