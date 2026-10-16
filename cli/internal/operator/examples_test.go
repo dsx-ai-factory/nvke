@@ -36,7 +36,7 @@ func TestExamplesDecode(t *testing.T) {
 			assert.Equal(t, "example-ubuntu-24.04-amd64", got.Metadata.Name)
 			if kind != operator.KindMachineImage {
 				assert.Equal(t, map[string]string{
-					"internal.nvke.nvidia.com/machine-init-kubernetes-version":          "1.34.2",
+					"internal.nvke.nvidia.com/machine-init-kubernetes-version":          "1.36.3",
 					"internal.nvke.nvidia.com/machine-init-kubernetes-version-injected": "false",
 				}, got.Metadata.Annotations, "a release example carries the Kubernetes version annotations")
 			}

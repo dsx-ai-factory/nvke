@@ -816,7 +816,7 @@ infra:
     releases: releases
 cluster:
   controlPlaneVIP: "10.0.0.100"
-  k8sVersion: "1.34.2"
+  k8sVersion: "1.36.3"
   cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"

@@ -32,7 +32,7 @@ cluster:
       tpmEkThumbprint: "2222222222222222222222222222222222222222222222222222222222222222"
 
   # Kubernetes version to install — plain semantic version, no leading "v".
-  k8sVersion: "1.34.2"
+  k8sVersion: "1.36.3"
 
   # CNI plugin. New site-controller clusters use "ovn-kubernetes".
   cniName: "ovn-kubernetes"
