@@ -36,7 +36,7 @@ Every page is exactly one type. Do not mix them.
 
 ### How-to template
 
-```markdown
+````markdown
 # <Verb phrase: Bootstrap the management cluster>
 
 This page describes how to <task>. <When you do it: after which page, before which page.>
@@ -63,9 +63,9 @@ This page describes how to <task>. <When you do it: after which page, before whi
 ## Next steps
 
 - <One to four links, in the order the reader needs them.>
-```
+````
 
-A how-to may include one short "What happens during <task>" section (a
+A how-to may include one short "What happens during `<task>`" section (a
 diagram and a paragraph) when later steps, failure handling or verification
 depend on the reader understanding the sequence. Keep it after the main steps
 and before failure handling. Anything longer belongs on an explanation page.

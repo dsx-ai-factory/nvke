@@ -90,7 +90,7 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
    nvkectl bootstrap site -f sitespec.yaml --dry-run
    ```
 
-   `<CA_CERT_PATH>` and `<CA_KEY_PATH>` are your SPIRE CA files. Nodes built from the node image need them: without them SPIRE uses a self-signed CA that no node can trust in advance, and the nodes cannot attest. The site spec sets `spire.upstreamCA`, so the dry run and the bootstrap both require them; keep them exported in the shell you run the bootstrap from.
+   `<CA_CERT_PATH>` and `<CA_KEY_PATH>` are absolute paths to your SPIRE CA files. The install exports the same values from inside the `nvke/` checkout, where a relative path no longer points at the files. Nodes built from the node image need them: without them SPIRE uses a self-signed CA that no node can trust in advance, and the nodes cannot attest. The site spec sets `spire.upstreamCA`, so the dry run and the bootstrap both require them; keep them exported in the shell you run the bootstrap from.
 
    The command prints the site spec with defaults applied, then `Dry run: site spec is valid. No workflow dispatched.` If the file is invalid, it lists every problem in one error. Read the printed values before you continue.
 

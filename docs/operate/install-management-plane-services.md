@@ -50,7 +50,7 @@ The install reads what only the management plane needs from `stack-config.json`,
    - `NVKECTL_NICO_TOKEN`: the NICo API token. The install writes it, with the NICo details below, to the `nico-credentials` Secret that CAPNICo reads.
    - `NVKECTL_NODE_USER` and `NVKECTL_NODE_PASSWORD`: the login account NVKE writes into the cloud-init user data of every workload-cluster node.
    - `NVKECTL_DATABASE_PASSWORD`: the PostgreSQL password the management plane and Temporal share. Choose it once and store it in your secret manager: every later install of this site needs the same value.
-   - `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`: the SPIRE CA certificate and key you gave the bootstrap. Every install of a site with `spire.upstreamCA: true` requires them. Leave both unset if the bootstrap ran without a CA.
+   - `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`: the SPIRE CA certificate and key you gave the bootstrap, as absolute paths. A relative path resolves from the current directory, which is now the `nvke/` checkout. Every install of a site with `spire.upstreamCA: true` requires them. Leave both unset if the bootstrap ran without a CA.
 
 2. Copy the example stack config.
 

@@ -98,11 +98,11 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 
 ### nvkr does not build
 
-- **Symptom:** `make build` in the NVIDIA Kubernetes Recipes (NVKR) repository prints `Go go<VERSION> does not match pinned go1.27.1`.
-- **Fix:** NVKR builds only with the exact Go version in its `.go-version` file. Install Go 1.27.1, or let Go fetch it:
+- **Symptom:** `make build` in the NVIDIA Kubernetes Recipes (NVKR) repository prints `Go go<VERSION> does not match pinned go1.27.2`.
+- **Fix:** NVKR builds only with the exact Go version in its `.go-version` file. Install Go 1.27.2, or let Go fetch it:
 
   ```bash
-  GOTOOLCHAIN=go1.27.1 make build
+  GOTOOLCHAIN=go1.27.2 make build
   ```
 
 ### The bootstrap fails at clusterctl init
