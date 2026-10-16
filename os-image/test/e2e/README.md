@@ -33,9 +33,9 @@ From the repository root:
 
 ```bash
 cd os-image
-go test -v ./test/dsx
+go test -v ./test/e2e
 # Select one functional test, including both Ubuntu versions:
-go test -v -run '^TestDSXHardwareSmoke$' ./test/dsx
+go test -v -run '^TestDSXHardwareSmoke$' ./test/e2e
 ```
 
 Expect every Ubuntu-version subtest to report **SKIP: not implemented**. No NICo
@@ -69,12 +69,21 @@ logs identify the requested type, and each job has a distinct artifact.
 record it, and future provisioning must use it. For a local invocation:
 
 ```bash
-DSX_MACHINE_TYPE_ID=example-instance-type-id go test -v ./test/dsx
+DSX_MACHINE_TYPE_ID=example-instance-type-id go test -v ./test/e2e
 ```
 
 Machine type selection uses the existing pool's credentials and network settings.
 Testing another site will also require that site's allocation configuration. A
 new type does not require new test functions or a change to their Go file.
+
+## Shared E2E infrastructure
+
+These hardware tests belong to the existing `os-image` Go module. Follow the
+repository E2E conventions when implementing provisioning, hardware selection,
+and qualification reporting. The controller suite's provisioning helpers are
+currently under `controller/test/e2e/internal`, so this package cannot import
+them directly. Reusing that code requires an accessible shared package or another
+explicit integration boundary; moving these tests does not resolve that boundary.
 
 ## Implementation boundaries
 
