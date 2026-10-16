@@ -8,7 +8,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 
 | Item | Supported | Notes |
 |---|---|---|
-| Kubernetes version | 1.34.2, 1.35.3, 1.36.3 | Pinned. The node image stages an `nvke-kubeadm-distro` package for each. Another patch release of these minor versions is not on the node. |
+| Kubernetes version | 1.34.2, 1.35.3, 1.36.3 | Pinned. The node image stages an `nvke-kubeadm-distro` package for each. Release qualification targets 1.36 (`release/policy.yaml`). Another patch release of these minor versions is not on the node. |
 | Version format | `X.Y.Z`, with no leading `v` | The API and the site spec reject any other format. |
 | Management cluster | 1.34.2, 1.35.3 or 1.36.3 | Set once, in the site spec's `cluster.k8sVersion` field, at bootstrap. `nvkectl generate sitespec` writes an older default unless you set it. The management cluster does not upgrade itself. |
 | Workload cluster | 1.34.2, 1.35.3 or 1.36.3 | `controlPlaneKubernetesVersion` is required and has no default. The API accepts any `X.Y.Z`, but nodes run only a version their node image carries. |

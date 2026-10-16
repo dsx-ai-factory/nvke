@@ -36,6 +36,7 @@ Every page is exactly one type. Do not mix them.
 
 ### How-to template
 
+<!-- Four backticks on purpose: the template holds ``` blocks, which would close a three-backtick fence early. -->
 ````markdown
 # <Verb phrase: Bootstrap the management cluster>
 
