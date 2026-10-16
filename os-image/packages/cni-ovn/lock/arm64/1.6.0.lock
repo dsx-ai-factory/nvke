@@ -1,4 +1,0 @@
-# nvke-cni-ovn lock for 1.6.0 (arm64). Regenerate with `make lock`; review the diff before committing.
-ovn 1.6.0
-source dsx-ai-factory/ovn-kubernetes 3fe59276c7b627378107c5688cad3dee3a73250a
-artifact ovn-kubernetes-src-3fe59276c7b627378107c5688cad3dee3a73250a.tar.gz 622d10677b94710da57f3000568a4a3f466b2d40ada6c03517afc3e53a68bfba https://api.github.com/repos/dsx-ai-factory/ovn-kubernetes/tarball/3fe59276c7b627378107c5688cad3dee3a73250a

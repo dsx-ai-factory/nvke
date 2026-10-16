@@ -44,7 +44,9 @@ Run the file-preparation commands below from the directory containing your `nvke
    | `spec.variant` | Optional. Distinguishes images built from the same operating system for another purpose, such as `fde`. |
    | `spec.nico.ipxeScript` | The script NICo runs to boot the machine. It starts with a `#!ipxe` line of its own. |
 
-   The example's `ipxeScript` installs Ubuntu 24.04 from the installer ISO; replace its `boot.example.com` and `releases.example.com` URLs with hosts that your NICo machines reach. To boot the reference node image instead, `ipxeScript` must write the QCOW2 file to the machine's disk by chainloading an EFI imager that downloads and writes the QCOW2. Use an imager and script validated together for your NICo site. Publish the files and verify their URLs as described in [Serve the boot artifacts over HTTP(S)](build-node-images.md#serve-the-boot-artifacts-over-https). This release has no reference QCOW2 boot script.
+   The example's `ipxeScript` installs Ubuntu 24.04 from the installer ISO; replace its `boot.example.com` and `releases.example.com` URLs with hosts that your NICo machines reach. To boot the reference node image instead, `ipxeScript` must write the QCOW2 file to the machine's disk by chainloading an EFI imager that downloads and writes the QCOW2. Use an imager and script validated together for your NICo site. Publish the files and verify their URLs as described in [Serve the boot artifacts over HTTP(S)](build-node-images.md#serve-the-boot-artifacts-over-https).
+
+   The repository includes an end-to-end iPXE test template, but it does not provide a complete, validated customer provisioning procedure for this image. The hosting guide explains the template and the imager compatibility requirements.
 
 4. Write the first-boot user data in `spec.machineInit.userDataTemplate` of both releases. It starts with a cloud-init header such as `#cloud-config`, and it can reference the values in [What NVKE puts in the user data](#what-nvke-puts-in-the-user-data). In the example, replace the `apt.example.com` repository line with a command that adds an apt repository serving the NVKE node packages; NVKE publishes no such repository. A release for the reference node image installs the packages the image stages, as [Prepare nodes](prepare-nodes.md) does, and writes the SPIRE files shown below.
 
@@ -77,7 +79,7 @@ NVKE renders `userDataTemplate` as a Go template for each node it creates, with 
 | `{{ .Username }}`, `{{ .HashedPassword }}` | The node login account from `NVKECTL_NODE_USER` and `NVKECTL_NODE_PASSWORD`, with the password as a SHA-512 crypt hash. |
 | `{{ .Files }}` | The `nvke-agent` files to write with `write_files`, including `/etc/default/nke-agent`, which sets the agent's arguments and port. `{{ .NodeAgentPort }}` is the port alone. |
 | `{{ .KubernetesVersion }}` | The Kubernetes version of the cluster or node pool. |
-| `{{ .CNIImagePackage }}`, `{{ .CNIChartsPackage }}` | The CNI packages for the cluster's `cniPlugin` and `cniVersion`, such as `nvke-cni-ovn-images-1.6.0` and `nvke-cni-ovn-charts-1.6.0`. `{{ .OvnEnabled }}` is true for OVN-Kubernetes. |
+| `{{ .CNIImagePackage }}`, `{{ .CNIChartsPackage }}` | The CNI packages for the cluster's `cniPlugin` and `cniVersion`, such as `nvke-cni-ovn-images-2.4.2` and `nvke-cni-ovn-charts-2.4.2`. `{{ .OvnEnabled }}` is true for OVN-Kubernetes. |
 | `{{ .SpireServerAddress }}`, `{{ .SpireServerPort }}` | Where the node reaches the management cluster's SPIRE server: the management cluster's virtual IP address (VIP) from the site spec's `cluster.controlPlaneVIP`, or its only node's IP address, and port `30440`. |
 | `{{ .TrustDomain }}`, `{{ .TrustBundle }}` | The management plane's SPIFFE trust domain, and the PEM trust bundle of the management cluster's SPIRE server. Empty when the node does not use SPIFFE. |
 

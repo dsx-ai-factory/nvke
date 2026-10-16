@@ -4,7 +4,7 @@
 # The dsx-ai-factory/ovn-kubernetes chart stream the agent installs by default
 # (defaultOvnCniChartStream in agent/internal/agent/cni.go). Bump here and run
 # `make lock`; see README.md.
-OVN_STREAMS ?= 1.6.0
+OVN_STREAMS ?= 2.4.2
 
 CNI := cni-ovn
 PRODUCT := OVN

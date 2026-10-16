@@ -124,7 +124,7 @@ func (InstallMethod) EnumDescriptor() ([]byte, []int) {
 type CniVariant int32
 
 const (
-	// Default for InstallCNI: treated as OVN when version is empty (default Debian stream suffix, e.g. 1.6.0).
+	// Default for InstallCNI: treated as OVN when version is empty (default Debian stream suffix, e.g. 2.4.2).
 	CniVariant_CNI_VARIANT_UNSPECIFIED CniVariant = 0
 	CniVariant_CNI_VARIANT_OVN         CniVariant = 1
 	CniVariant_CNI_VARIANT_CALICO      CniVariant = 2
@@ -2620,7 +2620,7 @@ type InstallCNIRequest struct {
 	// OVN or CALICO; when UNSPECIFIED the agent uses OVN (stream selects nvke-cni-ovn-charts-<stream>, etc.).
 	CniVariant CniVariant `protobuf:"varint,1,opt,name=cni_variant,json=cniVariant,proto3,enum=proto.CniVariant" json:"cni_variant,omitempty"`
 	// Selects Debian stream suffix in the charts/manifest package name used to locate bundled
-	// charts on disk (leading "v" stripped). Empty uses defaults matching cni-packages (OVN 1.6.0,
+	// charts on disk (leading "v" stripped). Empty uses defaults matching cni-packages (OVN 2.4.2,
 	// Calico 3.30.1). Non-empty duplicates the suffix for an optional apt pin suffix (foobar=VERSION)
 	// in the logical package spec string for logging/compatibility — install the pinned deb separately.
 	Version string `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`

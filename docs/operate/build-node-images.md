@@ -71,7 +71,9 @@ IMAGE_URL="${BOOT_BASE_URL}/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2"
 
 For another object store or a web server, upload the same files and set `BOOT_BASE_URL` to that service's HTTP(S) base URL. The boot flow is the same. S3 static website hosting is not required for this example; its [website endpoints support HTTP only](https://docs.aws.amazon.com/AmazonS3/latest/userguide/WebsiteEndpoints.html).
 
-Keep the final URLs for your site's validated iPXE script: the EFI URL is the chainload target, and the QCOW2 URL is an input to the imager. Keep the imager's required parameters and NICo's cloud-init datasource in that script. These URL assignments alone are not a complete imaging script; this release has no reference QCOW2 boot script.
+Keep the final URLs for your site's validated iPXE script: the EFI URL is the chainload target, and the QCOW2 URL is an input to the imager. Keep the imager's required parameters and NICo's cloud-init datasource in that script. These URL assignments alone are not a complete imaging script.
+
+The repository includes an [iPXE template used by end-to-end tests](../../controller/test/e2e/internal/nvke/nico_forge_ipxe.tmpl) that chains a separately supplied EFI imager and QCOW2 URL. It is a test template, not a complete, validated customer provisioning procedure. Use it only with an imager whose parameters match the script, and validate the pair on your target hardware; the [source-built EFI compatibility limitations](../../os-image/efi/README.md#what-this-does-not-build) explain why the available imagers are not interchangeable.
 
 ### Verify the endpoint before provisioning
 

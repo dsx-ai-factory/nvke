@@ -760,7 +760,7 @@ log "using agent source version ${NODE_AGENT_VERSION}"
 
 log "preparing verified SPIRE and OVN-Kubernetes charts"
 CNI_PLUGIN=ovn-kubernetes BUNDLE_ARCH="${host_arch}" bash hack/ci/prepare-capd-bundles.sh "${BUNDLE_DIR}"
-OVN_CHARTS_DEB="${BUNDLE_DIR}/nvke-cni-ovn-charts-1.6.0_1.6.0_${host_arch}.deb"
+OVN_CHARTS_DEB="${BUNDLE_DIR}/nvke-cni-ovn-charts-2.4.2_2.4.2_${host_arch}.deb"
 [[ -f "${OVN_CHARTS_DEB}" ]] || {
   log "OVN charts package was not produced: ${OVN_CHARTS_DEB}" >&2
   exit 1
@@ -860,7 +860,7 @@ NODE_AGENT_VERSION="${NODE_AGENT_VERSION}" \
 NODE_AGENT_REPO_PATH="${WORKSPACE_ROOT}/agent" \
 SPIRE_AGENT_BUNDLE_PATH="${BUNDLE_DIR}/spire-agent.tgz" \
 CAPD_CNI_CHARTS_DEB_PATH="${OVN_CHARTS_DEB}" \
-CAPD_CNI_IMAGES_DEB_PATH="${BUNDLE_DIR}/nvke-cni-ovn-images-1.6.0_1.6.0_${host_arch}.deb" \
+CAPD_CNI_IMAGES_DEB_PATH="${BUNDLE_DIR}/nvke-cni-ovn-images-2.4.2_2.4.2_${host_arch}.deb" \
 CAPD_HELM_DEB_PATH="${BUNDLE_DIR}/nke-e2e-helm.deb" \
 CAPD_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
 BUNDLE_SERVER_URL="http://${BUNDLE_MIRROR_NAME}/" \

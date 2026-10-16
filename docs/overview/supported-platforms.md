@@ -22,7 +22,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 
 | Plugin or setting | Version | Notes |
 |---|---|---|
-| `ovn-kubernetes` | 1.6.0 | Pinned. The Container Network Interface (CNI) plugin for workload clusters and the management cluster. The node image stages its charts and images packages. |
+| `ovn-kubernetes` | 2.4.2 | Pinned. The NVIDIA distribution of OVN-Kubernetes, built from `dsx-ai-factory/ovn-kubernetes`. It is the Container Network Interface (CNI) plugin for workload clusters and the management cluster. The node image stages its charts and images packages. Pod `hostPort` is enabled. |
 | Other `cniVersion` values | Not in the node image | The node agent installs the CNI from packages on the node, so another version needs a node image built with it. |
 | IP family | IPv4 | Pod and service CIDRs are private IPv4 ranges, fixed when the cluster is created: `/12` to `/23` for pods, `/12` to `/24` for services. The defaults are `192.168.0.0/16` and `10.96.0.0/12`. The API virtual IP address (VIP) is IPv4. |
 
