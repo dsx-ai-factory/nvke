@@ -26,7 +26,7 @@ const (
 	NicoInsecureEndpointEnv = "NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT"
 
 	// DefaultNicoAPIName is the API name in the NICo API path that CAPNICo is
-	// given, which the credentials file does not carry today.
+	// given when infra.nico.remote.apiName is unset.
 	DefaultNicoAPIName = "forge"
 )
 

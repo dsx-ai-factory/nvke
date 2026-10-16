@@ -11,9 +11,9 @@ import (
 // TestMain clears the SPIRE CA variables an operator's shell may export, so
 // specs without spire.upstreamCA load as the tests expect; the infra provider,
 // SPIRE address and node list overrides, which turn every spec into a nico one
-// or reject it; the controller port, which the tests expect at its default; and
-// the credentials' NKECTL_ aliases, which a test blanking an NVKECTL_ name would
-// fall back to.
+// or reject it; the controller port and the bootstrap cluster name, which the
+// tests expect at their defaults; and the credentials' NKECTL_ aliases, which a
+// test blanking an NVKECTL_ name would fall back to.
 func TestMain(m *testing.M) {
 	for _, name := range []string{
 		"NVKECTL_SPIRE_CA_CERT_FILE", "NVKECTL_SPIRE_CA_KEY_FILE",
@@ -24,6 +24,7 @@ func TestMain(m *testing.M) {
 		"NVKECTL_SPIRE_EXTERNAL_ADDRESS", "NKECTL_SPIRE_EXTERNAL_ADDRESS",
 		"NKECTL_NICO_CREDENTIALS",
 		"NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT", "NKECTL_NICO_ALLOW_INSECURE_ENDPOINT",
+		"NVKECTL_BOOTSTRAP_CLUSTER_NAME", "NKECTL_BOOTSTRAP_CLUSTER_NAME",
 		"NVKECTL_CLUSTER_NODES", "NKECTL_CLUSTER_NODES",
 		"NVKECTL_CONTROLLER_PORT", "NKECTL_CONTROLLER_PORT",
 	} {

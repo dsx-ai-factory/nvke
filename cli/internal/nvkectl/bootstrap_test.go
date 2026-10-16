@@ -2093,6 +2093,17 @@ func TestCapnicoAccess(t *testing.T) {
 			t.Errorf("capnicoAccess = %+v, want %+v", got, want)
 		}
 	})
+	t.Run("nico takes the site spec's API name", func(t *testing.T) {
+		t.Setenv(sitespec.NicoCredentialsEnv, nicoToken)
+		carbide := *nico
+		carbideNico := *nico.Infra.Nico
+		carbideNico.Remote = &sitespec.NicoRemote{Endpoint: "https://nico.example", APIName: "carbide"}
+		carbide.Infra.Nico = &carbideNico
+		got, err := capnicoAccess(&carbide)
+		if err != nil || got.APIName != "carbide" {
+			t.Fatalf("capnicoAccess = %+v, %v; want APIName carbide", got, err)
+		}
+	})
 	for name, tt := range map[string]struct {
 		env     string
 		inv     *sitespec.SiteSpec

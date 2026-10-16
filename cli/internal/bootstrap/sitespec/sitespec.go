@@ -339,13 +339,19 @@ func envBindings() map[string]string {
 }
 
 // Settings is every NVKECTL_* variable this package reads; each is also read
-// under its previous NVKECTL_* name for one release (see envalias).
+// under its previous NKECTL_* name for one release (see envalias). The one
+// exception is NicoInsecureEndpointEnv, which turns a safety check off and so
+// answers only to its own name.
 var Settings = []string{
 	"NVKECTL_SPIFFE_TRUST_DOMAIN",
 	"NVKECTL_CLUSTER_NODES",
+	"NVKECTL_INFRA_PROVIDER",
+	"NVKECTL_SPIRE_EXTERNAL_ADDRESS",
 	EnvSpireCACertFile,
 	EnvSpireCAKeyFile,
 	NicoCredentialsEnv,
+	stackconfig.EnvNodeUser,
+	stackconfig.EnvNodePassword,
 }
 
 // newInventoryViper returns a Viper that reads a YAML site spec file with the
@@ -911,6 +917,10 @@ func (v *validator) checkSpireExternalAddress(inv *SiteSpec) {
 			v.addf("%s %q must be an IP address or a lowercase DNS name", pathSpireExternalAddress, address)
 			return
 		}
+	}
+	// localhost names the loopback interface (RFC 6761), as 127.0.0.1 does.
+	if address == "localhost" || strings.HasSuffix(address, ".localhost") {
+		v.addf("%s %q names the loopback interface, which means nothing from another machine", pathSpireExternalAddress, address)
 	}
 }
 

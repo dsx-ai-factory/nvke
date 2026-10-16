@@ -95,9 +95,9 @@ func (e *Engine) installCAPI(ctx context.Context, kubeconfigPath string, cfg Con
 }
 
 // CAPNICoAccess is what the bootstrap CAPNICo needs from the operator: the
-// NICo API it calls. Endpoint and OrgID come from the site spec's infra.nico,
-// APIName is sitespec.DefaultNicoAPIName, and Token is read from the file
-// NVKECTL_NICO_CREDENTIALS names. Its image is public, so no registry
+// NICo API it calls. Endpoint, OrgID and APIName come from the site spec's
+// infra.nico, the API name defaulting to sitespec.DefaultNicoAPIName, and Token
+// is read from the file NVKECTL_NICO_CREDENTIALS names. Its image is public, so no registry
 // credential is needed.
 type CAPNICoAccess struct {
 	// Endpoint, OrgID, APIName and Token are the keys of the nico-credentials

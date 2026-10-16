@@ -106,6 +106,7 @@ would be a sibling of it, so nothing here changes when one is added.
 | `infra.nico.orgID` | string | with `nico` | The NICo organization the machines are created in. |
 | `infra.nico.remote.endpoint` | string | with `nico` | The existing NICo's API base URL. The bootstrap sends the NICo token to it, so `bootstrap site` and `validate sitespec --bootstrap-only` require https unless `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT=1` is set, for a local or simulated NICo. |
 | `infra.nico.remote.siteID`, `vpcID` | UUID | with `nico` | The NICo site and the VPC the cluster is created in. |
+| `infra.nico.remote.apiName` | string | no | The API name the NICo serves its REST API under, which CAPNICo puts in every request path. Default `forge`, which the hosted NICo and nico-sim serve; a self-hosted NICo REST server may serve another, such as `carbide`. A lowercase name. |
 | `infra.nico.controlPlane.count` | int | with `nico` | Odd, at least 1. Takes the place of the length of `cluster.nodes`. |
 | `infra.nico.controlPlane.instanceTypePreference` | UUID list | with `nico` | Ordered; index 0 is the first choice. |
 | `infra.nico.controlPlane.vpcPrefixIDs` / `subnetIDs` | UUID list | with `nico` | Exactly one of the two: native networking or not. |
@@ -113,7 +114,7 @@ would be a sibling of it, so nothing here changes when one is added.
 | `infra.nico.controlPlane.release` | string | with `nico` | The `ClusterRelease` the nodes boot from, which `infra.nico.releases` must hold. See Release manifests. |
 | `infra.nico.controlPlane.configProfile` | string | no | A config profile name. The bootstrap controller starts with an empty profiles directory and serves none, so it treats any name as missing and logs a warning: its hooks and labels never reach the nodes. Leave it unset. |
 | `infra.nico.releases` | path | with `nico` | A file, or a directory of `.yaml`, `.yml` and `.json` files, holding the `MachineImage` and `ClusterRelease` manifests. See below. |
-| `spire.externalAddress` | string | with `nico`, unless `--disable-mtls` | IP address or DNS name nodes use to reach the bootstrap host's SPIRE server, on NodePort 30081. See below. |
+| `spire.externalAddress` | string | with `nico`, unless `--disable-mtls` | IP address or DNS name nodes use to reach the bootstrap host's SPIRE server, on NodePort 30081. A loopback or unspecified address, and `localhost`, are refused: they mean nothing from a node. See below. |
 
 The NICo token is not a field: see NICo credentials below.
 
@@ -167,8 +168,8 @@ directory. `bootstrap site` and `validate sitespec --bootstrap-only` require it
 with `nico`; `validate sitespec` without that flag reports it without failing on it, and it
 is not read by commands that never run the bootstrap, such as
 `render deploy-path`. The bootstrap creates the `nico-credentials` Secret in the
-Kind cluster from it, with `infra.nico.remote.endpoint` and `infra.nico.orgID`
-from the spec and the API name `forge`.
+Kind cluster from it, with `infra.nico.remote.endpoint`, `infra.nico.orgID`
+and `infra.nico.remote.apiName` (`forge` when unset) from the spec.
 
 The file's format is told from its content. A bare token, one value with no
 whitespace, is the bearer token. A file that carries `tokenURL`, `clientID` or
@@ -214,8 +215,7 @@ same variables the controller stack install reads, so it is not in the site
 spec. The bootstrap puts it in a `dgxc-tenant-credentials` Secret in the
 controller's namespace and points the controller chart at it
 (`secrets.dgxcTenantCredSecretName`); without it the controller fails every
-node's user-data rendering and no node is created. A spec that still sets
-`infra.nico.tenant` is refused.
+node's user-data rendering and no node is created.
 
 ### Release manifests
 
@@ -277,7 +277,7 @@ part of the site spec.
 
 Unknown fields are rejected. A typo in a field name fails the load rather than
 being silently ignored. Removed fields,
-`registry`, `spire.caCertFile`, `spire.caKeyFile` and `infra.nico.tenant`,
+`registry`, `spire.caCertFile` and `spire.caKeyFile`,
 are refused with the name of what replaced them. So are the
 `SPIRE_CA_CERT_FILE` and `SPIRE_CA_KEY_FILE` variables: a run with either set
 fails, naming `NVKECTL_SPIRE_CA_CERT_FILE`, `NVKECTL_SPIRE_CA_KEY_FILE` and

@@ -79,6 +79,18 @@ type NicoRemote struct {
 	SiteID openapi_types.UUID `yaml:"siteID"`
 	// VpcID is the VPC the machines are created in.
 	VpcID openapi_types.UUID `yaml:"vpcID"`
+	// APIName is the API name the NICo serves its REST API under, which CAPNICo
+	// puts in every request path. Optional; DefaultNicoAPIName when unset.
+	APIName string `yaml:"apiName,omitempty"`
+}
+
+// EffectiveAPIName returns the API name the bootstrap CAPNICo calls the NICo
+// under: APIName, or DefaultNicoAPIName when it is unset.
+func (r *NicoRemote) EffectiveAPIName() string {
+	if r == nil || r.APIName == "" {
+		return DefaultNicoAPIName
+	}
+	return r.APIName
 }
 
 // NicoControlPlane is the control-plane machines' config. It is built from the
@@ -201,6 +213,10 @@ func (v *validator) checkNico(n *NicoInfra) {
 		}
 		v.checkUUID(pathNicoRemote+".siteID", n.Remote.SiteID)
 		v.checkUUID(pathNicoRemote+".vpcID", n.Remote.VpcID)
+		// The name is one segment of every request path CAPNICo builds.
+		if name := n.Remote.APIName; name != "" && (len(name) > 63 || !dnsLabelRE.MatchString(name)) {
+			v.addf("%s.apiName %q must be a lowercase name such as forge or carbide", pathNicoRemote, name)
+		}
 	}
 	v.checkNicoControlPlane(n.ControlPlane)
 	if n.Releases == "" {

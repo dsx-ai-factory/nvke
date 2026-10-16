@@ -1204,7 +1204,7 @@ func capnicoAccess(inv *sitespec.SiteSpec) (controllerdeploy.CAPNICoAccess, erro
 	return controllerdeploy.CAPNICoAccess{
 		Endpoint: n.Remote.Endpoint,
 		OrgID:    n.OrgID,
-		APIName:  sitespec.DefaultNicoAPIName,
+		APIName:  n.Remote.EffectiveAPIName(),
 		Token:    nicoToken,
 	}, nil
 }

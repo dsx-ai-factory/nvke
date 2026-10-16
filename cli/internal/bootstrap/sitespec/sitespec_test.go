@@ -979,6 +979,8 @@ func TestValidate_NicoInfra(t *testing.T) {
 			"only one of vpcPrefixIDs and subnetIDs",
 		},
 		{"missing release", func(n *NicoInfra) { n.ControlPlane.Release = "" }, "release is required"},
+		{"API name with a slash", func(n *NicoInfra) { n.Remote.APIName = "forge/v2" }, "remote.apiName \"forge/v2\" must be a lowercase name"},
+		{"API name in capitals", func(n *NicoInfra) { n.Remote.APIName = "Forge" }, "remote.apiName \"Forge\" must be a lowercase name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1268,6 +1270,8 @@ func TestValidate_SpireExternalAddress(t *testing.T) {
 		{"nico without an address (required only with mTLS, checked by bootstrap)", true, "", ""},
 		{"nico with loopback", true, "127.0.0.1", "routable unicast"},
 		{"nico with the unspecified address", true, "0.0.0.0", "routable unicast"},
+		{"nico with localhost", true, "localhost", "names the loopback interface"},
+		{"nico with a localhost subdomain", true, "spire.localhost", "names the loopback interface"},
 		{"nico with a zoned IPv6 address", true, "2001:db8::1%eth0", "without a zone"},
 		{"nico with a zone carrying a helm value", true, "2001:db8::1%x,spiffe.enabled=false", "without a zone"},
 		{"nico with an upper-case name", true, "Bootstrap.Example.com", "IP address or a lowercase DNS name"},
@@ -1623,6 +1627,47 @@ func TestTemplate_IsABootstrapSpec(t *testing.T) {
 	}
 	if _, err := spec.Render(); err != nil {
 		t.Errorf("Render of a loaded spec: %v", err)
+	}
+}
+
+// TestSettings_CoversEveryVariableTheBootstrapReads: bootstrap site warns about
+// an old NKECTL_ name only for the variables in Settings, so every NVKECTL_
+// variable this package reads is there, except the cleartext opt-in, which has
+// no old name.
+func TestSettings_CoversEveryVariableTheBootstrapReads(t *testing.T) {
+	listed := map[string]bool{}
+	for _, name := range Settings {
+		listed[name] = true
+	}
+	read := []string{NicoCredentialsEnv, stackconfig.EnvNodeUser, stackconfig.EnvNodePassword}
+	for env := range envBindings() {
+		if strings.HasPrefix(env, "NVKECTL_") {
+			read = append(read, env)
+		}
+	}
+	for _, name := range read {
+		if !listed[name] {
+			t.Errorf("%s is read under its old NKECTL_ name but is not in Settings, so no deprecation warning names it", name)
+		}
+	}
+	if listed[NicoInsecureEndpointEnv] {
+		t.Errorf("%s is in Settings, but it answers only to its own name", NicoInsecureEndpointEnv)
+	}
+}
+
+// TestNicoRemote_EffectiveAPIName: the API name defaults to forge.
+func TestNicoRemote_EffectiveAPIName(t *testing.T) {
+	for _, tt := range []struct {
+		remote *NicoRemote
+		want   string
+	}{
+		{nil, DefaultNicoAPIName},
+		{&NicoRemote{}, DefaultNicoAPIName},
+		{&NicoRemote{APIName: "carbide"}, "carbide"},
+	} {
+		if got := tt.remote.EffectiveAPIName(); got != tt.want {
+			t.Errorf("EffectiveAPIName(%+v) = %q, want %q", tt.remote, got, tt.want)
+		}
 	}
 }
 

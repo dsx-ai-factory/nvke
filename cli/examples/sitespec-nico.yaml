@@ -39,6 +39,9 @@ infra:
       endpoint: "https://nico.example"
       siteID: "00000000-0000-0000-0000-000000000001"
       vpcID: "00000000-0000-0000-0000-000000000002"
+      # Optional. The API name the NICo serves its REST API under; forge when
+      # unset, as the hosted NICo serves. A self-hosted one may serve carbide.
+      # apiName: "forge"
 
     controlPlane:
       # Same meaning as the length of cluster.nodes: odd, at least one.
