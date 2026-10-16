@@ -577,7 +577,10 @@ jobs:
       # enforcement, matching job_workflow_ref rather than github.ref. This
       # just skips a labelled PR leg straight to "not trusted" instead of
       # spending a step on an auth call that WIF was always going to deny.
-      QUALIFY_PUBLISH_TRUSTED: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'true' || 'false' }}
+      # TEST: forced true to confirm GCP itself rejects an untrusted ref's
+      # token exchange. Revert to the real condition before merge:
+      # ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'true' || 'false' }}
+      QUALIFY_PUBLISH_TRUSTED: 'true'
       # Reported below only -- not read by anything downstream here, since the
       # plan job already resolved and applied it. Mirrors that job's own
       # formula so the summary reports what actually happened, not a guess.
