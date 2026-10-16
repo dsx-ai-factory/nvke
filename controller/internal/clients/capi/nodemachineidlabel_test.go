@@ -15,7 +15,7 @@ func TestClient_NodeMachineIDLabelValue(t *testing.T) {
 	node := db.Node{}
 	node.SetNico(db.NicoNodeProvider{ForgeMachineID: "machine-abc123"})
 
-	value, err := New().NodeMachineIDLabelValue(db.Cluster{ProviderType: db.ProviderTypeCAPI}, node)
+	value, err := New().NodeMachineIDLabelValue(node)
 	require.NoError(t, err)
 	require.Empty(t, value, "CAPI nodes never carry a machine-ID label")
 }

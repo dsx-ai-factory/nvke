@@ -115,16 +115,12 @@ func NewDBClusterTenantClientProvider(
 // provider decides how its tenant API is reached; this provider builds the
 // client for that access method.
 func (p *DBClusterTenantClientProvider) ClientForDBCluster(ctx context.Context, cluster db.Cluster) (client.Client, error) {
-	access, err := clients.GetTenantAPIAccess(cluster)
-	if err != nil {
-		return nil, err
-	}
-	method, err := access.TenantAPIAccessMethod(cluster, p.tenantAccessEnabled)
+	provider, err := clients.GetProviderClient(cluster)
 	if err != nil {
 		return nil, err
 	}
 
-	switch method {
+	switch method := provider.TenantAPIAccess().TenantAPIAccessMethod(p.tenantAccessEnabled); method {
 	case shared.TenantAPIAccessSecret:
 		return p.clientFromTenantAccessSecret(ctx, cluster)
 	case shared.TenantAPIAccessNodeAgent:

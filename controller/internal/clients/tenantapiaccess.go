@@ -17,11 +17,10 @@ import (
 // GetTenantAPIAccess. It only chooses the access method; building a client
 // from that method is internal/kube's job.
 type TenantAPIAccess interface {
-	// TenantAPIAccessMethod checks that cluster carries the provider payload
-	// tenant access depends on, and returns how to reach its tenant API.
+	// TenantAPIAccessMethod returns how to reach a cluster's tenant API.
 	// tenantAccessEnabled is the controller-wide rollout flag for consuming
 	// the Secret TenantAccess publishes; a provider may ignore it.
-	TenantAPIAccessMethod(cluster db.Cluster, tenantAccessEnabled bool) (shared.TenantAPIAccessMethod, error)
+	TenantAPIAccessMethod(tenantAccessEnabled bool) shared.TenantAPIAccessMethod
 }
 
 // GetTenantAPIAccess selects the TenantAPIAccess implementation for the

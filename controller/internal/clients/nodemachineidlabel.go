@@ -21,7 +21,7 @@ import (
 type NodeMachineIDLabel interface {
 	// NodeMachineIDLabelValue returns node's machine-ID label value, or ""
 	// when the node should carry no machine-ID label.
-	NodeMachineIDLabelValue(cluster db.Cluster, node db.Node) (string, error)
+	NodeMachineIDLabelValue(node db.Node) (string, error)
 }
 
 // GetNodeMachineIDLabel selects the NodeMachineIDLabel implementation for

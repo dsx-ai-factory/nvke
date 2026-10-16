@@ -779,11 +779,11 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 	// is discoverable directly on the K8s node object. Skipped when the node has
 	// no machine ID (e.g. non-Forge / CAPD-only nodes). The capability call is
 	// a pure computation over the cluster and node rows, so it is safe here.
-	machineIDLabel, err := clients.GetNodeMachineIDLabel(cluster)
+	provider, err := clients.GetProviderClient(cluster)
 	if err != nil {
 		return err
 	}
-	machineID, err := machineIDLabel.NodeMachineIDLabelValue(cluster, node)
+	machineID, err := provider.NodeMachineIDLabel().NodeMachineIDLabelValue(node)
 	if err != nil {
 		return err
 	}

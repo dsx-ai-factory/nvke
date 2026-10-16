@@ -9,6 +9,6 @@ import (
 
 // NodeMachineIDLabelValue is always "": a CAPI node has no provider machine
 // ID the controller tracks, so it carries no machine-ID label.
-func (*Client) NodeMachineIDLabelValue(_ db.Cluster, _ db.Node) (string, error) {
+func (*Client) NodeMachineIDLabelValue(db.Node) (string, error) {
 	return "", nil
 }
