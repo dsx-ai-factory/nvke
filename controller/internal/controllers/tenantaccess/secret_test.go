@@ -35,7 +35,7 @@ func TestUpsertOwnedSecretUpdatesMatchingTypeInPlace(t *testing.T) {
 	existing := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      KubeconfigSecretName(cluster.Name),
-			Namespace: SecretsNamespace,
+			Namespace: constants.LegacyManagementNamespace,
 			UID:       types.UID("existing-uid"),
 			Labels: map[string]string{
 				"owner.nke.nvidia.com/cluster": cluster.ID.String(),
@@ -188,7 +188,7 @@ func desiredKubeconfigSecret(cluster db.Cluster, secretType corev1.SecretType, v
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      KubeconfigSecretName(cluster.Name),
-			Namespace: SecretsNamespace,
+			Namespace: constants.LegacyManagementNamespace,
 			Labels: map[string]string{
 				clusterv1.ClusterNameLabel: cluster.Name,
 			},

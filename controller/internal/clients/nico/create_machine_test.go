@@ -138,12 +138,12 @@ func TestClient_CreateMachine_ResolvesByRole(t *testing.T) {
 			assert.Equal(t, "gpu,network", machines.Items[0].Annotations["example.com/setup"])
 			assert.Equal(t, "gpu", machines.Items[0].Labels["example.com/pool"])
 			nicoMachines := &nicov1.NicoMachineList{}
-			require.NoError(t, k8sClient.List(ctx, nicoMachines, ctrlclient.InNamespace(constants.NamespaceNVKESystem)))
+			require.NoError(t, k8sClient.List(ctx, nicoMachines, ctrlclient.InNamespace(constants.LegacyManagementNamespace)))
 			require.Len(t, nicoMachines.Items, 1)
 			assert.Contains(t, nicoMachines.Items[0].Spec.IpxeScript, tt.wantIPXE)
 
 			secrets := &corev1.SecretList{}
-			require.NoError(t, k8sClient.List(ctx, secrets, ctrlclient.InNamespace(constants.NamespaceNVKESystem)))
+			require.NoError(t, k8sClient.List(ctx, secrets, ctrlclient.InNamespace(constants.LegacyManagementNamespace)))
 			require.Len(t, secrets.Items, 1)
 			assert.Contains(t, string(secrets.Items[0].Data["value"]), tt.wantUserData)
 		})
@@ -174,7 +174,7 @@ func testMachineCreateDeps(k8sClient ctrlclient.Client) shared.MachineCreateDeps
 	return shared.MachineCreateDeps{
 		K8sClient:        k8sClient,
 		FieldManagerName: "cloud-workflow-engine",
-		Namespace:        constants.NamespaceNVKESystem,
+		Namespace:        constants.LegacyManagementNamespace,
 		Config:           cfg,
 		NodeAgentBootstrapFiles: func(db.Node) ([]db.CloudInitFile, error) {
 			return nil, nil

@@ -23,6 +23,7 @@ func RegisterDefaults(
 	k8sClient client.Client,
 	oidc config.NvkeOIDCAuth,
 	trustDomain string,
+	managementNamespace string,
 ) {
 	oidcConfig := oidc
 	reg.RegisterOperation(rollout.Compile(NewEnableOIDCOperation(
@@ -31,5 +32,6 @@ func RegisterDefaults(
 		WithClient(k8sClient),
 		WithOIDCConfig(&oidcConfig),
 		WithTrustDomain(trustDomain),
+		WithManagementNamespace(managementNamespace),
 	)))
 }

@@ -13,7 +13,6 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
@@ -75,7 +74,7 @@ func (a *Activities) waitForNodeReboot(ctx context.Context, input WaitForNodeReb
 			return WaitForNodeRebootResult{}, fmt.Errorf("failed to get node: %w", err)
 		}
 
-		machineNamespace = constants.NamespaceNVKESystem
+		machineNamespace = a.cfg.ManagementNamespaceOrDefault()
 		machineName = node.Name
 	}
 

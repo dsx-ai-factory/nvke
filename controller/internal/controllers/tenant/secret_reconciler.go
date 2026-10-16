@@ -35,21 +35,32 @@ type SecretReconciler struct {
 	reader              client.Reader
 	managerSet          *ManagerSet
 	managedByLabelValue string
+	// secretsNamespace is the management namespace tenant-access publishes into
+	// (config.Config.ManagementNamespaceOrDefault). A Secret anywhere else is
+	// not one of ours.
+	secretsNamespace string
 }
 
-func NewSecretReconciler(database clusterReader, reader client.Reader, managerSet *ManagerSet, managedByLabelValue string) *SecretReconciler {
+func NewSecretReconciler(
+	database clusterReader,
+	reader client.Reader,
+	managerSet *ManagerSet,
+	managedByLabelValue string,
+	secretsNamespace string,
+) *SecretReconciler {
 	return &SecretReconciler{
 		database:            database,
 		reader:              reader,
 		managerSet:          managerSet,
 		managedByLabelValue: managedByLabelValue,
+		secretsNamespace:    secretsNamespace,
 	}
 }
 
 func (r *SecretReconciler) SetupWithManager(manager ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(manager).
 		Named("tenant-access-secret").
-		For(&corev1.Secret{}, builder.WithPredicates(tenantAccessSecretPredicate(r.managedByLabelValue))).
+		For(&corev1.Secret{}, builder.WithPredicates(tenantAccessSecretPredicate(r.managedByLabelValue, r.secretsNamespace))).
 		Complete(r)
 }
 
@@ -64,7 +75,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		return ctrl.Result{}, fmt.Errorf("getting tenant-access Secret %s: %w", secretRef, err)
 	}
 
-	clusterID, ok := clusterIDForKubeconfigSecret(secret, r.managedByLabelValue)
+	clusterID, ok := clusterIDForKubeconfigSecret(secret, r.managedByLabelValue, r.secretsNamespace)
 	if !ok {
 		r.managerSet.RemoveKubeconfigSecret(secretRef)
 		return ctrl.Result{}, nil
@@ -101,8 +112,8 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
-func clusterIDForKubeconfigSecret(secret *corev1.Secret, managedByLabelValue string) (uuid.UUID, bool) {
-	if secret.Namespace != tenantaccess.SecretsNamespace ||
+func clusterIDForKubeconfigSecret(secret *corev1.Secret, managedByLabelValue, secretsNamespace string) (uuid.UUID, bool) {
+	if secret.Namespace != secretsNamespace ||
 		keys.ManagedBy.Value(secret.Labels) != managedByLabelValue ||
 		!tenantaccess.IsControllerKubeconfigSecretName(secret.Name) {
 		return uuid.Nil, false
@@ -111,13 +122,13 @@ func clusterIDForKubeconfigSecret(secret *corev1.Secret, managedByLabelValue str
 	return clusterID, err == nil
 }
 
-func tenantAccessSecretPredicate(managedByLabelValue string) predicate.Predicate {
+func tenantAccessSecretPredicate(managedByLabelValue, secretsNamespace string) predicate.Predicate {
 	matches := func(object client.Object) bool {
 		secret, ok := object.(*corev1.Secret)
 		if !ok {
 			return false
 		}
-		_, matches := clusterIDForKubeconfigSecret(secret, managedByLabelValue)
+		_, matches := clusterIDForKubeconfigSecret(secret, managedByLabelValue, secretsNamespace)
 		return matches
 	}
 

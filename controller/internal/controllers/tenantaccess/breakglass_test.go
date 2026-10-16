@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
@@ -99,7 +100,7 @@ func TestIssueAdminBreakglassMints(t *testing.T) {
 	inflight := &corev1.Secret{}
 	require.NoError(t, c.k8sClient.Get(ctx, types.NamespacedName{
 		Name:      AdminKubeconfigSecretName(cluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, inflight))
 	assert.NotEmpty(t, inflight.Data[breakglassKeySecretKey])
 	assert.Empty(t, inflight.Data[KubeconfigSecretKey])
@@ -159,7 +160,7 @@ func TestIssueAdminBreakglassContinuesAnApprovedCSR(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(breakglassTenantScheme(t)).WithObjects(csr).Build()
 	c := breakglassController(client)
 	c.k8sClient = breakglassManagementClient(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: AdminKubeconfigSecretName("tenant-a"), Namespace: SecretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: AdminKubeconfigSecretName("tenant-a"), Namespace: constants.LegacyManagementNamespace},
 		Data:       map[string][]byte{breakglassKeySecretKey: keyPEM},
 	})
 
@@ -214,7 +215,7 @@ func TestIssueAdminBreakglassDropsSignedCSRWithoutKey(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(breakglassTenantScheme(t)).WithObjects(csr).Build()
 	c := breakglassController(client)
 	c.k8sClient = breakglassManagementClient(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: AdminKubeconfigSecretName("tenant-a"), Namespace: SecretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: AdminKubeconfigSecretName("tenant-a"), Namespace: constants.LegacyManagementNamespace},
 	})
 
 	_, err = c.issueAdminBreakglass(ctx, []byte(testAdminConf), testBreakglassCluster(), nil)
@@ -237,7 +238,7 @@ func TestIssueAdminBreakglassKeepsAnUnsignedCSR(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(breakglassTenantScheme(t)).WithObjects(csr).Build()
 	c := breakglassController(client)
 	c.k8sClient = breakglassManagementClient(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: AdminKubeconfigSecretName("tenant-a"), Namespace: SecretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: AdminKubeconfigSecretName("tenant-a"), Namespace: constants.LegacyManagementNamespace},
 		Data:       map[string][]byte{breakglassKeySecretKey: keyPEM},
 	})
 
@@ -250,7 +251,7 @@ func TestIssueAdminBreakglassKeepsAnUnsignedCSR(t *testing.T) {
 	secret := &corev1.Secret{}
 	require.NoError(t, c.k8sClient.Get(ctx, types.NamespacedName{
 		Name:      AdminKubeconfigSecretName("tenant-a"),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, secret))
 	assert.Equal(t, keyPEM, secret.Data[breakglassKeySecretKey])
 	assert.Empty(t, secret.Data["value"])
@@ -271,7 +272,7 @@ func TestIssueAdminBreakglassDeletesADeniedCSR(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(breakglassTenantScheme(t)).WithObjects(csr).Build()
 	c := breakglassController(client)
 	c.k8sClient = breakglassManagementClient(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: AdminKubeconfigSecretName("tenant-a"), Namespace: SecretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: AdminKubeconfigSecretName("tenant-a"), Namespace: constants.LegacyManagementNamespace},
 		Data:       map[string][]byte{breakglassKeySecretKey: keyPEM},
 	})
 
@@ -330,7 +331,7 @@ func TestIssueAdminBreakglassDeletesForeignCSR(t *testing.T) {
 		secret := &corev1.Secret{}
 		require.NoError(t, c.k8sClient.Get(ctx, types.NamespacedName{
 			Name:      AdminKubeconfigSecretName("tenant-a"),
-			Namespace: SecretsNamespace,
+			Namespace: constants.LegacyManagementNamespace,
 		}, secret))
 		assert.Equal(t, storedPEM, secret.Data[breakglassKeySecretKey])
 		assert.Empty(t, secret.Data["value"])
@@ -476,7 +477,7 @@ func submittedBreakglassCSR(t *testing.T, key *ecdsa.PrivateKey, status certific
 
 func breakglassKeySecret(clusterName string, keyPEM []byte) *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: AdminKubeconfigSecretName(clusterName), Namespace: SecretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: AdminKubeconfigSecretName(clusterName), Namespace: constants.LegacyManagementNamespace},
 		Data:       map[string][]byte{breakglassKeySecretKey: keyPEM},
 	}
 }
@@ -502,7 +503,7 @@ func assertBreakglassKeyCleared(t *testing.T, ctx context.Context, c *Controller
 	secret := &corev1.Secret{}
 	require.NoError(t, c.k8sClient.Get(ctx, types.NamespacedName{
 		Name:      AdminKubeconfigSecretName(clusterName),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, secret))
 	assert.Empty(t, secret.Data[breakglassKeySecretKey])
 }

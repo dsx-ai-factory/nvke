@@ -19,6 +19,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -35,11 +36,11 @@ func TestDBClusterTenantClientProviderResolvesCAPIClusterViaClusterRow(t *testin
 	database := &testutil.MockDB{}
 	database.On("ListClusters", mock.Anything, db.ClusterFilters{Name: &cluster.Name}).
 		Return([]db.Cluster{cluster}, nil)
-	provider := NewDBClusterTenantClientProvider(database, managementClient, nil, true)
+	provider := NewDBClusterTenantClientProvider(database, managementClient, nil, true, constants.LegacyManagementNamespace)
 
 	capiCluster := &clusterv1.Cluster{ObjectMeta: metav1.ObjectMeta{
 		Name:      cluster.Name,
-		Namespace: tenantAccessKubeconfigNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}}
 
 	tenantClient, err := provider.ClientForCluster(ctx, capiCluster)
@@ -52,7 +53,7 @@ func TestDBClusterTenantClientProviderErrorsWhenCAPIClusterHasNoRow(t *testing.T
 	database := &testutil.MockDB{}
 	database.On("ListClusters", mock.Anything, db.ClusterFilters{Name: &name}).
 		Return([]db.Cluster{}, nil)
-	provider := NewDBClusterTenantClientProvider(database, nil, nil, true)
+	provider := NewDBClusterTenantClientProvider(database, nil, nil, true, constants.LegacyManagementNamespace)
 
 	_, err := provider.ClientForCluster(context.Background(), &clusterv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "nke-system"},
@@ -72,7 +73,7 @@ func TestNewRESTConfigFromKubeconfigPreservesExecProvider(t *testing.T) {
 
 func TestDBClusterTenantClientProviderReturnsNotReadyForMissingPublishedSecret(t *testing.T) {
 	managementClient := fake.NewClientBuilder().WithScheme(newTenantClientProviderTestScheme(t)).Build()
-	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, true)
+	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, true, constants.LegacyManagementNamespace)
 
 	_, err := provider.ClientForDBCluster(context.Background(), newSiteDBClusterForTenantClientProviderTest())
 	require.Error(t, err)
@@ -85,12 +86,12 @@ func TestDBClusterTenantClientProviderReturnsNotReadyForEmptyPublishedSecret(t *
 		WithScheme(newTenantClientProviderTestScheme(t)).
 		WithObjects(&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: tenantAccessKubeconfigNamespace,
+				Namespace: constants.LegacyManagementNamespace,
 				Name:      cluster.Name + "-kubeconfig",
 			},
 		}).
 		Build()
-	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, true)
+	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, true, constants.LegacyManagementNamespace)
 
 	_, err := provider.ClientForDBCluster(context.Background(), cluster)
 	require.Error(t, err)
@@ -110,12 +111,12 @@ func TestDBClusterTenantClientProviderReturnsNotReadyForEmptyCAPIPublishedSecret
 		WithScheme(newTenantClientProviderTestScheme(t)).
 		WithObjects(&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: tenantAccessKubeconfigNamespace,
+				Namespace: constants.LegacyManagementNamespace,
 				Name:      cluster.Name + "-kubeconfig",
 			},
 		}).
 		Build()
-	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, false)
+	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, false, constants.LegacyManagementNamespace)
 
 	_, err := provider.ClientForDBCluster(context.Background(), cluster)
 	require.Error(t, err)
@@ -129,7 +130,7 @@ func TestDBClusterTenantClientProviderErrorsForUnsupportedProviderType(t *testin
 		Name:         "test-cluster",
 		ProviderType: db.ProviderType("unknown"),
 	}
-	provider := NewDBClusterTenantClientProvider(nil, nil, nil, false)
+	provider := NewDBClusterTenantClientProvider(nil, nil, nil, false, constants.LegacyManagementNamespace)
 
 	_, err := provider.ClientForDBCluster(context.Background(), cluster)
 	require.EqualError(t, err, `unsupported provider type "unknown" for cluster `+cluster.ID.String())
@@ -141,7 +142,7 @@ func TestDBClusterTenantClientProviderSharesClientByCluster(t *testing.T) {
 		WithScheme(newTenantClientProviderTestScheme(t)).
 		WithObjects(newPublishedTenantKubeconfigSecret(cluster.Name)).
 		Build()
-	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, true)
+	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, true, constants.LegacyManagementNamespace)
 
 	firstClient, err := provider.ClientForDBCluster(context.Background(), cluster)
 	require.NoError(t, err)
@@ -157,14 +158,14 @@ func TestDBClusterTenantClientProviderRebuildsClientAfterSecretRotation(t *testi
 		WithScheme(newTenantClientProviderTestScheme(t)).
 		WithObjects(newPublishedTenantKubeconfigSecret(cluster.Name)).
 		Build()
-	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, true)
+	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, true, constants.LegacyManagementNamespace)
 
 	firstClient, err := provider.ClientForDBCluster(ctx, cluster)
 	require.NoError(t, err)
 
 	secret := &corev1.Secret{}
 	require.NoError(t, managementClient.Get(ctx, types.NamespacedName{
-		Namespace: tenantAccessKubeconfigNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 		Name:      cluster.Name + "-kubeconfig",
 	}, secret))
 	previousResourceVersion := secret.ResourceVersion
@@ -175,7 +176,7 @@ func TestDBClusterTenantClientProviderRebuildsClientAfterSecretRotation(t *testi
 	)
 	require.NoError(t, managementClient.Update(ctx, secret))
 	require.NoError(t, managementClient.Get(ctx, types.NamespacedName{
-		Namespace: tenantAccessKubeconfigNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 		Name:      cluster.Name + "-kubeconfig",
 	}, secret))
 	require.NotEqual(t, previousResourceVersion, secret.ResourceVersion)
@@ -193,7 +194,7 @@ func TestDBClusterTenantClientProviderDoesNotCacheFailure(t *testing.T) {
 	ctx := context.Background()
 	cluster := newSiteDBClusterForTenantClientProviderTest()
 	managementClient := fake.NewClientBuilder().WithScheme(newTenantClientProviderTestScheme(t)).Build()
-	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, true)
+	provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, true, constants.LegacyManagementNamespace)
 
 	_, err := provider.ClientForDBCluster(ctx, cluster)
 	require.Error(t, err)
@@ -210,7 +211,7 @@ func TestDBClusterTenantClientProviderKeepsNodeAgentFallbackWhenTenantAccessDisa
 	cluster := newSiteDBClusterForTenantClientProviderTest()
 	database := &testutil.MockDB{}
 	database.On("ListNodes", mock.Anything, db.NodeFilters{ClusterID: &cluster.ID}).Return([]db.Node{}, nil)
-	provider := NewDBClusterTenantClientProvider(database, nil, nil, false)
+	provider := NewDBClusterTenantClientProvider(database, nil, nil, false, constants.LegacyManagementNamespace)
 
 	_, err := provider.ClientForDBCluster(context.Background(), cluster)
 	require.Error(t, err)
@@ -230,7 +231,7 @@ func TestDBClusterTenantClientProviderCAPIUsesPublishedSecret(t *testing.T) {
 	}
 	published := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: tenantAccessKubeconfigNamespace,
+			Namespace: constants.LegacyManagementNamespace,
 			Name:      cluster.Name + "-kubeconfig",
 			Labels: map[string]string{
 				"nke.nvidia.com/cluster-id":      cluster.ID.String(),
@@ -246,7 +247,7 @@ func TestDBClusterTenantClientProviderCAPIUsesPublishedSecret(t *testing.T) {
 			WithScheme(newTenantClientProviderTestScheme(t)).
 			WithObjects(published).
 			Build()
-		provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, false)
+		provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, false, constants.LegacyManagementNamespace)
 		tenantClient, err := provider.ClientForDBCluster(context.Background(), cluster)
 		require.NoError(t, err)
 		require.NotNil(t, tenantClient)
@@ -256,7 +257,7 @@ func TestDBClusterTenantClientProviderCAPIUsesPublishedSecret(t *testing.T) {
 		managementClient := fake.NewClientBuilder().
 			WithScheme(newTenantClientProviderTestScheme(t)).
 			Build()
-		provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, false)
+		provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, false, constants.LegacyManagementNamespace)
 		_, err := provider.ClientForDBCluster(context.Background(), cluster)
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrTenantClientNotReady)
@@ -313,7 +314,7 @@ func newSiteDBClusterForTenantClientProviderTest() db.Cluster {
 func newPublishedTenantKubeconfigSecret(clusterName string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:       tenantAccessKubeconfigNamespace,
+			Namespace:       constants.LegacyManagementNamespace,
 			Name:            clusterName + "-kubeconfig",
 			ResourceVersion: "1",
 		},

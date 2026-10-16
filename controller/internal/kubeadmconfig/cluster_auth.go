@@ -30,6 +30,9 @@ type ClusterAuthentication struct {
 	SharedEnabled bool
 	Providers     []controllerconfig.OIDCProvider
 	TrustDomain   string
+	// ManagementNamespace is where the nke-rbac ConfigMap lives
+	// (config.Config.ManagementNamespaceOrDefault).
+	ManagementNamespace string
 }
 
 // Needed reports whether the cluster has any OIDC provider.
@@ -59,7 +62,7 @@ func BuildClusterAuthenticationConfig(ctx context.Context, c client.Client, in C
 		}
 	}
 
-	policy, err := LoadOperatorJWTPolicy(ctx, c, in.TrustDomain)
+	policy, err := LoadOperatorJWTPolicy(ctx, c, in.TrustDomain, in.ManagementNamespace)
 	if err != nil {
 		return nil, err
 	}
@@ -72,13 +75,13 @@ func BuildClusterAuthenticationConfig(ctx context.Context, c client.Client, in C
 
 // LoadOperatorJWTPolicy reserves the management SPIFFE trust domain and the User
 // subjects nke-rbac binds. With nke-rbac present, the trust domain is required.
-func LoadOperatorJWTPolicy(ctx context.Context, reader client.Reader, trustDomain string) (OperatorJWTPolicy, error) {
+func LoadOperatorJWTPolicy(ctx context.Context, reader client.Reader, trustDomain, managementNamespace string) (OperatorJWTPolicy, error) {
 	if reader == nil {
 		return OperatorJWTPolicy{}, errors.New("reading nke-rbac needs a management-cluster client")
 	}
 	policy := OperatorJWTPolicy{ManagementJWTTrustDomain: trustDomain}
 
-	manifest, err := nvkerbac.ReadManifest(ctx, reader)
+	manifest, err := nvkerbac.ReadManifest(ctx, reader, managementNamespace)
 	if apierrors.IsNotFound(err) {
 		return policy, nil
 	}

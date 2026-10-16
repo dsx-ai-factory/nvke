@@ -56,10 +56,10 @@ func TestResources_ApplyClusterScaffold(t *testing.T) {
 			ctx := context.Background()
 			k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).Build()
 
-			err := capi.ApplyClusterScaffold(ctx, k8sClient, params.cluster, false, "cloud-workflow-engine", "cloud-workflow-engine")
+			err := capi.ApplyClusterScaffold(ctx, k8sClient, params.cluster, false, "cloud-workflow-engine", "cloud-workflow-engine", constants.LegacyManagementNamespace)
 			require.NoError(t, err)
 
-			namespace := constants.NamespaceNVKESystem
+			namespace := constants.LegacyManagementNamespace
 
 			clusterObj := &clusterv1.Cluster{}
 			require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Name: params.cluster.Name, Namespace: namespace}, clusterObj))

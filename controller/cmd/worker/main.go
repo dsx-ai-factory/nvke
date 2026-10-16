@@ -213,6 +213,7 @@ func main() {
 		kube.RuntimeManagerOptions{
 			ConfigMapCacheNamespace: cfg.SpireServerNamespace,
 			LeaderElectionNamespace: cfg.PodNamespace,
+			SecretCacheNamespace:    cfg.ManagementNamespaceOrDefault(),
 		},
 		spirev1alpha1.AddToScheme,
 		nicov1.AddToScheme,
@@ -227,6 +228,7 @@ func main() {
 		managementK8sClient,
 		nodeAgentClient,
 		cfg.TenantAccessEnabled,
+		cfg.ManagementNamespaceOrDefault(),
 	)
 
 	if cfg.SpiffeEnabled {
@@ -458,6 +460,7 @@ func main() {
 		k8sControllerManager.GetClient(),
 		tenantManagerSet,
 		cfg.ManagedByLabelValue,
+		cfg.ManagementNamespaceOrDefault(),
 	)
 	if err := tenantSecretReconciler.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up tenant manager Secret reconciler", "error", err)

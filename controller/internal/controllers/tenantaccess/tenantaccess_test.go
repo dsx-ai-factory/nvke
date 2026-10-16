@@ -94,7 +94,7 @@ func newPublishTestController(database db.DB, k8sClient ctrlclient.Client) *Cont
 
 func nvkeRBACConfigMap() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: "nke-rbac", Namespace: SecretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "nke-rbac", Namespace: constants.LegacyManagementNamespace},
 		Data:       map[string]string{"manifest.yaml": testRBACManifest},
 	}
 }
@@ -221,10 +221,10 @@ func TestController_Reconcile(t *testing.T) {
 	}
 
 	kubeconfigSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
-		Name: KubeconfigSecretName(deletingCluster.Name), Namespace: SecretsNamespace,
+		Name: KubeconfigSecretName(deletingCluster.Name), Namespace: constants.LegacyManagementNamespace,
 	}, Data: map[string][]byte{KubeconfigSecretKey: []byte("existing-kubeconfig")}}
 	trustBundleSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
-		Name: TrustBundleSecretName(deletingCluster.Name), Namespace: SecretsNamespace,
+		Name: TrustBundleSecretName(deletingCluster.Name), Namespace: constants.LegacyManagementNamespace,
 	}, Data: map[string][]byte{TrustBundleSecretKey: []byte("existing-trust-bundle")}}
 	k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
 		capiClusterFixture(activeCluster),
@@ -256,12 +256,12 @@ func TestController_Reconcile(t *testing.T) {
 	// publish nothing.
 	preservedKubeconfig := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
-		Name: KubeconfigSecretName(deletingCluster.Name), Namespace: SecretsNamespace,
+		Name: KubeconfigSecretName(deletingCluster.Name), Namespace: constants.LegacyManagementNamespace,
 	}, preservedKubeconfig))
 	assert.Equal(t, []byte("existing-kubeconfig"), preservedKubeconfig.Data[KubeconfigSecretKey])
 	preservedTrustBundle := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
-		Name: TrustBundleSecretName(deletingCluster.Name), Namespace: SecretsNamespace,
+		Name: TrustBundleSecretName(deletingCluster.Name), Namespace: constants.LegacyManagementNamespace,
 	}, preservedTrustBundle))
 	assert.Equal(t, []byte("existing-trust-bundle"), preservedTrustBundle.Data[TrustBundleSecretKey])
 	assertSecret(t, ctx, k8sClient, notReadyCluster, false)
@@ -443,7 +443,7 @@ func TestController_ReconcileOIDC(t *testing.T) {
 	// Management client seeded with the operator-managed nke-rbac ConfigMap and
 	// the CAPI Cluster owner-ref target.
 	rbacCM := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: "nke-rbac", Namespace: SecretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "nke-rbac", Namespace: constants.LegacyManagementNamespace},
 		Data:       map[string]string{"manifest.yaml": testRBACManifest},
 	}
 	k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(rbacCM, capiClusterFixture(oidcCluster)).Build()
@@ -476,7 +476,7 @@ func TestController_ReconcileOIDC(t *testing.T) {
 	kcSecret := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
 		Name:      KubeconfigSecretName(oidcCluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, kcSecret))
 	spireCfg, err := clientcmd.Load(kcSecret.Data[KubeconfigSecretKey])
 	require.NoError(t, err)
@@ -503,7 +503,7 @@ func TestController_ReconcileOIDC(t *testing.T) {
 	tbSecret := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
 		Name:      TrustBundleSecretName(oidcCluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, tbSecret))
 	assert.Equal(t, []byte("test-ca"), tbSecret.Data[TrustBundleSecretKey])
 	assert.Equal(t, "cloud-workflow-engine", tbSecret.Labels[keys.ManagedBy.String()])
@@ -550,7 +550,7 @@ func TestController_ReconcileMixed(t *testing.T) {
 	}
 
 	rbacCM := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: "nke-rbac", Namespace: SecretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "nke-rbac", Namespace: constants.LegacyManagementNamespace},
 		Data:       map[string]string{"manifest.yaml": testRBACManifest},
 	}
 	k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
@@ -583,7 +583,7 @@ func TestController_ReconcileMixed(t *testing.T) {
 	kcSecret := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
 		Name:      KubeconfigSecretName(oidcCluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, kcSecret))
 	spireCfg, err := clientcmd.Load(kcSecret.Data[KubeconfigSecretKey])
 	require.NoError(t, err)
@@ -593,7 +593,7 @@ func TestController_ReconcileMixed(t *testing.T) {
 	tbSecret := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
 		Name:      TrustBundleSecretName(oidcCluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, tbSecret))
 	assert.Equal(t, []byte("test-ca"), tbSecret.Data[TrustBundleSecretKey])
 
@@ -623,7 +623,7 @@ func capiClusterFixture(cluster db.Cluster) *clusterv1.Cluster {
 	return &clusterv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name,
-			Namespace: SecretsNamespace,
+			Namespace: constants.LegacyManagementNamespace,
 			UID:       types.UID(cluster.ID.String()),
 		},
 	}
@@ -632,7 +632,7 @@ func capiClusterFixture(cluster db.Cluster) *clusterv1.Cluster {
 // reconcileRequest builds the ctrl.Request the controller reconciles on: the
 // CAPI Cluster's namespace/name identity, not the DB cluster ID.
 func reconcileRequest(clusterName string) ctrl.Request {
-	return ctrl.Request{NamespacedName: types.NamespacedName{Namespace: SecretsNamespace, Name: clusterName}}
+	return ctrl.Request{NamespacedName: types.NamespacedName{Namespace: constants.LegacyManagementNamespace, Name: clusterName}}
 }
 
 // clusterNameFilter matches the db.ClusterFilters Reconcile issues to resolve
@@ -649,13 +649,13 @@ func assertSecret(t *testing.T, ctx context.Context, k8sClient ctrlclient.Client
 	secret := &corev1.Secret{}
 	err := k8sClient.Get(ctx, types.NamespacedName{
 		Name:      KubeconfigSecretName(cluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, secret)
 	if !want {
 		assert.True(t, apierrors.IsNotFound(err), "expected no secret for cluster %s", cluster.Name)
 		adminErr := k8sClient.Get(ctx, types.NamespacedName{
 			Name:      AdminKubeconfigSecretName(cluster.Name),
-			Namespace: SecretsNamespace,
+			Namespace: constants.LegacyManagementNamespace,
 		}, &corev1.Secret{})
 		assert.True(t, apierrors.IsNotFound(adminErr), "expected no admin secret for cluster %s", cluster.Name)
 		return
@@ -679,7 +679,7 @@ func assertAdminSecret(t *testing.T, ctx context.Context, k8sClient ctrlclient.C
 	secret := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
 		Name:      AdminKubeconfigSecretName(cluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, secret))
 	assert.Equal(t, []byte(wantKubeconfig), secret.Data[KubeconfigSecretKey])
 	assert.Equal(t, corev1.SecretTypeOpaque, secret.Type)
@@ -881,7 +881,7 @@ func TestController_PublishesOIDCWhenTenantAccessDisabled(t *testing.T) {
 	kcSecret := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
 		Name:      KubeconfigSecretName(oidcCluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, kcSecret))
 	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, kcSecret.Labels[keys.KubeconfigMode.String()])
 	assertAdminSecret(t, ctx, k8sClient, oidcCluster, testAdminConf)
@@ -917,7 +917,7 @@ func TestPublish_RefusesWrongOwnerSecret(t *testing.T) {
 	existing := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      KubeconfigSecretName(cluster.Name),
-			Namespace: SecretsNamespace,
+			Namespace: constants.LegacyManagementNamespace,
 			Labels: map[string]string{
 				keys.ClusterID.String():      otherID.String(),
 				keys.KubeconfigMode.String(): constants.LabelValueKubeconfigModeSPIRE,
@@ -984,7 +984,7 @@ func TestPublish_StoresIssuedAdminKubeconfig(t *testing.T) {
 	controllerSecret := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
 		Name:      KubeconfigSecretName(cluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, controllerSecret))
 	assert.Equal(t, []byte(testAdminConf), controllerSecret.Data[KubeconfigSecretKey])
 }
@@ -1008,14 +1008,14 @@ func TestPublish_PublishesControllerKubeconfigWhenIssuanceFails(t *testing.T) {
 	adminSecret := &corev1.Secret{}
 	err = k8sClient.Get(ctx, types.NamespacedName{
 		Name:      AdminKubeconfigSecretName(cluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, adminSecret)
 	assert.True(t, apierrors.IsNotFound(err), err)
 
 	controllerSecret := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
 		Name:      KubeconfigSecretName(cluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, controllerSecret))
 	assert.Equal(t, []byte(testAdminConf), controllerSecret.Data[KubeconfigSecretKey])
 }
@@ -1070,7 +1070,7 @@ func TestPublish_RewritesAdminToSPIRE(t *testing.T) {
 	existing := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      KubeconfigSecretName(cluster.Name),
-			Namespace: SecretsNamespace,
+			Namespace: constants.LegacyManagementNamespace,
 			Labels: map[string]string{
 				keys.ClusterID.String():      cluster.ID.String(),
 				keys.KubeconfigMode.String(): constants.LabelValueKubeconfigModeAdmin,
@@ -1092,7 +1092,7 @@ func TestPublish_RewritesAdminToSPIRE(t *testing.T) {
 	got := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
 		Name:      KubeconfigSecretName(cluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, got))
 	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, got.Labels[keys.KubeconfigMode.String()])
 	assert.Equal(t, corev1.SecretTypeOpaque, got.Type)
@@ -1118,7 +1118,7 @@ func TestPublish_CAPIClusterOIDCConsumedFromNVKESystem(t *testing.T) {
 	}
 	require.NoError(t, c.publish(ctx, cluster, kubeconfigWithParseableCA(t)))
 
-	dbProvider := kube.NewDBClusterTenantClientProvider(nil, k8sClient, nil, false)
+	dbProvider := kube.NewDBClusterTenantClientProvider(nil, k8sClient, nil, false, constants.LegacyManagementNamespace)
 	tenantClient, err := dbProvider.ClientForDBCluster(ctx, cluster)
 	require.NoError(t, err)
 	require.NotNil(t, tenantClient)
@@ -1142,7 +1142,7 @@ func TestPublish_UsesLiveOIDCAuthEnabled(t *testing.T) {
 	got := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
 		Name:      KubeconfigSecretName(live.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, got))
 	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, got.Labels[keys.KubeconfigMode.String()])
 	assert.Contains(t, string(got.Data[KubeconfigSecretKey]), "k8s-spiffe-workload-jwt-exec-auth")
@@ -1166,7 +1166,7 @@ func TestPublish_RefusesSPIREWithoutRBAC(t *testing.T) {
 	controllerSecret := &corev1.Secret{}
 	controllerErr := k8sClient.Get(ctx, types.NamespacedName{
 		Name:      KubeconfigSecretName(cluster.Name),
-		Namespace: SecretsNamespace,
+		Namespace: constants.LegacyManagementNamespace,
 	}, controllerSecret)
 	assert.True(t, apierrors.IsNotFound(controllerErr), "SPIRE kubeconfig must not publish without RBAC")
 }

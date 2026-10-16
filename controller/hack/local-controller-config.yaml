@@ -19,6 +19,8 @@ fieldManager:
   rebootMachineName: cloud-workflow-engine-reboot-machine
   machineHealthIssueName: cloud-workflow-engine-machine-health-issue
 managedByLabelValue: cloud-workflow-engine
+# The shared management-plane namespace. Tilt creates it (deploy/k8s/nvke-system-namespace.yaml).
+managementNamespace: nvke-system
 metricsListenAddress: 127.0.0.1:9090
 supportedInfraProviders:
   - nico

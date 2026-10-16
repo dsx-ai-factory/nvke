@@ -36,6 +36,7 @@ type Config struct {
 	AgentReadiness                           AgentReadinessConfig `json:"agentReadiness"`
 	FieldManager                             FieldManagerConfig   `json:"fieldManager"`
 	ManagedByLabelValue                      string               `json:"managedByLabelValue"`
+	ManagementNamespace                      string               `json:"managementNamespace"`
 	MetricsListenAddress                     string               `json:"metricsListenAddress"`
 	SupportedInfraProviders                  []string             `json:"supportedInfraProviders"`
 	NodeMetadataAllowlistedLabelKeys         []string             `json:"nodeMetadataAllowlistedLabelKeys"`
@@ -304,6 +305,12 @@ func (c *Config) Validate() error {
 
 	if err := c.OIDC.validate(); err != nil {
 		return fmt.Errorf("oidc: %w", err)
+	}
+
+	if c.ManagementNamespace != "" {
+		if errs := validation.IsDNS1123Label(c.ManagementNamespace); len(errs) > 0 {
+			return fmt.Errorf("managementNamespace %q is not a valid namespace name: %s", c.ManagementNamespace, strings.Join(errs, "; "))
+		}
 	}
 
 	if c.Spire.JoinTokenTTL.Duration <= 0 {
