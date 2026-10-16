@@ -421,15 +421,15 @@ type ClusterFilters struct {
 type CniPlugin string
 
 const (
-	CNICalico                      CniPlugin = "calico"
-	CNIOvnKubernetes               CniPlugin = "ovn-kubernetes"
-	DefaultCalicoCNIVersion                  = "3.30.1"
+	CNICalico               CniPlugin = "calico"
+	CNIOvnKubernetes        CniPlugin = "ovn-kubernetes"
+	DefaultCalicoCNIVersion           = "3.30.1"
 	// 1.4.0, not the published stream: this is the version the agent looks up in
 	// the bundle index baked into a node image, which os-image/packages/cni-ovn
 	// builds from OVN_STREAMS. The CAPD and nico-vms lanes bake 1.4.0 and have no
 	// apt to fall back to, so a default they did not build fails with "ovn bundle
 	// version ... not found in index". It moves when OVN_STREAMS does.
-	DefaultOvnKubernetesCNIVersion           = "1.4.0"
+	DefaultOvnKubernetesCNIVersion = "1.4.0"
 )
 
 func ListCNIPlugins() []CniPlugin {
