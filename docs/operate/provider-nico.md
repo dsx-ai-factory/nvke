@@ -51,7 +51,7 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
    kubectl rollout restart deployment/nke-controller -n nke-controller
    ```
 
-`CONFIGURED` does not mean the credentials work. The `CREDENTIALS` column of `nvkectl get providers` reports whether they do, from the check CAPNICo runs on them every few minutes, but only with a CAPNICo release that serves `NicoIdentity` and a `NicoIdentity` that names `nico-credentials`. The CAPNICo release this procedure installs does not serve `NicoIdentity`, so `CREDENTIALS` reads `UNSUPPORTED`, and nothing checks the token or reaches the NICo API until you create the first workload cluster. [Infrastructure providers](../../cli/README.md#infrastructure-providers) lists every `CREDENTIALS` value.
+`CONFIGURED` does not mean the credentials work. The `CREDENTIALS` column of `nvkectl get providers` reports whether they do, from the check CAPNICo runs on them every few minutes, but only with a CAPNICo release that serves `NicoIdentity` and a `NicoIdentity` that names `nico-credentials`. The CAPNICo release this procedure installs does not serve `NicoIdentity`, so `CREDENTIALS` reads `UNSUPPORTED`. CAPNICo still checks the token against the NICo API, but only when it reconciles a `NicoCluster` that belongs to a Cluster API `Cluster`, which normally first happens when you create a workload cluster. [Infrastructure providers](../../cli/README.md#infrastructure-providers) lists every `CREDENTIALS` value.
 
 ## Manage the NICo credentials
 
