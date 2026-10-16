@@ -190,3 +190,26 @@ func TestGetClusterKubeconfigReportsTheLastNamespaceTried(t *testing.T) {
 		t.Errorf("error = %v, want it to name %s", err, LegacySecretsNamespace)
 	}
 }
+
+// TestGetClusterKubeconfigPrefersForbiddenOverLaterNotFound covers the identity
+// that may read one namespace but not the other. "Not found -- check the cluster
+// name" would be a wrong answer there: the Secret may well exist in the
+// namespace the search was not allowed to look in.
+func TestGetClusterKubeconfigPrefersForbiddenOverLaterNotFound(t *testing.T) {
+	c := newTestClient(t)
+	c.kube.(*fake.Clientset).PrependReactor("get", "secrets", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		if action.GetNamespace() != DefaultSecretsNamespace {
+			return false, nil, nil
+		}
+		return true, nil, apierrors.NewForbidden(corev1.Resource("secrets"), "missing-cluster-admin-kubeconfig", errors.New("denied"))
+	})
+
+	_, err := c.GetClusterKubeconfig(context.Background(), "missing-cluster",
+		[]string{DefaultSecretsNamespace, LegacySecretsNamespace})
+	if err == nil {
+		t.Fatal("GetClusterKubeconfig: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not allowed to read secret "+DefaultSecretsNamespace+"/") {
+		t.Errorf("error = %v, want the %s permission error rather than the %s NotFound", err, DefaultSecretsNamespace, LegacySecretsNamespace)
+	}
+}

@@ -90,7 +90,8 @@ func newWithClient(kube kubernetes.Interface) *Client {
 // <namespace>/<cluster-name>-admin-kubeconfig.
 //
 // namespaces are tried in order, and a Secret missing from one is not an error
-// until every one has been tried; the error then names the last tried. The
+// until every one has been tried; the error then names the last tried, unless
+// one of the namespaces was unreadable, in which case it reports that. The
 // caller passes more than one so a site that pinned the legacy management
 // namespace is still found without the operator having to know which one the
 // site was installed with. An empty slice means DefaultSecretsNamespace alone.
@@ -100,7 +101,10 @@ func (c *Client) GetClusterKubeconfig(ctx context.Context, clusterName string, n
 	}
 	secretName := clusterName + adminKubeconfigSecretSuffix
 
-	var lastErr error
+	// A Forbidden outranks a later NotFound: "the Secret is not there" is only
+	// true of a namespace we were allowed to look in, so reporting the NotFound
+	// would send the operator after a cluster name that may be perfectly good.
+	var lastErr, forbiddenErr error
 	for _, namespace := range namespaces {
 		secret, err := c.kube.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{})
 		switch {
@@ -114,9 +118,15 @@ func (c *Client) GetClusterKubeconfig(ctx context.Context, clusterName string, n
 			lastErr = fmt.Errorf("admin kubeconfig secret %s/%s not found -- check the cluster name, or the cluster may not be provisioned yet: %w", namespace, secretName, err)
 		case apierrors.IsForbidden(err):
 			lastErr = fmt.Errorf("not allowed to read secret %s/%s -- the site kubeconfig identity needs 'get' on secrets in %s: %w", namespace, secretName, namespace, err)
+			if forbiddenErr == nil {
+				forbiddenErr = lastErr
+			}
 		default:
 			return nil, fmt.Errorf("reading admin kubeconfig secret %s/%s: %w", namespace, secretName, err)
 		}
+	}
+	if forbiddenErr != nil {
+		return nil, forbiddenErr
 	}
 	return nil, lastErr
 }

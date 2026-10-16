@@ -10,12 +10,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
 func TestReservedUsersReadsAllBindingDocuments(t *testing.T) {
 	t.Parallel()
 	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: nvkeRBACNamespace, Name: nvkeRBACConfigMap},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: nvkeRBACConfigMap},
 		Data: map[string]string{nvkeRBACKey: `apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 subjects:
@@ -44,7 +46,7 @@ subjects:
 func TestReservedUsersFailsWhenManifestHasNoUsers(t *testing.T) {
 	t.Parallel()
 	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: nvkeRBACNamespace, Name: nvkeRBACConfigMap},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: nvkeRBACConfigMap},
 		Data:       map[string]string{nvkeRBACKey: "kind: ClusterRole\n"},
 	}
 	client := fake.NewClientBuilder().WithObjects(configMap).Build()

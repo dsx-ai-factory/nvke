@@ -22,6 +22,15 @@ The all-node readiness validation uses the kubeconfig published in
 (using a JWT minted by the management cluster's SPIRE server) and ordinary
 admin kubeconfigs with embedded client certificates.
 
+The management namespace is per-site configurable -- the chart renders
+`nvkeSystemNamespace.name` into the controller's `managementNamespace` -- and
+`nvke-system` is only the default. Everything the suite reads or writes on the
+site controller (published Secrets, the `nke-rbac` ConfigMap, CAPI Clusters and
+Machines, verifier Pods) resolves that one namespace through
+`internal/mgmtns`. Set `NVKE_E2E_MANAGEMENT_NAMESPACE` to run against a site
+that pinned another -- `nke-system` for one installed before the namespace
+became configurable.
+
 ### Table Tests
 
 When you want to run the same validations across different cluster configurations, you can use table tests (`DescribeTableSubtree`).
