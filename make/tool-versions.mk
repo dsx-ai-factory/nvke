@@ -58,6 +58,29 @@ CRANE_SHA256_AMD64 ?= 5c16d8ddb971cb1d5e6ed8b1e743da8224414eeba2c2762d8f1a61b2f0
 CRANE_SHA256_ARM64 ?= 1f4c647b7bb260ab5435661df5b526cf59950ebf95201790db7183ac189cbcbd
 NFPM_VERSION  ?= 2.47.0
 
+# The Ubuntu Server installer ISO, one line per point release per architecture.
+# os-image/packer/Makefile selects by UBUNTU_RELEASE and ARCH and fails closed
+# on a combination with no line here, so a release bump lands with its digest.
+#
+# Committed for exactly the reason stated at the top of this file. ISO_CHECKSUM
+# used to be file:<the mirror's own SHA256SUMS>, which is served by the same
+# host as the ISO: a host that substitutes the image serves the matching
+# checksum with it, so that form cannot reject one.
+#
+# Taken from Canonical's SHA256SUMS and verified against the SHA256SUMS.gpg
+# beside it with the Ubuntu CD Image Automatic Signing Key (2012),
+# 8439 38DF 228D 22F7 B374  2BC0 D94A A3F0 EFE2 1092. To add or re-check a line:
+#
+#   gpg --verify SHA256SUMS.gpg SHA256SUMS && grep live-server SHA256SUMS
+#
+# amd64 is published under releases.ubuntu.com/<series>/, arm64 only under
+# cdimage.ubuntu.com/ubuntu/releases/<series>/release/ -- releases.ubuntu.com
+# has no arm64 entry at all.
+UBUNTU_ISO_SHA256_24_04_5_AMD64 ?= 97f3d7ffb032c3eb3b23d2c8be9cc76e60c2c1f2c0146ba5ba9fe01cafae0fd8
+UBUNTU_ISO_SHA256_24_04_5_ARM64 ?= f12484464c7d4d73e2167e0a7dbda1e669f8fae9bcf778dc0944937034b320cb
+UBUNTU_ISO_SHA256_26_04_1_AMD64 ?= cc8a95cde20f6ced61a322420de00f10cc3c90ced545daa46cb9c1a117f1d927
+UBUNTU_ISO_SHA256_26_04_1_ARM64 ?= af78753c94b924c85c4964c670692a853f7c80299a4064e317edad95462e3168
+
 KIND_VERSION    ?= v0.32.0
 KIND_SHA256_AMD64 ?= 50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54
 KIND_SHA256_ARM64 ?= b92cd615e97585de8ddade28ed5cd7feb4248d717c233eea5b03c37298900f5d
