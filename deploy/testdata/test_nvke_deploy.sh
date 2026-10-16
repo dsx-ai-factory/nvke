@@ -193,8 +193,12 @@ reject "spire takes no --set-file" 'helm upgrade --install spire .*--set-file' "
 # would be ignored: the executor refuses it before it applies anything.
 printf 'appDb:\n  url: external-pg.example.test:6432\n  dbName: customdb\n' >"${WORK}/appdb-override.yaml"
 printf '{"appDb": {"url": "external-pg.example.test:6432"}}\n' >"${WORK}/appdb-override.json"
-printf 'image:\n  tag: v-test\n' >"${WORK}/image-override.yaml"
-for f in appdb-override.yaml appdb-override.json; do
+# Spellings a line-by-line reader misses: a flow mapping after a comment, and a
+# top-level mapping indented as a whole.
+printf '# Database override\n{appDb: {url: external-pg.example.test:6432}}\n' >"${WORK}/appdb-override-flow.yaml"
+printf '  appDb:\n    url: external-pg.example.test:6432\n  image:\n    tag: v-test\n' >"${WORK}/appdb-override-indented.yaml"
+printf 'image:\n  tag: v-test\nsecrets:\n  appDb: not-the-top-level\n' >"${WORK}/image-override.yaml"
+for f in appdb-override.yaml appdb-override.json appdb-override-flow.yaml appdb-override-indented.yaml; do
   appdb_out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run --values-for "controller=${WORK}/${f}" 2>&1)" && fail "a controller --values-for ${f} that sets appDb exited 0"
   expect "a ${f} that sets appDb is refused" "^nvke-deploy: --values-for controller: ${WORK}/${f} sets appDb, but controller reads its database connection string from the Secret" "${appdb_out}"
   reject "nothing is applied before the appDb refusal (${f})" 'kubectl .*apply|helm upgrade' "${appdb_out}"

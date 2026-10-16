@@ -31,7 +31,6 @@ it is strict only within that block.
 
 Used by deploy/nvke-deploy.sh, which lives one directory up.
 """
-import json
 import re
 import sys
 
@@ -142,31 +141,6 @@ def release(path):
         ",".join(setfile))]
 
 
-TOPKEY = re.compile(r"""^(?:"([^"]+)"|'([^']+)'|([\w.-]+))[ \t]*:(?:[ \t]|$)""")
-FLOWKEY = re.compile(r"""[{,][ \t]*(?:"([^"]+)"|'([^']+)'|([\w.-]+))[ \t]*:""")
-
-
-def topkeys(path):
-    """The keys a values file sets at its top level, for the checks that ask
-    whether it sets one: a JSON object, a YAML mapping written one key per
-    line, or a flow mapping. A flow mapping also yields the keys nested in it,
-    which can only make a check refuse more, never less."""
-    with open(path, encoding="utf-8") as f:
-        text = f.read()
-    try:
-        doc = json.loads(text)
-    except ValueError:
-        doc = None
-    if isinstance(doc, dict):
-        return sorted(doc)
-    if text.lstrip().startswith("{"):
-        matches = FLOWKEY.finditer(text)
-    else:
-        matches = (TOPKEY.match(line) for line in text.splitlines())
-    return [next(g for g in m.groups() if g) for m in matches if m]
-
-
-COMMANDS = {"items": items, "release": release, "topkeys": topkeys}
-if len(sys.argv) != 3 or sys.argv[1] not in COMMANDS:
-    sys.exit("usage: nvke-deploy-items.py [items|release|topkeys] <file>")
-print("\n".join(COMMANDS[sys.argv[1]](sys.argv[2])))
+if len(sys.argv) != 3 or sys.argv[1] not in ("items", "release"):
+    sys.exit("usage: nvke-deploy-items.py [items|release] <file>")
+print("\n".join({"items": items, "release": release}[sys.argv[1]](sys.argv[2])))

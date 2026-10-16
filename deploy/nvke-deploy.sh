@@ -429,7 +429,8 @@ refuse_appdb_override() {
     while IFS= read -r file; do
       # A missing file is install_helm_item's refusal.
       [[ -n "${file}" && -f "${file}" ]] || continue
-      keys="$(python3 "${ITEMS_PY}" topkeys "${file}")" || die "--values-for ${name}: cannot read ${file}"
+      command -v "${NVKECTL}" >/dev/null 2>&1 || die "nvkectl is needed to read ${file}; set NVKECTL or put it on PATH"
+      keys="$("${NVKECTL}" inspect values "${file}")" || die "--values-for ${name}: cannot read ${file}"
       if grep -qx appDb <<<"${keys}"; then
         die "--values-for ${name}: ${file} sets appDb, but ${name} reads its database connection string from the Secret the render built from the deploy path's appDb values, so the override would be ignored; change appDb in the deploy path (for ${name}, its overlay.yaml) and run again"
       fi
