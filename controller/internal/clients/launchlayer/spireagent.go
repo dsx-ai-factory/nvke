@@ -32,10 +32,10 @@ func (*Client) ValidateNodeAgentProfile(node db.Node) error {
 // SpireAgentPath returns the dsx_imds agent ID path DSX gives a LaunchLayer
 // bare-metal instance, /spire/agent/dsx_imds/tenant/<orgID>/bm/<instanceID>,
 // from LaunchLayerCluster.status.vpc.orgID and
-// LaunchLayerMachine.status.instanceID. A node attesting any other way has
-// no path from here.
+// LaunchLayerMachine.status.instanceID. A node without SPIFFE, or attesting
+// any other way, has no path from here.
 func (*Client) SpireAgentPath(ctx context.Context, k8sClient client.Client, node db.Node, machine *clusterv1.Machine) (string, error) {
-	if node.SpireAttestationMethod != db.SpireAttestationMethodDSXIMDS {
+	if !node.SpiffeEnabled || node.SpireAttestationMethod != db.SpireAttestationMethodDSXIMDS {
 		return "", nil
 	}
 

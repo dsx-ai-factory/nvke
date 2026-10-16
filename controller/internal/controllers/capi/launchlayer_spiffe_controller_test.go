@@ -97,7 +97,7 @@ func TestUnit_LaunchLayerSpiffeControllerReconcile(t *testing.T) {
 				machine.Annotations[constants.MachineAnnotationKeyHostID] = "not-a-uuid"
 			}
 			launchLayerMachine := newLaunchLayerMachineForSpiffeTest(params.instanceID, params.ownerRef, params.deleting)
-			reader := &launchLayerSpiffeReaderStub{node: db.Node{SpireAttestationMethod: params.method}, err: params.dbErr}
+			reader := &launchLayerSpiffeReaderStub{node: db.Node{SpiffeEnabled: true, SpireAttestationMethod: params.method}, err: params.dbErr}
 			controller := newLaunchLayerSpiffeControllerForTest(t, reader, machine, launchLayerMachine)
 
 			result, err := controller.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(launchLayerMachine)})

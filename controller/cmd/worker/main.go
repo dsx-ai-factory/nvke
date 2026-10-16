@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"slices"
 	"syscall"
 	"time"
 
@@ -333,8 +332,11 @@ func main() {
 	}
 
 	// Writes the SPIRE agent ID path MachineSpireEntryController consumes, so it
-	// is only useful alongside that controller.
-	if machineCRDInstalled && slices.Contains(cfg.SupportedInfraProviders, config.InfraProviderLaunchLayer) {
+	// is only useful alongside that controller. Gated on CAPLL's CRD rather than
+	// supportedInfraProviders: dropping launchLayer from that list stops new
+	// clusters, while existing clusters' new and replacement machines still need
+	// their agent path to join.
+	if machineCRDInstalled {
 		launchLayerCRDInstalled, err := capi.LaunchLayerMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
 		if err != nil {
 			logger.Error("Failed to look up the LaunchLayerMachine CRD", "error", err)

@@ -21,7 +21,7 @@ import (
 func TestClient_SpireAgentPath(t *testing.T) {
 	t.Parallel()
 
-	dsxIMDS := db.Node{SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS}
+	dsxIMDS := db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS}
 	tests := map[string]struct {
 		node        db.Node
 		instanceID  string
@@ -36,7 +36,10 @@ func TestClient_SpireAgentPath(t *testing.T) {
 			wantPath: "/spire/agent/dsx_imds/tenant/org-1/bm/instance-123",
 		},
 		"supplies no path for another attestation method": {
-			node: db.Node{SpireAttestationMethod: db.SpireAttestationMethodTPM}, instanceID: "instance-123", orgID: "org-1",
+			node: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodTPM}, instanceID: "instance-123", orgID: "org-1",
+		},
+		"supplies no path without SPIFFE": {
+			node: db.Node{SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS}, instanceID: "instance-123", orgID: "org-1",
 		},
 		"pends until CAPLL records the instance ID": {
 			node: dsxIMDS, orgID: "org-1", wantPending: true,

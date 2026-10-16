@@ -87,8 +87,8 @@ func toAnySlice(in []string) []any {
 // ValidateNodeAgentProfile refuses, but a node is pinned to the profile in
 // force when it is created, which a deployment change can move after the
 // pool was accepted, so the node's own profile is checked again here.
-// Everything is validated and rendered before any object is applied, so a
-// rejected node leaves nothing behind.
+// Every object is validated and built before any is applied, so a rejected
+// node leaves nothing behind.
 func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDeps, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) error {
 	if err := c.ValidateNodeAgentProfile(node); err != nil {
 		return fmt.Errorf("%w: node %s: %w", shared.ErrUnsupportedMachineConfig, node.ID, err)
@@ -104,15 +104,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return fmt.Errorf("failed to render LaunchLayer bootstrap user data: %w", err)
 	}
 
-	if err := deps.K8sClient.Patch(ctx, infraMachine, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
-		return fmt.Errorf("failed to apply LaunchLayerMachine %s: %w", infraMachine.GetName(), err)
-	}
-
 	bootstrapSecret := shared.BuildBootstrapSecret(node, cluster, deps.Namespace, userData)
-	if err := deps.K8sClient.Patch(ctx, bootstrapSecret, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
-		return fmt.Errorf("failed to apply bootstrap secret %s: %w", bootstrapSecret.Name, err)
-	}
-
 	machine, err := shared.BuildMachine(node, nodeSet, nodePool, cluster, deps.Namespace, bootstrapSecret.Name, clusterv1.ContractVersionedObjectReference{
 		APIGroup: infrastructureGroup,
 		Kind:     "LaunchLayerMachine",
@@ -120,6 +112,13 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 	})
 	if err != nil {
 		return err
+	}
+
+	if err := deps.K8sClient.Patch(ctx, infraMachine, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
+		return fmt.Errorf("failed to apply LaunchLayerMachine %s: %w", infraMachine.GetName(), err)
+	}
+	if err := deps.K8sClient.Patch(ctx, bootstrapSecret, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
+		return fmt.Errorf("failed to apply bootstrap secret %s: %w", bootstrapSecret.Name, err)
 	}
 	return shared.ApplyMachine(ctx, deps.K8sClient, deps.FieldManagerName, machine)
 }
