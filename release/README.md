@@ -172,19 +172,15 @@ $ go run ./release/cmd/qualify plan --subject nvke --version v0.21.0 --scope ful
   selected by input or by `QUALIFY_E2E_RESOLUTION`, and a beta tag push takes
   `commitDescribe` whatever the variable says.
   The plan is uploaded as an artifact.
-- `verify` runs `qualify verify` on the whole plan, once, before any machine
-  is taken, so an artifact that was never published fails there rather than
-  an hour into a run -- waiting when the plan resolved at a commit, because
-  the publishers may still be running.
-- `qualify-run` runs once for each stream of each combination, after
-  `verify`. It resolves versions and capabilities and builds the site
-  inputs. Its versions, architecture and GPU model are that stream's entry
-  in the plan, so every stream qualifies exactly what the plan resolved.
-  Each job is named by its stream.
-- `verify` and `qualify-run` are both gated behind the same GitHub
-  environment expression from their first step. GitHub batches deployment
-  approval per run and environment, not per job, so one approval covers
-  `verify` and every stream.
+- `qualify-run` runs once for each stream of each combination, gated behind a
+  GitHub environment from its first step. It runs `qualify verify` on that
+  plan before any machine is taken, so an artifact that was never published
+  fails there rather than an hour into a run -- waiting when the plan
+  resolved at a commit, because the publishers may still be running -- then
+  resolves versions and capabilities and builds the site inputs. Its
+  versions, architecture and GPU model are that stream's entry in the plan,
+  so every stream qualifies exactly what the plan resolved. Each job is
+  named by its stream.
 
 The plan carries what a job needs, the versions to test and the capabilities of
 the stream to run on. The e2e suite requires every version a Forge run uses
