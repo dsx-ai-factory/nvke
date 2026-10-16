@@ -102,7 +102,7 @@ jobs:
           set -Eeuo pipefail
           go test -json -count=1 \
             -run "^Test${FUNCTIONAL_TEST}$" \
-            ./test/e2e > "${RUNNER_TEMP}/dsx-machine-image-tests.jsonl"
+            ./test/qualification > "${RUNNER_TEMP}/dsx-machine-image-tests.jsonl"
 
       - name: Report pending coverage
         if: always()
