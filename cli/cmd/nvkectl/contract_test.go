@@ -19,6 +19,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -559,19 +560,43 @@ func TestASecondSignalKillsACommandThatIgnoresTheFirst(t *testing.T) {
 
 	cmd := exec.Command(nvkectlBin, "create", "cluster", "-f", fifo)
 	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+t.TempDir())
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("starting nvkectl: %v", err)
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 
-	// Blocks until nvkectl opens the FIFO to read the spec. Held open for the
-	// rest of the test and never written to, so the read never completes and
-	// never sees EOF.
-	writer, err := os.OpenFile(fifo, os.O_WRONLY, 0)
-	if err != nil {
-		_ = cmd.Process.Kill()
-		t.Fatalf("opening the fifo for writing: %v", err)
+	// Succeeds only once nvkectl opens the FIFO to read the spec: a
+	// non-blocking open for writing fails with ENXIO until a reader exists.
+	// Held open for the rest of the test and never written to, so the read
+	// never completes and never sees EOF. Polled rather than opened blocking,
+	// so an nvkectl that exits before its spec read fails this test at once,
+	// with its stderr, instead of hanging the package to its timeout.
+	var writer *os.File
+	openDeadline := time.Now().Add(30 * time.Second)
+	for writer == nil {
+		w, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0)
+		switch {
+		case err == nil:
+			writer = w
+		case errors.Is(err, syscall.ENXIO):
+			select {
+			case err := <-done:
+				t.Fatalf("nvkectl exited before reading its spec: %v\n%s", err, stderr.String())
+			default:
+			}
+			if time.Now().After(openDeadline) {
+				_ = cmd.Process.Kill()
+				<-done
+				t.Fatalf("nvkectl did not open its spec within 30s\n%s", stderr.String())
+			}
+			time.Sleep(50 * time.Millisecond)
+		default:
+			_ = cmd.Process.Kill()
+			t.Fatalf("opening the fifo for writing: %v", err)
+		}
 	}
 	defer writer.Close()
 

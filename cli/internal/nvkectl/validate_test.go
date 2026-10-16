@@ -118,3 +118,242 @@ func TestValidateSiteSpec_Problems(t *testing.T) {
 		t.Error("missing -f accepted")
 	}
 }
+
+// TestValidateSiteSpec_NicoNeedsTheSpireAddressUnlessMTLSIsOff: validate applies
+// the check bootstrap site applies, so a file it passes is one that command
+// accepts, and --disable-mtls lifts it in both.
+func TestValidateSiteSpec_NicoNeedsTheSpireAddressUnlessMTLSIsOff(t *testing.T) {
+	example, err := os.ReadFile("../../examples/sitespec-nico.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	text := strings.Replace(string(example), `  externalAddress: "192.0.2.10"`, "", 1)
+	if text == string(example) {
+		t.Fatal("the example no longer sets spire.externalAddress; update this test")
+	}
+	path := filepath.Join(dir, "sitespec.yaml")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"nico.token"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("NVKECTL_NICO_CREDENTIALS", filepath.Join(dir, "nico.token"))
+	t.Setenv("NVKECTL_NODE_USER", "example-user")
+	t.Setenv("NVKECTL_NODE_PASSWORD", "example-password")
+	if err := os.Mkdir(filepath.Join(dir, "bootstrap-releases"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const releases = "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-ubuntu-24.04-amd64\nspec:\n  machineImageRef:\n    name: img\n"
+	if err := os.WriteFile(filepath.Join(dir, "bootstrap-releases", "r.yaml"), []byte(releases), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	err = runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
+	if err == nil || !strings.Contains(err.Error(), "spire.externalAddress is required") || out.Len() != 0 {
+		t.Fatalf("with mTLS: err = %v, stdout %q; want the address refused in the error and nothing on stdout", err, out.String())
+	}
+	out.Reset()
+	if err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true, disableMTLS: true}); err != nil {
+		t.Fatalf("with --disable-mtls: %v\n%s", err, out.String())
+	}
+}
+
+// TestValidateSiteSpec_NicoOneNodeWithoutVIP: the file is valid and the
+// bootstrap can run, but the stack install needs a VIP that cannot be added
+// once the site cluster exists, so both checks warn.
+func TestValidateSiteSpec_NicoOneNodeWithoutVIP(t *testing.T) {
+	path := nicoStackSiteSpec(t, oneNicoNodeNoVIP(t))
+	dir := filepath.Dir(path)
+	if err := os.WriteFile(filepath.Join(dir, "nico.token"), []byte("example-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("NVKECTL_NICO_CREDENTIALS", filepath.Join(dir, "nico.token"))
+	t.Setenv("NVKECTL_NODE_USER", "example-user")
+	t.Setenv("NVKECTL_NODE_PASSWORD", "example-password")
+	if err := os.Mkdir(filepath.Join(dir, "bootstrap-releases"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const releases = "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-ubuntu-24.04-amd64\nspec:\n  machineImageRef:\n    name: img\n"
+	if err := os.WriteFile(filepath.Join(dir, "bootstrap-releases", "r.yaml"), []byte(releases), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	const warning = "warning: cluster.controlPlaneVIP is not set"
+	for _, bootstrapOnly := range []bool{false, true} {
+		var out strings.Builder
+		err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: bootstrapOnly})
+		if got := out.String(); err != nil || !strings.Contains(got, warning) || !strings.HasSuffix(got, "valid\n") {
+			t.Errorf("bootstrapOnly=%v: err = %v, output %q; want it valid with %q", bootstrapOnly, err, got, warning)
+		}
+	}
+}
+
+// TestValidateSiteSpec_ReportsBootstrapProblemsTogether: a missing SPIRE address
+// does not hide what else only the bootstrap host holds, so one run lists both,
+// and --disable-mtls is offered for the address alone.
+func TestValidateSiteSpec_ReportsBootstrapProblemsTogether(t *testing.T) {
+	example, err := os.ReadFile(filepath.Join("..", "..", "examples", "sitespec-nico.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Replace(string(example), `  externalAddress: "192.0.2.10"`, "", 1)
+	if text == string(example) {
+		t.Fatal("the example no longer sets spire.externalAddress; update this test")
+	}
+	path := filepath.Join(t.TempDir(), "sitespec.yaml")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("NVKECTL_NICO_CREDENTIALS", "")
+
+	var out strings.Builder
+	err = runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
+	if err == nil {
+		t.Fatalf("--bootstrap-only passed:\n%s", out.String())
+	}
+	if out.Len() != 0 {
+		t.Errorf("a failing run wrote to stdout: %q", out.String())
+	}
+	for _, want := range []string{"SPIRE server (--disable-mtls lifts this)", "NVKECTL_NICO_CREDENTIALS must name", "bootstrap-releases"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q:\n%v", want, err)
+		}
+	}
+}
+
+// TestValidateSiteSpec_NicoExampleWithTheDocumentedReleases: cli/docs/sitespec.md
+// has the operator write the request documents in releases/ as full manifests
+// into bootstrap-releases/, which the nico example names. Done to the example
+// request documents, that passes the bootstrap check and leaves releases/ as it
+// was; releases/ itself is refused before any Kind cluster exists.
+func TestValidateSiteSpec_NicoExampleWithTheDocumentedReleases(t *testing.T) {
+	examples := filepath.Join("..", "..", "examples")
+	example, err := os.ReadFile(filepath.Join(examples, "sitespec-nico.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sitespec.yaml")
+	if err := os.WriteFile(path, example, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"nico.token"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("NVKECTL_NICO_CREDENTIALS", filepath.Join(dir, "nico.token"))
+	t.Setenv("NVKECTL_NODE_USER", "example-user")
+	t.Setenv("NVKECTL_NODE_PASSWORD", "example-password")
+
+	// releases/ as docs/operate/build-node-images.md has the operator build it.
+	for _, sub := range []string{"releases", "bootstrap-releases"} {
+		if err := os.Mkdir(filepath.Join(dir, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	requests := map[string]string{}
+	for _, name := range []string{"machineimage.yaml", "clusterrelease.yaml", "nodepoolrelease.yaml"} {
+		data, err := os.ReadFile(filepath.Join(examples, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		requests[name] = string(data)
+		if err := os.WriteFile(filepath.Join(dir, "releases", name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The documented commands.
+	for _, kind := range []string{"machineimage", "clusterrelease"} {
+		stdout, stderr, err := runGenerate(t, "create", kind, "-f", filepath.Join(dir, "releases", kind+".yaml"), "--dry-run=client", "-o", "yaml")
+		if err != nil {
+			t.Fatalf("nvkectl create %s --dry-run=client: %v\n%s", kind, err, stderr)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "bootstrap-releases", kind+".yaml"), []byte(stdout), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var out strings.Builder
+	if err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true}); err != nil {
+		t.Fatalf("the documented releases failed the bootstrap check: %v\n%s", err, out.String())
+	}
+	for name, want := range requests {
+		got, err := os.ReadFile(filepath.Join(dir, "releases", name))
+		if err != nil || string(got) != want {
+			t.Errorf("releases/%s changed (err %v)", name, err)
+		}
+	}
+
+	// The request documents themselves cannot be applied, and are refused.
+	text := strings.Replace(string(example), `releases: "bootstrap-releases"`, `releases: "releases"`, 1)
+	if text == string(example) {
+		t.Fatal("the example no longer names bootstrap-releases; update this test")
+	}
+	requestsSpec := filepath.Join(dir, "sitespec-requests.yaml")
+	if err := os.WriteFile(requestsSpec, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: requestsSpec, bootstrapOnly: true}); err == nil ||
+		!strings.Contains(err.Error(), "without apiVersion and kind") {
+		t.Errorf("releases/ of request documents: err = %v, output %q; want them refused", err, out.String())
+	}
+}
+
+// TestValidateSiteSpec_BootstrapFilesAreCheckedInTheBootstrapSection: the files
+// the bootstrap reads are no longer checked when the spec loads, so validate
+// checks them itself, and a nico spec without them is not ready to bootstrap.
+func TestValidateSiteSpec_BootstrapFilesAreCheckedInTheBootstrapSection(t *testing.T) {
+	example, err := os.ReadFile("../../examples/sitespec-nico.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "sitespec.yaml")
+	if err := os.WriteFile(path, example, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("NVKECTL_NICO_CREDENTIALS", "")
+	t.Setenv("NVKECTL_NODE_USER", "")
+	var out strings.Builder
+	err = runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
+	if err == nil || !strings.Contains(err.Error(), "NVKECTL_NICO_CREDENTIALS must name") || !strings.Contains(err.Error(), "NVKECTL_NODE_USER is not set") || out.Len() != 0 {
+		t.Fatalf("err = %v, stdout %q; want the credentials variable and the missing files in the error", err, out.String())
+	}
+}
+
+// TestValidateSiteSpec_NicoSpecIsValidWithoutBootstrapInputs: the controller
+// stack install runs validate sitespec without NVKECTL_NICO_CREDENTIALS, the
+// node login, the bootstrap's release manifests and the SPIRE address the
+// bootstrap's nodes dial. The nico spec is still valid there, with those
+// reported; --bootstrap-only is where they fail.
+func TestValidateSiteSpec_NicoSpecIsValidWithoutBootstrapInputs(t *testing.T) {
+	path := nicoStackSiteSpec(t, func(text string) string {
+		out := strings.Replace(text, `  externalAddress: "192.0.2.10"`, "", 1)
+		if out == text {
+			t.Fatal("the example no longer sets spire.externalAddress; update this test")
+		}
+		return out
+	})
+	t.Setenv("NVKECTL_NICO_CREDENTIALS", "")
+	t.Setenv("NVKECTL_NODE_USER", "")
+
+	var out strings.Builder
+	if err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path}); err != nil {
+		t.Fatalf("validate: %v\n%s", err, out.String())
+	}
+	if got := out.String(); !strings.HasSuffix(got, "valid\n") || !strings.Contains(got, "bootstrap: not ready for nvkectl bootstrap site on this host") {
+		t.Errorf("output %q; want the bootstrap inputs reported and the file valid", got)
+	}
+
+	out.Reset()
+	err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
+	if err == nil || out.Len() != 0 {
+		t.Fatalf("--bootstrap-only: err = %v, output %q; want it to fail without the inputs", err, out.String())
+	}
+}

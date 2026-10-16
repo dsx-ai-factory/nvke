@@ -8,7 +8,7 @@ NVKE control-plane CLI. Bootstraps site controllers and manages tenant cluster l
 
 ## What it does
 
-- **Site bootstrap** — `nvkectl bootstrap site` creates an ephemeral Kind cluster on nerdctl/containerd, deploys Postgres, Temporal, SPIRE (skipped with `--disable-mtls`, which dials the agents in plaintext), Cluster API and CWE onto it, then drives kubeadm init/join across pre-provisioned nodes via `nvke-agent` gRPC; no SSH required, and Docker is not supported
+- **Site bootstrap** — `nvkectl bootstrap site` creates an ephemeral Kind cluster on nerdctl/containerd, deploys Postgres, Temporal, SPIRE (skipped with `--disable-mtls`, which dials the agents in plaintext), Cluster API and CWE onto it, then drives kubeadm init/join across pre-provisioned nodes, or machines CAPNICo allocates with `infra.provider: nico`, via `nvke-agent` gRPC; no SSH required, and Docker is not supported
 - **Cluster lifecycle** — `nvkectl get/create/patch/delete clusters` manages tenant clusters through the CWE API
 - **Site spec** — `nvkectl generate sitespec` writes a site spec from a node CSV; `nvkectl bootstrap site --dry-run` validates one without touching a node
 - **Config** — `nvkectl config set-site` points the CLI at a site controller.
@@ -149,7 +149,8 @@ file. See [`docs/sitespec.md`](docs/sitespec.md).
 
 | Field | |
 |---|---|
-| `cluster.*.tpmEkThumbprint` | Which nodes may attest to SPIRE. No node listed, no node admitted; a site spec with none deploys no TPM attestor at all. |
+| `cluster.*.tpmEkThumbprint` | Which nodes may attest to SPIRE. No node listed, no node admitted; a site spec with none deploys no TPM attestor at all. `provisioned` only: with `nico` the attestor is always on and CAPNICo supplies each machine's key. |
+| `infra.provider`, `infra.nico` | `nico` allocates the control-plane machines from a NICo site instead of listing hosts. The NICo here is for bootstrap only; see [`docs/sitespec.md`](docs/sitespec.md#where-the-machines-come-from). |
 | `spire.upstreamCA` | `true` when SPIRE chains to a CA you bring, from `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`. Every run then requires the two variables. |
 
 ### What gets installed
@@ -166,7 +167,9 @@ Everything static about the deployment lives in
 [`internal/bootstrap/controllerdeploy/manifests/spire-values.yaml`](internal/bootstrap/controllerdeploy/manifests/spire-values.yaml).
 `nvkectl` sets only what it cannot know ahead of time: the trust domain and
 cluster name, CWE's admin identity, the CA to chain to, and the TPM thumbprints
-allowed to attest.
+allowed to attest, or, with `infra.provider: nico`, the `tpm-pubhashes`
+ConfigMap CWE fills as the attestor's allowlist (see
+[SPIRE with NICo nodes](docs/sitespec.md#spire-with-nico-nodes)).
 
 Two of the values it sets have to agree with CWE and are wrong by default on
 both sides, so both halves are set from one constant in
@@ -186,17 +189,21 @@ both sides, so both halves are set from one constant in
   publish, which a ClusterIP blackholes rather than refuses — so it surfaces as
   a node-attestation `i/o timeout` that names nothing useful.
 
-When any node in the site spec carries a TPM thumbprint, the SPIRE server is
-also published on host port 30081 of the machine running the bootstrap. Each
-node's `spire-agent` dials the SPIRE address it was given when the node was
-provisioned, so that address has to be a floating VIP the operator points at
-the bootstrap machine for the duration of the run; see
-[Your First Cluster](../docs/first-cluster.md#real-site). With no thumbprints,
-or with `--disable-mtls`, nothing is published.
+When any node in the site spec carries a TPM thumbprint, or the provider
+is `nico`, the SPIRE server is also published on host port 30081 of the machine
+running the bootstrap. With `provisioned`, each node's `spire-agent` dials the
+SPIRE address it was given when the node was provisioned, so that address has to
+be a floating VIP the operator points at the bootstrap machine for the duration
+of the run; see [Your First Cluster](../docs/first-cluster.md#real-site). With
+`nico`, the nodes dial `spire.externalAddress`, which the controller passes to
+the user data template of the `ClusterRelease` they boot; that template has to
+write it (see [SPIRE with NICo nodes](docs/sitespec.md#spire-with-nico-nodes)). With `provisioned` and no thumbprints, or with
+`--disable-mtls`, nothing is published.
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `NVKECTL_SPIFFE_TRUST_DOMAIN` | `<cluster>.nke.local` | Trust domain for the identities issued; the controller stack install defaults to the same value for the default cluster name |
+| `NVKECTL_SPIRE_EXTERNAL_ADDRESS` | unset | Overrides `spire.externalAddress`: the address nodes created by CAPNICo use to reach the bootstrap SPIRE server on NodePort 30081. Required with `infra.provider: nico` unless `--disable-mtls`, and rejected with `provisioned`. |
 | `NVKECTL_SPIRE_CA_CERT_FILE` | unset | Certificate of a CA for SPIRE to chain its own to, so a node given that certificate when it was provisioned verifies the server on first contact. Set with `NVKECTL_SPIRE_CA_KEY_FILE` and `spire.upstreamCA: true` in the site spec; without them, SPIRE is self-signed. |
 | `NVKECTL_SPIRE_CA_KEY_FILE` | unset | Private key of that CA. Set with `NVKECTL_SPIRE_CA_CERT_FILE`. |
 
@@ -230,9 +237,13 @@ through `KIND_EXPERIMENTAL_PROVIDER=nerdctl`, which `nvkectl` sets itself.
 | `NVKECTL_BOOTSTRAP_NODE_IMAGE` | kind's default | Node image for the ephemeral cluster |
 | `NVKECTL_BOOTSTRAP_WAIT_READY` | `3m` | Bounds `kind create cluster --wait` |
 | `NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` | unset | Registry mirror the ephemeral cluster pulls Docker Hub images through |
+| `NVKECTL_INFRA_PROVIDER` | `provisioned` | Overrides the site spec's `infra.provider`: `provisioned` takes the control-plane hosts from `cluster.nodes`, `nico` has CAPNICo allocate them from `infra.nico`. A value left exported in the shell switches every run. |
+| `NVKECTL_NICO_CREDENTIALS` | unset | Path to the file holding the NICo API token, read on the bootstrap host. Required with `infra.provider: nico` by `bootstrap site` and `validate sitespec --bootstrap-only`; the token is not in the site spec. A bare token is supported; a file with `tokenURL`, `clientID` and `clientSecret` is recognised and refused, because CAPNICo's Secret takes only a bearer token. |
+| `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` | unset | The login rendered into the cloud-init of every node CAPNICo creates. Required with `infra.provider: nico` by `bootstrap site` and `validate sitespec --bootstrap-only`; the stack install reads the same variables. |
+| `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT` | unset | Set to `1` to let `infra.nico.remote.endpoint` be an http URL. The bootstrap sends the NICo token there, so without it `bootstrap site` and `validate sitespec --bootstrap-only` require https; it is for a local or simulated NICo. |
 | `NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT` | `30m` | How long to wait for the site cluster to finish provisioning (`--timeout`) |
 | `NVKECTL_CONTROLLER_IMAGE` | `nke-controller:latest` | Controller image to deploy. A reference without a registry is side-loaded from the local image store; `make -C cli images` builds the default with nerdctl. A reference with a registry host is pulled with `nerdctl pull` when it is not already in containerd's image store, then loaded into the ephemeral cluster; log in to the registry first (`nerdctl login`). For Docker Hub, write `docker.io/<org>/<name>`. `--controller-image` overrides it for one run. |
-| `NVKECTL_CAPI_PROVISIONED_IMAGE` | `cluster-api-provider-provisioned:latest` | Provisioned-provider image, same semantics. `--provisioned-provider-image` overrides it for one run. |
+| `NVKECTL_CAPI_PROVISIONED_IMAGE` | `cluster-api-provider-provisioned:latest` | Provisioned-provider image, same semantics; unused with `infra.provider: nico`. `--provisioned-provider-image` overrides it for one run. |
 | `NVKECTL_CONTROLLER_PORT` | `30080` | Port of the controller API: its Service, NodePort, Kind host mapping and the address `nvkectl` calls |
 | `NVKECTL_CONTROLLER_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |
 | `NVKECTL_CONTROLLER_SPIRE_CHART` | `spire` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE chart, same semantics |
@@ -241,14 +252,16 @@ through `KIND_EXPERIMENTAL_PROVIDER=nerdctl`, which `nvkectl` sets itself.
 | `NVKECTL_CONTROLLER_READY_TIMEOUT` | `5m` | Bounds the wait for the controller's `/readyz` |
 | `NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR` | `cluster-diagnostics` | Where a failed bootstrap writes a cluster dump before tearing the cluster down (`--diagnostics-dir`) |
 
-Every `NVKECTL_*` variable above was named `NKECTL_*` while the binary was
-called `nkectl`. The old names still work for one release: when only the old
+Every `NVKECTL_*` variable above except `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT`,
+which turns a safety check off and so answers only to its own name, was named
+`NKECTL_*` while the binary was called `nkectl`. The old names still work for one release: when only the old
 name is set, `nvkectl` uses it and logs a warning naming the replacement. When
 both are set, the new name wins. nvkectl does not read the `NKECTL_CWE_*`
 names of cli/v0.1.x: `nvkectl bootstrap site` stops when one is set without
 its replacement, and warns when the replacement is set too. Likewise
 `make -C cli images` reads
-`CONTROLLER_IMAGE`, and still reads `CWE_IMAGE` with a warning.
+`CONTROLLER_IMAGE`, and still reads `CWE_IMAGE` with a warning until
+[nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes it.
 
 The controller and Postgres charts are carried in the binary and are never
 pulled, so they have no variable. For the three that are pulled, the chart
@@ -263,9 +276,13 @@ registries (`NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` covers Docker Hub), and
 
 `bootstrap site` removes the ephemeral Kind cluster on every exit path except
 these: `--keep-bootstrap-cluster`; a failure after CWE has accepted the site
-cluster, when the cluster is retained for recovery and the error says what to do
-next (the `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster` command, or,
-when the etcd encryption key was not saved, the command that saves it first);
+cluster, or with `nico` a create request that got no answer, so CWE may have
+accepted it, when the cluster is retained for recovery and the error says what to do
+next (the `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster` command, preceded
+with `nico`, for a failure before every control-plane node joined, by the steps that
+release the NICo instances CAPNICo allocated, and, after they joined, by saying to
+delete only the Kind cluster, because the site cluster is working; or, when the etcd
+encryption key was not saved, the command that saves it first);
 and a `kind create cluster` that succeeded but whose kubeconfig export or mirror
 configuration failed, which is left for you to delete. In the ordinary failure
 case, then, by the time the error reaches you there is nothing left to ask. To

@@ -29,6 +29,8 @@ type healthConfig struct {
 }
 
 func loadHealthConfig() (healthConfig, error) {
+	// CWE_HEALTH_TIMEOUT and CWE_EXPECTED_VERSION are deprecated aliases for the
+	// NKE_CONTROLLER_ names; #1399 removes them.
 	timeout, err := time.ParseDuration(envOrDefaultLegacy("NKE_CONTROLLER_HEALTH_TIMEOUT", "CWE_HEALTH_TIMEOUT", "60s"))
 	if err != nil {
 		return healthConfig{}, fmt.Errorf("parsing NKE_CONTROLLER_HEALTH_TIMEOUT: %w", err)

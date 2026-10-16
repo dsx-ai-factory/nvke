@@ -16,7 +16,7 @@ The process has three steps:
 
 `nvkectl bootstrap site` does more than call kubeadm. It first stands up an ephemeral Kind cluster on the init node, deploys a self-contained NVKE site controller (Postgres, Temporal, SPIRE, the Cluster API providers, and CWE) onto it — `--disable-mtls`, the development-only plaintext mode, skips SPIRE — and then uses that controller to drive the init and join workflows against your actual nodes over `nvke-agent`'s gRPC API — no SSH required.
 
-The ephemeral Kind cluster is torn down when bootstrap succeeds. It is retained if you pass `--keep-bootstrap-cluster`, or if the run fails after the site cluster was created — see [Pre-Provisioned Nodes](pre-provisioned-nodes.md) for the recovery steps.
+The ephemeral Kind cluster is torn down when bootstrap succeeds. It is retained if you pass `--keep-bootstrap-cluster`, or if the run fails after the site cluster was created (with `infra.provider: nico`, also when the create request got no answer) — see [Pre-Provisioned Nodes](pre-provisioned-nodes.md) for the recovery steps. With `infra.provider: nico`, use [the retained bootstrap cluster](../../cli/docs/bootstrap-troubleshooting.md#release-the-nico-instances-first) instead: deleting the Kind cluster alone leaves the NICo instances allocated and unmanaged, and after every control-plane node joined only the Kind cluster is deleted.
 
 ```mermaid
 sequenceDiagram

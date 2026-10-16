@@ -49,10 +49,15 @@ The names it replaces are listed in the plan under overrides. An image or a
 bootloader such as os-image-amd64 is a dependency, and its override is a URL.
 
 --resolution chooses how the components are resolved, and names the strategy that
-will answer. "gitTag" takes each from its own release tags, which is how a release
-is qualified. "commitDescribe" describes each at the commit the subject's version
-points at, which is how a beta is qualified: a beta tag carries no component tags,
-so the tags would name the newest release rather than what was built there.
+will answer. "commitDescribe" is the default and describes each at the commit the
+subject's version points at, which is how a beta is qualified: a beta tag carries
+no component tags, so the tags would name the newest release rather than what was
+built there.
+
+"gitTag" takes each from its own release tags, and a release qualification has to
+select it. Left on the default, a release resolves its components by describe and
+verifies the describe-named artifacts, which exist, so the run passes while
+qualifying builds other than the release-tagged ones.
 
 The commit is derived from the version being qualified rather than given. Either
 way, the components that are not built here, such as the Kubernetes and OVN
@@ -137,7 +142,7 @@ check can confirm that something exists but not that it does not.`,
 	f.StringVar(&registryAt, "registry", "", "release registry file (default: <root>/release/registry.yaml)")
 	// The values are the strategies the plan records under each component, so
 	// what a run asked for and what answered are the same word.
-	f.StringVar(&resolution, "resolution", resolve.VersionStrategyGitTag,
+	f.StringVar(&resolution, "resolution", resolve.VersionStrategyCommitDescribe,
 		`how to resolve the components, "`+resolve.VersionStrategyGitTag+`" or "`+resolve.VersionStrategyCommitDescribe+`"`)
 	f.BoolVar(&checkExists, "check-exists", false, "require the CDN locations this resolves to be published already. qualify verify checks the registry ones")
 

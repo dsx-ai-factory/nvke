@@ -91,10 +91,10 @@ on:
         type: string
         required: false
       resolution:
-        description: "How to resolve the components, named for the strategy that answers. gitTag takes each from its own release tags, which is how a release is qualified. commitDescribe describes each at the commit the nvke-version points at, which is how a beta is qualified, because a beta tag carries no component tags. A beta tag push uses commitDescribe."
+        description: "How to resolve the components, named for the strategy that answers. commitDescribe describes each at the commit the nvke-version points at, which is how a beta is qualified, because a beta tag carries no component tags. gitTag takes each from its own release tags, and a release qualification has to select it: left on the default a release resolves by describe and verifies the describe-named artifacts, which exist, so it passes while qualifying builds other than the release-tagged ones."
         type: choice
         required: false
-        default: gitTag
+        default: commitDescribe
         options:
           - gitTag
           - commitDescribe
@@ -104,7 +104,7 @@ on:
         required: false
         default: golden-path
       controller-version:
-        description: "Overrides the published CWE tag the plan resolves, e.g. v0.1.1. QUALIFY_E2E_CONTROLLER_VERSION supplies it when this is empty."
+        description: "Overrides the published controller tag the plan resolves, e.g. v0.1.1. QUALIFY_E2E_CONTROLLER_VERSION supplies it when this is empty."
         type: string
         required: false
       cli-version:
@@ -116,11 +116,11 @@ on:
         type: string
         required: false
       kubernetes-version:
-        description: "Overrides the Kubernetes version the plan resolves for every stream, e.g. 1.36.3. It selects the nvke-kubeadm-distro package on every node and the version CWE builds the cluster with, so one value decides both."
+        description: "Overrides the Kubernetes version the plan resolves for every stream, e.g. 1.36.3. It selects the nvke-kubeadm-distro package on every node and the version the controller builds the cluster with, so one value decides both."
         type: string
         required: false
       cni-ovn-version:
-        description: "Overrides the OVN CNI version the plan resolves, e.g. 1.4.0. It selects the nvke-cni-ovn-images and -charts packages."
+        description: "Overrides the OVN CNI version the plan resolves, e.g. 1.4.11. It selects the nvke-cni-ovn-images and -charts packages, and has to be a version the apt suites serve."
         type: string
         required: false
       controller-name:
@@ -262,12 +262,18 @@ jobs:
         ${{ inputs.nvke-version
             || (github.event_name == 'push' && github.ref_name)
             || vars.QUALIFY_E2E_NVKE_VERSION }}
-      # A beta tag is pushed to be qualified as what that commit built, so the
-      # tag push asks for commitDescribe without anyone selecting it.
+      # commitDescribe is the default because a beta is what this lane
+      # qualifies nightly, and a beta tag carries no component tags. A release
+      # qualification selects gitTag, by input or by the variable.
+      #
+      # The push arm sits ahead of the variable so a beta tag push resolves as
+      # what that commit built whatever the variable says. A variable left on
+      # gitTag would otherwise cost every nightly.
       RESOLUTION: >-
         ${{ inputs.resolution
             || (github.event_name == 'push' && 'commitDescribe')
-            || 'gitTag' }}
+            || vars.QUALIFY_E2E_RESOLUTION
+            || 'commitDescribe' }}
       # A label run carries no inputs, so a scope other than the repository
       # default was unreachable from a branch: dispatch is refused for one by
       # the Teleport ref guard, and a label takes what the variables say.
@@ -851,7 +857,7 @@ jobs:
           if [ -n "${SITE_CONTROLLER_VERSION}" ]; then
             echo "SITE_CONTROLLER_BUILD=0" >> "${GITHUB_ENV}"
             echo "qualifying the published ${SITE_CONTROLLER_VERSION}"
-            echo "::warning::pulling a published CWE, ${SITE_CONTROLLER_VERSION}; if it predates #850 the bootstrap fails at \"creating the site cluster\""
+            echo "::warning::pulling a published controller, ${SITE_CONTROLLER_VERSION}; if it predates #850 the bootstrap fails at \"creating the site cluster\""
             auth="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 -w0)"
             echo "::add-mask::${auth}"
 
@@ -888,7 +894,7 @@ jobs:
             echo "SITE_CONTROLLER_BUILD=1"
             echo "SITE_CONTROLLER_VERSION=${version}"
           } >> "${GITHUB_ENV}"
-          echo "building the CWE from ${version}"
+          echo "building the controller from ${version}"
 
       # Two checks that each cost a second and each save a run: the ref the
       # join token will see, and the three values a pull_request event does
@@ -959,7 +965,7 @@ jobs:
           echo "SITE_IMAGES=${images}" >> "${GITHUB_ENV}"
           echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION} images=${images}"
 
-      # nvkectl is a client of the CWE it bootstraps, so the two have to agree
+      # nvkectl is a client of the controller it bootstraps, so the two have to agree
       # on the cluster API. By default both are built from this checkout,
       # which makes them one commit. A published pair has to be chosen to
       # agree: GHCR carries release tags only and its newest, v0.1.1-rc.8, is
@@ -1073,7 +1079,7 @@ jobs:
           echo "OS_IMAGE_VERSIONS=${versions#,}" >> "${GITHUB_ENV}"
 
       # A named version stages the published nvkectl rather than one built
-      # here, so a candidate can pair a published CLI with a published CWE.
+      # here, so a candidate can pair a published CLI with a published controller.
       # site-inputs does the pull and the checks (hack/fetch-nvkectl.sh); this
       # step only names the artifact and where the staged binary lands, which
       # is the Makefile's SITE_NVKECTL.
@@ -1226,7 +1232,7 @@ jobs:
       # deploy path out of the checkout. The node has no access to this
       # repository, so everything it runs has to be built here and staged.
       # SITE_CONTROLLER_BUILD and SITE_CLI_BUILD come from the resolve steps
-      # and decide whether the CWE archive and nvkectl are built here or were
+      # and decide whether the controller archive and nvkectl are built here or were
       # published.
       - name: Build the site inputs
         shell: bash
@@ -1328,6 +1334,7 @@ jobs:
           IN_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 }}
           IN_NVKE_VERSION: ${{ inputs.nvke-version }}
           IN_RESOLUTION: ${{ inputs.resolution }}
+          VAR_RESOLUTION: ${{ vars.QUALIFY_E2E_RESOLUTION }}
           IN_SCOPE: ${{ inputs.scope }}
           IN_DRY_RUN: ${{ inputs.dry-run }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
@@ -1409,7 +1416,7 @@ jobs:
             "combination|COMBINATION|||"
             "nvke version|NVKE_VERSION|IN_NVKE_VERSION|VAR_NVKE_VERSION|QUALIFY_E2E_NVKE_VERSION"
             "scope|SCOPE|IN_SCOPE|VAR_SCOPE|QUALIFY_E2E_SCOPE"
-            "resolution|RESOLUTION|IN_RESOLUTION||"
+            "resolution|RESOLUTION|IN_RESOLUTION|VAR_RESOLUTION|QUALIFY_E2E_RESOLUTION"
             "cpu arch|ARCH|||"
             "gpu model|GPU|||"
             "DSX org|DSX_ORG_ID||DSX_ORG_ID|DSX_ORG_ID"
@@ -1703,9 +1710,9 @@ jobs:
       #
       # site-cluster-state.txt covers the gap that leaves. nvkectl writes
       # diagnostics when the bootstrap fails, so a run that bootstrapped and
-      # then never saw CWE answer gets none, and before this such a run
+      # then never saw the controller answer gets none, and before this such a run
       # recorded nothing beyond "did not become healthy within 10m0s". It
-      # carries the Service endpoints, so it says whether CWE was unready or
+      # carries the Service endpoints, so it says whether the controller was unready or
       # merely unreachable.
       - name: Upload the run log
         if: always()

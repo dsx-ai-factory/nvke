@@ -39,6 +39,7 @@ source "qemu" "nvke-non-fde" {
       luks_enabled              = false
       luks_passphrase           = ""
       nvidia_kernel_package     = local.nvidia_kernel_package
+      ubuntu_series             = var.ubuntu_series
       serial_console            = local.serial_console
       capture_apt_acquisitions  = var.capture_apt_acquisitions
       apt_capture_configuration = file("${local.project_root}/cidata/apt-capture.conf")
@@ -154,7 +155,7 @@ build {
   }
 
   provisioner "shell" {
-    environment_vars = ["ROOT_FS_LABEL=${var.root_fs_label}"]
+    environment_vars = ["ROOT_FS_LABEL=${var.root_fs_label}", "UBUNTU_SERIES=${var.ubuntu_series}"]
     script           = "${local.project_root}/scripts/provision.sh"
   }
 

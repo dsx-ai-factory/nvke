@@ -85,6 +85,8 @@ var _ = fixture.DescribeCaseSet(controllerCaseSet(
 						g.Expect(synced).NotTo(gomega.BeNil())
 						g.Expect(cluster.Generation).To(gomega.Equal(int64(2)))
 						g.Expect(synced.ObservedGeneration).To(gomega.Equal(cluster.Generation))
+						// The patch helper writes the conditions before the rest of status.
+						g.Expect(cluster.Status.ObservedGeneration).To(gomega.Equal(cluster.Generation))
 					}).WithContext(ctx).WithTimeout(timeout).WithPolling(pollInterval).Should(gomega.Succeed())
 					return
 				}

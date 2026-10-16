@@ -37,7 +37,7 @@ func (c *ControllerClient) CreateCluster(ctx context.Context, req api.CreateClus
 		return nil, fmt.Errorf("creating cluster: %w", err)
 	}
 	if resp.StatusCode() != 201 {
-		return nil, fmt.Errorf("creating cluster: %w", apiError(resp.Status(), resp.Body))
+		return nil, fmt.Errorf("creating cluster: %w", &StatusError{StatusCode: resp.StatusCode(), err: apiError(resp.Status(), resp.Body)})
 	}
 	if resp.JSON201 == nil {
 		return nil, fmt.Errorf("creating cluster: empty response body")

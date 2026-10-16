@@ -15,8 +15,8 @@
 # or NVKECTL_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, replace those two.
 #
 # Not listed:
-# - The controller chart, the Postgres chart and the provisioned provider's
-#   manifest. They ship inside nvkectl.
+# - The controller chart, the Postgres chart, the provisioned provider's
+#   manifest and the CAPNICo manifest. They ship inside nvkectl.
 # - The components `clusterctl init` installs: Cluster API core, the kubeadm
 #   providers and cert-manager.
 # - The kindest/node image kind boots.
@@ -61,7 +61,8 @@ components:
       sha256: ce982e63fc375e392b014fc99e621a55442ab886052413e9bb052f72d66580a8
 
   # Upstream release. tpm-attestor is pulled only when the site spec lists TPM
-  # thumbprints.
+  # thumbprints, or with infra.provider nico, whose nodes' keys CWE adds to the
+  # allowlist as CAPNICo allocates them.
   spire:
     chart:
       repo: https://spiffe.github.io/helm-charts-hardened/
@@ -112,3 +113,15 @@ components:
     images:
       manager:
         ref: cluster-api-provider-provisioned:latest
+
+  # Pulled only with `infra.provider: nico`. An upstream release: the image the
+  # embedded CAPNICo manifest names by tag. The install runs the digest below
+  # instead, so a retagged image does not change what runs; --release replaces
+  # it for one run with the capnico-controller digest of an NVKR release. The
+  # manifest ships inside nvkectl, so there is no chart entry. The digest is
+  # the multi-architecture index's.
+  cluster-api-provider-nico:
+    images:
+      controller:
+        ref: ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller:v0.0.45
+        digest: sha256:bca9d77a25e605a5c39faf0a71b45b484d363edc4535f8a37aa811a639738595

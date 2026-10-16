@@ -236,8 +236,9 @@ func decodeBytes(b []byte) (*SiteSpec, error) {
 
 // specDiff returns a human-readable difference between two site specs, or "".
 func specDiff(got, want *SiteSpec) string {
-	// The CA files come from the environment.
+	// The CA files come from the environment, and dir from where the file was loaded.
 	g, w := *got, *want
+	g.dir, w.dir = "", ""
 	g.Spire.CACertFile, w.Spire.CACertFile = "", ""
 	g.Spire.CAKeyFile, w.Spire.CAKeyFile = "", ""
 	if reflect.DeepEqual(&g, &w) {

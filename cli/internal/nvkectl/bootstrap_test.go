@@ -39,7 +39,9 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/controllerdeploy"
 	bootstrapengine "github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/engine"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
@@ -956,7 +958,8 @@ func TestMakefileImageTagsMatchTheManifest(t *testing.T) {
 // TestMakefileControllerImageFallsBackToTheOldName drives `make -n images`:
 // CONTROLLER_IMAGE wins, CWE_IMAGE is used with a warning when
 // CONTROLLER_IMAGE is unset or empty, from the environment or the command
-// line, and neither gives the manifest default.
+// line, and neither gives the manifest default. #1399 removes CWE_IMAGE and
+// this test with it.
 func TestMakefileControllerImageFallsBackToTheOldName(t *testing.T) {
 	makeBin, err := exec.LookPath("make")
 	if err != nil {
@@ -1534,6 +1537,316 @@ func (r leftoverKindRunner) Run(ctx context.Context, env map[string]string, name
 	return r.fakeBootstrapRunner.Run(ctx, env, name, args...)
 }
 
+// nicoSiteSpecFile writes examples/sitespec-nico.yaml with the files it names
+// beside it, and points NVKECTL_NICO_CREDENTIALS at a token file, so the
+// bootstrap checks pass.
+func nicoSiteSpecFile(t *testing.T) string {
+	t.Helper()
+	example, err := os.ReadFile("../../examples/sitespec-nico.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeSiteSpec(t, string(example))
+	dir := filepath.Dir(path)
+	for _, name := range []string{"nico.token"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(sitespec.NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
+	t.Setenv(stackconfig.EnvNodeUser, "example-user")
+	t.Setenv(stackconfig.EnvNodePassword, "example-password")
+	if err := os.Mkdir(filepath.Join(dir, "bootstrap-releases"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const releases = "apiVersion: internal.nvke.nvidia.com/v1\nkind: MachineImage\nmetadata:\n  name: img\n" +
+		"---\napiVersion: internal.nvke.nvidia.com/v1\nkind: ClusterRelease\nmetadata:\n  name: example-ubuntu-24.04-amd64\n" +
+		"spec:\n  machineImageRef:\n    name: img\n"
+	if err := os.WriteFile(filepath.Join(dir, "bootstrap-releases", "r.yaml"), []byte(releases), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestRunBootstrapSiteDryRunReportsBootstrapProblemsTogether: the dry run is the
+// complete pre-flight, so a missing SPIRE address does not hide the NICo token
+// the bootstrap host also lacks.
+func TestRunBootstrapSiteDryRunReportsBootstrapProblemsTogether(t *testing.T) {
+	example, err := os.ReadFile("../../examples/sitespec-nico.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Replace(string(example), `  externalAddress: "192.0.2.10"`, "", 1)
+	if text == string(example) {
+		t.Fatal("the example no longer sets spire.externalAddress; update this test")
+	}
+	t.Setenv(sitespec.NicoCredentialsEnv, "")
+
+	err = runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{siteSpec: writeSiteSpec(t, text), dryRun: true})
+	if err == nil {
+		t.Fatal("the dry run passed a spec with no SPIRE address and no NICo token")
+	}
+	for _, want := range []string{"spire.externalAddress is required", sitespec.NicoCredentialsEnv + " must name"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+}
+
+// TestRunBootstrapSiteNicoLeftoverClusterSaysToReleaseInstancesFirst: with nico
+// the leftover-cluster refusal is the only re-run guard, and the "delete it and
+// re-run" it ends with would orphan the NICo instances an earlier run
+// allocated. The refusal names the release step before the delete.
+func TestRunBootstrapSiteNicoLeftoverClusterSaysToReleaseInstancesFirst(t *testing.T) {
+	setBootstrapEnv(t)
+
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:            nicoSiteSpecFile(t),
+		bootstrapRunner:     &recordingRunner{next: leftoverKindRunner{}},
+		cweRunner:           newFakeCWERunner(t),
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+	})
+	if err == nil {
+		t.Fatal("expected an error while an earlier bootstrap cluster is still running")
+	}
+	msg := err.Error()
+	for _, want := range []string{"`nvkectl delete cluster nvke-site`", "nvkectl config set-site --name nvkectl-bootstrap --url http://127.0.0.1:30080", "no longer lists it"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q does not contain %q", msg, want)
+		}
+	}
+	if strings.Index(msg, "nvkectl delete cluster") > strings.Index(msg, "kind delete cluster") {
+		t.Errorf("error %q tells the operator to delete the Kind cluster before it releases the instances", msg)
+	}
+	// A leftover may hold a working site cluster, for which "delete it and
+	// re-run" allocates a second set of machines behind the same VIP.
+	for _, want := range []string{"succeeded, or failed after every control-plane node joined", "delete only this cluster", "do not re-run", "second control plane"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q does not contain %q", msg, want)
+		}
+	}
+}
+
+// TestRunBootstrapSiteNicoSpireDumpFailureIsAdvisedAsAJoinedCluster: the SPIRE
+// export runs after the site cluster is built. A failure there leaves a working
+// site, so the error says to delete only the bootstrap cluster, not to release
+// the NICo instances (which would delete the site and its machines).
+func TestRunBootstrapSiteNicoSpireDumpFailureIsAdvisedAsAJoinedCluster(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPIWithNodes(t, true, 3, 3)
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:            nicoSiteSpecFile(t),
+		bootstrapRunner:     runner,
+		cweRunner:           newFakeCWERunner(t),
+		kubeconfigOut:       filepath.Join(t.TempDir(), "nvke-site.kubeconfig"),
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) {
+			return 0, errors.New("dump failed")
+		},
+	})
+	if err == nil {
+		t.Fatal("expected the SPIRE dump failure")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"writing SPIRE bootstrap resources", "the site cluster is up and is not to be deleted",
+		"delete only the bootstrap cluster with `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q does not contain %q", msg, want)
+		}
+	}
+	for _, reject := range []string{"nvkectl delete cluster", "release the NICo instances", "set-site"} {
+		if strings.Contains(msg, reject) {
+			t.Errorf("error %q contains %q, which would delete a working site cluster", msg, reject)
+		}
+	}
+	if runner.sawArgs("delete", "cluster") {
+		t.Error("bootstrap cluster was deleted after the SPIRE copy failed")
+	}
+}
+
+// TestRunBootstrapSiteNicoRefusesWhenTheVIPAlreadyAnswers: the one address a
+// nico site's control plane is known by before it exists. When it answers, a
+// site for this spec is running, and a second bootstrap would allocate another
+// set of NICo machines behind the same VIP. Nothing is built before the refusal.
+func TestRunBootstrapSiteNicoRefusesWhenTheVIPAlreadyAnswers(t *testing.T) {
+	setBootstrapEnv(t)
+
+	var dialed []string
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:         nicoSiteSpecFile(t),
+		bootstrapRunner:  runner,
+		cweRunner:        newFakeCWERunner(t),
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		lookPath:         runtimeOnPath,
+		dialContext: func(_ context.Context, _, address string) (net.Conn, error) {
+			dialed = append(dialed, address)
+			if address != "10.0.0.100:6443" {
+				return nil, errors.New("connection refused")
+			}
+			client, server := net.Pipe()
+			_ = server.Close()
+			return client, nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected an error when the control-plane VIP already answers")
+	}
+	for _, want := range []string{"10.0.0.100", "6443", "do not re-run", "another set of NICo machines"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+	if !slices.Equal(dialed, []string{"10.0.0.100:6443"}) {
+		t.Errorf("dialed %v, want only the VIP: a nico spec lists no hosts", dialed)
+	}
+	if runner.sawArgs("create", "cluster") {
+		t.Errorf("the bootstrap kind cluster was created although the VIP already answers; calls: %v", runner.calls)
+	}
+}
+
+// TestRequireNoSiteAtVIPSkipsAnEmptyVIP: a one-node nico spec may have no VIP,
+// and then there is nothing to dial.
+func TestRequireNoSiteAtVIPSkipsAnEmptyVIP(t *testing.T) {
+	dial := func(context.Context, string, string) (net.Conn, error) {
+		t.Error("dialed with no VIP configured")
+		return nil, errors.New("unexpected dial")
+	}
+	if err := requireNoSiteAtVIP(context.Background(), "", dial); err != nil {
+		t.Fatalf("requireNoSiteAtVIP with no VIP: %v", err)
+	}
+}
+
+// TestCreateSiteCluster_KeepsKindAfterAnUnconfirmedNicoCreate: with nico, a
+// create the controller may have committed may be allocating NICo instances,
+// so the bootstrap cluster is kept. A refusal created nothing, and the
+// provisioned provider allocates nothing, so both leave it to be deleted.
+func TestCreateSiteCluster_KeepsKindAfterAnUnconfirmedNicoCreate(t *testing.T) {
+	nico, err := sitespec.Load(nicoSiteSpecFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provisioned, err := sitespec.Load(writeSiteSpec(t, validSiteSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name     string
+		inv      *sitespec.SiteSpec
+		status   int
+		wantKept bool
+	}{
+		{name: "nico, a 5xx", inv: nico, status: http.StatusInternalServerError, wantKept: true},
+		{name: "nico, a 4xx refusal", inv: nico, status: http.StatusBadRequest},
+		{name: "provisioned, a 5xx", inv: provisioned, status: http.StatusInternalServerError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+			}))
+			defer srv.Close()
+			port := srv.Listener.Addr().(*net.TCPAddr).Port
+
+			kept, err := createSiteCluster(context.Background(), nil, tt.inv, &bootstrapSiteOptions{}, int32(port), slog.New(slog.DiscardHandler))
+			if err == nil {
+				t.Fatal("expected createSiteCluster to fail")
+			}
+			if kept != tt.wantKept {
+				t.Errorf("createSiteCluster kept the bootstrap cluster = %v, want %v (err %v)", kept, tt.wantKept, err)
+			}
+		})
+	}
+}
+
+// TestRetainedClusterError: the advice after a failure past CreateCluster. With
+// nico it leads with releasing the instances; with provisioned it is unchanged.
+func TestRetainedClusterError(t *testing.T) {
+	cluster := &bootstrapengine.Cluster{Name: "nvkectl-bootstrap", KubeconfigPath: "/tmp/kc"}
+	cause := errors.New("workflow failed")
+	nico := &sitespec.SiteSpec{ClusterName: "nvke-site", Infra: sitespec.Infra{Provider: sitespec.ProviderNico}}
+	provisioned := &sitespec.SiteSpec{ClusterName: "nvke-site"}
+
+	t.Run("provisioned", func(t *testing.T) {
+		msg := retainedClusterError(cause, provisioned, cluster, 30080).Error()
+		if strings.Contains(msg, "NICo") || !strings.Contains(msg, "delete it after recovery with `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`") {
+			t.Errorf("provisioned advice changed: %q", msg)
+		}
+	})
+	t.Run("nico", func(t *testing.T) {
+		msg := retainedClusterError(cause, nico, cluster, 30080).Error()
+		for _, want := range []string{
+			"release the NICo instances", "leaves them allocated and unmanaged", "tenant login",
+			"`nvkectl config set-site --name nvkectl-bootstrap --url http://127.0.0.1:30080 --kubeconfig /tmp/kc`",
+			"`nvkectl delete cluster nvke-site`", "nvkectl config use-site",
+		} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("nico advice %q does not contain %q", msg, want)
+			}
+		}
+		if strings.Index(msg, "nvkectl delete cluster") > strings.Index(msg, "kind delete cluster") {
+			t.Errorf("advice %q deletes the Kind cluster before it releases the instances", msg)
+		}
+	})
+	// The create may have been committed without its answer arriving: the advice
+	// says to check for the cluster before releasing it, then delete Kind.
+	t.Run("nico with the create unconfirmed", func(t *testing.T) {
+		unconfirmed := fmt.Errorf("sitecluster: creating cluster %q: %w: %w", "nvke-site", sitecluster.ErrCreateUnconfirmed, cause)
+		msg := retainedClusterError(unconfirmed, nico, cluster, 30080).Error()
+		for _, want := range []string{
+			"no answer from the controller confirmed or refused the create",
+			"`nvkectl config set-site --name nvkectl-bootstrap --url http://127.0.0.1:30080 --kubeconfig /tmp/kc`",
+			"run `nvkectl get clusters`; if it lists nvke-site", "leaves them allocated and unmanaged",
+			"`nvkectl delete cluster nvke-site`", "nvkectl config use-site",
+			"then delete the bootstrap cluster with `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`",
+		} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("unconfirmed-create advice %q does not contain %q", msg, want)
+			}
+		}
+		if strings.Index(msg, "nvkectl get clusters") > strings.Index(msg, "nvkectl delete cluster") {
+			t.Errorf("advice %q deletes the site cluster before checking it exists", msg)
+		}
+	})
+	// After every node joined the site cluster is working: following the release
+	// steps would delete it and its NICo machines, so they are not given.
+	t.Run("nico with the key unsaved", func(t *testing.T) {
+		capture := &keyCaptureError{clusterName: "nvke-site", keyPath: "k.json", kubeconfigPath: "/tmp/kc", recover: "save-it", err: cause}
+		msg := retainedClusterError(capture, nico, cluster, 30080).Error()
+		for _, reject := range []string{"nvkectl delete cluster", "release the NICo instances", "set-site"} {
+			if strings.Contains(msg, reject) {
+				t.Errorf("key-unsaved advice %q contains %q, which would delete a working site cluster", msg, reject)
+			}
+		}
+		if !strings.Contains(msg, "once the key is saved, delete only the bootstrap cluster with `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap`") {
+			t.Errorf("key-unsaved advice does not say to delete only the bootstrap cluster: %q", msg)
+		}
+	})
+	t.Run("nico with the kubeconfig unwritten", func(t *testing.T) {
+		msg := retainedClusterError(&clusterJoinedError{cause}, nico, cluster, 30080).Error()
+		for _, reject := range []string{"nvkectl delete cluster", "release the NICo instances", "set-site"} {
+			if strings.Contains(msg, reject) {
+				t.Errorf("post-join advice %q contains %q, which would delete a working site cluster", msg, reject)
+			}
+		}
+		for _, want := range []string{"site cluster is up", "delete only the bootstrap cluster", "kind delete cluster --name nvkectl-bootstrap"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("post-join advice %q does not contain %q", msg, want)
+			}
+		}
+	})
+}
+
 // TestRunBootstrapSiteRefusesWhileAnEarlierBootstrapClusterRuns: the cluster
 // left by an earlier run may hold the key that run did not save. The refusal
 // says how to get it out before it says how to delete the cluster, and does
@@ -1739,7 +2052,119 @@ func TestControllerImageOrder(t *testing.T) {
 	}
 }
 
-// TestRunBootstrapSiteWarnsAboutOldSettingNames: an old NKECTL_* name set
+// TestCapnicoAccess: the bootstrap CAPNICo's endpoint and organization come from
+// the site spec's infra.nico, its token from the file NVKECTL_NICO_CREDENTIALS
+// names, and only for the nico provider.
+func TestCapnicoAccess(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	nicoToken := write("nico.token", "example-nico-token\n")
+	empty := write("empty.token", " \n")
+	structured := write("client.yaml", "tokenURL: https://idp.example/token\nclientID: id\nclientSecret: secret\n")
+
+	nico := &sitespec.SiteSpec{
+		Infra: sitespec.Infra{
+			Provider: sitespec.ProviderNico,
+			Nico:     &sitespec.NicoInfra{OrgID: "example-org", Remote: &sitespec.NicoRemote{Endpoint: "https://nico.example"}},
+		},
+	}
+
+	t.Run("provisioned needs nothing", func(t *testing.T) {
+		got, err := capnicoAccess(&sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderProvisioned}})
+		if err != nil || got != (controllerdeploy.CAPNICoAccess{}) {
+			t.Fatalf("capnicoAccess = %+v, %v; want the zero value", got, err)
+		}
+	})
+	t.Run("nico reads the token file", func(t *testing.T) {
+		t.Setenv(sitespec.NicoCredentialsEnv, nicoToken)
+		got, err := capnicoAccess(nico)
+		if err != nil {
+			t.Fatalf("capnicoAccess: %v", err)
+		}
+		want := controllerdeploy.CAPNICoAccess{
+			Endpoint: "https://nico.example", OrgID: "example-org", APIName: sitespec.DefaultNicoAPIName, Token: "example-nico-token",
+		}
+		if got != want {
+			t.Errorf("capnicoAccess = %+v, want %+v", got, want)
+		}
+	})
+	t.Run("nico takes the site spec's API name", func(t *testing.T) {
+		t.Setenv(sitespec.NicoCredentialsEnv, nicoToken)
+		carbide := *nico
+		carbideNico := *nico.Infra.Nico
+		carbideNico.Remote = &sitespec.NicoRemote{Endpoint: "https://nico.example", APIName: "carbide"}
+		carbide.Infra.Nico = &carbideNico
+		got, err := capnicoAccess(&carbide)
+		if err != nil || got.APIName != "carbide" {
+			t.Fatalf("capnicoAccess = %+v, %v; want APIName carbide", got, err)
+		}
+	})
+	for name, tt := range map[string]struct {
+		env     string
+		inv     *sitespec.SiteSpec
+		wantErr string
+	}{
+		"credentials variable unset": {"", nico, sitespec.NicoCredentialsEnv + " must name"},
+		"missing NICo token file":    {filepath.Join(dir, "absent"), nico, sitespec.NicoCredentialsEnv},
+		"empty NICo token file":      {empty, nico, "is empty"},
+		"client credentials refused": {structured, nico, "client-credentials form is not supported"},
+		"no NICo block in the spec":  {nicoToken, &sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderNico}}, "infra.nico.remote"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(sitespec.NicoCredentialsEnv, tt.env)
+			if _, err := capnicoAccess(tt.inv); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestCapnicoReleaseImage: a release's capnico-controller artifact becomes the
+// bootstrap CAPNICo image as repository@digest, for the architecture asked, and
+// only with the nico provider.
+func TestCapnicoReleaseImage(t *testing.T) {
+	const release = "../../../deploy/testdata/nvkr-release/valid.json"
+	nico := &sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderNico}}
+	provisioned := &sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderProvisioned}}
+
+	tests := []struct {
+		name    string
+		inv     *sitespec.SiteSpec
+		release string
+		arch    string
+		want    string
+		wantErr string
+	}{
+		{"no release leaves the manifest's image", nico, "", "linux/amd64", "", ""},
+		{"amd64", nico, release, "linux/amd64", "ghcr.io/example/recipes/capnico-controller@sha256:" + strings.Repeat("d", 64), ""},
+		{"arm64", nico, release, "linux/arm64", "ghcr.io/example/recipes/capnico-controller-arm64@sha256:" + strings.Repeat("e", 64), ""},
+		{"provisioned refuses a release", provisioned, release, "linux/amd64", "", "only applies with infra.provider nico"},
+		{"missing release file", nico, filepath.Join(t.TempDir(), "absent.json"), "linux/amd64", "", "absent.json"},
+		{"unknown architecture", nico, release, "linux/riscv64", "", "arch linux/riscv64"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := capnicoReleaseImage(tt.inv, tt.release, tt.arch)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("capnicoReleaseImage = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+}
+
+// TestRunBootstrapSiteWarnsAboutOldSettingNames: an old NKECTL_CWE_* name set
 // without its replacement is logged as a warning naming the replacement, before
 // anything else runs; a setting under its new name is not.
 func TestRunBootstrapSiteWarnsAboutOldSettingNames(t *testing.T) {
@@ -1850,5 +2275,129 @@ func TestRunBootstrapSiteStopsOnRemovedSettings(t *testing.T) {
 				t.Errorf("no warning %q in:\n%s", tc.wantWarning, logged)
 			}
 		})
+	}
+}
+
+// TestBootstrapSite_ArchNeedsARelease: --arch only picks a --release artifact,
+// so an explicit one without --release is refused instead of ignored. The
+// default does not count, which is why the check reads the flag's Changed.
+func TestBootstrapSite_ArchNeedsARelease(t *testing.T) {
+	_, _, err := runGenerate(t, "bootstrap", "site", "-f", "unused.yaml", "--arch", "linux/riscv64")
+	if err == nil || !strings.Contains(err.Error(), "--arch") || !strings.Contains(err.Error(), "--release") {
+		t.Fatalf("err = %v, want --arch refused without --release", err)
+	}
+}
+
+func TestNvkeImages(t *testing.T) {
+	tests := []struct {
+		name string
+		nico bool
+		want []string
+	}{
+		{"provisioned loads both images", false, []string{"cwe:1", "prov:1"}},
+		{"nico loads only the CWE image", true, []string{"cwe:1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := controllerdeploy.Config{CWEImage: "cwe:1", ProvisionedProviderImage: "prov:1", NicoInfrastructure: tt.nico}
+			if got := nvkeImages(cfg); !slices.Equal(got, tt.want) {
+				t.Errorf("nvkeImages = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCWEDeployConfig_NicoTenantLoginAndReleases: the controller config carries
+// the tenant login, read from NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD, and the release
+// manifests' path resolved from the site spec, for the nico provider only.
+func TestCWEDeployConfig_NicoTenantLoginAndReleases(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"nico.token"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("example-secret\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inv, err := sitespec.Load(writeSiteSpec(t, validSiteSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err := cweDeployConfig(inv, "c", false, "", ""); err != nil || cfg.DGXCTenant != (controllerdeploy.TenantLogin{}) || cfg.ReleasesPath != "" {
+		t.Fatalf("provisioned: %+v, %v; want no tenant login or releases", cfg, err)
+	}
+
+	t.Setenv(sitespec.NicoCredentialsEnv, filepath.Join(dir, "nico.token"))
+	t.Setenv(stackconfig.EnvNodeUser, "example-user")
+	t.Setenv(stackconfig.EnvNodePassword, "example-secret")
+	nico := &sitespec.SiteSpec{
+		Infra: sitespec.Infra{
+			Provider: sitespec.ProviderNico,
+			Nico: &sitespec.NicoInfra{
+				OrgID:    "o",
+				Remote:   &sitespec.NicoRemote{Endpoint: "https://nico.example"},
+				Releases: filepath.Join(dir, "releases"),
+			},
+		},
+	}
+	cfg, err := cweDeployConfig(nico, "c", true, "", "")
+	if err != nil {
+		t.Fatalf("nico: %v", err)
+	}
+	if want := (controllerdeploy.TenantLogin{User: "example-user", Password: "example-secret"}); cfg.DGXCTenant != want {
+		t.Errorf("DGXCTenant = %+v, want %+v", cfg.DGXCTenant, want)
+	}
+	if cfg.ReleasesPath != filepath.Join(dir, "releases") {
+		t.Errorf("ReleasesPath = %q", cfg.ReleasesPath)
+	}
+
+	t.Setenv(stackconfig.EnvNodePassword, "")
+	if _, err := cweDeployConfig(nico, "c", true, "", ""); err == nil || !strings.Contains(err.Error(), stackconfig.EnvNodePassword) {
+		t.Errorf("unset node password: err = %v, want %s", err, stackconfig.EnvNodePassword)
+	}
+}
+
+// TestDumpSiteSpecNamesTheNicoControlPlaneAsDocumented: the block embeds the
+// API's struct, which has json tags only, so the dump has to write the API's
+// camelCase names and leave out what is unset, not yaml.v3's lower-cased ones.
+func TestDumpSiteSpecNamesTheNicoControlPlaneAsDocumented(t *testing.T) {
+	inv, err := sitespec.Load(nicoSiteSpecFile(t))
+	if err != nil {
+		t.Fatalf("load site spec: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := dumpSiteSpec(&buf, inv); err != nil {
+		t.Fatalf("dumpSiteSpec: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"count: 3", "instanceTypePreference:", "vpcPrefixIDs:", "sshKeyGroupIDs:", "release: example-ubuntu-24.04-amd64"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the dump lacks %q:\n%s", want, out)
+		}
+	}
+	// The example sets vpcPrefixIDs and no subnetIDs, and leaves configProfile out.
+	for _, reject := range []string{"sshkeygroupids", "vpcprefixids", "instancetypepreference", "configprofile", "subnetids", "subnetIDs", "configProfile"} {
+		if strings.Contains(out, reject) {
+			t.Errorf("the dump has %q, which is lower-cased or unset:\n%s", reject, out)
+		}
+	}
+}
+
+// TestBootstrapPortMappings_ControllerAPIIsLoopbackOnly: the bootstrap
+// controller serves its API with no authentication, so Kind publishes it on
+// 127.0.0.1 alone; the SPIRE port stays on every address for the nodes.
+func TestBootstrapPortMappings_ControllerAPIIsLoopbackOnly(t *testing.T) {
+	cfg := controllerdeploy.Config{CWEPort: 30080, NicoInfrastructure: true}
+	got := bootstrapPortMappings(cfg)
+	if len(got) != 2 {
+		t.Fatalf("mappings = %+v, want the controller API and SPIRE", got)
+	}
+	if got[0].ContainerPort != 30080 || got[0].ListenAddress != "127.0.0.1" {
+		t.Errorf("controller API mapping = %+v, want port 30080 on 127.0.0.1", got[0])
+	}
+	if got[1].ContainerPort != controllerdeploy.SPIREServerNodePort || got[1].ListenAddress != "" {
+		t.Errorf("SPIRE mapping = %+v, want it on every address", got[1])
+	}
+	cfg.DisableMTLS = true
+	if got := bootstrapPortMappings(cfg); len(got) != 1 {
+		t.Errorf("mappings without the TPM attestor = %+v, want only the controller API", got)
 	}
 }

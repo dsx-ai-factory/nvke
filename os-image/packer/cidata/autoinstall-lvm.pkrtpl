@@ -90,6 +90,11 @@ autoinstall:
     # iproute2 is Priority: important and already on the base image.
     - iptables
     - conntrack
+%{ if ubuntu_series == "26.04" ~}
+    # containerd's erofs snapshotter (Kata) converts image layers with
+    # mkfs.erofs >= 1.8.2, which only 26.04 ships (24.04 has 1.7).
+    - erofs-utils
+%{ endif ~}
     - socat
     - ethtool
 

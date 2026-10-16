@@ -424,7 +424,7 @@ const (
 	CNICalico                      CniPlugin = "calico"
 	CNIOvnKubernetes               CniPlugin = "ovn-kubernetes"
 	DefaultCalicoCNIVersion                  = "3.30.1"
-	DefaultOvnKubernetesCNIVersion           = "1.4.0"
+	DefaultOvnKubernetesCNIVersion           = "1.6.0"
 )
 
 func ListCNIPlugins() []CniPlugin {

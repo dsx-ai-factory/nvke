@@ -62,9 +62,11 @@ concurrency:
   # workflows here.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# Module targets set their own workspace mode.
+# Module targets set their own workspace mode. A module fetch the proxy drops
+# mid-stream falls back to the module's origin (#1481).
 env:
   GOWORK: "off"
+  GOPROXY: https://proxy.golang.org|direct
 
 jobs:
   notices-check:

@@ -94,8 +94,9 @@ func Check(p *Policy, r *Registry, s *Subject, version, location map[string]reso
 // planner, which reports it where it is used.
 //
 // Both halves are asked, because a declared input belongs to whichever one
-// consumes it: a constraint is read by lockedPackage on the version side and by
-// osImage on the location side, and a value by url on the location side. The
+// consumes it: a constraint is read by lockedPackage and aptPackage on the
+// version side and by osImage on the location side, and a value by url on the
+// location side. The
 // half that rejects it is the one the error names.
 func checkInputs(p *Policy, subject string, d SubjectDependency, c Component, version, location resolve.Resolver) error {
 	halves := []struct {

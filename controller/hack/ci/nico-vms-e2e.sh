@@ -208,6 +208,10 @@ guest_diagnostics() {
         echo "=== listening ==="; ss -ltnp 2>&1
         echo "=== network ==="; ip -brief address 2>&1; ip route show 2>&1; cat /etc/resolv.conf 2>&1
         echo "=== journal: nvke-agent spire-agent kubelet containerd (last 400) ==="; journalctl --no-pager -n 400 -u nvke-agent -u spire-agent -u kubelet -u containerd 2>&1
+        echo "=== ovnkube containers (last 80 lines each) ==="
+        for c in $(crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps -a --name ovn -q 2>/dev/null); do
+          echo "--- $c ---"; crictl --runtime-endpoint unix:///run/containerd/containerd.sock logs --tail 80 "$c" 2>&1
+        done
         echo "=== kubeadm ==="; ls -la /etc/kubernetes 2>&1; cat /etc/kubernetes/kubelet.conf >/dev/null 2>&1 && echo kubelet.conf present
         echo "=== disk ==="; df -h / 2>&1; lsblk -o NAME,TYPE,FSTYPE,SIZE,MOUNTPOINTS 2>&1
         echo "=== dmesg (last 60) ==="; dmesg 2>&1 | tail -n 60
@@ -232,6 +236,7 @@ collect_diagnostics() {
   set +e
   mkdir -p "${STATE_DIR}"
   stop_state_monitor
+  cp "${CONTROLLER_ROOT}/test/e2e/tenant-diagnostics.json" "${STATE_DIR}/" 2>/dev/null
 
   if kubectl cluster-info >/dev/null 2>&1; then
     capture management-nodes.txt kubectl get nodes -o wide
@@ -359,7 +364,7 @@ export CNPG_TEMPORAL_PASSWORD="${CNPG_TEMPORAL_PASSWORD:-example-password}"
 export TENANT_ACCESS_ENABLED=true
 export NKE_OIDC_AUTH_ENABLED=true
 # Config profiles and runbooks only. OS images come from the releases below.
-# CWE_PROFILES_DIR is the deprecated name for NKE_CONTROLLER_PROFILES_DIR.
+# CWE_PROFILES_DIR is the deprecated name for NKE_CONTROLLER_PROFILES_DIR; #1399 removes it.
 export NKE_CONTROLLER_PROFILES_DIR="${NKE_CONTROLLER_PROFILES_DIR:-${CWE_PROFILES_DIR:-${CONTROLLER_ROOT}/test/fixtures/profiles}}"
 RELEASES_SRC="${NKE_CONTROLLER_RELEASES_DIR:-${CONTROLLER_ROOT}/test/fixtures/releases}"
 [[ -d "${RELEASES_SRC}" ]] || fail "releases not found at ${RELEASES_SRC}"

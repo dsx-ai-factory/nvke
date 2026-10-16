@@ -26,9 +26,16 @@ var templateYAML []byte
 
 // deniedPaths are the field paths --set must refuse. cluster.nodes comes from
 // the node CSV, which carries per-node fields a dotted path cannot express.
+// infra.provider and spire.externalAddress are for a nico site spec, which
+// generate sitespec does not write: it requires --nodes, so with either set the
+// file it writes is refused by its own validation.
 func deniedPaths() map[string]string {
 	return map[string]string{
 		pathNodes: "nodes come from --nodes",
+		pathInfraProvider: "generate sitespec writes a provisioned site spec from --nodes; " +
+			"write a nico one by hand from examples/sitespec-nico.yaml",
+		pathSpireExternalAddress: "spire.externalAddress is only valid with infra.provider nico, " +
+			"which generate sitespec does not write",
 	}
 }
 

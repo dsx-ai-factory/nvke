@@ -63,11 +63,16 @@ func TestNewVersionRejects(t *testing.T) {
 		want     string
 	}{
 		{"no strategy", "", nil, "no strategy"},
-		{"unknown strategy", "aptPackage", nil, `"aptPackage" is not one of`},
+		{"unknown strategy", "debPackage", nil, `"debPackage" is not one of`},
 		{"missing key", VersionStrategyGitTag, map[string]string{}, `needs "tagPrefix"`},
 		{"unknown key", VersionStrategyGitTag, map[string]string{"tagPrefix": "", "tagPrefx": "x"}, "does not take tagPrefx"},
 		{"locked package needs at", VersionStrategyLockedPackage, map[string]string{"lockDir": "a"}, `needs "at"`},
 		{"make var needs var", VersionStrategyMakeVar, map[string]string{}, `needs "var"`},
+		{
+			"apt package needs packages", VersionStrategyAptPackage,
+			map[string]string{"base": "https://example.invalid", "suites": "noble", "arches": "amd64"},
+			`needs "packages"`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := NewVersion(tc.strategy, tc.with, ".")

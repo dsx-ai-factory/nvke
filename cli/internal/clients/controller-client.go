@@ -101,6 +101,17 @@ func bearerToken(tokens tokenSource) api.RequestEditorFn {
 	}
 }
 
+// StatusError is an answer from the controller with a status other than the
+// one the call expects. Its presence means the request reached the controller
+// and was answered; its absence from an error means no answer came back.
+type StatusError struct {
+	// StatusCode is the HTTP status the controller answered with.
+	StatusCode int
+	err        error
+}
+
+func (e *StatusError) Error() string { return e.err.Error() }
+
 // apiError extracts a human-readable message from a non-2xx response body.
 // The controller API returns {"message": "..."} for all error responses (GenericError).
 // Falls back to the raw body if the body isn't a GenericError.

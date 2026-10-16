@@ -289,6 +289,12 @@ prepare-installer-iso: preflight
 		ubuntu-*-live-server-$(ARCH).iso) ;; \
 		*) echo "ISO_URL does not identify an $(ARCH) Ubuntu installer: $(ISO_URL)" >&2; exit 1 ;; \
 	esac
+	@# Packer and the package builder take the series from UBUNTU_RELEASE, so an
+	@# overridden ISO_URL must be the same series.
+	@case "$(UBUNTU_VERSION)" in \
+		$(UBUNTU_SERIES)|$(UBUNTU_SERIES).*) ;; \
+		*) echo "ISO_URL is Ubuntu $(UBUNTU_VERSION), not UBUNTU_RELEASE's $(UBUNTU_SERIES) series: $(ISO_URL)" >&2; exit 1 ;; \
+	esac
 	mkdir -p $(ISO_CACHE)
 	ISO_URL=$(ISO_URL) ISO_CHECKSUM=$(ISO_CHECKSUM) OUT_DIR=$(ISO_CACHE) ./scripts/prepare-installer-iso.sh
 
@@ -539,6 +545,7 @@ _os-image-fde: prepare-image-build
 	$(PACKER_BUILD) \
 		-only=$(PACKER_BUILD_FDE) \
 		-var "architecture=$(ARCH)" \
+		-var "ubuntu_series=$(UBUNTU_SERIES)" \
 		-var "material_manifest=$(MATERIAL_MANIFEST)" \
 		-var "output_directory=$(PACKER_OUTPUT_DIRECTORY_FDE)" \
 		-var "build_log_directory=$(BUILD_LOGS)" \
@@ -580,6 +587,7 @@ _os-image-non-fde: prepare-image-build
 	$(PACKER_BUILD) \
 		-only=$(PACKER_BUILD_NON_FDE) \
 		-var "architecture=$(ARCH)" \
+		-var "ubuntu_series=$(UBUNTU_SERIES)" \
 		-var "material_manifest=$(MATERIAL_MANIFEST)" \
 		-var "output_directory=$(PACKER_OUTPUT_DIRECTORY_NON_FDE)" \
 		-var "build_log_directory=$(BUILD_LOGS)" \

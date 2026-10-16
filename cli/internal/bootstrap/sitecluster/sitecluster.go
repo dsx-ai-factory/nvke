@@ -47,6 +47,10 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 		return api.CreateClusterJSONRequestBody{}, fmt.Errorf("sitecluster: site spec is nil")
 	}
 
+	if inv.IsNico() {
+		return nicoClusterRequest(inv)
+	}
+
 	hosts, err := provisionedHosts(inv)
 	if err != nil {
 		return api.CreateClusterJSONRequestBody{}, err
@@ -71,13 +75,58 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 		},
 	}
 
+	applySharedSettings(&req, inv)
+	return req, nil
+}
+
+// nicoClusterRequest builds the CreateCluster request for a site cluster whose
+// machines CAPNICo allocates from a NICo site.
+//
+// It differs from the provisioned request only in where the machines come
+// from: the request carries a nico payload and no infra payload, which is how
+// CWE selects Forge mode, and the control-plane count is the spec's
+// controlPlane.count instead of the length of a list.
+func nicoClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, error) {
+	n := inv.Infra.Nico
+	if n == nil {
+		return api.CreateClusterJSONRequestBody{}, fmt.Errorf("sitecluster: site spec selects infra.provider %q but has no %s block",
+			sitespec.ProviderNico, "infra.nico")
+	}
+
+	provider := n.ClusterProvider()
+	if provider == nil {
+		return api.CreateClusterJSONRequestBody{}, fmt.Errorf("sitecluster: infra.nico needs a remote")
+	}
+
+	// The control-plane block is the request's own struct, so it goes in as read;
+	// the nico block is assembled from the fields that hold the organization,
+	// site and VPC.
+	req := api.CreateClusterJSONRequestBody{
+		Name:                          inv.ClusterName,
+		ControlPlaneKubernetesVersion: inv.Cluster.K8sVersion,
+		CniPlugin:                     api.CreateClusterRequestCniPlugin(inv.Cluster.CniName),
+		EtcdEncrypted:                 inv.Cluster.EtcdEncryptionEnabled(),
+		ControlPlaneVIP:               inv.Cluster.ControlPlaneVIP,
+		Nico:                          provider,
+		ControlPlaneConfig: &api.CreateClusterControlPlaneConfig{
+			DesiredCount:         n.ControlPlane.Count,
+			SystemReservedMemory: inv.Cluster.KubeletConfig.SystemReservedMemory,
+			Nico:                 &n.ControlPlane.NicoControlPlaneProviderCreate,
+		},
+	}
+	applySharedSettings(&req, inv)
+	return req, nil
+}
+
+// applySharedSettings sets the request fields that mean the same thing whichever
+// infrastructure supplies the machines.
+func applySharedSettings(req *api.CreateClusterJSONRequestBody, inv *sitespec.SiteSpec) {
 	if inv.Cluster.CniVersion != "" {
 		req.CniVersion = &inv.Cluster.CniVersion
 	}
 	if network := clusterNetwork(inv); network != nil {
 		req.Network = network
 	}
-	return req, nil
 }
 
 // provisionedHosts renders the site spec's nodes as ProvisionedCluster hosts.

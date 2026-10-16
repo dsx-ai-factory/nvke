@@ -80,7 +80,7 @@ RELEASE_CRD_NAMES	?= machineimages clusterreleases nodepoolreleases
 RELEASES_DIR		?= $(CURDIR)/test/fixtures/releases
 
 .PHONY: releases-install
-releases-install: ## Install the release CRDs and apply RELEASES_DIR to the cluster in KUBECONFIG (for CWE run outside the chart).
+releases-install: ## Install the release CRDs and apply RELEASES_DIR to the cluster in KUBECONFIG (for a controller run outside the chart).
 	@set -eu; \
 	for name in $(RELEASE_CRD_NAMES); do \
 		kubectl apply --server-side --field-manager=releases -f "$(RELEASE_CRD_DIR)/internal.nvke.nvidia.com_$$name.yaml"; \
@@ -219,7 +219,7 @@ test-integration-local: ## Execute the `integration`-tagged tests that need no e
 	go test $(GO_TEST_FLAGS) -tags=integration -count=1 ./internal/agent/... ./internal/teleport/...
 
 .PHONY: test-integration
-test-integration: ## Execute tests against a running CWE deployment.
+test-integration: ## Execute tests against a running controller deployment.
 	@echo "Running integration tests..."
 	cd integration-test && go test -tags integration_test -timeout=3h
 
@@ -275,7 +275,7 @@ test-e2e-capd: ## Run CAPD happy-path e2e tests
 	make test-e2e ARGS='--label-filter="capd && happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
 
 .PHONY: test-e2e-capd-local
-test-e2e-capd-local: ## Run all CAPD e2e tests with local CWE and agent source. macOS bootstraps Colima; Linux uses the host Docker daemon.
+test-e2e-capd-local: ## Run all CAPD e2e tests with local controller and agent source. macOS bootstraps Colima; Linux uses the host Docker daemon.
 	./hack/local-backend-e2e.sh
 
 .PHONY: oidc-envtest-assets test-oidc-reference test-oidc-acceptance-live
@@ -402,7 +402,7 @@ docker-build-local: ## Build the controller image for amd64 and load it into the
 .PHONY: docker-build-multiarch
 docker-build-multiarch: ## Build the controller image for linux/amd64 and linux/arm64 (requires --push or --output)
 	@# Builds both architectures but does not load them into the local daemon.
-	@# To push: add --push and set IMG. To export: add --output type=oci,dest=cwe.tar.
+	@# To push: add --push and set IMG. To export: add --output type=oci,dest=controller.tar.
 	docker buildx build -f Dockerfile \
 	  --platform linux/amd64,linux/arm64 \
 	  --progress=plain \

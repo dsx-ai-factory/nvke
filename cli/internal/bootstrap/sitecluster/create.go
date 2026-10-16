@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nvke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nvke/cli/internal/clusterstate"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
@@ -44,8 +46,16 @@ type ClusterAPI interface {
 // which happened.
 var ErrClusterFailed = errors.New("cluster provisioning failed")
 
+// ErrCreateUnconfirmed marks a Create whose request the controller may have
+// accepted: the request went out and no answer came back, or the answer was not
+// a refusal (a 4xx). The
+// controller commits the cluster and starts provisioning it before it answers,
+// so the cluster may exist and be provisioning.
+var ErrCreateUnconfirmed = errors.New("the controller may have created the cluster")
+
 // Create submits the cluster described by inv and returns what the controller recorded.
-// Provisioning is asynchronous; see WaitProvisioned.
+// Provisioning is asynchronous; see WaitProvisioned. An error that wraps
+// ErrCreateUnconfirmed leaves open whether the cluster was created.
 func Create(ctx context.Context, client ClusterAPI, inv *sitespec.SiteSpec, log *slog.Logger) (*api.Cluster, error) {
 	req, err := ClusterRequest(inv)
 	if err != nil {
@@ -56,14 +66,31 @@ func Create(ctx context.Context, client ClusterAPI, inv *sitespec.SiteSpec, log 
 		"cluster", req.Name,
 		"kubernetesVersion", req.ControlPlaneKubernetesVersion,
 		"cni", req.CniPlugin,
-		"hosts", len(inv.Cluster.Nodes))
+		"infraProvider", inv.Infra.Provider,
+		"controlPlaneNodes", inv.ControlPlaneCount())
 
 	cluster, err := client.CreateCluster(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("sitecluster: creating cluster %q: %w", req.Name, err)
+		if notCreated(err) {
+			return nil, fmt.Errorf("sitecluster: creating cluster %q: %w", req.Name, err)
+		}
+		return nil, fmt.Errorf("sitecluster: creating cluster %q: %w: %w", req.Name, ErrCreateUnconfirmed, err)
 	}
 	log.Info("cluster created", "cluster", cluster.Name, "id", cluster.ID)
 	return cluster, nil
+}
+
+// notCreated reports whether a CreateCluster error proves the controller did
+// not create the cluster: it refused the request with a 4xx, or the connection
+// was never made. Anything else, a 5xx or a request that went out and got no
+// answer, may follow a committed create.
+func notCreated(err error) bool {
+	var status *clients.StatusError
+	if errors.As(err, &status) {
+		return status.StatusCode >= 400 && status.StatusCode < 500
+	}
+	var op *net.OpError
+	return errors.As(err, &op) && op.Op == "dial"
 }
 
 // WaitProvisioned polls the controller until the cluster reports Provisioned, reports a

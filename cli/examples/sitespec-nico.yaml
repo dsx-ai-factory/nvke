@@ -1,0 +1,87 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Example site spec for: nvkectl bootstrap site -f <sitespec-file>
+# with the control-plane machines allocated from a NICo site by CAPNICo,
+# instead of taken from a hardcoded list of hosts (examples/sitespec.yaml).
+#
+# The NICo described here is used ONLY to bootstrap the site controller's own
+# nodes. The NICo the finished site controller uses for tenant clusters is
+# configured in the stack config the controller stack install reads
+# (deploy/examples/stack-config.json), and may be a different one.
+#
+# The NICo token is not in this file. Point NVKECTL_NICO_CREDENTIALS at a file
+# that holds it:
+#
+#   NVKECTL_NICO_CREDENTIALS=/path/to/nico.token nvkectl bootstrap site -f sitespec.yaml
+#
+# The login the controller renders into every node CAPNICo creates is not in
+# this file either: set NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD. The CAPNICo
+# image is public, so the bootstrap needs no registry credential. See
+# docs/sitespec.md for the file format.
+#
+# Every ID below is a placeholder (the all-zero UUID is refused as unset).
+# Replace all of them. An instance type with no
+# allocation looks healthy and provisions nothing.
+
+clusterName: "nvke-site"
+
+infra:
+  # "provisioned" (the default) reads cluster.nodes. "nico" reads infra.nico.
+  provider: nico
+
+  nico:
+    # The NICo organization the machines are created in.
+    orgID: "example-org"
+
+    # An existing NICo, which the bootstrap CAPNICo calls.
+    remote:
+      endpoint: "https://nico.example"
+      siteID: "00000000-0000-0000-0000-000000000001"
+      vpcID: "00000000-0000-0000-0000-000000000002"
+      # Optional. The API name the NICo serves its REST API under; forge when
+      # unset, as the hosted NICo serves. A self-hosted one may serve carbide.
+      # apiName: "forge"
+
+    controlPlane:
+      # Same meaning as the length of cluster.nodes: odd, at least one.
+      count: 3
+      # Ordered; index 0 is the first choice.
+      instanceTypePreference:
+        - "00000000-0000-0000-0000-000000000003"
+      # Exactly one of vpcPrefixIDs (native networking) or subnetIDs.
+      vpcPrefixIDs:
+        - "00000000-0000-0000-0000-000000000004"
+      sshKeyGroupIDs:
+        - "00000000-0000-0000-0000-000000000005"
+      # The name of the ClusterRelease in releases below, the name
+      # examples/clusterrelease.yaml gives it.
+      release: "example-ubuntu-24.04-amd64"
+      # Optional. The bootstrap controller serves no config profiles, so a name
+      # here is accepted but its hooks and labels never reach the nodes.
+      # configProfile: "example-cp-profile"
+
+    # MachineImage and ClusterRelease manifests (a file or a directory) applied to the
+    # bootstrap cluster before the site cluster is created. They must include the
+    # ClusterRelease named by controlPlane.release and its MachineImage, as full
+    # manifests: docs/sitespec.md shows how nvkectl create writes them. Not the
+    # releases/ directory of request documents.
+    releases: "bootstrap-releases"
+
+cluster:
+  # Required with more than one control-plane node (count above). With nico it is
+  # needed for one node too: the nodes have no address until NICo allocates them,
+  # so the controller stack install has nothing else to reach the controller at.
+  controlPlaneVIP: "10.0.0.100"
+  k8sVersion: "1.34.2"
+  cniName: "ovn-kubernetes"
+  podCidr: "192.168.0.0/16"
+  serviceCidr: "10.96.0.0/12"
+  kubeletConfig:
+    systemReservedMemory: "16Gi"
+
+# The address the nodes use to reach the bootstrap host's SPIRE server (NodePort
+# 30081), as seen from the network they are created on. An IP address or DNS name.
+spire:
+  externalAddress: "192.0.2.10"
+

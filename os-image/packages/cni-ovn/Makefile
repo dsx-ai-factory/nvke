@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# The ovn-kubernetes chart stream the agent installs by default
+# The dsx-ai-factory/ovn-kubernetes chart stream the agent installs by default
 # (defaultOvnCniChartStream in agent/internal/agent/cni.go). Bump here and run
 # `make lock`; see README.md.
-OVN_STREAMS ?= 1.4.0
+OVN_STREAMS ?= 1.6.0
 
 CNI := cni-ovn
 PRODUCT := OVN

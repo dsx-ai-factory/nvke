@@ -68,6 +68,11 @@ const (
 	// and scopes the controller's Secret grant to, so it is a constant on both sides.
 	tenantSecretsNamespace = "nke-system"
 
+	// dgxcTenantSecret is the Secret holding the tenant node login, named by
+	// the chart's secrets.dgxcTenantCredSecretName. It matches the name the
+	// deploy path's 35-dgxc-tenant-credentials template renders.
+	dgxcTenantSecret = "dgxc-tenant-credentials"
+
 	postgresReleaseName  = "postgres"
 	temporalReleaseName  = "temporal"
 	spireCRDsReleaseName = "spire-crds"
@@ -139,6 +144,16 @@ const (
 	// on Docker or nerdctl, on Linux or macOS.
 	//
 	DefaultCWEPort int32 = 30080
+
+	// tpmPubhashesConfigMap is the ConfigMap CWE keeps the TPM allowlist in. The
+	// name is CWE's default (SPIRE_TPM_PUBHASHES_CONFIG_MAP_NAME) and has to
+	// match it.
+	tpmPubhashesConfigMap = "tpm-pubhashes"
+	tpmPubhashesVolume    = "tpm-pubhashes"
+
+	// tpmHashesMountPath is the directory the chart points the TPM attestor's
+	// hash_path at when it is given no static hashes.
+	tpmHashesMountPath = "/run/spire/data/tpm-direct/hashes"
 
 	// SPIREServerNodePort is the fixed NodePort used by the bootstrap SPIRE server.
 	SPIREServerNodePort int32 = 30081
@@ -224,6 +239,13 @@ type Config struct {
 	// attest are outside the cluster, and a ClusterIP is not a route they have.
 	TPMEKFingerprints []string
 
+	// SPIREExternalAddress is the address nodes created by CAPNICo use to reach
+	// the SPIRE server. CWE writes it into each node's userdata, so it has to
+	// work from outside the cluster; the in-cluster name the provisioned path
+	// uses does not. Required with NicoInfrastructure, and always paired with
+	// SPIREServerNodePort.
+	SPIREExternalAddress string
+
 	// DisableMTLS stands the site up without SPIFFE: no SPIRE is installed, and
 	// the controller dials each node agent in plaintext. The agent has to be running with
 	// --disable-mtls for that to connect.
@@ -242,7 +264,35 @@ type Config struct {
 	// pulled, because the bootstrap cluster has no pull secret.
 	ProvisionedProviderImage string
 
-	// NodeAgentPort is the port the controller dials nvke-agent on. Empty leaves the controller's own
+	// NicoInfrastructure installs CAPNICo as the infrastructure provider, in
+	// place of cluster-api-provider-provisioned: the site's machines are
+	// allocated from a NICo site instead of taken from a hardcoded host list.
+	// This is for the bootstrap Kind cluster only; the finished controller's
+	// tenant-cluster NICo is configured separately and may be a different one.
+	NicoInfrastructure bool
+
+	// CAPNICo is what the bootstrap CAPNICo is given to reach NICo. Required
+	// with NicoInfrastructure. Bootstrap NICo only; not the tenant-cluster NICo.
+	CAPNICo CAPNICoAccess
+
+	// DGXCTenant is the login the controller renders into the cloud-init of
+	// every node CAPNICo creates. Required with NicoInfrastructure: the
+	// controller refuses to render user data without it.
+	DGXCTenant TenantLogin
+
+	// ReleasesPath is a file or directory of MachineImage and ClusterRelease
+	// manifests applied to the cluster once the controller's CRDs exist. The
+	// controller resolves the control plane's release from them when it
+	// creates the first node. Required with NicoInfrastructure.
+	ReleasesPath string
+
+	// CAPNICoImage, when set, replaces the image the embedded CAPNICo manifest
+	// names, as repository@sha256:digest. It is the capnico-controller artifact
+	// of an NVKR release, so a bootstrap runs the bytes the release published
+	// rather than a tag. Empty runs the manifest's own image.
+	CAPNICoImage string
+
+	// NodeAgentPort is the port CWE dials nke-agent on. Empty leaves CWE's own
 	// default (15005) alone. It comes from the site spec, because it describes
 	// how the site's hosts were configured long before this cluster existed.
 	NodeAgentPort string
@@ -278,6 +328,14 @@ type Config struct {
 	// OCI reference or a local path. Empty uses the spiffe.github.io hardened
 	// chart repo.
 	SPIRECRDsChartRef string
+}
+
+// TPMAttestorEnabled reports whether the bootstrap SPIRE server attests hosts
+// by TPM, and so is published to hosts outside the cluster. That is the case
+// when the site spec listed endorsement-key thumbprints, or when CAPNICo creates
+// the nodes and CWE learns their keys as it allocates them.
+func (c Config) TPMAttestorEnabled() bool {
+	return !c.DisableMTLS && (len(c.TPMEKFingerprints) > 0 || c.NicoInfrastructure)
 }
 
 // DefaultConfig reads the package's knobs from the environment, mirroring
@@ -404,7 +462,20 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return errors.New("controllerdeploy: Config.CWEImage is required " +
 			"(e.g. nvcr.io/<org>/nvke-controller:edge -- see .github/workflows/image-nvcr.yml)")
 	}
-	if cfg.ProvisionedProviderImage == "" {
+	if cfg.NicoInfrastructure && !cfg.DisableMTLS && cfg.SPIREExternalAddress == "" {
+		return errors.New("controllerdeploy: Config.SPIREExternalAddress is required with NicoInfrastructure; " +
+			"nodes created by CAPNICo read the SPIRE server's address from their userdata, " +
+			"and the in-cluster name does not reach them")
+	}
+	if cfg.NicoInfrastructure && (cfg.DGXCTenant.User == "" || cfg.DGXCTenant.Password == "") {
+		return errors.New("controllerdeploy: Config.DGXCTenant is required with NicoInfrastructure; " +
+			"the controller refuses to render a node's user data without DGXC_TENANT_USER and DGXC_TENANT_PASSWORD")
+	}
+	if cfg.NicoInfrastructure && cfg.ReleasesPath == "" {
+		return errors.New("controllerdeploy: Config.ReleasesPath is required with NicoInfrastructure; " +
+			"the controller cannot resolve the control plane's release without the release manifests")
+	}
+	if cfg.ProvisionedProviderImage == "" && !cfg.NicoInfrastructure {
 		return errors.New("controllerdeploy: Config.ProvisionedProviderImage is required; the CAPI " +
 			"objects the NVKE controller writes for a site cluster go unreconciled without it " +
 			"(see Config.ProvisionedProviderImage)")
@@ -439,6 +510,10 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		}
 	}
 	redact.RegisterSecret(password)
+	// The NICo token and the node password reach the cluster only as Secrets,
+	// but a pod that logged one would otherwise carry it into the diagnostics.
+	redact.RegisterSecret(cfg.CAPNICo.Token)
+	redact.RegisterSecret(cfg.DGXCTenant.Password)
 
 	helmTimeout := cfg.HelmTimeout
 	if helmTimeout <= 0 {
@@ -577,7 +652,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 
 		// Only external TPM nodes need the NodePort. The controller and the in-cluster agents
 		// use SPIRE's ClusterIP service.
-		if len(cfg.TPMEKFingerprints) > 0 {
+		if cfg.TPMAttestorEnabled() {
 			if err := e.publishSpireExternally(ctx, kubeconfigPath); err != nil {
 				return err
 			}
@@ -613,6 +688,14 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		defer cleanup()
 	}
 
+	// The Secret has to exist before the controller's pod does: the chart wires
+	// DGXC_TENANT_USER and DGXC_TENANT_PASSWORD from it only when told its name.
+	if cfg.NicoInfrastructure {
+		if err := e.applyTenantCredentials(ctx, kubeconfigPath, cfg.DGXCTenant); err != nil {
+			return err
+		}
+	}
+
 	// tag and digest are always set, empty when unused: the chart reads an
 	// empty tag as "use appVersion" and an empty digest as "pull by tag".
 	imageRepo, imageTag, imageDigest := splitImageRef(cfg.CWEImage)
@@ -636,12 +719,15 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,
 		"--set-string", "spiffe.spire.className=" + spireControllerManagerClass,
-		"--set-string", "spiffe.spire.serverAddress=" + spireServiceHost(),
-		"--set-string", "spiffe.spire.serverPort=" + spireServerPort,
-		"--set-string", "supportedInfraProviders=infra",
+		"--set-string", "spiffe.spire.serverAddress=" + spireNodeAddress(cfg),
+		"--set-string", "spiffe.spire.serverPort=" + spireNodePort(cfg),
+		"--set-string", "supportedInfraProviders=" + supportedInfraProviders(cfg),
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
 	}
 	cweArgs = append(cweArgs, cweEnvArgs(cfg)...)
+	if cfg.NicoInfrastructure {
+		cweArgs = append(cweArgs, "--set-string", "secrets.dgxcTenantCredSecretName="+dgxcTenantSecret)
+	}
 	cweArgs = append(cweArgs, "--wait", "--timeout", helmTimeout.String())
 	if oidcValues != "" {
 		cweArgs = append(cweArgs, "--values", oidcValues)
@@ -650,9 +736,68 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return fmt.Errorf("controllerdeploy: installing the controller: %w", err)
 	}
 
+	// The chart installed the release CRDs, so the manifests can be applied now,
+	// before the site cluster is created.
+	if cfg.NicoInfrastructure {
+		if err := e.applyReleases(ctx, kubeconfigPath, cfg.ReleasesPath); err != nil {
+			return err
+		}
+	}
+
 	// The API has to be reachable from the host that ran this command: it is
 	// what creates the cluster next. See Config.CWEPort.
 	return e.publishCWEExternally(ctx, kubeconfigPath, cwePort)
+}
+
+// TenantLogin is the user and password the controller renders into the
+// cloud-init of the nodes it creates.
+type TenantLogin struct {
+	User     string
+	Password string
+}
+
+// applyTenantCredentials applies the Secret secrets.dgxcTenantCredSecretName
+// names, with the keys the chart reads (user and password), in the controller's
+// namespace. It goes through a 0600 file, not the command line, as the NICo
+// credentials do.
+func (e *Engine) applyTenantCredentials(ctx context.Context, kubeconfigPath string, login TenantLogin) error {
+	body, err := json.Marshal(map[string]any{
+		"apiVersion": "v1", "kind": "List",
+		"items": []any{
+			map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": cweNamespace}},
+			map[string]any{
+				"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
+				"metadata":   map[string]any{"name": dgxcTenantSecret, "namespace": cweNamespace},
+				"stringData": map[string]string{"user": login.User, "password": login.Password},
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("controllerdeploy: encoding the tenant credentials: %w", err)
+	}
+	file, cleanup, err := writeTempFile("nvkectl-tenant-credentials-*.json", body)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	e.log.Info("applying the tenant node credentials", "namespace", cweNamespace, "secret", dgxcTenantSecret)
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "--server-side", "--force-conflicts", "-f", file); err != nil {
+		return fmt.Errorf("controllerdeploy: applying the tenant credentials: %w\n%s", err, out)
+	}
+	return nil
+}
+
+// applyReleases applies the MachineImage and ClusterRelease manifests at path,
+// a file or a directory, so the controller can resolve an release from them.
+func (e *Engine) applyReleases(ctx context.Context, kubeconfigPath, path string) error {
+	e.log.Info("applying the release manifests", "path", path)
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "--server-side", "--force-conflicts", "-f", path); err != nil {
+		return fmt.Errorf("controllerdeploy: applying the release manifests at %s: %w\n%s", path, err, out)
+	}
+	return nil
 }
 
 // cweEnvArgs renders the settings the controller reads from its own environment as helm
@@ -906,7 +1051,28 @@ func effectiveCWEPort(cfg Config) int32 {
 	return cfg.CWEPort
 }
 
-// spireServiceHost is the in-cluster address the controller dials the SPIRE server on.
+// spireNodeAddress and spireNodePort are where CWE tells nodes to find SPIRE.
+// Only the node userdata CWE renders reads them; CWE does not dial them itself.
+//
+// Hosts that already exist were given the address when they were provisioned, so
+// the in-cluster name is only a placeholder for them. Nodes CAPNICo creates have
+// nothing but this userdata, so they get the address and NodePort the bootstrap
+// publishes the server on.
+func spireNodeAddress(cfg Config) string {
+	if cfg.NicoInfrastructure {
+		return cfg.SPIREExternalAddress
+	}
+	return spireServiceHost()
+}
+
+func spireNodePort(cfg Config) string {
+	if cfg.NicoInfrastructure {
+		return strconv.Itoa(int(SPIREServerNodePort))
+	}
+	return spireServerPort
+}
+
+// spireServiceHost is the in-cluster address CWE dials the SPIRE server on.
 // The Service is named after the release.
 func spireServiceHost() string {
 	return spireReleaseName + "-server." + spireNamespace + ".svc.cluster.local"
@@ -940,6 +1106,16 @@ func manifestChart(component string) (manifest.Chart, error) {
 		return manifest.Chart{}, fmt.Errorf("controllerdeploy: the embedded bootstrap manifest pins no chart for %q", component)
 	}
 	return *comp.Chart, nil
+}
+
+// supportedInfraProviders is the provider payload CWE accepts on CreateCluster.
+// The site cluster's request carries exactly one of them, and CWE rejects the
+// other, so it has to match what the bootstrap sends.
+func supportedInfraProviders(cfg Config) string {
+	if cfg.NicoInfrastructure {
+		return "nico"
+	}
+	return "infra"
 }
 
 // chartArgs returns the chart half of a `helm upgrade --install`: the override
@@ -987,25 +1163,51 @@ func spireInstallArgs(cfg Config, chart manifest.Chart, valuesPath, clusterName,
 
 // tpmAttestorArgs turns the EK allowlist into chart values.
 //
-// No fingerprints means no TPM attestor: a bootstrap that has not been told
-// which hardware it is entitled to admit must not admit any, and the hosts on
-// that path run without a SPIRE identity at all.
+// No fingerprints means no TPM attestor, except with NicoInfrastructure: a
+// bootstrap that has not been told which hardware it is entitled to admit must
+// not admit any, and the hosts on that path run without a SPIRE identity at
+// all. With nico the attestor is on without any, and the allowlist starts
+// empty: CWE adds each node's key as CAPNICo allocates the machine, so the
+// hardware admitted is what NICo handed this site.
 //
 // Reaching the server from outside is a separate concern, handled by
 // spire-server-nodeport.yaml rather than by the chart's own Service.
 func tpmAttestorArgs(cfg Config, prefix string) []string {
-	if len(cfg.TPMEKFingerprints) == 0 {
+	if !cfg.TPMAttestorEnabled() {
 		return nil
 	}
 	args := []string{"--set", prefix + ".nodeAttestor.tpmDirect.enabled=true"}
 	if checksum := SpireTPMDirectChecksum(runtime.GOARCH); checksum != "" {
 		args = append(args, "--set-string", prefix+".nodeAttestor.tpmDirect.checksum="+checksum)
 	}
+	if len(cfg.TPMEKFingerprints) == 0 {
+		return append(args, tpmDynamicAllowlistArgs(prefix)...)
+	}
 	for i, fingerprint := range cfg.TPMEKFingerprints {
 		args = append(args, "--set-string",
 			fmt.Sprintf("%s.nodeAttestor.tpmDirect.hashes[%d]=%s", prefix, i, fingerprint))
 	}
 	return args
+}
+
+// tpmDynamicAllowlistArgs mounts the ConfigMap CWE keeps the allowlist in on the
+// directory the TPM attestor reads.
+//
+// The chart reads its own static hashes list or this directory, never both, so
+// this is for a bootstrap with no thumbprints to list: CAPNICo reports each
+// machine's key as it allocates the machine, and CWE adds it to the ConfigMap.
+// The attestor looks the key up on every attestation, so an entry takes effect
+// as soon as the kubelet syncs the ConfigMap into the pod. Optional, so the
+// server starts before CWE has written it.
+func tpmDynamicAllowlistArgs(prefix string) []string {
+	return []string{
+		"--set-string", prefix + ".extraVolumes[0].name=" + tpmPubhashesVolume,
+		"--set-string", prefix + ".extraVolumes[0].configMap.name=" + tpmPubhashesConfigMap,
+		"--set", prefix + ".extraVolumes[0].configMap.optional=true",
+		"--set-string", prefix + ".extraVolumeMounts[0].name=" + tpmPubhashesVolume,
+		"--set-string", prefix + ".extraVolumeMounts[0].mountPath=" + tpmHashesMountPath,
+		"--set", prefix + ".extraVolumeMounts[0].readOnly=true",
+	}
 }
 
 // SpireTPMDirectChecksum returns the sha256 of the TPM attestor server plugin

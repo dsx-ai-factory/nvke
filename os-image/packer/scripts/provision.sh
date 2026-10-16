@@ -8,6 +8,16 @@ set -euo pipefail
 
 SRC=/var/tmp/nke-image
 ROOT_FS_LABEL="${ROOT_FS_LABEL:?ROOT_FS_LABEL is required}"
+UBUNTU_SERIES="${UBUNTU_SERIES:?UBUNTU_SERIES is required}"
+
+# autoinstall chose its release-specific packages from the caller's
+# ubuntu_series; refuse an image whose installed release disagrees.
+# shellcheck disable=SC1090 # Tests point OS_RELEASE at a fixture.
+installed_series=$(. "${OS_RELEASE:-/etc/os-release}" && echo "${VERSION_ID}")
+if [[ "${installed_series}" != "${UBUNTU_SERIES}" ]]; then
+  echo "ubuntu_series is ${UBUNTU_SERIES}, but the installed system is Ubuntu ${installed_series}" >&2
+  exit 1
+fi
 
 sudo install -d -m 0755 /usr/lib/nvke /etc/nke /var/lib/nke /usr/local/bin
 sudo install -m 0755 "${SRC}/wait-spiffe-socket.sh" /usr/lib/nvke/wait-spiffe-socket.sh
@@ -25,6 +35,14 @@ sudo install -m 0644 "${SRC}/10-nke-conntrack-timeouts.conf" /etc/sysctl.d/10-nk
 # modules-load.d/k8s.conf lists it too, but only from cluster create on.
 echo 'nf_conntrack' | sudo tee /etc/modules-load.d/nf_conntrack.conf >/dev/null
 sudo systemctl enable conntrack-tune.service
+
+# Kata's erofs snapshotter: containerd converts image layers to erofs (with
+# dm-verity metadata) and hands them to the guest as block devices. Load both
+# modules at boot rather than relying on on-demand loading. 26.04 only,
+# matching erofs-utils in cidata/autoinstall-lvm.pkrtpl.
+if [[ "${UBUNTU_SERIES}" == 26.04 ]]; then
+  printf '%s\n' erofs dm-verity | sudo tee /etc/modules-load.d/nvke-kata.conf >/dev/null
+fi
 
 # Own the etcd data directory as etcd:etcd (CIS 1.1.12). kubeadm creates
 # /var/lib/etcd as root:root during `kubeadm init` and exposes no knob for its
@@ -87,6 +105,16 @@ sudo e2label "${root_device}" "${ROOT_FS_LABEL}"
 if [[ "$(sudo e2label "${root_device}")" != "${ROOT_FS_LABEL}" ]]; then
   echo "Failed to label the root filesystem ${ROOT_FS_LABEL}" >&2
   exit 1
+fi
+
+# containerd's erofs snapshotter enables fs-verity on
+# /var/lib/containerd/io.containerd.snapshotter.v1.erofs at startup, and with
+# the ext4 feature off every plugin that depends on it fails to load, CRI
+# included ("enable fsverity failed: operation not supported"), so the node
+# goes NotReady as soon as Kata configures that snapshotter. The feature can
+# be set on the mounted filesystem.
+if [[ "${UBUNTU_SERIES}" == 26.04 ]]; then
+  sudo tune2fs -O verity "${root_device}"
 fi
 
 # Keep multipathd off the node. Ubuntu Server's installer pulls in

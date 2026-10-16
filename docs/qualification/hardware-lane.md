@@ -239,9 +239,14 @@ path was broken.
 What the suite passes down is `NodePayloads` — the iPXE script and
 `preKubeadmCommands` rendered by the same `BuildForgeNodePayloads` the site
 node was built from, so tenant nodes are constructed the same way. The
-pre-kubeadm script adds the NVKE apt repository and installs `nvke-agent`, the
-pinned `nvke-kubeadm-distro`, both OVN packages, `openvswitch-switch` and
-`spire-agent`.
+pre-kubeadm script adds the NVKE apt repository and installs the pinned
+`nvke-kubeadm-distro`, both OVN packages and `openvswitch-switch`.
+
+`nvke-agent` and `spire-agent` are deliberately absent. The image builds both
+from the checkout it was baked from and installs them with dpkg, so they are
+the builds under qualification. Installing the repository's own unpinned
+copies would swap a component being qualified for whichever one the suite
+currently holds, without the run saying so.
 
 "Both OVN packages" is load-bearing and was learned on hardware. The agent
 checks that `nvke-cni-ovn-charts` is *already installed* and terminates the

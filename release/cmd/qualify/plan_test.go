@@ -49,11 +49,11 @@ func TestBuildResolversBuildsOnePerHalf(t *testing.T) {
 // so the line to fix is the one in the registry.
 func TestBuildResolversNamesTheComponentThatFails(t *testing.T) {
 	reg := &qualification.Registry{Spec: qualification.RegistrySpec{Components: []qualification.Component{
-		{Name: "kube", Resolve: qualification.Resolve{Version: &qualification.Rule{Strategy: "aptPackage"}}},
+		{Name: "kube", Resolve: qualification.Resolve{Version: &qualification.Rule{Strategy: "debPackage"}}},
 	}}}
 
 	_, _, err := buildResolvers(reg, ".", resolve.Options{})
-	if err == nil || !strings.Contains(err.Error(), `component kube, version: "aptPackage" is not one of`) {
+	if err == nil || !strings.Contains(err.Error(), `component kube, version: "debPackage" is not one of`) {
 		t.Errorf("err = %v, want it to name the component", err)
 	}
 }

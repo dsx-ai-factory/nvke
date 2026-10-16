@@ -90,7 +90,14 @@ so resolving the components from their own tags would answer with the last
 release rather than with what that commit built. A tag push therefore asks for
 `resolution: commitDescribe`, which describes each component at the commit the
 tag marks, and the commit is derived from the version being qualified rather
-than given. A dispatch can select the same resolution for an existing beta tag.
+than given.
+
+`commitDescribe` is also the default, because a beta is what this lane
+qualifies nightly. A release qualification therefore has to select `gitTag`,
+by the `resolution` input or by the `QUALIFY_E2E_RESOLUTION` repository
+variable. Left on the default, a release resolves its components by describe
+and verifies the describe-named artifacts, which exist, so the run passes while
+qualifying builds other than the release-tagged ones.
 The plan records the commit and, for each component, the strategy that answered,
 so a run says afterwards how every version was arrived at.
 

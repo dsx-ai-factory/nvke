@@ -145,7 +145,7 @@ TEMPORAL_NAMESPACE = "temporal"
 POSTGRES_NAMESPACE = "postgres"
 SPIRE_NAMESPACE = "spire-server"
 CONTROLLER_LOCAL_DEBUG_MARKER = ".tilt-cwe-debug-local"
-# CWE_HTTP_PORT and CWE_TEMPORAL_UI_PORT are deprecated aliases for one release.
+# CWE_HTTP_PORT and CWE_TEMPORAL_UI_PORT are deprecated aliases for the NKE_CONTROLLER_ names; #1399 removes them.
 CONTROLLER_HTTP_PORT = os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
 CONTROLLER_TEMPORAL_UI_PORT = os.getenv("NKE_CONTROLLER_TEMPORAL_UI_PORT", "") or os.getenv("CWE_TEMPORAL_UI_PORT", "") or "8081"
 
@@ -1118,7 +1118,7 @@ _cwe_compile_script = """
 #
 # Point NKE_CONTROLLER_PROFILES_DIR at nke-site-deploy/cwe-profiles/profiles to exercise
 # the fleet profiles.
-# CWE_PROFILES_DIR and CWE_PROFILES_PRELOADED are deprecated aliases for one release.
+# CWE_PROFILES_DIR and CWE_PROFILES_PRELOADED are deprecated aliases for the NKE_CONTROLLER_ names; #1399 removes them.
 _cwe_profiles_dir = (os.getenv("NKE_CONTROLLER_PROFILES_DIR", "") or os.getenv("CWE_PROFILES_DIR", "") or _tilt_env.get("NKE_CONTROLLER_PROFILES_DIR", "") or _tilt_env.get("CWE_PROFILES_DIR", "")).strip()
 if _cwe_profiles_dir == "":
     _cwe_profiles_dir = os.path.abspath(os.path.join(config.main_dir, "test", "fixtures", "profiles"))

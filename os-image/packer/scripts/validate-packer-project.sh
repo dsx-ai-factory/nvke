@@ -40,6 +40,7 @@ for architecture in amd64 arm64; do
         -only="${selector}" \
         -var "capture_apt_acquisitions=${capture}" \
         -var "architecture=${architecture}" \
+        -var "ubuntu_series=26.04" \
         -var "material_manifest=${fixture}/material-manifest.json" \
         -var "output_directory=${fixture}/output" \
         -var "build_log_directory=${fixture}/logs" \
@@ -54,6 +55,7 @@ done
 if output="$("${packer_bin}" validate \
   -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
+  -var "ubuntu_series=26.04" \
   -var "material_manifest=${work}/amd64/material-manifest.json" \
   -var "output_directory=${work}/amd64/output" \
   -var "build_log_directory=${work}/amd64/logs" \
@@ -73,6 +75,7 @@ grep -F "integer of at least 1024" <<<"${output}" >/dev/null || {
 if output="$("${packer_bin}" validate \
   -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=arm64" \
+  -var "ubuntu_series=26.04" \
   -var "material_manifest=${work}/amd64/material-manifest.json" \
   -var "output_directory=${work}/amd64/output" \
   -var "build_log_directory=${work}/amd64/logs" \
@@ -96,6 +99,7 @@ for bad in "ttyS0; rm -rf /" "tty S0" "../../etc/passwd" "\$(id)"; do
   if output="$("${packer_bin}" validate \
     -only=nvke-node-non-fde.qemu.nvke-non-fde \
     -var "architecture=amd64" \
+    -var "ubuntu_series=26.04" \
     -var "material_manifest=${work}/amd64/material-manifest.json" \
     -var "output_directory=${work}/amd64/output" \
     -var "build_log_directory=${work}/amd64/logs" \
@@ -117,6 +121,7 @@ for good in ttyS0 ttyS1 ttyAMA0 ""; do
   "${packer_bin}" validate \
     -only=nvke-node-non-fde.qemu.nvke-non-fde \
     -var "architecture=amd64" \
+    -var "ubuntu_series=26.04" \
     -var "material_manifest=${work}/amd64/material-manifest.json" \
     -var "output_directory=${work}/amd64/output" \
     -var "build_log_directory=${work}/amd64/logs" \
@@ -150,6 +155,7 @@ chmod -R a-w "${PACKER_PLUGIN_PATH}"
 "${packer_bin}" validate \
   -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
+  -var "ubuntu_series=26.04" \
   -var "material_manifest=${work}/amd64/material-manifest.json" \
   -var "output_directory=${work}/amd64/output" \
   -var "build_log_directory=${work}/amd64/logs" \
@@ -163,6 +169,7 @@ sed 's#nvke.nvidia.com/os-image-materials/v1#nvke.nvidia.com/os-image-materials/
 if output="$("${packer_bin}" validate \
   -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
+  -var "ubuntu_series=26.04" \
   -var "material_manifest=${invalid_manifest}" \
   -var "output_directory=${work}/amd64/output" \
   -var "build_log_directory=${work}/amd64/logs" \
@@ -194,6 +201,7 @@ PY
 if output="$("${packer_bin}" validate \
   -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
+  -var "ubuntu_series=26.04" \
   -var "material_manifest=${missing_digest_manifest}" \
   -var "output_directory=${work}/amd64/output" \
   -var "build_log_directory=${work}/amd64/logs" \
@@ -212,6 +220,7 @@ grep -F "lowercase sha256 digests" <<<"${output}" >/dev/null || {
 if output="$("${packer_bin}" validate \
   -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
+  -var "ubuntu_series=26.04" \
   -var "material_manifest=${work}/amd64/material-manifest.json" \
   -var "output_directory=${work}/amd64/output/../escaped" \
   -var "build_log_directory=${work}/amd64/logs" \
@@ -241,6 +250,7 @@ PY
 if output="$("${packer_bin}" validate \
   -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
+  -var "ubuntu_series=26.04" \
   -var "material_manifest=${mismatched_manifest}" \
   -var "output_directory=${work}/amd64/output" \
   -var "build_log_directory=${work}/amd64/logs" \
@@ -273,6 +283,7 @@ PY
 if output="$("${packer_bin}" validate \
   -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var "architecture=amd64" \
+  -var "ubuntu_series=26.04" \
   -var "material_manifest=${duplicate_manifest}" \
   -var "output_directory=${work}/amd64/output" \
   -var "build_log_directory=${work}/amd64/logs" \

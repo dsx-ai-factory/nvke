@@ -675,6 +675,7 @@ jobs:
         if: matrix.variant == 'fde'
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OVN_KUBERNETES_TOKEN: ${{ secrets.OVN_KUBERNETES_RO_TOKEN }}
         run: |
           set -euo pipefail
           deadline=$(( ${{ steps.start_time.outputs.epoch }} + ${{ matrix.timeout_minutes }} * 60 - 30 ))
@@ -724,6 +725,7 @@ jobs:
         if: matrix.variant == 'non-fde'
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OVN_KUBERNETES_TOKEN: ${{ secrets.OVN_KUBERNETES_RO_TOKEN }}
         run: |
           set -euo pipefail
           deadline=$(( ${{ steps.start_time.outputs.epoch }} + ${{ matrix.timeout_minutes }} * 60 - 30 ))

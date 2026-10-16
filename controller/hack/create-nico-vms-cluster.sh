@@ -25,7 +25,7 @@
 #     control-plane-only cluster.
 #   - CNI defaults to ovn-kubernetes. Set CNI_PLUGIN=calico to use Calico instead.
 #     CNI_VERSION is optional; when empty the controller API applies the plugin default
-#     (1.4.0 for OVN, 3.30.1 for Calico).
+#     (1.6.0 for OVN, 3.30.1 for Calico).
 
 set -euo pipefail
 
@@ -34,7 +34,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/control-plane-vip.sh"
 
-# CWE_HTTP_PORT is a deprecated alias for NKE_CONTROLLER_HTTP_PORT.
+# CWE_HTTP_PORT is a deprecated alias for NKE_CONTROLLER_HTTP_PORT; #1399 removes it.
 NKE_CONTROLLER_HTTP_PORT="${NKE_CONTROLLER_HTTP_PORT:-${CWE_HTTP_PORT:-8080}}"
 API_URL="${API_URL:-http://localhost:${NKE_CONTROLLER_HTTP_PORT}/api}"
 CLUSTERS_API_URL="${API_URL%/}/clusters"

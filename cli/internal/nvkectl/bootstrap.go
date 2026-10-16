@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	// Aliased: this file has a local variable named engine.
 	bootstrapengine "github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/engine"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/etcdkey"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/spireentrydump"
@@ -65,10 +67,16 @@ type bootstrapSiteOptions struct {
 	diagnosticsDir    string
 	keepBootstrapKind bool
 
+	// release is an NVKR release description. With infra.provider nico its
+	// capnico-controller artifact replaces the CAPNICo image, as the deploy
+	// path's render does. arch selects the artifact's architecture.
+	release string
+	arch    string
+
 	// disableMTLS stands the site up without SPIFFE, for bring-up debugging.
 	disableMTLS bool
 
-	// clusterTimeout bounds the wait for the controller to finish provisioning the
+	// clusterTimeout bounds the wait for CWE to finish provisioning the
 	// cluster, from the create call to every node having joined.
 	clusterTimeout time.Duration
 
@@ -132,22 +140,33 @@ func newBootstrapSiteCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   siteSubcommand,
 		Short: "Bootstrap a new NVKE site controller from a site spec file",
-		Long: `Bootstrap a vanilla Kubernetes cluster from a set of pre-provisioned nodes
-described by the site spec file passed with -f/--sitespec.
+		Long: `Bootstrap a vanilla Kubernetes cluster from the nodes described by the site
+spec file passed with -f/--sitespec: pre-provisioned hosts it lists
+(infra.provider provisioned, the default), or machines CAPNICo allocates from a
+NICo site (infra.provider nico).
 
 The site spec file is loaded and validated first. On any invalid or missing
 field the command fails immediately with a clear error, before any workflow is
 dispatched or any node is touched.
 
-The bootstrap side-loads two images this repository builds,
-nke-controller:latest and cluster-api-provider-provisioned:latest, which
-"make -C cli images" builds. --controller-image and --provisioned-provider-image, or
+The bootstrap side-loads the images this repository builds, nke-controller:latest
+and, with the provisioned provider, cluster-api-provider-provisioned:latest,
+which "make -C cli images" builds. With nico, CAPNICo's image is public and
+pulled by the cluster; --release pins it to an NVKR release's artifact. --controller-image and --provisioned-provider-image, or
 NVKECTL_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, name other images, such as
 ones pushed to a registry; a flag wins over its variable. cli/README.md lists
 every NVKECTL_* variable.
 
 Every node becomes a control-plane node. Once the cluster is up, the
 control-plane NoSchedule taint is removed from each node so workloads can run.
+
+With nico, infra.nico names the NICo and the MachineImage and ClusterRelease
+manifests the controller needs; the NICo token is read from the file the
+NVKECTL_NICO_CREDENTIALS variable names; the login rendered into every node
+comes from NVKECTL_NODE_USER and NVKECTL_NODE_PASSWORD; and
+spire.externalAddress is required unless --disable-mtls is set. The nodes'
+names and addresses are not printed; read them with "kubectl get nodes -o wide"
+on the finished cluster.
 
 See the bundled examples/sitespec.yaml and docs/sitespec.md for the
 site spec file format.`,
@@ -167,6 +186,10 @@ site spec file format.`,
 			if id := telemetry.RunFrom(cmd.Context()).TraceID(); id != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Trace ID: %s\n", id)
 			}
+			// arch has a default, so only Changed tells an explicit value from none.
+			if cmd.Flags().Changed("arch") && opts.release == "" {
+				return errors.New("--arch selects the architecture of a --release artifact; pass --release too, or drop --arch")
+			}
 			return runBootstrapSite(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
 	}
@@ -180,6 +203,14 @@ site spec file format.`,
 		"Controller image to deploy (overrides NVKECTL_CONTROLLER_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.provisionedProviderImage, "provisioned-provider-image", "",
 		"Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)")
+	cmd.Flags().StringVar(&opts.release, "release", "",
+		"NVKR release description whose "+controllerdeploy.CAPNICoArtifact+" artifact replaces the bootstrap CAPNICo image "+
+			"with its pinned digest, as \"render deploy-path --release\" does for the site controller's CAPNICo. "+
+			"The release description is not verified: run \"nvkr release verify\" on the same reference first. "+
+			"Only with infra.provider nico.")
+	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH,
+		"Architecture of the release artifact to use: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. "+
+			"Only with --release.")
 	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
 		envOrDefault("NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "cluster-diagnostics"),
 		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
@@ -247,6 +278,26 @@ func checkRemovedSettings(logger *slog.Logger, opts *bootstrapSiteOptions) error
 // context detached from the command's, so they need a stop of their own.
 const cleanupTimeout = 2 * time.Minute
 
+// bootstrapPortMappings returns the host ports the Kind cluster publishes: the
+// controller API on 127.0.0.1 only, and the SPIRE server on every address when
+// the TPM attestor is enabled, since nodes outside the host dial it.
+func bootstrapPortMappings(cweCfg controllerdeploy.Config) []bootstrapengine.PortMapping {
+	// The bootstrap controller serves its API with no authentication and every
+	// caller dials 127.0.0.1, so it is not published to the network.
+	mappings := []bootstrapengine.PortMapping{{
+		ContainerPort: cweCfg.CWEPort,
+		HostPort:      cweCfg.CWEPort,
+		ListenAddress: "127.0.0.1",
+	}}
+	if cweCfg.TPMAttestorEnabled() {
+		mappings = append(mappings, bootstrapengine.PortMapping{
+			ContainerPort: controllerdeploy.SPIREServerNodePort,
+			HostPort:      controllerdeploy.SPIREServerNodePort,
+		})
+	}
+	return mappings
+}
+
 func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	logger := slog.Default().With("component", "bootstrap-site")
 	for _, s := range envalias.Deprecated(bootstrapSettings()...) {
@@ -262,6 +313,19 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 	logger.Info("loaded site spec", "path", opts.siteSpec, "cluster", inv.ClusterName)
+	// Checked before the dry-run return so --dry-run is the complete pre-flight,
+	// and together so one run reports every problem.
+	if err := errors.Join(inv.CheckBootstrapMode(opts.disableMTLS), inv.ValidateBootstrapReferences()); err != nil {
+		return fmt.Errorf("site spec file %s: %w", opts.siteSpec, err)
+	}
+	if warning := inv.NicoVIPWarning(); warning != "" {
+		logger.Warn(warning)
+	}
+	// Resolved here too, so a bad --release or --arch fails the dry run.
+	capnicoImage, err := capnicoReleaseImage(inv, opts.release, opts.arch)
+	if err != nil {
+		return err
+	}
 	if inv.Spire.CACertFile != "" {
 		logger.Info("SPIRE upstream CA from the environment", "cert", inv.Spire.CACertFile, "key", inv.Spire.CAKeyFile)
 	}
@@ -308,20 +372,14 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err != nil {
 		return err
 	}
+
+	cweCfg.CAPNICoImage = capnicoImage
+
 	// The controller API has to be reachable from this host: this command deploys it
 	// and then calls it. A host port mapping rather than the node container's
 	// own address, because that address is not routable from the host on
 	// every platform this runs on.
-	cfg.ExtraPortMappings = append(cfg.ExtraPortMappings, bootstrapengine.PortMapping{
-		ContainerPort: cweCfg.CWEPort,
-		HostPort:      cweCfg.CWEPort,
-	})
-	if len(cweCfg.TPMEKFingerprints) > 0 {
-		cfg.ExtraPortMappings = append(cfg.ExtraPortMappings, bootstrapengine.PortMapping{
-			ContainerPort: controllerdeploy.SPIREServerNodePort,
-			HostPort:      controllerdeploy.SPIREServerNodePort,
-		})
-	}
+	cfg.ExtraPortMappings = append(cfg.ExtraPortMappings, bootstrapPortMappings(cweCfg)...)
 
 	engine := bootstrapengine.New(opts.bootstrapRunner, logger)
 
@@ -333,7 +391,11 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	//
 	// A bootstrap cluster still running is the strongest sign of an earlier
 	// attempt, and may hold that attempt's encryption key.
-	if err := requireNoBootstrapCluster(ctx, engine, cfg.ClusterName); err != nil {
+	releaseSteps := ""
+	if inv.IsNico() {
+		releaseSteps = nicoReleaseSteps(inv.ClusterName, cfg.ClusterName, "<its kubeconfig file>", cweCfg.CWEPort)
+	}
+	if err := requireNoBootstrapCluster(ctx, engine, cfg.ClusterName, releaseSteps); err != nil {
 		return err
 	}
 	// A key file already at the output path belongs to an earlier bootstrap of
@@ -347,12 +409,21 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// A host that already serves a control plane is either a retry over a
 	// half-built site or a site spec pointed at a live cluster; provisioning
 	// over either ends badly.
-	if err := requireNoControlPlane(ctx, inv.Cluster.Nodes, opts.dialContext); err != nil {
+	// Nothing to probe when the machines are allocated rather than listed: they
+	// do not exist yet, and have no addresses to dial.
+	if !inv.IsNico() {
+		if err := requireNoControlPlane(ctx, inv.Cluster.Nodes, opts.dialContext); err != nil {
+			return err
+		}
+	} else if err := requireNoSiteAtVIP(ctx, inv.Cluster.ControlPlaneVIP, opts.dialContext); err != nil {
+		// The VIP is the one address a nico site's control plane is known by
+		// before it exists, and the only thing that tells a second bootstrap of
+		// the same spec from a first.
 		return err
 	}
 	// The two images this repository builds are side-loaded, not pulled. A
 	// build that was never made fails here, before the cluster exists.
-	if err := requireLocalImages(ctx, engine, cweCfg.CWEImage, cweCfg.ProvisionedProviderImage); err != nil {
+	if err := requireLocalImages(ctx, engine, nvkeImages(cweCfg)...); err != nil {
 		return err
 	}
 
@@ -423,30 +494,19 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// site spec's hosts.
 	siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, cweCfg.CWEPort, logger)
 	if err != nil && siteClusterCreated {
-		// The advice below ends with the command that deletes the bootstrap
-		// cluster. When the key was not saved, that cluster holds the only copy
-		// the operator does not have, and the error says so instead.
-		var capture *keyCaptureError
-		if errors.As(err, &capture) {
-			return &recoveryError{fmt.Errorf("%w (bootstrap cluster %q kept; its kubeconfig is %s)",
-				err, cluster.Name, cluster.KubeconfigPath)}
-		}
-		// The env prefix is not optional: kind resolves a cluster through the
-		// provider that created it, so without it the command reports the
-		// cluster as missing rather than deleting it.
-		deleteCommand := fmt.Sprintf(
-			"KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s", cluster.Name,
-		)
-		return &recoveryError{fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
-			"(kubeconfig: %s); delete it after recovery with `%s`",
-			err, cluster.Name, cluster.KubeconfigPath, deleteCommand)}
+		return retainedClusterError(err, inv, cluster, cweCfg.CWEPort)
 	}
 	if err == nil && !cweCfg.DisableMTLS {
 		count, dumpErr := dumpSpireBootstrapEntries(
 			ctx, opts, cluster.KubeconfigPath, filepath.Dir(siteKubeconfigPath(inv.ClusterName, opts)),
 		)
 		if dumpErr != nil {
-			return fmt.Errorf("writing SPIRE bootstrap resources: %w", dumpErr)
+			// The site cluster is built: the failure is advised on like any other
+			// after it, so a nico run is not told to release a working site.
+			return retainedClusterError(
+				&clusterJoinedError{fmt.Errorf("writing SPIRE bootstrap resources: %w", dumpErr)},
+				inv, cluster, cweCfg.CWEPort,
+			)
 		}
 		logger.Info("wrote SPIRE bootstrap resources", "clusterStaticEntries", count)
 	}
@@ -467,6 +527,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 
+	// Nico mode does not list the allocated nodes here; kubectl get nodes shows them.
 	fmt.Fprintf(out, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
 		inv.ClusterName, kubeconfigPath)
 	return nil
@@ -550,7 +611,10 @@ func createSiteCluster(
 	}
 	created, err := sitecluster.Create(ctx, client, inv, logger)
 	if err != nil {
-		return false, err
+		// With nico, a create the controller may have accepted may already be
+		// allocating NICo instances, which deleting the bootstrap cluster would
+		// leave unmanaged; it is kept as after any failure past the create.
+		return inv.IsNico() && errors.Is(err, sitecluster.ErrCreateUnconfirmed), err
 	}
 
 	// One budget spans both waits, because --timeout bounds the whole
@@ -576,17 +640,17 @@ func createSiteCluster(
 	// bootstrap cluster this command is about to delete. Returning here would
 	// tear that engine down underneath them.
 	if err := sitecluster.WaitControlPlaneJoined(
-		ctx, client, created.ID, len(inv.Cluster.Nodes), time.Until(deadline), logger,
+		ctx, client, created.ID, inv.ControlPlaneCount(), time.Until(deadline), logger,
 	); err != nil {
 		return true, err
 	}
-	logger.Info("all control plane nodes joined", "cluster", created.Name, "nodes", len(inv.Cluster.Nodes))
+	logger.Info("all control plane nodes joined", "cluster", created.Name, "nodes", inv.ControlPlaneCount())
 
 	// The kubeconfig first, so a failure in the key capture below still leaves
 	// the operator holding the admin credential of the cluster that was built.
 	kubeconfigPath, err := writeTenantKubeconfig(ctx, bootstrapCluster, created.Name, opts, logger)
 	if err != nil {
-		return true, err
+		return true, &clusterJoinedError{err}
 	}
 
 	// Every control-plane node holds the key now, and this is the last moment
@@ -685,6 +749,14 @@ type recoveryError struct{ err error }
 func (e *recoveryError) Error() string { return e.err.Error() }
 func (e *recoveryError) Unwrap() error { return e.err }
 
+// clusterJoinedError marks a failure after every control-plane node joined: the
+// site cluster is up and working, so what is left to recover is its outputs.
+// A keyCaptureError is the same, and is not wrapped in this.
+type clusterJoinedError struct{ err error }
+
+func (e *clusterJoinedError) Error() string { return e.err.Error() }
+func (e *clusterJoinedError) Unwrap() error { return e.err }
+
 // keyCaptureError is a bootstrap that built and encrypted its cluster and then
 // failed to save the key.
 type keyCaptureError struct {
@@ -743,6 +815,93 @@ func siteKubeconfigPath(clusterName string, opts *bootstrapSiteOptions) string {
 	return clusterName + ".kubeconfig"
 }
 
+// nicoReleaseSteps says how to release the NICo instances CAPNICo allocated for
+// the site cluster. Deleting the bootstrap Kind cluster does not: it runs no
+// finalizers, so the instances stay allocated and unmanaged, with the tenant
+// login in their user data, and every re-run allocates another set. Deleting
+// the site cluster through the bootstrap cluster's controller deletes each
+// node's Cluster API machine, which releases its instance.
+func nicoReleaseSteps(siteCluster, bootstrapCluster, kubeconfig string, port int32) string {
+	return fmt.Sprintf("release the NICo instances CAPNICo allocated first, because deleting the bootstrap cluster does not "+
+		"(it leaves them allocated and unmanaged, with the tenant login in their user data): point nvkectl at this "+
+		"cluster's controller with %s, run "+
+		"`nvkectl delete cluster %s`, and wait until `nvkectl get clusters` no longer lists it; set-site made %s the "+
+		"active site, so switch back afterwards with `nvkectl config use-site <name>`",
+		nicoSetSiteCommand(bootstrapCluster, kubeconfig, port), siteCluster, bootstrapCluster)
+}
+
+// nicoUnconfirmedSteps says what to do when the create request may have reached
+// the controller without its answer reaching nvkectl: find out whether the site
+// cluster exists and, if it does, release its NICo instances as nicoReleaseSteps
+// does.
+func nicoUnconfirmedSteps(siteCluster, bootstrapCluster, kubeconfig string, port int32) string {
+	return fmt.Sprintf("point nvkectl at this cluster's controller with %s and run `nvkectl get clusters`; if it lists %s, "+
+		"release the NICo instances CAPNICo may be allocating for it, because deleting the bootstrap cluster does not "+
+		"(it leaves them allocated and unmanaged, with the tenant login in their user data): run `nvkectl delete cluster %s` "+
+		"and wait until `nvkectl get clusters` no longer lists it; set-site made %s the active site, so switch back "+
+		"afterwards with `nvkectl config use-site <name>`",
+		nicoSetSiteCommand(bootstrapCluster, kubeconfig, port), siteCluster, siteCluster, bootstrapCluster)
+}
+
+// nicoSetSiteCommand is the command that points nvkectl at the bootstrap
+// cluster's controller.
+func nicoSetSiteCommand(bootstrapCluster, kubeconfig string, port int32) string {
+	return fmt.Sprintf("`nvkectl config set-site --name %s --url http://127.0.0.1:%d --kubeconfig %s`", bootstrapCluster, port, kubeconfig)
+}
+
+// retainedClusterError wraps err, from a failure after the site cluster was
+// created, with what to do about the bootstrap cluster that was kept for
+// recovery. With nico the advice leads with releasing the allocated instances,
+// but only for a failure before every control-plane node joined: after that the
+// site cluster is working, and deleting it would destroy it and its NICo
+// machines, so the advice is to recover the outputs and delete only Kind.
+func retainedClusterError(err error, inv *sitespec.SiteSpec, cluster *bootstrapengine.Cluster, port int32) error {
+	var capture *keyCaptureError
+	var joined *clusterJoinedError
+	built := errors.As(err, &capture) || errors.As(err, &joined)
+	release := ""
+	if inv.IsNico() && !built {
+		release = nicoReleaseSteps(inv.ClusterName, cluster.Name, cluster.KubeconfigPath, port)
+	}
+	// The env prefix is not optional: kind resolves a cluster through the
+	// provider that created it, so without it the command reports the
+	// cluster as missing rather than deleting it.
+	deleteCommand := fmt.Sprintf(
+		"KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s", cluster.Name,
+	)
+	// The advice below ends with the command that deletes the bootstrap
+	// cluster. When the key was not saved, that cluster holds the only copy
+	// the operator does not have, and the error says so instead.
+	if capture != nil {
+		kept := fmt.Errorf("%w (bootstrap cluster %q kept; its kubeconfig is %s)", err, cluster.Name, cluster.KubeconfigPath)
+		if inv.IsNico() {
+			kept = fmt.Errorf("%w; once the key is saved, delete only the bootstrap cluster with `%s`: the site cluster is up "+
+				"and its NICo machines belong to it", kept, deleteCommand)
+		}
+		return &recoveryError{kept}
+	}
+	if joined != nil && inv.IsNico() {
+		return &recoveryError{fmt.Errorf("%w; every control-plane node joined, so the site cluster is up and is not to be deleted; "+
+			"bootstrap cluster %q was retained to recover what this run could not write (kubeconfig: %s); once you have, delete only "+
+			"the bootstrap cluster with `%s`", err, cluster.Name, cluster.KubeconfigPath, deleteCommand)}
+	}
+	if release != "" && errors.Is(err, sitecluster.ErrCreateUnconfirmed) {
+		return &recoveryError{fmt.Errorf("%w; no answer from the controller confirmed or refused the create, so site cluster %q "+
+			"may exist and be allocating NICo instances, and bootstrap cluster %q was retained (kubeconfig: %s); %s; then delete "+
+			"the bootstrap cluster with `%s`",
+			err, inv.ClusterName, cluster.Name, cluster.KubeconfigPath,
+			nicoUnconfirmedSteps(inv.ClusterName, cluster.Name, cluster.KubeconfigPath, port), deleteCommand)}
+	}
+	if release != "" {
+		return &recoveryError{fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
+			"(kubeconfig: %s); %s; then delete it with `%s`",
+			err, cluster.Name, cluster.KubeconfigPath, release, deleteCommand)}
+	}
+	return &recoveryError{fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
+		"(kubeconfig: %s); delete it after recovery with `%s`",
+		err, cluster.Name, cluster.KubeconfigPath, deleteCommand)}
+}
+
 // requireNoBootstrapCluster refuses to start while a bootstrap cluster from an
 // earlier run is still running.
 //
@@ -751,7 +910,14 @@ func siteKubeconfigPath(clusterName string, opts *bootstrapSiteOptions) string {
 // only copy of that cluster's etcd encryption key that is not on a node, and
 // the natural response to "already exists" is the delete that loses it. The
 // message leads with saving the key. Nothing is deleted or reused here.
-func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engine, name string) error {
+//
+// With nico this is the re-run guard for a bootstrap that never got as far as a
+// VIP to probe, and the leftover may hold a working site cluster rather than a
+// failed one. releaseSteps, when set, is nicoReleaseSteps for this cluster: the
+// message then separates a run that failed before every control-plane node
+// joined, which is released and re-run, from one that succeeded or failed
+// later, which is not re-run at all.
+func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engine, name, releaseSteps string) error {
 	exists, err := engine.Exists(ctx, name)
 	if err != nil {
 		return fmt.Errorf("checking for a bootstrap cluster from an earlier run: %w", err)
@@ -759,12 +925,55 @@ func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engi
 	if !exists {
 		return nil
 	}
-	return fmt.Errorf("bootstrap cluster %q from an earlier run is still running. If that run built an encrypted "+
+	deleteCommand := "KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name " + name
+	saveKey := fmt.Sprintf("bootstrap cluster %q from an earlier run is still running. If that run built an encrypted "+
 		"site cluster and did not save its key, the key is in this cluster: get its kubeconfig with "+
 		"`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name %s`, save every etcd-encryption-key-* Secret it "+
-		"holds from the namespace it is in (`kubectl get secrets -A | grep etcd-encryption-key-`), then delete it with "+
-		"`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s` and re-run",
-		name, name, name)
+		"holds from the namespace it is in (`kubectl get secrets -A | grep etcd-encryption-key-`), ", name, name)
+	if releaseSteps == "" {
+		return fmt.Errorf("%sthen delete it with `%s` and re-run", saveKey, deleteCommand)
+	}
+	return fmt.Errorf("%sthen: if that run failed before every control-plane node joined, %s, delete the bootstrap cluster with "+
+		"`%s`, and re-run; if it succeeded, or failed after every control-plane node joined, the site cluster is working: "+
+		"recover from this cluster whatever that run did not write, delete only this cluster with `%s`, and do not re-run, "+
+		"because a re-run allocates another set of NICo machines and brings up a second control plane advertising the "+
+		"same controlPlaneVIP", saveKey, releaseSteps, deleteCommand, deleteCommand)
+}
+
+// requireNoSiteAtVIP refuses to bootstrap a nico site whose control-plane VIP
+// already accepts connections on the Kubernetes API port.
+//
+// A nico bootstrap allocates its machines, so there is no host to probe; the VIP
+// is the one address the site's control plane is known by. When it answers, a
+// site cluster for this spec is most likely already running, and another
+// bootstrap allocates another controlPlane.count NICo machines and brings up a
+// second control plane whose kube-vip advertises the same address. An empty vip
+// (a one-node spec without one) has nothing to probe; a dial error of any kind
+// counts as nothing answering, as in requireNoControlPlane.
+func requireNoSiteAtVIP(
+	ctx context.Context,
+	vip string,
+	dial func(ctx context.Context, network, address string) (net.Conn, error),
+) error {
+	if vip == "" {
+		return nil
+	}
+	if dial == nil {
+		dial = (&net.Dialer{}).DialContext
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, hostProbeTimeout)
+	defer cancel()
+	conn, err := dial(probeCtx, "tcp", net.JoinHostPort(vip, kubeAPIServerPort))
+	if err != nil {
+		return nil
+	}
+	_ = conn.Close()
+	return fmt.Errorf("the control-plane VIP %s is accepting connections on port %s, the Kubernetes API port: a site cluster "+
+		"is most likely already running there, and bootstrapping again would allocate another set of NICo machines and bring "+
+		"up a second control plane advertising the same VIP. If that is your site, do not re-run. If it is a half-built "+
+		"one from a failed bootstrap, release its NICo instances first (see docs/bootstrap-troubleshooting.md), and re-run "+
+		"once the VIP stops answering. If something else holds the address, change cluster.controlPlaneVIP in the site spec",
+		vip, kubeAPIServerPort)
 }
 
 // requireNoControlPlane refuses to bootstrap over a host that already accepts
@@ -861,7 +1070,23 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	if cfg.CWEImage == "" {
 		return cfg, errors.New("--controller-image and NVKECTL_CONTROLLER_IMAGE are not set and the bootstrap manifest carries no default controller image")
 	}
-	if cfg.ProvisionedProviderImage == "" {
+	cfg.NicoInfrastructure = inv.IsNico()
+	access, err := capnicoAccess(inv)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.CAPNICo = access
+	if inv.IsNico() {
+		user, password, err := sitespec.NodeLoginFromEnv()
+		if err != nil {
+			return cfg, err
+		}
+		cfg.DGXCTenant = controllerdeploy.TenantLogin{User: user, Password: password}
+		cfg.ReleasesPath = inv.ResolvePath(inv.Infra.Nico.Releases)
+	}
+	cfg.SPIREExternalAddress = inv.Spire.ExternalAddress
+	// CAPNICo comes from its own manifest, so the provisioned provider's image is not used.
+	if cfg.ProvisionedProviderImage == "" && !cfg.NicoInfrastructure {
 		return cfg, errors.New("--provisioned-provider-image and NVKECTL_CAPI_PROVISIONED_IMAGE are not set and the bootstrap manifest carries no default provisioned-provider image")
 	}
 
@@ -921,7 +1146,7 @@ func deployAndWaitForCWE(
 	cweRunner controllerdeploy.CommandRunner,
 	logger *slog.Logger,
 ) error {
-	for _, image := range []string{cweCfg.CWEImage, cweCfg.ProvisionedProviderImage} {
+	for _, image := range nvkeImages(cweCfg) {
 		if err := ensureImageAvailable(ctx, engine, cluster, image, logger); err != nil {
 			return fmt.Errorf("loading %s into bootstrap kind cluster: %w", image, err)
 		}
@@ -943,6 +1168,68 @@ func deployAndWaitForCWE(
 	}
 	logger.Info("controller deployment healthy")
 	return nil
+}
+
+// nvkeImages lists the images this repository builds that the bootstrap loads
+// into the Kind cluster. The provisioned provider is among them only when it is
+// the infrastructure provider in use.
+func nvkeImages(cfg controllerdeploy.Config) []string {
+	if cfg.NicoInfrastructure {
+		return []string{cfg.CWEImage}
+	}
+	return []string{cfg.CWEImage, cfg.ProvisionedProviderImage}
+}
+
+// capnicoAccess resolves the site spec's infra.nico into the values the
+// bootstrap CAPNICo is given: the endpoint and organization from the spec, and
+// the token from the file NVKECTL_NICO_CREDENTIALS names. The file is read here,
+// before a Kind cluster exists, so an unreadable one fails at once rather than
+// minutes in. It returns the zero value for any provider but nico.
+func capnicoAccess(inv *sitespec.SiteSpec) (controllerdeploy.CAPNICoAccess, error) {
+	if !inv.IsNico() {
+		return controllerdeploy.CAPNICoAccess{}, nil
+	}
+	n := inv.Infra.Nico
+	if n == nil || n.Remote == nil {
+		return controllerdeploy.CAPNICoAccess{}, errors.New("the site spec selects infra.provider nico but has no infra.nico.remote")
+	}
+	path := sitespec.NicoCredentialsPath()
+	if path == "" {
+		return controllerdeploy.CAPNICoAccess{}, fmt.Errorf("%s must name the file holding the NICo token", sitespec.NicoCredentialsEnv)
+	}
+	nicoToken, err := sitespec.ReadNicoToken(path)
+	if err != nil {
+		return controllerdeploy.CAPNICoAccess{}, fmt.Errorf("%s: %w", sitespec.NicoCredentialsEnv, err)
+	}
+	return controllerdeploy.CAPNICoAccess{
+		Endpoint: n.Remote.Endpoint,
+		OrgID:    n.OrgID,
+		APIName:  n.Remote.EffectiveAPIName(),
+		Token:    nicoToken,
+	}, nil
+}
+
+// capnicoReleaseImage returns the image the bootstrap CAPNICo runs when a
+// release is given: the release's capnico-controller artifact as
+// repository@digest, which is how the deploy path's render names it. It returns
+// "" without a release, which leaves the manifest's own image. A release with
+// provider provisioned is refused, since nothing there would read it.
+func capnicoReleaseImage(inv *sitespec.SiteSpec, releasePath, arch string) (string, error) {
+	if releasePath == "" {
+		return "", nil
+	}
+	if !inv.IsNico() {
+		return "", errors.New("--release only applies with infra.provider nico: it replaces the bootstrap CAPNICo image, and no other provider installs one")
+	}
+	release, err := nvkrrelease.Load(releasePath)
+	if err != nil {
+		return "", err
+	}
+	artifact, err := release.Select(controllerdeploy.CAPNICoArtifact, arch)
+	if err != nil {
+		return "", fmt.Errorf("--release %s: %w", releasePath, err)
+	}
+	return artifact.Repository() + "@" + artifact.Digest, nil
 }
 
 // waitForCWEHostEndpoint verifies the same host path that the create request

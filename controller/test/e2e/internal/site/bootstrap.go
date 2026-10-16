@@ -218,11 +218,17 @@ func (b bootstrap) generateSiteSpec(ctx context.Context) error {
 		return err
 	}
 	args := []string{nvkectlPath, "generate", "sitespec", b.spec.Name, "--nodes", hostsCSV}
-	for _, set := range []string{
+	sets := []string{
 		"cluster.k8sVersion=" + b.spec.KubernetesVersion,
 		"cluster.cniName=" + b.spec.CNI,
 		"spire.trustDomain=" + TrustDomain(b.spec.Name),
-	} {
+	}
+	// Only when the caller named one. An empty value would be a pin on nothing
+	// rather than a request for the default.
+	if b.spec.CNIVersion != "" {
+		sets = append(sets, "cluster.cniVersion="+b.spec.CNIVersion)
+	}
+	for _, set := range sets {
 		args = append(args, "--set", set)
 	}
 	return b.run(ctx, asRoot(quoteAll(args)+" > "+shellQuote(siteSpecPath)))

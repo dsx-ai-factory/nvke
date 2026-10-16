@@ -84,7 +84,7 @@ gRPC reflection is enabled on the same port (useful with `grpcurl`).
 - **CNI:** `InstallCNI` after packages are present; prefer `noCniInstall: true` on init for new orchestration (legacy in-init CNI remains when `noCniInstall` is false)
 - **Packages / collections:** apt packages, apt repos, bundles, collections
 - **Encryption:** Kubernetes API/etcd encryption-at-rest
-- **Control-plane ops:** graceful shutdown / kube-vip restore, apiserver manifest patch, NVKE RBAC apply
+- **Control-plane ops:** graceful shutdown / kube-vip restore, apiserver manifest patch
 - **Utilities:** script execution, file upload, support bundle
 
 Full RPC list: `pkg/agent/proto/node_agent.proto` and [docs/DESIGN.md](docs/DESIGN.md).

@@ -219,6 +219,7 @@ cd packer
 packer build \
   -only=nvke-node-non-fde.qemu.nvke-non-fde \
   -var architecture=amd64 \
+  -var ubuntu_series=26.04 \
   -var material_manifest=/run/nke-image/inputs/material-manifest.json \
   -var output_directory=/run/nke-image/output \
   -var ssh_private_key_file=/run/nke-image/state/id_ed25519 \
@@ -240,7 +241,7 @@ falling back to plugin discovery or download.
 The `-only` selector is required. Omitting it is unsupported because Packer
 runs both directory-project builds, including the FDE build, by default.
 
-Both builds require the `architecture`, `material_manifest`, `output_directory`,
+Both builds require the `architecture`, `ubuntu_series`, `material_manifest`, `output_directory`,
 `ssh_private_key_file`, `ssh_public_key_file`, `efi_firmware_code`, and
 `efi_firmware_vars` variables. Supply a matching firmware pair for the
 architecture (OVMF for amd64, AAVMF for arm64). The manifest must be an
@@ -262,6 +263,13 @@ targets already supply it. Packer 1.14 does not support cross-variable custom
 validation, so a mismatch is reported as an `Invalid index` diagnostic for
 `local.material_bound_architectures`; that diagnostic means the requested
 architecture does not match both material records.
+
+`ubuntu_series` (`24.04` or `26.04`) must be the installer ISO's series; it
+selects the release-specific autoinstall packages. The manifest does not record
+the series, so `provision.sh` checks it against the installed system's
+`VERSION_ID` and fails the build on a mismatch. This is also a breaking change
+for direct Packer callers, which must now pass `-var ubuntu_series=<24.04|26.04>`.
+The Make targets derive it from `UBUNTU_RELEASE`.
 
 The Make targets accept `SSH_PRIVATE_KEY_FILE` and `SSH_PUBLIC_KEY_FILE` as an
 optional pair. When both are set, they must be absolute paths. Make verifies

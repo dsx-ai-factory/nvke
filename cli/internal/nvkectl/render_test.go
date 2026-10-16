@@ -155,6 +155,79 @@ func TestRenderDeployPath_Arch(t *testing.T) {
 	}
 }
 
+// nicoStackSiteSpec writes the nico example, which the controller stack install
+// reads beside a stack config. edit changes the example's text first; the
+// files the bootstrap names are not written.
+func nicoStackSiteSpec(t *testing.T, edit func(string) string) string {
+	t.Helper()
+	example, err := os.ReadFile(filepath.Join("..", "..", "examples", "sitespec-nico.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(example)
+	if edit != nil {
+		text = edit(text)
+	}
+	spec := filepath.Join(t.TempDir(), "sitespec.yaml")
+	if err := os.WriteFile(spec, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return spec
+}
+
+// oneNicoNodeNoVIP makes the nico example a single node with no control-plane
+// VIP: valid for the bootstrap, and with no address for the stack install.
+func oneNicoNodeNoVIP(t *testing.T) func(string) string {
+	return func(text string) string {
+		t.Helper()
+		out := strings.Replace(text, "count: 3", "count: 1", 1)
+		out = strings.Replace(out, `  controlPlaneVIP: "10.0.0.100"`+"\n", "", 1)
+		if out == text || strings.Contains(out, "controlPlaneVIP: ") {
+			t.Fatal("the nico example changed; update oneNicoNodeNoVIP")
+		}
+		return out
+	}
+}
+
+// TestRenderDeployPath_NicoOneNodeWithoutVIP: render deploy-path says what the
+// nico spec lacks, not that it has "several nodes".
+func TestRenderDeployPath_NicoOneNodeWithoutVIP(t *testing.T) {
+	spec := nicoStackSiteSpec(t, oneNicoNodeNoVIP(t))
+	stack := filledStackConfig(t, nil)
+	t.Setenv("NVKECTL_RENDER_ALLOW_TEMP_OUT", "1")
+	nico := filepath.Join("..", "..", "..", "deploy", "nico")
+	_, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack,
+		"--arch", "linux/arm64", "--out", filepath.Join(t.TempDir(), "rendered"))
+	if err == nil || !strings.Contains(err.Error()+stderr, "cluster.controlPlaneVIP") || strings.Contains(err.Error()+stderr, "several nodes") {
+		t.Fatalf("err = %v, stderr %q; want the missing VIP named for nico", err, stderr)
+	}
+}
+
+// TestRenderDeployPath_NicoSpecNeedsNoBootstrapFiles: the controller stack
+// install on the site node renders from a nico site spec without the NICo token
+// credentials file and the release manifests, which only the bootstrap reads.
+func TestRenderDeployPath_NicoSpecNeedsNoBootstrapFiles(t *testing.T) {
+	spec := nicoStackSiteSpec(t, nil)
+	stack := filledStackConfig(t, nil)
+	// Nothing the bootstrap reads sits beside the spec, and the credentials
+	// variable is unset, as on the site node.
+	t.Setenv("NVKECTL_NICO_CREDENTIALS", "")
+	if _, err := os.Stat(filepath.Join(filepath.Dir(spec), "bootstrap-releases")); err == nil {
+		t.Fatal("bootstrap-releases exists beside the spec; the test needs it absent")
+	}
+
+	t.Setenv("NVKECTL_RENDER_ALLOW_TEMP_OUT", "1")
+	out := filepath.Join(t.TempDir(), "rendered")
+	nico := filepath.Join("..", "..", "..", "deploy", "nico")
+	if _, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack,
+		"--arch", "linux/arm64", "--out", out); err != nil {
+		t.Fatalf("render deploy-path needed a bootstrap-only file: %v\n%s", err, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(out, "controller", "site-values.yaml")); err != nil {
+		t.Error("controller site values missing")
+	}
+}
+
 // tpmChecksum reads the SPIRE TPM attestor checksum from a rendered tree.
 func tpmChecksum(t *testing.T, out string) string {
 	t.Helper()

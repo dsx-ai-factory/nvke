@@ -4,7 +4,7 @@ This directory holds release and qualification tooling: the orchestration that
 takes a candidate set of already-built artifacts and resolves what a
 qualification run would cover.
 
-> `qualify plan` resolves a real plan from the repository's tags and writes it as
+> `qualify plan` resolves a real plan from the repository and the places its
 > `plan.json`, and `qualify verify` checks that everything the plan names is
 > published. The [`qualify-e2e` workflow](../.github/workflows/qualify-e2e.yml)
 > runs both and qualifies one job per stream.
@@ -57,8 +57,8 @@ With `--wait` it then retries each one for the whole budget before failing.
 | `--overrides` | none | Values to use in place of what resolves, as `name=value` pairs separated by commas |
 | `--scope` | `full` | How much of the matrix to cover, a scope from `policy.yaml` |
 | `--output` | `-` | Where to write the plan. `-` is stdout |
-| `--resolution` | `gitTag` | How to resolve the components, named for the strategy that answers. `gitTag` takes each from its own release tags. `commitDescribe` describes each at the commit the subject's version points at |
-| `--check-exists` | off | Ask for each location this resolves and require it to be published. Off keeps planning to git alone |
+| `--resolution` | `commitDescribe` | How to resolve the components, named for the strategy that answers. `commitDescribe` describes each at the commit the subject's version points at, which is how a beta is qualified. `gitTag` takes each from its own release tags, and a release qualification has to select it: left on the default a release verifies the describe-named artifacts, which exist, so it passes while qualifying builds other than the release-tagged ones |
+| `--check-exists` | off | Ask for each location this resolves and require it to be published. Off leaves the question to `qualify verify` |
 | `--root`, `--policy`, `--registry` | the enclosing checkout and the files under `release/` | Where to read the repository and the two files from |
 
 Without `--version` the subject resolves the way every component does, to the
@@ -66,7 +66,8 @@ highest version of any kind. Pass `--version` to name a tag that exists.
 
 A value given with `--overrides` replaces what that component or dependency
 would have resolved to, and is checked the way a resolved one is: a tag has to
-exist, and a Kubernetes or OVN version has to be one the image locks. An image or
+exist, a Kubernetes version has to be one the image locks, and an OVN version
+has to be one the apt suites serve. An image or
 a bootloader such as `os-image-amd64` is a dependency whose override is a URL, so
 it is overridden by name too. The names that were overridden are listed under
 `overrides` in the plan.
@@ -78,9 +79,10 @@ the shape and a run supplies the value. An unset or empty variable fails on the
 file that asked for it, with every missing name at once, rather than producing a
 plan that names an artifact under no org.
 
-Planning reaches nothing but git. Whether each artifact is published is asked
-once, by `qualify verify`, for everything the plan names. `--check-exists` asks
-during resolution instead, which needs a network that can reach the bucket: it is
+Planning reads the checkout and, for `aptPackage`, the apt suites that serve
+the package. It asks for nothing else. Whether each artifact is published is
+asked once, by `qualify verify`, for everything the plan names. `--check-exists`
+asks during resolution instead, which needs a network that can reach the bucket: it is
 private, so a missing artifact and a network that is not allowed both answer 403,
 and the check can confirm that an artifact exists but not that it does not.
 
@@ -106,7 +108,7 @@ $ go run ./release/cmd/qualify plan --subject nvke --version v0.21.0 --scope ful
         { "name": "capi-provisioned", "version": "v0.1.0", "url": "oci://nvcr.io/<org>/cluster-api-provider-provisioned:v0.1.0", "versionStrategy": "gitTag", "locationStrategy": "ociArtifact" }
       ],
       "dependencies": [
-        { "name": "cni-ovn",               "version": "1.4.0", "versionStrategy": "lockedPackage" },
+        { "name": "cni-ovn",               "version": "1.4.11", "versionStrategy": "aptPackage" },
         { "name": "os-image-bootloader-amd64", "url": "https://cdn.example/nke-isos/qcow/efi/x86_64/qcow-imager.efi", "locationStrategy": "url" },
         { "name": "os-image-bootloader-arm64", "url": "https://cdn.example/nke-isos/qcow/efi/aarch64/qcow-imager.efi", "locationStrategy": "url" },
         { "name": "cli-amd64",                 "version": "v0.1.0", "url": "oci://nvcr.io/<org>/nvkectl:v0.1.0-linux-amd64", "locationStrategy": "ociArtifact" },
@@ -166,7 +168,9 @@ $ go run ./release/cmd/qualify plan --subject nvke --version v0.21.0 --scope ful
 - The `plan` job runs `qualify plan --subject nvke`. The dispatch inputs and
   `QUALIFY_E2E_*` repository variables that name a version are passed as
   `--overrides`, so the plan records them and a job never has to guess which of
-  the two it was handed. A beta tag push passes `--resolution commitDescribe`.
+  the two it was handed. `--resolution` is `commitDescribe` unless `gitTag` is
+  selected by input or by `QUALIFY_E2E_RESOLUTION`, and a beta tag push takes
+  `commitDescribe` whatever the variable says.
   The plan is uploaded as an artifact.
 - The `verify` job runs `qualify verify` on that plan before any machine is
   taken, so an artifact that was never published fails there rather than an hour
@@ -240,7 +244,7 @@ A dependency says what to resolve with four fields, each with one meaning:
 
 | Field | Meaning |
 |---|---|
-| `constraint` | A literal version constraint, such as `"1.4"` |
+| `constraint` | A literal version constraint, such as `"1.4"`. Naming every part pins one version, so `"1.4.11"` matches that and nothing else |
 | `constraintFrom` | The constraint is the stream's value of a capability, `{capability: kube}` |
 | `releases` | The versions to choose from, for a strategy that cannot list them itself. An image's Ubuntu point releases are one. The highest the constraint matches is used, so series `24.04` picks `24.04.5` |
 | `value` | A declared answer that nothing derives, such as a bootloader's path |
@@ -294,7 +298,8 @@ a location, without either declaring which it is.
 |---|---|---|
 | `nvke`, `cli`, `os-image` | Git tags, under each component's tag prefix | none this names |
 | `controller`, `capi-provisioned` | the same | `<artifact-registry>/<repository>:<version>` |
-| `kube`, `cni-ovn` | The lock files the image's packages commit, read at the `os-image` tag the combination resolved. A node installs these from the image's own apt repository, so the lock files are the versions it can offer | none |
+| `kube` | The lock files the image's packages commit, read at the `os-image` tag the combination resolved. A node installs this from the image's own apt repository, so the lock files are the versions it can offer | none |
+| `cni-ovn` | The apt suites that serve it. The stream is part of the package name, so the versions on offer are the ones served in every suite, for every architecture, as every package. A node installs these over the network, so what the suites serve is what it can offer | none |
 | `os-image-amd64`, `os-image-arm64` | taken from `os-image` | Built from that release, the architecture and the Ubuntu point release the stream's series picks from `releases` |
 | `cli-amd64`, `cli-arm64` | taken from `cli` | `<artifact-registry>/nvkectl:<version>-linux-<arch>`. nvkectl is published as one tag per platform with no index above them, so the `cli` version alone names none of them |
 | `os-image-bootloader-amd64`, `os-image-bootloader-arm64` | none, a declared path has no version behind it | A path declared in `qualification.yaml` under the `artifact-cdn` source, because nothing derives it |

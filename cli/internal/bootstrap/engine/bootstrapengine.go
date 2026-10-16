@@ -78,6 +78,9 @@ type PortMapping struct {
 	HostPort      int32
 	// Protocol is "TCP" or "UDP". Empty defaults to TCP.
 	Protocol string
+	// ListenAddress is the host address the port is bound to. Empty binds
+	// every address.
+	ListenAddress string
 }
 
 // Config describes the ephemeral bootstrap Kind cluster.

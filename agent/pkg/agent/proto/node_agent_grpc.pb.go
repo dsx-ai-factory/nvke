@@ -42,8 +42,6 @@ const (
 	NodeAgent_InstallCNI_FullMethodName                                   = "/proto.NodeAgent/InstallCNI"
 	NodeAgent_UpdateAndFetchKubeAdmJoinStrings_FullMethodName             = "/proto.NodeAgent/UpdateAndFetchKubeAdmJoinStrings"
 	NodeAgent_GetKubeconfig_FullMethodName                                = "/proto.NodeAgent/GetKubeconfig"
-	NodeAgent_UpdateNKERBAC_FullMethodName                                = "/proto.NodeAgent/UpdateNKERBAC"
-	NodeAgent_UpdateNVKERBAC_FullMethodName                               = "/proto.NodeAgent/UpdateNVKERBAC"
 	NodeAgent_ExecuteScript_FullMethodName                                = "/proto.NodeAgent/ExecuteScript"
 	NodeAgent_GetKubeadmJoinString_FullMethodName                         = "/proto.NodeAgent/GetKubeadmJoinString"
 	NodeAgent_InitializeKubernetesAPIEncryption_FullMethodName            = "/proto.NodeAgent/InitializeKubernetesAPIEncryption"
@@ -155,32 +153,6 @@ type NodeAgentClient interface {
 	InstallCNI(ctx context.Context, in *InstallCNIRequest, opts ...grpc.CallOption) (*InstallCNIResponse, error)
 	UpdateAndFetchKubeAdmJoinStrings(ctx context.Context, in *KubeadmJoinStringRequest, opts ...grpc.CallOption) (*KubeadmJoinStringResponse, error)
 	GetKubeconfig(ctx context.Context, in *KubeconfigRequest, opts ...grpc.CallOption) (*KubeconfigResponse, error)
-	// UpdateNKERBAC applies the NVKE RBAC resources carried in the request
-	// manifest to the local cluster. This RPC is intended only for managing
-	// NVKE-owned RBAC objects: only a fixed set of RBAC kinds is accepted, and
-	// every resource name must use the agent-owned "nvke:" or legacy "nke:" prefix.
-	// The request is rejected if any document falls outside that boundary.
-	//
-	// The request must be served by a control-plane node.
-	//
-	// Resources are applied sequentially in manifest order. Per-resource
-	// outcomes are reported in UpdateNKERBACResponse.results. If a resource
-	// fails to apply, the RPC stops, returns the partial results with that
-	// OUTCOME_FAILED entry last, and does not roll back earlier successes.
-	//
-	// Error codes:
-	//
-	//	FailedPrecondition — the node is not eligible to serve this RPC
-	//	                     (e.g. not a control-plane node).
-	//	InvalidArgument    — the manifest failed validation (empty, malformed,
-	//	                     or contains a resource outside the NVKE RBAC
-	//	                     allowlist); no apply is attempted.
-	//	Internal           — the agent could not reach the local cluster to
-	//	                     perform the apply.
-	UpdateNKERBAC(ctx context.Context, in *UpdateNKERBACRequest, opts ...grpc.CallOption) (*UpdateNKERBACResponse, error)
-	// UpdateNVKERBAC applies RBAC resources. UpdateNKERBAC remains an alias for
-	// controllers from before the rename; both methods use the same wire messages.
-	UpdateNVKERBAC(ctx context.Context, in *UpdateNKERBACRequest, opts ...grpc.CallOption) (*UpdateNKERBACResponse, error)
 	ExecuteScript(ctx context.Context, in *ExecuteScriptRequest, opts ...grpc.CallOption) (*ExecuteScriptResponse, error)
 	GetKubeadmJoinString(ctx context.Context, in *KubeadmJoinStringRequest, opts ...grpc.CallOption) (*KubeadmJoinStringResponse, error)
 	InitializeKubernetesAPIEncryption(ctx context.Context, in *InitializeKubernetesAPIEncryptionRequest, opts ...grpc.CallOption) (*InitializeKubernetesAPIEncryptionResponse, error)
@@ -485,26 +457,6 @@ func (c *nodeAgentClient) GetKubeconfig(ctx context.Context, in *KubeconfigReque
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(KubeconfigResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_GetKubeconfig_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAgentClient) UpdateNKERBAC(ctx context.Context, in *UpdateNKERBACRequest, opts ...grpc.CallOption) (*UpdateNKERBACResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdateNKERBACResponse)
-	err := c.cc.Invoke(ctx, NodeAgent_UpdateNKERBAC_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAgentClient) UpdateNVKERBAC(ctx context.Context, in *UpdateNKERBACRequest, opts ...grpc.CallOption) (*UpdateNKERBACResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdateNKERBACResponse)
-	err := c.cc.Invoke(ctx, NodeAgent_UpdateNVKERBAC_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -920,32 +872,6 @@ type NodeAgentServer interface {
 	InstallCNI(context.Context, *InstallCNIRequest) (*InstallCNIResponse, error)
 	UpdateAndFetchKubeAdmJoinStrings(context.Context, *KubeadmJoinStringRequest) (*KubeadmJoinStringResponse, error)
 	GetKubeconfig(context.Context, *KubeconfigRequest) (*KubeconfigResponse, error)
-	// UpdateNKERBAC applies the NVKE RBAC resources carried in the request
-	// manifest to the local cluster. This RPC is intended only for managing
-	// NVKE-owned RBAC objects: only a fixed set of RBAC kinds is accepted, and
-	// every resource name must use the agent-owned "nvke:" or legacy "nke:" prefix.
-	// The request is rejected if any document falls outside that boundary.
-	//
-	// The request must be served by a control-plane node.
-	//
-	// Resources are applied sequentially in manifest order. Per-resource
-	// outcomes are reported in UpdateNKERBACResponse.results. If a resource
-	// fails to apply, the RPC stops, returns the partial results with that
-	// OUTCOME_FAILED entry last, and does not roll back earlier successes.
-	//
-	// Error codes:
-	//
-	//	FailedPrecondition — the node is not eligible to serve this RPC
-	//	                     (e.g. not a control-plane node).
-	//	InvalidArgument    — the manifest failed validation (empty, malformed,
-	//	                     or contains a resource outside the NVKE RBAC
-	//	                     allowlist); no apply is attempted.
-	//	Internal           — the agent could not reach the local cluster to
-	//	                     perform the apply.
-	UpdateNKERBAC(context.Context, *UpdateNKERBACRequest) (*UpdateNKERBACResponse, error)
-	// UpdateNVKERBAC applies RBAC resources. UpdateNKERBAC remains an alias for
-	// controllers from before the rename; both methods use the same wire messages.
-	UpdateNVKERBAC(context.Context, *UpdateNKERBACRequest) (*UpdateNKERBACResponse, error)
 	ExecuteScript(context.Context, *ExecuteScriptRequest) (*ExecuteScriptResponse, error)
 	GetKubeadmJoinString(context.Context, *KubeadmJoinStringRequest) (*KubeadmJoinStringResponse, error)
 	InitializeKubernetesAPIEncryption(context.Context, *InitializeKubernetesAPIEncryptionRequest) (*InitializeKubernetesAPIEncryptionResponse, error)
@@ -1112,12 +1038,6 @@ func (UnimplementedNodeAgentServer) UpdateAndFetchKubeAdmJoinStrings(context.Con
 }
 func (UnimplementedNodeAgentServer) GetKubeconfig(context.Context, *KubeconfigRequest) (*KubeconfigResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetKubeconfig not implemented")
-}
-func (UnimplementedNodeAgentServer) UpdateNKERBAC(context.Context, *UpdateNKERBACRequest) (*UpdateNKERBACResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateNKERBAC not implemented")
-}
-func (UnimplementedNodeAgentServer) UpdateNVKERBAC(context.Context, *UpdateNKERBACRequest) (*UpdateNKERBACResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateNVKERBAC not implemented")
 }
 func (UnimplementedNodeAgentServer) ExecuteScript(context.Context, *ExecuteScriptRequest) (*ExecuteScriptResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExecuteScript not implemented")
@@ -1572,42 +1492,6 @@ func _NodeAgent_GetKubeconfig_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).GetKubeconfig(ctx, req.(*KubeconfigRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeAgent_UpdateNKERBAC_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateNKERBACRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAgentServer).UpdateNKERBAC(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAgent_UpdateNKERBAC_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAgentServer).UpdateNKERBAC(ctx, req.(*UpdateNKERBACRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeAgent_UpdateNVKERBAC_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateNKERBACRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAgentServer).UpdateNVKERBAC(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAgent_UpdateNVKERBAC_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAgentServer).UpdateNVKERBAC(ctx, req.(*UpdateNKERBACRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2213,14 +2097,6 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetKubeconfig",
 			Handler:    _NodeAgent_GetKubeconfig_Handler,
-		},
-		{
-			MethodName: "UpdateNKERBAC",
-			Handler:    _NodeAgent_UpdateNKERBAC_Handler,
-		},
-		{
-			MethodName: "UpdateNVKERBAC",
-			Handler:    _NodeAgent_UpdateNVKERBAC_Handler,
 		},
 		{
 			MethodName: "ExecuteScript",

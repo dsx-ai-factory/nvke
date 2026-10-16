@@ -162,7 +162,7 @@ func (n Nico) Validate() error {
 	return nil
 }
 
-// Tenant is the credential CWE creates tenant clusters' admin with.
+// Tenant is the credential the controller creates tenant clusters' admin with.
 type Tenant struct {
 	User     string `json:"User"`
 	Password string `json:"Password"`
@@ -373,7 +373,7 @@ func CheckControllerName(assets, deployPath string) error {
 }
 
 // controllerNameFromDeployPath is the name a set of exported assets installs
-// CWE under, read from the HelmRelease rather than assumed.
+// the controller under, read from the HelmRelease rather than assumed.
 func controllerNameFromDeployPath(assets, deployPath string) (string, error) {
 	releasePath := ControllerReleasePath(deployPath)
 	raw, err := os.ReadFile(filepath.Join(assets, releasePath))
@@ -390,7 +390,7 @@ func controllerNameFromDeployPath(assets, deployPath string) (string, error) {
 		return "", fmt.Errorf("parsing %s: %w", releasePath, err)
 	}
 	if release.Release.Namespace == "" {
-		return "", fmt.Errorf("%s names no release namespace, so the name CWE is installed under cannot be read", releasePath)
+		return "", fmt.Errorf("%s names no release namespace, so the name the controller is installed under cannot be read", releasePath)
 	}
 	return release.Release.Namespace, nil
 }
@@ -403,8 +403,8 @@ func controllerNameFromDeployPath(assets, deployPath string) (string, error) {
 // CheckControllerName fails the run before any spec when the two disagree.
 func controllerName() string { return controller.Service() }
 
-// spireAdminPath is CWE's SPIFFE ID below the trust domain. A name that does
-// not match what the deploy path installed leaves CWE denied every
+// spireAdminPath is the controller's SPIFFE ID below the trust domain. A name that does
+// not match what the deploy path installed leaves the controller denied every
 // authorization check, which reads as an RBAC fault rather than a naming one.
 func spireAdminPath() string { return "/nke-service/" + controllerName() }
 
@@ -508,7 +508,7 @@ func (d Stack) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, e
 	// take sql.password; the Bitnami chart takes auth.postgresPassword, and
 	// only falls back to auth.password when auth.username is postgres -- so
 	// auth.password renders a randomly generated superuser password the moment
-	// the deploy path gives CWE and Temporal an account of their own.
+	// the deploy path gives the controller and Temporal an account of their own.
 	sqlPassword := map[string]any{"password": d.DatabasePassword}
 
 	docs := map[string]any{

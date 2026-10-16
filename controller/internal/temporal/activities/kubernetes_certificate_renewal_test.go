@@ -245,6 +245,35 @@ func TestRenewalWaitsForAnotherNodesReservation(t *testing.T) {
 	}
 }
 
+func TestRenewalReleasesReservationWhenStartFails(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		response  *nvkeproto.StartKubernetesCertificateRenewalResponse
+		err       error
+		wantError string
+	}{
+		{name: "start RPC fails", err: status.Error(codes.Unavailable, "connection refused"), wantError: "failed to start certificate renewal"},
+		{name: "start returns no operation", response: &nvkeproto.StartKubernetesCertificateRenewalResponse{}, wantError: "empty certificate renewal operation"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			node := certificateRenewalTestNode()
+			database := &agentAdmissionDatabase{node: node, cluster: db.Cluster{ID: node.ClusterID}}
+			fakeAgent := &agenttest.FakeClient{
+				StartKubernetesCertificateRenewalHook: func(db.Node, *nvkeproto.StartKubernetesCertificateRenewalRequest) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error) {
+					require.NotNil(t, database.cluster.CertificateRenewal, "the reservation is held while the RPC runs")
+					return test.response, test.err
+				},
+			}
+			a := &Activities{db: database, nodeAgentClient: fakeAgent}
+
+			_, err := executeCertificateRenewalActivity(t, a, KubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "new-operation", ThresholdDays: 14})
+
+			require.ErrorContains(t, err, test.wantError)
+			require.Nil(t, database.cluster.CertificateRenewal, "a failed start must not keep the cluster's renewal reservation")
+		})
+	}
+}
+
 func TestRenewalAdmissionAndRecovery(t *testing.T) {
 	for _, test := range []struct {
 		name         string
