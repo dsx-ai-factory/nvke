@@ -1,14 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Brings the controller stack up on a kind node from a release description:
-# controller/hack/ci/kind-stack-from-release.sh builds the controller and the
-# profiles fixture into OCI layouts, copies the CAPNICo image, fills a
-# nvkr.dev/release-description/v1 file, renders deploy/nico against it with
-# --nvkr-run-dir, installs the result and checks the pods run the release's
-# digests. Advisory: not a merge-gate member.
+# Brings the controller stack up on a kind node from the stack artifacts
+# `make local-stack-artifacts` builds: controller/hack/ci/kind-stack.sh runs
+# the target, renders deploy/nico against its stack-artifacts.json, installs
+# the result with the layouts imported into the node's containerd, and checks
+# the pods run the file's digests. Advisory: not a merge-gate member.
 
-name: Kind stack from release
+name: Kind stack
 
 on:
   workflow_dispatch:
@@ -18,9 +17,12 @@ on:
     branches:
       - "pull-request/[0-9]+"
     paths:
-      - .github/workflows/kind-stack-from-release.yml
-      - controller/hack/ci/kind-stack-from-release.sh
-      - controller/hack/ci/kind-stack-from-release/**
+      - .github/workflows/kind-stack.yml
+      - controller/hack/ci/kind-stack.sh
+      - controller/hack/ci/kind-stack/**
+      - build/stack-artifacts.sh
+      - Makefile
+      - make/tool-versions.mk
       - deploy/**
       - controller/deploy/charts/**
       - cli/internal/deploypath/**
@@ -30,7 +32,8 @@ on:
       - cli/internal/nvkectl/validate.go
       - cli/internal/nvkectl/inspect_sitespec.go
       - cli/internal/nvkectl/inspect_stack_config.go
-      - cli/internal/nvkectl/nvkr_release.go
+      - cli/internal/nvkectl/inspect.go
+      - cli/internal/nvkectl/inspect_stack_artifacts.go
       - cli/internal/nvkectl/root.go
       - controller/hack/apply-capi-spiffe-exec-auth.sh
       - controller/deploy/k8s/capi-spiffe-exec-auth/**
@@ -45,12 +48,12 @@ on:
 permissions: {}
 
 concurrency:
-  group: kind-stack-from-release-${{ github.ref }}
+  group: kind-stack-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   smoke:
-    name: deploy/nico on kind from a release
+    name: deploy/nico on kind from local stack artifacts
     runs-on: ubuntu-latest
     if: github.repository_id == '1323115536'
     timeout-minutes: 75
@@ -147,7 +150,7 @@ jobs:
           raise_minimum fs.inotify.max_user_instances 1024
           raise_minimum fs.inotify.max_user_watches 1048576
 
-      - name: Bring the stack up from the release
+      - name: Bring the stack up from the artifacts
         env:
           # clusterctl reads the Cluster API releases through the GitHub API.
           GITHUB_TOKEN: ${{ github.token }}
@@ -156,19 +159,20 @@ jobs:
           KEEP_CLUSTER: "true"
           # A fixed directory on this single-use runner, so the diagnostics
           # step below finds the run's files.
-          WORK: ${{ runner.temp }}/kind-stack-from-release
-        run: ./controller/hack/ci/kind-stack-from-release.sh
+          WORK: ${{ runner.temp }}/kind-stack
+        run: ./controller/hack/ci/kind-stack.sh
 
       - name: Collect diagnostics
         if: failure()
         env:
-          KUBECONFIG: ${{ runner.temp }}/kind-stack-from-release/kubeconfig
+          KUBECONFIG: ${{ runner.temp }}/kind-stack/kubeconfig
         run: |
           set -uo pipefail
           out=/tmp/kind-stack-diag
           mkdir -p "${out}"
-          cp "${RUNNER_TEMP}/kind-stack-from-release/release.json" "${out}/" 2>/dev/null || true
-          { df -h /; docker exec -i nvke-release-smoke-control-plane df -h /var/lib/containerd; } > "${out}/disk.txt" 2>&1 || true
+          cp "${RUNNER_TEMP}/kind-stack/artifacts/stack-artifacts.json" "${out}/" 2>/dev/null || true
+          cp -R "${RUNNER_TEMP}/kind-stack/state/installs" "${out}/" 2>/dev/null || true
+          { df -h /; docker exec -i nvke-stack-smoke-control-plane df -h /var/lib/containerd; } > "${out}/disk.txt" 2>&1 || true
           kubectl get nodes -o wide > "${out}/nodes.txt" 2>&1 || true
           kubectl get pods -A -o wide > "${out}/pods.txt" 2>&1 || true
           kubectl describe pods -A > "${out}/describe-pods.txt" 2>&1 || true
@@ -176,12 +180,12 @@ jobs:
           for ns in nke-controller capnico-system spire-server; do
             kubectl -n "${ns}" logs --all-containers --tail=500 --prefix -l app.kubernetes.io/name > "${out}/${ns}.log" 2>&1 || true
           done
-          docker exec -i nvke-release-smoke-control-plane ctr -n k8s.io images ls > "${out}/containerd-images.txt" 2>&1 || true
+          docker exec -i nvke-stack-smoke-control-plane ctr -n k8s.io images ls > "${out}/containerd-images.txt" 2>&1 || true
 
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: kind-stack-from-release-${{ github.run_id }}
+          name: kind-stack-${{ github.run_id }}
           path: /tmp/kind-stack-diag
           retention-days: 7

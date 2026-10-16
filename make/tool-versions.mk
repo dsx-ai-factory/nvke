@@ -46,6 +46,11 @@ GH_CLI_SHA256_ARM64 ?= 73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8
 TELEPORT_VERSION   ?= 18.11.0
 TELEPORT_SHA256_AMD64 ?= 8d3dba03ea6b6e0d72c97e190da0595e8f0d70f5573c3a26b1908cf60caf6e3f
 
+# The lab StorageClass the local-site example installs: Rancher's
+# local-path-provisioner, applied from its release manifest at this tag.
+# docs/get-started/local-site.md and the bootstrap e2e's stack stage read it.
+LOCAL_PATH_PROVISIONER_VERSION ?= v0.0.31
+
 KUBECONFORM_VERSION ?= v0.7.0
 # .github/actions/setup-kubeconform installs it for chart.yml and nktp-chart.yml,
 # both on ubuntu-latest, so amd64 is the only platform needed.

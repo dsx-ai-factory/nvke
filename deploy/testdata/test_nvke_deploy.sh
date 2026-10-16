@@ -312,7 +312,7 @@ expect "an existing --out is refused" 'exists; render writes a new directory' "$
 # The hand-written example is the operator's starting point: it loads once
 # its placeholders are filled, and names the five artifacts deploy/nico binds.
 out="$("${NVKECTL}" inspect stack-artifacts "${REPO}/deploy/examples/stack-artifacts.json" --meta 2>&1)" && fail "the example with its placeholders loaded"
-expect "the example's placeholders are refused" 'reference is not an OCI reference' "${out}"
+expect "the example's placeholders are refused by name" 'artifact cwe: reference is still a REPLACE_\* placeholder; fill it in' "${out}"
 sed -e 's|REPLACE_REGISTRY|registry.example.com|g; s|REPLACE_CHART_VERSION|1.2.3|g' -e "s|REPLACE_DIGEST|$(printf 'a%.0s' $(seq 1 64))|g" "${REPO}/deploy/examples/stack-artifacts.json" >"${WORK}/example-filled.json"
 out="$("${NVKECTL}" inspect stack-artifacts "${WORK}/example-filled.json" --bindings --deploy-path "${NICO}" --arch linux/arm64 2>&1)" || fail "the filled example does not load: ${out}"
 expect "the filled example binds the controller image" $'^controller\timage\tcwe\tcwe\tbound$' "${out}"
@@ -514,7 +514,7 @@ expect "template item needs --config" 'needs --config' "${out}"
 
 # check-site.sh against the stub tools: every finding passes on a ready
 # cluster and names the fix on one that is not.
-check() { PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --stack-artifacts "${ARTIFACTS:-${LOCAL}}" --kubeconfig "${WORK}/stub.kubeconfig" "$@" 2>&1; }
+check() { PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --stack-artifacts "${ARTIFACTS:-${LOCAL}}" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1; }
 : >"${WORK}/curl.log"
 out="$(STUB_LOG="${WORK}/stub.log" CURL_LOG="${WORK}/curl.log" check)" || fail "check-site on a ready cluster exited $?: ${out}"
 grep -qE ' (apply|create|delete|patch|taint|annotate) ' "${WORK}/stub.log" && fail "check-site made a mutating kubectl call: $(grep -E ' (apply|create|delete|patch|taint|annotate) ' "${WORK}/stub.log")" || pass "check-site made no mutating kubectl call ($(wc -l <"${WORK}/stub.log" | tr -d ' ') reads)"
@@ -626,11 +626,149 @@ out="$(bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "ch
 expect "the inputs are required" '^usage: check-site.sh' "${out}"
 PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" --diagnostics >/dev/null 2>&1 || fail "check-site --diagnostics exited $?"
 [[ -f "${WORK}/check-state/diagnostics/nodes.txt" ]] && pass "diagnostics are written under the state directory" || fail "no diagnostics: $(ls -R "${WORK}/check-state" 2>/dev/null)"
-# --diagnostics copies the newest install record when there is one.
+# --diagnostics copies the last successful install's record when there is one.
 mkdir -p "${WORK}/check-state/installs/20260101T000000Z.aaaa" "${WORK}/check-state/installs/20260102T000000Z.bbbb"
 printf 'status=ok\n' >"${WORK}/check-state/installs/20260102T000000Z.bbbb/status"
 PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" --diagnostics >/dev/null 2>&1 || fail "check-site --diagnostics with a record exited $?"
-[[ -f "${WORK}/check-state/diagnostics/install-record/status" ]] && pass "the newest install record is in the diagnostics" || fail "no install record in the diagnostics"
+[[ -f "${WORK}/check-state/diagnostics/last-successful-install/status" ]] && pass "the last successful install's record is in the diagnostics" || fail "no install record in the diagnostics"
+
+
+# build/stack-artifacts.sh against stub tools: docker, oras and helm write
+# layout-shaped directories; python3 and nvkectl are real. The stubs read
+# STUB_* to fail at a chosen point or to change what they write.
+BUILD="${REPO}/build/stack-artifacts.sh"
+bstubs="${WORK}/build-stubs"
+mkdir -p "${bstubs}"
+# fake_image_layout DIR DIGEST [EXTRA_MANIFEST]: an OCI layout whose index
+# lists DIGEST, plus a second manifest when asked.
+cat >"${bstubs}/fake-layout.sh" <<'STUB'
+#!/usr/bin/env bash
+dir="$1" digest="$2" extra="${3:-}"
+mkdir -p "${dir}/blobs/sha256"
+printf '{"imageLayoutVersion":"1.0.0"}' >"${dir}/oci-layout"
+m="{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"digest\":\"${digest}\",\"size\":2}"
+[[ -z "${extra}" ]] || m="${m},{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"digest\":\"${extra}\",\"size\":2}"
+printf '{"schemaVersion":2,"manifests":[%s]}' "${m}" >"${dir}/index.json"
+STUB
+# digest_for NAME: a stable fake digest from the name and STUB_DIGEST_SEED.
+cat >"${bstubs}/digest-for.sh" <<'STUB'
+#!/usr/bin/env bash
+if [[ -n "${STUB_BAD_DIGEST:-}" && "$1" == "${STUB_BAD_DIGEST}" ]]; then printf 'sha256:not-a-digest'; exit 0; fi
+if command -v sha256sum >/dev/null 2>&1; then h="$(printf '%s%s' "$1" "${STUB_DIGEST_SEED:-}" | sha256sum | cut -d' ' -f1)"; else h="$(printf '%s%s' "$1" "${STUB_DIGEST_SEED:-}" | shasum -a 256 | cut -d' ' -f1)"; fi
+printf 'sha256:%s' "${h}"
+STUB
+cat >"${bstubs}/docker" <<'STUB'
+#!/usr/bin/env bash
+# buildx version: ok. buildx build ... --output type=oci,dest=TAR: a tar of a
+# fake layout named after the Dockerfile's directory. Anything else: ok.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[[ "$1 $2" != "buildx build" ]] && exit 0
+dest=""; file=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in --output) dest="${2#type=oci,dest=}"; shift 2 ;; --file) file="$2"; shift 2 ;; *) shift ;; esac
+done
+name="$(basename "$(dirname "${file}")")"; [[ "${name}" == controller ]] && name=cwe; [[ "${name}" == fixtures ]] && name=controller-profiles
+[[ "${STUB_FAIL:-}" == "build:${name}" ]] && { echo "stub docker: build of ${name} failed" >&2; exit 1; }
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/stub-docker.XXXXXX")"
+bash "${here}/fake-layout.sh" "${tmp}" "$(bash "${here}/digest-for.sh" "${name}")" $([[ "${STUB_TWO_MANIFESTS:-}" == "${name}" ]] && bash "${here}/digest-for.sh" "${name}-second")
+tar -cf "${dest}" -C "${tmp}" .
+rm -rf "${tmp}"
+STUB
+cat >"${bstubs}/nerdctl" <<'STUB'
+#!/usr/bin/env bash
+# The same as the docker stub, without the buildx verb.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[[ "$1" != build ]] && exit 0
+printf 'nerdctl\n' >>"${STUB_CLI_LOG:-/dev/null}"
+exec bash "${here}/docker" buildx "$@"
+STUB
+cat >"${bstubs}/oras" <<'STUB'
+#!/usr/bin/env bash
+# cp --to-oci-layout IMAGE DIR:TAG and push --oci-layout DIR:TAG ...: a fake
+# layout at DIR named after its last path element.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+verb="$1"; shift
+dir=""
+for arg in "$@"; do case "${arg}" in /*:*) dir="${arg%:*}" ;; esac; done
+[[ -n "${dir}" ]] || { echo "stub oras: no layout argument" >&2; exit 1; }
+name="$(basename "${dir}")"
+[[ "${STUB_FAIL:-}" == "${verb}:${name}" ]] && { echo "stub oras: ${verb} of ${name} failed" >&2; exit 1; }
+bash "${here}/fake-layout.sh" "${dir}" "$(bash "${here}/digest-for.sh" "${name}")" $([[ "${STUB_TWO_MANIFESTS:-}" == "${name}" ]] && bash "${here}/digest-for.sh" "${name}-second")
+STUB
+cat >"${bstubs}/helm" <<'STUB'
+#!/usr/bin/env bash
+# package DIR --destination D writes <name>-<version>.tgz from Chart.yaml;
+# repo add and dependency build do nothing.
+case "$1" in
+  package) chart="$2"; dest="$4"; name="$(awk '$1 == "name:" { print $2; exit }' "${chart}/Chart.yaml")"; ver="$(awk '$1 == "version:" { gsub(/"/, "", $2); print $2; exit }' "${chart}/Chart.yaml")"
+    printf 'not really a chart\n' >"${dest}/${name}-${ver}.tgz" ;;
+esac
+exit 0
+STUB
+chmod +x "${bstubs}"/*
+bout="${WORK}/dist/local-site"
+build() { PATH="${bstubs}:${PATH}" NVKECTL="${NVKECTL}" bash "${BUILD}" --profiles-src "${REPO}/controller/test/fixtures" --out "${bout}" --arch arm64 2>&1; }
+out="$(build)" || fail "stack-artifacts.sh exited $?: ${out}"
+[[ -f "${bout}/stack-artifacts.json" ]] && pass "the build writes stack-artifacts.json" || fail "no stack-artifacts.json: ${out}"
+listing="$("${NVKECTL}" inspect stack-artifacts "${bout}/stack-artifacts.json" --artifacts 2>&1)" || fail "the built file does not load: ${listing}"
+[[ "$(wc -l <<<"${listing}" | tr -d ' ')" == 5 ]] && pass "five artifacts" || fail "artifacts: ${listing}"
+expect "cwe is a local image with a layout" $'^cwe\toci\tnvke.local/cwe@sha256:[0-9a-f]{64}\tsha256:[0-9a-f]{64}\tlinux/arm64\t\t'"${bout}"'/images/cwe$' "${listing}"
+expect "controller-profiles is a local image" $'^controller-profiles\toci\tnvke.local/controller-profiles@' "${listing}"
+expect "capnico keeps its upstream repository" $'^capnico-controller\toci\tghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller@sha256:[0-9a-f]{64}\t.*\tlinux/arm64\t\t'"${bout}"'/images/capnico-controller$' "${listing}"
+expect "the controller chart is a helm-oci artifact with its version" $'^controller-chart\thelm-oci\tnvke.local/controller-chart@.*\t0.0.0\t'"${bout}"'/images/controller-chart$' "${listing}"
+expect "nktp too" $'^nktp\thelm-oci\tnvke.local/nktp@.*\t0.0.0\t' "${listing}"
+expect "the build prints every artifact" $'^capnico-controller\toci\tghcr.io/' "${out}"
+for layout in cwe controller-profiles capnico-controller controller-chart nktp; do
+  [[ "$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["manifests"]))' "${bout}/images/${layout}/index.json")" == 1 ]] || fail "layout ${layout} lists more than one manifest"
+done
+pass "one manifest per layout"
+bindings="$("${NVKECTL}" inspect stack-artifacts "${bout}/stack-artifacts.json" --bindings --deploy-path "${NICO}" --arch linux/arm64 2>&1)" || fail "bindings: ${bindings}"
+reject "every artifact deploy/nico needs is bound; none is unused" $'\t(missing|other-arch)|^unused' "${bindings}"
+expect "the controller chart binds" $'^controller\tchart\tcontroller-chart\tcontroller-chart\tbound$' "${bindings}"
+[[ ! -e "${bout}.tmp" ]] && pass "no tmp tree is left" || fail "tmp tree left"
+# Running twice replaces the tree: a changed input changes the digest.
+before="$(hex_of "${bout}/stack-artifacts.json")"
+out="$(STUB_DIGEST_SEED=second build)" || fail "second build exited $?: ${out}"
+[[ "$(hex_of "${bout}/stack-artifacts.json")" != "${before}" ]] && pass "a second build replaces the file" || fail "second build left the file as it was"
+[[ "$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["manifests"]))' "${bout}/images/cwe/index.json")" == 1 ]] && pass "a rebuilt layout holds one manifest" || fail "manifests accumulated"
+# A producer failing mid-list leaves the previous OUT byte-identical and no tmp.
+before="$(find "${bout}" -type f -exec cat {} + | hex_of /dev/stdin)"
+out="$(STUB_FAIL=push:nktp build)" && fail "a failing producer exited 0"
+expect "the failing producer is named" 'stub oras: push of nktp failed' "${out}"
+[[ "$(find "${bout}" -type f -exec cat {} + | hex_of /dev/stdin)" == "${before}" ]] && pass "a failed build leaves the previous output as it was" || fail "a failed build changed the output"
+[[ ! -e "${bout}.tmp" ]] && pass "a failed build leaves no tmp tree" || fail "tmp tree left after a failure"
+# A stale tmp tree is removed first.
+mkdir -p "${bout}.tmp/images/stale"; : >"${bout}.tmp/images/stale/index.json"
+out="$(build)" || fail "build over a stale tmp exited $?: ${out}"
+[[ ! -e "${bout}/images/stale" && ! -e "${bout}.tmp" ]] && pass "a stale tmp tree is removed" || fail "stale tmp content survived"
+# Refusals: a two-manifest index, a malformed digest, a placeholder in the
+# profiles source, a missing tool, an unknown flag.
+out="$(STUB_TWO_MANIFESTS=cwe build)" && fail "a two-manifest index exited 0"
+expect "a two-manifest index is refused naming the layout" 'images/cwe: index.json lists 2 manifests; a layout holds one artifact' "${out}"
+out="$(STUB_BAD_DIGEST=nktp build)" && fail "a malformed digest exited 0"
+expect "a malformed digest is refused" 'not-a-digest' "${out}"
+mkdir -p "${WORK}/bad-profiles/profiles"; printf 'token: REPLACE_ME\n' >"${WORK}/bad-profiles/profiles/x.yaml"
+out="$(PATH="${bstubs}:${PATH}" bash "${BUILD}" --profiles-src "${WORK}/bad-profiles" --out "${WORK}/dist/other" 2>&1)" && fail "REPLACE_ in the profiles exited 0"
+expect "a placeholder in the profiles source is refused" 'still holds REPLACE_ placeholders' "${out}"
+out="$(PATH="${bstubs}:${PATH}" bash "${BUILD}" --profiles-src "${REPO}/controller/test/fixtures" --out "${WORK}/dist/other" --container-cli nerdctl --flag 2>&1)" && fail "an unknown flag exited 0"
+expect "an unknown flag is named and usage printed" '^stack-artifacts: unknown argument: --flag$' "${out}"
+expect "usage" '^usage: build/stack-artifacts.sh' "${out}"
+out="$(PATH="${bstubs}:${PATH}" bash "${BUILD}" --out "${WORK}/dist/other" 2>&1)" && fail "no --profiles-src exited 0"
+expect "the two required flags" '^usage: build/stack-artifacts.sh' "${out}"
+# Without docker on PATH the CLI is nerdctl. The PATH is a directory of
+# links to the tools the script and python need, so a docker installed on
+# this machine is not found.
+nodocker="${WORK}/build-stubs-nerdctl"; mkdir -p "${nodocker}"; for f in nerdctl oras helm fake-layout.sh digest-for.sh docker; do cp "${bstubs}/${f}" "${nodocker}/"; done
+# The docker stub stays for the nerdctl stub to exec, under another name.
+mv "${nodocker}/docker" "${nodocker}/docker-impl"; sed -i.bak 's|"${here}/docker"|"${here}/docker-impl"|' "${nodocker}/nerdctl"; rm -f "${nodocker}/nerdctl.bak"
+for tool in bash sh env python3 tar git awk sed grep sort head find basename dirname mktemp mkdir rm mv cp cat uname tr wc ls cut chmod date readlink sha256sum shasum openssl; do
+  real="$(command -v "${tool}" 2>/dev/null)" && ln -sf "${real}" "${nodocker}/${tool}"
+done
+: >"${WORK}/cli.log"
+out="$(PATH="${nodocker}" STUB_CLI_LOG="${WORK}/cli.log" NVKECTL="${NVKECTL}" bash "${BUILD}" --profiles-src "${REPO}/controller/test/fixtures" --out "${WORK}/dist/nerdctl" --arch amd64 2>&1)" || fail "build without docker exited $?: ${out}"
+grep -q nerdctl "${WORK}/cli.log" && pass "without docker the images build with nerdctl" || fail "nerdctl was not used: $(cat "${WORK}/cli.log")"
+out="$(PATH="${nodocker}" bash "${BUILD}" --profiles-src "${REPO}/controller/test/fixtures" --out "${WORK}/dist/other" --container-cli docker 2>&1)" && fail "--container-cli docker without docker exited 0"
+expect "a missing tool is named" '^stack-artifacts: docker is not on PATH$' "${out}"
 
 if [[ "${failures}" -eq 0 ]]; then
   echo "all nvke-deploy tests passed"

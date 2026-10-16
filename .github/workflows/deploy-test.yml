@@ -3,11 +3,12 @@
 #
 # Runs the tests of the site controller install under deploy/.
 #
-# make -C deploy test builds nvkectl from cli/ and runs the executor's dry-run
-# suite in deploy/testdata/: item order, where each chart comes from, a deploy
-# path rendered for a site, and the errors the executor must stop on. Nothing
-# is applied and no registry is reached, so the job runs on ubuntu-latest with
-# no secret.
+# make -C deploy test builds nvkectl from cli/ and runs the executor's suite
+# in deploy/testdata/: item order, where each chart comes from, a deploy path
+# rendered for a site against stack artifacts, the errors the executor must
+# stop on, the install record, and build/stack-artifacts.sh against stub
+# tools. Nothing is applied and no registry is reached, so the job runs on
+# ubuntu-latest with no secret.
 #
 # The Go tests of the package nvkectl render uses run in controller-test.yml
 # with the rest of cli/.
@@ -26,6 +27,8 @@ on:
     branches: [main]
     paths:
       - 'deploy/**'
+      - 'build/**'
+      - 'Makefile'
       - 'cli/**'
       - 'nktp/**'
       - 'controller/deploy/charts/**'

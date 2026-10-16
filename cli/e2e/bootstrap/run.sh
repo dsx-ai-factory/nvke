@@ -23,6 +23,12 @@
 #      exercise the supported single-node configuration without kube-vip.
 #   5. Traefik serves a whoami Deployment on that cluster: hosts that already
 #      existed now serve traffic like any other cluster.
+#   6. With NVKECTL_E2E_INSTALL_STACK=1, and only with NVKECTL_E2E_NODES=1 and
+#      no VIP: the controller stack is installed on that cluster the way
+#      docs/get-started/local-site.md says, from `make local-stack-artifacts`,
+#      with the local site's example inputs, and the NVKE API answers. The
+#      tenant cluster the page then creates needs nico-sim's container
+#      backend, which this suite does not run.
 #
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit. A failing exit
@@ -48,6 +54,9 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
+REPO_ROOT="${REPO_ROOT:-$(dirname "${CLI_DIR}")}"
+# The lab StorageClass the stack stage installs, from make/tool-versions.mk.
+LOCAL_PATH_PROVISIONER_VERSION="${LOCAL_PATH_PROVISIONER_VERSION:-$(sed -n 's/^LOCAL_PATH_PROVISIONER_VERSION[[:space:]]*?=[[:space:]]*//p' "${REPO_ROOT}/make/tool-versions.mk" | head -n 1)}"
 NVKECTL="${NVKECTL:-${CLI_DIR}/bin/nvkectl}"
 # The site spec is generated per run by `nvkectl generate sitespec`, so this lane
 # tests the command an operator uses rather than a fixture kept in step with it
@@ -324,6 +333,11 @@ collect_diagnostics() {
       nerdctl exec "${node}" ls -la /etc/cni/net.d /opt/cni/bin || true
     } >"${output}" 2>&1
   done
+  # The stack stage's install record and the site cluster's pods, when it ran.
+  if [ -n "${STACK_WORK:-}" ] && [ -d "${STACK_WORK}/state/installs" ]; then
+    cp -R "${STACK_WORK}/state/installs" "${NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR:-cluster-diagnostics}/stack-install-records" 2>/dev/null || true
+    kubectl --kubeconfig "${TENANT_KUBECONFIG}" get pods -A -o wide >"${NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR:-cluster-diagnostics}/stack-pods.txt" 2>&1 || true
+  fi
 }
 
 # ── Stage 1: fake nodes ──────────────────────────────────────────────────
@@ -926,6 +940,88 @@ if ! wait_until 300 5 hello_world_served; then
   fail "hello world was never served through Traefik"
 fi
 log "PASS: the cluster built from pre-provisioned hosts serves hello world through Traefik"
+
+# ── Stage 6: the controller stack on the new cluster ───────────────────
+#
+# Opt-in: the stage adds the stack's install and about fifteen minutes. It
+# follows docs/get-started/local-site.md step by step, from
+# deploy/examples/local-site, so the page is what this proves. One node and
+# no VIP, as the page: a layout reaches one node's containerd, the one CTR
+# talks to, and the page's CTR is `nerdctl exec` into that node.
+
+install_stack() {
+  local stack_work node_bridge_subnet tenant_subnet node name stack_arch state
+  [ "${NODE_COUNT}" -eq 1 ] && [ -z "${CONTROL_PLANE_VIP}" ] ||
+    fail "NVKECTL_E2E_INSTALL_STACK=1 needs NVKECTL_E2E_NODES=1 and NVKECTL_E2E_CONTROL_PLANE_VIP=\"\": the local site is one node"
+  node="nvkectl-e2e-${NODE_PREFIX}1"
+  stack_arch="$(go env GOARCH)"
+  stack_work="${SCRIPT_DIR}/.stack"
+  rm -rf "${stack_work}"
+  mkdir -p "${stack_work}"
+  defer rm -rf "${stack_work}"
+  STACK_WORK="${stack_work}"
+  state="${stack_work}/state"
+
+  log "stage 6: the lab StorageClass, local-path-provisioner ${LOCAL_PATH_PROVISIONER_VERSION}"
+  kubectl --kubeconfig "${TENANT_KUBECONFIG}" apply -f     "https://raw.githubusercontent.com/rancher/local-path-provisioner/${LOCAL_PATH_PROVISIONER_VERSION}/deploy/local-path-storage.yaml"
+  kubectl --kubeconfig "${TENANT_KUBECONFIG}" annotate storageclass local-path storageclass.kubernetes.io/is-default-class=true --overwrite
+
+  # The stack's inputs: the local site's stack config, placeholder
+  # credentials (nothing here reaches NICo), a generated database password.
+  export NVKECTL_NICO_TOKEN="${NVKECTL_NICO_TOKEN:-e2e-nico-token}" NVKECTL_NODE_USER="${NVKECTL_NODE_USER:-nvke}" NVKECTL_NODE_PASSWORD="${NVKECTL_NODE_PASSWORD:-e2e-tenant-password}"
+  NVKECTL_DATABASE_PASSWORD="$(openssl rand -hex 16)"
+  export NVKECTL_DATABASE_PASSWORD
+  local stack_config="${REPO_ROOT}/deploy/examples/local-site/stack-config.json"
+
+  log "stage 6: building the stack artifacts (make local-stack-artifacts, ${stack_arch})"
+  make -C "${REPO_ROOT}" --no-print-directory local-stack-artifacts OUT="${stack_work}/artifacts" CONTAINER_CLI=nerdctl ARCH="${stack_arch}"
+  local artifacts="${stack_work}/artifacts/stack-artifacts.json"
+
+  log "stage 6: checking the site"
+  CTR="nerdctl exec -i ${node} ctr" NVKECTL="${NVKECTL}" NVKE_STATE_DIR="${state}" bash "${REPO_ROOT}/deploy/check-site.sh"     --sitespec "${RENDERED_SITESPEC}" --stack-config "${stack_config}" --stack-artifacts "${artifacts}" --kubeconfig "${TENANT_KUBECONFIG}"
+
+  log "stage 6: installing Cluster API ${CAPI_VERSION:-}"
+  local capi_version
+  capi_version="$(make -C "${REPO_ROOT}" --no-print-directory print-CAPI_VERSION)"
+  clusterctl init --kubeconfig "${TENANT_KUBECONFIG}" --core "cluster-api:${capi_version}" --bootstrap "kubeadm:${capi_version}"     --control-plane "kubeadm:${capi_version}" --wait-providers
+  kubectl --kubeconfig "${TENANT_KUBECONFIG}" rollout status deployment/cert-manager-webhook -n cert-manager --timeout=5m
+
+  log "stage 6: installing the stack"
+  CTR="nerdctl exec -i ${node} ctr" NVKECTL="${NVKECTL}" NVKE_STATE_DIR="${state}" bash "${REPO_ROOT}/deploy/nvke-deploy.sh" install     --deploy-path "${REPO_ROOT}/deploy/nico" --sitespec "${RENDERED_SITESPEC}" --stack-config "${stack_config}"     --stack-artifacts "${artifacts}" --kubeconfig "${TENANT_KUBECONFIG}" --timeout 15m
+  [ -z "$(ls -A "${state}/renders" 2>/dev/null)" ] || fail "the install left its render behind: $(ls -A "${state}/renders")"
+  [ "$(find "${state}/installs" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" = 1 ] || fail "expected one install record under ${state}/installs"
+
+  log "stage 6: patching the Cluster API controllers with the SPIRE exec-auth plugin"
+  bash "${REPO_ROOT}/controller/hack/apply-capi-spiffe-exec-auth.sh" --kubeconfig "${TENANT_KUBECONFIG}"
+
+  # The networks admitted to the NVKE API: the node network this host is on
+  # and the tenant network nico-sim would use.
+  node_bridge_subnet="$(nerdctl network inspect "${NODE_NETWORK}" --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' | awk '{for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+(\.[0-9]+){3}\/[0-9]+$/) {print $i; exit}}')"
+  tenant_subnet="$(nerdctl network inspect kind --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+(\.[0-9]+){3}\/[0-9]+$/) {print $i; exit}}')"
+  [ -n "${node_bridge_subnet}" ] || fail "cannot read the ${NODE_NETWORK} subnet"
+  log "stage 6: admitting ${node_bridge_subnet} and ${tenant_subnet:-no tenant network} to the NVKE API"
+  sed -e "s|REPLACE_HOST_CIDR|${node_bridge_subnet}|" -e "s|REPLACE_TENANT_CIDR|${tenant_subnet:-${node_bridge_subnet}}|"     "${REPO_ROOT}/deploy/examples/local-site/nvke-api-clients.yaml" | kubectl --kubeconfig "${TENANT_KUBECONFIG}" apply -f -
+
+  log "stage 6: pointing nvkectl at the site and publishing the local-site-${stack_arch} releases"
+  "${NVKECTL}" config set-site --name "${E2E_CLUSTER_NAME}" --url "http://${INIT_NODE_IP}:30080" --kubeconfig "${TENANT_KUBECONFIG}"
+  for name in machineimage clusterrelease nodepoolrelease; do
+    "${NVKECTL}" create "${name}" -f "${REPO_ROOT}/deploy/examples/local-site/releases/${name}-${stack_arch}.yaml"
+  done
+
+  log "stage 6: the NVKE API answers from this host"
+  wait_until 300 5 bash -c "curl -fsS --max-time 5 http://${INIT_NODE_IP}:30080/readyz | grep -q '\"status\":\"ok\"'" ||
+    fail "the NVKE API did not answer /readyz on ${INIT_NODE_IP}:30080"
+  "${NVKECTL}" get providers
+  "${NVKECTL}" get machineimages | grep -q "local-site-${stack_arch}" || fail "the published machine image is not listed"
+  log "PASS: the controller stack installed from make local-stack-artifacts answers on the new cluster"
+}
+
+STACK_WORK=""
+if [ "${NVKECTL_E2E_INSTALL_STACK:-}" = "1" ]; then
+  install_stack
+else
+  log "stage 6 skipped: set NVKECTL_E2E_INSTALL_STACK=1 to install the controller stack on the new cluster"
+fi
 
 # ── This suite's own teardown ───────────────────────────────────────────
 #
