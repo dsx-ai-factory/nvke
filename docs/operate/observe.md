@@ -42,7 +42,7 @@ This page describes how to check the health of the NVIDIA Kubernetes Engine (NVK
    nvkectl get providers
    ```
 
-   The `nico` row, for NVIDIA Infra Controller (NICo), reads `CONFIGURED` and `REPLICAS` reads `1/1` or more. `CONFIGURED` means the provider's resource definitions exist, its controller is available and its credentials Secret exists. It does not test the credentials against NICo. `DEGRADED` means the provider's controller is not available, and `UNKNOWN` usually means your kubeconfig cannot read Secrets in the provider's namespace.
+   The `nico` row, for NVIDIA Infra Controller (NICo), reads `CONFIGURED` and `REPLICAS` reads `1/1` or more. `CONFIGURED` means the provider's resource definitions exist, its controller is available and its credentials Secret exists. It does not test the credentials against NICo. The `CREDENTIALS` column reports CAPNICo's own check of them where CAPNICo serves `NicoIdentity`; with the CAPNICo release the install deploys, it reads `UNSUPPORTED`. `DEGRADED` means the provider's controller is not available, and `UNKNOWN` usually means your kubeconfig cannot read Secrets in the provider's namespace.
 
    With API authentication on, this command fails. Check the provider with `kubectl` instead:
 

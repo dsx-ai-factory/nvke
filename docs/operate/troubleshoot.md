@@ -237,6 +237,12 @@ The install stops at the component that failed. Fix the cause and run the same c
 - **Symptom:** The `nico` row of `nvkectl get providers` shows `NOT-INSTALLED`, `NOT-CONFIGURED`, `DEGRADED` or `UNKNOWN`. The `DETAIL` column says why.
 - **Fix:** [Configure an infrastructure provider: NICo](provider-nico.md#confirm-that-capnico-is-running) gives the action for each state.
 
+### nvkectl get providers shows CREDENTIALS other than HEALTHY
+
+- **Symptom:** The `nico` row reads `CONFIGURED`, but `CREDENTIALS` is not `HEALTHY`. The `DETAIL` column says why.
+- **Cause:** `UNSUPPORTED` is expected with the CAPNICo release the install deploys, which does not serve `NicoIdentity`. With a release that does, `NO-IDENTITY` means no `NicoIdentity` names `nico-credentials`, and `FAILING` or `UNKNOWN` carries the reason from CAPNICo's last check.
+- **Fix:** [Infrastructure providers](../../cli/README.md#infrastructure-providers) explains each value. For `FAILING`, correct the credentials as described in [Configure an infrastructure provider: NICo](provider-nico.md#manage-the-nico-credentials).
+
 ### Machines are not delivered
 
 - **Symptom:** A node's `pending` message stays `Waiting for infrastructure allocation`, or its step stays `Waiting for CAPI machine to be ready`. `clusterctl describe cluster <WORKLOAD_CLUSTER> -n nke-system` may show a machine with the reason `InstanceTypeUnavailable`.
