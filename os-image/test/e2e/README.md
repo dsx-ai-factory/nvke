@@ -40,8 +40,7 @@ go test -v -run '^TestDSXHardwareSmoke$' ./test/e2e
 
 Expect every Ubuntu-version subtest to report **SKIP: not implemented**. No NICo
 calls, machine allocation, image baking, or hardware tests are performed. The
-existing module test target discovers this package without a build tag or a new
-dependency. All four functions can stay in one Go file and run independently.
+existing module test target discovers this package without a build tag. All four functions can stay in one Go file and run independently.
 
 ## Initial CI jobs
 
@@ -81,9 +80,18 @@ new type does not require new test functions or a change to their Go file.
 These hardware tests belong to the existing `os-image` Go module. Follow the
 repository E2E conventions when implementing provisioning, hardware selection,
 and qualification reporting. The controller suite's provisioning helpers are
-currently under `controller/test/e2e/internal`, so this package cannot import
-them directly. Reusing that code requires an accessible shared package or another
-explicit integration boundary; moving these tests does not resolve that boundary.
+under `controller/test/e2e/internal`, so this package cannot import them directly.
+SSA exchange is available through the new public `controller/test/e2e/dsxauth`
+adapter: `dsxauth.MintToken(ctx, datahall)` delegates to the existing implementation
+without modifying it. Each call exchanges credentials; it does not maintain a
+shared token cache. Never log or upload the returned token.
+
+`auth_test.go` verifies the adapter from this module against a local mock issuer,
+including per-datahall credential selection and rejection. It uses no live
+credentials and is separate from the four pending hardware tests. The OS-image
+module uses a local dependency on the controller E2E module for this adapter;
+standalone builds resolve it through `go.mod` replacements, as they do the agent.
+Broader provisioning helpers still require an explicit public integration boundary.
 
 ## Implementation boundaries
 
