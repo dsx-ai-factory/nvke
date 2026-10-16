@@ -571,6 +571,13 @@ jobs:
       # anyway, its tenant half speaking Forge only. See SCOPE in the plan job.
       SITE_STAGE: ${{ inputs.stage || (github.event.label.name == 'qualify-e2e-dsx' && 'provision') || vars.QUALIFY_E2E_STAGE || 'full' }}
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
+      # Whether this run's ref is one the nvke WIF provider in the testgrid
+      # repo actually trusts (main, or a v<digit> tag -- see wif-nvke.tf
+      # there). Only a pre-filter: GCP's own attribute mapping is the real
+      # enforcement, matching job_workflow_ref rather than github.ref. This
+      # just skips a labelled PR leg straight to "not trusted" instead of
+      # spending a step on an auth call that WIF was always going to deny.
+      QUALIFY_PUBLISH_TRUSTED: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'true' || 'false' }}
       # Reported below only -- not read by anything downstream here, since the
       # plan job already resolved and applied it. Mirrors that job's own
       # formula so the summary reports what actually happened, not a guess.
@@ -719,6 +726,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Read by `qualify result` below as --started-at, for the case where
+      # Ginkgo never runs far enough to write its own StartTime (a Forge
+      # provisioning failure, a wedged runner) -- see that command's own doc.
+      - name: Record the run's start time
+        id: start-time
+        shell: bash
+        run: echo "started-at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_OUTPUT}"
 
       # Three `docker save` archives of multi-hundred-megabyte images, written
       # to the workspace and read back by dind. Reported rather than freed:
@@ -1667,6 +1682,55 @@ jobs:
             done
           done < <(compgen -v | grep -E '_JUMP_HOST$|^SSA_ISSUER$' || true)
 
+      # Writes qualify-result.json from this leg's plan entry and Ginkgo
+      # report, after credentials are scrubbed out of the report -- the result
+      # record is kept (and uploaded below) even on a dry run's or a PR leg's
+      # untrusted ref, just never published past this job. A missing report
+      # (Ginkgo never ran) still produces an errored result; see `qualify
+      # result`'s own doc.
+      - name: Record the qualification result
+        if: always() && env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          go run ./release/cmd/qualify result \
+            --plan plan.json \
+            --report controller/test/e2e/qualify-e2e.report.json \
+            --combination "${{ matrix.combination }}" \
+            --stream "${{ matrix.stream }}" \
+            --started-at "${{ steps.start-time.outputs.started-at }}" \
+            --output qualify-result.json
+
+      # Only a trusted ref (see QUALIFY_PUBLISH_TRUSTED above) ever reaches
+      # this: the WIF provider in the testgrid repo denies the token exchange
+      # for anything else, so there is no point spending a step finding that
+      # out for every labelled PR leg.
+      - name: Authenticate to GCP (TestGrid)
+        if: always() && env.DRY_RUN != 'true' && env.QUALIFY_PUBLISH_TRUSTED == 'true'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          # dsx-oss-github-<env>/dsx-oss-nvke, not aicr's own pool/provider --
+          # testgrid repo's wif-nvke.tf gives nvke its own pool so the
+          # workload_identity_provider path carries no aicr codename and the
+          # two repos share no federation resources.
+          workload_identity_provider: projects/${{ vars.TESTGRID_GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/dsx-oss-github-prod/providers/dsx-oss-nvke
+          service_account: dsx-oss-nvke-prod@${{ vars.TESTGRID_GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+      # `qualify publish` reads TESTGRID_BUCKET itself and no-ops (exit 0) for
+      # an errored result (Ginkgo never ran) -- see its own doc. Nothing
+      # here needs to branch on that.
+      - name: Publish the qualification result
+        if: always() && env.DRY_RUN != 'true' && env.QUALIFY_PUBLISH_TRUSTED == 'true'
+        shell: bash
+        env:
+          TESTGRID_BUCKET: ${{ vars.TESTGRID_BUCKET }}
+        run: |
+          set -Eeuo pipefail
+          go run ./release/cmd/qualify publish \
+            --result qualify-result.json \
+            --junit controller/test/e2e/qualify-e2e.junit.xml \
+            --stream "${{ matrix.stream }}"
+
       # The Ginkgo log carries every phase boundary, remote command and
       # failure. An hour-long run is worth more than a scroll-back in the job
       # view, and a green one is the reference for diagnosing the next red
@@ -1693,6 +1757,7 @@ jobs:
             controller/test/e2e/nvkectl-diagnostics.tar.gz
             controller/test/e2e/tenant-diagnostics.json
             controller/test/e2e/site-cluster-state.txt
+            qualify-result.json
             ${{ runner.temp }}/run-inputs.txt
             ${{ runner.temp }}/tbot.log
           if-no-files-found: warn
