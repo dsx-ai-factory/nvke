@@ -17,9 +17,9 @@ concurrency:
 
 jobs:
   machine-image:
-    name: ${{ matrix.test }} (Ubuntu ${{ matrix.ubuntu }}, ${{ matrix.arch }})
+    name: ${{ matrix.test }}
     if: github.repository_id == '1323115536' && github.ref == 'refs/heads/main'
-    # The same remote-driving runner as qualify-e2e.yml for both target arches.
+    # The same remote-driving runner as qualify-e2e.yml.
     runs-on: arc-amd64-cpu16
     timeout-minutes: 20
     permissions:
@@ -28,29 +28,12 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        ubuntu: ["24.04", "26.04"]
-        arch: [amd64, arm64]
         test:
-          - CandidateImageProvisioning
-          - HardwareBootAndNetworking
-          - PlatformKernelAndDrivers
-          - TPMAttestation
-          - FDEFirstBootKeyDelivery
-          - FDETPMBinding
-          - FDEClusterEndToEnd
-          - PostJoinWarmReboot
-          - PostJoinPowerCycle
-          - FDEWarmRebootAndUnseal
-          - FDEPowerCycleAndUnseal
-          - NonFDEUpgradeAndReboot
-          - FDEUpgradeAndReboot
-          - FailedImageRecovery
-          - PoolCleanupAndReuse
-          - FailureDiagnostics
-          - RetainInstanceAcrossRuns
+          - DSXRecipeValidation
+          - DSXHardwareSmoke
+          - DSXFDEEndToEnd
+          - DSXUpgradeAndReboot
     env:
-      UBUNTU_RELEASE: ${{ matrix.ubuntu }}
-      IMAGE_ARCH: ${{ matrix.arch }}
       FUNCTIONAL_TEST: ${{ matrix.test }}
     steps:
       - name: Checkout
@@ -109,9 +92,8 @@ jobs:
         working-directory: os-image
         run: |
           set -Eeuo pipefail
-          series_pattern="${UBUNTU_RELEASE//./[.]}"
           go test -json -count=1 \
-            -run "^TestDSXMachineImages$/^ubuntu-${series_pattern}$/^${IMAGE_ARCH}$/^${FUNCTIONAL_TEST}$" \
+            -run "^Test${FUNCTIONAL_TEST}$" \
             ./test/dsx > "${RUNNER_TEMP}/dsx-machine-image-tests.jsonl"
 
       - name: Report pending coverage
@@ -125,22 +107,22 @@ jobs:
 
           report = Path(os.environ["RUNNER_TEMP"]) / "dsx-machine-image-tests.jsonl"
           events = [json.loads(line) for line in report.read_text().splitlines()] if report.exists() else []
-          leaves = [event for event in events if event.get("Test", "").count("/") == 3]
+          leaves = [event for event in events if event.get("Test", "").count("/") == 1]
           counts = collections.Counter(event["Action"] for event in leaves)
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
               summary.write("## DSX machine-image scaffold\n\n")
-              summary.write(f"{os.environ['FUNCTIONAL_TEST']} — Ubuntu {os.environ['UBUNTU_RELEASE']}, {os.environ['IMAGE_ARCH']}\n\n")
+              summary.write(f"{os.environ['FUNCTIONAL_TEST']} — Ubuntu 24.04 and 26.04\n\n")
               summary.write(f"Functional cases: {counts['skip']} pending, {counts['pass']} passed, {counts['fail']} failed.\n\n")
               summary.write("**Scaffold only: no image was booted and no hardware qualification was performed.**\n")
-          if report.exists() and sum(counts[action] for action in ("skip", "pass", "fail")) != 1:
-              raise SystemExit("Expected exactly one functional test result; check the test selector.")
+          if report.exists() and sum(counts[action] for action in ("skip", "pass", "fail")) != 2:
+              raise SystemExit("Expected two Ubuntu-version results; check the test selector.")
           print("::warning::DSX machine-image functional tests are unimplemented; this job does not qualify an image.")
 
       - name: Upload test inventory
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: dsx-image-stub-${{ matrix.test }}-ubuntu-${{ matrix.ubuntu }}-${{ matrix.arch }}-${{ github.run_id }}
+          name: dsx-image-stub-${{ matrix.test }}-${{ github.run_id }}
           path: ${{ runner.temp }}/dsx-machine-image-tests.jsonl
           if-no-files-found: warn
           retention-days: 7
