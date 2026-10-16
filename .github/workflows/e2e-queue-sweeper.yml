@@ -59,6 +59,16 @@ jobs:
       - name: Cancel the superseded queued runs
         run: |
           set -euo pipefail
+          # gh api with retries: a 5xx from GitHub must not end the pass.
+          api() {
+            local try out
+            for try in 1 2 3; do
+              if out="$(gh api "$@")"; then printf '%s\n' "${out}"; return 0; fi
+              echo "gh api failed (try ${try} of 3)" >&2
+              sleep $((try * 5))
+            done
+            return 1
+          }
           lanes=(
             capd-e2e.yml
             nico-e2e.yml
@@ -74,15 +84,15 @@ jobs:
             while read -r id sha created; do
               [ -n "${id}" ] || continue
               # A run still reads "queued" while one leg waits and another runs.
-              running="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs" \
+              running="$(api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs" \
                            --jq '[.jobs[] | select(.status == "in_progress")] | length')"
               [ "${running}" = 0 ] || continue
               echo "${lane}: cancel ${id} (${sha}, queued since ${created})"
               if [ "${DRY_RUN}" != true ]; then
-                gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/cancel" >/dev/null
+                api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/cancel" >/dev/null || echo "  cancel failed, the next pass retries"
               fi
               cancelled=$((cancelled + 1))
-            done < <(gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${lane}/runs" \
+            done < <(api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${lane}/runs" \
                        -f branch=main -f event=push -f status=queued -f per_page=100 \
                        --jq '.workflow_runs | sort_by(.created_at) | reverse
                              | .[] | "\(.id) \(.head_sha[0:9]) \(.created_at)"' \
@@ -92,6 +102,16 @@ jobs:
       - name: Cancel the queued runs of merged and closed pull requests
         run: |
           set -euo pipefail
+          # gh api with retries: a 5xx from GitHub must not end the pass.
+          api() {
+            local try out
+            for try in 1 2 3; do
+              if out="$(gh api "$@")"; then printf '%s\n' "${out}"; return 0; fi
+              echo "gh api failed (try ${try} of 3)" >&2
+              sleep $((try * 5))
+            done
+            return 1
+          }
           lanes=(
             capd-e2e.yml
             nico-e2e.yml
@@ -109,15 +129,15 @@ jobs:
               [ -n "${id}" ] || continue
               pr="${branch#pull-request/}"
               if [ -z "${state[${pr}]:-}" ]; then
-                state[${pr}]="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .state 2>/dev/null || echo unknown)"
+                state[${pr}]="$(api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .state 2>/dev/null || echo unknown)"
               fi
               [ "${state[${pr}]}" = closed ] || continue
               echo "${lane}: cancel ${id} (#${pr} is closed, queued since ${created})"
               if [ "${DRY_RUN}" != true ]; then
-                gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/cancel" >/dev/null
+                api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/cancel" >/dev/null || echo "  cancel failed, the next pass retries"
               fi
               cancelled=$((cancelled + 1))
-            done < <(gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${lane}/runs" \
+            done < <(api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${lane}/runs" \
                        -f status=queued -f per_page=100 \
                        --jq '.workflow_runs[] | select(.head_branch | startswith("pull-request/"))
                              | "\(.id) \(.head_branch) \(.created_at)"')

@@ -71,6 +71,8 @@ jobs:
           OK_TO_TEST_LABEL: ${{ env.OK_TO_TEST_LABEL }}
           APPROVAL_LABEL: ${{ env.APPROVAL_LABEL }}
         with:
+          # Octokit retries 5xx and dropped connections; 4xx still fail at once.
+          retries: 3
           script: |
             for (const name of [process.env.OK_TO_TEST_LABEL, process.env.APPROVAL_LABEL]) {
               try {
@@ -107,6 +109,8 @@ jobs:
           OK_TO_TEST_LABEL: ${{ env.OK_TO_TEST_LABEL }}
           APPROVAL_LABEL: ${{ env.APPROVAL_LABEL }}
         with:
+          # Octokit retries 5xx and dropped connections; 4xx still fail at once.
+          retries: 3
           script: |
             // Both labels exist already; recreate as #e11d21 if either is ever
             // deleted, since addLabels would otherwise invent a colour.

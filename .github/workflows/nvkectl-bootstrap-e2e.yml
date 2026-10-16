@@ -348,6 +348,9 @@ jobs:
         working-directory: cli
         env:
           NVKECTL_CONTROLLER_IMAGE: ${{ env.CWE_IMAGE }}
+          OVN_KUBERNETES_TOKEN: ${{ secrets.OVN_KUBERNETES_RO_TOKEN }}
+          # Docker is removed on this lane; the OVN image builds through nerdctl.
+          OCI_BIN: nerdctl
         run: sudo -E env "PATH=$PATH" ./e2e/bootstrap/run.sh
 
       # Written by `nvkectl bootstrap site` when a bootstrap fails: a

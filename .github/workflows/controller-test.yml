@@ -74,6 +74,10 @@ concurrency:
   # Do not cancel a run on main; the newer workflows here all guard this.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# A module fetch the proxy drops mid-stream falls back to the module's origin (#1481).
+env:
+  GOPROXY: https://proxy.golang.org|direct
+
 jobs:
   test:
     name: Unit tests (${{ matrix.module }})

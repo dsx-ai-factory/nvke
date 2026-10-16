@@ -65,6 +65,11 @@ jobs:
           done
           if [ -f controller/api/openapi.yaml ]; then cp controller/api/openapi.yaml trusted/controller/api/openapi.yaml; fi
 
+      # The base tree lacks files the PR adds outside the docs directories, so links to them read as broken here; Fern Check on the PR tree is the gate.
+      - name: Let the preview warn about broken links
+        working-directory: ./trusted/fern
+        run: yq -i '.check.rules.broken-links = "warn"' docs.yml
+
       - name: Generate preview URL
         id: generate-docs
         env:

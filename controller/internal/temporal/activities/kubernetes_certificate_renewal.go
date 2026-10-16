@@ -76,7 +76,7 @@ func (a *Activities) RenewKubernetesCertificates(
 	})
 	if err != nil {
 		if status.Code(err) != codes.Unimplemented {
-			return KubernetesCertificateRenewalResult{}, fmt.Errorf("failed to start certificate renewal on node %s: %w", node.Name, err)
+			return KubernetesCertificateRenewalResult{}, a.releaseAfterFailedStart(ctx, node, input.OperationID, fmt.Errorf("failed to start certificate renewal on node %s: %w", node.Name, err))
 		}
 		legacy, legacyErr := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
 			HostID:      node.ID,
@@ -86,7 +86,7 @@ func (a *Activities) RenewKubernetesCertificates(
 			},
 		})
 		if legacyErr != nil {
-			return KubernetesCertificateRenewalResult{}, fmt.Errorf("failed to execute legacy certificate renewal on node %s: %w", node.Name, legacyErr)
+			return KubernetesCertificateRenewalResult{}, a.releaseAfterFailedStart(ctx, node, input.OperationID, fmt.Errorf("failed to execute legacy certificate renewal on node %s: %w", node.Name, legacyErr))
 		}
 		if err := a.releaseCertificateRenewal(ctx, node, input.OperationID); err != nil {
 			return KubernetesCertificateRenewalResult{}, err
@@ -94,7 +94,7 @@ func (a *Activities) RenewKubernetesCertificates(
 		return KubernetesCertificateRenewalResult(legacy), nil
 	}
 	if response == nil || response.GetOperation() == nil {
-		return KubernetesCertificateRenewalResult{}, errors.New("node agent returned an empty certificate renewal operation")
+		return KubernetesCertificateRenewalResult{}, a.releaseAfterFailedStart(ctx, node, input.OperationID, errors.New("node agent returned an empty certificate renewal operation"))
 	}
 
 	operation := response.GetOperation()
@@ -194,6 +194,15 @@ func certificateRenewalTerminalResult(
 			statusOperation.GetPhase(),
 		)
 	}
+}
+
+// releaseAfterFailedStart drops the reservation a start that never reached the node left behind, so another
+// workflow's renewal is not blocked until this one's retries end; the release error, if any, is joined.
+func (a *Activities) releaseAfterFailedStart(ctx context.Context, node db.Node, operationID string, startErr error) error {
+	if releaseErr := a.releaseCertificateRenewal(ctx, node, operationID); releaseErr != nil {
+		return errors.Join(startErr, releaseErr)
+	}
+	return startErr
 }
 
 // awaitCertificateRenewalReservation retries the reservation while another

@@ -11,6 +11,16 @@ variable "architecture" {
   }
 }
 
+variable "ubuntu_series" {
+  type        = string
+  description = "Ubuntu series of the installer ISO, e.g. 26.04. Gates release-specific packages."
+
+  validation {
+    condition     = contains(["24.04", "26.04"], var.ubuntu_series)
+    error_message = "The ubuntu_series value must be 24.04 or 26.04."
+  }
+}
+
 variable "capture_apt_acquisitions" {
   type        = bool
   default     = false

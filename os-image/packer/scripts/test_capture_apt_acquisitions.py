@@ -435,21 +435,23 @@ class CaptureAPTTest(unittest.TestCase):
         # not approximate the template grammar or add a Python YAML dependency.
         configuration = (SCRIPTS.parent / "cidata" / "apt-capture.conf").read_text()
         template = str(SCRIPTS.parent / "cidata" / "autoinstall-lvm.pkrtpl")
-        for capture in (False, True):
-            for encrypted in (False, True):
-                with self.subTest(capture=capture, encrypted=encrypted):
-                    values = dict(ssh_public_key="ssh-ed25519 fixture", luks_enabled=encrypted,
-                                  luks_passphrase="fixture-only", nvidia_kernel_package="linux-nvidia",
-                                  serial_console="ttyS0", capture_apt_acquisitions=capture,
-                                  apt_capture_configuration=configuration)
-                    expression = f"jsonencode(yamldecode(templatefile({json.dumps(template)}, {json.dumps(values)})))\n"
-                    result = subprocess.run([os.environ["NKE_TEST_PACKER"], "console", "-config-type=hcl2"],
-                                            input=expression, check=True, capture_output=True, text=True, timeout=30)
-                    autoinstall = json.loads(result.stdout)["autoinstall"]
-                    if capture:
-                        self.assertEqual(autoinstall["apt"]["conf"], configuration)
-                    else:
-                        self.assertNotIn("apt", autoinstall)
+        for series in ("24.04", "26.04"):
+            for capture in (False, True):
+                for encrypted in (False, True):
+                    with self.subTest(series=series, capture=capture, encrypted=encrypted):
+                        values = dict(ssh_public_key="ssh-ed25519 fixture", luks_enabled=encrypted,
+                                      luks_passphrase="fixture-only", nvidia_kernel_package="linux-nvidia",
+                                      serial_console="ttyS0", capture_apt_acquisitions=capture,
+                                      apt_capture_configuration=configuration, ubuntu_series=series)
+                        expression = f"jsonencode(yamldecode(templatefile({json.dumps(template)}, {json.dumps(values)})))\n"
+                        result = subprocess.run([os.environ["NKE_TEST_PACKER"], "console", "-config-type=hcl2"],
+                                                input=expression, check=True, capture_output=True, text=True, timeout=30)
+                        autoinstall = json.loads(result.stdout)["autoinstall"]
+                        self.assertEqual("erofs-utils" in autoinstall["packages"], series == "26.04")
+                        if capture:
+                            self.assertEqual(autoinstall["apt"]["conf"], configuration)
+                        else:
+                            self.assertNotIn("apt", autoinstall)
 
 if __name__ == "__main__":
     unittest.main()

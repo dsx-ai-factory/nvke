@@ -213,18 +213,21 @@ curl_with_retry() {
   fi
 }
 
-# The same 404 fails a build while it loads a base image; a second build gets it.
+# The same 404 fails a build while it loads a base image, and a Go proxy stream
+# reset fails it mid-module-download, past where GOPROXY's |direct fallback
+# applies; a second build gets both.
 build_with_retry() {
   local out attempt rc
   out=$(mktemp)
   for attempt in 1 2; do
     rc=0
     docker build "$@" 2>&1 | tee "${out}" || rc=$?
-    if ((rc == 0 || attempt == 2)) || ! grep -q 'could not fetch content descriptor' "${out}"; then
+    if ((rc == 0 || attempt == 2)) ||
+      ! grep -q -E 'could not fetch content descriptor|proxy\.golang\.org.*(stream error|unexpected EOF|connection reset)' "${out}"; then
       rm -f "${out}"
       return "${rc}"
     fi
-    log "docker build hit a mirror 404, retrying in 15s"
+    log "docker build hit a transient fetch error, retrying in 15s"
     sleep 15
   done
 }
@@ -471,14 +474,14 @@ collect_diagnostics() {
           >"${STATE_DIR}/nodes/${node_name}-crictl-images.txt" 2>&1
         docker exec "${node_name}" crictl info \
           >"${STATE_DIR}/nodes/${node_name}-crictl-info.json" 2>&1
-        # Static control-plane container logs. crictl ps -a already records
+        # Static control-plane and OVN container logs. crictl ps -a already records
         # that, say, kube-apiserver is on its third attempt, but without the
         # containers' own stderr a crashloop is only diagnosable by inference:
         # every other signal (kubelet unable to reach :6443, SPIFFE identity
         # never issued, CNI uninitialised) is downstream of it. -a covers the
         # exited attempts, which are the ones carrying the failure.
         docker exec "${node_name}" sh -c '
-          for comp in kube-apiserver etcd kube-controller-manager kube-scheduler; do
+          for comp in kube-apiserver etcd kube-controller-manager kube-scheduler ovnkube-controller ovnkube-cluster-manager; do
             echo "===== ${comp} ====="
             ids=$(crictl ps -a --label io.kubernetes.container.name="${comp}" -q 2>/dev/null)
             if [ -z "${ids}" ]; then
@@ -757,7 +760,7 @@ log "using agent source version ${NODE_AGENT_VERSION}"
 
 log "preparing verified SPIRE and OVN-Kubernetes charts"
 CNI_PLUGIN=ovn-kubernetes BUNDLE_ARCH="${host_arch}" bash hack/ci/prepare-capd-bundles.sh "${BUNDLE_DIR}"
-OVN_CHARTS_DEB="${BUNDLE_DIR}/nvke-cni-ovn-charts-1.4.0_1.4.0_${host_arch}.deb"
+OVN_CHARTS_DEB="${BUNDLE_DIR}/nvke-cni-ovn-charts-1.6.0_1.6.0_${host_arch}.deb"
 [[ -f "${OVN_CHARTS_DEB}" ]] || {
   log "OVN charts package was not produced: ${OVN_CHARTS_DEB}" >&2
   exit 1
@@ -857,7 +860,7 @@ NODE_AGENT_VERSION="${NODE_AGENT_VERSION}" \
 NODE_AGENT_REPO_PATH="${WORKSPACE_ROOT}/agent" \
 SPIRE_AGENT_BUNDLE_PATH="${BUNDLE_DIR}/spire-agent.tgz" \
 CAPD_CNI_CHARTS_DEB_PATH="${OVN_CHARTS_DEB}" \
-CAPD_CNI_IMAGES_DEB_PATH="${BUNDLE_DIR}/nvke-cni-ovn-images-1.4.0_1.4.0_${host_arch}.deb" \
+CAPD_CNI_IMAGES_DEB_PATH="${BUNDLE_DIR}/nvke-cni-ovn-images-1.6.0_1.6.0_${host_arch}.deb" \
 CAPD_HELM_DEB_PATH="${BUNDLE_DIR}/nke-e2e-helm.deb" \
 CAPD_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
 BUNDLE_SERVER_URL="http://${BUNDLE_MIRROR_NAME}/" \

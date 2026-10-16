@@ -37,6 +37,10 @@ concurrency:
   group: Unit Tests OS-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# A module fetch the proxy drops mid-stream falls back to the module's origin (#1481).
+env:
+  GOPROXY: https://proxy.golang.org|direct
+
 jobs:
   test:
     name: make test (${{ matrix.os }})

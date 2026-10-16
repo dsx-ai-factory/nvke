@@ -57,7 +57,7 @@ const (
 	ovnKubernetesHelmChartDir = "/etc/dgx/ovn-kubernetes"
 	// defaultOvnCniChartStream is the OVN Kubernetes chart stream baked into Debian package names
 	// when InstallCNIRequest.version is empty. Sync with OVN_STREAMS in os-image/packages/cni-ovn/Makefile.
-	defaultOvnCniChartStream = "1.4.0"
+	defaultOvnCniChartStream = "1.6.0"
 	// defaultCalicoCniStream is the Calico patch stream in Debian package names when version is empty.
 	// Sync with CALICO_STREAM in cni-packages debs/calico/BUILD.
 	defaultCalicoCniStream = "3.30.1"
@@ -69,16 +69,16 @@ const (
 	cniPluginTigera = "tigera"
 
 	// OVN Helm overrides for container nodes (CAPD and NICo). A dummy br-ex with
-	// no uplink and local gateway mode preserves Docker's management eth0.
-	// The kernel datapath sends Geneve through the route on that interface.
-	// These keys are chart values:
-	// https://github.com/ovn-kubernetes/ovn-kubernetes/blob/v1.4.0/helm/ovn-kubernetes/values-single-node-zone.yaml
+	// no uplink preserves Docker's management eth0. The kernel datapath sends
+	// Geneve through the route on that interface. --allow-no-uplink needs local
+	// gateway mode. The dsx-ai-factory chart hard-codes OVN_GATEWAY_MODE=shared
+	// and has no global.gatewayMode, but appends global.gatewayOptions after
+	// --gateway-mode, so the mode is overridden there:
+	// https://github.com/dsx-ai-factory/ovn-kubernetes/blob/release-1.6.0/charts/ovn-kubernetes/values.yaml
 	ovnDummyGatewayBridgeHelmValue = "global.dummyGatewayBridge"
 	ovnDummyGatewayBridgeEnabled   = "true"
-	ovnGatewayModeHelmValue        = "global.gatewayMode"
-	ovnLocalGatewayMode            = "local"
-	ovnGatewayOptsHelmValue        = "global.gatewayOpts"
-	ovnDummyGatewayOpts            = "--gateway-interface=br-ex --allow-no-uplink"
+	ovnGatewayOptsHelmValue        = "global.gatewayOptions"
+	ovnDummyGatewayOpts            = "--gateway-mode=local --gateway-interface=br-ex --allow-no-uplink"
 )
 
 // checkHostOpenVSwitchReady verifies ovs-vsctl is installed (ovs-vsctl --version).
@@ -210,11 +210,14 @@ func helmValuesFileArgs(chartDir string) []string {
 }
 
 // ovnRegistryHelmValue is the controller's registry-override CniConfig key (shared with Calico);
-// the upstream OVN chart has no global.registry, so it is rewritten to global.image.repository.
+// the OVN chart has no global.registry, so it is rewritten to global.imageRepositoryPrefix.
 const ovnRegistryHelmValue = "global.registry"
 
-// ovnStagedImageRepository reads global.image.repository from the values-nke.yaml bundle.sh wrote,
-// the one place the packaged image's name lives.
+// ovnImagePrefixHelmValue is the chart value every registry-less image.repository is prefixed with.
+const ovnImagePrefixHelmValue = "global.imageRepositoryPrefix"
+
+// ovnStagedImageRepository reads global.imageRepositoryPrefix from the values-nke.yaml bundle.sh wrote,
+// the one place the packaged image's registry path lives.
 func ovnStagedImageRepository(chartDir string) (string, error) {
 	valuesFile := ovnValuesFilename
 	raw, err := os.ReadFile(filepath.Join(chartDir, valuesFile))
@@ -227,19 +230,19 @@ func ovnStagedImageRepository(chartDir string) (string, error) {
 	}
 	var v struct {
 		Global struct {
-			Image struct{ Repository string }
+			ImageRepositoryPrefix string `yaml:"imageRepositoryPrefix"`
 		}
 	}
 	if err := yaml.Unmarshal(raw, &v); err != nil {
 		return "", fmt.Errorf("parsing %s: %w", valuesFile, err)
 	}
-	if !strings.Contains(v.Global.Image.Repository, "/") {
-		return "", fmt.Errorf("%s global.image.repository %q has no registry host", valuesFile, v.Global.Image.Repository)
+	if !strings.Contains(v.Global.ImageRepositoryPrefix, "/") {
+		return "", fmt.Errorf("%s global.imageRepositoryPrefix %q has no registry host", valuesFile, v.Global.ImageRepositoryPrefix)
 	}
-	return v.Global.Image.Repository, nil
+	return v.Global.ImageRepositoryPrefix, nil
 }
 
-// ovnImageRepository swaps the registry host of upstreamRepo for a mirror prefix, keeping the path.
+// ovnImageRepository swaps the registry host of the staged prefix for a mirror, keeping the path.
 func ovnImageRepository(registry, upstreamRepo string) string {
 	_, path, _ := strings.Cut(upstreamRepo, "/")
 	return strings.TrimRight(registry, "/") + "/" + path
@@ -253,15 +256,12 @@ func ovnKubernetesCNIConfig(cniConfig map[string]string, datapathType string) ma
 		return cniConfig
 	}
 
-	config := make(map[string]string, len(cniConfig)+3)
+	config := make(map[string]string, len(cniConfig)+2)
 	for key, value := range cniConfig {
 		config[key] = value
 	}
 	if _, ok := config[ovnDummyGatewayBridgeHelmValue]; !ok {
 		config[ovnDummyGatewayBridgeHelmValue] = ovnDummyGatewayBridgeEnabled
-	}
-	if _, ok := config[ovnGatewayModeHelmValue]; !ok {
-		config[ovnGatewayModeHelmValue] = ovnLocalGatewayMode
 	}
 	if _, ok := config[ovnGatewayOptsHelmValue]; !ok {
 		config[ovnGatewayOptsHelmValue] = ovnDummyGatewayOpts
@@ -302,14 +302,14 @@ func buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serv
 		"--set", "serviceNetwork="+serviceCidr,
 	)
 	if imageRegistry != "" {
-		args = append(args, "--set", "global.image.repository="+ovnImageRepository(imageRegistry, upstreamRepo))
+		args = append(args, "--set", ovnImagePrefixHelmValue+"="+ovnImageRepository(imageRegistry, upstreamRepo))
 	}
 	for key, value := range cniConfig {
 		if key == "" {
 			continue
 		}
 		if key == ovnRegistryHelmValue {
-			key = "global.image.repository"
+			key = ovnImagePrefixHelmValue
 			value = ovnImageRepository(value, upstreamRepo)
 		}
 		if value == "" {
@@ -491,8 +491,8 @@ func alternateCniDebName(binPkg string) string {
 
 // nvkeCniAptSpec builds an apt install spec for the discrete NVKE CNI packages.
 //
-// OVN Debian names include the Helm chart stream, e.g. nvke-cni-ovn-images-1.4.0 and
-// nvke-cni-ovn-charts-1.4.0. Request version (after stripping a leading "v") selects that
+// OVN Debian names include the Helm chart stream, e.g. nvke-cni-ovn-images-1.6.0 and
+// nvke-cni-ovn-charts-1.6.0. Request version (after stripping a leading "v") selects that
 // stream; when empty, defaultOvnCniChartStream is used. Non-empty version also appends
 // =<version> for an apt equality pin on the Debian package version.
 //
