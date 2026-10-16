@@ -4,7 +4,7 @@ This directory holds release and qualification tooling: the orchestration that
 takes a candidate set of already-built artifacts and resolves what a
 qualification run would cover.
 
-> `qualify plan` resolves a real plan from the repository's tags and writes it as
+> `qualify plan` resolves a real plan from the repository and the places its
 > `plan.json`, and `qualify verify` checks that everything the plan names is
 > published. The [`qualify-e2e` workflow](../.github/workflows/qualify-e2e.yml)
 > runs both and qualifies one job per stream.
@@ -58,7 +58,7 @@ With `--wait` it then retries each one for the whole budget before failing.
 | `--scope` | `full` | How much of the matrix to cover, a scope from `policy.yaml` |
 | `--output` | `-` | Where to write the plan. `-` is stdout |
 | `--resolution` | `commitDescribe` | How to resolve the components, named for the strategy that answers. `commitDescribe` describes each at the commit the subject's version points at, which is how a beta is qualified. `gitTag` takes each from its own release tags, and a release qualification selects it |
-| `--check-exists` | off | Ask for each location this resolves and require it to be published. Off keeps planning to git alone |
+| `--check-exists` | off | Ask for each location this resolves and require it to be published. Off leaves the question to `qualify verify` |
 | `--root`, `--policy`, `--registry` | the enclosing checkout and the files under `release/` | Where to read the repository and the two files from |
 
 Without `--version` the subject resolves the way every component does, to the
@@ -79,9 +79,10 @@ the shape and a run supplies the value. An unset or empty variable fails on the
 file that asked for it, with every missing name at once, rather than producing a
 plan that names an artifact under no org.
 
-Planning reaches nothing but git. Whether each artifact is published is asked
-once, by `qualify verify`, for everything the plan names. `--check-exists` asks
-during resolution instead, which needs a network that can reach the bucket: it is
+Planning reads the checkout and, for `aptPackage`, the apt suites that serve
+the package. It asks for nothing else. Whether each artifact is published is
+asked once, by `qualify verify`, for everything the plan names. `--check-exists`
+asks during resolution instead, which needs a network that can reach the bucket: it is
 private, so a missing artifact and a network that is not allowed both answer 403,
 and the check can confirm that an artifact exists but not that it does not.
 
@@ -167,7 +168,9 @@ $ go run ./release/cmd/qualify plan --subject nvke --version v0.21.0 --scope ful
 - The `plan` job runs `qualify plan --subject nvke`. The dispatch inputs and
   `QUALIFY_E2E_*` repository variables that name a version are passed as
   `--overrides`, so the plan records them and a job never has to guess which of
-  the two it was handed. A beta tag push passes `--resolution commitDescribe`.
+  the two it was handed. `--resolution` is `commitDescribe` unless `gitTag` is
+  selected by input or by `QUALIFY_E2E_RESOLUTION`, and a beta tag push takes
+  `commitDescribe` whatever the variable says.
   The plan is uploaded as an artifact.
 - The `verify` job runs `qualify verify` on that plan before any machine is
   taken, so an artifact that was never published fails there rather than an hour

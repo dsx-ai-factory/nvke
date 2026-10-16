@@ -31,7 +31,10 @@ metadata:
   description: How each component resolves to a version and a location.
 spec:
   # Where artifacts are published. A location names a source, so each is stated
-  # once and appears in no other file.
+  # once here. The apt base is the exception: the e2e pre-kubeadm commands write
+  # their own sources.list on the node, so that one string is also in
+  # controller/test/e2e/internal/nvke/nico_forge_prekubeadm.tmpl and the two
+  # move together.
   sources:
     - {name: artifact-cdn, base: https://d1veq6e8nuk2fy.cloudfront.net}
     # Where the Debian packages a node installs are served from. One suite

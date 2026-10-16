@@ -216,9 +216,16 @@ func (a AptPackage) fetch(url string) (string, error) {
 		defer gz.Close()
 		r = gz
 	}
-	body, err := io.ReadAll(io.LimitReader(r, aptIndexLimit))
+	// One past the limit, so a reply that reaches it is known to be over rather
+	// than exactly at it, and is reported instead of being silently truncated.
+	// A truncated index resolves from part of a suite, which is the one answer
+	// worse than no answer.
+	body, err := io.ReadAll(io.LimitReader(r, aptIndexLimit+1))
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", url, err)
+	}
+	if len(body) > aptIndexLimit {
+		return "", fmt.Errorf("%s: larger than %d bytes, which is not an index", url, aptIndexLimit)
 	}
 	return string(body), nil
 }
