@@ -240,7 +240,8 @@ already use the pending key as their primary (from `promote_primary` on) or have
 dropped the old key (from `remove_old_keys` on). A node that joined then would bootstrap with the
 old key alone and could not read objects written with the new one. The lock
 therefore defers control-plane joins, scale-up, remediation, and node deletes
-until the original workflow finishes. Cluster deletion is always accepted.
+until the original workflow finishes. Cluster deletion is always accepted, and
+so is teardown of a node retired as permanently lost (see below).
 
 For these retained-lock failures, first fix connectivity, authorization, reload,
 or rewrite prerequisites. Inspect the owning workflow and nodes while keeping
@@ -346,6 +347,64 @@ back after a reset, so it does not prove that no node uses the new key. Restore
 the lost host with the same node identity and reset the workflow as described
 above, or restore the cluster from backup.
 
+If the host cannot return, retire it instead while the rotation is failed in
+`add_secondary`, `promote_primary`, `rewrite` or `remove_old_keys`. Retiring
+removes the lost node, finishes the rotation on the surviving members, and
+replaces the node only after the lock is released:
+
+1. Confirm the owning workflow is closed and recorded `state: failed`. Cancel a
+   stuck execution rather than terminating it, so its cleanup records the
+   failure. Confirm no key update or rewrite is still running on a survivor.
+2. Start the operator workflow `RetireLostEtcdRotationNode` with a new workflow
+   ID, in the same namespace and task queue as the rotation:
+
+   ```bash
+   temporal workflow start \
+     --address "$rotation_temporal_address" \
+     --namespace "$rotation_temporal_namespace" \
+     --type RetireLostEtcdRotationNode \
+     --task-queue "$rotation_task_queue" \
+     --workflow-id "retire-etcd-rotation-node-${lost_node_id}-$(date -u +%Y%m%dT%H%M%SZ)" \
+     --input "{\"clusterID\":\"$rotation_cluster_id\",\"rotationWorkflowID\":\"$rotation_workflow_id\",\"nodeID\":\"$lost_node_id\"}"
+   ```
+
+   In one transaction under the cluster row lock it checks that the lock and the
+   recorded rotation belong to `rotationWorkflowID`, that the rotation failed in
+   one of the phases above, that the node is a joined control-plane node of the
+   cluster with neither `NodeAgentReady` nor `KubernetesReady` true, that its
+   agent does not answer a live probe, that no other control-plane removal is in
+   flight, and that the remaining ready members keep an etcd quorum. It then
+   records the node under the rotation's retired nodes, marks it deleting, and
+   writes a credential audit event (`rotate`, `etcd_encryption_key`, reason
+   `node_retired`, with the node and failed phase). Any refusal changes nothing
+   and is audited as a failure. A repeat is an audited no-op that resumes the
+   teardown.
+3. The workflow then runs `TeardownNode` for that node only, with the unreachable
+   path. Its etcd member removal runs on a survivor and keeps its quorum guard.
+   Only this node passes the rotation fence; joins, scale-up, upgrades and every
+   other node stay blocked. Wait for the retire workflow to complete and the node
+   to disappear from `GET /api/nodes`. If teardown fails, fix the cause and start
+   the retire workflow again.
+4. Reset the owning rotation workflow to the `WorkflowTaskCompleted` event that
+   scheduled `PrepareEtcdEncryptionKeyRotation`, the task right after Begin. Only
+   this boundary snapshots the surviving members and picks a surviving rewrite
+   executor; a later boundary replays the old snapshot and fails again. The run
+   reuses the staged pending key, skips key changes that a node already has,
+   runs the rewrite again (allow its full duration), and requires live etcd
+   membership to equal the survivors before it removes any old key. A survivor
+   holding the checkpoint of another key update rejects the run without changes;
+   recover that operation first.
+5. Completion releases the lock. The control-plane controller then creates the
+   replacement, which joins with the finalized key.
+
+A retired node lost from the rotation is recorded in the cluster's
+`etcdKeyRotation` database status and in the audit ledger; the REST status does
+not list it. Until the rotation completes the control plane runs with one fewer
+etcd member. Retiring is refused in `finalize`: finalization does not contact
+nodes, so reset at the failed finalize activity; completion releases the lock
+and remediation then replaces the node. If the survivors cannot keep a ready
+quorum, restore etcd from backup.
+
 Record the original and reset run IDs, chosen event ID, rationale, and results.
 Do not publish full history dumps from unrelated workflows; retain only reviewed,
 sanitized rotation evidence. If the pending/active key state no longer matches
@@ -403,7 +462,8 @@ required create specification.
 
 Local regression coverage exercises owner/phase retry idempotency, Kubernetes
 version admission, prepare-failure lock release and pending-key reuse, later-phase
-failed-lock retention, delayed cleanup, reset finalization, all workflow failure
+failed-lock retention, lost-node retirement and its refusals, the retired node's
+fence exemption, delayed cleanup, reset finalization, all workflow failure
 phases, legacy command paths, secret-safe error boundaries, and the verifier's detection
 of unchanged keys, stale API primaries, payload/read/write failures, and plaintext.
 Those tests establish code behavior, not live qualification.

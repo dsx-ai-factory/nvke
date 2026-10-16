@@ -38,15 +38,24 @@ func (a *Activities) reserveControlPlaneCleanup(ctx context.Context, node db.Nod
 		return nil
 	}
 	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
-		if err := controlPlaneMutationLock(ctx, tx, node); err != nil {
-			return err
+		cluster, err := tx.GetClusterForUpdate(ctx, node.ClusterID)
+		if err != nil {
+			return fmt.Errorf("locking cluster for control-plane cleanup: %w", err)
+		}
+		if db.ControlPlaneNodeRemovalBlocked(cluster, node.ID) {
+			return db.ErrControlPlaneMutationBlocked
 		}
 		locked, err := tx.GetNodeForUpdate(ctx, node.ID)
 		if err != nil {
 			return fmt.Errorf("locking control-plane cleanup node: %w", err)
 		}
-		if locked.Conditions.Joined.Status != db.ConditionStatusTrue &&
-			locked.Conditions.Deleting.Status != db.ConditionStatusTrue {
+		// A node retired from a failed etcd key rotation passes the fence only for
+		// its teardown, never for a pre-join cleanup that would precede a join.
+		removing := locked.Conditions.Deleting.Status == db.ConditionStatusTrue
+		if !removing && db.ControlPlaneMutationBlocked(cluster) {
+			return db.ErrControlPlaneMutationBlocked
+		}
+		if locked.Conditions.Joined.Status != db.ConditionStatusTrue && !removing {
 			db.SetCondition(&locked.Conditions.Provisioning, db.NewCondition(true, "Control-plane pre-join cleanup is in progress"))
 		} else {
 			db.SetCondition(&locked.Conditions.Deleting, db.NewCondition(true, "Control-plane deletion is in progress"))
@@ -65,6 +74,22 @@ func controlPlaneMutationLock(ctx context.Context, tx db.Tx, node db.Node) error
 		return fmt.Errorf("locking cluster for control-plane mutation: %w", err)
 	}
 	if db.ControlPlaneMutationBlocked(cluster) {
+		return db.ErrControlPlaneMutationBlocked
+	}
+	return nil
+}
+
+// controlPlaneRemovalLock admits only steps that remove node, including a node
+// retired from a failed etcd key rotation; see db.ControlPlaneNodeRemovalBlocked.
+func controlPlaneRemovalLock(ctx context.Context, tx db.Tx, node db.Node) error {
+	if !node.ControlPlane {
+		return nil
+	}
+	cluster, err := tx.GetClusterForUpdate(ctx, node.ClusterID)
+	if err != nil {
+		return fmt.Errorf("locking cluster for control-plane removal: %w", err)
+	}
+	if db.ControlPlaneNodeRemovalBlocked(cluster, node.ID) {
 		return db.ErrControlPlaneMutationBlocked
 	}
 	return nil

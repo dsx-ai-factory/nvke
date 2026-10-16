@@ -51,6 +51,13 @@ func TestNewHasStableSemanticIDAndDoesNotMutateInput(t *testing.T) {
 	require.NotEqual(t, third.ID, fourth.ID)
 }
 
+func TestNewAcceptsRetiredRotationNode(t *testing.T) {
+	input := validEvent()
+	input.Action, input.Credential, input.Reason, input.Phase = ActionRotate, TypeEtcdKey, ReasonNodeRetired, "rewrite"
+	_, err := New(input)
+	require.NoError(t, err)
+}
+
 func TestNewRejectsUnallowlistedAndPrivateFields(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -5,6 +5,8 @@ package db
 
 import (
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // EtcdKeyRotationState is the state of the last data-encryption-key rotation.
@@ -62,4 +64,28 @@ type EtcdKeyRotationStatus struct {
 	LastProgressAt time.Time                    `json:"lastProgressAt"`
 	CompletedAt    *time.Time                   `json:"completedAt,omitempty"`
 	FailureReason  EtcdKeyRotationFailureReason `json:"failureReason,omitempty"`
+	// RetiredNodes lists control-plane nodes an operator declared permanently
+	// lost while this failed rotation held the lock. Only their removal may pass
+	// the retained fence; the rotation must then converge on the survivors.
+	RetiredNodes []RetiredEtcdKeyRotationNode `json:"retiredNodes,omitempty"`
+}
+
+// RetiredEtcdKeyRotationNode records one operator-declared lost node.
+type RetiredEtcdKeyRotationNode struct {
+	NodeID    uuid.UUID            `json:"nodeID"`
+	RetiredAt time.Time            `json:"retiredAt"`
+	Phase     EtcdKeyRotationPhase `json:"phase"`
+}
+
+// RetiresNode reports whether nodeID was declared lost for this rotation.
+func (s *EtcdKeyRotationStatus) RetiresNode(nodeID uuid.UUID) bool {
+	if s == nil {
+		return false
+	}
+	for _, retired := range s.RetiredNodes {
+		if retired.NodeID == nodeID {
+			return true
+		}
+	}
+	return false
 }
