@@ -39,7 +39,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 
 | Item | Supported | Notes |
 |---|---|---|
-| Operating system | Ubuntu 26.04.1 LTS | Pinned. NVKR builds the node image from the Ubuntu 26.04.1 server installer, pinned by digest. |
+| Operating system | Ubuntu 26.04.1 LTS or Ubuntu 24.04.5 LTS | Pinned to these two point releases. Both are built, published and qualified; no other release is supported. 26.04.1 is the default. NVKR builds the node image from the Ubuntu server installer for the release you select. |
 | CPU architectures | amd64, arm64 | NVKR has a node image Definition for each architecture. |
 | Kernel | `linux-nvidia` on amd64, `linux-nvidia-64k` on arm64 | Ubuntu's NVIDIA-tuned kernel flavors. |
 | Full-disk encryption (FDE) | FDE node image, amd64 and arm64, for evaluation only | NVKR's hosted pipeline is configured to build `nvke-node-fde-amd64` and `nvke-node-fde-arm64`, with the root volume on LUKS2. A local build with NVKR's `scripts/nvke-os-local.sh` produces only the image without FDE. Nodes built from one FDE image share its volume encryption key, so the image does not protect data at rest; see [Preview status and known limitations](preview-status.md#building-artifacts). |
