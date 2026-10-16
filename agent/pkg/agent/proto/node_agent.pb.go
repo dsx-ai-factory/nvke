@@ -551,7 +551,7 @@ func (x ReconfigureKubeletAPIServerResponse_Outcome) Number() protoreflect.EnumN
 
 // Deprecated: Use ReconfigureKubeletAPIServerResponse_Outcome.Descriptor instead.
 func (ReconfigureKubeletAPIServerResponse_Outcome) EnumDescriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{98, 0}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{96, 0}
 }
 
 type KubeadmUpgradeApplyResponse_Outcome int32
@@ -597,7 +597,7 @@ func (x KubeadmUpgradeApplyResponse_Outcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use KubeadmUpgradeApplyResponse_Outcome.Descriptor instead.
 func (KubeadmUpgradeApplyResponse_Outcome) EnumDescriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{100, 0}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{98, 0}
 }
 
 type ReconcileKubeVipRequest_BGPPeerASNSource int32
@@ -648,7 +648,7 @@ func (x ReconcileKubeVipRequest_BGPPeerASNSource) Number() protoreflect.EnumNumb
 
 // Deprecated: Use ReconcileKubeVipRequest_BGPPeerASNSource.Descriptor instead.
 func (ReconcileKubeVipRequest_BGPPeerASNSource) EnumDescriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{101, 0}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{99, 0}
 }
 
 type ReconcileKubeVipResponse_Outcome int32
@@ -700,7 +700,7 @@ func (x ReconcileKubeVipResponse_Outcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ReconcileKubeVipResponse_Outcome.Descriptor instead.
 func (ReconcileKubeVipResponse_Outcome) EnumDescriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{102, 0}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{100, 0}
 }
 
 type KubernetesCertificateRenewalOperation_Outcome int32
@@ -763,7 +763,7 @@ func (x KubernetesCertificateRenewalOperation_Outcome) Number() protoreflect.Enu
 
 // Deprecated: Use KubernetesCertificateRenewalOperation_Outcome.Descriptor instead.
 func (KubernetesCertificateRenewalOperation_Outcome) EnumDescriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{107, 0}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{105, 0}
 }
 
 type OpenVSwitchReconciliationResult_Outcome int32
@@ -812,7 +812,7 @@ func (x OpenVSwitchReconciliationResult_Outcome) Number() protoreflect.EnumNumbe
 
 // Deprecated: Use OpenVSwitchReconciliationResult_Outcome.Descriptor instead.
 func (OpenVSwitchReconciliationResult_Outcome) EnumDescriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{110, 0}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{108, 0}
 }
 
 type OpenVSwitchReconciliationResult_NetworkBackend int32
@@ -861,7 +861,7 @@ func (x OpenVSwitchReconciliationResult_NetworkBackend) Number() protoreflect.En
 
 // Deprecated: Use OpenVSwitchReconciliationResult_NetworkBackend.Descriptor instead.
 func (OpenVSwitchReconciliationResult_NetworkBackend) EnumDescriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{110, 1}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{108, 1}
 }
 
 type GetSupportBundleRequest struct {
@@ -4292,99 +4292,6 @@ func (x *WriteNodeAgentConfigResponse) GetCode() int32 {
 	return 0
 }
 
-type RestartAPIPodsRequest struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-}
-
-func (x *RestartAPIPodsRequest) Reset() {
-	*x = RestartAPIPodsRequest{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[54]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *RestartAPIPodsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RestartAPIPodsRequest) ProtoMessage() {}
-
-func (x *RestartAPIPodsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[54]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RestartAPIPodsRequest.ProtoReflect.Descriptor instead.
-func (*RestartAPIPodsRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{54}
-}
-
-type RestartAPIPodsResponse struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Status       string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
-	ErrorMessage string `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-}
-
-func (x *RestartAPIPodsResponse) Reset() {
-	*x = RestartAPIPodsResponse{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[55]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *RestartAPIPodsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RestartAPIPodsResponse) ProtoMessage() {}
-
-func (x *RestartAPIPodsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[55]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RestartAPIPodsResponse.ProtoReflect.Descriptor instead.
-func (*RestartAPIPodsResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{55}
-}
-
-func (x *RestartAPIPodsResponse) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *RestartAPIPodsResponse) GetErrorMessage() string {
-	if x != nil {
-		return x.ErrorMessage
-	}
-	return ""
-}
-
 type ScriptOutputChunk struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -4399,7 +4306,7 @@ type ScriptOutputChunk struct {
 func (x *ScriptOutputChunk) Reset() {
 	*x = ScriptOutputChunk{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[56]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[54]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4412,7 +4319,7 @@ func (x *ScriptOutputChunk) String() string {
 func (*ScriptOutputChunk) ProtoMessage() {}
 
 func (x *ScriptOutputChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[56]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[54]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4425,7 +4332,7 @@ func (x *ScriptOutputChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScriptOutputChunk.ProtoReflect.Descriptor instead.
 func (*ScriptOutputChunk) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{56}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ScriptOutputChunk) GetOutput() string {
@@ -4467,7 +4374,7 @@ type SetUnsetIsMasterRequest struct {
 func (x *SetUnsetIsMasterRequest) Reset() {
 	*x = SetUnsetIsMasterRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[57]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[55]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4480,7 +4387,7 @@ func (x *SetUnsetIsMasterRequest) String() string {
 func (*SetUnsetIsMasterRequest) ProtoMessage() {}
 
 func (x *SetUnsetIsMasterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[57]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[55]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4493,7 +4400,7 @@ func (x *SetUnsetIsMasterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetUnsetIsMasterRequest.ProtoReflect.Descriptor instead.
 func (*SetUnsetIsMasterRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{57}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *SetUnsetIsMasterRequest) GetIsMaster() bool {
@@ -4515,7 +4422,7 @@ type SetUnsetIsMasterResponse struct {
 func (x *SetUnsetIsMasterResponse) Reset() {
 	*x = SetUnsetIsMasterResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[58]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[56]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4528,7 +4435,7 @@ func (x *SetUnsetIsMasterResponse) String() string {
 func (*SetUnsetIsMasterResponse) ProtoMessage() {}
 
 func (x *SetUnsetIsMasterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[58]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[56]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4541,7 +4448,7 @@ func (x *SetUnsetIsMasterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetUnsetIsMasterResponse.ProtoReflect.Descriptor instead.
 func (*SetUnsetIsMasterResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{58}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *SetUnsetIsMasterResponse) GetStatus() string {
@@ -4573,7 +4480,7 @@ type InstallBundleRequest struct {
 func (x *InstallBundleRequest) Reset() {
 	*x = InstallBundleRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[59]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[57]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4586,7 +4493,7 @@ func (x *InstallBundleRequest) String() string {
 func (*InstallBundleRequest) ProtoMessage() {}
 
 func (x *InstallBundleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[59]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[57]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4599,7 +4506,7 @@ func (x *InstallBundleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallBundleRequest.ProtoReflect.Descriptor instead.
 func (*InstallBundleRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{59}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *InstallBundleRequest) GetName() string {
@@ -4650,7 +4557,7 @@ type InstallBundleResponse struct {
 func (x *InstallBundleResponse) Reset() {
 	*x = InstallBundleResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[60]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[58]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4663,7 +4570,7 @@ func (x *InstallBundleResponse) String() string {
 func (*InstallBundleResponse) ProtoMessage() {}
 
 func (x *InstallBundleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[60]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[58]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4676,7 +4583,7 @@ func (x *InstallBundleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallBundleResponse.ProtoReflect.Descriptor instead.
 func (*InstallBundleResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{60}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *InstallBundleResponse) GetStatus() string {
@@ -4711,7 +4618,7 @@ type GetBundleStatusRequest struct {
 func (x *GetBundleStatusRequest) Reset() {
 	*x = GetBundleStatusRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[61]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[59]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4724,7 +4631,7 @@ func (x *GetBundleStatusRequest) String() string {
 func (*GetBundleStatusRequest) ProtoMessage() {}
 
 func (x *GetBundleStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[61]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[59]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4737,7 +4644,7 @@ func (x *GetBundleStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBundleStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetBundleStatusRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{61}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *GetBundleStatusRequest) GetRequestId() string {
@@ -4766,7 +4673,7 @@ type BundleStatus struct {
 func (x *BundleStatus) Reset() {
 	*x = BundleStatus{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[62]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[60]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4779,7 +4686,7 @@ func (x *BundleStatus) String() string {
 func (*BundleStatus) ProtoMessage() {}
 
 func (x *BundleStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[62]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[60]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4792,7 +4699,7 @@ func (x *BundleStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BundleStatus.ProtoReflect.Descriptor instead.
 func (*BundleStatus) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{62}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *BundleStatus) GetRequestId() string {
@@ -4862,7 +4769,7 @@ type GetBundleStatusResponse struct {
 func (x *GetBundleStatusResponse) Reset() {
 	*x = GetBundleStatusResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[63]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[61]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4875,7 +4782,7 @@ func (x *GetBundleStatusResponse) String() string {
 func (*GetBundleStatusResponse) ProtoMessage() {}
 
 func (x *GetBundleStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[63]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[61]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4888,7 +4795,7 @@ func (x *GetBundleStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBundleStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetBundleStatusResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{63}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *GetBundleStatusResponse) GetStatuses() []*BundleStatus {
@@ -4910,7 +4817,7 @@ type InstallCollectionRequest struct {
 func (x *InstallCollectionRequest) Reset() {
 	*x = InstallCollectionRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[64]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[62]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4923,7 +4830,7 @@ func (x *InstallCollectionRequest) String() string {
 func (*InstallCollectionRequest) ProtoMessage() {}
 
 func (x *InstallCollectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[64]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[62]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4936,7 +4843,7 @@ func (x *InstallCollectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallCollectionRequest.ProtoReflect.Descriptor instead.
 func (*InstallCollectionRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{64}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *InstallCollectionRequest) GetCollectionURL() string {
@@ -4964,7 +4871,7 @@ type InstallCollectionResponse struct {
 func (x *InstallCollectionResponse) Reset() {
 	*x = InstallCollectionResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[65]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[63]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4977,7 +4884,7 @@ func (x *InstallCollectionResponse) String() string {
 func (*InstallCollectionResponse) ProtoMessage() {}
 
 func (x *InstallCollectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[65]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[63]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4990,7 +4897,7 @@ func (x *InstallCollectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallCollectionResponse.ProtoReflect.Descriptor instead.
 func (*InstallCollectionResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{65}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *InstallCollectionResponse) GetRequestId() string {
@@ -5018,7 +4925,7 @@ type InstallPackagesRequest struct {
 func (x *InstallPackagesRequest) Reset() {
 	*x = InstallPackagesRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[66]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[64]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5031,7 +4938,7 @@ func (x *InstallPackagesRequest) String() string {
 func (*InstallPackagesRequest) ProtoMessage() {}
 
 func (x *InstallPackagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[66]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[64]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5044,7 +4951,7 @@ func (x *InstallPackagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallPackagesRequest.ProtoReflect.Descriptor instead.
 func (*InstallPackagesRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{66}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *InstallPackagesRequest) GetPackages() []string {
@@ -5079,7 +4986,7 @@ type InstallPackagesResponse struct {
 func (x *InstallPackagesResponse) Reset() {
 	*x = InstallPackagesResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[67]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[65]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5092,7 +4999,7 @@ func (x *InstallPackagesResponse) String() string {
 func (*InstallPackagesResponse) ProtoMessage() {}
 
 func (x *InstallPackagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[67]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[65]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5105,7 +5012,7 @@ func (x *InstallPackagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallPackagesResponse.ProtoReflect.Descriptor instead.
 func (*InstallPackagesResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{67}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *InstallPackagesResponse) GetRequestId() string {
@@ -5131,7 +5038,7 @@ type NodeAgentUpgradeOperation struct {
 func (x *NodeAgentUpgradeOperation) Reset() {
 	*x = NodeAgentUpgradeOperation{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[68]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[66]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5144,7 +5051,7 @@ func (x *NodeAgentUpgradeOperation) String() string {
 func (*NodeAgentUpgradeOperation) ProtoMessage() {}
 
 func (x *NodeAgentUpgradeOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[68]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[66]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5157,7 +5064,7 @@ func (x *NodeAgentUpgradeOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeAgentUpgradeOperation.ProtoReflect.Descriptor instead.
 func (*NodeAgentUpgradeOperation) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{68}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *NodeAgentUpgradeOperation) GetTargetVersion() string {
@@ -5215,7 +5122,7 @@ type StartNodeAgentUpgradeRequest struct {
 func (x *StartNodeAgentUpgradeRequest) Reset() {
 	*x = StartNodeAgentUpgradeRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[69]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[67]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5228,7 +5135,7 @@ func (x *StartNodeAgentUpgradeRequest) String() string {
 func (*StartNodeAgentUpgradeRequest) ProtoMessage() {}
 
 func (x *StartNodeAgentUpgradeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[69]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[67]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5241,7 +5148,7 @@ func (x *StartNodeAgentUpgradeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartNodeAgentUpgradeRequest.ProtoReflect.Descriptor instead.
 func (*StartNodeAgentUpgradeRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{69}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *StartNodeAgentUpgradeRequest) GetTargetVersion() string {
@@ -5269,7 +5176,7 @@ type StartNodeAgentUpgradeResponse struct {
 func (x *StartNodeAgentUpgradeResponse) Reset() {
 	*x = StartNodeAgentUpgradeResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[70]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[68]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5282,7 +5189,7 @@ func (x *StartNodeAgentUpgradeResponse) String() string {
 func (*StartNodeAgentUpgradeResponse) ProtoMessage() {}
 
 func (x *StartNodeAgentUpgradeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[70]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[68]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5295,7 +5202,7 @@ func (x *StartNodeAgentUpgradeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartNodeAgentUpgradeResponse.ProtoReflect.Descriptor instead.
 func (*StartNodeAgentUpgradeResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{70}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *StartNodeAgentUpgradeResponse) GetOperation() *NodeAgentUpgradeOperation {
@@ -5314,7 +5221,7 @@ type GetNodeAgentUpgradeStatusRequest struct {
 func (x *GetNodeAgentUpgradeStatusRequest) Reset() {
 	*x = GetNodeAgentUpgradeStatusRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[71]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[69]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5327,7 +5234,7 @@ func (x *GetNodeAgentUpgradeStatusRequest) String() string {
 func (*GetNodeAgentUpgradeStatusRequest) ProtoMessage() {}
 
 func (x *GetNodeAgentUpgradeStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[71]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[69]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5340,7 +5247,7 @@ func (x *GetNodeAgentUpgradeStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNodeAgentUpgradeStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetNodeAgentUpgradeStatusRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{71}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{69}
 }
 
 type GetNodeAgentUpgradeStatusResponse struct {
@@ -5355,7 +5262,7 @@ type GetNodeAgentUpgradeStatusResponse struct {
 func (x *GetNodeAgentUpgradeStatusResponse) Reset() {
 	*x = GetNodeAgentUpgradeStatusResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[72]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[70]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5368,7 +5275,7 @@ func (x *GetNodeAgentUpgradeStatusResponse) String() string {
 func (*GetNodeAgentUpgradeStatusResponse) ProtoMessage() {}
 
 func (x *GetNodeAgentUpgradeStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[72]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[70]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5381,7 +5288,7 @@ func (x *GetNodeAgentUpgradeStatusResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use GetNodeAgentUpgradeStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetNodeAgentUpgradeStatusResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{72}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *GetNodeAgentUpgradeStatusResponse) GetOperation() *NodeAgentUpgradeOperation {
@@ -5400,7 +5307,7 @@ type ListPackagesRequest struct {
 func (x *ListPackagesRequest) Reset() {
 	*x = ListPackagesRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[73]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[71]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5413,7 +5320,7 @@ func (x *ListPackagesRequest) String() string {
 func (*ListPackagesRequest) ProtoMessage() {}
 
 func (x *ListPackagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[73]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[71]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5426,7 +5333,7 @@ func (x *ListPackagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPackagesRequest.ProtoReflect.Descriptor instead.
 func (*ListPackagesRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{73}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{71}
 }
 
 type InstalledPackage struct {
@@ -5446,7 +5353,7 @@ type InstalledPackage struct {
 func (x *InstalledPackage) Reset() {
 	*x = InstalledPackage{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[74]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[72]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5459,7 +5366,7 @@ func (x *InstalledPackage) String() string {
 func (*InstalledPackage) ProtoMessage() {}
 
 func (x *InstalledPackage) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[74]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[72]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5472,7 +5379,7 @@ func (x *InstalledPackage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstalledPackage.ProtoReflect.Descriptor instead.
 func (*InstalledPackage) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{74}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *InstalledPackage) GetName() string {
@@ -5507,7 +5414,7 @@ type ListPackagesResponse struct {
 func (x *ListPackagesResponse) Reset() {
 	*x = ListPackagesResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[75]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[73]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5520,7 +5427,7 @@ func (x *ListPackagesResponse) String() string {
 func (*ListPackagesResponse) ProtoMessage() {}
 
 func (x *ListPackagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[75]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[73]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5533,7 +5440,7 @@ func (x *ListPackagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPackagesResponse.ProtoReflect.Descriptor instead.
 func (*ListPackagesResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{75}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *ListPackagesResponse) GetPackages() []*InstalledPackage {
@@ -5558,7 +5465,7 @@ type RemovePackagesRequest struct {
 func (x *RemovePackagesRequest) Reset() {
 	*x = RemovePackagesRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[76]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[74]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5571,7 +5478,7 @@ func (x *RemovePackagesRequest) String() string {
 func (*RemovePackagesRequest) ProtoMessage() {}
 
 func (x *RemovePackagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[76]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[74]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5584,7 +5491,7 @@ func (x *RemovePackagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemovePackagesRequest.ProtoReflect.Descriptor instead.
 func (*RemovePackagesRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{76}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *RemovePackagesRequest) GetPackages() []string {
@@ -5610,7 +5517,7 @@ type RemovePackagesResponse struct {
 func (x *RemovePackagesResponse) Reset() {
 	*x = RemovePackagesResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[77]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[75]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5623,7 +5530,7 @@ func (x *RemovePackagesResponse) String() string {
 func (*RemovePackagesResponse) ProtoMessage() {}
 
 func (x *RemovePackagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[77]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[75]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5636,7 +5543,7 @@ func (x *RemovePackagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemovePackagesResponse.ProtoReflect.Descriptor instead.
 func (*RemovePackagesResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{77}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{75}
 }
 
 type KubeadmPreflightRequest struct {
@@ -5653,7 +5560,7 @@ type KubeadmPreflightRequest struct {
 func (x *KubeadmPreflightRequest) Reset() {
 	*x = KubeadmPreflightRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[78]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[76]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5666,7 +5573,7 @@ func (x *KubeadmPreflightRequest) String() string {
 func (*KubeadmPreflightRequest) ProtoMessage() {}
 
 func (x *KubeadmPreflightRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[78]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[76]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5679,7 +5586,7 @@ func (x *KubeadmPreflightRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KubeadmPreflightRequest.ProtoReflect.Descriptor instead.
 func (*KubeadmPreflightRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{78}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *KubeadmPreflightRequest) GetConfig() string {
@@ -5710,7 +5617,7 @@ type PreflightCheckResult struct {
 func (x *PreflightCheckResult) Reset() {
 	*x = PreflightCheckResult{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[79]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[77]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5723,7 +5630,7 @@ func (x *PreflightCheckResult) String() string {
 func (*PreflightCheckResult) ProtoMessage() {}
 
 func (x *PreflightCheckResult) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[79]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[77]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5736,7 +5643,7 @@ func (x *PreflightCheckResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreflightCheckResult.ProtoReflect.Descriptor instead.
 func (*PreflightCheckResult) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{79}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *PreflightCheckResult) GetName() string {
@@ -5777,7 +5684,7 @@ type KubeadmPreflightResponse struct {
 func (x *KubeadmPreflightResponse) Reset() {
 	*x = KubeadmPreflightResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[80]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[78]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5790,7 +5697,7 @@ func (x *KubeadmPreflightResponse) String() string {
 func (*KubeadmPreflightResponse) ProtoMessage() {}
 
 func (x *KubeadmPreflightResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[80]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[78]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5803,7 +5710,7 @@ func (x *KubeadmPreflightResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KubeadmPreflightResponse.ProtoReflect.Descriptor instead.
 func (*KubeadmPreflightResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{80}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *KubeadmPreflightResponse) GetStatus() string {
@@ -5853,7 +5760,7 @@ type ExecuteNodePreflightRequest struct {
 func (x *ExecuteNodePreflightRequest) Reset() {
 	*x = ExecuteNodePreflightRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[81]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[79]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5866,7 +5773,7 @@ func (x *ExecuteNodePreflightRequest) String() string {
 func (*ExecuteNodePreflightRequest) ProtoMessage() {}
 
 func (x *ExecuteNodePreflightRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[81]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[79]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5879,7 +5786,7 @@ func (x *ExecuteNodePreflightRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteNodePreflightRequest.ProtoReflect.Descriptor instead.
 func (*ExecuteNodePreflightRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{81}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *ExecuteNodePreflightRequest) GetChecks() []*NodePreflightCheck {
@@ -5913,7 +5820,7 @@ type CheckCloudInitStatus struct {
 func (x *CheckCloudInitStatus) Reset() {
 	*x = CheckCloudInitStatus{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[82]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[80]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5926,7 +5833,7 @@ func (x *CheckCloudInitStatus) String() string {
 func (*CheckCloudInitStatus) ProtoMessage() {}
 
 func (x *CheckCloudInitStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[82]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[80]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5939,7 +5846,7 @@ func (x *CheckCloudInitStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckCloudInitStatus.ProtoReflect.Descriptor instead.
 func (*CheckCloudInitStatus) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{82}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{80}
 }
 
 type NodePreflightCheck struct {
@@ -5959,7 +5866,7 @@ type NodePreflightCheck struct {
 func (x *NodePreflightCheck) Reset() {
 	*x = NodePreflightCheck{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[83]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[81]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -5972,7 +5879,7 @@ func (x *NodePreflightCheck) String() string {
 func (*NodePreflightCheck) ProtoMessage() {}
 
 func (x *NodePreflightCheck) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[83]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[81]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5985,7 +5892,7 @@ func (x *NodePreflightCheck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodePreflightCheck.ProtoReflect.Descriptor instead.
 func (*NodePreflightCheck) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{83}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *NodePreflightCheck) GetName() string {
@@ -6031,7 +5938,7 @@ type FileExistsPreflightCheck struct {
 func (x *FileExistsPreflightCheck) Reset() {
 	*x = FileExistsPreflightCheck{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[84]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[82]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6044,7 +5951,7 @@ func (x *FileExistsPreflightCheck) String() string {
 func (*FileExistsPreflightCheck) ProtoMessage() {}
 
 func (x *FileExistsPreflightCheck) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[84]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[82]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6057,7 +5964,7 @@ func (x *FileExistsPreflightCheck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileExistsPreflightCheck.ProtoReflect.Descriptor instead.
 func (*FileExistsPreflightCheck) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{84}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *FileExistsPreflightCheck) GetPath() string {
@@ -6086,7 +5993,7 @@ type ExecuteNodePreflightResponse struct {
 func (x *ExecuteNodePreflightResponse) Reset() {
 	*x = ExecuteNodePreflightResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[85]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[83]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6099,7 +6006,7 @@ func (x *ExecuteNodePreflightResponse) String() string {
 func (*ExecuteNodePreflightResponse) ProtoMessage() {}
 
 func (x *ExecuteNodePreflightResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[85]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[83]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6112,7 +6019,7 @@ func (x *ExecuteNodePreflightResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteNodePreflightResponse.ProtoReflect.Descriptor instead.
 func (*ExecuteNodePreflightResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{85}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *ExecuteNodePreflightResponse) GetStatus() string {
@@ -6156,7 +6063,7 @@ type NodePreflightResult struct {
 func (x *NodePreflightResult) Reset() {
 	*x = NodePreflightResult{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[86]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[84]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6169,7 +6076,7 @@ func (x *NodePreflightResult) String() string {
 func (*NodePreflightResult) ProtoMessage() {}
 
 func (x *NodePreflightResult) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[86]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[84]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6182,7 +6089,7 @@ func (x *NodePreflightResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodePreflightResult.ProtoReflect.Descriptor instead.
 func (*NodePreflightResult) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{86}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *NodePreflightResult) GetName() string {
@@ -6233,7 +6140,7 @@ type ConfigureAptRepoRequest struct {
 func (x *ConfigureAptRepoRequest) Reset() {
 	*x = ConfigureAptRepoRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[87]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[85]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6246,7 +6153,7 @@ func (x *ConfigureAptRepoRequest) String() string {
 func (*ConfigureAptRepoRequest) ProtoMessage() {}
 
 func (x *ConfigureAptRepoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[87]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[85]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6259,7 +6166,7 @@ func (x *ConfigureAptRepoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureAptRepoRequest.ProtoReflect.Descriptor instead.
 func (*ConfigureAptRepoRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{87}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *ConfigureAptRepoRequest) GetRepoName() string {
@@ -6331,7 +6238,7 @@ type ConfigureAptRepoResponse struct {
 func (x *ConfigureAptRepoResponse) Reset() {
 	*x = ConfigureAptRepoResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[88]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[86]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6344,7 +6251,7 @@ func (x *ConfigureAptRepoResponse) String() string {
 func (*ConfigureAptRepoResponse) ProtoMessage() {}
 
 func (x *ConfigureAptRepoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[88]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[86]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6357,7 +6264,7 @@ func (x *ConfigureAptRepoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureAptRepoResponse.ProtoReflect.Descriptor instead.
 func (*ConfigureAptRepoResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{88}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *ConfigureAptRepoResponse) GetStatus() string {
@@ -6396,7 +6303,7 @@ type RemoveAptRepoRequest struct {
 func (x *RemoveAptRepoRequest) Reset() {
 	*x = RemoveAptRepoRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[89]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[87]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6409,7 +6316,7 @@ func (x *RemoveAptRepoRequest) String() string {
 func (*RemoveAptRepoRequest) ProtoMessage() {}
 
 func (x *RemoveAptRepoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[89]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[87]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6422,7 +6329,7 @@ func (x *RemoveAptRepoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveAptRepoRequest.ProtoReflect.Descriptor instead.
 func (*RemoveAptRepoRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{89}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *RemoveAptRepoRequest) GetKeyringName() string {
@@ -6452,7 +6359,7 @@ type RemoveAptRepoResponse struct {
 func (x *RemoveAptRepoResponse) Reset() {
 	*x = RemoveAptRepoResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[90]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[88]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6465,7 +6372,7 @@ func (x *RemoveAptRepoResponse) String() string {
 func (*RemoveAptRepoResponse) ProtoMessage() {}
 
 func (x *RemoveAptRepoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[90]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[88]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6478,7 +6385,7 @@ func (x *RemoveAptRepoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveAptRepoResponse.ProtoReflect.Descriptor instead.
 func (*RemoveAptRepoResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{90}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *RemoveAptRepoResponse) GetStatus() string {
@@ -6513,7 +6420,7 @@ type StartKubeVipRestoreRequest struct {
 func (x *StartKubeVipRestoreRequest) Reset() {
 	*x = StartKubeVipRestoreRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[91]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[89]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6526,7 +6433,7 @@ func (x *StartKubeVipRestoreRequest) String() string {
 func (*StartKubeVipRestoreRequest) ProtoMessage() {}
 
 func (x *StartKubeVipRestoreRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[91]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[89]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6539,7 +6446,7 @@ func (x *StartKubeVipRestoreRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartKubeVipRestoreRequest.ProtoReflect.Descriptor instead.
 func (*StartKubeVipRestoreRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{91}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *StartKubeVipRestoreRequest) GetOperationId() string {
@@ -6560,7 +6467,7 @@ type StartKubeVipRestoreResponse struct {
 func (x *StartKubeVipRestoreResponse) Reset() {
 	*x = StartKubeVipRestoreResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[92]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[90]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6573,7 +6480,7 @@ func (x *StartKubeVipRestoreResponse) String() string {
 func (*StartKubeVipRestoreResponse) ProtoMessage() {}
 
 func (x *StartKubeVipRestoreResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[92]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[90]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6586,7 +6493,7 @@ func (x *StartKubeVipRestoreResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartKubeVipRestoreResponse.ProtoReflect.Descriptor instead.
 func (*StartKubeVipRestoreResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{92}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *StartKubeVipRestoreResponse) GetOperation() *NodeAgentOperationStatus {
@@ -6605,7 +6512,7 @@ type ScheduleNodeRebootRequest struct {
 func (x *ScheduleNodeRebootRequest) Reset() {
 	*x = ScheduleNodeRebootRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[93]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[91]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6618,7 +6525,7 @@ func (x *ScheduleNodeRebootRequest) String() string {
 func (*ScheduleNodeRebootRequest) ProtoMessage() {}
 
 func (x *ScheduleNodeRebootRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[93]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[91]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6631,7 +6538,7 @@ func (x *ScheduleNodeRebootRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleNodeRebootRequest.ProtoReflect.Descriptor instead.
 func (*ScheduleNodeRebootRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{93}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{91}
 }
 
 type ScheduleNodeRebootResponse struct {
@@ -6647,7 +6554,7 @@ type ScheduleNodeRebootResponse struct {
 func (x *ScheduleNodeRebootResponse) Reset() {
 	*x = ScheduleNodeRebootResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[94]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[92]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6660,7 +6567,7 @@ func (x *ScheduleNodeRebootResponse) String() string {
 func (*ScheduleNodeRebootResponse) ProtoMessage() {}
 
 func (x *ScheduleNodeRebootResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[94]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[92]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6673,7 +6580,7 @@ func (x *ScheduleNodeRebootResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleNodeRebootResponse.ProtoReflect.Descriptor instead.
 func (*ScheduleNodeRebootResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{94}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *ScheduleNodeRebootResponse) GetPackageLocksTimedOut() bool {
@@ -6692,7 +6599,7 @@ type GetNodeBootInfoRequest struct {
 func (x *GetNodeBootInfoRequest) Reset() {
 	*x = GetNodeBootInfoRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[95]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[93]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6705,7 +6612,7 @@ func (x *GetNodeBootInfoRequest) String() string {
 func (*GetNodeBootInfoRequest) ProtoMessage() {}
 
 func (x *GetNodeBootInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[95]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[93]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6718,7 +6625,7 @@ func (x *GetNodeBootInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNodeBootInfoRequest.ProtoReflect.Descriptor instead.
 func (*GetNodeBootInfoRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{95}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{93}
 }
 
 type GetNodeBootInfoResponse struct {
@@ -6735,7 +6642,7 @@ type GetNodeBootInfoResponse struct {
 func (x *GetNodeBootInfoResponse) Reset() {
 	*x = GetNodeBootInfoResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[96]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[94]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6748,7 +6655,7 @@ func (x *GetNodeBootInfoResponse) String() string {
 func (*GetNodeBootInfoResponse) ProtoMessage() {}
 
 func (x *GetNodeBootInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[96]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[94]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6761,7 +6668,7 @@ func (x *GetNodeBootInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNodeBootInfoResponse.ProtoReflect.Descriptor instead.
 func (*GetNodeBootInfoResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{96}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *GetNodeBootInfoResponse) GetBootTimeUnixSeconds() int64 {
@@ -6790,7 +6697,7 @@ type ReconfigureKubeletAPIServerRequest struct {
 func (x *ReconfigureKubeletAPIServerRequest) Reset() {
 	*x = ReconfigureKubeletAPIServerRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[97]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[95]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6803,7 +6710,7 @@ func (x *ReconfigureKubeletAPIServerRequest) String() string {
 func (*ReconfigureKubeletAPIServerRequest) ProtoMessage() {}
 
 func (x *ReconfigureKubeletAPIServerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[97]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[95]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6816,7 +6723,7 @@ func (x *ReconfigureKubeletAPIServerRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ReconfigureKubeletAPIServerRequest.ProtoReflect.Descriptor instead.
 func (*ReconfigureKubeletAPIServerRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{97}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *ReconfigureKubeletAPIServerRequest) GetServer() string {
@@ -6839,7 +6746,7 @@ type ReconfigureKubeletAPIServerResponse struct {
 func (x *ReconfigureKubeletAPIServerResponse) Reset() {
 	*x = ReconfigureKubeletAPIServerResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[98]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[96]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6852,7 +6759,7 @@ func (x *ReconfigureKubeletAPIServerResponse) String() string {
 func (*ReconfigureKubeletAPIServerResponse) ProtoMessage() {}
 
 func (x *ReconfigureKubeletAPIServerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[98]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[96]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6865,7 +6772,7 @@ func (x *ReconfigureKubeletAPIServerResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ReconfigureKubeletAPIServerResponse.ProtoReflect.Descriptor instead.
 func (*ReconfigureKubeletAPIServerResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{98}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *ReconfigureKubeletAPIServerResponse) GetOutcome() ReconfigureKubeletAPIServerResponse_Outcome {
@@ -6894,7 +6801,7 @@ type KubeadmUpgradeApplyRequest struct {
 func (x *KubeadmUpgradeApplyRequest) Reset() {
 	*x = KubeadmUpgradeApplyRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[99]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[97]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6907,7 +6814,7 @@ func (x *KubeadmUpgradeApplyRequest) String() string {
 func (*KubeadmUpgradeApplyRequest) ProtoMessage() {}
 
 func (x *KubeadmUpgradeApplyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[99]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[97]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6920,7 +6827,7 @@ func (x *KubeadmUpgradeApplyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KubeadmUpgradeApplyRequest.ProtoReflect.Descriptor instead.
 func (*KubeadmUpgradeApplyRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{99}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *KubeadmUpgradeApplyRequest) GetTargetVersion() string {
@@ -6945,7 +6852,7 @@ type KubeadmUpgradeApplyResponse struct {
 func (x *KubeadmUpgradeApplyResponse) Reset() {
 	*x = KubeadmUpgradeApplyResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[100]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[98]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6958,7 +6865,7 @@ func (x *KubeadmUpgradeApplyResponse) String() string {
 func (*KubeadmUpgradeApplyResponse) ProtoMessage() {}
 
 func (x *KubeadmUpgradeApplyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[100]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[98]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6971,7 +6878,7 @@ func (x *KubeadmUpgradeApplyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KubeadmUpgradeApplyResponse.ProtoReflect.Descriptor instead.
 func (*KubeadmUpgradeApplyResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{100}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *KubeadmUpgradeApplyResponse) GetOutcome() KubeadmUpgradeApplyResponse_Outcome {
@@ -7027,7 +6934,7 @@ type ReconcileKubeVipRequest struct {
 func (x *ReconcileKubeVipRequest) Reset() {
 	*x = ReconcileKubeVipRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[101]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[99]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7040,7 +6947,7 @@ func (x *ReconcileKubeVipRequest) String() string {
 func (*ReconcileKubeVipRequest) ProtoMessage() {}
 
 func (x *ReconcileKubeVipRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[101]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[99]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7053,7 +6960,7 @@ func (x *ReconcileKubeVipRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReconcileKubeVipRequest.ProtoReflect.Descriptor instead.
 func (*ReconcileKubeVipRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{101}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *ReconcileKubeVipRequest) GetVipAddress() string {
@@ -7127,7 +7034,7 @@ type ReconcileKubeVipResponse struct {
 func (x *ReconcileKubeVipResponse) Reset() {
 	*x = ReconcileKubeVipResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[102]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[100]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7140,7 +7047,7 @@ func (x *ReconcileKubeVipResponse) String() string {
 func (*ReconcileKubeVipResponse) ProtoMessage() {}
 
 func (x *ReconcileKubeVipResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[102]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[100]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7153,7 +7060,7 @@ func (x *ReconcileKubeVipResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReconcileKubeVipResponse.ProtoReflect.Descriptor instead.
 func (*ReconcileKubeVipResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{102}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *ReconcileKubeVipResponse) GetOutcome() ReconcileKubeVipResponse_Outcome {
@@ -7226,7 +7133,7 @@ type StartKubernetesCertificateRenewalRequest struct {
 func (x *StartKubernetesCertificateRenewalRequest) Reset() {
 	*x = StartKubernetesCertificateRenewalRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[103]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[101]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7239,7 +7146,7 @@ func (x *StartKubernetesCertificateRenewalRequest) String() string {
 func (*StartKubernetesCertificateRenewalRequest) ProtoMessage() {}
 
 func (x *StartKubernetesCertificateRenewalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[103]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[101]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7252,7 +7159,7 @@ func (x *StartKubernetesCertificateRenewalRequest) ProtoReflect() protoreflect.M
 
 // Deprecated: Use StartKubernetesCertificateRenewalRequest.ProtoReflect.Descriptor instead.
 func (*StartKubernetesCertificateRenewalRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{103}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *StartKubernetesCertificateRenewalRequest) GetOperationId() string {
@@ -7280,7 +7187,7 @@ type StartKubernetesCertificateRenewalResponse struct {
 func (x *StartKubernetesCertificateRenewalResponse) Reset() {
 	*x = StartKubernetesCertificateRenewalResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[104]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[102]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7293,7 +7200,7 @@ func (x *StartKubernetesCertificateRenewalResponse) String() string {
 func (*StartKubernetesCertificateRenewalResponse) ProtoMessage() {}
 
 func (x *StartKubernetesCertificateRenewalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[104]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[102]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7306,7 +7213,7 @@ func (x *StartKubernetesCertificateRenewalResponse) ProtoReflect() protoreflect.
 
 // Deprecated: Use StartKubernetesCertificateRenewalResponse.ProtoReflect.Descriptor instead.
 func (*StartKubernetesCertificateRenewalResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{104}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *StartKubernetesCertificateRenewalResponse) GetOperation() *KubernetesCertificateRenewalOperation {
@@ -7327,7 +7234,7 @@ type GetKubernetesCertificateRenewalStatusRequest struct {
 func (x *GetKubernetesCertificateRenewalStatusRequest) Reset() {
 	*x = GetKubernetesCertificateRenewalStatusRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[105]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[103]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7340,7 +7247,7 @@ func (x *GetKubernetesCertificateRenewalStatusRequest) String() string {
 func (*GetKubernetesCertificateRenewalStatusRequest) ProtoMessage() {}
 
 func (x *GetKubernetesCertificateRenewalStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[105]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[103]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7353,7 +7260,7 @@ func (x *GetKubernetesCertificateRenewalStatusRequest) ProtoReflect() protorefle
 
 // Deprecated: Use GetKubernetesCertificateRenewalStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetKubernetesCertificateRenewalStatusRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{105}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *GetKubernetesCertificateRenewalStatusRequest) GetOperationId() string {
@@ -7374,7 +7281,7 @@ type GetKubernetesCertificateRenewalStatusResponse struct {
 func (x *GetKubernetesCertificateRenewalStatusResponse) Reset() {
 	*x = GetKubernetesCertificateRenewalStatusResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[106]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[104]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7387,7 +7294,7 @@ func (x *GetKubernetesCertificateRenewalStatusResponse) String() string {
 func (*GetKubernetesCertificateRenewalStatusResponse) ProtoMessage() {}
 
 func (x *GetKubernetesCertificateRenewalStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[106]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[104]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7400,7 +7307,7 @@ func (x *GetKubernetesCertificateRenewalStatusResponse) ProtoReflect() protorefl
 
 // Deprecated: Use GetKubernetesCertificateRenewalStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetKubernetesCertificateRenewalStatusResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{106}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *GetKubernetesCertificateRenewalStatusResponse) GetOperation() *KubernetesCertificateRenewalOperation {
@@ -7422,7 +7329,7 @@ type KubernetesCertificateRenewalOperation struct {
 func (x *KubernetesCertificateRenewalOperation) Reset() {
 	*x = KubernetesCertificateRenewalOperation{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[107]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[105]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7435,7 +7342,7 @@ func (x *KubernetesCertificateRenewalOperation) String() string {
 func (*KubernetesCertificateRenewalOperation) ProtoMessage() {}
 
 func (x *KubernetesCertificateRenewalOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[107]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[105]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7448,7 +7355,7 @@ func (x *KubernetesCertificateRenewalOperation) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use KubernetesCertificateRenewalOperation.ProtoReflect.Descriptor instead.
 func (*KubernetesCertificateRenewalOperation) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{107}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *KubernetesCertificateRenewalOperation) GetOperation() *NodeAgentOperationStatus {
@@ -7477,7 +7384,7 @@ type RemoveEtcdMemberRequest struct {
 func (x *RemoveEtcdMemberRequest) Reset() {
 	*x = RemoveEtcdMemberRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[108]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[106]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7490,7 +7397,7 @@ func (x *RemoveEtcdMemberRequest) String() string {
 func (*RemoveEtcdMemberRequest) ProtoMessage() {}
 
 func (x *RemoveEtcdMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[108]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[106]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7503,7 +7410,7 @@ func (x *RemoveEtcdMemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveEtcdMemberRequest.ProtoReflect.Descriptor instead.
 func (*RemoveEtcdMemberRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{108}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *RemoveEtcdMemberRequest) GetTarget() string {
@@ -7522,7 +7429,7 @@ type RemoveEtcdMemberResponse struct {
 func (x *RemoveEtcdMemberResponse) Reset() {
 	*x = RemoveEtcdMemberResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[109]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[107]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7535,7 +7442,7 @@ func (x *RemoveEtcdMemberResponse) String() string {
 func (*RemoveEtcdMemberResponse) ProtoMessage() {}
 
 func (x *RemoveEtcdMemberResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[109]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[107]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7548,7 +7455,7 @@ func (x *RemoveEtcdMemberResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveEtcdMemberResponse.ProtoReflect.Descriptor instead.
 func (*RemoveEtcdMemberResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{109}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{107}
 }
 
 type OpenVSwitchReconciliationResult struct {
@@ -7565,7 +7472,7 @@ type OpenVSwitchReconciliationResult struct {
 func (x *OpenVSwitchReconciliationResult) Reset() {
 	*x = OpenVSwitchReconciliationResult{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[110]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[108]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7578,7 +7485,7 @@ func (x *OpenVSwitchReconciliationResult) String() string {
 func (*OpenVSwitchReconciliationResult) ProtoMessage() {}
 
 func (x *OpenVSwitchReconciliationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[110]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[108]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7591,7 +7498,7 @@ func (x *OpenVSwitchReconciliationResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenVSwitchReconciliationResult.ProtoReflect.Descriptor instead.
 func (*OpenVSwitchReconciliationResult) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{110}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *OpenVSwitchReconciliationResult) GetOutcome() OpenVSwitchReconciliationResult_Outcome {
@@ -7633,7 +7540,7 @@ type StartOpenVSwitchReconciliationRequest struct {
 func (x *StartOpenVSwitchReconciliationRequest) Reset() {
 	*x = StartOpenVSwitchReconciliationRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[111]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[109]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7646,7 +7553,7 @@ func (x *StartOpenVSwitchReconciliationRequest) String() string {
 func (*StartOpenVSwitchReconciliationRequest) ProtoMessage() {}
 
 func (x *StartOpenVSwitchReconciliationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[111]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[109]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7659,7 +7566,7 @@ func (x *StartOpenVSwitchReconciliationRequest) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use StartOpenVSwitchReconciliationRequest.ProtoReflect.Descriptor instead.
 func (*StartOpenVSwitchReconciliationRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{111}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *StartOpenVSwitchReconciliationRequest) GetOperationId() string {
@@ -7680,7 +7587,7 @@ type StartOpenVSwitchReconciliationResponse struct {
 func (x *StartOpenVSwitchReconciliationResponse) Reset() {
 	*x = StartOpenVSwitchReconciliationResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[112]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[110]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7693,7 +7600,7 @@ func (x *StartOpenVSwitchReconciliationResponse) String() string {
 func (*StartOpenVSwitchReconciliationResponse) ProtoMessage() {}
 
 func (x *StartOpenVSwitchReconciliationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[112]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[110]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7706,7 +7613,7 @@ func (x *StartOpenVSwitchReconciliationResponse) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use StartOpenVSwitchReconciliationResponse.ProtoReflect.Descriptor instead.
 func (*StartOpenVSwitchReconciliationResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{112}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *StartOpenVSwitchReconciliationResponse) GetOperation() *OpenVSwitchReconciliationOperation {
@@ -7727,7 +7634,7 @@ type GetOpenVSwitchReconciliationStatusRequest struct {
 func (x *GetOpenVSwitchReconciliationStatusRequest) Reset() {
 	*x = GetOpenVSwitchReconciliationStatusRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[113]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[111]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7740,7 +7647,7 @@ func (x *GetOpenVSwitchReconciliationStatusRequest) String() string {
 func (*GetOpenVSwitchReconciliationStatusRequest) ProtoMessage() {}
 
 func (x *GetOpenVSwitchReconciliationStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[113]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[111]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7753,7 +7660,7 @@ func (x *GetOpenVSwitchReconciliationStatusRequest) ProtoReflect() protoreflect.
 
 // Deprecated: Use GetOpenVSwitchReconciliationStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetOpenVSwitchReconciliationStatusRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{113}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *GetOpenVSwitchReconciliationStatusRequest) GetOperationId() string {
@@ -7774,7 +7681,7 @@ type GetOpenVSwitchReconciliationStatusResponse struct {
 func (x *GetOpenVSwitchReconciliationStatusResponse) Reset() {
 	*x = GetOpenVSwitchReconciliationStatusResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[114]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[112]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7787,7 +7694,7 @@ func (x *GetOpenVSwitchReconciliationStatusResponse) String() string {
 func (*GetOpenVSwitchReconciliationStatusResponse) ProtoMessage() {}
 
 func (x *GetOpenVSwitchReconciliationStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[114]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[112]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7800,7 +7707,7 @@ func (x *GetOpenVSwitchReconciliationStatusResponse) ProtoReflect() protoreflect
 
 // Deprecated: Use GetOpenVSwitchReconciliationStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetOpenVSwitchReconciliationStatusResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{114}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *GetOpenVSwitchReconciliationStatusResponse) GetOperation() *OpenVSwitchReconciliationOperation {
@@ -7823,7 +7730,7 @@ type OpenVSwitchReconciliationOperation struct {
 func (x *OpenVSwitchReconciliationOperation) Reset() {
 	*x = OpenVSwitchReconciliationOperation{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[115]
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[113]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -7836,7 +7743,7 @@ func (x *OpenVSwitchReconciliationOperation) String() string {
 func (*OpenVSwitchReconciliationOperation) ProtoMessage() {}
 
 func (x *OpenVSwitchReconciliationOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[115]
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[113]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7849,7 +7756,7 @@ func (x *OpenVSwitchReconciliationOperation) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use OpenVSwitchReconciliationOperation.ProtoReflect.Descriptor instead.
 func (*OpenVSwitchReconciliationOperation) Descriptor() ([]byte, []int) {
-	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{115}
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *OpenVSwitchReconciliationOperation) GetOperation() *NodeAgentOperationStatus {
@@ -8368,14 +8275,7 @@ var file_pkg_agent_proto_node_agent_proto_rawDesc = []byte{
 	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x18, 0x0a, 0x07, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67,
 	0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65,
 	0x12, 0x12, 0x0a, 0x04, 0x63, 0x6f, 0x64, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x05, 0x52, 0x04,
-	0x63, 0x6f, 0x64, 0x65, 0x22, 0x17, 0x0a, 0x15, 0x52, 0x65, 0x73, 0x74, 0x61, 0x72, 0x74, 0x41,
-	0x50, 0x49, 0x50, 0x6f, 0x64, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x55, 0x0a,
-	0x16, 0x52, 0x65, 0x73, 0x74, 0x61, 0x72, 0x74, 0x41, 0x50, 0x49, 0x50, 0x6f, 0x64, 0x73, 0x52,
-	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75,
-	0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12,
-	0x23, 0x0a, 0x0d, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65,
-	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x4d, 0x65, 0x73,
-	0x73, 0x61, 0x67, 0x65, 0x22, 0x7f, 0x0a, 0x11, 0x53, 0x63, 0x72, 0x69, 0x70, 0x74, 0x4f, 0x75,
+	0x63, 0x6f, 0x64, 0x65, 0x22, 0x7f, 0x0a, 0x11, 0x53, 0x63, 0x72, 0x69, 0x70, 0x74, 0x4f, 0x75,
 	0x74, 0x70, 0x75, 0x74, 0x43, 0x68, 0x75, 0x6e, 0x6b, 0x12, 0x16, 0x0a, 0x06, 0x6f, 0x75, 0x74,
 	0x70, 0x75, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x6f, 0x75, 0x74, 0x70, 0x75,
 	0x74, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09,
@@ -8944,7 +8844,7 @@ var file_pkg_agent_proto_node_agent_proto_rawDesc = []byte{
 	0x4c, 0x49, 0x47, 0x48, 0x54, 0x5f, 0x52, 0x4f, 0x4c, 0x45, 0x5f, 0x49, 0x4e, 0x49, 0x54, 0x10,
 	0x00, 0x12, 0x1f, 0x0a, 0x1b, 0x4b, 0x55, 0x42, 0x45, 0x41, 0x44, 0x4d, 0x5f, 0x50, 0x52, 0x45,
 	0x46, 0x4c, 0x49, 0x47, 0x48, 0x54, 0x5f, 0x52, 0x4f, 0x4c, 0x45, 0x5f, 0x4a, 0x4f, 0x49, 0x4e,
-	0x10, 0x01, 0x32, 0x8d, 0x26, 0x0a, 0x09, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74,
+	0x10, 0x01, 0x32, 0xbc, 0x25, 0x0a, 0x09, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74,
 	0x12, 0x4f, 0x0a, 0x10, 0x47, 0x65, 0x74, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x53, 0x74,
 	0x61, 0x74, 0x75, 0x73, 0x12, 0x1b, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62,
 	0x65, 0x61, 0x64, 0x6d, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
@@ -9144,116 +9044,111 @@ var file_pkg_agent_proto_node_agent_proto_rawDesc = []byte{
 	0x73, 0x74, 0x1a, 0x36, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x6d, 0x6f, 0x76,
 	0x65, 0x50, 0x6c, 0x61, 0x69, 0x6e, 0x54, 0x65, 0x78, 0x74, 0x53, 0x65, 0x63, 0x6f, 0x6e, 0x64,
 	0x61, 0x72, 0x79, 0x45, 0x6e, 0x63, 0x72, 0x79, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x45, 0x6e, 0x74,
-	0x72, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4f, 0x0a, 0x0e,
-	0x52, 0x65, 0x73, 0x74, 0x61, 0x72, 0x74, 0x41, 0x50, 0x49, 0x50, 0x6f, 0x64, 0x73, 0x12, 0x1c,
-	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x73, 0x74, 0x61, 0x72, 0x74, 0x41, 0x50,
-	0x49, 0x50, 0x6f, 0x64, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1d, 0x2e, 0x70,
-	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x73, 0x74, 0x61, 0x72, 0x74, 0x41, 0x50, 0x49, 0x50,
-	0x6f, 0x64, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x3d, 0x0a,
-	0x10, 0x55, 0x70, 0x6c, 0x6f, 0x61, 0x64, 0x46, 0x69, 0x6c, 0x65, 0x42, 0x75, 0x6e, 0x64, 0x6c,
-	0x65, 0x12, 0x10, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x46, 0x69, 0x6c, 0x65, 0x43, 0x68,
-	0x75, 0x6e, 0x6b, 0x1a, 0x13, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x55, 0x70, 0x6c, 0x6f,
-	0x61, 0x64, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x22, 0x00, 0x28, 0x01, 0x12, 0x61, 0x0a, 0x14,
+	0x72, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x3d, 0x0a, 0x10,
+	0x55, 0x70, 0x6c, 0x6f, 0x61, 0x64, 0x46, 0x69, 0x6c, 0x65, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65,
+	0x12, 0x10, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x46, 0x69, 0x6c, 0x65, 0x43, 0x68, 0x75,
+	0x6e, 0x6b, 0x1a, 0x13, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x55, 0x70, 0x6c, 0x6f, 0x61,
+	0x64, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x22, 0x00, 0x28, 0x01, 0x12, 0x61, 0x0a, 0x14, 0x57,
+	0x72, 0x69, 0x74, 0x65, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x43, 0x6f, 0x6e,
+	0x66, 0x69, 0x67, 0x12, 0x22, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x57, 0x72, 0x69, 0x74,
+	0x65, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67,
+	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x23, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
 	0x57, 0x72, 0x69, 0x74, 0x65, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x43, 0x6f,
-	0x6e, 0x66, 0x69, 0x67, 0x12, 0x22, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x57, 0x72, 0x69,
-	0x74, 0x65, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x43, 0x6f, 0x6e, 0x66, 0x69,
-	0x67, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x23, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x2e, 0x57, 0x72, 0x69, 0x74, 0x65, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x43,
-	0x6f, 0x6e, 0x66, 0x69, 0x67, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12,
-	0x50, 0x0a, 0x13, 0x53, 0x74, 0x72, 0x65, 0x61, 0x6d, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65,
-	0x53, 0x63, 0x72, 0x69, 0x70, 0x74, 0x12, 0x1b, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45,
-	0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x53, 0x63, 0x72, 0x69, 0x70, 0x74, 0x52, 0x65, 0x71, 0x75,
-	0x65, 0x73, 0x74, 0x1a, 0x18, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x53, 0x63, 0x72, 0x69,
-	0x70, 0x74, 0x4f, 0x75, 0x74, 0x70, 0x75, 0x74, 0x43, 0x68, 0x75, 0x6e, 0x6b, 0x22, 0x00, 0x30,
-	0x01, 0x12, 0x55, 0x0a, 0x10, 0x53, 0x65, 0x74, 0x55, 0x6e, 0x73, 0x65, 0x74, 0x49, 0x73, 0x4d,
-	0x61, 0x73, 0x74, 0x65, 0x72, 0x12, 0x1e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x53, 0x65,
-	0x74, 0x55, 0x6e, 0x73, 0x65, 0x74, 0x49, 0x73, 0x4d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x52, 0x65,
-	0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x53, 0x65,
-	0x74, 0x55, 0x6e, 0x73, 0x65, 0x74, 0x49, 0x73, 0x4d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x52, 0x65,
-	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4c, 0x0a, 0x0d, 0x49, 0x6e, 0x73, 0x74,
-	0x61, 0x6c, 0x6c, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x12, 0x1b, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x52,
-	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x49,
-	0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x52, 0x65, 0x73, 0x70,
-	0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x52, 0x0a, 0x0f, 0x47, 0x65, 0x74, 0x42, 0x75, 0x6e,
-	0x64, 0x6c, 0x65, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x1d, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x2e, 0x47, 0x65, 0x74, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x53, 0x74, 0x61, 0x74, 0x75,
-	0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x6e, 0x66, 0x69, 0x67, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x50,
+	0x0a, 0x13, 0x53, 0x74, 0x72, 0x65, 0x61, 0x6d, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x53,
+	0x63, 0x72, 0x69, 0x70, 0x74, 0x12, 0x1b, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x78,
+	0x65, 0x63, 0x75, 0x74, 0x65, 0x53, 0x63, 0x72, 0x69, 0x70, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x1a, 0x18, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x53, 0x63, 0x72, 0x69, 0x70,
+	0x74, 0x4f, 0x75, 0x74, 0x70, 0x75, 0x74, 0x43, 0x68, 0x75, 0x6e, 0x6b, 0x22, 0x00, 0x30, 0x01,
+	0x12, 0x55, 0x0a, 0x10, 0x53, 0x65, 0x74, 0x55, 0x6e, 0x73, 0x65, 0x74, 0x49, 0x73, 0x4d, 0x61,
+	0x73, 0x74, 0x65, 0x72, 0x12, 0x1e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x53, 0x65, 0x74,
+	0x55, 0x6e, 0x73, 0x65, 0x74, 0x49, 0x73, 0x4d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x52, 0x65, 0x71,
+	0x75, 0x65, 0x73, 0x74, 0x1a, 0x1f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x53, 0x65, 0x74,
+	0x55, 0x6e, 0x73, 0x65, 0x74, 0x49, 0x73, 0x4d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4c, 0x0a, 0x0d, 0x49, 0x6e, 0x73, 0x74, 0x61,
+	0x6c, 0x6c, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x12, 0x1b, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x52, 0x65,
+	0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x49, 0x6e,
+	0x73, 0x74, 0x61, 0x6c, 0x6c, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f,
+	0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x52, 0x0a, 0x0f, 0x47, 0x65, 0x74, 0x42, 0x75, 0x6e, 0x64,
+	0x6c, 0x65, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x1d, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
 	0x2e, 0x47, 0x65, 0x74, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73,
-	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x58, 0x0a, 0x11, 0x49, 0x6e,
-	0x73, 0x74, 0x61, 0x6c, 0x6c, 0x43, 0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x12,
-	0x1f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x43,
-	0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
-	0x1a, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c,
-	0x43, 0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
-	0x73, 0x65, 0x22, 0x00, 0x12, 0x64, 0x0a, 0x15, 0x53, 0x74, 0x61, 0x72, 0x74, 0x4e, 0x6f, 0x64,
-	0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x55, 0x70, 0x67, 0x72, 0x61, 0x64, 0x65, 0x12, 0x23, 0x2e,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x53, 0x74, 0x61, 0x72, 0x74, 0x4e, 0x6f, 0x64, 0x65, 0x41,
-	0x67, 0x65, 0x6e, 0x74, 0x55, 0x70, 0x67, 0x72, 0x61, 0x64, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65,
-	0x73, 0x74, 0x1a, 0x24, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x53, 0x74, 0x61, 0x72, 0x74,
+	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
+	0x47, 0x65, 0x74, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x58, 0x0a, 0x11, 0x49, 0x6e, 0x73,
+	0x74, 0x61, 0x6c, 0x6c, 0x43, 0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x1f,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x43, 0x6f,
+	0x6c, 0x6c, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
+	0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x43,
+	0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
+	0x65, 0x22, 0x00, 0x12, 0x64, 0x0a, 0x15, 0x53, 0x74, 0x61, 0x72, 0x74, 0x4e, 0x6f, 0x64, 0x65,
+	0x41, 0x67, 0x65, 0x6e, 0x74, 0x55, 0x70, 0x67, 0x72, 0x61, 0x64, 0x65, 0x12, 0x23, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x53, 0x74, 0x61, 0x72, 0x74, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67,
+	0x65, 0x6e, 0x74, 0x55, 0x70, 0x67, 0x72, 0x61, 0x64, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x1a, 0x24, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x53, 0x74, 0x61, 0x72, 0x74, 0x4e,
+	0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x55, 0x70, 0x67, 0x72, 0x61, 0x64, 0x65, 0x52,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x70, 0x0a, 0x19, 0x47, 0x65, 0x74,
 	0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x55, 0x70, 0x67, 0x72, 0x61, 0x64, 0x65,
-	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x70, 0x0a, 0x19, 0x47, 0x65,
-	0x74, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x55, 0x70, 0x67, 0x72, 0x61, 0x64,
-	0x65, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x27, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
-	0x47, 0x65, 0x74, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x55, 0x70, 0x67, 0x72,
-	0x61, 0x64, 0x65, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
-	0x1a, 0x28, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x47, 0x65, 0x74, 0x4e, 0x6f, 0x64, 0x65,
-	0x41, 0x67, 0x65, 0x6e, 0x74, 0x55, 0x70, 0x67, 0x72, 0x61, 0x64, 0x65, 0x53, 0x74, 0x61, 0x74,
-	0x75, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x52, 0x0a, 0x0f,
-	0x49, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x50, 0x61, 0x63, 0x6b, 0x61, 0x67, 0x65, 0x73, 0x12,
-	0x1d, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x50,
-	0x61, 0x63, 0x6b, 0x61, 0x67, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1e,
+	0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x27, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x47,
+	0x65, 0x74, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x55, 0x70, 0x67, 0x72, 0x61,
+	0x64, 0x65, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
+	0x28, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x47, 0x65, 0x74, 0x4e, 0x6f, 0x64, 0x65, 0x41,
+	0x67, 0x65, 0x6e, 0x74, 0x55, 0x70, 0x67, 0x72, 0x61, 0x64, 0x65, 0x53, 0x74, 0x61, 0x74, 0x75,
+	0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x52, 0x0a, 0x0f, 0x49,
+	0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x50, 0x61, 0x63, 0x6b, 0x61, 0x67, 0x65, 0x73, 0x12, 0x1d,
 	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x50, 0x61,
-	0x63, 0x6b, 0x61, 0x67, 0x65, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00,
-	0x12, 0x49, 0x0a, 0x0c, 0x4c, 0x69, 0x73, 0x74, 0x50, 0x61, 0x63, 0x6b, 0x61, 0x67, 0x65, 0x73,
-	0x12, 0x1a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4c, 0x69, 0x73, 0x74, 0x50, 0x61, 0x63,
-	0x6b, 0x61, 0x67, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1b, 0x2e, 0x70,
-	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4c, 0x69, 0x73, 0x74, 0x50, 0x61, 0x63, 0x6b, 0x61, 0x67, 0x65,
-	0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4f, 0x0a, 0x0e, 0x52,
-	0x65, 0x6d, 0x6f, 0x76, 0x65, 0x50, 0x61, 0x63, 0x6b, 0x61, 0x67, 0x65, 0x73, 0x12, 0x1c, 0x2e,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x50, 0x61, 0x63, 0x6b,
-	0x61, 0x67, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1d, 0x2e, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x50, 0x61, 0x63, 0x6b, 0x61, 0x67,
-	0x65, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x55, 0x0a, 0x10,
-	0x47, 0x65, 0x74, 0x53, 0x75, 0x70, 0x70, 0x6f, 0x72, 0x74, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65,
-	0x12, 0x1e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x47, 0x65, 0x74, 0x53, 0x75, 0x70, 0x70,
-	0x6f, 0x72, 0x74, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
-	0x1a, 0x1f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x47, 0x65, 0x74, 0x53, 0x75, 0x70, 0x70,
-	0x6f, 0x72, 0x74, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
-	0x65, 0x22, 0x00, 0x12, 0x5c, 0x0a, 0x17, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x4b, 0x75,
-	0x62, 0x65, 0x61, 0x64, 0x6d, 0x50, 0x72, 0x65, 0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x12, 0x1e,
-	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x50, 0x72,
-	0x65, 0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1f,
-	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x50, 0x72,
-	0x65, 0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22,
-	0x00, 0x12, 0x61, 0x0a, 0x14, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x4e, 0x6f, 0x64, 0x65,
-	0x50, 0x72, 0x65, 0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x12, 0x22, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x2e, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x4e, 0x6f, 0x64, 0x65, 0x50, 0x72, 0x65,
-	0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x23, 0x2e,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x4e, 0x6f, 0x64,
-	0x65, 0x50, 0x72, 0x65, 0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
-	0x73, 0x65, 0x22, 0x00, 0x12, 0x55, 0x0a, 0x10, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72,
-	0x65, 0x41, 0x70, 0x74, 0x52, 0x65, 0x70, 0x6f, 0x12, 0x1e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x2e, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x65, 0x41, 0x70, 0x74, 0x52, 0x65, 0x70,
-	0x6f, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x2e, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x65, 0x41, 0x70, 0x74, 0x52, 0x65, 0x70,
-	0x6f, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4c, 0x0a, 0x0d, 0x52,
-	0x65, 0x6d, 0x6f, 0x76, 0x65, 0x41, 0x70, 0x74, 0x52, 0x65, 0x70, 0x6f, 0x12, 0x1b, 0x2e, 0x70,
-	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x41, 0x70, 0x74, 0x52, 0x65,
-	0x70, 0x6f, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1c, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x2e, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x41, 0x70, 0x74, 0x52, 0x65, 0x70, 0x6f, 0x52,
-	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x67, 0x0a, 0x16, 0x50, 0x61, 0x74,
-	0x63, 0x68, 0x41, 0x50, 0x49, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x4d, 0x61, 0x6e, 0x69, 0x66,
-	0x65, 0x73, 0x74, 0x12, 0x24, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x50, 0x61, 0x74, 0x63,
+	0x63, 0x6b, 0x61, 0x67, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1e, 0x2e,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x50, 0x61, 0x63,
+	0x6b, 0x61, 0x67, 0x65, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12,
+	0x49, 0x0a, 0x0c, 0x4c, 0x69, 0x73, 0x74, 0x50, 0x61, 0x63, 0x6b, 0x61, 0x67, 0x65, 0x73, 0x12,
+	0x1a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4c, 0x69, 0x73, 0x74, 0x50, 0x61, 0x63, 0x6b,
+	0x61, 0x67, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1b, 0x2e, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x2e, 0x4c, 0x69, 0x73, 0x74, 0x50, 0x61, 0x63, 0x6b, 0x61, 0x67, 0x65, 0x73,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4f, 0x0a, 0x0e, 0x52, 0x65,
+	0x6d, 0x6f, 0x76, 0x65, 0x50, 0x61, 0x63, 0x6b, 0x61, 0x67, 0x65, 0x73, 0x12, 0x1c, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x50, 0x61, 0x63, 0x6b, 0x61,
+	0x67, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1d, 0x2e, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x2e, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x50, 0x61, 0x63, 0x6b, 0x61, 0x67, 0x65,
+	0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x55, 0x0a, 0x10, 0x47,
+	0x65, 0x74, 0x53, 0x75, 0x70, 0x70, 0x6f, 0x72, 0x74, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x12,
+	0x1e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x47, 0x65, 0x74, 0x53, 0x75, 0x70, 0x70, 0x6f,
+	0x72, 0x74, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
+	0x1f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x47, 0x65, 0x74, 0x53, 0x75, 0x70, 0x70, 0x6f,
+	0x72, 0x74, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
+	0x22, 0x00, 0x12, 0x5c, 0x0a, 0x17, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x4b, 0x75, 0x62,
+	0x65, 0x61, 0x64, 0x6d, 0x50, 0x72, 0x65, 0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x12, 0x1e, 0x2e,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x50, 0x72, 0x65,
+	0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1f, 0x2e,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x50, 0x72, 0x65,
+	0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00,
+	0x12, 0x61, 0x0a, 0x14, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x4e, 0x6f, 0x64, 0x65, 0x50,
+	0x72, 0x65, 0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x12, 0x22, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x2e, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x4e, 0x6f, 0x64, 0x65, 0x50, 0x72, 0x65, 0x66,
+	0x6c, 0x69, 0x67, 0x68, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x23, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x4e, 0x6f, 0x64, 0x65,
+	0x50, 0x72, 0x65, 0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
+	0x65, 0x22, 0x00, 0x12, 0x55, 0x0a, 0x10, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x65,
+	0x41, 0x70, 0x74, 0x52, 0x65, 0x70, 0x6f, 0x12, 0x1e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
+	0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x65, 0x41, 0x70, 0x74, 0x52, 0x65, 0x70, 0x6f,
+	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
+	0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x65, 0x41, 0x70, 0x74, 0x52, 0x65, 0x70, 0x6f,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4c, 0x0a, 0x0d, 0x52, 0x65,
+	0x6d, 0x6f, 0x76, 0x65, 0x41, 0x70, 0x74, 0x52, 0x65, 0x70, 0x6f, 0x12, 0x1b, 0x2e, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x41, 0x70, 0x74, 0x52, 0x65, 0x70,
+	0x6f, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x2e, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x41, 0x70, 0x74, 0x52, 0x65, 0x70, 0x6f, 0x52, 0x65,
+	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x67, 0x0a, 0x16, 0x50, 0x61, 0x74, 0x63,
 	0x68, 0x41, 0x50, 0x49, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x4d, 0x61, 0x6e, 0x69, 0x66, 0x65,
-	0x73, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x25, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x2e, 0x50, 0x61, 0x74, 0x63, 0x68, 0x41, 0x50, 0x49, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72,
-	0x4d, 0x61, 0x6e, 0x69, 0x66, 0x65, 0x73, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
-	0x22, 0x00, 0x42, 0x36, 0x5a, 0x34, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d,
-	0x2f, 0x64, 0x73, 0x78, 0x2d, 0x61, 0x69, 0x2d, 0x66, 0x61, 0x63, 0x74, 0x6f, 0x72, 0x79, 0x2f,
-	0x6e, 0x76, 0x6b, 0x65, 0x2f, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61,
-	0x67, 0x65, 0x6e, 0x74, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x33,
+	0x73, 0x74, 0x12, 0x24, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x50, 0x61, 0x74, 0x63, 0x68,
+	0x41, 0x50, 0x49, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x4d, 0x61, 0x6e, 0x69, 0x66, 0x65, 0x73,
+	0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x25, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x2e, 0x50, 0x61, 0x74, 0x63, 0x68, 0x41, 0x50, 0x49, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x4d,
+	0x61, 0x6e, 0x69, 0x66, 0x65, 0x73, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22,
+	0x00, 0x42, 0x36, 0x5a, 0x34, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f,
+	0x64, 0x73, 0x78, 0x2d, 0x61, 0x69, 0x2d, 0x66, 0x61, 0x63, 0x74, 0x6f, 0x72, 0x79, 0x2f, 0x6e,
+	0x76, 0x6b, 0x65, 0x2f, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2f, 0x70, 0x6b, 0x67, 0x2f, 0x61, 0x67,
+	0x65, 0x6e, 0x74, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x33,
 }
 
 var (
@@ -9269,7 +9164,7 @@ func file_pkg_agent_proto_node_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_agent_proto_node_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 16)
-var file_pkg_agent_proto_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 119)
+var file_pkg_agent_proto_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 117)
 var file_pkg_agent_proto_node_agent_proto_goTypes = []interface{}{
 	(NodeAgentOperationPhase)(0),                                 // 0: proto.NodeAgentOperationPhase
 	(InstallMethod)(0),                                           // 1: proto.InstallMethod
@@ -9341,71 +9236,69 @@ var file_pkg_agent_proto_node_agent_proto_goTypes = []interface{}{
 	(*UploadStatus)(nil),                                         // 67: proto.UploadStatus
 	(*WriteNodeAgentConfigRequest)(nil),                          // 68: proto.WriteNodeAgentConfigRequest
 	(*WriteNodeAgentConfigResponse)(nil),                         // 69: proto.WriteNodeAgentConfigResponse
-	(*RestartAPIPodsRequest)(nil),                                // 70: proto.RestartAPIPodsRequest
-	(*RestartAPIPodsResponse)(nil),                               // 71: proto.RestartAPIPodsResponse
-	(*ScriptOutputChunk)(nil),                                    // 72: proto.ScriptOutputChunk
-	(*SetUnsetIsMasterRequest)(nil),                              // 73: proto.SetUnsetIsMasterRequest
-	(*SetUnsetIsMasterResponse)(nil),                             // 74: proto.SetUnsetIsMasterResponse
-	(*InstallBundleRequest)(nil),                                 // 75: proto.InstallBundleRequest
-	(*InstallBundleResponse)(nil),                                // 76: proto.InstallBundleResponse
-	(*GetBundleStatusRequest)(nil),                               // 77: proto.GetBundleStatusRequest
-	(*BundleStatus)(nil),                                         // 78: proto.BundleStatus
-	(*GetBundleStatusResponse)(nil),                              // 79: proto.GetBundleStatusResponse
-	(*InstallCollectionRequest)(nil),                             // 80: proto.InstallCollectionRequest
-	(*InstallCollectionResponse)(nil),                            // 81: proto.InstallCollectionResponse
-	(*InstallPackagesRequest)(nil),                               // 82: proto.InstallPackagesRequest
-	(*InstallPackagesResponse)(nil),                              // 83: proto.InstallPackagesResponse
-	(*NodeAgentUpgradeOperation)(nil),                            // 84: proto.NodeAgentUpgradeOperation
-	(*StartNodeAgentUpgradeRequest)(nil),                         // 85: proto.StartNodeAgentUpgradeRequest
-	(*StartNodeAgentUpgradeResponse)(nil),                        // 86: proto.StartNodeAgentUpgradeResponse
-	(*GetNodeAgentUpgradeStatusRequest)(nil),                     // 87: proto.GetNodeAgentUpgradeStatusRequest
-	(*GetNodeAgentUpgradeStatusResponse)(nil),                    // 88: proto.GetNodeAgentUpgradeStatusResponse
-	(*ListPackagesRequest)(nil),                                  // 89: proto.ListPackagesRequest
-	(*InstalledPackage)(nil),                                     // 90: proto.InstalledPackage
-	(*ListPackagesResponse)(nil),                                 // 91: proto.ListPackagesResponse
-	(*RemovePackagesRequest)(nil),                                // 92: proto.RemovePackagesRequest
-	(*RemovePackagesResponse)(nil),                               // 93: proto.RemovePackagesResponse
-	(*KubeadmPreflightRequest)(nil),                              // 94: proto.KubeadmPreflightRequest
-	(*PreflightCheckResult)(nil),                                 // 95: proto.PreflightCheckResult
-	(*KubeadmPreflightResponse)(nil),                             // 96: proto.KubeadmPreflightResponse
-	(*ExecuteNodePreflightRequest)(nil),                          // 97: proto.ExecuteNodePreflightRequest
-	(*CheckCloudInitStatus)(nil),                                 // 98: proto.CheckCloudInitStatus
-	(*NodePreflightCheck)(nil),                                   // 99: proto.NodePreflightCheck
-	(*FileExistsPreflightCheck)(nil),                             // 100: proto.FileExistsPreflightCheck
-	(*ExecuteNodePreflightResponse)(nil),                         // 101: proto.ExecuteNodePreflightResponse
-	(*NodePreflightResult)(nil),                                  // 102: proto.NodePreflightResult
-	(*ConfigureAptRepoRequest)(nil),                              // 103: proto.ConfigureAptRepoRequest
-	(*ConfigureAptRepoResponse)(nil),                             // 104: proto.ConfigureAptRepoResponse
-	(*RemoveAptRepoRequest)(nil),                                 // 105: proto.RemoveAptRepoRequest
-	(*RemoveAptRepoResponse)(nil),                                // 106: proto.RemoveAptRepoResponse
-	(*StartKubeVipRestoreRequest)(nil),                           // 107: proto.StartKubeVipRestoreRequest
-	(*StartKubeVipRestoreResponse)(nil),                          // 108: proto.StartKubeVipRestoreResponse
-	(*ScheduleNodeRebootRequest)(nil),                            // 109: proto.ScheduleNodeRebootRequest
-	(*ScheduleNodeRebootResponse)(nil),                           // 110: proto.ScheduleNodeRebootResponse
-	(*GetNodeBootInfoRequest)(nil),                               // 111: proto.GetNodeBootInfoRequest
-	(*GetNodeBootInfoResponse)(nil),                              // 112: proto.GetNodeBootInfoResponse
-	(*ReconfigureKubeletAPIServerRequest)(nil),                   // 113: proto.ReconfigureKubeletAPIServerRequest
-	(*ReconfigureKubeletAPIServerResponse)(nil),                  // 114: proto.ReconfigureKubeletAPIServerResponse
-	(*KubeadmUpgradeApplyRequest)(nil),                           // 115: proto.KubeadmUpgradeApplyRequest
-	(*KubeadmUpgradeApplyResponse)(nil),                          // 116: proto.KubeadmUpgradeApplyResponse
-	(*ReconcileKubeVipRequest)(nil),                              // 117: proto.ReconcileKubeVipRequest
-	(*ReconcileKubeVipResponse)(nil),                             // 118: proto.ReconcileKubeVipResponse
-	(*StartKubernetesCertificateRenewalRequest)(nil),             // 119: proto.StartKubernetesCertificateRenewalRequest
-	(*StartKubernetesCertificateRenewalResponse)(nil),            // 120: proto.StartKubernetesCertificateRenewalResponse
-	(*GetKubernetesCertificateRenewalStatusRequest)(nil),         // 121: proto.GetKubernetesCertificateRenewalStatusRequest
-	(*GetKubernetesCertificateRenewalStatusResponse)(nil),        // 122: proto.GetKubernetesCertificateRenewalStatusResponse
-	(*KubernetesCertificateRenewalOperation)(nil),                // 123: proto.KubernetesCertificateRenewalOperation
-	(*RemoveEtcdMemberRequest)(nil),                              // 124: proto.RemoveEtcdMemberRequest
-	(*RemoveEtcdMemberResponse)(nil),                             // 125: proto.RemoveEtcdMemberResponse
-	(*OpenVSwitchReconciliationResult)(nil),                      // 126: proto.OpenVSwitchReconciliationResult
-	(*StartOpenVSwitchReconciliationRequest)(nil),                // 127: proto.StartOpenVSwitchReconciliationRequest
-	(*StartOpenVSwitchReconciliationResponse)(nil),               // 128: proto.StartOpenVSwitchReconciliationResponse
-	(*GetOpenVSwitchReconciliationStatusRequest)(nil),            // 129: proto.GetOpenVSwitchReconciliationStatusRequest
-	(*GetOpenVSwitchReconciliationStatusResponse)(nil),           // 130: proto.GetOpenVSwitchReconciliationStatusResponse
-	(*OpenVSwitchReconciliationOperation)(nil),                   // 131: proto.OpenVSwitchReconciliationOperation
-	nil, // 132: proto.KubeadmInitRequest.CniConfigEntry
-	nil, // 133: proto.InstallCNIPluginRequest.CniConfigEntry
-	nil, // 134: proto.InstallCNIRequest.CniConfigEntry
+	(*ScriptOutputChunk)(nil),                                    // 70: proto.ScriptOutputChunk
+	(*SetUnsetIsMasterRequest)(nil),                              // 71: proto.SetUnsetIsMasterRequest
+	(*SetUnsetIsMasterResponse)(nil),                             // 72: proto.SetUnsetIsMasterResponse
+	(*InstallBundleRequest)(nil),                                 // 73: proto.InstallBundleRequest
+	(*InstallBundleResponse)(nil),                                // 74: proto.InstallBundleResponse
+	(*GetBundleStatusRequest)(nil),                               // 75: proto.GetBundleStatusRequest
+	(*BundleStatus)(nil),                                         // 76: proto.BundleStatus
+	(*GetBundleStatusResponse)(nil),                              // 77: proto.GetBundleStatusResponse
+	(*InstallCollectionRequest)(nil),                             // 78: proto.InstallCollectionRequest
+	(*InstallCollectionResponse)(nil),                            // 79: proto.InstallCollectionResponse
+	(*InstallPackagesRequest)(nil),                               // 80: proto.InstallPackagesRequest
+	(*InstallPackagesResponse)(nil),                              // 81: proto.InstallPackagesResponse
+	(*NodeAgentUpgradeOperation)(nil),                            // 82: proto.NodeAgentUpgradeOperation
+	(*StartNodeAgentUpgradeRequest)(nil),                         // 83: proto.StartNodeAgentUpgradeRequest
+	(*StartNodeAgentUpgradeResponse)(nil),                        // 84: proto.StartNodeAgentUpgradeResponse
+	(*GetNodeAgentUpgradeStatusRequest)(nil),                     // 85: proto.GetNodeAgentUpgradeStatusRequest
+	(*GetNodeAgentUpgradeStatusResponse)(nil),                    // 86: proto.GetNodeAgentUpgradeStatusResponse
+	(*ListPackagesRequest)(nil),                                  // 87: proto.ListPackagesRequest
+	(*InstalledPackage)(nil),                                     // 88: proto.InstalledPackage
+	(*ListPackagesResponse)(nil),                                 // 89: proto.ListPackagesResponse
+	(*RemovePackagesRequest)(nil),                                // 90: proto.RemovePackagesRequest
+	(*RemovePackagesResponse)(nil),                               // 91: proto.RemovePackagesResponse
+	(*KubeadmPreflightRequest)(nil),                              // 92: proto.KubeadmPreflightRequest
+	(*PreflightCheckResult)(nil),                                 // 93: proto.PreflightCheckResult
+	(*KubeadmPreflightResponse)(nil),                             // 94: proto.KubeadmPreflightResponse
+	(*ExecuteNodePreflightRequest)(nil),                          // 95: proto.ExecuteNodePreflightRequest
+	(*CheckCloudInitStatus)(nil),                                 // 96: proto.CheckCloudInitStatus
+	(*NodePreflightCheck)(nil),                                   // 97: proto.NodePreflightCheck
+	(*FileExistsPreflightCheck)(nil),                             // 98: proto.FileExistsPreflightCheck
+	(*ExecuteNodePreflightResponse)(nil),                         // 99: proto.ExecuteNodePreflightResponse
+	(*NodePreflightResult)(nil),                                  // 100: proto.NodePreflightResult
+	(*ConfigureAptRepoRequest)(nil),                              // 101: proto.ConfigureAptRepoRequest
+	(*ConfigureAptRepoResponse)(nil),                             // 102: proto.ConfigureAptRepoResponse
+	(*RemoveAptRepoRequest)(nil),                                 // 103: proto.RemoveAptRepoRequest
+	(*RemoveAptRepoResponse)(nil),                                // 104: proto.RemoveAptRepoResponse
+	(*StartKubeVipRestoreRequest)(nil),                           // 105: proto.StartKubeVipRestoreRequest
+	(*StartKubeVipRestoreResponse)(nil),                          // 106: proto.StartKubeVipRestoreResponse
+	(*ScheduleNodeRebootRequest)(nil),                            // 107: proto.ScheduleNodeRebootRequest
+	(*ScheduleNodeRebootResponse)(nil),                           // 108: proto.ScheduleNodeRebootResponse
+	(*GetNodeBootInfoRequest)(nil),                               // 109: proto.GetNodeBootInfoRequest
+	(*GetNodeBootInfoResponse)(nil),                              // 110: proto.GetNodeBootInfoResponse
+	(*ReconfigureKubeletAPIServerRequest)(nil),                   // 111: proto.ReconfigureKubeletAPIServerRequest
+	(*ReconfigureKubeletAPIServerResponse)(nil),                  // 112: proto.ReconfigureKubeletAPIServerResponse
+	(*KubeadmUpgradeApplyRequest)(nil),                           // 113: proto.KubeadmUpgradeApplyRequest
+	(*KubeadmUpgradeApplyResponse)(nil),                          // 114: proto.KubeadmUpgradeApplyResponse
+	(*ReconcileKubeVipRequest)(nil),                              // 115: proto.ReconcileKubeVipRequest
+	(*ReconcileKubeVipResponse)(nil),                             // 116: proto.ReconcileKubeVipResponse
+	(*StartKubernetesCertificateRenewalRequest)(nil),             // 117: proto.StartKubernetesCertificateRenewalRequest
+	(*StartKubernetesCertificateRenewalResponse)(nil),            // 118: proto.StartKubernetesCertificateRenewalResponse
+	(*GetKubernetesCertificateRenewalStatusRequest)(nil),         // 119: proto.GetKubernetesCertificateRenewalStatusRequest
+	(*GetKubernetesCertificateRenewalStatusResponse)(nil),        // 120: proto.GetKubernetesCertificateRenewalStatusResponse
+	(*KubernetesCertificateRenewalOperation)(nil),                // 121: proto.KubernetesCertificateRenewalOperation
+	(*RemoveEtcdMemberRequest)(nil),                              // 122: proto.RemoveEtcdMemberRequest
+	(*RemoveEtcdMemberResponse)(nil),                             // 123: proto.RemoveEtcdMemberResponse
+	(*OpenVSwitchReconciliationResult)(nil),                      // 124: proto.OpenVSwitchReconciliationResult
+	(*StartOpenVSwitchReconciliationRequest)(nil),                // 125: proto.StartOpenVSwitchReconciliationRequest
+	(*StartOpenVSwitchReconciliationResponse)(nil),               // 126: proto.StartOpenVSwitchReconciliationResponse
+	(*GetOpenVSwitchReconciliationStatusRequest)(nil),            // 127: proto.GetOpenVSwitchReconciliationStatusRequest
+	(*GetOpenVSwitchReconciliationStatusResponse)(nil),           // 128: proto.GetOpenVSwitchReconciliationStatusResponse
+	(*OpenVSwitchReconciliationOperation)(nil),                   // 129: proto.OpenVSwitchReconciliationOperation
+	nil, // 130: proto.KubeadmInitRequest.CniConfigEntry
+	nil, // 131: proto.InstallCNIPluginRequest.CniConfigEntry
+	nil, // 132: proto.InstallCNIRequest.CniConfigEntry
 }
 var file_pkg_agent_proto_node_agent_proto_depIdxs = []int32{
 	22,  // 0: proto.PatchAPIServerManifestRequest.flag_ops:type_name -> proto.FlagOp
@@ -9413,69 +9306,69 @@ var file_pkg_agent_proto_node_agent_proto_depIdxs = []int32{
 	23,  // 2: proto.FlagOp.set:type_name -> proto.SetFlag
 	24,  // 3: proto.FlagOp.remove:type_name -> proto.RemoveFlag
 	8,   // 4: proto.PatchAPIServerManifestResponse.outcome:type_name -> proto.PatchAPIServerManifestResponse.Outcome
-	132, // 5: proto.KubeadmInitRequest.cni_config:type_name -> proto.KubeadmInitRequest.CniConfigEntry
+	130, // 5: proto.KubeadmInitRequest.cni_config:type_name -> proto.KubeadmInitRequest.CniConfigEntry
 	20,  // 6: proto.KubeadmInitRequest.files:type_name -> proto.File
 	20,  // 7: proto.KubeadmJoinRequest.files:type_name -> proto.File
 	0,   // 8: proto.NodeAgentOperationStatus.phase:type_name -> proto.NodeAgentOperationPhase
 	34,  // 9: proto.StartK8sControlPlaneNodeGracefulShutdownResponse.operation:type_name -> proto.NodeAgentOperationStatus
 	34,  // 10: proto.GetK8sControlPlaneNodeGracefulShutdownStatusResponse.operation:type_name -> proto.NodeAgentOperationStatus
-	133, // 11: proto.InstallCNIPluginRequest.cni_config:type_name -> proto.InstallCNIPluginRequest.CniConfigEntry
+	131, // 11: proto.InstallCNIPluginRequest.cni_config:type_name -> proto.InstallCNIPluginRequest.CniConfigEntry
 	2,   // 12: proto.InstallCNIRequest.cni_variant:type_name -> proto.CniVariant
 	3,   // 13: proto.InstallCNIRequest.cni_apt_role:type_name -> proto.CniAptRole
-	134, // 14: proto.InstallCNIRequest.cni_config:type_name -> proto.InstallCNIRequest.CniConfigEntry
+	132, // 14: proto.InstallCNIRequest.cni_config:type_name -> proto.InstallCNIRequest.CniConfigEntry
 	54,  // 15: proto.UpdateEncryptionConfigRequest.add_secondary_key:type_name -> proto.AddSecondaryKeyOperation
 	55,  // 16: proto.UpdateEncryptionConfigRequest.promote_primary_key:type_name -> proto.PromotePrimaryKeyOperation
 	56,  // 17: proto.UpdateEncryptionConfigRequest.remove_old_keys:type_name -> proto.RemoveOldKeysOperation
 	4,   // 18: proto.EtcdEncryptionAtRestObjectsRewriteOperation.state:type_name -> proto.EtcdEncryptionAtRestObjectsRewriteState
 	59,  // 19: proto.StartEtcdEncryptionAtRestObjectsRewriteResponse.operation:type_name -> proto.EtcdEncryptionAtRestObjectsRewriteOperation
 	59,  // 20: proto.GetEtcdEncryptionAtRestObjectsRewriteStatusResponse.operation:type_name -> proto.EtcdEncryptionAtRestObjectsRewriteOperation
-	78,  // 21: proto.GetBundleStatusResponse.statuses:type_name -> proto.BundleStatus
+	76,  // 21: proto.GetBundleStatusResponse.statuses:type_name -> proto.BundleStatus
 	5,   // 22: proto.NodeAgentUpgradeOperation.method:type_name -> proto.NodeAgentUpgradeMethod
 	6,   // 23: proto.NodeAgentUpgradeOperation.phase:type_name -> proto.NodeAgentUpgradePhase
 	5,   // 24: proto.StartNodeAgentUpgradeRequest.method:type_name -> proto.NodeAgentUpgradeMethod
-	84,  // 25: proto.StartNodeAgentUpgradeResponse.operation:type_name -> proto.NodeAgentUpgradeOperation
-	84,  // 26: proto.GetNodeAgentUpgradeStatusResponse.operation:type_name -> proto.NodeAgentUpgradeOperation
-	90,  // 27: proto.ListPackagesResponse.packages:type_name -> proto.InstalledPackage
+	82,  // 25: proto.StartNodeAgentUpgradeResponse.operation:type_name -> proto.NodeAgentUpgradeOperation
+	82,  // 26: proto.GetNodeAgentUpgradeStatusResponse.operation:type_name -> proto.NodeAgentUpgradeOperation
+	88,  // 27: proto.ListPackagesResponse.packages:type_name -> proto.InstalledPackage
 	7,   // 28: proto.KubeadmPreflightRequest.role:type_name -> proto.KubeadmPreflightRole
-	95,  // 29: proto.KubeadmPreflightResponse.results:type_name -> proto.PreflightCheckResult
-	99,  // 30: proto.ExecuteNodePreflightRequest.checks:type_name -> proto.NodePreflightCheck
-	94,  // 31: proto.ExecuteNodePreflightRequest.kubeadm_preflight:type_name -> proto.KubeadmPreflightRequest
-	98,  // 32: proto.ExecuteNodePreflightRequest.check_cloud_init_status:type_name -> proto.CheckCloudInitStatus
-	100, // 33: proto.NodePreflightCheck.file_exists:type_name -> proto.FileExistsPreflightCheck
-	102, // 34: proto.ExecuteNodePreflightResponse.results:type_name -> proto.NodePreflightResult
-	96,  // 35: proto.ExecuteNodePreflightResponse.kubeadm_preflight:type_name -> proto.KubeadmPreflightResponse
+	93,  // 29: proto.KubeadmPreflightResponse.results:type_name -> proto.PreflightCheckResult
+	97,  // 30: proto.ExecuteNodePreflightRequest.checks:type_name -> proto.NodePreflightCheck
+	92,  // 31: proto.ExecuteNodePreflightRequest.kubeadm_preflight:type_name -> proto.KubeadmPreflightRequest
+	96,  // 32: proto.ExecuteNodePreflightRequest.check_cloud_init_status:type_name -> proto.CheckCloudInitStatus
+	98,  // 33: proto.NodePreflightCheck.file_exists:type_name -> proto.FileExistsPreflightCheck
+	100, // 34: proto.ExecuteNodePreflightResponse.results:type_name -> proto.NodePreflightResult
+	94,  // 35: proto.ExecuteNodePreflightResponse.kubeadm_preflight:type_name -> proto.KubeadmPreflightResponse
 	34,  // 36: proto.StartKubeVipRestoreResponse.operation:type_name -> proto.NodeAgentOperationStatus
 	9,   // 37: proto.ReconfigureKubeletAPIServerResponse.outcome:type_name -> proto.ReconfigureKubeletAPIServerResponse.Outcome
 	10,  // 38: proto.KubeadmUpgradeApplyResponse.outcome:type_name -> proto.KubeadmUpgradeApplyResponse.Outcome
 	11,  // 39: proto.ReconcileKubeVipRequest.bgp_peer_asn_source:type_name -> proto.ReconcileKubeVipRequest.BGPPeerASNSource
 	12,  // 40: proto.ReconcileKubeVipResponse.outcome:type_name -> proto.ReconcileKubeVipResponse.Outcome
-	123, // 41: proto.StartKubernetesCertificateRenewalResponse.operation:type_name -> proto.KubernetesCertificateRenewalOperation
-	123, // 42: proto.GetKubernetesCertificateRenewalStatusResponse.operation:type_name -> proto.KubernetesCertificateRenewalOperation
+	121, // 41: proto.StartKubernetesCertificateRenewalResponse.operation:type_name -> proto.KubernetesCertificateRenewalOperation
+	121, // 42: proto.GetKubernetesCertificateRenewalStatusResponse.operation:type_name -> proto.KubernetesCertificateRenewalOperation
 	34,  // 43: proto.KubernetesCertificateRenewalOperation.operation:type_name -> proto.NodeAgentOperationStatus
 	13,  // 44: proto.KubernetesCertificateRenewalOperation.outcome:type_name -> proto.KubernetesCertificateRenewalOperation.Outcome
 	14,  // 45: proto.OpenVSwitchReconciliationResult.outcome:type_name -> proto.OpenVSwitchReconciliationResult.Outcome
 	15,  // 46: proto.OpenVSwitchReconciliationResult.network_backend:type_name -> proto.OpenVSwitchReconciliationResult.NetworkBackend
-	131, // 47: proto.StartOpenVSwitchReconciliationResponse.operation:type_name -> proto.OpenVSwitchReconciliationOperation
-	131, // 48: proto.GetOpenVSwitchReconciliationStatusResponse.operation:type_name -> proto.OpenVSwitchReconciliationOperation
+	129, // 47: proto.StartOpenVSwitchReconciliationResponse.operation:type_name -> proto.OpenVSwitchReconciliationOperation
+	129, // 48: proto.GetOpenVSwitchReconciliationStatusResponse.operation:type_name -> proto.OpenVSwitchReconciliationOperation
 	34,  // 49: proto.OpenVSwitchReconciliationOperation.operation:type_name -> proto.NodeAgentOperationStatus
-	126, // 50: proto.OpenVSwitchReconciliationOperation.result:type_name -> proto.OpenVSwitchReconciliationResult
+	124, // 50: proto.OpenVSwitchReconciliationOperation.result:type_name -> proto.OpenVSwitchReconciliationResult
 	18,  // 51: proto.NodeAgent.GetKubeadmStatus:input_type -> proto.KubeadmStatusRequest
-	109, // 52: proto.NodeAgent.ScheduleNodeReboot:input_type -> proto.ScheduleNodeRebootRequest
-	111, // 53: proto.NodeAgent.GetNodeBootInfo:input_type -> proto.GetNodeBootInfoRequest
+	107, // 52: proto.NodeAgent.ScheduleNodeReboot:input_type -> proto.ScheduleNodeRebootRequest
+	109, // 53: proto.NodeAgent.GetNodeBootInfo:input_type -> proto.GetNodeBootInfoRequest
 	26,  // 54: proto.NodeAgent.ExecuteKubeadmInit:input_type -> proto.KubeadmInitRequest
 	29,  // 55: proto.NodeAgent.ExecuteKubeadmJoin:input_type -> proto.KubeadmJoinRequest
 	32,  // 56: proto.NodeAgent.ExecuteKubeadmReset:input_type -> proto.KubeadmResetRequest
-	113, // 57: proto.NodeAgent.ReconfigureKubeletAPIServer:input_type -> proto.ReconfigureKubeletAPIServerRequest
-	127, // 58: proto.NodeAgent.StartOpenVSwitchReconciliation:input_type -> proto.StartOpenVSwitchReconciliationRequest
-	129, // 59: proto.NodeAgent.GetOpenVSwitchReconciliationStatus:input_type -> proto.GetOpenVSwitchReconciliationStatusRequest
-	115, // 60: proto.NodeAgent.KubeadmUpgradeApply:input_type -> proto.KubeadmUpgradeApplyRequest
-	117, // 61: proto.NodeAgent.ReconcileKubeVip:input_type -> proto.ReconcileKubeVipRequest
-	119, // 62: proto.NodeAgent.StartKubernetesCertificateRenewal:input_type -> proto.StartKubernetesCertificateRenewalRequest
-	121, // 63: proto.NodeAgent.GetKubernetesCertificateRenewalStatus:input_type -> proto.GetKubernetesCertificateRenewalStatusRequest
-	124, // 64: proto.NodeAgent.RemoveEtcdMember:input_type -> proto.RemoveEtcdMemberRequest
+	111, // 57: proto.NodeAgent.ReconfigureKubeletAPIServer:input_type -> proto.ReconfigureKubeletAPIServerRequest
+	125, // 58: proto.NodeAgent.StartOpenVSwitchReconciliation:input_type -> proto.StartOpenVSwitchReconciliationRequest
+	127, // 59: proto.NodeAgent.GetOpenVSwitchReconciliationStatus:input_type -> proto.GetOpenVSwitchReconciliationStatusRequest
+	113, // 60: proto.NodeAgent.KubeadmUpgradeApply:input_type -> proto.KubeadmUpgradeApplyRequest
+	115, // 61: proto.NodeAgent.ReconcileKubeVip:input_type -> proto.ReconcileKubeVipRequest
+	117, // 62: proto.NodeAgent.StartKubernetesCertificateRenewal:input_type -> proto.StartKubernetesCertificateRenewalRequest
+	119, // 63: proto.NodeAgent.GetKubernetesCertificateRenewalStatus:input_type -> proto.GetKubernetesCertificateRenewalStatusRequest
+	122, // 64: proto.NodeAgent.RemoveEtcdMember:input_type -> proto.RemoveEtcdMemberRequest
 	35,  // 65: proto.NodeAgent.StartK8sControlPlaneNodeGracefulShutdown:input_type -> proto.StartK8sControlPlaneNodeGracefulShutdownRequest
 	37,  // 66: proto.NodeAgent.GetK8sControlPlaneNodeGracefulShutdownStatus:input_type -> proto.GetK8sControlPlaneNodeGracefulShutdownStatusRequest
-	107, // 67: proto.NodeAgent.StartKubeVipRestore:input_type -> proto.StartKubeVipRestoreRequest
+	105, // 67: proto.NodeAgent.StartKubeVipRestore:input_type -> proto.StartKubeVipRestoreRequest
 	40,  // 68: proto.NodeAgent.InstallCNI:input_type -> proto.InstallCNIRequest
 	42,  // 69: proto.NodeAgent.UpdateAndFetchKubeAdmJoinStrings:input_type -> proto.KubeadmJoinStringRequest
 	46,  // 70: proto.NodeAgent.GetKubeconfig:input_type -> proto.KubeconfigRequest
@@ -9487,74 +9380,72 @@ var file_pkg_agent_proto_node_agent_proto_depIdxs = []int32{
 	60,  // 76: proto.NodeAgent.StartEtcdEncryptionAtRestObjectsRewrite:input_type -> proto.StartEtcdEncryptionAtRestObjectsRewriteRequest
 	62,  // 77: proto.NodeAgent.GetEtcdEncryptionAtRestObjectsRewriteStatus:input_type -> proto.GetEtcdEncryptionAtRestObjectsRewriteStatusRequest
 	64,  // 78: proto.NodeAgent.RemovePlainTextSecondaryEncryptionEntry:input_type -> proto.RemovePlainTextSecondaryEncryptionEntryRequest
-	70,  // 79: proto.NodeAgent.RestartAPIPods:input_type -> proto.RestartAPIPodsRequest
-	66,  // 80: proto.NodeAgent.UploadFileBundle:input_type -> proto.FileChunk
-	68,  // 81: proto.NodeAgent.WriteNodeAgentConfig:input_type -> proto.WriteNodeAgentConfigRequest
-	48,  // 82: proto.NodeAgent.StreamExecuteScript:input_type -> proto.ExecuteScriptRequest
-	73,  // 83: proto.NodeAgent.SetUnsetIsMaster:input_type -> proto.SetUnsetIsMasterRequest
-	75,  // 84: proto.NodeAgent.InstallBundle:input_type -> proto.InstallBundleRequest
-	77,  // 85: proto.NodeAgent.GetBundleStatus:input_type -> proto.GetBundleStatusRequest
-	80,  // 86: proto.NodeAgent.InstallCollection:input_type -> proto.InstallCollectionRequest
-	85,  // 87: proto.NodeAgent.StartNodeAgentUpgrade:input_type -> proto.StartNodeAgentUpgradeRequest
-	87,  // 88: proto.NodeAgent.GetNodeAgentUpgradeStatus:input_type -> proto.GetNodeAgentUpgradeStatusRequest
-	82,  // 89: proto.NodeAgent.InstallPackages:input_type -> proto.InstallPackagesRequest
-	89,  // 90: proto.NodeAgent.ListPackages:input_type -> proto.ListPackagesRequest
-	92,  // 91: proto.NodeAgent.RemovePackages:input_type -> proto.RemovePackagesRequest
-	16,  // 92: proto.NodeAgent.GetSupportBundle:input_type -> proto.GetSupportBundleRequest
-	94,  // 93: proto.NodeAgent.ExecuteKubeadmPreflight:input_type -> proto.KubeadmPreflightRequest
-	97,  // 94: proto.NodeAgent.ExecuteNodePreflight:input_type -> proto.ExecuteNodePreflightRequest
-	103, // 95: proto.NodeAgent.ConfigureAptRepo:input_type -> proto.ConfigureAptRepoRequest
-	105, // 96: proto.NodeAgent.RemoveAptRepo:input_type -> proto.RemoveAptRepoRequest
-	21,  // 97: proto.NodeAgent.PatchAPIServerManifest:input_type -> proto.PatchAPIServerManifestRequest
-	19,  // 98: proto.NodeAgent.GetKubeadmStatus:output_type -> proto.KubeadmStatusResponse
-	110, // 99: proto.NodeAgent.ScheduleNodeReboot:output_type -> proto.ScheduleNodeRebootResponse
-	112, // 100: proto.NodeAgent.GetNodeBootInfo:output_type -> proto.GetNodeBootInfoResponse
-	28,  // 101: proto.NodeAgent.ExecuteKubeadmInit:output_type -> proto.KubeadmInitStatusResponse
-	31,  // 102: proto.NodeAgent.ExecuteKubeadmJoin:output_type -> proto.KubeadmJoinStatusResponse
-	33,  // 103: proto.NodeAgent.ExecuteKubeadmReset:output_type -> proto.KubeadmResetStatusResponse
-	114, // 104: proto.NodeAgent.ReconfigureKubeletAPIServer:output_type -> proto.ReconfigureKubeletAPIServerResponse
-	128, // 105: proto.NodeAgent.StartOpenVSwitchReconciliation:output_type -> proto.StartOpenVSwitchReconciliationResponse
-	130, // 106: proto.NodeAgent.GetOpenVSwitchReconciliationStatus:output_type -> proto.GetOpenVSwitchReconciliationStatusResponse
-	116, // 107: proto.NodeAgent.KubeadmUpgradeApply:output_type -> proto.KubeadmUpgradeApplyResponse
-	118, // 108: proto.NodeAgent.ReconcileKubeVip:output_type -> proto.ReconcileKubeVipResponse
-	120, // 109: proto.NodeAgent.StartKubernetesCertificateRenewal:output_type -> proto.StartKubernetesCertificateRenewalResponse
-	122, // 110: proto.NodeAgent.GetKubernetesCertificateRenewalStatus:output_type -> proto.GetKubernetesCertificateRenewalStatusResponse
-	125, // 111: proto.NodeAgent.RemoveEtcdMember:output_type -> proto.RemoveEtcdMemberResponse
-	36,  // 112: proto.NodeAgent.StartK8sControlPlaneNodeGracefulShutdown:output_type -> proto.StartK8sControlPlaneNodeGracefulShutdownResponse
-	38,  // 113: proto.NodeAgent.GetK8sControlPlaneNodeGracefulShutdownStatus:output_type -> proto.GetK8sControlPlaneNodeGracefulShutdownStatusResponse
-	108, // 114: proto.NodeAgent.StartKubeVipRestore:output_type -> proto.StartKubeVipRestoreResponse
-	41,  // 115: proto.NodeAgent.InstallCNI:output_type -> proto.InstallCNIResponse
-	43,  // 116: proto.NodeAgent.UpdateAndFetchKubeAdmJoinStrings:output_type -> proto.KubeadmJoinStringResponse
-	47,  // 117: proto.NodeAgent.GetKubeconfig:output_type -> proto.KubeconfigResponse
-	49,  // 118: proto.NodeAgent.ExecuteScript:output_type -> proto.ExecuteScriptResponse
-	43,  // 119: proto.NodeAgent.GetKubeadmJoinString:output_type -> proto.KubeadmJoinStringResponse
-	51,  // 120: proto.NodeAgent.InitializeKubernetesAPIEncryption:output_type -> proto.InitializeKubernetesAPIEncryptionResponse
-	53,  // 121: proto.NodeAgent.PromoteKubernetesAPIEncryptionProviders:output_type -> proto.PromoteKubernetesAPIEncryptionProvidersResponse
-	58,  // 122: proto.NodeAgent.UpdateEncryptionConfig:output_type -> proto.UpdateEncryptionConfigResponse
-	61,  // 123: proto.NodeAgent.StartEtcdEncryptionAtRestObjectsRewrite:output_type -> proto.StartEtcdEncryptionAtRestObjectsRewriteResponse
-	63,  // 124: proto.NodeAgent.GetEtcdEncryptionAtRestObjectsRewriteStatus:output_type -> proto.GetEtcdEncryptionAtRestObjectsRewriteStatusResponse
-	65,  // 125: proto.NodeAgent.RemovePlainTextSecondaryEncryptionEntry:output_type -> proto.RemovePlainTextSecondaryEncryptionEntryResponse
-	71,  // 126: proto.NodeAgent.RestartAPIPods:output_type -> proto.RestartAPIPodsResponse
-	67,  // 127: proto.NodeAgent.UploadFileBundle:output_type -> proto.UploadStatus
-	69,  // 128: proto.NodeAgent.WriteNodeAgentConfig:output_type -> proto.WriteNodeAgentConfigResponse
-	72,  // 129: proto.NodeAgent.StreamExecuteScript:output_type -> proto.ScriptOutputChunk
-	74,  // 130: proto.NodeAgent.SetUnsetIsMaster:output_type -> proto.SetUnsetIsMasterResponse
-	76,  // 131: proto.NodeAgent.InstallBundle:output_type -> proto.InstallBundleResponse
-	79,  // 132: proto.NodeAgent.GetBundleStatus:output_type -> proto.GetBundleStatusResponse
-	81,  // 133: proto.NodeAgent.InstallCollection:output_type -> proto.InstallCollectionResponse
-	86,  // 134: proto.NodeAgent.StartNodeAgentUpgrade:output_type -> proto.StartNodeAgentUpgradeResponse
-	88,  // 135: proto.NodeAgent.GetNodeAgentUpgradeStatus:output_type -> proto.GetNodeAgentUpgradeStatusResponse
-	83,  // 136: proto.NodeAgent.InstallPackages:output_type -> proto.InstallPackagesResponse
-	91,  // 137: proto.NodeAgent.ListPackages:output_type -> proto.ListPackagesResponse
-	93,  // 138: proto.NodeAgent.RemovePackages:output_type -> proto.RemovePackagesResponse
-	17,  // 139: proto.NodeAgent.GetSupportBundle:output_type -> proto.GetSupportBundleResponse
-	96,  // 140: proto.NodeAgent.ExecuteKubeadmPreflight:output_type -> proto.KubeadmPreflightResponse
-	101, // 141: proto.NodeAgent.ExecuteNodePreflight:output_type -> proto.ExecuteNodePreflightResponse
-	104, // 142: proto.NodeAgent.ConfigureAptRepo:output_type -> proto.ConfigureAptRepoResponse
-	106, // 143: proto.NodeAgent.RemoveAptRepo:output_type -> proto.RemoveAptRepoResponse
-	25,  // 144: proto.NodeAgent.PatchAPIServerManifest:output_type -> proto.PatchAPIServerManifestResponse
-	98,  // [98:145] is the sub-list for method output_type
-	51,  // [51:98] is the sub-list for method input_type
+	66,  // 79: proto.NodeAgent.UploadFileBundle:input_type -> proto.FileChunk
+	68,  // 80: proto.NodeAgent.WriteNodeAgentConfig:input_type -> proto.WriteNodeAgentConfigRequest
+	48,  // 81: proto.NodeAgent.StreamExecuteScript:input_type -> proto.ExecuteScriptRequest
+	71,  // 82: proto.NodeAgent.SetUnsetIsMaster:input_type -> proto.SetUnsetIsMasterRequest
+	73,  // 83: proto.NodeAgent.InstallBundle:input_type -> proto.InstallBundleRequest
+	75,  // 84: proto.NodeAgent.GetBundleStatus:input_type -> proto.GetBundleStatusRequest
+	78,  // 85: proto.NodeAgent.InstallCollection:input_type -> proto.InstallCollectionRequest
+	83,  // 86: proto.NodeAgent.StartNodeAgentUpgrade:input_type -> proto.StartNodeAgentUpgradeRequest
+	85,  // 87: proto.NodeAgent.GetNodeAgentUpgradeStatus:input_type -> proto.GetNodeAgentUpgradeStatusRequest
+	80,  // 88: proto.NodeAgent.InstallPackages:input_type -> proto.InstallPackagesRequest
+	87,  // 89: proto.NodeAgent.ListPackages:input_type -> proto.ListPackagesRequest
+	90,  // 90: proto.NodeAgent.RemovePackages:input_type -> proto.RemovePackagesRequest
+	16,  // 91: proto.NodeAgent.GetSupportBundle:input_type -> proto.GetSupportBundleRequest
+	92,  // 92: proto.NodeAgent.ExecuteKubeadmPreflight:input_type -> proto.KubeadmPreflightRequest
+	95,  // 93: proto.NodeAgent.ExecuteNodePreflight:input_type -> proto.ExecuteNodePreflightRequest
+	101, // 94: proto.NodeAgent.ConfigureAptRepo:input_type -> proto.ConfigureAptRepoRequest
+	103, // 95: proto.NodeAgent.RemoveAptRepo:input_type -> proto.RemoveAptRepoRequest
+	21,  // 96: proto.NodeAgent.PatchAPIServerManifest:input_type -> proto.PatchAPIServerManifestRequest
+	19,  // 97: proto.NodeAgent.GetKubeadmStatus:output_type -> proto.KubeadmStatusResponse
+	108, // 98: proto.NodeAgent.ScheduleNodeReboot:output_type -> proto.ScheduleNodeRebootResponse
+	110, // 99: proto.NodeAgent.GetNodeBootInfo:output_type -> proto.GetNodeBootInfoResponse
+	28,  // 100: proto.NodeAgent.ExecuteKubeadmInit:output_type -> proto.KubeadmInitStatusResponse
+	31,  // 101: proto.NodeAgent.ExecuteKubeadmJoin:output_type -> proto.KubeadmJoinStatusResponse
+	33,  // 102: proto.NodeAgent.ExecuteKubeadmReset:output_type -> proto.KubeadmResetStatusResponse
+	112, // 103: proto.NodeAgent.ReconfigureKubeletAPIServer:output_type -> proto.ReconfigureKubeletAPIServerResponse
+	126, // 104: proto.NodeAgent.StartOpenVSwitchReconciliation:output_type -> proto.StartOpenVSwitchReconciliationResponse
+	128, // 105: proto.NodeAgent.GetOpenVSwitchReconciliationStatus:output_type -> proto.GetOpenVSwitchReconciliationStatusResponse
+	114, // 106: proto.NodeAgent.KubeadmUpgradeApply:output_type -> proto.KubeadmUpgradeApplyResponse
+	116, // 107: proto.NodeAgent.ReconcileKubeVip:output_type -> proto.ReconcileKubeVipResponse
+	118, // 108: proto.NodeAgent.StartKubernetesCertificateRenewal:output_type -> proto.StartKubernetesCertificateRenewalResponse
+	120, // 109: proto.NodeAgent.GetKubernetesCertificateRenewalStatus:output_type -> proto.GetKubernetesCertificateRenewalStatusResponse
+	123, // 110: proto.NodeAgent.RemoveEtcdMember:output_type -> proto.RemoveEtcdMemberResponse
+	36,  // 111: proto.NodeAgent.StartK8sControlPlaneNodeGracefulShutdown:output_type -> proto.StartK8sControlPlaneNodeGracefulShutdownResponse
+	38,  // 112: proto.NodeAgent.GetK8sControlPlaneNodeGracefulShutdownStatus:output_type -> proto.GetK8sControlPlaneNodeGracefulShutdownStatusResponse
+	106, // 113: proto.NodeAgent.StartKubeVipRestore:output_type -> proto.StartKubeVipRestoreResponse
+	41,  // 114: proto.NodeAgent.InstallCNI:output_type -> proto.InstallCNIResponse
+	43,  // 115: proto.NodeAgent.UpdateAndFetchKubeAdmJoinStrings:output_type -> proto.KubeadmJoinStringResponse
+	47,  // 116: proto.NodeAgent.GetKubeconfig:output_type -> proto.KubeconfigResponse
+	49,  // 117: proto.NodeAgent.ExecuteScript:output_type -> proto.ExecuteScriptResponse
+	43,  // 118: proto.NodeAgent.GetKubeadmJoinString:output_type -> proto.KubeadmJoinStringResponse
+	51,  // 119: proto.NodeAgent.InitializeKubernetesAPIEncryption:output_type -> proto.InitializeKubernetesAPIEncryptionResponse
+	53,  // 120: proto.NodeAgent.PromoteKubernetesAPIEncryptionProviders:output_type -> proto.PromoteKubernetesAPIEncryptionProvidersResponse
+	58,  // 121: proto.NodeAgent.UpdateEncryptionConfig:output_type -> proto.UpdateEncryptionConfigResponse
+	61,  // 122: proto.NodeAgent.StartEtcdEncryptionAtRestObjectsRewrite:output_type -> proto.StartEtcdEncryptionAtRestObjectsRewriteResponse
+	63,  // 123: proto.NodeAgent.GetEtcdEncryptionAtRestObjectsRewriteStatus:output_type -> proto.GetEtcdEncryptionAtRestObjectsRewriteStatusResponse
+	65,  // 124: proto.NodeAgent.RemovePlainTextSecondaryEncryptionEntry:output_type -> proto.RemovePlainTextSecondaryEncryptionEntryResponse
+	67,  // 125: proto.NodeAgent.UploadFileBundle:output_type -> proto.UploadStatus
+	69,  // 126: proto.NodeAgent.WriteNodeAgentConfig:output_type -> proto.WriteNodeAgentConfigResponse
+	70,  // 127: proto.NodeAgent.StreamExecuteScript:output_type -> proto.ScriptOutputChunk
+	72,  // 128: proto.NodeAgent.SetUnsetIsMaster:output_type -> proto.SetUnsetIsMasterResponse
+	74,  // 129: proto.NodeAgent.InstallBundle:output_type -> proto.InstallBundleResponse
+	77,  // 130: proto.NodeAgent.GetBundleStatus:output_type -> proto.GetBundleStatusResponse
+	79,  // 131: proto.NodeAgent.InstallCollection:output_type -> proto.InstallCollectionResponse
+	84,  // 132: proto.NodeAgent.StartNodeAgentUpgrade:output_type -> proto.StartNodeAgentUpgradeResponse
+	86,  // 133: proto.NodeAgent.GetNodeAgentUpgradeStatus:output_type -> proto.GetNodeAgentUpgradeStatusResponse
+	81,  // 134: proto.NodeAgent.InstallPackages:output_type -> proto.InstallPackagesResponse
+	89,  // 135: proto.NodeAgent.ListPackages:output_type -> proto.ListPackagesResponse
+	91,  // 136: proto.NodeAgent.RemovePackages:output_type -> proto.RemovePackagesResponse
+	17,  // 137: proto.NodeAgent.GetSupportBundle:output_type -> proto.GetSupportBundleResponse
+	94,  // 138: proto.NodeAgent.ExecuteKubeadmPreflight:output_type -> proto.KubeadmPreflightResponse
+	99,  // 139: proto.NodeAgent.ExecuteNodePreflight:output_type -> proto.ExecuteNodePreflightResponse
+	102, // 140: proto.NodeAgent.ConfigureAptRepo:output_type -> proto.ConfigureAptRepoResponse
+	104, // 141: proto.NodeAgent.RemoveAptRepo:output_type -> proto.RemoveAptRepoResponse
+	25,  // 142: proto.NodeAgent.PatchAPIServerManifest:output_type -> proto.PatchAPIServerManifestResponse
+	97,  // [97:143] is the sub-list for method output_type
+	51,  // [51:97] is the sub-list for method input_type
 	51,  // [51:51] is the sub-list for extension type_name
 	51,  // [51:51] is the sub-list for extension extendee
 	0,   // [0:51] is the sub-list for field type_name
@@ -10215,30 +10106,6 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 			}
 		}
 		file_pkg_agent_proto_node_agent_proto_msgTypes[54].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RestartAPIPodsRequest); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[55].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RestartAPIPodsResponse); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[56].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ScriptOutputChunk); i {
 			case 0:
 				return &v.state
@@ -10250,7 +10117,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[57].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[55].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*SetUnsetIsMasterRequest); i {
 			case 0:
 				return &v.state
@@ -10262,7 +10129,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[58].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[56].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*SetUnsetIsMasterResponse); i {
 			case 0:
 				return &v.state
@@ -10274,7 +10141,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[59].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[57].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*InstallBundleRequest); i {
 			case 0:
 				return &v.state
@@ -10286,7 +10153,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[60].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[58].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*InstallBundleResponse); i {
 			case 0:
 				return &v.state
@@ -10298,7 +10165,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[61].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[59].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*GetBundleStatusRequest); i {
 			case 0:
 				return &v.state
@@ -10310,7 +10177,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[62].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[60].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*BundleStatus); i {
 			case 0:
 				return &v.state
@@ -10322,7 +10189,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[63].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[61].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*GetBundleStatusResponse); i {
 			case 0:
 				return &v.state
@@ -10334,7 +10201,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[64].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[62].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*InstallCollectionRequest); i {
 			case 0:
 				return &v.state
@@ -10346,7 +10213,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[65].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[63].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*InstallCollectionResponse); i {
 			case 0:
 				return &v.state
@@ -10358,7 +10225,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[66].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[64].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*InstallPackagesRequest); i {
 			case 0:
 				return &v.state
@@ -10370,7 +10237,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[67].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[65].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*InstallPackagesResponse); i {
 			case 0:
 				return &v.state
@@ -10382,7 +10249,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[68].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[66].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*NodeAgentUpgradeOperation); i {
 			case 0:
 				return &v.state
@@ -10394,7 +10261,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[69].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[67].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*StartNodeAgentUpgradeRequest); i {
 			case 0:
 				return &v.state
@@ -10406,7 +10273,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[70].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[68].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*StartNodeAgentUpgradeResponse); i {
 			case 0:
 				return &v.state
@@ -10418,7 +10285,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[71].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[69].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*GetNodeAgentUpgradeStatusRequest); i {
 			case 0:
 				return &v.state
@@ -10430,7 +10297,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[72].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[70].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*GetNodeAgentUpgradeStatusResponse); i {
 			case 0:
 				return &v.state
@@ -10442,7 +10309,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[73].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[71].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ListPackagesRequest); i {
 			case 0:
 				return &v.state
@@ -10454,7 +10321,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[74].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[72].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*InstalledPackage); i {
 			case 0:
 				return &v.state
@@ -10466,7 +10333,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[75].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[73].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ListPackagesResponse); i {
 			case 0:
 				return &v.state
@@ -10478,7 +10345,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[76].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[74].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*RemovePackagesRequest); i {
 			case 0:
 				return &v.state
@@ -10490,7 +10357,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[77].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[75].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*RemovePackagesResponse); i {
 			case 0:
 				return &v.state
@@ -10502,7 +10369,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[78].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[76].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*KubeadmPreflightRequest); i {
 			case 0:
 				return &v.state
@@ -10514,7 +10381,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[79].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[77].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*PreflightCheckResult); i {
 			case 0:
 				return &v.state
@@ -10526,7 +10393,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[80].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[78].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*KubeadmPreflightResponse); i {
 			case 0:
 				return &v.state
@@ -10538,7 +10405,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[81].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[79].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ExecuteNodePreflightRequest); i {
 			case 0:
 				return &v.state
@@ -10550,7 +10417,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[82].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[80].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*CheckCloudInitStatus); i {
 			case 0:
 				return &v.state
@@ -10562,7 +10429,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[83].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[81].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*NodePreflightCheck); i {
 			case 0:
 				return &v.state
@@ -10574,7 +10441,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[84].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[82].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*FileExistsPreflightCheck); i {
 			case 0:
 				return &v.state
@@ -10586,7 +10453,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[85].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[83].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ExecuteNodePreflightResponse); i {
 			case 0:
 				return &v.state
@@ -10598,7 +10465,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[86].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[84].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*NodePreflightResult); i {
 			case 0:
 				return &v.state
@@ -10610,7 +10477,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[87].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[85].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ConfigureAptRepoRequest); i {
 			case 0:
 				return &v.state
@@ -10622,7 +10489,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[88].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[86].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ConfigureAptRepoResponse); i {
 			case 0:
 				return &v.state
@@ -10634,7 +10501,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[89].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[87].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*RemoveAptRepoRequest); i {
 			case 0:
 				return &v.state
@@ -10646,7 +10513,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[90].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[88].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*RemoveAptRepoResponse); i {
 			case 0:
 				return &v.state
@@ -10658,7 +10525,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[91].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[89].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*StartKubeVipRestoreRequest); i {
 			case 0:
 				return &v.state
@@ -10670,7 +10537,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[92].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[90].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*StartKubeVipRestoreResponse); i {
 			case 0:
 				return &v.state
@@ -10682,7 +10549,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[93].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[91].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ScheduleNodeRebootRequest); i {
 			case 0:
 				return &v.state
@@ -10694,7 +10561,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[94].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[92].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ScheduleNodeRebootResponse); i {
 			case 0:
 				return &v.state
@@ -10706,7 +10573,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[95].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[93].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*GetNodeBootInfoRequest); i {
 			case 0:
 				return &v.state
@@ -10718,7 +10585,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[96].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[94].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*GetNodeBootInfoResponse); i {
 			case 0:
 				return &v.state
@@ -10730,7 +10597,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[97].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[95].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ReconfigureKubeletAPIServerRequest); i {
 			case 0:
 				return &v.state
@@ -10742,7 +10609,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[98].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[96].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ReconfigureKubeletAPIServerResponse); i {
 			case 0:
 				return &v.state
@@ -10754,7 +10621,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[99].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[97].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*KubeadmUpgradeApplyRequest); i {
 			case 0:
 				return &v.state
@@ -10766,7 +10633,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[100].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[98].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*KubeadmUpgradeApplyResponse); i {
 			case 0:
 				return &v.state
@@ -10778,7 +10645,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[101].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[99].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ReconcileKubeVipRequest); i {
 			case 0:
 				return &v.state
@@ -10790,7 +10657,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[102].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[100].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ReconcileKubeVipResponse); i {
 			case 0:
 				return &v.state
@@ -10802,7 +10669,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[103].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[101].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*StartKubernetesCertificateRenewalRequest); i {
 			case 0:
 				return &v.state
@@ -10814,7 +10681,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[104].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[102].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*StartKubernetesCertificateRenewalResponse); i {
 			case 0:
 				return &v.state
@@ -10826,7 +10693,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[105].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[103].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*GetKubernetesCertificateRenewalStatusRequest); i {
 			case 0:
 				return &v.state
@@ -10838,7 +10705,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[106].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[104].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*GetKubernetesCertificateRenewalStatusResponse); i {
 			case 0:
 				return &v.state
@@ -10850,7 +10717,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[107].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[105].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*KubernetesCertificateRenewalOperation); i {
 			case 0:
 				return &v.state
@@ -10862,7 +10729,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[108].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[106].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*RemoveEtcdMemberRequest); i {
 			case 0:
 				return &v.state
@@ -10874,7 +10741,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[109].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[107].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*RemoveEtcdMemberResponse); i {
 			case 0:
 				return &v.state
@@ -10886,7 +10753,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[110].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[108].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*OpenVSwitchReconciliationResult); i {
 			case 0:
 				return &v.state
@@ -10898,7 +10765,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[111].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[109].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*StartOpenVSwitchReconciliationRequest); i {
 			case 0:
 				return &v.state
@@ -10910,7 +10777,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[112].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[110].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*StartOpenVSwitchReconciliationResponse); i {
 			case 0:
 				return &v.state
@@ -10922,7 +10789,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[113].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[111].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*GetOpenVSwitchReconciliationStatusRequest); i {
 			case 0:
 				return &v.state
@@ -10934,7 +10801,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[114].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[112].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*GetOpenVSwitchReconciliationStatusResponse); i {
 			case 0:
 				return &v.state
@@ -10946,7 +10813,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
-		file_pkg_agent_proto_node_agent_proto_msgTypes[115].Exporter = func(v interface{}, i int) interface{} {
+		file_pkg_agent_proto_node_agent_proto_msgTypes[113].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*OpenVSwitchReconciliationOperation); i {
 			case 0:
 				return &v.state
@@ -10968,8 +10835,8 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 		(*UpdateEncryptionConfigRequest_PromotePrimaryKey)(nil),
 		(*UpdateEncryptionConfigRequest_RemoveOldKeys)(nil),
 	}
-	file_pkg_agent_proto_node_agent_proto_msgTypes[81].OneofWrappers = []interface{}{}
-	file_pkg_agent_proto_node_agent_proto_msgTypes[83].OneofWrappers = []interface{}{
+	file_pkg_agent_proto_node_agent_proto_msgTypes[79].OneofWrappers = []interface{}{}
+	file_pkg_agent_proto_node_agent_proto_msgTypes[81].OneofWrappers = []interface{}{
 		(*NodePreflightCheck_FileExists)(nil),
 	}
 	type x struct{}
@@ -10978,7 +10845,7 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_pkg_agent_proto_node_agent_proto_rawDesc,
 			NumEnums:      16,
-			NumMessages:   119,
+			NumMessages:   117,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

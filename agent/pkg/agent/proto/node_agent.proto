@@ -150,8 +150,6 @@ service NodeAgent {
 
   rpc RemovePlainTextSecondaryEncryptionEntry(RemovePlainTextSecondaryEncryptionEntryRequest) returns (RemovePlainTextSecondaryEncryptionEntryResponse) {}
 
-  rpc RestartAPIPods(RestartAPIPodsRequest) returns (RestartAPIPodsResponse) {}
-
   rpc UploadFileBundle(stream FileChunk) returns (UploadStatus) {}
 
   // WriteNodeAgentConfig replaces /etc/agent/config.yaml with the given YAML
@@ -670,13 +668,6 @@ message WriteNodeAgentConfigResponse {
   string message = 1;
   // HTTP-style code for parity with UploadStatus (e.g. 200 = success).
   int32 code = 2;
-}
-
-message RestartAPIPodsRequest {}
-
-message RestartAPIPodsResponse {
-  string status = 1;
-  string error_message = 2;
 }
 
 message ScriptOutputChunk {

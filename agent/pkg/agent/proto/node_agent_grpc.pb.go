@@ -50,7 +50,6 @@ const (
 	NodeAgent_StartEtcdEncryptionAtRestObjectsRewrite_FullMethodName      = "/proto.NodeAgent/StartEtcdEncryptionAtRestObjectsRewrite"
 	NodeAgent_GetEtcdEncryptionAtRestObjectsRewriteStatus_FullMethodName  = "/proto.NodeAgent/GetEtcdEncryptionAtRestObjectsRewriteStatus"
 	NodeAgent_RemovePlainTextSecondaryEncryptionEntry_FullMethodName      = "/proto.NodeAgent/RemovePlainTextSecondaryEncryptionEntry"
-	NodeAgent_RestartAPIPods_FullMethodName                               = "/proto.NodeAgent/RestartAPIPods"
 	NodeAgent_UploadFileBundle_FullMethodName                             = "/proto.NodeAgent/UploadFileBundle"
 	NodeAgent_WriteNodeAgentConfig_FullMethodName                         = "/proto.NodeAgent/WriteNodeAgentConfig"
 	NodeAgent_StreamExecuteScript_FullMethodName                          = "/proto.NodeAgent/StreamExecuteScript"
@@ -190,7 +189,6 @@ type NodeAgentClient interface {
 	// a previously started asynchronous rewrite operation.
 	GetEtcdEncryptionAtRestObjectsRewriteStatus(ctx context.Context, in *GetEtcdEncryptionAtRestObjectsRewriteStatusRequest, opts ...grpc.CallOption) (*GetEtcdEncryptionAtRestObjectsRewriteStatusResponse, error)
 	RemovePlainTextSecondaryEncryptionEntry(ctx context.Context, in *RemovePlainTextSecondaryEncryptionEntryRequest, opts ...grpc.CallOption) (*RemovePlainTextSecondaryEncryptionEntryResponse, error)
-	RestartAPIPods(ctx context.Context, in *RestartAPIPodsRequest, opts ...grpc.CallOption) (*RestartAPIPodsResponse, error)
 	UploadFileBundle(ctx context.Context, opts ...grpc.CallOption) (NodeAgent_UploadFileBundleClient, error)
 	// WriteNodeAgentConfig replaces /etc/agent/config.yaml with the given YAML
 	// (NodeSpec) using an atomic write and serializes concurrent callers on this agent.
@@ -536,16 +534,6 @@ func (c *nodeAgentClient) RemovePlainTextSecondaryEncryptionEntry(ctx context.Co
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RemovePlainTextSecondaryEncryptionEntryResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_RemovePlainTextSecondaryEncryptionEntry_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAgentClient) RestartAPIPods(ctx context.Context, in *RestartAPIPodsRequest, opts ...grpc.CallOption) (*RestartAPIPodsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RestartAPIPodsResponse)
-	err := c.cc.Invoke(ctx, NodeAgent_RestartAPIPods_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -899,7 +887,6 @@ type NodeAgentServer interface {
 	// a previously started asynchronous rewrite operation.
 	GetEtcdEncryptionAtRestObjectsRewriteStatus(context.Context, *GetEtcdEncryptionAtRestObjectsRewriteStatusRequest) (*GetEtcdEncryptionAtRestObjectsRewriteStatusResponse, error)
 	RemovePlainTextSecondaryEncryptionEntry(context.Context, *RemovePlainTextSecondaryEncryptionEntryRequest) (*RemovePlainTextSecondaryEncryptionEntryResponse, error)
-	RestartAPIPods(context.Context, *RestartAPIPodsRequest) (*RestartAPIPodsResponse, error)
 	UploadFileBundle(NodeAgent_UploadFileBundleServer) error
 	// WriteNodeAgentConfig replaces /etc/agent/config.yaml with the given YAML
 	// (NodeSpec) using an atomic write and serializes concurrent callers on this agent.
@@ -1051,9 +1038,6 @@ func (UnimplementedNodeAgentServer) GetEtcdEncryptionAtRestObjectsRewriteStatus(
 }
 func (UnimplementedNodeAgentServer) RemovePlainTextSecondaryEncryptionEntry(context.Context, *RemovePlainTextSecondaryEncryptionEntryRequest) (*RemovePlainTextSecondaryEncryptionEntryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemovePlainTextSecondaryEncryptionEntry not implemented")
-}
-func (UnimplementedNodeAgentServer) RestartAPIPods(context.Context, *RestartAPIPodsRequest) (*RestartAPIPodsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RestartAPIPods not implemented")
 }
 func (UnimplementedNodeAgentServer) UploadFileBundle(NodeAgent_UploadFileBundleServer) error {
 	return status.Errorf(codes.Unimplemented, "method UploadFileBundle not implemented")
@@ -1626,24 +1610,6 @@ func _NodeAgent_RemovePlainTextSecondaryEncryptionEntry_Handler(srv interface{},
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NodeAgent_RestartAPIPods_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RestartAPIPodsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAgentServer).RestartAPIPods(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAgent_RestartAPIPods_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAgentServer).RestartAPIPods(ctx, req.(*RestartAPIPodsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _NodeAgent_UploadFileBundle_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(NodeAgentServer).UploadFileBundle(&nodeAgentUploadFileBundleServer{ServerStream: stream})
 }
@@ -2097,10 +2063,6 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemovePlainTextSecondaryEncryptionEntry",
 			Handler:    _NodeAgent_RemovePlainTextSecondaryEncryptionEntry_Handler,
-		},
-		{
-			MethodName: "RestartAPIPods",
-			Handler:    _NodeAgent_RestartAPIPods_Handler,
 		},
 		{
 			MethodName: "WriteNodeAgentConfig",

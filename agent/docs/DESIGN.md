@@ -342,7 +342,7 @@ Defined in `pkg/agent/proto/node_agent.proto`. Grouped conceptually:
 `InitializeKubernetesAPIEncryption`, `PromoteKubernetesAPIEncryptionProviders`,
 `UpdateEncryptionConfig`,
 `StartEtcdEncryptionAtRestObjectsRewrite` + `Get…Status`,
-`RemovePlainTextSecondaryEncryptionEntry`, `RestartAPIPods`.
+`RemovePlainTextSecondaryEncryptionEntry`.
 
 **Control-plane availability**
 `StartK8sControlPlaneNodeGracefulShutdown` + `Get…Status`, `StartKubeVipRestore`,

@@ -49,6 +49,9 @@ const (
 	APIEncryptionRewriteCompleteLabel     string = "nvke.nvidia.com/k8s-api-encryption-rewrite-complete=true"
 	APIEncryptionEnabledLabel             string = "nvke.nvidia.com/k8s-api-encryption-enabled=true"
 	APIEncryptionSecondaryKeyEnabledLabel string = "nvke.nvidia.com/k8s-api-encryption-secondary-key-configured=true"
+
+	kubectlNamespaceFlag = "-n"
+	kubectlOutputFlag    = "-o"
 )
 
 type (
@@ -369,57 +372,6 @@ func (n *NodeAgentServer) PromoteKubernetesAPIEncryptionProviders(
 	return response, nil
 }
 
-// RestartAPIPods restarts the kube-apiserver pods for all cp nodes in the cluster.
-func (n *NodeAgentServer) RestartAPIPods(
-	ctx context.Context,
-	req *pb.RestartAPIPodsRequest,
-) (*pb.RestartAPIPodsResponse, error) {
-	response := &pb.RestartAPIPodsResponse{}
-	defer logRPCSpan(ctx, "RestartAPIPods")()
-	// Get a lit of all apiserver pods....
-	//   kubectl get pods --no-headers -o custom-columns=":metadata.name" -n kube-system -l component=kube-apiserver
-
-	output, err := n.Runner.Run(
-		"kubectl",
-		[]string{
-			"get",
-			"pods",
-			"--no-headers",
-			"-o", //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
-			"custom-columns=:metadata.name",
-			"-n",          //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
-			"kube-system", //nolint:goconst // kubectl argv; kept literal so the arg list reads as the command line
-			"-l",
-			"component=kube-apiserver",
-		},
-		&nvkeutils.CommandOptions{
-			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
-		},
-	)
-	if err != nil {
-		log.Printf("failed to get api-server pods: %v\n", err)
-		log.Printf("output: %s\n", output)
-		return response, err
-	}
-
-	// restart each apiserver pod
-	for _, podName := range strings.Split(string(output), "\n") {
-		output, err := n.Runner.Run(
-			"kubectl",
-			[]string{"delete", "pod", podName, "-n", "kube-system"}, //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
-			&nvkeutils.CommandOptions{
-				Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
-			},
-		)
-		if err != nil {
-			log.Printf("failed to delete api-server pod: %v\n", err)
-			log.Printf("output: %s\n", output)
-			return response, err
-		}
-	}
-	return response, nil
-}
-
 // RemovePlainTextSecondaryEncryptionEntry removes the secondary kubernetes API encryption key
 // RemovePlainTextSecondaryEncryptionEntry removes the default "identity: {}" entry after encyprtion
 // initialization
@@ -579,12 +531,12 @@ func (n *NodeAgentServer) getPodStatus(podName string) (string, error) {
 	out, err := n.Runner.Run(
 		"kubectl",
 		[]string{
-			"-n",
-			"kube-system",
+			kubectlNamespaceFlag,
+			kubeSystemNamespace,
 			"get",
 			"pod",
 			podName,
-			"-o",
+			kubectlOutputFlag,
 			"jsonpath={.status.phase}",
 		},
 		&nvkeutils.CommandOptions{
@@ -612,8 +564,8 @@ func (n *NodeAgentServer) restartAPIServer() error {
 	_, err = n.Runner.Run(
 		"kubectl",
 		[]string{
-			"-n",
-			"kube-system",
+			kubectlNamespaceFlag,
+			kubeSystemNamespace,
 			"delete",
 			"pod",
 			podName,
@@ -657,7 +609,7 @@ func rewriteAPIObjects(objects []string) error {
 			"get",
 			object,
 			"--all-namespaces",
-			"-o",
+			kubectlOutputFlag,
 			"json",
 			"|",
 			"kubectl",
@@ -830,8 +782,8 @@ func (n *NodeAgentServer) verifyNodeAPIEncryptionEnabled() (bool, error) {
 	out, err := n.Runner.Run(
 		"kubectl",
 		[]string{
-			"-n",
-			"kube-system",
+			kubectlNamespaceFlag,
+			kubeSystemNamespace,
 			"describe",
 			"po",
 			apiServerPodName,
