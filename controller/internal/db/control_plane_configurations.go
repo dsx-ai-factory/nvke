@@ -38,6 +38,8 @@ type ControlPlaneConfigSpec struct {
 	Nico                        *NicoControlPlaneProvider `json:"nico,omitempty" bun:"-"`
 	Capi                        *CAPIControlPlaneProvider `json:"capi,omitempty" bun:"-"`
 	NodeAgentConfig             NodeAgentConfig           `json:"node_agent_config,omitempty" bun:"-"`
+	MachineAnnotations          map[string]string         `json:"machine_annotations,omitempty" bun:"-"`
+	MachineLabels               map[string]string         `json:"machine_labels,omitempty" bun:"-"`
 }
 
 type NicoControlPlaneProvider struct {
@@ -157,6 +159,8 @@ func (c ControlPlaneConfigSpec) Equal(other ControlPlaneConfigSpec) bool {
 func normalizeConfigSpec(cfg ControlPlaneConfigSpec) ControlPlaneConfigSpec {
 	out := cfg
 	out.NodeLabels = CloneStringMap(cfg.NodeLabels)
+	out.MachineAnnotations = CloneStringMap(cfg.MachineAnnotations)
+	out.MachineLabels = CloneStringMap(cfg.MachineLabels)
 	out.Nico = cloneNicoControlPlaneProvider(cfg.Nico)
 	out.Capi = cloneCAPIControlPlaneProvider(cfg.Capi)
 	return out

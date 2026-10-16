@@ -236,6 +236,8 @@ func NewServerImpl(
 		cfg.SupportedInfraProviders,
 	)
 	nodePoolService.allowlistedLabelKeys = cfg.NodeMetadataAllowlistedLabelKeys
+	nodePoolService.machineAllowlistedLabelKeys = cfg.MachineMetadataAllowlistedLabelKeys
+	nodePoolService.machineAllowlistedAnnotationKeys = cfg.MachineMetadataAllowlistedAnnotationKeys
 
 	clusterService := NewClusterService(
 		logger,
@@ -248,6 +250,8 @@ func NewServerImpl(
 		cfg.NodeAgent.UpdateMethod,
 	)
 	clusterService.allowlistedLabelKeys = cfg.NodeMetadataAllowlistedLabelKeys
+	clusterService.machineAllowlistedLabelKeys = cfg.MachineMetadataAllowlistedLabelKeys
+	clusterService.machineAllowlistedAnnotationKeys = cfg.MachineMetadataAllowlistedAnnotationKeys
 	clusterService.fleetOIDC = o.fleetOIDC
 
 	return &serverImpl{

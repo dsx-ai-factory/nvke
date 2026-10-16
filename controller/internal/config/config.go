@@ -384,6 +384,10 @@ type Config struct {
 
 	// Tracing configures the export of OpenTelemetry spans to an OTLP collector.
 	Tracing TracingConfig
+
+	// Machine metadata allowlists permit exact keys under reserved domains.
+	MachineMetadataAllowlistedLabelKeys      []string `controllerconfig:"machineMetadataAllowlistedLabelKeys"`
+	MachineMetadataAllowlistedAnnotationKeys []string `controllerconfig:"machineMetadataAllowlistedAnnotationKeys"`
 }
 
 // TracingConfig configures OpenTelemetry span export.

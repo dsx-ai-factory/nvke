@@ -756,3 +756,55 @@ func TestNicoControlPlaneConfigProfileIsOptional(t *testing.T) {
 		require.NoError(t, validateMergedForgeControlPlaneSpec(spec))
 	})
 }
+
+func TestControlPlaneConfig_MachineMetadata(t *testing.T) {
+	for _, provider := range []db.ProviderType{db.ProviderTypeNico, db.ProviderTypeCAPI} {
+		t.Run(string(provider), func(t *testing.T) {
+			input := &api.CreateClusterControlPlaneConfig{
+				MachineAnnotations: map[string]string{"example.com/setup": "gpu,network"},
+				MachineLabels:      map[string]string{"example.com/pool": "control-plane"},
+			}
+			spec := controlPlaneConfigSpecFromCreateAPI(input, "1.32.1", false, provider)
+			response := apiControlPlaneConfigFromDB(db.ControlPlaneConfig{ControlPlaneConfigSpec: spec})
+			require.Equal(t, input.MachineAnnotations, response.MachineAnnotations)
+			require.Equal(t, input.MachineLabels, response.MachineLabels)
+			input.MachineAnnotations["example.com/setup"] = "changed"
+			response.MachineLabels["example.com/pool"] = "changed"
+			require.Equal(t, "gpu,network", spec.MachineAnnotations["example.com/setup"])
+			require.Equal(t, "control-plane", spec.MachineLabels["example.com/pool"])
+		})
+	}
+}
+
+func TestValidateCreateClusterRequestFields_MachineMetadata(t *testing.T) {
+	type parameters struct {
+		annotations, labels               map[string]string
+		allowedAnnotations, allowedLabels []string
+		wantErr                           string
+	}
+	tests := map[string]parameters{
+		"omitted":             {},
+		"custom":              {annotations: map[string]string{"example.com/setup": "gpu,network"}, labels: map[string]string{"example.com/pool": "cp"}},
+		"reserved annotation": {annotations: map[string]string{"nvke.nvidia.com/setup": "gpu"}, wantErr: "controlPlaneConfig: machineAnnotations"},
+		"reserved label":      {labels: map[string]string{"cluster.x-k8s.io/pool": "cp"}, wantErr: "controlPlaneConfig: machineLabels"},
+		"allowed annotation":  {annotations: map[string]string{"nvke.nvidia.com/setup": "gpu"}, allowedAnnotations: []string{"nvke.nvidia.com/setup"}},
+		"allowed label":       {labels: map[string]string{"cluster.x-k8s.io/pool": "cp"}, allowedLabels: []string{"cluster.x-k8s.io/pool"}},
+		"wrong allowlist":     {annotations: map[string]string{"nvke.nvidia.com/setup": "gpu"}, allowedLabels: []string{"nvke.nvidia.com/setup"}, wantErr: "controlPlaneConfig: machineAnnotations"},
+	}
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			svc := clusterService{machineAllowlistedLabelKeys: params.allowedLabels, machineAllowlistedAnnotationKeys: params.allowedAnnotations}
+			req := validForgeCreateClusterRequest()
+			req.ControlPlaneConfig = validForgeControlPlaneConfig()
+			req.ControlPlaneConfig.DesiredCount = 1
+			req.ControlPlaneConfig.MachineAnnotations = params.annotations
+			req.ControlPlaneConfig.MachineLabels = params.labels
+			err := svc.ValidateCreateClusterRequestFields(req)
+			if params.wantErr != "" {
+				require.ErrorContains(t, err, params.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

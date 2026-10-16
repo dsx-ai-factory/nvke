@@ -81,6 +81,12 @@ func TestRenderedChart(t *testing.T) {
 			fromFile.ApplyTo(&cfg)
 			require.NoError(t, cfg.Validate())
 
+			if filepath.Base(render) == "machine-metadata-allowlists.yaml" {
+				require.Equal(t, []string{"cluster.x-k8s.io/custom"}, cfg.MachineMetadataAllowlistedLabelKeys)
+				require.Equal(t, []string{"nke.nvidia.com/profile"}, cfg.MachineMetadataAllowlistedAnnotationKeys)
+				require.Empty(t, cfg.NodeMetadataAllowlistedLabelKeys)
+			}
+
 			if filepath.Base(render) == "readiness-custom.yaml" {
 				require.Equal(t, config.AgentReadinessConfig{
 					Workers: 4, Timeout: 10 * time.Second, Interval: 90 * time.Second,

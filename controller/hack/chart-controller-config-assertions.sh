@@ -105,6 +105,10 @@ render infra-providers --set-string 'supportedInfraProviders=nico\, infra'
 render node-label-allowlist \
   --set 'nodeMetadata.allowlistedLabelKeys={ node.kubernetes.io/custom ,k8s.io/custom}'
 
+render machine-metadata-allowlists \
+  --set 'machineMetadata.allowlistedLabelKeys={cluster.x-k8s.io/custom}' \
+  --set 'machineMetadata.allowlistedAnnotationKeys={nke.nvidia.com/profile}'
+
 render oidc \
   --set nvkeOIDCAuth.enabled=true \
   --set spiffe.enabled=true \

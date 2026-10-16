@@ -770,6 +770,8 @@ func nodePoolRequest(clusterID uuid.UUID, pool api.NodePoolCreateConfig) api.Cre
 		SystemReservedMemory:        pool.SystemReservedMemory,
 		KubeReservedMemory:          pool.KubeReservedMemory,
 		ControlPlane:                pool.ControlPlane,
+		MachineAnnotations:          pool.MachineAnnotations,
+		MachineLabels:               pool.MachineLabels,
 		NodeLabels:                  pool.NodeLabels,
 		NodeTaints:                  pool.NodeTaints,
 		DesiredNodeCount:            pool.DesiredNodeCount,

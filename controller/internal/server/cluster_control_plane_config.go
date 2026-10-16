@@ -301,6 +301,8 @@ func controlPlaneConfigSpecFromCreateAPI(
 		TeleportEnabled:             teleportEnabled,
 		ProvisioningMonitorDisabled: provisioningMonitorDisabled,
 		KubernetesVersion:           kubernetesVersion,
+		MachineAnnotations:          db.CloneStringMap(c.MachineAnnotations),
+		MachineLabels:               db.CloneStringMap(c.MachineLabels),
 	}
 
 	if c.NodeAgentConfig != nil && c.NodeAgentConfig.Version != nil {

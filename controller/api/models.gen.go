@@ -217,6 +217,12 @@ type ControlPlaneConfig struct {
 	// Infra Infra provider control plane fields.
 	Infra *InfraControlPlaneProvider `json:"infra,omitempty"`
 
+	// MachineAnnotations Annotations applied to control-plane CAPI Machines at creation, including scale-out and replacement Machines. Fixed at cluster creation and not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
+	MachineAnnotations map[string]string `json:"machineAnnotations,omitempty"`
+
+	// MachineLabels Labels applied to control-plane CAPI Machines at creation, including scale-out and replacement Machines. Fixed at cluster creation and not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
+	MachineLabels map[string]string `json:"machineLabels,omitempty"`
+
 	// MaxSurge Extra control-plane nodes allowed during a rollout (0 or 1).
 	MaxSurge *int `json:"maxSurge,omitempty"`
 
@@ -371,6 +377,12 @@ type CreateClusterControlPlaneConfig struct {
 	// Infra Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
 	Infra *InfraControlPlaneProvider `json:"infra,omitempty"`
 
+	// MachineAnnotations Annotations applied to control-plane CAPI Machines at creation, including scale-out and replacement Machines. Fixed at cluster creation and not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
+	MachineAnnotations map[string]string `json:"machineAnnotations,omitempty"`
+
+	// MachineLabels Labels applied to control-plane CAPI Machines at creation, including scale-out and replacement Machines. Fixed at cluster creation and not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
+	MachineLabels map[string]string `json:"machineLabels,omitempty"`
+
 	// MaxSurge Extra control-plane nodes allowed during a rollout (0 or 1).
 	MaxSurge *int `json:"maxSurge,omitempty"`
 
@@ -480,8 +492,17 @@ type CreateNodePoolRequest struct {
 	// AutoProvisionDisabled Disables automatic provisioning for the pool.
 	AutoProvisionDisabled *bool `json:"autoProvisionDisabled,omitempty"`
 
+	// AutoModeDisabled Disables auto-mode (automatic node recycling).
+	AutoModeDisabled *bool `json:"autoModeDisabled,omitempty"`
+
 	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
+
+	// MachineAnnotations Annotations set on CAPI Machines only when they are created, including Machines created during scale-out or replacement. Fixed at node-pool creation. Not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
+	MachineAnnotations map[string]string `json:"machineAnnotations,omitempty"`
+
+	// MachineLabels Labels set on CAPI Machines only when they are created, including Machines created during scale-out or replacement. Fixed at node-pool creation. Not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
+	MachineLabels map[string]string `json:"machineLabels,omitempty"`
 
 	// Nico NICo settings for a node pool. instanceTypeID and release are required,
 	// and exactly one of subnetIDs and vpcPrefixIDs is required.
@@ -492,9 +513,6 @@ type CreateNodePoolRequest struct {
 	// Generated names must fit within 63 characters (Kubernetes Node name limit).
 	// Maximum prefix length depends on cluster name length.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
-
-	// AutoModeDisabled Disables auto-mode (automatic node recycling).
-	AutoModeDisabled *bool `json:"autoModeDisabled,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
@@ -970,23 +988,29 @@ type NodePool struct {
 	// AutoProvisionDisabled Disables automatic provisioning for the pool.
 	AutoProvisionDisabled bool `json:"autoProvisionDisabled"`
 
-	// Conditions Lifecycle conditions: provisioning, provisioned, deleting.
-	Conditions NodePoolConditions `json:"conditions"`
-
 	// CurrentNodeSetID The active NodeSet.
 	CurrentNodeSetID *openapi_types.UUID `json:"currentNodeSetID"`
 
+	// AutoModeDisabled Disables auto-mode (automatic node recycling).
+	AutoModeDisabled bool `json:"autoModeDisabled"`
+
+	// Conditions Lifecycle conditions: provisioning, provisioned, deleting.
+	Conditions NodePoolConditions `json:"conditions"`
+
 	// Infra Infra provider node pool fields.
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
+
+	// MachineAnnotations Annotations set on CAPI Machines only when they are created, including Machines created during scale-out or replacement. Fixed at node-pool creation. Not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
+	MachineAnnotations map[string]string `json:"machineAnnotations,omitempty"`
+
+	// MachineLabels Labels set on CAPI Machines only when they are created, including Machines created during scale-out or replacement. Fixed at node-pool creation. Not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
+	MachineLabels map[string]string `json:"machineLabels,omitempty"`
 
 	// Nico NICo settings for the pool.
 	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
 
 	// NodeNamePrefix Node names are `<cluster>-<prefix>-<NNNN>` (four-digit suffix), at most 63 characters in total.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
-
-	// AutoModeDisabled Disables auto-mode (automatic node recycling).
-	AutoModeDisabled bool `json:"autoModeDisabled"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
 	ProvisioningMonitorDisabled bool `json:"provisioningMonitorDisabled"`
@@ -1041,8 +1065,20 @@ type NodePoolCreateConfig struct {
 	// Description Free-text description.
 	Description *string `json:"description,omitempty"`
 
+	// AutoProvisionDisabled Disables automatic provisioning for the pool.
+	AutoProvisionDisabled *bool `json:"autoProvisionDisabled,omitempty"`
+
+	// AutoModeDisabled Disables auto-mode (automatic node recycling).
+	AutoModeDisabled *bool `json:"autoModeDisabled,omitempty"`
+
 	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
+
+	// MachineAnnotations Annotations set on CAPI Machines only when they are created, including Machines created during scale-out or replacement. Fixed at node-pool creation. Not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
+	MachineAnnotations map[string]string `json:"machineAnnotations,omitempty"`
+
+	// MachineLabels Labels set on CAPI Machines only when they are created, including Machines created during scale-out or replacement. Fixed at node-pool creation. Not reconciled after provisioning. Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their subdomains require an explicit deployment allowlist entry for this metadata type.
+	MachineLabels map[string]string `json:"machineLabels,omitempty"`
 
 	// Nico NICo settings for a node pool. instanceTypeID and release are required,
 	// and exactly one of subnetIDs and vpcPrefixIDs is required.
@@ -1053,12 +1089,6 @@ type NodePoolCreateConfig struct {
 	// Generated names must fit within 63 characters (Kubernetes Node name limit).
 	// Maximum prefix length depends on cluster name length.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
-
-	// AutoProvisionDisabled Disables automatic provisioning for the pool.
-	AutoProvisionDisabled *bool `json:"autoProvisionDisabled,omitempty"`
-
-	// AutoModeDisabled Disables auto-mode (automatic node recycling).
-	AutoModeDisabled *bool `json:"autoModeDisabled,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`

@@ -337,6 +337,12 @@ nodeMetadata:
   # The controller validates the allowlist and refuses to start if an entry is one of the above forbidden keys, or is empty, padded, not a valid label key, or a duplicate.
   allowlistedLabelKeys: []
 
+machineMetadata:
+  # -- Exact Machine label keys allowed under reserved NVKE, Kubernetes and Cluster API domains. Use with care: these keys may affect controller behavior.
+  allowlistedLabelKeys: []
+  # -- Exact Machine annotation keys allowed under reserved domains, for example a configuration-profile selection annotation. Values remain free-form strings.
+  allowlistedAnnotationKeys: []
+
 # -- Additional environment variables to inject into the controller container. A
 # variable nke-controller-config carries is refused; set its chart value instead.
 # CONTROLLER_CONFIG_PATH is refused too: the chart sets it to the mounted file.

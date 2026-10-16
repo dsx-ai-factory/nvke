@@ -4,11 +4,17 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	apivalidation "k8s.io/apimachinery/pkg/api/validation"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 func TestValidateNodeLabels(t *testing.T) {
@@ -221,6 +227,70 @@ func TestValidateNodeTaints(t *testing.T) {
 				return
 			}
 			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestValidateMachineMetadata_Inputs(t *testing.T) {
+	t.Parallel()
+	const sizeTestKey = "example.com/large"
+	maxValueBytes := apivalidation.TotalAnnotationSizeLimitB - len(sizeTestKey)
+	for key, value := range shared.MachineAnnotations(db.Node{}) {
+		maxValueBytes -= len(key) + len(value)
+	}
+	type parameters struct {
+		annotations        map[string]string
+		labels             map[string]string
+		wantErr            string
+		allowedAnnotations []string
+		allowedLabels      []string
+	}
+	tests := map[string]parameters{
+		"omitted":                                  {},
+		"free-form annotations":                    {annotations: map[string]string{"nke.nvidia.com/profile-selection": "[\"gpu\", \"network\"]\n"}, allowedAnnotations: []string{"nke.nvidia.com/profile-selection"}},
+		"custom labels":                            {labels: map[string]string{"example.com/pool": "gpu", "empty": ""}},
+		"invalid annotation key":                   {annotations: map[string]string{"bad key": "value"}, wantErr: "machineAnnotations"},
+		"annotation value too large":               {annotations: map[string]string{"example.com/large": strings.Repeat("a", 256*1024)}, wantErr: "Too long"},
+		"annotations below total limit":            {annotations: map[string]string{sizeTestKey: strings.Repeat("a", maxValueBytes-1)}},
+		"annotations at total limit":               {annotations: map[string]string{sizeTestKey: strings.Repeat("a", maxValueBytes)}},
+		"annotations exceed total limit":           {annotations: map[string]string{sizeTestKey: strings.Repeat("a", maxValueBytes+1)}, wantErr: "Too long"},
+		"caller annotations at Kubernetes limit":   {annotations: map[string]string{sizeTestKey: strings.Repeat("a", apivalidation.TotalAnnotationSizeLimitB-len(sizeTestKey))}, wantErr: "Too long"},
+		"invalid label key":                        {labels: map[string]string{"bad key": "value"}, wantErr: "machineLabels"},
+		"invalid label value":                      {labels: map[string]string{"pool": "not a label"}, wantErr: "machineLabels"},
+		"cluster identity label":                   {labels: map[string]string{clusterv1.ClusterNameLabel: "other"}, wantErr: "must be explicitly allowlisted"},
+		"control-plane role label":                 {labels: map[string]string{clusterv1.MachineControlPlaneLabel: ""}, wantErr: "must be explicitly allowlisted"},
+		"annotation exception":                     {annotations: map[string]string{"nke.nvidia.com/profile": "gpu,network"}, allowedAnnotations: []string{"nke.nvidia.com/profile"}},
+		"label exception":                          {labels: map[string]string{"cluster.x-k8s.io/custom": "gpu"}, allowedLabels: []string{"cluster.x-k8s.io/custom"}},
+		"annotation exception cannot permit label": {labels: map[string]string{"nvke.nvidia.com/profile": "gpu"}, allowedAnnotations: []string{"nvke.nvidia.com/profile"}, wantErr: "must be explicitly allowlisted"},
+		"label exception cannot permit annotation": {annotations: map[string]string{"nvke.nvidia.com/profile": "gpu"}, allowedLabels: []string{"nvke.nvidia.com/profile"}, wantErr: "must be explicitly allowlisted"},
+		"exception must match exact key":           {annotations: map[string]string{"nvke.nvidia.com/other": "gpu"}, allowedAnnotations: []string{"nvke.nvidia.com/profile"}, wantErr: "must be explicitly allowlisted"},
+		"lookalike domains":                        {annotations: map[string]string{"mynke.io/key": "value"}, labels: map[string]string{"notk8s.io/key": "value"}},
+	}
+	for _, domain := range []string{"nke.nvidia.com", "nke.io", "nvke.nvidia.com", "kubernetes.io", "k8s.io", "cluster.x-k8s.io"} {
+		for _, prefix := range []string{domain, "child." + domain} {
+			key := prefix + "/future-key"
+			tests["reserved annotation "+key] = parameters{annotations: map[string]string{key: "value"}, wantErr: "must be explicitly allowlisted"}
+			tests["reserved label "+key] = parameters{labels: map[string]string{key: "value"}, wantErr: "must be explicitly allowlisted"}
+		}
+	}
+
+	for _, key := range []string{
+		constants.MachineAnnotationKeyHostID, constants.MachineAnnotationKeyReboot,
+		constants.MachineAnnotationKeyRebootCompleteTimestamp, constants.MachineAnnotationKeyMachineHealthIssue,
+		constants.MachineAnnotationKeySpireAgentSpiffeIDPath, clusterv1.ExcludeNodeDrainingAnnotation,
+		clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation,
+	} {
+		tests["reserved annotation "+key] = parameters{annotations: map[string]string{key: "value"}, wantErr: "must be explicitly allowlisted"}
+	}
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			err := validateMachineMetadata(params.annotations, params.labels, params.allowedAnnotations, params.allowedLabels)
+			if params.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, params.wantErr)
+			}
 		})
 	}
 }

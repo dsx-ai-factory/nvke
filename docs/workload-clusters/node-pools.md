@@ -85,6 +85,41 @@ A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NI
 
    On a provisioned cluster the pool's status reads `Provisioned` within moments, before its nodes join. Follow the nodes by listing them as in [List node pools and nodes](#list-node-pools-and-nodes). A node waits as pending until NICo allocates it a machine of the instance type.
 
+## Machine annotations and labels
+
+Set `machineAnnotations` and `machineLabels` on a node pool at creation, either
+inside a cluster's `nodePools` list or in a standalone node pool request:
+
+```yaml
+machineAnnotations:
+  example.com/setup: "gpu,network"
+machineLabels:
+  example.com/workload: gpu
+```
+
+Both fields are optional maps of strings and are fixed when the pool is created.
+They are applied only to new CAPI Machines, including scale-out and replacement
+Machines. They do not label or annotate Kubernetes Nodes or infrastructure
+Machines. They are not reconciled after provisioning. Annotation values can
+be free-form strings, while labels must follow Kubernetes label syntax.
+
+Keys under `nke.nvidia.com`, `nke.io`, `nvke.nvidia.com`, `kubernetes.io`, `k8s.io`,
+`cluster.x-k8s.io` and their subdomains are reserved. Operators can allow exact
+keys using `machineMetadata.allowlistedLabelKeys` and
+`machineMetadata.allowlistedAnnotationKeys` in the controller Helm values
+(`machineMetadataAllowlistedLabelKeys` and
+`machineMetadataAllowlistedAnnotationKeys` in `nke-controller-config`). Both
+lists default to empty. Label exceptions do not permit annotation keys, or vice
+versa. Add the configuration-profile selection annotation to the annotation
+allowlist if it uses a reserved domain. These settings do not change `nodeLabels`
+validation.
+
+For control-plane Machines, set the same fields under `controlPlaneConfig` in
+the cluster creation request. They are fixed at cluster creation, use the same
+allowlists, and apply to newly provisioned control-plane Machines, including
+scale-out and replacement Machines. They cannot be changed through the cluster
+update API.
+
 ## Scale a node pool
 
 `desiredNodeCount` is the number of nodes NVKE keeps in the pool. It is not workload-driven autoscaling: NVKE changes the count only when you do.

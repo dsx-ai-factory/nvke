@@ -4,6 +4,7 @@
 package db_test
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestNodePoolProviderGettersAndSetters(t *testing.T) {
@@ -104,4 +106,36 @@ func TestNodePoolResolveProviderType(t *testing.T) {
 	empty := db.NodePool{ID: uuid.New()}
 	_, err = empty.ResolveProviderType()
 	require.ErrorIs(t, err, db.ErrMissingProviderPayload)
+}
+
+func TestNodePool_MachineMetadataPersistence(t *testing.T) {
+	type parameters struct{ annotations, labels map[string]string }
+	for name, params := range map[string]parameters{
+		"omitted":    {},
+		"configured": {annotations: map[string]string{"example.com/setup": "gpu,network"}, labels: map[string]string{"example.com/pool": "gpu"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			bunDB := testutil.SetupDB(ctx, t, (*db.NodePool)(nil))
+			queries := db.NewDB(bunDB)
+			pool := db.NodePool{
+				ID: uuid.New(), ClusterID: uuid.New(), Name: "workers", NodeNamePrefix: "worker", KubernetesVersion: "1.32.1",
+				MachineAnnotations: params.annotations, MachineLabels: params.labels,
+			}
+			_, err := queries.CreateNodePool(ctx, &pool)
+			require.NoError(t, err)
+			loaded, err := queries.GetNodePool(ctx, pool.ID)
+			require.NoError(t, err)
+			require.Equal(t, db.CloneStringMap(params.annotations), loaded.MachineAnnotations)
+			require.Equal(t, db.CloneStringMap(params.labels), loaded.MachineLabels)
+			// Other pool updates retain the immutable metadata.
+			loaded.DesiredCount = 2
+			_, err = queries.UpdateNodePool(ctx, &loaded)
+			require.NoError(t, err)
+			loaded, err = queries.GetNodePool(ctx, pool.ID)
+			require.NoError(t, err)
+			require.Equal(t, db.CloneStringMap(params.annotations), loaded.MachineAnnotations)
+			require.Equal(t, db.CloneStringMap(params.labels), loaded.MachineLabels)
+		})
+	}
 }

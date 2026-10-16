@@ -171,3 +171,32 @@ func TestApplyMachine_PreservesExistingFailureDomain(t *testing.T) {
 	require.NoError(t, k8sClient.Get(context.Background(), client.ObjectKeyFromObject(existing), actual))
 	assert.Equal(t, "fd-a", actual.Spec.FailureDomain)
 }
+
+func TestBuildMachine_Metadata(t *testing.T) {
+	type parameters struct{ annotations, labels map[string]string }
+	for name, params := range map[string]parameters{
+		"omitted":    {},
+		"configured": {annotations: map[string]string{"example.com/setup": "gpu,network"}, labels: map[string]string{"example.com/pool": "gpu"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pool := db.NodePool{MachineAnnotations: params.annotations, MachineLabels: params.labels}
+			machine, err := shared.BuildMachine(db.Node{Name: "worker-0"}, db.NodeSet{KubernetesVersion: "1.32.1"}, pool,
+				db.Cluster{Name: "cluster-a"}, "nke-system", "bootstrap", clusterv1.ContractVersionedObjectReference{
+					APIGroup: "infrastructure.cluster.x-k8s.io", Kind: "DockerMachine", Name: "worker-0",
+				})
+			require.NoError(t, err)
+			for key, value := range params.annotations {
+				require.Equal(t, value, machine.Annotations[key])
+			}
+			for key, value := range params.labels {
+				require.Equal(t, value, machine.Labels[key])
+			}
+			require.Equal(t, "cluster-a", machine.Labels[clusterv1.ClusterNameLabel])
+			require.Equal(t, "cwe-controlled", machine.Annotations[clusterv1.ExcludeNodeDrainingAnnotation])
+			machine.Annotations["example.com/only-machine"] = "value"
+			machine.Labels["example.com/only-machine"] = "value"
+			require.NotContains(t, pool.MachineAnnotations, "example.com/only-machine")
+			require.NotContains(t, pool.MachineLabels, "example.com/only-machine")
+		})
+	}
+}

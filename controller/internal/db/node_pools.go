@@ -189,6 +189,10 @@ type NodePool struct {
 
 	Nico *NicoNodePoolProvider `bun:"nico,type:jsonb"`
 	Capi *CAPINodePoolProvider `bun:"capi,type:jsonb"`
+
+	// Machine metadata is fixed at pool creation and applied only to new Machines.
+	MachineAnnotations map[string]string `bun:"type:jsonb,notnull,default:'{}'"`
+	MachineLabels      map[string]string `bun:"type:jsonb,notnull,default:'{}'"`
 }
 
 // NodeTaint is a Kubernetes taint stored as the desired set for every node in a pool.
@@ -210,6 +214,8 @@ func CloneStringMap(in map[string]string) map[string]string {
 // array for taints so a nil Go value is not written as JSON null.
 func normalizeNodePoolCollections(nodePool *NodePool) {
 	nodePool.NodeLabels = CloneStringMap(nodePool.NodeLabels)
+	nodePool.MachineAnnotations = CloneStringMap(nodePool.MachineAnnotations)
+	nodePool.MachineLabels = CloneStringMap(nodePool.MachineLabels)
 	if nodePool.NodeTaints == nil {
 		nodePool.NodeTaints = []NodeTaint{}
 	}

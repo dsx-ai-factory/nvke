@@ -48,6 +48,8 @@ data:
     {{- else }}
     nodeMetadataAllowlistedLabelKeys: []
     {{- end }}
+    machineMetadataAllowlistedLabelKeys: {{ .Values.machineMetadata.allowlistedLabelKeys | toJson }}
+    machineMetadataAllowlistedAnnotationKeys: {{ .Values.machineMetadata.allowlistedAnnotationKeys | toJson }}
     tracing:
       enabled: {{ if $tracing.enabled }}true{{ else }}false{{ end }}
       endpoint: {{ if $traceToEndpoint }}{{ $tracing.endpoint | quote }}{{ else }}""{{ end }}

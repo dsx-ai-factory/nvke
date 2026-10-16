@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -15,8 +16,6 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capiexternal "sigs.k8s.io/cluster-api/controllers/external"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"

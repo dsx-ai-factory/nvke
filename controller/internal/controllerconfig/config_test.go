@@ -1110,3 +1110,52 @@ nodeAgent:
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid duration")
 }
+
+func TestMachineMetadataAllowlists_Config(t *testing.T) {
+	t.Parallel()
+	type parameters struct {
+		value   string
+		wantErr string
+	}
+	tests := map[string]parameters{
+		"empty":                     {value: "[]"},
+		"internal domain exception": {value: "[nke.nvidia.com/profile, cluster.x-k8s.io/custom]"},
+		"empty key":                 {value: `[""]`, wantErr: "must not be empty"},
+		"padded key":                {value: `[" nvke.nvidia.com/profile"]`, wantErr: "whitespace"},
+		"invalid key":               {value: `["bad key"]`, wantErr: "not a valid label key"},
+		"wildcard":                  {value: `["nke.io/*"]`, wantErr: "not a valid label key"},
+		"duplicate":                 {value: "[nvke.nvidia.com/profile, nvke.nvidia.com/profile]", wantErr: "duplicates"},
+	}
+	for _, field := range []string{"machineMetadataAllowlistedLabelKeys", "machineMetadataAllowlistedAnnotationKeys"} {
+		for name, params := range tests {
+			t.Run(field+"/"+name, func(t *testing.T) {
+				t.Parallel()
+				yaml := strings.Replace(minimalConfig, "supportedInfraProviders: [nico]\n", "supportedInfraProviders: [nico]\n"+field+": "+params.value+"\n", 1)
+				file, err := controllerconfig.Load(writeConfig(t, yaml))
+				if params.wantErr != "" {
+					require.ErrorContains(t, err, field)
+					require.ErrorContains(t, err, params.wantErr)
+					return
+				}
+				require.NoError(t, err)
+				var cfg config.Config
+				file.ApplyTo(&cfg)
+				if params.value == "[]" {
+					require.Empty(t, cfg.MachineMetadataAllowlistedLabelKeys)
+					require.Empty(t, cfg.MachineMetadataAllowlistedAnnotationKeys)
+					return
+				}
+				want := []string{"nke.nvidia.com/profile", "cluster.x-k8s.io/custom"}
+				if field == "machineMetadataAllowlistedLabelKeys" {
+					require.Equal(t, want, cfg.MachineMetadataAllowlistedLabelKeys)
+					cfg.MachineMetadataAllowlistedLabelKeys[0] = "mutated"
+					require.Equal(t, want, file.MachineMetadataAllowlistedLabelKeys)
+				} else {
+					require.Equal(t, want, cfg.MachineMetadataAllowlistedAnnotationKeys)
+					cfg.MachineMetadataAllowlistedAnnotationKeys[0] = "mutated"
+					require.Equal(t, want, file.MachineMetadataAllowlistedAnnotationKeys)
+				}
+			})
+		}
+	}
+}

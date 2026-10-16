@@ -79,6 +79,8 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 		KubeReservedMemory:          snapshotCfg.KubeReservedMemory,
 		TeleportEnabled:             snapshotCfg.TeleportEnabled,
 		ProvisioningMonitorDisabled: snapshotCfg.ProvisioningMonitorDisabled,
+		MachineAnnotations:          db.CloneStringMap(snapshotCfg.MachineAnnotations),
+		MachineLabels:               db.CloneStringMap(snapshotCfg.MachineLabels),
 	}
 
 	provider, err := clients.GetControlPlaneConfigNodeProvider(cluster)

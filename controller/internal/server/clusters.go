@@ -87,6 +87,8 @@ type clusterService struct {
 	allowLegacyCalicoClusterCreation bool
 	nodeAgentUpdateMethod            string
 	allowlistedLabelKeys             []string
+	machineAllowlistedLabelKeys      []string
+	machineAllowlistedAnnotationKeys []string
 }
 
 func NewClusterService(
@@ -371,6 +373,9 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 	if req.ControlPlaneConfig == nil {
 		return fmt.Errorf("controlPlaneConfig is required")
 	}
+	if err := validateMachineMetadata(req.ControlPlaneConfig.MachineAnnotations, req.ControlPlaneConfig.MachineLabels, s.machineAllowlistedAnnotationKeys, s.machineAllowlistedLabelKeys); err != nil {
+		return fmt.Errorf("controlPlaneConfig: %w", err)
+	}
 	if err := validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, req.ControlPlaneConfig.DesiredCount); err != nil {
 		return err
 	}
@@ -459,6 +464,8 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 			TeleportEnabled:             nodePoolConfig.TeleportEnabled,
 			Nico:                        nodePoolConfig.Nico,
 			Infra:                       nodePoolConfig.Infra,
+			MachineAnnotations:          nodePoolConfig.MachineAnnotations,
+			MachineLabels:               nodePoolConfig.MachineLabels,
 		}
 
 		if err := s.nodePoolService.validateCreateNodePoolRequest(cluster, &nodePoolReq); err != nil {
@@ -1015,6 +1022,8 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 		Nico:                        apiNicoControlPlaneProviderFromDB(cfg.Nico),
 		Infra:                       apiInfraControlPlaneProviderFromDB(cfg.Capi),
 		NodeAgentConfig:             apiNodeAgentConfigFromDB(cfg.NodeAgentConfig),
+		MachineAnnotations:          maps.Clone(cfg.MachineAnnotations),
+		MachineLabels:               maps.Clone(cfg.MachineLabels),
 	}
 }
 
