@@ -46,7 +46,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | SPIFFE Runtime Environment (SPIRE) agent | 1.14.1, with TPM plugin 1.9.0 | Pinned. Installed on the node image for TPM node attestation. |
 | Node agent (`nvke-agent`) | Built from the NVKE source NVKR pins | Installed and enabled on the node image. Listens on port 15005. |
 
-NVKR's [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/nvke-os/README.md) lists the build host requirements; [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md) summarizes them.
+NVKR's [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/diagnostics/README.md) lists the build host requirements; [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md) summarizes them.
 
 ## Management and bootstrap tooling
 

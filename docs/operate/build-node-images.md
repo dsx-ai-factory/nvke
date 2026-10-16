@@ -21,8 +21,8 @@ NVKR builds every artifact from a Definition, a YAML file that names each output
 | Install `nvkr` and run a first build | [Quickstart](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/quickstart.md) |
 | Plan, run, publish and inspect a Run | [Definition, Run, and Release workflow](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/lifecycle.md) |
 | Browse, verify and export a Release | [Browse, export and verify a release](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/release-quickstart.md) |
-| The maintained NVKE Definition | [Combined NVKE M2 candidate](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/nvke-m2/README.md) |
-| Build the node OS image | [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/nvke-os/README.md) and [Build a node image from component materials](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/node-images.md) |
+| The maintained NVKE Definition | [Combined NVKE M2 candidate](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/nvke/README.md) |
+| Build the node OS image | [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/diagnostics/README.md) and [Build a node image from component materials](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/node-images.md) |
 
 ### What the install takes from an NVKR Release
 
@@ -52,7 +52,7 @@ The install selects each output for the management nodes' CPU architecture, whic
 
 3. Keep `release.json`. You pass it to the install as `--release` in [Install management-plane services](install-management-plane-services.md). For a local Run that was never published, also pass `--nvkr-run-dir .nvkr/runs/<ATTEMPT>`: the install then reads charts and images from the Run's OCI layouts instead of a registry, and imports the images into the node's containerd.
 
-> **Note:** NVKR's maintained M2 Definition (`inputs/nvke-m2`) does not build the `controller-profiles` or `capnico-controller` outputs, so the install refuses a Release built from it. Install without `--release` instead. The controller chart then comes from your checkout, and the stack config names the profile content image in `images.profiles`, as `repository:tag` or `repository@sha256:<DIGEST>`; `images.controller` is optional in the same form and overrides the deploy path's pinned controller image. To use the Release's controller image, take the `cwe` output's `Derived artifact reference:` from `nvkr release browse`. To build the profiles image, see [Build the profile content image](#build-the-profile-content-image).
+> **Note:** NVKR's maintained M2 Definition (`inputs/definitions/nvke`) does not build the `controller-profiles` or `capnico-controller` outputs, so the install refuses a Release built from it. Install without `--release` instead. The controller chart then comes from your checkout, and the stack config names the profile content image in `images.profiles`, as `repository:tag` or `repository@sha256:<DIGEST>`; `images.controller` is optional in the same form and overrides the deploy path's pinned controller image. To use the Release's controller image, take the `cwe` output's `Derived artifact reference:` from `nvkr release browse`. To build the profiles image, see [Build the profile content image](#build-the-profile-content-image).
 
 ### What an NVKR Release proves
 
@@ -68,7 +68,7 @@ See [Preview status and known limitations](../overview/preview-status.md).
 
 ### The node OS image
 
-NVKR builds the node OS image, `nvke-node-image-<ARCH>.qcow2`: Ubuntu 26.04.1 in QEMU copy-on-write (QCOW2) format, for `amd64` or `arm64`. A local build runs NVKR's `scripts/nvke-os-local.sh` with `NVKE_OS_ARCH` set to the architecture, on native Linux with Kernel-based Virtual Machine (KVM) access, at least 8 CPUs, 10 GiB of memory and 64 GiB of free disk space. It writes `.nvkr/runs/<ATTEMPT>/outputs/nvke-node-image-<ARCH>.qcow2`, which is unsigned and unqualified. The maintained M2 Definition also builds node images for both architectures in the hosted pipeline. [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/nvke-os/README.md) has the procedure. Copy the image to where your provisioning system serves images, then [Prepare nodes](prepare-nodes.md) from it.
+NVKR builds the node OS image, `nvke-node-image-<ARCH>.qcow2`: Ubuntu 26.04.1 in QEMU copy-on-write (QCOW2) format, for `amd64` or `arm64`. A local build runs NVKR's `scripts/nvke-os-local.sh` with `NVKE_OS_ARCH` set to the architecture, on native Linux with Kernel-based Virtual Machine (KVM) access, at least 8 CPUs, 10 GiB of memory and 64 GiB of free disk space. It writes `.nvkr/runs/<ATTEMPT>/outputs/nvke-node-image-<ARCH>.qcow2`, which is unsigned and unqualified. The maintained M2 Definition also builds node images for both architectures in the hosted pipeline. [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/diagnostics/README.md) has the procedure. Copy the image to where your provisioning system serves images, then [Prepare nodes](prepare-nodes.md) from it.
 
 ## Write the release manifests
 
