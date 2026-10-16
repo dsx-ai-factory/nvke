@@ -29,11 +29,15 @@ import (
 )
 
 const (
-	annotationRebootCompleteTimestamp = "nke.nvidia.com/reboot-complete-timestamp"
-	annotationReboot                  = "nke.nvidia.com/reboot"
-	reasonRebootComplete              = "RebootComplete"
-	fieldOwnerCapdRebootController    = "capd-reboot-controller"
-	defaultSleepDuration              = 10 * time.Second
+	annotationRebootCompleteTimestamp = "nvke.nvidia.com/reboot-complete-timestamp"
+	annotationReboot                  = "nvke.nvidia.com/reboot"
+
+	// The controller writes the reboot request under both domains while sites
+	// move over, and an older build wrote only this one.
+	legacyAnnotationReboot         = "nke.nvidia.com/reboot"
+	reasonRebootComplete           = "RebootComplete"
+	fieldOwnerCapdRebootController = "capd-reboot-controller"
+	defaultSleepDuration           = 10 * time.Second
 )
 
 // version is set at build time via -ldflags "-X main.version=<version>".
@@ -115,6 +119,9 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	rebootAnnotation := machine.Annotations[annotationReboot]
+	if rebootAnnotation == "" {
+		rebootAnnotation = machine.Annotations[legacyAnnotationReboot]
+	}
 	if rebootAnnotation == "" {
 		log.V(2).Info("no Machine reboot annotation found; skipping")
 		return ctrl.Result{}, nil
