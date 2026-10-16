@@ -53,7 +53,7 @@ func TestProviderSupport_Require(t *testing.T) {
 	}
 }
 
-func TestClusterService_ValidateNodeAgentProfile(t *testing.T) {
+func TestValidateNodeAgentProfile(t *testing.T) {
 	t.Parallel()
 
 	spiffeTPM := db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodTPM}
@@ -81,7 +81,7 @@ func TestClusterService_ValidateNodeAgentProfile(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			err := (&clusterService{nodeAgentProfile: tt.profile}).validateNodeAgentProfile(tt.provider)
+			err := validateNodeAgentProfile(tt.profile, tt.provider)
 			if tt.wantErr != "" {
 				require.EqualError(t, err, tt.wantErr)
 				return

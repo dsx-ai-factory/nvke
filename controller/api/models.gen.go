@@ -414,7 +414,7 @@ type ControlPlaneStatus struct {
 // CreateClusterControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
 // Required when you create a cluster.
 // `nico` carries the NICo settings for the control-plane nodes; it is required
-// for a NICo cluster.
+// for a NICo cluster. `launchLayer` is required for a LaunchLayer cluster.
 type CreateClusterControlPlaneConfig struct {
 	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster.
 	DesiredCount int `json:"desiredCount"`
@@ -492,7 +492,7 @@ type CreateClusterRequest struct {
 	// ControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
 	// Required when you create a cluster.
 	// `nico` carries the NICo settings for the control-plane nodes; it is required
-	// for a NICo cluster.
+	// for a NICo cluster. `launchLayer` is required for a LaunchLayer cluster.
 	ControlPlaneConfig *CreateClusterControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
 
 	// Infra CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
@@ -501,7 +501,7 @@ type CreateClusterRequest struct {
 	Infra *InfraClusterProvider `json:"infra,omitempty"`
 
 	// LaunchLayer LaunchLayer identifiers for the cluster. Exactly one of vpcID or orgID
-	// must be set. siteID and owner are immutable once a VPC is bound.
+	// must be set, and siteID is required. All fields are fixed at creation.
 	LaunchLayer *LaunchLayerClusterProvider `json:"launchLayer,omitempty"`
 
 	// Network Pod and service network. Immutable after creation. Defaults apply when omitted.
@@ -687,10 +687,10 @@ type LaunchLayerClusterOwner struct {
 }
 
 // LaunchLayerClusterProvider LaunchLayer identifiers for the cluster. Exactly one of vpcID or orgID
-// must be set. siteID and owner are immutable once a VPC is bound.
+// must be set, and siteID is required. All fields are fixed at creation.
 type LaunchLayerClusterProvider struct {
 	// CloudProviderEnabled Set true where a cloud controller manager runs, so CAPLL leaves the
-	// Node's provider ID to it. Leave false/unset — NVKE runs no CCM.
+	// Node's provider ID to it. NVKE runs no CCM, so true is rejected.
 	CloudProviderEnabled bool `json:"cloudProviderEnabled,omitempty"`
 
 	// OrgID Organization in which CAPLL creates a VPC when vpcID is omitted.
@@ -703,16 +703,20 @@ type LaunchLayerClusterProvider struct {
 	SecurityGroups *[]LaunchLayerSecurityGroup `json:"securityGroups,omitempty"`
 
 	// SiteID Names the LaunchLayer datahall this cluster's machines come from.
-	SiteID string `json:"siteID,omitempty"`
+	SiteID string `json:"siteID"`
 
 	// VpcID An existing LaunchLayer VPC that CAPLL observes but never deletes.
 	VpcID string `json:"vpcID,omitempty"`
 
-	// VpcType Network type for a managed or existing VPC. Immutable, defaults to VIRTUALIZED.
+	// VpcType Network type for a managed or existing VPC. When omitted, CAPLL
+	// treats the VPC as VIRTUALIZED. A VIRTUALIZED security group needs a
+	// VIRTUALIZED VPC.
 	VpcType *LaunchLayerClusterProviderVpcType `json:"vpcType,omitempty"`
 }
 
-// LaunchLayerClusterProviderVpcType Network type for a managed or existing VPC. Immutable, defaults to VIRTUALIZED.
+// LaunchLayerClusterProviderVpcType Network type for a managed or existing VPC. When omitted, CAPLL
+// treats the VPC as VIRTUALIZED. A VIRTUALIZED security group needs a
+// VIRTUALIZED VPC.
 type LaunchLayerClusterProviderVpcType string
 
 // LaunchLayerControlPlaneProvider LaunchLayer settings for the control-plane nodes. Same shape as
@@ -726,7 +730,7 @@ type LaunchLayerControlPlaneProvider struct {
 	HostOSProfile string `json:"hostOSProfile,omitempty"`
 
 	// InstanceType Requests capacity of a given shape, for example "vm200".
-	InstanceType string `json:"instanceType,omitempty"`
+	InstanceType string `json:"instanceType"`
 
 	// SecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
 	// network interface. Mutually exclusive with securityGroups (existing
@@ -756,7 +760,7 @@ type LaunchLayerNodePoolProvider struct {
 	HostOSProfile string `json:"hostOSProfile,omitempty"`
 
 	// InstanceType Requests capacity of a given shape, for example "vm200".
-	InstanceType string `json:"instanceType,omitempty"`
+	InstanceType string `json:"instanceType"`
 
 	// SecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
 	// network interface. Mutually exclusive with securityGroups (existing
@@ -818,16 +822,17 @@ type LaunchLayerNodeSetProviderFulfillmentStrategy string
 // LaunchLayerSecurityGroup A security group LaunchLayer creates with the cluster and deletes with it.
 type LaunchLayerSecurityGroup struct {
 	// Name Security group name, referenced by node pools via securityGroupRefs.
+	// A DNS label of at most 24 characters, unique within the cluster.
 	Name string `json:"name"`
 
-	// NetworkType Virtual groups only; omitted for bare-metal groups.
+	// NetworkType Required for a VIRTUALIZED group and rejected for a BARE_METAL group.
 	NetworkType *LaunchLayerSecurityGroupNetworkType `json:"networkType,omitempty"`
 
 	// Type Immutable. A virtual VPC can contain both kinds of groups.
 	Type LaunchLayerSecurityGroupType `json:"type"`
 }
 
-// LaunchLayerSecurityGroupNetworkType Virtual groups only; omitted for bare-metal groups.
+// LaunchLayerSecurityGroupNetworkType Required for a VIRTUALIZED group and rejected for a BARE_METAL group.
 type LaunchLayerSecurityGroupNetworkType string
 
 // LaunchLayerSecurityGroupType Immutable. A virtual VPC can contain both kinds of groups.

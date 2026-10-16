@@ -324,14 +324,14 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 	return network, nil
 }
 
-// validateNodeAgentProfile rejects a cluster whose nodes could never join
-// under this deployment's node-agent settings.
-func (s *clusterService) validateNodeAgentProfile(providerType db.ProviderType) error {
+// validateNodeAgentProfile rejects new nodes of providerType that could never
+// join under this deployment's node-agent settings, profile.
+func validateNodeAgentProfile(profile db.Node, providerType db.ProviderType) error {
 	validator, err := clients.GetNodeAgentProfileValidator(db.Cluster{ProviderType: providerType})
 	if err != nil {
 		return err
 	}
-	if err := validator.ValidateNodeAgentProfile(s.nodeAgentProfile); err != nil {
+	if err := validator.ValidateNodeAgentProfile(profile); err != nil {
 		return fmt.Errorf("this deployment's node-agent settings do not support the %s provider: %w", providerType, err)
 	}
 	return nil
@@ -381,7 +381,7 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 	default:
 		return fmt.Errorf("exactly one provider must be set")
 	}
-	if err := s.validateNodeAgentProfile(providerType); err != nil {
+	if err := validateNodeAgentProfile(s.nodeAgentProfile, providerType); err != nil {
 		return err
 	}
 
@@ -480,6 +480,34 @@ func validateCreateLaunchLayerClusterProvider(req *api.CreateClusterRequest) err
 	}
 	if req.LaunchLayer.SiteID == "" {
 		return fmt.Errorf("launchLayer.siteID is required to create a launchLayer cluster")
+	}
+	if req.LaunchLayer.CloudProviderEnabled {
+		return fmt.Errorf("launchLayer.cloudProviderEnabled must not be true: NVKE runs no cloud controller manager")
+	}
+	return validateLaunchLayerSecurityGroups(req.LaunchLayer)
+}
+
+// validateLaunchLayerSecurityGroups applies the security-group rules CAPLL's
+// CRD enforces, so a bad group gets 400 rather than a cluster whose
+// LaunchLayerCluster apply is retried forever.
+func validateLaunchLayerSecurityGroups(provider *api.LaunchLayerClusterProvider) error {
+	if provider.SecurityGroups == nil {
+		return nil
+	}
+	names := make(map[string]struct{}, len(*provider.SecurityGroups))
+	for _, group := range *provider.SecurityGroups {
+		if _, exists := names[group.Name]; exists {
+			return fmt.Errorf("duplicate launchLayer.securityGroups name %q", group.Name)
+		}
+		names[group.Name] = struct{}{}
+		virtualized := group.Type == api.LaunchLayerSecurityGroupTypeVIRTUALIZED
+		if virtualized != (group.NetworkType != nil) {
+			return fmt.Errorf("launchLayer.securityGroups %q: networkType is required for a VIRTUALIZED group and forbidden for a BARE_METAL group", group.Name)
+		}
+		// CAPLL treats an unset vpcType as VIRTUALIZED.
+		if virtualized && provider.VpcType != nil && *provider.VpcType != api.LaunchLayerClusterProviderVpcTypeVIRTUALIZED {
+			return fmt.Errorf("launchLayer.securityGroups %q: a VIRTUALIZED group requires a VIRTUALIZED vpcType", group.Name)
+		}
 	}
 	return nil
 }
@@ -964,6 +992,11 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 			*req.DesiredCount,
 		); err != nil {
 			return err
+		}
+		if *req.DesiredCount > cluster.ControlPlaneConfig.DesiredCount {
+			if err := validateNodeAgentProfile(s.nodeAgentProfile, cluster.ProviderType); err != nil {
+				return newBadRequestErrorf("%s", err)
+			}
 		}
 		cluster.ControlPlaneConfig.DesiredCount = *req.DesiredCount
 	}

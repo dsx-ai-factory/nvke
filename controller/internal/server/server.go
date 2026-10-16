@@ -255,6 +255,7 @@ func NewServerImpl(
 	clusterService.machineAllowlistedAnnotationKeys = cfg.MachineMetadataAllowlistedAnnotationKeys
 	clusterService.fleetOIDC = o.fleetOIDC
 	nodes.PinAgentProfile(&clusterService.nodeAgentProfile, cfg)
+	nodes.PinAgentProfile(&nodePoolService.nodeAgentProfile, cfg)
 
 	return &serverImpl{
 		clusterService:       *clusterService,

@@ -1238,7 +1238,7 @@ components:
         Writable cluster-level control plane configuration supplied at cluster creation.
         Required when you create a cluster.
         `nico` carries the NICo settings for the control-plane nodes; it is required
-        for a NICo cluster.
+        for a NICo cluster. `launchLayer` is required for a LaunchLayer cluster.
       properties:
         desiredCount:
           type: integer
@@ -2626,7 +2626,11 @@ components:
         name:
           type: string
           minLength: 1
-          description: Security group name, referenced by node pools via securityGroupRefs.
+          maxLength: 24
+          pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+          description: |
+            Security group name, referenced by node pools via securityGroupRefs.
+            A DNS label of at most 24 characters, unique within the cluster.
         type:
           type: string
           enum: [BARE_METAL, VIRTUALIZED]
@@ -2634,14 +2638,15 @@ components:
         networkType:
           type: string
           enum: [primary, secondary]
-          description: Virtual groups only; omitted for bare-metal groups.
+          description: Required for a VIRTUALIZED group and rejected for a BARE_METAL group.
 
     LaunchLayerClusterProvider:
       type: object
       additionalProperties: false
       description: |
         LaunchLayer identifiers for the cluster. Exactly one of vpcID or orgID
-        must be set. siteID and owner are immutable once a VPC is bound.
+        must be set, and siteID is required. All fields are fixed at creation.
+      required: [siteID]
       properties:
         vpcID:
           type: string
@@ -2654,7 +2659,10 @@ components:
         vpcType:
           type: string
           enum: [BARE_METAL, VIRTUALIZED]
-          description: Network type for a managed or existing VPC. Immutable, defaults to VIRTUALIZED.
+          description: |
+            Network type for a managed or existing VPC. When omitted, CAPLL
+            treats the VPC as VIRTUALIZED. A VIRTUALIZED security group needs a
+            VIRTUALIZED VPC.
         siteID:
           type: string
           description: Names the LaunchLayer datahall this cluster's machines come from.
@@ -2663,7 +2671,7 @@ components:
           type: boolean
           description: |
             Set true where a cloud controller manager runs, so CAPLL leaves the
-            Node's provider ID to it. Leave false/unset — NVKE runs no CCM.
+            Node's provider ID to it. NVKE runs no CCM, so true is rejected.
           x-go-type-skip-optional-pointer: true
         owner:
           $ref: "#/components/schemas/LaunchLayerClusterOwner"
@@ -2843,6 +2851,7 @@ components:
       description: |
         LaunchLayer settings for a node pool. instanceType is required, and
         at most one of hostOSProfile and vmProfile may be set.
+      required: [instanceType]
       properties:
         instanceType:
           type: string
@@ -3126,6 +3135,7 @@ components:
         LaunchLayer settings for the control-plane nodes. Same shape as
         LaunchLayerNodePoolProvider — control-plane nodes are still
         LaunchLayer machines. Fixed at creation.
+      required: [instanceType]
       properties:
         instanceType:
           type: string

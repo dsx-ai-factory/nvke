@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -52,6 +53,9 @@ type nodePoolService struct {
 	allowlistedLabelKeys             []string
 	machineAllowlistedLabelKeys      []string
 	machineAllowlistedAnnotationKeys []string
+	// nodeAgentProfile carries the node-agent settings nodes.PinAgentProfile
+	// stamps on every node this deployment creates.
+	nodeAgentProfile db.Node
 }
 
 func NewNodePoolService(
@@ -231,6 +235,9 @@ func (s *nodePoolService) validateCreateNodePoolRequest(cluster db.Cluster, req 
 	if err := validateNodeTaints(req.NodeTaints, req.ControlPlane); err != nil {
 		return newBadRequestErrorf("%s", err)
 	}
+	if err := validateNodeAgentProfile(s.nodeAgentProfile, cluster.ProviderType); err != nil {
+		return err
+	}
 
 	switch cluster.ProviderType {
 	case db.ProviderTypeCAPI:
@@ -328,7 +335,29 @@ func validateCreateLaunchLayerNodePoolRequest(cluster db.Cluster, req *api.Creat
 	if err != nil {
 		return err
 	}
-	return validator.ValidateNodePoolPayload(nodePool)
+	if err := validator.ValidateNodePoolPayload(nodePool); err != nil {
+		return err
+	}
+	clusterProvider, err := cluster.LaunchLayerProvider()
+	if err != nil {
+		return err
+	}
+	return validateLaunchLayerSecurityGroupRefs(req.LaunchLayer.SecurityGroupRefs, clusterProvider.SecurityGroups, "launchLayer")
+}
+
+// validateLaunchLayerSecurityGroupRefs rejects a securityGroupRefs name that
+// is not one of groups, the cluster's managed security groups; CAPLL would
+// otherwise fail on it after the request was accepted.
+func validateLaunchLayerSecurityGroupRefs(refs *api.LaunchLayerSecurityGroupRefs, groups []db.LaunchLayerSecurityGroup, fieldPrefix string) error {
+	if refs == nil {
+		return nil
+	}
+	for _, name := range slices.Concat(refs.PrimaryNetworkInterface, refs.GpuNetworkInterface) {
+		if !slices.ContainsFunc(groups, func(group db.LaunchLayerSecurityGroup) bool { return group.Name == name }) {
+			return fmt.Errorf("%s.securityGroupRefs: %q is not one of the cluster's launchLayer.securityGroups", fieldPrefix, name)
+		}
+	}
+	return nil
 }
 
 func dbLaunchLayerNodePoolProviderFromAPI(provider api.LaunchLayerNodePoolProvider) db.LaunchLayerNodePoolProvider {

@@ -116,6 +116,48 @@ func TestValidateCreateNodePoolRequest_RejectsUnsupportedParentProvider(t *testi
 	})
 }
 
+func TestValidateCreateNodePoolRequest_LaunchLayer(t *testing.T) {
+	cluster := launchLayerCluster()
+	cluster.LaunchLayer.SecurityGroups = []db.LaunchLayerSecurityGroup{{Name: "workers", Type: "BARE_METAL"}}
+
+	tests := map[string]struct {
+		nodeAgentProfile db.Node
+		refs             *api.LaunchLayerSecurityGroupRefs
+		wantErr          string
+	}{
+		"accepts securityGroupRefs naming the cluster's groups": {
+			refs: &api.LaunchLayerSecurityGroupRefs{PrimaryNetworkInterface: []string{"workers"}},
+		},
+		"rejects a securityGroupRefs name the cluster does not define": {
+			refs:    &api.LaunchLayerSecurityGroupRefs{GpuNetworkInterface: []string{"missing"}},
+			wantErr: `launchLayer.securityGroupRefs: "missing" is not one of the cluster's launchLayer.securityGroups`,
+		},
+		"rejects a pool whose nodes could never join": {
+			nodeAgentProfile: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodTPM},
+			wantErr: "this deployment's node-agent settings do not support the launchlayer provider: " +
+				"SPIFFE-enabled LaunchLayer nodes require dsxImds SPIRE attestation, got tpm",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, []string{config.InfraProviderLaunchLayer})
+			service.nodeAgentProfile = tt.nodeAgentProfile
+
+			err := service.validateCreateNodePoolRequest(cluster, &api.CreateNodePoolRequest{
+				Name:             "worker",
+				NodeNamePrefix:   "worker",
+				DesiredNodeCount: 1,
+				LaunchLayer:      &api.LaunchLayerNodePoolProvider{InstanceType: "dgx200", SecurityGroupRefs: tt.refs},
+			})
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestValidateCreateNodePoolRequest_DisabledProviderPrecedesProviderShape(t *testing.T) {
 	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, []string{config.InfraProviderNico})
 

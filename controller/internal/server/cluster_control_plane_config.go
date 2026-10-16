@@ -172,7 +172,7 @@ func validateCreateClusterLevelControlPlane(
 	case db.ProviderTypeNico:
 		return validateCreateForgeControlPlaneConfigFields(ccpc)
 	case db.ProviderTypeLaunchLayer:
-		return validateCreateLaunchLayerControlPlaneConfig(providerType, ccpc)
+		return validateCreateLaunchLayerControlPlaneConfig(providerType, ccpc, req.LaunchLayer)
 	default:
 		return fmt.Errorf("unsupported cluster provider")
 	}
@@ -205,9 +205,14 @@ func validateCreateCAPIControlPlaneConfig(providerType db.ProviderType, c *api.C
 
 // validateCreateLaunchLayerControlPlaneConfig enforces LaunchLayer
 // control-plane config rules: instanceType is required, Nico/Infra-only
-// fields are rejected. Content-correctness (hostOSProfile/vmProfile
-// exclusivity) goes through the LaunchLayer client's payload validator.
-func validateCreateLaunchLayerControlPlaneConfig(providerType db.ProviderType, c *api.CreateClusterControlPlaneConfig) error {
+// fields are rejected, and securityGroupRefs must name groups in
+// clusterProvider. Content-correctness (hostOSProfile/vmProfile exclusivity)
+// goes through the LaunchLayer client's payload validator.
+func validateCreateLaunchLayerControlPlaneConfig(
+	providerType db.ProviderType,
+	c *api.CreateClusterControlPlaneConfig,
+	clusterProvider *api.LaunchLayerClusterProvider,
+) error {
 	if c.Nico != nil {
 		return fmt.Errorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.launchLayer")
 	}
@@ -216,6 +221,10 @@ func validateCreateLaunchLayerControlPlaneConfig(providerType db.ProviderType, c
 	}
 	if c.LaunchLayer == nil {
 		return fmt.Errorf("controlPlaneConfig.launchLayer is required for a launchLayer cluster control plane")
+	}
+	groups := dbLaunchLayerClusterProviderFromAPI(*clusterProvider).SecurityGroups
+	if err := validateLaunchLayerSecurityGroupRefs(c.LaunchLayer.SecurityGroupRefs, groups, "controlPlaneConfig.launchLayer"); err != nil {
+		return err
 	}
 	var spec db.ControlPlaneConfigSpec
 	spec.SetLaunchLayer(dbLaunchLayerControlPlaneProviderFromAPI(*c.LaunchLayer))
