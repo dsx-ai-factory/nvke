@@ -114,7 +114,7 @@ would be a sibling of it, so nothing here changes when one is added.
 | `infra.nico.controlPlane.release` | string | with `nico` | The `ClusterRelease` the nodes boot from, which `infra.nico.releases` must hold. See Release manifests. |
 | `infra.nico.controlPlane.configProfile` | string | no | A config profile name. The bootstrap controller starts with an empty profiles directory and serves none, so it treats any name as missing and logs a warning: its hooks and labels never reach the nodes. Leave it unset. |
 | `infra.nico.releases` | path | with `nico` | A file, or a directory of `.yaml`, `.yml` and `.json` files, holding the `MachineImage` and `ClusterRelease` manifests. See below. |
-| `spire.externalAddress` | string | with `nico`, unless `--disable-mtls` | IP address or DNS name nodes use to reach the bootstrap host's SPIRE server, on NodePort 30081. A loopback or unspecified address, and `localhost`, are refused: they mean nothing from a node. See below. |
+| `spire.externalAddress` | string | with `nico`, unless `--disable-mtls` | IP address or DNS name nodes use to reach the bootstrap host's SPIRE server, on NodePort 30081. It must be a routable unicast IP address without a zone, or a DNS name other than `localhost` or a `*.localhost` name: a loopback, unspecified, link-local or multicast address means nothing from a node. See below. |
 
 The NICo token is not a field: see NICo credentials below.
 

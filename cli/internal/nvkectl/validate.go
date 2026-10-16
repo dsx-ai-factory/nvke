@@ -82,22 +82,20 @@ func runValidateSiteSpec(out io.Writer, opts *validateSiteSpecOptions) error {
 		modeErr = fmt.Errorf("%w (--disable-mtls lifts this)", modeErr)
 	}
 	bootstrapErr := errors.Join(modeErr, spec.ValidateBootstrapReferences())
+	// A failing command writes nothing to stdout: the reasons are the error,
+	// which goes to stderr.
+	if bootstrapErr != nil && opts.bootstrapOnly {
+		return fmt.Errorf("the site spec is not ready for nvkectl bootstrap site: %w", bootstrapErr)
+	}
 	if bootstrapErr != nil {
-		if opts.bootstrapOnly {
-			fmt.Fprintf(out, "bootstrap: %v\n", bootstrapErr)
-		} else {
-			fmt.Fprintf(out, "bootstrap: not ready for nvkectl bootstrap site on this host "+
-				"(--bootstrap-only fails on this): %v\n", bootstrapErr)
-		}
+		fmt.Fprintf(out, "bootstrap: not ready for nvkectl bootstrap site on this host "+
+			"(--bootstrap-only fails on this): %v\n", bootstrapErr)
 	}
 	if warning := spec.NicoVIPWarning(); warning != "" {
 		fmt.Fprintf(out, "warning: %s\n", warning)
 	}
 	if domain, defaulted := spec.TrustDomain(); defaulted {
 		fmt.Fprintf(out, "spire.trustDomain: not set; a bootstrap with the default cluster name and the controller stack install both use %s\n", domain)
-	}
-	if bootstrapErr != nil && opts.bootstrapOnly {
-		return errors.New("the site spec is not ready for nvkectl bootstrap site")
 	}
 	fmt.Fprintln(out, "valid")
 	return nil

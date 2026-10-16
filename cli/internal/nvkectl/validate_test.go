@@ -154,8 +154,8 @@ func TestValidateSiteSpec_NicoNeedsTheSpireAddressUnlessMTLSIsOff(t *testing.T) 
 
 	var out strings.Builder
 	err = runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
-	if err == nil || !strings.Contains(out.String(), "spire.externalAddress is required") || strings.Contains(out.String(), "can run with this file") {
-		t.Fatalf("with mTLS: err = %v, output %q; want the address refused", err, out.String())
+	if err == nil || !strings.Contains(err.Error(), "spire.externalAddress is required") || out.Len() != 0 {
+		t.Fatalf("with mTLS: err = %v, stdout %q; want the address refused in the error and nothing on stdout", err, out.String())
 	}
 	out.Reset()
 	if err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true, disableMTLS: true}); err != nil {
@@ -213,13 +213,15 @@ func TestValidateSiteSpec_ReportsBootstrapProblemsTogether(t *testing.T) {
 
 	var out strings.Builder
 	err = runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
-	got := out.String()
 	if err == nil {
-		t.Fatalf("--bootstrap-only passed:\n%s", got)
+		t.Fatalf("--bootstrap-only passed:\n%s", out.String())
+	}
+	if out.Len() != 0 {
+		t.Errorf("a failing run wrote to stdout: %q", out.String())
 	}
 	for _, want := range []string{"SPIRE server (--disable-mtls lifts this)", "NVKECTL_NICO_CREDENTIALS must name", "bootstrap-releases"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("output lacks %q:\n%s", want, got)
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q:\n%v", want, err)
 		}
 	}
 }
@@ -299,7 +301,7 @@ func TestValidateSiteSpec_NicoExampleWithTheDocumentedReleases(t *testing.T) {
 	}
 	out.Reset()
 	if err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: requestsSpec, bootstrapOnly: true}); err == nil ||
-		!strings.Contains(out.String(), "without apiVersion and kind") {
+		!strings.Contains(err.Error(), "without apiVersion and kind") {
 		t.Errorf("releases/ of request documents: err = %v, output %q; want them refused", err, out.String())
 	}
 }
@@ -320,8 +322,8 @@ func TestValidateSiteSpec_BootstrapFilesAreCheckedInTheBootstrapSection(t *testi
 	t.Setenv("NVKECTL_NODE_USER", "")
 	var out strings.Builder
 	err = runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
-	if err == nil || !strings.Contains(out.String(), "NVKECTL_NICO_CREDENTIALS must name") || !strings.Contains(out.String(), "NVKECTL_NODE_USER is not set") || strings.Contains(out.String(), "can run with this file") {
-		t.Fatalf("err = %v, output %q; want the credentials variable and the missing files reported", err, out.String())
+	if err == nil || !strings.Contains(err.Error(), "NVKECTL_NICO_CREDENTIALS must name") || !strings.Contains(err.Error(), "NVKECTL_NODE_USER is not set") || out.Len() != 0 {
+		t.Fatalf("err = %v, stdout %q; want the credentials variable and the missing files in the error", err, out.String())
 	}
 }
 
@@ -351,7 +353,7 @@ func TestValidateSiteSpec_NicoSpecIsValidWithoutBootstrapInputs(t *testing.T) {
 
 	out.Reset()
 	err := runValidateSiteSpec(&out, &validateSiteSpecOptions{siteSpec: path, bootstrapOnly: true})
-	if err == nil || strings.HasSuffix(out.String(), "valid\n") {
+	if err == nil || out.Len() != 0 {
 		t.Fatalf("--bootstrap-only: err = %v, output %q; want it to fail without the inputs", err, out.String())
 	}
 }

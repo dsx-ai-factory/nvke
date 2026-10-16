@@ -28,6 +28,11 @@ WORK="$(cd "${WORK}" && pwd)"
 # The render refuses an --out under a temp directory; this suite renders
 # into one on purpose. Test-only allowance.
 export NVKECTL_RENDER_ALLOW_TEMP_OUT=1
+# The site spec's environment overrides would change every spec this suite
+# loads; an operator's shell may export them, under either prefix.
+for name in INFRA_PROVIDER SPIRE_EXTERNAL_ADDRESS CLUSTER_NODES SPIFFE_TRUST_DOMAIN; do
+  unset "NVKECTL_${name}" "NKECTL_${name}"
+done
 
 failures=0
 pass() { printf 'PASS  %s\n' "$*"; }
