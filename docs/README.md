@@ -12,8 +12,8 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | Document | Contents |
 |---|---|
 | [overview/what-is-nvke.md](overview/what-is-nvke.md) | What NVKE is, its parts, and who does what from Day 0 to Day 2 |
-| [overview/preview-status.md](overview/preview-status.md) | What the preview supports and its known limitations |
 | [overview/supported-platforms.md](overview/supported-platforms.md) | The Kubernetes versions, networking, infrastructure providers, node OS and tools this release supports |
+| [overview/preview-status.md](overview/preview-status.md) | What the preview supports and its known limitations |
 | [get-started/quickstart-local.md](get-started/quickstart-local.md) | Evaluate NVKE on one Linux host with mock-NICo |
 | [operate/plan-installation.md](operate/plan-installation.md) | What to decide and gather before installing |
 | [operate/build-node-images.md](operate/build-node-images.md) | Building node OS images, hosting their boot files over HTTP(S), and checking downloads |
@@ -167,7 +167,8 @@ Deeper module documentation:
 | [../GOVERNANCE.md](../GOVERNANCE.md) | How the project is governed |
 | [../MAINTAINERS.md](../MAINTAINERS.md) | Who maintains what |
 | [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) | Expected conduct |
-| [../RELEASE.md](../RELEASE.md) | How a release is cut |
+| [../RELEASE.md](../RELEASE.md) | Source releases, build instructions, validated SBOM evidence, approval and recovery |
+| [artifact-publication.md](artifact-publication.md) | Existing binary, image and chart publication workflows and artifact verification |
 | [../CHANGELOG.md](../CHANGELOG.md) | Changes not yet released |
 
 ## For coding agents

@@ -14,10 +14,10 @@ navigation:
         contents:
           - page: What is NVKE
             path: overview/what-is-nvke.md
-          - page: Preview status and known limitations
-            path: overview/preview-status.md
           - page: Supported platforms and versions
             path: overview/supported-platforms.md
+          - page: Preview status and known limitations
+            path: overview/preview-status.md
 
       - section: Get started
         contents:
