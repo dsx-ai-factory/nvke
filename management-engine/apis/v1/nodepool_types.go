@@ -83,7 +83,7 @@ type NodeProfileReference string
 
 // UserParams configures labels and taints for nodes in a pool.
 type UserParams struct {
-	// Labels specifies node labels. The prefixes nke.nvidia.com, kubernetes.io,
+	// Labels specifies node labels. The prefixes nvke.nvidia.com, nke.nvidia.com, kubernetes.io,
 	// k8s.io and their subdomains are reserved.
 	// +optional
 	// +kubebuilder:validation:MaxProperties=128

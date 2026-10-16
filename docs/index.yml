@@ -60,6 +60,8 @@ navigation:
             path: operate/troubleshoot.md
           - page: Migrating CRs to the internal.nvke.nvidia.com group
             path: operations/crd-group-migration.md
+          - page: The NVKE label and annotation domain
+            path: operations/label-domain-migration.md
 
       - section: Telemetry (NKTP)
         contents:

@@ -188,7 +188,7 @@ Auto mode moves a pool onto a new node configuration by marking outdated nodes f
 
 Auto mode works as follows:
 
-- **NVKE marks, something else deletes.** NVKE sets the condition `nke.nvidia.com/NeedsRecycle` on the Kubernetes node of each outdated node it selects, oldest first, and reports it as `markedForRecycling` in the node list. NVKE does not delete marked nodes itself. NVSentinel, or your own process, drains and deletes them when the customer's maintenance policy allows, and NVKE then provisions replacements on the current configuration. Without NVSentinel, delete marked nodes yourself as in [Replace a node](#replace-a-node).
+- **NVKE marks, something else deletes.** NVKE sets the condition `nvke.nvidia.com/NeedsRecycle` on the Kubernetes node of each outdated node it selects, oldest first, and reports it as `markedForRecycling` in the node list. NVKE does not delete marked nodes itself. NVSentinel, or your own process, drains and deletes them when the customer's maintenance policy allows, and NVKE then provisions replacements on the current configuration. Without NVSentinel, delete marked nodes yourself as in [Replace a node](#replace-a-node).
 - **`recycleBudget` limits how many nodes are out at once.** NVKE marks at most `recycleBudget` minus the pool's shortfall, where the shortfall is `desiredNodeCount` minus the number of available nodes. A node is unavailable when it is not `Ready`, is cordoned, is being deleted, or is marked for replacement or repair, and a node the pool is still waiting for adds to the shortfall. With `desiredNodeCount: 4`, `recycleBudget: 2` and one node `NotReady`, NVKE marks at most one node.
 - **Auto mode is inactive until you set a budget.** `recycleBudget` defaults to `0`, and with `0` NVKE marks nothing.
 

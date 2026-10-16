@@ -47,7 +47,7 @@ NVKE does not automatically terminate healthy in-service nodes only because desi
 
 ## Auto-mode Recycling
 
-Auto-mode gradually replaces worker nodes in deprecated NodeSets. The controller marks eligible nodes with `nke.nvidia.com/NeedsRecycle`, and [NVSentinel](https://github.com/NVIDIA/NVSentinel) (or your break-fix system) decides when those nodes can be cordoned, drained, and terminated.
+Auto-mode gradually replaces worker nodes in deprecated NodeSets. The controller marks eligible nodes with `nvke.nvidia.com/NeedsRecycle`, and [NVSentinel](https://github.com/NVIDIA/NVSentinel) (or your break-fix system) decides when those nodes can be cordoned, drained, and terminated.
 
 ## Rebooting a Node
 
