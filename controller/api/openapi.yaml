@@ -979,7 +979,7 @@ components:
           x-fern-ignore: true
           type: string
           pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
-          example: "1.4.0"
+          example: "1.4.11"
           description: CNI version, as X.Y.Z. Defaults to 3.30.1 for legacy calico or 1.4.11 for ovn-kubernetes.
           x-order: 7
         etcdEncrypted:
