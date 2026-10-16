@@ -48,7 +48,9 @@ module test target discovers this package without a build tag or a new dependenc
 [DSX Machine Image Tests](../../../.github/workflows/dsx-machine-image-tests.yml)
 is a manually dispatched advisory workflow, restricted to this repository's
 `main` branch. It becomes dispatchable after the workflow lands on the default
-branch. Four matrix jobs enumerate the selected OS/architecture's 17 stubs on
+branch. Each of the 17 functional tests gets its own matrix job for each of the four
+OS/architecture combinations: **68 jobs per dispatch**. Every job selects exactly
+one Go subtest and publishes its own result and artifact. Jobs run serially on
 the same `arc-amd64-cpu16` runner class as RelEng qualification. ARM64 names the
 future remote target; the test driver itself runs on AMD64.
 
@@ -57,7 +59,7 @@ and allocation settings. They reference the same repository secrets as
 `qualify-e2e.yml`; they do not copy secret values or create a new identity.
 Credentials are exposed only to the configuration check. No authentication is
 attempted, and no credentials are passed to Go tooling or uploaded artifacts.
-Each job publishes the test inventory and a summary that explicitly distinguishes
+Each job publishes its selected test result and a summary that explicitly distinguishes
 pending cases from executed qualification.
 
 Hardware execution will require wiring those credentials into the actual test
@@ -66,6 +68,11 @@ exchange, node access, and cleanup. The current configuration-presence check doe
 not verify token permissions, Teleport's workflow allowlist, or machine reachability.
 Redstone provides the ARM64 target; AMD64 hardware still needs a suitable site
 allocation rather than an architecture flag on Redstone.
+
+The subtests can stay in one Go file: `go test -run` selects a single named
+case independently. Adding or renaming a functional case also requires updating
+the workflow's `test` matrix. The job rejects selectors that produce anything other
+than one functional result.
 
 ## Implementation boundaries
 
