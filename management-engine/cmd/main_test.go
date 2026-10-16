@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestConfigureCWE(t *testing.T) {
+func TestConfigureController(t *testing.T) {
 	dir := t.TempDir()
 	bindingsPath := filepath.Join(dir, "bindings.json")
 	invalidBindingsPath := filepath.Join(dir, "invalid-bindings.json")
@@ -25,8 +25,8 @@ func TestConfigureCWE(t *testing.T) {
 	}}]`
 	require.NoError(t, os.WriteFile(bindingsPath, []byte(data), 0o600))
 	require.NoError(t, os.WriteFile(invalidBindingsPath, []byte(`[{"unknown":"REDACTED"}]`), 0o600))
-	const endpoint = "https://cwe.example.com"
-	const partialConfiguration = "--cwe-endpoint and --cwe-bindings must be provided together"
+	const endpoint = "https://controller.example.com"
+	const partialConfiguration = "--nvke-controller-endpoint and --nvke-controller-bindings must be provided together"
 	for _, tc := range []struct {
 		name         string
 		endpoint     string
@@ -39,12 +39,12 @@ func TestConfigureCWE(t *testing.T) {
 		{"bindings without endpoint", "", "", bindingsPath, partialConfiguration},
 		{"token without configuration", "", missingTokenPath, "", partialConfiguration},
 		{"configured", endpoint, "", bindingsPath, ""},
-		{"invalid endpoint", "https://user:REDACTED@cwe.example.com", "", bindingsPath, "CWE endpoint"},
+		{"invalid endpoint", "https://user:REDACTED@controller.example.com", "", bindingsPath, "NVKE controller endpoint"},
 		{"missing token", endpoint, missingTokenPath, bindingsPath, "bearer token file"},
-		{"invalid bindings", endpoint, "", invalidBindingsPath, "CWE bindings"},
+		{"invalid bindings", endpoint, "", invalidBindingsPath, "NVKE controller bindings"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			service, bindings, err := configureCWE(tc.endpoint, tc.tokenFile, tc.bindingsPath)
+			service, bindings, err := configureController(tc.endpoint, tc.tokenFile, tc.bindingsPath)
 			if tc.wantError != "" {
 				require.ErrorContains(t, err, tc.wantError)
 				require.NotContains(t, err.Error(), "REDACTED")

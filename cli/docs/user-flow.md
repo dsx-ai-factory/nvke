@@ -4,7 +4,7 @@ What `nvkectl` does today, in the order an operator uses it, with the two
 steps that are not CLI commands marked: getting a release from NVKR and
 installing the controller stack with the deploy script.
 `nvkectl <command> --help` is the authoritative reference for flags. The
-walkthrough is [Your first cluster](../../docs/first-cluster.md); this page is
+walkthrough is [Your first cluster](https://github.com/dsx-ai-factory/nvke/blob/main/docs/first-cluster.md); this page is
 the reference it points at.
 
 ## Commands
@@ -137,7 +137,7 @@ and applies it, item by item; the next script patches
 the Cluster API controllers for SPIRE; the NetworkPolicy admits your client
 networks to the controller API, which the chart otherwise answers from
 in-cluster pods only. Then point the CLI at the site (step 6) and publish a `MachineImage`, `ClusterRelease` and `NodePoolRelease`
-with `nvkectl create`, as [Your first cluster](../../docs/first-cluster.md#7-publish-a-release)
+with `nvkectl create`, as [Your first cluster](https://github.com/dsx-ai-factory/nvke/blob/main/docs/first-cluster.md)
 shows, before the first tenant cluster.
 [Install management-plane services](../../docs/operate/install-management-plane-services.md)
 gives each step with its inputs.
@@ -146,7 +146,7 @@ The deploy path is the interface and the script is the reference way to apply
 it. `deploy/nico/nvke-deploy.yaml` lists the items in install order, and each
 item directory holds its chart pin, values and overlay, or its manifests;
 `--dry-run` prints every kubectl and helm call the script would make. An operator can apply the same items with their own tooling or through
-GitOps; [Deploy Path](../../docs/site-bootstrap/deploy-repository.md)
+GitOps; [Deploy Path](https://github.com/dsx-ai-factory/nvke/blob/main/docs/site-bootstrap/deploy-repository.md)
 describes the format.
 
 ### 6. Point the CLI at the site controller
@@ -190,6 +190,15 @@ cluster on it. `CONFIGURED` means the provider's CRDs are established, its
 controller is running, and its credentials are in place; it does not prove the
 credentials work. Needs `kubectl` on `PATH` and the site kubeconfig from
 step 6.
+
+`CREDENTIALS` answers whether they work: it is the provider's own last
+credential check, read from the `NicoIdentity` that names its credentials
+Secret, and `LAST CHECK` says how long ago that check ran. Look for `CONFIGURED`
+with `HEALTHY`. `HEALTHY` means the credentials authenticated recently; it does
+not prove that provisioning will succeed. `NO-IDENTITY` and `UNSUPPORTED` mean
+nothing is checking the credentials yet; see
+[Infrastructure providers](../README.md#infrastructure-providers) for what each
+value means.
 
 `nvkectl` only reads this state and never changes it, so it makes no difference
 whether Helm, Argo CD, or a person applied the provider — the same command

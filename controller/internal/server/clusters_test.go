@@ -262,9 +262,11 @@ func TestClusterService_CreateCluster(t *testing.T) {
 							Release:        "ubuntu",
 							ConfigProfile:  "default",
 						},
-						NodeLabels:       map[string]string{"label1": "value1", "label2": "value2"},
-						NodeTaints:       []api.NodeTaint{{Key: "nvidia.com/dedicated", Value: "gpu", Effect: api.NodeTaintEffectNoSchedule}},
-						DesiredNodeCount: 1,
+						NodeLabels:         map[string]string{"label1": "value1", "label2": "value2"},
+						MachineAnnotations: map[string]string{"example.com/profiles": "gpu,network"},
+						MachineLabels:      map[string]string{"example.com/pool": "gpu"},
+						NodeTaints:         []api.NodeTaint{{Key: "nvidia.com/dedicated", Value: "gpu", Effect: api.NodeTaintEffectNoSchedule}},
+						DesiredNodeCount:   1,
 					},
 				},
 			},
@@ -300,6 +302,8 @@ func TestClusterService_CreateCluster(t *testing.T) {
 						!np.ControlPlane &&
 						np.NodeNamePrefix == "w-prefix" &&
 						assert.ObjectsAreEqual(map[string]string{"label1": "value1", "label2": "value2"}, np.NodeLabels) &&
+						assert.ObjectsAreEqual(map[string]string{"example.com/profiles": "gpu,network"}, np.MachineAnnotations) &&
+						assert.ObjectsAreEqual(map[string]string{"example.com/pool": "gpu"}, np.MachineLabels) &&
 						assert.ObjectsAreEqual([]db.NodeTaint{{Key: "nvidia.com/dedicated", Value: "gpu", Effect: "NoSchedule"}}, np.NodeTaints)
 				})).Return(db.NodePool{
 					ID:             workerNodePoolID,

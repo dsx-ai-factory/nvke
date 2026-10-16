@@ -18,9 +18,9 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/tenantaccess"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 type clusterReader interface {
@@ -103,11 +103,11 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 
 func clusterIDForKubeconfigSecret(secret *corev1.Secret, managedByLabelValue string) (uuid.UUID, bool) {
 	if secret.Namespace != tenantaccess.SecretsNamespace ||
-		secret.Labels[constants.LabelKeyNvkeManagedBy] != managedByLabelValue ||
+		keys.ManagedBy.Value(secret.Labels) != managedByLabelValue ||
 		!tenantaccess.IsControllerKubeconfigSecretName(secret.Name) {
 		return uuid.Nil, false
 	}
-	clusterID, err := uuid.Parse(secret.Labels[constants.LabelKeyClusterID])
+	clusterID, err := uuid.Parse(keys.ClusterID.Value(secret.Labels))
 	return clusterID, err == nil
 }
 

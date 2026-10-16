@@ -6,6 +6,7 @@ package activities
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -15,6 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 type TaintNodeInput struct {
@@ -106,9 +109,15 @@ func taintFromInput(input TaintNodeInput) (corev1.Taint, bool, error) {
 
 func updateNodeTaint(node *corev1.Node, taint corev1.Taint, remove bool) bool {
 	if remove {
+		// Strip both domains. The taint may have been applied by a build that
+		// wrote the legacy key -- a kubeadm join config rendered before the
+		// rename, or a workflow that started before this worker was upgraded
+		// -- and removing only the requested form would strand the other one,
+		// leaving the node unschedulable for good.
+		removeKeys := keys.BothForms(taint.Key)
 		taints := make([]corev1.Taint, 0, len(node.Spec.Taints))
 		for _, existing := range node.Spec.Taints {
-			if existing.Key == taint.Key && existing.Effect == taint.Effect {
+			if slices.Contains(removeKeys, existing.Key) && existing.Effect == taint.Effect {
 				continue
 			}
 			taints = append(taints, existing)

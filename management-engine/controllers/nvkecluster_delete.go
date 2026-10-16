@@ -16,7 +16,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
-	"github.com/dsx-ai-factory/nvke/management-engine/internal/cwe"
+	"github.com/dsx-ai-factory/nvke/management-engine/internal/nvkecontroller"
 )
 
 func (r *NVKEClusterReconciler) reconcileDelete(ctx context.Context, cluster *internalv1.NVKECluster) (ctrl.Result, error) {
@@ -25,7 +25,7 @@ func (r *NVKEClusterReconciler) reconcileDelete(ctx context.Context, cluster *in
 	}
 	setLifecycleConditions(cluster, metav1.ConditionFalse, metav1.ConditionUnknown, clusterv1.DeletingReason, "Waiting for cluster deletion")
 	observedCluster, err := r.findCluster(ctx, cluster)
-	if errors.Is(err, cwe.ErrNotFound) {
+	if errors.Is(err, nvkecontroller.ErrNotFound) {
 		if state := cluster.Status.Provisioning; state != nil && state.ID == "" {
 			setLifecycleConditions(cluster, metav1.ConditionFalse, metav1.ConditionUnknown, "CreateOutcomeUnknown",
 				"Cluster creation outcome is unknown; contact the service administrator before deletion")
@@ -38,7 +38,7 @@ func (r *NVKEClusterReconciler) reconcileDelete(ctx context.Context, cluster *in
 		return r.lifecycleError(cluster, err)
 	}
 	if observedCluster.Conditions.Deleting.Status != api.ConditionStatus("True") {
-		if err := r.CWE.Delete(ctx, observedCluster.ID.String()); err != nil && !errors.Is(err, cwe.ErrNotFound) {
+		if err := r.NVKEController.Delete(ctx, observedCluster.ID.String()); err != nil && !errors.Is(err, nvkecontroller.ErrNotFound) {
 			return r.lifecycleError(cluster, err)
 		}
 	}

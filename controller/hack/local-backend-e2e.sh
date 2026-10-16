@@ -18,8 +18,7 @@ mkdir -p "${state_dir}"
 # packages created by the Linux OVN builder invisible to the host.
 tmp_dir="$(mktemp -d "${state_dir}/tmp.XXXXXX")"
 tmp_dir="$(cd "${tmp_dir}" && pwd)"
-# Kept as cwe-capi until a follow-up rename: changing it forces every developer to recreate their kind cluster.
-kind_cluster_name="${KIND_CLUSTER_NAME:-cwe-capi}"
+kind_cluster_name="${KIND_CLUSTER_NAME:-controller-capi}"
 dockerhub_mirror="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 runner_name="cwe-capd-local-e2e-${$}"
 runner_image="${LOCAL_NKE_E2E_RUNNER_IMAGE:-docker:29.1.3-cli@sha256:4fa0ee1f3a7e4354c4ea34558b6d4ee32859baf4973d4c8ccc8e7fe3dd730c04}"

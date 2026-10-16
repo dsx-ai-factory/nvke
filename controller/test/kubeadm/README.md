@@ -71,7 +71,7 @@ bare-metal lease works; so does any workstation with `/dev/kvm`. macOS cannot
 run this suite — nico-vms' libvirt backend is Linux-only.
 
 1. **Host packages and networking.** nico-vms' own setup script installs QEMU,
-   libvirt, swtpm and OVMF, creates the `cwebr0` bridge on `172.30.0.0/24`,
+   libvirt, swtpm and OVMF, creates the `controllerbr0` bridge on `172.30.0.0/24`,
    starts a dnsmasq for DHCP, and installs the iptables NAT rules
    (`../../nico-sim/README.md:641-656`):
 
@@ -125,7 +125,7 @@ export NKE_BRINGUP_PROVISION_MODE=community
 export NICO_VMS_BASE_IMAGE="$PWD/controller/nico-sim/images/ubuntu-cloud.qcow2"
 
 # Match what setup-linux.sh configured.
-export NICO_VMS_BRIDGE_NAME=cwebr0
+export NICO_VMS_BRIDGE_NAME=controllerbr0
 export NICO_VMS_BRIDGE_CIDR=172.30.0.0/24
 
 # Do not fight another nico-vms for the console SSH port; -1 disables it.
@@ -167,17 +167,17 @@ the whole environment; it explains each value in place.
 These nico-vms variables are read by the server the driver launches. The driver
 sets `NICO_SIM_LISTEN_ADDR`, `NICO_SIM_DB_PATH` and `NICO_SIM_SEED_PATH`
 itself — nico-vms parses **zero** command-line flags, so everything is
-environment (`../../nico-sim/internal/config/config.go:157-181`). The rest are
+environment (`../../nico-sim/internal/config/config.go:162-206`). The rest are
 yours to set:
 
 | Variable | Default | Notes |
 |---|---|---|
-| `NICO_VMS_BASE_IMAGE` | `images/ubuntu-cloud.qcow2` | Required for any non-mock backend (`config.go:165,229`). Relative paths resolve against nico-vms' working directory. |
-| `NICO_VMS_BRIDGE_NAME` | `cwebr0` | `config.go:163` |
-| `NICO_VMS_BRIDGE_CIDR` | `172.30.0.0/24` | Unset means the default is logged and applied at normalisation (`config.go:164,419-422`). |
-| `NICO_VMS_CONSOLE_SSH_PORT` | `2222` | `-1` disables. A port already in use is fatal (`config.go:128`). |
-| `NICO_VMS_READINESS_TIMEOUT` | `15m` | Per-VM boot budget. Raise it under emulation (`config.go:101`). |
-| `NICO_VMS_VM_VCPUS` / `_VM_MEMORY_MIB` / `_VM_DISK_GIB` | `2` / `2048` / `20` | The driver overrides these with kubeadm-workable values (`config.go:111-119`). |
+| `NICO_VMS_BASE_IMAGE` | `images/ubuntu-cloud.qcow2` | Required for any non-mock backend (`config.go:171,240`). Relative paths resolve against nico-vms' working directory. |
+| `NICO_VMS_BRIDGE_NAME` | `controllerbr0` | `config.go:169` |
+| `NICO_VMS_BRIDGE_CIDR` | `172.30.0.0/24` | Unset means the default is logged and applied at normalisation (`config.go:170,442-445`). |
+| `NICO_VMS_CONSOLE_SSH_PORT` | `2222` | `-1` disables. A port already in use is fatal (`config.go:134`). |
+| `NICO_VMS_READINESS_TIMEOUT` | `15m` | Per-VM boot budget. Raise it under emulation (`config.go:107`). |
+| `NICO_VMS_VM_VCPUS` / `_VM_MEMORY_MIB` / `_VM_DISK_GIB` | `2` / `2048` / `20` | The driver overrides these with kubeadm-workable values (`config.go:117-128`). |
 | `NICO_VMS_LIBVIRT_NETWORK` | *(unset)* | **Leave unset.** Setting it switches nico-vms to libvirt-network mode, which needs a pre-existing libvirt network and `qemu:///system`. This suite uses native bridge mode. |
 
 ## KVM versus TCG

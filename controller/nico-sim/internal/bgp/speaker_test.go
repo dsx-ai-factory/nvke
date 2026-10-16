@@ -41,7 +41,7 @@ type mockRouteManager struct {
 
 func newMockRM() *mockRouteManager {
 	return &mockRouteManager{
-		link: &mockLink{attrs: netlink.LinkAttrs{Index: 42, Name: "cwebr0"}},
+		link: &mockLink{attrs: netlink.LinkAttrs{Index: 42, Name: "controllerbr0"}},
 	}
 }
 
@@ -102,7 +102,7 @@ func newTestSpeakerDirect(rm *mockRouteManager, extraCfg ...func(*Config)) *Spea
 		HoldTime:          9,
 		KeepaliveInterval: 3,
 		BridgeSubnet:      testBridgeSubnet,
-		BridgeName:        "cwebr0",
+		BridgeName:        "controllerbr0",
 	}
 	for _, fn := range extraCfg {
 		fn(&cfg)
@@ -463,7 +463,7 @@ func newTCPSpeaker(t *testing.T, rm *mockRouteManager, extraCfg ...func(*Config)
 		HoldTime:          2, // short for tests
 		KeepaliveInterval: 1,
 		BridgeSubnet:      "", // disabled — allows loopback peers in tests
-		BridgeName:        "cwebr0",
+		BridgeName:        "controllerbr0",
 	}
 	for _, fn := range extraCfg {
 		fn(&cfg)

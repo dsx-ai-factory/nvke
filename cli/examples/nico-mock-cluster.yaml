@@ -19,6 +19,9 @@
 # nico-cluster.yaml.
 
 name: my-cluster
+# Matches the node image `make capd-up` builds (CAPD_KINDEST_NODE_TAG in
+# controller/hack/capd-kindest-node/build-image.sh), not the version the
+# real-site examples use. Change this value and CAPD_KINDEST_NODE_TAG together.
 controlPlaneKubernetesVersion: 1.34.8
 cniPlugin: ovn-kubernetes
 etcdEncrypted: false

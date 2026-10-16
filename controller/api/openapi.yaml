@@ -1085,6 +1085,30 @@ components:
           type: string
           description: Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
           x-go-type-skip-optional-pointer: true
+        machineAnnotations:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Annotations applied to control-plane CAPI Machines at creation, including
+            scale-out and replacement Machines. Fixed at cluster creation and
+            not reconciled after provisioning. Keys under nke.nvidia.com, nke.io,
+            nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their
+            subdomains require an explicit deployment allowlist entry for this
+            metadata type.
+          x-go-type-skip-optional-pointer: true
+        machineLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Labels applied to control-plane CAPI Machines at creation, including
+            scale-out and replacement Machines. Fixed at cluster creation and
+            not reconciled after provisioning. Keys under nke.nvidia.com, nke.io,
+            nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their
+            subdomains require an explicit deployment allowlist entry for this
+            metadata type.
+          x-go-type-skip-optional-pointer: true
         nodeLabels:
           type: object
           additionalProperties:
@@ -1214,6 +1238,30 @@ components:
           type: string
           default: "16Gi"
           description: Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
+          x-go-type-skip-optional-pointer: true
+        machineAnnotations:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Annotations applied to control-plane CAPI Machines at creation, including
+            scale-out and replacement Machines. Fixed at cluster creation and
+            not reconciled after provisioning. Keys under nke.nvidia.com, nke.io,
+            nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their
+            subdomains require an explicit deployment allowlist entry for this
+            metadata type.
+          x-go-type-skip-optional-pointer: true
+        machineLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Labels applied to control-plane CAPI Machines at creation, including
+            scale-out and replacement Machines. Fixed at cluster creation and
+            not reconciled after provisioning. Keys under nke.nvidia.com, nke.io,
+            nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their
+            subdomains require an explicit deployment allowlist entry for this
+            metadata type.
           x-go-type-skip-optional-pointer: true
         nodeLabels:
           type: object
@@ -1583,6 +1631,30 @@ components:
           description: Whether the nodes in this pool should be added as Kubernetes control plane nodes
           x-go-type-skip-optional-pointer: true
           x-order: 12
+        machineAnnotations:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Annotations set on CAPI Machines only when they are created, including
+            Machines created during scale-out or replacement. Fixed at node-pool
+            creation. Not reconciled after provisioning.
+            Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io,
+            k8s.io, cluster.x-k8s.io and their subdomains require an explicit
+            deployment allowlist entry for this metadata type.
+          x-go-type-skip-optional-pointer: true
+        machineLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Labels set on CAPI Machines only when they are created, including
+            Machines created during scale-out or replacement. Fixed at node-pool
+            creation. Not reconciled after provisioning.
+            Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io,
+            k8s.io, cluster.x-k8s.io and their subdomains require an explicit
+            deployment allowlist entry for this metadata type.
+          x-go-type-skip-optional-pointer: true
         nodeLabels:
           type: object
           additionalProperties:
@@ -1761,6 +1833,30 @@ components:
           type: boolean
           description: Whether the nodes in this pool are control plane nodes
           x-order: 15
+        machineAnnotations:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Annotations set on CAPI Machines only when they are created, including
+            Machines created during scale-out or replacement. Fixed at node-pool
+            creation. Not reconciled after provisioning.
+            Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io,
+            k8s.io, cluster.x-k8s.io and their subdomains require an explicit
+            deployment allowlist entry for this metadata type.
+          x-go-type-skip-optional-pointer: true
+        machineLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Labels set on CAPI Machines only when they are created, including
+            Machines created during scale-out or replacement. Fixed at node-pool
+            creation. Not reconciled after provisioning.
+            Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io,
+            k8s.io, cluster.x-k8s.io and their subdomains require an explicit
+            deployment allowlist entry for this metadata type.
+          x-go-type-skip-optional-pointer: true
         nodeLabels:
           type: object
           additionalProperties:

@@ -160,14 +160,19 @@ func RenderUserData(in UserDataInputs) (string, error) {
 
 		// nerdctl-full carries the CNI plugins and buildkit kind needs. Rootful:
 		// bootstrap adds an iptables rule and a bridge address.
-		fmt.Sprintf("curl -fsSL -o /tmp/nerdctl.tgz https://github.com/containerd/nerdctl/releases/download/v%[1]s/nerdctl-full-%[1]s-linux-%[2]s.tar.gz", in.Tools.NerdctlVersion, in.Arch),
+		//
+		// --retry: an anonymous request off a shared egress IP can hit a
+		// transient 403 from GitHub's or kind.sigs.k8s.io's rate limiting,
+		// which a bare curl turns into an unrecoverable boot failure. Same
+		// flags as every other pinned-tool download in this repository.
+		fmt.Sprintf("curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 -o /tmp/nerdctl.tgz https://github.com/containerd/nerdctl/releases/download/v%[1]s/nerdctl-full-%[1]s-linux-%[2]s.tar.gz", in.Tools.NerdctlVersion, in.Arch),
 		"tar -C /usr/local -xzf /tmp/nerdctl.tgz",
 		"systemctl enable --now buildkit || true",
 
-		fmt.Sprintf("curl -fsSL -o /usr/local/bin/kind https://kind.sigs.k8s.io/dl/%s/kind-linux-%s", in.Tools.KindVersion, in.Arch),
+		fmt.Sprintf("curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 -o /usr/local/bin/kind https://kind.sigs.k8s.io/dl/%s/kind-linux-%s", in.Tools.KindVersion, in.Arch),
 		"chmod 0755 /usr/local/bin/kind",
 
-		fmt.Sprintf("curl -fsSL -o /usr/local/bin/clusterctl https://github.com/kubernetes-sigs/cluster-api/releases/download/%s/clusterctl-linux-%s", in.Tools.ClusterctlVersion, in.Arch),
+		fmt.Sprintf("curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 -o /usr/local/bin/clusterctl https://github.com/kubernetes-sigs/cluster-api/releases/download/%s/clusterctl-linux-%s", in.Tools.ClusterctlVersion, in.Arch),
 		"chmod 0755 /usr/local/bin/clusterctl",
 
 		// kind's default network is dual-stack and the NVKE image boots

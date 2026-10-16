@@ -1,14 +1,19 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Command qualify drives release qualification. `plan` resolves what to
-// qualify, and `verify` checks that what a plan names is published.
+// Command qualify drives release qualification: plan resolves what to
+// qualify, result records what one stream ran, publish ships a stream's
+// result and JUnit report to a destination, and verify checks that what a
+// plan names is published.
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -19,7 +24,10 @@ import (
 var version = "dev"
 
 func main() {
-	if err := root().Execute(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := root().ExecuteContext(ctx); err != nil {
 		// Cobra has already printed usage errors. Anything else is ours and
 		// is printed here, once.
 		var silent silentError
@@ -41,9 +49,14 @@ func root() *cobra.Command {
 		Long: `Drive NVKE release qualification.
 
   plan       resolve what to qualify
+  result     record what one stream of one combination qualified
+  publish    ship a stream's result and JUnit report to a destination
   verify     check that everything a plan names is published`,
 		SilenceUsage: true,
 	}
-	cmd.AddCommand(planCmd(), verifyCmd())
+	cmd.AddCommand(planCmd())
+	cmd.AddCommand(resultCmd())
+	cmd.AddCommand(publishCmd())
+	cmd.AddCommand(verifyCmd())
 	return cmd
 }

@@ -1,0 +1,49 @@
+apiVersion: apiserver.config.k8s.io/v1
+kind: AuthenticationConfiguration
+jwt:
+- issuer:
+    url: https://nke.example.internal
+    discoveryURL: https://192.0.2.10:30443/.well-known/openid-configuration
+    audiences:
+    - example-cluster
+  claimMappings:
+    username:
+      claim: sub
+      prefix: ""
+- issuer:
+    url: https://idp.example.com
+    certificateAuthority: |
+      -----BEGIN CERTIFICATE-----
+      MIIB
+      -----END CERTIFICATE-----
+    audiences:
+    - example-audience
+    audienceMatchPolicy: MatchAny
+  claimValidationRules:
+  - claim: tenant
+    requiredValue: example
+  claimMappings:
+    username:
+      claim: sub
+      prefix: ""
+    groups:
+      claim: groups
+      prefix: ""
+  userValidationRules:
+  - expression: '!user.username.startsWith("system:") && !user.username.startsWith("kubeadm:") && !user.username.startsWith("nke:") && !user.username.startsWith("nvke:") && !user.username.startsWith("nvidia:")'
+    message: username uses a reserved prefix
+  - expression: 'user.groups.all(group, !group.startsWith("system:") && !group.startsWith("kubeadm:") && !group.startsWith("nke:") && !group.startsWith("nvke:") && !group.startsWith("nvidia:"))'
+    message: groups use a reserved prefix
+  - expression: '!user.username.startsWith("spiffe://example.test/")'
+    message: username uses a reserved prefix
+  - expression: 'user.groups.all(group, !group.startsWith("spiffe://example.test/"))'
+    message: groups use a reserved prefix
+  - expression: 'user.username != "spiffe://example.test/nke-service/nke-controller"'
+    message: username uses a reserved prefix
+  - expression: 'user.groups.all(group, group != "spiffe://example.test/nke-service/nke-controller")'
+    message: groups use a reserved prefix
+anonymous:
+  enabled: true
+  conditions:
+  - path: /livez
+  - path: /readyz

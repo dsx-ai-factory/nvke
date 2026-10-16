@@ -12,7 +12,7 @@
 //
 // The values are read from each provider's own source. They are a snapshot:
 // both providers are under active development, so a bump should re-check the
-// CRD names, the manager identity, and the credentials flags.
+// CRD names, the manager identity, the credentials flags, and the Identity kind.
 package providers
 
 // Type names a supported infrastructure provider.
@@ -85,6 +85,37 @@ type Provider struct {
 	// unauthenticated, which is how it addresses a fake. For such a provider a
 	// missing Secret is a configuration choice, not a fault.
 	UnconfiguredIsValid bool `json:"unconfiguredIsValid"`
+
+	// Identity is the namespaced resource on which the provider's manager
+	// publishes the result of its own credential checks. Nil when the provider
+	// publishes none, in which case nvkectl reports no credential health for it.
+	Identity *IdentityKind `json:"identity,omitempty"`
+
+	// WatchNamespaceFlag and WatchFilterFlag are the manager flags that limit
+	// which objects, Identities included, the manager reconciles: one namespace,
+	// and objects carrying the cluster.x-k8s.io/watch-filter label with the
+	// flag's value. They explain why an Identity is never checked.
+	WatchNamespaceFlag string `json:"watchNamespaceFlag,omitempty"`
+	WatchFilterFlag    string `json:"watchFilterFlag,omitempty"`
+}
+
+// IdentityKind names the namespaced resource a provider publishes credential
+// health on.
+type IdentityKind struct {
+	Group    string `json:"group"`
+	Version  string `json:"version"`
+	Resource string `json:"resource"`
+	Kind     string `json:"kind"`
+}
+
+// CRDName returns the name of the CRD that serves the kind, <resource>.<group>.
+func (k IdentityKind) CRDName() string {
+	return k.Resource + "." + k.Group
+}
+
+// APIVersion returns the kind's apiVersion, <group>/<version>.
+func (k IdentityKind) APIVersion() string {
+	return k.Group + "/" + k.Version
 }
 
 // infrastructureGroup is the API group every CAPI infrastructure provider
@@ -104,6 +135,14 @@ func Supported() []Provider {
 			SecretNameFlag:       "--provider-credentials-secret-name",
 			SecretNamespaceFlag:  "--provider-credentials-namespace",
 			DefaultSecretName:    "nico-credentials",
+			Identity: &IdentityKind{
+				Group:    infrastructureGroup,
+				Version:  "v1alpha1",
+				Resource: "nicoidentities",
+				Kind:     "NicoIdentity",
+			},
+			WatchNamespaceFlag: "--namespace",
+			WatchFilterFlag:    "--watch-filter",
 		},
 		{
 			Type:                 TypeLaunchLayer,

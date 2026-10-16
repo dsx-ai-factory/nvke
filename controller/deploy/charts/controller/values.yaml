@@ -156,7 +156,7 @@ nodeAgent:
       newPrivateKeyKey: ""
 
 # identity configures the strings this controller compiles into
-# Server-Side-Apply field managers and the nke.nvidia.com/managed-by label
+# Server-Side-Apply field managers and the nvke.nvidia.com/managed-by label
 # value. Every value here defaults to today's literal, so an unset value is
 # today's behavior exactly.
 identity:
@@ -166,7 +166,7 @@ identity:
   fieldManagerRebootMachineName: "cloud-workflow-engine-reboot-machine"
   # -- Field manager used when patching a Machine's health-issue annotation.
   fieldManagerMachineHealthIssueName: "cloud-workflow-engine-machine-health-issue"
-  # -- Value written under the nke.nvidia.com/managed-by label on objects this
+  # -- Value written under the nvke.nvidia.com/managed-by label on objects this
   # controller owns, and the value the tenant Secret reconciler filters on.
   managedByLabelValue: "cloud-workflow-engine"
 
@@ -336,6 +336,12 @@ nodeMetadata:
   # `node-role.kubernetes.io/control-plane` and keys under the internal NVKE domains cannot be listed.
   # The controller validates the allowlist and refuses to start if an entry is one of the above forbidden keys, or is empty, padded, not a valid label key, or a duplicate.
   allowlistedLabelKeys: []
+
+machineMetadata:
+  # -- Exact Machine label keys allowed under reserved NVKE, Kubernetes and Cluster API domains. Use with care: these keys may affect controller behavior.
+  allowlistedLabelKeys: []
+  # -- Exact Machine annotation keys allowed under reserved domains, for example a configuration-profile selection annotation. Values remain free-form strings.
+  allowlistedAnnotationKeys: []
 
 # -- Additional environment variables to inject into the controller container. A
 # variable nke-controller-config carries is refused; set its chart value instead.

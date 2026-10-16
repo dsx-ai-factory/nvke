@@ -90,7 +90,10 @@ usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
                       item's own values. This is how per-run values reach a
                       single component: with one release per chart the keys are
                       no longer prefixed, so a value meant for the controller
-                      cannot be broadcast to every item. Repeatable.
+                      cannot be broadcast to every item. Repeatable. For an
+                      item whose connection string the render put in a Secret
+                      (the controller) a file that sets appDb is refused: change
+                      appDb in the deploy path instead.
   --dry-run           print the argv each step would run, and exit. The
                       render still runs
   --kubeconfig PATH   passed to every kubectl call
@@ -412,6 +415,29 @@ render_deploy_path() {
   DEPLOY_PATH="${SCRATCH}/rendered"
 }
 
+# refuse_appdb_override stops a run whose --values-for file sets appDb for an
+# item that reads its database URL from a Secret. The render builds that URL,
+# with the password, from the deploy path's appDb values into the Secret and
+# names it in the item's secrets.dbSecretName; the chart then stops reading
+# appDb, so the override would be ignored without a word. It runs before any
+# item is applied.
+refuse_appdb_override() {
+  local items="$1" name type file keys
+  while IFS=$'\t' read -r name type; do
+    [[ "${type}" == helm ]] || continue
+    grep -qE '^[[:space:]]+dbSecretName:' "${DEPLOY_PATH}/${name}/site-values.yaml" 2>/dev/null || continue
+    while IFS= read -r file; do
+      # A missing file is install_helm_item's refusal.
+      [[ -n "${file}" && -f "${file}" ]] || continue
+      command -v "${NVKECTL}" >/dev/null 2>&1 || die "nvkectl is needed to read ${file}; set NVKECTL or put it on PATH"
+      keys="$("${NVKECTL}" inspect values "${file}")" || die "--values-for ${name}: cannot read ${file}"
+      if grep -qx appDb <<<"${keys}"; then
+        die "--values-for ${name}: ${file} sets appDb, but ${name} reads its database connection string from the Secret the render built from the deploy path's appDb values, so the override would be ignored; change appDb in the deploy path (for ${name}, its overlay.yaml) and run again"
+      fi
+    done < <(values_for "${name}")
+  done <<<"${items}"
+}
+
 install() {
   [[ -n "${DEPLOY_PATH}" ]] || die "--deploy-path is required"
   [[ -f "${DEPLOY_PATH}/nvke-deploy.yaml" ]] \
@@ -423,6 +449,7 @@ install() {
   if ! items="$(python3 "${ITEMS_PY}" items "${DEPLOY_PATH}/nvke-deploy.yaml")"; then
     die "cannot parse ${DEPLOY_PATH}/nvke-deploy.yaml"
   fi
+  refuse_appdb_override "${items}"
   import_images
   while IFS=$'\t' read -r name type; do
     [[ -n "${name}" ]] || continue

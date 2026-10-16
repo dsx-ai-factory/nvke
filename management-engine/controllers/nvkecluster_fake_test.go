@@ -25,26 +25,26 @@ import (
 	"github.com/dsx-ai-factory/cluster-api-provider-nico/pkg/test/fixture"
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
-	"github.com/dsx-ai-factory/nvke/management-engine/internal/cwe"
+	"github.com/dsx-ai-factory/nvke/management-engine/internal/nvkecontroller"
 )
 
 var fixtureRemoteID = uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 
 // Keep persisted endpoints stable in goldens while exercising the real HTTP client.
-type fixtureCWEClient struct{ *cwe.Client }
+type fixtureControllerClient struct{ *nvkecontroller.Client }
 
-func (*fixtureCWEClient) Endpoint() string { return "https://cwe.example.com/api" }
+func (*fixtureControllerClient) Endpoint() string { return "https://controller.example.com/api" }
 
-type cweFixtureConfig struct {
+type controllerFixtureConfig struct {
 	RecoveryEdited bool `json:"recoveryEdited"`
 	Ready          bool `json:"ready"`
 	Recover        bool `json:"recover"`
 	DeletePending  bool `json:"deletePending"`
 }
 
-type cweFixture struct {
+type controllerFixture struct {
 	mu              sync.Mutex
-	config          cweFixtureConfig
+	config          controllerFixtureConfig
 	request         *api.CreateClusterRequest
 	observedCluster *api.Cluster
 	calls           map[string]int
@@ -52,33 +52,33 @@ type cweFixture struct {
 	source          client.ObjectKey
 }
 
-func setupCWEFixture(ctx SpecContext, tc *fixture.Case, reconciler *NVKEClusterReconciler) {
-	input, exists := tc.Input("input_cwe.yaml")
+func setupControllerFixture(ctx SpecContext, tc *fixture.Case, reconciler *NVKEClusterReconciler) {
+	input, exists := tc.Input("input_controller.yaml")
 	if !exists {
 		return
 	}
-	fake := &cweFixture{calls: map[string]int{}, kube: tc.Client, source: client.ObjectKey{Namespace: testNamespace, Name: testCluster}}
+	fake := &controllerFixture{calls: map[string]int{}, kube: tc.Client, source: client.ObjectKey{Namespace: testNamespace, Name: testCluster}}
 	Expect(yaml.UnmarshalStrict([]byte(input), &fake.config)).To(Succeed())
 	bindings, exists := tc.Input("input_bindings.yaml")
 	Expect(exists).To(BeTrue())
 	Expect(yaml.UnmarshalStrict([]byte(bindings), &reconciler.Bindings)).To(Succeed())
 	var source internalv1.NVKECluster
 	Expect(tc.Client.Get(ctx, fake.source, &source)).To(Succeed())
-	request, err := ResolveCWERequest(&source, reconciler.Bindings)
+	request, err := ResolveControllerRequest(&source, reconciler.Bindings)
 	Expect(err).NotTo(HaveOccurred())
 	if fake.config.Recover {
 		fake.observedCluster = fake.cluster(request)
 	}
 	server := httptest.NewServer(http.HandlerFunc(fake.serveHTTP))
 	DeferCleanup(server.Close)
-	httpClient, err := cwe.New(cwe.Config{Endpoint: server.URL})
+	httpClient, err := nvkecontroller.New(nvkecontroller.Config{Endpoint: server.URL})
 	Expect(err).NotTo(HaveOccurred())
-	reconciler.CWE = &fixtureCWEClient{Client: httpClient}
+	reconciler.NVKEController = &fixtureControllerClient{Client: httpClient}
 	if fake.config.Recover {
 		controllerutil.AddFinalizer(&source, nvkeClusterFinalizer)
 		Expect(tc.Client.Update(ctx, &source)).To(Succeed())
 		source.Status.Provisioning = &internalv1.ClusterProvisioningStatus{
-			Endpoint: reconciler.CWE.Endpoint(), Generation: source.Generation,
+			Endpoint: reconciler.NVKEController.Endpoint(), Generation: source.Generation,
 		}
 		Expect(tc.Client.Status().Update(ctx, &source)).To(Succeed())
 		if fake.config.RecoveryEdited {
@@ -86,10 +86,10 @@ func setupCWEFixture(ctx SpecContext, tc *fixture.Case, reconciler *NVKEClusterR
 			Expect(tc.Client.Update(ctx, &source)).To(Succeed())
 		}
 	}
-	tc.AddGolden("expected_cwe.yaml", fake.golden)
+	tc.AddGolden("expected_controller.yaml", fake.golden)
 }
 
-func (f *cweFixture) cluster(request api.CreateClusterRequest) *api.Cluster {
+func (f *controllerFixture) cluster(request api.CreateClusterRequest) *api.Cluster {
 	cluster := api.Cluster{ID: fixtureRemoteID, Name: request.Name}
 	cluster.Conditions.Deleting.Status = "False"
 	cluster.Conditions.Provisioning.Status = "True"
@@ -101,7 +101,7 @@ func (f *cweFixture) cluster(request api.CreateClusterRequest) *api.Cluster {
 	return &cluster
 }
 
-func (f *cweFixture) serveHTTP(w http.ResponseWriter, req *http.Request) {
+func (f *controllerFixture) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
@@ -126,7 +126,7 @@ func (f *cweFixture) serveHTTP(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusPreconditionFailed)
 		return
 	}
-	if source.Status.Provisioning == nil || source.Status.Provisioning.Endpoint != "https://cwe.example.com/api" {
+	if source.Status.Provisioning == nil || source.Status.Provisioning.Endpoint != "https://controller.example.com/api" {
 		w.WriteHeader(http.StatusPreconditionFailed)
 		return
 	}
@@ -167,7 +167,7 @@ func (f *cweFixture) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (f *cweFixture) golden(context.Context) (string, error) {
+func (f *controllerFixture) golden(context.Context) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	result := struct {

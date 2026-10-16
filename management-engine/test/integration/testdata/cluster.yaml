@@ -4,8 +4,8 @@
 apiVersion: internal.nvke.nvidia.com/v1
 kind: NVKECluster
 metadata:
-  generateName: cwe-integration-
-  namespace: cwe-integration
+  generateName: controller-integration-
+  namespace: controller-integration
 spec:
   apiServerAccess:
     publicAccessEnabled: false

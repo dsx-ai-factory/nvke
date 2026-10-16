@@ -35,8 +35,10 @@ output_dir="$(cd "${output_dir}" && pwd)"
 # Reuse the reference OS packaging, including the committed per-arch image
 # digest and its containerd-importing postinst. Keep crane and nfpm in the
 # scratch directory: the package tree's bin/ is gitignored, and a checkout
-# sync can remove it while crane is still downloading.
-make -C "${workspace_root}/os-image/packages/cni-ovn" debs \
+# sync can remove it while crane is still downloading. The ARC runners' dind
+# daemon has no Docker Hub mirror, so the image's ubuntu base comes through
+# NKE_E2E_DOCKERHUB_MIRROR like the lanes' other Docker Hub pulls.
+CNI_DOCKERHUB_MIRROR="${NKE_E2E_DOCKERHUB_MIRROR:-}" make -C "${workspace_root}/os-image/packages/cni-ovn" debs \
   ARCH="${arch}" OVN_STREAMS="${version}" DEB_REVISION="${version}" \
   OUT_DIR="${output_dir}" DIST_DIR="${scratch}/dist" \
   BIN_DIR="${OVN_TOOLS_DIR:-${scratch}/tools}"

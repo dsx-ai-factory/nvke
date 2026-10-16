@@ -87,7 +87,19 @@ CAPNICo is not ready. Check:
 1. The `nico-credentials` Secret exists in `capnico-system` on the site controller cluster
 2. The NICo API endpoint in the secret is reachable from the site controller
 3. CAPNICo controller is running: `kubectl get pods -n capnico-system`
-4. CAPNICo logs for authentication errors: `kubectl logs -n capnico-system deploy/cluster-api-provider-nico-controller-manager`
+4. CAPNICo logs for authentication errors: `kubectl logs -n capnico-system deploy/controller-manager`
+
+### `nvkectl get providers` shows `nico: CONFIGURED` but `CREDENTIALS` is not `HEALTHY`
+
+`CREDENTIALS` is CAPNICo's own last check of the credentials Secret, read from the `NicoIdentity` that names it.
+
+- `FAILING (reason)`: fix what the reason names. `CredentialsNotFound` and `InvalidConfiguration` point at the `nico-credentials` Secret; `AuthenticationFailed` and `AccessDenied` mean NICo rejected or forbade the credentials. CAPNICo rechecks within seconds of a change to the Secret.
+- `UNKNOWN (ValidationFailed)`: CAPNICo could not reach NICo, or the check timed out or failed TLS verification. Check the endpoint in the Secret and the network path from the site controller.
+- `STALE`: CAPNICo has not checked in the last 10 minutes. `DETAIL` names the likely cause: the manager is not running, it watches another namespace or `--watch-filter`, or it needs a restart because the `NicoIdentity` CRD was installed after it started.
+- `PENDING`: CAPNICo has not checked the `NicoIdentity`, or its latest change, yet. Run the command again in a few seconds; if nothing checks it, it turns `STALE` after 10 minutes.
+- `NO-IDENTITY`: no `NicoIdentity` names the Secret. Create one; see [Infrastructure providers](../../cli/README.md#infrastructure-providers).
+- `UNSUPPORTED`: the installed CAPNICo predates `NicoIdentity`.
+- `UNREADABLE`: the site kubeconfig could not list `NicoIdentity` objects, and `DETAIL` names the error. If listing is forbidden, grant `list` on `nicoidentities.infrastructure.cluster.x-k8s.io` in the Secret's namespace; the kubeconfig permissions are in [Authenticating to CWE](../../cli/README.md#authenticating-to-cwe).
 
 ### `nvkectl create cluster` returns 500
 
@@ -106,7 +118,7 @@ Open the Temporal Web UI (see [Observability](observability.md)) and find the ac
 Auto-provisioning waits for matching capacity. Check:
 - Your NICo site has available hosts matching the node pool's instance type
 - The configured subnet has free IP addresses
-- The NICo site is healthy (`nvkectl get providers` shows `nico: CONFIGURED`)
+- CAPNICo is installed and its credentials work (`nvkectl get providers` shows `nico: CONFIGURED`, with `CREDENTIALS` `HEALTHY` where CAPNICo serves `NicoIdentity`)
 
 ## Site Controller
 

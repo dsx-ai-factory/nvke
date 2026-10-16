@@ -19,22 +19,22 @@ func twoContextKubeconfig(t *testing.T) string {
 kind: Config
 current-context: kind-other
 clusters:
-  - name: kind-cwe-capi
+  - name: kind-controller-capi
     cluster:
       server: https://127.0.0.1:16443
   - name: kind-other
     cluster:
       server: https://127.0.0.1:16444
 users:
-  - name: kind-cwe-capi
+  - name: kind-controller-capi
     user: {}
   - name: kind-other
     user: {}
 contexts:
-  - name: kind-cwe-capi
+  - name: kind-controller-capi
     context:
-      cluster: kind-cwe-capi
-      user: kind-cwe-capi
+      cluster: kind-controller-capi
+      user: kind-controller-capi
   - name: kind-other
     context:
       cluster: kind-other
@@ -51,7 +51,7 @@ contexts:
 func TestRESTConfigSelectsAContextFromTheDefaultKubeconfig(t *testing.T) {
 	twoContextKubeconfig(t)
 
-	restConfig, err := RESTConfig("", "kind-cwe-capi")
+	restConfig, err := RESTConfig("", "kind-controller-capi")
 	if err != nil {
 		t.Fatalf("RESTConfig with a context and no path: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestRESTConfigHonoursAnExplicitPathAndContext(t *testing.T) {
 	// Somewhere useless, so only the explicit path can be answering.
 	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "absent"))
 
-	restConfig, err := RESTConfig(path, "kind-cwe-capi")
+	restConfig, err := RESTConfig(path, "kind-controller-capi")
 	if err != nil {
 		t.Fatalf("RESTConfig with both: %v", err)
 	}
@@ -103,8 +103,8 @@ func TestTrustDomainFromContextName(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "a named kind context", context: "kind-cwe-capi", want: "cwe-capi.nke.local"},
-		{name: "no context falls back to current-context", context: "", want: "other.nke.local"},
+		{name: "a named kind context", context: "kind-controller-capi", want: "controller-capi.nvke.local"},
+		{name: "no context falls back to current-context", context: "", want: "other.nvke.local"},
 		{name: "a context that is not a kind cluster", context: "example.teleport.sh-managed-cluster", wantErr: true},
 	}
 

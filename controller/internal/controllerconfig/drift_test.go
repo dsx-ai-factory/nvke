@@ -104,6 +104,8 @@ var configMapOnly = []string{
 	// fleets set when they still create Calico clusters.
 	"allowLegacyCalicoClusterCreation",
 	"nodeMetadataAllowlistedLabelKeys",
+	"machineMetadataAllowlistedLabelKeys",
+	"machineMetadataAllowlistedAnnotationKeys",
 }
 
 // chartDeployment is the template whose env block decides what the chart sets.

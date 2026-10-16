@@ -146,6 +146,8 @@ Once the site controller is installed and you have run `nvkectl config set-site`
 
 > **`CONFIGURED` is a narrower claim than it looks.** It means the provider's CRDs are established, its controller is running, and a credentials Secret is present. It does **not** check that Cluster API core is installed, that the credentials work, or that the backend is reachable. CAPNICo ships its own CRDs, so `nico` reads `CONFIGURED` even on a cluster with no Cluster API at all. Treat it as "the provider is installed", not "the site is ready".
 
+The `CREDENTIALS` column of `nvkectl get providers` reports whether the credentials work, from the check CAPNICo runs on them every few minutes. It reads `HEALTHY` only when CAPNICo serves `NicoIdentity`, the site kubeconfig can list `NicoIdentity` objects, and one of them names the credentials Secret; otherwise it reads `UNSUPPORTED`, `UNREADABLE` or `NO-IDENTITY`. See [Infrastructure providers](../../cli/README.md#infrastructure-providers) for every value.
+
 To prove the credentials actually work before committing hardware, follow CAPNICo's **[5. Prove the Credentials Before Creating Machines](https://github.com/dsx-ai-factory/cluster-api-provider-nico/blob/main/docs/getting-started.md#5-prove-the-credentials-before-creating-machines)** section, which applies a throwaway `NicoCluster` that validates the identity and provisions nothing.
 
 ## Troubleshooting

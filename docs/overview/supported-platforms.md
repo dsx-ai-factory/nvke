@@ -8,7 +8,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 
 | Item | Supported | Notes |
 |---|---|---|
-| Kubernetes version | 1.36.3 | Pinned. The node image stages an `nvke-kubeadm-distro` package for it. Another patch release of 1.36 is not on the node. |
+| Kubernetes version | 1.36.3 | Pinned. Release qualification targets 1.36 (`release/policy.yaml`). The node image also stages `nvke-kubeadm-distro` packages for 1.34.2 and 1.35.3; those versions are not supported. Another patch release of 1.36 is not on the node. |
 | Version format | `X.Y.Z`, with no leading `v` | The API and the site spec reject any other format. |
 | Management cluster | 1.36.3 | Set once, in the site spec's `cluster.k8sVersion` field, at bootstrap. `nvkectl generate sitespec` writes an older default unless you set it. The management cluster does not upgrade itself. |
 | Workload cluster | 1.36.3 | `controlPlaneKubernetesVersion` is required and has no default. The API accepts any `X.Y.Z`, but nodes run only a version their node image carries. |
@@ -39,7 +39,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 
 | Item | Supported | Notes |
 |---|---|---|
-| Operating system | Ubuntu 26.04.1 LTS | Default in `os-image/packer/Makefile`. The Make targets build from the Ubuntu server installer; see the image build guide for release selection and verification. |
+| Operating system | Ubuntu 26.04 LTS or Ubuntu 24.04 LTS | No other release is supported. The reference Make build defaults to Ubuntu 26.04.1; set `UBUNTU_RELEASE` to select the installer point release. See the image build guide for release selection and verification. |
 | CPU architectures | amd64, arm64 | Set `ARCH=amd64` or `ARCH=arm64` on the repository image Make target; `image-native` requires a matching Linux/KVM host. |
 | Kernel | `linux-nvidia` on amd64, `linux-nvidia-64k` on arm64 | Ubuntu's NVIDIA-tuned kernel flavors. |
 | Full-disk encryption (FDE) | Opt-in reference build, amd64 and arm64, for evaluation only | `VARIANT=fde`; follow the separate [build and verification instructions](../../os-image/README.md#full-disk-encryption-fde-variant). NVKR's hosted pipeline also selects FDE images for both architectures; its local `scripts/nvke-os-local.sh` path builds only non-FDE. Nodes built from one FDE image share its volume encryption key, so the image does not protect data at rest; see [Preview status and known limitations](preview-status.md#building-artifacts). |
@@ -47,6 +47,8 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | Node agent (`nvke-agent`) | Built from the NVKE checkout used for the image | Installed and enabled on the node image. Listens on port 15005. |
 
 [Build the OS image](../../os-image/README.md#build-the-os-image) lists the build host requirements and Make targets; [Build and host node OS images](../operate/build-node-images.md) covers the build and HTTP(S) hosting. [Register node images for provisioning](../operate/register-node-images.md) covers the management-cluster configuration.
+
+For NVKR's separate build route, see its [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/diagnostics/README.md).
 
 ## Management and bootstrap tooling
 

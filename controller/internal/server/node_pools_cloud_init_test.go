@@ -372,3 +372,30 @@ func TestNodePoolGetThenPatchNestedMutableOnly(t *testing.T) {
 		assert.Equal(t, "os-v2", pool.Nico.Release)
 	})
 }
+
+func TestNodePool_MachineMetadataRoundTrip(t *testing.T) {
+	type parameters struct{ annotations, labels map[string]string }
+	tests := map[string]parameters{
+		"omitted":    {},
+		"configured": {annotations: map[string]string{"example.com/profiles": "gpu,network"}, labels: map[string]string{"example.com/pool": "gpu"}},
+	}
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			req := api.CreateNodePoolRequest{
+				MachineAnnotations: params.annotations, MachineLabels: params.labels,
+				Nico: &api.NicoNodePoolProvider{Release: "test-release", ConfigProfile: "legacy-profile"},
+			}
+			stored, err := dbNodePoolFromAPI(&req, "1.32.1")
+			require.NoError(t, err)
+			require.NotNil(t, stored.MachineAnnotations)
+			require.NotNil(t, stored.MachineLabels)
+			loaded := stored
+			response := apiNodePoolFromDB(&loaded)
+			require.Equal(t, db.CloneStringMap(params.annotations), response.MachineAnnotations)
+			require.Equal(t, db.CloneStringMap(params.labels), response.MachineLabels)
+			require.Equal(t, "legacy-profile", response.Nico.ConfigProfile)
+			response.MachineAnnotations["example.com/response-only"] = "value"
+			require.NotContains(t, loaded.MachineAnnotations, "example.com/response-only")
+		})
+	}
+}

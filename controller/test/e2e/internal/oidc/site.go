@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	apiserverv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/yaml"
@@ -27,7 +28,7 @@ import (
 
 const (
 	startupMessage = "Loaded nke-controller-config"
-	defaultRestart = "e2e.nke.nvidia.com/oidc-restart"
+	defaultRestart = "e2e.nvke.nvidia.com/oidc-restart"
 	maxLogBytes    = 1 << 20
 	chartConfigMap = "nke-controller-config"
 	chartConfigKey = "config.yaml"
@@ -102,6 +103,52 @@ func NewSite(client kubernetes.Interface, config SiteConfig) (*Site, error) {
 		config.PollInterval = 3 * time.Second
 	}
 	return &Site{client: client, config: config}, nil
+}
+
+// SharedIssuer is the issuer the shared provider renders from: the issuer and
+// discovery URLs in the controller's current configuration, and the PEM bundle
+// in the CA Secret it names.
+func (s *Site) SharedIssuer(ctx context.Context) (*apiserverv1.Issuer, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, err := s.currentConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var root map[string]any
+	if err = yaml.Unmarshal(current.value, &root); err != nil {
+		return nil, errors.New("decode controller config: invalid YAML")
+	}
+	oidcConfig, err := childMap(root, "oidc")
+	if err != nil {
+		return nil, err
+	}
+	management, err := childMap(oidcConfig, "managementOIDCAuth")
+	if err != nil {
+		return nil, err
+	}
+	issuer := &apiserverv1.Issuer{}
+	issuer.URL, _ = management["issuerURL"].(string)
+	if discoveryURL, _ := management["discoveryURL"].(string); discoveryURL != "" {
+		issuer.DiscoveryURL = &discoveryURL
+	}
+	ref, _ := management["caBundleSecretRef"].(map[string]any)
+	namespace, _ := ref["namespace"].(string)
+	name, _ := ref["name"].(string)
+	key, _ := ref["key"].(string)
+	if namespace == "" && name == "" && key == "" {
+		return issuer, nil
+	}
+	secret, err := s.client.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get shared CA Secret %s/%s: %w", namespace, name, err)
+	}
+	bundle := secret.Data[key]
+	if len(bytes.TrimSpace(bundle)) == 0 {
+		return nil, fmt.Errorf("shared CA Secret %s/%s has no %q bundle", namespace, name, key)
+	}
+	issuer.CertificateAuthority = string(bundle)
+	return issuer, nil
 }
 
 // Snapshot records the raw ConfigMap value and restart annotation.

@@ -195,11 +195,12 @@ guest_diagnostics() {
     read -r name ip <<<"${line}"
     log "collecting guest diagnostics from ${name} (${ip})"
     # -n: ssh must not read the instance list from the loop's stdin.
-    SSHPASS="${password}" timeout 120 sshpass -e ssh -n \
+    SSHPASS="${password}" timeout 180 sshpass -e ssh -n \
       -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
       -o ConnectTimeout=15 -o PreferredAuthentications=password -o PubkeyAuthentication=no \
       "${user}@${ip}" 'sudo bash -c '"'"'
         set +e
+        crictl() { command crictl --runtime-endpoint unix:///run/containerd/containerd.sock "$@"; }
         echo "=== cloud-init ==="; cloud-init status --long 2>&1
         echo "=== cloud-init-output.log (last 200) ==="; tail -n 200 /var/log/cloud-init-output.log 2>&1
         echo "=== units ==="; systemctl --no-pager --no-legend list-units "nvke-agent*" "spire-agent*" kubelet containerd 2>&1
@@ -208,10 +209,19 @@ guest_diagnostics() {
         echo "=== listening ==="; ss -ltnp 2>&1
         echo "=== network ==="; ip -brief address 2>&1; ip route show 2>&1; cat /etc/resolv.conf 2>&1
         echo "=== journal: nvke-agent spire-agent kubelet containerd (last 400) ==="; journalctl --no-pager -n 400 -u nvke-agent -u spire-agent -u kubelet -u containerd 2>&1
-        echo "=== ovnkube containers (last 80 lines each) ==="
-        for c in $(crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps -a --name ovn -q 2>/dev/null); do
-          echo "--- $c ---"; crictl --runtime-endpoint unix:///run/containerd/containerd.sock logs --tail 80 "$c" 2>&1
+        echo "=== kubelet journal: pod adds, admission and ovn (last 60 matches) ==="; journalctl --no-pager -u kubelet 2>&1 | grep -E "SyncLoop ADD|ovnkube|ovn-kubernetes|Predicate|OutOf|admission|Failed to create pod sandbox" | tail -n 60
+        echo "=== pods and containers on this node ==="; crictl pods 2>&1; crictl ps -a 2>&1
+        echo "=== ovn-kubernetes containers (last 80 lines each) ==="
+        for c in $(crictl ps -a --label io.kubernetes.pod.namespace=ovn-kubernetes -q 2>/dev/null); do
+          echo "--- $(crictl inspect -o go-template --template "{{.status.metadata.name}}" "$c" 2>/dev/null) $c ---"; crictl logs --tail 80 "$c" 2>&1
         done
+        if [ -f /etc/kubernetes/admin.conf ]; then
+          export KUBECONFIG=/etc/kubernetes/admin.conf
+          echo "=== tenant nodes ==="; kubectl get nodes -o wide --show-labels 2>&1
+          echo "=== tenant pods ==="; kubectl get pods -A -o wide 2>&1
+          echo "=== ovn-kubernetes workloads ==="; kubectl -n ovn-kubernetes get ds,deploy -o wide 2>&1; kubectl -n ovn-kubernetes describe ds 2>&1
+          echo "=== tenant events (last 150) ==="; kubectl get events -A --sort-by=.lastTimestamp 2>&1 | tail -n 150
+        fi
         echo "=== kubeadm ==="; ls -la /etc/kubernetes 2>&1; cat /etc/kubernetes/kubelet.conf >/dev/null 2>&1 && echo kubelet.conf present
         echo "=== disk ==="; df -h / 2>&1; lsblk -o NAME,TYPE,FSTYPE,SIZE,MOUNTPOINTS 2>&1
         echo "=== dmesg (last 60) ==="; dmesg 2>&1 | tail -n 60
@@ -236,7 +246,8 @@ collect_diagnostics() {
   set +e
   mkdir -p "${STATE_DIR}"
   stop_state_monitor
-  cp "${CONTROLLER_ROOT}/test/e2e/tenant-diagnostics.json" "${STATE_DIR}/" 2>/dev/null
+  # The suite runs from CONTROLLER_ROOT and writes the report beside its log.
+  cp "${CONTROLLER_ROOT}/tenant-diagnostics.json" "${STATE_DIR}/" 2>/dev/null
 
   if kubectl cluster-info >/dev/null 2>&1; then
     capture management-nodes.txt kubectl get nodes -o wide
@@ -333,8 +344,7 @@ CAPNICO_SOURCE_DIR="${CAPNICO_SOURCE_DIR:-}"
 [[ -d "${CAPNICO_SOURCE_DIR}/config/default" ]] || fail "${CAPNICO_SOURCE_DIR} is not a cluster-api-provider-nico checkout (config/default is missing)"
 export CAPNICO_SOURCE_DIR
 
-# Kept as cwebr0 until a follow-up rename: changing it leaves the old bridge behind on existing nico-vms hosts.
-BRIDGE_NAME="${NICO_VMS_BRIDGE_NAME:-cwebr0}"
+BRIDGE_NAME="${NICO_VMS_BRIDGE_NAME:-controllerbr0}"
 ip link show "${BRIDGE_NAME}" >/dev/null 2>&1 ||
   fail "bridge ${BRIDGE_NAME} does not exist; run test/kubeadm/scripts/setup-ci-host.sh with NKE_CI_HOST_FDE=true first"
 if [[ -c /dev/kvm ]]; then

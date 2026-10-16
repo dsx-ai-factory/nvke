@@ -27,7 +27,7 @@ sudo sh -c 'grep -q keycloak.nke.test /etc/hosts || echo "127.0.0.1 keycloak.nke
 ./down.sh
 ```
 
-`up.sh` defaults to Kind cluster `cwe-capi` (context `kind-cwe-capi`). Override
+`up.sh` defaults to Kind cluster `controller-capi` (context `kind-controller-capi`). Override
 with `KIND_CLUSTER_NAME` / `KUBE_CONTEXT`. Re-run `./up.sh` after `kind create`
 or `make capd-up` if Keycloak started first — it will then wire the cluster.
 

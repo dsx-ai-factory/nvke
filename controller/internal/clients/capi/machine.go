@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -16,12 +17,10 @@ import (
 	capiexternal "sigs.k8s.io/cluster-api/controllers/external"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
-
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // renderInfraMachine renders the caller-supplied CAPI infrastructure machine
@@ -109,7 +108,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return err
 	}
 	if spireJoinToken != "" {
-		machine.Annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath] = spireAgentAlternateIDPath
+		machine.Annotations[keys.MachineSpireAgentSpiffeIDPath.String()] = spireAgentAlternateIDPath
 	}
 	if err := shared.ApplyMachine(ctx, deps.K8sClient, deps.FieldManagerName, machine); err != nil {
 		return err

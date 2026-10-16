@@ -151,7 +151,15 @@ out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${SIT
 expect "render reports the site values" '^controller: site values written$' "${out}"
 expect "render reports the templates" '^nvke-base-config: 3 templates rendered; applies as a manifest item$' "${out}"
 reject "no host-default warning when --arch is given" 'warning: --arch not given' "${out}"
-grep -q 'postgresPassword: secret-db-password' "${rendered}/controller/site-values.yaml" && pass "the database password comes from NVKECTL_DATABASE_PASSWORD" || fail "db password"
+grep -q 'dbSecretName: nvke-database' "${rendered}/controller/site-values.yaml" && pass "the controller reads its connection string from the nvke-database Secret" || fail "controller site values: $(cat "${rendered}/controller/site-values.yaml")"
+grep -q 'existingSecret: nvke-database' "${rendered}/postgresql/site-values.yaml" && grep -c 'existingSecret: nvke-database' "${rendered}/temporal/site-values.yaml" | grep -qx 2 && pass "postgresql and both temporal datastores read the same Secret" || fail "postgresql/temporal site values"
+! grep -rq 'secret-db-password\|BEGIN' "${rendered}"/*/site-values.yaml && pass "no values file holds a credential" || fail "a values file holds a credential"
+grep -q 'name: site-credentials, type: manifest' "${rendered}/nvke-deploy.yaml" && pass "the render adds the site-credentials item" || fail "item list: $(cat "${rendered}/nvke-deploy.yaml")"
+sed -n '/^items:/,$p' "${rendered}/nvke-deploy.yaml" | sed -n 3p | grep -q 'name: site-credentials' && pass "the site-credentials item follows the first item" || fail "item order: $(cat "${rendered}/nvke-deploy.yaml")"
+grep -q "database-connection-string: $(printf 'postgresql://postgres:secret-db-password@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller?sslmode=disable' | base64 | tr -d '\n')$" "${rendered}/site-credentials/secrets.yaml" && pass "the Secrets item holds the controller's connection string, base64 in data" || fail "secrets.yaml: $(cat "${rendered}/site-credentials/secrets.yaml")"
+grep -q "tls.key: $(base64 <"${WORK}/site/ca.key" | tr -d '\n')$" "${rendered}/site-credentials/secrets.yaml" && grep -q 'namespace: spire-server' "${rendered}/site-credentials/secrets.yaml" && pass "and the SPIRE CA Secret" || fail "secrets.yaml lacks the CA"
+reject "the Secrets use data, not stringData" 'stringData' "$(cat "${rendered}/site-credentials/secrets.yaml")"
+grep -q 'bundle: bundle.crt' "${rendered}/spire/site-values.yaml" && pass "the spire values keep the bundle path on" || fail "spire bundle marker missing"
 find "${rendered}" -maxdepth 0 -perm 0700 | grep -q . && pass "the rendered tree is private" || fail "rendered tree mode"
 [[ ! -e "${NICO}/site.env" && ! -e "${NICO}/controller/site-values.yaml" ]] && pass "nothing was written into the committed deploy path" || fail "committed deploy path written"
 grep -q '^  - site-values.yaml$' "${rendered}/controller/release.yaml" && pass "the controller's values list ends with site-values.yaml" || fail "controller release.yaml: $(cat "${rendered}/controller/release.yaml")"
@@ -159,13 +167,52 @@ grep -q 'token: "secret-nico-token"' "${rendered}/nvke-base-config/20-nico-crede
 [[ -z "$(ls "${rendered}/nvke-base-config/"*.tmpl 2>/dev/null)" ]] && pass "no template is left in the rendered item" || fail "templates left"
 grep -q 'name: nvke-base-config, type: manifest' "${rendered}/nvke-deploy.yaml" && pass "the template item became a manifest item" || fail "item list: $(cat "${rendered}/nvke-deploy.yaml")"
 grep -q '^SITE_NAME=nvke-site$' "${rendered}/site.env" && grep -q '^SITE_TRUST_DOMAIN=nvke-site.nke.local$' "${rendered}/site.env" && pass "site.env names the site and its trust domain" || fail "site.env"
-expect "the operator is told which files hold credentials" "^${rendered} holds this site's credentials: controller/site-values.yaml, postgresql/site-values.yaml, temporal/site-values.yaml, nvke-base-config/20-nico-credentials.yaml, .*\. Delete it after the install\.$" "${out}"
+expect "the operator is told which files hold credentials" "^${rendered} holds this site's credentials: site-credentials/secrets.yaml, nvke-base-config/20-nico-credentials.yaml, .*\. Delete it after the install\.$" "${out}"
 [[ "$(cat "${rendered}/.gitignore")" == "*" ]] && pass "the rendered tree ignores itself for git" || fail ".gitignore"
+
+# External credentials: no credential or CA variable read, no secret written,
+# the Secrets listed.
+out="$(env -u NVKECTL_NICO_TOKEN -u NVKECTL_NODE_USER -u NVKECTL_NODE_PASSWORD -u NVKECTL_DATABASE_PASSWORD -u NVKECTL_SPIRE_CA_CERT_FILE -u NVKECTL_SPIRE_CA_KEY_FILE "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --arch linux/arm64 --credentials external --out "${WORK}/external" 2>&1)" || fail "external render exited $?: ${out}"
+expect "the external render holds no credential" "^${WORK}/external holds no credential\.$" "${out}"
+expect "the external render names the database Secret" '^expected in the cluster once its namespace exists and before the item that reads it: Secret postgres/nvke-database with keys password, postgres-password$' "${out}"
+expect "and the NICo Secret" '^expected in the cluster once its namespace exists and before the item that reads it: Secret capnico-system/nico-credentials with keys ' "${out}"
+expect "and the CA Secret" '^expected in the cluster once its namespace exists and before the item that reads it: Secret spire-server/spire-upstream-ca with keys bundle.crt, tls.crt, tls.key$' "${out}"
+expect "the external render shows the connection string shape" '^expected in the cluster once its namespace exists and before the item that reads it: Secret nke-controller/nvke-database with keys database-connection-string, the URL postgresql://postgres:<password>@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller\?sslmode=disable with the password URL-escaped$' "${out}"
+[[ ! -e "${WORK}/external/site-credentials" && ! -e "${WORK}/external/nvke-base-config/20-nico-credentials.yaml" && -e "${WORK}/external/nvke-base-config/45-nktp-cluster.yaml" && ! -e "${WORK}/external/.gitignore" ]] && pass "the external tree carries no Secret and no .gitignore" || fail "external tree: $(ls -a "${WORK}/external" "${WORK}/external/nvke-base-config")"
+! grep -rqF -e "${DEPLOY_DIR}" -e "${WORK}" "${WORK}/external" && pass "the external tree names no path of this machine" || fail "the external tree names a local path: $(grep -rnF -e "${DEPLOY_DIR}" -e "${WORK}" "${WORK}/external" | head -3)"
+grep -q 'path: ../../controller/deploy/charts/controller' "${WORK}/external/controller/release.yaml" && pass "the external tree keeps the committed chart path" || fail "external controller release.yaml: $(cat "${WORK}/external/controller/release.yaml")"
 
 out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run 2>&1)" || fail "rendered dry run exited $?"
 expect "the controller takes its site values" "helm upgrade --install nke-controller .*--values ${rendered}/controller/values.yaml --values ${rendered}/controller/overlay.yaml --values ${rendered}/controller/site-values.yaml" "${out}"
 expect "spire takes its site values" "helm upgrade --install spire .*--values ${rendered}/spire/site-values.yaml" "${out}"
-expect "spire reads the CA from the operator's files" "helm upgrade --install spire .*--set-file spire-server.upstreamAuthority.disk.secret.data.certificate=${WORK}/site/ca.crt --set-file spire-server.upstreamAuthority.disk.secret.data.key=${WORK}/site/ca.key --set-file spire-server.upstreamAuthority.disk.secret.data.bundle=${WORK}/site/ca.crt" "${out}"
+expect "the Secrets item is applied before the charts" "^kubectl apply --server-side -f ${rendered}/site-credentials/secrets.yaml" "${out}"
+reject "spire takes no --set-file" 'helm upgrade --install spire .*--set-file' "${out}"
+
+# The controller reads its connection string from the Secret the render built
+# from the deploy path's appDb values, so a --values-for file that sets appDb
+# would be ignored: the executor refuses it before it applies anything.
+printf 'appDb:\n  url: external-pg.example.test:6432\n  dbName: customdb\n' >"${WORK}/appdb-override.yaml"
+printf '{"appDb": {"url": "external-pg.example.test:6432"}}\n' >"${WORK}/appdb-override.json"
+# Spellings a line-by-line reader misses: a flow mapping after a comment, and a
+# top-level mapping indented as a whole.
+printf '# Database override\n{appDb: {url: external-pg.example.test:6432}}\n' >"${WORK}/appdb-override-flow.yaml"
+printf '  appDb:\n    url: external-pg.example.test:6432\n  image:\n    tag: v-test\n' >"${WORK}/appdb-override-indented.yaml"
+printf 'image:\n  tag: v-test\nsecrets:\n  appDb: not-the-top-level\n' >"${WORK}/image-override.yaml"
+for f in appdb-override.yaml appdb-override.json appdb-override-flow.yaml appdb-override-indented.yaml; do
+  appdb_out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run --values-for "controller=${WORK}/${f}" 2>&1)" && fail "a controller --values-for ${f} that sets appDb exited 0"
+  expect "a ${f} that sets appDb is refused" "^nvke-deploy: --values-for controller: ${WORK}/${f} sets appDb, but controller reads its database connection string from the Secret" "${appdb_out}"
+  reject "nothing is applied before the appDb refusal (${f})" 'kubectl .*apply|helm upgrade' "${appdb_out}"
+done
+expect "the refusal says where appDb is changed" 'change appDb in the deploy path \(for controller, its overlay.yaml\) and run again$' "${appdb_out}"
+appdb_out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run --values-for "controller=${WORK}/image-override.yaml" 2>&1)" || fail "a controller --values-for without appDb exited $?: ${appdb_out}"
+expect "a --values-for file without appDb is still applied" "helm upgrade --install nke-controller .*--values ${WORK}/image-override.yaml" "${appdb_out}"
+# A deploy path the render did not write holds no Secret: the chart builds the
+# connection string from the merged values, so an appDb override is applied.
+mkdir -p "${WORK}/handpath/ctl"
+printf 'items:\n  - {name: ctl, type: helm}\n' >"${WORK}/handpath/nvke-deploy.yaml"
+printf 'chart:\n  name: nke-controller\n  version: "1.0.0"\n  repository: oci://registry.example.test/charts\nrelease:\n  name: nke-controller\n  namespace: nke-controller\n' >"${WORK}/handpath/ctl/release.yaml"
+appdb_out="$(bash "${EXECUTOR}" install --deploy-path "${WORK}/handpath" --dry-run --values-for "ctl=${WORK}/appdb-override.yaml" 2>&1)" || fail "an appDb override on a deploy path with no Secret exited $?: ${appdb_out}"
+expect "an appDb override is applied where the chart reads appDb" "helm upgrade --install nke-controller .*--values ${WORK}/appdb-override.yaml" "${appdb_out}"
 ! grep -q 'BEGIN' "${rendered}/spire/site-values.yaml" && pass "the CA is not copied into the spire values" || fail "spire site values hold PEM"
 expect "the rendered Secret is applied as a manifest" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/20-nico-credentials.yaml" "${out}"
 expect "the namespaces manifest is applied too" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/00-namespaces.yaml" "${out}"

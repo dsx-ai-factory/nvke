@@ -23,6 +23,8 @@ metricsListenAddress: 127.0.0.1:9090
 supportedInfraProviders:
   - nico
 nodeMetadataAllowlistedLabelKeys: []
+machineMetadataAllowlistedLabelKeys: []
+machineMetadataAllowlistedAnnotationKeys: []
 tracing:
   enabled: false
   endpoint: ""

@@ -73,7 +73,7 @@ make test-integration-libvirt RUN_TESTS=TestIPXEProductionImageFlow
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NICO_VMS_BRIDGE_NAME` | cwebr0 | Bridge interface name |
+| `NICO_VMS_BRIDGE_NAME` | controllerbr0 | Bridge interface name |
 | `NICO_VMS_BRIDGE_CIDR` | 172.30.0.0/24 | Bridge subnet |
 | `NICO_VMS_DHCP_HOSTS_DIR` | /var/lib/nico-vms/dhcp-hosts | dnsmasq DHCP host files directory |
 | `NICO_VMS_DHCP_LEASE_FILE` | /var/run/nico-vms-dnsmasq.leases | dnsmasq lease file path |

@@ -4,7 +4,7 @@
 #
 # setup-libvirt-network.sh — prepare a host to run nico-vms in libvirt-network
 # mode, where nico-vms attaches VMs to a pre-existing libvirt NAT network
-# (e.g. 'default'/virbr0) instead of creating its own bridge (cwebr0) + dnsmasq
+# (e.g. 'default'/virbr0) instead of creating its own bridge (controllerbr0) + dnsmasq
 # + iptables. This is the counterpart to setup-linux.sh for environments where
 # nico-vms must not create host networking of its own — most notably a
 # hostNetwork Kubernetes pod (e.g. a shared GitLab libvirt runner), where a

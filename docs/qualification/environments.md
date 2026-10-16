@@ -119,9 +119,12 @@ repository that has not onboarded ytl still runs against az61. Set them to
 qualify at ytl.
 
 CI supplies them from repository variables, which is the same route
-`FORGE_TELEPORT_PROXY` already takes. `FORGE_JUMP_HOST` and
-`FORGE_TELEPORT_JOIN_TOKEN` are repository secrets instead, so that the job
-log masks them.
+`FORGE_TELEPORT_PROXY` and `FORGE_TELEPORT_JOIN_TOKEN` take -- the latter
+names a Teleport provision-token resource rather than being a credential
+itself, so a variable is enough. `FORGE_JUMP_HOST` is a secret instead, so
+the job log masks it, and it is scoped to the `forge` GitHub environment
+rather than the repository, alongside `FORGE_API_KEY` and
+`FORGE_YTL_JUMP_HOST`.
 
 The split is between engineering and account. Which sites exist, which machine
 shapes they offer, and what those shapes `provides` is engineering: it is
@@ -144,17 +147,19 @@ wherever it runs.
 
 ## What is deliberately absent
 
-**Credentials.** The Forge API key and the Teleport join are workflow secrets,
-read from the environment and never written to this file, a values file, or a
-command line.
+**Credentials.** The Forge API key is a workflow secret, read from the
+environment and never written to this file, a values file, or a command line.
+The Teleport join token is a variable, not a secret -- it only names a
+Teleport provision-token resource; the actual credential is the job's GitHub
+OIDC token, which Teleport validates server-side.
 
-**The jump host.** It is a repository variable rather than a declared field, so
-the access path is not published alongside the site. It is not a special case:
-the org, site, VPC and subnet identifiers are variables too, as "Where the
-identifiers come from" above describes, so the same rule covers the access path
-and the identifiers it reaches. Keeping them as `${NAME}` references rather than
-literals was raised in review and settled deliberately; a site added later
-declares its own references under `sites:` and the variable list grows with it.
+**The jump host.** It is a workflow secret rather than a declared field, so
+the access path is not published alongside the site, and not a repository
+variable like the org, site, VPC and subnet identifiers -- GitHub prints
+job-level `env` in every step's log header, and only a secret is masked
+there. Keeping them as `${NAME}` references rather than literals was raised
+in review and settled deliberately; a site added later declares its own
+references under `sites:` and the variable list grows with it.
 
 **The org's human-facing name.** Recorded in a comment. The field lands when
 something reads it, rather than being accepted and silently dropped by a

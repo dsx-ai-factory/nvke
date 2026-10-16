@@ -8,6 +8,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -29,11 +30,17 @@ import (
 )
 
 const (
-	annotationRebootCompleteTimestamp = "nke.nvidia.com/reboot-complete-timestamp"
-	annotationReboot                  = "nke.nvidia.com/reboot"
-	reasonRebootComplete              = "RebootComplete"
-	fieldOwnerCapdRebootController    = "capd-reboot-controller"
-	defaultSleepDuration              = 10 * time.Second
+	annotationRebootCompleteTimestamp = "nvke.nvidia.com/reboot-complete-timestamp"
+	annotationReboot                  = "nvke.nvidia.com/reboot"
+
+	// The controller writes the reboot request under both domains while sites
+	// move over, and an older build wrote only these. Read, never written.
+	legacyAnnotationReboot                  = "nke.nvidia.com/reboot"
+	legacyAnnotationRebootCompleteTimestamp = "nke.nvidia.com/reboot-complete-timestamp"
+
+	reasonRebootComplete           = "RebootComplete"
+	fieldOwnerCapdRebootController = "capd-reboot-controller"
+	defaultSleepDuration           = 10 * time.Second
 )
 
 // version is set at build time via -ldflags "-X main.version=<version>".
@@ -114,7 +121,7 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	rebootAnnotation := machine.Annotations[annotationReboot]
+	rebootAnnotation := cmp.Or(machine.Annotations[annotationReboot], machine.Annotations[legacyAnnotationReboot])
 	if rebootAnnotation == "" {
 		log.V(2).Info("no Machine reboot annotation found; skipping")
 		return ctrl.Result{}, nil
@@ -163,7 +170,10 @@ func rebootAlreadySignaled(machine *clusterv1.Machine, rebootAnnotation string) 
 		return false
 	}
 
-	raw := machine.Annotations[annotationRebootCompleteTimestamp]
+	// A reboot this controller completed before the nvke.nvidia.com rename
+	// signaled under the legacy key. Ignoring it would replay the
+	// simulated reboot and overwrite the completion already recorded.
+	raw := cmp.Or(machine.Annotations[annotationRebootCompleteTimestamp], machine.Annotations[legacyAnnotationRebootCompleteTimestamp])
 	if raw == "" {
 		return false
 	}

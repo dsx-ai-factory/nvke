@@ -12,6 +12,10 @@
 // A provider that is not installed is not an error. Reporting a site that has
 // one provider, both, or neither is the point, so absence is a state rather
 // than a failure.
+//
+// For a provider that publishes credential health, Inspect also reports the
+// result of the provider's own last credential check, read from the Identity
+// that names its credentials Secret.
 package inspect
 
 import (
@@ -20,9 +24,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/providers"
+	"github.com/dsx-ai-factory/nvke/cli/internal/providers/credentials"
 )
 
 // defaultTimeout bounds the whole inspection. Without it an unreachable API
@@ -82,6 +88,10 @@ type Status struct {
 	ReadyReplicas       int            `json:"readyReplicas"`
 	DesiredReplicas     int            `json:"desiredReplicas"`
 	Detail              string         `json:"detail,omitempty"`
+
+	// Credentials is the provider's own credential health. Nil when the
+	// provider publishes none or is not installed.
+	Credentials *credentials.Credentials `json:"credentials,omitempty"`
 }
 
 // Inspect reports the state of every registered provider in the cluster that
@@ -91,7 +101,10 @@ type Status struct {
 // unreadable kubeconfig, a missing kubectl, or an unreachable cluster. A
 // provider that is absent, unconfigured or unreadable is reported in its
 // Status, so one bad provider does not hide the others.
-func Inspect(ctx context.Context, r Runner, kubeconfig string) ([]Status, error) {
+//
+// newLister builds the client that lists Identities. Inspect calls it at most
+// once, and only when an installed provider's Identity CRD is established.
+func Inspect(ctx context.Context, r Runner, newLister credentials.ListerFactory, kubeconfig string) ([]Status, error) {
 	if kubeconfig == "" {
 		return nil, fmt.Errorf("no kubeconfig configured for this site: run 'nvkectl config set-site --kubeconfig <path>'")
 	}
@@ -111,12 +124,57 @@ func Inspect(ctx context.Context, r Runner, kubeconfig string) ([]Status, error)
 		return nil, err
 	}
 
+	lister := sync.OnceValues(func() (credentials.Lister, error) { return newLister(kubeconfig) })
+	now := time.Now()
+
 	all := providers.Supported()
 	out := make([]Status, 0, len(all))
 	for _, d := range all {
-		out = append(out, inspectOne(ctx, r, kubeconfig, d, crds, deployments))
+		s := inspectOne(ctx, r, kubeconfig, d, crds, deployments)
+		if d.Identity != nil && s.State != StateNotInstalled {
+			s.Credentials = assessCredentials(ctx, lister, d, s, crds, deployments, now)
+		}
+		out = append(out, s)
 	}
 	return out, nil
+}
+
+// assessCredentials reports d's credential health. Only the Identity list is
+// read here; the CRDs, the manager and the Secret's location come from what
+// Inspect already found.
+func assessCredentials(
+	ctx context.Context,
+	lister func() (credentials.Lister, error),
+	d providers.Provider,
+	s Status,
+	crds map[string]bool,
+	deployments []deployment,
+	now time.Time,
+) *credentials.Credentials {
+	mgr, found := findManager(d, deployments)
+	in := credentials.Input{
+		Kind:            *d.Identity,
+		CRDEstablished:  crds[d.Identity.CRDName()],
+		SecretNamespace: s.SecretNamespace,
+		SecretName:      s.SecretName,
+		ManagerFound:    found,
+		// A manager scaled to zero still reports Available, but nothing is
+		// running to check the credentials.
+		ManagerAvailable: found && mgr.available && mgr.ready > 0,
+		Now:              now,
+	}
+	if found {
+		in.WatchNamespace, _ = flagValue(mgr.args, d.WatchNamespaceFlag)
+		in.WatchFilter, _ = flagValue(mgr.args, d.WatchFilterFlag)
+	}
+	if in.CRDEstablished {
+		l, err := lister()
+		if err == nil {
+			in.Identities, err = l.List(ctx, *d.Identity, s.SecretNamespace)
+		}
+		in.ListErr = err
+	}
+	return credentials.Assess(in)
 }
 
 func inspectOne(

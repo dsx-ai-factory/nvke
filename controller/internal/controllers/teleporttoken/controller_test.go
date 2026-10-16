@@ -29,6 +29,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/teleport"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -176,7 +177,7 @@ func (te *testEnv) createNicoMachineForNode(ctx context.Context, t *testing.T, n
 			Name:      node.Name,
 			Namespace: constants.NamespaceNVKESystem,
 			Annotations: map[string]string{
-				constants.MachineAnnotationKeyHostID: node.ID.String(),
+				keys.MachineHostID.String(): node.ID.String(),
 			},
 		},
 	}
@@ -1266,7 +1267,7 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 				Name:      "invalid-host-machine",
 				Namespace: constants.NamespaceNVKESystem,
 				Annotations: map[string]string{
-					constants.MachineAnnotationKeyHostID: "not-a-uuid",
+					keys.MachineHostID.String(): "not-a-uuid",
 				},
 			},
 		}

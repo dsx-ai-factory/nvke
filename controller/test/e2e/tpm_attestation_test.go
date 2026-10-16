@@ -4,6 +4,7 @@
 package e2e
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -19,13 +20,15 @@ import (
 )
 
 // The controller's names for a Machine's SPIRE agent identity. They must match
-// constants.MachineAnnotationKeySpireAgentSpiffeIDPath, constants.TPMSpireAgentPath
+// keys.MachineSpireAgentSpiffeIDPath, constants.TPMSpireAgentPath
 // and constants.NamespaceNVKESystem in controller/internal/constants, which this
 // module does not import.
 const (
-	spireAgentIDPathAnnotation = "nke.nvidia.com/spire-agent-spiffe-id-path"
-	tpmSpireAgentPath          = "/spire/agent/tpm/"
-	tenantMachineNamespace     = "nke-system"
+	spireAgentIDPathAnnotation = "nvke.nvidia.com/spire-agent-spiffe-id-path"
+	// Machines annotated before the nvke.nvidia.com rename carry the legacy key.
+	legacySpireAgentIDPathAnnotation = "nke.nvidia.com/spire-agent-spiffe-id-path"
+	tpmSpireAgentPath                = "/spire/agent/tpm/"
+	tenantMachineNamespace           = "nke-system"
 )
 
 // validateTPMAttestationPostCreate asserts that every node of the tenant
@@ -85,7 +88,8 @@ func tpmAgentIDs(trustDomain string, machines []unstructured.Unstructured, want 
 		owners   = map[string]string{}
 	)
 	for _, machine := range machines {
-		path := machine.GetAnnotations()[spireAgentIDPathAnnotation]
+		annotations := machine.GetAnnotations()
+		path := cmp.Or(annotations[spireAgentIDPathAnnotation], annotations[legacySpireAgentIDPathAnnotation])
 		if !strings.HasPrefix(path, tpmSpireAgentPath) || path == tpmSpireAgentPath {
 			problems = append(problems, fmt.Sprintf("Machine %s has agent path %q, not a TPM identity", machine.GetName(), path))
 			continue

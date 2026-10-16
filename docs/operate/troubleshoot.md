@@ -98,11 +98,11 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 
 ### nvkr does not build
 
-- **Symptom:** `make build` in the NVIDIA Kubernetes Recipes (NVKR) repository prints `Go go<VERSION> does not match pinned go1.27.1`.
-- **Fix:** NVKR builds only with the exact Go version in its `.go-version` file. Install Go 1.27.1, or let Go fetch it:
+- **Symptom:** `make build` in the NVIDIA Kubernetes Recipes (NVKR) repository prints `Go go<VERSION> does not match pinned go1.27.2`.
+- **Fix:** NVKR builds only with the exact Go version in its `.go-version` file. Install Go 1.27.2, or let Go fetch it:
 
   ```bash
-  GOTOOLCHAIN=go1.27.1 make build
+  GOTOOLCHAIN=go1.27.2 make build
   ```
 
 ### The bootstrap fails at clusterctl init
@@ -236,6 +236,12 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 - **Symptom:** The `nico` row of `nvkectl get providers` shows `NOT-INSTALLED`, `NOT-CONFIGURED`, `DEGRADED` or `UNKNOWN`. The `DETAIL` column says why.
 - **Fix:** [Configure an infrastructure provider: NICo](provider-nico.md#confirm-that-capnico-is-running) gives the action for each state.
+
+### nvkectl get providers shows CREDENTIALS other than HEALTHY
+
+- **Symptom:** The `nico` row reads `CONFIGURED`, but `CREDENTIALS` is not `HEALTHY`. The `DETAIL` column says why.
+- **Cause:** `UNSUPPORTED` is expected with the CAPNICo release the install deploys, which does not serve `NicoIdentity`. With a release that does, `NO-IDENTITY` means no `NicoIdentity` names `nico-credentials`, and `FAILING` or `UNKNOWN` carries the reason from CAPNICo's last check.
+- **Fix:** [Infrastructure providers](../../cli/README.md#infrastructure-providers) explains each value. For `FAILING`, correct the credentials as described in [Configure an infrastructure provider: NICo](provider-nico.md#manage-the-nico-credentials).
 
 ### Machines are not delivered
 

@@ -62,7 +62,7 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
    ```
 
    - `<WORKLOAD_CLUSTER>`: a lowercase DNS label of at most 55 characters, unique on the management plane, such as `example-customer-a`. Node names are built from it.
-   - `<K8S_VERSION>`: the Kubernetes version as `X.Y.Z` with no leading `v`, such as `1.34.2`. Use a version your releases' node images carry; see [Supported platforms and versions](../overview/supported-platforms.md).
+   - `<K8S_VERSION>`: the Kubernetes version as `X.Y.Z` with no leading `v`, such as `1.36.3`. Use a version your releases' node images carry; see [Supported platforms and versions](../overview/supported-platforms.md).
    - `<API_VIP>`: the Kubernetes API VIP. It must be outside the pod and service CIDRs.
    - `<NICO_ORG_ID>`, `<NICO_SITE_ID>` and `<NICO_VPC_ID>`: your NICo organization ID, and the site and VPC IDs. Every NICo ID in the spec except the organization ID is a UUID.
    - `<CP_INSTANCE_TYPE_ID>` and `<WORKER_INSTANCE_TYPE_ID>`: NICo instance type IDs. `instanceTypePreference` is a required, ordered list: add more IDs after the first as fallbacks.

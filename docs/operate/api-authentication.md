@@ -150,10 +150,10 @@ Configure your callers now, while NVKE still serves every request. From the mome
 1. Generate a kubeconfig that gets tokens from your IdP.
 
    ```bash
-   nvkectl generate oidc-kubeconfig --kubeconfig <CLUSTER_NAME>.kubeconfig \
+   nvkectl generate oidc-kubeconfig --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
      --oidc-issuer-url <ISSUER_URL> \
      --oidc-client-id <CLIENT_ID> \
-     --output-file oidc.kubeconfig
+     --output-file ../oidc.kubeconfig
    ```
 
    The command copies the cluster address and CA from `<CLUSTER_NAME>.kubeconfig` and replaces the user with `kubectl oidc-login`. Add `--oidc-extra-scope <SCOPE>` for each scope your IdP needs to release the `groups` claim. On a machine with no browser, add `--headless`. `kubectl oidc-login` then prints a URL to open on another machine. The IdP client must allow the device authorization grant.
@@ -161,8 +161,10 @@ Configure your callers now, while NVKE still serves every request. From the mome
 2. Point `nvkectl` at the API with that kubeconfig.
 
    ```bash
-   nvkectl config set-site --name <CLUSTER_NAME> --url <API_URL> --kubeconfig oidc.kubeconfig
+   nvkectl config set-site --name <CLUSTER_NAME> --url <API_URL> --kubeconfig "$PWD/../oidc.kubeconfig"
    ```
+
+   `nvkectl` stores the kubeconfig path as you give it, so give an absolute path; a relative one works only from the directory you ran `set-site` in.
 
    `<API_URL>` is the base address of the NVKE API without `/api`: `http://<MANAGEMENT_ADDRESS>:30080`, as in [Install management-plane services](install-management-plane-services.md), or the `https` address of the TLS endpoint you put in front of it. A token sent to the `http` address crosses the network unencrypted; see the warning at the top of this page. `nvkectl get kubeconfig`, `nvkectl get providers`, and the machine image, cluster release and node pool release commands, such as `nvkectl get nodepoolreleases`, read the management cluster's Kubernetes API directly with this kubeconfig. The bootstrap does not configure that API server to accept tokens from your IdP, so these commands fail. Use `kubectl` with `<CLUSTER_NAME>.kubeconfig` for them instead, as described in [Access a workload cluster](../workload-clusters/access.md#get-the-admin-kubeconfig) and [Create a workload cluster](../workload-clusters/create.md#before-you-begin).
 

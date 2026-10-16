@@ -414,7 +414,7 @@ func (q *queriesImpl) ListNodeInfo(ctx context.Context) ([]NodeInfo, error) {
 			n.agent_version,
 			n.spiffe_enabled,
 			COALESCE(n.nico->>'forge_machine_id', '') as forge_machine_id,
-			COALESCE(ns.nico->>'release', ns.nico->>'os_profile', '') as release,
+			COALESCE(ns.nico->>'release', '') as release,
 			COALESCE(ns.nico->>'config_profile', '') as config_profile
 		FROM nodes n
 		JOIN node_sets ns ON ns.id = n.node_set_id

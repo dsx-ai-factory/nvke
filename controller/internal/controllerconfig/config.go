@@ -33,28 +33,30 @@ import (
 // and AUTH_CONFIG_PATH. The package tests hold the full classification and fail
 // when config.Config gains a field it does not cover.
 type Config struct {
-	AgentReadiness                   AgentReadinessConfig `json:"agentReadiness"`
-	FieldManager                     FieldManagerConfig   `json:"fieldManager"`
-	ManagedByLabelValue              string               `json:"managedByLabelValue"`
-	MetricsListenAddress             string               `json:"metricsListenAddress"`
-	SupportedInfraProviders          []string             `json:"supportedInfraProviders"`
-	NodeMetadataAllowlistedLabelKeys []string             `json:"nodeMetadataAllowlistedLabelKeys"`
-	Tracing                          TracingConfig        `json:"tracing"`
-	CertRenewal                      CertRenewalConfig    `json:"certRenewal"`
-	KubeadmImageRepository           string               `json:"kubeadmImageRepository"`
-	CNIImageRegistry                 string               `json:"cniImageRegistry"`
-	InstallCNIAfterInit              bool                 `json:"installCNIAfterInit"`
-	AllowLegacyCalicoClusterCreation bool                 `json:"allowLegacyCalicoClusterCreation"`
-	NicoControllersEnabled           bool                 `json:"nicoControllersEnabled"`
-	ProfilesDir                      string               `json:"profilesDir"`
-	RunbooksDir                      string               `json:"runbooksDir"`
-	TenantAccessEnabled              bool                 `json:"tenantAccessEnabled"`
-	NodeAgent                        NodeAgentConfig      `json:"nodeAgent"`
-	OIDC                             OIDCConfig           `json:"oidc"`
-	Temporal                         TemporalConfig       `json:"temporal"`
-	Spire                            SpireConfig          `json:"spire"`
-	Teleport                         TeleportConfig       `json:"teleport"`
-	PermissiveMode                   bool                 `json:"permissiveMode"`
+	AgentReadiness                           AgentReadinessConfig `json:"agentReadiness"`
+	FieldManager                             FieldManagerConfig   `json:"fieldManager"`
+	ManagedByLabelValue                      string               `json:"managedByLabelValue"`
+	MetricsListenAddress                     string               `json:"metricsListenAddress"`
+	SupportedInfraProviders                  []string             `json:"supportedInfraProviders"`
+	NodeMetadataAllowlistedLabelKeys         []string             `json:"nodeMetadataAllowlistedLabelKeys"`
+	Tracing                                  TracingConfig        `json:"tracing"`
+	CertRenewal                              CertRenewalConfig    `json:"certRenewal"`
+	KubeadmImageRepository                   string               `json:"kubeadmImageRepository"`
+	CNIImageRegistry                         string               `json:"cniImageRegistry"`
+	InstallCNIAfterInit                      bool                 `json:"installCNIAfterInit"`
+	AllowLegacyCalicoClusterCreation         bool                 `json:"allowLegacyCalicoClusterCreation"`
+	NicoControllersEnabled                   bool                 `json:"nicoControllersEnabled"`
+	ProfilesDir                              string               `json:"profilesDir"`
+	RunbooksDir                              string               `json:"runbooksDir"`
+	TenantAccessEnabled                      bool                 `json:"tenantAccessEnabled"`
+	NodeAgent                                NodeAgentConfig      `json:"nodeAgent"`
+	OIDC                                     OIDCConfig           `json:"oidc"`
+	Temporal                                 TemporalConfig       `json:"temporal"`
+	Spire                                    SpireConfig          `json:"spire"`
+	Teleport                                 TeleportConfig       `json:"teleport"`
+	PermissiveMode                           bool                 `json:"permissiveMode"`
+	MachineMetadataAllowlistedLabelKeys      []string             `json:"machineMetadataAllowlistedLabelKeys"`
+	MachineMetadataAllowlistedAnnotationKeys []string             `json:"machineMetadataAllowlistedAnnotationKeys"`
 }
 
 // FieldManagerConfig groups the Server-Side-Apply field manager names, mirroring
@@ -324,6 +326,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("nodeMetadataAllowlistedLabelKeys: %w", err)
 	}
 
+	if err := validateMetadataAllowlistedKeys(c.MachineMetadataAllowlistedLabelKeys); err != nil {
+		return fmt.Errorf("machineMetadataAllowlistedLabelKeys: %w", err)
+	}
+	if err := validateMetadataAllowlistedKeys(c.MachineMetadataAllowlistedAnnotationKeys); err != nil {
+		return fmt.Errorf("machineMetadataAllowlistedAnnotationKeys: %w", err)
+	}
+
 	if err := c.AgentReadiness.validate(); err != nil {
 		return fmt.Errorf("agentReadiness: %w", err)
 	}
@@ -374,6 +383,23 @@ func NodeMetadataReservedInternalDomains() []string {
 // control-plane role key, or a key under NodeMetadataReservedInternalDomains. An empty
 // list is valid and allows no keys under the reserved Kubernetes domains.
 func validateNodeMetadataAllowlistedLabelKeys(keys []string) error {
+	if err := validateMetadataAllowlistedKeys(keys); err != nil {
+		return err
+	}
+	for i, key := range keys {
+		if key == NodeMetadataControlPlaneRoleKey {
+			return fmt.Errorf("[%d] %q is managed by core bootstrap components and cannot be allowlisted", i, key)
+		}
+		if domain, isReserved := reservedDomain(key, NodeMetadataReservedInternalDomains()); isReserved {
+			return fmt.Errorf("[%d] %q is under reserved domain %q and cannot be allowlisted", i, key, domain)
+		}
+	}
+	return nil
+}
+
+// validateMetadataAllowlistedKeys validates exact metadata keys. It does not
+// accept domain wildcards; labels and annotations share the same key syntax.
+func validateMetadataAllowlistedKeys(keys []string) error {
 	seen := make(map[string]int, len(keys))
 	for i, key := range keys {
 		if strings.TrimSpace(key) == "" {
@@ -384,12 +410,6 @@ func validateNodeMetadataAllowlistedLabelKeys(keys []string) error {
 		}
 		if errs := content.IsLabelKey(key); len(errs) > 0 {
 			return fmt.Errorf("[%d] %q is not a valid label key: %s", i, key, strings.Join(errs, "; "))
-		}
-		if key == NodeMetadataControlPlaneRoleKey {
-			return fmt.Errorf("[%d] %q is managed by core bootstrap components and cannot be allowlisted", i, key)
-		}
-		if domain, isReserved := reservedDomain(key, NodeMetadataReservedInternalDomains()); isReserved {
-			return fmt.Errorf("[%d] %q is under reserved domain %q and cannot be allowlisted", i, key, domain)
 		}
 		if prev, dup := seen[key]; dup {
 			return fmt.Errorf("[%d] %q duplicates [%d]", i, key, prev)

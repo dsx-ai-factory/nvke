@@ -24,3 +24,19 @@ func TestNodeMetadataAllowlistReachesTheServices(t *testing.T) {
 	assert.Empty(t, impl.clusterService.allowlistedLabelKeys)
 	assert.Empty(t, impl.nodePoolService.allowlistedLabelKeys)
 }
+
+func TestMachineMetadataAllowlistsReachNodePoolService(t *testing.T) {
+	t.Parallel()
+	labels := []string{"cluster.x-k8s.io/custom"}
+	annotations := []string{"nke.nvidia.com/profile"}
+	impl := NewServerImpl(config.Config{MachineMetadataAllowlistedLabelKeys: labels, MachineMetadataAllowlistedAnnotationKeys: annotations}, slog.New(slog.DiscardHandler), nil, nil, nil)
+	assert.Equal(t, labels, impl.nodePoolService.machineAllowlistedLabelKeys)
+	assert.Equal(t, annotations, impl.nodePoolService.machineAllowlistedAnnotationKeys)
+	assert.Equal(t, labels, impl.clusterService.machineAllowlistedLabelKeys)
+	assert.Equal(t, annotations, impl.clusterService.machineAllowlistedAnnotationKeys)
+	assert.Empty(t, impl.nodePoolService.allowlistedLabelKeys)
+	assert.Empty(t, impl.clusterService.allowlistedLabelKeys)
+	impl = NewServerImpl(config.Config{}, slog.New(slog.DiscardHandler), nil, nil, nil)
+	assert.Empty(t, impl.nodePoolService.machineAllowlistedLabelKeys)
+	assert.Empty(t, impl.nodePoolService.machineAllowlistedAnnotationKeys)
+}

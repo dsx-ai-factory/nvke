@@ -142,8 +142,8 @@ VIP. These ranges are deliberately in class B (172.x) to avoid the tenant pod CI
 | `NICO_VMS_DHCP_RANGE_END` | auto from bridge | Last DHCP IP (auto-derived if empty) |
 
 **Debugging:**
-- `ip route get <VIP>` — should show multipath route with CP node nexthops, not just `dev cwebr0`
-- `sudo arping -I cwebr0 <VIP>` — all CP nodes respond (VIP on loopback, `arp_ignore=0`)
+- `ip route get <VIP>` — should show multipath route with CP node nexthops, not just `dev controllerbr0`
+- `sudo arping -I controllerbr0 <VIP>` — all CP nodes respond (VIP on loopback, `arp_ignore=0`)
 - nico-vms logs: look for "BGP route announced" (working) or "BGP ignoring disallowed route" (broken)
 
 ### Seeded Test Data

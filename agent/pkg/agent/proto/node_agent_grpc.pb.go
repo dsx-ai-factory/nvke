@@ -45,17 +45,14 @@ const (
 	NodeAgent_ExecuteScript_FullMethodName                                = "/proto.NodeAgent/ExecuteScript"
 	NodeAgent_GetKubeadmJoinString_FullMethodName                         = "/proto.NodeAgent/GetKubeadmJoinString"
 	NodeAgent_InitializeKubernetesAPIEncryption_FullMethodName            = "/proto.NodeAgent/InitializeKubernetesAPIEncryption"
-	NodeAgent_RewriteKubernetesAPIObjects_FullMethodName                  = "/proto.NodeAgent/RewriteKubernetesAPIObjects"
 	NodeAgent_PromoteKubernetesAPIEncryptionProviders_FullMethodName      = "/proto.NodeAgent/PromoteKubernetesAPIEncryptionProviders"
 	NodeAgent_UpdateEncryptionConfig_FullMethodName                       = "/proto.NodeAgent/UpdateEncryptionConfig"
 	NodeAgent_StartEtcdEncryptionAtRestObjectsRewrite_FullMethodName      = "/proto.NodeAgent/StartEtcdEncryptionAtRestObjectsRewrite"
 	NodeAgent_GetEtcdEncryptionAtRestObjectsRewriteStatus_FullMethodName  = "/proto.NodeAgent/GetEtcdEncryptionAtRestObjectsRewriteStatus"
 	NodeAgent_RemovePlainTextSecondaryEncryptionEntry_FullMethodName      = "/proto.NodeAgent/RemovePlainTextSecondaryEncryptionEntry"
-	NodeAgent_RestartAPIPods_FullMethodName                               = "/proto.NodeAgent/RestartAPIPods"
 	NodeAgent_UploadFileBundle_FullMethodName                             = "/proto.NodeAgent/UploadFileBundle"
 	NodeAgent_WriteNodeAgentConfig_FullMethodName                         = "/proto.NodeAgent/WriteNodeAgentConfig"
 	NodeAgent_StreamExecuteScript_FullMethodName                          = "/proto.NodeAgent/StreamExecuteScript"
-	NodeAgent_SetUnsetIsMaster_FullMethodName                             = "/proto.NodeAgent/SetUnsetIsMaster"
 	NodeAgent_InstallBundle_FullMethodName                                = "/proto.NodeAgent/InstallBundle"
 	NodeAgent_GetBundleStatus_FullMethodName                              = "/proto.NodeAgent/GetBundleStatus"
 	NodeAgent_InstallCollection_FullMethodName                            = "/proto.NodeAgent/InstallCollection"
@@ -156,12 +153,12 @@ type NodeAgentClient interface {
 	ExecuteScript(ctx context.Context, in *ExecuteScriptRequest, opts ...grpc.CallOption) (*ExecuteScriptResponse, error)
 	GetKubeadmJoinString(ctx context.Context, in *KubeadmJoinStringRequest, opts ...grpc.CallOption) (*KubeadmJoinStringResponse, error)
 	InitializeKubernetesAPIEncryption(ctx context.Context, in *InitializeKubernetesAPIEncryptionRequest, opts ...grpc.CallOption) (*InitializeKubernetesAPIEncryptionResponse, error)
-	RewriteKubernetesAPIObjects(ctx context.Context, in *RewriteKubernetesAPIObjectsRequest, opts ...grpc.CallOption) (*RewriteKubernetesAPIObjectsResponse, error)
 	// PromoteKubernetesAPIEncryptionProviders reorders encryption providers from
 	// identity-then-secretbox (existing-cluster bootstrap) to secretbox-then-identity
 	// on this node, then waits for the local apiserver to reload the config.
 	// Run on every control-plane node after phase-1 InitializeKubernetesAPIEncryption;
-	// then run RewriteKubernetesAPIObjects once.
+	// then call StartEtcdEncryptionAtRestObjectsRewrite once and poll
+	// GetEtcdEncryptionAtRestObjectsRewriteStatus until the operation succeeds.
 	PromoteKubernetesAPIEncryptionProviders(ctx context.Context, in *PromoteKubernetesAPIEncryptionProvidersRequest, opts ...grpc.CallOption) (*PromoteKubernetesAPIEncryptionProvidersResponse, error)
 	// UpdateEncryptionConfig applies a single key-rotation mutation to the local
 	// EncryptionConfiguration file, then blocks until the local apiserver
@@ -191,13 +188,11 @@ type NodeAgentClient interface {
 	// a previously started asynchronous rewrite operation.
 	GetEtcdEncryptionAtRestObjectsRewriteStatus(ctx context.Context, in *GetEtcdEncryptionAtRestObjectsRewriteStatusRequest, opts ...grpc.CallOption) (*GetEtcdEncryptionAtRestObjectsRewriteStatusResponse, error)
 	RemovePlainTextSecondaryEncryptionEntry(ctx context.Context, in *RemovePlainTextSecondaryEncryptionEntryRequest, opts ...grpc.CallOption) (*RemovePlainTextSecondaryEncryptionEntryResponse, error)
-	RestartAPIPods(ctx context.Context, in *RestartAPIPodsRequest, opts ...grpc.CallOption) (*RestartAPIPodsResponse, error)
 	UploadFileBundle(ctx context.Context, opts ...grpc.CallOption) (NodeAgent_UploadFileBundleClient, error)
 	// WriteNodeAgentConfig replaces /etc/agent/config.yaml with the given YAML
 	// (NodeSpec) using an atomic write and serializes concurrent callers on this agent.
 	WriteNodeAgentConfig(ctx context.Context, in *WriteNodeAgentConfigRequest, opts ...grpc.CallOption) (*WriteNodeAgentConfigResponse, error)
 	StreamExecuteScript(ctx context.Context, in *ExecuteScriptRequest, opts ...grpc.CallOption) (NodeAgent_StreamExecuteScriptClient, error)
-	SetUnsetIsMaster(ctx context.Context, in *SetUnsetIsMasterRequest, opts ...grpc.CallOption) (*SetUnsetIsMasterResponse, error)
 	InstallBundle(ctx context.Context, in *InstallBundleRequest, opts ...grpc.CallOption) (*InstallBundleResponse, error)
 	GetBundleStatus(ctx context.Context, in *GetBundleStatusRequest, opts ...grpc.CallOption) (*GetBundleStatusResponse, error)
 	InstallCollection(ctx context.Context, in *InstallCollectionRequest, opts ...grpc.CallOption) (*InstallCollectionResponse, error)
@@ -493,16 +488,6 @@ func (c *nodeAgentClient) InitializeKubernetesAPIEncryption(ctx context.Context,
 	return out, nil
 }
 
-func (c *nodeAgentClient) RewriteKubernetesAPIObjects(ctx context.Context, in *RewriteKubernetesAPIObjectsRequest, opts ...grpc.CallOption) (*RewriteKubernetesAPIObjectsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RewriteKubernetesAPIObjectsResponse)
-	err := c.cc.Invoke(ctx, NodeAgent_RewriteKubernetesAPIObjects_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *nodeAgentClient) PromoteKubernetesAPIEncryptionProviders(ctx context.Context, in *PromoteKubernetesAPIEncryptionProvidersRequest, opts ...grpc.CallOption) (*PromoteKubernetesAPIEncryptionProvidersResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PromoteKubernetesAPIEncryptionProvidersResponse)
@@ -547,16 +532,6 @@ func (c *nodeAgentClient) RemovePlainTextSecondaryEncryptionEntry(ctx context.Co
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RemovePlainTextSecondaryEncryptionEntryResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_RemovePlainTextSecondaryEncryptionEntry_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAgentClient) RestartAPIPods(ctx context.Context, in *RestartAPIPodsRequest, opts ...grpc.CallOption) (*RestartAPIPodsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RestartAPIPodsResponse)
-	err := c.cc.Invoke(ctx, NodeAgent_RestartAPIPods_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -639,16 +614,6 @@ func (x *nodeAgentStreamExecuteScriptClient) Recv() (*ScriptOutputChunk, error) 
 		return nil, err
 	}
 	return m, nil
-}
-
-func (c *nodeAgentClient) SetUnsetIsMaster(ctx context.Context, in *SetUnsetIsMasterRequest, opts ...grpc.CallOption) (*SetUnsetIsMasterResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SetUnsetIsMasterResponse)
-	err := c.cc.Invoke(ctx, NodeAgent_SetUnsetIsMaster_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *nodeAgentClient) InstallBundle(ctx context.Context, in *InstallBundleRequest, opts ...grpc.CallOption) (*InstallBundleResponse, error) {
@@ -875,12 +840,12 @@ type NodeAgentServer interface {
 	ExecuteScript(context.Context, *ExecuteScriptRequest) (*ExecuteScriptResponse, error)
 	GetKubeadmJoinString(context.Context, *KubeadmJoinStringRequest) (*KubeadmJoinStringResponse, error)
 	InitializeKubernetesAPIEncryption(context.Context, *InitializeKubernetesAPIEncryptionRequest) (*InitializeKubernetesAPIEncryptionResponse, error)
-	RewriteKubernetesAPIObjects(context.Context, *RewriteKubernetesAPIObjectsRequest) (*RewriteKubernetesAPIObjectsResponse, error)
 	// PromoteKubernetesAPIEncryptionProviders reorders encryption providers from
 	// identity-then-secretbox (existing-cluster bootstrap) to secretbox-then-identity
 	// on this node, then waits for the local apiserver to reload the config.
 	// Run on every control-plane node after phase-1 InitializeKubernetesAPIEncryption;
-	// then run RewriteKubernetesAPIObjects once.
+	// then call StartEtcdEncryptionAtRestObjectsRewrite once and poll
+	// GetEtcdEncryptionAtRestObjectsRewriteStatus until the operation succeeds.
 	PromoteKubernetesAPIEncryptionProviders(context.Context, *PromoteKubernetesAPIEncryptionProvidersRequest) (*PromoteKubernetesAPIEncryptionProvidersResponse, error)
 	// UpdateEncryptionConfig applies a single key-rotation mutation to the local
 	// EncryptionConfiguration file, then blocks until the local apiserver
@@ -910,13 +875,11 @@ type NodeAgentServer interface {
 	// a previously started asynchronous rewrite operation.
 	GetEtcdEncryptionAtRestObjectsRewriteStatus(context.Context, *GetEtcdEncryptionAtRestObjectsRewriteStatusRequest) (*GetEtcdEncryptionAtRestObjectsRewriteStatusResponse, error)
 	RemovePlainTextSecondaryEncryptionEntry(context.Context, *RemovePlainTextSecondaryEncryptionEntryRequest) (*RemovePlainTextSecondaryEncryptionEntryResponse, error)
-	RestartAPIPods(context.Context, *RestartAPIPodsRequest) (*RestartAPIPodsResponse, error)
 	UploadFileBundle(NodeAgent_UploadFileBundleServer) error
 	// WriteNodeAgentConfig replaces /etc/agent/config.yaml with the given YAML
 	// (NodeSpec) using an atomic write and serializes concurrent callers on this agent.
 	WriteNodeAgentConfig(context.Context, *WriteNodeAgentConfigRequest) (*WriteNodeAgentConfigResponse, error)
 	StreamExecuteScript(*ExecuteScriptRequest, NodeAgent_StreamExecuteScriptServer) error
-	SetUnsetIsMaster(context.Context, *SetUnsetIsMasterRequest) (*SetUnsetIsMasterResponse, error)
 	InstallBundle(context.Context, *InstallBundleRequest) (*InstallBundleResponse, error)
 	GetBundleStatus(context.Context, *GetBundleStatusRequest) (*GetBundleStatusResponse, error)
 	InstallCollection(context.Context, *InstallCollectionRequest) (*InstallCollectionResponse, error)
@@ -1048,9 +1011,6 @@ func (UnimplementedNodeAgentServer) GetKubeadmJoinString(context.Context, *Kubea
 func (UnimplementedNodeAgentServer) InitializeKubernetesAPIEncryption(context.Context, *InitializeKubernetesAPIEncryptionRequest) (*InitializeKubernetesAPIEncryptionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InitializeKubernetesAPIEncryption not implemented")
 }
-func (UnimplementedNodeAgentServer) RewriteKubernetesAPIObjects(context.Context, *RewriteKubernetesAPIObjectsRequest) (*RewriteKubernetesAPIObjectsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RewriteKubernetesAPIObjects not implemented")
-}
 func (UnimplementedNodeAgentServer) PromoteKubernetesAPIEncryptionProviders(context.Context, *PromoteKubernetesAPIEncryptionProvidersRequest) (*PromoteKubernetesAPIEncryptionProvidersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PromoteKubernetesAPIEncryptionProviders not implemented")
 }
@@ -1066,9 +1026,6 @@ func (UnimplementedNodeAgentServer) GetEtcdEncryptionAtRestObjectsRewriteStatus(
 func (UnimplementedNodeAgentServer) RemovePlainTextSecondaryEncryptionEntry(context.Context, *RemovePlainTextSecondaryEncryptionEntryRequest) (*RemovePlainTextSecondaryEncryptionEntryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemovePlainTextSecondaryEncryptionEntry not implemented")
 }
-func (UnimplementedNodeAgentServer) RestartAPIPods(context.Context, *RestartAPIPodsRequest) (*RestartAPIPodsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RestartAPIPods not implemented")
-}
 func (UnimplementedNodeAgentServer) UploadFileBundle(NodeAgent_UploadFileBundleServer) error {
 	return status.Errorf(codes.Unimplemented, "method UploadFileBundle not implemented")
 }
@@ -1077,9 +1034,6 @@ func (UnimplementedNodeAgentServer) WriteNodeAgentConfig(context.Context, *Write
 }
 func (UnimplementedNodeAgentServer) StreamExecuteScript(*ExecuteScriptRequest, NodeAgent_StreamExecuteScriptServer) error {
 	return status.Errorf(codes.Unimplemented, "method StreamExecuteScript not implemented")
-}
-func (UnimplementedNodeAgentServer) SetUnsetIsMaster(context.Context, *SetUnsetIsMasterRequest) (*SetUnsetIsMasterResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SetUnsetIsMaster not implemented")
 }
 func (UnimplementedNodeAgentServer) InstallBundle(context.Context, *InstallBundleRequest) (*InstallBundleResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InstallBundle not implemented")
@@ -1550,24 +1504,6 @@ func _NodeAgent_InitializeKubernetesAPIEncryption_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NodeAgent_RewriteKubernetesAPIObjects_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RewriteKubernetesAPIObjectsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAgentServer).RewriteKubernetesAPIObjects(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAgent_RewriteKubernetesAPIObjects_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAgentServer).RewriteKubernetesAPIObjects(ctx, req.(*RewriteKubernetesAPIObjectsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _NodeAgent_PromoteKubernetesAPIEncryptionProviders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PromoteKubernetesAPIEncryptionProvidersRequest)
 	if err := dec(in); err != nil {
@@ -1658,24 +1594,6 @@ func _NodeAgent_RemovePlainTextSecondaryEncryptionEntry_Handler(srv interface{},
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NodeAgent_RestartAPIPods_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RestartAPIPodsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAgentServer).RestartAPIPods(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAgent_RestartAPIPods_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAgentServer).RestartAPIPods(ctx, req.(*RestartAPIPodsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _NodeAgent_UploadFileBundle_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(NodeAgentServer).UploadFileBundle(&nodeAgentUploadFileBundleServer{ServerStream: stream})
 }
@@ -1739,24 +1657,6 @@ type nodeAgentStreamExecuteScriptServer struct {
 
 func (x *nodeAgentStreamExecuteScriptServer) Send(m *ScriptOutputChunk) error {
 	return x.ServerStream.SendMsg(m)
-}
-
-func _NodeAgent_SetUnsetIsMaster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetUnsetIsMasterRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAgentServer).SetUnsetIsMaster(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAgent_SetUnsetIsMaster_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAgentServer).SetUnsetIsMaster(ctx, req.(*SetUnsetIsMasterRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _NodeAgent_InstallBundle_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -2111,10 +2011,6 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NodeAgent_InitializeKubernetesAPIEncryption_Handler,
 		},
 		{
-			MethodName: "RewriteKubernetesAPIObjects",
-			Handler:    _NodeAgent_RewriteKubernetesAPIObjects_Handler,
-		},
-		{
 			MethodName: "PromoteKubernetesAPIEncryptionProviders",
 			Handler:    _NodeAgent_PromoteKubernetesAPIEncryptionProviders_Handler,
 		},
@@ -2135,16 +2031,8 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NodeAgent_RemovePlainTextSecondaryEncryptionEntry_Handler,
 		},
 		{
-			MethodName: "RestartAPIPods",
-			Handler:    _NodeAgent_RestartAPIPods_Handler,
-		},
-		{
 			MethodName: "WriteNodeAgentConfig",
 			Handler:    _NodeAgent_WriteNodeAgentConfig_Handler,
-		},
-		{
-			MethodName: "SetUnsetIsMaster",
-			Handler:    _NodeAgent_SetUnsetIsMaster_Handler,
 		},
 		{
 			MethodName: "InstallBundle",

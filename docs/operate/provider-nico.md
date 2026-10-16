@@ -29,7 +29,7 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
    nvkectl get providers
    ```
 
-   The `nico` row reads `CONFIGURED`: the CAPNICo custom resource definitions (CRDs) are established, the CAPNICo controller is available and the `nico-credentials` Secret exists. `NOT-INSTALLED` or `NOT-CONFIGURED` means the install did not complete; run it again as described in [Install management-plane services](install-management-plane-services.md). `DEGRADED` means the CAPNICo controller is not available; check the `controller-manager` Deployment in `capnico-system`. `UNKNOWN` usually means the kubeconfig that `nvkectl` uses cannot read Secrets in `capnico-system`.
+   The `nico` row reads `CONFIGURED`: the CAPNICo custom resource definitions (CRDs) are established, the CAPNICo controller is available and the `nico-credentials` Secret exists. `CREDENTIALS` reads `UNSUPPORTED`; see the note after these steps. `NOT-INSTALLED` or `NOT-CONFIGURED` means the install did not complete; run it again as described in [Install management-plane services](install-management-plane-services.md). `DEGRADED` means the CAPNICo controller is not available; check the `controller-manager` Deployment in `capnico-system`. `UNKNOWN` usually means the kubeconfig that `nvkectl` uses cannot read Secrets in `capnico-system`.
 
    With API authentication on, this command fails. Check CAPNICo with `kubectl` instead:
 
@@ -51,7 +51,7 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
    kubectl rollout restart deployment/nke-controller -n nke-controller
    ```
 
-`CONFIGURED` does not mean the credentials work. Nothing checks the token or reaches the NICo API until you create the first workload cluster.
+`CONFIGURED` does not mean the credentials work. The `CREDENTIALS` column of `nvkectl get providers` reports whether they do, from the check CAPNICo runs on them every few minutes, but only with a CAPNICo release that serves `NicoIdentity` and a `NicoIdentity` that names `nico-credentials`. The CAPNICo release this procedure installs does not serve `NicoIdentity`, so `CREDENTIALS` reads `UNSUPPORTED`. CAPNICo still checks the token against the NICo API, but only when it reconciles a `NicoCluster` that belongs to a Cluster API `Cluster`, which normally first happens when you create a workload cluster. [Infrastructure providers](../../cli/README.md#infrastructure-providers) lists every `CREDENTIALS` value.
 
 ## Manage the NICo credentials
 

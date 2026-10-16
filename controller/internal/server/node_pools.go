@@ -45,11 +45,13 @@ func newBadRequestErrorf(format string, args ...any) error {
 }
 
 type nodePoolService struct {
-	logger               *slog.Logger
-	db                   db.DB
-	teleportCfg          config.TeleportConfig
-	providers            providerSupport
-	allowlistedLabelKeys []string
+	logger                           *slog.Logger
+	db                               db.DB
+	teleportCfg                      config.TeleportConfig
+	providers                        providerSupport
+	allowlistedLabelKeys             []string
+	machineAllowlistedLabelKeys      []string
+	machineAllowlistedAnnotationKeys []string
 }
 
 func NewNodePoolService(
@@ -221,6 +223,9 @@ func (s *nodePoolService) validateCreateNodePoolRequest(cluster db.Cluster, req 
 		return err
 	}
 	if err := validateNodeLabels(req.NodeLabels, s.allowlistedLabelKeys); err != nil {
+		return newBadRequestErrorf("%s", err)
+	}
+	if err := validateMachineMetadata(req.MachineAnnotations, req.MachineLabels, s.machineAllowlistedAnnotationKeys, s.machineAllowlistedLabelKeys); err != nil {
 		return newBadRequestErrorf("%s", err)
 	}
 	if err := validateNodeTaints(req.NodeTaints, req.ControlPlane); err != nil {
@@ -752,6 +757,8 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
 			Provisioned:  apiConditionFromDB(dbNodePool.Conditions.Provisioned),
 			Deleting:     apiConditionFromDB(dbNodePool.Conditions.Deleting),
 		},
+		MachineAnnotations: maps.Clone(dbNodePool.MachineAnnotations),
+		MachineLabels:      maps.Clone(dbNodePool.MachineLabels),
 	}
 }
 
@@ -863,6 +870,8 @@ func dbNodePoolFromAPI(
 		ProvisioningMonitorDisabled: provisioningMonitorDisabled,
 		RecycleBudget:               recycleBudget,
 		TeleportEnabled:             teleportEnabled,
+		MachineAnnotations:          db.CloneStringMap(req.MachineAnnotations),
+		MachineLabels:               db.CloneStringMap(req.MachineLabels),
 	}
 
 	switch {

@@ -96,6 +96,21 @@ fetch() {
   ((size <= MAX_ARTIFACT_BYTES)) || { rm -f "$2"; die "$1 is ${size} bytes, over the ${MAX_ARTIFACT_BYTES} byte ceiling"; }
 }
 
+# image_digest resolves one tag to its linux/<arch> manifest digest. A registry
+# blip, such as a connect timeout to registry.k8s.io, gets two more attempts.
+image_digest() {
+  local attempt digest
+  for attempt in 1 2 3; do
+    if digest="$("$CRANE" digest --platform "linux/${ARCH}" "$1")"; then
+      printf '%s\n' "$digest"
+      return 0
+    fi
+    [[ "$attempt" -eq 3 ]] && return 1
+    echo "bundle.sh: crane digest $1 failed; retrying (${attempt}/2)" >&2
+    sleep "$attempt"
+  done
+}
+
 file_sha() { sha256sum "$1" | cut -d' ' -f1; }
 
 # checksum_from_doc reads the publisher's digest for one basename out of a
@@ -240,7 +255,7 @@ resolve_images() {
     # repository, so anything but a plain host[:port]/path:tag stops here
     # rather than being mangled into the wrong pull.
     [[ "$ref" =~ ^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9._-]+)*:[A-Za-z0-9._-]+$ ]] || die "kubeadm listed an image reference this script cannot handle: ${ref}"
-    digest="$("$CRANE" digest --platform "linux/${ARCH}" "$ref")" || die "crane digest ${ref} failed"
+    digest="$(image_digest "$ref")" || die "crane digest ${ref} failed after 3 attempts"
     [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "crane digest ${ref} returned ${digest}"
     echo "image ${ref} ${digest}" >>"${WORK}/resolved"
   done <"${WORK}/refs"

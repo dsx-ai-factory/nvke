@@ -29,8 +29,7 @@ export SPIFFE_ENABLED ?= false
 # CAPD / Kind Configuration
 export COLIMA_PROFILE ?= default
 export COLIMA_DOCKER_HOST ?= unix://$(HOME)/.colima/$(COLIMA_PROFILE)/docker.sock
-# Kept as cwe-capi until a follow-up rename: changing it forces every developer to recreate their kind cluster.
-export KIND_CLUSTER_NAME ?= cwe-capi
+export KIND_CLUSTER_NAME ?= controller-capi
 export KIND_CLUSTER_CONFIG ?= hack/controller-capi-kind.yaml
 # The image `make registry-mirror` runs. The host daemon pulls it anonymously,
 # so CI points it at the Docker Hub mirror.
@@ -421,6 +420,18 @@ clusterctl-arch = $(if $(filter aarch64 arm64,$(shell uname -m)),arm64,amd64)
 .PHONY: kind-up
 kind-up: ## Create the local Kind management cluster for CAPD
 	@echo "Ensuring Kind management cluster '$(KIND_CLUSTER_NAME)' exists..."
+# The default cluster was cwe-capi, with trust domain cwe-capi.nke.local. After
+# the rename, kind-down deletes only the new name, so stop here rather than
+# leave the old cluster running next to a new one.
+	@clusters="$$($(kind-docker-host) kind get clusters 2>/dev/null)"; \
+	if test "$(KIND_CLUSTER_NAME)" = controller-capi && \
+		printf '%s\n' "$$clusters" | grep -Fx cwe-capi >/dev/null && \
+		! printf '%s\n' "$$clusters" | grep -Fx controller-capi >/dev/null; then \
+		echo "Found the old Kind cluster 'cwe-capi'. The dev cluster is now 'controller-capi', with trust domain controller-capi.nvke.local." >&2; \
+		echo "Delete the old cluster, then run this again:" >&2; \
+		echo '  $(kind-docker-host) kind delete cluster --name cwe-capi' >&2; \
+		exit 1; \
+	fi
 	@if $(kind-docker-host) kind get clusters | grep -Fx "$(KIND_CLUSTER_NAME)" >/dev/null; then \
 		echo "✅ Kind management cluster '$(KIND_CLUSTER_NAME)' already exists"; \
 	else \

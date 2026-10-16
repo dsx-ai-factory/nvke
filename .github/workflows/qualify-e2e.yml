@@ -58,20 +58,32 @@
 # public half to `authorized_keys`, and the dialer authenticates with the
 # private half, which never leaves the runner.
 #
-# PLAN FIRST, THEN ONE JOB PER STREAM. The `plan` job runs `qualify plan` and
-# writes plan.json: what to qualify, resolved once, with every stream in the
-# scope. The `qualify-matrix` job then runs once per stream of that plan, so every stream
-# qualifies exactly the versions the plan named, and a run can say afterwards
-# what it qualified from plan.json alone. The dispatch inputs and QUALIFY_E2E_*
-# variables that name a version are overrides of what the plan resolves, not a
-# second source of versions.
+# PLAN FIRST, THEN ONE GATED JOB PER STREAM. The `plan` job runs `qualify
+# plan` and writes plan.json: what to qualify, resolved once, with every
+# stream in the scope. `qualify-run` then runs once per stream of that plan,
+# so every stream qualifies exactly the versions the plan named, and a run
+# can say afterwards what it qualified from plan.json alone. The dispatch
+# inputs and QUALIFY_E2E_* variables that name a version are overrides of
+# what the plan resolves, not a second source of versions.
+#
+# EVERYTHING IS GATED, NGC_API_KEY INCLUDED, DRY RUN TOO. A single job
+# replaced the old validate/run split: there is no ungated job and no ungated
+# trigger left for a dispatch or label to reach NGC_API_KEY (or anything
+# else) through. `qualify-run` is gated behind a GitHub environment from its
+# first step, so every run -- dry or real -- waits for a required reviewer
+# on `forge` before it can log into a registry or touch a machine. A beta
+# tag push instead resolves `forge-nightly`, which carries the same secrets
+# and no required reviewers -- an unattended nightly cannot wait on a
+# person, so the control is the deployment tag policy (`v*-beta.*`) rather
+# than a reviewer.
 #
 # DRY RUN. A `dry-run` dispatch input, or the `qualify-e2e-dry-run` label on a
 # pull request, does everything except join Teleport and run the suite: the
-# plan, each stream's job, the site inputs (so every image and archive is
-# confirmed to exist) and the e2e config. It takes no Forge machine, so it does
-# not queue behind a real run, and it prints the suite invocation it would have
-# made.
+# plan, the site inputs (so every image and archive is confirmed to exist,
+# which still means a real NGC_API_KEY-backed NVCR login) and the e2e config.
+# It reaches the same `forge`/`forge-nightly` gate a real run does and waits
+# on the same approval -- a dry run skips Teleport and the suite, not the
+# credentials it needs to get that far.
 name: Qualify e2e
 
 on:
@@ -488,109 +500,57 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Confirms every artifact the plan names is published, before any machine is
-  # taken. A plan that names something unpublished otherwise fails an hour in,
-  # on hardware, with the failure looking like a provisioning fault.
-  #
-  # It asks the registry for the locations the plan recorded, so what it
-  # confirms is that the run can pull them.
-  #
-  # Always, in both modes, because nothing else asks. What the mode changes is
-  # the budget: a release's artifacts were published when it was cut, so a miss
-  # is a fault to report now, while a beta's publishers may still be running, so
-  # a miss means not yet. The os-image bake is the long pole at roughly ninety
-  # minutes.
-  verify:
-    name: verify artifacts
-    needs: plan
-    runs-on: arc-amd64-cpu16
-    timeout-minutes: 120
-    permissions:
-      contents: read
-      packages: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: release/go.mod
-          cache-dependency-path: release/go.sum
-
-      - name: Download the plan
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: qualify-plan-${{ github.run_id }}
-
-      - name: Check every artifact the plan names
-        shell: bash
-        env:
-          # Both registries hold private repositories, so neither answers
-          # anonymously. These are the same credentials the lanes log in with.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
-          # A commit-resolved plan may have been made by the tag push that
-          # started the publishers, so give them time. A tag-resolved one asks
-          # once.
-          #
-          # A dry run asks once either way. The wait is there to keep a run from
-          # failing on an artifact that is still publishing, and a dry run takes
-          # no machine to protect, so waiting out a bake would only make the
-          # cheap way of exercising this the slow one.
-          WAIT: >-
-            ${{ (needs.plan.outputs.dry-run != 'true'
-                 && needs.plan.outputs.commit != '' && '90m') || '0' }}
-        run: |
-          set -euo pipefail
-          go run ./release/cmd/qualify verify --plan plan.json --wait "${WAIT}"
-
-  # One job per stream of the plan.
-  qualify-matrix:
-    # Named for the stream, which names its provider, GPU model, architecture,
-    # Ubuntu series and Kubernetes minor, so the shape is readable from the
-    # checks list without opening the run.
+  # Everything the run needs, in one gated job: confirms every artifact the
+  # plan names is published, resolves versions and capabilities, builds the
+  # image archives and nvkectl, reaches Forge or the jump host, and runs the
+  # suite. Every credential this stream can reach -- NGC_API_KEY included --
+  # is behind the same environment approval; nothing in this job runs ahead
+  # of it.
+  qualify-run:
     name: ${{ matrix.stream }}${{ needs.plan.outputs.dry-run == 'true' && ' (dry run)' || '' }}
-    needs: [plan, verify]
+    needs: plan
     strategy:
       # Never cancel a sibling. A cancelled lane dies before its teardown and
       # leaks a bare-metal instance, so one stream failing must not take the
       # others with it.
       fail-fast: false
-      # The site has capacity for three runs at once, which is what the
-      # concurrency note above is about.
       max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    # The ARC fleet on the RelEng EKS cluster: 16 vCPU / 64 GiB with dind, on
-    # a runner image built to stand in for ubuntu-latest. In the corpnet VPC,
-    # which is what makes the jump host reachable at all. Capped at two
-    # runners for the whole class, another reason this lane is manual.
     runs-on: arc-amd64-cpu16
-    # Gated by the plan job: it is skipped when the plan is, and the plan job
-    # carries the dispatch and `qualify-e2e` label conditions.
-    # Measured phases from the recorded SBOM run: ~17 min to create the instance,
-    # ~10 to stage assets, ~5 to bootstrap, ~8 to install the management
-    # plane, ~20 per tenant. Call it 60 for `full`, doubled for a cold run and
-    # for bootstrap's 30-45 minute worst case -- the missing-kubeadm failure
-    # runs its full 30 minutes before failing on NodePreflight.
+    # A nightly beta tag qualifies itself unattended, so it cannot wait on a
+    # required reviewer the way every other real run does: forge-nightly
+    # carries the same secrets, no required reviewers, and a deployment tag
+    # policy of v*-beta.* -- the ref pattern is the control, not a person.
     #
-    # The go-test timeout below is 15 minutes shorter on purpose. Ginkgo
-    # unwinds and tears the node down when it fires; `timeout-minutes` kills
-    # the runner and leaks the instance. The gap is teardown's budget, and it
-    # is sized against the cleanup nodes' NodeTimeouts -- see the note on the
-    # three nested timeouts at the run step. This bound is only ever reached
-    # by a run that has already gone wrong; a healthy `full` is about an hour.
-    timeout-minutes: 235
+    # No dry-run exemption: a dry run still logs into NVCR and pulls real
+    # images with NGC_API_KEY (see "Check every artifact the plan names" and
+    # "Log in to NVCR" below), so it needs the same approval a real run does.
+    # Only Teleport and the suite itself skip on a dry run, not the gate.
+    environment: ${{ github.event_name == 'push' && 'forge-nightly' || 'forge' }}
+    # Composed of two budgets that used to be separate jobs: up to 90 minutes
+    # waiting for a commit-resolved plan's publishers (see "Check every
+    # artifact the plan names"), plus the run budget below. Measured phases
+    # from the recorded SBOM run: ~17 min to create the instance, ~10 to
+    # stage assets, ~5 to bootstrap, ~8 to install the management plane, ~20
+    # per tenant. Call it 60 for `full`, doubled for a cold run and for
+    # bootstrap's 30-45 minute worst case -- the missing-kubeadm failure runs
+    # its full 30 minutes before failing on NodePreflight.
+    #
+    # The go-test timeout below is 15 minutes shorter than the run budget on
+    # purpose. Ginkgo unwinds and tears the node down when it fires;
+    # `timeout-minutes` kills the runner and leaks the instance. The gap is
+    # teardown's budget, sized against the cleanup nodes' NodeTimeouts -- see
+    # the note on the three nested timeouts at the run step. This bound is
+    # only ever reached by a run that has already gone wrong; a healthy
+    # `full` is about an hour plus whatever the artifact wait cost.
+    timeout-minutes: 335
     permissions:
       contents: read
-      # The runner's GHCR pulls. No PAT, matching every other workflow here:
-      # github.actor with GITHUB_TOKEN. The token dies with the job, which is
-      # shorter than any credential we could store.
+      # The runner's own GHCR and NVCR pulls, and the Teleport join. No PAT
+      # for GHCR, matching every other workflow here: github.actor with
+      # GITHUB_TOKEN. The token dies with the job, which is shorter than any
+      # credential we could store.
       packages: read
-      # The Teleport join, and only that. The join token's allow rules are
-      # what actually bound it -- see the daemon step.
       id-token: write
     env:
       # Every knob, resolved once. The versions, the architecture and the GPU
@@ -600,12 +560,9 @@ jobs:
       # variables instead. The guard step checks the result rather than
       # letting an empty value surface twenty minutes into a run.
       #
-      # Nothing about a stage or an OS image is Forge's -- only the access
-      # path to the hardware is, which is why FORGE_JUMP_HOST and the
-      # Teleport and Forge resource variables below keep their prefix.
-      # full, so a run that names no stage qualifies the whole thing. A label run
-      # and a tag push carry no dispatch input, and a beta that stopped at a
-      # booted node would have qualified none of what it was cut for.
+      # full, so a run that names no stage qualifies the whole thing. A label
+      # run and a tag push carry no dispatch input, and a beta that stopped at
+      # a booted node would have qualified none of what it was cut for.
       #
       # provision for the DSX label: it takes the node, reaches it, and
       # releases it, which is what redstone-dev1-dh2 can place --- one machine
@@ -613,28 +570,32 @@ jobs:
       # A DSX run at full is refused by the suite before a machine is taken
       # anyway, its tenant half speaking Forge only. See SCOPE in the plan job.
       SITE_STAGE: ${{ inputs.stage || (github.event.label.name == 'qualify-e2e-dsx' && 'provision') || vars.QUALIFY_E2E_STAGE || 'full' }}
-      # A dry run joins no Teleport and runs no suite. Decided by the plan job.
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
+      # Whether this run's ref is one the nvke WIF provider in the testgrid
+      # repo actually trusts (main, or a v<digit> tag -- see wif-nvke.tf
+      # there). Only a pre-filter: GCP's own attribute mapping is the real
+      # enforcement, matching job_workflow_ref rather than github.ref. This
+      # just skips a labelled PR leg straight to "not trusted" instead of
+      # spending a step on an auth call that WIF was always going to deny.
+      QUALIFY_PUBLISH_TRUSTED: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'true' || 'false' }}
+      # Reported below only -- not read by anything downstream here, since the
+      # plan job already resolved and applied it. Mirrors that job's own
+      # formula so the summary reports what actually happened, not a guess.
+      RESOLUTION: >-
+        ${{ inputs.resolution
+            || (github.event_name == 'push' && 'commitDescribe')
+            || vars.QUALIFY_E2E_RESOLUTION
+            || 'commitDescribe' }}
       # Where the nvkectl artifact for this stream's architecture is. The plan
       # names it, because nvkectl is published as one artifact per platform and
-      # the cli version below names none of them. Resolving it there is also
-      # what lets the verify job confirm it before a machine is taken.
+      # the cli version below names none of them.
       CLI_REF: ${{ matrix.cli_ref }}
+      SITE_CONTROLLER_VERSION: ${{ matrix.controller }}
       # How the controller's version was resolved, and the commit a described
       # one was taken at. Together they say what the deploy path is exported
       # from, which is a tag for one and a commit for the other.
       CONTROLLER_VERSION_STRATEGY: ${{ matrix.controller_version_strategy }}
       PLAN_COMMIT: ${{ needs.plan.outputs.commit }}
-      # Empty asks for a build from this checkout; the resolve step fills it
-      # in. Every use of it downstream -- the image site-inputs stages, the
-      # NVKECTL_CONTROLLER_IMAGE the bootstrap runs, and the tag the SBOM deploys --
-      # reads this one value, which is what keeps them the same image.
-      SITE_CONTROLLER_VERSION: ${{ matrix.controller }}
-      # The same shape for nvkectl: empty builds it from this checkout, a
-      # version stages that cli/<version> release. The resolve step fills in
-      # the commit when it builds, so -e2e.versions always names one. Named
-      # for the component, as CAPI_PROVISIONED_VERSION is; the make variable
-      # it feeds keeps the SITE_ prefix.
       CLI_VERSION: ${{ matrix.cli }}
       # The name the controller is installed under, which the deploy path
       # decides. Empty leaves the suite on its default, nke-controller, which
@@ -651,21 +612,13 @@ jobs:
       # deprecated aliases, read after the new names; #1399 removes them.
       NKE_CONTROLLER_NAMESPACE: ${{ inputs.controller-name || inputs.cwe-name || vars.NVKE_CONTROLLER_NAMESPACE || vars.CWE_NAMESPACE }}
       NKE_CONTROLLER_SERVICE: ${{ inputs.controller-name || inputs.cwe-name || vars.NVKE_CONTROLLER_SERVICE || vars.CWE_SERVICE }}
-      # One pair per architecture. A run boots as many as its shapes need: a
-      # GB200 tenant is arm64 workers behind a control plane of whatever
-      # `arch` asked for, so it needs both pairs, while a single-architecture
-      # run needs one. Which pair each machine takes is decided by the suite
-      # from the instance type it resolved, not here.
-      # Components the run qualifies that are not artifacts it downloads. The
-      # suite requires every one, so a run states them all and records what it
-      # qualified.
       KUBERNETES_VERSION: ${{ matrix.kube }}
       CNI_OVN_VERSION: ${{ matrix.cni_ovn }}
       KIND_VERSION: ${{ matrix.kind }}
       CLUSTERCTL_VERSION: ${{ matrix.clusterctl }}
       NERDCTL_VERSION: ${{ matrix.nerdctl }}
-      # The os-image release the images were built from. It is recorded and not
-      # passed to the suite, whose bare os-image key is an image URL.
+      # The os-image release the images were built from. Recorded by the
+      # resolved-inputs step below.
       OS_IMAGE_RELEASE: ${{ matrix.os_image }}
       OS_IMAGE_BOOTLOADER_AMD64: ${{ matrix.os_image_bootloader_amd64 }}
       OS_IMAGE_AMD64: ${{ matrix.os_image_amd64 }}
@@ -676,10 +629,6 @@ jobs:
       # mismatch fails as a publickey rejection after the provisioning wait
       # rather than at validation.
       NODE_USER: ${{ vars.QUALIFY_E2E_NODE_USER }}
-      # What the run needs to execute on, which is the stream's capabilities,
-      # one key each rather than one packed string. The suite takes them joined
-      # as -e2e.capabilities, which the step below assembles, and ARCH is
-      # needed on its own anyway, for SITE_ARCH.
       ARCH: ${{ matrix.arch }}
       PROVIDER: ${{ matrix.provider }}
       GPU: ${{ matrix.gpu }}
@@ -692,14 +641,9 @@ jobs:
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
       # staged onto the node as an archive. The node's own pull is CAPNICo,
       # which is published to GHCR alone, so the GHCR login below stays either
-      # way.
-      # NVCR holds every build, so a commit between releases has an image.
+      # way. NVCR holds every build, so a commit between releases has an
+      # image, which is why it is the default.
       SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || vars.QUALIFY_E2E_IMAGE_REGISTRY || 'nvcr' }}
-      # One value for the archive site-inputs pulls and the reference the suite
-      # bootstraps with. Named for the component, as -e2e.versions and the
-      # config field are; the make variable it feeds keeps the SITE_ prefix its
-      # siblings share, so the two names meet at the site-inputs step below.
-      #
       CAPI_PROVISIONED_VERSION: ${{ matrix.capi_provisioned }}
       # The NGC org the NVCR images are published under. A repository
       # variable, not the nvcr environment's NVKE_NGC_ORG: that environment
@@ -724,11 +668,8 @@ jobs:
       # log header, and only a secret is masked there. A variable masked by a
       # step is still in the clear in every header before that step.
       FORGE_JUMP_HOST: ${{ secrets.FORGE_JUMP_HOST }}
-      # The tbot join token. Names a Teleport resource rather than granting
-      # anything on its own -- joining also requires this repository's OIDC
-      # identity, which is what the token is bound to. A secret for the same
-      # reason as the jump host.
-      FORGE_TELEPORT_JOIN_TOKEN: ${{ secrets.FORGE_TELEPORT_JOIN_TOKEN }}
+      # Names a Teleport provision token resource, not a secret itself.
+      FORGE_TELEPORT_JOIN_TOKEN: ${{ vars.FORGE_TELEPORT_JOIN_TOKEN }}
       # The jump host login, read by environments/forge.yaml beside
       # FORGE_JUMP_HOST. root because that is the only login the bot's role
       # grants, and the probe confirmed the certificate carries it. No
@@ -756,7 +697,20 @@ jobs:
       FORGE_YTL_VPC_ID: ${{ vars.FORGE_YTL_VPC_ID }}
       FORGE_YTL_VPC_PREFIX_ID: ${{ vars.FORGE_YTL_VPC_PREFIX_ID }}
       FORGE_YTL_SSH_KEY_GROUP_ID: ${{ vars.FORGE_YTL_SSH_KEY_GROUP_ID }}
-      FORGE_YTL_JUMP_HOST: ${{ vars.FORGE_YTL_JUMP_HOST }}
+      # A secret, like FORGE_JUMP_HOST, not a variable.
+      FORGE_YTL_JUMP_HOST: ${{ secrets.FORGE_YTL_JUMP_HOST }}
+      # root for the same reason as FORGE_TELEPORT_LOGIN: the same bot reaches
+      # both jump hosts through rg-k8aas-bot-ssh-root, whose only login is
+      # root. Unset falls back to tsh's default, the runner's local user,
+      # which Teleport denies.
+      FORGE_YTL_TELEPORT_LOGIN: root
+      FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID }}
+      FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID }}
+      FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID }}
+      # DSX_, the second provider. Its identifiers follow the same split as
+      # Forge's: the jump host is a secret, read by environments/dsx.yaml
+      # beside the rest, and everything else is a variable naming
+      # infrastructure rather than granting anything.
       DSX_ORG_ID: ${{ vars.DSX_ORG_ID }}
       DSX_REDSTONE_DEV1_DH2_SITE_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_SITE_ID }}
       DSX_REDSTONE_DEV1_DH2_TENANT_ID: ${{ vars.DSX_REDSTONE_DEV1_DH2_TENANT_ID }}
@@ -767,19 +721,19 @@ jobs:
       DSX_REDSTONE_DEV1_DH2_NODE_USER: ${{ vars.DSX_REDSTONE_DEV1_DH2_NODE_USER }}
       DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN: ${{ vars.DSX_REDSTONE_DEV1_DH2_TELEPORT_LOGIN }}
       DSX_REDSTONE_DEV1_DH2_JUMP_HOST: ${{ secrets.DSX_REDSTONE_DEV1_DH2_JUMP_HOST }}
-      # root for the same reason as FORGE_TELEPORT_LOGIN: the same bot reaches
-      # both jump hosts through rg-k8aas-bot-ssh-root, whose only login is
-      # root. Unset falls back to tsh's default, the runner's local user,
-      # which Teleport denies.
-      FORGE_YTL_TELEPORT_LOGIN: root
-      FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID }}
-      FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID }}
-      FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Read by `qualify result` below as --started-at, for the case where
+      # Ginkgo never runs far enough to write its own StartTime (a Forge
+      # provisioning failure, a wedged runner) -- see that command's own doc.
+      - name: Record the run's start time
+        id: start-time
+        shell: bash
+        run: echo "started-at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_OUTPUT}"
 
       # Three `docker save` archives of multi-hundred-megabyte images, written
       # to the workspace and read back by dind. Reported rather than freed:
@@ -803,50 +757,49 @@ jobs:
             go.work.sum
             **/go.sum
 
-      # tsh is the relay: `teleport.Dialer` shells out to it to open a byte
-      # stream to the node's sshd through the jump host. Pinned, and checked,
-      # because an unpinned client against a pinned cluster is a failure mode
-      # that surfaces as an unexplained relay error deep in a 40-minute run.
-      # Matched to the cluster's server version rather than merely within the
-      # supported skew. The version and its digest live in
-      # make/tool-versions.mk, which is where every other pinned tool's do.
-      # tbot as well as tsh: the harness relays with tsh, and the step below
-      # runs tbot as the daemon that keeps the identity fresh. Both come out
-      # of the same tarball, so one pin covers the join and the relay.
-      - name: Install tsh and tbot
-        if: env.DRY_RUN != 'true'
+      - name: Download the plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: qualify-plan-${{ github.run_id }}
+
+      # Confirms every artifact the plan names is published, before any
+      # machine is taken. A plan that names something unpublished otherwise
+      # fails an hour in, on hardware, with the failure looking like a
+      # provisioning fault. It asks the registry for the locations the plan
+      # recorded, so what it confirms is that the run can pull them.
+      #
+      # Always, in both modes, because nothing else asks. What the mode
+      # changes is the budget: a release's artifacts were published when it
+      # was cut, so a miss is a fault to report now, while a beta's
+      # publishers may still be running, so a miss means not yet. The
+      # os-image bake is the long pole at roughly ninety minutes.
+      #
+      # Checked once per stream rather than once per run: the plan it checks
+      # is the whole run's, so a run with more than one stream repeats this.
+      # Cheap relative to everything after it, and the alternative is a
+      # separate ungated job, which would need its own approval or would put
+      # NGC_API_KEY back outside the gate.
+      - name: Check every artifact the plan names
         shell: bash
+        env:
+          # Both registries hold private repositories, so neither answers
+          # anonymously. These are the same credentials the lanes log in with.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
+          # A commit-resolved plan may have been made by the tag push that
+          # started the publishers, so give them time. A tag-resolved one asks
+          # once.
+          #
+          # A dry run asks once either way. The wait is there to keep a run from
+          # failing on an artifact that is still publishing, and a dry run takes
+          # no machine to protect, so waiting out a bake would only make the
+          # cheap way of exercising this the slow one.
+          WAIT: >-
+            ${{ (needs.plan.outputs.dry-run != 'true'
+                 && needs.plan.outputs.commit != '' && '90m') || '0' }}
         run: |
-          set -Eeuo pipefail
-          version="$(make --no-print-directory print-TELEPORT_VERSION)"
-          # A committed digest, not the CDN's own .sha256 -- same host, so the
-          # same compromise boundary. make/tool-versions.mk owns both, next to
-          # each other, so a bump cannot move one without the other.
-          expected="$(make --no-print-directory print-TELEPORT_SHA256_AMD64)"
-          tar="teleport-v${version}-linux-amd64-bin.tar.gz"
-          tmp="$(mktemp -d)"
-
-          curl -fsSL --connect-timeout 20 --max-time 300 --retry 8 --retry-all-errors --retry-max-time 240 \
-            -o "${tmp}/${tar}" "https://cdn.teleport.dev/${tar}"
-          if [ -z "${expected}" ]; then
-            echo "::error::no checksum entry for ${tar}"
-            exit 1
-          fi
-          actual="$(sha256sum "${tmp}/${tar}" | awk '{print $1}')"
-          if [ "${actual}" != "${expected}" ]; then
-            echo "::error::checksum mismatch for ${tar}"
-            exit 1
-          fi
-
-          tar -C "${tmp}" -xzf "${tmp}/${tar}" teleport/tsh teleport/tbot
-          # /usr/local/bin is not writable by the runner user on the
-          # self-hosted runners, so it goes somewhere that always is -- the
-          # same place secrets.yml puts gitleaks. GITHUB_PATH reaches the
-          # steps after this one, so the version check below uses the path.
-          mkdir -p "${HOME}/.local/bin"
-          install -m 0755 "${tmp}/teleport/tsh" "${tmp}/teleport/tbot" "${HOME}/.local/bin/"
-          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
-          "${HOME}/.local/bin/tsh" version
+          set -euo pipefail
+          go run ./release/cmd/qualify verify --plan plan.json --wait "${WAIT}"
 
       - name: Resolve the controller version
         shell: bash
@@ -907,21 +860,15 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          # FORGE_JUMP_HOST is a secret, so the log masks it without being
-          # asked. FORGE_YTL_JUMP_HOST is a repository variable and gets none
-          # of that, so it is masked here, before any step can print it.
-          if [ -n "${FORGE_YTL_JUMP_HOST}" ]; then
-            echo "::add-mask::${FORGE_YTL_JUMP_HOST}"
-          fi
+          # FORGE_JUMP_HOST and DSX_REDSTONE_DEV1_DH2_JUMP_HOST are secrets, so
+          # the log masks them without being asked. Nothing else here needs
+          # masking: every other identifier names infrastructure rather than
+          # granting anything.
 
           # The join token allows refs/heads/main, refs/pull/*/merge and a
           # repo-wide beta tag, and nothing else, so a dispatch from any other
-          # branch mints nothing. Checked here because the join failure names
-          # neither the ref nor the rule, and the dispatch UI offers every
-          # branch. The patterns are the token's own, so a change there is a
-          # change here.
-          #
-          # A dry run joins no Teleport, so it can run from any branch.
+          # branch mints nothing. The patterns are the token's own, so a
+          # change there is a change here.
           if [ "${DRY_RUN}" != "true" ]; then
             case "${REF}" in
               refs/heads/main | refs/pull/*/merge | refs/tags/v*-beta.*) ;;
@@ -1085,9 +1032,9 @@ jobs:
       # is the Makefile's SITE_NVKECTL.
       #
       # The reference comes from the plan rather than being built here, so the
-      # artifact this pulls is the one the verify job already waited for. Every
-      # location in a plan carries a scheme and oras takes a bare reference, so
-      # the scheme is dropped.
+      # artifact this pulls is the one "Check every artifact the plan names"
+      # already waited for. Every location in a plan carries a scheme and oras
+      # takes a bare reference, so the scheme is dropped.
       - name: Resolve the nvkectl version
         shell: bash
         run: |
@@ -1114,80 +1061,6 @@ jobs:
             echo "SITE_NVKECTL=${SITE_INPUTS}/nvkectl/nvkectl-linux-${SITE_ARCH}"
           } >> "${GITHUB_ENV}"
           echo "staging the published nvkectl ${CLI_VERSION} from ${ref}"
-
-      # No stored identity: tbot joins with the repository's OIDC token
-      # against a join token named by FORGE_TELEPORT_JOIN_TOKEN, whose bot
-      # holds a role granting root on the jump hosts labelled for it -- one
-      # of which is the one this lane uses.
-      #
-      # A DAEMON, NOT teleport-actions/auth. That action mints exactly one
-      # certificate and stamps it disallow-reissue, and the cluster caps
-      # every certificate at the shortest max_session_ttl across the bot's
-      # roles -- 2h, set by rg-nke-ssh-sudo, a role that matches no node and
-      # is carried only for parity with the GitLab bot. Asking for 4h
-      # measurably returns 1h59m. A `full` run's 150-minute budget outlives
-      # that, and the relay would start failing partway through.
-      #
-      # tbot in daemon mode renews instead, rewriting the same identity file
-      # every 20 minutes, so the absolute TTL stops mattering. The dialer
-      # starts a fresh `tsh` per dial and reads TELEPORT_IDENTITY_FILE, so it
-      # picks the new file up with no coordination; sessions already open are
-      # unaffected, since the cluster sets no disconnect_expired_cert.
-      #
-      # Every element of this config was verified against the cluster's 18.11
-      # server by forge-connectivity-probe.yml before the lane was changed.
-      - name: Start the Teleport identity daemon
-        if: env.DRY_RUN != 'true'
-        shell: bash
-        env:
-          TBOT_DIR: ${{ runner.temp }}/tbot
-        run: |
-          set -Eeuo pipefail
-          mkdir -p "${TBOT_DIR}"
-          cat > "${RUNNER_TEMP}/tbot.yaml" <<EOF
-          version: v2
-          proxy_server: ${FORGE_TELEPORT_PROXY}
-          onboarding:
-            join_method: github
-            token: ${FORGE_TELEPORT_JOIN_TOKEN}
-          # Nothing to persist: the bot re-joins with the runner's OIDC token,
-          # so there is no state worth keeping and none left on disk.
-          storage:
-            type: memory
-          # 1h is what the cluster grants whatever is asked for. The interval
-          # is the part that matters: the file on disk is never within 40
-          # minutes of expiring, however long the run lasts.
-          credential_lifetime:
-            ttl: 1h
-            renewal_interval: 20m
-          services:
-            - type: identity
-              destination:
-                type: directory
-                path: ${TBOT_DIR}
-          EOF
-
-          tbot start -c "${RUNNER_TEMP}/tbot.yaml" >"${RUNNER_TEMP}/tbot.log" 2>&1 &
-          echo $! > "${RUNNER_TEMP}/tbot.pid"
-
-          for _ in $(seq 1 30); do
-            [ -s "${TBOT_DIR}/identity" ] && break
-            sleep 2
-          done
-          if [ ! -s "${TBOT_DIR}/identity" ]; then
-            echo "::error::tbot wrote no identity in 60s; the run cannot reach the jump host"
-            sed 's/^/  /' "${RUNNER_TEMP}/tbot.log"
-            exit 1
-          fi
-
-          # What teleport-actions/auth used to export, and what both tsh and
-          # the dialer read. config.go deliberately leaves the identity path
-          # empty so that it comes from here.
-          {
-            echo "TELEPORT_PROXY=${FORGE_TELEPORT_PROXY}"
-            echo "TELEPORT_IDENTITY_FILE=${TBOT_DIR}/identity"
-          } >> "${GITHUB_ENV}"
-          tsh --proxy "${FORGE_TELEPORT_PROXY}" --identity "${TBOT_DIR}/identity" status
 
       # With image-registry ghcr, site-inputs pulls the controller and
       # capi-provisioned images from here, both private. The node needs no
@@ -1252,12 +1125,120 @@ jobs:
             SITE_PROVISIONED_VERSION="${CAPI_PROVISIONED_VERSION}" \
             SITE_INPUTS="${SITE_INPUTS}"
 
+      # tsh is the relay: `teleport.Dialer` shells out to it to open a byte
+      # stream to the node's sshd through the jump host. Pinned, and checked,
+      # because an unpinned client against a pinned cluster is a failure mode
+      # that surfaces as an unexplained relay error deep in a 40-minute run.
+      # Matched to the cluster's server version rather than merely within the
+      # supported skew. The version and its digest live in
+      # make/tool-versions.mk, which is where every other pinned tool's do.
+      # tbot as well as tsh: the harness relays with tsh, and the step below
+      # runs tbot as the daemon that keeps the identity fresh. Both come out
+      # of the same tarball, so one pin covers the join and the relay.
+      - name: Install tsh and tbot
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          version="$(make --no-print-directory print-TELEPORT_VERSION)"
+          # A committed digest, not the CDN's own .sha256 -- same host, so the
+          # same compromise boundary. make/tool-versions.mk owns both, next to
+          # each other, so a bump cannot move one without the other.
+          expected="$(make --no-print-directory print-TELEPORT_SHA256_AMD64)"
+          tar="teleport-v${version}-linux-amd64-bin.tar.gz"
+          tmp="$(mktemp -d)"
+
+          curl -fsSL --connect-timeout 20 --max-time 300 --retry 8 --retry-all-errors --retry-max-time 240 \
+            -o "${tmp}/${tar}" "https://cdn.teleport.dev/${tar}"
+          if [ -z "${expected}" ]; then
+            echo "::error::no checksum entry for ${tar}"
+            exit 1
+          fi
+          actual="$(sha256sum "${tmp}/${tar}" | awk '{print $1}')"
+          if [ "${actual}" != "${expected}" ]; then
+            echo "::error::checksum mismatch for ${tar}"
+            exit 1
+          fi
+
+          tar -C "${tmp}" -xzf "${tmp}/${tar}" teleport/tsh teleport/tbot
+          mkdir -p "${HOME}/.local/bin"
+          install -m 0755 "${tmp}/teleport/tsh" "${tmp}/teleport/tbot" "${HOME}/.local/bin/"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.local/bin/tsh" version
+
+      # No stored identity: tbot joins with the repository's OIDC token
+      # against a join token named by FORGE_TELEPORT_JOIN_TOKEN, whose bot
+      # holds a role granting root on the jump hosts labelled for it -- one
+      # of which is the one this lane uses.
+      #
+      # A DAEMON, NOT teleport-actions/auth. That action mints exactly one
+      # certificate and stamps it disallow-reissue, and the cluster caps
+      # every certificate at the shortest max_session_ttl across the bot's
+      # roles -- 2h, set by rg-nke-ssh-sudo, a role that matches no node and
+      # is carried only for parity with the GitLab bot. Asking for 4h
+      # measurably returns 1h59m. A `full` run's 150-minute budget outlives
+      # that, and the relay would start failing partway through.
+      #
+      # tbot in daemon mode renews instead, rewriting the same identity file
+      # every 20 minutes, so the absolute TTL stops mattering. The dialer
+      # starts a fresh `tsh` per dial and reads TELEPORT_IDENTITY_FILE, so it
+      # picks the new file up with no coordination; sessions already open are
+      # unaffected, since the cluster sets no disconnect_expired_cert.
+      #
+      # Every element of this config was verified against the cluster's 18.11
+      # server by forge-connectivity-probe.yml before the lane was changed.
+      - name: Start the Teleport identity daemon
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        env:
+          TBOT_DIR: ${{ runner.temp }}/tbot
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "${TBOT_DIR}"
+          cat > "${RUNNER_TEMP}/tbot.yaml" <<EOF
+          version: v2
+          proxy_server: ${FORGE_TELEPORT_PROXY}
+          onboarding:
+            join_method: github
+            token: ${FORGE_TELEPORT_JOIN_TOKEN}
+          storage:
+            type: memory
+          credential_lifetime:
+            ttl: 1h
+            renewal_interval: 20m
+          services:
+            - type: identity
+              destination:
+                type: directory
+                path: ${TBOT_DIR}
+          EOF
+
+          tbot start -c "${RUNNER_TEMP}/tbot.yaml" >"${RUNNER_TEMP}/tbot.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/tbot.pid"
+
+          for _ in $(seq 1 30); do
+            [ -s "${TBOT_DIR}/identity" ] && break
+            sleep 2
+          done
+          if [ ! -s "${TBOT_DIR}/identity" ]; then
+            echo "::error::tbot wrote no identity in 60s; the run cannot reach the jump host"
+            sed 's/^/  /' "${RUNNER_TEMP}/tbot.log"
+            exit 1
+          fi
+
+          {
+            echo "TELEPORT_PROXY=${FORGE_TELEPORT_PROXY}"
+            echo "TELEPORT_IDENTITY_FILE=${TBOT_DIR}/identity"
+          } >> "${GITHUB_ENV}"
+          tsh --proxy "${FORGE_TELEPORT_PROXY}" --identity "${TBOT_DIR}/identity" status
+
       # Where each staged image came from, and nothing else. Versions are
       # -e2e.versions keys, the jump host is the resolved site's and comes
       # from that provider's environment file, and every secret is read from
       # the environment by the suite itself -- see the const block at the top
       # of site_controller_test.go.
       - name: Write the e2e config
+        if: env.DRY_RUN != 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -1333,10 +1314,10 @@ jobs:
           IN_OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 }}
           IN_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 }}
           IN_NVKE_VERSION: ${{ inputs.nvke-version }}
-          IN_RESOLUTION: ${{ inputs.resolution }}
-          VAR_RESOLUTION: ${{ vars.QUALIFY_E2E_RESOLUTION }}
           IN_SCOPE: ${{ inputs.scope }}
           IN_DRY_RUN: ${{ inputs.dry-run }}
+          IN_RESOLUTION: ${{ inputs.resolution }}
+          VAR_RESOLUTION: ${{ vars.QUALIFY_E2E_RESOLUTION }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
           VAR_KEEP_SITE: ${{ vars.QUALIFY_E2E_KEEP_SITE }}
           IN_IMAGE_REGISTRY: ${{ inputs.image-registry }}
@@ -1366,10 +1347,10 @@ jobs:
           # come from its matrix entry, which is in the env above.
           NVKE_VERSION: ${{ needs.plan.outputs.nvke-version }}
           SCOPE: ${{ needs.plan.outputs.scope }}
-          RESOLUTION: ${{ needs.plan.outputs.resolution }}
           STREAM: ${{ matrix.stream }}
           COMBINATION: ${{ matrix.combination }}
           VAR_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
+          VAR_TELEPORT_JOIN_TOKEN: ${{ vars.FORGE_TELEPORT_JOIN_TOKEN }}
         run: |
           set -Eeuo pipefail
 
@@ -1390,7 +1371,7 @@ jobs:
             "NGC org|QUALIFY_E2E_NGC_ORG||VAR_NGC_ORG|QUALIFY_E2E_NGC_ORG"
             "Teleport proxy|FORGE_TELEPORT_PROXY||VAR_TELEPORT_PROXY|FORGE_TELEPORT_PROXY"
             "jump host|FORGE_JUMP_HOST|||"
-            "Teleport join token|FORGE_TELEPORT_JOIN_TOKEN|||"
+            "Teleport join token|FORGE_TELEPORT_JOIN_TOKEN||VAR_TELEPORT_JOIN_TOKEN|FORGE_TELEPORT_JOIN_TOKEN"
             "Forge org|FORGE_ORG_ID||FORGE_ORG_ID|FORGE_ORG_ID"
             "Forge site|FORGE_SITE_ID||FORGE_SITE_ID|FORGE_SITE_ID"
             "Forge VPC|FORGE_VPC_ID||FORGE_VPC_ID|FORGE_VPC_ID"
@@ -1433,7 +1414,7 @@ jobs:
             "ytl VPC|FORGE_YTL_VPC_ID||FORGE_YTL_VPC_ID|FORGE_YTL_VPC_ID"
             "ytl VPC prefix|FORGE_YTL_VPC_PREFIX_ID||FORGE_YTL_VPC_PREFIX_ID|FORGE_YTL_VPC_PREFIX_ID"
             "ytl ssh key group|FORGE_YTL_SSH_KEY_GROUP_ID||FORGE_YTL_SSH_KEY_GROUP_ID|FORGE_YTL_SSH_KEY_GROUP_ID"
-            "ytl jump host|FORGE_YTL_JUMP_HOST||FORGE_YTL_JUMP_HOST|FORGE_YTL_JUMP_HOST"
+            "ytl jump host|FORGE_YTL_JUMP_HOST|||"
             "ytl Teleport login|FORGE_YTL_TELEPORT_LOGIN|||"
             "ytl amd64 cpu instance type|FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID||FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID|FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID"
             "ytl arm64 cpu instance type|FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID||FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID|FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID"
@@ -1529,7 +1510,7 @@ jobs:
                   ;;
               esac
               if [ "${withhold}" = 1 ]; then
-                source="repository secret ${resolved}"
+                source="secret ${resolved}"
               fi
               # A pull_request run has no inputs, so a dry run there came from
               # its label.
@@ -1551,9 +1532,11 @@ jobs:
               printf '  %-22s = %s\n' "${label}" "${value}"
               printf '  %-22s   [%s]\n' "" "${source}"
             done
-            echo
-            echo "--- e2e-config.yaml (what the suite reads) ---"
-            cat controller/test/e2e/e2e-config.yaml
+            if [ "${DRY_RUN}" != "true" ]; then
+              echo
+              echo "--- e2e-config.yaml (what the suite reads) ---"
+              cat controller/test/e2e/e2e-config.yaml
+            fi
           } | tee "${OUT}"
 
       # Three nested timeouts, shortest first, because only the shortest one
@@ -1699,6 +1682,55 @@ jobs:
             done
           done < <(compgen -v | grep -E '_JUMP_HOST$|^SSA_ISSUER$' || true)
 
+      # Writes qualify-result.json from this leg's plan entry and Ginkgo
+      # report, after credentials are scrubbed out of the report -- the result
+      # record is kept (and uploaded below) even on a dry run's or a PR leg's
+      # untrusted ref, just never published past this job. A missing report
+      # (Ginkgo never ran) still produces an errored result; see `qualify
+      # result`'s own doc.
+      - name: Record the qualification result
+        if: always() && env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          go run ./release/cmd/qualify result \
+            --plan plan.json \
+            --report controller/test/e2e/qualify-e2e.report.json \
+            --combination "${{ matrix.combination }}" \
+            --stream "${{ matrix.stream }}" \
+            --started-at "${{ steps.start-time.outputs.started-at }}" \
+            --output qualify-result.json
+
+      # Only a trusted ref (see QUALIFY_PUBLISH_TRUSTED above) ever reaches
+      # this: the WIF provider in the testgrid repo denies the token exchange
+      # for anything else, so there is no point spending a step finding that
+      # out for every labelled PR leg.
+      - name: Authenticate to GCP (TestGrid)
+        if: always() && env.DRY_RUN != 'true' && env.QUALIFY_PUBLISH_TRUSTED == 'true'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          # dsx-oss-github-<env>/dsx-oss-nvke, not aicr's own pool/provider --
+          # testgrid repo's wif-nvke.tf gives nvke its own pool so the
+          # workload_identity_provider path carries no aicr codename and the
+          # two repos share no federation resources.
+          workload_identity_provider: projects/${{ vars.TESTGRID_GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/dsx-oss-github-prod/providers/dsx-oss-nvke
+          service_account: dsx-oss-nvke-prod@${{ vars.TESTGRID_GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+      # `qualify publish` reads TESTGRID_BUCKET itself and no-ops (exit 0) for
+      # an errored result (Ginkgo never ran) -- see its own doc. Nothing
+      # here needs to branch on that.
+      - name: Publish the qualification result
+        if: always() && env.DRY_RUN != 'true' && env.QUALIFY_PUBLISH_TRUSTED == 'true'
+        shell: bash
+        env:
+          TESTGRID_BUCKET: ${{ vars.TESTGRID_BUCKET }}
+        run: |
+          set -Eeuo pipefail
+          go run ./release/cmd/qualify publish \
+            --result qualify-result.json \
+            --junit controller/test/e2e/qualify-e2e.junit.xml \
+            --stream "${{ matrix.stream }}"
+
       # The Ginkgo log carries every phase boundary, remote command and
       # failure. An hour-long run is worth more than a scroll-back in the job
       # view, and a green one is the reference for diagnosing the next red
@@ -1725,6 +1757,7 @@ jobs:
             controller/test/e2e/nvkectl-diagnostics.tar.gz
             controller/test/e2e/tenant-diagnostics.json
             controller/test/e2e/site-cluster-state.txt
+            qualify-result.json
             ${{ runner.temp }}/run-inputs.txt
             ${{ runner.temp }}/tbot.log
           if-no-files-found: warn

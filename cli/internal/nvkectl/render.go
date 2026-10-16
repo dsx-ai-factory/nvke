@@ -41,6 +41,7 @@ type renderDeployPathOptions struct {
 	runDir      string
 	plainHTTP   []string
 	ephemeral   bool
+	creds       string
 }
 
 func newRenderDeployPathCmd() *cobra.Command {
@@ -56,12 +57,21 @@ supplies the site name, the control-plane VIP and the SPIRE trust domain;
 the stack config supplies what only the stack needs: the NICo API, and
 optionally a mirror and image overrides. The credentials come from
 NVKECTL_NICO_TOKEN, NVKECTL_NODE_USER, NVKECTL_NODE_PASSWORD and
-NVKECTL_DATABASE_PASSWORD. Items get a site-values.yaml; template items
-become manifests. SPIRE gets the CA named by NVKECTL_SPIRE_CA_CERT_FILE and
-NVKECTL_SPIRE_CA_KEY_FILE by file reference: helm reads it at install
-time. The stack joins the bootstrap's trust domain: spire.trustDomain, set
-once before the bootstrap, else the default both commands share, with a
+NVKECTL_DATABASE_PASSWORD; the CA from the files NVKECTL_SPIRE_CA_CERT_FILE
+and NVKECTL_SPIRE_CA_KEY_FILE name. Items get a site-values.yaml that names
+no credential; template items become manifests. The credentials become
+Secrets in a site-credentials item the render adds after the first one:
+nvke-database for Postgres, Temporal and the controller, spire-upstream-ca
+for the CA. The stack joins the bootstrap's trust domain: spire.trustDomain,
+set once before the bootstrap, else the default both commands share, with a
 warning.
+
+--credentials external renders for a tree that lives in a repository: no
+credential variable is read, no Secret is written, no .gitignore and no path
+of this machine, and the command ends by listing the Secrets the cluster has
+to hold, namespace, name, keys and type. The install creates their
+namespaces in its first item, nvke-base-config, so the operator's secret
+store delivers each Secret after that item and before the one that reads it.
 
 --arch is the nodes' architecture, linux/amd64 or linux/arm64. It selects
 the release artifacts and the SPIRE TPM attestor checksum. deploy/nvke-deploy.sh
@@ -80,14 +90,15 @@ of every chart it carries, with a warning when release.yaml pins another;
 the pin decides only for a chart the release lacks. --nvkr-run-dir reads a
 completed NVKR Run or a directory of OCI layouts instead of a registry.
 
---out holds the site's secrets: it is created 0700 and is for one install.
-An --out under a shared temp directory is refused; use a directory only you
-can read, for example ~/.local/state/nvke/renders/<site>. The command ends
-by naming the files under --out that hold a credential; delete --out after
-the install. --out gets a .gitignore that ignores everything, so a
-repository does not pick it up by accident. Committed chart paths are
-written absolute, so --out can live anywhere. Problems are reported all at
-once and nothing is left on failure. Then install it:
+--out is created 0700. An --out under a shared temp directory is refused;
+use a directory only you can read, for example
+~/.local/state/nvke/renders/<site>. With rendered credentials, the default,
+--out holds the site's secrets and is for one install: the command ends by
+naming the files under --out that hold a credential, --out gets a
+.gitignore that ignores everything, and you delete --out after the install.
+Committed chart paths are written absolute, so --out can live anywhere; an
+external tree keeps them as committed. Problems are reported all at once and
+nothing is left on failure. Then install it:
 deploy/nvke-deploy.sh install --deploy-path OUT.`,
 		Example: `  nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json --arch linux/arm64 --release release.json --out ~/.local/state/nvke/renders/my-site
   nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json --arch linux/amd64 --release release.json --nvkr-run-dir .nvkr/runs/demo-01 --out ~/.local/state/nvke/renders/my-site`,
@@ -106,6 +117,7 @@ deploy/nvke-deploy.sh install --deploy-path OUT.`,
 	cmd.Flags().StringVar(&opts.runDir, "nvkr-run-dir", "", "A completed NVKR Run or a directory of OCI layouts to read artifacts from instead of a registry")
 	cmd.Flags().StringSliceVar(&opts.plainHTTP, "plain-http-registries", nil, "Registry hosts served over plain HTTP; nothing is probed")
 	cmd.Flags().BoolVar(&opts.ephemeral, "ephemeral", false, "The caller removes --out when it is done; the summary does not ask the operator to")
+	cmd.Flags().StringVar(&opts.creds, "credentials", deploypath.CredentialsRendered, "Where the site's credentials go: rendered (Secret manifests in the site-credentials item) or external (none written; the Secrets the cluster must hold are listed)")
 	for _, flag := range []string{"deploy-path", "out"} {
 		_ = cmd.MarkFlagRequired(flag)
 	}
@@ -128,10 +140,15 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 	if !slices.Contains(nvkrrelease.Archs, opts.arch) {
 		return fmt.Errorf("--arch %s is not one of %s", opts.arch, strings.Join(nvkrrelease.Archs, ", "))
 	}
-	ro := deploypath.RenderOptions{DeployPath: opts.deployPath, Out: opts.out, Arch: opts.arch, Log: cmd.ErrOrStderr(), AllowTempOut: os.Getenv("NVKECTL_RENDER_ALLOW_TEMP_OUT") == "1"}
+	ro := deploypath.RenderOptions{DeployPath: opts.deployPath, Out: opts.out, Arch: opts.arch, Log: cmd.ErrOrStderr(), AllowTempOut: os.Getenv("NVKECTL_RENDER_ALLOW_TEMP_OUT") == "1", Credentials: opts.creds}
 	var inputs []string
 	if opts.siteSpec != "" {
-		spec, err := sitespec.Load(opts.siteSpec)
+		// An external render reads no CA file, so the spec is loaded without it.
+		load := sitespec.Load
+		if opts.creds == deploypath.CredentialsExternal {
+			load = sitespec.LoadDescription
+		}
+		spec, err := load(opts.siteSpec)
 		if err != nil {
 			return err
 		}
@@ -169,9 +186,15 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 		}
 		fmt.Fprintf(out, "images: %s\n", strings.Join(refs, ", "))
 	}
-	if opts.ephemeral {
+	for _, e := range result.Expected {
+		fmt.Fprintf(out, "expected in the cluster once its namespace exists and before the item that reads it: %s\n", e)
+	}
+	switch {
+	case len(result.Credentials) == 0:
+		fmt.Fprintf(out, "%s holds no credential.\n", opts.out)
+	case opts.ephemeral:
 		fmt.Fprintf(out, "%s holds this site's credentials: %s; it is removed when the install ends.\n", opts.out, strings.Join(result.Credentials, ", "))
-	} else {
+	default:
 		fmt.Fprintf(out, "%s holds this site's credentials: %s. Delete it after the install.\n", opts.out, strings.Join(result.Credentials, ", "))
 	}
 	return nil

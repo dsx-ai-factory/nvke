@@ -43,8 +43,14 @@ const (
 
 	// machineSpireAgentIDPathAnnotation is the Machine contract the controller reads to
 	// create the node-agent workload entry under its TPM-attested SPIRE agent.
-	machineSpireAgentIDPathAnnotation = "nke.nvidia.com/spire-agent-spiffe-id-path"
-	tpmSpireAgentPathPrefix           = "/spire/agent/tpm/"
+	machineSpireAgentIDPathAnnotation = "nvke.nvidia.com/spire-agent-spiffe-id-path"
+
+	// legacyMachineSpireAgentIDPathAnnotation is the same contract under the
+	// domain the controller wrote before the nvke.nvidia.com rename. Machines
+	// annotated by an earlier build still carry it, so it is read, never
+	// written.
+	legacyMachineSpireAgentIDPathAnnotation = "nke.nvidia.com/spire-agent-spiffe-id-path"
+	tpmSpireAgentPathPrefix                 = "/spire/agent/tpm/"
 )
 
 // MachineReconciler binds a ProvisionedMachine to one host of the inventory.
@@ -405,6 +411,10 @@ func (r *MachineReconciler) reconcileMachineSpireAgentIDPath(
 	if ownerMachine.Annotations == nil {
 		ownerMachine.Annotations = map[string]string{}
 	}
+	// A Machine annotated by an earlier build carries the legacy key; dropping
+	// it here is what moves the Machine over, and leaving it would hand the
+	// controller two keys to choose between.
+	delete(ownerMachine.Annotations, legacyMachineSpireAgentIDPathAnnotation)
 	ownerMachine.Annotations[machineSpireAgentIDPathAnnotation] = want
 	if err := r.client.Patch(ctx, ownerMachine, patch); err != nil {
 		return fmt.Errorf("failed to set the SPIRE agent ID path on Machine %s: %w", ownerMachine.Name, err)

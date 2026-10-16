@@ -2024,26 +2024,6 @@ func errStatus(err error) string {
 	return SuccessStatus
 }
 
-func (s *NodeAgentServer) SetUnsetIsMaster(
-	ctx context.Context,
-	req *pb.SetUnsetIsMasterRequest,
-) (*pb.SetUnsetIsMasterResponse, error) {
-	defer logRPCSpan(ctx, "SetUnsetIsMaster")()
-	if s.NodeStatus.Role != ControlPlaneRole {
-		slog.Error("IsMaster can only be set to true on controlplane nodes")
-		return nil, errors.New("unable to set ismaster on non-controlplane node")
-	}
-
-	s.mu.Lock()
-	s.NodeStatus.IsMaster = req.IsMaster
-	statusCopy := *s.NodeStatus
-	s.mu.Unlock()
-	s.Persister.Persist(&statusCopy) //nolint:all
-
-	slog.Info("IsMaster set", "value", s.NodeStatus.IsMaster)
-	return &pb.SetUnsetIsMasterResponse{}, nil
-}
-
 // bundleIndexUnconfiguredMessage explains an empty BundleIndexFile. The two
 // causes need different advice: with no bundle server the operator has set
 // nothing, but with one set the index is derived from /etc/os-release and that

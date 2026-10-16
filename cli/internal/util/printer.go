@@ -63,7 +63,13 @@ func Print(w io.Writer, f Format, v any) error {
 // FormatAge returns a short human-readable duration since t, matching the
 // bucketed format kubectl uses: seconds, minutes, hours, or days.
 func FormatAge(t time.Time) string {
-	d := max(time.Since(t).Round(time.Second), 0)
+	return FormatDuration(time.Since(t))
+}
+
+// FormatDuration returns d in the bucketed format FormatAge uses: whole
+// seconds, minutes, hours, or days. A negative duration reports 0s.
+func FormatDuration(d time.Duration) string {
+	d = max(d.Round(time.Second), 0)
 	switch {
 	case d < time.Minute:
 		return fmt.Sprintf("%ds", int(d.Seconds()))

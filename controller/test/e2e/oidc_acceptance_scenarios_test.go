@@ -29,7 +29,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
-	liveoidc "github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/oidc"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/oidc"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/tenantauth"
 )
 
@@ -37,23 +37,37 @@ const (
 	oidcIssuerHostEnv = "NKE_E2E_OIDC_ISSUER_HOST"
 	oidcAudience      = "nke-oidc-acceptance"
 	oidcUsername      = "oidc-acceptance-user"
+	oidcGroup         = "oidc-acceptance"
+	oidcPrefix        = "prefixed:"
 	oidcCleanup       = 15 * time.Minute
+
+	oidcSecondAudience = "nke-oidc-acceptance-second"
+	oidcSecondPrefix   = "second:"
+	oidcSecondTenant   = "second"
 )
 
 type oidcAcceptanceRun struct {
-	site            *liveoidc.Site
+	site            *oidc.Site
 	issuer          *testissuer.Server
+	secondIssuer    *testissuer.Server
 	test            tenantTest
-	provider        liveoidc.Provider
+	provider        oidc.Provider
+	prefixed        oidc.Provider
+	second          oidc.Provider
 	clusters        []*api.Cluster
 	failed          bool
 	clusterBFixture *oidcAdminFixture
 }
 
+// clusterBProviders is the fleet-wide list cluster B is created with.
+func (r *oidcAcceptanceRun) clusterBProviders() []oidc.Provider {
+	return []oidc.Provider{r.prefixed, r.second}
+}
+
 type oidcAdminFixture struct {
 	allowedPath string
 	deniedPath  string
-	trust       liveoidc.EndpointTrust
+	trust       oidc.EndpointTrust
 }
 
 var _ = Describe("NVKE OIDC acceptance", Ordered, Serial, Label("oidc-acceptance"), func() {
@@ -72,11 +86,15 @@ var _ = Describe("NVKE OIDC acceptance", Ordered, Serial, Label("oidc-acceptance
 			ListenAddress: "0.0.0.0:0", AdvertiseHost: host, Audience: oidcAudience,
 		}))
 		DeferCleanup(func() { Expect(run.issuer.Close()).To(Succeed()) })
+		run.secondIssuer = expectSucceed(testissuer.Start(testissuer.Config{
+			ListenAddress: "0.0.0.0:0", AdvertiseHost: host, Audience: oidcSecondAudience,
+		}))
+		DeferCleanup(func() { Expect(run.secondIssuer.Close()).To(Succeed()) })
 
 		management := expectSucceed(configuredManagement())
 		restConfig := expectSucceed(kube.RESTConfig(management.Kubeconfig, management.Context))
 		clientset := expectSucceed(kubernetes.NewForConfig(restConfig))
-		run.site = expectSucceed(liveoidc.NewSite(clientset, liveoidc.SiteConfig{
+		run.site = expectSucceed(oidc.NewSite(clientset, oidc.SiteConfig{
 			Namespace: controller.Namespace(), Deployment: controller.Deployment(), Container: controller.Deployment(),
 			ResetForwarders: kube.ResetSharedForwarders,
 		}))
@@ -87,11 +105,21 @@ var _ = Describe("NVKE OIDC acceptance", Ordered, Serial, Label("oidc-acceptance
 
 		timeouts := nvke.Options{Provision: 2 * time.Hour, Delete: time.Hour, Poll: 10 * time.Second}
 		run.test = expectSucceed(setupTenantTest(ctx, management, timeouts))
-		expectSucceed(liveoidc.ReservedUsers(ctx, run.test.k8sClient))
-		run.provider = liveoidc.Provider{
+		expectSucceed(oidc.ReservedUsers(ctx, run.test.k8sClient))
+		run.provider = oidc.Provider{
 			Name: "acceptance", IssuerURL: run.issuer.IssuerURL(), Audiences: []string{run.issuer.Audience()},
 			UsernameClaim: "sub", GroupsClaim: "groups", RequiredClaims: map[string]string{"tenant": "acceptance"},
 			CABundle: string(run.issuer.CAPEM()),
+		}
+		// Cluster B pins the same provider with prefixes. A cluster keeps the
+		// mapping it was created with, so cluster A covers names that land in a
+		// reserved namespace and cluster B covers names moved out of one.
+		run.prefixed = run.provider
+		run.prefixed.UsernamePrefix, run.prefixed.GroupsPrefix = oidcPrefix, oidcPrefix
+		run.second = oidc.Provider{
+			Name: "acceptance-second", IssuerURL: run.secondIssuer.IssuerURL(), Audiences: []string{run.secondIssuer.Audience()},
+			UsernameClaim: "sub", UsernamePrefix: oidcSecondPrefix, GroupsClaim: "groups", GroupsPrefix: oidcSecondPrefix,
+			RequiredClaims: map[string]string{"tenant": oidcSecondTenant}, CABundle: string(run.secondIssuer.CAPEM()),
 		}
 		DeferCleanup(func(ctx SpecContext) {
 			Expect(cleanupOIDCAcceptance(ctx, run.test, &run.clusters, run.failed)).To(Succeed())
@@ -100,19 +128,36 @@ var _ = Describe("NVKE OIDC acceptance", Ordered, Serial, Label("oidc-acceptance
 	})
 
 	It("creates cluster A with external OIDC only", func(ctx SpecContext) {
-		Expect(run.site.Apply(ctx, []liveoidc.Provider{run.provider}, false)).To(Succeed())
+		Expect(run.site.Apply(ctx, []oidc.Provider{run.provider}, false)).To(Succeed())
 		createOIDCAcceptanceCluster(ctx, run, "a")
 	}, NodeTimeout(2*time.Hour))
 
 	It("proves external RBAC and focused rejection controls on cluster A", func(ctx SpecContext) {
+		expectPinnedAuthenticationConfig(ctx, run, run.clusters[0], false, []oidc.Provider{run.provider})
 		fixture := expectSucceed(prepareOIDCAdminFixture(ctx, run, run.clusters[0]))
-		expectValidExternalProbe(ctx, run, fixture, fixture.trust.Endpoint)
-		reservedUsers := expectSucceed(liveoidc.ReservedUsers(ctx, run.test.k8sClient))
-		negativeTokens := make([]testissuer.TokenSpec, 0, 2+2*len(reservedUsers))
+		expectValidExternalProbe(ctx, run, fixture, fixture.trust.Endpoint, "")
+		reservedUsers := expectSucceed(oidc.ReservedUsers(ctx, run.test.k8sClient))
+		reservedPrefixes := oidc.ReservedPrefixes()
+		missingTenant := oidcClaims(oidcUsername)
+		delete(missingTenant, "tenant")
+		wrongTenant := oidcClaims(oidcUsername)
+		wrongTenant["tenant"] = "other"
+		negativeTokens := make([]testissuer.TokenSpec, 0, 4+2*len(reservedPrefixes)+2*len(reservedUsers))
 		negativeTokens = append(negativeTokens,
 			testissuer.TokenSpec{Claims: oidcClaims(oidcUsername), UntrustedKey: true},
 			testissuer.TokenSpec{Claims: oidcClaims(oidcUsername), Audience: []string{"wrong-audience"}},
+			testissuer.TokenSpec{Claims: missingTenant},
+			testissuer.TokenSpec{Claims: wrongTenant},
 		)
+		// Unprefixed, a token can name a reserved namespace directly, and the
+		// API server's CEL rules refuse it. Cluster B maps the same names under
+		// its prefix instead.
+		for _, prefix := range reservedPrefixes {
+			negativeTokens = append(negativeTokens,
+				testissuer.TokenSpec{Claims: oidcClaims(prefix + oidcUsername)},
+				testissuer.TokenSpec{Claims: oidcClaimsWithGroups(oidcUsername, []string{prefix + oidcGroup})},
+			)
+		}
 		for _, subject := range reservedUsers {
 			negativeTokens = append(negativeTokens,
 				testissuer.TokenSpec{Claims: oidcClaims(subject)},
@@ -120,17 +165,13 @@ var _ = Describe("NVKE OIDC acceptance", Ordered, Serial, Label("oidc-acceptance
 			)
 		}
 		for _, tokenSpec := range negativeTokens {
-			expectValidExternalProbe(ctx, run, fixture, fixture.trust.Endpoint)
-			token := expectSucceed(run.issuer.Sign(tokenSpec))
-			result := expectSucceed(liveoidc.ProbeToken(ctx, fixture.trust.Endpoint, fixture.trust.CAData, []byte(token), fixture.allowedPath, fixture.deniedPath))
-			Expect(result.IdentityStatus).To(Equal(http.StatusUnauthorized))
-			Expect(result.AllowedStatus).To(Equal(http.StatusUnauthorized))
-			Expect(result.DeniedStatus).To(Equal(http.StatusUnauthorized))
+			expectValidExternalProbe(ctx, run, fixture, fixture.trust.Endpoint, "")
+			expectRejected(ctx, run.issuer, fixture, fixture.trust.Endpoint, tokenSpec)
 		}
 	}, NodeTimeout(15*time.Minute))
 
-	It("creates cluster B with external and shared OIDC", func(ctx SpecContext) {
-		Expect(run.site.Apply(ctx, []liveoidc.Provider{run.provider}, true)).To(Succeed())
+	It("creates cluster B with shared OIDC and two prefixed external providers", func(ctx SpecContext) {
+		Expect(run.site.Apply(ctx, run.clusterBProviders(), true)).To(Succeed())
 		createOIDCAcceptanceCluster(ctx, run, "b")
 	}, NodeTimeout(2*time.Hour))
 
@@ -138,8 +179,48 @@ var _ = Describe("NVKE OIDC acceptance", Ordered, Serial, Label("oidc-acceptance
 		cluster := run.clusters[1]
 		fixture := expectSucceed(prepareOIDCAdminFixture(ctx, run, cluster))
 		run.clusterBFixture = fixture
-		expectValidExternalProbe(ctx, run, fixture, fixture.trust.Endpoint)
+		expectValidExternalProbe(ctx, run, fixture, fixture.trust.Endpoint, oidcPrefix)
 		expectSPIREAccess(ctx, run, cluster)
+	}, NodeTimeout(15*time.Minute))
+
+	It("maps external usernames and groups under the prefix on cluster B", func(ctx SpecContext) {
+		fixture := run.clusterBFixture
+		Expect(fixture).NotTo(BeNil(), "cluster B's RBAC fixture")
+		endpoint := fixture.trust.Endpoint
+
+		By("keeping the prefixed username out of the binding for the unprefixed one")
+		result := probeToken(ctx, run.issuer, fixture, endpoint, testissuer.TokenSpec{Claims: oidcClaimsWithGroups(oidcUsername, []string{})})
+		Expect(result.IdentityStatus).To(Equal(http.StatusCreated))
+		Expect(result.Username).To(Equal(oidcPrefix + oidcUsername))
+		Expect(result.Groups).To(ConsistOf("system:authenticated"))
+		Expect(result.AllowedStatus).To(Equal(http.StatusForbidden))
+		Expect(result.DeniedStatus).To(Equal(http.StatusForbidden))
+
+		By("moving names cluster A refuses out of the reserved namespaces")
+		result = probeToken(ctx, run.issuer, fixture, endpoint, testissuer.TokenSpec{Claims: oidcClaimsWithGroups("system:admin", []string{"system:masters"})})
+		Expect(result.IdentityStatus).To(Equal(http.StatusCreated))
+		Expect(result.Username).To(Equal(oidcPrefix + "system:admin"))
+		Expect(result.Groups).To(ConsistOf(oidcPrefix+"system:masters", "system:authenticated"))
+		Expect(result.AllowedStatus).To(Equal(http.StatusForbidden))
+		Expect(result.DeniedStatus).To(Equal(http.StatusForbidden))
+	}, NodeTimeout(15*time.Minute))
+
+	It("keeps the second provider's identities and rules apart on cluster B", func(ctx SpecContext) {
+		fixture := run.clusterBFixture
+		Expect(fixture).NotTo(BeNil(), "cluster B's RBAC fixture")
+		endpoint := fixture.trust.Endpoint
+
+		By("mapping the same subject and group from the second issuer to distinct names")
+		expectSecondProviderMapping(ctx, run, fixture, endpoint)
+
+		By("applying each provider's audience and required tenant only to its own tokens")
+		expectRejected(ctx, run.issuer, fixture, endpoint, testissuer.TokenSpec{
+			Claims: oidcClaims(oidcUsername), Audience: []string{oidcSecondAudience},
+		})
+		expectRejected(ctx, run.secondIssuer, fixture, endpoint, testissuer.TokenSpec{
+			Claims: secondClaims(oidcUsername), Audience: []string{oidcAudience},
+		})
+		expectRejected(ctx, run.secondIssuer, fixture, endpoint, testissuer.TokenSpec{Claims: oidcClaims(oidcUsername)})
 	}, NodeTimeout(15*time.Minute))
 
 	It("rejects a real SPIRE token on cluster A", func(ctx SpecContext) {
@@ -166,13 +247,15 @@ var _ = Describe("NVKE OIDC acceptance", Ordered, Serial, Label("oidc-acceptance
 		expectSucceed(run.test.nvke.UpdateControlPlaneDesiredCount(ctx, cluster.ID, desired))
 		Expect(run.test.nvke.WaitForJoinedControlPlaneNodes(ctx, cluster.ID, desired)).To(Succeed())
 
+		expectPinnedAuthenticationConfig(ctx, run, cluster, true, run.clusterBProviders())
 		fixture := run.clusterBFixture
 		nodes := expectSucceed(run.test.nvke.ListClusterNodesByControlPlane(ctx, cluster.ID, true))
 		Expect(nodes).To(HaveLen(desired))
 		for _, node := range nodes {
 			Expect(node.IP).NotTo(BeEmpty())
 			endpoint := "https://" + net.JoinHostPort(node.IP, "6443")
-			expectValidExternalProbe(ctx, run, fixture, endpoint)
+			expectValidExternalProbe(ctx, run, fixture, endpoint, oidcPrefix)
+			expectSecondProviderMapping(ctx, run, fixture, endpoint)
 		}
 		expectSPIREAccess(ctx, run, cluster)
 	}, NodeTimeout(2*time.Hour))
@@ -209,7 +292,7 @@ func prepareOIDCAdminFixture(ctx context.Context, run *oidcAcceptanceRun, cluste
 	if err != nil {
 		return nil, fmt.Errorf("get tenant admin kubeconfig: %w", err)
 	}
-	trust, err := liveoidc.TrustFromKubeconfig(kubeconfig)
+	trust, err := oidc.TrustFromKubeconfig(kubeconfig)
 	if err != nil {
 		return nil, err
 	}
@@ -226,6 +309,13 @@ func prepareOIDCAdminFixture(ctx context.Context, run *oidcAcceptanceRun, cluste
 			Subjects:   []rbacv1.Subject{{Kind: rbacv1.UserKind, APIGroup: rbacv1.GroupName, Name: oidcUsername}},
 			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: "oidc-reader"},
 		},
+		// Cluster B's prefixed identities reach the ConfigMap only through the
+		// prefixed group, never through the unprefixed user binding above.
+		&rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "oidc-prefixed-reader", Namespace: namespace},
+			Subjects:   []rbacv1.Subject{{Kind: rbacv1.GroupKind, APIGroup: rbacv1.GroupName, Name: oidcPrefix + oidcGroup}},
+			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: "oidc-reader"},
+		},
 	}
 	fixture := &oidcAdminFixture{
 		trust:       trust,
@@ -240,23 +330,89 @@ func prepareOIDCAdminFixture(ctx context.Context, run *oidcAcceptanceRun, cluste
 	return fixture, nil
 }
 
-func expectValidExternalProbe(ctx context.Context, run *oidcAcceptanceRun, fixture *oidcAdminFixture, endpoint string) {
+// expectValidExternalProbe proves a valid external token maps under prefix,
+// the cluster's pinned username and groups prefix, and reads only the allowed
+// ConfigMap.
+func expectValidExternalProbe(ctx context.Context, run *oidcAcceptanceRun, fixture *oidcAdminFixture, endpoint, prefix string) {
 	GinkgoHelper()
-	token := expectSucceed(run.issuer.Sign(testissuer.TokenSpec{Claims: oidcClaims(oidcUsername)}))
-	result := expectSucceed(liveoidc.ProbeToken(ctx, endpoint, fixture.trust.CAData, []byte(token), fixture.allowedPath, fixture.deniedPath))
+	result := probeToken(ctx, run.issuer, fixture, endpoint, testissuer.TokenSpec{Claims: oidcClaims(oidcUsername)})
 	Expect(result.IdentityStatus).To(Equal(http.StatusCreated))
-	Expect(result.Username).To(Equal(oidcUsername))
-	Expect(result.Groups).To(ContainElements("oidc-acceptance", "system:authenticated"))
+	Expect(result.Username).To(Equal(prefix + oidcUsername))
+	Expect(result.Groups).To(ConsistOf(prefix+oidcGroup, "system:authenticated"))
 	Expect(result.AllowedStatus).To(Equal(http.StatusOK))
 	Expect(result.DeniedStatus).To(Equal(http.StatusForbidden))
 }
 
+// expectSecondProviderMapping proves the second issuer's token for the same
+// subject and group as the first maps to distinct, second-prefixed names that
+// inherit none of the first provider's access.
+func expectSecondProviderMapping(ctx context.Context, run *oidcAcceptanceRun, fixture *oidcAdminFixture, endpoint string) {
+	GinkgoHelper()
+	result := probeToken(ctx, run.secondIssuer, fixture, endpoint, testissuer.TokenSpec{Claims: secondClaims(oidcUsername)})
+	Expect(result.IdentityStatus).To(Equal(http.StatusCreated))
+	Expect(result.Username).To(Equal(oidcSecondPrefix + oidcUsername))
+	Expect(result.Groups).To(ConsistOf(oidcSecondPrefix+oidcGroup, "system:authenticated"))
+	Expect(result.AllowedStatus).To(Equal(http.StatusForbidden))
+	Expect(result.DeniedStatus).To(Equal(http.StatusForbidden))
+}
+
+func expectRejected(ctx context.Context, issuer *testissuer.Server, fixture *oidcAdminFixture, endpoint string, spec testissuer.TokenSpec) {
+	GinkgoHelper()
+	result := probeToken(ctx, issuer, fixture, endpoint, spec)
+	Expect(result.IdentityStatus).To(Equal(http.StatusUnauthorized))
+	Expect(result.AllowedStatus).To(Equal(http.StatusUnauthorized))
+	Expect(result.DeniedStatus).To(Equal(http.StatusUnauthorized))
+}
+
+func probeToken(ctx context.Context, issuer *testissuer.Server, fixture *oidcAdminFixture, endpoint string, spec testissuer.TokenSpec) oidc.ProbeResult {
+	GinkgoHelper()
+	token := expectSucceed(issuer.Sign(spec))
+	return expectSucceed(oidc.ProbeToken(ctx, endpoint, fixture.trust.CAData, []byte(token), fixture.allowedPath, fixture.deniedPath))
+}
+
+// secondClaims is a valid token for the second provider: the first provider's
+// subject and group, with the second provider's required tenant.
+func secondClaims(username string) map[string]any {
+	claims := oidcClaims(username)
+	claims["tenant"] = oidcSecondTenant
+	return claims
+}
+
 func oidcClaims(username string) map[string]any {
-	return oidcClaimsWithGroups(username, []string{"oidc-acceptance"})
+	return oidcClaimsWithGroups(username, []string{oidcGroup})
 }
 
 func oidcClaimsWithGroups(username string, groups []string) map[string]any {
 	return map[string]any{"sub": username, "groups": groups, "tenant": "acceptance"}
+}
+
+// expectPinnedAuthenticationConfig reads the AuthenticationConfiguration from
+// every control-plane node container and checks it holds the providers the
+// cluster was created with, identically on each node, whatever the controller's
+// configuration says now.
+func expectPinnedAuthenticationConfig(ctx context.Context, run *oidcAcceptanceRun, cluster *api.Cluster, shared bool, providers []oidc.Provider) {
+	GinkgoHelper()
+	want := oidc.ExpectedAuthentication{
+		ClusterName:   cluster.Name,
+		Providers:     providers,
+		ReservedUsers: expectSucceed(oidc.ReservedUsers(ctx, run.test.k8sClient)),
+	}
+	if shared {
+		want.Shared = expectSucceed(run.site.SharedIssuer(ctx))
+	}
+	nodes := expectSucceed(run.test.nvke.ListClusterNodesByControlPlane(ctx, cluster.ID, true))
+	Expect(nodes).NotTo(BeEmpty())
+	var first, firstNode string
+	for _, node := range nodes {
+		container := expectSucceed(nodeContainerName(ctx, node.Name))
+		content := expectSucceed(agentDockerOutput(ctx, "exec", container, "cat", oidc.AuthConfigPath))
+		Expect(oidc.CheckAuthenticationConfig([]byte(content), want)).To(Succeed(), "control-plane node %s", node.Name)
+		if firstNode == "" {
+			first, firstNode = content, node.Name
+			continue
+		}
+		Expect(content).To(Equal(first), "control-plane node %s has a different %s from %s", node.Name, oidc.AuthConfigPath, firstNode)
+	}
 }
 
 func controllerIdentity() tenantauth.Identity {

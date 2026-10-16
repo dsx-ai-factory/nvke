@@ -8,19 +8,19 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func applyKubernetesNodeHealth(controllerNode *db.Node, kubeNode *corev1.Node) {
 	controllerNode.Conditions.KubernetesReady = fromKubeCondition(controllerNode.Conditions.KubernetesReady, kubeNode, string(corev1.NodeReady))
 	controllerNode.Conditions.KubernetesUnschedulable = kubernetesUnschedulableCondition(controllerNode.Conditions.KubernetesUnschedulable, kubeNode)
 
-	needsRecycle := fromKubeCondition(controllerNode.Conditions.MarkedForRecycling, kubeNode, constants.NodeConditionTypeNeedsRecycle)
+	needsRecycle := fromKubeConditionKey(controllerNode.Conditions.MarkedForRecycling, kubeNode, keys.NeedsRecycle)
 	if needsRecycle.Status == db.ConditionStatusTrue {
 		controllerNode.Conditions.MarkedForRecycling = needsRecycle
 	}
-	needsRepair := fromKubeCondition(controllerNode.Conditions.MarkedForRepair, kubeNode, constants.NodeConditionTypeNeedsRepair)
+	needsRepair := fromKubeConditionKey(controllerNode.Conditions.MarkedForRepair, kubeNode, keys.NeedsRepair)
 	if needsRepair.Status == db.ConditionStatusTrue {
 		controllerNode.Conditions.MarkedForRepair = needsRepair
 	}
@@ -52,7 +52,34 @@ func fromKubeCondition(existing db.Condition, kubeNode *corev1.Node, conditionTy
 	if kubeNode == nil {
 		return updatedCondition(existing, db.ConditionStatusUnknown, "Node data not available")
 	}
+	if condition, found := lookupKubeCondition(kubeNode, conditionType); found {
+		return condition
+	}
+	return updatedCondition(existing, db.ConditionStatusUnknown, fmt.Sprintf("Condition %s not found on node", conditionType))
+}
 
+// fromKubeConditionKey is fromKubeCondition for a condition this controller
+// owns, so a node still carrying the condition under the legacy domain is read
+// rather than reported as missing.
+//
+// The domains are tried in order rather than matched together, because a node
+// can carry both: a stale legacy condition left by an earlier build and the
+// current one. Matching either would take whichever happens to come first in
+// Status.Conditions, so a legacy False could mask a current True and lose the
+// request it records. Key.All() puts the current domain first.
+func fromKubeConditionKey(existing db.Condition, kubeNode *corev1.Node, key keys.Key) db.Condition {
+	if kubeNode == nil {
+		return updatedCondition(existing, db.ConditionStatusUnknown, "Node data not available")
+	}
+	for _, conditionType := range key.All() {
+		if condition, found := lookupKubeCondition(kubeNode, conditionType); found {
+			return condition
+		}
+	}
+	return updatedCondition(existing, db.ConditionStatusUnknown, fmt.Sprintf("Condition %s not found on node", key))
+}
+
+func lookupKubeCondition(kubeNode *corev1.Node, conditionType string) (db.Condition, bool) {
 	for _, condition := range kubeNode.Status.Conditions {
 		if string(condition.Type) == conditionType {
 			return db.Condition{
@@ -61,11 +88,10 @@ func fromKubeCondition(existing db.Condition, kubeNode *corev1.Node, conditionTy
 				// metav1.Time decodes into the local zone, so normalize to keep
 				// what is persisted to JSONB in the same shape it is read back in.
 				LastTransitionTime: condition.LastTransitionTime.Time.UTC(),
-			}
+			}, true
 		}
 	}
-
-	return updatedCondition(existing, db.ConditionStatusUnknown, fmt.Sprintf("Condition %s not found on node", conditionType))
+	return db.Condition{}, false
 }
 
 func kubernetesUnschedulableCondition(existing db.Condition, kubeNode *corev1.Node) db.Condition {

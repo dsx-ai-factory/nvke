@@ -796,3 +796,35 @@ func newTestServerWithValidator(t *testing.T, mockDB *testutil.MockDB) http.Hand
 
 	return srv.Handler
 }
+
+func TestOpenAPIValidator_MachineMetadataIsCreateOnly(t *testing.T) {
+	for _, field := range []string{"machineAnnotations", "machineLabels"} {
+		t.Run(field, func(t *testing.T) {
+			handler := newTestServerWithValidator(t, &testutil.MockDB{})
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch,
+				"/api/nodePools/550e8400-e29b-41d4-a716-446655440000",
+				strings.NewReader(`{"`+field+`":{"example.com/key":"value"}}`))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+			require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+			require.Contains(t, rr.Body.String(), field)
+		})
+	}
+}
+
+func TestOpenAPIValidator_ControlPlaneMachineMetadataIsCreateOnly(t *testing.T) {
+	for _, field := range []string{"machineAnnotations", "machineLabels"} {
+		t.Run(field, func(t *testing.T) {
+			handler := newTestServerWithValidator(t, &testutil.MockDB{})
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch,
+				"/api/clusters/550e8400-e29b-41d4-a716-446655440000",
+				strings.NewReader(`{"controlPlaneConfig":{"`+field+`":{"example.com/key":"value"}}}`))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+			require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+			require.Contains(t, rr.Body.String(), field)
+		})
+	}
+}

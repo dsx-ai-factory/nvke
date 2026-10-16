@@ -164,7 +164,7 @@ make capd-up
 3. Start Tilt:
 
 ```bash
-# optional if your kind cluster name is not cwe-capi
+# optional if your kind cluster name is not controller-capi
 # export KIND_CLUSTER_NAME=<your-kind-cluster-name>
 
 # required: copy the template and fill in the credentials it declares

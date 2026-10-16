@@ -4,10 +4,12 @@ This directory holds release and qualification tooling: the orchestration that
 takes a candidate set of already-built artifacts and resolves what a
 qualification run would cover.
 
-> `qualify plan` resolves a real plan from the repository and the places its
+> `qualify plan` resolves a real plan from the repository and places its
 > `plan.json`, and `qualify verify` checks that everything the plan names is
-> published. The [`qualify-e2e` workflow](../.github/workflows/qualify-e2e.yml)
-> runs both and qualifies one job per stream.
+> published. Each stream's leg then records its outcome with `qualify result`
+> and ships it to TestGrid with `qualify publish`. The
+> [`qualify-e2e` workflow](../.github/workflows/qualify-e2e.yml) runs all four
+> and qualifies one job per stream.
 
 ## Usage
 
@@ -172,14 +174,24 @@ $ go run ./release/cmd/qualify plan --subject nvke --version v0.21.0 --scope ful
   selected by input or by `QUALIFY_E2E_RESOLUTION`, and a beta tag push takes
   `commitDescribe` whatever the variable says.
   The plan is uploaded as an artifact.
-- The `verify` job runs `qualify verify` on that plan before any machine is
-  taken, so an artifact that was never published fails there rather than an hour
-  into a run. It waits when the plan resolved at a commit, because the publishers
-  may still be running.
-- The `qualify-matrix` job runs once for each stream of each combination. Its
-  versions, architecture and GPU model are that stream's entry in the plan, so
-  every stream qualifies exactly what the plan resolved. Each job is named by
-  its stream.
+- `qualify-run` runs once for each stream of each combination, gated behind a
+  GitHub environment from its first step. It runs `qualify verify` on that
+  plan before any machine is taken, so an artifact that was never published
+  fails there rather than an hour into a run -- waiting when the plan
+  resolved at a commit, because the publishers may still be running -- then
+  resolves versions and capabilities and builds the site inputs. Its
+  versions, architecture and GPU model are that stream's entry in the plan,
+  so every stream qualifies exactly what the plan resolved. Each job is
+  named by its stream.
+- After the suite runs (or fails to), `qualify result` writes
+  `qualify-result.json` from that stream's plan entry and its Ginkgo report,
+  on every non-dry-run leg -- including a PR leg and an infrastructure
+  failure, so the record exists even when nothing gets published. `qualify
+  publish` then ships it, with the JUnit report, to TestGrid -- but only on a
+  trusted ref (`main`, or a release/beta tag), since that is the only
+  identity the testgrid repo's WIF provider will exchange a token for. A
+  labelled PR leg gets a result record as a workflow artifact and nothing on
+  TestGrid.
 
 The plan carries what a job needs, the versions to test and the capabilities of
 the stream to run on. The e2e suite requires every version a Forge run uses

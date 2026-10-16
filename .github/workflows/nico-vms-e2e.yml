@@ -130,7 +130,7 @@ jobs:
     env:
       # nico-vms needs cgo for sqlite; without it the binary fails at the first query.
       CGO_ENABLED: "1"
-      NICO_VMS_BRIDGE_NAME: cwebr0
+      NICO_VMS_BRIDGE_NAME: controllerbr0
       NICO_VMS_BRIDGE_CIDR: 172.30.0.0/24
       # Required by nico-vms even on the iPXE path, which never boots it.
       NICO_VMS_BASE_IMAGE: ${{ github.workspace }}/controller/nico-sim/images/ubuntu-cloud.qcow2

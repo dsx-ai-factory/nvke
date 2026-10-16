@@ -7,6 +7,8 @@ import (
 	"context"
 	"testing"
 
+	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
+	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,9 +18,6 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
-	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
@@ -105,7 +104,11 @@ func TestClient_CreateMachine_ResolvesByRole(t *testing.T) {
 			ctx := context.Background()
 			nodeSet := db.NodeSet{KubernetesVersion: "1.32.1"}
 			nodeSet.SetNico(db.NicoNodePoolProvider{Release: name, DiskSelectionStrategy: db.DiskSelectionStrategySmallest})
-			nodePool := db.NodePool{ControlPlane: tt.controlPlane}
+			nodePool := db.NodePool{
+				ControlPlane:       tt.controlPlane,
+				MachineAnnotations: map[string]string{"example.com/setup": "gpu,network"},
+				MachineLabels:      map[string]string{"example.com/pool": "gpu"},
+			}
 			nodePool.SetNico(db.NicoNodePoolProvider{
 				InstanceTypeID: uuid.MustParse("70000000-0000-0000-0000-000000000005"),
 				VpcPrefixIDs:   []uuid.UUID{uuid.MustParse("70000000-0000-0000-0000-000000000007")},
@@ -129,6 +132,11 @@ func TestClient_CreateMachine_ResolvesByRole(t *testing.T) {
 			}
 			require.NoError(t, err)
 
+			machines := &clusterv1.MachineList{}
+			require.NoError(t, k8sClient.List(ctx, machines))
+			require.Len(t, machines.Items, 1)
+			assert.Equal(t, "gpu,network", machines.Items[0].Annotations["example.com/setup"])
+			assert.Equal(t, "gpu", machines.Items[0].Labels["example.com/pool"])
 			nicoMachines := &nicov1.NicoMachineList{}
 			require.NoError(t, k8sClient.List(ctx, nicoMachines, ctrlclient.InNamespace(constants.NamespaceNVKESystem)))
 			require.Len(t, nicoMachines.Items, 1)

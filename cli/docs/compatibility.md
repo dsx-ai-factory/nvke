@@ -6,7 +6,7 @@ what it reserves the right to change, and how something that has to change gets
 removed.
 
 `nvkectl` versions and releases on its own `cli/vX.Y.Z` tags, separately from the
-controller. The [release process](../../RELEASE.md) defines what each increment
+controller. The [release process](https://github.com/dsx-ai-factory/nvke/blob/main/RELEASE.md) defines what each increment
 means. This document says which parts of the CLI those increments apply to.
 
 `cmd/nvkectl/contract_test.go` enforces the promises below at the command
@@ -30,7 +30,7 @@ this document.
 | **Output channels** | Results go to stdout. Diagnostics, progress, logs and deprecation warnings go to stderr. The two never mix: an error message never goes to stdout, so a piped `-o json` is never polluted by one. A failing command writes nothing to stdout, with one exception: `get clusters` and `get nodepools` given several names print the ones that matched, kubectl-style, and exit `1` if any name was not found. A query command that succeeds writes nothing to stderr, except the trace ID mismatch warning; a command that does work, such as `bootstrap`, reports its progress there. The trace ID is reported on stderr only, as described under [Trace ID](#trace-id). |
 | **Machine-readable output** | `-o json` and `-o yaml` keep the field names they emit. `nvkectl version -o short` stays the bare version string and nothing else. |
 | **Config file** | The location (`$XDG_CONFIG_HOME/nvkectl/config.yaml`, else `~/.config/nvkectl/config.yaml`) and the `sites` / `current-site` schema. Fields may be added; existing ones are not renamed or repurposed. The binary was called `nkectl` until cli/v0.1.x and kept the same file under `nkectl/`; when the current location has no file yet, that one is read and copied over once. |
-| **Environment variables** | The `NVKECTL_*` variables, as documented in [the README](../README.md), keep their names and meanings. Each `NVKECTL_*` variable is also read under its `NKECTL_*` name for one release, with a deprecation warning, except `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT`, which turns a safety check off and answers only to its own name. |
+| **Environment variables** | The `NVKECTL_*` variables, as documented in [the README](https://github.com/dsx-ai-factory/nvke/blob/main/cli/README.md), keep their names and meanings. Each `NVKECTL_*` variable is also read under its `NKECTL_*` name for one release, with a deprecation warning, except `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT`, which turns a safety check off and answers only to its own name. |
 | **Site spec schema** | `generate sitespec` output and `bootstrap site -f` input, as documented in [sitespec.md](sitespec.md). |
 
 ### Trace ID
@@ -108,7 +108,7 @@ documented environment variables — never from a prompt.
 ## Deprecation and removal
 
 A flag, command, output field or environment variable that has to go follows
-this sequence. It is tied to the increments in [RELEASE.md](../../RELEASE.md).
+this sequence. It is tied to the increments in [RELEASE.md](https://github.com/dsx-ai-factory/nvke/blob/main/RELEASE.md).
 
 1. **Announce**, in a MINOR release. The deprecated thing keeps working and
    keeps its behaviour. Its help text says it is deprecated, says what replaces
