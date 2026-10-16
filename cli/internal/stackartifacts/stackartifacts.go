@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package nvkrrelease reads the stack artifacts file: the
+// Package stackartifacts reads the stack artifacts file: the
 // nvke.nvidia.com/stack-artifacts/v1 document that names every artifact the
 // controller stack installs, by reference and digest. The deploy-path render
 // and the bootstrap take their images and charts from it.
@@ -39,7 +39,7 @@
 // carries os and arch; a multi-arch image carries an imageIndex that lists
 // its platforms; per-architecture artifacts may also be published as `<name>`
 // and `<name>-arm64`.
-package nvkrrelease
+package stackartifacts
 
 import (
 	"bytes"
@@ -66,24 +66,26 @@ var Archs = []string{"linux/amd64", "linux/arm64"}
 
 var (
 	digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-	// refPattern is the OCI distribution reference grammar: a host (name,
-	// IPv4 or bracketed IPv6, optional port), one or more lowercase path
-	// components, an optional tag, and a sha256 digest. The path and the
-	// digest are required: every reference is registry-qualified.
-	refPattern = regexp.MustCompile(`^(?:[A-Za-z0-9]+(?:[-.][A-Za-z0-9]+)*|\[[0-9A-Fa-f:.]+\])(?::[0-9]+)?` +
+	// refPattern is the OCI distribution reference grammar with the host
+	// required: a dotted name, localhost, a bracketed IPv6 address, each with
+	// an optional port, or any name with a port; then one or more lowercase
+	// path components, an optional tag, and a sha256 digest. A first
+	// component without a dot or a port is a namespace, not a registry, and
+	// is refused: every reference is registry-qualified.
+	refPattern = regexp.MustCompile(`^(?:(?:[A-Za-z0-9]+(?:-+[A-Za-z0-9]+)*(?:\.[A-Za-z0-9]+(?:-+[A-Za-z0-9]+)*)+|localhost|\[[0-9A-Fa-f:.]+\])(?::[0-9]+)?|[A-Za-z0-9]+(?:-+[A-Za-z0-9]+)*:[0-9]+)` +
 		`(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)+(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$`)
 	tokenPattern    = regexp.MustCompile(`^[\w.-]+$`)
 	versionPattern  = regexp.MustCompile(`^[\w.+-]+$`)
 	platformPattern = regexp.MustCompile(`^[a-z0-9]+/[a-z0-9]+(?:/[a-z0-9]+)?$`)
 )
 
-// Release is the stack artifacts file.
-type Release struct {
+// Set is the stack artifacts file: the set of artifacts the stack installs.
+type Set struct {
 	SchemaVersion string `json:"schemaVersion"`
 	// Source says where the artifacts came from. Optional and informational.
 	Source *Source `json:"source,omitempty"`
-	// Outputs are the artifacts, under the JSON key "artifacts".
-	Outputs []Artifact `json:"artifacts"`
+	// Artifacts are the artifacts, in document order.
+	Artifacts []Artifact `json:"artifacts"`
 }
 
 // Source is the publication the artifacts were taken from: an NVKR release
@@ -170,10 +172,24 @@ func (a Artifact) Platforms() []string {
 	return out
 }
 
+// PublishedPlatforms returns the platforms an artifact is published for as
+// selection reads them: Platforms, or for an artifact that names none, the
+// architecture its name's -amd64 or -arm64 suffix says. Empty means the
+// artifact serves any architecture.
+func (a Artifact) PublishedPlatforms() []string {
+	if platforms := a.Platforms(); len(platforms) > 0 {
+		return platforms
+	}
+	if own := archSuffix(a.Name); own != "" {
+		return []string{own}
+	}
+	return nil
+}
+
 // Load reads and validates the file at path and makes every relative layout
 // absolute against the file's directory. Errors name the path. The layouts
 // are not read: CheckLayouts does that.
-func Load(path string) (*Release, error) {
+func Load(path string) (*Set, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -187,9 +203,9 @@ func Load(path string) (*Release, error) {
 		return nil, err
 	}
 	dir := filepath.Dir(abs)
-	for i := range r.Outputs {
-		if layout := r.Outputs[i].Layout; layout != "" && !filepath.IsAbs(layout) {
-			r.Outputs[i].Layout = filepath.Join(dir, layout)
+	for i := range r.Artifacts {
+		if layout := r.Artifacts[i].Layout; layout != "" && !filepath.IsAbs(layout) {
+			r.Artifacts[i].Layout = filepath.Join(dir, layout)
 		}
 	}
 	return r, nil
@@ -197,7 +213,7 @@ func Load(path string) (*Release, error) {
 
 // Parse decodes and validates a stack artifacts document. Layouts are left
 // as written.
-func Parse(data []byte) (*Release, error) {
+func Parse(data []byte) (*Set, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, errors.New("the file is empty")
 	}
@@ -217,7 +233,7 @@ func Parse(data []byte) (*Release, error) {
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	var r Release
+	var r Set
 	if err := dec.Decode(&r); err != nil {
 		return nil, errors.New(strings.TrimPrefix(err.Error(), "json: "))
 	}
@@ -228,18 +244,18 @@ func Parse(data []byte) (*Release, error) {
 }
 
 // Marshal writes the document as JSON, indented, with the schema version
-// set. A Release built in code and one read from a file write the same.
-func (r *Release) Marshal() ([]byte, error) {
-	copy := *r
-	copy.SchemaVersion = SchemaVersion
-	data, err := json.MarshalIndent(&copy, "", " ")
+// set. A Set built in code and one read from a file write the same.
+func (r *Set) Marshal() ([]byte, error) {
+	doc := *r
+	doc.SchemaVersion = SchemaVersion
+	data, err := json.MarshalIndent(&doc, "", " ")
 	if err != nil {
 		return nil, err
 	}
 	return append(data, '\n'), nil
 }
 
-func (r *Release) validate() error {
+func (r *Set) validate() error {
 	if r.Source != nil {
 		if r.Source.Reference == "" {
 			// An empty block, or one without a reference, says nothing.
@@ -253,12 +269,12 @@ func (r *Release) validate() error {
 			}
 		}
 	}
-	if len(r.Outputs) == 0 {
+	if len(r.Artifacts) == 0 {
 		return errors.New("artifacts is empty")
 	}
-	names := make(map[string]bool, len(r.Outputs))
-	for i := range r.Outputs {
-		a := &r.Outputs[i]
+	names := make(map[string]bool, len(r.Artifacts))
+	for i := range r.Artifacts {
+		a := &r.Artifacts[i]
 		if err := a.validate(i); err != nil {
 			return err
 		}
@@ -273,6 +289,13 @@ func (r *Release) validate() error {
 func (a *Artifact) validate(i int) error {
 	if a.Name == "" || a.Kind == "" {
 		return fmt.Errorf("artifacts[%d]: name and kind are required", i)
+	}
+	// The example file's placeholders are refused by name, as the stack
+	// config's are, so a copied example fails on the first unfilled field.
+	for _, f := range []struct{ field, value string }{{"name", a.Name}, {"kind", a.Kind}, {"digest", a.Digest}, {"reference", a.Reference}, {"chartVersion", a.ChartVersion}, {"os", a.OS}, {"arch", a.Arch}, {"layout", a.Layout}} {
+		if strings.Contains(f.value, "REPLACE_") {
+			return fmt.Errorf("artifact %s: %s is still a REPLACE_* placeholder; fill it in", a.Name, f.field)
+		}
 	}
 	if !tokenPattern.MatchString(a.Name) {
 		return fmt.Errorf("artifact name must be a token: %q", a.Name)
@@ -330,11 +353,11 @@ func (a *Artifact) validate(i int) error {
 
 // CheckLayouts reads every artifact's layout and returns one error per
 // layout that is missing, unreadable, or does not list the artifact's
-// digest. A layout path is read as given: call it on a Release from Load,
+// digest. A layout path is read as given: call it on a Set from Load,
 // which made the paths absolute.
-func (r *Release) CheckLayouts() []error {
+func (r *Set) CheckLayouts() []error {
 	var errs []error
-	for _, a := range r.Outputs {
+	for _, a := range r.Artifacts {
 		if a.Layout == "" {
 			continue
 		}
@@ -365,8 +388,8 @@ func layoutLists(dir, digest string) error {
 }
 
 // Artifact returns the artifact of that exact name.
-func (r *Release) Artifact(name string) (Artifact, bool) {
-	for _, a := range r.Outputs {
+func (r *Set) Artifact(name string) (Artifact, bool) {
+	for _, a := range r.Artifacts {
 		if a.Name == name {
 			return a, true
 		}
@@ -376,9 +399,9 @@ func (r *Release) Artifact(name string) (Artifact, bool) {
 
 // OfKind returns the artifacts of one kind, in document order. An empty
 // kind returns every artifact.
-func (r *Release) OfKind(kind string) []Artifact {
+func (r *Set) OfKind(kind string) []Artifact {
 	var out []Artifact
-	for _, a := range r.Outputs {
+	for _, a := range r.Artifacts {
 		if kind == "" || a.Kind == kind {
 			out = append(out, a)
 		}
@@ -389,9 +412,9 @@ func (r *Release) OfKind(kind string) []Artifact {
 // Candidates returns the artifacts Select considers for name, whatever the
 // architecture: the one of that exact name and the ones named
 // <name>-<arch suffix>.
-func (r *Release) Candidates(name string) []Artifact {
+func (r *Set) Candidates(name string) []Artifact {
 	var out []Artifact
-	for _, a := range r.Outputs {
+	for _, a := range r.Artifacts {
 		if a.Name == name || contains(Siblings(name), a.Name) {
 			out = append(out, a)
 		}
@@ -409,9 +432,20 @@ func Siblings(name string) []string {
 	return out
 }
 
-// ErrNotPublished reports that no artifact of the name exists for any
+// Kinds of the artifacts an item binds: KindImage for an image role,
+// KindChart for the chart role.
+const (
+	KindImage = "oci"
+	KindChart = "helm-oci"
+)
+
+// ErrOtherArch reports that artifacts of the name exist, none for the
+// architecture asked for.
+var ErrOtherArch = errors.New("published only for other architectures")
+
+// ErrNotProvided reports that no artifact of the name exists for any
 // architecture. A caller that has a fallback checks for it.
-var ErrNotPublished = errors.New("not in the stack artifacts")
+var ErrNotProvided = errors.New("not in the stack artifacts")
 
 // archSuffix returns the architecture a name's `-<arch>` suffix names, in
 // the form Archs uses, or "".
@@ -431,17 +465,17 @@ func archSuffix(name string) string {
 // they include arch; one that names none counts as built for the
 // architecture its own name's suffix says, else for any. The exact name for
 // arch wins, then the suffixed name for arch, then the exact name naming no
-// platform. No artifact of the name at all is ErrNotPublished; artifacts
+// platform. No artifact of the name at all is ErrNotProvided; artifacts
 // only for other architectures, or a candidate without a reference, are
 // errors that say so.
-func (r *Release) Select(name, arch string) (Artifact, error) {
+func (r *Set) Select(name, arch string) (Artifact, error) {
 	if !contains(Archs, arch) {
 		return Artifact{}, fmt.Errorf("arch %s is not one of %s", arch, strings.Join(Archs, ", "))
 	}
 	var exact, suffixed, anyArch *Artifact
 	var others []string
-	for i := range r.Outputs {
-		a := &r.Outputs[i]
+	for i := range r.Artifacts {
+		a := &r.Artifacts[i]
 		bySuffix := ""
 		if a.Name != name {
 			bySuffix = archSuffix(a.Name)
@@ -449,12 +483,7 @@ func (r *Release) Select(name, arch string) (Artifact, error) {
 				continue
 			}
 		}
-		platforms := a.Platforms()
-		if len(platforms) == 0 {
-			if own := archSuffix(a.Name); own != "" {
-				platforms = []string{own}
-			}
-		}
+		platforms := a.PublishedPlatforms()
 		switch {
 		case len(platforms) == 0:
 			anyArch = a
@@ -478,14 +507,28 @@ func (r *Release) Select(name, arch string) (Artifact, error) {
 	}
 	if chosen == nil {
 		if len(others) > 0 {
-			return Artifact{}, fmt.Errorf("%s is published only for other architectures: %s", name, strings.Join(others, ", "))
+			return Artifact{}, fmt.Errorf("%s is %w: %s", name, ErrOtherArch, strings.Join(others, ", "))
 		}
-		return Artifact{}, fmt.Errorf("%s: %w", name, ErrNotPublished)
+		return Artifact{}, fmt.Errorf("%s: %w", name, ErrNotProvided)
 	}
 	if chosen.Reference == "" {
 		return Artifact{}, fmt.Errorf("artifact %s has no reference; the stack artifacts file must say where it is pulled from, or stored under", chosen.Name)
 	}
 	return *chosen, nil
+}
+
+// SelectKind is Select for the artifact an item binds in one role: an
+// artifact of another kind than the role takes, KindImage or KindChart, is
+// an error naming both kinds.
+func (r *Set) SelectKind(name, kind, arch string) (Artifact, error) {
+	a, err := r.Select(name, arch)
+	if err != nil {
+		return Artifact{}, err
+	}
+	if a.Kind != kind {
+		return Artifact{}, fmt.Errorf("artifact %s is kind %s, not %s", a.Name, a.Kind, kind)
+	}
+	return a, nil
 }
 
 // osArch returns a platform without its variant: linux/arm64/v8 is linux/arm64.

@@ -13,8 +13,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath"
+	"github.com/dsx-ai-factory/nvke/cli/internal/stackartifacts"
 )
 
 type inspectStackArtifactsOptions struct {
@@ -59,7 +59,8 @@ print one view of it:
                  one line per artifact the deploy path binds, in item order,
                  tab separated: item, role (chart, image, profiles-image),
                  artifact name, the artifact chosen ("-" when none), state
-                 (bound, missing, committed, other-arch:<platforms>); then one line
+                 (bound, missing, committed, other-arch:<platforms>,
+                 invalid:<reason>); then one line
                  "unused<TAB><name>" per artifact no item binds. The render
                  makes the same selections.
 
@@ -108,7 +109,7 @@ func runInspectStackArtifacts(cmd *cobra.Command, path string, opts *inspectStac
 	if opts.deployPath != "" && !opts.bindings {
 		return errors.New("--deploy-path goes with --bindings")
 	}
-	r, err := nvkrrelease.Load(path)
+	r, err := stackartifacts.Load(path)
 	if err != nil {
 		return err
 	}
@@ -125,7 +126,7 @@ func runInspectStackArtifacts(cmd *cobra.Command, path string, opts *inspectStac
 		}
 		layouts := 0
 		hosts := map[string]bool{}
-		for _, a := range r.Outputs {
+		for _, a := range r.Artifacts {
 			if a.Layout != "" {
 				layouts++
 			} else if host := a.Host(); host != "" {
@@ -151,7 +152,7 @@ func runInspectStackArtifacts(cmd *cobra.Command, path string, opts *inspectStac
 			{"STACK_ARTIFACTS", abs},
 			{"SOURCE_REFERENCE", reference},
 			{"QUALIFICATION", qualification},
-			{"ARTIFACTS", strconv.Itoa(len(r.Outputs))},
+			{"ARTIFACTS", strconv.Itoa(len(r.Artifacts))},
 			{"LAYOUTS", strconv.Itoa(layouts)},
 			{"LAYOUTS_MISSING", strings.Join(missing, " ")},
 			{"PULL_HOSTS", strings.Join(pullHosts, " ")},
@@ -160,7 +161,7 @@ func runInspectStackArtifacts(cmd *cobra.Command, path string, opts *inspectStac
 		}
 	case opts.name != "":
 		a, err := r.Select(opts.name, opts.arch)
-		if errors.Is(err, nvkrrelease.ErrNotPublished) {
+		if errors.Is(err, stackartifacts.ErrNotProvided) {
 			return nil
 		}
 		if err != nil {

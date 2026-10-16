@@ -27,7 +27,6 @@ import (
 	// Aliased: this file has a local variable named engine.
 	bootstrapengine "github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/engine"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/etcdkey"
-	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/spireentrydump"
@@ -35,6 +34,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
+	"github.com/dsx-ai-factory/nvke/cli/internal/stackartifacts"
 	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 )
 
@@ -1225,11 +1225,11 @@ func capnicoReleaseImage(inv *sitespec.SiteSpec, artifactsPath, arch string) (im
 	if !inv.IsNico() {
 		return "", "", errors.New("--stack-artifacts only applies with infra.provider nico: it replaces the bootstrap CAPNICo image, and no other provider installs one")
 	}
-	artifacts, err := nvkrrelease.Load(artifactsPath)
+	artifacts, err := stackartifacts.Load(artifactsPath)
 	if err != nil {
 		return "", "", err
 	}
-	artifact, err := artifacts.Select(controllerdeploy.CAPNICoArtifact, arch)
+	artifact, err := artifacts.SelectKind(controllerdeploy.CAPNICoArtifact, stackartifacts.KindImage, arch)
 	if err != nil {
 		return "", "", fmt.Errorf("--stack-artifacts %s: %w", artifactsPath, err)
 	}

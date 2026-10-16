@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package nvkrrelease
+package stackartifacts
 
 import (
 	"errors"
@@ -12,12 +12,12 @@ import (
 )
 
 func fixture(name string) string {
-	return filepath.Join("..", "..", "..", "..", "deploy", "testdata", "stack-artifacts", name)
+	return filepath.Join("..", "..", "..", "deploy", "testdata", "stack-artifacts", name)
 }
 
 // The old-schema export, kept for the converter's tests.
 func nvkrFixture(name string) string {
-	return filepath.Join("..", "..", "..", "..", "hack", "testdata", "nvkr-release", name)
+	return filepath.Join("..", "..", "..", "hack", "testdata", "nvkr-release", name)
 }
 
 func TestLoad_BadFixturesNameTheProblem(t *testing.T) {
@@ -110,6 +110,7 @@ func TestParse_RefusesMalformedArtifacts(t *testing.T) {
 		`"artifacts":[{"name":"x","kind":"helm-oci","digest":"` + d + `","chartVersion":"1.0 beta"}]`:                                                                                          `artifact x: chartVersion is not a version`,
 		`"artifacts":[{"name":"x","kind":"oci","digest":"` + d + `","reference":"not-a-ref@` + d + `"}]`:                                                                                       `artifact x: reference is not an OCI reference`,
 		`"artifacts":[{"name":"x","kind":"oci","reference":"not-a-ref@` + d + `"}]`:                                                                                                            `artifact x: reference is not an OCI reference`,
+		`"artifacts":[{"name":"x","kind":"oci","reference":"myorg/cwe@` + d + `"}]`:                                                                                                            `artifact x: reference is not an OCI reference`,
 		`"artifacts":[{"name":"x","kind":"oci","digest":"` + d + `","os":"linux"}]`:                                                                                                            `artifact x: os "linux" without arch`,
 		`"artifacts":[{"name":"x","kind":"oci","digest":"` + d + `","os":"windows","arch":"linux/amd64"}]`:                                                                                     `artifact x: os "windows" disagrees with arch`,
 		`"artifacts":[{"name":"x","kind":"oci","digest":"` + d + `","arch":"amd64","imageIndex":{"children":[{"platform":"linux/amd64","manifestDigest":"` + d + `"}]}}]`:                      `artifact x: both arch and imageIndex are set`,
@@ -125,14 +126,35 @@ func TestParse_RefusesMalformedArtifacts(t *testing.T) {
 			t.Errorf("want %q, got %v\n%s", want, err, body)
 		}
 	}
+	// A registry is a dotted name, localhost or any name with a port.
+	for _, host := range []string{"nvke.local", "localhost", "localhost:5000", "registry:5000", "ghcr.io", "[::1]:5000", "127.0.0.1:5000"} {
+		if _, err := Parse([]byte(head + `"artifacts":[{"name":"x","kind":"oci","reference":"` + host + `/ns/x@` + d + `"}]}`)); err != nil {
+			t.Errorf("host %s refused: %v", host, err)
+		}
+	}
 	// A platform outside Archs is well formed: the artifact is simply for
 	// another architecture, which Select reports for the artifact asked for.
 	r, err := Parse([]byte(head + `"artifacts":[{"name":"x","kind":"oci","digest":"` + d + `","reference":"r.example/x@` + d + `","os":"linux","arch":"riscv64"}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.Select("x", "linux/amd64"); err == nil || !strings.Contains(err.Error(), "published only for other architectures: x (linux/riscv64)") {
+	if _, err := r.Select("x", "linux/amd64"); !errors.Is(err, ErrOtherArch) || !strings.Contains(err.Error(), "published only for other architectures: x (linux/riscv64)") {
 		t.Errorf("riscv64 artifact: %v", err)
+	}
+	// SelectKind binds an artifact only in the role its kind takes.
+	r, err = Parse([]byte(head + `"artifacts":[{"name":"y","kind":"oci","digest":"` + d + `","reference":"r.example/y@` + d + `","os":"linux","arch":"amd64"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, err := r.SelectKind("y", KindImage, "linux/amd64"); err != nil || a.Name != "y" {
+		t.Errorf("SelectKind for an image: %v %v", a, err)
+	}
+	if _, err := r.SelectKind("y", KindChart, "linux/amd64"); err == nil || err.Error() != "artifact y is kind oci, not helm-oci" {
+		t.Errorf("SelectKind of the wrong kind: %v", err)
+	}
+	// The example file is refused by its first placeholder, by field name.
+	if _, err := Load(filepath.Join("..", "..", "..", "deploy", "examples", "stack-artifacts.json")); err == nil || !strings.Contains(err.Error(), "is still a REPLACE_* placeholder; fill it in") {
+		t.Errorf("example with placeholders: %v", err)
 	}
 }
 
@@ -147,8 +169,8 @@ func TestLoad_FixturesLackingOneArtifact(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
-		if _, err := r.Select(missing, "linux/arm64"); !errors.Is(err, ErrNotPublished) {
-			t.Errorf("%s: Select(%s) = %v, want ErrNotPublished", file, missing, err)
+		if _, err := r.Select(missing, "linux/arm64"); !errors.Is(err, ErrNotProvided) {
+			t.Errorf("%s: Select(%s) = %v, want ErrNotProvided", file, missing, err)
 		}
 	}
 	r, err := Load(fixture("tagged-capnico.json"))
@@ -165,8 +187,8 @@ func TestLoad_Valid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Source == nil || r.Source.DeclaredQualification != "pipeline-attested" || len(r.Outputs) != 15 {
-		t.Errorf("source %+v artifacts %d", r.Source, len(r.Outputs))
+	if r.Source == nil || r.Source.DeclaredQualification != "pipeline-attested" || len(r.Artifacts) != 15 {
+		t.Errorf("source %+v artifacts %d", r.Source, len(r.Artifacts))
 	}
 	if charts := r.OfKind("helm-oci"); len(charts) != 6 || charts[0].Name != "controller-chart" || charts[0].ChartVersion != "0.1.1" {
 		t.Errorf("helm-oci artifacts: %+v", charts)
@@ -204,11 +226,11 @@ func TestMarshal_RoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v\n%s", err, data)
 	}
-	if len(again.Outputs) != len(r.Outputs) || *again.Source != *r.Source || again.Outputs[0].ImageIndex == nil {
+	if len(again.Artifacts) != len(r.Artifacts) || *again.Source != *r.Source || again.Artifacts[0].ImageIndex == nil {
 		t.Errorf("round trip changed the document:\n%s", data)
 	}
-	// A Release built in code writes the schema version and no empty fields.
-	built := &Release{Outputs: []Artifact{{Name: "x", Kind: "oci", Digest: "sha256:" + strings.Repeat("a", 64)}}}
+	// A Set built in code writes the schema version and no empty fields.
+	built := &Set{Artifacts: []Artifact{{Name: "x", Kind: "oci", Digest: "sha256:" + strings.Repeat("a", 64)}}}
 	data, err = built.Marshal()
 	if err != nil {
 		t.Fatal(err)
@@ -243,16 +265,16 @@ func TestLoad_Layouts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parsed.Outputs[0].Layout != "layouts/cwe" {
-		t.Errorf("Parse changed the layout: %s", parsed.Outputs[0].Layout)
+	if parsed.Artifacts[0].Layout != "layouts/cwe" {
+		t.Errorf("Parse changed the layout: %s", parsed.Artifacts[0].Layout)
 	}
 	// An absolute layout is kept.
 	r, err = Load(fixture("layout-absolute.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Outputs[0].Layout != "/nonexistent/layouts/cwe" {
-		t.Errorf("absolute layout changed: %s", r.Outputs[0].Layout)
+	if r.Artifacts[0].Layout != "/nonexistent/layouts/cwe" {
+		t.Errorf("absolute layout changed: %s", r.Artifacts[0].Layout)
 	}
 	if errs := r.CheckLayouts(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "artifact cwe: layout /nonexistent/layouts/cwe:") {
 		t.Errorf("absent absolute layout: %v", errs)
@@ -272,7 +294,7 @@ func TestLoad_Layouts(t *testing.T) {
 		}
 	}
 	// Several bad layouts are all reported.
-	r = &Release{Outputs: []Artifact{
+	r = &Set{Artifacts: []Artifact{
 		{Name: "a", Kind: "oci", Digest: "sha256:" + strings.Repeat("a", 64), Layout: filepath.Join(t.TempDir(), "a")},
 		{Name: "b", Kind: "oci", Digest: "sha256:" + strings.Repeat("b", 64), Layout: filepath.Join(t.TempDir(), "b")},
 		{Name: "c", Kind: "oci", Digest: "sha256:" + strings.Repeat("c", 64)},
@@ -313,8 +335,8 @@ func TestSelect(t *testing.T) {
 			t.Errorf("Select(%s, %s): want error %q, got %v", tc.name, tc.arch, tc.err, err)
 		}
 	}
-	if _, err := r.Select("absent", "linux/arm64"); !errors.Is(err, ErrNotPublished) {
-		t.Errorf("absent is not ErrNotPublished: %v", err)
+	if _, err := r.Select("absent", "linux/arm64"); !errors.Is(err, ErrNotProvided) {
+		t.Errorf("absent is not ErrNotProvided: %v", err)
 	}
 	nr, err := Load(fixture("no-reference.json"))
 	if err != nil {
@@ -354,7 +376,7 @@ func TestCandidatesAndSiblings(t *testing.T) {
 func TestSelect_ImageIndexNamesThePlatforms(t *testing.T) {
 	d := "sha256:" + strings.Repeat("a", 64)
 	amd := ImageIndexChild{Platform: "linux/amd64", ManifestDigest: "sha256:" + strings.Repeat("1", 64)}
-	r := &Release{Outputs: []Artifact{
+	r := &Set{Artifacts: []Artifact{
 		{Name: "x", Kind: "oci", Digest: d, Reference: "r.example/x@" + d, ImageIndex: &ImageIndex{Children: []ImageIndexChild{amd}}},
 	}}
 	if got, err := r.Select("x", "linux/amd64"); err != nil || got.Name != "x" {
@@ -385,7 +407,7 @@ func TestSelect_VariantIsTheArchitecture(t *testing.T) {
 
 func TestSelect_SuffixBeatsAnArchlessName(t *testing.T) {
 	d := "sha256:" + strings.Repeat("a", 64)
-	r := &Release{Outputs: []Artifact{
+	r := &Set{Artifacts: []Artifact{
 		{Name: "x", Kind: "oci", Digest: d, Reference: "r.example/x@" + d},
 		{Name: "x-arm64", Kind: "oci", Digest: d, Reference: "r.example/x-arm64@" + d},
 	}}
@@ -405,8 +427,8 @@ func TestSelect_SuffixBeatsAnArchlessName(t *testing.T) {
 		t.Errorf("direct amd64: %v", err)
 	}
 	// With os and arch the name no longer matters.
-	r.Outputs[0].OS, r.Outputs[0].Arch = "linux", "arm64"
-	r.Outputs[1].OS, r.Outputs[1].Arch = "linux", "amd64"
+	r.Artifacts[0].OS, r.Artifacts[0].Arch = "linux", "arm64"
+	r.Artifacts[1].OS, r.Artifacts[1].Arch = "linux", "amd64"
 	if got, err := r.Select("x", "linux/arm64"); err != nil || got.Name != "x" {
 		t.Errorf("arch field wins: %q %v", got.Name, err)
 	}
@@ -416,7 +438,7 @@ func TestSelect_Precedence(t *testing.T) {
 	d := "sha256:" + strings.Repeat("a", 64)
 	both := &ImageIndex{Children: []ImageIndexChild{{Platform: "linux/amd64", ManifestDigest: d}, {Platform: "linux/arm64", ManifestDigest: d}}}
 	// The exact name covering arch beats a suffixed artifact that also covers it.
-	r := &Release{Outputs: []Artifact{
+	r := &Set{Artifacts: []Artifact{
 		{Name: "x", Kind: "oci", Digest: d, Reference: "r.example/x@" + d, ImageIndex: both},
 		{Name: "x-arm64", Kind: "oci", Digest: d, Reference: "r.example/x-arm64@" + d, OS: "linux", Arch: "arm64"},
 	}}
@@ -425,7 +447,7 @@ func TestSelect_Precedence(t *testing.T) {
 	}
 	// Two suffixed artifacts both covering arch: the one named for it wins,
 	// whatever the document order.
-	r = &Release{Outputs: []Artifact{
+	r = &Set{Artifacts: []Artifact{
 		{Name: "y-amd64", Kind: "oci", Digest: d, Reference: "r.example/y-amd64@" + d, ImageIndex: both},
 		{Name: "y-arm64", Kind: "oci", Digest: d, Reference: "r.example/y-arm64@" + d, ImageIndex: both},
 	}}

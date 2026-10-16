@@ -13,10 +13,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath"
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
+	"github.com/dsx-ai-factory/nvke/cli/internal/stackartifacts"
 )
 
 func newRenderCmd() *cobra.Command {
@@ -134,8 +134,8 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 	if opts.siteSpec == "" && opts.artifacts == "" {
 		return errors.New("pass --sitespec with --stack-config, --stack-artifacts, or both")
 	}
-	if !slices.Contains(nvkrrelease.Archs, opts.arch) {
-		return fmt.Errorf("--arch %s is not one of %s", opts.arch, strings.Join(nvkrrelease.Archs, ", "))
+	if !slices.Contains(stackartifacts.Archs, opts.arch) {
+		return fmt.Errorf("--arch %s is not one of %s", opts.arch, strings.Join(stackartifacts.Archs, ", "))
 	}
 	ro := deploypath.RenderOptions{DeployPath: opts.deployPath, Out: opts.out, Arch: opts.arch, Log: cmd.ErrOrStderr(), AllowTempOut: os.Getenv("NVKECTL_RENDER_ALLOW_TEMP_OUT") == "1", Credentials: opts.creds}
 	var inputs []string
@@ -162,11 +162,11 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 		}
 	}
 	if opts.artifacts != "" {
-		artifacts, err := nvkrrelease.Load(opts.artifacts)
+		artifacts, err := stackartifacts.Load(opts.artifacts)
 		if err != nil {
 			return err
 		}
-		ro.Release, ro.ReleasePath = artifacts, opts.artifacts
+		ro.Artifacts = artifacts
 		ro.Registry = deploypath.Registries(opts.plainHTTP)
 		inputs = append(inputs, "stack artifacts "+opts.artifacts)
 	}

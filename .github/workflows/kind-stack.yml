@@ -27,7 +27,7 @@ on:
       - deploy/**
       - controller/deploy/charts/**
       - cli/internal/deploypath/**
-      - cli/internal/bootstrap/nvkrrelease/**
+      - cli/internal/stackartifacts/**
       - cli/internal/bootstrap/sitespec/**
       - cli/internal/bootstrap/controllerdeploy/**
       - cli/internal/nvkectl/validate.go
@@ -35,6 +35,7 @@ on:
       - cli/internal/nvkectl/inspect_stack_config.go
       - cli/internal/nvkectl/inspect.go
       - cli/internal/nvkectl/inspect_stack_artifacts.go
+      - cli/internal/nvkectl/inspect_values.go
       - cli/internal/nvkectl/root.go
       - controller/hack/apply-capi-spiffe-exec-auth.sh
       - controller/deploy/k8s/capi-spiffe-exec-auth/**
@@ -44,7 +45,6 @@ on:
       - controller/Dockerfile
       - controller/test/fixtures/**
       - nktp/hack/e2e-values.yaml
-      - make/tool-versions.mk
 
 permissions: {}
 

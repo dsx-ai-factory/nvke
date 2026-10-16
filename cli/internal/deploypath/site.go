@@ -118,7 +118,7 @@ func (r *renderer) site() {
 		"nvkeOIDCAuth": map[string]any{"discoveryURL": fmt.Sprintf("https://%s:%d/.well-known/openid-configuration", vip, oidcNodePort)},
 		"spiffe":       map[string]any{"trustDomain": trustDomain, "spire": map[string]any{"serverAddress": vip}},
 	}
-	if r.opts.Release == nil && r.profilesImageRequired() {
+	if r.opts.Artifacts == nil && r.profilesImageRequired() {
 		// With the stack artifacts, the controller item's profilesArtifact
 		// names it.
 		r.problem("controller: the deploy path enables profiles.image and nothing names the image; pass --stack-artifacts with a controller-profiles artifact")
@@ -300,8 +300,8 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 }
 
 // profilesImageRequired reports whether the deploy path's controller values
-// enable profiles.image without naming a tag or digest, so the stack config
-// must supply the image. The files are read as nodes: helm accepts a
+// enable profiles.image without naming a tag or digest, so the stack
+// artifacts file must supply the image. The files are read as nodes: helm accepts a
 // repeated key, so the check does too.
 func (r *renderer) profilesImageRequired() bool {
 	rel, err := ReadRelease(filepath.Join(r.opts.DeployPath, "controller"))

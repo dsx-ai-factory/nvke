@@ -19,9 +19,9 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/oci"
 
-	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
+	"github.com/dsx-ai-factory/nvke/cli/internal/stackartifacts"
 )
 
 // RenderOptions drive Render.
@@ -36,11 +36,10 @@ type RenderOptions struct {
 	// Required with Site, refused without it. The credentials come from the
 	// environment.
 	Stack *stackconfig.Config
-	// Release is the stack artifacts file, loaded by nvkrrelease.Load so its
-	// layouts are absolute, and ReleasePath where it was read from. The
-	// rendered tree gets a copy as stack-artifacts.json. Optional.
-	Release     *nvkrrelease.Release
-	ReleasePath string
+	// Artifacts is the stack artifacts file, loaded by stackartifacts.Load so
+	// its layouts are absolute. The rendered tree gets a copy as
+	// stack-artifacts.json. Optional.
+	Artifacts *stackartifacts.Set
 	// Arch is the nodes' architecture, linux/amd64 or linux/arm64. It
 	// selects the artifacts and the SPIRE TPM attestor checksum, and is
 	// required with Site.
@@ -134,7 +133,7 @@ func Render(ctx context.Context, opts RenderOptions) (*Rendered, error) {
 	if opts.Stack != nil && opts.Site == nil {
 		return nil, errors.New("--stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec")
 	}
-	if opts.Site == nil && opts.Release == nil {
+	if opts.Site == nil && opts.Artifacts == nil {
 		return nil, errors.New("a site spec or a stack artifacts file is required")
 	}
 	switch opts.Credentials {
@@ -147,10 +146,10 @@ func Render(ctx context.Context, opts RenderOptions) (*Rendered, error) {
 	if opts.Stack != nil && opts.Stack.Path() == "" {
 		return nil, errors.New("the stack config must be loaded by stackconfig.Load, which validates it")
 	}
-	if opts.Site != nil && !contains(nvkrrelease.Archs, opts.Arch) {
-		return nil, fmt.Errorf("the architecture %q is not one of %s", opts.Arch, strings.Join(nvkrrelease.Archs, ", "))
+	if opts.Site != nil && !contains(stackartifacts.Archs, opts.Arch) {
+		return nil, fmt.Errorf("the architecture %q is not one of %s", opts.Arch, strings.Join(stackartifacts.Archs, ", "))
 	}
-	if opts.Release != nil && opts.Registry == nil {
+	if opts.Artifacts != nil && opts.Registry == nil {
 		opts.Registry = Registries(nil)
 	}
 	deployPath, err := filepath.Abs(opts.DeployPath)
@@ -170,16 +169,16 @@ func Render(ctx context.Context, opts RenderOptions) (*Rendered, error) {
 	if !opts.AllowTempOut && underSharedTemp(out) {
 		return nil, fmt.Errorf("%s is under a shared temp directory; render a site's credentials under a directory only you can read, for example ~/.local/state/nvke/renders/<site>", out)
 	}
-	if opts.Release != nil {
+	if opts.Artifacts != nil {
 		// images.txt and the copy of the file name each layout; the install
 		// may run from another directory, so the paths are absolute, as
-		// nvkrrelease.Load writes them.
-		for _, a := range opts.Release.Outputs {
+		// stackartifacts.Load writes them.
+		for _, a := range opts.Artifacts.Artifacts {
 			if a.Layout != "" && !filepath.IsAbs(a.Layout) {
-				return nil, fmt.Errorf("artifact %s: layout %q is relative; load the stack artifacts file with nvkrrelease.Load", a.Name, a.Layout)
+				return nil, fmt.Errorf("artifact %s: layout %q is relative; load the stack artifacts file with stackartifacts.Load", a.Name, a.Layout)
 			}
 		}
-		if errs := opts.Release.CheckLayouts(); len(errs) > 0 {
+		if errs := opts.Artifacts.CheckLayouts(); len(errs) > 0 {
 			var lines []string
 			for _, err := range errs {
 				lines = append(lines, err.Error())
@@ -211,7 +210,7 @@ func Render(ctx context.Context, opts RenderOptions) (*Rendered, error) {
 	// replaces them and a chart they lack resolves from anywhere; then the
 	// artifacts, then the site, whose values are appended last and win.
 	r.absoluteChartPaths()
-	if opts.Release != nil {
+	if opts.Artifacts != nil {
 		for _, item := range items {
 			switch item.Type {
 			case TypeHelm:
@@ -224,7 +223,7 @@ func Render(ctx context.Context, opts RenderOptions) (*Rendered, error) {
 	if opts.Site != nil {
 		r.site()
 	}
-	if opts.Release != nil {
+	if opts.Artifacts != nil {
 		r.unusedArtifacts()
 	}
 	if len(r.problems) > 0 {
@@ -368,16 +367,16 @@ func (r *renderer) appendValues(item, file string, data []byte) {
 	}
 }
 
-// selectRequired resolves an artifact an item needs; absence is a problem.
-func (r *renderer) selectRequired(item, role, name string) (nvkrrelease.Artifact, bool) {
-	a, err := r.opts.Release.Select(name, r.opts.Arch)
-	if errors.Is(err, nvkrrelease.ErrNotPublished) {
+// selectRequired resolves an image an item needs; absence is a problem.
+func (r *renderer) selectRequired(item, role, name string) (stackartifacts.Artifact, bool) {
+	a, err := r.opts.Artifacts.SelectKind(name, stackartifacts.KindImage, r.opts.Arch)
+	if errors.Is(err, stackartifacts.ErrNotProvided) {
 		r.problem("%s: %s %s is not in the stack artifacts", item, role, name)
-		return nvkrrelease.Artifact{}, false
+		return stackartifacts.Artifact{}, false
 	}
 	if err != nil {
 		r.problem("%s: %s: %v", item, role, err)
-		return nvkrrelease.Artifact{}, false
+		return stackartifacts.Artifact{}, false
 	}
 	return a, true
 }
@@ -403,9 +402,9 @@ func (r *renderer) helm(item string) {
 	if artifact == "" {
 		artifact = item
 	}
-	a, err := r.opts.Release.Select(artifact, r.opts.Arch)
+	a, err := r.opts.Artifacts.SelectKind(artifact, stackartifacts.KindChart, r.opts.Arch)
 	switch {
-	case errors.Is(err, nvkrrelease.ErrNotPublished):
+	case errors.Is(err, stackartifacts.ErrNotProvided):
 		r.note("%s: %s is not in the stack artifacts; the chart comes from the deploy path or its repository", item, artifact)
 	case err != nil:
 		r.problem("%s: chart: %v", item, err)
@@ -516,7 +515,7 @@ func (r *renderer) manifest(item string) {
 // name the values and the kustomization use, and the one containerd is asked
 // for. A tag in the artifact's reference is dropped. The layout, when the
 // artifact has one, is where the install imports it from.
-func (r *renderer) image(a nvkrrelease.Artifact) {
+func (r *renderer) image(a stackartifacts.Artifact) {
 	ref := a.Repository() + "@" + a.Digest
 	for _, have := range r.out.Images {
 		if have.Reference == ref {
@@ -530,7 +529,7 @@ func (r *renderer) image(a nvkrrelease.Artifact) {
 // problem: a file converted from an NVKR export carries artifacts the deploy
 // path has no item for. A per-architecture sibling of a bound name is bound.
 func (r *renderer) unusedArtifacts() {
-	_, unused, err := Bindings(r.opts.DeployPath, r.opts.Release, r.opts.Arch)
+	_, unused, err := Bindings(r.opts.DeployPath, r.opts.Artifacts, r.opts.Arch)
 	if err != nil {
 		// The release.yaml problem was reported by the pass that read it.
 		return
@@ -543,7 +542,7 @@ func (r *renderer) unusedArtifacts() {
 // chartArchive puts the chart archive of a into charts/<item>/ under Out and
 // returns its path relative to Out. The store verifies the manifest and the
 // archive against their digests as it reads them.
-func (r *renderer) chartArchive(item, chartName string, a nvkrrelease.Artifact) (string, error) {
+func (r *renderer) chartArchive(item, chartName string, a stackartifacts.Artifact) (string, error) {
 	ctx := r.ctx
 	store, ref, err := r.store(ctx, a)
 	if err != nil {
@@ -560,7 +559,7 @@ func (r *renderer) chartArchive(item, chartName string, a nvkrrelease.Artifact) 
 	if err != nil {
 		return "", err
 	}
-	layer, file, err := nvkrrelease.ChartLayer(manifest, chartName+"-"+strings.TrimPrefix(a.Digest, "sha256:")+".tgz")
+	layer, file, err := stackartifacts.ChartLayer(manifest, chartName+"-"+strings.TrimPrefix(a.Digest, "sha256:")+".tgz")
 	if err != nil {
 		return "", err
 	}
@@ -577,7 +576,7 @@ func (r *renderer) chartArchive(item, chartName string, a nvkrrelease.Artifact) 
 
 // store returns where a is read from, its OCI layout or its registry, and
 // the reference to resolve there.
-func (r *renderer) store(ctx context.Context, a nvkrrelease.Artifact) (oras.ReadOnlyTarget, string, error) {
+func (r *renderer) store(ctx context.Context, a stackartifacts.Artifact) (oras.ReadOnlyTarget, string, error) {
 	if a.Layout == "" {
 		store, err := r.opts.Registry(a.Repository())
 		return store, a.Reference, err
@@ -614,16 +613,16 @@ func (r *renderer) finish() error {
 			return err
 		}
 	}
-	if r.opts.Release != nil {
+	if r.opts.Artifacts != nil {
 		// The file as the render read it, layouts absolute, so the install's
 		// record of it loads from anywhere. An external tree names no
 		// layout: a layout is a directory of this machine.
-		file := *r.opts.Release
+		file := *r.opts.Artifacts
 		if r.opts.Credentials == CredentialsExternal {
-			file.Outputs = make([]nvkrrelease.Artifact, len(r.opts.Release.Outputs))
-			for i, a := range r.opts.Release.Outputs {
+			file.Artifacts = make([]stackartifacts.Artifact, len(r.opts.Artifacts.Artifacts))
+			for i, a := range r.opts.Artifacts.Artifacts {
 				a.Layout = ""
-				file.Outputs[i] = a
+				file.Artifacts[i] = a
 			}
 		}
 		data, err := file.Marshal()
@@ -633,7 +632,7 @@ func (r *renderer) finish() error {
 		if err := writePrivate(filepath.Join(r.opts.Out, "stack-artifacts.json"), data); err != nil {
 			return err
 		}
-		if src := r.opts.Release.Source; src != nil {
+		if src := r.opts.Artifacts.Source; src != nil {
 			r.note("stack-artifacts: source %s (declared %s)", src.Reference, firstNonEmpty(src.DeclaredQualification, "no qualification"))
 		} else {
 			r.note("stack-artifacts: no source block")
@@ -663,7 +662,7 @@ func (r *renderer) noteCommittedChartPaths() {
 		if err != nil || rel.Chart == nil || !strings.HasPrefix(rel.Chart.Path, "..") {
 			continue
 		}
-		r.note("%s: chart.path %s stays as committed and resolves from where the tree is installed; render with --release to put the chart in the tree", item.Name, rel.Chart.Path)
+		r.note("%s: chart.path %s stays as committed and resolves from where the tree is installed; name the chart in the stack artifacts file to put it in the tree", item.Name, rel.Chart.Path)
 	}
 }
 

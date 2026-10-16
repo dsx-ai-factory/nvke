@@ -24,9 +24,9 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
-	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
+	"github.com/dsx-ai-factory/nvke/cli/internal/stackartifacts"
 )
 
 var (
@@ -183,20 +183,20 @@ func filledInputs(t *testing.T, withCA bool, extra map[string]string) (*sitespec
 // under a directory of their own, for both architectures, and returns the
 // stack artifacts naming them with absolute layouts, as Load would. No chart
 // is in it, so every chart stays committed and nothing is pulled.
-func localArtifacts(t *testing.T) *nvkrrelease.Release {
+func localArtifacts(t *testing.T) *stackartifacts.Set {
 	t.Helper()
 	dir := t.TempDir()
 	ref := func(name, d string) string { return "nvke.local/" + name + "@" + d }
-	var out []nvkrrelease.Artifact
+	var out []stackartifacts.Artifact
 	for _, img := range []struct{ name, arch string }{{"cwe", ""}, {"controller-profiles", ""}, {"capnico-controller", "amd64"}, {"capnico-controller-arm64", "arm64"}} {
 		d := writeLayout(t, dir, img.name, []byte(`{"config":{"digest":"sha256:`+img.name+`"}}`), nil)
-		a := nvkrrelease.Artifact{Name: img.name, Kind: "oci", Digest: d, Reference: ref(img.name, d), Layout: filepath.Join(dir, img.name)}
+		a := stackartifacts.Artifact{Name: img.name, Kind: "oci", Digest: d, Reference: ref(img.name, d), Layout: filepath.Join(dir, img.name)}
 		if img.arch != "" {
 			a.OS, a.Arch = "linux", img.arch
 		}
 		out = append(out, a)
 	}
-	return &nvkrrelease.Release{Outputs: out}
+	return &stackartifacts.Set{Artifacts: out}
 }
 
 // siteRender is the RenderOptions of a site render into out, with the three
@@ -204,7 +204,7 @@ func localArtifacts(t *testing.T) *nvkrrelease.Release {
 // only the stack artifacts name it.
 func siteRender(t *testing.T, spec *sitespec.SiteSpec, stack *stackconfig.Config, out string) RenderOptions {
 	t.Helper()
-	return RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Stack: stack, Release: localArtifacts(t), Arch: "linux/arm64", Out: out}
+	return RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Stack: stack, Artifacts: localArtifacts(t), Arch: "linux/arm64", Out: out}
 }
 
 func readValues(t *testing.T, path string) map[string]any {
@@ -722,7 +722,7 @@ func TestRender_ExternalTreeHoldsNoLocalPath(t *testing.T) {
 	if err != nil || release.Chart == nil || release.Chart.Path != "../../controller/deploy/charts/controller" {
 		t.Errorf("controller chart path: %+v %v", release, err)
 	}
-	if !contains(result.Notes, "controller: chart.path ../../controller/deploy/charts/controller stays as committed and resolves from where the tree is installed; render with --release to put the chart in the tree") {
+	if !contains(result.Notes, "controller: chart.path ../../controller/deploy/charts/controller stays as committed and resolves from where the tree is installed; name the chart in the stack artifacts file to put it in the tree") {
 		t.Errorf("notes: %v", result.Notes)
 	}
 	// The rendered default keeps writing the path absolute.
@@ -875,7 +875,7 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 		want   string
 	}{
 		"quoted orgID": {func(o *RenderOptions) { o.Stack.Nico.OrgID = "org\"x" }, "stack config: nico.orgID: the value holds a character"},
-		"no artifacts": {func(o *RenderOptions) { o.Release = nil }, "controller: the deploy path enables profiles.image and nothing names the image; pass --stack-artifacts with a controller-profiles artifact"},
+		"no artifacts": {func(o *RenderOptions) { o.Artifacts = nil }, "controller: the deploy path enables profiles.image and nothing names the image; pass --stack-artifacts with a controller-profiles artifact"},
 	} {
 		spec, stack := filledInputs(t, false, nil)
 		out := filepath.Join(t.TempDir(), "r")
@@ -1019,7 +1019,7 @@ func chartManifest(blob []byte) []byte {
 
 // chartArtifact pushes a chart and its manifest to r under repo/name and
 // returns the artifact and the archive's digest.
-func chartArtifact(r *registry, repo, name string) (nvkrrelease.Artifact, string) {
+func chartArtifact(r *registry, repo, name string) (stackartifacts.Artifact, string) {
 	ctx := context.Background()
 	blob := []byte("chart " + name)
 	manifest := chartManifest(blob)
@@ -1034,12 +1034,12 @@ func chartArtifact(r *registry, repo, name string) (nvkrrelease.Artifact, string
 	if err := r.Tag(ctx, desc, ref); err != nil {
 		panic(err)
 	}
-	return nvkrrelease.Artifact{Name: name, Kind: "helm-oci", Digest: desc.Digest.String(), Reference: ref}, digest(blob)
+	return stackartifacts.Artifact{Name: name, Kind: "helm-oci", Digest: desc.Digest.String(), Reference: ref}, digest(blob)
 }
 
-func imageArtifact(repo, name, arch string) nvkrrelease.Artifact {
+func imageArtifact(repo, name, arch string) stackartifacts.Artifact {
 	d := digest([]byte("image " + name + arch))
-	return nvkrrelease.Artifact{Name: name, Kind: "oci", Digest: d, Reference: repo + "/" + name + "@" + d, Arch: arch}
+	return stackartifacts.Artifact{Name: name, Kind: "oci", Digest: d, Reference: repo + "/" + name + "@" + d, Arch: arch}
 }
 
 // The stack artifacts decide the version of a chart they carry: the rendered
@@ -1058,10 +1058,10 @@ func TestRender_ChartVersionWins(t *testing.T) {
 		p := newRegistry()
 		temporal, _ := chartArtifact(p, repo, "temporal")
 		temporal.ChartVersion = tc.version
-		release := &nvkrrelease.Release{Outputs: []nvkrrelease.Artifact{temporal, cwe, profiles, capARM}}
+		release := &stackartifacts.Set{Artifacts: []stackartifacts.Artifact{temporal, cwe, profiles, capARM}}
 		out := filepath.Join(t.TempDir(), "r")
 		var log strings.Builder
-		if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open, Log: &log}); err != nil {
+		if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Artifacts: release, Arch: "linux/arm64", Out: out, Registry: p.open, Log: &log}); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		rel, _ := ReadRelease(filepath.Join(out, "temporal"))
@@ -1108,10 +1108,10 @@ func TestRender_FromRegistry(t *testing.T) {
 	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
 	// A release may reference an image as repository:tag@digest.
 	capARM.Reference = repo + "/capnico-controller-arm64:v0.0.45@" + capARM.Digest
-	release := &nvkrrelease.Release{Source: &nvkrrelease.Source{Reference: repo + "/releases@" + digest([]byte("r")), DeclaredQualification: "pipeline-attested"}, Outputs: []nvkrrelease.Artifact{temporal, controllerChart, cwe, profiles, capAMD, capARM}}
+	release := &stackartifacts.Set{Source: &stackartifacts.Source{Reference: repo + "/releases@" + digest([]byte("r")), DeclaredQualification: "pipeline-attested"}, Artifacts: []stackartifacts.Artifact{temporal, controllerChart, cwe, profiles, capAMD, capARM}}
 	out := filepath.Join(t.TempDir(), "rendered")
 	var log strings.Builder
-	result, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open, Log: &log})
+	result, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Artifacts: release, Arch: "linux/arm64", Out: out, Registry: p.open, Log: &log})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1119,7 +1119,7 @@ func TestRender_FromRegistry(t *testing.T) {
 		t.Errorf("no source note:\n%s", log.String())
 	}
 	// The file travels with the render and loads; no nvkr-release.json.
-	if _, err := nvkrrelease.Load(filepath.Join(out, "stack-artifacts.json")); err != nil {
+	if _, err := stackartifacts.Load(filepath.Join(out, "stack-artifacts.json")); err != nil {
 		t.Errorf("stack-artifacts.json: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(out, "nvkr-release.json")); err == nil {
@@ -1191,9 +1191,9 @@ func TestRender_Refusals(t *testing.T) {
 	repo := "ghcr.io/example/recipes"
 	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
 	profiles := imageArtifact(repo, "controller-profiles", "")
-	release := &nvkrrelease.Release{Outputs: []nvkrrelease.Artifact{capARM, profiles}}
+	release := &stackartifacts.Set{Artifacts: []stackartifacts.Artifact{capARM, profiles}}
 	out := filepath.Join(t.TempDir(), "rendered")
-	_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/amd64", Out: out, Registry: p.open})
+	_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Artifacts: release, Arch: "linux/amd64", Out: out, Registry: p.open})
 	if err == nil {
 		t.Fatal("rendered without the controller image")
 	}
@@ -1209,7 +1209,7 @@ func TestRender_Refusals(t *testing.T) {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err == nil || !strings.Contains(err.Error(), "exists") {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Artifacts: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err == nil || !strings.Contains(err.Error(), "exists") {
 		t.Errorf("existing out accepted: %v", err)
 	}
 	// A reference that resolves to another manifest than its digest is refused.
@@ -1224,8 +1224,8 @@ func TestRender_Refusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	cwe := imageArtifact(repo, "cwe", "")
-	rel := &nvkrrelease.Release{Outputs: []nvkrrelease.Artifact{tampered, cwe, profiles, capARM}}
-	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: rel, Arch: "linux/arm64", Out: filepath.Join(t.TempDir(), "r"), Registry: bad.open})
+	rel := &stackartifacts.Set{Artifacts: []stackartifacts.Artifact{tampered, cwe, profiles, capARM}}
+	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Artifacts: rel, Arch: "linux/arm64", Out: filepath.Join(t.TempDir(), "r"), Registry: bad.open})
 	if err == nil || !strings.Contains(err.Error(), "the manifest is sha256:") {
 		t.Errorf("tampered manifest: %v", err)
 	}
@@ -1267,7 +1267,7 @@ func TestRender_FromLayouts(t *testing.T) {
 	profDigest := writeLayout(t, layouts, "controller-profiles", []byte(`{"config":{"digest":"sha256:1"}}`), nil)
 	capDigest := writeLayout(t, layouts, "capnico-controller-arm64", []byte(`{"config":{"digest":"sha256:2"}}`), nil)
 	ref := func(name, d string) string { return "nvke.local/" + name + "@" + d }
-	release := &nvkrrelease.Release{Outputs: []nvkrrelease.Artifact{
+	release := &stackartifacts.Set{Artifacts: []stackartifacts.Artifact{
 		{Name: "temporal", Kind: "helm-oci", Digest: tDigest, Reference: ref("temporal", tDigest), ChartVersion: "0.74.0", Layout: filepath.Join(layouts, "temporal")},
 		{Name: "cwe", Kind: "oci", Digest: cweDigest, Reference: ref("cwe", cweDigest), Layout: filepath.Join(layouts, "cwe")},
 		{Name: "controller-profiles", Kind: "oci", Digest: profDigest, Reference: ref("controller-profiles", profDigest), Layout: filepath.Join(layouts, "controller-profiles")},
@@ -1276,7 +1276,7 @@ func TestRender_FromLayouts(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "rendered")
 	var log strings.Builder
 	// No Registry: nothing may be pulled when every artifact has a layout.
-	result, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Log: &log, Registry: func(string) (oras.ReadOnlyTarget, error) {
+	result, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Artifacts: release, Arch: "linux/arm64", Out: out, Log: &log, Registry: func(string) (oras.ReadOnlyTarget, error) {
 		t.Fatal("the registry was opened for a layout-backed artifact")
 		return nil, nil
 	}})
@@ -1301,7 +1301,7 @@ func TestRender_FromLayouts(t *testing.T) {
 		t.Errorf("no source note:\n%s", log.String())
 	}
 	// The copy loads, with its absolute layouts.
-	copied, err := nvkrrelease.Load(filepath.Join(out, "stack-artifacts.json"))
+	copied, err := stackartifacts.Load(filepath.Join(out, "stack-artifacts.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1314,7 +1314,7 @@ func TestRender_FromLayouts(t *testing.T) {
 	// An external tree names the images and no layout, in images.txt and in
 	// its copy of the file: a layout is a directory of this machine.
 	externalOut := filepath.Join(t.TempDir(), "external")
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: externalOut, Credentials: CredentialsExternal}); err != nil {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Artifacts: release, Arch: "linux/arm64", Out: externalOut, Credentials: CredentialsExternal}); err != nil {
 		t.Fatal(err)
 	}
 	externalImages, _ := os.ReadFile(filepath.Join(externalOut, "images.txt"))
@@ -1324,7 +1324,7 @@ func TestRender_FromLayouts(t *testing.T) {
 	}
 	abs, _ := filepath.Abs(nico)
 	checkNoLocalPath(t, externalOut, append(repositoryRoots(t, abs), layouts)...)
-	externalCopy, err := nvkrrelease.Load(filepath.Join(externalOut, "stack-artifacts.json"))
+	externalCopy, err := stackartifacts.Load(filepath.Join(externalOut, "stack-artifacts.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1336,7 +1336,7 @@ func TestRender_FromLayouts(t *testing.T) {
 		t.Fatal(err)
 	}
 	out2 := filepath.Join(t.TempDir(), "rendered")
-	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out2})
+	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Artifacts: release, Arch: "linux/arm64", Out: out2})
 	if err == nil || !strings.Contains(err.Error(), "artifact cwe: layout "+filepath.Join(layouts, "cwe")) {
 		t.Errorf("missing layout: %v", err)
 	}
@@ -1344,8 +1344,8 @@ func TestRender_FromLayouts(t *testing.T) {
 		t.Error("output left behind")
 	}
 	// A relative layout did not come from Load and is refused.
-	release.Outputs[1].Layout = "layouts/cwe"
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out2}); err == nil || !strings.Contains(err.Error(), "is relative") {
+	release.Artifacts[1].Layout = "layouts/cwe"
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Artifacts: release, Arch: "linux/arm64", Out: out2}); err == nil || !strings.Contains(err.Error(), "is relative") {
 		t.Errorf("relative layout: %v", err)
 	}
 }
@@ -1360,14 +1360,14 @@ func TestRender_MixedLayoutAndRegistry(t *testing.T) {
 	layouts := t.TempDir()
 	blob := []byte("spire chart bytes")
 	spireDigest := writeLayout(t, layouts, "spire", chartManifest(blob), blob)
-	spire := nvkrrelease.Artifact{Name: "spire", Kind: "helm-oci", Digest: spireDigest, Reference: "nvke.local/spire@" + spireDigest, ChartVersion: "0.30.1", Layout: filepath.Join(layouts, "spire")}
+	spire := stackartifacts.Artifact{Name: "spire", Kind: "helm-oci", Digest: spireDigest, Reference: "nvke.local/spire@" + spireDigest, ChartVersion: "0.30.1", Layout: filepath.Join(layouts, "spire")}
 	local := localArtifacts(t)
 	cwe, _ := local.Artifact("cwe")
 	profiles := imageArtifact(repo, "controller-profiles", "")
 	capARM, _ := local.Artifact("capnico-controller-arm64")
-	release := &nvkrrelease.Release{Outputs: []nvkrrelease.Artifact{temporal, spire, cwe, profiles, capARM}}
+	release := &stackartifacts.Set{Artifacts: []stackartifacts.Artifact{temporal, spire, cwe, profiles, capARM}}
 	out := filepath.Join(t.TempDir(), "rendered")
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err != nil {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Artifacts: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err != nil {
 		t.Fatal(err)
 	}
 	// Only temporal was fetched; spire came from its layout.
@@ -1391,11 +1391,11 @@ func TestRender_MixedLayoutAndRegistry(t *testing.T) {
 func TestRender_UnusedArtifactsNoted(t *testing.T) {
 	local := localArtifacts(t)
 	d := "sha256:" + strings.Repeat("f", 64)
-	extra := nvkrrelease.Artifact{Name: "nvkectl", Kind: "executable", Digest: d, Reference: "nvke.local/nvkectl@" + d}
-	local.Outputs = append(local.Outputs, extra)
+	extra := stackartifacts.Artifact{Name: "nvkectl", Kind: "executable", Digest: d, Reference: "nvke.local/nvkectl@" + d}
+	local.Artifacts = append(local.Artifacts, extra)
 	out := filepath.Join(t.TempDir(), "rendered")
 	var log strings.Builder
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: local, Arch: "linux/arm64", Out: out, Log: &log}); err != nil {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Artifacts: local, Arch: "linux/arm64", Out: out, Log: &log}); err != nil {
 		t.Fatal(err)
 	}
 	notes := log.String()
@@ -1444,7 +1444,7 @@ func TestBindings(t *testing.T) {
 		t.Errorf("unused for amd64: %v", unused)
 	}
 	// Missing and other-arch states.
-	local.Outputs = local.Outputs[:1] // cwe only
+	local.Artifacts = local.Artifacts[:1] // cwe only
 	bindings, unused, err = Bindings(nico, local, "linux/arm64")
 	if err != nil {
 		t.Fatal(err)
@@ -1458,7 +1458,7 @@ func TestBindings(t *testing.T) {
 		t.Errorf("unused: %v", unused)
 	}
 	amdOnly := localArtifacts(t)
-	amdOnly.Outputs = amdOnly.Outputs[:3] // cwe, profiles, capnico-controller (amd64)
+	amdOnly.Artifacts = amdOnly.Artifacts[:3] // cwe, profiles, capnico-controller (amd64)
 	bindings, _, err = Bindings(nico, amdOnly, "linux/arm64")
 	if err != nil {
 		t.Fatal(err)
@@ -1466,6 +1466,33 @@ func TestBindings(t *testing.T) {
 	for _, b := range bindings {
 		if b.Item == "capnico" && b.State != StateOtherArch+":linux/amd64" {
 			t.Errorf("capnico for arm64 from an amd64 file: %+v", b)
+		}
+	}
+	// A sibling that names its architecture only by its suffix is reported
+	// with that architecture, as Select reports it.
+	suffixOnly := localArtifacts(t)
+	suffixOnly.Artifacts = suffixOnly.Artifacts[3:4] // capnico-controller-arm64
+	suffixOnly.Artifacts[0].OS, suffixOnly.Artifacts[0].Arch = "", ""
+	bindings, _, err = Bindings(nico, suffixOnly, "linux/amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range bindings {
+		if b.Item == "capnico" && b.State != StateOtherArch+":linux/arm64" {
+			t.Errorf("capnico for amd64 from a suffix-only arm64 artifact: %+v", b)
+		}
+	}
+	// An artifact of the wrong kind for its role is in the file and cannot
+	// be bound: the state says why.
+	wrongKind := localArtifacts(t)
+	wrongKind.Artifacts[0].Kind = stackartifacts.KindChart // cwe
+	bindings, _, err = Bindings(nico, wrongKind, "linux/arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range bindings {
+		if b.Item == "controller" && b.Role == "image" && b.State != StateInvalid+":artifact cwe is kind helm-oci, not oci" {
+			t.Errorf("controller image of the chart kind: %+v", b)
 		}
 	}
 	if _, _, err := Bindings(t.TempDir(), local, "linux/arm64"); err == nil {
@@ -1481,10 +1508,10 @@ func TestRender_SiteAndRelease(t *testing.T) {
 	cwe := imageArtifact(repo, "cwe", "")
 	profiles := imageArtifact(repo, "controller-profiles", "")
 	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
-	release := &nvkrrelease.Release{Outputs: []nvkrrelease.Artifact{temporal, cwe, profiles, capARM}}
+	release := &stackartifacts.Set{Artifacts: []stackartifacts.Artifact{temporal, cwe, profiles, capARM}}
 	out := filepath.Join(t.TempDir(), "rendered")
 	spec, stack := filledInputs(t, false, nil)
-	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Stack: stack, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err != nil {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Stack: stack, Artifacts: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err != nil {
 		t.Fatal(err)
 	}
 	// The site values name no image: release-images.yaml does.
