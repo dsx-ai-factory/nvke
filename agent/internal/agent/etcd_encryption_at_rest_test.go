@@ -213,26 +213,6 @@ func TestInitializeKubernetesAPIEncryptionNotControlPlane(t *testing.T) {
 	assert.Equal(t, K8sAPIEncryptionErrorStatus, server.NodeStatus.K8sAPIEncryption.Status)
 }
 
-func TestRewriteKubernetesAPIObjectsNotControlPlane(t *testing.T) {
-	mockRunner := NewMockK8sEncryptionRunner()
-
-	server := &NodeAgentServer{
-		Runner:    mockRunner,
-		Persister: &MockPersister{},
-		NodeStatus: &NodeStatus{
-			Role: WorkerRole, // Not control plane
-		},
-	}
-
-	req := &pb.RewriteKubernetesAPIObjectsRequest{}
-
-	resp, err := server.RewriteKubernetesAPIObjects(context.Background(), req)
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "non-controlplane")
-	assert.Empty(t, resp.ErrorMessage) // Error message set before check fails
-}
-
 func TestRestartAPIPods(t *testing.T) {
 	t.Run("successful pod list and restart", func(t *testing.T) {
 		mockRunner := NewMockK8sEncryptionRunner()
@@ -614,34 +594,6 @@ func TestRestartAPIServer(t *testing.T) {
 				assert.NoError(t, err)
 			}
 		})
-	}
-}
-
-// ── RewriteKubernetesAPIObjects skip_label_check tests ────────────────────
-
-func TestRewriteKubernetesAPIObjects_SkipLabelCheck(t *testing.T) {
-	mockRunner := NewMockK8sEncryptionRunner()
-	// Return no CP nodes so the loop body is skipped, but still tests that
-	// no label check error is returned when skip_label_check=true.
-	mockRunner.Outputs["kubectl get"] = []byte("")
-	mockRunner.Errors["kubectl get"] = nil
-	mockRunner.Outputs["bash"] = []byte("")
-
-	server := &NodeAgentServer{
-		Runner:    mockRunner,
-		Persister: &MockPersister{},
-		NodeStatus: &NodeStatus{
-			Role: ControlPlaneRole,
-		},
-	}
-
-	req := &pb.RewriteKubernetesAPIObjectsRequest{SkipLabelCheck: true}
-	_, err := server.RewriteKubernetesAPIObjects(context.Background(), req)
-	// Should not fail with "not configured" label error.
-	// It may fail on kubectl get node labels (empty node list → succeeds) or
-	// on rewrite commands depending on mock; what matters is no label error.
-	if err != nil {
-		assert.NotContains(t, err.Error(), "not configured")
 	}
 }
 

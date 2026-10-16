@@ -295,13 +295,18 @@ rotation steps crash/timeout-tolerant.
 
 ### 7.5 Multi-node encryption ordering (HA-safe)
 
-Enabling encryption on an existing cluster uses **identity-then-secretbox** provider
-order first (writes stay plaintext-readable by every CP apiserver), then
-`PromoteKubernetesAPIEncryptionProviders` flips to **secretbox-then-identity** on
-each node, then a single `RewriteKubernetesAPIObjects` re-persists objects encrypted,
-then `RemovePlainTextSecondaryEncryptionEntry` drops the fallback. Progress is gated
-by node labels (`nvke.nvidia.com/k8s-api-encryption-*`). New clusters skip this and enable
-encryption directly at `kubeadm init`.
+To enable encryption on an existing cluster, initialize every control-plane node
+with identity before secretbox. This order keeps new writes readable by every
+control-plane API server until all nodes receive the key.
+
+Call `PromoteKubernetesAPIEncryptionProviders` on every control-plane node to put
+secretbox first. Start one rewrite with `StartEtcdEncryptionAtRestObjectsRewrite`.
+Poll `GetEtcdEncryptionAtRestObjectsRewriteStatus` until the operation succeeds.
+Then call `RemovePlainTextSecondaryEncryptionEntry` on every control-plane node
+to remove the plaintext fallback.
+
+Node labels (`nvke.nvidia.com/k8s-api-encryption-*`) gate progress. New clusters
+enable encryption directly at `kubeadm init`.
 
 ### 7.6 Fail-fast RPC + async worker
 
@@ -335,7 +340,7 @@ Defined in `pkg/agent/proto/node_agent.proto`. Grouped conceptually:
 
 **K8s API/etcd encryption**
 `InitializeKubernetesAPIEncryption`, `PromoteKubernetesAPIEncryptionProviders`,
-`RewriteKubernetesAPIObjects`, `UpdateEncryptionConfig`,
+`UpdateEncryptionConfig`,
 `StartEtcdEncryptionAtRestObjectsRewrite` + `Get…Status`,
 `RemovePlainTextSecondaryEncryptionEntry`, `RestartAPIPods`.
 

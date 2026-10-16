@@ -111,13 +111,12 @@ service NodeAgent {
 
   rpc InitializeKubernetesAPIEncryption(InitializeKubernetesAPIEncryptionRequest) returns (InitializeKubernetesAPIEncryptionResponse) {}
 
-  rpc RewriteKubernetesAPIObjects(RewriteKubernetesAPIObjectsRequest) returns (RewriteKubernetesAPIObjectsResponse) {}
-
   // PromoteKubernetesAPIEncryptionProviders reorders encryption providers from
   // identity-then-secretbox (existing-cluster bootstrap) to secretbox-then-identity
   // on this node, then waits for the local apiserver to reload the config.
   // Run on every control-plane node after phase-1 InitializeKubernetesAPIEncryption;
-  // then run RewriteKubernetesAPIObjects once.
+  // then call StartEtcdEncryptionAtRestObjectsRewrite once and poll
+  // GetEtcdEncryptionAtRestObjectsRewriteStatus until the operation succeeds.
   rpc PromoteKubernetesAPIEncryptionProviders(PromoteKubernetesAPIEncryptionProvidersRequest) returns (PromoteKubernetesAPIEncryptionProvidersResponse) {}
 
   // UpdateEncryptionConfig applies a single key-rotation mutation to the local
@@ -574,18 +573,6 @@ message InitializeKubernetesAPIEncryptionRequest {
 }
 
 message InitializeKubernetesAPIEncryptionResponse {
-  string status = 1;
-  string error_message = 2;
-}
-
-message RewriteKubernetesAPIObjectsRequest {
-  // When true, bypasses the "nvke.nvidia.com/k8s-api-encryption-configured=true" label
-  // check that gates the initial-setup flow. Required for key rotation on an
-  // already-encrypted cluster where that label is absent.
-  bool skip_label_check = 1;
-}
-
-message RewriteKubernetesAPIObjectsResponse {
   string status = 1;
   string error_message = 2;
 }
