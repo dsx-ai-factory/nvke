@@ -217,7 +217,11 @@ func readSecrets(t *testing.T, path string) map[string]map[string]string {
 		t.Fatal(err)
 	}
 	out := map[string]map[string]string{}
-	for _, raw := range yamlDocuments(data) {
+	docs, err := yamlDocuments(data)
+	if err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	for _, raw := range docs {
 		var doc struct {
 			Kind     string `yaml:"kind"`
 			Type     string `yaml:"type"`
@@ -227,7 +231,7 @@ func readSecrets(t *testing.T, path string) map[string]map[string]string {
 			StringData map[string]string `yaml:"stringData"`
 			Data       map[string]string `yaml:"data"`
 		}
-		if err := yaml.Unmarshal(raw, &doc); err != nil {
+		if err := raw.Decode(&doc); err != nil {
 			t.Fatalf("%s: %v", path, err)
 		}
 		if doc.Kind != "Secret" {
@@ -474,13 +478,16 @@ func TestRender_ExternalCredentials(t *testing.T) {
 	for _, name := range []string{stackconfig.EnvNicoToken, stackconfig.EnvNodeUser, stackconfig.EnvNodePassword, stackconfig.EnvDatabasePassword} {
 		t.Setenv(name, "")
 	}
-	// The CA files are not read: emptied after the spec loaded, they are
-	// no problem here.
+	// The CA files are not read: sitespec.LoadDescription leaves the paths
+	// empty, and upstreamCA alone says the site uses one.
 	for _, f := range []string{spec.Spire.CACertFile, spec.Spire.CAKeyFile} {
-		if err := os.WriteFile(f, nil, 0o600); err != nil {
+		if err := os.Remove(f); err != nil {
 			t.Fatal(err)
 		}
 	}
+	spec.Spire.CACertFile, spec.Spire.CAKeyFile = "", ""
+	t.Setenv(sitespec.EnvSpireCACertFile, "")
+	t.Setenv(sitespec.EnvSpireCAKeyFile, "")
 	out := filepath.Join(t.TempDir(), "rendered")
 	opts := siteRender(spec, stack, out)
 	opts.Credentials = CredentialsExternal
@@ -539,7 +546,7 @@ func TestRender_TemplateDocumentsAndNamespaces(t *testing.T) {
 	if err := copyTree(nico, path); err != nil {
 		t.Fatal(err)
 	}
-	mixed := "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: site-name\n  namespace: capnico-system\ndata:\n  name: \"{{ .ClusterName }}\"\n---\n" +
+	mixed := "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: site-name\n  namespace: capnico-system\ndata:\n  name: \"{{ .ClusterName }}\"\n--- # the pull secret\n" +
 		"apiVersion: v1\nkind: Secret\nmetadata:\n  name: registry-pull\n  namespace: capnico-system\ntype: kubernetes.io/dockerconfigjson\nstringData:\n  .dockerconfigjson: \"{{ .Nico.Token }}\"\n"
 	if err := os.WriteFile(filepath.Join(path, "nvke-base-config", "50-mixed.yaml.tmpl"), []byte(mixed), 0o600); err != nil {
 		t.Fatal(err)

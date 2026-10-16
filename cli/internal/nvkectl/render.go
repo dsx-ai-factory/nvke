@@ -141,7 +141,12 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 	ro := deploypath.RenderOptions{DeployPath: opts.deployPath, Out: opts.out, Arch: opts.arch, Log: cmd.ErrOrStderr(), AllowTempOut: os.Getenv("NVKECTL_RENDER_ALLOW_TEMP_OUT") == "1", Credentials: opts.creds}
 	var inputs []string
 	if opts.siteSpec != "" {
-		spec, err := sitespec.Load(opts.siteSpec)
+		// An external render reads no CA file, so the spec is loaded without it.
+		load := sitespec.Load
+		if opts.creds == deploypath.CredentialsExternal {
+			load = sitespec.LoadDescription
+		}
+		spec, err := load(opts.siteSpec)
 		if err != nil {
 			return err
 		}

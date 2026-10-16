@@ -378,6 +378,18 @@ func newInventoryViper() *viper.Viper {
 // or an aggregated error describing every problem found. A nil error means the
 // site spec is safe to act on.
 func Load(path string) (*SiteSpec, error) {
+	return load(path, true)
+}
+
+// LoadDescription reads the site spec as Load does but without the SPIRE CA:
+// the CA variables are not read and the files are not opened. Spire.UpstreamCA
+// still says whether the site uses one. For a caller that describes the site
+// and never acts on it, such as a render that writes no credential.
+func LoadDescription(path string) (*SiteSpec, error) {
+	return load(path, false)
+}
+
+func load(path string, withCA bool) (*SiteSpec, error) {
 	v := newInventoryViper()
 	v.SetConfigFile(path)
 	if err := v.ReadInConfig(); err != nil {
@@ -414,7 +426,9 @@ func Load(path string) (*SiteSpec, error) {
 	if abs, err := filepath.Abs(path); err == nil {
 		inv.dir = filepath.Dir(abs)
 	}
-	inv.Spire.CACertFile, inv.Spire.CAKeyFile = envalias.Get(EnvSpireCACertFile), envalias.Get(EnvSpireCAKeyFile)
+	if withCA {
+		inv.Spire.CACertFile, inv.Spire.CAKeyFile = envalias.Get(EnvSpireCACertFile), envalias.Get(EnvSpireCAKeyFile)
+	}
 
 	inv.SetDefaults()
 
@@ -422,7 +436,9 @@ func Load(path string) (*SiteSpec, error) {
 	// problem in one pass, as it did before the two were separated.
 	checks := &validator{}
 	inv.appendDataChecks(checks)
-	inv.appendReferenceChecks(checks)
+	if withCA {
+		inv.appendReferenceChecks(checks)
+	}
 	if err := checks.err(); err != nil {
 		return nil, fmt.Errorf("site spec file %s: %w", path, err)
 	}

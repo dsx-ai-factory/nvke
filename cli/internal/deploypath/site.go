@@ -6,7 +6,9 @@ package deploypath
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -149,7 +151,7 @@ func (r *renderer) site() {
 	}
 	// The CA is a Secret the site-credentials item holds; the chart creates none.
 	var caCert, caKey []byte
-	hasCA := spec.Spire.CACertFile != "" && spec.Spire.CAKeyFile != ""
+	hasCA := spec.Spire.UpstreamCA
 	if hasCA {
 		if !external {
 			caCert = secretFile(r, sitespec.EnvSpireCACertFile, spec.Spire.CACertFile)
@@ -273,9 +275,14 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 		}
 		count++
 		// Each document is classified by its own kind.
-		var kept [][]byte
+		docs, err := yamlDocuments(out.Bytes())
+		if err != nil {
+			r.problem("%s/%s: %v", item, rendered, err)
+			return
+		}
+		var kept []*yaml.Node
 		hasSecret := false
-		for _, doc := range yamlDocuments(out.Bytes()) {
+		for _, doc := range docs {
 			meta, err := decodeSecretMeta(doc)
 			if err != nil {
 				r.problem("%s/%s: %v", item, rendered, err)
@@ -297,7 +304,10 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 			if len(kept) == 0 {
 				continue
 			}
-			content = bytes.Join(kept, []byte("---\n"))
+			if content, err = encodeDocuments(kept); err != nil {
+				r.problem("%s/%s: %v", item, rendered, err)
+				return
+			}
 		}
 		if err := writePrivate(filepath.Join(dst, rendered), content); err != nil {
 			r.problem("%s: %v", item, err)
@@ -476,6 +486,12 @@ type siteSecret struct {
 // siteCredentials writes the site-credentials item, or with external
 // credentials lists the Secrets it would hold.
 func (r *renderer) siteCredentials(password string, hasCA bool, caCert, caKey []byte) {
+	for _, item := range r.items {
+		if item.Name == credentialsItem {
+			r.problem("%s: the deploy path already has an item of that name; the render adds it", credentialsItem)
+			return
+		}
+	}
 	namespaces := map[string]string{}
 	for _, item := range []string{"postgresql", "temporal", "controller", "spire"} {
 		ns, ok := r.itemNamespace(item)
@@ -577,39 +593,49 @@ type secretMeta struct {
 	Data       map[string]any `yaml:"data"`
 }
 
-// yamlDocuments splits a YAML stream; empty and comment-only documents are
-// dropped.
-func yamlDocuments(stream []byte) [][]byte {
-	var docs [][]byte
-	var cur [][]byte
-	flush := func() {
-		doc := bytes.Join(cur, []byte("\n"))
-		cur = nil
-		for _, line := range bytes.Split(doc, []byte("\n")) {
-			if t := bytes.TrimSpace(line); len(t) > 0 && t[0] != '#' {
-				docs = append(docs, append(doc, '\n'))
-				return
-			}
+// yamlDocuments decodes a YAML stream into its documents; an empty document
+// is dropped. Comments stay on the nodes, so a re-encoded document keeps them.
+func yamlDocuments(stream []byte) ([]*yaml.Node, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(stream))
+	var docs []*yaml.Node
+	for {
+		var node yaml.Node
+		err := dec.Decode(&node)
+		if errors.Is(err, io.EOF) {
+			return docs, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
+			docs = append(docs, &node)
 		}
 	}
-	for _, line := range bytes.Split(bytes.TrimRight(stream, "\n"), []byte("\n")) {
-		if bytes.Equal(bytes.TrimRight(line, " \t"), []byte("---")) {
-			flush()
-			continue
-		}
-		cur = append(cur, line)
-	}
-	flush()
-	return docs
 }
 
-// decodeSecretMeta decodes one rendered document.
-func decodeSecretMeta(doc []byte) (secretMeta, error) {
+// decodeSecretMeta reads one rendered document.
+func decodeSecretMeta(doc *yaml.Node) (secretMeta, error) {
 	var meta secretMeta
-	if err := yaml.Unmarshal(doc, &meta); err != nil {
+	if err := doc.Decode(&meta); err != nil {
 		return meta, err
 	}
 	return meta, nil
+}
+
+// encodeDocuments writes docs as one YAML stream.
+func encodeDocuments(docs []*yaml.Node) ([]byte, error) {
+	var b bytes.Buffer
+	enc := yaml.NewEncoder(&b)
+	enc.SetIndent(2)
+	for _, doc := range docs {
+		if err := enc.Encode(doc); err != nil {
+			return nil, err
+		}
+	}
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
 }
 
 // expected records a Secret the operator's secret store must provide:

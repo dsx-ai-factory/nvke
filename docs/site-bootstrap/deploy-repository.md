@@ -156,9 +156,9 @@ The committed deploy path is site-independent and names no digest. `nvkectl rend
 - Each template item rendered, as a manifest item.
 - `charts/<item>/` holding the chart archive pulled by digest, for every chart the release carries; the item's `chart.path` points at it. A chart the release lacks stays as committed.
 - `release-images.yaml` in every helm item whose image artifacts the release carries; `kustomization.yaml` in every manifest item bound to an image artifact.
-- At the root: `images.txt`, the images the result runs; `nvkr-release.json`, a copy of the release; and a `.gitignore` that ignores the tree.
+- At the root: `images.txt`, the images the result runs; `nvkr-release.json`, a copy of the release; and, with the default `--credentials rendered`, a `.gitignore` that ignores the tree.
 
-The copy holds the site's credentials. It is written readable by its owner only, and the render refuses an output under a shared temp directory. `nvke-deploy.sh` renders into a scratch directory under `NVKE_STATE_DIR` (default `$XDG_STATE_HOME/nvke`) and removes it when it exits, so no rendered credential is left behind. To read a render, run the command yourself:
+With the default `--credentials rendered` the copy holds the site's credentials. It is written readable by its owner only, and the render refuses an output under a shared temp directory. `nvke-deploy.sh` renders into a scratch directory under `NVKE_STATE_DIR` (default `$XDG_STATE_HOME/nvke`) and removes it when it exits, so no rendered credential is left behind. To read a render, run the command yourself:
 
 ```bash
 nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json \

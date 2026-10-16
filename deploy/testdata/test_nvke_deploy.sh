@@ -156,8 +156,8 @@ grep -q 'existingSecret: nvke-database' "${rendered}/postgresql/site-values.yaml
 ! grep -rq 'secret-db-password\|BEGIN' "${rendered}"/*/site-values.yaml && pass "no values file holds a credential" || fail "a values file holds a credential"
 grep -q 'name: site-credentials, type: manifest' "${rendered}/nvke-deploy.yaml" && pass "the render adds the site-credentials item" || fail "item list: $(cat "${rendered}/nvke-deploy.yaml")"
 sed -n '/^items:/,$p' "${rendered}/nvke-deploy.yaml" | sed -n 3p | grep -q 'name: site-credentials' && pass "the site-credentials item follows the first item" || fail "item order: $(cat "${rendered}/nvke-deploy.yaml")"
-grep -q "database-connection-string: $(printf 'postgresql://postgres:secret-db-password@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller?sslmode=disable' | base64)" "${rendered}/site-credentials/secrets.yaml" && pass "the Secrets item holds the controller's connection string, base64 in data" || fail "secrets.yaml: $(cat "${rendered}/site-credentials/secrets.yaml")"
-grep -q "tls.key: $(base64 <"${WORK}/site/ca.key")" "${rendered}/site-credentials/secrets.yaml" && grep -q 'namespace: spire-server' "${rendered}/site-credentials/secrets.yaml" && pass "and the SPIRE CA Secret" || fail "secrets.yaml lacks the CA"
+grep -q "database-connection-string: $(printf 'postgresql://postgres:secret-db-password@postgres-postgresql.postgres.svc.cluster.local:5432/nke-controller?sslmode=disable' | base64 | tr -d '\n')$" "${rendered}/site-credentials/secrets.yaml" && pass "the Secrets item holds the controller's connection string, base64 in data" || fail "secrets.yaml: $(cat "${rendered}/site-credentials/secrets.yaml")"
+grep -q "tls.key: $(base64 <"${WORK}/site/ca.key" | tr -d '\n')$" "${rendered}/site-credentials/secrets.yaml" && grep -q 'namespace: spire-server' "${rendered}/site-credentials/secrets.yaml" && pass "and the SPIRE CA Secret" || fail "secrets.yaml lacks the CA"
 reject "the Secrets use data, not stringData" 'stringData' "$(cat "${rendered}/site-credentials/secrets.yaml")"
 grep -q 'bundle: bundle.crt' "${rendered}/spire/site-values.yaml" && pass "the spire values keep the bundle path on" || fail "spire bundle marker missing"
 find "${rendered}" -maxdepth 0 -perm 0700 | grep -q . && pass "the rendered tree is private" || fail "rendered tree mode"
@@ -170,8 +170,9 @@ grep -q '^SITE_NAME=nvke-site$' "${rendered}/site.env" && grep -q '^SITE_TRUST_D
 expect "the operator is told which files hold credentials" "^${rendered} holds this site's credentials: site-credentials/secrets.yaml, nvke-base-config/20-nico-credentials.yaml, .*\. Delete it after the install\.$" "${out}"
 [[ "$(cat "${rendered}/.gitignore")" == "*" ]] && pass "the rendered tree ignores itself for git" || fail ".gitignore"
 
-# External credentials: no variable read, no secret written, the Secrets listed.
-out="$(env -u NVKECTL_NICO_TOKEN -u NVKECTL_NODE_USER -u NVKECTL_NODE_PASSWORD -u NVKECTL_DATABASE_PASSWORD "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --arch linux/arm64 --credentials external --out "${WORK}/external" 2>&1)" || fail "external render exited $?: ${out}"
+# External credentials: no credential or CA variable read, no secret written,
+# the Secrets listed.
+out="$(env -u NVKECTL_NICO_TOKEN -u NVKECTL_NODE_USER -u NVKECTL_NODE_PASSWORD -u NVKECTL_DATABASE_PASSWORD -u NVKECTL_SPIRE_CA_CERT_FILE -u NVKECTL_SPIRE_CA_KEY_FILE "${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${SITESPEC}" --stack-config "${STACK}" --arch linux/arm64 --credentials external --out "${WORK}/external" 2>&1)" || fail "external render exited $?: ${out}"
 expect "the external render holds no credential" "^${WORK}/external holds no credential\.$" "${out}"
 expect "the external render names the database Secret" '^expected in the cluster before the install: Secret postgres/nvke-database with keys password, postgres-password$' "${out}"
 expect "and the NICo Secret" '^expected in the cluster before the install: Secret capnico-system/nico-credentials with keys ' "${out}"
