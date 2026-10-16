@@ -70,16 +70,6 @@ func TestClientRegistry(t *testing.T) {
 				}
 			})
 
-			t.Run("dynamic", func(t *testing.T) {
-				client, err := registry.DynamicClient()
-				if tt.wantErrContains == "" {
-					require.NotNil(t, client)
-					require.NoError(t, err)
-				} else {
-					require.ErrorContains(t, err, tt.wantErrContains)
-				}
-			})
-
 			t.Run("local", func(t *testing.T) {
 				client, err := registry.LocalClient()
 				if tt.wantErrContains == "" {
@@ -107,16 +97,6 @@ func TestClientRegistryClientsAreCached(t *testing.T) {
 		assert.True(t, typedClient == cachedTypedClient)
 	})
 
-	t.Run("dynamic", func(t *testing.T) {
-		dynamicClient, err := registry.DynamicClient()
-		require.NoError(t, err)
-		require.NotNil(t, dynamicClient)
-
-		cachedDynamicClient, err := registry.DynamicClient()
-		require.NoError(t, err)
-		assert.True(t, dynamicClient == cachedDynamicClient)
-	})
-
 	t.Run("local", func(t *testing.T) {
 		localClient, err := registry.LocalClient()
 		require.NoError(t, err)
@@ -140,13 +120,13 @@ func TestClientRegistryLocalClientUsesLoopbackApiserver(t *testing.T) {
 	assert.Equal(t, "https://127.0.0.1:6443/metrics", reqURL)
 }
 
-func TestKubeconfigAccessError(t *testing.T) {
+func TestClientRegistryMissingKubeconfig(t *testing.T) {
 	path := "/missing/admin.conf"
 	registry := NewClientRegistry(path)
 	_, err := registry.Client()
 
 	assert.ErrorContains(t, err, "reading kubeconfig /missing/admin.conf")
-	assert.ErrorAs(t, err, &KubeconfigAccessError{})
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func newKubeconfigFile(t *testing.T, kubeconfig string) string {

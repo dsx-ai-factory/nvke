@@ -32,9 +32,11 @@ time so both paths hold with no maintainer script.
 points every enabled component at the one image the images package imports into
 containerd: `global.imageRepositoryPrefix: localhost/nvke`, so the chart's
 `ovnkube` repository becomes `localhost/nvke/ovnkube`, and each component's
-`image.tag` is the first 12 characters of the locked commit. The chart's
-defaults are its `values.yaml`, which helm must be given before
-`values-nke.yaml`. `bundle.sh` renders the chart with helm when it is installed
+`image.tag` is the first 12 characters of the locked commit. It also turns on
+pod `hostPort` (`global.enablePodHostPort`), which needs the shared gateway mode
+of real nodes; the agent turns it off on container nodes, which run the local
+gateway. The chart's defaults are its `values.yaml`, which helm must be given
+before `values-nke.yaml`. `bundle.sh` renders the chart with helm when it is installed
 and fails if the result names any image other than the embedded one, so a new
 image key in the fork cannot ship as a registry pull.
 
@@ -93,19 +95,18 @@ emulation. `OVN_KUBERNETES_TOKEN` or `GITHUB_TOKEN` is needed while the fork is 
 
 ## Bumping the stream
 
-`OVN_STREAMS` is `X.Y.0`: the chart's version, built from the fork's
-`release-X.Y.0` branch. `make lock` resolves that branch to a commit and records
-it with the tarball's checksum. Lock amd64 and arm64 from the same ref, review,
-commit:
+`OVN_STREAMS` is the chart version, which is the fork's release tag without
+the `v`: `2.4.2` is tag `v2.4.2`. `make lock` resolves that tag to a commit and
+records it with the tarball's checksum. Lock amd64 and arm64, review, commit:
 
 ```bash
 export OVN_KUBERNETES_TOKEN=...   # while the fork is internal
-make lock OVN_STREAMS=1.7.0
-make lock OVN_STREAMS=1.7.0 ARCH=arm64
+make lock OVN_STREAMS=2.4.3
+make lock OVN_STREAMS=2.4.3 ARCH=arm64
 git diff -- lock
 ```
 
-`OVN_KUBERNETES_REF` locks another branch or a commit instead. A moving branch
+`OVN_KUBERNETES_REF` locks a branch or a commit instead. A moving branch
 can advance between the two runs, so resolve it once and pass the full commit to
 both (`bundle.sh` fails a build whose two locks pin different commits). Keep the
 default stream in step with `defaultOvnCniChartStream` in `agent/internal/agent/cni.go`.

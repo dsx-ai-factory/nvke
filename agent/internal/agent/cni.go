@@ -57,7 +57,7 @@ const (
 	ovnKubernetesHelmChartDir = "/etc/dgx/ovn-kubernetes"
 	// defaultOvnCniChartStream is the OVN Kubernetes chart stream baked into Debian package names
 	// when InstallCNIRequest.version is empty. Sync with OVN_STREAMS in os-image/packages/cni-ovn/Makefile.
-	defaultOvnCniChartStream = "1.6.0"
+	defaultOvnCniChartStream = "2.4.2"
 	// defaultCalicoCniStream is the Calico patch stream in Debian package names when version is empty.
 	// Sync with CALICO_STREAM in cni-packages debs/calico/BUILD.
 	defaultCalicoCniStream = "3.30.1"
@@ -74,11 +74,15 @@ const (
 	// gateway mode. The dsx-ai-factory chart hard-codes OVN_GATEWAY_MODE=shared
 	// and has no global.gatewayMode, but appends global.gatewayOptions after
 	// --gateway-mode, so the mode is overridden there:
-	// https://github.com/dsx-ai-factory/ovn-kubernetes/blob/release-1.6.0/charts/ovn-kubernetes/values.yaml
+	// https://github.com/dsx-ai-factory/ovn-kubernetes/blob/v2.4.2/charts/ovn-kubernetes/values.yaml
 	ovnDummyGatewayBridgeHelmValue = "global.dummyGatewayBridge"
 	ovnDummyGatewayBridgeEnabled   = "true"
 	ovnGatewayOptsHelmValue        = "global.gatewayOptions"
 	ovnDummyGatewayOpts            = "--gateway-mode=local --gateway-interface=br-ex --allow-no-uplink"
+	// values-nke.yaml turns pod hostPort on. ovnkube-node refuses it outside
+	// shared gateway mode, so container nodes turn it back off.
+	ovnPodHostPortHelmValue = "global.enablePodHostPort"
+	ovnPodHostPortDisabled  = "false"
 )
 
 // checkHostOpenVSwitchReady verifies ovs-vsctl is installed (ovs-vsctl --version).
@@ -256,7 +260,7 @@ func ovnKubernetesCNIConfig(cniConfig map[string]string, datapathType string) ma
 		return cniConfig
 	}
 
-	config := make(map[string]string, len(cniConfig)+2)
+	config := make(map[string]string, len(cniConfig)+3)
 	for key, value := range cniConfig {
 		config[key] = value
 	}
@@ -265,6 +269,9 @@ func ovnKubernetesCNIConfig(cniConfig map[string]string, datapathType string) ma
 	}
 	if _, ok := config[ovnGatewayOptsHelmValue]; !ok {
 		config[ovnGatewayOptsHelmValue] = ovnDummyGatewayOpts
+	}
+	if _, ok := config[ovnPodHostPortHelmValue]; !ok {
+		config[ovnPodHostPortHelmValue] = ovnPodHostPortDisabled
 	}
 	return config
 }
@@ -491,8 +498,8 @@ func alternateCniDebName(binPkg string) string {
 
 // nvkeCniAptSpec builds an apt install spec for the discrete NVKE CNI packages.
 //
-// OVN Debian names include the Helm chart stream, e.g. nvke-cni-ovn-images-1.6.0 and
-// nvke-cni-ovn-charts-1.6.0. Request version (after stripping a leading "v") selects that
+// OVN Debian names include the Helm chart stream, e.g. nvke-cni-ovn-images-2.4.2 and
+// nvke-cni-ovn-charts-2.4.2. Request version (after stripping a leading "v") selects that
 // stream; when empty, defaultOvnCniChartStream is used. Non-empty version also appends
 // =<version> for an apt equality pin on the Debian package version.
 //

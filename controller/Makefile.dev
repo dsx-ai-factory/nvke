@@ -678,8 +678,8 @@ capd-image: $(CAPD_IMAGE_DEPS) ## Build the custom CAPD node image for DockerMac
 					arm64|aarch64) bundle_arch=arm64 ;; \
 					*) echo "unsupported docker server arch: $$server_arch" >&2; exit 1 ;; \
 				esac; \
-				ovn_charts="$(CURDIR)/.local/cni/nvke-cni-ovn-charts-1.6.0_1.6.0_$${bundle_arch}.deb"; \
-				ovn_images="$(CURDIR)/.local/cni/nvke-cni-ovn-images-1.6.0_1.6.0_$${bundle_arch}.deb"; \
+				ovn_charts="$(CURDIR)/.local/cni/nvke-cni-ovn-charts-2.4.2_2.4.2_$${bundle_arch}.deb"; \
+				ovn_images="$(CURDIR)/.local/cni/nvke-cni-ovn-images-2.4.2_2.4.2_$${bundle_arch}.deb"; \
 				ovn_helm="$(CURDIR)/.local/cni/nke-e2e-helm.deb"; \
 				[ -n "$${CAPD_CNI_CHARTS_DEB_PATH:-}" ] || CAPD_CNI_CHARTS_DEB_PATH="$$ovn_charts"; \
 				[ -n "$${CAPD_CNI_IMAGES_DEB_PATH:-}" ] || CAPD_CNI_IMAGES_DEB_PATH="$$ovn_images"; \

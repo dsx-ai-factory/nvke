@@ -6,7 +6,7 @@ set -euo pipefail
 
 output_dir="${1:?usage: prepare-ovn-assets.sh OUTPUT_DIR}"
 workspace_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-version=1.6.0
+version=2.4.2
 arch="${BUNDLE_ARCH:-amd64}"
 # The reference package builder needs Linux. Local macOS runs already have
 # Docker/Colima; use a Linux builder there while CI builds directly on its host.

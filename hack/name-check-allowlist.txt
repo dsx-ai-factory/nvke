@@ -85,8 +85,8 @@ token:(^|[./])nke\.nvidia\.com|\.labels\.nke$
 token:NKECluster|nkecluster|NKENodePool|nkenodepool|nkeClusterRef|NKEValidatedNodeIdentity
 
 # The nke-rbac ConfigMap, the nke: ClusterRole prefix the tenant apiserver
-# reserves, and the UpdateNKERBAC rpc with its messages.
-token:nke-rbac|^nke:|UpdateNKERBAC|nkerbac|update_nke_rbac
+# reserves, and the legacy filenames in controller/internal/nvkerbac/.
+token:nke-rbac|^nke:|nkerbac
 
 # SPIFFE caller paths and the ClusterSPIFFEID, the client identities, and the
 # e2e and Tilt probe identities.
