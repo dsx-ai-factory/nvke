@@ -871,7 +871,7 @@ func siteSpec(cfg config.Config, name string) (site.Spec, error) {
 	if err != nil {
 		return site.Spec{}, err
 	}
-	versions, err := requireVersions(versionController, versionCAPIProvisioned, versionKube)
+	versions, err := requireVersions(versionController, versionCAPIProvisioned, versionKube, versionCNIOVN)
 	if err != nil {
 		return site.Spec{}, err
 	}
@@ -888,6 +888,7 @@ func siteSpec(cfg config.Config, name string) (site.Spec, error) {
 		},
 		KubernetesVersion:    versions[versionKube],
 		CNI:                  siteCNI,
+		CNIVersion:           versions[versionCNIOVN],
 		DisableMTLS:          siteDisableMTLS,
 		ControllerImage:      controller.Ref(),
 		CAPIProvisionedImage: provisioned.Ref(),

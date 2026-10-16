@@ -50,6 +50,12 @@ type Spec struct {
 	KubernetesVersion string
 	CNI               string
 
+	// CNIVersion is the CNI stream to install, and has to be the one the node
+	// already has: cloud-init installs the packages and the agent only checks
+	// they are there. Empty leaves the controller's default, which is the
+	// stream a node image bakes, so a node staged with anything else names it.
+	CNIVersion string
+
 	// DisableMTLS bootstraps without SPIFFE. It must match how the node
 	// agent was started, or the bootstrap fails as a TLS handshake error.
 	DisableMTLS bool
