@@ -58,24 +58,25 @@
 # public half to `authorized_keys`, and the dialer authenticates with the
 # private half, which never leaves the runner.
 #
-# PLAN FIRST, THEN ONE GATED JOB PER STREAM. The `plan` job runs `qualify
-# plan` and writes plan.json: what to qualify, resolved once, with every
-# stream in the scope. `qualify-run` then runs once per stream of that plan,
-# so every stream qualifies exactly the versions the plan named, and a run
-# can say afterwards what it qualified from plan.json alone. The dispatch
-# inputs and QUALIFY_E2E_* variables that name a version are overrides of
-# what the plan resolves, not a second source of versions.
+# ONE PLAN, ONE GATED JOB PER STREAM. The `plan` job runs `qualify plan` and
+# writes plan.json: what to qualify, resolved once, with every stream in the
+# scope. `qualify-run` runs once per stream of that plan, so every stream
+# qualifies exactly the versions the plan named, and a run can say
+# afterwards what it qualified from plan.json alone. The dispatch inputs and
+# QUALIFY_E2E_* variables that name a version are overrides of what the plan
+# resolves, not a second source of versions.
 #
-# EVERYTHING IS GATED, NGC_API_KEY INCLUDED, DRY RUN TOO. A single job
-# replaced the old validate/run split: there is no ungated job and no ungated
-# trigger left for a dispatch or label to reach NGC_API_KEY (or anything
-# else) through. `qualify-run` is gated behind a GitHub environment from its
-# first step, so every run -- dry or real -- waits for a required reviewer
-# on `forge` before it can log into a registry or touch a machine. A beta
-# tag push instead resolves `forge-nightly`, which carries the same secrets
-# and no required reviewers -- an unattended nightly cannot wait on a
-# person, so the control is the deployment tag policy (`v*-beta.*`) rather
-# than a reviewer.
+# EVERYTHING IS GATED, NGC_API_KEY INCLUDED, DRY RUN TOO. There is no
+# ungated job and no ungated trigger left for a dispatch or label to reach
+# NGC_API_KEY (or anything else) through. `verify` and `qualify-run` both
+# declare the same `environment:` expression, so every run -- dry or real --
+# waits for a required reviewer on `forge` before either job can log into a
+# registry or touch a machine; GitHub batches that approval per run and
+# environment, not per job, so one click clears both. A beta tag push
+# instead resolves `forge-nightly`, which carries the same secrets and no
+# required reviewers -- an unattended nightly cannot wait on a person, so
+# the control is the deployment tag policy (`v*-beta.*`) rather than a
+# reviewer.
 #
 # DRY RUN. A `dry-run` dispatch input, or the `qualify-e2e-dry-run` label on a
 # pull request, does everything except join Teleport and run the suite: the
@@ -500,15 +501,72 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Everything the run needs, in one gated job: confirms every artifact the
-  # plan names is published, resolves versions and capabilities, builds the
-  # image archives and nvkectl, reaches Forge or the jump host, and runs the
-  # suite. Every credential this stream can reach -- NGC_API_KEY included --
-  # is behind the same environment approval; nothing in this job runs ahead
-  # of it.
+  # Confirms every artifact the plan names is published, before any machine
+  # is taken. A plan that names something unpublished otherwise fails an hour
+  # in, on hardware, with the failure looking like a provisioning fault. It
+  # asks the registry for the locations the plan recorded, so what it
+  # confirms is that the run can pull them. Runs once for the whole plan,
+  # not per stream, since the plan it checks is the whole run's.
+  #
+  # Reads NGC_API_KEY, so it carries the same environment gate as
+  # qualify-run; GitHub batches deployment approval per run and environment,
+  # not per job, so one approval covers both.
+  verify:
+    name: verify artifacts
+    needs: plan
+    runs-on: arc-amd64-cpu16
+    environment: ${{ github.event_name == 'push' && 'forge-nightly' || 'forge' }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: release/go.mod
+          cache-dependency-path: release/go.sum
+
+      - name: Download the plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: qualify-plan-${{ github.run_id }}
+
+      - name: Check every artifact the plan names
+        shell: bash
+        env:
+          # Both registries hold private repositories, so neither answers
+          # anonymously. These are the same credentials the lanes log in with.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
+          # A commit-resolved plan may have been made by the tag push that
+          # started the publishers, so give them time. A tag-resolved one asks
+          # once.
+          #
+          # A dry run asks once either way. The wait is there to keep a run from
+          # failing on an artifact that is still publishing, and a dry run takes
+          # no machine to protect, so waiting out a bake would only make the
+          # cheap way of exercising this the slow one.
+          WAIT: >-
+            ${{ (needs.plan.outputs.dry-run != 'true'
+                 && needs.plan.outputs.commit != '' && '90m') || '0' }}
+        run: |
+          set -euo pipefail
+          go run ./release/cmd/qualify verify --plan plan.json --wait "${WAIT}"
+
+  # Everything else the run needs, in one gated job: resolves versions and
+  # capabilities, builds the image archives and nvkectl, reaches Forge or
+  # the jump host, and runs the suite. Every credential this stream can
+  # reach -- NGC_API_KEY included -- is behind the same environment
+  # approval; nothing in this job runs ahead of it.
   qualify-run:
     name: ${{ matrix.stream }}${{ needs.plan.outputs.dry-run == 'true' && ' (dry run)' || '' }}
-    needs: plan
+    needs: [plan, verify]
     strategy:
       # Never cancel a sibling. A cancelled lane dies before its teardown and
       # leaks a bare-metal instance, so one stream failing must not take the
@@ -523,18 +581,16 @@ jobs:
     # policy of v*-beta.* -- the ref pattern is the control, not a person.
     #
     # No dry-run exemption: a dry run still logs into NVCR and pulls real
-    # images with NGC_API_KEY (see "Check every artifact the plan names" and
-    # "Log in to NVCR" below), so it needs the same approval a real run does.
-    # Only Teleport and the suite itself skip on a dry run, not the gate.
+    # images with NGC_API_KEY (see "Log in to NVCR" below), so it needs the
+    # same approval a real run does. Only Teleport and the suite itself skip
+    # on a dry run, not the gate.
     environment: ${{ github.event_name == 'push' && 'forge-nightly' || 'forge' }}
-    # Composed of two budgets that used to be separate jobs: up to 90 minutes
-    # waiting for a commit-resolved plan's publishers (see "Check every
-    # artifact the plan names"), plus the run budget below. Measured phases
-    # from the recorded SBOM run: ~17 min to create the instance, ~10 to
-    # stage assets, ~5 to bootstrap, ~8 to install the management plane, ~20
-    # per tenant. Call it 60 for `full`, doubled for a cold run and for
-    # bootstrap's 30-45 minute worst case -- the missing-kubeadm failure runs
-    # its full 30 minutes before failing on NodePreflight.
+    # Measured phases from the recorded SBOM run: ~17 min to create the
+    # instance, ~10 to stage assets, ~5 to bootstrap, ~8 to install the
+    # management plane, ~20 per tenant. Call it 60 for `full`, doubled for a
+    # cold run and for bootstrap's 30-45 minute worst case -- the
+    # missing-kubeadm failure runs its full 30 minutes before failing on
+    # NodePreflight.
     #
     # The go-test timeout below is 15 minutes shorter than the run budget on
     # purpose. Ginkgo unwinds and tears the node down when it fires;
@@ -542,8 +598,8 @@ jobs:
     # teardown's budget, sized against the cleanup nodes' NodeTimeouts -- see
     # the note on the three nested timeouts at the run step. This bound is
     # only ever reached by a run that has already gone wrong; a healthy
-    # `full` is about an hour plus whatever the artifact wait cost.
-    timeout-minutes: 335
+    # `full` is about an hour.
+    timeout-minutes: 235
     permissions:
       contents: read
       # The runner's own GHCR and NVCR pulls, and the Teleport join. No PAT
@@ -741,50 +797,6 @@ jobs:
           cache-dependency-path: |
             go.work.sum
             **/go.sum
-
-      - name: Download the plan
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: qualify-plan-${{ github.run_id }}
-
-      # Confirms every artifact the plan names is published, before any
-      # machine is taken. A plan that names something unpublished otherwise
-      # fails an hour in, on hardware, with the failure looking like a
-      # provisioning fault. It asks the registry for the locations the plan
-      # recorded, so what it confirms is that the run can pull them.
-      #
-      # Always, in both modes, because nothing else asks. What the mode
-      # changes is the budget: a release's artifacts were published when it
-      # was cut, so a miss is a fault to report now, while a beta's
-      # publishers may still be running, so a miss means not yet. The
-      # os-image bake is the long pole at roughly ninety minutes.
-      #
-      # Checked once per stream rather than once per run: the plan it checks
-      # is the whole run's, so a run with more than one stream repeats this.
-      # Cheap relative to everything after it, and the alternative is a
-      # separate ungated job, which would need its own approval or would put
-      # NGC_API_KEY back outside the gate.
-      - name: Check every artifact the plan names
-        shell: bash
-        env:
-          # Both registries hold private repositories, so neither answers
-          # anonymously. These are the same credentials the lanes log in with.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
-          # A commit-resolved plan may have been made by the tag push that
-          # started the publishers, so give them time. A tag-resolved one asks
-          # once.
-          #
-          # A dry run asks once either way. The wait is there to keep a run from
-          # failing on an artifact that is still publishing, and a dry run takes
-          # no machine to protect, so waiting out a bake would only make the
-          # cheap way of exercising this the slow one.
-          WAIT: >-
-            ${{ (needs.plan.outputs.dry-run != 'true'
-                 && needs.plan.outputs.commit != '' && '90m') || '0' }}
-        run: |
-          set -euo pipefail
-          go run ./release/cmd/qualify verify --plan plan.json --wait "${WAIT}"
 
       - name: Resolve the controller version
         shell: bash

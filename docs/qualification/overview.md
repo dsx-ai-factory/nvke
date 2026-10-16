@@ -80,23 +80,27 @@ only, so it is refused before a machine is taken. The dsx stream is outside the
 `full` scope for that reason.
 
 A run starts with a `plan` job that runs `qualify plan` and uploads
-`plan.json`, and then a single `qualify-run` job runs once for each stream of
-the plan's scope: it checks that everything the plan names is published,
-resolves versions and capabilities, builds the site inputs, and reaches
-Forge, DSX or Teleport. The versions, the architecture and the GPU model of a
-job are the plan's, and the dispatch inputs that name a version override
-what the plan resolves.
+`plan.json`. A `verify` job then checks that everything the plan names is
+published, once for the whole plan. A `qualify-run` job runs once for each
+stream of the plan's scope: it resolves versions and capabilities, builds
+the site inputs, and reaches Forge, DSX or Teleport. The versions, the
+architecture and the GPU model of a job are the plan's, and the dispatch
+inputs that name a version override what the plan resolves.
 
-`qualify-run` is gated behind a GitHub environment from its first step, so
-every run -- dry or real -- waits for approval before it can touch any
-credential -- including the NGC key it logs into NVCR with -- or a machine.
-A `workflow_dispatch` or a labelled pull request resolves `forge`, which
+`verify` and `qualify-run` are both gated behind a GitHub environment from
+their first step, so every run -- dry or real -- waits for approval before
+either can touch any credential -- including the NGC key `verify` checks
+artifacts with and `qualify-run` logs into NVCR with -- or a machine. A
+`workflow_dispatch` or a labelled pull request resolves `forge`, which
 carries a required reviewer. A beta tag push instead resolves
 `forge-nightly`, which carries the same secrets but no required reviewer --
 an unattended nightly cannot wait on a person, so the control there is the
-deployment tag policy (`v*-beta.*`) rather than a reviewer. There is no
-ungated job and no ungated trigger left in this lane: a label or a dispatch
-alone, dry run included, cannot reach any credential without an approval.
+deployment tag policy (`v*-beta.*`) rather than a reviewer. GitHub batches
+deployment approval per run and environment, not per job, so one approval
+covers `verify` and every `qualify-run` stream that resolves the same
+environment. There is no ungated job and no ungated trigger left in this
+lane: a label or a dispatch alone, dry run included, cannot reach any
+credential without an approval.
 
 **Qualifying a beta.** A beta tag names a commit and carries no component tags,
 so resolving the components from their own tags would answer with the last
