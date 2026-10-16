@@ -9,7 +9,7 @@
   "goTestFiles": [
     "management-engine/cmd/main_test.go",
     "management-engine/controllers/nvkecluster_resolve_test.go",
-    "management-engine/internal/controller/client_test.go",
+    "management-engine/internal/nvkecontroller/client_test.go",
     "management-engine/test/integration/temporal_test.go"
   ],
   "ordinaryGoTests": [

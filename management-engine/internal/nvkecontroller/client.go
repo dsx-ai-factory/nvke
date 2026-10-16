@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package controller adapts the existing NVKE controller cluster API for reconciliation.
+// Package nvkecontroller adapts the existing NVKE controller cluster API for reconciliation.
 // This will be removed with the migration to CAPI.
-package controller
+package nvkecontroller
 
 import (
 	"context"

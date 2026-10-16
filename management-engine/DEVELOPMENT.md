@@ -79,18 +79,18 @@ supported.
 Use the shared toolchain, including the Temporal CLI, with Docker running:
 
 ```sh
-make dev-controller               # start the combined environment and keep Tilt running
-make test-controller-integration  # run from a second terminal once the services are ready
-make dev-controller-down          # stop Tilt first, then remove the environment
+make dev-nvke-controller               # start the combined environment and keep Tilt running
+make test-nvke-controller-integration  # run from a second terminal once the services are ready
+make dev-nvke-controller-down          # stop Tilt first, then remove the environment
 ```
 
 This creates the dedicated `nvke-controller-management` and `nvke-controller-state` Kind clusters.
 The services cluster runs management-engine, the NVKE controller, Temporal, and CAPI; the state
 cluster stores NVKECluster resources. Open [Tilt](http://localhost:10353/) or the
-[Temporal UI](http://localhost:18081/). The manual `controller-integration-test` resource
+[Temporal UI](http://localhost:18081/). The manual `management-engine-integration-test` resource
 under Tilt's **tests** group runs the same test command.
 
-Use `make dev-controller-up` for setup without Tilt. Pass the same `DEV_NAME` to each
+Use `make dev-nvke-controller-up` for setup without Tilt. Pass the same `DEV_NAME` to each
 command when choosing another name. The launcher uses the controller's existing Tiltfile
 through its local extension hook and requires an unused
 `controller/tilt_config.json`; use a separate checkout if you already have one.
@@ -114,13 +114,13 @@ kubectl --kubeconfig .local/dev/nvke-controller/kubeconfig --context kind-nvke-c
 Resources remain available after testing. Proof JSON and JUnit reports are saved
 under `.local/dev/<DEV_NAME>/controller/results/` and survive teardown. Teardown removes
 the dedicated clusters, owned load balancers, and credentials. Rerun Tilt's
-`controller-credentials` resource to renew controller credentials; `make test-controller-integration` also renews
+`management-engine-credentials` resource to renew controller credentials; `make test-nvke-controller-integration` also renews
 them before each run. Datastore credentials use [the usual refresh](#credentials)
 with the same `DEV_NAME`.
 
 ### Configure an existing NVKE controller
 
-Provide `--controller-endpoint` and `--controller-bindings` together, plus `--controller-token-file`
+Provide `--nvke-controller-endpoint` and `--nvke-controller-bindings` together, plus `--nvke-controller-token-file`
 for bearer authentication. Without controller configuration the manager runs without
 provisioning.
 

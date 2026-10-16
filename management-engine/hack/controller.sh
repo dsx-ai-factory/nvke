@@ -95,7 +95,7 @@ controller_credentials() (
 )
 
 controller_down() (
-  [[ -f "$controller_dir/owned" ]] || fail "This environment was not created by make dev-controller."
+  [[ -f "$controller_dir/owned" ]] || fail "This environment was not created by make dev-nvke-controller."
   local uid container proof scratch
   scratch=$(mktemp -d "$controller_dir/cleanup.XXXXXX")
   trap 'rm -rf "$scratch"' EXIT
@@ -142,7 +142,7 @@ controller_main() {
     controller-up) controller_setup ;;
     controller-down) controller_down ;;
     controller-tilt|controller-test|controller-credentials)
-      [[ -f "$controller_dir/owned" ]] || fail "Run make dev-controller-up first."
+      [[ -f "$controller_dir/owned" ]] || fail "Run make dev-nvke-controller-up first."
       controller_environment
       connect
       case "$1" in

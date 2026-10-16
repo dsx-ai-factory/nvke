@@ -26,7 +26,7 @@ func TestConfigureController(t *testing.T) {
 	require.NoError(t, os.WriteFile(bindingsPath, []byte(data), 0o600))
 	require.NoError(t, os.WriteFile(invalidBindingsPath, []byte(`[{"unknown":"REDACTED"}]`), 0o600))
 	const endpoint = "https://controller.example.com"
-	const partialConfiguration = "--controller-endpoint and --controller-bindings must be provided together"
+	const partialConfiguration = "--nvke-controller-endpoint and --nvke-controller-bindings must be provided together"
 	for _, tc := range []struct {
 		name         string
 		endpoint     string

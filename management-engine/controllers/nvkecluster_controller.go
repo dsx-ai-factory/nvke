@@ -40,9 +40,9 @@ type ControllerClient interface {
 // NVKEClusterReconciler coordinates cluster provisioning from declarative intent.
 type NVKEClusterReconciler struct {
 	client.Client
-	Controller   ControllerClient
-	Bindings     []ControllerBinding
-	PollInterval time.Duration
+	NVKEController ControllerClient
+	Bindings       []ControllerBinding
+	PollInterval   time.Duration
 }
 
 // +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=nvkeclusters,verbs=get;list;watch;patch
@@ -75,7 +75,7 @@ func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}()
 
-	if r.Controller == nil {
+	if r.NVKEController == nil {
 		setLifecycleConditions(&cluster, metav1.ConditionUnknown, metav1.ConditionUnknown, "ProvisioningNotConfigured", "Cluster provisioning is not configured")
 		return ctrl.Result{}, nil
 	}

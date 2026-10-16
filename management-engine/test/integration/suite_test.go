@@ -107,7 +107,7 @@ func newLocalClient(kubeconfig, contextName string) client.Client {
 
 func requiredEnv(name string) string {
 	value := os.Getenv(name)
-	Expect(value).NotTo(BeEmpty(), "%s is required; use make test-controller-integration", name)
+	Expect(value).NotTo(BeEmpty(), "%s is required; use make test-nvke-controller-integration", name)
 	return value
 }
 

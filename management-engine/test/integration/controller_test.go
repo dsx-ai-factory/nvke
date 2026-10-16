@@ -145,7 +145,7 @@ var _ = Describe("NVKECluster through the local NVKE controller API", func() {
 		saveEvidence(env.resultsDir, evidence)
 		GinkgoWriter.Printf("Verified controller %s -> Temporal %s -> CAPI %s/%s; machine %s is paused.\n",
 			evidence.RemoteID, evidence.WorkflowID, capiKey.Namespace, capiKey.Name, evidence.MachineName)
-		GinkgoWriter.Println("Resources remain available in Tilt; make dev-controller-down removes the dedicated environment.")
+		GinkgoWriter.Println("Resources remain available in Tilt; make dev-nvke-controller-down removes the dedicated environment.")
 	}, SpecTimeout(10*time.Minute))
 })
 

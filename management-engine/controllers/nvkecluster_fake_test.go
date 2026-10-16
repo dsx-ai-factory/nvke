@@ -25,13 +25,13 @@ import (
 	"github.com/dsx-ai-factory/cluster-api-provider-nico/pkg/test/fixture"
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
-	"github.com/dsx-ai-factory/nvke/management-engine/internal/controller"
+	"github.com/dsx-ai-factory/nvke/management-engine/internal/nvkecontroller"
 )
 
 var fixtureRemoteID = uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 
 // Keep persisted endpoints stable in goldens while exercising the real HTTP client.
-type fixtureControllerClient struct{ *controller.Client }
+type fixtureControllerClient struct{ *nvkecontroller.Client }
 
 func (*fixtureControllerClient) Endpoint() string { return "https://controller.example.com/api" }
 
@@ -71,14 +71,14 @@ func setupControllerFixture(ctx SpecContext, tc *fixture.Case, reconciler *NVKEC
 	}
 	server := httptest.NewServer(http.HandlerFunc(fake.serveHTTP))
 	DeferCleanup(server.Close)
-	httpClient, err := controller.New(controller.Config{Endpoint: server.URL})
+	httpClient, err := nvkecontroller.New(nvkecontroller.Config{Endpoint: server.URL})
 	Expect(err).NotTo(HaveOccurred())
-	reconciler.Controller = &fixtureControllerClient{Client: httpClient}
+	reconciler.NVKEController = &fixtureControllerClient{Client: httpClient}
 	if fake.config.Recover {
 		controllerutil.AddFinalizer(&source, nvkeClusterFinalizer)
 		Expect(tc.Client.Update(ctx, &source)).To(Succeed())
 		source.Status.Provisioning = &internalv1.ClusterProvisioningStatus{
-			Endpoint: reconciler.Controller.Endpoint(), Generation: source.Generation,
+			Endpoint: reconciler.NVKEController.Endpoint(), Generation: source.Generation,
 		}
 		Expect(tc.Client.Status().Update(ctx, &source)).To(Succeed())
 		if fake.config.RecoveryEdited {

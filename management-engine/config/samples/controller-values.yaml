@@ -8,9 +8,9 @@ manager:
     - --leader-election-namespace=$(STATE_NAMESPACE)
     - --kubeconfig=/etc/management-api/kubeconfig
     - --namespace=project-a
-    - --controller-endpoint=https://controller.example.com/api
-    - --controller-bindings=/etc/controller/bindings/bindings.json
-    - --controller-token-file=/etc/controller/auth/token
+    - --nvke-controller-endpoint=https://controller.example.com/api
+    - --nvke-controller-bindings=/etc/controller/bindings/bindings.json
+    - --nvke-controller-token-file=/etc/controller/auth/token
   extraVolumeMounts:
     - name: controller-bindings
       mountPath: /etc/controller/bindings

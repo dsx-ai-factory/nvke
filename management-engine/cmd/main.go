@@ -26,7 +26,7 @@ import (
 
 	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 	"github.com/dsx-ai-factory/nvke/management-engine/controllers"
-	"github.com/dsx-ai-factory/nvke/management-engine/internal/controller"
+	"github.com/dsx-ai-factory/nvke/management-engine/internal/nvkecontroller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -81,16 +81,21 @@ func main() {
 
 	flag.StringVar(
 		&controllerEndpoint,
-		"controller-endpoint",
+		"nvke-controller-endpoint",
 		"",
-		"NVKE controller REST API base URL; requires --controller-bindings",
+		"NVKE controller REST API base URL; requires --nvke-controller-bindings",
 	)
-	flag.StringVar(&controllerTokenFile, "controller-token-file", "", "File containing the NVKE controller bearer token")
+	flag.StringVar(
+		&controllerTokenFile,
+		"nvke-controller-token-file",
+		"",
+		"File containing the NVKE controller bearer token",
+	)
 	flag.StringVar(
 		&controllerBindingsPath,
-		"controller-bindings",
+		"nvke-controller-bindings",
 		"",
-		"JSON provisioning bindings; requires --controller-endpoint",
+		"JSON provisioning bindings; requires --nvke-controller-endpoint",
 	)
 
 	zapOpts := zap.Options{}
@@ -152,9 +157,9 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	if err := (&controllers.NVKEClusterReconciler{
-		Client:     mgr.GetClient(),
-		Controller: controllerClient,
-		Bindings:   bindings,
+		Client:         mgr.GetClient(),
+		NVKEController: controllerClient,
+		Bindings:       bindings,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NVKECluster")
 		os.Exit(1)
@@ -187,13 +192,13 @@ func configureController(
 		return nil, nil, nil
 	}
 	if endpoint == "" || bindingsPath == "" {
-		return nil, nil, fmt.Errorf("--controller-endpoint and --controller-bindings must be provided together")
+		return nil, nil, fmt.Errorf("--nvke-controller-endpoint and --nvke-controller-bindings must be provided together")
 	}
 	bindings, err := controllers.LoadControllerBindings(bindingsPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	service, err := controller.New(controller.Config{Endpoint: endpoint, TokenFile: tokenFile})
+	service, err := nvkecontroller.New(nvkecontroller.Config{Endpoint: endpoint, TokenFile: tokenFile})
 	if err != nil {
 		return nil, nil, err
 	}
