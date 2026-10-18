@@ -88,7 +88,7 @@ autoinstall:
       # Known limitation at preview: the NVKE apt repository is not published, so
       # the key download and apt-get commands below fail. Instead, install the
       # nvke-agent_<version>_<arch>.deb attached to an agent/ release from
-      # agent/v0.3.0-rc.1 on, at https://github.com/dsx-ai-factory/nvke/releases.
+      # agent/v0.3.0-rc.2 on, at https://github.com/dsx-ai-factory/nvke/releases.
       # Install nvke-agent from the NVKE apt repository
       - [sh, -c, "curl -fsSL -o /etc/apt/keyrings/nke.asc https://packages.nvidia.com/nvke/nvke-apt-public.key"]
       - [sh, -c, "echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://packages.nvidia.com/nvke/apt nvke-noble main' | tee /etc/apt/sources.list.d/nke-apt.list"]

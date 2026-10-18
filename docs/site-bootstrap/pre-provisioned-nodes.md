@@ -176,7 +176,7 @@ curl -fsSL "https://github.com/containernetworking/plugins/releases/download/${C
 > installs the agent that way for the bootstrap e2e's nodes and is the closest
 > worked example.
 > **Known limitation at preview:** the apt repository and its signing key are
-> not published. From `agent/v0.3.0-rc.1`, each `agent/` release at
+> not published. From `agent/v0.3.0-rc.2`, each `agent/` release at
 > https://github.com/dsx-ai-factory/nvke/releases also attaches
 > `nvke-agent_<version>_<arch>.deb`, which `apt-get install` can install from a
 > local path.
