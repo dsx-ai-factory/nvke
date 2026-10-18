@@ -2,7 +2,7 @@
 
 > **Preview:** NVKE is available as a preview. APIs, configuration and behavior can change between releases, and we do not recommend NVKE for production workloads. See [Preview status and known limitations](preview-status.md).
 
-NVIDIA Kubernetes Engine (NVKE) is open-source software that an AI factory installs to run a managed Kubernetes service on its own NVIDIA GPU infrastructure. You call the NVKE API to create Kubernetes clusters for your customers, and NVKE provisions the nodes, forms each cluster, and operates it afterward: scaling node pools, upgrading Kubernetes, replacing nodes and renewing certificates.
+NVIDIA Kubernetes® Engine (NVKE) is open-source software that an AI factory installs to run a managed Kubernetes service on its own NVIDIA GPU infrastructure. You call the NVKE API to create Kubernetes clusters for your customers, and NVKE provisions the nodes, forms each cluster, and operates it afterward: scaling node pools, upgrading Kubernetes, replacing nodes and renewing certificates.
 
 NVKE runs the artifacts that NVIDIA Kubernetes Recipes (NVKR), its companion project, builds. NVKR turns pinned source into node OS images, packages and NVKE's own components, either in a Run on your own host or in the hosted pipeline that NVKR generates, and publishes them as Releases to registries you control. Only a Release from the hosted pipeline is signed and carries build provenance; a local Run is unsigned. No NVKR Release is qualified at preview. NVKE then deploys those artifacts by name.
 
@@ -115,3 +115,9 @@ NVKE is the Kubernetes layer of DSX OS, NVIDIA's software stack for AI factories
 - **Build your first artifacts:** [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md).
 - **Install on your hardware:** [Plan your installation](../operate/plan-installation.md).
 - **Check what preview supports:** [Preview status and known limitations](preview-status.md) and [Supported platforms and versions](supported-platforms.md).
+
+## Trademarks
+
+Kubernetes® is a registered trademark of The Linux Foundation in the United States and other countries. NVIDIA and the NVIDIA logo are trademarks and/or registered trademarks of NVIDIA Corporation in the U.S. and other countries. Other company and product names may be trademarks of the respective companies with which they are associated.
+
+The Linux Foundation has registered trademarks and uses trademarks. For a list of trademarks of The Linux Foundation, please see its Trademark Usage page: https://www.linuxfoundation.org/legal/trademark-usage.

@@ -1,28 +1,28 @@
-# NVKE — NVIDIA Kubernetes Engine
+# NVIDIA Kubernetes® Engine (NVKE)
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8.svg)](https://go.dev/dl/)
 
 **A management plane for running GPU Kubernetes clusters on bare metal.** NVKE
 provisions and operates isolated Kubernetes clusters on NVIDIA infrastructure,
-so platform teams can offer managed Kubernetes to their tenants without building
-and running a control plane themselves.
+so platform teams can offer managed Kubernetes to their customers without
+building and running a control plane themselves.
 
 **Who this is for:** NVIDIA Cloud Partners and platform operators who have GPU
-bare metal and want to hand out production Kubernetes clusters on it, and
-engineers integrating against that control plane.
+bare metal and want to hand out Kubernetes clusters on it, and engineers
+integrating against its management plane.
 
-> **Status: early.** This repository is being prepared for open source. Layout,
-> interfaces, and build inputs are still changing, and every product line is
-> still on pre-releases. Expect breaking changes.
+> **Preview:** NVKE is available as a preview. APIs, configuration and behavior
+> can change between releases, and we do not recommend NVKE for production
+> workloads. See [Preview status and known limitations](docs/overview/preview-status.md).
 
 ## Overview
 
 NVKE is not a Kubernetes distribution and not a Cluster API flavour. It is a
 **self-hosting factory for Kubernetes clusters**: a throwaway seed cluster
-stands up a highly available, self-managing control plane, and that control
-plane then provisions and lifecycle-manages many isolated tenant clusters on
-demand.
+stands up a highly available management cluster, and the management plane on
+it then provisions and lifecycle-manages many isolated workload clusters
+on demand.
 
 The loop is **seed → pivot → mint**:
 
@@ -48,7 +48,7 @@ What distinguishes it from a generic CAPI distribution:
 
 | Directory | What it is |
 |---|---|
-| `controller/` | The control plane. REST API and UI, durable Temporal workflows, cluster and node inventory, and the infrastructure provider integrations. |
+| `controller/` | The management plane. REST API, durable Temporal workflows, cluster and node inventory, and the infrastructure provider integrations. |
 | `cluster-api-provider-provisioned/` | Cluster API infrastructure provider for hosts that NVKE provisions before CAPI bootstraps them. |
 | `agent/` | The on-node daemon. Exposes a gRPC API the controller drives to run `kubeadm`, install a CNI, and configure disk and etcd encryption. |
 | `cli/` | `nvkectl`, the command-line interface. Validates a site spec and drives bootstrap. |
@@ -209,6 +209,14 @@ Questions and discussion:
 [GitHub Discussions](https://github.com/dsx-ai-factory/nvke/discussions/categories/q-a).
 Bugs, feature requests and documentation gaps:
 [GitHub Issues](https://github.com/dsx-ai-factory/nvke/issues).
+
+## Trademarks
+
+Kubernetes® is a registered trademark of The Linux Foundation in the United
+States and other countries. NVIDIA and the NVIDIA logo are trademarks and/or
+registered trademarks of NVIDIA Corporation in the U.S. and other countries.
+Other company and product names may be trademarks of the respective companies
+with which they are associated.
 
 ## License
 
