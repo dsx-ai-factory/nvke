@@ -5,7 +5,7 @@
 This document describes the normal lifecycle controls for worker nodes in NVKE tenant clusters:
 
 - **Auto-provisioning** keeps a node pool converged toward its desired count.
-- **Auto-mode** marks nodes in deprecated NodeSets for recycle.
+- **Auto-mode** marks nodes in deprecated NodeSets for recycle. It does not replace them.
 - **External break-fix systems** decide when workload-aware cordon, drain, and termination can happen.
 - **Operators** can manually reboot or terminate individual nodes when needed.
 
@@ -47,7 +47,7 @@ NVKE does not automatically terminate healthy in-service nodes only because desi
 
 ## Auto-mode Recycling
 
-Auto-mode gradually replaces worker nodes in deprecated NodeSets. The controller marks eligible nodes with `nvke.nvidia.com/NeedsRecycle`, and [NVSentinel](https://github.com/NVIDIA/NVSentinel) (or your break-fix system) decides when those nodes can be cordoned, drained, and terminated.
+Auto-mode marks worker nodes in deprecated NodeSets with the condition `nvke.nvidia.com/NeedsRecycle`, a few at a time. NVKE does not cordon, drain or terminate marked nodes. An operator, or a break-fix system configured to act on the condition, decides when each node can be drained and terminated, and NVKE then provisions its replacement.
 
 ## Rebooting a Node
 

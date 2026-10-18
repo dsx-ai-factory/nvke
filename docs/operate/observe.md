@@ -149,7 +149,7 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
      | jq -r '.nodes[] | [.name, .conditions.provisioned.status, .conditions.kubernetesReady.status, .conditions.nodeAgentReady.status, .conditions.markedForRecycling.status, .conditions.markedForRepair.status] | @tsv'
    ```
 
-   A healthy node reads `True`, `True`, `True`, `False`, `False`: provisioned, `Ready` in Kubernetes, `nvke-agent` healthy, and not marked for replacement or repair. A node is marked for replacement or repair when its Kubernetes node carries the condition `nvke.nvidia.com/NeedsRecycle` or `nvke.nvidia.com/NeedsRepair` (a node last reconciled by an older controller may still carry the `nke.nvidia.com/` form, which NVKE also reads), for example set by NVSentinel. [Manage node pools](../workload-clusters/node-pools.md) describes what NVKE does next.
+   A healthy node reads `True`, `True`, `True`, `False`, `False`: provisioned, `Ready` in Kubernetes, `nvke-agent` healthy, and not marked for replacement or repair. A node is marked for replacement or repair when its Kubernetes node carries the condition `nvke.nvidia.com/NeedsRecycle` or `nvke.nvidia.com/NeedsRepair` (a node last reconciled by an older controller may still carry the `nke.nvidia.com/` form, which NVKE also reads), set by auto mode or by a break-fix system you run. [Manage node pools](../workload-clusters/node-pools.md) describes what NVKE does next.
 
 5. Check the Cluster API objects behind the cluster.
 

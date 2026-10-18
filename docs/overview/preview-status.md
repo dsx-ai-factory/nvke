@@ -10,7 +10,7 @@ NVIDIA Kubernetes Engine (NVKE) is available as a preview. APIs, configuration a
 - Provision workload cluster nodes through NVIDIA Infra Controller (NICo): [Configure an infrastructure provider: NICo](../operate/provider-nico.md).
 - Authenticate NVKE API callers with JWTs from your identity provider: [Secure the NVKE API](../operate/api-authentication.md).
 - Create, change and delete workload clusters with `ovn-kubernetes` networking and optional etcd encryption: [Create a workload cluster](../workload-clusters/create.md).
-- Add, scale and delete node pools, replace nodes, and mark outdated nodes for recycling with auto mode: [Manage node pools](../workload-clusters/node-pools.md).
+- Add, scale and delete node pools, and replace nodes: [Manage node pools](../workload-clusters/node-pools.md).
 - Hand a workload cluster to a customer through its admin kubeconfig: [Access a workload cluster](../workload-clusters/access.md).
 - Check health and collect telemetry with NVIDIA Kubernetes Telemetry Pipeline (NKTP): [Observe NVKE and its clusters](../operate/observe.md).
 - Evaluate NVKE on one Linux machine with simulated NICo: [Quickstart: evaluate locally with mock-NICo](../get-started/quickstart-local.md).
@@ -35,6 +35,7 @@ NVIDIA Kubernetes Engine (NVKE) is available as a preview. APIs, configuration a
 
 ### Workload clusters and node pools
 
+- **Changing a node pool's configuration does not replace its running nodes.** Only nodes created after the change use the new configuration. With `recycleBudget` above `0`, auto mode marks the outdated nodes with the condition `nvke.nvidia.com/NeedsRecycle`, but NVKE does not drain or delete them, and `nvkectl` cannot set the auto-mode fields or show which nodes are marked. Delete outdated nodes yourself, or with a break-fix system you configure to act on the condition, as described in [Manage node pools](../workload-clusters/node-pools.md#control-automatic-node-replacement).
 - **Node labels and taints are fixed at creation and applied only when a node joins.** You cannot update a node pool's `nodeLabels` or `nodeTaints`, or the control plane's `controlPlaneConfig.nodeLabels`, after you create them. NVKE applies them once, after each node joins the cluster. If a label or taint is later removed from a node, it is not added back. To change them on existing nodes, use `kubectl label` and `kubectl taint`.
 
 ### Building artifacts
