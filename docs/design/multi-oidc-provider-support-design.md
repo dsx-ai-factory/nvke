@@ -2,7 +2,7 @@
 
 > **Status:** the fleet-wide providers are implemented, in [#1325](https://github.com/dsx-ai-factory/nvke/pull/1325), [#1355](https://github.com/dsx-ai-factory/nvke/pull/1355), [#1425](https://github.com/dsx-ai-factory/nvke/pull/1425), [#1426](https://github.com/dsx-ai-factory/nvke/pull/1426) and [#1527](https://github.com/dsx-ai-factory/nvke/pull/1527). This document was written before that implementation, so "today" means the controller as it was then. The per-cluster provider API in **Future scope: per-cluster provider API** is not implemented yet, and neither is `discoveryURL` on fleet-wide providers.
 >
-> **Release scope.** GA (target: February) needs both fleet-wide and per-cluster control over OIDC providers. This document covers both: the fleet-wide provider ConfigMap proposed below ships first, for the initial OSS release; the per-cluster provider API described in **Future scope: per-cluster provider API** ships as the GA follow-up, adding per-cluster control on top of the fleet-wide mechanism rather than replacing it.
+> **Release scope.** A later release needs both fleet-wide and per-cluster control over OIDC providers. This document covers both: the fleet-wide provider ConfigMap proposed below ships first, for the initial OSS release; the per-cluster provider API described in **Future scope: per-cluster provider API** ships in a later release, adding per-cluster control on top of the fleet-wide mechanism rather than replacing it.
 
 ## Problem
 
@@ -17,7 +17,7 @@ NVKE supports one OIDC provider today: the shared `NvkeOIDCAuth` provider, set o
 ## Non-goals (initial OSS release)
 
 - Propagating a provider-set change to already-running clusters. A cluster keeps the fleet-wide providers it was created with; a later edit affects only subsequently created clusters. Rolling a change out to running clusters would need its own rollout and failure-mode analysis, weighing replacing a node against in-place-editing the `AuthenticationConfiguration` file across the control plane, analogous to the existing brownfield `EnableOIDC` workflow. That is the extension point: this release does not build anything that would be incompatible with reusing that rollout framework later.
-- Per-cluster provider overrides or opt-outs. All clusters in the fleet get the same combined provider set in this release; there is, for example, no way yet to give a self-managed cluster running NVKE's own components stricter controls than the rest of the fleet. See **Future scope: per-cluster provider API** for the GA follow-up that adds this.
+- Per-cluster provider overrides or opt-outs. All clusters in the fleet get the same combined provider set in this release; there is, for example, no way yet to give a self-managed cluster running NVKE's own components stricter controls than the rest of the fleet. See **Future scope: per-cluster provider API** for a later release that adds this.
 - Operator-supplied CEL expressions for username/group mapping.
 - Adding fleet-wide providers to clusters that already exist. A cluster created before `oidc.providers` was set, or without `nke-controller-config`, has no pinned providers and gets none later. The `EnableOIDC` rollout, which turns the shared provider on for an existing cluster, keeps the providers a cluster was created with but adds none.
 - Continuous validation feedback surfaced back to the operator on its own, outside of a `helm upgrade` or a controller restart. This release validates when the chart renders and when the controller starts; nothing watches for a problem in between.
@@ -276,9 +276,9 @@ One more consequence worth accepting up front rather than discovering during rol
 
 Tracing is the one place an environment variable stays meaningful: the OpenTelemetry Operator injects `OTEL_EXPORTER_OTLP_*` into the pod. When the file sets no `tracing.endpoint`, the controller leaves the exporter to the OpenTelemetry SDK, which reads those standard variables itself.
 
-# Future scope: per-cluster provider API (GA target: February)
+# Future scope: per-cluster provider API (a later release)
 
-Fleet-wide covers only part of GA's scope: an operator will also want to add a provider scoped to one cluster, on top of whatever the fleet-wide set already gives everyone. Some clusters need the opposite too, excluding the fleet-wide set entirely; a self-managed cluster running NVKE's own components wanting stricter controls than the rest of the fleet is a concrete example.
+Fleet-wide covers only part of the scope planned for a later release: an operator will also want to add a provider scoped to one cluster, on top of whatever the fleet-wide set already gives everyone. Some clusters need the opposite too, excluding the fleet-wide set entirely; a self-managed cluster running NVKE's own components wanting stricter controls than the rest of the fleet is a concrete example.
 
 The plan is a per-cluster provider list on the create-cluster API itself, same per-provider fields as the fleet-wide `oidc.providers` list, plus a policy flag, `inheritFleetWide`, defaulting to true. When it is false, the pinning from **Control flow and validation** skips the fleet-wide union for that cluster and builds the `AuthenticationConfiguration` from only the shared provider (if enabled) and that cluster's own per-cluster list, giving true opt-out rather than only additive per-cluster providers. The per-cluster list itself becomes a third source into the same combination step: shared provider, fleet-wide list, per-cluster list, all validated the same way, all subject to the same reserved-namespace rule. It is pinned at creation too, for the same reason; `inheritFleetWide` is one more input to a function that already exists, not a new mechanism.
 

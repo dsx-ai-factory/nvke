@@ -28,8 +28,8 @@ cd nvke
 
 ## controller
 
-> **`controller/` builds without NVIDIA credentials.** The carbide SDK and
-> cluster-api-provider-nico dependencies are now public. A cold build needs
+> **`controller/` builds without NVIDIA credentials.** All of its dependencies
+> are public. A cold build needs
 > access to the public Go module proxy; from the repository root,
 > `make build` compiles all twelve modules. See
 > [AGENTS.md](../AGENTS.md).

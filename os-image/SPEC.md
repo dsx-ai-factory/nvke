@@ -12,7 +12,8 @@ not the only allowed one.
 
 ## Must have (baked into the image)
 
-TODO:  Need to refine the requirements around spire-agent below
+> **Known limitation:** the SPIRE agent requirements below are not final and
+> can change between preview releases.
 
 | Item | Requirement |
 |---|---|

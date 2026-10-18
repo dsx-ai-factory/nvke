@@ -35,25 +35,10 @@ device state from hiding the root filesystem in a replacement image.
 
 ## What this does not build
 
-The EFI the fleet actually boots is not this one. It is built by the internal
-GitLab repo `nke/node-images`, which uses the same clone-and-run shape as this
-Makefile but first copies **its own** `disk_imaging.sh` over upstream's, then
-cosign-signs the result and uploads it to S3 behind CloudFront. The two payload
-copies have diverged a long way: 874 lines in `node-images` against 1141
-upstream, differing in about a thousand lines. `node-images` also pins a
-different upstream commit.
-
-So this target proves the artifact can be built from source in the open. It
-does not reproduce the shipped binary, and the two are not interchangeable
-today.
-
-The concrete difference, if anyone is tempted to swap them: every production
-iPXE script passes `disk_strategy=` on the kernel command line. The
-`node-images` payload parses it and selects a disk by it. Upstream's payload
-has no `disk_strategy` at all — it reads a differently named `image_disk`. An
-EFI built here would ignore the parameter without complaining and choose a disk
-by its own rules. Reconciling the two payloads is a prerequisite for using this
-output anywhere real.
+Production node images may be built by a downstream pipeline that carries its own
+`disk_imaging.sh` payload, so the EFI built here is not necessarily the one a
+given site boots. The upstream payload built here reads `image_disk` and ignores
+the `disk_strategy=` parameter that NVKE's iPXE scripts pass.
 
 ## Building
 

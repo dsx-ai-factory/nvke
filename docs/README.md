@@ -33,7 +33,6 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 
 | Document | Contents |
 |---|---|
-| [overview.md](overview.md) | What NVKE is and the problem it solves |
 | [dsx-stack.md](dsx-stack.md) | Where NVKE sits in the DSX component ecosystem (NICo, AICR, CRE, Nodewright, NVSentinel) |
 | [concepts.md](concepts.md) | The terms the rest of the documentation uses |
 | [first-cluster.md](first-cluster.md) | Three paths to a running cluster, driven by `nvkectl` |
@@ -74,13 +73,15 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [tenant-clusters/kubernetes-api-access.md](tenant-clusters/kubernetes-api-access.md) | How operators, automation and Site Controller services reach and authenticate to tenant Kubernetes APIs |
 | [../controller/docs/authenticating-to-the-api.md](../controller/docs/authenticating-to-the-api.md) | Authenticating to the API |
 | [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nvkectl` |
-| [../controller/docs/byo-os.md](../controller/docs/byo-os.md) | Bringing your own OS image |
+| [design/README.md](design/README.md) | Design records and proposals; status is stated at the top of each |
+| [design/byo-os.md](design/byo-os.md) | Proposal: bringing your own OS image |
+| [design/multi-oidc-provider-support-design.md](design/multi-oidc-provider-support-design.md) | Design: multiple OIDC providers |
 
 ## Operating a site
 
 | Document | Contents |
 |---|---|
-| [operations/upgrade.md](operations/upgrade.md) | Upgrading NVKE and tenant cluster Kubernetes versions |
+| [operations/upgrade.md](operations/upgrade.md) | Pointer to the upgrade limitations in preview status |
 | [operations/crd-group-migration.md](operations/crd-group-migration.md) | Copying existing CRs to the `internal.nvke.nvidia.com` group on an existing site |
 | [operations/label-domain-migration.md](operations/label-domain-migration.md) | What the move to the `nvke.nvidia.com` label and annotation domain means for an existing site |
 | [site-operations/certificate-renewal.md](site-operations/certificate-renewal.md) | Site-management certificate renewal for NVKE fleet operators |
