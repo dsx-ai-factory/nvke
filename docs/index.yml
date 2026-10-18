@@ -30,6 +30,10 @@ navigation:
             path: operate/plan-installation.md
           - page: Get NVKE artifacts from NVKR and write release manifests
             path: operate/build-node-images.md
+          # Absolute URL: NVKR is a separate Fern instance, so a relative
+          # /nvke/nvkr link resolves only once docs.nvidia.com proxies both.
+          - link: NVKR documentation
+            href: https://nvidia-nvkr.docs.buildwithfern.com/nvke/nvkr
           - page: Prepare nodes
             path: operate/prepare-nodes.md
           - page: Bootstrap the management cluster
