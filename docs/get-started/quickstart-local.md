@@ -1,5 +1,7 @@
 # Quickstart: evaluate locally with mock-NICo
 
+> **Preview:** NVKE is available as a preview. APIs, configuration and behavior can change between releases, and we do not recommend NVKE for production workloads. See [Preview status and known limitations](../overview/preview-status.md).
+
 This page describes how to run NVIDIA Kubernetes Engine (NVKE) on one Linux machine and create a workload cluster through the NVKE API, with no GPU hardware and no NVIDIA account. In place of NVIDIA Infra Controller (NICo), the machine runs mock-NICo, a simulator that answers the NICo API and starts each workload cluster node as a Docker container.
 
 You need a Linux host, physical or virtual, with at least 6 CPUs, 12 GiB of free memory and 100 GiB of free disk, Docker, and the tools listed in [Before you begin](#before-you-begin). macOS is not covered by this page.
