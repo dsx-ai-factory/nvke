@@ -25,7 +25,7 @@ Install in this order:
 
 1. Cluster API core and the kubeadm providers
 2. CAPNICo
-3. The site controller (CWE)
+3. The management plane (CWE)
 
 **CWE must come last.** It reads the `Machine` and `NicoMachine` CRDs once, at process start, and silently skips three controllers when they are absent — the machine SPIRE entry controller, the NICo TPM SPIFFE controller, and the NICo provider-ID controller. They are warnings, not failures, and there is no retry. If CWE is already running, restart it after the provider lands. Find it by the
 chart's own label rather than a hardcoded name, since the deployment name
@@ -51,7 +51,7 @@ No node should list `node-role.kubernetes.io/control-plane`. If one does, becaus
 kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
 ```
 
-The site cluster also needs a default StorageClass before CWE's Postgres and SPIRE will schedule. That is part of installing the site controller, not this page.
+The site cluster also needs a default StorageClass before CWE's Postgres and SPIRE will schedule. That is part of installing the management plane, not this page.
 
 ## 2. Install Cluster API
 
@@ -127,7 +127,7 @@ Before you create anything, read CAPNICo's **[2. Check the Instance Types Have A
 
 ## 5. Verify
 
-Use `kubectl` here. `nvkectl get providers` cannot run yet: it needs a site registered with `nvkectl config set-site`, and that requires a CWE URL, which does not exist until you install the site controller in the next step.
+Use `kubectl` here. `nvkectl get providers` cannot run yet: it needs a site registered with `nvkectl config set-site`, and that requires a CWE URL, which does not exist until you install the management plane in the next step.
 
 ```bash
 # Cluster API core and the kubeadm providers
@@ -142,7 +142,7 @@ kubectl get secret nico-credentials -n capnico-system
 
 The CAPNICo Deployment should be available, and `nicoclusters`, `nicoclustertemplates`, `nicomachines` and `nicomachinetemplates` should all be established.
 
-Once the site controller is installed and you have run `nvkectl config set-site`, `nvkectl get providers` reports the same thing in one line, and `nico` should read `CONFIGURED`.
+Once the management plane is installed and you have run `nvkectl config set-site`, `nvkectl get providers` reports the same thing in one line, and `nico` should read `CONFIGURED`.
 
 > **`CONFIGURED` is a narrower claim than it looks.** It means the provider's CRDs are established, its controller is running, and a credentials Secret is present. It does **not** check that Cluster API core is installed, that the credentials work, or that the backend is reachable. CAPNICo ships its own CRDs, so `nico` reads `CONFIGURED` even on a cluster with no Cluster API at all. Treat it as "the provider is installed", not "the site is ready".
 
@@ -166,7 +166,7 @@ For provider-side conditions — `WaitingForBootstrapData`, `WaitingForIdentityS
 
 ## What This Page Does Not Cover
 
-- **The site controller (CWE) install.** Separate step, and it must come after this one.
+- **The management plane (CWE) install.** Separate step, and it must come after this one.
 - **`cluster-api-provider-provisioned`.** It ships in this repository but is not a tenant-cluster infrastructure provider and is not installed on a site cluster.
 - **LaunchLayer.** `nvkectl get providers` reports on it, but it is not supported for tenant clusters today.
 - **Installing the GPU runtime on a tenant cluster.** Once a tenant cluster exists, drivers, operators and system configuration are installed with [NVIDIA AI Cluster Runtime](https://github.com/NVIDIA/aicr), a separate project.

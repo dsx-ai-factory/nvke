@@ -139,7 +139,7 @@ func newBootstrapSiteCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   siteSubcommand,
-		Short: "Bootstrap a new NVKE site controller from a site spec file",
+		Short: "Bootstrap a new NVKE management cluster from a site spec file",
 		Long: `Bootstrap a vanilla Kubernetes cluster from the nodes described by the site
 spec file passed with -f/--sitespec: pre-provisioned hosts it lists
 (infra.provider provisioned, the default), or machines CAPNICo allocates from a
@@ -205,7 +205,7 @@ site spec file format.`,
 		"Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.release, "release", "",
 		"NVKR release description whose "+controllerdeploy.CAPNICoArtifact+" artifact replaces the bootstrap CAPNICo image "+
-			"with its pinned digest, as \"render deploy-path --release\" does for the site controller's CAPNICo. "+
+			"with its pinned digest, as \"render deploy-path --release\" does for the management cluster's CAPNICo. "+
 			"The release description is not verified: run \"nvkr release verify\" on the same reference first. "+
 			"Only with infra.provider nico.")
 	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH,

@@ -1,8 +1,8 @@
-# Site Controller Bootstrap
+# Management cluster bootstrap
 
 ## Overview
 
-This guide walks you through deploying a self-managing site controller cluster — the Kubernetes control plane that runs NVKE's workflow engine, databases, and security services.
+This guide walks you through deploying a self-managing management cluster — the Kubernetes cluster that runs NVKE's workflow engine, databases, and security services.
 
 The process has three steps:
 
@@ -14,7 +14,7 @@ The process has three steps:
 
 ## What Happens During Bootstrap
 
-`nvkectl bootstrap site` does more than call kubeadm. It first stands up an ephemeral Kind cluster on the init node, deploys a self-contained NVKE site controller (Postgres, Temporal, SPIRE, the Cluster API providers, and CWE) onto it — `--disable-mtls`, the development-only plaintext mode, skips SPIRE — and then uses that controller to drive the init and join workflows against your actual nodes over `nvke-agent`'s gRPC API — no SSH required.
+`nvkectl bootstrap site` does more than call kubeadm. It first stands up an ephemeral Kind cluster on the init node, deploys a self-contained NVKE management plane (Postgres, Temporal, SPIRE, the Cluster API providers, and CWE) onto it — `--disable-mtls`, the development-only plaintext mode, skips SPIRE — and then uses that controller to drive the init and join workflows against your actual nodes over `nvke-agent`'s gRPC API — no SSH required.
 
 The ephemeral Kind cluster is torn down when bootstrap succeeds. It is retained if you pass `--keep-bootstrap-cluster`, or if the run fails after the site cluster was created (with `infra.provider: nico`, also when the create request got no answer) — see [Pre-Provisioned Nodes](pre-provisioned-nodes.md) for the recovery steps. With `infra.provider: nico`, use [the retained bootstrap cluster](../../cli/docs/bootstrap-troubleshooting.md#release-the-nico-instances-first) instead: deleting the Kind cluster alone leaves the NICo instances allocated and unmanaged, and after every control-plane node joined only the Kind cluster is deleted.
 
@@ -26,7 +26,7 @@ sequenceDiagram
     participant CWE as Cloud Workflow Engine
     participant Init as nvke-agent (init node)
     participant Join as nvke-agent (join nodes)
-    participant K8s as Site Controller Cluster
+    participant K8s as Management Cluster
 
     Op->>Ctl: nvkectl bootstrap site -f sitespec.yaml
     Ctl->>Ctl: Load and validate inventory

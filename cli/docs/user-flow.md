@@ -17,9 +17,9 @@ the reference it points at.
 | Write the stack config, `stack-config.json` | The controller stack install reads it: the NICo API, and under `images` the profile content image (required without a release) and, optionally, the controller image. Copy `deploy/examples/stack-config.json` and fill in every `REPLACE_*` value; the install refuses a placeholder. The tokens and passwords come from `NVKECTL_*` variables. Not read by `bootstrap site`. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
 | `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts come from this checkout, the profile content image from the stack config's `images.profiles`, and the controller image from `images.controller` or, when that is empty, the deploy path's pin. | Not in the CLI |
-| `deploy/check-site.sh`, `clusterctl init`, `deploy/nvke-deploy.sh install --deploy-path deploy/nico`, the exec-auth patch | The site controller install, a short list of commands run in order: the check reports what the cluster and this machine still need; `clusterctl init` installs Cluster API; the executor renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NVKE telemetry pipelines (NKTP), the controller) and applies it; the patch gives the Cluster API controllers SPIRE exec-auth. See [Install management-plane services](../../docs/operate/install-management-plane-services.md). | Not in the CLI |
-| `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
-| `nvkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
+| `deploy/check-site.sh`, `clusterctl init`, `deploy/nvke-deploy.sh install --deploy-path deploy/nico`, the exec-auth patch | The management plane install, a short list of commands run in order: the check reports what the cluster and this machine still need; `clusterctl init` installs Cluster API; the executor renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NVKE telemetry pipelines (NKTP), the controller) and applies it; the patch gives the Cluster API controllers SPIRE exec-auth. See [Install management-plane services](../../docs/operate/install-management-plane-services.md). | Not in the CLI |
+| `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at an NVKE management plane. `use-site` switches between entries, `view` prints the config. | Available |
+| `nvkectl get providers` | Lists the Cluster API infrastructure providers the management plane can use, with their state. Alpha. | Available |
 | `nvkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
 | `nvkectl get clusters [name ...]` | Lists tenant clusters. Names narrow to those clusters. `-o json\|yaml` changes the format. | Available |
 | `nvkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. `--output-file` writes it to a file instead of stdout. | Available |
@@ -27,7 +27,7 @@ the reference it points at.
 | `nvkectl patch cluster <name>` | PATCHes a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config). `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). | Available |
 | `nvkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Available |
 | `nvkectl get nodepools [name ...]` | Lists node pools. Names narrow to those pools, `--cluster <name>` to one cluster. `-o json\|yaml` changes the format. | Available |
-| `nvkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. A cluster has a control-plane pool only on a site controller with the control-plane controller off; deleting its last joined one is rejected, so delete the cluster instead. | Available |
+| `nvkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. A cluster has a control-plane pool only on a management plane with the control-plane controller off; deleting its last joined one is rejected, so delete the cluster instead. | Available |
 | `nvkectl patch nodepool <name> --cluster <name>` | PATCHes a node pool. `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). `desiredNodeCount` is the only field supported so far. | Available |
 | `nvkectl version` | Prints version, commit and build date. `-o short\|yaml\|json`. | Available |
 
@@ -149,7 +149,7 @@ item directory holds its chart pin, values and overlay, or its manifests;
 GitOps; [Deploy Path](https://github.com/dsx-ai-factory/nvke/blob/main/docs/site-bootstrap/deploy-repository.md)
 describes the format.
 
-### 6. Point the CLI at the site controller
+### 6. Point the CLI at the management plane
 
 On the machine the CLI lives on:
 
@@ -215,7 +215,7 @@ cat examples/capd-cluster.yaml | nvkectl create cluster -f -
 ```
 
 The spec is a `CreateClusterRequest`; the schema is served at `/api/docs` on
-the site controller. [examples/capd-cluster.yaml](../examples/capd-cluster.yaml)
+the management plane. [examples/capd-cluster.yaml](../examples/capd-cluster.yaml)
 is a starting point.
 
 ### 9. Watch it come up
@@ -259,7 +259,7 @@ cat pool.yaml | nvkectl create nodepool -f -
 ```
 
 The spec is a `CreateNodePoolRequest`; the schema is served at `/api/docs` on
-the site controller. A file holding several documents is rejected; create one
+the management plane. A file holding several documents is rejected; create one
 pool per invocation.
 
 `name`, `nodeNamePrefix`, `desiredNodeCount` and `clusterID` are required;
@@ -286,7 +286,7 @@ supports today; the API accepts more, but anything else is rejected before the
 request is sent.
 
 Scaling is asynchronous: the command returns once the controller has recorded the change,
-and the site controller provisions or tears down nodes to match it. A rejected
+and the management plane provisions or tears down nodes to match it. A rejected
 scale-up, such as one the cluster's pod CIDR has no room for, is reported with
 the controller's own message. There is no confirmation prompt, so a lower count starts
 removing nodes straight away.
@@ -301,7 +301,7 @@ nvkectl delete nodepool <nodepool-name> --cluster <cluster-name>
 Node pool names are unique within a cluster, so `--cluster` is what decides
 which pool is resolved. Deletion is asynchronous and the nodes are drained
 before removal; run `nvkectl get nodepools --cluster <cluster-name>` to check
-on it. On a site controller with the control-plane controller off, deleting a
+on it. On a management plane with the control-plane controller off, deleting a
 cluster's last joined control-plane node pool is rejected with the NVKE controller's own
 message — delete the cluster instead.
 

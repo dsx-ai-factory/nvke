@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# What a site controller changes about nktp, over the chart's defaults.
+# What a management cluster changes about nktp, over the chart's defaults.
 #
-# Everything a site controller needs differently lives here instead:
-# sizing for the smaller clusters a site controller runs on and the Operator
+# Everything a management cluster needs differently lives here instead:
+# sizing for a small management cluster and the Operator
 # permission NVKE's API server requires.
 #
 # The exporters stay pointed at the bundled development backend, which keeps
@@ -16,7 +16,7 @@
 # therefore complete: the env lists restate the chart's entries alongside ours.
 # Recheck them whenever the chart changes.
 
-# Nothing else on a site controller serves metrics.k8s.io, and the Collector
+# Nothing else on a management cluster serves metrics.k8s.io, and the Collector
 # autoscalers read it.
 metrics-server:
   enabled: true
@@ -70,8 +70,7 @@ opentelemetry-kube-stack:
 
 # ---------------------------------------------------------------------------
 # Sizing. One replica of everything, autoscaling up from one, and requests the
-# smaller clusters a site controller runs on can hold, as the first site
-# controller ran with.
+# small management cluster can hold, as the first one ran with.
 
 # The four Collectors that export to the backend -- the watchdog and the three
 # gateways -- and the watchdog's sidecar label what they send with the site's

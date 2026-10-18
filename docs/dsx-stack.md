@@ -9,7 +9,7 @@ flowchart TB
     hw["Physical hardware\n(GPUs · DPUs · switches · BMC)"]
     nico["NICo — NVIDIA Infra Controller\nBare-metal lifecycle: discovery, firmware,\nnetworking, DPU management"]
     NVKE["NVKE — NVIDIA Kubernetes Engine\nBootstraps and manages Kubernetes clusters\nusing NICo as the infrastructure provider"]
-    inside["Inside each Kubernetes cluster\n(site controller and tenant clusters)"]
+    inside["Inside each Kubernetes cluster\n(management cluster and tenant clusters)"]
     nw["Nodewright\nNode-level package manager:\nGPU drivers, kernel config, host software"]
     aicr["AICR — AI Cluster Runtime\nValidated AI workload recipes:\nknown-good operator + driver + K8s combos"]
     cre["CRE — Cluster Readiness Engine\nCertifies cluster health by running\nreal GPU workloads before production"]
@@ -41,10 +41,10 @@ NVKE's primary CAPI infrastructure provider is [CAPNICo](https://github.com/dsx-
 
 ### NVKE (this project)
 
-NVKE sits between NICo and the Kubernetes workload layer. It bootstraps the site controller cluster, then uses NICo (through CAPNICo and Cluster API) to provision and manage tenant Kubernetes clusters. NVKE provisions the cluster with OVN-Kubernetes, then hands off — the GPU software stack, workload configuration, and cluster readiness certification are handled by the components above.
+NVKE sits between NICo and the Kubernetes workload layer. It bootstraps the management cluster, then uses NICo (through CAPNICo and Cluster API) to provision and manage tenant Kubernetes clusters. NVKE provisions the cluster with OVN-Kubernetes, then hands off — the GPU software stack, workload configuration, and cluster readiness certification are handled by the components above.
 
 **NVKE's scope:**
-- Bootstrap a site controller cluster from pre-provisioned nodes (`nvkectl bootstrap site`)
+- Bootstrap a management cluster from pre-provisioned nodes (`nvkectl bootstrap site`)
 - Provision and lifecycle-manage tenant Kubernetes clusters via NICo
 - Drive rolling Kubernetes version upgrades, node add/remove, and pool scaling
 - Maintain the etcd encryption key and cluster credentials
@@ -62,7 +62,7 @@ Nodewright is a Kubernetes-native package manager for host-level changes. It ins
 
 ### AICR (AI Cluster Runtime)
 
-AICR publishes validated recipes — version-locked combinations of GPU Operator, drivers, kernel configuration, and Kubernetes that are known to work together. Each recipe is rendered into deployment-ready GitOps bundles (ArgoCD, Flux, Helm). After NVKE bootstraps a site controller and a tenant cluster exists, the operator deploys the appropriate AICR recipe bundle to configure the cluster for AI workloads.
+AICR publishes validated recipes — version-locked combinations of GPU Operator, drivers, kernel configuration, and Kubernetes that are known to work together. Each recipe is rendered into deployment-ready GitOps bundles (ArgoCD, Flux, Helm). After NVKE bootstraps a management cluster and a tenant cluster exists, the operator deploys the appropriate AICR recipe bundle to configure the cluster for AI workloads.
 
 [AICR documentation](https://docs.nvidia.com/aicr)
 
@@ -81,8 +81,8 @@ NVSentinel is a break-fix system for node health. It watches nodes for hardware 
 ## A Typical Site Bring-Up Sequence
 
 1. **NICo** is deployed and the bare-metal site is stood up — BMC access, switches configured, hosts ingested.
-2. **NVKE** bootstraps the site controller cluster onto a set of pre-provisioned nodes.
-3. The **NVKE SBOM** (the NVKE controller, NICo, Temporal, Postgres, SPIRE, CAPNICo) is deployed onto the site controller cluster via GitOps.
+2. **NVKE** bootstraps the management cluster onto a set of pre-provisioned nodes.
+3. The **NVKE SBOM** (the NVKE controller, NICo, Temporal, Postgres, SPIRE, CAPNICo) is deployed onto the management cluster via GitOps.
 4. The site is ingested: NVKE is connected to NICo and can now drive tenant cluster operations.
 5. A tenant cluster is created via `nvkectl create cluster`.
 6. An **AICR recipe bundle** is deployed to the tenant cluster, installing Nodewright, GPU Operator, and the full validated software stack.

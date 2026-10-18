@@ -315,7 +315,7 @@ provider-manifest: ## Regenerate the embedded provisioned-provider manifest.
 
 # The CAPNICo manifest the bootstrap installs when the site spec selects
 # infra.provider nico. deploy/nico/capnico/capnico.yaml is the source of truth:
-# it is the manifest the site controller's own deploy path installs, with its one
+# it is the manifest the management cluster's own deploy path installs, with its one
 # edit (the manager's args, which set the reboot/repair annotation prefixes the
 # controller writes), and the
 # bootstrap installs the same bytes so the two cannot pin different CAPNICos.

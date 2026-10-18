@@ -73,7 +73,7 @@ What each binary is, and where it ends up running:
 | Binary | Module | What it does | Runs on |
 |---|---|---|---|
 | `management-engine` | `management-engine/` | Controller management engine for NVKE resources, communicating directly with the management Kubernetes API | An operator-owned management cluster, or a development host with kubeconfig |
-| `controller` | `controller/` | The control plane: REST API, Temporal workflows, and the Kubernetes reconcilers | The site controller cluster |
+| `controller` | `controller/` | The control plane: REST API, Temporal workflows, and the Kubernetes reconcilers | The management cluster |
 | `agent` | `agent/` | gRPC server the control plane drives to run `kubeadm`, install a CNI, and configure encryption | Every managed node |
 | `updater` | `agent/` | Independent helper that replaces the node agent without depending on the agent process | Every managed node |
 | `nvkectl` | `cli/` | Validates a site spec and drives bootstrap | Your machine |

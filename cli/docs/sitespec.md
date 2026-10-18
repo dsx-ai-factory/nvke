@@ -70,7 +70,7 @@ is a complete example.
 
 **This NICo is for bootstrap only.** It is the NICo that allocates the site
 controller's own control-plane machines, through a CAPNICo installed in the
-throwaway Kind cluster. It is not the NICo the finished site controller uses to
+throwaway Kind cluster. It is not the NICo the finished management cluster uses to
 create tenant clusters; that one is in the stack config the controller stack
 install reads, and may be a different NICo, with different credentials, org and
 site.
@@ -146,7 +146,7 @@ writes them: its `userDataTemplate` must carry the SPIRE `write_files` block in
 [What NVKE puts in the user data](../../docs/operate/build-node-images.md#what-nvke-puts-in-the-user-data),
 which `examples/clusterrelease.yaml` does not. Without it the nodes never attest
 and the bootstrap waits until `--timeout`. That page describes the values the
-finished site controller fills in. The bootstrap controller fills in others:
+finished management cluster fills in. The bootstrap controller fills in others:
 
 | Template value | From the bootstrap |
 |---|---|
@@ -193,7 +193,7 @@ By default the image is the digest that `bootstrap-manifest.yaml` lists for the
 tag the manifest names (`nvkectl get bootstrap-manifest`), so a retagged image
 does not change what runs. Pass `--release <file>` to
 pin it to an NVKR release's `capnico-controller` artifact instead, as
-`nvkectl render deploy-path --release` does for the site controller's CAPNICo:
+`nvkectl render deploy-path --release` does for the management cluster's CAPNICo:
 the manifest's one image is replaced with the artifact's `repository@digest`.
 The release description is not verified, here or there: run `nvkr release
 verify` on the same reference first.
@@ -248,7 +248,7 @@ nvkectl create clusterrelease -f releases/clusterrelease.yaml --dry-run=client -
 ```
 
 Keep the two directories apart. `releases/` keeps the request documents that
-`nvkectl create` publishes to the finished site controller, and the bootstrap
+`nvkectl create` publishes to the finished management plane, and the bootstrap
 applies every file in `infra.nico.releases`.
 
 ## Schema
@@ -552,5 +552,5 @@ values are never logged or printed.
 | `NVKECTL_NICO_TOKEN` | the stack install, which `deploy/check-site.sh` checks | NICo API token. |
 | `NVKECTL_NODE_USER` | `bootstrap site` (with `nico`), `validate sitespec --bootstrap-only`, the stack install | Login account rendered into every node's cloud-init: the site's nodes with `nico`, and every tenant node. Both refuse a quote, a backslash or a control character. |
 | `NVKECTL_NODE_PASSWORD` | `bootstrap site` (with `nico`), `validate sitespec --bootstrap-only`, the stack install | Password for `NVKECTL_NODE_USER`. |
-| `NVKECTL_NICO_CREDENTIALS` | `bootstrap site` (with `nico`), `validate sitespec --bootstrap-only` | Path to the file holding the NICo token the bootstrap's CAPNICo uses. Not `NVKECTL_NICO_TOKEN`, which is the finished site controller's token. See "NICo credentials". |
+| `NVKECTL_NICO_CREDENTIALS` | `bootstrap site` (with `nico`), `validate sitespec --bootstrap-only` | Path to the file holding the NICo token the bootstrap's CAPNICo uses. Not `NVKECTL_NICO_TOKEN`, which is the finished management cluster's token. See "NICo credentials". |
 | `NVKECTL_DATABASE_PASSWORD` | the stack install | Postgres password the controller and Temporal share. Keep it: every install of the same site needs the same value. |

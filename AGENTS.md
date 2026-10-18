@@ -358,7 +358,7 @@ those tasks.
 - [docs/architecture.md](docs/architecture.md) — the design to understand before
   changing how the controller and the agent talk to each other: the provisioning
   data flow from `POST /api/clusters` through Temporal and Forge to a node
-  registering itself over SPIFFE mTLS, and the site-controller deployment model
+  registering itself over SPIFFE mTLS, and the management cluster deployment model
 - [controller/AGENTS.md](controller/AGENTS.md) — the full CWE loop: Flox, Temporal
   workflows, the Bun/PostgreSQL layer, environment variables, and the local stack
 - [agent/AGENTS.md](agent/AGENTS.md) — proto generation, the state file, Debian

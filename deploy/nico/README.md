@@ -1,10 +1,10 @@
 # deploy/nico
 
-The deploy path for a NICo site controller on real hardware, with SPIRE. It is
+The deploy path for an NVKE management cluster on NICo-managed hardware, with SPIRE. It is
 the customer deploy path; the e2e lanes under `controller/deploy/` are not.
 
 Not a reference implementation: the item list and its order are derived from a
-provisioning run that stood a site controller up on bare metal and had it
+provisioning run that stood a management cluster up on bare metal and had it
 provision a tenant. Where that run and `capnico-e2e` disagree, this path follows
 the run -- it is the one that has been exercised on real hardware.
 
@@ -17,7 +17,7 @@ Four steps, three owners:
 | 1. create and image the instance | **not NVKE** -- the NICo API, iPXE and cloud-init | a booted host running `nvke-agent` |
 | 2. `nvkectl bootstrap site` | nvkectl, on the instance | a **vanilla** Kubernetes cluster |
 | 3. this deploy path | `deploy/nvke-deploy.sh`, on the node | the management plane |
-| 4. `nvkectl create cluster` | the site controller itself | tenant clusters |
+| 4. `nvkectl create cluster` | the management plane itself | tenant clusters |
 
 Step 2 leaves bare Kubernetes on purpose. `bootstrap site` stands up a
 throwaway kind cluster carrying Postgres, Temporal, SPIRE, CAPI and CWE, uses
@@ -209,7 +209,7 @@ lane has exercised on NICo:
   In e2e that is a kind NodePort; here it is the VIP, published by the
   `spire-server-nodeport` item.
 
-The site controller's own node is a separate matter and stays plaintext: it is
+The management cluster's own node is a separate matter and stays plaintext: it is
 provisioned outside CWE, and when it bootstraps the only SPIRE alive is the one
 in the throwaway kind cluster, which is deleted. Nothing dials that node
 afterwards.

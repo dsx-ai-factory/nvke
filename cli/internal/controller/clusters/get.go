@@ -24,8 +24,8 @@ func NewGetCmd(clientFn ControllerClientFn) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "clusters [name ...]",
 		Aliases: []string{"cluster"},
-		Short:   "List tenant clusters on the site controller",
-		Long: `List tenant clusters on the site controller.
+		Short:   "List tenant clusters on the management plane",
+		Long: `List tenant clusters on the management plane.
 
 Naming clusters narrows the listing to them, in the order given.
 

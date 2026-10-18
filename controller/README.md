@@ -454,7 +454,7 @@ docker run -d --name=cwe-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres pos
 ```
 (If you ever want to start fresh with an empty database, remove the container with `docker rm -f cwe-postgres` and then start a new one)
 
-To use remote Temporal, set up your kubeconfig and SSH tunnel for the site-controller cluster, then run a port forward to the Temporal service (using non-default ports to avoid conflicts with local Temporal):
+To use remote Temporal, set up your kubeconfig and SSH tunnel for the management cluster, then run a port forward to the Temporal service (using non-default ports to avoid conflicts with local Temporal):
 ```bash
 kubectl port-forward -n temporal svc/temporal-frontend 17233:7233
 ```
