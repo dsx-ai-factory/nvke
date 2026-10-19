@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
@@ -982,6 +983,33 @@ func TestCheckKubernetesCertificateRenewalRequiredUsesEmbeddedReadOnlyMode(t *te
 			require.Empty(t, fake.StartKubernetesCertificateRenewalV2Calls)
 			require.Len(t, fake.ExecuteScriptNames, 1)
 			database.AssertExpectations(t)
+		})
+	}
+}
+
+// TestKubernetesCertificateRenewalCheckResultDecodesRecordedResults keeps histories
+// that recorded the earlier bare bool result replayable.
+func TestKubernetesCertificateRenewalCheckResultDecodesRecordedResults(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		recorded any
+		want     KubernetesCertificateRenewalCheckResult
+	}{
+		{name: "legacy bool true", recorded: true, want: KubernetesCertificateRenewalCheckResult{Required: true}},
+		{name: "legacy bool false", recorded: false},
+		{
+			name:     "struct",
+			recorded: KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true, Typed: true},
+			want:     KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true, Typed: true},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dc := converter.GetDefaultDataConverter()
+			payload, err := dc.ToPayload(test.recorded)
+			require.NoError(t, err)
+			got := KubernetesCertificateRenewalCheckResult{Legacy: true}
+			require.NoError(t, dc.FromPayload(payload, &got))
+			require.Equal(t, test.want, got)
 		})
 	}
 }

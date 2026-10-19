@@ -5,6 +5,7 @@ package activities
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -71,9 +72,27 @@ type KubernetesCertificateRenewalResult struct {
 // Typed, set only with Legacy, reports that the agent also holds pending intent,
 // so the typed executor must run after the legacy one in the same cycle.
 type KubernetesCertificateRenewalCheckResult struct {
-	Required bool
-	Legacy   bool
-	Typed    bool
+	Required bool `json:"Required"`
+	Legacy   bool `json:"Legacy"`
+	Typed    bool `json:"Typed"`
+}
+
+// UnmarshalJSON also accepts the bare bool that earlier versions of
+// CheckKubernetesCertificateRenewalRequired returned, so recorded workflow
+// histories still replay: true decodes as Required.
+func (r *KubernetesCertificateRenewalCheckResult) UnmarshalJSON(data []byte) error {
+	var required bool
+	if err := json.Unmarshal(data, &required); err == nil {
+		*r = KubernetesCertificateRenewalCheckResult{Required: required}
+		return nil
+	}
+	type plain KubernetesCertificateRenewalCheckResult
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return fmt.Errorf("decoding certificate renewal check result: %w", err)
+	}
+	*r = KubernetesCertificateRenewalCheckResult(decoded)
+	return nil
 }
 
 // CheckKubernetesCertificateRenewalRequired reads expiry and either executor's
