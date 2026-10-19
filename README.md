@@ -28,6 +28,8 @@ The local quickstart runs on a **Linux host or VM, amd64 or arm64**, with at lea
 **6 CPUs, 12 GiB of free memory and 100 GiB of free disk**. It requires Docker,
 virtual TPM support and the tools listed in the guide. Follow its setup through
 workload-cluster creation and confirm the cluster's nodes report `Ready`.
+On macOS, use the [local site guide](docs/get-started/local-site.md), which runs
+the evaluation inside a Colima virtual machine.
 
 For a real installation, you supply the machines, networking, node images and
 registries, and configure access to **NVIDIA Infra Controller (NICo)**. NICo is

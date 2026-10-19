@@ -239,10 +239,10 @@ Open a second terminal in the `nvke` directory for the rest of this page, and ru
 
    The output is `kubeconfig written to my-cluster.kubeconfig`. The file is an admin credential for the cluster.
 
-2. Wait for the cluster's nodes to become ready. `Provisioned` means the provisioning workflow has finished; node networking can still be starting.
+2. Wait for every node to become ready. `Provisioned` means the provisioning workflow has finished; node networking can still be starting. Watch the nodes until each one shows `Ready`, then press Ctrl+C. This usually takes a few minutes.
 
    ```bash
-   kubectl --kubeconfig my-cluster.kubeconfig wait --for=condition=Ready nodes --all --timeout=5m
+   kubectl --kubeconfig my-cluster.kubeconfig get nodes --watch
    ```
 
 3. List the cluster's nodes.
