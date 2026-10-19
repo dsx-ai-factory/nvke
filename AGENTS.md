@@ -152,6 +152,14 @@ Keep the controller chart's `version`, `appVersion`, and README version badge at
 - **Do not change the release or CI workflows** in `.github/workflows/` as part
   of an unrelated change. They gate every merge.
 - Do not add a new dependency without saying why in the pull request.
+- **Do not add agent attribution to commits or pull requests.** No
+  `Co-Authored-By` trailer naming an agent, and no "Generated with …" or
+  "Created with …" footer in the PR description. Commits are authored and
+  signed off by the human contributor. Disclosure of AI assistance is the
+  human-written note that [CONTRIBUTING.md](CONTRIBUTING.md#ai-assisted-contributions)
+  asks for, not an agent footer. This matches the NVKR and AICR repositories.
+  The committed `.claude/settings.json` turns Claude Code's default
+  attribution off; other harnesses must be configured the same way.
 
 ## Coding conventions
 
