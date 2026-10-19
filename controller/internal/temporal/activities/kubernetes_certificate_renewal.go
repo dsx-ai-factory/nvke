@@ -34,7 +34,10 @@ const (
 
 	legacyKubernetesCertificateRenewalRunbook = "k8s-cert-renewal"
 	certificateRenewalStatusPollInterval      = 5 * time.Second
-	renewalOutcomeMarkerPrefix                = "RENEWAL_OUTCOME="
+	// certificateRenewalReleaseReserve bounds the time kept back from status
+	// polling for releasing the reservation after terminal status.
+	certificateRenewalReleaseReserve = 30 * time.Second
+	renewalOutcomeMarkerPrefix       = "RENEWAL_OUTCOME="
 	// Legacy V1 workflows can overlap before reserving node work. V2 admission
 	// instead serializes cycles under the cluster mutation lock.
 	certificateRenewalReservationPollInterval = 5 * time.Second
@@ -363,13 +366,29 @@ func (a *Activities) resolveKubernetesCertificateRenewal(ctx context.Context, in
 	if err != nil {
 		return fmt.Errorf("failed to get node for certificate-renewal resolution: %w", err)
 	}
-	if err := a.awaitCertificateRenewalTermination(ctx, node, input, acceptAbandoned); err != nil {
+	pollCtx := ctx
+	if deadline, ok := ctx.Deadline(); ok && release {
+		// Stop polling with time left so a terminal status that arrives near the
+		// caller's deadline can still release the reservation.
+		reserve := min(certificateRenewalReleaseReserve, time.Until(deadline)/10)
+		var cancel context.CancelFunc
+		pollCtx, cancel = context.WithDeadline(ctx, deadline.Add(-reserve))
+		defer cancel()
+	}
+	if err := a.awaitCertificateRenewalTermination(pollCtx, node, input, acceptAbandoned); err != nil {
 		return err
 	}
 	if !release {
 		return nil
 	}
-	return a.releaseCertificateRenewal(ctx, node, input.OperationID)
+	// Termination is confirmed, so a failed release must not retain the cluster
+	// mutation lock: the reconciler clears a reservation once the agent reports
+	// terminal status.
+	if err := a.releaseCertificateRenewal(ctx, node, input.OperationID); err != nil {
+		activity.GetLogger(ctx).Warn("failed to release certificate renewal reservation after confirmed termination",
+			"nodeID", node.ID, "operationID", input.OperationID, "error", err)
+	}
+	return nil
 }
 
 // awaitCertificateRenewalTermination returns nil only for matching terminal evidence.
