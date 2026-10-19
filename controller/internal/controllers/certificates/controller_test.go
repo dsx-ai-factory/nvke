@@ -18,6 +18,7 @@ import (
 	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/controllertest"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -231,4 +232,52 @@ type inspectionSQLiteTx struct{ db.Tx }
 
 func (t inspectionSQLiteTx) GetNodeForUpdate(ctx context.Context, id uuid.UUID) (db.Node, error) {
 	return t.Tx.GetNode(ctx, id)
+}
+
+// blockingInspector blocks the probe of one node until released.
+type blockingInspector struct {
+	blocked  uuid.UUID
+	release  chan struct{}
+	response *pb.InspectKubernetesCertificatesResponse
+}
+
+func (s *blockingInspector) InspectKubernetesCertificates(ctx context.Context, node db.Node) (*pb.InspectKubernetesCertificatesResponse, error) {
+	if node.ID == s.blocked {
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return s.response, nil
+}
+
+// TestSetupWithManagerInspectsOtherNodesWhileOneProbeBlocks keeps an unreachable
+// agent, which holds its probe until the deadline, from delaying another due node.
+func TestSetupWithManagerInspectsOtherNodesWhileOneProbeBlocks(t *testing.T) {
+	ctx := t.Context()
+	database := inspectionSQLiteDB{DB: db.NewDB(testutil.SetupDB(ctx, t, (*db.Cluster)(nil), (*db.NodePool)(nil), (*db.NodeSet)(nil), (*db.Node)(nil)))}
+	newNode := func(name string) db.Node {
+		t.Helper()
+		node, err := database.CreateNode(ctx, &db.Node{ID: uuid.New(), ClusterID: uuid.New(), Name: name, SpireAttestationMethod: db.SpireAttestationMethodTPM, Conditions: db.NodeConditions{Joined: db.NewCondition(true, "joined")}})
+		require.NoError(t, err)
+		return node
+	}
+	blocked, other := newNode("blocked-node"), newNode("other-node")
+	release := make(chan struct{})
+	defer close(release)
+	stub := &blockingInspector{blocked: blocked.ID, release: release, response: &pb.InspectKubernetesCertificatesResponse{}}
+	mgr, err := controllertest.NewManager(nil)
+	require.NoError(t, err)
+	controller := NewController(config.Config{CertificateInspectionInterval: time.Hour}, dbwrapper.New(database, slog.New(slog.DiscardHandler)), stub)
+	require.NoError(t, controller.SetupWithManager(mgr))
+	controllertest.Start(ctx, t, mgr)
+
+	require.Eventually(t, func() bool {
+		stored, err := database.GetNode(ctx, other.ID)
+		return err == nil && stored.CertificateInspection != nil
+	}, 10*time.Second, 10*time.Millisecond, "the other node was not inspected while one probe blocked")
+	stored, err := database.GetNode(ctx, blocked.ID)
+	require.NoError(t, err)
+	require.Nil(t, stored.CertificateInspection, "the blocked probe has not returned")
 }
