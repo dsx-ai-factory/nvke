@@ -797,7 +797,7 @@ func TestResolveLegacyKubernetesCertificateRenewalUsesOnlyEmbeddedStatusMode(t *
 					require.Contains(t, script, "export STATUS_ONLY='true'")
 					require.Contains(t, script, "export OPERATION_ID='stable-operation'")
 					require.Contains(t, script, "export LOCK_TIMEOUT='240'")
-					require.Contains(t, script, `exec 9<"$LOCK_FILE"`)
+					require.Contains(t, script, `exec 9>>"$LOCK_FILE"`)
 					require.NotContains(t, script, "unsafe override")
 					return &nvkeproto.ExecuteScriptResponse{Output: tt.output, ExitCode: tt.exitCode}, tt.err
 				},
