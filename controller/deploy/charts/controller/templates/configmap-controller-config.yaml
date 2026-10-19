@@ -125,6 +125,7 @@ data:
       proxyAddress: {{ if $teleport.enabled }}{{ $teleport.proxyAddress | quote }}{{ else }}""{{ end }}
       environment: {{ if $teleport.enabled }}{{ $teleport.environment | default "non-prod" | quote }}{{ else }}"non-prod"{{ end }}
       managedByLabelValue: {{ $teleport.managedByLabelValue | default "nvke-controller" | quote }}
+      acceptedManagedByLabelValues: {{ $teleport.acceptedManagedByLabelValues | default list | toJson }}
       tokenNamePrefix: {{ $teleport.tokenNamePrefix | default "nvke-controller-" | quote }}
       resourceGroupLabelValue: {{ $teleport.resourceGroupLabelValue | default "nvke" | quote }}
     permissiveMode: {{ if .Values.apiAuth.enabled }}{{ .Values.apiAuth.permissive }}{{ else }}false{{ end }}

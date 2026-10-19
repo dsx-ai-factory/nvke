@@ -221,12 +221,13 @@ const (
 // are not included: the chart has never set them, so they stay on their Go
 // default in internal/config until something needs to set them.
 type TeleportConfig struct {
-	Enabled             bool   `json:"enabled"`
-	IdentityFile        string `json:"identityFile"`
-	ProxyAddress        string `json:"proxyAddress"`
-	Environment         string `json:"environment"`
-	ManagedByLabelValue string `json:"managedByLabelValue"`
-	TokenNamePrefix     string `json:"tokenNamePrefix"`
+	Enabled                      bool     `json:"enabled"`
+	IdentityFile                 string   `json:"identityFile"`
+	ProxyAddress                 string   `json:"proxyAddress"`
+	Environment                  string   `json:"environment"`
+	ManagedByLabelValue          string   `json:"managedByLabelValue"`
+	AcceptedManagedByLabelValues []string `json:"acceptedManagedByLabelValues"`
+	TokenNamePrefix              string   `json:"tokenNamePrefix"`
 
 	ResourceGroupLabelValue string `json:"resourceGroupLabelValue"`
 }

@@ -107,6 +107,9 @@ var configMapOnly = []string{
 	"nodeMetadataAllowlistedLabelKeys",
 	"machineMetadataAllowlistedLabelKeys",
 	"machineMetadataAllowlistedAnnotationKeys",
+	// The dual-accept window for the Teleport "managed-by" value. It exists
+	// because managedByLabelValue moved, which is newer than the environment.
+	"teleport.acceptedManagedByLabelValues",
 }
 
 // chartDeployment is the template whose env block decides what the chart sets.

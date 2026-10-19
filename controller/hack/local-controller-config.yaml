@@ -95,6 +95,7 @@ teleport:
   proxyAddress: ""
   environment: non-prod
   managedByLabelValue: nvke-controller
+  acceptedManagedByLabelValues: []
   tokenNamePrefix: nvke-controller-
   resourceGroupLabelValue: nvke
 permissiveMode: false
