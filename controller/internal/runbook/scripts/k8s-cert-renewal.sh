@@ -532,15 +532,30 @@ main() {
     # cycle, so neither pending restart waits for the next due time.
     validate_input
     load_state
-    local agent_state=""
+    local legacy_pending=false
+    if [[ "$STATE_PHASE" == "renewing" || "$STATE_PHASE" == "restart_pending" ]]; then
+      legacy_pending=true
+    fi
+    local agent_state="" agent_state_error=""
     if [[ -f "$AGENT_STATE_FILE" ]]; then
-      agent_state="$(jq -r '.k8sCertRenewalState // ""' "$AGENT_STATE_FILE")" || die "Unable to parse the node-agent state file."
+      if ! agent_state="$(jq -r '.k8sCertRenewalState // ""' "$AGENT_STATE_FILE")"; then
+        agent_state="" agent_state_error="Unable to parse the node-agent state file."
+      fi
       case "$agent_state" in
         renewing|restart_pending|"") ;;
-        *) die "Node-agent state has unknown certificate-renewal state '$agent_state'." ;;
+        *)
+          agent_state_error="Node-agent state has unknown certificate-renewal state '$agent_state'."
+          agent_state=""
+          ;;
       esac
     fi
-    if [[ "$STATE_PHASE" == "renewing" || "$STATE_PHASE" == "restart_pending" ]]; then
+    if [[ -n "$agent_state_error" ]]; then
+      # An unreadable agent state must not block resuming this runbook's own
+      # pending restarts; without pending legacy intent it stays fatal.
+      [[ "$legacy_pending" == "true" ]] || die "$agent_state_error"
+      log "WARNING: $agent_state_error Resuming the pending legacy renewal only." >&2
+    fi
+    if [[ "$legacy_pending" == "true" ]]; then
       if [[ -n "$agent_state" ]]; then
         echo "RENEWAL_REQUIRED=legacy_then_typed"
       else

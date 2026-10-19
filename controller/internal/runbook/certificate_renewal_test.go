@@ -1312,20 +1312,43 @@ func TestCertificateRenewalRunbookCheckOnlyIsReadOnly(t *testing.T) {
 }
 
 // Check-only selection fails closed on agent state it cannot interpret, as the
-// agent itself refuses an unknown persisted certificate-renewal state.
+// agent itself refuses an unknown persisted certificate-renewal state, unless
+// this runbook has pending intent: then only the legacy executor is selected so
+// its restarts still finish, and stdout carries only the marker line.
 func TestCertificateRenewalRunbookCheckOnlyRejectsInvalidAgentState(t *testing.T) {
-	for name, agentState := range map[string]string{
-		"malformed": `{"k8sCertRenewalState":`,
-		"unknown":   `{"k8sCertRenewalState":"bogus"}`,
+	for _, test := range []struct {
+		name         string
+		agentState   string
+		runbookPhase string
+		wantOutput   string
+	}{
+		{name: "malformed", agentState: `{"k8sCertRenewalState":`},
+		{name: "unknown", agentState: `{"k8sCertRenewalState":"bogus"}`},
+		{name: "malformed with pending legacy restart", agentState: `{"k8sCertRenewalState":`, runbookPhase: "restart_pending\netcd", wantOutput: "RENEWAL_REQUIRED=legacy\n"},
+		{name: "unknown with pending legacy renewal", agentState: `{"k8sCertRenewalState":"bogus"}`, runbookPhase: "renewing\n", wantOutput: "RENEWAL_REQUIRED=legacy\n"},
+		{name: "valid agent intent with pending legacy restart", agentState: `{"k8sCertRenewalState":"restart_pending"}`, runbookPhase: "restart_pending\netcd", wantOutput: "RENEWAL_REQUIRED=legacy_then_typed\n"},
 	} {
-		t.Run(name, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			harness := newCertificateRenewalHarness(t)
 			harness.setEnv("CHECK_ONLY", "true")
 			harness.setEnv("FAKE_RESIDUAL", "365d")
-			require.NoError(t, os.WriteFile(harness.agentState, []byte(agentState), 0o600))
-			output, err := harness.run(t)
-			require.Error(t, err, output)
-			require.NotContains(t, output, "RENEWAL_REQUIRED=")
+			require.NoError(t, os.WriteFile(harness.agentState, []byte(test.agentState), 0o600))
+			if test.runbookPhase != "" {
+				state := "pending-cycle\n" + test.runbookPhase + "\nrenewed\n" + harness.caFingerprints(t) + "\n"
+				require.NoError(t, os.WriteFile(filepath.Join(harness.stateDir, "state"), []byte(state), 0o600))
+			}
+			var stdout, stderr bytes.Buffer
+			cmd := exec.CommandContext(t.Context(), "bash", harness.scriptPath)
+			cmd.Env = harness.env
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			err := cmd.Run()
+			if test.wantOutput == "" {
+				require.Error(t, err, stdout.String()+stderr.String())
+				require.NotContains(t, stdout.String()+stderr.String(), "RENEWAL_REQUIRED=")
+				return
+			}
+			require.NoError(t, err, stderr.String())
+			require.Equal(t, test.wantOutput, stdout.String())
 		})
 	}
 }
