@@ -103,7 +103,7 @@ autoinstall:
 
       # Download and install nvkectl (bootstrap host only). Replace cli/vX.Y.Z
       # with a cli/ tag listed at https://github.com/dsx-ai-factory/nvke/releases,
-      # cli/v0.2.0-rc.1 or later; earlier releases name the binary nkectl.
+      # cli/v0.2.0 or later; earlier releases do not take --nvke-controller-image.
       - [sh, -c, "curl -fsSL -o /usr/local/bin/nvkectl https://github.com/dsx-ai-factory/nvke/releases/download/cli/vX.Y.Z/nvkectl-linux-amd64 && chmod +x /usr/local/bin/nvkectl"]
 
       # Run bootstrap (bootstrap host only). --disable-mtls matches the plaintext
