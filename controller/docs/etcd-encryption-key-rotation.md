@@ -319,6 +319,11 @@ For retained-lock failures, there is no automatic recovery API or unattended
 lock-release procedure, and no supported database edit releases the lock. Only
 successful completion of the owning workflow releases it.
 
+A failed rotation can be reset only while Temporal retains its workflow history.
+When the controller creates its namespace, it sets 30-day retention, counted from
+the failed run's close. After the history expires, no reset can resume the
+rotation and its retained lock can no longer be released, so recover before then.
+
 ## Prove completion and preexisting-object rewrite
 
 Success requires all of the following, rather than only a completed workflow:
