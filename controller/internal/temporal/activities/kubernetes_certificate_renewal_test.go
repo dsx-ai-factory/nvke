@@ -681,10 +681,17 @@ func TestResolveKubernetesCertificateRenewalRetriesTransientStatusErrors(t *test
 			database := &testutil.MockDB{}
 			database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 			polls := 0
+			var cancelResolve context.CancelFunc
 			fakeAgent := &agenttest.FakeClient{GetKubernetesCertificateRenewalHook: func(_ db.Node, req *nvkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nvkeproto.GetKubernetesCertificateRenewalStatusResponse, error) {
 				require.Equal(t, "stable-operation", req.GetOperationId())
 				polls++
-				if tt.persistent || polls == 1 {
+				if tt.persistent {
+					// The caller's budget ends while the agent is still unreachable.
+					// Canceling here keeps the case independent of scheduling delays.
+					cancelResolve()
+					return nil, tt.err
+				}
+				if polls == 1 {
 					return nil, tt.err
 				}
 				return &nvkeproto.GetKubernetesCertificateRenewalStatusResponse{Operation: certificateRenewalStartResponse(
@@ -698,19 +705,16 @@ func TestResolveKubernetesCertificateRenewalRetriesTransientStatusErrors(t *test
 			suite := &testsuite.WorkflowTestSuite{}
 			env := suite.NewTestActivityEnvironment()
 			resolve := func(ctx context.Context) error {
-				timeout := 10 * time.Second
-				if tt.persistent {
-					timeout = 50 * time.Millisecond
-				}
-				ctx, cancel := context.WithTimeout(ctx, timeout)
+				ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				defer cancel()
+				cancelResolve = cancel
 				return a.ResolveKubernetesCertificateRenewal(ctx, ResolveKubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "stable-operation"})
 			}
 			env.RegisterActivity(resolve)
 			_, err := env.ExecuteActivity(resolve)
 			if tt.persistent {
-				require.ErrorContains(t, err, "deadline exceeded")
 				require.ErrorContains(t, err, "disconnected")
+				require.Equal(t, 1, polls)
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, 2, polls)
