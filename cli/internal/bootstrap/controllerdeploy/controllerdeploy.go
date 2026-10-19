@@ -207,7 +207,7 @@ type oidcProviders struct {
 // Config describes a controller deployment.
 type Config struct {
 	// CWEImage is the image reference to deploy. Defaults to nke-controller:latest,
-	// the local build's tag, from the bootstrap manifest. NVKECTL_CONTROLLER_IMAGE
+	// the local build's tag, from the bootstrap manifest. NVKECTL_NVKE_CONTROLLER_IMAGE
 	// overrides it, for example with the image .github/workflows/image-nvcr.yml
 	// publishes.
 	CWEImage string
@@ -343,7 +343,7 @@ func (c Config) TPMAttestorEnabled() bool {
 // bootstrapengine.DefaultConfig's env-driven shape.
 func DefaultConfig() Config {
 	return Config{
-		CWEImage: envOr("NVKECTL_CONTROLLER_IMAGE", defaultImage(manifest.ComponentController, manifest.ImageController)),
+		CWEImage: envOr("NVKECTL_NVKE_CONTROLLER_IMAGE", defaultImage(manifest.ComponentController, manifest.ImageController)),
 		// No cluster-name variable of its own: the bootstrap cluster has one
 		// name, NVKECTL_BOOTSTRAP_CLUSTER_NAME, and SPIRE is told that one.
 		// Callers set SPIFFEClusterName; an empty trust domain is derived from
@@ -351,30 +351,30 @@ func DefaultConfig() Config {
 		SPIFFETrustDomain: getenv("NVKECTL_SPIFFE_TRUST_DOMAIN"),
 
 		ProvisionedProviderImage: envOr("NVKECTL_CAPI_PROVISIONED_IMAGE", defaultImage(manifest.ComponentProvisioned, manifest.ImageManager)),
-		CWEPort:                  envPort("NVKECTL_CONTROLLER_PORT", DefaultCWEPort),
+		CWEPort:                  envPort("NVKECTL_NVKE_CONTROLLER_PORT", DefaultCWEPort),
 
-		HelmTimeout:  envDuration("NVKECTL_CONTROLLER_HELM_TIMEOUT", 5*time.Minute),
-		ReadyTimeout: envDuration("NVKECTL_CONTROLLER_READY_TIMEOUT", 5*time.Minute),
+		HelmTimeout:  envDuration("NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT", 5*time.Minute),
+		ReadyTimeout: envDuration("NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT", 5*time.Minute),
 
-		TemporalChartRef:  getenv("NVKECTL_CONTROLLER_TEMPORAL_CHART"),
-		SPIREChartRef:     getenv("NVKECTL_CONTROLLER_SPIRE_CHART"),
-		SPIRECRDsChartRef: getenv("NVKECTL_CONTROLLER_SPIRE_CRDS_CHART"),
+		TemporalChartRef:  getenv("NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART"),
+		SPIREChartRef:     getenv("NVKECTL_NVKE_CONTROLLER_SPIRE_CHART"),
+		SPIRECRDsChartRef: getenv("NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART"),
 	}
 }
 
-// Settings is every environment variable this package reads. Each is also
-// read under the name it had while the binary was called nkectl, for one
-// release; see envalias.
+// Settings is every environment variable this package reads. Each one that is
+// not NVKECTL_NVKE_* is also read under the name it had while the binary was
+// called nkectl, for one release; see envalias.
 var Settings = []string{
-	"NVKECTL_CONTROLLER_IMAGE",
+	"NVKECTL_NVKE_CONTROLLER_IMAGE",
 	"NVKECTL_CAPI_PROVISIONED_IMAGE",
 	"NVKECTL_SPIFFE_TRUST_DOMAIN",
-	"NVKECTL_CONTROLLER_PORT",
-	"NVKECTL_CONTROLLER_HELM_TIMEOUT",
-	"NVKECTL_CONTROLLER_READY_TIMEOUT",
-	"NVKECTL_CONTROLLER_TEMPORAL_CHART",
-	"NVKECTL_CONTROLLER_SPIRE_CHART",
-	"NVKECTL_CONTROLLER_SPIRE_CRDS_CHART",
+	"NVKECTL_NVKE_CONTROLLER_PORT",
+	"NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT",
+	"NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT",
+	"NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART",
+	"NVKECTL_NVKE_CONTROLLER_SPIRE_CHART",
+	"NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART",
 }
 
 // DeprecatedSettings returns, sorted by old name, every setting in Settings
@@ -385,19 +385,29 @@ func DeprecatedSettings() []envalias.Renamed {
 	return envalias.Deprecated(Settings...)
 }
 
-// RemovedSettings returns, sorted by old name, every NKECTL_CWE_* variable that
-// is set. nkectl cli/v0.1.x read the NVKECTL_CONTROLLER_* settings under those
-// names; DefaultConfig does not read them. New is the setting that replaces
-// each one.
+// controllerSettingPrefix starts the NVKE controller's settings, the
+// NVKECTL_NVKE_CONTROLLER_* entries of Settings.
+const controllerSettingPrefix = "NVKECTL_NVKE_CONTROLLER_"
+
+// removedSettingPrefixes are the earlier prefixes of the NVKE controller's
+// settings: NVKECTL_CONTROLLER_ and NKECTL_CONTROLLER_ from the cli/v0.2.0
+// release candidates, and NKECTL_CWE_ from cli/v0.1.x.
+var removedSettingPrefixes = []string{"NVKECTL_CONTROLLER_", "NKECTL_CONTROLLER_", "NKECTL_CWE_"}
+
+// RemovedSettings returns, sorted by old name, every earlier name of an NVKE
+// controller setting that is set. DefaultConfig does not read them. New is the
+// setting that replaces each one.
 func RemovedSettings() []envalias.Renamed {
 	var found []envalias.Renamed
 	for _, name := range Settings {
-		suffix, ok := strings.CutPrefix(name, "NVKECTL_CONTROLLER_")
+		suffix, ok := strings.CutPrefix(name, controllerSettingPrefix)
 		if !ok {
 			continue
 		}
-		if old := "NKECTL_CWE_" + suffix; os.Getenv(old) != "" {
-			found = append(found, envalias.Renamed{Old: old, New: name})
+		for _, p := range removedSettingPrefixes {
+			if old := p + suffix; os.Getenv(old) != "" {
+				found = append(found, envalias.Renamed{Old: old, New: name})
+			}
 		}
 	}
 	slices.SortFunc(found, func(a, b envalias.Renamed) int { return strings.Compare(a.Old, b.Old) })

@@ -42,7 +42,7 @@ After bootstrap completes:
 - Each node has an available NVMe device for local storage (non-root, unpartitioned, not in use)
 - NGC API key (required for pulling NVKE container images)
 - On the **init node**: `kind` binary and `nerdctl` with containerd installed — `nvkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises
-- The two images `nvkectl` side-loads: `make -C cli images` builds them on the init node. To use images from a registry instead, pass `--controller-image` and `--provisioned-provider-image`, or set `NKECTL_CONTROLLER_IMAGE` (e.g. `nvcr.io/<org>/nvke-controller:edge`) and `NKECTL_CAPI_PROVISIONED_IMAGE` (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
+- The two images `nvkectl` side-loads: `make -C cli images` builds them on the init node. To use images from a registry instead, pass `--nvke-controller-image` and `--provisioned-provider-image`, or set `NVKECTL_NVKE_CONTROLLER_IMAGE` (e.g. `nvcr.io/<org>/nvke-controller:edge`) and `NVKECTL_CAPI_PROVISIONED_IMAGE` (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
 - On the **init node**, also on `PATH`: `helm`, `kubectl`, and `clusterctl`. `nvkectl`
   shells out to all three during bootstrap — Helm for the Postgres, Temporal, SPIRE
   and CWE releases, `kubectl` for the manifests, and `clusterctl init` for the
@@ -252,8 +252,8 @@ reaches `Ready`.
 nvkectl bootstrap site -f sitespec.yaml --dry-run
 
 # Run bootstrap. --disable-mtls matches the plaintext agents from Step 1.
-NKECTL_CONTROLLER_IMAGE="nvcr.io/<org>/nvke-controller:edge" \
-NKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
+NVKECTL_NVKE_CONTROLLER_IMAGE="nvcr.io/<org>/nvke-controller:edge" \
+NVKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
   nvkectl bootstrap site -f sitespec.yaml --disable-mtls
 ```
 

@@ -137,7 +137,7 @@ nvkectl delete cluster <clusterName>                          # clusterName from
 nvkectl get clusters                                          # repeat until it is no longer listed
 ```
 
-The URL port is `NVKECTL_CONTROLLER_PORT`, `30080` by default. `set-site` makes
+The URL port is `NVKECTL_NVKE_CONTROLLER_PORT`, `30080` by default. `set-site` makes
 `nvkectl-bootstrap` the active site; switch back with
 `nvkectl config use-site <name>`. A cluster can be deleted in any state, and it
 stays listed as `Deleting` until every machine is released. Only then delete the
@@ -211,8 +211,8 @@ supported. Install both on the machine running `nvkectl`; see
 **`image <image> is not in the local image store ... and names no registry to pull it from`**
 
 A required image is missing from containerd's image store. Supply a pullable
-registry reference with `--controller-image` or `--provisioned-provider-image`
-(or `NVKECTL_CONTROLLER_IMAGE` / `NVKECTL_CAPI_PROVISIONED_IMAGE`). If building
+registry reference with `--nvke-controller-image` or `--provisioned-provider-image`
+(or `NVKECTL_NVKE_CONTROLLER_IMAGE` / `NVKECTL_CAPI_PROVISIONED_IMAGE`). If building
 from source, `make -C cli images` builds the default local images.
 
 **`bootstrap cluster "nvkectl-bootstrap" from an earlier run is still running`**
@@ -287,8 +287,8 @@ The error names the release; the Helm output gives the cause:
 
 - *Chart fetch failed*, such as `failed to fetch ... 500` or a timeout. The
   chart repository is unreachable from the bootstrap host. Retry, or point at
-  a mirror or local copy with `NVKECTL_CONTROLLER_TEMPORAL_CHART`,
-  `NVKECTL_CONTROLLER_SPIRE_CHART` and `NVKECTL_CONTROLLER_SPIRE_CRDS_CHART`. Nodes are
+  a mirror or local copy with `NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART`,
+  `NVKECTL_NVKE_CONTROLLER_SPIRE_CHART` and `NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART`. Nodes are
   untouched.
 - *Image pull failed inside the cluster*, visible as `ErrImagePull` or
   `ImagePullBackOff`. Check the pod events for an incorrect image reference,
@@ -301,7 +301,7 @@ The error names the release; the Helm output gives the cause:
   dependency's readiness and credentials; for migration errors, inspect the
   named migration or schema job.
 
-`NVKECTL_CONTROLLER_HELM_TIMEOUT` raises the per-release wait from its default of
+`NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT` raises the per-release wait from its default of
 five minutes on a slow network.
 
 **`the controller did not report healthy on <url> within 5m0s: last error=... last response=...`**
@@ -309,13 +309,13 @@ five minutes on a slow network.
 Check the controller pod's state and the last error. If `/readyz` responded,
 it identifies the failing dependency: inspect `postgres/*/logs.txt` for
 `database`, or `temporal/*/logs.txt` for `temporal`. Check credentials,
-connectivity and schema jobs. `NVKECTL_CONTROLLER_READY_TIMEOUT` raises the wait.
+connectivity and schema jobs. `NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT` raises the wait.
 
 **`waiting for the published cwe api: http://127.0.0.1:30080/readyz did not become ready`**
 
 The controller passed its in-cluster check, but the host check failed. Verify
 it is still healthy, then inspect the Kind port mapping and NodePort Service.
-Check for a conflict on port 30080, or change it with `NVKECTL_CONTROLLER_PORT`.
+Check for a conflict on port 30080, or change it with `NVKECTL_NVKE_CONTROLLER_PORT`.
 
 ### Site cluster
 

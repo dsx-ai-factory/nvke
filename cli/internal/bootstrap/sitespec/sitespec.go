@@ -112,7 +112,7 @@ var removedSpireCAEnv = [][2]string{
 
 // removedFields maps each removed field to what replaced it.
 var removedFields = map[string]string{
-	"registry":          "the bootstrap takes its images from --controller-image and --provisioned-provider-image; log in to a private registry with nerdctl login",
+	"registry":          "the bootstrap takes its images from --nvke-controller-image and --provisioned-provider-image; log in to a private registry with nerdctl login",
 	"spire.caCertFile":  "set " + EnvSpireCACertFile + " and spire.upstreamCA: true",
 	"spire.caKeyFile":   "set " + EnvSpireCAKeyFile + " and spire.upstreamCA: true",
 	"infra.nico.tenant": "set " + stackconfig.EnvNodeUser + " and " + stackconfig.EnvNodePassword,

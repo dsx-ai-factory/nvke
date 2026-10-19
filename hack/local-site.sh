@@ -67,7 +67,7 @@ CONTROLLER_IMAGE="nvke.local/nke-controller:local"
 PROFILES_IMAGE="nvke.local/controller-profiles:local"
 # The image `make -C cli images` builds for the bootstrap's seed cluster; the
 # site's controller is the same build under the name above.
-BOOTSTRAP_CONTROLLER_IMAGE="${NVKECTL_CONTROLLER_IMAGE:-nke-controller:latest}"
+BOOTSTRAP_CONTROLLER_IMAGE="${NVKECTL_NVKE_CONTROLLER_IMAGE:-nke-controller:latest}"
 
 log() { printf '[local-site] %s\n' "$*" >&2; }
 die() { printf 'local-site: %s\n' "$*" >&2; exit 1; }
@@ -291,7 +291,7 @@ export CONTAINERD_NAMESPACE="${CONTAINERD_NAMESPACE:-default}"
 export NVKECTL_E2E_NETWORK="${NODE_NETWORK}" NVKECTL_E2E_NODES=1 NVKECTL_E2E_ATTESTATION_BASELINE="${WORKSPACE}/.attestation-baseline.json"
 # The image the bootstrap's seed cluster side-loads: the one the setup built
 # and tagged for the site.
-export NVKECTL_CONTROLLER_IMAGE="${BOOTSTRAP_CONTROLLER_IMAGE}"
+export NVKECTL_NVKE_CONTROLLER_IMAGE="${BOOTSTRAP_CONTROLLER_IMAGE}"
 # The SPIRE CA the node's agent trusts: the bootstrap and the install read it.
 export NVKECTL_SPIRE_CA_CERT_FILE="${WORKSPACE}/spire-ca.crt" NVKECTL_SPIRE_CA_KEY_FILE="${WORKSPACE}/spire-ca.key"
 # The install's credentials. nico-sim accepts its seeded token; the node login

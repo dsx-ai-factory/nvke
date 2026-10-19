@@ -347,7 +347,7 @@ jobs:
       - name: Run nvkectl bootstrap e2e
         working-directory: cli
         env:
-          NVKECTL_CONTROLLER_IMAGE: ${{ env.NVKE_CONTROLLER_IMAGE }}
+          NVKECTL_NVKE_CONTROLLER_IMAGE: ${{ env.NVKE_CONTROLLER_IMAGE }}
           # Docker is removed on this lane; the OVN image builds through nerdctl.
           OCI_BIN: nerdctl
         run: sudo -E env "PATH=$PATH" ./e2e/bootstrap/run.sh

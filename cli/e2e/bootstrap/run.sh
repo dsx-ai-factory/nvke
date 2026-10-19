@@ -38,7 +38,7 @@
 #
 # jq is required for BGP route checks when the control-plane VIP is enabled.
 #
-# NVKECTL_CONTROLLER_IMAGE must already be in containerd's image store: nvkectl saves it
+# NVKECTL_NVKE_CONTROLLER_IMAGE must already be in containerd's image store: nvkectl saves it
 # from there and loads it into the kind cluster rather than pulling from inside
 # the cluster, so no registry credentials are needed past that point.
 
@@ -105,8 +105,8 @@ REPO_ROOT="$(dirname "${CLI_DIR}")"
 BGP_FILES_DIR="${REPO_ROOT}/controller/hack/bgp-containers"
 # Scratch dir for the rendered FRR config, bind-mounted into the container.
 BGP_RENDER_DIR="${SCRIPT_DIR}/.bgp"
-: "${NVKECTL_CONTROLLER_IMAGE:?NVKECTL_CONTROLLER_IMAGE must name the controller image to deploy, already present in containerd (see comment above)}"
-export NVKECTL_CONTROLLER_IMAGE
+: "${NVKECTL_NVKE_CONTROLLER_IMAGE:?NVKECTL_NVKE_CONTROLLER_IMAGE must name the controller image to deploy, already present in containerd (see comment above)}"
+export NVKECTL_NVKE_CONTROLLER_IMAGE
 
 # The Cluster API infrastructure provider for hosts that already exist, built
 # below from this checkout. Without it the CAPI objects the NVKE controller writes have no
@@ -511,7 +511,7 @@ fi
 rm -f "${ETCD_KEY_FILE}"
 
 log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
-  "(NVKECTL_CONTROLLER_IMAGE=${NVKECTL_CONTROLLER_IMAGE}," \
+  "(NVKECTL_NVKE_CONTROLLER_IMAGE=${NVKECTL_NVKE_CONTROLLER_IMAGE}," \
   "NVKECTL_CAPI_PROVISIONED_IMAGE=${NVKECTL_CAPI_PROVISIONED_IMAGE})"
 
 # In the background, because the attach below has to happen *during* the run:

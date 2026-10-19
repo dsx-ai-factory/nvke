@@ -123,7 +123,7 @@ Replace these examples with the references for the NVKE version you are installi
 nerdctl login registry.example.com
 ```
 
-Replace `registry.example.com` with the host in your image references. In the next step, pass the two references with `--controller-image` and `--provisioned-provider-image`. The bootstrap pulls a registry image if it is absent locally, then loads it into the seed cluster. This step selects existing container images; it does not build or publish them.
+Replace `registry.example.com` with the host in your image references. In the next step, pass the two references with `--nvke-controller-image` and `--provisioned-provider-image`. The bootstrap pulls a registry image if it is absent locally, then loads it into the seed cluster. This step selects existing container images; it does not build or publish them.
 
 ## Run the bootstrap
 
@@ -139,11 +139,11 @@ Replace `registry.example.com` with the host in your image references. In the ne
 
    ```bash
    nvkectl bootstrap site -f sitespec.yaml \
-     --controller-image "$CONTROLLER_IMAGE" \
+     --nvke-controller-image "$CONTROLLER_IMAGE" \
      --provisioned-provider-image "$PROVISIONED_PROVIDER_IMAGE"
    ```
 
-   Run either command in the shell where you exported the SPIRE CA variables to validate the site spec. `NVKECTL_CONTROLLER_IMAGE` and `NVKECTL_CAPI_PROVISIONED_IMAGE` can also select the images from the environment; explicit flags take precedence. For the local-build command, leave those image variables unset to use the default local image names.
+   Run either command in the shell where you exported the SPIRE CA variables to validate the site spec. `NVKECTL_NVKE_CONTROLLER_IMAGE` and `NVKECTL_CAPI_PROVISIONED_IMAGE` can also select the images from the environment; explicit flags take precedence. For the local-build command, leave those image variables unset to use the default local image names.
 
    Before it creates anything, the command refuses to start if a seed cluster from an earlier run still exists, if the etcd encryption key file it would write already exists, if any node already accepts connections on port 6443, or if a local image is missing.
 

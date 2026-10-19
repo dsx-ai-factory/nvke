@@ -144,7 +144,7 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 ### An NVKE image is missing or cannot be pulled
 
 - **Symptom:** `image <IMAGE> is not in the local image store`, or a `nerdctl pull` error that ends with `if this is an authentication failure, log in to the image's registry`.
-- **Cause:** The `--controller-image` or `--provisioned-provider-image` reference has no registry host and was never built on this host, or the registry refused the pull.
+- **Cause:** The `--nvke-controller-image` or `--provisioned-provider-image` reference has no registry host and was never built on this host, or the registry refused the pull.
 - **Fix:** Build the images with `make -C nvke/cli images`, or pass full image references. For a refused pull, run `nerdctl login <REGISTRY_HOST>` first.
 
 ### A required tool is missing

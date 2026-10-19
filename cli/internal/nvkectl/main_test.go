@@ -26,9 +26,16 @@ func TestMain(m *testing.M) {
 		"NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT", "NKECTL_NICO_ALLOW_INSECURE_ENDPOINT",
 		"NVKECTL_BOOTSTRAP_CLUSTER_NAME", "NKECTL_BOOTSTRAP_CLUSTER_NAME",
 		"NVKECTL_CLUSTER_NODES", "NKECTL_CLUSTER_NODES",
-		"NVKECTL_CONTROLLER_PORT", "NKECTL_CONTROLLER_PORT",
+		"NVKECTL_NVKE_CONTROLLER_PORT", "NVKECTL_CONTROLLER_PORT", "NKECTL_CONTROLLER_PORT",
 	} {
 		_ = os.Unsetenv(name)
+	}
+	// The earlier names of the NVKE controller settings, any of which stops
+	// bootstrap site.
+	for _, prefix := range []string{"NVKECTL_CONTROLLER_", "NKECTL_CONTROLLER_", "NKECTL_CWE_"} {
+		for _, suffix := range []string{"IMAGE", "PORT", "HELM_TIMEOUT", "READY_TIMEOUT", "TEMPORAL_CHART", "SPIRE_CHART", "SPIRE_CRDS_CHART"} {
+			_ = os.Unsetenv(prefix + suffix)
+		}
 	}
 	os.Exit(m.Run())
 }

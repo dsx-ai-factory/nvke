@@ -22,6 +22,14 @@ func TestGetPrefersTheNewNameAndFallsBackToTheOld(t *testing.T) {
 	assert.Equal(t, "", Old("OTHER_SETTING"))
 }
 
+func TestGetReadsAnNVKEPrefixedSettingOnlyUnderItsOwnName(t *testing.T) {
+	t.Setenv("NVKECTL_NVKE_TEST_SETTING", "")
+	t.Setenv("NKECTL_NVKE_TEST_SETTING", "never a name")
+	assert.Equal(t, "", Old("NVKECTL_NVKE_TEST_SETTING"))
+	assert.Equal(t, "", Get("NVKECTL_NVKE_TEST_SETTING"))
+	assert.Empty(t, Deprecated("NVKECTL_NVKE_TEST_SETTING"))
+}
+
 func TestDeprecatedReportsOnlySettingsSetUnderTheOldName(t *testing.T) {
 	t.Setenv("NVKECTL_A", "")
 	t.Setenv("NKECTL_A", "set")

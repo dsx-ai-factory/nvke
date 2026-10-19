@@ -47,7 +47,7 @@ nvkectl generate sitespec my-site --nodes hosts.csv > sitespec.yaml
 nvkectl bootstrap site -f sitespec.yaml
 # ... or with images you pushed to a registry
 nvkectl bootstrap site -f sitespec.yaml \
-  --controller-image nvcr.io/<org>/nvke-controller:edge \
+  --nvke-controller-image nvcr.io/<org>/nvke-controller:edge \
   --provisioned-provider-image nvcr.io/<org>/cluster-api-provider-provisioned:edge
 nvkectl bootstrap site -f sitespec.yaml --dry-run                 # validate only
 nvkectl bootstrap site -f sitespec.yaml --keep-bootstrap-cluster  # leave the Kind cluster for debugging
@@ -291,23 +291,27 @@ through `KIND_EXPERIMENTAL_PROVIDER=nerdctl`, which `nvkectl` sets itself.
 | `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` | unset | The login rendered into the cloud-init of every node CAPNICo creates. Required with `infra.provider: nico` by `bootstrap site` and `validate sitespec --bootstrap-only`; the stack install reads the same variables. |
 | `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT` | unset | Set to `1` to let `infra.nico.remote.endpoint` be an http URL. The bootstrap sends the NICo token there, so without it `bootstrap site` and `validate sitespec --bootstrap-only` require https; it is for a local or simulated NICo. |
 | `NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT` | `30m` | How long to wait for the site cluster to finish provisioning (`--timeout`) |
-| `NVKECTL_CONTROLLER_IMAGE` | `nke-controller:latest` | Controller image to deploy. A reference without a registry is side-loaded from the local image store; `make -C cli images` builds the default with nerdctl. A reference with a registry host is pulled with `nerdctl pull` when it is not already in containerd's image store, then loaded into the ephemeral cluster; log in to the registry first (`nerdctl login`). For Docker Hub, write `docker.io/<org>/<name>`. `--controller-image` overrides it for one run. |
+| `NVKECTL_NVKE_CONTROLLER_IMAGE` | `nke-controller:latest` | Controller image to deploy. A reference without a registry is side-loaded from the local image store; `make -C cli images` builds the default with nerdctl. A reference with a registry host is pulled with `nerdctl pull` when it is not already in containerd's image store, then loaded into the ephemeral cluster; log in to the registry first (`nerdctl login`). For Docker Hub, write `docker.io/<org>/<name>`. `--nvke-controller-image` overrides it for one run. |
 | `NVKECTL_CAPI_PROVISIONED_IMAGE` | `cluster-api-provider-provisioned:latest` | Provisioned-provider image, same semantics; unused with `infra.provider: nico`. `--provisioned-provider-image` overrides it for one run. |
-| `NVKECTL_CONTROLLER_PORT` | `30080` | Port of the controller API: its Service, NodePort, Kind host mapping and the address `nvkectl` calls |
-| `NVKECTL_CONTROLLER_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |
-| `NVKECTL_CONTROLLER_SPIRE_CHART` | `spire` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE chart, same semantics |
-| `NVKECTL_CONTROLLER_SPIRE_CRDS_CHART` | `spire-crds` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE CRDs chart, same semantics |
-| `NVKECTL_CONTROLLER_HELM_TIMEOUT` | `5m` | Bounds each `helm upgrade --install --wait` |
-| `NVKECTL_CONTROLLER_READY_TIMEOUT` | `5m` | Bounds the wait for the controller's `/readyz` |
+| `NVKECTL_NVKE_CONTROLLER_PORT` | `30080` | Port of the controller API: its Service, NodePort, Kind host mapping and the address `nvkectl` calls |
+| `NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |
+| `NVKECTL_NVKE_CONTROLLER_SPIRE_CHART` | `spire` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE chart, same semantics |
+| `NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART` | `spire-crds` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE CRDs chart, same semantics |
+| `NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT` | `5m` | Bounds each `helm upgrade --install --wait` |
+| `NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT` | `5m` | Bounds the wait for the controller's `/readyz` |
 | `NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR` | `cluster-diagnostics` | Where a failed bootstrap writes a cluster dump before tearing the cluster down (`--diagnostics-dir`) |
 
 Every `NVKECTL_*` variable above except `NVKECTL_NICO_ALLOW_INSECURE_ENDPOINT`,
-which turns a safety check off and so answers only to its own name, was named
+which turns a safety check off and so answers only to its own name, and the
+`NVKECTL_NVKE_CONTROLLER_*` settings, was named
 `NKECTL_*` while the binary was called `nkectl`. The old names still work for one release: when only the old
 name is set, `nvkectl` uses it and logs a warning naming the replacement. When
-both are set, the new name wins. nvkectl does not read the `NKECTL_CWE_*`
-names of cli/v0.1.x: `nvkectl bootstrap site` stops when one is set without
-its replacement, and warns when the replacement is set too. Likewise
+both are set, the new name wins. nvkectl does not read the earlier names of the
+`NVKECTL_NVKE_CONTROLLER_*` settings: `NKECTL_CWE_*` from cli/v0.1.x, and
+`NVKECTL_CONTROLLER_*` and `NKECTL_CONTROLLER_*` from the cli/v0.2.0 release
+candidates. `nvkectl bootstrap site` stops when one is set without its
+replacement, and warns when the replacement is set too. The release candidates'
+`--controller-image` flag is now `--nvke-controller-image`. Likewise
 `make -C cli images` reads
 `CONTROLLER_IMAGE`, and still reads `CWE_IMAGE` with a warning until
 [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes it.

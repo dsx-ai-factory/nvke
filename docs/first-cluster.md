@@ -312,11 +312,11 @@ bootstrap side-loads them by default. To use images you pushed to a registry
 instead, name them:
 
 ```bash
-export NVKECTL_CONTROLLER_IMAGE=<nke-controller image>
+export NVKECTL_NVKE_CONTROLLER_IMAGE=<nke-controller image>
 export NVKECTL_CAPI_PROVISIONED_IMAGE=<provisioned provider image>
 ```
 
-The `--controller-image` and `--provisioned-provider-image` flags do the same for one
+The `--nvke-controller-image` and `--provisioned-provider-image` flags do the same for one
 run. `nvkectl` carries the CWE chart and the provisioned provider's manifests.
 Step 4 lists what it fetches.
 
@@ -336,8 +336,8 @@ the listed images into a local or private registry. To change where they come
 from:
 
 - `NVKECTL_BOOTSTRAP_DOCKERHUB_MIRROR=<host>` pulls the Docker Hub images from a mirror.
-- `NVKECTL_CONTROLLER_TEMPORAL_CHART`, `NVKECTL_CONTROLLER_SPIRE_CHART` and
-  `NVKECTL_CONTROLLER_SPIRE_CRDS_CHART` take an OCI reference or a local path.
+- `NVKECTL_NVKE_CONTROLLER_TEMPORAL_CHART`, `NVKECTL_NVKE_CONTROLLER_SPIRE_CHART` and
+  `NVKECTL_NVKE_CONTROLLER_SPIRE_CRDS_CHART` take an OCI reference or a local path.
 
 Images from `ghcr.io`, `registry.k8s.io` and `cgr.dev` come from those
 registries. Cluster API and cert-manager come from `github.com` through

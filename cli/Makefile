@@ -204,7 +204,7 @@ ensure-capd-image:
 # workspace vendor tree.
 CAPI_PROVISIONED_IMAGE ?= cluster-api-provider-provisioned:latest
 # The tags below are the defaults `bootstrap site` uses when neither the image
-# flags nor NVKECTL_CONTROLLER_IMAGE / NVKECTL_CAPI_PROVISIONED_IMAGE name an image; the
+# flags nor NVKECTL_NVKE_CONTROLLER_IMAGE / NVKECTL_CAPI_PROVISIONED_IMAGE name an image; the
 # bootstrap manifest pins them.
 # CONTROLLER_IMAGE is the tag `images` gives the controller image. CWE_IMAGE
 # is its deprecated name. When CONTROLLER_IMAGE is unset or empty and

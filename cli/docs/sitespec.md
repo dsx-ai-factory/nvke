@@ -534,7 +534,7 @@ so operators do not need to relearn them. The subset of settings our main user
 The differences from tier-0 are deliberate and make the file open-sourceable:
 
 - **Images from the command line.** tier-0's `registry.ngcApiKey` and
-  `registry.sweImageTag` give way to `--controller-image` and
+  `registry.sweImageTag` give way to `--nvke-controller-image` and
   `--provisioned-provider-image`, with registry access from `nerdctl login`.
   The chart versions are baked into the `nvkectl` build.
 - **No deploy-time fields.** `argocd`, `repos`, `skipDeploy`, Forge/baremetal,
