@@ -8,10 +8,10 @@
                                 \x1f<values>\x1f<requires>\x1f<artifact>
                                 \x1f<imageArtifact>\x1f<profilesArtifact>
                                 \x1f<setfile>", one line. artifact,
-                                imageArtifact and profilesArtifact are the NVKR
-                                artifacts the chart, the image it runs and its
-                                profiles content image come from, by NVKR's
-                                output names; each may be empty. <setfile> is
+                                imageArtifact and profilesArtifact are the
+                                stack artifacts the chart, the image it runs
+                                and its profiles content image come from, by
+                                name; each may be empty. <setfile> is
                                 chart.setFile joined with commas: "<helm
                                 key>=<absolute path>" entries the executor
                                 passes as --set-file.

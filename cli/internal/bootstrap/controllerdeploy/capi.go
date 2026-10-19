@@ -41,7 +41,7 @@ const (
 	// credentials from. The name, namespace and keys are CAPNICo's own.
 	nicoCredentialsSecret = "nico-credentials"
 
-	// CAPNICoArtifact is the NVKR release artifact that carries the CAPNICo
+	// CAPNICoArtifact is the stack artifact that carries the CAPNICo
 	// image. It is the artifact deploy/nico/capnico/release.yaml binds to the
 	// manifest, so a release repoints the same image for the deploy path and
 	// the bootstrap.

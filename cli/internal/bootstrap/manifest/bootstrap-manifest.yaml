@@ -116,8 +116,8 @@ components:
 
   # Pulled only with `infra.provider: nico`. An upstream release: the image the
   # embedded CAPNICo manifest names by tag. The install runs the digest below
-  # instead, so a retagged image does not change what runs; --release replaces
-  # it for one run with the capnico-controller digest of an NVKR release. The
+  # instead, so a retagged image does not change what runs; --stack-artifacts
+  # replaces it for one run with the file's capnico-controller digest. The
   # manifest ships inside nvkectl, so there is no chart entry. The digest is
   # the multi-architecture index's.
   cluster-api-provider-nico:
