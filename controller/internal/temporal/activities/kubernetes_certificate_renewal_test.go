@@ -588,7 +588,6 @@ func TestResolveKubernetesCertificateRenewalRequiresMatchingTerminalStatus(t *te
 		{name: "malformed failed outcome", id: "stable-operation", phase: nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED, wantError: true},
 		{name: "not found", err: status.Error(codes.NotFound, "unknown operation"), wantError: true},
 		{name: "unimplemented", err: status.Error(codes.Unimplemented, "status unsupported"), wantError: true},
-		{name: "lost connectivity", err: status.Error(codes.Unavailable, "disconnected"), wantError: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			node := certificateRenewalTestNode()
@@ -657,6 +656,67 @@ func TestResolveKubernetesCertificateRenewalPollsRunningWithoutStarting(t *testi
 			}
 			require.Empty(t, fakeAgent.StartKubernetesCertificateRenewalV2Calls)
 			require.Empty(t, fakeAgent.ExecuteScriptNames)
+		})
+	}
+}
+
+// TestResolveKubernetesCertificateRenewalRetriesTransientStatusErrors keeps an
+// agent restart or network blip from retaining the lock: transient status errors
+// are retried within the caller's budget, and ownership is retained only when no
+// terminal status arrives before the deadline.
+func TestResolveKubernetesCertificateRenewalRetriesTransientStatusErrors(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		err        error
+		persistent bool
+	}{
+		{name: "unavailable then terminal failure", err: status.Error(codes.Unavailable, "agent restarting")},
+		{name: "deadline exceeded then terminal failure", err: fmt.Errorf("wrapped: %w", status.Error(codes.DeadlineExceeded, "slow agent"))},
+		{name: "transport error then terminal failure", err: errors.New("failed to connect to node agent")},
+		{name: "persistently unavailable retains ownership", err: status.Error(codes.Unavailable, "disconnected"), persistent: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			node := certificateRenewalTestNode()
+			database := &testutil.MockDB{}
+			database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
+			polls := 0
+			fakeAgent := &agenttest.FakeClient{GetKubernetesCertificateRenewalHook: func(_ db.Node, req *nvkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nvkeproto.GetKubernetesCertificateRenewalStatusResponse, error) {
+				require.Equal(t, "stable-operation", req.GetOperationId())
+				polls++
+				if tt.persistent || polls == 1 {
+					return nil, tt.err
+				}
+				return &nvkeproto.GetKubernetesCertificateRenewalStatusResponse{Operation: certificateRenewalStartResponse(
+					req.GetOperationId(),
+					nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED,
+					nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_RESTORED,
+					"",
+				).GetOperation()}, nil
+			}}
+			a := &Activities{db: database, nodeAgentClient: fakeAgent}
+			suite := &testsuite.WorkflowTestSuite{}
+			env := suite.NewTestActivityEnvironment()
+			resolve := func(ctx context.Context) error {
+				timeout := 10 * time.Second
+				if tt.persistent {
+					timeout = 50 * time.Millisecond
+				}
+				ctx, cancel := context.WithTimeout(ctx, timeout)
+				defer cancel()
+				return a.ResolveKubernetesCertificateRenewal(ctx, ResolveKubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "stable-operation"})
+			}
+			env.RegisterActivity(resolve)
+			_, err := env.ExecuteActivity(resolve)
+			if tt.persistent {
+				require.ErrorContains(t, err, "deadline exceeded")
+				require.ErrorContains(t, err, "disconnected")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, 2, polls)
+			}
+			require.Empty(t, fakeAgent.StartKubernetesCertificateRenewalV2Calls)
+			require.Empty(t, fakeAgent.ExecuteScriptNames)
+			database.AssertExpectations(t)
 		})
 	}
 }

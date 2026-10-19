@@ -164,7 +164,8 @@ Temporal activity retries, records the failing node and phase, and stops before
 another node is scheduled. After a node-renewal failure or cancellation, cleanup
 has a separate five-minute budget to confirm termination of the same operation
 ID on the executor already selected by the workflow. Typed cleanup only polls
-status; legacy cleanup requires a matching durable terminal receipt under the
+status, retrying transport, `Unavailable` and `DeadlineExceeded` errors until
+that budget ends; legacy cleanup requires a matching durable terminal receipt under the
 runbook's flock, which also excludes an active EXIT restoration. Neither cleanup
 starts or resumes renewal. Healthy diagnostic postflight alone is not proof of
 termination.
