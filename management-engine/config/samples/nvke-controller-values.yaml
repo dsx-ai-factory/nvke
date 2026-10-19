@@ -9,19 +9,19 @@ manager:
     - --kubeconfig=/etc/management-api/kubeconfig
     - --namespace=project-a
     - --nvke-controller-endpoint=https://controller.example.com/api
-    - --nvke-controller-bindings=/etc/controller/bindings/bindings.json
-    - --nvke-controller-token-file=/etc/controller/auth/token
+    - --nvke-controller-bindings=/etc/nvke-controller/bindings/bindings.json
+    - --nvke-controller-token-file=/etc/nvke-controller/auth/token
   extraVolumeMounts:
-    - name: controller-bindings
-      mountPath: /etc/controller/bindings
+    - name: nvke-controller-bindings
+      mountPath: /etc/nvke-controller/bindings
       readOnly: true
-    - name: controller-token
-      mountPath: /etc/controller/auth
+    - name: nvke-controller-token
+      mountPath: /etc/nvke-controller/auth
       readOnly: true
   extraVolumes:
-    - name: controller-bindings
+    - name: nvke-controller-bindings
       configMap:
-        name: management-controller-bindings
-    - name: controller-token
+        name: management-nvke-controller-bindings
+    - name: nvke-controller-token
       secret:
-        secretName: management-controller-token
+        secretName: management-nvke-controller-token

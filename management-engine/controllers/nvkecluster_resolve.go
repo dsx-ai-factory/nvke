@@ -20,13 +20,13 @@ type InvalidSpecError struct{ Message string }
 
 func (e *InvalidSpecError) Error() string { return e.Message }
 
-// ResolveControllerRequest translates supported cluster intent using bindings validated by LoadControllerBindings.
-func ResolveControllerRequest(cluster *internalv1.NVKECluster, bindings []ControllerBinding) (api.CreateClusterRequest, error) {
+// ResolveNVKEControllerRequest translates supported cluster intent using bindings validated by LoadNVKEControllerBindings.
+func ResolveNVKEControllerRequest(cluster *internalv1.NVKECluster, bindings []NVKEControllerBinding) (api.CreateClusterRequest, error) {
 	var empty api.CreateClusterRequest
-	if err := validateControllerSpec(cluster); err != nil {
+	if err := validateNVKEControllerSpec(cluster); err != nil {
 		return empty, err
 	}
-	var selected *ControllerBinding
+	var selected *NVKEControllerBinding
 	for i := range bindings {
 		binding := &bindings[i]
 		if binding.Namespace == cluster.Namespace && binding.Channel == string(cluster.Spec.Release.Channel.Name) && binding.Version == cluster.Spec.Release.Channel.Version && binding.ControlPlaneClass == string(cluster.Spec.ControlPlaneClass) {
@@ -35,7 +35,7 @@ func ResolveControllerRequest(cluster *internalv1.NVKECluster, bindings []Contro
 		}
 	}
 	if selected == nil {
-		return empty, invalidControllerRequest("The selected release and control-plane class are not available for this cluster")
+		return empty, invalidNVKEControllerRequest("The selected release and control-plane class are not available for this cluster")
 	}
 	// The REST types have no generated DeepCopy. JSON copying isolates nested provider data.
 	data, err := json.Marshal(selected.Template)
@@ -48,15 +48,15 @@ func ResolveControllerRequest(cluster *internalv1.NVKECluster, bindings []Contro
 	}
 	request.Name = clusterRemoteName(cluster)
 	if cluster.UID == "" {
-		return empty, invalidControllerRequest("A persisted cluster UID is required before provisioning")
+		return empty, invalidNVKEControllerRequest("A persisted cluster UID is required before provisioning")
 	}
 	request.CniPlugin = api.CreateClusterRequestCniPluginOvnKubernetes
 	request.EtcdEncrypted = true
-	pod, err := controllerNetworkPrefix(cluster.Spec.ClusterNetwork.Pods.CIDRBlocks)
+	pod, err := nvkeControllerNetworkPrefix(cluster.Spec.ClusterNetwork.Pods.CIDRBlocks)
 	if err != nil {
 		return empty, err
 	}
-	service, err := controllerNetworkPrefix(cluster.Spec.ClusterNetwork.Services.CIDRBlocks)
+	service, err := nvkeControllerNetworkPrefix(cluster.Spec.ClusterNetwork.Services.CIDRBlocks)
 	if err != nil {
 		return empty, err
 	}
@@ -64,37 +64,37 @@ func ResolveControllerRequest(cluster *internalv1.NVKECluster, bindings []Contro
 	return request, nil
 }
 
-func invalidControllerRequest(message string) error { return &InvalidSpecError{Message: message} }
+func invalidNVKEControllerRequest(message string) error { return &InvalidSpecError{Message: message} }
 
-func validateControllerSpec(cluster *internalv1.NVKECluster) error {
+func validateNVKEControllerSpec(cluster *internalv1.NVKECluster) error {
 	if len(cluster.Spec.NodePools) != 0 {
-		return invalidControllerRequest("Worker node pools are not supported")
+		return invalidNVKEControllerRequest("Worker node pools are not supported")
 	}
 	if cluster.Spec.Network != nil {
-		return invalidControllerRequest("Worker network selection is not supported")
+		return invalidNVKEControllerRequest("Worker network selection is not supported")
 	}
 	if cluster.Spec.Authentication != nil {
-		return invalidControllerRequest("Custom authentication is not supported")
+		return invalidNVKEControllerRequest("Custom authentication is not supported")
 	}
 	if cluster.Spec.APIServerAccess.PublicAccessEnabled || len(cluster.Spec.APIServerAccess.PublicAccessCIDRs) != 0 {
-		return invalidControllerRequest("Public API access configuration is not supported")
+		return invalidNVKEControllerRequest("Public API access configuration is not supported")
 	}
 	if runtime := cluster.Spec.AcceleratedRuntime; runtime != nil && (runtime.Name != "none" || runtime.Version != "") {
-		return invalidControllerRequest("Accelerated runtime configuration is not supported")
+		return invalidNVKEControllerRequest("Accelerated runtime configuration is not supported")
 	}
 	if cluster.Spec.ClusterNetwork.ServiceDomain != "cluster.local" {
-		return invalidControllerRequest("Only the cluster.local service domain is supported")
+		return invalidNVKEControllerRequest("Only the cluster.local service domain is supported")
 	}
 	return nil
 }
 
-func controllerNetworkPrefix(blocks []internalv1.NetworkCIDR) (string, error) {
+func nvkeControllerNetworkPrefix(blocks []internalv1.NetworkCIDR) (string, error) {
 	if len(blocks) != 1 {
-		return "", invalidControllerRequest("Exactly one IPv4 pod range and one IPv4 service range are required")
+		return "", invalidNVKEControllerRequest("Exactly one IPv4 pod range and one IPv4 service range are required")
 	}
 	prefix, err := netip.ParsePrefix(string(blocks[0]))
 	if err != nil || !prefix.Addr().Is4() {
-		return "", invalidControllerRequest("Pod and service ranges must be valid IPv4 CIDRs")
+		return "", invalidNVKEControllerRequest("Pod and service ranges must be valid IPv4 CIDRs")
 	}
 	// The NVKE controller remains authoritative for private ranges, overlap, size, and capacity validation.
 	return prefix.Masked().String(), nil

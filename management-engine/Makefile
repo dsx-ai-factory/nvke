@@ -197,17 +197,17 @@ test-install: ## Test the runtime in the prepared environment; run before Tilt.
 dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: DEV_NAME = nvke-controller
 dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: TILT_PORT = 10353
 dev-nvke-controller: ## Start the NVKE controller and management-engine in one Tilt dashboard on dedicated Kind clusters.
-	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh controller-up
-	bash hack/dev.sh controller-tilt
+	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh nvke-controller-up
+	bash hack/dev.sh nvke-controller-tilt
 
-dev-nvke-controller-up: ## Prepare the dedicated controller integration environment without starting Tilt.
-	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh controller-up
+dev-nvke-controller-up: ## Prepare the dedicated NVKE controller integration environment without starting Tilt.
+	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh nvke-controller-up
 
 test-nvke-controller-integration: ## Run the Ginkgo integration suite against the running combined environment.
-	bash hack/dev.sh controller-test
+	bash hack/dev.sh nvke-controller-test
 
-dev-nvke-controller-down: ## Remove the dedicated controller environment and credentials; stop Tilt first.
-	bash hack/dev.sh controller-down
+dev-nvke-controller-down: ## Remove the dedicated NVKE controller environment and credentials; stop Tilt first.
+	bash hack/dev.sh nvke-controller-down
 
 .PHONY: install install-state
 install: install-state ## Install the datastore resources using STATE_CONTEXT.
@@ -367,5 +367,5 @@ helm-uninstall: require-host-context ## Uninstall the Helm release from the K8s 
 chart-check: manifests ## Lint and render the Helm chart without a cluster.
 	$(HELM) lint chart -f config/samples/runtime-values.yaml
 	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml > dist/chart-rendered.yaml
-	$(HELM) lint chart -f config/samples/runtime-values.yaml -f config/samples/controller-values.yaml
-	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml -f config/samples/controller-values.yaml > dist/chart-controller-rendered.yaml
+	$(HELM) lint chart -f config/samples/runtime-values.yaml -f config/samples/nvke-controller-values.yaml
+	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml -f config/samples/nvke-controller-values.yaml > dist/chart-nvke-controller-rendered.yaml

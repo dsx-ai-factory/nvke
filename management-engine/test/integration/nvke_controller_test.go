@@ -52,7 +52,7 @@ var _ = Describe("NVKECluster through the local NVKE controller API", func() {
 		By("checking that the deployed binding uses paused local Docker infrastructure")
 		var configured corev1.ConfigMap
 		Expect(env.host.Get(ctx, client.ObjectKey{
-			Namespace: "management-engine-system", Name: "management-controller-bindings",
+			Namespace: "management-engine-system", Name: "management-nvke-controller-bindings",
 		}, &configured)).To(Succeed())
 		Expect(configured.Data["bindings.json"]).To(MatchJSON(bindingFixture))
 		Expect(expected.Nico).To(BeNil())
@@ -77,12 +77,12 @@ var _ = Describe("NVKECluster through the local NVKE controller API", func() {
 			TemporalNamespace: env.temporalNamespace,
 		}
 		saveEvidence(env.resultsDir, evidence)
-		GinkgoWriter.Printf("NVKECluster %s/%s; controller name %s\n", cluster.Namespace, cluster.Name, remoteName)
+		GinkgoWriter.Printf("NVKECluster %s/%s; NVKE controller name %s\n", cluster.Namespace, cluster.Name, remoteName)
 
 		By("observing the independent NVKE controller API representation")
 		var observedCluster *api.Cluster
 		Eventually(ctx, func(g Gomega) {
-			response, err := env.controller.ListClustersWithResponse(ctx, &api.ListClustersParams{Name: &remoteName})
+			response, err := env.nvkeController.ListClustersWithResponse(ctx, &api.ListClustersParams{Name: &remoteName})
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(response.StatusCode()).To(Equal(http.StatusOK))
 			g.Expect(response.JSON200).NotTo(BeNil())
@@ -143,7 +143,7 @@ var _ = Describe("NVKECluster through the local NVKE controller API", func() {
 		}).WithTimeout(3 * time.Minute).WithPolling(pollInterval).Should(Succeed())
 		evidence.Passed = true
 		saveEvidence(env.resultsDir, evidence)
-		GinkgoWriter.Printf("Verified controller %s -> Temporal %s -> CAPI %s/%s; machine %s is paused.\n",
+		GinkgoWriter.Printf("Verified NVKE controller %s -> Temporal %s -> CAPI %s/%s; machine %s is paused.\n",
 			evidence.RemoteID, evidence.WorkflowID, capiKey.Namespace, capiKey.Name, evidence.MachineName)
 		GinkgoWriter.Println("Resources remain available in Tilt; make dev-nvke-controller-down removes the dedicated environment.")
 	}, SpecTimeout(10*time.Minute))

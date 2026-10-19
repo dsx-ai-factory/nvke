@@ -87,7 +87,7 @@ func setupWithManager(ctx SpecContext, tc *fixture.Case) {
 	})
 	Expect(err).NotTo(HaveOccurred())
 	reconciler := &NVKEClusterReconciler{Client: mgr.GetClient(), PollInterval: pollInterval}
-	setupControllerFixture(ctx, tc, reconciler)
+	setupNVKEControllerFixture(ctx, tc, reconciler)
 	Expect(reconciler.SetupWithManager(mgr)).To(Succeed())
 	tc.StartManager(ctx, mgr)
 }

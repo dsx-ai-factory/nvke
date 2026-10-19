@@ -31,20 +31,20 @@ import (
 var fixtureRemoteID = uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 
 // Keep persisted endpoints stable in goldens while exercising the real HTTP client.
-type fixtureControllerClient struct{ *nvkecontroller.Client }
+type fixtureNVKEControllerClient struct{ *nvkecontroller.Client }
 
-func (*fixtureControllerClient) Endpoint() string { return "https://controller.example.com/api" }
+func (*fixtureNVKEControllerClient) Endpoint() string { return "https://controller.example.com/api" }
 
-type controllerFixtureConfig struct {
+type nvkeControllerFixtureConfig struct {
 	RecoveryEdited bool `json:"recoveryEdited"`
 	Ready          bool `json:"ready"`
 	Recover        bool `json:"recover"`
 	DeletePending  bool `json:"deletePending"`
 }
 
-type controllerFixture struct {
+type nvkeControllerFixture struct {
 	mu              sync.Mutex
-	config          controllerFixtureConfig
+	config          nvkeControllerFixtureConfig
 	request         *api.CreateClusterRequest
 	observedCluster *api.Cluster
 	calls           map[string]int
@@ -52,19 +52,19 @@ type controllerFixture struct {
 	source          client.ObjectKey
 }
 
-func setupControllerFixture(ctx SpecContext, tc *fixture.Case, reconciler *NVKEClusterReconciler) {
-	input, exists := tc.Input("input_controller.yaml")
+func setupNVKEControllerFixture(ctx SpecContext, tc *fixture.Case, reconciler *NVKEClusterReconciler) {
+	input, exists := tc.Input("input_nvke_controller.yaml")
 	if !exists {
 		return
 	}
-	fake := &controllerFixture{calls: map[string]int{}, kube: tc.Client, source: client.ObjectKey{Namespace: testNamespace, Name: testCluster}}
+	fake := &nvkeControllerFixture{calls: map[string]int{}, kube: tc.Client, source: client.ObjectKey{Namespace: testNamespace, Name: testCluster}}
 	Expect(yaml.UnmarshalStrict([]byte(input), &fake.config)).To(Succeed())
 	bindings, exists := tc.Input("input_bindings.yaml")
 	Expect(exists).To(BeTrue())
 	Expect(yaml.UnmarshalStrict([]byte(bindings), &reconciler.Bindings)).To(Succeed())
 	var source internalv1.NVKECluster
 	Expect(tc.Client.Get(ctx, fake.source, &source)).To(Succeed())
-	request, err := ResolveControllerRequest(&source, reconciler.Bindings)
+	request, err := ResolveNVKEControllerRequest(&source, reconciler.Bindings)
 	Expect(err).NotTo(HaveOccurred())
 	if fake.config.Recover {
 		fake.observedCluster = fake.cluster(request)
@@ -73,7 +73,7 @@ func setupControllerFixture(ctx SpecContext, tc *fixture.Case, reconciler *NVKEC
 	DeferCleanup(server.Close)
 	httpClient, err := nvkecontroller.New(nvkecontroller.Config{Endpoint: server.URL})
 	Expect(err).NotTo(HaveOccurred())
-	reconciler.NVKEController = &fixtureControllerClient{Client: httpClient}
+	reconciler.NVKEController = &fixtureNVKEControllerClient{Client: httpClient}
 	if fake.config.Recover {
 		controllerutil.AddFinalizer(&source, nvkeClusterFinalizer)
 		Expect(tc.Client.Update(ctx, &source)).To(Succeed())
@@ -86,10 +86,10 @@ func setupControllerFixture(ctx SpecContext, tc *fixture.Case, reconciler *NVKEC
 			Expect(tc.Client.Update(ctx, &source)).To(Succeed())
 		}
 	}
-	tc.AddGolden("expected_controller.yaml", fake.golden)
+	tc.AddGolden("expected_nvke_controller.yaml", fake.golden)
 }
 
-func (f *controllerFixture) cluster(request api.CreateClusterRequest) *api.Cluster {
+func (f *nvkeControllerFixture) cluster(request api.CreateClusterRequest) *api.Cluster {
 	cluster := api.Cluster{ID: fixtureRemoteID, Name: request.Name}
 	cluster.Conditions.Deleting.Status = "False"
 	cluster.Conditions.Provisioning.Status = "True"
@@ -101,7 +101,7 @@ func (f *controllerFixture) cluster(request api.CreateClusterRequest) *api.Clust
 	return &cluster
 }
 
-func (f *controllerFixture) serveHTTP(w http.ResponseWriter, req *http.Request) {
+func (f *nvkeControllerFixture) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
@@ -167,7 +167,7 @@ func (f *controllerFixture) serveHTTP(w http.ResponseWriter, req *http.Request) 
 	}
 }
 
-func (f *controllerFixture) golden(context.Context) (string, error) {
+func (f *nvkeControllerFixture) golden(context.Context) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	result := struct {

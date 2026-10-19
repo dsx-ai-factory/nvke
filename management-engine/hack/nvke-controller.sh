@@ -6,12 +6,12 @@
 : "${dev_dir:?Source this helper through hack/dev.sh}"
 declare -a host state clusters
 
-controller_environment() {
-  export DEV_CONTROLLER=1 KIND_CLUSTER_NAME="$DEV_NAME-management"
+nvke_controller_environment() {
+  export DEV_NVKE_CONTROLLER=1 KIND_CLUSTER_NAME="$DEV_NAME-management"
   export NKE_CONTROLLER_HTTP_PORT="${NKE_CONTROLLER_HTTP_PORT:-18080}" NKE_CONTROLLER_TEMPORAL_UI_PORT="${NKE_CONTROLLER_TEMPORAL_UI_PORT:-18081}"
-  export DEV_VALUES="$controller_dir/values.yaml"
-  export NKE_CONTROLLER_API_URL="http://127.0.0.1:$NKE_CONTROLLER_HTTP_PORT/api" NKE_CONTROLLER_TOKEN_FILE="$controller_dir/token"
-  export NKE_CONTROLLER_RESULTS_DIR="$controller_dir/results"
+  export DEV_VALUES="$nvke_controller_dir/values.yaml"
+  export NKE_CONTROLLER_API_URL="http://127.0.0.1:$NKE_CONTROLLER_HTTP_PORT/api" NKE_CONTROLLER_TOKEN_FILE="$nvke_controller_dir/token"
+  export NKE_CONTROLLER_RESULTS_DIR="$nvke_controller_dir/results"
   export NKE_AUTH_ENABLED=true NKE_PERMISSIVE_MODE=false
   export TENANT_ACCESS_ENABLED=false NKE_OIDC_AUTH_ENABLED=false
   export NKE_CONTROLLER_PROFILES_DIR="$PWD/../controller/test/fixtures/profiles"
@@ -22,17 +22,17 @@ controller_environment() {
   # These randomly generated credentials belong only to this disposable stack.
   set -a
   # shellcheck disable=SC1091
-  source "$controller_dir/credentials.env"
+  source "$nvke_controller_dir/credentials.env"
   set +a
 }
 
-controller_setup() (
-  trap 'rm -f "$controller_dir/credentials.env.tmp"' EXIT
+nvke_controller_setup() (
+  trap 'rm -f "$nvke_controller_dir/credentials.env.tmp"' EXIT
   check_tilt
   for tool in docker kubectl kind helm openssl go temporal; do
     command -v "$tool" >/dev/null || fail "$tool is required by the combined development environment."
   done
-  if [[ ! -f "$controller_dir/owned" ]]; then
+  if [[ ! -f "$nvke_controller_dir/owned" ]]; then
     local existing cluster
     existing=$(kind get clusters)
     for cluster in "${clusters[@]}"; do
@@ -41,36 +41,36 @@ controller_setup() (
       fi
     done
   fi
-  local target="$controller_dir/tilt_config.json"
-  if [[ -e "$controller_config" || -L "$controller_config" ]]; then
-    [[ -L "$controller_config" && $(readlink "$controller_config") == "$target" ]] ||
-      fail "$controller_config already exists; preserve it and use a separate checkout for the combined environment."
+  local target="$nvke_controller_dir/tilt_config.json"
+  if [[ -e "$nvke_controller_config" || -L "$nvke_controller_config" ]]; then
+    [[ -L "$nvke_controller_config" && $(readlink "$nvke_controller_config") == "$target" ]] ||
+      fail "$nvke_controller_config already exists; preserve it and use a separate checkout for the combined environment."
   fi
-  if [[ -e "$controller_hook" ]]; then
-    cmp -s "$controller_hook" hack/controller-hook.star || fail "$controller_hook is not owned by this integration environment."
+  if [[ -e "$nvke_controller_hook" ]]; then
+    cmp -s "$nvke_controller_hook" hack/nvke-controller-hook.star || fail "$nvke_controller_hook is not owned by this integration environment."
   fi
-  mkdir -p "$controller_dir" ../controller/tilt.d
-  touch "$controller_dir/owned"
+  mkdir -p "$nvke_controller_dir" ../controller/tilt.d
+  touch "$nvke_controller_dir/owned"
   printf '%s\n' '{"providers":["capi_core","capd"]}' >"$target"
-  [[ -L "$controller_config" ]] || ln -s "$target" "$controller_config"
-  cp hack/controller-hook.star "$controller_hook"
-  if [[ ! -f "$controller_dir/credentials.env" ]]; then
+  [[ -L "$nvke_controller_config" ]] || ln -s "$target" "$nvke_controller_config"
+  cp hack/nvke-controller-hook.star "$nvke_controller_hook"
+  if [[ ! -f "$nvke_controller_dir/credentials.env" ]]; then
     local variable value
-    : >"$controller_dir/credentials.env.tmp"
+    : >"$nvke_controller_dir/credentials.env.tmp"
     for variable in DGXC_TENANT_USER DGXC_TENANT_PASSWORD CNPG_SUPERUSER_PASSWORD CNPG_CLOUD_PASSWORD CNPG_TEMPORAL_PASSWORD; do
       value=$(openssl rand -hex 24)
-      printf '%s=%s\n' "$variable" "$value" >>"$controller_dir/credentials.env.tmp"
+      printf '%s=%s\n' "$variable" "$value" >>"$nvke_controller_dir/credentials.env.tmp"
     done
-    mv "$controller_dir/credentials.env.tmp" "$controller_dir/credentials.env"
+    mv "$nvke_controller_dir/credentials.env.tmp" "$nvke_controller_dir/credentials.env"
   fi
-  sed -e 's/--namespace=project-a/--namespace=controller-integration/' \
+  sed -e 's/--namespace=project-a/--namespace=nvke-controller-integration/' \
     -e 's|https://controller.example.com/api|http://nke-controller.nke-controller.svc.cluster.local:8080/api|' \
-    config/samples/controller-values.yaml >"$controller_dir/values.yaml"
-  controller_environment
+    config/samples/nvke-controller-values.yaml >"$nvke_controller_dir/values.yaml"
+  nvke_controller_environment
   bash hack/dev.sh up
   connect
-  "${state[@]}" create namespace controller-integration --dry-run=client -o yaml | "${state[@]}" apply -f -
-  "${host[@]}" -n "$HOST_NAMESPACE" create configmap management-controller-bindings \
+  "${state[@]}" create namespace nvke-controller-integration --dry-run=client -o yaml | "${state[@]}" apply -f -
+  "${host[@]}" -n "$HOST_NAMESPACE" create configmap management-nvke-controller-bindings \
     --from-file=bindings.json=test/integration/testdata/bindings.json --dry-run=client -o yaml | "${host[@]}" apply -f -
   make -C ../controller clusterctl-install
   ../controller/.local/bin/clusterctl init --kubeconfig "$KUBECONFIG" --kubeconfig-context "$HOST_CONTEXT" \
@@ -80,27 +80,27 @@ controller_setup() (
   "${host[@]}" -n capd-system rollout status deployment/capd-controller-manager --timeout=300s
 )
 
-controller_credentials() (
+nvke_controller_credentials() (
   local token_file
-  token_file=$(mktemp "$controller_dir/token.XXXXXX")
+  token_file=$(mktemp "$nvke_controller_dir/token.XXXXXX")
   trap 'rm -f "$token_file"' EXIT
   # Refresh the existing admitted development identity without logging its token.
   KUBE_CONTEXT="$HOST_CONTEXT" NKE_TOKEN_TTL=24h NKE_AUTH_TOKEN='' \
     bash ../controller/hack/nvke-token.sh >"$token_file"
   [[ -s "$token_file" ]] || fail "The NVKE controller must have authentication enabled."
-  mv "$token_file" "$controller_dir/token"
-  "${host[@]}" -n "$HOST_NAMESPACE" create secret generic management-controller-token \
-    --from-file=token="$controller_dir/token" --dry-run=client -o yaml |
+  mv "$token_file" "$nvke_controller_dir/token"
+  "${host[@]}" -n "$HOST_NAMESPACE" create secret generic management-nvke-controller-token \
+    --from-file=token="$nvke_controller_dir/token" --dry-run=client -o yaml |
     "${host[@]}" apply --server-side --field-manager=management-engine-dev -f -
 )
 
-controller_down() (
-  [[ -f "$controller_dir/owned" ]] || fail "This environment was not created by make dev-nvke-controller."
+nvke_controller_down() (
+  [[ -f "$nvke_controller_dir/owned" ]] || fail "This environment was not created by make dev-nvke-controller."
   local uid container proof scratch
-  scratch=$(mktemp -d "$controller_dir/cleanup.XXXXXX")
+  scratch=$(mktemp -d "$nvke_controller_dir/cleanup.XXXXXX")
   trap 'rm -rf "$scratch"' EXIT
   touch "$scratch/uids"
-  for proof in "$controller_dir"/results/*.json; do
+  for proof in "$nvke_controller_dir"/results/*.json; do
     [[ -f "$proof" ]] || continue
     uid=${proof##*/}
     uid=${uid%.json}
@@ -111,7 +111,7 @@ controller_down() (
   # The journal also permits cleanup after either Kind cluster has disappeared.
   if kind get clusters | grep -Fxq "$DEV_NAME-state"; then
     kind export kubeconfig --name "$DEV_NAME-state" --kubeconfig "$scratch/kubeconfig"
-    "${state[@]}" --kubeconfig "$scratch/kubeconfig" -n controller-integration get nvkeclusters \
+    "${state[@]}" --kubeconfig "$scratch/kubeconfig" -n nvke-controller-integration get nvkeclusters \
       --ignore-not-found -o jsonpath='{range .items[*]}{.metadata.uid}{"\n"}{end}' >>"$scratch/uids" ||
       echo "State API unavailable; using recorded test UIDs for load-balancer cleanup." >&2
   fi
@@ -126,36 +126,36 @@ controller_down() (
       [[ -n "$container" ]] && docker rm -f "$container" >/dev/null
     done <"$scratch/containers"
   done <"$scratch/unique-uids"
-  if [[ -L "$controller_config" && $(readlink "$controller_config") == "$controller_dir/tilt_config.json" ]]; then
-    rm "$controller_config"
-    if cmp -s "$controller_hook" hack/controller-hook.star; then rm "$controller_hook"; fi
+  if [[ -L "$nvke_controller_config" && $(readlink "$nvke_controller_config") == "$nvke_controller_dir/tilt_config.json" ]]; then
+    rm "$nvke_controller_config"
+    if cmp -s "$nvke_controller_hook" hack/nvke-controller-hook.star; then rm "$nvke_controller_hook"; fi
   fi
-  rm -f "$controller_dir/token" "$controller_dir/token.tmp" "$controller_dir/credentials.env" "$controller_dir/owned"
-  echo "Controller integration environment removed; diagnostics remain in $controller_dir/results."
+  rm -f "$nvke_controller_dir/token" "$nvke_controller_dir/token.tmp" "$nvke_controller_dir/credentials.env" "$nvke_controller_dir/owned"
+  echo "NVKE controller integration environment removed; diagnostics remain in $nvke_controller_dir/results."
 )
 
-controller_main() {
-  controller_dir="$dev_dir/controller"
-  controller_config="$PWD/../controller/tilt_config.json"
-  controller_hook="$PWD/../controller/tilt.d/management-engine.star"
+nvke_controller_main() {
+  nvke_controller_dir="$dev_dir/nvke-controller"
+  nvke_controller_config="$PWD/../controller/tilt_config.json"
+  nvke_controller_hook="$PWD/../controller/tilt.d/management-engine.star"
   case "$1" in
-    controller-up) controller_setup ;;
-    controller-down) controller_down ;;
-    controller-tilt|controller-test|controller-credentials)
-      [[ -f "$controller_dir/owned" ]] || fail "Run make dev-nvke-controller-up first."
-      controller_environment
+    nvke-controller-up) nvke_controller_setup ;;
+    nvke-controller-down) nvke_controller_down ;;
+    nvke-controller-tilt|nvke-controller-test|nvke-controller-credentials)
+      [[ -f "$nvke_controller_dir/owned" ]] || fail "Run make dev-nvke-controller-up first."
+      nvke_controller_environment
       connect
       case "$1" in
-        controller-tilt) start_tilt ../controller/Tiltfile "$TILT_PORT" ;;
-        controller-credentials) controller_credentials ;;
-        controller-test)
-          controller_credentials
+        nvke-controller-tilt) start_tilt ../controller/Tiltfile "$TILT_PORT" ;;
+        nvke-controller-credentials) nvke_controller_credentials ;;
+        nvke-controller-test)
+          nvke_controller_credentials
           mkdir -p "$NKE_CONTROLLER_RESULTS_DIR"
           exec go test -tags=integration_test -count=1 -timeout=12m -v ./test/integration \
             -ginkgo.v -ginkgo.junit-report="$NKE_CONTROLLER_RESULTS_DIR/junit.xml"
           ;;
       esac
       ;;
-    *) fail "Unknown controller development action: $1" ;;
+    *) fail "Unknown NVKE controller development action: $1" ;;
   esac
 }

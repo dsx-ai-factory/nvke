@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestConfigureController(t *testing.T) {
+func TestConfigureNVKEController(t *testing.T) {
 	dir := t.TempDir()
 	bindingsPath := filepath.Join(dir, "bindings.json")
 	invalidBindingsPath := filepath.Join(dir, "invalid-bindings.json")
@@ -44,7 +44,7 @@ func TestConfigureController(t *testing.T) {
 		{"invalid bindings", endpoint, "", invalidBindingsPath, "NVKE controller bindings"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			service, bindings, err := configureController(tc.endpoint, tc.tokenFile, tc.bindingsPath)
+			service, bindings, err := configureNVKEController(tc.endpoint, tc.tokenFile, tc.bindingsPath)
 			if tc.wantError != "" {
 				require.ErrorContains(t, err, tc.wantError)
 				require.NotContains(t, err.Error(), "REDACTED")

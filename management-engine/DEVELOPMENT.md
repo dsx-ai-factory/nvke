@@ -67,7 +67,7 @@ export KUBECONFIG="$PWD/.local/dev/nvke/kubeconfig"
 kubectl --context kind-nvke-state get namespaces
 ```
 
-## Controller integration
+## NVKE controller integration
 
 The NVKECluster controller creates, observes, and deletes clusters through the
 NVKE controller API. The controller owns provisioning and teardown, including
@@ -108,20 +108,20 @@ Inspect status in the state cluster and runtime logs in Tilt:
 
 ```sh
 kubectl --kubeconfig .local/dev/nvke-controller/kubeconfig --context kind-nvke-controller-state \
-  -n controller-integration get nvkeclusters -o yaml
+  -n nvke-controller-integration get nvkeclusters -o yaml
 ```
 
 Resources remain available after testing. Proof JSON and JUnit reports are saved
-under `.local/dev/<DEV_NAME>/controller/results/` and survive teardown. Teardown removes
+under `.local/dev/<DEV_NAME>/nvke-controller/results/` and survive teardown. Teardown removes
 the dedicated clusters, owned load balancers, and credentials. Rerun Tilt's
-`management-engine-credentials` resource to renew controller credentials; `make test-nvke-controller-integration` also renews
+`management-engine-credentials` resource to renew NVKE controller credentials; `make test-nvke-controller-integration` also renews
 them before each run. Datastore credentials use [the usual refresh](#credentials)
 with the same `DEV_NAME`.
 
 ### Configure an existing NVKE controller
 
 Provide `--nvke-controller-endpoint` and `--nvke-controller-bindings` together, plus `--nvke-controller-token-file`
-for bearer authentication. Without controller configuration the manager runs without
+for bearer authentication. Without NVKE controller configuration the manager runs without
 provisioning.
 
 Bindings are a JSON array selecting `namespace`, `channel`, optional `version`,
@@ -139,27 +139,27 @@ public API access, and accelerated-runtime installation are not yet supported.
 The general API samples include these future features and cannot be submitted
 unchanged to this integration.
 
-For Helm/Tilt, copy the [controller values example](config/samples/controller-values.yaml):
+For Helm/Tilt, copy the [NVKE controller values example](config/samples/nvke-controller-values.yaml):
 
 ```sh
-mkdir -p .local/controller
-cp config/samples/controller-values.yaml .local/controller/values.yaml
+mkdir -p .local/nvke-controller
+cp config/samples/nvke-controller-values.yaml .local/nvke-controller/values.yaml
 ```
 
 Set the service URL and namespace in the copy; retain its datastore and leadership
-arguments because Helm replaces argument lists. Supply `.local/controller/bindings.json`
-and `.local/controller/token`, then mount them in the default development environment:
+arguments because Helm replaces argument lists. Supply `.local/nvke-controller/bindings.json`
+and `.local/nvke-controller/token`, then mount them in the default development environment:
 
 ```sh
 make dev-up
 export KUBECONFIG="$PWD/.local/dev/nvke/kubeconfig"
-kubectl --context kind-nvke-management -n management-engine-system create configmap management-controller-bindings \
-  --from-file=bindings.json=.local/controller/bindings.json --dry-run=client -o yaml | \
+kubectl --context kind-nvke-management -n management-engine-system create configmap management-nvke-controller-bindings \
+  --from-file=bindings.json=.local/nvke-controller/bindings.json --dry-run=client -o yaml | \
   kubectl --context kind-nvke-management apply -f -
-kubectl --context kind-nvke-management -n management-engine-system create secret generic management-controller-token \
-  --from-file=token=.local/controller/token --dry-run=client -o yaml | \
+kubectl --context kind-nvke-management -n management-engine-system create secret generic management-nvke-controller-token \
+  --from-file=token=.local/nvke-controller/token --dry-run=client -o yaml | \
   kubectl --context kind-nvke-management apply -f -
-DEV_VALUES=.local/controller/values.yaml make dev
+DEV_VALUES=.local/nvke-controller/values.yaml make dev
 ```
 
 Use an endpoint reachable from the manager Pod; its `localhost` is not your host.
@@ -170,7 +170,7 @@ source control. Applying a cluster to a live NVKE controller requests real provi
 
 Restrict writes to bindings and cluster status to the controller and trusted
 administrators. `--namespace` filters watches, not RBAC, and bindings do
-not make controller credentials tenant-scoped. Reserve `nke-<NVKECluster UID>` names
+not make NVKE controller credentials tenant-scoped. Reserve `nke-<NVKECluster UID>` names
 for this integration; recovery relies on coordinated API writers.
 `status.provisioning` pins the endpoint and creation generation, then the returned
 cluster ID. Keep bindings stable while creation is pending: retries rebuild the

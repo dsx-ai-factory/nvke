@@ -34,8 +34,8 @@ func requestCluster() *internalv1.NVKECluster {
 	}
 }
 
-func requestBinding() ControllerBinding {
-	return ControllerBinding{
+func requestBinding() NVKEControllerBinding {
+	return NVKEControllerBinding{
 		Namespace: "project-a", Channel: "stable", ControlPlaneClass: "standard",
 		Template: api.CreateClusterRequest{
 			ControlPlaneKubernetesVersion: "1.35.1",
@@ -48,7 +48,7 @@ func requestBinding() ControllerBinding {
 	}
 }
 
-func TestResolveControllerRequest(t *testing.T) {
+func TestResolveNVKEControllerRequest(t *testing.T) {
 	cluster, binding := requestCluster(), requestBinding()
 	binding.Template.ControlPlaneConfig.Infra.BootstrapFiles = []api.CloudInitFile{{Path: "/etc/example", Content: "original"}}
 	cluster.Spec.AcceleratedRuntime = &internalv1.AcceleratedRuntimeSelection{Name: "none"}
@@ -57,7 +57,7 @@ func TestResolveControllerRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := ResolveControllerRequest(cluster, []ControllerBinding{binding})
+	request, err := ResolveNVKEControllerRequest(cluster, []NVKEControllerBinding{binding})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,27 +80,27 @@ func TestResolveControllerRequest(t *testing.T) {
 	}
 }
 
-func TestResolveControllerSelection(t *testing.T) {
+func TestResolveNVKEControllerSelection(t *testing.T) {
 	cases := []struct {
 		name      string
-		modify    func(*internalv1.NVKECluster, *[]ControllerBinding)
+		modify    func(*internalv1.NVKECluster, *[]NVKEControllerBinding)
 		wantError bool
 	}{
-		{"explicit default", func(_ *internalv1.NVKECluster, _ *[]ControllerBinding) {}, false},
-		{"explicit version", func(c *internalv1.NVKECluster, b *[]ControllerBinding) {
+		{"explicit default", func(_ *internalv1.NVKECluster, _ *[]NVKEControllerBinding) {}, false},
+		{"explicit version", func(c *internalv1.NVKECluster, b *[]NVKEControllerBinding) {
 			c.Spec.Release.Channel.Version = "release-1"
 			(*b)[0].Version = "release-1"
 		}, false},
-		{"no implicit latest", func(_ *internalv1.NVKECluster, b *[]ControllerBinding) { (*b)[0].Version = "release-1" }, true},
-		{"namespace isolation", func(c *internalv1.NVKECluster, _ *[]ControllerBinding) { c.Namespace = "other-project" }, true},
-		{"different class", func(c *internalv1.NVKECluster, _ *[]ControllerBinding) { c.Spec.ControlPlaneClass = "large" }, true},
-		{"unpersisted cluster", func(c *internalv1.NVKECluster, _ *[]ControllerBinding) { c.UID = "" }, true},
+		{"no implicit latest", func(_ *internalv1.NVKECluster, b *[]NVKEControllerBinding) { (*b)[0].Version = "release-1" }, true},
+		{"namespace isolation", func(c *internalv1.NVKECluster, _ *[]NVKEControllerBinding) { c.Namespace = "other-project" }, true},
+		{"different class", func(c *internalv1.NVKECluster, _ *[]NVKEControllerBinding) { c.Spec.ControlPlaneClass = "large" }, true},
+		{"unpersisted cluster", func(c *internalv1.NVKECluster, _ *[]NVKEControllerBinding) { c.UID = "" }, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cluster, bindings := requestCluster(), []ControllerBinding{requestBinding()}
+			cluster, bindings := requestCluster(), []NVKEControllerBinding{requestBinding()}
 			tc.modify(cluster, &bindings)
-			_, err := ResolveControllerRequest(cluster, bindings)
+			_, err := ResolveNVKEControllerRequest(cluster, bindings)
 			if (err != nil) != tc.wantError {
 				t.Fatalf("error = %v, wantError = %v", err, tc.wantError)
 			}
@@ -108,7 +108,7 @@ func TestResolveControllerSelection(t *testing.T) {
 	}
 }
 
-func TestResolveControllerUnsupportedIntent(t *testing.T) {
+func TestResolveNVKEControllerUnsupportedIntent(t *testing.T) {
 	cases := map[string]func(*internalv1.NVKECluster){
 		"workers":        func(c *internalv1.NVKECluster) { c.Spec.NodePools = []internalv1.NodePool{{}} },
 		"worker network": func(c *internalv1.NVKECluster) { c.Spec.Network = &internalv1.Network{VPCID: uuid.NewString()} },
@@ -133,7 +133,7 @@ func TestResolveControllerUnsupportedIntent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cluster := requestCluster()
 			modify(cluster)
-			_, err := ResolveControllerRequest(cluster, []ControllerBinding{requestBinding()})
+			_, err := ResolveNVKEControllerRequest(cluster, []NVKEControllerBinding{requestBinding()})
 			if _, ok := errors.AsType[*InvalidSpecError](err); !ok {
 				t.Fatalf("expected InvalidSpecError, got %v", err)
 			}
@@ -141,8 +141,8 @@ func TestResolveControllerUnsupportedIntent(t *testing.T) {
 	}
 }
 
-func TestLoadControllerBindings(t *testing.T) {
-	valid, err := json.Marshal([]ControllerBinding{requestBinding()})
+func TestLoadNVKEControllerBindings(t *testing.T) {
+	valid, err := json.Marshal([]NVKEControllerBinding{requestBinding()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestLoadControllerBindings(t *testing.T) {
 			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			bindings, err := LoadControllerBindings(path)
+			bindings, err := LoadNVKEControllerBindings(path)
 			if name == "valid" {
 				if err != nil || len(bindings) != 1 {
 					t.Fatalf("bindings=%v error=%v", bindings, err)
@@ -172,7 +172,7 @@ func TestLoadControllerBindings(t *testing.T) {
 	}
 }
 
-func TestLoadControllerInvalidTemplates(t *testing.T) {
+func TestLoadNVKEControllerInvalidTemplates(t *testing.T) {
 	cases := map[string]func(*api.CreateClusterRequest){
 		"name":      func(r *api.CreateClusterRequest) { r.Name = "tenant-chosen" },
 		"network":   func(r *api.CreateClusterRequest) { r.Network = &api.ClusterNetworkCreateConfig{} },
@@ -183,7 +183,7 @@ func TestLoadControllerInvalidTemplates(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			binding := requestBinding()
 			modify(&binding.Template)
-			data, err := json.Marshal([]ControllerBinding{binding})
+			data, err := json.Marshal([]NVKEControllerBinding{binding})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -191,7 +191,7 @@ func TestLoadControllerInvalidTemplates(t *testing.T) {
 			if err := os.WriteFile(path, data, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := LoadControllerBindings(path); err == nil {
+			if _, err := LoadNVKEControllerBindings(path); err == nil {
 				t.Fatal("expected invalid template rejection")
 			}
 		})

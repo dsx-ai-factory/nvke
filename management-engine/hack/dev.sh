@@ -25,7 +25,7 @@ check_tilt() {
   (( BASH_REMATCH[1] > 0 || BASH_REMATCH[2] >= 36 )) ||
     fail "Tilt 0.36+ is required; found $version at $(command -v tilt). Use the shared toolchain described in DEVELOPMENT.md."
   [[ -z "${DEV_VALUES:-}" || -r "$DEV_VALUES" ]] ||
-    fail "DEV_VALUES=$DEV_VALUES is not readable. Configure a local copy of config/samples/controller-values.yaml, or omit DEV_VALUES to run without the NVKE controller."
+    fail "DEV_VALUES=$DEV_VALUES is not readable. Configure a local copy of config/samples/nvke-controller-values.yaml, or omit DEV_VALUES to run without the NVKE controller."
 }
 
 start_tilt() {
@@ -124,8 +124,8 @@ case "${1:-}" in
     for cluster in "${clusters[@]}"; do
       if ! grep -Fxq -- "$cluster" <<<"$existing"; then
         config_args=()
-        if [[ ${DEV_CONTROLLER:-} == 1 && "$cluster" == "$DEV_NAME-management" ]]; then
-          config_args=(--config config/dev/controller-kind.yaml)
+        if [[ ${DEV_NVKE_CONTROLLER:-} == 1 && "$cluster" == "$DEV_NAME-management" ]]; then
+          config_args=(--config config/dev/nvke-controller-kind.yaml)
         fi
         kind create cluster --name "$cluster" --image "$KIND_NODE_IMAGE" --kubeconfig "$KUBECONFIG" "${config_args[@]}" --wait 120s
       fi
@@ -159,10 +159,10 @@ case "${1:-}" in
     # Integration runs retain diagnostics in this directory after teardown.
     rmdir "$dev_dir" 2>/dev/null || true
     ;;
-  controller-*)
-    # shellcheck source=management-engine/hack/controller.sh
-    source hack/controller.sh
-    controller_main "$1"
+  nvke-controller-*)
+    # shellcheck source=management-engine/hack/nvke-controller.sh
+    source hack/nvke-controller.sh
+    nvke_controller_main "$1"
     ;;
-  *) fail "Usage: $0 {check|up|sync|refresh|tilt|test|down|controller-up|controller-tilt|controller-test|controller-credentials|controller-down}" ;;
+  *) fail "Usage: $0 {check|up|sync|refresh|tilt|test|down|nvke-controller-up|nvke-controller-tilt|nvke-controller-test|nvke-controller-credentials|nvke-controller-down}" ;;
 esac

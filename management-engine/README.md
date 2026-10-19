@@ -29,7 +29,7 @@ git diff --exit-code -- apis/v1 config/crd/bases config/rbac/role.yaml chart # c
 make test-controller # controller integration tests (envtest)
 make test-install # requires a prepared environment without Tilt
 make -C .. chart-crds # after changing MachineImage, ClusterRelease, or NodePoolRelease
-make -C .. chart-crds-check # verify the controller chart's generated CRDs
+make -C .. chart-crds-check # verify the NVKE controller chart's generated CRDs
 make chart-check # generate, lint, and render the management-engine chart
 ```
 

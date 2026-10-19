@@ -54,7 +54,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var metricsCertPath, metricsCertName, metricsCertKey string
-	var controllerEndpoint, controllerTokenFile, controllerBindingsPath string
+	var nvkeControllerEndpoint, nvkeControllerTokenFile, nvkeControllerBindingsPath string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metric endpoint binds to; 0 disables it.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -80,19 +80,19 @@ func main() {
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "Enable HTTP/2 for metrics")
 
 	flag.StringVar(
-		&controllerEndpoint,
+		&nvkeControllerEndpoint,
 		"nvke-controller-endpoint",
 		"",
 		"NVKE controller REST API base URL; requires --nvke-controller-bindings",
 	)
 	flag.StringVar(
-		&controllerTokenFile,
+		&nvkeControllerTokenFile,
 		"nvke-controller-token-file",
 		"",
 		"File containing the NVKE controller bearer token",
 	)
 	flag.StringVar(
-		&controllerBindingsPath,
+		&nvkeControllerBindingsPath,
 		"nvke-controller-bindings",
 		"",
 		"JSON provisioning bindings; requires --nvke-controller-endpoint",
@@ -127,7 +127,11 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
 
-	controllerClient, bindings, err := configureController(controllerEndpoint, controllerTokenFile, controllerBindingsPath)
+	nvkeControllerClient, bindings, err := configureNVKEController(
+		nvkeControllerEndpoint,
+		nvkeControllerTokenFile,
+		nvkeControllerBindingsPath,
+	)
 	if err != nil {
 		setupLog.Error(err, "configure NVKE controller access")
 		os.Exit(1)
@@ -158,7 +162,7 @@ func main() {
 
 	if err := (&controllers.NVKEClusterReconciler{
 		Client:         mgr.GetClient(),
-		NVKEController: controllerClient,
+		NVKEController: nvkeControllerClient,
 		Bindings:       bindings,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NVKECluster")
@@ -182,19 +186,19 @@ func main() {
 	}
 }
 
-// configureController leaves reconciliation inactive unless an endpoint and bindings are supplied.
-func configureController(
+// configureNVKEController leaves reconciliation inactive unless an endpoint and bindings are supplied.
+func configureNVKEController(
 	endpoint string,
 	tokenFile string,
 	bindingsPath string,
-) (controllers.ControllerClient, []controllers.ControllerBinding, error) {
+) (controllers.NVKEControllerClient, []controllers.NVKEControllerBinding, error) {
 	if endpoint == "" && tokenFile == "" && bindingsPath == "" {
 		return nil, nil, nil
 	}
 	if endpoint == "" || bindingsPath == "" {
 		return nil, nil, fmt.Errorf("--nvke-controller-endpoint and --nvke-controller-bindings must be provided together")
 	}
-	bindings, err := controllers.LoadControllerBindings(bindingsPath)
+	bindings, err := controllers.LoadNVKEControllerBindings(bindingsPath)
 	if err != nil {
 		return nil, nil, err
 	}

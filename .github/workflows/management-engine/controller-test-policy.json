@@ -3,7 +3,7 @@
     "management-engine/controllers/nvkecluster_controller_test.go": 7,
     "management-engine/controllers/nvkecluster_fake_test.go": 0,
     "management-engine/controllers/suite_test.go": 0,
-    "management-engine/test/integration/controller_test.go": 1,
+    "management-engine/test/integration/nvke_controller_test.go": 1,
     "management-engine/test/integration/suite_test.go": 0
   },
   "goTestFiles": [
@@ -13,17 +13,17 @@
     "management-engine/test/integration/temporal_test.go"
   ],
   "ordinaryGoTests": [
-    "TestConfigureController",
-    "TestControllerIntegration",
+    "TestConfigureNVKEController",
     "TestControllers",
     "TestEndpointConfiguration",
     "TestHTTPFailures",
-    "TestLoadControllerBindings",
-    "TestLoadControllerInvalidTemplates",
+    "TestLoadNVKEControllerBindings",
+    "TestLoadNVKEControllerInvalidTemplates",
+    "TestNVKEControllerIntegration",
     "TestRedirectsAreNotFollowed",
-    "TestResolveControllerRequest",
-    "TestResolveControllerSelection",
-    "TestResolveControllerUnsupportedIntent",
+    "TestResolveNVKEControllerRequest",
+    "TestResolveNVKEControllerSelection",
+    "TestResolveNVKEControllerUnsupportedIntent",
     "TestResponseValidation",
     "TestTLSVerificationAndCancellation",
     "TestTokenRotation"

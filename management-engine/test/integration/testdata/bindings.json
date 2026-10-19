@@ -1,6 +1,6 @@
 [
   {
-    "namespace": "controller-integration",
+    "namespace": "nvke-controller-integration",
     "channel": "stable",
     "controlPlaneClass": "local",
     "template": {

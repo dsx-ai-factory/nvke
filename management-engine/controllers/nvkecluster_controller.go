@@ -28,8 +28,8 @@ const (
 	defaultPollInterval  = 10 * time.Second
 )
 
-// ControllerClient is the existing REST API surface used by cluster reconciliation.
-type ControllerClient interface {
+// NVKEControllerClient is the existing REST API surface used by cluster reconciliation.
+type NVKEControllerClient interface {
 	Endpoint() string
 	FindByName(ctx context.Context, name string) (*api.Cluster, error)
 	Get(ctx context.Context, id string) (*api.Cluster, error)
@@ -40,8 +40,8 @@ type ControllerClient interface {
 // NVKEClusterReconciler coordinates cluster provisioning from declarative intent.
 type NVKEClusterReconciler struct {
 	client.Client
-	NVKEController ControllerClient
-	Bindings       []ControllerBinding
+	NVKEController NVKEControllerClient
+	Bindings       []NVKEControllerBinding
 	PollInterval   time.Duration
 }
 

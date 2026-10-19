@@ -14,9 +14,9 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
-// ControllerBinding maps a namespace, release selection, and class to an existing NVKE controller request.
+// NVKEControllerBinding maps a namespace, release selection, and class to an existing NVKE controller request.
 // An empty Version is an explicit default for requests that omit the channel version.
-type ControllerBinding struct {
+type NVKEControllerBinding struct {
 	Namespace         string                   `json:"namespace"`
 	Channel           string                   `json:"channel"`
 	Version           string                   `json:"version,omitempty"`
@@ -24,15 +24,15 @@ type ControllerBinding struct {
 	Template          api.CreateClusterRequest `json:"template"`
 }
 
-// LoadControllerBindings reads a strict JSON array of trusted provisioning bindings.
-func LoadControllerBindings(path string) ([]ControllerBinding, error) {
+// LoadNVKEControllerBindings reads a strict JSON array of trusted provisioning bindings.
+func LoadNVKEControllerBindings(path string) ([]NVKEControllerBinding, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read NVKE controller bindings: %w", err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	var bindings []ControllerBinding
+	var bindings []NVKEControllerBinding
 	if err := decoder.Decode(&bindings); err != nil {
 		return nil, fmt.Errorf("NVKE controller bindings must be a JSON array with supported fields")
 	}

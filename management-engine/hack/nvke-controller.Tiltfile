@@ -1,14 +1,14 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Loaded by the controller's local tilt.d hook, after its own resources are registered.
+# Loaded by the NVKE controller's local tilt.d hook, after its own resources are registered.
 load_dynamic("../Tiltfile")
 
 local_resource(
     "management-engine-credentials",
-    cmd=["bash", "hack/dev.sh", "controller-credentials"],
+    cmd=["bash", "hack/dev.sh", "nvke-controller-credentials"],
     dir="..",
-    deps=["dev.sh", "controller.sh"],
+    deps=["dev.sh", "nvke-controller.sh"],
     resource_deps=["nvke-controller", "management-state"],
     labels=["management-engine"],
 )

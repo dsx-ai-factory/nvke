@@ -46,7 +46,7 @@ func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *inte
 		}
 	}
 
-	request, err := ResolveControllerRequest(cluster, r.Bindings)
+	request, err := ResolveNVKEControllerRequest(cluster, r.Bindings)
 	if err != nil {
 		return nil, err
 	}
