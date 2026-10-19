@@ -850,6 +850,7 @@ jobs:
       # A pull-request branch must never publish. Its inputs are empty, so
       # dry_run alone would read as "not a dry run" and push.
       - name: Push the qcow2 to GHCR
+        id: push
         if: >-
           github.event.inputs.dry_run != 'true' &&
           (startsWith(github.ref, 'refs/tags/os-image/') ||
@@ -872,6 +873,11 @@ jobs:
             tags="${tags:+${tags},}${alias}${SUFFIX}-${ARCH}"
           done
 
+          # Record the manifest digest this push created. Every tag written
+          # here is mutable: a second build of the same commit -- a re-run, a
+          # mirrored branch -- overwrites it, and a later job resolving the
+          # tag then gets an image this run never built. The digest is the
+          # only stable handle, so the downstream jobs consume it instead.
           ( cd dist && oras push "${REPO}:${tags}" \
               --artifact-type application/vnd.nvidia.nvke.node.qcow2.v1 \
               --artifact-platform "linux/${ARCH}" \
@@ -880,7 +886,15 @@ jobs:
               --annotation "org.opencontainers.image.version=${VERSION}" \
               --annotation "org.opencontainers.image.licenses=Apache-2.0" \
               --annotation "org.opencontainers.image.title=${DISK}" \
-              "${DISK}:application/vnd.qemu.qcow2" )
+              "${DISK}:application/vnd.qemu.qcow2" ) | tee push.out
+
+          digest="$(awk '/^Digest: /{print $2; exit}' push.out)"
+          if [[ "${digest}" != sha256:* ]]; then
+            echo "::error::oras push reported no manifest digest"
+            exit 1
+          fi
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+          echo "pushed ${REPO}@${digest}"
 
       - name: Show published manifest
         if: >-
@@ -904,9 +918,16 @@ jobs:
           DISK: ${{ steps.disks.outputs.disk }}
           VERSION: ${{ steps.meta.outputs.version }}
           AGENT_VERSION: ${{ steps.meta.outputs.agent_version }}
+          DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           set -euo pipefail
           mkdir -p assets
+          # Travels with the checksums so publish-nvcr and publish-s3 can pull
+          # by digest. Empty when the push step was skipped (a dry run, or a
+          # ref that does not publish); those runs have no downstream job.
+          if [[ -n "${DIGEST}" ]]; then
+            echo "${DIGEST}" > "assets/digest-${BUILD}.txt"
+          fi
           ( cd dist && sha256sum "${DISK}" ) > "assets/checksums-${BUILD}.txt"
           # The SBOM is small enough to attach, unlike the disk it describes,
           # so it is both hashed here and copied into the upload.
@@ -984,15 +1005,13 @@ jobs:
             echo "::error::NVKE_NGC_ORG is not set in the nvcr environment"
             exit 1
           fi
-          # The source is always the sha- alias: the version alias exists on
-          # GHCR only when NVKE_GITHUB_PUBLISH names os-image.
-          source_tag="${SHA_ALIAS}${SUFFIX}-${ARCH}"
-          tag="${source_tag}"
+          # Only the destination tag is resolved here; the source is the
+          # digest this run pushed, read from the build leg's artifact.
+          tag="${SHA_ALIAS}${SUFFIX}-${ARCH}"
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             tag="${VERSION}${SUFFIX}-${ARCH}"
           fi
           {
-            echo "source_tag=${source_tag}"
             echo "tag=${tag}"
             echo "nvcr_repo=nvcr.io/${NVKE_NGC_ORG}/nvke-os-image-${{ matrix.variant }}"
           } >> "${GITHUB_OUTPUT}"
@@ -1010,14 +1029,30 @@ jobs:
           echo "${NGC_TOKEN}" | oras login nvcr.io \
             --username '$oauthtoken' --password-stdin
 
+      # By digest, not by the sha- tag: the tag is mutable and a second build
+      # of this commit would otherwise put an image this run never built, and
+      # never checksummed, into NVCR under a release tag.
+      - name: Download this build's digest
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets-${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}
+          path: expected
+
       - name: Copy GHCR to NVCR
         shell: bash
         env:
-          SOURCE_TAG: ${{ steps.meta.outputs.source_tag }}
+          BUILD: ${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}
           TAG: ${{ steps.meta.outputs.tag }}
           REPO: ${{ matrix.variant == 'fde' && env.REPO_FDE || env.REPO_NON_FDE }}
           NVCR_REPO: ${{ steps.meta.outputs.nvcr_repo }}
-        run: oras cp "${REPO}:${SOURCE_TAG}" "${NVCR_REPO}:${TAG}"
+        run: |
+          set -euo pipefail
+          digest="$(cat "expected/digest-${BUILD}.txt")"
+          if [[ "${digest}" != sha256:* ]]; then
+            echo "::error::no manifest digest recorded for ${BUILD}"
+            exit 1
+          fi
+          oras cp "${REPO}@${digest}" "${NVCR_REPO}:${TAG}"
 
   # Same "separate job" reasoning as publish-nvcr. Downloads the qcow2 from
   # GHCR rather than the runner's local disk, since this job doesn't share a
@@ -1070,12 +1105,9 @@ jobs:
           echo "${GHCR_TOKEN}" | oras login ghcr.io \
             --username "${{ github.actor }}" --password-stdin
 
-      - name: Resolve release and pull the qcow2
+      - name: Resolve the release
         id: meta
         env:
-          ARCH: ${{ matrix.arch }}
-          SUFFIX: ${{ matrix.tag_suffix }}
-          REPO: ${{ matrix.variant == 'fde' && env.REPO_FDE || env.REPO_NON_FDE }}
           S3_URI: ${{ vars.S3_PUBLISH_S3_URI }}
           ROLE_ARN: ${{ vars.S3_PUBLISH_AWS_ROLE_ARN }}
           REGION: ${{ vars.S3_PUBLISH_AWS_REGION }}
@@ -1091,10 +1123,6 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             release="${VERSION}"
           fi
-          # Pull the sha- alias: the version alias exists on GHCR only when
-          # NVKE_GITHUB_PUBLISH names os-image. The S3 path keeps the version.
-          mkdir -p dist
-          oras pull "${REPO}:${SHA_ALIAS}${SUFFIX}-${ARCH}" -o dist
           {
             echo "s3_uri=${S3_URI}"
             echo "role_arn=${ROLE_ARN}"
@@ -1103,15 +1131,28 @@ jobs:
             echo "cf_domain=${CF_DOMAIN}"
           } >> "${GITHUB_OUTPUT}"
 
-      # The pull above resolves a mutable tag, so what lands in dist/ is
-      # whatever that tag points at now, not necessarily what this run built.
-      # The build leg recorded the sha256 of each disk it produced; compare
-      # against it before anything reaches S3.
-      - name: Download this build's checksums
+      # The build leg recorded both the manifest digest it pushed and the
+      # sha256 of each disk. Pull by that digest -- a mutable tag can point
+      # at another build of the same commit -- then verify the bytes anyway.
+      - name: Download this build's digest and checksums
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-assets-${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}
           path: expected
+
+      - name: Pull the qcow2 by digest
+        shell: bash
+        env:
+          BUILD: ${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}
+          REPO: ${{ matrix.variant == 'fde' && env.REPO_FDE || env.REPO_NON_FDE }}
+        run: |
+          set -euo pipefail
+          digest="$(cat "expected/digest-${BUILD}.txt")"
+          if [[ "${digest}" != sha256:* ]]; then
+            echo "::error::no manifest digest recorded for ${BUILD}"
+            exit 1
+          fi
+          oras pull "${REPO}@${digest}" -o dist
 
       - name: Verify the pulled qcow2s
         shell: bash
