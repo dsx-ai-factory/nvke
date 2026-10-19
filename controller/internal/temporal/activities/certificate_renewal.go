@@ -145,8 +145,9 @@ func admitCertificateRenewal(ctx context.Context, tx db.Tx, cluster db.Cluster) 
 	if cluster.NodeAgentUpgrade != nil {
 		return refuse("cannot renew certificates while a node-agent installation is in progress")
 	}
-	// The reservation outlives its cycle until confirmed termination clears it.
-	if cluster.CertificateRenewal != nil {
+	// A fenced reservation outlives its cycle until confirmed termination clears it.
+	// An unfenced (V1) one is left to dispatch, which reattaches on the same node.
+	if cluster.CertificateRenewal != nil && cluster.CertificateRenewal.Fenced {
 		return refuse("cannot renew certificates while a node certificate renewal is still reserved")
 	}
 	// Admission writers check ownership under this lock, so work they accepted
