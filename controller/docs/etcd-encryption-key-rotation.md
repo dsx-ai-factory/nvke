@@ -215,7 +215,9 @@ the mutation lock. Do not delete the pending key, hand-edit encryption
 configuration, edit database conditions, start a competing rotation, or
 restore an old configuration after old keys were removed.
 
-Prefer automatic activity retry while the original execution is running. If it
+While the original execution is running, each node key update already retries
+the agent's retry-safe `Unavailable` and `DeadlineExceeded` answers up to three
+times before the phase fails; prefer that over manual action. If it
 has failed/canceled in `add_secondary` or later, recover by **resetting that same
 workflow ID**, after proving all old key-update activity attempts are terminal
 and no conflicting node work

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
@@ -51,6 +53,15 @@ func DefaultObjectsToEncrypt() []string {
 type phase string
 
 const (
+	// updateEncryptionConfigAttempts bounds the rotation's UpdateEncryptionConfig
+	// calls per node when the agent reports a retry-safe code. Each attempt can
+	// wait about two minutes for the reload, so all of them fit in the
+	// eight-minute ApplyToNode activity timeout.
+	updateEncryptionConfigAttempts       = 3
+	defaultUpdateEncryptionConfigBackoff = 5 * time.Second
+)
+
+const (
 	phaseInitialize             phase = "initialize"
 	phasePromote                phase = "promote"
 	phaseRemove                 phase = "remove"
@@ -68,6 +79,7 @@ type EncryptionOperation struct {
 	objectsToEncrypt      []string
 	nodeAgentClientDialer nodeAgentClientDialer
 	encryptionKeyReader   EncryptionKeyReader
+	updateRetryBackoff    time.Duration
 }
 
 var (
@@ -101,7 +113,7 @@ func NewRemoveOldKeysOperation(opts ...Option) *EncryptionOperation {
 }
 
 func newEncryptionOperation(name string, operationPhase phase, opts ...Option) *EncryptionOperation {
-	op := &EncryptionOperation{name: name, phase: operationPhase}
+	op := &EncryptionOperation{name: name, phase: operationPhase, updateRetryBackoff: defaultUpdateEncryptionConfigBackoff}
 	for _, opt := range opts {
 		opt(op)
 	}
@@ -185,7 +197,7 @@ func (op *EncryptionOperation) runEncryptionPhase(ctx context.Context, client no
 			return fmt.Errorf("remove plain-text identity provider: %s", msg)
 		}
 	case phaseAddSecondaryKey:
-		if _, err := client.UpdateEncryptionConfig(ctx, &nvkeproto.UpdateEncryptionConfigRequest{
+		if err := op.updateEncryptionConfig(ctx, client, &nvkeproto.UpdateEncryptionConfigRequest{
 			Operation: &nvkeproto.UpdateEncryptionConfigRequest_AddSecondaryKey{
 				AddSecondaryKey: &nvkeproto.AddSecondaryKeyOperation{NewKey: key.Key, KeyName: key.Name},
 			},
@@ -193,7 +205,7 @@ func (op *EncryptionOperation) runEncryptionPhase(ctx context.Context, client no
 			return fmt.Errorf("add secondary encryption key: %w", err)
 		}
 	case phasePromotePrimaryKey:
-		if _, err := client.UpdateEncryptionConfig(ctx, &nvkeproto.UpdateEncryptionConfigRequest{
+		if err := op.updateEncryptionConfig(ctx, client, &nvkeproto.UpdateEncryptionConfigRequest{
 			Operation: &nvkeproto.UpdateEncryptionConfigRequest_PromotePrimaryKey{
 				PromotePrimaryKey: &nvkeproto.PromotePrimaryKeyOperation{NewKey: key.Key, KeyName: key.Name},
 			},
@@ -201,7 +213,7 @@ func (op *EncryptionOperation) runEncryptionPhase(ctx context.Context, client no
 			return fmt.Errorf("promote primary encryption key: %w", err)
 		}
 	case phaseRemoveOldEncryptionKey:
-		if _, err := client.UpdateEncryptionConfig(ctx, &nvkeproto.UpdateEncryptionConfigRequest{
+		if err := op.updateEncryptionConfig(ctx, client, &nvkeproto.UpdateEncryptionConfigRequest{
 			Operation: &nvkeproto.UpdateEncryptionConfigRequest_RemoveOldKeys{
 				RemoveOldKeys: &nvkeproto.RemoveOldKeysOperation{PrimaryKey: key.Key, KeyName: key.Name},
 			},
@@ -212,6 +224,29 @@ func (op *EncryptionOperation) runEncryptionPhase(ctx context.Context, client no
 		return fmt.Errorf("unknown etcd encryption phase %q", op.phase)
 	}
 	return nil
+}
+
+// updateEncryptionConfig retries the codes the RPC contract calls safe to retry,
+// Unavailable and DeadlineExceeded, within a bounded budget. ApplyToNode returns
+// outcomes rather than activity errors, so nothing else retries a node mutation
+// before the phase fails. Every other code fails at once.
+func (op *EncryptionOperation) updateEncryptionConfig(ctx context.Context, client nodeAgentEncryptionClient, req *nvkeproto.UpdateEncryptionConfigRequest) error {
+	backoff := op.updateRetryBackoff
+	for attempt := 1; ; attempt++ {
+		_, err := client.UpdateEncryptionConfig(ctx, req)
+		code := status.Code(err)
+		if err == nil || attempt == updateEncryptionConfigAttempts || code != codes.Unavailable && code != codes.DeadlineExceeded {
+			return err
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return errors.Join(err, ctx.Err())
+		case <-timer.C:
+		}
+		backoff *= 2
+	}
 }
 
 func (op *EncryptionOperation) Validate(_ context.Context, cluster rollout.Cluster) error {

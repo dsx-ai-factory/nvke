@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -77,6 +78,8 @@ type fakeEncryptionClient struct {
 	removeCalls       int
 	updateRequests    []*nvkeproto.UpdateEncryptionConfigRequest
 	updateErr         error
+	updateErrs        []error
+	onUpdate          func()
 	identityName      string
 	identityErr       error
 	identityCalls     int
@@ -124,6 +127,17 @@ func (c *fakeEncryptionClient) UpdateEncryptionConfig(
 	_ ...grpc.CallOption,
 ) (*nvkeproto.UpdateEncryptionConfigResponse, error) {
 	c.updateRequests = append(c.updateRequests, req)
+	if c.onUpdate != nil {
+		c.onUpdate()
+	}
+	if len(c.updateErrs) > 0 {
+		err := c.updateErrs[0]
+		c.updateErrs = c.updateErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+		return &nvkeproto.UpdateEncryptionConfigResponse{}, nil
+	}
 	if c.updateErr != nil {
 		return nil, c.updateErr
 	}
@@ -401,4 +415,46 @@ func TestLegacyRotationPhasesUseOriginalProtocolOnAgentsWithoutIdentity(t *testi
 	require.Equal(t, &nvkeproto.AddSecondaryKeyOperation{NewKey: "legacy-pending-key"}, client.updateRequests[0].GetAddSecondaryKey())
 	require.Equal(t, &nvkeproto.PromotePrimaryKeyOperation{NewKey: "legacy-pending-key"}, client.updateRequests[1].GetPromotePrimaryKey())
 	require.Equal(t, &nvkeproto.RemoveOldKeysOperation{PrimaryKey: "legacy-pending-key"}, client.updateRequests[2].GetRemoveOldKeys())
+}
+
+// TestRotationRetriesRetrySafeUpdateErrors retries only the codes the
+// UpdateEncryptionConfig contract calls safe to retry, within a bounded budget,
+// because ApplyToNode returns outcomes and nothing else retries the node.
+func TestRotationRetriesRetrySafeUpdateErrors(t *testing.T) {
+	unavailable := status.Error(codes.Unavailable, "apiserver metrics unavailable")
+	deadline := status.Error(codes.DeadlineExceeded, "reload not confirmed")
+	for _, test := range []struct {
+		name        string
+		errs        []error
+		cancel      bool
+		wantCalls   int
+		wantOutcome rollout.Outcome
+	}{
+		{name: "transient then success", errs: []error{unavailable, deadline, nil}, wantCalls: 3, wantOutcome: rollout.OutcomeApplied},
+		{name: "persistent transient fails after the budget", errs: []error{unavailable, unavailable, unavailable, nil}, wantCalls: 3, wantOutcome: rollout.OutcomeFailedNotRestored},
+		{name: "non-retryable fails at once", errs: []error{status.Error(codes.FailedPrecondition, "wal from another operation"), nil}, wantCalls: 1, wantOutcome: rollout.OutcomeFailedNotRestored},
+		{name: "canceled context stops retrying", errs: []error{unavailable, nil}, cancel: true, wantCalls: 1, wantOutcome: rollout.OutcomeFailedNotRestored},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			client := &fakeEncryptionClient{updateErrs: test.errs}
+			if test.cancel {
+				client.onUpdate = cancel
+			}
+			op := NewPromotePrimaryKeyOperation(WithEncryptionKeyReader(&fakeEncryptionKeyReader{key: "new-pending-key"}))
+			op.updateRetryBackoff = time.Millisecond
+			op.nodeAgentClientDialer = func(context.Context, rollout.Node) (nodeAgentEncryptionClient, func(), error) {
+				return client, func() {}, nil
+			}
+			payload, err := op.BuildApplyToNodePayload(ctx, &fakeCluster{id: uuid.New(), name: "tenant-a"})
+			require.NoError(t, err)
+
+			outcome, err := op.ApplyToNode(ctx, fakeNode{name: "cp-0", role: rollout.NodeRoleControlPlane}, payload)
+
+			assert.Equal(t, test.wantOutcome, outcome)
+			assert.Equal(t, test.wantOutcome != rollout.OutcomeApplied, err != nil)
+			assert.Len(t, client.updateRequests, test.wantCalls)
+		})
+	}
 }
