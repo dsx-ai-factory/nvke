@@ -465,7 +465,7 @@ func TestUnit_ControllerReconcileRetriesReleasedFailure(t *testing.T) {
 		{"admission refusal after backoff", 2 * time.Hour, false, db.CertificateRenewalPhaseAdmission, 3, true},
 		{"two voters still desired", 2 * time.Hour, false, db.CertificateRenewalPhaseTwoControlPlaneVoters, 2, false},
 		{"two voters scaled to three", 2 * time.Hour, false, db.CertificateRenewalPhaseTwoControlPlaneVoters, 3, true},
-		{"two voters scaled to one", 2 * time.Hour, false, db.CertificateRenewalPhaseTwoControlPlaneVoters, 1, true},
+		{"two voters scaled to one", 2 * time.Hour, false, db.CertificateRenewalPhaseTwoControlPlaneVoters, 1, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			clusterID := uuid.New()
