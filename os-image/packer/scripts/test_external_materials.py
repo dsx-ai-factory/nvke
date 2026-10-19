@@ -60,7 +60,8 @@ class ComposeImageInputsTest(unittest.TestCase):
             write_package_archive(self.materials / binding, name)
         for name in ("nvke-agent-spire.conf", "wait-spiffe-socket.sh",
                      "conntrack-tune.service", "configure-conntrack.sh",
-                     "10-nke-conntrack-timeouts.conf"):
+                     "10-nke-conntrack-timeouts.conf", "99-disable-network-config.cfg",
+                     "00-dhcp-all.yaml"):
             shutil.copyfile(SCRIPTS.parent.parent / "files" / name, self.source_files / name)
         write_executable(
             self.tools / "dpkg-scanpackages",
@@ -124,6 +125,8 @@ class ComposeImageInputsTest(unittest.TestCase):
                 "conntrack-tune.service",
                 "configure-conntrack.sh",
                 "10-nke-conntrack-timeouts.conf",
+                "99-disable-network-config.cfg",
+                "00-dhcp-all.yaml",
             },
         )
 
@@ -138,6 +141,8 @@ class ComposeImageInputsTest(unittest.TestCase):
                 ("conntrack-tune.service", 0o644),
                 ("configure-conntrack.sh", 0o755),
                 ("10-nke-conntrack-timeouts.conf", 0o644),
+                ("99-disable-network-config.cfg", 0o644),
+                ("00-dhcp-all.yaml", 0o644),
             ):
                 with self.subTest(name=name):
                     self.assertEqual(archive.getmember(name).mode, mode)
@@ -281,7 +286,7 @@ class ComposeImageInputsTest(unittest.TestCase):
                             patch.object(module.subprocess, "run") as index:
                         with self.assertRaisesRegex(SystemExit, expected):
                             module.main()
-                        self.assertEqual(install.call_count, 6 if copies_agent else 0)
+                        self.assertEqual(install.call_count, 8 if copies_agent else 0)
                         index.assert_not_called()
                     if existing:
                         self.assertEqual(output.read_bytes(), b"prior output")
@@ -500,7 +505,8 @@ class ComposeImageInputsTest(unittest.TestCase):
     def test_missing_files_and_unsafe_outputs(self):
         for relative in ("materials/ovn", "materials/agent", "source-files/nvke-agent-spire.conf",
                          "source-files/wait-spiffe-socket.sh", "source-files/conntrack-tune.service",
-                         "source-files/configure-conntrack.sh", "source-files/10-nke-conntrack-timeouts.conf"):
+                         "source-files/configure-conntrack.sh", "source-files/10-nke-conntrack-timeouts.conf",
+                         "source-files/99-disable-network-config.cfg", "source-files/00-dhcp-all.yaml"):
             with self.subTest(relative=relative):
                 path = self.root / relative
                 saved = path.read_bytes()
