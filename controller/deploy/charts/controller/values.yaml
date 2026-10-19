@@ -518,7 +518,7 @@ apiAuth:
     # -- Extra files to place beside `auth.yaml`, keyed by filename. Only used
     # when configMap.create=true. The whole ConfigMap is mounted, so each one
     # lands in the same directory and can be named by a `jwks.caBundlePath` as
-    # /etc/nvke/auth/<filename> -- which is how an issuer behind a private CA
+    # /etc/nke/auth/<filename> -- which is how an issuer behind a private CA
     # gets its bundle. A CA bundle is a public certificate, not a secret. The
     # render fails if `caBundlePath` names a file in that directory that is not
     # listed here, rather than leaving NVKE to crash-loop on a missing file.

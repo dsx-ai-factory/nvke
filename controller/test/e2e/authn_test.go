@@ -422,7 +422,7 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 			Data:       map[string]string{"config.yaml": fmt.Sprintf("metricsListenAddress: 127.0.0.1:9090\npermissiveMode: %t\n", permissive)},
 		}
 	}
-	authConfigPath := corev1.EnvVar{Name: "AUTH_CONFIG_PATH", Value: "/etc/nvke/auth/auth.yaml"}
+	authConfigPath := corev1.EnvVar{Name: "AUTH_CONFIG_PATH", Value: "/etc/nke/auth/auth.yaml"}
 
 	tests := []struct {
 		name       string
@@ -481,7 +481,7 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 				Template: corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{Containers: []corev1.Container{{
 						Name: "sidecar",
-						Env:  []corev1.EnvVar{{Name: "AUTH_CONFIG_PATH", Value: "/etc/nvke/auth/auth.yaml"}},
+						Env:  []corev1.EnvVar{{Name: "AUTH_CONFIG_PATH", Value: "/etc/nke/auth/auth.yaml"}},
 					}}},
 				},
 			},

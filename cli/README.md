@@ -110,11 +110,15 @@ ConfigMap, looked up in namespace `nke-controller` first and then
 `nke-auth-config` for a site that keeps the older name by pinning
 `apiAuth.configMap.name`.
 
+The first *readable* candidate is used: a site whose RBAC grants `get` on its
+pinned name alone answers Forbidden for the other name, and the search moves
+past that denial rather than stopping at it.
+
 Only when neither name is found in either namespace does the CLI treat
 authentication as off and send no `Authorization` header — the same as a CWE
-that was installed with `apiAuth.enabled` unset. A ConfigMap that exists but
-cannot be read is reported as the denial it is, rather than being read as
-authentication being off.
+that was installed with `apiAuth.enabled` unset. A denial is not that: it is
+kept, and reported only if no candidate turns out to be readable, so an RBAC
+problem never arrives as an unexplained 401.
 
 The kubeconfig identity needs:
 

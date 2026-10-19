@@ -36,8 +36,8 @@ func TestAuthEnvFields(t *testing.T) {
 		},
 		{
 			name:     "set",
-			env:      map[string]string{"AUTH_CONFIG_PATH": "/etc/nvke/auth/authentication.yaml"},
-			wantPath: "/etc/nvke/auth/authentication.yaml",
+			env:      map[string]string{"AUTH_CONFIG_PATH": "/etc/nke/auth/authentication.yaml"},
+			wantPath: "/etc/nke/auth/authentication.yaml",
 		},
 	}
 
@@ -73,7 +73,7 @@ func TestValidateIgnoresAuthFields(t *testing.T) {
 	// And set changes nothing, in either mode: Validate has no opinion either way.
 	for _, permissive := range []bool{false, true} {
 		configured := base
-		configured.AuthConfigPath = "/etc/nvke/auth/auth.yaml"
+		configured.AuthConfigPath = "/etc/nke/auth/auth.yaml"
 		configured.PermissiveMode = permissive
 		require.NoError(t, configured.Validate(), "permissive=%t must not change validation", permissive)
 	}

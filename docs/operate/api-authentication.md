@@ -95,7 +95,7 @@ Authentication has three modes. Off is the default.
 
    NVKE uses each value exactly as written. A value with leading or trailing whitespace stops NVKE from starting.
 
-2. If the IdP's certificate is signed by a private certificate authority (CA), add the CA certificate to the same file. The chart places it at `/etc/nvke/auth/idp-ca.crt`.
+2. If the IdP's certificate is signed by a private certificate authority (CA), add the CA certificate to the same file. The chart places it at `/etc/nke/auth/idp-ca.crt`.
 
    ```yaml
    apiAuth:
@@ -109,7 +109,7 @@ Authentication has three modes. Off is the default.
        issuers:
          - name: example-idp
            jwks:
-             caBundlePath: /etc/nvke/auth/idp-ca.crt
+             caBundlePath: /etc/nke/auth/idp-ca.crt
    ```
 
    Merge these keys into the file from step 1: `extraFiles` under `configMap`, and `caBundlePath` under the existing issuer's `jwks`, rather than adding a second `apiAuth` block or issuer. Without `caBundlePath`, NVKE trusts the system CAs.
@@ -121,7 +121,7 @@ Authentication has three modes. Off is the default.
      --values-for controller=../auth-values.yaml
    ```
 
-   The wrapper reads the site spec, the stack config and the kubeconfig from `NVKE_SITESPEC`, `NVKE_STACK_CONFIG` and `NVKE_KUBECONFIG`, which `env.sh` exports, so the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart refuses to render if `config` is set without `create`, or if `caBundlePath` names a file under `/etc/nvke/auth` that `extraFiles` does not list.
+   The wrapper reads the site spec, the stack config and the kubeconfig from `NVKE_SITESPEC`, `NVKE_STACK_CONFIG` and `NVKE_KUBECONFIG`, which `env.sh` exports, so the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart refuses to render if `config` is set without `create`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
 
 4. Wait for the new pods and check the startup log.
 

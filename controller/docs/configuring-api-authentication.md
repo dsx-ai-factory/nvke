@@ -92,11 +92,17 @@ kubectl -n nke-clients create serviceaccount nke-client
 ```
 
 `nvkectl` mints this pair and no other. The names `nke-clients` /
-`nke-client` and ConfigMap `nvke-auth-config` are fixed in the CLI. It reads
-that ConfigMap from namespace `nke-controller`, or from `cloud-workflow-engine`
-when `nke-controller` has none. Any other error reading it, such as a
-permission denial, stops the command. In any other namespace, `nvkectl` finds
-no ConfigMap and sends no token.
+`nke-client` are fixed in the CLI, and it looks for the authentication ConfigMap
+under two fixed names: `nvke-auth-config`, then `nke-auth-config` for a site
+that keeps the older name by pinning `apiAuth.configMap.name`. It searches both
+in namespace `nke-controller`, then both in `cloud-workflow-engine`, and uses
+the first it can read.
+
+A ConfigMap it is not permitted to read does not stop the command: the search
+moves to the next candidate, so a kubeconfig scoped to the pinned name alone
+still works. The denial is reported only if no candidate turns out to be
+readable. Any other error reading a ConfigMap stops the command. In any other
+namespace, `nvkectl` finds no ConfigMap and sends no token.
 Other names work for `curl` and `hack/nvke-token.sh` if you override
 them; they will not work for `nvkectl`. One account per caller is still easier
 to revoke when those callers are not the CLI.

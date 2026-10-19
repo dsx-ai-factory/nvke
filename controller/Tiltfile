@@ -885,7 +885,7 @@ k8s_resource(
 
 # NVKE API authentication scaffolding: the client namespaces and service accounts
 # the demo mints tokens for, the token-minter RBAC, and the auth config the
-# deployment mounts at /etc/nvke/auth/auth.yaml. The NVKE release depends on this
+# deployment mounts at /etc/nke/auth/auth.yaml. The NVKE release depends on this
 # so the ConfigMap exists before the pod mounts it.
 k8s_resource(
     new_name="nvke-auth-dev",

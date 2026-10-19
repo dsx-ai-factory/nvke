@@ -166,14 +166,18 @@ kubeconfig to authenticate: they read the audience from the authentication
 ConfigMap and mint a TokenRequest for `nke-clients/nke-client`. Two names are
 searched, in each of `nke-controller` and then `cloud-workflow-engine`:
 `nvke-auth-config` first, then `nke-auth-config`, which a site installed before
-the `nvke` rename keeps by pinning `apiAuth.configMap.name`. The first that
-exists is used.
+the `nvke` rename keeps by pinning `apiAuth.configMap.name`. The first *readable*
+one is used.
+
+Readable matters because RBAC scoped to `resourceNames` denies the names it does
+not grant: a site that grants `get` on its pinned name alone answers Forbidden
+for the other. The search moves past such a denial to the next candidate, so a
+kubeconfig that can read only the pinned ConfigMap still mints a token.
 
 The CLI sends no bearer token only when neither name is found in either
-namespace; that is read as authentication being off. A ConfigMap the kubeconfig
-is not permitted to read is not the same thing — the search moves on to the
-other names, and if none is readable the command fails with that denial rather
-than sending a bare request.
+namespace; that is read as authentication being off. A denial is not that — it
+is kept, and if no candidate turns out to be readable the command fails with it
+rather than sending a bare request the controller would reject.
 
 The kubeconfig identity needs `create` on `serviceaccounts/token` for
 `nke-client`. See

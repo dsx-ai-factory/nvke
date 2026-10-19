@@ -186,8 +186,8 @@ func discover(ctx context.Context, client kubernetes.Interface) (*Source, bool, 
 }
 
 // RawConfig returns the auth.yaml the NVKE pod mounts, out of the authentication
-// ConfigMap; found is false, with a nil error, when neither name exists. It stops
-// at the bytes, and each caller decodes what it asserts on.
+// ConfigMap; found is false, with a nil error, only when neither name exists. It
+// stops at the bytes, and each caller decodes what it asserts on.
 //
 // Both names are searched so a run against a site pinned to the legacy name reads
 // its configuration rather than concluding authentication is off, which would
@@ -195,12 +195,22 @@ func discover(ctx context.Context, client kubernetes.Interface) (*Source, bool, 
 // skip the SPIRE one.
 func RawConfig(ctx context.Context, client kubernetes.Interface) ([]byte, bool, error) {
 	namespace := controller.Namespace()
+	// As in cli/internal/auth: RBAC scoped to resourceNames denies the names it
+	// does not grant, so a run whose kubeconfig may read only the pinned name
+	// must not stop at the denial of the other. The denial is returned only if
+	// no candidate is readable, never reported as authentication being absent.
+	var denied error
 	for _, name := range [...]string{ConfigMapName, LegacyConfigMapName} {
 		cm, err := client.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
+		switch {
+		case apierrors.IsNotFound(err):
 			continue
-		}
-		if err != nil {
+		case apierrors.IsForbidden(err):
+			if denied == nil {
+				denied = fmt.Errorf("authtoken: reading ConfigMap %s/%s: %w", namespace, name, err)
+			}
+			continue
+		case err != nil:
 			return nil, false, fmt.Errorf("authtoken: reading ConfigMap %s/%s: %w", namespace, name, err)
 		}
 
@@ -210,7 +220,7 @@ func RawConfig(ctx context.Context, client kubernetes.Interface) ([]byte, bool, 
 		}
 		return []byte(raw), true, nil
 	}
-	return nil, false, nil
+	return nil, false, denied
 }
 
 // AudienceFromCluster reads one deployment-wide audience out of the

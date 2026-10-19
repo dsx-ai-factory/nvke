@@ -684,7 +684,7 @@ a failed render, so read the pod logs, not the Helm output.
 
 An issuer whose `jwks.uri` sits behind a private CA needs its bundle as a file
 in the same directory, which `extraFiles` puts there. The whole ConfigMap is
-mounted, so every key in it is a file at `/etc/nvke/auth`:
+mounted, so every key in it is a file at `/etc/nke/auth`:
 
 ```yaml
 apiAuth:
@@ -700,11 +700,11 @@ apiAuth:
       - name: spire
         jwks:
           uri: "https://spire.example.internal:30443/keys"
-          caBundlePath: /etc/nvke/auth/spire-ca.crt
+          caBundlePath: /etc/nke/auth/spire-ca.crt
 ```
 
 A CA bundle is a public certificate, not a secret. A `caBundlePath` under
-`/etc/nvke/auth` that names a file nothing supplies fails the render, rather than
+`/etc/nke/auth` that names a file nothing supplies fails the render, rather than
 leaving the pod to crash-loop on a missing file; a path anywhere else is taken
 to be a volume you mount yourself and is left alone.
 
@@ -712,7 +712,7 @@ to be a volume you mount yourself and is left alone.
 must be `auth.yaml`:
 
 ```bash
-# In the release namespace. The chart mounts the ConfigMap at /etc/nvke/auth and
+# In the release namespace. The chart mounts the ConfigMap at /etc/nke/auth and
 # points AUTH_CONFIG_PATH at auth.yaml within it.
 kubectl create configmap nvke-auth-config -n "${RELEASE_NAMESPACE}" \
   --from-file=auth.yaml=./auth.yaml
