@@ -481,13 +481,54 @@ func TestCertificateRenewalRunbookFailsClosedOnUnknownExpirationFormat(t *testin
 
 func TestCertificateRenewalRunbookMissingCertificateFailsClosed(t *testing.T) {
 	harness := newCertificateRenewalHarness(t)
-	harness.env = append(harness.env, "FAKE_MISSING_CERT=true", "OPERATION_ID=missing-cert")
+	harness.env = append(harness.env, "FAKE_MISSING_CERT=admin.conf", "OPERATION_ID=missing-cert")
 
 	output, err := harness.run(t)
 
 	require.Error(t, err, output)
 	require.Contains(t, output, "Unable to parse kubeadm certificate expiration output safely")
 	require.NoFileExists(t, filepath.Join(harness.runtimeDir, "renewed"))
+}
+
+// Joined control-plane nodes never have super-admin.conf; kubeadm reports it
+// missing on every healthy joined node, so selection must still succeed.
+func TestCertificateRenewalRunbookJoinedControlPlaneMissingSuperAdmin(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		residual string
+		renews   bool
+	}{
+		{name: "fresh", residual: "365d", renews: false},
+		{name: "due", residual: "1d", renews: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			harness := newCertificateRenewalHarness(t)
+			harness.env = append(harness.env, "FAKE_MISSING_CERT=super-admin.conf", "FAKE_RESIDUAL="+tt.residual, "OPERATION_ID=joined-node")
+
+			output, err := harness.run(t)
+
+			require.NoError(t, err, output)
+			if tt.renews {
+				require.Contains(t, output, "RENEWAL_OUTCOME=renewed")
+				require.FileExists(t, filepath.Join(harness.runtimeDir, "renewed"))
+			} else {
+				require.Contains(t, output, "RENEWAL_OUTCOME=unchanged")
+				require.NoFileExists(t, filepath.Join(harness.runtimeDir, "renewed"))
+			}
+		})
+	}
+
+	t.Run("check-only", func(t *testing.T) {
+		harness := newCertificateRenewalHarness(t)
+		harness.setEnv("CHECK_ONLY", "true")
+		harness.setEnv("FAKE_MISSING_CERT", "super-admin.conf")
+		harness.setEnv("FAKE_RESIDUAL", "365d")
+
+		output, err := harness.run(t)
+
+		require.NoError(t, err, output)
+		require.Equal(t, "RENEWAL_REQUIRED=false\n", output)
+	})
 }
 
 func TestCertificateRenewalRunbookRenewsCertificatesInsideThreshold(t *testing.T) {
@@ -990,10 +1031,11 @@ if [[ "$*" == "certs check-expiration" ]]; then
   cat <<EOF
 CERTIFICATE                EXPIRES                  RESIDUAL TIME   CERTIFICATE AUTHORITY   EXTERNALLY MANAGED
 EOF
-  if [[ "${FAKE_MISSING_CERT:-false}" == "true" ]]; then
-    echo "!MISSING! admin.conf"
-  else
+  if [[ "${FAKE_MISSING_CERT:-}" != "admin.conf" ]]; then
     echo "admin.conf                 Sep 04, 2027 12:00 UTC   ${FAKE_RESIDUAL:-365d}            ca                      no"
+  fi
+  if [[ -n "${FAKE_MISSING_CERT:-}" ]]; then
+    echo "!MISSING! ${FAKE_MISSING_CERT}"
   fi
   cat <<EOF
 CERTIFICATE AUTHORITY      EXPIRES                  RESIDUAL TIME   EXTERNALLY MANAGED
