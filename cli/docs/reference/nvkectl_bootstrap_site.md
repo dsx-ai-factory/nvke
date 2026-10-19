@@ -27,8 +27,8 @@ dispatched or any node is touched.
 The bootstrap side-loads the images this repository builds, nke-controller:latest
 and, with the provisioned provider, cluster-api-provider-provisioned:latest,
 which "make -C cli images" builds. With nico, CAPNICo's image is public and
-pulled by the cluster; --release pins it to an NVKR release's artifact. --controller-image and --provisioned-provider-image, or
-NVKECTL_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, name other images, such as
+pulled by the cluster; --release pins it to an NVKR release's artifact. --nvke-controller-image and --provisioned-provider-image, or
+NVKECTL_NVKE_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, name other images, such as
 ones pushed to a registry; a flag wins over its variable. cli/README.md lists
 every NVKECTL_* variable.
 
@@ -61,7 +61,7 @@ nvkectl bootstrap site [flags]
 
   # Deploy images you pushed to a registry instead of the local build
   nvkectl bootstrap site -f sitespec.yaml \
-    --controller-image nvcr.io/<org>/nvke-controller:edge \
+    --nvke-controller-image nvcr.io/<org>/nvke-controller:edge \
     --provisioned-provider-image nvcr.io/<org>/cluster-api-provider-provisioned:edge
 ```
 
@@ -69,7 +69,6 @@ nvkectl bootstrap site [flags]
 
 ```
       --arch string                         Architecture of the release artifact to use: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. Only with --release. (default "linux/amd64")
-      --controller-image string             Controller image to deploy (overrides NVKECTL_CONTROLLER_IMAGE and the manifest default)
       --diagnostics-dir string              Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR. (default "cluster-diagnostics")
       --disable-mtls                        Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. The agents must be running with --disable-mtls too. Development only.
       --dry-run                             Load and validate the site spec and print it, but do not dispatch any workflow
@@ -77,6 +76,7 @@ nvkectl bootstrap site [flags]
   -h, --help                                help for site
       --keep-bootstrap-cluster              Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging
       --kubeconfig-out string               Where to write the finished cluster's admin breakglass kubeconfig (default: <clusterName>.kubeconfig in the working directory)
+      --nvke-controller-image string        NVKE controller image to deploy (overrides NVKECTL_NVKE_CONTROLLER_IMAGE and the manifest default)
       --provisioned-provider-image string   Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)
       --release string                      NVKR release description whose capnico-controller artifact replaces the bootstrap CAPNICo image with its pinned digest, as "render deploy-path --release" does for the management cluster's CAPNICo. The release description is not verified: run "nvkr release verify" on the same reference first. Only with infra.provider nico.
   -f, --sitespec string                     Path to the site spec YAML file (required)
