@@ -68,7 +68,7 @@ refuses an `env` entry that names one.
 | `nke-controller-config` key | Chart value | Default | Supported bound or relationship |
 | --- | --- | --- | --- |
 | `certRenewal.interval` | `scheduledMaintenance.certRenewal.interval` | `12h` | `1h` through `24h` |
-| `certRenewal.thresholdDays` | `scheduledMaintenance.certRenewal.thresholdDays` | `30` | `7` through `90` days |
+| `certRenewal.thresholdDays` | `scheduledMaintenance.certRenewal.thresholdDays` | `30` | `7` through `90` days; with monitoring enabled, `warningDays` must exceed it by at least two renewal intervals, so at most `44` with the default `warningDays` and `interval` |
 | `credentialMonitoring.enabled` | `credentialMonitoring.enabled` | `true` | controls read-only node and CSR observations independently of renewal |
 | `credentialMonitoring.inspectionInterval` | `credentialMonitoring.inspectionInterval` | `1h` | `5m` through `12h` |
 | `credentialMonitoring.observationMaxAge` | `credentialMonitoring.observationMaxAge` | `3h` | at least two inspection intervals; at most `24h` |
@@ -181,7 +181,7 @@ thresholds in `deploy/charts/controller/files/credential-alerts.yaml`.
 
 | Alert | Threshold and hold | Operator response |
 | --- | --- | --- |
-| `NVKECertificateExpiring` | NotAfter minus current time below warning window for `5m` | inspect node inventory and renewal status; use manual CA procedure for a CA |
+| `NVKECertificateExpiring` | NotAfter minus current time below warning window for `5m` | inspect node inventory and renewal status; for a CA, escalate: NVKE ships no CA rotation procedure and [does not rotate CAs](certificate-renewal.md) |
 | `NVKECertificateInspectionUnavailable` | failed, never observed or stale node inspection for `15m`, when monitoring enabled | restore transport, upgrade unsupported agent, confirm layout and observation freshness |
 | `NVKECertificateMissingOrInvalid` | required credential unavailable in a successful fresh inventory for `15m` | inspect fixed file or kubelet bootstrap; validate identity before repair |
 | `NVKECertificateRenewalFailed` | latest cycle failed for `5m` | follow [renewal recovery](certificate-renewal.md); released failures retry after one hour, retained-lock failures stay halted |
@@ -207,7 +207,9 @@ that no PrometheusRule is emitted by default or with
 Prometheus `promtool` at the version in `make/tool-versions.mk` into the ignored
 `.local/` directory, verifying the release archive against a committed SHA-256.
 The first run needs network access to GitHub releases; subsequent runs reuse the
-binary. To run only the credential checks:
+binary. Every run also fetches the PrometheusRule schema from the pinned
+datreeio/CRDs-catalog commit on raw.githubusercontent.com and verifies its
+committed SHA-256, so the check is never fully offline. To run only the credential checks:
 
 ```bash
 make -C controller credential-alerts-check

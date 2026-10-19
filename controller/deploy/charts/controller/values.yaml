@@ -583,7 +583,7 @@ scheduledMaintenance:
     enabled: true
     # -- Interval between certificate renewal checks for each cluster (1h through 24h while renewal is enabled; the chart refuses other values).
     interval: 12h
-    # -- Days before expiry that the runbook renews certificates (7 through 90 while renewal is enabled; the chart refuses other values).
+    # -- Days before expiry that the runbook renews certificates (7 through 90 while renewal is enabled; with credential monitoring also enabled, credentialMonitoring.warningDays must exceed it by at least two renewal intervals, so the default maximum is 44; the chart refuses other values).
     thresholdDays: 30
 
 secrets:
