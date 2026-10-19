@@ -519,12 +519,11 @@ type CertificateRenewalStatus struct {
 }
 
 type ClusterConditions struct {
-	CredentialCSRs        *CredentialCSRObservation `json:"credentialCSRs,omitempty"`
-	Provisioning          Condition                 `json:"provisioning"`
-	Provisioned           Condition                 `json:"provisioned"`
-	Deleting              Condition                 `json:"deleting"`
-	ControlPlaneUpgrading Condition                 `json:"controlPlaneUpgrading"`
-	CPNodesRecycling      Condition                 `json:"cpNodesRecycling"`
+	Provisioning          Condition `json:"provisioning"`
+	Provisioned           Condition `json:"provisioned"`
+	Deleting              Condition `json:"deleting"`
+	ControlPlaneUpgrading Condition `json:"controlPlaneUpgrading"`
+	CPNodesRecycling      Condition `json:"cpNodesRecycling"`
 	// UpdateInProgress marks a mutually-exclusive cluster mutation, including
 	// certificate-renewal workflow ownership retained after an unresolved failure.
 	// Legacy operation flags may still be populated by controllers.
@@ -532,6 +531,7 @@ type ClusterConditions struct {
 	UpdateFailed       *Condition                `json:"updateFailed,omitempty"`
 	CertificateRenewal *CertificateRenewalStatus `json:"certificateRenewal,omitempty"`
 	EtcdKeyRotation    *EtcdKeyRotationStatus    `json:"etcdKeyRotation,omitempty"`
+	CredentialCSRs     *CredentialCSRObservation `json:"credentialCSRs,omitempty"`
 }
 
 type ClusterFilters struct {

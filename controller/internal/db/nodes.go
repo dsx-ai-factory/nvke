@@ -17,9 +17,7 @@ import (
 )
 
 type Node struct {
-	// CertificateInspection retains read-only public observations independently of lifecycle conditions.
-	CertificateInspection *CertificateInspection `bun:"type:jsonb,nullzero"`
-	ID                    uuid.UUID              `bun:"type:uuid,pk,default:gen_random_uuid()"`
+	ID uuid.UUID `bun:"type:uuid,pk,default:gen_random_uuid()"`
 	// Transition contract (especially for control-plane nodes):
 	// - control-plane nodes with non-null node_pool_id/node_set_id are managed by nodepool controller
 	// - control-plane nodes with null node_pool_id/node_set_id are managed by no-nodepool control-plane controller
@@ -52,6 +50,8 @@ type Node struct {
 	Nico               *NicoNodeProvider        `bun:"nico,type:jsonb"`
 	NodeAgentLifecycle *NodeAgentLifecycle      `bun:"node_agent_lifecycle,type:jsonb"`
 	LaunchLayer        *LaunchLayerNodeProvider `bun:"launch_layer,type:jsonb"`
+	// CertificateInspection retains read-only public observations independently of lifecycle conditions.
+	CertificateInspection *CertificateInspection `bun:"type:jsonb,nullzero"`
 }
 
 type NicoNodeProvider struct {
