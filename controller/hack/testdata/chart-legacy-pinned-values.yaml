@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The values an install that predates the nvke rename sets to keep the names it
+# already runs. hack/chart-identity-assertions.py renders the chart with this
+# file and asserts every name comes out as it did before the rename.
+#
+# This is a worked example for the test, not a site's values: the trust domain
+# is a placeholder. Every key here is one the chart lets an install pin, and the
+# comment says what moving it would break.
+
+# The Deployment's spec.selector.matchLabels carries app.kubernetes.io/name,
+# which comes from here. spec.selector is immutable, so an upgrade that changes
+# it fails rather than renames. The container, ServiceAccount, Service and every
+# <fullname>-prefixed object derive from the same value.
+nameOverride: "cloud-workflow-engine"
+fullnameOverride: ""
+
+# The management namespace holds the tenant-access Secrets and the nke-rbac
+# objects. The old namespace is not also read, so a controller that addresses
+# another one publishes where it has no grant.
+nvkeSystemNamespace:
+  name: "nke-system"
+
+# Renaming the ConfigMap orphans the live object.
+controllerConfig:
+  name: "nke-controller-config"
+
+# The ClusterSPIFFEID issues spiffe://<trustDomain>/nke-service/<serviceAccount>.
+# The default RBAC subjects must name the same segment.
+spiffe:
+  trustDomain: "example.test"
+  servicePathSegment: "nke-service"
+
+# Teleport compares the managed-by value on the resources it already owns, so a
+# controller that stamps another one stops recognising them.
+teleport:
+  managedByLabelValue: "nke-cloud-workflow-engine"
+  tokenNamePrefix: "nke-cwe-"
+  resourceGroupLabelValue: "nke"
