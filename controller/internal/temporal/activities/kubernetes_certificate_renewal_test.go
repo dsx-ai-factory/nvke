@@ -1020,23 +1020,31 @@ func TestKubernetesCertificateRenewalCheckResultDecodesRecordedResults(t *testin
 
 // TestResolveKubernetesCertificateRenewalReleasesMatchingReservation lets a later
 // cycle pass admission once the operation's termination is confirmed, without
-// clearing another operation's reservation or an unconfirmed one.
+// clearing another operation's reservation or an unconfirmed one. A failed
+// release after confirmed termination still succeeds, so the workflow releases
+// the cluster mutation lock and the reconciler clears the reservation.
 func TestResolveKubernetesCertificateRenewalReleasesMatchingReservation(t *testing.T) {
 	for _, tt := range []struct {
 		name         string
 		reservedOp   string
 		statusErr    error
+		releaseErr   error
 		wantError    bool
 		wantReleased bool
 	}{
 		{name: "terminal status releases the matching reservation", reservedOp: "stable-operation", wantReleased: true},
 		{name: "terminal status keeps another operation's reservation", reservedOp: "another-operation"},
 		{name: "missing status keeps the reservation", reservedOp: "stable-operation", statusErr: status.Error(codes.NotFound, "unknown operation"), wantError: true},
+		{name: "failed release after terminal status still resolves", reservedOp: "stable-operation", releaseErr: errors.New("connection reset")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			node := certificateRenewalTestNode()
 			reservation := &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: tt.reservedOp, Fenced: true}
-			database := &agentAdmissionDatabase{node: node, cluster: db.Cluster{ID: node.ClusterID, CertificateRenewal: reservation}}
+			admission := &agentAdmissionDatabase{node: node, cluster: db.Cluster{ID: node.ClusterID, CertificateRenewal: reservation}}
+			var database db.DB = admission
+			if tt.releaseErr != nil {
+				database = &failingTxDatabase{agentAdmissionDatabase: admission, err: tt.releaseErr}
+			}
 			fakeAgent := &agenttest.FakeClient{GetKubernetesCertificateRenewalHook: func(_ db.Node, req *nvkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nvkeproto.GetKubernetesCertificateRenewalStatusResponse, error) {
 				if tt.statusErr != nil {
 					return nil, tt.statusErr
@@ -1060,12 +1068,22 @@ func TestResolveKubernetesCertificateRenewalReleasesMatchingReservation(t *testi
 				require.NoError(t, err)
 			}
 			if tt.wantReleased {
-				require.Nil(t, database.cluster.CertificateRenewal)
+				require.Nil(t, admission.cluster.CertificateRenewal)
 			} else {
-				require.Equal(t, reservation, database.cluster.CertificateRenewal)
+				require.Equal(t, reservation, admission.cluster.CertificateRenewal)
 			}
 		})
 	}
+}
+
+// failingTxDatabase fails every transaction, as a transient database error would.
+type failingTxDatabase struct {
+	*agentAdmissionDatabase
+	err error
+}
+
+func (d *failingTxDatabase) RunInTx(context.Context, func(context.Context, db.Tx) error) error {
+	return d.err
 }
 
 // TestReserveCertificateRenewalFencesOnlyV2 marks reservations that a cycle owns
