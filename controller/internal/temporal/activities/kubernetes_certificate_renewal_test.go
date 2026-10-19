@@ -1280,11 +1280,9 @@ func (d *flakyReleaseDatabase) RunInTx(ctx context.Context, fn func(context.Cont
 // TestLegacyRenewalSuccessRetriesRelease keeps one transient database error after
 // a successful legacy run from leaving the reservation set, which would refuse
 // the cycle's next node. After the last attempt V1 still returns the error and V2
-// still returns its result, leaving the reservation to the reconciler.
+// still returns its result, leaving the reservation to the reconciler. The cases
+// wait the real backoff, a few seconds in total.
 func TestLegacyRenewalSuccessRetriesRelease(t *testing.T) {
-	previous := certificateRenewalReleaseRetryBackoff
-	certificateRenewalReleaseRetryBackoff = []time.Duration{time.Millisecond, time.Millisecond}
-	t.Cleanup(func() { certificateRenewalReleaseRetryBackoff = previous })
 	for _, test := range []struct {
 		name         string
 		v2           bool

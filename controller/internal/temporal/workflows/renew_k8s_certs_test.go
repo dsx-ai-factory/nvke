@@ -1172,6 +1172,7 @@ func TestRenewK8sCertsPendingIntentInBothExecutorsFinishesBothInOneCycle(t *test
 }
 
 func testPendingIntentInBothExecutors(t *testing.T, version workflow.Version, typed bool) {
+	t.Helper()
 	clusterID := uuid.New()
 	node := certificateRenewalWorkflowNode(clusterID, "cp-a")
 	peer := certificateRenewalWorkflowNode(clusterID, "cp-b")
