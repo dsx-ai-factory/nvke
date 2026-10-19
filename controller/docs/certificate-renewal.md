@@ -119,8 +119,8 @@ as a forced one, is not retried until that due time arrives, up to
 `certRenewal.interval` later. A retained `certificate_renewal` lock prevents automatic retry.
 When acceptance refuses a cycle because of cluster state (unfinished
 control-plane membership, upgrade or recycling work, a node-agent installation,
-a node certificate-renewal reservation that has not been cleared yet, or two
-control-plane nodes), the cycle is recorded as `failed` with `phase`
+a fenced node certificate-renewal reservation that has not been cleared yet,
+or two control-plane nodes), the cycle is recorded as `failed` with `phase`
 `admission` (or `two-control-plane-voters`) and the lock is not taken, so the
 same backoff applies. Such a record replaces the previous cycle's status.
 Refusals because another operation holds the lock, or because the cluster is
@@ -216,9 +216,11 @@ retained-lock release or dedicated recovery API. Do not clear the lock based
 only on cluster health or workflow completion.
 
 A failed cycle can also leave its node reservation in the cluster row's
-`certificate_renewal` column (not shown by the REST API). Admission refuses
-every cycle while it is set, recording another `admission` failure and
-restarting the one-hour backoff. The reservation is cleared automatically
+`certificate_renewal` column (not shown by the REST API). While a fenced
+reservation (one written by the current workflow) is set, admission refuses
+every cycle, recording another `admission` failure and restarting the one-hour
+backoff. A reservation left by an older V1 workflow does not block admission;
+the next cycle reattaches to it on the same node. The reservation is cleared automatically
 once the reserved node operation is confirmed to have ended: for example, the
 node agent reports it finished or, for fenced work, no longer knows it while no
 `certificate_renewal` lock is held, or the node row is gone.
