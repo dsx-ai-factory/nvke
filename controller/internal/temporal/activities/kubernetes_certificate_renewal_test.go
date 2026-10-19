@@ -1206,3 +1206,45 @@ func TestReserveCertificateRenewalFencesOnlyV2(t *testing.T) {
 		})
 	}
 }
+
+// TestV2RenewalRefusesUnfencedReservationOnSameNode keeps a V2 cycle from adopting
+// a V1 workflow's reservation: reattaching would run under the V1 operation ID
+// while workflow cleanup polls the cycle's own ID. Both V2 executors refuse the
+// node before any agent call and leave the V1 record untouched.
+func TestV2RenewalRefusesUnfencedReservationOnSameNode(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		legacy bool
+	}{
+		{name: "typed dispatch"},
+		{name: "legacy dispatch", legacy: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			node := certificateRenewalTestNode()
+			v1 := &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: "v1-operation"}
+			database := &agentAdmissionDatabase{node: node, cluster: db.Cluster{ID: node.ClusterID, CertificateRenewal: v1}}
+			fake := &agenttest.FakeClient{}
+			a := &Activities{cfg: config.Config{RunbooksDir: t.TempDir()}, db: legacyAdmissionDatabase{database}, nodeAgentClient: fake}
+			env := (&testsuite.WorkflowTestSuite{}).NewTestActivityEnvironment()
+			renew := a.RenewKubernetesCertificates
+			if test.legacy {
+				renew = a.RenewLegacyKubernetesCertificates
+			}
+			env.RegisterActivity(renew)
+
+			_, err := env.ExecuteActivity(renew, KubernetesCertificateRenewalInput{
+				NodeID: node.ID, OperationID: "cycle-operation", ThresholdDays: 14, ExpectedEtcdMembers: 3,
+			})
+
+			var appErr *temporal.ApplicationError
+			require.ErrorAs(t, err, &appErr)
+			require.Equal(t, CertificateRenewalNotDispatched, appErr.Type())
+			require.True(t, appErr.NonRetryable())
+			require.Equal(t, v1, database.cluster.CertificateRenewal, "the V1 reservation keeps its operation ID")
+			require.Empty(t, fake.StartKubernetesCertificateRenewalV2Calls)
+			require.Empty(t, fake.StartKubernetesCertificateRenewalCalls)
+			require.Empty(t, fake.GetKubernetesCertificateRenewalCalls)
+			require.Empty(t, fake.ExecuteScriptNames)
+		})
+	}
+}

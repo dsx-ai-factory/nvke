@@ -697,6 +697,16 @@ func (a *Activities) reserveCertificateRenewal(ctx context.Context, node db.Node
 			if active.Fenced && input.ExpectedEtcdMembers == 0 {
 				return fmt.Errorf("%w (fenced operation %s on this node)", errCertificateRenewalBusy, active.OperationID)
 			}
+			// V2 writes only fenced reservations, so an unfenced one belongs to a V1
+			// workflow. Adopting its operation ID would leave cleanup polling the
+			// cycle's own ID; refuse it like a reservation on another node.
+			if !active.Fenced && input.ExpectedEtcdMembers > 0 {
+				const message = "certificate renewal is in progress on this node"
+				if activity.GetInfo(ctx).Attempt == 1 {
+					return temporal.NewNonRetryableApplicationError(message, CertificateRenewalNotDispatched, nil)
+				}
+				return errors.New(message)
+			}
 			// A later activity attempt reattaches even if its workflow run changed.
 			input.OperationID = active.OperationID
 			return nil
