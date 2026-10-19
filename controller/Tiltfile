@@ -846,7 +846,7 @@ k8s_resource(
 k8s_resource(
     new_name="oidc-upstream-ca-issuer",
     labels=["1-infra"],
-    objects=["nke-oidc-upstream-ca:issuer"],
+    objects=["nvke-oidc-upstream-ca:issuer"],
     resource_deps=["oidc-ca-bootstrap"],
     pod_readiness="ignore",
 )

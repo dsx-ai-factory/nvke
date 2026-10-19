@@ -83,7 +83,7 @@ spiffe-oidc-discovery-provider:
         issuerRef:
           group: cert-manager.io
           kind: Issuer
-          name: nke-oidc-upstream-ca
+          name: nvke-oidc-upstream-ca
   config:
     # The provider rejects requests whose Host header is not in this list.
     # Every value that will appear in a request URL must be present — including

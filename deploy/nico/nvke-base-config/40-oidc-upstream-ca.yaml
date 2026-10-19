@@ -47,7 +47,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: nke-oidc-upstream-ca
+  name: nvke-oidc-upstream-ca
   namespace: spire-server
 spec:
   ca:
