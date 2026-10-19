@@ -50,6 +50,10 @@ func (a *Activities) BeginEtcdEncryptionKeyRotation(
 					// new execution reused the ID; it must not report success unrotated.
 					return etcdEncryptionKeyRotationPreconditionError("etcd key rotation with this workflow ID already succeeded; start a new rotation with a new workflow ID")
 				}
+				if status.State == db.EtcdKeyRotationStateFailed && status.Phase == db.EtcdKeyRotationPhasePrepare {
+					// A prepare failure released the lock, so no reset of this workflow can succeed.
+					return etcdEncryptionKeyRotationPreconditionError("etcd key rotation failed in prepare; start a new rotation with a new workflow ID")
+				}
 				if status.State == db.EtcdKeyRotationStateFailed {
 					return etcdEncryptionKeyRotationPreconditionError("failed etcd key rotation requires reset at its failed phase")
 				}
