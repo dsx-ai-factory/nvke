@@ -44,7 +44,8 @@ const (
 	certificateRenewalReservationWait         = 20 * time.Minute
 )
 
-// errCertificateRenewalBusy reports a renewal reservation held by another node.
+// errCertificateRenewalBusy reports a renewal reservation a V1 workflow must wait
+// for: one held by another node, or a fenced V2 reservation on its own node.
 var errCertificateRenewalBusy = errors.New("certificate renewal is in progress on another node")
 
 // KubernetesCertificateRenewalInput identifies one node-local renewal
@@ -663,6 +664,11 @@ func (a *Activities) reserveCertificateRenewal(ctx context.Context, node db.Node
 					return fmt.Errorf("%w (node %s)", errCertificateRenewalBusy, active.NodeID)
 				}
 				return reject("certificate renewal is in progress on another node")
+			}
+			// V1 never takes the cert_renewal lock, so adopting a fenced V2
+			// reservation would let the reconciler clear it under a running V1 renewal.
+			if active.Fenced && input.ExpectedEtcdMembers == 0 {
+				return fmt.Errorf("%w (fenced operation %s on this node)", errCertificateRenewalBusy, active.OperationID)
 			}
 			// A later activity attempt reattaches even if its workflow run changed.
 			input.OperationID = active.OperationID

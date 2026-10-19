@@ -406,6 +406,38 @@ func TestRenewalWaitsForAnotherNodesReservation(t *testing.T) {
 	}
 }
 
+func TestReserveCertificateRenewalSameNodeReattach(t *testing.T) {
+	for _, tt := range []struct {
+		name                string
+		fenced              bool
+		expectedEtcdMembers int
+		wantBusy            bool
+	}{
+		{name: "V1 reattaches to an unfenced reservation"},
+		{name: "V1 refuses a fenced reservation", fenced: true, wantBusy: true},
+		{name: "V2 reattaches to a fenced reservation", fenced: true, expectedEtcdMembers: 3},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			node := certificateRenewalTestNode()
+			existing := &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: "existing-operation", Fenced: tt.fenced}
+			database := &agentAdmissionDatabase{node: node, cluster: db.Cluster{ID: node.ClusterID, CertificateRenewal: existing}}
+			a := &Activities{db: database}
+			input := KubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "new-operation", ThresholdDays: 14, ExpectedEtcdMembers: tt.expectedEtcdMembers}
+
+			err := a.reserveCertificateRenewal(t.Context(), node, &input)
+
+			if tt.wantBusy {
+				require.ErrorIs(t, err, errCertificateRenewalBusy)
+				require.Equal(t, "new-operation", input.OperationID)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, "existing-operation", input.OperationID)
+			}
+			require.Equal(t, existing, database.cluster.CertificateRenewal)
+		})
+	}
+}
+
 // TestRenewalReservationAfterFailedStart keeps #1692's release only where the
 // node's termination is confirmed: a legacy script that exited. A failed or empty
 // Start may still have been accepted, so its retries reattach to the reservation.
