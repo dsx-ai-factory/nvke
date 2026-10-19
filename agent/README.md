@@ -45,7 +45,7 @@ Important flags (also settable via env; see `AGENT_ARGS`):
 | `--index-file-url` | Optional absolute index URL (`NKE_BUNDLE_INDEX_URL`); otherwise derived from the bundle server + OS |
 | `--cni-image-registry` | Optional OCI prefix for CNI helm `global.registry` (`NKE_CNI_IMAGE_REGISTRY`) |
 | `--disable-mtls` | Plaintext gRPC (**development only**) |
-| `--spiffe-socket-path` | SPIFFE workload API socket (ignored with `--disable-mtls`) |
+| `--spiffe-socket-path` | SPIFFE workload API socket. Used for the gRPC server's mTLS unless `--disable-mtls` is set, and always by the SPIRE agent RPCs |
 | `--secure-server-port` | gRPC listen port (default `15005`) |
 | `--version` | Print build version and exit |
 

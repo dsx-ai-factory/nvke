@@ -31,6 +31,18 @@ service NodeAgent {
   // restore the service before returning a structured failure outcome.
   rpc ReconfigureKubeletAPIServer(ReconfigureKubeletAPIServerRequest) returns (ReconfigureKubeletAPIServerResponse) {}
 
+  // ReconfigureSpireAgent points the node's SPIRE agent at a new SPIRE server.
+  // It rewrites server_address and server_port in the agent config and in the
+  // boot-time SPIRE environment file, restarts spire-agent, and waits until the
+  // agent serves an X.509 SVID issued after the restart. The agent may exit
+  // once while it re-attests to the new server; systemd restarts it. Repeating
+  // the call with the same server is safe.
+  rpc ReconfigureSpireAgent(ReconfigureSpireAgentRequest) returns (ReconfigureSpireAgentResponse) {}
+
+  // GetSpireAgentStatus reports the SPIRE server the node's agent config points
+  // at and whether the agent holds a valid X.509 SVID from that server.
+  rpc GetSpireAgentStatus(GetSpireAgentStatusRequest) returns (GetSpireAgentStatusResponse) {}
+
   // StartOpenVSwitchReconciliation durably accepts an asynchronous host-network
   // reconciliation that moves the default-route interface's existing network
   // configuration onto an Open vSwitch bridge named br<interface>. The
@@ -971,6 +983,52 @@ message ReconfigureKubeletAPIServerResponse {
   Outcome outcome = 1;
   // Populated only on FAILED_* outcomes.
   string error_message = 2;
+}
+
+message ReconfigureSpireAgentRequest {
+  // SPIRE server host name or IP address the agent dials.
+  string server_address = 1;
+  // SPIRE server port, 1-65535.
+  uint32 server_port = 2;
+}
+
+message ReconfigureSpireAgentResponse {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    // spire-agent was restarted and serves an SVID issued after the restart.
+    // The config was rewritten if it pointed at another server.
+    OUTCOME_APPLIED = 1;
+    // The config already pointed at the requested server and the agent holds a
+    // valid SVID from it; the agent was not restarted.
+    OUTCOME_UNCHANGED = 2;
+    // The agent did not serve an SVID from the requested server in time. The
+    // config is left pointing at the requested server.
+    OUTCOME_FAILED = 3;
+  }
+
+  Outcome outcome = 1;
+  // Populated only on OUTCOME_FAILED.
+  string error_message = 2;
+}
+
+message GetSpireAgentStatusRequest {}
+
+message GetSpireAgentStatusResponse {
+  // server_address and server_port as written in the agent config.
+  string server_address = 1;
+  uint32 server_port = 2;
+  // spire-agent is active and was started after the config was last written,
+  // so the running agent uses the config above.
+  bool config_applied = 3;
+  // config_applied and the agent serves an unexpired X.509 SVID. SVIDs live
+  // only in the running agent's memory, so this SVID came from the server
+  // above.
+  bool has_valid_svid = 4;
+  // SPIFFE ID and expiry (UTC Unix seconds) of that SVID, when one is served.
+  string svid_spiffe_id = 5;
+  int64 svid_expires_at_unix_seconds = 6;
+  // Why has_valid_svid is false, when it is.
+  string message = 7;
 }
 
 message KubeadmUpgradeApplyRequest {

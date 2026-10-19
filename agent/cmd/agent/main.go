@@ -375,6 +375,8 @@ func initializeNodeServer(cfg AgentConfig) *server.NodeAgentServer {
 		cfg)
 	agentServer := server.NewNodeAgentServer(cfg.MLX5Rescan, cfg.BundleServerURL, cfg.IndexFileURL, cfg.CniImageRegistry)
 	agentServer.ScriptExecutionLogger = cfg.ScriptExecutionLogger
+	// The SPIRE RPCs read SVIDs from the socket whether or not the gRPC server uses mTLS.
+	agentServer.SPIFFESocketPath = cfg.SPIFFESocketPath
 	agentServer.NodeStatus.ListenStatus = "pending"
 	if err := agentServer.Persister.Persist(agentServer.NodeStatus); err != nil {
 		slog.Error("failed to persist initial status", "err", err)
@@ -399,7 +401,7 @@ func RunNodeStartup(cfg AgentConfig) (*server.NodeAgentServer, error) {
 func main() {
 	disableMLX5Rescan := flag.Bool("disable-mlx5-rescan", false, "Disable mlx5 rescan (disables the init routine mlx5 reset proc)")
 	disableMTLS := flag.Bool("disable-mtls", false, "Disable mTLS / use plaintext gRPC (development only)")
-	spiffeSocketPath := flag.String("spiffe-socket-path", "unix:///tmp/spire-agent/public/api.sock", "Path to the SPIFFE workload API socket (--disable-mtls ignores this)")
+	spiffeSocketPath := flag.String("spiffe-socket-path", "unix:///tmp/spire-agent/public/api.sock", "Path to the SPIFFE workload API socket, used for the gRPC server's mTLS unless --disable-mtls is set and always for the SPIRE agent RPCs")
 	grpcAuthMode := flag.String(
 		"grpc-auth-mode",
 		authModeSPIFFEMTLS,
