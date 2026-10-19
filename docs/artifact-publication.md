@@ -148,7 +148,7 @@ additionally publishes the controller image and Helm chart:
 | Workflow | What it publishes |
 |---|---|
 | `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/nvke-controller`, promotes that released image to DSX as `nvcr.io/<dsx-org-team>/nvke-controller`, and promotes release tags to `ghcr.io/dsx-ai-factory/nvke/nke-controller` |
-| `chart-publish.yml` | chart to `ghcr.io/dsx-ai-factory/nvke/charts/nke-controller` |
+| `chart-publish.yml` | chart to `ghcr.io/dsx-ai-factory/nvke/charts/nvke-controller` |
 | `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/nvke-controller-chart` and `nvcr.io/<dsx-org-team>/nvke-controller-chart` |
 
 Every `main` commit already publishes the image and chart to NVCR. GHCR receives

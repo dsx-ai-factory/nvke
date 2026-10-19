@@ -6,8 +6,8 @@ name: Chart Publish
 # Packages the controller Helm chart and publishes it under
 # ghcr.io/dsx-ai-factory/nvke/charts as an OCI artifact:
 #
-#   ghcr.io/dsx-ai-factory/nvke/charts/nke-controller:0.1.0        <- release tag
-#   ghcr.io/dsx-ai-factory/nvke/charts/nke-controller:0.1.0-rc.1   <- release candidate
+#   ghcr.io/dsx-ai-factory/nvke/charts/nvke-controller:0.1.0        <- release tag
+#   ghcr.io/dsx-ai-factory/nvke/charts/nvke-controller:0.1.0-rc.1   <- release candidate
 #
 # The last path segment is the chart's `name:`, not anything set here.
 # Through controller/v0.1.1-rc.1 the chart was named cloud-workflow-engine,
@@ -183,9 +183,9 @@ jobs:
         run: |
           set -euo pipefail
           helm push \
-            "${RUNNER_TEMP}/chart-dist/nke-controller-${VERSION}.tgz" \
+            "${RUNNER_TEMP}/chart-dist/nvke-controller-${VERSION}.tgz" \
             oci://ghcr.io/dsx-ai-factory/nvke/charts
-          echo "Pushed ghcr.io/dsx-ai-factory/nvke/charts/nke-controller:${VERSION}"
+          echo "Pushed ghcr.io/dsx-ai-factory/nvke/charts/nvke-controller:${VERSION}"
 
       # The chart names the image by version, and the release layer has to
       # pin both by digest. Until this ran, nothing in CI recorded what GHCR
@@ -194,5 +194,5 @@ jobs:
       - name: Record the published digest
         uses: ./.github/actions/record-digest
         with:
-          references: ghcr.io/dsx-ai-factory/nvke/charts/nke-controller:${{ steps.meta.outputs.version }}
+          references: ghcr.io/dsx-ai-factory/nvke/charts/nvke-controller:${{ steps.meta.outputs.version }}
           component: nke-controller-chart
