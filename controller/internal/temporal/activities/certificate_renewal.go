@@ -165,7 +165,7 @@ func admitCertificateRenewal(ctx context.Context, tx db.Tx, cluster db.Cluster) 
 	if len(nodes) == 2 {
 		return &certificateRenewalRefusalError{
 			phase:   db.CertificateRenewalPhaseTwoControlPlaneVoters,
-			message: "cannot renew certificates with exactly two control-plane nodes; scale the control plane to one or three or more nodes",
+			message: "cannot renew certificates with exactly two control-plane nodes; scale the control plane to three or more nodes",
 		}
 	}
 	return nil
