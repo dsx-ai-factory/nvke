@@ -119,7 +119,8 @@ as a forced one, is not retried until that due time arrives, up to
 `certRenewal.interval` later. A retained `certificate_renewal` lock prevents automatic retry.
 When acceptance refuses a cycle because of cluster state (unfinished
 control-plane membership, upgrade or recycling work, a node-agent installation,
-or two control-plane nodes), the cycle is recorded as `failed` with `phase`
+a node certificate-renewal reservation that has not been cleared yet, or two
+control-plane nodes), the cycle is recorded as `failed` with `phase`
 `admission` (or `two-control-plane-voters`) and the lock is not taken, so the
 same backoff applies. Such a record replaces the previous cycle's status.
 Refusals because another operation holds the lock, or because the cluster is
@@ -214,7 +215,18 @@ on the cluster's row in the `clusters` table: under the row lock, check that the
 retained-lock release or dedicated recovery API. Do not clear the lock based
 only on cluster health or workflow completion.
 
-Clearing the lock leaves a released failure, and the controller then starts
+A failed cycle can also leave its node reservation in the cluster row's
+`certificate_renewal` column (not shown by the REST API). Admission refuses
+every cycle while it is set, recording another `admission` failure and
+restarting the one-hour backoff. The reservation is cleared automatically
+once the reserved node operation is confirmed to have ended: for example, the
+node agent reports it finished or, for fenced work, no longer knows it while no
+`certificate_renewal` lock is held, or the node row is gone.
+Before expecting a retry, check that this column is empty; if it stays set,
+check the node agent's reachability and status for that operation.
+
+Clearing the lock leaves a released failure, and once the reservation is also
+clear the controller starts
 its own non-forced `-retry-` cycle once `nextCertRenewalDue` has passed and
 `certificateRenewal.completedAt` is more than an hour old. If the due time is
 still in the future, that retry waits for it, up to `certRenewal.interval`. That retry takes the lock, so
