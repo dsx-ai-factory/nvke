@@ -46,10 +46,15 @@ pull-through mirror. The mirror changes Crane's transport reference and, for
 base, which travels as a `--build-arg`, and the recipe's own digest-pinned
 `FROM` lines, which are rewritten in place because no build-arg can reach them.
 The committed lock and the image names imported on the node remain
-`docker.io/...`. A build uses the mirror when it serves the locked digest, and
-the canonical `docker.io` reference otherwise; `make lock` resolves the tag
-through the mirror first and falls back the same way. Either route transfers the
-same digest.
+`docker.io/...`. For the images Crane fetches, a build uses the mirror when it
+serves the locked digest and the canonical `docker.io` reference otherwise;
+`make lock` resolves the tag through the mirror first and falls back the same
+way. Either route transfers the same digest.
+
+A rewritten `FROM` has no such fallback. The builder resolves that line itself,
+so a mirror that does not serve the locked digest fails the build rather than
+reverting to `docker.io` -- which is the trade for reaching a `FROM` no
+`--build-arg` can redirect.
 
 Only the registry host moves — each rewritten `FROM` keeps its `@sha256` digest,
 so the bytes the build consumes are identical and the lock's `source` pin still

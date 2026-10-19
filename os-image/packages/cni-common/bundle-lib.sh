@@ -140,15 +140,33 @@ image_transport_ref() {
 # first path segment as a registry when it contains a dot or a colon, or is
 # exactly localhost; anything else is a Docker Hub name, and a single segment is
 # an official image under library/.
+#
+# index.docker.io is Docker Hub's legacy name for itself and registry-1.docker.io
+# is the endpoint it resolves to. Both carry a dot, so without naming them here
+# they would read as some other registry: the rewrite would skip them and the
+# guard below would not report them, which is the one combination that lets a
+# direct Docker Hub pull through untouched.
+#
+# The library/ namespace is written out rather than left implicit. Docker expands
+# a bare official name on the client side, so docker.io/ubuntu and
+# docker.io/library/ubuntu name the same image to a builder -- but a mirror is
+# asked for a repository path, and only the expanded one exists upstream.
 dockerhub_ref_of() {
-  local image="$1" first
+  local image="$1" first rest
   if [[ "$image" != */* ]]; then
     printf 'docker.io/library/%s\n' "$image"
     return
   fi
   first="${image%%/*}"
   case "$first" in
-    docker.io) printf 'docker.io/%s\n' "${image#*/}" ;;
+    docker.io | index.docker.io | registry-1.docker.io)
+      rest="${image#*/}"
+      if [[ "$rest" == */* ]]; then
+        printf 'docker.io/%s\n' "$rest"
+      else
+        printf 'docker.io/library/%s\n' "$rest"
+      fi
+      ;;
     *.* | *:* | localhost) ;;
     *) printf 'docker.io/%s\n' "$image" ;;
   esac
@@ -171,7 +189,10 @@ mirror_dockerfile_bases() {
   [[ -n "${CNI_DOCKERHUB_MIRROR:-}" ]] || return 0
 
   rewritten="$(mktemp)"
-  while IFS= read -r line; do
+  # read returns nonzero on a final line with no trailing newline, having already
+  # assigned it. Without the guard the loop drops that line and mv installs the
+  # truncated copy, silently losing the recipe's last instruction.
+  while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" =~ ^([[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]+(--[^[:space:]]+[[:space:]]+)*)([^[:space:]]*@sha256:[^[:space:]]+)(.*)$ ]]; then
       image="${BASH_REMATCH[3]}"
       hub="$(dockerhub_ref_of "$image")"
@@ -188,7 +209,7 @@ mirror_dockerfile_bases() {
   # A FROM naming an earlier stage, scratch, or an ARG is not an image pull.
   local stages=" scratch "
   stray=""
-  while IFS= read -r line; do
+  while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]+(--[^[:space:]]+[[:space:]]+)*([^[:space:]]+)(.*)$ ]] || continue
     image="${BASH_REMATCH[2]}"
     if [[ "${BASH_REMATCH[3]}" =~ [[:space:]]+[Aa][Ss][[:space:]]+([^[:space:]]+) ]]; then
