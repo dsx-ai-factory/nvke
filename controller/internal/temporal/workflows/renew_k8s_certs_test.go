@@ -1154,13 +1154,30 @@ func TestRenewK8sCertsPendingLegacyIntentFailureResolvesLegacyExecutor(t *testin
 // legacy phase file left in restart_pending and a later forced typed attempt that
 // also failed mid-restart. The legacy executor resumes its own phase file, then
 // the typed executor resumes the agent's intent in the same cycle and behind the
-// same drain, so neither restart waits for the next due time.
+// same drain, so neither restart waits for the next due time. A cycle recorded
+// before the version marker replays without the typed dispatch.
 func TestRenewK8sCertsPendingIntentInBothExecutorsFinishesBothInOneCycle(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		version workflow.Version
+		typed   bool
+	}{
+		{name: "typed dispatch follows legacy", version: 1, typed: true},
+		{name: "history before the marker replays legacy only", version: workflow.DefaultVersion},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			testPendingIntentInBothExecutors(t, test.version, test.typed)
+		})
+	}
+}
+
+func testPendingIntentInBothExecutors(t *testing.T, version workflow.Version, typed bool) {
 	clusterID := uuid.New()
 	node := certificateRenewalWorkflowNode(clusterID, "cp-a")
 	peer := certificateRenewalWorkflowNode(clusterID, "cp-b")
 	suite := &testsuite.WorkflowTestSuite{}
 	env := suite.NewTestWorkflowEnvironment()
+	env.OnGetVersion(certificateRenewalTypedAfterLegacyChangeID, workflow.DefaultVersion, 1).Return(version).Once()
 	rollouttemporal.NewActivities(&noOpRolloutLoader{}, rollout.NewRegistry()).Register(env)
 	a := &activities.Activities{}
 	events := &kubeVipGuardEvents{}
@@ -1183,13 +1200,15 @@ func TestRenewK8sCertsPendingIntentInBothExecutorsFinishesBothInOneCycle(t *test
 		events.add("legacy " + input.NodeID.String())
 		return activities.KubernetesCertificateRenewalResult{Outcome: db.CertificateRenewalOutcomeRenewed}, nil
 	}).Once()
-	env.OnActivity(a.RenewKubernetesCertificates, mock.Anything, mock.MatchedBy(func(input activities.KubernetesCertificateRenewalInput) bool {
-		return input.NodeID == node.ID && input.ExpectedEtcdMembers == 2 && !input.Force
-	})).Return(func(_ context.Context, input activities.KubernetesCertificateRenewalInput) (activities.KubernetesCertificateRenewalResult, error) {
-		events.add("typed " + input.NodeID.String())
-		// Fresh certificates: the typed operation only finishes its restarts.
-		return activities.KubernetesCertificateRenewalResult{Outcome: db.CertificateRenewalOutcomeUnchanged}, nil
-	}).Once()
+	if typed {
+		env.OnActivity(a.RenewKubernetesCertificates, mock.Anything, mock.MatchedBy(func(input activities.KubernetesCertificateRenewalInput) bool {
+			return input.NodeID == node.ID && input.ExpectedEtcdMembers == 2 && !input.Force
+		})).Return(func(_ context.Context, input activities.KubernetesCertificateRenewalInput) (activities.KubernetesCertificateRenewalResult, error) {
+			events.add("typed " + input.NodeID.String())
+			// Fresh certificates: the typed operation only finishes its restarts.
+			return activities.KubernetesCertificateRenewalResult{Outcome: db.CertificateRenewalOutcomeUnchanged}, nil
+		}).Once()
+	}
 	env.OnActivity(a.CompleteCertificateRenewal, mock.Anything, mock.MatchedBy(func(input activities.CompleteCertificateRenewalInput) bool {
 		return input.Outcome == db.CertificateRenewalOutcomeRenewed
 	})).Return(activities.CompleteCertificateRenewalResult{}, nil).Once()
@@ -1198,10 +1217,14 @@ func TestRenewK8sCertsPendingIntentInBothExecutorsFinishesBothInOneCycle(t *test
 	env.ExecuteWorkflow(RenewK8sCertsV2, RenewK8sCertsInput{ClusterID: clusterID, ThresholdDays: 14, ScheduledFor: &due})
 
 	require.NoError(t, env.GetWorkflowError())
-	require.Equal(t, []string{
-		"drain-prepared " + node.ID.String(), "drain " + node.ID.String(), "legacy " + node.ID.String(), "typed " + node.ID.String(),
-		"restore " + node.ID.String(), "restored " + node.ID.String(),
-	}, events.snapshot())
+	want := []string{"drain-prepared " + node.ID.String(), "drain " + node.ID.String(), "legacy " + node.ID.String()}
+	if typed {
+		want = append(want, "typed "+node.ID.String())
+	} else {
+		env.AssertNotCalled(t, "RenewKubernetesCertificates", mock.Anything, mock.Anything)
+	}
+	want = append(want, "restore "+node.ID.String(), "restored "+node.ID.String())
+	require.Equal(t, want, events.snapshot())
 	env.AssertNotCalled(t, "ResolveKubernetesCertificateRenewal", mock.Anything, mock.Anything)
 	env.AssertExpectations(t)
 }
