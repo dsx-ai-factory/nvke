@@ -75,6 +75,9 @@ func (e *updateInProgressError) Error() string {
 	if e.message != "" {
 		msg += " (" + e.message + ")"
 	}
+	if e.op == db.OperationTypeCertRenewal {
+		msg += "; a failed certificate renewal can retain the lock until an operator clears it (see controller/docs/certificate-renewal.md)"
+	}
 	return msg
 }
 

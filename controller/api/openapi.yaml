@@ -337,7 +337,9 @@ paths:
         Returns 409 when another mutually exclusive cluster operation is in
         progress (`etcd_encryption`, `k8s_upgrade`, `cp_nodes_recycling`,
         `oidc_enable`, `certificate_renewal`), or the control plane is upgrading
-        or recycling nodes.
+        or recycling nodes. A failed certificate renewal can retain the lock
+        until an operator clears it; see the retained-lock recovery procedure in
+        controller/docs/certificate-renewal.md.
       requestBody:
         required: true
         description: The fields to change. All are optional.
@@ -381,7 +383,10 @@ paths:
           description: |
             Another mutually exclusive cluster operation is in progress. The
             message names the operation (etcd_encryption, k8s_upgrade,
-            cp_nodes_recycling, oidc_enable, certificate_renewal).
+            cp_nodes_recycling, oidc_enable, certificate_renewal). A failed
+            certificate renewal can retain the lock until an operator clears it;
+            see the retained-lock recovery procedure in
+            controller/docs/certificate-renewal.md.
           content:
             application/json:
               schema:
