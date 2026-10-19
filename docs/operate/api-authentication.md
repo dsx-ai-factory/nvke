@@ -17,7 +17,7 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
 ## Before you begin
 
 - You have completed [Install management-plane services](install-management-plane-services.md). You can do this before or after [Configure an infrastructure provider: NICo](provider-nico.md).
-- You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it, as in [Install management-plane services](install-management-plane-services.md). Set `KUBECONFIG` for `kubectl`:
+- You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and `stack-artifacts.json` in the directory above it, as in [Install management-plane services](install-management-plane-services.md). Set `KUBECONFIG` for `kubectl`:
 
   ```bash
   export KUBECONFIG="$PWD/../<CLUSTER_NAME>.kubeconfig"
@@ -120,12 +120,12 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
    deploy/nvke-deploy.sh install --deploy-path deploy/nico \
      --sitespec ../sitespec.yaml \
      --stack-config ../stack-config.json \
+     --stack-artifacts ../stack-artifacts.json \
      --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
-     --release ../release.json \
      --values-for controller=../auth-values.yaml
    ```
 
-   Keep the `--release` and `--nvkr-run-dir` flags exactly as you installed, or leave them out if you installed without them, so that the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart refuses to render if `config` is set without `create`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
+   Pass the same `--stack-artifacts` file you installed with, so that the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart refuses to render if `config` is set without `create`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
 
 4. Wait for the new pods and check the startup log.
 
@@ -240,8 +240,8 @@ Continue when `would_reject` stops increasing.
    deploy/nvke-deploy.sh install --deploy-path deploy/nico \
      --sitespec ../sitespec.yaml \
      --stack-config ../stack-config.json \
+     --stack-artifacts ../stack-artifacts.json \
      --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
-     --release ../release.json \
      --values-for controller=../auth-values.yaml
    ```
 

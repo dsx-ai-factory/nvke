@@ -1,0 +1,104 @@
+{
+ "schemaVersion": "nvke.nvidia.com/stack-artifacts/v1",
+ "artifacts": [
+  {
+   "name": "cwe",
+   "kind": "oci",
+   "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "name": "capnico-controller",
+   "kind": "oci",
+   "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+   "reference": "ghcr.io/example/recipes/capnico-controller@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+   "os": "linux",
+   "arch": "amd64"
+  },
+  {
+   "name": "capnico-controller-arm64",
+   "kind": "oci",
+   "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "reference": "ghcr.io/example/recipes/capnico-controller-arm64@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "os": "linux",
+   "arch": "arm64"
+  },
+  {
+   "name": "cluster-api-provider-provisioned-arm64",
+   "kind": "oci",
+   "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "reference": "ghcr.io/example/recipes/cluster-api-provider-provisioned-arm64@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "os": "linux",
+   "arch": "arm64"
+  },
+  {
+   "name": "controller-profiles",
+   "kind": "oci",
+   "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "reference": "ghcr.io/example/recipes/controller-profiles@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  {
+   "name": "controller-chart",
+   "kind": "helm-oci",
+   "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+   "reference": "ghcr.io/example/recipes/controller-chart@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  {
+   "name": "nktp",
+   "kind": "helm-oci",
+   "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+   "reference": "ghcr.io/example/recipes/nktp@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  {
+   "name": "postgresql",
+   "kind": "helm-oci",
+   "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+   "reference": "ghcr.io/example/recipes/postgresql@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  {
+   "name": "spire-crds",
+   "kind": "helm-oci",
+   "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+   "reference": "ghcr.io/example/recipes/spire-crds@sha256:4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  {
+   "name": "temporal",
+   "kind": "helm-oci",
+   "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+   "reference": "ghcr.io/example/recipes/temporal@sha256:5555555555555555555555555555555555555555555555555555555555555555"
+  },
+  {
+   "name": "spire",
+   "kind": "helm-oci",
+   "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+   "reference": "ghcr.io/example/recipes/spire@sha256:6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  {
+   "name": "spire-server-image-arm64",
+   "kind": "oci",
+   "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+   "reference": "ghcr.io/example/recipes/spire-server-image-arm64@sha256:7777777777777777777777777777777777777777777777777777777777777777",
+   "os": "linux",
+   "arch": "arm64"
+  },
+  {
+   "name": "nvkectl",
+   "kind": "executable",
+   "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+   "reference": "ghcr.io/example/recipes/nvkectl@sha256:8888888888888888888888888888888888888888888888888888888888888888"
+  },
+  {
+   "name": "nvke-node-image-arm64",
+   "kind": "disk-image",
+   "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+   "reference": "ghcr.io/example/recipes/nvke-node-image-arm64@sha256:9999999999999999999999999999999999999999999999999999999999999999",
+   "os": "linux",
+   "arch": "arm64"
+  },
+  {
+   "name": "nvke-os",
+   "kind": "apt-repository",
+   "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+   "reference": "ghcr.io/example/recipes/nvke-os@sha256:0000000000000000000000000000000000000000000000000000000000000001"
+  }
+ ]
+}

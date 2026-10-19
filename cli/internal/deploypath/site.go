@@ -36,10 +36,6 @@ const oidcNodePort = 30443
 // nke-controller. It must match spire-server.adminIDs in spire/values.yaml.
 const controllerAdminPath = "/nke-service/nke-controller"
 
-// temporalImages are the repositories the Temporal chart defaults to; the
-// chart has no registry key, so a mirror is written into the repository.
-var temporalImages = map[string]string{"server": "temporalio/server", "admintools": "temporalio/admin-tools", "web": "temporalio/ui"}
-
 // TemplateContext is what a template item's .yaml.tmpl files render against:
 // the subset of the BootstrapConfig fields in
 // docs/site-bootstrap/deploy-repository.md that the site spec, the stack
@@ -115,27 +111,17 @@ func (r *renderer) site() {
 	password := creds.DatabasePassword
 
 	// controller: the database Secret's name, the OIDC discovery URL and the
-	// SPIRE server, all VIP-derived; the images only when the stack config
-	// overrides them. No values file carries a credential.
+	// SPIRE server, all VIP-derived. The images come from the stack
+	// artifacts. No values file carries a credential.
 	controller := map[string]any{
 		"secrets":      map[string]any{"dbSecretName": databaseSecret},
 		"nvkeOIDCAuth": map[string]any{"discoveryURL": fmt.Sprintf("https://%s:%d/.well-known/openid-configuration", vip, oidcNodePort)},
 		"spiffe":       map[string]any{"trustDomain": trustDomain, "spire": map[string]any{"serverAddress": vip}},
 	}
-	if cs.Images.Controller != "" {
-		controller["image"] = r.imageValues("images.controller", cs.Images.Controller)
-		if r.opts.Release != nil {
-			r.note("controller: images.controller in the stack config overrides the release's image")
-		}
-	}
-	if cs.Images.Profiles != "" {
-		controller["profiles"] = map[string]any{"image": r.imageValues("images.profiles", cs.Images.Profiles)}
-		if r.opts.Release != nil {
-			r.note("controller: images.profiles in the stack config overrides the release's profiles image")
-		}
-	} else if r.opts.Release == nil && r.profilesImageRequired() {
-		// With a release, the controller item's profilesArtifact names it.
-		r.problem("stack config: images.profiles is required: the deploy path enables profiles.image and nothing else names the image")
+	if r.opts.Artifacts == nil && r.profilesImageRequired() {
+		// With the stack artifacts, the controller item's profilesArtifact
+		// names it.
+		r.problem("controller: the deploy path enables profiles.image and nothing names the image; pass --stack-artifacts with a controller-profiles artifact")
 	}
 	r.siteValues("controller", controller)
 
@@ -143,9 +129,6 @@ func (r *renderer) site() {
 	// checksum for the architecture, the bootstrap CA when the environment
 	// names one, and the OIDC provider published on the VIP.
 	global := map[string]any{"trustDomain": trustDomain, "clusterName": spec.ClusterName}
-	if cs.Mirror != "" {
-		global["image"] = map[string]any{"registry": cs.Mirror}
-	}
 	server := map[string]any{
 		"adminIDs":     []string{"spiffe://" + trustDomain + controllerAdminPath},
 		"nodeAttestor": map[string]any{"tpmDirect": map[string]any{"checksum": checksum}},
@@ -182,26 +165,11 @@ func (r *renderer) site() {
 
 	// postgresql and temporal read the one password from the same Secret.
 	postgresql := map[string]any{"auth": map[string]any{"existingSecret": databaseSecret}}
-	if cs.Mirror != "" {
-		// The chart refuses an image outside its own registry unless told so.
-		postgresql["global"] = map[string]any{"imageRegistry": cs.Mirror, "security": map[string]any{"allowInsecureImages": true}}
-	}
 	r.siteValues("postgresql", postgresql)
 	temporal := map[string]any{"server": map[string]any{"config": map[string]any{"persistence": map[string]any{
 		"default":    map[string]any{"sql": map[string]any{"existingSecret": databaseSecret}},
 		"visibility": map[string]any{"sql": map[string]any{"existingSecret": databaseSecret}},
 	}}}}
-	if cs.Mirror != "" {
-		for key, repo := range temporalImages {
-			image := map[string]any{"repository": cs.Mirror + "/" + repo}
-			if existing, ok := temporal[key].(map[string]any); ok {
-				existing["image"] = image
-			} else {
-				temporal[key] = map[string]any{"image": image}
-			}
-		}
-		r.note("mirror: spire, postgresql and temporal pull from %s; nktp and capnico keep their upstream registries", cs.Mirror)
-	}
 	r.siteValues("temporal", temporal)
 	if len(r.problems) == 0 {
 		r.siteCredentials(password, hasCA, caCert, caKey)
@@ -331,38 +299,9 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 	r.note("%s: %d templates rendered; applies as a manifest item", item, count)
 }
 
-// imageValues splits an image reference into the chart's image values:
-// repository, tag and digest, the unused pin cleared so nothing from the
-// overlay survives beside the operator's. A tag beside a digest is dropped;
-// the controller chart fills in its appVersion as a placeholder tag and the
-// digest pins the pull. A reference with neither tag nor digest is refused.
-func (r *renderer) imageValues(what, ref string) map[string]any {
-	values := imageValues(ref)
-	if values == nil {
-		r.problem("stack config: %s: %q names neither a tag nor a digest", what, ref)
-		return map[string]any{}
-	}
-	return values
-}
-
-func imageValues(ref string) map[string]any {
-	if repo, digest, ok := strings.Cut(ref, "@"); ok {
-		slash := strings.LastIndex(repo, "/")
-		if colon := strings.LastIndex(repo, ":"); colon > slash {
-			repo = repo[:colon]
-		}
-		return map[string]any{"repository": repo, "digest": digest, "tag": ""}
-	}
-	slash := strings.LastIndex(ref, "/")
-	if colon := strings.LastIndex(ref, ":"); colon > slash {
-		return map[string]any{"repository": ref[:colon], "tag": ref[colon+1:], "digest": ""}
-	}
-	return nil
-}
-
 // profilesImageRequired reports whether the deploy path's controller values
-// enable profiles.image without naming a tag or digest, so the stack config
-// must supply the image. The files are read as nodes: helm accepts a
+// enable profiles.image without naming a tag or digest, so the stack
+// artifacts file must supply the image. The files are read as nodes: helm accepts a
 // repeated key, so the check does too.
 func (r *renderer) profilesImageRequired() bool {
 	rel, err := ReadRelease(filepath.Join(r.opts.DeployPath, "controller"))

@@ -15,10 +15,20 @@
 # emits can override what an item's values decided.
 #
 # Charts come from the deploy path or the item's repository. A deploy path
-# rendered against an NVKR release with `nvkectl render deploy-path` carries its
-# charts as archives, its images by digest, and an images.txt of images to
-# import from a local Run's OCI layouts; this script applies it the same way.
+# rendered against a stack artifacts file with `nvkectl render deploy-path`
+# carries its charts as archives, its images by digest, and an images.txt of
+# images to import from their OCI layouts; this script applies it the same
+# way, and records what it installed under NVKE_STATE_DIR/installs.
 set -euo pipefail
+
+ARGV=("$@")
+# The arguments before --, the ones this script reads.
+OWN_ARGV=()
+for arg in "${ARGV[@]}"; do
+  [[ "${arg}" == -- ]] && break
+  OWN_ARGV+=("${arg}")
+done
+unset arg
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ITEMS_PY="${SCRIPT_DIR}/lib/nvke-deploy-items.py"
@@ -32,8 +42,7 @@ PASSTHROUGH=()
 CONFIG=""
 SITESPEC=""
 STACK_CONFIG=""
-RELEASE=""
-RUN_DIR=""
+STACK_ARTIFACTS=""
 # ARCH is the --arch override; NODE_ARCH is what the cluster's nodes report.
 ARCH=""
 NODE_ARCH=""
@@ -45,11 +54,13 @@ STATE_DIR="${NVKE_STATE_DIR:-${XDG_STATE_HOME:-${HOME}/.local/state}/nvke}"
 SCRATCH=""
 VALUES_FOR=()
 DEPLOY_PATH=""
-# CTR imports images into the node's containerd for a deploy path rendered
-# from a local NVKR Run (images.txt names each image's OCI layout). It may
+# CTR imports images into the node's containerd for a deploy path whose
+# stack artifacts have OCI layouts (images.txt names each image's layout). A
+# layout reaches one node: the one whose containerd CTR talks to. It may
 # carry arguments: CTR="sudo ctr" when the install does not run as root, or
-# CTR="docker exec -i kind-control-plane ctr" when the cluster is a kind node.
+# CTR="nerdctl exec -i <node> ctr" when the node is a container.
 CTR="${CTR:-ctr}"
+STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 log() { printf '\n=== %s\n' "$*" >&2; }
 die() { printf 'nvke-deploy: %s\n' "$*" >&2; exit 1; }
@@ -58,11 +69,14 @@ usage() {
   cat >&2 <<'USAGE'
 usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
 
-  With --sitespec and --stack-config, or --release, the deploy path is first
-  rendered for the site and against the release (nvkectl does the rendering) into a private
-  scratch directory under NVKE_STATE_DIR (default $XDG_STATE_HOME/nvke),
-  installed from there, and the scratch directory is removed when the
-  install ends, so no rendered credential is left behind.
+  With --sitespec, --stack-config and --stack-artifacts, the deploy path is
+  first rendered for the site and against the artifacts (nvkectl does the
+  rendering) into a private scratch directory under NVKE_STATE_DIR (default
+  $XDG_STATE_HOME/nvke), installed from there, and the scratch directory is
+  removed when the install ends, so no rendered credential is left behind.
+  A successful install leaves a record of what it installed under
+  NVKE_STATE_DIR/installs/<time>.<id>/: images.txt, stack-artifacts.json,
+  render.log and status.
 
   --deploy-path DIR   the deploy path to install: a directory holding
                       nvke-deploy.yaml and one directory per item, e.g.
@@ -70,19 +84,20 @@ usage: nvke-deploy.sh install --deploy-path DIR [options] [-- helm args]
   --sitespec FILE     render for this site first (needs nvkectl: NVKECTL or PATH);
                       the site name, VIP and trust domain come from it
   --stack-config FILE with --sitespec: the stack's input for this site, the NICo
-                      API and the optional images and mirror; start from
-                      deploy/examples/stack-config.json. The NVKECTL_*
-                      credentials must be exported; see deploy/README.md
+                      API; start from deploy/examples/stack-config.json. The
+                      NVKECTL_* credentials must be exported; see deploy/README.md
+  --stack-artifacts FILE
+                      with --sitespec: the images and charts the stack
+                      installs, each by reference and digest, as
+                      nvke.nvidia.com/stack-artifacts/v1 JSON. `make
+                      local-stack-artifacts` builds one from this checkout;
+                      deploy/examples/stack-artifacts.json is the hand-written
+                      starting point; hack/nvkr-run-to-stack-artifacts.py
+                      converts an NVKR release export. An artifact with a
+                      layout is imported into the node's containerd (CTR
+                      names the import command); one without is pulled
   --arch linux/ARCH   render for this architecture instead of the one the
                       cluster's nodes report (linux/amd64 or linux/arm64)
-  --release FILE      render against this NVKR release description first;
-                      with --sitespec and --stack-config
-  --nvkr-run-dir DIR  with --release, for a Run that was not published (a
-                      local build, the CI lane): read charts and images from
-                      this completed NVKR Run's OCI layouts instead of a
-                      registry; images.txt then names them and they are
-                      imported into the node's containerd (CTR names the
-                      import command)
   --config PATH       BootstrapConfig, as JSON. Required by a template item;
                       its fields are the context those templates render against.
   --values-for ITEM=PATH
@@ -301,6 +316,7 @@ install_helm_item() {
 # digest. The repository need not exist anywhere: imagePullPolicy
 # IfNotPresent resolves the name from the local store. A line without a
 # layout is an image the nodes pull from the registry the reference names.
+# The import reaches the one containerd CTR talks to.
 import_images() {
   local list="${DEPLOY_PATH}/images.txt" ref layout repository ctr line lines=()
   [[ -f "${list}" ]] || return 0
@@ -375,6 +391,7 @@ read_inputs() {
   [[ -z "${SITE_NAME:-}" ]] || inputs="${inputs}, site ${SITE_NAME}"
   inputs="${inputs}, stack config $(abspath "${STACK_CONFIG}")"
   [[ -z "${STACK_NICO_ENDPOINT:-}" ]] || inputs="${inputs}, nico ${STACK_NICO_ENDPOINT} org ${STACK_NICO_ORG_ID:-}"
+  inputs="${inputs}, stack artifacts $(abspath "${STACK_ARTIFACTS}"), CTR ${CTR}"
   log "inputs: ${inputs}"
 }
 
@@ -390,28 +407,28 @@ abspath() {
   fi
 }
 
-# render_deploy_path renders DEPLOY_PATH for the site and the release and
-# points DEPLOY_PATH at the result, a private scratch directory under the
-# state directory (never a shared temp directory, which the render refuses)
-# that is removed when this script exits.
+# render_deploy_path renders DEPLOY_PATH for the site and against the stack
+# artifacts and points DEPLOY_PATH at the result, a private scratch directory
+# under the state directory (never a shared temp directory, which the render
+# refuses) that is removed when this script exits. The render's notes and
+# warnings are kept in the scratch as render.log for the install record.
 render_deploy_path() {
   command -v "${NVKECTL}" >/dev/null 2>&1 || die "nvkectl is needed to render; set NVKECTL or put it on PATH"
-  local args=(render deploy-path --deploy-path "${DEPLOY_PATH}" --ephemeral)
-  if [[ -n "${SITESPEC}" ]]; then
-    read_inputs
-    [[ -n "${ARCH}" ]] || read_node_arch
-    args+=(--sitespec "${SITESPEC}" --stack-config "${STACK_CONFIG}")
-  fi
+  local args=(render deploy-path --deploy-path "${DEPLOY_PATH}" --ephemeral --sitespec "${SITESPEC}" --stack-config "${STACK_CONFIG}" --stack-artifacts "${STACK_ARTIFACTS}")
+  read_inputs
+  [[ -n "${ARCH}" ]] || read_node_arch
   [[ -z "${ARCH:-${NODE_ARCH:-}}" ]] || args+=(--arch "${ARCH:-${NODE_ARCH}}")
-  [[ -z "${RELEASE}" ]] || args+=(--release "${RELEASE}")
-  [[ -z "${RUN_DIR}" ]] || args+=(--nvkr-run-dir "${RUN_DIR}")
   local base="${STATE_DIR}/renders"
   (umask 077 && mkdir -p "${base}") || die "cannot create ${base}; NVKE_STATE_DIR names the state directory"
   SCRATCH="$(mktemp -d "${base}/install.XXXXXX")"
-  # Removed however this script ends: a die, a failed render, a signal.
+  # Removed however this script ends: a die, a failed render, a signal. The
+  # trap does nothing else: a record is written by the main flow, on success.
   trap 'rm -rf "${SCRATCH}"' EXIT
   log "rendering ${DEPLOY_PATH}"
-  "${NVKECTL}" "${args[@]}" --out "${SCRATCH}/rendered" || die "the render failed"
+  local rc=0
+  "${NVKECTL}" "${args[@]}" --out "${SCRATCH}/rendered" 2>"${SCRATCH}/render.log" || rc=$?
+  cat "${SCRATCH}/render.log" >&2
+  [[ "${rc}" -eq 0 ]] || die "the render failed"
   DEPLOY_PATH="${SCRATCH}/rendered"
 }
 
@@ -436,6 +453,34 @@ refuse_appdb_override() {
       fi
     done < <(values_for "${name}")
   done <<<"${items}"
+}
+
+# record_install writes what a successful install installed under
+# NVKE_STATE_DIR/installs/<UTC time>.<id>/: images.txt, stack-artifacts.json
+# (its layouts absolute, so it loads from anywhere), render.log and status.
+# Nothing in the record is a credential: the arguments after -- go to helm,
+# may carry one, and are recorded by count only. A dry run writes none.
+record_install() {
+  local base="${STATE_DIR}/installs" dir
+  (umask 077 && mkdir -p "${base}") || die "cannot create ${base}"
+  dir="$(mktemp -d "${base}/$(date -u +%Y%m%dT%H%M%SZ).XXXX")"
+  local file
+  for file in "${DEPLOY_PATH}/images.txt" "${DEPLOY_PATH}/stack-artifacts.json" "${SCRATCH}/render.log"; do
+    [[ -f "${file}" ]] || continue
+    cp "${file}" "${dir}/${file##*/}"
+    chmod 600 "${dir}/${file##*/}"
+  done
+  {
+    printf 'status=ok\n'
+    printf 'argv=%s\n' "$(printf '%q ' "${OWN_ARGV[@]}")"
+    printf 'passthrough=%d\n' "${#PASSTHROUGH[@]}"
+    printf 'ctr=%s\n' "${CTR}"
+    printf 'arch=%s\n' "${ARCH:-${NODE_ARCH:-}}"
+    printf 'kubeconfig=%s\n' "${KUBECONFIG_PATH}"
+    printf 'started=%s\nended=%s\n' "${STARTED}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } >"${dir}/status"
+  chmod 600 "${dir}/status"
+  log "installed; record in ${dir}"
 }
 
 install() {
@@ -477,8 +522,7 @@ while [[ $# -gt 0 ]]; do
     --sitespec) SITESPEC="$2"; shift 2 ;;
     --stack-config) STACK_CONFIG="$2"; shift 2 ;;
     --arch) ARCH="$2"; shift 2 ;;
-    --release) RELEASE="$2"; shift 2 ;;
-    --nvkr-run-dir) RUN_DIR="$2"; shift 2 ;;
+    --stack-artifacts) STACK_ARTIFACTS="$2"; shift 2 ;;
     --config) CONFIG="$2"; shift 2 ;;
     --values-for) VALUES_FOR+=("$2"); shift 2 ;;
     --kubeconfig) KUBECONFIG_PATH="$2"; shift 2 ;;
@@ -492,14 +536,15 @@ done
 
 [[ -z "${SITESPEC}" || -n "${STACK_CONFIG}" ]] || die "--sitespec needs --stack-config: the stack's input is the stack config file"
 [[ -z "${STACK_CONFIG}" || -n "${SITESPEC}" ]] || die "--stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec"
-[[ -z "${RUN_DIR}" || -n "${RELEASE}" ]] || die "--nvkr-run-dir holds a release's artifacts; pass --release"
-[[ -z "${RELEASE}" || -n "${SITESPEC}" ]] || die "--release needs --sitespec and --stack-config"
+[[ -z "${STACK_ARTIFACTS}" || -n "${SITESPEC}" ]] || die "--stack-artifacts needs --sitespec and --stack-config"
+[[ -z "${SITESPEC}" || -n "${STACK_ARTIFACTS}" ]] || die "--sitespec needs --stack-artifacts: a site install names its artifacts; make local-stack-artifacts writes the file"
 case "${ARCH}" in
   "" | linux/amd64 | linux/arm64) ;;
   *) die "--arch ${ARCH} is not linux/amd64 or linux/arm64" ;;
 esac
-if [[ -n "${SITESPEC}${RELEASE}" ]]; then
+if [[ -n "${SITESPEC}" ]]; then
   [[ -n "${DEPLOY_PATH}" ]] || die "--deploy-path is required"
   render_deploy_path
 fi
 install
+[[ -z "${SITESPEC}" || -n "${DRY_RUN}" ]] || record_install

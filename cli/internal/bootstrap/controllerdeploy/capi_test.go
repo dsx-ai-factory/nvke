@@ -382,8 +382,8 @@ func TestInstallCAPNICo_AppliesSecretsThenTheManifest(t *testing.T) {
 
 // TestInstallCAPNICo_RunsTheManifestsDigestByDefault: the embedded manifest
 // names the image by tag, which a registry can move, and the manager can read
-// cluster Secrets. With no --release the install applies the digest the
-// bootstrap manifest lists; a release's image still replaces it.
+// cluster Secrets. With no --stack-artifacts the install applies the digest
+// the bootstrap manifest lists; the file's image still replaces it.
 func TestInstallCAPNICo_RunsTheManifestsDigestByDefault(t *testing.T) {
 	listed := manifest.Load().Components[manifest.ComponentCAPNICo].Images[manifest.ImageCAPNICo]
 	wantImage := "ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller@" + listed.Digest

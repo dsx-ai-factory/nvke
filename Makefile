@@ -31,6 +31,17 @@ export GOTOOLCHAIN
 GO      ?= go
 BIN_DIR ?= $(CURDIR)/bin
 
+# local-stack-artifacts: the architecture to build for (this machine's), the
+# container CLI (docker when on PATH, else nerdctl; the script decides when
+# empty), and where the layouts and stack-artifacts.json go. ARCH here is
+# amd64 or arm64; controller/Makefile has its own ARCH for its image build.
+ARCH          ?= $(shell uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+CONTAINER_CLI ?=
+OUT           ?= $(CURDIR)/dist/local-site
+# The profile content the local profiles image is built from: the
+# repository's test fixtures, which the kind lanes and Tilt use too.
+PROFILES_SRC  ?= $(CURDIR)/controller/test/fixtures
+
 # One template for the whole repository. Every module's `make license` reads
 # this file, so the header text has a single definition and cannot drift
 # between modules -- which is how four of the five modules ended up stamping a
@@ -149,7 +160,7 @@ include make/versions.mk
 include make/checks.mk
 
 .DEFAULT_GOAL := help
-.PHONY: help show-versions tools-check lint-workflows lint-shell docs-check internal-config-check lint-chart chart-rbac-check chart-package-check chart-controller-config-check chart-check vulncheck fmt lint gate test-compile test-e2e-backend-ci work work-sync work-check build test coverage coverage-report coverage-check preflight version-check clean licenses licenses-check license-deps-check notices notices-check license-header-check
+.PHONY: help show-versions tools-check lint-workflows lint-shell docs-check internal-config-check lint-chart chart-rbac-check chart-package-check chart-controller-config-check chart-check vulncheck fmt lint gate test-compile test-e2e-backend-ci work work-sync work-check build local-stack-artifacts test coverage coverage-report coverage-check preflight version-check clean licenses licenses-check license-deps-check notices notices-check license-header-check
 
 ##@ Help
 
@@ -508,6 +519,13 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 		exit 1; \
 	fi; \
 	echo "preflight passed."
+
+# The images and charts deploy/nico installs, built from this checkout into
+# OCI layouts, and the stack artifacts file that names them. The install's
+# input on a site without a registry: see docs/operate/get-artifacts.md.
+local-stack-artifacts: ## Build deploy/nico's images and charts from this checkout into dist/local-site/ and write stack-artifacts.json.
+	@$(MAKE) --no-print-directory -C cli build
+	NVKECTL=$(CURDIR)/cli/bin/nvkectl ./build/stack-artifacts.sh --profiles-src $(PROFILES_SRC) --out $(OUT) --arch $(ARCH) $(if $(CONTAINER_CLI),--container-cli $(CONTAINER_CLI),)
 
 build: ## Build every workspace package, and the released commands into bin/.
 	@# Compile everything first. Building only ./cmd/... left controller/api and

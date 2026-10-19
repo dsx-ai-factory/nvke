@@ -98,7 +98,7 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
 
 The bootstrap deploys two NVKE images into the seed cluster: the controller and the provisioned infrastructure provider. By default it uses `nke-controller:latest` and `cluster-api-provider-provisioned:latest` from the bootstrap host's local image store.
 
-To use images you published to your registry, for example with NVKR as described in [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md), log in to the registry and name the images when you run the bootstrap.
+To use images you published to your registry, log in to the registry and name the images when you run the bootstrap.
 
 ```bash
 nerdctl login <REGISTRY_HOST>
@@ -107,6 +107,8 @@ nerdctl login <REGISTRY_HOST>
 `<REGISTRY_HOST>` is the host name of your registry. You pass the image references with `--controller-image` and `--provisioned-provider-image` in the next section.
 
 To build both images from the repository on the bootstrap host instead, run `make -C nvke/cli images`.
+
+With the NICo provider, the seed cluster also runs CAPNICo, from the public image the deploy path pins. `--stack-artifacts <FILE>` pins it to the `capnico-controller` artifact of your stack artifacts file instead, the one the install reads too; the seed cluster pulls the image from its reference, so the artifact must be in a registry it reaches. See [Get the NVKE artifacts](get-artifacts.md).
 
 ## Run the bootstrap
 

@@ -53,9 +53,10 @@ before installing it. That needs egress to `open-telemetry.github.io`,
 - **Allow that egress,** or
 - **Build the dependencies ahead of time** with `make nktp-chart-deps` in the
   checkout the path installs from, or
-- **Install from a release.** `nvke-deploy.sh install --sitespec … --stack-config … --release …` puts the packaged
-  nktp chart the release carries under `charts/`, and `helm dependency build`
-  is not run for an archive.
+- **Install from the stack artifacts.** `make local-stack-artifacts` packages
+  the nktp chart with its dependencies, and `nvke-deploy.sh install
+  --stack-artifacts …` puts the archive under `charts/`; `helm dependency
+  build` is not run for an archive.
 
 ## Collectors don't appear, or the Operator's webhook fails
 

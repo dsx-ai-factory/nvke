@@ -45,7 +45,7 @@ func TestLoad(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		if c.Nico.Endpoint != "https://nico.example.com" || c.Nico.OrgID != "org-1" || c.Nico.APIName != "forge" || c.Images != (Images{}) || c.Mirror != "" {
+		if c.Nico.Endpoint != "https://nico.example.com" || c.Nico.OrgID != "org-1" || c.Nico.APIName != "forge" {
 			t.Errorf("loaded: %+v", c)
 		}
 		if c.Path() != path {
@@ -66,26 +66,18 @@ func TestLoad(t *testing.T) {
 			t.Errorf("placeholders:\n got %q\nwant %q", err.Error(), strings.Join(want, "\n"))
 		}
 	})
-	t.Run("optional values are read", func(t *testing.T) {
-		body := strings.NewReplacer(
-			`"controller": ""`, `"controller": "registry.example.com/nvke/cwe:v1"`,
-			`"profiles": ""`, `"profiles": "registry.example.com/nvke/profiles@sha256:`+strings.Repeat("a", 64)+`"`,
-			`"mirror": ""`, `"mirror": "mirror.example.com:5000"`,
-		).Replace(filled(t))
-		c, err := Load(write(t, body))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if c.Images.Controller != "registry.example.com/nvke/cwe:v1" || !strings.HasPrefix(c.Images.Profiles, "registry.example.com/nvke/profiles@sha256:") || c.Mirror != "mirror.example.com:5000" {
-			t.Errorf("optional values: %+v", c)
-		}
-	})
 	t.Run("a Config that was not loaded has no path", func(t *testing.T) {
 		var c Config
 		if c.Path() != "" {
 			t.Errorf("Path on a zero Config: %q", c.Path())
 		}
 	})
+}
+
+// withKey adds a top-level key after the nico object.
+func withKey(b, key, value string) string {
+	i := strings.LastIndex(b, "}")
+	return b[:i] + ",\n  " + key + ": " + value + "\n}\n"
 }
 
 func TestLoad_Refusals(t *testing.T) {
@@ -103,8 +95,18 @@ func TestLoad_Refusals(t *testing.T) {
 			want: "nico.orgID: must be set",
 		},
 		"unknown key at the top level": {
-			edit: func(b string) string { return strings.Replace(b, `"mirror": ""`, `"mirror": "", "arch": "arm64"`, 1) },
+			edit: func(b string) string { return withKey(b, `"arch"`, `"arm64"`) },
 			want: "arch: unknown field",
+		},
+		// The images and the mirror are not the stack config's: the stack
+		// artifacts file names every image.
+		"images": {
+			edit: func(b string) string { return withKey(b, `"images"`, `{"controller": "", "profiles": ""}`) },
+			want: "images: unknown field",
+		},
+		"mirror": {
+			edit: func(b string) string { return withKey(b, `"mirror"`, `"mirror.example.com:5000"`) },
+			want: "mirror: unknown field",
 		},
 		"unknown key in an object": {
 			edit: func(b string) string { return strings.Replace(b, `"endpoint":`, `"endpont":`, 1) },
@@ -133,22 +135,12 @@ func TestLoad_Refusals(t *testing.T) {
 			want: "after top-level value",
 		},
 		"null nico": {
-			edit: func(b string) string {
-				return b[:strings.Index(b, `"nico"`)] + `"nico": null,` + b[strings.Index(b, `"images"`):]
-			},
+			body: `{"nico": null}`,
 			want: "nico: must be an object, not null",
 		},
-		"null images": {
-			edit: func(b string) string {
-				return b[:strings.Index(b, `"images"`)] + `"images": null,` + b[strings.Index(b, `"mirror"`):]
-			},
-			want: "images: must be an object, not null",
-		},
 		"wrong type": {
-			edit: func(b string) string {
-				return b[:strings.Index(b, `"images"`)] + `"images": "x",` + b[strings.Index(b, `"mirror"`):]
-			},
-			want: "images",
+			body: `{"nico": "x"}`,
+			want: "nico",
 		},
 		"endpoint without a scheme": {
 			edit: func(b string) string { return strings.Replace(b, "https://nico.example.com", "nico.example.com", 1) },
@@ -164,12 +156,6 @@ func TestLoad_Refusals(t *testing.T) {
 		"a quote in a template value": {
 			edit: func(b string) string { return strings.Replace(b, `"org-1"`, `"org\"1"`, 1) },
 			want: "nico.orgID: the value holds a character the templates cannot carry",
-		},
-		"mirror with a scheme": {
-			edit: func(b string) string {
-				return strings.Replace(b, `"mirror": ""`, `"mirror": "https://mirror.example.com"`, 1)
-			},
-			want: `mirror: "https://mirror.example.com" is a host[:port][/prefix], not a URL`,
 		},
 	}
 	for name, tc := range cases {
@@ -206,21 +192,19 @@ func TestLoad_ReportsEveryProblem(t *testing.T) {
 	body := filled(t)
 	body = strings.Replace(body, `"orgID": "org-1"`, `"orgID": ""`, 1)
 	body = strings.Replace(body, "https://nico.example.com", "nico.example.com", 1)
-	body = strings.Replace(body, `"mirror": ""`, `"mirror": "https://m"`, 1)
 	_, err := Load(write(t, body))
 	if err == nil {
 		t.Fatal("accepted")
 	}
-	if lines := strings.Split(err.Error(), "\n"); len(lines) != 3 {
-		t.Errorf("want three lines, got %d:\n%s", len(lines), err)
+	if lines := strings.Split(err.Error(), "\n"); len(lines) != 2 {
+		t.Errorf("want two lines, got %d:\n%s", len(lines), err)
 	}
-	for _, want := range []string{"nico.orgID: must be set", "nico.endpoint:", "mirror:"} {
+	for _, want := range []string{"nico.orgID: must be set", "nico.endpoint:"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("want %q in:\n%s", want, err)
 		}
 	}
-	body = strings.Replace(body, `"mirror": "https://m"`, `"mirror": "", "pullSecret": "x"`, 1)
-	_, err = Load(write(t, body))
+	_, err = Load(write(t, withKey(body, `"pullSecret"`, `"x"`)))
 	if err == nil {
 		t.Fatal("accepted")
 	}
@@ -229,9 +213,7 @@ func TestLoad_ReportsEveryProblem(t *testing.T) {
 	}
 	// A null object is the one problem reported for it: its fields are not
 	// listed as missing too.
-	body = filled(t)
-	body = body[:strings.Index(body, `"nico"`)] + `"nico": null,` + body[strings.Index(body, `"images"`):]
-	_, err = Load(write(t, body))
+	_, err = Load(write(t, `{"nico": null}`))
 	if err == nil || !strings.Contains(err.Error(), "nico: must be an object, not null") || strings.Contains(err.Error(), "nico.endpoint") {
 		t.Errorf("null object:\n%v", err)
 	}

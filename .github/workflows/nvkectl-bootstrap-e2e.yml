@@ -58,10 +58,19 @@ on:
       - 'go.work.sum'
       - '.github/workflows/nvkectl-bootstrap-e2e.yml'
   # Twice a day as well: a schedule ignores the paths above, so a break they
-  # filtered out still surfaces within twelve hours.
+  # filtered out still surfaces within twelve hours. A push and the schedule
+  # run the three-node bootstrap with kube-vip. A dispatch with install_stack
+  # also installs the controller stack on the new cluster (stage 6), on one
+  # node without a VIP, as docs/get-started/local-site.md does; the Kind
+  # stack lane covers the deploy path on every pull request.
   schedule:
     - cron: '0 3,15 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      install_stack:
+        description: Install the controller stack on the bootstrapped cluster (one node, no VIP)
+        type: boolean
+        default: true
 
 permissions: {}
 
@@ -101,13 +110,18 @@ jobs:
             # mount an upperdir. Fixed by pinning nerdctl's data root.
             runner: arc-arm64-vtpm
     # A full run takes 12-17 minutes on this pool, most of it the node image
-    # build and the controller's three sequential control-plane joins. The margin covers
-    # a cold image cache and a slow mirror; queue time does not count.
-    timeout-minutes: 45
+    # build and the controller's three sequential control-plane joins; the
+    # stack stage adds about fifteen. The margin covers a cold image cache and
+    # a slow mirror; queue time does not count.
+    timeout-minutes: 70
     permissions:
       contents: read
     env:
       CONTROLLER_IMAGE: controller:nvkectl-bootstrap-e2e
+      # Stage 6 on a dispatch that asks for it. The run step sets the node
+      # count and clears the VIP for it: an empty string cannot come out of
+      # an expression's `&& ... ||` form.
+      INSTALL_STACK: ${{ github.event_name == 'workflow_dispatch' && inputs.install_stack && '1' || '' }}
       # A public pull-through mirror, not dc.local.gha-runners.nvidia.com:
       # that name resolves only on the self-hosted fleet. Same host and same
       # reasoning as backend-e2e.yml and os-image-artifact.yml, both of which
@@ -227,7 +241,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          for var in HELM_VERSION KIND_VERSION KUBECTL_VERSION CAPI_VERSION; do
+          for var in HELM_VERSION KIND_VERSION KUBECTL_VERSION CAPI_VERSION ORAS_VERSION; do
             value="$(make --no-print-directory "print-${var}")"
             if [ -z "${value}" ]; then
               echo "::error::make print-${var} returned nothing; make/versions.mk is broken"
@@ -240,6 +254,13 @@ jobs:
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: ${{ steps.versions.outputs.helm_version }}
+
+      # Stage 6 packages the charts into OCI layouts with oras.
+      - name: Set up ORAS
+        if: env.INSTALL_STACK == '1'
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
 
       # Same pinned versions as capd-e2e.yml; this suite drives kind itself.
       - name: Set up Kind and kubectl
@@ -350,7 +371,15 @@ jobs:
           NVKECTL_CONTROLLER_IMAGE: ${{ env.CONTROLLER_IMAGE }}
           # Docker is removed on this lane; the OVN image builds through nerdctl.
           OCI_BIN: nerdctl
-        run: sudo -E env "PATH=$PATH" ./e2e/bootstrap/run.sh
+          # Stage 6 runs clusterctl init a second time; it reads the Cluster
+          # API releases through the GitHub API.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          # Stage 6 is the local site's shape: one node and no VIP.
+          if [ "${INSTALL_STACK}" = 1 ]; then
+            export NVKECTL_E2E_INSTALL_STACK=1 NVKECTL_E2E_NODES=1 NVKECTL_E2E_CONTROL_PLANE_VIP=""
+          fi
+          sudo -E env "PATH=$PATH" ./e2e/bootstrap/run.sh
 
       # Written by `nvkectl bootstrap site` when a bootstrap fails: a
       # cluster-info dump plus the object state and helm releases that explain

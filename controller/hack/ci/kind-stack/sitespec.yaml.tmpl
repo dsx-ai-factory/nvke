@@ -1,0 +1,16 @@
+# Site spec for the kind smoke lane. The one node is the kind control plane;
+# the stack config beside it names the NICo API; the credentials are
+# placeholders kind-stack.sh exports.
+clusterName: "@CLUSTER@"
+cluster:
+  nodes:
+    - name: "control-plane"
+      ip: "@VIP@"
+      tpmEkThumbprint: "0000000000000000000000000000000000000000000000000000000000000000"
+  k8sVersion: "1.34.2"
+  cniName: "ovn-kubernetes"
+  podCidr: "192.168.0.0/16"
+  serviceCidr: "10.96.0.0/12"
+  controlPlaneVIP: "@VIP@"
+spire:
+  trustDomain: "@CLUSTER@.nvke.local"

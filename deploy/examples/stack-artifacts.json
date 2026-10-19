@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "nvke.nvidia.com/stack-artifacts/v1",
+  "artifacts": [
+    {
+      "name": "cwe",
+      "kind": "oci",
+      "reference": "REPLACE_REGISTRY/nvke/nke-controller@sha256:REPLACE_DIGEST"
+    },
+    {
+      "name": "controller-profiles",
+      "kind": "oci",
+      "reference": "REPLACE_REGISTRY/nvke/controller-profiles@sha256:REPLACE_DIGEST"
+    },
+    {
+      "name": "capnico-controller",
+      "kind": "oci",
+      "reference": "ghcr.io/dsx-ai-factory/cluster-api-provider-nico/controller@sha256:REPLACE_DIGEST"
+    },
+    {
+      "name": "controller-chart",
+      "kind": "helm-oci",
+      "chartVersion": "REPLACE_CHART_VERSION",
+      "reference": "REPLACE_REGISTRY/nvke/charts/nke-controller@sha256:REPLACE_DIGEST"
+    },
+    {
+      "name": "nktp",
+      "kind": "helm-oci",
+      "chartVersion": "REPLACE_CHART_VERSION",
+      "reference": "REPLACE_REGISTRY/nvke/charts/nktp@sha256:REPLACE_DIGEST"
+    }
+  ]
+}

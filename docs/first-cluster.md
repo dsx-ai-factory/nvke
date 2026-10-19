@@ -388,7 +388,7 @@ separate job, and the largest step here — `nvkectl` has no command for it.
 Follow [Install management-plane services](operate/install-management-plane-services.md).
 It installs the whole management plane, Postgres, Temporal, SPIRE, CAPNICo,
 NVKE telemetry pipelines (NKTP) and CWE, with the commands that page lists, from the `deploy/nico`
-deploy path, the site spec and an NVKR release description.
+deploy path, the site spec, the stack config and the stack artifacts file.
 
 ```bash
 nvkectl config set-site --name my-site --url http://<VIP>:30080 \

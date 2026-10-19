@@ -16,7 +16,7 @@ A management cluster with an odd number of nodes, each a control-plane node that
 
 | Step | What you do | Page |
 |---|---|---|
-| 1. Build | Build the NVKE controller image and the node OS image with NVIDIA Kubernetes Recipes (NVKR), and package the releases. | [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md) |
+| 1. Build | Build the management plane's images and charts from the checkout, or publish them to your registry, and write the stack artifacts file that names them; write the releases; build the node OS image with NVIDIA Kubernetes Recipes (NVKR). | [Get the NVKE artifacts](get-artifacts.md), [Write release manifests](write-release-manifests.md) |
 | 2. Prepare nodes | Boot the management cluster's nodes from the node image with cloud-init user data, and record each node's TPM thumbprint. | [Prepare nodes](prepare-nodes.md) |
 | 3. Bootstrap | Run `nvkectl bootstrap site` to form the management cluster. | [Bootstrap the management cluster](bootstrap-management-cluster.md) |
 | 4. Install | Install Cluster API, CAPNICo, SPIRE, telemetry and the NVKE API and controllers. | [Install management-plane services](install-management-plane-services.md) |
@@ -72,14 +72,15 @@ All connections are TCP; traffic between the nodes of one cluster is not listed.
 
 ### Registries
 
-- **A container registry you control**, with an account that can push to it, for the controller image and the profile content image. If pulling needs credentials, the management cluster needs them too.
-- CAPNICo's image is public on `ghcr.io`, or comes from your NVKR release, so it needs no credentials.
+- **A container registry you control**, with an account that can push to it, for the controller image, the profile content image and the two NVKE charts, when the management cluster has more than one node or you do not build on the install host. A one-node management cluster installs from artifacts built on the node with `make local-stack-artifacts` and needs no registry for them. If pulling needs credentials, the management cluster needs them too: log in with `docker login` on the install host for the charts, and give the controller chart a pull Secret for the images. CAPNICo's manifest names no pull Secret: keep `capnico-controller` on its public `ghcr.io` repository or give it a `layout`, which the install imports into containerd.
+- CAPNICo's image is public on `ghcr.io`, so it needs no credentials.
 
 ### Hosts and tools
 
 | Host | Needs |
 |---|---|
-| NVKR build host | Linux AMD64 with Docker, Git, GNU Make, `jq` and the Go version NVKR pins. For the node OS image, also Kernel-based Virtual Machine (KVM) access, 8 CPUs, 10 GiB of memory and 64 GiB of free disk. |
+| Build host | Linux with `docker` and its `buildx` plugin or `nerdctl`, `helm` v4.2.4, `oras`, `python3`, Git, GNU Make 4 and Go, for `make local-stack-artifacts`. It can be the install host. |
+| NVKR build host | Linux AMD64 with Docker, Git, GNU Make, `jq` and the Go version NVKR pins, for the node OS image: also Kernel-based Virtual Machine (KVM) access, 8 CPUs, 10 GiB of memory and 64 GiB of free disk. |
 | Bootstrap host | Linux, run as root, with rootful `nerdctl` and containerd, `kind`, `helm`, `kubectl`, `clusterctl`, Go and GNU Make. Docker is not supported. It can be a management cluster node. |
 | Install host | `nvkectl`, `helm` v4.2.4, `kubectl`, `clusterctl` v1.13.6, `curl`, `python3` and `git`. It can be the bootstrap host. |
 | API workstation | `nvkectl`, `curl` and `jq`; with API authentication, also the `kubectl oidc-login` plugin and `python3`. |
@@ -136,12 +137,11 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 |---|---|---|---|
 | Registry host and namespace | `<REGISTRY_HOST>`, `<NAMESPACE>` | Build, Bootstrap, Install | |
 | Registry account that can push | `<REGISTRY_USER>`, `<REGISTRY_TOKEN>` | Build | |
-| NVKR release reference, and its exported description `release.json` | `<RELEASE_REF>` | Build, Install | |
-| Controller image, the release's `cwe` artifact | `<CONTROLLER_IMAGE>` | Bootstrap; Install without a release | |
+| The stack artifacts file, from `make local-stack-artifacts` or written from the example | `stack-artifacts.json` | Build, Install | |
+| Controller image, the `cwe` artifact | `<CONTROLLER_IMAGE>` | Bootstrap, Build | |
 | Provisioned infrastructure provider image | `<PROVISIONED_PROVIDER_IMAGE>` | Bootstrap | |
-| Profile content image, the release's `controller-profiles` artifact | `images.profiles` in the stack config | Install without a release | |
+| Profile content image, the `controller-profiles` artifact | `<PROFILES_DIGEST>` | Build | |
 | OS release resources, `MachineImage`, `ClusterRelease` and `NodePoolRelease` | `releases/` | Build, Install | |
-| For `nvkr release verify`: the accepted signer identity and OIDC issuer, and a `cosign` path and digest | `<IDENTITY_REGEXP>`, `<OIDC_ISSUER>`, `<COSIGN_PATH>`, `<COSIGN_DIGEST>` | Build | |
 
 ### NICo
 
@@ -192,4 +192,4 @@ Your plan is complete when every row in [Fill in your values](#fill-in-your-valu
 
 ## Next steps
 
-- [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md).
+- [Get the NVKE artifacts](get-artifacts.md).

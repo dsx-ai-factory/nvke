@@ -17,6 +17,13 @@ import (
 // stackConfigExample is the operator's starting point for the stack config.
 var stackConfigExample = filepath.Join("..", "..", "..", "deploy", "examples", "stack-config.json")
 
+// localImages is a stack artifacts file whose three images are local layouts,
+// for both architectures; localImagesAMD64 has CAPNICo for amd64 only.
+var (
+	localImages      = filepath.Join(artifactFixtures, "local-images.json")
+	localImagesAMD64 = filepath.Join(artifactFixtures, "local-images-amd64.json")
+)
+
 // filledStackConfig writes the example stack config with every placeholder
 // replaced, in a directory of its own, sets the install's credentials in
 // the environment, and returns the file's path. edits replace further text.
@@ -36,8 +43,6 @@ func filledStackConfig(t *testing.T, edits map[string]string) string {
 	}
 	values := map[string]string{
 		"REPLACE_NICO_ENDPOINT": "https://nico.example.com", "REPLACE_NICO_ORG_ID": "org-1", "REPLACE_NICO_API_NAME": "forge",
-		// deploy/nico enables profiles.image without a pin.
-		`"profiles": ""`: `"profiles": "ghcr.io/example/controller-profiles:v1"`,
 	}
 	for k, v := range edits {
 		values[k] = v
@@ -60,27 +65,42 @@ func TestRenderDeployPath(t *testing.T) {
 	nico := filepath.Join("..", "..", "..", "deploy", "nico")
 	// A temp --out is refused unless the test-only allowance is set.
 	t.Setenv("NVKECTL_RENDER_ALLOW_TEMP_OUT", "")
-	if _, _, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--arch", "linux/arm64", "--out", out); err == nil || !strings.Contains(err.Error(), "shared temp directory") {
+	if _, _, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--stack-artifacts", localImages, "--arch", "linux/arm64", "--out", out); err == nil || !strings.Contains(err.Error(), "shared temp directory") {
 		t.Errorf("temp --out: %v", err)
 	}
 	t.Setenv("NVKECTL_RENDER_ALLOW_TEMP_OUT", "1")
-	stdout, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--arch", "linux/arm64", "--out", out)
+	stdout, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--stack-artifacts", localImages, "--arch", "linux/arm64", "--out", out)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, stderr)
 	}
-	if !strings.HasPrefix(stdout, "rendered "+nico+" for my-tier0-site into "+out) || !strings.Contains(stdout, out+" holds this site's credentials: site-credentials/secrets.yaml, nvke-base-config/20-nico-credentials.yaml, ") || !strings.HasSuffix(strings.TrimSpace(stdout), "Delete it after the install.") {
+	if !strings.HasPrefix(stdout, "rendered "+nico+" for my-tier0-site and stack artifacts "+localImages+" into "+out) || !strings.Contains(stdout, out+" holds this site's credentials: site-credentials/secrets.yaml, nvke-base-config/20-nico-credentials.yaml, ") || !strings.HasSuffix(strings.TrimSpace(stdout), "Delete it after the install.") {
 		t.Errorf("stdout: %q", stdout)
 	}
-	if !strings.Contains(stderr, "controller: site values written") || !strings.Contains(stderr, "nvke-base-config: 3 templates rendered") {
+	if !strings.Contains(stdout, "images: nvke.local/capnico-controller-arm64@sha256:") {
+		t.Errorf("images line: %q", stdout)
+	}
+	if !strings.Contains(stderr, "controller: site values written") || !strings.Contains(stderr, "nvke-base-config: 3 templates rendered") || !strings.Contains(stderr, "stack-artifacts: no source block") {
 		t.Errorf("notes: %q", stderr)
 	}
 	if _, err := os.Stat(filepath.Join(out, "controller", "site-values.yaml")); err != nil {
 		t.Error("controller site values missing")
 	}
+	if _, err := os.Stat(filepath.Join(out, "stack-artifacts.json")); err != nil {
+		t.Error("stack-artifacts.json missing from the rendered tree")
+	}
+	// A site alone is refused: the deploy path enables the profiles image
+	// and only the stack artifacts name it.
+	out2 := filepath.Join(t.TempDir(), "rendered")
+	_, _, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--arch", "linux/arm64", "--out", out2)
+	if err == nil || !strings.Contains(err.Error(), "pass --stack-artifacts with a controller-profiles artifact") {
+		t.Errorf("site without artifacts: %v", err)
+	}
+	if _, statErr := os.Stat(out2); statErr == nil {
+		t.Error("output left behind")
+	}
 	// A stack config with placeholders is refused, naming the file and the
 	// placeholders, and leaves nothing.
-	out2 := filepath.Join(t.TempDir(), "rendered")
-	_, _, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stackConfigExample, "--arch", "linux/arm64", "--out", out2)
+	_, _, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stackConfigExample, "--stack-artifacts", localImages, "--arch", "linux/arm64", "--out", out2)
 	if err == nil || !strings.Contains(err.Error(), "stack config "+stackConfigExample) || !strings.Contains(err.Error(), "nico.endpoint: still a REPLACE_* placeholder") {
 		t.Errorf("placeholders: %v", err)
 	}
@@ -91,11 +111,15 @@ func TestRenderDeployPath(t *testing.T) {
 		args []string
 		want string
 	}{
-		"no --deploy-path":  {[]string{"--sitespec", spec, "--stack-config", stack, "--out", out2}, "deploy-path"},
-		"no --out":          {[]string{"--deploy-path", nico, "--sitespec", spec, "--stack-config", stack}, "out"},
-		"no input":          {[]string{"--deploy-path", nico, "--out", out2}, "pass --sitespec with --stack-config, --release, or both"},
-		"no --stack-config": {[]string{"--deploy-path", nico, "--sitespec", spec, "--out", out2}, "--sitespec needs --stack-config: the stack's input is the stack config file"},
-		"no --sitespec":     {[]string{"--deploy-path", nico, "--stack-config", stack, "--out", out2}, "--stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec"},
+		"no --deploy-path":   {[]string{"--sitespec", spec, "--stack-config", stack, "--out", out2}, "deploy-path"},
+		"no --out":           {[]string{"--deploy-path", nico, "--sitespec", spec, "--stack-config", stack}, "out"},
+		"no input":           {[]string{"--deploy-path", nico, "--out", out2}, "pass --sitespec with --stack-config, --stack-artifacts, or both"},
+		"no --stack-config":  {[]string{"--deploy-path", nico, "--sitespec", spec, "--out", out2}, "--sitespec needs --stack-config: the stack's input is the stack config file"},
+		"no --sitespec":      {[]string{"--deploy-path", nico, "--stack-config", stack, "--out", out2}, "--stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec"},
+		"missing artifacts":  {[]string{"--deploy-path", nico, "--stack-artifacts", filepath.Join(t.TempDir(), "absent.json"), "--out", out2}, "absent.json"},
+		"nvkr export":        {[]string{"--deploy-path", nico, "--stack-artifacts", filepath.Join("..", "..", "..", "hack", "testdata", "nvkr-release", "valid.json"), "--out", out2}, "convert it with hack/nvkr-run-to-stack-artifacts.py"},
+		"old --release":      {[]string{"--deploy-path", nico, "--release", localImages, "--out", out2}, "unknown flag: --release"},
+		"old --nvkr-run-dir": {[]string{"--deploy-path", nico, "--stack-artifacts", localImages, "--nvkr-run-dir", t.TempDir(), "--out", out2}, "unknown flag: --nvkr-run-dir"},
 	} {
 		_, _, err := runGenerate(t, append([]string{"render", "deploy-path"}, tc.args...)...)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -112,15 +136,14 @@ func TestRenderDeployPath_Arch(t *testing.T) {
 	spec := siteSpecWithTrustDomain(t)
 	stack := filledStackConfig(t, nil)
 	nico := filepath.Join("..", "..", "..", "deploy", "nico")
-	release := filepath.Join(releaseFixtures, "valid.json") // capnico-controller for amd64 and -arm64
-	// --arch selects the release artifacts. An empty run directory refuses,
-	// naming the artifact it looked for: the arm64 capnico digest (e...).
-	_, _, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--arch", "linux/arm64", "--release", release, "--nvkr-run-dir", t.TempDir(), "--out", filepath.Join(t.TempDir(), "rendered"))
-	if err == nil || !strings.Contains(err.Error(), "no OCI layout") || !strings.Contains(err.Error(), strings.Repeat("e", 64)) {
+	// --arch selects the artifacts: a file with CAPNICo for amd64 only
+	// refuses an arm64 render, naming the artifact.
+	_, _, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--arch", "linux/arm64", "--stack-artifacts", localImagesAMD64, "--out", filepath.Join(t.TempDir(), "rendered"))
+	if err == nil || !strings.Contains(err.Error(), "capnico: image: capnico-controller is published only for other architectures: capnico-controller (linux/amd64)") {
 		t.Errorf("the arm64 capnico artifact was not selected from --arch: %v", err)
 	}
 	// A value outside the two architectures is refused before anything is read.
-	_, _, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--arch", "linux/x86", "--out", filepath.Join(t.TempDir(), "r"))
+	_, _, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--stack-artifacts", localImages, "--arch", "linux/x86", "--out", filepath.Join(t.TempDir(), "r"))
 	if err == nil || !strings.Contains(err.Error(), "--arch linux/x86 is not one of linux/amd64, linux/arm64") {
 		t.Errorf("bad --arch: %v", err)
 	}
@@ -129,7 +152,7 @@ func TestRenderDeployPath_Arch(t *testing.T) {
 	checksums := map[string]string{"linux/amd64": "46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc", "linux/arm64": "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16"}
 	for arch, want := range checksums {
 		out := filepath.Join(t.TempDir(), "rendered")
-		_, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--arch", arch, "--out", out)
+		_, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--stack-artifacts", localImages, "--arch", arch, "--out", out)
 		if err != nil {
 			t.Fatalf("%s: %v\n%s", arch, err, stderr)
 		}
@@ -141,17 +164,17 @@ func TestRenderDeployPath_Arch(t *testing.T) {
 		}
 	}
 	out := filepath.Join(t.TempDir(), "rendered")
-	_, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--out", out)
+	_, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--stack-artifacts", localImages, "--out", out)
 	if err != nil {
 		t.Fatalf("without --arch: %v\n%s", err, stderr)
 	}
 	if !strings.Contains(stderr, "warning: --arch not given; rendering for the host's linux/") {
 		t.Errorf("no host-default warning:\n%s", stderr)
 	}
-	// A release alone keeps rendering, as the deploy suite does, without a warning.
-	_, stderr, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--release", release, "--arch", "linux/arm64", "--nvkr-run-dir", t.TempDir(), "--out", filepath.Join(t.TempDir(), "r"))
-	if err == nil || !strings.Contains(err.Error(), "no OCI layout") || strings.Contains(stderr, "warning: --arch") {
-		t.Errorf("release alone: %v\n%s", err, stderr)
+	// The artifacts alone render, as the deploy suite does, without a warning.
+	_, stderr, err = runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--stack-artifacts", localImages, "--arch", "linux/arm64", "--out", filepath.Join(t.TempDir(), "r"))
+	if err != nil || strings.Contains(stderr, "warning: --arch") {
+		t.Errorf("artifacts alone: %v\n%s", err, stderr)
 	}
 }
 
@@ -196,7 +219,7 @@ func TestRenderDeployPath_NicoOneNodeWithoutVIP(t *testing.T) {
 	stack := filledStackConfig(t, nil)
 	t.Setenv("NVKECTL_RENDER_ALLOW_TEMP_OUT", "1")
 	nico := filepath.Join("..", "..", "..", "deploy", "nico")
-	_, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack,
+	_, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--stack-artifacts", localImages,
 		"--arch", "linux/arm64", "--out", filepath.Join(t.TempDir(), "rendered"))
 	if err == nil || !strings.Contains(err.Error()+stderr, "cluster.controlPlaneVIP") || strings.Contains(err.Error()+stderr, "several nodes") {
 		t.Fatalf("err = %v, stderr %q; want the missing VIP named for nico", err, stderr)
@@ -219,7 +242,7 @@ func TestRenderDeployPath_NicoSpecNeedsNoBootstrapFiles(t *testing.T) {
 	t.Setenv("NVKECTL_RENDER_ALLOW_TEMP_OUT", "1")
 	out := filepath.Join(t.TempDir(), "rendered")
 	nico := filepath.Join("..", "..", "..", "deploy", "nico")
-	if _, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack,
+	if _, stderr, err := runGenerate(t, "render", "deploy-path", "--deploy-path", nico, "--sitespec", spec, "--stack-config", stack, "--stack-artifacts", localImages,
 		"--arch", "linux/arm64", "--out", out); err != nil {
 		t.Fatalf("render deploy-path needed a bootstrap-only file: %v\n%s", err, stderr)
 	}

@@ -27,7 +27,6 @@ import (
 	// Aliased: this file has a local variable named engine.
 	bootstrapengine "github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/engine"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/etcdkey"
-	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/spireentrydump"
@@ -35,6 +34,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
+	"github.com/dsx-ai-factory/nvke/cli/internal/stackartifacts"
 	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 )
 
@@ -67,11 +67,11 @@ type bootstrapSiteOptions struct {
 	diagnosticsDir    string
 	keepBootstrapKind bool
 
-	// release is an NVKR release description. With infra.provider nico its
+	// stackArtifacts is a stack artifacts file. With infra.provider nico its
 	// capnico-controller artifact replaces the CAPNICo image, as the deploy
 	// path's render does. arch selects the artifact's architecture.
-	release string
-	arch    string
+	stackArtifacts string
+	arch           string
 
 	// disableMTLS stands the site up without SPIFFE, for bring-up debugging.
 	disableMTLS bool
@@ -152,7 +152,7 @@ dispatched or any node is touched.
 The bootstrap side-loads the images this repository builds, nke-controller:latest
 and, with the provisioned provider, cluster-api-provider-provisioned:latest,
 which "make -C cli images" builds. With nico, CAPNICo's image is public and
-pulled by the cluster; --release pins it to an NVKR release's artifact. --controller-image and --provisioned-provider-image, or
+pulled by the cluster; --stack-artifacts pins it to the file's capnico-controller artifact. --controller-image and --provisioned-provider-image, or
 NVKECTL_CONTROLLER_IMAGE and NVKECTL_CAPI_PROVISIONED_IMAGE, name other images, such as
 ones pushed to a registry; a flag wins over its variable. cli/README.md lists
 every NVKECTL_* variable.
@@ -187,8 +187,8 @@ site spec file format.`,
 				fmt.Fprintf(cmd.ErrOrStderr(), "Trace ID: %s\n", id)
 			}
 			// arch has a default, so only Changed tells an explicit value from none.
-			if cmd.Flags().Changed("arch") && opts.release == "" {
-				return errors.New("--arch selects the architecture of a --release artifact; pass --release too, or drop --arch")
+			if cmd.Flags().Changed("arch") && opts.stackArtifacts == "" {
+				return errors.New("--arch selects the architecture of a --stack-artifacts artifact; pass --stack-artifacts too, or drop --arch")
 			}
 			return runBootstrapSite(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
@@ -203,14 +203,13 @@ site spec file format.`,
 		"Controller image to deploy (overrides NVKECTL_CONTROLLER_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.provisionedProviderImage, "provisioned-provider-image", "",
 		"Provisioned-provider image to deploy (overrides NVKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)")
-	cmd.Flags().StringVar(&opts.release, "release", "",
-		"NVKR release description whose "+controllerdeploy.CAPNICoArtifact+" artifact replaces the bootstrap CAPNICo image "+
-			"with its pinned digest, as \"render deploy-path --release\" does for the management cluster's CAPNICo. "+
-			"The release description is not verified: run \"nvkr release verify\" on the same reference first. "+
-			"Only with infra.provider nico.")
+	cmd.Flags().StringVar(&opts.stackArtifacts, "stack-artifacts", "",
+		"Stack artifacts file whose "+controllerdeploy.CAPNICoArtifact+" artifact replaces the bootstrap CAPNICo image "+
+			"with its pinned digest, the file the stack install reads too. The Kind cluster pulls the image from its "+
+			"reference; a layout in the file is not used here. Only with infra.provider nico.")
 	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH,
-		"Architecture of the release artifact to use: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. "+
-			"Only with --release.")
+		"Architecture of the artifact to use: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. "+
+			"Only with --stack-artifacts.")
 	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
 		envOrDefault("NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "cluster-diagnostics"),
 		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
@@ -321,10 +320,13 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if warning := inv.NicoVIPWarning(); warning != "" {
 		logger.Warn(warning)
 	}
-	// Resolved here too, so a bad --release or --arch fails the dry run.
-	capnicoImage, err := capnicoReleaseImage(inv, opts.release, opts.arch)
+	// Resolved here too, so a bad --stack-artifacts or --arch fails the dry run.
+	capnicoImage, note, err := capnicoReleaseImage(inv, opts.stackArtifacts, opts.arch)
 	if err != nil {
 		return err
+	}
+	if note != "" {
+		logger.Info(note)
 	}
 	if inv.Spire.CACertFile != "" {
 		logger.Info("SPIRE upstream CA from the environment", "cert", inv.Spire.CACertFile, "key", inv.Spire.CAKeyFile)
@@ -1210,26 +1212,31 @@ func capnicoAccess(inv *sitespec.SiteSpec) (controllerdeploy.CAPNICoAccess, erro
 }
 
 // capnicoReleaseImage returns the image the bootstrap CAPNICo runs when a
-// release is given: the release's capnico-controller artifact as
-// repository@digest, which is how the deploy path's render names it. It returns
-// "" without a release, which leaves the manifest's own image. A release with
-// provider provisioned is refused, since nothing there would read it.
-func capnicoReleaseImage(inv *sitespec.SiteSpec, releasePath, arch string) (string, error) {
-	if releasePath == "" {
-		return "", nil
+// stack artifacts file is given: its capnico-controller artifact as
+// repository@digest, which is how the deploy path's render names it. It
+// returns "" without a file, which leaves the manifest's own image. A file
+// with provider provisioned is refused, since nothing there would read it.
+// The note, when set, says that the artifact's layout is not used: the Kind
+// cluster pulls from the reference.
+func capnicoReleaseImage(inv *sitespec.SiteSpec, artifactsPath, arch string) (image, note string, err error) {
+	if artifactsPath == "" {
+		return "", "", nil
 	}
 	if !inv.IsNico() {
-		return "", errors.New("--release only applies with infra.provider nico: it replaces the bootstrap CAPNICo image, and no other provider installs one")
+		return "", "", errors.New("--stack-artifacts only applies with infra.provider nico: it replaces the bootstrap CAPNICo image, and no other provider installs one")
 	}
-	release, err := nvkrrelease.Load(releasePath)
+	artifacts, err := stackartifacts.Load(artifactsPath)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	artifact, err := release.Select(controllerdeploy.CAPNICoArtifact, arch)
+	artifact, err := artifacts.SelectKind(controllerdeploy.CAPNICoArtifact, stackartifacts.KindImage, arch)
 	if err != nil {
-		return "", fmt.Errorf("--release %s: %w", releasePath, err)
+		return "", "", fmt.Errorf("--stack-artifacts %s: %w", artifactsPath, err)
 	}
-	return artifact.Repository() + "@" + artifact.Digest, nil
+	if artifact.Layout != "" {
+		note = fmt.Sprintf("--stack-artifacts: %s has a layout, which the bootstrap does not import; the Kind cluster pulls %s", artifact.Name, artifact.Reference)
+	}
+	return artifact.Repository() + "@" + artifact.Digest, note, nil
 }
 
 // waitForCWEHostEndpoint verifies the same host path that the create request

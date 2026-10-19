@@ -45,12 +45,20 @@ abspath() {
 }
 
 # diagnostics writes what a failed step leaves behind in the cluster into
-# the state directory: nodes, pods, events, helm releases, controller logs.
+# the state directory: nodes, pods, events, helm releases, controller logs,
+# and the record of the last successful install under
+# NVKE_STATE_DIR/installs, as last-successful-install/. A failed install
+# writes no record, so the copy is the install before it.
 diagnostics() {
-  local ns deploy name
+  local ns deploy name record
   local dir="${STATE_DIR}/diagnostics"
   [[ -n "${KUBECONFIG_PATH}" ]] || return 0
   mkdir -p "${dir}" 2>/dev/null || return 0
+  record="$(find "${STATE_DIR}/installs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1 || true)"
+  rm -rf "${dir}/last-successful-install"
+  if [[ -n "${record}" ]]; then
+    mkdir -p "${dir}/last-successful-install" && cp "${record}"/* "${dir}/last-successful-install/" 2>/dev/null || true
+  fi
   kq get nodes -o wide >"${dir}/nodes.txt"
   kq get pods -A -o wide >"${dir}/pods.txt"
   kq get events -A --sort-by=.lastTimestamp | tail -200 >"${dir}/events.txt"

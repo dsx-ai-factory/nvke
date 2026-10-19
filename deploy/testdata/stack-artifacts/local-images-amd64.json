@@ -1,0 +1,28 @@
+{
+ "schemaVersion": "nvke.nvidia.com/stack-artifacts/v1",
+ "artifacts": [
+  {
+   "name": "cwe",
+   "kind": "oci",
+   "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "reference": "nvke.local/cwe@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "layout": "layouts/cwe"
+  },
+  {
+   "name": "controller-profiles",
+   "kind": "oci",
+   "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "reference": "nvke.local/controller-profiles@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "layout": "layouts/controller-profiles"
+  },
+  {
+   "name": "capnico-controller",
+   "kind": "oci",
+   "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+   "reference": "nvke.local/capnico-controller@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+   "layout": "layouts/capnico-controller",
+   "os": "linux",
+   "arch": "amd64"
+  }
+ ]
+}

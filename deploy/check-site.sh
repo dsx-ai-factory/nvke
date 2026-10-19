@@ -6,12 +6,12 @@
 # management plane stack. It changes nothing. Every finding is one line, PASS,
 # WARN, SKIP or FAIL, and a FAIL names the fix. Any FAIL fails the run.
 #
-#   check-site.sh --sitespec FILE --stack-config FILE --kubeconfig PATH [--release FILE] [--nvkr-run-dir DIR]
+#   check-site.sh --sitespec FILE --stack-config FILE --stack-artifacts FILE --kubeconfig PATH
 #   check-site.sh --kubeconfig PATH --diagnostics
 #
 # --diagnostics writes what a failed step left in the cluster (nodes, pods,
-# events, helm releases, controller logs) under NVKE_STATE_DIR/diagnostics
-# and exits 0.
+# events, helm releases, controller logs) and the last successful install's record
+# under NVKE_STATE_DIR/diagnostics and exits 0.
 #
 # What the stack needs and this check reports, the operator supplies: the
 # control-plane taint is removed by nvkectl bootstrap site, the default
@@ -27,9 +27,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 SITESPEC=""
 STACK_CONFIG=""
-RELEASE=""
-RUN_DIR=""
+STACK_ARTIFACTS=""
 KUBECONFIG_PATH=""
+CTR="${CTR:-ctr}"
 DIAGNOSTICS=""
 NVKECTL="${NVKECTL:-nvkectl}"
 DEPLOY_PATH="${SCRIPT_DIR}/nico"
@@ -38,8 +38,10 @@ CONTROLLER_NAMESPACE="${CONTROLLER_NAMESPACE:-nke-controller}"
 CAPI_VERSION="${CAPI_VERSION:-$(mk_var CAPI_VERSION)}"
 SITE_NAME=""
 NODE_ARCH=""
+NODE_COUNT=""
 CAPI_INIT=""
 HAVE_NVKECTL=""
+ARTIFACTS_READ=""
 
 EGRESS_URLS=(
   https://ghcr.io/v2/
@@ -55,22 +57,26 @@ EGRESS_URLS=(
 
 usage() {
   cat >&2 <<'USAGE'
-usage: check-site.sh --sitespec FILE --stack-config FILE --kubeconfig PATH [--release FILE] [--nvkr-run-dir DIR]
+usage: check-site.sh --sitespec FILE --stack-config FILE --stack-artifacts FILE --kubeconfig PATH
        check-site.sh --kubeconfig PATH --diagnostics
 
 Reports, one line per finding, whether this machine and the cluster are
 ready for the management plane stack. Changes nothing; exits non-zero on a
-FAIL. --diagnostics instead writes nodes, pods, events, helm releases and
-the controller logs under NVKE_STATE_DIR/diagnostics (default
-$XDG_STATE_HOME/nvke/diagnostics).
+FAIL. --diagnostics instead writes nodes, pods, events, helm releases, the
+controller logs and the last successful install's record under NVKE_STATE_DIR/diagnostics
+(default $XDG_STATE_HOME/nvke/diagnostics).
 
   --sitespec FILE     the site spec the bootstrap ran with
   --stack-config FILE the stack config, the stack's input for this site; start
                       from deploy/examples/stack-config.json. The NVKECTL_*
                       credentials the install reads must be exported
+  --stack-artifacts FILE
+                      the stack artifacts the install will use: `make
+                      local-stack-artifacts` writes one; deploy/examples/
+                      stack-artifacts.json is the hand-written starting point;
+                      hack/nvkr-run-to-stack-artifacts.py converts an NVKR
+                      release export
   --kubeconfig PATH   the bootstrapped site cluster
-  --release FILE      the NVKR release description the install will use
-  --nvkr-run-dir DIR  with --release, the local NVKR Run the artifacts come from
   --diagnostics       write the cluster diagnostics and exit
 USAGE
   exit 2
@@ -81,8 +87,7 @@ while [[ $# -gt 0 ]]; do
     --sitespec) SITESPEC="$2"; shift 2 ;;
     --stack-config) STACK_CONFIG="$2"; shift 2 ;;
     --kubeconfig) KUBECONFIG_PATH="$2"; shift 2 ;;
-    --release) RELEASE="$2"; shift 2 ;;
-    --nvkr-run-dir) RUN_DIR="$2"; shift 2 ;;
+    --stack-artifacts) STACK_ARTIFACTS="$2"; shift 2 ;;
     --diagnostics) DIAGNOSTICS=1; shift ;;
     -h | --help) usage ;;
     *) die "unknown argument: $1" ;;
@@ -98,7 +103,7 @@ fi
 [[ -n "${SITESPEC}${STACK_CONFIG}" ]] || usage
 [[ -z "${SITESPEC}" || -n "${STACK_CONFIG}" ]] || die "--sitespec needs --stack-config: the stack's input is the stack config file"
 [[ -z "${STACK_CONFIG}" || -n "${SITESPEC}" ]] || die "--stack-config needs --sitespec: the site name, VIP and trust domain come from the site spec"
-[[ -z "${RUN_DIR}" || -n "${RELEASE}" ]] || die "--nvkr-run-dir holds a release's artifacts; pass --release"
+[[ -n "${STACK_ARTIFACTS}" ]] || die "--sitespec needs --stack-artifacts: a site install names its artifacts; make local-stack-artifacts writes the file"
 
 # kread is a kubectl read whose failure is a finding: a denied, timed-out or
 # flaky read must not pass as an empty answer. Its stderr lands in KREAD_ERR.
@@ -122,7 +127,7 @@ if command -v "${NVKECTL}" >/dev/null 2>&1; then
   check_pass "tool nvkectl: $(command -v "${NVKECTL}")"
   HAVE_NVKECTL=1
 else
-  check_fail "tool nvkectl: ${NVKECTL} not found; set NVKECTL or put it on PATH (make -C cli build). The site spec, the stack config and the release are not checked without it"
+  check_fail "tool nvkectl: ${NVKECTL} not found; set NVKECTL or put it on PATH (make -C cli build). The site spec, the stack config and the stack artifacts are not checked without it"
   HAVE_NVKECTL=""
 fi
 pin="$(mk_var HELM_VERSION)"
@@ -177,10 +182,27 @@ if [[ -n "${HAVE_NVKECTL}" ]]; then
     [[ -n "${stack_problem}" ]] || stack_problem="nvkectl inspect stack-config exited non-zero without a reason"
   fi
 fi
+# The stack artifacts: the file loads, its layouts are there, and the
+# source block, when it has one, is said with its verify command. The
+# bindings against the deploy path need the nodes' architecture and are
+# checked with the cluster below.
+artifacts_problem=""
+unset SOURCE_REFERENCE QUALIFICATION ARTIFACTS LAYOUTS LAYOUTS_MISSING PULL_HOSTS
+if [[ -n "${HAVE_NVKECTL}" ]]; then
+  if artifact_vars="$("${NVKECTL}" inspect stack-artifacts "${STACK_ARTIFACTS}" --meta 2>"${KREAD_ERR}")"; then
+    eval "${artifact_vars}"
+    ARTIFACTS_READ=1
+  else
+    artifacts_problem="$(sed -e 's/^Error: //' "${KREAD_ERR}" | grep -v -e '^Trace ID: ' | head -n 1 || true)"
+    [[ -n "${artifacts_problem}" ]] || artifacts_problem="nvkectl inspect stack-artifacts exited non-zero without a reason"
+  fi
+fi
 inputs="site spec $(abspath "${SITESPEC}")"
 [[ -z "${SITE_NAME}" ]] || inputs="${inputs}, site ${SITE_NAME}"
 inputs="${inputs}, stack config $(abspath "${STACK_CONFIG}")"
 [[ -z "${STACK_NICO_ENDPOINT:-}" ]] || inputs="${inputs}, nico ${STACK_NICO_ENDPOINT} org ${STACK_NICO_ORG_ID:-}"
+inputs="${inputs}, stack artifacts $(abspath "${STACK_ARTIFACTS}")"
+[[ -z "${ARTIFACTS:-}" ]] || inputs="${inputs} (${ARTIFACTS} artifacts, ${LAYOUTS:-0} layouts)"
 check_info "inputs: ${inputs}"
 
 if [[ -z "${HAVE_NVKECTL}" ]]; then
@@ -200,25 +222,22 @@ else
     check_fail "stack config: ${STACK_CONFIG} is not ready: ${stack_problem}; run: $(q "${NVKECTL}") inspect stack-config $(q "${STACK_CONFIG}")"
   fi
 fi
-if [[ -n "${RELEASE}" && -z "${HAVE_NVKECTL}" ]]; then
-  check_skip "release: ${RELEASE} (no nvkectl)"
-elif [[ -n "${RELEASE}" ]]; then
-  # The description says what the release holds, not that it was verified;
-  # nvkr release verify decides that for the same reference.
-  unset REFERENCE QUALIFICATION
-  if release_vars="$("${NVKECTL}" inspect nvkr-release "${RELEASE}" --meta 2>/dev/null)" && eval "${release_vars}" && [[ -n "${REFERENCE:-}" ]]; then
-    check_pass "release: ${REFERENCE} (declared ${QUALIFICATION:-?}); verify it with: nvkr release verify --reference ${REFERENCE}"
-    [[ "${QUALIFICATION:-}" == "pipeline-attested" ]] || check_warn "release qualification is ${QUALIFICATION:-unknown}, not pipeline-attested, as the publisher declared it"
+if [[ -z "${HAVE_NVKECTL}" ]]; then
+  check_skip "stack artifacts: ${STACK_ARTIFACTS} (no nvkectl)"
+elif [[ -z "${ARTIFACTS_READ}" ]]; then
+  check_fail "stack artifacts: ${STACK_ARTIFACTS} does not parse: ${artifacts_problem}; run: $(q "${NVKECTL}") inspect stack-artifacts $(q "${STACK_ARTIFACTS}") --meta"
+else
+  # The source block says where the artifacts came from, not that they were
+  # verified; nvkr release verify decides that for the same reference.
+  if [[ -n "${SOURCE_REFERENCE:-}" ]]; then
+    check_pass "stack artifacts: ${STACK_ARTIFACTS} (${ARTIFACTS} artifacts; source ${SOURCE_REFERENCE}, declared ${QUALIFICATION:-unqualified}); verify it with: nvkr release verify --reference ${SOURCE_REFERENCE}"
+    check_warn "stack artifacts: the source's qualification is declared by its publisher, not verified here"
   else
-    check_fail "release: ${RELEASE} does not parse; run: $(q "${NVKECTL}") inspect nvkr-release $(q "${RELEASE}") --meta"
+    check_pass "stack artifacts: ${STACK_ARTIFACTS} (${ARTIFACTS} artifacts, no source block)"
   fi
-fi
-if [[ -n "${RUN_DIR}" ]]; then
-  if [[ -d "${RUN_DIR}" ]]; then
-    check_pass "run directory: ${RUN_DIR}"
-  else
-    check_fail "run directory: ${RUN_DIR} does not exist"
-  fi
+  for name in ${LAYOUTS_MISSING:-}; do
+    check_fail "stack artifacts: layout for ${name} is missing or does not list its digest; run: $(q "${NVKECTL}") inspect stack-artifacts $(q "${STACK_ARTIFACTS}") --artifacts"
+  done
 fi
 
 # --- the cluster -------------------------------------------------------------
@@ -250,6 +269,7 @@ else
       check_fail "cluster: nodes report ${archs}; the stack installs for one architecture"
     else
       NODE_ARCH="${archs}"
+      NODE_COUNT="${count}"
       check_pass "cluster: nodes are ${NODE_ARCH}"
     fi
     # nvkectl bootstrap site removes the control-plane taint; nothing
@@ -317,8 +337,45 @@ else
   fi
 fi
 
+# --- the artifacts against the deploy path -----------------------------------
+
+# What deploy/nico binds, resolved for the nodes' architecture, by the
+# renderer's own selection: a required image the file lacks or has only for
+# another architecture is what the render would refuse. An artifact no item
+# binds is said, not failed: a converted NVKR export carries more.
+if [[ -n "${ARTIFACTS_READ}" && -n "${NODE_ARCH}" ]]; then
+  if bindings="$("${NVKECTL}" inspect stack-artifacts "${STACK_ARTIFACTS}" --bindings --deploy-path "${DEPLOY_PATH}" --arch "linux/${NODE_ARCH}" 2>"${KREAD_ERR}")"; then
+    while IFS=$'\t' read -r item role artifact _ state; do
+      [[ -n "${item}" ]] || continue
+      if [[ "${item}" == unused ]]; then
+        check_info "stack artifacts: ${role} is not used by ${DEPLOY_PATH}"
+        continue
+      fi
+      case "${state}" in
+        bound | committed) ;;
+        missing) check_fail "stack artifacts: ${item} ${role} ${artifact} is not in the file" ;;
+        other-arch:*) check_fail "stack artifacts: ${item} ${role} ${artifact} is published only for ${state#other-arch:}; the nodes are linux/${NODE_ARCH}" ;;
+        invalid:*) check_fail "stack artifacts: ${item} ${role} ${artifact}: ${state#invalid:}" ;;
+        *) check_fail "stack artifacts: ${item} ${role} ${artifact}: ${state}" ;;
+      esac
+    done <<<"${bindings}"
+    check_pass "stack artifacts: bindings of ${DEPLOY_PATH} checked for linux/${NODE_ARCH}"
+  else
+    check_fail "stack artifacts: cannot resolve the bindings: $(kread_err)"
+  fi
+  if [[ "${LAYOUTS:-0}" -gt 0 && "${NODE_COUNT:-1}" -gt 1 ]]; then
+    check_warn "stack artifacts: ${LAYOUTS} layout(s) and ${NODE_COUNT} nodes; a layout reaches one node's containerd, the one CTR talks to; CTR is ${CTR}"
+  fi
+elif [[ -n "${ARTIFACTS_READ}" ]]; then
+  check_skip "stack artifacts: bindings not checked without the nodes' architecture"
+fi
+
 # --- egress and disk ---------------------------------------------------------
 
+# The hosts the artifacts without a layout are pulled from, after the fixed list.
+for host in ${PULL_HOSTS:-}; do
+  EGRESS_URLS+=("https://${host}/v2/")
+done
 for url in "${EGRESS_URLS[@]}"; do
   if curl -sSI --max-time 10 -o /dev/null "${url}" 2>/dev/null; then
     check_pass "egress: ${url}"
@@ -335,9 +392,12 @@ fi
 [[ "${CHECK_FAILURES}" -eq 0 ]] || die "${CHECK_FAILURES} finding(s) to fix before the stack installs"
 printf 'ready. Next:\n'
 [[ -z "${CAPI_INIT:-}" ]] || printf '  %s\n' "${CAPI_INIT}"
-install_cmd=("${SCRIPT_DIR}/nvke-deploy.sh" install --deploy-path "${DEPLOY_PATH}" --sitespec "${SITESPEC}" --stack-config "${STACK_CONFIG}" --kubeconfig "${KUBECONFIG_PATH}")
-[[ -z "${RELEASE}" ]] || install_cmd+=(--release "${RELEASE}")
-[[ -z "${RUN_DIR}" ]] || install_cmd+=(--nvkr-run-dir "${RUN_DIR}")
+install_cmd=("${SCRIPT_DIR}/nvke-deploy.sh" install --deploy-path "${DEPLOY_PATH}" --sitespec "${SITESPEC}" --stack-config "${STACK_CONFIG}" --stack-artifacts "${STACK_ARTIFACTS}" --kubeconfig "${KUBECONFIG_PATH}")
 install_line="$(printf '%q ' "${install_cmd[@]}")"
-printf '  %s\n' "${install_line% }"
+if [[ "${LAYOUTS:-0}" -gt 0 ]]; then
+  # A layout is imported into the node's containerd through CTR.
+  printf '  CTR=%q %s\n' "${CTR}" "${install_line% }"
+else
+  printf '  %s\n' "${install_line% }"
+fi
 printf '  # with your own telemetry backend, add: --values-for nktp=<file>\n'

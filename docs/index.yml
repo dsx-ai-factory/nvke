@@ -23,13 +23,17 @@ navigation:
         contents:
           - page: "Quickstart: evaluate locally with mock-NICo"
             path: get-started/quickstart-local.md
+          - page: Run NVKE end to end on one machine
+            path: get-started/local-site.md
 
       - section: Install NVKE
         contents:
           - page: Plan your installation
             path: operate/plan-installation.md
-          - page: Get NVKE artifacts from NVKR and write release manifests
-            path: operate/build-node-images.md
+          - page: Get the NVKE artifacts
+            path: operate/get-artifacts.md
+          - page: Write release manifests
+            path: operate/write-release-manifests.md
           # Absolute URL: NVKR is a separate Fern instance, served under
           # docs.nvidia.com/nvke/nvkr alongside this site.
           - link: NVKR documentation

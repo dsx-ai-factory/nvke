@@ -15,8 +15,10 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [overview/supported-platforms.md](overview/supported-platforms.md) | The Kubernetes versions, networking, infrastructure providers, node OS and tools this release supports |
 | [overview/preview-status.md](overview/preview-status.md) | What the preview supports and its known limitations |
 | [get-started/quickstart-local.md](get-started/quickstart-local.md) | Evaluate NVKE on one Linux host with mock-NICo |
+| [get-started/local-site.md](get-started/local-site.md) | The operator flow end to end on one machine: bootstrap a container node, install the management plane from artifacts built from the checkout, create a workload cluster on simulated NICo |
 | [operate/plan-installation.md](operate/plan-installation.md) | What to decide and gather before installing |
-| [operate/build-node-images.md](operate/build-node-images.md) | Where NVKE's artifacts come from in NVKR, and writing the OS release resources |
+| [operate/get-artifacts.md](operate/get-artifacts.md) | Producing the stack artifacts file the install reads: built from the checkout, or naming images and charts in your registry |
+| [operate/write-release-manifests.md](operate/write-release-manifests.md) | Writing the OS release resources, the node OS image, and the profile content image |
 | [operate/prepare-nodes.md](operate/prepare-nodes.md) | Bringing the management cluster's nodes from first boot to what `nvkectl bootstrap site` requires |
 | [operate/bootstrap-management-cluster.md](operate/bootstrap-management-cluster.md) | Writing the site spec and running `nvkectl bootstrap site` |
 | [operate/install-management-plane-services.md](operate/install-management-plane-services.md) | Installing Cluster API, CAPNICo and the NVKE API and controllers |
@@ -63,6 +65,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [site-bootstrap/deploy-repository.md](site-bootstrap/deploy-repository.md) | The deploy repository and what it holds |
 | [site-bootstrap/infrastructure-providers.md](site-bootstrap/infrastructure-providers.md) | Installing Cluster API and an infrastructure provider on a site cluster |
 | [../cli/docs/sitespec.md](../cli/docs/sitespec.md) | Every field of the site spec file, with its type |
+| [../cli/docs/stack-artifacts.md](../cli/docs/stack-artifacts.md) | The stack artifacts file: every field, how artifacts are selected, layouts, and what the install records |
 | [../cli/docs/bootstrap-troubleshooting.md](../cli/docs/bootstrap-troubleshooting.md) | Where a failed bootstrap leaves its evidence, how to read the error, common failures and when to re-run |
 
 ## Running tenant clusters
@@ -145,7 +148,7 @@ Deeper module documentation:
 | [../controller/profiles/README.md](../controller/profiles/README.md) | External profiles |
 | [../controller/deploy/charts/controller/README.md](../controller/deploy/charts/controller/README.md) | The engine's Helm chart and its values |
 | [../nktp/deploy/charts/nktp/README.md](../nktp/deploy/charts/nktp/README.md) | The NKTP Helm chart, what it deploys and its values |
-| [../build/README.md](../build/README.md) | The per-component build and publish scripts |
+| [../build/README.md](../build/README.md) | The build scripts: the node agent, and the stack artifacts from the checkout |
 | [../os-image/README.md](../os-image/README.md) | Node image build, FDE/non-FDE variants, release |
 
 ## Tests

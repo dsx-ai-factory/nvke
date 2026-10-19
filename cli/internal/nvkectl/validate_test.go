@@ -251,7 +251,7 @@ func TestValidateSiteSpec_NicoExampleWithTheDocumentedReleases(t *testing.T) {
 	t.Setenv("NVKECTL_NODE_USER", "example-user")
 	t.Setenv("NVKECTL_NODE_PASSWORD", "example-password")
 
-	// releases/ as docs/operate/build-node-images.md has the operator build it.
+	// releases/ as docs/operate/write-release-manifests.md has the operator build it.
 	for _, sub := range []string{"releases", "bootstrap-releases"} {
 		if err := os.Mkdir(filepath.Join(dir, sub), 0o755); err != nil {
 			t.Fatal(err)

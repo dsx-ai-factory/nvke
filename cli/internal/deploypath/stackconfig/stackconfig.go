@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package stackconfig loads the controller stack install's inputs: the stack
-// config file, which names the NICo API and the optional image overrides and
-// mirror, and the credentials, which come from the environment. The site spec
-// holds the facts the bootstrap owns, such as the site name, the control-plane
-// VIP and the SPIRE trust domain; the stack config holds what only the stack
-// reads. deploy/examples/stack-config.json is the operator's starting point.
+// config file, which names the NICo API, and the credentials, which come from
+// the environment. The site spec holds the facts the bootstrap owns, such as
+// the site name, the control-plane VIP and the SPIRE trust domain; the stack
+// artifacts file names the images and charts; the stack config holds what
+// only the stack reads. deploy/examples/stack-config.json is the operator's
+// starting point.
 package stackconfig
 
 import (
@@ -29,12 +30,6 @@ import (
 type Config struct {
 	// Nico is the NICo API CAPNICo calls.
 	Nico Nico `json:"nico"`
-	// Images overrides the controller and profiles images, which default to
-	// the release's artifacts.
-	Images Images `json:"images"`
-	// Mirror is a registry the external images are pulled from instead of
-	// their upstream registries, as host[:port][/prefix], no scheme.
-	Mirror string `json:"mirror"`
 
 	// path is the absolute path of the file, set by Load and by nothing else.
 	path string
@@ -47,19 +42,13 @@ type Nico struct {
 	APIName  string `json:"apiName"`
 }
 
-// Images overrides images that default to the release's artifacts.
-type Images struct {
-	Controller string `json:"controller"`
-	Profiles   string `json:"profiles"`
-}
-
 // placeholderPrefix marks a value the example leaves for the operator to
 // fill in.
 const placeholderPrefix = "REPLACE_"
 
 // objectKeys are the top-level keys that hold an object. UnmarshalStrict
 // reads null into an empty object, so null is refused by name.
-var objectKeys = []string{"nico", "images"}
+var objectKeys = []string{"nico"}
 
 // field is one value of the file with its JSON path.
 type field struct {
@@ -77,18 +66,15 @@ func (c *Config) fields() []field {
 		{path: "nico.endpoint", value: c.Nico.Endpoint, required: true, template: true},
 		{path: "nico.orgID", value: c.Nico.OrgID, required: true, template: true},
 		{path: "nico.apiName", value: c.Nico.APIName, required: true, template: true},
-		{path: "images.controller", value: c.Images.Controller},
-		{path: "images.profiles", value: c.Images.Profiles},
-		{path: "mirror", value: c.Mirror},
 	}
 }
 
 // Load reads the stack config file at path and returns it validated. The
 // file must be one JSON object; an unknown, duplicate or differently cased
 // key is refused, as is null for an object. No value may still be a
-// REPLACE_* placeholder, every required value must be set, the NICo
-// endpoint must be an http or https URL with no user or password, and the
-// mirror must carry no scheme. Load reads nothing but the file.
+// REPLACE_* placeholder, every required value must be set, and the NICo
+// endpoint must be an http or https URL with no user or password. Load reads
+// nothing but the file.
 //
 // Every problem is reported at once, one per line as "<json path>:
 // <problem>" with no file name in front; a problem with the file as a
@@ -199,9 +185,6 @@ func (c *Config) problems() []string {
 		case err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https"):
 			problems = append(problems, fmt.Sprintf("nico.endpoint: %q must be an http or https URL", ep))
 		}
-	}
-	if c.Mirror != "" && strings.Contains(c.Mirror, "://") {
-		problems = append(problems, fmt.Sprintf("mirror: %q is a host[:port][/prefix], not a URL", c.Mirror))
 	}
 	return problems
 }

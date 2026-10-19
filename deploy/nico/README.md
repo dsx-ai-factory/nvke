@@ -30,7 +30,7 @@ Step 3 runs ON the node, not against it from a workstation. That is what makes
 the image story cheap: the node's containerd IS the cluster's containerd, so
 an image imported there resolves with `imagePullPolicy: IfNotPresent` and needs
 no registry credential, and CAPNICo's image is public on GHCR or comes from
-the release by digest, so this path renders no pull secret.
+the stack artifacts by digest, so this path renders no pull secret.
 
 What the node needs, all present on the reference instance type:
 
@@ -38,17 +38,18 @@ What the node needs, all present on the reference instance type:
   renderer are Python), plus `clusterctl` for the prerequisites
 - to install for a site: `nvkectl` (`make -C cli build` writes
   `cli/bin/nvkectl`; `NVKECTL` names it, else PATH). `deploy/check-site.sh --sitespec
-  sitespec.yaml --stack-config stack-config.json --kubeconfig site.kubeconfig`
-  reports what is still missing; `deploy/nvke-deploy.sh install --deploy-path
-  deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json
-  --kubeconfig site.kubeconfig` renders this deploy path for the site from
-  the two files and applies it: the site spec gives the site name, VIP and
-  trust domain, the stack config (`deploy/examples/stack-config.json`,
-  filled in) the NICo API and the optional images and mirror. The render
-  lives in a private scratch directory and is removed when the script
-  exits, so no rendered credential is left behind. Without a release, the
-  stack config sets `images.profiles`: this deploy path enables the
-  profiles content image without naming it
+  sitespec.yaml --stack-config stack-config.json --stack-artifacts
+  stack-artifacts.json --kubeconfig site.kubeconfig` reports what is still
+  missing; `deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec
+  sitespec.yaml --stack-config stack-config.json --stack-artifacts
+  stack-artifacts.json --kubeconfig site.kubeconfig` renders this deploy path
+  for the site from the three files and applies it: the site spec gives the
+  site name, VIP and trust domain, the stack config
+  (`deploy/examples/stack-config.json`, filled in) the NICo API, and the
+  stack artifacts the images and charts. The render lives in a private
+  scratch directory and is removed when the script exits, so no rendered
+  credential is left behind; a successful install leaves a record under
+  `$XDG_STATE_HOME/nvke/installs/`
 - a checkout laid out so that `deploy/` and `controller/` are siblings --
   `controller/release.yaml` reaches its chart as
   `../../controller/deploy/charts/controller`
@@ -59,23 +60,25 @@ What the node needs, all present on the reference instance type:
   `prometheus-community.github.io` and `kubernetes-sigs.github.io`, where the
   chart's dependencies come from, and to `docker.io`, `ghcr.io`, `quay.io` and
   `registry.k8s.io`, where its images come from
-- to install from an NVKR release: add `--release release.json`, the
-  `nvkr.dev/release-description/v1` JSON that `nvkr release export
-  --reference <repo@digest>` writes. The export describes the release; it
-  verifies nothing. Run `nvkr release verify` on the same reference first.
-  Charts the release carries are pulled by digest; images are pinned by
-  digest; a chart the release lacks stays on its public repository. The
-  release decides the version of a chart it carries, with a warning when
-  the item pins another; the pin decides only for a chart the release
-  lacks. Each item's `release.yaml` names its artifacts: `chart.artifact`
-  (default: the item name), `chart.imageArtifact`, `chart.profilesArtifact`,
-  or a manifest item's `artifact`. Artifacts are selected for the
-  architecture the cluster's nodes report, which the executor reads and
-  passes to the render as `--arch`. The render refuses, naming every problem,
-  when an image artifact is missing. With `--nvkr-run-dir
-  .nvkr/runs/<attempt>`, charts and images come from the Run's OCI layouts
-  and the images are imported into the node's containerd (`CTR` names the
-  import command).
+- the stack artifacts file, `nvke.nvidia.com/stack-artifacts/v1` JSON:
+  `make local-stack-artifacts` builds the controller image, the profiles
+  fixture image, a copy of CAPNICo and the two NVKE charts from this checkout
+  into OCI layouts and writes `dist/local-site/stack-artifacts.json` naming
+  them; `deploy/examples/stack-artifacts.json` is the starting point for a
+  file naming images and charts in your registry; and
+  `hack/nvkr-run-to-stack-artifacts.py` converts an NVKR release export.
+  Charts the file carries are read by digest, from their layout or their
+  registry; images are pinned by digest; a chart the file lacks stays on its
+  public repository. The file decides the version of a chart it carries,
+  with a warning when the item pins another; the pin decides only for a
+  chart the file lacks. Each item's `release.yaml` names its artifacts:
+  `chart.artifact` (default: the item name), `chart.imageArtifact`,
+  `chart.profilesArtifact`, or a manifest item's `artifact`. Artifacts are
+  selected for the architecture the cluster's nodes report, which the
+  executor reads and passes to the render as `--arch`. The render refuses,
+  naming every problem, when an image artifact is missing. An artifact with
+  a layout is imported into the node's containerd (`CTR` names the import
+  command); one without is pulled by the nodes from its reference.
 
 ## Before this runs
 
@@ -94,21 +97,19 @@ be true before it runs and one after, all of them outside the deploy path:
    controller overlay sets `imagePullPolicy: IfNotPresent` and this path
    supplies no pull secret for them -- deliberately, because the node's
    containerd IS the cluster's containerd, so an imported image resolves
-   without one. A deploy path rendered against a release sets the two images
-   by digest from the release's `cwe` and `controller-profiles` artifacts,
-   and the CAPNICo image from `capnico-controller`; the nodes then pull them
-   from the registries the release names, so those registries need to be
-   reachable from the nodes, with a containerd registry config or a pull
-   secret where they need one. Rendered with `--nvkr-run-dir` as well, from a
-   completed NVKR Run (`.nvkr/runs/<attempt>`, whose `packages/` holds one OCI
-   layout per artifact), nothing is pulled: charts come out of the layouts,
-   and `images.txt` in the rendered path names each image's layout, which
-   this script imports into the node's containerd under the reference's name
-   before applying anything, so the reference's host is only a name. `CTR`
-   is the import command and may carry arguments: `CTR="sudo ctr"` when the
-   install does not run as root, `CTR="docker exec -i kind-control-plane
-   ctr"` when the cluster is a kind node. Without a render, import the
-   images before installing:
+   without one. A deploy path rendered against the stack artifacts sets the
+   two images by digest from the `cwe` and `controller-profiles` artifacts,
+   and the CAPNICo image from `capnico-controller`. An artifact without a
+   layout is pulled by the nodes from the registry its reference names, so
+   that registry needs to be reachable from the nodes, with a containerd
+   registry config or a pull secret where it needs one. An artifact with a
+   layout is not pulled: `images.txt` in the rendered path names the layout,
+   which this script imports into the node's containerd under the
+   reference's name before applying anything, so the reference's host is
+   only a name. `CTR` is the import command and may carry arguments:
+   `CTR="sudo ctr"` when the install does not run as root, `CTR="nerdctl
+   exec -i <node> ctr"` when the node is a container. Without a render,
+   import the images before installing:
 
    ```
    docker save --platform linux/amd64 <image> | sudo ctr -n k8s.io images import -
@@ -179,8 +180,8 @@ rendered path, after `site-values.yaml`.
 | discovery URL | `https://<VIP>:30443/.well-known/openid-configuration` | the same shape |
 | Postgres / Temporal password | `NVKECTL_DATABASE_PASSWORD`, written into the `nvke-database` Secret of the postgres, temporal and nke-controller namespaces by the `site-credentials` item the render adds; every chart reads it from there and no values file carries it | generated per run |
 | SPIRE upstream CA | `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`, written into the `spire-upstream-ca` Secret in spire-server by the same item, when `spire.upstreamCA` is set | self-signed |
-| controller image | the release, or the stack config's `images.controller` | built per run |
-| profiles image | the release, or the stack config's `images.profiles` | built per run |
+| controller image | the stack artifacts' `cwe` | built per run |
+| profiles image | the stack artifacts' `controller-profiles` | built per run |
 | telemetry backend | `--values-for nktp=<file>`, else the chart's bundled development backend | not installed |
 | telemetry `k8s.cluster.name` | `clusterName`, through the `nvke-base-config` template | not installed |
 

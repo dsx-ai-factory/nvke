@@ -1,0 +1,28 @@
+{
+ "schemaVersion": "nvke.nvidia.com/stack-artifacts/v1",
+ "artifacts": [
+  {
+   "name": "cwe",
+   "kind": "oci",
+   "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "reference": "ghcr.io/example/recipes/cwe@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "imageIndex": {
+    "requiredPlatforms": [
+     "linux/amd64",
+     "linux/arm64"
+    ],
+    "children": [
+     {
+      "platform": "linux/amd64",
+      "manifestDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+     },
+     {
+      "platform": "linux/arm64",
+      "manifestDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+     }
+    ]
+   },
+   "layout": "layouts/absent"
+  }
+ ]
+}

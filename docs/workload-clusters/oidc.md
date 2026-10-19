@@ -18,7 +18,7 @@ NVKE binds Kubernetes roles only to the management plane's own identities. A fle
 
 ## Before you begin
 
-- You have completed [Install management-plane services](../operate/install-management-plane-services.md). You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it. Set `KUBECONFIG` for `kubectl`:
+- You have completed [Install management-plane services](../operate/install-management-plane-services.md). You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and `stack-artifacts.json` in the directory above it. Set `KUBECONFIG` for `kubectl`:
 
   ```bash
   export KUBECONFIG="$PWD/../<CLUSTER_NAME>.kubeconfig"
@@ -72,12 +72,12 @@ NVKE binds Kubernetes roles only to the management plane's own identities. A fle
    deploy/nvke-deploy.sh install --deploy-path deploy/nico \
      --sitespec ../sitespec.yaml \
      --stack-config ../stack-config.json \
+     --stack-artifacts ../stack-artifacts.json \
      --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
-     --release ../release.json \
      --values-for controller=../oidc-values.yaml
    ```
 
-   Keep the `--release` and `--nvkr-run-dir` flags exactly as you installed, or leave them out if you installed without them. If you passed other values files before, such as `../auth-values.yaml` from [Secure the NVKE API](../operate/api-authentication.md) or a values file for NVKE telemetry pipelines (NKTP) with `--values-for nktp=`, pass each of them again with its own `--values-for` flag: a file you leave out stops applying, and the deploy path's own values turn API authentication off and send telemetry to the bundled development backend. The chart refuses to render more than five providers.
+   Pass the same `--stack-artifacts` file you installed with. If you passed other values files before, such as `../auth-values.yaml` from [Secure the NVKE API](../operate/api-authentication.md) or a values file for NVKE telemetry pipelines (NKTP) with `--values-for nktp=`, pass each of them again with its own `--values-for` flag: a file you leave out stops applying, and the deploy path's own values turn API authentication off and send telemetry to the bundled development backend. The chart refuses to render more than five providers.
 
 3. Restart the controller so that it reads the new configuration.
 

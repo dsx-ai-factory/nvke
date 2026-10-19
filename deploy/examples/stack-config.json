@@ -3,10 +3,5 @@
     "endpoint": "REPLACE_NICO_ENDPOINT",
     "orgID": "REPLACE_NICO_ORG_ID",
     "apiName": "REPLACE_NICO_API_NAME"
-  },
-  "images": {
-    "controller": "",
-    "profiles": ""
-  },
-  "mirror": ""
+  }
 }

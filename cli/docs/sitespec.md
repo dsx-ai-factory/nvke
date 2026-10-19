@@ -143,7 +143,7 @@ server there on NodePort 30081.
 
 The values reach a node only if the `ClusterRelease` in `infra.nico.releases`
 writes them: its `userDataTemplate` must carry the SPIRE `write_files` block in
-[What NVKE puts in the user data](../../docs/operate/build-node-images.md#what-nvke-puts-in-the-user-data),
+[What NVKE puts in the user data](../../docs/operate/write-release-manifests.md#what-nvke-puts-in-the-user-data),
 which `examples/clusterrelease.yaml` does not. Without it the nodes never attest
 and the bootstrap waits until `--timeout`. That page describes the values the
 finished management cluster fills in. The bootstrap controller fills in others:
@@ -191,19 +191,17 @@ the chart does not, and needs only `kubectl`.
 
 By default the image is the digest that `bootstrap-manifest.yaml` lists for the
 tag the manifest names (`nvkectl get bootstrap-manifest`), so a retagged image
-does not change what runs. Pass `--release <file>` to
-pin it to an NVKR release's `capnico-controller` artifact instead, as
-`nvkectl render deploy-path --release` does for the management cluster's CAPNICo:
+does not change what runs. Pass `--stack-artifacts <file>` to pin it to the
+`capnico-controller` artifact of the stack artifacts file instead, the file
+the controller stack install reads ([stack-artifacts.md](stack-artifacts.md)):
 the manifest's one image is replaced with the artifact's `repository@digest`.
-The release description is not verified, here or there: run `nvkr release
-verify` on the same reference first.
 `--arch` (default the bootstrap host's) picks the artifact's architecture, since
 the bootstrap CAPNICo runs in the Kind cluster on that host. It is refused
-without `--release`, whatever the provider, and `--release` is itself refused
-with the `provisioned` provider, where no CAPNICo is installed. The Kind node pulls
-the image anonymously, so the release's `capnico-controller` image must be
-publicly pullable; staging images from a release run directory, as the deploy path does for the
-node, is not supported here. The Kind host must reach `ghcr.io`
+without `--stack-artifacts`, whatever the provider, and `--stack-artifacts` is
+itself refused with the `provisioned` provider, where no CAPNICo is installed.
+The Kind node pulls the image from its reference, so the artifact must be in a
+registry the node reaches; a `layout` in the file is noted and not used, since
+the bootstrap imports nothing into the Kind node. The Kind host must reach `ghcr.io`
 and the NICo API and each new node's agent port, and the nodes must reach the
 SPIRE server the bootstrap publishes on the host. After every node joins, the
 bootstrap calls the site's Kubernetes API to write the kubeconfig, so the host
@@ -223,7 +221,7 @@ With `nico` the controller resolves `infra.nico.controlPlane.release` from
 its own API: a `ClusterRelease` of that name and the `MachineImage` it names.
 The bootstrap controller starts with neither, so `infra.nico.releases` points at
 the manifests, written as in
-[Get NVKE artifacts from NVKR and write release manifests](../../docs/operate/build-node-images.md),
+[Write release manifests](../../docs/operate/write-release-manifests.md),
 and the bootstrap applies them to the Kind cluster after the controller's CRDs
 exist and before it creates the site cluster. `bootstrap site` and
 `nvkectl validate sitespec --bootstrap-only` fail, before any Kind cluster exists,

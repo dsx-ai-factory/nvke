@@ -2125,32 +2125,37 @@ func TestCapnicoAccess(t *testing.T) {
 	}
 }
 
-// TestCapnicoReleaseImage: a release's capnico-controller artifact becomes the
-// bootstrap CAPNICo image as repository@digest, for the architecture asked, and
-// only with the nico provider.
+// TestCapnicoReleaseImage: the stack artifacts' capnico-controller artifact
+// becomes the bootstrap CAPNICo image as repository@digest, for the
+// architecture asked, and only with the nico provider. A layout is noted,
+// not used.
 func TestCapnicoReleaseImage(t *testing.T) {
-	const release = "../../../deploy/testdata/nvkr-release/valid.json"
+	const artifacts = "../../../deploy/testdata/stack-artifacts/valid.json"
+	const local = "../../../deploy/testdata/stack-artifacts/local-images.json"
 	nico := &sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderNico}}
 	provisioned := &sitespec.SiteSpec{Infra: sitespec.Infra{Provider: sitespec.ProviderProvisioned}}
 
 	tests := []struct {
-		name    string
-		inv     *sitespec.SiteSpec
-		release string
-		arch    string
-		want    string
-		wantErr string
+		name      string
+		inv       *sitespec.SiteSpec
+		artifacts string
+		arch      string
+		want      string
+		wantNote  string
+		wantErr   string
 	}{
-		{"no release leaves the manifest's image", nico, "", "linux/amd64", "", ""},
-		{"amd64", nico, release, "linux/amd64", "ghcr.io/example/recipes/capnico-controller@sha256:" + strings.Repeat("d", 64), ""},
-		{"arm64", nico, release, "linux/arm64", "ghcr.io/example/recipes/capnico-controller-arm64@sha256:" + strings.Repeat("e", 64), ""},
-		{"provisioned refuses a release", provisioned, release, "linux/amd64", "", "only applies with infra.provider nico"},
-		{"missing release file", nico, filepath.Join(t.TempDir(), "absent.json"), "linux/amd64", "", "absent.json"},
-		{"unknown architecture", nico, release, "linux/riscv64", "", "arch linux/riscv64"},
+		{"no file leaves the manifest's image", nico, "", "linux/amd64", "", "", ""},
+		{"amd64", nico, artifacts, "linux/amd64", "ghcr.io/example/recipes/capnico-controller@sha256:" + strings.Repeat("d", 64), "", ""},
+		{"arm64", nico, artifacts, "linux/arm64", "ghcr.io/example/recipes/capnico-controller-arm64@sha256:" + strings.Repeat("e", 64), "", ""},
+		{"a layout is noted", nico, local, "linux/arm64", "nvke.local/capnico-controller-arm64@sha256:" + strings.Repeat("e", 64), "capnico-controller-arm64 has a layout, which the bootstrap does not import", ""},
+		{"provisioned refuses the file", provisioned, artifacts, "linux/amd64", "", "", "only applies with infra.provider nico"},
+		{"missing file", nico, filepath.Join(t.TempDir(), "absent.json"), "linux/amd64", "", "", "absent.json"},
+		{"nvkr export", nico, "../../../hack/testdata/nvkr-release/valid.json", "linux/amd64", "", "", "convert it with hack/nvkr-run-to-stack-artifacts.py"},
+		{"unknown architecture", nico, artifacts, "linux/riscv64", "", "", "arch linux/riscv64"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := capnicoReleaseImage(tt.inv, tt.release, tt.arch)
+			got, note, err := capnicoReleaseImage(tt.inv, tt.artifacts, tt.arch)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
@@ -2159,6 +2164,9 @@ func TestCapnicoReleaseImage(t *testing.T) {
 			}
 			if err != nil || got != tt.want {
 				t.Fatalf("capnicoReleaseImage = %q, %v; want %q", got, err, tt.want)
+			}
+			if (tt.wantNote == "") != (note == "") || !strings.Contains(note, tt.wantNote) {
+				t.Fatalf("note = %q, want %q", note, tt.wantNote)
 			}
 		})
 	}
@@ -2278,13 +2286,17 @@ func TestRunBootstrapSiteStopsOnRemovedSettings(t *testing.T) {
 	}
 }
 
-// TestBootstrapSite_ArchNeedsARelease: --arch only picks a --release artifact,
-// so an explicit one without --release is refused instead of ignored. The
-// default does not count, which is why the check reads the flag's Changed.
-func TestBootstrapSite_ArchNeedsARelease(t *testing.T) {
+// TestBootstrapSite_ArchNeedsStackArtifacts: --arch only picks a
+// --stack-artifacts artifact, so an explicit one without the file is refused
+// instead of ignored. The default does not count, which is why the check
+// reads the flag's Changed.
+func TestBootstrapSite_ArchNeedsStackArtifacts(t *testing.T) {
 	_, _, err := runGenerate(t, "bootstrap", "site", "-f", "unused.yaml", "--arch", "linux/riscv64")
-	if err == nil || !strings.Contains(err.Error(), "--arch") || !strings.Contains(err.Error(), "--release") {
-		t.Fatalf("err = %v, want --arch refused without --release", err)
+	if err == nil || !strings.Contains(err.Error(), "--arch") || !strings.Contains(err.Error(), "--stack-artifacts") {
+		t.Fatalf("err = %v, want --arch refused without --stack-artifacts", err)
+	}
+	if _, _, err := runGenerate(t, "bootstrap", "site", "-f", "unused.yaml", "--release", "x.json"); err == nil || !strings.Contains(err.Error(), "unknown flag: --release") {
+		t.Fatalf("err = %v, want --release unknown", err)
 	}
 }
 
