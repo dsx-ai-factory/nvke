@@ -1,12 +1,13 @@
-# NVIDIA Kubernetes® Engine (NVKE)
+# NVIDIA Kubernetes Engine (NVKE)
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8.svg)](https://go.dev/dl/)
 
-**A management plane for running GPU Kubernetes clusters on bare metal.** NVKE
-provisions and operates isolated Kubernetes clusters on NVIDIA infrastructure,
-so platform teams can offer managed Kubernetes to their customers without
-building and running a control plane themselves.
+**A management plane for running GPU Kubernetes clusters on bare metal.**
+NVIDIA Kubernetes® Engine (NVKE) provisions and operates isolated Kubernetes
+clusters on NVIDIA infrastructure, so platform teams can offer managed
+Kubernetes to their customers without building and running a control plane
+themselves.
 
 **Who this is for:** NVIDIA Cloud Partners and platform operators who have GPU
 bare metal and want to hand out Kubernetes clusters on it, and engineers
