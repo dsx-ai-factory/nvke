@@ -440,21 +440,24 @@ func TestReserveCertificateRenewalSameNodeReattach(t *testing.T) {
 	}
 }
 
-// TestRenewalReservationAfterFailedStart keeps #1692's release where the node's
-// termination is confirmed (a legacy script that exited) and for a failed V1
-// Start, whose unfenced reservation nothing else would clear. An empty Start may
-// still have been accepted, so its retries reattach to the reservation.
+// TestRenewalReservationAfterFailedStart releases a V1 reservation on every
+// failure before the agent accepted typed work, as main does: V1 never runs
+// Resolve and the reconciler keeps unfenced records the agent does not report
+// terminal, so nothing else would clear it. A V2 reservation is kept after a
+// failed Start until termination is confirmed.
 func TestRenewalReservationAfterFailedStart(t *testing.T) {
 	for _, test := range []struct {
 		name         string
 		response     *nvkeproto.StartKubernetesCertificateRenewalResponse
 		err          error
 		script       func() (*nvkeproto.ExecuteScriptResponse, error)
+		v2           bool
 		wantError    string
 		wantReleased bool
 	}{
 		{name: "start RPC fails", err: status.Error(codes.Unavailable, "connection refused"), wantError: "failed to start certificate renewal", wantReleased: true},
-		{name: "start returns no operation", response: &nvkeproto.StartKubernetesCertificateRenewalResponse{}, wantError: "empty certificate renewal operation"},
+		{name: "start returns no operation", response: &nvkeproto.StartKubernetesCertificateRenewalResponse{}, wantError: "empty certificate renewal operation", wantReleased: true},
+		{name: "V2 start RPC fails", err: status.Error(codes.Unavailable, "connection refused"), v2: true, wantError: "failed to start certificate renewal"},
 		{
 			name: "legacy runbook exits non-zero",
 			err:  status.Error(codes.Unimplemented, "unknown method"),
@@ -470,7 +473,8 @@ func TestRenewalReservationAfterFailedStart(t *testing.T) {
 			script: func() (*nvkeproto.ExecuteScriptResponse, error) {
 				return nil, status.Error(codes.Unavailable, "connection reset")
 			},
-			wantError: "failed to execute legacy certificate renewal",
+			wantError:    "failed to execute legacy certificate renewal",
+			wantReleased: true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -481,20 +485,28 @@ func TestRenewalReservationAfterFailedStart(t *testing.T) {
 					require.NotNil(t, database.cluster.CertificateRenewal, "the reservation is held while the RPC runs")
 					return test.response, test.err
 				},
+				StartKubernetesCertificateRenewalV2Hook: func(db.Node, *nvkeproto.StartKubernetesCertificateRenewalV2Request) (*nvkeproto.StartKubernetesCertificateRenewalV2Response, error) {
+					require.NotNil(t, database.cluster.CertificateRenewal, "the reservation is held while the RPC runs")
+					return nil, test.err
+				},
 				ExecuteScriptHook: func(db.Node, string, string) (*nvkeproto.ExecuteScriptResponse, error) {
 					return test.script()
 				},
 			}
 			a := &Activities{cfg: config.Config{RunbooksDir: t.TempDir()}, db: database, nodeAgentClient: fakeAgent}
+			input := KubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "new-operation", ThresholdDays: 14}
+			if test.v2 {
+				input.ExpectedEtcdMembers = 3
+			}
 
-			_, err := executeCertificateRenewalActivity(t, a, KubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "new-operation", ThresholdDays: 14})
+			_, err := executeCertificateRenewalActivity(t, a, input)
 
 			require.ErrorContains(t, err, test.wantError)
 			if test.wantReleased {
-				require.Nil(t, database.cluster.CertificateRenewal, "a terminated legacy script or failed V1 Start must not keep the cluster's renewal reservation")
+				require.Nil(t, database.cluster.CertificateRenewal, "a failed V1 dispatch must not keep the cluster's renewal reservation")
 			} else {
-				require.Equal(t, &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: "new-operation"}, database.cluster.CertificateRenewal,
-					"unconfirmed termination keeps the reservation for the retry to reattach")
+				require.Equal(t, &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: "new-operation", Fenced: true}, database.cluster.CertificateRenewal,
+					"a V2 Start that may have been accepted keeps the reservation for the retry to reattach")
 			}
 		})
 	}
