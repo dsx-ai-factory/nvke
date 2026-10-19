@@ -129,21 +129,9 @@ spec:
     - name: kube
       resolve:
         version: {strategy: lockedPackage, with: {lockDir: os-image/packages/kubeadm-distro/lock, at: os-image}}
-    # Resolved against the suites rather than against a number written beside
-    # them: the stream is part of the package name, so what is installable is
-    # exactly what is served. A pin can go on naming a package the repository
-    # stopped serving, and nothing says so until a node runs apt-get.
     - name: cni-ovn
       resolve:
-        version:
-          strategy: aptPackage
-          with:
-            source: artifact-apt
-            suites: noble,resolute
-            arches: amd64,arm64
-            # Both, because a node installs both and a stream served as one
-            # and not the other cannot be installed.
-            packages: nvke-cni-ovn-images,nvke-cni-ovn-charts
+        version: {strategy: lockedPackage, with: {lockDir: os-image/packages/cni-ovn/lock, at: os-image}}
 
     # Read from make/tool-versions.mk, which owns every tool pin.
     - {name: kind,       resolve: {version: {strategy: makeVar, with: {var: KIND_VERSION}}}}

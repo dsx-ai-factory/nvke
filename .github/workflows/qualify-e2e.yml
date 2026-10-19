@@ -132,7 +132,7 @@ on:
         type: string
         required: false
       cni-ovn-version:
-        description: "Overrides the OVN CNI version the plan resolves, e.g. 1.4.11. It selects the nvke-cni-ovn-images and -charts packages, and has to be a version the apt suites serve."
+        description: "Overrides the OVN CNI version the plan resolves, e.g. 1.4.11. It selects the nvke-cni-ovn-images and -charts packages, and has to be a version the OS image locks, because a node installs them from the image rather than over the network."
         type: string
         required: false
       controller-name:

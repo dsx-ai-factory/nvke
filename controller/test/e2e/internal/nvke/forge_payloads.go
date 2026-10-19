@@ -22,12 +22,6 @@ var (
 	// names and the EFI imager uses the uname ones.
 	archInURL           = regexp.MustCompile(`\b(amd64|arm64)\b`)
 	bootLoaderArchInURL = regexp.MustCompile(`\b(x86_64|aarch64)\b`)
-
-	// ubuntuReleaseInURL matches the Ubuntu release in an OS image filename,
-	// as in nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2. The point release is
-	// optional and ignored: NVKE publishes a suite per Ubuntu release, not per
-	// point.
-	ubuntuReleaseInURL = regexp.MustCompile(`ubuntu-(\d+\.\d+)`)
 )
 
 // NodeInputs is everything building an NVKE node from an image needs that a
@@ -56,13 +50,6 @@ type NodeInputs struct {
 	KubernetesVersion string
 	// CNIVersion selects the nvke-cni-ovn-images package, e.g. "1.4.0".
 	CNIVersion string
-	// AptSuite is the NVKE apt suite the node installs its packages from, one
-	// per Ubuntu release. Empty derives it from ImageURL, which is where the
-	// answer already is: the suite has to match the release the image was
-	// built from, and a separately supplied one is just an opportunity for
-	// the two to disagree. Set it only when the URL does not name a release.
-	AptSuite string
-
 	// AgentArgs overrides the node agent's arguments. Empty means the port
 	// the controller dials and nothing else. Whether the agent runs --disable-mtls has to
 	// agree with how the dialing side was deployed, and a mismatch fails as
@@ -121,14 +108,6 @@ func BuildForgeNodePayloads(inputs NodeInputs) (NodePayloads, error) {
 	if err := inputs.checkArch(); err != nil {
 		return NodePayloads{}, err
 	}
-	if strings.TrimSpace(inputs.AptSuite) == "" {
-		suite, err := aptSuiteFor(inputs.ImageURL)
-		if err != nil {
-			return NodePayloads{}, err
-		}
-		inputs.AptSuite = suite
-	}
-
 	ipxe, err := renderTemplate("nico_forge_ipxe", nicoForgeIPXETmpl, inputs)
 	if err != nil {
 		return NodePayloads{}, err
@@ -149,10 +128,6 @@ func BuildForgeNodePayloads(inputs NodeInputs) (NodePayloads, error) {
 
 	return NodePayloads{IPXEScript: ipxe, PreKubeadmCommands: commands}, nil
 }
-
-// ubuntuReleaseInURL matches the Ubuntu release in an OS image filename, as in
-// nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2. The point release is optional
-// and ignored: NVKE publishes a suite per Ubuntu release, not per point.
 
 // unameArch is the imager's spelling of an architecture, empty for one it does
 // not name.
@@ -196,37 +171,6 @@ func (i NodeInputs) checkArch() error {
 		}
 	}
 	return nil
-}
-
-// aptSuite is the NVKE apt suite built for an Ubuntu release, and the list of
-// releases that have one. Adding a release means publishing its suite first;
-// see agent/scripts/upload-s3-apt-intake.sh, whose default list is these two.
-func aptSuite(release string) (string, []string) {
-	known := []string{"24.04", "26.04"}
-	switch release {
-	case "24.04":
-		return "noble", known
-	case "26.04":
-		return "resolute", known
-	default:
-		return "", known
-	}
-}
-
-// aptSuiteFor reads the suite out of the image URL rather than guessing one.
-// An unknown release is an error and not a fallback: installing from the wrong
-// suite fails as a package that cannot be found, minutes into a boot, with
-// nothing naming the release as the cause.
-func aptSuiteFor(imageURL string) (string, error) {
-	match := ubuntuReleaseInURL.FindStringSubmatch(imageURL)
-	if match == nil {
-		return "", fmt.Errorf("cannot tell which Ubuntu release %q is, so cannot pick an apt suite: set NodeInputs.AptSuite", imageURL)
-	}
-	suite, known := aptSuite(match[1])
-	if suite == "" {
-		return "", fmt.Errorf("no NVKE apt suite is known for Ubuntu %s (only %s); publish one and add it to aptSuite", match[1], strings.Join(known, ", "))
-	}
-	return suite, nil
 }
 
 func renderTemplate(name, text string, data any) (string, error) {

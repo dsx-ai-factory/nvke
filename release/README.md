@@ -68,8 +68,7 @@ highest version of any kind. Pass `--version` to name a tag that exists.
 
 A value given with `--overrides` replaces what that component or dependency
 would have resolved to, and is checked the way a resolved one is: a tag has to
-exist, a Kubernetes version has to be one the image locks, and an OVN version
-has to be one the apt suites serve. An image or
+exist, and a Kubernetes or OVN version has to be one the image locks. An image or
 a bootloader such as `os-image-amd64` is a dependency whose override is a URL, so
 it is overridden by name too. The names that were overridden are listed under
 `overrides` in the plan.
@@ -81,10 +80,9 @@ the shape and a run supplies the value. An unset or empty variable fails on the
 file that asked for it, with every missing name at once, rather than producing a
 plan that names an artifact under no org.
 
-Planning reads the checkout and, for `aptPackage`, the apt suites that serve
-the package. It asks for nothing else. Whether each artifact is published is
-asked once, by `qualify verify`, for everything the plan names. `--check-exists`
-asks during resolution instead, which needs a network that can reach the bucket: it is
+Planning reaches nothing but git. Whether each artifact is published is asked
+once, by `qualify verify`, for everything the plan names. `--check-exists` asks
+during resolution instead, which needs a network that can reach the bucket: it is
 private, so a missing artifact and a network that is not allowed both answer 403,
 and the check can confirm that an artifact exists but not that it does not.
 
@@ -110,7 +108,7 @@ $ go run ./release/cmd/qualify plan --subject nvke --version v0.21.0 --scope ful
         { "name": "capi-provisioned", "version": "v0.1.0", "url": "oci://nvcr.io/<org>/cluster-api-provider-provisioned:v0.1.0", "versionStrategy": "gitTag", "locationStrategy": "ociArtifact" }
       ],
       "dependencies": [
-        { "name": "cni-ovn",               "version": "2.4.2", "versionStrategy": "aptPackage" },
+        { "name": "cni-ovn",               "version": "2.4.2", "versionStrategy": "lockedPackage" },
         { "name": "os-image-bootloader-amd64", "url": "https://cdn.example/nke-isos/qcow/efi/x86_64/qcow-imager.efi", "locationStrategy": "url" },
         { "name": "os-image-bootloader-arm64", "url": "https://cdn.example/nke-isos/qcow/efi/aarch64/qcow-imager.efi", "locationStrategy": "url" },
         { "name": "cli-amd64",                 "version": "v0.1.0", "url": "oci://nvcr.io/<org>/nvkectl:v0.1.0-linux-amd64", "locationStrategy": "ociArtifact" },
@@ -310,8 +308,7 @@ a location, without either declaring which it is.
 |---|---|---|
 | `nvke`, `cli`, `os-image` | Git tags, under each component's tag prefix | none this names |
 | `controller`, `capi-provisioned` | the same | `<artifact-registry>/<repository>:<version>` |
-| `kube` | The lock files the image's packages commit, read at the `os-image` tag the combination resolved. A node installs this from the image's own apt repository, so the lock files are the versions it can offer | none |
-| `cni-ovn` | The apt suites that serve it. The stream is part of the package name, so the versions on offer are the ones served in every suite, for every architecture, as every package. A node installs these over the network, so what the suites serve is what it can offer | none |
+| `kube`, `cni-ovn` | The lock files the image's packages commit, read at the `os-image` tag the combination resolved. A node installs these from the image's own apt repository, so the lock files are the versions it can offer | none |
 | `os-image-amd64`, `os-image-arm64` | taken from `os-image` | Built from that release, the architecture and the Ubuntu point release the stream's series picks from `releases` |
 | `cli-amd64`, `cli-arm64` | taken from `cli` | `<artifact-registry>/nvkectl:<version>-linux-<arch>`. nvkectl is published as one tag per platform with no index above them, so the `cli` version alone names none of them |
 | `os-image-bootloader-amd64`, `os-image-bootloader-arm64` | none, a declared path has no version behind it | A path declared in `qualification.yaml` under the `artifact-cdn` source, because nothing derives it |

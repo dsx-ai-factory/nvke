@@ -342,67 +342,24 @@ func TestBuildForgeNodePayloadsBootParametersFollowTheArch(t *testing.T) {
 	}
 }
 
-// TestBuildForgeNodePayloadsAptSuiteFollowsTheImage covers the other blocker:
-// NVKE publishes a suite per Ubuntu release, so a 26.04 image installing from
-// the 24.04 suite finds no packages.
-func TestBuildForgeNodePayloadsAptSuiteFollowsTheImage(t *testing.T) {
-	for _, tc := range []struct{ arch, url, want, wantAbsent string }{
-		{"amd64", "https://cdn.invalid/nvke-node-non-fde-ubuntu-24.04.1-amd64.qcow2", "nvke-noble", "resolute"},
-		{"arm64", "https://cdn.invalid/nvke-node-non-fde-ubuntu-26.04.1-arm64.qcow2", "nvke-resolute", "noble"},
-	} {
-		t.Run(tc.want, func(t *testing.T) {
-			inputs := completeForgeInputs()
-			inputs.Arch = tc.arch
-			inputs.BootLoaderURL = "https://cdn.invalid/qcow-imager.efi"
-			inputs.ImageURL = tc.url
-			payloads, err := BuildForgeNodePayloads(inputs)
-			if err != nil {
-				t.Fatalf("building payloads: %v", err)
-			}
-			joined := strings.Join(payloads.PreKubeadmCommands, "\n")
-			if !strings.Contains(joined, tc.want) {
-				t.Errorf("should install from %q, got:\n%s", tc.want, joined)
-			}
-			if strings.Contains(joined, tc.wantAbsent) {
-				t.Errorf("should not name %q, got:\n%s", tc.wantAbsent, joined)
-			}
-		})
-	}
-}
-
-// An unrecognized release has to fail here rather than on the node, where it
-// surfaces as a package that cannot be found minutes into a boot.
-func TestBuildForgeNodePayloadsRejectsAnUnknownRelease(t *testing.T) {
-	for _, tc := range []struct{ name, url, want string }{
-		{"no release in the url", "https://cdn.invalid/nvke-node.qcow2", "cannot tell which Ubuntu release"},
-		{"a release with no suite", "https://cdn.invalid/nvke-node-ubuntu-22.04-amd64.qcow2", "no NVKE apt suite is known for Ubuntu 22.04"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			inputs := completeForgeInputs()
-			inputs.ImageURL = tc.url
-			_, err := BuildForgeNodePayloads(inputs)
-			if err == nil {
-				t.Fatal("should refuse to render an apt source for an unknown release")
-			}
-			if !strings.Contains(err.Error(), tc.want) {
-				t.Errorf("error should say %q, got %v", tc.want, err)
-			}
-		})
-	}
-}
-
-// An explicit suite is for an image URL that names no release, so it has to
-// win over the derivation rather than be checked against it.
-func TestBuildForgeNodePayloadsExplicitAptSuiteWins(t *testing.T) {
-	inputs := completeForgeInputs()
-	inputs.ImageURL = "https://cdn.invalid/some-internal-build.qcow2"
-	inputs.AptSuite = "resolute"
-	payloads, err := BuildForgeNodePayloads(inputs)
+// No apt source is configured on the node. Every NVKE package installed before
+// kubeadm has to come from the image's own repository, so a run cannot be
+// handed a build other than the one under qualification.
+func TestBuildForgeNodePayloadsConfiguresNoAptSource(t *testing.T) {
+	payloads, err := BuildForgeNodePayloads(completeForgeInputs())
 	if err != nil {
 		t.Fatalf("building payloads: %v", err)
 	}
-	if joined := strings.Join(payloads.PreKubeadmCommands, "\n"); !strings.Contains(joined, "nvke-resolute") {
-		t.Errorf("should install from the stated suite, got:\n%s", joined)
+	joined := strings.Join(payloads.PreKubeadmCommands, "\n")
+	for _, forbidden := range []string{"sources.list", "nvke-apt", "/etc/apt/keyrings", "curl"} {
+		if strings.Contains(joined, forbidden) {
+			t.Errorf("should configure no apt source, but the commands name %q:\n%s", forbidden, joined)
+		}
+	}
+	for _, want := range []string{"nvke-kubeadm-distro-", "nvke-cni-ovn-images-", "nvke-cni-ovn-charts-"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("should still install %q, got:\n%s", want, joined)
+		}
 	}
 }
 
@@ -610,36 +567,5 @@ func TestBuildForgeNodePayloadsDoesNotInstallSpireAgent(t *testing.T) {
 	}
 	if strings.Contains(joined, "--allow-downgrades") {
 		t.Error("nothing here should need a downgrade")
-	}
-}
-
-// The apt key is fetched by name, so the wait for name resolution has to come
-// first. A default IPv4 route is not enough on its own: the route appears
-// while systemd-resolved is still coming up, the curl fails to resolve, and
-// set -e takes the rest of the block with it. Asserted as an ordering rather
-// than a presence so that reordering the commands fails here too.
-func TestBuildForgeNodePayloadsWaitsForNameResolutionBeforeFetchingTheAptKey(t *testing.T) {
-	payloads, err := BuildForgeNodePayloads(completeForgeInputs())
-	if err != nil {
-		t.Fatalf("building payloads: %v", err)
-	}
-	index := func(substring string) int {
-		for i, command := range payloads.PreKubeadmCommands {
-			if strings.Contains(command, substring) {
-				return i
-			}
-		}
-		return -1
-	}
-	wait, fetch := index("getent hosts"), index("/etc/apt/keyrings/nvke.asc")
-	if wait < 0 {
-		t.Fatalf("no wait for name resolution, got:\n%s", strings.Join(payloads.PreKubeadmCommands, "\n"))
-	}
-	if fetch < 0 {
-		t.Fatalf("no apt key fetch, got:\n%s", strings.Join(payloads.PreKubeadmCommands, "\n"))
-	}
-	if wait > fetch {
-		t.Errorf("the apt key is fetched before name resolution is waited for, at %d and %d:\n%s",
-			fetch, wait, strings.Join(payloads.PreKubeadmCommands, "\n"))
 	}
 }

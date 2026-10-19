@@ -210,6 +210,10 @@ grep -Fq -- -expandEnv /lib/systemd/system/spire-agent.service
 # Persistent upload scratch must not remain in the golden image.
 test ! -e /var/tmp/nke-image
 
+# OVN runs Open vSwitch on the host, and the pre-kubeadm commands no longer
+# reach a repository that could supply it, so the image has to carry it.
+command -v ovs-vsctl >/dev/null
+
 # The local apt repo has to offer what a node installs at cluster create.
 # These are staged rather than installed, so nothing above would notice them
 # missing: the arm64 image shipped with no kubeadm at all, and the failure
@@ -222,6 +226,12 @@ have_in_local_repo() {
 }
 have_in_local_repo nvke-kubeadm-distro
 have_in_local_repo nvke-cni-calico-images
+# The OVN pair as well, and the charts half especially: the pre-kubeadm
+# commands install both from this repo and nothing else offers them, and the
+# agent refuses to run helm without the charts deb already registered in dpkg
+# (errCNIChartsDebNotInstalled), which terminates provisioning without a retry.
+have_in_local_repo nvke-cni-ovn-images
+have_in_local_repo nvke-cni-ovn-charts
 # The package Provides its previous name, so a node that asks apt for
 # nke-kubeadm-distro-<ver> or nke-cni-*-images-<ver> still installs it.
 # showpkg lists that provider under Reverse Provides.
