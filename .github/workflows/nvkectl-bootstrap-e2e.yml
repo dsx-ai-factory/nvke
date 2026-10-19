@@ -347,7 +347,7 @@ jobs:
         working-directory: cli
         run: make check-no-docker
 
-      # run.sh scans the bootstrap log and the diagnostics it collects for
+      # run.sh scans the bootstrap log and the diagnostics bundle for
       # credentials, on success and on failure, so a change that starts printing
       # a secret turns this lane red. Pinned and checksum-verified, on both
       # architectures; see cli/e2e/bootstrap/gitleaks.toml for the rules.
@@ -367,10 +367,13 @@ jobs:
           NVKECTL_E2E_REQUIRE_SECRET_SCAN: "1"
         run: sudo -E env "PATH=$PATH" ./e2e/bootstrap/run.sh
 
-      # Written by `nvkectl bootstrap site` when a bootstrap fails: a
-      # cluster-info dump plus the object state and helm releases that explain
-      # a pod which never started, collected before the cluster goes away.
-      # if-no-files-found: ignore, since a successful run writes nothing.
+      # Written by `nvkectl bootstrap site`: a cluster-info dump plus the object
+      # state and helm releases that explain a pod which never started,
+      # collected before the cluster goes away. run.sh passes -v, so a passing
+      # run writes it too, for the credential scan; it is uploaded only when the
+      # job fails, which includes a scan that found a credential.
+      # if-no-files-found: ignore, since a run that stops before the bootstrap
+      # cluster exists writes nothing.
       - name: Upload bootstrap cluster diagnostics
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
