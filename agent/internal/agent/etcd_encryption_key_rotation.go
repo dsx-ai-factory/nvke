@@ -400,7 +400,7 @@ func (n *NodeAgentServer) commitConfigWrite(
 	// mutation. Missing/invalid metrics cannot be replaced by a counter guess.
 	baseline, err := n.getApiserverEncryptionState(ctx)
 	if err != nil {
-		return prevEncResult{}, fmt.Errorf("cannot establish reload baseline (metrics unavailable): %w", err)
+		return prevEncResult{}, status.Errorf(codes.Unavailable, "cannot establish reload baseline (metrics unavailable): %v", err)
 	}
 	onDisk, err := n.encryptionConfigHash()
 	if err != nil {

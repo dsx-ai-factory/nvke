@@ -187,7 +187,7 @@ func (n *NodeAgentServer) confirmEncryptionConfig(ctx context.Context, walPath, 
 		return true, nil
 	}
 	if err := os.Remove(walPath); err != nil {
-		return false, fmt.Errorf("remove rotation WAL: %w", err)
+		return false, status.Errorf(codes.Internal, "remove rotation WAL: %v", err)
 	}
 	return true, nil
 }
@@ -206,7 +206,8 @@ func (n *NodeAgentServer) waitForEncryptionConfig(ctx context.Context, walPath, 
 				return nil
 			}
 		}
-		if status.Code(err) == codes.FailedPrecondition {
+		// Only metrics failures count as an outage; a failed WAL removal is local.
+		if code := status.Code(err); code == codes.FailedPrecondition || code == codes.Internal {
 			return err
 		}
 		if err != nil {

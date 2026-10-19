@@ -317,6 +317,27 @@ func TestEncryptionReload_DiskOrOwnershipChangesPreserveWAL(t *testing.T) {
 	}
 }
 
+func TestEncryptionReload_WALRemovalFailureIsNotMetricsOutage(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the read-only directory used to make WAL removal fail")
+	}
+	dir, req, loadedHash := reloadTestPending(t)
+	server := reloadTestServer(t, dir, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(reloadTestMetrics(loadedHash, 200, 0))
+	})
+	writeWALFixture(t, server, 5, req)
+	walDir := filepath.Dir(server.encRotationWALPath())
+	require.NoError(t, os.Chmod(walDir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(walDir, 0o700) })
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	_, err := server.UpdateEncryptionConfig(ctx, req)
+	require.Equal(t, codes.Internal, status.Code(err))
+	require.ErrorContains(t, err, "remove rotation WAL")
+	require.NotContains(t, err.Error(), "metrics")
+	require.True(t, walFileExists(server))
+}
+
 func TestEncryptionReload_ConcurrentSameOperationRetries(t *testing.T) {
 	dir, req, loadedHash := reloadTestPending(t)
 	server := reloadTestServer(t, dir, func(w http.ResponseWriter, _ *http.Request) {
