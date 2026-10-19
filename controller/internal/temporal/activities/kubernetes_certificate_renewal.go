@@ -210,12 +210,7 @@ func (a *Activities) RenewKubernetesCertificates(
 		if status.Code(err) != codes.Unimplemented {
 			startErr := fmt.Errorf("failed to start certificate renewal on node %s: %w", node.Name, err)
 			if input.ExpectedEtcdMembers == 0 {
-				// V1 never runs Resolve and the reconciler keeps unfenced records, so
-				// its reservation must not outlive the activity; retries re-reserve.
-				if releaseErr := a.releaseCertificateRenewal(ctx, node, input.OperationID); releaseErr != nil {
-					return KubernetesCertificateRenewalResult{}, errors.Join(startErr, releaseErr)
-				}
-				return KubernetesCertificateRenewalResult{}, startErr
+				return KubernetesCertificateRenewalResult{}, a.releaseAfterFailedStart(ctx, node, input.OperationID, startErr)
 			}
 			// A failed V2 Start may still have been accepted. Retries reattach to the
 			// reservation; it is released only once termination is confirmed.
@@ -234,16 +229,10 @@ func (a *Activities) RenewKubernetesCertificates(
 				"node agent does not implement certificate renewal V2", CertificateRenewalLegacyRequired, err,
 			)
 		}
+		// Only V1 reaches this inline legacy fallback.
 		legacy, legacyErr := a.RenewLegacyKubernetesCertificates(ctx, input)
 		if legacyErr != nil {
-			var runbookErr *temporal.ApplicationError
-			if errors.As(legacyErr, &runbookErr) && runbookErr.Type() == "RunbookError" {
-				// The script exited, so its termination is confirmed: release, as #1692 does.
-				if releaseErr := a.releaseCertificateRenewal(ctx, node, input.OperationID); releaseErr != nil {
-					return legacy, errors.Join(legacyErr, releaseErr)
-				}
-			}
-			return legacy, legacyErr
+			return legacy, a.releaseAfterFailedStart(ctx, node, input.OperationID, legacyErr)
 		}
 		if releaseErr := a.releaseCertificateRenewal(ctx, node, input.OperationID); releaseErr != nil {
 			return KubernetesCertificateRenewalResult{}, releaseErr
@@ -251,7 +240,11 @@ func (a *Activities) RenewKubernetesCertificates(
 		return legacy, nil
 	}
 	if operation == nil {
-		return KubernetesCertificateRenewalResult{}, errors.New("node agent returned an empty certificate renewal operation")
+		emptyErr := errors.New("node agent returned an empty certificate renewal operation")
+		if input.ExpectedEtcdMembers == 0 {
+			return KubernetesCertificateRenewalResult{}, a.releaseAfterFailedStart(ctx, node, input.OperationID, emptyErr)
+		}
+		return KubernetesCertificateRenewalResult{}, emptyErr
 	}
 
 	waitBeforePoll := false
@@ -715,6 +708,20 @@ func (a *Activities) reserveCertificateRenewal(ctx context.Context, node db.Node
 		_, err = tx.UpdateCluster(ctx, &cluster)
 		return err
 	})
+}
+
+// releaseAfterFailedStart releases a V1 reservation whose work the agent never
+// accepted as a typed operation, and returns startErr joined with any release
+// failure. V1 never runs Resolve, and the reconciler clears an unfenced record
+// only once the agent reports that operation terminal, so nothing else would
+// clear it; retries re-reserve. As on main, this accepts that a legacy script
+// may still be running after, for example, a transport error. Accepted typed
+// work keeps its reservation until the agent reports it terminal.
+func (a *Activities) releaseAfterFailedStart(ctx context.Context, node db.Node, operationID string, startErr error) error {
+	if releaseErr := a.releaseCertificateRenewal(ctx, node, operationID); releaseErr != nil {
+		return errors.Join(startErr, releaseErr)
+	}
+	return startErr
 }
 
 func (a *Activities) releaseCertificateRenewal(ctx context.Context, node db.Node, operationID string) error {
