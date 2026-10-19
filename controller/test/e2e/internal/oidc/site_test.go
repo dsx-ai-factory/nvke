@@ -535,8 +535,8 @@ func TestStartupProviderCountReadsBoundedPodLogs(t *testing.T) {
 			responses := map[string][]byte{}
 			for path, object := range map[string]any{
 				"/api/v1/namespaces/controller/configmaps/nvke-controller-config": configMap,
-				"/apis/apps/v1/namespaces/controller/deployments/controller":     deployment,
-				"/api/v1/namespaces/controller/pods":                             pods,
+				"/apis/apps/v1/namespaces/controller/deployments/controller":      deployment,
+				"/api/v1/namespaces/controller/pods":                              pods,
 			} {
 				body, err := json.Marshal(object)
 				require.NoError(t, err)
