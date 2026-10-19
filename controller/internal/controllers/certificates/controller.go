@@ -52,17 +52,20 @@ type Controller struct {
 	cfg      config.Config
 	database *dbwrapper.DB
 	agent    inspector
+	// name registers the controller; controller-runtime rejects a name already
+	// registered in the process, so tests that set up a manager repeatedly vary it.
+	name string
 }
 
 // NewController constructs the certificate observation controller.
 func NewController(cfg config.Config, database *dbwrapper.DB, agent inspector) *Controller {
-	return &Controller{cfg: cfg, database: database, agent: agent}
+	return &Controller{cfg: cfg, database: database, agent: agent, name: "certificate-inspection"}
 }
 
 // SetupWithManager watches only non-deleting nodes.
 func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 	return dbreconcile.AddController(mgr, dbreconcile.Controller{
-		Name:       "certificate-inspection",
+		Name:       c.name,
 		Reconciler: c,
 		Workers:    inspectionWorkers,
 		Sources:    []dbreconcile.Source{dbwrapper.NewNodeSource(c.database, dbfilters.Node{Deleting: ptr.To(false)})},

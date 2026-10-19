@@ -270,6 +270,7 @@ func TestSetupWithManagerInspectsOtherNodesWhileOneProbeBlocks(t *testing.T) {
 	mgr, err := controllertest.NewManager(nil)
 	require.NoError(t, err)
 	controller := NewController(config.Config{CertificateInspectionInterval: time.Hour}, dbwrapper.New(database, slog.New(slog.DiscardHandler)), stub)
+	controller.name = "certificate-inspection-" + uuid.NewString()
 	require.NoError(t, controller.SetupWithManager(mgr))
 	controllertest.Start(ctx, t, mgr)
 
