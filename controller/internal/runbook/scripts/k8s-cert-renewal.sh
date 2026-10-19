@@ -526,10 +526,12 @@ main() {
     # restoration traps. A later guarded renewal still rechecks expiration.
     # Persisted renewing/restart_pending intent from either executor requires
     # dispatch even with fresh certificates: only a renewal attempt resumes it.
+    # This runbook's own intent is reported as legacy because the typed agent
+    # executor never reads this phase file and could not finish its restarts.
     validate_input
     load_state
     if [[ "$STATE_PHASE" == "renewing" || "$STATE_PHASE" == "restart_pending" ]]; then
-      echo "RENEWAL_REQUIRED=true"
+      echo "RENEWAL_REQUIRED=legacy"
       return 0
     fi
     if [[ -f "$AGENT_STATE_FILE" ]]; then
