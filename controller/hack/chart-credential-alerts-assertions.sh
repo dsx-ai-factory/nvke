@@ -8,11 +8,12 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
 chart="${CHART:-controller/deploy/charts/controller}"
 
-pin() {
-  awk -v name="$1" '$1 == name { print $3 }' "${repo_root}/make/tool-versions.mk"
-}
+# shellcheck source=../../hack/read-tool-version.sh
+. "${repo_root}/hack/read-tool-version.sh"
 
-version="$(pin PROMTOOL_VERSION)"
+version="$(read_tool_version PROMTOOL_VERSION)"
+schema_commit="$(read_tool_version PROMETHEUSRULE_SCHEMA_VERSION)"
+schema_checksum="$(read_tool_version PROMETHEUSRULE_SCHEMA_SHA256)"
 case "$(uname -s)" in
   Linux) os=linux ;;
   Darwin) os=darwin ;;
@@ -24,8 +25,16 @@ case "$(uname -m)" in
   *) echo "ERROR: promtool install supports amd64 and arm64" >&2; exit 1 ;;
 esac
 platform="${os}-${arch}"
-checksum="$(pin "PROMTOOL_SHA256_$(printf '%s_%s' "${os}" "${arch}" | tr '[:lower:]' '[:upper:]')")"
+checksum="$(read_tool_version "PROMTOOL_SHA256_$(printf '%s_%s' "${os}" "${arch}" | tr '[:lower:]' '[:upper:]')")"
 bin_dir="${repo_root}/.local/promtool/${version}-${platform}"
+
+verify_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s  %s\n' "$1" "$2" | sha256sum -c -
+  else
+    printf '%s  %s\n' "$1" "$2" | shasum -a 256 -c -
+  fi
+}
 mkdir -p "${bin_dir}"
 tmp="$(mktemp -d "${bin_dir}/tmp.XXXXXX")"
 trap 'rm -rf "${tmp}"' EXIT
@@ -41,11 +50,7 @@ if [[ ! -x "${bin_dir}/promtool" ]]; then
   curl -fSL --retry 8 --retry-all-errors --retry-max-time 240 --connect-timeout 10 --max-time 120 \
     "https://github.com/prometheus/prometheus/releases/download/v${version}/${archive}.tar.gz" \
     -o "${tmp}/prometheus.tar.gz"
-  if command -v sha256sum >/dev/null 2>&1; then
-    printf '%s  %s\n' "${checksum}" "${tmp}/prometheus.tar.gz" | sha256sum -c -
-  else
-    printf '%s  %s\n' "${checksum}" "${tmp}/prometheus.tar.gz" | shasum -a 256 -c -
-  fi
+  verify_sha256 "${checksum}" "${tmp}/prometheus.tar.gz"
   tar -xzf "${tmp}/prometheus.tar.gz" -C "${tmp}" "${archive}/promtool"
   mv "${tmp}/${archive}/promtool" "${bin_dir}/promtool"
 fi
@@ -71,11 +76,14 @@ grep -q '^kind: PrometheusRule$' "${tmp}/rule.yaml"
 # Unlike the whole-chart render, do not ignore missing schemas here: the new
 # resource must actually be validated, not merely counted as skipped.
 # kubeconform cannot retry its own fetch, so download the one schema with the
-# same retries as the tool download and validate against the local copy.
+# same retries as the tool download and validate against the local copy. The
+# catalog commit and digest are pinned, so an upstream change cannot alter the
+# result for an unchanged commit.
 mkdir -p "${tmp}/schemas/monitoring.coreos.com"
 curl -fSL --retry 8 --retry-all-errors --retry-max-time 240 --connect-timeout 10 --max-time 120 \
-  "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/monitoring.coreos.com/prometheusrule_v1.json" \
+  "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${schema_commit}/monitoring.coreos.com/prometheusrule_v1.json" \
   -o "${tmp}/schemas/monitoring.coreos.com/prometheusrule_v1.json"
+verify_sha256 "${schema_checksum}" "${tmp}/schemas/monitoring.coreos.com/prometheusrule_v1.json"
 kubeconform -strict -summary \
   -schema-location "${tmp}/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
   "${tmp}/rule.yaml"
