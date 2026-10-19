@@ -1,6 +1,6 @@
 # Build and host node OS images
 
-Build a node OS image for NVIDIA Kubernetes Engine (NVKE), make its boot files available over HTTP(S), and verify that machines can download them. Do it after you plan the installation and before you prepare the nodes.
+Build a node OS image for NVIDIA Kubernetes Engine (NVKE), make its boot files available over HTTP(S), verify downloads, and register the image for provisioning. Build and host the image before preparing nodes; register it after installing the management plane.
 
 ## Before you begin
 
@@ -87,18 +87,15 @@ sha256sum /tmp/nvke-qcow-imager.efi /tmp/nvke-node-non-fde-ubuntu-26.04.1-amd64.
 
 Compare the downloaded files' SHA-256 digests with the verified source artifacts before using them. Check every URL in an installer or chained-script flow in the same way. This checks network access and file integrity; a successful machine boot is still needed to validate firmware TLS support, imager compatibility, disk selection and first-boot user data.
 
-
 ## Register the image for provisioning
 
 After you build and host a node OS image, register its boot instructions and first-boot settings with NVKE. This lets the management plane use that image when it provisions workload-cluster nodes. You do this after installing the management-plane services.
 
-
 ### Before registering an image
 
 - You have completed the build, hosting and download checks above.
-- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md), including `nvkectl config set-site` with a kubeconfig that can create configuration objects on the management cluster.
+- You have installed the management-plane services and configured a site with `nvkectl config set-site`. The site's kubeconfig can create configuration objects on the management cluster. [Run NVKE end to end on one machine](../get-started/local-site.md) shows an installation example.
 - You have `nvkectl` on this host and a checkout of `nvke/` matching the software you installed.
-
 
 ### Prepare the configuration files
 
