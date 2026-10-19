@@ -291,9 +291,21 @@ func (a *Activities) RenewKubernetesCertificates(
 // V2 workflow (or reached by V1's inline fallback). V2 success requires both an
 // outcome marker and a durable receipt verified under the runbook lock, because
 // output alone cannot prevent delayed attempts from mutating a later cycle.
-// Receipt-unaware overrides cannot satisfy that contract. V1 retains its older
-// output-only result without receipt validation.
+// Receipt-unaware overrides cannot satisfy that contract. V2 dispatch passes the
+// same node admission as typed work and releases its reservation once the receipt
+// confirms termination. V1 retains its older output-only result without receipt
+// validation; its caller already holds the reservation.
 func (a *Activities) RenewLegacyKubernetesCertificates(ctx context.Context, input KubernetesCertificateRenewalInput) (KubernetesCertificateRenewalResult, error) {
+	var node db.Node
+	if input.ExpectedEtcdMembers > 0 {
+		var err error
+		if node, err = a.db.GetNode(ctx, input.NodeID); err != nil {
+			return KubernetesCertificateRenewalResult{}, fmt.Errorf("failed to get node: %w", err)
+		}
+		if err := a.reserveCertificateRenewal(ctx, node, &input); err != nil {
+			return KubernetesCertificateRenewalResult{}, err
+		}
+	}
 	runbookEnv := map[string]string{
 		"FORCE":          fmt.Sprintf("%t", input.Force),
 		"OPERATION_ID":   input.OperationID,
@@ -336,6 +348,12 @@ func (a *Activities) RenewLegacyKubernetesCertificates(ctx context.Context, inpu
 				fmt.Sprintf("legacy certificate renewal on node %s has no confirmed terminal receipt", input.NodeID),
 				"UnconfirmedLegacyCertificateRenewal", err, result,
 			)
+		}
+		// Termination is confirmed, so a failed release must not rerun the runbook;
+		// the reconciler clears the reservation once the cycle drops its lock.
+		if err := a.releaseCertificateRenewal(ctx, node, input.OperationID); err != nil {
+			activity.GetLogger(ctx).Warn("failed to release certificate renewal reservation after confirmed termination",
+				"nodeID", node.ID, "operationID", input.OperationID, "error", err)
 		}
 	}
 	return result, nil
