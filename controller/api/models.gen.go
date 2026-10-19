@@ -133,7 +133,7 @@ type CertificateRenewalStatus struct {
 	// ScheduledFor The scheduled due time associated with this cycle, when applicable.
 	ScheduledFor *time.Time `json:"scheduledFor,omitempty"`
 
-	// StartedAt When the workflow accepted the cycle and acquired the cluster mutation lock.
+	// StartedAt When the workflow accepted the cycle and acquired the cluster mutation lock. Refused cycles record startedAt without holding the lock.
 	StartedAt time.Time `json:"startedAt"`
 
 	// CompletedAt When the cycle succeeded or failed.

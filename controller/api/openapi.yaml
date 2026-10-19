@@ -2580,7 +2580,9 @@ components:
         startedAt:
           type: string
           format: date-time
-          description: When the workflow accepted the cycle and acquired the cluster mutation lock.
+          description: >-
+            When the workflow accepted the cycle and acquired the cluster mutation lock.
+            Refused cycles record startedAt without holding the lock.
           x-order: 6
         completedAt:
           type: string
