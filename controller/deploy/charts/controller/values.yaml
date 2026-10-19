@@ -644,9 +644,22 @@ profiles:
     # -- Digest pin for the profiles content image (preferred; e.g. `sha256:…`)
     digest: ""
 
+controllerConfig:
+  # -- Name of the ConfigMap that carries the controller's settings file, and
+  # that the Deployment mounts and Reloader watches. An existing site keeps the
+  # name it has: renaming the ConfigMap orphans the live object.
+  name: "nke-controller-config"
+
 spiffe:
   # -- Enable SPIFFE identity for mTLS to tenant clusters
   enabled: false
+  # -- First path segment of the SPIFFE IDs the nvkeOIDCAuth.tenantRbacName and
+  # capi-cluster-admin RBAC subjects default to, as in
+  # spiffe://<trustDomain>/<servicePathSegment>/<serviceAccount>. It must equal
+  # the segment the ClusterSPIFFEID spiffeIDTemplate issues
+  # (deploy/k8s/spire-nke-services-spiffe-id.yaml), or every default subject
+  # matches nothing and a tenant authenticates the controller and then denies it.
+  servicePathSegment: "nke-service"
   endpointSocket: "unix:///spiffe-workload-api/spire-agent.sock"
   # -- RFC 8693 token-exchange endpoint the exec credential plugin trades its
   # JWT-SVID at before calling a tenant API server. Leave empty to present the

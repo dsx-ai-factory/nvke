@@ -89,11 +89,12 @@ metadata:
   the effective SA name) never has to be reconciled by hand against this
   value, and jwtExchangeEndpoint remains the only case that does.
 */}}
-{{- $controllerSubject := .Values.spiffe.controllerSubject | default .Values.spiffe.cweSubject | default (printf "spiffe://%s/nke-service/%s" $td (include "controller.serviceAccountName" .)) }}
-{{- $capiManagerSubject := .Values.spiffe.capiManagerSubject | default (printf "spiffe://%s/nke-service/capi-manager" $td) }}
-{{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-control-plane-manager" $td) }}
-{{- $capiKubeadmBootstrapManagerSubject := .Values.spiffe.capiKubeadmBootstrapManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-bootstrap-manager" $td) }}
-{{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/nke-service/capd-manager" $td) }}
+{{- $seg := required "spiffe.servicePathSegment must not be empty" .Values.spiffe.servicePathSegment }}
+{{- $controllerSubject := .Values.spiffe.controllerSubject | default .Values.spiffe.cweSubject | default (printf "spiffe://%s/%s/%s" $td $seg (include "controller.serviceAccountName" .)) }}
+{{- $capiManagerSubject := .Values.spiffe.capiManagerSubject | default (printf "spiffe://%s/%s/capi-manager" $td $seg) }}
+{{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/%s/capi-kubeadm-control-plane-manager" $td $seg) }}
+{{- $capiKubeadmBootstrapManagerSubject := .Values.spiffe.capiKubeadmBootstrapManagerSubject | default (printf "spiffe://%s/%s/capi-kubeadm-bootstrap-manager" $td $seg) }}
+{{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/%s/capd-manager" $td $seg) }}
 {{- $tenantRbacName := .Values.nvkeOIDCAuth.tenantRbacName }}
 ---
 apiVersion: v1

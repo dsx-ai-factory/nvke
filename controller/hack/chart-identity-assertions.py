@@ -211,6 +211,76 @@ def check_legacy_namespace(chart: str) -> list[str]:
     return failures
 
 
+PINNED_CONFIG_NAME = "pinned-controller-config"
+PINNED_SPIFFE_SEGMENT = "pinned-service"
+
+
+def check_pinnable_names(chart: str) -> list[str]:
+    """Render with controllerConfig.name and spiffe.servicePathSegment set and assert they move everywhere.
+
+    Both were literals, so a chart that renames its defaults could not leave an
+    existing site on the old names. The ConfigMap name is read by the ConfigMap
+    itself, the Deployment's volume and the Reloader annotation; the SPIFFE
+    segment by every default subject in nke-rbac. One consumer left on the
+    default is a pod that cannot mount its config or a controller the tenant
+    apiserver denies.
+    """
+    failures = []
+
+    rendered = subprocess.run(
+        [
+            "helm",
+            "template",
+            RELEASE,
+            chart,
+            "--set",
+            f"controllerConfig.name={PINNED_CONFIG_NAME}",
+            "--set",
+            f"spiffe.servicePathSegment={PINNED_SPIFFE_SEGMENT}",
+            "--set",
+            f"spiffe.trustDomain={GREENFIELD_TRUST_DOMAIN}",
+            "--set",
+            "nvkeOIDCAuth.enabled=true",
+            "--set",
+            "tenantAccess.enabled=true",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    docs = [d for d in yaml.safe_load_all(rendered) if d]
+
+    config_maps = [d["metadata"]["name"] for d in docs if d.get("kind") == "ConfigMap"]
+    if PINNED_CONFIG_NAME not in config_maps or "nke-controller-config" in config_maps:
+        failures.append(f"pinned render ConfigMaps are {sorted(config_maps)}; expected {PINNED_CONFIG_NAME!r} and no nke-controller-config")
+
+    for dep in (d for d in docs if d.get("kind") == "Deployment"):
+        volumes = {v["name"]: v for v in dep["spec"]["template"]["spec"].get("volumes") or []}
+        mounted = [v["configMap"]["name"] for v in volumes.values() if "configMap" in v]
+        if PINNED_CONFIG_NAME not in mounted:
+            failures.append(f"pinned render Deployment mounts ConfigMaps {mounted}, not {PINNED_CONFIG_NAME!r}")
+        reload = dep["metadata"].get("annotations", {}).get("configmap.reloader.stakater.com/reload", "")
+        if PINNED_CONFIG_NAME not in reload.split(","):
+            failures.append(f"pinned render Reloader annotation is {reload!r}, which does not watch {PINNED_CONFIG_NAME!r}")
+
+    rbac = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == "nke-rbac"]
+    if not rbac:
+        failures.append("pinned render has no nke-rbac ConfigMap")
+        return failures
+    subjects = {
+        s["name"]
+        for d in yaml.safe_load_all(rbac[0]["data"]["manifest.yaml"])
+        if d and d.get("kind") == "ClusterRoleBinding"
+        for s in d.get("subjects") or []
+        if str(s.get("name", "")).startswith("spiffe://")
+    }
+    stale = sorted(s for s in subjects if f"/{PINNED_SPIFFE_SEGMENT}/" not in s)
+    if not subjects or stale:
+        failures.append(f"pinned render SPIFFE subjects {sorted(subjects)} are not all under /{PINNED_SPIFFE_SEGMENT}/; stale: {stale}")
+
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--chart", required=True)
@@ -265,6 +335,15 @@ def main() -> int:
         return 1
 
     print(f"  pinned management namespace: every object and the controller config land in {LEGACY_NAMESPACE}")
+
+    pinnable_failures = check_pinnable_names(args.chart)
+    if pinnable_failures:
+        print("ERROR: pinning controllerConfig.name or spiffe.servicePathSegment does not move every consumer.")
+        for f in pinnable_failures:
+            print(f"  - {f}")
+        return 1
+
+    print(f"  pinnable names: controller config ConfigMap and SPIFFE subjects follow {PINNED_CONFIG_NAME} and {PINNED_SPIFFE_SEGMENT}")
 
     greenfield_failures = check_greenfield(args.chart)
     if greenfield_failures:
