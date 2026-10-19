@@ -5,8 +5,8 @@
 # with the control-plane machines allocated from a NICo site by CAPNICo,
 # instead of taken from a hardcoded list of hosts (examples/sitespec.yaml).
 #
-# The NICo described here is used ONLY to bootstrap the site controller's own
-# nodes. The NICo the finished site controller uses for tenant clusters is
+# The NICo described here is used ONLY to bootstrap the management cluster's own
+# nodes. The NICo the finished management cluster uses for tenant clusters is
 # configured in the stack config the controller stack install reads
 # (deploy/examples/stack-config.json), and may be a different one.
 #
@@ -73,7 +73,7 @@ cluster:
   # needed for one node too: the nodes have no address until NICo allocates them,
   # so the controller stack install has nothing else to reach the controller at.
   controlPlaneVIP: "10.0.0.100"
-  k8sVersion: "1.34.2"
+  k8sVersion: "1.36.3"
   cniName: "ovn-kubernetes"
   podCidr: "192.168.0.0/16"
   serviceCidr: "10.96.0.0/12"

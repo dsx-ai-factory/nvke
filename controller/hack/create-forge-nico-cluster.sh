@@ -16,7 +16,7 @@ KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
 # CNI defaults to ovn-kubernetes. Set CNI_PLUGIN=calico to use Calico instead.
 CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
 case "${CNI_PLUGIN}" in
-  ovn-kubernetes) CNI_IMAGES_PACKAGE="nvke-cni-ovn-images-1.6.0" ;;
+  ovn-kubernetes) CNI_IMAGES_PACKAGE="nvke-cni-ovn-images-2.4.2" ;;
   calico) CNI_IMAGES_PACKAGE="nvke-cni-calico-images-3.30.1" ;;
   *)
     printf 'create-forge-nico-cluster: unsupported CNI_PLUGIN %s\n' "${CNI_PLUGIN}" >&2

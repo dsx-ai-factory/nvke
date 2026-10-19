@@ -6,13 +6,13 @@ NVKE operations are organized into three phases that match what you're doing to 
 Day 0            Day 1                      Day 2
 ──────────────   ────────────────────────   ─────────────────────────────
 Bootstrap the    Install the site stack     Operate tenant clusters
-site controller  and first tenant cluster   and the platform
+management cluster and first tenant cluster   and the platform
 cluster
 ```
 
 ## Day 0 — Bootstrap
 
-**Goal:** Turn a set of bare, prepared nodes into a running Kubernetes cluster that will host the site controller.
+**Goal:** Turn a set of bare, prepared nodes into a running Kubernetes cluster that will host the management plane.
 
 `nvkectl bootstrap site` does this. It creates a temporary Kind cluster on the init node, uses it to drive `kubeadm init` and `kubeadm join` on your nodes through `nvke-agent` gRPC, and tears the temporary cluster down when done. You are left with:
 
@@ -26,7 +26,7 @@ The cluster at this point is a plain kubeadm cluster. No NVKE services are insta
 - `nvkectl`, `nerdctl`, `kind` on the init node
 - Network reach from the init node to all nodes on port 15005
 
-**See:** [Site Controller Bootstrap](site-bootstrap/overview.md) · [Your First Cluster — Real Site](first-cluster.md#real-site)
+**See:** [Management cluster bootstrap](site-bootstrap/overview.md) · [Your First Cluster — Real Site](first-cluster.md#real-site)
 
 ## Day 1 — Configuration
 
@@ -34,7 +34,7 @@ The cluster at this point is a plain kubeadm cluster. No NVKE services are insta
 
 This phase installs everything that makes the cluster an NVKE site:
 
-1. **Deploy the NVKE component stack** — the controller, Temporal, PostgreSQL, SPIRE, NKTP and CAPNICo, as the `deploy/nico` deploy path lists them. `deploy/nvke-deploy.sh` installs it from the site spec and the stack config, and from an NVKR release description when you install from a release, one step of a short list of commands; your GitOps tooling can deliver the same items. See [Install management-plane services](operate/install-management-plane-services.md) and [Deploy Path](site-bootstrap/deploy-repository.md).
+1. **Deploy the NVKE component stack** — the controller, Temporal, PostgreSQL, SPIRE, NVKE telemetry pipelines (NKTP) and CAPNICo, as the `deploy/nico` deploy path lists them. `deploy/nvke-deploy.sh` installs it from the site spec and the stack config, and from an NVKR release description when you install from a release, one step of a short list of commands; your GitOps tooling can deliver the same items. See [Install management-plane services](operate/install-management-plane-services.md) and [Deploy Path](site-bootstrap/deploy-repository.md).
 2. **Configure CAPNICo** — the deploy path installed it in step 1; connect it to your NICo site with the `nico-credentials` Secret the same step rendered. Run `nvkectl get providers` to confirm `nico: CONFIGURED`.
 3. **Ingest the site into NVKE** — the NVKE team registers the site and applies the etcd encryption key from Day 0. This step requires coordination with the NVKE team; contact your NVKE onboarding contact with your site's kubeconfig and the etcd encryption key file from Day 0.
 4. **Create your first tenant cluster** — `nvkectl create cluster -f cluster.yaml`. See [Your First Cluster — Path C, Step 8](first-cluster.md#8-create-a-tenant-cluster).
@@ -67,5 +67,5 @@ Node health and break-fix policy are handled by [NVSentinel](https://github.com/
 
 **What Day 2 requires:**
 - A healthy NICo site with available capacity
-- The site controller stack running and healthy
+- The management plane stack running and healthy
 - CAPNICo in `CONFIGURED` state (`nvkectl get providers`)

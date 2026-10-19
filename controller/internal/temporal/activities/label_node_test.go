@@ -112,6 +112,34 @@ func TestLabelNodeRejectsInvalidLabelBeforeTenantAccess(t *testing.T) {
 	database.AssertExpectations(t)
 }
 
+func TestLabelNodeSucceedsWhenNoLabels(t *testing.T) {
+	nodeID := uuid.New()
+	clusterID := uuid.New()
+	node := db.Node{
+		ID:           nodeID,
+		ClusterID:    clusterID,
+		Name:         "worker-0",
+		ControlPlane: true,
+	}
+	cluster := db.Cluster{ID: clusterID, Name: "cluster-a"}
+	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "test-org", SiteID: uuid.New()})
+
+	database := &testutil.MockDB{}
+	database.On("GetNode", mock.Anything, nodeID).Return(node, nil)
+	database.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Once()
+	provider := &fakeTenantClientProvider{}
+
+	a := &Activities{
+		db:                   database,
+		tenantClientProvider: provider,
+	}
+	result, err := executeLabelNodeActivity(t, a, LabelNodeInput{NodeID: nodeID})
+	require.NoError(t, err)
+	require.Equal(t, "node/worker-0 has no labels to apply", result.Output)
+	require.Equal(t, 0, provider.calls)
+	database.AssertExpectations(t)
+}
+
 func executeLabelNodeActivity(
 	t *testing.T,
 	a *Activities,

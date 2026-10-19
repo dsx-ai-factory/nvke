@@ -19,7 +19,7 @@ nomination required. Contributors are expected to follow the
 Maintainers have write access to the repository and are responsible for:
 
 - Reviewing and merging pull requests
-- Triaging issues
+- Triaging issues, as [docs/issue-triage.md](docs/issue-triage.md) describes
 - Cutting releases (see [RELEASE.md](RELEASE.md))
 - Upholding the code of conduct
 

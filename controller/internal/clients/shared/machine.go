@@ -4,7 +4,8 @@
 // Package shared holds machine-materialization pieces genuinely common to
 // every provider: the dependencies Activities supplies to a provider client's
 // CreateMachine, and the generic CAPI Machine/Secret builders neither
-// provider's rendering differs on. It exists so internal/clients/capi and
+// provider's rendering differs on. It also holds the value types a
+// capability interface returns, such as TenantAPIAccessMethod. It exists so internal/clients/capi and
 // internal/clients/nico can both depend on this without either importing the
 // other, and without internal/clients (which imports both, for the factory)
 // creating an import cycle.
@@ -13,6 +14,7 @@ package shared
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -22,8 +24,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // MachineCreateDeps bundles what Activities supplies so a provider client's
@@ -132,6 +134,11 @@ func BuildMachine(node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluste
 		machineVersion = "v" + machineVersion
 	}
 
+	labels := db.CloneStringMap(nodePool.MachineLabels)
+	maps.Copy(labels, MachineLabels(cluster.Name, nodePool.ControlPlane))
+	annotations := db.CloneStringMap(nodePool.MachineAnnotations)
+	maps.Copy(annotations, MachineAnnotations(node))
+
 	return &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
@@ -140,8 +147,8 @@ func BuildMachine(node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluste
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        node.Name,
 			Namespace:   namespace,
-			Labels:      MachineLabels(cluster.Name, nodePool.ControlPlane),
-			Annotations: machineAnnotations(node),
+			Labels:      labels,
+			Annotations: annotations,
 		},
 		Spec: clusterv1.MachineSpec{
 			ClusterName:   cluster.Name,
@@ -191,12 +198,13 @@ func MachineLabels(clusterName string, controlPlane bool) map[string]string {
 	return labels
 }
 
-func machineAnnotations(node db.Node) map[string]string {
+// MachineAnnotations returns the controller-owned annotations added to every Machine.
+func MachineAnnotations(node db.Node) map[string]string {
 	// The controller owns drain / kube Node removal in teardown workflows. Tell CAPI to skip its
 	// drain and volume-detach waits so Machine deletion is not blocked when the
 	// workload API is unreachable.
 	return map[string]string{
-		constants.MachineAnnotationKeyHostID:               node.ID.String(),
+		keys.MachineHostID.String():                        node.ID.String(),
 		clusterv1.ExcludeNodeDrainingAnnotation:            "cwe-controlled",
 		clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation: "cwe-controlled",
 	}

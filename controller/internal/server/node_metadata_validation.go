@@ -10,9 +10,13 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/validate/content"
+	apivalidation "k8s.io/apimachinery/pkg/api/validation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 const (
@@ -129,4 +133,38 @@ func reservedKeyError(field, key, domain, reason string) error {
 
 func forbiddenKeyError(field, key string) error {
 	return fmt.Errorf("%s: key %q is managed by core bootstrap components and cannot be set", field, key)
+}
+
+// validateMachineMetadata checks syntax and reserved domains, allowing only
+// explicitly configured keys under those domains.
+func validateMachineMetadata(annotations, labels map[string]string, allowlistedAnnotations, allowlistedLabels []string) error {
+	completeAnnotations := db.CloneStringMap(annotations)
+	// The zero UUID has the same encoded length as the host ID allocated at creation.
+	maps.Copy(completeAnnotations, shared.MachineAnnotations(db.Node{}))
+	if errs := apivalidation.ValidateAnnotations(completeAnnotations, field.NewPath("machineAnnotations")); len(errs) > 0 {
+		return errs.ToAggregate()
+	}
+	for _, key := range slices.Sorted(maps.Keys(annotations)) {
+		if err := validateMachineMetadataKey("machineAnnotations", key, allowlistedAnnotations); err != nil {
+			return err
+		}
+	}
+	for _, key := range slices.Sorted(maps.Keys(labels)) {
+		if err := validateKeyValue("machineLabels", key, labels[key]); err != nil {
+			return err
+		}
+		if err := validateMachineMetadataKey("machineLabels", key, allowlistedLabels); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateMachineMetadataKey(field, key string, allowlistedKeys []string) error {
+	domains := append(controllerconfig.NodeMetadataReservedInternalDomains(), reservedKubernetesDomains()...)
+	domains = append(domains, "cluster.x-k8s.io")
+	if domain, reserved := reservedDomain(key, domains); reserved && !slices.Contains(allowlistedKeys, key) {
+		return reservedKeyError(field, key, domain, "key must be explicitly allowlisted")
+	}
+	return nil
 }

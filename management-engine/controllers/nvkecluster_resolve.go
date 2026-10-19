@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Cluster intent resolution combines the spec with selected configuration for reconciliation.
-// CWE REST API specific calls will be replaced with the CAPI objects, but this is a temporary placeholder.
+// NVKE controller REST API specific calls will be replaced with the CAPI objects, but this is a temporary placeholder.
 
 package controllers
 
@@ -20,13 +20,13 @@ type InvalidSpecError struct{ Message string }
 
 func (e *InvalidSpecError) Error() string { return e.Message }
 
-// ResolveCWERequest translates supported cluster intent using bindings validated by LoadCWEBindings.
-func ResolveCWERequest(cluster *internalv1.NVKECluster, bindings []CWEBinding) (api.CreateClusterRequest, error) {
+// ResolveControllerRequest translates supported cluster intent using bindings validated by LoadControllerBindings.
+func ResolveControllerRequest(cluster *internalv1.NVKECluster, bindings []ControllerBinding) (api.CreateClusterRequest, error) {
 	var empty api.CreateClusterRequest
-	if err := validateCWESpec(cluster); err != nil {
+	if err := validateControllerSpec(cluster); err != nil {
 		return empty, err
 	}
-	var selected *CWEBinding
+	var selected *ControllerBinding
 	for i := range bindings {
 		binding := &bindings[i]
 		if binding.Namespace == cluster.Namespace && binding.Channel == string(cluster.Spec.Release.Channel.Name) && binding.Version == cluster.Spec.Release.Channel.Version && binding.ControlPlaneClass == string(cluster.Spec.ControlPlaneClass) {
@@ -35,28 +35,28 @@ func ResolveCWERequest(cluster *internalv1.NVKECluster, bindings []CWEBinding) (
 		}
 	}
 	if selected == nil {
-		return empty, invalidCWERequest("The selected release and control-plane class are not available for this cluster")
+		return empty, invalidControllerRequest("The selected release and control-plane class are not available for this cluster")
 	}
 	// The REST types have no generated DeepCopy. JSON copying isolates nested provider data.
 	data, err := json.Marshal(selected.Template)
 	if err != nil {
-		return empty, fmt.Errorf("encode CWE request template: %w", err)
+		return empty, fmt.Errorf("encode NVKE controller request template: %w", err)
 	}
 	var request api.CreateClusterRequest
 	if err := json.Unmarshal(data, &request); err != nil {
-		return empty, fmt.Errorf("copy CWE request template: %w", err)
+		return empty, fmt.Errorf("copy NVKE controller request template: %w", err)
 	}
 	request.Name = clusterRemoteName(cluster)
 	if cluster.UID == "" {
-		return empty, invalidCWERequest("A persisted cluster UID is required before provisioning")
+		return empty, invalidControllerRequest("A persisted cluster UID is required before provisioning")
 	}
 	request.CniPlugin = api.CreateClusterRequestCniPluginOvnKubernetes
 	request.EtcdEncrypted = true
-	pod, err := cweNetworkPrefix(cluster.Spec.ClusterNetwork.Pods.CIDRBlocks)
+	pod, err := controllerNetworkPrefix(cluster.Spec.ClusterNetwork.Pods.CIDRBlocks)
 	if err != nil {
 		return empty, err
 	}
-	service, err := cweNetworkPrefix(cluster.Spec.ClusterNetwork.Services.CIDRBlocks)
+	service, err := controllerNetworkPrefix(cluster.Spec.ClusterNetwork.Services.CIDRBlocks)
 	if err != nil {
 		return empty, err
 	}
@@ -64,38 +64,38 @@ func ResolveCWERequest(cluster *internalv1.NVKECluster, bindings []CWEBinding) (
 	return request, nil
 }
 
-func invalidCWERequest(message string) error { return &InvalidSpecError{Message: message} }
+func invalidControllerRequest(message string) error { return &InvalidSpecError{Message: message} }
 
-func validateCWESpec(cluster *internalv1.NVKECluster) error {
+func validateControllerSpec(cluster *internalv1.NVKECluster) error {
 	if len(cluster.Spec.NodePools) != 0 {
-		return invalidCWERequest("Worker node pools are not supported")
+		return invalidControllerRequest("Worker node pools are not supported")
 	}
 	if cluster.Spec.Network != nil {
-		return invalidCWERequest("Worker network selection is not supported")
+		return invalidControllerRequest("Worker network selection is not supported")
 	}
 	if cluster.Spec.Authentication != nil {
-		return invalidCWERequest("Custom authentication is not supported")
+		return invalidControllerRequest("Custom authentication is not supported")
 	}
 	if cluster.Spec.APIServerAccess.PublicAccessEnabled || len(cluster.Spec.APIServerAccess.PublicAccessCIDRs) != 0 {
-		return invalidCWERequest("Public API access configuration is not supported")
+		return invalidControllerRequest("Public API access configuration is not supported")
 	}
 	if runtime := cluster.Spec.AcceleratedRuntime; runtime != nil && (runtime.Name != "none" || runtime.Version != "") {
-		return invalidCWERequest("Accelerated runtime configuration is not supported")
+		return invalidControllerRequest("Accelerated runtime configuration is not supported")
 	}
 	if cluster.Spec.ClusterNetwork.ServiceDomain != "cluster.local" {
-		return invalidCWERequest("Only the cluster.local service domain is supported")
+		return invalidControllerRequest("Only the cluster.local service domain is supported")
 	}
 	return nil
 }
 
-func cweNetworkPrefix(blocks []internalv1.NetworkCIDR) (string, error) {
+func controllerNetworkPrefix(blocks []internalv1.NetworkCIDR) (string, error) {
 	if len(blocks) != 1 {
-		return "", invalidCWERequest("Exactly one IPv4 pod range and one IPv4 service range are required")
+		return "", invalidControllerRequest("Exactly one IPv4 pod range and one IPv4 service range are required")
 	}
 	prefix, err := netip.ParsePrefix(string(blocks[0]))
 	if err != nil || !prefix.Addr().Is4() {
-		return "", invalidCWERequest("Pod and service ranges must be valid IPv4 CIDRs")
+		return "", invalidControllerRequest("Pod and service ranges must be valid IPv4 CIDRs")
 	}
-	// CWE remains authoritative for private ranges, overlap, size, and capacity validation.
+	// The NVKE controller remains authoritative for private ranges, overlap, size, and capacity validation.
 	return prefix.Masked().String(), nil
 }

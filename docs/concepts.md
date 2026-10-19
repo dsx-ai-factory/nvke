@@ -12,7 +12,7 @@ Kubernetes (K8s) is the orchestration system NVKE is built on. It schedules cont
 
 In the NVKE context, there are two kinds of Kubernetes clusters:
 
-- **Site controller cluster** — a small, HA three-node K8s cluster that runs NVKE's own management services (workflow engines, databases, security). Operators manage this cluster; tenants don't see it.
+- **Management cluster** — a small, HA three-node K8s cluster that runs NVKE's own management services (workflow engines, databases, security). Operators manage this cluster; tenants don't see it.
 - **Tenant clusters** — GPU-accelerated K8s clusters provisioned by NVKE for tenants to run AI workloads on.
 
 **Learn more:** https://kubernetes.io/docs/concepts/overview/
@@ -21,7 +21,7 @@ In the NVKE context, there are two kinds of Kubernetes clusters:
 
 ## kubeadm
 
-`kubeadm` is the upstream tool for bootstrapping Kubernetes clusters — it initializes the control plane, generates certificates, and joins nodes. NVKE uses `kubeadm` under the hood via `nvke-agent` to bring up both the site controller and tenant clusters.
+`kubeadm` is the upstream tool for bootstrapping Kubernetes clusters — it initializes the control plane, generates certificates, and joins nodes. NVKE uses `kubeadm` under the hood via `nvke-agent` to bring up both the management cluster and tenant clusters.
 
 You don't run `kubeadm` directly. NVKE runs it for you. But understanding what it does helps when reading bootstrap logs or troubleshooting a failed node join.
 
@@ -31,7 +31,7 @@ You don't run `kubeadm` directly. NVKE runs it for you. But understanding what i
 
 ## Helm
 
-Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NVKE's own services (the controller, Temporal, Postgres, SPIRE, NKTP) are installed as Helm charts, from the NVKR release or their public repositories.
+Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NVKE's own services (the controller, Temporal, Postgres, SPIRE, NVKE telemetry pipelines (NKTP)) are installed as Helm charts, from the NVKR release or their public repositories.
 
 After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` installs them from the `deploy/nico` deploy path, one step of a short list of commands: each item is a chart with its values, or plain manifests. See [Install management-plane services](operate/install-management-plane-services.md).
 
@@ -106,8 +106,8 @@ NVKE handles the following for you — you don't need deep expertise in these to
 - **kubeadm internals** — NVKE drives these via `nvke-agent`
 - **Certificate lifecycle** — managed by `cert-manager` and `nvke-agent`
 - **etcd operations** — managed by NVKE with built-in encryption and `etcd-manager` for compaction and snapshots
-- **CNI configuration** — NVKE configures OVN-Kubernetes during site-controller bootstrap
+- **CNI configuration** — NVKE configures OVN-Kubernetes during management cluster bootstrap
 
 ---
 
-Ready to continue? Start with [Architecture](architecture.md) for the component overview, or go straight to [Site Controller Bootstrap](site-bootstrap/overview.md) to stand up a site controller.
+Ready to continue? Start with [Architecture](architecture.md) for the component overview, or go straight to [Management cluster bootstrap](site-bootstrap/overview.md) to stand up a management cluster.

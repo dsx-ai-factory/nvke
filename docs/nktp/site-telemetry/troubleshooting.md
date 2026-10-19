@@ -1,6 +1,6 @@
-# Telemetry on a site controller: troubleshooting
+# Management cluster telemetry: troubleshooting
 
-Failures seen while standing NKTP up on a site controller, with their causes
+Failures seen while bringing up NVKE telemetry pipelines (NKTP) on the management cluster, with their causes
 and fixes. For checks that tell whether anything is wrong, see
 [verification](verification.md).
 
@@ -63,7 +63,7 @@ before installing it. That needs egress to `open-telemetry.github.io`,
 certificate or the Target Allocators' mTLS certificates aren't issued.
 
 **Fix:** check `kubectl -n nktp get certificates` and cert-manager's own
-Pods. On a site controller, `clusterctl init` installs cert-manager before
+Pods. On the management cluster, `clusterctl init` installs cert-manager before
 the deploy path runs; if it was skipped, run it.
 
 ## Scrape targets are down
@@ -111,7 +111,7 @@ with new entries, so an idle node can take a while to show any.
 **Cause:** nothing serves `metrics.k8s.io`, or two providers are fighting over
 it.
 
-**Fix:** the site values turn metrics-server on because a site controller has
+**Fix:** the site values turn metrics-server on because a management cluster has
 no other provider. If something else later installs a provider, turn one of
 the two off. The `v1beta1.metrics.k8s.io` APIService has a single owner, and
 two providers make it flip between them.

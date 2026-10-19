@@ -38,6 +38,7 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
 func TestExpiringJWTSourceCachesAndRefreshesBeforeExpiry(t *testing.T) {
@@ -254,7 +255,7 @@ func TestTenantRESTConfigReplacesSPIREExecCredentials(t *testing.T) {
 	kubeconfig := testSPIREKubeconfig(t, "tenant-a")
 	factory := newTestTenantClientFactory(t,
 		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+			ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 			Data:       map[string][]byte{tenantKubeconfigKey: kubeconfig},
 		},
 		spireServerConfigMapObject(`{"server":{"trust_domain":"test.nke.local"}}`),
@@ -350,7 +351,7 @@ func TestRelayEndpointWithoutARelay(t *testing.T) {
 
 func TestRelayEndpointFailureNamesTheCluster(t *testing.T) {
 	factory := newTestTenantClientFactory(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 		Data:       map[string][]byte{tenantKubeconfigKey: testSPIREKubeconfig(t, "tenant-a")},
 	})
 	factory.relay = func(context.Context, string) (string, error) {
@@ -368,7 +369,7 @@ func TestTenantRESTConfigRelaysTheSPIREEndpoint(t *testing.T) {
 	// is the one that would silently drop the substitution.
 	factory := newTestTenantClientFactory(t,
 		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+			ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 			Data:       map[string][]byte{tenantKubeconfigKey: testSPIREKubeconfig(t, "tenant-a")},
 		},
 		spireServerConfigMapObject(`{"server":{"trust_domain":"test.nke.local"}}`),
@@ -411,7 +412,7 @@ func TestTenantRESTConfigExchangesSPIREJWTCredentials(t *testing.T) {
 
 	factory := newTestTenantClientFactory(t,
 		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+			ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 			Data: map[string][]byte{tenantKubeconfigKey: testSPIREExchangeKubeconfig(
 				t, "tenant-a", exchangeServer.URL+"/v1/exchange",
 			)},
@@ -477,7 +478,7 @@ func TestTenantRESTConfigExchangesSPIREJWTCredentials(t *testing.T) {
 func TestTenantRESTConfigPreservesAdminCredentials(t *testing.T) {
 	kubeconfig := testAdminKubeconfig(t)
 	factory := newTestTenantClientFactory(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 		Data:       map[string][]byte{tenantKubeconfigKey: kubeconfig},
 	})
 
@@ -498,7 +499,7 @@ func TestTenantRESTConfigPreservesAdminCredentials(t *testing.T) {
 
 func TestGetAdminClientReadsPublishedKubeconfigAndRegistersVerifierSchemes(t *testing.T) {
 	factory := newTestTenantClientFactory(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 		Data:       map[string][]byte{tenantKubeconfigKey: testClientKubeconfig(t)},
 	})
 
@@ -525,7 +526,7 @@ func TestGetAdminClientReportsMissingKubeconfig(t *testing.T) {
 	factory := newTestTenantClientFactory(t)
 
 	_, err := factory.GetAdminClient(context.Background(), "tenant-a")
-	if err == nil || !strings.Contains(err.Error(), "getting tenant kubeconfig secret nke-system/tenant-a-kubeconfig") {
+	if err == nil || !strings.Contains(err.Error(), "getting tenant kubeconfig secret nvke-system/tenant-a-kubeconfig") {
 		t.Fatalf("GetAdminClient() error = %v, want contextual Secret error", err)
 	}
 }
@@ -538,7 +539,7 @@ func TestAdminAndControllerPathsMintDistinctIdentities(t *testing.T) {
 		spireServerConfigMapObject(`{"server":{"trust_domain":"test.nke.local"}}`),
 		spireServerPod("spire-server-1", true, spireServerSelector()),
 		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+			ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 			Data:       map[string][]byte{tenantKubeconfigKey: testSPIREKubeconfig(t, "tenant-a")},
 		},
 	}
@@ -641,7 +642,7 @@ func TestSPIREAudience(t *testing.T) {
 
 func TestTenantRESTConfigRejectsSPIREExecWithoutAudience(t *testing.T) {
 	factory := newTestTenantClientFactory(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 		Data:       map[string][]byte{tenantKubeconfigKey: testSPIREKubeconfig(t, "")},
 	})
 
@@ -655,7 +656,7 @@ func TestTenantRESTConfigReportsMissingKubeconfigSecret(t *testing.T) {
 	factory := newTestTenantClientFactory(t)
 
 	_, err := factory.tenantRESTConfig(context.Background(), "tenant-a")
-	if err == nil || !strings.Contains(err.Error(), "getting tenant kubeconfig secret nke-system/tenant-a-kubeconfig") {
+	if err == nil || !strings.Contains(err.Error(), "getting tenant kubeconfig secret nvke-system/tenant-a-kubeconfig") {
 		t.Fatalf("tenantRESTConfig() error = %v, want contextual Secret error", err)
 	}
 }
@@ -979,7 +980,7 @@ func TestAdminKubeconfigReplacesSPIREExecWithAMintedToken(t *testing.T) {
 		spireServerConfigMapObject(`{"server":{"trust_domain":"test.nke.local"}}`),
 		spireServerPod("spire-server-1", true, spireServerSelector()),
 		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+			ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 			Data:       map[string][]byte{tenantKubeconfigKey: testSPIREKubeconfig(t, "tenant-a")},
 		},
 	)
@@ -1020,7 +1021,7 @@ func TestAdminKubeconfigReplacesSPIREExecWithAMintedToken(t *testing.T) {
 func TestAdminKubeconfigPassesThroughANonSPIREKubeconfig(t *testing.T) {
 	published := testClientKubeconfig(t)
 	factory := newTestTenantClientFactory(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 		Data:       map[string][]byte{tenantKubeconfigKey: published},
 	})
 

@@ -93,7 +93,7 @@ untested_packages() {
 		controller/test/oidctest/envtest/cases	behind `-tags oidc_integration`; runs with pinned Kubernetes envtest assets via `make -C controller test-oidc-reference`
 		controller/nico-sim/test/integration/libvirt	behind `-tags integration`; needs libvirt and a node image
 		controller/nico-sim/test/integration/qemu	behind `-tags integration`; needs QEMU and a node image
-		management-engine/test/integration	behind `-tags integration_test`; run by `make test-cwe` against the local Kind stack
+		management-engine/test/integration	behind `-tags integration_test`; run by `make test-nvke-controller-integration` against the local Kind stack
 	EOF
 }
 

@@ -6,7 +6,7 @@ set -euo pipefail
 
 output_dir="${1:?usage: prepare-ovn-assets.sh OUTPUT_DIR}"
 workspace_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-version=1.6.0
+version=2.4.2
 arch="${BUNDLE_ARCH:-amd64}"
 # The reference package builder needs Linux. Local macOS runs already have
 # Docker/Colima; use a Linux builder there while CI builds directly on its host.
@@ -19,7 +19,7 @@ if [[ "$(uname -s)" == Darwin ]]; then
   exec docker run --rm \
     -v "${workspace_root}:/workspace:ro" -v "${output_dir}:/output" \
     -v /var/run/docker.sock:/var/run/docker.sock \
-    -e "BUNDLE_ARCH=${arch}" -e OVN_TOOLS_DIR=/tmp/ovn-tools -e OVN_KUBERNETES_TOKEN -e GITHUB_TOKEN \
+    -e "BUNDLE_ARCH=${arch}" -e OVN_TOOLS_DIR=/tmp/ovn-tools \
     "golang:${go_version}-trixie" \
     bash -c '
       set -euo pipefail
@@ -35,8 +35,10 @@ output_dir="$(cd "${output_dir}" && pwd)"
 # Reuse the reference OS packaging, including the committed per-arch image
 # digest and its containerd-importing postinst. Keep crane and nfpm in the
 # scratch directory: the package tree's bin/ is gitignored, and a checkout
-# sync can remove it while crane is still downloading.
-make -C "${workspace_root}/os-image/packages/cni-ovn" debs \
+# sync can remove it while crane is still downloading. The ARC runners' dind
+# daemon has no Docker Hub mirror, so the image's ubuntu base comes through
+# NKE_E2E_DOCKERHUB_MIRROR like the lanes' other Docker Hub pulls.
+CNI_DOCKERHUB_MIRROR="${NKE_E2E_DOCKERHUB_MIRROR:-}" make -C "${workspace_root}/os-image/packages/cni-ovn" debs \
   ARCH="${arch}" OVN_STREAMS="${version}" DEB_REVISION="${version}" \
   OUT_DIR="${output_dir}" DIST_DIR="${scratch}/dist" \
   BIN_DIR="${OVN_TOOLS_DIR:-${scratch}/tools}"

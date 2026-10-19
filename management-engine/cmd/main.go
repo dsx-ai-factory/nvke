@@ -26,7 +26,7 @@ import (
 
 	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 	"github.com/dsx-ai-factory/nvke/management-engine/controllers"
-	"github.com/dsx-ai-factory/nvke/management-engine/internal/cwe"
+	"github.com/dsx-ai-factory/nvke/management-engine/internal/nvkecontroller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -54,7 +54,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var metricsCertPath, metricsCertName, metricsCertKey string
-	var cweEndpoint, cweTokenFile, cweBindingsPath string
+	var controllerEndpoint, controllerTokenFile, controllerBindingsPath string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metric endpoint binds to; 0 disables it.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -79,9 +79,24 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "Metrics private key filename")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "Enable HTTP/2 for metrics")
 
-	flag.StringVar(&cweEndpoint, "cwe-endpoint", "", "CWE REST API base URL; requires --cwe-bindings")
-	flag.StringVar(&cweTokenFile, "cwe-token-file", "", "File containing the CWE bearer token")
-	flag.StringVar(&cweBindingsPath, "cwe-bindings", "", "JSON provisioning bindings; requires --cwe-endpoint")
+	flag.StringVar(
+		&controllerEndpoint,
+		"nvke-controller-endpoint",
+		"",
+		"NVKE controller REST API base URL; requires --nvke-controller-bindings",
+	)
+	flag.StringVar(
+		&controllerTokenFile,
+		"nvke-controller-token-file",
+		"",
+		"File containing the NVKE controller bearer token",
+	)
+	flag.StringVar(
+		&controllerBindingsPath,
+		"nvke-controller-bindings",
+		"",
+		"JSON provisioning bindings; requires --nvke-controller-endpoint",
+	)
 
 	zapOpts := zap.Options{}
 	zapOpts.BindFlags(flag.CommandLine)
@@ -112,9 +127,9 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
 
-	cweClient, bindings, err := configureCWE(cweEndpoint, cweTokenFile, cweBindingsPath)
+	controllerClient, bindings, err := configureController(controllerEndpoint, controllerTokenFile, controllerBindingsPath)
 	if err != nil {
-		setupLog.Error(err, "configure CWE access")
+		setupLog.Error(err, "configure NVKE controller access")
 		os.Exit(1)
 	}
 
@@ -142,9 +157,9 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	if err := (&controllers.NVKEClusterReconciler{
-		Client:   mgr.GetClient(),
-		CWE:      cweClient,
-		Bindings: bindings,
+		Client:         mgr.GetClient(),
+		NVKEController: controllerClient,
+		Bindings:       bindings,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NVKECluster")
 		os.Exit(1)
@@ -167,19 +182,23 @@ func main() {
 	}
 }
 
-// configureCWE leaves reconciliation inactive unless an endpoint and bindings are supplied.
-func configureCWE(endpoint, tokenFile, bindingsPath string) (controllers.CWEClient, []controllers.CWEBinding, error) {
+// configureController leaves reconciliation inactive unless an endpoint and bindings are supplied.
+func configureController(
+	endpoint string,
+	tokenFile string,
+	bindingsPath string,
+) (controllers.ControllerClient, []controllers.ControllerBinding, error) {
 	if endpoint == "" && tokenFile == "" && bindingsPath == "" {
 		return nil, nil, nil
 	}
 	if endpoint == "" || bindingsPath == "" {
-		return nil, nil, fmt.Errorf("--cwe-endpoint and --cwe-bindings must be provided together")
+		return nil, nil, fmt.Errorf("--nvke-controller-endpoint and --nvke-controller-bindings must be provided together")
 	}
-	bindings, err := controllers.LoadCWEBindings(bindingsPath)
+	bindings, err := controllers.LoadControllerBindings(bindingsPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	service, err := cwe.New(cwe.Config{Endpoint: endpoint, TokenFile: tokenFile})
+	service, err := nvkecontroller.New(nvkecontroller.Config{Endpoint: endpoint, TokenFile: tokenFile})
 	if err != nil {
 		return nil, nil, err
 	}

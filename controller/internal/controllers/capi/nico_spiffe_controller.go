@@ -27,6 +27,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 type nicoSpiffeNodeReader interface {
@@ -64,12 +65,12 @@ func (c *NicoSpiffeController) SetupWithManager(mgr ctrl.Manager) error {
 func machineHostIDWatchPredicate() predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			return e.Object.GetAnnotations()[constants.MachineAnnotationKeyHostID] != ""
+			return keys.MachineHostID.Value(e.Object.GetAnnotations()) != ""
 		},
 		// Ignore updates from this controller's own SPIRE agent-path annotation.
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return e.ObjectOld.GetAnnotations()[constants.MachineAnnotationKeyHostID] !=
-				e.ObjectNew.GetAnnotations()[constants.MachineAnnotationKeyHostID]
+			return keys.MachineHostID.Value(e.ObjectOld.GetAnnotations()) !=
+				keys.MachineHostID.Value(e.ObjectNew.GetAnnotations())
 		},
 		DeleteFunc:  func(event.DeleteEvent) bool { return false },
 		GenericFunc: func(event.GenericEvent) bool { return false },
@@ -113,7 +114,7 @@ func (c *NicoSpiffeController) Reconcile(ctx context.Context, req ctrl.Request) 
 		logger.Info("Waiting for Machine controller to set OwnerRef on NicoMachine")
 		return ctrl.Result{}, nil
 	}
-	hostID := machine.GetAnnotations()[constants.MachineAnnotationKeyHostID]
+	hostID := keys.MachineHostID.Value(machine.GetAnnotations())
 	if hostID == "" {
 		logger.Debug("Machine has no host-id annotation, skipping SPIRE agent path reconciliation")
 		return ctrl.Result{}, nil
@@ -136,7 +137,7 @@ func (c *NicoSpiffeController) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	existingPath := machine.GetAnnotations()[constants.MachineAnnotationKeySpireAgentSpiffeIDPath]
+	existingPath := keys.MachineSpireAgentSpiffeIDPath.Value(machine.GetAnnotations())
 	if existingPath != "" && !strings.HasPrefix(existingPath, expectedPathPrefix) {
 		logger.Info("Machine already has a SPIRE agent ID path for another attestation method, skipping annotation update")
 		return ctrl.Result{}, nil
@@ -151,12 +152,12 @@ func (c *NicoSpiffeController) Reconcile(ctx context.Context, req ctrl.Request) 
 			Name:      machine.Name,
 			Namespace: machine.Namespace,
 			Annotations: map[string]string{
-				constants.MachineAnnotationKeySpireAgentSpiffeIDPath: spireAgentSpiffeIDPath,
+				keys.MachineSpireAgentSpiffeIDPath.String(): spireAgentSpiffeIDPath,
 			},
 		},
 	}
 
-	logger.Info("Applying Machine annotation", "machineNamespace", applyMachine.Namespace, "machineName", applyMachine.Name, "annotation", constants.MachineAnnotationKeySpireAgentSpiffeIDPath)
+	logger.Info("Applying Machine annotation", "machineNamespace", applyMachine.Namespace, "machineName", applyMachine.Name, "annotation", keys.MachineSpireAgentSpiffeIDPath.String())
 	if err := c.k8sClient.Patch(ctx, applyMachine, client.Apply, client.FieldOwner(constants.FieldManagerNicoSpiffe), client.ForceOwnership); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to apply machine: %w", err)
 	}

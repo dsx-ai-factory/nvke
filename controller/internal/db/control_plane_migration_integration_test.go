@@ -58,7 +58,7 @@ func newMigratedPostgres(ctx context.Context, t *testing.T) *bun.DB {
 		_, _ = cleanup.ExecContext(context.Background(), fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE)", name))
 	})
 
-	require.NoError(t, migrations.Migrate(ctx, bunDB))
+	require.NoError(t, migrations.Migrate(ctx, bunDB, ""))
 	return bunDB
 }
 

@@ -32,40 +32,40 @@ import (
 type environment struct {
 	host              client.Client
 	state             client.Client
-	cwe               *api.ClientWithResponses
+	controller        *api.ClientWithResponses
 	temporal          string
 	temporalAddress   string
 	temporalNamespace string
 	resultsDir        string
 }
 
-func TestCWEIntegration(t *testing.T) {
+func TestControllerIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Management Engine CWE Integration Suite")
+	RunSpecs(t, "Management Engine Controller Integration Suite")
 }
 
 func loadEnvironment() environment {
 	kubeconfig := requiredEnv("KUBECONFIG")
 	hostContext, stateContext := requiredEnv("HOST_CONTEXT"), requiredEnv("STATE_CONTEXT")
 	Expect(hostContext).NotTo(Equal(stateContext), "host and state clusters must be separate")
-	endpoint := requiredEnv("CWE_API_URL")
+	endpoint := requiredEnv("NKE_CONTROLLER_API_URL")
 	endpointURL, err := url.Parse(endpoint)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(endpointURL.Scheme).To(Equal("http"), "use the local CWE port-forward")
-	Expect(isLoopback(endpointURL.Hostname())).To(BeTrue(), "CWE must use a loopback port-forward")
-	tokenFile := requiredEnv("CWE_TOKEN_FILE")
+	Expect(endpointURL.Scheme).To(Equal("http"), "use the local NVKE controller port-forward")
+	Expect(isLoopback(endpointURL.Hostname())).To(BeTrue(), "The NVKE controller must use a loopback port-forward")
+	tokenFile := requiredEnv("NKE_CONTROLLER_TOKEN_FILE")
 	_, err = os.Stat(tokenFile)
 	Expect(err).NotTo(HaveOccurred())
-	cwe, err := api.NewClientWithResponses(endpoint, api.WithHTTPClient(&http.Client{
+	controller, err := api.NewClientWithResponses(endpoint, api.WithHTTPClient(&http.Client{
 		Timeout:       10 * time.Second,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}), api.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
 		token, err := os.ReadFile(tokenFile)
 		if err != nil {
-			return fmt.Errorf("read CWE token file: %w", err)
+			return fmt.Errorf("read NVKE controller token file: %w", err)
 		}
 		if strings.TrimSpace(string(token)) == "" {
-			return fmt.Errorf("CWE token file is empty")
+			return fmt.Errorf("NVKE controller token file is empty")
 		}
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
 		return nil
@@ -79,9 +79,9 @@ func loadEnvironment() environment {
 	Expect(isLoopback(host)).To(BeTrue(), "Temporal must use a loopback port-forward")
 	return environment{
 		host: newLocalClient(kubeconfig, hostContext), state: newLocalClient(kubeconfig, stateContext),
-		cwe: cwe, temporal: temporal, temporalAddress: address,
-		temporalNamespace: envOr("TEMPORAL_NAMESPACE", "cloud-workflow-engine"),
-		resultsDir:        requiredEnv("CWE_RESULTS_DIR"),
+		controller: controller, temporal: temporal, temporalAddress: address,
+		temporalNamespace: envOr("TEMPORAL_NAMESPACE", "nke-controller"),
+		resultsDir:        requiredEnv("NKE_CONTROLLER_RESULTS_DIR"),
 	}
 }
 
@@ -107,7 +107,7 @@ func newLocalClient(kubeconfig, contextName string) client.Client {
 
 func requiredEnv(name string) string {
 	value := os.Getenv(name)
-	Expect(value).NotTo(BeEmpty(), "%s is required; use make test-cwe", name)
+	Expect(value).NotTo(BeEmpty(), "%s is required; use make test-nvke-controller-integration", name)
 	return value
 }
 

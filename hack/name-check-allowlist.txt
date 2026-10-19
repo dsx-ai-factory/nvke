@@ -70,10 +70,13 @@ token:nke-cloud-workflow-engine|nke-stack
 # the nkeOIDCAuth values key.
 token:nke-system|nkeSystemNamespace|NkeOIDCAuth
 
-# Label, annotation, taint and condition keys, and the *.nke.nvidia.com trust
-# domains of existing sites. The management-engine CRD group is now
-# internal.nvke.nvidia.com and no longer needs this entry.
-token:(^|[./])nke\.nvidia\.com|\.labels\.nke$
+# The legacy label, annotation, taint and condition domain, which the
+# controller still reads (controller/internal/keys), and the *.nke.nvidia.com
+# trust domains of existing sites. The Prometheus-mangled spelling appears in
+# the migration guide's example query, where naming the old series is the
+# point. The management-engine CRD group is now internal.nvke.nvidia.com and
+# no longer needs this entry.
+token:(^|[./])nke\.nvidia\.com|^label_nke_nvidia_com_|\.labels\.nke$
 
 # The NKECluster, NKENodePool and nkeClusterRef names of the DGXC platform API
 # (compute.private.x-dgxc.nvidia.com), which this repository emits CRs for in

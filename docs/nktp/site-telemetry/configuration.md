@@ -1,8 +1,8 @@
-# Telemetry on a site controller: configuration
+# Management cluster telemetry: configuration
 
-The NKTP chart's defaults are for a multi-node cluster, and they know nothing
-about NVKE. Everything a site controller needs differently is in
-[`deploy/nico/nktp/values.yaml`](../../../deploy/nico/nktp/values.yaml),
+The NVKE telemetry pipelines (NKTP) chart's defaults are for a multi-node cluster, and they know nothing
+about NVKE. Everything a management cluster needs differently is in
+[`deploy/nico/nktp/values.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/nktp/values.yaml),
 which the `nktp` item applies over the chart. This page explains what it
 changes and why, and how a site overrides it.
 
@@ -14,8 +14,8 @@ changes and why, and how a site overrides it.
 | **`k8s.cluster.name`** on the watchdog, its sidecar and the three gateways | A `K8S_CLUSTER_NAME` environment variable read from ConfigMap `nktp-cluster`, which `nvke-base-config` renders from BootstrapConfig's `ClusterName`. The chart's `transform/cluster` processor reads it, and the chart sets it from `global.clusterName` only when the `env` list omits it. NVKE's kubeadm configuration names every cluster `kubernetes`, so the name has to come from outside the cluster. |
 | **The API audit log path** (`filelog/kube-api-audit.include`) | NVKE's kubeadm configuration writes the API server's audit log to `/var/log/kubernetes_audit/audit.log`, not the chart's default path. |
 | **Control-plane monitors** (`kubeScheduler`, `kubeControllerManager`, `kubeProxy` off) | NVKE binds the scheduler and controller manager to `127.0.0.1`, and OVN clusters run no kube-proxy. Left on, they would show as permanently down targets. The API server, etcd and CoreDNS monitors stay on and work. |
-| **metrics-server on** | Nothing else serves `metrics.k8s.io` on a site controller, and the Collector autoscalers read it. |
-| **Sizing** | One replica of everything, autoscalers starting at one, small requests and limits for every Collector and Target Allocator, and one kube-state-metrics Deployment for all object types instead of five. Sized for the smaller clusters a site controller runs on. |
+| **metrics-server on** | Nothing else serves `metrics.k8s.io` on the management cluster, and the Collector autoscalers read it. |
+| **Sizing** | One replica of everything, autoscalers starting at one, small requests and limits for every Collector and Target Allocator, and one kube-state-metrics Deployment for all object types instead of five. Sized for a small management cluster. |
 
 ## Connecting a real backend
 
@@ -82,13 +82,13 @@ For a node that keeps its journal only in memory, add a `/run/log/journal`
 host volume mounted at `/hostfs/run/log/journal`, and set
 `daemonset.otelcol.config.receivers.journald.directory: /run/log/journal`. The
 volume lists replace the site values' lists, so restate them in full, as
-[`nktp/hack/e2e-values.yaml`](../../../nktp/hack/e2e-values.yaml) does for
+[`nktp/hack/e2e-values.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/nktp/hack/e2e-values.yaml) does for
 Kind.
 
 ## Sizing up
 
-The site values size NKTP for the smaller clusters a site controller runs on,
-with a handful of workloads. As a site grows:
+The site values size NKTP for a small management cluster with a handful of
+workloads. As a site grows:
 
 - **The large-target pool** carries kube-state-metrics and the control-plane
   monitors. Raise `large_target_metrics.kubernetes.resources` and its

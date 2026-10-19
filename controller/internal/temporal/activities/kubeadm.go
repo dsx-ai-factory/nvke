@@ -65,6 +65,8 @@ func (a *Activities) clusterAuthentication(cluster db.Cluster) kubeadmconfig.Clu
 		SharedEnabled: cluster.OIDCAuthEnabled,
 		Providers:     db.ClusterOIDCProvidersToConfig(cluster.OIDCProviders),
 		TrustDomain:   a.trustDomain,
+
+		ManagementNamespace: a.cfg.ManagementNamespaceOrDefault(),
 	}
 }
 

@@ -5,12 +5,17 @@ package deploypath
 
 import (
 	"bytes"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"io"
+	"maps"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/template"
-	"unicode"
 
 	"gopkg.in/yaml.v3"
 
@@ -49,12 +54,18 @@ type TemplateContext struct {
 // site writes the site values and renders the template items.
 func (r *renderer) site() {
 	spec, cs := r.opts.Site, r.opts.Stack
-	creds, err := stackconfig.CredentialsFromEnv()
-	if err != nil {
-		for _, line := range strings.Split(err.Error(), "\n") {
-			r.problem("environment: %s", line)
+	// An external render reads no secret: no credential variable, no CA file.
+	external := r.opts.Credentials == CredentialsExternal
+	var creds stackconfig.Credentials
+	if !external {
+		loaded, err := stackconfig.CredentialsFromEnv()
+		if err != nil {
+			for _, line := range strings.Split(err.Error(), "\n") {
+				r.problem("environment: %s", line)
+			}
+			return
 		}
-		return
+		creds = loaded
 	}
 	vip, err := spec.ControllerEndpoint()
 	if err != nil {
@@ -101,16 +112,13 @@ func (r *renderer) site() {
 		r.problem("the architecture %q has no TPM attestor checksum", r.opts.Arch)
 		return
 	}
-	// Only YAML-encoded values carry it, so it needs no template character check.
 	password := creds.DatabasePassword
 
-	// controller: the database password, the OIDC discovery URL and the SPIRE
-	// server, all VIP-derived; the images only when the site spec overrides them.
+	// controller: the database Secret's name, the OIDC discovery URL and the
+	// SPIRE server, all VIP-derived; the images only when the stack config
+	// overrides them. No values file carries a credential.
 	controller := map[string]any{
-		"appDb": map[string]any{"postgresPassword": password},
-		// The chart then writes the connection string, URL-escaped, into a
-		// Secret instead of a plain env value.
-		"secrets":      map[string]any{"createDbSecret": true},
+		"secrets":      map[string]any{"dbSecretName": databaseSecret},
 		"nvkeOIDCAuth": map[string]any{"discoveryURL": fmt.Sprintf("https://%s:%d/.well-known/openid-configuration", vip, oidcNodePort)},
 		"spiffe":       map[string]any{"trustDomain": trustDomain, "spire": map[string]any{"serverAddress": vip}},
 	}
@@ -130,7 +138,6 @@ func (r *renderer) site() {
 		r.problem("stack config: images.profiles is required: the deploy path enables profiles.image and nothing else names the image")
 	}
 	r.siteValues("controller", controller)
-	r.credential(filepath.Join("controller", SiteValuesFile))
 
 	// spire: site identity, the controller's admin ID, the TPM attestor
 	// checksum for the architecture, the bootstrap CA when the environment
@@ -143,15 +150,20 @@ func (r *renderer) site() {
 		"adminIDs":     []string{"spiffe://" + trustDomain + controllerAdminPath},
 		"nodeAttestor": map[string]any{"tpmDirect": map[string]any{"checksum": checksum}},
 	}
-	// The CA files stay with the operator: helm reads them at install time
-	// through chart.setFile. A self-signed root is its own bundle.
-	var caFiles []string
-	if spec.Spire.CACertFile != "" && spec.Spire.CAKeyFile != "" {
-		cert := secretPath(r, sitespec.EnvSpireCACertFile, spec.Spire.CACertFile)
-		key := secretPath(r, sitespec.EnvSpireCAKeyFile, spec.Spire.CAKeyFile)
-		server["upstreamAuthority"] = map[string]any{"disk": map[string]any{"enabled": true}}
-		const prefix = "spire-server.upstreamAuthority.disk.secret.data."
-		caFiles = []string{prefix + "certificate=" + cert, prefix + "key=" + key, prefix + "bundle=" + cert}
+	// The CA is a Secret the site-credentials item holds; the chart creates none.
+	var caCert, caKey []byte
+	hasCA := spec.Spire.UpstreamCA
+	if hasCA {
+		if !external {
+			caCert = secretFile(r, sitespec.EnvSpireCACertFile, spec.Spire.CACertFile)
+			caKey = secretFile(r, sitespec.EnvSpireCAKeyFile, spec.Spire.CAKeyFile)
+		}
+		// data.bundle is a marker: the chart sets bundle_file_path only when
+		// it is non-empty, and with create: false writes no Secret from it.
+		server["upstreamAuthority"] = map[string]any{"disk": map[string]any{
+			"enabled": true,
+			"secret":  map[string]any{"create": false, "name": spireCASecret, "data": map[string]any{"bundle": "bundle.crt"}},
+		}}
 	}
 	domains, err := oidcDomains(filepath.Join(r.opts.DeployPath, "spire", "overlay.yaml"), vip)
 	if err != nil {
@@ -167,24 +179,17 @@ func (r *renderer) site() {
 		},
 	}
 	r.siteValues("spire", spire)
-	if len(caFiles) > 0 && len(r.problems) == 0 {
-		r.appendSetFile("spire", caFiles)
-		r.note("spire: the CA is read from %s and %s at install time", spec.Spire.CACertFile, spec.Spire.CAKeyFile)
-	}
 
-	// postgresql and temporal share the one database password. The Bitnami
-	// chart reads auth.postgresPassword for the superuser and auth.password
-	// for the application user: one value for both.
-	postgresql := map[string]any{"auth": map[string]any{"postgresPassword": password, "password": password}}
+	// postgresql and temporal read the one password from the same Secret.
+	postgresql := map[string]any{"auth": map[string]any{"existingSecret": databaseSecret}}
 	if cs.Mirror != "" {
 		// The chart refuses an image outside its own registry unless told so.
 		postgresql["global"] = map[string]any{"imageRegistry": cs.Mirror, "security": map[string]any{"allowInsecureImages": true}}
 	}
 	r.siteValues("postgresql", postgresql)
-	r.credential(filepath.Join("postgresql", SiteValuesFile))
 	temporal := map[string]any{"server": map[string]any{"config": map[string]any{"persistence": map[string]any{
-		"default":    map[string]any{"sql": map[string]any{"password": password}},
-		"visibility": map[string]any{"sql": map[string]any{"password": password}},
+		"default":    map[string]any{"sql": map[string]any{"existingSecret": databaseSecret}},
+		"visibility": map[string]any{"sql": map[string]any{"existingSecret": databaseSecret}},
 	}}}}
 	if cs.Mirror != "" {
 		for key, repo := range temporalImages {
@@ -198,7 +203,9 @@ func (r *renderer) site() {
 		r.note("mirror: spire, postgresql and temporal pull from %s; nktp and capnico keep their upstream registries", cs.Mirror)
 	}
 	r.siteValues("temporal", temporal)
-	r.credential(filepath.Join("temporal", SiteValuesFile))
+	if len(r.problems) == 0 {
+		r.siteCredentials(password, hasCA, caCert, caKey)
+	}
 
 	for _, item := range r.items {
 		if item.Type == TypeTemplate {
@@ -263,18 +270,53 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 			return
 		}
 		rendered := strings.TrimSuffix(name, ".tmpl")
-		if err := writePrivate(filepath.Join(dst, rendered), out.Bytes()); err != nil {
-			r.problem("%s: %v", item, err)
-			return
-		}
-		if bytes.Contains(out.Bytes(), []byte("kind: Secret")) {
-			r.credential(filepath.Join(item, rendered))
-		}
 		if err := os.Remove(filepath.Join(dst, name)); err != nil {
 			r.problem("%s: %v", item, err)
 			return
 		}
 		count++
+		// Each document is classified by its own kind.
+		docs, err := yamlDocuments(out.Bytes())
+		if err != nil {
+			r.problem("%s/%s: %v", item, rendered, err)
+			return
+		}
+		var kept []*yaml.Node
+		hasSecret := false
+		for _, doc := range docs {
+			meta, err := decodeSecretMeta(doc)
+			if err != nil {
+				r.problem("%s/%s: %v", item, rendered, err)
+				return
+			}
+			if meta.Kind != "Secret" {
+				kept = append(kept, doc)
+				continue
+			}
+			hasSecret = true
+			if r.opts.Credentials == CredentialsExternal {
+				// The operator's secret store delivers it.
+				r.expected(meta)
+			}
+		}
+		// Rendered: the file as written. External: the non-Secret documents.
+		content := out.Bytes()
+		if r.opts.Credentials == CredentialsExternal {
+			if len(kept) == 0 {
+				continue
+			}
+			if content, err = encodeDocuments(kept); err != nil {
+				r.problem("%s/%s: %v", item, rendered, err)
+				return
+			}
+		}
+		if err := writePrivate(filepath.Join(dst, rendered), content); err != nil {
+			r.problem("%s: %v", item, err)
+			return
+		}
+		if hasSecret && r.opts.Credentials != CredentialsExternal {
+			r.credential(filepath.Join(item, rendered))
+		}
 	}
 	if count == 0 {
 		r.problem("%s: a template item with no .yaml.tmpl file", item)
@@ -400,24 +442,19 @@ func oidcDomains(overlay, vip string) ([]string, error) {
 	return domains, nil
 }
 
-// secretPath returns the absolute path of a file an environment variable
-// names for the install to read. A missing file, or a path the deploy path
-// reader cannot carry, is a problem naming the variable.
-func secretPath(r *renderer, what, path string) string {
-	abs, err := filepath.Abs(path)
+// secretFile reads the credential file a variable names; missing or empty
+// is a problem naming the variable.
+func secretFile(r *renderer, what, path string) []byte {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		r.problem("environment: %s: %v", what, err)
-		return ""
+		return nil
 	}
-	if _, err := os.Stat(abs); err != nil {
-		r.problem("environment: %s: %v", what, err)
-		return ""
+	if len(bytes.TrimSpace(data)) == 0 {
+		r.problem("environment: %s: %s is empty", what, path)
+		return nil
 	}
-	if strings.ContainsFunc(abs, unicode.IsSpace) {
-		r.problem("environment: %s: the path %q holds whitespace, which the deploy path reader cannot carry; move the file to a path without spaces", what, abs)
-		return ""
-	}
-	return abs
+	return data
 }
 
 func contains(list []string, value string) bool {
@@ -427,4 +464,291 @@ func contains(list []string, value string) bool {
 		}
 	}
 	return false
+}
+
+// The Secrets the charts read their credentials from. The site-credentials
+// item holds them, or the operator's secret store does when the credentials
+// are external.
+const (
+	// credentialsItem is the manifest item added after the first item.
+	credentialsItem = "site-credentials"
+	// databaseSecret is read by the postgresql, temporal and controller items.
+	databaseSecret = "nvke-database"
+	// spireCASecret is the upstream CA Secret the spire item mounts.
+	spireCASecret = "spire-upstream-ca"
+)
+
+// connectionStringKey is the key the controller reads its database URL from.
+const connectionStringKey = "database-connection-string"
+
+// siteSecret is one Secret the site-credentials item holds, or with external
+// credentials one the cluster has to hold: with external credentials the
+// values are empty, except the connection string's, which is its shape.
+type siteSecret struct {
+	namespace, name string
+	data            map[string]string
+}
+
+// mergeSecrets joins the Secrets that share a namespace and a name, in the
+// order each first appears, with the union of their keys. A Secret is one
+// document: server-side apply gives a later document for the same Secret
+// ownership of only its own keys and drops the rest.
+func mergeSecrets(secrets []siteSecret) ([]siteSecret, error) {
+	var merged []siteSecret
+	index := map[string]int{}
+	for _, sec := range secrets {
+		id := sec.namespace + "/" + sec.name
+		i, seen := index[id]
+		if !seen {
+			index[id] = len(merged)
+			merged = append(merged, siteSecret{sec.namespace, sec.name, maps.Clone(sec.data)})
+			continue
+		}
+		for k, v := range sec.data {
+			if have, ok := merged[i].data[k]; ok && have != v {
+				return nil, fmt.Errorf("the items that share the Secret %s give its key %s different values", id, k)
+			}
+			merged[i].data[k] = v
+		}
+	}
+	return merged, nil
+}
+
+// expectedLine describes a Secret the cluster has to hold: namespace, name,
+// keys and, for the connection string, the shape of its value.
+func (s siteSecret) expectedLine() string {
+	keys := make([]string, 0, len(s.data))
+	for k := range s.data {
+		if k != connectionStringKey {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	shape, hasURL := s.data[connectionStringKey]
+	if hasURL {
+		keys = append(keys, connectionStringKey)
+	}
+	line := "Secret " + s.namespace + "/" + s.name + " with keys " + strings.Join(keys, ", ")
+	if hasURL {
+		line += ", the URL " + shape + " with the password URL-escaped"
+	}
+	return line
+}
+
+// siteCredentials writes the site-credentials item, or with external
+// credentials lists the Secrets it would hold. The items that read the same
+// Secret name in one namespace share one Secret holding every key they read.
+func (r *renderer) siteCredentials(password string, hasCA bool, caCert, caKey []byte) {
+	for _, item := range r.items {
+		if item.Name == credentialsItem {
+			r.problem("%s: the deploy path already has an item of that name; the render adds it", credentialsItem)
+			return
+		}
+	}
+	namespaces := map[string]string{}
+	for _, item := range []string{"postgresql", "temporal", "controller", "spire"} {
+		ns, ok := r.itemNamespace(item)
+		if !ok {
+			return
+		}
+		namespaces[item] = ns
+	}
+	// With external credentials the password is empty and the controller's
+	// value is the shape of the connection string.
+	conn, ok := r.controllerConnectionString(password)
+	if !ok {
+		return
+	}
+	external := r.opts.Credentials == CredentialsExternal
+	secrets := []siteSecret{
+		{namespaces["postgresql"], databaseSecret, map[string]string{"postgres-password": password, "password": password}},
+		{namespaces["temporal"], databaseSecret, map[string]string{"password": password}},
+		{namespaces["controller"], databaseSecret, map[string]string{connectionStringKey: conn}},
+	}
+	if hasCA && (external || caCert != nil && caKey != nil) {
+		// A self-signed root is its own bundle.
+		secrets = append(secrets, siteSecret{namespaces["spire"], spireCASecret, map[string]string{"tls.crt": string(caCert), "tls.key": string(caKey), "bundle.crt": string(caCert)}})
+	}
+	secrets, err := mergeSecrets(secrets)
+	if err != nil {
+		r.problem("%s: %v", credentialsItem, err)
+		return
+	}
+	if external {
+		for _, sec := range secrets {
+			r.out.Expected = append(r.out.Expected, sec.expectedLine())
+		}
+		return
+	}
+	var b bytes.Buffer
+	b.WriteString("# Written by nvkectl render deploy-path: the Secrets the charts read.\n")
+	for _, sec := range secrets {
+		// data, not stringData: server-side apply cannot update stringData.
+		data := map[string]string{}
+		for k, v := range sec.data {
+			data[k] = base64.StdEncoding.EncodeToString([]byte(v))
+		}
+		b.WriteString("---\n")
+		doc := map[string]any{
+			"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
+			"metadata": map[string]any{"name": sec.name, "namespace": sec.namespace},
+			"data":     data,
+		}
+		enc := yaml.NewEncoder(&b)
+		enc.SetIndent(2)
+		if err := enc.Encode(doc); err != nil {
+			r.problem("%s: %v", credentialsItem, err)
+			return
+		}
+	}
+	if err := writePrivate(filepath.Join(r.opts.Out, credentialsItem, "secrets.yaml"), b.Bytes()); err != nil {
+		r.problem("%s: %v", credentialsItem, err)
+		return
+	}
+	r.credential(filepath.Join(credentialsItem, "secrets.yaml"))
+	// After the first item: the namespaces exist, no chart has run.
+	items := make([]Item, 0, len(r.items)+1)
+	for i, item := range r.items {
+		items = append(items, item)
+		if i == 0 {
+			items = append(items, Item{Name: credentialsItem, Type: TypeManifest})
+		}
+	}
+	r.items = items
+	r.itemsChanged = true
+	r.note("%s: %d Secrets written", credentialsItem, len(secrets))
+}
+
+// itemNamespace is the release namespace in an item's release.yaml.
+func (r *renderer) itemNamespace(item string) (string, bool) {
+	rel, err := ReadRelease(filepath.Join(r.opts.DeployPath, item))
+	if err != nil {
+		r.problem("%s: %v", item, err)
+		return "", false
+	}
+	if rel.Release == nil || rel.Release.Namespace == "" {
+		r.problem("%s: release.yaml names no release namespace; the Secret it reads has nowhere to go", item)
+		return "", false
+	}
+	return rel.Release.Namespace, true
+}
+
+// secretMeta is what the render reads of a rendered document.
+type secretMeta struct {
+	Kind     string `yaml:"kind"`
+	Type     string `yaml:"type"`
+	Metadata struct {
+		Name      string `yaml:"name"`
+		Namespace string `yaml:"namespace"`
+	} `yaml:"metadata"`
+	StringData map[string]any `yaml:"stringData"`
+	Data       map[string]any `yaml:"data"`
+}
+
+// yamlDocuments decodes a YAML stream into its documents; an empty document
+// is dropped. Comments stay on the nodes, so a re-encoded document keeps them.
+func yamlDocuments(stream []byte) ([]*yaml.Node, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(stream))
+	var docs []*yaml.Node
+	for {
+		var node yaml.Node
+		err := dec.Decode(&node)
+		if errors.Is(err, io.EOF) {
+			return docs, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
+			docs = append(docs, &node)
+		}
+	}
+}
+
+// decodeSecretMeta reads one rendered document.
+func decodeSecretMeta(doc *yaml.Node) (secretMeta, error) {
+	var meta secretMeta
+	if err := doc.Decode(&meta); err != nil {
+		return meta, err
+	}
+	return meta, nil
+}
+
+// encodeDocuments writes docs as one YAML stream.
+func encodeDocuments(docs []*yaml.Node) ([]byte, error) {
+	var b bytes.Buffer
+	enc := yaml.NewEncoder(&b)
+	enc.SetIndent(2)
+	for _, doc := range docs {
+		if err := enc.Encode(doc); err != nil {
+			return nil, err
+		}
+	}
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+// expected records a Secret the operator's secret store must provide:
+// namespace, name, keys and, unless Opaque, type.
+func (r *renderer) expected(meta secretMeta) {
+	keys := make([]string, 0, len(meta.StringData)+len(meta.Data))
+	for k := range meta.StringData {
+		keys = append(keys, k)
+	}
+	for k := range meta.Data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	line := fmt.Sprintf("Secret %s/%s with keys %s", meta.Metadata.Namespace, meta.Metadata.Name, strings.Join(keys, ", "))
+	if meta.Type != "" && meta.Type != "Opaque" {
+		line += ", type " + meta.Type
+	}
+	r.out.Expected = append(r.out.Expected, line)
+}
+
+// controllerConnectionString builds the controller's database URL from the
+// committed appDb values and the password, escaped as userinfo. An empty
+// password gives the shape, with <password> in its place.
+func (r *renderer) controllerConnectionString(password string) (string, bool) {
+	app := map[string]string{"url": "postgresql:5432", "dbName": "cloud-workflow", "postgresUser": "", "sslMode": "disable"}
+	rel, err := ReadRelease(filepath.Join(r.opts.DeployPath, "controller"))
+	if err != nil {
+		r.problem("controller: %v", err)
+		return "", false
+	}
+	for _, file := range rel.Values {
+		data, err := os.ReadFile(filepath.Join(r.opts.DeployPath, "controller", file))
+		if err != nil {
+			r.problem("controller: %v", err)
+			return "", false
+		}
+		// A node walk: helm tolerates a repeated key, a strict decode does not.
+		var doc yaml.Node
+		if err := yaml.Unmarshal(data, &doc); err != nil {
+			r.problem("controller: %s: %v", file, err)
+			return "", false
+		}
+		root := &doc
+		if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
+			root = root.Content[0]
+		}
+		if appDb := yamlChild(root, "appDb"); appDb != nil && appDb.Kind == yaml.MappingNode {
+			for i := 0; i+1 < len(appDb.Content); i += 2 {
+				if v := appDb.Content[i+1]; v.Kind == yaml.ScalarNode && v.Value != "" {
+					app[appDb.Content[i].Value] = v.Value
+				}
+			}
+		}
+	}
+	if app["postgresUser"] == "" {
+		r.problem("controller: appDb.postgresUser is not set in the deploy path's values")
+		return "", false
+	}
+	userinfo := url.UserPassword(app["postgresUser"], password).String()
+	if password == "" {
+		userinfo = url.User(app["postgresUser"]).String() + ":<password>"
+	}
+	return fmt.Sprintf("postgresql://%s@%s/%s?sslmode=%s", userinfo, app["url"], app["dbName"], url.QueryEscape(app["sslMode"])), true
 }

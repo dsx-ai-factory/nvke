@@ -19,12 +19,11 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
-
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/server"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 // testNicoNodePoolProvider is the nested Forge payload the read fixtures below
@@ -281,9 +280,11 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 						Release:                  "ubuntu",
 						ConfigProfile:            "default",
 					},
-					NodeLabels:       map[string]string{"label1": "value1", "label2": "value2"},
-					NodeTaints:       []api.NodeTaint{{Key: "nvidia.com/dedicated", Value: "gpu", Effect: api.NodeTaintEffectNoSchedule}},
-					DesiredNodeCount: 3,
+					NodeLabels:         map[string]string{"label1": "value1", "label2": "value2"},
+					MachineAnnotations: map[string]string{"example.com/profiles": "gpu,network"},
+					MachineLabels:      map[string]string{"example.com/pool": "gpu"},
+					NodeTaints:         []api.NodeTaint{{Key: "nvidia.com/dedicated", Value: "gpu", Effect: api.NodeTaintEffectNoSchedule}},
+					DesiredNodeCount:   3,
 				}
 			}(),
 			setupMockCalls: func(tx *mockTx) {
@@ -303,6 +304,8 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 						n.Name == "test-pool" &&
 						n.NodeNamePrefix == "test-pool-prefix" &&
 						assert.ObjectsAreEqual(map[string]string{"label1": "value1", "label2": "value2"}, n.NodeLabels) &&
+						assert.ObjectsAreEqual(map[string]string{"example.com/profiles": "gpu,network"}, n.MachineAnnotations) &&
+						assert.ObjectsAreEqual(map[string]string{"example.com/pool": "gpu"}, n.MachineLabels) &&
 						assert.ObjectsAreEqual([]db.NodeTaint{{Key: "nvidia.com/dedicated", Value: "gpu", Effect: "NoSchedule"}}, n.NodeTaints) &&
 						nico.NvLinkLogicalPartitionID != nil &&
 						*nico.NvLinkLogicalPartitionID == uuid.MustParse("550e8400-e29b-41d4-a716-446655440006")

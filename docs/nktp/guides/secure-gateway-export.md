@@ -1,6 +1,6 @@
 # Secure gateway export
 
-NKTP exports to its bundled LGTM backend over plaintext OTLP/gRPC at
+NVKE telemetry pipelines (NKTP) exports to its bundled LGTM backend over plaintext OTLP/gRPC at
 `lgtm:4317` by default. LGTM already enables both
 [gRPC and HTTP ingestion](https://github.com/grafana/docker-otel-lgtm/blob/v0.32.0/docker/otelcol-config.yaml).
 This backend is intended only for local development. Configure TLS before
@@ -16,7 +16,7 @@ LGTM accepts gRPC through its bundled Collector, which forwards metrics and logs
 to those HTTP endpoints internally.
 
 This guide configures mTLS for the three gateway Collectors using gRPC. The
-[example](../examples/gateway-mtls.values.yaml) shows the overrides. Receiver
+[example](https://github.com/dsx-ai-factory/nvke/blob/main/docs/nktp/examples/gateway-mtls.values.yaml) shows the overrides. Receiver
 TLS for connections into the gateways is configured separately.
 
 ## mTLS with an existing certificate
@@ -82,8 +82,7 @@ gateway_logs:
         readOnly: true
 ```
 
-> [!NOTE]
-> `fsGroup: 10001` matches the group used by NKTP's default Collector image. It
+> **Note:** `fsGroup: 10001` matches the group used by NKTP's default Collector image. It
 > lets the non-root Collector read the root-owned Secret files through the group
 > read bit in `0440`. If you use a custom Collector image, set `fsGroup` to a
 > group available to that image. Alternatively, omit both `defaultMode` and
@@ -111,7 +110,7 @@ Apply the volume, mount, and exporter settings to `gateway_logs`,
 `gateway_metrics`, and `gateway_traces`. Use each gateway's own internal Secrets:
 `nktp-gateway-<signal>-server-tls` and `nktp-gateway-<signal>-client-tls`, where
 `<signal>` is `logs`, `metrics`, or `traces`. Keep the volume names and mount paths
-shown above. The complete [values example](../examples/gateway-mtls.values.yaml)
+shown above. The complete [values example](https://github.com/dsx-ai-factory/nvke/blob/main/docs/nktp/examples/gateway-mtls.values.yaml)
 configures all three.
 
 Set `insecure: false` explicitly: the development defaults disable TLS, and

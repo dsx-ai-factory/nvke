@@ -100,10 +100,13 @@ var stayEnv = map[string]string{
 // because the ConfigMap is the first place they exist.
 var configMapOnly = []string{
 	"oidc.providers",
+	"managementNamespace",
 	// New clusters default to OVN-Kubernetes. This is the switch internal
 	// fleets set when they still create Calico clusters.
 	"allowLegacyCalicoClusterCreation",
 	"nodeMetadataAllowlistedLabelKeys",
+	"machineMetadataAllowlistedLabelKeys",
+	"machineMetadataAllowlistedAnnotationKeys",
 }
 
 // chartDeployment is the template whose env block decides what the chart sets.

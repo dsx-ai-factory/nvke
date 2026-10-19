@@ -16,6 +16,7 @@ import (
 	"go.temporal.io/sdk/testsuite"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
@@ -31,7 +32,7 @@ func TestNodeReconfigureKubeletServerActivityOrder(t *testing.T) {
 		mock.Anything,
 		activities.TaintNodeInput{
 			NodeID:      nodeID,
-			TaintKey:    constants.TaintKeyMaintenance,
+			TaintKey:    keys.MaintenanceTaint.String(),
 			TaintValue:  kubeVIPMaintenanceTaintValue,
 			TaintEffect: constants.TaintEffectNoSchedule,
 		},
@@ -51,7 +52,7 @@ func TestNodeReconfigureKubeletServerActivityOrder(t *testing.T) {
 		mock.Anything,
 		activities.TaintNodeInput{
 			NodeID:      nodeID,
-			TaintKey:    constants.TaintKeyMaintenance,
+			TaintKey:    keys.MaintenanceTaint.String(),
 			TaintValue:  kubeVIPMaintenanceTaintValue,
 			TaintEffect: constants.TaintEffectNoSchedule + "-",
 		},

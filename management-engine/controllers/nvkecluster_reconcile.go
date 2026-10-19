@@ -14,7 +14,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	internalv1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
-	"github.com/dsx-ai-factory/nvke/management-engine/internal/cwe"
+	"github.com/dsx-ai-factory/nvke/management-engine/internal/nvkecontroller"
 )
 
 var errCreateRejected = errors.New("cluster creation request was rejected")
@@ -31,7 +31,7 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *internalv1.NVKECluster) (*api.Cluster, error) {
 	// Recover existing work before resolving a spec that may have changed since creation.
 	observedCluster, err := r.findCluster(ctx, cluster)
-	if !errors.Is(err, cwe.ErrNotFound) {
+	if !errors.Is(err, nvkecontroller.ErrNotFound) {
 		return observedCluster, err
 	}
 	state := cluster.Status.Provisioning
@@ -46,13 +46,13 @@ func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *inte
 		}
 	}
 
-	request, err := ResolveCWERequest(cluster, r.Bindings)
+	request, err := ResolveControllerRequest(cluster, r.Bindings)
 	if err != nil {
 		return nil, err
 	}
 	var checkpoint *internalv1.NVKECluster
 	if newAttempt {
-		state = &internalv1.ClusterProvisioningStatus{Endpoint: r.CWE.Endpoint(), Generation: cluster.Generation}
+		state = &internalv1.ClusterProvisioningStatus{Endpoint: r.NVKEController.Endpoint(), Generation: cluster.Generation}
 		// Checkpoint before POST: a restart can recover by name without claiming a newer spec was accepted.
 		checkpoint = cluster.DeepCopy()
 		checkpoint.Status.Provisioning = state
@@ -62,11 +62,11 @@ func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *inte
 		cluster.Status.Provisioning = state
 	}
 
-	observedCluster, err = r.CWE.Create(ctx, request)
-	if response, ok := errors.AsType[*cwe.HTTPError](err); ok && response.StatusCode == http.StatusBadRequest {
+	observedCluster, err = r.NVKEController.Create(ctx, request)
+	if response, ok := errors.AsType[*nvkecontroller.HTTPError](err); ok && response.StatusCode == http.StatusBadRequest {
 		// A duplicate-name response can follow a successful POST whose response was lost.
 		observedCluster, err = r.findCluster(ctx, cluster)
-		if errors.Is(err, cwe.ErrNotFound) {
+		if errors.Is(err, nvkecontroller.ErrNotFound) {
 			// A rejected request cannot cancel an earlier attempt whose outcome is still unknown.
 			if newAttempt {
 				// The deferred patch predates the checkpoint, so clear it explicitly with its resource version.
@@ -89,15 +89,15 @@ func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *inte
 // Lookup also recovers a successful create whose response or status write was lost.
 func (r *NVKEClusterReconciler) findCluster(ctx context.Context, cluster *internalv1.NVKECluster) (*api.Cluster, error) {
 	state := cluster.Status.Provisioning
-	if state != nil && state.Endpoint != r.CWE.Endpoint() {
+	if state != nil && state.Endpoint != r.NVKEController.Endpoint() {
 		return nil, &InvalidSpecError{Message: "Cluster provisioning service has changed; restore the original configuration"}
 	}
 	var observedCluster *api.Cluster
 	var err error
 	if state != nil && state.ID != "" {
-		observedCluster, err = r.CWE.Get(ctx, state.ID)
+		observedCluster, err = r.NVKEController.Get(ctx, state.ID)
 	} else {
-		observedCluster, err = r.CWE.FindByName(ctx, clusterRemoteName(cluster))
+		observedCluster, err = r.NVKEController.FindByName(ctx, clusterRemoteName(cluster))
 	}
 	if err != nil {
 		return nil, err

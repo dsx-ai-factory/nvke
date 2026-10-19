@@ -33,7 +33,6 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 
 | Document | Contents |
 |---|---|
-| [overview.md](overview.md) | What NVKE is and the problem it solves |
 | [dsx-stack.md](dsx-stack.md) | Where NVKE sits in the DSX component ecosystem (NICo, AICR, CRE, Nodewright, NVSentinel) |
 | [concepts.md](concepts.md) | The terms the rest of the documentation uses |
 | [first-cluster.md](first-cluster.md) | Three paths to a running cluster, driven by `nvkectl` |
@@ -48,6 +47,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [development.md](development.md) | The checks to run before opening a pull request, and which ones a laptop cannot reproduce |
 | [go-workspace.md](go-workspace.md) | The Go workspace, which modules are in it, and how to keep `go.work.sum` current |
 | [coverage-policy.md](coverage-policy.md) | What coverage is collected, what CI does with it, and why no threshold gates a merge |
+| [issue-triage.md](issue-triage.md) | How issues are triaged: the `needs-triage` and `priority/*` labels, who sets them, and what the automation does |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | How to get a change reviewed and merged |
 | [../.github/workflows/README.md](../.github/workflows/README.md) | How CI is wired, and the invariants a new workflow has to hold to |
 
@@ -73,23 +73,27 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [tenant-clusters/kubernetes-api-access.md](tenant-clusters/kubernetes-api-access.md) | How operators, automation and Site Controller services reach and authenticate to tenant Kubernetes APIs |
 | [../controller/docs/authenticating-to-the-api.md](../controller/docs/authenticating-to-the-api.md) | Authenticating to the API |
 | [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nvkectl` |
-| [../controller/docs/byo-os.md](../controller/docs/byo-os.md) | Bringing your own OS image |
+| [design/README.md](design/README.md) | Design records and proposals; status is stated at the top of each |
+| [design/byo-os.md](design/byo-os.md) | Proposal: bringing your own OS image |
+| [design/multi-oidc-provider-support-design.md](design/multi-oidc-provider-support-design.md) | Design: multiple OIDC providers |
 
 ## Operating a site
 
 | Document | Contents |
 |---|---|
-| [operations/upgrade.md](operations/upgrade.md) | Upgrading NVKE and tenant cluster Kubernetes versions |
+| [operations/upgrade.md](operations/upgrade.md) | Pointer to the upgrade limitations in preview status |
 | [operations/crd-group-migration.md](operations/crd-group-migration.md) | Copying existing CRs to the `internal.nvke.nvidia.com` group on an existing site |
+| [operations/label-domain-migration.md](operations/label-domain-migration.md) | What the move to the `nvke.nvidia.com` label and annotation domain means for an existing site |
+| [site-operations/certificate-renewal.md](site-operations/certificate-renewal.md) | Site-management certificate renewal for NVKE fleet operators |
 | [operations/observability.md](operations/observability.md) | Temporal UI, CWE logs, database health, and CAPNICo diagnostics |
 | [operations/faq.md](operations/faq.md) | Common bootstrap and tenant cluster failure modes |
-| [nktp/site-telemetry/getting-started.md](nktp/site-telemetry/getting-started.md) | Telemetry on a site controller: what NKTP collects and what the deploy path needs |
+| [nktp/site-telemetry/getting-started.md](nktp/site-telemetry/getting-started.md) | Management cluster telemetry: what NKTP collects and what the deploy path needs |
 | [nktp/site-telemetry/configuration.md](nktp/site-telemetry/configuration.md) | What the site's NKTP values change, connecting a real backend, and overriding values safely |
 | [nktp/site-telemetry/monitoring-a-service.md](nktp/site-telemetry/monitoring-a-service.md) | How a service owner gets a service's metrics scraped by NKTP |
 | [nktp/site-telemetry/verification.md](nktp/site-telemetry/verification.md) | Checking every telemetry signal end to end after an install |
-| [nktp/site-telemetry/troubleshooting.md](nktp/site-telemetry/troubleshooting.md) | Telemetry failures seen on site controllers, and their fixes |
+| [nktp/site-telemetry/troubleshooting.md](nktp/site-telemetry/troubleshooting.md) | Telemetry failures seen on management clusters, and their fixes |
 
-## Running the telemetry pipeline (NKTP)
+## Running NVKE telemetry pipelines (NKTP)
 
 | Document | Contents |
 |---|---|

@@ -485,11 +485,14 @@ make run-vm QCOW=packer/output-non-fde/nvke-node-non-fde-ubuntu-26.04.1-arm64.qc
 
 An `os-image/vX.Y.Z` tag (or `os-image/vX.Y.Z-rc.N`) runs
 `.github/workflows/os-image-artifact.yml`, which builds and validates the FDE
-and non-FDE images for both architectures and, only if that succeeds, pushes
-the qcow2s to GHCR as OCI artifacts under arch-suffixed tags — not one
+and non-FDE images for both architectures and, only if that succeeds, publishes
+the qcow2s to NVCR and S3, each with its SBOM and checksums beside it. GHCR
+gets them as OCI artifacts under arch-suffixed `sha-<commit>` tags — not one
 multi-platform manifest shared across arches, see the workflow's header
-comment for why — then cuts a GitHub Release attaching `nvke-os-image-check`
-and a `checksums.txt` covering all four qcow2s and the checker binary.
+comment for why. The version tags on GHCR and the GitHub Release attaching
+`nvke-os-image-check` and a `checksums.txt` covering all the qcow2s and the
+checker binary are cut only when the repository variable `NVKE_GITHUB_PUBLISH`
+names `os-image` (see `docs/artifact-publication.md`).
 
 The workflow selects the source-owned Make collection target for each matrix
 variant. Make copies the final QCOW2 under its existing basename and verifies

@@ -20,11 +20,8 @@ import (
 
 type LabelNodeInput struct {
 	NodeID uuid.UUID
-	// If true, the config profile labels will be added to the node
-	AddConfigProfileLabels bool
 
 	// Optional labels to apply to the node.
-	// If AddConfigProfileLabels is true, these labels along with the config profile labels will be added to the node
 	// Labels should be in `key=value` format or `key-` (trailing dash to negate or delete label)
 	Labels []string
 
@@ -68,34 +65,15 @@ func (a *Activities) labelNode(ctx context.Context, input LabelNodeInput) (Label
 		return LabelNodeResult{}, fmt.Errorf("failed to get node: %w", err)
 	}
 
-	nodeSet, nodePool, err := nodes.GetNodeContext(ctx, a.db, node)
+	_, nodePool, err := nodes.GetNodeContext(ctx, a.db, node)
 	if err != nil {
 		return LabelNodeResult{}, fmt.Errorf("failed to get node context: %w", err)
 	}
 
-	// Initialize labels with labels from input
-	labels := append([]string(nil), input.Labels...)
-
-	// If AddConfigProfileLabels is true, add labels from config profile
-	if input.AddConfigProfileLabels {
-		configProfileName := ""
-		if nicoNodeSetProvider, err := nodeSet.NicoProvider(); err == nil {
-			configProfileName = nicoNodeSetProvider.ConfigProfile
-		}
-		configProfile, missing, err := getConfigProfile(a.cfg.ProfilesDir, configProfileName)
-		if err != nil {
-			return LabelNodeResult{}, fmt.Errorf("failed to get config profile: %w", err)
-		}
-		if missing {
-			logger.Warn("config profile file not found, treating as empty (profile retired)",
-				"configProfile", configProfileName)
-		}
-		labels = append(labels, configProfile.Labels...)
-	}
-
+	labels := input.Labels
 	if len(labels) == 0 {
-		return LabelNodeResult{}, fmt.Errorf("no labels to apply to node (AddConfigProfileLabels=%v, explicit labels provided=%v)",
-			input.AddConfigProfileLabels, len(input.Labels) > 0)
+		logger.Info("No labels to apply to node", "nodeID", input.NodeID, "nodeName", node.Name)
+		return LabelNodeResult{Output: fmt.Sprintf("node/%s has no labels to apply", node.Name)}, nil
 	}
 
 	logger.Info("Labeling node", "nodeID", input.NodeID, "labels", labels)

@@ -1,6 +1,6 @@
 # Your first cluster
 
-NVKE is a management plane. A **site controller** — one durable Kubernetes
+NVKE is a management plane. A **management cluster** — one durable Kubernetes
 cluster, also called a cell — mints **tenant clusters** on demand, each with its
 own control plane, etcd and nodes. `nvkectl` is how you drive it.
 
@@ -8,7 +8,7 @@ Three paths — pick the one that matches what you have:
 
 | Path | Who it's for | Needs | Gets you |
 |---|---|---|---|
-| [**Real Site**](#real-site) | **Operators** standing up a production NVKE site | Imaged nodes, nerdctl, a NICo site | A site controller minting CAPNICo-backed tenant clusters |
+| [**Real Site**](#real-site) | **Operators** standing up a production NVKE site | Imaged nodes, nerdctl, a NICo site | A management cluster minting CAPNICo-backed tenant clusters |
 | [**Mock NICo**](#mock-nico) | **Contributors** testing the full create-cluster loop without hardware | Docker, kind, ~16 GB free, and either a CAPNICo checkout or an NGC account | The real create-a-cluster loop against real CAPNICo, no hardware |
 | [**API Only**](#api-only) | **Contributors** exploring the CWE REST API | Go, Docker, kind | CWE running and its API to explore, in minutes. No tenant clusters. |
 
@@ -120,7 +120,7 @@ provider starts nico-sim and installs one CAPNICo controller in
 
 ### Driving it with nvkectl
 
-Point the CLI at the site controller:
+Point the CLI at the management plane:
 
 ```bash
 go build -o bin/nvkectl ./cli/cmd/nvkectl
@@ -179,17 +179,17 @@ ConfigMap and sends requests unauthenticated.
 nvkectl get kubeconfig <cluster> --output-file tenant.kubeconfig
 ```
 
-This reads the `<cluster>-admin-kubeconfig` Secret in `nke-system`, which
+This reads the `<cluster>-admin-kubeconfig` Secret in `nvke-system`, which
 holds an `nvke:breakglass` admin kubeconfig. The `-kubeconfig` Secret beside
 it is the one CWE consumes, and it becomes a SPIRE exec-auth kubeconfig when
 OIDC is on.
 
 ## Real Site
 
-Real hardware, a real NICo site, and a site controller that outlives your
+Real hardware, a real NICo site, and a management cluster that outlives your
 terminal. Steps 1 to 4 have been run end to end on leased bare metal to a
 `Ready` control-plane node; steps 5, 6 and 8 have been run against mock NICo
-rather than a real site, and step 7 against neither. New site-controller
+rather than a real site, and step 7 against neither. New management cluster
 clusters use OVN-Kubernetes. Treat a surprise here as a bug in this page and
 say so.
 
@@ -380,14 +380,14 @@ commands installs Cluster API with `clusterctl init` and CAPNICo from the
 separately first; [Configure an infrastructure provider: NICo](operate/provider-nico.md)
 explains how to prove the NICo credentials once the site is up.
 
-### 6. Install the site controller
+### 6. Install the management plane
 
 The bootstrap leaves you a plain Kubernetes cluster. Installing CWE onto it is a
 separate job, and the largest step here — `nvkectl` has no command for it.
 
 Follow [Install management-plane services](operate/install-management-plane-services.md).
 It installs the whole management plane, Postgres, Temporal, SPIRE, CAPNICo,
-NKTP and CWE, with the commands that page lists, from the `deploy/nico`
+NVKE telemetry pipelines (NKTP) and CWE, with the commands that page lists, from the `deploy/nico`
 deploy path, the site spec and an NVKR release description.
 
 ```bash
@@ -454,7 +454,7 @@ Start from [`cli/examples/nico-cluster.yaml`](../cli/examples/nico-cluster.yaml)
 Replace every UUID and `orgID` — a leftover placeholder returns 500 rather than
 a validation error. Every `release` has to name a release already published on
 the site — the one from step 7. Every `configProfile` has to name a config
-profile the site controller already holds, and that content is maintained
+profile the management plane already holds, and that content is maintained
 outside this repository.
 
 ### Decommissioning
@@ -491,13 +491,13 @@ teardown cannot be helped along through the API.
 
 ### Rough edges
 
-- The site controller does not manage itself: no upgrade, node cycling or
+- The management cluster does not manage itself: no upgrade, node cycling or
   scaling.
 
 ## Control plane configuration
 
 A tenant cluster's control plane is described once, at the cluster level, by
-`controlPlaneConfig`. The site controller's control-plane controller manages
+`controlPlaneConfig`. The management plane's control-plane controller manages
 it: it creates control-plane hosts in parallel, joins them to the cluster one
 at a time, and deletes them one at a time. A create request carries
 `controlPlaneConfig` alongside a `nodePools` list that holds only workers:

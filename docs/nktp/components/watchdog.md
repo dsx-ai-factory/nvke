@@ -1,6 +1,6 @@
 # Watchdog
 
-The watchdog receives internal metrics, logs and traces from NKTP collectors over
+The watchdog receives internal metrics, logs and traces from NVKE telemetry pipelines (NKTP) collectors over
 OTLP/gRPC with mTLS at `nktp-watchdog-collector:4317` in the Helm release namespace.
 Target Allocators send their own metrics over plaintext OTLP/gRPC at
 `nktp-watchdog-collector:4320`; that receiver is used only by the metrics pipeline.

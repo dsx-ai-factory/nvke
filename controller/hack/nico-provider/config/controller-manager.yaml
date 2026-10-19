@@ -13,5 +13,5 @@ spec:
         - name: manager
           args:
             - --leader-elect
-            - --reboot-annotation=nke.nvidia.com/reboot
-            - --repair-annotation=nke.nvidia.com/machine-health-issue
+            - --reboot-annotation=nvke.nvidia.com/reboot
+            - --repair-annotation=nvke.nvidia.com/machine-health-issue

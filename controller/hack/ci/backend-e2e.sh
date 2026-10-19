@@ -17,8 +17,7 @@ RUN_ID="${NKE_E2E_RUN_ID:-${GITHUB_RUN_ID:-local-$$}}"
 RUN_ID="${RUN_ID//[^a-zA-Z0-9_.-]/-}"
 RUN_ID="${RUN_ID:0:64}"
 STATE_DIR="${NKE_E2E_STATE_DIR:-${CONTROLLER_ROOT}/.local/backend-e2e/${RUN_ID}}"
-# Kept as cwe-capi until a follow-up rename: changing it forces every developer to recreate their kind cluster.
-KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-cwe-capi}"
+KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-controller-capi}"
 DOCKERHUB_MIRROR="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 # Names the backend in this script's own output. Both lanes share the script, so
 # without it a NICo run reports itself as CAPD.
@@ -760,7 +759,7 @@ log "using agent source version ${NODE_AGENT_VERSION}"
 
 log "preparing verified SPIRE and OVN-Kubernetes charts"
 CNI_PLUGIN=ovn-kubernetes BUNDLE_ARCH="${host_arch}" bash hack/ci/prepare-capd-bundles.sh "${BUNDLE_DIR}"
-OVN_CHARTS_DEB="${BUNDLE_DIR}/nvke-cni-ovn-charts-1.6.0_1.6.0_${host_arch}.deb"
+OVN_CHARTS_DEB="${BUNDLE_DIR}/nvke-cni-ovn-charts-2.4.2_2.4.2_${host_arch}.deb"
 [[ -f "${OVN_CHARTS_DEB}" ]] || {
   log "OVN charts package was not produced: ${OVN_CHARTS_DEB}" >&2
   exit 1
@@ -860,7 +859,7 @@ NODE_AGENT_VERSION="${NODE_AGENT_VERSION}" \
 NODE_AGENT_REPO_PATH="${WORKSPACE_ROOT}/agent" \
 SPIRE_AGENT_BUNDLE_PATH="${BUNDLE_DIR}/spire-agent.tgz" \
 CAPD_CNI_CHARTS_DEB_PATH="${OVN_CHARTS_DEB}" \
-CAPD_CNI_IMAGES_DEB_PATH="${BUNDLE_DIR}/nvke-cni-ovn-images-1.6.0_1.6.0_${host_arch}.deb" \
+CAPD_CNI_IMAGES_DEB_PATH="${BUNDLE_DIR}/nvke-cni-ovn-images-2.4.2_2.4.2_${host_arch}.deb" \
 CAPD_HELM_DEB_PATH="${BUNDLE_DIR}/nke-e2e-helm.deb" \
 CAPD_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
 BUNDLE_SERVER_URL="http://${BUNDLE_MIRROR_NAME}/" \

@@ -18,6 +18,14 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
+const (
+	// controlPlaneTestLabelKey is the label the control-plane-controller entries create the control plane with.
+	// It sits outside the domains the controller reserves.
+	controlPlaneTestLabelKey = "example.com/cp-controller-e2e"
+	// controlPlaneRoleLabelKey is set by kubeadm when a node joins as a control plane, not by the request.
+	controlPlaneRoleLabelKey = "node-role.kubernetes.io/control-plane"
+)
+
 // validateControllerManagedControlPlane asserts a cluster provisioned from the
 // cluster-level controlPlaneConfig (control-plane controller, no control-plane
 // node pool) has no such pool and brings the desired control-plane nodes to Ready

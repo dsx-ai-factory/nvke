@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Structure is kept in sync with product-family.mmd. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 624" role="img" aria-labelledby="product-family-title product-family-desc">
+  <title id="product-family-title">NVKE product family</title>
+  <desc id="product-family-desc">Layered view, bottom to top. NICo provisions NVIDIA GPU machines, and those machines become the Kubernetes nodes of each workload cluster, each running nvke-agent, under the cluster's Kubernetes control plane. The accelerated runtime that AICR produces and NVKE observability are optional in workload clusters, installed by the operator. The operator installs the management cluster's components from the registry. The management cluster runs the NVKE management plane, CAPNICo and NVKE observability. The management plane requests machines through CAPNICo, which asks NICo for instances, and drives each workload cluster. On the left, the operator builds artifacts with NVKR, which publishes Releases to a registry holding the charts and images for the management cluster and the node OS image that NICo provisions machines from. The operator uses nvkectl or the NVKE API; the customer uses kubectl against the workload cluster's control plane.</desc>
+  <style>
+    text { font-family: "NVIDIA Sans", Arial, Helvetica, sans-serif; }
+    .bg { fill: #FFFFFF; stroke: #E0E0E0; stroke-width: 1; }
+    .t { fill: #1A1A1A; }
+    .tm { fill: #4B4B4B; }
+    .tw { fill: #FFFFFF; }
+    .tk { fill: #000000; }
+    .l { font-size: 14px; font-weight: 600; }
+    .s { font-size: 13px; font-weight: 400; }
+    .gl { font-size: 13px; font-weight: 600; }
+    .k-nvke { fill: #76B900; }
+    .k-nvkr { fill: #952FC6; }
+    .k-nv { fill: #FFFFFF; stroke: #4B4B4B; stroke-width: 1.5; }
+    .k-tp { fill: #E0E0E0; }
+    .k-hw { fill: #4B4B4B; }
+    .k-actor { fill: #FFFFFF; stroke: #757575; stroke-width: 1.5; }
+    .k-nvke-o { fill: #FFFFFF; stroke: #3F8500; stroke-width: 1.5; }
+    .k-nvkr-o { fill: #FFFFFF; stroke: #952FC6; stroke-width: 1.5; }
+    .dash { stroke-dasharray: 5 4; }
+    .g { fill: none; stroke: #757575; stroke-width: 1.5; }
+    .e { fill: none; stroke: #4B4B4B; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+    .ah { fill: #4B4B4B; }
+    .ko { fill: #FFFFFF; }
+    .ll { stroke: #A7A7A7; stroke-width: 1.5; stroke-dasharray: 2 5; stroke-linecap: round; }
+    .band { fill: none; stroke: #757575; stroke-width: 1.5; stroke-dasharray: 5 4; }
+    .badge { fill: #F9C500; }
+    .num { fill: #FFFFFF; stroke: #4B4B4B; stroke-width: 1.5; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1A1A1A; stroke: #313131; }
+      .t { fill: #FFFFFF; }
+      .tm { fill: #A7A7A7; }
+      .k-nv { fill: #1A1A1A; stroke: #A7A7A7; }
+      .k-tp { fill: #313131; }
+      .k-hw { fill: #757575; }
+      .k-actor { fill: #1A1A1A; stroke: #A7A7A7; }
+      .k-nvke-o { fill: #1A1A1A; stroke: #76B900; }
+      .k-nvkr-o { fill: #1A1A1A; stroke: #C359EF; }
+      .g { stroke: #757575; }
+      .e { stroke: #A7A7A7; }
+      .ah { fill: #A7A7A7; }
+      .ko { fill: #1A1A1A; }
+      .ll { stroke: #757575; }
+      .num { fill: #1A1A1A; stroke: #A7A7A7; }
+    }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto">
+      <path class="ah" d="M1,1.5 L9,5 L1,8.5 Z"/>
+    </marker>
+    <marker id="ahs" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto">
+      <path class="ah" d="M9,1.5 L1,5 L9,8.5 Z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0.5" y="0.5" width="1119" height="623" rx="16"/>
+  <g class="group">
+    <rect class="g" x="280" y="104" width="380" height="292" rx="12"/>
+    <text class="gl tm" x="294" y="126">Management cluster</text>
+  </g>
+  <g class="group">
+    <rect class="g" x="744" y="104" width="352" height="292" rx="12"/>
+    <text class="gl tm" x="758" y="126">Workload cluster</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M296,50 L110,50 Q104,50 104,56 L104,144" marker-end="url(#ah)"/>
+    <rect class="ko" x="174.9" y="31" width="50.1" height="18" rx="3"/>
+    <text class="s tm elabel" x="200" y="44" text-anchor="middle">builds</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M396,76 L396,144" marker-end="url(#ah)"/>
+    <rect class="ko" x="400" y="82" width="120.3" height="18" rx="3"/>
+    <text class="s tm elabel" x="404" y="95" text-anchor="start">manages clusters</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M926,76 L926,144" marker-end="url(#ah)"/>
+    <rect class="ko" x="930" y="82" width="57.1" height="18" rx="3"/>
+    <text class="s tm elabel" x="934" y="95" text-anchor="start">kubectl</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M104,208 L104,304" marker-end="url(#ah)"/>
+    <rect class="ko" x="108" y="248" width="71.2" height="18" rx="3"/>
+    <text class="s tm elabel" x="112" y="261" text-anchor="start">publishes</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M330,76 L330,104" marker-end="url(#ah)"/>
+    <rect class="ko" x="261.8" y="82" width="64.2" height="18" rx="3"/>
+    <text class="s tm elabel" x="322" y="95" text-anchor="end">installs</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M184,336 L280,336" marker-end="url(#ah)"/>
+    <rect class="ko" x="186" y="316" width="92" height="18" rx="3"/>
+    <text class="s tm elabel" x="232" y="329" text-anchor="middle">charts, images</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M372,208 L372,304" marker-end="url(#ah)"/>
+    <rect class="ko" x="376" y="248" width="127.3" height="18" rx="3"/>
+    <text class="s tm elabel" x="380" y="261" text-anchor="start">requests machines</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M644,176 L744,176" marker-end="url(#ah)"/>
+    <rect class="ko" x="647" y="156" width="94" height="18" rx="3"/>
+    <text class="s tm elabel" x="694" y="169" text-anchor="middle">drives clusters</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M560,304 L560,208" marker-end="url(#ah)"/>
+    <rect class="ko" x="564" y="248" width="57.1" height="18" rx="3"/>
+    <text class="s tm elabel" x="568" y="261" text-anchor="start">scrapes</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M372,368 L372,458 Q372,464 378,464 L760,464" marker-end="url(#ah)"/>
+    <rect class="ko" x="512.8" y="444" width="134.4" height="18" rx="3"/>
+    <text class="s tm elabel" x="580" y="457" text-anchor="middle">requests instances</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M104,368 L104,486 Q104,492 110,492 L760,492" marker-end="url(#ah)"/>
+    <rect class="ko" x="180.4" y="473" width="99.3" height="18" rx="3"/>
+    <text class="s tm elabel" x="230" y="486" text-anchor="middle">node OS image</text>
+  </g>
+  <g class="edge">
+    <path class="e" d="M920,440 L920,376" marker-end="url(#ah)"/>
+    <rect class="ko" x="924" y="400" width="141.4" height="18" rx="3"/>
+    <text class="s tm elabel" x="928" y="413" text-anchor="start">provisions as nodes</text>
+  </g>
+  <g class="node">
+    <rect class="k-actor" x="296" y="24" width="200" height="52" rx="26"/>
+    <text class="l t" x="396" y="46" text-anchor="middle">Operator</text>
+    <text class="s tm" x="396" y="63" text-anchor="middle">nvkectl or NVKE API</text>
+  </g>
+  <g class="node">
+    <rect class="k-actor" x="816" y="24" width="220" height="52" rx="26"/>
+    <text class="l t" x="926" y="46" text-anchor="middle">Customer</text>
+    <text class="s tm" x="926" y="63" text-anchor="middle">runs AI workloads</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvkr" x="24" y="144" width="160" height="64" rx="8"/>
+    <text class="l tw" x="104" y="172" text-anchor="middle">NVKR</text>
+    <text class="s tw" x="104" y="189" text-anchor="middle">builds and signs</text>
+  </g>
+  <g class="node">
+    <rect class="k-tp" x="24" y="304" width="160" height="64" rx="8"/>
+    <text class="l t" x="104" y="332" text-anchor="middle">Registry</text>
+    <text class="s tm" x="104" y="349" text-anchor="middle">Releases</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvke" x="296" y="144" width="348" height="64" rx="8"/>
+    <text class="l tk" x="470" y="172" text-anchor="middle">NVKE management plane</text>
+    <text class="s tk" x="470" y="189" text-anchor="middle">API, controllers and workflows</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvke" x="296" y="304" width="164" height="64" rx="8"/>
+    <text class="l tk" x="378" y="332" text-anchor="middle">CAPNICo</text>
+    <text class="s tk" x="378" y="349" text-anchor="middle">Cluster API provider</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvke" x="472" y="304" width="172" height="64" rx="8"/>
+    <text class="l tk" x="558" y="332" text-anchor="middle">NVKE observability</text>
+    <text class="s tk" x="558" y="349" text-anchor="middle">telemetry</text>
+  </g>
+  <g class="node">
+    <rect class="k-tp" x="760" y="144" width="320" height="56" rx="8"/>
+    <text class="l t" x="920" y="168" text-anchor="middle">Kubernetes control plane</text>
+    <text class="s tm" x="920" y="185" text-anchor="middle">API server, etcd</text>
+  </g>
+  <g class="node">
+    <rect class="k-nv dash" x="760" y="232" width="156" height="56" rx="8"/>
+    <text class="l t" x="838" y="256" text-anchor="middle">Accelerated runtime</text>
+    <text class="s tm" x="838" y="273" text-anchor="middle">produced by AICR</text>
+  </g>
+  <g class="node">
+    <rect class="k-nvke-o dash" x="928" y="232" width="152" height="56" rx="8"/>
+    <text class="l t" x="1004" y="256" text-anchor="middle">NVKE observability</text>
+    <text class="s tm" x="1004" y="273" text-anchor="middle">telemetry</text>
+  </g>
+  <g class="node">
+    <rect class="k-hw" x="760" y="320" width="320" height="56" rx="8"/>
+    <text class="l tw" x="920" y="344" text-anchor="middle">NVIDIA GPU machines</text>
+    <text class="s tw" x="920" y="361" text-anchor="middle">Kubernetes nodes running nvke-agent</text>
+  </g>
+  <g class="node">
+    <rect class="k-nv" x="760" y="440" width="320" height="72" rx="8"/>
+    <text class="l t" x="920" y="472" text-anchor="middle">NICo</text>
+    <text class="s tm" x="920" y="489" text-anchor="middle">bare-metal machine lifecycle</text>
+  </g>
+  <g class="legend">
+    <rect class="k-nvke" x="24" y="557" width="22" height="16" rx="4"/>
+    <text class="s t" x="54" y="570">NVKE</text>
+    <rect class="k-nvkr" x="104.08" y="557" width="22" height="16" rx="4"/>
+    <text class="s t" x="134.07999999999998" y="570">NVKR</text>
+    <rect class="k-nv" x="184.16" y="557" width="22" height="16" rx="4"/>
+    <text class="s t" x="214.16" y="570">Other NVIDIA software</text>
+    <rect class="k-tp" x="383.58000000000004" y="557" width="22" height="16" rx="4"/>
+    <text class="s t" x="413.58000000000004" y="570">Third party or yours</text>
+    <rect class="k-hw" x="575.98" y="557" width="22" height="16" rx="4"/>
+    <text class="s t" x="605.98" y="570">Hardware</text>
+    <rect class="k-nv dash" x="684.14" y="557" width="22" height="16" rx="4"/>
+    <text class="s t" x="714.14" y="570">Optional</text>
+    <path class="e" d="M792.3,565 H822.3" marker-end="url(#ah)"/>
+    <text class="s t" x="830.3" y="570">Control or data path</text>
+    <path class="e dash" d="M24,591 H54" marker-end="url(#ah)"/>
+    <text class="s t" x="62" y="596">Optional or asynchronous</text>
+  </g>
+</svg>

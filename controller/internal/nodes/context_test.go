@@ -10,7 +10,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
@@ -221,4 +223,38 @@ func TestControlPlaneConfigNodeContext_DefaultsDiskStrategy(t *testing.T) {
 	nicoNodePoolProvider, err := nodePool.NicoProvider()
 	require.NoError(t, err)
 	assert.Equal(t, db.DiskSelectionStrategySmallest, nicoNodePoolProvider.DiskSelectionStrategy)
+}
+
+func TestControlPlaneConfigNodeContext_MachineMetadata(t *testing.T) {
+	for _, provider := range []db.ProviderType{db.ProviderTypeNico, db.ProviderTypeCAPI} {
+		t.Run(string(provider), func(t *testing.T) {
+			cluster := db.Cluster{Name: "cluster-a", ProviderType: provider}
+			node := nicoNode(uuid.New())
+			node.Name = "cp-0"
+			node.ControlPlane = true
+			snapshot := db.ControlPlaneConfigSpec{
+				KubernetesVersion:  "1.32.1",
+				MachineAnnotations: map[string]string{"example.com/setup": "gpu,network"},
+				MachineLabels:      map[string]string{"example.com/pool": "control-plane"},
+			}
+			if provider == db.ProviderTypeNico {
+				snapshot.SetNico(db.NicoControlPlaneProvider{})
+			} else {
+				snapshot.SetCapi(db.CAPIControlPlaneProvider{})
+			}
+			set, pool, err := nodes.ControlPlaneConfigNodeContext(cluster, node, snapshot)
+			require.NoError(t, err)
+			machine, err := shared.BuildMachine(node, set, pool, cluster, "nke-system", "bootstrap", clusterv1.ContractVersionedObjectReference{
+				APIGroup: "infrastructure.cluster.x-k8s.io", Kind: "TestMachine", Name: node.Name,
+			})
+			require.NoError(t, err)
+			require.Equal(t, "gpu,network", machine.Annotations["example.com/setup"])
+			require.Equal(t, "control-plane", machine.Labels["example.com/pool"])
+			require.Contains(t, machine.Labels, clusterv1.MachineControlPlaneLabel)
+			pool.MachineAnnotations["example.com/setup"] = "changed"
+			pool.MachineLabels["example.com/pool"] = "changed"
+			require.Equal(t, "gpu,network", snapshot.MachineAnnotations["example.com/setup"])
+			require.Equal(t, "control-plane", snapshot.MachineLabels["example.com/pool"])
+		})
+	}
 }

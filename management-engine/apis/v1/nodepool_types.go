@@ -83,12 +83,12 @@ type NodeProfileReference string
 
 // UserParams configures labels and taints for nodes in a pool.
 type UserParams struct {
-	// Labels specifies node labels. The prefixes nke.nvidia.com, kubernetes.io,
+	// Labels specifies node labels. The prefixes nvke.nvidia.com, nke.nvidia.com, kubernetes.io,
 	// k8s.io and their subdomains are reserved.
 	// +optional
 	// +kubebuilder:validation:MaxProperties=128
 	// +kubebuilder:validation:XValidation:rule="self.all(k, k.size() <= 317 && k.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?([.][a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$') && (k.split('/').size() == 1 ? k.size() <= 63 : k.split('/')[0].size() <= 253 && k.split('/')[1].size() <= 63))",message="label keys must be Kubernetes qualified names"
-	// +kubebuilder:validation:XValidation:rule="self.all(k, !k.matches('(^|[.])(nke[.]nvidia[.]com|kubernetes[.]io|k8s[.]io)/'))",message="platform label prefixes are reserved"
+	// +kubebuilder:validation:XValidation:rule="self.all(k, !k.matches('(^|[.])(nvke[.]nvidia[.]com|nke[.]nvidia[.]com|kubernetes[.]io|k8s[.]io)/'))",message="platform label prefixes are reserved"
 	Labels map[string]LabelValue `json:"labels,omitempty"`
 	// Taints specifies node taints that control which pods can be scheduled on these nodes.
 	// +optional

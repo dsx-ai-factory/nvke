@@ -193,21 +193,21 @@ dev-down: ## Delete this environment's clusters and local credentials; stop Tilt
 test-install: ## Test the runtime in the prepared environment; run before Tilt.
 	IMG="$(IMG)" bash hack/dev.sh test
 
-.PHONY: dev-cwe dev-cwe-up dev-cwe-down test-cwe
-dev-cwe dev-cwe-up dev-cwe-down test-cwe: DEV_NAME = nvke-cwe
-dev-cwe dev-cwe-up dev-cwe-down test-cwe: TILT_PORT = 10353
-dev-cwe: ## Start CWE and management-engine in one Tilt dashboard on dedicated Kind clusters.
-	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh cwe-up
-	bash hack/dev.sh cwe-tilt
+.PHONY: dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration
+dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: DEV_NAME = nvke-controller
+dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: TILT_PORT = 10353
+dev-nvke-controller: ## Start the NVKE controller and management-engine in one Tilt dashboard on dedicated Kind clusters.
+	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh controller-up
+	bash hack/dev.sh controller-tilt
 
-dev-cwe-up: ## Prepare the dedicated CWE integration environment without starting Tilt.
-	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh cwe-up
+dev-nvke-controller-up: ## Prepare the dedicated controller integration environment without starting Tilt.
+	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh controller-up
 
-test-cwe: ## Run the Ginkgo integration suite against the running combined environment.
-	bash hack/dev.sh cwe-test
+test-nvke-controller-integration: ## Run the Ginkgo integration suite against the running combined environment.
+	bash hack/dev.sh controller-test
 
-dev-cwe-down: ## Remove the dedicated CWE environment and credentials; stop Tilt first.
-	bash hack/dev.sh cwe-down
+dev-nvke-controller-down: ## Remove the dedicated controller environment and credentials; stop Tilt first.
+	bash hack/dev.sh controller-down
 
 .PHONY: install install-state
 install: install-state ## Install the datastore resources using STATE_CONTEXT.
@@ -262,8 +262,8 @@ include ../make/coverage.mk
 kind: $(LOCALBIN) ## Install the pinned Kind CLI for the development environment.
 	$(call go-install-tool,$(KIND),sigs.k8s.io/kind,$(KIND_VERSION))
 
-dev-up dev dev-sync dev-refresh dev-down test-install dev-cwe dev-cwe-up dev-cwe-down test-cwe: kind
-dev-up dev dev-sync dev-refresh dev-down test-install dev-cwe dev-cwe-up dev-cwe-down test-cwe: export PATH := $(LOCALBIN):$(PATH)
+dev-up dev dev-sync dev-refresh dev-down test-install dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: kind
+dev-up dev dev-sync dev-refresh dev-down test-install dev-nvke-controller dev-nvke-controller-up dev-nvke-controller-down test-nvke-controller-integration: export PATH := $(LOCALBIN):$(PATH)
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -367,5 +367,5 @@ helm-uninstall: require-host-context ## Uninstall the Helm release from the K8s 
 chart-check: manifests ## Lint and render the Helm chart without a cluster.
 	$(HELM) lint chart -f config/samples/runtime-values.yaml
 	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml > dist/chart-rendered.yaml
-	$(HELM) lint chart -f config/samples/runtime-values.yaml -f config/samples/cwe-values.yaml
-	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml -f config/samples/cwe-values.yaml > dist/chart-cwe-rendered.yaml
+	$(HELM) lint chart -f config/samples/runtime-values.yaml -f config/samples/controller-values.yaml
+	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml -f config/samples/controller-values.yaml > dist/chart-controller-rendered.yaml

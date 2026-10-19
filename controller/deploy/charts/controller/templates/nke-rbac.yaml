@@ -1,6 +1,7 @@
-# Shared nke-system namespace and tenant RBAC ConfigMap.
+# Shared management-plane namespace (nvkeSystemNamespace.name, nvke-system by
+# default) and tenant RBAC ConfigMap.
 #
-# The nke-system Namespace is rendered when nvkeSystemNamespace.create is true
+# The Namespace is rendered when nvkeSystemNamespace.create is true
 # (the default), irrespective of whether tenantAccess.enabled or nvkeOIDCAuth.enabled is true.
 # controller publishes per-cluster Secrets (<cluster>-kubeconfig,
 # <cluster>-cluster-trust-bundle) into it, so the Namespace must stay even if
@@ -22,7 +23,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: nke-system
+  name: {{ include "controller.managementNamespace" . }}
   annotations:
     helm.sh/resource-policy: keep
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
@@ -99,7 +100,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: nke-rbac
-  namespace: nke-system
+  namespace: {{ include "controller.managementNamespace" . }}
   labels:
     {{- include "controller.labels" . | nindent 4 }}
 data:

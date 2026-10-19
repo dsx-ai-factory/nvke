@@ -20,6 +20,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/workflows"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -131,7 +132,7 @@ func TestUnit_ReconcileMarksDeprecatedNodesWithinBudget(t *testing.T) {
 		constants.ApplyK8sNodeConditionWorkflowPrefix+recyclingNode.ID.String(),
 		mock.MatchedBy(func(input workflows.ApplyK8sNodeConditionInput) bool {
 			return input.NodeID == recyclingNode.ID &&
-				input.NodeCondition.Type == constants.NodeConditionTypeNeedsRecycle &&
+				string(input.NodeCondition.Type) == keys.NeedsRecycle.String() &&
 				input.NodeCondition.Status == corev1.ConditionTrue &&
 				input.NodeCondition.Reason == "Deprecated" &&
 				input.NodeCondition.Message == "NVKE auto-mode recycling deprecated node"

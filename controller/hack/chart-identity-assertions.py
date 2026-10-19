@@ -49,7 +49,10 @@ EXPECTED_NAMES = {
     ("CustomResourceDefinition", "nodepoolreleases.internal.nvke.nvidia.com"),
     ("ClusterRole", "cloud-workflow-engine-releases"),
     ("ClusterRoleBinding", "cloud-workflow-engine-releases"),
-    ("Namespace", "nke-system"),
+    # The management namespace is the one default that moved: a new install gets
+    # nvke-system. An existing site pins nvkeSystemNamespace.name to nke-system,
+    # which check_legacy_namespace renders and asserts.
+    ("Namespace", "nvke-system"),
     ("NetworkPolicy", "cloud-workflow-engine-metrics"),
     ("ServiceAccount", "cloud-workflow-engine"),
     ("Role", "cloud-workflow-engine"),
@@ -69,6 +72,8 @@ EXPECTED_SELECTOR = {
     "app.kubernetes.io/instance": "cloud-workflow-engine",
 }
 
+
+LEGACY_NAMESPACE = "nke-system"
 
 GREENFIELD_NAME = "nke-controller"
 GREENFIELD_TRUST_DOMAIN = "example.test"
@@ -145,6 +150,67 @@ def check_greenfield(chart: str) -> list[str]:
     return failures
 
 
+def check_legacy_namespace(chart: str) -> list[str]:
+    """Render with the management namespace pinned and assert everything moves together.
+
+    A site installed before nvkeSystemNamespace.name existed holds its
+    tenant-access Secrets in nke-system, and the old namespace is not also read.
+    Pinning the value is how such a site stays put, so the pin is gated here:
+    the Namespace, the nke-rbac ConfigMap, the Role and RoleBinding scoped to it
+    and the managementNamespace the controller reads must all land on the pinned
+    name. One of them left on the default is a site whose controller publishes
+    where it has no grant, or reads where nothing is published.
+    """
+    failures = []
+
+    rendered = subprocess.run(
+        [
+            "helm",
+            "template",
+            RELEASE,
+            chart,
+            "--set",
+            f"nvkeSystemNamespace.name={LEGACY_NAMESPACE}",
+            "--set",
+            f"spiffe.trustDomain={GREENFIELD_TRUST_DOMAIN}",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    docs = [d for d in yaml.safe_load_all(rendered) if d]
+
+    namespaces = [d for d in docs if d.get("kind") == "Namespace"]
+    if [d["metadata"]["name"] for d in namespaces] != [LEGACY_NAMESPACE]:
+        failures.append(
+            f"pinned render created {[d['metadata']['name'] for d in namespaces]}, expected [{LEGACY_NAMESPACE!r}]"
+        )
+
+    for kind in ("ConfigMap", "Role", "RoleBinding"):
+        for doc in docs:
+            if doc.get("kind") != kind:
+                continue
+            name = doc["metadata"]["name"]
+            if not (name == "nke-rbac" or name.endswith("-nke-rbac")):
+                continue
+            got = doc["metadata"].get("namespace")
+            if got != LEGACY_NAMESPACE:
+                failures.append(f"pinned render put {kind} {name} in {got!r}, expected {LEGACY_NAMESPACE!r}")
+
+    config = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == "nke-controller-config"]
+    if not config:
+        failures.append("pinned render has no nke-controller-config ConfigMap")
+    else:
+        got = yaml.safe_load(config[0]["data"]["config.yaml"]).get("managementNamespace")
+        if got != LEGACY_NAMESPACE:
+            failures.append(
+                f"pinned render set managementNamespace to {got!r}, expected {LEGACY_NAMESPACE!r}; "
+                "the controller would address a namespace the chart did not grant it"
+            )
+
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--chart", required=True)
@@ -190,6 +256,15 @@ def main() -> int:
         return 1
 
     print(f"  chart identities: {len(EXPECTED_NAMES)} resources, container and selector unchanged")
+
+    legacy_failures = check_legacy_namespace(args.chart)
+    if legacy_failures:
+        print("ERROR: pinning nvkeSystemNamespace.name does not keep an existing site in its namespace.")
+        for f in legacy_failures:
+            print(f"  - {f}")
+        return 1
+
+    print(f"  pinned management namespace: every object and the controller config land in {LEGACY_NAMESPACE}")
 
     greenfield_failures = check_greenfield(args.chart)
     if greenfield_failures:

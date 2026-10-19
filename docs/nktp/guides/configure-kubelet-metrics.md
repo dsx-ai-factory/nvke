@@ -37,7 +37,7 @@ distributions. For this reason, certificate verification is disabled by
 default. Each kubelet certificate must cover the node IP that the collector
 uses.
 
-To enable verification, first create a ConfigMap in the NKTP release namespace
+To enable verification, first create a ConfigMap in the NVKE telemetry pipelines (NKTP) release namespace
 that contains the kubelet-serving CA:
 
 ```console

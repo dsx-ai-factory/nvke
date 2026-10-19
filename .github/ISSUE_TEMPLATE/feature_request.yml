@@ -4,7 +4,7 @@
 name: Feature Request
 description: Suggest a new feature or an improvement to NVKE
 title: "[Feature]: "
-labels: ["feature"]
+labels: ["feature", "needs-triage"]
 
 body:
   - type: checkboxes
@@ -71,7 +71,7 @@ body:
         - Helm charts or deployment
         - nico-sim (development simulator)
         - OS image or image checker
-        - NKTP telemetry pipeline
+        - NVKE telemetry pipelines (NKTP)
         - Build, packaging, or release automation
         - Documentation
         - Cross-component / Other

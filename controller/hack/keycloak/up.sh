@@ -14,7 +14,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTAINER_NAME="${CONTAINER_NAME:-nke-keycloak}"
 KIND_NETWORK="${KIND_NETWORK:-kind}"
-KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-cwe-capi}"
+KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-controller-capi}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-kind-${KIND_CLUSTER_NAME}}"
 HOSTNAME_NAME="${KEYCLOAK_HOSTNAME:-keycloak.nke.test}"
 HOST_PORT="${KEYCLOAK_HOST_PORT:-8180}"

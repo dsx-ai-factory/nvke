@@ -9,16 +9,15 @@ import (
 	"fmt"
 	"text/template"
 
+	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 	"github.com/google/uuid"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
-
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // NodeConfig is the NICo-specific node provisioning data resolved from a
@@ -225,11 +224,11 @@ func buildMachine(
 // NicoMachine.
 func BuildInstanceLabels(node db.Node, cluster db.Cluster, nodePoolID uuid.UUID) map[string]string {
 	labels := map[string]string{
-		constants.LabelKeyNodeID:    node.ID.String(),
-		constants.LabelKeyClusterID: cluster.ID.String(),
+		keys.NodeID.String():    node.ID.String(),
+		keys.ClusterID.String(): cluster.ID.String(),
 	}
 	if nodePoolID != uuid.Nil {
-		labels[constants.LabelKeyNodePoolID] = nodePoolID.String()
+		labels[keys.NodePoolID.String()] = nodePoolID.String()
 	}
 	return labels
 }

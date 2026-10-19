@@ -19,8 +19,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
@@ -43,7 +43,7 @@ func TestApplyNodeConditionPatchesTenantNodeStatusDirectly(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: node.Name},
 			Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{
 				{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
-				{Type: constants.NodeConditionTypeNeedsRecycle, Status: corev1.ConditionFalse, Reason: "OldReason"},
+				{Type: corev1.NodeConditionType(keys.NeedsRecycle.String()), Status: corev1.ConditionFalse, Reason: "OldReason"},
 			}},
 		}).
 		Build()
@@ -51,7 +51,7 @@ func TestApplyNodeConditionPatchesTenantNodeStatusDirectly(t *testing.T) {
 
 	a := &Activities{db: database, tenantClientProvider: provider}
 	condition := corev1.NodeCondition{
-		Type:    constants.NodeConditionTypeNeedsRecycle,
+		Type:    corev1.NodeConditionType(keys.NeedsRecycle.String()),
 		Status:  corev1.ConditionTrue,
 		Reason:  "ImageDrift",
 		Message: "the node image differs from the desired image",
@@ -61,7 +61,7 @@ func TestApplyNodeConditionPatchesTenantNodeStatusDirectly(t *testing.T) {
 		NodeCondition: condition,
 	})
 	require.NoError(t, err)
-	require.Equal(t, "node/worker-0 condition nke.nvidia.com/NeedsRecycle applied", result.Output)
+	require.Equal(t, "node/worker-0 condition nvke.nvidia.com/NeedsRecycle applied", result.Output)
 
 	var updated corev1.Node
 	require.NoError(t, tenantClient.Get(context.Background(), client.ObjectKey{Name: node.Name}, &updated))
@@ -112,7 +112,7 @@ func TestApplyNodeConditionClassifiesClusterLookupErrors(t *testing.T) {
 			a := &Activities{db: database, tenantClientProvider: provider}
 			_, err := executeApplyNodeConditionActivity(t, a, ApplyNodeConditionInput{
 				NodeID:        nodeID,
-				NodeCondition: corev1.NodeCondition{Type: constants.NodeConditionTypeNeedsRecycle},
+				NodeCondition: corev1.NodeCondition{Type: corev1.NodeConditionType(keys.NeedsRecycle.String())},
 			})
 			require.Error(t, err)
 			var applicationErr *temporal.ApplicationError

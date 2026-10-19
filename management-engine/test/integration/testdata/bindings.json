@@ -1,6 +1,6 @@
 [
   {
-    "namespace": "cwe-integration",
+    "namespace": "controller-integration",
     "channel": "stable",
     "controlPlaneClass": "local",
     "template": {

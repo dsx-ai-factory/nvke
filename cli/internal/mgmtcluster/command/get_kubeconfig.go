@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
+	"github.com/dsx-ai-factory/nvke/cli/internal/mgmtcluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/util"
 )
 
@@ -25,7 +26,7 @@ type SiteFn func() (config.SiteConfig, error)
 // KubeconfigFetcher is the subset of *mgmtcluster.Client NewGetKubeconfigCmd
 // depends on.
 type KubeconfigFetcher interface {
-	GetClusterKubeconfig(ctx context.Context, clusterName string) ([]byte, error)
+	GetClusterKubeconfig(ctx context.Context, clusterName string, namespaces []string) ([]byte, error)
 }
 
 // MgmtClientFactory builds a KubeconfigFetcher from a management cluster
@@ -39,7 +40,10 @@ type MgmtClientFactory func(kubeconfigPath string) (KubeconfigFetcher, error)
 // the management cluster, using the active site's configured kubeconfig
 // (--site overrides which site is active, the same as every other command).
 func NewGetKubeconfigCmd(siteFn SiteFn, newMgmtClient MgmtClientFactory) *cobra.Command {
-	var outputFile string
+	var (
+		outputFile string
+		namespace  string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "kubeconfig <cluster-name>",
@@ -49,7 +53,11 @@ func NewGetKubeconfigCmd(siteFn SiteFn, newMgmtClient MgmtClientFactory) *cobra.
 The kubeconfig is read from the Secret that the NVKE tenantaccess controller
 publishes into the management cluster at:
 
-  nke-system/<cluster-name>-admin-kubeconfig  (key: value)
+  <namespace>/<cluster-name>-admin-kubeconfig  (key: value)
+
+The namespace defaults to nvke-system, falling back to nke-system, which is
+where a site installed before the namespace became configurable publishes.
+Use --namespace to name it outright.
 
 The management cluster kubeconfig is the active site's configured kubeconfig
 (see 'nvkectl config set-site --kubeconfig'); use --site to target a
@@ -61,7 +69,8 @@ to a file instead.
 Example:
   nvkectl get kubeconfig my-cluster
   nvkectl get kubeconfig my-cluster --output-file ~/.kube/my-cluster.yaml
-  nvkectl get kubeconfig my-cluster --site prod`,
+  nvkectl get kubeconfig my-cluster --site prod
+  nvkectl get kubeconfig my-cluster --namespace nke-system`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clusterName := args[0]
@@ -76,7 +85,12 @@ Example:
 				return err
 			}
 
-			data, err := mc.GetClusterKubeconfig(cmd.Context(), clusterName)
+			namespaces := []string{mgmtcluster.DefaultSecretsNamespace, mgmtcluster.LegacySecretsNamespace}
+			if namespace != "" {
+				namespaces = []string{namespace}
+			}
+
+			data, err := mc.GetClusterKubeconfig(cmd.Context(), clusterName, namespaces)
 			if err != nil {
 				return err
 			}
@@ -95,6 +109,9 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write kubeconfig to file instead of stdout")
+	cmd.Flags().StringVar(&namespace, "namespace", "",
+		fmt.Sprintf("Management namespace holding the kubeconfig Secret (default: %s, then %s)",
+			mgmtcluster.DefaultSecretsNamespace, mgmtcluster.LegacySecretsNamespace))
 
 	return cmd
 }

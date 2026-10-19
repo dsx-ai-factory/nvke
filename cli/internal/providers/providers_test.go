@@ -4,6 +4,7 @@
 package providers
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -13,8 +14,8 @@ import (
 // a test that compared the set to itself would pass no matter what drifted.
 //
 // Both providers are under active development. When one is bumped,
-// re-read its CRD names, its manager identity, and its credentials flags, and
-// update this test with them.
+// re-read its CRD names, its manager identity, its credentials flags, and its
+// Identity kind and watch-scope flags, and update this test with them.
 func TestSupportedMatchesProviderSources(t *testing.T) {
 	cases := []struct {
 		typ                  Type
@@ -26,6 +27,9 @@ func TestSupportedMatchesProviderSources(t *testing.T) {
 		defaultSecretName    string
 		endpointFlag         string
 		unconfiguredIsValid  bool
+		identity             *IdentityKind
+		watchNamespaceFlag   string
+		watchFilterFlag      string
 	}{
 		{
 			typ:                  TypeNico,
@@ -37,6 +41,16 @@ func TestSupportedMatchesProviderSources(t *testing.T) {
 			defaultSecretName:    "nico-credentials",
 			// NICo carries its endpoint in the Secret, not in a manager flag.
 			endpointFlag: "",
+			// The NicoIdentity kind and the manager's --namespace and
+			// --watch-filter flags, as cluster-api-provider-nico declares them.
+			identity: &IdentityKind{
+				Group:    "infrastructure.cluster.x-k8s.io",
+				Version:  "v1alpha1",
+				Resource: "nicoidentities",
+				Kind:     "NicoIdentity",
+			},
+			watchNamespaceFlag: "--namespace",
+			watchFilterFlag:    "--watch-filter",
 		},
 		{
 			typ:                  TypeLaunchLayer,
@@ -50,6 +64,8 @@ func TestSupportedMatchesProviderSources(t *testing.T) {
 			defaultSecretName:   "",
 			endpointFlag:        "--base-url",
 			unconfiguredIsValid: true,
+			// CAPLL publishes no credential health yet.
+			identity: nil,
 		},
 	}
 
@@ -89,6 +105,15 @@ func TestSupportedMatchesProviderSources(t *testing.T) {
 			if d.UnconfiguredIsValid != tc.unconfiguredIsValid {
 				t.Errorf("UnconfiguredIsValid = %v, want %v", d.UnconfiguredIsValid, tc.unconfiguredIsValid)
 			}
+			if !reflect.DeepEqual(d.Identity, tc.identity) {
+				t.Errorf("Identity = %+v, want %+v", d.Identity, tc.identity)
+			}
+			if d.WatchNamespaceFlag != tc.watchNamespaceFlag {
+				t.Errorf("WatchNamespaceFlag = %q, want %q", d.WatchNamespaceFlag, tc.watchNamespaceFlag)
+			}
+			if d.WatchFilterFlag != tc.watchFilterFlag {
+				t.Errorf("WatchFilterFlag = %q, want %q", d.WatchFilterFlag, tc.watchFilterFlag)
+			}
 		})
 	}
 }
@@ -103,5 +128,18 @@ func TestSupportedSetIsTheTwoProvidersNvkectlKnows(t *testing.T) {
 	}
 	if got, want := strings.Join(names, ","), "nico,launchlayer"; got != want {
 		t.Errorf("Supported() = %q, want %q", got, want)
+	}
+}
+
+// TestIdentityKindNames pins the CRD name and apiVersion an Identity kind
+// derives, since the inspector looks the CRD up and the reader reports the
+// apiVersion under those exact strings.
+func TestIdentityKindNames(t *testing.T) {
+	k := IdentityKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1alpha1", Resource: "nicoidentities", Kind: "NicoIdentity"}
+	if got, want := k.CRDName(), "nicoidentities.infrastructure.cluster.x-k8s.io"; got != want {
+		t.Errorf("CRDName() = %q, want %q", got, want)
+	}
+	if got, want := k.APIVersion(), "infrastructure.cluster.x-k8s.io/v1alpha1"; got != want {
+		t.Errorf("APIVersion() = %q, want %q", got, want)
 	}
 }

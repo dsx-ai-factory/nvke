@@ -10,7 +10,7 @@ The node Collector accepts OTLP logs, metrics, and traces at
 over HTTP. The Service routes traffic only to the Collector on the sender's node.
 If no local Collector is ready, traffic fails rather than reaching another node.
 The Collector sets `k8s.node.name` and forwards each signal to its corresponding
-gateway. Qualify the Service name with the NKTP namespace when
+gateway. Qualify the Service name with the NVKE telemetry pipelines (NKTP) namespace when
 sending from another namespace.
 
 ## Pod logs and metrics

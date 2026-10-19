@@ -1,12 +1,14 @@
 # Quickstart: evaluate locally with mock-NICo
 
+> **Preview:** NVKE is available as a preview. APIs, configuration and behavior can change between releases, and we do not recommend NVKE for production workloads. See [Preview status and known limitations](../overview/preview-status.md).
+
 This page describes how to run NVIDIA Kubernetes Engine (NVKE) on one Linux machine and create a workload cluster through the NVKE API, with no GPU hardware and no NVIDIA account. In place of NVIDIA Infra Controller (NICo), the machine runs mock-NICo, a simulator that answers the NICo API and starts each workload cluster node as a Docker container.
 
 You need a Linux host, physical or virtual, with at least 6 CPUs, 12 GiB of free memory and 100 GiB of free disk, Docker, and the tools listed in [Before you begin](#before-you-begin). macOS is not covered by this page.
 
 The setup has four parts on your machine:
 
-- A kind cluster named `cwe-capi` that serves as the management cluster, with Cluster API installed.
+- A kind cluster named `controller-capi` that serves as the management cluster, with Cluster API installed.
 - The NVKE management plane, deployed into that cluster by Tilt and served on `http://localhost:8080`.
 - CAPNICo, the Cluster API infrastructure provider for NICo, built from source.
 - mock-NICo (the `nico-sim` process), which CAPNICo calls as if it were NICo.
@@ -157,7 +159,7 @@ CAPNICo is public at [dsx-ai-factory/cluster-api-provider-nico](https://github.c
    Next step: tilt up
    ```
 
-   The management cluster's `kubectl` context is `kind-cwe-capi`, and it is now your current context.
+   The management cluster's `kubectl` context is `kind-controller-capi`, and it is now your current context.
 
 4. Start Tilt from the `controller` directory and leave it running.
 
@@ -174,14 +176,14 @@ Open a second terminal in the `nvke` directory for the rest of this page, and ru
 1. Write the management cluster's kubeconfig to a file.
 
    ```bash
-   kubectl config view --raw --minify --context kind-cwe-capi > local-mgmt.kubeconfig
+   kubectl config view --raw --minify --context kind-controller-capi > local-mgmt.kubeconfig
    ```
 
    ```bash
    chmod 600 local-mgmt.kubeconfig
    ```
 
-   The file holds only the `kind-cwe-capi` context, with its admin credentials.
+   The file holds only the `kind-controller-capi` context, with its admin credentials.
 
 2. Point `nvkectl` at the management plane.
 

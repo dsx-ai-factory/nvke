@@ -3,6 +3,8 @@
 
 package qualification
 
+import "fmt"
+
 // Plan is what `qualify plan` writes and the e2e qualification workflow reads.
 type Plan struct {
 	Subject string `json:"subject"`
@@ -74,4 +76,52 @@ type Stream struct {
 
 	// Dependencies are the ones that depend on this stream.
 	Dependencies []ComponentVersion `json:"dependencies,omitempty"`
+}
+
+// LoadPlan reads a Plan written by `qualify plan`. Plan carries no
+// apiVersion/kind of its own, so this is a plain strict-unmarshal, not a
+// checkTypeMeta read like the registry/policy/subject files.
+func LoadPlan(path string) (*Plan, error) {
+	var plan Plan
+	if err := readStrict(path, &plan); err != nil {
+		return nil, err
+	}
+	return &plan, nil
+}
+
+// FindCombination returns the combination with the given id, and whether it
+// was found.
+func (p *Plan) FindCombination(id string) (*Combination, bool) {
+	for i := range p.Combinations {
+		if p.Combinations[i].ID == id {
+			return &p.Combinations[i], true
+		}
+	}
+	return nil, false
+}
+
+// FindStream returns the stream with the given name, and whether it was
+// found.
+func (c *Combination) FindStream(name string) (*Stream, bool) {
+	for i := range c.Streams {
+		if c.Streams[i].Name == name {
+			return &c.Streams[i], true
+		}
+	}
+	return nil, false
+}
+
+// CombinationStream is the error-checked pair lookup `qualify result` needs:
+// find the named stream within the named combination, or say which one was
+// missing.
+func CombinationStream(plan *Plan, combinationID, streamName string) (*Combination, *Stream, error) {
+	combo, ok := plan.FindCombination(combinationID)
+	if !ok {
+		return nil, nil, fmt.Errorf("combination %q not found in plan", combinationID)
+	}
+	stream, ok := combo.FindStream(streamName)
+	if !ok {
+		return nil, nil, fmt.Errorf("stream %q not found in combination %q", streamName, combinationID)
+	}
+	return combo, stream, nil
 }

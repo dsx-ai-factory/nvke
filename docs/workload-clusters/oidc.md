@@ -24,7 +24,7 @@ NVKE binds Kubernetes roles only to the management plane's own identities. A fle
   export KUBECONFIG="$PWD/../<CLUSTER_NAME>.kubeconfig"
   ```
 
-- The shell you run the install from has the `NVKECTL_*` variables from [Fill in the controller stack settings](../operate/install-management-plane-services.md#fill-in-the-controller-stack-settings) exported, as described in [Run the install again](../operate/install-management-plane-services.md#run-the-install-again).
+- The shell you run the install from has the `NVKECTL_*` variables from [Write the stack config](../operate/install-management-plane-services.md#write-the-stack-config) exported, as described in [Run the install again](../operate/install-management-plane-services.md#run-the-install-again).
 - For each fleet-wide provider you have its issuer URL, the audience its tokens carry, the claims that hold the username and groups, and the certificate authority (CA) certificates that sign its HTTPS certificate. [Collect the identity provider values](../operate/api-authentication.md#collect-the-identity-provider-values) shows how to read the first three from the IdP's discovery document and a token.
 - The control-plane nodes of your workload clusters reach each provider's discovery document, and the `jwks_uri` it names, over HTTPS. NVKE does not check this.
 - The workload clusters that need fleet-wide providers run Kubernetes 1.34 or later. [Supported platforms and versions](../overview/supported-platforms.md) lists the version this release supports.
@@ -77,7 +77,7 @@ NVKE binds Kubernetes roles only to the management plane's own identities. A fle
      --values-for controller=../oidc-values.yaml
    ```
 
-   Keep the `--release` and `--nvkr-run-dir` flags exactly as you installed, or leave them out if you installed without them. If you passed other values files before, such as `../auth-values.yaml` from [Secure the NVKE API](../operate/api-authentication.md) or an NKTP file with `--values-for nktp=`, pass each of them again with its own `--values-for` flag: a file you leave out stops applying, and the deploy path's own values turn API authentication off and send telemetry to the bundled development backend. The chart refuses to render more than five providers.
+   Keep the `--release` and `--nvkr-run-dir` flags exactly as you installed, or leave them out if you installed without them. If you passed other values files before, such as `../auth-values.yaml` from [Secure the NVKE API](../operate/api-authentication.md) or a values file for NVKE telemetry pipelines (NKTP) with `--values-for nktp=`, pass each of them again with its own `--values-for` flag: a file you leave out stops applying, and the deploy path's own values turn API authentication off and send telemetry to the bundled development backend. The chart refuses to render more than five providers.
 
 3. Restart the controller so that it reads the new configuration.
 
@@ -133,10 +133,10 @@ The install configures the shared provider for the management cluster's SPIRE se
 2. Confirm that a cluster has the shared provider. On the management cluster, read the mode label of the cluster's management-plane kubeconfig.
 
    ```bash
-   kubectl -n nke-system get secret <WORKLOAD_CLUSTER>-kubeconfig -o jsonpath='{.metadata.labels.nke\.nvidia\.com/kubeconfig-mode}'
+   kubectl -n nvke-system get secret <WORKLOAD_CLUSTER>-kubeconfig -o jsonpath='{.metadata.labels.nvke\.nvidia\.com/kubeconfig-mode}'
    ```
 
-   The output is `spire` when the management plane reaches the cluster with SPIFFE JWTs through the shared provider, and `admin` when it uses the admin kubeconfig. NVKE switches it to `spire` after it applies its own role bindings in the cluster. If it stays `admin` after the cluster is `Provisioned` or the rollout succeeds, the controller's log says why: NVKE could not read the `nke-rbac` ConfigMap in `nke-system` or could not apply the role bindings.
+   The output is `spire` when the management plane reaches the cluster with SPIFFE JWTs through the shared provider, and `admin` when it uses the admin kubeconfig. NVKE switches it to `spire` after it applies its own role bindings in the cluster. If it stays `admin` after the cluster is `Provisioned` or the rollout succeeds, the controller's log says why: NVKE could not read the `nke-rbac` ConfigMap in `nvke-system` or could not apply the role bindings.
 
 ## How NVKE applies the providers
 

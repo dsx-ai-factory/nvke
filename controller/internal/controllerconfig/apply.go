@@ -38,9 +38,12 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.FieldManagerRebootMachineName = c.FieldManager.RebootMachineName
 	cfg.FieldManagerMachineHealthIssueName = c.FieldManager.MachineHealthIssueName
 	cfg.ManagedByLabelValue = c.ManagedByLabelValue
+	cfg.ManagementNamespace = c.ManagementNamespace
 	cfg.MetricsListenAddress = c.MetricsListenAddress
 	cfg.SupportedInfraProviders = slices.Clone(c.SupportedInfraProviders)
 	cfg.NodeMetadataAllowlistedLabelKeys = slices.Clone(c.NodeMetadataAllowlistedLabelKeys)
+	cfg.MachineMetadataAllowlistedLabelKeys = slices.Clone(c.MachineMetadataAllowlistedLabelKeys)
+	cfg.MachineMetadataAllowlistedAnnotationKeys = slices.Clone(c.MachineMetadataAllowlistedAnnotationKeys)
 	cfg.Tracing.Enabled = c.Tracing.Enabled
 	cfg.Tracing.Endpoint = c.Tracing.Endpoint
 	cfg.Tracing.Insecure = c.Tracing.Insecure

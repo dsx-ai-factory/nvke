@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The controller Helm chart owns the OIDC RBAC ConfigMap. Tilt owns only the shared
+# namespace so Helm can create cross-namespace RBAC and tenant-access Secrets
+# without attempting to adopt a namespace from an existing local environment.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nvke-system

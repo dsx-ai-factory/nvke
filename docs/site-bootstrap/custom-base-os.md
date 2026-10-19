@@ -65,7 +65,7 @@ autoinstall:
                 ip: "10.0.0.11"
               - name: "ctrl-3"
                 ip: "10.0.0.12"
-            k8sVersion: "1.34.2"
+            k8sVersion: "1.36.3"
             cniName: "ovn-kubernetes"
             podCidr: "192.168.0.0/16"
             serviceCidr: "10.96.0.0/12"
@@ -85,7 +85,10 @@ autoinstall:
       - [sh, -c, "apt-get install -y kubelet kubeadm kubectl"]
       - [sh, -c, "apt-mark hold kubelet kubeadm kubectl"]
 
-      # TODO: Replace apt repo URL with confirmed public URL before publishing.
+      # Known limitation at preview: the NVKE apt repository is not published, so
+      # the key download and apt-get commands below fail. Instead, install the
+      # nvke-agent_<version>_<arch>.deb attached to an agent/ release from
+      # agent/v0.3.0-rc.2 on, at https://github.com/dsx-ai-factory/nvke/releases.
       # Install nvke-agent from the NVKE apt repository
       - [sh, -c, "curl -fsSL -o /etc/apt/keyrings/nke.asc https://packages.nvidia.com/nvke/nvke-apt-public.key"]
       - [sh, -c, "echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://packages.nvidia.com/nvke/apt nvke-noble main' | tee /etc/apt/sources.list.d/nke-apt.list"]
@@ -98,9 +101,10 @@ autoinstall:
       # clusterctl here. nvkectl checks for nerdctl before it starts; a missing kind
       # fails pre-flight, and helm, kubectl or clusterctl fail mid-bootstrap.
 
-      # TODO: Replace with real release URL once the repo is public.
-      # Download and install nvkectl (bootstrap host only)
-      - [sh, -c, "curl -fsSL -o /usr/local/bin/nvkectl https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-linux-amd64 && chmod +x /usr/local/bin/nvkectl"]
+      # Download and install nvkectl (bootstrap host only). Replace cli/vX.Y.Z
+      # with a cli/ tag listed at https://github.com/dsx-ai-factory/nvke/releases,
+      # cli/v0.2.0-rc.1 or later; earlier releases name the binary nkectl.
+      - [sh, -c, "curl -fsSL -o /usr/local/bin/nvkectl https://github.com/dsx-ai-factory/nvke/releases/download/cli/vX.Y.Z/nvkectl-linux-amd64 && chmod +x /usr/local/bin/nvkectl"]
 
       # Run bootstrap (bootstrap host only). --disable-mtls matches the plaintext
       # agents configured above; this is the development-only mode, not a

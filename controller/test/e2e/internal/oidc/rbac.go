@@ -15,10 +15,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
+// The nke-rbac ConfigMap lives in the site's management namespace, which
+// mgmtns.Namespace resolves -- it is per-site configurable, so it is never
+// assumed here.
 const (
-	nvkeRBACNamespace = "nke-system"
 	nvkeRBACConfigMap = "nke-rbac"
 	nvkeRBACKey       = "manifest.yaml"
 )
@@ -26,7 +30,7 @@ const (
 // ReservedUsers reads every User subject bound by the live nke-rbac manifest.
 func ReservedUsers(ctx context.Context, reader client.Reader) ([]string, error) {
 	var configMap corev1.ConfigMap
-	key := types.NamespacedName{Namespace: nvkeRBACNamespace, Name: nvkeRBACConfigMap}
+	key := types.NamespacedName{Namespace: mgmtns.Namespace(), Name: nvkeRBACConfigMap}
 	if err := reader.Get(ctx, key, &configMap); err != nil {
 		return nil, fmt.Errorf("get %s/%s: %w", key.Namespace, key.Name, err)
 	}

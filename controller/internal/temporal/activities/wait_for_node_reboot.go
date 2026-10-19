@@ -13,7 +13,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 type WaitForNodeRebootInput struct {
@@ -24,7 +24,7 @@ type WaitForNodeRebootInput struct {
 	// which indicates the node has booted and kubelet has reported node system info.
 	PreviousBootID string
 
-	// Whether to also check the nke.nvidia.com/reboot-complete-timestamp annotation to consider the node rebooted if it is present and later than the reboot request timestamp.
+	// Whether to also check the nvke.nvidia.com/reboot-complete-timestamp annotation to consider the node rebooted if it is present and later than the reboot request timestamp.
 	CheckRebootCompleteAnnotation bool
 
 	// If CheckRebootCompleteAnnotation is true, the node is considered rebooted if the annotation is present and the timestamp is later than this time.
@@ -74,7 +74,7 @@ func (a *Activities) waitForNodeReboot(ctx context.Context, input WaitForNodeReb
 			return WaitForNodeRebootResult{}, fmt.Errorf("failed to get node: %w", err)
 		}
 
-		machineNamespace = constants.NamespaceNVKESystem
+		machineNamespace = a.cfg.ManagementNamespaceOrDefault()
 		machineName = node.Name
 	}
 
@@ -128,7 +128,7 @@ func (a *Activities) getMachineRebootCompleteTimestamp(ctx context.Context, mach
 		return false, time.Time{}, fmt.Errorf("failed to get machine: %w", err)
 	}
 
-	rebootCompleteTimestamp, ok := machine.Annotations[constants.MachineAnnotationKeyRebootCompleteTimestamp]
+	rebootCompleteTimestamp, ok := keys.MachineRebootCompleteTimestamp.Get(machine.Annotations)
 	if !ok {
 		return false, time.Time{}, nil
 	}

@@ -1,5 +1,7 @@
 # Plan your installation
 
+> **Preview:** NVKE is available as a preview. APIs, configuration and behavior can change between releases, and we do not recommend NVKE for production workloads. See [Preview status and known limitations](../overview/preview-status.md).
+
 This page describes what you need before you install NVIDIA Kubernetes Engine (NVKE) on your own hardware, which settings cannot change later, and which values to collect. Read it before every other installation page.
 
 ## Before you begin

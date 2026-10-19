@@ -35,6 +35,7 @@ data:
       rebootMachineName: {{ .Values.identity.fieldManagerRebootMachineName | default "cloud-workflow-engine-reboot-machine" | quote }}
       machineHealthIssueName: {{ .Values.identity.fieldManagerMachineHealthIssueName | default "cloud-workflow-engine-machine-health-issue" | quote }}
     managedByLabelValue: {{ .Values.identity.managedByLabelValue | default "cloud-workflow-engine" | quote }}
+    managementNamespace: {{ include "controller.managementNamespace" . | quote }}
     metricsListenAddress: {{ .Values.metrics.listenAddress | default "127.0.0.1:9090" | quote }}
     supportedInfraProviders:
       {{- range splitList "," (.Values.supportedInfraProviders | default "nico") }}
@@ -48,6 +49,8 @@ data:
     {{- else }}
     nodeMetadataAllowlistedLabelKeys: []
     {{- end }}
+    machineMetadataAllowlistedLabelKeys: {{ .Values.machineMetadata.allowlistedLabelKeys | toJson }}
+    machineMetadataAllowlistedAnnotationKeys: {{ .Values.machineMetadata.allowlistedAnnotationKeys | toJson }}
     tracing:
       enabled: {{ if $tracing.enabled }}true{{ else }}false{{ end }}
       endpoint: {{ if $traceToEndpoint }}{{ $tracing.endpoint | quote }}{{ else }}""{{ end }}

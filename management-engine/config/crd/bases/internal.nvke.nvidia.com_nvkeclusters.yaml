@@ -432,7 +432,7 @@ spec:
                             pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
                             type: string
                           description: |-
-                            Labels specifies node labels. The prefixes nke.nvidia.com, kubernetes.io,
+                            Labels specifies node labels. The prefixes nvke.nvidia.com, nke.nvidia.com, kubernetes.io,
                             k8s.io and their subdomains are reserved.
                           maxProperties: 128
                           type: object
@@ -442,7 +442,7 @@ spec:
                               && (k.split(''/'').size() == 1 ? k.size() <= 63 : k.split(''/'')[0].size()
                               <= 253 && k.split(''/'')[1].size() <= 63))'
                           - message: platform label prefixes are reserved
-                            rule: self.all(k, !k.matches('(^|[.])(nke[.]nvidia[.]com|kubernetes[.]io|k8s[.]io)/'))
+                            rule: self.all(k, !k.matches('(^|[.])(nvke[.]nvidia[.]com|nke[.]nvidia[.]com|kubernetes[.]io|k8s[.]io)/'))
                         taints:
                           description: Taints specifies node taints that control which
                             pods can be scheduled on these nodes.

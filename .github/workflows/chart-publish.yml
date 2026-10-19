@@ -78,9 +78,12 @@ jobs:
     # would package something like 0.1.1-rc.0-2-g068156e and point it at
     # ghcr.io/dsx-ai-factory/nvke/nke-controller:v0.1.1-rc.0-2-g068156e, a tag promotion never
     # creates -- a chart naming an image that does not exist.
+    # NVKE_GITHUB_PUBLISH names the components whose releases go to GitHub;
+    # see docs/artifact-publication.md. Unset means every component but os-image.
     if: >-
       github.repository_id == '1323115536' &&
-      startsWith(github.ref, 'refs/tags/controller/v')
+      startsWith(github.ref, 'refs/tags/controller/v') &&
+      contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',controller,')
     timeout-minutes: 10
     permissions:
       contents: read

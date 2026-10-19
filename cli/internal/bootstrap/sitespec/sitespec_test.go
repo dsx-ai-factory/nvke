@@ -693,6 +693,31 @@ func TestLoad_ReadsCAFromEnv(t *testing.T) {
 	}
 }
 
+// TestLoadDescription_SkipsCA: LoadDescription needs neither CA variable and
+// opens no file, and still reports that the site uses a CA.
+func TestLoadDescription_SkipsCA(t *testing.T) {
+	t.Setenv(EnvSpireCACertFile, "")
+	t.Setenv(EnvSpireCAKeyFile, "")
+	withCA := validYAML + "\nspire:\n  upstreamCA: true\n"
+	path := writeTemp(t, withCA)
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), EnvSpireCACertFile) {
+		t.Errorf("Load without the CA variables: %v", err)
+	}
+	inv, err := LoadDescription(path)
+	if err != nil {
+		t.Fatalf("LoadDescription: %v", err)
+	}
+	if !inv.Spire.UpstreamCA || inv.Spire.CACertFile != "" || inv.Spire.CAKeyFile != "" {
+		t.Errorf("spire: %+v", inv.Spire)
+	}
+	_, _, missing := spireCAFiles(t)
+	t.Setenv(EnvSpireCACertFile, missing)
+	t.Setenv(EnvSpireCAKeyFile, missing)
+	if _, err := LoadDescription(path); err != nil {
+		t.Errorf("LoadDescription opened the CA files: %v", err)
+	}
+}
+
 // TestLoad_RefusesRemovedCAEnv: a CA variable main read is refused, alone or
 // beside its replacement, rather than leaving SPIRE self-signed.
 func TestLoad_RefusesRemovedCAEnv(t *testing.T) {
@@ -816,7 +841,7 @@ infra:
     releases: releases
 cluster:
   controlPlaneVIP: "10.0.0.100"
-  k8sVersion: "1.34.2"
+  k8sVersion: "1.36.3"
   cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
   serviceCidr: "10.200.0.0/16"

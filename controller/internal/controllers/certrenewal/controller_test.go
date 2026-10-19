@@ -29,12 +29,33 @@ import (
 const certRenewalInterval = 12 * time.Hour
 
 func TestUnit_ControllerReconcile(t *testing.T) {
+	t.Run("schedules the first check without a workflow", func(t *testing.T) {
+		ctx := context.Background()
+		clusterID := uuid.New()
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil).Once()
+		mockDB.On("UpdateClusterNextCertRenewalDue", mock.Anything, clusterID, mock.MatchedBy(func(next time.Time) bool {
+			return next.After(time.Now().Add(certRenewalInterval - time.Minute))
+		})).Return(nil).Once()
+
+		temporalClient := &mockWorkflowStarter{}
+		controller := newController(mockDB, temporalClient)
+		result, err := controller.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+
+		require.NoError(t, err)
+		require.Equal(t, reconcile.Result{RequeueAfter: certRenewalInterval}, result)
+		mockDB.AssertExpectations(t)
+		temporalClient.AssertNotCalled(t, "ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
 	t.Run("starts workflow and advances due time", func(t *testing.T) {
 		ctx := context.Background()
 		clusterID := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+		due := time.Now().Add(-time.Minute)
 		mockDB := &testutil.MockDB{}
 		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
-			ID: clusterID,
+			ID:                 clusterID,
+			NextCertRenewalDue: &due,
 		}, nil).Once()
 		mockDB.On("UpdateClusterNextCertRenewalDue", mock.Anything, clusterID, mock.MatchedBy(func(next time.Time) bool {
 			return next.After(time.Now())
@@ -83,8 +104,9 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 	t.Run("does not advance due time when workflow start fails", func(t *testing.T) {
 		ctx := context.Background()
 		clusterID := uuid.New()
+		due := time.Now().Add(-time.Minute)
 		mockDB := &testutil.MockDB{}
-		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil).Once()
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, NextCertRenewalDue: &due}, nil).Once()
 
 		temporalClient := &mockWorkflowStarter{}
 		temporalClient.On("ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).

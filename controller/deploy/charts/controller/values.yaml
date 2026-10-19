@@ -156,7 +156,7 @@ nodeAgent:
       newPrivateKeyKey: ""
 
 # identity configures the strings this controller compiles into
-# Server-Side-Apply field managers and the nke.nvidia.com/managed-by label
+# Server-Side-Apply field managers and the nvke.nvidia.com/managed-by label
 # value. Every value here defaults to today's literal, so an unset value is
 # today's behavior exactly.
 identity:
@@ -166,7 +166,7 @@ identity:
   fieldManagerRebootMachineName: "cloud-workflow-engine-reboot-machine"
   # -- Field manager used when patching a Machine's health-issue annotation.
   fieldManagerMachineHealthIssueName: "cloud-workflow-engine-machine-health-issue"
-  # -- Value written under the nke.nvidia.com/managed-by label on objects this
+  # -- Value written under the nvke.nvidia.com/managed-by label on objects this
   # controller owns, and the value the tenant Secret reconciler filters on.
   managedByLabelValue: "cloud-workflow-engine"
 
@@ -175,12 +175,19 @@ identity:
 # it at all fails the render naming the new key, rather than letting Helm drop
 # an unknown key silently and fall back to the nvkeSystemNamespace defaults.
 nvkeSystemNamespace:
-  # -- Create the shared nke-system namespace. The object always carries
+  # -- Name of the shared management-plane namespace: the Namespace object, the
+  # Roles and RoleBindings in it, and the namespace the controller publishes
+  # tenant-access Secrets into and reads the nke-rbac ConfigMap from. Empty
+  # means nvke-system. A SITE INSTALLED BEFORE THIS VALUE EXISTED MUST PIN
+  # nke-system HERE: the old namespace is not also read, so a site that moves
+  # leaves its published kubeconfig and trust-bundle Secrets behind in it.
+  name: "nvke-system"
+  # -- Create the shared management namespace. The object always carries
   # helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and
   # argocd.argoproj.io/sync-options: Prune=false,Delete=false so an Argo prune or
   # Application delete does not either. Both are set by the template for default delete protection.
   create: true
-  # -- Extra annotations merged onto nke-system. This is useful for
+  # -- Extra annotations merged onto the namespace. This is useful for
   # adding additional annotations to the namespace to protect it from being deleted. Listing annotations that
   # template already defaults here duplicates the key in the rendered Namespace.
   annotations: {}
@@ -337,6 +344,12 @@ nodeMetadata:
   # The controller validates the allowlist and refuses to start if an entry is one of the above forbidden keys, or is empty, padded, not a valid label key, or a duplicate.
   allowlistedLabelKeys: []
 
+machineMetadata:
+  # -- Exact Machine label keys allowed under reserved NVKE, Kubernetes and Cluster API domains. Use with care: these keys may affect controller behavior.
+  allowlistedLabelKeys: []
+  # -- Exact Machine annotation keys allowed under reserved domains, for example a configuration-profile selection annotation. Values remain free-form strings.
+  allowlistedAnnotationKeys: []
+
 # -- Additional environment variables to inject into the controller container. A
 # variable nke-controller-config carries is refused; set its chart value instead.
 # CONTROLLER_CONFIG_PATH is refused too: the chart sets it to the mounted file.
@@ -422,7 +435,8 @@ cni:
   installAfterInit: false
 
 tenantAccess:
-  # -- Publish each cluster's kubeconfig as a Secret in the nke-system namespace,
+  # -- Publish each cluster's kubeconfig as a Secret in the shared management
+  # namespace (nvkeSystemNamespace.name),
   # and remove those Secrets during cluster teardown. Gates both the controller
   # and its cleanup activity, and the Secret grant they depend on.
   enabled: true

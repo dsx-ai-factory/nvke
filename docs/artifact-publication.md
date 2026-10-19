@@ -95,14 +95,46 @@ themselves, after they have built and verified the real artifacts:
 | Tag | Workflow | What ships |
 |---|---|---|
 | `agent/vX.Y.Z` | `agent-deb-publish.yml` (+ `agent-artifact.yml`) | `.deb`s, GitHub Release assets, GHCR binary, NVCR binary + `.deb`, S3/CloudFront `.deb` |
-| `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2 on GHCR, NVCR, and S3/CloudFront; `nvke-os-image-check` on the GitHub Release |
+| `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2 on NVCR and S3/CloudFront; on GHCR, with `nvke-os-image-check` on the GitHub Release, only when `NVKE_GITHUB_PUBLISH` names `os-image` |
 | `nktp/vX.Y.Z` | `nktp-chart-publish.yml` | Helm chart on GHCR and the GitHub Release |
 | `cli/vX.Y.Z` | `release.yml` (+ `cli-artifact.yml`, `cli-artifact-nvcr.yml`, `cli-s3-publish.yml`) | binaries on GitHub Release, GHCR, NVCR, S3/CloudFront |
+
+### Switching GitHub publishing off
+
+The Actions variable `NVKE_GITHUB_PUBLISH` lists the components whose releases
+go to GitHub: the GitHub Release record and assets, and the release-tagged
+artifacts on GHCR. Unset, it means
+`root,controller,cli,agent,cluster-api-provider-provisioned,nktp`, so every
+component but `os-image`, whose qcow2s go to NVCR and S3 only. Set it to `none`
+to stop every GitHub publication, or list the components you want. NVCR, S3 and
+CloudFront are not affected, and neither is the CI hand-off on GHCR: the `sha-`
+and `edge` aliases of `agent` and `cli` and the `sha-` tagged qcow2s of
+`os-image` keep flowing, because `agent/Makefile`, the NVCR and S3 publishers
+and the NICo VMs lane read them. Only the version-tagged aliases, the GitHub
+Releases and their attestations stop. The variable must be a repository or
+organization variable; an environment variable is not visible to the job
+conditions. With `os-image` off, each leg's SBOM, checksums file and the
+checker binary are published to S3 beside the disk instead.
+
+Set it under the repository's Settings, Actions, Variables, or with
+`gh variable set NVKE_GITHUB_PUBLISH --body 'controller,cli'`. An empty value
+counts as unset and gives the default list; only `none` means nothing. The
+names, comma-separated with no spaces:
+
+| Name | Tag | What GitHub gets when the name is listed |
+|---|---|---|
+| `root` | bare `vX.Y.Z` | the GitHub Release with the product manifest and SBOM |
+| `controller` | `controller/v*` | the GitHub Release, `nke-controller` image and chart on GHCR |
+| `cli` | `cli/v*` | the GitHub Release with the binaries, `cli` binaries on GHCR |
+| `agent` | `agent/v*` | the GitHub Release with the `.deb`s, `agent` and `agent-deb` on GHCR |
+| `cluster-api-provider-provisioned` | `cluster-api-provider-provisioned/v*` | the provider image on GHCR |
+| `nktp` | `nktp/v*` | the GitHub Release and the chart on GHCR |
+| `os-image` | `os-image/v*` | the GitHub Release and the version-tagged qcow2s on GHCR |
 
 An `os-image/` tag that fails Packer or the boot-smoke test never publishes the
 OCI artifact and never promotes the GitHub Release out of draft.
 
-An `nktp/` tag releases the NKTP Helm chart. The chart version is the tag's:
+An `nktp/` tag releases the NVKE telemetry pipelines (NKTP) Helm chart. The chart version is the tag's:
 `nktp/vX.Y.Z` packages the chart as `X.Y.Z` and `nktp/vX.Y.Z-rc.1` as
 `X.Y.Z-rc.1`, the way the controller chart takes its version from
 `controller/v*`. `version:` in `nktp/deploy/charts/nktp/Chart.yaml` is a
@@ -166,9 +198,11 @@ body from `CHANGELOG.md`. Nothing is created by hand.
 
 After the tag push, confirm that any CI release pipelines complete
 successfully (node OS-image bake, chart publish, etc.). For `os-image/v*`, that is
-the **OS Image Artifact** check: Packer, boot-smoke, then `oras` to
-`ghcr.io/dsx-ai-factory/nvke/os-image`. For `controller/v*`, confirm the **Image
-NVCR** and **Chart Publish** checks, then that the promoted image is present at
+the **OS Image Artifact** check: Packer, boot-smoke, then the NVCR and S3
+publishers (GHCR and the GitHub Release only when `NVKE_GITHUB_PUBLISH` names
+`os-image`). For `controller/v*`, confirm the **Image
+NVCR** check, and, when `NVKE_GITHUB_PUBLISH` names `controller`, the **Chart
+Publish** check and the promoted image at
 `ghcr.io/dsx-ai-factory/nvke/nke-controller:<version>`. For `nktp/v*`, confirm the
 **NKTP Chart Publish** check.
 
@@ -178,8 +212,11 @@ Every release attaches a `checksums.txt` and a `checksums.txt.sigstore.json`
 beside it. The checksums file binds every artifact by SHA-256; the bundle is a
 [build-provenance attestation](https://docs.github.com/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds)
 over that file. Verifying the attestation and then running `sha256sum -c`
-covers everything the release ships, including the four `os-image` qcow2s that
-are distributed as OCI artifacts rather than attached.
+covers everything the release ships, including the `os-image` qcow2s that
+are distributed as OCI artifacts rather than attached. An `os-image` release
+exists only when `NVKE_GITHUB_PUBLISH` names `os-image`; otherwise each leg's
+`checksums-<arch>[-ubuntu24.04]-<variant>.txt` sits on S3 beside its disk,
+without an attestation.
 
 A checksums file on its own proves a download arrived intact. It does not prove
 who produced it: whoever can replace the archive can replace the checksums file
@@ -241,7 +278,7 @@ what a build of this commit ought to select.
 |---|---|---|---|
 | `nvkectl-<os>-<arch>` | `nvkectl-<os>-<arch>.spdx.json` | Go modules, from the binary's embedded build info | GitHub Release asset |
 | `nvke-agent_<version>_<arch>.deb` | `nvke-agent_<version>_<arch>.spdx.json` | Go modules, from the binary inside the package | GitHub Release asset |
-| `nvke-node-{fde,non-fde}-ubuntu-<rel>-<arch>.qcow2` | `nvke-node-…-<arch>.spdx.json` | dpkg packages, from the image's own package database | GitHub Release asset |
+| `nvke-node-{fde,non-fde}-ubuntu-<rel>-<arch>.qcow2` | `nvke-node-…-<arch>.spdx.json` | dpkg packages, from the image's own package database | S3, beside the disk; a GitHub Release asset too when `NVKE_GITHUB_PUBLISH` names `os-image` |
 | `nke-controller` image | `controller-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image NVCR** run |
 | `cluster-api-provider-provisioned` image | `cluster-api-provider-provisioned-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image Provisioned NVCR** run |
 
@@ -311,7 +348,7 @@ the artifact was built by some GitHub workflow somewhere. Use
 | Artifact | Attested subject | Where the attestation lives |
 |---|---|---|
 | Release assets (`nvkectl`, agent `.deb`s, `nvke-os-image-check`, the NKTP chart archive) | `checksums.txt`, which names each by digest | GitHub, plus the attached bundle |
-| `os-image` qcow2 OCI artifacts | the same `checksums.txt` | GitHub, plus the attached bundle |
+| `os-image` qcow2 OCI artifacts | the same `checksums.txt` | GitHub, plus the attached bundle, when `NVKE_GITHUB_PUBLISH` names `os-image`; otherwise unattested |
 | `nke-controller`, `cluster-api-provider-provisioned` on GHCR | the multi-arch index digest | attached to the image in GHCR as an OCI referrer |
 | the same two images on NVCR | the same index digest | GitHub's attestation store only |
 

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Reports whether this machine and a bootstrapped cluster are ready for the
-# site controller stack. It changes nothing. Every finding is one line, PASS,
+# management plane stack. It changes nothing. Every finding is one line, PASS,
 # WARN, SKIP or FAIL, and a FAIL names the fix. Any FAIL fails the run.
 #
 #   check-site.sh --sitespec FILE --stack-config FILE --kubeconfig PATH [--release FILE] [--nvkr-run-dir DIR]
@@ -59,7 +59,7 @@ usage: check-site.sh --sitespec FILE --stack-config FILE --kubeconfig PATH [--re
        check-site.sh --kubeconfig PATH --diagnostics
 
 Reports, one line per finding, whether this machine and the cluster are
-ready for the site controller stack. Changes nothing; exits non-zero on a
+ready for the management plane stack. Changes nothing; exits non-zero on a
 FAIL. --diagnostics instead writes nodes, pods, events, helm releases and
 the controller logs under NVKE_STATE_DIR/diagnostics (default
 $XDG_STATE_HOME/nvke/diagnostics).

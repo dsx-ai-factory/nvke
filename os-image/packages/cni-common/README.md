@@ -41,7 +41,8 @@ node holds one stream per CNI. They depend on `containerd | nvke-kubeadm-distro`
 the distro package ships its own containerd and conflicts with Ubuntu's.
 
 Set `CNI_DOCKERHUB_MIRROR` to a registry host when Docker Hub reads must use a
-pull-through mirror. The mirror changes only Crane's transport reference. The
+pull-through mirror. The mirror changes only Crane's transport reference and,
+for `cni-ovn`, where the image build pulls its pinned `ubuntu` base. The
 committed lock and the image names imported on the node remain `docker.io/...`.
 A build uses the mirror when it serves the locked digest, and the canonical
 `docker.io` reference otherwise; `make lock` resolves the tag through the mirror

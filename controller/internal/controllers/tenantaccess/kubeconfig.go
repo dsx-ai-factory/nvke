@@ -44,7 +44,7 @@ const (
 )
 
 // TrustBundleSecretName returns the Secret name that holds the per-cluster
-// tenant CA trust bundle published into SecretsNamespace (OIDC clusters only).
+// tenant CA trust bundle published into the management namespace (OIDC clusters only).
 func TrustBundleSecretName(clusterName string) string {
 	return clusterName + "-cluster-trust-bundle"
 }

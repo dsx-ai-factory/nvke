@@ -1,6 +1,6 @@
 # Configure cert-manager
 
-Choose how NKTP obtains its TLS certificates:
+Choose how NVKE telemetry pipelines (NKTP) obtains its TLS certificates:
 
 - **Use cert-manager (default and recommended).** cert-manager issues and renews
   certificates for internal Collector mTLS, the Operator's admission webhook,
@@ -169,7 +169,7 @@ chart's `admissionWebhooks.certFile`, `keyFile`, and `caFile` values under
 ### Switching internal traffic to plaintext
 
 Set `certManager.internalTLS.enabled: false` only with the matching configuration
-and mount overrides in the [plaintext example](../examples/disable-internal-mtls.values.yaml).
+and mount overrides in the [plaintext example](https://github.com/dsx-ai-factory/nvke/blob/main/docs/nktp/examples/disable-internal-mtls.values.yaml).
 This flag stops certificate creation; it does not change Collector configurations.
 The example changes internal traffic only; apply the webhook and Target Allocator
 overrides above as well to remove the cert-manager dependency.

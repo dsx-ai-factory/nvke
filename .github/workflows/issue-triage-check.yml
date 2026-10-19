@@ -1,0 +1,162 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Keeps `needs-triage` on every open issue that has no `priority/*` label, and
+# routes a new issue to its area from the form's Component field. Setting a
+# priority is the act of triage; nothing else clears the label. The process is
+# docs/issue-triage.md.
+#
+# Advisory, like the other needs-* labels, and the same shape as
+# test-gate-check.yml: events clear, the hourly sweep reconciles. The forms add
+# `needs-triage` themselves, so `opened` matters only for an issue opened
+# without a form. Issues only: a pull request carries no triage or priority
+# label.
+
+name: Issue Triage Check
+
+on:
+  issues:
+    types: [opened, reopened, labeled, unlabeled]
+  schedule:
+    # Twenty-five to, clear of the :10/:40 test-gate sweep, the :15/:45
+    # CI-failure sweep and the e2e queue sweeper's ten-minute marks.
+    - cron: '35 * * * *'
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  triage:
+    name: Reconcile needs-triage
+    # A labeled or unlabeled event matters only for a priority label; the form
+    # labels and this workflow's own area label would otherwise run it again
+    # for nothing.
+    if: >-
+      github.repository_id == '1323115536' &&
+      (github.event_name != 'issues' ||
+       !contains(fromJSON('["labeled","unlabeled"]'), github.event.action) ||
+       startsWith(github.event.label.name, 'priority/'))
+    # On the job, not the workflow: a form-created issue fires `opened` plus one
+    # `labeled` per initial label, and a workflow-level group would let a label
+    # run cancel the `opened` run that does the routing even though its own
+    # job skips. The `opened` run is alone in its group; priority label runs
+    # on one issue supersede each other; sweeps queue behind one another.
+    concurrency:
+      group: ${{ github.event.issue.number && format('Issue Triage Check-{0}-{1}', github.event.issue.number, (contains(fromJSON('["labeled","unlabeled"]'), github.event.action) && 'label') || github.event.action) || 'Issue Triage Check-sweep' }}
+      cancel-in-progress: ${{ github.event_name == 'issues' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    timeout-minutes: 10
+    steps:
+      - name: Label issues that need triage
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          # Octokit retries 5xx and dropped connections; 4xx still fail at once.
+          retries: 3
+          script: |
+            // The labels exist already. Recreate needs-triage as #e11d21 and
+            // the priorities as #ad4c00, #663f0b and #ddac19 if one is ever
+            // deleted, since addLabels would otherwise invent a colour.
+            const NEEDS_TRIAGE = 'needs-triage';
+            const PRIORITY_PREFIX = 'priority/';
+
+            // The Component options in .github/ISSUE_TEMPLATE/*.yml, lower
+            // case, to the area labels in .github/labeler.yml. An option that
+            // is missing here routes nowhere and the triager picks the area.
+            const AREA_BY_COMPONENT = new Map([
+              ['controller', 'area/controller'],
+              ['node agent or updater', 'area/agent'],
+              ['nvkectl cli', 'area/cli'],
+              ['cluster api provider (provisioned)', 'area/controller'],
+              ['helm charts or deployment', 'area/chart'],
+              ['nico-sim (development simulator)', 'area/controller'],
+              ['os image or image checker', 'area/os-image'],
+              ['nvke telemetry pipelines (nktp)', 'area/nktp'],
+              ['build, packaging, or release automation', 'area/ci-build'],
+              ['documentation', 'area/docs'],
+            ]);
+
+            const names = (issue) => issue.labels.map((l) => (typeof l === 'string' ? l : l.name));
+
+            function areaFor(issue) {
+              const labels = names(issue);
+              if (labels.some((l) => l.startsWith('area/'))) {
+                return null;
+              }
+              const match = (issue.body ?? '').match(/^###\s+Component\s*$\r?\n+([^\r\n]+)/m);
+              if (match) {
+                return AREA_BY_COMPONENT.get(match[1].trim().toLowerCase()) ?? null;
+              }
+              // The documentation form has no Component field.
+              return labels.includes('documentation') ? 'area/docs' : null;
+            }
+
+            async function addLabel(issue, name) {
+              await github.rest.issues.addLabels({
+                ...context.repo,
+                issue_number: issue.number,
+                labels: [name],
+              });
+            }
+
+            async function removeLabel(issue, name) {
+              try {
+                await github.rest.issues.removeLabel({
+                  ...context.repo,
+                  issue_number: issue.number,
+                  name,
+                });
+              } catch (error) {
+                // 404 means someone removed it by hand first.
+                if (error.status !== 404) {
+                  throw error;
+                }
+              }
+            }
+
+            // One event names one issue, read live rather than from the
+            // payload so a label that moved since the event is seen. A sweep
+            // reads every open issue; the list endpoint returns pull requests
+            // too, so drop those.
+            const event = context.payload.issue;
+            const issues = event
+              ? [(await github.rest.issues.get({ ...context.repo, issue_number: event.number })).data]
+              : (await github.paginate(github.rest.issues.listForRepo, {
+                  ...context.repo,
+                  state: 'open',
+                  per_page: 100,
+                })).filter((issue) => !issue.pull_request);
+
+            const tally = { added: 0, cleared: 0, routed: 0, unchanged: 0 };
+            for (const issue of issues) {
+              if (issue.pull_request || issue.state !== 'open') {
+                continue;
+              }
+              const labels = names(issue);
+
+              // Routing happens once, on open. A later sweep must not put back
+              // an area a triager took off.
+              if (context.payload.action === 'opened') {
+                const area = areaFor(issue);
+                if (area) {
+                  await addLabel(issue, area);
+                  tally.routed += 1;
+                  core.info(`#${issue.number}: routed to ${area}`);
+                }
+              }
+
+              const wanted = !labels.some((l) => l.startsWith(PRIORITY_PREFIX));
+              const has = labels.includes(NEEDS_TRIAGE);
+              if (wanted && !has) {
+                await addLabel(issue, NEEDS_TRIAGE);
+                tally.added += 1;
+              } else if (!wanted && has) {
+                await removeLabel(issue, NEEDS_TRIAGE);
+                tally.cleared += 1;
+              } else {
+                tally.unchanged += 1;
+              }
+            }
+
+            core.info(`${issues.length} checked: ${tally.added} added, ${tally.cleared} cleared, ${tally.routed} routed, ${tally.unchanged} unchanged`);

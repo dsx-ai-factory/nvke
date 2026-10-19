@@ -8,9 +8,9 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 
 | Item | Supported | Notes |
 |---|---|---|
-| Kubernetes version | 1.36.3 | Pinned. The node image stages an `nvke-kubeadm-distro` package for it. Another patch release of 1.36 is not on the node. |
+| Kubernetes version | 1.36.3 | Pinned. Release qualification targets 1.36 (`release/policy.yaml`). The node image also stages `nvke-kubeadm-distro` packages for 1.34.2 and 1.35.3; those versions are not supported. Another patch release of 1.36 is not on the node. |
 | Version format | `X.Y.Z`, with no leading `v` | The API and the site spec reject any other format. |
-| Management cluster | 1.36.3 | Set once, in the site spec's `cluster.k8sVersion` field, at bootstrap. `nvkectl generate sitespec` writes an older default unless you set it. The management cluster does not upgrade itself. |
+| Management cluster | 1.36.3 | Set once, in the site spec's `cluster.k8sVersion` field, at bootstrap. `nvkectl generate sitespec` writes 1.36.3 unless you set it. The management cluster does not upgrade itself. |
 | Workload cluster | 1.36.3 | `controlPlaneKubernetesVersion` is required and has no default. The API accepts any `X.Y.Z`, but nodes run only a version their node image carries. |
 | Control-plane upgrade | One minor version up, or a later patch release | Range. Downgrades and requests for the current version are rejected. The cluster must have a `controlPlaneVIP`, and only one upgrade runs at a time. |
 | Worker node pool skew | Up to 3 minor versions behind the control plane | Range. Checked when you upgrade the control plane. A new node pool starts at the cluster's version. |
@@ -18,11 +18,24 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | OpenID Connect (OIDC) on a workload cluster | 1.30.0 or later | Range. Applies to `enableOidc` and `nvkeOIDCAuth`. |
 | Fleet-wide OIDC providers on a workload cluster | 1.34.0 or later | Range. Applies to `oidc.providers`. A cluster created on an earlier version gets none. |
 
+### Kubernetes feature gates
+
+NVKE runs every Kubernetes component with the upstream default feature gates for its Kubernetes version. On the supported version, NVKE sets no `--feature-gates` flag on `kube-apiserver`, `kube-controller-manager` or `kube-scheduler`, and no `featureGates` in the kubelet or kube-proxy configuration. The same applies to the management cluster and to workload clusters.
+
+| Feature stage | State in NVKE | Notes |
+|---|---|---|
+| General availability (GA) | Enabled | Kubernetes locks most GA gates on, and removes them in a later release. |
+| Beta | The upstream default | Most beta gates are on by default upstream, and some are off. NVKE does not change either. |
+| Alpha | Disabled | Alpha gates are off by default upstream. NVKE does not enable any. |
+| Beta API versions | The upstream default | NVKE does not set `--runtime-config`, so beta API versions that are off by default upstream stay off. |
+
+The NVKE API and the site spec have no field to change a feature gate. The [Kubernetes feature gates reference](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/) lists each gate's stage and default for every Kubernetes version.
+
 ## Container networking
 
 | Plugin or setting | Version | Notes |
 |---|---|---|
-| `ovn-kubernetes` | 1.6.0 | Pinned. The Container Network Interface (CNI) plugin for workload clusters and the management cluster. The node image stages its charts and images packages. |
+| `ovn-kubernetes` | 2.4.2 | Pinned. The NVIDIA distribution of OVN-Kubernetes, built from `dsx-ai-factory/ovn-kubernetes`. It is the Container Network Interface (CNI) plugin for workload clusters and the management cluster. The node image stages its charts and images packages. Pod `hostPort` is enabled. |
 | Other `cniVersion` values | Not in the node image | The node agent installs the CNI from packages on the node, so another version needs a node image built with it. |
 | IP family | IPv4 | Pod and service CIDRs are private IPv4 ranges, fixed when the cluster is created: `/12` to `/23` for pods, `/12` to `/24` for services. The defaults are `192.168.0.0/16` and `10.96.0.0/12`. The API virtual IP address (VIP) is IPv4. |
 
@@ -39,14 +52,14 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 
 | Item | Supported | Notes |
 |---|---|---|
-| Operating system | Ubuntu 26.04.1 LTS | Pinned. NVKR builds the node image from the Ubuntu 26.04.1 server installer, pinned by digest. |
+| Operating system | Ubuntu 26.04 LTS or Ubuntu 24.04 LTS | Both releases are built, published and qualified; no other release is supported. 26.04 is the default. NVKR builds the node image from the Ubuntu server installer for the release you select. |
 | CPU architectures | amd64, arm64 | NVKR has a node image Definition for each architecture. |
 | Kernel | `linux-nvidia` on amd64, `linux-nvidia-64k` on arm64 | Ubuntu's NVIDIA-tuned kernel flavors. |
 | Full-disk encryption (FDE) | FDE node image, amd64 and arm64, for evaluation only | NVKR's hosted pipeline is configured to build `nvke-node-fde-amd64` and `nvke-node-fde-arm64`, with the root volume on LUKS2. A local build with NVKR's `scripts/nvke-os-local.sh` produces only the image without FDE. Nodes built from one FDE image share its volume encryption key, so the image does not protect data at rest; see [Preview status and known limitations](preview-status.md#building-artifacts). |
 | SPIFFE Runtime Environment (SPIRE) agent | 1.14.1, with TPM plugin 1.9.0 | Pinned. Installed on the node image for TPM node attestation. |
 | Node agent (`nvke-agent`) | Built from the NVKE source NVKR pins | Installed and enabled on the node image. Listens on port 15005. |
 
-NVKR's [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/definitions/nvke-os/README.md) lists the build host requirements; [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md) summarizes them.
+NVKR's [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/diagnostics/README.md) lists the build host requirements; [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md) summarizes them.
 
 ## Management and bootstrap tooling
 

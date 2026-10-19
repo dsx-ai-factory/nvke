@@ -52,10 +52,10 @@ kubectl logs deployment/nke-controller -n nke-controller --since=1h \
 
 ### Cluster API objects
 
-NVKE creates each workload cluster's Cluster API objects in the `nke-system` namespace of the management cluster, named after the cluster. The last command shows the logs of CAPNICo, the Cluster API infrastructure provider for NVIDIA Infra Controller (NICo).
+NVKE creates each workload cluster's Cluster API objects in the `nvke-system` namespace of the management cluster, named after the cluster. The last command shows the logs of CAPNICo, the Cluster API infrastructure provider for NVIDIA Infra Controller (NICo).
 
 ```bash
-clusterctl describe cluster <WORKLOAD_CLUSTER> -n nke-system
+clusterctl describe cluster <WORKLOAD_CLUSTER> -n nvke-system
 ```
 
 ```bash
@@ -98,16 +98,16 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 
 ### nvkr does not build
 
-- **Symptom:** `make build` in the NVIDIA Kubernetes Recipes (NVKR) repository prints `Go go<VERSION> does not match pinned go1.27.1`.
-- **Fix:** NVKR builds only with the exact Go version in its `.go-version` file. Install Go 1.27.1, or let Go fetch it:
+- **Symptom:** `make build` in the NVIDIA Kubernetes Recipes (NVKR) repository prints `Go go<VERSION> does not match pinned go1.27.2`.
+- **Fix:** NVKR builds only with the exact Go version in its `.go-version` file. Install Go 1.27.2, or let Go fetch it:
 
   ```bash
-  GOTOOLCHAIN=go1.27.1 make build
+  GOTOOLCHAIN=go1.27.2 make build
   ```
 
 ### The bootstrap fails at clusterctl init
 
-- **Symptom:** The bootstrap fails with `cwedeploy: clusterctl init:` and `clusterctl dev must be on PATH`, and `nvkectl version` prints `dev`.
+- **Symptom:** The bootstrap fails with `controllerdeploy: clusterctl init:` and `clusterctl dev must be on PATH`, and `nvkectl version` prints `dev`.
 - **Cause:** `nvkectl` was built with `go build`. Only the Makefile stamps the version and the Cluster API version into the binary.
 - **Fix:** Build with `make -C nvke/cli build`. If the message names a real version, `clusterctl` is missing from `PATH` or the host cannot reach `github.com`.
 
@@ -237,9 +237,15 @@ The install stops at the component that failed. Fix the cause and run the same c
 - **Symptom:** The `nico` row of `nvkectl get providers` shows `NOT-INSTALLED`, `NOT-CONFIGURED`, `DEGRADED` or `UNKNOWN`. The `DETAIL` column says why.
 - **Fix:** [Configure an infrastructure provider: NICo](provider-nico.md#confirm-that-capnico-is-running) gives the action for each state.
 
+### nvkectl get providers shows CREDENTIALS other than HEALTHY
+
+- **Symptom:** The `nico` row reads `CONFIGURED`, but `CREDENTIALS` is not `HEALTHY`. The `DETAIL` column says why.
+- **Cause:** `UNSUPPORTED` is expected with the CAPNICo release the install deploys, which does not serve `NicoIdentity`. With a release that does, `NO-IDENTITY` means no `NicoIdentity` names `nico-credentials`, and `FAILING` or `UNKNOWN` carries the reason from CAPNICo's last check.
+- **Fix:** [Infrastructure providers](https://github.com/dsx-ai-factory/nvke/blob/main/cli/README.md#infrastructure-providers) explains each value. For `FAILING`, correct the credentials as described in [Configure an infrastructure provider: NICo](provider-nico.md#manage-the-nico-credentials).
+
 ### Machines are not delivered
 
-- **Symptom:** A node's `pending` message stays `Waiting for infrastructure allocation`, or its step stays `Waiting for CAPI machine to be ready`. `clusterctl describe cluster <WORKLOAD_CLUSTER> -n nke-system` may show a machine with the reason `InstanceTypeUnavailable`.
+- **Symptom:** A node's `pending` message stays `Waiting for infrastructure allocation`, or its step stays `Waiting for CAPI machine to be ready`. `clusterctl describe cluster <WORKLOAD_CLUSTER> -n nvke-system` may show a machine with the reason `InstanceTypeUnavailable`.
 - **Cause:** The NICo instance type has no allocation for your organization, or no free machine.
 - **Fix:** Add an allocation in NICo, or use an instance type with free capacity. The control plane can list fallback types in `instanceTypePreference`, as in [Create a workload cluster](../workload-clusters/create.md).
 
@@ -302,7 +308,7 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 - **Symptom:** The cluster stays `Deleting`, and its `deleting` condition message starts with `Workflow failed:`.
 - **Cause:** Teardown failed.
-- **Fix:** [Report the problem](#get-help) with the cluster's YAML, the management-plane log and the Cluster API objects. Do not delete the cluster's objects in `nke-system` by hand.
+- **Fix:** [Report the problem](#get-help) with the cluster's YAML, the management-plane log and the Cluster API objects. Do not delete the cluster's objects in `nvke-system` by hand.
 
 ## Node pools and nodes
 
@@ -316,9 +322,10 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 ### nvkectl get kubeconfig fails
 
-- **Symptom:** `admin kubeconfig secret nke-system/<WORKLOAD_CLUSTER>-admin-kubeconfig not found`, or `not allowed to read secret nke-system/<WORKLOAD_CLUSTER>-admin-kubeconfig`.
-- **Cause:** For `not found`, the name is wrong or the cluster is not provisioned yet. For `not allowed`, the kubeconfig set with `nvkectl config set-site` lacks `get` on Secrets in `nke-system`.
+- **Symptom:** `admin kubeconfig secret nvke-system/<WORKLOAD_CLUSTER>-admin-kubeconfig not found`, or `not allowed to read secret nvke-system/<WORKLOAD_CLUSTER>-admin-kubeconfig`.
+- **Cause:** For `not found`, the name is wrong or the cluster is not provisioned yet. For `not allowed`, the kubeconfig set with `nvkectl config set-site` lacks `get` on Secrets in `nvke-system`.
 - **Fix:** Check the name with `nvkectl get clusters` and wait for `Provisioned`, or use a kubeconfig with that permission.
+- **Note:** A management plane installed before the management namespace became configurable publishes into `nke-system`, not `nvke-system`. `nvkectl get kubeconfig` tries both, so the message naming only one means it found the Secret in neither. Pass `--namespace` if the site pins a name of its own.
 
 ### kubectl times out against the workload cluster
 

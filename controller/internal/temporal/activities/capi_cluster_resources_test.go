@@ -41,7 +41,7 @@ func TestDeleteCAPIClusterResources_LeavesSharedNamespaceIntact(t *testing.T) {
 		ProviderType: db.ProviderTypeNico,
 		Nico:         &db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID},
 	}
-	ns := constants.NamespaceNVKESystem
+	ns := constants.LegacyManagementNamespace
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
@@ -80,7 +80,7 @@ func TestDeleteCAPIClusterResources_WaitsForRemainingMachines(t *testing.T) {
 		ProviderType: db.ProviderTypeNico,
 		Nico:         &db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID},
 	}
-	ns := constants.NamespaceNVKESystem
+	ns := constants.LegacyManagementNamespace
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))

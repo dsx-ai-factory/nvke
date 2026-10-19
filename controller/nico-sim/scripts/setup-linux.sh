@@ -388,6 +388,13 @@ info "Ensuring libvirtd is running..."
 sudo systemctl enable --now libvirtd 2>/dev/null || true
 sudo systemctl start libvirtd 2>/dev/null || true
 
+# ── 4a. Bridge left by an older nico-vms ────────────────────────────────────
+
+BRIDGE_NAME="${NICO_VMS_BRIDGE_NAME:-controllerbr0}"
+
+# The old cwebr0 bridge holds the gateway address the configured bridge needs.
+bash "${SCRIPT_DIR}/remove-legacy-bridge.sh" "$BRIDGE_NAME"
+
 # ── 4b. qemu-bridge-helper for qemu:///session ──────────────────────────────
 
 # qemu:///session mode runs QEMU as the current user (no root needed, all files
@@ -397,9 +404,9 @@ BRIDGE_HELPER=$(find /usr/lib/qemu /usr/libexec -name qemu-bridge-helper 2>/dev/
 if [ -n "$BRIDGE_HELPER" ]; then
     info "Configuring qemu-bridge-helper for session mode..."
     sudo mkdir -p /etc/qemu
-    if ! grep -q "allow cwebr0" /etc/qemu/bridge.conf 2>/dev/null; then
-        echo "allow cwebr0" | sudo tee -a /etc/qemu/bridge.conf >/dev/null
-        info "Added 'allow cwebr0' to /etc/qemu/bridge.conf"
+    if ! grep -qx "allow ${BRIDGE_NAME}" /etc/qemu/bridge.conf 2>/dev/null; then
+        echo "allow ${BRIDGE_NAME}" | sudo tee -a /etc/qemu/bridge.conf >/dev/null
+        info "Added 'allow ${BRIDGE_NAME}' to /etc/qemu/bridge.conf"
     fi
     sudo chmod u+s "$BRIDGE_HELPER"
     info "Set setuid on $BRIDGE_HELPER"
@@ -409,7 +416,6 @@ fi
 
 # ── 5. Bridge networking ────────────────────────────────────────────────────
 
-BRIDGE_NAME="cwebr0"
 BRIDGE_CIDR="172.30.0.0/24"
 BRIDGE_IP="172.30.0.1/24"
 

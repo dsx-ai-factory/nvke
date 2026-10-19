@@ -23,8 +23,3 @@ hooks:
 # The fleet reboots before join so disable-ipv6-grub takes effect; the lane skips
 # the 1-2 min per node and the reboot spec still exercises a reboot.
 preJoinNodeReboot: false
-labels:
-  - node-role.kubernetes.io/control-plane=
-  - nodeGroup=control-plane
-  - node.kubernetes.io/instance-type=cpu
-  - nodeType=cpu

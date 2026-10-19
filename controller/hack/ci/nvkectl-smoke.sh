@@ -347,9 +347,11 @@ nvkectl_smoke_local_commands() {
 }
 
 # get kubeconfig reaches the management cluster directly, not the controller: site
-# kubeconfig -> Secret nke-system/<cluster>-admin-kubeconfig. Nothing else here
+# kubeconfig -> Secret <namespace>/<cluster>-admin-kubeconfig. Nothing else here
 # exercises that path, and the not-found message is the only proof the CLI
-# looked in the right namespace under the right name.
+# looked in the right namespace under the right name. The CLI tries nvke-system,
+# then falls back to nke-system, and its error names the last one it tried, so
+# either namespace is a correct answer.
 nvkectl_smoke_kubeconfig_negatives() {
   local out
 
@@ -357,7 +359,7 @@ nvkectl_smoke_kubeconfig_negatives() {
     log "nvkectl smoke: 'get kubeconfig ${NVKECTL_SMOKE_ABSENT}' succeeded against a cluster that does not exist" >&2
     return 1
   fi
-  if ! grep -q "nke-system/${NVKECTL_SMOKE_ABSENT}-admin-kubeconfig" <<<"${out}"; then
+  if ! grep -Eq "(nvke|nke)-system/${NVKECTL_SMOKE_ABSENT}-admin-kubeconfig" <<<"${out}"; then
     log "nvkectl smoke: 'get kubeconfig' named the wrong secret: ${out}" >&2
     return 1
   fi
@@ -751,7 +753,7 @@ EOF
       return 1
     fi
     log "nvkectl smoke: ${name}'s control plane was already up; 'get kubeconfig' returned its kubeconfig"
-  elif ! grep -q "nke-system/${name}-admin-kubeconfig" <<<"${out}"; then
+  elif ! grep -Eq "(nvke|nke)-system/${name}-admin-kubeconfig" <<<"${out}"; then
     log "nvkectl smoke: 'get kubeconfig ${name}' named the wrong secret: ${out}" >&2
     return 1
   elif ! grep -q 'not be provisioned yet' <<<"${out}"; then

@@ -1327,8 +1327,8 @@ func TestRunBootstrapSiteSavesTheEtcdEncryptionKey(t *testing.T) {
 	if secret.Metadata.Namespace != nil {
 		t.Errorf("metadata.namespace = %q, want none", *secret.Metadata.Namespace)
 	}
-	if secret.Metadata.Annotations["nke.nvidia.com/cluster-name"] != "nvke-site" {
-		t.Errorf("cluster-name annotation = %q, want %q", secret.Metadata.Annotations["nke.nvidia.com/cluster-name"], "nvke-site")
+	if secret.Metadata.Annotations["nvke.nvidia.com/cluster-name"] != "nvke-site" {
+		t.Errorf("cluster-name annotation = %q, want %q", secret.Metadata.Annotations["nvke.nvidia.com/cluster-name"], "nvke-site")
 	}
 	if string(secret.Data["active"]) != fakeEtcdKey {
 		t.Errorf("data.active is not the key the controller served")

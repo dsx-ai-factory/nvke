@@ -7,11 +7,12 @@ into three categories:
     describing what you encountered or what you want to see changed.
     - For usage questions, use [GitHub Discussions Q&A](https://github.com/dsx-ai-factory/nvke/discussions/categories/q-a)
     instead of an issue.
-    - Maintainers triage issues. Engineering reviews bugs, Product reviews
-    feature requests, and maintainers review documentation requests. The
-    impact reported in an issue is evidence for triage, not a
-    P0/P1/P2 priority assigned by the reporter. If you believe an issue needs
-    prompt attention, comment on it to notify the team.
+    - Maintainers triage issues as [docs/issue-triage.md](docs/issue-triage.md)
+    describes. Engineering reviews bugs, Product reviews feature requests, and
+    maintainers review documentation requests. The impact reported in an issue
+    is evidence for triage, not the `priority/P0` to `priority/P2` label a
+    triager sets. If you believe an issue needs prompt attention, comment on it
+    to notify the team.
 2. You want to propose a new Feature and implement it
     - Post about your intended feature, and we shall discuss the design and
     implementation.

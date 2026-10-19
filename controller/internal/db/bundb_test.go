@@ -15,9 +15,48 @@ import (
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
 	"github.com/uptrace/bun/extra/bunotel"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+type recordingMeterProvider struct {
+	metric.MeterProvider
+	histogram *recordingHistogram
+}
+
+func newRecordingMeterProvider() *recordingMeterProvider {
+	return &recordingMeterProvider{
+		MeterProvider: noop.NewMeterProvider(),
+		histogram:     &recordingHistogram{},
+	}
+}
+
+func (p *recordingMeterProvider) Meter(name string, opts ...metric.MeterOption) metric.Meter {
+	return &recordingMeter{
+		Meter:     p.MeterProvider.Meter(name, opts...),
+		histogram: p.histogram,
+	}
+}
+
+type recordingMeter struct {
+	metric.Meter
+	histogram *recordingHistogram
+}
+
+func (m *recordingMeter) Int64Histogram(string, ...metric.Int64HistogramOption) (metric.Int64Histogram, error) {
+	return m.histogram, nil
+}
+
+type recordingHistogram struct {
+	noop.Int64Histogram
+	records int
+}
+
+func (h *recordingHistogram) Record(context.Context, int64, ...metric.RecordOption) {
+	h.records++
+}
 
 // The DSNs are the shapes the controller chart renders: an inline env value
 // (legacy and greenfield) and a chart-created secret with an escaped password.
@@ -55,11 +94,14 @@ func TestTracingHookDBNameFollowsDSN(t *testing.T) {
 			bdb := bun.NewDB(sql.OpenDB(connector), pgdialect.New())
 			t.Cleanup(func() { _ = bdb.Close() })
 			event := &bun.QueryEvent{DB: bdb, Query: "SELECT 1", StartTime: time.Now()}
-			ctx := hook.BeforeQuery(context.Background(), event)
+			ctx, parent := tp.Tracer("test").Start(context.Background(), "parent")
+			ctx = hook.BeforeQuery(ctx, event)
 			hook.AfterQuery(ctx, event)
 
 			spans := recorder.Ended()
 			require.Len(t, spans, 1)
+			assert.Equal(t, parent.SpanContext().TraceID(), spans[0].SpanContext().TraceID())
+			assert.Equal(t, parent.SpanContext().SpanID(), spans[0].Parent().SpanID())
 			var got string
 			for _, attr := range spans[0].Attributes() {
 				if attr.Key == "db.name" {
@@ -67,6 +109,25 @@ func TestTracingHookDBNameFollowsDSN(t *testing.T) {
 				}
 			}
 			assert.Equal(t, tt.want, got)
+			parent.End()
 		})
 	}
+}
+
+func TestTracingHookDoesNotCreateRootSpans(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+	meterProvider := newRecordingMeterProvider()
+	connector := pgdriver.NewConnector(pgdriver.WithDSN("postgres://postgres:postgres@localhost:5432/nke-controller?sslmode=disable"))
+	hook := newTracingHook(connector, bunotel.WithTracerProvider(tp), bunotel.WithMeterProvider(meterProvider))
+
+	bdb := bun.NewDB(sql.OpenDB(connector), pgdialect.New())
+	t.Cleanup(func() { _ = bdb.Close() })
+	event := &bun.QueryEvent{DB: bdb, Query: "SELECT 1", StartTime: time.Now()}
+	ctx := hook.BeforeQuery(context.Background(), event)
+	hook.AfterQuery(ctx, event)
+
+	assert.Empty(t, recorder.Ended())
+	assert.Equal(t, 1, meterProvider.histogram.records)
 }

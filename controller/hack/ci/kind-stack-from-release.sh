@@ -183,7 +183,7 @@ for target in deployment/nke-controller:nke-controller deployment/controller-man
 done
 not_ready() {
   local ns
-  for ns in nke-system capnico-system nktp postgres spire-server spire-system temporal nke-controller cert-manager capi-system; do
+  for ns in nvke-system capnico-system nktp postgres spire-server spire-system temporal nke-controller cert-manager capi-system; do
     kubectl -n "${ns}" get pods -o jsonpath='{range .items[?(@.status.phase!="Succeeded")]}{.metadata.namespace}/{.metadata.name}{"\t"}{.status.phase}{"\t"}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' || die "cannot list pods in ${ns}"
   done | awk -F'\t' '$2 != "Running" || $3 ~ /false/ || $4 != "True"'
 }

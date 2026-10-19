@@ -21,8 +21,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
@@ -74,14 +74,14 @@ func TestRebootAndWaitCAPINode(t *testing.T) {
 					node.Status.NodeInfo.BootID = "new-boot"
 				}
 				if test.withdrawn {
-					delete(node.Labels, constants.LabelKeyNodeLabelReboot)
+					keys.Reboot.Delete(node.Labels)
 				}
 				if test.deleting {
 					ts := metav1.Now()
 					node.DeletionTimestamp = &ts
 				}
 				if test.terminating {
-					node.Labels[constants.LabelKeyNodeLabelTerminate] = "repair"
+					node.Labels[keys.Terminate.String()] = "repair"
 				}
 				env.OnActivity(a.GetKubeNode, mock.Anything, mock.Anything).Return(activities.GetKubeNodeResult{Node: node}, nil).Once()
 			}
@@ -143,7 +143,7 @@ func TestSoftRebootVerificationWindow(t *testing.T) {
 
 func rebootTestKubeNode(bootID string) corev1.Node {
 	return corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: "worker", Labels: map[string]string{constants.LabelKeyNodeLabelReboot: "repair"}},
+		ObjectMeta: metav1.ObjectMeta{Name: "worker", Labels: map[string]string{keys.Reboot.String(): "repair"}},
 		Status:     corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{BootID: bootID}},
 	}
 }
@@ -292,4 +292,36 @@ func setupRebootNodeWorkflowEnv(t *testing.T) (*testsuite.TestWorkflowEnvironmen
 	env.RegisterActivity(a.GetKubeNode)
 
 	return env, a
+}
+
+// A reboot request is applied by an operator or an external automation, so it
+// keeps arriving under the legacy domain; a terminate request withdraws it in
+// either domain too.
+func TestRebootRequestActiveReadsBothDomains(t *testing.T) {
+	tests := map[string]struct {
+		labels map[string]string
+		want   bool
+	}{
+		"no labels":                      {labels: nil},
+		"current domain":                 {labels: map[string]string{keys.Reboot.String(): "repair"}, want: true},
+		"legacy domain":                  {labels: map[string]string{keys.Reboot.Legacy(): "repair"}, want: true},
+		"empty value is not a request":   {labels: map[string]string{keys.Reboot.String(): ""}},
+		"terminate wins, current domain": {labels: map[string]string{keys.Reboot.String(): "repair", keys.Terminate.String(): "replace"}},
+		"terminate wins, legacy domain":  {labels: map[string]string{keys.Reboot.String(): "repair", keys.Terminate.Legacy(): "replace"}},
+	}
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			node := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", Labels: params.labels}}
+			require.Equal(t, params.want, rebootRequestActive(node))
+		})
+	}
+}
+
+// Completion has to clear the request in both domains: clearing only the one
+// this build writes would leave a legacy label that immediately restarts the
+// workflow.
+func TestRebootLabelRemovalCoversBothDomains(t *testing.T) {
+	require.Equal(t,
+		[]string{keys.Reboot.String() + "-", keys.Reboot.Legacy() + "-"},
+		keys.Reboot.RemoveSelectors())
 }

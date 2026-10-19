@@ -62,7 +62,7 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
    ```
 
    - `<WORKLOAD_CLUSTER>`: a lowercase DNS label of at most 55 characters, unique on the management plane, such as `example-customer-a`. Node names are built from it.
-   - `<K8S_VERSION>`: the Kubernetes version as `X.Y.Z` with no leading `v`, such as `1.34.2`. Use a version your releases' node images carry; see [Supported platforms and versions](../overview/supported-platforms.md).
+   - `<K8S_VERSION>`: the Kubernetes version as `X.Y.Z` with no leading `v`, such as `1.36.3`. Use a version your releases' node images carry; see [Supported platforms and versions](../overview/supported-platforms.md).
    - `<API_VIP>`: the Kubernetes API VIP. It must be outside the pod and service CIDRs.
    - `<NICO_ORG_ID>`, `<NICO_SITE_ID>` and `<NICO_VPC_ID>`: your NICo organization ID, and the site and VPC IDs. Every NICo ID in the spec except the organization ID is a UUID.
    - `<CP_INSTANCE_TYPE_ID>` and `<WORKER_INSTANCE_TYPE_ID>`: NICo instance type IDs. `instanceTypePreference` is a required, ordered list: add more IDs after the first as fallbacks.
@@ -74,7 +74,7 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
 
    | Field | Default | Notes |
    |---|---|---|
-   | `cniPlugin` | `ovn-kubernetes` | `cniVersion` defaults to `1.6.0`, the version the node image carries. |
+   | `cniPlugin` | `ovn-kubernetes` | `cniVersion` defaults to `2.4.2`, the version the node image carries. |
    | `etcdEncrypted` | None, required | Encrypts etcd at rest. You can turn encryption on later, but not off. |
    | `controlPlaneVIP` | None | Without a VIP, the API endpoint is the first control-plane node's IP, `desiredCount` must be `1`, and you cannot later scale the control plane above one node, upgrade it or replace its nodes. Recreate the cluster to add a VIP. |
    | `network.podCIDR` | `192.168.0.0/16` | Private IPv4 CIDRs, comma-separated, each `/12` to `/23`. Needs one `/24` for every node in the request, plus one. |
@@ -90,13 +90,13 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
    | `controlPlaneConfig.desiredCount` | None, required | Number of control-plane nodes. Use an odd number so that etcd keeps a quorum. More than one requires `controlPlaneVIP`. |
    | `controlPlaneConfig.maxSurge` | `0` | Extra control-plane nodes allowed during a rollout: `0` or `1`. |
    | `controlPlaneConfig.systemReservedMemory` | `16Gi` | Memory the kubelet reserves for system daemons. |
-   | `controlPlaneConfig.nodeLabels` | None | Stored with the cluster but not applied to the Kubernetes nodes; see [Preview status and known limitations](../overview/preview-status.md). |
-   | `nico.configProfile` (control plane or node pool) | None | Optional. Without one, the nodes run no config profile hooks or labels. |
+   | `controlPlaneConfig.nodeLabels` | None | Labels applied to each control-plane node after it joins. Set at creation; updating them is not supported, see [Preview status and known limitations](../overview/preview-status.md#workload-clusters-and-node-pools). Control-plane nodes take no custom taints. |
+   | `nico.configProfile` (control plane or node pool) | None | Optional. Without one, the nodes run no config profile hooks. |
    | `nodePools[].nodeNamePrefix` | None, required | Node names are `<WORKLOAD_CLUSTER>-<nodeNamePrefix>-<NNNN>` and must fit in 63 characters. |
    | `nodePools[].systemReservedMemory` | `16Gi` | `kubeReservedMemory` defaults to `2Gi`. |
    | `nodePools[].nico.diskSelectionStrategy` | `smallest` | The disk the OS is installed on: `smallest` or `largest`. |
 
-   Node pools also take `recycleBudget` and `autoModeDisabled`, and accept `nodeLabels` and `nodeTaints`, which are stored but not applied to the Kubernetes nodes. [Manage node pools](node-pools.md) describes them. You can create the cluster with no `nodePools` and add pools later.
+   Node pools also take `recycleBudget` and `autoModeDisabled`, and accept `nodeLabels` and `nodeTaints`, which are applied to each node when it joins. [Manage node pools](node-pools.md) describes them. You can create the cluster with no `nodePools` and add pools later.
 
 ## Create the cluster
 

@@ -166,7 +166,7 @@ func Parse(logger *slog.Logger) (Config, error) {
 		LibvirtURI:                      envOrDefault("NICO_VMS_LIBVIRT_URI", "qemu:///session"),
 		LibvirtNetwork:                  os.Getenv("NICO_VMS_LIBVIRT_NETWORK"),
 		QEMUSystemPath:                  os.Getenv("NICO_VMS_QEMU_SYSTEM_PATH"),
-		BridgeName:                      envOrDefault("NICO_VMS_BRIDGE_NAME", "cwebr0"), // Kept as cwebr0 until a follow-up rename: changing it leaves the old bridge behind on existing nico-vms hosts.
+		BridgeName:                      envOrDefault("NICO_VMS_BRIDGE_NAME", "controllerbr0"),
 		BridgeCIDR:                      os.Getenv("NICO_VMS_BRIDGE_CIDR"),
 		BaseImage:                       envOrDefault("NICO_VMS_BASE_IMAGE", "images/ubuntu-cloud.qcow2"),
 		ReadinessProbeInterval:          readinessProbeInterval,

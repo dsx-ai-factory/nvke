@@ -78,7 +78,7 @@ jobs:
       CGO_ENABLED: "1"
       # The contract between setup-ci-host.sh, which creates the bridge, and
       # nico-vms, which attaches taps to it. CIDR has no default in nico-vms.
-      NICO_VMS_BRIDGE_NAME: cwebr0
+      NICO_VMS_BRIDGE_NAME: controllerbr0
       NICO_VMS_BRIDGE_CIDR: 172.30.0.0/24
       # Absolute: nico-vms resolves this relative to its own working directory.
       # setup-ci-host.sh fetches the image here; nico-vms will not download it.

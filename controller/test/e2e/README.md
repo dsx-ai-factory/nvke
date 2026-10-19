@@ -18,9 +18,18 @@ This is the most typical way of writing a test. For any given cluster configurat
 4. **Post-Delete Validations**: Verify resources are properly cleaned up (e.g. `validateOIDCPostDelete`).
 
 The all-node readiness validation uses the kubeconfig published in
-`nke-system/<cluster>-kubeconfig`. It supports both SPIRE exec-auth kubeconfigs
+`nvke-system/<cluster>-kubeconfig`. It supports both SPIRE exec-auth kubeconfigs
 (using a JWT minted by the management cluster's SPIRE server) and ordinary
 admin kubeconfigs with embedded client certificates.
+
+The management namespace is per-site configurable -- the chart renders
+`nvkeSystemNamespace.name` into the controller's `managementNamespace` -- and
+`nvke-system` is only the default. Everything the suite reads or writes on the
+site controller (published Secrets, the `nke-rbac` ConfigMap, CAPI Clusters and
+Machines, verifier Pods) resolves that one namespace through
+`internal/mgmtns`. Set `NVKE_E2E_MANAGEMENT_NAMESPACE` to run against a site
+that pinned another -- `nke-system` for one installed before the namespace
+became configurable.
 
 ### Table Tests
 
@@ -403,10 +412,10 @@ node image is pinned accordingly). The CAPD deploy stands up the OIDC substrate
 the flip-on has everything it needs.
 
 **Two ordered specs.** The first proves the enablement itself (API trigger +
-kubeadm-config write-back + `nke-system` kubeconfig/trust-bundle publish); the second
+kubeadm-config write-back + `nvke-system` kubeconfig/trust-bundle publish); the second
 asserts a SPIRE identity authenticates on the tenant apiserver. The auth half depends
 on the tenant-access controller having published the SPIRE exec-auth kubeconfig +
-trust bundle (`nke-system/<cluster>-kubeconfig` and the trust-bundle Secret); the
+trust bundle (`nvke-system/<cluster>-kubeconfig` and the trust-bundle Secret); the
 verifier pod fetches the `k8s-spiffe-workload-jwt-exec-auth` plugin itself, so no
 plugin needs to be present in the test image.
 

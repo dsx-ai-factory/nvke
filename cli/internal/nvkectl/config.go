@@ -27,8 +27,8 @@ func newConfigSetSiteCmd() *cobra.Command {
 	var url, kubeconfig, name, proxyClientCert, proxyClientKey string
 	cmd := &cobra.Command{
 		Use:   "set-site",
-		Short: "Configure the site controller the CLI connects to",
-		Long: `Store the URL and management cluster kubeconfig for a site controller in ~/.config/nvkectl/config.yaml.
+		Short: "Configure the management plane the CLI connects to",
+		Long: `Store the URL and management cluster kubeconfig for a management plane in ~/.config/nvkectl/config.yaml.
 
 For sites fronted by a proxy that requires TLS client authentication, pass
 --proxy-client-cert and --proxy-client-key. nvkectl presents the certificate to

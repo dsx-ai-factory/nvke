@@ -28,7 +28,7 @@ func NewPatchCmd(clientFn ControllerClientFn) *cobra.Command {
 		Use:     "nodepool <name> --cluster <cluster>",
 		Aliases: []string{"nodepools"},
 		Short:   "Patch a node pool",
-		Long: `Patch a node pool on the site controller.
+		Long: `Patch a node pool on the management plane.
 
 Node pool names are unique within a cluster, so --cluster is required to
 identify which pool to patch.
@@ -47,7 +47,7 @@ Example — patch file:
   nvkectl patch nodepool gpu-workers --cluster my-cluster --patch-file patch.yaml
 
 The patch document's fields must match the controller UpdateNodePoolRequest schema
-exactly. See /api/docs on your site controller.`,
+exactly. See /api/docs on your management plane.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if patch == "" && patchFile == "" {

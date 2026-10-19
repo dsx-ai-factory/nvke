@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# OpenSSF Scorecard. Results go to Security -> Code scanning.
+# OpenSSF Scorecard. The SARIF goes to Security -> Code scanning; the JSON
+# result is kept as a workflow artifact for the NVIDIA OSS scorecard tool.
 #
 # Scorecard grades supply-chain practice from outside: branch protection,
 # pinned dependencies, token permissions, signed releases, whether a fuzzer or
@@ -22,22 +23,9 @@
 # repository-level metadata and a token with more than a pull request should
 # ever carry, and its own documentation says to run it this way.
 #
-# PUBLIC REPOSITORIES ONLY, which is what the gate job is for. Scorecard reads
-# history over the GitHub GraphQL API, and GITHUB_TOKEN may not do that on a
-# repository that is not public. It does not degrade, it stops:
-#
-#   scorecard had an error: internal error: ListCommits:error during
-#   graphqlHandler.setup: internal error: githubv4.Query:
-#   Resource not accessible by integration
-#
-# This repository is `internal` today, so the analysis is skipped and the run
-# stays green with a note that says why. It starts working by itself on the day
-# the repository is made public: the gate reads the live visibility rather than
-# a value written down here, so nothing needs editing then.
-#
-# The alternative is a PAT with repo scope. That is a long-lived credential with
-# much more reach than this needs, to grade a repository whose whole purpose is
-# to stop being private.
+# publish_results stays off. Publishing lists the score on the OpenSSF API and
+# needs id-token: write; the JSON artifact below gives the NVIDIA OSS scorecard
+# tool the same document meanwhile.
 
 name: Scorecard
 
@@ -66,53 +54,23 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Reads the visibility live rather than testing github.event.repository, which
-  # is absent on a schedule trigger and would skip every weekly run.
-  gate:
-    name: Check the repository is public
-    runs-on: ubuntu-latest
-    if: github.repository_id == '1323115536'
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    outputs:
-      public: ${{ steps.visibility.outputs.public }}
-    steps:
-      - name: Read the repository visibility
-        id: visibility
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          vis=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .visibility)
-          echo "Repository visibility: ${vis}"
-          if [ "${vis}" = "public" ]; then
-            echo "public=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "public=false" >> "${GITHUB_OUTPUT}"
-            {
-              echo "### Scorecard skipped"
-              echo
-              echo "The repository is \`${vis}\`. OpenSSF Scorecard needs the GraphQL"
-              echo "API, which \`GITHUB_TOKEN\` cannot use on a repository that is not"
-              echo "public, so the analysis would fail rather than report."
-              echo
-              echo "This runs by itself once the repository is public. No change needed here."
-            } >> "${GITHUB_STEP_SUMMARY}"
-          fi
-
   analysis:
     name: Scorecard analysis
-    needs: [gate]
-    if: needs.gate.outputs.public == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    if: github.repository_id == '1323115536'
+    timeout-minutes: 30
     permissions:
       # Upload the findings to the code-scanning dashboard.
       security-events: write
       # Read the workflow run history, which several checks grade.
       actions: read
       contents: read
+      # Commit, review and check-run queries, the action's documented set.
+      issues: read
+      pull-requests: read
+      checks: read
+      # Commit statuses, which the CI-Tests check lists.
+      statuses: read
       # No id-token: that is for publish_results, which is off below.
       #
       # Branch-Protection will score low or unknown as a result. It needs a PAT
@@ -130,9 +88,16 @@ jobs:
         with:
           results_file: results.sarif
           results_format: sarif
-          # Publishing would list the score on the public OpenSSF API and needs
-          # a PAT. Off until someone decides the score is ready to be published;
-          # the findings are just as useful in the Security tab meanwhile.
+          publish_results: false
+
+      # The SARIF keeps a check only when it scores below the action's policy,
+      # and drops inconclusive checks, so per-check scores do not survive it.
+      # The JSON result is the document the OpenSSF API serves.
+      - name: Write the JSON result
+        uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.json
+          results_format: json
           publish_results: false
 
       # The SARIF file, kept for 5 days. The dashboard shows current findings
@@ -144,6 +109,15 @@ jobs:
           name: scorecard-results
           path: results.sarif
           retention-days: 5
+
+      # Read by the NVIDIA OSS scorecard tool (OPENSSF_SCORECARD_ARTIFACT) when
+      # the OpenSSF API has no record of this repository.
+      - name: Upload the JSON result as an artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: openssf-scorecard-json
+          path: results.json
+          retention-days: 90
 
       - name: Upload the SARIF to code scanning
         uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3

@@ -38,6 +38,8 @@ type ControlPlaneConfigSpec struct {
 	Nico                        *NicoControlPlaneProvider `json:"nico,omitempty" bun:"-"`
 	Capi                        *CAPIControlPlaneProvider `json:"capi,omitempty" bun:"-"`
 	NodeAgentConfig             NodeAgentConfig           `json:"node_agent_config,omitempty" bun:"-"`
+	MachineAnnotations          map[string]string         `json:"machine_annotations,omitempty" bun:"-"`
+	MachineLabels               map[string]string         `json:"machine_labels,omitempty" bun:"-"`
 }
 
 type NicoControlPlaneProvider struct {
@@ -48,32 +50,6 @@ type NicoControlPlaneProvider struct {
 	DiskSelectionStrategy  DiskSelectionStrategy `json:"disk_selection_strategy,omitempty"`
 	ConfigProfile          string                `json:"config_profile,omitempty"`
 	SSHKeyGroupIDs         []uuid.UUID           `json:"ssh_key_group_ids,omitempty"`
-}
-
-// MarshalJSON writes the release under both the release and os_profile keys.
-// See NicoNodePoolProvider.MarshalJSON for why the mirror exists.
-func (n NicoControlPlaneProvider) MarshalJSON() ([]byte, error) {
-	type alias NicoControlPlaneProvider
-	return json.Marshal(struct {
-		alias
-		OSProfileLegacy string `json:"os_profile,omitempty"`
-	}{alias(n), n.Release})
-}
-
-// UnmarshalJSON reads the release from either key, preferring release.
-func (n *NicoControlPlaneProvider) UnmarshalJSON(data []byte) error {
-	type alias NicoControlPlaneProvider
-	aux := struct {
-		*alias
-		OSProfileLegacy string `json:"os_profile,omitempty"`
-	}{alias: (*alias)(n)}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	if n.Release == "" {
-		n.Release = aux.OSProfileLegacy
-	}
-	return nil
 }
 
 type CAPIControlPlaneProvider struct {
@@ -157,6 +133,8 @@ func (c ControlPlaneConfigSpec) Equal(other ControlPlaneConfigSpec) bool {
 func normalizeConfigSpec(cfg ControlPlaneConfigSpec) ControlPlaneConfigSpec {
 	out := cfg
 	out.NodeLabels = CloneStringMap(cfg.NodeLabels)
+	out.MachineAnnotations = CloneStringMap(cfg.MachineAnnotations)
+	out.MachineLabels = CloneStringMap(cfg.MachineLabels)
 	out.Nico = cloneNicoControlPlaneProvider(cfg.Nico)
 	out.Capi = cloneCAPIControlPlaneProvider(cfg.Capi)
 	return out

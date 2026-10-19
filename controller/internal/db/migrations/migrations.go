@@ -14,7 +14,15 @@ import (
 //nolint:gochecknoglobals // migrations are global
 var migrations = migrate.NewMigrations()
 
-func Migrate(ctx context.Context, db *bun.DB) error {
+// profilesDirKey carries the controller's profiles directory to migrations that read config profiles
+type profilesDirKey struct{}
+
+// Migrate applies pending migrations. profilesDir is the controller's profilesDir setting, read by
+// migrations that backfill data from config profiles.
+func Migrate(ctx context.Context, db *bun.DB, profilesDir string) error {
+	// Note: profilesDir is read by 20261016120000_backfill_config_profile_labels.
+	ctx = context.WithValue(ctx, profilesDirKey{}, profilesDir)
+
 	// By default, When a migration fails, Bun still marks the migration as applied.
 	// Marking the failed migration as applied is problematic when executing migrations as a part of
 	// kubernetes deployment as k8s will restart the failed container,

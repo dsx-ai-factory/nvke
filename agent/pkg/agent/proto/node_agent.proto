@@ -111,13 +111,12 @@ service NodeAgent {
 
   rpc InitializeKubernetesAPIEncryption(InitializeKubernetesAPIEncryptionRequest) returns (InitializeKubernetesAPIEncryptionResponse) {}
 
-  rpc RewriteKubernetesAPIObjects(RewriteKubernetesAPIObjectsRequest) returns (RewriteKubernetesAPIObjectsResponse) {}
-
   // PromoteKubernetesAPIEncryptionProviders reorders encryption providers from
   // identity-then-secretbox (existing-cluster bootstrap) to secretbox-then-identity
   // on this node, then waits for the local apiserver to reload the config.
   // Run on every control-plane node after phase-1 InitializeKubernetesAPIEncryption;
-  // then run RewriteKubernetesAPIObjects once.
+  // then call StartEtcdEncryptionAtRestObjectsRewrite once and poll
+  // GetEtcdEncryptionAtRestObjectsRewriteStatus until the operation succeeds.
   rpc PromoteKubernetesAPIEncryptionProviders(PromoteKubernetesAPIEncryptionProvidersRequest) returns (PromoteKubernetesAPIEncryptionProvidersResponse) {}
 
   // UpdateEncryptionConfig applies a single key-rotation mutation to the local
@@ -151,8 +150,6 @@ service NodeAgent {
 
   rpc RemovePlainTextSecondaryEncryptionEntry(RemovePlainTextSecondaryEncryptionEntryRequest) returns (RemovePlainTextSecondaryEncryptionEntryResponse) {}
 
-  rpc RestartAPIPods(RestartAPIPodsRequest) returns (RestartAPIPodsResponse) {}
-
   rpc UploadFileBundle(stream FileChunk) returns (UploadStatus) {}
 
   // WriteNodeAgentConfig replaces /etc/agent/config.yaml with the given YAML
@@ -160,8 +157,6 @@ service NodeAgent {
   rpc WriteNodeAgentConfig(WriteNodeAgentConfigRequest) returns (WriteNodeAgentConfigResponse) {}
 
   rpc StreamExecuteScript(ExecuteScriptRequest) returns (stream ScriptOutputChunk) {}
-
-  rpc SetUnsetIsMaster(SetUnsetIsMasterRequest) returns (SetUnsetIsMasterResponse) {}
 
   rpc InstallBundle(InstallBundleRequest) returns (InstallBundleResponse) {}
 
@@ -468,7 +463,7 @@ enum InstallMethod {
 }
 
 enum CniVariant {
-  // Default for InstallCNI: treated as OVN when version is empty (default Debian stream suffix, e.g. 1.6.0).
+  // Default for InstallCNI: treated as OVN when version is empty (default Debian stream suffix, e.g. 2.4.2).
   CNI_VARIANT_UNSPECIFIED = 0;
   CNI_VARIANT_OVN = 1;
   CNI_VARIANT_CALICO = 2;
@@ -500,7 +495,7 @@ message InstallCNIRequest {
   // OVN or CALICO; when UNSPECIFIED the agent uses OVN (stream selects nvke-cni-ovn-charts-<stream>, etc.).
   CniVariant cni_variant = 1;
   // Selects Debian stream suffix in the charts/manifest package name used to locate bundled
-  // charts on disk (leading "v" stripped). Empty uses defaults matching cni-packages (OVN 1.6.0,
+  // charts on disk (leading "v" stripped). Empty uses defaults matching cni-packages (OVN 2.4.2,
   // Calico 3.30.1). Non-empty duplicates the suffix for an optional apt pin suffix (foobar=VERSION)
   // in the logical package spec string for logging/compatibility — install the pinned deb separately.
   string version = 2;
@@ -574,18 +569,6 @@ message InitializeKubernetesAPIEncryptionRequest {
 }
 
 message InitializeKubernetesAPIEncryptionResponse {
-  string status = 1;
-  string error_message = 2;
-}
-
-message RewriteKubernetesAPIObjectsRequest {
-  // When true, bypasses the "nvke.nvidia.com/k8s-api-encryption-configured=true" label
-  // check that gates the initial-setup flow. Required for key rotation on an
-  // already-encrypted cluster where that label is absent.
-  bool skip_label_check = 1;
-}
-
-message RewriteKubernetesAPIObjectsResponse {
   string status = 1;
   string error_message = 2;
 }
@@ -685,27 +668,11 @@ message WriteNodeAgentConfigResponse {
   int32 code = 2;
 }
 
-message RestartAPIPodsRequest {}
-
-message RestartAPIPodsResponse {
-  string status = 1;
-  string error_message = 2;
-}
-
 message ScriptOutputChunk {
   string output = 1;
   string error = 2;
   int32 exit_code = 3; // Exit code (set in final chunk)
   bool is_complete = 4; // Indicates if this is the final chunk
-}
-
-message SetUnsetIsMasterRequest {
-  bool is_master = 1;
-}
-
-message SetUnsetIsMasterResponse {
-  string status = 1;
-  string error_message = 2;
 }
 
 message InstallBundleRequest {

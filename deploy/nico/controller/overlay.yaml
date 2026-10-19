@@ -3,7 +3,7 @@
 
 # What this target changes about controller, applied over values.yaml.
 
-# OFF, matching a NICo site controller that provisioned a real tenant.
+# OFF, matching an NVKE management cluster on NICo that provisioned a real tenant.
 #
 # Not a recommendation for a production site -- a deliberate choice for the
 # first run on this path, which is already changing one thing that has never
@@ -196,11 +196,13 @@ appDb:
   url: postgres-postgresql.postgres.svc.cluster.local:5432
   dbName: nke-controller
   postgresUser: postgres
-  # postgresPassword is a real credential on this path and is NOT committed.
-  # Supply it with --values-for controller=<file>, together with the matching
-  # value on BOTH of temporal's datastores -- default and visibility. Setting
-  # it on only one leaves the Temporal schema job crash-looping with
-  # "password authentication failed", which that run hit.
+  # No postgresPassword: the render builds the connection string from these
+  # values and NVKECTL_DATABASE_PASSWORD into the nvke-database Secret and
+  # names it in secrets.dbSecretName. A hand install sets the password here
+  # and on BOTH of temporal's datastores, or the Temporal schema job
+  # crash-loops with "password authentication failed". Change appDb here, not
+  # with --values-for: once the Secret is named, the chart ignores appDb, and
+  # nvke-deploy.sh refuses a --values-for file that sets it.
   sslMode: disable
 
 # The port nvke-agent listens on, and it has to agree with three other places:

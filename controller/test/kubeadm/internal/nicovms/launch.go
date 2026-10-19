@@ -93,7 +93,7 @@ type LaunchOpts struct {
 	// existing libvirt network: config.UseLibvirtNetwork() is simply
 	// `LibvirtNetwork != ""`. These must agree with whatever
 	// scripts/setup-ci-host.sh created. Empty values fall back to nico-vms's
-	// own defaults (cwebr0, and 172.30.0.0/24 on Linux).
+	// own defaults (controllerbr0, and 172.30.0.0/24 on Linux).
 	BridgeName string
 	BridgeCIDR string
 
@@ -310,7 +310,7 @@ func (p *Process) CreateNode(ctx context.Context, name, userData string, phoneHo
 		TenantID:       DefaultTenantID,
 		InstanceTypeID: DefaultInstanceTypeID,
 		VPCID:          DefaultVpcID,
-		Labels:         map[string]string{"nke.nvidia.com/test-role": "cluster-bringup"},
+		Labels:         map[string]string{"nvke.nvidia.com/test-role": "cluster-bringup"},
 		Interfaces: []interfaceCreateRequest{
 			{SubnetID: DefaultSubnetID},
 		},

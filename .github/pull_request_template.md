@@ -33,7 +33,7 @@ Related: <!-- #123 or N/A -->
 - [ ] nvkectl CLI (`cli/`)
 - [ ] Cluster API provider (`cluster-api-provider-provisioned/`)
 - [ ] Helm charts or deployment (`controller/deploy/`)
-- [ ] NKTP telemetry pipeline (`nktp/`)
+- [ ] NVKE telemetry pipelines (NKTP) (`nktp/`)
 - [ ] nico-sim (`controller/nico-sim/`)
 - [ ] OS image or image checker (`os-image/`)
 - [ ] CI / workflows (`.github/`)

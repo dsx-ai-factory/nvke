@@ -2,7 +2,7 @@
 
 ## Purpose
 
-NKTP uses stock kube-state-metrics (KSM) to expose Kubernetes object state.
+NVKE telemetry pipelines (NKTP) uses stock kube-state-metrics (KSM) to expose Kubernetes object state.
 In AI-scale Kubernetes clusters, KSM must balance scrape response size, its own per-pod and aggregate CPU and memory use, Kubernetes API server load,
 and concurrent API watches. The designs below compare ways to address these scaling pressures and the tradeoffs of each.
 
@@ -21,7 +21,7 @@ One KSM Pod collects all selected Kubernetes objects through API server list and
 The [`--resources` option][ksm-options] selects the resource types.
 
 ```text
-# Psuedocommand for each KSM pod
+# Pseudocommand for each KSM pod
 ksm --resources=<all-resource-types>
 ```
 
@@ -36,7 +36,7 @@ ksm --resources=<all-resource-types>
 KSM's [hash sharding][ksm-hash-sharding] assigns objects to shards using each object's unique identifier (UID).
 
 ```text
-# Psuedocommand for each KSM pod
+# Pseudocommand for each KSM pod
 ksm --resources=<all-resource-types> --shard=0 --total-shards=2
 ksm --resources=<all-resource-types> --shard=1 --total-shards=2
 ```
@@ -55,7 +55,7 @@ ksm --resources=<all-resource-types> --shard=1 --total-shards=2
 Separate KSM instances request different resource types from the API server, selected through [KSM's `--resources` option][ksm-options].
 
 ```text
-# Psuedocommand for each KSM pod
+# Pseudocommand for each KSM pod
 ksm --resources=pods
 ksm --resources=deployments,statefulsets,daemonsets
 ksm --resources=<remaining-resource-types>
@@ -76,7 +76,7 @@ ksm --resources=<remaining-resource-types>
 Run one KSM Pod per node, each collecting all selected resource types through the [`--resources` option][ksm-options].
 
 ```text
-# Psuedocommand for each KSM pod
+# Pseudocommand for each KSM pod
 ksm --resources=<all-resource-types> # On node-a
 ksm --resources=<all-resource-types> # On node-b
 # One Pod on each remaining node.
@@ -95,7 +95,7 @@ Collect unscheduled Pods and all other resource types centrally, using [hash sha
 The [`--track-unscheduled-pods` option][ksm-options] restricts central Pod collection to Pods without a node assignment.
 
 ```text
-# Psuedocommand for each KSM pod
+# Pseudocommand for each KSM pod
 ksm --resources=<all-resource-types> --track-unscheduled-pods --shard=0 --total-shards=2
 ksm --resources=<all-resource-types> --track-unscheduled-pods --shard=1 --total-shards=2
 
@@ -122,7 +122,7 @@ Low-cardinality resource types can be configured to share a KSM instance, while 
 KSM's [`--track-unscheduled-pods` option][ksm-options] covers Pods without a node assignment.
 
 ```text
-# Psuedocommand for each KSM pod
+# Pseudocommand for each KSM pod
 ksm --resources=pods --track-unscheduled-pods
 ksm --resources=deployments,statefulsets,daemonsets
 ksm --resources=<remaining-resource-types>
@@ -150,7 +150,7 @@ For example, Deployments, StatefulSets, and DaemonSets may be small enough to co
 Jobs may be collected separately but still exceed a single Pod's budget, so only Jobs are sharded in this example.
 
 ```text
-# Psuedocommand for each KSM pod
+# Pseudocommand for each KSM pod
 ksm --resources=pods --track-unscheduled-pods
 ksm --resources=deployments,statefulsets,daemonsets
 ksm --resources=jobs --shard=0 --total-shards=2

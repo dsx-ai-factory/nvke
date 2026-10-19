@@ -5,6 +5,8 @@ package constants
 
 import (
 	"github.com/google/uuid"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 const (
@@ -47,57 +49,28 @@ const (
 
 	MachineCapabilityDeviceTypeNVLink = "NVLink"
 
-	// NVKE label keys for Forge instances
-	LabelKeyNodeID     = "nke.nvidia.com/node-id"
-	LabelKeyNodePoolID = "nke.nvidia.com/node-pool-id"
-	LabelKeyClusterID  = "nke.nvidia.com/cluster-id"
-	LabelKeyIPAddress  = "nke.nvidia.com/ip-address"
-	LabelKeySiteID     = "nke.nvidia.com/site-id"
-
-	// NVKE label keys applied to Kubernetes node objects
-	LabelKeyMachineID = "nke.nvidia.com/machine-id"
-
-	// Forge topology label keys applied to Kubernetes node objects. These are
-	// deliberately distinct from the Forge-instance label keys above (LabelKey*)
-	// even where the string value matches (e.g. site-id): the two families target
-	// different objects (K8s node vs. Forge instance) and own separate
-	// deprecation contracts.
-	//
-	// NOTE: node.kubernetes.io/instance-type is intentionally NOT set here. The
-	// prod tenant Prometheus SLO rules (prometheus/slo.rules) exact-match
-	// instance_type="cpu" to exclude CPU nodes from GPU capacity/health math, and
-	// the Forge instance-type name (e.g. "cpu.t1") does not match "cpu". Leave the
-	// upstream/kubelet-provided value untouched.
-	LabelKeyNodeSiteID   = "nke.nvidia.com/site-id"
-	LabelKeyNodeSiteName = "nke.nvidia.com/site-name"
-	LabelKeyNodeVPCID    = "nke.nvidia.com/vpc-id"
-	LabelKeyNodeVPCName  = "nke.nvidia.com/vpc-name"
-
-	// NVKE label keys for node remediation
-	LabelKeyNodeLabelReboot                = "nke.nvidia.com/reboot"
-	LabelKeyNodeLabelRebootStarted         = "nke.nvidia.com/reboot-started"
-	LabelKeyNodeLabelRebootAttempt         = "nke.nvidia.com/reboot-attempt"
-	LabelKeyNodeLabelLastCompletedReboot   = "nke.nvidia.com/last-completed-reboot"
-	LabelKeyNodeLabelRebootStatus          = "nke.nvidia.com/reboot-status"
-	LabelKeyNodeLabelRebootStatusTimestamp = "nke.nvidia.com/reboot-status-timestamp"
-	LabelKeyNodeLabelTerminate             = "nke.nvidia.com/terminate"
-	LabelKeyNodeLabelTerminateStatus       = "nke.nvidia.com/terminate-status"
-
-	// NVKE label key for cluster static entries. The value is
-	// config.Config.ManagedByLabelValue, not a constant -- it is
-	// per-install configurable.
-	LabelKeyNvkeManagedBy = "nke.nvidia.com/managed-by"
-
 	// NamespaceNVKESystem is the shared management-plane namespace for tenant-access
 	// Secrets and OIDC-mode CAPI objects. The Helm chart creates it unconditionally.
 	NamespaceNVKESystem = "nke-system"
 
-	// LabelKeyKubeconfigMode records whether a published kubeconfig Secret holds
+	// LegacyManagementNamespace is the shared management-plane namespace every
+	// site installed before the namespace became configurable uses. It is the
+	// value config.Config.ManagementNamespaceOrDefault falls back to when unset,
+	// so a controller handed a config.yaml written before managementNamespace
+	// existed keeps reading and writing exactly where it always did.
+	//
+	// It is not the default a new site gets. That is the chart's
+	// nvkeSystemNamespace.name, which the chart always renders into
+	// managementNamespace. The new default is deliberately not duplicated here:
+	// the controller must never pick it on its own, or an existing site that has
+	// not pinned the old name would be moved by a binary upgrade alone.
+	LegacyManagementNamespace = "nke-system"
+
+	// LabelValueKubeconfigMode* record whether a published kubeconfig Secret holds
 	// SPIRE exec-auth or a verbatim admin.conf. The mode is rewritten in place when
 	// EnableOIDC flips a cluster, so it is descriptive, not an ownership key:
 	// publish and delete key off cluster-id alone, and the consume path checks the
-	// payload itself rather than this label.
-	LabelKeyKubeconfigMode        = "nke.nvidia.com/kubeconfig-mode"
+	// payload itself rather than keys.KubeconfigMode.
 	LabelValueKubeconfigModeSPIRE = "spire"
 	LabelValueKubeconfigModeAdmin = "admin"
 
@@ -109,26 +82,10 @@ const (
 	FieldManagerNicoSpiffe        = "nico-tpm-spiffe-controller"
 	FieldManagerMachineSpireEntry = "machine-spire-entry-controller"
 
-	// Node annotations
-	NodeAnnotationKeyMachineHealthIssue = "nke.nvidia.com/machine-health-issue"
-
-	// CAPI Machine annotations
-	MachineAnnotationKeyHostID                  = "nke.nvidia.com/host-id"
-	MachineAnnotationKeyRebootCompleteTimestamp = "nke.nvidia.com/reboot-complete-timestamp"
-	MachineAnnotationKeyReboot                  = "nke.nvidia.com/reboot"
-	MachineAnnotationKeyMachineHealthIssue      = "nke.nvidia.com/machine-health-issue"
-	MachineAnnotationKeySpireAgentSpiffeIDPath  = "nke.nvidia.com/spire-agent-spiffe-id-path"
-
 	LabelValueTerminateStatusInProgress = "InProgress"
 	LabelValueTerminateStatusNotAllowed = "NotAllowed"
 
-	TaintEffectNoSchedule    = "NoSchedule"
-	TaintKeyMaintenance      = "nke.nvidia.com/maintenance"
-	TaintKeyNodeProvisioning = "nke.nvidia.com/provisioning"
-
-	// NVKE Node Condition types
-	NodeConditionTypeNeedsRecycle = "nke.nvidia.com/NeedsRecycle"
-	NodeConditionTypeNeedsRepair  = "nke.nvidia.com/NeedsRepair"
+	TaintEffectNoSchedule = "NoSchedule"
 
 	// SPIFFE ID paths expected from SPIRE agents
 	TPMSpireAgentPath                = "/spire/agent/tpm/"
@@ -157,7 +114,7 @@ type NodeTaint struct {
 }
 
 func NodeTaintProvisioning() NodeTaint {
-	return NodeTaint{Key: TaintKeyNodeProvisioning, Value: "true", Effect: TaintEffectNoSchedule}
+	return NodeTaint{Key: keys.ProvisioningTaint.String(), Value: "true", Effect: TaintEffectNoSchedule}
 }
 
 func EtcdEncryptionKeySecretName(clusterID uuid.UUID) string {

@@ -23,7 +23,7 @@ cluster:
     - name: "ctrl-3"
       ip: "10.0.0.3"
 
-  k8sVersion: "1.34.2"     # plain semver, no leading "v"
+  k8sVersion: "1.36.3"     # plain semver, no leading "v"
   cniName: "ovn-kubernetes"
   podCidr: "192.168.0.0/16"
   serviceCidr: "10.96.0.0/12"
@@ -42,7 +42,7 @@ cluster:
 | `cluster.nodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Must be unique across all nodes. |
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Must be unique across all nodes. |
 | `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. Every thumbprint listed is allowlisted on the SPIRE server the bootstrap deploys; a node without one cannot attest, and a file with none deploys no TPM attestor. That holds for `provisioned` only: with `infra.provider: nico` there is no node list, and the attestor is always on, with its allowlist filled in from the nodes CAPNICo creates. Ignored with `--disable-mtls`. |
-| `cluster.k8sVersion` | string | yes | Plain semver, e.g. `1.34.2` — no leading `v`. |
+| `cluster.k8sVersion` | string | yes | Plain semver, e.g. `1.36.3` — no leading `v`. |
 | `cluster.cniName` | string | no | Defaults to and must be `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the agent's built-in default. |
 | `cluster.controlPlaneVIP` | string | for multiple nodes | kube-vip control-plane VIP. Required when `cluster.nodes` (or `infra.nico.controlPlane.count` with nico) has more than one entry. It must be a routable unicast IPv4 address, reachable by the nodes over BGP, and outside `podCidr` and `serviceCidr`. It may equal a declared node IP, but CLI acceptance does not prove bootstrap or networking works. See [CLI validation rules](../../cli/docs/sitespec.md#validation-rules) for runtime constraints. A single-node `provisioned` cluster may omit it and use that node's IP as its fixed endpoint; with `nico` it is needed even for one node, because the node has no address until NICo allocates it, and it cannot be added once the site cluster exists. |
@@ -121,4 +121,4 @@ The controller stack install reads the site spec too, for the site name, the con
 
 ## What's Next After Bootstrap
 
-After the site controller cluster is up, install Cluster API and an infrastructure provider on it before deploying the NVKE services (CWE, Temporal, CNPG) — see [Infrastructure Providers](infrastructure-providers.md). The NVKE services deployment uses a GitOps-based deploy repository and ArgoCD; see [Deploy Repository](deploy-repository.md) for the structure and application manifests.
+After the management cluster is up, install Cluster API and an infrastructure provider on it before deploying the NVKE services (CWE, Temporal, CNPG) — see [Infrastructure Providers](infrastructure-providers.md). The NVKE services deployment uses a GitOps-based deploy repository and ArgoCD; see [Deploy Repository](deploy-repository.md) for the structure and application manifests.

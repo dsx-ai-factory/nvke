@@ -181,10 +181,12 @@ jobs:
           # go.work.sum holds only the hashes NOT already in a member's go.sum,
           # so the versions actually linked often appear in it zero times. Keyed
           # on it alone, a dependency bump leaves the key unchanged and restores
-          # a stale cache. Same block as go-build.yml.
+          # a stale cache. Same block as go-build.yml, plus the module's go.mod
+          # so each matrix job keys its own cache instead of the first finisher's.
           cache-dependency-path: |
             go.work.sum
             **/go.sum
+            ${{ matrix.module.dir }}/go.mod
 
       - name: Install govulncheck
         # golang.org/x/vuln v1.6.0 needs go >= 1.25.0, which the pin above

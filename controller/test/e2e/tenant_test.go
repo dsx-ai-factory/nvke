@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"net/netip"
 	"os"
 	"runtime"
@@ -165,7 +166,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	Entry("CAPD control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("capd", "cp-controller"), testSpec{
 		buildSpec: capdControlPlaneControllerSpec,
 		shape: clusterShape{
-			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1, NodeLabels: map[string]string{controlPlaneTestLabelKey: "true"}},
 			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
 		// 15m, matching the nico-containers entry below. The roll waits on a
@@ -177,6 +178,7 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			controlPlaneControllerUpdate:        true,
 			controlPlaneControllerRollingUpdate: true,
 			controlPlaneControllerDelete:        true,
+			controlPlaneNodeLabels:              true,
 		},
 	}),
 	Entry("CAPD control-plane controller without kube-vip", Ordered, ContinueOnFailure, Label("capd", "cp-controller", "no-vip"), testSpec{
@@ -594,6 +596,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			if spec.validate.controlPlaneController {
 				validateControllerManagedControlPlane(&test)
 			}
+			if spec.validate.controlPlaneNodeLabels {
+				validateControlPlaneNodeLabels(&test, "after create")
+			}
 			if spec.validate.controlPlaneControllerUpdate {
 				validateControllerManagedControlPlaneUpdate(&test)
 			}
@@ -605,6 +610,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			}
 			if spec.validate.controlPlaneControllerRollingUpdate {
 				validateControllerManagedControlPlaneRollingUpdate(&test)
+				if spec.validate.controlPlaneNodeLabels {
+					validateControlPlaneNodeLabels(&test, "after the rolling update")
+				}
 			}
 			if spec.validate.controlPlaneControllerDelete {
 				validateControllerManagedControlPlaneDeleteRefused(&test)
@@ -868,6 +876,10 @@ type validations struct {
 	// controlPlaneControllerRollingUpdate so the control plane is already at three
 	// nodes.
 	controlPlaneControllerDelete bool
+	// controlPlaneNodeLabels asserts the control plane's configured node labels
+	// are on every control-plane node after create and, when the entry runs it,
+	// after the rolling update. The entry must set controlPlaneConfig.NodeLabels.
+	controlPlaneNodeLabels bool
 }
 
 // managementCluster is the cluster the controller runs on, which a tenant test reaches
@@ -1897,4 +1909,23 @@ func expectSucceed[T any](v T, err error, messages ...any) T {
 	GinkgoHelper()
 	Expect(err).NotTo(HaveOccurred(), messages...)
 	return v
+}
+
+// validateControlPlaneNodeLabels asserts that the control plane reports the node labels the entry created it with,
+// and that every current control-plane node carries them alongside the kubeadm role label. phase names the
+// lifecycle step the current nodes came from.
+func validateControlPlaneNodeLabels(test *tenantTest, phase string) {
+	It("applies the control plane's node labels to its nodes "+phase, func(ctx context.Context) {
+		requested := test.spec.ControlPlane.Config.NodeLabels
+		Expect(requested).NotTo(BeEmpty(), "the entry must create the control plane with node labels")
+
+		By("Verifying the control plane reports the labels it was created with")
+		controlPlane := expectSucceed(test.nvke.GetClusterControlPlane(ctx, test.cluster.ID))
+		Expect(controlPlane.Config.NodeLabels).To(Equal(requested))
+
+		By("Verifying every control-plane node carries the labels and the kubeadm role label")
+		wantLabels := maps.Clone(requested)
+		wantLabels[controlPlaneRoleLabelKey] = ""
+		eventuallyNodesHaveMetadata(ctx, test, expectSucceed(test.nvke.ControlPlaneNodeNames(ctx, test.cluster.ID)), wantLabels, nil)
+	}, Label("cp-controller", "node-metadata"), NodeTimeout(30*time.Minute))
 }

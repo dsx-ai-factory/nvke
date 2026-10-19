@@ -4,7 +4,7 @@
 name: Bug Report
 description: Report a bug or unexpected behavior in NVKE
 title: "[Bug]: "
-labels: ["bug"]
+labels: ["bug", "needs-triage"]
 
 body:
   - type: checkboxes
@@ -50,7 +50,7 @@ body:
         - Helm charts or deployment
         - nico-sim (development simulator)
         - OS image or image checker
-        - NKTP telemetry pipeline
+        - NVKE telemetry pipelines (NKTP)
         - Build, packaging, or release automation
         - Documentation
         - Other / Unknown

@@ -42,7 +42,7 @@ This page describes how to check the health of the NVIDIA Kubernetes Engine (NVK
    nvkectl get providers
    ```
 
-   The `nico` row, for NVIDIA Infra Controller (NICo), reads `CONFIGURED` and `REPLICAS` reads `1/1` or more. `CONFIGURED` means the provider's resource definitions exist, its controller is available and its credentials Secret exists. It does not test the credentials against NICo. `DEGRADED` means the provider's controller is not available, and `UNKNOWN` usually means your kubeconfig cannot read Secrets in the provider's namespace.
+   The `nico` row, for NVIDIA Infra Controller (NICo), reads `CONFIGURED` and `REPLICAS` reads `1/1` or more. `CONFIGURED` means the provider's resource definitions exist, its controller is available and its credentials Secret exists. It does not test the credentials against NICo. The `CREDENTIALS` column reports CAPNICo's own check of them where CAPNICo serves `NicoIdentity`; with the CAPNICo release the install deploys, it reads `UNSUPPORTED`. `DEGRADED` means the provider's controller is not available, and `UNKNOWN` usually means your kubeconfig cannot read Secrets in the provider's namespace.
 
    With API authentication on, this command fails. Check the provider with `kubectl` instead:
 
@@ -83,7 +83,7 @@ Then run the install command from [Install management-plane services](install-ma
 
 ### Read the management plane metrics
 
-The management plane serves Prometheus metrics at `/metrics` on port 9090 of its pod. NVIDIA Kubernetes Telemetry Pipeline (NKTP) scrapes them, as described in [Find the management cluster's telemetry](#find-the-management-clusters-telemetry). To read them directly:
+The management plane serves Prometheus metrics at `/metrics` on port 9090 of its pod. NVKE telemetry pipelines (NKTP) scrapes them, as described in [Find the management cluster's telemetry](#find-the-management-clusters-telemetry). To read them directly:
 
 1. Forward the metrics port to your machine.
 
@@ -149,15 +149,15 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
      | jq -r '.nodes[] | [.name, .conditions.provisioned.status, .conditions.kubernetesReady.status, .conditions.nodeAgentReady.status, .conditions.markedForRecycling.status, .conditions.markedForRepair.status] | @tsv'
    ```
 
-   A healthy node reads `True`, `True`, `True`, `False`, `False`: provisioned, `Ready` in Kubernetes, `nvke-agent` healthy, and not marked for replacement or repair. A node is marked for replacement or repair when its Kubernetes node carries the condition `nke.nvidia.com/NeedsRecycle` or `nke.nvidia.com/NeedsRepair`, for example set by NVSentinel. [Manage node pools](../workload-clusters/node-pools.md) describes what NVKE does next.
+   A healthy node reads `True`, `True`, `True`, `False`, `False`: provisioned, `Ready` in Kubernetes, `nvke-agent` healthy, and not marked for replacement or repair. A node is marked for replacement or repair when its Kubernetes node carries the condition `nvke.nvidia.com/NeedsRecycle` or `nvke.nvidia.com/NeedsRepair` (a node last reconciled by an older controller may still carry the `nke.nvidia.com/` form, which NVKE also reads), set by auto mode or by a break-fix system you run. [Manage node pools](../workload-clusters/node-pools.md) describes what NVKE does next.
 
 5. Check the Cluster API objects behind the cluster.
 
    ```bash
-   clusterctl describe cluster <WORKLOAD_CLUSTER> -n nke-system
+   clusterctl describe cluster <WORKLOAD_CLUSTER> -n nvke-system
    ```
 
-   NVKE creates each workload cluster's Cluster API objects in the `nke-system` namespace of the management cluster, named after the cluster. The output shows the readiness of the control plane and of each machine, with the reason for any that is not ready.
+   NVKE creates each workload cluster's Cluster API objects in the `nvke-system` namespace of the management cluster, named after the cluster. The output shows the readiness of the control plane and of each machine, with the reason for any that is not ready.
 
 6. Check the nodes from inside the workload cluster.
 
@@ -193,7 +193,7 @@ The repository includes three Grafana dashboards for NVKE in `controller/deploy/
 
 | File | Title in Grafana | What it shows | Data it needs |
 |---|---|---|---|
-| `nvke-site-controller-health-reference.json` | `Reference - NVKE Site Controller Health` | Management cluster workloads, SPIRE, cert-manager and node readiness. | kube-state-metrics, from NKTP. |
+| `nvke-site-controller-health-reference.json` | `Reference - NVKE Management Cluster Health` | Management cluster workloads, SPIRE, cert-manager and node readiness. | kube-state-metrics, from NKTP. |
 | `nvke-provisioning-duration-reference.json` | `Reference - NVKE Provisioning Duration` | Node provisioning and teardown time, success against give-up rate, and nodes in progress. | Management plane metrics. |
 | `nvke-cluster-upgrade-overview-reference.json` | `Reference - NVKE Cluster Upgrade Overview` | Kubelet versions per cluster, and control-plane and OS profile panels. | kube-state-metrics; management plane metrics for the optional panels. It shows only clusters that export telemetry to the same backend. |
 
@@ -214,7 +214,7 @@ The `$cluster` variable lists the values of the `k8s_cluster_name` label, which 
 
    The result has one series for each workload cluster that `nvkectl get clusters` lists.
 
-2. Open `Reference - NVKE Site Controller Health` and select the management cluster's name in the `$cluster` list. The panels show data.
+2. Open `Reference - NVKE Management Cluster Health` and select the management cluster's name in the `$cluster` list. The panels show data.
 
 ## Next steps
 

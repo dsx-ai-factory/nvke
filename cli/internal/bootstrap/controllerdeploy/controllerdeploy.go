@@ -63,10 +63,11 @@ const (
 	cweNamespace = "nke-controller"
 
 	// tenantSecretsNamespace is where the controller publishes each cluster's kubeconfig
-	// and where it puts the cluster's CAPI objects. It matches
-	// controller/internal/constants.NamespaceNVKESystem, which the chart creates
-	// and scopes the controller's Secret grant to, so it is a constant on both sides.
-	tenantSecretsNamespace = "nke-system"
+	// and where it puts the cluster's CAPI objects. It is the chart's
+	// nvkeSystemNamespace.name default, which the chart creates and scopes the
+	// controller's Secret grant to. A bootstrap installs the chart with default
+	// values and so never pins another name, which is why this stays a constant.
+	tenantSecretsNamespace = "nvke-system"
 
 	// dgxcTenantSecret is the Secret holding the tenant node login, named by
 	// the chart's secrets.dgxcTenantCredSecretName. It matches the name the
@@ -1270,7 +1271,7 @@ func (e *Engine) publishSpireExternally(ctx context.Context, kubeconfigPath stri
 // kubeconfig for clusterName and returns it. A non-positive timeout uses the
 // package default.
 //
-// The controller writes it as a Secret in nke-system, which is also the namespace it puts
+// The controller writes it as a Secret in nvke-system, which is also the namespace it puts
 // the cluster's CAPI objects in — so this is the same Secret Cluster API
 // resolves by name for the cluster, and the one
 // cluster-api-provider-provisioned reads to set each Node's provider ID.

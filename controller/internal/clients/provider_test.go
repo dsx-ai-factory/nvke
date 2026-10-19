@@ -26,6 +26,8 @@ func TestGetProviderClient(t *testing.T) {
 		assert.IsType(t, &capiclient.Client{}, provider.NodeSetProvider())
 		assert.IsType(t, &capiclient.Client{}, provider.ControlPlaneConfigNodeProvider())
 		assert.IsType(t, &capiclient.Client{}, provider.NewNodeProvider())
+		assert.IsType(t, &capiclient.Client{}, provider.TenantAPIAccess())
+		assert.IsType(t, &capiclient.Client{}, provider.NodeMachineIDLabel())
 	})
 
 	t.Run("nico provider exposes every settled capability backed by the nico client", func(t *testing.T) {
@@ -37,6 +39,8 @@ func TestGetProviderClient(t *testing.T) {
 		assert.IsType(t, &nico.Client{}, provider.NodeSetProvider())
 		assert.IsType(t, &nico.Client{}, provider.ControlPlaneConfigNodeProvider())
 		assert.IsType(t, &nico.Client{}, provider.NewNodeProvider())
+		assert.IsType(t, &nico.Client{}, provider.TenantAPIAccess())
+		assert.IsType(t, &nico.Client{}, provider.NodeMachineIDLabel())
 	})
 
 	t.Run("unsupported provider errors", func(t *testing.T) {

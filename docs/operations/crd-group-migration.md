@@ -1,4 +1,4 @@
-# Migrating CRs to the `internal.nvke.nvidia.com` Group
+# Migrating CRs to the internal.nvke.nvidia.com group
 
 The management-engine's internal API group changed from `internal.nke.nvidia.com`
 to `internal.nvke.nvidia.com`, and its cluster kind from `NKECluster` to
@@ -33,7 +33,7 @@ the controller sets it on first reconcile.
 
 - Take a backup of the old resources. Step 2 writes one, and it is the only copy
   once step 6 deletes the originals.
-- `jq` and a `kubectl` that can reach the site controller.
+- `jq` and a `kubectl` that can reach the management cluster.
 - Know your NVKECluster namespaces. The examples use `--all-namespaces`.
 
 > **Status matters.** `NVKECluster.status.provisioning` pins a cluster to the

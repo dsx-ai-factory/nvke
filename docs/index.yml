@@ -18,6 +18,8 @@ navigation:
             path: overview/supported-platforms.md
           - page: Preview status and known limitations
             path: overview/preview-status.md
+          - link: NVKR documentation
+            href: https://docs.nvidia.com/nvke/nvkr
 
       - section: Get started
         contents:
@@ -30,6 +32,10 @@ navigation:
             path: operate/plan-installation.md
           - page: Get NVKE artifacts from NVKR and write release manifests
             path: operate/build-node-images.md
+          # Absolute URL: NVKR is a separate Fern instance, served under
+          # docs.nvidia.com/nvke/nvkr alongside this site.
+          - link: NVKR documentation
+            href: https://docs.nvidia.com/nvke/nvkr
           - page: Prepare nodes
             path: operate/prepare-nodes.md
           - page: Bootstrap the management cluster
@@ -58,12 +64,16 @@ navigation:
             path: operate/observe.md
           - page: Troubleshoot
             path: operate/troubleshoot.md
-          - page: Migrate CRs to the NVKE CRD group
+          - page: Migrating CRs to the internal.nvke.nvidia.com group
             path: operations/crd-group-migration.md
+          - page: The NVKE label and annotation domain
+            path: operations/label-domain-migration.md
+          - page: Site Certificate Renewal
+            path: site-operations/certificate-renewal.md
 
-      - section: Telemetry (NKTP)
+      - section: NVKE telemetry pipelines (NKTP)
         contents:
-          - page: Getting Started
+          - page: Getting started with NKTP
             path: nktp/getting-started.md
           - page: Send Telemetry to NKTP
             path: nktp/guides/send-telemetry.md
@@ -111,29 +121,28 @@ navigation:
                 path: nktp/design-principles.md
               - page: Required Target Allocation
                 path: nktp/designs/target-allocation.md
-              - page: kube-state-metrics Scaling
+              - page: kube-state-metrics
                 path: nktp/designs/kube-state-metrics.md
-
-      - section: Site Telemetry (NKTP)
-        contents:
-          - page: Getting Started
-            path: nktp/site-telemetry/getting-started.md
-          - page: Configuration
-            path: nktp/site-telemetry/configuration.md
-          - page: Monitoring Your Service
-            path: nktp/site-telemetry/monitoring-a-service.md
-          - page: Verification
-            path: nktp/site-telemetry/verification.md
-          - page: Troubleshooting
-            path: nktp/site-telemetry/troubleshooting.md
+          - section: Management cluster telemetry
+            contents:
+              - page: "Management cluster telemetry: getting started"
+                path: nktp/site-telemetry/getting-started.md
+              - page: "Management cluster telemetry: configuration"
+                path: nktp/site-telemetry/configuration.md
+              - page: "Management cluster telemetry: monitoring your service"
+                path: nktp/site-telemetry/monitoring-a-service.md
+              - page: "Management cluster telemetry: verification"
+                path: nktp/site-telemetry/verification.md
+              - page: "Management cluster telemetry: troubleshooting"
+                path: nktp/site-telemetry/troubleshooting.md
 
       - section: Reference
         contents:
-          - page: nvkectl CLI
+          - page: Site and Tenant Cluster Flow
             path: ../cli/docs/user-flow.md
           - page: nvkectl Compatibility Policy
             path: ../cli/docs/compatibility.md
-          - page: Site Spec
+          - page: nvkectl bootstrap site — site spec file spec
             path: ../cli/docs/sitespec.md
           - page: Configuring API Authentication
             path: ../controller/docs/configuring-api-authentication.md
@@ -151,11 +160,11 @@ navigation:
         # this the URL repeats it.
         skip-slug: true
         # Sections in reading order rather than in order of first appearance
-        # in openapi.yaml, which would put Catalog first.
+        # in openapi.yaml. Catalog is absent on purpose: both of its operations
+        # carry x-fern-ignore, so Fern has no group to place.
         layout:
           - clusters
           - controlPlane
           - nodePools
           - nodeSets
           - nodes
-          - catalog

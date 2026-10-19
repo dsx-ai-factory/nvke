@@ -18,8 +18,7 @@ mkdir -p "${state_dir}"
 # packages created by the Linux OVN builder invisible to the host.
 tmp_dir="$(mktemp -d "${state_dir}/tmp.XXXXXX")"
 tmp_dir="$(cd "${tmp_dir}" && pwd)"
-# Kept as cwe-capi until a follow-up rename: changing it forces every developer to recreate their kind cluster.
-kind_cluster_name="${KIND_CLUSTER_NAME:-cwe-capi}"
+kind_cluster_name="${KIND_CLUSTER_NAME:-controller-capi}"
 dockerhub_mirror="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 runner_name="cwe-capd-local-e2e-${$}"
 runner_image="${LOCAL_NKE_E2E_RUNNER_IMAGE:-docker:29.1.3-cli@sha256:4fa0ee1f3a7e4354c4ea34558b6d4ee32859baf4973d4c8ccc8e7fe3dd730c04}"
@@ -218,10 +217,10 @@ if [[ "${LOCAL_NVKE_E2E_NODE_AGENT_UPGRADE:-false}" == true ]]; then
 fi
 
 export SPIRE_AGENT_BUNDLE_PATH="${bundle_dir}/spire-agent.tgz"
-CAPD_CNI_CHARTS_DEB_PATH="${bundle_dir}/nvke-cni-ovn-charts-1.6.0_1.6.0_${host_arch}.deb"
+CAPD_CNI_CHARTS_DEB_PATH="${bundle_dir}/nvke-cni-ovn-charts-2.4.2_2.4.2_${host_arch}.deb"
 export CAPD_CNI_CHARTS_DEB_PATH
 export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}"
-export CAPD_CNI_IMAGES_DEB_PATH="${bundle_dir}/nvke-cni-ovn-images-1.6.0_1.6.0_${host_arch}.deb"
+export CAPD_CNI_IMAGES_DEB_PATH="${bundle_dir}/nvke-cni-ovn-images-2.4.2_2.4.2_${host_arch}.deb"
 export CAPD_HELM_DEB_PATH="${bundle_dir}/nke-e2e-helm.deb"
 [[ -f "${CAPD_CNI_CHARTS_DEB_PATH}" ]] \
   || fail "prepare-capd-bundles.sh produced no OVN charts package"

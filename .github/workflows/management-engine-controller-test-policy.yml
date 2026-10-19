@@ -49,11 +49,11 @@ jobs:
           failed=0
 
           # Keep file discovery and test-name discovery on the same controller boundary.
-          # The manager command is one package; the controller and CWE suites are recursive.
+          # The manager command is one package; the controllers and internal/nvkecontroller suites are recursive.
           policy_packages=(
             ./management-engine/cmd
             ./management-engine/controllers/...
-            ./management-engine/internal/cwe/...
+            ./management-engine/internal/nvkecontroller/...
             ./management-engine/test/integration/...
           )
           test_files="$(

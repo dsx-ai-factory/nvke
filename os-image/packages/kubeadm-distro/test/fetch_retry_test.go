@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -92,6 +93,58 @@ func TestFetchRetriesConnectionResets(t *testing.T) {
 				assert.Equal(t, "verified fixture bytes", string(body))
 			}
 			assert.Equal(t, tc.requests, requests.Load())
+		})
+	}
+}
+
+func TestImageDigestRetriesRegistryErrors(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not on PATH")
+	}
+	data, err := os.ReadFile(bundleScript)
+	require.NoError(t, err)
+	functions, _, found := strings.Cut(string(data), "\nWRITE_LOCK=0\n")
+	require.True(t, found)
+	const digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	for _, tc := range []struct {
+		name     string
+		failures int
+		calls    string
+		wantErr  bool
+	}{
+		{name: "two timeouts then success", failures: 2, calls: "3"},
+		{name: "persistent timeouts stop after three attempts", failures: 3, calls: "3", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			script := filepath.Join(dir, "functions.sh")
+			require.NoError(t, os.WriteFile(script, []byte(functions), 0o600))
+			counter := filepath.Join(dir, "calls")
+			// The fake crane fails the first FAILURES digest calls the way a registry timeout does.
+			crane := filepath.Join(dir, "crane")
+			require.NoError(t, os.WriteFile(crane, []byte(`#!/usr/bin/env bash
+n=$(( $(cat "$COUNTER" 2>/dev/null || echo 0) + 1 ))
+echo "$n" >"$COUNTER"
+if (( n <= FAILURES )); then
+  echo 'Error: Get "https://registry.k8s.io/v2/": dial tcp 34.96.108.209:443: i/o timeout' >&2
+  exit 1
+fi
+echo `+digest+`
+`), 0o700))
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, "bash", "-c", `source "$1"; CRANE="$2" ARCH=amd64 image_digest registry.k8s.io/kube-apiserver:v1.36.3`, "bash", script, crane)
+			cmd.Env = append(os.Environ(), "COUNTER="+counter, "FAILURES="+strconv.Itoa(tc.failures))
+			out, runErr := cmd.CombinedOutput()
+			if tc.wantErr {
+				require.Error(t, runErr, string(out))
+			} else {
+				require.NoError(t, runErr, string(out))
+				assert.Contains(t, string(out), digest)
+			}
+			calls, readErr := os.ReadFile(counter)
+			require.NoError(t, readErr)
+			assert.Equal(t, tc.calls, strings.TrimSpace(string(calls)))
 		})
 	}
 }

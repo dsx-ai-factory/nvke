@@ -1,6 +1,6 @@
-# Telemetry on a site controller: monitoring your service
+# Management cluster telemetry: monitoring your service
 
-NKTP collects every Pod's logs, every Pod's state, and the node's metrics
+NVKE telemetry pipelines (NKTP) collects every Pod's logs, every Pod's state, and the node's metrics
 without being asked. Application metrics are different: NKTP scrapes a
 service only when the service declares how to be scraped, with a
 `ServiceMonitor` or `PodMonitor`. NKTP ships no monitors for other
@@ -50,7 +50,7 @@ spec:
   credentials is the exception; see
   [authenticated endpoints](#authenticated-or-https-endpoints).
 
-**Ordering.** The monitoring CRDs come with NKTP. On a site controller, the
+**Ordering.** The monitoring CRDs come with NKTP. On the management cluster, the
 `nktp` item installs them before every item that follows it in
 `deploy/nico/nvke-deploy.yaml`, so a chart installed later in
 the path can create its monitor. A component installed before NKTP, or outside

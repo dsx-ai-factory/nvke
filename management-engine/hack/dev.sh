@@ -25,7 +25,7 @@ check_tilt() {
   (( BASH_REMATCH[1] > 0 || BASH_REMATCH[2] >= 36 )) ||
     fail "Tilt 0.36+ is required; found $version at $(command -v tilt). Use the shared toolchain described in DEVELOPMENT.md."
   [[ -z "${DEV_VALUES:-}" || -r "$DEV_VALUES" ]] ||
-    fail "DEV_VALUES=$DEV_VALUES is not readable. Configure a local copy of config/samples/cwe-values.yaml, or omit DEV_VALUES to run without CWE."
+    fail "DEV_VALUES=$DEV_VALUES is not readable. Configure a local copy of config/samples/controller-values.yaml, or omit DEV_VALUES to run without the NVKE controller."
 }
 
 start_tilt() {
@@ -63,7 +63,7 @@ connect() (
   for cluster in "${clusters[@]}"; do
     kind export kubeconfig --name "$cluster" --kubeconfig "$scratch"
   done
-  # Publish atomically: concurrent CWE commands must never see the state context.
+  # Publish atomically: concurrent controller commands must never see the state context.
   kubectl --kubeconfig "$scratch" config use-context "$HOST_CONTEXT" >/dev/null
   mv "$scratch" "$KUBECONFIG"
   host_uid=$("${host[@]}" get namespace kube-system -o jsonpath='{.metadata.uid}')
@@ -124,8 +124,8 @@ case "${1:-}" in
     for cluster in "${clusters[@]}"; do
       if ! grep -Fxq -- "$cluster" <<<"$existing"; then
         config_args=()
-        if [[ ${DEV_CWE:-} == 1 && "$cluster" == "$DEV_NAME-management" ]]; then
-          config_args=(--config config/dev/cwe-kind.yaml)
+        if [[ ${DEV_CONTROLLER:-} == 1 && "$cluster" == "$DEV_NAME-management" ]]; then
+          config_args=(--config config/dev/controller-kind.yaml)
         fi
         kind create cluster --name "$cluster" --image "$KIND_NODE_IMAGE" --kubeconfig "$KUBECONFIG" "${config_args[@]}" --wait 120s
       fi
@@ -159,10 +159,10 @@ case "${1:-}" in
     # Integration runs retain diagnostics in this directory after teardown.
     rmdir "$dev_dir" 2>/dev/null || true
     ;;
-  cwe-*)
-    # shellcheck source=management-engine/hack/cwe.sh
-    source hack/cwe.sh
-    cwe_main "$1"
+  controller-*)
+    # shellcheck source=management-engine/hack/controller.sh
+    source hack/controller.sh
+    controller_main "$1"
     ;;
-  *) fail "Usage: $0 {check|up|sync|refresh|tilt|test|down|cwe-up|cwe-tilt|cwe-test|cwe-credentials|cwe-down}" ;;
+  *) fail "Usage: $0 {check|up|sync|refresh|tilt|test|down|controller-up|controller-tilt|controller-test|controller-credentials|controller-down}" ;;
 esac

@@ -329,7 +329,7 @@ func (c *Controller) saveBreakglassClientKey(ctx context.Context, cluster db.Clu
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      AdminKubeconfigSecretName(cluster.Name),
-			Namespace: SecretsNamespace,
+			Namespace: c.secretsNamespace(),
 			Labels: map[string]string{
 				clusterv1.ClusterNameLabel: cluster.Name,
 			},
@@ -387,7 +387,7 @@ func (c *Controller) adminKubeconfigSecret(ctx context.Context, clusterName stri
 	secret := &corev1.Secret{}
 	err := c.k8sClient.Get(ctx, types.NamespacedName{
 		Name:      AdminKubeconfigSecretName(clusterName),
-		Namespace: SecretsNamespace,
+		Namespace: c.secretsNamespace(),
 	}, secret)
 	if err != nil {
 		if apierrors.IsNotFound(err) {

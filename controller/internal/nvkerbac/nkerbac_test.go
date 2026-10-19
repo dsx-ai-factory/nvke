@@ -25,7 +25,7 @@ func TestReadManifest(t *testing.T) {
 
 	t.Run("absent ConfigMap is NotFound", func(t *testing.T) {
 		t.Parallel()
-		_, err := nvkerbac.ReadManifest(ctx, fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).Build())
+		_, err := nvkerbac.ReadManifest(ctx, fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).Build(), constants.LegacyManagementNamespace)
 		require.Error(t, err)
 		assert.True(t, apierrors.IsNotFound(err))
 	})
@@ -33,10 +33,10 @@ func TestReadManifest(t *testing.T) {
 	t.Run("returns the trimmed manifest", func(t *testing.T) {
 		t.Parallel()
 		cm := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Namespace: constants.NamespaceNVKESystem, Name: nvkerbac.ConfigMapName},
+			ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.ConfigMapName},
 			Data:       map[string]string{nvkerbac.ConfigMapKey: "\nkind: ClusterRole\n\n"},
 		}
-		got, err := nvkerbac.ReadManifest(ctx, fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).WithObjects(cm).Build())
+		got, err := nvkerbac.ReadManifest(ctx, fake.NewClientBuilder().WithScheme(clientgoscheme.Scheme).WithObjects(cm).Build(), constants.LegacyManagementNamespace)
 		require.NoError(t, err)
 		assert.Equal(t, "kind: ClusterRole", string(got))
 	})

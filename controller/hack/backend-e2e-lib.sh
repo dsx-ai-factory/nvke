@@ -332,7 +332,7 @@ e2e_collect_node_diagnostics() {
 
 # The Tilt providers a CAPD run needs. This belongs beside the filters because
 # the two are one contract: the suite filter selects reboot_test.go, which
-# reboots a worker through the nke.nvidia.com/reboot label, and nothing acts on
+# reboots a worker through the nvke.nvidia.com/reboot label, and nothing acts on
 # that label unless capd-reboot-controller is deployed.
 # shellcheck disable=SC2034  # consumed by the scripts that source this file
 E2E_CAPD_PROVIDERS='["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]'

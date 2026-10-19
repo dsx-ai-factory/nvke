@@ -32,6 +32,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
 func validateEtcdEncryption(test *tenantTest) {
@@ -186,7 +187,7 @@ func readEtcdEncryptionKeyState(
 }
 
 func readKubeAPIServerRestartCounts(ctx context.Context, c client.Client, kubeconfigSecret string) (string, error) {
-	namespace := "nke-system"
+	namespace := mgmtns.Namespace()
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "e2e-kube-apiserver-restarts-",
@@ -375,7 +376,7 @@ func adminKubeconfigSecret(ctx context.Context, test *tenantTest) string {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "e2e-admin-kubeconfig-",
-			Namespace:    "nke-system",
+			Namespace:    mgmtns.Namespace(),
 		},
 		Data: map[string][]byte{"value": kubeconfig},
 	}
@@ -387,7 +388,7 @@ func adminKubeconfigSecret(ctx context.Context, test *tenantTest) string {
 }
 
 func runEtcdEncryptionVerifier(ctx context.Context, c client.Client, kubeconfigSecret string) error {
-	namespace := "nke-system"
+	namespace := mgmtns.Namespace()
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "e2e-etcd-encryption-",

@@ -67,10 +67,10 @@ export KUBECONFIG="$PWD/.local/dev/nvke/kubeconfig"
 kubectl --context kind-nvke-state get namespaces
 ```
 
-## CWE integration
+## Controller integration
 
 The NVKECluster controller creates, observes, and deletes clusters through the
-Cloud Workflow Engine (CWE) API. CWE owns provisioning and teardown, including
+NVKE controller API. The controller owns provisioning and teardown, including
 Temporal workflows and CAPI resources. Updates to existing clusters are not yet
 supported.
 
@@ -79,19 +79,19 @@ supported.
 Use the shared toolchain, including the Temporal CLI, with Docker running:
 
 ```sh
-make dev-cwe       # start the combined environment and keep Tilt running
-make test-cwe      # run from a second terminal once the services are ready
-make dev-cwe-down  # stop Tilt first, then remove the environment
+make dev-nvke-controller               # start the combined environment and keep Tilt running
+make test-nvke-controller-integration  # run from a second terminal once the services are ready
+make dev-nvke-controller-down          # stop Tilt first, then remove the environment
 ```
 
-This creates the dedicated `nke-cwe-management` and `nke-cwe-state` Kind clusters.
-The services cluster runs management-engine, CWE, Temporal, and CAPI; the state
+This creates the dedicated `nvke-controller-management` and `nvke-controller-state` Kind clusters.
+The services cluster runs management-engine, the NVKE controller, Temporal, and CAPI; the state
 cluster stores NVKECluster resources. Open [Tilt](http://localhost:10353/) or the
-[Temporal UI](http://localhost:18081/). The manual `cwe-integration-test` resource
+[Temporal UI](http://localhost:18081/). The manual `management-engine-integration-test` resource
 under Tilt's **tests** group runs the same test command.
 
-Use `make dev-cwe-up` for setup without Tilt. Pass the same `DEV_NAME` to each
-command when choosing another name. The launcher uses CWE's existing Tiltfile
+Use `make dev-nvke-controller-up` for setup without Tilt. Pass the same `DEV_NAME` to each
+command when choosing another name. The launcher uses the controller's existing Tiltfile
 through its local extension hook and requires an unused
 `controller/tilt_config.json`; use a separate checkout if you already have one.
 Only one combined environment per checkout can own that configuration.
@@ -107,25 +107,25 @@ cluster is ready. Leave the machine pause in place for this test.
 Inspect status in the state cluster and runtime logs in Tilt:
 
 ```sh
-kubectl --kubeconfig .local/dev/nvke-cwe/kubeconfig --context kind-nvke-cwe-state \
-  -n cwe-integration get nvkeclusters -o yaml
+kubectl --kubeconfig .local/dev/nvke-controller/kubeconfig --context kind-nvke-controller-state \
+  -n controller-integration get nvkeclusters -o yaml
 ```
 
 Resources remain available after testing. Proof JSON and JUnit reports are saved
-under `.local/dev/<DEV_NAME>/cwe/results/` and survive teardown. Teardown removes
+under `.local/dev/<DEV_NAME>/controller/results/` and survive teardown. Teardown removes
 the dedicated clusters, owned load balancers, and credentials. Rerun Tilt's
-`cwe-credentials` resource to renew CWE credentials; `make test-cwe` also renews
+`management-engine-credentials` resource to renew controller credentials; `make test-nvke-controller-integration` also renews
 them before each run. Datastore credentials use [the usual refresh](#credentials)
 with the same `DEV_NAME`.
 
-### Configure an existing CWE service
+### Configure an existing NVKE controller
 
-Provide `--cwe-endpoint` and `--cwe-bindings` together, plus `--cwe-token-file`
-for bearer authentication. Without CWE configuration the manager runs without
+Provide `--nvke-controller-endpoint` and `--nvke-controller-bindings` together, plus `--nvke-controller-token-file`
+for bearer authentication. Without controller configuration the manager runs without
 provisioning.
 
 Bindings are a JSON array selecting `namespace`, `channel`, optional `version`,
-and `controlPlaneClass`, with a `template` containing an existing CWE cluster
+and `controlPlaneClass`, with a `template` containing an existing NVKE controller cluster
 create request. An omitted version matches only requests without a channel
 version. Templates supply the Kubernetes version, control-plane size, and provider
 settings; omit `name`, `network`, and `nodePools`, which the controller controls.
@@ -139,38 +139,38 @@ public API access, and accelerated-runtime installation are not yet supported.
 The general API samples include these future features and cannot be submitted
 unchanged to this integration.
 
-For Helm/Tilt, copy the [CWE values example](config/samples/cwe-values.yaml):
+For Helm/Tilt, copy the [controller values example](config/samples/controller-values.yaml):
 
 ```sh
-mkdir -p .local/cwe
-cp config/samples/cwe-values.yaml .local/cwe/values.yaml
+mkdir -p .local/controller
+cp config/samples/controller-values.yaml .local/controller/values.yaml
 ```
 
 Set the service URL and namespace in the copy; retain its datastore and leadership
-arguments because Helm replaces argument lists. Supply `.local/cwe/bindings.json`
-and `.local/cwe/token`, then mount them in the default development environment:
+arguments because Helm replaces argument lists. Supply `.local/controller/bindings.json`
+and `.local/controller/token`, then mount them in the default development environment:
 
 ```sh
 make dev-up
 export KUBECONFIG="$PWD/.local/dev/nvke/kubeconfig"
-kubectl --context kind-nvke-management -n management-engine-system create configmap management-cwe-bindings \
-  --from-file=bindings.json=.local/cwe/bindings.json --dry-run=client -o yaml | \
+kubectl --context kind-nvke-management -n management-engine-system create configmap management-controller-bindings \
+  --from-file=bindings.json=.local/controller/bindings.json --dry-run=client -o yaml | \
   kubectl --context kind-nvke-management apply -f -
-kubectl --context kind-nvke-management -n management-engine-system create secret generic management-cwe-token \
-  --from-file=token=.local/cwe/token --dry-run=client -o yaml | \
+kubectl --context kind-nvke-management -n management-engine-system create secret generic management-controller-token \
+  --from-file=token=.local/controller/token --dry-run=client -o yaml | \
   kubectl --context kind-nvke-management apply -f -
-DEV_VALUES=.local/cwe/values.yaml make dev
+DEV_VALUES=.local/controller/values.yaml make dev
 ```
 
 Use an endpoint reachable from the manager Pod; its `localhost` is not your host.
 HTTPS verifies certificates; HTTP is supported for local/service deployments.
 Bindings load at startup, so restart the manager after changing them. Tokens are
 reread per request after the mounted Secret refreshes. Keep both files out of
-source control. Applying a cluster to a live CWE service requests real provisioning.
+source control. Applying a cluster to a live NVKE controller requests real provisioning.
 
 Restrict writes to bindings and cluster status to the controller and trusted
 administrators. `--namespace` filters watches, not RBAC, and bindings do
-not make CWE credentials tenant-scoped. Reserve `nke-<NVKECluster UID>` names
+not make controller credentials tenant-scoped. Reserve `nke-<NVKECluster UID>` names
 for this integration; recovery relies on coordinated API writers.
 `status.provisioning` pins the endpoint and creation generation, then the returned
 cluster ID. Keep bindings stable while creation is pending: retries rebuild the
@@ -180,7 +180,7 @@ If a create response is lost, reconciliation recovers the cluster by its UID-der
 name. After `CreateRejected`, correct the spec, or correct the bindings and restart
 the manager. An earlier attempt with an unknown outcome keeps its checkpoint;
 `CreateOutcomeUnknown` retains the finalizer until deletion can be resolved.
-For manual recovery, stop the manager and check that name in CWE. If the cluster
+For manual recovery, stop the manager and check that name in the NVKE controller. If the cluster
 exists, restart the manager to recover its ID. If no cluster exists, confirm that
 no create request remains in flight before clearing the checkpoint and conditions:
 

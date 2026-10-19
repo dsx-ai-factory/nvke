@@ -1,12 +1,11 @@
 # otel-lgtm
 
 [grafana/otel-lgtm](https://github.com/grafana/docker-otel-lgtm) is an all-in-one observability backend (Grafana, Loki, Tempo, Prometheus) with OTLP ingest.
-NKTP deploys it by default so that telemetry is viewable immediately after install.
+NVKE telemetry pipelines (NKTP) deploys it by default so that telemetry is viewable immediately after install.
 Prometheus is available on port 9090 of the `lgtm` Service, for example
 `http://lgtm.nktp.svc:9090` when installed in namespace `nktp`. Grafana is served on port 3000 of the `lgtm` service, with anonymous admin access (no login).
 
-> [!WARNING]
-> This container is intended for kicking the tires only. It will not support
+> **Warning:** This container is intended for kicking the tires only. It will not support
 > substantial scale and MUST be disabled for production use:
 >
 > ```yaml
@@ -36,7 +35,7 @@ self-telemetry sidecar. Panels that show replicas show the 20 largest. A
 includes the kube-state-metrics scrape panels: samples, sample-count growth,
 duration, watch errors and shard coverage.
 
-See the [dashboards README](../../../nktp/deploy/charts/nktp/dashboards/README.md) for every
+See the [dashboards README](https://github.com/dsx-ai-factory/nvke/blob/main/nktp/deploy/charts/nktp/dashboards/README.md) for every
 dashboard and how to import them into your own Grafana.
 
 ## Configuration

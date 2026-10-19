@@ -183,11 +183,11 @@ func buildResolvers(reg *qualification.Registry, root string, opts resolve.Optio
 	return version, location, nil
 }
 
-// write emits the plan as indented JSON, to stdout or to a file.
-func write(cmd *cobra.Command, path string, result *qualification.Plan) error {
+// write emits a plan or a result as indented JSON, to stdout or to a file.
+func write(cmd *cobra.Command, path string, result any) error {
 	b, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encoding the plan: %w", err)
+		return fmt.Errorf("encoding %T: %w", result, err)
 	}
 	b = append(b, '\n')
 

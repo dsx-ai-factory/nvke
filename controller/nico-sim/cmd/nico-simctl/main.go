@@ -101,7 +101,7 @@ func runInstanceCommand(action string, args []string) {
 			"instanceTypeId": instanceTypeID,
 			"vpcId":          vpcID,
 			"labels": map[string]string{
-				"nke.nvidia.com/node-id": nodeID,
+				"nvke.nvidia.com/node-id": nodeID,
 			},
 			"sshKeyGroupIds": splitCSV(optionalStringArg(args, "--ssh-key-group-ids")),
 			"interfaces":     interfaces,

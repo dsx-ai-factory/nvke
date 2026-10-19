@@ -67,7 +67,7 @@ spire-agent:
       # attestor stops rendering entirely and disableContainerSelectors has no
       # plugin to apply to.
       enabled: true
-      # Every site controller node is a control-plane node and the taint is
+      # Every management cluster node is a control-plane node and the taint is
       # removed before anything installs, so management workloads land on
       # nodes that run Kata. A Kata workload runs inside a VM, where the agent
       # cannot walk the caller's cgroup back to a container ID: the

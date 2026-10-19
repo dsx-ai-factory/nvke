@@ -90,7 +90,10 @@ jobs:
       # rerun would replace the published chart with different bytes than the
       # release attests. As image-nvcr.yml does for images: reuse a published
       # version whose contents match, fail on one that does not.
+      # NVKE_GITHUB_PUBLISH names the components whose releases go to GitHub;
+      # see docs/artifact-publication.md. Unset means every component but os-image.
       - name: Push to GHCR
+        if: contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',nktp,')
         env:
           VERSION: ${{ steps.version.outputs.version }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -135,6 +138,7 @@ jobs:
       # nothing at all, leaving a checksum of a file that was never pushed.
       # This records what is actually addressable, on both branches.
       - name: Record the published digest
+        if: contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',nktp,')
         uses: ./.github/actions/record-digest
         with:
           references: ghcr.io/dsx-ai-factory/nvke/charts/nktp:${{ steps.version.outputs.version }}
@@ -150,6 +154,7 @@ jobs:
   release:
     name: Cut the GitHub Release
     needs: publish
+    if: contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',nktp,')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

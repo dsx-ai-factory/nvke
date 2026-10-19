@@ -102,7 +102,10 @@ func TestCreateControlPlaneConfigRowIfChanged_StoresProviderPayload(t *testing.T
 
 	instanceTypeID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	subnetID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
-	snapshotCfg := db.ControlPlaneConfigSpec{}
+	snapshotCfg := db.ControlPlaneConfigSpec{
+		MachineAnnotations: map[string]string{"example.com/setup": "gpu,network"},
+		MachineLabels:      map[string]string{"example.com/pool": "control-plane"},
+	}
 	snapshotCfg.SetNico(db.NicoControlPlaneProvider{
 		InstanceTypePreference: []uuid.UUID{instanceTypeID},
 		SubnetIDs:              []uuid.UUID{subnetID},
@@ -116,6 +119,8 @@ func TestCreateControlPlaneConfigRowIfChanged_StoresProviderPayload(t *testing.T
 
 	row, err := dbImpl.GetControlPlaneConfiguration(ctx, createdCluster.ControlPlaneConfig.ConfigurationID)
 	require.NoError(t, err)
+	require.Equal(t, snapshotCfg.MachineAnnotations, row.Config.MachineAnnotations)
+	require.Equal(t, snapshotCfg.MachineLabels, row.Config.MachineLabels)
 	require.NotNil(t, row.Config.Nico)
 	require.Nil(t, row.Config.Capi)
 	assert.Equal(t, []uuid.UUID{instanceTypeID}, row.Config.Nico.InstanceTypePreference)
@@ -270,4 +275,13 @@ func newControlPlaneConfigTestCluster() db.Cluster {
 		VpcID:  uuid.New(),
 	})
 	return cluster
+}
+
+func TestControlPlaneConfigSpec_MachineMetadataDefaults(t *testing.T) {
+	empty := db.ControlPlaneConfigSpec{}
+	explicit := db.ControlPlaneConfigSpec{MachineAnnotations: map[string]string{}, MachineLabels: map[string]string{}}
+	require.True(t, empty.Equal(explicit))
+	configured := db.ControlPlaneConfigSpec{MachineAnnotations: map[string]string{"example.com/setup": "gpu"}, MachineLabels: map[string]string{"example.com/pool": "cp"}}
+	require.False(t, empty.Equal(configured))
+	require.False(t, db.IsControlPlaneRolloutRequired(empty, configured))
 }

@@ -20,10 +20,10 @@ func NewCreateCmd(clientFn ControllerClientFn) *cobra.Command {
 		Use:     "nodepool",
 		Aliases: []string{"nodepools"},
 		Short:   "Create a node pool",
-		Long: `Create a node pool on the site controller.
+		Long: `Create a node pool on the management plane.
 
 The spec must be a single YAML or JSON document whose fields match the controller
-CreateNodePoolRequest schema exactly. See /api/docs on your site controller.
+CreateNodePoolRequest schema exactly. See /api/docs on your management plane.
 
 Pass a file path or '-' to read from stdin (e.g. via a pipe or heredoc).
 

@@ -22,6 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
 func TestSPIRERejectionKubeconfigUsesAdminTrustWithoutFallbackCredentials(t *testing.T) {
@@ -45,7 +47,7 @@ func TestSPIRERejectionKubeconfigUsesAdminTrustWithoutFallbackCredentials(t *tes
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: secretsNamespace, Name: "tenant-a-admin-kubeconfig"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-admin-kubeconfig"},
 		Data:       map[string][]byte{kubeconfigSecretKey: requireKubeconfig(t, config)},
 	}).Build()
 
@@ -218,7 +220,7 @@ func TestVerifySPIRERejectedPreservesPodCreationFailure(t *testing.T) {
 	}
 	positive := buildPod(id, "tenant-b", "example-user", nil)
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: secretsNamespace, Name: "tenant-a-admin-kubeconfig"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-admin-kubeconfig"},
 		Data:       map[string][]byte{kubeconfigSecretKey: requireKubeconfig(t, config)},
 	}).WithInterceptorFuncs(interceptor.Funcs{
 		Create: func(_ context.Context, _ client.WithWatch, object client.Object, _ ...client.CreateOption) error {

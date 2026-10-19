@@ -1,28 +1,32 @@
-# NVKE — NVIDIA Kubernetes Engine
+# NVIDIA Kubernetes® Engine (NVKE)
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8.svg)](https://go.dev/dl/)
 
 **A management plane for running GPU Kubernetes clusters on bare metal.** NVKE
 provisions and operates isolated Kubernetes clusters on NVIDIA infrastructure,
-so platform teams can offer managed Kubernetes to their tenants without building
-and running a control plane themselves.
+so platform teams can offer managed Kubernetes to their customers without
+building and running a control plane themselves.
 
 **Who this is for:** NVIDIA Cloud Partners and platform operators who have GPU
-bare metal and want to hand out production Kubernetes clusters on it, and
-engineers integrating against that control plane.
+bare metal and want to hand out Kubernetes clusters on it, and engineers
+integrating against its management plane.
 
-> **Status: early.** This repository is being prepared for open source. Layout,
-> interfaces, and build inputs are still changing, and every product line is
-> still on pre-releases. Expect breaking changes.
+> **Preview:** NVKE is available as a preview. APIs, configuration and behavior
+> can change between releases, and we do not recommend NVKE for production
+> workloads. See [Preview status and known limitations](docs/overview/preview-status.md).
 
 ## Overview
 
+The diagram shows the NVKE product family, how it sits on NICo and your GPU machines, and which components talk to each other.
+
+![NVKE product family. NVKR builds and signs artifacts and publishes them to a registry. The operator installs the management cluster's components, the NVKE management plane, CAPNICo and NVKE observability, from the charts and images in the registry. The management plane requests machines through CAPNICo, which calls NICo, and drives each workload cluster. NICo provisions NVIDIA GPU machines from the node OS image, and those machines become the workload cluster's Kubernetes nodes, each running nvke-agent, under the cluster's Kubernetes control plane. The accelerated runtime produced by AICR and NVKE observability are optional in the workload cluster. The customer uses kubectl against the control plane.](docs/assets/diagrams/product-family.svg)
+
 NVKE is not a Kubernetes distribution and not a Cluster API flavour. It is a
 **self-hosting factory for Kubernetes clusters**: a throwaway seed cluster
-stands up a highly available, self-managing control plane, and that control
-plane then provisions and lifecycle-manages many isolated tenant clusters on
-demand.
+stands up a highly available management cluster, and the management plane on
+it then provisions and lifecycle-manages many isolated workload clusters
+on demand.
 
 The loop is **seed → pivot → mint**:
 
@@ -48,7 +52,7 @@ What distinguishes it from a generic CAPI distribution:
 
 | Directory | What it is |
 |---|---|
-| `controller/` | The control plane. REST API and UI, durable Temporal workflows, cluster and node inventory, and the infrastructure provider integrations. |
+| `controller/` | The management plane. REST API, durable Temporal workflows, cluster and node inventory, and the infrastructure provider integrations. |
 | `cluster-api-provider-provisioned/` | Cluster API infrastructure provider for hosts that NVKE provisions before CAPI bootstraps them. |
 | `agent/` | The on-node daemon. Exposes a gRPC API the controller drives to run `kubeadm`, install a CNI, and configure disk and etcd encryption. |
 | `cli/` | `nvkectl`, the command-line interface. Validates a site spec and drives bootstrap. |
@@ -56,7 +60,7 @@ What distinguishes it from a generic CAPI distribution:
 | `build/` | Build and publish scripts per component. |
 | `docs/` | Architecture, getting started, and admin guides. |
 | `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nvke-os-image-check`. |
-| `nktp/` | NVIDIA Kubernetes Telemetry Pipeline (NKTP): a Helm chart that deploys an OpenTelemetry pipeline for cluster metrics, logs and traces. Versioned and released on its own. |
+| `nktp/` | NVKE telemetry pipelines (NKTP): a Helm chart that deploys an OpenTelemetry pipeline for cluster metrics, logs and traces. Versioned and released on its own. |
 
 **Twelve Go modules**, tied together by a workspace at the repository root, each
 independently buildable. `make build` links seven binaries: `agent`, `updater`,
@@ -69,7 +73,7 @@ What each binary is, and where it ends up running:
 | Binary | Module | What it does | Runs on |
 |---|---|---|---|
 | `management-engine` | `management-engine/` | Controller management engine for NVKE resources, communicating directly with the management Kubernetes API | An operator-owned management cluster, or a development host with kubeconfig |
-| `controller` | `controller/` | The control plane: REST API, Temporal workflows, and the Kubernetes reconcilers | The site controller cluster |
+| `controller` | `controller/` | The control plane: REST API, Temporal workflows, and the Kubernetes reconcilers | The management cluster |
 | `agent` | `agent/` | gRPC server the control plane drives to run `kubeadm`, install a CNI, and configure encryption | Every managed node |
 | `updater` | `agent/` | Independent helper that replaces the node agent without depending on the agent process | Every managed node |
 | `nvkectl` | `cli/` | Validates a site spec and drives bootstrap | Your machine |
@@ -209,6 +213,14 @@ Questions and discussion:
 [GitHub Discussions](https://github.com/dsx-ai-factory/nvke/discussions/categories/q-a).
 Bugs, feature requests and documentation gaps:
 [GitHub Issues](https://github.com/dsx-ai-factory/nvke/issues).
+
+## Trademarks
+
+Kubernetes® is a registered trademark of The Linux Foundation in the United
+States and other countries. NVIDIA and the NVIDIA logo are trademarks and/or
+registered trademarks of NVIDIA Corporation in the U.S. and other countries.
+Other company and product names may be trademarks of the respective companies
+with which they are associated.
 
 ## License
 

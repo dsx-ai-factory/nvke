@@ -28,6 +28,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
@@ -129,7 +130,7 @@ func TestActivities_CreateCAPIInfraMachineForNode_TemplatelessNico_Idempotent(t 
 		ProviderType: db.ProviderTypeNico,
 	}
 	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID})
-	namespace := constants.NamespaceNVKESystem
+	namespace := constants.LegacyManagementNamespace
 	k8sClient := newCAPIMachineCreateClient(t, testNicoWorkerRelease("test-os", "#!ipxe\n{{ .DiskSelectionStrategy }}", "#cloud-config\nhostname: {{ .Hostname }}\n")...)
 
 	mockDB := &testutil.MockDB{}
@@ -596,7 +597,7 @@ func testCAPIMachineWithNicoInfraRef(addresses clusterv1.MachineAddresses) *clus
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "worker-0",
-			Namespace: constants.NamespaceNVKESystem,
+			Namespace: constants.LegacyManagementNamespace,
 		},
 		Spec: clusterv1.MachineSpec{
 			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
@@ -657,7 +658,7 @@ func testNicoMachineForRotation(params nicoMachineRotationParameters) *nicov1.Ni
 
 func testNicoMachineForCAPIMachineReady(params nicoMachineRotationParameters) *nicov1.NicoMachine {
 	nicoMachine := testNicoMachineForRotation(params)
-	nicoMachine.Namespace = constants.NamespaceNVKESystem
+	nicoMachine.Namespace = constants.LegacyManagementNamespace
 	return nicoMachine
 }
 
@@ -786,7 +787,7 @@ func TestDeleteCAPIMachineForNode_WaitFalseReturnsWhileObjectsFinalize(t *testin
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "worker-0",
-			Namespace:  constants.NamespaceNVKESystem,
+			Namespace:  constants.LegacyManagementNamespace,
 			Finalizers: []string{"test.finalizer"},
 		},
 	}
@@ -797,7 +798,7 @@ func TestDeleteCAPIMachineForNode_WaitFalseReturnsWhileObjectsFinalize(t *testin
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "worker-0-bootstrap-data",
-			Namespace:  constants.NamespaceNVKESystem,
+			Namespace:  constants.LegacyManagementNamespace,
 			Finalizers: []string{"test.finalizer"},
 		},
 	}
@@ -825,14 +826,14 @@ func TestDeleteCAPIMachineForNode_WaitFalseReturnsWhileObjectsFinalize(t *testin
 
 	storedMachine := &clusterv1.Machine{}
 	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: constants.NamespaceNVKESystem,
+		Namespace: constants.LegacyManagementNamespace,
 		Name:      "worker-0",
 	}, storedMachine))
 	require.NotNil(t, storedMachine.DeletionTimestamp)
 
 	storedSecret := &corev1.Secret{}
 	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: constants.NamespaceNVKESystem,
+		Namespace: constants.LegacyManagementNamespace,
 		Name:      "worker-0-bootstrap-data",
 	}, storedSecret))
 	require.NotNil(t, storedSecret.DeletionTimestamp)
@@ -929,10 +930,12 @@ func TestApplyCAPIMachineRebootAnnotation(t *testing.T) {
 
 	storedMachine := &clusterv1.Machine{}
 	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: constants.NamespaceNVKESystem,
+		Namespace: constants.LegacyManagementNamespace,
 		Name:      "worker-0",
 	}, storedMachine))
-	require.Contains(t, storedMachine.Annotations, constants.MachineAnnotationKeyReboot)
+	// Written in both domains while cluster-api-provider-nico deployments move over.
+	require.Contains(t, storedMachine.Annotations, keys.MachineReboot.String())
+	require.Contains(t, storedMachine.Annotations, keys.MachineReboot.Legacy())
 	mockDB.AssertExpectations(t)
 }
 
@@ -990,10 +993,11 @@ func TestDeleteCAPIMachineRebootAnnotation(t *testing.T) {
 
 	storedMachine := &clusterv1.Machine{}
 	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: constants.NamespaceNVKESystem,
+		Namespace: constants.LegacyManagementNamespace,
 		Name:      "worker-1",
 	}, storedMachine))
-	require.NotContains(t, storedMachine.Annotations, constants.MachineAnnotationKeyReboot)
+	require.NotContains(t, storedMachine.Annotations, keys.MachineReboot.String())
+	require.NotContains(t, storedMachine.Annotations, keys.MachineReboot.Legacy())
 	mockDB.AssertExpectations(t)
 }
 
@@ -1002,7 +1006,7 @@ func getTestNicoMachine(t *testing.T, k8sClient client.Client) *nicov1.NicoMachi
 
 	nicoMachine := &nicov1.NicoMachine{}
 	require.NoError(t, k8sClient.Get(context.Background(), client.ObjectKey{
-		Namespace: constants.NamespaceNVKESystem,
+		Namespace: constants.LegacyManagementNamespace,
 		Name:      "worker-0",
 	}, nicoMachine))
 	return nicoMachine

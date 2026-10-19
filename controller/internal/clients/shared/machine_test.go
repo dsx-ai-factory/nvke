@@ -17,8 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 func TestBuildBootstrapSecret(t *testing.T) {
@@ -131,7 +131,7 @@ func TestBuildMachine(t *testing.T) {
 			assert.Equal(t, params.node.Name, machine.Name)
 			assert.Equal(t, "capi-cluster-a", machine.Namespace)
 			assert.Equal(t, params.cluster.Name, machine.Labels["cluster.x-k8s.io/cluster-name"])
-			assert.Equal(t, params.node.ID.String(), machine.Annotations[constants.MachineAnnotationKeyHostID])
+			assert.Equal(t, params.node.ID.String(), machine.Annotations[keys.MachineHostID.String()])
 			assert.Equal(t, "cwe-controlled", machine.Annotations[clusterv1.ExcludeNodeDrainingAnnotation])
 			assert.Equal(t, "cwe-controlled", machine.Annotations[clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation])
 			assert.Equal(t, params.wantVersion, machine.Spec.Version)
@@ -170,4 +170,33 @@ func TestApplyMachine_PreservesExistingFailureDomain(t *testing.T) {
 	actual := &clusterv1.Machine{}
 	require.NoError(t, k8sClient.Get(context.Background(), client.ObjectKeyFromObject(existing), actual))
 	assert.Equal(t, "fd-a", actual.Spec.FailureDomain)
+}
+
+func TestBuildMachine_Metadata(t *testing.T) {
+	type parameters struct{ annotations, labels map[string]string }
+	for name, params := range map[string]parameters{
+		"omitted":    {},
+		"configured": {annotations: map[string]string{"example.com/setup": "gpu,network"}, labels: map[string]string{"example.com/pool": "gpu"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pool := db.NodePool{MachineAnnotations: params.annotations, MachineLabels: params.labels}
+			machine, err := shared.BuildMachine(db.Node{Name: "worker-0"}, db.NodeSet{KubernetesVersion: "1.32.1"}, pool,
+				db.Cluster{Name: "cluster-a"}, "nke-system", "bootstrap", clusterv1.ContractVersionedObjectReference{
+					APIGroup: "infrastructure.cluster.x-k8s.io", Kind: "DockerMachine", Name: "worker-0",
+				})
+			require.NoError(t, err)
+			for key, value := range params.annotations {
+				require.Equal(t, value, machine.Annotations[key])
+			}
+			for key, value := range params.labels {
+				require.Equal(t, value, machine.Labels[key])
+			}
+			require.Equal(t, "cluster-a", machine.Labels[clusterv1.ClusterNameLabel])
+			require.Equal(t, "cwe-controlled", machine.Annotations[clusterv1.ExcludeNodeDrainingAnnotation])
+			machine.Annotations["example.com/only-machine"] = "value"
+			machine.Labels["example.com/only-machine"] = "value"
+			require.NotContains(t, pool.MachineAnnotations, "example.com/only-machine")
+			require.NotContains(t, pool.MachineLabels, "example.com/only-machine")
+		})
+	}
 }

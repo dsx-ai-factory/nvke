@@ -1,6 +1,6 @@
 # Topology
 
-NKTP deploys OpenTelemetry Collectors in two tiers. Collection-tier Collectors
+NVKE telemetry pipelines (NKTP) deploys OpenTelemetry Collectors in two tiers. Collection-tier Collectors
 gather telemetry inside the cluster and forward each signal to the gateway for
 that signal. The gateways export to the backend. A separate Collector, the
 watchdog, carries the pipeline's own telemetry.

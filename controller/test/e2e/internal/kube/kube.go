@@ -66,8 +66,8 @@ func RuntimeClient(restConfig *rest.Config) (client.Client, error) {
 }
 
 // TrustDomain derives the SPIRE trust domain from the active kube context name.
-// The final "kind-X" segment maps to "X.nke.local" so remote-sync contexts
-// such as "kind-cwe-capi" or "colossus-kind-cwe-capi" resolve to "cwe-capi.nke.local".
+// The final "kind-X" segment maps to "X.nvke.local" so remote-sync contexts
+// such as "kind-controller-capi" or "colossus-kind-controller-capi" resolve to "controller-capi.nvke.local".
 func TrustDomain(kubeconfig, context string) (string, error) {
 	raw, err := clientConfig(kubeconfig, context).RawConfig()
 	if err != nil {
@@ -81,7 +81,7 @@ func TrustDomain(kubeconfig, context string) (string, error) {
 	if kindIndex == -1 {
 		return "", fmt.Errorf("context %q is not a kind context; expected name to contain kind-", ctx)
 	}
-	return ctx[kindIndex+len("kind-"):] + ".nke.local", nil
+	return ctx[kindIndex+len("kind-"):] + ".nvke.local", nil
 }
 
 // clientConfig resolves the file and the context independently; either can be

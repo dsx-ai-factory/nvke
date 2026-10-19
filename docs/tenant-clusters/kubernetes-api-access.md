@@ -28,8 +28,8 @@ otherwise.
 | Tenant operator | The operator obtains an `nvke:breakglass` kubeconfig with `nvkectl get kubeconfig`. It contains an X.509 client certificate and private key. | The certificate's organization is `nvke:breakglass`, which is bound to `cluster-admin`. | The operator connects directly to the tenant API endpoint from an approved private network. | One year. See [Alpha Operator Access](#alpha-operator-access) for renewal and retrieval details. |
 | Tenant user | NVKE alpha does not deliver a distinct, individually attributable tenant-user credential. A tenant operator must establish the user's authentication outside NVKE. | A tenant operator creates the required Kubernetes RBAC bindings. NVKE grants no default tenant-user role. | The user connects directly to the tenant API endpoint from an approved private network. | Determined by the tenant's chosen authentication mechanism. |
 | Tenant automation | A tenant operator creates a Kubernetes ServiceAccount and uses a TokenRequest token, or configures another Kubernetes-supported authenticator. NVKE does not distribute a separate automation credential. | A tenant operator binds the ServiceAccount or other identity to a workload-specific Role or ClusterRole. NVKE grants no default role. | The automation connects directly to the tenant API endpoint, normally from the tenant network or from inside the cluster. | TokenRequest tokens are time limited. Their requested and maximum lifetimes are deployment policy rather than an NVKE tenant-access setting. |
-| NVKE Controller | The NVKE Controller's SPIFFE workload identity obtains a short-lived JWT-SVID, optionally exchanges it through the configured token-exchange service, and presents the resulting bearer token to the tenant API server. | The token's `sub` claim maps to a Kubernetes user. NVKE binds that user to the `nvke:cwe` ClusterRole and namespace-scoped Roles needed for lifecycle operations. | The NVKE Controller connects from the Site Controller cluster directly to the tenant API endpoint over the site's private network. | JWT expiry is set by the issuing identity system. The client obtains a new token rather than storing a long-lived bearer token. |
-| Cluster API controllers | Each controller uses its SPIFFE workload identity and the same JWT authentication path as the NVKE Controller. | The current NVKE manifest binds the CAPI manager identities to `cluster-admin`. | The controllers connect from the Site Controller cluster directly to the tenant API endpoint. | JWT expiry is set by the issuing identity system, and clients obtain replacement tokens as needed. |
+| NVKE Controller | The NVKE Controller's SPIFFE workload identity obtains a short-lived JWT-SVID, optionally exchanges it through the configured token-exchange service, and presents the resulting bearer token to the tenant API server. | The token's `sub` claim maps to a Kubernetes user. NVKE binds that user to the `nvke:cwe` ClusterRole and namespace-scoped Roles needed for lifecycle operations. | The NVKE Controller connects from the management cluster directly to the tenant API endpoint over the site's private network. | JWT expiry is set by the issuing identity system. The client obtains a new token rather than storing a long-lived bearer token. |
+| Cluster API controllers | Each controller uses its SPIFFE workload identity and the same JWT authentication path as the NVKE Controller. | The current NVKE manifest binds the CAPI manager identities to `cluster-admin`. | The controllers connect from the management cluster directly to the tenant API endpoint. | JWT expiry is set by the issuing identity system, and clients obtain replacement tokens as needed. |
 | Break-fix system | NVKE alpha defines no generic break-fix credential. A break-fix deployment must use a dedicated ServiceAccount or workload identity rather than the operator admin kubeconfig. | The deployer creates RBAC matching the repair operations the system performs. NVKE grants no default break-fix role. | The system connects directly to the private tenant API endpoint from its approved runtime network. | Determined by the selected ServiceAccount or workload-identity mechanism. |
 | Break-glass operator | The operator obtains the same `nvke:breakglass` kubeconfig used by the alpha tenant-operator path. Access to the management-cluster Secret is the delivery control. | `cluster-admin`, through the `nvke:breakglass` group. | The operator must have both management-cluster access to retrieve the kubeconfig and private network reachability to the tenant API endpoint. | The same one-year certificate and renewal behavior apply. The exported copy does not refresh or gain the renewed certificate automatically. Treat every downloaded copy as sensitive until its certificate expires or the cluster CA and credentials are replaced. |
 
@@ -40,9 +40,9 @@ repository.
 
 ## Alpha Operator Access
 
-An operator first configures `nvkectl` with a kubeconfig for the Site Controller
+An operator first configures `nvkectl` with a kubeconfig for the management
 cluster. That management-cluster identity must be allowed to read the tenant
-access Secret in `nke-system`.
+access Secret in `nvke-system`.
 
 ```bash
 nvkectl config set-site --name "$SITE_NAME" \
@@ -54,7 +54,7 @@ kubectl --kubeconfig tenant.kubeconfig get nodes
 ```
 
 `nvkectl get kubeconfig` reads
-`nke-system/<cluster>-admin-kubeconfig` from the Site Controller cluster. The
+`nvke-system/<cluster>-admin-kubeconfig` from the management cluster. The
 Secret contains an `nvke:breakglass` client certificate. The server URL and
 cluster CA come from a control-plane node's `admin.conf`; the client key does
 not. The resulting `kubectl` process then connects directly to the server URL
@@ -88,7 +88,7 @@ username. Kubernetes RBAC then authorizes that username. The OIDC discovery
 provider publishes discovery metadata and signing keys; it does not grant
 permissions.
 
-The NVKE Controller publishes a separate `nke-system/<cluster>-kubeconfig` for
+The NVKE Controller publishes a separate `nvke-system/<cluster>-kubeconfig` for
 its own use. On an OIDC-enabled cluster, this kubeconfig runs the SPIFFE
 exec-auth plugin to obtain a JWT. It is not the kubeconfig returned by
 `nvkectl get kubeconfig`.
@@ -133,11 +133,11 @@ as available tenant access.
 
 ## Network Paths
 
-### Site Controller to tenant cluster
+### Management plane to tenant cluster
 
 The NVKE Controller and the Cluster API controllers connect from the Site
 Controller cluster to the private tenant API endpoint. This path is required
-for cluster lifecycle and reconciliation. The Site Controller deployment must
+for cluster lifecycle and reconciliation. The management plane deployment must
 be able to route to TCP port 6443 on the endpoint.
 
 ### In-VPC access
@@ -237,7 +237,7 @@ logs.
    or HTTP 403. The cleanup trap removes both temporary artifacts when
    the shell exits.
 
-5. From an authorized Site Controller workload environment with access to its
+5. From an authorized management cluster workload environment with access to its
    SPIRE socket and tenant service kubeconfig, verify the service identity and
    effective RBAC:
 
@@ -303,7 +303,7 @@ When the tenant API endpoint is not routable from your workstation but is
 routable from a bastion host, use one of the two approaches below. Both
 approaches:
 
-- Fetch the tenant kubeconfig from the Site Controller cluster.
+- Fetch the tenant kubeconfig from the management cluster.
 - Require SSH access to the bastion but not to a tenant control-plane node.
 - Require the bastion to have network connectivity to the tenant API endpoint.
 
@@ -315,7 +315,7 @@ keys for access to it.
 | Kubeconfig location | Your laptop | The bastion |
 | Network path | SSH tunnel from the laptop to the bastion, then direct TCP from the bastion to the tenant API endpoint | SSH session on the bastion, then direct TCP from the bastion to the tenant API endpoint |
 | Kubeconfig modifications | Set the server endpoint to `localhost` and set `tls-server-name` to the original endpoint | None |
-| Required access | Bastion SSH access with TCP forwarding, Site Controller access from your laptop | Bastion SSH access with a shell, Site Controller access from the bastion or from your laptop |
+| Required access | Bastion SSH access with TCP forwarding, management cluster access from your laptop | Bastion SSH access with a shell, management cluster access from the bastion or from your laptop |
 
 ### Option A: `kubectl` on your laptop
 
@@ -374,7 +374,7 @@ keys for access to it.
 
 1. Copy the kubeconfig to the bastion.
 
-   If the bastion can reach the Site Controller cluster, SSH to the bastion and
+   If the bastion can reach the management cluster, SSH to the bastion and
    fetch the kubeconfig there, as described in
    [Alpha Operator Access](#alpha-operator-access):
 

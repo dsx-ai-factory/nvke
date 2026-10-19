@@ -124,7 +124,7 @@ tags:
       and a pool's `kubernetesVersion` are desired versions; the control plane's
       current running version is reported in `ControlPlaneStatus.kubernetesVersion`.
 
-      **Networking.** New clusters use ovn-kubernetes (default version 1.6.0).
+      **Networking.** New clusters use ovn-kubernetes (default version 2.4.2).
       Calico is retained only for existing fleets and its creation path is
       disabled by default. Pod and service CIDRs are IPv4,
       private, and immutable after
@@ -979,8 +979,8 @@ components:
           x-fern-ignore: true
           type: string
           pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
-          example: "1.6.0"
-          description: CNI version, as X.Y.Z. Defaults to 3.30.1 for legacy calico or 1.6.0 for ovn-kubernetes.
+          example: "2.4.2"
+          description: CNI version, as X.Y.Z. Defaults to 3.30.1 for legacy calico or 2.4.2 for ovn-kubernetes.
           x-order: 7
         etcdEncrypted:
           type: boolean
@@ -1084,6 +1084,30 @@ components:
         systemReservedMemory:
           type: string
           description: Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
+          x-go-type-skip-optional-pointer: true
+        machineAnnotations:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Annotations applied to control-plane CAPI Machines at creation, including
+            scale-out and replacement Machines. Fixed at cluster creation and
+            not reconciled after provisioning. Keys under nke.nvidia.com, nke.io,
+            nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their
+            subdomains require an explicit deployment allowlist entry for this
+            metadata type.
+          x-go-type-skip-optional-pointer: true
+        machineLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Labels applied to control-plane CAPI Machines at creation, including
+            scale-out and replacement Machines. Fixed at cluster creation and
+            not reconciled after provisioning. Keys under nke.nvidia.com, nke.io,
+            nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their
+            subdomains require an explicit deployment allowlist entry for this
+            metadata type.
           x-go-type-skip-optional-pointer: true
         nodeLabels:
           type: object
@@ -1214,6 +1238,30 @@ components:
           type: string
           default: "16Gi"
           description: Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
+          x-go-type-skip-optional-pointer: true
+        machineAnnotations:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Annotations applied to control-plane CAPI Machines at creation, including
+            scale-out and replacement Machines. Fixed at cluster creation and
+            not reconciled after provisioning. Keys under nke.nvidia.com, nke.io,
+            nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their
+            subdomains require an explicit deployment allowlist entry for this
+            metadata type.
+          x-go-type-skip-optional-pointer: true
+        machineLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Labels applied to control-plane CAPI Machines at creation, including
+            scale-out and replacement Machines. Fixed at cluster creation and
+            not reconciled after provisioning. Keys under nke.nvidia.com, nke.io,
+            nvke.nvidia.com, kubernetes.io, k8s.io, cluster.x-k8s.io and their
+            subdomains require an explicit deployment allowlist entry for this
+            metadata type.
           x-go-type-skip-optional-pointer: true
         nodeLabels:
           type: object
@@ -1583,6 +1631,30 @@ components:
           description: Whether the nodes in this pool should be added as Kubernetes control plane nodes
           x-go-type-skip-optional-pointer: true
           x-order: 12
+        machineAnnotations:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Annotations set on CAPI Machines only when they are created, including
+            Machines created during scale-out or replacement. Fixed at node-pool
+            creation. Not reconciled after provisioning.
+            Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io,
+            k8s.io, cluster.x-k8s.io and their subdomains require an explicit
+            deployment allowlist entry for this metadata type.
+          x-go-type-skip-optional-pointer: true
+        machineLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Labels set on CAPI Machines only when they are created, including
+            Machines created during scale-out or replacement. Fixed at node-pool
+            creation. Not reconciled after provisioning.
+            Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io,
+            k8s.io, cluster.x-k8s.io and their subdomains require an explicit
+            deployment allowlist entry for this metadata type.
+          x-go-type-skip-optional-pointer: true
         nodeLabels:
           type: object
           additionalProperties:
@@ -1761,6 +1833,30 @@ components:
           type: boolean
           description: Whether the nodes in this pool are control plane nodes
           x-order: 15
+        machineAnnotations:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Annotations set on CAPI Machines only when they are created, including
+            Machines created during scale-out or replacement. Fixed at node-pool
+            creation. Not reconciled after provisioning.
+            Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io,
+            k8s.io, cluster.x-k8s.io and their subdomains require an explicit
+            deployment allowlist entry for this metadata type.
+          x-go-type-skip-optional-pointer: true
+        machineLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Labels set on CAPI Machines only when they are created, including
+            Machines created during scale-out or replacement. Fixed at node-pool
+            creation. Not reconciled after provisioning.
+            Keys under nke.nvidia.com, nke.io, nvke.nvidia.com, kubernetes.io,
+            k8s.io, cluster.x-k8s.io and their subdomains require an explicit
+            deployment allowlist entry for this metadata type.
+          x-go-type-skip-optional-pointer: true
         nodeLabels:
           type: object
           additionalProperties:
@@ -2519,7 +2615,7 @@ components:
           x-fern-ignore: true
           type: string
           description: |
-            Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
+            Deprecated: Config profile name for the pool's nodes. Optional; when omitted, no config profile hooks run on the nodes.
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
@@ -2590,7 +2686,7 @@ components:
           x-fern-ignore: true
           type: string
           description: |
-            Deprecated: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
+            Deprecated: Config profile name for the pool's nodes. Optional; when omitted, no config profile hooks run on the nodes.
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
@@ -2762,7 +2858,7 @@ components:
           x-fern-ignore: true
           type: string
           description: |
-            Deprecated: Config profile name for the control-plane nodes. Optional; when omitted the nodes run no config profile hooks or labels.
+            Deprecated: Config profile name for the control-plane nodes. Optional; when omitted, no config profile hooks run on the nodes.
           x-go-type-skip-optional-pointer: true
         sshKeyGroupIDs:
           type: array

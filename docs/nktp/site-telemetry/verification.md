@@ -1,15 +1,15 @@
-# Telemetry on a site controller: verification
+# Management cluster telemetry: verification
 
 A Collector can be Ready and still export nothing, so this checklist checks
-the signals themselves, not just the Pods. Run it after a site controller is
-installed through the `deploy/nico` deploy path, or after any change to its NKTP
+the signals themselves, not just the Pods. Run it after the management plane is
+installed through the `deploy/nico` deploy path, or after any change to its NVKE telemetry pipelines (NKTP)
 values. It assumes the development backend, `lgtm`. Against your own backend,
 run the same queries there.
 
 On an existing site, where the controller runs as `cloud-workflow-engine`,
 replace `nke-controller` with `cloud-workflow-engine` throughout this page.
 
-All commands run against the site controller cluster:
+All commands run against the management cluster:
 
 ```bash
 export KUBECONFIG=<site-kubeconfig>
@@ -20,12 +20,15 @@ export KUBECONFIG=<site-kubeconfig>
 ```bash
 kubectl -n nktp get pods                          # every Pod Running, no restarts climbing
 kubectl -n nktp get opentelemetrycollectors       # seven, each READY 1/1
-kubectl -n nktp get certificates                  # ten, all Ready
+kubectl -n nktp get certificates                  # 21, all Ready
 kubectl -n nktp get configmap nktp-cluster -o jsonpath='{.data.name}'; echo   # <site-name>
 ```
 
-The ten certificates are the Operator's webhook certificate, and a CA, server
-and client certificate for each of the three Target Allocators.
+The 21 certificates are the Operator's webhook certificate, a CA, server and
+client certificate for each of the three Target Allocators, and the eleven
+internal TLS certificates that the chart's `certManager.internalTLS` default
+adds: one CA, four server and six client certificates.
+[Configure cert-manager](../guides/configure-cert-manager.md) lists them.
 
 **The Operator:** it must be running with no restarts, and its finalizer
 grant must be owned by Helm:
@@ -138,8 +141,8 @@ The controller sends a span per API request:
 
 ```bash
 for i in 1 2 3; do curl -fsS -o /dev/null http://<site-ip>:30080/api/version; done; sleep 10
-curl -fsSG http://127.0.0.1:13200/api/search --data-urlencode 'q={ resource.service.name = "nke-controller" }' | jq '.traces | length'   # > 0
-curl -fsS http://127.0.0.1:13200/api/search/tag/service.name/values | jq -r '.tagValues[]'   # includes nke-controller and the nktp-* Collectors
+curl -fsSG http://127.0.0.1:13200/api/search --data-urlencode 'q={ resource.service.name = "nvke-controller" }' | jq '.traces | length'   # > 0
+curl -fsS http://127.0.0.1:13200/api/search/tag/service.name/values | jq -r '.tagValues[]'   # includes nvke-controller and the nktp-* Collectors
 ```
 
 ## 3. The rest of the site is unaffected

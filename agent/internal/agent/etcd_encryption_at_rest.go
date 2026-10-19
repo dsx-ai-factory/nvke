@@ -49,6 +49,9 @@ const (
 	APIEncryptionRewriteCompleteLabel     string = "nvke.nvidia.com/k8s-api-encryption-rewrite-complete=true"
 	APIEncryptionEnabledLabel             string = "nvke.nvidia.com/k8s-api-encryption-enabled=true"
 	APIEncryptionSecondaryKeyEnabledLabel string = "nvke.nvidia.com/k8s-api-encryption-secondary-key-configured=true"
+
+	kubectlNamespaceFlag = "-n"
+	kubectlOutputFlag    = "-o"
 )
 
 type (
@@ -91,7 +94,8 @@ resources:
       - identity: {}`
 
 	// identity first so new writes stay plaintext in etcd until every control-plane
-	// apiserver has the same key, then PromoteKubernetesAPIEncryptionProviders and RewriteKubernetesAPIObjects.
+	// apiserver has the same key. Then promote the providers on every node and start
+	// one asynchronous object rewrite with StartEtcdEncryptionAtRestObjectsRewrite.
 	encryptionConfigTemplateExistingCluster = `
 ---
 apiVersion: apiserver.config.k8s.io/v1
@@ -126,7 +130,8 @@ resources:
 //   - Must be run on EVERY controlplane node!
 //   - Must use the same key on all controlplane nodes
 //   - Provider order is always identity then secretbox (HA-safe); call
-//     PromoteKubernetesAPIEncryptionProviders on each node, then RewriteKubernetesAPIObjects.
+//     PromoteKubernetesAPIEncryptionProviders on each node, then start one rewrite with
+//     StartEtcdEncryptionAtRestObjectsRewrite and poll GetEtcdEncryptionAtRestObjectsRewriteStatus.
 //     New clusters use kubeadm init with encryption instead of this RPC.
 //
 // We are NOT blocking on the error status or re-checking phase here
@@ -335,7 +340,7 @@ func (n *NodeAgentServer) commitPromoteEncryptionProvidersLocked() (int, bool, e
 //
 // Preconditions: phase 1 used InitializeKubernetesAPIEncryption (identity before secretbox)
 // on every control-plane node (same key everywhere). Run on every control-plane node before
-// RewriteKubernetesAPIObjects (no-op if config is already secretbox-first).
+// StartEtcdEncryptionAtRestObjectsRewrite. Promotion is a no-op if config is already secretbox-first.
 func (n *NodeAgentServer) PromoteKubernetesAPIEncryptionProviders(
 	ctx context.Context,
 	_ *pb.PromoteKubernetesAPIEncryptionProvidersRequest,
@@ -363,148 +368,6 @@ func (n *NodeAgentServer) PromoteKubernetesAPIEncryptionProviders(
 	}
 	if err := n.waitForEncryptionReload(ctx, reloadCountBefore); err != nil {
 		return response, err
-	}
-	return response, nil
-}
-
-// RewriteKubernetesAPIObjects rewrites the selected kubernetes API objects
-// to use the new encryption key.
-// NOTE:
-// * This is only supported on controlplane nodes, and only needs to be run on a single controlplane node!!!
-// * This will only work if the encryption key has been updated on ALL controlplane nodes
-
-func (n *NodeAgentServer) RewriteKubernetesAPIObjects(
-	ctx context.Context,
-	req *pb.RewriteKubernetesAPIObjectsRequest,
-) (*pb.RewriteKubernetesAPIObjectsResponse, error) {
-	response := &pb.RewriteKubernetesAPIObjectsResponse{}
-	defer logRPCSpan(ctx, "RewriteKubernetesAPIObjects")()
-
-	if n.NodeStatus.Role != ControlPlaneRole {
-		log.Printf("rewrite objects only set on controlplane nodes")
-		return response, errors.New("unable to rewrite kube api objects on non-controlplane node")
-	}
-
-	hostname, err := os.Hostname()
-	if err != nil {
-		log.Printf("failed to get hostname: %v\n", err)
-		response.ErrorMessage = "failed to get hostname"
-		n.NodeStatus.K8sAPIEncryption.Status = K8sAPIEncryptionErrorStatus
-		return response, err
-	}
-	n.NodeStatus.NodeName = hostname
-
-	// Verify all cp nodes are configured
-	cpNodes, err := k8s.GetNodeNamesByLabel(ctx, "node-role.kubernetes.io/control-plane=")
-	if err != nil {
-		log.Printf("failed to get control-plane nodes: %v\n", err)
-		response.ErrorMessage = "failed to get control-plane nodes"
-		n.NodeStatus.K8sAPIEncryption.Status = K8sAPIEncryptionErrorStatus
-		return response, err
-	}
-
-	if req.SkipLabelCheck {
-		log.Printf("WARNING: RewriteKubernetesAPIObjects called with skip_label_check=true — " +
-			"skipping node label validation; ensure this is an intentional key-rotation call\n")
-	} else {
-		for _, node := range cpNodes {
-			hasLabel, err := k8s.NodeHasLabelOrMigrate(ctx, node, APIEncryptionConfiguredLabel, "nke.io/k8s-api-encryption-configured=true")
-			if err != nil {
-				log.Printf("failed to get control-plane node %s label: %v\n", node, err)
-			}
-			if !hasLabel {
-				log.Printf("control-plane node %s encryption is not configured", node)
-				response.ErrorMessage = "control-plane node encryption is not configured"
-				n.NodeStatus.K8sAPIEncryption.Status = K8sAPIEncryptionErrorStatus
-				return response, errors.New(
-					"node encryption is not configured, can't rewrite",
-				)
-			}
-		}
-	}
-
-	log.Printf("rewriting api objects...\n")
-	/*
-		kcmd := "kubectl get secrets -A -o json | kubectl replace -f -"
-		cmd := exec.Command(
-			"bash",
-			"-c",
-			kcmd,
-		)
-		cmd.Env = os.Environ()
-		cmd.Env = append(cmd.Env, "KUBECONFIG=/etc/kubernetes/admin.conf")
-		output, err := cmd.CombinedOutput()
-	*/
-
-	log.Printf("rewriting api objects (client-go, kinds: %v)\n", objectsToEncrypt)
-	if err := k8s.RewriteEncryptableAPIObjects(ctx, objectsToEncrypt); err != nil {
-		log.Printf("failed to rewrite api objects: %v\n", err)
-		return response, err
-	}
-
-	log.Printf("cpnodes for labeling: %v\n", cpNodes)
-	for _, node := range cpNodes {
-		if node != "" {
-			log.Printf("labeling node %s\n", node)
-			err := labelAPIEncryptionNode(ctx, node, APIEncryptionRewriteCompleteLabel)
-			if err != nil {
-				log.Printf("failed to label node %s: %v\n", node, err)
-				response.ErrorMessage = "failed to label node"
-				n.NodeStatus.K8sAPIEncryption.Status = K8sAPIEncryptionErrorStatus
-				return response, err
-			}
-		}
-	}
-	return response, nil
-}
-
-// RestartAPIPods restarts the kube-apiserver pods for all cp nodes in the cluster.
-func (n *NodeAgentServer) RestartAPIPods(
-	ctx context.Context,
-	req *pb.RestartAPIPodsRequest,
-) (*pb.RestartAPIPodsResponse, error) {
-	response := &pb.RestartAPIPodsResponse{}
-	defer logRPCSpan(ctx, "RestartAPIPods")()
-	// Get a lit of all apiserver pods....
-	//   kubectl get pods --no-headers -o custom-columns=":metadata.name" -n kube-system -l component=kube-apiserver
-
-	output, err := n.Runner.Run(
-		"kubectl",
-		[]string{
-			"get",
-			"pods",
-			"--no-headers",
-			"-o", //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
-			"custom-columns=:metadata.name",
-			"-n",          //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
-			"kube-system", //nolint:goconst // kubectl argv; kept literal so the arg list reads as the command line
-			"-l",
-			"component=kube-apiserver",
-		},
-		&nvkeutils.CommandOptions{
-			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
-		},
-	)
-	if err != nil {
-		log.Printf("failed to get api-server pods: %v\n", err)
-		log.Printf("output: %s\n", output)
-		return response, err
-	}
-
-	// restart each apiserver pod
-	for _, podName := range strings.Split(string(output), "\n") {
-		output, err := n.Runner.Run(
-			"kubectl",
-			[]string{"delete", "pod", podName, "-n", "kube-system"}, //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
-			&nvkeutils.CommandOptions{
-				Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
-			},
-		)
-		if err != nil {
-			log.Printf("failed to delete api-server pod: %v\n", err)
-			log.Printf("output: %s\n", output)
-			return response, err
-		}
 	}
 	return response, nil
 }
@@ -668,12 +531,12 @@ func (n *NodeAgentServer) getPodStatus(podName string) (string, error) {
 	out, err := n.Runner.Run(
 		"kubectl",
 		[]string{
-			"-n",
-			"kube-system",
+			kubectlNamespaceFlag,
+			kubeSystemNamespace,
 			"get",
 			"pod",
 			podName,
-			"-o",
+			kubectlOutputFlag,
 			"jsonpath={.status.phase}",
 		},
 		&nvkeutils.CommandOptions{
@@ -701,8 +564,8 @@ func (n *NodeAgentServer) restartAPIServer() error {
 	_, err = n.Runner.Run(
 		"kubectl",
 		[]string{
-			"-n",
-			"kube-system",
+			kubectlNamespaceFlag,
+			kubeSystemNamespace,
 			"delete",
 			"pod",
 			podName,
@@ -746,7 +609,7 @@ func rewriteAPIObjects(objects []string) error {
 			"get",
 			object,
 			"--all-namespaces",
-			"-o",
+			kubectlOutputFlag,
 			"json",
 			"|",
 			"kubectl",
@@ -919,8 +782,8 @@ func (n *NodeAgentServer) verifyNodeAPIEncryptionEnabled() (bool, error) {
 	out, err := n.Runner.Run(
 		"kubectl",
 		[]string{
-			"-n",
-			"kube-system",
+			kubectlNamespaceFlag,
+			kubeSystemNamespace,
 			"describe",
 			"po",
 			apiServerPodName,

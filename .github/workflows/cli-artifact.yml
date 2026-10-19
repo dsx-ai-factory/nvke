@@ -75,6 +75,10 @@ jobs:
       - name: Resolve version and tags
         id: meta
         shell: bash
+        env:
+          # NVKE_GITHUB_PUBLISH names the components whose releases go to GitHub;
+          # see docs/artifact-publication.md. Unset means every component but os-image.
+          GITHUB_PUBLISH: ${{ contains(format(',{0},', vars.NVKE_GITHUB_PUBLISH || 'root,controller,cli,agent,cluster-api-provider-provisioned,nktp'), ',cli,') }}
         run: |
           set -euo pipefail
           repo="ghcr.io/${GITHUB_REPOSITORY,,}/cli"
@@ -82,10 +86,12 @@ jobs:
           version="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#cli/}"
 
+          # sha- and edge stay as the CI hand-off; the version alias is the
+          # GitHub publication.
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
-          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+          elif [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_PUBLISH}" == "true" ]]; then
             aliases+=("${GITHUB_REF_NAME#cli/}")
           fi
 

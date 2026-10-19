@@ -43,13 +43,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
+// Published per-cluster kubeconfigs (see internal/controllers/tenantaccess)
+// live in the site's management namespace, which mgmtns.Namespace resolves --
+// it is per-site configurable, so it is never assumed here.
 const (
-	// tenantKubeconfigNamespace is where TenantAccessController publishes
-	// per-cluster kubeconfigs (see internal/controllers/tenantaccess).
-	tenantKubeconfigNamespace = "nke-system"
-	tenantKubeconfigKey       = "value"
+	tenantKubeconfigKey = "value"
 
 	spireServerNamespace = "spire-server"
 	spireServerContainer = "spire-server"
@@ -141,7 +142,8 @@ func WithJWTExchangeCABundle(bundle []byte) TenantClientFactoryOption {
 
 // TenantClientFactory builds controller-runtime clients for tenant clusters.
 // It obtains the tenant endpoint, CA, and authentication mode from the
-// TenantAccessController-published kubeconfig in nke-system. Plain kubeconfig
+// TenantAccessController-published kubeconfig in the site's management
+// namespace (see internal/mgmtns). Plain kubeconfig
 // credentials are preserved; the SPIRE exec plugin is replaced by a lazily
 // minted JWT-SVID for the controller's identity.
 type TenantClientFactory struct {
@@ -286,14 +288,14 @@ func (f *TenantClientFactory) tenantRESTConfigAs(ctx context.Context, clusterNam
 	}
 
 	secretName := clusterName + "-kubeconfig"
-	secret, err := f.coreClient.Secrets(tenantKubeconfigNamespace).Get(ctx, secretName, metav1.GetOptions{})
+	secret, err := f.coreClient.Secrets(mgmtns.Namespace()).Get(ctx, secretName, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("getting tenant kubeconfig secret %s/%s: %w", tenantKubeconfigNamespace, secretName, err)
+		return nil, fmt.Errorf("getting tenant kubeconfig secret %s/%s: %w", mgmtns.Namespace(), secretName, err)
 	}
 
 	kubeconfig, ok := secret.Data[tenantKubeconfigKey]
 	if !ok || len(kubeconfig) == 0 {
-		return nil, fmt.Errorf("tenant kubeconfig secret %s/%s has no non-empty %q key", tenantKubeconfigNamespace, secretName, tenantKubeconfigKey)
+		return nil, fmt.Errorf("tenant kubeconfig secret %s/%s has no non-empty %q key", mgmtns.Namespace(), secretName, tenantKubeconfigKey)
 	}
 
 	publishedConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
@@ -359,13 +361,13 @@ func (f *TenantClientFactory) AdminKubeconfig(ctx context.Context, clusterName s
 	}
 
 	secretName := clusterName + "-kubeconfig"
-	secret, err := f.coreClient.Secrets(tenantKubeconfigNamespace).Get(ctx, secretName, metav1.GetOptions{})
+	secret, err := f.coreClient.Secrets(mgmtns.Namespace()).Get(ctx, secretName, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("getting tenant kubeconfig secret %s/%s: %w", tenantKubeconfigNamespace, secretName, err)
+		return nil, fmt.Errorf("getting tenant kubeconfig secret %s/%s: %w", mgmtns.Namespace(), secretName, err)
 	}
 	published, ok := secret.Data[tenantKubeconfigKey]
 	if !ok || len(published) == 0 {
-		return nil, fmt.Errorf("tenant kubeconfig secret %s/%s has no non-empty %q key", tenantKubeconfigNamespace, secretName, tenantKubeconfigKey)
+		return nil, fmt.Errorf("tenant kubeconfig secret %s/%s has no non-empty %q key", mgmtns.Namespace(), secretName, tenantKubeconfigKey)
 	}
 
 	parsed, err := clientcmd.Load(published)

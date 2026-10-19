@@ -1,6 +1,6 @@
 # Send telemetry to NKTP
 
-This guide is for teams whose workloads run on a cluster with NKTP. NKTP
+This guide is for teams whose workloads run on a cluster with NVKE telemetry pipelines (NKTP). NKTP
 collects Pod logs without any action from you. Traces, pushed metrics, and
 scraped metrics each need one step.
 

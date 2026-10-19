@@ -23,11 +23,11 @@ import (
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
 	dbfilters "github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 	"github.com/dsx-ai-factory/nvke/controller/internal/teleport"
@@ -146,7 +146,7 @@ func (c *Controller) nodeKeysForNicoMachine(ctx context.Context, nicoMachine *ni
 		return nil
 	}
 
-	hostID := machine.GetAnnotations()[constants.MachineAnnotationKeyHostID]
+	hostID := keys.MachineHostID.Value(machine.GetAnnotations())
 	nodeID, err := uuid.Parse(hostID)
 	if err != nil {
 		c.logger.Error("Machine has invalid host ID annotation, skipping Teleport token reconciliation",
@@ -295,7 +295,7 @@ func isNodeIneligible(node db.Node) bool {
 func (c *Controller) getPubHashFromNicoMachine(ctx context.Context, node db.Node) (string, error) {
 	nicoMachine := &nicov1.NicoMachine{}
 	if err := c.k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: constants.NamespaceNVKESystem,
+		Namespace: c.cfg.ManagementNamespaceOrDefault(),
 		Name:      node.Name,
 	}, nicoMachine); err != nil {
 		if apierrors.IsNotFound(err) {

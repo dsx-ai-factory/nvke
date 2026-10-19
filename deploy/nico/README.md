@@ -1,10 +1,10 @@
 # deploy/nico
 
-The deploy path for a NICo site controller on real hardware, with SPIRE. It is
+The deploy path for an NVKE management cluster on NICo-managed hardware, with SPIRE. It is
 the customer deploy path; the e2e lanes under `controller/deploy/` are not.
 
 Not a reference implementation: the item list and its order are derived from a
-provisioning run that stood a site controller up on bare metal and had it
+provisioning run that stood a management cluster up on bare metal and had it
 provision a tenant. Where that run and `capnico-e2e` disagree, this path follows
 the run -- it is the one that has been exercised on real hardware.
 
@@ -17,7 +17,7 @@ Four steps, three owners:
 | 1. create and image the instance | **not NVKE** -- the NICo API, iPXE and cloud-init | a booted host running `nvke-agent` |
 | 2. `nvkectl bootstrap site` | nvkectl, on the instance | a **vanilla** Kubernetes cluster |
 | 3. this deploy path | `deploy/nvke-deploy.sh`, on the node | the management plane |
-| 4. `nvkectl create cluster` | the site controller itself | tenant clusters |
+| 4. `nvkectl create cluster` | the management plane itself | tenant clusters |
 
 Step 2 leaves bare Kubernetes on purpose. `bootstrap site` stands up a
 throwaway kind cluster carrying Postgres, Temporal, SPIRE, CAPI and CWE, uses
@@ -171,13 +171,14 @@ rendered path, after `site-values.yaml`.
 
 | value | the install takes it from | e2e derivation |
 |---|---|---|
-| trust domain | `spire.trustDomain`, else `nvkectl-bootstrap.nke.local` with a warning | `${KIND_CLUSTER_NAME}.nke.local` |
+| trust domain | `spire.trustDomain`, else `nvkectl-bootstrap.nke.local` with a warning | `${KIND_CLUSTER_NAME}.nvke.local` |
 | management VIP | `cluster.controlPlaneVIP`, or the only node's IP | kind control-plane IP |
 | SPIRE admin path | a constant, `/nke-service/nke-controller` | the same |
 | TPM attestor **server** checksum | pinned per the nodes' architecture, `--arch` | pinned per arch in `resolve_tpm_checksum()` |
 | OIDC domains / IP SANs | the overlay's hostnames plus the VIP | VIP plus the kind gateway |
 | discovery URL | `https://<VIP>:30443/.well-known/openid-configuration` | the same shape |
-| Postgres / Temporal password | `NVKECTL_DATABASE_PASSWORD`, on both Temporal datastores; the controller reads its connection string from a Secret | generated per run |
+| Postgres / Temporal password | `NVKECTL_DATABASE_PASSWORD`, written into the `nvke-database` Secret of the postgres, temporal and nke-controller namespaces by the `site-credentials` item the render adds; every chart reads it from there and no values file carries it | generated per run |
+| SPIRE upstream CA | `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`, written into the `spire-upstream-ca` Secret in spire-server by the same item, when `spire.upstreamCA` is set | self-signed |
 | controller image | the release, or the stack config's `images.controller` | built per run |
 | profiles image | the release, or the stack config's `images.profiles` | built per run |
 | telemetry backend | `--values-for nktp=<file>`, else the chart's bundled development backend | not installed |
@@ -208,7 +209,7 @@ lane has exercised on NICo:
   In e2e that is a kind NodePort; here it is the VIP, published by the
   `spire-server-nodeport` item.
 
-The site controller's own node is a separate matter and stays plaintext: it is
+The management cluster's own node is a separate matter and stays plaintext: it is
 provisioned outside CWE, and when it bootstraps the only SPIRE alive is the one
 in the throwaway kind cluster, which is deleted. Nothing dials that node
 afterwards.

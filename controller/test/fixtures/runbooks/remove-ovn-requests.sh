@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+#
+# Drops every ovnkube-node container's resources so the pods run BestEffort on
+# the small e2e VMs. Resources, not only requests: when a chart sets limits,
+# a pod without requests gets them defaulted to the limits, which the VMs
+# cannot fit, and the pods never schedule again.
 set -euo pipefail
 
 export KUBECONFIG="/etc/kubernetes/admin.conf"
@@ -18,33 +23,17 @@ if [[ -z "$ds_ref" ]]; then
   exit 0
 fi
 
-echo "Patching DaemonSet ${DS_NAME} in namespace ${NAMESPACE}..."
-
-# Get container names from the DaemonSet
-containers=$(kubectl get ds "$DS_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[*].name}')
-
-for container in $containers; do
-  echo "Removing requests from container: ${container}"
-  kubectl patch ds "$DS_NAME" -n "$NAMESPACE" --type=json \
-    -p "[{\"op\": \"remove\", \"path\": \"/spec/template/spec/containers/$(
-      kubectl get ds "$DS_NAME" -n "$NAMESPACE" \
-        -o jsonpath="{range .spec.template.spec.containers[*]}{.name}{'\n'}{end}" \
-        | grep -n "^${container}$" | cut -d: -f1 | awk '{print $1 - 1}'
-    )/resources/requests\"}]" 2>&1 || echo "  No requests to remove (or already removed)"
+# One "add" per container: it creates or replaces the member, and an unchanged
+# value is a no-op, so the later control-plane joins do not roll the pods again.
+ops=""
+for field in containers initContainers; do
+  i=0
+  for name in $(kubectl get ds "$DS_NAME" -n "$NAMESPACE" -o jsonpath="{.spec.template.spec.${field}[*].name}" 2>/dev/null); do
+    echo "Dropping resources from ${field}: ${name}"
+    ops+="${ops:+,}{\"op\": \"add\", \"path\": \"/spec/template/spec/${field}/${i}/resources\", \"value\": {}}"
+    i=$((i + 1))
+  done
 done
 
-# Handle init containers if present
-init_containers=$(kubectl get ds "$DS_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.initContainers[*].name}' 2>/dev/null || true)
-
-for container in $init_containers; do
-  [ -z "$container" ] && continue
-  echo "Removing requests from init container: ${container}"
-  kubectl patch ds "$DS_NAME" -n "$NAMESPACE" --type=json \
-    -p "[{\"op\": \"remove\", \"path\": \"/spec/template/spec/initContainers/$(
-      kubectl get ds "$DS_NAME" -n "$NAMESPACE" \
-        -o jsonpath="{range .spec.template.spec.initContainers[*]}{.name}{'\n'}{end}" \
-        | grep -n "^${container}$" | cut -d: -f1 | awk '{print $1 - 1}'
-    )/resources/requests\"}]" 2>&1 || echo "  No requests to remove (or already removed)"
-done
-
+kubectl patch ds "$DS_NAME" -n "$NAMESPACE" --type=json -p "[${ops}]"
 echo "Done."

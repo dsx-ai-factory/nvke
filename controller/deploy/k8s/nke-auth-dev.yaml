@@ -22,7 +22,7 @@
 # See hack/nvke-auth-demo.sh.
 ---
 # Tilt owns the release namespace rather than Helm's --create-namespace: this
-# file is applied before the release runs. Same as nke-system-namespace.yaml.
+# file is applied before the release runs. Same as nvke-system-namespace.yaml.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -208,5 +208,5 @@ data:
       #     algorithms: [RS256]
       #     admit:
       #       spiffe:
-      #         trustDomain: cwe-capi.nke.local
+      #         trustDomain: controller-capi.nvke.local
       #         pathPrefixes: ["/nke-e2e/"]

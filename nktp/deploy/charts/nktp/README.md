@@ -1,6 +1,6 @@
 # NKTP Helm Chart
 
-NKTP is how NVIDIA runs OpenTelemetry on Kubernetes.
+NVKE telemetry pipelines (NKTP) runs OpenTelemetry Collectors on a Kubernetes cluster.
 
 The chart deploys a pipeline that collects a cluster's metrics, logs and traces
 and exports them over OTLP: a Collector on every node, a scrape pool for large
