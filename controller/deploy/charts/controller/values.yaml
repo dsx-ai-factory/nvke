@@ -64,16 +64,14 @@ image:
 # NVCR-published chart gets the NGC secret put back at package time. Supply
 # your own for a private GHCR package.
 imagePullSecrets: []
-# This is to override the chart name.
-#
-# Pinned rather than left empty: the name helper feeds app.kubernetes.io/name,
-# every resource name derived from the fullname template, and the
-# serviceMonitor.matchLabels selector below. Letting it follow .Chart.Name would
-# rename every object this chart owns whenever the chart is renamed.
-#
-# New installs get nvke-controller. An install that predates it sets
-# "cloud-workflow-engine": the Deployment's spec.selector carries this value and
-# is immutable, so an upgrade that changes it fails rather than renames. See
+# -- Overrides the chart name, and with it app.kubernetes.io/name, every
+# resource name derived from the fullname template, and the
+# serviceMonitor.matchLabels selector. Pinned rather than left empty: letting it
+# follow .Chart.Name would rename every object this chart owns whenever the
+# chart is renamed. AN INSTALL THAT PREDATES nvke-controller MUST PIN
+# "cloud-workflow-engine" HERE: the Deployment's spec.selector carries this
+# value and is immutable, so an upgrade that changes it is rejected by the API
+# server and fails rather than renaming. See
 # hack/testdata/chart-legacy-pinned-values.yaml for the full set of pins.
 nameOverride: "nvke-controller"
 fullnameOverride: ""
@@ -512,7 +510,10 @@ apiAuth:
     create: false
     # -- ConfigMap holding the authentication configuration, keyed `auth.yaml`.
     # Required when apiAuth.enabled=true; an empty name fails the render.
-    # Created by the chart when configMap.create=true, mounted either way.
+    # Created by the chart when configMap.create=true, mounted either way. An
+    # install that predates nvke-auth-config sets "nke-auth-config": renaming it
+    # orphans the live object, and with configMap.create=false the pod stays in
+    # ContainerCreating until the named ConfigMap exists.
     name: nvke-auth-config
     # -- Extra files to place beside `auth.yaml`, keyed by filename. Only used
     # when configMap.create=true. The whole ConfigMap is mounted, so each one
@@ -657,7 +658,7 @@ profiles:
 controllerConfig:
   # -- Name of the ConfigMap that carries the controller's settings file, and
   # that the Deployment mounts and Reloader watches. An install that predates
-  # nvke-controller-config sets "nvke-controller-config": renaming the ConfigMap
+  # nvke-controller-config sets "nke-controller-config": renaming the ConfigMap
   # orphans the live object.
   name: "nvke-controller-config"
 
