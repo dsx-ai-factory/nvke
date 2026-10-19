@@ -41,8 +41,8 @@ type encRotationWALEntry struct {
 const (
 	// encRotationWALFile is the WAL entry written atomically before the
 	// encryption config is updated (JSON-encoded encRotationWALEntry).
-	// It records the UpdateEncryptionConfig operation id and the apiserver reload
-	// counter before the operation is applied.
+	// It records only the UpdateEncryptionConfig operation id; the legacy reload
+	// counter field stays zero.
 	//
 	// A matching pending operation verifies the intended on-disk configuration
 	// against the local apiserver's loaded configuration identity, even after
@@ -383,8 +383,10 @@ func writeEncRotationWAL(path string, state encRotationWALEntry) error {
 // ---------------------------------------------------------------------------
 
 // commitConfigWrite is called (under lock) when the config must be written.
-// It validates mutation preconditions, snapshots the reload counter, applies
-// the mutation, and performs the two WAL writes (WAL ①, config ②).
+// It validates mutation preconditions, requires the local apiserver's
+// loaded-config identity to match the current on-disk config as the baseline,
+// applies the mutation, and performs the two writes (WAL ① with the operation
+// id, config ②).
 func (n *NodeAgentServer) commitConfigWrite(
 	ctx context.Context,
 	cfg *EncryptionConfiguration,
