@@ -368,7 +368,8 @@ func forbid(names ...string) k8stesting.ReactionFunc {
 			return false, nil, nil
 		}
 		return true, nil, apierrors.NewForbidden(
-			schema.GroupResource{Resource: "configmaps"}, get.Name, fmt.Errorf("not permitted"))
+			schema.GroupResource{Resource: "configmaps"}, get.Name, fmt.Errorf("not permitted"),
+		)
 	}
 }
 
