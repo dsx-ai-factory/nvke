@@ -155,7 +155,10 @@ func lockRetirableNode(ctx context.Context, tx db.Tx, clusterID, nodeID uuid.UUI
 		node.Conditions.KubernetesReady.Status == db.ConditionStatusTrue {
 		return db.Node{}, etcdEncryptionKeyRotationPreconditionError("node is not lost: its agent or kubelet still reports ready; restore it and reset the rotation instead")
 	}
-	if ready < members/2+1 {
+	// members excludes the lost node, but removing it from etcd must commit
+	// under the current membership, members+1, whose quorum the ready
+	// survivors alone have to supply.
+	if ready < (members+1)/2+1 {
 		return db.Node{}, etcdEncryptionKeyRotationPreconditionError("removing the node would leave no ready etcd quorum; restore etcd from backup")
 	}
 	return node, nil

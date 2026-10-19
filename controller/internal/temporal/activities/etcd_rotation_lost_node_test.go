@@ -271,3 +271,46 @@ func TestRetireLostEtcdRotationNodeAuditsFailedCommitAsFailure(t *testing.T) {
 	require.Equal(t, credentialaudit.OutcomeFailure, store.auditEvents[0].Outcome)
 	require.Equal(t, credentialaudit.ReasonFailed, store.auditEvents[0].Reason)
 }
+
+// TestRetireLostEtcdRotationNodeRequiresQuorumOfCurrentMembership checks quorum
+// against the membership that still includes the lost node, because the etcd
+// member removal must commit under it. Even control planes are the edge cases.
+func TestRetireLostEtcdRotationNodeRequiresQuorumOfCurrentMembership(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		nodes, ready int
+		admit        bool
+	}{
+		{name: "2 nodes, 1 ready survivor", nodes: 2, ready: 1},
+		{name: "3 nodes, 2 ready survivors", nodes: 3, ready: 2, admit: true},
+		{name: "4 nodes, 2 ready survivors", nodes: 4, ready: 2},
+		{name: "4 nodes, 3 ready survivors", nodes: 4, ready: 3, admit: true},
+		{name: "5 nodes, 3 ready survivors", nodes: 5, ready: 3, admit: true},
+		{name: "5 nodes, 2 ready survivors", nodes: 5, ready: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store, lost := failedRotationWithLostNode(db.EtcdKeyRotationPhaseRewrite)
+			survivors := []db.Node{store.nodes[0]}
+			for len(survivors) < test.nodes-1 {
+				node := stableRenewalNode(store.cluster.ID)
+				node.Conditions.KubernetesReady = db.NewCondition(true, "ready")
+				survivors = append(survivors, node)
+			}
+			for index := test.ready; index < len(survivors); index++ {
+				survivors[index].Conditions.NodeAgentReady = db.NewCondition(false, "unreachable")
+			}
+			store.nodes = append([]db.Node{store.nodes[1]}, survivors...)
+			a := lostNodeActivities(store, unreachableAgent())
+
+			_, err := a.RetireLostEtcdRotationNode(t.Context(), retireInput(store, lost))
+
+			if test.admit {
+				require.NoError(t, err)
+				require.Len(t, store.cluster.Conditions.EtcdKeyRotation.RetiredNodes, 1)
+				return
+			}
+			require.ErrorContains(t, err, "quorum")
+			require.Empty(t, store.cluster.Conditions.EtcdKeyRotation.RetiredNodes)
+		})
+	}
+}

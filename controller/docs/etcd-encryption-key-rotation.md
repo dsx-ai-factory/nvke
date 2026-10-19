@@ -373,7 +373,10 @@ replaces the node only after the lock is released:
    one of the phases above, that the node is a joined control-plane node of the
    cluster with neither `NodeAgentReady` nor `KubernetesReady` true, that its
    agent does not answer a live probe, that no other control-plane removal is in
-   flight, and that the remaining ready members keep an etcd quorum. It then
+   flight, and that the ready survivors alone form a quorum of the current
+   membership, which still counts the lost node: with `n` control-plane members,
+   at least `n/2+1` (integer division) others must be ready, so two of three,
+   three of four, three of five. It then
    records the node under the rotation's retired nodes, marks it deleting, and
    writes a credential audit event (`rotate`, `etcd_encryption_key`, reason
    `node_retired`, with the node and failed phase). Any refusal changes nothing
