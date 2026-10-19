@@ -345,7 +345,18 @@ func (a *Activities) resolveKubernetesCertificateRenewal(ctx context.Context, in
 		response, err := a.nodeAgentClient.GetKubernetesCertificateRenewalStatus(ctx, node,
 			&nvkeproto.GetKubernetesCertificateRenewalStatusRequest{OperationId: input.OperationID})
 		if err != nil {
-			return fmt.Errorf("failed to resolve certificate renewal operation %s: %w", input.OperationID, err)
+			err = fmt.Errorf("failed to resolve certificate renewal operation %s: %w", input.OperationID, err)
+			if ctx.Err() != nil || !transientCertificateRenewalStatusError(err) {
+				return err
+			}
+			// An agent restart or network blip must not retain the lock while the
+			// caller's bounded budget remains; keep polling for terminal status.
+			activity.GetLogger(ctx).Debug("certificate renewal status temporarily unavailable",
+				"nodeID", node.ID, "operationID", input.OperationID, "error", err)
+			if waitErr := waitForCertificateRenewalStatusPoll(ctx); waitErr != nil {
+				return errors.Join(waitErr, err)
+			}
+			continue
 		}
 		operation := response.GetOperation()
 		statusOperation := operation.GetOperation()
@@ -376,13 +387,31 @@ func (a *Activities) resolveKubernetesCertificateRenewal(ctx context.Context, in
 		default:
 			return errors.New("certificate renewal status has an unknown phase")
 		}
-		timer := time.NewTimer(certificateRenewalStatusPollInterval)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
+		if err := waitForCertificateRenewalStatusPoll(ctx); err != nil {
+			return err
 		}
+	}
+}
+
+// transientCertificateRenewalStatusError reports local connection failures,
+// which carry no gRPC status, and Unavailable or DeadlineExceeded responses.
+// NotFound, Unimplemented and other agent answers remain conclusive.
+func transientCertificateRenewalStatusError(err error) bool {
+	rpcStatus, ok := status.FromError(err)
+	if !ok {
+		return true
+	}
+	return rpcStatus.Code() == codes.Unavailable || rpcStatus.Code() == codes.DeadlineExceeded
+}
+
+func waitForCertificateRenewalStatusPoll(ctx context.Context) error {
+	timer := time.NewTimer(certificateRenewalStatusPollInterval)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 
