@@ -244,3 +244,30 @@ func TestRetiredNodeTeardownActivitiesPassFenceOnlyForThatNode(t *testing.T) {
 	require.ErrorIs(t, a.DeleteNode(t.Context(), survivor.ID), db.ErrControlPlaneMutationBlocked)
 	require.Equal(t, []uuid.UUID{lost.ID}, store.deleted)
 }
+
+// commitFailingLostNodeStore runs the transaction body, then fails the commit.
+type commitFailingLostNodeStore struct {
+	*lostNodeStore
+}
+
+func (s *commitFailingLostNodeStore) RunInTx(ctx context.Context, fn func(context.Context, db.Tx) error) error {
+	if err := s.lostNodeStore.RunInTx(ctx, fn); err != nil {
+		return err
+	}
+	return errors.New("commit failed")
+}
+
+// TestRetireLostEtcdRotationNodeAuditsFailedCommitAsFailure keeps a rolled-back
+// retirement from being audited as rotate/success/node_retired.
+func TestRetireLostEtcdRotationNodeAuditsFailedCommitAsFailure(t *testing.T) {
+	store, lost := failedRotationWithLostNode(db.EtcdKeyRotationPhaseRewrite)
+	failing := &commitFailingLostNodeStore{lostNodeStore: store}
+	a := activities.NewActivities(config.Config{}, failing, nil, unreachableAgent(), "", nil, "")
+
+	_, err := a.RetireLostEtcdRotationNode(t.Context(), retireInput(store, lost))
+
+	require.ErrorContains(t, err, "commit failed")
+	require.Len(t, store.auditEvents, 1)
+	require.Equal(t, credentialaudit.OutcomeFailure, store.auditEvents[0].Outcome)
+	require.Equal(t, credentialaudit.ReasonFailed, store.auditEvents[0].Reason)
+}

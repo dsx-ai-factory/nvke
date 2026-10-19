@@ -93,6 +93,10 @@ func (a *Activities) RetireLostEtcdRotationNode(ctx context.Context, input Retir
 		result.TeardownRequired = true
 		return nil
 	})
+	if err != nil {
+		// A failed commit rolls back whatever the closure decided.
+		outcome, reason = credentialaudit.OutcomeFailure, credentialaudit.ReasonFailed
+	}
 	event := credentialOperationAudit(input.ClusterID, &input.NodeID, credentialaudit.ActionRotate, credentialaudit.TypeEtcdKey, outcome, reason)
 	event.Phase = phase
 	a.recordCredentialAudit(ctx, event, input.RotationWorkflowID)
