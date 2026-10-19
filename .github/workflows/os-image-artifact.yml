@@ -325,11 +325,6 @@ jobs:
     needs: [matrix, validate-packer]
     if: github.repository_id == '1323115536' && needs.matrix.outputs.skip != 'true'
     name: Build and verify (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }}, ${{ matrix.variant }})
-    # No protection rules: ci-shared exists to scope NVKE_GHA_CACHE_BUCKET
-    # and NVKE_GHA_CACHE_READ_ROLE_ARN to the jobs that read them instead of
-    # leaving them at repository level. It allows every branch, so this
-    # changes nothing about who can run this job.
-    environment: ci-shared
     strategy:
       fail-fast: false
       matrix:
