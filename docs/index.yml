@@ -18,6 +18,8 @@ navigation:
             path: overview/supported-platforms.md
           - page: Preview status and known limitations
             path: overview/preview-status.md
+          - link: NVKR documentation
+            href: https://docs.nvidia.com/nvke/nvkr
 
       - section: Get started
         contents:

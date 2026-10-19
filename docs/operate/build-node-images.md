@@ -21,7 +21,6 @@ NVKR builds every artifact from a Definition, a YAML file that names each output
 | Install `nvkr` and run a first build | [Quickstart](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/quickstart.md) |
 | Plan, run, publish and inspect a Run | [Definition, Run, and Release workflow](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/lifecycle.md) |
 | Browse, verify and export a Release | [Browse, export and verify a release](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/release-quickstart.md) |
-| The maintained NVKE Definition | [Combined NVKE M2 candidate](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/nvke/README.md) |
 | Build the node OS image | [NVKE node image](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/diagnostics/README.md) and [Build a node image from component materials](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/node-images.md) |
 
 ### What the install takes from an NVKR Release
