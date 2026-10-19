@@ -51,8 +51,10 @@ func TestReconcileControlPlaneJoinsOmitsEmptyNodePoolIDFromLookupLog(t *testing.
 		},
 	}
 	cp := &controlPlane{nodes: []db.Node{{
-		ID:   nodeID,
-		Name: "test-control-plane-node",
+		ID:           nodeID,
+		Name:         "test-control-plane-node",
+		ControlPlane: true,
+		NodePoolID:   uuid.Nil,
 		Conditions: db.NodeConditions{
 			ReadyToJoin: db.NewCondition(true, "ready"),
 		},

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/google/uuid"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -91,7 +90,7 @@ func (s *Service) startProvisionNodeWorkflow(ctx context.Context, pendingNode db
 	logArgs := []any{
 		"cluster_id", pendingNode.ClusterID,
 	}
-	if pendingNode.NodePoolID != uuid.Nil {
+	if pendingNode.IsManagedByNodePool() {
 		logArgs = append(logArgs, "node_pool_id", pendingNode.NodePoolID)
 	}
 	logArgs = append(logArgs,
