@@ -168,7 +168,6 @@ func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.
 
 	r.logger.InfoContext(ctx, "Started control-plane JoinNode workflow",
 		"cluster_id", cluster.ID,
-		"node_pool_id", node.NodePoolID,
 		"node_id", node.ID,
 		"node_name", node.Name,
 		"workflow_id", workflowID,

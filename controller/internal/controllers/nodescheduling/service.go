@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/google/uuid"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -87,13 +88,18 @@ func (s *Service) startProvisionNodeWorkflow(ctx context.Context, pendingNode db
 		return fmt.Errorf("starting ProvisionNode workflow for node %s: %w", pendingNode.ID, err)
 	}
 
-	s.logger.InfoContext(ctx, "Started (or already running) ProvisionNode workflow",
+	logArgs := []any{
 		"cluster_id", pendingNode.ClusterID,
-		"node_pool_id", pendingNode.NodePoolID,
+	}
+	if pendingNode.NodePoolID != uuid.Nil {
+		logArgs = append(logArgs, "node_pool_id", pendingNode.NodePoolID)
+	}
+	logArgs = append(logArgs,
 		"node_id", pendingNode.ID,
 		"node_name", pendingNode.Name,
 		"workflow_id", workflowID,
 		"run_id", run.GetRunID(),
 	)
+	s.logger.InfoContext(ctx, "Started (or already running) ProvisionNode workflow", logArgs...)
 	return nil
 }
