@@ -237,6 +237,11 @@ jobs:
   plan:
     name: plan
     runs-on: arc-amd64-cpu16
+    # No protection rules: ci-shared exists to scope QUALIFY_E2E_NGC_ORG to
+    # the jobs that read it instead of leaving it at repository level, not to
+    # gate this job the way forge/forge-nightly gate qualify-run. It allows
+    # every branch, so this changes nothing about who can run plan.
+    environment: ci-shared
     # The same gate as the lanes: a dispatch is deliberate, a beta tag was
     # pushed to this repository, and a pull_request run has to be asked for with
     # the `qualify-e2e` label, the `qualify-e2e-l40s` label for the az61 L40S
