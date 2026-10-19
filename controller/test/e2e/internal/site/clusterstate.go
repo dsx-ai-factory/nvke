@@ -82,7 +82,8 @@ func clusterStateScript() string {
 	inNamespace := kubectl + " -n " + shellQuote(controller.Namespace())
 	selector := "app.kubernetes.io/name=" + controller.Service()
 
-	sections := []struct{ title, cmd string }{
+	type section struct{ title, cmd string }
+	sections := []section{
 		// First, because it is what tells a not-ready workload apart from
 		// an unreachable one.
 		{"service and endpoints", inNamespace + " get service,endpoints,endpointslice -o wide"},
@@ -98,6 +99,21 @@ func clusterStateScript() string {
 		{"controller logs, previous", inNamespace + " logs -l " + shellQuote(selector) + " --all-containers --tail=200 --prefix --previous"},
 		{"nodes", kubectl + " get nodes -o wide"},
 		{"workloads, all namespaces", kubectl + " get pods -A -o wide"},
+		// Probe failures, back-offs and sandbox errors, from every namespace
+		// rather than only the controller's.
+		{"events, all namespaces", kubectl + " get events -A --sort-by=.lastTimestamp"},
+	}
+	for _, dep := range siteInfrastructure {
+		inDep := kubectl + " -n " + shellQuote(dep.namespace)
+		logs := inDep + " logs -l " + shellQuote(dep.selector) + " --all-containers --tail=200 --prefix"
+		sections = append(sections,
+			// Last State carries the exit code and, for containers whose
+			// terminationMessagePolicy is FallbackToLogsOnError, the tail of
+			// the log they died with.
+			section{dep.title + " pod detail", inDep + " describe pods"},
+			section{dep.title + " logs", logs},
+			section{dep.title + " logs, previous", logs + " --previous"},
+		)
 	}
 
 	stanzas := make([]string, 0, 2*len(sections))
@@ -108,4 +124,15 @@ func clusterStateScript() string {
 		)
 	}
 	return strings.Join(stanzas, "; ")
+}
+
+// siteInfrastructure is what clusterctl init and the deploy path wait on
+// before the controller exists. A deploy that fails in one of these leaves
+// every controller section reading "No resources found", so they are read by
+// name: the workloads table shows that a pod is crash-looping, not why.
+var siteInfrastructure = []struct{ title, namespace, selector string }{
+	// The ovn-kubernetes chart labels both ovnkube-node and
+	// ovnkube-control-plane component=network.
+	{title: "cni", namespace: "ovn-kubernetes", selector: "component=network"},
+	{title: "cert-manager", namespace: "cert-manager", selector: "app.kubernetes.io/instance=cert-manager"},
 }
