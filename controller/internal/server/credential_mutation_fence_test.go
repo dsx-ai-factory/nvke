@@ -108,7 +108,7 @@ func TestRenewalFencesControlPlaneNodeDelete(t *testing.T) {
 				if controlPlane {
 					blocked, ok := response.(api.DeleteNode409JSONResponse)
 					require.True(t, ok, "expected a 409, got %T", response)
-					require.Contains(t, blocked.Message, "control-plane changes are rejected while etcd encryption or certificate renewal is in progress; retry after the operation completes")
+					require.Contains(t, blocked.Message, "control-plane changes are rejected while etcd encryption or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md)")
 					tx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 					tx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 				} else {
