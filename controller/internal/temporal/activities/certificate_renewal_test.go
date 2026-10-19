@@ -31,41 +31,54 @@ import (
 )
 
 // TestBeginCertificateRenewalRecordsAcceptedStateAndLock requires acceptance and
-// mutation ownership in the same write, so dispatch cannot precede ownership.
+// mutation ownership in the same write, so dispatch cannot precede ownership. An
+// unfenced (V1) reservation does not block admission: dispatch reattaches it.
 func TestBeginCertificateRenewalRecordsAcceptedStateAndLock(t *testing.T) {
-	clusterID := uuid.New()
-	due := time.Now().Add(-time.Hour).UTC()
-	tx := &testutil.MockTx{}
-	database := &testutil.MockDB{GetTx: func() db.Tx { return tx }}
-	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
-	tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
-		ID: clusterID,
-		Conditions: db.ClusterConditions{
-			Provisioned: db.Condition{Status: db.ConditionStatusTrue},
-		},
-	}, nil).Once()
-	tx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Once()
-	tx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{{
-		IP: "10.0.0.10", ControlPlane: true,
-		Conditions: db.NodeConditions{Joined: db.NewCondition(true, ""), Provisioned: db.NewCondition(true, "")},
-	}}, nil).Once()
-	tx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(cluster *db.Cluster) bool {
-		status := cluster.Conditions.CertificateRenewal
-		update := cluster.Conditions.UpdateInProgress
-		return status != nil && status.CycleID == "cycle-1" &&
-			status.State == db.CertificateRenewalStateAccepted && !status.Forced &&
-			status.ScheduledFor != nil && status.ScheduledFor.Equal(due) &&
-			update != nil && update.Type == db.OperationTypeCertRenewal
-	})).Return(db.Cluster{}, nil).Once()
-	a := &Activities{db: database}
+	for _, test := range []struct {
+		name        string
+		reservation *db.NodeAgentCertificateRenewal
+	}{
+		{name: "no reservation"},
+		{name: "unfenced reservation", reservation: &db.NodeAgentCertificateRenewal{NodeID: uuid.New(), OperationID: "v1-operation"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clusterID := uuid.New()
+			due := time.Now().Add(-time.Hour).UTC()
+			tx := &testutil.MockTx{}
+			database := &testutil.MockDB{GetTx: func() db.Tx { return tx }}
+			database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+			tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+				ID: clusterID,
+				Conditions: db.ClusterConditions{
+					Provisioned: db.Condition{Status: db.ConditionStatusTrue},
+				},
+				CertificateRenewal: test.reservation,
+			}, nil).Once()
+			tx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Once()
+			tx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{{
+				IP: "10.0.0.10", ControlPlane: true,
+				Conditions: db.NodeConditions{Joined: db.NewCondition(true, ""), Provisioned: db.NewCondition(true, "")},
+			}}, nil).Once()
+			tx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(cluster *db.Cluster) bool {
+				status := cluster.Conditions.CertificateRenewal
+				update := cluster.Conditions.UpdateInProgress
+				return status != nil && status.CycleID == "cycle-1" &&
+					status.State == db.CertificateRenewalStateAccepted && !status.Forced &&
+					status.ScheduledFor != nil && status.ScheduledFor.Equal(due) &&
+					update != nil && update.Type == db.OperationTypeCertRenewal &&
+					cluster.CertificateRenewal == test.reservation
+			})).Return(db.Cluster{}, nil).Once()
+			a := &Activities{db: database}
 
-	_, err := a.BeginCertificateRenewal(context.Background(), BeginCertificateRenewalInput{
-		ClusterID: clusterID, CycleID: "cycle-1", ScheduledFor: &due,
-	})
+			_, err := a.BeginCertificateRenewal(context.Background(), BeginCertificateRenewalInput{
+				ClusterID: clusterID, CycleID: "cycle-1", ScheduledFor: &due,
+			})
 
-	require.NoError(t, err)
-	database.AssertExpectations(t)
-	tx.AssertExpectations(t)
+			require.NoError(t, err)
+			database.AssertExpectations(t)
+			tx.AssertExpectations(t)
+		})
+	}
 }
 
 // TestCompleteCertificateRenewalAdvancesDueOnlyOnSuccess couples the new due time
