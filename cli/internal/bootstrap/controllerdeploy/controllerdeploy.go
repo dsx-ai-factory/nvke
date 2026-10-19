@@ -169,7 +169,8 @@ const (
 	// (profilesDir). Set explicitly rather than left to the chart's empty
 	// default, so profilesDir names the empty /profiles the controller image
 	// ships rather than resolving somewhere else. nvkectl deploys no profiles
-	// into it; a site gets them from its deploy repository.
+	// into it unless Config.ProfilesImage is set, which copies that image's
+	// /profiles tree in; a site otherwise gets them from its deploy repository.
 	profilesPath = "/profiles"
 )
 
@@ -364,7 +365,7 @@ func DefaultConfig() Config {
 		CWEPort:                  envPort("NVKECTL_NVKE_CONTROLLER_PORT", DefaultCWEPort),
 		// Added after the rename, so it has no NKECTL_ name to fall back to and
 		// is not in Settings.
-		ProfilesImage: os.Getenv("NVKECTL_CONTROLLER_PROFILES_IMAGE"),
+		ProfilesImage: os.Getenv(ProfilesImageEnv),
 
 		HelmTimeout:  envDuration("NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT", 5*time.Minute),
 		ReadyTimeout: envDuration("NVKECTL_NVKE_CONTROLLER_READY_TIMEOUT", 5*time.Minute),
@@ -800,6 +801,29 @@ func (e *Engine) applyReleases(ctx context.Context, kubeconfigPath, path string)
 	return nil
 }
 
+// ProfilesImageEnv names the environment variable that sets Config.ProfilesImage.
+const ProfilesImageEnv = "NVKECTL_CONTROLLER_PROFILES_IMAGE"
+
+// ValidateProfilesImage reports an error when image cannot be used as the
+// profiles image. An empty image is valid: no profiles image is deployed. The
+// check is cheap and needs no cluster, so callers run it before anything is
+// built.
+func ValidateProfilesImage(image string) error {
+	if image == "" {
+		return nil
+	}
+	_, tag, digest := splitImageRef(image)
+	// splitImageRef reports an untagged reference as latest. Kubernetes pulls
+	// latest unconditionally, and the chart gives this image no pull policy to
+	// override that, so a side-loaded image would never be found.
+	if digest == "" && tag == "latest" {
+		return fmt.Errorf("controllerdeploy: the profiles image %q (%s) must carry a tag other than latest, or a digest: "+
+			"the chart sets no pull policy on it, so a latest tag makes the cluster pull it instead of using the "+
+			"side-loaded copy", image, ProfilesImageEnv)
+	}
+	return nil
+}
+
 // profilesImageArgs turns Config.ProfilesImage into the chart values that make
 // its init container copy the profiles into place. Nothing is added when no
 // image is set.
@@ -807,15 +831,10 @@ func profilesImageArgs(cfg Config) ([]string, error) {
 	if cfg.ProfilesImage == "" {
 		return nil, nil
 	}
-	repo, tag, digest := splitImageRef(cfg.ProfilesImage)
-	// splitImageRef reports an untagged reference as latest. Kubernetes pulls
-	// latest unconditionally, and the chart gives this image no pull policy to
-	// override that, so a side-loaded image would never be found.
-	if digest == "" && tag == "latest" {
-		return nil, fmt.Errorf("controllerdeploy: the profiles image %q must carry a tag other than latest, or a digest: "+
-			"the chart sets no pull policy on it, so a latest tag makes the cluster pull it instead of using the "+
-			"side-loaded copy", cfg.ProfilesImage)
+	if err := ValidateProfilesImage(cfg.ProfilesImage); err != nil {
+		return nil, err
 	}
+	repo, tag, digest := splitImageRef(cfg.ProfilesImage)
 	return []string{
 		"--set", "profiles.image.enabled=true",
 		"--set-string", "profiles.image.repository=" + repo,

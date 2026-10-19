@@ -112,7 +112,7 @@ would be a sibling of it, so nothing here changes when one is added.
 | `infra.nico.controlPlane.vpcPrefixIDs` / `subnetIDs` | UUID list | with `nico` | Exactly one of the two: native networking or not. |
 | `infra.nico.controlPlane.sshKeyGroupIDs` | UUID list | with `nico` | At least one. |
 | `infra.nico.controlPlane.release` | string | with `nico` | The `ClusterRelease` the nodes boot from, which `infra.nico.releases` must hold. See Release manifests. |
-| `infra.nico.controlPlane.configProfile` | string | no | A config profile name. The bootstrap controller starts with an empty profiles directory and serves none, so it treats any name as missing and logs a warning: its hooks and labels never reach the nodes. Leave it unset. |
+| `infra.nico.controlPlane.configProfile` | string | no | A config profile name. The bootstrap controller's profiles directory is empty unless `NVKECTL_CONTROLLER_PROFILES_IMAGE` fills it (see Profiles), so by default any name is treated as missing: the controller logs a warning and builds the nodes without that profile's hooks and labels. Leave it unset unless you supply the profiles. |
 | `infra.nico.releases` | path | with `nico` | A file, or a directory of `.yaml`, `.yml` and `.json` files, holding the `MachineImage` and `ClusterRelease` manifests. See below. |
 | `spire.externalAddress` | string | with `nico`, unless `--disable-mtls` | IP address or DNS name nodes use to reach the bootstrap host's SPIRE server, on NodePort 30081. It must be a routable unicast IP address without a zone, or a DNS name other than `localhost` or a `*.localhost` name: a loopback, unspecified, link-local or multicast address means nothing from a node. See below. |
 
@@ -162,14 +162,16 @@ given their SPIRE address when they were provisioned.
 
 ### Profiles
 
-`cluster.nico.controlPlane.configProfile` names a profile the controller reads
-from its profiles directory, and `nvkectl` deploys the controller with that
-directory empty. Until the site spec can say where a site's profiles come from,
-supply them with `NVKECTL_CONTROLLER_PROFILES_IMAGE`, an OCI content image whose
-`/profiles` tree is copied into place; see the
-[README](../README.md#bootstrap-cluster-and-cwe). Without it the
-controller accepts the cluster request but has nothing to render a node from.
-The OS profile is separate: it comes from `bootstrapReleases`, below.
+`infra.nico.controlPlane.configProfile` names a config profile the controller
+reads from its profiles directory, and `nvkectl` deploys the controller with
+that directory empty. Without profiles the controller still accepts the cluster
+request: it logs a warning, treats the named profile as empty, and builds the
+nodes without that profile's hooks and labels. To supply them, set
+`NVKECTL_CONTROLLER_PROFILES_IMAGE` to an OCI content image whose `/profiles`
+tree is copied into place; it needs a tag other than `latest`, or a digest, and
+the README's [variable table](../README.md#bootstrap-cluster-and-cwe) has the
+rest. The release the nodes boot is separate: it comes from
+`infra.nico.releases`, below.
 
 ### NICo credentials
 

@@ -320,6 +320,12 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		}
 	}
 
+	// Before the dry-run return, so a profiles image the deploy would refuse
+	// fails here and not minutes into a real run, after the Kind cluster exists.
+	if err := controllerdeploy.ValidateProfilesImage(os.Getenv(controllerdeploy.ProfilesImageEnv)); err != nil {
+		return err
+	}
+
 	if opts.dryRun {
 		fmt.Fprintln(out, "\nDry run: site spec is valid. No workflow dispatched.")
 		return nil
@@ -1328,8 +1334,15 @@ func requireLocalImages(ctx context.Context, engine *bootstrapengine.Engine, ima
 }
 
 // missingLocalImageError names the build command and the flags and variables
-// that replace a local build, and keeps the inspect failure.
+// that replace a local build, and keeps the inspect failure. The profiles image
+// is not one `make -C cli images` builds, and only its own variable sets it.
 func missingLocalImageError(image string, err error, out string) error {
+	if image == os.Getenv(controllerdeploy.ProfilesImageEnv) {
+		return fmt.Errorf("the profiles image %s is not in the local image store (%w\n%s) and names no registry to pull it from; "+
+			"build it and tag it with something other than latest, or name an image the runtime can pull in %s "+
+			"(for Docker Hub, write docker.io/<org>/<name>)",
+			image, err, strings.TrimSpace(out), controllerdeploy.ProfilesImageEnv)
+	}
 	return fmt.Errorf("image %s is not in the local image store (%w\n%s) and names no registry to pull it from; "+
 		"build it with `make -C cli images`, or name an image the runtime can pull with "+
 		"--nvke-controller-image / --provisioned-provider-image or NVKECTL_NVKE_CONTROLLER_IMAGE / NVKECTL_CAPI_PROVISIONED_IMAGE "+

@@ -11,6 +11,12 @@ bin/
 e2e/bootstrap/.hosts.csv
 e2e/bootstrap/.sitespec.rendered.yaml
 
+# E2E scratch of run-nico.sh: its site spec and bootstrap log, and the FRR
+# config it renders. The script removes them on exit; an aborted run leaves them.
+e2e/bootstrap/.sitespec.nico.rendered.yaml
+e2e/bootstrap/.bootstrap-nico.log
+e2e/bootstrap/.bgp-nico/
+
 # The etcd encryption key `nvkectl bootstrap site` writes, the temporary file
 # it is assembled in, and the E2E's copy next to the site spec. The root
 # .gitignore carries the same rules for a bootstrap run from anywhere else.

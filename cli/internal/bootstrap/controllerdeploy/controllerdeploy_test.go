@@ -2233,3 +2233,29 @@ func TestDeploy_RefusesAProfilesImageTheClusterWouldPull(t *testing.T) {
 		t.Fatal("Deploy accepted a latest-tagged profiles image")
 	}
 }
+
+func TestValidateProfilesImage(t *testing.T) {
+	tests := []struct {
+		image   string
+		wantErr string
+	}{
+		{"", ""},
+		{"controller-profiles:e2e", ""},
+		{"localhost:5000/team/profiles:v1", ""},
+		{"registry.example.com/profiles@sha256:abc123", ""},
+		{"controller-profiles:latest", "other than latest"},
+		{"controller-profiles", "other than latest"},
+		{"localhost:5000/team/profiles", "other than latest"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.image, func(t *testing.T) {
+			err := ValidateProfilesImage(tt.image)
+			switch {
+			case tt.wantErr == "" && err != nil:
+				t.Fatalf("ValidateProfilesImage(%q) = %v, want nil", tt.image, err)
+			case tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr) || !strings.Contains(err.Error(), ProfilesImageEnv)):
+				t.Fatalf("ValidateProfilesImage(%q) = %v, want one naming %s and %q", tt.image, err, ProfilesImageEnv, tt.wantErr)
+			}
+		})
+	}
+}

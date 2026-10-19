@@ -401,8 +401,10 @@ var readyUnits = []string{"containerd", "swtpm-local", "spire-agent"}
 func probeHost(ctx context.Context, node Node) error {
 	// The exit status is not the verdict: with several units, is-active exits 0
 	// when any one is active, so a unit still queued behind another would pass.
-	out, _ := exec.CommandContext(ctx, ContainerCLI, append([]string{"exec", node.Container,
-		"systemctl", "is-active"}, readyUnits...)...).CombinedOutput()
+	out, _ := exec.CommandContext(ctx, ContainerCLI, append([]string{
+		"exec", node.Container,
+		"systemctl", "is-active",
+	}, readyUnits...)...).CombinedOutput()
 	return unitsActive(string(out), readyUnits)
 }
 

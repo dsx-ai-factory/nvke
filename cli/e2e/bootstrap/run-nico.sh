@@ -5,8 +5,9 @@
 # `nvkectl bootstrap site` e2e for `infra.provider: nico`: the control-plane
 # machines are allocated by CAPNICo from a NICo site instead of taken from a
 # hardcoded list. The sibling of run.sh, which covers `infra.provider:
-# provisioned`; same host requirements (see run.sh), plus a Go toolchain to
-# build nico-sim, and network access to ghcr.io for the CAPNICo image.
+# provisioned`; same host requirements (see run.sh), plus a Go toolchain and a C
+# compiler (gcc) to build nico-sim, and network access to ghcr.io for the CAPNICo
+# image.
 #
 # Stages:
 #   1. Images: the CAPD node image nico-sim creates its nodes from, and a
@@ -22,7 +23,7 @@
 #      attested to the bootstrap SPIRE server over TPM, and the allowlist that
 #      admitted it was filled in by CWE from the NicoMachine, not by the site spec.
 #
-# Three inputs the site spec supplies and this script prepares:
+# Four inputs the bootstrap reads and this script prepares:
 #   - NVKECTL_NICO_CREDENTIALS: the token file for nico-sim's API.
 #   - NVKECTL_NODE_USER, NVKECTL_NODE_PASSWORD: the login the controller puts on
 #     each node, with throwaway values. `bootstrap site` creates the Secret that
@@ -114,6 +115,9 @@ RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.nico.rendered.yaml"
 BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap-nico.log"
 DIAGNOSTICS_DIR="${CLI_DIR}/cluster-diagnostics"
 export NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}"
+# What this lane adds to the dump nvkectl writes there: the node journals and the
+# nico-sim log, which the bootstrap cannot see.
+DIAGNOSTICS_FILE="${DIAGNOSTICS_DIR}/nico-lane.txt"
 
 : "${NVKECTL_CONTROLLER_IMAGE:?NVKECTL_CONTROLLER_IMAGE must name the controller image to deploy, already present in containerd (see run.sh)}"
 export NVKECTL_CONTROLLER_IMAGE
@@ -163,6 +167,9 @@ source "${SCRIPT_DIR}/etcd-lib.sh"
 
 collect_diagnostics() {
   log "collecting diagnostics"
+  # DIAGNOSTICS_DIR is ignored by git, handed back to the invoking user on exit
+  # and uploaded by CI, which a file beside the script is not.
+  mkdir -p "${DIAGNOSTICS_DIR}"
   {
     printf '### nerdctl ps -a\n'; nerdctl ps -a || true
     printf '\n### nico-sim log (tail)\n'; tail -n 80 "${SIM_LOG}" 2>/dev/null || true
@@ -171,8 +178,8 @@ collect_diagnostics() {
       printf '\n### node container %s: journal (tail)\n' "${c}"
       nerdctl exec "${c}" journalctl --no-pager -n 60 2>&1 || true
     done
-  } >"${SCRIPT_DIR}/.nico-diagnostics.txt" 2>&1 || true
-  log "wrote ${SCRIPT_DIR}/.nico-diagnostics.txt"
+  } >"${DIAGNOSTICS_FILE}" 2>&1 || true
+  log "wrote ${DIAGNOSTICS_FILE}"
 }
 
 started=false
@@ -206,7 +213,7 @@ wait_until() {
 
 # gcc: nico-sim stores its state in SQLite through cgo. Go builds without cgo,
 # silently, when it finds no C compiler, and the binary then fails at startup.
-for tool in nerdctl kind kubectl helm clusterctl go gcc make iptables ip; do
+for tool in nerdctl kind kubectl helm clusterctl go gcc make iptables ip ss; do
   command -v "${tool}" >/dev/null 2>&1 || fail "${tool} is required"
 done
 [ -x "${NVKECTL}" ] || fail "${NVKECTL} is not built (run make -C cli build)"
@@ -311,13 +318,17 @@ log "the host is ${GATEWAY} on the node network: nico-sim's endpoint and the SPI
 
 # The environment mirrors controller/hack/nico-provider/run-nico-sim.sh, with
 # the container CLI swapped for nerdctl and the node network named explicitly.
-log "starting nico-sim on :${SIM_PORT}"
+log "starting nico-sim on ${GATEWAY}:${SIM_PORT}"
 defer remove_sim_nodes
 defer stop_sim
 (
   cd "${NICO_SIM_DIR}"
   mkdir -p "${SIM_STATE_DIR}/files"
-  export NICO_SIM_LISTEN_ADDR=":${SIM_PORT}"
+  # Only the node network's gateway, which is where CAPNICo and the nodes reach
+  # it. nico-sim accepts any bearer token and runs a request's commands as root
+  # in privileged containers, so it must not listen on every interface of a host
+  # that may share a network with others.
+  export NICO_SIM_LISTEN_ADDR="${GATEWAY}:${SIM_PORT}"
   export NICO_SIM_DB_PATH="${SIM_STATE_DIR}/nico-sim.db"
   export NICO_SIM_FILES_DIR="${SIM_STATE_DIR}/files"
   export NICO_VMS_VM_BACKEND=mock
@@ -335,10 +346,15 @@ defer stop_sim
 )
 sim_up() {
   kill -0 "$(cat "${SIM_STATE_DIR}/nico-sim.pid")" 2>/dev/null || fail "nico-sim exited" "$(tail -n 20 "${SIM_LOG}")"
-  (exec 3<>"/dev/tcp/127.0.0.1/${SIM_PORT}") 2>/dev/null
+  (exec 3<>"/dev/tcp/${GATEWAY}/${SIM_PORT}") 2>/dev/null
 }
-wait_until 120 1 sim_up || fail "nico-sim did not listen on :${SIM_PORT} within 120s" "$(tail -n 20 "${SIM_LOG}")"
-log "PASS: nico-sim is up on :${SIM_PORT}"
+wait_until 120 1 sim_up || fail "nico-sim did not listen on ${GATEWAY}:${SIM_PORT} within 120s" "$(tail -n 20 "${SIM_LOG}")"
+# Every listening socket on the port is the gateway's: none on a wildcard or
+# loopback address, which anything that can reach the host could dial.
+sim_listeners="$(ss -Hltn "sport = :${SIM_PORT}" | awk '{print $4}' | sort -u)"
+[ "${sim_listeners}" = "${GATEWAY}:${SIM_PORT}" ] ||
+  fail "nico-sim listens on $(echo "${sim_listeners}" | tr '\n' ' '), expected only ${GATEWAY}:${SIM_PORT}"
+log "PASS: nico-sim is up on ${GATEWAY}:${SIM_PORT} and listens nowhere else"
 
 # ── Stage 3: bootstrap site ────────────────────────────────────────────────
 
