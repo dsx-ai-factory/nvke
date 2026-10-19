@@ -32,6 +32,10 @@ const (
 	certificateRenewalRenewNode = "renew-node"
 
 	certificateRenewalExpiryCheckChangeID = "certificate-renewal-check-before-drain"
+	// certificateRenewalTypedAfterLegacyChangeID marks the typed dispatch that
+	// follows a successful legacy run in one cycle. Histories recorded before it
+	// returned the legacy result alone.
+	certificateRenewalTypedAfterLegacyChangeID = "certificate-renewal-typed-after-legacy"
 )
 
 // RenewK8sCertsInput selects a threshold-based or forced cycle. V2 requires a
@@ -353,6 +357,10 @@ func renewCertificatesOnNodeWithExecutors(
 	result, unresolved, err := renewCertificatesOnNode(ctx, input, legacy)
 	if err != nil || !legacy || !thenTyped {
 		return result, unresolved, err
+	}
+	// Called only on this path so histories that never reach it are unaffected.
+	if workflow.GetVersion(ctx, certificateRenewalTypedAfterLegacyChangeID, workflow.DefaultVersion, 1) == workflow.DefaultVersion {
+		return result, unresolved, nil
 	}
 	typedResult, unresolved, err := renewCertificatesOnNode(ctx, input, false)
 	if err != nil {
