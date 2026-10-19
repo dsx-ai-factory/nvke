@@ -779,7 +779,7 @@ teleport:
 
 # Read-only credential inventory is independent of automated renewal.
 credentialMonitoring:
-  # -- Enable read-only node certificate and direct tenant API CSR observations independently of renewal.
+  # -- Enable read-only node certificate and direct tenant API CSR observations independently of renewal. When false, the inspection and CSR availability alerts are suppressed, because nothing observes those series.
   enabled: true
   # -- Interval between node certificate inspection attempts (5m through 12h while monitoring is enabled; the chart refuses other values).
   inspectionInterval: "1h"
