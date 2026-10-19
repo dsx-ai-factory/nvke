@@ -59,7 +59,7 @@ The NVKE API and the site spec have no field to change a feature gate. The [Kube
 | SPIFFE Runtime Environment (SPIRE) agent | 1.14.1, with TPM plugin 1.9.0 | Pinned. Installed on the node image for TPM node attestation. |
 | Node agent (`nvke-agent`) | Built from the NVKE checkout used for the image | Installed and enabled on the node image. Listens on port 15005. |
 
-[Build the OS image](../../os-image/README.md#build-the-os-image) lists the build host requirements and Make targets; [Build and host node OS images](../operate/build-node-images.md) covers the build and HTTP(S) hosting. [Register node images for provisioning](../operate/register-node-images.md) covers the management-cluster configuration.
+[Build the OS image](../../os-image/README.md#build-the-os-image) lists the build host requirements and Make targets; [Build and host node OS images](../operate/build-node-images.md) covers the build and HTTP(S) hosting. [Register node images for provisioning](../operate/build-node-images.md#register-the-image-for-provisioning) covers the management-cluster configuration.
 
 For NVKR's separate build route, see its [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/inputs/definitions/diagnostics/README.md).
 

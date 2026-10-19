@@ -123,7 +123,7 @@ Install the other tools in the machine with its package manager and from each to
    nvkectl create nodepoolrelease -f releases/nodepoolrelease.yaml
    ```
 
-   The set is for your machine's architecture and boots mock-NICo's container nodes. Real hardware: [Register node images for provisioning](../operate/register-node-images.md).
+   The set is for your machine's architecture and boots mock-NICo's container nodes. Real hardware: [Register node images for provisioning](../operate/build-node-images.md#register-the-image-for-provisioning).
 
 ## Create a workload cluster
 

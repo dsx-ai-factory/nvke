@@ -141,7 +141,7 @@ Each placeholder has the same name on the page that uses it. Keep credentials in
 | Controller image reference | `<CONTROLLER_IMAGE>` | Bootstrap; Install without a release | |
 | Provisioned infrastructure provider image | `<PROVISIONED_PROVIDER_IMAGE>` | Bootstrap | |
 | Profile content image reference | `images.profiles` in the stack config | Install without a release | |
-| Node provisioning configuration files; see [Register node images for provisioning](register-node-images.md) | `node-config/` | After Install | |
+| Node provisioning configuration files; see [Register node images for provisioning](build-node-images.md#register-the-image-for-provisioning) | `node-config/` | After Install | |
 
 ### NICo
 
