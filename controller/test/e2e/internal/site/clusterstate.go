@@ -87,6 +87,15 @@ func clusterStateScript() string {
 	cniSelector := "component=network"
 	inCertManager := kubectl + " -n " + shellQuote("cert-manager")
 	certManagerSelector := "app.kubernetes.io/instance=cert-manager"
+	// The spire release spans two namespaces: the server, its controller
+	// manager and the OIDC discovery provider in spire-server, the agent and
+	// the CSI driver in spire-system. Helm labels every one of them with the
+	// release name, so one selector reads both.
+	inSpireServer := kubectl + " -n " + shellQuote("spire-server")
+	inSpireSystem := kubectl + " -n " + shellQuote("spire-system")
+	spireSelector := "app.kubernetes.io/instance=spire"
+	inTemporal := kubectl + " -n " + shellQuote("temporal")
+	temporalSelector := "app.kubernetes.io/instance=temporal"
 
 	type section struct{ title, cmd string }
 	sections := []section{
@@ -121,6 +130,21 @@ func clusterStateScript() string {
 		{"cert-manager pod detail", inCertManager + " describe pods"},
 		{"cert-manager logs", podLogs(inCertManager, certManagerSelector)},
 		{"cert-manager logs, previous", podLogs(inCertManager, certManagerSelector) + " --previous"},
+		// The two releases the deploy path installs and waits on after
+		// cert-manager, and the last ones before the controller itself. Run
+		// 39338192654 reached them: the spire release timed out with the
+		// agent at 0/1, the server StatefulSet at 0/1 and the OIDC provider
+		// past its progress deadline, and the artifact recorded no reason for
+		// any of it, because the collector read neither namespace.
+		{"spire server pod detail", inSpireServer + " describe pods"},
+		{"spire server logs", podLogs(inSpireServer, spireSelector)},
+		{"spire server logs, previous", podLogs(inSpireServer, spireSelector) + " --previous"},
+		{"spire agent pod detail", inSpireSystem + " describe pods"},
+		{"spire agent logs", podLogs(inSpireSystem, spireSelector)},
+		{"spire agent logs, previous", podLogs(inSpireSystem, spireSelector) + " --previous"},
+		{"temporal pod detail", inTemporal + " describe pods"},
+		{"temporal logs", podLogs(inTemporal, temporalSelector)},
+		{"temporal logs, previous", podLogs(inTemporal, temporalSelector) + " --previous"},
 	}
 
 	stanzas := make([]string, 0, 2*len(sections))
