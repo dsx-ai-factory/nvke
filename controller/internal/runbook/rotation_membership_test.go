@@ -13,6 +13,11 @@ import (
 )
 
 func TestRotationMembershipProbeMatchesExactVotersAndHealth(t *testing.T) {
+	for _, command := range []string{"bash", "jq"} {
+		if _, err := exec.LookPath(command); err != nil {
+			t.Skipf("%s is required to exercise the etcd rotation membership probe", command)
+		}
+	}
 	for _, test := range []struct {
 		name, members string
 		health        bool
