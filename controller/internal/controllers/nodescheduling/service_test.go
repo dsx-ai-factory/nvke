@@ -70,6 +70,7 @@ func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T
 
 	for _, tc := range []struct {
 		name           string
+		controlPlane   bool
 		nodePoolID     uuid.UUID
 		wantNodePoolID bool
 	}{
@@ -79,8 +80,9 @@ func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T
 			wantNodePoolID: true,
 		},
 		{
-			name:       "control-plane node omits empty node pool ID",
-			nodePoolID: uuid.Nil,
+			name:         "control-plane node omits empty node pool ID",
+			controlPlane: true,
+			nodePoolID:   uuid.Nil,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -101,10 +103,11 @@ func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T
 			})
 			ctx := trace.ContextWithSpanContext(t.Context(), spanContext)
 			_, err := service.ScheduleCAPIInfraNodes(ctx, slog.Default(), []db.Node{{
-				ID:         nodeID,
-				NodePoolID: tc.nodePoolID,
-				ClusterID:  clusterID,
-				Name:       "test-node",
+				ID:           nodeID,
+				NodePoolID:   tc.nodePoolID,
+				ClusterID:    clusterID,
+				ControlPlane: tc.controlPlane,
+				Name:         "test-node",
 			}})
 			require.NoError(t, err)
 			temporalClient.AssertExpectations(t)
