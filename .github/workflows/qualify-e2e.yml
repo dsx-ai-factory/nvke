@@ -590,11 +590,11 @@ jobs:
       # names it, because nvkectl is published as one artifact per platform and
       # the cli version below names none of them.
       CLI_REF: ${{ matrix.cli_ref }}
-      SITE_CONTROLLER_VERSION: ${{ matrix.controller }}
+      SITE_NVKE_CONTROLLER_VERSION: ${{ matrix.controller }}
       # How the controller's version was resolved, and the commit a described
       # one was taken at. Together they say what the deploy path is exported
       # from, which is a tag for one and a commit for the other.
-      CONTROLLER_VERSION_STRATEGY: ${{ matrix.controller_version_strategy }}
+      NVKE_CONTROLLER_VERSION_STRATEGY: ${{ matrix.controller_version_strategy }}
       PLAN_COMMIT: ${{ needs.plan.outputs.commit }}
       CLI_VERSION: ${{ matrix.cli }}
       # The name the controller is installed under, which the deploy path
@@ -807,10 +807,10 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-          if [ -n "${SITE_CONTROLLER_VERSION}" ]; then
-            echo "SITE_CONTROLLER_BUILD=0" >> "${GITHUB_ENV}"
-            echo "qualifying the published ${SITE_CONTROLLER_VERSION}"
-            echo "::warning::pulling a published controller, ${SITE_CONTROLLER_VERSION}; if it predates #850 the bootstrap fails at \"creating the site cluster\""
+          if [ -n "${SITE_NVKE_CONTROLLER_VERSION}" ]; then
+            echo "SITE_NVKE_CONTROLLER_BUILD=0" >> "${GITHUB_ENV}"
+            echo "qualifying the published ${SITE_NVKE_CONTROLLER_VERSION}"
+            echo "::warning::pulling a published controller, ${SITE_NVKE_CONTROLLER_VERSION}; if it predates #850 the bootstrap fails at \"creating the site cluster\""
             auth="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 -w0)"
             echo "::add-mask::${auth}"
 
@@ -823,15 +823,15 @@ jobs:
             # abbreviated hash inside it is refused over the wire. It resolves
             # locally through that hash once the commit is here, and the full
             # hash is what the plan recorded.
-            if [ "${CONTROLLER_VERSION_STRATEGY}" = commitDescribe ]; then
+            if [ "${NVKE_CONTROLLER_VERSION_STRATEGY}" = commitDescribe ]; then
               if [ -z "${PLAN_COMMIT}" ]; then
                 echo "::error::the controller was described at a commit, but the plan records none"
                 exit 1
               fi
               want="${PLAN_COMMIT}"
-              missing="could not fetch ${PLAN_COMMIT}, the commit ${SITE_CONTROLLER_VERSION} describes"
+              missing="could not fetch ${PLAN_COMMIT}, the commit ${SITE_NVKE_CONTROLLER_VERSION} describes"
             else
-              tag="controller/${SITE_CONTROLLER_VERSION}"
+              tag="controller/${SITE_NVKE_CONTROLLER_VERSION}"
               want="refs/tags/${tag}:refs/tags/${tag}"
               missing="no ${tag} release tag; the deploy path is exported from the controller's own commit"
             fi
@@ -844,8 +844,8 @@ jobs:
           fi
           version="$(git rev-parse --short=12 HEAD)"
           {
-            echo "SITE_CONTROLLER_BUILD=1"
-            echo "SITE_CONTROLLER_VERSION=${version}"
+            echo "SITE_NVKE_CONTROLLER_BUILD=1"
+            echo "SITE_NVKE_CONTROLLER_VERSION=${version}"
           } >> "${GITHUB_ENV}"
           echo "building the controller from ${version}"
 
@@ -882,7 +882,7 @@ jobs:
           fi
 
           # Empty on a pull_request run whose QUALIFY_E2E_* variable is unset.
-          # SITE_CONTROLLER_VERSION is not here: the step above resolves it.
+          # SITE_NVKE_CONTROLLER_VERSION is not here: the step above resolves it.
           missing=()
           for name in SITE_STAGE; do
             [ -n "${!name}" ] || missing+=("${name}")
@@ -910,7 +910,7 @@ jobs:
               ;;
           esac
           echo "SITE_IMAGES=${images}" >> "${GITHUB_ENV}"
-          echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION} images=${images}"
+          echo "stage=${SITE_STAGE} controller=${SITE_NVKE_CONTROLLER_VERSION} images=${images}"
 
       # nvkectl is a client of the controller it bootstraps, so the two have to agree
       # on the cluster API. By default both are built from this checkout,
@@ -944,12 +944,12 @@ jobs:
             amd64|arm64) ;;
             *) echo "::error::arch is ${arch}, which is neither amd64 nor arm64"; exit 1 ;;
           esac
-          # SITE_CONTROLLER_BUILD, not SITE_CONTROLLER_VERSION: the resolve
+          # SITE_NVKE_CONTROLLER_BUILD, not SITE_NVKE_CONTROLLER_VERSION: the resolve
           # step above writes a commit into the version when none was given,
           # so the version is never empty by here. The build flag is what
           # records that the image is built from this checkout, which is the
           # amd64-only path.
-          if [ "${arch}" != amd64 ] && [ "${SITE_CONTROLLER_BUILD}" = 1 ]; then
+          if [ "${arch}" != amd64 ] && [ "${SITE_NVKE_CONTROLLER_BUILD}" = 1 ]; then
             echo "::error::arch=${arch} needs controller-version set: building the controller image here is amd64-only"
             exit 1
           fi
@@ -1104,7 +1104,7 @@ jobs:
       # nvkectl for the node's architecture, the three image archives, and the
       # deploy path out of the checkout. The node has no access to this
       # repository, so everything it runs has to be built here and staged.
-      # SITE_CONTROLLER_BUILD and SITE_CLI_BUILD come from the resolve steps
+      # SITE_NVKE_CONTROLLER_BUILD and SITE_CLI_BUILD come from the resolve steps
       # and decide whether the controller archive and nvkectl are built here or were
       # published.
       - name: Build the site inputs
@@ -1116,8 +1116,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           make -C controller/test/e2e site-inputs \
-            SITE_CONTROLLER_VERSION="${SITE_CONTROLLER_VERSION}" \
-            SITE_CONTROLLER_BUILD="${SITE_CONTROLLER_BUILD}" \
+            SITE_NVKE_CONTROLLER_VERSION="${SITE_NVKE_CONTROLLER_VERSION}" \
+            SITE_NVKE_CONTROLLER_BUILD="${SITE_NVKE_CONTROLLER_BUILD}" \
             SITE_ARCH="${SITE_ARCH}" \
             SITE_CLI_BUILD="${SITE_CLI_BUILD}" \
             SITE_CLI_VERSION="${CLI_VERSION}" \
@@ -1329,13 +1329,13 @@ jobs:
           VAR_CAPI_PROVISIONED_VERSION: ${{ vars.QUALIFY_E2E_CAPI_PROVISIONED_VERSION }}
           VAR_KUBERNETES_VERSION: ${{ vars.QUALIFY_E2E_KUBERNETES_VERSION }}
           VAR_CNI_OVN_VERSION: ${{ vars.QUALIFY_E2E_CNI_OVN_VERSION }}
-          VAR_CONTROLLER_NAMESPACE: ${{ vars.NVKE_CONTROLLER_NAMESPACE }}
-          VAR_CONTROLLER_SERVICE: ${{ vars.NVKE_CONTROLLER_SERVICE }}
+          VAR_NVKE_CONTROLLER_NAMESPACE: ${{ vars.NVKE_CONTROLLER_NAMESPACE }}
+          VAR_NVKE_CONTROLLER_SERVICE: ${{ vars.NVKE_CONTROLLER_SERVICE }}
           # The names those two replaced, read separately so the summary can
           # say a deprecated one answered instead of hiding it behind the
           # value it supplied. #1399 removes them.
-          WAS_CONTROLLER_NAMESPACE: ${{ vars.CWE_NAMESPACE }}
-          WAS_CONTROLLER_SERVICE: ${{ vars.CWE_SERVICE }}
+          WAS_NVKE_CONTROLLER_NAMESPACE: ${{ vars.CWE_NAMESPACE }}
+          WAS_NVKE_CONTROLLER_SERVICE: ${{ vars.CWE_SERVICE }}
           VAR_OS_IMAGE_BOOTLOADER_AMD64: ${{ vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
           VAR_OS_IMAGE_AMD64: ${{ vars.QUALIFY_E2E_OS_IMAGE_AMD64 }}
           VAR_OS_IMAGE_BOOTLOADER_ARM64: ${{ vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
@@ -1362,7 +1362,7 @@ jobs:
           # so rather than reporting the new one it did not read.
           rows=(
             "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|QUALIFY_E2E_STAGE"
-            "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|QUALIFY_E2E_CONTROLLER_VERSION"
+            "controller version|SITE_NVKE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|QUALIFY_E2E_CONTROLLER_VERSION"
             "nvkectl version|CLI_VERSION|IN_CLI_VERSION|VAR_CLI_VERSION|QUALIFY_E2E_CLI_VERSION"
             "nvkectl artifact|SITE_CLI_REF|||"
             "dry run|DRY_RUN|IN_DRY_RUN||"
@@ -1385,8 +1385,8 @@ jobs:
             "kind version|KIND_VERSION|||"
             "clusterctl version|CLUSTERCTL_VERSION|||"
             "nerdctl version|NERDCTL_VERSION|||"
-            "controller namespace|NKE_CONTROLLER_NAMESPACE|IN_CONTROLLER_NAME|VAR_CONTROLLER_NAMESPACE|NKE_CONTROLLER_NAMESPACE|WAS_CONTROLLER_NAMESPACE|CWE_NAMESPACE"
-            "controller service|NKE_CONTROLLER_SERVICE|IN_CONTROLLER_NAME|VAR_CONTROLLER_SERVICE|NKE_CONTROLLER_SERVICE|WAS_CONTROLLER_SERVICE|CWE_SERVICE"
+            "controller namespace|NKE_CONTROLLER_NAMESPACE|IN_CONTROLLER_NAME|VAR_NVKE_CONTROLLER_NAMESPACE|NVKE_CONTROLLER_NAMESPACE|WAS_NVKE_CONTROLLER_NAMESPACE|CWE_NAMESPACE"
+            "controller service|NKE_CONTROLLER_SERVICE|IN_CONTROLLER_NAME|VAR_NVKE_CONTROLLER_SERVICE|NVKE_CONTROLLER_SERVICE|WAS_NVKE_CONTROLLER_SERVICE|CWE_SERVICE"
             "os-image release|OS_IMAGE_RELEASE|IN_OS_IMAGE_VERSION|VAR_OS_IMAGE_VERSION|QUALIFY_E2E_OS_IMAGE_VERSION"
             "amd64 OS image bootloader|OS_IMAGE_BOOTLOADER_AMD64|IN_OS_IMAGE_BOOTLOADER_AMD64|VAR_OS_IMAGE_BOOTLOADER_AMD64|QUALIFY_E2E_OS_IMAGE_BOOTLOADER_AMD64"
             "amd64 OS image|OS_IMAGE_AMD64|IN_OS_IMAGE_AMD64|VAR_OS_IMAGE_AMD64|QUALIFY_E2E_OS_IMAGE_AMD64"
@@ -1432,7 +1432,7 @@ jobs:
           # renamed out of that prefix would have dropped out of this check
           # silently -- no failure, just less coverage, which is the one
           # thing this step exists to prevent. Every prefix in use is listed,
-          # and a new one has to be added here too. NKE_CONTROLLER_ is here
+          # and a new one has to be added here too. NVKE_CONTROLLER_ is here
           # because the name the controller is installed under is read by the
           # suite from the environment variables it already honours, so it
           # carries no QUALIFY_E2E_ prefix of its own. CWE_ is its deprecated
@@ -1442,7 +1442,7 @@ jobs:
           missing=()
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f5,7 | tr '|' '\n' | grep -qx "${name}" || missing+=("vars.${name}")
-          done < <(grep -oE 'vars\.(FORGE|QUALIFY_E2E|NKE_CONTROLLER|CWE|DSX)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
+          done < <(grep -oE 'vars\.(FORGE|QUALIFY_E2E|NVKE_CONTROLLER|CWE|DSX)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f3 |
               grep -qx "IN_$(printf '%s' "${name}" | tr 'a-z-' 'A-Z_')" || missing+=("inputs.${name}")
@@ -1503,7 +1503,7 @@ jobs:
               # What the plan resolved, which is where each of these comes
               # from when no override named it.
               case "${resolved}" in
-                SITE_CONTROLLER_VERSION|CLI_VERSION|SITE_CLI_REF|CAPI_PROVISIONED_VERSION|KUBERNETES_VERSION|CNI_OVN_VERSION|KIND_VERSION|CLUSTERCTL_VERSION|NERDCTL_VERSION|OS_IMAGE_*|ARCH|GPU|STREAM|COMBINATION)
+                SITE_NVKE_CONTROLLER_VERSION|CLI_VERSION|SITE_CLI_REF|CAPI_PROVISIONED_VERSION|KUBERNETES_VERSION|CNI_OVN_VERSION|KIND_VERSION|CLUSTERCTL_VERSION|NERDCTL_VERSION|OS_IMAGE_*|ARCH|GPU|STREAM|COMBINATION)
                   if [ "${source}" = "workflow default" ]; then
                     source="qualification plan"
                   fi
@@ -1525,7 +1525,7 @@ jobs:
               fi
               # The resolve steps fill these in from the checkout when no
               # published version was asked for, so neither arm above named it.
-              if { [ "${resolved}" = "SITE_CONTROLLER_VERSION" ] && [ "${SITE_CONTROLLER_BUILD}" = "1" ]; } ||
+              if { [ "${resolved}" = "SITE_NVKE_CONTROLLER_VERSION" ] && [ "${SITE_NVKE_CONTROLLER_BUILD}" = "1" ]; } ||
                  { [ "${resolved}" = "CLI_VERSION" ] && [ "${SITE_CLI_BUILD}" = "1" ]; }; then
                 source="built from this checkout"
               fi
@@ -1620,7 +1620,7 @@ jobs:
             {
               echo "dry run: ginkgo is not run. It would have run with:"
               echo "  -e2e.site-stage=${SITE_STAGE}"
-              echo "  -e2e.versions=controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}"
+              echo "  -e2e.versions=controller=${SITE_NVKE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}"
               echo "  -e2e.capabilities=${CAPABILITIES}"
               echo "  keep: ${keep[*]:-no}"
             } | tee qualify-e2e.log
@@ -1636,7 +1636,7 @@ jobs:
               -e2e.config=e2e-config.yaml \
               -e2e.environment="${SITE_ENVIRONMENT}" \
               -e2e.site-stage="${SITE_STAGE}" \
-              -e2e.versions="controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
+              -e2e.versions="controller=${SITE_NVKE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
               -e2e.capabilities="${CAPABILITIES}" \
               "${keep[@]}" 2>&1 | tee qualify-e2e.log
           fi

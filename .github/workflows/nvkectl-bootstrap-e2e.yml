@@ -107,7 +107,7 @@ jobs:
     permissions:
       contents: read
     env:
-      CONTROLLER_IMAGE: controller:nvkectl-bootstrap-e2e
+      NVKE_CONTROLLER_IMAGE: controller:nvkectl-bootstrap-e2e
       # A public pull-through mirror, not dc.local.gha-runners.nvidia.com:
       # that name resolves only on the self-hosted fleet. Same host and same
       # reasoning as backend-e2e.yml and os-image-artifact.yml, both of which
@@ -324,7 +324,7 @@ jobs:
           sudo -E env "PATH=$PATH" nerdctl build \
             --file controller/Dockerfile \
             --platform "linux/${{ matrix.arch }}" \
-            --tag "${CONTROLLER_IMAGE}" \
+            --tag "${NVKE_CONTROLLER_IMAGE}" \
             --build-arg "BUILD_VERSION=nvkectl-bootstrap-e2e" \
             --build-arg "GIT_VERSION=${GITHUB_SHA}" \
             "${mirror_args[@]}" \
@@ -347,7 +347,7 @@ jobs:
       - name: Run nvkectl bootstrap e2e
         working-directory: cli
         env:
-          NVKECTL_CONTROLLER_IMAGE: ${{ env.CONTROLLER_IMAGE }}
+          NVKECTL_CONTROLLER_IMAGE: ${{ env.NVKE_CONTROLLER_IMAGE }}
           # Docker is removed on this lane; the OVN image builds through nerdctl.
           OCI_BIN: nerdctl
         run: sudo -E env "PATH=$PATH" ./e2e/bootstrap/run.sh
