@@ -79,8 +79,10 @@ Two etcd voters cannot lose one, so a cluster with exactly two control-plane
 nodes is never renewed. Acceptance refuses it and records the cycle as `failed`
 with `phase` `two-control-plane-voters`, without the mutation lock. The
 controller does not retry that cycle while `controlPlaneConfig.desiredCount`
-stays at 2; changing it to 1 or to 3 or more lets the hourly retry resume.
-Scale such a cluster before its leaf certificates expire.
+stays at 2; changing it to 3 or more lets the hourly retry resume. Scaling
+down to one node is not possible: the controller only adds control-plane nodes,
+and it refuses to delete a healthy node that would leave fewer than three.
+Scale such a cluster to three or more nodes before its leaf certificates expire.
 
 A single-control-plane cluster has no peer quorum to protect, so the
 lose-one-voter requirement does not apply to it; every other gate, including
