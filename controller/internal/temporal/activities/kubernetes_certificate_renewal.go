@@ -42,6 +42,10 @@ const (
 	// instead serializes cycles under the cluster mutation lock.
 	certificateRenewalReservationPollInterval = 5 * time.Second
 	certificateRenewalReservationWait         = 20 * time.Minute
+	// A release after a successful legacy run is attempted this many times,
+	// waiting the backoff before the first retry and doubling it after each.
+	certificateRenewalReleaseAttempts     = 3
+	certificateRenewalReleaseRetryBackoff = time.Second
 )
 
 // errCertificateRenewalBusy reports a renewal reservation a V1 workflow must wait
@@ -724,17 +728,15 @@ func (a *Activities) releaseAfterFailedStart(ctx context.Context, node db.Node, 
 	return startErr
 }
 
-// certificateRenewalReleaseRetryBackoff is the wait before each retry of a
-// release after confirmed termination; a variable so tests run fast.
-var certificateRenewalReleaseRetryBackoff = []time.Duration{time.Second, 2 * time.Second}
-
 // releaseCertificateRenewalAfterTermination retries the release of a reservation
-// after a successful legacy run, whose node operation has ended. A single transient database error there would
-// otherwise leave the reservation set, so the cycle's next node is refused and
-// the cycle fails until the backoff passes. It returns the last error.
+// after a successful legacy run, whose node operation has ended. A single
+// transient database error there would otherwise leave the reservation set, so
+// the cycle's next node is refused and the cycle fails until the backoff passes.
+// It returns the last error.
 func (a *Activities) releaseCertificateRenewalAfterTermination(ctx context.Context, node db.Node, operationID string) error {
+	backoff := certificateRenewalReleaseRetryBackoff
 	err := a.releaseCertificateRenewal(ctx, node, operationID)
-	for _, backoff := range certificateRenewalReleaseRetryBackoff {
+	for range certificateRenewalReleaseAttempts - 1 {
 		if err == nil {
 			return nil
 		}
@@ -745,6 +747,7 @@ func (a *Activities) releaseCertificateRenewalAfterTermination(ctx context.Conte
 			return errors.Join(err, ctx.Err())
 		case <-timer.C:
 		}
+		backoff *= 2
 		err = a.releaseCertificateRenewal(ctx, node, operationID)
 	}
 	return err
