@@ -168,26 +168,18 @@ kubectl_minor="$(awk '/^[[:space:]]*k8s.io\/kubernetes v/ { v = substr($2, 2); s
 # CoreDNS, and the chart cannot change the names, so a node without internet DNS is
 # never Ready and a template change then deletes every ovnkube-node pod at once.
 # The API service name still proves CoreDNS answers and needs no egress. Remove once
-# the fork exposes EXTERNAL_DNS_NAMES in the chart. The image label below also
-# binds this adjustment into the archive cache key.
+# the fork exposes EXTERNAL_DNS_NAMES in the chart.
 readiness="${src}/dist/images/ovnkube-node-readiness-check.sh"
 public_names="dns_names=\${EXTERNAL_DNS_NAMES:-\"google.com cloudflare.com\"}"
 grep -qxF "$public_names" "$readiness" ||
   die "${REPO} dist/images/ovnkube-node-readiness-check.sh no longer defaults to google.com cloudflare.com; re-check the probe patch"
 sed -i "s|^${public_names}\$|dns_names=\${EXTERNAL_DNS_NAMES:-\"kubernetes.default.svc.cluster.local\"}|" "$readiness"
 
-# Build the source-owned NVIDIA runtime recipe without synthesizing a Dockerfile.
-# Its public DOCA/UCA selectors require Ubuntu noble, independently of the node OS.
-# Keep the package versions aligned with NVKR's NVIDIA OVN catalog.
+# Use the NVIDIA recipe with public package sources; its installers require noble.
 build_image "$src" "$dockerfile" "$IMAGE_REF" \
-  --build-arg "OVN_K8S_SRC_ROOT=." \
   --build-arg "BASE_IMAGE=$(image_transport_ref "${UBUNTU_BASE_IMAGE}")" \
   --build-arg "OVS_SOURCE=doca" \
   --build-arg "OVN_SOURCE=uca" \
-  --build-arg "CLOUD_ARCHIVE=gazpacho" \
-  --build-arg "UCA_OVN_VER=26.03.0-2~cloud0" \
-  --build-arg "DOCA_RELEASE=3.5.0" \
-  --build-arg "K8S_VER=v${kubectl_minor}" \
-  --label "io.nvke.readiness-dns=kubernetes.default.svc.cluster.local"
+  --build-arg "K8S_VER=v${kubectl_minor}"
 repack_archive
 finish_bundle

@@ -56,28 +56,30 @@ and the lock's `tree` line pins the exported files, so the lock carries no check
 of a generated archive: GitHub does not promise stable bytes for one, and its API
 tarball endpoint is rate-limited for anonymous callers. The chart is
 `charts/ovn-kubernetes/` in that tree (upstream's is `helm/ovn-kubernetes/`) and
-the image is built from the source-owned `dist/images/Dockerfile.ubuntu.nv`.
-The recipe is used unchanged, with a digest-pinned public Ubuntu 24.04 runtime
-base, `OVS_SOURCE=doca`, DOCA release `3.5.0`, `OVN_SOURCE=uca`, Cloud Archive
-`gazpacho`, and OVN package version `26.03.0-2~cloud0`. These public package
-sources do not require Artifactory credentials. The DOCA/UCA installers require
-Ubuntu noble; this container base is independent of the node OS version.
-The Dockerfile owns its digest-pinned Go builder. `K8S_VER` follows the minor
-version of Kubernetes in the pinned OVN source.
+the image is built from `dist/images/Dockerfile.ubuntu`, the variant on the
+public `ubuntu` base. The `ubuntu-nv-image` variant needs Artifactory and is not
+built here.
 
-The NVIDIA recipe includes the startup and probe scripts, real iptables,
-`ncat`, and `dnsutils`; NVKE no longer generates a modified generic Dockerfile
-or injects runtime packages. NVKE still points the readiness script's DNS check
-at `kubernetes.default.svc.cluster.local` instead of google.com and cloudflare.com,
-so nodes without internet DNS can become Ready. An image label binds this
-adjustment into the archive cache key.
+The lock pins the source, not the image: the `Dockerfile.ubuntu` build runs
+`apt-get` and fetches the kubectl key, so no registry digest exists to pin. The
+Go and Ubuntu base images are pinned by index digest and the build pins
+timestamps, but the fork's apt layer and Go binaries still differ between two
+fresh builds. The built archive is therefore cached in `DIST_DIR`, keyed by
+commit, arch and build arguments, and a second build reuses it. That is what lets
+`make repro-check` show the packaging is deterministic; it does not show the
+image rebuilds identically. Delete `DIST_DIR` to force a fresh image build.
 
-The lock pins the source, not the image: the Dockerfile acquires packages
-through APT. Pinned bases and timestamps do not establish identical image bytes
-across fresh builds. The built archive is cached in `DIST_DIR`, keyed by commit,
-architecture, Dockerfile, build arguments and labels. A second build reuses it,
-so `make repro-check` checks packaging determinism, not image reproducibility.
-Delete `DIST_DIR` to force a fresh image build.
+The fork's `Dockerfile.ubuntu` leaves out four things its chart needs, so `bundle.sh` builds from
+a copy of it that adds them to the runtime layer: the node liveness and readiness scripts the chart
+runs as probes from `/root` (without them kubelet kills `ovnkube-controller` every two minutes),
+`ncat` and `nslookup` (`dnsutils`), which the readiness script runs (without them it exits
+"command not found" and `ovnkube-node` is never Ready, so a template change makes the DaemonSet
+controller delete every pod at once), and `firewalld` and a real `iptables`.
+`ovnkube-cluster-manager` looks up `firewall-cmd` at startup, and the image's iptables wrappers
+`chroot /host`, which the chart never mounts. (`Dockerfile.ubuntu.nv` has all of these.)
+It also points the readiness script's DNS check at `kubernetes.default.svc.cluster.local` instead of
+google.com and cloudflare.com, which the chart cannot change: without internet DNS the pods would
+never be Ready, and a template change would again delete every pod at once.
 
 ## Building
 
@@ -92,10 +94,9 @@ compares every `.deb` byte-for-byte.
 
 The build needs `git` and network access to github.com for the source. The image
 build needs docker with buildx, nerdctl or podman (`OCI_BIN=nerdctl` or `podman`), and
-network access to Docker Hub (the Go builder and Ubuntu runtime), the Ubuntu
-archive, Ubuntu Cloud Archive, `linux.mellanox.com`, and pkgs.k8s.io. Override
-the runtime base with `OVN_UBUNTU_BASE_IMAGE`; the selected base must support the
-recipe's package sources. A build for the other architecture runs under
+network access to `quay.io` (the Go builder), Docker Hub (`ubuntu`), the Ubuntu
+archive and pkgs.k8s.io. Override the bases with `OVN_BUILDER_IMAGE` and
+`OVN_UBUNTU_BASE_IMAGE`. A build for the other architecture runs under
 emulation.
 
 ## Bumping the stream
