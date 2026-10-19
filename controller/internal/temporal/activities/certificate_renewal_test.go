@@ -522,6 +522,7 @@ func TestBeginCertificateRenewalRecordsClusterStateRefusals(t *testing.T) {
 		wantPhase string
 	}{
 		{"agent upgrade", db.CertificateRenewalPhaseAdmission},
+		{"node renewal reservation", db.CertificateRenewalPhaseAdmission},
 		{"control-plane upgrade", db.CertificateRenewalPhaseAdmission},
 		{"repair", db.CertificateRenewalPhaseAdmission},
 		{"recycling", db.CertificateRenewalPhaseAdmission},
@@ -545,6 +546,8 @@ func TestBeginCertificateRenewalRecordsClusterStateRefusals(t *testing.T) {
 			switch test.reason {
 			case "agent upgrade":
 				cluster.NodeAgentUpgrade = &db.NodeAgentUpgrade{NodeID: uuid.New()}
+			case "node renewal reservation":
+				cluster.CertificateRenewal = &db.NodeAgentCertificateRenewal{NodeID: uuid.New(), OperationID: "earlier-cycle", Fenced: true}
 			case "control-plane upgrade":
 				cluster.Conditions.ControlPlaneUpgrading = db.NewCondition(true, "")
 			case "repair":
@@ -562,7 +565,7 @@ func TestBeginCertificateRenewalRecordsClusterStateRefusals(t *testing.T) {
 			database := &testutil.MockDB{GetTx: func() db.Tx { return tx }}
 			database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
 			tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(cluster, nil).Once()
-			if test.reason != "agent upgrade" && test.reason != "control-plane upgrade" {
+			if test.reason != "agent upgrade" && test.reason != "node renewal reservation" && test.reason != "control-plane upgrade" {
 				tx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Once()
 				tx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 			}
