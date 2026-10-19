@@ -54,9 +54,9 @@ name: OS Image Artifact
 # The Release is cut by the "release" job, not by a matrix leg: legs run
 # concurrently and none can see another's checksums.
 #
-# A bare vX.Y.Z-beta.N tag only triggers the run. It bakes that commit on the
-# golden path only -- Ubuntu 24.04, non-FDE, amd64 and arm64 -- and versions it
-# by the os-image/v* describe, like any other build of it: GHCR gets
+# A bare vX.Y.Z-beta.N tag only triggers the run. It bakes that commit's
+# non-FDE images only -- Ubuntu 26.04 and 24.04, amd64 and arm64 -- and versions
+# it by the os-image/v* describe, like any other build of it: GHCR gets
 # sha-<commit> (and the describe version when NVKE_GITHUB_PUBLISH names
 # os-image), NVCR and the prod S3 path get the describe version. The beta tag
 # name is not published, and there is no Release.
@@ -224,16 +224,16 @@ jobs:
           # packer Makefile: its amd64 non-FDE build also carries the shared
           # release assets.
           #
-          # A beta is qualified on the golden path only -- Ubuntu 24.04,
-          # non-FDE, on both arches -- so it keeps just those legs. The shared
-          # release assets are not missed: they feed the Release, which a beta
-          # does not cut.
+          # A beta is qualified on non-FDE images only, but on every Ubuntu
+          # flavor a qualification stream runs -- the 26.04 streams as well as
+          # the 24.04 golden path -- so it keeps the non-FDE legs of both. The
+          # Release the shared assets feed is not cut for a beta.
           legs="$(jq -c -n --argjson arches "${arches}" --argjson beta "${BETA:-false}" '
             [{ubuntu_release:"26.04.1",tag_suffix:""},
              {ubuntu_release:"24.04.5",tag_suffix:"-ubuntu24.04"}] as $flavors
             | [$arches[] as $a | $flavors[] as $f | ("fde","non-fde") as $v
                | $a + $f + {variant:$v, timeout_minutes:90}]
-            | if $beta then map(select(.tag_suffix == "-ubuntu24.04" and .variant == "non-fde")) else . end')"
+            | if $beta then map(select(.variant == "non-fde")) else . end')"
           echo "legs=${legs}" >> "$GITHUB_OUTPUT"
           echo "building: ${legs}"
 
@@ -1144,6 +1144,9 @@ jobs:
           # NVKE_GITHUB_PUBLISH leaves os-image off the GitHub Release.
           shopt -s nullglob
           for f in dist/*.qcow2 expected/*.spdx.json expected/checksums-*.txt expected/nvke-os-image-check; do
+            # nullglob drops only an unmatched pattern. The checker is a literal
+            # path, so every other leg would hand the uploader a missing file.
+            [[ -e "${f}" ]] || continue
             S3_PREFIX="os-image/releases/${RELEASE}/${ARCH}" \
               ./scripts/upload-s3-flat.sh "$f"
           done
@@ -1169,6 +1172,7 @@ jobs:
           s3_path="${S3_URI#s3://*/}"
           shopt -s nullglob
           for f in dist/*.qcow2 expected/*.spdx.json expected/checksums-*.txt expected/nvke-os-image-check; do
+            [[ -e "${f}" ]] || continue
             bn="$(basename "$f")"
             key="${s3_path}/os-image/releases/${RELEASE}/${ARCH}/${bn}"
             aws s3api head-object --bucket "${bucket}" --key "${key}" >/dev/null
