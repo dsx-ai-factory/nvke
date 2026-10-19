@@ -149,7 +149,7 @@ include make/versions.mk
 include make/checks.mk
 
 .DEFAULT_GOAL := help
-.PHONY: help show-versions tools-check lint-workflows lint-shell docs-check internal-config-check lint-chart chart-rbac-check chart-package-check chart-controller-config-check chart-check vulncheck fmt lint gate test-compile test-e2e-backend-ci work work-sync work-check build test coverage coverage-report coverage-check preflight version-check clean licenses licenses-check license-deps-check notices notices-check license-header-check
+.PHONY: local-site-setup local-site-status local-site-down help show-versions tools-check lint-workflows lint-shell docs-check internal-config-check lint-chart chart-rbac-check chart-package-check chart-controller-config-check chart-check vulncheck fmt lint gate test-compile test-e2e-backend-ci work work-sync work-check build test coverage coverage-report coverage-check preflight version-check clean licenses licenses-check license-deps-check notices notices-check license-header-check
 
 ##@ Help
 
@@ -713,6 +713,18 @@ clean: ## Remove the built binaries and the coverage profiles.
 	@rm -rf $(BIN_DIR) $(CURDIR)/coverage
 
 ##@ End-to-end
+
+# The local site: everything the operator flow needs on one machine, so
+# `nvkectl bootstrap site` and the deploy scripts can be typed as on real
+# hardware. docs/get-started/local-site.md is the page.
+local-site-setup: ## Prepare the local site: a container node with its hosts.csv and CA, the images, the inputs, nico-sim, and a workspace with env.sh.
+	@./hack/local-site.sh setup
+
+local-site-status: ## Say what of the local site is up.
+	@./hack/local-site.sh status
+
+local-site-down: ## Delete the tenant clusters, nico-sim, the node and the local site's workspace.
+	@./hack/local-site.sh down
 
 test-e2e-backend-ci: ## Run a backend E2E suite (CAPD by default) with local controller and agent source.
 	./controller/hack/ci/backend-e2e.sh

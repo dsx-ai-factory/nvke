@@ -23,6 +23,8 @@ navigation:
         contents:
           - page: "Quickstart: evaluate locally with mock-NICo"
             path: get-started/quickstart-local.md
+          - page: Run NVKE end to end on one machine
+            path: get-started/local-site.md
 
       - section: Install NVKE
         contents:

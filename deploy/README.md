@@ -2,7 +2,7 @@
 
 Installs the NVKE management plane onto a site cluster that `nvkectl bootstrap site` left behind: Postgres, Temporal, SPIRE, CAPNICo, NKTP and the NVKE controller. One scenario: NVKE with CAPNICo on a NICo site.
 
-Two scripts: `check-site.sh` reports what the site still needs, `nvke-deploy.sh` installs the deploy path. Read them before you run them. The guide [Install management-plane services](../docs/operate/install-management-plane-services.md) explains each step.
+Two scripts: `check-site.sh` reports what the site still needs, `nvke-deploy.sh` installs the deploy path. `nvke-deploy-local.sh` wraps the second for the local site of [Run NVKE end to end on one machine](../docs/get-started/local-site.md): the lab StorageClass before, the inputs from the environment, the SPIRE exec-auth patch after. Read them before you run them. The guide [Install management-plane services](../docs/operate/install-management-plane-services.md) explains each step.
 
 ## Inputs
 
