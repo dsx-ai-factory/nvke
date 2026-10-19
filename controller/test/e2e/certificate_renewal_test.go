@@ -13,6 +13,8 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 const (
@@ -40,7 +42,7 @@ func validatePostReadyCertificateRenewal(test *tenantTest) {
 			return err
 		}).WithContext(ctx).WithTimeout(2 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
 
-		runRenewal := func(force bool) {
+		runRenewal := func(force bool) string {
 			input := struct {
 				ClusterID     string `json:"clusterID"`
 				ThresholdDays int    `json:"thresholdDays"`
@@ -60,12 +62,19 @@ func validatePostReadyCertificateRenewal(test *tenantTest) {
 				[]string{string(rawInput)},
 				20*time.Minute,
 			)).To(Succeed())
+			return workflowID
 		}
 
 		// Joined control-plane nodes have no super-admin.conf, so this exercises
 		// expiry selection on every node of a multi-node control plane.
 		By("Executing a non-forced certificate-renewal cycle, which leaves fresh certificates unchanged")
-		runRenewal(false)
+		nonForcedWorkflowID := runRenewal(false)
+		renewal := expectSucceed(test.nvke.GetCluster(ctx, test.cluster.ID)).Conditions.CertificateRenewal
+		Expect(renewal).NotTo(BeNil(), "the non-forced cycle must record a certificate renewal condition")
+		Expect(renewal.CycleID).To(Equal(nonForcedWorkflowID))
+		Expect(renewal.State).To(Equal(api.CertificateRenewalStatusStateSucceeded))
+		Expect(renewal.Outcome).To(HaveValue(Equal(api.CertificateRenewalStatusOutcomeUnchanged)),
+			"a non-forced cycle with fresh certificates must report outcome unchanged")
 		Expect(staticControlPlaneContainerIDs(ctx, tenantClient, expectedControlPlanes)).To(Equal(originalContainerIDs),
 			"a non-forced cycle with fresh certificates must not restart static control-plane components")
 
