@@ -670,7 +670,11 @@ spiffe:
   # the segment the ClusterSPIFFEID spiffeIDTemplate issues
   # (deploy/k8s/spire-nke-services-spiffe-id.yaml), or every default subject
   # matches nothing and a tenant authenticates the controller and then denies it.
-  servicePathSegment: "nke-service"
+  # An install that predates nvke-service sets "nke-service": its SPIRE server
+  # keeps issuing that path, and node agents older than the nvke rename admit
+  # only it. A new install issues nvke-service, which agents admit from the nvke
+  # rename on.
+  servicePathSegment: "nvke-service"
   endpointSocket: "unix:///spiffe-workload-api/spire-agent.sock"
   # -- RFC 8693 token-exchange endpoint the exec credential plugin trades its
   # JWT-SVID at before calling a tenant API server. Leave empty to present the
@@ -679,7 +683,7 @@ spiffe:
   # to them will start failing authentication.
   jwtExchangeEndpoint: ""
   # -- Subject the nvkeOIDCAuth.tenantRbacName RBAC bindings name in tenant clusters. Defaults to this
-  # controller's own SPIFFE ID, spiffe://<trustDomain>/nke-service/cloud-workflow-engine,
+  # controller's own SPIFFE ID, spiffe://<trustDomain>/<servicePathSegment>/<serviceAccount>,
   # which is what a tenant sees when no exchange is in play. Set it whenever
   # jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust
   # domain and rewrites the path, so give the exchanged subject in full, e.g.
@@ -690,7 +694,7 @@ spiffe:
   # controllerSubject wins.
   cweSubject: ""
   # -- Subject the nvke:capi-cluster-admin RBAC binding names for capi-manager.
-  # Defaults to spiffe://<trustDomain>/nke-service/capi-manager, which is what a
+  # Defaults to spiffe://<trustDomain>/<servicePathSegment>/capi-manager, which is what a
   # tenant sees without token exchange. Set it whenever jwtExchangeEndpoint is
   # set because the exchange may rewrite the token's sub claim.
   capiManagerSubject: ""

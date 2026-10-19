@@ -33,7 +33,7 @@ metadata:
 {{- end }}
 {{- if .Values.nvkeOIDCAuth.enabled }}
 {{- /*
-  spiffe.trustDomain builds the nke-service principals below. It must equal the
+  spiffe.trustDomain builds the principals below, under spiffe.servicePathSegment. It must equal the
   SPIRE server's trust domain (the spire chart's global.spire.trustDomain) so these
   RBAC subjects match the SPIFFE IDs the tenant apiserver actually sees; the deploy
   layer stamps both from one ${ENV_NAME}.
@@ -82,7 +82,7 @@ metadata:
 {{- /*
   Derived from the effective service account name, not a hardcoded literal:
   this is exactly what the ClusterSPIFFEID template issues
-  (spiffe://{{.TrustDomain}}/nke-service/{{.PodSpec.ServiceAccountName}}, see
+  (spiffe://{{.TrustDomain}}/<servicePathSegment>/{{.PodSpec.ServiceAccountName}}, see
   deploy/k8s/spire-nke-services-spiffe-id.yaml), so the default always
   matches the real SPIFFE ID SPIRE hands this controller's pod -- a renamed
   serviceAccount.name (or a nameOverride/fullnameOverride change that moves

@@ -69,7 +69,7 @@ const (
 	// adminSPIFFEPath is bound to cluster-admin in every tenant by the
 	// nvke:capi-cluster-admin ClusterRoleBinding the nke-rbac ConfigMap carries.
 	// GetAdminClient mints this rather than widening nvke:cwe for test setup.
-	adminSPIFFEPath     = "/nke-service/capi-manager"
+	adminSPIFFEPath     = "/nvke-service/capi-manager"
 	spireExecPluginName = "k8s-spiffe-workload-jwt-exec-auth"
 	spireAudienceEnv    = "SPIFFE_JWT_AUDIENCE"
 	spireExchangeEnv    = "SPIFFE_JWT_EXCHANGE_ENDPOINT"
@@ -515,7 +515,7 @@ func (f *TenantClientFactory) mintTenantJWTAs(
 }
 
 func exchangeSourceSPIFFEPath(spiffePath string) (string, error) {
-	service, ok := strings.CutPrefix(spiffePath, "/nke-service/")
+	service, ok := strings.CutPrefix(spiffePath, "/nvke-service/")
 	if !ok || service == "" || strings.Contains(service, "/") {
 		return "", fmt.Errorf("cannot map SPIFFE path %q to a DSX exchange source identity", spiffePath)
 	}
@@ -939,5 +939,5 @@ func discardAndClose(body io.ReadCloser) error {
 }
 
 // controllerSPIFFEPath is the SPIFFE ID path the controller presents and the
-// tenant nvke:cwe bindings name: its ServiceAccount under /nke-service/.
-func controllerSPIFFEPath() string { return "/nke-service/" + controller.ServiceAccount() }
+// tenant nvke:cwe bindings name: its ServiceAccount under /nvke-service/.
+func controllerSPIFFEPath() string { return "/nvke-service/" + controller.ServiceAccount() }

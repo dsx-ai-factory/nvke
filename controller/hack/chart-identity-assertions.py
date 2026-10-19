@@ -115,6 +115,9 @@ class Scenario:
     namespace: str
     # The teleport block of the rendered controller config.
     teleport: dict
+    # The first SPIFFE path segment of the default RBAC subjects, which must be
+    # the one the ClusterSPIFFEID issues.
+    spiffe_segment: str = "nke-service"
 
 
 # The names an install keeps by pinning. These do not change when a default does.
@@ -160,6 +163,7 @@ DEFAULT = dataclasses.replace(
         "tokenNamePrefix": "nvke-controller-",
         "resourceGroupLabelValue": "nvke",
     },
+    spiffe_segment="nvke-service",
 )
 
 SCENARIOS = (DEFAULT, LEGACY)
@@ -174,6 +178,17 @@ def render(chart: str, release: str, values_file: pathlib.Path | None = None, se
         cmd += ["--set", item]
     out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
     return [d for d in yaml.safe_load_all(out) if d]
+
+
+def spiffe_subjects(rbac_config_map: dict) -> set[str]:
+    """Return the spiffe:// subjects of the ClusterRoleBindings the nke-rbac ConfigMap carries."""
+    return {
+        s["name"]
+        for d in yaml.safe_load_all(rbac_config_map["data"]["manifest.yaml"])
+        if d and d.get("kind") == "ClusterRoleBinding"
+        for s in d.get("subjects") or []
+        if str(s.get("name", "")).startswith("spiffe://")
+    }
 
 
 def check_scenario(chart: str, sc: Scenario) -> list[str]:
@@ -218,9 +233,20 @@ def check_scenario(chart: str, sc: Scenario) -> list[str]:
         if got != sc.namespace:
             failures.append(f"{doc['kind']} {name} is in namespace {got!r}, expected {sc.namespace!r}")
 
+    # The nke-rbac ConfigMap renders only when spiffe.trustDomain is set.
+    rbac = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == "nke-rbac"]
+    if rbac:
+        subjects = spiffe_subjects(rbac[0])
+        stale = sorted(s for s in subjects if f"/{sc.spiffe_segment}/" not in s)
+        if not subjects or stale:
+            failures.append(
+                f"SPIFFE subjects {sorted(subjects)} are not all under /{sc.spiffe_segment}/; stale: {stale}. "
+                "The ClusterSPIFFEID would issue an ID the tenant bindings do not name"
+            )
+
     config_maps = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == sc.config_map]
     if not config_maps:
-        failures.append("no nke-controller-config ConfigMap")
+        failures.append(f"no {sc.config_map} ConfigMap")
         return failures
     config = yaml.safe_load(config_maps[0]["data"]["config.yaml"])
     if config.get("managementNamespace") != sc.namespace:
@@ -280,7 +306,7 @@ def check_greenfield(chart: str) -> list[str]:
     bindings = [
         d for d in inner if d and d.get("kind") == "ClusterRoleBinding" and d["metadata"]["name"] == "nvke:cwe"
     ]
-    want_subject = f"spiffe://{GREENFIELD_TRUST_DOMAIN}/nke-service/{GREENFIELD_NAME}"
+    want_subject = f"spiffe://{GREENFIELD_TRUST_DOMAIN}/{DEFAULT.spiffe_segment}/{GREENFIELD_NAME}"
     if not bindings:
         failures.append("greenfield render has no nvke:cwe ClusterRoleBinding")
     else:

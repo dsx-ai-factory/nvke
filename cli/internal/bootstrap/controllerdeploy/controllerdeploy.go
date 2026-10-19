@@ -1148,7 +1148,7 @@ func spireInstallArgs(cfg Config, chart manifest.Chart, valuesPath, clusterName,
 		"--values", valuesPath,
 		"--set-string", "global.spire.clusterName="+clusterName,
 		"--set-string", "global.spire.trustDomain="+trustDomain,
-		"--set-string", prefix+".adminIDs[0]=spiffe://"+trustDomain+"/nke-service/"+cweReleaseName,
+		"--set-string", prefix+".adminIDs[0]=spiffe://"+trustDomain+"/nvke-service/"+cweReleaseName,
 		// Both halves of the two agreements the controller depends on. See the constants.
 		"--set-string", prefix+".controllerManager.className="+spireControllerManagerClass,
 		// --set, not --set-string: the chart's schema types these as integers.

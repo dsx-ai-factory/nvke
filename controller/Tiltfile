@@ -194,7 +194,7 @@ if os.getenv("KIND_CLUSTER_NAME", "") == "" and KIND_CLUSTER_NAME_VALUE == "cwe-
 EXPECTED_K8S_CONTEXT = "kind-%s" % KIND_CLUSTER_NAME_VALUE
 SPIRE_TRUST_DOMAIN = "%s.nvke.local" % KIND_CLUSTER_NAME_VALUE
 NKE_OIDC_ISSUER_URL = "https://nke.site-controller.internal"
-SPIRE_CONTROLLER_ADMIN_PATH = "/nke-service/nke-controller"
+SPIRE_CONTROLLER_ADMIN_PATH = "/nvke-service/nke-controller"
 if DSX_IDENTITY_EXCHANGE_ENABLED:
     SPIRE_CONTROLLER_ADMIN_PATH = "/tenant/nke/service/nke-controller/bm/cwe"
 
@@ -810,7 +810,7 @@ k8s_yaml([
 _nke_service_spiffe_id_yaml = str(read_file("deploy/k8s/spire-nke-services-spiffe-id.yaml"))
 if DSX_IDENTITY_EXCHANGE_ENABLED:
     _nke_service_spiffe_id_yaml = _nke_service_spiffe_id_yaml.replace(
-        "spiffe://{{.TrustDomain}}/nke-service/{{.PodSpec.ServiceAccountName}}",
+        "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}",
         "spiffe://{{.TrustDomain}}/tenant/nke/service/{{.PodSpec.ServiceAccountName}}/bm/cwe",
     )
 k8s_yaml(blob(_nke_service_spiffe_id_yaml))
@@ -979,7 +979,7 @@ if not _on_mac and not SITE_CONTROLLER_VIP_OVERRIDE:
 k8s_resource(
     new_name="spire-nke-services-spiffe-id",
     labels=["1-infra"],
-    objects=["nke-service:clusterspiffeid"],
+    objects=["nvke-service:clusterspiffeid"],
     resource_deps=["spire-server"],
     pod_readiness="ignore",
 )

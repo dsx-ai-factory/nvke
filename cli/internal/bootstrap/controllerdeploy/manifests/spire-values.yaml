@@ -56,9 +56,9 @@ spire-server:
                 operator: NotIn
                 values:
                   - nke-controller
-        nke-service:
+        nvke-service:
           enabled: true
-          spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/nke-service/{{ .PodSpec.ServiceAccountName }}"
+          spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/nvke-service/{{ .PodSpec.ServiceAccountName }}"
           namespaceSelector:
             matchExpressions:
               - key: kubernetes.io/metadata.name
