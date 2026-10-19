@@ -45,9 +45,12 @@ func RetireLostEtcdRotationNode(ctx workflow.Context, input RetireLostEtcdRotati
 	}
 	// The usual teardown ID lets the control-plane reconciler restart a failed run
 	// once the rotation completes; a repeat of this workflow restarts it earlier.
+	// A completed run of that ID may be label-driven remediation, which returns
+	// without tearing down a control-plane node, so any closed run is replaced.
+	// An open run still fails the start.
 	childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
 		WorkflowID:            constants.TeardownNodeWorkflowPrefix + input.NodeID.String(),
-		WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
+		WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 	})
 	if err := workflow.ExecuteChildWorkflow(childCtx, TeardownNode, TeardownNodeInput{
 		NodeID: input.NodeID, AllowCPNode: true, ForceUnreachable: true, Reason: retiredEtcdRotationNodeReason,

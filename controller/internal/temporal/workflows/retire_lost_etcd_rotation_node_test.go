@@ -12,6 +12,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
@@ -74,4 +75,37 @@ func TestRetireLostEtcdRotationNodeRequiresIdentifiers(t *testing.T) {
 	env, _ := setupEnableEtcdEncryptionWorkflowEnv(t)
 	env.ExecuteWorkflow(RetireLostEtcdRotationNode, RetireLostEtcdRotationNodeInput{ClusterID: uuid.New()})
 	require.ErrorContains(t, env.GetWorkflowError(), "required")
+}
+
+// TestRetireLostEtcdRotationNodeReplacesCompletedTeardownRun starts the teardown
+// child after a completed run of the same ID, as label-driven remediation leaves
+// when it skips a control-plane node.
+func TestRetireLostEtcdRotationNodeReplacesCompletedTeardownRun(t *testing.T) {
+	input := RetireLostEtcdRotationNodeInput{ClusterID: uuid.New(), RotationWorkflowID: "owner", NodeID: uuid.New()}
+	env, a := setupEnableEtcdEncryptionWorkflowEnv(t)
+	env.RegisterWorkflow(TeardownNode)
+	env.RegisterWorkflow(RetireLostEtcdRotationNode)
+	env.OnActivity(a.RetireLostEtcdRotationNode, mock.Anything, mock.Anything).
+		Return(activities.RetireLostEtcdRotationNodeResult{TeardownRequired: true}, nil).Once()
+	var teardown []TeardownNodeInput
+	env.OnWorkflow(TeardownNode, mock.Anything, mock.Anything).Return(func(_ workflow.Context, in TeardownNodeInput) error {
+		teardown = append(teardown, in)
+		return nil
+	}).Twice()
+	remediationThenRetire := func(ctx workflow.Context) error {
+		childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+			WorkflowID: constants.TeardownNodeWorkflowPrefix + input.NodeID.String(),
+		})
+		if err := workflow.ExecuteChildWorkflow(childCtx, TeardownNode, TeardownNodeInput{NodeID: input.NodeID}).Get(ctx, nil); err != nil {
+			return err
+		}
+		return workflow.ExecuteChildWorkflow(ctx, RetireLostEtcdRotationNode, input).Get(ctx, nil)
+	}
+
+	env.ExecuteWorkflow(remediationThenRetire)
+
+	require.NoError(t, env.GetWorkflowError())
+	require.Len(t, teardown, 2)
+	require.True(t, teardown[1].AllowCPNode)
+	env.AssertExpectations(t)
 }
