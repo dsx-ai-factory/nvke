@@ -188,22 +188,22 @@ func TestControllerClientCABundleNames(t *testing.T) {
 		{name: "unset", want: ""},
 		{name: "nvke flag", args: []string{"--nvke-controller-client-ca-bundle=/nvke.crt"}, want: "/nvke.crt"},
 		{name: "nvke env", env: map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"}, want: "/nvke.crt"},
-		{name: "earlier flag", args: []string{"--controller-client-ca-bundle=/nke.crt"}, want: "/nke.crt"},
-		{name: "earlier env", env: map[string]string{"NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nke.crt"}, want: "/nke.crt"},
+		{name: "earlier flag", args: []string{"--controller-client-ca-bundle=/earlier.crt"}, want: "/earlier.crt"},
+		{name: "earlier env", env: map[string]string{"NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/earlier.crt"}, want: "/earlier.crt"},
 		{
 			name: "both flags: nvke wins",
-			args: []string{"--controller-client-ca-bundle=/nke.crt", "--nvke-controller-client-ca-bundle=/nvke.crt"},
+			args: []string{"--controller-client-ca-bundle=/earlier.crt", "--nvke-controller-client-ca-bundle=/nvke.crt"},
 			want: "/nvke.crt",
 		},
 		{
 			name: "both env: nvke wins",
-			env:  map[string]string{"NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nke.crt", "NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"},
+			env:  map[string]string{"NKE_CONTROLLER_CLIENT_CA_BUNDLE": "/earlier.crt", "NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"},
 			want: "/nvke.crt",
 		},
 		{
 			name: "nvke env and earlier flag: nvke wins",
 			env:  map[string]string{"NVKE_CONTROLLER_CLIENT_CA_BUNDLE": "/nvke.crt"},
-			args: []string{"--controller-client-ca-bundle=/nke.crt"},
+			args: []string{"--controller-client-ca-bundle=/earlier.crt"},
 			want: "/nvke.crt",
 		},
 	}
