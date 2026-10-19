@@ -87,9 +87,10 @@ Explanation and reference pages follow the model page.
 - No metaphors where a literal word works.
 - Use at most one em dash in a paragraph, and none in headings.
 - Number of list items matches the content, not a rhythm of three.
-- Spell out an acronym on its first use on each page, with the acronym in
-  parentheses: "virtual IP address (VIP)". Well-known terms (API, CLI, IP,
-  CPU, GPU, TPM, YAML) need no expansion.
+- Spell out NVIDIA, product and project-specific acronyms on their first use
+  on each page, with the acronym in parentheses: "NVIDIA Infra Controller
+  (NICo)". Industry-standard terms (API, CLI, IP, VIP, CPU, GPU, TPM, YAML,
+  mTLS, KVM, QEMU, LVM, UEFI) need no expansion.
 - The page is not the actor. Write "This page describes how to..." or address
   the reader, not "This page turns...".
 - No "we" except in the preview statement on the model page.
