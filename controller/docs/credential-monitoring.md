@@ -195,7 +195,9 @@ locks or start competing maintenance from an alert alone.
 ## Offline verification and live acceptance
 
 `make chart-check`, which the merge gate runs, includes the credential rule
-fixtures and a schema-validated render with alerts enabled. The check installs
+fixtures, a schema-validated render with alerts enabled, and renders asserting
+that no PrometheusRule is emitted by default or with
+`global.monitoring.enabled=false`. The check installs
 Prometheus `promtool` at the version in `make/tool-versions.mk` into the ignored
 `.local/` directory, verifying the release archive against a committed SHA-256.
 The first run needs network access to GitHub releases; subsequent runs reuse the
