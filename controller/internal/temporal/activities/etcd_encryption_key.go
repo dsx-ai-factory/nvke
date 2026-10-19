@@ -121,11 +121,25 @@ func (a *Activities) ensurePendingKubeAPIEncryptionRotationKey(ctx context.Conte
 	return key, nil
 }
 
-// finalizePendingKubeAPIEncryptionKey promotes the pending key to active. An
-// enablement rollout distributes an unnamed pending key under the legacy name,
-// so enablement records that name without the identity RPC, which agents
-// admitted by enablement may lack. Rotation discovers an unnamed pending name.
-func (a *Activities) finalizePendingKubeAPIEncryptionKey(ctx context.Context, clusterID uuid.UUID, enablement bool) error {
+// pendingKeyProtocol identifies the workflow that staged the pending key, which
+// determines how finalization records its storage name.
+type pendingKeyProtocol int
+
+const (
+	// pendingKeyEnablement distributes an unnamed pending key under the legacy name.
+	pendingKeyEnablement pendingKeyProtocol = iota
+	// pendingKeyLegacyRotation is a rotation history recorded before ownership.
+	pendingKeyLegacyRotation
+	// pendingKeyOwnedRotation always stages a named pending key.
+	pendingKeyOwnedRotation
+)
+
+// finalizePendingKubeAPIEncryptionKey promotes the pending key to active. A
+// recorded pending name is promoted with it. Without one, enablement records
+// the legacy name, and a legacy rotation keeps its original protocol: its agents
+// auto-named the key and may lack the identity RPC, so it records no name and
+// the next init, join, or rotation discovers it. An owned rotation discovers it.
+func (a *Activities) finalizePendingKubeAPIEncryptionKey(ctx context.Context, clusterID uuid.UUID, protocol pendingKeyProtocol) error {
 	secret, err := a.getKubeAPIEncryptionKeySecret(ctx, clusterID)
 	if err != nil {
 		return err
@@ -138,13 +152,23 @@ func (a *Activities) finalizePendingKubeAPIEncryptionKey(ctx context.Context, cl
 		return nil
 	}
 	name := string(secret.Data[constants.EtcdEncryptionKeyFieldPendingName])
-	if name == "" && enablement {
+	switch {
+	case name != "":
+	case protocol == pendingKeyEnablement:
 		name = constants.LegacyAPIEncryptionKeyName
-	} else if name, err = a.adoptEncryptionKeyName(ctx, clusterID, secret, constants.EtcdEncryptionKeyFieldPending, constants.EtcdEncryptionKeyFieldPendingName); err != nil {
-		return err
+	case protocol == pendingKeyLegacyRotation:
+	default:
+		if name, err = a.adoptEncryptionKeyName(ctx, clusterID, secret, constants.EtcdEncryptionKeyFieldPending, constants.EtcdEncryptionKeyFieldPendingName); err != nil {
+			return err
+		}
 	}
 	secret.Data[constants.EtcdEncryptionKeyFieldActive] = pending
-	secret.Data[constants.EtcdEncryptionKeyFieldActiveName] = []byte(name)
+	if name == "" {
+		// The previous active name belongs to the replaced key.
+		delete(secret.Data, constants.EtcdEncryptionKeyFieldActiveName)
+	} else {
+		secret.Data[constants.EtcdEncryptionKeyFieldActiveName] = []byte(name)
+	}
 	secret.Data[constants.EtcdEncryptionKeyFieldActiveSince] = []byte(strconv.FormatInt(time.Now().Unix(), 10))
 	delete(secret.Data, constants.EtcdEncryptionKeyFieldPending)
 	delete(secret.Data, constants.EtcdEncryptionKeyFieldPendingName)

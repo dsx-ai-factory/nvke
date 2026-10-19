@@ -149,7 +149,11 @@ func (a *Activities) FinalizePendingEtcdEncryptionKey(ctx context.Context, input
 	if err != nil {
 		return fmt.Errorf("failed to get cluster %s: %w", input.ClusterID, err)
 	}
-	return a.finalizePendingKubeAPIEncryptionKey(ctx, input.ClusterID, !cluster.EtcdEncrypted)
+	protocol := pendingKeyEnablement
+	if cluster.EtcdEncrypted {
+		protocol = pendingKeyLegacyRotation
+	}
+	return a.finalizePendingKubeAPIEncryptionKey(ctx, input.ClusterID, protocol)
 }
 
 type EtcdEncryptionRewriteInput struct {
