@@ -18,13 +18,12 @@ NVKE binds Kubernetes roles only to the management plane's own identities. A fle
 
 ## Before you begin
 
-- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md). You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it. Set `KUBECONFIG` for `kubectl`:
+- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md), and you run the install and `kubectl` commands in a shell that has sourced the workspace's `env.sh`. It exports the `NVKECTL_*` credentials and the `NVKE_*` input paths the install reads. Set `KUBECONFIG` for `kubectl` from the same workspace:
 
   ```bash
-  export KUBECONFIG="$PWD/../<CLUSTER_NAME>.kubeconfig"
+  export KUBECONFIG="$NVKE_KUBECONFIG"
   ```
 
-- The shell you run the install from has the `NVKECTL_*` variables from [Run NVKE end to end on one machine](../get-started/local-site.md) exported, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
 - For each fleet-wide provider you have its issuer URL, the audience its tokens carry, the claims that hold the username and groups, and the certificate authority (CA) certificates that sign its HTTPS certificate. [Collect the identity provider values](../operate/api-authentication.md#collect-the-identity-provider-values) shows how to read the first three from the IdP's discovery document and a token.
 - The control-plane nodes of your workload clusters reach each provider's discovery document, and the `jwks_uri` it names, over HTTPS. NVKE does not check this.
 - The workload clusters that need fleet-wide providers run Kubernetes 1.34 or later. [Supported platforms and versions](../overview/supported-platforms.md) lists the version this release supports.

@@ -41,14 +41,12 @@ What the node needs, all present on the reference instance type:
   sitespec.yaml --stack-config stack-config.json --kubeconfig site.kubeconfig`
   reports what is still missing; `deploy/nvke-deploy.sh install --deploy-path
   deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json
-  --kubeconfig site.kubeconfig` renders this deploy path for the site from
-  the two files and applies it: the site spec gives the site name, VIP and
-  trust domain, the stack config (`deploy/examples/stack-config.json`,
-  filled in) the NICo API and the optional images and mirror. The render
-  lives in a private scratch directory and is removed when the script
-  exits, so no rendered credential is left behind. Without a release, the
-  stack config sets `images.profiles`: this deploy path enables the
-  profiles content image without naming it
+  --kubeconfig site.kubeconfig` renders
+  this deploy path for the site and applies it: the site spec gives the site
+  name, VIP and trust domain, and the install supplies the NICo API and the
+  optional images and mirror. The render lives in a private scratch directory
+  and is removed when the script exits, so no rendered credential is left
+  behind
 - a checkout laid out so that `deploy/` and `controller/` are siblings --
   `controller/release.yaml` reaches its chart as
   `../../controller/deploy/charts/controller`
@@ -179,8 +177,8 @@ rendered path, after `site-values.yaml`.
 | discovery URL | `https://<VIP>:30443/.well-known/openid-configuration` | the same shape |
 | Postgres / Temporal password | `NVKECTL_DATABASE_PASSWORD`, written into the `nvke-database` Secret of the postgres, temporal and nke-controller namespaces by the `site-credentials` item the render adds; every chart reads it from there and no values file carries it | generated per run |
 | SPIRE upstream CA | `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`, written into the `spire-upstream-ca` Secret in spire-server by the same item, when `spire.upstreamCA` is set | self-signed |
-| controller image | the release, or the stack config's `images.controller` | built per run |
-| profiles image | the release, or the stack config's `images.profiles` | built per run |
+| controller image | the release, or the install's image override | built per run |
+| profiles image | the release, or the install's image override | built per run |
 | telemetry backend | `--values-for nktp=<file>`, else the chart's bundled development backend | not installed |
 | telemetry `k8s.cluster.name` | `clusterName`, through the `nvke-base-config` template | not installed |
 

@@ -117,7 +117,7 @@ nvkectl validate sitespec -f sitespec.yaml --bootstrap-only --disable-mtls   # a
 nvkectl bootstrap site -f sitespec.yaml --dry-run
 ```
 
-The controller stack install reads the site spec too, for the site name, the control-plane VIP and the SPIRE trust domain, and takes everything only the stack needs from a file of its own, the stack config; [deploy/README.md](../../deploy/README.md) describes it. The install reads the NICo token, the node login and the PostgreSQL password from `NVKECTL_NICO_TOKEN`, `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` and `NVKECTL_DATABASE_PASSWORD`, so neither file holds a credential.
+The controller stack install reads the site spec too, for the site name, the control-plane VIP and the SPIRE trust domain, and takes everything only the stack needs from its own inputs. The install reads the NICo token, the node login and the PostgreSQL password from `NVKECTL_NICO_TOKEN`, `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` and `NVKECTL_DATABASE_PASSWORD`, so neither file holds a credential.
 
 ## What's Next After Bootstrap
 

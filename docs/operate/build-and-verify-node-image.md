@@ -12,7 +12,6 @@ The build produces one QCOW2 disk image: Ubuntu Server with the NVIDIA-tuned ker
 
 ## Before you begin
 
-- You have read [Plan your installation](plan-installation.md).
 - You have a Linux build host of the image's architecture with a writable `/dev/kvm`. A build takes about 15 minutes with KVM and hours under TCG emulation, which the build uses when KVM is unavailable. The build VM uses 4 vCPUs, 8 GiB of memory and a 12 GiB disk by default.
 - You have the build tools: Packer 1.15.4, Python 3.10 or later, `curl`, `ssh-keygen`, QEMU (`qemu-system-x86_64` or `qemu-system-aarch64`, and `qemu-img`), `cloud-localds`, `swtpm`, UEFI firmware (OVMF for amd64, AAVMF for arm64), `xorriso`, `p7zip-full` and `dpkg-dev`.
 - You have Go, at the version in `go.work`, and a C compiler. The build compiles `nvke-agent` against the host's glibc, so the host must run the image's Ubuntu release or an older one. On a newer Ubuntu the build compiles the packages in a NixOS VM instead; on another Linux distribution, set `NKE_PACKAGE_BUILDER=nix` to do the same. The VM needs Nix with `nix-command` and `flakes` enabled; see [Nix setup](https://github.com/dsx-ai-factory/nvke/blob/main/os-image/nix/README.md).

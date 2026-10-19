@@ -1,8 +1,8 @@
 # Site and Tenant Cluster Flow
 
-What `nvkectl` does today, in the order an operator uses it, with the two
-steps that are not CLI commands marked: getting a release from NVKR and
-installing the controller stack with the deploy script.
+What `nvkectl` does today, in the order an operator uses it, with the one
+step that is not a CLI command marked: installing the controller stack with
+the deploy script.
 The [command reference](https://github.com/dsx-ai-factory/nvke/blob/main/cli/docs/reference/README.md)
 lists every command and flag; it is generated from the CLI, so it says the same
 as `nvkectl <command> --help`. The
@@ -16,9 +16,7 @@ the reference it points at.
 | `nvkectl generate sitespec <name> --nodes hosts.csv` | Writes a site spec for `bootstrap site` from a node CSV. `--set path=value` fills in what the CSV does not carry. | Available |
 | `nvkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running the NVKE controller, has the controller create the site cluster on the spec's hosts through `nvke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down on success. `--dry-run` validates the spec only. | Available |
 | `nvkectl validate sitespec -f sitespec.yaml` | Checks the site spec the way `bootstrap site` reads it and prints `valid`. | Available |
-| Write the stack config, `stack-config.json` | The controller stack install reads it: the NICo API, and under `images` the profile content image (required without a release) and, optionally, the controller image. Copy `deploy/examples/stack-config.json` and fill in every `REPLACE_*` value; the install refuses a placeholder. The tokens and passwords come from `NVKECTL_*` variables. Not read by `bootstrap site`. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
-| `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts come from this checkout, the profile content image from the stack config's `images.profiles`, and the controller image from `images.controller` or, when that is empty, the deploy path's pin. | Not in the CLI |
 | `clusterctl init`, `deploy/nvke-deploy-local.sh install` | The management plane install, a short list of commands run in order: `clusterctl init` installs Cluster API; the wrapper installs the lab StorageClass, renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller) and applies it, and gives the Cluster API controllers SPIRE exec-auth. See [Run NVKE end to end on one machine](../../docs/get-started/local-site.md). | Not in the CLI |
 | `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at an NVKE management plane. `use-site` switches between entries, `view` prints the config. | Available |
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the management plane can use, with their state. Alpha. | Available |
@@ -40,29 +38,7 @@ Global flags: `--site <name>` overrides the active site for one invocation,
 
 ## Example
 
-### 1. Get a release
-
-NVKR builds and publishes NVKE's artifacts. Verify a published release under
-your policy, then export its description; the install takes that file as
-`--release` and pulls every chart and image it carries by digest. The
-release also carries `nvkectl` itself; [Bootstrap the management cluster](../../docs/operate/bootstrap-management-cluster.md#install-nvkectl)
-shows how to take it from there.
-
-```bash
-nvkr release verify --reference <repo@digest> --lane pipeline-attested --scope artifact-publication \
-  --identity <signer identity regexp> --issuer <OIDC issuer> --cosign <cosign> --cosign-digest <sha256>
-nvkr release export --reference <repo@digest> > release.json
-```
-
-`export` describes the release and verifies nothing, so run it only on a
-reference `verify` accepted. [Get NVKE artifacts from NVKR and write release manifests](../../docs/operate/build-node-images.md)
-explains what each command checks and writes. The release
-is optional: without it the install takes the charts from this checkout and
-their public repositories, the stack config names the profile content image
-in `images.profiles`, and `images.controller` may override the deploy path's
-pinned controller image.
-
-### 2. Describe the hosts and generate the site spec
+### 1. Describe the hosts and generate the site spec
 
 A CSV with a header names the hosts. `name` and `ip` are required;
 `tpm_ek_thumbprint` is optional per row and turns on TPM attestation for that
@@ -87,7 +63,7 @@ nvkectl generate sitespec my-tier0-site --nodes hosts.csv \
 The file format is described in [sitespec.md](sitespec.md); a complete example
 is in [examples/sitespec.yaml](https://github.com/dsx-ai-factory/nvke/blob/main/cli/examples/sitespec.yaml).
 
-### 3. Bootstrap the site cluster
+### 2. Bootstrap the site cluster
 
 ```bash
 # Validate only: load, check and print the spec, touch nothing
@@ -102,30 +78,16 @@ The command needs nerdctl and containerd on the host, plus `kind`, `helm`,
 `nvke-agent` ports. It leaves a plain Kubernetes cluster and
 `my-tier0-site.kubeconfig`.
 
-### 4. Write the stack config
+### 3. Install the controller stack
 
-The install takes what only the stack needs from a file of its own, beside
-the site spec, and the credentials from the environment:
-
-```bash
-cp deploy/examples/stack-config.json stack-config.json
-read -rs NVKECTL_NICO_TOKEN && export NVKECTL_NICO_TOKEN
-export NVKECTL_NODE_USER=nvke
-read -rs NVKECTL_NODE_PASSWORD && export NVKECTL_NODE_PASSWORD
-read -rs NVKECTL_DATABASE_PASSWORD && export NVKECTL_DATABASE_PASSWORD
-```
-
-Fill in every `REPLACE_*` value: the NICo API endpoint, organization ID and
-API name. Without a release, name the profile content image in
-`images.profiles`. The file holds no secret, so it can sit next to the site
-spec. [deploy/README.md](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/README.md) lists every key.
-
-### 5. Install the controller stack
+Run these from a shell that has sourced the workspace's `env.sh`, as
+[Run NVKE end to end on one machine](../../docs/get-started/local-site.md)
+describes. It exports `NVKE_KUBECONFIG` and the install's other inputs.
 
 ```bash
-clusterctl init --kubeconfig local-site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
+clusterctl init --kubeconfig "$NVKE_KUBECONFIG" --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
 "$NVKE_REPO"/deploy/nvke-deploy-local.sh install
-kubectl --kubeconfig local-site.kubeconfig apply -f nvke-api-clients.yaml
+kubectl --kubeconfig "$NVKE_KUBECONFIG" apply -f nvke-api-clients.yaml
 ```
 
 A list of commands, in this order: `clusterctl init` installs Cluster API at
@@ -134,7 +96,7 @@ nodes' architecture from the cluster, renders and applies the `deploy/nico`
 deploy path item by item, and patches the Cluster API controllers for SPIRE;
 the NetworkPolicy admits your client
 networks to the controller API, which the chart otherwise answers from
-in-cluster pods only. Then point the CLI at the site (step 6) and publish a `MachineImage`, `ClusterRelease` and `NodePoolRelease`
+in-cluster pods only. Then point the CLI at the site (step 4) and publish a `MachineImage`, `ClusterRelease` and `NodePoolRelease`
 with `nvkectl create`, as [Your first cluster](https://github.com/dsx-ai-factory/nvke/blob/main/docs/first-cluster.md)
 shows, before the first tenant cluster.
 [Run NVKE end to end on one machine](../../docs/get-started/local-site.md)
@@ -147,7 +109,7 @@ item directory holds its chart pin, values and overlay, or its manifests;
 GitOps; [Deploy Path](https://github.com/dsx-ai-factory/nvke/blob/main/docs/site-bootstrap/deploy-repository.md)
 describes the format.
 
-### 6. Point the CLI at the management plane
+### 4. Point the CLI at the management plane
 
 On the machine the CLI lives on:
 
@@ -172,7 +134,7 @@ The kubeconfig identity needs `create` on `serviceaccounts/token` for
 `nke-client`. See
 [Configuring NVKE API Authentication](../../controller/docs/configuring-api-authentication.md).
 
-### 7. Check the infrastructure providers
+### 5. Check the infrastructure providers
 
 A tenant cluster is created on an infrastructure provider: a controller running
 on the site cluster that holds credentials for its backend and creates machines
@@ -203,7 +165,7 @@ whether Helm, Argo CD, or a person applied the provider — the same command
 reports it either way. On a site managed by Argo CD, that makes `get providers`
 the check that what Argo synced is something a provider can actually use.
 
-### 8. Create a tenant cluster
+### 6. Create a tenant cluster
 
 ```bash
 nvkectl create cluster -f examples/capd-cluster.yaml
@@ -216,7 +178,7 @@ The spec is a `CreateClusterRequest`; the schema is served at `/api/docs` on
 the management plane. [examples/capd-cluster.yaml](https://github.com/dsx-ai-factory/nvke/blob/main/cli/examples/capd-cluster.yaml)
 is a starting point.
 
-### 9. Watch it come up
+### 7. Watch it come up
 
 ```bash
 nvkectl get clusters
@@ -224,7 +186,7 @@ nvkectl get clusters <cluster-name>
 nvkectl get clusters <cluster-name> -o yaml
 ```
 
-### 10. Get the tenant cluster's kubeconfig
+### 8. Get the tenant cluster's kubeconfig
 
 ```bash
 nvkectl get kubeconfig <cluster-name> --output-file ./tenant.kubeconfig
@@ -234,7 +196,7 @@ Without `--output-file`, the kubeconfig is written to stdout. This reads the
 site cluster directly, the same as `get providers`, so it needs the site
 kubeconfig from step 6.
 
-### 11. Patch the tenant cluster
+### 9. Patch the tenant cluster
 
 ```bash
 # Bump the Kubernetes version
@@ -247,7 +209,7 @@ nvkectl patch cluster my-cluster --patch-file patch.yaml
 Only the fields in the patch document are changed. `nvkectl patch cluster
 --help` covers `--patch`, `--patch-file`, and field clearing in full.
 
-### 12. Add a node pool
+### 10. Add a node pool
 
 ```bash
 nvkectl create nodepool -f pool.yaml
@@ -269,7 +231,7 @@ through the cluster's `controlPlaneConfig`.
 [examples/nico-mock-nodepool.yaml](https://github.com/dsx-ai-factory/nvke/blob/main/cli/examples/nico-mock-nodepool.yaml) is a
 starting point. Provisioning is asynchronous, the same as cluster creation.
 
-### 13. Scale a node pool
+### 11. Scale a node pool
 
 ```bash
 nvkectl patch nodepool <nodepool-name> --cluster <cluster-name> --patch 'desiredNodeCount: 8'
@@ -291,7 +253,7 @@ only pending nodes that provisioning has not started; running nodes stay until y
 delete them.
 
 
-### 14. Delete a node pool
+### 12. Delete a node pool
 
 ```bash
 nvkectl delete nodepool <nodepool-name> --cluster <cluster-name>
@@ -304,7 +266,7 @@ on it. On a management plane with the control-plane controller off, deleting a
 cluster's last joined control-plane node pool is rejected with the NVKE controller's own
 message — delete the cluster instead.
 
-### 15. Delete the tenant cluster
+### 13. Delete the tenant cluster
 
 ```bash
 nvkectl delete cluster <cluster-name>

@@ -69,8 +69,8 @@ NVKR's [node image Definition](https://github.com/dsx-ai-factory/nvkr/blob/main/
 | Container runtime on the bootstrap host | Rootful `nerdctl` with containerd | No version is checked. Docker is not supported. |
 | `kind` | v0.32.0 | Pinned for continuous integration (CI) and the local quickstart. The bootstrap does not check the version. |
 | `kubectl` | v1.36.0 | Pinned for CI. The bootstrap does not check the version. |
-| `clusterctl` | v1.13.6 | Pinned. Match the Cluster API version above. The install reports a Cluster API of another version. |
-| Helm | v4.2.4 | Pinned. The install and the local quickstart need Helm 4; Helm 3 cannot install the charts. The install warns on another version. |
+| `clusterctl` | v1.13.6 | Pinned. Match the Cluster API version above. `deploy/check-site.sh` reports a Cluster API of another version. |
+| Helm | v4.2.4 | Pinned. The install and the local quickstart need Helm 4; Helm 3 cannot install the charts. `deploy/check-site.sh` warns on another version. |
 | Go, to build `nvkectl` and the NVKE images | 1.27.2 or later | Range. An older Go downloads 1.27.2 unless `GOTOOLCHAIN=local` is set. Also needs GNU Make. |
 | Go, to build `nvkr` (NVKR) | 1.27.2 | Pinned in NVKR's `.go-version`. |
 | `nvkectl` | Linux and macOS, amd64 and arm64 | `nvkectl bootstrap site` runs only on a Linux bootstrap host. |

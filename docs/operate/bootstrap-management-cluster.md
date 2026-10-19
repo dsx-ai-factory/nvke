@@ -4,7 +4,6 @@ This page describes how to turn your prepared nodes into the management cluster,
 
 ## Before you begin
 
-- You have read [Plan your installation](plan-installation.md).
 - Your nodes are prepared as described in [Prepare nodes](prepare-nodes.md): each has `nvke-agent` enabled, has the Kubernetes packages installed, and has `spire-agent` configured with your SPIFFE trust domain and the SPIRE address of the bootstrap host. `nvke-agent` starts once the bootstrap's SPIRE server attests the node.
 - You have an odd number of nodes, such as one, three or five, and you know each node's name, IP address and TPM endorsement-key (EK) thumbprint.
 - You have an IPv4 virtual IP address (VIP) for the Kubernetes API, routed to the nodes over BGP. A single-node cluster can omit it and use its node's IP.

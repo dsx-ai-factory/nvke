@@ -200,17 +200,11 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 
 The install stops at the component that failed. Fix the cause and run the same command again, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
 
-### The stack config is not ready
-
-- **Symptom:** The install stops with `stack config <FILE>:` followed by one line per problem, such as `nico.endpoint: still a REPLACE_* placeholder; fill it in` or `environment: NVKECTL_NICO_TOKEN is not set`.
-- **Cause:** A value in the stack config is still a `REPLACE_*` placeholder, a required key is empty, the file carries a key it must not, or one of the `NVKECTL_*` variables is not exported in the shell you run from.
-- **Fix:** Edit the key or export the variable as described in [Run NVKE end to end on one machine](../get-started/local-site.md), then run the check again until the stack config passes.
-
 ### The install refuses the release
 
 - **Symptom:** The install stops before it changes the cluster with `<ITEM>: <ROLE> <ARTIFACT> is not in the release`, for example for `controller-profiles` or `capnico-controller`.
 - **Cause:** The release description does not carry an artifact that the deploy path names, for the management nodes' CPU architecture.
-- **Fix:** Use a release that carries the artifact, or install without `--release` and name the images in the stack config's `images`, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
+- **Fix:** Use a release that carries the artifact for the management nodes' CPU architecture, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
 
 ### A volume claim stays Pending
 
@@ -221,7 +215,7 @@ The install stops at the component that failed. Fix the cause and run the same c
 ### An image cannot be pulled
 
 - **Symptom:** A component times out, and its pod is in `ImagePullBackOff`.
-- **Cause:** The nodes cannot reach or authenticate to the registry that the release or the stack config's `images` names.
+- **Cause:** The nodes cannot reach or authenticate to the registry the install's image references name.
 - **Fix:** Read the registry's error with `kubectl describe pod`, make the registry reachable from the nodes, and run the install again.
 
 ### spire-server restarts with checksums did not match

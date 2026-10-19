@@ -53,7 +53,7 @@ before installing it. That needs egress to `open-telemetry.github.io`,
 - **Allow that egress,** or
 - **Build the dependencies ahead of time** with `make nktp-chart-deps` in the
   checkout the path installs from, or
-- **Install from a release.** `nvke-deploy-local.sh install --release …` puts the packaged
+- **Install from a release.** `"$NVKE_REPO"/deploy/nvke-deploy-local.sh install --release …` puts the packaged
   nktp chart the release carries under `charts/`, and `helm dependency build`
   is not run for an archive.
 

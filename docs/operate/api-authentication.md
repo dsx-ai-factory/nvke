@@ -17,14 +17,13 @@ Authentication has three modes. Off is the default.
 ## Before you begin
 
 - You have completed [Run NVKE end to end on one machine](../get-started/local-site.md). You can do this before or after [Configure an infrastructure provider: NICo](provider-nico.md).
-- You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it, as in [Run NVKE end to end on one machine](../get-started/local-site.md). Set `KUBECONFIG` for `kubectl`:
+- You run the install and `kubectl` commands in a shell that has sourced the workspace's `env.sh`, as [Run NVKE end to end on one machine](../get-started/local-site.md) describes. It exports the `NVKECTL_*` credentials and the `NVKE_*` input paths the install reads. Set `KUBECONFIG` for `kubectl` from the same workspace:
 
   ```bash
-  export KUBECONFIG="$PWD/../<CLUSTER_NAME>.kubeconfig"
+  export KUBECONFIG="$NVKE_KUBECONFIG"
   ```
 
   The install created the Helm release `nke-controller` and the Deployment `nke-controller`, both in the `nke-controller` namespace.
-- The shell you run the install from has the `NVKECTL_*` variables from [Run NVKE end to end on one machine](../get-started/local-site.md) exported, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
 - Your IdP publishes an OIDC discovery document over HTTPS, and the management cluster can reach its signing-key endpoint.
 - Your IdP has a group for the people and automation allowed to call the NVKE API, and puts it in a token claim named `groups`, a list of strings. NVKE reads group membership only from that claim.
 - Your IdP has an OIDC client for `nvkectl` that needs no client secret.
@@ -121,7 +120,7 @@ Authentication has three modes. Off is the default.
      --values-for controller=../auth-values.yaml
    ```
 
-   The wrapper reads the site spec, the stack config and the kubeconfig from `NVKE_SITESPEC`, `NVKE_STACK_CONFIG` and `NVKE_KUBECONFIG`, which `env.sh` exports, so the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart refuses to render if `config` is set without `create`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
+   The wrapper reads its inputs from the `NVKE_*` variables that `env.sh` exports, so the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart refuses to render if `config` is set without `create`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
 
 4. Wait for the new pods and check the startup log.
 

@@ -22,7 +22,7 @@ To offer managed Kubernetes as a service an AI factory must deliver cluster prov
 
 | You are | You use NVKE to | Start with |
 |---|---|---|
-| **An AI factory operator**: the Kubernetes service team at an AI factory that provides NVIDIA GPUs to customers | Build your artifacts with NVKR, install and run NVKE, and create and operate clusters for your customers. Most of this documentation is written for you. | [Plan your installation](../operate/plan-installation.md) |
+| **An AI factory operator**: the Kubernetes service team at an AI factory that provides NVIDIA GPUs to customers | Build your artifacts with NVKR, install and run NVKE, and create and operate clusters for your customers. Most of this documentation is written for you. | [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md) |
 | **A customer** of an AI factory | Receive a Kubernetes API endpoint and node pools, and run AI workloads on them. Your operator creates and manages the cluster for you. | [Access a workload cluster](../workload-clusters/access.md) |
 | **An evaluator or contributor** | Try NVKE on one Linux machine with at least 6 CPUs and 12 GiB of memory, against a simulated infrastructure provider, or build and change NVKE and NVKR. | [Quickstart: evaluate locally with mock-NICo](../get-started/quickstart-local.md) |
 
@@ -77,7 +77,7 @@ NVKE is software that you install and operate. NVIDIA provides the software; the
 | The operator | The infrastructure, the management cluster, building, verifying and publishing artifacts with NVKR, installing the accelerated runtime, cluster availability, and the access model customers receive. |
 | The customer | Workloads, their images, namespaces and application secrets, and RBAC for their own users within the operator's limits. |
 
-[Plan your installation](../operate/plan-installation.md) lists the full requirements, and [Supported platforms and versions](supported-platforms.md) lists what each release supports.
+[Supported platforms and versions](supported-platforms.md) lists what each release supports.
 
 ## What NVKE does not do
 
@@ -102,7 +102,6 @@ NVKE is the Kubernetes layer of DSX OS, NVIDIA's software stack for AI factories
 
 - **Try NVKE without hardware:** [Quickstart: evaluate locally with mock-NICo](../get-started/quickstart-local.md).
 - **Build your first artifacts:** [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md).
-- **Install on your hardware:** [Plan your installation](../operate/plan-installation.md).
 - **Check what preview supports:** [Preview status and known limitations](preview-status.md) and [Supported platforms and versions](supported-platforms.md).
 
 ## Trademarks

@@ -30,8 +30,6 @@ navigation:
 
       - section: Install NVKE
         contents:
-          - page: Plan your installation
-            path: operate/plan-installation.md
           - page: Get NVKE artifacts from NVKR and write release manifests
             path: operate/build-node-images.md
           - page: Build and verify your own node image

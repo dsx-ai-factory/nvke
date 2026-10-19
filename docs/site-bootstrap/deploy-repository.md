@@ -66,12 +66,12 @@ The script reads the item list and an item's `release.yaml` through `deploy/lib/
 
 A template item holds `.yaml.tmpl` files, and may hold plain `.yaml` files beside them. Each `.yaml.tmpl` is rendered with Go's [`text/template`](https://pkg.go.dev/text/template), the plain files are copied, and the result is applied as a manifest item. This is how the deploy path creates the Secrets the stack needs without committing a credential.
 
-The template context is what the site spec, the stack config and the install's environment supply:
+The template context is what the site spec and the install's environment supply:
 
 | Expression | Taken from |
 |------------|------------|
 | `.ClusterName` | `clusterName` |
-| `.Nico.Endpoint`, `.Nico.OrgID`, `.Nico.APIName` | The stack config's `nico.endpoint`, `.orgID`, `.apiName` |
+| `.Nico.Endpoint`, `.Nico.OrgID`, `.Nico.APIName` | The install's NICo settings |
 | `.Nico.Token` | `NVKECTL_NICO_TOKEN` |
 | `.Tenant.User` | `NVKECTL_NODE_USER` |
 | `.Tenant.Password` | `NVKECTL_NODE_PASSWORD` |
@@ -160,12 +160,9 @@ The committed deploy path is site-independent and names no digest. `nvkectl rend
 
 With the default `--credentials rendered` the copy holds the site's credentials. It is written readable by its owner only, and the render refuses an output under a shared temp directory. `nvke-deploy.sh` renders into a scratch directory under `NVKE_STATE_DIR` (default `$XDG_STATE_HOME/nvke`) and removes it when it exits, so no rendered credential is left behind. To read a render, run the command yourself:
 
-```bash
-nvkectl render deploy-path --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json \
-  --arch linux/arm64 --release release.json --out ~/.local/state/nvke/renders/my-site
-```
-
-For a tree that lives in a repository, add `--credentials external` to that command. The render then reads no credential variable and no CA file, writes no Secret and no `.gitignore`, and writes no path of this machine: a chart the release does not carry keeps its committed `chart.path`, which resolves from where the tree is installed, so render with `--release` to put every chart in the tree. It ends by listing the Secrets the cluster has to hold: namespace, name, keys and, when it is not `Opaque`, the type. The Secrets' namespaces are created by the first item, `nvke-base-config`, so your secret store delivers each Secret after that item and before the item that reads it, not before the install starts. The charts name the same Secrets either way. `nvke-deploy.sh` has no such option: it always renders with the credentials and removes the tree.
+The install runs this render itself, into a private scratch directory it
+removes when it exits. To keep the copy, point `--out` at a directory of your
+own; for a tree that lives in a repository, add `--credentials external`. The render then reads no credential variable and no CA file, writes no Secret and no `.gitignore`, and writes no path of this machine: a chart the release does not carry keeps its committed `chart.path`, which resolves from where the tree is installed, so render with `--release` to put every chart in the tree. It ends by listing the Secrets the cluster has to hold: namespace, name, keys and, when it is not `Opaque`, the type. The Secrets' namespaces are created by the first item, `nvke-base-config`, so your secret store delivers each Secret after that item and before the item that reads it, not before the install starts. The charts name the same Secrets either way. `nvke-deploy.sh` has no such option: it always renders with the credentials and removes the tree.
 
 `nvke-deploy.sh install --values-for ITEM=FILE` layers a file over an item's values. One key cannot be set that way: the controller reads its database connection string from the `nvke-database` Secret, which the render builds from the `appDb` values of the deploy path, so a file that sets `appDb` would be ignored. The executor refuses it before it applies anything. Change `appDb` in the deploy path, in `deploy/nico/controller/overlay.yaml`, and run the install again.
 

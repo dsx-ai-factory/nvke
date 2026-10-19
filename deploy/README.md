@@ -9,8 +9,7 @@ Two scripts: `check-site.sh` reports what the site still needs, `nvke-deploy.sh`
 | Input | From | Says |
 |---|---|---|
 | The site spec | `nvkectl generate sitespec`, the file the bootstrap ran with | What the bootstrap built and the stack must agree with: the site name, the control-plane VIP and the SPIRE trust domain. The install reads it and changes nothing in it. [docs/sitespec.md](../cli/docs/sitespec.md) |
-| The stack config, `stack-config.json` | [`examples/stack-config.json`](examples/stack-config.json), copied and filled in | What only the stack needs: the NICo API, and optionally image overrides and a mirror. See [The stack config](#the-stack-config) |
-| The release description | `nvkr release export --reference <repo@digest>` | Which published artifacts to use, each by OCI reference and digest: `nvkr.dev/release-description/v1` JSON. It describes the release and verifies nothing; run `nvkr release verify` on the same reference first. Optional; without it the charts come from this checkout and the public repositories, and the stack config names the images |
+| The release description | `nvkr release export --reference <repo@digest>` | Which published artifacts to use, each by OCI reference and digest: `nvkr.dev/release-description/v1` JSON. It describes the release and verifies nothing; run `nvkr release verify` on the same reference first. Optional; without it the charts come from this checkout and the public repositories |
 | The deploy path, [`nico/`](nico/) | This checkout | What to install and in which order. `nvke-deploy.yaml` lists the items; each item directory holds its chart pin (`release.yaml`), values and overlay, or its manifests. [deploy-repository.md](../docs/site-bootstrap/deploy-repository.md) |
 
 The install reads the NICo token, the node login and the database password from `NVKECTL_NICO_TOKEN`, `NVKECTL_NODE_USER`, `NVKECTL_NODE_PASSWORD` and `NVKECTL_DATABASE_PASSWORD`, and the SPIRE CA from the files `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE` name, which a site spec with `spire.upstreamCA: true` requires. The render writes them into Secrets (`nvke-database`, `spire-upstream-ca`, the template items') that the charts read by name; no values file carries a credential. The nodes' CPU architecture is in no file: both scripts read it from the cluster's `kubernetes.io/arch` node labels, and the executor passes it to the render, which selects the release artifacts and the SPIRE TPM attestor checksum for it. `nvkectl` reads the deploy path and renders it for the site and against the release into a private scratch directory under `$XDG_STATE_HOME/nvke/renders` (`~/.local/state/nvke/renders`); the script removes it when it exits.
@@ -33,22 +32,9 @@ nvkectl create machineimage -f machineimage.yaml && nvkectl create clusterreleas
 The two scripts below are the reference documentation for `check-site.sh` and
 `nvke-deploy.sh`, which `nvke-deploy-local.sh` wraps.
 
-## The stack config
-
-One JSON object, the keys of [`examples/stack-config.json`](examples/stack-config.json) and no others: an unknown, duplicate or differently cased key is refused, as is a value that is still a `REPLACE_*` placeholder. Copy the example, fill it in, and keep it with the site spec; it holds no secret. `nvkectl inspect stack-config stack-config.json` (internal; both scripts run it) reports every problem at once as `<key>: <problem>`, and checks the `NVKECTL_*` credentials with it.
-
-| Key | Required | Value |
-|---|---|---|
-| `nico.endpoint` | yes | The NICo API base URL CAPNICo calls, `http` or `https`, with no user or password |
-| `nico.orgID` | yes | The NICo organization ID |
-| `nico.apiName` | yes | The API name in the NICo API path, for example `forge` |
-| `images.controller` | no | Overrides the controller image, as `repository:tag` or `repository@sha256:<digest>`; defaults to the release's `cwe` artifact, or without a release to the overlay's pinned image |
-| `images.profiles` | no | Overrides the profile content image; defaults to the release's `controller-profiles` artifact. Required without a release: `deploy/nico` enables the image without naming it |
-| `mirror` | no | A registry the external images are pulled from instead of their upstream registries, as `host[:port][/prefix]`, no scheme |
-
 ## check-site.sh
 
-One line per finding, PASS, WARN, SKIP or FAIL with the fix, and a non-zero exit on any FAIL. It changes nothing. It starts with an `INFO  inputs:` line naming the site spec and stack config it pairs, by absolute path, with the site name and the NICo endpoint and org, so a wrong file is seen before anything is checked. When everything passes it prints the commands that remain, `clusterctl init` when Cluster API is not installed yet and `nvke-deploy.sh install`, with the given paths.
+One line per finding, PASS, WARN, SKIP or FAIL with the fix, and a non-zero exit on any FAIL. It changes nothing. It starts with an `INFO  inputs:` line naming the site spec it reads, by absolute path, with the site name and the NICo endpoint and org, so a wrong file is seen before anything is checked. When everything passes it prints the commands that remain, `clusterctl init` when Cluster API is not installed yet and `nvke-deploy.sh install`, with the given paths.
 
 | Finding | What it checks |
 |---|---|
@@ -56,7 +42,6 @@ One line per finding, PASS, WARN, SKIP or FAIL with the fix, and a non-zero exit
 | checkout | `deploy/nico/nvke-deploy.yaml` and the controller and NKTP charts, which the executor installs from the tree |
 | Cluster API | `CAPI_VERSION` from `make/tool-versions.mk`; `clusterctl` at that version; not installed yet, installed at that version with its kubeadm providers, or a FAIL: another version, a digest-only image, or a core without the kubeadm providers |
 | site spec | `nvkectl validate sitespec` passes |
-| stack config | `nvkectl inspect stack-config` accepts the file and finds the `NVKECTL_*` credentials: strict JSON, no placeholder, every required value set and well-formed, every variable set. A FAIL carries the first `<key>: <problem>` |
 | release | `--release` parses and names its reference and declared qualification; `--nvkr-run-dir` exists |
 | cluster | the API answers with `--kubeconfig`; an odd node count; every node carries `kubernetes.io/arch` and all report one architecture; no control-plane `NoSchedule` taint; exactly one default StorageClass |
 | egress | a fixed list of endpoints answers within 10s: `ghcr.io`, `github.com`, the NKTP chart indexes, `quay.io`, `registry.k8s.io` (WARN) |

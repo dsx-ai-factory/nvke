@@ -4,7 +4,6 @@ This page describes how to bring the management cluster's nodes from a first boo
 
 ## Before you begin
 
-- You have read [Plan your installation](plan-installation.md).
 - You have a node image built as described in [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md), for the CPU architecture of your nodes.
 - You have an odd number of machines, such as one, three or five, that meet [Supported platforms and versions](../overview/supported-platforms.md). Each has a TPM 2.0 device, and your provisioning system can boot it from the image and pass it cloud-init user data.
 - Each node keeps the same IP address across reboots. The image configures every `e*` network interface with DHCP and disables cloud-init network configuration, so reserve each node's address in DHCP.

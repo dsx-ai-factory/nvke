@@ -6,7 +6,6 @@ NVIDIA Kubernetes Recipes (NVKR) builds the artifacts NVKE runs: the controller 
 
 ## Before you begin
 
-- You have read [Plan your installation](plan-installation.md).
 - You have a published NVKR Release reference, as `<REGISTRY>/<REPOSITORY>@sha256:<DIGEST>`, or a completed local NVKR Run. To produce either, follow the NVKR documentation linked in [Get the artifacts from NVKR](#get-the-artifacts-from-nvkr).
 - You have a checkout of `dsx-ai-factory/nvke` in `nvke/`, at the release you install.
 - You have `nvkectl` on this host, from [Install nvkectl](bootstrap-management-cluster.md#install-nvkectl), to check the release resources before you publish them.
@@ -51,7 +50,7 @@ The install selects each output for the management nodes' CPU architecture, whic
 
 3. Keep `release.json`. You pass it to the install as `--release` in [Run NVKE end to end on one machine](../get-started/local-site.md). For a local Run that was never published, also pass `--nvkr-run-dir .nvkr/runs/<ATTEMPT>`: the install then reads charts and images from the Run's OCI layouts instead of a registry, and imports the images into the node's containerd.
 
-> **Note:** NVKR's maintained M2 Definition (`inputs/definitions/nvke`) does not build the `controller-profiles` or `capnico-controller` outputs, so the install refuses a Release built from it. Install without `--release` instead. The controller chart then comes from your checkout, and the stack config names the profile content image in `images.profiles`, as `repository:tag` or `repository@sha256:<DIGEST>`; `images.controller` is optional in the same form and overrides the deploy path's pinned controller image. To use the Release's controller image, take the `cwe` output's `Derived artifact reference:` from `nvkr release browse`. To build the profiles image, see [Build the profile content image](#build-the-profile-content-image).
+> **Note:** NVKR's maintained M2 Definition (`inputs/definitions/nvke`) does not build the `controller-profiles` or `capnico-controller` outputs, so the install refuses a Release built from it. Install without `--release` instead; the controller chart then comes from your checkout. To build the profiles image, see [Build the profile content image](#build-the-profile-content-image).
 
 ### What an NVKR Release proves
 
@@ -166,7 +165,7 @@ write_files:
 
 The optional `configProfile` field of a node pool names a config profile, which sets the hook scripts that run before a node joins. The controller reads config profiles from a profile content image that an init container, `materialize-profiles`, copies into the controller pod at startup. NVKE looks up `configProfiles/<NAME>.yaml` in that image, and the hook scripts under `runbooks/`.
 
-With a Release, the profile content image is the Release's `controller-profiles` output. Without one, or to use your own config profiles, build the image and name it in the stack config's `images.profiles`, which overrides the Release's.
+With a Release, the profile content image is the Release's `controller-profiles` output. To use your own config profiles, build the image as below.
 
 ### Build the profile content image
 
@@ -195,17 +194,6 @@ With a Release, the profile content image is the Release's `controller-profiles`
    ```
 
    `<REGISTRY_HOST>/<NAMESPACE>` is your registry path, such as `registry.example.com/nvke`, and `<TAG>` is a version you choose, such as `v1`. Note the digest that `docker push` prints.
-
-4. Set the image in the stack config, the file you write in [Run NVKE end to end on one machine](../get-started/local-site.md).
-
-   ```json
-   "images": {
-     "controller": "",
-     "profiles": "<REGISTRY_HOST>/<NAMESPACE>/nvke-profiles@<PROFILES_DIGEST>"
-   }
-   ```
-
-   `<PROFILES_DIGEST>` is the `sha256:` digest from step 3. A digest pin restarts the controller when the profiles change; `repository:tag` also works.
 
 ## Verify
 

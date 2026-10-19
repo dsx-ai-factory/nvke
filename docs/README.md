@@ -16,7 +16,6 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [overview/preview-status.md](overview/preview-status.md) | What the preview supports and its known limitations |
 | [get-started/quickstart-local.md](get-started/quickstart-local.md) | Evaluate NVKE on one Linux host with mock-NICo |
 | [get-started/local-site.md](get-started/local-site.md) | The operator flow end to end on one machine: bootstrap a container node, install the management plane, create a workload cluster on simulated NICo |
-| [operate/plan-installation.md](operate/plan-installation.md) | What to decide and gather before installing |
 | [operate/build-node-images.md](operate/build-node-images.md) | Where NVKE's artifacts come from in NVKR, and writing the OS release resources |
 | [operate/build-and-verify-node-image.md](operate/build-and-verify-node-image.md) | Building the reference node image from `os-image/` for development, booting it, and checking it with `nvke-os-image-check` |
 | [operate/prepare-nodes.md](operate/prepare-nodes.md) | Bringing the management cluster's nodes from first boot to what `nvkectl bootstrap site` requires |

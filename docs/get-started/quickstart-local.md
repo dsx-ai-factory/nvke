@@ -313,4 +313,3 @@ The container images that the setup built or pulled stay in Docker, and `docker 
 ## Next steps
 
 - [What is NVKE](../overview/what-is-nvke.md)
-- [Plan your installation](../operate/plan-installation.md)
