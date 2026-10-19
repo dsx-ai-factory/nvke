@@ -59,7 +59,7 @@ The kubeconfig is a secret. It holds a client certificate and private key for th
 
 ## Give the customer access
 
-NVKE gives one credential for a workload cluster: the admin kubeconfig. To give the customer access, send them the file through a channel you trust for passwords, and tell them the API address from step 2 so they can arrange a network route to it.
+NVKE gives one credential for a workload cluster: the admin kubeconfig. The kubeconfig authenticates its holder, but it does not make the private API address reachable. For direct access, send the customer the file through a channel you trust for passwords, and tell them the API address from step 2 so they can arrange a network route to it. If giving the customer that route is not appropriate, the operator can provide an [access proxy](#access-through-a-proxy) instead.
 
 You cannot revoke a copy you hand over. It stays valid until its certificate expires, because the cluster's certificate authority is not rotated. Hand it over only to the people who administer the cluster for the customer, and have them create narrower credentials for everyone else, as described in [What the customer manages](#what-the-customer-manages).
 
@@ -69,7 +69,7 @@ A fleet-wide OIDC provider, described in [Configure OIDC for workload clusters](
 
 ## Connect with kubectl
 
-The customer runs these steps with the kubeconfig the operator sent.
+For direct access, the customer runs these steps with the kubeconfig the operator sent.
 
 1. Store the kubeconfig where only you can read it.
 
@@ -110,11 +110,37 @@ The operator manages the rest through the NVKE API, and the customer asks the op
 
 ## How clients reach the Kubernetes API
 
-Clients connect directly to the address in the kubeconfig. Neither the management plane nor `nvkectl` proxies Kubernetes API traffic.
+The kubeconfig that NVKE publishes connects directly to its API address. Neither the management plane nor `nvkectl` proxies Kubernetes API traffic.
 
 When the cluster has a `controlPlaneVIP`, every control-plane node runs `kube-vip`, which advertises the VIP over Border Gateway Protocol (BGP) and withdraws it when that node's API server fails its readiness check. Traffic to the VIP on port 6443 reaches a healthy control-plane node. Without a VIP, the API address is the first control-plane node's IP address, and the API is unavailable whenever that node is.
 
 NVKE does not create a public endpoint or an external load balancer for the API. Your network decides who can reach the API address. The management cluster must also reach it on port 6443 to operate the cluster.
+
+## Access through a proxy
+
+When a customer's workstation cannot route to the private API address, the operator can provide a proxy that connects the customer to it. The proxy must be reachable from the customer's network and must either reach the API address on port 6443 or run a component inside the workload cluster. NVKE does not include, install or manage an access proxy. Choose and operate one that meets your network, identity, authorization and audit requirements.
+
+### Example: Teleport
+
+[Teleport Kubernetes Access](https://goteleport.com/docs/enroll-resources/kubernetes-access/getting-started/) is one proxy option. With this approach, the operator keeps the admin kubeconfig and customers connect with credentials issued through Teleport.
+
+1. From a machine that can reach the workload cluster API, follow Teleport's enrollment guide to deploy the Teleport Kubernetes Service in the workload cluster. The service must be able to reach your Teleport Proxy Service.
+2. Configure Teleport roles and matching Kubernetes RBAC by following Teleport's [Kubernetes access-control guide](https://goteleport.com/docs/enroll-resources/kubernetes-access/manage-access/). Grant each customer only the users, groups and resources they need.
+3. Have the customer connect through Teleport:
+
+   ```bash
+   tsh login --proxy=<TELEPORT_PROXY>
+   ```
+
+   ```bash
+   tsh kube login <TELEPORT_KUBERNETES_CLUSTER>
+   ```
+
+   ```bash
+   kubectl auth whoami
+   ```
+
+   `<TELEPORT_PROXY>` is the address of your Teleport Proxy Service. `<TELEPORT_KUBERNETES_CLUSTER>` is the name used when the workload cluster was enrolled. `tsh kube login` adds and selects a Teleport context in the customer's kubeconfig, so subsequent `kubectl` commands use Teleport instead of the direct API address.
 
 ## Keep the kubeconfig current
 

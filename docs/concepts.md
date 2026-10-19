@@ -31,7 +31,7 @@ You don't run `kubeadm` directly. NVKE runs it for you. But understanding what i
 
 ## Helm
 
-Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NVKE's own services (the controller, Temporal, Postgres, SPIRE, NVKE telemetry pipelines (NKTP)) are installed as Helm charts, from the NVKR release or their public repositories.
+Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NVKE's own services (the controller, Temporal, Postgres, SPIRE, NVKE telemetry pipeline (NKTP)) are installed as Helm charts, from the NVKR release or their public repositories.
 
 After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` installs them from the `deploy/nico` deploy path, one step of a short list of commands: each item is a chart with its values, or plain manifests. See [Install management-plane services](operate/install-management-plane-services.md).
 

@@ -32,9 +32,9 @@ const SiteValuesFile = "site-values.yaml"
 const oidcNodePort = 30443
 
 // controllerAdminPath is the SPIFFE path the controller presents:
-// /nke-service/<ServiceAccount>, and the deploy path names the ServiceAccount
+// /nvke-service/<ServiceAccount>, and the deploy path names the ServiceAccount
 // nke-controller. It must match spire-server.adminIDs in spire/values.yaml.
-const controllerAdminPath = "/nke-service/nke-controller"
+const controllerAdminPath = "/nvke-service/nke-controller"
 
 // temporalImages are the repositories the Temporal chart defaults to; the
 // chart has no registry key, so a mirror is written into the repository.

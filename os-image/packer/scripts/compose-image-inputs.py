@@ -256,6 +256,8 @@ def main() -> None:
             ("conntrack-tune.service", 0o644),
             ("configure-conntrack.sh", 0o755),
             ("10-nke-conntrack-timeouts.conf", 0o644),
+            ("99-disable-network-config.cfg", 0o644),
+            ("00-dhcp-all.yaml", 0o644),
         ):
             install_file(args.source_files_dir / name, stage / name, mode)
 

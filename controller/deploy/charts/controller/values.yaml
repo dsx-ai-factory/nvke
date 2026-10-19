@@ -66,13 +66,16 @@ image:
 imagePullSecrets: []
 # This is to override the chart name.
 #
-# Pinned to cloud-workflow-engine rather than left empty: the chart is named
-# `nke-controller` so it publishes to <registry>/nke/charts/nke-controller, but
-# the name helper feeds app.kubernetes.io/name, every resource name derived
-# from the fullname template, and the serviceMonitor.matchLabels selector
-# below. Letting it follow .Chart.Name would rename every object this chart
-# owns and break that selector on upgrade of an existing release.
-nameOverride: "cloud-workflow-engine"
+# Pinned rather than left empty: the name helper feeds app.kubernetes.io/name,
+# every resource name derived from the fullname template, and the
+# serviceMonitor.matchLabels selector below. Letting it follow .Chart.Name would
+# rename every object this chart owns whenever the chart is renamed.
+#
+# New installs get nvke-controller. An install that predates it sets
+# "cloud-workflow-engine": the Deployment's spec.selector carries this value and
+# is immutable, so an upgrade that changes it fails rather than renames. See
+# hack/testdata/chart-legacy-pinned-values.yaml for the full set of pins.
+nameOverride: "nvke-controller"
 fullnameOverride: ""
 # -- Deploy into this namespace instead of the release namespace (umbrella use).
 namespaceOverride: ""
@@ -334,7 +337,7 @@ resources: {}
   #   cpu: 100m
   #   memory: 128Mi
 
-# -- Comma-separated API provider blocks accepted by mutating cluster and node-pool requests. The chart defaults the deployed controller to Nico only; set to "nico,infra" only for deployments that should accept generic CAPI-backed provider payloads.
+# -- Comma-separated API provider blocks accepted by mutating cluster and node-pool requests: `nico`, `launchLayer` and `infra`. The chart defaults the deployed controller to Nico only. Add `launchLayer` for deployments with CAPLL installed; with `spiffe.enabled` it also needs `nodeAgent.spireAttestationMethod: dsxImds`, which applies to every provider's new nodes, so a TPM-attested NICo deployment cannot add `launchLayer`. Add `infra` only for deployments that should accept generic CAPI-backed provider payloads.
 supportedInfraProviders: "nico"
 
 nodeMetadata:
@@ -412,8 +415,15 @@ releaseCRDs:
 
 capi:
   rbac:
-    # -- Create RBAC for the controller to watch and patch CAPI/NICo resources.
+    # -- Create RBAC for the controller to watch and patch CAPI-backed infrastructure resources.
     create: false
+    # -- Grant RBAC for NICo's CRDs (nicoclusters, nicomachines). Only applies when `create` is true.
+    # Setting it false requires `controllers.nico.enabled: false`.
+    nico: true
+    # -- Grant RBAC for LaunchLayer's CRDs (launchlayerclusters, launchlayermachines,
+    # launchlayermachinetemplates). Only applies when `create` is true.
+    # Keep it true while CAPLL's CRDs are installed.
+    launchLayer: true
 
 kubeadm:
   # -- OCI registry kubeadm uses for control-plane component images.
@@ -644,9 +654,27 @@ profiles:
     # -- Digest pin for the profiles content image (preferred; e.g. `sha256:…`)
     digest: ""
 
+controllerConfig:
+  # -- Name of the ConfigMap that carries the controller's settings file, and
+  # that the Deployment mounts and Reloader watches. An install that predates
+  # nvke-controller-config sets "nke-controller-config": renaming the ConfigMap
+  # orphans the live object.
+  name: "nvke-controller-config"
+
 spiffe:
   # -- Enable SPIFFE identity for mTLS to tenant clusters
   enabled: false
+  # -- First path segment of the SPIFFE IDs the nvkeOIDCAuth.tenantRbacName and
+  # capi-cluster-admin RBAC subjects default to, as in
+  # spiffe://<trustDomain>/<servicePathSegment>/<serviceAccount>. It must equal
+  # the segment the ClusterSPIFFEID spiffeIDTemplate issues
+  # (deploy/k8s/spire-nke-services-spiffe-id.yaml), or every default subject
+  # matches nothing and a tenant authenticates the controller and then denies it.
+  # An install that predates nvke-service sets "nke-service": its SPIRE server
+  # keeps issuing that path, and node agents older than the nvke rename admit
+  # only it. A new install issues nvke-service, which agents admit from the nvke
+  # rename on.
+  servicePathSegment: "nvke-service"
   endpointSocket: "unix:///spiffe-workload-api/spire-agent.sock"
   # -- RFC 8693 token-exchange endpoint the exec credential plugin trades its
   # JWT-SVID at before calling a tenant API server. Leave empty to present the
@@ -655,7 +683,7 @@ spiffe:
   # to them will start failing authentication.
   jwtExchangeEndpoint: ""
   # -- Subject the nvkeOIDCAuth.tenantRbacName RBAC bindings name in tenant clusters. Defaults to this
-  # controller's own SPIFFE ID, spiffe://<trustDomain>/nke-service/cloud-workflow-engine,
+  # controller's own SPIFFE ID, spiffe://<trustDomain>/<servicePathSegment>/<serviceAccount>,
   # which is what a tenant sees when no exchange is in play. Set it whenever
   # jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust
   # domain and rewrites the path, so give the exchanged subject in full, e.g.
@@ -666,7 +694,7 @@ spiffe:
   # controllerSubject wins.
   cweSubject: ""
   # -- Subject the nvke:capi-cluster-admin RBAC binding names for capi-manager.
-  # Defaults to spiffe://<trustDomain>/nke-service/capi-manager, which is what a
+  # Defaults to spiffe://<trustDomain>/<servicePathSegment>/capi-manager, which is what a
   # tenant sees without token exchange. Set it whenever jwtExchangeEndpoint is
   # set because the exchange may rewrite the token's sub claim.
   capiManagerSubject: ""

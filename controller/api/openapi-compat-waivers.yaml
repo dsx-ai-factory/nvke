@@ -113,3 +113,52 @@ waivers:
     owner: "Miancheng Lin"
     review: "2027-01-11"
     baseline: "controller/api/v0.0.39"
+  - change: "property_removed"
+    path: "$.components.schemas['UpdateClusterControlPlaneConfig'].not"
+    property: "required"
+    reason: >
+      Restructuring a single `not: {required: [a, b]}` into `not: {anyOf: [...]}`
+      to forbid a third provider pair reads as "required removed" to the
+      structural differ, but no request valid under the old schema becomes
+      invalid: every pair the old schema forbade is still forbidden, and the
+      new pairs only involve `launchLayer`, a field that did not exist before
+      this change, so no existing client could have been sending it. Keeping
+      `not.required` untouched and adding the new pairs via a sibling `allOf`
+      (logically equivalent by De Morgan's) was tried first but breaks
+      oapi-codegen's generated type for this schema into an untyped
+      interface{}, so the anyOf form is the real target of this waiver, not a
+      shortcut around a fixable issue.
+    owner: "Meet Vadaria"
+    review: "2027-04-12"
+    baseline: "controller/api/v0.0.45"
+  - change: "property_removed"
+    path: "$.components.schemas['UpdateClusterControlPlaneConfig'].not"
+    property: "required"
+    reason: >
+      Same restructuring and the same reasoning as the sibling waiver on this
+      path, for the "nico" value of the removed `required` array.
+    owner: "Meet Vadaria"
+    review: "2027-04-12"
+    baseline: "controller/api/v0.0.45"
+  - change: "property_removed"
+    path: "$.components.schemas['UpdateNodePoolRequest'].not"
+    property: "required"
+    reason: >
+      Same restructuring and the same reasoning as
+      UpdateClusterControlPlaneConfig's waiver above: forbidding a third
+      provider pair (now including the new `launchLayer` field) requires
+      moving `not.required` into `not.anyOf`, which the structural differ
+      reads as a removal even though no previously-valid request becomes
+      invalid.
+    owner: "Meet Vadaria"
+    review: "2027-04-12"
+    baseline: "controller/api/v0.0.45"
+  - change: "property_removed"
+    path: "$.components.schemas['UpdateNodePoolRequest'].not"
+    property: "required"
+    reason: >
+      Same restructuring and the same reasoning as the sibling waiver on this
+      path, for the "nico" value of the removed `required` array.
+    owner: "Meet Vadaria"
+    review: "2027-04-12"
+    baseline: "controller/api/v0.0.45"

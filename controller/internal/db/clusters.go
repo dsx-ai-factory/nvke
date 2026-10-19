@@ -35,6 +35,9 @@ const (
 
 	// When ProviderType is CAPI, the user specifies the infra machine template and the controller clones it for each node.
 	ProviderTypeCAPI ProviderType = "capi"
+
+	// When ProviderType is LaunchLayer, the caller gives a VPC/org/site and the controller generates the LaunchLayerCluster/LaunchLayerMachine manifests for each node, the same way it does for Nico.
+	ProviderTypeLaunchLayer ProviderType = "launchlayer"
 )
 
 type NicoClusterProvider struct {
@@ -45,6 +48,32 @@ type NicoClusterProvider struct {
 
 type CAPIClusterProvider struct {
 	InfraCluster json.RawMessage `json:"infra_cluster,omitempty"`
+}
+
+// LaunchLayerClusterOwner is the LaunchLayer identity requests are attributed
+// to. Mirrors LaunchLayerCluster.spec.owner in CAPLL.
+type LaunchLayerClusterOwner struct {
+	UserID   string `json:"user_id,omitempty"`
+	Username string `json:"username,omitempty"`
+}
+
+// LaunchLayerSecurityGroup is a security group CAPLL creates with the cluster
+// and deletes with it. Mirrors one entry of
+// LaunchLayerCluster.spec.securityGroups in CAPLL.
+type LaunchLayerSecurityGroup struct {
+	Name        string `json:"name,omitempty"`
+	Type        string `json:"type,omitempty"`
+	NetworkType string `json:"network_type,omitempty"`
+}
+
+type LaunchLayerClusterProvider struct {
+	VpcID                string                     `json:"vpc_id,omitempty"`
+	OrgID                string                     `json:"org_id,omitempty"`
+	VpcType              string                     `json:"vpc_type,omitempty"`
+	SiteID               string                     `json:"site_id,omitempty"`
+	CloudProviderEnabled bool                       `json:"cloud_provider_enabled,omitempty"`
+	Owner                LaunchLayerClusterOwner    `json:"owner,omitempty"`
+	SecurityGroups       []LaunchLayerSecurityGroup `json:"security_groups,omitempty"`
 }
 
 type Cluster struct {
@@ -62,9 +91,10 @@ type Cluster struct {
 	OIDCAuthEnabled       bool       `bun:"type:boolean,notnull,default:false"`
 	NextCertRenewalDue    *time.Time `bun:"type:timestamptz"`
 
-	ProviderType ProviderType         `bun:"provider_type,type:text,notnull"`
-	Nico         *NicoClusterProvider `bun:"nico,type:jsonb"`
-	Capi         *CAPIClusterProvider `bun:"capi,type:jsonb"`
+	ProviderType ProviderType                `bun:"provider_type,type:text,notnull"`
+	Nico         *NicoClusterProvider        `bun:"nico,type:jsonb"`
+	Capi         *CAPIClusterProvider        `bun:"capi,type:jsonb"`
+	LaunchLayer  *LaunchLayerClusterProvider `bun:"launch_layer,type:jsonb"`
 
 	// OIDCProviders is set only at creation; UpdateCluster never writes it.
 	OIDCProviders []ClusterOIDCProvider `bun:"oidc_providers,type:jsonb,nullzero"`
@@ -104,6 +134,16 @@ func (c *Cluster) CAPIProvider() (CAPIClusterProvider, error) {
 	}, nil
 }
 
+func (c *Cluster) LaunchLayerProvider() (LaunchLayerClusterProvider, error) {
+	if c.ProviderType != ProviderTypeLaunchLayer {
+		return LaunchLayerClusterProvider{}, fmt.Errorf("cluster %s provider type is %q, not %q", c.ID, c.ProviderType, ProviderTypeLaunchLayer)
+	}
+	if c.LaunchLayer == nil {
+		return LaunchLayerClusterProvider{}, fmt.Errorf("%w: cluster %s launch_layer", ErrMissingProviderPayload, c.ID)
+	}
+	return *cloneLaunchLayerClusterProvider(c.LaunchLayer), nil
+}
+
 // ResolveProviderType validates and returns the cluster's provider type. It
 // does not require the matching payload to be present — use NicoProvider or
 // CAPIProvider for that. NodePool and NodeSet have no persisted ProviderType
@@ -112,7 +152,7 @@ func (c *Cluster) CAPIProvider() (CAPIClusterProvider, error) {
 // regardless of which of the three types they're holding.
 func (c *Cluster) ResolveProviderType() (ProviderType, error) {
 	switch c.ProviderType {
-	case ProviderTypeNico, ProviderTypeCAPI:
+	case ProviderTypeNico, ProviderTypeCAPI, ProviderTypeLaunchLayer:
 		return c.ProviderType, nil
 	default:
 		return "", fmt.Errorf("cluster %s has unsupported provider type %q", c.ID, c.ProviderType)
@@ -134,6 +174,7 @@ func (c *Cluster) SetNicoProvider(provider NicoClusterProvider) {
 	c.ProviderType = ProviderTypeNico
 	c.Nico = &provider
 	c.Capi = nil
+	c.LaunchLayer = nil
 }
 
 func (c *Cluster) SetCAPIProvider(provider CAPIClusterProvider) {
@@ -142,6 +183,14 @@ func (c *Cluster) SetCAPIProvider(provider CAPIClusterProvider) {
 	c.Capi = &CAPIClusterProvider{
 		InfraCluster: cloneRawMessage(provider.InfraCluster),
 	}
+	c.LaunchLayer = nil
+}
+
+func (c *Cluster) SetLaunchLayerProvider(provider LaunchLayerClusterProvider) {
+	c.ProviderType = ProviderTypeLaunchLayer
+	c.Nico = nil
+	c.Capi = nil
+	c.LaunchLayer = cloneLaunchLayerClusterProvider(&provider)
 }
 
 func cloneRawMessage(raw json.RawMessage) json.RawMessage {
@@ -149,6 +198,18 @@ func cloneRawMessage(raw json.RawMessage) json.RawMessage {
 		return nil
 	}
 	return append(json.RawMessage(nil), raw...)
+}
+
+func cloneLaunchLayerClusterProvider(provider *LaunchLayerClusterProvider) *LaunchLayerClusterProvider {
+	return &LaunchLayerClusterProvider{
+		VpcID:                provider.VpcID,
+		OrgID:                provider.OrgID,
+		VpcType:              provider.VpcType,
+		SiteID:               provider.SiteID,
+		CloudProviderEnabled: provider.CloudProviderEnabled,
+		Owner:                provider.Owner,
+		SecurityGroups:       append([]LaunchLayerSecurityGroup(nil), provider.SecurityGroups...),
+	}
 }
 
 // ControlPlaneConfigFromNodePool copies a control-plane node pool into ControlPlaneConfig.

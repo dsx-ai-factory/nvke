@@ -4,10 +4,10 @@
 apiVersion: spire.spiffe.io/v1alpha1
 kind: ClusterSPIFFEID
 metadata:
-  name: nke-service
+  name: nvke-service
 spec:
   className: spire-mgmt-spire
-  spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nke-service/{{.PodSpec.ServiceAccountName}}"
+  spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}"
   namespaceSelector:
     matchExpressions:
     - key: kubernetes.io/metadata.name

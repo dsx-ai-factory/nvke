@@ -551,7 +551,7 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	if !strings.Contains(spire, "upgrade --install spire spire") ||
 		!strings.Contains(spire, "global.spire.clusterName=test-kind") ||
 		!strings.Contains(spire, "global.spire.trustDomain=test-kind.nke.local") ||
-		!strings.Contains(spire, "spire-server.adminIDs[0]=spiffe://test-kind.nke.local/nke-service/nke-controller") {
+		!strings.Contains(spire, "spire-server.adminIDs[0]=spiffe://test-kind.nke.local/nvke-service/nke-controller") {
 		t.Errorf("SPIRE call = %q, want the pinned chart and controller identity", spire)
 	}
 
@@ -827,7 +827,7 @@ func TestSpireInstallArgs(t *testing.T) {
 		"--values /tmp/values.yaml",
 		"global.spire.clusterName=kind",
 		"global.spire.trustDomain=kind.nke.local",
-		spireServerValuesPrefix + ".adminIDs[0]=spiffe://kind.nke.local/nke-service/nke-controller",
+		spireServerValuesPrefix + ".adminIDs[0]=spiffe://kind.nke.local/nvke-service/nke-controller",
 	} {
 		if !hasArgs(got, strings.Fields(want)...) {
 			t.Errorf("install = %q, want it to contain %q", got, want)

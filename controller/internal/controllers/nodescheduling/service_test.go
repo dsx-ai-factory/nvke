@@ -62,49 +62,73 @@ func TestUnit_ServiceScheduleCAPIInfraNodesStartsProvisionWorkflows(t *testing.T
 
 func TestUnit_ServiceScheduleCAPIInfraNodesLogsWorkflowLookupFields(t *testing.T) {
 	clusterID := uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")
-	nodePoolID := uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")
 	nodeID := uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
 	const (
 		workflowID = "provision-node-eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
 		runID      = "ffffffff-ffff-ffff-ffff-ffffffffffff"
 	)
 
-	temporalClient := &mockWorkflowStarter{}
-	temporalClient.On("ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(mockWorkflowRun{id: workflowID, runID: runID}, nil).Once()
-	var logs bytes.Buffer
-	service := NewService(
-		config.Config{TemporalTaskQueue: "test-task-queue"},
-		slog.New(otelx.LogHandler{Handler: slog.NewJSONHandler(&logs, nil)}),
-		nil,
-		temporalClient,
-	)
+	for _, tc := range []struct {
+		name           string
+		controlPlane   bool
+		nodePoolID     uuid.UUID
+		wantNodePoolID bool
+	}{
+		{
+			name:           "node-pool node includes node pool ID",
+			nodePoolID:     uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+			wantNodePoolID: true,
+		},
+		{
+			name:         "control-plane node omits empty node pool ID",
+			controlPlane: true,
+			nodePoolID:   uuid.Nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			temporalClient := &mockWorkflowStarter{}
+			temporalClient.On("ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+				Return(mockWorkflowRun{id: workflowID, runID: runID}, nil).Once()
+			var logs bytes.Buffer
+			service := NewService(
+				config.Config{TemporalTaskQueue: "test-task-queue"},
+				slog.New(otelx.LogHandler{Handler: slog.NewJSONHandler(&logs, nil)}),
+				nil,
+				temporalClient,
+			)
 
-	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID: trace.TraceID{1},
-		SpanID:  trace.SpanID{1},
-	})
-	ctx := trace.ContextWithSpanContext(t.Context(), spanContext)
-	_, err := service.ScheduleCAPIInfraNodes(ctx, slog.Default(), []db.Node{{
-		ID:         nodeID,
-		NodePoolID: nodePoolID,
-		ClusterID:  clusterID,
-		Name:       "test-node",
-	}})
-	require.NoError(t, err)
-	temporalClient.AssertExpectations(t)
+			spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID: trace.TraceID{1},
+				SpanID:  trace.SpanID{1},
+			})
+			ctx := trace.ContextWithSpanContext(t.Context(), spanContext)
+			_, err := service.ScheduleCAPIInfraNodes(ctx, slog.Default(), []db.Node{{
+				ID:           nodeID,
+				NodePoolID:   tc.nodePoolID,
+				ClusterID:    clusterID,
+				ControlPlane: tc.controlPlane,
+				Name:         "test-node",
+			}})
+			require.NoError(t, err)
+			temporalClient.AssertExpectations(t)
 
-	var record map[string]any
-	require.NoError(t, json.Unmarshal(logs.Bytes(), &record))
-	require.Equal(t, "Started (or already running) ProvisionNode workflow", record["msg"])
-	require.Equal(t, clusterID.String(), record["cluster_id"])
-	require.Equal(t, nodePoolID.String(), record["node_pool_id"])
-	require.Equal(t, nodeID.String(), record["node_id"])
-	require.Equal(t, "test-node", record["node_name"])
-	require.Equal(t, workflowID, record["workflow_id"])
-	require.Equal(t, runID, record["run_id"])
-	require.Equal(t, spanContext.TraceID().String(), record["trace_id"])
-	require.Equal(t, spanContext.SpanID().String(), record["span_id"])
+			var record map[string]any
+			require.NoError(t, json.Unmarshal(logs.Bytes(), &record))
+			require.Equal(t, "Started (or already running) ProvisionNode workflow", record["msg"])
+			require.Equal(t, clusterID.String(), record["cluster_id"])
+			if tc.wantNodePoolID {
+				require.Equal(t, tc.nodePoolID.String(), record["node_pool_id"])
+			} else {
+				require.NotContains(t, record, "node_pool_id")
+			}
+			require.Equal(t, nodeID.String(), record["node_id"])
+			require.Equal(t, "test-node", record["node_name"])
+			require.Equal(t, workflowID, record["workflow_id"])
+			require.Equal(t, runID, record["run_id"])
+			require.Equal(t, spanContext.TraceID().String(), record["trace_id"])
+			require.Equal(t, spanContext.SpanID().String(), record["span_id"])
+		})
+	}
 }
 
 func TestUnit_ServiceScheduleCAPIInfraNodesReportsNodeWhenWorkflowStartFails(t *testing.T) {

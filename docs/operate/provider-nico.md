@@ -2,7 +2,7 @@
 
 This page describes how to confirm that the NVIDIA Kubernetes Engine (NVKE) management plane can request bare-metal machines from NVIDIA Infra Controller (NICo), how to manage the credentials it uses, and which NICo identifiers each workload cluster request needs. NVKE requests machines through CAPNICo, the Cluster API (CAPI) infrastructure provider for NICo, which runs on the management cluster and calls the NICo API with your credentials. You do this after you install the management-plane services and before you create the first workload cluster.
 
-NICo is the only infrastructure provider NVKE supports at preview; see [Preview status and known limitations](../overview/preview-status.md).
+NICo is NVKE's default infrastructure provider; LaunchLayer is also supported once a deployment enables it, as described in [Infrastructure Providers](../site-bootstrap/infrastructure-providers.md#launchlayer). See also [Preview status and known limitations](../overview/preview-status.md).
 
 ## Before you begin
 
@@ -51,7 +51,7 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
    kubectl rollout restart deployment/nke-controller -n nke-controller
    ```
 
-`CONFIGURED` does not mean the credentials work. The `CREDENTIALS` column of `nvkectl get providers` reports whether they do, from the check CAPNICo runs on them every few minutes, but only with a CAPNICo release that serves `NicoIdentity` and a `NicoIdentity` that names `nico-credentials`. The CAPNICo release this procedure installs does not serve `NicoIdentity`, so `CREDENTIALS` reads `UNSUPPORTED`. CAPNICo still checks the token against the NICo API, but only when it reconciles a `NicoCluster` that belongs to a Cluster API `Cluster`, which normally first happens when you create a workload cluster. [Infrastructure providers](../../cli/README.md#infrastructure-providers) lists every `CREDENTIALS` value.
+`CONFIGURED` does not mean the credentials work. The `CREDENTIALS` column of `nvkectl get providers` reports whether they do, from the check CAPNICo runs on them every few minutes, but only with a CAPNICo release that serves `NicoIdentity` and a `NicoIdentity` that names `nico-credentials`. The CAPNICo release this procedure installs does not serve `NicoIdentity`, so `CREDENTIALS` reads `UNSUPPORTED`. CAPNICo still checks the token against the NICo API, but only when it reconciles a `NicoCluster` that belongs to a Cluster API `Cluster`, which normally first happens when you create a workload cluster. [Infrastructure providers](https://github.com/dsx-ai-factory/nvke/blob/main/cli/README.md#infrastructure-providers) lists every `CREDENTIALS` value.
 
 ## Manage the NICo credentials
 

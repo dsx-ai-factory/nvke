@@ -4,6 +4,9 @@
 package nico
 
 import (
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -24,4 +27,10 @@ func (*Client) ApplyNodePoolNodePayload(nodePool db.NodePool, node *db.Node) err
 // records it.
 func (*Client) ApplyPlaceholderNodePayload(node *db.Node) {
 	node.SetNico(db.NicoNodeProvider{})
+}
+
+// ApplyObservedNodeIdentity records the Forge instance and machine IDs
+// NicoMachine.status reports.
+func (*Client) ApplyObservedNodeIdentity(node *db.Node, infraMachine *unstructured.Unstructured) error {
+	return shared.StampForgeIdentity(node, infraMachine)
 }

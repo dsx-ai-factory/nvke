@@ -23,7 +23,7 @@ import (
 const (
 	// ControllerConfigMap is the ConfigMap the controller reads its settings
 	// from, once, at startup.
-	ControllerConfigMap = "nke-controller-config"
+	ControllerConfigMap = "nvke-controller-config"
 	controllerConfigKey = "config.yaml"
 
 	// restartedAtAnnotation is the pod-template annotation `kubectl rollout

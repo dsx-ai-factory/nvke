@@ -13,6 +13,7 @@ package shared
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -27,6 +29,46 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
+
+var (
+	// ErrUnsupportedMachineConfig marks a CreateMachine failure caused by the
+	// node's own configuration, which no retry can fix.
+	ErrUnsupportedMachineConfig = errors.New("unsupported machine configuration")
+
+	// ErrSpireAgentPathPending marks a SPIRE agent ID path the infrastructure
+	// provider has not yet reported enough to build.
+	ErrSpireAgentPathPending = errors.New("SPIRE agent ID path not yet resolvable")
+)
+
+// StampForgeIdentity records the Forge instance and machine IDs a
+// NicoMachine reports on its status onto the node's nico payload, never
+// overwriting a recorded value. It invents no nico payload from an empty
+// observation, so a CAPD machine stays without one.
+func StampForgeIdentity(node *db.Node, infraMachine *unstructured.Unstructured) error {
+	instanceID, _, err := unstructured.NestedString(infraMachine.Object, "status", "instanceID")
+	if err != nil {
+		return fmt.Errorf("read %s status.instanceID: %w", infraMachine.GetKind(), err)
+	}
+	machineID, _, err := unstructured.NestedString(infraMachine.Object, "status", "machineID")
+	if err != nil {
+		return fmt.Errorf("read %s status.machineID: %w", infraMachine.GetKind(), err)
+	}
+	if instanceID == "" && machineID == "" && node.Nico == nil {
+		return nil
+	}
+	nico := db.NicoNodeProvider{}
+	if node.Nico != nil {
+		nico = *node.Nico
+	}
+	if nico.ForgeInstanceID == "" {
+		nico.ForgeInstanceID = instanceID
+	}
+	if nico.ForgeMachineID == "" {
+		nico.ForgeMachineID = machineID
+	}
+	node.SetNico(nico)
+	return nil
+}
 
 // MachineCreateDeps bundles what Activities supplies so a provider client's
 // CreateMachine can run without the clients package depending on

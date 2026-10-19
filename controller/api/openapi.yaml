@@ -109,12 +109,17 @@ tags:
       A Kubernetes cluster. Holds the Kubernetes version, network, CNI, etcd
       encryption, control-plane configuration and conditions.
 
-      **Infrastructure provider.** Clusters in this release run on NVIDIA Infra
-      Controller (NICo) bare-metal infrastructure. Each cluster, control plane
-      and node pool carries a `nico` object with the NICo identifiers it uses:
-      organization, site and VPC at the cluster level; instance type,
-      networking, SSH key groups and release at the control-plane and node
-      pool level. A cluster's provider is fixed at creation.
+      **Infrastructure provider.** Each cluster, control plane and node pool
+      carries exactly one provider object. `nico` runs the cluster on NVIDIA
+      Infra Controller (NICo) bare-metal infrastructure: organization, site
+      and VPC at the cluster level; instance type, networking, SSH key groups
+      and release at the control-plane and node pool level. `launchLayer`
+      runs it on LaunchLayer compute: VPC or organization, site and security
+      groups at the cluster level; instance type and host OS or VM profile at
+      the control-plane and node pool level. A deployment accepts only the
+      providers its operator enables (`supportedInfraProviders`, NICo by
+      default) and rejects any other with 400. A cluster's provider is fixed
+      at creation.
 
       **Kubernetes versions.** Versions are semantic-version cores (X.Y.Z) with
       no leading `v`. Control-plane upgrades move forward one minor version at a
@@ -937,15 +942,19 @@ components:
         - controlPlaneKubernetesVersion
         - etcdEncrypted
       # A cluster picks its provider at creation, so exactly one provider payload is
-      # required. Rejecting "both or neither" leaves exactly one.
+      # required. Rejecting every pair, plus "none", leaves exactly one.
       not:
         anyOf:
           - required: [nico, infra]
+          - required: [nico, launchLayer]
+          - required: [infra, launchLayer]
           - allOf:
               - not:
                   required: [nico]
               - not:
                   required: [infra]
+              - not:
+                  required: [launchLayer]
       description: |
         A cluster and, optionally, its initial node pools. The provider payload is
         fixed at creation.
@@ -1025,6 +1034,8 @@ components:
           $ref: "#/components/schemas/CreateClusterControlPlaneConfig"
         nico:
           $ref: "#/components/schemas/NicoClusterProvider"
+        launchLayer:
+          $ref: "#/components/schemas/LaunchLayerClusterProvider"
         infra:
           x-fern-ignore: true
           $ref: "#/components/schemas/InfraClusterProvider"
@@ -1123,6 +1134,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/NicoControlPlaneProvider"
           description: NICo settings for control-plane nodes.
+        launchLayer:
+          allOf:
+            - $ref: "#/components/schemas/LaunchLayerControlPlaneProvider"
+          description: LaunchLayer settings for control-plane nodes.
         infra:
           x-fern-ignore: true
           allOf:
@@ -1210,16 +1225,20 @@ components:
       not:
         anyOf:
           - required: [nico, infra]
+          - required: [nico, launchLayer]
+          - required: [infra, launchLayer]
           - allOf:
               - not:
                   required: [nico]
               - not:
                   required: [infra]
+              - not:
+                  required: [launchLayer]
       description: |
         Writable cluster-level control plane configuration supplied at cluster creation.
         Required when you create a cluster.
         `nico` carries the NICo settings for the control-plane nodes; it is required
-        for a NICo cluster.
+        for a NICo cluster. `launchLayer` is required for a LaunchLayer cluster.
       properties:
         desiredCount:
           type: integer
@@ -1278,6 +1297,8 @@ components:
           description: Whether Teleport SSH enrollment is enabled for control plane nodes. When omitted, the server-side default for the site is applied.
         nico:
           $ref: "#/components/schemas/NicoControlPlaneProviderCreate"
+        launchLayer:
+          $ref: "#/components/schemas/LaunchLayerControlPlaneProvider"
         infra:
           x-fern-ignore: true
           $ref: "#/components/schemas/InfraControlPlaneProvider"
@@ -1287,7 +1308,10 @@ components:
       type: object
       additionalProperties: false
       not:
-        required: [nico, infra]
+        anyOf:
+          - required: [nico, infra]
+          - required: [nico, launchLayer]
+          - required: [infra, launchLayer]
       description: |
         Changes to `release` or the Kubernetes version start a control-plane
         rollout. All fields are optional. A provider payload that does not match the
@@ -1317,6 +1341,8 @@ components:
           description: Enable or disable Teleport SSH enrollment for control plane nodes.
         nico:
           $ref: "#/components/schemas/NicoControlPlaneProviderUpdate"
+        launchLayer:
+          $ref: "#/components/schemas/LaunchLayerControlPlaneProviderUpdate"
         infra:
           x-fern-ignore: true
           $ref: "#/components/schemas/InfraControlPlaneProviderUpdate"
@@ -1404,6 +1430,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/NicoClusterProvider"
           description: NICo identifiers.
+        launchLayer:
+          allOf:
+            - $ref: "#/components/schemas/LaunchLayerClusterProvider"
+          description: LaunchLayer identifiers.
         infra:
           x-fern-ignore: true
           allOf:
@@ -1597,11 +1627,15 @@ components:
       not:
         anyOf:
           - required: [nico, infra]
+          - required: [nico, launchLayer]
+          - required: [infra, launchLayer]
           - allOf:
               - not:
                   required: [nico]
               - not:
                   required: [infra]
+              - not:
+                  required: [launchLayer]
       properties:
         name:
           type: string
@@ -1712,6 +1746,8 @@ components:
           x-order: 21
         nico:
           $ref: "#/components/schemas/NicoNodePoolProvider"
+        launchLayer:
+          $ref: "#/components/schemas/LaunchLayerNodePoolProvider"
         infra:
           x-fern-ignore: true
           $ref: "#/components/schemas/InfraNodePoolProvider"
@@ -1719,7 +1755,10 @@ components:
       type: object
       additionalProperties: false
       not:
-        required: [nico, infra]
+        anyOf:
+          - required: [nico, infra]
+          - required: [nico, launchLayer]
+          - required: [infra, launchLayer]
       description: |
         All fields are optional. A provider payload that does not match the node pool's
         cluster is rejected with 400.
@@ -1774,6 +1813,8 @@ components:
             Must be newer than the current version.
         nico:
           $ref: "#/components/schemas/NicoNodePoolProviderUpdate"
+        launchLayer:
+          $ref: "#/components/schemas/LaunchLayerNodePoolProviderUpdate"
         infra:
           x-fern-ignore: true
           $ref: "#/components/schemas/InfraNodePoolProviderUpdate"
@@ -1925,6 +1966,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/NicoNodePoolProvider"
           description: NICo settings for the pool.
+        launchLayer:
+          allOf:
+            - $ref: "#/components/schemas/LaunchLayerNodePoolProvider"
+          description: LaunchLayer settings for the pool.
         infra:
           x-fern-ignore: true
           allOf:
@@ -2073,6 +2118,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/NicoNodeSetProvider"
           description: NICo settings in the snapshot.
+        launchLayer:
+          allOf:
+            - $ref: "#/components/schemas/LaunchLayerNodeSetProvider"
+          description: LaunchLayer settings in the snapshot.
         infra:
           x-fern-ignore: true
           allOf:
@@ -2122,6 +2171,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/NicoNodeProvider"
           description: NICo instanceID, machineID and instanceTypeID. Omitted when none are set.
+        launchLayer:
+          allOf:
+            - $ref: "#/components/schemas/LaunchLayerNodeProvider"
+          description: LaunchLayer instanceID, machineID and rackID. Omitted when none are set.
         controlPlane:
           type: boolean
           description: Whether the node is a control-plane node.
@@ -2550,6 +2603,85 @@ components:
           description: NICo VPC ID.
           x-go-type-skip-optional-pointer: true
 
+    LaunchLayerClusterOwner:
+      type: object
+      additionalProperties: false
+      description: The LaunchLayer identity requests are attributed to.
+      properties:
+        userID:
+          type: string
+          description: LaunchLayer user ID.
+          x-go-type-skip-optional-pointer: true
+        username:
+          type: string
+          description: LaunchLayer username.
+          x-go-type-skip-optional-pointer: true
+
+    LaunchLayerSecurityGroup:
+      type: object
+      additionalProperties: false
+      description: A security group LaunchLayer creates with the cluster and deletes with it.
+      required: [name, type]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 24
+          pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+          description: |
+            Security group name, referenced by node pools via securityGroupRefs.
+            A DNS label of at most 24 characters, unique within the cluster.
+        type:
+          type: string
+          enum: [BARE_METAL, VIRTUALIZED]
+          description: Immutable. A virtual VPC can contain both kinds of groups.
+        networkType:
+          type: string
+          enum: [primary, secondary]
+          description: Required for a VIRTUALIZED group and rejected for a BARE_METAL group.
+
+    LaunchLayerClusterProvider:
+      type: object
+      additionalProperties: false
+      description: |
+        LaunchLayer identifiers for the cluster. Exactly one of vpcID or orgID
+        must be set, and siteID is required. All fields are fixed at creation.
+      required: [siteID]
+      properties:
+        vpcID:
+          type: string
+          description: An existing LaunchLayer VPC that CAPLL observes but never deletes.
+          x-go-type-skip-optional-pointer: true
+        orgID:
+          type: string
+          description: Organization in which CAPLL creates a VPC when vpcID is omitted.
+          x-go-type-skip-optional-pointer: true
+        vpcType:
+          type: string
+          enum: [BARE_METAL, VIRTUALIZED]
+          description: |
+            Network type for a managed or existing VPC. When omitted, CAPLL
+            treats the VPC as VIRTUALIZED. A VIRTUALIZED security group needs a
+            VIRTUALIZED VPC.
+        siteID:
+          type: string
+          description: Names the LaunchLayer datahall this cluster's machines come from.
+          x-go-type-skip-optional-pointer: true
+        cloudProviderEnabled:
+          type: boolean
+          description: |
+            Set true where a cloud controller manager runs, so CAPLL leaves the
+            Node's provider ID to it. NVKE runs no CCM, so true is rejected.
+          x-go-type-skip-optional-pointer: true
+        owner:
+          $ref: "#/components/schemas/LaunchLayerClusterOwner"
+        securityGroups:
+          type: array
+          maxItems: 16
+          description: Security groups CAPLL creates with the cluster and deletes with it.
+          items:
+            $ref: "#/components/schemas/LaunchLayerSecurityGroup"
+
     InfraClusterProvider:
       x-fern-ignore: true
       type: object
@@ -2690,6 +2822,89 @@ components:
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
+
+    LaunchLayerSecurityGroupRefs:
+      type: object
+      additionalProperties: false
+      description: |
+        Names of the owning cluster's managed security groups to attach, per
+        network interface. Mutually exclusive with securityGroups (existing
+        group IDs) per interface — CAPLL supports both but NVKE always creates
+        groups through the cluster, so NVKE only exposes refs.
+      properties:
+        primaryNetworkInterface:
+          type: array
+          description: Managed security group names to attach to the primary network interface.
+          items:
+            type: string
+          x-go-type-skip-optional-pointer: true
+        gpuNetworkInterface:
+          type: array
+          description: Managed security group names to attach to the GPU network interface.
+          items:
+            type: string
+          x-go-type-skip-optional-pointer: true
+
+    LaunchLayerNodePoolProvider:
+      type: object
+      additionalProperties: false
+      description: |
+        LaunchLayer settings for a node pool. instanceType is required, and
+        at most one of hostOSProfile and vmProfile may be set.
+      required: [instanceType]
+      properties:
+        instanceType:
+          type: string
+          minLength: 1
+          description: Requests capacity of a given shape, for example "vm200".
+          x-go-type-skip-optional-pointer: true
+        hostOSProfile:
+          type: string
+          description: Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with vmProfile.
+          x-go-type-skip-optional-pointer: true
+        vmProfile:
+          type: string
+          description: Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
+          x-go-type-skip-optional-pointer: true
+        fulfillmentStrategy:
+          type: string
+          enum: [BEST_EFFORT, ALL_OR_NOTHING, WAIT_FOR_RESOURCE]
+          description: Controls how the Compute Allocation Operator places the request.
+        securityGroupRefs:
+          $ref: "#/components/schemas/LaunchLayerSecurityGroupRefs"
+
+    LaunchLayerNodePoolProviderUpdate:
+      type: object
+      additionalProperties: false
+      description: |
+        All LaunchLayer node-pool fields (instanceType, hostOSProfile, vmProfile,
+        fulfillmentStrategy, securityGroupRefs) are fixed at creation: a request
+        carrying one is rejected with 400. A body echoed from GET must have them
+        stripped.
+
+    LaunchLayerNodeSetProvider:
+      type: object
+      additionalProperties: false
+      description: LaunchLayer settings in a node set (read-only snapshot).
+      properties:
+        instanceType:
+          type: string
+          description: Requests capacity of a given shape, for example "vm200".
+          x-go-type-skip-optional-pointer: true
+        hostOSProfile:
+          type: string
+          description: Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with vmProfile.
+          x-go-type-skip-optional-pointer: true
+        vmProfile:
+          type: string
+          description: Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
+          x-go-type-skip-optional-pointer: true
+        fulfillmentStrategy:
+          type: string
+          enum: [BEST_EFFORT, ALL_OR_NOTHING, WAIT_FOR_RESOURCE]
+          description: Controls how the Compute Allocation Operator places the request.
+        securityGroupRefs:
+          $ref: "#/components/schemas/LaunchLayerSecurityGroupRefs"
 
     InfraNodePoolProvider:
       x-fern-ignore: true
@@ -2913,6 +3128,43 @@ components:
           description: SSH key groups for node access. Can be updated.
           x-go-type-skip-optional-pointer: true
 
+    LaunchLayerControlPlaneProvider:
+      type: object
+      additionalProperties: false
+      description: |
+        LaunchLayer settings for the control-plane nodes. Same shape as
+        LaunchLayerNodePoolProvider — control-plane nodes are still
+        LaunchLayer machines. Fixed at creation.
+      required: [instanceType]
+      properties:
+        instanceType:
+          type: string
+          minLength: 1
+          description: Requests capacity of a given shape, for example "vm200".
+          x-go-type-skip-optional-pointer: true
+        hostOSProfile:
+          type: string
+          description: Bare-metal profile, as "<name>" or "<name>:<version>". Mutually exclusive with vmProfile.
+          x-go-type-skip-optional-pointer: true
+        vmProfile:
+          type: string
+          description: Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
+          x-go-type-skip-optional-pointer: true
+        fulfillmentStrategy:
+          type: string
+          enum: [BEST_EFFORT, ALL_OR_NOTHING, WAIT_FOR_RESOURCE]
+          description: Controls how the Compute Allocation Operator places the request.
+        securityGroupRefs:
+          $ref: "#/components/schemas/LaunchLayerSecurityGroupRefs"
+
+    LaunchLayerControlPlaneProviderUpdate:
+      type: object
+      additionalProperties: false
+      description: |
+        All LaunchLayer control-plane fields are fixed at creation: a request
+        carrying one is rejected with 400. A body echoed from GET must have
+        them stripped.
+
     InfraControlPlaneProvider:
       x-fern-ignore: true
       type: object
@@ -2981,6 +3233,27 @@ components:
           type: string
           format: uuid
           description: NICo instance type the node was provisioned with.
+          x-go-type-skip-optional-pointer: true
+
+    LaunchLayerNodeProvider:
+      type: object
+      additionalProperties: false
+      description: |
+        LaunchLayer identifiers of the instance behind a node, reported by
+        CAPLL on LaunchLayerMachine.status. Omitted when none of its fields
+        are set — a node not yet provisioned has none of them.
+      properties:
+        instanceID:
+          type: string
+          description: LaunchLayer Compute instance ID.
+          x-go-type-skip-optional-pointer: true
+        machineID:
+          type: string
+          description: Physical machine the instance landed on. Empty for a virtual instance.
+          x-go-type-skip-optional-pointer: true
+        rackID:
+          type: string
+          description: Rack the instance landed in. Populated for both virtual and physical instances.
           x-go-type-skip-optional-pointer: true
 
     DiskSelectionStrategy:

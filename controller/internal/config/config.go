@@ -21,6 +21,8 @@ const (
 	InfraProviderNico = "nico"
 	// InfraProviderInfra is the API-facing name for the generic CAPI provider block.
 	InfraProviderInfra = "infra"
+	// InfraProviderLaunchLayer is the API-facing name for the LaunchLayer provider block.
+	InfraProviderLaunchLayer = "launchLayer"
 
 	SpireAttestationMethodTPM       SpireAttestationMethod = "tpm"
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
@@ -403,7 +405,7 @@ type Config struct {
 
 // TracingConfig configures OpenTelemetry span export.
 type TracingConfig struct {
-	// Enabled turns on span export and per-query database spans.
+	// Enabled turns on span export and database spans for queries with a trace parent.
 	Enabled bool `controllerconfig:"tracing.enabled"`
 	// Endpoint is the OTLP gRPC collector host:port (scheme optional) that
 	// spans are exported to. When empty, the OTEL_EXPORTER_OTLP_* variables the

@@ -135,6 +135,6 @@ spec:
     )
 
     return struct(
-        cwe_resource_deps=[SYSCMP_PROVIDER_RESOURCE],
-        cwe_env_overrides={},
+        controller_resource_deps=[SYSCMP_PROVIDER_RESOURCE],
+        controller_env_overrides={},
     )

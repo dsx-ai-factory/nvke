@@ -345,6 +345,45 @@ provider-manifest-check: capnico-manifest-check ## Verify the embedded provider 
 		|| { echo "ERROR: $(PROVIDER_MANIFEST) is stale. Run 'make -C cli provider-manifest' and commit it."; exit 1; }
 	@echo "  $(PROVIDER_MANIFEST) is up to date."
 
+.PHONY: docs docs-check
+# The nvkectl command reference: one page per public command, generated from the
+# same cobra tree the binary runs. hack/gendocs builds that tree and reads its
+# metadata -- it runs no command, so this needs no credential, kubeconfig,
+# configured site or reachable cluster, and nothing beyond the module cache.
+#
+# Deterministic by construction: the generator clears the NVKECTL_ and NKECTL_
+# variables before building the tree, because two of `bootstrap site`'s flag
+# defaults are read from the environment when the command is constructed, and
+# it switches off cobra's generated-on timestamp. See cli/internal/clidocs.
+DOCS_DIR := docs/reference
+
+docs: ## Regenerate the nvkectl command reference under docs/reference.
+	@$(GO) run ./hack/gendocs -output $(DOCS_DIR)
+
+docs-check: ## Verify the nvkectl command reference is up to date. (run by the merge gate)
+	@# Tracking first, as provider-manifest-check does: git diff says nothing
+	@# about an untracked path, so a reference that was never committed would
+	@# otherwise pass this check in silence.
+	@git ls-files --error-unmatch $(DOCS_DIR)/README.md > /dev/null 2>&1 \
+		|| { echo "ERROR: $(DOCS_DIR) is not tracked by git. Run 'make -C cli docs' and commit it."; exit 1; }
+	@$(MAKE) --no-print-directory docs
+	@# `docs` empties the directory before writing, so a page for a command
+	@# that no longer exists is not rewritten and shows up here as a deletion.
+	@# That is the obsolete-page case; a changed page is a modification.
+	@git diff --exit-code --stat -- $(DOCS_DIR) \
+		|| { echo "ERROR: the nvkectl reference is stale. Run 'make -C cli docs' and commit $(DOCS_DIR)."; exit 1; }
+	@# And the case git diff cannot see: a page for a NEW command, generated
+	@# just now and never added. Without this a new command reaches main
+	@# undocumented, with every check green.
+	@untracked=$$(git ls-files --others --exclude-standard -- $(DOCS_DIR)); \
+	if [ -n "$$untracked" ]; then \
+		echo "ERROR: the nvkectl reference has pages that are not tracked by git:"; \
+		printf '%s\n' "$$untracked" | sed 's/^/    /'; \
+		echo "Run 'make -C cli docs' and commit $(DOCS_DIR)."; \
+		exit 1; \
+	fi
+	@echo "  the nvkectl reference matches the command tree."
+
 notices: ## Regenerate THIRD_PARTY_NOTICES.md for the nvkectl binary.
 	@# The tool and the script both live in controller/, which is a sibling now,
 	@# not the parent. `go-licenses`, not `bin/go-licenses`: the real rule's

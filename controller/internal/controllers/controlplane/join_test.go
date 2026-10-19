@@ -4,14 +4,78 @@
 package controlplane
 
 import (
+	"bytes"
+	"encoding/json"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"go.temporal.io/api/serviceerror"
+	temporalmocks "go.temporal.io/sdk/mocks"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
+
+func TestReconcileControlPlaneJoinsOmitsEmptyNodePoolIDFromLookupLog(t *testing.T) {
+	clusterID := uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")
+	nodeID := uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+	const (
+		workflowID = "join-node-eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+		runID      = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+	)
+
+	temporalClient := &temporalmocks.Client{}
+	temporalClient.On("DescribeWorkflowExecution", mock.Anything, workflowID, "").
+		Return(nil, serviceerror.NewNotFound("workflow not found")).Once()
+	workflowRun := &temporalmocks.WorkflowRun{}
+	workflowRun.On("GetRunID").Return(runID).Once()
+	temporalClient.On("ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(workflowRun, nil).Once()
+
+	var logs bytes.Buffer
+	r := &reconciler{
+		cfg:                      config.Config{TemporalTaskQueue: "test-task-queue"},
+		logger:                   slog.New(slog.NewJSONHandler(&logs, nil)),
+		controllerTemporalClient: temporalClient,
+	}
+	cluster := db.Cluster{
+		ID:   clusterID,
+		Name: "test-cluster",
+		Conditions: db.ClusterConditions{
+			Provisioned: db.NewCondition(true, "provisioned"),
+		},
+	}
+	cp := &controlPlane{nodes: []db.Node{{
+		ID:           nodeID,
+		Name:         "test-control-plane-node",
+		ControlPlane: true,
+		NodePoolID:   uuid.Nil,
+		Conditions: db.NodeConditions{
+			ReadyToJoin: db.NewCondition(true, "ready"),
+		},
+	}}}
+
+	started, err := r.reconcileControlPlaneJoins(t.Context(), cluster, cp)
+	require.NoError(t, err)
+	require.True(t, started)
+	temporalClient.AssertExpectations(t)
+	workflowRun.AssertExpectations(t)
+
+	var record map[string]any
+	require.NoError(t, json.Unmarshal(logs.Bytes(), &record))
+	require.Equal(t, "Started control-plane JoinNode workflow", record["msg"])
+	require.Equal(t, clusterID.String(), record["cluster_id"])
+	require.NotContains(t, record, "node_pool_id")
+	require.Equal(t, nodeID.String(), record["node_id"])
+	require.Equal(t, "test-control-plane-node", record["node_name"])
+	require.Equal(t, workflowID, record["workflow_id"])
+	require.Equal(t, runID, record["run_id"])
+}
 
 func TestControlPlaneJoinCandidates(t *testing.T) {
 	t.Parallel()

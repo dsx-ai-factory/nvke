@@ -74,7 +74,7 @@ Record the `kube-system` UID, node names/IPs, API endpoint, and workload
 readiness against the selected site's inventory. Verify the NVKE controller
 API, Temporal workers, database, infrastructure provider, and site identity
 services using your deployment's health checks. See
-[Observability](../operations/observability.md) for NVKE service diagnostics.
+[Observe NVKE and its clusters](../operate/observe.md) for NVKE service diagnostics.
 
 **Operator machine — connect to a control-plane node.** Use your fleet's remote
 access method. With ordinary SSH, for example:
@@ -169,7 +169,7 @@ Before any renewal, verify a recent **off-node etcd snapshot** and that the
 recovery owner has the matching encryption configuration/key, CA keys, and
 restore instructions. A YAML export or filesystem copy of `/var/lib/etcd` is
 not a substitute. See [etcd recovery](https://etcd.io/docs/v3.7/op-guide/recovery/)
-and [NVKE's encryption-key notes](../site-bootstrap/pre-provisioned-nodes.md).
+and the etcd encryption key file in [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md).
 
 Also back up the selected node's `/etc/kubernetes` tree **off-node** before
 renewing it. From the operator machine, with approved SSH and noninteractive

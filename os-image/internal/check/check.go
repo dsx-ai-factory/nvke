@@ -88,8 +88,8 @@ func NormalizeEndpoint(raw string) (string, error) {
 }
 
 // Probe dials endpoint over SPIFFE mTLS, lists gRPC services, and calls
-// GetKubeadmStatus. The local workload API must issue an SVID under
-// /nke-service/ in the agent's trust domain.
+// GetKubeadmStatus. The local workload API must issue an SVID under a path
+// authorizedClientPath accepts, in the agent's trust domain.
 func Probe(ctx context.Context, opts Options) (Result, error) {
 	endpoint, err := NormalizeEndpoint(opts.Endpoint)
 	if err != nil {

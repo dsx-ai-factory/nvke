@@ -8,7 +8,7 @@ The command loads the file, applies defaults, and validates every field before
 it dispatches any work. Any invalid or missing field fails fast with a clear
 error and no node is touched.
 
-A ready-to-copy example is in [`examples/sitespec.yaml`](../examples/sitespec.yaml).
+A ready-to-copy example is in [`examples/sitespec.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/cli/examples/sitespec.yaml).
 
 ## Generating one
 
@@ -65,7 +65,7 @@ the cluster on them. Setting `infra.provider: nico` swaps that list for
 `infra.nico`: CAPNICo allocates the same number of control-plane machines from
 a NICo site, with the instance types, network, SSH key groups and release the
 block names. Everything else in the
-file means what it did. [`examples/sitespec-nico.yaml`](../examples/sitespec-nico.yaml)
+file means what it did. [`examples/sitespec-nico.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/cli/examples/sitespec-nico.yaml)
 is a complete example.
 
 **This NICo is for bootstrap only.** It is the NICo that allocates the site
@@ -87,7 +87,7 @@ you delete the cluster with
 until then. After a failure before every control-plane node joined, release the
 NICo instances CAPNICo allocated before you delete the cluster, as the failure
 message and
-[the retained bootstrap cluster](bootstrap-troubleshooting.md#release-the-nico-instances-first)
+[the retained bootstrap cluster](https://github.com/dsx-ai-factory/nvke/blob/main/cli/docs/bootstrap-troubleshooting.md#release-the-nico-instances-first)
 describe: deleting the Kind cluster alone leaves them allocated and unmanaged.
 After every control-plane node joined the site cluster is working and its NICo
 machines belong to it, so release nothing: recover the kubeconfig and key, then
@@ -272,6 +272,7 @@ applies every file in `infra.nico.releases`.
 | `cluster.oidcProviders` | list | no | OIDC providers for site cluster. Cannot be modified afterwards. Ignored when absent. Rejected when `cluster.k8sVersion` is older than `1.34.0`. Each entry needs `name`, `issuerURL`, `audiences`, `usernameClaim`, `usernamePrefix`, and `caBundle` (inline PEM). Optional: `groupsClaim`, `groupsPrefix`, `requiredClaims`.|
 | `spire.upstreamCA` | bool | no | `true` when the site's SPIRE chains to a CA you bring. Every `bootstrap site`, `validate sitespec` and install run then requires `NVKECTL_SPIRE_CA_CERT_FILE` and `NVKECTL_SPIRE_CA_KEY_FILE`, and the variables are refused without it. See "The SPIRE CA". |
 | `spire.trustDomain` | string | no | SPIFFE trust domain, shared by the bootstrap and the controller stack install. Set it once, before the bootstrap, or leave it unset: both then use `nvkectl-bootstrap.nke.local`, and the install says so. A bootstrap run with `NVKECTL_BOOTSTRAP_CLUSTER_NAME` set derives another, so set it then. |
+
 The version (image/chart tag) is baked into the `nvkectl` build, so it is not
 part of the site spec.
 
@@ -289,8 +290,8 @@ The controller stack install reads the site spec too, and changes nothing
 in it: the site name, the control-plane VIP and the SPIRE trust domain are
 the bootstrap's facts the stack must agree with. Everything only the stack
 needs lives in a separate file, the stack config, which starts from
-[`deploy/examples/stack-config.json`](../../deploy/examples/stack-config.json);
-[deploy/README.md](../../deploy/README.md) lists its keys. The credentials
+[`deploy/examples/stack-config.json`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/examples/stack-config.json);
+[deploy/README.md](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/README.md) lists its keys. The credentials
 come from the environment (see "Credential handling"), and the nodes'
 architecture is in neither file: the install reads it from the cluster.
 
@@ -447,7 +448,7 @@ A non-empty list requires `cluster.k8sVersion` `1.34.0` or newer and contains at
 | `issuerURL` | yes | Issuer URL. An `https` URL, unique in the list. The API server compares it with the token's `iss` claim. |
 | `audiences` | yes | `aud` values the API server accepts. At least one, and none empty. |
 | `usernameClaim` | yes | Claim the API server uses as the username. |
-| `usernamePrefix` | yes | Text the API server puts in front of the username. It must not start with `system:`, `kubeadm:`, `nvke:`, or `nvidia:`. |
+| `usernamePrefix` | yes | Text the API server puts in front of the username. It must not start with `system:`, `kubeadm:`, `nke:`, `nvke:`, or `nvidia:`. |
 | `groupsClaim` | no | Claim the API server uses as the user's groups. |
 | `groupsPrefix` | no | Text the API server puts in front of each group. The reserved prefixes are the same as for `usernamePrefix`. |
 | `requiredClaims` | no | Map of claim name to the value that claim must hold. |

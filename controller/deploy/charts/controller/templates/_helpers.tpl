@@ -119,7 +119,7 @@ The nke-controller-config ConfigMap, its file key, and where it is mounted.
 CONTROLLER_CONFIG_PATH is the mount and the file joined, so none are values.
 */}}
 {{- define "controller.controllerConfig.name" -}}
-nke-controller-config
+{{- required "controllerConfig.name must not be empty" .Values.controllerConfig.name -}}
 {{- end }}
 
 {{- define "controller.controllerConfig.file" -}}

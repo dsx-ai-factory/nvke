@@ -689,7 +689,7 @@ sa="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
 endpoints="$(bk -n "${CONTROLLER_NAME}" get endpoints "${CONTROLLER_NAME}-external" \
   -o 'jsonpath={.subsets[*].addresses[*].ip}')"
 [ -n "${endpoints}" ] || fail "Service ${CONTROLLER_NAME}-external has no endpoints"
-spiffe_id="spiffe://${SPIRE_TRUST_DOMAIN}/nke-service/${CONTROLLER_NAME}"
+spiffe_id="spiffe://${SPIRE_TRUST_DOMAIN}/nvke-service/${CONTROLLER_NAME}"
 bk -n spire-server exec spire-server-0 -c spire-server -- \
   /opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" | grep -q "Entry ID" ||
   fail "SPIRE has no entry for ${spiffe_id}"

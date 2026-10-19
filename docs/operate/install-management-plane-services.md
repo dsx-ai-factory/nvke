@@ -1,6 +1,6 @@
 # Install management-plane services
 
-This page describes how to install the NVIDIA Kubernetes Engine (NVKE) management plane on the management cluster: Cluster API, the Cluster API infrastructure provider for NVIDIA Infra Controller (NICo), called CAPNICo, PostgreSQL, Temporal, SPIRE, NVKE telemetry pipelines (NKTP), and the NVKE API and controllers. You do this after [Bootstrap the management cluster](bootstrap-management-cluster.md) and before you configure the infrastructure provider and API authentication.
+This page describes how to install the NVIDIA Kubernetes Engine (NVKE) management plane on the management cluster: Cluster API, the Cluster API infrastructure provider for NVIDIA Infra Controller (NICo), called CAPNICo, PostgreSQL, Temporal, SPIRE, NVKE telemetry pipeline (NKTP), and the NVKE API and controllers. You do this after [Bootstrap the management cluster](bootstrap-management-cluster.md) and before you configure the infrastructure provider and API authentication.
 
 The install is a short list of commands that you run in order. Each one stands on its own, and nothing orchestrates them. The first command checks the cluster and your host and tells you what is still missing. The install reads four inputs:
 
@@ -98,7 +98,7 @@ The install takes its charts and images from one of three places. The commands i
 | A local NVKR Run | `--release ../release.json --nvkr-run-dir <NVKR_CHECKOUT>/.nvkr/runs/<ATTEMPT>` | Charts and images come out of the Run's OCI layouts and are imported into the nodes' container runtime. No registry is involved. |
 | No release | Neither flag | Every chart comes from the checkout and the public repositories. Set `images.profiles` in the stack config, as `repository:tag` or `repository@sha256:<digest>`: the deploy path enables the profile content image without naming it. `images.controller` is optional in the same form; without it the install uses the overlay's pinned image, the newest controller release. |
 
-The install refuses a release that lacks an image artifact the deploy path names: the controller image `cwe`, the profile content image `controller-profiles` or the CAPNICo image `capnico-controller`. See [Preview status and known limitations](../overview/preview-status.md).
+The install refuses a release that lacks an image artifact the deploy path names: the controller image `cwe`, the profile content image `controller-profiles` or the CAPNICo image `capnico-controller`. NVKR's maintained M2 Definition builds neither `controller-profiles` nor `capnico-controller`, so for a Release built from it use the last row: run the commands below without `--release`, and set `images.profiles` in the stack config as [Get NVKE artifacts from NVKR and write release manifests](build-node-images.md) describes. See [Preview status and known limitations](../overview/preview-status.md).
 
 ## Install
 

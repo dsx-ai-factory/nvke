@@ -37,7 +37,7 @@ ServiceMonitor or PodMonitor endpoint. Keep the timeout below the scrape interva
 
 ## Kubernetes component metrics
 
-NVKE telemetry pipelines (NKTP) enables the kube-stack ServiceMonitors for kube-apiserver,
+NVKE telemetry pipeline (NKTP) enables the kube-stack ServiceMonitors for kube-apiserver,
 kube-controller-manager, kube-scheduler, etcd, CoreDNS, and kube-proxy. They are
 labeled `nktp.nvidia.io/large-target: "true"` and selected by the large-target
 metrics Target Allocator. Component availability, labels, ports, and network

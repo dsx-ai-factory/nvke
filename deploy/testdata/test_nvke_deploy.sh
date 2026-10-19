@@ -33,6 +33,9 @@ export NVKECTL_RENDER_ALLOW_TEMP_OUT=1
 for name in INFRA_PROVIDER SPIRE_EXTERNAL_ADDRESS CLUSTER_NODES SPIFFE_TRUST_DOMAIN; do
   unset "NVKECTL_${name}" "NKECTL_${name}"
 done
+# The local site's env.sh exports the wrapper's inputs; a shell that sourced
+# it would point the wrapper tests at a real site.
+unset NVKE_SITESPEC NVKE_STACK_CONFIG NVKE_KUBECONFIG NVKE_LOCAL_SITE_DIR
 
 failures=0
 pass() { printf 'PASS  %s\n' "$*"; }
@@ -511,6 +514,80 @@ out="$(bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" 2>&1)" && fail "ch
 expect "the inputs are required" '^usage: check-site.sh' "${out}"
 PATH="${stubs}:${PATH}" NVKE_STATE_DIR="${WORK}/check-state" bash "${CHECK}" --kubeconfig "${WORK}/stub.kubeconfig" --diagnostics >/dev/null 2>&1 || fail "check-site --diagnostics exited $?"
 [[ -f "${WORK}/check-state/diagnostics/nodes.txt" ]] && pass "diagnostics are written under the state directory" || fail "no diagnostics: $(ls -R "${WORK}/check-state" 2>/dev/null)"
+
+# hack/local-site.sh and deploy/nvke-deploy-local.sh. The stages shell out to
+# the runtimes, so they run here against stubs on PATH that answer "nothing is
+# up": the tests cannot touch a node or a simulator on this machine.
+LOCAL_SITE="${REPO}/hack/local-site.sh"
+LOCAL_DEPLOY="${DEPLOY_DIR}/nvke-deploy-local.sh"
+[[ -x "${LOCAL_SITE}" && -x "${LOCAL_DEPLOY}" ]] && pass "the local-site scripts are executable, as make and the page run them" || fail "a local-site script is not executable"
+lstubs="${WORK}/local-site-stubs"
+mkdir -p "${lstubs}"
+printf '#!/usr/bin/env bash\n[[ -z "${STUB_LOG:-}" ]] || printf "%%s\\n" "nerdctl $*" >>"${STUB_LOG}"\ncase "$*" in *inspect*) exit 1 ;; esac\nexit 0\n' >"${lstubs}/nerdctl"
+printf '#!/usr/bin/env bash\n[[ -z "${STUB_LOG:-}" ]] || printf "%%s\\n" "docker $*" >>"${STUB_LOG}"\ncase "$*" in *"network inspect"*) exit 1 ;; esac\nexit 0\n' >"${lstubs}/docker"
+printf '#!/usr/bin/env bash\n[[ -z "${STUB_LOG:-}" ]] || printf "%%s\\n" "kubectl $*" >>"${STUB_LOG}"\nexit 1\n' >"${lstubs}/kubectl"
+printf '#!/usr/bin/env bash\nexit 0\n' >"${lstubs}/iptables"
+printf '#!/usr/bin/env bash\n[[ -z "${STUB_LOG:-}" ]] || printf "%%s\\n" "ip $*" >>"${STUB_LOG}"\nexit 1\n' >"${lstubs}/ip"
+chmod +x "${lstubs}"/*
+lsite() { PATH="${lstubs}:${PATH}" NVKE_LOCAL_SITE_DIR="${WORK}/local-site" bash "${LOCAL_SITE}" "$@" 2>&1; }
+out="$(lsite)" && fail "local-site.sh without a verb exited 0"
+expect "local-site.sh prints its usage" 'hack/local-site.sh setup ' "${out}"
+out="$(lsite status)" || fail "local-site.sh status on nothing exited $?: ${out}"
+expect "status says the node is down" '^node: *down$' "${out}"
+expect "status says the images are not staged" '^images: *not staged$' "${out}"
+expect "status says the management cluster is down" '^management: *down$' "${out}"
+expect "status says nico-sim is down" '^nico-sim: *down$' "${out}"
+: >"${WORK}/local-site.log"
+out="$(STUB_LOG="${WORK}/local-site.log" lsite down)" || fail "local-site.sh down on nothing exited $?: ${out}"
+expect "down on nothing ends down" '^\[local-site\] down$' "${out}"
+reject "down on nothing removes no container" 'docker rm|nerdctl rm|nodes-down' "$(cat "${WORK}/local-site.log")"
+reject "down on nothing touches no bridge" '^ip ' "$(cat "${WORK}/local-site.log")"
+[[ ! -e "${WORK}/local-site" ]] && pass "down leaves no workspace" || fail "workspace left"
+# A directory that is not a workspace is refused, not removed.
+mkdir -p "${WORK}/local-site/keep"
+out="$(lsite down)" && fail "down on a directory without env.sh exited 0"
+expect "down refuses a directory it did not write" 'is not a workspace this script wrote' "${out}"
+[[ -d "${WORK}/local-site/keep" ]] && pass "the directory is left alone" || fail "the directory was removed"
+rm -rf "${WORK}/local-site"
+# An env.sh this script wrote is the other credential; an unrelated one is not.
+mkdir -p "${WORK}/local-site" && printf '# shellcheck shell=bash\n# Written by hack/local-site.sh setup; the credentials are the lab'"'"'s.\n' >"${WORK}/local-site/env.sh"
+out="$(lsite down)" || fail "down on a workspace with this script's env.sh exited $?: ${out}"
+[[ ! -e "${WORK}/local-site" ]] && pass "down removes a workspace by its env.sh header" || fail "workspace with env.sh left"
+mkdir -p "${WORK}/local-site" && printf 'export FOO=bar\n' >"${WORK}/local-site/env.sh"
+out="$(lsite down)" && fail "down on a directory with an unrelated env.sh exited 0"
+expect "down refuses an unrelated env.sh" 'is not a workspace this script wrote' "${out}"
+rm -rf "${WORK}/local-site"
+# A setup that stopped before env.sh left the marker: down removes it.
+mkdir -p "${WORK}/local-site/releases" && : >"${WORK}/local-site/.local-site"
+out="$(lsite down)" || fail "down on a half-finished workspace exited $?: ${out}"
+[[ ! -e "${WORK}/local-site" ]] && pass "down removes a workspace the setup started" || fail "half-finished workspace left"
+if [[ "$(uname -s)" != Linux || "$(id -u)" != 0 ]]; then
+  out="$(lsite setup)" && fail "local-site.sh setup off Linux or without root exited 0"
+  expect "setup names what it needs" '^local-site: run as root|^local-site: run this inside the Colima machine' "${out}"
+fi
+# The example stack config loads once the setup's two image names are in.
+sed -e 's|REPLACE_CONTROLLER_IMAGE|nvke.local/nke-controller:local|' -e 's|REPLACE_PROFILES_IMAGE|nvke.local/controller-profiles:local|' "${REPO}/deploy/examples/local-site/stack-config.json" >"${WORK}/local-stack-config.json"
+out="$("${NVKECTL}" inspect stack-config "${WORK}/local-stack-config.json" 2>&1)" || fail "the local site's stack config does not load: ${out}"
+expect "the local site's stack config names nico-sim" "^STACK_NICO_ENDPOINT='http://172.26.0.1:18080'$" "${out}"
+
+# The wrapper: its inputs come from the environment; a dry run prints the
+# storage and patch steps around the executor's dry run with the inputs.
+out="$(bash "${LOCAL_DEPLOY}" 2>&1)" && fail "nvke-deploy-local.sh without a verb exited 0"
+expect "nvke-deploy-local.sh prints its usage" 'deploy/nvke-deploy-local.sh install' "${out}"
+out="$(NVKE_LOCAL_SITE_DIR="${WORK}/no-such-site" bash "${LOCAL_DEPLOY}" install --dry-run 2>&1)" && fail "nvke-deploy-local.sh without inputs exited 0"
+expect "a missing input is named with the setup to run" 'sitespec.yaml is missing; run make local-site-setup and nvkectl bootstrap site first' "${out}"
+: >"${WORK}/stub.log"
+out="$(PATH="${stubs}:${PATH}" STUB_LOG="${WORK}/stub.log" NVKE_STATE_DIR="${state}" NVKE_SITESPEC="${SITESPEC}" NVKE_STACK_CONFIG="${STACK}" NVKE_KUBECONFIG="${WORK}/stub.kubeconfig" bash "${LOCAL_DEPLOY}" install --dry-run 2>&1)" || fail "nvke-deploy-local.sh --dry-run exited $?: ${out}"
+expect "the dry run names the StorageClass step" '^=== dry run: the lab StorageClass local-path-provisioner v[0-9.]+ would be installed' "${out}"
+expect "the executor runs with the inputs from the environment" "^=== inputs: site spec ${SITESPEC}, site nvke-site, stack config ${STACK}, nico https://nico.example.com org org-1$" "${out}"
+expect "the dry run names the exec-auth patch" "^=== dry run: controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig ${WORK}/stub.kubeconfig would run$" "${out}"
+reject "the dry run makes no kubectl call" 'storageclass|apply' "$(cat "${WORK}/stub.log")"
+# --dry-run after -- belongs to helm: the wrapper's own steps run for real,
+# which against the stub kubectl means it tries the StorageClass.
+: >"${WORK}/stub.log"
+out="$(PATH="${stubs}:${PATH}" STUB_LOG="${WORK}/stub.log" NVKE_STATE_DIR="${state}" NVKE_SITESPEC="${SITESPEC}" NVKE_STACK_CONFIG="${STACK}" NVKE_KUBECONFIG="${WORK}/stub.kubeconfig" bash "${LOCAL_DEPLOY}" install -- --dry-run 2>&1)" && fail "a helm --dry-run against the stub kubectl exited 0"
+reject "a --dry-run after -- is not the wrapper's" '^=== dry run:' "${out}"
+expect "the wrapper reaches the StorageClass for real" 'storageclass' "$(cat "${WORK}/stub.log")"
 
 if [[ "${failures}" -eq 0 ]]; then
   echo "all nvke-deploy tests passed"

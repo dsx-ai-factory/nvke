@@ -332,7 +332,11 @@ Copilot, Cursor, etc.). When using AI assistance:
 - **No AI-generated sensitive content:** Do not use AI to generate security policies,
   legal text, or license headers — these require human judgment and legal review.
 - **Disclose in the PR** if a substantial portion of the change was AI-generated,
-  so reviewers can calibrate their review depth.
+  so reviewers can calibrate their review depth. Write the note yourself.
+- **No agent attribution:** Do not add `Co-Authored-By` trailers naming an AI
+  assistant to commits, or tool-generated footers such as "Generated with …" to
+  PR descriptions. You are the author of the change; turn off your tool's
+  default attribution.
 
 ## Changelog
 

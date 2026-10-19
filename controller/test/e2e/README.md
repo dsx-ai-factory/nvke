@@ -249,16 +249,19 @@ wait for both nodes to become Ready in CWE, and delete the cluster. The matrix
 reads active release names, architectures, and Kubernetes versions from the
 fleet releases (NodePoolReleases that are not deprecated, and the
 MachineImages they reference), which is maintained outside this repository.
-Resolution order:
+If `NKE_CONTROLLER_RELEASES_DIR` is set, it is used exclusively and must
+contain at least one YAML release manifest. A missing or empty explicit
+directory causes suite initialization to fail.
 
-1. `$NKE_CONTROLLER_RELEASES_DIR`
-2. sibling `../nke-site-deploy/cwe-profiles/releases`
+When the variable is unset, releases are resolved in this order:
+
+1. sibling `../nke-site-deploy/cwe-profiles/releases`
    (an NVIDIA-internal fleet repository; external contributors use the
    environment variable above instead)
-3. the stub mirror in `test/fixtures/fleet-releases`
+2. the stub mirror in `test/fixtures/fleet-releases`
 
-If no releases are found, nico-vms matrix table entries are skipped at
-suite init (no panic) so CAPD and other label filters can still run.
+If neither fallback contains releases, nico-vms matrix table entries are
+skipped at suite init so CAPD and other label filters can still run.
 
 Profiles with an embedded Kubernetes version use that version for their
 cluster; version-injected profiles use the suite default.
@@ -491,7 +494,7 @@ go test -timeout 5h . -args \
 no `site:` block is needed at all:
 
 ```bash
-gmake site-inputs SITE_CONTROLLER_VERSION=$(git rev-parse --short=12 HEAD)
+gmake site-inputs SITE_NVKE_CONTROLLER_VERSION=$(git rev-parse --short=12 HEAD)
 go test -timeout 5h . -args \
   -ginkgo.label-filter=site-controller -ginkgo.v \
   -e2e.config=e2e-config.yaml -e2e.environment=forge -e2e.site-stage=full \
@@ -513,7 +516,7 @@ pair. The CI workflow always passes suffixed pairs, from the
 `QUALIFY_E2E_OS_IMAGE_<ARCH>` and `QUALIFY_E2E_OS_IMAGE_BOOTLOADER_<ARCH>`
 repository variables.
 
-`SITE_CONTROLLER_VERSION` and `-e2e.versions=controller=` have to be the same
+`SITE_NVKE_CONTROLLER_VERSION` and `-e2e.versions=controller=` have to be the same
 string, because they name one image: the archive `site-inputs` writes, and the
 reference the suite hands the bootstrap and the deploy path, which the node
 resolves out of its own containerd rather than a registry. The suite builds
@@ -526,7 +529,7 @@ NGC org; the image names are the same:
 
 ```bash
 echo "$NGC_KEY" | docker login nvcr.io -u '$oauthtoken' --password-stdin
-gmake site-inputs SITE_IMAGE_REGISTRY=nvcr.io/<org> SITE_CONTROLLER_VERSION=...
+gmake site-inputs SITE_IMAGE_REGISTRY=nvcr.io/<org> SITE_NVKE_CONTROLLER_VERSION=...
 # and in e2e-config.yaml, site.images.{controller,capi-provisioned}.repository
 # under nvcr.io/<org>
 ```
@@ -537,8 +540,8 @@ GHCR image, and nothing else on the node pulls at all.
 `site-inputs` builds that image from the checkout. nvkectl is built here too and
 is a client of the CWE it bootstraps, so the two have to be one commit; the
 newest CWE on GHCR predates #850 and rejects this checkout's nvkectl at
-"creating the site cluster". `SITE_CONTROLLER_BUILD=0` pulls
-`SITE_CONTROLLER_VERSION` as a published tag instead, for qualifying a release
+"creating the site cluster". `SITE_NVKE_CONTROLLER_BUILD=0` pulls
+`SITE_NVKE_CONTROLLER_VERSION` as a published tag instead, for qualifying a release
 once one is cut past #850.
 
 To stage a published nvkectl instead, set `SITE_CLI_BUILD=0` and name the
@@ -554,7 +557,7 @@ release and `sha-<commit>` for a commit between releases. It needs `oras` and a
 `docker login` to the registry:
 
 ```bash
-gmake site-inputs SITE_CLI_BUILD=0 SITE_CONTROLLER_VERSION=... \
+gmake site-inputs SITE_CLI_BUILD=0 SITE_NVKE_CONTROLLER_VERSION=... \
   SITE_CLI_VERSION=v0.1.0 SITE_CLI_REF=nvcr.io/<org>/nvkectl:v0.1.0-linux-amd64
 # and in e2e-config.yaml, site.nvkectl: <SITE_INPUTS>/nvkectl/nvkectl-linux-<arch>
 # and on the suite, -e2e.versions=...,cli=<version>

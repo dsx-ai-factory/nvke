@@ -107,7 +107,7 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 
 ### The bootstrap fails at clusterctl init
 
-- **Symptom:** The bootstrap fails with `cwedeploy: clusterctl init:` and `clusterctl dev must be on PATH`, and `nvkectl version` prints `dev`.
+- **Symptom:** The bootstrap fails with `controllerdeploy: clusterctl init:` and `clusterctl dev must be on PATH`, and `nvkectl version` prints `dev`.
 - **Cause:** `nvkectl` was built with `go build`. Only the Makefile stamps the version and the Cluster API version into the binary.
 - **Fix:** Build with `make -C nvke/cli build`. If the message names a real version, `clusterctl` is missing from `PATH` or the host cannot reach `github.com`.
 
@@ -241,7 +241,7 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 - **Symptom:** The `nico` row reads `CONFIGURED`, but `CREDENTIALS` is not `HEALTHY`. The `DETAIL` column says why.
 - **Cause:** `UNSUPPORTED` is expected with the CAPNICo release the install deploys, which does not serve `NicoIdentity`. With a release that does, `NO-IDENTITY` means no `NicoIdentity` names `nico-credentials`, and `FAILING` or `UNKNOWN` carries the reason from CAPNICo's last check.
-- **Fix:** [Infrastructure providers](../../cli/README.md#infrastructure-providers) explains each value. For `FAILING`, correct the credentials as described in [Configure an infrastructure provider: NICo](provider-nico.md#manage-the-nico-credentials).
+- **Fix:** [Infrastructure providers](https://github.com/dsx-ai-factory/nvke/blob/main/cli/README.md#infrastructure-providers) explains each value. For `FAILING`, correct the credentials as described in [Configure an infrastructure provider: NICo](provider-nico.md#manage-the-nico-credentials).
 
 ### Machines are not delivered
 

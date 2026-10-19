@@ -334,7 +334,7 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	if dig(sp, "global", "spire", "trustDomain") != td || dig(sp, "global", "spire", "clusterName") != spec.ClusterName {
 		t.Errorf("spire identity: %v", sp)
 	}
-	if ids, _ := dig(sp, "spire-server", "adminIDs").([]any); len(ids) != 1 || ids[0] != "spiffe://"+td+"/nke-service/nke-controller" {
+	if ids, _ := dig(sp, "spire-server", "adminIDs").([]any); len(ids) != 1 || ids[0] != "spiffe://"+td+"/nvke-service/nke-controller" {
 		t.Errorf("adminIDs: %v", dig(sp, "spire-server", "adminIDs"))
 	}
 	if dig(sp, "spire-server", "nodeAttestor", "tpmDirect", "checksum") != "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16" {

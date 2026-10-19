@@ -60,7 +60,7 @@ The diagram shows the NVKE product family, how it sits on NICo and your GPU mach
 | Management plane | The NVKE REST API and controllers on the management cluster. Holds the inventory of clusters, node pools and nodes, and drives every lifecycle operation. | [Install management-plane services](../operate/install-management-plane-services.md) |
 | Node agent (`nvke-agent`) | A service on every node. The management plane calls it to run kubeadm, configure encryption and install components such as the CNI, without SSH. | [Prepare nodes](../operate/prepare-nodes.md) |
 | CAPNICo | The Cluster API infrastructure provider for NICo. Turns each machine NVKE requests into a NICo bare-metal instance. Separate repository: [dsx-ai-factory/cluster-api-provider-nico](https://github.com/dsx-ai-factory/cluster-api-provider-nico). | [Configure an infrastructure provider: NICo](../operate/provider-nico.md) |
-| NKTP | NVKE telemetry pipelines. OpenTelemetry pipelines for metrics, logs and traces from the management cluster and NVKE clusters. | [Observe NVKE and its clusters](../operate/observe.md) |
+| NKTP | NVKE telemetry pipeline. OpenTelemetry pipelines for metrics, logs and traces from the management cluster and NVKE clusters. | [Observe NVKE and its clusters](../operate/observe.md) |
 
 ## What you bring
 

@@ -363,7 +363,7 @@ cluster:
 // TestBootstrapSiteCommandWired verifies the command tree exposes
 // "nvkectl bootstrap site" — the runnable command required by the ticket.
 func TestBootstrapSiteCommandWired(t *testing.T) {
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	cmd, _, err := root.Find([]string{"bootstrap", siteSubcommand})
 	if err != nil {
 		t.Fatalf("find bootstrap site: %v", err)
@@ -376,7 +376,7 @@ func TestBootstrapSiteCommandWired(t *testing.T) {
 // TestBootstrapSiteImageFlags pins the two image flags by name, so the
 // registration cannot drift from the help text and the docs that name them.
 func TestBootstrapSiteImageFlags(t *testing.T) {
-	root := newRootCmd("test", "test", "test", "test")
+	root := NewRootCmd("test", "test", "test", "test")
 	cmd, _, err := root.Find([]string{"bootstrap", siteSubcommand})
 	if err != nil {
 		t.Fatalf("find bootstrap site: %v", err)

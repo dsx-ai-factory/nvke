@@ -51,6 +51,24 @@ type CAPINodePoolProvider struct {
 	SpireAttestationMethod SpireAttestationMethod `json:"spire_attestation_method,omitempty"`
 }
 
+// LaunchLayerSecurityGroupRefs names the owning cluster's managed security
+// groups to attach, per network interface. Mirrors
+// LaunchLayerMachine.spec.securityGroupRefs in CAPLL.
+type LaunchLayerSecurityGroupRefs struct {
+	PrimaryNetworkInterface []string `json:"primary_network_interface,omitempty"`
+	GPUNetworkInterface     []string `json:"gpu_network_interface,omitempty"`
+}
+
+// LaunchLayerNodePoolProvider is the LaunchLayer-specific node pool payload.
+// Reused for NodeSet, the same way NicoNodePoolProvider is.
+type LaunchLayerNodePoolProvider struct {
+	InstanceType        string                       `json:"instance_type,omitempty"`
+	HostOSProfile       string                       `json:"host_os_profile,omitempty"`
+	VMProfile           string                       `json:"vm_profile,omitempty"`
+	FulfillmentStrategy string                       `json:"fulfillment_strategy,omitempty"`
+	SecurityGroupRefs   LaunchLayerSecurityGroupRefs `json:"security_group_refs,omitempty"`
+}
+
 // Equal reports whether two NicoNodePoolProvider values represent the same configuration.
 // SubnetIDs and VpcPrefixIDs are compared as sets (order-independent).
 func (n NicoNodePoolProvider) Equal(other NicoNodePoolProvider) bool {
@@ -67,6 +85,16 @@ func (c CAPINodePoolProvider) Equal(other CAPINodePoolProvider) bool {
 		c.SpireAttestationMethod == other.SpireAttestationMethod &&
 		cloudInitFilesEqual(c.BootstrapFiles, other.BootstrapFiles) &&
 		slices.Equal(c.PreKubeadmCommands, other.PreKubeadmCommands)
+}
+
+// Equal reports whether two LaunchLayerNodePoolProvider values represent the same configuration.
+func (l LaunchLayerNodePoolProvider) Equal(other LaunchLayerNodePoolProvider) bool {
+	return l.InstanceType == other.InstanceType &&
+		l.HostOSProfile == other.HostOSProfile &&
+		l.VMProfile == other.VMProfile &&
+		l.FulfillmentStrategy == other.FulfillmentStrategy &&
+		slices.Equal(l.SecurityGroupRefs.PrimaryNetworkInterface, other.SecurityGroupRefs.PrimaryNetworkInterface) &&
+		slices.Equal(l.SecurityGroupRefs.GPUNetworkInterface, other.SecurityGroupRefs.GPUNetworkInterface)
 }
 
 func uuidSlicesSetEqual(a, b []uuid.UUID) bool {
@@ -161,6 +189,8 @@ type NodePool struct {
 	// Machine metadata is fixed at pool creation and applied only to new Machines.
 	MachineAnnotations map[string]string `bun:"type:jsonb,notnull,default:'{}'"`
 	MachineLabels      map[string]string `bun:"type:jsonb,notnull,default:'{}'"`
+
+	LaunchLayer *LaunchLayerNodePoolProvider `bun:"launch_layer,type:jsonb"`
 }
 
 // NodeTaint is a Kubernetes taint stored as the desired set for every node in a pool.
@@ -214,6 +244,13 @@ func (n *NodePool) CAPIProvider() (CAPINodePoolProvider, error) {
 	return *cloneCAPINodePoolProvider(*n.Capi), nil
 }
 
+func (n *NodePool) LaunchLayerProvider() (LaunchLayerNodePoolProvider, error) {
+	if n.LaunchLayer == nil {
+		return LaunchLayerNodePoolProvider{}, fmt.Errorf("%w: node pool %s launch_layer", ErrMissingProviderPayload, n.ID)
+	}
+	return *cloneLaunchLayerNodePoolProvider(*n.LaunchLayer), nil
+}
+
 // ResolveProviderType infers the node pool's provider type from which
 // provider payload is set. NodePool has no persisted ProviderType field the
 // way Cluster does, so this is the node-pool equivalent of
@@ -224,6 +261,8 @@ func (n *NodePool) ResolveProviderType() (ProviderType, error) {
 		return ProviderTypeNico, nil
 	case n.Capi != nil:
 		return ProviderTypeCAPI, nil
+	case n.LaunchLayer != nil:
+		return ProviderTypeLaunchLayer, nil
 	default:
 		return "", fmt.Errorf("%w: node pool %s has no provider payload set", ErrMissingProviderPayload, n.ID)
 	}
@@ -232,11 +271,19 @@ func (n *NodePool) ResolveProviderType() (ProviderType, error) {
 func (n *NodePool) SetNico(provider NicoNodePoolProvider) {
 	n.Nico = cloneNicoNodePoolProvider(provider)
 	n.Capi = nil
+	n.LaunchLayer = nil
 }
 
 func (n *NodePool) SetCapi(provider CAPINodePoolProvider) {
 	n.Capi = cloneCAPINodePoolProvider(provider)
 	n.Nico = nil
+	n.LaunchLayer = nil
+}
+
+func (n *NodePool) SetLaunchLayer(provider LaunchLayerNodePoolProvider) {
+	n.LaunchLayer = cloneLaunchLayerNodePoolProvider(provider)
+	n.Nico = nil
+	n.Capi = nil
 }
 
 func cloneNicoNodePoolProvider(provider NicoNodePoolProvider) *NicoNodePoolProvider {
@@ -259,6 +306,19 @@ func cloneCAPINodePoolProvider(provider CAPINodePoolProvider) *CAPINodePoolProvi
 		BootstrapFiles:         append([]CloudInitFile(nil), provider.BootstrapFiles...),
 		PreKubeadmCommands:     append([]string(nil), provider.PreKubeadmCommands...),
 		SpireAttestationMethod: provider.SpireAttestationMethod,
+	}
+}
+
+func cloneLaunchLayerNodePoolProvider(provider LaunchLayerNodePoolProvider) *LaunchLayerNodePoolProvider {
+	return &LaunchLayerNodePoolProvider{
+		InstanceType:        provider.InstanceType,
+		HostOSProfile:       provider.HostOSProfile,
+		VMProfile:           provider.VMProfile,
+		FulfillmentStrategy: provider.FulfillmentStrategy,
+		SecurityGroupRefs: LaunchLayerSecurityGroupRefs{
+			PrimaryNetworkInterface: append([]string(nil), provider.SecurityGroupRefs.PrimaryNetworkInterface...),
+			GPUNetworkInterface:     append([]string(nil), provider.SecurityGroupRefs.GPUNetworkInterface...),
+		},
 	}
 }
 

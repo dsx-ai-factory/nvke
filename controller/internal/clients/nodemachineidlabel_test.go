@@ -12,6 +12,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	capiclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/launchlayer"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
@@ -27,6 +28,12 @@ func TestGetNodeMachineIDLabel(t *testing.T) {
 		provider, err := clients.GetNodeMachineIDLabel(db.Cluster{ID: uuid.New(), ProviderType: db.ProviderTypeNico})
 		require.NoError(t, err)
 		assert.IsType(t, &nico.Client{}, provider)
+	})
+
+	t.Run("launchlayer provider selects the launchlayer client", func(t *testing.T) {
+		provider, err := clients.GetNodeMachineIDLabel(db.Cluster{ID: uuid.New(), ProviderType: db.ProviderTypeLaunchLayer})
+		require.NoError(t, err)
+		assert.IsType(t, &launchlayer.Client{}, provider)
 	})
 
 	t.Run("unsupported provider errors", func(t *testing.T) {

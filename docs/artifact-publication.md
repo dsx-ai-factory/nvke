@@ -134,7 +134,7 @@ names, comma-separated with no spaces:
 An `os-image/` tag that fails Packer or the boot-smoke test never publishes the
 OCI artifact and never promotes the GitHub Release out of draft.
 
-An `nktp/` tag releases the NVKE telemetry pipelines (NKTP) Helm chart. The chart version is the tag's:
+An `nktp/` tag releases the NVKE telemetry pipeline (NKTP) Helm chart. The chart version is the tag's:
 `nktp/vX.Y.Z` packages the chart as `X.Y.Z` and `nktp/vX.Y.Z-rc.1` as
 `X.Y.Z-rc.1`, the way the controller chart takes its version from
 `controller/v*`. `version:` in `nktp/deploy/charts/nktp/Chart.yaml` is a

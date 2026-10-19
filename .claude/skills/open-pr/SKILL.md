@@ -33,7 +33,9 @@ executable checklist, not a replacement for it.
    `documentation`. There is no `breaking` label; mark a breaking change
    with `!` in the title or a `BREAKING CHANGE:` footer.
 7. If a substantial portion of the change was AI-generated, disclose that in
-   the PR description (required by CONTRIBUTING.md).
+   the PR description (required by CONTRIBUTING.md). Do not add agent
+   attribution: no `Co-Authored-By` trailer naming an agent in any commit, and
+   no "Generated with …" footer in the PR description.
 
 ## After opening — verify checks are PRESENT, not just green
 

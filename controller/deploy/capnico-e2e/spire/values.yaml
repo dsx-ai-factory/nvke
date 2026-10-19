@@ -78,7 +78,7 @@ spire-server:
     k8sConfigMap:
       namespace: spire-system
   adminIDs:
-    - spiffe://example.org/nke-service/nke-controller
+    - spiffe://example.org/nvke-service/nke-controller
   controllerManager:
     # The chart applies its ClusterSPIFFEID objects as part of the same release
     # that creates the controller manager serving the webhook that validates
@@ -110,7 +110,7 @@ spire-server:
     identities:
       clusterSPIFFEIDs:
         default:
-          # nke-controller workloads use a dedicated nke-service
+          # nke-controller workloads use a dedicated nvke-service
           # identity. Keep the fallback from racing it during reconciliation.
           namespaceSelector:
             matchExpressions:
@@ -130,14 +130,14 @@ spire-server:
         # append its own expression to namespaceSelector and merge a podSelector
         # in; raw is the one branch that passes these through verbatim.
         #
-        # The emitted CR is named <release namespace>-<release>-nke-service
-        # rather than nke-service -- the chart derives it. Nothing reads it by
+        # The emitted CR is named <release namespace>-<release>-nvke-service
+        # rather than nvke-service -- the chart derives it. Nothing reads it by
         # name on this path; what matters is the SPIFFE ID below, which has to
         # keep matching spire-server.adminIDs above and the prefixes
         # agent/cmd/agent/main.go admits.
-        nke-service:
+        nvke-service:
           type: raw
-          spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nke-service/{{.PodSpec.ServiceAccountName}}"
+          spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}"
           namespaceSelector:
             matchExpressions:
               - key: kubernetes.io/metadata.name

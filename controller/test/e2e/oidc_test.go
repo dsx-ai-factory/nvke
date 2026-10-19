@@ -44,7 +44,7 @@ func validateOIDCPostCreate(test *tenantTest) {
 		}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
 		controllerIdentity := tenantauth.Identity{Namespace: controller.Namespace(), ServiceAccount: controller.ServiceAccount()}
-		controllerUser := "spiffe://" + test.trustDomain + "/nke-service/" + controller.ServiceAccount()
+		controllerUser := "spiffe://" + test.trustDomain + "/nvke-service/" + controller.ServiceAccount()
 		if os.Getenv(dsxIdentityExchangeEnv) == "true" {
 			By("Asserting the published kubeconfig selects the HTTPS token exchange")
 			exchangeEndpoint := expectSucceed(tenantauth.KubeconfigExecEnv(

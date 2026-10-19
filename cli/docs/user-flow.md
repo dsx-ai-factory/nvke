@@ -3,7 +3,9 @@
 What `nvkectl` does today, in the order an operator uses it, with the two
 steps that are not CLI commands marked: getting a release from NVKR and
 installing the controller stack with the deploy script.
-`nvkectl <command> --help` is the authoritative reference for flags. The
+The [command reference](https://github.com/dsx-ai-factory/nvke/blob/main/cli/docs/reference/README.md)
+lists every command and flag; it is generated from the CLI, so it says the same
+as `nvkectl <command> --help`. The
 walkthrough is [Your first cluster](https://github.com/dsx-ai-factory/nvke/blob/main/docs/first-cluster.md); this page is
 the reference it points at.
 
@@ -17,7 +19,7 @@ the reference it points at.
 | Write the stack config, `stack-config.json` | The controller stack install reads it: the NICo API, and under `images` the profile content image (required without a release) and, optionally, the controller image. Copy `deploy/examples/stack-config.json` and fill in every `REPLACE_*` value; the install refuses a placeholder. The tokens and passwords come from `NVKECTL_*` variables. Not read by `bootstrap site`. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
 | `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts come from this checkout, the profile content image from the stack config's `images.profiles`, and the controller image from `images.controller` or, when that is empty, the deploy path's pin. | Not in the CLI |
-| `deploy/check-site.sh`, `clusterctl init`, `deploy/nvke-deploy.sh install --deploy-path deploy/nico`, the exec-auth patch | The management plane install, a short list of commands run in order: the check reports what the cluster and this machine still need; `clusterctl init` installs Cluster API; the executor renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NVKE telemetry pipelines (NKTP), the controller) and applies it; the patch gives the Cluster API controllers SPIRE exec-auth. See [Install management-plane services](../../docs/operate/install-management-plane-services.md). | Not in the CLI |
+| `deploy/check-site.sh`, `clusterctl init`, `deploy/nvke-deploy.sh install --deploy-path deploy/nico`, the exec-auth patch | The management plane install, a short list of commands run in order: the check reports what the cluster and this machine still need; `clusterctl init` installs Cluster API; the executor renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller) and applies it; the patch gives the Cluster API controllers SPIRE exec-auth. See [Install management-plane services](../../docs/operate/install-management-plane-services.md). | Not in the CLI |
 | `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at an NVKE management plane. `use-site` switches between entries, `view` prints the config. | Available |
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the management plane can use, with their state. Alpha. | Available |
 | `nvkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
@@ -83,7 +85,7 @@ nvkectl generate sitespec my-tier0-site --nodes hosts.csv \
 ```
 
 The file format is described in [sitespec.md](sitespec.md); a complete example
-is in [examples/sitespec.yaml](../examples/sitespec.yaml).
+is in [examples/sitespec.yaml](https://github.com/dsx-ai-factory/nvke/blob/main/cli/examples/sitespec.yaml).
 
 ### 3. Bootstrap the site cluster
 
@@ -116,7 +118,7 @@ read -rs NVKECTL_DATABASE_PASSWORD && export NVKECTL_DATABASE_PASSWORD
 Fill in every `REPLACE_*` value: the NICo API endpoint, organization ID and
 API name. Without a release, name the profile content image in
 `images.profiles`. The file holds no secret, so it can sit next to the site
-spec. [deploy/README.md](../../deploy/README.md) lists every key.
+spec. [deploy/README.md](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/README.md) lists every key.
 
 ### 5. Install the controller stack
 
@@ -197,7 +199,7 @@ Secret, and `LAST CHECK` says how long ago that check ran. Look for `CONFIGURED`
 with `HEALTHY`. `HEALTHY` means the credentials authenticated recently; it does
 not prove that provisioning will succeed. `NO-IDENTITY` and `UNSUPPORTED` mean
 nothing is checking the credentials yet; see
-[Infrastructure providers](../README.md#infrastructure-providers) for what each
+[Infrastructure providers](https://github.com/dsx-ai-factory/nvke/blob/main/cli/README.md#infrastructure-providers) for what each
 value means.
 
 `nvkectl` only reads this state and never changes it, so it makes no difference
@@ -215,7 +217,7 @@ cat examples/capd-cluster.yaml | nvkectl create cluster -f -
 ```
 
 The spec is a `CreateClusterRequest`; the schema is served at `/api/docs` on
-the management plane. [examples/capd-cluster.yaml](../examples/capd-cluster.yaml)
+the management plane. [examples/capd-cluster.yaml](https://github.com/dsx-ai-factory/nvke/blob/main/cli/examples/capd-cluster.yaml)
 is a starting point.
 
 ### 9. Watch it come up
@@ -268,7 +270,7 @@ same `nico` or `infra` payload as its cluster, and that is where the node type
 is chosen. `nvkectl create nodepool` adds workers; the control plane is managed
 through the cluster's `controlPlaneConfig`.
 
-[examples/nico-mock-nodepool.yaml](../examples/nico-mock-nodepool.yaml) is a
+[examples/nico-mock-nodepool.yaml](https://github.com/dsx-ai-factory/nvke/blob/main/cli/examples/nico-mock-nodepool.yaml) is a
 starting point. Provisioning is asynchronous, the same as cluster creation.
 
 ### 13. Scale a node pool
@@ -288,8 +290,9 @@ request is sent.
 Scaling is asynchronous: the command returns once the controller has recorded the change,
 and the management plane provisions or tears down nodes to match it. A rejected
 scale-up, such as one the cluster's pod CIDR has no room for, is reported with
-the controller's own message. There is no confirmation prompt, so a lower count starts
-removing nodes straight away.
+the controller's own message. There is no confirmation prompt. A lower count removes
+only pending nodes that provisioning has not started; running nodes stay until you
+delete them.
 
 
 ### 14. Delete a node pool

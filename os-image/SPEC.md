@@ -167,8 +167,9 @@ parity is intentional.
 These are enforced by `nvke-agent`, not by the image:
 
 - Client and agent SVIDs share a trust domain.
-- The **client** SPIFFE path must start with `/nke-service/` or the agent
-  rejects the handshake.
+- The **client** SPIFFE path must start with `/tenant/nvke/service/`, or
+  one of the transitional prefixes `/nvke-service/`, `/nke-service/` and
+  `/tenant/nke/service/`, or the agent rejects the handshake.
 - The **agent** SVID is whatever this node's SPIRE registration issues. The
   site SPIRE server must have a workload entry for unix uid 0 (root
   `nvke-agent`) parented to the node's agent SPIFFE ID.
@@ -199,8 +200,8 @@ server, not this image.
 ## How to prove it
 
 Boot a VM from the image, feed it the cloud-init files above against a SPIRE
-server that has issued a join token and a `/nke-service/...` identity for the
-checker, then:
+server that has issued a join token and an identity under an accepted client
+path for the checker, then:
 
 ```bash
 nvke-os-image-check --endpoint <node-ip>:15005

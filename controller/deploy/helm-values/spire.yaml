@@ -30,13 +30,13 @@ spire-agent:
 
 spire-server:
   adminIDs:
-    - spiffe://example.org/nke-service/nke-controller
+    - spiffe://example.org/nvke-service/nke-controller
   controllerManager:
     className: spire-mgmt-spire
     identities:
       clusterSPIFFEIDs:
         default:
-          # Controller workloads use the dedicated nke-service identity deployed by
+          # Controller workloads use the dedicated nvke-service identity deployed by
           # Tilt. Keep the fallback from racing it during pod reconciliation.
           namespaceSelector:
             matchExpressions:

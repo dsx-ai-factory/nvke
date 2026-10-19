@@ -8,8 +8,8 @@
 
 def register(ctx):
     return struct(
-        cwe_resource_deps = [],
-        cwe_env_overrides = {},
+        controller_resource_deps = [],
+        controller_env_overrides = {},
         preflight_script = """
       kubectl get deployment -n capi-system capi-controller-manager >/dev/null 2>&1 || {
         echo "CAPI controllers are not installed in the current cluster. Run 'make capi-core-up' (or 'make capd-up') first." >&2

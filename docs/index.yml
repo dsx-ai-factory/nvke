@@ -18,11 +18,15 @@ navigation:
             path: overview/supported-platforms.md
           - page: Preview status and known limitations
             path: overview/preview-status.md
+          - link: NVKR documentation
+            href: https://docs.nvidia.com/nvke/nvkr
 
       - section: Get started
         contents:
           - page: "Quickstart: evaluate locally with mock-NICo"
             path: get-started/quickstart-local.md
+          - page: Run NVKE end to end on one machine
+            path: get-started/local-site.md
 
       - section: Install NVKE
         contents:
@@ -30,6 +34,8 @@ navigation:
             path: operate/plan-installation.md
           - page: Get NVKE artifacts from NVKR and write release manifests
             path: operate/build-node-images.md
+          - page: Build and verify your own node image
+            path: operate/build-and-verify-node-image.md
           # Absolute URL: NVKR is a separate Fern instance, served under
           # docs.nvidia.com/nvke/nvkr alongside this site.
           - link: NVKR documentation
@@ -44,6 +50,11 @@ navigation:
             path: operate/provider-nico.md
           - page: Secure the NVKE API
             path: operate/api-authentication.md
+
+      - section: Networking
+        contents:
+          - page: Configure OVN-Kubernetes networking
+            path: workload-clusters/ovn-kubernetes.md
 
       - section: Run workload clusters
         contents:
@@ -69,7 +80,7 @@ navigation:
           - page: Site Certificate Renewal
             path: site-operations/certificate-renewal.md
 
-      - section: NVKE telemetry pipelines (NKTP)
+      - section: NVKE telemetry pipeline (NKTP)
         contents:
           - page: Getting started with NKTP
             path: nktp/getting-started.md
@@ -158,11 +169,11 @@ navigation:
         # this the URL repeats it.
         skip-slug: true
         # Sections in reading order rather than in order of first appearance
-        # in openapi.yaml, which would put Catalog first.
+        # in openapi.yaml. Catalog is absent on purpose: both of its operations
+        # carry x-fern-ignore, so Fern has no group to place.
         layout:
           - clusters
           - controlPlane
           - nodePools
           - nodeSets
           - nodes
-          - catalog

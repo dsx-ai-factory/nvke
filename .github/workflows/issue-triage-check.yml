@@ -72,7 +72,7 @@ jobs:
               ['helm charts or deployment', 'area/chart'],
               ['nico-sim (development simulator)', 'area/controller'],
               ['os image or image checker', 'area/os-image'],
-              ['nvke telemetry pipelines (nktp)', 'area/nktp'],
+              ['nvke telemetry pipeline (nktp)', 'area/nktp'],
               ['build, packaging, or release automation', 'area/ci-build'],
               ['documentation', 'area/docs'],
             ]);

@@ -1,6 +1,6 @@
 # Gateways
 
-NVKE telemetry pipelines (NKTP) runs one gateway per signal. Each gateway accepts OTLP over gRPC with mTLS
+NVKE telemetry pipeline (NKTP) runs one gateway per signal. Each gateway accepts OTLP over gRPC with mTLS
 at its Service in the Helm release namespace, forwards what it receives to LGTM
 by default, and sends its own metrics, logs and traces through its
 [sidecar](../architecture/self-telemetry.md) to watchdog.

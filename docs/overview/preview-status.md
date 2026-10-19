@@ -1,6 +1,6 @@
 # Preview status and known limitations
 
-> **Preview:** NVKE is available as a preview. APIs, configuration and behavior can change between releases, and we do not recommend NVKE for production workloads. See [Preview status and known limitations](preview-status.md).
+> **Preview:** NVKE is available as a preview. APIs, configuration and behavior can change between releases, and we do not recommend NVKE for production workloads.
 
 This page lists what the NVIDIA Kubernetes Engine (NVKE) preview supports and every known limitation. For versions and platforms, see [Supported platforms and versions](supported-platforms.md).
 
@@ -14,7 +14,7 @@ This page lists what the NVIDIA Kubernetes Engine (NVKE) preview supports and ev
 - Create, change and delete workload clusters with `ovn-kubernetes` networking and optional etcd encryption: [Create a workload cluster](../workload-clusters/create.md).
 - Add, scale and delete node pools, and replace nodes: [Manage node pools](../workload-clusters/node-pools.md).
 - Hand a workload cluster to a customer through its admin kubeconfig: [Access a workload cluster](../workload-clusters/access.md).
-- Check health and collect telemetry with NVKE telemetry pipelines (NKTP): [Observe NVKE and its clusters](../operate/observe.md).
+- Check health and collect telemetry with NVKE telemetry pipeline (NKTP): [Observe NVKE and its clusters](../operate/observe.md).
 - Evaluate NVKE on one Linux machine with simulated NICo: [Quickstart: evaluate locally with mock-NICo](../get-started/quickstart-local.md).
 
 ## Known limitations
@@ -25,7 +25,7 @@ This page lists what the NVIDIA Kubernetes Engine (NVKE) preview supports and ev
 - **No management-plane upgrade procedure.** NVKE provides no procedure to move the management-plane services to a later NVKE release.
 - **No backup or restore procedure.** NVKE provides no procedure to back up or restore the management cluster or the management plane's state. Keep the kubeconfig and etcd encryption key file from the bootstrap in secure storage: the key file is the only copy of the management cluster's etcd encryption key that is not on a node.
 - **Management cluster nodes built from the node image need your own SPIRE certificate authority (CA).** Without your CA files at bootstrap, SPIRE uses a self-signed CA that no node can trust in advance, so the nodes cannot attest and cannot join. Supply your CA files as described in [Prepare nodes](../operate/prepare-nodes.md). Workload cluster nodes do not use this CA: NVKE puts the management cluster's SPIRE trust bundle in their user data, as described in [Get NVKE artifacts from NVKR and write release manifests](../operate/build-node-images.md#what-nvke-puts-in-the-user-data).
-- **NICo is the only infrastructure provider.** NVKE provisions workload cluster nodes only through NICo.
+- **NICo is the default infrastructure provider.** LaunchLayer is also supported once a deployment enables it; see [Infrastructure Providers](../site-bootstrap/infrastructure-providers.md#launchlayer).
 
 ### API and access
 

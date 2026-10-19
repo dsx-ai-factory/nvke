@@ -29,7 +29,8 @@ func NewPatchCmd(clientFn ControllerClientFn) *cobra.Command {
 
 PATCH semantics apply: only the fields in the patch document are changed;
 everything else on the cluster is left as it is. Pass the patch inline with
---patch, or from a file (or stdin via -) with --patch-file.
+--patch, or from a file (or stdin via -) with --patch-file. Exactly one of
+the two is required.
 
 Example — bump the Kubernetes version:
   nvkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'

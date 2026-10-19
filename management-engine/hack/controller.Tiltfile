@@ -9,7 +9,7 @@ local_resource(
     cmd=["bash", "hack/dev.sh", "controller-credentials"],
     dir="..",
     deps=["dev.sh", "controller.sh"],
-    resource_deps=["cwe", "management-state"],
+    resource_deps=["nvke-controller", "management-state"],
     labels=["management-engine"],
 )
 k8s_resource("management-engine", resource_deps=["management-state", "management-engine-credentials"], labels=["management-engine"])

@@ -8,7 +8,7 @@ This page describes what you need before you install NVIDIA Kubernetes Engine (N
 
 - You have read [What is NVKE](../overview/what-is-nvke.md).
 - You have checked your hardware and versions against [Supported platforms and versions](../overview/supported-platforms.md).
-- You have read [Preview status and known limitations](../overview/preview-status.md). Two limitations shape the plan: the management cluster does not upgrade, scale or replace its own nodes, and NVIDIA Infra Controller (NICo) is the only infrastructure provider.
+- You have read [Preview status and known limitations](../overview/preview-status.md). Two limitations shape the plan: the management cluster does not upgrade, scale or replace its own nodes, and NVIDIA Infra Controller (NICo) is the default infrastructure provider, with LaunchLayer available only once a deployment enables it.
 
 ## What you end up with
 

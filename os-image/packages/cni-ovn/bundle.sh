@@ -10,8 +10,8 @@
 #
 # Env: OVN_KUBERNETES_REF is the tag, branch or commit --write-lock locks
 #      (default v<version>, the release tag). OVN_KUBERNETES_REPO names another
-#      GitHub repository. OVN_BUILDER_IMAGE and OVN_UBUNTU_BASE_IMAGE override
-#      the image build's Go and runtime bases. OCI_BIN picks docker.
+#      GitHub repository. OVN_UBUNTU_BASE_IMAGE overrides the public Ubuntu
+#      runtime base. The source owns the Go builder. OCI_BIN picks docker.
 #
 # The lock and archive handling is ../cni-common/bundle-lib.sh.
 
@@ -35,8 +35,7 @@ IMAGE_REPO="localhost/nvke/ovnkube"
 # registry override swaps the host and keeps the rest (ovnImageRepository).
 IMAGE_PREFIX="${IMAGE_REPO%/*}"
 # Base images are pinned by index digest, so a moved tag cannot change the build.
-BUILDER_IMAGE="${OVN_BUILDER_IMAGE:-quay.io/projectquay/golang:1.26@sha256:506a668eb4c763a964ffc4d4ad0125d45d75aac899392be7e5d39380f8452564}"
-UBUNTU_BASE_IMAGE="${OVN_UBUNTU_BASE_IMAGE:-docker.io/library/ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7}"
+UBUNTU_BASE_IMAGE="${OVN_UBUNTU_BASE_IMAGE:-docker.io/library/ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55}"
 
 command -v git >/dev/null 2>&1 || die "git is required to fetch the ${REPO} source"
 
@@ -95,7 +94,8 @@ chart_src="${src}/charts/ovn-kubernetes"
 [[ -f "${chart_src}/Chart.yaml" ]] || die "${REPO} ${COMMIT} has no charts/ovn-kubernetes/Chart.yaml"
 grep -qx "version: ${VERSION}" "${chart_src}/Chart.yaml" ||
   die "${REPO} ${COMMIT} is not chart version ${VERSION}"
-[[ -f "${src}/dist/images/Dockerfile.ubuntu" ]] || die "${REPO} ${COMMIT} has no dist/images/Dockerfile.ubuntu"
+dockerfile="${src}/dist/images/Dockerfile.ubuntu.nv"
+[[ -f "$dockerfile" ]] || die "${REPO} ${COMMIT} has no dist/images/Dockerfile.ubuntu.nv"
 
 mkdir -p "${STAGE}/charts"
 cp -R "$chart_src" "${STAGE}/charts/ovn-kubernetes"
@@ -168,43 +168,18 @@ kubectl_minor="$(awk '/^[[:space:]]*k8s.io\/kubernetes v/ { v = substr($2, 2); s
 # CoreDNS, and the chart cannot change the names, so a node without internet DNS is
 # never Ready and a template change then deletes every ovnkube-node pod at once.
 # The API service name still proves CoreDNS answers and needs no egress. Remove once
-# the fork exposes EXTERNAL_DNS_NAMES in the chart. The Dockerfile comment below keys
-# the image cache on it: the cache hashes the Dockerfile and build args, not the source.
+# the fork exposes EXTERNAL_DNS_NAMES in the chart.
 readiness="${src}/dist/images/ovnkube-node-readiness-check.sh"
 public_names="dns_names=\${EXTERNAL_DNS_NAMES:-\"google.com cloudflare.com\"}"
 grep -qxF "$public_names" "$readiness" ||
   die "${REPO} dist/images/ovnkube-node-readiness-check.sh no longer defaults to google.com cloudflare.com; re-check the probe patch"
 sed -i "s|^${public_names}\$|dns_names=\${EXTERNAL_DNS_NAMES:-\"kubernetes.default.svc.cluster.local\"}|" "$readiness"
 
-# The fork's Dockerfile.ubuntu leaves out four things the chart needs (Dockerfile.ubuntu.nv has all):
-# - the node liveness and readiness scripts (and ovnkube-init.sh) the chart runs as probes from /root:
-#   without them the liveness probe fails and kubelet kills ovnkube-controller every two minutes.
-# - ncat and nslookup (dnsutils), which the readiness script runs: without them it exits
-#   "command not found" at its first check and ovnkube-node is never Ready, so a template change
-#   makes the DaemonSet controller delete every pod at once instead of one per maxUnavailable.
-# - firewalld: ovnkube-cluster-manager looks up firewall-cmd at startup, and the chart only
-#   turns firewalld off for the node.
-# - a real iptables: the image copies wrappers that `chroot /host /sbin/iptables`, but the chart
-#   mounts no host root at /host, so ovnkube-controller exits with "iptables ... exit status 127".
-# Install both after the wrappers are copied, replacing them (update-alternatives will not
-# overwrite a regular file). Remove once the fork's Dockerfile does this.
-dockerfile="${WORK}/Dockerfile.ovnkube"
-awk '/^LABEL io.k8s.display-name/ && !done {
-  print "# nvke: the readiness probe resolves kubernetes.default.svc.cluster.local (bundle.sh)"
-  print "COPY --chmod=755 --from=ovnkube-builder /workspace/ovn-kubernetes/dist/images/ovnkube-init.sh /workspace/ovn-kubernetes/dist/images/ovnkube-node-readiness-check.sh /workspace/ovn-kubernetes/dist/images/ovnkube-node-liveness-check.sh /root/"
-  print "RUN rm -f /usr/sbin/iptables /usr/sbin/iptables-save /usr/sbin/iptables-restore /usr/sbin/ip6tables /usr/sbin/ip6tables-save /usr/sbin/ip6tables-restore && \\"
-  print "    apt-get update && apt-get install -y --no-install-recommends firewalld iptables ncat dnsutils && rm -rf /var/lib/apt/lists/*"
-  done = 1 } { print }' "${src}/dist/images/Dockerfile.ubuntu" >"$dockerfile"
-grep -q 'install -y --no-install-recommends firewalld iptables ncat dnsutils' "$dockerfile" ||
-  die "${REPO} Dockerfile.ubuntu has no 'LABEL io.k8s.display-name' line to add the probe scripts and packages before"
-
-# The build uses only public inputs: the Go and Ubuntu base images, the Ubuntu
-# archive and pkgs.k8s.io. Not dist/images' ubuntu-nv-image (Artifactory).
-# The Ubuntu base honours CNI_DOCKERHUB_MIRROR; the digest pins it either way.
+# Use the NVIDIA recipe with public package sources; its installers require noble.
 build_image "$src" "$dockerfile" "$IMAGE_REF" \
-  --build-arg "OVN_KUBERNETES_DIR=." \
-  --build-arg "BUILDER_IMAGE=${BUILDER_IMAGE}" \
-  --build-arg "KUBECTL_MINOR=${kubectl_minor}" \
-  --build-arg "UBUNTU_BASE_IMAGE=$(image_transport_ref "${UBUNTU_BASE_IMAGE}")"
+  --build-arg "BASE_IMAGE=$(image_transport_ref "${UBUNTU_BASE_IMAGE}")" \
+  --build-arg "OVS_SOURCE=doca" \
+  --build-arg "OVN_SOURCE=uca" \
+  --build-arg "K8S_VER=v${kubectl_minor}"
 repack_archive
 finish_bundle

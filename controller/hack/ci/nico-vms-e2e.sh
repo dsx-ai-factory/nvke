@@ -595,10 +595,10 @@ else
 fi
 jq -n \
   --arg capnico "${CAPNICO_SOURCE_DIR}" \
-  --arg cwe_image "${NKE_CONTROLLER_IMAGE}" \
+  --arg nvke_controller_image "${NKE_CONTROLLER_IMAGE}" \
   '{
     providers: ["capi_core", "nico"],
-    cwe_image: $cwe_image,
+    nvke_controller_image: $nvke_controller_image,
     capnico_source_dir: $capnico,
     nico_sim_backends: ["vm"],
     nico_vms_observability: false
