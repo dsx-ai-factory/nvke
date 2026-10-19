@@ -36,6 +36,11 @@ const (
 	// beyond the inspection interval.
 	inspectionRetryBase  = time.Minute
 	maxInspectionRetries = 6
+
+	// inspectionWorkers bounds concurrent inspections, as the agent-readiness
+	// controller's default does for the same probe pattern, so an unreachable
+	// agent holding its 30s probe does not delay other due nodes.
+	inspectionWorkers = 8
 )
 
 type inspector interface {
@@ -56,7 +61,12 @@ func NewController(cfg config.Config, database *dbwrapper.DB, agent inspector) *
 
 // SetupWithManager watches only non-deleting nodes.
 func (c *Controller) SetupWithManager(mgr manager.Manager) error {
-	return dbreconcile.SetupController(mgr, "certificate-inspection", c, dbwrapper.NewNodeSource(c.database, dbfilters.Node{Deleting: ptr.To(false)}))
+	return dbreconcile.AddController(mgr, dbreconcile.Controller{
+		Name:       "certificate-inspection",
+		Reconciler: c,
+		Workers:    inspectionWorkers,
+		Sources:    []dbreconcile.Source{dbwrapper.NewNodeSource(c.database, dbfilters.Node{Deleting: ptr.To(false)})},
+	})
 }
 
 // Reconcile persists the latest inspection without modifying credentials.
