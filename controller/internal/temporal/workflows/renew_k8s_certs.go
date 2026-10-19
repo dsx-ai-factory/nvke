@@ -312,7 +312,9 @@ func renewK8sCerts(
 
 // renewCertificatesOnNodeForCycle selects only due nodes before any guard or
 // mutating dispatch. The read-only result is recorded as unchanged; Force skips
-// selection. A single control-plane node never drains, even when forced.
+// selection. Pending legacy-runbook intent goes straight to the legacy executor,
+// the only one that can finish its restarts. A single control-plane node never
+// drains, even when forced.
 func renewCertificatesOnNodeForCycle(
 	ctx workflow.Context,
 	cluster rollout.Cluster,
@@ -320,20 +322,22 @@ func renewCertificatesOnNodeForCycle(
 	input activities.KubernetesCertificateRenewalInput,
 	checkExpiry bool,
 ) (activities.KubernetesCertificateRenewalResult, *activities.ResolveKubernetesCertificateRenewalInput, error) {
+	legacy := false
 	if checkExpiry && !input.Force {
 		var a *activities.Activities
-		var required bool
-		if err := workflow.ExecuteActivity(certificateRenewalHealthOptions(ctx), a.CheckKubernetesCertificateRenewalRequired, input).Get(ctx, &required); err != nil {
+		var check activities.KubernetesCertificateRenewalCheckResult
+		if err := workflow.ExecuteActivity(certificateRenewalHealthOptions(ctx), a.CheckKubernetesCertificateRenewalRequired, input).Get(ctx, &check); err != nil {
 			return activities.KubernetesCertificateRenewalResult{}, nil, fmt.Errorf("certificate expiry check failed: %w", err)
 		}
-		if !required {
+		if !check.Required {
 			return activities.KubernetesCertificateRenewalResult{Outcome: db.CertificateRenewalOutcomeUnchanged}, nil, nil
 		}
+		legacy = check.Legacy
 	}
 	if input.ExpectedEtcdMembers == 1 {
-		return renewCertificatesOnNode(ctx, input)
+		return renewCertificatesOnNode(ctx, input, legacy)
 	}
-	return renewCertificatesOnNodeBehindKubeVipDrain(ctx, cluster, adaptercontroller.NewNode(node, ""), input)
+	return renewCertificatesOnNodeBehindKubeVipDrain(ctx, cluster, adaptercontroller.NewNode(node, ""), input, legacy)
 }
 
 // renewCertificatesOnNodeBehindKubeVipDrain brackets one node's renewal with the
@@ -350,6 +354,7 @@ func renewCertificatesOnNodeBehindKubeVipDrain(
 	cluster rollout.Cluster,
 	node rollout.Node,
 	input activities.KubernetesCertificateRenewalInput,
+	legacy bool,
 ) (activities.KubernetesCertificateRenewalResult, *activities.ResolveKubernetesCertificateRenewalInput, error) {
 	var result activities.KubernetesCertificateRenewalResult
 	var unresolved *activities.ResolveKubernetesCertificateRenewalInput
@@ -363,7 +368,7 @@ func renewCertificatesOnNodeBehindKubeVipDrain(
 		[]rollout.NodeGuardRef{{Name: rolloutkubevip.GuardNameKubeVipDrainRestore}},
 		func() error {
 			var renewErr error
-			result, unresolved, renewErr = renewCertificatesOnNode(ctx, input)
+			result, unresolved, renewErr = renewCertificatesOnNode(ctx, input, legacy)
 			return renewErr
 		},
 	)
@@ -371,12 +376,14 @@ func renewCertificatesOnNodeBehindKubeVipDrain(
 }
 
 // renewCertificatesOnNode records executor selection in workflow history before
-// dispatching legacy work. A canceled or failed activity can leave remote work
-// running; a non-nil resolution input identifies what cleanup must observe,
-// including dispatches whose acceptance is unknown.
+// dispatching legacy work. Legacy selects that executor without a typed attempt.
+// A canceled or failed activity can leave remote work running; a non-nil
+// resolution input identifies what cleanup must observe, including dispatches
+// whose acceptance is unknown.
 func renewCertificatesOnNode(
 	ctx workflow.Context,
 	input activities.KubernetesCertificateRenewalInput,
+	legacy bool,
 ) (activities.KubernetesCertificateRenewalResult, *activities.ResolveKubernetesCertificateRenewalInput, error) {
 	var a *activities.Activities
 	var result activities.KubernetesCertificateRenewalResult
@@ -384,12 +391,15 @@ func renewCertificatesOnNode(
 		return result, nil, err
 	}
 	pending := &activities.ResolveKubernetesCertificateRenewalInput{NodeID: input.NodeID, OperationID: input.OperationID}
-	err := workflow.ExecuteActivity(certificateRenewalNodeOptions(ctx), a.RenewKubernetesCertificates, input).Get(ctx, &result)
+	var err error
+	if !legacy {
+		err = workflow.ExecuteActivity(certificateRenewalNodeOptions(ctx), a.RenewKubernetesCertificates, input).Get(ctx, &result)
+	}
 	var applicationErr *temporal.ApplicationError
 	if errors.As(err, &applicationErr) && applicationErr.Type() == activities.CertificateRenewalNotDispatched {
 		return result, nil, err
 	}
-	if errors.As(err, &applicationErr) && applicationErr.Type() == activities.CertificateRenewalLegacyRequired {
+	if legacy || errors.As(err, &applicationErr) && applicationErr.Type() == activities.CertificateRenewalLegacyRequired {
 		if err := ctx.Err(); err != nil {
 			return result, nil, err // Typed work was rejected and legacy work has not been dispatched.
 		}

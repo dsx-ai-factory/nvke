@@ -1148,7 +1148,8 @@ esac
 // Check-only selection cannot resume a staged renewal, write state/logs, or
 // acquire a lock, even when Force is set or expiration parsing fails. Persisted
 // renewing/restart_pending intent from either executor requires renewal even
-// with fresh certificates, because only a renewal attempt resumes it.
+// with fresh certificates, because only a renewal attempt resumes it; the
+// runbook's own intent selects the legacy executor, the only one that reads it.
 func TestCertificateRenewalRunbookCheckOnlyIsReadOnly(t *testing.T) {
 	runbookStates := map[string]string{
 		"none":            "",
@@ -1185,13 +1186,17 @@ func TestCertificateRenewalRunbookCheckOnlyIsReadOnly(t *testing.T) {
 					if agentState != "" {
 						require.NoError(t, os.WriteFile(harness.agentState, []byte(agentState), 0o600))
 					}
-					pendingIntent := runbookName == "renewing" || runbookName == "restart_pending" ||
-						agentName == "renewing" || agentName == "restart_pending"
+					legacyIntent := runbookName == "renewing" || runbookName == "restart_pending"
+					pendingIntent := legacyIntent || agentName == "renewing" || agentName == "restart_pending"
 					output, err := harness.run(t)
-					if !pendingIntent && residual == "unknown" {
+					switch {
+					case legacyIntent:
+						require.NoError(t, err, output)
+						require.Equal(t, "RENEWAL_REQUIRED=legacy\n", output)
+					case !pendingIntent && residual == "unknown":
 						require.Error(t, err, output)
 						require.NotContains(t, output, "RENEWAL_REQUIRED=")
-					} else {
+					default:
 						require.NoError(t, err, output)
 						require.Equal(t, fmt.Sprintf("RENEWAL_REQUIRED=%t\n", pendingIntent || residual == "1d"), output)
 					}

@@ -65,40 +65,53 @@ type KubernetesCertificateRenewalResult struct {
 	ExitCode     int
 }
 
+// KubernetesCertificateRenewalCheckResult selects whether a node needs renewal
+// dispatch. Legacy reports pending legacy-runbook intent, which only the legacy
+// executor can resume: the typed agent operation never reads its phase file.
+type KubernetesCertificateRenewalCheckResult struct {
+	Required bool
+	Legacy   bool
+}
+
 // CheckKubernetesCertificateRenewalRequired reads expiry and either executor's
 // persisted renewing/restart_pending intent without reserving or starting
-// renewal; pending intent requires dispatch so Start resumes it. Use only the
-// embedded check-only mode: configured overrides may not understand it and must
-// never turn this read into a mutation.
-func (a *Activities) CheckKubernetesCertificateRenewalRequired(ctx context.Context, input KubernetesCertificateRenewalInput) (bool, error) {
+// renewal; pending intent requires dispatch to the executor that recorded it so
+// its restarts finish. Use only the embedded check-only mode: configured
+// overrides may not understand it and must never turn this read into a mutation.
+func (a *Activities) CheckKubernetesCertificateRenewalRequired(
+	ctx context.Context,
+	input KubernetesCertificateRenewalInput,
+) (KubernetesCertificateRenewalCheckResult, error) {
 	node, err := a.db.GetNode(ctx, input.NodeID)
 	if err != nil {
-		return false, fmt.Errorf("failed to get node for certificate expiry check: %w", err)
+		return KubernetesCertificateRenewalCheckResult{}, fmt.Errorf("failed to get node for certificate expiry check: %w", err)
 	}
 	script, err := runbook.Script("", legacyKubernetesCertificateRenewalRunbook)
 	if err != nil {
-		return false, err
+		return KubernetesCertificateRenewalCheckResult{}, err
 	}
 	script, err = runbook.InjectEnvironment(map[string]string{
 		"CHECK_ONLY": "true", "THRESHOLD_DAYS": fmt.Sprint(input.ThresholdDays),
 	}, script)
 	if err != nil {
-		return false, fmt.Errorf("failed to inject certificate expiry check environment: %w", err)
+		return KubernetesCertificateRenewalCheckResult{}, fmt.Errorf("failed to inject certificate expiry check environment: %w", err)
 	}
 	response, err := a.nodeAgentClient.ExecuteScript(ctx, node, legacyKubernetesCertificateRenewalRunbook, script, nil)
 	if err != nil {
-		return false, fmt.Errorf("failed to check certificate expiry: %w", err)
+		return KubernetesCertificateRenewalCheckResult{}, fmt.Errorf("failed to check certificate expiry: %w", err)
 	}
 	if response == nil || response.GetExitCode() != 0 {
-		return false, errors.New("certificate expiry check failed")
+		return KubernetesCertificateRenewalCheckResult{}, errors.New("certificate expiry check failed")
 	}
 	switch strings.TrimSpace(response.GetOutput()) {
 	case "RENEWAL_REQUIRED=false":
-		return false, nil
+		return KubernetesCertificateRenewalCheckResult{}, nil
 	case "RENEWAL_REQUIRED=true":
-		return true, nil
+		return KubernetesCertificateRenewalCheckResult{Required: true}, nil
+	case "RENEWAL_REQUIRED=legacy":
+		return KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true}, nil
 	default:
-		return false, errors.New("certificate expiry check has no recognized result")
+		return KubernetesCertificateRenewalCheckResult{}, errors.New("certificate expiry check has no recognized result")
 	}
 }
 

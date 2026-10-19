@@ -877,14 +877,19 @@ func TestRenewKubernetesCertificatesPollsAcceptedOperationWithoutRestarting(t *t
 
 func TestCheckKubernetesCertificateRenewalRequiredUsesEmbeddedReadOnlyMode(t *testing.T) {
 	for _, test := range []struct {
-		name         string
-		response     *nvkeproto.ExecuteScriptResponse
-		rpcErr       error
-		wantRequired bool
-		wantErr      bool
+		name     string
+		response *nvkeproto.ExecuteScriptResponse
+		rpcErr   error
+		want     KubernetesCertificateRenewalCheckResult
+		wantErr  bool
 	}{
 		{name: "unchanged", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=false\n"}},
-		{name: "due", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=true\n"}, wantRequired: true},
+		{name: "due", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=true\n"}, want: KubernetesCertificateRenewalCheckResult{Required: true}},
+		{
+			name:     "pending legacy intent",
+			response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=legacy\n"},
+			want:     KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true},
+		},
 		{name: "unknown", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=unknown\n"}, wantErr: true},
 		{name: "normal renewal marker is insufficient", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_OUTCOME=unchanged\n"}, wantErr: true},
 		{name: "failed check", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=false\n", ExitCode: 1}, wantErr: true},
@@ -905,9 +910,9 @@ func TestCheckKubernetesCertificateRenewalRequiredUsesEmbeddedReadOnlyMode(t *te
 				return test.response, test.rpcErr
 			}}
 			a := &Activities{cfg: config.Config{RunbooksDir: overrides}, db: database, nodeAgentClient: fake}
-			required, err := a.CheckKubernetesCertificateRenewalRequired(t.Context(), KubernetesCertificateRenewalInput{NodeID: node.ID, ThresholdDays: 14})
+			result, err := a.CheckKubernetesCertificateRenewalRequired(t.Context(), KubernetesCertificateRenewalInput{NodeID: node.ID, ThresholdDays: 14})
 			require.Equal(t, test.wantErr, err != nil)
-			require.Equal(t, test.wantRequired, required)
+			require.Equal(t, test.want, result)
 			require.Empty(t, fake.StartKubernetesCertificateRenewalCalls)
 			require.Empty(t, fake.StartKubernetesCertificateRenewalV2Calls)
 			require.Len(t, fake.ExecuteScriptNames, 1)
