@@ -29,16 +29,15 @@ import (
 )
 
 // Where the authentication configuration lives, in controller.Namespace().
+// LegacyConfigMapName is the name a site keeps by pinning
+// apiAuth.configMap.name; RawConfig searches ConfigMapName first, and
+// ConfigMapName stays the one the suite names in its diagnostics, since it is
+// what a run is expected to find.
 const (
-	ConfigMapName = "nvke-auth-config"
-	ConfigMapKey  = "auth.yaml"
+	ConfigMapName       = "nvke-auth-config"
+	LegacyConfigMapName = "nke-auth-config"
+	ConfigMapKey        = "auth.yaml"
 )
-
-// ConfigMapNames are the names the chart gives that ConfigMap, searched in
-// order: the default first, then the name a site keeps by pinning
-// apiAuth.configMap.name. ConfigMapName stays the one the suite names in its
-// diagnostics, since it is what a run is expected to find.
-var ConfigMapNames = []string{ConfigMapName, "nke-auth-config"}
 
 // The identity the suite presents; deploy/k8s/nvke-auth-dev.yaml creates it.
 const (
@@ -196,7 +195,7 @@ func discover(ctx context.Context, client kubernetes.Interface) (*Source, bool, 
 // skip the SPIRE one.
 func RawConfig(ctx context.Context, client kubernetes.Interface) ([]byte, bool, error) {
 	namespace := controller.Namespace()
-	for _, name := range ConfigMapNames {
+	for _, name := range [...]string{ConfigMapName, LegacyConfigMapName} {
 		cm, err := client.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			continue
