@@ -162,11 +162,18 @@ nvkectl config view
 providers` and `get kubeconfig` read the cluster directly and need it.
 
 Controller API commands (`get`/`create`/`patch`/`delete` clusters) use that
-kubeconfig to authenticate: they read the audience from ConfigMap
-`nvke-auth-config` in `nke-controller`, or in `cloud-workflow-engine` when that
-is absent, and mint a TokenRequest for
-`nke-clients/nke-client`. If neither holds the ConfigMap, authentication is off
-and the CLI sends no bearer token.
+kubeconfig to authenticate: they read the audience from the authentication
+ConfigMap and mint a TokenRequest for `nke-clients/nke-client`. Two names are
+searched, in each of `nke-controller` and then `cloud-workflow-engine`:
+`nvke-auth-config` first, then `nke-auth-config`, which a site installed before
+the `nvke` rename keeps by pinning `apiAuth.configMap.name`. The first that
+exists is used.
+
+The CLI sends no bearer token only when neither name is found in either
+namespace; that is read as authentication being off. A ConfigMap the kubeconfig
+is not permitted to read is not the same thing — the search moves on to the
+other names, and if none is readable the command fails with that denial rather
+than sending a bare request.
 
 The kubeconfig identity needs `create` on `serviceaccounts/token` for
 `nke-client`. See

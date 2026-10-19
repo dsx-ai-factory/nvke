@@ -34,6 +34,12 @@ const (
 	ConfigMapKey  = "auth.yaml"
 )
 
+// ConfigMapNames are the names the chart gives that ConfigMap, searched in
+// order: the default first, then the name a site keeps by pinning
+// apiAuth.configMap.name. ConfigMapName stays the one the suite names in its
+// diagnostics, since it is what a run is expected to find.
+var ConfigMapNames = []string{ConfigMapName, "nke-auth-config"}
+
 // The identity the suite presents; deploy/k8s/nvke-auth-dev.yaml creates it.
 const (
 	DefaultNamespace      = "nke-clients"
@@ -180,24 +186,32 @@ func discover(ctx context.Context, client kubernetes.Interface) (*Source, bool, 
 	return source, true, nil
 }
 
-// RawConfig returns the auth.yaml the NVKE pod mounts, out of the
-// nvke-auth-config ConfigMap; found is false, with a nil error, when it does not
-// exist. It stops at the bytes, and each caller decodes what it asserts on.
+// RawConfig returns the auth.yaml the NVKE pod mounts, out of the authentication
+// ConfigMap; found is false, with a nil error, when neither name exists. It stops
+// at the bytes, and each caller decodes what it asserts on.
+//
+// Both names are searched so a run against a site pinned to the legacy name reads
+// its configuration rather than concluding authentication is off, which would
+// quietly turn the authn specs into assertions about an unauthenticated NVKE and
+// skip the SPIRE one.
 func RawConfig(ctx context.Context, client kubernetes.Interface) ([]byte, bool, error) {
 	namespace := controller.Namespace()
-	cm, err := client.CoreV1().ConfigMaps(namespace).Get(ctx, ConfigMapName, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, fmt.Errorf("authtoken: reading ConfigMap %s/%s: %w", namespace, ConfigMapName, err)
-	}
+	for _, name := range ConfigMapNames {
+		cm, err := client.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return nil, false, fmt.Errorf("authtoken: reading ConfigMap %s/%s: %w", namespace, name, err)
+		}
 
-	raw, ok := cm.Data[ConfigMapKey]
-	if !ok {
-		return nil, false, fmt.Errorf("authtoken: ConfigMap %s/%s has no %q key", namespace, ConfigMapName, ConfigMapKey)
+		raw, ok := cm.Data[ConfigMapKey]
+		if !ok {
+			return nil, false, fmt.Errorf("authtoken: ConfigMap %s/%s has no %q key", namespace, name, ConfigMapKey)
+		}
+		return []byte(raw), true, nil
 	}
-	return []byte(raw), true, nil
+	return nil, false, nil
 }
 
 // AudienceFromCluster reads one deployment-wide audience out of the

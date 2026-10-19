@@ -211,15 +211,28 @@ func (t *tokenCatcher) RoundTrip(req *http.Request) (*http.Response, error) {
 func (s *TokenSource) audience(ctx context.Context) (string, bool, error) {
 	var configMap *corev1.ConfigMap
 	var namespace, name string
+	// A ConfigMap this kubeconfig may not read is information, not a failure:
+	// RBAC scoped to resourceNames denies every name it does not grant, which is
+	// exactly how a site pinned to the legacy name looks once there are two names
+	// to try. Keep the first denial and carry on. It is returned only if no
+	// candidate turns out to be readable, so a denied read still never degrades
+	// into "authentication is off" and a bare, rejected request.
+	var denied error
 	for _, candidateNS := range authConfigNamespaces {
 		for _, candidateName := range authConfigMaps {
 			found, err := s.client.CoreV1().
 				ConfigMaps(candidateNS).
 				Get(ctx, candidateName, metav1.GetOptions{})
-			if apierrors.IsNotFound(err) {
+			switch {
+			case apierrors.IsNotFound(err):
 				continue
-			}
-			if err != nil {
+			case apierrors.IsForbidden(err):
+				if denied == nil {
+					denied = fmt.Errorf("reading controller authentication ConfigMap %s/%s: %w",
+						candidateNS, candidateName, err)
+				}
+				continue
+			case err != nil:
 				return "", false, fmt.Errorf("reading controller authentication ConfigMap %s/%s: %w",
 					candidateNS, candidateName, err)
 			}
@@ -231,7 +244,7 @@ func (s *TokenSource) audience(ctx context.Context) (string, bool, error) {
 		}
 	}
 	if configMap == nil {
-		return "", false, nil
+		return "", false, denied
 	}
 
 	raw, ok := configMap.Data[authConfigKey]

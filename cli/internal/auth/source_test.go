@@ -13,8 +13,10 @@ import (
 
 	authnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	k8stesting "k8s.io/client-go/testing"
@@ -350,6 +352,61 @@ func TestAudienceReportsNonNotFoundErrors(t *testing.T) {
 
 	if _, _, err := (&TokenSource{client: client}).audience(t.Context()); err == nil {
 		t.Fatal("audience returned no error for a failed read of the greenfield namespace")
+	}
+}
+
+// forbid returns a reactor that denies get on exactly the named ConfigMaps, the
+// way RBAC scoped to resourceNames does, and passes everything else through.
+func forbid(names ...string) k8stesting.ReactionFunc {
+	denied := make(map[string]bool, len(names))
+	for _, n := range names {
+		denied[n] = true
+	}
+	return func(action k8stesting.Action) (bool, runtime.Object, error) {
+		get, ok := action.(k8stesting.GetActionImpl)
+		if !ok || !denied[get.Name] {
+			return false, nil, nil
+		}
+		return true, nil, apierrors.NewForbidden(
+			schema.GroupResource{Resource: "configmaps"}, get.Name, fmt.Errorf("not permitted"))
+	}
+}
+
+// A site pinned to the legacy name may grant get on that name alone. The denial
+// of the greenfield name is then expected, and must not stop the search before
+// the name the kubeconfig can actually read.
+func TestAudienceFallsBackWhenTheGreenfieldNameIsForbidden(t *testing.T) {
+	client := fake.NewClientset(&corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "nke-auth-config", Namespace: greenfieldNamespace},
+		Data:       map[string]string{authConfigKey: "audiences:\n  - https://pinned.example\n"},
+	})
+	client.PrependReactor("get", "configmaps", forbid("nvke-auth-config"))
+
+	audience, enabled, err := (&TokenSource{client: client}).audience(t.Context())
+	if err != nil {
+		t.Fatalf("audience: %v", err)
+	}
+	if audience != "https://pinned.example" || !enabled {
+		t.Fatalf("audience = %q, enabled = %t; want https://pinned.example, true", audience, enabled)
+	}
+}
+
+// The other half of that: when nothing is readable, the denial is the answer.
+// Reporting "authentication is off" would send a bare request that the
+// controller rejects, turning an RBAC problem into a confusing 401.
+func TestAudienceReportsForbiddenWhenNothingIsReadable(t *testing.T) {
+	client := fake.NewClientset()
+	client.PrependReactor("get", "configmaps", forbid("nvke-auth-config", "nke-auth-config"))
+
+	_, enabled, err := (&TokenSource{client: client}).audience(t.Context())
+	if err == nil {
+		t.Fatal("audience treated a denied read as authentication being off")
+	}
+	if enabled {
+		t.Fatal("audience reported authentication as enabled without a ConfigMap")
+	}
+	if !apierrors.IsForbidden(err) {
+		t.Fatalf("audience lost the Forbidden cause: %v", err)
 	}
 }
 

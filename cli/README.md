@@ -104,13 +104,17 @@ are aliases on `get`, `create`, `patch` and `delete`.
 
 `nvkectl config set-site` command configures the management-cluster kubeconfig with the site.
 nvkectl commands use it to mint an audience-scoped token for the admitted
-identity `nke-clients/nke-client`. The audience comes from ConfigMap
-`nvke-auth-config`, looked up in namespace `nke-controller` first and then
-`cloud-workflow-engine`.
+identity `nke-clients/nke-client`. The audience comes from the authentication
+ConfigMap, looked up in namespace `nke-controller` first and then
+`cloud-workflow-engine`, and under two names in each: `nvke-auth-config`, then
+`nke-auth-config` for a site that keeps the older name by pinning
+`apiAuth.configMap.name`.
 
-If neither namespace holds that ConfigMap, the CLI treats authentication as off and sends no
-`Authorization` header — the same as a CWE that was installed with
-`apiAuth.enabled` unset.
+Only when neither name is found in either namespace does the CLI treat
+authentication as off and send no `Authorization` header — the same as a CWE
+that was installed with `apiAuth.enabled` unset. A ConfigMap that exists but
+cannot be read is reported as the denial it is, rather than being read as
+authentication being off.
 
 The kubeconfig identity needs:
 
