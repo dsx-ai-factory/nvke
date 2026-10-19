@@ -208,9 +208,18 @@ func (a *Activities) RenewKubernetesCertificates(
 	}
 	if err != nil {
 		if status.Code(err) != codes.Unimplemented {
-			// A failed Start may still have been accepted. Retries reattach to the
+			startErr := fmt.Errorf("failed to start certificate renewal on node %s: %w", node.Name, err)
+			if input.ExpectedEtcdMembers == 0 {
+				// V1 never runs Resolve and the reconciler keeps unfenced records, so
+				// its reservation must not outlive the activity; retries re-reserve.
+				if releaseErr := a.releaseCertificateRenewal(ctx, node, input.OperationID); releaseErr != nil {
+					return KubernetesCertificateRenewalResult{}, errors.Join(startErr, releaseErr)
+				}
+				return KubernetesCertificateRenewalResult{}, startErr
+			}
+			// A failed V2 Start may still have been accepted. Retries reattach to the
 			// reservation; it is released only once termination is confirmed.
-			return KubernetesCertificateRenewalResult{}, fmt.Errorf("failed to start certificate renewal on node %s: %w", node.Name, err)
+			return KubernetesCertificateRenewalResult{}, startErr
 		}
 		if input.ExpectedEtcdMembers > 0 {
 			// A prior attempt may have accepted work but lost its response. Even
