@@ -186,5 +186,5 @@ metadata:
         app.kubernetes.io/name: cloud-workflow-engine
         app.kubernetes.io/part-of: cloud-workflow-engine
         nke.nvidia.com/purpose: nke-auth-dev
-    name: nke-auth-config
+    name: nvke-auth-config
     namespace: nke-controller

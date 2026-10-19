@@ -14,7 +14,7 @@ Expand the name of the chart.
 {{/*
 The shared management-plane namespace: the Namespace object, the Roles and
 RoleBindings scoped to it, and the managementNamespace key the controller reads
-from nke-controller-config all come from here, so they cannot drift apart.
+from nvke-controller-config all come from here, so they cannot drift apart.
 
 The default is nvke-system. A site installed before this value existed holds its
 Secrets in nke-system and must pin nvkeSystemNamespace.name to it: the old
@@ -115,7 +115,7 @@ auth.yaml
 {{- end }}
 
 {{/*
-The nke-controller-config ConfigMap, its file key, and where it is mounted.
+The nvke-controller-config ConfigMap, its file key, and where it is mounted.
 CONTROLLER_CONFIG_PATH is the mount and the file joined, so none are values.
 */}}
 {{- define "controller.controllerConfig.name" -}}
@@ -131,7 +131,7 @@ config.yaml
 {{- end }}
 
 {{/*
-Refuse an env entry for a variable nke-controller-config carries: the controller
+Refuse an env entry for a variable nvke-controller-config carries: the controller
 reads that setting only from the file, so the entry would do nothing.
 files/controller-config-env.yaml lists those variables, each with the
 config.yaml key that replaces it.
@@ -146,16 +146,16 @@ at another file, or at none.
 {{- range .Values.env }}
 {{- $name := toString .name }}
 {{- if eq $name "CONTROLLER_CONFIG_PATH" }}
-{{- fail "env sets CONTROLLER_CONFIG_PATH, which the chart sets to the mounted nke-controller-config file" }}
+{{- fail (printf "env sets CONTROLLER_CONFIG_PATH, which the chart sets to the mounted %s file" (include "controller.controllerConfig.name" $)) }}
 {{- end }}
 {{- if hasKey $carried $name }}
-{{- fail (printf "env sets %s, which nke-controller-config carries as %s; set it through its chart value instead" $name (get $carried $name)) }}
+{{- fail (printf "env sets %s, which %s carries as %s; set it through its chart value instead" $name (include "controller.controllerConfig.name" $) (get $carried $name)) }}
 {{- end }}
 {{- end }}
 {{- end }}
 
 {{/*
-runbooksDir in nke-controller-config: profiles.runbooksPath when set, else the
+runbooksDir in nvke-controller-config: profiles.runbooksPath when set, else the
 runbooks/ directory the profiles image provides, else empty, which leaves the
 controller its own default of profilesDir/runbooks.
 */}}

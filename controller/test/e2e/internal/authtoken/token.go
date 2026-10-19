@@ -30,7 +30,7 @@ import (
 
 // Where the authentication configuration lives, in controller.Namespace().
 const (
-	ConfigMapName = "nke-auth-config"
+	ConfigMapName = "nvke-auth-config"
 	ConfigMapKey  = "auth.yaml"
 )
 
@@ -181,7 +181,7 @@ func discover(ctx context.Context, client kubernetes.Interface) (*Source, bool, 
 }
 
 // RawConfig returns the auth.yaml the NVKE pod mounts, out of the
-// nke-auth-config ConfigMap; found is false, with a nil error, when it does not
+// nvke-auth-config ConfigMap; found is false, with a nil error, when it does not
 // exist. It stops at the bytes, and each caller decodes what it asserts on.
 func RawConfig(ctx context.Context, client kubernetes.Interface) ([]byte, bool, error) {
 	namespace := controller.Namespace()
@@ -201,7 +201,7 @@ func RawConfig(ctx context.Context, client kubernetes.Interface) ([]byte, bool, 
 }
 
 // AudienceFromCluster reads one deployment-wide audience out of the
-// nke-auth-config ConfigMap. Only the top-level "audiences" list is read, since
+// nvke-auth-config ConfigMap. Only the top-level "audiences" list is read, since
 // nothing shipped overrides it for the Kubernetes issuer; any entry would do,
 // as NVKE matches any-of.
 func AudienceFromCluster(ctx context.Context, client kubernetes.Interface) (string, bool, error) {

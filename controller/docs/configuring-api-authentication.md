@@ -92,7 +92,7 @@ kubectl -n nke-clients create serviceaccount nke-client
 ```
 
 `nvkectl` mints this pair and no other. The names `nke-clients` /
-`nke-client` and ConfigMap `nke-auth-config` are fixed in the CLI. It reads
+`nke-client` and ConfigMap `nvke-auth-config` are fixed in the CLI. It reads
 that ConfigMap from namespace `nke-controller`, or from `cloud-workflow-engine`
 when `nke-controller` has none. Any other error reading it, such as a
 permission denial, stops the command. In any other namespace, `nvkectl` finds
@@ -164,7 +164,7 @@ apiAuth:
   permissive: true
   configMap:
     create: true
-    name: nke-auth-config
+    name: nvke-auth-config
   config:
     # the YAML from step 3 goes here
     audiences: ["https://nke.example.com"]
@@ -180,7 +180,7 @@ existing GitOps pipeline, leave `create` at its default of `false` and put the d
 in a ConfigMap named by `configMap.name`, under the key `auth.yaml`:
 
 ```bash
-kubectl -n "$NS" create configmap nke-auth-config \
+kubectl -n "$NS" create configmap nvke-auth-config \
   --from-file=auth.yaml=auth.yaml \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
@@ -275,7 +275,7 @@ at below. A CA bundle is a public certificate, not a secret.
 If you manage the ConfigMap yourself instead, put the file in it directly:
 
 ```bash
-kubectl -n "$NS" create configmap nke-auth-config \
+kubectl -n "$NS" create configmap nvke-auth-config \
   --from-file=auth.yaml=auth.yaml \
   --from-file=spire-ca.crt=spire-ca.crt \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -404,7 +404,7 @@ something NVKE trims.
 |---|---|---|
 | `apiAuth.enabled` | `false` | |
 | `apiAuth.permissive` | `false` | |
-| `apiAuth.configMap.name` | `nke-auth-config` | Mounted either way. |
+| `apiAuth.configMap.name` | `nvke-auth-config` | Mounted either way. |
 | `apiAuth.configMap.create` | `false` | Build the ConfigMap from `apiAuth.config`. |
 | `apiAuth.configMap.extraFiles` | empty | Files to place beside `auth.yaml`, keyed by filename. A CA bundle goes here. |
 | `apiAuth.config` | empty | The document, `audiences` and `issuers` only. |

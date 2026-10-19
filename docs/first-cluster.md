@@ -139,7 +139,7 @@ not export a token for `nvkectl`.
 
 Under Tilt the API requires a token, unlike **API Only** — a bare `curl` to
 `/api/clusters` returns 401. `nvkectl get clusters` does not, once `set-site`
-has the kubeconfig: it discovers the audience from the `nke-auth-config`
+has the kubeconfig: it discovers the audience from the `nvke-auth-config`
 ConfigMap and mints through the TokenRequest API.
 
 ```bash
@@ -170,7 +170,7 @@ curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/clusters
 ```
 
 `NKE_AUTH_ENABLED=false tilt up` turns authentication off. Then neither
-`nvkectl` nor `curl` needs a token — `nvkectl` sees no `nke-auth-config`
+`nvkectl` nor `curl` needs a token — `nvkectl` sees no `nvke-auth-config`
 ConfigMap and sends requests unauthenticated.
 
 ### Getting a tenant kubeconfig
@@ -400,7 +400,7 @@ bearer token to it, so use it from a trusted network only.
 
 That kubeconfig is also how `nvkectl` authenticates to CWE once the site has API
 authentication on. The CLI always mints for `nke-clients/nke-client` and reads
-the audience from ConfigMap `nke-auth-config` in namespace `nke-controller`, or
+the audience from ConfigMap `nvke-auth-config` in namespace `nke-controller`, or
 in `cloud-workflow-engine` when that is absent. Create that service
 account, admit it, and grant the kubeconfig identity the permissions in
 [Configuring NVKE API Authentication](../controller/docs/configuring-api-authentication.md).

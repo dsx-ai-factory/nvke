@@ -30,8 +30,14 @@ import (
 // earlier site keeps. The first that holds the ConfigMap is used.
 var authConfigNamespaces = []string{"nke-controller", "cloud-workflow-engine"}
 
+// authConfigMaps are the names the chart gives the authentication ConfigMap,
+// in the order they are searched: a greenfield site's name first, then the
+// name every earlier site keeps by pinning apiAuth.configMap.name. Every
+// (namespace, name) pair is tried, because a site that pins one of the two
+// need not have pinned the other.
+var authConfigMaps = []string{"nvke-auth-config", "nke-auth-config"}
+
 const (
-	authConfigMap       = "nke-auth-config"
 	authConfigKey       = "auth.yaml"
 	tokenNamespace      = "nke-clients"
 	tokenServiceAccount = "nke-client"
@@ -204,20 +210,25 @@ func (t *tokenCatcher) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func (s *TokenSource) audience(ctx context.Context) (string, bool, error) {
 	var configMap *corev1.ConfigMap
-	var namespace string
-	for _, candidate := range authConfigNamespaces {
-		found, err := s.client.CoreV1().
-			ConfigMaps(candidate).
-			Get(ctx, authConfigMap, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			continue
+	var namespace, name string
+	for _, candidateNS := range authConfigNamespaces {
+		for _, candidateName := range authConfigMaps {
+			found, err := s.client.CoreV1().
+				ConfigMaps(candidateNS).
+				Get(ctx, candidateName, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			if err != nil {
+				return "", false, fmt.Errorf("reading controller authentication ConfigMap %s/%s: %w",
+					candidateNS, candidateName, err)
+			}
+			configMap, namespace, name = found, candidateNS, candidateName
+			break
 		}
-		if err != nil {
-			return "", false, fmt.Errorf("reading controller authentication ConfigMap %s/%s: %w",
-				candidate, authConfigMap, err)
+		if configMap != nil {
+			break
 		}
-		configMap, namespace = found, candidate
-		break
 	}
 	if configMap == nil {
 		return "", false, nil
@@ -226,7 +237,7 @@ func (s *TokenSource) audience(ctx context.Context) (string, bool, error) {
 	raw, ok := configMap.Data[authConfigKey]
 	if !ok {
 		return "", false, fmt.Errorf("controller authentication ConfigMap %s/%s has no %q key",
-			namespace, authConfigMap, authConfigKey)
+			namespace, name, authConfigKey)
 	}
 
 	var config struct {
@@ -234,11 +245,11 @@ func (s *TokenSource) audience(ctx context.Context) (string, bool, error) {
 	}
 	if err := yaml.Unmarshal([]byte(raw), &config); err != nil {
 		return "", false, fmt.Errorf("parsing %q from controller authentication ConfigMap %s/%s: %w",
-			authConfigKey, namespace, authConfigMap, err)
+			authConfigKey, namespace, name, err)
 	}
 	if len(config.Audiences) == 0 || config.Audiences[0] == "" {
 		return "", false, fmt.Errorf("controller authentication ConfigMap %s/%s sets no audiences",
-			namespace, authConfigMap)
+			namespace, name)
 	}
 	return config.Audiences[0], true, nil
 }

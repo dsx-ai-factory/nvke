@@ -46,7 +46,7 @@ load("ext://uibutton", "cmd_button", "text_input")
 #                                               Appended to the nvke-controller resource's resource_deps.
 #   controller_env_overrides (dict[string, string]) Overrides for .env.tilt. Only the names this file passes to
 #                                               the controller's env list reach it; settings in
-#                                               nke-controller-config go through controller_chart_flags.
+#                                               nvke-controller-config go through controller_chart_flags.
 #   controller_chart_flags (list[string], optional) Additional Helm flags for the controller.
 #   spire_chart_flags  (list[string], optional) Additional Helm flags for SPIRE.
 #   spire_resource_deps (list[string], optional) Tilt resources SPIRE should depend on.
@@ -901,7 +901,7 @@ k8s_resource(
         "nke-client-token-minter:rolebinding:nke-clients",
         "nke-outsider-token-minter:role:nke-outsiders",
         "nke-outsider-token-minter:rolebinding:nke-outsiders",
-        "nke-auth-config:configmap:nke-controller",
+        "nvke-auth-config:configmap:nke-controller",
     ],
     resource_deps=["check-management-cluster"],
     pod_readiness="ignore",
@@ -1019,11 +1019,11 @@ _controller_oidc_enabled = os.getenv(
     "NKE_OIDC_AUTH_ENABLED", _tilt_env.get("NKE_OIDC_AUTH_ENABLED", "true")) == "true"
 
 # NVKE API authentication. Enforcing by default now that the suite mints its own
-# token: internal/authtoken discovers the audience from the nke-auth-config
+# token: internal/authtoken discovers the audience from the nvke-auth-config
 # ConfigMap and nvke.NewClient presents it on every call, so the ordinary specs
 # exercise the shipping authentication path rather than bypassing it.
 #
-# The config file comes from the nke-auth-config ConfigMap in
+# The config file comes from the nvke-auth-config ConfigMap in
 # deploy/k8s/nke-auth-dev.yaml, and the chart mounts it from the apiAuth values
 # set below. To drive it by hand, use hack/nvke-token.sh for the bearer token.
 #

@@ -164,7 +164,7 @@ subjects:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: nke-auth-config
+  name: nvke-auth-config
   namespace: nke-controller
   labels:
     app.kubernetes.io/name: cloud-workflow-engine

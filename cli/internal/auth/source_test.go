@@ -34,7 +34,7 @@ func TestTokenMintsForConfiguredAudience(t *testing.T) {
 
 	client := fake.NewClientset(&corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      authConfigMap,
+			Name:      authConfigMaps[0],
 			Namespace: legacyNamespace,
 		},
 		Data: map[string]string{
@@ -104,7 +104,7 @@ func TestTokenRenewsAndCachesNearExpiryToken(t *testing.T) {
 	const endpoint = "https://nke.example.internal"
 	mintedExpiry := time.Now().Add(tokenLifetime)
 	client := fake.NewClientset(&corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: legacyNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: authConfigMaps[0], Namespace: legacyNamespace},
 		Data:       map[string]string{authConfigKey: "audiences:\n  - " + endpoint + "\n"},
 	})
 	client.PrependReactor("create", "serviceaccounts", func(_ k8stesting.Action) (bool, runtime.Object, error) {
@@ -139,7 +139,7 @@ func TestTokenRenewsAndCachesNearExpiryToken(t *testing.T) {
 func TestTokenReusesMintedTokenInMemory(t *testing.T) {
 	const configuredAudience = "https://nke.example.internal"
 	client := fake.NewClientset(&corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: legacyNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: authConfigMaps[0], Namespace: legacyNamespace},
 		Data:       map[string]string{authConfigKey: "audiences:\n  - " + configuredAudience + "\n"},
 	})
 	mints := 0
@@ -196,13 +196,13 @@ func TestTokenRequiresConfiguredAudience(t *testing.T) {
 		{
 			name: "missing auth config key",
 			configMap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: legacyNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: authConfigMaps[0], Namespace: legacyNamespace},
 			},
 		},
 		{
 			name: "empty audience list",
 			configMap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: legacyNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: authConfigMaps[0], Namespace: legacyNamespace},
 				Data:       map[string]string{authConfigKey: "audiences: []\n"},
 			},
 		},
@@ -228,7 +228,7 @@ func TestTokenRequiresConfiguredAudience(t *testing.T) {
 func TestAudienceSearchesBothControllerNamespaces(t *testing.T) {
 	authConfig := func(namespace, audience string) *corev1.ConfigMap {
 		return &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: namespace},
+			ObjectMeta: metav1.ObjectMeta{Name: authConfigMaps[0], Namespace: namespace},
 			Data:       map[string]string{authConfigKey: "audiences:\n  - " + audience + "\n"},
 		}
 	}
@@ -280,11 +280,65 @@ func TestAudienceSearchesBothControllerNamespaces(t *testing.T) {
 	}
 }
 
+// The chart's default ConfigMap name moved to nvke-auth-config; a site that
+// pinned apiAuth.configMap.name keeps nke-auth-config. The CLI reads either,
+// so one nvkectl works against both.
+func TestAudienceSearchesBothConfigMapNames(t *testing.T) {
+	authConfig := func(name, audience string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: greenfieldNamespace},
+			Data:       map[string]string{authConfigKey: "audiences:\n  - " + audience + "\n"},
+		}
+	}
+
+	tests := []struct {
+		name         string
+		objects      []runtime.Object
+		wantAudience string
+		wantEnabled  bool
+	}{
+		{
+			name:         "greenfield name",
+			objects:      []runtime.Object{authConfig("nvke-auth-config", "https://greenfield.example")},
+			wantAudience: "https://greenfield.example",
+			wantEnabled:  true,
+		},
+		{
+			name:         "pinned legacy name",
+			objects:      []runtime.Object{authConfig("nke-auth-config", "https://legacy.example")},
+			wantAudience: "https://legacy.example",
+			wantEnabled:  true,
+		},
+		{
+			name: "both names present uses the greenfield name",
+			objects: []runtime.Object{
+				authConfig("nke-auth-config", "https://legacy.example"),
+				authConfig("nvke-auth-config", "https://greenfield.example"),
+			},
+			wantAudience: "https://greenfield.example",
+			wantEnabled:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewClientset(tt.objects...)
+			audience, enabled, err := (&TokenSource{client: client}).audience(t.Context())
+			if err != nil {
+				t.Fatalf("audience: %v", err)
+			}
+			if audience != tt.wantAudience || enabled != tt.wantEnabled {
+				t.Fatalf("audience = %q, enabled = %t; want %q, %t", audience, enabled, tt.wantAudience, tt.wantEnabled)
+			}
+		})
+	}
+}
+
 // Only NotFound moves on to the next namespace. Any other failure is reported,
 // so a denied read cannot turn into an unauthenticated request.
 func TestAudienceReportsNonNotFoundErrors(t *testing.T) {
 	client := fake.NewClientset(&corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: legacyNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: authConfigMaps[0], Namespace: legacyNamespace},
 		Data:       map[string]string{authConfigKey: "audiences:\n  - https://legacy.example\n"},
 	})
 	client.PrependReactor("get", "configmaps", func(action k8stesting.Action) (bool, runtime.Object, error) {

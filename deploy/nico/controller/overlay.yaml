@@ -12,7 +12,7 @@
 # once means a failure could be either.
 #
 # It also cannot simply be flipped true here. The chart defaults
-# apiAuth.configMap.create to false and mounts `nke-auth-config`, which on the
+# apiAuth.configMap.create to false and mounts `nvke-auth-config`, which on the
 # e2e lanes comes from the nke-auth-dev item -- and that item is test
 # scaffolding (it creates nke-client, nke-outsider and nke-e2e ServiceAccounts)
 # that a site has no business installing. The controller treats a configured-but-unreadable

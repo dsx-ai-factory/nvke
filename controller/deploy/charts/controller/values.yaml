@@ -354,7 +354,7 @@ machineMetadata:
   allowlistedAnnotationKeys: []
 
 # -- Additional environment variables to inject into the controller container. A
-# variable nke-controller-config carries is refused; set its chart value instead.
+# variable nvke-controller-config carries is refused; set its chart value instead.
 # CONTROLLER_CONFIG_PATH is refused too: the chart sets it to the mounted file.
 env: []
 # - name: EXAMPLE
@@ -513,7 +513,7 @@ apiAuth:
     # -- ConfigMap holding the authentication configuration, keyed `auth.yaml`.
     # Required when apiAuth.enabled=true; an empty name fails the render.
     # Created by the chart when configMap.create=true, mounted either way.
-    name: nke-auth-config
+    name: nvke-auth-config
     # -- Extra files to place beside `auth.yaml`, keyed by filename. Only used
     # when configMap.create=true. The whole ConfigMap is mounted, so each one
     # lands in the same directory and can be named by a `jwks.caBundlePath` as
@@ -657,7 +657,7 @@ profiles:
 controllerConfig:
   # -- Name of the ConfigMap that carries the controller's settings file, and
   # that the Deployment mounts and Reloader watches. An install that predates
-  # nvke-controller-config sets "nke-controller-config": renaming the ConfigMap
+  # nvke-controller-config sets "nvke-controller-config": renaming the ConfigMap
   # orphans the live object.
   name: "nvke-controller-config"
 

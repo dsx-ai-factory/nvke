@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Renders the chart under value sets that reach each conditional key of
-# nke-controller-config, then runs TestRenderedChart over the renders.
+# nvke-controller-config, then runs TestRenderedChart over the renders.
 # RENDERS_DIR keeps the renders; GO_TEST_FLAGS is passed to go test.
 
 set -euo pipefail
@@ -236,7 +236,7 @@ render runbooks-path-with-profiles-image \
   --set-string profiles.path=/opt/nke/profiles \
   --set-string profiles.runbooksPath=/opt/nke/hooks
 
-# env stays open to what nke-controller-config does not carry, such as what
+# env stays open to what nvke-controller-config does not carry, such as what
 # Tilt and nvkectl bootstrap pass, and refuses what it does.
 render env-passthrough \
   --set-string 'env[0].name=LOG_LEVEL' --set-string 'env[0].value=debug' \
@@ -244,10 +244,10 @@ render env-passthrough \
 if refusal="$(helm template cwe "${CHART}" \
   --set nvkeOIDCAuth.enabled=true --set spiffe.enabled=true --set-string spiffe.trustDomain=example.test \
   --set-string 'env[0].name=NKE_OIDC_AUTH_ISSUER_URL' --set-string 'env[0].value=https://oidc.example.test' 2>&1)"; then
-  echo "env set NKE_OIDC_AUTH_ISSUER_URL and rendered; the chart must refuse a variable nke-controller-config carries" >&2
+  echo "env set NKE_OIDC_AUTH_ISSUER_URL and rendered; the chart must refuse a variable nvke-controller-config carries" >&2
   exit 1
 fi
-[[ "${refusal}" == *"env sets NKE_OIDC_AUTH_ISSUER_URL, which nke-controller-config carries as oidc.managementOIDCAuth.issuerURL"* ]] ||
+[[ "${refusal}" == *"env sets NKE_OIDC_AUTH_ISSUER_URL, which nvke-controller-config carries as oidc.managementOIDCAuth.issuerURL"* ]] ||
   { echo "env override of NKE_OIDC_AUTH_ISSUER_URL failed for another reason: ${refusal}" >&2; exit 1; }
 if refusal="$(helm template cwe "${CHART}" --set-string 'env[0].name=CONTROLLER_CONFIG_PATH' --set-string 'env[0].value=' 2>&1)"; then
   echo "env set CONTROLLER_CONFIG_PATH and rendered; the chart must refuse it" >&2
@@ -261,10 +261,10 @@ for key in WORKERS TIMEOUT INTERVAL JITTER; do
     echo "env set ${variable} and rendered; the chart must refuse it" >&2
     exit 1
   fi
-  [[ "${refusal}" == *"env sets ${variable}, which nke-controller-config carries as agentReadiness."* ]] ||
+  [[ "${refusal}" == *"env sets ${variable}, which nvke-controller-config carries as agentReadiness."* ]] ||
     { echo "env override of ${variable} failed for another reason: ${refusal}" >&2; exit 1; }
 done
-printf '  env overrides of nke-controller-config settings and its path are refused\n'
+printf '  env overrides of nvke-controller-config settings and its path are refused\n'
 
 # A renamed values key must fail the render naming its replacement, not fall
 # back to the chart defaults, which is what Helm does with an unknown key.

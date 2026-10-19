@@ -605,7 +605,7 @@ apiAuth:
   permissive: false
   configMap:
     create: false               # true to render apiAuth.config into it
-    name: nke-auth-config       # mounted either way
+    name: nvke-auth-config       # mounted either way
   clusterIssuerDiscovery: true  # see RBAC Prerequisite below
 ```
 
@@ -651,7 +651,7 @@ apiAuth:
   enabled: true
   configMap:
     create: true
-    name: nke-auth-config
+    name: nvke-auth-config
   config:
     # No apiVersion or kind: the chart supplies both, and repeating them here
     # renders duplicate keys that auth.Load refuses. The render fails if you do.
@@ -714,7 +714,7 @@ must be `auth.yaml`:
 ```bash
 # In the release namespace. The chart mounts the ConfigMap at /etc/nvke/auth and
 # points AUTH_CONFIG_PATH at auth.yaml within it.
-kubectl create configmap nke-auth-config -n "${RELEASE_NAMESPACE}" \
+kubectl create configmap nvke-auth-config -n "${RELEASE_NAMESPACE}" \
   --from-file=auth.yaml=./auth.yaml
 ```
 

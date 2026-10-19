@@ -26,6 +26,13 @@ nvkeSystemNamespace:
 controllerConfig:
   name: "nke-controller-config"
 
+# Same again for the authentication ConfigMap, which the chart mounts whether
+# or not it created it. An install that supplies its own (configMap.create
+# false) must keep naming the one it supplies.
+apiAuth:
+  configMap:
+    name: "nke-auth-config"
+
 # The ClusterSPIFFEID issues spiffe://<trustDomain>/nke-service/<serviceAccount>.
 # The default RBAC subjects must name the same segment.
 spiffe:

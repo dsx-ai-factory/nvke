@@ -91,7 +91,7 @@ hack/nvke-token.sh --audience
 Or from the ConfigMap directly:
 
 ```bash
-kubectl -n nke-controller get configmap nke-auth-config \
+kubectl -n nke-controller get configmap nvke-auth-config \
   -o jsonpath='{.data.auth\.yaml}' | grep audiences
 ```
 
@@ -267,7 +267,7 @@ all 4 checks passed
 
 `nvkectl` is a caller of this API. After `nvkectl config set-site --kubeconfig`,
 every controller API command mints the same identity this page uses (`nke-clients/nke-client`)
-with the audience from ConfigMap `nke-auth-config`, read from namespace
+with the audience from ConfigMap `nvke-auth-config`, read from namespace
 `nke-controller`, or from `cloud-workflow-engine` when that is absent. There
 is no `NKECTL_DEV_TOKEN` and no `hack/nvke-token.sh` step.
 

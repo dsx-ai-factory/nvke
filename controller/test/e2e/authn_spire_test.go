@@ -154,7 +154,7 @@ type spireAdmission struct {
 	PathPrefixes []string
 }
 
-// spireAdmissionFromCluster reads the SPIRE issuer out of the nke-auth-config
+// spireAdmissionFromCluster reads the SPIRE issuer out of the nvke-auth-config
 // ConfigMap; found is false, with a nil error, when there is none.
 func spireAdmissionFromCluster(ctx context.Context, clientset kubernetes.Interface) (spireAdmission, bool, error) {
 	raw, found, err := authtoken.RawConfig(ctx, clientset)
