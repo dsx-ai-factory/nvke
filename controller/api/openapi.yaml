@@ -745,7 +745,9 @@ paths:
 
         Returns 409 for a control-plane node pool while etcd encryption or
         certificate renewal holds the control-plane mutation lock. Retry once the
-        operation has finished.
+        operation has finished. A failed certificate renewal can retain the lock
+        until an operator clears it; see the retained-lock recovery procedure in
+        controller/docs/certificate-renewal.md.
       operationId: deleteNodePool
       responses:
         "202":
@@ -767,7 +769,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/GenericError"
               example:
-                message: control-plane changes are rejected while etcd encryption or certificate renewal is in progress; retry after the operation completes
+                message: control-plane changes are rejected while etcd encryption or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md)
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -930,7 +932,9 @@ paths:
 
         Returns 409 for a control-plane node while etcd encryption or certificate
         renewal holds the control-plane mutation lock. Retry once the operation
-        has finished.
+        has finished. A failed certificate renewal can retain the lock until an
+        operator clears it; see the retained-lock recovery procedure in
+        controller/docs/certificate-renewal.md.
       operationId: deleteNode
       requestBody:
         required: false
@@ -967,7 +971,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/GenericError"
               example:
-                message: control-plane changes are rejected while etcd encryption or certificate renewal is in progress; retry after the operation completes
+                message: control-plane changes are rejected while etcd encryption or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md)
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
