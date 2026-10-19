@@ -49,8 +49,9 @@ const (
 )
 
 // EtcdKeyRotationStatus records the last rotation in clusters.conditions JSONB.
-// WorkflowID is also its recovery owner: failed rotations retain UpdateInProgress
-// until the original workflow is reset and successfully completes. Observers must
+// WorkflowID is also its recovery owner: a failure in the prepare phase releases
+// UpdateInProgress, while failures after prepare retain it until the original
+// workflow is reset and successfully completes. Observers must
 // not equate a failed/closed workflow with safely released mutation ownership.
 // Keys, ciphertext, Secret names and free-form errors are deliberately absent.
 type EtcdKeyRotationStatus struct {
