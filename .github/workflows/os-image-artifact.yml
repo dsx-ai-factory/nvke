@@ -8,8 +8,9 @@ name: OS Image Artifact
 # UBUNTU_RELEASE in os-image/packer/Makefile for why both ship), on an
 # os-image/v* tag, a manual dispatch, a main push that touches os-image/ or
 # the 12-hourly schedule, pushes all eight qcow2s to GHCR as OCI artifacts
-# under sha-<commit> tags (main pushes and the schedule stop there; NVCR and
-# S3 stay tag/dispatch only and read that sha- alias), and on a real tag, when
+# under sha-<commit> tags, main-sha-<commit> on a main push (main pushes and
+# the schedule stop there; NVCR and S3 stay tag/dispatch only and read that
+# sha- alias), and on a real tag, when
 # NVKE_GITHUB_PUBLISH names os-image (it does not by default), adds the version
 # tags on GHCR and cuts a GitHub Release carrying nvke-os-image-check +
 # checksums covering all nine files. The GitHub Release is created here (not
@@ -123,6 +124,10 @@ concurrency:
 env:
   REPO_FDE: ghcr.io/dsx-ai-factory/nvke/os-image-fde
   REPO_NON_FDE: ghcr.io/dsx-ai-factory/nvke/os-image-non-fde
+  # The GHCR hand-off alias. A main push gets its own prefix: a release branch or
+  # tag at the same commit builds the same legs, and one shared alias let the slower
+  # run move the tag under the other run's publish.
+  SHA_ALIAS: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('main-sha-{0}', github.sha) || format('sha-{0}', github.sha) }}
   # The S3 build cache. The bucket and its two roles are repository variables;
   # this workflow only reads, and os-image-cache.yml, on main, is the only
   # writer.
@@ -197,9 +202,9 @@ jobs:
             echo "::warning::could not list ${REPO_NON_FDE} versions; baking anyway"
             tags=""
           fi
-          if grep -qx "sha-${GITHUB_SHA}-amd64" <<< "${tags}" && grep -qx "sha-${GITHUB_SHA}-arm64" <<< "${tags}"; then
+          if grep -qx "${SHA_ALIAS}-amd64" <<< "${tags}" && grep -qx "${SHA_ALIAS}-arm64" <<< "${tags}"; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "sha-${GITHUB_SHA} is already published for both arches; nothing to bake"
+            echo "${SHA_ALIAS} is already published for both arches; nothing to bake"
           fi
 
       - name: Pick
@@ -425,9 +430,10 @@ jobs:
 
           version="${VERSION}"
 
-          # The sha- alias is the hand-off the NVCR and S3 publishers and the
-          # NICo VMs lane read. The version alias is the GitHub publication.
-          aliases=("sha-${GITHUB_SHA}")
+          # The sha- alias (main-sha- on a main push) is the hand-off the NVCR and
+          # S3 publishers and the NICo VMs lane read. The version alias is the
+          # GitHub publication.
+          aliases=("${SHA_ALIAS}")
           if [[ "${GITHUB_REF}" == refs/tags/* && "${GITHUB_PUBLISH}" == "true" ]]; then
             aliases+=("${version}")
           fi
@@ -886,7 +892,7 @@ jobs:
            (github.event_name == 'push' && github.ref == 'refs/heads/main'))
         env:
           REPO: ${{ matrix.variant == 'fde' && env.REPO_FDE || env.REPO_NON_FDE }}
-        run: oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}${{ matrix.tag_suffix }}-${{ matrix.arch }}"
+        run: oras manifest fetch --pretty "${REPO}:${SHA_ALIAS}${{ matrix.tag_suffix }}-${{ matrix.arch }}"
 
       # One file per leg; the release job concatenates them. The checker
       # binary and the version metadata come from a single build -- amd64,
@@ -980,7 +986,7 @@ jobs:
           fi
           # The source is always the sha- alias: the version alias exists on
           # GHCR only when NVKE_GITHUB_PUBLISH names os-image.
-          source_tag="sha-${GITHUB_SHA}${SUFFIX}-${ARCH}"
+          source_tag="${SHA_ALIAS}${SUFFIX}-${ARCH}"
           tag="${source_tag}"
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             tag="${VERSION}${SUFFIX}-${ARCH}"
@@ -1088,7 +1094,7 @@ jobs:
           # Pull the sha- alias: the version alias exists on GHCR only when
           # NVKE_GITHUB_PUBLISH names os-image. The S3 path keeps the version.
           mkdir -p dist
-          oras pull "${REPO}:sha-${GITHUB_SHA}${SUFFIX}-${ARCH}" -o dist
+          oras pull "${REPO}:${SHA_ALIAS}${SUFFIX}-${ARCH}" -o dist
           {
             echo "s3_uri=${S3_URI}"
             echo "role_arn=${ROLE_ARN}"
