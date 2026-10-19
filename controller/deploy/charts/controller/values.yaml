@@ -66,13 +66,16 @@ image:
 imagePullSecrets: []
 # This is to override the chart name.
 #
-# Pinned to cloud-workflow-engine rather than left empty: the chart is named
-# `nke-controller` so it publishes to <registry>/nke/charts/nke-controller, but
-# the name helper feeds app.kubernetes.io/name, every resource name derived
-# from the fullname template, and the serviceMonitor.matchLabels selector
-# below. Letting it follow .Chart.Name would rename every object this chart
-# owns and break that selector on upgrade of an existing release.
-nameOverride: "cloud-workflow-engine"
+# Pinned rather than left empty: the name helper feeds app.kubernetes.io/name,
+# every resource name derived from the fullname template, and the
+# serviceMonitor.matchLabels selector below. Letting it follow .Chart.Name would
+# rename every object this chart owns whenever the chart is renamed.
+#
+# New installs get nvke-controller. An install that predates it sets
+# "cloud-workflow-engine": the Deployment's spec.selector carries this value and
+# is immutable, so an upgrade that changes it fails rather than renames. See
+# hack/testdata/chart-legacy-pinned-values.yaml for the full set of pins.
+nameOverride: "nvke-controller"
 fullnameOverride: ""
 # -- Deploy into this namespace instead of the release namespace (umbrella use).
 namespaceOverride: ""
@@ -653,9 +656,10 @@ profiles:
 
 controllerConfig:
   # -- Name of the ConfigMap that carries the controller's settings file, and
-  # that the Deployment mounts and Reloader watches. An existing site keeps the
-  # name it has: renaming the ConfigMap orphans the live object.
-  name: "nke-controller-config"
+  # that the Deployment mounts and Reloader watches. An install that predates
+  # nvke-controller-config sets "nke-controller-config": renaming the ConfigMap
+  # orphans the live object.
+  name: "nvke-controller-config"
 
 spiffe:
   # -- Enable SPIFFE identity for mTLS to tenant clusters

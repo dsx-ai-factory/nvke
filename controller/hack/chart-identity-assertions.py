@@ -47,38 +47,52 @@ import sys
 
 import yaml
 
-# The Helm release name production uses. `app.kubernetes.io/instance` and the
-# fullname helper both derive from it, so rendering under any other release
-# name would not exercise the identities that actually ship.
-RELEASE = "cloud-workflow-engine"
+# The Helm release an install that predates the rename runs.
+# `app.kubernetes.io/instance` and the fullname helper both derive from the
+# release name, so rendering under any other one would not exercise the
+# identities that actually ship.
+LEGACY_RELEASE = "cloud-workflow-engine"
+# The release a new install uses.
+DEFAULT_RELEASE = "nvke-controller"
 
 LEGACY_VALUES = pathlib.Path(__file__).resolve().parent / "testdata" / "chart-legacy-pinned-values.yaml"
 
 GREENFIELD_NAME = "nke-controller"
 GREENFIELD_TRUST_DOMAIN = "example.test"
 
-# Every resource the chart renders with no values, except the management
-# Namespace, which the scenarios set.
-COMMON_NAMES = frozenset(
-    {
-        ("CustomResourceDefinition", "clusterreleases.internal.nvke.nvidia.com"),
-        ("CustomResourceDefinition", "machineimages.internal.nvke.nvidia.com"),
-        ("CustomResourceDefinition", "nodepoolreleases.internal.nvke.nvidia.com"),
-        ("ClusterRole", "cloud-workflow-engine-releases"),
-        ("ClusterRoleBinding", "cloud-workflow-engine-releases"),
-        ("NetworkPolicy", "cloud-workflow-engine-metrics"),
-        ("ServiceAccount", "cloud-workflow-engine"),
-        ("Role", "cloud-workflow-engine"),
-        ("Role", "cloud-workflow-engine-nke-rbac"),
-        ("RoleBinding", "cloud-workflow-engine"),
-        ("RoleBinding", "cloud-workflow-engine-nke-rbac"),
-        ("Service", "cloud-workflow-engine"),
-        ("ConfigMap", "nke-controller-config"),
-        ("Deployment", "cloud-workflow-engine"),
-        ("ServiceMonitor", "cloud-workflow-engine-metrics"),
-        ("Pod", "cloud-workflow-engine-test-connection"),
-    }
-)
+
+def expected_names(fullname: str, config_map: str, namespace: str, extra: frozenset = frozenset()) -> frozenset:
+    """Every (kind, name) the chart renders, given the names that vary between scenarios.
+
+    fullname is what `controller.fullname` yields: the Deployment, Service and
+    everything prefixed by it. The ServiceAccount, its Role and RoleBinding and
+    the ServiceMonitor are named by their own defaults, not by fullname, and
+    have not moved.
+    """
+    return (
+        frozenset(
+            {
+                ("CustomResourceDefinition", "clusterreleases.internal.nvke.nvidia.com"),
+                ("CustomResourceDefinition", "machineimages.internal.nvke.nvidia.com"),
+                ("CustomResourceDefinition", "nodepoolreleases.internal.nvke.nvidia.com"),
+                ("ClusterRole", f"{fullname}-releases"),
+                ("ClusterRoleBinding", f"{fullname}-releases"),
+                ("NetworkPolicy", f"{fullname}-metrics"),
+                ("ServiceAccount", "cloud-workflow-engine"),
+                ("Role", "cloud-workflow-engine"),
+                ("Role", f"{fullname}-nke-rbac"),
+                ("RoleBinding", "cloud-workflow-engine"),
+                ("RoleBinding", f"{fullname}-nke-rbac"),
+                ("Service", fullname),
+                ("ConfigMap", config_map),
+                ("Deployment", fullname),
+                ("ServiceMonitor", "cloud-workflow-engine-metrics"),
+                ("Pod", f"{fullname}-test-connection"),
+                ("Namespace", namespace),
+            }
+        )
+        | extra
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -86,10 +100,14 @@ class Scenario:
     """One render of the chart and what it must contain."""
 
     label: str
+    # The Helm release name the render uses.
+    release: str
     # Passed to helm as -f. None renders the chart's own defaults.
     values_file: pathlib.Path | None
     # Every (kind, name) the render must contain, and nothing else.
     names: frozenset
+    # The name of the ConfigMap that carries the controller's settings file.
+    config_map: str
     container: str
     selector: dict
     # The management namespace, and so the Namespace object and the namespace
@@ -102,13 +120,15 @@ class Scenario:
 # The names an install keeps by pinning. These do not change when a default does.
 LEGACY = Scenario(
     label="legacy-pinned",
+    release=LEGACY_RELEASE,
     values_file=LEGACY_VALUES,
     # The pinned values set spiffe.trustDomain, so the nke-rbac ConfigMap renders.
-    names=COMMON_NAMES | {("Namespace", "nke-system"), ("ConfigMap", "nke-rbac")},
+    names=expected_names("cloud-workflow-engine", "nke-controller-config", "nke-system", frozenset({("ConfigMap", "nke-rbac")})),
+    config_map="nke-controller-config",
     container="cloud-workflow-engine",
     selector={
         "app.kubernetes.io/name": "cloud-workflow-engine",
-        "app.kubernetes.io/instance": "cloud-workflow-engine",
+        "app.kubernetes.io/instance": LEGACY_RELEASE,
     },
     namespace="nke-system",
     teleport={
@@ -118,14 +138,22 @@ LEGACY = Scenario(
     },
 )
 
-# What a new install gets. The management namespace and the Teleport values have
-# moved to nvke; the object names have not, and moving them is the rest of the
-# rename. Change this, and only this, when a default moves.
+# What a new install gets. The controller's own names, the config ConfigMap, the
+# management namespace and the Teleport values have moved to nvke. The
+# ServiceAccount, the ServiceMonitor and the nke-rbac objects have not, and moving
+# them is the rest of the rename. Change this, and only this, when a default moves.
 DEFAULT = dataclasses.replace(
     LEGACY,
     label="default",
+    release=DEFAULT_RELEASE,
     values_file=None,
-    names=COMMON_NAMES | {("Namespace", "nvke-system")},
+    names=expected_names("nvke-controller", "nvke-controller-config", "nvke-system"),
+    config_map="nvke-controller-config",
+    container="nvke-controller",
+    selector={
+        "app.kubernetes.io/name": "nvke-controller",
+        "app.kubernetes.io/instance": DEFAULT_RELEASE,
+    },
     namespace="nvke-system",
     teleport={
         "managedByLabelValue": "nvke-controller",
@@ -151,7 +179,7 @@ def render(chart: str, release: str, values_file: pathlib.Path | None = None, se
 def check_scenario(chart: str, sc: Scenario) -> list[str]:
     """Render the scenario and assert the names, selector, namespace and config it must carry."""
     failures = []
-    docs = render(chart, RELEASE, sc.values_file)
+    docs = render(chart, sc.release, sc.values_file)
 
     actual = {(d.get("kind"), d.get("metadata", {}).get("name")) for d in docs}
     for missing in sorted(sc.names - actual):
@@ -190,7 +218,7 @@ def check_scenario(chart: str, sc: Scenario) -> list[str]:
         if got != sc.namespace:
             failures.append(f"{doc['kind']} {name} is in namespace {got!r}, expected {sc.namespace!r}")
 
-    config_maps = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == "nke-controller-config"]
+    config_maps = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == sc.config_map]
     if not config_maps:
         failures.append("no nke-controller-config ConfigMap")
         return failures
@@ -297,7 +325,7 @@ def check_pinnable_names(chart: str) -> list[str]:
 
     docs = render(
         chart,
-        RELEASE,
+        DEFAULT_RELEASE,
         sets=(
             f"controllerConfig.name={PINNED_CONFIG_NAME}",
             f"spiffe.servicePathSegment={PINNED_SPIFFE_SEGMENT}",
@@ -308,8 +336,8 @@ def check_pinnable_names(chart: str) -> list[str]:
     )
 
     config_maps = [d["metadata"]["name"] for d in docs if d.get("kind") == "ConfigMap"]
-    if PINNED_CONFIG_NAME not in config_maps or "nke-controller-config" in config_maps:
-        failures.append(f"pinned render ConfigMaps are {sorted(config_maps)}; expected {PINNED_CONFIG_NAME!r} and no nke-controller-config")
+    if PINNED_CONFIG_NAME not in config_maps or DEFAULT.config_map in config_maps:
+        failures.append(f"pinned render ConfigMaps are {sorted(config_maps)}; expected {PINNED_CONFIG_NAME!r} and no {DEFAULT.config_map}")
 
     deployments = [d for d in docs if d.get("kind") == "Deployment"]
     if not deployments:
