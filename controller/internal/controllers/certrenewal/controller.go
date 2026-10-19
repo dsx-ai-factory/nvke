@@ -109,9 +109,10 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		if update := cluster.Conditions.UpdateInProgress; (update != nil && update.Type == db.OperationTypeCertRenewal) || status.CompletedAt == nil {
 			return reconcile.Result{RequeueAfter: 15 * time.Minute}, nil
 		}
-		// Two voters always fail the renewal health gate. Wait for a different
-		// desired control-plane size; that cluster update reconciles again.
-		if status.Phase == db.CertificateRenewalPhaseTwoControlPlaneVoters && cluster.ControlPlaneConfig.DesiredCount == 2 {
+		// Two voters always fail the renewal health gate. Wait until three or more
+		// are desired; that cluster update reconciles again. A two-node control
+		// plane cannot scale down to one, so a smaller desired size changes nothing.
+		if status.Phase == db.CertificateRenewalPhaseTwoControlPlaneVoters && cluster.ControlPlaneConfig.DesiredCount < 3 {
 			return reconcile.Result{}, nil
 		}
 		if retryAt := status.CompletedAt.Add(time.Hour); retryAt.After(now) {
