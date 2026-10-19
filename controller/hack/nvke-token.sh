@@ -157,7 +157,7 @@ fi
 
 # Uses TokenRequest: NVKE accepts only audience-scoped tokens, and a legacy
 # Secret carries no audience. Needs `create` on serviceaccounts/token, granted
-# by deploy/k8s/nke-auth-dev.yaml.
+# by deploy/k8s/nvke-auth-dev.yaml.
 token="$(
   "${KUBECTL[@]}" create token "${NKE_TOKEN_SERVICE_ACCOUNT}" \
     -n "${NKE_TOKEN_NAMESPACE}" \
@@ -165,7 +165,7 @@ token="$(
     --duration="${NKE_TOKEN_TTL}" 2>&1
 )" || die "minting a token for ${NKE_TOKEN_NAMESPACE}/${NKE_TOKEN_SERVICE_ACCOUNT} failed:
   ${token}
-  Apply deploy/k8s/nke-auth-dev.yaml, or run tilt up, so the service account and
+  Apply deploy/k8s/nvke-auth-dev.yaml, or run tilt up, so the service account and
   its token-minter RoleBinding exist."
 
 [[ -n "${token}" ]] || die "kubectl create token produced no token"

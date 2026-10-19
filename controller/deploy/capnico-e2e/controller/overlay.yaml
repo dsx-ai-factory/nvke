@@ -139,7 +139,7 @@ profiles:
 
 # apiAuth is not set here. The Tiltfile drives it from NKE_AUTH_ENABLED and
 # NKE_PERMISSIVE_MODE, and the chart's default ConfigMap name already matches
-# the one deploy/k8s/nke-auth-dev.yaml applies.
+# the one deploy/k8s/nvke-auth-dev.yaml applies.
 
 spiffe:
   enabled: true

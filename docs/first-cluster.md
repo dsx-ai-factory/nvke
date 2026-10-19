@@ -134,7 +134,7 @@ bin/nvkectl config view
 `--kubeconfig` is the management cluster. `get providers` reads it directly, and
 CWE API commands (`get`/`create`/`patch`/`delete` clusters) use it to mint a
 bearer token for `nke-clients/nke-client` when authentication is on. Tilt
-applies that identity in `controller/deploy/k8s/nke-auth-dev.yaml`. You do
+applies that identity in `controller/deploy/k8s/nvke-auth-dev.yaml`. You do
 not export a token for `nvkectl`.
 
 Under Tilt the API requires a token, unlike **API Only** — a bare `curl` to

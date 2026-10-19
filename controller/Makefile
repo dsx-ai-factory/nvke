@@ -227,11 +227,11 @@ test-integration: ## Execute tests against a running controller deployment.
 test-health: ## Run the health-labeled subset of the test/e2e suite against the cluster in KUBECONFIG.
 	$(MAKE) test-e2e E2E_TIMEOUT=10m ARGS='--label-filter=health'
 
-# The authentication specs. Both need deploy/k8s/nke-auth-dev.yaml applied and
+# The authentication specs. Both need deploy/k8s/nvke-auth-dev.yaml applied and
 # an enforcing NVKE; the chart binds the JWKS read permission.
 #
 # The SPIRE spec carries both labels, so test-authn runs it too; it skips itself
-# with a message naming deploy/k8s/nke-spire-client.yaml when that scaffolding
+# with a message naming deploy/k8s/nvke-spire-client.yaml when that scaffolding
 # is absent. test-authn-spire is the way to run only that one.
 #
 # The permissive specs have no target: they need an NVKE deployed with

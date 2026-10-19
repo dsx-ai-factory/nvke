@@ -83,7 +83,7 @@ metadata:
   Derived from the effective service account name, not a hardcoded literal:
   this is exactly what the ClusterSPIFFEID template issues
   (spiffe://{{.TrustDomain}}/<servicePathSegment>/{{.PodSpec.ServiceAccountName}}, see
-  deploy/k8s/spire-nke-services-spiffe-id.yaml), so the default always
+  deploy/k8s/spire-nvke-services-spiffe-id.yaml), so the default always
   matches the real SPIFFE ID SPIRE hands this controller's pod -- a renamed
   serviceAccount.name (or a nameOverride/fullnameOverride change that moves
   the effective SA name) never has to be reconciled by hand against this

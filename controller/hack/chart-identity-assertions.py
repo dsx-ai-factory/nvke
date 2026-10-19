@@ -35,7 +35,7 @@ identity.
 The greenfield render checks the opposite direction: the ServiceMonitor's
 selector must still match the Service it is supposed to scrape, and the tenant
 RBAC ClusterRoleBinding's subject must still match the SPIFFE ID SPIRE actually
-issues that renamed ServiceAccount (see deploy/k8s/spire-nke-services-spiffe-id.yaml's
+issues that renamed ServiceAccount (see deploy/k8s/spire-nvke-services-spiffe-id.yaml's
 spiffeIDTemplate), with no manual spiffe.controllerSubject override required.
 """
 

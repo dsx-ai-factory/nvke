@@ -40,7 +40,7 @@ tilt up
 ```
 
 That deploys an enforcing NVKE. Tilt forwards the API to `localhost:8080` and
-applies `deploy/k8s/nke-auth-dev.yaml`, which creates the client identities used
+applies `deploy/k8s/nvke-auth-dev.yaml`, which creates the client identities used
 below.
 
 `NKE_AUTH_ENABLED=false tilt up` turns authentication off, and then none of this
@@ -109,7 +109,7 @@ for their service account naming any audience they ask for, and no RBAC check
 applies to that. So NVKE keeps an allow-list of admitted subjects, and everyone
 else is refused even with a perfectly valid token.
 
-`deploy/k8s/nke-auth-dev.yaml` sets up two identities for local work:
+`deploy/k8s/nvke-auth-dev.yaml` sets up two identities for local work:
 
 | Identity | Admitted? | What you get |
 | --- | --- | --- |
@@ -194,7 +194,7 @@ NVKE does no authorization beyond that. Every admitted caller can do everything.
 | `401` after it worked a minute ago | The token expired. | Mint another. They're short-lived by design. |
 | `403` | The token is valid; the subject isn't admitted. | You're minting for the wrong service account, or the `admit` rules don't list yours. A different token won't help. |
 | `200` for everything, even garbage tokens | Authentication is off, or NVKE is permissive. | Check `AUTH_CONFIG_PATH` on the deployment and `permissiveMode` in its `nke-controller-config`. |
-| `error: failed to create token` | Your kubeconfig identity can't mint for that service account. | You need `create` on `serviceaccounts/token` for it. `deploy/k8s/nke-auth-dev.yaml` grants this locally; apply it, or run `tilt up`. |
+| `error: failed to create token` | Your kubeconfig identity can't mint for that service account. | You need `create` on `serviceaccounts/token` for it. `deploy/k8s/nvke-auth-dev.yaml` grants this locally; apply it, or run `tilt up`. |
 
 NVKE logs its reasoning for every rejection. This is usually faster than guessing:
 
@@ -330,5 +330,5 @@ not a setting to leave on: it accepts everything.
 - [API Authentication](../README.md#api-authentication): configuration schema,
   RBAC prerequisite, the full rejection-reason table.
 - [nvkectl](../../cli/README.md#authenticating-to-cwe): how the CLI mints.
-- `deploy/k8s/nke-auth-dev.yaml`: the local identities and auth config.
+- `deploy/k8s/nvke-auth-dev.yaml`: the local identities and auth config.
 - `internal/auth/`: the implementation.

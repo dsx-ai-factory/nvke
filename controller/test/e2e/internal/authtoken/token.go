@@ -34,7 +34,7 @@ const (
 	ConfigMapKey  = "auth.yaml"
 )
 
-// The identity the suite presents; deploy/k8s/nke-auth-dev.yaml creates it.
+// The identity the suite presents; deploy/k8s/nvke-auth-dev.yaml creates it.
 const (
 	DefaultNamespace      = "nke-clients"
 	DefaultServiceAccount = "nke-client"

@@ -9,7 +9,7 @@
 #     go test . -count=1 -args -ginkgo.label-filter=authn-spire
 #
 # The matching NVKE configuration is the `spire` issuer in nvke-auth-config
-# (deploy/k8s/nke-auth-dev.yaml): its admit.spiffe.pathPrefixes must agree with
+# (deploy/k8s/nvke-auth-dev.yaml): its admit.spiffe.pathPrefixes must agree with
 # the spiffeIDTemplate below and its trustDomain with the cluster's. Development
 # only; the grant is wide, see the ClusterSPIFFEID.
 ---

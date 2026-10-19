@@ -34,7 +34,7 @@ The mode is read from the live Deployment's AUTH_CONFIG_PATH and the
 permissiveMode key of its controller config ConfigMap, so the same script covers both
 deployments. Override it with --mode.
 
-Scaffolding lives in deploy/k8s/nke-auth-dev.yaml (namespaces, service accounts,
+Scaffolding lives in deploy/k8s/nvke-auth-dev.yaml (namespaces, service accounts,
 token-minter RBAC, the auth ConfigMap). The chart mounts the config and binds the
 JWKS read permission.
 
@@ -123,7 +123,7 @@ missing=()
 if [[ ${#missing[@]} -gt 0 ]]; then
   printf 'FATAL: missing scaffolding:\n' >&2
   printf '  - %s\n' "${missing[@]}" >&2
-  echo "  apply deploy/k8s/nke-auth-dev.yaml, or run tilt up" >&2
+  echo "  apply deploy/k8s/nvke-auth-dev.yaml, or run tilt up" >&2
   exit 2
 fi
 

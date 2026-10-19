@@ -80,7 +80,7 @@ def register(ctx):
               --from-file=ca.crt="${ca_file}" --dry-run=client -o yaml | kubectl apply -f -
           done
         """ % (os.path.join(ctx.main_dir, ".local/dsx-identity-exchange/ca.crt"), DSX_IDENTITY_EXCHANGE_CA_CONFIG_MAP)],
-        resource_deps=["oidc-upstream-ca-ready", "nke-auth-dev"],
+        resource_deps=["oidc-upstream-ca-ready", "nvke-auth-dev"],
     )
 
     local_resource(

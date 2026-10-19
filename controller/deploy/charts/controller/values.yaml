@@ -668,7 +668,7 @@ spiffe:
   # capi-cluster-admin RBAC subjects default to, as in
   # spiffe://<trustDomain>/<servicePathSegment>/<serviceAccount>. It must equal
   # the segment the ClusterSPIFFEID spiffeIDTemplate issues
-  # (deploy/k8s/spire-nke-services-spiffe-id.yaml), or every default subject
+  # (deploy/k8s/spire-nvke-services-spiffe-id.yaml), or every default subject
   # matches nothing and a tenant authenticates the controller and then denies it.
   # An install that predates nvke-service sets "nke-service": its SPIRE server
   # keeps issuing that path, and node agents older than the nvke rename admit

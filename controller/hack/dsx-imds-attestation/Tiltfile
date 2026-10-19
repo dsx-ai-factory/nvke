@@ -159,7 +159,7 @@ def register(ctx):
             ],
             new_name="dsx-controller-client-certificate",
             labels=["1-infra"],
-            resource_deps=["cert-manager", "nke-auth-dev"],
+            resource_deps=["cert-manager", "nvke-auth-dev"],
         )
         local_resource(
             "dsx-controller-client-ready",

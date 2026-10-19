@@ -161,9 +161,9 @@ needs, reading `AUTH_CONFIG_PATH` off the live NVKE Deployment and
 cluster with authentication off produces `SUCCESS! -- 0 Passed | 0 Failed | N
 Skipped`, indistinguishable in a CI log from a suite that never had these specs.
 
-**Prerequisites.** `tilt up` applies `deploy/k8s/nke-auth-dev.yaml` (client
+**Prerequisites.** `tilt up` applies `deploy/k8s/nvke-auth-dev.yaml` (client
 namespaces, service accounts, token-minter RBAC and the `nvke-auth-config`
-ConfigMap) and, for `authn-spire`, `deploy/k8s/nke-spire-client.yaml`. NVKE's
+ConfigMap) and, for `authn-spire`, `deploy/k8s/nvke-spire-client.yaml`. NVKE's
 permission to read the cluster JWKS comes from the chart
 (`apiAuth.clusterIssuerDiscovery`).
 

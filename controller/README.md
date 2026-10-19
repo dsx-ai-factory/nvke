@@ -559,7 +559,7 @@ what to check when you get an unexpected 401, see
 [Authenticating to the NVKE API](docs/authenticating-to-the-api.md).
 
 `tilt up` deploys an enforcing NVKE with the config in
-`deploy/k8s/nke-auth-dev.yaml`, two client identities (one admitted, one not),
+`deploy/k8s/nvke-auth-dev.yaml`, two client identities (one admitted, one not),
 and the binding described under RBAC Prerequisite.
 
 `nvkectl` uses that admitted identity. After `nvkectl config set-site` with the
@@ -728,7 +728,7 @@ source, `kubectl edit` included. Set
 over; the chart leaves an annotation you set alone. Without Reloader running,
 restart the pods yourself.
 
-`deploy/k8s/nke-auth-dev.yaml` is a working example; the full schema and every
+`deploy/k8s/nvke-auth-dev.yaml` is a working example; the full schema and every
 validation rule live in `internal/auth/config.go`. The shape:
 
 ```yaml
@@ -817,7 +817,7 @@ curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/clusters"
 It reads the audience from the running Deployment and mints an audience-scoped
 token through the TokenRequest API, so the caller needs `create` on
 `serviceaccounts/token` for the service account being minted for.
-`deploy/k8s/nke-auth-dev.yaml` grants that locally.
+`deploy/k8s/nvke-auth-dev.yaml` grants that locally.
 
 Useful overrides:
 

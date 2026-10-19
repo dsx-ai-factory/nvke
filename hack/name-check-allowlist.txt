@@ -87,9 +87,12 @@ token:(^|[./])nke\.nvidia\.com|^label_nke_nvidia_com_|\.labels\.nke$
 # and no longer need this entry.
 token:NKECluster|nkecluster|NKENodePool|nkenodepool|nkeClusterRef|NKEValidatedNodeIdentity
 
-# The nke-rbac ConfigMap, the nke: ClusterRole prefix the tenant apiserver
-# reserves, and the legacy filenames in controller/internal/nvkerbac/.
-token:nke-rbac|^nke:|nkerbac
+# The nke-rbac ConfigMap, whose name is still a compiled constant
+# (controller/internal/nvkerbac) and so has to become a chart value before it
+# can move, and the nke: ClusterRole prefix the tenant apiserver reserves.
+# The nvkerbac package's own filenames have been renamed and no longer need
+# an entry.
+token:nke-rbac|^nke:
 
 # SPIFFE caller paths and the ClusterSPIFFEID, the client identities, and the
 # e2e and Tilt probe identities.

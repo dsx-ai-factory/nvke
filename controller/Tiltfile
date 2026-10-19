@@ -820,11 +820,11 @@ k8s_yaml([
     "deploy/k8s/spire-server-nodeport.yaml",
     "deploy/k8s/spire-oidc-provider-nodeport.yaml",
     "deploy/k8s/spire-tpm-pubhashes-configmap.yaml",
-    "deploy/k8s/nke-auth-dev.yaml",
-    "deploy/k8s/nke-spire-client.yaml",
+    "deploy/k8s/nvke-auth-dev.yaml",
+    "deploy/k8s/nvke-spire-client.yaml",
 ])
 
-_nke_service_spiffe_id_yaml = str(read_file("deploy/k8s/spire-nke-services-spiffe-id.yaml"))
+_nke_service_spiffe_id_yaml = str(read_file("deploy/k8s/spire-nvke-services-spiffe-id.yaml"))
 if DSX_IDENTITY_EXCHANGE_ENABLED:
     _nke_service_spiffe_id_yaml = _nke_service_spiffe_id_yaml.replace(
         "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}",
@@ -888,7 +888,7 @@ k8s_resource(
 # deployment mounts at /etc/nvke/auth/auth.yaml. The NVKE release depends on this
 # so the ConfigMap exists before the pod mounts it.
 k8s_resource(
-    new_name="nke-auth-dev",
+    new_name="nvke-auth-dev",
     labels=["1-infra"],
     objects=[
         "nke-controller:namespace",
@@ -994,7 +994,7 @@ if not _on_mac and not SITE_CONTROLLER_VIP_OVERRIDE:
     )
 
 k8s_resource(
-    new_name="spire-nke-services-spiffe-id",
+    new_name="spire-nvke-services-spiffe-id",
     labels=["1-infra"],
     objects=["nvke-service:clusterspiffeid"],
     resource_deps=["spire-server"],
@@ -1024,7 +1024,7 @@ _controller_oidc_enabled = os.getenv(
 # exercise the shipping authentication path rather than bypassing it.
 #
 # The config file comes from the nvke-auth-config ConfigMap in
-# deploy/k8s/nke-auth-dev.yaml, and the chart mounts it from the apiAuth values
+# deploy/k8s/nvke-auth-dev.yaml, and the chart mounts it from the apiAuth values
 # set below. To drive it by hand, use hack/nvke-token.sh for the bearer token.
 #
 #   NKE_AUTH_ENABLED=false tilt up     -> AUTH_CONFIG_PATH unset, authn off
@@ -1122,7 +1122,7 @@ if CONTROLLER_IMAGE:
 
 _controller_local_debug_active = os.path.exists(CONTROLLER_LOCAL_DEBUG_MARKER)
 _controller_tilt_goarch = local_arch()
-_controller_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nvke-system-namespace", "nke-auth-dev", "machine-engine-releases"] + _all_controller_resource_deps
+_controller_resource_deps = ["postgres", "temporal", "spire-nvke-services-spiffe-id", "spire-tpm-pubhashes", "nvke-system-namespace", "nvke-auth-dev", "machine-engine-releases"] + _all_controller_resource_deps
 if _controller_oidc_enabled:
     _controller_resource_deps += ["spire-oidc-provider-nodeport", "oidc-upstream-ca-ready"]
 
