@@ -105,10 +105,10 @@ absent "no issuer-discovery binding"          'system:service-account-issuer-dis
 
 echo "apiAuth enabled, enforcing:"
 out="$(render --set apiAuth.enabled=true)"
-want   "AUTH_CONFIG_PATH points at the mount" 'value: "/etc/nke/auth/auth.yaml"'     "${out}"
+want   "AUTH_CONFIG_PATH points at the mount" 'value: "/etc/nvke/auth/auth.yaml"'     "${out}"
 setting "permissiveMode is false"           permissiveMode false                   "${out}"
 want   "ConfigMap volume"                     'name: nke-auth-config'                "${out}"
-want   "mounted where the path says"          'mountPath: "/etc/nke/auth"'           "${out}"
+want   "mounted where the path says"          'mountPath: "/etc/nvke/auth"'           "${out}"
 want   "issuer-discovery binding"             'system:service-account-issuer-discovery' "${out}"
 
 echo "apiAuth enabled, permissive:"
@@ -122,8 +122,8 @@ want   "but the rest of apiAuth still renders" 'AUTH_CONFIG_PATH'               
 
 echo "the mount path and file name are fixed by the chart:"
 out="$(render --set apiAuth.enabled=true)"
-want   "mounted at the path AUTH_CONFIG_PATH names" 'mountPath: "/etc/nke/auth"'     "${out}"
-want   "and the two agree"                    'value: "/etc/nke/auth/auth.yaml"'     "${out}"
+want   "mounted at the path AUTH_CONFIG_PATH names" 'mountPath: "/etc/nvke/auth"'     "${out}"
+want   "and the two agree"                    'value: "/etc/nvke/auth/auth.yaml"'     "${out}"
 
 echo "a named ConfigMap is what gets mounted:"
 out="$(render --set apiAuth.enabled=true --set apiAuth.configMap.name=my-auth)"
@@ -228,7 +228,7 @@ apiAuth:
         issuer: "https://spire.example.internal"
         jwks:
           uri: "https://spire.example.internal:30443/keys"
-          caBundlePath: /etc/nke/auth/spire-ca.crt
+          caBundlePath: /etc/nvke/auth/spire-ca.crt
         algorithms: [RS256]
         admit:
           spiffe:
@@ -247,7 +247,7 @@ wantfail "unlisted file in the mount is refused" 'nothing puts spire-ca\.crt the
   --set apiAuth.enabled=true --set apiAuth.configMap.create=true \
   --set 'apiAuth.config.audiences[0]=https://nke.example.internal' \
   --set 'apiAuth.config.issuers[0].name=spire' \
-  --set 'apiAuth.config.issuers[0].jwks.caBundlePath=/etc/nke/auth/spire-ca.crt'
+  --set 'apiAuth.config.issuers[0].jwks.caBundlePath=/etc/nvke/auth/spire-ca.crt'
 # A path outside the mount is the operator's own volume, and none of the chart's business.
 out="$(render -f "${values}")"
 want   "a CA outside the mount is left alone"  'caBundlePath: /var/run/secrets' "${out}"

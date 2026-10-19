@@ -29,15 +29,15 @@ const (
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
 	SpireAttestationMethodDSXIMDS   SpireAttestationMethod = "dsxImds"
 
-	NodeAgentExternalTLSCertPath = "/etc/nke/node-agent-client-tls/tls.crt"
-	NodeAgentExternalTLSKeyPath  = "/etc/nke/node-agent-client-tls/tls.key"
-	NodeAgentExternalTLSCAPath   = "/etc/nke/node-agent-client-tls/ca.crt"
+	NodeAgentExternalTLSCertPath = "/etc/nvke/node-agent-client-tls/tls.crt"
+	NodeAgentExternalTLSKeyPath  = "/etc/nvke/node-agent-client-tls/tls.key"
+	NodeAgentExternalTLSCAPath   = "/etc/nvke/node-agent-client-tls/ca.crt"
 	// NodeAgentExternalTLSNVKECertPath and ...KeyPath are an optional second client
 	// identity whose URI SAN is the new-form controller URN. When present, nodes whose
 	// agent speaks the new form are dialed with it; otherwise the first identity is
 	// used for every node.
-	NodeAgentExternalTLSNVKECertPath = "/etc/nke/node-agent-client-tls/nvke-tls.crt"
-	NodeAgentExternalTLSNVKEKeyPath  = "/etc/nke/node-agent-client-tls/nvke-tls.key"
+	NodeAgentExternalTLSNVKECertPath = "/etc/nvke/node-agent-client-tls/nvke-tls.crt"
+	NodeAgentExternalTLSNVKEKeyPath  = "/etc/nvke/node-agent-client-tls/nvke-tls.key"
 	NodeAgentConfigPath              = "/etc/default/nke-agent"
 	NodeAgentControllerCAPath        = "/etc/nke/controller-ca.crt"
 )

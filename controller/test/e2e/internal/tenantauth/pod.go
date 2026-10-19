@@ -30,7 +30,7 @@ const (
 	expectedUsernameEnv   = "EXPECTED_USERNAME"
 	binaryVolumeName      = "binary"
 	exchangeCAVolumeName  = "exchange-ca"
-	exchangeCAPath        = "/etc/nke/dsx-identity/ca.crt"
+	exchangeCAPath        = "/etc/nvke/dsx-identity/ca.crt"
 
 	// downloadScript fetches and sha256-verifies the exec plugin into the
 	// shared binary volume. ASSET and CHECKSUMS come in as env vars, set per

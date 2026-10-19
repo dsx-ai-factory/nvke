@@ -18,7 +18,7 @@ import (
 func setMinimumEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("CNPG_SUPERUSER_PASSWORD", "not-the-dev-default")
-	t.Setenv("CONTROLLER_CONFIG_PATH", "/etc/nke/controller-config/config.yaml")
+	t.Setenv("CONTROLLER_CONFIG_PATH", "/etc/nvke/controller-config/config.yaml")
 }
 
 // Unset AUTH_CONFIG_PATH parses as the disabled state. Permissive mode comes
@@ -36,8 +36,8 @@ func TestAuthEnvFields(t *testing.T) {
 		},
 		{
 			name:     "set",
-			env:      map[string]string{"AUTH_CONFIG_PATH": "/etc/nke/auth/authentication.yaml"},
-			wantPath: "/etc/nke/auth/authentication.yaml",
+			env:      map[string]string{"AUTH_CONFIG_PATH": "/etc/nvke/auth/authentication.yaml"},
+			wantPath: "/etc/nvke/auth/authentication.yaml",
 		},
 	}
 
@@ -73,7 +73,7 @@ func TestValidateIgnoresAuthFields(t *testing.T) {
 	// And set changes nothing, in either mode: Validate has no opinion either way.
 	for _, permissive := range []bool{false, true} {
 		configured := base
-		configured.AuthConfigPath = "/etc/nke/auth/auth.yaml"
+		configured.AuthConfigPath = "/etc/nvke/auth/auth.yaml"
 		configured.PermissiveMode = permissive
 		require.NoError(t, configured.Validate(), "permissive=%t must not change validation", permissive)
 	}

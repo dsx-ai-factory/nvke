@@ -107,7 +107,7 @@ nothing outside the pod observes either, so making them configurable would only
 create a way for the mount and the path to disagree.
 */}}
 {{- define "controller.apiAuth.mountPath" -}}
-/etc/nke/auth
+/etc/nvke/auth
 {{- end }}
 
 {{- define "controller.apiAuth.configFile" -}}
@@ -127,7 +127,7 @@ config.yaml
 {{- end }}
 
 {{- define "controller.controllerConfig.mountPath" -}}
-/etc/nke/controller-config
+/etc/nvke/controller-config
 {{- end }}
 
 {{/*

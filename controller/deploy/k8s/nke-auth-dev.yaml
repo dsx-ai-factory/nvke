@@ -157,7 +157,7 @@ subjects:
     name: nke-e2e
     namespace: nke-clients
 ---
-# The authentication configuration, mounted at /etc/nke/auth/auth.yaml by the
+# The authentication configuration, mounted at /etc/nvke/auth/auth.yaml by the
 # chart. See internal/auth and the README for the schema. Only
 # auth.nke.nvidia.com/v1alpha1 is accepted: the apiserver's own
 # AuthenticationConfiguration shares the kind but not the group.

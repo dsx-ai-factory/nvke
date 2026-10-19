@@ -79,7 +79,7 @@ else
   want "whitespace-only identity exchange URL is rejected" 'nodeAgent.tlsJwt.dsxIdentityExchangeURL is required' "${whitespace_out}"
 fi
 absent "no certificate Secret reload" 'secret.reloader.stakater.com/reload: "nke-controller-agent-client-tls"' "${out}"
-absent "no certificate mount" 'mountPath: /etc/nke/node-agent-tls' "${out}"
+absent "no certificate mount" 'mountPath: /etc/nvke/node-agent-client-tls' "${out}"
 
 if ((failures > 0)); then
   printf '%d node-agent TLS/JWT chart assertion(s) failed\n' "${failures}" >&2

@@ -190,7 +190,7 @@ spec:
               readOnly: true
             {{- if .Values.nodeAgent.externalMTLS.enabled }}
             - name: node-agent-client-tls
-              mountPath: /etc/nke/node-agent-client-tls
+              mountPath: /etc/nvke/node-agent-client-tls
               readOnly: true
             {{- end }}
             {{- if .Values.apiAuth.enabled }}

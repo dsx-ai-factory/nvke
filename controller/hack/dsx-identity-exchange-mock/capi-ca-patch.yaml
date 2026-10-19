@@ -12,9 +12,9 @@ spec:
         - name: manager
           env:
             - name: SSL_CERT_FILE
-              value: /etc/nke/dsx-identity/ca.crt
+              value: /etc/nvke/dsx-identity/ca.crt
           volumeMounts:
             - name: dsx-identity-exchange-ca
-              mountPath: /etc/nke/dsx-identity/ca.crt
+              mountPath: /etc/nvke/dsx-identity/ca.crt
               subPath: ca.crt
               readOnly: true
