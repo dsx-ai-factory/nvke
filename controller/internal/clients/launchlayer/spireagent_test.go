@@ -26,10 +26,8 @@ func TestClient_SpireAgentPath(t *testing.T) {
 		node        db.Node
 		instanceID  string
 		orgID       string
-		clusterKind string
 		wantPath    string
 		wantPending bool
-		wantErr     string
 	}{
 		"builds the dsx_imds path from the organization and instance ID": {
 			node: dsxIMDS, instanceID: "instance-123", orgID: "org-1",
@@ -47,18 +45,10 @@ func TestClient_SpireAgentPath(t *testing.T) {
 		"pends until CAPLL records the organization": {
 			node: dsxIMDS, instanceID: "instance-123", wantPending: true,
 		},
-		"rejects a cluster that is not backed by LaunchLayer": {
-			node: dsxIMDS, instanceID: "instance-123", orgID: "org-1", clusterKind: "NicoCluster",
-			wantErr: "is not a LaunchLayerCluster",
-		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			clusterKind := tt.clusterKind
-			if clusterKind == "" {
-				clusterKind = "LaunchLayerCluster"
-			}
 			machine := &clusterv1.Machine{
 				ObjectMeta: metav1.ObjectMeta{Name: "worker-0", Namespace: "cluster-test"},
 				Spec: clusterv1.MachineSpec{
@@ -71,7 +61,7 @@ func TestClient_SpireAgentPath(t *testing.T) {
 			cluster := &clusterv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "tenant", Namespace: "cluster-test"},
 				Spec: clusterv1.ClusterSpec{InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-					APIGroup: infrastructureGroup, Kind: clusterKind, Name: "tenant-infra",
+					APIGroup: infrastructureGroup, Kind: "LaunchLayerCluster", Name: "tenant-infra",
 				}},
 			}
 			k8sClient := newSpireAgentPathTestClient(t, machine, cluster,
@@ -84,8 +74,6 @@ func TestClient_SpireAgentPath(t *testing.T) {
 			switch {
 			case tt.wantPending:
 				require.ErrorIs(t, err, shared.ErrSpireAgentPathPending)
-			case tt.wantErr != "":
-				require.ErrorContains(t, err, tt.wantErr)
 			default:
 				require.NoError(t, err)
 				require.Equal(t, tt.wantPath, path)

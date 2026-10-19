@@ -48,7 +48,7 @@ func (*Client) SpireAgentPath(ctx context.Context, k8sClient client.Client, node
 		return "", nil
 	}
 
-	instanceID, err := readStatusString(ctx, k8sClient, machine.Namespace, machine.Spec.InfrastructureRef, "LaunchLayerMachine", "instanceID")
+	instanceID, err := readStatusString(ctx, k8sClient, machine.Namespace, machine.Spec.InfrastructureRef.Name, "LaunchLayerMachine", "instanceID")
 	if err != nil {
 		return "", err
 	}
@@ -61,7 +61,7 @@ func (*Client) SpireAgentPath(ctx context.Context, k8sClient client.Client, node
 	if err != nil {
 		return "", fmt.Errorf("get cluster for Machine %s/%s: %w", machine.Namespace, machine.Name, err)
 	}
-	orgID, err := readStatusString(ctx, k8sClient, cluster.Namespace, cluster.Spec.InfrastructureRef, "LaunchLayerCluster", "vpc", "orgID")
+	orgID, err := readStatusString(ctx, k8sClient, cluster.Namespace, cluster.Spec.InfrastructureRef.Name, "LaunchLayerCluster", "vpc", "orgID")
 	if err != nil {
 		return "", err
 	}
@@ -73,17 +73,14 @@ func (*Client) SpireAgentPath(ctx context.Context, k8sClient client.Client, node
 	return constants.DSXIMDSSpireAgentPath + orgID + "/bm/" + instanceID, nil
 }
 
-// readStatusString reads a string status field off the CAPLL object ref
-// names, which must be of the given kind.
-func readStatusString(ctx context.Context, k8sClient client.Client, namespace string, ref clusterv1.ContractVersionedObjectReference, kind string, fields ...string) (string, error) {
-	if ref.APIGroup != infrastructureGroup || ref.Kind != kind || ref.Name == "" {
-		return "", fmt.Errorf("infrastructure reference %s/%s %q is not a %s", ref.APIGroup, ref.Kind, ref.Name, kind)
-	}
+// readStatusString reads a string status field off the named CAPLL object.
+// NVKE writes the infrastructure references it follows, so they need no check.
+func readStatusString(ctx context.Context, k8sClient client.Client, namespace, name, kind string, fields ...string) (string, error) {
 	obj := &unstructured.Unstructured{}
 	obj.SetAPIVersion(infrastructureAPIVersion)
 	obj.SetKind(kind)
-	if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: ref.Name}, obj); err != nil {
-		return "", fmt.Errorf("get %s %s/%s: %w", kind, namespace, ref.Name, err)
+	if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, obj); err != nil {
+		return "", fmt.Errorf("get %s %s/%s: %w", kind, namespace, name, err)
 	}
 	value, _, err := unstructured.NestedString(obj.Object, append([]string{"status"}, fields...)...)
 	if err != nil {

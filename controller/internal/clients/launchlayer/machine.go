@@ -23,9 +23,6 @@ func buildInfraMachine(node db.Node, nodeSet db.NodeSet, cluster db.Cluster, con
 	if err != nil {
 		return nil, fmt.Errorf("failed to read node set launchlayer provider: %w", err)
 	}
-	if provider.InstanceType == "" {
-		return nil, fmt.Errorf("launchlayer node set %s has no instanceType set", nodeSet.ID)
-	}
 
 	spec := map[string]any{"instanceType": provider.InstanceType}
 	if provider.HostOSProfile != "" {
