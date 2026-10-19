@@ -219,8 +219,12 @@ A failed cycle can also leave its node reservation in the cluster row's
 `certificate_renewal` column (not shown by the REST API). While a fenced
 reservation (one written by the current workflow) is set, admission refuses
 every cycle, recording another `admission` failure and restarting the one-hour
-backoff. A reservation left by an older V1 workflow does not block admission;
-the next cycle reattaches to it on the same node. The reservation is cleared automatically
+backoff. A reservation left by an older V1 workflow does not block admission,
+but the cycle does not reuse it: when the cycle reaches that node, the node is
+refused without dispatch, the cycle fails and is retried after the backoff. The
+V1 activity releases its reservation when it ends, on success or failure, unless
+the node agent accepted the work and then stopped answering. Any remaining
+reservation is cleared automatically
 once the reserved node operation is confirmed to have ended: for example, the
 node agent reports it finished or, for fenced work, no longer knows it while no
 `certificate_renewal` lock is held, or the node row is gone.
