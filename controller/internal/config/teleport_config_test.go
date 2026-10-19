@@ -102,8 +102,8 @@ func TestTeleportConfig_OwnershipManagedByValues(t *testing.T) {
 		{
 			name:     "blank and repeated entries are dropped",
 			written:  "nvke-controller",
-			accepted: []string{"", "  ", "nke-cwe", "nke-cwe"},
-			want:     []string{"nvke-controller", "nke-cwe"},
+			accepted: []string{"", "  ", "nke-cloud-workflow-engine", "nke-cloud-workflow-engine"},
+			want:     []string{"nvke-controller", "nke-cloud-workflow-engine"},
 		},
 		{
 			name:     "surrounding space does not make a separate value",
