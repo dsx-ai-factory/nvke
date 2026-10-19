@@ -324,15 +324,15 @@ tilt up
   - UI: http://localhost:8080
   - Swagger: http://localhost:8080/api/docs
   - Temporal UI: http://localhost:8081
-- CWE pod logs are available in the native `cwe` Tilt resource.
+- CWE pod logs are available in the native `nvke-controller` Tilt resource.
 - Use the Tilt buttons for the common local actions below.
 
 ### Common Actions
 
-- Create a sample CAPD cluster from the `cwe` Tilt resource.
-- Create a sample local Forge cluster from the `cwe` Tilt resource when NICo is enabled.
-- Create a sample local NICo cluster from the `cwe` Tilt resource when NICo is enabled.
-- Restart CWE from the `cwe` Tilt resource.
+- Create a sample CAPD cluster from the `nvke-controller` Tilt resource.
+- Create a sample local Forge cluster from the `nvke-controller` Tilt resource when NICo is enabled.
+- Create a sample local NICo cluster from the `nvke-controller` Tilt resource when NICo is enabled.
+- Restart CWE from the `nvke-controller` Tilt resource.
 - Show SPIRE entries or list connected SPIRE agents from the `spire-server` Tilt resource.
 
 CLI equivalents if you prefer:
@@ -881,10 +881,10 @@ export DB_MAX_OPEN_CONNECTIONS=12
 1. Open **Run and Debug** in Cursor/VS Code (`Cmd+Shift+D`).
 2. Select **"Launch CWE (Tilt Local Debug)"**.
 3. Start debugging.
-4. When you are done debugging, re-enable the in-cluster `cwe` Tilt resource manually in the UI or with:
+4. When you are done debugging, re-enable the in-cluster `nvke-controller` Tilt resource manually in the UI or with:
 
 ```bash
-tilt trigger cwe
+tilt trigger nvke-controller
 ```
 
 This shared debug configuration:

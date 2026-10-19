@@ -76,6 +76,6 @@ def register(ctx):
     )
 
     return struct(
-        cwe_resource_deps=["capd-reboot-controller"],
-        cwe_env_overrides={},
+        controller_resource_deps=["capd-reboot-controller"],
+        controller_env_overrides={},
     )

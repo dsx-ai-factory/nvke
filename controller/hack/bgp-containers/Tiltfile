@@ -10,7 +10,7 @@ BGP_RESOURCE = "bgp-containers"
 
 def register(ctx):
     container_name = ctx.cfg.get("bgp_containers_container_name", BGP_RESOURCE)
-    cwe_resource_deps = []
+    controller_resource_deps = []
     bgp_dir = os.path.join(ctx.main_dir, "hack", "bgp-containers")
 
     # FRR runs in the Docker daemon's host network namespace so kube-vip pods
@@ -33,9 +33,9 @@ def register(ctx):
             ],
             labels=["1-infra"],
         )
-        cwe_resource_deps.append(BGP_RESOURCE)
+        controller_resource_deps.append(BGP_RESOURCE)
 
     return struct(
-        cwe_resource_deps=cwe_resource_deps,
-        cwe_env_overrides={},
+        controller_resource_deps=controller_resource_deps,
+        controller_env_overrides={},
     )

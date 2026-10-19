@@ -168,7 +168,7 @@ def register(ctx):
     use_nico_sim = not nico.endpoint
     nico_sim_endpoint_host = _nico_sim_endpoint_host(ctx)
 
-    sim_result = struct(cwe_resource_deps=[], cwe_env_overrides={})
+    sim_result = struct(controller_resource_deps=[], controller_env_overrides={})
     endpoint = nico.endpoint
     if use_nico_sim:
         sim_result = _register_nico_sim(ctx, labels, nico, nico_sim_endpoint_host)
@@ -238,12 +238,12 @@ def register(ctx):
         allow_parallel=True,
     )
 
-    cwe_resource_deps = sim_result.cwe_resource_deps + [CAPNICO_CREDENTIALS_RESOURCE]
-    cwe_env_overrides = {}
-    cwe_env_overrides.update(sim_result.cwe_env_overrides)
+    controller_resource_deps = sim_result.controller_resource_deps + [CAPNICO_CREDENTIALS_RESOURCE]
+    controller_env_overrides = {}
+    controller_env_overrides.update(sim_result.controller_env_overrides)
 
     # CWE_HTTP_PORT is a deprecated alias for NKE_CONTROLLER_HTTP_PORT; #1399 removes it.
-    cwe_http_port = os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
+    controller_http_port = os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
     cmd_button(
         "5-create-sample-local-nico-cluster",
         argv=["bash", "-c", """
@@ -254,8 +254,8 @@ def register(ctx):
           CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}" \
           WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-0}" \
           ./hack/create-local-nico-cluster.sh
-        """ % cwe_http_port],
-        resource="cwe",
+        """ % controller_http_port],
+        resource="nvke-controller",
         icon_name="add_box",
         text="Create sample local NICo cluster",
         inputs=[
@@ -284,7 +284,7 @@ def register(ctx):
     """
 
     return struct(
-        cwe_resource_deps=cwe_resource_deps,
-        cwe_env_overrides=cwe_env_overrides,
+        controller_resource_deps=controller_resource_deps,
+        controller_env_overrides=controller_env_overrides,
         preflight_script=preflight_script,
     )
