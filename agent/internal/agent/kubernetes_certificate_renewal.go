@@ -392,8 +392,9 @@ func parseKubeadmResidualTime(value string) (time.Duration, error) {
 
 // expiringKubernetesCertificates parses kubeadm's leaf-certificate table. The
 // residual duration is field seven; the later CA table is intentionally out of
-// scope. Missing certificates and unrecognized rows fail rather than suggest a
-// healthy no-op; <invalid> means renew, and any other residual time must be
+// scope. Missing certificates other than super-admin.conf, which joined
+// control-plane nodes never have, and unrecognized rows fail rather than suggest
+// a healthy no-op; <invalid> means renew, and any other residual time must be
 // shorter than the threshold.
 func expiringKubernetesCertificates(output string, thresholdDays int) ([]string, error) {
 	const kubeadmCertificateHeader = "CERTIFICATE"
@@ -416,6 +417,11 @@ func expiringKubernetesCertificates(output string, thresholdDays int) ([]string,
 			break
 		}
 		if len(fields) == 0 {
+			continue
+		}
+		// kubeadm join never writes super-admin.conf, so joined control-plane
+		// nodes always report it missing; renew all skips it there too.
+		if len(fields) == 2 && fields[0] == "!MISSING!" && fields[1] == "super-admin.conf" {
 			continue
 		}
 		if fields[0] == "!MISSING!" {

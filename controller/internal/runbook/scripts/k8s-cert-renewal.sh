@@ -226,6 +226,9 @@ check_expiring_certs() {
     /^\[check-expiration\]/ || NF == 0 { next }
     /^CERTIFICATE[[:space:]]+EXPIRES/ { next }
     /^CERTIFICATE AUTHORITY/ { exit }
+    # kubeadm join never writes super-admin.conf, so joined control-plane
+    # nodes always report it missing; renew all skips it there too.
+    $1 == "!MISSING!" && $2 == "super-admin.conf" && NF == 2 { next }
     $1 == "!MISSING!" { invalid = 1; next }
     {
       seen++

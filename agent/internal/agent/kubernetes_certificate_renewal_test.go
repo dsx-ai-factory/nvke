@@ -263,16 +263,47 @@ func (r *certificateRenewalTestRunner) RunDetached(string, []string, *nvkeutils.
 }
 
 // TestExpiringKubernetesCertificates protects the leaf-only, strict-threshold
-// boundary and rejects missing certificates instead of treating them as healthy.
+// boundary and rejects missing certificates instead of treating them as healthy,
+// except super-admin.conf, which kubeadm join never writes.
 func TestExpiringKubernetesCertificates(t *testing.T) {
-	expiring, err := expiringKubernetesCertificates(certificateExpirationOutput, 2)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"admin.conf", "controller-manager.conf", "front-proxy-client"}, expiring)
+	const header = "CERTIFICATE EXPIRES RESIDUAL TIME CERTIFICATE AUTHORITY EXTERNALLY MANAGED\n"
+	for _, tt := range []struct {
+		name     string
+		output   string
+		expiring []string
+		wantErr  string
+	}{
+		{
+			name:     "leaf table only",
+			output:   certificateExpirationOutput,
+			expiring: []string{"admin.conf", "controller-manager.conf", "front-proxy-client"},
+		},
+		{
+			name:    "missing admin.conf",
+			output:  header + "!MISSING! admin.conf",
+			wantErr: "missing certificate",
+		},
+		{
+			name:   "joined control plane without super-admin.conf",
+			output: header + "admin.conf Aug 28, 2027 00:00 UTC 365d ca no\n!MISSING! super-admin.conf\n",
+		},
+		{
+			name:     "joined control plane due without super-admin.conf",
+			output:   header + "admin.conf Aug 28, 2026 00:00 UTC 1d ca no\n!MISSING! super-admin.conf\n",
+			expiring: []string{"admin.conf"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			expiring, err := expiringKubernetesCertificates(tt.output, 2)
 
-	_, err = expiringKubernetesCertificates(`
-CERTIFICATE EXPIRES RESIDUAL TIME CERTIFICATE AUTHORITY EXTERNALLY MANAGED
-!MISSING! admin.conf`, 2)
-	require.ErrorContains(t, err, "missing certificate")
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.expiring, expiring)
+		})
+	}
 }
 
 // TestExpiringKubernetesCertificatesParsesHumanDurations covers the compound
