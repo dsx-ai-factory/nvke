@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"testing"
 	"time"
 
@@ -30,6 +31,8 @@ import (
 type rotationTx struct {
 	db.Tx
 	cluster *db.Cluster
+	nodes   []db.Node                      // nil: one stable node
+	configs []db.ControlPlaneConfiguration // nil: every node pinned to the cluster version
 	writes  int
 	deleted bool
 }
@@ -51,7 +54,17 @@ func (tx *rotationTx) ListNodePools(context.Context, db.NodePoolFilters) ([]db.N
 }
 
 func (tx *rotationTx) ListNodes(context.Context, db.NodeFilters) ([]db.Node, error) {
+	if tx.nodes != nil {
+		return tx.nodes, nil
+	}
 	return []db.Node{stableRotationNode(tx.cluster.ID)}, nil
+}
+
+func (tx *rotationTx) ListControlPlaneConfigurationsByIDs(_ context.Context, ids []uuid.UUID) ([]db.ControlPlaneConfiguration, error) {
+	if tx.configs != nil {
+		return tx.configs, nil
+	}
+	return pinnedControlPlaneConfigurations(ids, tx.cluster.KubernetesVersion), nil
 }
 
 func (tx *rotationTx) UpdateCluster(_ context.Context, updated *db.Cluster) (db.Cluster, error) {
@@ -106,6 +119,62 @@ func TestBeginEtcdEncryptionKeyRotationRequiresKubernetes134(t *testing.T) {
 				return
 			}
 			require.ErrorContains(t, err, "Kubernetes 1.34 or newer")
+			var applicationErr *temporal.ApplicationError
+			require.ErrorAs(t, err, &applicationErr)
+			require.Equal(t, "EtcdEncryptionKeyRotationPrecondition", applicationErr.Type())
+			require.True(t, applicationErr.NonRetryable())
+			require.Zero(t, tx.writes)
+			require.Nil(t, cluster.Conditions.UpdateInProgress)
+			require.Nil(t, cluster.Conditions.EtcdKeyRotation)
+		})
+	}
+}
+
+// TestBeginEtcdEncryptionKeyRotationRequiresControlPlaneNodesAtClusterVersion
+// covers the window after PATCH sets the desired version but before the
+// control-plane upgrade rolls out: Begin must refuse before taking the lock.
+func TestBeginEtcdEncryptionKeyRotationRequiresControlPlaneNodesAtClusterVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		pinned  []string // per node; "" means the node has no configuration ID, "missing" means no row
+		wantErr string
+	}{
+		{name: "all nodes at cluster version", pinned: []string{"1.34.0", "1.34.0"}},
+		{name: "one node still on 1.33", pinned: []string{"1.34.0", "1.33.4"}, wantErr: "control-plane Kubernetes upgrade has not finished rolling out"},
+		{name: "node without configuration", pinned: []string{"1.34.0", ""}, wantErr: "cannot determine the Kubernetes version of control-plane node cp-1"},
+		{name: "configuration row missing", pinned: []string{"missing", "1.34.0"}, wantErr: "cannot determine the Kubernetes version of control-plane node cp-0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cluster := runningRotation()
+			cluster.Conditions.EtcdKeyRotation = nil
+			cluster.Conditions.UpdateInProgress = nil
+			a, tx := rotationActivities(t, &cluster)
+			tx.configs = []db.ControlPlaneConfiguration{}
+			for i, pinned := range tc.pinned {
+				node := stableRotationNode(cluster.ID)
+				node.Name = fmt.Sprintf("cp-%d", i)
+				switch pinned {
+				case "":
+					node.ControlPlaneConfigurationID = uuid.Nil
+				case "missing":
+				default:
+					tx.configs = append(tx.configs, db.ControlPlaneConfiguration{
+						ID: node.ControlPlaneConfigurationID, Config: db.ControlPlaneConfigSpec{KubernetesVersion: pinned},
+					})
+				}
+				tx.nodes = append(tx.nodes, node)
+			}
+
+			_, err := a.BeginEtcdEncryptionKeyRotation(t.Context(), activities.BeginEtcdEncryptionKeyRotationInput{
+				ClusterID: cluster.ID, WorkflowID: "owner",
+			})
+
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				require.Equal(t, db.OperationTypeEtcdKeyRotation, cluster.Conditions.UpdateInProgress.Type)
+				return
+			}
+			require.ErrorContains(t, err, tc.wantErr)
 			var applicationErr *temporal.ApplicationError
 			require.ErrorAs(t, err, &applicationErr)
 			require.Equal(t, "EtcdEncryptionKeyRotationPrecondition", applicationErr.Type())
