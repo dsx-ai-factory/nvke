@@ -85,6 +85,10 @@ func (s *fenceStore) ListNodes(context.Context, db.NodeFilters) ([]db.Node, erro
 	return append([]db.Node(nil), s.nodes...), nil
 }
 
+func (s *fenceStore) ListControlPlaneConfigurationsByIDs(_ context.Context, ids []uuid.UUID) ([]db.ControlPlaneConfiguration, error) {
+	return pinnedControlPlaneConfigurations(ids, s.cluster.KubernetesVersion), nil
+}
+
 func (s *fenceStore) ListNodePools(context.Context, db.NodePoolFilters) ([]db.NodePool, error) {
 	return s.pools, nil
 }
@@ -355,7 +359,7 @@ func TestFailedV1StartReleasesReservationForV2Begin(t *testing.T) {
 
 func stableRenewalNode(clusterID uuid.UUID) db.Node {
 	return db.Node{
-		ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, Name: "cp-0", IP: "10.0.0.10",
+		ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, Name: "cp-0", IP: "10.0.0.10", ControlPlaneConfigurationID: uuid.New(),
 		Conditions: db.NodeConditions{Joined: db.NewCondition(true, "joined"), Provisioned: db.NewCondition(true, "provisioned"), NodeAgentReady: db.NewCondition(true, "ready")},
 	}
 }

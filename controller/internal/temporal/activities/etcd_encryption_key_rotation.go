@@ -93,7 +93,11 @@ func (a *Activities) BeginEtcdEncryptionKeyRotation(
 			return etcdEncryptionKeyRotationPreconditionError("etcd key rotation requires Kubernetes 1.34 or newer")
 		}
 
-		if _, err := stableRotationControlPlane(ctx, tx, cluster.ID); err != nil {
+		nodes, err := stableRotationControlPlane(ctx, tx, cluster.ID)
+		if err != nil {
+			return err
+		}
+		if err := requireControlPlaneNodesAtClusterKubernetesVersion(ctx, tx, nodes, cluster.KubernetesVersion); err != nil {
 			return err
 		}
 
@@ -122,6 +126,46 @@ func (a *Activities) BeginEtcdEncryptionKeyRotation(
 		return BeginEtcdEncryptionKeyRotationResult{}, err
 	}
 	return BeginEtcdEncryptionKeyRotationResult{}, nil
+}
+
+// requireControlPlaneNodesAtClusterKubernetesVersion refuses rotation while a
+// control-plane Kubernetes upgrade has not reached every node: the desired
+// cluster version is set before ControlPlaneUpgrading, so nodes may still run
+// a version without the encryption-config reload metric. It compares pinned
+// snapshot versions as controlPlaneControllerNeedsK8sUpgrade does.
+func requireControlPlaneNodesAtClusterKubernetesVersion(
+	ctx context.Context,
+	tx db.Tx,
+	nodes []db.Node,
+	kubernetesVersion string,
+) error {
+	ids := make([]uuid.UUID, 0, len(nodes))
+	for _, node := range nodes {
+		ids = append(ids, node.ControlPlaneConfigurationID)
+	}
+	rows, err := tx.ListControlPlaneConfigurationsByIDs(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("failed to list control-plane node configurations: %w", err)
+	}
+	pinned := make(map[uuid.UUID]string, len(rows))
+	for _, row := range rows {
+		pinned[row.ID] = row.Config.KubernetesVersion
+	}
+	for _, node := range nodes {
+		nodeVersion, ok := pinned[node.ControlPlaneConfigurationID]
+		if node.ControlPlaneConfigurationID == uuid.Nil || !ok {
+			return etcdEncryptionKeyRotationPreconditionError(
+				fmt.Sprintf("cannot determine the Kubernetes version of control-plane node %s", node.Name),
+			)
+		}
+		if nodeVersion != kubernetesVersion {
+			return etcdEncryptionKeyRotationPreconditionError(fmt.Sprintf(
+				"control-plane node %s runs Kubernetes %s, not the cluster's %s: a control-plane Kubernetes upgrade has not finished rolling out; wait for it before rotating the etcd encryption key",
+				node.Name, nodeVersion, kubernetesVersion,
+			))
+		}
+	}
+	return nil
 }
 
 func etcdEncryptionKeyRotationPreconditionError(message string) error {

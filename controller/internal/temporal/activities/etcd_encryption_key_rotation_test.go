@@ -35,7 +35,10 @@ func TestBeginEtcdEncryptionKeyRotation_AcquiresClusterMutationLock(t *testing.T
 		KubernetesVersion: "1.34.0",
 	}, nil).Once()
 	mockDB.MockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Once()
-	mockDB.MockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{stableRotationNode(clusterID)}, nil).Once()
+	node := stableRotationNode(clusterID)
+	mockDB.MockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{node}, nil).Once()
+	mockDB.MockTx.On("ListControlPlaneConfigurationsByIDs", mock.Anything, []uuid.UUID{node.ControlPlaneConfigurationID}).
+		Return(pinnedControlPlaneConfigurations([]uuid.UUID{node.ControlPlaneConfigurationID}, "1.34.0"), nil).Once()
 	mockDB.MockTx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(cluster *db.Cluster) bool {
 		return cluster.ID == clusterID &&
 			cluster.EtcdEncrypted &&
@@ -155,7 +158,19 @@ func TestStartEtcdEncryptionRewrite_StartsFreshOperationAfterPriorSuccess(t *tes
 
 func stableRotationNode(clusterID uuid.UUID) db.Node {
 	return db.Node{
-		ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, Name: "cp-0", IP: "10.0.0.10",
+		ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, Name: "cp-0", IP: "10.0.0.10", ControlPlaneConfigurationID: uuid.New(),
 		Conditions: db.NodeConditions{Joined: db.NewCondition(true, "joined"), Provisioned: db.NewCondition(true, "provisioned"), NodeAgentReady: db.NewCondition(true, "ready")},
 	}
+}
+
+// pinnedControlPlaneConfigurations returns a configuration row pinning each
+// non-nil ID to kubernetesVersion, as the batched DB query would.
+func pinnedControlPlaneConfigurations(ids []uuid.UUID, kubernetesVersion string) []db.ControlPlaneConfiguration {
+	rows := make([]db.ControlPlaneConfiguration, 0, len(ids))
+	for _, id := range ids {
+		if id != uuid.Nil {
+			rows = append(rows, db.ControlPlaneConfiguration{ID: id, Config: db.ControlPlaneConfigSpec{KubernetesVersion: kubernetesVersion}})
+		}
+	}
+	return rows
 }

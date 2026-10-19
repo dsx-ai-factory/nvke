@@ -56,6 +56,13 @@ control-plane node UUIDs, topology, operator, time, and approved change window.
   The active key exists in CWE's key Secret; no pending key from an unrelated
   operation is present. A pending key left by a released `prepare` failure is
   reused. Inspect field presence only; do not print Secret data.
+- Every control-plane node is already rolled to the cluster's Kubernetes
+  version, with no control-plane upgrade pending. Raising the cluster's
+  Kubernetes version records the target before the nodes are upgraded, so
+  Begin also compares each node's pinned control-plane configuration with the
+  cluster version. It refuses before taking the mutation lock when a node
+  differs or its version cannot be determined; wait for the upgrade to finish,
+  then start the rotation.
 - CWE can read/update its management-plane key Secret and contact each tenant
   node over its configured SPIFFE mTLS connection. PostgreSQL, Temporal, and the
   CWE worker task queue are available.
