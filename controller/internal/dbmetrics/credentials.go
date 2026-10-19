@@ -44,7 +44,7 @@ func NewCredentialCollector(logger *slog.Logger, database credentialDatabase, cf
 	}{
 		{"certificate_not_after_timestamp_seconds", "Observed certificate NotAfter; absent when no expiration is known.", []string{labelTenantCluster, labelNode, labelCredential}},
 		{"certificate_required", "One when the credential is required on this node role; optional super-admin is observed if present.", []string{labelTenantCluster, labelNode, labelCredential}},
-		{"certificate_observation_available", "One only when this credential was inspected successfully and the observation is fresh.", []string{labelTenantCluster, labelNode, labelCredential}},
+		{"certificate_observation_available", "One when the last successful inspection is fresh and found this credential; a later failed attempt does not clear it.", []string{labelTenantCluster, labelNode, labelCredential}},
 		{"certificate_inspection_available", "One when the latest node inspection succeeded and is fresh.", []string{labelTenantCluster, labelNode}},
 		{"certificate_observation_age_seconds", "Age of last successful node inspection; -1 means never observed.", []string{labelTenantCluster, labelNode}},
 		{"certificate_warning_window_seconds", "Configured certificate warning window.", nil},
@@ -133,13 +133,17 @@ func age(now, observed time.Time) float64 {
 
 func (c *CredentialCollector) collectCertificates(ch chan<- prometheus.Metric, cluster string, node db.Node, now time.Time) {
 	observation := node.CertificateInspection
-	fresh := false
+	// A failed attempt keeps the last successful ObservedAt and certificates, so
+	// per-credential observations stay usable until that success ages out; only
+	// inspection availability follows the latest attempt.
+	observedFresh, inspectionFresh := false, false
 	observedAge := -1.0
 	byName := map[string]db.CertificateObservation{}
 	if observation != nil {
 		if observation.ObservedAt != nil {
 			observedAge = age(now, *observation.ObservedAt)
-			fresh = observation.Available && observedAge <= c.cfg.CertificateObservationMaxAge.Seconds()
+			observedFresh = observedAge <= c.cfg.CertificateObservationMaxAge.Seconds()
+			inspectionFresh = observation.Available && observedFresh
 		}
 		for _, item := range observation.Certificates {
 			if certificates.Supports(item.Credential, node.ControlPlane) {
@@ -147,13 +151,13 @@ func (c *CredentialCollector) collectCertificates(ch chan<- prometheus.Metric, c
 			}
 		}
 	}
-	c.emit(ch, "certificate_inspection_available", boolean(fresh), cluster, node.Name)
+	c.emit(ch, "certificate_inspection_available", boolean(inspectionFresh), cluster, node.Name)
 	c.emit(ch, "certificate_observation_age_seconds", observedAge, cluster, node.Name)
 	for _, name := range certificates.Names(node.ControlPlane) {
 		c.emit(ch, "certificate_required", boolean(certificates.Required(name)), cluster, node.Name, name)
 		item, ok := byName[name]
 		available := ok && item.State == "available" && !item.NotAfter.IsZero()
-		c.emit(ch, "certificate_observation_available", boolean(fresh && available), cluster, node.Name, name)
+		c.emit(ch, "certificate_observation_available", boolean(observedFresh && available), cluster, node.Name, name)
 		if available {
 			c.emit(ch, "certificate_not_after_timestamp_seconds", float64(item.NotAfter.Unix()), cluster, node.Name, name)
 		}
