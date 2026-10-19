@@ -60,6 +60,11 @@ PROMTOOL_SHA256_LINUX_AMD64 ?= a622e3007c9109a7f470e1433cbd29bf392596715cf7eea8b
 PROMTOOL_SHA256_LINUX_ARM64 ?= f2dec3178f1181c1b795b275750d056e71ead13f7fbfe08b76834c4ec20b748e
 PROMTOOL_SHA256_DARWIN_AMD64 ?= e73ecf2ccd3ecca4bba8f2f82f82c8c51d190283217c6007b41bfe2478ebe482
 PROMTOOL_SHA256_DARWIN_ARM64 ?= f71d933be340486e27625a9b80c7be8282a5c8dbb041594ba2e52a4788dc6ebb
+# The PrometheusRule JSON schema the same script validates the rendered rule
+# against: monitoring.coreos.com/prometheusrule_v1.json at this
+# datreeio/CRDs-catalog commit, verified against the digest below.
+PROMETHEUSRULE_SCHEMA_VERSION ?= 501527ab9c40c827144c8f45945b25a023e344ce
+PROMETHEUSRULE_SCHEMA_SHA256  ?= 9cd71d75b714b541a0be960b46bd961dbf1f0106071381cd88f54dfe80b8bd9d
 
 # crane and nfpm build the CNI debs under os-image/packages/.
 CRANE_VERSION ?= 0.21.9
