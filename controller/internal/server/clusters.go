@@ -762,7 +762,7 @@ func validateUpdateControlPlaneConfigProviderMatch(providerType db.ProviderType,
 	if cpConfig == nil {
 		return nil
 	}
-	providerField, providerName := "", ""
+	var providerField, providerName string
 	switch providerType {
 	case db.ProviderTypeNico:
 		providerField, providerName = "nico", "controlPlaneConfig.nico"

@@ -12,6 +12,8 @@ import (
 // Resolve it once, as early in a request flow as the cluster is known, and
 // pass the result through to whatever needs a capability from it — not a
 // fresh GetXxx call at each spot that needs one.
+//
+//nolint:interfacebloat // One accessor per provider capability, as in client-go's Clientset.
 type ProviderClient interface {
 	ClusterScaffold() ClusterScaffold
 	MachineMaterialization() MachineMaterialization
