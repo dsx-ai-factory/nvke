@@ -23,7 +23,7 @@ control-plane node UUIDs, topology, operator, time, and approved change window.
 - Every control-plane node is joined, reachable, and running a node agent built
   from this release or later. Rotation needs the `GetEtcdEncryptionKeyIdentity`
   RPC and the `api_encryption_key_name` request fields, which this release adds.
-  No published agent up to and including `agent/v0.3.0-rc.1` has them. The
+  No published agent up to and including `agent/v0.3.0-rc.2` has them. The
   workflow's existing v0.1.26 version gate does not prove these capabilities, so
   check each control-plane node before starting. For agents serving plain mTLS,
   check through gRPC reflection, using the controller's mTLS client identity:
@@ -70,6 +70,15 @@ control-plane node UUIDs, topology, operator, time, and approved change window.
   are available. Keep backup material and kubeconfigs outside this repository.
   A pre-rotation etcd snapshot still requires its corresponding old key; retiring
   that key from live nodes does not make that snapshot recoverable without it.
+  Finalization replaces `active` and `active-name` in the key Secret and keeps
+  no prior key, so **before starting, retain the current active key and its
+  storage name with the etcd backups**. Copy the whole key Secret object,
+  `etcd-encryption-key-<cluster-uuid>` in the controller's namespace, into the
+  backup store through your secret-handling tooling, for example
+  `kubectl get secret --namespace <controller-namespace>
+  etcd-encryption-key-<cluster-uuid> --output yaml` redirected straight into
+  that store. Its `active` and `active-name` fields are the key and storage
+  name. Do not print or inspect the copied data.
 
 The workflow snapshots the control-plane node set and runs health/preflight
 checks before rollout. Key updates hot-reload API server configuration; they do
@@ -201,6 +210,11 @@ received the pending key. Fix the prerequisite, then start a rotation with a
 any staged pending key and its name. Do not reset the failed workflow; after
 release it no longer owns the mutation lock.
 
+This applies only to a **recorded** failure. A terminated or timed-out owner
+never runs its failure cleanup, in any phase including `prepare`: `state` stays
+`running` and `updateInProgress` stays set, so Begin refuses a new workflow ID.
+Recover it by resetting that same workflow ID.
+
 From `add_secondary` on, a failed rotation keeps `updateInProgress` deliberately.
 Until finalization, the key Secret's active key is the old one, while nodes may
 already use the pending key as their primary (from `promote_primary` on) or have
@@ -256,7 +270,7 @@ The safe boundary depends on the phase:
 
 | Failed phase | Recovery boundary and required checks |
 |---|---|
-| `prepare` | Confirm the recorded failure released the mutation lock, fix the prerequisite, and start a rotation with a **new workflow ID**, not a reset. Leave the key Secret unchanged; the new execution reuses an existing pending key and its name. |
+| `prepare` | Confirm the recorded failure released the mutation lock, fix the prerequisite, and start a rotation with a **new workflow ID**, not a reset. Leave the key Secret unchanged; the new execution reuses an existing pending key and its name. A terminated or timed-out owner never records that failure: `state` stays `running` and the lock stays held in any phase, `prepare` included. Begin refuses a new workflow ID while the lock is held, so recover such an owner by resetting that same workflow ID. |
 | `add_secondary` | Before the failed node update. Keep the same pending key; prior successful nodes stay recorded. |
 | `promote_primary` | Before the failed node promotion. Verify secondary distribution completed everywhere; do not remove either key. |
 | `rewrite` | If the original rewrite remains running, reset after the acknowledged `StartEtcdEncryptionRewrite` result to resume polling with its recorded operation ID. This works only before the original run's six-hour poll deadline: the reset replays the deadline computed when Start was scheduled, so once six hours have passed since then, the reset run fails at once with "did not complete within 6h0m0s". The usual reason the rewrite is still running is that the original run hit that deadline. In that case wait for the old rewrite operation to become terminal on the executor node, then reset before Start so the reset run gets a new rewrite ID and a fresh deadline. If it failed terminally, reset before Start so the reset run gets a new rewrite ID. Verify the old operation is terminal before starting that ID. The recorded phase also stays `rewrite` while the workflow runs the post-rewrite membership check, pending-primary re-promotion and second membership check. If the rewrite already succeeded and one of those checks failed, reset before the failed check without starting a new rewrite. |
