@@ -214,6 +214,18 @@ def check_legacy_namespace(chart: str) -> list[str]:
 PINNED_CONFIG_NAME = "pinned-controller-config"
 PINNED_SPIFFE_SEGMENT = "pinned-service"
 
+# Every ServiceAccount nke-rbac names a default subject for: this controller's
+# own, plus the four CAPI managers the nvke:capi-cluster-admin binding grants.
+# Each is spiffe://<trustDomain>/<servicePathSegment>/<serviceAccount>, so
+# pinning the segment has to move all five together.
+DEFAULT_SPIFFE_SERVICE_ACCOUNTS = (
+    "cloud-workflow-engine",
+    "capi-manager",
+    "capi-kubeadm-control-plane-manager",
+    "capi-kubeadm-bootstrap-manager",
+    "capd-manager",
+)
+
 
 def check_pinnable_names(chart: str) -> list[str]:
     """Render with controllerConfig.name and spiffe.servicePathSegment set and assert they move everywhere.
@@ -254,7 +266,12 @@ def check_pinnable_names(chart: str) -> list[str]:
     if PINNED_CONFIG_NAME not in config_maps or "nke-controller-config" in config_maps:
         failures.append(f"pinned render ConfigMaps are {sorted(config_maps)}; expected {PINNED_CONFIG_NAME!r} and no nke-controller-config")
 
-    for dep in (d for d in docs if d.get("kind") == "Deployment"):
+    deployments = [d for d in docs if d.get("kind") == "Deployment"]
+    if not deployments:
+        failures.append(
+            "pinned render has no Deployment; the config mount and Reloader watch went unchecked"
+        )
+    for dep in deployments:
         volumes = {v["name"]: v for v in dep["spec"]["template"]["spec"].get("volumes") or []}
         mounted = [v["configMap"]["name"] for v in volumes.values() if "configMap" in v]
         if PINNED_CONFIG_NAME not in mounted:
@@ -268,15 +285,19 @@ def check_pinnable_names(chart: str) -> list[str]:
         failures.append("pinned render has no nke-rbac ConfigMap")
         return failures
     subjects = {
-        s["name"]
+        str(s.get("name", ""))
         for d in yaml.safe_load_all(rbac[0]["data"]["manifest.yaml"])
         if d and d.get("kind") == "ClusterRoleBinding"
         for s in d.get("subjects") or []
-        if str(s.get("name", "")).startswith("spiffe://")
     }
-    stale = sorted(s for s in subjects if f"/{PINNED_SPIFFE_SEGMENT}/" not in s)
-    if not subjects or stale:
-        failures.append(f"pinned render SPIFFE subjects {sorted(subjects)} are not all under /{PINNED_SPIFFE_SEGMENT}/; stale: {stale}")
+    want = {
+        f"spiffe://{GREENFIELD_TRUST_DOMAIN}/{PINNED_SPIFFE_SEGMENT}/{sa}" for sa in DEFAULT_SPIFFE_SERVICE_ACCOUNTS
+    }
+    if subjects != want:
+        failures.append(
+            f"pinned render ClusterRoleBinding subjects {sorted(subjects)} != expected {sorted(want)}; "
+            f"missing: {sorted(want - subjects)}; unexpected: {sorted(subjects - want)}"
+        )
 
     return failures
 
