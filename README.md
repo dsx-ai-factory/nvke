@@ -28,13 +28,12 @@ The local quickstart runs on a **Linux host or VM, amd64 or arm64**, with at lea
 **6 CPUs, 12 GiB of free memory and 100 GiB of free disk**. It requires Docker,
 virtual TPM support and the tools listed in the guide. Follow its setup through
 workload-cluster creation and confirm the cluster's nodes report `Ready`.
-The guide does not cover macOS host setup; run the Linux steps inside a suitable VM.
 
 For a real installation, you supply the machines, networking, node images and
 registries, and configure access to **NVIDIA Infra Controller (NICo)**. NICo is
-the supported workload infrastructure provider at preview. The
+the sole compatible infrastructure provider at preview. The
 [platform and version reference](docs/overview/supported-platforms.md) lists
-supported combinations and pinned dependencies.
+validated combinations and pinned dependencies.
 
 ## What NVKE does
 
@@ -69,7 +68,7 @@ The diagram shows the NVKE product family, how it sits on NICo and your GPU mach
 
 NVKE is not a Kubernetes distribution and not a Cluster API flavour. It is a
 **self-hosting factory for Kubernetes clusters**: a throwaway seed cluster
-stands up a highly available management cluster, and the management plane on
+stands up a management cluster, and the management plane on
 it then provisions and lifecycle-manages many isolated workload clusters
 on demand.
 
