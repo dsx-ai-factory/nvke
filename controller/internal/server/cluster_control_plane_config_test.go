@@ -239,8 +239,9 @@ func TestValidateCreateClusterRequestFields_LaunchLayer(t *testing.T) {
 	bareMetalVPC := api.LaunchLayerClusterProviderVpcTypeBAREMETAL
 
 	tests := map[string]struct {
-		mutate  func(*api.CreateClusterRequest)
-		wantErr string
+		nodeAgentProfile db.Node
+		mutate           func(*api.CreateClusterRequest)
+		wantErr          string
 	}{
 		"accepts a valid request, VIRTUALIZED group with vpcType unset": {
 			mutate: func(*api.CreateClusterRequest) {},
@@ -271,12 +272,20 @@ func TestValidateCreateClusterRequestFields_LaunchLayer(t *testing.T) {
 			},
 			wantErr: `controlPlaneConfig.launchLayer.securityGroupRefs: "missing" is not one of the cluster's launchLayer.securityGroups`,
 		},
+		"rejects a vmProfile control plane whose nodes could never attest": {
+			nodeAgentProfile: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS},
+			mutate:           func(r *api.CreateClusterRequest) { r.ControlPlaneConfig.LaunchLayer.VMProfile = "ubuntu" },
+			wantErr: "this deployment's node-agent settings do not support the launchlayer provider: " +
+				`SPIFFE-enabled LaunchLayer nodes without external mTLS require hostOSProfile: dsxImds attestation is not available to vmProfile "ubuntu" instances`,
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			req := validLaunchLayerCreateClusterRequest()
 			tt.mutate(req)
 
+			svc := svc
+			svc.nodeAgentProfile = tt.nodeAgentProfile
 			err := svc.ValidateCreateClusterRequestFields(req)
 			if tt.wantErr != "" {
 				require.EqualError(t, err, tt.wantErr)
@@ -378,6 +387,26 @@ func TestApplyClusterLevelControlPlaneSpecUpdate_DesiredCount(t *testing.T) {
 		require.ErrorAs(t, err, &badRequest)
 		require.EqualError(t, err, "this deployment's node-agent settings do not support the launchlayer provider: "+
 			"SPIFFE-enabled LaunchLayer nodes require dsxImds SPIRE attestation, got tpm")
+		require.Equal(t, 1, cluster.ControlPlaneConfig.DesiredCount)
+	})
+
+	t.Run("rejects scale-up of a vmProfile control plane whose new nodes could never attest", func(t *testing.T) {
+		svc := clusterService{nodeAgentProfile: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS}}
+		cluster := &db.Cluster{
+			ID:                 uuid.New(),
+			ProviderType:       db.ProviderTypeLaunchLayer,
+			ControlPlaneVIP:    "172.31.0.10",
+			ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 1},
+		}
+		spec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
+		spec.SetLaunchLayer(db.LaunchLayerControlPlaneProvider{InstanceType: "vm200", VMProfile: "ubuntu"})
+		desired := 3
+		err := svc.applyClusterLevelControlPlaneSpecUpdate(ctx, cluster, &api.UpdateClusterControlPlaneConfig{
+			DesiredCount: &desired,
+		}, &spec)
+		var badRequest *badRequestError
+		require.ErrorAs(t, err, &badRequest)
+		require.ErrorContains(t, err, `dsxImds attestation is not available to vmProfile "ubuntu" instances`)
 		require.Equal(t, 1, cluster.ControlPlaneConfig.DesiredCount)
 	})
 }
@@ -908,4 +937,12 @@ func TestValidateCreateClusterRequestFields_MachineMetadata(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateUpdateControlPlaneConfigProviderMatch_UnknownProvider(t *testing.T) {
+	err := validateUpdateControlPlaneConfigProviderMatch("bogus", &api.UpdateClusterControlPlaneConfig{})
+
+	var badRequest *badRequestError
+	require.ErrorAs(t, err, &badRequest)
+	require.EqualError(t, err, `unsupported cluster provider "bogus"`)
 }

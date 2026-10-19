@@ -324,17 +324,31 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 	return network, nil
 }
 
-// validateNodeAgentProfile rejects new nodes of providerType that could never
+// validateNodeAgentProfile rejects new nodes of nodePool that could never
 // join under this deployment's node-agent settings, profile.
-func validateNodeAgentProfile(profile db.Node, providerType db.ProviderType) error {
-	validator, err := clients.GetNodeAgentProfileValidator(db.Cluster{ProviderType: providerType})
+func validateNodeAgentProfile(profile db.Node, cluster db.Cluster, nodePool db.NodePool) error {
+	validator, err := clients.GetNodeAgentProfileValidator(cluster)
 	if err != nil {
 		return err
 	}
-	if err := validator.ValidateNodeAgentProfile(profile); err != nil {
-		return fmt.Errorf("this deployment's node-agent settings do not support the %s provider: %w", providerType, err)
+	if err := validator.ValidateNodeAgentProfile(profile, nodePool); err != nil {
+		return fmt.Errorf("this deployment's node-agent settings do not support the %s provider: %w", cluster.ProviderType, err)
 	}
 	return nil
+}
+
+// validateControlPlaneNodeAgentProfile is validateNodeAgentProfile for the
+// control plane, whose nodes belong to the node pool the provider builds from
+// spec.
+func validateControlPlaneNodeAgentProfile(profile db.Node, cluster db.Cluster, spec db.ControlPlaneConfigSpec) error {
+	nodeProvider, err := clients.GetControlPlaneConfigNodeProvider(cluster)
+	if err != nil {
+		return err
+	}
+	var nodeSet db.NodeSet
+	var nodePool db.NodePool
+	nodeProvider.ApplyControlPlaneConfigPayloads(db.Node{}, spec, &nodeSet, &nodePool)
+	return validateNodeAgentProfile(profile, cluster, nodePool)
 }
 
 func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClusterRequest) error {
@@ -381,9 +395,6 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 	default:
 		return fmt.Errorf("exactly one provider must be set")
 	}
-	if err := validateNodeAgentProfile(s.nodeAgentProfile, providerType); err != nil {
-		return err
-	}
 
 	if req.ControlPlaneConfig != nil && req.ControlPlaneConfig.NodeAgentConfig != nil && req.ControlPlaneConfig.NodeAgentConfig.Version != nil {
 		version, err := canonicalNodeAgentVersion(*req.ControlPlaneConfig.NodeAgentConfig.Version)
@@ -396,6 +407,10 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		req.ControlPlaneConfig.NodeAgentConfig.Version = &version
 	}
 	if err := validateCreateClusterLevelControlPlane(req, nodePools, providerType, s.allowlistedLabelKeys); err != nil {
+		return err
+	}
+	controlPlaneSpec := controlPlaneConfigSpecFromCreateAPI(req.ControlPlaneConfig, req.ControlPlaneKubernetesVersion, false, providerType)
+	if err := validateControlPlaneNodeAgentProfile(s.nodeAgentProfile, db.Cluster{ProviderType: providerType}, controlPlaneSpec); err != nil {
 		return err
 	}
 	if req.ControlPlaneConfig == nil {
@@ -755,6 +770,8 @@ func validateUpdateControlPlaneConfigProviderMatch(providerType db.ProviderType,
 		providerField, providerName = "infra", "controlPlaneConfig.infra"
 	case db.ProviderTypeLaunchLayer:
 		providerField, providerName = "launchLayer", "controlPlaneConfig.launchLayer"
+	default:
+		return newBadRequestErrorf("unsupported cluster provider %q", providerType)
 	}
 	if providerField != "nico" && cpConfig.Nico != nil {
 		return newBadRequestErrorf("controlPlaneConfig.nico is not supported, please provide %s", providerName)
@@ -994,7 +1011,7 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 			return err
 		}
 		if *req.DesiredCount > cluster.ControlPlaneConfig.DesiredCount {
-			if err := validateNodeAgentProfile(s.nodeAgentProfile, cluster.ProviderType); err != nil {
+			if err := validateControlPlaneNodeAgentProfile(s.nodeAgentProfile, *cluster, *spec); err != nil {
 				return newBadRequestErrorf("%s", err)
 			}
 		}

@@ -22,9 +22,12 @@ func TestClient_CreateMachine_RejectsBeforeApplying(t *testing.T) {
 
 	var withoutKubernetesVersion db.NodeSet
 	withoutKubernetesVersion.SetLaunchLayer(db.LaunchLayerNodePoolProvider{InstanceType: "dgx200"})
+	var vmPool db.NodePool
+	vmPool.SetLaunchLayer(db.LaunchLayerNodePoolProvider{InstanceType: "vm200", VMProfile: "ubuntu"})
 	tests := map[string]struct {
 		node        db.Node
 		nodeSet     db.NodeSet
+		nodePool    db.NodePool
 		wantErrIs   error
 		wantErrText string
 	}{
@@ -37,6 +40,12 @@ func TestClient_CreateMachine_RejectsBeforeApplying(t *testing.T) {
 			node:        db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodTPM},
 			wantErrIs:   shared.ErrUnsupportedMachineConfig,
 			wantErrText: "SPIFFE-enabled LaunchLayer nodes require dsxImds SPIRE attestation",
+		},
+		"vmProfile pool": {
+			node:        db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS},
+			nodePool:    vmPool,
+			wantErrIs:   shared.ErrUnsupportedMachineConfig,
+			wantErrText: "SPIFFE-enabled LaunchLayer nodes without external mTLS require hostOSProfile",
 		},
 		"a Machine that cannot be built": {
 			nodeSet:     withoutKubernetesVersion,
@@ -55,7 +64,7 @@ func TestClient_CreateMachine_RejectsBeforeApplying(t *testing.T) {
 				},
 			}).Build()
 
-			err := (&Client{}).CreateMachine(t.Context(), deps, tt.node, tt.nodeSet, db.NodePool{}, db.Cluster{})
+			err := (&Client{}).CreateMachine(t.Context(), deps, tt.node, tt.nodeSet, tt.nodePool, db.Cluster{})
 
 			if tt.wantErrIs != nil {
 				require.ErrorIs(t, err, tt.wantErrIs)

@@ -86,11 +86,12 @@ func toAnySlice(in []string) []any {
 // LaunchLayer cluster or node pool on a deployment whose node-agent profile
 // ValidateNodeAgentProfile refuses, but a node is pinned to the profile in
 // force when it is created, which a deployment change can move after the
-// pool was accepted, so the node's own profile is checked again here.
+// pool was accepted, so the node's own profile is checked again here, against
+// its pool.
 // Every object is validated and built before any is applied, so a rejected
 // node leaves nothing behind.
 func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDeps, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) error {
-	if err := c.ValidateNodeAgentProfile(node); err != nil {
+	if err := c.ValidateNodeAgentProfile(node, nodePool); err != nil {
 		return fmt.Errorf("%w: node %s: %w", shared.ErrUnsupportedMachineConfig, node.ID, err)
 	}
 	infraMachine, err := buildInfraMachine(node, nodeSet, cluster, nodePool.ControlPlane)

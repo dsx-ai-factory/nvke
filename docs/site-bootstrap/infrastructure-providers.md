@@ -182,6 +182,8 @@ The management plane then has to accept LaunchLayer requests. Until it does, it 
 
 `nodeAgent.spireAttestationMethod` applies to every provider's new nodes, not only LaunchLayer's. NICo accepts any method, so on a site whose NICo nodes attest with TPM, setting `dsxImds` pins new NICo nodes to it as well, and they fail only when they attest. A TPM-attested NICo deployment cannot enable LaunchLayer this way.
 
+DSX IMDS identifies bare-metal instances only. With SPIFFE on and `nodeAgent.externalMTLS.enabled` off, the management plane rejects with 400 any LaunchLayer node pool or control plane that sets `vmProfile`, since its nodes could never attest.
+
 SPIRE needs the `dsx_imds` node attestor on both sides:
 
 - **Server.** Add the `dsx_imds` node attestor plugin to the SPIRE server, with `jwks_url` and `issuer` naming DSX Identity's signing keys and issuer, and `audience` set to `spiffe://<trust-domain>/spire/server`.

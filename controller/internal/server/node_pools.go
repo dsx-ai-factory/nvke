@@ -235,10 +235,21 @@ func (s *nodePoolService) validateCreateNodePoolRequest(cluster db.Cluster, req 
 	if err := validateNodeTaints(req.NodeTaints, req.ControlPlane); err != nil {
 		return newBadRequestErrorf("%s", err)
 	}
-	if err := validateNodeAgentProfile(s.nodeAgentProfile, cluster.ProviderType); err != nil {
+	if err := s.validateCreateNodePoolProvider(cluster, req); err != nil {
 		return err
 	}
 
+	nodePool, err := dbNodePoolFromAPI(req, cluster.KubernetesVersion)
+	if err != nil {
+		return err
+	}
+	if err := validateNodeAgentProfile(s.nodeAgentProfile, cluster, nodePool); err != nil {
+		return newBadRequestErrorf("%s", err)
+	}
+	return nil
+}
+
+func (s *nodePoolService) validateCreateNodePoolProvider(cluster db.Cluster, req *api.CreateNodePoolRequest) error {
 	switch cluster.ProviderType {
 	case db.ProviderTypeCAPI:
 		if err := s.providers.require(config.InfraProviderInfra); err != nil {
@@ -471,6 +482,11 @@ func (s *nodePoolService) UpdateNodePool(
 
 		if err := s.validateUpdateNodePoolRequest(cluster, req.Body); err != nil {
 			return &badRequestError{message: err.Error()}
+		}
+		if req.Body != nil && req.Body.DesiredNodeCount != nil && *req.Body.DesiredNodeCount > dbNodePool.DesiredCount {
+			if err := validateNodeAgentProfile(s.nodeAgentProfile, cluster, dbNodePool); err != nil {
+				return newBadRequestErrorf("%s", err)
+			}
 		}
 
 		if err := applyUpdateNodePoolRequest(cluster, &dbNodePool, req.Body); err != nil {

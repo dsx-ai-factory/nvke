@@ -57,9 +57,13 @@ func TestValidateNodeAgentProfile(t *testing.T) {
 	t.Parallel()
 
 	spiffeTPM := db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodTPM}
+	spiffeDSXIMDS := db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS}
+	var vmPool db.NodePool
+	vmPool.SetLaunchLayer(db.LaunchLayerNodePoolProvider{InstanceType: "vm200", VMProfile: "ubuntu"})
 	tests := map[string]struct {
 		profile  db.Node
 		provider db.ProviderType
+		nodePool db.NodePool
 		wantErr  string
 	}{
 		"launchLayer on a SPIFFE tpm deployment is rejected": {
@@ -69,8 +73,24 @@ func TestValidateNodeAgentProfile(t *testing.T) {
 				"SPIFFE-enabled LaunchLayer nodes require dsxImds SPIRE attestation, got tpm",
 		},
 		"launchLayer on a SPIFFE dsxImds deployment is accepted": {
-			profile:  db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS},
+			profile:  spiffeDSXIMDS,
 			provider: db.ProviderTypeLaunchLayer,
+		},
+		"launchLayer vmProfile pool on a SPIFFE dsxImds deployment is rejected": {
+			profile:  spiffeDSXIMDS,
+			provider: db.ProviderTypeLaunchLayer,
+			nodePool: vmPool,
+			wantErr: "this deployment's node-agent settings do not support the launchlayer provider: " +
+				`SPIFFE-enabled LaunchLayer nodes without external mTLS require hostOSProfile: dsxImds attestation is not available to vmProfile "ubuntu" instances`,
+		},
+		"launchLayer vmProfile pool with external mTLS is accepted": {
+			profile:  db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS, NodeAgentExternalMTLSEnabled: true},
+			provider: db.ProviderTypeLaunchLayer,
+			nodePool: vmPool,
+		},
+		"launchLayer vmProfile pool without SPIFFE is accepted": {
+			provider: db.ProviderTypeLaunchLayer,
+			nodePool: vmPool,
 		},
 		"nico on a SPIFFE tpm deployment is accepted": {
 			profile:  spiffeTPM,
@@ -81,7 +101,7 @@ func TestValidateNodeAgentProfile(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			err := validateNodeAgentProfile(tt.profile, tt.provider)
+			err := validateNodeAgentProfile(tt.profile, db.Cluster{ProviderType: tt.provider}, tt.nodePool)
 			if tt.wantErr != "" {
 				require.EqualError(t, err, tt.wantErr)
 				return

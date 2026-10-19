@@ -14,7 +14,7 @@ import (
 
 // ValidateNodeAgentProfile accepts every profile: CAPI nodes support each
 // SPIRE attestation method and transport.
-func (*Client) ValidateNodeAgentProfile(db.Node) error {
+func (*Client) ValidateNodeAgentProfile(db.Node, db.NodePool) error {
 	return nil
 }
 

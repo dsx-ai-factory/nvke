@@ -12,14 +12,14 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
-// NodeAgentProfileValidator reports whether the provider's nodes can join
+// NodeAgentProfileValidator reports whether a node pool's nodes can join
 // under a node-agent profile: the SPIFFE, SPIRE attestation and transport
 // settings nodes.PinAgentProfile stamps on a new node. Each provider has its
 // own implementation, selected by GetNodeAgentProfileValidator.
 type NodeAgentProfileValidator interface {
 	// ValidateNodeAgentProfile returns an error naming the setting the
-	// provider cannot support, or nil.
-	ValidateNodeAgentProfile(node db.Node) error
+	// provider cannot support for nodePool's nodes, or nil.
+	ValidateNodeAgentProfile(profile db.Node, nodePool db.NodePool) error
 }
 
 // GetNodeAgentProfileValidator selects the NodeAgentProfileValidator
