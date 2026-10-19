@@ -1260,3 +1260,86 @@ func TestV2RenewalRefusesUnfencedReservationOnSameNode(t *testing.T) {
 		})
 	}
 }
+
+// flakyReleaseDatabase fails the transactions numbered in fail (1-based), so a
+// test can fail the release that follows a successful reservation.
+type flakyReleaseDatabase struct {
+	legacyAdmissionDatabase
+	fail  map[int]bool
+	calls int
+}
+
+func (d *flakyReleaseDatabase) RunInTx(ctx context.Context, fn func(context.Context, db.Tx) error) error {
+	d.calls++
+	if d.fail[d.calls] {
+		return errors.New("connection reset")
+	}
+	return d.agentAdmissionDatabase.RunInTx(ctx, fn)
+}
+
+// TestLegacyRenewalSuccessRetriesRelease keeps one transient database error after
+// a successful legacy run from leaving the reservation set, which would refuse
+// the cycle's next node. After the last attempt V1 still returns the error and V2
+// still returns its result, leaving the reservation to the reconciler.
+func TestLegacyRenewalSuccessRetriesRelease(t *testing.T) {
+	previous := certificateRenewalReleaseRetryBackoff
+	certificateRenewalReleaseRetryBackoff = []time.Duration{time.Millisecond, time.Millisecond}
+	t.Cleanup(func() { certificateRenewalReleaseRetryBackoff = previous })
+	for _, test := range []struct {
+		name         string
+		v2           bool
+		failReleases int
+		wantError    bool
+	}{
+		{name: "V1 release succeeds on retry", failReleases: 1},
+		{name: "V1 release fails every attempt", failReleases: 3, wantError: true},
+		{name: "V2 release succeeds on retry", v2: true, failReleases: 1},
+		{name: "V2 release fails every attempt", v2: true, failReleases: 3},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			node := certificateRenewalTestNode()
+			admission := &agentAdmissionDatabase{node: node, cluster: db.Cluster{ID: node.ClusterID}}
+			database := &flakyReleaseDatabase{legacyAdmissionDatabase: legacyAdmissionDatabase{admission}, fail: map[int]bool{}}
+			for attempt := range test.failReleases {
+				database.fail[2+attempt] = true // Transaction 1 is the reservation.
+			}
+			fake := &agenttest.FakeClient{
+				StartKubernetesCertificateRenewalHook: func(db.Node, *nvkeproto.StartKubernetesCertificateRenewalRequest) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error) {
+					return nil, status.Error(codes.Unimplemented, "unknown method")
+				},
+				ExecuteScriptHook: func(_ db.Node, _, script string) (*nvkeproto.ExecuteScriptResponse, error) {
+					if strings.Contains(script, "export STATUS_ONLY='true'") {
+						return &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_TERMINAL_OPERATION_ID=stable-operation\n"}, nil
+					}
+					return &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_OUTCOME=renewed\n"}, nil
+				},
+			}
+			a := &Activities{cfg: config.Config{RunbooksDir: t.TempDir()}, db: database, nodeAgentClient: fake}
+			env := (&testsuite.WorkflowTestSuite{}).NewTestActivityEnvironment()
+			renew := a.RenewKubernetesCertificates
+			input := KubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "stable-operation", ThresholdDays: 14}
+			if test.v2 {
+				renew = a.RenewLegacyKubernetesCertificates
+				input.ExpectedEtcdMembers = 3
+			}
+			env.RegisterActivity(renew)
+
+			value, err := env.ExecuteActivity(renew, input)
+
+			if test.wantError {
+				require.ErrorContains(t, err, "connection reset")
+			} else {
+				require.NoError(t, err)
+				var result KubernetesCertificateRenewalResult
+				require.NoError(t, value.Get(&result))
+				require.Contains(t, result.Output, "RENEWAL_OUTCOME=renewed")
+			}
+			if test.failReleases < 3 {
+				require.Nil(t, admission.cluster.CertificateRenewal, "a retried release clears the reservation")
+			} else {
+				require.NotNil(t, admission.cluster.CertificateRenewal)
+			}
+			require.Equal(t, 1+min(test.failReleases+1, 3), database.calls)
+		})
+	}
+}

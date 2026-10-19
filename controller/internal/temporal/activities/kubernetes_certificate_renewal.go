@@ -234,7 +234,7 @@ func (a *Activities) RenewKubernetesCertificates(
 		if legacyErr != nil {
 			return legacy, a.releaseAfterFailedStart(ctx, node, input.OperationID, legacyErr)
 		}
-		if releaseErr := a.releaseCertificateRenewal(ctx, node, input.OperationID); releaseErr != nil {
+		if releaseErr := a.releaseCertificateRenewalAfterTermination(ctx, node, input.OperationID); releaseErr != nil {
 			return KubernetesCertificateRenewalResult{}, releaseErr
 		}
 		return legacy, nil
@@ -353,7 +353,7 @@ func (a *Activities) RenewLegacyKubernetesCertificates(ctx context.Context, inpu
 		}
 		// Termination is confirmed, so a failed release must not rerun the runbook;
 		// the reconciler clears the reservation once the cycle drops its lock.
-		if err := a.releaseCertificateRenewal(ctx, node, input.OperationID); err != nil {
+		if err := a.releaseCertificateRenewalAfterTermination(ctx, node, input.OperationID); err != nil {
 			activity.GetLogger(ctx).Warn("failed to release certificate renewal reservation after confirmed termination",
 				"nodeID", node.ID, "operationID", input.OperationID, "error", err)
 		}
@@ -722,6 +722,32 @@ func (a *Activities) releaseAfterFailedStart(ctx context.Context, node db.Node, 
 		return errors.Join(startErr, releaseErr)
 	}
 	return startErr
+}
+
+// certificateRenewalReleaseRetryBackoff is the wait before each retry of a
+// release after confirmed termination; a variable so tests run fast.
+var certificateRenewalReleaseRetryBackoff = []time.Duration{time.Second, 2 * time.Second}
+
+// releaseCertificateRenewalAfterTermination retries the release of a reservation
+// after a successful legacy run, whose node operation has ended. A single transient database error there would
+// otherwise leave the reservation set, so the cycle's next node is refused and
+// the cycle fails until the backoff passes. It returns the last error.
+func (a *Activities) releaseCertificateRenewalAfterTermination(ctx context.Context, node db.Node, operationID string) error {
+	err := a.releaseCertificateRenewal(ctx, node, operationID)
+	for _, backoff := range certificateRenewalReleaseRetryBackoff {
+		if err == nil {
+			return nil
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return errors.Join(err, ctx.Err())
+		case <-timer.C:
+		}
+		err = a.releaseCertificateRenewal(ctx, node, operationID)
+	}
+	return err
 }
 
 func (a *Activities) releaseCertificateRenewal(ctx context.Context, node db.Node, operationID string) error {
