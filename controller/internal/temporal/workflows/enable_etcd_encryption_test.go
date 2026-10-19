@@ -340,3 +340,10 @@ func setupEnableEtcdEncryptionWorkflowEnv(t *testing.T) (*testsuite.TestWorkflow
 	a := &activities.Activities{}
 	return env, a
 }
+
+func TestValidateEtcdEncryptionRewriteOperationFailedPhaseHasFixedRemedy(t *testing.T) {
+	_, err := validateEtcdEncryptionRewriteOperation("op", activities.EtcdEncryptionRewriteOperation{
+		OperationID: "op", Phase: activities.EtcdEncryptionOperationPhaseFailed, ErrorMessage: "upstream-body-marker",
+	})
+	require.EqualError(t, err, "encrypted-object rewrite failed; inspect node rewrite state")
+}
