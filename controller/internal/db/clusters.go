@@ -110,6 +110,18 @@ type Cluster struct {
 
 	NodeAgentUpgrade   *NodeAgentUpgrade            `bun:"node_agent_upgrade,type:jsonb"`
 	CertificateRenewal *NodeAgentCertificateRenewal `bun:"certificate_renewal,type:jsonb"`
+
+	// SpireServer is the SPIRE server last requested for the cluster's nodes.
+	// Nil means none was requested.
+	SpireServer *ClusterSpireServer `bun:"spire_server,type:jsonb"`
+}
+
+// ClusterSpireServer is a SPIRE server address requested for a cluster's
+// SPIRE agents, stored in clusters.spire_server.
+type ClusterSpireServer struct {
+	Address     string    `json:"address"`
+	Port        int       `json:"port"`
+	RequestedAt time.Time `json:"requestedAt"`
 }
 
 func (c *Cluster) NicoProvider() (NicoClusterProvider, error) {

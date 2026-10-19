@@ -95,10 +95,11 @@ const (
 
 // Defines values for UpdateInProgressType.
 const (
-	UpdateInProgressTypeCpNodesRecycling UpdateInProgressType = "cp_nodes_recycling"
-	UpdateInProgressTypeEtcdEncryption   UpdateInProgressType = "etcd_encryption"
-	UpdateInProgressTypeK8SUpgrade       UpdateInProgressType = "k8s_upgrade"
-	UpdateInProgressTypeOidcEnable       UpdateInProgressType = "oidc_enable"
+	UpdateInProgressTypeCpNodesRecycling  UpdateInProgressType = "cp_nodes_recycling"
+	UpdateInProgressTypeEtcdEncryption    UpdateInProgressType = "etcd_encryption"
+	UpdateInProgressTypeK8SUpgrade        UpdateInProgressType = "k8s_upgrade"
+	UpdateInProgressTypeOidcEnable        UpdateInProgressType = "oidc_enable"
+	UpdateInProgressTypeSpireServerUpdate UpdateInProgressType = "spire_server_update"
 )
 
 // CloudInitFile A file written by cloud-init on CAPI-backed nodes.
@@ -225,6 +226,15 @@ type ClusterNetworkCreateConfig struct {
 
 	// ServiceCIDR IPv4 service CIDR, private, /12 to /24. Default 10.96.0.0/12.
 	ServiceCIDR string `json:"serviceCIDR,omitempty"`
+}
+
+// ClusterSpireServerStatus Requested SPIRE server and live per-node SPIRE agent status.
+type ClusterSpireServerStatus struct {
+	// Requested The server last requested. Absent if none was requested.
+	Requested *SpireServer `json:"requested,omitempty"`
+
+	// Nodes Every node of the cluster.
+	Nodes []NodeSpireAgentStatus `json:"nodes"`
 }
 
 // Condition A status, when it last changed, and a message.
@@ -1396,6 +1406,34 @@ type NodeSet struct {
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 }
 
+// NodeSpireAgentStatus One node's SPIRE agent, as reported live by its node agent.
+type NodeSpireAgentStatus struct {
+	// NodeID Node ID.
+	NodeID openapi_types.UUID `json:"nodeID"`
+
+	// Name Node name.
+	Name string `json:"name"`
+
+	// Reachable The node agent answered. When false, only `message` is set.
+	Reachable bool `json:"reachable"`
+
+	// ServerAddress SPIRE server address in the node's agent config.
+	ServerAddress *string `json:"serverAddress,omitempty"`
+
+	// ServerPort SPIRE server port in the node's agent config.
+	ServerPort *int `json:"serverPort,omitempty"`
+
+	// HasValidSVID The running SPIRE agent uses the config above and serves an
+	// unexpired X.509 SVID, so it holds a certificate from that server.
+	HasValidSVID bool `json:"hasValidSVID"`
+
+	// SvidExpiresAt Expiry of that SVID.
+	SvidExpiresAt *time.Time `json:"svidExpiresAt,omitempty"`
+
+	// Message Why the node is unreachable or has no valid SVID.
+	Message *string `json:"message,omitempty"`
+}
+
 // NodeTaint A Kubernetes taint applied to nodes in a pool.
 type NodeTaint struct {
 	// Effect Kubernetes taint effect.
@@ -1415,6 +1453,15 @@ type NodeTaintEffect string
 type Release struct {
 	// Name The name of the release
 	Name string `json:"name"`
+}
+
+// SpireServer A SPIRE server address the cluster's SPIRE agents dial.
+type SpireServer struct {
+	// Address Host name or IP address of the SPIRE server.
+	Address string `json:"address"`
+
+	// Port SPIRE server port.
+	Port int `json:"port"`
 }
 
 // UpdateClusterControlPlaneConfig Changes to `release` or the Kubernetes version start a control-plane
@@ -1619,6 +1666,9 @@ type CreateClusterJSONRequestBody = CreateClusterRequest
 
 // UpdateClusterJSONRequestBody defines body for UpdateCluster for application/json ContentType.
 type UpdateClusterJSONRequestBody = UpdateClusterRequest
+
+// UpdateClusterSpireServerJSONRequestBody defines body for UpdateClusterSpireServer for application/json ContentType.
+type UpdateClusterSpireServerJSONRequestBody = SpireServer
 
 // CreateNodePoolJSONRequestBody defines body for CreateNodePool for application/json ContentType.
 type CreateNodePoolJSONRequestBody = CreateNodePoolRequest

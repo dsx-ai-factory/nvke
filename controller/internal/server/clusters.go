@@ -18,6 +18,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	capiclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
@@ -93,6 +94,8 @@ type clusterService struct {
 	// nodeAgentProfile carries the node-agent settings nodes.PinAgentProfile
 	// stamps on every node this deployment creates.
 	nodeAgentProfile db.Node
+	// nodeAgentClient reads live node state; nil reports nodes unreachable.
+	nodeAgentClient agent.Client
 }
 
 func NewClusterService(

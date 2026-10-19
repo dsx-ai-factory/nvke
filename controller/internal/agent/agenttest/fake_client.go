@@ -87,6 +87,12 @@ type FakeClient struct {
 
 	StartEncryptedObjectsRewriteHook func(node db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error)
 	GetEncryptedObjectsRewriteHook   func(node db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error)
+
+	// ReconfigureSpireAgentHook and GetSpireAgentStatusHook produce the
+	// responses for those RPCs. They may be called concurrently, so the fake
+	// records no calls for them; a hook that needs to must synchronize itself.
+	ReconfigureSpireAgentHook func(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error)
+	GetSpireAgentStatusHook   func(ctx context.Context, node db.Node) (*nvkeproto.GetSpireAgentStatusResponse, error)
 }
 
 func (f *FakeClient) GetKubeconfig(ctx context.Context, node db.Node) (string, error) {
@@ -300,4 +306,20 @@ type InstallCNICall struct {
 func (f *FakeClient) ConvergeNodeAgent(ctx context.Context, node db.Node, target, _ string) (string, bool, error) {
 	version, err := f.GetAgentVersion(ctx, node)
 	return version, version == target || target == "", err
+}
+
+// ReconfigureSpireAgent implements agent.Client through ReconfigureSpireAgentHook.
+func (f *FakeClient) ReconfigureSpireAgent(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error) {
+	if f.ReconfigureSpireAgentHook == nil {
+		return nil, errors.New("ReconfigureSpireAgentHook is nil")
+	}
+	return f.ReconfigureSpireAgentHook(ctx, node, req)
+}
+
+// GetSpireAgentStatus implements agent.Client through GetSpireAgentStatusHook.
+func (f *FakeClient) GetSpireAgentStatus(ctx context.Context, node db.Node) (*nvkeproto.GetSpireAgentStatusResponse, error) {
+	if f.GetSpireAgentStatusHook == nil {
+		return nil, errors.New("GetSpireAgentStatusHook is nil")
+	}
+	return f.GetSpireAgentStatusHook(ctx, node)
 }

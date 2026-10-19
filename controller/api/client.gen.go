@@ -118,6 +118,14 @@ type ClientInterface interface {
 	// GetClusterControlPlaneConfigHistory request
 	GetClusterControlPlaneConfigHistory(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetClusterSpireServer request
+	GetClusterSpireServer(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateClusterSpireServerWithBody request with any body
+	UpdateClusterSpireServerWithBody(ctx context.Context, clusterID openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateClusterSpireServer(ctx context.Context, clusterID openapi_types.UUID, body UpdateClusterSpireServerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListConfigProfiles request
 	ListConfigProfiles(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -259,6 +267,42 @@ func (c *Client) GetClusterControlPlane(ctx context.Context, clusterID openapi_t
 
 func (c *Client) GetClusterControlPlaneConfigHistory(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetClusterControlPlaneConfigHistoryRequest(c.Server, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetClusterSpireServer(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetClusterSpireServerRequest(c.Server, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateClusterSpireServerWithBody(ctx context.Context, clusterID openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateClusterSpireServerRequestWithBody(c.Server, clusterID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateClusterSpireServer(ctx context.Context, clusterID openapi_types.UUID, body UpdateClusterSpireServerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateClusterSpireServerRequest(c.Server, clusterID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -715,6 +759,87 @@ func NewGetClusterControlPlaneConfigHistoryRequest(server string, clusterID open
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewGetClusterSpireServerRequest generates requests for GetClusterSpireServer
+func NewGetClusterSpireServerRequest(server string, clusterID openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "clusterID", runtime.ParamLocationPath, clusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/clusters/%s/spire-server", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateClusterSpireServerRequest calls the generic UpdateClusterSpireServer builder with application/json body
+func NewUpdateClusterSpireServerRequest(server string, clusterID openapi_types.UUID, body UpdateClusterSpireServerJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateClusterSpireServerRequestWithBody(server, clusterID, "application/json", bodyReader)
+}
+
+// NewUpdateClusterSpireServerRequestWithBody generates requests for UpdateClusterSpireServer with any type of body
+func NewUpdateClusterSpireServerRequestWithBody(server string, clusterID openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "clusterID", runtime.ParamLocationPath, clusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/clusters/%s/spire-server", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -1336,6 +1461,14 @@ type ClientWithResponsesInterface interface {
 	// GetClusterControlPlaneConfigHistoryWithResponse request
 	GetClusterControlPlaneConfigHistoryWithResponse(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetClusterControlPlaneConfigHistoryClientResponse, error)
 
+	// GetClusterSpireServerWithResponse request
+	GetClusterSpireServerWithResponse(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetClusterSpireServerClientResponse, error)
+
+	// UpdateClusterSpireServerWithBodyWithResponse request with any body
+	UpdateClusterSpireServerWithBodyWithResponse(ctx context.Context, clusterID openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateClusterSpireServerClientResponse, error)
+
+	UpdateClusterSpireServerWithResponse(ctx context.Context, clusterID openapi_types.UUID, body UpdateClusterSpireServerJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateClusterSpireServerClientResponse, error)
+
 	// ListConfigProfilesWithResponse request
 	ListConfigProfilesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListConfigProfilesClientResponse, error)
 
@@ -1541,6 +1674,55 @@ func (r GetClusterControlPlaneConfigHistoryClientResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetClusterControlPlaneConfigHistoryClientResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetClusterSpireServerClientResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ClusterSpireServerStatus
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
+}
+
+// Status returns HTTPResponse.Status
+func (r GetClusterSpireServerClientResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetClusterSpireServerClientResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateClusterSpireServerClientResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
+	JSON409      *GenericError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateClusterSpireServerClientResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateClusterSpireServerClientResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1915,6 +2097,32 @@ func (c *ClientWithResponses) GetClusterControlPlaneConfigHistoryWithResponse(ct
 		return nil, err
 	}
 	return ParseGetClusterControlPlaneConfigHistoryClientResponse(rsp)
+}
+
+// GetClusterSpireServerWithResponse request returning *GetClusterSpireServerClientResponse
+func (c *ClientWithResponses) GetClusterSpireServerWithResponse(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetClusterSpireServerClientResponse, error) {
+	rsp, err := c.GetClusterSpireServer(ctx, clusterID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetClusterSpireServerClientResponse(rsp)
+}
+
+// UpdateClusterSpireServerWithBodyWithResponse request with arbitrary body returning *UpdateClusterSpireServerClientResponse
+func (c *ClientWithResponses) UpdateClusterSpireServerWithBodyWithResponse(ctx context.Context, clusterID openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateClusterSpireServerClientResponse, error) {
+	rsp, err := c.UpdateClusterSpireServerWithBody(ctx, clusterID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateClusterSpireServerClientResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateClusterSpireServerWithResponse(ctx context.Context, clusterID openapi_types.UUID, body UpdateClusterSpireServerJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateClusterSpireServerClientResponse, error) {
+	rsp, err := c.UpdateClusterSpireServer(ctx, clusterID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateClusterSpireServerClientResponse(rsp)
 }
 
 // ListConfigProfilesWithResponse request returning *ListConfigProfilesClientResponse
@@ -2322,6 +2530,93 @@ func ParseGetClusterControlPlaneConfigHistoryClientResponse(rsp *http.Response) 
 			return nil, err
 		}
 		response.JSON403 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetClusterSpireServerClientResponse parses an HTTP response from a GetClusterSpireServerWithResponse call
+func ParseGetClusterSpireServerClientResponse(rsp *http.Response) (*GetClusterSpireServerClientResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetClusterSpireServerClientResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ClusterSpireServerStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateClusterSpireServerClientResponse parses an HTTP response from a UpdateClusterSpireServerWithResponse call
+func ParseUpdateClusterSpireServerClientResponse(rsp *http.Response) (*UpdateClusterSpireServerClientResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateClusterSpireServerClientResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest GenericError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest GenericError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	}
 

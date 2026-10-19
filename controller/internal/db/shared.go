@@ -80,10 +80,11 @@ func SetCondition(existing *Condition, condition Condition) {
 type OperationType string
 
 const (
-	OperationTypeEtcdEncryption   OperationType = "etcd_encryption"
-	OperationTypeK8sUpgrade       OperationType = "k8s_upgrade"
-	OperationTypeCPNodesRecycling OperationType = "cp_nodes_recycling"
-	OperationTypeOIDCEnable       OperationType = "oidc_enable"
+	OperationTypeEtcdEncryption    OperationType = "etcd_encryption"
+	OperationTypeK8sUpgrade        OperationType = "k8s_upgrade"
+	OperationTypeCPNodesRecycling  OperationType = "cp_nodes_recycling"
+	OperationTypeOIDCEnable        OperationType = "oidc_enable"
+	OperationTypeSpireServerUpdate OperationType = "spire_server_update"
 )
 
 // UpdateInProgress represents a mutually-exclusive cluster mutation in flight.

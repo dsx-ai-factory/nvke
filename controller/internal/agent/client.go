@@ -52,6 +52,8 @@ type Client interface {
 	RemovePlainTextSecondaryEncryptionEntry(ctx context.Context, node db.Node) error
 	StartKubeVIPRestore(ctx context.Context, node db.Node, operationID string) (*nvkeproto.NodeAgentOperationStatus, error)
 	ConvergeNodeAgent(ctx context.Context, node db.Node, target, method string) (string, bool, error)
+	ReconfigureSpireAgent(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error)
+	GetSpireAgentStatus(ctx context.Context, node db.Node) (*nvkeproto.GetSpireAgentStatusResponse, error)
 }
 
 type NodeAgentClient struct {
@@ -257,6 +259,44 @@ func (c *NodeAgentClient) ReconfigureKubeletAPIServer(ctx context.Context, node 
 	resp, err := nvkeproto.NewNodeAgentClient(conn).ReconfigureKubeletAPIServer(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconfigure kubelet API server on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+// ReconfigureSpireAgent points the node's SPIRE agent at a new SPIRE server and
+// waits until the agent holds an SVID from it.
+func (c *NodeAgentClient) ReconfigureSpireAgent(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+
+	resp, err := nvkeproto.NewNodeAgentClient(conn).ReconfigureSpireAgent(ctx, req)
+	if status.Code(err) == codes.Unimplemented {
+		return nil, fmt.Errorf("node agent on node %s does not support ReconfigureSpireAgent; upgrade the node agent before retrying: %w", node.Name, err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to reconfigure SPIRE agent on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+// GetSpireAgentStatus reports the SPIRE server the node's agent points at and
+// whether it holds a valid SVID from that server.
+func (c *NodeAgentClient) GetSpireAgentStatus(ctx context.Context, node db.Node) (*nvkeproto.GetSpireAgentStatusResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+
+	resp, err := nvkeproto.NewNodeAgentClient(conn).GetSpireAgentStatus(ctx, &nvkeproto.GetSpireAgentStatusRequest{})
+	if status.Code(err) == codes.Unimplemented {
+		return nil, fmt.Errorf("node agent on node %s does not support GetSpireAgentStatus; upgrade the node agent before retrying: %w", node.Name, err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get SPIRE agent status from node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
