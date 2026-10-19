@@ -249,16 +249,19 @@ wait for both nodes to become Ready in CWE, and delete the cluster. The matrix
 reads active release names, architectures, and Kubernetes versions from the
 fleet releases (NodePoolReleases that are not deprecated, and the
 MachineImages they reference), which is maintained outside this repository.
-Resolution order:
+If `NKE_CONTROLLER_RELEASES_DIR` is set, it is used exclusively and must
+contain at least one YAML release manifest. A missing or empty explicit
+directory causes suite initialization to fail.
 
-1. `$NKE_CONTROLLER_RELEASES_DIR`
-2. sibling `../nke-site-deploy/cwe-profiles/releases`
+When the variable is unset, releases are resolved in this order:
+
+1. sibling `../nke-site-deploy/cwe-profiles/releases`
    (an NVIDIA-internal fleet repository; external contributors use the
    environment variable above instead)
-3. the stub mirror in `test/fixtures/fleet-releases`
+2. the stub mirror in `test/fixtures/fleet-releases`
 
-If no releases are found, nico-vms matrix table entries are skipped at
-suite init (no panic) so CAPD and other label filters can still run.
+If neither fallback contains releases, nico-vms matrix table entries are
+skipped at suite init so CAPD and other label filters can still run.
 
 Profiles with an embedded Kubernetes version use that version for their
 cluster; version-injected profiles use the suite default.

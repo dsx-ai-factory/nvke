@@ -225,7 +225,7 @@ Preferred day-to-day path is CAPI + Tilt (see `README.md` in this directory).
 1. Start local Temporal: `temporal server start-dev`
 2. Start PostgreSQL (see above)
 3. Install the release CRDs and the fixture releases into the cluster in `KUBECONFIG`.
- CWE resolves every OS image from them, so provisioning fails without them:
+ CWE exits at startup without the CRDs, and provisioning fails without the releases:
  ```bash
  make releases-install
  ```

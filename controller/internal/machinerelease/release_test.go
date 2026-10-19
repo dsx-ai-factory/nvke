@@ -4,14 +4,18 @@
 package machinerelease_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	enginev1 "github.com/dsx-ai-factory/nvke/management-engine/apis/v1"
 
@@ -106,6 +110,33 @@ func TestParseKubernetesVersionAnnotationsRejectsBadInjectionAnnotation(t *testi
 	_, _, err := machinerelease.ParseKubernetesVersionAnnotations(release)
 	require.ErrorIs(t, err, machinerelease.ErrInvalidRelease)
 	assert.Contains(t, err.Error(), "maybe")
+}
+
+func TestCheckCRDsPassesWhenKindsAreRegistered(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, machinerelease.CheckCRDs(t.Context(), fakeClient(t)))
+}
+
+func TestCheckCRDsFailsWhenKindsAreNotInScheme(t *testing.T) {
+	t.Parallel()
+
+	reader := fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
+	err := machinerelease.CheckCRDs(t.Context(), reader)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "checking MachineImage")
+}
+
+// An API server that serves the group without the kind is what a cluster the
+// release CRDs were never applied to looks like, and it is the case the
+// startup check exists for.
+func TestCheckCRDsNamesTheKindThatIsNotInstalled(t *testing.T) {
+	t.Parallel()
+
+	notInstalled := &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: enginev1.GroupVersion.Group, Kind: "MachineImage"}}
+
+	err := machinerelease.CheckCRDs(t.Context(), failingClient(t, notInstalled))
+	require.ErrorContains(t, err, "MachineImage CRD is not installed")
 }
 
 func TestSelectUpgradeTargetSkipsDeprecatedAndPrefersNewestBuild(t *testing.T) {
@@ -207,6 +238,21 @@ func fakeClient(t *testing.T, objects ...client.Object) client.Client {
 	scheme := runtime.NewScheme()
 	require.NoError(t, enginev1.AddToScheme(scheme))
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+}
+
+// failingClient fails every read, like an unreachable API server.
+func failingClient(t *testing.T, err error) client.Client {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, enginev1.AddToScheme(scheme))
+	return fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(interceptor.Funcs{
+		Get: func(_ context.Context, _ client.WithWatch, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
+			return err
+		},
+		List: func(_ context.Context, _ client.WithWatch, _ client.ObjectList, _ ...client.ListOption) error {
+			return err
+		},
+	}).Build()
 }
 
 func image(name, arch, variant, ubuntu, buildDate, ipxe string) *enginev1.MachineImage {

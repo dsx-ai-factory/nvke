@@ -49,6 +49,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db/migrations"
 	"github.com/dsx-ai-factory/nvke/controller/internal/dbmetrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/internal/machinerelease"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/runbook"
@@ -205,6 +206,10 @@ func main() {
 	managementK8sClient, err := kube.NewRuntimeClient(spirev1alpha1.AddToScheme, nicov1.AddToScheme, enginev1.AddToScheme)
 	if err != nil {
 		logger.Error("Failed to create management-cluster Kubernetes client", "error", err)
+		os.Exit(1)
+	}
+	if err := machinerelease.CheckCRDs(ctx, managementK8sClient); err != nil {
+		logger.Error("Failed the release CRD startup check", "error", err)
 		os.Exit(1)
 	}
 
