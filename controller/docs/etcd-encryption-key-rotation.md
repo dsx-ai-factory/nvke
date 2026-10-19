@@ -292,7 +292,8 @@ temporal workflow reset \
   --address "$rotation_temporal_address" \
   --namespace "$rotation_temporal_namespace" \
   --workflow-id "$rotation_workflow_id" \
-  --event-id "$reviewed_workflow_task_completed_event_id"
+  --event-id "$reviewed_workflow_task_completed_event_id" \
+  --reason "$reviewed_reset_rationale"
 ```
 
 ### Control-plane host lost during a rotation
