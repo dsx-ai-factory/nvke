@@ -1149,7 +1149,8 @@ esac
 // acquire a lock, even when Force is set or expiration parsing fails. Persisted
 // renewing/restart_pending intent from either executor requires renewal even
 // with fresh certificates, because only a renewal attempt resumes it; the
-// runbook's own intent selects the legacy executor, the only one that reads it.
+// runbook's own intent selects the legacy executor, the only one that reads it,
+// followed by the typed executor when the agent also holds pending intent.
 func TestCertificateRenewalRunbookCheckOnlyIsReadOnly(t *testing.T) {
 	runbookStates := map[string]string{
 		"none":            "",
@@ -1190,6 +1191,9 @@ func TestCertificateRenewalRunbookCheckOnlyIsReadOnly(t *testing.T) {
 					pendingIntent := legacyIntent || agentName == "renewing" || agentName == "restart_pending"
 					output, err := harness.run(t)
 					switch {
+					case legacyIntent && (agentName == "renewing" || agentName == "restart_pending"):
+						require.NoError(t, err, output)
+						require.Equal(t, "RENEWAL_REQUIRED=legacy_then_typed\n", output)
 					case legacyIntent:
 						require.NoError(t, err, output)
 						require.Equal(t, "RENEWAL_REQUIRED=legacy\n", output)

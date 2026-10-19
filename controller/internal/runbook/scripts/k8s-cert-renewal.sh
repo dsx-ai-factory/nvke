@@ -528,23 +528,29 @@ main() {
     # dispatch even with fresh certificates: only a renewal attempt resumes it.
     # This runbook's own intent is reported as legacy because the typed agent
     # executor never reads this phase file and could not finish its restarts.
+    # When both executors hold intent, legacy_then_typed asks for both in one
+    # cycle, so neither pending restart waits for the next due time.
     validate_input
     load_state
-    if [[ "$STATE_PHASE" == "renewing" || "$STATE_PHASE" == "restart_pending" ]]; then
-      echo "RENEWAL_REQUIRED=legacy"
-      return 0
-    fi
+    local agent_state=""
     if [[ -f "$AGENT_STATE_FILE" ]]; then
-      local agent_state
       agent_state="$(jq -r '.k8sCertRenewalState // ""' "$AGENT_STATE_FILE")" || die "Unable to parse the node-agent state file."
       case "$agent_state" in
-        renewing|restart_pending)
-          echo "RENEWAL_REQUIRED=true"
-          return 0
-          ;;
-        "") ;;
+        renewing|restart_pending|"") ;;
         *) die "Node-agent state has unknown certificate-renewal state '$agent_state'." ;;
       esac
+    fi
+    if [[ "$STATE_PHASE" == "renewing" || "$STATE_PHASE" == "restart_pending" ]]; then
+      if [[ -n "$agent_state" ]]; then
+        echo "RENEWAL_REQUIRED=legacy_then_typed"
+      else
+        echo "RENEWAL_REQUIRED=legacy"
+      fi
+      return 0
+    fi
+    if [[ -n "$agent_state" ]]; then
+      echo "RENEWAL_REQUIRED=true"
+      return 0
     fi
     local expiring
     if ! expiring="$(check_expiring_certs)"; then

@@ -950,6 +950,11 @@ func TestCheckKubernetesCertificateRenewalRequiredUsesEmbeddedReadOnlyMode(t *te
 			response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=legacy\n"},
 			want:     KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true},
 		},
+		{
+			name:     "pending intent in both executors",
+			response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=legacy_then_typed\n"},
+			want:     KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true, Typed: true},
+		},
 		{name: "unknown", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=unknown\n"}, wantErr: true},
 		{name: "normal renewal marker is insufficient", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_OUTCOME=unchanged\n"}, wantErr: true},
 		{name: "failed check", response: &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_REQUIRED=false\n", ExitCode: 1}, wantErr: true},

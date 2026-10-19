@@ -1056,3 +1056,59 @@ func TestRenewK8sCertsPendingLegacyIntentUsesLegacyExecutor(t *testing.T) {
 	env.AssertNotCalled(t, "ResolveKubernetesCertificateRenewal", mock.Anything, mock.Anything)
 	env.AssertExpectations(t)
 }
+
+// TestRenewK8sCertsPendingIntentInBothExecutorsFinishesBothInOneCycle models a
+// legacy phase file left in restart_pending and a later forced typed attempt that
+// also failed mid-restart. The legacy executor resumes its own phase file, then
+// the typed executor resumes the agent's intent in the same cycle and behind the
+// same drain, so neither restart waits for the next due time.
+func TestRenewK8sCertsPendingIntentInBothExecutorsFinishesBothInOneCycle(t *testing.T) {
+	clusterID := uuid.New()
+	node := certificateRenewalWorkflowNode(clusterID, "cp-a")
+	peer := certificateRenewalWorkflowNode(clusterID, "cp-b")
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	rollouttemporal.NewActivities(&noOpRolloutLoader{}, rollout.NewRegistry()).Register(env)
+	a := &activities.Activities{}
+	events := &kubeVipGuardEvents{}
+	expectKubeVipGuard(env, events, kubeVipGuardBehavior{})
+	expectCertificateRenewalBegin(t, env, a, clusterID, false)
+	env.OnActivity(a.ListControlPlaneNodes, mock.Anything, clusterID).Return([]db.Node{node, peer}, nil).Once()
+	expectedIDs := []uuid.UUID{node.ID, peer.ID}
+	expectCertificateRenewalHealth(t, env, a, clusterID, expectedIDs, nil).Once()
+	expectCertificateRenewalHealth(t, env, a, clusterID, expectedIDs, &node.ID).Once()
+	expectCertificateRenewalHealth(t, env, a, clusterID, expectedIDs, &peer.ID).Once()
+	env.OnActivity(a.CheckKubernetesCertificateRenewalRequired, mock.Anything, mock.MatchedBy(func(input activities.KubernetesCertificateRenewalInput) bool {
+		return input.NodeID == node.ID
+	})).Return(activities.KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true, Typed: true}, nil).Once()
+	env.OnActivity(a.CheckKubernetesCertificateRenewalRequired, mock.Anything, mock.MatchedBy(func(input activities.KubernetesCertificateRenewalInput) bool {
+		return input.NodeID == peer.ID
+	})).Return(activities.KubernetesCertificateRenewalCheckResult{}, nil).Once()
+	env.OnActivity(a.RenewLegacyKubernetesCertificates, mock.Anything, mock.MatchedBy(func(input activities.KubernetesCertificateRenewalInput) bool {
+		return input.NodeID == node.ID && input.ExpectedEtcdMembers == 2 && !input.Force
+	})).Return(func(_ context.Context, input activities.KubernetesCertificateRenewalInput) (activities.KubernetesCertificateRenewalResult, error) {
+		events.add("legacy " + input.NodeID.String())
+		return activities.KubernetesCertificateRenewalResult{Outcome: db.CertificateRenewalOutcomeRenewed}, nil
+	}).Once()
+	env.OnActivity(a.RenewKubernetesCertificates, mock.Anything, mock.MatchedBy(func(input activities.KubernetesCertificateRenewalInput) bool {
+		return input.NodeID == node.ID && input.ExpectedEtcdMembers == 2 && !input.Force
+	})).Return(func(_ context.Context, input activities.KubernetesCertificateRenewalInput) (activities.KubernetesCertificateRenewalResult, error) {
+		events.add("typed " + input.NodeID.String())
+		// Fresh certificates: the typed operation only finishes its restarts.
+		return activities.KubernetesCertificateRenewalResult{Outcome: db.CertificateRenewalOutcomeUnchanged}, nil
+	}).Once()
+	env.OnActivity(a.CompleteCertificateRenewal, mock.Anything, mock.MatchedBy(func(input activities.CompleteCertificateRenewalInput) bool {
+		return input.Outcome == db.CertificateRenewalOutcomeRenewed
+	})).Return(activities.CompleteCertificateRenewalResult{}, nil).Once()
+
+	due := time.Now().Add(-time.Hour)
+	env.ExecuteWorkflow(RenewK8sCertsV2, RenewK8sCertsInput{ClusterID: clusterID, ThresholdDays: 14, ScheduledFor: &due})
+
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{
+		"drain-prepared " + node.ID.String(), "drain " + node.ID.String(), "legacy " + node.ID.String(), "typed " + node.ID.String(),
+		"restore " + node.ID.String(), "restored " + node.ID.String(),
+	}, events.snapshot())
+	env.AssertNotCalled(t, "ResolveKubernetesCertificateRenewal", mock.Anything, mock.Anything)
+	env.AssertExpectations(t)
+}

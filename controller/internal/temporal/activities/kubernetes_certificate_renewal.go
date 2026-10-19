@@ -68,9 +68,12 @@ type KubernetesCertificateRenewalResult struct {
 // KubernetesCertificateRenewalCheckResult selects whether a node needs renewal
 // dispatch. Legacy reports pending legacy-runbook intent, which only the legacy
 // executor can resume: the typed agent operation never reads its phase file.
+// Typed, set only with Legacy, reports that the agent also holds pending intent,
+// so the typed executor must run after the legacy one in the same cycle.
 type KubernetesCertificateRenewalCheckResult struct {
 	Required bool
 	Legacy   bool
+	Typed    bool
 }
 
 // CheckKubernetesCertificateRenewalRequired reads expiry and either executor's
@@ -110,6 +113,8 @@ func (a *Activities) CheckKubernetesCertificateRenewalRequired(
 		return KubernetesCertificateRenewalCheckResult{Required: true}, nil
 	case "RENEWAL_REQUIRED=legacy":
 		return KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true}, nil
+	case "RENEWAL_REQUIRED=legacy_then_typed":
+		return KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true, Typed: true}, nil
 	default:
 		return KubernetesCertificateRenewalCheckResult{}, errors.New("certificate expiry check has no recognized result")
 	}

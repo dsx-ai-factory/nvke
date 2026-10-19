@@ -313,8 +313,9 @@ func renewK8sCerts(
 // renewCertificatesOnNodeForCycle selects only due nodes before any guard or
 // mutating dispatch. The read-only result is recorded as unchanged; Force skips
 // selection. Pending legacy-runbook intent goes straight to the legacy executor,
-// the only one that can finish its restarts. A single control-plane node never
-// drains, even when forced.
+// the only one that can finish its restarts; when the agent also holds pending
+// intent, the typed executor follows in the same cycle so neither restart waits
+// for the next due time. A single control-plane node never drains, even when forced.
 func renewCertificatesOnNodeForCycle(
 	ctx workflow.Context,
 	cluster rollout.Cluster,
@@ -322,7 +323,7 @@ func renewCertificatesOnNodeForCycle(
 	input activities.KubernetesCertificateRenewalInput,
 	checkExpiry bool,
 ) (activities.KubernetesCertificateRenewalResult, *activities.ResolveKubernetesCertificateRenewalInput, error) {
-	legacy := false
+	legacy, thenTyped := false, false
 	if checkExpiry && !input.Force {
 		var a *activities.Activities
 		var check activities.KubernetesCertificateRenewalCheckResult
@@ -332,12 +333,35 @@ func renewCertificatesOnNodeForCycle(
 		if !check.Required {
 			return activities.KubernetesCertificateRenewalResult{Outcome: db.CertificateRenewalOutcomeUnchanged}, nil, nil
 		}
-		legacy = check.Legacy
+		legacy, thenTyped = check.Legacy, check.Legacy && check.Typed
 	}
 	if input.ExpectedEtcdMembers == 1 {
-		return renewCertificatesOnNode(ctx, input, legacy)
+		return renewCertificatesOnNodeWithExecutors(ctx, input, legacy, thenTyped)
 	}
-	return renewCertificatesOnNodeBehindKubeVipDrain(ctx, cluster, adaptercontroller.NewNode(node, ""), input, legacy)
+	return renewCertificatesOnNodeBehindKubeVipDrain(ctx, cluster, adaptercontroller.NewNode(node, ""), input, legacy, thenTyped)
+}
+
+// renewCertificatesOnNodeWithExecutors runs the selected executor and, when
+// thenTyped is set after a legacy run, the typed executor next so pending agent
+// intent also finishes. Either executor renewing makes the node renewed.
+func renewCertificatesOnNodeWithExecutors(
+	ctx workflow.Context,
+	input activities.KubernetesCertificateRenewalInput,
+	legacy bool,
+	thenTyped bool,
+) (activities.KubernetesCertificateRenewalResult, *activities.ResolveKubernetesCertificateRenewalInput, error) {
+	result, unresolved, err := renewCertificatesOnNode(ctx, input, legacy)
+	if err != nil || !legacy || !thenTyped {
+		return result, unresolved, err
+	}
+	typedResult, unresolved, err := renewCertificatesOnNode(ctx, input, false)
+	if err != nil {
+		return typedResult, unresolved, err
+	}
+	if result.Outcome == db.CertificateRenewalOutcomeRenewed {
+		typedResult.Outcome = db.CertificateRenewalOutcomeRenewed
+	}
+	return typedResult, nil, nil
 }
 
 // renewCertificatesOnNodeBehindKubeVipDrain brackets one node's renewal with the
@@ -355,6 +379,7 @@ func renewCertificatesOnNodeBehindKubeVipDrain(
 	node rollout.Node,
 	input activities.KubernetesCertificateRenewalInput,
 	legacy bool,
+	thenTyped bool,
 ) (activities.KubernetesCertificateRenewalResult, *activities.ResolveKubernetesCertificateRenewalInput, error) {
 	var result activities.KubernetesCertificateRenewalResult
 	var unresolved *activities.ResolveKubernetesCertificateRenewalInput
@@ -368,7 +393,7 @@ func renewCertificatesOnNodeBehindKubeVipDrain(
 		[]rollout.NodeGuardRef{{Name: rolloutkubevip.GuardNameKubeVipDrainRestore}},
 		func() error {
 			var renewErr error
-			result, unresolved, renewErr = renewCertificatesOnNode(ctx, input, legacy)
+			result, unresolved, renewErr = renewCertificatesOnNodeWithExecutors(ctx, input, legacy, thenTyped)
 			return renewErr
 		},
 	)
