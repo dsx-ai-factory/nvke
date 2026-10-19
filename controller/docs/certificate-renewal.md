@@ -79,7 +79,7 @@ Two etcd voters cannot lose one, so a cluster with exactly two control-plane
 nodes is never renewed. Acceptance refuses it and records the cycle as `failed`
 with `phase` `two-control-plane-voters`, without the mutation lock. The
 controller does not retry that cycle while `controlPlaneConfig.desiredCount`
-stays at 2; changing it to 3 or more lets the hourly retry resume. Scaling
+stays at 2; changing it to 3 or more lets the automatic retry resume. Scaling
 down to one node is not possible: the controller only adds control-plane nodes,
 and it refuses to delete a healthy node that would leave fewer than three.
 Scale such a cluster to three or more nodes before its leaf certificates expire.
@@ -111,8 +111,12 @@ pods again) and in the runbook's additional lock and CA fingerprint checks.
 `nextCertRenewalDue` advances by `certRenewal.interval` only after the workflow
 succeeds. A failed scheduled cycle leaves the old due time intact and therefore
 remains overdue until a fresh cycle succeeds. If the failure released the
-mutation lock, the controller retries with a new workflow ID after a fixed
-one-hour backoff. A retained `certificate_renewal` lock prevents automatic retry.
+mutation lock, the controller retries with a new workflow ID once both
+`nextCertRenewalDue` and a fixed one-hour backoff after
+`certificateRenewal.completedAt` have passed. A failure does not move
+`nextCertRenewalDue`, so a failed cycle that started before its due time, such
+as a forced one, is not retried until that due time arrives, up to
+`certRenewal.interval` later. A retained `certificate_renewal` lock prevents automatic retry.
 When acceptance refuses a cycle because of cluster state (unfinished
 control-plane membership, upgrade or recycling work, a node-agent installation,
 or two control-plane nodes), the cycle is recorded as `failed` with `phase`
@@ -197,7 +201,8 @@ checks always use the embedded status-only implementation, not a configured
 runbook override that might ignore the status-only mode.
 
 The controller never reopens the same failed cycle ID. Released failures retry
-automatically after one hour with a fresh ID; retained-lock failures stay halted.
+automatically with a fresh ID once both `nextCertRenewalDue` and the one-hour
+backoff have passed; retained-lock failures stay halted.
 For a retained lock, first establish that the reported operation and all its
 attempts have stopped, including any legacy manifest restoration, and repair the
 reported node/health problem. An operator must then clear only that cycle's
@@ -210,8 +215,9 @@ retained-lock release or dedicated recovery API. Do not clear the lock based
 only on cluster health or workflow completion.
 
 Clearing the lock leaves a released failure, and the controller then starts
-its own non-forced `-retry-` cycle once `certificateRenewal.completedAt` is more
-than an hour old (usually at its next reconcile). That retry takes the lock, so
+its own non-forced `-retry-` cycle once `nextCertRenewalDue` has passed and
+`certificateRenewal.completedAt` is more than an hour old. If the due time is
+still in the future, that retry waits for it, up to `certRenewal.interval`. That retry takes the lock, so
 a forced workflow started meanwhile is refused. Wait for the automatic retry and
 inspect its result; start a uniquely named forced workflow only when forced
 semantics are needed, after that retry has finished.
