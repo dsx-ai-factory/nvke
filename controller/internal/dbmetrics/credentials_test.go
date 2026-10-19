@@ -141,3 +141,40 @@ nvke_controller_renewal_mutation_lock_retained{tenant_cluster="managed"} 1
 	require.Zero(t, got["nvke_controller_credential_metrics_collection_success"].GetMetric()[0].GetGauge().GetValue())
 	require.Nil(t, got["nvke_controller_renewal_state"])
 }
+
+// TestCredentialObservationSurvivesFailedAttempt keeps a firing expiry alert from
+// resolving on one failed probe: the controller keeps the last successful
+// observation, so per-credential availability follows its age while inspection
+// availability follows the latest attempt.
+func TestCredentialObservationSurvivesFailedAttempt(t *testing.T) {
+	now := time.Now().UTC()
+	for _, test := range []struct {
+		name            string
+		observedAgo     time.Duration
+		wantObservation float64
+	}{
+		{name: "failed attempt within observation max age", observedAgo: time.Hour, wantObservation: 1},
+		{name: "failed attempt after observation max age", observedAgo: 4 * time.Hour},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			id := uuid.New()
+			observed := now.Add(-test.observedAgo)
+			cluster := db.Cluster{ID: id, Name: "managed", CreatedAt: observed, Conditions: db.ClusterConditions{Provisioned: db.NewCondition(true, "")}}
+			node := db.Node{ID: uuid.New(), ClusterID: id, Name: "node-one", Conditions: db.NodeConditions{Joined: db.NewCondition(true, "")}, CertificateInspection: &db.CertificateInspection{
+				AttemptedAt: now, ObservedAt: &observed, Available: false, Reason: "unavailable",
+				Certificates: []db.CertificateObservation{{Credential: "kubelet-client", State: "available", NotAfter: now.Add(24 * time.Hour)}},
+			}}
+
+			got := gatherCredentials(t, &credentialDBStub{clusters: []db.Cluster{cluster}, nodes: []db.Node{node}})
+
+			require.Zero(t, got["nvke_controller_certificate_inspection_available"].GetMetric()[0].GetGauge().GetValue())
+			for _, metric := range got["nvke_controller_certificate_observation_available"].GetMetric() {
+				for _, label := range metric.GetLabel() {
+					if label.GetName() == "credential" && label.GetValue() == "kubelet-client" {
+						require.InDelta(t, test.wantObservation, metric.GetGauge().GetValue(), 0.000001)
+					}
+				}
+			}
+		})
+	}
+}

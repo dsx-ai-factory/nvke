@@ -113,8 +113,8 @@ metrics from database state.
 | --- | --- |
 | `certificate_not_after_timestamp_seconds` | actual X.509 NotAfter, retained for diagnosis when inspection becomes unavailable |
 | `certificate_required` | required credential applicability; zero for optional super-admin |
-| `certificate_observation_available` | fresh, successfully parsed credential observation |
-| `certificate_inspection_available` | fresh, successful latest node inspection |
+| `certificate_observation_available` | credential found by the last successful inspection, while that inspection is within `observationMaxAge`; a later failed attempt does not clear it |
+| `certificate_inspection_available` | fresh, successful latest node inspection; zero after any failed attempt |
 | `certificate_observation_age_seconds` | seconds since the last successful inventory response; `-1` for never observed |
 | `certificate_warning_window_seconds` | configured expiry warning window |
 | `credential_monitoring_enabled` / `renewal_automation_enabled` | independent subsystem enablement |
