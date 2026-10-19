@@ -29,6 +29,11 @@ func (m *MockDB) RecordCredentialAuditEvent(ctx context.Context, event credentia
 	return args.Error(0)
 }
 
+func (m *MockDB) RecordCSRCredentialAuditEvent(ctx context.Context, event credentialaudit.Event, limit int, since time.Time) (bool, error) {
+	args := m.Called(ctx, event, limit, since)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *MockDB) Ping(ctx context.Context) error {
 	args := m.Called(ctx)
 	return args.Error(0)

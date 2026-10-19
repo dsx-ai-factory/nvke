@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/big"
 	"testing"
@@ -40,6 +41,29 @@ type csrAuditStore struct {
 func (s *csrAuditStore) RecordCredentialAuditEvent(_ context.Context, event credentialaudit.Event) error {
 	s.events = append(s.events, event)
 	return s.err
+}
+
+// RecordCSRCredentialAuditEvent applies the bound the way the database query
+// does: only events for the same cluster and node within the window count.
+func (s *csrAuditStore) RecordCSRCredentialAuditEvent(_ context.Context, event credentialaudit.Event, limit int, since time.Time) (bool, error) {
+	if s.err != nil {
+		s.events = append(s.events, event)
+		return false, s.err
+	}
+	count := 0
+	for _, stored := range s.events {
+		if stored.ID == event.ID {
+			return true, nil
+		}
+		if stored.Target == event.Target && !stored.Timestamp.Before(since) {
+			count++
+		}
+	}
+	if count >= limit {
+		return false, nil
+	}
+	s.events = append(s.events, event)
+	return true, nil
 }
 
 func TestCSRAuditPreservesApprovalOnSinkFailureAndOmitsUntrustedNames(t *testing.T) {
@@ -148,4 +172,40 @@ func TestCSRAuditRecordsSkipsOnlyForManagedNodes(t *testing.T) {
 			require.Empty(t, unchanged.Status.Conditions)
 		})
 	}
+}
+
+// TestCSRAuditBoundsRowsPerManagedNode keeps a tenant that creates many CSRs
+// naming a managed node from writing unbounded ledger rows. Writes beyond the
+// per-node bound are counted as rate_limited; another node keeps its budget.
+func TestCSRAuditBoundsRowsPerManagedNode(t *testing.T) {
+	clusterID, nodeID, otherID := uuid.New(), uuid.New(), uuid.New()
+	nodes := []db.Node{{ID: nodeID, Name: "worker-1", IP: "192.0.2.10"}, {ID: otherID, Name: "worker-2", IP: "192.0.2.11"}}
+	scheme := runtime.NewScheme()
+	require.NoError(t, certificatesv1.AddToScheme(scheme))
+	store := &csrAuditStore{}
+	results := map[string]int{}
+	recorder := credentialaudit.NewRecorder(store, slog.New(slog.DiscardHandler), func(result string) { results[result]++ })
+	reconcileCSR := func(name, node string) {
+		t.Helper()
+		// A SAN mismatch is rejected, so each fresh CSR writes one row until the bound.
+		csr := newServingCSR(t, name, time.Now(), "system:node:"+node, []string{"system:nodes"}, []string{"other"}, nil, nil)
+		csr.UID = types.UID(uuid.NewString())
+		csr.Spec.Username = "system:node:" + node
+		r := &Reconciler{
+			clusterID: clusterID, database: staticDatabase{nodes: nodes},
+			client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(csr).Build(), logger: slog.New(slog.DiscardHandler), audit: recorder,
+		}
+		_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{Name: csr.Name}})
+		require.NoError(t, err)
+	}
+	attempts := 3 * credentialaudit.CSRAuditLimit
+	for index := range attempts {
+		reconcileCSR(fmt.Sprintf("flood-%d", index), "worker-1")
+	}
+	require.Len(t, store.events, credentialaudit.CSRAuditLimit)
+	require.Equal(t, credentialaudit.CSRAuditLimit, results[credentialaudit.WriteStored])
+	require.Equal(t, attempts-credentialaudit.CSRAuditLimit, results[credentialaudit.WriteRateLimited])
+	reconcileCSR("other-node", "worker-2")
+	require.Len(t, store.events, credentialaudit.CSRAuditLimit+1)
+	require.Equal(t, otherID.String(), store.events[len(store.events)-1].Target.NodeID)
 }
