@@ -135,6 +135,73 @@ image_transport_ref() {
   printf '%s\n' "$ref"
 }
 
+# dockerhub_ref_of <image> prints the docker.io/... form of a Dockerfile FROM
+# image when it resolves to Docker Hub, and nothing otherwise. Docker reads the
+# first path segment as a registry when it contains a dot or a colon, or is
+# exactly localhost; anything else is a Docker Hub name, and a single segment is
+# an official image under library/.
+dockerhub_ref_of() {
+  local image="$1" first
+  if [[ "$image" != */* ]]; then
+    printf 'docker.io/library/%s\n' "$image"
+    return
+  fi
+  first="${image%%/*}"
+  case "$first" in
+    docker.io) printf 'docker.io/%s\n' "${image#*/}" ;;
+    *.* | *:* | localhost) ;;
+    *) printf 'docker.io/%s\n' "$image" ;;
+  esac
+}
+
+# mirror_dockerfile_bases <dockerfile> routes the recipe's own digest-pinned FROM
+# lines through CNI_DOCKERHUB_MIRROR, and is a no-op when no mirror is set.
+#
+# A --build-arg can only redirect a FROM the recipe writes as an ARG. A literal
+# FROM is resolved by the builder itself, straight to registry-1.docker.io, which
+# is how a mirrored build still fails on Docker Hub's rate limit. Only the
+# registry host moves: each line keeps its @sha256 digest, so the bytes the build
+# consumes are identical either way and the lock's source pin still covers them.
+#
+# Digest-pinned lines only, which is the conservative read: every external base in
+# these recipes is pinned, while a FROM naming an earlier build stage, scratch, or
+# an ARG never carries a digest, so none of them can be mistaken for an image.
+mirror_dockerfile_bases() {
+  local file="$1" line image hub rewritten stray
+  [[ -n "${CNI_DOCKERHUB_MIRROR:-}" ]] || return 0
+
+  rewritten="$(mktemp)"
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^([[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]+(--[^[:space:]]+[[:space:]]+)*)([^[:space:]]*@sha256:[^[:space:]]+)(.*)$ ]]; then
+      image="${BASH_REMATCH[3]}"
+      hub="$(dockerhub_ref_of "$image")"
+      if [[ -n "$hub" ]]; then
+        line="${BASH_REMATCH[1]}$(image_transport_ref "$hub")${BASH_REMATCH[4]}"
+      fi
+    fi
+    printf '%s\n' "$line"
+  done <"$file" >"$rewritten"
+  mv "$rewritten" "$file"
+
+  # The guard that matters: a FROM this did not recognise still reaches Docker
+  # Hub, and the build only fails later, under rate limiting, in another lane.
+  # A FROM naming an earlier stage, scratch, or an ARG is not an image pull.
+  local stages=" scratch "
+  stray=""
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]+(--[^[:space:]]+[[:space:]]+)*([^[:space:]]+)(.*)$ ]] || continue
+    image="${BASH_REMATCH[2]}"
+    if [[ "${BASH_REMATCH[3]}" =~ [[:space:]]+[Aa][Ss][[:space:]]+([^[:space:]]+) ]]; then
+      stages+="${BASH_REMATCH[1]} "
+    fi
+    [[ "$image" == *'$'* || "$stages" == *" ${image} "* ]] && continue
+    [[ -n "$(dockerhub_ref_of "$image")" ]] || continue
+    stray+=" ${image}"
+  done <"$file"
+  [[ -z "$stray" ]] ||
+    die "${CNI}: $(basename "$file") still resolves to Docker Hub for:${stray}; CNI_DOCKERHUB_MIRROR cannot redirect it, so a mirrored build would still be rate limited"
+}
+
 # lock_value <kind> <key> prints the pinned value, or nothing when absent.
 lock_value() {
   local kind="$1" key="$2"

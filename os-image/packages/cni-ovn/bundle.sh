@@ -175,6 +175,13 @@ grep -qxF "$public_names" "$readiness" ||
   die "${REPO} dist/images/ovnkube-node-readiness-check.sh no longer defaults to google.com cloudflare.com; re-check the probe patch"
 sed -i "s|^${public_names}\$|dns_names=\${EXTERNAL_DNS_NAMES:-\"kubernetes.default.svc.cluster.local\"}|" "$readiness"
 
+# BASE_IMAGE below is an ARG, so the build-arg redirects it. The recipe's builder
+# stages are literal FROM lines that no build-arg can reach, and the builder
+# resolves those itself -- so without this a mirrored build still pulls them from
+# registry-1.docker.io and dies on its rate limit, which is what took out every
+# e2e lane at once. Rewrites the host only; the digests are untouched.
+mirror_dockerfile_bases "$dockerfile"
+
 # Use the NVIDIA recipe with public package sources; its installers require noble.
 build_image "$src" "$dockerfile" "$IMAGE_REF" \
   --build-arg "BASE_IMAGE=$(image_transport_ref "${UBUNTU_BASE_IMAGE}")" \
