@@ -332,6 +332,27 @@ func TestCertificateRenewalRunbookStatusOnlyAbandonsFailedOperation(t *testing.T
 	require.Equal(t, "RENEWAL_TERMINAL_OPERATION_ID=next-cycle\n", output)
 }
 
+// TestCertificateRenewalRunbookStatusOnlyAbandonsWithoutStateDir resolves an
+// operation whose dispatch never started the script on a node where the runbook
+// never ran: status-only must still record the abandoned receipt.
+func TestCertificateRenewalRunbookStatusOnlyAbandonsWithoutStateDir(t *testing.T) {
+	harness := newCertificateRenewalHarness(t)
+	require.NoError(t, os.RemoveAll(harness.stateDir))
+	harness.setEnv("OPERATION_ID", "never-started")
+	harness.setEnv("STATUS_ONLY", "true")
+
+	output, err := harness.run(t)
+	require.NoError(t, err, output)
+	require.Equal(t, "RENEWAL_TERMINAL_OPERATION_ID=never-started\nRENEWAL_TERMINAL_OUTCOME=abandoned\n", output)
+	info, err := os.Stat(harness.stateDir)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+	require.NoFileExists(t, filepath.Join(harness.stateDir, "state"))
+	receipt, err := os.ReadFile(filepath.Join(harness.stateDir, "completed", fmt.Sprintf("%x", sha256.Sum256([]byte("never-started")))))
+	require.NoError(t, err)
+	require.Equal(t, "terminal-receipt-v1\nnever-started\nabandoned\n", string(receipt))
+}
+
 // TestCertificateRenewalRunbookNextOperationResumesAbandonedRenewal releases an
 // operation whose restart failed after renewal: the next operation resumes and
 // completes its pending restarts, while the abandoned operation stays fenced.

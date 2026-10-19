@@ -568,7 +568,11 @@ main() {
     validate_input
     # Use the same lock, held through the renewing process's EXIT restoration.
     # Never write phase state, install restoration traps, or enter resume/start logic.
-    exec 9<"$LOCK_FILE"
+    # Create the directory and lock without truncating it: a node where no
+    # attempt ever ran must still reach the abandoned-receipt path below.
+    mkdir -p "$STATE_DIR"
+    chmod 0700 "$STATE_DIR"
+    exec 9>>"$LOCK_FILE"
     flock -w "$LOCK_TIMEOUT" 9 || die "Timed out waiting for certificate-renewal termination."
     # The controller resolves only after it stopped retrying. Holding the flock
     # proves no attempt is running, so a missing receipt means the operation
