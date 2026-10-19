@@ -29,6 +29,23 @@ func TestFailedRotationCannotRestartAtBeginWithSameOwner(t *testing.T) {
 	require.NotNil(t, cluster.Conditions.UpdateInProgress)
 }
 
+// TestFailedPrepareRotationRequiresNewWorkflowID covers a prepare failure, which
+// already released the lock, so no reset of that workflow can succeed.
+func TestFailedPrepareRotationRequiresNewWorkflowID(t *testing.T) {
+	cluster := runningRotation()
+	cluster.Conditions.EtcdKeyRotation.State = db.EtcdKeyRotationStateFailed
+	cluster.Conditions.EtcdKeyRotation.Phase = db.EtcdKeyRotationPhasePrepare
+	db.ClearUpdateInProgress(&cluster)
+	a, tx := rotationActivities(t, &cluster)
+	_, err := a.BeginEtcdEncryptionKeyRotation(t.Context(), activities.BeginEtcdEncryptionKeyRotationInput{
+		ClusterID: cluster.ID, WorkflowID: cluster.Conditions.EtcdKeyRotation.WorkflowID,
+	})
+	require.ErrorContains(t, err, "start a new rotation with a new workflow ID")
+	require.NotContains(t, err.Error(), "requires reset")
+	require.Zero(t, tx.writes)
+	require.Equal(t, db.EtcdKeyRotationStateFailed, cluster.Conditions.EtcdKeyRotation.State)
+}
+
 // TestLegacyRotationPayloadsRemainUnchanged preserves old activity command
 // payloads when the versioned workflow omits lifecycle ownership.
 func TestLegacyRotationPayloadsRemainUnchanged(t *testing.T) {
