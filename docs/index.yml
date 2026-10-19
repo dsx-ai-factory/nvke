@@ -32,6 +32,8 @@ navigation:
             path: operate/plan-installation.md
           - page: Get NVKE artifacts from NVKR and write release manifests
             path: operate/build-node-images.md
+          - page: Build and verify your own node image
+            path: operate/build-and-verify-node-image.md
           # Absolute URL: NVKR is a separate Fern instance, served under
           # docs.nvidia.com/nvke/nvkr alongside this site.
           - link: NVKR documentation

@@ -5,6 +5,9 @@ controller can reach the node over SPIFFE mTLS, built on Ubuntu's
 NVIDIA-tuned kernel flavor (`linux-nvidia`/`linux-nvidia-64k`), not the
 generic default. The contract is [SPEC.md](SPEC.md).
 
+> **Canonical licensing:** For internal/dev use only - contact Canonical
+> before commercial production use.
+
 26.04 LTS is the default. 24.04 LTS is built and published alongside it, for
 consumers whose other software pins that release — see `UBUNTU_RELEASE` under
 [Build the OS image](#build-the-os-image).
@@ -55,6 +58,11 @@ requiring approximately three times the source ISO's size in total disk space;
 an existing patched ISO adds to that peak until it is replaced. Legacy
 `.patched.iso.tmp` leftovers are not reused; the existing Make `clean` target
 removes them with the ISO cache and its other build outputs.
+
+A bake requires a clean checkout: `check-source` fails on any tracked or
+untracked change, so commit or stash first. Rebuilding a variant also fails
+while `packer/output-<variant>/` exists; run
+`make -C os-image/packer clean-fde-output` or `clean-non-fde-output` first.
 
 From the repository root, bake and smoke-test with native KVM:
 
@@ -566,8 +574,9 @@ write_files:
 `nvke-agent` starts after the workload API socket exists.
 
 The site SPIRE server must also register a workload entry for root
-`nvke-agent` (unix attestor, uid 0) and a `/nke-service/...` identity for
-whatever will dial the node (controller or `nvke-os-image-check`).
+`nvke-agent` (unix attestor, uid 0) and an identity under an accepted caller
+path for whatever will dial the node (controller or `nvke-os-image-check`);
+see [Checker](#checker).
 
 ## Conntrack limits
 
@@ -606,20 +615,74 @@ The Make targets do not collect the capture; use direct Packer for this output.
 
 ## Checker
 
-From the repository root (`make build` writes `bin/nvke-os-image-check`):
+`nvke-os-image-check` confirms that a booted node's `nvke-agent` answers over
+SPIFFE mTLS. Use it to qualify an image you built, against a SPIRE server you
+control. It is not an install step: on the management-cluster path no SPIRE
+server exists until `nvkectl bootstrap site` runs, so a node has nothing to
+attest to before then.
+
+`make build` from the repository root writes `bin/nvke-os-image-check`;
+`make -C os-image build` writes `os-image/bin/nvke-os-image-check`.
+
+### Before you run it
+
+- The node booted with the [first-boot user data](#first-boot-cloud-init),
+  attested to your SPIRE server, and `nvke-agent` is active on it. Until the
+  node attests, `journalctl -u nvke-agent` shows
+  `timed out waiting for SPIFFE workload API socket` and the unit restarts.
+- Your SPIRE server has the workload entry for root `nvke-agent` (unix
+  attestor, uid 0), parented to the node's agent SPIFFE ID.
+- The machine running the checker has a SPIRE agent in the same trust domain,
+  and an entry that issues the checker an SVID under a caller path the agent
+  accepts:
+
+  | Prefix | Status |
+  |---|---|
+  | `/tenant/nvke/service/` | Canonical. |
+  | `/nke-service/` | Legacy. Still what the SPIRE values under `controller/deploy/` and `controller/scripts/dev-env-spire.sh` issue. |
+  | `/nvke-service/`, `/tenant/nke/service/` | Transitional. |
+
+  The checker refuses to dial when its own SVID is outside these, because the
+  agent would reject the handshake. `controller/scripts/dev-env-spire.sh` sets
+  up a local SPIRE.
+
+### Run it
 
 ```bash
 nvke-os-image-check --endpoint 192.0.2.10:15005
 ```
 
-The process needs a SPIFFE workload API with an SVID whose path starts with
-`/nke-service/`, in the same trust domain as the node. Default socket:
+| Flag | Default | Meaning |
+|---|---|---|
+| `--endpoint` | required | Node address, `host` or `host:port`. The port defaults to `15005`. |
+| `--spiffe-socket` | `unix:///tmp/spire-agent/public/api.sock` | Local SPIFFE workload API. |
+| `--expect-trust-domain` | unset | Fail unless the checker's own SVID is in this trust domain. |
+| `--tls-jwt` | `false` | Expect the `NKEAuth` record; see below. |
+| `--timeout` | `30s` | Limit for the whole probe. |
+| `--version` | | Print the version and exit. |
 
-`unix:///tmp/spire-agent/public/api.sock`
+A pass means all of these held, in order:
 
-Override with `--spiffe-socket`. This is the same shape as the controller
-dialer; it is not a SPIRE server. For a local SPIRE, see
-`controller/scripts/dev-env-spire.sh`.
+1. The checker's SVID is under an accepted caller path, and in
+   `--expect-trust-domain` if you set it.
+2. The mTLS handshake completed, and the agent's SVID is in the checker's
+   trust domain.
+3. gRPC reflection on the agent lists `proto.NodeAgent`.
+4. `GetKubeadmStatus` returned.
+
+On a pass the checker exits 0 and logs `nvke-agent reachable` with
+`agent_version`, `kubeadm_status` and `services`. On a failed probe it exits 1
+and logs `probe failed`; a usage error exits 2.
+
+| Error starts with | Likely cause |
+|---|---|
+| `spiffe workload api:` | No workload API at `--spiffe-socket`, or no entry issues the checker an SVID. |
+| `client spiffe identity:` | The checker's SVID path is outside the accepted prefixes, or its trust domain differs from `--expect-trust-domain`. The message names only the canonical prefix. |
+| `nvke-agent rpc: reflection: dial nvke-agent:` | The connection or handshake failed: the port is unreachable, `nvke-agent` is not running because the node has not attested, or the agent's SVID is in another trust domain. Check `journalctl -u spire-agent` on the node. If the error mentions the server preface, the agent likely runs `--grpc-auth-mode=tls-jwt`; add `--tls-jwt`. |
+| `nvke-agent rpc: proto.NodeAgent not in reflection listing` | Something other than `nvke-agent` answered on the port. |
+| `nvke-agent rpc: GetKubeadmStatus:` | The handshake worked but the agent failed the call. Check `journalctl -u nvke-agent` on the node. |
+
+### `tls-jwt` agents
 
 If the node runs `nvke-agent --grpc-auth-mode=tls-jwt`, pass `--tls-jwt`:
 
