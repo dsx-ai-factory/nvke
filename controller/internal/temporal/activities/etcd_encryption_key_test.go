@@ -38,7 +38,7 @@ func TestPendingKubeAPIEncryptionKeyIsStableAcrossRetries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, pending, retriedPending)
 
-	require.NoError(t, a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID))
+	require.NoError(t, a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID, true))
 
 	retriedAfterFinalize, err := a.ensurePendingKubeAPIEncryptionKey(ctx, clusterID)
 	require.NoError(t, err)
@@ -70,7 +70,7 @@ func TestFinalizePendingKubeAPIEncryptionKeyRejectsSecretWithoutAKey(t *testing.
 		k8sClient: k8sClient,
 	}
 
-	err := a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID)
+	err := a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID, true)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "neither pending nor active key")
 }
@@ -113,7 +113,7 @@ func TestPendingKubeAPIEncryptionRotationKeyIsFreshAndStableAcrossRetries(t *tes
 	name := string(stored.Data[constants.EtcdEncryptionKeyFieldPendingName])
 	require.NotEmpty(t, name)
 	require.NotEqual(t, constants.LegacyAPIEncryptionKeyName, name)
-	require.NoError(t, a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID))
+	require.NoError(t, a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID, false))
 	activeName, err := a.requireKubeAPIEncryptionKeyName(ctx, clusterID)
 	require.NoError(t, err)
 	require.Equal(t, name, activeName)
