@@ -318,6 +318,33 @@ func TestRetainedFailedRenewalKeepsFencingUntilReleased(t *testing.T) {
 	}
 }
 
+// TestFailedV1StartReleasesReservationForV2Begin: a V1 history never resolves its
+// operation and the reconciler keeps unfenced records, so a failed V1 Start must
+// release its reservation instead of blocking later cycles and agent upgrades.
+func TestFailedV1StartReleasesReservationForV2Begin(t *testing.T) {
+	store := newFenceStore()
+	store.cluster.Conditions.UpdateInProgress = nil
+	agent := &agenttest.FakeClient{
+		StartKubernetesCertificateRenewalHook: func(db.Node, *nvkeproto.StartKubernetesCertificateRenewalRequest) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error) {
+			require.NotNil(t, store.cluster.CertificateRenewal, "the reservation is held while the RPC runs")
+			return nil, errors.New("connection refused")
+		},
+	}
+	a := fenceActivities(store, agent)
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestActivityEnvironment()
+	env.RegisterActivity(a.RenewKubernetesCertificates)
+
+	_, err := env.ExecuteActivity(a.RenewKubernetesCertificates, activities.KubernetesCertificateRenewalInput{
+		NodeID: store.nodes[0].ID, OperationID: "v1-operation", ThresholdDays: 14,
+	})
+
+	require.ErrorContains(t, err, "failed to start certificate renewal")
+	require.Nil(t, store.cluster.CertificateRenewal, "a failed V1 Start must not outlive its activity")
+	require.NoError(t, beginFenceOwner(t, a, store), "a later V2 cycle is admitted")
+	require.Equal(t, db.CertificateRenewalStateAccepted, store.cluster.Conditions.CertificateRenewal.State)
+}
+
 func stableRenewalNode(clusterID uuid.UUID) db.Node {
 	return db.Node{
 		ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, Name: "cp-0", IP: "10.0.0.10",

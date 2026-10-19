@@ -440,9 +440,10 @@ func TestReserveCertificateRenewalSameNodeReattach(t *testing.T) {
 	}
 }
 
-// TestRenewalReservationAfterFailedStart keeps #1692's release only where the
-// node's termination is confirmed: a legacy script that exited. A failed or empty
-// Start may still have been accepted, so its retries reattach to the reservation.
+// TestRenewalReservationAfterFailedStart keeps #1692's release where the node's
+// termination is confirmed (a legacy script that exited) and for a failed V1
+// Start, whose unfenced reservation nothing else would clear. An empty Start may
+// still have been accepted, so its retries reattach to the reservation.
 func TestRenewalReservationAfterFailedStart(t *testing.T) {
 	for _, test := range []struct {
 		name         string
@@ -452,7 +453,7 @@ func TestRenewalReservationAfterFailedStart(t *testing.T) {
 		wantError    string
 		wantReleased bool
 	}{
-		{name: "start RPC fails", err: status.Error(codes.Unavailable, "connection refused"), wantError: "failed to start certificate renewal"},
+		{name: "start RPC fails", err: status.Error(codes.Unavailable, "connection refused"), wantError: "failed to start certificate renewal", wantReleased: true},
 		{name: "start returns no operation", response: &nvkeproto.StartKubernetesCertificateRenewalResponse{}, wantError: "empty certificate renewal operation"},
 		{
 			name: "legacy runbook exits non-zero",
@@ -490,7 +491,7 @@ func TestRenewalReservationAfterFailedStart(t *testing.T) {
 
 			require.ErrorContains(t, err, test.wantError)
 			if test.wantReleased {
-				require.Nil(t, database.cluster.CertificateRenewal, "a terminated legacy script must not keep the cluster's renewal reservation")
+				require.Nil(t, database.cluster.CertificateRenewal, "a terminated legacy script or failed V1 Start must not keep the cluster's renewal reservation")
 			} else {
 				require.Equal(t, &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: "new-operation"}, database.cluster.CertificateRenewal,
 					"unconfirmed termination keeps the reservation for the retry to reattach")
