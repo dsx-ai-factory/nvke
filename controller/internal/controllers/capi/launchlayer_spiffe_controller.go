@@ -28,6 +28,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 // The controller watches LaunchLayerMachine, read as unstructured because
@@ -129,7 +130,7 @@ func (c *LaunchLayerSpiffeController) Reconcile(ctx context.Context, req ctrl.Re
 		logger.Info("Waiting for Machine controller to set OwnerRef on LaunchLayerMachine")
 		return ctrl.Result{}, nil
 	}
-	hostID := machine.GetAnnotations()[constants.MachineAnnotationKeyHostID]
+	hostID := keys.MachineHostID.Value(machine.GetAnnotations())
 	if hostID == "" {
 		logger.Debug("Machine has no host-id annotation, skipping SPIRE agent path reconciliation")
 		return ctrl.Result{}, nil
@@ -162,7 +163,7 @@ func (c *LaunchLayerSpiffeController) Reconcile(ctx context.Context, req ctrl.Re
 		logger.Info("Node has no SPIRE agent ID path to record", "attestationMethod", node.SpireAttestationMethod)
 		return ctrl.Result{}, nil
 	}
-	if existingPath := machine.GetAnnotations()[constants.MachineAnnotationKeySpireAgentSpiffeIDPath]; existingPath != "" {
+	if existingPath := keys.MachineSpireAgentSpiffeIDPath.Value(machine.GetAnnotations()); existingPath != "" {
 		if existingPath != spireAgentSpiffeIDPath {
 			logger.Info("Machine already has a SPIRE agent ID path for another attestation identity, skipping annotation update")
 		}
@@ -178,11 +179,11 @@ func (c *LaunchLayerSpiffeController) Reconcile(ctx context.Context, req ctrl.Re
 			Name:      machine.Name,
 			Namespace: machine.Namespace,
 			Annotations: map[string]string{
-				constants.MachineAnnotationKeySpireAgentSpiffeIDPath: spireAgentSpiffeIDPath,
+				keys.MachineSpireAgentSpiffeIDPath.String(): spireAgentSpiffeIDPath,
 			},
 		},
 	}
-	logger.Info("Applying Machine annotation", "machineNamespace", applyMachine.Namespace, "machineName", applyMachine.Name, "annotation", constants.MachineAnnotationKeySpireAgentSpiffeIDPath)
+	logger.Info("Applying Machine annotation", "machineNamespace", applyMachine.Namespace, "machineName", applyMachine.Name, "annotation", keys.MachineSpireAgentSpiffeIDPath.String())
 	if err := c.k8sClient.Patch(ctx, applyMachine, client.Apply, client.FieldOwner(constants.FieldManagerLaunchLayerSpiffe), client.ForceOwnership); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to apply machine: %w", err)
 	}

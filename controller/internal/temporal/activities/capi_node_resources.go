@@ -518,7 +518,9 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	annotations := map[string]string{}
 
 	if annotation != nil {
-		annotations[rebootAnnotationProvider.HardRebootAnnotationKey()] = *annotation
+		for _, key := range rebootAnnotationProvider.HardRebootAnnotationKeys() {
+			annotations[key] = *annotation
+		}
 	}
 
 	machine := &clusterv1.Machine{

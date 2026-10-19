@@ -24,6 +24,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
 const (
@@ -91,10 +92,10 @@ func TestUnit_LaunchLayerSpiffeControllerReconcile(t *testing.T) {
 
 			machine := newMachineForLaunchLayerSpiffeTest(params.existingPath)
 			if params.missingHostID {
-				delete(machine.Annotations, constants.MachineAnnotationKeyHostID)
+				keys.MachineHostID.Delete(machine.Annotations)
 			}
 			if params.invalidHostID {
-				machine.Annotations[constants.MachineAnnotationKeyHostID] = "not-a-uuid"
+				machine.Annotations[keys.MachineHostID.String()] = "not-a-uuid"
 			}
 			launchLayerMachine := newLaunchLayerMachineForSpiffeTest(params.instanceID, params.ownerRef, params.deleting)
 			reader := &launchLayerSpiffeReaderStub{node: db.Node{SpiffeEnabled: true, SpireAttestationMethod: params.method}, err: params.dbErr}
@@ -115,10 +116,10 @@ func TestUnit_LaunchLayerSpiffeControllerReconcile(t *testing.T) {
 			gotMachine := &clusterv1.Machine{}
 			require.NoError(t, controller.k8sClient.Get(t.Context(), client.ObjectKeyFromObject(machine), gotMachine))
 			if params.wantPath == "" {
-				require.NotContains(t, gotMachine.Annotations, constants.MachineAnnotationKeySpireAgentSpiffeIDPath)
+				require.False(t, keys.MachineSpireAgentSpiffeIDPath.Has(gotMachine.Annotations))
 				return
 			}
-			require.Equal(t, params.wantPath, gotMachine.Annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath])
+			require.Equal(t, params.wantPath, keys.MachineSpireAgentSpiffeIDPath.Value(gotMachine.Annotations))
 		})
 	}
 }
@@ -213,9 +214,9 @@ func TestUnit_LaunchLayerSpiffeControllerMachineGetsClusterStaticEntry(t *testin
 }
 
 func newMachineForLaunchLayerSpiffeTest(existingPath string) *clusterv1.Machine {
-	annotations := map[string]string{constants.MachineAnnotationKeyHostID: launchLayerSpiffeTestHostID}
+	annotations := map[string]string{keys.MachineHostID.String(): launchLayerSpiffeTestHostID}
 	if existingPath != "" {
-		annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath] = existingPath
+		annotations[keys.MachineSpireAgentSpiffeIDPath.String()] = existingPath
 	}
 	return &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{APIVersion: clusterv1.GroupVersion.String(), Kind: "Machine"},

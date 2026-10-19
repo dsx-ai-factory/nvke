@@ -4,13 +4,12 @@
 package capi
 
 import (
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
-// HardRebootAnnotationKey returns NVKE's own reboot-annotation key.
-// CAPD (the only real consumer of this generic/opaque path) has no
-// controller watching it, so this is unchanged behavior from before this
-// capability existed, not a working hard-reboot path.
-func (*Client) HardRebootAnnotationKey() string {
-	return constants.MachineAnnotationKeyReboot
+// HardRebootAnnotationKeys returns NVKE's reboot key under both domains, as
+// for NICo: a CAPI template may render a NicoMachine, whose provider reads
+// only the key its --reboot-annotation flag names.
+func (*Client) HardRebootAnnotationKeys() []string {
+	return keys.MachineReboot.All()
 }

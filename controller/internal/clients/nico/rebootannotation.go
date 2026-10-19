@@ -4,12 +4,14 @@
 package nico
 
 import (
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
-// HardRebootAnnotationKey returns NVKE's own reboot-annotation key. CAPNico's
-// `--reboot-annotation` flag is deployed configured to this same value, so
-// writing it triggers an out-of-band CAPNico power cycle.
-func (*Client) HardRebootAnnotationKey() string {
-	return constants.MachineAnnotationKeyReboot
+// HardRebootAnnotationKeys returns NVKE's reboot key under both domains:
+// cluster-api-provider-nico reads only the key its --reboot-annotation flag
+// names, which a deployment may still set to the legacy domain.
+// FIXME: https://github.com/dsx-ai-factory/nvke/issues/1718 -- write
+// only the current domain once every deployment reads the new key.
+func (*Client) HardRebootAnnotationKeys() []string {
+	return keys.MachineReboot.All()
 }

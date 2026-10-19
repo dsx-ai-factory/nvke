@@ -12,17 +12,17 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
-// RebootAnnotationProvider resolves the annotation key a hard reboot request
+// RebootAnnotationProvider resolves the annotation keys a hard reboot request
 // must write onto the generic CAPI Machine object for the cluster's
 // infrastructure provider to act on it. Each provider has its own
-// implementation, selected by GetRebootAnnotationProvider, because this key
-// is not uniform: CAPNico watches a configurable key (NVKE configures it to
-// HardRebootAnnotationKey's value), while CAPLL watches a hardcoded key it
-// defines itself.
+// implementation, selected by GetRebootAnnotationProvider, because the keys
+// are not uniform: CAPNico watches a configurable key, while CAPLL watches a
+// hardcoded key it defines itself.
 type RebootAnnotationProvider interface {
-	// HardRebootAnnotationKey returns the Machine annotation key that
-	// triggers an out-of-band infrastructure-level reboot for this provider.
-	HardRebootAnnotationKey() string
+	// HardRebootAnnotationKeys returns the Machine annotation keys that
+	// trigger an out-of-band infrastructure-level reboot for this provider.
+	// The same keys are applied to request a reboot and dropped to clear it.
+	HardRebootAnnotationKeys() []string
 }
 
 // GetRebootAnnotationProvider selects the RebootAnnotationProvider

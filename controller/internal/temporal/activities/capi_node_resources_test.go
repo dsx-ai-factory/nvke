@@ -1029,7 +1029,7 @@ func TestApplyCAPIMachineRebootAnnotation_LaunchLayerUsesCAPLLKey(t *testing.T) 
 		Name:      "worker-2",
 	}, storedMachine))
 	require.Contains(t, storedMachine.Annotations, "infrastructure.cluster.x-k8s.io/reboot-requested")
-	require.NotContains(t, storedMachine.Annotations, constants.MachineAnnotationKeyReboot)
+	require.False(t, keys.MachineReboot.Has(storedMachine.Annotations), "LaunchLayer nodes must not get NVKE's reboot key in either domain")
 	mockDB.AssertExpectations(t)
 }
 
