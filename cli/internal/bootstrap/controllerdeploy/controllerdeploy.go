@@ -33,7 +33,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -383,35 +382,6 @@ var Settings = []string{
 // the point DefaultConfig runs.
 func DeprecatedSettings() []envalias.Renamed {
 	return envalias.Deprecated(Settings...)
-}
-
-// controllerSettingPrefix starts the NVKE controller's settings, the
-// NVKECTL_NVKE_CONTROLLER_* entries of Settings.
-const controllerSettingPrefix = "NVKECTL_NVKE_CONTROLLER_"
-
-// removedSettingPrefixes are the earlier prefixes of the NVKE controller's
-// settings: NVKECTL_CONTROLLER_ and NKECTL_CONTROLLER_ from the cli/v0.2.0
-// release candidates, and NKECTL_CWE_ from cli/v0.1.x.
-var removedSettingPrefixes = []string{"NVKECTL_CONTROLLER_", "NKECTL_CONTROLLER_", "NKECTL_CWE_"}
-
-// RemovedSettings returns, sorted by old name, every earlier name of an NVKE
-// controller setting that is set. DefaultConfig does not read them. New is the
-// setting that replaces each one.
-func RemovedSettings() []envalias.Renamed {
-	var found []envalias.Renamed
-	for _, name := range Settings {
-		suffix, ok := strings.CutPrefix(name, controllerSettingPrefix)
-		if !ok {
-			continue
-		}
-		for _, p := range removedSettingPrefixes {
-			if old := p + suffix; os.Getenv(old) != "" {
-				found = append(found, envalias.Renamed{Old: old, New: name})
-			}
-		}
-	}
-	slices.SortFunc(found, func(a, b envalias.Renamed) int { return strings.Compare(a.Old, b.Old) })
-	return found
 }
 
 // getenv returns the setting's value, or, when it is unset or empty, the value

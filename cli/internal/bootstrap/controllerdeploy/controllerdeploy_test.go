@@ -1171,9 +1171,6 @@ func clearSettings(t *testing.T) {
 			t.Setenv(c.old, "")
 		}
 	}
-	for _, old := range removedSettingNames {
-		t.Setenv(old, "")
-	}
 }
 
 // TestDefaultConfig_RenamedSettings: each setting with a previous NKECTL_*
@@ -1218,15 +1215,17 @@ func TestDefaultConfig_RenamedSettings(t *testing.T) {
 }
 
 // TestDefaultConfig_ControllerSettings: each NVKECTL_NVKE_CONTROLLER_* setting
-// is read under that name only. An earlier name is neither read nor reported
-// as deprecated, alone or beside the new one.
+// is read under that name only. An earlier name (the cli/v0.2.0 release
+// candidates' NVKECTL_CONTROLLER_* and NKECTL_CONTROLLER_*, or cli/v0.1.x's
+// NKECTL_CWE_*) is neither read nor reported as deprecated, alone or beside the
+// new one.
 func TestDefaultConfig_ControllerSettings(t *testing.T) {
 	for _, tc := range renamedSettingCases {
-		suffix, ok := strings.CutPrefix(tc.name, controllerSettingPrefix)
+		suffix, ok := strings.CutPrefix(tc.name, "NVKECTL_NVKE_CONTROLLER_")
 		if !ok {
 			continue
 		}
-		for _, prefix := range removedSettingPrefixes {
+		for _, prefix := range []string{"NVKECTL_CONTROLLER_", "NKECTL_CONTROLLER_", "NKECTL_CWE_"} {
 			old := prefix + suffix
 			t.Run(tc.name+"/"+old, func(t *testing.T) {
 				clearSettings(t)
@@ -1260,70 +1259,6 @@ func TestDeprecatedSettings_SortedByOldName(t *testing.T) {
 	}
 	if got := DeprecatedSettings(); !slices.Equal(got, want) {
 		t.Errorf("DeprecatedSettings = %v, want %v", got, want)
-	}
-}
-
-// removedSettingNames is every earlier name of an NVKE controller setting:
-// NKECTL_CWE_* from nkectl cli/v0.1.x, and NKECTL_CONTROLLER_* and
-// NVKECTL_CONTROLLER_* from the cli/v0.2.0 release candidates. Sorted.
-var removedSettingNames = []string{
-	"NKECTL_CONTROLLER_HELM_TIMEOUT",
-	"NKECTL_CONTROLLER_IMAGE",
-	"NKECTL_CONTROLLER_PORT",
-	"NKECTL_CONTROLLER_READY_TIMEOUT",
-	"NKECTL_CONTROLLER_SPIRE_CHART",
-	"NKECTL_CONTROLLER_SPIRE_CRDS_CHART",
-	"NKECTL_CONTROLLER_TEMPORAL_CHART",
-	"NKECTL_CWE_HELM_TIMEOUT",
-	"NKECTL_CWE_IMAGE",
-	"NKECTL_CWE_PORT",
-	"NKECTL_CWE_READY_TIMEOUT",
-	"NKECTL_CWE_SPIRE_CHART",
-	"NKECTL_CWE_SPIRE_CRDS_CHART",
-	"NKECTL_CWE_TEMPORAL_CHART",
-	"NVKECTL_CONTROLLER_HELM_TIMEOUT",
-	"NVKECTL_CONTROLLER_IMAGE",
-	"NVKECTL_CONTROLLER_PORT",
-	"NVKECTL_CONTROLLER_READY_TIMEOUT",
-	"NVKECTL_CONTROLLER_SPIRE_CHART",
-	"NVKECTL_CONTROLLER_SPIRE_CRDS_CHART",
-	"NVKECTL_CONTROLLER_TEMPORAL_CHART",
-}
-
-// TestRemovedSettings: every earlier name that is set comes back, sorted,
-// with the setting that replaces it; one that is unset does not, and setting
-// its replacement does not hide it.
-func TestRemovedSettings(t *testing.T) {
-	clearSettings(t)
-	if got := RemovedSettings(); len(got) != 0 {
-		t.Fatalf("RemovedSettings with nothing set = %v", got)
-	}
-
-	t.Setenv("NKECTL_CWE_SPIRE_CHART", "oci://old.example.com/spire")
-	t.Setenv("NVKECTL_CONTROLLER_IMAGE", "nvcr.io/org/rc:1")
-	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/old:1")
-	t.Setenv("NVKECTL_NVKE_CONTROLLER_IMAGE", "nvcr.io/org/new:1")
-	want := []envalias.Renamed{
-		{Old: "NKECTL_CWE_IMAGE", New: "NVKECTL_NVKE_CONTROLLER_IMAGE"},
-		{Old: "NKECTL_CWE_SPIRE_CHART", New: "NVKECTL_NVKE_CONTROLLER_SPIRE_CHART"},
-		{Old: "NVKECTL_CONTROLLER_IMAGE", New: "NVKECTL_NVKE_CONTROLLER_IMAGE"},
-	}
-	if got := RemovedSettings(); !slices.Equal(got, want) {
-		t.Errorf("RemovedSettings = %v, want %v", got, want)
-	}
-
-	for _, old := range removedSettingNames {
-		t.Setenv(old, "x")
-	}
-	var olds []string
-	for _, r := range RemovedSettings() {
-		if !slices.Contains(Settings, r.New) {
-			t.Errorf("%s maps to %s, which DefaultConfig does not read", r.Old, r.New)
-		}
-		olds = append(olds, r.Old)
-	}
-	if !slices.Equal(olds, removedSettingNames) {
-		t.Errorf("RemovedSettings covers %v, want %v", olds, removedSettingNames)
 	}
 }
 

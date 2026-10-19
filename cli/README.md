@@ -306,12 +306,7 @@ which turns a safety check off and so answers only to its own name, and the
 `NVKECTL_NVKE_CONTROLLER_*` settings, was named
 `NKECTL_*` while the binary was called `nkectl`. The old names still work for one release: when only the old
 name is set, `nvkectl` uses it and logs a warning naming the replacement. When
-both are set, the new name wins. nvkectl does not read the earlier names of the
-`NVKECTL_NVKE_CONTROLLER_*` settings: `NKECTL_CWE_*` from cli/v0.1.x, and
-`NVKECTL_CONTROLLER_*` and `NKECTL_CONTROLLER_*` from the cli/v0.2.0 release
-candidates. `nvkectl bootstrap site` stops when one is set without its
-replacement, and warns when the replacement is set too. The release candidates'
-`--controller-image` flag is now `--nvke-controller-image`. Likewise
+both are set, the new name wins. Likewise
 `make -C cli images` reads
 `CONTROLLER_IMAGE`, and still reads `CWE_IMAGE` with a warning until
 [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes it.

@@ -42,7 +42,6 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
-	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
 )
 
@@ -2192,103 +2191,29 @@ func TestRunBootstrapSiteWarnsAboutOldSettingNames(t *testing.T) {
 	}
 }
 
-// TestRunBootstrapSiteStopsOnRemovedSettings: an earlier name of an NVKE
-// controller setting (NKECTL_CWE_*, NKECTL_CONTROLLER_* or
-// NVKECTL_CONTROLLER_*), which nvkectl does not read, stops bootstrap site
-// before the site spec is loaded when its replacement is unset, and is only a
-// warning when the replacement is set as a variable or through its flag.
-func TestRunBootstrapSiteStopsOnRemovedSettings(t *testing.T) {
-	for _, tc := range []struct {
-		desc            string
-		env             map[string]string
-		controllerImage string
-		wantErr         string
-		notInErr        string
-		wantWarning     string
-	}{
-		{
-			desc: "cli/v0.1 names, replacements unset",
-			env:  map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned", "NKECTL_CWE_PORT": "30181"},
-			wantErr: "NKECTL_CWE_IMAGE is no longer read; set NVKECTL_NVKE_CONTROLLER_IMAGE instead; " +
-				"NKECTL_CWE_PORT is no longer read; set NVKECTL_NVKE_CONTROLLER_PORT instead",
-		},
-		{
-			desc:    "release candidate NVKECTL_ name, replacement unset",
-			env:     map[string]string{"NVKECTL_CONTROLLER_IMAGE": "rc.example/c:pinned"},
-			wantErr: "NVKECTL_CONTROLLER_IMAGE is no longer read; set NVKECTL_NVKE_CONTROLLER_IMAGE instead",
-		},
-		{
-			desc:    "release candidate NKECTL_ name, replacement unset",
-			env:     map[string]string{"NKECTL_CONTROLLER_HELM_TIMEOUT": "2m"},
-			wantErr: "NKECTL_CONTROLLER_HELM_TIMEOUT is no longer read; set NVKECTL_NVKE_CONTROLLER_HELM_TIMEOUT instead",
-		},
-		{
-			desc: "two earlier names of one setting, replacement unset",
-			env:  map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned", "NVKECTL_CONTROLLER_IMAGE": "rc.example/c:pinned"},
-			wantErr: "NKECTL_CWE_IMAGE is no longer read; set NVKECTL_NVKE_CONTROLLER_IMAGE instead; " +
-				"NVKECTL_CONTROLLER_IMAGE is no longer read; set NVKECTL_NVKE_CONTROLLER_IMAGE instead",
-		},
-		{
-			desc:        "replacement set as a variable",
-			env:         map[string]string{"NVKECTL_CONTROLLER_IMAGE": "rc.example/c:pinned", "NVKECTL_NVKE_CONTROLLER_IMAGE": "new.example/c:pinned"},
-			wantErr:     "missing.yaml",
-			wantWarning: "NVKECTL_CONTROLLER_IMAGE is not read; NVKECTL_NVKE_CONTROLLER_IMAGE is set and is used instead",
-		},
-		{
-			desc:            "replacement given as --nvke-controller-image",
-			env:             map[string]string{"NKECTL_CWE_IMAGE": "old.example/c:pinned"},
-			controllerImage: "flag.example/c:pinned",
-			wantErr:         "missing.yaml",
-			wantWarning:     "NKECTL_CWE_IMAGE is not read; --nvke-controller-image is set and is used instead",
-		},
-		{
-			desc:            "one replaced by its flag, one not replaced",
-			env:             map[string]string{"NVKECTL_CONTROLLER_IMAGE": "rc.example/c:pinned", "NVKECTL_CONTROLLER_PORT": "30181"},
-			controllerImage: "flag.example/c:pinned",
-			wantErr:         "NVKECTL_CONTROLLER_PORT is no longer read; set NVKECTL_NVKE_CONTROLLER_PORT instead",
-			notInErr:        "NVKECTL_CONTROLLER_IMAGE",
-			wantWarning:     "NVKECTL_CONTROLLER_IMAGE is not read; --nvke-controller-image is set and is used instead",
-		},
-	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			for _, name := range controllerdeploy.Settings {
-				t.Setenv(name, "")
-				suffix, ok := strings.CutPrefix(name, "NVKECTL_NVKE_CONTROLLER_")
-				if !ok {
-					t.Setenv(envalias.Old(name), "")
-					continue
-				}
-				for _, prefix := range []string{"NVKECTL_CONTROLLER_", "NKECTL_CONTROLLER_", "NKECTL_CWE_"} {
-					t.Setenv(prefix+suffix, "")
-				}
-			}
-			for k, v := range tc.env {
-				t.Setenv(k, v)
-			}
+// TestRunBootstrapSiteIgnoresEarlierControllerNames: the earlier names of the
+// NVKE controller settings (NKECTL_CWE_*, NKECTL_CONTROLLER_* and
+// NVKECTL_CONTROLLER_*) are not read, so they neither stop bootstrap site nor
+// draw a warning.
+func TestRunBootstrapSiteIgnoresEarlierControllerNames(t *testing.T) {
+	for _, name := range []string{"NKECTL_CWE_IMAGE", "NKECTL_CONTROLLER_PORT", "NVKECTL_CONTROLLER_IMAGE"} {
+		t.Setenv(name, "old.example/c:pinned")
+	}
 
-			var buf bytes.Buffer
-			prev := slog.Default()
-			slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
-			t.Cleanup(func() { slog.SetDefault(prev) })
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
 
-			err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
-				siteSpec:        filepath.Join(t.TempDir(), "missing.yaml"),
-				controllerImage: tc.controllerImage,
-			})
-			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
-				t.Fatalf("runBootstrapSite error = %v, want it to contain %q", err, tc.wantErr)
-			}
-			if tc.notInErr != "" && strings.Contains(err.Error(), tc.notInErr) {
-				t.Errorf("runBootstrapSite error = %v, want no mention of %s", err, tc.notInErr)
-			}
-			logged := buf.String()
-			if tc.wantWarning == "" && strings.Contains(logged, " is not read; ") {
-				t.Errorf("warned instead of stopping:\n%s", logged)
-			}
-			if tc.wantWarning != "" && !strings.Contains(logged, tc.wantWarning) {
-				t.Errorf("no warning %q in:\n%s", tc.wantWarning, logged)
-			}
-		})
+	// A missing site spec is the first thing that stops the command.
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec: filepath.Join(t.TempDir(), "missing.yaml"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "missing.yaml") {
+		t.Fatalf("runBootstrapSite error = %v, want the missing site spec", err)
+	}
+	if logged := buf.String(); strings.Contains(logged, "level=WARN") {
+		t.Errorf("warned about a name nvkectl does not read:\n%s", logged)
 	}
 }
 

@@ -30,12 +30,5 @@ func TestMain(m *testing.M) {
 	} {
 		_ = os.Unsetenv(name)
 	}
-	// The earlier names of the NVKE controller settings, any of which stops
-	// bootstrap site.
-	for _, prefix := range []string{"NVKECTL_CONTROLLER_", "NKECTL_CONTROLLER_", "NKECTL_CWE_"} {
-		for _, suffix := range []string{"IMAGE", "PORT", "HELM_TIMEOUT", "READY_TIMEOUT", "TEMPORAL_CHART", "SPIRE_CHART", "SPIRE_CRDS_CHART"} {
-			_ = os.Unsetenv(prefix + suffix)
-		}
-	}
 	os.Exit(m.Run())
 }
