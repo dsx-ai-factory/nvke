@@ -8,7 +8,7 @@ Authentication has three modes. Off is the default.
 |---|---|
 | Off | Every request is served. This is the default. |
 | Permissive | Every request is checked and counted, then served. Nothing is rejected. |
-| Enforcing | A request without a valid token gets `401`. A valid token with no admitted group gets `403`. |
+| Enforcing | A request without a valid token gets `401`. A valid token that no admission rule matches gets `403`. |
 
 [NVKE does no authorization.](../overview/preview-status.md#api-and-access) Every caller that NVKE admits can call every endpoint, including the ones that create and delete workload clusters.
 
@@ -42,7 +42,7 @@ Authentication has three modes. Off is the default.
 
    Record the output:
 
-   - `issuer`: use this exact string as <ISSUER_URL>. NVKE compares it with the token's `iss` claim byte for byte, including any trailing slash.
+   - `issuer`: use this exact string as `<ISSUER_URL>`. NVKE compares it with the token's `iss` claim byte for byte, including any trailing slash.
    - `jwks_uri` is `<JWKS_URI>`, where NVKE fetches the signing keys. It must use `https`.
    - `id_token_signing_alg_values_supported` lists the signing algorithms. NVKE accepts only asymmetric algorithms, such as `RS256` and `ES256`.
 
