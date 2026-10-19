@@ -20,7 +20,7 @@ render() { helm template cwe "${CHART}" "$@"; }
 # reads its settings. A list compares as its items joined with commas.
 setting() {
   local got
-  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nke-controller-config") | .data["config.yaml"]' <<<"$4" |
+  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nvke-controller-config") | .data["config.yaml"]' <<<"$4" |
     yq ".$2 | (select(tag == \"!!seq\") | join(\",\")) // .")"
   if [[ "${got}" == "$3" ]]; then
     printf '  ok    %s\n' "$1"
@@ -34,7 +34,7 @@ setting() {
 # Asserts how many ClusterRoles named <fullname>-<suffix> were rendered.
 clusterrole() {
   local got
-  got="$(yq "select(.kind == \"ClusterRole\" and .metadata.name == \"cwe-cloud-workflow-engine-$2\") | .metadata.name" <<<"$4" | grep -c . || true)"
+  got="$(yq "select(.kind == \"ClusterRole\" and .metadata.name == \"cwe-nvke-controller-$2\") | .metadata.name" <<<"$4" | grep -c . || true)"
   if [[ "${got}" == "$3" ]]; then
     printf '  ok    %s\n' "$1"
   else
