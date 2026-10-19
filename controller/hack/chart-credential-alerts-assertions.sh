@@ -55,6 +55,16 @@ promtool check rules "${chart}/files/credential-alerts.yaml"
 # The fixtures resolve rule_files relative to their own directory.
 promtool test rules controller/deploy/monitoring/credential-alerts-test.yaml
 
+# The rule is opt-in, and the umbrella monitoring switch overrides the opt-in.
+# Render the whole chart so an absent template cannot hide a stray rule.
+for disabled in "" "--set credentialMonitoring.alerts.enabled=true --set global.monitoring.enabled=false"; do
+  # shellcheck disable=SC2086 # Intentional word splitting of the flag list.
+  if helm template cwe "${chart}" ${disabled} | grep -q '^kind: PrometheusRule$'; then
+    echo "ERROR: PrometheusRule rendered with ${disabled:-default values}" >&2
+    exit 1
+  fi
+done
+
 helm template cwe "${chart}" --set credentialMonitoring.alerts.enabled=true \
   --show-only templates/credential-prometheusrule.yaml > "${tmp}/rule.yaml"
 grep -q '^kind: PrometheusRule$' "${tmp}/rule.yaml"
