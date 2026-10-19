@@ -81,7 +81,9 @@ func (a *Activities) ValidateEtcdRotationMembership(ctx context.Context, input V
 		return errors.New("cannot load rotation membership probe")
 	}
 	resp, err := a.nodeAgentClient.ExecuteScript(ctx, nodes[0], "etcd-rotation-membership", script, names)
-	if err != nil || resp.GetExitCode() != 0 {
+	// The agent reports scripts it could not start with exit code 0 and status
+	// "error", so require its "success" status as well.
+	if err != nil || resp.GetExitCode() != 0 || resp.GetStatus() != "success" {
 		// Never put arbitrary node output into workflow failure/history.
 		return errors.New("live etcd membership or health does not match the rotation snapshot")
 	}

@@ -434,7 +434,7 @@ func TestRotationStopsWhenClusterDeletionStarts(t *testing.T) {
 }
 
 func TestRotationRemovalGateRejectsMembershipDriftAndRequiresEveryNodeReady(t *testing.T) {
-	for _, failure := range []string{"", "db_membership", "unfinished", "agent_not_ready", "api_not_ready", "live_membership"} {
+	for _, failure := range []string{"", "db_membership", "unfinished", "agent_not_ready", "api_not_ready", "live_membership", "probe_not_started"} {
 		name := failure
 		if name == "" {
 			name = "converged"
@@ -459,7 +459,11 @@ func TestRotationRemovalGateRejectsMembershipDriftAndRequiresEveryNodeReady(t *t
 					if failure == "live_membership" {
 						return &nvkeproto.ExecuteScriptResponse{ExitCode: 1, ErrorMessage: "untrusted output"}, nil
 					}
-					return &nvkeproto.ExecuteScriptResponse{}, nil
+					if failure == "probe_not_started" {
+						// The agent reports exec failures such as EACCES with exit code 0.
+						return &nvkeproto.ExecuteScriptResponse{ExitCode: 0, Status: "error", ErrorMessage: "untrusted output"}, nil
+					}
+					return &nvkeproto.ExecuteScriptResponse{Status: "success"}, nil
 				}
 				if failure == "api_not_ready" && node.ID == store.nodes[1].ID {
 					return nil, errors.New("untrusted output")
