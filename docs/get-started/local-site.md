@@ -12,6 +12,8 @@ The example credentials, the simulated NICo and the single-node site are for loc
 
 ## Before you begin
 
+**Validation status:** the October 18, 2026 ARM64 Colima test of revision `bdbe146745702dcb76422cee52b05a88e562935f` completed runtime installation and `make local-site-setup`, but management-cluster bootstrap was blocked by local network connectivity. The management-plane install and workload-cluster steps below remain unverified in that run. See [Runtime test evidence](#runtime-test-evidence) before following this draft walkthrough.
+
 - A Linux host, as root, with at least 10 CPUs, 24 GiB of free memory and 100 GiB of free disk; or macOS, set up in [On macOS](#on-macos).
 - The Linux kernel module `tpm_vtpm_proxy`, which the container node's TPM uses. `make -C controller host-up` loads it.
 - A standalone containerd with `nerdctl` and `buildkitd` for the node, which `cli/hack/bootstrap-e2e-host.sh install-runtime` installs, and Docker for the workload cluster nodes.
@@ -28,16 +30,15 @@ Run everything inside a Colima virtual machine with the Docker runtime. `make -C
 COLIMA_CPUS=10 COLIMA_MEMORY_GIB=28 COLIMA_DISK_GIB=100 make -C controller host-up
 ```
 
-Then open a root shell in the machine, clone the repository inside it, and install the node's container runtime beside Colima's Docker:
+Then open a root shell in the machine and clone the repository inside it:
 
 ```bash
 colima ssh
 sudo -i
 git clone https://github.com/dsx-ai-factory/nvke.git nvke && cd nvke
-cli/hack/bootstrap-e2e-host.sh install-runtime
 ```
 
-Install the other tools in the machine with its package manager and from each tool's release page. The rest of this page runs in that shell.
+Install the prerequisite tools in the machine with its package manager and from each tool's release page. The runtime installation below supplies `nerdctl`, containerd and BuildKit. The rest of this page runs in that root shell.
 
 ## Set up the machine
 
@@ -47,7 +48,30 @@ Install the other tools in the machine with its package manager and from each to
    git clone https://github.com/dsx-ai-factory/nvke.git && cd nvke
    ```
 
-2. Prepare the local site.
+2. Install the standalone container runtime, in the root shell. Read its version and checksums from the checkout and select its sockets before running the installer.
+
+   ```bash
+   export NERDCTL_VERSION="$(make --no-print-directory print-NERDCTL_VERSION)"
+   export NERDCTL_FULL_SHA256_AMD64="$(make --no-print-directory print-NERDCTL_FULL_SHA256_AMD64)"
+   export NERDCTL_FULL_SHA256_ARM64="$(make --no-print-directory print-NERDCTL_FULL_SHA256_ARM64)"
+   export CONTAINERD_ADDRESS=/run/containerd-nerdctl/containerd.sock
+   export BUILDKIT_HOST=unix:///run/buildkit-nerdctl/buildkitd.sock
+   export CONTAINERD_NAMESPACE=default
+   ```
+
+   ```bash
+   cli/hack/bootstrap-e2e-host.sh install-runtime
+   ```
+
+   The installer verifies the archive for your architecture and starts a separate containerd and BuildKit, alongside Docker. Keep these exports in the shell used for setup; a new root shell does not inherit them.
+
+   ```bash
+   nerdctl info
+   ```
+
+   The command reports the standalone containerd server. If installation reports `NERDCTL_VERSION: parameter null or not set`, run the exports above in the same shell before retrying.
+
+3. Prepare the local site.
 
    ```bash
    make local-site-setup
@@ -55,7 +79,7 @@ Install the other tools in the machine with its package manager and from each to
 
    The command builds the bootstrap images, starts the container node and records its `hosts.csv` and CA, builds the management plane's images and charts from the checkout, writes the workspace, and starts mock-NICo. The first run takes about ten minutes, most of it the node image; a rerun skips what is there. It ends with the first two commands of the flow and a list of what the workspace holds.
 
-3. Load the workspace into your shell. Every command below runs from the workspace with its environment.
+4. Load the workspace into your shell. Every command below runs from the workspace with its environment.
 
    ```bash
    source ~/nvke-local-site/env.sh
@@ -166,3 +190,22 @@ The command deletes the workload clusters through the NVKE API, stops mock-NICo 
 - [Create a workload cluster](../workload-clusters/create.md) with your own request.
 - [Observe NVKE and its clusters](../operate/observe.md).
 - [Plan your installation](../operate/plan-installation.md) for real hardware.
+
+## Runtime test evidence
+
+The October 18, 2026 test used an isolated Colima 0.10.3 / Lima 2.2.1 machine with the Docker runtime, Apple Virtualization, Ubuntu 24.04.4 ARM64, 10 CPUs, 28 GiB RAM, and separate 150 GiB root and data disks. The source revision was `bdbe146745702dcb76422cee52b05a88e562935f`, the tested head of [#1725](https://github.com/dsx-ai-factory/nvke/pull/1725). No executable source was changed.
+
+The machine was created separately with these resources; this run did not validate the macOS `host-up` creation command or the minimum disk size above. Tools were installed at the checkout's pinned versions. No `GITHUB_TOKEN` was supplied; bootstrap's Cluster API installation succeeded without one in this run.
+
+| Step | Observed result |
+| --- | --- |
+| Original runtime-install command, without exports | Failed with `NERDCTL_VERSION: parameter null or not set`. |
+| Runtime install with the exports documented above | Passed archive checksum verification; containerd and BuildKit started; `nerdctl info` succeeded alongside Docker. |
+| `make local-site-setup` | Passed: built the images and stack artifacts, started the management-node container and simulator, and wrote the workspace. |
+| Site-spec generation | Passed. |
+| `nvkectl bootstrap site -f sitespec.yaml --timeout 25m` | Created the seed cluster and reported a healthy controller, but management-cluster provisioning stalled. The run was interrupted after diagnosing the network failure; no `local-site.kubeconfig` was produced. |
+| Management-plane installation and workload-cluster creation | Not run: require the management cluster's kubeconfig. |
+
+The controller's `NodePreflight` retries reported `dial tcp 172.26.0.10:15005: i/o timeout`. The management node's SPIRE agent reported `dial tcp 172.26.0.2:30081: connect: no route to host`. Its service was running, but it had not attested and the node agent was not listening on port 15005.
+
+The seed cluster used nerdctl's `kind` bridge. Setup's `bridge_networks` function in `hack/local-site.sh` connected the management-node bridge to Docker's `kind` bridge instead; the SPIRE address was also absent from the management-node bridge. The separate bootstrap test in `cli/e2e/bootstrap/run.sh` supplies those missing steps through `attach_bootstrap_to_node_network`. That test's network preparation is not invoked by this walkthrough. Resolve this prerequisite and repeat bootstrap before treating the remaining steps as validated.
