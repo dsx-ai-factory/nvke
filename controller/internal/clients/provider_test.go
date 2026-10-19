@@ -12,6 +12,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	capiclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/launchlayer"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
@@ -28,6 +29,11 @@ func TestGetProviderClient(t *testing.T) {
 		assert.IsType(t, &capiclient.Client{}, provider.NewNodeProvider())
 		assert.IsType(t, &capiclient.Client{}, provider.TenantAPIAccess())
 		assert.IsType(t, &capiclient.Client{}, provider.NodeMachineIDLabel())
+		assert.IsType(t, &capiclient.Client{}, provider.NodePoolPayloadValidator())
+		assert.IsType(t, &capiclient.Client{}, provider.ControlPlaneConfigPayloadValidator())
+		assert.IsType(t, &capiclient.Client{}, provider.RebootAnnotationProvider())
+		assert.IsType(t, &capiclient.Client{}, provider.NodeAgentProfileValidator())
+		assert.IsType(t, &capiclient.Client{}, provider.SpireAgentPathProvider())
 	})
 
 	t.Run("nico provider exposes every settled capability backed by the nico client", func(t *testing.T) {
@@ -41,6 +47,29 @@ func TestGetProviderClient(t *testing.T) {
 		assert.IsType(t, &nico.Client{}, provider.NewNodeProvider())
 		assert.IsType(t, &nico.Client{}, provider.TenantAPIAccess())
 		assert.IsType(t, &nico.Client{}, provider.NodeMachineIDLabel())
+		assert.IsType(t, &nico.Client{}, provider.NodePoolPayloadValidator())
+		assert.IsType(t, &nico.Client{}, provider.ControlPlaneConfigPayloadValidator())
+		assert.IsType(t, &nico.Client{}, provider.RebootAnnotationProvider())
+		assert.IsType(t, &nico.Client{}, provider.NodeAgentProfileValidator())
+		assert.IsType(t, &nico.Client{}, provider.SpireAgentPathProvider())
+	})
+
+	t.Run("launchlayer provider exposes every settled capability backed by the launchlayer client", func(t *testing.T) {
+		provider, err := clients.GetProviderClient(db.Cluster{ID: uuid.New(), ProviderType: db.ProviderTypeLaunchLayer})
+		require.NoError(t, err)
+		assert.IsType(t, &launchlayer.Client{}, provider.ClusterScaffold())
+		assert.IsType(t, &launchlayer.Client{}, provider.MachineMaterialization())
+		assert.IsType(t, &launchlayer.Client{}, provider.KubeVIPConfig())
+		assert.IsType(t, &launchlayer.Client{}, provider.NodeSetProvider())
+		assert.IsType(t, &launchlayer.Client{}, provider.ControlPlaneConfigNodeProvider())
+		assert.IsType(t, &launchlayer.Client{}, provider.NewNodeProvider())
+		assert.IsType(t, &launchlayer.Client{}, provider.TenantAPIAccess())
+		assert.IsType(t, &launchlayer.Client{}, provider.NodeMachineIDLabel())
+		assert.IsType(t, &launchlayer.Client{}, provider.NodePoolPayloadValidator())
+		assert.IsType(t, &launchlayer.Client{}, provider.ControlPlaneConfigPayloadValidator())
+		assert.IsType(t, &launchlayer.Client{}, provider.RebootAnnotationProvider())
+		assert.IsType(t, &launchlayer.Client{}, provider.NodeAgentProfileValidator())
+		assert.IsType(t, &launchlayer.Client{}, provider.SpireAgentPathProvider())
 	})
 
 	t.Run("unsupported provider errors", func(t *testing.T) {

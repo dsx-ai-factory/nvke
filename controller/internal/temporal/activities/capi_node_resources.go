@@ -503,11 +503,11 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	if err != nil {
 		return err
 	}
-	rebootAnnotationProvider, err := clients.GetRebootAnnotationProvider(cluster)
+	provider, err := clients.GetProviderClient(cluster)
 	if err != nil {
 		// Deterministic: an unsupported cluster.ProviderType cannot become
 		// supported by retrying, so retrying it is pure wasted attempts.
-		return temporal.NewNonRetryableApplicationError("failed to get reboot annotation provider", "UnsupportedProvider", err)
+		return temporal.NewNonRetryableApplicationError("failed to get provider client", "UnsupportedProvider", err)
 	}
 	namespace := a.cfg.ManagementNamespaceOrDefault()
 	machineName := node.Name
@@ -518,7 +518,7 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	annotations := map[string]string{}
 
 	if annotation != nil {
-		for _, key := range rebootAnnotationProvider.HardRebootAnnotationKeys() {
+		for _, key := range provider.RebootAnnotationProvider().HardRebootAnnotationKeys() {
 			annotations[key] = *annotation
 		}
 	}

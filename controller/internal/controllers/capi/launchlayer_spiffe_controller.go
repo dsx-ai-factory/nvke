@@ -59,7 +59,7 @@ type launchLayerSpiffeReader interface {
 // LaunchLayer-backed Machine, so MachineSpireEntryController registers its
 // ClusterStaticEntry before the node joins. It is the LaunchLayer counterpart
 // of NicoSpiffeController; the path itself comes from the cluster's
-// SpireAgentPathProvider.
+// SpireAgentPathProvider, resolved through its ProviderClient.
 type LaunchLayerSpiffeController struct {
 	db        launchLayerSpiffeReader
 	k8sClient client.Client
@@ -147,11 +147,11 @@ func (c *LaunchLayerSpiffeController) Reconcile(ctx context.Context, req ctrl.Re
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("get cluster %s for node %s: %w", node.ClusterID, nodeID, err)
 	}
-	pathProvider, err := clients.GetSpireAgentPathProvider(cluster)
+	provider, err := clients.GetProviderClient(cluster)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	spireAgentSpiffeIDPath, err := pathProvider.SpireAgentPath(ctx, c.k8sClient, node, machine)
+	spireAgentSpiffeIDPath, err := provider.SpireAgentPathProvider().SpireAgentPath(ctx, c.k8sClient, node, machine)
 	if errors.Is(err, shared.ErrSpireAgentPathPending) {
 		logger.Info("Waiting for the SPIRE agent ID path", "reason", err)
 		return ctrl.Result{RequeueAfter: launchLayerSpireAgentPathRequeue}, nil

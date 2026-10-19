@@ -24,6 +24,8 @@ type ProviderClient interface {
 	TenantAPIAccess() TenantAPIAccess
 	NodeMachineIDLabel() NodeMachineIDLabel
 	RebootAnnotationProvider() RebootAnnotationProvider
+	NodeAgentProfileValidator() NodeAgentProfileValidator
+	SpireAgentPathProvider() SpireAgentPathProvider
 }
 
 type providerClient struct {
@@ -38,6 +40,8 @@ type providerClient struct {
 	tenantAPIAccess       TenantAPIAccess
 	nodeMachineIDLabel    NodeMachineIDLabel
 	rebootAnnotation      RebootAnnotationProvider
+	nodeAgentProfile      NodeAgentProfileValidator
+	spireAgentPath        SpireAgentPathProvider
 }
 
 func (p *providerClient) ClusterScaffold() ClusterScaffold               { return p.scaffold }
@@ -61,6 +65,14 @@ func (p *providerClient) TenantAPIAccess() TenantAPIAccess { return p.tenantAPIA
 func (p *providerClient) NodeMachineIDLabel() NodeMachineIDLabel { return p.nodeMachineIDLabel }
 func (p *providerClient) RebootAnnotationProvider() RebootAnnotationProvider {
 	return p.rebootAnnotation
+}
+
+func (p *providerClient) NodeAgentProfileValidator() NodeAgentProfileValidator {
+	return p.nodeAgentProfile
+}
+
+func (p *providerClient) SpireAgentPathProvider() SpireAgentPathProvider {
+	return p.spireAgentPath
 }
 
 // GetProviderClient resolves every settled capability for cluster's
@@ -112,6 +124,14 @@ func GetProviderClient(cluster db.Cluster) (ProviderClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	nodeAgentProfile, err := GetNodeAgentProfileValidator(cluster)
+	if err != nil {
+		return nil, err
+	}
+	spireAgentPath, err := GetSpireAgentPathProvider(cluster)
+	if err != nil {
+		return nil, err
+	}
 	return &providerClient{
 		scaffold:              scaffold,
 		machine:               machine,
@@ -124,5 +144,7 @@ func GetProviderClient(cluster db.Cluster) (ProviderClient, error) {
 		tenantAPIAccess:       tenantAPIAccess,
 		nodeMachineIDLabel:    nodeMachineIDLabel,
 		rebootAnnotation:      rebootAnnotation,
+		nodeAgentProfile:      nodeAgentProfile,
+		spireAgentPath:        spireAgentPath,
 	}, nil
 }
