@@ -58,9 +58,12 @@ for discovery in available unavailable; do
     generate "${work_dir}/${discovery}.md" "${work_dir}/${discovery}.csv" "${modules}"
 done
 cmp "${work_dir}/available.md" "${work_dir}/unavailable.md"
-grep -q -F 'Required license fixture' "${work_dir}/unavailable.md"
-grep -q -F 'Required attribution fixture' "${work_dir}/unavailable.md"
-grep -q -F 'https://pkg.go.dev/github.com/example/library@v1.2.3' "${work_dir}/unavailable.md"
+grep -q -F 'Required license fixture' "${work_dir}/unavailable.md" || { echo 'ERROR: missing the saved LICENSE text' >&2; exit 1; }
+grep -q -F 'Required attribution fixture' "${work_dir}/unavailable.md" || { echo 'ERROR: missing the saved NOTICE text' >&2; exit 1; }
+grep -q -F 'https://pkg.go.dev/github.com/example/library@v1.2.3' "${work_dir}/unavailable.md" || {
+    echo 'ERROR: missing the pkg.go.dev fallback link' >&2
+    exit 1
+}
 if grep -q -F '(Unknown)' "${work_dir}/unavailable.md"; then
     echo 'ERROR: generated a broken Unknown link' >&2
     exit 1
@@ -86,7 +89,7 @@ printf 'github.com/example/library,https://example.test/a,Apache-2.0\ngithub.com
 generate "${work_dir}/dual-a.md" "${work_dir}/dual-a.csv" "${modules}"
 generate "${work_dir}/dual-b.md" "${work_dir}/dual-b.csv" "${modules}"
 cmp "${work_dir}/dual-a.md" "${work_dir}/dual-b.md"
-grep -q -F '| Apache-2.0 / MIT |' "${work_dir}/dual-a.md"
+grep -q -F '| Apache-2.0 / MIT |' "${work_dir}/dual-a.md" || { echo 'ERROR: dual-license label is not canonically ordered' >&2; exit 1; }
 
 # A third-party package carrying this repository's URL is rejected, including
 # when the URL has a major-version segment.
@@ -95,7 +98,11 @@ if generate "${work_dir}/self.md" "${work_dir}/self.csv" "${modules}" 2> "${work
     echo 'ERROR: accepted a third-party package attributed to this repository' >&2
     exit 1
 fi
-grep -q -F 'are not ours' "${work_dir}/self.err"
+grep -q -F 'are not ours' "${work_dir}/self.err" || {
+    cat "${work_dir}/self.err" >&2
+    echo 'ERROR: expected the self-attribution diagnostic' >&2
+    exit 1
+}
 
 # A package with no saved attribution file is rejected.
 if NOTICE_TEST_SAVE=none generate "${work_dir}/missing.md" "${work_dir}/available.csv" "${modules}" 2> "${work_dir}/missing.err"; then
