@@ -32,7 +32,7 @@ import (
 
 // TestBeginCertificateRenewalRecordsAcceptedStateAndLock requires acceptance and
 // mutation ownership in the same write, so dispatch cannot precede ownership. An
-// unfenced (V1) reservation does not block admission: dispatch reattaches it.
+// unfenced (V1) reservation does not block admission: dispatch refuses its node.
 func TestBeginCertificateRenewalRecordsAcceptedStateAndLock(t *testing.T) {
 	for _, test := range []struct {
 		name        string
