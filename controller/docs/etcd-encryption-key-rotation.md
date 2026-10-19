@@ -117,10 +117,19 @@ controllers and agents used, and record nothing. They still fail if an agent is
 unreachable or an upgraded agent reports a different name. A cluster rotated by
 an earlier controller may already use another storage name, so upgrade every
 control-plane agent before replacing nodes on it; the next init, join, or
-rotation then records the proven name. An interrupted
-legacy rotation adopts the pending key's existing name wherever already
-distributed. Legacy activity retries retain their original auto-naming protocol;
-finalization discovers the deployed name if staging predates this release.
+rotation then records the proven name. A new rotation that reuses a pending
+key from an interrupted earlier rotation adopts its existing name wherever
+already distributed.
+
+A rotation started by an earlier controller and still running when the
+controller is upgraded keeps its original protocol, and its node agents cannot
+be upgraded while it holds the mutation lock. If the earlier controller staged
+its pending key, the key has no saved name: every node mutation sends it
+unnamed, so each agent derives the name itself or matches the existing key by
+its bytes, and no identity RPC is called. Finalization then makes the key active
+without a saved name, and the next init, join, or rotation discovers it as
+described above. If the pending key was staged after the upgrade, it has a
+saved name and every mutation verifies that name as in a new rotation.
 Do not repair a missing management field by renaming a live storage key.
 
 ## Invocation and observation

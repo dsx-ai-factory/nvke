@@ -140,7 +140,11 @@ func (op *EncryptionOperation) ApplyToNode(ctx context.Context, node rollout.Nod
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if op.isRotation() {
+	// Only a rotation staged by an earlier controller has an unnamed pending
+	// key. Its agents may predate the identity RPC, so it keeps the original
+	// unnamed requests: the agent auto-names the new key and later phases match
+	// the key bytes.
+	if op.isRotation() && key.Name != "" {
 		if err := verifyRotationKeyIdentity(ctx, client, &key); err != nil {
 			return rollout.OutcomeFailedNotRestored, err
 		}
@@ -325,8 +329,7 @@ func (op *EncryptionOperation) isRotation() bool {
 }
 
 // verifyRotationKeyIdentity confirms the upgraded agent supports named keys and
-// rejects conflicting live names before any mutation. Legacy activity histories
-// may still have unnamed pending keys; preserve their existing naming protocol.
+// rejects conflicting live names before any mutation.
 func verifyRotationKeyIdentity(ctx context.Context, client nodeAgentEncryptionClient, key *EncryptionKey) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -335,11 +338,8 @@ func verifyRotationKeyIdentity(ctx context.Context, client nodeAgentEncryptionCl
 	if err != nil {
 		return errors.New("cannot prove rotation key identity; check connectivity and upgrade older node agents")
 	}
-	if name := resp.GetKeyName(); name != "" {
-		if key.Name != "" && key.Name != name {
-			return errors.New("pending encryption storage identity conflicts with the node configuration")
-		}
-		key.Name = name
+	if name := resp.GetKeyName(); name != "" && name != key.Name {
+		return errors.New("pending encryption storage identity conflicts with the node configuration")
 	}
 	return nil
 }

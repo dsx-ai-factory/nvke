@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
@@ -77,6 +79,7 @@ type fakeEncryptionClient struct {
 	updateErr         error
 	identityName      string
 	identityErr       error
+	identityCalls     int
 }
 
 func (c *fakeEncryptionClient) InitializeKubernetesAPIEncryption(
@@ -326,6 +329,7 @@ func TestRotationErrorsNeverSerializeKeyMaterial(t *testing.T) {
 }
 
 func (c *fakeEncryptionClient) GetEtcdEncryptionKeyIdentity(context.Context, *nvkeproto.GetEtcdEncryptionKeyIdentityRequest, ...grpc.CallOption) (*nvkeproto.GetEtcdEncryptionKeyIdentityResponse, error) {
+	c.identityCalls++
 	return &nvkeproto.GetEtcdEncryptionKeyIdentityResponse{KeyName: c.identityName}, c.identityErr
 }
 
@@ -338,7 +342,8 @@ func TestRotationIdentityChecksBeforeMutation(t *testing.T) {
 		wantError    bool
 	}{
 		{name: "supported named key", storedName: "key-7", observedName: "key-7"},
-		{name: "legacy retry adopts live name", observedName: "key-7"},
+		{name: "named key not yet distributed", storedName: "key-7"},
+		{name: "unnamed legacy key skips identity", observedName: "key-7"},
 		{name: "mismatched names rejected", storedName: "key-7", observedName: "key-8", wantError: true},
 		{name: "older agent rejected", storedName: "key-7", err: errors.New("unsupported identity RPC"), wantError: true},
 	} {
@@ -358,8 +363,42 @@ func TestRotationIdentityChecksBeforeMutation(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				require.Len(t, client.updateRequests, 1)
-				require.Equal(t, test.observedName, client.updateRequests[0].GetAddSecondaryKey().GetKeyName())
+				require.Equal(t, test.storedName, client.updateRequests[0].GetAddSecondaryKey().GetKeyName())
+			}
+			if test.storedName == "" {
+				require.Zero(t, client.identityCalls)
+			} else {
+				require.Equal(t, 1, client.identityCalls)
 			}
 		})
 	}
+}
+
+// TestLegacyRotationPhasesUseOriginalProtocolOnAgentsWithoutIdentity models a
+// rotation started by an earlier controller: its pending key has no recorded
+// name and the agents predate the identity RPC. Every phase must send the
+// original unnamed request and never call the identity RPC.
+func TestLegacyRotationPhasesUseOriginalProtocolOnAgentsWithoutIdentity(t *testing.T) {
+	reader := &fakeEncryptionKeyReader{key: "legacy-pending-key"}
+	client := &fakeEncryptionClient{identityErr: status.Error(codes.Unimplemented, "unknown method GetEtcdEncryptionKeyIdentity")}
+	cluster := &fakeCluster{id: uuid.New(), name: "tenant-a"}
+	for _, op := range []*EncryptionOperation{
+		NewAddSecondaryKeyOperation(WithEncryptionKeyReader(reader)),
+		NewPromotePrimaryKeyOperation(WithEncryptionKeyReader(reader)),
+		NewRemoveOldKeysOperation(WithEncryptionKeyReader(reader)),
+	} {
+		op.nodeAgentClientDialer = func(context.Context, rollout.Node) (nodeAgentEncryptionClient, func(), error) {
+			return client, nil, nil
+		}
+		payload, err := op.BuildApplyToNodePayload(t.Context(), cluster)
+		require.NoError(t, err)
+		outcome, err := op.ApplyToNode(t.Context(), fakeNode{name: "cp-0", role: rollout.NodeRoleControlPlane}, payload)
+		require.NoError(t, err, op.Name())
+		require.Equal(t, rollout.OutcomeApplied, outcome)
+	}
+	require.Zero(t, client.identityCalls)
+	require.Len(t, client.updateRequests, 3)
+	require.Equal(t, &nvkeproto.AddSecondaryKeyOperation{NewKey: "legacy-pending-key"}, client.updateRequests[0].GetAddSecondaryKey())
+	require.Equal(t, &nvkeproto.PromotePrimaryKeyOperation{NewKey: "legacy-pending-key"}, client.updateRequests[1].GetPromotePrimaryKey())
+	require.Equal(t, &nvkeproto.RemoveOldKeysOperation{PrimaryKey: "legacy-pending-key"}, client.updateRequests[2].GetRemoveOldKeys())
 }

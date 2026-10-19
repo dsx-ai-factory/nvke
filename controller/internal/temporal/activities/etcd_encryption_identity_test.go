@@ -113,8 +113,8 @@ func TestRotationAdoptsLegacyPendingNameAndFinalizesIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "kube-api-encryption-key-8", string(stored.Data[constants.EtcdEncryptionKeyFieldPendingName]))
 	// Finalization occurs after the workflow's distribute/promote/rewrite/remove phases.
-	require.NoError(t, a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID, false))
-	require.NoError(t, a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID, false))
+	require.NoError(t, a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID, pendingKeyOwnedRotation))
+	require.NoError(t, a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID, pendingKeyOwnedRotation))
 	name, err := a.requireKubeAPIEncryptionKeyName(ctx, clusterID)
 	require.NoError(t, err)
 	require.Equal(t, "kube-api-encryption-key-8", name)
@@ -131,7 +131,7 @@ func TestLegacyFinalizationDiscoversPendingStorageName(t *testing.T) {
 	}}
 	a := &Activities{cfg: config.Config{PodNamespace: "nke"}, k8sClient: fake.NewClientBuilder().WithObjects(secret).Build()}
 	withIdentityTestNodes(t, a, clusterID, func(db.Node, string) (string, error) { return "kube-api-encryption-key-9", nil })
-	require.NoError(t, a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID, false))
+	require.NoError(t, a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID, pendingKeyOwnedRotation))
 	name, err := a.requireKubeAPIEncryptionKeyName(ctx, clusterID)
 	require.NoError(t, err)
 	require.Equal(t, "kube-api-encryption-key-9", name)
@@ -188,19 +188,54 @@ func TestEnablementFinalizesUnnamedPendingKeyWithoutIdentityDiscovery(t *testing
 	require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldPending)
 }
 
-// TestLegacyRotationFinalizeActivityDiscoversPendingStorageName covers rotation
-// histories recorded before ownership, which finalize through the enablement
-// activity after EtcdEncrypted is set and must keep discovering the name.
-func TestLegacyRotationFinalizeActivityDiscoversPendingStorageName(t *testing.T) {
+// TestLegacyRotationFinalizeDefersStorageNameDiscovery covers rotation histories
+// recorded before ownership, which finalize through the enablement activity
+// after EtcdEncrypted is set. Finalization records no name; the next reader
+// discovers the auto-derived name from upgraded agents.
+func TestLegacyRotationFinalizeDefersStorageNameDiscovery(t *testing.T) {
 	ctx, clusterID := context.Background(), uuid.New()
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "nke", Name: constants.EtcdEncryptionKeySecretName(clusterID)}, Data: map[string][]byte{
 		constants.EtcdEncryptionKeyFieldActive: []byte("old-public-fixture-key"), constants.EtcdEncryptionKeyFieldPending: []byte("pending-public-fixture-key"),
 	}}
 	a := &Activities{cfg: config.Config{PodNamespace: "nke"}, k8sClient: fake.NewClientBuilder().WithObjects(secret).Build()}
-	withIdentityTestNodes(t, a, clusterID, func(db.Node, string) (string, error) { return "kube-api-encryption-key-9", nil })
+	identityCalls := 0
+	withIdentityTestNodes(t, a, clusterID, func(db.Node, string) (string, error) {
+		identityCalls++
+		return "kube-api-encryption-key-9", nil
+	})
 	a.db.(*testutil.MockDB).On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, EtcdEncrypted: true}, nil)
 	require.NoError(t, a.FinalizePendingEtcdEncryptionKey(ctx, EtcdEncryptionClusterInput{ClusterID: clusterID}))
+	require.Zero(t, identityCalls)
 	name, err := a.requireKubeAPIEncryptionKeyName(ctx, clusterID)
 	require.NoError(t, err)
 	require.Equal(t, "kube-api-encryption-key-9", name)
+}
+
+// TestLegacyRotationFinalizesUnnamedPendingKeyWithoutIdentityDiscovery models a
+// rotation started by an earlier controller that finalizes on agents without
+// the identity RPC. It must record the original state: the pending bytes become
+// active and no storage name is guessed; a stale active name is dropped.
+func TestLegacyRotationFinalizesUnnamedPendingKeyWithoutIdentityDiscovery(t *testing.T) {
+	ctx, clusterID := context.Background(), uuid.New()
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "nke", Name: constants.EtcdEncryptionKeySecretName(clusterID)}, Data: map[string][]byte{
+		constants.EtcdEncryptionKeyFieldActive:     []byte("old-public-fixture-key"),
+		constants.EtcdEncryptionKeyFieldActiveName: []byte(constants.LegacyAPIEncryptionKeyName),
+		constants.EtcdEncryptionKeyFieldPending:    []byte("pending-public-fixture-key"),
+	}}
+	a := &Activities{cfg: config.Config{PodNamespace: "nke"}, k8sClient: fake.NewClientBuilder().WithObjects(secret).Build()}
+	identityCalls := 0
+	withIdentityTestNodes(t, a, clusterID, func(node db.Node, _ string) (string, error) {
+		identityCalls++
+		return "", fmt.Errorf("node %s %w", node.Name, agent.ErrEncryptionIdentityUnsupported)
+	})
+	a.db.(*testutil.MockDB).On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, EtcdEncrypted: true}, nil)
+	require.NoError(t, a.FinalizePendingEtcdEncryptionKey(ctx, EtcdEncryptionClusterInput{ClusterID: clusterID}))
+	require.NoError(t, a.FinalizePendingEtcdEncryptionKey(ctx, EtcdEncryptionClusterInput{ClusterID: clusterID}))
+	require.Zero(t, identityCalls)
+	stored, err := a.getKubeAPIEncryptionKeySecret(ctx, clusterID)
+	require.NoError(t, err)
+	require.Equal(t, "pending-public-fixture-key", string(stored.Data[constants.EtcdEncryptionKeyFieldActive]))
+	require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldActiveName)
+	require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldPending)
+	require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldPendingName)
 }
