@@ -209,8 +209,11 @@ func TestFailEtcdKeyRotationReleasesOnlyPrepareLock(t *testing.T) {
 			require.Equal(t, db.ConditionStatusTrue, cluster.Conditions.UpdateFailed.Status)
 			if phase == db.EtcdKeyRotationPhasePrepare {
 				require.Nil(t, cluster.Conditions.UpdateInProgress)
+				require.Equal(t, "Etcd encryption key rotation failed in prepare; fix the prerequisite and start a new rotation with a new workflow ID",
+					cluster.Conditions.UpdateFailed.Message)
 			} else {
 				require.Equal(t, db.OperationTypeEtcdKeyRotation, cluster.Conditions.UpdateInProgress.Type)
+				require.Equal(t, "Etcd encryption key rotation failed; recover the owning workflow", cluster.Conditions.UpdateFailed.Message)
 			}
 			completed := status.CompletedAt
 			require.NoError(t, a.FailEtcdKeyRotation(t.Context(), input))

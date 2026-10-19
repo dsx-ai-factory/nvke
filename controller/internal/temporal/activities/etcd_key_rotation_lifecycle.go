@@ -78,7 +78,10 @@ func (a *Activities) FailEtcdKeyRotation(ctx context.Context, input FailEtcdKeyR
 		status.CompletedAt = &now
 		status.LastProgressAt = now
 		if status.Phase == db.EtcdKeyRotationPhasePrepare {
+			// Begin refuses a reset of this owner once its lock is released.
 			db.ClearUpdateInProgress(cluster)
+			db.SetUpdateFailed(cluster, "Etcd encryption key rotation failed in prepare; fix the prerequisite and start a new rotation with a new workflow ID")
+			return nil
 		}
 		db.SetUpdateFailed(cluster, "Etcd encryption key rotation failed; recover the owning workflow")
 		return nil
