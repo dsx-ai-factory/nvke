@@ -445,7 +445,7 @@ tsh login
 kubectl -n cloud-workflow-engine port-forward svc/cloud-workflow-engine 18080:8080
 
 # Create the Forge NICo cluster
-NKE_CONTROLLER_HTTP_PORT=18080 ./hack/create-forge-nico-cluster.sh
+NVKE_CONTROLLER_HTTP_PORT=18080 ./hack/create-forge-nico-cluster.sh
 ```
 
 ### Cleanup

@@ -148,9 +148,9 @@ jobs:
       - name: Run the gofail suite
         working-directory: controller
         env:
-          NKE_CONTROLLER_GOFAIL_E2E_DB_CONNECTION_STRING: postgres://postgres:gofail@127.0.0.1:5432/gofail_e2e?sslmode=disable
-          NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS: ${{ github.workspace }}/.capi/cluster-api/config/crd/bases
-          NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS: ${{ github.workspace }}/controller/test/fixtures/capnico-crds
+          NVKE_CONTROLLER_GOFAIL_E2E_DB_CONNECTION_STRING: postgres://postgres:gofail@127.0.0.1:5432/gofail_e2e?sslmode=disable
+          NVKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS: ${{ github.workspace }}/.capi/cluster-api/config/crd/bases
+          NVKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS: ${{ github.workspace }}/controller/test/fixtures/capnico-crds
         run: make e2e-gofail
 
       # The fixture is a pinned copy of the public provider's CRDs. Verify it

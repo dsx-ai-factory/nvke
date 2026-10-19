@@ -8,10 +8,14 @@ import (
 	"os"
 )
 
-// getenvWithLegacy reads key, then legacyKey, its deprecated name; an empty
-// value counts as unset. It has its own file without the gofail build tag so
+// getenvWithLegacy reads key, then legacyKeys, its deprecated names, in order;
+// an empty value counts as unset. It has its own file without the gofail build tag so
 // that the unit-test lane, which does not build gofail, runs its test. Delete
 // this file and env_test.go when #1399 removes the deprecated names.
-func getenvWithLegacy(key, legacyKey string) string {
-	return cmp.Or(os.Getenv(key), os.Getenv(legacyKey))
+func getenvWithLegacy(key string, legacyKeys ...string) string {
+	value := os.Getenv(key)
+	for _, legacyKey := range legacyKeys {
+		value = cmp.Or(value, os.Getenv(legacyKey))
+	}
+	return value
 }

@@ -159,9 +159,9 @@ TEMPORAL_NAMESPACE = "temporal"
 POSTGRES_NAMESPACE = "postgres"
 SPIRE_NAMESPACE = "spire-server"
 CONTROLLER_LOCAL_DEBUG_MARKER = ".tilt-cwe-debug-local"
-# CWE_HTTP_PORT and CWE_TEMPORAL_UI_PORT are deprecated aliases for the NKE_CONTROLLER_ names; #1399 removes them.
-CONTROLLER_HTTP_PORT = os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
-CONTROLLER_TEMPORAL_UI_PORT = os.getenv("NKE_CONTROLLER_TEMPORAL_UI_PORT", "") or os.getenv("CWE_TEMPORAL_UI_PORT", "") or "8081"
+# NKE_CONTROLLER_HTTP_PORT, NKE_CONTROLLER_TEMPORAL_UI_PORT, CWE_HTTP_PORT and CWE_TEMPORAL_UI_PORT are deprecated aliases for the NVKE_CONTROLLER_ names; #1399 removes them.
+CONTROLLER_HTTP_PORT = os.getenv("NVKE_CONTROLLER_HTTP_PORT", "") or os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
+CONTROLLER_TEMPORAL_UI_PORT = os.getenv("NVKE_CONTROLLER_TEMPORAL_UI_PORT", "") or os.getenv("NKE_CONTROLLER_TEMPORAL_UI_PORT", "") or os.getenv("CWE_TEMPORAL_UI_PORT", "") or "8081"
 
 # Tilt UI links open in the browser of whoever views the Tilt UI. When Tilt runs
 # on a remote host accessed via forwarded ports (e.g. Mutagen forwards a target
@@ -1147,20 +1147,20 @@ _controller_compile_script = """
 # a plain `tilt up` failed for anyone without that checkout, even though a
 # working profiles tree was one directory away.
 #
-# Point NKE_CONTROLLER_PROFILES_DIR at nke-site-deploy/cwe-profiles/profiles to exercise
+# Point NVKE_CONTROLLER_PROFILES_DIR at nke-site-deploy/cwe-profiles/profiles to exercise
 # the fleet profiles.
-# CWE_PROFILES_DIR and CWE_PROFILES_PRELOADED are deprecated aliases for the NKE_CONTROLLER_ names; #1399 removes them.
-_controller_profiles_dir = (os.getenv("NKE_CONTROLLER_PROFILES_DIR", "") or os.getenv("CWE_PROFILES_DIR", "") or _tilt_env.get("NKE_CONTROLLER_PROFILES_DIR", "") or _tilt_env.get("CWE_PROFILES_DIR", "")).strip()
+# NKE_CONTROLLER_PROFILES_DIR, NKE_CONTROLLER_PROFILES_PRELOADED, CWE_PROFILES_DIR and CWE_PROFILES_PRELOADED are deprecated aliases for the NVKE_CONTROLLER_ names; #1399 removes them.
+_controller_profiles_dir = (os.getenv("NVKE_CONTROLLER_PROFILES_DIR", "") or os.getenv("NKE_CONTROLLER_PROFILES_DIR", "") or os.getenv("CWE_PROFILES_DIR", "") or _tilt_env.get("NVKE_CONTROLLER_PROFILES_DIR", "") or _tilt_env.get("NKE_CONTROLLER_PROFILES_DIR", "") or _tilt_env.get("CWE_PROFILES_DIR", "")).strip()
 if _controller_profiles_dir == "":
     _controller_profiles_dir = os.path.abspath(os.path.join(config.main_dir, "test", "fixtures", "profiles"))
 elif not _controller_profiles_dir.startswith("/"):
     _controller_profiles_dir = os.path.abspath(os.path.join(config.main_dir, _controller_profiles_dir))
-_controller_profiles_preloaded = (os.getenv("NKE_CONTROLLER_PROFILES_PRELOADED", "") or os.getenv("CWE_PROFILES_PRELOADED", "")) == "true"
+_controller_profiles_preloaded = (os.getenv("NVKE_CONTROLLER_PROFILES_PRELOADED", "") or os.getenv("NKE_CONTROLLER_PROFILES_PRELOADED", "") or os.getenv("CWE_PROFILES_PRELOADED", "")) == "true"
 # Starlark's os.path has exists/join but not isdir.
 if not _controller_profiles_preloaded and not _controller_profiles_dir:
-    fail("NKE_CONTROLLER_PROFILES_DIR must point to an external profiles directory")
+    fail("NVKE_CONTROLLER_PROFILES_DIR must point to an external profiles directory")
 if not _controller_profiles_preloaded and not os.path.exists(_controller_profiles_dir):
-    fail("Controller profiles not found at %s. Set NKE_CONTROLLER_PROFILES_DIR to a profiles tree; the in-repo fixture is controller/test/fixtures/profiles and the fleet profiles live in nke-site-deploy." % _controller_profiles_dir)
+    fail("Controller profiles not found at %s. Set NVKE_CONTROLLER_PROFILES_DIR to a profiles tree; the in-repo fixture is controller/test/fixtures/profiles and the fleet profiles live in nke-site-deploy." % _controller_profiles_dir)
 
 _controller_profiles_context = os.path.dirname(_controller_profiles_dir)
 _controller_profiles_dockerfile = os.path.join(_controller_profiles_context, "Dockerfile")
@@ -1279,7 +1279,8 @@ local_resource(
 )
 
 # Applies the releases the controller resolves every OS image from.
-_nke_release_dir = os.getenv("NKE_CONTROLLER_RELEASES_DIR", _tilt_env.get("NKE_CONTROLLER_RELEASES_DIR", "")).strip()
+# NKE_CONTROLLER_RELEASES_DIR is a deprecated alias for NVKE_CONTROLLER_RELEASES_DIR; #1399 removes it.
+_nke_release_dir = (os.getenv("NVKE_CONTROLLER_RELEASES_DIR", "") or os.getenv("NKE_CONTROLLER_RELEASES_DIR", "") or _tilt_env.get("NVKE_CONTROLLER_RELEASES_DIR", "") or _tilt_env.get("NKE_CONTROLLER_RELEASES_DIR", "")).strip()
 if _nke_release_dir == "":
     _nke_release_dir = os.path.join(_controller_profiles_context, "releases")
 elif not _nke_release_dir.startswith("/"):
@@ -1290,7 +1291,7 @@ local_resource(
     cmd=["bash", "-c", """
       set -euo pipefail
       dir="%s"
-      [ -d "${dir}" ] || { echo "releases not found at ${dir}; set NKE_CONTROLLER_RELEASES_DIR to a directory of generated MachineImage, ClusterRelease and NodePoolRelease manifests" >&2; exit 1; }
+      [ -d "${dir}" ] || { echo "releases not found at ${dir}; set NVKE_CONTROLLER_RELEASES_DIR to a directory of generated MachineImage, ClusterRelease and NodePoolRelease manifests" >&2; exit 1; }
       # MachineImage specs are immutable. After editing a profile, delete the
       # stale image (kubectl delete machineimage <name>) and apply again.
       kubectl apply --server-side --field-manager=tilt-releases -f "${dir}"

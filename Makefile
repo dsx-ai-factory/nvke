@@ -116,9 +116,9 @@ cmd_ldflags = -X 'main.version=$(call cmd_version,$(1))' \
 RELEASE_LDFLAGS ?= -s -w -buildid= -extldflags -static
 
 # Must match WORKER_BIN_NAME in controller/Makefile. `build` fails if it does not.
-# NKE_CONTROLLER_BIN_NAME overrides it. An empty value counts as unset.
-# CWE_BIN_NAME is a deprecated alias for NKE_CONTROLLER_BIN_NAME; #1399 removes it.
-controller_bin_name = $(or $(NKE_CONTROLLER_BIN_NAME),$(CWE_BIN_NAME),controller)
+# NVKE_CONTROLLER_BIN_NAME overrides it. An empty value counts as unset.
+# NKE_CONTROLLER_BIN_NAME and CWE_BIN_NAME are deprecated aliases for NVKE_CONTROLLER_BIN_NAME; #1399 removes them.
+controller_bin_name = $(or $(NVKE_CONTROLLER_BIN_NAME),$(NKE_CONTROLLER_BIN_NAME),$(CWE_BIN_NAME),controller)
 
 # No module is excluded from the workspace any more; kept (empty) because
 # work-check accounts for every go.mod in the tree against these two lists.

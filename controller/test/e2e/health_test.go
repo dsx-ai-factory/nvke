@@ -29,46 +29,53 @@ type healthConfig struct {
 }
 
 func loadHealthConfig() (healthConfig, error) {
-	// CWE_HEALTH_TIMEOUT and CWE_EXPECTED_VERSION are deprecated aliases for the
-	// NKE_CONTROLLER_ names; #1399 removes them.
-	timeout, err := time.ParseDuration(envOrDefaultLegacy("NKE_CONTROLLER_HEALTH_TIMEOUT", "CWE_HEALTH_TIMEOUT", "60s"))
+	// NKE_CONTROLLER_HEALTH_TIMEOUT, NKE_CONTROLLER_EXPECTED_VERSION, CWE_HEALTH_TIMEOUT and
+	// CWE_EXPECTED_VERSION are deprecated aliases for the NVKE_CONTROLLER_ names; #1399 removes them.
+	timeout, err := time.ParseDuration(envOrDefaultLegacy("60s", "NVKE_CONTROLLER_HEALTH_TIMEOUT", "NKE_CONTROLLER_HEALTH_TIMEOUT", "CWE_HEALTH_TIMEOUT"))
 	if err != nil {
-		return healthConfig{}, fmt.Errorf("parsing NKE_CONTROLLER_HEALTH_TIMEOUT: %w", err)
+		return healthConfig{}, fmt.Errorf("parsing NVKE_CONTROLLER_HEALTH_TIMEOUT: %w", err)
 	}
 
 	// Where the controller is, from internal/controller, which reads the same
-	// NKE_CONTROLLER_NAMESPACE / NKE_CONTROLLER_SERVICE / NKE_CONTROLLER_SERVICE_PORT
+	// NVKE_CONTROLLER_NAMESPACE / NVKE_CONTROLLER_SERVICE / NVKE_CONTROLLER_SERVICE_PORT
 	// everything else looking for the controller reads.
 	return healthConfig{
 		Namespace:       controller.Namespace(),
 		Service:         controller.Service(),
 		ServicePort:     controller.Port(),
-		ExpectedVersion: envOrDefaultLegacy("NKE_CONTROLLER_EXPECTED_VERSION", "CWE_EXPECTED_VERSION", ""),
+		ExpectedVersion: envOrDefaultLegacy("", "NVKE_CONTROLLER_EXPECTED_VERSION", "NKE_CONTROLLER_EXPECTED_VERSION", "CWE_EXPECTED_VERSION"),
 		Timeout:         timeout,
 	}, nil
 }
 
-// envOrDefaultLegacy reads key, then legacyKey (deprecated spelling of key,
-// still honored), then def. An empty value counts as unset, so an empty key
-// does not hide a set legacyKey.
-func envOrDefaultLegacy(key, legacyKey, def string) string {
-	return cmp.Or(os.Getenv(key), os.Getenv(legacyKey), def)
+// envOrDefaultLegacy reads key, then each of legacyKeys (deprecated spellings
+// of key, still honored, in order), then def. An empty value counts as unset,
+// so an empty key does not hide a set legacy key.
+func envOrDefaultLegacy(def, key string, legacyKeys ...string) string {
+	value := os.Getenv(key)
+	for _, legacyKey := range legacyKeys {
+		value = cmp.Or(value, os.Getenv(legacyKey))
+	}
+	return cmp.Or(value, def)
 }
 
 func TestUnit_EnvOrDefaultLegacy(t *testing.T) {
-	const key, legacyKey = "NKE_E2E_TEST_NEW", "NKE_E2E_TEST_OLD"
+	const key, previousKey, cweKey = "NKE_E2E_TEST_NEW", "NKE_E2E_TEST_NKE", "NKE_E2E_TEST_OLD"
 	for _, tc := range []struct {
-		name, value, legacy, want string
+		name, value, previous, legacy, want string
 	}{
-		{name: "default when neither is set", want: "def"},
+		{name: "default when none is set", want: "def"},
 		{name: "legacy name when only it is set", legacy: "old", want: "old"},
-		{name: "new name wins over legacy", value: "new", legacy: "old", want: "new"},
-		{name: "empty new name does not hide legacy", value: "", legacy: "old", want: "old"},
+		{name: "NKE_CONTROLLER name when only it is set", previous: "nke", want: "nke"},
+		{name: "new name wins over legacy names", value: "new", previous: "nke", legacy: "old", want: "new"},
+		{name: "NKE_CONTROLLER name wins over CWE name", previous: "nke", legacy: "old", want: "nke"},
+		{name: "empty new name does not hide legacy names", value: "", previous: "", legacy: "old", want: "old"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(key, tc.value)
-			t.Setenv(legacyKey, tc.legacy)
-			if got := envOrDefaultLegacy(key, legacyKey, "def"); got != tc.want {
+			t.Setenv(previousKey, tc.previous)
+			t.Setenv(cweKey, tc.legacy)
+			if got := envOrDefaultLegacy("def", key, previousKey, cweKey); got != tc.want {
 				t.Errorf("envOrDefaultLegacy = %q, want %q", got, tc.want)
 			}
 		})
@@ -130,7 +137,7 @@ var _ = Describe("controller management-plane health", Label("health"), func() {
 		defer cancel()
 
 		if hc.ExpectedVersion == "" {
-			Skip("NKE_CONTROLLER_EXPECTED_VERSION is not set")
+			Skip("NVKE_CONTROLLER_EXPECTED_VERSION is not set")
 		}
 
 		statusCode, body, err := forwarder.Get(tctx, "/api/version")

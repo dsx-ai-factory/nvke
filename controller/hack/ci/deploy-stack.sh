@@ -41,7 +41,7 @@ set -euo pipefail
 # controller/deploy/charts/controller/templates would run this suite
 # green against the old templates. capd-e2e.yml triggers on controller/**, which
 # includes exactly those files.
-NKE_CONTROLLER_IMAGE="${1:?usage: $0 <controller-image>}"
+NVKE_CONTROLLER_IMAGE="${1:?usage: $0 <controller-image>}"
 : "${NODE_AGENT_SPIRE_ATTESTATION_METHOD:?NODE_AGENT_SPIRE_ATTESTATION_METHOD is required}"
 # Optional, from the workflow inputs of the same name. Set together to install a
 # published artifact; leave empty to build.
@@ -102,8 +102,8 @@ TPM_CHECKSUM="$(resolve_tpm_checksum)"
 # repointed at that local tag. This only works because the controller chart is
 # a subchart with live values -- a pre-rendered bundle would have baked the
 # image string in and ignored the override.
-cwe_repository="${NKE_CONTROLLER_IMAGE%:*}"
-cwe_tag="${NKE_CONTROLLER_IMAGE##*:}"
+cwe_repository="${NVKE_CONTROLLER_IMAGE%:*}"
+cwe_tag="${NVKE_CONTROLLER_IMAGE##*:}"
 
 # Everything this script used to apply by hand is now an item of the capd-e2e
 # deploy path, applied by deploy/nvke-deploy.sh in the order nvke-deploy.yaml
@@ -172,7 +172,7 @@ for name in ("DGXC_TENANT_USER", "DGXC_TENANT_PASSWORD", "CNPG_SUPERUSER_PASSWOR
 print(json.dumps(env))
 '
 }
-NKE_CONTROLLER_ENV_JSON="$(controller_env_json)"
+NVKE_CONTROLLER_ENV_JSON="$(controller_env_json)"
 
 # The SPIFFE identity the controller presents: its ServiceAccount, nke-controller
 # in every deploy path, under the nvke-service ClusterSPIFFEID in the deploy
@@ -247,7 +247,7 @@ spiffe:
     serverAddress: "${MANAGEMENT_VIP}"
 nodeAgent:
   spireAttestationMethod: "${NODE_AGENT_SPIRE_ATTESTATION_METHOD}"
-env: ${NKE_CONTROLLER_ENV_JSON}
+env: ${NVKE_CONTROLLER_ENV_JSON}
 EOF
 
 cat >"${VALUES_DIR}/spire.yaml" <<EOF
@@ -329,8 +329,9 @@ fi
 
 # Applies the releases the controller resolves every OS image from. The controller chart
 # installs their CRDs, so this waits for the CRDs before applying.
-NKE_CONTROLLER_RELEASES_DIR="${NKE_CONTROLLER_RELEASES_DIR:-/workspace/cloud-workflow-engine/test/fixtures/releases}"
-[[ -d "${NKE_CONTROLLER_RELEASES_DIR}" ]] || { echo "releases not found at ${NKE_CONTROLLER_RELEASES_DIR}; set NKE_CONTROLLER_RELEASES_DIR" >&2; exit 1; }
+# NKE_CONTROLLER_RELEASES_DIR is a deprecated alias for NVKE_CONTROLLER_RELEASES_DIR; #1399 removes it.
+NVKE_CONTROLLER_RELEASES_DIR="${NVKE_CONTROLLER_RELEASES_DIR:-${NKE_CONTROLLER_RELEASES_DIR:-/workspace/cloud-workflow-engine/test/fixtures/releases}}"
+[[ -d "${NVKE_CONTROLLER_RELEASES_DIR}" ]] || { echo "releases not found at ${NVKE_CONTROLLER_RELEASES_DIR}; set NVKE_CONTROLLER_RELEASES_DIR" >&2; exit 1; }
 
 apply_releases() {
   local crd
@@ -342,10 +343,10 @@ apply_releases() {
     done
     kubectl wait --for=condition=Established --timeout=120s "crd/${name}"
   done
-  kubectl apply --server-side --field-manager=deploy-stack-releases -f "${NKE_CONTROLLER_RELEASES_DIR}"
+  kubectl apply --server-side --field-manager=deploy-stack-releases -f "${NVKE_CONTROLLER_RELEASES_DIR}"
 }
 
-log "applying the releases from ${NKE_CONTROLLER_RELEASES_DIR} once the CRDs exist"
+log "applying the releases from ${NVKE_CONTROLLER_RELEASES_DIR} once the CRDs exist"
 apply_releases &
 RELEASES_PID=$!
 trap 'rm -rf "${VALUES_DIR}"; kill "${RELEASES_PID}" 2>/dev/null || true' EXIT

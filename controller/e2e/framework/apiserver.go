@@ -49,8 +49,11 @@ const kubebuilderAssetsEnv = "KUBEBUILDER_ASSETS"
 // The legacy names are deprecated aliases, read when the new name is unset or
 // empty; #1399 removes them.
 const (
-	clusterCRDsEnv = "NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS"
-	nicoCRDsEnv    = "NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS"
+	clusterCRDsEnv = "NVKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS"
+	nicoCRDsEnv    = "NVKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS"
+
+	previousClusterCRDsEnv = "NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS"
+	previousNicoCRDsEnv    = "NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS"
 
 	legacyClusterCRDsEnv = "CWE_GOFAIL_E2E_CLUSTER_CRDS"
 	legacyNicoCRDsEnv    = "CWE_GOFAIL_E2E_CAPNICO_CRDS"
@@ -117,8 +120,8 @@ func gofailCRDDirectoryPaths(t testing.TB) []string {
 	t.Helper()
 
 	paths := []string{
-		getenvWithLegacy(clusterCRDsEnv, legacyClusterCRDsEnv),
-		getenvWithLegacy(nicoCRDsEnv, legacyNicoCRDsEnv),
+		getenvWithLegacy(clusterCRDsEnv, previousClusterCRDsEnv, legacyClusterCRDsEnv),
+		getenvWithLegacy(nicoCRDsEnv, previousNicoCRDsEnv, legacyNicoCRDsEnv),
 	}
 	for _, path := range paths {
 		require.NotEmpty(t, path, "CRD directory environment variable must be set")

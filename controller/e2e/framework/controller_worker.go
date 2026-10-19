@@ -30,8 +30,9 @@ import (
 )
 
 const (
-	ControllerGofailWorkerBinaryEnv = "NKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY"
-	// legacyWorkerBinaryEnv is a deprecated alias; #1399 removes it.
+	ControllerGofailWorkerBinaryEnv = "NVKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY"
+	// previousWorkerBinaryEnv and legacyWorkerBinaryEnv are deprecated aliases; #1399 removes them.
+	previousWorkerBinaryEnv         = "NKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY"
 	legacyWorkerBinaryEnv           = "CWE_GOFAIL_E2E_WORKER_BINARY"
 	ControllerGofailFailpointName   = "CWERunbookWorkerCrash"
 	ControllerGofailWorkerCrashLine = "cwe-gofail-runbook-worker-crash"
@@ -72,7 +73,7 @@ type ControllerWorkerBinaryConfig struct {
 func ControllerWorkerBinary(t testing.TB) string {
 	t.Helper()
 
-	binaryPath := getenvWithLegacy(ControllerGofailWorkerBinaryEnv, legacyWorkerBinaryEnv)
+	binaryPath := getenvWithLegacy(ControllerGofailWorkerBinaryEnv, previousWorkerBinaryEnv, legacyWorkerBinaryEnv)
 	require.NotEmpty(t, binaryPath, "%s must point to the worker built by make e2e-gofail", ControllerGofailWorkerBinaryEnv)
 	_, err := os.Stat(binaryPath)
 	require.NoError(t, err, "controller worker binary does not exist")

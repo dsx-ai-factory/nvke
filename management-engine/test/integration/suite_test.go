@@ -48,12 +48,12 @@ func loadEnvironment() environment {
 	kubeconfig := requiredEnv("KUBECONFIG")
 	hostContext, stateContext := requiredEnv("HOST_CONTEXT"), requiredEnv("STATE_CONTEXT")
 	Expect(hostContext).NotTo(Equal(stateContext), "host and state clusters must be separate")
-	endpoint := requiredEnv("NKE_CONTROLLER_API_URL")
+	endpoint := requiredEnv("NVKE_CONTROLLER_API_URL")
 	endpointURL, err := url.Parse(endpoint)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(endpointURL.Scheme).To(Equal("http"), "use the local NVKE controller port-forward")
 	Expect(isLoopback(endpointURL.Hostname())).To(BeTrue(), "The NVKE controller must use a loopback port-forward")
-	tokenFile := requiredEnv("NKE_CONTROLLER_TOKEN_FILE")
+	tokenFile := requiredEnv("NVKE_CONTROLLER_TOKEN_FILE")
 	_, err = os.Stat(tokenFile)
 	Expect(err).NotTo(HaveOccurred())
 	nvkeController, err := api.NewClientWithResponses(endpoint, api.WithHTTPClient(&http.Client{
@@ -81,7 +81,7 @@ func loadEnvironment() environment {
 		host: newLocalClient(kubeconfig, hostContext), state: newLocalClient(kubeconfig, stateContext),
 		nvkeController: nvkeController, temporal: temporal, temporalAddress: address,
 		temporalNamespace: envOr("TEMPORAL_NAMESPACE", "nke-controller"),
-		resultsDir:        requiredEnv("NKE_CONTROLLER_RESULTS_DIR"),
+		resultsDir:        requiredEnv("NVKE_CONTROLLER_RESULTS_DIR"),
 	}
 }
 

@@ -15,7 +15,7 @@ Before you begin you need a test environment and usable forge instances. Current
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `NKE_CONTROLLER_API_URL` | URL of the controller API. The old name `CWE_API_URL` keeps working until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes it, after the first controller and nvkectl GA releases that include the new names. | `http://localhost:8080/api` |
+| `NVKE_CONTROLLER_API_URL` | URL of the controller API. The old names `NKE_CONTROLLER_API_URL` and `CWE_API_URL` keep working until [nvke#1399](https://github.com/dsx-ai-factory/nvke/issues/1399) removes them, after the first controller and nvkectl GA releases that include the new names. | `http://localhost:8080/api` |
 | `CREATE_CLUSTER_REQUEST_PATH` | Path to JSON file | `testdata/default/create-cluster-request.json` (placeholder IDs; override for a live run) |
 | `CREATE_NODE_POOL_REQUEST_PATH` | Path to JSON file | `testdata/default/create-nodepool-request.json` (placeholder IDs; override for a live run) |
 | `SKIP_CLEANUP` | Don't tear down any provisioned resources | `false` |
@@ -25,7 +25,7 @@ is not optional: without it `go test` runs only `TestControllerAPIURL`, the
 settings test that the ordinary unit lane runs, and reports success.
 
 ```bash
-export NKE_CONTROLLER_API_URL=http://<MANAGEMENT_ADDRESS>:8080/api
+export NVKE_CONTROLLER_API_URL=http://<MANAGEMENT_ADDRESS>:8080/api
 export CREATE_CLUSTER_REQUEST_PATH=~/nvke-integration/create-cluster-request.json
 export CREATE_NODE_POOL_REQUEST_PATH=~/nvke-integration/create-nodepool-request.json
 go test -tags integration_test -v -timeout=3h

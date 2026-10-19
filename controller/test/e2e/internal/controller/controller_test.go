@@ -7,21 +7,23 @@ import "testing"
 
 func TestEnvFallbackOrder(t *testing.T) {
 	tests := []struct {
-		name   string
-		get    func() string
-		newEnv string
-		oldEnv string
-		def    string
+		name        string
+		get         func() string
+		newEnv      string
+		previousEnv string
+		oldEnv      string
+		def         string
 	}{
-		{"namespace", Namespace, EnvNamespace, LegacyEnvNamespace, ServiceNamespace},
-		{"service", Service, EnvService, LegacyEnvService, ServiceName},
-		{"deployment", Deployment, EnvService, LegacyEnvService, DeploymentName},
-		{"service account", ServiceAccount, EnvService, LegacyEnvService, ServiceName},
-		{"port", Port, EnvPort, LegacyEnvPort, ServicePort},
+		{"namespace", Namespace, EnvNamespace, PreviousEnvNamespace, LegacyEnvNamespace, ServiceNamespace},
+		{"service", Service, EnvService, PreviousEnvService, LegacyEnvService, ServiceName},
+		{"deployment", Deployment, EnvService, PreviousEnvService, LegacyEnvService, DeploymentName},
+		{"service account", ServiceAccount, EnvService, PreviousEnvService, LegacyEnvService, ServiceName},
+		{"port", Port, EnvPort, PreviousEnvPort, LegacyEnvPort, ServicePort},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(tt.newEnv, "")
+			t.Setenv(tt.previousEnv, "")
 			t.Setenv(tt.oldEnv, "")
 			if got := tt.get(); got != tt.def {
 				t.Errorf("default = %q, want %q", got, tt.def)
@@ -29,6 +31,10 @@ func TestEnvFallbackOrder(t *testing.T) {
 			t.Setenv(tt.oldEnv, "legacy")
 			if got := tt.get(); got != "legacy" {
 				t.Errorf("legacy only = %q, want legacy", got)
+			}
+			t.Setenv(tt.previousEnv, "nke")
+			if got := tt.get(); got != "nke" {
+				t.Errorf("NKE_CONTROLLER and legacy set = %q, want nke", got)
 			}
 			t.Setenv(tt.newEnv, "current")
 			if got := tt.get(); got != "current" {

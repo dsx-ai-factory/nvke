@@ -34,9 +34,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/control-plane-vip.sh"
 
-# CWE_HTTP_PORT is a deprecated alias for NKE_CONTROLLER_HTTP_PORT; #1399 removes it.
-NKE_CONTROLLER_HTTP_PORT="${NKE_CONTROLLER_HTTP_PORT:-${CWE_HTTP_PORT:-8080}}"
-API_URL="${API_URL:-http://localhost:${NKE_CONTROLLER_HTTP_PORT}/api}"
+# NKE_CONTROLLER_HTTP_PORT and CWE_HTTP_PORT are deprecated aliases for NVKE_CONTROLLER_HTTP_PORT; #1399 removes them.
+NVKE_CONTROLLER_HTTP_PORT="${NVKE_CONTROLLER_HTTP_PORT:-${NKE_CONTROLLER_HTTP_PORT:-${CWE_HTTP_PORT:-8080}}}"
+API_URL="${API_URL:-http://localhost:${NVKE_CONTROLLER_HTTP_PORT}/api}"
 CLUSTERS_API_URL="${API_URL%/}/clusters"
 
 # /api/* is authenticated. hack/nvke-token.sh prints nothing when NVKE is not, so

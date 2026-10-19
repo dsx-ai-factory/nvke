@@ -15,7 +15,7 @@
 # Options:
 #   --cluster-name  NAME    Cluster name (looked up via controller API)
 #   --cluster-id    UUID    Cluster ID (direct lookup)
-#   --controller-api URL    Controller API base URL (env NKE_CONTROLLER_API_URL; default: http://localhost:8080/api)
+#   --controller-api URL    Controller API base URL (env NVKE_CONTROLLER_API_URL; default: http://localhost:8080/api)
 #   --cwe-api       URL     Deprecated alias for --controller-api; #1399 removes it
 #   --ssh-user      USER    SSH user on CP nodes     (default: nico-diag)
 #   --ssh-key       PATH    SSH private key          (default: ~/.ssh/id_rsa)
@@ -36,8 +36,8 @@ set -euo pipefail
 DIAG_SSH_USER="${NICO_VMS_DIAG_SSH_USER:-nico-diag}"
 DIAG_SSH_PASSWORD="${NICO_VMS_DIAG_SSH_PASSWORD:-nico-diag}"
 
-# CWE_API is a deprecated alias for NKE_CONTROLLER_API_URL; #1399 removes it.
-NKE_CONTROLLER_API_URL="${NKE_CONTROLLER_API_URL:-${CWE_API:-http://localhost:8080/api}}"
+# NKE_CONTROLLER_API_URL and CWE_API are deprecated aliases for NVKE_CONTROLLER_API_URL; #1399 removes them.
+NVKE_CONTROLLER_API_URL="${NVKE_CONTROLLER_API_URL:-${NKE_CONTROLLER_API_URL:-${CWE_API:-http://localhost:8080/api}}}"
 SSH_USER="${SSH_USER:-}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
 SSH_PASSWORD=false
@@ -55,8 +55,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --cluster-name) CLUSTER_NAME="$2"; shift 2 ;;
     --cluster-id)   CLUSTER_ID="$2";   shift 2 ;;
-    --controller-api) NKE_CONTROLLER_API_URL="$2"; shift 2 ;;
-    --cwe-api)      NKE_CONTROLLER_API_URL="$2"; shift 2 ;; # deprecated alias for --controller-api; #1399 removes it
+    --controller-api) NVKE_CONTROLLER_API_URL="$2"; shift 2 ;;
+    --cwe-api)      NVKE_CONTROLLER_API_URL="$2"; shift 2 ;; # deprecated alias for --controller-api; #1399 removes it
     --ssh-user)     SSH_USER="$2";      shift 2 ;;
     --ssh-key)      SSH_KEY="$2";       shift 2 ;;
     --ssh-password) SSH_PASSWORD=true;  shift   ;;
@@ -93,7 +93,7 @@ if [[ -z "$SSH_USER" ]]; then
 fi
 
 api_get() {
-  local url="${NKE_CONTROLLER_API_URL}$1"
+  local url="${NVKE_CONTROLLER_API_URL}$1"
   local resp http_code body
 
   resp=$(curl -sf --write-out '\n%{http_code}' "$url") || die "API call failed: GET $url"

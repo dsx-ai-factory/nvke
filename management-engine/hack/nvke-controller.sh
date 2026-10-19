@@ -8,13 +8,14 @@ declare -a host state clusters
 
 nvke_controller_environment() {
   export DEV_NVKE_CONTROLLER=1 KIND_CLUSTER_NAME="$DEV_NAME-management"
-  export NKE_CONTROLLER_HTTP_PORT="${NKE_CONTROLLER_HTTP_PORT:-18080}" NKE_CONTROLLER_TEMPORAL_UI_PORT="${NKE_CONTROLLER_TEMPORAL_UI_PORT:-18081}"
+  # NKE_CONTROLLER_HTTP_PORT and NKE_CONTROLLER_TEMPORAL_UI_PORT are deprecated aliases; #1399 removes them.
+  export NVKE_CONTROLLER_HTTP_PORT="${NVKE_CONTROLLER_HTTP_PORT:-${NKE_CONTROLLER_HTTP_PORT:-18080}}" NVKE_CONTROLLER_TEMPORAL_UI_PORT="${NVKE_CONTROLLER_TEMPORAL_UI_PORT:-${NKE_CONTROLLER_TEMPORAL_UI_PORT:-18081}}"
   export DEV_VALUES="$nvke_controller_dir/values.yaml"
-  export NKE_CONTROLLER_API_URL="http://127.0.0.1:$NKE_CONTROLLER_HTTP_PORT/api" NKE_CONTROLLER_TOKEN_FILE="$nvke_controller_dir/token"
-  export NKE_CONTROLLER_RESULTS_DIR="$nvke_controller_dir/results"
+  export NVKE_CONTROLLER_API_URL="http://127.0.0.1:$NVKE_CONTROLLER_HTTP_PORT/api" NVKE_CONTROLLER_TOKEN_FILE="$nvke_controller_dir/token"
+  export NVKE_CONTROLLER_RESULTS_DIR="$nvke_controller_dir/results"
   export NKE_AUTH_ENABLED=true NKE_PERMISSIVE_MODE=false
   export TENANT_ACCESS_ENABLED=false NKE_OIDC_AUTH_ENABLED=false
-  export NKE_CONTROLLER_PROFILES_DIR="$PWD/../controller/test/fixtures/profiles"
+  export NVKE_CONTROLLER_PROFILES_DIR="$PWD/../controller/test/fixtures/profiles"
   if [[ -z ${DOCKER_HOST:-} ]]; then
     DOCKER_HOST=$(docker context inspect --format '{{.Endpoints.docker.Host}}')
     export DOCKER_HOST
@@ -150,9 +151,9 @@ nvke_controller_main() {
         nvke-controller-credentials) nvke_controller_credentials ;;
         nvke-controller-test)
           nvke_controller_credentials
-          mkdir -p "$NKE_CONTROLLER_RESULTS_DIR"
+          mkdir -p "$NVKE_CONTROLLER_RESULTS_DIR"
           exec go test -tags=integration_test -count=1 -timeout=12m -v ./test/integration \
-            -ginkgo.v -ginkgo.junit-report="$NKE_CONTROLLER_RESULTS_DIR/junit.xml"
+            -ginkgo.v -ginkgo.junit-report="$NVKE_CONTROLLER_RESULTS_DIR/junit.xml"
           ;;
       esac
       ;;
