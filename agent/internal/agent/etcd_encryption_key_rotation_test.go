@@ -792,6 +792,7 @@ func TestUpdateEncryptionConfig_MetricsUnavailable_FailsBeforeWrite(t *testing.T
 		},
 	})
 	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err), "nothing was written, so retrying is safe")
 	assert.Contains(t, err.Error(), "metrics unavailable")
 	cfg, readErr := srv.readEncryptionConfig()
 	require.NoError(t, readErr)
