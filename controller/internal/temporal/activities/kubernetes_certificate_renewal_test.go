@@ -590,7 +590,7 @@ func TestResolveKubernetesCertificateRenewalRequiresMatchingTerminalStatus(t *te
 		{name: "unimplemented", err: status.Error(codes.Unimplemented, "status unsupported"), wantError: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			node := certificateRenewalTestNode()
+			node := pooledCertificateRenewalTestNode() // releases no cluster reservation
 			database := &testutil.MockDB{}
 			database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 			fakeAgent := &agenttest.FakeClient{GetKubernetesCertificateRenewalHook: func(_ db.Node, req *nvkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nvkeproto.GetKubernetesCertificateRenewalStatusResponse, error) {
@@ -621,7 +621,7 @@ func TestResolveKubernetesCertificateRenewalRequiresMatchingTerminalStatus(t *te
 func TestResolveKubernetesCertificateRenewalPollsRunningWithoutStarting(t *testing.T) {
 	for _, finish := range []bool{false, true} {
 		t.Run(fmt.Sprintf("terminal=%t", finish), func(t *testing.T) {
-			node := certificateRenewalTestNode()
+			node := pooledCertificateRenewalTestNode() // releases no cluster reservation
 			database := &testutil.MockDB{}
 			database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 			polls := 0
@@ -676,7 +676,7 @@ func TestResolveKubernetesCertificateRenewalRetriesTransientStatusErrors(t *test
 		{name: "persistently unavailable retains ownership", err: status.Error(codes.Unavailable, "disconnected"), persistent: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			node := certificateRenewalTestNode()
+			node := pooledCertificateRenewalTestNode() // releases no cluster reservation
 			database := &testutil.MockDB{}
 			database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 			polls := 0
@@ -742,7 +742,7 @@ func TestResolveLegacyKubernetesCertificateRenewalUsesOnlyEmbeddedStatusMode(t *
 		{name: "unreachable", err: errors.New("connection lost"), wantError: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			node := certificateRenewalTestNode()
+			node := pooledCertificateRenewalTestNode() // releases no cluster reservation
 			database := &testutil.MockDB{}
 			database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 			overrides := t.TempDir()
@@ -977,6 +977,80 @@ func TestCheckKubernetesCertificateRenewalRequiredUsesEmbeddedReadOnlyMode(t *te
 			require.Empty(t, fake.StartKubernetesCertificateRenewalV2Calls)
 			require.Len(t, fake.ExecuteScriptNames, 1)
 			database.AssertExpectations(t)
+		})
+	}
+}
+
+// TestResolveKubernetesCertificateRenewalReleasesMatchingReservation lets a later
+// cycle pass admission once the operation's termination is confirmed, without
+// clearing another operation's reservation or an unconfirmed one.
+func TestResolveKubernetesCertificateRenewalReleasesMatchingReservation(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		reservedOp   string
+		statusErr    error
+		wantError    bool
+		wantReleased bool
+	}{
+		{name: "terminal status releases the matching reservation", reservedOp: "stable-operation", wantReleased: true},
+		{name: "terminal status keeps another operation's reservation", reservedOp: "another-operation"},
+		{name: "missing status keeps the reservation", reservedOp: "stable-operation", statusErr: status.Error(codes.NotFound, "unknown operation"), wantError: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			node := certificateRenewalTestNode()
+			reservation := &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: tt.reservedOp, Fenced: true}
+			database := &agentAdmissionDatabase{node: node, cluster: db.Cluster{ID: node.ClusterID, CertificateRenewal: reservation}}
+			fakeAgent := &agenttest.FakeClient{GetKubernetesCertificateRenewalHook: func(_ db.Node, req *nvkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nvkeproto.GetKubernetesCertificateRenewalStatusResponse, error) {
+				if tt.statusErr != nil {
+					return nil, tt.statusErr
+				}
+				return &nvkeproto.GetKubernetesCertificateRenewalStatusResponse{Operation: certificateRenewalStartResponse(
+					req.GetOperationId(),
+					nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED,
+					nvkeproto.KubernetesCertificateRenewalOperation_OUTCOME_FAILED_RESTORED,
+					"",
+				).GetOperation()}, nil
+			}}
+			a := &Activities{db: database, nodeAgentClient: fakeAgent}
+			env := (&testsuite.WorkflowTestSuite{}).NewTestActivityEnvironment()
+			env.RegisterActivity(a.ResolveKubernetesCertificateRenewal)
+
+			_, err := env.ExecuteActivity(a.ResolveKubernetesCertificateRenewal, ResolveKubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "stable-operation"})
+
+			if tt.wantError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			if tt.wantReleased {
+				require.Nil(t, database.cluster.CertificateRenewal)
+			} else {
+				require.Equal(t, reservation, database.cluster.CertificateRenewal)
+			}
+		})
+	}
+}
+
+// TestReserveCertificateRenewalFencesOnlyV2 marks reservations that a cycle owns
+// under the cluster mutation lock, which the reconciler may later clear.
+func TestReserveCertificateRenewalFencesOnlyV2(t *testing.T) {
+	for _, tt := range []struct {
+		name                string
+		expectedEtcdMembers int
+		wantFenced          bool
+	}{
+		{name: "V1 reservation is not fenced"},
+		{name: "V2 reservation is fenced", expectedEtcdMembers: 3, wantFenced: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			node := certificateRenewalTestNode()
+			database := &agentAdmissionDatabase{node: node, cluster: db.Cluster{ID: node.ClusterID}}
+			a := &Activities{db: database}
+			input := KubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "new-operation", ThresholdDays: 14, ExpectedEtcdMembers: tt.expectedEtcdMembers}
+
+			require.NoError(t, a.reserveCertificateRenewal(t.Context(), node, &input))
+
+			require.Equal(t, &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: "new-operation", Fenced: tt.wantFenced}, database.cluster.CertificateRenewal)
 		})
 	}
 }

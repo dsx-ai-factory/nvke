@@ -145,6 +145,10 @@ func admitCertificateRenewal(ctx context.Context, tx db.Tx, cluster db.Cluster) 
 	if cluster.NodeAgentUpgrade != nil {
 		return refuse("cannot renew certificates while a node-agent installation is in progress")
 	}
+	// The reservation outlives its cycle until confirmed termination clears it.
+	if cluster.CertificateRenewal != nil {
+		return refuse("cannot renew certificates while a node certificate renewal is still reserved")
+	}
 	// Admission writers check ownership under this lock, so work they accepted
 	// earlier is visible here and must finish before renewal takes ownership.
 	nodes, err := stableControlPlane(ctx, tx, cluster.ID, refuse)

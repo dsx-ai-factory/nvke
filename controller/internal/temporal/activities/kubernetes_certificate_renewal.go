@@ -303,7 +303,7 @@ func (a *Activities) RenewLegacyKubernetesCertificates(ctx context.Context, inpu
 		// An abandoned receipt fences delayed attempts but is not a completed renewal.
 		if err := a.resolveKubernetesCertificateRenewal(resolutionCtx, ResolveKubernetesCertificateRenewalInput{
 			NodeID: input.NodeID, OperationID: input.OperationID, Legacy: true,
-		}, false); err != nil {
+		}, false, false); err != nil {
 			return result, temporal.NewNonRetryableApplicationError(
 				fmt.Sprintf("legacy certificate renewal on node %s has no confirmed terminal receipt", input.NodeID),
 				"UnconfirmedLegacyCertificateRenewal", err, result,
@@ -326,18 +326,30 @@ type ResolveKubernetesCertificateRenewalInput struct {
 // Terminal failure, including failed restoration, can resolve ownership; nil does
 // not mean renewal succeeded or the node is healthy. Its caller must impose a
 // bounded timeout independent of workflow cancellation and retain ownership on
-// error, including missing or unsupported status.
+// error, including missing or unsupported status. Terminal evidence also
+// releases the operation's matching node reservation.
 func (a *Activities) ResolveKubernetesCertificateRenewal(ctx context.Context, input ResolveKubernetesCertificateRenewalInput) error {
-	return a.resolveKubernetesCertificateRenewal(ctx, input, true)
+	return a.resolveKubernetesCertificateRenewal(ctx, input, true, true)
 }
 
-func (a *Activities) resolveKubernetesCertificateRenewal(ctx context.Context, input ResolveKubernetesCertificateRenewalInput, acceptAbandoned bool) error {
+func (a *Activities) resolveKubernetesCertificateRenewal(ctx context.Context, input ResolveKubernetesCertificateRenewalInput, acceptAbandoned, release bool) error {
 	heartbeatCancel := startActivityHeartbeat(ctx)
 	defer heartbeatCancel()
 	node, err := a.db.GetNode(ctx, input.NodeID)
 	if err != nil {
 		return fmt.Errorf("failed to get node for certificate-renewal resolution: %w", err)
 	}
+	if err := a.awaitCertificateRenewalTermination(ctx, node, input, acceptAbandoned); err != nil {
+		return err
+	}
+	if !release {
+		return nil
+	}
+	return a.releaseCertificateRenewal(ctx, node, input.OperationID)
+}
+
+// awaitCertificateRenewalTermination returns nil only for matching terminal evidence.
+func (a *Activities) awaitCertificateRenewalTermination(ctx context.Context, node db.Node, input ResolveKubernetesCertificateRenewalInput, acceptAbandoned bool) error {
 	if input.Legacy {
 		return a.resolveLegacyKubernetesCertificateRenewal(ctx, node, input.OperationID, acceptAbandoned)
 	}
@@ -613,7 +625,7 @@ func (a *Activities) reserveCertificateRenewal(ctx context.Context, node db.Node
 			input.OperationID = active.OperationID
 			return nil
 		}
-		cluster.CertificateRenewal = &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: input.OperationID}
+		cluster.CertificateRenewal = &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: input.OperationID, Fenced: input.ExpectedEtcdMembers > 0}
 		_, err = tx.UpdateCluster(ctx, &cluster)
 		return err
 	})
