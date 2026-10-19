@@ -430,6 +430,9 @@ func renewCertificatesOnNode(
 		}
 		pending.Legacy = true
 		err = workflow.ExecuteActivity(certificateRenewalNodeOptions(ctx), a.RenewLegacyKubernetesCertificates, input).Get(ctx, &result)
+		if errors.As(err, &applicationErr) && applicationErr.Type() == activities.CertificateRenewalNotDispatched {
+			return result, nil, err // Admission refused the node before the runbook ran.
+		}
 	}
 	if err != nil {
 		return result, pending, err

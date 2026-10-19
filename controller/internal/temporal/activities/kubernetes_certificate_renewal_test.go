@@ -207,11 +207,13 @@ func TestRenewKubernetesCertificatesFallbackOutcomes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			node := pooledCertificateRenewalTestNode()
 			database := &testutil.MockDB{}
-			if tt.v1 || tt.wantErr == "" {
-				database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Twice()
-			} else {
-				database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
+			// V1 loads the node for dispatch and the runbook; V2 loads it for
+			// admission, the runbook and, on success, receipt resolution.
+			getNodeCalls := 2
+			if !tt.v1 && tt.wantErr == "" {
+				getNodeCalls = 3
 			}
+			database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Times(getNodeCalls)
 			database.On("GetCluster", mock.Anything, node.ClusterID).Return(db.Cluster{ID: node.ClusterID, Name: "test"}, nil).Once()
 			fakeAgent := &agenttest.FakeClient{
 				StartKubernetesCertificateRenewalHook: func(db.Node, *nvkeproto.StartKubernetesCertificateRenewalRequest) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error) {
@@ -834,9 +836,9 @@ func TestRenewLegacyKubernetesCertificatesRejectsReceiptUnawareSuccess(t *testin
 
 func testRenewLegacyKubernetesCertificatesRejectsReceiptUnawareSuccess(t *testing.T, statusResponse *nvkeproto.ExecuteScriptResponse) {
 	t.Helper()
-	node := certificateRenewalTestNode()
+	node := pooledCertificateRenewalTestNode()
 	database := &testutil.MockDB{}
-	database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Twice()
+	database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Times(3)
 	database.On("GetCluster", mock.Anything, node.ClusterID).Return(db.Cluster{ID: node.ClusterID}, nil).Once()
 	overrides := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(overrides, legacyKubernetesCertificateRenewalRunbook+".sh"),
@@ -909,6 +911,68 @@ func TestRenewKubernetesCertificatesNotDispatchedRequiresNoPriorReservation(t *t
 				require.Empty(t, fake.StartKubernetesCertificateRenewalCalls)
 			})
 		}
+	}
+}
+
+// legacyAdmissionDatabase adds the runbook metric's cluster lookup to the
+// admission fake so a V2 legacy dispatch can run end to end.
+type legacyAdmissionDatabase struct {
+	*agentAdmissionDatabase
+}
+
+func (d legacyAdmissionDatabase) GetCluster(context.Context, uuid.UUID) (db.Cluster, error) {
+	return d.cluster, nil
+}
+
+// TestRenewLegacyKubernetesCertificatesAdmission keeps a workflow-selected legacy
+// dispatch behind the same node admission as typed work: refused nodes never run
+// the runbook, and admitted work releases its reservation once its receipt is confirmed.
+func TestRenewLegacyKubernetesCertificatesAdmission(t *testing.T) {
+	for _, reason := range []string{"none", "upgrade", "repair", "recycling", "delete", "deleting cluster", "another node"} {
+		t.Run(reason, func(t *testing.T) {
+			node := certificateRenewalTestNode()
+			database := &agentAdmissionDatabase{cluster: db.Cluster{ID: node.ClusterID}, node: node}
+			switch reason {
+			case "upgrade":
+				database.cluster.NodeAgentUpgrade = &db.NodeAgentUpgrade{NodeID: node.ID}
+			case "repair":
+				database.node.Conditions.MarkedForRepair = db.NewCondition(true, "")
+			case "recycling":
+				database.node.Conditions.MarkedForRecycling = db.NewCondition(true, "")
+			case "delete":
+				database.node.Conditions.DeleteRequested = db.NewCondition(true, "")
+			case "deleting cluster":
+				database.cluster.Conditions.Deleting = db.NewCondition(true, "")
+			case "another node":
+				database.cluster.CertificateRenewal = &db.NodeAgentCertificateRenewal{NodeID: uuid.New(), OperationID: "other", Fenced: true}
+			}
+			fake := &agenttest.FakeClient{ExecuteScriptHook: func(_ db.Node, _, script string) (*nvkeproto.ExecuteScriptResponse, error) {
+				if strings.Contains(script, "export STATUS_ONLY='true'") {
+					return &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_TERMINAL_OPERATION_ID=stable-operation\n"}, nil
+				}
+				return &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_OUTCOME=renewed\n"}, nil
+			}}
+			a := &Activities{cfg: config.Config{RunbooksDir: t.TempDir()}, db: legacyAdmissionDatabase{database}, nodeAgentClient: fake}
+			suite := &testsuite.WorkflowTestSuite{}
+			env := suite.NewTestActivityEnvironment()
+			env.RegisterActivity(a.RenewLegacyKubernetesCertificates)
+
+			_, err := env.ExecuteActivity(a.RenewLegacyKubernetesCertificates, KubernetesCertificateRenewalInput{
+				NodeID: node.ID, OperationID: "stable-operation", ThresholdDays: 14, ExpectedEtcdMembers: 3,
+			})
+
+			if reason == "none" {
+				require.NoError(t, err)
+				require.Nil(t, database.cluster.CertificateRenewal, "confirmed termination releases the reservation")
+				require.Len(t, fake.ExecuteScriptNames, 2)
+				return
+			}
+			var appErr *temporal.ApplicationError
+			require.ErrorAs(t, err, &appErr)
+			require.Equal(t, CertificateRenewalNotDispatched, appErr.Type())
+			require.True(t, appErr.NonRetryable())
+			require.Empty(t, fake.ExecuteScriptNames, "a refused node must not run the legacy runbook")
+		})
 	}
 }
 

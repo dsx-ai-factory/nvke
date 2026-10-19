@@ -893,6 +893,38 @@ func TestRenewK8sCertsReserveFailureReleasesMutationLock(t *testing.T) {
 	env.AssertExpectations(t)
 }
 
+// A node that is refused admission after its check selected the legacy runbook
+// was never dispatched, so the cycle fails without resolution and releases the lock.
+func TestRenewK8sCertsLegacyAdmissionRefusalReleasesMutationLock(t *testing.T) {
+	clusterID := uuid.New()
+	node := certificateRenewalWorkflowNode(clusterID, "cp-a")
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	rollouttemporal.NewActivities(&noOpRolloutLoader{}, rollout.NewRegistry()).Register(env)
+	a := &activities.Activities{}
+	expectCertificateRenewalBegin(t, env, a, clusterID, false)
+	env.OnActivity(a.ListControlPlaneNodes, mock.Anything, clusterID).Return([]db.Node{node}, nil).Once()
+	expectCertificateRenewalHealth(t, env, a, clusterID, []uuid.UUID{node.ID}, nil).Once()
+	expectCertificateRenewalHealth(t, env, a, clusterID, []uuid.UUID{node.ID}, &node.ID).Once()
+	env.OnActivity(a.CheckKubernetesCertificateRenewalRequired, mock.Anything, mock.Anything).
+		Return(activities.KubernetesCertificateRenewalCheckResult{Required: true, Legacy: true}, nil).Once()
+	env.OnActivity(a.RenewLegacyKubernetesCertificates, mock.Anything, mock.Anything).Return(activities.KubernetesCertificateRenewalResult{},
+		temporal.NewNonRetryableApplicationError("node or cluster removal is requested", activities.CertificateRenewalNotDispatched, nil)).Once()
+	env.OnActivity(a.FailCertificateRenewal, mock.Anything, mock.Anything).Return(func(_ context.Context, input activities.FailCertificateRenewalInput) (activities.FailCertificateRenewalResult, error) {
+		require.False(t, input.RetainMutationLock)
+		require.Equal(t, &node.ID, input.FailedNodeID)
+		require.Contains(t, input.Message, "node or cluster removal is requested")
+		return activities.FailCertificateRenewalResult{}, nil
+	}).Once()
+	due := time.Now().Add(-time.Hour)
+	env.ExecuteWorkflow(RenewK8sCertsV2, RenewK8sCertsInput{ClusterID: clusterID, ThresholdDays: 14, ScheduledFor: &due})
+	require.Error(t, env.GetWorkflowError())
+	env.AssertNotCalled(t, "RenewKubernetesCertificates", mock.Anything, mock.Anything)
+	env.AssertNotCalled(t, "ResolveKubernetesCertificateRenewal", mock.Anything, mock.Anything)
+	env.AssertNotCalled(t, "CompleteCertificateRenewal", mock.Anything, mock.Anything)
+	env.AssertExpectations(t)
+}
+
 // All unchanged scheduled nodes skip both guards and dispatch. Forced cycles
 // bypass read-only selection and still drain each node before restarting it.
 func TestRenewK8sCertsUnchangedThreeNodeCycleNeverDrainsUnlessForced(t *testing.T) {
