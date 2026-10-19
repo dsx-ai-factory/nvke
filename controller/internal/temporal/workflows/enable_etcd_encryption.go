@@ -322,7 +322,8 @@ func validateEtcdEncryptionRewriteOperation(
 	case activities.EtcdEncryptionOperationPhaseSucceeded:
 		return true, nil
 	case activities.EtcdEncryptionOperationPhaseFailed:
-		return false, fmt.Errorf("encrypted-object rewrite failed: %s", operation.ErrorMessage)
+		// The activity drops agent error text, which can echo rejected Secret bodies.
+		return false, errors.New("encrypted-object rewrite failed; inspect node rewrite state")
 	default:
 		return false, fmt.Errorf("encrypted-object rewrite returned unknown phase %q", operation.Phase)
 	}
