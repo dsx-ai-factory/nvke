@@ -163,9 +163,15 @@ route. Successful scraping alone does not deliver notifications.
 Operators must confirm the ServiceMonitor selects the controller service, the
 Prometheus instance loads `nvke-credential-lifecycle`, and its Alertmanager route
 has a receiver for the rule severities. Add a separate scrape/target-down alert:
-these rules cannot report from a controller that is unreachable. When intentionally
-disabling inspection, disable or silence its availability rules explicitly;
-unknown observations must not be mistaken for healthy credentials.
+these rules cannot report from a controller that is unreachable. With
+`credentialMonitoring.enabled=false`, the controller still exports the inspection
+and CSR availability series as unavailable, because nothing observes them. The
+two availability alerts, `NVKECertificateInspectionUnavailable` and
+`NVKEKubeletServingCSRObservationUnavailable`, therefore fire only while
+`credential_monitoring_enabled` is 1, so disabling monitoring does not page for
+every node and cluster. Unknown observations must still not be mistaken for
+healthy credentials: with monitoring disabled, no rule reports expiring or missing
+certificates.
 
 ## Alert responses
 
@@ -176,14 +182,14 @@ thresholds in `deploy/charts/controller/files/credential-alerts.yaml`.
 | Alert | Threshold and hold | Operator response |
 | --- | --- | --- |
 | `NVKECertificateExpiring` | NotAfter minus current time below warning window for `5m` | inspect node inventory and renewal status; use manual CA procedure for a CA |
-| `NVKECertificateInspectionUnavailable` | failed, never observed or stale node inspection for `15m` | restore transport, upgrade unsupported agent, confirm layout and observation freshness |
+| `NVKECertificateInspectionUnavailable` | failed, never observed or stale node inspection for `15m`, when monitoring enabled | restore transport, upgrade unsupported agent, confirm layout and observation freshness |
 | `NVKECertificateMissingOrInvalid` | required credential unavailable in a successful fresh inventory for `15m` | inspect fixed file or kubelet bootstrap; validate identity before repair |
 | `NVKECertificateRenewalFailed` | latest cycle failed for `5m` | follow [renewal recovery](certificate-renewal.md); released failures retry after one hour, retained-lock failures stay halted |
 | `NVKECertificateRenewalOverdue` | more than one hour overdue for `15m`, when automation enabled | inspect readiness, Temporal and maintenance ownership |
 | `NVKECertificateRenewalStuck` | accepted cycle older than two hours for `15m` | inspect workflow and agent termination/restoration before retry |
 | `NVKEKubeletServingCSRStale` | unissued CSR older than fifteen minutes for `5m` | inspect approver decisions and signer health; approved is not issued |
 | `NVKEKubeletServingCSRFailed` | failed or denied CSR exists for `5m` | inspect tenant conditions and identity; never blindly approve a denied request |
-| `NVKEKubeletServingCSRObservationUnavailable` | never observed or snapshot older than five minutes for `5m` | restore tenant-manager access and kubeconfig refresh |
+| `NVKEKubeletServingCSRObservationUnavailable` | never observed or snapshot older than five minutes for `5m`, when monitoring enabled | restore tenant-manager access and kubeconfig refresh |
 | `NVKEEtcdKeyRotationFailed` | latest rotation failed for `5m` | follow [phase-specific recovery](etcd-encryption-key-rotation.md#phase-aware-recovery): a released `prepare` failure needs a new workflow ID; later phases retain the original owner |
 | `NVKEEtcdKeyRotationStuck` | no phase progress for two hours for `15m` | inspect workflow/rewrite before reset or key removal; large rewrites may need longer investigation |
 | `NVKECredentialMetricsCollectionFailed` | inventory query failure for `5m` | restore controller database connectivity; absent cluster series do not prove health |
