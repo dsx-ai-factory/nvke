@@ -260,8 +260,8 @@ log "building the OVN packages for post-init CNI"
 BUNDLE_ARCH="$(go env GOARCH)"
 export BUNDLE_ARCH
 bash "${REPO_ROOT}/controller/hack/ci/prepare-capd-bundles.sh" "${CNI_BUNDLE_DIR}"
-CAPD_CNI_CHARTS_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-charts-1.6.0_1.6.0_${BUNDLE_ARCH}.deb"
-CAPD_CNI_IMAGES_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-images-1.6.0_1.6.0_${BUNDLE_ARCH}.deb"
+CAPD_CNI_CHARTS_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-charts-2.4.2_2.4.2_${BUNDLE_ARCH}.deb"
+CAPD_CNI_IMAGES_DEB_PATH="${CNI_BUNDLE_DIR}/nvke-cni-ovn-images-2.4.2_2.4.2_${BUNDLE_ARCH}.deb"
 CAPD_HELM_DEB_PATH="${CNI_BUNDLE_DIR}/nke-e2e-helm.deb"
 export CAPD_CNI_CHARTS_DEB_PATH CAPD_CNI_IMAGES_DEB_PATH CAPD_HELM_DEB_PATH
 if [ ! -f "${CAPD_CNI_CHARTS_DEB_PATH}" ] || [ ! -f "${CAPD_CNI_IMAGES_DEB_PATH}" ] || [ ! -f "${CAPD_HELM_DEB_PATH}" ]; then
@@ -405,7 +405,7 @@ cluster:
 ${vip_line}
   k8sVersion: "1.34.8"
   cniName: ovn-kubernetes
-  cniVersion: "1.6.0"
+  cniVersion: "2.4.2"
   podCidr: "192.168.0.0/16"
   serviceCidr: "10.96.0.0/12"
   kubeletConfig:
