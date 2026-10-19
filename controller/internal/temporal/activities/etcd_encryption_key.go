@@ -121,7 +121,11 @@ func (a *Activities) ensurePendingKubeAPIEncryptionRotationKey(ctx context.Conte
 	return key, nil
 }
 
-func (a *Activities) finalizePendingKubeAPIEncryptionKey(ctx context.Context, clusterID uuid.UUID) error {
+// finalizePendingKubeAPIEncryptionKey promotes the pending key to active. An
+// enablement rollout distributes an unnamed pending key under the legacy name,
+// so enablement records that name without the identity RPC, which agents
+// admitted by enablement may lack. Rotation discovers an unnamed pending name.
+func (a *Activities) finalizePendingKubeAPIEncryptionKey(ctx context.Context, clusterID uuid.UUID, enablement bool) error {
 	secret, err := a.getKubeAPIEncryptionKeySecret(ctx, clusterID)
 	if err != nil {
 		return err
@@ -133,12 +137,11 @@ func (a *Activities) finalizePendingKubeAPIEncryptionKey(ctx context.Context, cl
 		}
 		return nil
 	}
-	name, err := a.adoptEncryptionKeyName(ctx, clusterID, secret, constants.EtcdEncryptionKeyFieldPending, constants.EtcdEncryptionKeyFieldPendingName)
-	if err != nil {
+	name := string(secret.Data[constants.EtcdEncryptionKeyFieldPendingName])
+	if name == "" && enablement {
+		name = constants.LegacyAPIEncryptionKeyName
+	} else if name, err = a.adoptEncryptionKeyName(ctx, clusterID, secret, constants.EtcdEncryptionKeyFieldPending, constants.EtcdEncryptionKeyFieldPendingName); err != nil {
 		return err
-	}
-	if secret.Data == nil {
-		secret.Data = map[string][]byte{}
 	}
 	secret.Data[constants.EtcdEncryptionKeyFieldActive] = pending
 	secret.Data[constants.EtcdEncryptionKeyFieldActiveName] = []byte(name)

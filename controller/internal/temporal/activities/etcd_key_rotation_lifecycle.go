@@ -136,7 +136,7 @@ func (a *Activities) mutateEtcdKeyRotation(ctx context.Context, clusterID uuid.U
 // redacts upstream errors, which can include rejected Secret bodies, before the
 // Temporal SDK serializes them. Key material never appears in activity results.
 func (a *Activities) FinalizeEtcdRotationKey(ctx context.Context, input EtcdEncryptionClusterInput) error {
-	if err := a.finalizePendingKubeAPIEncryptionKey(ctx, input.ClusterID); err != nil {
+	if err := a.finalizePendingKubeAPIEncryptionKey(ctx, input.ClusterID, false); err != nil {
 		return errors.New("finalizing etcd rotation key failed; inspect Kubernetes access and key state")
 	}
 	return nil

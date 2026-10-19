@@ -141,8 +141,15 @@ func (a *Activities) EnsurePendingEtcdEncryptionKey(ctx context.Context, input E
 	return err
 }
 
+// FinalizePendingEtcdEncryptionKey also serves rotation histories recorded
+// before rotation ownership. Enablement finalizes before EtcdEncrypted is set,
+// and rotation begins only after it is set, so the flag selects the protocol.
 func (a *Activities) FinalizePendingEtcdEncryptionKey(ctx context.Context, input EtcdEncryptionClusterInput) error {
-	return a.finalizePendingKubeAPIEncryptionKey(ctx, input.ClusterID)
+	cluster, err := a.db.GetCluster(ctx, input.ClusterID)
+	if err != nil {
+		return fmt.Errorf("failed to get cluster %s: %w", input.ClusterID, err)
+	}
+	return a.finalizePendingKubeAPIEncryptionKey(ctx, input.ClusterID, !cluster.EtcdEncrypted)
 }
 
 type EtcdEncryptionRewriteInput struct {
