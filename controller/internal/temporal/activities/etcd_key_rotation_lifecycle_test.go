@@ -256,9 +256,30 @@ func TestRotationCompletionRequiresFinalizationAndIsIdempotent(t *testing.T) {
 	_, err = a.CompleteEtcdEncryptionKeyRotation(t.Context(), input)
 	require.NoError(t, err)
 	require.Equal(t, completed, cluster.Conditions.EtcdKeyRotation.CompletedAt)
-	result, err := a.BeginEtcdEncryptionKeyRotation(t.Context(), activities.BeginEtcdEncryptionKeyRotationInput{ClusterID: cluster.ID, WorkflowID: "owner"})
+}
+
+// TestRotationBeginRejectsReusedSucceededWorkflowID: a new execution that reuses
+// the ID of a succeeded rotation must fail visibly instead of reporting success
+// without rotating, and must leave the recorded success untouched.
+func TestRotationBeginRejectsReusedSucceededWorkflowID(t *testing.T) {
+	cluster := runningRotation()
+	a, tx := rotationActivities(t, &cluster)
+	require.NoError(t, a.RecordEtcdKeyRotationPhase(t.Context(), activities.RecordEtcdKeyRotationPhaseInput{
+		ClusterID: cluster.ID, WorkflowID: "owner", Phase: db.EtcdKeyRotationPhaseFinalize,
+	}))
+	_, err := a.CompleteEtcdEncryptionKeyRotation(t.Context(), activities.CompleteEtcdEncryptionKeyRotationInput{ClusterID: cluster.ID, WorkflowID: "owner"})
 	require.NoError(t, err)
-	require.True(t, result.AlreadyCompleted)
+	writes := tx.writes
+	result, err := a.BeginEtcdEncryptionKeyRotation(t.Context(), activities.BeginEtcdEncryptionKeyRotationInput{ClusterID: cluster.ID, WorkflowID: "owner"})
+	require.ErrorContains(t, err, "already succeeded")
+	var applicationErr *temporal.ApplicationError
+	require.ErrorAs(t, err, &applicationErr)
+	require.Equal(t, "EtcdEncryptionKeyRotationPrecondition", applicationErr.Type())
+	require.True(t, applicationErr.NonRetryable())
+	require.False(t, result.AlreadyCompleted)
+	require.Equal(t, writes, tx.writes)
+	require.Equal(t, db.EtcdKeyRotationStateSucceeded, cluster.Conditions.EtcdKeyRotation.State)
+	require.Nil(t, cluster.Conditions.UpdateInProgress)
 }
 
 func TestRotationDelayedUpdatesCannotTouchAnotherOwner(t *testing.T) {

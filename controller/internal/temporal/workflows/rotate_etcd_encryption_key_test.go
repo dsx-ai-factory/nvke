@@ -26,11 +26,13 @@ import (
 	"go.temporal.io/sdk/workflow"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 	rolloutetcd "github.com/dsx-ai-factory/nvke/controller/internal/rollout/operations/etcd"
 	rollouttemporal "github.com/dsx-ai-factory/nvke/controller/internal/rollout/temporal"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestRotateEtcdEncryptionKeyWorkflow_CompletesThroughUnguardedRolloutExecutor(t *testing.T) {
@@ -422,6 +424,40 @@ func TestRotationCancellationWaitsForAcceptedBeginAndRecordsFailure(t *testing.T
 	env.AssertNotCalled(t, "ValidateEtcdEncryptionHealth", mock.Anything, mock.Anything)
 	env.AssertNotCalled(t, "CompleteEtcdEncryptionKeyRotation", mock.Anything, mock.Anything)
 	env.AssertExpectations(t)
+}
+
+// TestRotationReusingSucceededWorkflowIDFailsWithoutNodeWork runs the real Begin
+// activity against a cluster whose recorded rotation with this workflow ID
+// already succeeded: the execution must fail and dispatch nothing after Begin.
+func TestRotationReusingSucceededWorkflowIDFailsWithoutNodeWork(t *testing.T) {
+	clusterID := uuid.New()
+	now := time.Now().UTC()
+	tx := &testutil.MockTx{}
+	tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, EtcdEncrypted: true, Conditions: db.ClusterConditions{
+		Provisioned: db.NewCondition(true, "ready"),
+		EtcdKeyRotation: &db.EtcdKeyRotationStatus{
+			WorkflowID: "owner", State: db.EtcdKeyRotationStateSucceeded, Phase: db.EtcdKeyRotationPhaseFinalize,
+			StartedAt: now, LastProgressAt: now, CompletedAt: &now,
+		},
+	}}, nil)
+	store := &testutil.MockDB{MockTx: tx}
+	store.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	env, _ := setupEnableEtcdEncryptionWorkflowEnv(t)
+	a := activities.NewActivities(config.Config{}, store, nil, nil, "", nil, "")
+	env.RegisterActivity(a.BeginEtcdEncryptionKeyRotation)
+	env.SetStartWorkflowOptions(client.StartWorkflowOptions{ID: "owner"})
+	var started []string
+	env.SetOnActivityStartedListener(func(info *activity.Info, _ context.Context, _ converter.EncodedValues) {
+		started = append(started, info.ActivityType.Name)
+	})
+
+	env.ExecuteWorkflow(RotateEtcdEncryptionKey, RotateEtcdEncryptionKeyInput{ClusterID: clusterID})
+
+	require.True(t, env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	require.ErrorContains(t, err, "already succeeded")
+	require.Equal(t, []string{"BeginEtcdEncryptionKeyRotation"}, started, "a non-retryable Begin failure runs once and dispatches nothing after it")
+	tx.AssertNotCalled(t, "UpdateCluster", mock.Anything, mock.Anything)
 }
 
 // TestRotationBeginAcceptanceReplaysRecordedHistories replays an already-recorded rotation that has no

@@ -56,7 +56,7 @@ func RotateEtcdEncryptionKey(ctx workflow.Context, input RotateEtcdEncryptionKey
 		return fmt.Errorf("failed to begin etcd encryption key rotation: %w", err)
 	}
 
-	if begin.AlreadyCompleted {
+	if begin.AlreadyCompleted { // only in histories recorded before Begin rejected a succeeded owner
 		return nil
 	}
 	logger := workflow.GetLogger(ctx)
