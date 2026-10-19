@@ -1,6 +1,6 @@
 # Configure cert-manager
 
-Choose how NVKE telemetry pipelines (NKTP) obtains its TLS certificates:
+Choose how NVKE telemetry pipeline (NKTP) obtains its TLS certificates:
 
 - **Use cert-manager (default and recommended).** cert-manager issues and renews
   certificates for internal Collector mTLS, the Operator's admission webhook,

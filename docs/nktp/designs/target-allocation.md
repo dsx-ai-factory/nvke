@@ -1,6 +1,6 @@
 # Required target allocation
 
-Scraping workloads in NVKE telemetry pipelines (NKTP) require a Target Allocator. Allocation determines
+Scraping workloads in NVKE telemetry pipeline (NKTP) require a Target Allocator. Allocation determines
 which Collector owns each scrape target.
 
 - Watchdog assigns each target to one replica to avoid duplicate scraping.

@@ -1,6 +1,6 @@
 # Management cluster telemetry: configuration
 
-The NVKE telemetry pipelines (NKTP) chart's defaults are for a multi-node cluster, and they know nothing
+The NVKE telemetry pipeline (NKTP) chart's defaults are for a multi-node cluster, and they know nothing
 about NVKE. Everything a management cluster needs differently is in
 [`deploy/nico/nktp/values.yaml`](https://github.com/dsx-ai-factory/nvke/blob/main/deploy/nico/nktp/values.yaml),
 which the `nktp` item applies over the chart. This page explains what it

@@ -14,7 +14,7 @@ This page lists what the NVIDIA Kubernetes Engine (NVKE) preview supports and ev
 - Create, change and delete workload clusters with `ovn-kubernetes` networking and optional etcd encryption: [Create a workload cluster](../workload-clusters/create.md).
 - Add, scale and delete node pools, and replace nodes: [Manage node pools](../workload-clusters/node-pools.md).
 - Hand a workload cluster to a customer through its admin kubeconfig: [Access a workload cluster](../workload-clusters/access.md).
-- Check health and collect telemetry with NVKE telemetry pipelines (NKTP): [Observe NVKE and its clusters](../operate/observe.md).
+- Check health and collect telemetry with NVKE telemetry pipeline (NKTP): [Observe NVKE and its clusters](../operate/observe.md).
 - Evaluate NVKE on one Linux machine with simulated NICo: [Quickstart: evaluate locally with mock-NICo](../get-started/quickstart-local.md).
 
 ## Known limitations

@@ -4,7 +4,7 @@ The cluster event reader sends Kubernetes Event logs to the logs gateway. Two
 replicas share one watch through leader election. Its own metrics, logs and
 traces go through its [sidecar](../architecture/self-telemetry.md) to watchdog.
 
-All Event logs receive the NVKE telemetry pipelines (NKTP) resource attribute
+All Event logs receive the NVKE telemetry pipeline (NKTP) resource attribute
 `nvidia.telemetry.class: k8s.event`, identifying their category independently of
 the reporting controller or service-name fallback.
 

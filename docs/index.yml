@@ -71,7 +71,7 @@ navigation:
           - page: Site Certificate Renewal
             path: site-operations/certificate-renewal.md
 
-      - section: NVKE telemetry pipelines (NKTP)
+      - section: NVKE telemetry pipeline (NKTP)
         contents:
           - page: Getting started with NKTP
             path: nktp/getting-started.md

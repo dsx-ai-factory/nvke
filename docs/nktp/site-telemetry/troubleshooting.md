@@ -1,6 +1,6 @@
 # Management cluster telemetry: troubleshooting
 
-Failures seen while bringing up NVKE telemetry pipelines (NKTP) on the management cluster, with their causes
+Failures seen while bringing up NVKE telemetry pipeline (NKTP) on the management cluster, with their causes
 and fixes. For checks that tell whether anything is wrong, see
 [verification](verification.md).
 

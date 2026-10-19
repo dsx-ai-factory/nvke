@@ -1,6 +1,6 @@
 # Management cluster telemetry: monitoring your service
 
-NVKE telemetry pipelines (NKTP) collects every Pod's logs, every Pod's state, and the node's metrics
+NVKE telemetry pipeline (NKTP) collects every Pod's logs, every Pod's state, and the node's metrics
 without being asked. Application metrics are different: NKTP scrapes a
 service only when the service declares how to be scraped, with a
 `ServiceMonitor` or `PodMonitor`. NKTP ships no monitors for other

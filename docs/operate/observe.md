@@ -83,7 +83,7 @@ Then run the install command from [Install management-plane services](install-ma
 
 ### Read the management plane metrics
 
-The management plane serves Prometheus metrics at `/metrics` on port 9090 of its pod. NVKE telemetry pipelines (NKTP) scrapes them, as described in [Find the management cluster's telemetry](#find-the-management-clusters-telemetry). To read them directly:
+The management plane serves Prometheus metrics at `/metrics` on port 9090 of its pod. NVKE telemetry pipeline (NKTP) scrapes them, as described in [Find the management cluster's telemetry](#find-the-management-clusters-telemetry). To read them directly:
 
 1. Forward the metrics port to your machine.
 

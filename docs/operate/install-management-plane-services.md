@@ -1,6 +1,6 @@
 # Install management-plane services
 
-This page describes how to install the NVIDIA Kubernetes Engine (NVKE) management plane on the management cluster: Cluster API, the Cluster API infrastructure provider for NVIDIA Infra Controller (NICo), called CAPNICo, PostgreSQL, Temporal, SPIRE, NVKE telemetry pipelines (NKTP), and the NVKE API and controllers. You do this after [Bootstrap the management cluster](bootstrap-management-cluster.md) and before you configure the infrastructure provider and API authentication.
+This page describes how to install the NVIDIA Kubernetes Engine (NVKE) management plane on the management cluster: Cluster API, the Cluster API infrastructure provider for NVIDIA Infra Controller (NICo), called CAPNICo, PostgreSQL, Temporal, SPIRE, NVKE telemetry pipeline (NKTP), and the NVKE API and controllers. You do this after [Bootstrap the management cluster](bootstrap-management-cluster.md) and before you configure the infrastructure provider and API authentication.
 
 The install is a short list of commands that you run in order. Each one stands on its own, and nothing orchestrates them. The first command checks the cluster and your host and tells you what is still missing. The install reads four inputs:
 

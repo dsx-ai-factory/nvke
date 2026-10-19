@@ -93,7 +93,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [nktp/site-telemetry/verification.md](nktp/site-telemetry/verification.md) | Checking every telemetry signal end to end after an install |
 | [nktp/site-telemetry/troubleshooting.md](nktp/site-telemetry/troubleshooting.md) | Telemetry failures seen on management clusters, and their fixes |
 
-## Running NVKE telemetry pipelines (NKTP)
+## Running NVKE telemetry pipeline (NKTP)
 
 | Document | Contents |
 |---|---|

@@ -1,6 +1,6 @@
 # Management cluster telemetry: getting started
 
-NVKE telemetry pipelines (NKTP) collects the management cluster's
+NVKE telemetry pipeline (NKTP) collects the management cluster's
 metrics, logs and traces and exports them over OTLP. It is installed by the `deploy/nico` deploy path, the same way as the rest of the
 management plane. There is nothing to install by hand.
 

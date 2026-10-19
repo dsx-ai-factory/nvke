@@ -50,7 +50,7 @@ body:
         - Helm charts or deployment
         - nico-sim (development simulator)
         - OS image or image checker
-        - NVKE telemetry pipelines (NKTP)
+        - NVKE telemetry pipeline (NKTP)
         - Build, packaging, or release automation
         - Documentation
         - Other / Unknown

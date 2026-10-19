@@ -1,7 +1,7 @@
 # otel-lgtm
 
 [grafana/otel-lgtm](https://github.com/grafana/docker-otel-lgtm) is an all-in-one observability backend (Grafana, Loki, Tempo, Prometheus) with OTLP ingest.
-NVKE telemetry pipelines (NKTP) deploys it by default so that telemetry is viewable immediately after install.
+NVKE telemetry pipeline (NKTP) deploys it by default so that telemetry is viewable immediately after install.
 Prometheus is available on port 9090 of the `lgtm` Service, for example
 `http://lgtm.nktp.svc:9090` when installed in namespace `nktp`. Grafana is served on port 3000 of the `lgtm` service, with anonymous admin access (no login).
 

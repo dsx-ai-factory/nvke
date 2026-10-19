@@ -1,6 +1,6 @@
 # AGENTS.md — `nktp/`
 
-The NVKE telemetry pipelines (NKTP) Helm chart. It deploys an
+The NVKE telemetry pipeline (NKTP) Helm chart. It deploys an
 OpenTelemetry pipeline for cluster metrics, logs and traces. There is no Go code
 here and no image; the chart is the whole component.
 

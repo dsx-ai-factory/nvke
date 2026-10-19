@@ -1,6 +1,6 @@
 # Managed dependencies
 
-NVKE telemetry pipelines (NKTP) installs these upstream charts as Helm dependencies. Their versions are
+NVKE telemetry pipeline (NKTP) installs these upstream charts as Helm dependencies. Their versions are
 pinned in `nktp/deploy/charts/nktp/Chart.yaml` and `nktp/deploy/charts/nktp/Chart.lock`. Settings for each pass
 through under its values key using the upstream chart's own values.
 

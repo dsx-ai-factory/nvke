@@ -2,7 +2,7 @@
 
 A Collector can be Ready and still export nothing, so this checklist checks
 the signals themselves, not just the Pods. Run it after the management plane is
-installed through the `deploy/nico` deploy path, or after any change to its NVKE telemetry pipelines (NKTP)
+installed through the `deploy/nico` deploy path, or after any change to its NVKE telemetry pipeline (NKTP)
 values. It assumes the development backend, `lgtm`. Against your own backend,
 run the same queries there.
 
