@@ -61,6 +61,19 @@ regexes = [
   '''msg="wrote the etcd encryption key" (\S+ )*path=\S+ sha256=[0-9a-f]{64}( trace_id=[0-9a-f]{32} span_id=[0-9a-f]{16})?$''',
 ]
 
+# nvkectl logs where the upstream SPIRE CA's certificate and key files are, when
+# the CA comes from the environment. The line holds paths, not the key, but the
+# default generic-api-key rule reads "key=<path>/ca.key" followed by the span ID
+# as a credential. Scoped like the etcd line: that rule, that message, matched
+# on the line and anchored to its end so nothing else can ride along on it.
+[[allowlists]]
+description = "the paths of the upstream SPIRE CA files that nvkectl logs"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+regexes = [
+  '''msg="SPIRE upstream CA from the environment" (\S+ )*cert=\S+ key=\S+( trace_id=[0-9a-f]{32} span_id=[0-9a-f]{16})?$''',
+]
+
 # Two more hashes the default generic-api-key rule reads as credentials.
 #
 # api_encryption_key_sha256 is the node agent's log of a fingerprint of the key it

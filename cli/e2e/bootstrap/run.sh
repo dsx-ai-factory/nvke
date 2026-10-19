@@ -208,6 +208,9 @@ scan_output_for_secrets() {
     "${fingerprint}" 1 1 >"${work}/clean/etcd-fingerprint.txt"
   printf 'msg="wrote the file" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
     "${fingerprint}" 1 1 >"${work}/flagged/etcd-other.txt"
+  # The SPIRE CA line, which holds file paths, and a key written to it instead.
+  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/cli/.local/spire-ca/ca.crt key=/w/cli/.local/spire-ca/ca.key trace_id=%032x span_id=%016x\n' \
+    1 1 >"${work}/clean/spire-ca-paths.txt"
   # The two hashes the rules allow, and a join token and certificate key beside one
   # of them, which they must not. Computed here for the same reason as above.
   printf '{"msg":"update","api_encryption_key_sha256":"%s"}\n' "${fingerprint}" >"${work}/clean/key-fingerprint.txt"
