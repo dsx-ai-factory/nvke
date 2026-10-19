@@ -190,13 +190,26 @@ type NodeAgentClient interface {
 	// state file is written before the config is touched, so a crash or a
 	// timed-out call can be resumed without re-applying the mutation.
 	//
+	// Once the WAL entry is written it is removed only when the reload is
+	// confirmed. Every later failure retains it (and possibly the written
+	// config), and other mutations fail until the same operation is retried.
+	//
 	// Error codes:
 	//
-	//	FailedPrecondition — encryption-config.yaml is missing on this node; run
-	//	                     InitializeKubernetesAPIEncryption first.
-	//	DeadlineExceeded — config was written but reload was not confirmed
-	//	                   within the deadline; the call is safe to retry.
-	//	other codes      — unrecoverable; no partial state remains.
+	//	FailedPrecondition — encryption-config.yaml is missing (run
+	//	                     InitializeKubernetesAPIEncryption first); a WAL entry
+	//	                     from a different operation exists (retry that
+	//	                     operation first); the apiserver has not yet loaded the
+	//	                     current config; or the config or WAL ownership
+	//	                     changed, or the config became unreadable, before or
+	//	                     during confirmation.
+	//	DeadlineExceeded,
+	//	Canceled         — reload was not confirmed before the deadline or
+	//	                   cancellation; the call is safe to retry.
+	//	Unavailable      — apiserver metrics stayed unavailable, so the reload
+	//	                   cannot be confirmed; retry after they recover.
+	//	other codes      — invalid request, non-control-plane node, invalid
+	//	                   config or mutation, or a local I/O failure.
 	UpdateEncryptionConfig(ctx context.Context, in *UpdateEncryptionConfigRequest, opts ...grpc.CallOption) (*UpdateEncryptionConfigResponse, error)
 	// Looks up a storage key name in the local configuration without returning key material.
 	GetEtcdEncryptionKeyIdentity(ctx context.Context, in *GetEtcdEncryptionKeyIdentityRequest, opts ...grpc.CallOption) (*GetEtcdEncryptionKeyIdentityResponse, error)
@@ -936,13 +949,26 @@ type NodeAgentServer interface {
 	// state file is written before the config is touched, so a crash or a
 	// timed-out call can be resumed without re-applying the mutation.
 	//
+	// Once the WAL entry is written it is removed only when the reload is
+	// confirmed. Every later failure retains it (and possibly the written
+	// config), and other mutations fail until the same operation is retried.
+	//
 	// Error codes:
 	//
-	//	FailedPrecondition — encryption-config.yaml is missing on this node; run
-	//	                     InitializeKubernetesAPIEncryption first.
-	//	DeadlineExceeded — config was written but reload was not confirmed
-	//	                   within the deadline; the call is safe to retry.
-	//	other codes      — unrecoverable; no partial state remains.
+	//	FailedPrecondition — encryption-config.yaml is missing (run
+	//	                     InitializeKubernetesAPIEncryption first); a WAL entry
+	//	                     from a different operation exists (retry that
+	//	                     operation first); the apiserver has not yet loaded the
+	//	                     current config; or the config or WAL ownership
+	//	                     changed, or the config became unreadable, before or
+	//	                     during confirmation.
+	//	DeadlineExceeded,
+	//	Canceled         — reload was not confirmed before the deadline or
+	//	                   cancellation; the call is safe to retry.
+	//	Unavailable      — apiserver metrics stayed unavailable, so the reload
+	//	                   cannot be confirmed; retry after they recover.
+	//	other codes      — invalid request, non-control-plane node, invalid
+	//	                   config or mutation, or a local I/O failure.
 	UpdateEncryptionConfig(context.Context, *UpdateEncryptionConfigRequest) (*UpdateEncryptionConfigResponse, error)
 	// Looks up a storage key name in the local configuration without returning key material.
 	GetEtcdEncryptionKeyIdentity(context.Context, *GetEtcdEncryptionKeyIdentityRequest) (*GetEtcdEncryptionKeyIdentityResponse, error)

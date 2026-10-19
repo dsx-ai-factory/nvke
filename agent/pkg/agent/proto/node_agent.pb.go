@@ -3789,12 +3789,9 @@ func (*UpdateEncryptionConfigRequest_PromotePrimaryKey) isUpdateEncryptionConfig
 
 func (*UpdateEncryptionConfigRequest_RemoveOldKeys) isUpdateEncryptionConfigRequest_Operation() {}
 
-// UpdateEncryptionConfigResponse is empty on success.
-// On failure the gRPC status code describes the nature of the error:
-//
-//	DeadlineExceeded — config was written but the apiserver did not confirm
-//	                   a reload within the deadline; safe to retry.
-//	other codes      — unrecoverable error; no partial state remains.
+// UpdateEncryptionConfigResponse is empty on success. On failure the gRPC
+// status code follows the UpdateEncryptionConfig contract; a written WAL entry
+// is retained for a retry of the same operation.
 type UpdateEncryptionConfigResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
