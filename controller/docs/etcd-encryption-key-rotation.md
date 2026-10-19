@@ -120,6 +120,9 @@ Do not repair a missing management field by renaming a live storage key.
 
 Choose the actual Temporal address, namespace, and CWE task queue from the site
 configuration. Use a new workflow ID for each rotation and retain it for recovery.
+An execution that reuses the ID of a succeeded rotation fails with a
+non-retryable precondition error before any node work, instead of reporting
+success without rotating.
 The input contains only the tenant cluster UUID. The following values are
 placeholders, not deployment defaults:
 

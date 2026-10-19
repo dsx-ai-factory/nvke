@@ -25,6 +25,8 @@ type BeginEtcdEncryptionKeyRotationInput struct {
 	WorkflowID string `json:"WorkflowID,omitempty"`
 }
 
+// BeginEtcdEncryptionKeyRotationResult keeps AlreadyCompleted only so recorded
+// histories that carry it still decode and replay; Begin no longer sets it.
 type BeginEtcdEncryptionKeyRotationResult struct {
 	AlreadyCompleted bool `json:"AlreadyCompleted,omitempty"`
 }
@@ -33,7 +35,6 @@ func (a *Activities) BeginEtcdEncryptionKeyRotation(
 	ctx context.Context,
 	input BeginEtcdEncryptionKeyRotationInput,
 ) (BeginEtcdEncryptionKeyRotationResult, error) {
-	result := BeginEtcdEncryptionKeyRotationResult{}
 	err := a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		cluster, err := tx.GetClusterForUpdate(ctx, input.ClusterID)
 		if err != nil {
@@ -45,8 +46,9 @@ func (a *Activities) BeginEtcdEncryptionKeyRotation(
 		if input.WorkflowID != "" {
 			if status := cluster.Conditions.EtcdKeyRotation; status != nil && status.WorkflowID == input.WorkflowID {
 				if status.State == db.EtcdKeyRotationStateSucceeded {
-					result.AlreadyCompleted = true
-					return nil
+					// Begin succeeds at most once per run, so a succeeded owner means a
+					// new execution reused the ID; it must not report success unrotated.
+					return etcdEncryptionKeyRotationPreconditionError("etcd key rotation with this workflow ID already succeeded; start a new rotation with a new workflow ID")
 				}
 				if status.State == db.EtcdKeyRotationStateFailed {
 					return etcdEncryptionKeyRotationPreconditionError("failed etcd key rotation requires reset at its failed phase")
@@ -119,7 +121,7 @@ func (a *Activities) BeginEtcdEncryptionKeyRotation(
 	if err != nil {
 		return BeginEtcdEncryptionKeyRotationResult{}, err
 	}
-	return result, nil
+	return BeginEtcdEncryptionKeyRotationResult{}, nil
 }
 
 func etcdEncryptionKeyRotationPreconditionError(message string) error {
