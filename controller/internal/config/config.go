@@ -403,7 +403,7 @@ type Config struct {
 
 // TracingConfig configures OpenTelemetry span export.
 type TracingConfig struct {
-	// Enabled turns on span export and per-query database spans.
+	// Enabled turns on span export and database spans for queries with a trace parent.
 	Enabled bool `controllerconfig:"tracing.enabled"`
 	// Endpoint is the OTLP gRPC collector host:port (scheme optional) that
 	// spans are exported to. When empty, the OTEL_EXPORTER_OTLP_* variables the
