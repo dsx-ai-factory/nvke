@@ -119,13 +119,33 @@ func TestClusterStateReadsTheInfrastructureTheDeployWaitsOn(t *testing.T) {
 	for _, want := range []string{
 		"get events -A",
 		"-n 'ovn-kubernetes' describe pods",
-		"-n 'ovn-kubernetes' logs -l 'component=network' --all-containers --tail=200 --prefix --previous",
+		"-n 'ovn-kubernetes' logs -l 'component=network' --all-containers --tail=200 --prefix --ignore-errors --previous",
 		"-n 'cert-manager' describe pods",
-		"-n 'cert-manager' logs -l 'app.kubernetes.io/instance=cert-manager' --all-containers --tail=200 --prefix --previous",
+		"-n 'cert-manager' logs -l 'app.kubernetes.io/instance=cert-manager' --all-containers --tail=200 --prefix --ignore-errors --previous",
 	} {
 		if !strings.Contains(script, want) {
 			t.Errorf("the script does not run %q:\n%s", want, script)
 		}
+	}
+}
+
+// kubectl logs over a selector stops at the first container it cannot read.
+// Run 39238542656 asked ovn-kubernetes for --previous; ovnkube-control-plane
+// had never restarted, so the section held that error and not the ovnkube-node
+// container that was crash-looping.
+func TestClusterStateLogsOutliveAContainerWithNothingToRead(t *testing.T) {
+	var reads int
+	for _, stanza := range strings.Split(clusterStateScript(), "; ") {
+		if !strings.Contains(stanza, " logs -l ") {
+			continue
+		}
+		reads++
+		if !strings.Contains(stanza, " --ignore-errors") {
+			t.Errorf("a log read stops at the first container it cannot read: %s", stanza)
+		}
+	}
+	if reads == 0 {
+		t.Fatal("the script reads no logs")
 	}
 }
 
