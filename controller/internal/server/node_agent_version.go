@@ -14,7 +14,7 @@ import (
 
 var (
 	errAgentUpgradeInProgress = errors.New("control-plane agent upgrade is in progress; retry this maintenance update after it completes")
-	agentReleasePattern       = regexp.MustCompile(`^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`)
+	agentReleasePattern       = regexp.MustCompile(`^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
 )
 
 func canonicalNodeAgentVersion(value string) (string, error) {

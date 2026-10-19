@@ -26,6 +26,10 @@ import urllib.request
 ROOT = Path('/var/lib/nvke/agent-upgrades')
 LEGACY_PACKAGE = 'nke-agent'
 PACKAGE = 'nvke-agent'
+PRERELEASE_IDENTIFIER = r'(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+AGENT_VERSION_PATTERN = (r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
+                         + r'(-' + PRERELEASE_IDENTIFIER + r'(\.' + PRERELEASE_IDENTIFIER + r')*)?')
+REQUEST_KEY_PATTERN = AGENT_VERSION_PATTERN + r'_(apt|bundle)'
 # Keep the legacy state tree intact until the package migration moves it.
 legacy_state = Path('/var/lib/nke')
 if legacy_state.is_dir() and not legacy_state.is_symlink() and not ROOT.parent.exists():
@@ -290,7 +294,7 @@ def read_operations(root):
         try:
             op = json.loads(path.read_text())
             key = request_key(op)
-            if path.parent.name != key or not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)_(apt|bundle)', key):
+            if path.parent.name != key or not re.fullmatch(REQUEST_KEY_PATTERN, key):
                 continue
             if not all(isinstance(op[field], str) for field in ('phase', 'createdAt')):
                 continue
@@ -311,7 +315,7 @@ def prune_operations(records):
     for folder, previous in records:
         name = request_key(previous)
         if name not in keep:
-            if folder.name != name or not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)_(apt|bundle)', name):
+            if folder.name != name or not re.fullmatch(REQUEST_KEY_PATTERN, name):
                 continue
             shutil.rmtree(folder)
 
@@ -321,7 +325,7 @@ if len(sys.argv) == 3 and sys.argv[1] == '--execute':
     sys.exit(0)
 
 target, method, observed = sys.argv[1:]
-if target and not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', target) or method not in ('apt', 'bundle'):
+if target and not re.fullmatch(AGENT_VERSION_PATTERN, target) or method not in ('apt', 'bundle'):
     raise RuntimeError('invalid exact agent target or installation method')
 ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
 with (ROOT / 'upgrade.lock').open('w') as lock:

@@ -32,10 +32,10 @@ with tempfile.TemporaryDirectory() as temporary:
             targetVersion=version, method='bundle',
             phase=phase, createdAt=date)))
     record('v0.1.1_bundle', 'v0.1.1', 'Succeeded', '2026-01-01')
-    record('v0.1.2_bundle', 'v0.1.2', 'Succeeded', '2026-01-02')
+    record('v0.3.0-rc.2_bundle', 'v0.3.0-rc.2', 'Succeeded', '2026-01-02')
     record('v0.1.3_bundle', 'v0.1.3', 'FailedRestored', '2026-01-03')
     record('v0.1.4_bundle', 'v0.1.4', 'Running', '2026-01-04')
-    record('mismatched', 'v0.1.2', 'Succeeded', '2026-01-05')
+    record('mismatched', 'v0.3.0-rc.2', 'Succeeded', '2026-01-05')
     record('v0.1.5_bundle', 'v0.1.6', 'Succeeded', '2026-01-06')
     corrupt = root / 'v0.1.7_bundle'
     corrupt.mkdir()
@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory() as temporary:
     assert len(records) == 4, records
     prune_operations(records)
     assert not (root / 'v0.1.1_bundle').exists()
-    for name in ('v0.1.2_bundle', 'v0.1.3_bundle', 'v0.1.4_bundle',
+    for name in ('v0.3.0-rc.2_bundle', 'v0.1.3_bundle', 'v0.1.4_bundle',
                  'mismatched', 'v0.1.5_bundle', 'v0.1.7_bundle'):
         assert (root / name).exists(), name
 `
@@ -137,6 +137,50 @@ for previous_name, target_name in [('nke-agent', 'nvke-agent'), ('nvke-agent', '
             assert (state_dir / 'state.json').read_text() == 'original state'
 `
 	command := exec.CommandContext(t.Context(), "python3", "-c", "DEFINITIONS = "+fmt.Sprintf("%q", definitions)+"\n"+checks)
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, "%s", output)
+}
+
+func TestAgentUpgradeBootstrapVersionValidation(t *testing.T) {
+	script, err := Script("", "node-agent-upgrade")
+	require.NoError(t, err)
+	_, python, found := strings.Cut(script, "<<'PY'\n")
+	require.True(t, found)
+	python, _, found = strings.Cut(python, "\nPY")
+	require.True(t, found)
+	definitions, admission, found := strings.Cut(python, "if len(sys.argv) == 3")
+	require.True(t, found)
+	checks := `
+import contextlib
+import io
+import tempfile
+with tempfile.TemporaryDirectory() as temporary:
+    for version in ('v1.2.3', 'v0.3.0-rc.2', 'v1.2.3-0', 'v1.2.3-alpha-beta.1'):
+        for method in ('apt', 'bundle'):
+            namespace = dict(globals(), ROOT=Path(temporary))
+            sys.argv = ['updater.py', version, method, version]
+            output = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(output):
+                    exec(ADMISSION, namespace)
+            except SystemExit as result:
+                assert result.code == 0, result
+            else:
+                raise AssertionError('matching version did not finish')
+            assert json.loads(output.getvalue())['phase'] == 'Succeeded'
+    for version in ('latest', '1.2.3', 'v1.2', 'v01.2.3', 'v1.2.3-rc.01',
+                    'v1.2.3-rc..1', 'v1.2.3-', 'v1.2.3+build',
+                    'v1.2.3-rc.1+build', 'v1.2.3-rc/1', ' v1.2.3'):
+        namespace = dict(globals(), ROOT=Path(temporary))
+        sys.argv = ['updater.py', version, 'apt', version]
+        try:
+            exec(ADMISSION, namespace)
+        except RuntimeError as error:
+            assert str(error) == 'invalid exact agent target or installation method'
+        else:
+            raise AssertionError('accepted invalid target: ' + version)
+`
+	command := exec.CommandContext(t.Context(), "python3", "-c", definitions+fmt.Sprintf("ADMISSION = %q\n", "if len(sys.argv) == 3"+admission)+checks)
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, "%s", output)
 }

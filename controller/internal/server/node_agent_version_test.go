@@ -27,7 +27,15 @@ func TestCanonicalNodeAgentVersion(t *testing.T) {
 		{"latest", "", false},
 		{"1.2", "", false},
 		{"v01.2.3", "", false},
-		{"v1.2.3-rc.1", "", false},
+		{"v0.3.0-rc.2", "v0.3.0-rc.2", true},
+		{"0.3.0-rc.2", "v0.3.0-rc.2", true},
+		{"v1.2.3-0", "v1.2.3-0", true},
+		{"v1.2.3-alpha-beta.1", "v1.2.3-alpha-beta.1", true},
+		{"v1.2.3-rc.01", "", false},
+		{"v1.2.3-rc..1", "", false},
+		{"v1.2.3-", "", false},
+		{"v1.2.3-rc.1+build", "", false},
+		{"v1.2.3-rc/1", "", false},
 		{"v1.2.3+build", "", false},
 		{" v1.2.3", "", false},
 	} {
@@ -63,9 +71,9 @@ func TestNodeAgentVersionPatchPreservesOmittedAndClearsEmpty(t *testing.T) {
 	require.Equal(t, "v1.2.3", spec.NodeAgentConfig.Version)
 	require.NoError(t, service.applyClusterLevelControlPlaneSpecUpdate(ctx, &cluster, &api.UpdateClusterControlPlaneConfig{NodeAgentConfig: &api.NodeAgentConfig{}}, &spec))
 	require.Equal(t, "v1.2.3", spec.NodeAgentConfig.Version)
-	downgrade := "1.2.2"
+	downgrade := "0.3.0-rc.2"
 	require.NoError(t, service.applyClusterLevelControlPlaneSpecUpdate(ctx, &cluster, &api.UpdateClusterControlPlaneConfig{NodeAgentConfig: &api.NodeAgentConfig{Version: &downgrade}}, &spec))
-	require.Equal(t, "v1.2.2", spec.NodeAgentConfig.Version)
+	require.Equal(t, "v0.3.0-rc.2", spec.NodeAgentConfig.Version)
 	empty := ""
 	require.NoError(t, service.applyClusterLevelControlPlaneSpecUpdate(ctx, &cluster, &api.UpdateClusterControlPlaneConfig{NodeAgentConfig: &api.NodeAgentConfig{Version: &empty}}, &spec))
 	require.Empty(t, spec.NodeAgentConfig.Version)
