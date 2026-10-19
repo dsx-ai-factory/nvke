@@ -67,7 +67,7 @@ spire-agent:
       # attestor stops rendering entirely and disableContainerSelectors has no
       # plugin to apply to.
       enabled: true
-      # Every site controller node is a control-plane node and the taint is
+      # Every management cluster node is a control-plane node and the taint is
       # removed before anything installs, so management workloads land on
       # nodes that run Kata. A Kata workload runs inside a VM, where the agent
       # cannot walk the caller's cgroup back to a container ID: the
@@ -94,11 +94,11 @@ spire-server:
   # and forget the other, which is why this says example.org rather than
   # something that looks plausible.
   #
-  # The path is a constant: /nke-service/nke-controller, matching the
-  # nke-service ClusterSPIFFEID below and the prefixes
+  # The path is a constant: /nvke-service/nke-controller, matching the
+  # nvke-service ClusterSPIFFEID below and the prefixes
   # agent/cmd/agent/main.go admits.
   adminIDs:
-    - spiffe://example.org/nke-service/nke-controller
+    - spiffe://example.org/nvke-service/nke-controller
   controllerManager:
     # The chart applies its ClusterSPIFFEID objects as part of the same release
     # that creates the controller manager serving the webhook that validates
@@ -130,7 +130,7 @@ spire-server:
     identities:
       clusterSPIFFEIDs:
         default:
-          # nke-controller workloads use a dedicated nke-service
+          # nke-controller workloads use a dedicated nvke-service
           # identity. Keep the fallback from racing it during reconciliation.
           namespaceSelector:
             matchExpressions:
@@ -150,14 +150,14 @@ spire-server:
         # append its own expression to namespaceSelector and merge a podSelector
         # in; raw is the one branch that passes these through verbatim.
         #
-        # The emitted CR is named <release namespace>-<release>-nke-service
-        # rather than nke-service -- the chart derives it. Nothing reads it by
+        # The emitted CR is named <release namespace>-<release>-nvke-service
+        # rather than nvke-service -- the chart derives it. Nothing reads it by
         # name on this path; what matters is the SPIFFE ID below, which has to
         # keep matching spire-server.adminIDs above and the prefixes
         # agent/cmd/agent/main.go admits.
-        nke-service:
+        nvke-service:
           type: raw
-          spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nke-service/{{.PodSpec.ServiceAccountName}}"
+          spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}"
           namespaceSelector:
             matchExpressions:
               - key: kubernetes.io/metadata.name

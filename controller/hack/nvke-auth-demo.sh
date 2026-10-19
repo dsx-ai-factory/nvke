@@ -31,7 +31,7 @@ Permissive (NKE_PERMISSIVE_MODE=true tilt up):
   produces. That counter check is the extra case in a permissive run.
 
 The mode is read from the live Deployment's AUTH_CONFIG_PATH and the
-permissiveMode key of its nke-controller-config, so the same script covers both
+permissiveMode key of its controller config ConfigMap, so the same script covers both
 deployments. Override it with --mode.
 
 Scaffolding lives in deploy/k8s/nke-auth-dev.yaml (namespaces, service accounts,
@@ -46,6 +46,8 @@ EOF
 KUBE_CONTEXT="${KUBE_CONTEXT:-kind-controller-capi}"
 # CWE_NAMESPACE and CWE_HTTP_PORT are deprecated aliases for the NKE_CONTROLLER_ names; #1399 removes them.
 NKE_CONTROLLER_NAMESPACE="${NKE_CONTROLLER_NAMESPACE:-${CWE_NAMESPACE:-}}"
+# controllerConfig.name in the chart; an install that pins the old name sets this to nke-controller-config.
+NVKE_CONTROLLER_CONFIGMAP="${NVKE_CONTROLLER_CONFIGMAP:-nvke-controller-config}"
 NKE_DEPLOYMENT="${NKE_DEPLOYMENT:-}"
 NKE_CONTROLLER_HTTP_PORT="${NKE_CONTROLLER_HTTP_PORT:-${CWE_HTTP_PORT:-8080}}"
 NKE_HTTP_URL="${NKE_HTTP_URL:-http://127.0.0.1:${NKE_CONTROLLER_HTTP_PORT}}"
@@ -142,7 +144,7 @@ if [[ -z "${MODE}" ]]; then
       -o jsonpath="{.spec.template.spec.containers[?(@.name=='${NKE_DEPLOYMENT}')].env[?(@.name=='$1')].value}" 2>/dev/null
   }
   auth_path="$(container_env AUTH_CONFIG_PATH)"
-  permissive="$("${KUBECTL[@]}" get configmap nke-controller-config -n "${NKE_CONTROLLER_NAMESPACE}" \
+  permissive="$("${KUBECTL[@]}" get configmap "${NVKE_CONTROLLER_CONFIGMAP}" -n "${NKE_CONTROLLER_NAMESPACE}" \
     -o jsonpath='{.data.config\.yaml}' 2>/dev/null | yq '.permissiveMode')"
   if [[ -z "${auth_path}" ]]; then
     MODE="disabled"

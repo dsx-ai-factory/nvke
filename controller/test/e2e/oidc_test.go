@@ -37,14 +37,14 @@ func validateOIDCPostCreate(test *tenantTest) {
 		}
 
 		By("Asserting the OIDC kubeconfig + trust bundle exist")
-		// The controller publishes the nke-system secrets asynchronously, so poll
+		// The controller publishes the nvke-system secrets asynchronously, so poll
 		// rather than checking once.
 		Eventually(func() error {
 			return tenantauth.AssertKubeconfigAndTrustBundle(ctx, test.k8sClient, test.cluster.Name)
 		}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
 		controllerIdentity := tenantauth.Identity{Namespace: controller.Namespace(), ServiceAccount: controller.ServiceAccount()}
-		controllerUser := "spiffe://" + test.trustDomain + "/nke-service/" + controller.ServiceAccount()
+		controllerUser := "spiffe://" + test.trustDomain + "/nvke-service/" + controller.ServiceAccount()
 		if os.Getenv(dsxIdentityExchangeEnv) == "true" {
 			By("Asserting the published kubeconfig selects the HTTPS token exchange")
 			exchangeEndpoint := expectSucceed(tenantauth.KubeconfigExecEnv(

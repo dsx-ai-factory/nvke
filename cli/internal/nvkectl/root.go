@@ -34,7 +34,14 @@ var (
 	site     string //nolint:gochecknoglobals // cobra PersistentFlags binding requires package-level var
 )
 
-func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
+// NewRootCmd returns the nvkectl command tree, stamped with the build metadata
+// the version command reports.
+//
+// Building the tree reads no configuration and contacts nothing: every client
+// is created when a command runs, not here. That is what lets the reference
+// documentation be generated from this tree without a kubeconfig, a configured
+// site or a reachable cluster.
+func NewRootCmd(ver, commit, treeState, date string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "nvkectl",
 		Short: "NVKE control-plane CLI",
@@ -135,7 +142,7 @@ func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
 // as a "Trace ID:" line on stderr, never on stdout. A succeeding query command
 // writes nothing and logs the ID at debug level.
 func Execute(ctx context.Context, ver, commit, treeState, date string) error {
-	root := newRootCmd(ver, commit, treeState, date)
+	root := NewRootCmd(ver, commit, treeState, date)
 	return execute(ctx, root, ver, root.ErrOrStderr())
 }
 

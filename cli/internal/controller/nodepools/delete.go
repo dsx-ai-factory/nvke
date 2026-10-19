@@ -17,7 +17,7 @@ func NewDeleteCmd(clientFn ControllerClientFn) *cobra.Command {
 		Use:     "nodepool <name> --cluster <cluster>",
 		Aliases: []string{"nodepools"},
 		Short:   "Delete a node pool",
-		Long: `Delete a node pool on the site controller.
+		Long: `Delete a node pool on the management plane.
 
 Node pool names are unique within a cluster, so --cluster is required to
 identify which pool to delete.

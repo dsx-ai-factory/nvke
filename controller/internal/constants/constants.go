@@ -53,6 +53,19 @@ const (
 	// Secrets and OIDC-mode CAPI objects. The Helm chart creates it unconditionally.
 	NamespaceNVKESystem = "nke-system"
 
+	// LegacyManagementNamespace is the shared management-plane namespace every
+	// site installed before the namespace became configurable uses. It is the
+	// value config.Config.ManagementNamespaceOrDefault falls back to when unset,
+	// so a controller handed a config.yaml written before managementNamespace
+	// existed keeps reading and writing exactly where it always did.
+	//
+	// It is not the default a new site gets. That is the chart's
+	// nvkeSystemNamespace.name, which the chart always renders into
+	// managementNamespace. The new default is deliberately not duplicated here:
+	// the controller must never pick it on its own, or an existing site that has
+	// not pinned the old name would be moved by a binary upgrade alone.
+	LegacyManagementNamespace = "nke-system"
+
 	// LabelValueKubeconfigMode* record whether a published kubeconfig Secret holds
 	// SPIRE exec-auth or a verbatim admin.conf. The mode is rewritten in place when
 	// EnableOIDC flips a cluster, so it is descriptive, not an ownership key:
@@ -67,6 +80,7 @@ const (
 	// constants here. The NICo manager retains its existing identity when the
 	// controller starts managing DSX IMDS entries too, avoiding SSA ownership churn.
 	FieldManagerNicoSpiffe        = "nico-tpm-spiffe-controller"
+	FieldManagerLaunchLayerSpiffe = "launchlayer-spiffe-controller"
 	FieldManagerMachineSpireEntry = "machine-spire-entry-controller"
 
 	LabelValueTerminateStatusInProgress = "InProgress"

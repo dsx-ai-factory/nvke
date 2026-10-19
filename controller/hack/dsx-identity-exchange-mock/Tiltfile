@@ -107,15 +107,15 @@ def register(ctx):
 
     exchange_endpoint = "https://%s:30444/v1/exchange" % site_address
     return struct(
-        cwe_resource_deps=[
+        controller_resource_deps=[
             "dsx-identity-exchange-mock",
             "dsx-identity-exchange-ca",
             "capi-dsx-identity-exchange-ca",
         ],
-        cwe_env_overrides={
+        controller_env_overrides={
             "SSL_CERT_FILE": "/etc/nke/dsx-identity/ca.crt",
         },
-        cwe_chart_flags=[
+        controller_chart_flags=[
             "--set-string", "spiffe.jwtExchangeEndpoint=%s" % exchange_endpoint,
             "--set-string", "spiffe.controllerSubject=spiffe://nke.capd.nke-controller.nvid.id/bm/cwe",
             "--set-string", "spiffe.capiManagerSubject=spiffe://nke.capd.capi-manager.nvid.id/bm/cwe",

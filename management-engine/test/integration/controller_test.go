@@ -123,7 +123,7 @@ var _ = Describe("NVKECluster through the local NVKE controller API", func() {
 		saveEvidence(env.resultsDir, evidence)
 
 		By("checking the CAPI Cluster and Docker infrastructure references")
-		capiKey := client.ObjectKey{Namespace: "nke-system", Name: remoteName}
+		capiKey := client.ObjectKey{Namespace: "nvke-system", Name: remoteName}
 		var capiCluster clusterv1.Cluster
 		Expect(env.host.Get(ctx, capiKey, &capiCluster)).To(Succeed())
 		Expect(capiCluster.Spec.InfrastructureRef).To(Equal(clusterv1.ContractVersionedObjectReference{
@@ -151,7 +151,7 @@ var _ = Describe("NVKECluster through the local NVKE controller API", func() {
 
 func (e environment) pausedControlPlaneMachine(ctx context.Context, clusterName string) (*unstructured.Unstructured, error) {
 	var machines clusterv1.MachineList
-	if err := e.host.List(ctx, &machines, client.InNamespace("nke-system"),
+	if err := e.host.List(ctx, &machines, client.InNamespace("nvke-system"),
 		client.MatchingLabels{clusterv1.ClusterNameLabel: clusterName}); err != nil {
 		return nil, fmt.Errorf("list CAPI machines: %w", err)
 	}

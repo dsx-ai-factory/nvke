@@ -2,16 +2,26 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Assert that the chart still renders the deployed identities it always has,
-and that a greenfield (renamed) render stays internally self-consistent.
+"""Assert the identities the chart renders, for the three ways it gets installed.
 
-The chart package is named `nke-controller`, but every name it renders stays
-`cloud-workflow-engine`, pinned by `nameOverride` in values.yaml. That split is
-deliberate and permanent, not a migration step: existing sites keep the legacy
-runtime naming indefinitely, and only new site installs opt into `controller`
-naming. So "default values render the legacy names" is a durable invariant.
+Three renders, each with its own expectations (see SCENARIOS):
 
-It is also easy to break by accident. Dropping or emptying `nameOverride`
+  default        the chart with no values. What a new install gets.
+  legacy-pinned  the chart with hack/testdata/chart-legacy-pinned-values.yaml,
+                 the values an install that predates the nvke rename sets to keep
+                 the names it already runs. Every name must come out as it did
+                 before the rename, whatever the defaults are.
+  greenfield     a renamed install: nameOverride, fullnameOverride and
+                 serviceAccount.name set to a new value and nothing else
+                 touched. It must stay internally consistent.
+
+The default render and the legacy-pinned render are separate on purpose. The
+chart's defaults are the thing a rename moves; the pins are the thing that
+stops that move from reaching an install that already runs. When a default
+moves, DEFAULT changes and LEGACY does not, and this check fails if the change
+leaks into the pinned render.
+
+Why the legacy names are held at all: dropping or emptying `nameOverride`
 renames the container, the ServiceAccount that SPIFFE identities derive from,
 and the selector labels -- and `helm lint`, `helm template` and kubeconform all
 still pass. Fleet dashboards select on `container="cloud-workflow-engine"`, and
@@ -19,89 +29,255 @@ a Deployment's `spec.selector` is immutable once applied, so an upgrade would
 fail rather than rename.
 
 Not asserted: `helm.sh/chart` and the `# Source:` comments. Both encode the
-chart's own name by design, both changed when the package was renamed, and
-neither is a selector or a consumer-visible identity.
+chart's own name by design, and neither is a selector or a consumer-visible
+identity.
 
-A second, independent render then checks the opposite direction: a site that
-*does* rename (nameOverride/fullnameOverride/serviceAccount.name all set to a
-greenfield value, nothing else touched) must still be internally consistent --
-the ServiceMonitor's selector must still match the Service it is supposed to
-scrape, and the tenant RBAC ClusterRoleBinding's subject must still match the
-SPIFFE ID SPIRE actually issues that renamed ServiceAccount (see
-deploy/k8s/spire-nke-services-spiffe-id.yaml's spiffeIDTemplate), with no
-manual spiffe.controllerSubject override required.
+The greenfield render checks the opposite direction: the ServiceMonitor's
+selector must still match the Service it is supposed to scrape, and the tenant
+RBAC ClusterRoleBinding's subject must still match the SPIFFE ID SPIRE actually
+issues that renamed ServiceAccount (see deploy/k8s/spire-nke-services-spiffe-id.yaml's
+spiffeIDTemplate), with no manual spiffe.controllerSubject override required.
 """
 
 import argparse
+import dataclasses
+import pathlib
 import subprocess
 import sys
 
 import yaml
 
-# The Helm release name production uses. `app.kubernetes.io/instance` and the
-# fullname helper both derive from it, so rendering under any other release
-# name would not exercise the identities that actually ship.
-RELEASE = "cloud-workflow-engine"
+# The Helm release an install that predates the rename runs.
+# `app.kubernetes.io/instance` and the fullname helper both derive from the
+# release name, so rendering under any other one would not exercise the
+# identities that actually ship.
+LEGACY_RELEASE = "cloud-workflow-engine"
+# The release a new install uses.
+DEFAULT_RELEASE = "nvke-controller"
 
-EXPECTED_NAMES = {
-    ("CustomResourceDefinition", "clusterreleases.internal.nvke.nvidia.com"),
-    ("CustomResourceDefinition", "machineimages.internal.nvke.nvidia.com"),
-    ("CustomResourceDefinition", "nodepoolreleases.internal.nvke.nvidia.com"),
-    ("ClusterRole", "cloud-workflow-engine-releases"),
-    ("ClusterRoleBinding", "cloud-workflow-engine-releases"),
-    ("Namespace", "nke-system"),
-    ("NetworkPolicy", "cloud-workflow-engine-metrics"),
-    ("ServiceAccount", "cloud-workflow-engine"),
-    ("Role", "cloud-workflow-engine"),
-    ("Role", "cloud-workflow-engine-nke-rbac"),
-    ("RoleBinding", "cloud-workflow-engine"),
-    ("RoleBinding", "cloud-workflow-engine-nke-rbac"),
-    ("Service", "cloud-workflow-engine"),
-    ("ConfigMap", "nke-controller-config"),
-    ("Deployment", "cloud-workflow-engine"),
-    ("ServiceMonitor", "cloud-workflow-engine-metrics"),
-    ("Pod", "cloud-workflow-engine-test-connection"),
-}
-
-EXPECTED_CONTAINER = "cloud-workflow-engine"
-EXPECTED_SELECTOR = {
-    "app.kubernetes.io/name": "cloud-workflow-engine",
-    "app.kubernetes.io/instance": "cloud-workflow-engine",
-}
-
+LEGACY_VALUES = pathlib.Path(__file__).resolve().parent / "testdata" / "chart-legacy-pinned-values.yaml"
 
 GREENFIELD_NAME = "nke-controller"
 GREENFIELD_TRUST_DOMAIN = "example.test"
+
+
+def expected_names(fullname: str, config_map: str, namespace: str, extra: frozenset = frozenset()) -> frozenset:
+    """Every (kind, name) the chart renders, given the names that vary between scenarios.
+
+    fullname is what `controller.fullname` yields: the Deployment, Service and
+    everything prefixed by it. The ServiceAccount, its Role and RoleBinding and
+    the ServiceMonitor are named by their own defaults, not by fullname, and
+    have not moved.
+    """
+    return (
+        frozenset(
+            {
+                ("CustomResourceDefinition", "clusterreleases.internal.nvke.nvidia.com"),
+                ("CustomResourceDefinition", "machineimages.internal.nvke.nvidia.com"),
+                ("CustomResourceDefinition", "nodepoolreleases.internal.nvke.nvidia.com"),
+                ("ClusterRole", f"{fullname}-releases"),
+                ("ClusterRoleBinding", f"{fullname}-releases"),
+                ("NetworkPolicy", f"{fullname}-metrics"),
+                ("ServiceAccount", "cloud-workflow-engine"),
+                ("Role", "cloud-workflow-engine"),
+                ("Role", f"{fullname}-nke-rbac"),
+                ("RoleBinding", "cloud-workflow-engine"),
+                ("RoleBinding", f"{fullname}-nke-rbac"),
+                ("Service", fullname),
+                ("ConfigMap", config_map),
+                ("Deployment", fullname),
+                ("ServiceMonitor", "cloud-workflow-engine-metrics"),
+                ("Pod", f"{fullname}-test-connection"),
+                ("Namespace", namespace),
+            }
+        )
+        | extra
+    )
+
+
+@dataclasses.dataclass(frozen=True)
+class Scenario:
+    """One render of the chart and what it must contain."""
+
+    label: str
+    # The Helm release name the render uses.
+    release: str
+    # Passed to helm as -f. None renders the chart's own defaults.
+    values_file: pathlib.Path | None
+    # Every (kind, name) the render must contain, and nothing else.
+    names: frozenset
+    # The name of the ConfigMap that carries the controller's settings file.
+    config_map: str
+    container: str
+    selector: dict
+    # The management namespace, and so the Namespace object and the namespace
+    # of the nke-rbac ConfigMap, Role and RoleBinding.
+    namespace: str
+    # The teleport block of the rendered controller config.
+    teleport: dict
+    # The first SPIFFE path segment of the default RBAC subjects, which must be
+    # the one the ClusterSPIFFEID issues.
+    spiffe_segment: str = "nke-service"
+
+
+# The names an install keeps by pinning. These do not change when a default does.
+LEGACY = Scenario(
+    label="legacy-pinned",
+    release=LEGACY_RELEASE,
+    values_file=LEGACY_VALUES,
+    # The pinned values set spiffe.trustDomain, so the nke-rbac ConfigMap renders.
+    names=expected_names("cloud-workflow-engine", "nke-controller-config", "nke-system", frozenset({("ConfigMap", "nke-rbac")})),
+    config_map="nke-controller-config",
+    container="cloud-workflow-engine",
+    selector={
+        "app.kubernetes.io/name": "cloud-workflow-engine",
+        "app.kubernetes.io/instance": LEGACY_RELEASE,
+    },
+    namespace="nke-system",
+    teleport={
+        "managedByLabelValue": "nke-cloud-workflow-engine",
+        "tokenNamePrefix": "nke-cwe-",
+        "resourceGroupLabelValue": "nke",
+    },
+)
+
+# What a new install gets. The controller's own names, the config ConfigMap, the
+# management namespace and the Teleport values have moved to nvke. The
+# ServiceAccount, the ServiceMonitor and the nke-rbac objects have not, and moving
+# them is the rest of the rename. Change this, and only this, when a default moves.
+DEFAULT = dataclasses.replace(
+    LEGACY,
+    label="default",
+    release=DEFAULT_RELEASE,
+    values_file=None,
+    names=expected_names("nvke-controller", "nvke-controller-config", "nvke-system"),
+    config_map="nvke-controller-config",
+    container="nvke-controller",
+    selector={
+        "app.kubernetes.io/name": "nvke-controller",
+        "app.kubernetes.io/instance": DEFAULT_RELEASE,
+    },
+    namespace="nvke-system",
+    teleport={
+        "managedByLabelValue": "nvke-controller",
+        "tokenNamePrefix": "nvke-controller-",
+        "resourceGroupLabelValue": "nvke",
+    },
+    spiffe_segment="nvke-service",
+)
+
+SCENARIOS = (DEFAULT, LEGACY)
+
+
+def render(chart: str, release: str, values_file: pathlib.Path | None = None, sets: tuple = ()) -> list[dict]:
+    """Return the documents `helm template` renders."""
+    cmd = ["helm", "template", release, chart]
+    if values_file is not None:
+        cmd += ["-f", str(values_file)]
+    for item in sets:
+        cmd += ["--set", item]
+    out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
+    return [d for d in yaml.safe_load_all(out) if d]
+
+
+def spiffe_subjects(rbac_config_map: dict) -> set[str]:
+    """Return the spiffe:// subjects of the ClusterRoleBindings the nke-rbac ConfigMap carries."""
+    return {
+        s["name"]
+        for d in yaml.safe_load_all(rbac_config_map["data"]["manifest.yaml"])
+        if d and d.get("kind") == "ClusterRoleBinding"
+        for s in d.get("subjects") or []
+        if str(s.get("name", "")).startswith("spiffe://")
+    }
+
+
+def check_scenario(chart: str, sc: Scenario) -> list[str]:
+    """Render the scenario and assert the names, selector, namespace and config it must carry."""
+    failures = []
+    docs = render(chart, sc.release, sc.values_file)
+
+    actual = {(d.get("kind"), d.get("metadata", {}).get("name")) for d in docs}
+    for missing in sorted(sc.names - actual):
+        failures.append(f"expected {missing[0]} named {missing[1]}, which the chart no longer renders")
+    for extra in sorted(actual - sc.names):
+        failures.append(f"unexpected {extra[0]} named {extra[1]}")
+
+    deployments = [d for d in docs if d.get("kind") == "Deployment"]
+    if not deployments:
+        failures.append("the chart rendered no Deployment")
+    for dep in deployments:
+        names = [c["name"] for c in dep["spec"]["template"]["spec"]["containers"]]
+        if sc.container not in names:
+            failures.append(
+                f"container {sc.container} is gone; got {names}. "
+                "Dashboards select on it -- check nameOverride"
+            )
+        selector = dep["spec"]["selector"]["matchLabels"]
+        if selector != sc.selector:
+            failures.append(
+                f"Deployment selector changed to {selector}; expected {sc.selector}. "
+                "spec.selector is immutable, so this breaks upgrades on existing sites"
+            )
+
+    namespaces = [d["metadata"]["name"] for d in docs if d.get("kind") == "Namespace"]
+    if namespaces != [sc.namespace]:
+        failures.append(f"created Namespaces {namespaces}, expected [{sc.namespace!r}]")
+
+    for doc in docs:
+        if doc.get("kind") not in ("ConfigMap", "Role", "RoleBinding"):
+            continue
+        name = doc["metadata"]["name"]
+        if not (name == "nke-rbac" or name.endswith("-nke-rbac")):
+            continue
+        got = doc["metadata"].get("namespace")
+        if got != sc.namespace:
+            failures.append(f"{doc['kind']} {name} is in namespace {got!r}, expected {sc.namespace!r}")
+
+    # The nke-rbac ConfigMap renders only when spiffe.trustDomain is set.
+    rbac = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == "nke-rbac"]
+    if rbac:
+        subjects = spiffe_subjects(rbac[0])
+        stale = sorted(s for s in subjects if f"/{sc.spiffe_segment}/" not in s)
+        if not subjects or stale:
+            failures.append(
+                f"SPIFFE subjects {sorted(subjects)} are not all under /{sc.spiffe_segment}/; stale: {stale}. "
+                "The ClusterSPIFFEID would issue an ID the tenant bindings do not name"
+            )
+
+    config_maps = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == sc.config_map]
+    if not config_maps:
+        failures.append(f"no {sc.config_map} ConfigMap")
+        return failures
+    config = yaml.safe_load(config_maps[0]["data"]["config.yaml"])
+    if config.get("managementNamespace") != sc.namespace:
+        failures.append(
+            f"managementNamespace is {config.get('managementNamespace')!r}, expected {sc.namespace!r}; "
+            "the controller would address a namespace the chart did not grant it"
+        )
+    teleport = config.get("teleport") or {}
+    for key, want in sc.teleport.items():
+        if teleport.get(key) != want:
+            failures.append(f"teleport.{key} is {teleport.get(key)!r}, expected {want!r}")
+
+    return failures
 
 
 def check_greenfield(chart: str) -> list[str]:
     """Render with a renamed service and assert it stays self-consistent."""
     failures = []
 
-    rendered = subprocess.run(
-        [
-            "helm",
-            "template",
-            GREENFIELD_NAME,
-            chart,
-            "--set",
+    docs = render(
+        chart,
+        GREENFIELD_NAME,
+        sets=(
             f"nameOverride={GREENFIELD_NAME}",
-            "--set",
             f"fullnameOverride={GREENFIELD_NAME}",
-            "--set",
             f"serviceAccount.name={GREENFIELD_NAME}",
-            "--set",
             f"spiffe.trustDomain={GREENFIELD_TRUST_DOMAIN}",
-            "--set",
             "nvkeOIDCAuth.enabled=true",
-            "--set",
             "tenantAccess.enabled=true",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    docs = [d for d in yaml.safe_load_all(rendered) if d]
+        ),
+    )
 
     services = [d for d in docs if d.get("kind") == "Service"]
     monitors = [d for d in docs if d.get("kind") == "ServiceMonitor"]
@@ -130,7 +306,7 @@ def check_greenfield(chart: str) -> list[str]:
     bindings = [
         d for d in inner if d and d.get("kind") == "ClusterRoleBinding" and d["metadata"]["name"] == "nvke:cwe"
     ]
-    want_subject = f"spiffe://{GREENFIELD_TRUST_DOMAIN}/nke-service/{GREENFIELD_NAME}"
+    want_subject = f"spiffe://{GREENFIELD_TRUST_DOMAIN}/{DEFAULT.spiffe_segment}/{GREENFIELD_NAME}"
     if not bindings:
         failures.append("greenfield render has no nvke:cwe ClusterRoleBinding")
     else:
@@ -145,61 +321,135 @@ def check_greenfield(chart: str) -> list[str]:
     return failures
 
 
+PINNED_CONFIG_NAME = "pinned-controller-config"
+PINNED_SPIFFE_SEGMENT = "pinned-service"
+
+# Every ServiceAccount nke-rbac names a default subject for: this controller's
+# own, plus the four CAPI managers the nvke:capi-cluster-admin binding grants.
+# Each is spiffe://<trustDomain>/<servicePathSegment>/<serviceAccount>, so
+# pinning the segment has to move all five together.
+DEFAULT_SPIFFE_SERVICE_ACCOUNTS = (
+    "cloud-workflow-engine",
+    "capi-manager",
+    "capi-kubeadm-control-plane-manager",
+    "capi-kubeadm-bootstrap-manager",
+    "capd-manager",
+)
+
+
+def check_pinnable_names(chart: str) -> list[str]:
+    """Render with controllerConfig.name and spiffe.servicePathSegment set and assert they move everywhere.
+
+    Both were literals, so a chart that renames its defaults could not leave an
+    existing site on the old names. The ConfigMap name is read by the ConfigMap
+    itself, the Deployment's volume and the Reloader annotation; the SPIFFE
+    segment by every default subject in nke-rbac. One consumer left on the
+    default is a pod that cannot mount its config or a controller the tenant
+    apiserver denies.
+    """
+    failures = []
+
+    docs = render(
+        chart,
+        DEFAULT_RELEASE,
+        sets=(
+            f"controllerConfig.name={PINNED_CONFIG_NAME}",
+            f"spiffe.servicePathSegment={PINNED_SPIFFE_SEGMENT}",
+            f"spiffe.trustDomain={GREENFIELD_TRUST_DOMAIN}",
+            "nvkeOIDCAuth.enabled=true",
+            "tenantAccess.enabled=true",
+        ),
+    )
+
+    config_maps = [d["metadata"]["name"] for d in docs if d.get("kind") == "ConfigMap"]
+    if PINNED_CONFIG_NAME not in config_maps or DEFAULT.config_map in config_maps:
+        failures.append(f"pinned render ConfigMaps are {sorted(config_maps)}; expected {PINNED_CONFIG_NAME!r} and no {DEFAULT.config_map}")
+
+    deployments = [d for d in docs if d.get("kind") == "Deployment"]
+    if not deployments:
+        failures.append(
+            "pinned render has no Deployment; the config mount and Reloader watch went unchecked"
+        )
+    for dep in deployments:
+        volumes = {v["name"]: v for v in dep["spec"]["template"]["spec"].get("volumes") or []}
+        mounted = [v["configMap"]["name"] for v in volumes.values() if "configMap" in v]
+        if PINNED_CONFIG_NAME not in mounted:
+            failures.append(f"pinned render Deployment mounts ConfigMaps {mounted}, not {PINNED_CONFIG_NAME!r}")
+        reload = dep["metadata"].get("annotations", {}).get("configmap.reloader.stakater.com/reload", "")
+        if PINNED_CONFIG_NAME not in reload.split(","):
+            failures.append(f"pinned render Reloader annotation is {reload!r}, which does not watch {PINNED_CONFIG_NAME!r}")
+
+    rbac = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == "nke-rbac"]
+    if not rbac:
+        failures.append("pinned render has no nke-rbac ConfigMap")
+        return failures
+    subjects = {
+        str(s.get("name", ""))
+        for d in yaml.safe_load_all(rbac[0]["data"]["manifest.yaml"])
+        if d and d.get("kind") == "ClusterRoleBinding"
+        for s in d.get("subjects") or []
+    }
+    want = {
+        f"spiffe://{GREENFIELD_TRUST_DOMAIN}/{PINNED_SPIFFE_SEGMENT}/{sa}" for sa in DEFAULT_SPIFFE_SERVICE_ACCOUNTS
+    }
+    if subjects != want:
+        failures.append(
+            f"pinned render ClusterRoleBinding subjects {sorted(subjects)} != expected {sorted(want)}; "
+            f"missing: {sorted(want - subjects)}; unexpected: {sorted(subjects - want)}"
+        )
+
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--chart", required=True)
     args = parser.parse_args()
 
-    rendered = subprocess.run(
-        ["helm", "template", RELEASE, args.chart],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    docs = [d for d in yaml.safe_load_all(rendered) if d]
-
-    failures = []
-
-    actual = {(d.get("kind"), d.get("metadata", {}).get("name")) for d in docs}
-    for missing in sorted(EXPECTED_NAMES - actual):
-        failures.append(f"expected {missing[0]} named {missing[1]}, which the chart no longer renders")
-    for extra in sorted(actual - EXPECTED_NAMES):
-        failures.append(f"unexpected {extra[0]} named {extra[1]}")
-
-    deployments = [d for d in docs if d.get("kind") == "Deployment"]
-    if not deployments:
-        failures.append("the chart rendered no Deployment")
-    for dep in deployments:
-        names = [c["name"] for c in dep["spec"]["template"]["spec"]["containers"]]
-        if EXPECTED_CONTAINER not in names:
-            failures.append(
-                f"container {EXPECTED_CONTAINER} is gone; got {names}. "
-                "Dashboards select on it -- check nameOverride in values.yaml"
-            )
-        selector = dep["spec"]["selector"]["matchLabels"]
-        if selector != EXPECTED_SELECTOR:
-            failures.append(
-                f"Deployment selector changed to {selector}; expected {EXPECTED_SELECTOR}. "
-                "spec.selector is immutable, so this breaks upgrades on existing sites"
-            )
-
-    if failures:
-        print("ERROR: the chart no longer renders the deployed identities it must preserve.")
-        for f in failures:
-            print(f"  - {f}")
+    if not LEGACY_VALUES.is_file():
+        print(f"ERROR: the legacy-pinned values fixture is missing: {LEGACY_VALUES}")
         return 1
 
-    print(f"  chart identities: {len(EXPECTED_NAMES)} resources, container and selector unchanged")
+    checks = [
+        (
+            f"the {sc.label} render",
+            f"the {sc.label} render does not carry the identities it must",
+            lambda sc=sc: check_scenario(args.chart, sc),
+            f"  {sc.label}: {len(sc.names)} resources, container, selector, namespace and Teleport values as expected",
+        )
+        for sc in SCENARIOS
+    ]
+    checks.append(
+        (
+            "pinnable names",
+            "pinning controllerConfig.name or spiffe.servicePathSegment does not move every consumer",
+            lambda: check_pinnable_names(args.chart),
+            f"  pinnable names: controller config ConfigMap and SPIFFE subjects follow {PINNED_CONFIG_NAME} and {PINNED_SPIFFE_SEGMENT}",
+        )
+    )
+    checks.append(
+        (
+            "greenfield",
+            "a renamed (greenfield) render is not internally self-consistent",
+            lambda: check_greenfield(args.chart),
+            "  greenfield: ServiceMonitor/Service selectors match, controller subject self-corrects",
+        )
+    )
 
-    greenfield_failures = check_greenfield(args.chart)
-    if greenfield_failures:
-        print("ERROR: a renamed (greenfield) render is not internally self-consistent.")
-        for f in greenfield_failures:
-            print(f"  - {f}")
-        return 1
-
-    print("  greenfield identities: ServiceMonitor/Service selectors match, controller subject self-corrects")
-    return 0
+    # Every check runs: a change to a default should fail the default render and
+    # leave the legacy-pinned one passing, and stopping at the first failure
+    # would hide which of the two it was.
+    failed = False
+    for _name, error, run, ok in checks:
+        failures = run()
+        if failures:
+            failed = True
+            print(f"ERROR: {error}.")
+            for f in failures:
+                print(f"  - {f}")
+        else:
+            print(ok)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

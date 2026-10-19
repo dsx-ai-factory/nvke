@@ -82,8 +82,8 @@ func StartAPIServer(t testing.TB) string {
 	cfg, err := env.Start()
 	require.NoError(t, err, "starting the envtest API server")
 	requireGofailAPIResources(t, cfg)
-	// The worker resolves every OS image from the release resources, so the
-	// tests install them.
+	// The worker exits at startup without the release CRDs, and resolves every
+	// OS image from the releases, so the framework installs both.
 	installReleases(t, cfg)
 	t.Cleanup(func() {
 		require.NoError(t, env.Stop(), "stopping the envtest API server")

@@ -19,7 +19,7 @@ import (
 // fakeKubeconfigFetcher is a KubeconfigFetcher double keyed by cluster name.
 type fakeKubeconfigFetcher map[string][]byte
 
-func (f fakeKubeconfigFetcher) GetClusterKubeconfig(_ context.Context, clusterName string) ([]byte, error) {
+func (f fakeKubeconfigFetcher) GetClusterKubeconfig(_ context.Context, clusterName string, _ []string) ([]byte, error) {
 	data, ok := f[clusterName]
 	if !ok {
 		return nil, errors.New("secret not found")

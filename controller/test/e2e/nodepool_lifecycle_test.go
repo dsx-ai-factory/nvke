@@ -12,6 +12,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
@@ -20,6 +23,9 @@ const (
 	extraPoolName            = "worker-extra"
 	cascadePoolName          = "worker-cascade"
 	manualScaleDownStableFor = 5 * time.Minute
+	// extraPoolMetadataKey is the label and taint key the additional pool is created with. It sits outside the
+	// domains the controller reserves.
+	extraPoolMetadataKey = "example.com/nodepool-e2e"
 )
 
 // validateClusterConfig verifies the cluster and its initial control-plane and
@@ -140,18 +146,30 @@ func validateAdditionalNodePool(test *tenantTest) {
 		primaryPool := expectWorkerPool(ctx, test)
 		primaryBefore := expectNodeIDs(ctx, test, primaryPool.ID)
 
-		By("Creating an additional worker node pool")
+		By("Creating an additional worker node pool with labels and taints")
 		req := expectSucceed(workerNodePoolRequest(test, extraPoolName, "wx"))
+		wantLabels := map[string]string{extraPoolMetadataKey: "true"}
+		wantTaints := []api.NodeTaint{{Key: extraPoolMetadataKey, Value: "true", Effect: api.NodeTaintEffectNoSchedule}}
+		req.NodeLabels = wantLabels
+		req.NodeTaints = wantTaints
 		extra := expectSucceed(test.nvke.CreateNodePool(ctx, req))
 		Expect(extra.Name).To(Equal(extraPoolName))
 		Expect(extra.ControlPlane).To(BeFalse())
+		Expect(extra.NodeLabels).To(Equal(wantLabels), "the pool should report the labels it was created with")
+		Expect(extra.NodeTaints).To(Equal(wantTaints), "the pool should report the taints it was created with")
 
 		By("Waiting for the additional pool to reach one provisioned node")
 		Expect(test.nvke.WaitForProvisionedNodeCount(ctx, extra.ID, 1)).To(Succeed())
 
+		By("Verifying the pool's labels and taints are applied to its node")
+		eventuallyNodesHaveMetadata(ctx, test, expectNodeNames(ctx, test, extra.ID), wantLabels, wantTaints)
+
 		By("Scaling the additional pool from one node to two")
 		expectSucceed(test.nvke.UpdateNodePoolDesiredCount(ctx, extra.ID, 2))
 		Expect(test.nvke.WaitForProvisionedNodeCount(ctx, extra.ID, 2)).To(Succeed())
+
+		By("Verifying the node added by the scale-up also has the pool's labels and taints")
+		eventuallyNodesHaveMetadata(ctx, test, expectNodeNames(ctx, test, extra.ID), wantLabels, wantTaints)
 
 		By("Verifying the primary worker pool was not disturbed")
 		Expect(expectNodeIDs(ctx, test, primaryPool.ID)).To(Equal(primaryBefore),
@@ -192,6 +210,50 @@ func validateNodePoolCascadePostDelete(test *tenantTest) {
 		By("Verifying the node pool retains no nodes")
 		Expect(expectSucceed(test.nvke.ListNodePoolNodes(ctx, test.cascadePoolID))).To(BeEmpty())
 	}, Label("cascade"), NodeTimeout(10*time.Minute))
+}
+
+// eventuallyNodesHaveMetadata blocks until every named node carries wantLabels and wantTaints in the tenant cluster.
+// It polls because a node can report Ready before NVKE finishes applying them.
+func eventuallyNodesHaveMetadata(
+	ctx context.Context,
+	test *tenantTest,
+	nodeNames []string,
+	wantLabels map[string]string,
+	wantTaints []api.NodeTaint,
+) {
+	GinkgoHelper()
+	Expect(nodeNames).NotTo(BeEmpty())
+	Eventually(func(g Gomega, ctx context.Context) {
+		tenantClient, err := test.tenantClients.GetClient(ctx, test.cluster.Name)
+		g.Expect(err).NotTo(HaveOccurred())
+		for _, name := range nodeNames {
+			var node corev1.Node
+			g.Expect(tenantClient.Get(ctx, client.ObjectKey{Name: name}, &node)).To(Succeed())
+			for key, value := range wantLabels {
+				g.Expect(node.Labels).To(HaveKeyWithValue(key, value), "node %s should carry label %s", name, key)
+			}
+			for _, taint := range wantTaints {
+				g.Expect(node.Spec.Taints).To(ContainElement(SatisfyAll(
+					HaveField("Key", taint.Key),
+					HaveField("Value", taint.Value),
+					HaveField("Effect", corev1.TaintEffect(taint.Effect)),
+				)), "node %s should carry taint %s:%s", name, taint.Key, taint.Effect)
+			}
+		}
+	}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5 * time.Second).Should(Succeed())
+}
+
+func expectNodeNames(ctx context.Context, test *tenantTest, nodePoolID uuid.UUID) []string {
+	GinkgoHelper()
+
+	nodes, err := test.nvke.ListNodePoolNodes(ctx, nodePoolID)
+	Expect(err).NotTo(HaveOccurred(), "should list nodes")
+
+	names := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		names = append(names, node.Name)
+	}
+	return names
 }
 
 func workerNodePoolRequest(test *tenantTest, name, nodeNamePrefix string) (api.CreateNodePoolRequest, error) {

@@ -9,12 +9,14 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/naming"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 // A CAPI cluster rejects a nico payload whatever it carries: the provider shape
@@ -116,6 +118,55 @@ func TestValidateCreateNodePoolRequest_RejectsUnsupportedParentProvider(t *testi
 	})
 }
 
+func TestValidateCreateNodePoolRequest_LaunchLayer(t *testing.T) {
+	cluster := launchLayerCluster()
+	cluster.LaunchLayer.SecurityGroups = []db.LaunchLayerSecurityGroup{{Name: "workers", Type: "BARE_METAL"}}
+
+	tests := map[string]struct {
+		nodeAgentProfile db.Node
+		refs             *api.LaunchLayerSecurityGroupRefs
+		vmProfile        string
+		wantErr          string
+	}{
+		"accepts securityGroupRefs naming the cluster's groups": {
+			refs: &api.LaunchLayerSecurityGroupRefs{PrimaryNetworkInterface: []string{"workers"}},
+		},
+		"rejects a securityGroupRefs name the cluster does not define": {
+			refs:    &api.LaunchLayerSecurityGroupRefs{GpuNetworkInterface: []string{"missing"}},
+			wantErr: `launchLayer.securityGroupRefs: "missing" is not one of the cluster's launchLayer.securityGroups`,
+		},
+		"rejects a pool whose nodes could never join": {
+			nodeAgentProfile: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodTPM},
+			wantErr: "this deployment's node-agent settings do not support the launchlayer provider: " +
+				"SPIFFE-enabled LaunchLayer nodes require dsxImds SPIRE attestation, got tpm",
+		},
+		"rejects a vmProfile pool whose nodes could never attest": {
+			nodeAgentProfile: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS},
+			vmProfile:        "ubuntu",
+			wantErr: "this deployment's node-agent settings do not support the launchlayer provider: " +
+				`SPIFFE-enabled LaunchLayer nodes without external mTLS require hostOSProfile: dsxImds attestation is not available to vmProfile "ubuntu" instances`,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, []string{config.InfraProviderLaunchLayer})
+			service.nodeAgentProfile = tt.nodeAgentProfile
+
+			err := service.validateCreateNodePoolRequest(cluster, &api.CreateNodePoolRequest{
+				Name:             "worker",
+				NodeNamePrefix:   "worker",
+				DesiredNodeCount: 1,
+				LaunchLayer:      &api.LaunchLayerNodePoolProvider{InstanceType: "dgx200", VMProfile: tt.vmProfile, SecurityGroupRefs: tt.refs},
+			})
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestValidateCreateNodePoolRequest_DisabledProviderPrecedesProviderShape(t *testing.T) {
 	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, []string{config.InfraProviderNico})
 
@@ -175,6 +226,14 @@ func TestValidateUpdateNodePoolRequest_CAPIRejectsForgeSpecificFieldsIndividuall
 
 		require.EqualError(t, err, "nico is not supported, please use infra")
 	})
+
+	t.Run("launchLayer provider shape", func(t *testing.T) {
+		err := service.validateUpdateNodePoolRequest(db.Cluster{ProviderType: db.ProviderTypeCAPI}, &api.UpdateNodePoolRequest{
+			LaunchLayer: &api.LaunchLayerNodePoolProviderUpdate{},
+		})
+
+		require.EqualError(t, err, "launchLayer is not supported, please use infra")
+	})
 }
 
 func TestValidateUpdateNodePoolRequest_ForgeRejectsCAPISpecificFieldsIndividually(t *testing.T) {
@@ -188,6 +247,14 @@ func TestValidateUpdateNodePoolRequest_ForgeRejectsCAPISpecificFieldsIndividuall
 		})
 
 		require.EqualError(t, err, "infra is not supported, please use nico")
+	})
+
+	t.Run("launchLayer provider shape", func(t *testing.T) {
+		err := service.validateUpdateNodePoolRequest(db.Cluster{ProviderType: db.ProviderTypeNico, Nico: &db.NicoClusterProvider{SiteID: uuid.New()}}, &api.UpdateNodePoolRequest{
+			LaunchLayer: &api.LaunchLayerNodePoolProviderUpdate{},
+		})
+
+		require.EqualError(t, err, "launchLayer is not supported, please use nico")
 	})
 }
 
@@ -366,6 +433,50 @@ func TestValidateUpdateForgeNodePoolRequest_RejectsClearedRelease(t *testing.T) 
 		t.Run(tc.name, func(t *testing.T) {
 			err := svc.validateUpdateNodePoolRequest(forgeCluster(), tc.req)
 			require.EqualError(t, err, tc.want)
+		})
+	}
+}
+
+func TestUpdateNodePool_ScaleUpChecksNodeAgentProfile(t *testing.T) {
+	cluster := launchLayerCluster()
+	cluster.ID = uuid.New()
+	nodePool := db.NodePool{ID: uuid.New(), ClusterID: cluster.ID, DesiredCount: 2}
+	nodePool.SetLaunchLayer(db.LaunchLayerNodePoolProvider{InstanceType: "vm200", VMProfile: "ubuntu"})
+
+	tests := map[string]struct {
+		desiredNodeCount int
+		want400          bool
+	}{
+		"scale-up of a vmProfile pool is rejected": {desiredNodeCount: 3, want400: true},
+		"scale-down is not checked":                {desiredNodeCount: 1},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			tx := &testutil.MockTx{}
+			tx.On("GetNodePool", mock.Anything, nodePool.ID).Return(nodePool, nil)
+			tx.On("GetClusterForUpdate", mock.Anything, cluster.ID).Return(cluster, nil)
+			tx.On("GetNodePoolForUpdate", mock.Anything, nodePool.ID).Return(nodePool, nil)
+			tx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{nodePool}, nil)
+			tx.On("UpdateNodePool", mock.Anything, mock.Anything).Maybe().Return(nodePool, nil)
+			database := &testutil.MockDB{MockTx: tx}
+			database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+			service := NewNodePoolService(slog.Default(), database, config.TeleportConfig{}, []string{config.InfraProviderLaunchLayer})
+			service.nodeAgentProfile = db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS}
+
+			resp, err := service.UpdateNodePool(t.Context(), api.UpdateNodePoolRequestObject{
+				NodePoolID: nodePool.ID,
+				Body:       &api.UpdateNodePoolRequest{DesiredNodeCount: &tt.desiredNodeCount},
+			})
+
+			require.NoError(t, err)
+			if !tt.want400 {
+				require.IsType(t, api.UpdateNodePool200JSONResponse{}, resp)
+				return
+			}
+			badRequest, ok := resp.(api.UpdateNodePool400JSONResponse)
+			require.True(t, ok, "expected UpdateNodePool400JSONResponse, got %T", resp)
+			require.Contains(t, badRequest.Message, `dsxImds attestation is not available to vmProfile "ubuntu" instances`)
+			tx.AssertNotCalled(t, "UpdateNodePool", mock.Anything, mock.Anything)
 		})
 	}
 }

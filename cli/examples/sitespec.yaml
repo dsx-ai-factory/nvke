@@ -34,7 +34,7 @@ cluster:
   # Kubernetes version to install — plain semantic version, no leading "v".
   k8sVersion: "1.36.3"
 
-  # CNI plugin. New site-controller clusters use "ovn-kubernetes".
+  # CNI plugin. New management clusters use "ovn-kubernetes".
   cniName: "ovn-kubernetes"
   # Optional CNI plugin version. Empty uses the node-agent's built-in default.
   # The value must be an OVN-Kubernetes version.

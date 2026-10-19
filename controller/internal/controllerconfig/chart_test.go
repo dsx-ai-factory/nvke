@@ -124,7 +124,7 @@ func splitRender(t *testing.T, raw []byte) (string, map[string]string, *appsv1.D
 		case "ConfigMap":
 			var configMap corev1.ConfigMap
 			require.NoError(t, yaml.Unmarshal(manifest, &configMap))
-			if configMap.Name == "nke-controller-config" {
+			if configMap.Name == "nvke-controller-config" {
 				require.Empty(t, document, "the render has more than one nke-controller-config")
 				document = configMap.Data["config.yaml"]
 			}
@@ -156,7 +156,7 @@ func checkMounted(t *testing.T, deployment *appsv1.Deployment, environment map[s
 
 	var volume string
 	for _, v := range deployment.Spec.Template.Spec.Volumes {
-		if v.ConfigMap != nil && v.ConfigMap.Name == "nke-controller-config" {
+		if v.ConfigMap != nil && v.ConfigMap.Name == "nvke-controller-config" {
 			require.Empty(t, volume, "more than one volume mounts nke-controller-config")
 			require.False(t, ptr.Deref(v.ConfigMap.Optional, false), "the nke-controller-config volume is optional")
 			volume = v.Name
@@ -176,7 +176,7 @@ func checkMounted(t *testing.T, deployment *appsv1.Deployment, environment map[s
 	require.Equal(t, path.Join(mountPath, "config.yaml"), environment["CONTROLLER_CONFIG_PATH"])
 
 	watched := strings.Split(deployment.Annotations["configmap.reloader.stakater.com/reload"], ",")
-	require.Contains(t, watched, "nke-controller-config", "Reloader does not watch nke-controller-config")
+	require.Contains(t, watched, "nvke-controller-config", "Reloader does not watch nke-controller-config")
 }
 
 // documentKeys returns every dotted key path the YAML document sets, at every

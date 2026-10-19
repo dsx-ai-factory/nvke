@@ -99,7 +99,7 @@ kubectl -n nke-controller get configmap nke-auth-config \
 audiences: ["https://nke.tilt.local"]
 ```
 
-This value is per-install. On a real site controller it will be something else.
+This value is per-install. On a real management cluster it is different.
 
 ## Step 2: pick an identity
 

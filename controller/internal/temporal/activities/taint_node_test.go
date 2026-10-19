@@ -263,6 +263,76 @@ func TestTaintNodeRetriesConflictAndPreservesConcurrentTaint(t *testing.T) {
 	database.AssertExpectations(t)
 }
 
+func TestTaintNodeAppliesAndRemovesTaintWithoutValue(t *testing.T) {
+	nodeID := uuid.New()
+	clusterID := uuid.New()
+	node := db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-0"}
+	cluster := db.Cluster{ID: clusterID, Name: "cluster-a"}
+
+	database := &testutil.MockDB{}
+	database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Times(4)
+	database.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Twice()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	tenantClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: node.Name}}).
+		Build()
+	provider := &fakeTenantClientProvider{tenantClient: tenantClient}
+	a := &Activities{db: database, tenantClientProvider: provider}
+
+	result, err := executeTaintNodeActivity(t, a, TaintNodeInput{
+		NodeID:      nodeID,
+		TaintKey:    "example.com/dedicated",
+		TaintEffect: string(corev1.TaintEffectNoSchedule),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "taint example.com/dedicated:NoSchedule applied to node/worker-0", result.Output)
+
+	var updated corev1.Node
+	require.NoError(t, tenantClient.Get(context.Background(), client.ObjectKey{Name: node.Name}, &updated))
+	require.Equal(t, []corev1.Taint{
+		{Key: "example.com/dedicated", Effect: corev1.TaintEffectNoSchedule},
+	}, updated.Spec.Taints)
+
+	_, err = executeTaintNodeActivity(t, a, TaintNodeInput{
+		NodeID:      nodeID,
+		TaintKey:    "example.com/dedicated",
+		TaintEffect: string(corev1.TaintEffectNoSchedule) + "-",
+	})
+	require.NoError(t, err)
+	require.NoError(t, tenantClient.Get(context.Background(), client.ObjectKey{Name: node.Name}, &updated))
+	require.Empty(t, updated.Spec.Taints)
+	database.AssertExpectations(t)
+}
+
+func TestTaintNodeRejectsMissingKeyOrEffect(t *testing.T) {
+	tests := []struct {
+		name  string
+		input TaintNodeInput
+	}{
+		{
+			name:  "missing key",
+			input: TaintNodeInput{NodeID: uuid.New(), TaintValue: "true", TaintEffect: string(corev1.TaintEffectNoSchedule)},
+		},
+		{
+			name:  "missing effect",
+			input: TaintNodeInput{NodeID: uuid.New(), TaintKey: "example.com/dedicated", TaintValue: "true"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := &fakeTenantClientProvider{}
+			a := &Activities{tenantClientProvider: provider}
+
+			_, err := executeTaintNodeActivity(t, a, tt.input)
+			require.ErrorContains(t, err, "taint key and effect are required")
+			require.Equal(t, 0, provider.calls)
+		})
+	}
+}
+
 func TestTaintNodeRejectsInvalidTaintBeforeTenantAccess(t *testing.T) {
 	provider := &fakeTenantClientProvider{}
 	a := &Activities{tenantClientProvider: provider}

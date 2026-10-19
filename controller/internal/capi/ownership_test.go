@@ -43,7 +43,7 @@ func TestValidateSecretOwnership(t *testing.T) {
 		t.Parallel()
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 			Name:      "alpha-kubeconfig",
-			Namespace: constants.NamespaceNVKESystem,
+			Namespace: constants.LegacyManagementNamespace,
 			Labels:    map[string]string{keys.ClusterID.String(): uuid.New().String()},
 		}}
 		err := capi.ValidateSecretOwnership(secret, cluster)
@@ -55,7 +55,7 @@ func TestValidateSecretOwnership(t *testing.T) {
 		t.Parallel()
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 			Name:      "alpha-kubeconfig",
-			Namespace: constants.NamespaceNVKESystem,
+			Namespace: constants.LegacyManagementNamespace,
 			Labels: map[string]string{
 				keys.ClusterID.String():      cluster.ID.String(),
 				keys.KubeconfigMode.String(): constants.LabelValueKubeconfigModeAdmin,

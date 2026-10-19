@@ -71,7 +71,7 @@ has. Match on both while you migrate, for example:
 kube_node_labels{label_nvke_nvidia_com_site_name!=""} or kube_node_labels{label_nke_nvidia_com_site_name!=""}
 ```
 
-NVSentinel and anything else that sets `NeedsRecycle` or `NeedsRepair` may use
+Anything that sets `NeedsRecycle` or `NeedsRepair`, such as a break-fix system, may use
 either domain; NVKE reads both.
 
 ## What did not change

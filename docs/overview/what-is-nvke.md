@@ -2,7 +2,7 @@
 
 > **Preview:** NVKE is available as a preview. APIs, configuration and behavior can change between releases, and we do not recommend NVKE for production workloads. See [Preview status and known limitations](preview-status.md).
 
-NVIDIA Kubernetes Engine (NVKE) is open-source software that an AI factory installs to run a managed Kubernetes service on its own NVIDIA GPU infrastructure. You call the NVKE API to create Kubernetes clusters for your customers, and NVKE provisions the nodes, forms each cluster, and operates it afterward: scaling node pools, upgrading Kubernetes, replacing nodes and renewing certificates.
+NVIDIA Kubernetes® Engine (NVKE) is open-source software that an AI factory installs to run a managed Kubernetes service on its own NVIDIA GPU infrastructure. You call the NVKE API to create Kubernetes clusters for your customers, and NVKE provisions the nodes, forms each cluster, and operates it afterward: scaling node pools, upgrading Kubernetes, replacing nodes and renewing certificates.
 
 Build the reference node OS image with the NVKE repository's Make targets and serve its boot artifacts over HTTP(S). NVIDIA Kubernetes Recipes (NVKR), a companion project, provides a separate build and publication workflow for component and package artifacts. Only a Release from the hosted pipeline is signed and carries build provenance; a local Run is unsigned. No NVKR Release is qualified at preview. NVKE then deploys those artifacts by name.
 
@@ -32,7 +32,7 @@ To offer managed Kubernetes as a service an AI factory must deliver cluster prov
 - **Management plane.** The NVKE API and controllers running on the management cluster. It holds the inventory of clusters, node pools and nodes, and drives every lifecycle operation.
 - **Seed cluster.** A temporary single-node kind cluster that `nvkectl` starts during bootstrap to form the management cluster. `nvkectl` deletes it when bootstrap succeeds.
 - **NVKE cluster (workload cluster).** A Kubernetes cluster that NVKE creates and manages for a customer. Each has its own control plane, etcd and node pools.
-- **Node pool.** A group of nodes in an NVKE cluster that share an instance type, a node pool release and a Kubernetes version. You scale and upgrade nodes by node pool. A node pool also stores `nodeLabels` and `nodeTaints`, which NVKE does not apply to the Kubernetes nodes at preview; see [Preview status and known limitations](preview-status.md#workload-clusters-and-node-pools).
+- **Node pool.** A group of nodes in an NVKE cluster that share an instance type, a node pool release and a Kubernetes version. You scale and upgrade nodes by node pool.
 - **Infrastructure provider.** The system that supplies machines to NVKE through Cluster API. At preview, NVKE supports NVIDIA Infra Controller (NICo).
 - **NVKR Release.** An immutable set of artifacts and the evidence of how they were built, available through one pinned reference. You deploy artifacts from an NVKR Release once it passes your verification policy.
 
@@ -40,25 +40,14 @@ To offer managed Kubernetes as a service an AI factory must deliver cluster prov
 
 The operator brings NVIDIA GPU machines, networks, registries holding component artifacts, an HTTP(S) boot-artifact endpoint, and an infrastructure provider. NVKE connects to the infrastructure provider through Cluster API (CAPI) to provision machines with your node images, then uses the NVKE node agent on each machine to form and configure the Kubernetes cluster. The operator calls the NVKE API to create clusters, and customers receive a Kubernetes API endpoint for their cluster.
 
-The diagram shows how artifacts and requests flow from NVKR to a customer's cluster.
+The diagram shows the NVKE product family, how it sits on NICo and your GPU machines, and which components talk to each other.
 
-```mermaid
-flowchart LR
-    nvkr["NVKR<br/>Definition → Run → Release"] --> reg["Operator registries"]
-    op["Operator<br/>nvkectl or NVKE API"] --> mp["NVKE management plane<br/>on the management cluster"]
-    reg --> mp
-    mp --> capnico["CAPNICo"] --> nico["NICo"] --> hw["GPU machines"]
-    hw --> wc["Workload cluster<br/>control plane and node pools"]
-    reg --> wc
-    wc --> cust["Customer<br/>kubectl"]
-    aicr["AICR"] -. "accelerated runtime" .-> wc
-    nvs["NVSentinel"] -. "remediation requests" .-> mp
-```
+![NVKE product family. NVKR builds and signs artifacts and publishes them to a registry. The operator installs the management cluster's components, the NVKE management plane, CAPNICo and NVKE observability, from the charts and images in the registry. The management plane requests machines through CAPNICo, which calls NICo, and drives each workload cluster. NICo provisions NVIDIA GPU machines from the node OS image, and those machines become the workload cluster's Kubernetes nodes, each running nvke-agent, under the cluster's Kubernetes control plane. The accelerated runtime produced by AICR and NVKE observability are optional in the workload cluster. The customer uses kubectl against the control plane.](../assets/diagrams/product-family.svg)
 
 | Stage | What happens | Read more |
 |---|---|---|
 | **Build** | The operator builds the reference node image with the repository's Make targets, serves boot artifacts over HTTP(S), and registers the image for node provisioning. NVKR remains a separate source for component and package artifacts. Repeat the image build and validation for each new Kubernetes version or security fix. | [Build and host node OS images](../operate/build-node-images.md) |
-| **Day 0: Bootstrap** | The operator prepares the management cluster's nodes. `nvkectl` starts a seed cluster, uses it to form the management cluster with kubeadm, then deletes it. The operator installs the NVKE management plane and the Cluster API controllers onto the management cluster. | [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md), [Install management-plane services](../operate/install-management-plane-services.md) |
+| **Day 0: Bootstrap** | The operator prepares the management cluster's nodes. `nvkectl` starts a seed cluster, uses it to form the management cluster with kubeadm, then deletes it. The operator installs the NVKE management plane and the Cluster API controllers onto the management cluster. | [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md), [Run NVKE end to end on one machine](../get-started/local-site.md) |
 | **Day 1: Configure** | The operator connects the management plane to the infrastructure provider, configures API authentication, and publishes the machine images and releases that clusters will use. | [Configure an infrastructure provider: NICo](../operate/provider-nico.md), [Secure the NVKE API](../operate/api-authentication.md) |
 | **Day 2: Run clusters** | The operator creates NVKE clusters through the API, gives customers access, and installs the accelerated runtime with [NVIDIA AI Cluster Runtime (AICR)](https://docs.nvidia.com/aicr). NVKE scales node pools, upgrades the control plane and workers to new releases, replaces nodes and renews certificates. With NVSentinel installed, NVKE reboots or replaces nodes that NVSentinel reports as faulty. | [Create a workload cluster](../workload-clusters/create.md), [Manage node pools](../workload-clusters/node-pools.md) |
 
@@ -68,10 +57,10 @@ flowchart LR
 |---|---|---|
 | NVKR | NVIDIA Kubernetes Recipes. A separate build system and published Definitions for component and package artifacts. Its CLI is `nvkr`. Separate repository: [dsx-ai-factory/nvkr](https://github.com/dsx-ai-factory/nvkr). | [Build and host node OS images](../operate/build-node-images.md) |
 | `nvkectl` | The command-line client. Bootstraps the management cluster, and creates and operates NVKE clusters and node pools through the NVKE API. | [Bootstrap the management cluster](../operate/bootstrap-management-cluster.md) |
-| Management plane | The NVKE REST API and controllers on the management cluster. Holds the inventory of clusters, node pools and nodes, and drives every lifecycle operation. | [Install management-plane services](../operate/install-management-plane-services.md) |
+| Management plane | The NVKE REST API and controllers on the management cluster. Holds the inventory of clusters, node pools and nodes, and drives every lifecycle operation. | [Run NVKE end to end on one machine](../get-started/local-site.md) |
 | Node agent (`nvke-agent`) | A service on every node. The management plane calls it to run kubeadm, configure encryption and install components such as the CNI, without SSH. | [Prepare nodes](../operate/prepare-nodes.md) |
 | CAPNICo | The Cluster API infrastructure provider for NICo. Turns each machine NVKE requests into a NICo bare-metal instance. Separate repository: [dsx-ai-factory/cluster-api-provider-nico](https://github.com/dsx-ai-factory/cluster-api-provider-nico). | [Configure an infrastructure provider: NICo](../operate/provider-nico.md) |
-| NKTP | NVIDIA Kubernetes Telemetry Pipeline. OpenTelemetry pipelines for metrics, logs and traces from the management cluster and NVKE clusters. | [Observe NVKE and its clusters](../operate/observe.md) |
+| NKTP | NVKE telemetry pipeline. OpenTelemetry pipelines for metrics, logs and traces from the management cluster and NVKE clusters. | [Observe NVKE and its clusters](../operate/observe.md) |
 
 ## What you bring
 
@@ -115,3 +104,9 @@ NVKE is the Kubernetes layer of DSX OS, NVIDIA's software stack for AI factories
 - **Build your first artifacts:** [Build and host node OS images](../operate/build-node-images.md).
 - **Install on your hardware:** [Plan your installation](../operate/plan-installation.md).
 - **Check what preview supports:** [Preview status and known limitations](preview-status.md) and [Supported platforms and versions](supported-platforms.md).
+
+## Trademarks
+
+Kubernetes® is a registered trademark of The Linux Foundation in the United States and other countries. NVIDIA and the NVIDIA logo are trademarks and/or registered trademarks of NVIDIA Corporation in the U.S. and other countries. Other company and product names may be trademarks of the respective companies with which they are associated.
+
+The Linux Foundation has registered trademarks and uses trademarks. For a list of trademarks of The Linux Foundation, please see its Trademark Usage page: https://www.linuxfoundation.org/legal/trademark-usage.

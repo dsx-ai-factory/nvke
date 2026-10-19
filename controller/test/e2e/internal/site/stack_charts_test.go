@@ -251,7 +251,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		}
 
 		var settings map[string]any
-		raw, _ := dig(t, find(t, docs, "ConfigMap", "nke-controller-config"), "data", "config.yaml").(string)
+		raw, _ := dig(t, find(t, docs, "ConfigMap", "nvke-controller-config"), "data", "config.yaml").(string)
 		if err := yaml.Unmarshal([]byte(raw), &settings); err != nil {
 			t.Fatalf("parse nke-controller-config: %v", err)
 		}

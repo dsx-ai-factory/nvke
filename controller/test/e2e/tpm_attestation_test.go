@@ -17,19 +17,23 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
 // The controller's names for a Machine's SPIRE agent identity. They must match
-// keys.MachineSpireAgentSpiffeIDPath, constants.TPMSpireAgentPath
-// and constants.NamespaceNVKESystem in controller/internal/constants, which this
-// module does not import.
+// keys.MachineSpireAgentSpiffeIDPath and constants.TPMSpireAgentPath in
+// controller/internal/constants, which this module does not import.
 const (
 	spireAgentIDPathAnnotation = "nvke.nvidia.com/spire-agent-spiffe-id-path"
 	// Machines annotated before the nvke.nvidia.com rename carry the legacy key.
 	legacySpireAgentIDPathAnnotation = "nke.nvidia.com/spire-agent-spiffe-id-path"
 	tpmSpireAgentPath                = "/spire/agent/tpm/"
-	tenantMachineNamespace           = "nke-system"
 )
+
+// The CAPI Machines live in the site's management namespace, which
+// mgmtns.Namespace resolves -- it is per-site configurable, so it is never
+// assumed here.
 
 // validateTPMAttestationPostCreate asserts that every node of the tenant
 // joined with an identity its TPM proved.
@@ -52,7 +56,7 @@ func validateTPMAttestationPostCreate(test *tenantTest) {
 		Eventually(func(ctx context.Context) error {
 			machines := &unstructured.UnstructuredList{}
 			machines.SetGroupVersionKind(schema.GroupVersionKind{Group: "cluster.x-k8s.io", Version: "v1beta2", Kind: "MachineList"})
-			if err := test.k8sClient.List(ctx, machines, client.InNamespace(tenantMachineNamespace),
+			if err := test.k8sClient.List(ctx, machines, client.InNamespace(mgmtns.Namespace()),
 				client.MatchingLabels{"cluster.x-k8s.io/cluster-name": test.cluster.Name}); err != nil {
 				return fmt.Errorf("listing CAPI Machines: %w", err)
 			}

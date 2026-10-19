@@ -21,7 +21,7 @@ import (
 	nvkeutils "github.com/dsx-ai-factory/nvke/agent/pkg/utils"
 )
 
-var canonicalAgentVersionPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+var canonicalAgentVersionPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
 
 type agentUpgradeLauncher interface {
 	Start(requestKey string) error
@@ -211,7 +211,7 @@ func (s *NodeAgentServer) launchNodeAgentUpdater(op agentupgrade.Operation) (age
 
 func parseCanonicalAgentVersion(value string) (*semver.Version, error) {
 	if !canonicalAgentVersionPattern.MatchString(value) {
-		return nil, errors.New("target_version must be canonical vMAJOR.MINOR.PATCH")
+		return nil, errors.New("target_version must be canonical vMAJOR.MINOR.PATCH with an optional prerelease")
 	}
 	version, err := semver.StrictNewVersion(strings.TrimPrefix(value, "v"))
 	if err != nil {

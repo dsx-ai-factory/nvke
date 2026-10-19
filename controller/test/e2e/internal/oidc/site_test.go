@@ -96,7 +96,7 @@ func TestSiteAppliesAndRestoresExactOwnedFields(t *testing.T) {
 		t.Fatalf("Apply() error = %v", err)
 	}
 
-	updatedConfig, err := client.CoreV1().ConfigMaps("controller").Get(context.Background(), "nke-controller-config", metav1.GetOptions{})
+	updatedConfig, err := client.CoreV1().ConfigMaps("controller").Get(context.Background(), "nvke-controller-config", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("get updated ConfigMap: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestSiteAppliesAndRestoresExactOwnedFields(t *testing.T) {
 		t.Fatalf("Restore() error = %v", err)
 	}
 
-	restoredConfig, err := client.CoreV1().ConfigMaps("controller").Get(context.Background(), "nke-controller-config", metav1.GetOptions{})
+	restoredConfig, err := client.CoreV1().ConfigMaps("controller").Get(context.Background(), "nvke-controller-config", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("get restored ConfigMap: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestSiteRefusesConcurrentOwnedMutation(t *testing.T) {
 	if _, err = site.Snapshot(context.Background()); err != nil {
 		t.Fatalf("Snapshot() error = %v", err)
 	}
-	mutated, err := client.CoreV1().ConfigMaps("controller").Get(context.Background(), "nke-controller-config", metav1.GetOptions{})
+	mutated, err := client.CoreV1().ConfigMaps("controller").Get(context.Background(), "nvke-controller-config", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("get ConfigMap: %v", err)
 	}
@@ -534,9 +534,9 @@ func TestStartupProviderCountReadsBoundedPodLogs(t *testing.T) {
 			}
 			responses := map[string][]byte{}
 			for path, object := range map[string]any{
-				"/api/v1/namespaces/controller/configmaps/nke-controller-config": configMap,
-				"/apis/apps/v1/namespaces/controller/deployments/controller":     deployment,
-				"/api/v1/namespaces/controller/pods":                             pods,
+				"/api/v1/namespaces/controller/configmaps/nvke-controller-config": configMap,
+				"/apis/apps/v1/namespaces/controller/deployments/controller":      deployment,
+				"/api/v1/namespaces/controller/pods":                              pods,
 			} {
 				body, err := json.Marshal(object)
 				require.NoError(t, err)
@@ -627,7 +627,7 @@ func siteTestObjects() (*appsv1.Deployment, *corev1.ConfigMap) {
 		Status: appsv1.DeploymentStatus{ObservedGeneration: 4, Replicas: 1, UpdatedReplicas: 1, ReadyReplicas: 1, AvailableReplicas: 1},
 	}
 	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "controller", Name: "nke-controller-config"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "controller", Name: "nvke-controller-config"},
 		Data:       map[string]string{"config.yaml": siteTestConfig, "unrelated": "same"},
 	}
 	return deployment, configMap

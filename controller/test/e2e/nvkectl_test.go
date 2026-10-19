@@ -100,7 +100,7 @@ func validateNvkectlPostCreate(test *tenantTest) {
 		})
 
 		// The gap this entry exists to close. `get kubeconfig` reads
-		// nke-system/<cluster>-admin-kubeconfig through the site's own
+		// nvke-system/<cluster>-admin-kubeconfig through the site's own
 		// kubeconfig rather than the controller API, and that Secret appears only after
 		// provisioning -- which the smoke lane's cluster never does.
 		It("prints a usable admin kubeconfig", func(ctx context.Context) {

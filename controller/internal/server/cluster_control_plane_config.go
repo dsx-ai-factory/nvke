@@ -171,6 +171,8 @@ func validateCreateClusterLevelControlPlane(
 		return validateCreateCAPIControlPlaneConfig(providerType, ccpc)
 	case db.ProviderTypeNico:
 		return validateCreateForgeControlPlaneConfigFields(ccpc)
+	case db.ProviderTypeLaunchLayer:
+		return validateCreateLaunchLayerControlPlaneConfig(providerType, ccpc, req.LaunchLayer)
 	default:
 		return fmt.Errorf("unsupported cluster provider")
 	}
@@ -199,6 +201,38 @@ func validateCreateCAPIControlPlaneConfig(providerType db.ProviderType, c *api.C
 		return fmt.Errorf("invalid controlPlaneConfig.infra.machineTemplate: %w", err)
 	}
 	return validateCloudInitFiles(c.Infra.BootstrapFiles)
+}
+
+// validateCreateLaunchLayerControlPlaneConfig enforces LaunchLayer
+// control-plane config rules: instanceType is required, Nico/Infra-only
+// fields are rejected, and securityGroupRefs must name groups in
+// clusterProvider. Content-correctness (hostOSProfile/vmProfile exclusivity)
+// goes through the LaunchLayer client's payload validator.
+func validateCreateLaunchLayerControlPlaneConfig(
+	providerType db.ProviderType,
+	c *api.CreateClusterControlPlaneConfig,
+	clusterProvider *api.LaunchLayerClusterProvider,
+) error {
+	if c.Nico != nil {
+		return fmt.Errorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.launchLayer")
+	}
+	if c.Infra != nil {
+		return fmt.Errorf("controlPlaneConfig.infra is not supported, please provide controlPlaneConfig.launchLayer")
+	}
+	if c.LaunchLayer == nil {
+		return fmt.Errorf("controlPlaneConfig.launchLayer is required for a launchLayer cluster control plane")
+	}
+	groups := dbLaunchLayerClusterProviderFromAPI(*clusterProvider).SecurityGroups
+	if err := validateLaunchLayerSecurityGroupRefs(c.LaunchLayer.SecurityGroupRefs, groups, "controlPlaneConfig.launchLayer"); err != nil {
+		return err
+	}
+	var spec db.ControlPlaneConfigSpec
+	spec.SetLaunchLayer(dbLaunchLayerControlPlaneProviderFromAPI(*c.LaunchLayer))
+	validator, err := clients.GetControlPlaneConfigPayloadValidator(db.Cluster{ProviderType: providerType})
+	if err != nil {
+		return err
+	}
+	return validator.ValidateControlPlaneConfigPayload(spec)
 }
 
 // validateCreateForgeControlPlaneConfigFields enforces the non-networking Forge
@@ -232,9 +266,24 @@ func validateMergedClusterControlPlaneSpec(cluster db.Cluster, spec db.ControlPl
 		return validateMergedForgeControlPlaneSpec(spec)
 	case db.ProviderTypeCAPI:
 		return validateMergedCAPIControlPlaneSpec(spec)
+	case db.ProviderTypeLaunchLayer:
+		return validateMergedLaunchLayerControlPlaneSpec(spec)
 	default:
 		return fmt.Errorf("unsupported cluster provider")
 	}
+}
+
+func validateMergedLaunchLayerControlPlaneSpec(spec db.ControlPlaneConfigSpec) error {
+	if spec.LaunchLayer == nil {
+		return newBadRequestErrorf("controlPlaneConfig.launchLayer is required for a launchLayer cluster control plane")
+	}
+	if spec.Nico != nil || spec.Capi != nil {
+		return newBadRequestErrorf("controlPlaneConfig.nico/infra is not supported, please provide controlPlaneConfig.launchLayer")
+	}
+	if spec.LaunchLayer.InstanceType == "" {
+		return newBadRequestErrorf("controlPlaneConfig.launchLayer.instanceType is required for a launchLayer cluster control plane")
+	}
+	return nil
 }
 
 func validateMergedForgeControlPlaneSpec(spec db.ControlPlaneConfigSpec) error {
@@ -334,9 +383,32 @@ func controlPlaneConfigSpecFromCreateAPI(
 		}
 		spec.SetCapi(capiControlPlaneProvider)
 		return spec
+	case db.ProviderTypeLaunchLayer:
+		if c.LaunchLayer != nil {
+			spec.SetLaunchLayer(dbLaunchLayerControlPlaneProviderFromAPI(*c.LaunchLayer))
+		}
+		return spec
 	default:
 		return db.ControlPlaneConfigSpec{}
 	}
+}
+
+func dbLaunchLayerControlPlaneProviderFromAPI(provider api.LaunchLayerControlPlaneProvider) db.LaunchLayerControlPlaneProvider {
+	out := db.LaunchLayerControlPlaneProvider{
+		InstanceType:  provider.InstanceType,
+		HostOSProfile: provider.HostOSProfile,
+		VMProfile:     provider.VMProfile,
+	}
+	if provider.FulfillmentStrategy != nil {
+		out.FulfillmentStrategy = string(*provider.FulfillmentStrategy)
+	}
+	if provider.SecurityGroupRefs != nil {
+		out.SecurityGroupRefs = db.LaunchLayerSecurityGroupRefs{
+			PrimaryNetworkInterface: provider.SecurityGroupRefs.PrimaryNetworkInterface,
+			GPUNetworkInterface:     provider.SecurityGroupRefs.GpuNetworkInterface,
+		}
+	}
+	return out
 }
 
 func apiNicoControlPlaneProviderFromDB(nicoControlPlaneProvider *db.NicoControlPlaneProvider) *api.NicoControlPlaneProvider {
@@ -369,6 +441,28 @@ func apiInfraControlPlaneProviderFromDB(capiControlPlaneProvider *db.CAPIControl
 	}
 	if files := apiCloudInitFilesFromDB(capiControlPlaneProvider.BootstrapFiles); files != nil {
 		out.BootstrapFiles = *files
+	}
+	return out
+}
+
+func apiLaunchLayerControlPlaneProviderFromDB(provider *db.LaunchLayerControlPlaneProvider) *api.LaunchLayerControlPlaneProvider {
+	if provider == nil {
+		return nil
+	}
+	out := &api.LaunchLayerControlPlaneProvider{
+		InstanceType:  provider.InstanceType,
+		HostOSProfile: provider.HostOSProfile,
+		VMProfile:     provider.VMProfile,
+	}
+	if provider.FulfillmentStrategy != "" {
+		strategy := api.LaunchLayerControlPlaneProviderFulfillmentStrategy(provider.FulfillmentStrategy)
+		out.FulfillmentStrategy = &strategy
+	}
+	if len(provider.SecurityGroupRefs.PrimaryNetworkInterface) > 0 || len(provider.SecurityGroupRefs.GPUNetworkInterface) > 0 {
+		out.SecurityGroupRefs = &api.LaunchLayerSecurityGroupRefs{
+			PrimaryNetworkInterface: provider.SecurityGroupRefs.PrimaryNetworkInterface,
+			GpuNetworkInterface:     provider.SecurityGroupRefs.GPUNetworkInterface,
+		}
 	}
 	return out
 }

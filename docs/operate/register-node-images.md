@@ -5,7 +5,7 @@ After you build and host a node OS image, register its boot instructions and fir
 ## Before you begin
 
 - You have [built and hosted the node OS image](build-node-images.md), and verified the boot files' HTTP(S) URLs.
-- You have completed [Install management-plane services](install-management-plane-services.md), including `nvkectl config set-site` with a kubeconfig that can create configuration objects on the management cluster.
+- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md), including `nvkectl config set-site` with a kubeconfig that can create configuration objects on the management cluster.
 - You have `nvkectl` on this host and a checkout of `nvke/` matching the software you installed.
 
 ## Prepare the configuration files
@@ -122,7 +122,7 @@ nvkectl create nodepoolrelease -f node-config/nodepoolrelease.yaml --dry-run=cli
 
 The YAML files become configuration objects when you create them on the management cluster. There are two separate steps:
 
-1. **Install the CRD schemas.** Follow [Install management-plane services](install-management-plane-services.md). The NVKE controller chart installs the `MachineImage`, `ClusterRelease` and `NodePoolRelease` CustomResourceDefinitions by default (`releaseCRDs.install: true`). These define the cluster-scoped types in `internal.nvke.nvidia.com/v1`; they do not create entries for your images or node settings. If you disable that chart setting, you must install the schemas separately before creating your objects.
+1. **Install the CRD schemas.** Follow [Run NVKE end to end on one machine](../get-started/local-site.md). The NVKE controller chart installs the `MachineImage`, `ClusterRelease` and `NodePoolRelease` CustomResourceDefinitions by default (`releaseCRDs.install: true`). These define the cluster-scoped types in `internal.nvke.nvidia.com/v1`; they do not create entries for your images or node settings. If you disable that chart setting, you must install the schemas separately before creating your objects.
 
 2. **Create your objects.** After the install registers the site with `nvkectl config set-site`, use a site configuration whose kubeconfig can write these resources on the management cluster. From the directory containing your `node-config/` files, create the image first, then its control-plane and worker releases:
 

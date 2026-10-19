@@ -46,7 +46,10 @@ func TestRebootVerificationTimeoutEscalates(t *testing.T) {
 	agent := framework.StartNodeAgentServer(t)
 	agent.SetKubeconfig(string(contents))
 	api := rebootAPIClient(t, kubeconfig)
-	require.NoError(t, api.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: constants.NamespaceNVKESystem}}))
+	// The worker reads CAPI Machines from the namespace its config names, so the
+	// Machine below has to be seeded there rather than in a fixed one.
+	managementNamespace := framework.ManagementNamespace(t)
+	require.NoError(t, api.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: managementNamespace}}))
 	taskQueue := framework.TaskQueueName("reboot-timeout", t.Name())
 	worker := framework.StartControllerWorkerBinary(t, framework.ControllerWorkerBinaryConfig{
 		BinaryPath: framework.ControllerWorkerBinary(t), DBConnectionString: dsn, KubeconfigPath: kubeconfig,
@@ -83,7 +86,7 @@ func TestRebootVerificationTimeoutEscalates(t *testing.T) {
 			node.Status.NodeInfo.BootID = "old-boot"
 			require.NoError(t, api.Status().Update(ctx, node))
 			machine := &clusterv1.Machine{
-				ObjectMeta: metav1.ObjectMeta{Name: node.Name, Namespace: constants.NamespaceNVKESystem},
+				ObjectMeta: metav1.ObjectMeta{Name: node.Name, Namespace: managementNamespace},
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "cwe-gofail-" + cluster.Name,
 					Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("unused-bootstrap")},

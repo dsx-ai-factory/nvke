@@ -47,11 +47,11 @@ func newTestClient(t *testing.T, objs ...runtime.Object) *Client {
 
 func TestGetClusterKubeconfigReturnsAdminSecretData(t *testing.T) {
 	c := newTestClient(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-admin-kubeconfig", Namespace: secretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-admin-kubeconfig", Namespace: DefaultSecretsNamespace},
 		Data:       map[string][]byte{kubeconfigSecretKey: []byte("fake-kubeconfig-bytes")},
 	})
 
-	data, err := c.GetClusterKubeconfig(context.Background(), "my-cluster")
+	data, err := c.GetClusterKubeconfig(context.Background(), "my-cluster", []string{DefaultSecretsNamespace})
 	if err != nil {
 		t.Fatalf("GetClusterKubeconfig: %v", err)
 	}
@@ -65,11 +65,11 @@ func TestGetClusterKubeconfigIgnoresNonAdminSecret(t *testing.T) {
 	// exec-auth kubeconfig on an OIDC-enabled cluster) — GetClusterKubeconfig
 	// must not fall back to it.
 	c := newTestClient(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-kubeconfig", Namespace: secretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-kubeconfig", Namespace: DefaultSecretsNamespace},
 		Data:       map[string][]byte{kubeconfigSecretKey: []byte("spire-exec-auth-kubeconfig")},
 	})
 
-	if _, err := c.GetClusterKubeconfig(context.Background(), "my-cluster"); err == nil {
+	if _, err := c.GetClusterKubeconfig(context.Background(), "my-cluster", []string{DefaultSecretsNamespace}); err == nil {
 		t.Fatal("expected error when only the non-admin Secret exists, got nil")
 	}
 }
@@ -77,7 +77,7 @@ func TestGetClusterKubeconfigIgnoresNonAdminSecret(t *testing.T) {
 func TestGetClusterKubeconfigErrorsWhenSecretMissing(t *testing.T) {
 	c := newTestClient(t)
 
-	_, err := c.GetClusterKubeconfig(context.Background(), "missing-cluster")
+	_, err := c.GetClusterKubeconfig(context.Background(), "missing-cluster", []string{DefaultSecretsNamespace})
 	if err == nil {
 		t.Fatal("expected error for missing secret, got nil")
 	}
@@ -92,7 +92,7 @@ func TestGetClusterKubeconfigErrorsWhenForbidden(t *testing.T) {
 		return true, nil, apierrors.NewForbidden(corev1.Resource("secrets"), "my-cluster-admin-kubeconfig", errors.New("denied"))
 	})
 
-	_, err := c.GetClusterKubeconfig(context.Background(), "my-cluster")
+	_, err := c.GetClusterKubeconfig(context.Background(), "my-cluster", []string{DefaultSecretsNamespace})
 	if err == nil {
 		t.Fatal("expected error when the request is forbidden, got nil")
 	}
@@ -103,11 +103,11 @@ func TestGetClusterKubeconfigErrorsWhenForbidden(t *testing.T) {
 
 func TestGetClusterKubeconfigErrorsWhenDataKeyMissing(t *testing.T) {
 	c := newTestClient(t, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-admin-kubeconfig", Namespace: secretsNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-admin-kubeconfig", Namespace: DefaultSecretsNamespace},
 		Data:       map[string][]byte{"unexpected-key": []byte("x")},
 	})
 
-	if _, err := c.GetClusterKubeconfig(context.Background(), "my-cluster"); err == nil {
+	if _, err := c.GetClusterKubeconfig(context.Background(), "my-cluster", []string{DefaultSecretsNamespace}); err == nil {
 		t.Fatal("expected error when the secret has no \"value\" key, got nil")
 	}
 }
@@ -136,5 +136,80 @@ func TestNewBuildsClientFromValidKubeconfig(t *testing.T) {
 	}
 	if c == nil || c.kube == nil {
 		t.Fatal("New returned a Client with no underlying client")
+	}
+}
+
+// TestGetClusterKubeconfigFallsBackToLegacyNamespace covers a site installed
+// before the management namespace became configurable: the Secret is only in
+// nke-system, and the default order has to reach it without --namespace.
+func TestGetClusterKubeconfigFallsBackToLegacyNamespace(t *testing.T) {
+	c := newTestClient(t, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-admin-kubeconfig", Namespace: LegacySecretsNamespace},
+		Data:       map[string][]byte{kubeconfigSecretKey: []byte("legacy-kubeconfig-bytes")},
+	})
+
+	data, err := c.GetClusterKubeconfig(context.Background(), "my-cluster",
+		[]string{DefaultSecretsNamespace, LegacySecretsNamespace})
+	if err != nil {
+		t.Fatalf("GetClusterKubeconfig: %v", err)
+	}
+	if string(data) != "legacy-kubeconfig-bytes" {
+		t.Errorf("data = %q, want %q", data, "legacy-kubeconfig-bytes")
+	}
+}
+
+// TestGetClusterKubeconfigHonorsExplicitNamespace proves --namespace is a
+// restriction, not a hint: a Secret in another namespace is not returned.
+func TestGetClusterKubeconfigHonorsExplicitNamespace(t *testing.T) {
+	c := newTestClient(t, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-admin-kubeconfig", Namespace: DefaultSecretsNamespace},
+		Data:       map[string][]byte{kubeconfigSecretKey: []byte("fake-kubeconfig-bytes")},
+	})
+
+	_, err := c.GetClusterKubeconfig(context.Background(), "my-cluster", []string{"somewhere-else"})
+	if err == nil {
+		t.Fatal("GetClusterKubeconfig: want error for a namespace holding no Secret, got nil")
+	}
+	if !strings.Contains(err.Error(), "somewhere-else/my-cluster-admin-kubeconfig") {
+		t.Errorf("error = %v, want it to name the namespace that was searched", err)
+	}
+}
+
+// TestGetClusterKubeconfigReportsTheLastNamespaceTried keeps the fallback from
+// hiding what happened: with the Secret in neither namespace, the message names
+// the last one searched rather than silently reporting the first.
+func TestGetClusterKubeconfigReportsTheLastNamespaceTried(t *testing.T) {
+	c := newTestClient(t)
+
+	_, err := c.GetClusterKubeconfig(context.Background(), "missing-cluster",
+		[]string{DefaultSecretsNamespace, LegacySecretsNamespace})
+	if err == nil {
+		t.Fatal("GetClusterKubeconfig: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), LegacySecretsNamespace+"/missing-cluster-admin-kubeconfig") {
+		t.Errorf("error = %v, want it to name %s", err, LegacySecretsNamespace)
+	}
+}
+
+// TestGetClusterKubeconfigPrefersForbiddenOverLaterNotFound covers the identity
+// that may read one namespace but not the other. "Not found -- check the cluster
+// name" would be a wrong answer there: the Secret may well exist in the
+// namespace the search was not allowed to look in.
+func TestGetClusterKubeconfigPrefersForbiddenOverLaterNotFound(t *testing.T) {
+	c := newTestClient(t)
+	c.kube.(*fake.Clientset).PrependReactor("get", "secrets", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		if action.GetNamespace() != DefaultSecretsNamespace {
+			return false, nil, nil
+		}
+		return true, nil, apierrors.NewForbidden(corev1.Resource("secrets"), "missing-cluster-admin-kubeconfig", errors.New("denied"))
+	})
+
+	_, err := c.GetClusterKubeconfig(context.Background(), "missing-cluster",
+		[]string{DefaultSecretsNamespace, LegacySecretsNamespace})
+	if err == nil {
+		t.Fatal("GetClusterKubeconfig: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not allowed to read secret "+DefaultSecretsNamespace+"/") {
+		t.Errorf("error = %v, want the %s permission error rather than the %s NotFound", err, DefaultSecretsNamespace, LegacySecretsNamespace)
 	}
 }

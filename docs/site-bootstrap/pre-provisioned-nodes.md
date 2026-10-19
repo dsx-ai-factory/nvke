@@ -167,7 +167,7 @@ curl -fsSL "https://github.com/containernetworking/plugins/releases/download/${C
 > **Not published yet — the commands below do not work.**
 > `packages.nvidia.com/nvke` serves neither the key nor the suite: the `curl`
 > returns HTTP 404 (`NoSuchKey`), so `apt-get install nvke-agent` fails after it.
-> Until the repository exists there is no package install. To prepare a node in
+> Until the repository exists there is no apt install. To prepare a node in
 > the meantime, build the agent from this repository: `make -C agent package`
 > cross-compiles it to `agent/bin/linux_<arch>/nvke-agent` and bundles it with
 > `agent/scripts/agent-installer.sh`, which lays down the binary, the systemd
@@ -175,8 +175,11 @@ curl -fsSL "https://github.com/containernetworking/plugins/releases/download/${C
 > [`controller/hack/capd-kindest-node/`](https://github.com/dsx-ai-factory/nvke/tree/main/controller/hack/capd-kindest-node)
 > installs the agent that way for the bootstrap e2e's nodes and is the closest
 > worked example.
-> **TODO:** replace this note with the repository URL and GPG key location once
-> they exist, and drop the workaround.
+> **Known limitation at preview:** the apt repository and its signing key are
+> not published. From `agent/v0.3.0-rc.2`, each `agent/` release at
+> https://github.com/dsx-ai-factory/nvke/releases also attaches
+> `nvke-agent_<version>_<arch>.deb`, which `apt-get install` can install from a
+> local path.
 
 ```bash
 # Configure the NVKE apt repository
@@ -306,7 +309,7 @@ All nodes should show `Ready` status.
 1. Ensure your NICo site is set up and healthy before proceeding. See the [NICo documentation](https://docs.nvidia.com/infra-controller/documentation/home) for site setup and networking requirements.
 2. Install your environment SBOM so NVKE can drive day-2 operations through NICo.
 3. Wait until the SBOM is fully deployed and healthy.
-4. Complete NVKE and NICo host ingestion with the NVKE team. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. **TODO:** Publish NVKE-specific ingestion runbook here once it exists.
+4. Complete NVKE and NICo host ingestion with the NVKE team. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. Known limitation at preview: no ingestion runbook is published.
 5. Operate the site through NVKE day-2 workflows.
 
 **Unmanaged sites:** Deploy workloads with whatever tooling fits your environment. No NVKE site-controller installation is required. Note that without NICo, no NVKE day-2 operations (tenant cluster creation, node add/remove, upgrades) are available.

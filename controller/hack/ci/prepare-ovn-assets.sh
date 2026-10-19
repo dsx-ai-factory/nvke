@@ -19,7 +19,7 @@ if [[ "$(uname -s)" == Darwin ]]; then
   exec docker run --rm \
     -v "${workspace_root}:/workspace:ro" -v "${output_dir}:/output" \
     -v /var/run/docker.sock:/var/run/docker.sock \
-    -e "BUNDLE_ARCH=${arch}" -e OVN_TOOLS_DIR=/tmp/ovn-tools -e OVN_KUBERNETES_TOKEN -e GITHUB_TOKEN \
+    -e "BUNDLE_ARCH=${arch}" -e OVN_TOOLS_DIR=/tmp/ovn-tools \
     "golang:${go_version}-trixie" \
     bash -c '
       set -euo pipefail

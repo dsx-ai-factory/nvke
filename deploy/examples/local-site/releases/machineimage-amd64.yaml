@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+# The machine image of the local site's tenant nodes, for
+# `nvkectl create machineimage -f`. The nodes are nico-sim containers from
+# the kindest node image, so the iPXE script is a placeholder; a real site's
+# names the kernel, initrd and image its hardware boots.
+metadata:
+  name: local-site-amd64
+spec:
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  architecture: amd64
+  buildDate: "2026-01-01"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      echo local-dev placeholder

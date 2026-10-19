@@ -308,9 +308,18 @@ func readReleaseStubs(dir string) ([]releaseStub, error) {
 // test/fixtures/releases, which holds synthetic releases that are not fleet OS
 // profiles and would otherwise turn into matrix specs.
 func resolveReleasesDir() (string, error) {
-	candidates := make([]string, 0, 3)
+	// An explicit directory is authoritative. Falling back from it would run the
+	// matrix against releases the caller did not name, and the error below is
+	// not errOSProfileMetadataUnavailable, so it fails rather than skips.
 	if dir := os.Getenv("NKE_CONTROLLER_RELEASES_DIR"); dir != "" {
-		candidates = append(candidates, dir)
+		matches, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
+		if err != nil {
+			return "", fmt.Errorf("listing NKE_CONTROLLER_RELEASES_DIR %s: %w", dir, err)
+		}
+		if len(matches) == 0 {
+			return "", fmt.Errorf("NKE_CONTROLLER_RELEASES_DIR is %s, which holds no release manifests", dir)
+		}
+		return dir, nil
 	}
 
 	_, sourceFile, _, ok := runtime.Caller(0)
@@ -318,10 +327,10 @@ func resolveReleasesDir() (string, error) {
 		return "", fmt.Errorf("resolving matrix source path")
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "..", ".."))
-	candidates = append(candidates,
+	candidates := []string{
 		filepath.Join(repoRoot, "..", "nke-site-deploy", "cwe-profiles", "releases"),
 		filepath.Join(repoRoot, "test", "fixtures", "fleet-releases"),
-	)
+	}
 
 	var missing []string
 	for _, dir := range candidates {

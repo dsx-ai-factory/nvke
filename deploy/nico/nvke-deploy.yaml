@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Deploy path for a NICo site controller on real hardware.
+# Deploy path for an NVKE management cluster on NICo-managed hardware.
 #
 # The order is not designed from first principles. It was derived from a
-# provisioning run that stood a site controller up on bare metal and had it
+# provisioning run that stood a management cluster up on bare metal and had it
 # provision a tenant cluster, whose install script is this file in script form.
 # That order in turn follows the management-software phases:
 #
@@ -57,7 +57,7 @@
 # SPIRE IS IN, deliberately. That run used --disable-mtls end to end, but its
 # own notes record that os-image/SPEC.md lists that as NOT a supported
 # production mode, and the reference image ships mTLS on. The flag is a property
-# of bootstrapping the site controller's own node -- at that moment the only
+# of bootstrapping the management cluster's own node -- at that moment the only
 # SPIRE server alive is the one in the throwaway kind cluster -- and nothing
 # drives that node afterwards, so it does not constrain this path.
 items:

@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
 const (
@@ -52,15 +53,20 @@ grep " $ASSET$" checksums.txt | sha256sum -c -
 tar xzf "$ASSET"
 install -m 0755 k8s-spiffe-workload-jwt-exec-auth ` + pluginInstallPath + `
 `
+)
 
-	// verifyScript self-fetches the published kubeconfig with the pod's own SA
-	// token, then waits for the pod-specific SPIFFE registration before running
-	// can-i and a real `kubectl get nodes` list call. An empty whoami, a "no"
-	// result, or a failed list is a reported fact, not a script failure. The
-	// parseable lines are written to /dev/termination-log so the host can read
-	// them from the Pod object (a controller-runtime client cannot stream logs).
-	verifyScript = `set -e
-kubectl get secret -n nke-system "${CLUSTER}-kubeconfig" \
+// verifyScript returns the script that self-fetches the published kubeconfig with the pod's own SA
+// token, then waits for the pod-specific SPIFFE registration before running
+// can-i and a real `kubectl get nodes` list call. An empty whoami, a "no"
+// result, or a failed list is a reported fact, not a script failure. The
+// parseable lines are written to /dev/termination-log so the host can read
+// them from the Pod object (a controller-runtime client cannot stream logs).
+//
+// The Secret lives in the site's management namespace, which is per-site
+// configurable, so the lookup is built from the resolved value.
+func verifyScript() string {
+	return `set -e
+kubectl get secret -n ` + mgmtns.Namespace() + ` "${CLUSTER}-kubeconfig" \
   -o go-template='{{ index .data "value" | base64decode }}' > /work/kubeconfig
 KC="--kubeconfig /work/kubeconfig"
 set +e
@@ -85,7 +91,7 @@ for c in "$@"; do
 done
 if kubectl $KC get nodes >/dev/null 2>&1; then echo "LISTNODES ok"; else echo "LISTNODES fail"; fi
 `
-)
+}
 
 // buildPod assembles the verifier Pod for identity id against clusterName,
 // passing the expected username and encoded checks to the verify container.
@@ -93,7 +99,7 @@ func buildPod(id Identity, clusterName, expectedUsername string, checks []Check)
 	return buildCredentialPod(
 		id,
 		clusterName,
-		verifyScript,
+		verifyScript(),
 		[]corev1.EnvVar{{Name: expectedUsernameEnv, Value: expectedUsername}},
 		encodeChecks(checks),
 	)

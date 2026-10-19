@@ -9,6 +9,11 @@ endif
 override PACKER_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 override PACKER_ROOT := $(abspath $(dir $(PACKER_MAKEFILE)))
 override PACKER_PROJECT := $(PACKER_ROOT)
+# UBUNTU_ISO_SHA256_* comes from make/tool-versions.mk, which owns every
+# committed digest in the repository. Included after PACKER_MAKEFILE is taken
+# from $(lastword $(MAKEFILE_LIST)) above, which an earlier include would
+# have pointed at tool-versions.mk instead.
+include $(PACKER_ROOT)/../../make/tool-versions.mk
 SSH_DIR     := $(CURDIR)/.ssh
 SSH_PRIVATE_KEY_FILE ?=
 SSH_PUBLIC_KEY_FILE ?=
@@ -100,11 +105,23 @@ UBUNTU_RELEASE ?= 26.04.1
 override UBUNTU_SERIES := $(word 1,$(subst ., ,$(UBUNTU_RELEASE))).$(word 2,$(subst ., ,$(UBUNTU_RELEASE)))
 ifeq ($(ARCH),arm64)
   ISO_URL      ?= https://cdimage.ubuntu.com/ubuntu/releases/$(UBUNTU_SERIES)/release/ubuntu-$(UBUNTU_RELEASE)-live-server-arm64.iso
-  ISO_CHECKSUM ?= file:https://cdimage.ubuntu.com/ubuntu/releases/$(UBUNTU_SERIES)/release/SHA256SUMS
 else
   ISO_URL      ?= https://releases.ubuntu.com/$(UBUNTU_SERIES)/ubuntu-$(UBUNTU_RELEASE)-live-server-$(ARCH).iso
-  ISO_CHECKSUM ?= file:https://releases.ubuntu.com/$(UBUNTU_SERIES)/SHA256SUMS
 endif
+
+# The committed digest for this UBUNTU_RELEASE and ARCH, from
+# make/tool-versions.mk -- see the comment there for why it is committed rather
+# than fetched, and how to add a line. Empty when the combination has no line,
+# which prepare-installer-iso turns into a named failure rather than a build
+# against an unverified ISO.
+override UBUNTU_ISO_SHA256 := $(UBUNTU_ISO_SHA256_$(subst .,_,$(UBUNTU_RELEASE))_$(if $(filter arm64,$(ARCH)),ARM64,AMD64))
+
+# Either form is accepted, matching Packer's own iso_checksum spelling:
+#   sha256:<hex>  a digest, which is what the committed pin above produces
+#   file:<url>    a SHA256SUMS-style manifest to look ISO_URL's basename up in
+# Override it together with ISO_URL when building from an ISO that is not a
+# Canonical release; file: is the escape hatch for a locally served manifest.
+ISO_CHECKSUM ?= sha256:$(UBUNTU_ISO_SHA256)
 override UBUNTU_VERSION := $(patsubst ubuntu-%-live-server-$(ARCH).iso,%,$(notdir $(ISO_URL)))
 
 # uname -m spelling of ARCH, to compare against the host below. KVM only
@@ -295,6 +312,14 @@ prepare-installer-iso: preflight
 		$(UBUNTU_SERIES)|$(UBUNTU_SERIES).*) ;; \
 		*) echo "ISO_URL is Ubuntu $(UBUNTU_VERSION), not UBUNTU_RELEASE's $(UBUNTU_SERIES) series: $(ISO_URL)" >&2; exit 1 ;; \
 	esac
+	@# Fail closed rather than build against an unverified ISO: the default
+	@# ISO_CHECKSUM is sha256:$(UBUNTU_ISO_SHA256), so an unpinned release
+	@# leaves nothing after the colon.
+	@if [ "$(ISO_CHECKSUM)" = "sha256:" ]; then \
+		echo "no committed installer digest for UBUNTU_RELEASE=$(UBUNTU_RELEASE) ARCH=$(ARCH)." >&2; \
+		echo "Add UBUNTU_ISO_SHA256_$(subst .,_,$(UBUNTU_RELEASE))_$(if $(filter arm64,$(ARCH)),ARM64,AMD64) to make/tool-versions.mk; that file says how to obtain and verify it." >&2; \
+		exit 1; \
+	fi
 	mkdir -p $(ISO_CACHE)
 	ISO_URL=$(ISO_URL) ISO_CHECKSUM=$(ISO_CHECKSUM) OUT_DIR=$(ISO_CACHE) ./scripts/prepare-installer-iso.sh
 

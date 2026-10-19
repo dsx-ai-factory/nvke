@@ -28,14 +28,15 @@ func NewPatchCmd(clientFn ControllerClientFn) *cobra.Command {
 		Use:     "nodepool <name> --cluster <cluster>",
 		Aliases: []string{"nodepools"},
 		Short:   "Patch a node pool",
-		Long: `Patch a node pool on the site controller.
+		Long: `Patch a node pool on the management plane.
 
 Node pool names are unique within a cluster, so --cluster is required to
 identify which pool to patch.
 
 PATCH semantics apply: only the fields in the patch document are changed;
 everything else on the node pool is left as it is. Pass the patch inline with
---patch, or from a file (or stdin via -) with --patch-file.
+--patch, or from a file (or stdin via -) with --patch-file. Exactly one of
+the two is required.
 
 nvkectl can set ` + strings.Join(settableFields(), ", ") + ` so far. The API
 accepts more, but anything else is rejected before the request is sent.
@@ -47,7 +48,7 @@ Example — patch file:
   nvkectl patch nodepool gpu-workers --cluster my-cluster --patch-file patch.yaml
 
 The patch document's fields must match the controller UpdateNodePoolRequest schema
-exactly. See /api/docs on your site controller.`,
+exactly. See /api/docs on your management plane.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if patch == "" && patchFile == "" {

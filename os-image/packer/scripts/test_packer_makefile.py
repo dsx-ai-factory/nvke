@@ -129,11 +129,27 @@ class PackerMakefileTest(unittest.TestCase):
         path.write_text(contents, encoding="utf-8")
         path.chmod(0o755)
 
+    @staticmethod
+    def stage_packer_makefile(root):
+        """Copy the Makefile into a repo-shaped workspace under root.
+
+        The Makefile includes ../../make/tool-versions.mk for the committed
+        installer digests, so a copy has to sit two levels below a directory
+        holding that file. Mirror os-image/packer and stage the real
+        tool-versions.mk beside it, so the fixture resolves ISO_CHECKSUM the
+        way a real checkout does.
+        """
+        workspace = root / "os-image" / "packer"
+        workspace.mkdir(parents=True)
+        shutil.copy2(PACKER_DIR / "Makefile", workspace / "Makefile")
+        make_dir = root / "make"
+        make_dir.mkdir(exist_ok=True)
+        shutil.copy2(REPO_ROOT / "make" / "tool-versions.mk", make_dir / "tool-versions.mk")
+        return workspace
+
     def create_image_build_fixture(self, root, *, unsafe_artifacts=False):
         root = root.resolve()
-        workspace = root / "workspace"
-        workspace.mkdir()
-        shutil.copy2(PACKER_DIR / "Makefile", workspace / "Makefile")
+        workspace = self.stage_packer_makefile(root)
         source = root / "source"
         self.create_source_repo(source)
 
@@ -1540,20 +1556,22 @@ exec "${REAL_MV:?}" "$@"
 
     def test_ubuntu_release_selects_the_installer_iso_for_both_flavors(self):
         # Literal, not derived: 26.04's URLs are what consumers already pin, so
-        # a change to the derivation must not move them quietly.
+        # a change to the derivation must not move them quietly. The checksums
+        # are the committed digests from make/tool-versions.mk, restated here
+        # so a silent edit to a pin fails rather than reading as agreement.
         cases = (
             ("26.04.1", "amd64",
              "https://releases.ubuntu.com/26.04/ubuntu-26.04.1-live-server-amd64.iso",
-             "file:https://releases.ubuntu.com/26.04/SHA256SUMS"),
+             "sha256:cc8a95cde20f6ced61a322420de00f10cc3c90ced545daa46cb9c1a117f1d927"),
             ("26.04.1", "arm64",
              "https://cdimage.ubuntu.com/ubuntu/releases/26.04/release/ubuntu-26.04.1-live-server-arm64.iso",
-             "file:https://cdimage.ubuntu.com/ubuntu/releases/26.04/release/SHA256SUMS"),
+             "sha256:af78753c94b924c85c4964c670692a853f7c80299a4064e317edad95462e3168"),
             ("24.04.5", "amd64",
              "https://releases.ubuntu.com/24.04/ubuntu-24.04.5-live-server-amd64.iso",
-             "file:https://releases.ubuntu.com/24.04/SHA256SUMS"),
+             "sha256:97f3d7ffb032c3eb3b23d2c8be9cc76e60c2c1f2c0146ba5ba9fe01cafae0fd8"),
             ("24.04.5", "arm64",
              "https://cdimage.ubuntu.com/ubuntu/releases/24.04/release/ubuntu-24.04.5-live-server-arm64.iso",
-             "file:https://cdimage.ubuntu.com/ubuntu/releases/24.04/release/SHA256SUMS"),
+             "sha256:f12484464c7d4d73e2167e0a7dbda1e669f8fae9bcf778dc0944937034b320cb"),
         )
         for release, arch, iso_url, iso_checksum in cases:
             with self.subTest(release=release, arch=arch):
@@ -1568,6 +1586,28 @@ exec "${REAL_MV:?}" "$@"
                     )
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stdout.strip(), expected)
+
+    def test_iso_checksum_accepts_a_manifest_override_and_fails_closed_unpinned(self):
+        # The committed digest is the default, but a locally served or
+        # non-Canonical ISO still needs the SHA256SUMS-manifest form.
+        manifest = "file:https://mirror.invalid/24.04/SHA256SUMS"
+        result = self.run_make(
+            "print-ISO_CHECKSUM",
+            cwd=PACKER_DIR,
+            variables=("UBUNTU_RELEASE=24.04.5", "ARCH=amd64", f"ISO_CHECKSUM={manifest}"),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), manifest)
+
+        # A release with no committed digest leaves nothing after "sha256:",
+        # which prepare-installer-iso refuses rather than building unverified.
+        unpinned = self.run_make(
+            "print-ISO_CHECKSUM",
+            cwd=PACKER_DIR,
+            variables=("UBUNTU_RELEASE=24.04.6", "ARCH=amd64"),
+        )
+        self.assertEqual(unpinned.returncode, 0, unpinned.stderr)
+        self.assertEqual(unpinned.stdout.strip(), "sha256:")
 
     def test_explicit_iso_url_still_names_the_image_over_ubuntu_release(self):
         # ISO_URL stays authoritative, so an override cannot produce an image

@@ -2,29 +2,29 @@
 
 This page describes how to make the NVIDIA Kubernetes Engine (NVKE) API require a signed JSON Web Token (JWT) from an OpenID Connect (OIDC) identity provider (IdP) that you already run. Do this after you install the management-plane services and before you give anyone else access to the API.
 
-API authentication is off by default: until you turn it on, the API serves every request without a token. Authentication has three modes:
+Authentication has three modes. Off is the default.
 
 | Mode | Behavior |
 |---|---|
 | Off | Every request is served. This is the default. |
 | Permissive | Every request is checked and counted, then served. Nothing is rejected. |
-| Enforcing | A request without a valid token gets `401`. A valid token whose caller is not on your allow-list gets `403`. |
+| Enforcing | A request without a valid token gets `401`. A valid token that no admission rule matches gets `403`. |
 
-NVKE does no authorization. Every caller that NVKE admits can call every endpoint, including the ones that create and delete workload clusters.
+[NVKE does no authorization.](../overview/preview-status.md#api-and-access) Every caller that NVKE admits can call every endpoint, including the ones that create and delete workload clusters.
 
-> **Warning:** The NVKE API serves plain HTTP on NodePort 30080, and neither NVKE nor its chart serves it over TLS. Every bearer token a caller sends to `http://<MANAGEMENT_ADDRESS>:30080` crosses the network unencrypted, and anyone who captures it can call the API until it expires. Send tokens only to a TLS endpoint that you put in front of the API, such as a reverse proxy that terminates TLS and forwards to port 30080, or admit to the API, in the NetworkPolicy from [Install management-plane services](install-management-plane-services.md), only clients on a trusted, isolated network.
+> **Warning:** The NVKE API serves plain HTTP on NodePort 30080, and neither NVKE nor its chart serves it over TLS. Every bearer token a caller sends to `http://<MANAGEMENT_ADDRESS>:30080` crosses the network unencrypted, and anyone who captures it can call the API until it expires. Send tokens only to a TLS endpoint that you put in front of the API, such as a reverse proxy that terminates TLS and forwards to port 30080, or admit to the API, in the NetworkPolicy from [Run NVKE end to end on one machine](../get-started/local-site.md), only clients on a trusted, isolated network.
 
 ## Before you begin
 
-- You have completed [Install management-plane services](install-management-plane-services.md). You can do this before or after [Configure an infrastructure provider: NICo](provider-nico.md).
-- You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `stack-config.json`, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it, as in [Install management-plane services](install-management-plane-services.md). Set `KUBECONFIG` for `kubectl`:
+- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md). You can do this before or after [Configure an infrastructure provider: NICo](provider-nico.md).
+- You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it, as in [Run NVKE end to end on one machine](../get-started/local-site.md). Set `KUBECONFIG` for `kubectl`:
 
   ```bash
   export KUBECONFIG="$PWD/../<CLUSTER_NAME>.kubeconfig"
   ```
 
   The install created the Helm release `nke-controller` and the Deployment `nke-controller`, both in the `nke-controller` namespace.
-- The shell you run the install from has the `NVKECTL_*` variables from [Write the stack config](install-management-plane-services.md#write-the-stack-config) exported, as described in [Run the install again](install-management-plane-services.md#run-the-install-again).
+- The shell you run the install from has the `NVKECTL_*` variables from [Run NVKE end to end on one machine](../get-started/local-site.md) exported, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
 - Your IdP publishes an OIDC discovery document over HTTPS, and the management cluster can reach its signing-key endpoint.
 - Your IdP has a group for the people and automation allowed to call the NVKE API, and puts it in a token claim named `groups`, a list of strings. NVKE reads group membership only from that claim.
 - Your IdP has an OIDC client for `nvkectl` that needs no client secret.
@@ -42,7 +42,7 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
 
    Record the output:
 
-   - `issuer` is `<ISSUER_URL>` as NVKE must match it. NVKE compares it with the token's `iss` claim byte for byte, including any trailing slash.
+   - `issuer`: use this exact string as `<ISSUER_URL>`. NVKE compares it with the token's `iss` claim byte for byte, including any trailing slash.
    - `jwks_uri` is `<JWKS_URI>`, where NVKE fetches the signing keys. It must use `https`.
    - `id_token_signing_alg_values_supported` lists the signing algorithms. NVKE accepts only asymmetric algorithms, such as `RS256` and `ES256`.
 
@@ -61,7 +61,7 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
    Record two claims:
 
    - `aud` is `<AUDIENCE>`, the value callers must present. For a token from `kubectl oidc-login` it is usually `<CLIENT_ID>`.
-   - `groups` must contain the group you will admit, `<ADMITTED_GROUP>`. If it is missing, configure the IdP to release it. Some IdPs release it only when the client asks for a scope such as `groups`; pass that with `--oidc-extra-scope`.
+   - `groups` must contain the group you will admit, `<ADMITTED_GROUP>`. If it is missing, configure the IdP to release it. Some IdPs release it only when the client asks for a scope such as `groups`; pass that with `--oidc-extra-scope`. Use the value exactly as the claim shows it.
 
 ## Turn on authentication in permissive mode
 
@@ -114,18 +114,14 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
 
    Merge these keys into the file from step 1: `extraFiles` under `configMap`, and `caBundlePath` under the existing issuer's `jwks`, rather than adding a second `apiAuth` block or issuer. Without `caBundlePath`, NVKE trusts the system CAs.
 
-3. Run the install command from [Install management-plane services](install-management-plane-services.md) again, with the same flags, including any `--values-for nktp=<FILE>`, and `--values-for controller=../auth-values.yaml` added.
+3. Run the install command from [Run NVKE end to end on one machine](../get-started/local-site.md) again, with the same flags, including any `--values-for nktp=<FILE>`, and `--values-for controller=../auth-values.yaml` added.
 
    ```bash
-   deploy/nvke-deploy.sh install --deploy-path deploy/nico \
-     --sitespec ../sitespec.yaml \
-     --stack-config ../stack-config.json \
-     --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
-     --release ../release.json \
+   "$NVKE_REPO"/deploy/nvke-deploy-local.sh install \
      --values-for controller=../auth-values.yaml
    ```
 
-   Keep the `--release` and `--nvkr-run-dir` flags exactly as you installed, or leave them out if you installed without them, so that the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart refuses to render if `config` is set without `create`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
+   The wrapper reads the site spec, the stack config and the kubeconfig from `NVKE_SITESPEC`, `NVKE_STACK_CONFIG` and `NVKE_KUBECONFIG`, which `env.sh` exports, so the controller chart and image stay the ones you installed. The install upgrades each component in place, and applies `auth-values.yaml` to the controller after the deploy path's own values, which turn authentication off. The chart refuses to render if `config` is set without `create`, or if `caBundlePath` names a file under `/etc/nke/auth` that `extraFiles` does not list.
 
 4. Wait for the new pods and check the startup log.
 
@@ -139,7 +135,7 @@ NVKE does no authorization. Every caller that NVKE admits can call every endpoin
 
    The output contains a `fetched issuer signing keys` line for `example-idp` and an `API authentication is enabled` line with `"mode":"permissive"`.
 
-   If the keys line is missing, look for a `JWKS fetch failed` warning and fix the URI, the CA bundle or the network path now. In permissive mode NVKE starts without the keys and counts every token from that issuer as a would-be rejection. In enforcing mode it does not start.
+   If the keys line is missing, look for a `JWKS fetch failed` warning and fix the URI, the CA bundle or the network path now. In permissive mode NVKE starts without the keys, counts that issuer's tokens as `jwks_stale`, and retries as they arrive. In enforcing mode it does not start.
 
 ## Call the API
 
@@ -166,7 +162,7 @@ Configure your callers now, while NVKE still serves every request. From the mome
 
    `nvkectl` stores the kubeconfig path as you give it, so give an absolute path; a relative one works only from the directory you ran `set-site` in.
 
-   `<API_URL>` is the base address of the NVKE API without `/api`: `http://<MANAGEMENT_ADDRESS>:30080`, as in [Install management-plane services](install-management-plane-services.md), or the `https` address of the TLS endpoint you put in front of it. A token sent to the `http` address crosses the network unencrypted; see the warning at the top of this page. `nvkectl get kubeconfig`, `nvkectl get providers`, and the machine image, cluster release and node pool release commands, such as `nvkectl get nodepoolreleases`, read the management cluster's Kubernetes API directly with this kubeconfig. The bootstrap does not configure that API server to accept tokens from your IdP, so these commands fail. Use `kubectl` with `<CLUSTER_NAME>.kubeconfig` for them instead, as described in [Access a workload cluster](../workload-clusters/access.md#get-the-admin-kubeconfig) and [Create a workload cluster](../workload-clusters/create.md#before-you-begin).
+   `<API_URL>` is the base address of the NVKE API without `/api`: `http://<MANAGEMENT_ADDRESS>:30080`, as in [Run NVKE end to end on one machine](../get-started/local-site.md), or the `https` address of the TLS endpoint you put in front of it. A token sent to the `http` address crosses the network unencrypted; see the warning at the top of this page. `nvkectl get kubeconfig`, `nvkectl get providers`, and the machine image, cluster release and node pool release commands, such as `nvkectl get nodepoolreleases`, read the management cluster's Kubernetes API directly with this kubeconfig. The bootstrap does not configure that API server to accept tokens from your IdP, so these commands fail. Use `kubectl` with `<CLUSTER_NAME>.kubeconfig` for them instead, as described in [Access a workload cluster](../workload-clusters/access.md#get-the-admin-kubeconfig) and [Create a workload cluster](../workload-clusters/create.md#before-you-begin).
 
 3. Call the API.
 
@@ -208,15 +204,15 @@ Leave NVKE in permissive mode while your existing callers keep working, and watc
    nvke_auth_requests_total{issuer="unknown",outcome="would_reject",reason="no_token"} 7
    ```
 
-   Requests that pass are counted with `outcome="authenticated"`. Every `would_reject` series is a caller that enforcing mode would break. The counter is per pod, so if the Deployment runs more than one replica, run the command once per pod, replacing `deploy/nke-controller` with each pod name from `kubectl -n nke-controller get pods`.
+   Requests that pass are counted with `outcome="authenticated"`. Each `would_reject` series represents requests that enforcing mode would reject. Use the logs to trace the source requests.
 
 2. Read the `reason` label and fix each caller.
 
    | `reason` | Status when enforcing | Fix |
    |---|---|---|
    | `no_token` | `401` | The caller sends no `Authorization: Bearer` header. Give it a token. |
-   | `unknown_issuer` | `401` | The token's `iss` matches no configured `issuer`. Give the caller a token from your IdP. |
-   | `audience_mismatch` | `401` | The token's `aud` is not in `audiences`. |
+   | `unknown_issuer` | `401` | The token's `iss` matches no configured `issuer` byte for byte. Fix issuer, or give the caller a token from your IdP. |
+   | `audience_mismatch` | `401` | The token's `aud` is not in `audiences`. Add it, or give the caller a token for an accepted audience. |
    | `expired`, `not_yet_valid` | `401` | The token is outside its validity period. Get a new one, or check the caller's clock. |
    | `bad_signature`, `algorithm_not_allowed` | `401` | The token does not verify against the issuer's keys and `algorithms`. |
    | `jwks_stale` | `401` | NVKE cannot refresh the issuer's keys. Fix the key endpoint, not the caller. |
@@ -237,11 +233,7 @@ Continue when `would_reject` stops increasing.
 1. In `auth-values.yaml`, set `permissive: false`, then run the install again with the same flags as in [Turn on authentication in permissive mode](#turn-on-authentication-in-permissive-mode), step 3.
 
    ```bash
-   deploy/nvke-deploy.sh install --deploy-path deploy/nico \
-     --sitespec ../sitespec.yaml \
-     --stack-config ../stack-config.json \
-     --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
-     --release ../release.json \
+   "$NVKE_REPO"/deploy/nvke-deploy-local.sh install \
      --values-for controller=../auth-values.yaml
    ```
 
@@ -255,9 +247,9 @@ Continue when `would_reject` stops increasing.
 
    In enforcing mode, NVKE logs each rejected request as `rejected request`, with the same fields as the permissive-mode message.
 
-NVKE reads the authentication configuration once, at startup. If you later change only `apiAuth.config`, restart the Deployment with `kubectl -n nke-controller rollout restart deploy/nke-controller`. Add a new issuer in permissive mode first, because an issuer whose keys NVKE cannot fetch stops an enforcing NVKE from starting.
+NVKE reads the authentication configuration once, at startup. If you later change only `apiAuth.config` or `apiAuth.configMap.extraFiles`, restart the Deployment with `kubectl -n nke-controller rollout restart deploy/nke-controller`. Add a new issuer in permissive mode first, because an issuer whose keys NVKE cannot fetch stops an enforcing NVKE from starting.
 
-The deploy path's own values turn authentication off. Every time you run the install again, for any reason, add `--values-for controller=../auth-values.yaml`, along with the other inputs listed in [Run the install again](install-management-plane-services.md#run-the-install-again).
+The deploy path's own values turn authentication off. Every time you run the install again, for any reason, add `--values-for controller=../auth-values.yaml`, along with the other inputs listed in [Run NVKE end to end on one machine](../get-started/local-site.md).
 
 ## Verify
 

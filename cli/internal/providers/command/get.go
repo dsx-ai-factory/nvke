@@ -38,8 +38,8 @@ func NewGetCmd(siteFn SiteFn, runner inspect.Runner, newLister credentials.Liste
 	cmd := &cobra.Command{
 		Use:     "providers",
 		Aliases: []string{"provider"},
-		Short:   "List infrastructure providers installed on the site controller",
-		Long: "List infrastructure providers installed on the site controller.\n\n" +
+		Short:   "List infrastructure providers installed on the management cluster",
+		Long: "List infrastructure providers installed on the management cluster.\n\n" +
 			"This reads the site's Kubernetes cluster directly rather than the controller API, so it " +
 			"needs the kubeconfig registered with 'nvkectl config set-site --kubeconfig' and " +
 			"kubectl on PATH.\n\n" +

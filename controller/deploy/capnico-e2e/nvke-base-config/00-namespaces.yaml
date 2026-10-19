@@ -18,7 +18,7 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: nke-system
+  name: nvke-system
 ---
 apiVersion: v1
 kind: Namespace

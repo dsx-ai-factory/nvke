@@ -1,6 +1,7 @@
-# Shared nke-system namespace and tenant RBAC ConfigMap.
+# Shared management-plane namespace (nvkeSystemNamespace.name, nvke-system by
+# default) and tenant RBAC ConfigMap.
 #
-# The nke-system Namespace is rendered when nvkeSystemNamespace.create is true
+# The Namespace is rendered when nvkeSystemNamespace.create is true
 # (the default), irrespective of whether tenantAccess.enabled or nvkeOIDCAuth.enabled is true.
 # controller publishes per-cluster Secrets (<cluster>-kubeconfig,
 # <cluster>-cluster-trust-bundle) into it, so the Namespace must stay even if
@@ -22,7 +23,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: nke-system
+  name: {{ include "controller.managementNamespace" . }}
   annotations:
     helm.sh/resource-policy: keep
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
@@ -32,7 +33,7 @@ metadata:
 {{- end }}
 {{- if .Values.nvkeOIDCAuth.enabled }}
 {{- /*
-  spiffe.trustDomain builds the nke-service principals below. It must equal the
+  spiffe.trustDomain builds the principals below, under spiffe.servicePathSegment. It must equal the
   SPIRE server's trust domain (the spire chart's global.spire.trustDomain) so these
   RBAC subjects match the SPIFFE IDs the tenant apiserver actually sees; the deploy
   layer stamps both from one ${ENV_NAME}.
@@ -81,25 +82,26 @@ metadata:
 {{- /*
   Derived from the effective service account name, not a hardcoded literal:
   this is exactly what the ClusterSPIFFEID template issues
-  (spiffe://{{.TrustDomain}}/nke-service/{{.PodSpec.ServiceAccountName}}, see
+  (spiffe://{{.TrustDomain}}/<servicePathSegment>/{{.PodSpec.ServiceAccountName}}, see
   deploy/k8s/spire-nke-services-spiffe-id.yaml), so the default always
   matches the real SPIFFE ID SPIRE hands this controller's pod -- a renamed
   serviceAccount.name (or a nameOverride/fullnameOverride change that moves
   the effective SA name) never has to be reconciled by hand against this
   value, and jwtExchangeEndpoint remains the only case that does.
 */}}
-{{- $controllerSubject := .Values.spiffe.controllerSubject | default .Values.spiffe.cweSubject | default (printf "spiffe://%s/nke-service/%s" $td (include "controller.serviceAccountName" .)) }}
-{{- $capiManagerSubject := .Values.spiffe.capiManagerSubject | default (printf "spiffe://%s/nke-service/capi-manager" $td) }}
-{{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-control-plane-manager" $td) }}
-{{- $capiKubeadmBootstrapManagerSubject := .Values.spiffe.capiKubeadmBootstrapManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-bootstrap-manager" $td) }}
-{{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/nke-service/capd-manager" $td) }}
+{{- $seg := required "spiffe.servicePathSegment must not be empty" .Values.spiffe.servicePathSegment }}
+{{- $controllerSubject := .Values.spiffe.controllerSubject | default .Values.spiffe.cweSubject | default (printf "spiffe://%s/%s/%s" $td $seg (include "controller.serviceAccountName" .)) }}
+{{- $capiManagerSubject := .Values.spiffe.capiManagerSubject | default (printf "spiffe://%s/%s/capi-manager" $td $seg) }}
+{{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/%s/capi-kubeadm-control-plane-manager" $td $seg) }}
+{{- $capiKubeadmBootstrapManagerSubject := .Values.spiffe.capiKubeadmBootstrapManagerSubject | default (printf "spiffe://%s/%s/capi-kubeadm-bootstrap-manager" $td $seg) }}
+{{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/%s/capd-manager" $td $seg) }}
 {{- $tenantRbacName := .Values.nvkeOIDCAuth.tenantRbacName }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: nke-rbac
-  namespace: nke-system
+  namespace: {{ include "controller.managementNamespace" . }}
   labels:
     {{- include "controller.labels" . | nindent 4 }}
 data:

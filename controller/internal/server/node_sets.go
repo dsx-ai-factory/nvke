@@ -99,7 +99,30 @@ func apiNodeSetFromDB(dbNodeSet *db.NodeSet) (api.NodeSet, error) {
 		TeleportEnabled:      &dbNodeSet.TeleportEnabled,
 		Nico:                 apiNicoNodeSetProviderFromDB(dbNodeSet.Nico),
 		Infra:                apiInfraNodeSetProviderFromDB(dbNodeSet.Capi),
+		LaunchLayer:          apiLaunchLayerNodeSetProviderFromDB(dbNodeSet.LaunchLayer),
 	}, nil
+}
+
+func apiLaunchLayerNodeSetProviderFromDB(provider *db.LaunchLayerNodePoolProvider) *api.LaunchLayerNodeSetProvider {
+	if provider == nil {
+		return nil
+	}
+	out := &api.LaunchLayerNodeSetProvider{
+		InstanceType:  provider.InstanceType,
+		HostOSProfile: provider.HostOSProfile,
+		VMProfile:     provider.VMProfile,
+	}
+	if provider.FulfillmentStrategy != "" {
+		strategy := api.LaunchLayerNodeSetProviderFulfillmentStrategy(provider.FulfillmentStrategy)
+		out.FulfillmentStrategy = &strategy
+	}
+	if len(provider.SecurityGroupRefs.PrimaryNetworkInterface) > 0 || len(provider.SecurityGroupRefs.GPUNetworkInterface) > 0 {
+		out.SecurityGroupRefs = &api.LaunchLayerSecurityGroupRefs{
+			PrimaryNetworkInterface: provider.SecurityGroupRefs.PrimaryNetworkInterface,
+			GpuNetworkInterface:     provider.SecurityGroupRefs.GPUNetworkInterface,
+		}
+	}
+	return out
 }
 
 func apiInfraNodeSetProviderFromDB(capiNodeSetProvider *db.CAPINodePoolProvider) *api.InfraNodeSetProvider {

@@ -35,7 +35,7 @@ func TestRootCommandWritesToSetOut(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			root := newRootCmd("v1.2.3", "abc1234", "clean", "2026-01-01T00:00:00Z")
+			root := NewRootCmd("v1.2.3", "abc1234", "clean", "2026-01-01T00:00:00Z")
 			root.SetOut(&out)
 			root.SetErr(&out)
 			root.SetArgs(tc.args)

@@ -37,7 +37,7 @@ metadata:
 ---
 # What makes SPIRE issue this workload an SVID.
 #
-# The path segment is /nke-e2e/ rather than NVKE's own /nke-service/, so the probe
+# The path segment is /nke-e2e/ rather than NVKE's own /nvke-service/, so the probe
 # does not share NVKE's prefix and admit.spiffe's prefix check is actually
 # exercised. className must match the SPIRE controller manager's (Tilt's chart
 # values set spiffe.spire.className); a wrong value is ignored silently and shows up as a pod

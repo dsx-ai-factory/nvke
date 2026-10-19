@@ -14,6 +14,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 )
 
 func TestKubeconfigExecEnv(t *testing.T) {
@@ -35,7 +37,7 @@ func TestKubeconfigExecEnv(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: secretsNamespace, Name: "tenant-a-kubeconfig"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 		Data:       map[string][]byte{kubeconfigSecretKey: raw},
 	}).Build()
 
@@ -55,7 +57,7 @@ func TestAssertSPIREKubeconfigHasNoFallback(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: secretsNamespace, Name: "tenant-a-kubeconfig"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 		Data:       map[string][]byte{kubeconfigSecretKey: requireKubeconfig(t, config)},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
@@ -104,7 +106,7 @@ func TestAssertSPIREKubeconfigHasNoFallback(t *testing.T) {
 			extra := config.DeepCopy()
 			testCase.add(extra)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Namespace: secretsNamespace, Name: "tenant-a-kubeconfig"},
+				ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 				Data:       map[string][]byte{kubeconfigSecretKey: requireKubeconfig(t, extra)},
 			}).Build()
 
@@ -131,7 +133,7 @@ users:
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: secretsNamespace, Name: "tenant-a-kubeconfig"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: mgmtns.Namespace(), Name: "tenant-a-kubeconfig"},
 		Data:       map[string][]byte{kubeconfigSecretKey: raw},
 	}).Build()
 
@@ -144,7 +146,7 @@ users:
 		},
 	} {
 		err := read()
-		require.EqualError(t, err, "parsing kubeconfig from secret nke-system/tenant-a-kubeconfig")
+		require.EqualError(t, err, "parsing kubeconfig from secret nvke-system/tenant-a-kubeconfig")
 		require.NotContains(t, err.Error(), "example-token")
 		require.NotContains(t, err.Error(), "example-password")
 		require.NoError(t, errors.Unwrap(err))

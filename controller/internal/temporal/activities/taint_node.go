@@ -88,8 +88,8 @@ func (a *Activities) TaintNode(ctx context.Context, input TaintNodeInput) (Taint
 func taintFromInput(input TaintNodeInput) (corev1.Taint, bool, error) {
 	remove := strings.HasSuffix(input.TaintEffect, "-")
 	effect := corev1.TaintEffect(strings.TrimSuffix(input.TaintEffect, "-"))
-	if input.TaintKey == "" || input.TaintEffect == "" || (!remove && input.TaintValue == "") {
-		return corev1.Taint{}, false, fmt.Errorf("taint key and effect are required, and value is required when applying a taint")
+	if input.TaintKey == "" || input.TaintEffect == "" {
+		return corev1.Taint{}, false, fmt.Errorf("taint key and effect are required")
 	}
 	if errs := validation.IsQualifiedName(input.TaintKey); len(errs) > 0 {
 		return corev1.Taint{}, false, fmt.Errorf("invalid taint key %q: %s", input.TaintKey, strings.Join(errs, "; "))
@@ -107,6 +107,9 @@ func taintFromInput(input TaintNodeInput) (corev1.Taint, bool, error) {
 	return corev1.Taint{Key: input.TaintKey, Value: input.TaintValue, Effect: effect}, remove, nil
 }
 
+// updateNodeTaint adds, updates, or removes taint on the in-memory node and reports whether the node changed.
+// Taints are matched by key and effect. When remove is set, the matching taint is dropped. Otherwise a matching
+// taint with a different value is replaced, and a missing taint is appended.
 func updateNodeTaint(node *corev1.Node, taint corev1.Taint, remove bool) bool {
 	if remove {
 		// Strip both domains. The taint may have been applied by a build that

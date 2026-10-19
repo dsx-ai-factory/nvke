@@ -33,9 +33,10 @@ git push origin os-image/v0.1.0
 ```
 
 Pushing the tag runs `.github/workflows/os-image-artifact.yml`: Packer bakes the
-qcow2, `make boot-smoke` must pass, then the disk is published to
-`ghcr.io/dsx-ai-factory/nvke/os-image` and the GitHub Release is created. A failed bake
-or smoke test does not publish.
+qcow2, `make boot-smoke` must pass, then the disk is published to NVCR and S3
+(and under its version tag to `ghcr.io/dsx-ai-factory/nvke/os-image-*`, with a
+GitHub Release, only when the repository variable `NVKE_GITHUB_PUBLISH` names
+`os-image`). A failed bake or smoke test does not publish.
 
 `make` stamps `nvke-os-image-check` from:
 

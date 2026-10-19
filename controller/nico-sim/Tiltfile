@@ -94,7 +94,7 @@ def register(ctx):
         ctx: struct with main_dir, cfg, kind_host_ip, provider_dir.
 
     Returns:
-        struct with cwe_resource_deps and cwe_env_overrides.
+        struct with controller_resource_deps and controller_env_overrides.
     """
     provider_dir = ctx.provider_dir
     _deploy = os.path.join(provider_dir, "deploy")
@@ -454,7 +454,7 @@ def register(ctx):
     # Defaults to 1 control-plane + 1 worker node using the seed resources.
     # -----------------------------------------------------------------------
     # CWE_HTTP_PORT is a deprecated alias for NKE_CONTROLLER_HTTP_PORT; #1399 removes it.
-    _cwe_port = os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
+    _controller_port = os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
     if _vm_backend_enabled:
         cmd_button(
             "5-create-sample-nico-vms-cluster",
@@ -469,8 +469,8 @@ def register(ctx):
               CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}" \
               CNI_VERSION="${CNI_VERSION:-}" \
               ./hack/create-nico-vms-cluster.sh
-            """ % (ctx.main_dir, _cwe_port)],
-            resource="cwe",
+            """ % (ctx.main_dir, _controller_port)],
+            resource="nvke-controller",
             icon_name="add_box",
             text="Create sample nico-vms cluster",
             inputs=[
@@ -484,6 +484,6 @@ def register(ctx):
         )
 
     return struct(
-        cwe_resource_deps = ["nico-sim"],
-        cwe_env_overrides = {},
+        controller_resource_deps = ["nico-sim"],
+        controller_env_overrides = {},
     )

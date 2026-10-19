@@ -1,0 +1,58 @@
+> **Generated file -- do not edit.** This page is written from the nvkectl
+> command tree in `cli/internal/nvkectl`. To change what it says, change the
+> command's own metadata -- its Short, Long, Example, Args, Aliases, deprecation
+> notice or flag usage strings -- and run `make -C cli docs`. An edit made here
+> is lost on the next run, and `make -C cli docs-check` fails until the
+> committed pages match the tree again.
+
+## nvkectl get clusterreleases
+
+List cluster releases on the active site's management cluster
+
+### Aliases
+
+`clusterrelease`
+
+### Synopsis
+
+List cluster releases on the active site's management cluster.
+
+Naming cluster releases narrows the listing to them, in the order given.
+
+With -o json or -o yaml, one name prints that cluster release as a single object in the
+metadata and spec shape that 'nvkectl create clusterrelease' accepts, so it can be edited and
+created under a new name. No name, or several, prints a list of those objects.
+
+Example - every cluster release:
+```
+nvkectl get clusterreleases
+```
+
+Example - one cluster release, as YAML:
+```
+nvkectl get clusterreleases <name> -o yaml
+```
+
+```
+nvkectl get clusterreleases [name ...] [flags]
+```
+
+### Options
+
+```
+  -h, --help            help for clusterreleases
+  -o, --output string   Output format: json or yaml (default: table)
+```
+
+### Options inherited from parent commands
+
+```
+      --json-logs     Emit logs as JSON
+      --site string   Override the active site for this invocation
+  -v, --verbose       Enable debug logging
+```
+
+### SEE ALSO
+
+* [nvkectl get](nvkectl_get.md)	 - Display one or more resources
+

@@ -217,7 +217,7 @@ done
 # The providers reach config.yaml as given, down to the CA bundle's newlines.
 for name in oidc-providers-required oidc-providers-full oidc-providers-at-cap; do
   want="$(yq -o=json -I=0 '.oidc.providers | sort_keys(..)' "${values}/${name}.yaml")"
-  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nke-controller-config") | .data["config.yaml"]' "${renders}/${name}.yaml" |
+  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nvke-controller-config") | .data["config.yaml"]' "${renders}/${name}.yaml" |
     yq -o=json -I=0 '.oidc.providers | sort_keys(..)')"
   [[ "${got}" == "${want}" ]] || { echo "${name}: config.yaml has oidc.providers ${got}, values gave ${want}" >&2; exit 1; }
 done

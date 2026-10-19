@@ -1,13 +1,13 @@
 # Observe NVKE and its clusters
 
-This page describes how to check the health of the NVIDIA Kubernetes Engine (NVKE) management plane and the workload clusters it manages, and where to find their logs, metrics and dashboards. You use it after [Install management-plane services](install-management-plane-services.md), and whenever you need to know whether NVKE and its clusters are working.
+This page describes how to check the health of the NVIDIA Kubernetes Engine (NVKE) management plane and the workload clusters it manages, and where to find their logs, metrics and dashboards. You use it after [Run NVKE end to end on one machine](../get-started/local-site.md), and whenever you need to know whether NVKE and its clusters are working.
 
 ## Before you begin
 
-- You have completed [Install management-plane services](install-management-plane-services.md), and `nvkectl config set-site` points `nvkectl` at your NVKE API and the management cluster's kubeconfig. If API authentication is on, `nvkectl` points at an OpenID Connect (OIDC) kubeconfig instead, as described in [Secure the NVKE API](api-authentication.md). With that kubeconfig, `nvkectl get providers` and `nvkectl get kubeconfig` fail, because they read the management cluster's Kubernetes API, which does not accept your identity provider's tokens; the steps that use them give a `kubectl` alternative.
+- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md), and `nvkectl config set-site` points `nvkectl` at your NVKE API and the management cluster's kubeconfig. If API authentication is on, `nvkectl` points at an OpenID Connect (OIDC) kubeconfig instead, as described in [Secure the NVKE API](api-authentication.md). With that kubeconfig, `nvkectl get providers` and `nvkectl get kubeconfig` fail, because they read the management cluster's Kubernetes API, which does not accept your identity provider's tokens; the steps that use them give a `kubectl` alternative.
 - `kubectl` uses the management cluster's admin kubeconfig, for example with `export KUBECONFIG=<CLUSTER_NAME>.kubeconfig`, where `<CLUSTER_NAME>` is the management cluster's name.
 - You have `curl` and `jq`.
-- If you change the management plane's values below, run the install from a shell with the `NVKECTL_*` variables exported, as described in [Run the install again](install-management-plane-services.md#run-the-install-again).
+- If you change the management plane's values below, run the install from a shell with the `NVKECTL_*` variables exported, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
 - You know `<MANAGEMENT_ADDRESS>`, the management cluster's API virtual IP address (VIP), or the node IP of a single-node management cluster. The NVKE API is at `http://<MANAGEMENT_ADDRESS>:30080`. If API authentication is on, add `-H "Authorization: Bearer <TOKEN>"` to each `curl` command that calls `/api/`, where `<TOKEN>` is a JSON Web Token (JWT) from your identity provider, as described in [Secure the NVKE API](api-authentication.md). `/healthz` and `/readyz` need no token.
 
 ## Check the management plane
@@ -79,11 +79,11 @@ env:
     value: debug
 ```
 
-Then run the install command from [Install management-plane services](install-management-plane-services.md) again, with the same flags and `--values-for controller=../controller-log.yaml` added. Your `env` list replaces the deploy path's list, which sets `NODE_AGENT_PORT`, so keep that entry. `LOG_LEVEL` accepts `debug`, `info`, `warn` and `error`. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md). If you passed `--values-for nktp=<FILE>` when you installed, pass it again, or NKTP goes back to the bundled development backend.
+Then run the install command from [Run NVKE end to end on one machine](../get-started/local-site.md) again, with the same flags and `--values-for controller=../controller-log.yaml` added. Your `env` list replaces the deploy path's list, which sets `NODE_AGENT_PORT`, so keep that entry. `LOG_LEVEL` accepts `debug`, `info`, `warn` and `error`. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md). If you passed `--values-for nktp=<FILE>` when you installed, pass it again, or NKTP goes back to the bundled development backend.
 
 ### Read the management plane metrics
 
-The management plane serves Prometheus metrics at `/metrics` on port 9090 of its pod. NVIDIA Kubernetes Telemetry Pipeline (NKTP) scrapes them, as described in [Find the management cluster's telemetry](#find-the-management-clusters-telemetry). To read them directly:
+The management plane serves Prometheus metrics at `/metrics` on port 9090 of its pod. NVKE telemetry pipeline (NKTP) scrapes them, as described in [Find the management cluster's telemetry](#find-the-management-clusters-telemetry). To read them directly:
 
 1. Forward the metrics port to your machine.
 
@@ -149,15 +149,15 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
      | jq -r '.nodes[] | [.name, .conditions.provisioned.status, .conditions.kubernetesReady.status, .conditions.nodeAgentReady.status, .conditions.markedForRecycling.status, .conditions.markedForRepair.status] | @tsv'
    ```
 
-   A healthy node reads `True`, `True`, `True`, `False`, `False`: provisioned, `Ready` in Kubernetes, `nvke-agent` healthy, and not marked for replacement or repair. A node is marked for replacement or repair when its Kubernetes node carries the condition `nvke.nvidia.com/NeedsRecycle` or `nvke.nvidia.com/NeedsRepair` (a node last reconciled by an older controller may still carry the `nke.nvidia.com/` form, which NVKE also reads), for example set by NVSentinel. [Manage node pools](../workload-clusters/node-pools.md) describes what NVKE does next.
+   A healthy node reads `True`, `True`, `True`, `False`, `False`: provisioned, `Ready` in Kubernetes, `nvke-agent` healthy, and not marked for replacement or repair. A node is marked for replacement or repair when its Kubernetes node carries the condition `nvke.nvidia.com/NeedsRecycle` or `nvke.nvidia.com/NeedsRepair` (a node last reconciled by an older controller may still carry the `nke.nvidia.com/` form, which NVKE also reads), set by auto mode or by a break-fix system you run. [Manage node pools](../workload-clusters/node-pools.md) describes what NVKE does next.
 
 5. Check the Cluster API objects behind the cluster.
 
    ```bash
-   clusterctl describe cluster <WORKLOAD_CLUSTER> -n nke-system
+   clusterctl describe cluster <WORKLOAD_CLUSTER> -n nvke-system
    ```
 
-   NVKE creates each workload cluster's Cluster API objects in the `nke-system` namespace of the management cluster, named after the cluster. The output shows the readiness of the control plane and of each machine, with the reason for any that is not ready.
+   NVKE creates each workload cluster's Cluster API objects in the `nvke-system` namespace of the management cluster, named after the cluster. The output shows the readiness of the control plane and of each machine, with the reason for any that is not ready.
 
 6. Check the nodes from inside the workload cluster.
 
@@ -183,7 +183,7 @@ By default NKTP exports to a bundled development backend, with Grafana, Promethe
 kubectl -n nktp port-forward svc/lgtm 3000:3000 --address 127.0.0.1
 ```
 
-To keep the data, send it to your own backend: write a values file as described under "Set a backend" in [Getting started with NKTP](../nktp/getting-started.md), and run the install from [Install management-plane services](install-management-plane-services.md) again with `--values-for nktp=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
+To keep the data, send it to your own backend: write a values file as described under "Set a backend" in [Getting started with NKTP](../nktp/getting-started.md), and run the install from [Run NVKE end to end on one machine](../get-started/local-site.md) again with `--values-for nktp=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md).
 
 NVKE installs neither NKTP nor cert-manager in workload clusters. NKTP collects only from the management cluster, where the install deploys it; for workload clusters you have the management plane's metrics, which describe each cluster, node pool and node as NVKE tracks them. [Getting started with NKTP](../nktp/getting-started.md) describes NKTP itself.
 
@@ -193,7 +193,7 @@ The repository includes three Grafana dashboards for NVKE in `controller/deploy/
 
 | File | Title in Grafana | What it shows | Data it needs |
 |---|---|---|---|
-| `nvke-site-controller-health-reference.json` | `Reference - NVKE Site Controller Health` | Management cluster workloads, SPIRE, cert-manager and node readiness. | kube-state-metrics, from NKTP. |
+| `nvke-site-controller-health-reference.json` | `Reference - NVKE Management Cluster Health` | Management cluster workloads, SPIRE, cert-manager and node readiness. | kube-state-metrics, from NKTP. |
 | `nvke-provisioning-duration-reference.json` | `Reference - NVKE Provisioning Duration` | Node provisioning and teardown time, success against give-up rate, and nodes in progress. | Management plane metrics. |
 | `nvke-cluster-upgrade-overview-reference.json` | `Reference - NVKE Cluster Upgrade Overview` | Kubelet versions per cluster, and control-plane and OS profile panels. | kube-state-metrics; management plane metrics for the optional panels. It shows only clusters that export telemetry to the same backend. |
 
@@ -214,7 +214,7 @@ The `$cluster` variable lists the values of the `k8s_cluster_name` label, which 
 
    The result has one series for each workload cluster that `nvkectl get clusters` lists.
 
-2. Open `Reference - NVKE Site Controller Health` and select the management cluster's name in the `$cluster` list. The panels show data.
+2. Open `Reference - NVKE Management Cluster Health` and select the management cluster's name in the `$cluster` list. The panels show data.
 
 ## Next steps
 

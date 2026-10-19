@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+CAPLL_PROVIDER_RESOURCE = "capll-provider"
+CAPLL_NAMESPACE = "capll-system"
+CAPLL_FAKE_NAMESPACE = "fake-ll-api"
+CAPLL_RELEASE = "capi-provider-launchlayer"
+CAPLL_IMAGE = "cluster-api-provider-launchlayer:local"
+CAPLL_FAKE_IMAGE = "fake-ll-api-server:local"
+
+def _get_kind_cluster_name():
+    name = os.getenv("KIND_CLUSTER_NAME", "")
+    if name:
+        return name
+    context = k8s_context()
+    if context.startswith("kind-"):
+        return context[5:]
+    return "kind-cluster-name-not-set"
+
+def _capll_source_dir(ctx):
+    source_dir = os.getenv("CAPLL_SOURCE_DIR", ctx.cfg.get("capll_source_dir", ""))
+    if not source_dir:
+        fail("Provider 'launchlayer' requires CAPLL_SOURCE_DIR (or tilt_config.json's " +
+             "'capll_source_dir') to point at a cluster-api-provider-launchlayer checkout.")
+    if not source_dir.startswith("/"):
+        source_dir = os.path.abspath(os.path.join(ctx.main_dir, source_dir))
+    return source_dir
+
+def register(ctx):
+    labels = ["3-launchlayer"]
+    source_dir = _capll_source_dir(ctx)
+
+    install_script = os.path.join(ctx.provider_dir, "install-capll.sh")
+    install_cmd = [
+        "env",
+        "CAPLL_SOURCE_DIR=" + source_dir,
+        "CAPLL_NAMESPACE=" + CAPLL_NAMESPACE,
+        "CAPLL_FAKE_NAMESPACE=" + CAPLL_FAKE_NAMESPACE,
+        "CAPLL_RELEASE=" + CAPLL_RELEASE,
+        "CAPLL_IMAGE=" + CAPLL_IMAGE,
+        "CAPLL_FAKE_IMAGE=" + CAPLL_FAKE_IMAGE,
+        "CAPLL_STAGED_CHART_DIR=" + os.path.join(ctx.main_dir, ".local", "capll-chart"),
+        "KIND_CLUSTER_NAME=" + _get_kind_cluster_name(),
+        "bash", install_script,
+    ]
+
+    local_resource(
+        CAPLL_PROVIDER_RESOURCE,
+        labels=labels,
+        cmd=install_cmd,
+        resource_deps=["check-management-cluster"],
+        deps=[install_script, source_dir],
+        allow_parallel=True,
+    )
+
+    preflight_script = """
+      command -v helm >/dev/null || { echo "helm is required for the launchlayer provider" >&2; exit 1; }
+      command -v docker >/dev/null || { echo "docker is required for the launchlayer provider" >&2; exit 1; }
+      if [ ! -f "%s/chart/Chart.yaml" ]; then
+        echo "CAPLL source directory '%s' is incomplete." >&2
+        exit 1
+      fi
+    """ % (source_dir, source_dir)
+
+    return struct(
+        cwe_resource_deps=[CAPLL_PROVIDER_RESOURCE],
+        cwe_env_overrides={},
+        preflight_script=preflight_script,
+    )

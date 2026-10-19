@@ -16,7 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 )
 
 type ApplyCAPIClusterResourcesInput struct {
@@ -35,7 +34,7 @@ func (a *Activities) ApplyCAPIClusterResources(ctx context.Context, input ApplyC
 	if capi.IsEmptyManifest(manifest) {
 		return nil
 	}
-	return capi.ApplyClusterScaffold(ctx, a.k8sClient, cluster, false, a.cfg.FieldManagerName, a.cfg.ManagedByLabelValue)
+	return capi.ApplyClusterScaffold(ctx, a.k8sClient, cluster, false, a.cfg.FieldManagerName, a.cfg.ManagedByLabelValue, a.cfg.ManagementNamespaceOrDefault())
 }
 
 type DeleteCAPIClusterResourcesInput struct {
@@ -55,7 +54,7 @@ func (a *Activities) DeleteCAPIClusterResources(ctx context.Context, input Delet
 		return nil
 	}
 
-	namespace := constants.NamespaceNVKESystem
+	namespace := a.cfg.ManagementNamespaceOrDefault()
 
 	infraCluster, err := capi.ParseManifest(manifest)
 	if err != nil {

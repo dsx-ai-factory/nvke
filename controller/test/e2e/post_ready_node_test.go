@@ -23,7 +23,7 @@ const (
 	applyNodeConditionWorkflowType   = "ApplyK8sNodeCondition"
 	nodeReconfigureWorkflowType      = "NodeReconfigureKubeletServer"
 	e2eNodeConditionType             = "nke.nvidia.com/E2EPostReadyValidation"
-	maintenanceTaintKey              = "nke.nvidia.com/maintenance"
+	maintenanceTaintKey              = "nvke.nvidia.com/maintenance"
 	nodeOperationExecutionTimeout    = 5 * time.Minute
 	nodeOperationObservationInterval = time.Second
 )

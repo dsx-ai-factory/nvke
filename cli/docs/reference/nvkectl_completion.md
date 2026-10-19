@@ -1,0 +1,39 @@
+> **Generated file -- do not edit.** This page is written from the nvkectl
+> command tree in `cli/internal/nvkectl`. To change what it says, change the
+> command's own metadata -- its Short, Long, Example, Args, Aliases, deprecation
+> notice or flag usage strings -- and run `make -C cli docs`. An edit made here
+> is lost on the next run, and `make -C cli docs-check` fails until the
+> committed pages match the tree again.
+
+## nvkectl completion
+
+Generate the autocompletion script for the specified shell
+
+### Synopsis
+
+Generate the autocompletion script for nvkectl for the specified shell.
+See each sub-command's help for details on how to use the generated script.
+
+
+### Options
+
+```
+  -h, --help   help for completion
+```
+
+### Options inherited from parent commands
+
+```
+      --json-logs     Emit logs as JSON
+      --site string   Override the active site for this invocation
+  -v, --verbose       Enable debug logging
+```
+
+### SEE ALSO
+
+* [nvkectl](nvkectl.md)	 - NVKE control-plane CLI
+* [nvkectl completion bash](nvkectl_completion_bash.md)	 - Generate the autocompletion script for bash
+* [nvkectl completion fish](nvkectl_completion_fish.md)	 - Generate the autocompletion script for fish
+* [nvkectl completion powershell](nvkectl_completion_powershell.md)	 - Generate the autocompletion script for powershell
+* [nvkectl completion zsh](nvkectl_completion_zsh.md)	 - Generate the autocompletion script for zsh
+

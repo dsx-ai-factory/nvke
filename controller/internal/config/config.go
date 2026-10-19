@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 )
 
 const (
@@ -19,6 +21,8 @@ const (
 	InfraProviderNico = "nico"
 	// InfraProviderInfra is the API-facing name for the generic CAPI provider block.
 	InfraProviderInfra = "infra"
+	// InfraProviderLaunchLayer is the API-facing name for the LaunchLayer provider block.
+	InfraProviderLaunchLayer = "launchLayer"
 
 	SpireAttestationMethodTPM       SpireAttestationMethod = "tpm"
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
@@ -258,6 +262,15 @@ type Config struct {
 	// events on. Both sides must agree, so this is read from one place.
 	ManagedByLabelValue string `controllerconfig:"managedByLabelValue"`
 
+	// ManagementNamespace is the shared management-plane namespace holding the
+	// tenant-access Secrets, the nke-rbac ConfigMap and the OIDC-mode CAPI
+	// objects. Empty means constants.LegacyManagementNamespace, so a config.yaml
+	// written before this key existed keeps today's behavior exactly. Read it
+	// through ManagementNamespaceOrDefault rather than directly: unlike the
+	// label keys, the old namespace is not also read, so an empty value reaching
+	// a client would address the wrong namespace rather than fall back.
+	ManagementNamespace string `controllerconfig:"managementNamespace"`
+
 	// SpiffeEnabled is a feature flag to enable SPIFFE support.
 	SpiffeEnabled bool `controllerconfig:"spire.spiffeEnabled"`
 
@@ -392,7 +405,7 @@ type Config struct {
 
 // TracingConfig configures OpenTelemetry span export.
 type TracingConfig struct {
-	// Enabled turns on span export and per-query database spans.
+	// Enabled turns on span export and database spans for queries with a trace parent.
 	Enabled bool `controllerconfig:"tracing.enabled"`
 	// Endpoint is the OTLP gRPC collector host:port (scheme optional) that
 	// spans are exported to. When empty, the OTEL_EXPORTER_OTLP_* variables the
@@ -521,6 +534,19 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// ManagementNamespaceOrDefault returns the shared management-plane namespace,
+// falling back to constants.LegacyManagementNamespace when ManagementNamespace is
+// unset. The chart renders the key on every install, so the fallback is for a
+// config.yaml written before it existed and for a zero Config in tests; it is
+// deliberately the legacy name, because a site that has not pinned a namespace
+// must not be moved to a new one by a binary upgrade alone.
+func (c Config) ManagementNamespaceOrDefault() string {
+	if c.ManagementNamespace == "" {
+		return constants.LegacyManagementNamespace
+	}
+	return c.ManagementNamespace
 }
 
 // Validate checks the settings the environment supplies. nke-controller-config

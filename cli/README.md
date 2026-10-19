@@ -1,6 +1,6 @@
 # nvkectl
 
-NVKE control-plane CLI. Bootstraps site controllers and manages tenant cluster lifecycle.
+NVKE control-plane CLI. Bootstraps management clusters and manages tenant cluster lifecycle.
 
 **Module:** `github.com/dsx-ai-factory/nvke/cli`  
 **Binary:** `nvkectl`  
@@ -11,7 +11,7 @@ NVKE control-plane CLI. Bootstraps site controllers and manages tenant cluster l
 - **Site bootstrap** — `nvkectl bootstrap site` creates an ephemeral Kind cluster on nerdctl/containerd, deploys Postgres, Temporal, SPIRE (skipped with `--disable-mtls`, which dials the agents in plaintext), Cluster API and CWE onto it, then drives kubeadm init/join across pre-provisioned nodes, or machines CAPNICo allocates with `infra.provider: nico`, via `nvke-agent` gRPC; no SSH required, and Docker is not supported
 - **Cluster lifecycle** — `nvkectl get/create/patch/delete clusters` manages tenant clusters through the CWE API
 - **Site spec** — `nvkectl generate sitespec` writes a site spec from a node CSV; `nvkectl bootstrap site --dry-run` validates one without touching a node
-- **Config** — `nvkectl config set-site` points the CLI at a site controller.
+- **Config** — `nvkectl config set-site` points the CLI at an NVKE management plane.
 
 ## Installation
 
@@ -31,10 +31,16 @@ chmod +x nvkectl && sudo mv nvkectl /usr/local/bin/
 nvkectl version
 ```
 
+## Command reference
+
+[**Every command and flag**](docs/reference/README.md), one page per command,
+generated from the command tree this binary runs. The quick reference below is
+the short list of what operators reach for most.
+
 ## Quick reference
 
 ```bash
-# Write a site spec from a node CSV, then bootstrap a new site controller with
+# Write a site spec from a node CSV, then bootstrap a new management cluster with
 # the images `make -C cli images` built. Needs nerdctl+containerd, kind, helm,
 # kubectl and clusterctl on PATH.
 nvkectl generate sitespec my-site --nodes hosts.csv > sitespec.yaml
@@ -49,7 +55,7 @@ nvkectl bootstrap site -f sitespec.yaml --timeout 45m \
   --kubeconfig-out ./my-site.kubeconfig                          # longer provisioning wait; pick the output path
 nvkectl bootstrap site -f sitespec.yaml --disable-mtls            # no SPIRE, plaintext agents; development only
 
-# Point the CLI at a site controller
+# Point the CLI at a management plane
 nvkectl config set-site --url https://cwe.example.com --name default \
   --kubeconfig ~/.kube/site.kubeconfig
 nvkectl config use-site <name>          # switch between configured sites
@@ -109,8 +115,11 @@ If neither namespace holds that ConfigMap, the CLI treats authentication as off 
 The kubeconfig identity needs:
 
 - `create` on `serviceaccounts/token` for `nke-client` in `nke-clients`
-- `get` on `secrets` in `nke-system`, for `nvkectl get kubeconfig`, which reads
-  the `<cluster>-admin-kubeconfig` Secret there directly rather than through CWE
+- `get` on `secrets` in the site's management namespace (`nvke-system`, or
+  `nke-system` on a site installed before it was configurable), for
+  `nvkectl get kubeconfig`, which reads the `<cluster>-admin-kubeconfig` Secret
+  there directly rather than through CWE. The command tries both and takes
+  `--namespace` for anything else
 - `list` on `customresourcedefinitions`, `list` on `deployments` across
   namespaces, and `get` on `secrets` in each provider manager's namespace
   (`capnico-system` and `capll-system` by default), for `nvkectl get providers`
@@ -375,8 +384,9 @@ in a patch release. Match on the exit code, not on error text.
 
 ## Related docs
 
+- [Command reference](docs/reference/README.md) — every public command and flag
 - [Compatibility and deprecation policy](docs/compatibility.md)
-- [Site Controller Bootstrap](../docs/site-bootstrap/overview.md)
+- [Management cluster bootstrap](../docs/site-bootstrap/overview.md)
 - [Architecture](../docs/architecture.md)
 - [Authenticating to the NVKE API](../controller/docs/authenticating-to-the-api.md)
 - [Configuring NVKE API Authentication](../controller/docs/configuring-api-authentication.md)

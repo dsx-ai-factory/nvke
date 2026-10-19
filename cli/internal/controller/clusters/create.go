@@ -20,10 +20,10 @@ func NewCreateCmd(clientFn ControllerClientFn) *cobra.Command {
 		Use:     "cluster",
 		Aliases: []string{"clusters"},
 		Short:   "Create a tenant cluster",
-		Long: `Create a tenant cluster on the site controller.
+		Long: `Create a tenant cluster on the management plane.
 
 The spec must be a YAML document whose fields match the controller
-CreateClusterRequest schema exactly. See /api/docs on your site controller.
+CreateClusterRequest schema exactly. See /api/docs on your management plane.
 
 Pass a file path or '-' to read from stdin (e.g. via a pipe or heredoc).
 

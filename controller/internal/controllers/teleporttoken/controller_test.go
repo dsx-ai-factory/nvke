@@ -175,7 +175,7 @@ func (te *testEnv) createNicoMachineForNode(ctx context.Context, t *testing.T, n
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      node.Name,
-			Namespace: constants.NamespaceNVKESystem,
+			Namespace: constants.LegacyManagementNamespace,
 			Annotations: map[string]string{
 				keys.MachineHostID.String(): node.ID.String(),
 			},
@@ -191,7 +191,7 @@ func (te *testEnv) createNicoMachineForNode(ctx context.Context, t *testing.T, n
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      node.Name,
-			Namespace: constants.NamespaceNVKESystem,
+			Namespace: constants.LegacyManagementNamespace,
 			OwnerReferences: []metav1.OwnerReference{{
 				APIVersion: clusterv1.GroupVersion.String(),
 				Kind:       "Machine",
@@ -1240,7 +1240,7 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 
 	nicoMachine := &nicov1.NicoMachine{}
 	require.NoError(t, te.k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: constants.NamespaceNVKESystem,
+		Namespace: constants.LegacyManagementNamespace,
 		Name:      node1.Name,
 	}, nicoMachine))
 	assert.Equal(t, []dbreconcile.Key{dbreconcile.NodeKey(node1.ID)}, controller.nodeKeysForNicoMachine(ctx, nicoMachine))
@@ -1249,7 +1249,7 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 		orphan := &nicov1.NicoMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "orphan-nicomachine",
-				Namespace: constants.NamespaceNVKESystem,
+				Namespace: constants.LegacyManagementNamespace,
 			},
 		}
 
@@ -1265,7 +1265,7 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "invalid-host-machine",
-				Namespace: constants.NamespaceNVKESystem,
+				Namespace: constants.LegacyManagementNamespace,
 				Annotations: map[string]string{
 					keys.MachineHostID.String(): "not-a-uuid",
 				},
@@ -1280,7 +1280,7 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "invalid-host-machine",
-				Namespace: constants.NamespaceNVKESystem,
+				Namespace: constants.LegacyManagementNamespace,
 				OwnerReferences: []metav1.OwnerReference{{
 					APIVersion: clusterv1.GroupVersion.String(),
 					Kind:       "Machine",

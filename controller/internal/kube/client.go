@@ -38,6 +38,11 @@ type RuntimeManagerOptions struct {
 	ConfigMapCacheNamespace string
 	// LeaderElectionNamespace is the namespace containing the manager's Lease.
 	LeaderElectionNamespace string
+	// SecretCacheNamespace scopes the Secret cache to the management namespace
+	// tenant-access publishes into (config.Config.ManagementNamespaceOrDefault).
+	// It must match what the tenant-access controller writes, or the published
+	// kubeconfig Secrets are never cached and never seen.
+	SecretCacheNamespace string
 }
 
 // NewRuntimeClient creates a new Kubernetes client using the controller-runtime client.
@@ -84,6 +89,9 @@ func NewRuntimeManager(
 	if opts.LeaderElectionNamespace == "" {
 		return nil, fmt.Errorf("leader election namespace must not be empty")
 	}
+	if opts.SecretCacheNamespace == "" {
+		return nil, fmt.Errorf("secret cache namespace must not be empty")
+	}
 
 	config, err := NewRESTConfig()
 	if err != nil {
@@ -108,7 +116,7 @@ func runtimeManagerOptions(scheme *runtime.Scheme, opts RuntimeManagerOptions) c
 	cacheOptions := cache.Options{ByObject: map[client.Object]cache.ByObject{
 		&corev1.Secret{}: {
 			Namespaces: map[string]cache.Config{
-				tenantAccessKubeconfigNamespace: {},
+				opts.SecretCacheNamespace: {},
 			},
 		},
 	}}

@@ -86,8 +86,8 @@ Operators opt in through `CreateCluster` or `UpdateCluster` by setting a nonempt
 `controlPlaneConfig.nodeAgentConfig.version`. An absent or empty desired version
 disables both in-place updates and the lifecycle version step.
 
-The API accepts exact release SemVer and canonicalizes it to
-`vMAJOR.MINOR.PATCH`.
+The API accepts exact release and prerelease SemVer, such as `v0.3.0-rc.2`.
+It adds the `v` prefix when absent.
 
 ### UpdateCluster
 

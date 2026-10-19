@@ -20,7 +20,6 @@ import (
 type ConfigProfile struct {
 	Hooks             ConfigProfileHookSpec `yaml:"hooks"`
 	PreJoinNodeReboot bool                  `yaml:"preJoinNodeReboot"`
-	Labels            []string              `yaml:"labels"`
 }
 
 type ConfigProfileHookSpec struct {

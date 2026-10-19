@@ -122,11 +122,11 @@ def register(ctx):
     }
 
     node_endpoint = "http://%s:%d" % (ctx.site_controller_vip, DSX_IMDS_NODE_PORT)
-    cwe_resource_deps = ["dsx-imds-attestation-mock"]
+    controller_resource_deps = ["dsx-imds-attestation-mock"]
     controller_method = ctx.cfg.get("controller_attestation_method", "dsxImds")
     if controller_method not in ["tpm", "joinToken", "dsxImds"]:
         fail("controller_attestation_method must be tpm, joinToken, or dsxImds")
-    cwe_chart_flags = [
+    controller_chart_flags = [
         "--set-string", "nodeAgent.spireAttestationMethod=%s" % controller_method,
         "--set-string", "nodeAgent.dsxImds.operatorTenant=operator-1",
         "--set-string", "nodeAgent.dsxImds.endpoint=%s" % node_endpoint,
@@ -136,7 +136,7 @@ def register(ctx):
         if site_address == "":
             fail("DSX IMDS node-agent TLS/JWT requires tilt_config.json field site_controller_vip")
         identity_url = "https://%s:30444" % site_address
-        cwe_chart_flags += [
+        controller_chart_flags += [
             "--set", "nodeAgent.tlsJwt.enabled=true",
             "--set-string", "nodeAgent.tlsJwt.issuer=https://capd.dsx.nvid.id",
             "--set-string", "nodeAgent.tlsJwt.jwksURI=%s/.well-known/jwks.json" % identity_url,
@@ -173,15 +173,15 @@ def register(ctx):
             """ % (ctx.kind_cluster_name, ctx.kind_cluster_name)],
             resource_deps=["dsx-controller-client-certificate"],
         )
-        cwe_resource_deps.append("dsx-controller-client-ready")
-        cwe_chart_flags += [
+        controller_resource_deps.append("dsx-controller-client-ready")
+        controller_chart_flags += [
             "--set", "nodeAgent.externalMTLS.enabled=true",
             "--set-string", "nodeAgent.externalMTLS.secret.name=dsx-controller-client",
         ]
     return struct(
-        cwe_resource_deps=cwe_resource_deps,
-        cwe_env_overrides={},
-        cwe_chart_flags=cwe_chart_flags,
+        controller_resource_deps=controller_resource_deps,
+        controller_env_overrides={},
+        controller_chart_flags=controller_chart_flags,
         spire_chart_flags=[
             "--set-json",
             "spire-server.customPlugins.nodeAttestor.dsx_imds=%s" % encode_json(server_plugin),

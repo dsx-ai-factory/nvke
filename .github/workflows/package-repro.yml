@@ -78,8 +78,6 @@ jobs:
         run: df -h /
 
       - name: Build twice and compare
-        env:
-          OVN_KUBERNETES_TOKEN: ${{ secrets.OVN_KUBERNETES_RO_TOKEN }}
         run: make -C os-image/packages/${{ matrix.package }} repro-check
 
       - name: Show the disk after building

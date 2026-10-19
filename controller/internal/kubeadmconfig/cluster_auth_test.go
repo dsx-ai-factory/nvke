@@ -65,7 +65,7 @@ func nvkeRBAC(users ...string) *corev1.ConfigMap {
 		manifest += "  - {kind: User, name: " + user + "}\n"
 	}
 	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: constants.NamespaceNVKESystem, Name: nvkerbac.ConfigMapName},
+		ObjectMeta: metav1.ObjectMeta{Namespace: constants.LegacyManagementNamespace, Name: nvkerbac.ConfigMapName},
 		Data:       map[string]string{nvkerbac.ConfigMapKey: manifest},
 	}
 }
@@ -114,6 +114,8 @@ func TestBuildClusterAuthenticationConfig(t *testing.T) {
 			SharedEnabled: true,
 			Providers:     []controllerconfig.OIDCProvider{clusterAuthOperator()},
 			TrustDomain:   clusterAuthTrustDomain,
+
+			ManagementNamespace: constants.LegacyManagementNamespace,
 		})
 		require.NoError(t, err)
 		require.Len(t, got.JWT, 2)
@@ -204,7 +206,7 @@ func TestLoadOperatorJWTPolicy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := LoadOperatorJWTPolicy(ctx, tt.reader, tt.trustDomain)
+			got, err := LoadOperatorJWTPolicy(ctx, tt.reader, tt.trustDomain, constants.LegacyManagementNamespace)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				return

@@ -1,6 +1,6 @@
 # Download and Install nvkectl
 
-`nvkectl` is the NVKE control-plane CLI. You use it to validate and bootstrap a site controller cluster from a declarative site spec file, and to manage tenant cluster lifecycle.
+`nvkectl` is the NVKE control-plane CLI. You use it to validate and bootstrap a management cluster from a declarative site spec file, and to manage tenant cluster lifecycle.
 
 Releases are published under `cli/v*` tags at https://github.com/dsx-ai-factory/nvke/releases.
 

@@ -52,6 +52,7 @@ type EnableOIDCOperation struct {
 	k8sClient             client.Client
 	oidcConfig            *config.NvkeOIDCAuth
 	trustDomain           string
+	managementNamespace   string
 	// methodChecker verifies each control-plane agent implements the OIDC
 	// RPCs (gRPC reflection) before any node is touched — the reusable capability
 	// gate in place of an agent version floor.
@@ -184,6 +185,8 @@ func (op *EnableOIDCOperation) BuildApplyToNodePayload(ctx context.Context, clus
 		SharedEnabled: true,
 		Providers:     cluster.OIDCProviders(),
 		TrustDomain:   op.trustDomain,
+
+		ManagementNamespace: op.managementNamespace,
 	}
 	cfg, err := kubeadmconfig.BuildClusterAuthenticationConfig(ctx, op.k8sClient, authn)
 	if err != nil {

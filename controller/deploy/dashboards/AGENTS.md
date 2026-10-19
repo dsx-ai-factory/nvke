@@ -10,7 +10,7 @@ Operators: import steps and a short description of each file are in [README.md](
 
 | File | Purpose | Primary scrape |
 |---|---|---|
-| `nvke-site-controller-health-reference.json` | Site-controller workload and node health | kube-state-metrics; optional apiserver/etcd, CNPG |
+| `nvke-site-controller-health-reference.json` | Management cluster workload and node health | kube-state-metrics; optional apiserver/etcd, CNPG |
 | `nvke-provisioning-duration-reference.json` | Node provision/teardown duration and outcomes | controller `/metrics` (`nvke_controller_*`) |
 | `nvke-cluster-upgrade-overview-reference.json` | Kubernetes cluster upgrade progress | kube-state-metrics; optional NVKE controller inventory metrics |
 
@@ -29,7 +29,7 @@ Do not bump `controller/deploy/charts/controller/Chart.yaml` for dashboard-only 
 
 ## Workflow for a dashboard change
 
-1. Identify the **cluster that emits the metrics** (site controller vs tenant vs controller process). Site kube-prometheus does not scrape tenant etcd.
+1. Identify the **cluster that emits the metrics** (management cluster vs tenant vs controller process). Site kube-prometheus does not scrape tenant etcd.
 2. Confirm the series exist in **this repo’s OSS stack** (`generated/nke-stack/values.yaml`, controller metrics).
 3. Prefer **required** panels that work with kube-state-metrics or documented controller metrics. Put everything else in **optional** rows that stay empty without turning red (`or vector(0)` only when zero is a real reading, not a missing scrape).
 4. Update the Requirements panel, `description`, and tags (`nvke`, plus the topic).
@@ -93,7 +93,7 @@ HA thresholds of **3** (etcd members, ready nodes) are colo-sized. Parameterize 
 
 ## Per-dashboard contracts
 
-**Site controller health.** Glance: NVKE controller, SPIRE, Temporal, cert-manager, node Ready. Optional collapsed: apiserver/etcd (needs scrape), CNPG **or** postgres. Keep the etcd Has Leader panel as the control-plane health signal. Empty optional ≠ red.
+**Management cluster health.** Glance: NVKE controller, SPIRE, Temporal, cert-manager, node Ready. Optional collapsed: apiserver/etcd (needs scrape), CNPG **or** postgres. Keep the etcd Has Leader panel as the control-plane health signal. Empty optional ≠ red.
 
 **Provisioning duration.** Source of truth: `controller/internal/metrics/lifecycle.go` and `node_provisioning.go`.
 

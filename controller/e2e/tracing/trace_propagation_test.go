@@ -79,7 +79,7 @@ func TestTraceContinuesThroughOutbox(t *testing.T) {
 	bunDB, err := db.NewBunDB(cfg, logger)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, bunDB.Close()) })
-	require.NoError(t, migrations.Migrate(ctx, bunDB))
+	require.NoError(t, migrations.Migrate(ctx, bunDB, ""))
 	database := db.NewDB(bunDB)
 
 	temporalClient, err := controllertemporal.NewClient(cfg, logger)

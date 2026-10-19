@@ -385,7 +385,7 @@ missing, unreadable or empty. Once it is available, save it:
 ```bash
 # Creates a private file; noclobber refuses to overwrite an existing one.
 ( umask 077; set -o noclobber
-  kubectl --kubeconfig <bootstrap-kubeconfig> -n nke-system get secret <name>-kubeconfig -o jsonpath='{.data.value}' | base64 -d > <name>.kubeconfig )
+  kubectl --kubeconfig <bootstrap-kubeconfig> -n nvke-system get secret <name>-kubeconfig -o jsonpath='{.data.value}' | base64 -d > <name>.kubeconfig )
 ```
 
 Verify the file works before deleting anything. The encryption key and SPIRE
