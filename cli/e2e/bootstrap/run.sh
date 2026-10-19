@@ -186,7 +186,7 @@ scan_output_for_secrets() {
     return 0
   fi
 
-  local work rc name shape fingerprint join_token
+  local work rc name shape fingerprint join_token plog
   work="$(mktemp -d)"
 
   # The rules, proved on a sample of each shape: flagged with a value, clean with
@@ -232,21 +232,66 @@ scan_output_for_secrets() {
     return 1
   fi
 
-  # What the run produced.
-  mkdir -p "${work}/output"
-  cp "${BOOTSTRAP_LOG}" "${work}/output/bootstrap.log"
-  if [ -d "${DIAGNOSTICS_DIR}" ]; then
-    mkdir -p "${work}/output/diagnostics"
-    cp -R "${DIAGNOSTICS_DIR}/." "${work}/output/diagnostics/" || {
-      log "FAIL: could not read ${DIAGNOSTICS_DIR}, so it was not scanned for credentials"
+  # The scan itself, driven the way it is on the real output: a secret planted
+  # in the log, in a file of the diagnostics bundle, and in a pod log inside it
+  # (the controller's, in the real bundle) must each fail it, and the same
+  # files without it must pass.
+  local planted clean_log diag where
+  planted="$(sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' <<<'helm upgrade --install demo chart --set-string auth.password=PLACEHOLDER')"
+  clean_log="${work}/clean.log"
+  printf 'msg="nothing to see" trace_id=%032x\n' 1 >"${clean_log}"
+  diag="${work}/diag"
+  reset_diag() {
+    mkdir -p "${diag}/nvke/controller"
+    printf 'no secret here\n' >"${diag}/all-resources.txt"
+    printf 'no secret here\n' >"${diag}/nvke/controller/logs.txt"
+  }
+  reset_diag
+  if ! scan_run_output "${clean_log}" "${diag}" >/dev/null 2>&1; then
+    log "FAIL: the scan failed a log and diagnostics bundle with no secret in them"
+    rm -rf "${work}"
+    return 1
+  fi
+  for where in log diagnostics-file pod-log; do
+    reset_diag
+    plog="${clean_log}"
+    case "${where}" in
+      log) printf '%s\n' "${planted}" >"${work}/planted.log"; plog="${work}/planted.log" ;;
+      diagnostics-file) printf '%s\n' "${planted}" >"${diag}/all-resources.txt" ;;
+      pod-log) printf '%s\n' "${planted}" >"${diag}/nvke/controller/logs.txt" ;;
+    esac
+    if scan_run_output "${plog}" "${diag}" >/dev/null 2>&1; then
+      log "FAIL: the scan passed a secret planted in the ${where}"
       rm -rf "${work}"
+      return 1
+    fi
+  done
+
+  rc=0
+  scan_run_output "${BOOTSTRAP_LOG}" "${DIAGNOSTICS_DIR}" || rc=$?
+  rm -rf "${work}"
+  return "${rc}"
+}
+
+# scan_run_output scans a bootstrap log and a diagnostics directory, which may
+# not exist, with gitleaks. It returns 1 on a finding or a scanner failure.
+scan_run_output() {
+  local log_file="$1" diag_dir="$2" out rc
+  out="$(mktemp -d)"
+  mkdir -p "${out}/output"
+  cp "${log_file}" "${out}/output/bootstrap.log"
+  if [ -d "${diag_dir}" ]; then
+    mkdir -p "${out}/output/diagnostics"
+    cp -R "${diag_dir}/." "${out}/output/diagnostics/" || {
+      log "FAIL: could not read ${diag_dir}, so it was not scanned for credentials"
+      rm -rf "${out}"
       return 1
     }
   fi
   rc=0
   # --verbose names each finding: rule, file and line, with the secret redacted.
-  gitleaks_scan "${work}/output" --verbose || rc=$?
-  rm -rf "${work}"
+  gitleaks_scan "${out}/output" --verbose || rc=$?
+  rm -rf "${out}"
   case "${rc}" in
     0) log "PASS: no credential in the bootstrap log or its diagnostics" ;;
     2) log "FAIL: gitleaks found a credential in the bootstrap output; the findings above are redacted" ; return 1 ;;
@@ -638,7 +683,9 @@ defer teardown_bootstrap_cluster
 # setsid makes nvkectl a process-group leader so abort_bootstrap can signal the
 # kind, nerdctl and helm it drives as one group; nvkectl does not forward
 # signals to its children.
-setsid "${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
+# -v makes a successful run write its diagnostics bundle too, so the credential
+# scan covers the bundle on the passing path and not only after a failure.
+setsid "${NVKECTL}" bootstrap site -v -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
   --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" \
   --encryption-key-out "${ETCD_KEY_FILE}" >"${BOOTSTRAP_LOG}" 2>&1 &
 bootstrap_pid=$!
@@ -785,6 +832,32 @@ if [[ -n "${NVKECTL_SPIRE_CA_CERT_FILE:-}" ]] && ! grep -q "SPIRE upstream CA fr
   fail "a bootstrap CA was supplied but bootstrap site did not pick it up"
 fi
 log "PASS: bootstrap site created the site cluster through the controller API"
+
+# check_trace_id asserts the run's trace ID: printed first and last, the same
+# value, and on every log record nvkectl wrote. Records are the slog lines, which
+# start with time=; the output of helm, kind and the like is not nvkectl's.
+check_trace_id() {
+  local ids first last id bare
+  ids="$(grep -E '^Trace ID: ' <<<"${output}" || true)"
+  [ "$(wc -l <<<"${ids}")" -ge 2 ] ||
+    fail "expected a Trace ID line at the start and at the end of the output" "${ids}"
+  first="$(head -n1 <<<"${ids}")"
+  last="$(tail -n1 <<<"${ids}")"
+  [[ "${first}" =~ ^Trace\ ID:\ ([0-9a-f]{32})$ ]] || fail "malformed Trace ID line: ${first}"
+  id="${BASH_REMATCH[1]}"
+  [ "${first}" = "${last}" ] || fail "the first and last Trace ID lines differ" "${first}" "${last}"
+  [ "$(grep -c '^time=' <<<"${output}")" -gt 0 ] || fail "no log records in the output to carry a trace ID"
+  bare="$(grep '^time=' <<<"${output}" | grep -vc "trace_id=${id}" || true)"
+  [ "${bare}" -eq 0 ] || fail "${bare} log records do not carry trace_id=${id}"
+  log "PASS: one trace ID, first and last line, on every nvkectl log record"
+}
+check_trace_id
+
+# -v makes the run write diagnostics even on success. An empty directory would
+# make the credential scan pass over nothing.
+[ -n "$(find "${DIAGNOSTICS_DIR}" -type f 2>/dev/null | head -n1)" ] ||
+  fail "bootstrap site -v wrote no diagnostics to ${DIAGNOSTICS_DIR}"
+log "PASS: a successful run wrote its diagnostics bundle for the credential scan"
 
 # The controller reached this point by answering /readyz through its Service
 # and the host through its external NodePort. What that does not show is that
