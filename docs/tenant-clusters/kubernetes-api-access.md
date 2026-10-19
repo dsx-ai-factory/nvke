@@ -80,7 +80,9 @@ certificate signing request named `nvke-breakglass` and approves it.
 kube-controller-manager issues the certificate, and tenant-access replaces the
 Secret. The node's `admin.conf` is used to approve the request and to copy the
 server URL and cluster CA. That `admin.conf` is kept valid by the separate
-12-hour kubeadm certificate renewal. Renewal updates the Secret, not kubeconfig
+12-hour kubeadm certificate renewal, which does not run on a cluster with
+exactly two control-plane nodes; see
+[Certificate renewal](../../controller/docs/certificate-renewal.md). Renewal updates the Secret, not kubeconfig
 files that operators have already downloaded. Operators must retrieve a
 refreshed kubeconfig before the certificate in their local copy expires.
 
