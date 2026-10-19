@@ -19,7 +19,7 @@ the reference it points at.
 | Write the stack config, `stack-config.json` | The controller stack install reads it: the NICo API, and under `images` the profile content image (required without a release) and, optionally, the controller image. Copy `deploy/examples/stack-config.json` and fill in every `REPLACE_*` value; the install refuses a placeholder. The tokens and passwords come from `NVKECTL_*` variables. Not read by `bootstrap site`. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
 | `nvkr release verify` and `nvkr release export --reference <release>` | NVKR, not `nvkectl`: verifies a published release under your policy, then writes its description, the `--release` input of the install. Optional: without it the charts come from this checkout, the profile content image from the stack config's `images.profiles`, and the controller image from `images.controller` or, when that is empty, the deploy path's pin. | Not in the CLI |
-| `deploy/check-site.sh`, `clusterctl init`, `deploy/nvke-deploy.sh install --deploy-path deploy/nico`, the exec-auth patch | The management plane install, a short list of commands run in order: the check reports what the cluster and this machine still need; `clusterctl init` installs Cluster API; the executor renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller) and applies it; the patch gives the Cluster API controllers SPIRE exec-auth. See [Install management-plane services](../../docs/operate/install-management-plane-services.md). | Not in the CLI |
+| `clusterctl init`, `deploy/nvke-deploy-local.sh install` | The management plane install, a short list of commands run in order: `clusterctl init` installs Cluster API; the wrapper installs the lab StorageClass, renders the `deploy/nico` deploy path for the site (Postgres, Temporal, SPIRE, CAPNICo, NKTP, the controller) and applies it, and gives the Cluster API controllers SPIRE exec-auth. See [Run NVKE end to end on one machine](../../docs/get-started/local-site.md). | Not in the CLI |
 | `nvkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at an NVKE management plane. `use-site` switches between entries, `view` prints the config. | Available |
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the management plane can use, with their state. Alpha. | Available |
 | `nvkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
@@ -123,25 +123,21 @@ spec. [deploy/README.md](https://github.com/dsx-ai-factory/nvke/blob/main/deploy
 ### 5. Install the controller stack
 
 ```bash
-deploy/check-site.sh --sitespec sitespec.yaml --stack-config stack-config.json --kubeconfig my-tier0-site.kubeconfig --release release.json
-clusterctl init --kubeconfig my-tier0-site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
-deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json --kubeconfig my-tier0-site.kubeconfig --release release.json
-controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig my-tier0-site.kubeconfig
-kubectl --kubeconfig my-tier0-site.kubeconfig apply -f nvke-api-clients.yaml
+clusterctl init --kubeconfig local-site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
+"$NVKE_REPO"/deploy/nvke-deploy-local.sh install
+kubectl --kubeconfig local-site.kubeconfig apply -f nvke-api-clients.yaml
 ```
 
-A list of commands, in this order: the check reports what the cluster and
-this machine still need, with the fix, and prints the commands that remain
-when everything passes; `clusterctl init` installs Cluster API at the
-pinned version; the executor reads the nodes' architecture from the
-cluster, renders the `deploy/nico` deploy path for the site and the release
-and applies it, item by item; the next script patches
-the Cluster API controllers for SPIRE; the NetworkPolicy admits your client
+A list of commands, in this order: `clusterctl init` installs Cluster API at
+the pinned version; the wrapper installs the lab StorageClass, reads the
+nodes' architecture from the cluster, renders and applies the `deploy/nico`
+deploy path item by item, and patches the Cluster API controllers for SPIRE;
+the NetworkPolicy admits your client
 networks to the controller API, which the chart otherwise answers from
 in-cluster pods only. Then point the CLI at the site (step 6) and publish a `MachineImage`, `ClusterRelease` and `NodePoolRelease`
 with `nvkectl create`, as [Your first cluster](https://github.com/dsx-ai-factory/nvke/blob/main/docs/first-cluster.md)
 shows, before the first tenant cluster.
-[Install management-plane services](../../docs/operate/install-management-plane-services.md)
+[Run NVKE end to end on one machine](../../docs/get-started/local-site.md)
 gives each step with its inputs.
 
 The deploy path is the interface and the script is the reference way to apply

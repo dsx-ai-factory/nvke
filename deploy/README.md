@@ -2,7 +2,7 @@
 
 Installs the NVKE management plane onto a site cluster that `nvkectl bootstrap site` left behind: Postgres, Temporal, SPIRE, CAPNICo, NKTP and the NVKE controller. One scenario: NVKE with CAPNICo on a NICo site.
 
-Two scripts: `check-site.sh` reports what the site still needs, `nvke-deploy.sh` installs the deploy path. `nvke-deploy-local.sh` wraps the second for the local site of [Run NVKE end to end on one machine](../docs/get-started/local-site.md): the lab StorageClass before, the inputs from the environment, the SPIRE exec-auth patch after. Read them before you run them. The guide [Install management-plane services](../docs/operate/install-management-plane-services.md) explains each step.
+Two scripts: `check-site.sh` reports what the site still needs, `nvke-deploy.sh` installs the deploy path. `nvke-deploy-local.sh` wraps the second for the local site of [Run NVKE end to end on one machine](../docs/get-started/local-site.md): the lab StorageClass before, the inputs from the environment, the SPIRE exec-auth patch after. Read them before you run them.
 
 ## Inputs
 
@@ -17,18 +17,21 @@ The install reads the NICo token, the node login and the database password from 
 
 ## Run
 
-The install is a list of commands; [Install management-plane services](../docs/operate/install-management-plane-services.md) gives it in order with what each one does. The two scripts here are steps 1 and 3 of that list.
+[Run NVKE end to end on one machine](../docs/get-started/local-site.md) gives
+the install in order with what each command does. `nvke-deploy-local.sh` is
+the entry point; it calls `nvke-deploy.sh` with the inputs from the
+environment.
 
 ```bash
-cp deploy/examples/stack-config.json stack-config.json   # then fill in every REPLACE_* value
-deploy/check-site.sh --sitespec sitespec.yaml --stack-config stack-config.json --kubeconfig site.kubeconfig [--release release.json [--nvkr-run-dir DIR]]
-clusterctl init --kubeconfig site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
-deploy/nvke-deploy.sh install --deploy-path deploy/nico --sitespec sitespec.yaml --stack-config stack-config.json --kubeconfig site.kubeconfig [--release release.json [--nvkr-run-dir DIR]]
-controller/hack/apply-capi-spiffe-exec-auth.sh --kubeconfig site.kubeconfig
-kubectl --kubeconfig site.kubeconfig apply -f nvke-api-clients.yaml   # the NetworkPolicy admitting your client networks; the guide shows it
-nvkectl config set-site --name <site> --url http://<VIP>:30080 --kubeconfig site.kubeconfig
+clusterctl init --kubeconfig local-site.kubeconfig --core cluster-api:<v> --bootstrap kubeadm:<v> --control-plane kubeadm:<v> --wait-providers
+"$NVKE_REPO"/deploy/nvke-deploy-local.sh install
+kubectl --kubeconfig local-site.kubeconfig apply -f nvke-api-clients.yaml   # the NetworkPolicy admitting your client networks
+nvkectl config set-site --name <site> --url http://<ADDRESS>:30080 --kubeconfig local-site.kubeconfig
 nvkectl create machineimage -f machineimage.yaml && nvkectl create clusterrelease -f clusterrelease.yaml && nvkectl create nodepoolrelease -f nodepoolrelease.yaml
 ```
+
+The two scripts below are the reference documentation for `check-site.sh` and
+`nvke-deploy.sh`, which `nvke-deploy-local.sh` wraps.
 
 ## The stack config
 

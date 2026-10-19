@@ -6,9 +6,9 @@ NICo is NVKE's default infrastructure provider; LaunchLayer is also supported on
 
 ## Before you begin
 
-- You have completed [Install management-plane services](install-management-plane-services.md). That procedure installs CAPNICo in the `capnico-system` namespace and writes your NICo API details from the `nico` section of the stack config to the `nico-credentials` Secret, before it installs the management plane.
+- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md). That procedure installs CAPNICo in the `capnico-system` namespace and writes your NICo API details from the `nico` section of the stack config to the `nico-credentials` Secret, before it installs the management plane.
 - You have the management cluster kubeconfig, `<CLUSTER_NAME>.kubeconfig`, and `kubectl` on `PATH`. The kubeconfig must be able to read Secrets in the `capnico-system` namespace.
-- `nvkectl` points at your management plane, as set in [Install management-plane services](install-management-plane-services.md) with `nvkectl config set-site`. If API authentication is on, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](api-authentication.md), and `nvkectl get providers` fails with it, because it reads the management cluster's Kubernetes API, which does not accept your identity provider's tokens. The steps that use it give a `kubectl` alternative.
+- `nvkectl` points at your management plane, as set in [Run NVKE end to end on one machine](../get-started/local-site.md) with `nvkectl config set-site`. If API authentication is on, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](api-authentication.md), and `nvkectl get providers` fails with it, because it reads the management cluster's Kubernetes API, which does not accept your identity provider's tokens. The steps that use it give a `kubectl` alternative.
 - In NICo, you have:
   - A site, with machines enrolled.
   - A virtual private cloud (VPC) in that site, and either VPC prefixes or subnets in it for the nodes.
@@ -29,7 +29,7 @@ export KUBECONFIG=$PWD/<CLUSTER_NAME>.kubeconfig
    nvkectl get providers
    ```
 
-   The `nico` row reads `CONFIGURED`: the CAPNICo custom resource definitions (CRDs) are established, the CAPNICo controller is available and the `nico-credentials` Secret exists. `CREDENTIALS` reads `UNSUPPORTED`; see the note after these steps. `NOT-INSTALLED` or `NOT-CONFIGURED` means the install did not complete; run it again as described in [Install management-plane services](install-management-plane-services.md). `DEGRADED` means the CAPNICo controller is not available; check the `controller-manager` Deployment in `capnico-system`. `UNKNOWN` usually means the kubeconfig that `nvkectl` uses cannot read Secrets in `capnico-system`.
+   The `nico` row reads `CONFIGURED`: the CAPNICo custom resource definitions (CRDs) are established, the CAPNICo controller is available and the `nico-credentials` Secret exists. `CREDENTIALS` reads `UNSUPPORTED`; see the note after these steps. `NOT-INSTALLED` or `NOT-CONFIGURED` means the install did not complete; run it again as described in [Run NVKE end to end on one machine](../get-started/local-site.md). `DEGRADED` means the CAPNICo controller is not available; check the `controller-manager` Deployment in `capnico-system`. `UNKNOWN` usually means the kubeconfig that `nvkectl` uses cannot read Secrets in `capnico-system`.
 
    With API authentication on, this command fails. Check CAPNICo with `kubectl` instead:
 
@@ -113,7 +113,7 @@ The management plane holds no site-wide NICo settings. Each workload cluster req
 | `sshKeyGroupIDs` | Control plane and node pool `nico` | Optional. SSH key groups for node access. |
 | `infinibandPartitionID`, `nvLinkLogicalPartitionID` | Node pool `nico` | Optional. An InfiniBand partition and an NVLink logical partition. Fixed when the node pool is created. |
 
-The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and each node pool select one of the releases you applied in [Install management-plane services](install-management-plane-services.md) with `nico.release` and, optionally, a config profile with `nico.configProfile`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
+The `orgID`, `siteID` and `vpcID` of a cluster are fixed when the cluster is created. The control plane and each node pool select one of the releases you applied in [Run NVKE end to end on one machine](../get-started/local-site.md) with `nico.release` and, optionally, a config profile with `nico.configProfile`. [Create a workload cluster](../workload-clusters/create.md) shows a full request.
 
 ## Verify
 

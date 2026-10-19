@@ -1,6 +1,6 @@
 # Configure OIDC for workload clusters
 
-This page describes how to make the Kubernetes API servers of the workload clusters that NVIDIA Kubernetes Engine (NVKE) creates accept JSON Web Tokens (JWTs) from OpenID Connect (OIDC) identity providers (IdPs). Do it after [Install management-plane services](../operate/install-management-plane-services.md) and before you create the workload clusters that need it: a workload cluster keeps the fleet-wide providers it was created with.
+This page describes how to make the Kubernetes API servers of the workload clusters that NVIDIA Kubernetes Engine (NVKE) creates accept JSON Web Tokens (JWTs) from OpenID Connect (OIDC) identity providers (IdPs). Do it after [Run NVKE end to end on one machine](../get-started/local-site.md) and before you create the workload clusters that need it: a workload cluster keeps the fleet-wide providers it was created with.
 
 A workload cluster's API server trusts two kinds of provider:
 
@@ -18,13 +18,13 @@ NVKE binds Kubernetes roles only to the management plane's own identities. A fle
 
 ## Before you begin
 
-- You have completed [Install management-plane services](../operate/install-management-plane-services.md). You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it. Set `KUBECONFIG` for `kubectl`:
+- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md). You run the install and `kubectl` commands on the host you installed from, from the root of the same `nvke/` checkout, with the site spec, `<CLUSTER_NAME>.kubeconfig` and, if you installed from one, `release.json` in the directory above it. Set `KUBECONFIG` for `kubectl`:
 
   ```bash
   export KUBECONFIG="$PWD/../<CLUSTER_NAME>.kubeconfig"
   ```
 
-- The shell you run the install from has the `NVKECTL_*` variables from [Write the stack config](../operate/install-management-plane-services.md#write-the-stack-config) exported, as described in [Run the install again](../operate/install-management-plane-services.md#run-the-install-again).
+- The shell you run the install from has the `NVKECTL_*` variables from [Run NVKE end to end on one machine](../get-started/local-site.md) exported, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
 - For each fleet-wide provider you have its issuer URL, the audience its tokens carry, the claims that hold the username and groups, and the certificate authority (CA) certificates that sign its HTTPS certificate. [Collect the identity provider values](../operate/api-authentication.md#collect-the-identity-provider-values) shows how to read the first three from the IdP's discovery document and a token.
 - The control-plane nodes of your workload clusters reach each provider's discovery document, and the `jwks_uri` it names, over HTTPS. NVKE does not check this.
 - The workload clusters that need fleet-wide providers run Kubernetes 1.34 or later. [Supported platforms and versions](../overview/supported-platforms.md) lists the version this release supports.
@@ -66,18 +66,14 @@ NVKE binds Kubernetes roles only to the management plane's own identities. A fle
 
    `usernamePrefix` and `groupsPrefix` must not start with `system:`, `kubeadm:`, `nke:`, `nvke:` or `nvidia:`. Give each provider a different prefix, so that its users and groups cannot collide with another provider's. See [Reserved identities](#reserved-identities) for what the API server refuses regardless of the prefix.
 
-2. Run the install command from [Install management-plane services](../operate/install-management-plane-services.md) again, with the same flags and `--values-for controller=../oidc-values.yaml` added.
+2. Run the install command from [Run NVKE end to end on one machine](../get-started/local-site.md) again, with the same flags and `--values-for controller=../oidc-values.yaml` added.
 
    ```bash
-   deploy/nvke-deploy.sh install --deploy-path deploy/nico \
-     --sitespec ../sitespec.yaml \
-     --stack-config ../stack-config.json \
-     --kubeconfig ../<CLUSTER_NAME>.kubeconfig \
-     --release ../release.json \
+   "$NVKE_REPO"/deploy/nvke-deploy-local.sh install \
      --values-for controller=../oidc-values.yaml
    ```
 
-   Keep the `--release` and `--nvkr-run-dir` flags exactly as you installed, or leave them out if you installed without them. If you passed other values files before, such as `../auth-values.yaml` from [Secure the NVKE API](../operate/api-authentication.md) or a values file for NVKE telemetry pipeline (NKTP) with `--values-for nktp=`, pass each of them again with its own `--values-for` flag: a file you leave out stops applying, and the deploy path's own values turn API authentication off and send telemetry to the bundled development backend. The chart refuses to render more than five providers.
+   The wrapper reads its inputs from the `NVKE_*` variables that `env.sh` exports. If you passed other values files before, such as `../auth-values.yaml` from [Secure the NVKE API](../operate/api-authentication.md) or a values file for NVKE telemetry pipeline (NKTP) with `--values-for nktp=`, pass each of them again with its own `--values-for` flag: a file you leave out stops applying, and the deploy path's own values turn API authentication off and send telemetry to the bundled development backend. The chart refuses to render more than five providers.
 
 3. Restart the controller so that it reads the new configuration.
 

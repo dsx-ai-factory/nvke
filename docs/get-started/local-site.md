@@ -95,7 +95,7 @@ Install the other tools in the machine with its package manager and from each to
    "$NVKE_REPO"/deploy/nvke-deploy-local.sh install
    ```
 
-   `NVKE_REPO` is the checkout, exported by `env.sh`. The command installs the lab StorageClass, runs the install a site runs, `deploy/nvke-deploy.sh install` on `deploy/nico` with the site spec and the stack config from the workspace, and patches the Cluster API controllers with the SPIRE exec-auth plugin. It takes about ten minutes. Real hardware: [Install management-plane services](../operate/install-management-plane-services.md), where the storage is the site's and each input is yours.
+   `NVKE_REPO` is the checkout, exported by `env.sh`. The command installs the lab StorageClass, runs the install a site runs, `deploy/nvke-deploy.sh install` on `deploy/nico` with the site spec and the stack config from the workspace, and patches the Cluster API controllers with the SPIRE exec-auth plugin. It takes about ten minutes.
 
 3. Admit the lab's networks to the NVKE API and point `nvkectl` at it.
 

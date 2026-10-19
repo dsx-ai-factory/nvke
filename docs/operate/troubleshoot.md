@@ -198,24 +198,24 @@ kubectl get deployment nke-controller -n nke-controller -o jsonpath='{.spec.temp
 
 ## Management-plane install
 
-The install stops at the component that failed. Fix the cause and run the same command again, as described in [Install management-plane services](install-management-plane-services.md#if-the-install-fails).
+The install stops at the component that failed. Fix the cause and run the same command again, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
 
 ### The stack config is not ready
 
-- **Symptom:** `deploy/check-site.sh` reports `FAIL  stack config: <FILE> is not ready: <KEY>: <PROBLEM>`, or the install stops with `stack config <FILE>:` followed by one line per problem, such as `nico.endpoint: still a REPLACE_* placeholder; fill it in` or `environment: NVKECTL_NICO_TOKEN is not set`.
+- **Symptom:** The install stops with `stack config <FILE>:` followed by one line per problem, such as `nico.endpoint: still a REPLACE_* placeholder; fill it in` or `environment: NVKECTL_NICO_TOKEN is not set`.
 - **Cause:** A value in the stack config is still a `REPLACE_*` placeholder, a required key is empty, the file carries a key it must not, or one of the `NVKECTL_*` variables is not exported in the shell you run from.
-- **Fix:** Edit the key or export the variable as described in [Install management-plane services](install-management-plane-services.md#write-the-stack-config), then run the check again until the stack config passes.
+- **Fix:** Edit the key or export the variable as described in [Run NVKE end to end on one machine](../get-started/local-site.md), then run the check again until the stack config passes.
 
 ### The install refuses the release
 
 - **Symptom:** The install stops before it changes the cluster with `<ITEM>: <ROLE> <ARTIFACT> is not in the release`, for example for `controller-profiles` or `capnico-controller`.
 - **Cause:** The release description does not carry an artifact that the deploy path names, for the management nodes' CPU architecture.
-- **Fix:** Use a release that carries the artifact, or install without `--release` and name the images in the stack config's `images`, as described in [Choose where the artifacts come from](install-management-plane-services.md#choose-where-the-artifacts-come-from).
+- **Fix:** Use a release that carries the artifact, or install without `--release` and name the images in the stack config's `images`, as described in [Run NVKE end to end on one machine](../get-started/local-site.md).
 
 ### A volume claim stays Pending
 
 - **Symptom:** `kubectl get pvc -A` shows a claim in `Pending`, and the component that owns it times out.
-- **Cause:** The management cluster has no default StorageClass. The bootstrap installs none. `deploy/check-site.sh` reports this as a `FAIL`.
+- **Cause:** The management cluster has no default StorageClass. The bootstrap installs none.
 - **Fix:** Install a storage provisioner, mark its StorageClass as the default, and run the install again.
 
 ### An image cannot be pulled
@@ -290,7 +290,7 @@ The install stops at the component that failed. Fix the cause and run the same c
 
 - **Symptom:** Nodes do not progress, and the management-plane log contains `resolving release "<NAME>"`.
 - **Cause:** The control plane must name an existing cluster release and each node pool an existing node pool release.
-- **Fix:** Check the names with `nvkectl get clusterreleases` and `nvkectl get nodepoolreleases`. Apply the missing releases as in [Install management-plane services](install-management-plane-services.md), or delete the cluster and create it again with names that exist.
+- **Fix:** Check the names with `nvkectl get clusterreleases` and `nvkectl get nodepoolreleases`. Apply the missing releases as in [Run NVKE end to end on one machine](../get-started/local-site.md), or delete the cluster and create it again with names that exist.
 
 ### The cluster shows ProvisioningFailed
 

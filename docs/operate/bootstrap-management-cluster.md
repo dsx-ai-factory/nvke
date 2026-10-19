@@ -79,7 +79,7 @@ The site spec is a YAML file that lists the nodes and the Kubernetes settings fo
 
    If you omit a `--set` line, the field keeps its default: `k8sVersion` `1.36.3`, `podCidr` `192.168.0.0/16`, `serviceCidr` `10.96.0.0/12`, `systemReservedMemory` `16Gi`. If the reserved memory is close to a node's total memory, the node has nothing left to schedule and never reaches `Ready`. The CNI defaults to `ovn-kubernetes`, and etcd encryption at rest is on. Encryption can only be chosen at bootstrap: a cluster built with `--set cluster.etcdEncryption=false` stays unencrypted.
 
-   The site spec carries the bootstrap's fields and nothing else. What the management plane needs beyond them goes in a file of its own, which you write before you [install the management-plane services](install-management-plane-services.md#write-the-stack-config).
+   The site spec carries the bootstrap's fields and nothing else. What the management plane needs beyond them goes in a file of its own, which you write before you [Run NVKE end to end on one machine](../get-started/local-site.md).
 
    `generate sitespec` validates every field before it writes the file. `bootstrap site` also reads environment variables, such as `CLUSTER_POD_CIDR`, that override fields in the file; [Site Spec](../../cli/docs/sitespec.md) lists them. Unset them before you run the bootstrap unless you mean to override the file.
 
@@ -140,7 +140,7 @@ To build both images from the repository on the bootstrap host instead, run `mak
 
    The kubeconfig and the key file are secrets. Every control-plane node holds the etcd key, so the running cluster does not depend on the file, and installing the management-plane services does not use it. It is the only copy of the key that is not on a node. After you finish [Verify](#verify), copy the key file to secure storage and delete it from the bootstrap host.
 
-   Keep `<CLUSTER_NAME>.kubeconfig` on the host you install from. [Install management-plane services](install-management-plane-services.md), [Configure an infrastructure provider: NICo](provider-nico.md) and [Secure the NVKE API](api-authentication.md) all use it. When you finish those pages, copy it to secure storage and delete it from that host.
+   Keep `<CLUSTER_NAME>.kubeconfig` on the host you install from. [Run NVKE end to end on one machine](../get-started/local-site.md), [Configure an infrastructure provider: NICo](provider-nico.md) and [Secure the NVKE API](api-authentication.md) all use it. When you finish those pages, copy it to secure storage and delete it from that host.
 
 ## What happens during the bootstrap
 
@@ -231,5 +231,5 @@ The management cluster is a plain Kubernetes cluster at this point. It does not 
 
 ## Next steps
 
-- [Install management-plane services](install-management-plane-services.md) on the new cluster, using the kubeconfig from the bootstrap.
+- [Run NVKE end to end on one machine](../get-started/local-site.md) on the new cluster, using the kubeconfig from the bootstrap.
 - [Configure an infrastructure provider: NICo](provider-nico.md).

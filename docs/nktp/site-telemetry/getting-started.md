@@ -77,7 +77,7 @@ plus:
   ```
 - **Egress from the node running the install:**
   - to `open-telemetry.github.io`, `prometheus-community.github.io` and
-    `kubernetes-sigs.github.io`, because `deploy/nvke-deploy.sh` builds the
+    `kubernetes-sigs.github.io`, because the install builds the
     chart's dependencies from its `Chart.lock` before installing
   - to `docker.io`, `ghcr.io`, `quay.io` and `registry.k8s.io`, for the images
 - **Room on the nodes.** The site values size NKTP for a small management

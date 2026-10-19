@@ -300,7 +300,7 @@ architecture is in neither file: the install reads it from the cluster.
 bootstrap host holds, the file `NVKECTL_NICO_CREDENTIALS` names, the release
 manifests, the node login in `NVKECTL_NODE_USER` and `NVKECTL_NODE_PASSWORD`,
 `spire.externalAddress` and the https check on `infra.nico.remote.endpoint`,
-is reported without failing, because `deploy/check-site.sh` runs the command
+is reported without failing, because the install runs the command
 on the site node, which does not hold them. `--bootstrap-only` fails on them,
 so a file it passes is one `bootstrap site` accepts on this host; pass
 `--disable-mtls` to it as you will to `bootstrap site`.
@@ -550,7 +550,7 @@ values are never logged or printed.
 | Environment variable | Read by | What |
 |---|---|---|
 | `NVKECTL_SPIRE_CA_CERT_FILE`, `NVKECTL_SPIRE_CA_KEY_FILE` | `bootstrap site`, `validate sitespec`, the stack install | Paths to the SPIRE CA certificate and its private key. Required with `spire.upstreamCA: true`, refused without it. See "The SPIRE CA". |
-| `NVKECTL_NICO_TOKEN` | the stack install, which `deploy/check-site.sh` checks | NICo API token. |
+| `NVKECTL_NICO_TOKEN` | the stack install | NICo API token. |
 | `NVKECTL_NODE_USER` | `bootstrap site` (with `nico`), `validate sitespec --bootstrap-only`, the stack install | Login account rendered into every node's cloud-init: the site's nodes with `nico`, and every tenant node. Both refuse a quote, a backslash or a control character. |
 | `NVKECTL_NODE_PASSWORD` | `bootstrap site` (with `nico`), `validate sitespec --bootstrap-only`, the stack install | Password for `NVKECTL_NODE_USER`. |
 | `NVKECTL_NICO_CREDENTIALS` | `bootstrap site` (with `nico`), `validate sitespec --bootstrap-only` | Path to the file holding the NICo token the bootstrap's CAPNICo uses. Not `NVKECTL_NICO_TOKEN`, which is the finished management cluster's token. See "NICo credentials". |

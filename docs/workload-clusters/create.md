@@ -4,7 +4,7 @@ This page describes how to create an NVIDIA Kubernetes Engine (NVKE) workload cl
 
 ## Before you begin
 
-- You have completed [Install management-plane services](../operate/install-management-plane-services.md) and [Configure an infrastructure provider: NICo](../operate/provider-nico.md).
+- You have completed [Run NVKE end to end on one machine](../get-started/local-site.md) and [Configure an infrastructure provider: NICo](../operate/provider-nico.md).
 - `nvkectl` points at your management plane, set with `nvkectl config set-site`, and `nvkectl get providers` reports the `nico` row as `CONFIGURED`. If you turned on API authentication, `nvkectl` uses an OpenID Connect (OIDC) kubeconfig, as described in [Secure the NVKE API](../operate/api-authentication.md). `nvkectl get providers` reads the management cluster's Kubernetes API with that kubeconfig, which the bootstrap does not configure to accept tokens from your identity provider, so the command fails. Check the provider with the management cluster's admin kubeconfig instead:
 
   ```bash
@@ -204,7 +204,7 @@ You change three cluster settings after creation with `nvkectl patch cluster`, w
 
    After etcd encryption, `nvkectl get clusters <WORKLOAD_CLUSTER> -o yaml` shows `etcdEncrypted: true`. If `STATUS` reads `UpdateFailed`, send the same patch again to retry.
 
-`enableOidc` requires Kubernetes 1.30.0 or later and turns on the shared OIDC provider that the `nvkeOIDCAuth` chart values configure. The install in [Install management-plane services](../operate/install-management-plane-services.md) configures it for the management cluster's SPIRE server and sets `nvkeOIDCAuth.enabled` to `false`, so new clusters start without it and the `enableOidc` patch is accepted. Try `enableOidc` on one cluster before you rely on it. [Configure OIDC for workload clusters](oidc.md) describes the shared provider, and the fleet-wide providers that a cluster gets only at creation.
+`enableOidc` requires Kubernetes 1.30.0 or later and turns on the shared OIDC provider that the `nvkeOIDCAuth` chart values configure. The install in [Run NVKE end to end on one machine](../get-started/local-site.md) configures it for the management cluster's SPIRE server and sets `nvkeOIDCAuth.enabled` to `false`, so new clusters start without it and the `enableOidc` patch is accepted. Try `enableOidc` on one cluster before you rely on it. [Configure OIDC for workload clusters](oidc.md) describes the shared provider, and the fleet-wide providers that a cluster gets only at creation.
 
 The same `PATCH` also takes `controlPlaneKubernetesVersion`, to upgrade the control plane, and `controlPlaneConfig`, to change the control-plane node count or release. An upgrade, a node count above one and a release change each require `controlPlaneVIP`.
 

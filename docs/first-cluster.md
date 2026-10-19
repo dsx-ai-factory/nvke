@@ -385,7 +385,7 @@ explains how to prove the NICo credentials once the site is up.
 The bootstrap leaves you a plain Kubernetes cluster. Installing CWE onto it is a
 separate job, and the largest step here — `nvkectl` has no command for it.
 
-Follow [Install management-plane services](operate/install-management-plane-services.md).
+Follow [Run NVKE end to end on one machine](get-started/local-site.md).
 It installs the whole management plane, Postgres, Temporal, SPIRE, CAPNICo,
 NVKE telemetry pipeline (NKTP) and CWE, with the commands that page lists, from the `deploy/nico`
 deploy path, the site spec and an NVKR release description.

@@ -127,7 +127,7 @@ cp "${HERE}/stack-config.json.tmpl" "${WORK}/site/stack-config.json"
 "${NVKECTL}" validate sitespec -f "${WORK}/site/sitespec.yaml"
 "${NVKECTL}" inspect stack-config "${WORK}/site/stack-config.json" >/dev/null
 
-# 4. The site runbook, in the order docs/operate/install-management-plane-services.md
+# 4. The site runbook, in the order docs/get-started/local-site.md
 # gives it. nvkectl bootstrap site untaints a real site's nodes; kind does
 # not, so the lane does it here. kind ships a default StorageClass.
 kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true

@@ -49,7 +49,7 @@ The install selects each output for the management nodes' CPU architecture, whic
 
    `<RELEASE_REF>` is the Release reference you verified in step 1. The file is `nvkr.dev/release-description/v1` JSON that lists every output with its digest-pinned reference. `export` verifies nothing, so run it only on a reference that `verify` accepted. See [Export the complete description](https://github.com/dsx-ai-factory/nvkr/blob/main/docs/release-quickstart.md#export-the-complete-description).
 
-3. Keep `release.json`. You pass it to the install as `--release` in [Install management-plane services](install-management-plane-services.md). For a local Run that was never published, also pass `--nvkr-run-dir .nvkr/runs/<ATTEMPT>`: the install then reads charts and images from the Run's OCI layouts instead of a registry, and imports the images into the node's containerd.
+3. Keep `release.json`. You pass it to the install as `--release` in [Run NVKE end to end on one machine](../get-started/local-site.md). For a local Run that was never published, also pass `--nvkr-run-dir .nvkr/runs/<ATTEMPT>`: the install then reads charts and images from the Run's OCI layouts instead of a registry, and imports the images into the node's containerd.
 
 > **Note:** NVKR's maintained M2 Definition (`inputs/definitions/nvke`) does not build the `controller-profiles` or `capnico-controller` outputs, so the install refuses a Release built from it. Install without `--release` instead. The controller chart then comes from your checkout, and the stack config names the profile content image in `images.profiles`, as `repository:tag` or `repository@sha256:<DIGEST>`; `images.controller` is optional in the same form and overrides the deploy path's pinned controller image. To use the Release's controller image, take the `cwe` output's `Derived artifact reference:` from `nvkr release browse`. To build the profiles image, see [Build the profile content image](#build-the-profile-content-image).
 
@@ -126,7 +126,7 @@ A control-plane node pool resolves its `release` to a `ClusterRelease`, and a wo
 
    The command prints nothing when every placeholder host is replaced.
 
-The files hold `metadata` and `spec` only; `nvkectl` supplies the API version and kind when it publishes them. You publish the three resources with `nvkectl create` in [Install management-plane services](install-management-plane-services.md), after `nvkectl config set-site` records the management cluster's kubeconfig, with the machine image first because both releases reference it.
+The files hold `metadata` and `spec` only; `nvkectl` supplies the API version and kind when it publishes them. You publish the three resources with `nvkectl create` in [Run NVKE end to end on one machine](../get-started/local-site.md), after `nvkectl config set-site` records the management cluster's kubeconfig, with the machine image first because both releases reference it.
 
 ### What NVKE puts in the user data
 
@@ -196,7 +196,7 @@ With a Release, the profile content image is the Release's `controller-profiles`
 
    `<REGISTRY_HOST>/<NAMESPACE>` is your registry path, such as `registry.example.com/nvke`, and `<TAG>` is a version you choose, such as `v1`. Note the digest that `docker push` prints.
 
-4. Set the image in the stack config, the file you write in [Install management-plane services](install-management-plane-services.md#write-the-stack-config).
+4. Set the image in the stack config, the file you write in [Run NVKE end to end on one machine](../get-started/local-site.md).
 
    ```json
    "images": {
@@ -229,4 +229,4 @@ With a Release, the profile content image is the Release's `controller-profiles`
 
 - [Prepare nodes](prepare-nodes.md) from the node image.
 - [Bootstrap the management cluster](bootstrap-management-cluster.md).
-- [Install management-plane services](install-management-plane-services.md) with `release.json` and the `releases` directory.
+- [Run NVKE end to end on one machine](../get-started/local-site.md) with `release.json` and the `releases` directory.

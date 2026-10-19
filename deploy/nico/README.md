@@ -135,7 +135,7 @@ be true before it runs and one after, all of them outside the deploy path:
    `ClusterRelease` and `NodePoolRelease` resources. The chart installs the
    CRDs; after `nvkectl config set-site`, publish the resources with
    `nvkectl create machineimage|clusterrelease|nodepoolrelease -f <file>`,
-   as docs/operate/install-management-plane-services.md shows.
+   as docs/get-started/local-site.md shows.
 
 ## After this runs
 

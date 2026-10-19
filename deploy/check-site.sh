@@ -16,7 +16,7 @@
 # What the stack needs and this check reports, the operator supplies: the
 # control-plane taint is removed by nvkectl bootstrap site, the default
 # StorageClass is the hardware's CSI driver, Cluster API is installed with
-# the clusterctl init this check prints. docs/operate/install-management-plane-services.md
+# the clusterctl init this check prints. docs/get-started/local-site.md
 # lists the steps in order.
 set -euo pipefail
 
