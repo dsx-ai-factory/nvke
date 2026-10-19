@@ -23,8 +23,9 @@ The names after the domain are unchanged, so `nke.nvidia.com/reboot` becomes
 
 - **Relabel existing objects.** NVKE reads both domains. An object labelled by
   an earlier build keeps working as it is.
-- **Coordinate the upgrade with anything else.** Every reader in NVKE accepts
-  both forms, in either order of rollout.
+- **Coordinate the upgrade with anything else in NVKE.** Every reader in NVKE
+  accepts both forms, in either order of rollout. CAPNICo is the exception, and
+  it is not an NVKE reader — see below.
 - **Change how you request a reboot or a replacement.** `nke.nvidia.com/reboot`
   and `nke.nvidia.com/terminate` are still honoured. Prefer the new form in new
   automation; the old one is not going away in this release.
@@ -36,26 +37,27 @@ taint is written under the new domain by the next node to join.
 
 ## What you do have to check
 
-**`cluster-api-provider-nico`'s reboot and repair flags.** This is the one key
-pair with a single configured reader. CAPNICo watches exactly one annotation
-for each, named by `--reboot-annotation` and `--repair-annotation`, and
-silently ignores a request under any other key — a mismatch produces no error
-anywhere, it just means reboot and repair requests are never actioned.
-
-NVKE therefore writes those two annotations under **both** domains while sites
-move over, so a CAPNICo still pointed at `nke.nvidia.com/*` keeps working. The
-manifests in this repository set the new values:
+**`cluster-api-provider-nico`'s reboot and repair flags must name the new
+domain.** This is the one key pair with a single configured reader. CAPNICo
+watches exactly one annotation for each, named by `--reboot-annotation` and
+`--repair-annotation`, and silently ignores a request under any other key. NVKE
+writes only `nvke.nvidia.com/*`, so a CAPNICo still pointed at
+`nke.nvidia.com/*` never sees a request at all:
 
 ```yaml
 - --reboot-annotation=nvke.nvidia.com/reboot
 - --repair-annotation=nvke.nvidia.com/machine-health-issue
 ```
 
-If your site deploys CAPNICo from its own manifests, move those flags across at
-your convenience. The dual write goes away once every deployment has moved
-([#1718](https://github.com/dsx-ai-factory/nvke/issues/1718)), and after that a
-stale flag means reboot and repair requests are silently dropped. Verify what is
-actually running:
+A mismatch produces no error anywhere. CAPNICo looks for its configured key,
+does not find it, and returns — no log line, no metric, no condition on the
+Machine. The reboot workflow waits for a boot-ID change that never comes; the
+repair path deletes the instance without ever flagging it for repair. The first
+sign is a node that needed recycling and did not get it.
+
+The manifests in this repository set the new values. If your site deploys
+CAPNICo from its own manifests, move those flags across **before** upgrading
+NVKE. Verify what is actually running:
 
 ```sh
 kubectl -n capnico-system get deployment controller-manager \

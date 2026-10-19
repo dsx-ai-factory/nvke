@@ -7,11 +7,9 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
-// HardRebootAnnotationKeys returns NVKE's reboot key under both domains:
+// HardRebootAnnotationKeys returns NVKE's reboot key under the current domain.
 // cluster-api-provider-nico reads only the key its --reboot-annotation flag
-// names, which a deployment may still set to the legacy domain.
-// FIXME: https://github.com/dsx-ai-factory/nvke/issues/1718 -- write
-// only the current domain once every deployment reads the new key.
+// names, so that flag must name this key.
 func (*Client) HardRebootAnnotationKeys() []string {
-	return keys.MachineReboot.All()
+	return []string{keys.MachineReboot.String()}
 }
