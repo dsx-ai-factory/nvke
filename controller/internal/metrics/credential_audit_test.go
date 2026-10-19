@@ -33,10 +33,10 @@ func credentialAuditResultLabels(t *testing.T) []string {
 }
 
 func TestCredentialAuditWritesExposeEveryResultBeforeFirstRecord(t *testing.T) {
-	require.ElementsMatch(t, []string{"stored", "invalid_event", "sink_failed"}, credentialAuditResultLabels(t))
+	require.ElementsMatch(t, []string{"stored", "invalid_event", "sink_failed", "rate_limited"}, credentialAuditResultLabels(t))
 }
 
 func TestRecordCredentialAuditWriteIgnoresUnknownResult(t *testing.T) {
 	RecordCredentialAuditWrite("unexpected")
-	require.ElementsMatch(t, []string{"stored", "invalid_event", "sink_failed"}, credentialAuditResultLabels(t))
+	require.ElementsMatch(t, []string{"stored", "invalid_event", "sink_failed", "rate_limited"}, credentialAuditResultLabels(t))
 }

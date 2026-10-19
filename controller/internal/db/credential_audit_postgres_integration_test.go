@@ -80,3 +80,54 @@ func TestCredentialAuditPostgres(t *testing.T) {
 	recorder.Record(t.Context(), event)
 	require.Equal(t, []string{credentialaudit.WriteFailed}, observations)
 }
+
+// TestCSRCredentialAuditBoundPostgres checks the per-node CSR bound in SQL: CSR
+// events beyond the limit within the window are not stored, inspection events
+// for the same credential do not consume the budget, another node keeps its
+// own, and a repeated event still reports stored.
+func TestCSRCredentialAuditBoundPostgres(t *testing.T) {
+	database := newMigratedPostgres(t.Context(), t)
+	store := db.NewDB(database)
+	clusterID, nodeID, otherID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	now := time.Now().UTC()
+	event := func(node, action, reason string) credentialaudit.Event {
+		t.Helper()
+		outcome := credentialaudit.OutcomeSuccess
+		if reason == credentialaudit.ReasonRejected {
+			outcome = credentialaudit.OutcomeNoop
+		}
+		built, err := credentialaudit.New(credentialaudit.Event{
+			Timestamp: now, Action: action, Credential: credentialaudit.TypeServing, Plane: credentialaudit.PlaneT2,
+			Target: credentialaudit.Target{ClusterID: clusterID, NodeID: node}, Actor: credentialaudit.Actor{Kind: credentialaudit.ActorAutomatic},
+			Outcome: outcome, Reason: reason,
+			Correlation: credentialaudit.Correlation{OperationHash: credentialaudit.Hash("operation", uuid.NewString())},
+		})
+		require.NoError(t, err)
+		return built
+	}
+	since := now.Add(-time.Hour)
+	// An inspection of the same credential is recorded through the unbounded path.
+	require.NoError(t, store.RecordCredentialAuditEvent(t.Context(), event(nodeID, credentialaudit.ActionCheck, credentialaudit.ReasonObserved)))
+	var first credentialaudit.Event
+	for index := range 5 {
+		next := event(nodeID, credentialaudit.ActionCheck, credentialaudit.ReasonRejected)
+		if index == 0 {
+			first = next
+		}
+		stored, err := store.RecordCSRCredentialAuditEvent(t.Context(), next, 3, since)
+		require.NoError(t, err)
+		require.Equal(t, index < 3, stored)
+	}
+	stored, err := store.RecordCSRCredentialAuditEvent(t.Context(), first, 3, since)
+	require.NoError(t, err)
+	require.True(t, stored, "a repeated stored event is not rate limited")
+	stored, err = store.RecordCSRCredentialAuditEvent(t.Context(), event(otherID, credentialaudit.ActionApprove, credentialaudit.ReasonCompleted), 3, since)
+	require.NoError(t, err)
+	require.True(t, stored)
+	stored, err = store.RecordCSRCredentialAuditEvent(t.Context(), event(nodeID, credentialaudit.ActionCheck, credentialaudit.ReasonRejected), 3, now.Add(time.Minute))
+	require.NoError(t, err)
+	require.True(t, stored, "events before the window do not count")
+	var count int
+	require.NoError(t, database.QueryRowContext(t.Context(), "SELECT count(*) FROM credential_audit_events WHERE event #>> '{target,node_id}' = ?", nodeID).Scan(&count))
+	require.Equal(t, 5, count)
+}

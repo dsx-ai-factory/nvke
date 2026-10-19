@@ -140,8 +140,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 	}
 	decision := planDecision(csr, nodes)
 	if decision.Action == decisionSkip {
-		// Only a managed node's rejected CSR is ledger evidence. Other requestors
-		// are tenant-controlled and would otherwise add unbounded rows.
+		// Only a managed node's rejected CSR is ledger evidence; other requestors
+		// are never written. A tenant can still create CSRs naming a managed
+		// node, so every CSR-derived write goes through a per-node bound.
 		if _, managed := knownNodeIP(nodes, decision.NodeName); managed {
 			r.auditDecision(ctx, decision, nodes, credentialaudit.ActionCheck, credentialaudit.OutcomeNoop, credentialaudit.ReasonRejected)
 		}
@@ -162,7 +163,7 @@ func (r *Reconciler) auditDecision(ctx context.Context, decision csrDecision, no
 	if r.audit == nil {
 		return
 	}
-	r.audit.Record(ctx, r.csrAuditEvent(decision, nodes, action, outcome, reason))
+	r.audit.RecordCSR(ctx, r.csrAuditEvent(decision, nodes, action, outcome, reason))
 }
 
 func (r *Reconciler) csrAuditEvent(decision csrDecision, nodes []db.Node, action, outcome, reason string) credentialaudit.Event {
@@ -207,7 +208,7 @@ func (r *Reconciler) auditIssuedCertificate(ctx context.Context, csr *certificat
 	} else {
 		event.Fingerprints = fingerprints
 	}
-	r.audit.Record(ctx, event)
+	r.audit.RecordCSR(ctx, event)
 }
 
 func hasIssuedServingCertificate(csr *certificatesv1.CertificateSigningRequest) bool {

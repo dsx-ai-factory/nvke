@@ -71,10 +71,15 @@ The manual tool rejects mixed PEM bundles and private-key PEM blocks.
 - The kubelet-serving CSR controller records validation and approval
   success/failure. A skipped CSR is recorded only when its requestor resolves to
   a managed node; CSRs from other requestors are logged at debug level but never
-  written to the ledger, so tenant-created objects cannot add unbounded rows. An
-  observed signer result can supply public fingerprints; `verify/observed`
-  proves only that the CSR has a public certificate, not that the kubelet
-  installed it.
+  written to the ledger. An observed signer result can supply public
+  fingerprints; `verify/observed` proves only that the CSR has a public
+  certificate, not that the kubelet installed it. Because a tenant
+  cluster-admin can still create CSRs naming a managed node, CSR-derived writes
+  are bounded per cluster and node: at most 12 events within any hour, counted
+  in the ledger itself so a controller restart does not reset the bound. Events
+  beyond it are dropped and counted as
+  `nvke_controller_credential_audit_writes_total{result="rate_limited"}`, which
+  is expected under CSR churn and is not a sink failure.
 - Independent background certificate inspections record a control-plane leaf
   bundle check and a kubelet-serving check with available public fingerprints.
   These observations have no renewal workflow attribution. A failed probe emits
@@ -129,7 +134,8 @@ exactly-once delivery from this ledger.
 
 `nvke_controller_credential_audit_writes_total{result="stored"}` counts successful
 write attempts, including duplicate inserts. `result="sink_failed"` counts sink
-failure; `result="invalid_event"` identifies rejected construction. A useful site
+failure; `result="invalid_event"` identifies rejected construction;
+`result="rate_limited"` counts CSR-derived events dropped by the per-node bound. A useful site
 alert expression is:
 
 ```promql
