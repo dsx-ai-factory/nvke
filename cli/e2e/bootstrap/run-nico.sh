@@ -34,8 +34,9 @@
 #     resolves infra.nico.controlPlane.release from, copied from the in-repo
 #     fixtures. `bootstrap site` applies them before it creates the cluster.
 # One thing it does not supply, which this script hands it through an env hook:
-#   - NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE: the config profile a cluster request
-#     names. The controller deploys with an empty profiles directory.
+#   - NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE: an OCI image reference whose /profiles
+#     tree supplies the config profile a cluster request names. Without it the
+#     controller deploys with an empty profiles directory.
 #
 # Beyond building the cluster the lane checks what the bootstrap promises around
 # it: the binary refuses a bad token file, an http endpoint without the opt-in
