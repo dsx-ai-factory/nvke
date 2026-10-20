@@ -1,12 +1,12 @@
 # Kubernetes certificate renewal
 
-CWE renews kubeadm-managed Kubernetes leaf certificates on provisioned clusters.
-It does not rotate Kubernetes certificate authorities (CAs).
+The NVKE controller renews kubeadm-managed Kubernetes leaf certificates on
+provisioned clusters. It does not rotate Kubernetes certificate authorities (CAs).
 
 ## Scheduled renewal
 
 The certificate-renewal controller is enabled by
-`certRenewal.controllerEnabled` in `nke-controller-config` (default `true`). The chart
+`certRenewal.controllerEnabled` in `nvke-controller-config` (default `true`). The chart
 renders `certRenewal.controllerEnabled`, `certRenewal.interval` and
 `certRenewal.thresholdDays` from `scheduledMaintenance.certRenewal.enabled`,
 `.interval` and `.thresholdDays`. It evaluates each cluster at
@@ -132,7 +132,7 @@ Forced renewal is intentionally an operator-started Temporal workflow; there is
 no REST or CLI trigger. Use a new workflow ID for every forced run, and do not
 reuse the controller's `renew-k8s-certs-...` IDs. Start it in the namespace and
 task queue the controller's workers poll: `temporal.namespace` and
-`temporal.taskQueue` in `nke-controller-config` (chart values
+`temporal.taskQueue` in `nvke-controller-config` (chart values
 `temporal.cloudWorkflow.namespace` and `temporal.cloudWorkflow.queue`; defaults
 `cloud-workflow-engine` and `cloud-workflow-engine-tasks`). A different namespace
 or queue is rejected or never runs. Also pass the Temporal CLI's address and TLS
