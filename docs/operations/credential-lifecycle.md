@@ -35,7 +35,7 @@ keys, encryption keys and arbitrary file paths never form metric labels.
 
 | Task | Runbook | Completion requirement |
 | --- | --- | --- |
-| Renew T1 kubeadm leaves | [Separate manual site-management runbook](https://github.com/dsx-ai-factory/nvke/blob/e76ea3db2535e2588014a417643a44ccfe38fc83/docs/site-operations/certificate-renewal.md) and [additional evidence requirements](#manual-t1-evidence-and-qualification) | One control-plane node at a time; all four static components recovered, unchanged CAs, site services healthy. |
+| Renew T1 kubeadm leaves | [Site-management certificate renewal runbook](../site-operations/certificate-renewal.md) and [additional evidence requirements](#manual-t1-evidence-and-qualification) | One control-plane node at a time; all four static components recovered, unchanged CAs, site services healthy. |
 | Scheduled or forced T2 kubeadm renewal | [Tenant certificate renewal](../tenant-clusters/certificate-renewal.md) | Terminal successful owning workflow and cluster state, node health, renewed leaves or documented no-op, and unchanged CAs, verified on each node. |
 | Diagnose T2 kubelet-serving renewal | [Kubelet serving certificates](../tenant-clusters/kubelet-serving-certificates.md) | Identity-valid CSR approved, certificate issued, installed public certificate verified on the node. |
 | Rotate an existing T2 etcd encryption key | [Etcd key rotation](../../controller/docs/etcd-encryption-key-rotation.md) | Requires Kubernetes 1.34+ and an agent from the same qualified build as the controller; see its loaded-config/process-metrics prerequisites before use. Preexisting Secret rewritten/readable, every API server uses the new primary, pending state and ownership cleared. |
@@ -120,10 +120,10 @@ audit record.
 
 ## Manual T1 evidence and qualification
 
-The manual renewal procedure remains separate in
-[PR #1050](https://github.com/dsx-ai-factory/nvke/pull/1050). The runbook link above
-pins its source revision while it is unmerged; this section adds evidence
-requirements, not a replacement renewal/restart or recovery procedure. Follow
+The manual renewal procedure is the separate
+[site-management certificate renewal runbook](../site-operations/certificate-renewal.md);
+this section adds evidence requirements, not a replacement renewal/restart or
+recovery procedure. Follow
 that complete runbook's node-by-node ordering, backups, quorum, health and
 stop-on-failure gates. T1 maintenance can interrupt the audit database itself.
 

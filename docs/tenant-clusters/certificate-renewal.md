@@ -4,9 +4,9 @@ This is the operator flow for the canonical CWE `RenewK8sCertsV2` workflow.
 Scheduled and forced cycles use the same health, executor and ownership gates.
 The [implementation and failure contract](../../controller/docs/certificate-renewal.md)
 describes receipt-aware fallback, static-pod restoration and retained-lock
-behavior. Use the separate [manual T1 maintenance runbook](https://github.com/dsx-ai-factory/nvke/blob/e76ea3db2535e2588014a417643a44ccfe38fc83/docs/site-operations/certificate-renewal.md)
-from [PR #1050](https://github.com/dsx-ai-factory/nvke/pull/1050) for the
-site-management cluster; the link pins its reviewed source while it is unmerged.
+behavior. Use the separate
+[site-management certificate renewal runbook](../site-operations/certificate-renewal.md)
+for the site-management cluster.
 See the [additional manual evidence requirements](../operations/credential-lifecycle.md#manual-t1-evidence-and-qualification)
 for audit and public CA/leaf comparisons.
 
@@ -100,7 +100,7 @@ sudo crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps \
 
 Record the public output and all four component container IDs. Verify local
 `admin.conf`, static-pod readiness and actual etcd membership/endpoint health with
-the [node preflight commands](https://github.com/dsx-ai-factory/nvke/blob/e76ea3db2535e2588014a417643a44ccfe38fc83/docs/site-operations/certificate-renewal.md#1-select-a-site-and-prepare-maintenance).
+the [node preflight commands](../site-operations/certificate-renewal.md#1-select-a-site-and-prepare-maintenance).
 Select only the tenant node's stacked-etcd container; do not confuse it with a
 different etcd instance. Confirm the three local CA keys are available for this
 profile. Stop for missing/expired/external PKI, learners, membership changes or
@@ -127,7 +127,7 @@ Observe the persisted `certificateRenewal.cycleID` and that workflow's state.
 Never edit a due time to force a test or reuse scheduler IDs for manual work.
 Keep authenticated API traffic running through both scheduled and forced runs,
 with the site's normal latency/error monitoring. The
-[manual runbook's bounded API monitor](https://github.com/dsx-ai-factory/nvke/blob/e76ea3db2535e2588014a417643a44ccfe38fc83/docs/site-operations/certificate-renewal.md#3-renew-one-control-plane-node)
+[manual runbook's bounded API monitor](../site-operations/certificate-renewal.md#3-renew-one-control-plane-node)
 is a basic fallback; it must use this tenant's explicit kubeconfig/context.
 
 ## Forced renewal and terminal observation
