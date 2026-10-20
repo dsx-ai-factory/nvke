@@ -82,7 +82,7 @@ func registerControllerClientCABundleFlags(fs *flag.FlagSet) func() string {
 	legacy := fs.String(
 		"controller-client-ca-bundle",
 		envOr("NKE_CONTROLLER_CLIENT_CA_BUNDLE", ""),
-		"Earlier name for --nvke-controller-client-ca-bundle, which wins when both are set. "+
+		"Earlier name for --nvke-controller-client-ca-bundle. When both are set, --nvke-controller-client-ca-bundle wins. "+
 			"Also set via NKE_CONTROLLER_CLIENT_CA_BUNDLE",
 	)
 	return func() string {
