@@ -133,7 +133,7 @@ A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces,
 
    With API authentication on, `nvkectl` must use an OIDC kubeconfig for this and the next two steps; with the management cluster's admin kubeconfig every NVKE API call fails.
 
-   A healthy cluster's `STATUS` is `Provisioned`. `Provisioning`, `Updating`, `Upgrading`, `Recycling` and `Deleting` mean an operation is running. `Updating` can also mean that a failed certificate renewal kept the cluster mutation lock. A failed certificate renewal whose node work was not confirmed terminal keeps `updateInProgress=certificate_renewal` (`conditions.certificateRenewal.state` is `failed`) until an operator clears it; see [Status and failure handling](../../controller/docs/certificate-renewal.md#status-and-failure-handling). `ProvisioningFailed` and `UpdateFailed` mean the last operation failed. [Create a workload cluster](../workload-clusters/create.md) describes each status.
+   A healthy cluster's `STATUS` is `Provisioned`. `Provisioning`, `Updating`, `Upgrading`, `Recycling` and `Deleting` mean an operation is running. `Updating` can also mean that a failed certificate renewal kept the cluster mutation lock. A failed certificate renewal whose node work was not confirmed terminal keeps `conditions.updateInProgress.type=certificate_renewal` (`conditions.certificateRenewal.state` is `failed`) until an operator clears it; see [Status and failure handling](../../controller/docs/certificate-renewal.md#status-and-failure-handling). `ProvisioningFailed` and `UpdateFailed` mean the last operation failed. [Create a workload cluster](../workload-clusters/create.md) describes each status.
 
 2. Read the conditions of a cluster whose status is not `Provisioned`.
 
