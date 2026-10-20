@@ -734,6 +734,9 @@ func (a *Activities) releaseAfterFailedStart(ctx context.Context, node db.Node, 
 // It returns the last error.
 func (a *Activities) releaseCertificateRenewalAfterTermination(ctx context.Context, node db.Node, operationID string) error {
 	backoff := certificateRenewalReleaseRetryBackoff
+	if a.certificateRenewalReleaseBackoff > 0 {
+		backoff = a.certificateRenewalReleaseBackoff
+	}
 	err := a.releaseCertificateRenewal(ctx, node, operationID)
 	for range certificateRenewalReleaseAttempts - 1 {
 		if err == nil {
