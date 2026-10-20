@@ -55,8 +55,9 @@ A healthy three-control-plane cluster with working VIP/load-balancer failover is
 the HA qualification baseline. Three Ready Kubernetes nodes alone prove neither
 etcd quorum nor client failover. Test the actual endpoint clients use, and check
 etcd voters and every endpoint. T2 leaf renewal refuses unstable membership and
-never renews a two-control-plane cluster; scale such a cluster to one or three or
-more control-plane nodes before its certificates expire. For other multi-node topologies, retain qualification
+never renews a two-control-plane cluster; scale such a cluster up to three or
+more control-plane nodes before its certificates expire. Renewal resumes only
+once `controlPlaneConfig.desiredCount` is 3 or more. For other multi-node topologies, retain qualification
 evidence before advertising availability guarantees.
 
 A single control plane has no redundancy. Its leaf renewal restarts its only

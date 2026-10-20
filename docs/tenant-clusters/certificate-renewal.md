@@ -22,11 +22,13 @@ V2 renewal and, for clusters with more than one control plane, kube-vip
 drain/restore.
 
 The HA baseline is three control planes with a working VIP/load balancer.
-Renewal supports one or three or more control-plane nodes. A cluster with exactly
-two is never renewed: its cycle is recorded as failed with phase
-`two-control-plane-voters` and not retried until the control-plane count
-changes, so scale it before its certificates expire. A single control plane is
-allowed with an expected API outage. Verify the client's actual endpoint and planned outage/error budget.
+Renewal runs on clusters with three or more control-plane nodes, or on a cluster
+created with a single control plane. A cluster with exactly two is never
+renewed: its cycle is recorded as failed with phase `two-control-plane-voters`. Scale it up to three or more control-plane nodes
+before its certificates expire; renewal resumes only once
+`controlPlaneConfig.desiredCount` is 3 or more. A two-control-plane cluster
+cannot be scaled down to one. A single control plane is allowed with an
+expected API outage. Verify the client's actual endpoint and planned outage/error budget.
 Do not schedule simultaneous upgrades, node replacements, encryption rotation
 or other cluster mutations.
 
