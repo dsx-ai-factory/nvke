@@ -370,6 +370,11 @@ On any failure, leave remaining nodes untouched and preserve backups and
 diagnostics for the recovery owner. Restoring an etcd snapshot or old PKI files
 is a separate recovery decision, not a routine renewal step.
 
+After each check, approval, renewal, and verification, record the T1 evidence
+as described in
+[Manual T1 evidence](https://github.com/dsx-ai-factory/nvke/blob/main/controller/docs/credential-audit.md#manual-t1-evidence);
+it cannot be recreated after the maintenance window.
+
 ## 5. Return the site to service
 
 After the final control-plane node, repeat the site-wide API, etcd, workload,
