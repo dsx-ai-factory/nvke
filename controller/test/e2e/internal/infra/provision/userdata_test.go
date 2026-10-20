@@ -93,6 +93,14 @@ func TestRenderUserData(t *testing.T) {
 	if network < agent {
 		t.Error("the kind network has to be created after the node stack is installed")
 	}
+	// Written before any nerdctl command creates a network, or the bridge
+	// conflist is already in the site containerd's conf_dir.
+	netconf := index("printf 'cni_netconfpath = \"/etc/containerd-nerdctl/net.d\"\\n' > /etc/nerdctl/nerdctl.toml")
+	if netconf < 0 {
+		t.Error("nerdctl's CNI config is never moved out of /etc/cni/net.d")
+	} else if network < netconf {
+		t.Error("nerdctl's CNI config path has to be set before the kind network is created")
+	}
 	if index("systemctl enable --now containerd") < 0 {
 		t.Error("containerd is never started")
 	}
