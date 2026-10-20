@@ -90,8 +90,9 @@ The manual tool rejects mixed PEM bundles and private-key PEM blocks.
   in the ledger itself so a controller restart does not reset the bound.
   Rejections are recorded at most once per node per UTC hour: all rejected CSRs
   for that node in that hour share one event, which uses one slot of the bound,
-  so repeated rejections cannot crowd out approvals. A valid CSR records up to
-  three events, so the bound admits about four valid CSRs per node per hour.
+  so repeated rejections cannot crowd out approvals. A valid CSR records three
+  events, or four if an approval write fails and is retried, so the bound admits
+  about four valid CSRs per node per hour, or three if their approvals are retried.
   Events beyond it are dropped and counted as
   `nvke_controller_credential_audit_writes_total{result="rate_limited"}`. A
   non-zero `rate_limited` means CSR-derived evidence for some node and hour,
