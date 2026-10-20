@@ -1,10 +1,10 @@
 # T2 etcd data-encryption-key rotation
 
-`RotateEtcdEncryptionKey` is the operator-initiated CWE Temporal workflow for a
-CWE-managed tenant cluster that already has API object encryption enabled. It
-adds a secondary key to every control-plane API server, promotes it everywhere,
-rewrites existing objects, removes old keys everywhere, then finalizes the
-management-plane key Secret. This rotates the data-encryption key; it does not
+`RotateEtcdEncryptionKey` is the operator-initiated NVKE controller Temporal
+workflow for a controller-managed tenant cluster that already has API object
+encryption enabled. It adds a secondary key to every control-plane API server,
+promotes it everywhere, rewrites existing objects, removes old keys everywhere,
+then finalizes the management-plane key Secret. This rotates the data-encryption key; it does not
 rotate an etcd CA, API certificate, storage-disk key, or external KMS key.
 
 The OSS alpha path uses kubeadm static pods, local etcd, node-agent RPCs, and
@@ -45,16 +45,16 @@ control-plane node UUIDs, topology, operator, time, and approved change window.
   below). Any already-staged pending key is preserved and reused.
 - Membership must stay fixed throughout the operation. No upgrades, recycling,
   certificate renewal, or other mutations may overlap.
-- The API servers run **Kubernetes 1.34 or newer** and use CWE's encryption
-  configuration with automatic reload. Each node-local `/metrics` endpoint must
+- The API servers run **Kubernetes 1.34 or newer** and use the controller's
+  encryption configuration with automatic reload. Each node-local `/metrics` endpoint must
   expose `apiserver_encryption_config_controller_last_config_info` and a valid
   `process_start_time_seconds`. The loaded-config metric is an alpha metric;
   verify its availability on the deployed build. Kubernetes 1.33 and earlier
   do not provide this proof, so Begin refuses them before taking the mutation
   lock. Upgrade Kubernetes before starting rotation; counter-only confirmation
   is unsupported. The agent needs permission to read local `/metrics`.
-  The active key exists in CWE's key Secret; no pending key from an unrelated
-  operation is present. A pending key left by a released `prepare` failure is
+  The active key exists in the controller's key Secret; no pending key from an
+  unrelated operation is present. A pending key left by a released `prepare` failure is
   reused. Inspect field presence only; do not print Secret data.
 - Every control-plane node is already rolled to the cluster's Kubernetes
   version, with no control-plane upgrade pending. Raising the cluster's
@@ -63,9 +63,9 @@ control-plane node UUIDs, topology, operator, time, and approved change window.
   cluster version. It refuses before taking the mutation lock when a node
   differs or its version cannot be determined; wait for the upgrade to finish,
   then start the rotation.
-- CWE can read/update its management-plane key Secret and contact each tenant
-  node over its configured SPIFFE mTLS connection. PostgreSQL, Temporal, and the
-  CWE worker task queue are available.
+- The controller can read/update its management-plane key Secret and contact
+  each tenant node over its configured SPIFFE mTLS connection. PostgreSQL, Temporal, and the
+  controller worker task queue are available.
 - Operator access to the tenant API and an established backup/recovery process
   are available. Keep backup material and kubeconfigs outside this repository.
   A pre-rotation etcd snapshot still requires its corresponding old key; retiring
@@ -151,7 +151,7 @@ Do not repair a missing management field by renaming a live storage key.
 
 ## Invocation and observation
 
-Choose the actual Temporal address, namespace, and CWE task queue from the site
+Choose the actual Temporal address, namespace, and controller task queue from the site
 configuration. Use a new workflow ID for each rotation and retain it for recovery.
 An execution that reuses the ID of a succeeded rotation fails with a
 non-retryable precondition error before any node work, instead of reporting
