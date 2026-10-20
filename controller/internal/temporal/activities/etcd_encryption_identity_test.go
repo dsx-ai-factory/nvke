@@ -100,6 +100,9 @@ func TestRotationAdoptsLegacyPendingNameAndFinalizesIt(t *testing.T) {
 	}}
 	a := &Activities{cfg: config.Config{PodNamespace: "nke"}, k8sClient: fake.NewClientBuilder().WithObjects(secret).Build()}
 	withIdentityTestNodes(t, a, clusterID, func(node db.Node, digest string) (string, error) {
+		if digest == identityTestDigest("old-public-fixture-key") {
+			return constants.LegacyAPIEncryptionKeyName, nil
+		}
 		require.Equal(t, identityTestDigest("pending-public-fixture-key"), digest)
 		if node.Name == "cp-1" {
 			return "kube-api-encryption-key-8", nil
@@ -122,6 +125,50 @@ func TestRotationAdoptsLegacyPendingNameAndFinalizesIt(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldPendingName)
 	require.NotContains(t, stored.Data, constants.EtcdEncryptionKeyFieldPending)
+}
+
+func TestRotationReusingPendingKeyRecordsActiveName(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		storedActiveName string
+		wantError        string
+	}{
+		{name: "active name missing is recorded"},
+		{name: "matching active name is kept", storedActiveName: "kube-api-encryption-key-7"},
+		{name: "disagreeing active name is refused", storedActiveName: constants.LegacyAPIEncryptionKeyName, wantError: "active encryption identity disagrees"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, clusterID := context.Background(), uuid.New()
+			data := map[string][]byte{
+				constants.EtcdEncryptionKeyFieldActive:      []byte("old-public-fixture-key"),
+				constants.EtcdEncryptionKeyFieldPending:     []byte("pending-public-fixture-key"),
+				constants.EtcdEncryptionKeyFieldPendingName: []byte("kube-api-encryption-key-8"),
+			}
+			if test.storedActiveName != "" {
+				data[constants.EtcdEncryptionKeyFieldActiveName] = []byte(test.storedActiveName)
+			}
+			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "nke", Name: constants.EtcdEncryptionKeySecretName(clusterID)}, Data: data}
+			a := &Activities{cfg: config.Config{PodNamespace: "nke"}, k8sClient: fake.NewClientBuilder().WithObjects(secret).Build()}
+			withIdentityTestNodes(t, a, clusterID, func(_ db.Node, digest string) (string, error) {
+				if digest == identityTestDigest("old-public-fixture-key") {
+					return "kube-api-encryption-key-7", nil
+				}
+				return "kube-api-encryption-key-8", nil
+			})
+			pending, err := a.ensurePendingKubeAPIEncryptionRotationKey(ctx, clusterID)
+			stored, getErr := a.getKubeAPIEncryptionKeySecret(ctx, clusterID)
+			require.NoError(t, getErr)
+			if test.wantError != "" {
+				require.ErrorContains(t, err, test.wantError)
+				require.Equal(t, test.storedActiveName, string(stored.Data[constants.EtcdEncryptionKeyFieldActiveName]))
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "pending-public-fixture-key", pending)
+			require.Equal(t, "kube-api-encryption-key-7", string(stored.Data[constants.EtcdEncryptionKeyFieldActiveName]))
+			require.Equal(t, "kube-api-encryption-key-8", string(stored.Data[constants.EtcdEncryptionKeyFieldPendingName]))
+		})
+	}
 }
 
 func TestLegacyFinalizationDiscoversPendingStorageName(t *testing.T) {

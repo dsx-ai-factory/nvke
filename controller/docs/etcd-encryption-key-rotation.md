@@ -83,9 +83,10 @@ control-plane node UUIDs, topology, operator, time, and approved change window.
   `active-name` yet, so this copy lacks the storage name. Use the same tooling
   to check only whether the field is present. If it is missing, copy the Secret
   again once `conditions.etcdKeyRotation.phase` reports `add_secondary`, and
-  before it reaches `finalize`: the workflow records the old key's storage name
-  in `active-name` before that phase, and `active` keeps the old key until
-  finalization. Keep both copies with the etcd backups.
+  before it reaches `finalize`: on either path, staging a new pending key or
+  reusing one left by an earlier rotation, the workflow records the old key's
+  storage name in `active-name` before that phase, and `active` keeps the old
+  key until finalization. Keep both copies with the etcd backups.
 
 The workflow snapshots the control-plane node set and runs health/preflight
 checks before rollout. Key updates hot-reload API server configuration; they do
