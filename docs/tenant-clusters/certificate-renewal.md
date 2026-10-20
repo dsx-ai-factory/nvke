@@ -229,12 +229,18 @@ lock type must both still match, and `certificateRenewal.state` must be
 `failed`. An unexpected owner means stop and investigate. If the state is still
 `accepted`, for example because its workflow was terminated, stop and escalate
 without releasing the lock: the scheduler keeps requeuing an accepted cycle
-without dispatching it, so releasing it would stop automatic renewal.
+without dispatching it, so releasing the lock does not resume renewal.
 Do not use a generic condition-clearing SQL command, replay a successful renewal
 to obtain evidence, or delete receipts to unblock work.
 
 Once the failed owner's work is proven stopped, its ownership safely released
-and all preflight gates healthy, the controller can retry automatically. The
+and all preflight gates healthy, the controller can retry automatically.
+Before waiting for that retry or starting a forced workflow, confirm that the
+cluster row's `certificate_renewal` reservation column is empty; the REST API
+does not show it. A fenced reservation makes admission refuse both and restart
+the one-hour backoff; a reservation left by an older V1 workflow fails the cycle
+when it reaches that node. If it stays set, follow the reservation
+paragraph of the [component recovery contract](../../controller/docs/certificate-renewal.md#status-and-failure-handling). The
 automatic retry needs scheduling enabled (`certRenewal.controllerEnabled`) and
 starts no earlier than both one hour after the failure and `nextCertRenewalDue`,
 so after a forced cycle that failed before its due time it can wait up to
