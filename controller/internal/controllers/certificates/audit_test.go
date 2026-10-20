@@ -82,30 +82,40 @@ func TestInspectionAuditReportsSinkFailureWithoutChangingObservation(t *testing.
 
 // TestInspectionAuditSkipsUnchangedObservations keeps an unchanged node from
 // adding ledger rows every inspection interval: a repeat of the previous
-// outcome and fingerprints records nothing, while a changed fingerprint and a
-// failure are recorded.
+// outcome, reason and fingerprints records nothing, including a probe that keeps
+// failing the same way, while a changed fingerprint, a new failure and a changed
+// failure reason are recorded.
 func TestInspectionAuditSkipsUnchangedObservations(t *testing.T) {
 	store := &inspectionAuditStore{}
 	c := &Controller{audit: credentialaudit.NewRecorder(store, slog.New(slog.DiscardHandler), nil)}
 	node := db.Node{ID: uuid.New(), ClusterID: uuid.New()}
-	inspection := func(serving string, available bool) *db.CertificateInspection {
-		return &db.CertificateInspection{Available: available, AttemptedAt: time.Now().UTC(), Certificates: []db.CertificateObservation{
+	attempt := time.Now().UTC()
+	inspection := func(serving string, reason string) *db.CertificateInspection {
+		attempt = attempt.Add(time.Hour)
+		return &db.CertificateInspection{Available: reason == "", Reason: reason, AttemptedAt: attempt, Certificates: []db.CertificateObservation{
 			{Credential: "kubelet-serving", State: "available", CertificateSHA256: credentialaudit.Hash("certificate", serving)},
 		}}
 	}
-	first := inspection("serving-1", true)
+	first := inspection("serving-1", "")
 	c.recordInspectionAudit(t.Context(), node, nil, first)
-	second := inspection("serving-1", true)
+	second := inspection("serving-1", "")
 	c.recordInspectionAudit(t.Context(), node, first, second)
 	require.Len(t, store.events, 1, "an unchanged inspection records no row")
 
-	renewed := inspection("serving-2", true)
+	renewed := inspection("serving-2", "")
 	c.recordInspectionAudit(t.Context(), node, second, renewed)
 	require.Len(t, store.events, 2, "a changed fingerprint is recorded")
 
-	failed := inspection("serving-2", false)
-	c.recordInspectionAudit(t.Context(), node, renewed, failed)
-	c.recordInspectionAudit(t.Context(), node, failed, inspection("serving-2", false))
-	require.Len(t, store.events, 4, "failures are recorded every time")
+	unsupported := inspection("serving-2", inspectionUnsupported)
+	c.recordInspectionAudit(t.Context(), node, renewed, unsupported)
+	require.Len(t, store.events, 3, "a new failure is recorded")
+	require.Equal(t, credentialaudit.OutcomeFailure, store.events[2].Outcome)
+	again := inspection("serving-2", inspectionUnsupported)
+	c.recordInspectionAudit(t.Context(), node, unsupported, again)
+	require.Len(t, store.events, 3, "an identical failure records no row")
+
+	unavailable := inspection("serving-2", "unavailable")
+	c.recordInspectionAudit(t.Context(), node, again, unavailable)
+	require.Len(t, store.events, 4, "a changed failure reason is recorded")
 	require.Equal(t, credentialaudit.OutcomeFailure, store.events[3].Outcome)
 }

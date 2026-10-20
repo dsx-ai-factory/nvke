@@ -20,19 +20,23 @@ const (
 
 // recordInspectionAudit emits independent observations, not renewal completion
 // evidence. A failed probe must never report retained fingerprints as fresh.
-// A successful observation that repeats the previous inspection's outcome and
+// An observation that repeats the previous inspection's outcome, reason and
 // fingerprints for the same credential is not recorded again, so an unchanged
-// node does not add rows every inspection interval; failures are always recorded.
+// node, including one whose probe keeps failing the same way such as an agent
+// without the inspection RPC, does not add rows every inspection interval.
 func (c *Controller) recordInspectionAudit(ctx context.Context, node db.Node, previous, inspection *db.CertificateInspection) {
 	if c.audit == nil || inspection == nil {
 		return
 	}
 	var before []credentialaudit.Event
-	if previous != nil {
+	// Every failed probe maps to the same audit reason, so a change of the
+	// inspection's own reason, for example from unsupported to unavailable, is
+	// recorded as a new observation.
+	if previous != nil && previous.Reason == inspection.Reason {
 		before = inspectionAuditEvents(node, previous)
 	}
 	for _, event := range inspectionAuditEvents(node, inspection) {
-		if event.Outcome == credentialaudit.OutcomeSuccess && slices.ContainsFunc(before, func(prior credentialaudit.Event) bool {
+		if slices.ContainsFunc(before, func(prior credentialaudit.Event) bool {
 			return sameInspectionObservation(prior, event)
 		}) {
 			continue
