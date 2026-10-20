@@ -1063,9 +1063,10 @@ func TestApplyCAPIMachineRebootAnnotation(t *testing.T) {
 		Namespace: constants.LegacyManagementNamespace,
 		Name:      "worker-0",
 	}, storedMachine))
-	// Written in both domains while cluster-api-provider-nico deployments move over.
+	// Current domain only: cluster-api-provider-nico is pointed at this key by
+	// its --reboot-annotation flag, and a legacy copy would be dead weight.
 	require.Contains(t, storedMachine.Annotations, keys.MachineReboot.String())
-	require.Contains(t, storedMachine.Annotations, keys.MachineReboot.Legacy())
+	require.NotContains(t, storedMachine.Annotations, keys.MachineReboot.Legacy())
 	mockDB.AssertExpectations(t)
 }
 
@@ -1152,7 +1153,6 @@ func TestDeleteCAPIMachineRebootAnnotation(t *testing.T) {
 		Name:      "worker-1",
 	}, storedMachine))
 	require.NotContains(t, storedMachine.Annotations, keys.MachineReboot.String())
-	require.NotContains(t, storedMachine.Annotations, keys.MachineReboot.Legacy())
 	mockDB.AssertExpectations(t)
 }
 
