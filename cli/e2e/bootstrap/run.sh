@@ -186,7 +186,7 @@ scan_output_for_secrets() {
     return 0
   fi
 
-  local work rc name shape fingerprint join_token plog trace_hex span_hex
+  local work rc name shape fingerprint join_token leaked plog trace_hex span_hex
   work="$(mktemp -d)"
 
   # The rules, proved on a sample of each shape: flagged with a value, clean with
@@ -212,9 +212,9 @@ scan_output_for_secrets() {
   # they must not allow. The hash is computed here, not written in this file: a
   # literal would trip the Secrets workflow just as it trips the default rules.
   fingerprint="$(printf '%s' sample | sha256sum | cut -d' ' -f1)"
-  printf 'msg="wrote the etcd encryption key" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
+  printf 'time=x level=INFO msg="wrote the etcd encryption key" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
     "${fingerprint}" 1 1 >"${work}/clean/etcd-fingerprint.txt"
-  printf 'msg="wrote the file" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
+  printf 'time=x level=INFO msg="wrote the file" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
     "${fingerprint}" 1 1 >"${work}/flagged/etcd-other.txt"
   # The SPIRE CA line, which holds file paths, and the same line with a field
   # appended after the span ID, which the allowlist is anchored to refuse. The
@@ -234,6 +234,19 @@ scan_output_for_secrets() {
   join_token="$(printf a | sha256sum | cut -c1-6).$(printf b | sha256sum | cut -c1-16)"
   printf '{"args":["join","--token","%s","--discovery-token-ca-cert-hash","sha256:%s"]}\n' \
     "${join_token}" "${fingerprint}" >"${work}/flagged/join-token.txt"
+  # The allowed etcd and SPIRE lines with a credential-shaped field added on
+  # either side of the part the allowlist matches: between the message and the
+  # path, and before the message. Neither may be allowed. The value is derived,
+  # and long enough for the default rules to flag it under these names.
+  leaked="$(printf leak | sha256sum | cut -c1-32)"
+  printf 'time=x level=INFO msg="wrote the etcd encryption key" component=x token=%s path=/x/.etcd-encryption-key.json sha256=%s\n' \
+    "${leaked}" "${fingerprint}" >"${work}/flagged/etcd-field-before-path.txt"
+  printf 'token=%s time=x level=INFO msg="wrote the etcd encryption key" component=x path=/x/.etcd-encryption-key.json sha256=%s\n' \
+    "${leaked}" "${fingerprint}" >"${work}/flagged/etcd-field-before-msg.txt"
+  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x api_key=%s cert=/w/ca.crt key=/w/ca.key\n' \
+    "${leaked}" >"${work}/flagged/spire-field-before-cert.txt"
+  printf 'api_key=%s time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/ca.crt key=/w/ca.key\n' \
+    "${leaked}" >"${work}/flagged/spire-field-before-msg.txt"
   for name in "${work}"/flagged/*; do
     rc=0
     gitleaks_scan "${name}" >/dev/null 2>&1 || rc=$?
