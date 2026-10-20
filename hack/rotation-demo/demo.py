@@ -566,7 +566,7 @@ def wait_for(check, deadline):
         except CheckError as error:
             last = str(error)
             if last in {"workflow_failed", "workflow_identity_mismatch", "unsupported_workflow", "cycle_not_scheduled",
-                        "cycle_not_scheduler_named", "manual_marker_invalid", "audit_schema_invalid", "audit_values_invalid",
+                        "cycle_not_scheduler_named", "cycle_started_before_traffic", "manual_marker_invalid", "audit_schema_invalid", "audit_values_invalid",
                         "scheduled_cycle_did_not_renew"}:
                 raise
         time.sleep(2)
@@ -653,6 +653,7 @@ def run(c, scenario, approve, live_factory=Live):
             proof.create()
             evidence["storage_header_before_sha256"] = proof.verify()
             passed("preexisting_secret_readable_encrypted")
+        traffic_started_at = time.time()
         traffic = Traffic(live, proof)
         traffic.thread.start()
         mutation_at = time.time()
@@ -673,6 +674,8 @@ def run(c, scenario, approve, live_factory=Live):
                 require(state.get("cycleID") != prior and state.get("cycleID"), "scheduled_cycle_not_observed")
                 require(not state.get("forced") and (state.get("scheduledFor") or state["cycleID"].endswith("-initial")), "cycle_not_scheduled")
                 require(state["cycleID"].startswith("renew-k8s-certs-" + c["cluster_id"] + "-"), "cycle_not_scheduler_named")
+                # A cycle accepted during the baseline phase ran without observed traffic.
+                require(timestamp(state["startedAt"]) >= traffic_started_at, "cycle_started_before_traffic")
                 return state["cycleID"]
             workflow = wait_for(scheduled, deadline)
         else:
