@@ -190,8 +190,8 @@ thresholds in `deploy/charts/controller/files/credential-alerts.yaml`.
 | `NVKECertificateRenewalFailed` | latest cycle failed for `5m` | follow [renewal recovery](certificate-renewal.md); released failures retry after one hour, retained-lock failures stay halted |
 | `NVKECertificateRenewalOverdue` | more than one hour overdue for `15m`, when automation enabled | inspect readiness, Temporal and maintenance ownership |
 | `NVKECertificateRenewalStuck` | accepted cycle older than two hours for `15m` | inspect workflow and agent termination/restoration before retry |
-| `NVKEKubeletServingCSRStale` | unissued CSR older than fifteen minutes for `5m` | inspect approver decisions and signer health; approved is not issued |
-| `NVKEKubeletServingCSRFailed` | failed or denied CSR exists for `5m` | inspect tenant conditions and identity; never blindly approve a denied request |
+| `NVKEKubeletServingCSRStale` | unissued CSR older than fifteen minutes for `5m`, when monitoring enabled | inspect approver decisions and signer health; approved is not issued |
+| `NVKEKubeletServingCSRFailed` | failed or denied CSR exists for `5m`, when monitoring enabled | inspect tenant conditions and identity; never blindly approve a denied request |
 | `NVKEKubeletServingCSRObservationUnavailable` | never observed or snapshot older than five minutes for `5m`, when monitoring enabled | restore tenant-manager access and kubeconfig refresh |
 | `NVKEEtcdKeyRotationFailed` | latest rotation failed for `5m` | follow [phase-specific recovery](etcd-encryption-key-rotation.md#phase-aware-recovery): a released `prepare` failure needs a new workflow ID; later phases retain the original owner |
 | `NVKEEtcdKeyRotationStuck` | no phase progress for two hours for `15m` | inspect workflow/rewrite before reset or key removal; large rewrites may need longer investigation |
