@@ -5,6 +5,7 @@ import base64
 import copy
 import http.server
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -356,6 +357,23 @@ class DemoTests(unittest.TestCase):
             self.assertEqual(1, status)
             run.assert_not_called()
             self.assertEqual("public-existing-evidence", path.read_text())
+
+    def test_rejected_config_reports_its_code_and_releases_the_output_path(self):
+        c = config()
+        c["profile"] = "unsupported"
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path, output = Path(tmp) / "config.json", Path(tmp) / "evidence.json"
+            config_path.write_text(json.dumps(c))
+            argv = ["run", "--config", str(config_path), "--scenario", "forced-renewal", "--output", str(output)]
+            with patch.object(sys, "stderr", new_callable=io.StringIO) as stderr:
+                self.assertEqual(1, demo.main(argv))
+            self.assertIn("unsupported_profile", stderr.getvalue())
+            self.assertFalse(output.exists(), "a rejected config must not leave the reserved output behind")
+            c["profile"] = "kubeadm-ha"
+            config_path.write_text(json.dumps(c))
+            with patch.object(demo, "run", return_value={"status": "failed"}):
+                self.assertEqual(1, demo.main(argv))
+            self.assertEqual({"status": "failed"}, json.loads(output.read_text()))
 
     def test_source_provenance_uses_demo_worktree_from_another_directory(self):
         old = os.getcwd()

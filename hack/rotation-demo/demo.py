@@ -860,9 +860,11 @@ def main(argv=None):
     release.add_argument("evidence", nargs="+")
     args = parser.parse_args(argv)
     os.umask(0o077)
+    reserved = False
     try:
         # Reserve the exclusive private destination before any live collection or mutation.
         with os.fdopen(os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as output:
+            reserved = True
             if args.action == "run":
                 evidence = run(read_json(args.config), args.scenario, args.approve_cluster)
             else:
@@ -871,10 +873,15 @@ def main(argv=None):
             output.write("\n")
             output.flush()
             os.fsync(output.fileno())
+            reserved = False
         print("Rotation evidence: " + evidence["status"])
         return 0 if evidence["status"] == "passed" else 1
-    except Exception:
-        print("Rotation evidence could not be collected or written", file=sys.stderr)
+    except Exception as error:
+        if reserved:
+            # Nothing was serialized; release the path so a corrected rerun can use it.
+            Path(args.output).unlink(missing_ok=True)
+        reason = str(error) if isinstance(error, CheckError) else "collector_input_or_protocol_error"
+        print("Rotation evidence could not be collected or written: " + reason, file=sys.stderr)
         return 1
 
 
