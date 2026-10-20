@@ -49,9 +49,9 @@ management cluster's API virtual IP address (VIP), or the node IP of a
 single-node management cluster.
 
 ```bash
-export SITE_NAME=<SITE_NAME>
-export NVKE_CONTROLLER_URL=http://<MANAGEMENT_ADDRESS>:30080
-export CLUSTER_NAME=<TENANT_CLUSTER_NAME>
+export SITE_NAME="<SITE_NAME>"
+export NVKE_CONTROLLER_URL="http://<MANAGEMENT_ADDRESS>:30080"
+export CLUSTER_NAME="<TENANT_CLUSTER_NAME>"
 
 nvkectl config set-site --name "$SITE_NAME" \
   --url "$NVKE_CONTROLLER_URL" \
