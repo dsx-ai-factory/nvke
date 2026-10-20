@@ -569,3 +569,11 @@ notices-check: ## Verify THIRD_PARTY_NOTICES.md is up to date. (advisory; not in
 		git diff --name-only -- THIRD_PARTY_NOTICES.md; \
 		exit 1; \
 	fi
+
+# Supplied-artifact diagnostics never depend on the controller/image/chart build targets.
+.PHONY: test-controller-image-artifact test-chart-package-artifact
+test-controller-image-artifact:
+	go run ./cmd/artifact-diagnostic --kind controller-image $(ARTIFACT_ARGS)
+
+test-chart-package-artifact:
+	go run ./cmd/artifact-diagnostic --kind chart-package $(ARTIFACT_ARGS)

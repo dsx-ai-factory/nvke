@@ -6,7 +6,6 @@ package e2e
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -14,6 +13,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/dsx-ai-factory/nvke/controller/api/testutil/health"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
@@ -113,7 +114,7 @@ var _ = Describe("controller management-plane health", Label("health"), func() {
 
 		statusCode, body, err := forwarder.Get(tctx, "/healthz")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(statusCode).To(Equal(200), "response body: %s", body)
+		Expect(health.Check("/healthz", statusCode, body, "")).To(Succeed())
 	})
 
 	It("serves /readyz", func(ctx SpecContext) {
@@ -122,7 +123,7 @@ var _ = Describe("controller management-plane health", Label("health"), func() {
 
 		statusCode, body, err := forwarder.Get(tctx, "/readyz")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(statusCode).To(Equal(200), "response body: %s", body)
+		Expect(health.Check("/readyz", statusCode, body, "")).To(Succeed())
 	})
 
 	It("reports the expected version", func(ctx SpecContext) {
@@ -135,12 +136,6 @@ var _ = Describe("controller management-plane health", Label("health"), func() {
 
 		statusCode, body, err := forwarder.Get(tctx, "/api/version")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(statusCode).To(Equal(200), "response body: %s", body)
-
-		var response struct {
-			Version string `json:"version"`
-		}
-		Expect(json.Unmarshal(body, &response)).To(Succeed())
-		Expect(response.Version).To(Equal(hc.ExpectedVersion))
+		Expect(health.Check("/api/version", statusCode, body, hc.ExpectedVersion)).To(Succeed())
 	})
 })
