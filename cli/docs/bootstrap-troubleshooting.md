@@ -55,10 +55,11 @@ run prints. A retry writes into the same
 directory, replacing files of the same name, so move it first or pass a new
 `--diagnostics-dir`.
 
-No diagnostics are collected when the failure comes after the site cluster and
-its outputs are saved, as in
+Without `-v`, no diagnostics are collected when the failure comes after the site
+cluster and its outputs are saved, as in
 [making the control-plane nodes schedulable](#finish). The bootstrap cluster is
-retained, so read its controller logs and the nodes' journals instead.
+retained, so read its controller logs and the nodes' journals instead. With `-v`
+they are collected in that case too.
 
 | Path | Use it to check |
 |---|---|

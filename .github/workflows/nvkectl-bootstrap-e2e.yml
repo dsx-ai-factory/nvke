@@ -371,7 +371,8 @@ jobs:
       # state and helm releases that explain a pod which never started,
       # collected before the cluster goes away. run.sh passes -v, so a passing
       # run writes it too, for the credential scan; it is uploaded only when the
-      # job fails, which includes a scan that found a credential.
+      # job fails. run.sh deletes it when the scan reports a credential or cannot
+      # run, so a leaked secret is not published.
       # if-no-files-found: ignore, since a run that stops before the bootstrap
       # cluster exists writes nothing.
       - name: Upload bootstrap cluster diagnostics

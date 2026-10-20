@@ -45,6 +45,39 @@ regex = '''(?i)["']?[\w.-]*passw(?:or)?d["']?\s*[:=]\s*["']([^"'<\s]{4,})["']'''
 secretGroup = 1
 keywords = ["passw"]
 
+# The same field as a line of its own with no quotes, which is how kubectl
+# describe prints a literal environment variable ("POSTGRES_PASSWORD:  value")
+# and how YAML prints a field. It is anchored to the whole line so it cannot
+# match inside prose or a flag, and a value that is a placeholder, such as
+# <redacted> or describe's <set to the key ...>, starts with < and is skipped.
+[[rules]]
+id = "nvkectl-password-unquoted"
+description = "A password field with an unquoted literal value, as kubectl describe and YAML print it"
+regex = '''(?im)^[ \t]*[\w.-]*passw(?:or)?d[ \t]*[:=][ \t]+([^"'<\s{\[][^"'\s]{3,})[ \t]*$'''
+secretGroup = 1
+keywords = ["passw"]
+
+# A literal environment variable in a JSON dump of a pod spec: the name and the
+# value are separate fields, so the password field rule above never sees them.
+# An environment variable fed from a Secret has valueFrom, not value, so it does
+# not match.
+[[rules]]
+id = "nvkectl-password-env"
+description = "A password environment variable with a literal value in a pod spec"
+regex = '''(?i)"name"\s*:\s*"[\w.-]*passw(?:or)?d"\s*,\s*"value"\s*:\s*"([^"<]{4,})"'''
+secretGroup = 1
+keywords = ["passw"]
+
+# Values that name a state, not a credential. The unquoted rule reads
+# "usePassword: true" as a password field.
+[[allowlists]]
+description = "a boolean or null where a password field is expected"
+targetRules = ["nvkectl-password-unquoted"]
+regexTarget = "secret"
+regexes = [
+  '''^(?i:true|false|null|none|nil)$''',
+]
+
 # nvkectl logs the SHA-256 of the etcd encryption key next to the key file's path,
 # so an operator can tell two keys apart. etcdkey.Fingerprint is a hash of the
 # key, "nothing that decrypts anything", but the default generic-api-key rule

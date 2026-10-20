@@ -410,8 +410,8 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	siteClusterCreated := false
 	// handedOver is set once the site cluster and every artifact the operator
 	// needs are on disk. A failure after that is about the site cluster, so
-	// the bootstrap cluster's diagnostics are not collected and it is torn
-	// down.
+	// without -v the bootstrap cluster's diagnostics are not collected and it
+	// is torn down.
 	handedOver := false
 	defer func() {
 		// Collect diagnostics before anything is torn down: this cluster is

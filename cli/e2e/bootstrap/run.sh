@@ -195,11 +195,19 @@ scan_output_for_secrets() {
   for shape in \
     'helm|helm upgrade --install demo chart --set-string auth.password=PLACEHOLDER --wait' \
     'url|{"env":[{"name":"DATABASE_URL","value":"postgres://cloud:PLACEHOLDER@db.example:5432/cloud"}]}' \
-    'field|{"auth":{"username":"cloud","password":"PLACEHOLDER"}}'; do
+    'field|{"auth":{"username":"cloud","password":"PLACEHOLDER"}}' \
+    'unquoted|      POSTGRES_PASSWORD:  PLACEHOLDER' \
+    'env|{"env":[{"name":"POSTGRES_PASSWORD","value":"PLACEHOLDER"}]}'; do
     name="${shape%%|*}"
     printf '%s\n' "${shape#*|}" | sed 's/PLACEHOLDER/aaaa-bbbb-cccc/' >"${work}/flagged/${name}.txt"
     printf '%s\n' "${shape#*|}" | sed 's/PLACEHOLDER/<redacted>/' >"${work}/clean/${name}.txt"
   done
+  # Password fields that hold no credential, which the rules must not flag: a
+  # value kubectl describe prints for a Secret, a boolean, and an environment
+  # variable fed from a Secret, which has valueFrom and no value.
+  printf "      POSTGRES_PASSWORD:  <set to the key 'password' in secret 'pg'>  Optional: false\n" >"${work}/clean/describe-secret.txt"
+  printf 'spec:\n  usePassword: true\n  password: null\n' >"${work}/clean/password-state.txt"
+  printf '{"env":[{"name":"POSTGRES_PASSWORD","valueFrom":{"secretKeyRef":{"name":"pg","key":"password"}}}]}\n' >"${work}/clean/env-secretref.txt"
   # The one line the rules allow, and the same line under another message, which
   # they must not allow. The hash is computed here, not written in this file: a
   # literal would trip the Secrets workflow just as it trips the default rules.
@@ -327,6 +335,14 @@ cleanup() {
   # A leak turns a passing run red; a run that already failed stays failed.
   local scan_failed=0
   scan_output_for_secrets || scan_failed=1
+  # CI uploads this directory when the job fails, and a failed scan is a failed
+  # job. The bundle is redacted in the scan's output but not on disk, so it is
+  # removed rather than published with the credential the scan reported. A
+  # scan that could not run counts too: the bundle was not checked.
+  if [ "${scan_failed}" -ne 0 ] && [ -d "${DIAGNOSTICS_DIR}" ]; then
+    log "removing ${DIAGNOSTICS_DIR}: it may hold a credential, and CI uploads it"
+    rm -rf "${DIAGNOSTICS_DIR}"
+  fi
   for ((i = ${#DEFERRED[@]} - 1; i >= 0; i--)); do
     eval "${DEFERRED[$i]}" || true
   done
