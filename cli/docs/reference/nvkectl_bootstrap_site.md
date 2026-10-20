@@ -68,8 +68,9 @@ nvkectl bootstrap site [flags]
 ### Options
 
 ```
-      --arch string                         Architecture of the release artifact to use: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. Only with --release. (default "linux/amd64")
-      --diagnostics-dir string              Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. With --verbose a successful bootstrap writes them too. Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR. (default "cluster-diagnostics")
+      --arch string                         Architecture of the release artifact to use: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. Only with --release. (default "linux/arm64")
+      --controller-image string             Controller image to deploy (overrides NVKECTL_CONTROLLER_IMAGE and the manifest default)
+      --diagnostics-dir string              Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR. (default "cluster-diagnostics")
       --disable-mtls                        Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. The agents must be running with --disable-mtls too. Development only.
       --dry-run                             Load and validate the site spec and print it, but do not dispatch any workflow
       --encryption-key-out string           Where to write the finished cluster's etcd encryption key, as a Secret manifest (default: <clusterName>-etcd-encryption-key.json in the working directory)
