@@ -222,12 +222,21 @@ every cycle, recording another `admission` failure and restarting the one-hour
 backoff. A reservation left by an older V1 workflow does not block admission,
 but the cycle does not reuse it: when the cycle reaches that node, the node is
 refused without dispatch, the cycle fails and is retried after the backoff. The
-V1 activity releases its reservation when it ends, on success or failure, unless
-the node agent accepted the work and then stopped answering. Any remaining
-reservation is cleared automatically
-once the reserved node operation is confirmed to have ended: for example, the
-node agent reports it finished or, for fenced work, no longer knows it while no
-`certificate_renewal` lock is held, or the node row is gone.
+V1 activity normally releases its reservation when it ends, on success or
+failure. It can leave an unfenced reservation behind when the activity is
+interrupted (worker restart, timeout or cancellation), when the release itself
+fails, or when the node agent accepted typed work and then stopped answering.
+A fenced reservation is cleared automatically once the node agent reports its
+operation finished or no longer knows it while no `certificate_renewal` lock is
+held, or once the node row is gone. An unfenced reservation is cleared
+automatically only when the node agent reports that operation finished or the
+node row is gone. The controller never clears it when the agent does not know
+the operation or does not implement the typed status RPC, as with an
+interrupted legacy runbook. Clear such a reservation yourself: confirm that the
+runbook has stopped on that node (no process holds
+`/var/lib/nvke/k8s-cert-renewal/lock`), then, under the cluster row lock, check
+that the `certificate_renewal` column still holds the same node and operation
+ID and set it to `NULL`.
 Before expecting a retry, check that this column is empty; if it stays set,
 check the node agent's reachability and status for that operation.
 
