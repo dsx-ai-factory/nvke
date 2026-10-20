@@ -24,8 +24,8 @@ prerequisites or phase-aware failure/reset recovery.
 Use Python 3.10+, a Kubernetes-compatible `kubectl`, Temporal CLI supporting
 JSON [workflow describe](https://docs.temporal.io/cli/command-reference/workflow),
 `psql` and OpenSSL. T1 collection also needs SSH,
-noninteractive privileged access, GNU `date`, `sha256sum` and `kubectl` on the
-control-plane nodes. The script never prints command diagnostics or histories.
+noninteractive privileged access, GNU `date`, `sha256sum`, `openssl`, `base64`
+and `kubectl` on the control-plane nodes. The script never prints command diagnostics or histories.
 Temporal connection/TLS credentials use its existing CLI environment/profile;
 PostgreSQL uses `PGSERVICE` and `PGPASSFILE` with a read-only role. Keep those
 files and kubeconfigs outside Git.
@@ -80,6 +80,17 @@ does not terminate/reset a workflow or release its mutation lock.
 
 ## Run the T2 scenarios
 
+Run the T2 lanes in this order on one cluster: `scheduled-renewal` first, then
+`alert-renewal` and `forced-renewal`, with `etcd-key` independent of them. Forced
+and alert renewal both force-renew every control plane, so either one run first
+makes the scheduled cycle `unchanged` (which fails that lane) and clears the
+warning window the alert lane needs; `aggregate` requires all T2 reports from
+the same cluster, which then cannot qualify until its certificates approach
+expiry again. The alert lane also needs staggered expiry prepared in advance:
+one still-valid control-plane leaf already inside the warning window and its
+`NVKECertificateExpiring` alert firing, see
+[Prove expiry alert delivery and resolution](#prove-expiry-alert-delivery-and-resolution).
+
 Run from the clean candidate checkout. Output paths must be new and outside the
 repository, so subsequent runs remain clean. The exact cluster UUID supplied to
 `--approve-cluster` is the operator's opt-in. Omitting it performs baseline
@@ -113,7 +124,11 @@ Every returned controller replica must meet these checks. Keep operator,
 controller and Prometheus clocks synchronized for these wall-clock comparisons.
 
 Run the same command with `--scenario scheduled-renewal` and a new output path
-to observe the actual controller scheduler. It waits for a new non-forced,
+to observe the actual controller scheduler. Start it only when the cluster's
+`nextCertRenewalDue`, plus the renewal itself and the next certificate
+inspection (default one hour), fits inside `timeout_seconds`, which is at most
+eight hours while `certRenewal.interval` defaults to twelve. Read
+`nextCertRenewalDue` from `GET /api/clusters/{clusterID}` first. It waits for a new non-forced,
 scheduler-named cycle; it does not synthesize a schedule by starting Temporal
 directly. Prepare a healthy, naturally approaching-expiry candidate within the
 configured selection threshold. The candidate must be older than one renewal
@@ -170,7 +185,12 @@ production site just to manufacture this test. Set `alert_node`,
 last day and before run start). CA alerts cannot use this lane because renewal
 does not rotate CAs.
 
-The optional receiver accepts actual Alertmanager webhook requests at `/alerts`:
+The bundled receiver is **required**: the collector accepts only its
+`nke.alert-receipt.v1` records, not a site receiver's. Start it and route
+Alertmanager to it before the alert fires, so that a matching firing receipt is
+already in `alert_receipts_file` when the lane starts; the collector refuses to
+start the renewal (`firing_notification_not_received`) otherwise. It accepts
+actual Alertmanager webhook requests at `/alerts`:
 
 ```bash
 python3 hack/rotation-demo/alert-receiver.py \
@@ -190,29 +210,38 @@ this configured webhook, not delivery to an unrelated email/pager receiver.
 The scenario requires loaded healthy rules, firing before actual expiration,
 renewed public credentials, resolved evaluator state, and both firing/resolved
 webhook receipts with the same alert ID matching the target/window. The firing
-receipt must precede mutation and the resolved receipt must follow this run's
-terminal completion; an old resolution cannot satisfy the check. Missing delivery or resolution
+receipt must precede mutation and the resolved receipt must follow the start of
+this run's renewal, with no new firing receipt between that resolution and
+completion; an old resolution cannot satisfy the check. Renewal proceeds one
+node at a time, so the alert can resolve before the last node finishes. Missing delivery or resolution
 fails. Alert fixture tests and absent series cannot substitute for these checks.
 
 ## Observe manual T1 separately
 
-Use [the separate T1 runbook](https://github.com/dsx-ai-factory/nvke/blob/e76ea3db2535e2588014a417643a44ccfe38fc83/docs/site-operations/certificate-renewal.md)
-from [PR #1050](https://github.com/dsx-ai-factory/nvke/pull/1050), with the
+Use [the separate T1 runbook](../../docs/site-operations/certificate-renewal.md),
+with the
 [additional evidence guidance](../../docs/operations/credential-lifecycle.md#manual-t1-evidence-and-qualification).
 The demo does not duplicate that procedure or automate its mutations. Prepare a
 separate T1 configuration with `cluster_id` (also the `--approve-cluster` value
 and part of the completion marker), `api_server`, `profile`, the site
 `context`/`kube_system_uid`, stable UUID evidence identities for nodes, complete
 node inventory, expected Kubernetes versions, SSH destinations for control
-planes, unique `manual_operation`, a nonexistent `manual_completion_file`, and
-`manual_audit_file`. Set `deployment_source_revision` to this demo revision;
+planes, unique `manual_operation`, a nonexistent `manual_completion_file`,
+`manual_audit_file`, and `timeout_seconds`. Size `timeout_seconds` for the whole
+T1 runbook and its post-checks, at most 28800 (eight hours): the same deadline
+bounds the wait for the completion marker, and the 7200-second default fails a
+longer maintenance with `manual_completion_not_observed` after it has happened. Set `deployment_source_revision` to this demo revision;
 manual T1 has no CWE/agent registration requirement. T1 inventory intentionally
 covers kubeadm leaves/configs and CAs, and excludes kubelet certificates/CSRs.
 
 Start `--scenario manual-t1` with that config and explicit approval. Wait for
 the fixed message **"T1 baseline recorded and API observation running"** before
-beginning the runbook. The read-only SSH collector runs only fixed OpenSSL
-public-certificate queries; it never copies PKI or kubeconfigs. T1 uses actual
+beginning the runbook. The read-only SSH collector runs
+[public-certificates.sh](public-certificates.sh) under `sudo`: fixed OpenSSL
+public-certificate queries, and for each kubeadm kubeconfig a
+`kubectl config view --raw` read whose embedded client certificate is decoded
+with `base64` to compute its public fingerprint and expiry. It never copies PKI
+or kubeconfigs off the node. T1 uses actual
 public snapshots rather than the T2 database inventory.
 
 Record check/renew/verify observations for each control-plane node through the
@@ -225,16 +254,22 @@ operation values with `manual_audit_target_or_run_mismatch` and duplicate
 `event_id`s, which a repeated step without its own suffix produces, with
 `audit_event_duplicate`. Keep the original audit records: do not delete rows or
 repeat maintenance to manufacture evidence.
-Build the tool once from the repository root, as in the
-[audit guide](../../controller/docs/credential-audit.md#manual-t1-evidence).
-For example, after a verified step:
+Before starting `manual-t1`, build the tool once from the repository root, as in
+the [audit guide](../../controller/docs/credential-audit.md#manual-t1-evidence):
 
 ```bash
 tool_dir="$(mktemp -d)" &&
-  (cd controller && go build -o "$tool_dir/credential-audit" ./cmd/credential-audit) &&
-  "$tool_dir/credential-audit" --action verify --credential kubeadm_leaf_bundle --plane t1 \
+  (cd controller && go build -o "$tool_dir/credential-audit" ./cmd/credential-audit)
+```
+
+Then record each observation only after that step was performed on that node.
+For example, the `verify` observation for `example-cp-1`, after its `check` and
+`renew` rows were recorded with the same tool:
+
+```bash
+"$tool_dir/credential-audit" --action verify --credential kubeadm_leaf_bundle --plane t1 \
   --cluster 00000000-0000-0000-0000-000000000002 --node example-cp-1 \
-  --operation example-operator-change-window --actor example-operator \
+  --operation example-operator-change-window/verify-1 --actor example-operator \
   --outcome success --reason verified >> /operator/private/t1-audit.jsonl
 ```
 
