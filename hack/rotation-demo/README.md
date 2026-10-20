@@ -1,7 +1,7 @@
 # Credential rotation qualification demo
 
 `demo.sh` runs real qualification checks against one explicitly selected cluster.
-It uses `kubectl`, Temporal CLI, the CWE REST API, read-only PostgreSQL and
+It uses `kubectl`, Temporal CLI, the NVKE controller REST API, read-only PostgreSQL and
 Prometheus. It writes only public, allowlisted JSON evidence. No live run is
 included in this repository. Offline tests exercise collector failures and
 redaction; they do not qualify a deployment.
@@ -34,7 +34,7 @@ Copy [config.example.json](config.example.json) to an operator-owned directory.
 Replace every example value with the approved site's values. `KUBECONFIG`
 selects the kubeconfig; `context` must select the exact tenant and `api_server`
 must equal that context's HTTPS server (the VIP for HA traffic). Record the actual
-`kube-system` namespace UID, CWE cluster UUID/name and complete joined node
+`kube-system` namespace UID, the controller's cluster UUID/name and complete joined node
 UUID/name/role inventory. The collector rejects mismatches, added/missing nodes,
 unsupported control-plane counts and unhealthy endpoints before starting work.
 
@@ -43,7 +43,7 @@ deployed candidate. Set `expected_versions.controller` to `/api/version.version`
 `agents` to the expected deployed agent version for every node UUID, and
 `kubernetes` to each node's expected `kubeletVersion`. The collector compares
 reported versions before/after and stores their SHA-256 hashes, never arbitrary
-version strings. The agent value comes from CWE's persisted registration;
+version strings. The agent value comes from the controller's persisted registration;
 refresh/verify registration and retain image/binary digests separately. Version
 reporting and the operator-declared source mapping do not cryptographically
 prove a binary's source. Do not qualify an unrelated deployment by copying
@@ -235,7 +235,7 @@ planes, unique `manual_operation`, a nonexistent `manual_completion_file`,
 T1 runbook and its post-checks, at most 28800 (eight hours): the same deadline
 bounds the wait for the completion marker, and the 7200-second default fails a
 longer maintenance with `manual_completion_not_observed` after it has happened. Set `deployment_source_revision` to this demo revision;
-manual T1 has no CWE/agent registration requirement. T1 inventory intentionally
+manual T1 has no controller/agent registration requirement. T1 inventory intentionally
 covers kubeadm leaves/configs and CAs, and excludes kubelet certificates/CSRs.
 
 Start `--scenario manual-t1` with that config and explicit approval. Wait for
