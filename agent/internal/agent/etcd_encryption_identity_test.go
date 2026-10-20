@@ -132,3 +132,50 @@ func TestLegacyRotationRequestsPreserveTheirStorageNamesAndWALIdentity(t *testin
 	require.NoError(t, err)
 	require.Equal(t, legacyID, namedID)
 }
+
+func TestBootstrapReplacesStaleEncryptionConfigOnlyWithoutLocalEtcdData(t *testing.T) {
+	tests := []struct {
+		name       string
+		bootstrap  string
+		localState string
+		wantReady  bool
+	}{
+		{name: "init after reset replaces stale config", bootstrap: "init", wantReady: true},
+		{name: "control-plane join after reset replaces stale config", bootstrap: "join", wantReady: true},
+		{name: "init keeps rename check while etcd member data exists", bootstrap: "init", localState: "var/lib/etcd/member/snap"},
+		{name: "join keeps rename check while etcd member data exists", bootstrap: "join", localState: "var/lib/etcd/member/snap"},
+		{name: "init keeps rename check while kube-apiserver manifest exists", bootstrap: "init", localState: "etc/kubernetes/manifests/kube-apiserver.yaml"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			n := newKubeadmFileTestServer(t)
+			n.NodeStatus = &NodeStatus{Role: ControlPlaneRole, Status: PendingStatus}
+			// A previous cluster's config survives kubeadm reset under the same name with other bytes.
+			require.NoError(t, n.createNamedAPIEncryptionConfig(testKey2, legacyAPIEncryptionKeyName, false, nil))
+			if tc.localState != "" {
+				path := filepath.Join(n.RootPath, tc.localState)
+				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+				require.NoError(t, os.WriteFile(path, []byte("fixture"), 0o600))
+			}
+			if tc.bootstrap == "join" {
+				n.Runner = &MockRunner{Output: []byte("joined")}
+				n.processKubeadmJoin([]string{"join", "192.0.2.1:6443"}, &pb.KubeadmJoinRequest{ApiEncryptionKey: testKey1, ApiEncryptionKeyName: legacyAPIEncryptionKeyName})
+			} else {
+				n.Runner = &MockRunner{Output: []byte(initOutput)}
+				n.processKubeadmInit([]string{"init", "--upload-certs"}, &pb.KubeadmInitRequest{ApiEncryptionEnabled: true, ApiEncryptionKey: testKey1, ApiEncryptionKeyName: legacyAPIEncryptionKeyName, NoCniInstall: true})
+			}
+			cfg, err := n.readEncryptionConfig()
+			require.NoError(t, err)
+			primary, ok := cfg.PrimaryKey()
+			require.True(t, ok)
+			require.Equal(t, legacyAPIEncryptionKeyName, primary.Name)
+			if tc.wantReady {
+				require.Equal(t, ReadyStatus, n.NodeStatus.Status)
+				require.Equal(t, testKey1, primary.Secret)
+				return
+			}
+			require.Equal(t, ErrorStatus, n.NodeStatus.Status)
+			require.Equal(t, testKey2, primary.Secret)
+		})
+	}
+}

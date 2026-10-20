@@ -624,7 +624,7 @@ func (s *NodeAgentServer) processKubeadmJoin(args []string, req *pb.KubeadmJoinR
 
 	// If the node role is controlPlane check for encryption settings
 	if s.NodeStatus.Role == ControlPlaneRole && req.ApiEncryptionKey != "" {
-		err = s.createNamedAPIEncryptionConfig(req.ApiEncryptionKey, req.ApiEncryptionKeyName, false, nil)
+		err = s.createBootstrapAPIEncryptionConfig(req.ApiEncryptionKey, req.ApiEncryptionKeyName)
 		if err != nil {
 			slog.Error("failed to write config", "err", err)
 			ns.Status = ErrorStatus
@@ -870,7 +870,7 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 
 	// Before we run init, check to see if encryption is requested and set up the encryption-config file
 	if req.ApiEncryptionEnabled && req.ApiEncryptionKey != "" {
-		if err := s.createNamedAPIEncryptionConfig(req.ApiEncryptionKey, req.ApiEncryptionKeyName, false, nil); err != nil {
+		if err := s.createBootstrapAPIEncryptionConfig(req.ApiEncryptionKey, req.ApiEncryptionKeyName); err != nil {
 			ns.Status = ErrorStatus
 			ns.ErrorMessage = "Failed to initialize API encryption: " + err.Error()
 			return
