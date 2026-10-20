@@ -31,6 +31,7 @@ Three inspection tiers, cheapest first; every check declares its tier in
 ```text
 checks.yaml                  # the versioned check registry: what + why, never how
 cmd/nvke-image-validate/     # CLI entrypoint; exit 0 pass / 1 fail / 2 error
+cmd/nvke-verdict/            # reference verdict verifier (what a gate runs)
 pkg/bundle/                  # release evidence bundle: loader + offline sigstore
                              # verification + SBOM extraction
 pkg/checks/                  # registry loader + engine; implementations per tier
@@ -38,6 +39,8 @@ pkg/checks/                  # registry loader + engine; implementations per tie
 pkg/inspect/guestfs/         # libguestfs session (read-only, LUKS-aware)
 pkg/inspect/qemu/            # throwaway QEMU boot + SSH probe channel
 pkg/report/                  # report.json schema v1, human renderer, exit policy
+pkg/verify/                  # verdict DSSE sign/verify; self-contained so
+                             # consumers vendor only this package
 docs/decisions.md            # design decisions and their reasons
 hack/                        # fixture generator + containerized Linux test runners
 ```
@@ -79,6 +82,9 @@ daemon backed by a Linux kernel works:
 hack/test-guestfs-container.sh   # guestfs tier against a generated LUKS+LVM fixture
 hack/test-boot-container.sh      # boot tier against a cached Ubuntu cloud image
 ```
+
+`hack/cross-verify-cosign.sh` (any OS, needs cosign v3+) proves emitted
+verdicts verify with the sigstore ecosystem's own tooling.
 
 ## Verification — run before submitting a pull request
 

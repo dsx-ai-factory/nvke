@@ -93,6 +93,13 @@ pipelines in air-gapped sites have no OIDC issuer. `pkg/verify` is the
 consumer's half — self-contained, no dependency on the rest of this module —
 so the management plane can vendor the smallest possible surface.
 
+Emitted signatures carry **no keyid**: DSSE calls the field advisory, but real
+verifiers skip signatures whose keyid does not match their own derivation —
+measured with cosign v3.1.3, which reported "accepted signatures do not match
+threshold, Found: 0" against an envelope whose only flaw was a keyid. The
+cross-verify lane (`hack/cross-verify-cosign.sh`) pins this interoperability:
+cosign must accept our verdicts and reject them against different blob bytes.
+
 ## 2026-10 — Deferred, visibly
 
 FDE-004 (grub passphrase stripped after the TPM first-boot bind) needs a

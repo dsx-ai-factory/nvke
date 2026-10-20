@@ -17,6 +17,7 @@ REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
 
 GO ?= go
 BINARY := bin/nvke-image-validate
+VERDICT_BINARY := bin/nvke-verdict
 
 # Go tool install location (GOPATH/bin, unless GOBIN is set); matches the
 # sibling modules.
@@ -43,8 +44,9 @@ GO_TEST_FLAGS ?=
 
 ##@ Build
 
-build: ## Build nvke-image-validate into bin/.
+build: ## Build nvke-image-validate and nvke-verdict into bin/.
 	$(GO) build -ldflags "$(VALIDATE_LDFLAGS)" -o $(BINARY) ./cmd/nvke-image-validate
+	$(GO) build -ldflags "$(VALIDATE_LDFLAGS)" -o $(VERDICT_BINARY) ./cmd/nvke-verdict
 
 compile: ## Type-check every package, including the ones with no binary.
 	$(GO) build ./...

@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/validate/pkg/inspect/guestfs"
 	"github.com/dsx-ai-factory/nvke/validate/pkg/inspect/qemu"
 	"github.com/dsx-ai-factory/nvke/validate/pkg/report"
+	"github.com/dsx-ai-factory/nvke/validate/pkg/verify"
 )
 
 // version is set at build time via -X main.version=.
@@ -49,6 +51,8 @@ func run(args []string, stdout, stderr *os.File) int {
 	inspect := fs.String("inspect", "auto", "guestfs inspection tier: auto (on when guestfish is on PATH) | on | off")
 	bootTier := fs.String("boot", "off", "boot tier (boots a throwaway copy under QEMU, minutes): on | off")
 	luksKeyFile := fs.String("luks-passphrase-file", "", "File holding the LUKS passphrase for FDE images (never pass the passphrase itself on the command line)")
+	emitVerdict := fs.String("emit-verdict", "", "Write the run's result as a DSSE-signed in-toto attestation to this path (requires --sign-key); a failing run still emits its verdict")
+	signKey := fs.String("sign-key", "", "PEM private key (Ed25519 or ECDSA P-256) that signs the verdict")
 	format := fs.String("format", "text", "Output format: text | json")
 	if err := fs.Parse(args); err != nil {
 		return report.ExitError
@@ -69,6 +73,11 @@ func run(args []string, stdout, stderr *os.File) int {
 	}
 	if (*bundleDir == "") == (*checksums == "") {
 		fmt.Fprintln(stderr, "nvke-image-validate: exactly one of --bundle or --checksums is required")
+		fs.Usage()
+		return report.ExitError
+	}
+	if (*emitVerdict == "") != (*signKey == "") {
+		fmt.Fprintln(stderr, "nvke-image-validate: --emit-verdict and --sign-key are required together")
 		fs.Usage()
 		return report.ExitError
 	}
@@ -231,5 +240,66 @@ func run(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintf(stderr, "nvke-image-validate: unknown --format %q\n", *format)
 		return report.ExitError
 	}
+	if *emitVerdict != "" {
+		if err := writeVerdict(*emitVerdict, *signKey, rep); err != nil {
+			fmt.Fprintf(stderr, "nvke-image-validate: emitting verdict: %v\n", err)
+			return report.ExitError
+		}
+	}
 	return rep.ExitCode()
+}
+
+// writeVerdict signs the run's result as an in-toto attestation over the
+// image's digest. A failing or erroring run still emits its verdict: the
+// signed outcome is the evidence a consumer enforces on.
+func writeVerdict(path, keyPath string, rep report.Report) error {
+	keyPEM, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fmt.Errorf("reading signing key: %w", err)
+	}
+	signer, err := verify.LoadSigner(keyPEM)
+	if err != nil {
+		return err
+	}
+	outcome := verify.OutcomeError
+	switch rep.ExitCode() {
+	case report.ExitPass:
+		outcome = verify.OutcomePass
+	case report.ExitFail:
+		outcome = verify.OutcomeFail
+	}
+	results := make([]verify.CheckResult, 0, len(rep.Results))
+	for _, r := range rep.Results {
+		results = append(results, verify.CheckResult{ID: r.ID, Status: string(r.Status), Severity: string(r.Severity), Evidence: r.Evidence})
+	}
+	statement := verify.Statement{
+		Type:          verify.StatementType,
+		Subject:       []verify.Subject{{Name: rep.Subject.Name, Digest: map[string]string{"sha256": rep.Subject.SHA256}}},
+		PredicateType: verify.PredicateType,
+		Predicate: verify.Predicate{
+			Outcome:             outcome,
+			CheckSetVersion:     rep.CheckSetVersion,
+			ReportSchemaVersion: rep.SchemaVersion,
+			Validator:           verify.Tool{Name: "nvke-image-validate", Version: version},
+			Target:              verify.Target{Variant: string(rep.Target.Variant), Arch: rep.Target.Arch, Ubuntu: rep.Target.Ubuntu},
+			Summary: verify.Summary{
+				Pass: rep.Summary.Pass, Fail: rep.Summary.Fail, BlockingFail: rep.Summary.BlockingFail,
+				WarnFail: rep.Summary.WarnFail, Skip: rep.Summary.Skip, Error: rep.Summary.Error,
+			},
+			Results:    results,
+			FinishedAt: rep.GeneratedAt,
+		},
+	}
+	payload, err := json.Marshal(statement)
+	if err != nil {
+		return fmt.Errorf("encoding verdict statement: %w", err)
+	}
+	envelope, err := verify.Sign(payload, signer)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, envelope, 0o644); err != nil {
+		return fmt.Errorf("writing verdict: %w", err)
+	}
+	return nil
 }

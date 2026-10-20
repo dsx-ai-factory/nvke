@@ -43,6 +43,26 @@ evaluate (error always outranks fail). Warn-severity failures are reported and
 counted without failing the run. `--format json` emits the schema-v1 report
 for pipelines.
 
+`--emit-verdict verdict.json --sign-key key.pem` additionally signs the run's
+result as a DSSE in-toto attestation over the image's digest (predicate
+`https://nvke.nvidia.com/image-validation/v1`; Ed25519 or ECDSA P-256 key). A
+failing run still emits its verdict — the signed outcome is the evidence.
+Downstream gates re-check the verdict in milliseconds instead of ever
+re-reading the image:
+
+```console
+$ nvke-verdict --attestation verdict.json --key verdict.pub \
+    --image nvke-node-fde-ubuntu-26.04.1-amd64.qcow2 --max-age 720h
+verified: nvke-node-fde-ubuntu-26.04.1-amd64.qcow2 sha256:49647c…
+  outcome: pass
+  …
+```
+
+`nvke-verdict` exits 0 (authentic and passing), 1 (authentic, not passing) or
+2 (could not verify — never read as a pass). In-process consumers use
+`pkg/verify`, which is self-contained by design. The envelopes are standard:
+cosign verifies them (`hack/cross-verify-cosign.sh`).
+
 A check that cannot run never silently passes: an entry with no bound
 implementation is an error, and a tier that is off (or missing its inputs)
 reports a skip the report shows.

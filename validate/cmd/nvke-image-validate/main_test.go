@@ -4,17 +4,26 @@
 package main
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dsx-ai-factory/nvke/validate/pkg/checks/static"
 	"github.com/dsx-ai-factory/nvke/validate/pkg/report"
+	"github.com/dsx-ai-factory/nvke/validate/pkg/verify"
 )
 
 const artifact = "nke-node-fde-ubuntu-24.04.5-amd64.qcow2"
@@ -203,4 +212,58 @@ func TestRunTargetBOM(t *testing.T) {
 			assert.Regexp(t, `"id": "COMPAT-002",\s*"status": "`+tt.wantStatus+`"`, string(data))
 		})
 	}
+}
+
+// TestRunEmitsSignedVerdict exercises --emit-verdict end to end: the emitted
+// DSSE attestation verifies offline against the signer's public key and the
+// image's digest, and carries the run's outcome.
+func TestRunEmitsSignedVerdict(t *testing.T) {
+	dir := t.TempDir()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	require.NoError(t, err)
+	keyPath := filepath.Join(dir, "sign.key")
+	require.NoError(t, os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600))
+
+	for _, tt := range []struct {
+		name        string
+		tampered    bool
+		wantExit    int
+		wantOutcome string
+	}{
+		{name: "passing run emits a pass verdict", tampered: false, wantExit: report.ExitPass, wantOutcome: verify.OutcomePass},
+		{name: "failing run still emits its verdict", tampered: true, wantExit: report.ExitFail, wantOutcome: verify.OutcomeFail},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			verdictPath := filepath.Join(t.TempDir(), "verdict.json")
+			args := append(fixture(t, tt.tampered), "--emit-verdict", verdictPath, "--sign-key", keyPath)
+			sink := devNull(t)
+			assert.Equal(t, tt.wantExit, run(args, sink, sink))
+
+			envelope, err := os.ReadFile(verdictPath)
+			require.NoError(t, err)
+			var imagePath string
+			for i, a := range args {
+				if a == "--image" {
+					imagePath = args[i+1]
+				}
+			}
+			sum, err := static.HashFile(imagePath)
+			require.NoError(t, err)
+			st, err := verify.Verify(envelope, sum, verify.Policy{Keys: []crypto.PublicKey{&key.PublicKey}}, time.Now())
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantOutcome, st.Predicate.Outcome)
+			assert.NotEmpty(t, st.Predicate.CheckSetVersion)
+			assert.NotEmpty(t, st.Predicate.Results)
+		})
+	}
+}
+
+func TestRunVerdictFlagsAreRequiredTogether(t *testing.T) {
+	sink := devNull(t)
+	args := append(fixture(t, false), "--emit-verdict", filepath.Join(t.TempDir(), "v.json"))
+	assert.Equal(t, report.ExitError, run(args, sink, sink))
+	args = append(fixture(t, false), "--sign-key", filepath.Join(t.TempDir(), "missing.key"))
+	assert.Equal(t, report.ExitError, run(args, sink, sink))
 }
