@@ -74,7 +74,7 @@ The manual tool rejects mixed PEM bundles and private-key PEM blocks.
   | Observation | Meaning |
   | --- | --- |
   | `check/success/verified` | the CSR matches the managed node's identity |
-  | `check/no_op/identity_not_approved` | the CSR was rejected and not approved; this is how a rejected identity appears, not as `failure` |
+  | `check/no_op/identity_not_approved` | a CSR was rejected and not approved; this is how a rejected identity appears, not as `failure`. Recorded at most once per node per UTC hour |
   | `approve/success/completed` | the approval was written to the CSR |
   | `approve/failure/approval_update_failed` | writing the approval failed; the CSR is retried |
   | `verify/success/observed` | the signer issued a certificate, with its public fingerprints |
@@ -87,10 +87,20 @@ The manual tool rejects mixed PEM bundles and private-key PEM blocks.
   certificate, not that the kubelet installed it. Because a tenant
   cluster-admin can still create CSRs naming a managed node, CSR-derived writes
   are bounded per cluster and node: at most 12 events within any hour, counted
-  in the ledger itself so a controller restart does not reset the bound. Events
-  beyond it are dropped and counted as
-  `nvke_controller_credential_audit_writes_total{result="rate_limited"}`, which
-  is expected under CSR churn and is not a sink failure.
+  in the ledger itself so a controller restart does not reset the bound.
+  Rejections are recorded at most once per node per UTC hour: all rejected CSRs
+  for that node in that hour share one event, which uses one slot of the bound,
+  so repeated rejections cannot crowd out approvals. A valid CSR records up to
+  three events, so the bound admits about four valid CSRs per node per hour.
+  Events beyond it are dropped and counted as
+  `nvke_controller_credential_audit_writes_total{result="rate_limited"}`. A
+  non-zero `rate_limited` means CSR-derived evidence for some node and hour,
+  including approvals and issued certificates, may be missing from the ledger.
+  Investigate it. The metric carries no node label: find nodes with 12
+  `kubelet_serving` CSR events within one hour in the ledger (any `approve` or
+  `verify` event, and `check` events with `reason_code` `verified` or
+  `identity_not_approved`), then
+  reconcile that node's CSRs in the tenant cluster with the ledger.
 - Independent background certificate inspections record a control-plane leaf
   bundle check and a kubelet-serving check with available public fingerprints.
   These observations have no renewal workflow attribution. A successful
@@ -150,16 +160,17 @@ exactly-once delivery from this ledger.
 `nvke_controller_credential_audit_writes_total{result="stored"}` counts successful
 write attempts, including duplicate inserts. `result="sink_failed"` counts sink
 failure; `result="invalid_event"` identifies rejected construction;
-`result="rate_limited"` counts CSR-derived events dropped by the per-node bound. A useful site
-alert expression is:
+`result="rate_limited"` counts CSR-derived events dropped by the per-node bound. All
+three mean that ledger evidence is missing. A useful site alert expression is:
 
 ```promql
-sum(increase(nvke_controller_credential_audit_writes_total{result=~"sink_failed|invalid_event"}[10m])) > 0
+sum(increase(nvke_controller_credential_audit_writes_total{result=~"sink_failed|invalid_event|rate_limited"}[10m])) > 0
 ```
 
-When this fires, check controller database access, migration availability, and
-recent restarts. Reconcile workflow histories, cluster conditions and explicit
-operator evidence for the affected interval. Do not replay mutations merely to
+When it fires for `sink_failed` or `invalid_event`, check controller database
+access, migration availability, and recent restarts. For `rate_limited`, find
+the node that reached the CSR bound, as described above. Reconcile workflow
+histories, cluster conditions and explicit operator evidence for the affected interval. Do not replay mutations merely to
 manufacture missing events. Each result series exists at zero from process
 start, so failures after the first scrape of a process are visible to
 `increase()`. A burst between process start and the first scrape, or a

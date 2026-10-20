@@ -14,12 +14,13 @@ const (
 	WriteInvalid = "invalid_event"
 	WriteFailed  = "sink_failed"
 	// WriteRateLimited counts CSR-derived events dropped by the per-node bound.
-	// It is expected under CSR churn and is not a sink failure.
+	// Dropped events can include approvals, so it means evidence is missing.
 	WriteRateLimited = "rate_limited"
 
 	// CSRAuditLimit bounds CSR-derived events per managed node within
-	// CSRAuditWindow, however many CSRs a tenant creates. A valid CSR records
-	// check, approve and verify, so this admits four of them per hour.
+	// CSRAuditWindow, however many CSRs a tenant creates. Rejections of one node
+	// within one UTC hour share one event and use one slot. A valid CSR records
+	// check, approve and verify, so this admits about four of them per hour.
 	CSRAuditLimit  = 12
 	CSRAuditWindow = time.Hour
 )
