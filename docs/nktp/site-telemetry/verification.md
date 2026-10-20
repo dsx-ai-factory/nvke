@@ -6,7 +6,7 @@ installed through the `deploy/nico` deploy path, or after any change to its NVKE
 values. It assumes the development backend, `lgtm`. Against your own backend,
 run the same queries there.
 
-On an existing site, where the controller runs as `cloud-workflow-engine`,
+On an existing site, where the NVKE controller runs as `cloud-workflow-engine`,
 replace `nke-controller` with `cloud-workflow-engine` throughout this page.
 
 All commands run against the management cluster:

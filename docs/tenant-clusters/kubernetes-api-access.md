@@ -42,11 +42,19 @@ repository.
 
 An operator first configures `nvkectl` with a kubeconfig for the management
 cluster. That management-cluster identity must be allowed to read the tenant
-access Secret in `nvke-system`.
+access Secret in `nvke-system`. Set the three values the commands below use.
+`NVKE_CONTROLLER_URL` is the NVKE API's base address,
+`http://<MANAGEMENT_ADDRESS>:30080`, where `<MANAGEMENT_ADDRESS>` is the
+management cluster's API virtual IP address (VIP), or the node IP of a
+single-node management cluster.
 
 ```bash
+export SITE_NAME=<SITE_NAME>
+export NVKE_CONTROLLER_URL=http://<MANAGEMENT_ADDRESS>:30080
+export CLUSTER_NAME=<TENANT_CLUSTER_NAME>
+
 nvkectl config set-site --name "$SITE_NAME" \
-  --url "$NKE_CONTROLLER_URL" \
+  --url "$NVKE_CONTROLLER_URL" \
   --kubeconfig site-controller.kubeconfig
 
 nvkectl get kubeconfig "$CLUSTER_NAME" --output-file tenant.kubeconfig

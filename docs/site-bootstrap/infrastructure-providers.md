@@ -25,11 +25,11 @@ Install in this order:
 
 1. Cluster API core and the kubeadm providers
 2. The infrastructure providers: CAPNICo, [CAPLL](#launchlayer), or both
-3. The management plane (CWE)
+3. The management plane (the NVKE controller)
 
-**CWE must come last.** It reads the `Machine`, `NicoMachine` and `LaunchLayerMachine` CRDs once, at process start, and silently skips four controllers when they are absent — the machine SPIRE entry controller, the NICo TPM SPIFFE controller, the NICo provider-ID controller, and the LaunchLayer SPIFFE controller. They are warnings, not failures, and there is no retry. If CWE is already running, restart it after the provider lands. Find it by the
+**The NVKE controller must come last.** It reads the `Machine`, `NicoMachine` and `LaunchLayerMachine` CRDs once, at process start, and silently skips four controllers when they are absent — the machine SPIRE entry controller, the NICo TPM SPIFFE controller, the NICo provider-ID controller, and the LaunchLayer SPIFFE controller. They are warnings, not failures, and there is no retry. If the controller is already running, restart it after the provider lands. Find it by the
 chart's own label rather than a hardcoded name, since the deployment name
-depends on the Helm release name your CWE install used:
+depends on the Helm release name your controller install used:
 
 On an existing site, where the controller runs as `cloud-workflow-engine`, use `cloud-workflow-engine` for both the namespace and the label in the command below.
 
@@ -51,7 +51,7 @@ No node should list `node-role.kubernetes.io/control-plane`. If one does, becaus
 kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
 ```
 
-The site cluster also needs a default StorageClass before CWE's Postgres and SPIRE will schedule. That is part of installing the management plane, not this page.
+The site cluster also needs a default StorageClass before the controller's Postgres and SPIRE will schedule. That is part of installing the management plane, not this page.
 
 ## 2. Install Cluster API
 
@@ -127,7 +127,7 @@ Before you create anything, read CAPNICo's **[2. Check the Instance Types Have A
 
 ## 5. Verify
 
-Use `kubectl` here. `nvkectl get providers` cannot run yet: it needs a site registered with `nvkectl config set-site`, and that requires a CWE URL, which does not exist until you install the management plane in the next step.
+Use `kubectl` here. `nvkectl get providers` cannot run yet: it needs a site registered with `nvkectl config set-site`, and that requires the controller's URL, which does not exist until you install the management plane in the next step.
 
 ```bash
 # Cluster API core and the kubeadm providers
@@ -174,8 +174,8 @@ The management plane then has to accept LaunchLayer requests. Until it does, it 
 |---|---|
 | `supportedInfraProviders` | Append `launchLayer` to the existing value rather than replacing it. The deploy overlay ships `"nico,infra"`, which becomes `"nico,infra,launchLayer"` |
 | `capi.rbac.create` | `true`. It defaults to `false`, and the chart renders no CAPI or LaunchLayer RBAC without it |
-| `capi.rbac.launchLayer` | `true`, the default. Grants CWE access to LaunchLayer's CRDs when `capi.rbac.create` is `true`. Keep it `true` for as long as CAPLL's CRDs are installed, even after removing `launchLayer` from `supportedInfraProviders`: CWE runs the LaunchLayer SPIFFE controller whenever the `LaunchLayerMachine` CRD exists, so existing clusters' new machines still join, and without the grant its watch is refused and CWE exits |
-| `tenantAccess.enabled` | `true`, the default. CWE reaches a LaunchLayer cluster's API only through the kubeconfig Secret this publishes; with it off, LaunchLayer clusters stay `Provisioning` |
+| `capi.rbac.launchLayer` | `true`, the default. Grants the controller access to LaunchLayer's CRDs when `capi.rbac.create` is `true`. Keep it `true` for as long as CAPLL's CRDs are installed, even after removing `launchLayer` from `supportedInfraProviders`: the NVKE controller runs the LaunchLayer SPIFFE controller whenever the `LaunchLayerMachine` CRD exists, so existing clusters' new machines still join, and without the grant its watch is refused and the controller exits |
+| `tenantAccess.enabled` | `true`, the default. The controller reaches a LaunchLayer cluster's API only through the kubeconfig Secret this publishes; with it off, LaunchLayer clusters stay `Provisioning` |
 | `nodeAgent.spireAttestationMethod` | `dsxImds`, when `spiffe.enabled` is `true`. A LaunchLayer node attests to SPIRE only through DSX IMDS, so a SPIFFE-enabled deployment using any other method rejects LaunchLayer requests with 400 |
 | `nodeAgent.dsxImds.operatorTenant` | Required with `dsxImds`; the chart refuses to render without it. Must match DSX Identity's `global.operatorTenant` |
 | `nodeAgent.dsxImds.endpoint` | Required with `dsxImds`. The metadata endpoint the node attestor queries; the default, `http://169.254.169.254`, is the standard link-local address |
@@ -187,13 +187,13 @@ DSX IMDS identifies bare-metal instances only. With SPIFFE on and `nodeAgent.ext
 SPIRE needs the `dsx_imds` node attestor on both sides:
 
 - **Server.** Add the `dsx_imds` node attestor plugin to the SPIRE server, with `jwks_url` and `issuer` naming DSX Identity's signing keys and issuer, and `audience` set to `spiffe://<trust-domain>/spire/server`.
-- **Nodes.** The node image must install the agent plugin at `/usr/local/lib/spire-agent/dsx-imds-node-attestor-agent` and supply its checksum as `DSX_IMDS_PLUGIN_CHECKSUM` in `/etc/spire-agent/spire-agent.env`, or set `nodeAgent.dsxImds.pluginChecksum`. CWE writes the agent's attestor configuration itself.
+- **Nodes.** The node image must install the agent plugin at `/usr/local/lib/spire-agent/dsx-imds-node-attestor-agent` and supply its checksum as `DSX_IMDS_PLUGIN_CHECKSUM` in `/etc/spire-agent/spire-agent.env`, or set `nodeAgent.dsxImds.pluginChecksum`. The controller writes the agent's attestor configuration itself.
 
-The ordering rule above applies here too: CWE checks for the `LaunchLayerMachine` CRD once, at process start, and skips the LaunchLayer SPIFFE controller when it is absent. Install CAPLL before CWE, or restart CWE after it.
+The ordering rule above applies here too: the NVKE controller checks for the `LaunchLayerMachine` CRD once, at process start, and skips the LaunchLayer SPIFFE controller when it is absent. Install CAPLL before the controller, or restart the controller after it.
 
 ## What This Page Does Not Cover
 
-- **The management plane (CWE) install.** Separate step, and it must come after this one.
+- **The management plane (NVKE controller) install.** Separate step, and it must come after this one.
 - **`cluster-api-provider-provisioned`.** It ships in this repository but is not a tenant-cluster infrastructure provider and is not installed on a site cluster.
 - **Installing the GPU runtime on a tenant cluster.** Once a tenant cluster exists, drivers, operators and system configuration are installed with [NVIDIA AI Cluster Runtime](https://github.com/NVIDIA/aicr), a separate project.
 

@@ -45,7 +45,7 @@ After bootstrap completes:
 - The two images `nvkectl` side-loads: `make -C cli images` builds them on the init node. To use images from a registry instead, pass `--nvke-controller-image` and `--provisioned-provider-image`, or set `NVKECTL_NVKE_CONTROLLER_IMAGE` (e.g. `nvcr.io/<org>/nvke-controller:edge`) and `NVKECTL_CAPI_PROVISIONED_IMAGE` (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
 - On the **init node**, also on `PATH`: `helm`, `kubectl`, and `clusterctl`. `nvkectl`
   shells out to all three during bootstrap — Helm for the Postgres, Temporal, SPIRE
-  and CWE releases, `kubectl` for the manifests, and `clusterctl init` for the
+  and NVKE controller releases, `kubectl` for the manifests, and `clusterctl init` for the
   Cluster API providers. Only nerdctl is checked before the run starts; a
   missing `kind` fails in the pre-flight check for a leftover bootstrap cluster,
   before anything is created; a missing `helm`, `kubectl` or `clusterctl`
@@ -204,7 +204,7 @@ sudo systemctl status nvke-agent
 > **Warning:** Use `nvke-agent` **0.1.12 or later**. Older agents do not implement kubeadm preflight checks, so configuration problems only surface mid-bootstrap.
 
 > **Plaintext mode.** `--disable-mtls` on the agent turns SPIFFE off, so
-> `nvkectl bootstrap site` has to be run with `--disable-mtls` as well — CWE
+> `nvkectl bootstrap site` has to be run with `--disable-mtls` as well — the controller
 > otherwise dials the agents over mTLS and never connects. `nvkectl` labels this
 > mode development only. For the attested path — `spire-agent` on every node, a
 > TPM EK thumbprint per host in the CSV, and a SPIRE CA from
@@ -265,7 +265,7 @@ local build from `make -C cli images` needs no login.
 
 `nvkectl` creates a temporary Kind cluster on the init node, deploys Postgres,
 Temporal and the Cluster API providers onto it — and SPIRE, unless `--disable-mtls`
-is set — then CWE, waits for CWE to be healthy, and dispatches the kubeadm init and
+is set — then the controller, waits for it to be healthy, and dispatches the kubeadm init and
 join work to your nodes through Cluster API and `nvke-agent` gRPC. No SSH required.
 
 The ephemeral Kind cluster is torn down when bootstrap succeeds. It is **kept** if you
@@ -282,7 +282,7 @@ Useful flags:
 | `--keep-bootstrap-cluster` | off | Leave the ephemeral Kind cluster running for debugging. |
 | `--kubeconfig-out` | `<clusterName>.kubeconfig` | Where to write the finished cluster's breakglass admin kubeconfig. |
 | `--encryption-key-out` | `<clusterName>-etcd-encryption-key.json` | Where to write the cluster's etcd encryption key, as a Secret manifest. |
-| `--disable-mtls` | off | Stand the site up with no SPIRE, CWE dialling agents in plaintext. **Development only.** This guide uses it because the agents in Step 1 run with `--disable-mtls`; the two sides must agree. Drop it only when every node runs `spire-agent` and has a thumbprint in the CSV. |
+| `--disable-mtls` | off | Stand the site up with no SPIRE, the controller dialling agents in plaintext. **Development only.** This guide uses it because the agents in Step 1 run with `--disable-mtls`; the two sides must agree. Drop it only when every node runs `spire-agent` and has a thumbprint in the CSV. |
 
 When bootstrap finishes it writes two files into the working directory: `<clusterName>.kubeconfig`, a breakglass admin kubeconfig, and `<clusterName>-etcd-encryption-key.json`, the key that encrypts the cluster's etcd data. Both are secrets. The cluster does not depend on the key file: every control-plane node holds the key at `/etc/kubernetes/kube-api-encryption/encryption-config.yaml`, and that is what kube-apiserver reads. The file is for two things the nodes cannot do. It is what a controller installed later is given, so nobody has to pull the key off a node by hand, and it is the copy that restores etcd onto new hosts when no control-plane node survives. **Move it off this host** — this host is one of the nodes it protects — and keep it with the cluster's other credentials. Use `--kubeconfig-out` and `--encryption-key-out` to write the files elsewhere.
 
@@ -318,7 +318,7 @@ All nodes should show `Ready` status.
 
 - **Join nodes don't need `nvkectl`** — only the init node runs it
 - **`nvke-agent` must be running on all nodes** — verify `systemctl status nvke-agent` before starting bootstrap
-- **Network connectivity** — CWE must reach each node on **15005** (nvke-agent gRPC) and **6443** (API server); nodes with a TPM EK thumbprint must reach the init node on **30081** (SPIRE) for attestation
+- **Network connectivity** — the controller must reach each node on **15005** (nvke-agent gRPC) and **6443** (API server); nodes with a TPM EK thumbprint must reach the init node on **30081** (SPIRE) for attestation
 - **Hostnames and IPs** — use actual hostnames and IPs that nodes use to communicate with each other
 - **User permissions** — commands must run with `sudo` or as root
 

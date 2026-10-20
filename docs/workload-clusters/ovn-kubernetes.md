@@ -29,7 +29,7 @@ Each OVN-Kubernetes stream produces two Debian packages:
 
 NVKE uses the artifacts as follows:
 
-- **Helm chart:** The NVKE-managed deployment requires the chart Debian package on the initial control-plane node. During cluster initialization, the controller asks the node agent to deploy the local chart with the cluster's API endpoint, pod CIDR and service CIDR. NVKE does not deploy the chart from a remote Helm or OCI registry.
+- **Helm chart:** The NVKE-managed deployment requires the chart Debian package on the initial control-plane node. During cluster initialization, the NVKE controller asks the node agent to deploy the local chart with the cluster's API endpoint, pod CIDR and service CIDR. NVKE does not deploy the chart from a remote Helm or OCI registry.
 - **Container image:** Install the image Debian package to preload the image into containerd on each node, or configure the nodes to pull the image from a remote OCI registry.
 
 The supported stream is `2.4.2`. The package build reads the source commit and tree hash from `os-image/packages/cni-ovn/lock/<ARCH>/2.4.2.lock`. It verifies those pins, exports the chart and builds the image before producing either package.

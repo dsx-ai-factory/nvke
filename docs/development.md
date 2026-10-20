@@ -56,7 +56,7 @@ Each module answers the same four verbs, so `make -C <module> {build,test,lint,f
 works for `agent`, `cli`, `controller`, `controller/nico-sim`,
 and `os-image`.
 
-For the controller specifically, `make -C controller generate` regenerates the
+For the NVKE controller (`controller/`) specifically, `make -C controller generate` regenerates the
 OpenAPI client, server and models from `api/openapi.yaml`. **It is the one most
 easily forgotten.** The generated files are committed, so changing the spec
 without regenerating leaves them stale and CI will catch it.

@@ -31,7 +31,7 @@ You don't run `kubeadm` directly. NVKE runs it for you. But understanding what i
 
 ## Helm
 
-Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NVKE's own services (the controller, Temporal, Postgres, SPIRE, NVKE telemetry pipeline (NKTP)) are installed as Helm charts, from the NVKR release or their public repositories.
+Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NVKE's own services (the NVKE controller, Temporal, Postgres, SPIRE, NVKE telemetry pipeline (NKTP)) are installed as Helm charts, from the NVKR release or their public repositories.
 
 After `nvkectl` bootstraps the cluster, `deploy/nvke-deploy.sh` installs them from the `deploy/nico` deploy path, one step of a short list of commands: each item is a chart with its values, or plain manifests. See [Run NVKE end to end on one machine](get-started/local-site.md).
 
@@ -53,7 +53,7 @@ NVKE does not require ArgoCD. The deploy path is Helm charts with values and pla
 
 Temporal is a durable workflow orchestration platform. It executes long-running, fault-tolerant workflows — like "provision a three-node cluster" or "upgrade 200 worker nodes one at a time" — and automatically retries failed steps without losing progress.
 
-NVKE's Cloud Workflow Engine (CWE) is a Temporal worker. When you provision a tenant cluster through NVKE, CWE submits a workflow to Temporal that drives the full lifecycle. If a step fails mid-way, Temporal resumes from that point rather than starting over.
+The NVKE controller is a Temporal worker. When you provision a tenant cluster through NVKE, the controller submits a workflow to Temporal that drives the full lifecycle. If a step fails mid-way, Temporal resumes from that point rather than starting over.
 
 Operators can port-forward Temporal's web UI to inspect running workflows or diagnose failures.
 
