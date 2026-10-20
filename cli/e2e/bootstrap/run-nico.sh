@@ -482,7 +482,7 @@ STACK_CONFIG_FILE="${SIM_STATE_DIR}/stack-config.json"
 cat >"${STACK_CONFIG_FILE}" <<EOF
 {
   "nico": {"endpoint": "http://${GATEWAY}:${SIM_PORT}", "orgID": "${NICO_ORG_ID}", "apiName": "forge"},
-  "images": {"controller": "registry.example.com/nke/controller:e2e", "profiles": "registry.example.com/nke/profiles:e2e"},
+  "images": {"controller": "registry.example.com/nvke/controller:e2e", "profiles": "registry.example.com/nvke/profiles:e2e"},
   "mirror": ""
 }
 EOF

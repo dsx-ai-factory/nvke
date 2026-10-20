@@ -214,9 +214,9 @@ site spec file format.`,
 			"with its pinned digest, as \"render deploy-path --release\" does for the management cluster's CAPNICo. "+
 			"The release description is not verified: run \"nvkr release verify\" on the same reference first. "+
 			"Only with infra.provider nico.")
-	cmd.Flags().StringVar(&opts.arch, "arch", "linux/"+runtime.GOARCH,
-		"Architecture of the release artifact to use: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. "+
-			"Only with --release.")
+	cmd.Flags().StringVar(&opts.arch, "arch", "",
+		"Architecture of the release artifact to use, linux/amd64 or linux/arm64; default: the bootstrap host's, "+
+			"since the bootstrap CAPNICo runs in its Kind cluster. Only with --release.")
 	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
 		envOrDefault("NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "cluster-diagnostics"),
 		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
@@ -1206,6 +1206,11 @@ func capnicoAccess(inv *sitespec.SiteSpec) (controllerdeploy.CAPNICoAccess, erro
 func capnicoReleaseImage(inv *sitespec.SiteSpec, releasePath, arch string) (string, error) {
 	if releasePath == "" {
 		return "", nil
+	}
+	// The flag's default is empty, not the host's architecture, so the generated
+	// command reference does not change with the machine that generates it.
+	if arch == "" {
+		arch = "linux/" + runtime.GOARCH
 	}
 	if !inv.IsNico() {
 		return "", errors.New("--release only applies with infra.provider nico: it replaces the bootstrap CAPNICo image, and no other provider installs one")
