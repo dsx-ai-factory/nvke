@@ -2,7 +2,8 @@
 
 Use this guide to choose the supported renewal or rotation procedure, then follow
 its complete runbook. **T1** is the site-management Kubernetes cluster hosting
-CWE, Temporal and PostgreSQL. **T2** is a CWE-managed tenant Kubernetes cluster.
+the NVKE controller, Temporal and PostgreSQL. **T2** is a controller-managed tenant
+Kubernetes cluster.
 Sharing a kubeadm layout does not make their maintenance interchangeable: a T1
 restart can interrupt the services that orchestrate T2 maintenance.
 
@@ -16,13 +17,13 @@ verify the actual node layout before selecting a procedure.
 
 | Credential | Plane and owner | Supported action and evidence |
 | --- | --- | --- |
-| API server, API-to-kubelet, front-proxy client and API-to-etcd leaf certificates | T1 operator; T2 CWE workflow and node agent | T1 manual or T2 scheduled/forced kubeadm leaf renewal. Compare expiry and public fingerprints; restart and verify consumers. |
-| Stacked-etcd server, peer and healthcheck-client leaf certificates | T1 operator; T2 CWE workflow and node agent | Renew in the same kubeadm leaf bundle. Verify actual etcd membership and every endpoint before proceeding. |
-| `admin.conf`, `controller-manager.conf`, `scheduler.conf`; `super-admin.conf` where present | T1 operator; T2 CWE workflow and node agent | Renew embedded client certificates with the bundle. `super-admin.conf` is optional on joined control planes. Exported admin copies require a separate secure refresh. |
+| API server, API-to-kubelet, front-proxy client and API-to-etcd leaf certificates | T1 operator; T2 controller workflow and node agent | T1 manual or T2 scheduled/forced kubeadm leaf renewal. Compare expiry and public fingerprints; restart and verify consumers. |
+| Stacked-etcd server, peer and healthcheck-client leaf certificates | T1 operator; T2 controller workflow and node agent | Renew in the same kubeadm leaf bundle. Verify actual etcd membership and every endpoint before proceeding. |
+| `admin.conf`, `controller-manager.conf`, `scheduler.conf`; `super-admin.conf` where present | T1 operator; T2 controller workflow and node agent | Renew embedded client certificates with the bundle. `super-admin.conf` is optional on joined control planes. Exported admin copies require a separate secure refresh. |
 | Kubernetes, front-proxy and etcd CA certificates and private keys | T1/T2 bootstrap and site PKI owner | Existing self-signed CAs remain in place during leaf renewal. Public CA expiry is observed on managed nodes; CA rotation is deferred. |
-| Kubelet serving certificate | T2 kubelet, CWE tenant CSR approver, Kubernetes signer | Kubelet requests renewal; CWE validates managed node identity before approval; Kubernetes signs; kubelet must install the result. Check each stage separately. |
+| Kubelet serving certificate | T2 kubelet, controller tenant CSR approver, Kubernetes signer | Kubelet requests renewal; the controller validates managed node identity before approval; Kubernetes signs; kubelet must install the result. Check each stage separately. |
 | Kubelet client certificate | Kubeadm/kubelet and Kubernetes client signer | Fixed-path public expiry inspection on joined T2 nodes. The leaf-bundle workflow does not renew it; investigate kubelet client/bootstrap configuration separately. |
-| Etcd API-object data-encryption key | T2 operator-initiated CWE workflow and node agents | Existing secretbox key rotation: distribute, promote, rewrite old objects, remove old keys, finalize. Prove preexisting-object rewrite and all-node convergence. |
+| Etcd API-object data-encryption key | T2 operator-initiated controller workflow and node agents | Existing secretbox key rotation: distribute, promote, rewrite old objects, remove old keys, finalize. Prove preexisting-object rewrite and all-node convergence. |
 | T1 etcd data-encryption key | Site backup/recovery owner | Preserve the matching key with protected recovery backups. NVKE provides no T1 key-rotation workflow. |
 | SPIFFE SVIDs, SPIRE CA material and agent transport identity | Site identity deployment | Owned by SPIRE/transport setup; not renewed by kubeadm certificate maintenance. See [agent security](https://github.com/dsx-ai-factory/nvke/blob/main/agent/docs/SECURITY.md) and [transport configuration](https://github.com/dsx-ai-factory/nvke/blob/main/controller/docs/configuring-node-agent-tls-jwt.md). |
 | Service-account signing keys, bootstrap tokens, disk-encryption keys, OIDC issuer keys, application TLS and external PKI | Their component/site owners | Outside these rotation procedures. Their presence does not imply an alpha rotation API. |
