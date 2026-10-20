@@ -167,7 +167,7 @@ validated endpoint probe.
 
 On the node, `sudo journalctl -u kubelet --since '30 minutes ago'` supplies local
 diagnostics. On the management cluster, use
-[controller and Temporal diagnostics](../operations/observability.md). Logs and
+[controller and Temporal diagnostics](https://github.com/dsx-ai-factory/nvke/blob/main/docs/operations/observability.md). Logs and
 CSR names may contain sensitive operational context; keep raw diagnostics
 private and export only reviewed fixed reason/outcome evidence. Do not delete
 terminal CSR objects solely to hide a failed/denied inventory alert; follow the

@@ -24,7 +24,7 @@ verify the actual node layout before selecting a procedure.
 | Kubelet client certificate | Kubeadm/kubelet and Kubernetes client signer | Fixed-path public expiry inspection on joined T2 nodes. The leaf-bundle workflow does not renew it; investigate kubelet client/bootstrap configuration separately. |
 | Etcd API-object data-encryption key | T2 operator-initiated CWE workflow and node agents | Existing secretbox key rotation: distribute, promote, rewrite old objects, remove old keys, finalize. Prove preexisting-object rewrite and all-node convergence. |
 | T1 etcd data-encryption key | Site backup/recovery owner | Preserve the matching key with protected recovery backups. NVKE provides no T1 key-rotation workflow. |
-| SPIFFE SVIDs, SPIRE CA material and agent transport identity | Site identity deployment | Owned by SPIRE/transport setup; not renewed by kubeadm certificate maintenance. See [agent security](../../agent/docs/SECURITY.md) and [transport configuration](../../controller/docs/configuring-node-agent-tls-jwt.md). |
+| SPIFFE SVIDs, SPIRE CA material and agent transport identity | Site identity deployment | Owned by SPIRE/transport setup; not renewed by kubeadm certificate maintenance. See [agent security](https://github.com/dsx-ai-factory/nvke/blob/main/agent/docs/SECURITY.md) and [transport configuration](https://github.com/dsx-ai-factory/nvke/blob/main/controller/docs/configuring-node-agent-tls-jwt.md). |
 | Service-account signing keys, bootstrap tokens, disk-encryption keys, OIDC issuer keys, application TLS and external PKI | Their component/site owners | Outside these rotation procedures. Their presence does not imply an alpha rotation API. |
 
 For the exact public inspection catalog and unavailable/optional behavior, see
@@ -199,4 +199,4 @@ trusted verifier described in the rotation guide; never export key bytes.
 Verify every run against the selected site before declaring release acceptance.
 These guides and offline checks provide executable procedures, not a claim that
 an environment has passed them. Preserve live results and known gaps with the
-[release qualification record](../qualification/overview.md).
+[release qualification record](https://github.com/dsx-ai-factory/nvke/blob/main/docs/qualification/overview.md).
