@@ -128,7 +128,11 @@ to observe the actual controller scheduler. Start it only when the cluster's
 `nextCertRenewalDue`, plus the renewal itself and the next certificate
 inspection (default one hour), fits inside `timeout_seconds`, which is at most
 eight hours while `certRenewal.interval` defaults to twelve. Read
-`nextCertRenewalDue` from `GET /api/clusters/{clusterID}` first. It waits for a new non-forced,
+`nextCertRenewalDue` from `GET /api/clusters/{clusterID}` first. Also start it
+early enough that the baseline checks, including the fresh-metrics wait, finish
+before `nextCertRenewalDue`: a cycle the scheduler accepts before the lane
+starts its traffic fails the lane with `cycle_started_before_traffic`, and that
+cycle has already renewed the due node. It waits for a new non-forced,
 scheduler-named cycle; it does not synthesize a schedule by starting Temporal
 directly. Prepare a healthy, naturally approaching-expiry candidate within the
 configured selection threshold. The candidate must be older than one renewal
@@ -315,7 +319,9 @@ hack/rotation-demo/demo.sh aggregate --output /operator/private/release.json \
 The index records evidence digests and missing/failed scenarios. It exits
 nonzero with `incomplete` if any required scenario is absent, failed, synthetic,
 or collected from a dirty checkout. All T2 reports must identify the same source,
-cluster UID/UUID and profile. A passed index covers these specified scenarios;
+cluster UID/UUID and profile, and the same observed deployed versions (passed
+reports); a redeploy between lanes fails with `release_deployed_versions_mismatch`.
+A passed index covers these specified scenarios;
 it does not claim CA rotation, failure/reset recovery, unsupported topologies,
 audit delivery completeness, or an unrelated notification receiver. Retain
 separate reviewed evidence for those acceptance criteria. Audit ledger writes
