@@ -129,20 +129,14 @@ func main() {
 		ConfigPath: cfg.AuthConfigPath,
 		Permissive: cfg.PermissiveMode,
 		Recorder:   metrics.RecordAuthRequest,
+		Config:     controllerCfg.APIAuth.AuthConfig(),
 	}, logger)
 	if err != nil {
 		logger.Error("Failed to set up API authentication", "error", err)
 		os.Exit(1)
 	}
 
-	switch {
-	case cfg.AuthConfigPath == "":
-		metrics.SetAuthMode("off")
-	case cfg.PermissiveMode:
-		metrics.SetAuthMode("permissive")
-	default:
-		metrics.SetAuthMode("enforcing")
-	}
+	metrics.SetAuthMode(authMode(authenticator, cfg.PermissiveMode))
 
 	// Get cloud-workflow-engine workload trust domain and bundle
 	trustDomain, err := getSpiffeTrustDomain(ctx, cfg, logger)
@@ -689,6 +683,19 @@ func main() {
 	if err := g.Wait(); err != nil {
 		logger.Error("Service error occurred", "error", err)
 		os.Exit(1)
+	}
+}
+
+// authMode is the nvke_auth_enabled mode label. Setup builds no
+// authenticator exactly when authentication is off.
+func authMode(authenticator *authn.Authenticator, permissive bool) string {
+	switch {
+	case authenticator == nil:
+		return "off"
+	case permissive:
+		return "permissive"
+	default:
+		return "enforcing"
 	}
 }
 

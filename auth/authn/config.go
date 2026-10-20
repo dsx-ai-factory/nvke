@@ -54,7 +54,8 @@ func allowedAlgorithms() []string {
 	return algs
 }
 
-// Config is the file at AUTH_CONFIG_PATH, loaded once at startup.
+// Config is the issuer registry, read once at startup from the file at
+// AUTH_CONFIG_PATH or from apiAuth in nvke-controller-config.
 type Config struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -151,8 +152,9 @@ func (i Issuer) EffectiveAudiences(deploymentAudiences []string) []string {
 
 // Load reads and validates the configuration at path. An unreadable file is an
 // error, never "authentication is disabled", or a typo'd mountPath would produce
-// a controller that starts cleanly and authenticates nobody. Only an unset
-// AUTH_CONFIG_PATH disables authentication.
+// a controller that starts cleanly and authenticates nobody. Authentication is
+// disabled only when AUTH_CONFIG_PATH is unset and apiAuth is not enabled in
+// nvke-controller-config.
 func Load(path string) (*Config, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, ErrEmptyPath
@@ -194,20 +196,31 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("invalid authentication config %q: %w", path, err)
 	}
 
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.ValidateStartup(); err != nil {
 		return nil, fmt.Errorf("invalid authentication config %q: %w", path, err)
 	}
-	for index, issuer := range cfg.Issuers {
+	return &cfg, nil
+}
+
+// ValidateStartup runs every check a configuration must pass before the
+// controller serves with it: Validate, and an admit block on every issuer,
+// which Validate alone does not require. Load calls it after the checks that
+// belong to the file; nvke-controller-config's apiAuth section, which has no
+// file of its own, calls it directly.
+func (c *Config) ValidateStartup() error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	for index, issuer := range c.Issuers {
 		if issuer.Admit == nil {
-			return nil, fmt.Errorf(
-				"invalid authentication config %q: issuers[%d] (%s): admit is required; an issuer with no admission rules would authenticate callers and then reject all of them",
-				path,
+			return fmt.Errorf(
+				"issuers[%d] (%s): admit is required; an issuer with no admission rules would authenticate callers and then reject all of them",
 				index,
 				strings.TrimSpace(issuer.Name),
 			)
 		}
 	}
-	return &cfg, nil
+	return nil
 }
 
 // requireSingleDocument refuses a file that is empty or holds more than one YAML

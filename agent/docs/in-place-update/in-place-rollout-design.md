@@ -195,7 +195,7 @@ Temporal workflow.
 ### Node-agent update method
 
 A site-scoped NVKE controller setting, `nodeAgent.updateMethod` in
-`nke-controller-config` (the chart value of the same name), selects `apt` or
+`nvke-controller-config` (the chart value of the same name), selects `apt` or
 `bundle`. It is required when a cluster sets a desired agent version and may
 be empty otherwise. The reconciler validates it and snapshots the resolved value into each workflow and node operation. Changing this setting does
 not reinstall an agent or alter an in-flight workflow; it applies to the next

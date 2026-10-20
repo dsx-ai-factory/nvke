@@ -2,6 +2,8 @@
 
 > **Status:** the fleet-wide providers are implemented, in [#1325](https://github.com/dsx-ai-factory/nvke/pull/1325), [#1355](https://github.com/dsx-ai-factory/nvke/pull/1355), [#1425](https://github.com/dsx-ai-factory/nvke/pull/1425), [#1426](https://github.com/dsx-ai-factory/nvke/pull/1426), [#1527](https://github.com/dsx-ai-factory/nvke/pull/1527) and [#1628](https://github.com/dsx-ai-factory/nvke/pull/1628) (`discoveryURL` on fleet-wide providers). This document was written before that implementation, so "today" means the NVKE controller as it was then. The per-cluster provider API in **Future scope: per-cluster provider API** is not implemented yet.
 >
+> **Names.** This document uses the names from when it was written. The chart now names the settings ConfigMap `nvke-controller-config` and the authentication ConfigMap `nvke-auth-config` by default, both in the controller's own namespace; an install that predates the move to nvke names pins `nke-controller-config` and `nke-auth-config`.
+>
 > **Release scope.** A later release needs both fleet-wide and per-cluster control over OIDC providers. This document covers both: the fleet-wide provider ConfigMap proposed below ships first, for the initial OSS release; the per-cluster provider API described in **Future scope: per-cluster provider API** ships in a later release, adding per-cluster control on top of the fleet-wide mechanism rather than replacing it.
 
 ## Problem

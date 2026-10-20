@@ -105,7 +105,7 @@ incomplete picture of what reacts to a change.
 
 ### Configuration
 
-The controller reads its settings once, at startup, from `nke-controller-config`,
+The controller reads its settings once, at startup, from `nvke-controller-config`,
 a ConfigMap that the Helm chart renders from its values and mounts at the path
 `CONTROLLER_CONFIG_PATH` names. `internal/controllerconfig` loads and validates
 it, and an invalid file stops the controller from starting rather than falling

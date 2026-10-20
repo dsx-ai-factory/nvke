@@ -15,13 +15,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dsx-ai-factory/nvke/auth/authn"
+
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
 
-// baseConfig is every required key except nodeAgent, for tests that supply
-// their own nodeAgent block.
-const baseConfig = `
+// baseConfigWithoutAPIAuth is every required key except nodeAgent and apiAuth,
+// for tests that supply their own of either.
+const baseConfigWithoutAPIAuth = `
 agentReadiness:
   workers: 8
   timeout: 30s
@@ -33,11 +35,23 @@ spire:
   joinTokenTTL: 1h
 `
 
-// minimalConfig satisfies every Validate constraint with the smallest possible
-// document: everything optional left out, everything required present.
-const minimalConfig = baseConfig + `nodeAgent:
+// offAPIAuth is the apiAuth section that switches authentication off. Load
+// requires the section, so every document that must load carries one.
+const offAPIAuth = "apiAuth:\n  enabled: false\n  audiences: []\n  issuers: []\n"
+
+// baseConfig is every required key except nodeAgent, for tests that supply
+// their own nodeAgent block.
+const baseConfig = baseConfigWithoutAPIAuth + offAPIAuth
+
+// minimalConfigWithoutAPIAuth is minimalConfig less its apiAuth section, for
+// tests that supply their own.
+const minimalConfigWithoutAPIAuth = baseConfigWithoutAPIAuth + `nodeAgent:
   spireAttestationMethod: tpm
 `
+
+// minimalConfig satisfies every Validate constraint with the smallest possible
+// document: everything optional left out, everything required present.
+const minimalConfig = minimalConfigWithoutAPIAuth + offAPIAuth
 
 // A 64-character hex digest, the shape nodeAgent.dsxImds.pluginChecksum takes.
 const exampleChecksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -158,6 +172,10 @@ teleport:
   tokenNamePrefix: nke-cwe-
   resourceGroupLabelValue: nke
 permissiveMode: false
+apiAuth:
+  enabled: false
+  audiences: []
+  issuers: []
 `
 
 	cfg, err := controllerconfig.Load(writeConfig(t, full))
@@ -438,6 +456,10 @@ supportedInfraProviders: [nico]
 spire:
   spiffeEnabled: %t
   joinTokenTTL: 1h
+apiAuth:
+  enabled: false
+  audiences: []
+  issuers: []
 nodeAgent:
   spireAttestationMethod: %s
 `, spiffeEnabled, method)
@@ -1188,6 +1210,153 @@ func TestControlPlaneVIPOverrideConfiguration(t *testing.T) {
 			var runtime config.Config
 			file.ApplyTo(&runtime)
 			require.Equal(t, strings.Contains(value, "true"), runtime.AllowControlPlaneWithoutVIP)
+		})
+	}
+}
+
+// exampleAPIAuth is an enabled apiAuth section that passes auth/authn's rules.
+func exampleAPIAuth() controllerconfig.APIAuthConfig {
+	return controllerconfig.APIAuthConfig{
+		Enabled:   true,
+		Audiences: []string{"https://nke.example.internal"},
+		Issuers: []authn.Issuer{{
+			Name:       "local-kubernetes",
+			Issuer:     "https://kubernetes.default.svc.cluster.local",
+			JWKS:       &authn.JWKSKeys{URI: "https://kubernetes.default.svc/openid/v1/jwks"},
+			Algorithms: []string{"RS256"},
+			Admit: &authn.Admit{
+				ServiceAccounts: []authn.ServiceAccountRule{{Namespace: "nke-clients"}},
+			},
+		}},
+	}
+}
+
+// apiAuthIssuer is one valid issuer, indented to sit under apiAuth.issuers.
+const apiAuthIssuer = `
+    - name: local-kubernetes
+      issuer: "https://kubernetes.default.svc.cluster.local"
+      jwks:
+        uri: "https://kubernetes.default.svc/openid/v1/jwks"
+      algorithms: [RS256]
+      admit:
+        serviceAccounts:
+          - namespace: nke-clients
+`
+
+// apiAuth reuses auth/authn's issuer schema and rules, and adds an explicit
+// switch: a section filled in but switched off is an error, never a silent off.
+func TestValidateAPIAuth(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		apiAuth string
+		wantOn  bool
+		wantErr string
+	}{
+		{name: "absent is refused", wantErr: "apiAuth is required"},
+		{name: "apiAuth: null is refused", apiAuth: "apiAuth: null\n", wantErr: "apiAuth is required"},
+		{name: "off and empty is off", apiAuth: offAPIAuth},
+		{
+			name:    "on with a valid issuer",
+			apiAuth: "apiAuth:\n  enabled: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers:" + apiAuthIssuer,
+			wantOn:  true,
+		},
+		{
+			name:    "issuers while off are refused rather than ignored",
+			apiAuth: "apiAuth:\n  enabled: false\n  audiences: []\n  issuers:" + apiAuthIssuer,
+			wantErr: "apiAuth: audiences or issuers are set but enabled is false",
+		},
+		{
+			name:    "audiences while off are refused too",
+			apiAuth: "apiAuth:\n  enabled: false\n  audiences: [\"https://nke.example.internal\"]\n  issuers: []\n",
+			wantErr: "apiAuth: audiences or issuers are set but enabled is false",
+		},
+		{
+			name:    "on with no issuers is refused",
+			apiAuth: "apiAuth:\n  enabled: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers: []\n",
+			wantErr: "apiAuth: issuers is required",
+		},
+		{
+			name: "an issuer without admit is refused, as authn.Load refuses it",
+			apiAuth: "apiAuth:\n  enabled: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers:\n" +
+				"    - name: local-kubernetes\n" +
+				"      issuer: \"https://kubernetes.default.svc.cluster.local\"\n" +
+				"      jwks: {uri: \"https://kubernetes.default.svc/openid/v1/jwks\"}\n" +
+				"      algorithms: [RS256]\n",
+			wantErr: "apiAuth: issuers[0] (local-kubernetes): admit is required",
+		},
+		{
+			name:    "apiVersion belongs to the standalone file, not this section",
+			apiAuth: "apiAuth:\n  apiVersion: auth.nvke.nvidia.com/v1alpha1\n  enabled: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers:" + apiAuthIssuer,
+			wantErr: `unknown field "apiAuth.apiVersion"`,
+		},
+		{
+			name: "a misspelled issuer key is refused, not dropped",
+			apiAuth: "apiAuth:\n  enabled: true\n  audiences: [\"https://nke.example.internal\"]\n  issuers:\n" +
+				"    - name: local-kubernetes\n" +
+				"      issuer: \"https://kubernetes.default.svc.cluster.local\"\n" +
+				"      jwks: {urii: \"https://kubernetes.default.svc/openid/v1/jwks\"}\n" +
+				"      algorithms: [RS256]\n" +
+				"      admit: {serviceAccounts: [{namespace: nke-clients}]}\n",
+			wantErr: "urii",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := controllerconfig.Load(writeConfig(t, minimalConfigWithoutAPIAuth+tt.apiAuth))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			if !tt.wantOn {
+				assert.Nil(t, cfg.APIAuth.AuthConfig(), "an off section yields no authn.Config")
+				return
+			}
+			authCfg := cfg.APIAuth.AuthConfig()
+			require.NotNil(t, authCfg)
+			assert.Equal(t, []string{"https://nke.example.internal"}, authCfg.Audiences)
+			require.Len(t, authCfg.Issuers, 1)
+			assert.Equal(t, "local-kubernetes", authCfg.Issuers[0].Name)
+		})
+	}
+}
+
+// The two sources could disagree about who is admitted, so neither wins.
+func TestCheckAuthSource(t *testing.T) {
+	t.Parallel()
+
+	const path = "/etc/nke/auth/auth.yaml"
+	tests := []struct {
+		name    string
+		apiAuth controllerconfig.APIAuthConfig
+		path    string
+		wantErr string
+	}{
+		{name: "neither is off"},
+		{name: "apiAuth alone", apiAuth: exampleAPIAuth()},
+		{name: "AUTH_CONFIG_PATH alone", path: path},
+		{
+			name:    "both are refused, naming the path",
+			apiAuth: exampleAPIAuth(),
+			path:    path,
+			wantErr: `configured twice: apiAuth.enabled is true in nvke-controller-config and AUTH_CONFIG_PATH is "/etc/nke/auth/auth.yaml"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			file := controllerconfig.Config{APIAuth: tt.apiAuth}
+			err := file.CheckAuthSource(tt.path)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
 		})
 	}
 }

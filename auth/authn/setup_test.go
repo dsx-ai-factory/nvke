@@ -9,6 +9,7 @@ package authn_test
 // binary.
 
 import (
+	"bytes"
 	"log/slog"
 	"path/filepath"
 	"testing"
@@ -84,4 +85,73 @@ func TestSetupEnforcingRefusesWithoutReachableKeys(t *testing.T) {
 
 	require.Error(t, err, "enforcing must not start without every issuer's keys")
 	assert.Nil(t, authenticator)
+}
+
+// apiAuth in nvke-controller-config arrives as a Config rather than a path. From
+// there it takes the same road, so permissive builds without reachable keys.
+func TestSetupFromControllerConfig(t *testing.T) {
+	t.Parallel()
+
+	authenticator, err := authn.Setup(t.Context(), authn.Options{Permissive: true, Config: exampleStructConfig()}, discardLogger())
+
+	require.NoError(t, err)
+	assert.NotNil(t, authenticator)
+}
+
+// A Config that Load would refuse is refused here too, never served.
+func TestSetupInvalidControllerConfigIsAnError(t *testing.T) {
+	t.Parallel()
+
+	cfg := exampleStructConfig()
+	cfg.Issuers[0].Admit = nil
+
+	authenticator, err := authn.Setup(t.Context(), authn.Options{Permissive: true, Config: cfg}, discardLogger())
+
+	require.ErrorContains(t, err, "admit is required")
+	assert.Nil(t, authenticator)
+}
+
+// Two sources could disagree about who is admitted, so neither wins.
+func TestSetupRefusesBothSources(t *testing.T) {
+	t.Parallel()
+
+	path := writeConfig(t, exampleConfig)
+
+	authenticator, err := authn.Setup(t.Context(), authn.Options{ConfigPath: path, Permissive: true, Config: exampleStructConfig()}, discardLogger())
+
+	require.ErrorContains(t, err, "configured twice")
+	assert.Nil(t, authenticator)
+}
+
+// The startup line names where the configuration was read from, which is how an
+// operator tells the chart-rendered section from an external ConfigMap.
+func TestSetupLogsItsSource(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		fromFile bool // the file at ConfigPath rather than a Config
+		want     string
+	}{
+		{name: "apiAuth in nvke-controller-config", want: `"source":"nvke-controller-config"`},
+		{name: "the file at AUTH_CONFIG_PATH", fromFile: true, want: `"source":"AUTH_CONFIG_PATH"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := authn.Options{Permissive: true, Config: exampleStructConfig()}
+			if tt.fromFile {
+				opts = authn.Options{Permissive: true, ConfigPath: writeConfig(t, exampleConfig)}
+			}
+
+			var buf bytes.Buffer
+			authenticator, err := authn.Setup(t.Context(), opts, slog.New(slog.NewJSONHandler(&buf, nil)))
+
+			require.NoError(t, err)
+			require.NotNil(t, authenticator)
+			assert.Contains(t, buf.String(), `"msg":"API authentication is enabled"`)
+			assert.Contains(t, buf.String(), tt.want)
+		})
+	}
 }

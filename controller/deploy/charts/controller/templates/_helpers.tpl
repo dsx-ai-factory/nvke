@@ -210,6 +210,7 @@ every other rule belongs to auth/authn/config.go, whose errors name the field
 at fault.
 */}}
 {{- define "controller.apiAuth.validate" -}}
+{{- $root := . -}}
 {{- $auth := .Values.apiAuth -}}
 {{- $create := and $auth.enabled $auth.configMap.create -}}
 {{- if and $auth.config (not $create) -}}
@@ -222,8 +223,16 @@ at fault.
 {{- fail "apiAuth.configMap.create is true but apiAuth.config is empty, which would mount an AuthenticationConfiguration carrying no issuers. Populate apiAuth.config, or set create to false and manage the ConfigMap yourself." -}}
 {{- end -}}
 {{- if $create -}}
+{{- range $root.Values.env -}}
+{{- if eq (toString .name) "AUTH_CONFIG_PATH" -}}
+{{- fail (printf "env sets AUTH_CONFIG_PATH while apiAuth.configMap.create is true. The controller reads the chart-rendered configuration from apiAuth in %s, and both together refuse to start. Drop the env entry, or set create to false to mount a ConfigMap you manage." (include "controller.controllerConfig.name" $root)) -}}
+{{- end -}}
+{{- end -}}
 {{- if or (hasKey $auth.config "apiVersion") (hasKey $auth.config "kind") -}}
 {{- fail "apiAuth.config must not carry apiVersion or kind. The chart supplies both, so a copy here renders them twice, and auth.Load refuses duplicate keys -- the controller would crash-loop rather than start. Keep audiences and issuers only. If you are pasting the file from the README, drop its first two lines." -}}
+{{- end -}}
+{{- if hasKey $auth.config "enabled" -}}
+{{- fail (printf "apiAuth.config must not carry enabled. apiAuth.enabled is the switch, and apiAuth.config is rendered whole into the apiAuth section of %s beside it, so a copy here is a duplicate key the controller refuses at startup. Keep audiences and issuers only." (include "controller.controllerConfig.name" $root)) -}}
 {{- end -}}
 {{- if not $auth.config.audiences -}}
 {{- fail "apiAuth.config.audiences is required and must not be empty. The audience is per-install and has no default; a token minted for one install must fail at another." -}}

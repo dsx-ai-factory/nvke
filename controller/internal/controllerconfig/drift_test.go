@@ -4,7 +4,7 @@
 package controllerconfig_test
 
 // config.Config takes each field either from an environment variable (an env
-// tag) or from nke-controller-config (a controllerconfig tag naming its key).
+// tag) or from nvke-controller-config (a controllerconfig tag naming its key).
 // These tests check that split against the list of retired variables, the Go
 // types, ApplyTo, and the chart.
 
@@ -26,8 +26,8 @@ import (
 )
 
 // migratedEnvFile maps each environment variable whose setting moved into
-// nke-controller-config to its config.yaml key. The chart's env guard reads the
-// same file, so this is the only copy of the list.
+// nvke-controller-config to its config.yaml key. The chart's env guard reads
+// the same file, so this is the only copy of the list.
 const migratedEnvFile = "../../deploy/charts/controller/files/controller-config-env.yaml"
 
 // loadMigrated reads migratedEnvFile.
@@ -112,6 +112,11 @@ var configMapOnly = []string{
 	// The dual-accept window for the Teleport "managed-by" value. It exists
 	// because managedByLabelValue moved, which is newer than the environment.
 	"teleport.acceptedManagedByLabelValues",
+	// API authentication was a file of its own, never environment variables.
+	// AUTH_CONFIG_PATH, which names that file, stays on the environment.
+	"apiAuth.enabled",
+	"apiAuth.audiences",
+	"apiAuth.issuers",
 }
 
 // chartDeployment is the template whose env block decides what the chart sets.
@@ -135,7 +140,7 @@ func TestEveryConfigEnvVarStaysOnTheEnvironment(t *testing.T) {
 
 	for _, name := range parsed {
 		if key, retired := migrated[name]; retired {
-			t.Errorf("config.Config parses %s, which nke-controller-config replaced as %s; read it from the file", name, key)
+			t.Errorf("config.Config parses %s, which nvke-controller-config replaced as %s; read it from the file", name, key)
 			continue
 		}
 		if _, ok := stayEnv[name]; !ok {
@@ -252,18 +257,18 @@ func TestChartSetsNoRetiredVariable(t *testing.T) {
 
 	for name, key := range migrated {
 		if chartSets[name] {
-			t.Errorf("%s sets %s, which the controller no longer reads; render %s in nke-controller-config instead", chartDeployment, name, key)
+			t.Errorf("%s sets %s, which the controller no longer reads; render %s in nvke-controller-config instead", chartDeployment, name, key)
 		}
 	}
 	for name, reason := range stayEnv {
 		if reason == chartUnset && chartSets[name] {
-			t.Errorf("stayEnv says the chart never sets %s, but %s does; move it into nke-controller-config", name, chartDeployment)
+			t.Errorf("stayEnv says the chart never sets %s, but %s does; move it into nvke-controller-config", name, chartDeployment)
 		}
 	}
 }
 
 // configLeaf is one field of config.Config that a value comes from: either an
-// environment variable or a key in nke-controller-config.
+// environment variable or a key in nvke-controller-config.
 type configLeaf struct {
 	name    string
 	index   []int

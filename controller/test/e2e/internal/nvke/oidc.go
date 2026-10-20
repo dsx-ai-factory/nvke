@@ -40,7 +40,7 @@ const (
 
 // ControllerSetting returns the value at key, a dotted config.yaml path such as
 // oidc.managementOIDCAuth.enabled, in data, the data of the controller's
-// nke-controller-config ConfigMap.
+// nvke-controller-config ConfigMap.
 func ControllerSetting(data map[string]string, key string) (any, error) {
 	settings, err := parseControllerConfig(data)
 	if err != nil {
@@ -50,8 +50,24 @@ func ControllerSetting(data map[string]string, key string) (any, error) {
 	return value, err
 }
 
+// APIAuthEnabled reports apiAuth.enabled in data, the data of the controller's
+// nvke-controller-config ConfigMap. A controller older than the apiAuth section
+// has no such key, which is false: it can only authenticate through
+// AUTH_CONFIG_PATH.
+func APIAuthEnabled(data map[string]string) (bool, error) {
+	settings, err := parseControllerConfig(data)
+	if err != nil {
+		return false, err
+	}
+	section, ok := settings["apiAuth"].(map[string]any)
+	if !ok {
+		return false, nil
+	}
+	return section["enabled"] == true, nil
+}
+
 // OIDCEnabled reports whether the controller has tenant OIDC JWT auth turned on
-// (oidc.managementOIDCAuth.enabled in nke-controller-config). The OIDC
+// (oidc.managementOIDCAuth.enabled in nvke-controller-config). The OIDC
 // validations only apply when it does, so the suite uses this to skip them on
 // deployments where OIDC is off.
 func OIDCEnabled(ctx context.Context, c client.Client) (bool, error) {
@@ -66,11 +82,11 @@ func OIDCEnabled(ctx context.Context, c client.Client) (bool, error) {
 	return value == true, nil
 }
 
-// SetOIDCEnabled sets oidc.managementOIDCAuth.enabled in nke-controller-config,
-// restarts the controller and waits for the rollout. The issuer, discovery and
-// CA settings the enable workflow needs are left in place, so toggling this
-// flag alone moves the controller between "new clusters are created OIDC-off"
-// and "OIDC is active" without a redeploy.
+// SetOIDCEnabled sets oidc.managementOIDCAuth.enabled in
+// nvke-controller-config, restarts the controller and waits for the rollout.
+// The issuer, discovery and CA settings the enable workflow needs are left in
+// place, so toggling this flag alone moves the controller between "new
+// clusters are created OIDC-off" and "OIDC is active" without a redeploy.
 //
 // The brownfield OIDC spec uses this to construct its precondition: a cluster on
 // an OIDC-enabled site is always born OIDC-on, so the spec creates its cluster with
@@ -80,7 +96,7 @@ func SetOIDCEnabled(ctx context.Context, c client.Client, enabled bool) error {
 	return err
 }
 
-// SetPermissiveMode sets permissiveMode in nke-controller-config, restarts the
+// SetPermissiveMode sets permissiveMode in nvke-controller-config, restarts the
 // controller and waits for the rollout, returning the value it replaced so a
 // caller can put it back. The second result reports whether the ConfigMap was
 // written. It stays true when the restart after the write fails, and the caller
@@ -91,7 +107,7 @@ func SetPermissiveMode(ctx context.Context, c client.Client, permissive bool) (b
 	return previous == true, written, err
 }
 
-// setControllerSetting sets one key of nke-controller-config and restarts the
+// setControllerSetting sets one key of nvke-controller-config and restarts the
 // controller, which reads the file only at startup. It returns the value it
 // replaced and whether it wrote the ConfigMap, including when the restart that
 // follows the write fails.
@@ -125,7 +141,7 @@ func setControllerSetting(ctx context.Context, c client.Client, key string, valu
 }
 
 // restartController rolls the controller's pods so they read the current
-// nke-controller-config, and waits for the rollout.
+// nvke-controller-config, and waits for the rollout.
 //
 // Where Reloader runs, the ConfigMap edit makes it update the Deployment too, so
 // that update can land between the read and the write here; a conflict is

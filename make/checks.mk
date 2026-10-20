@@ -164,9 +164,9 @@ chart-identity-check: ## Assert the chart still renders the deployed identities 
 	 }
 	@python3 ./controller/hack/chart-identity-assertions.py --chart "$(CHART)"
 
-# helm lint and kubeconform cannot tell whether nke-controller-config agrees
+# helm lint and kubeconform cannot tell whether nvke-controller-config agrees
 # with the controller's environment variables; this checks each key against them.
-chart-controller-config-check: ## Assert nke-controller-config loads and matches the controller's environment.
+chart-controller-config-check: ## Assert nvke-controller-config loads and matches the controller's environment.
 	@$(call require_tool,helm,$(HELM_VERSION))
 	@$(call require_command,go)
 	@$(call require_command,yq)

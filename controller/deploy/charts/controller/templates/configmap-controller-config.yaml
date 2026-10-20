@@ -130,3 +130,19 @@ data:
       tokenNamePrefix: {{ $teleport.tokenNamePrefix | default "nvke-controller-" | quote }}
       resourceGroupLabelValue: {{ $teleport.resourceGroupLabelValue | default "nvke" | quote }}
     permissiveMode: {{ if .Values.apiAuth.enabled }}{{ .Values.apiAuth.permissive }}{{ else }}false{{ end }}
+    {{- /*
+    Where the controller reads API authentication when the chart renders the
+    configuration. A ConfigMap managed elsewhere stays on AUTH_CONFIG_PATH, so
+    the section is off then. apiAuth.config goes in whole rather than key by key,
+    so a stray key reaches the controller's strict loader instead of vanishing
+    here.
+    */}}
+    apiAuth:
+      {{- if and .Values.apiAuth.enabled .Values.apiAuth.configMap.create }}
+      enabled: true
+      {{- toYaml .Values.apiAuth.config | nindent 6 }}
+      {{- else }}
+      enabled: false
+      audiences: []
+      issuers: []
+      {{- end }}

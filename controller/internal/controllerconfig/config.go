@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package controllerconfig is the file mounted from the nke-controller-config
+// Package controllerconfig is the file mounted from the nvke-controller-config
 // ConfigMap, read once at controller startup in place of the environment
 // variables config.Config parses today.
 package controllerconfig
@@ -10,11 +10,13 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
@@ -24,9 +26,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	kjson "sigs.k8s.io/json"
 	"sigs.k8s.io/yaml"
+
+	"github.com/dsx-ai-factory/nvke/auth/authn"
 )
 
-// Config is the top-level shape of nke-controller-config's config.yaml key. It
+// Config is the top-level shape of nvke-controller-config's config.yaml key. It
 // mirrors every field of internal/config.Config the chart sets, except the ones
 // that keep the environment-variable path: secretKeyRef-backed credentials,
 // POD_NAMESPACE and SPIRE_SERVER_ADDRESS (both can come from the downward API),
@@ -59,6 +63,7 @@ type Config struct {
 	MachineMetadataAllowlistedLabelKeys      []string             `json:"machineMetadataAllowlistedLabelKeys"`
 	MachineMetadataAllowlistedAnnotationKeys []string             `json:"machineMetadataAllowlistedAnnotationKeys"`
 	AllowControlPlaneWithoutVIP              bool                 `json:"allowControlPlaneWithoutVIP"`
+	APIAuth                                  APIAuthConfig        `json:"apiAuth"`
 }
 
 // FieldManagerConfig groups the Server-Side-Apply field manager names, mirroring
@@ -233,6 +238,38 @@ type TeleportConfig struct {
 	ResourceGroupLabelValue string `json:"resourceGroupLabelValue"`
 }
 
+// APIAuthConfig is the NVKE REST API's authentication configuration: the same
+// audiences and issuers auth/authn reads from the file at AUTH_CONFIG_PATH,
+// plus the switch that turns it on. It has no apiVersion or kind, which
+// describe a file; this section is part of one.
+type APIAuthConfig struct {
+	Enabled   bool           `json:"enabled"`
+	Audiences []string       `json:"audiences"`
+	Issuers   []authn.Issuer `json:"issuers"`
+}
+
+// AuthConfig returns the section as the configuration authn.Setup takes, or nil
+// when it is switched off.
+func (a APIAuthConfig) AuthConfig() *authn.Config {
+	if !a.Enabled {
+		return nil
+	}
+	return &authn.Config{Audiences: slices.Clone(a.Audiences), Issuers: slices.Clone(a.Issuers)}
+}
+
+// validate applies auth/authn's rules when the section is on. Off, it must
+// be empty: a filled-in section left switched off would read as "configured"
+// to anyone looking at the file and authenticate nobody.
+func (a APIAuthConfig) validate() error {
+	if !a.Enabled {
+		if len(a.Audiences) > 0 || len(a.Issuers) > 0 {
+			return errors.New("audiences or issuers are set but enabled is false; set enabled to true to authenticate API requests, or empty both")
+		}
+		return nil
+	}
+	return a.AuthConfig().ValidateStartup()
+}
+
 // Load reads and validates the configuration at path. A missing file is not
 // reached in practice: Kubernetes will not start the controller's container
 // until the ConfigMap a volume mount references exists. A malformed or
@@ -273,7 +310,30 @@ func Load(path string) (*Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid controller config %q: %w", path, err)
 	}
+
+	// Required of the file rather than of a Config value, like authn.Load's
+	// header check. An absent apiAuth decodes as the zero value, which is
+	// switched off, so a ConfigMap that predates the section would start the
+	// controller without authentication. Turning it off must be said outright.
+	if err := requireAPIAuth(jsonBytes); err != nil {
+		return nil, fmt.Errorf("invalid controller config %q: %w", path, err)
+	}
 	return &cfg, nil
+}
+
+// requireAPIAuth refuses a document whose top level has no apiAuth key or has
+// apiAuth: null, which decode exactly as "enabled: false" does. jsonBytes is the
+// document Load has already decoded strictly, so it is a JSON object here.
+func requireAPIAuth(jsonBytes []byte) error {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(jsonBytes, &top); err != nil {
+		return fmt.Errorf("apiAuth: %w", err)
+	}
+	if raw, ok := top["apiAuth"]; !ok || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return errors.New("apiAuth is required; set apiAuth.enabled to false to run without API authentication. " +
+			"A config.yaml without it comes from a chart older than this controller: deploy the chart and image together")
+	}
+	return nil
 }
 
 // requireSingleDocument refuses a file that is empty or holds more than one
@@ -309,6 +369,10 @@ func (c *Config) Validate() error {
 
 	if err := c.OIDC.validate(); err != nil {
 		return fmt.Errorf("oidc: %w", err)
+	}
+
+	if err := c.APIAuth.validate(); err != nil {
+		return fmt.Errorf("apiAuth: %w", err)
 	}
 
 	if c.ManagementNamespace != "" {

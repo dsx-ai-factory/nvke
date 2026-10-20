@@ -485,7 +485,7 @@ docker-manifest: check-img-repo ## Stitch <t>-amd64 + <t>-arm64 into <t> under I
 ##@ Run
 
 .PHONY: run
-# Host-local runs read nke-controller-config from this file unless
+# Host-local runs read nvke-controller-config from this file unless
 # CONTROLLER_CONFIG_PATH names another.
 LOCAL_CONTROLLER_CONFIG ?= $(CURDIR)/hack/local-controller-config.yaml
 

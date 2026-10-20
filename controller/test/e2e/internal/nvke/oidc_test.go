@@ -184,3 +184,31 @@ func TestNodeAgentMethodReportsWriteWhenRestartFails(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, false, mode)
 }
+
+func TestAPIAuthEnabled(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		data    map[string]string
+		want    bool
+		wantErr string
+	}{
+		{name: "enabled", data: map[string]string{controllerConfigKey: "apiAuth:\n  enabled: true\n"}, want: true},
+		{name: "disabled", data: map[string]string{controllerConfigKey: "apiAuth:\n  enabled: false\n"}},
+		{name: "a controller older than apiAuth has no section, which is off", data: map[string]string{controllerConfigKey: "permissiveMode: true\n"}},
+		{name: "no config.yaml", data: map[string]string{}, wantErr: "has no config.yaml"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := APIAuthEnabled(tt.data)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

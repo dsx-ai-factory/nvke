@@ -37,8 +37,9 @@ var (
 	)
 
 	// authEnabled is a config-state gauge, not a traffic counter: it is set once
-	// at startup from cfg.AuthConfigPath/PermissiveMode, so a site with zero
-	// callers still reports its real mode. nvke_auth_requests_total cannot answer
+	// at startup from whether authentication is on (AUTH_CONFIG_PATH or
+	// apiAuth.enabled) and permissiveMode, so a site with zero callers still
+	// reports its real mode. nvke_auth_requests_total cannot answer
 	// "is this on" on its own -- its series only exist once a request has been
 	// evaluated, so a quiet site is indistinguishable from a disabled one.
 	authEnabled = prometheus.NewGaugeVec(

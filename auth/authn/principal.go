@@ -5,7 +5,8 @@
 // verification, and per-issuer admission. Three states, chosen outside this
 // package:
 //
-//	Disabled   AUTH_CONFIG_PATH unset; the middleware is not in the chain.
+//	Disabled   AUTH_CONFIG_PATH unset and apiAuth.enabled false; the middleware
+//	           is not in the chain.
 //	Permissive evaluate, log and count, never reject.
 //	Enforcing  401 on authentication, 403 on admission.
 package authn

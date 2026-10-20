@@ -26,7 +26,7 @@ absent() {
 }
 
 # setting <description> <config.yaml key> <value> <rendered>
-# Asserts one key of the rendered nke-controller-config, where the controller
+# Asserts one key of the rendered nvke-controller-config, where the controller
 # reads its settings. A list compares as its items joined with commas.
 setting() {
   local got

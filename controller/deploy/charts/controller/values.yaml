@@ -513,10 +513,11 @@ apiAuth:
   # Watch nvke_auth_requests_total{outcome="would_reject"} before enforcing.
   permissive: false
   configMap:
-    # -- Render `apiAuth.config` into the ConfigMap named below, rather than
-    # mounting one managed elsewhere. The two are alternatives: setting `config`
-    # without this, or this without `config`, fails the render rather than
-    # silently ignoring one of them.
+    # -- Render `apiAuth.config` into both `nvke-controller-config`, which is
+    # what the controller reads, and the ConfigMap named below, a copy for
+    # `nvkectl` and `extraFiles`, rather than mounting one managed elsewhere.
+    # The two are alternatives: setting `config` without this, or this without
+    # `config`, fails the render rather than silently ignoring one of them.
     create: false
     # -- ConfigMap holding the authentication configuration, keyed `auth.yaml`.
     # Required when apiAuth.enabled=true; an empty name fails the render.
@@ -539,15 +540,19 @@ apiAuth:
     #     ...
     #     -----END CERTIFICATE-----
     extraFiles: {}
-  # -- The AuthenticationConfiguration itself, rendered verbatim into that
-  # ConfigMap. Carries `audiences` and `issuers` only: apiVersion and kind are
-  # supplied by the chart, which ships in lockstep with the build that accepts
-  # them.
+  # -- The AuthenticationConfiguration itself. With `configMap.create` the chart
+  # renders it into the `apiAuth` section of `nvke-controller-config`, which is
+  # what the controller reads, and verbatim into the ConfigMap named by
+  # `configMap.name`, a copy for `nvkectl` and `extraFiles`. Carries `audiences`
+  # and `issuers` only: apiVersion and kind are supplied by the chart, which
+  # ships in lockstep with the build that accepts them, and `enabled` is
+  # `apiAuth.enabled`.
   #
-  # Not validated here beyond both keys being present. auth/authn/config.go
-  # is a strict loader whose errors name the offending field, and a second copy
-  # of its rules in Helm would drift the first time an issuer gains a new key.
-  # The cost is that a bad value fails at pod start rather than at render.
+  # The render checks that both keys are present and refuses `apiVersion`,
+  # `kind` and `enabled` here, and nothing more. The controller applies
+  # auth/authn's rules at startup and its errors name the offending field; a
+  # second copy of them in Helm would drift the first time an issuer gains a new
+  # key. The cost is that a bad value fails at pod start rather than at render.
   #
   # config:
   #   audiences: ["https://nke.example.internal"]

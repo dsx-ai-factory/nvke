@@ -202,7 +202,7 @@ kubectl -n "$NS" logs deploy/nke-controller | grep 'API authentication'
 
 ```json
 {"msg":"fetched issuer signing keys","issuer":"local-kubernetes","keys":1}
-{"msg":"API authentication is enabled","mode":"permissive","issuers":["local-kubernetes"]}
+{"msg":"API authentication is enabled","mode":"permissive","source":"nvke-controller-config","issuers":["local-kubernetes"]}
 ```
 
 You want one `fetched issuer signing keys` line per issuer. If one is missing,
@@ -395,7 +395,7 @@ a warning.
 | `issuers[].algorithms` | yes | `RS256` and `ES256` cover most issuers. Asymmetric only. |
 | `issuers[].admit` | yes | One of `serviceAccounts`, `spiffe`, or `groups`. |
 
-The file is read once at startup, so restart NVKE after you change it:
+The configuration is read once at startup, so restart NVKE after you change it:
 
 ```bash
 kubectl -n "$NS" rollout restart deploy/nke-controller
@@ -411,7 +411,7 @@ something NVKE trims.
 | `apiAuth.enabled` | `false` | |
 | `apiAuth.permissive` | `false` | |
 | `apiAuth.configMap.name` | `nvke-auth-config` | Mounted either way. |
-| `apiAuth.configMap.create` | `false` | Build the ConfigMap from `apiAuth.config`. |
+| `apiAuth.configMap.create` | `false` | Build the ConfigMap from `apiAuth.config`, and give NVKE the same document as `apiAuth` in `nvke-controller-config`. |
 | `apiAuth.configMap.extraFiles` | empty | Files to place beside `auth.yaml`, keyed by filename. A CA bundle goes here. |
 | `apiAuth.config` | empty | The document, `audiences` and `issuers` only. |
 | `apiAuth.clusterIssuerDiscovery` | `true` | Lets NVKE read the cluster's own keys. Already granted on a stock cluster; leave it on unless you bind that permission yourself. |
@@ -457,6 +457,15 @@ Check the audience first: it's the usual cause. A token minted for the wrong
 audience is rejected identically to no token at all. Compare its `aud` claim
 against the audiences NVKE logs at startup.
 
+**NVKE does not start, and the log never says "API authentication is".**
+An invalid inline configuration fails before that log line, on stderr, as
+`Error loading configuration: invalid controller config "<path>": apiAuth: ...`.
+Read the container's previous log:
+
+```bash
+kubectl -n "$NS" logs deploy/nke-controller --previous
+```
+
 **A caller gets 403.**
 Its token is fine and its subject is not on the allow-list. The log names the
 subject; compare it to your `admit` rules. Re-minting the token will not help.
@@ -467,15 +476,23 @@ of your issuers, a value with stray whitespace, `serviceAccounts` and `spiffe`
 on the same issuer, or a keys URL that is not `https`.
 
 **Config changes have no effect.**
-It is read once at startup. Restart the deployment.
+It is read once at startup. Restart the deployment. If the chart renders the
+configuration (`apiAuth.configMap.create: true`), also check which copy you
+changed. The controller reads `apiAuth` in `nvke-controller-config`;
+`nvke-auth-config` is a copy for `nvkectl` and the files beside it. Editing
+`nvke-auth-config` alone restarts the pods where Reloader runs, but changes
+nothing NVKE enforces. Change the chart values, or edit
+`nvke-controller-config`.
 
 **You cannot tell whether authentication is on.**
-Read it off the deployment rather than probing the API:
+NVKE says so at startup, and names where it read the configuration:
 
 ```bash
-kubectl -n "$NS" get deploy nke-controller \
-  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="AUTH_CONFIG_PATH")].value}{"\n"}'
+kubectl -n "$NS" logs deploy/nke-controller | grep 'API authentication is'
 ```
+
+`"source":"nvke-controller-config"` means the chart rendered it;
+`"source":"AUTH_CONFIG_PATH"` means a ConfigMap managed elsewhere.
 
 ## See also
 

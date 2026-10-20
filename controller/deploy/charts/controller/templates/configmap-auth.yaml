@@ -2,13 +2,17 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# The AuthenticationConfiguration NVKE reads at AUTH_CONFIG_PATH.
+# The AuthenticationConfiguration, in the file format NVKE reads at
+# AUTH_CONFIG_PATH. The controller reads the same values from apiAuth in its
+# settings ConfigMap (controllerConfig.name); this copy stays for nvkectl, which
+# discovers the audience here, and to carry extraFiles into the mounted directory.
 #
 # apiAuth.config is rendered verbatim; only apiVersion and kind are supplied
-# here. The chart validates nothing beyond the presence of the two top-level
-# keys: auth/authn/config.go is a strict loader whose errors name the field
-# at fault, and restating its rules in Helm would leave two schemas to keep in
-# step. An issuer that gains a new key needs no change to this file.
+# here. The chart checks that the two top-level keys are present and that
+# apiAuth.config carries no apiVersion, kind or enabled; it applies none of
+# auth/authn/config.go's other rules, which are strict and whose errors name
+# the field at fault, and restating them in Helm would leave two schemas to keep
+# in step. An issuer that gains a new key needs no change to this file.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -18,8 +22,9 @@ metadata:
     {{- include "controller.labels" . | nindent 4 }}
 data:
   # The key is fixed by the chart, which mounts this ConfigMap at
-  # apiAuth.mountPath and points AUTH_CONFIG_PATH at this file within it.
+  # apiAuth.mountPath so extraFiles and nvkectl find it beside the configuration.
   {{ include "controller.apiAuth.configFile" . }}: |
+    # NVKE reads this configuration from apiAuth in ConfigMap {{ include "controller.controllerConfig.name" . }}. This copy is for nvkectl and the files beside it; editing it changes nothing NVKE enforces.
     apiVersion: auth.nke.nvidia.com/v1alpha1
     kind: AuthenticationConfiguration
     {{- toYaml .Values.apiAuth.config | nindent 4 }}

@@ -114,7 +114,7 @@ Keys under `nke.nvidia.com`, `nke.io`, `nvke.nvidia.com`, `kubernetes.io`, `k8s.
 keys using `machineMetadata.allowlistedLabelKeys` and
 `machineMetadata.allowlistedAnnotationKeys` in the controller Helm values
 (`machineMetadataAllowlistedLabelKeys` and
-`machineMetadataAllowlistedAnnotationKeys` in `nke-controller-config`). Both
+`machineMetadataAllowlistedAnnotationKeys` in `nvke-controller-config`). Both
 lists default to empty. Label exceptions do not permit annotation keys, or vice
 versa. Add the configuration-profile selection annotation to the annotation
 allowlist if it uses a reserved domain. These settings do not change `nodeLabels`

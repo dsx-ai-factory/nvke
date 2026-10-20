@@ -4,7 +4,7 @@ NVKE can update the node agent without replacing a bare-metal node. This feature
 covers control planes managed by the control-plane controller. Workers and
 pool-managed control planes are outside its scope.
 
-Set `nodeAgent.updateMethod` to `apt` or `bundle` in `nke-controller-config`.
+Set `nodeAgent.updateMethod` to `apt` or `bundle` in `nvke-controller-config`.
 In Helm, set `nodeAgent.updateMethod`. The installation method comes from the controller
 configuration, not the cluster request.
 

@@ -68,12 +68,25 @@ kubectl -n nke-controller get deploy nke-controller \
   -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="AUTH_CONFIG_PATH")].value}{"\n"}'
 ```
 
-Empty means off. NVKE also says so at startup:
+Tilt sets `AUTH_CONFIG_PATH`. A deployment whose chart renders the configuration
+sets none and has `apiAuth.enabled: true` in its settings ConfigMap instead,
+`nvke-controller-config` by default (`nke-controller-config` on an install that
+pins the old name). Read that switch with:
+
+```bash
+kubectl -n nke-controller get configmap nvke-controller-config \
+  -o jsonpath='{.data.config\.yaml}' | yq '.apiAuth.enabled'
+```
+
+Authentication is off when this prints `false` and the `AUTH_CONFIG_PATH`
+command prints nothing.
+
+NVKE also says which at startup:
 
 ```json
 {"level":"INFO","msg":"API authentication is enabled","mode":"enforcing",
- "config_path":"/etc/nke/auth/auth.yaml","audiences":["https://nke.tilt.local"],
- "issuers":["local-kubernetes"]}
+ "source":"AUTH_CONFIG_PATH","config_path":"/etc/nke/auth/auth.yaml",
+ "audiences":["https://nke.tilt.local"],"issuers":["local-kubernetes"]}
 ```
 
 ## Step 1: find the audience
@@ -193,7 +206,7 @@ NVKE does no authorization beyond that. Every admitted caller can do everything.
 | `401` and your token looks fine | Almost always the audience. | Re-read it with `hack/nvke-token.sh --audience` and mint again. A wrong audience and no token at all are the same 401. |
 | `401` after it worked a minute ago | The token expired. | Mint another. They're short-lived by design. |
 | `403` | The token is valid; the subject isn't admitted. | You're minting for the wrong service account, or the `admit` rules don't list yours. A different token won't help. |
-| `200` for everything, even garbage tokens | Authentication is off, or NVKE is permissive. | Check `AUTH_CONFIG_PATH` on the deployment and `permissiveMode` in its `nke-controller-config`. |
+| `200` for everything, even garbage tokens | Authentication is off, or NVKE is permissive. | Check `AUTH_CONFIG_PATH` on the deployment, and `apiAuth.enabled` and `permissiveMode` in its `nvke-controller-config`. |
 | `error: failed to create token` | Your kubeconfig identity can't mint for that service account. | You need `create` on `serviceaccounts/token` for it. `deploy/k8s/nvke-auth-dev.yaml` grants this locally; apply it, or run `tilt up`. |
 
 NVKE logs its reasoning for every rejection. This is usually faster than guessing:

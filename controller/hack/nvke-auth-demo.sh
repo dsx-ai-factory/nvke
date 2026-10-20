@@ -30,16 +30,17 @@ Permissive (NKE_PERMISSIVE_MODE=true tilt up):
   advances by 3 across the run, which is the only evidence permissive mode
   produces. That counter check is the extra case in a permissive run.
 
-The mode is read from the live Deployment's AUTH_CONFIG_PATH and the
-permissiveMode key of its controller config ConfigMap, so the same script covers both
-deployments. Override it with --mode.
+The mode is read from the live Deployment's AUTH_CONFIG_PATH and the apiAuth.enabled
+and permissiveMode keys of its controller config ConfigMap, so the same script
+covers every deployment. Override it with --mode.
 
 Scaffolding lives in deploy/k8s/nvke-auth-dev.yaml (namespaces, service accounts,
 token-minter RBAC, the auth ConfigMap). The chart mounts the config and binds the
 JWKS read permission.
 
 Environment: KUBE_CONTEXT, NVKE_CONTROLLER_NAMESPACE, NVKE_AUTH_CONFIGMAP, NKE_DEPLOYMENT, NVKE_CONTROLLER_HTTP_PORT,
-NKE_HTTP_URL, NKE_METRICS_PORT, NKE_METRICS_LOCAL_PORT, PROBE_PATH, TOKEN_TTL.
+NKE_HTTP_URL, NKE_METRICS_PORT, NKE_METRICS_LOCAL_PORT, NVKE_CONTROLLER_CONFIGMAP, PROBE_PATH,
+TOKEN_TTL.
 EOF
 }
 
@@ -145,9 +146,13 @@ if [[ -z "${MODE}" ]]; then
       -o jsonpath="{.spec.template.spec.containers[?(@.name=='${NKE_DEPLOYMENT}')].env[?(@.name=='$1')].value}" 2>/dev/null
   }
   auth_path="$(container_env AUTH_CONFIG_PATH)"
-  permissive="$("${KUBECTL[@]}" get configmap "${NVKE_CONTROLLER_CONFIGMAP}" -n "${NVKE_CONTROLLER_NAMESPACE}" \
-    -o jsonpath='{.data.config\.yaml}' 2>/dev/null | yq '.permissiveMode')"
-  if [[ -z "${auth_path}" ]]; then
+  controller_config="$("${KUBECTL[@]}" get configmap "${NVKE_CONTROLLER_CONFIGMAP}" -n "${NVKE_CONTROLLER_NAMESPACE}" \
+    -o jsonpath='{.data.config\.yaml}' 2>/dev/null)"
+  permissive="$(yq '.permissiveMode' <<<"${controller_config}")"
+  # A configuration the chart renders reaches NVKE as apiAuth in the controller
+  # config ConfigMap, with no AUTH_CONFIG_PATH.
+  api_auth="$(yq '.apiAuth.enabled // false' <<<"${controller_config}")"
+  if [[ -z "${auth_path}" && "${api_auth}" != "true" ]]; then
     MODE="disabled"
   elif [[ "${permissive}" == "true" ]]; then
     MODE="permissive"
@@ -159,8 +164,9 @@ fi
 case "${MODE}" in
   enforcing|permissive) ;;
   disabled)
-    echo "FATAL: AUTH_CONFIG_PATH is not set on deploy/${NKE_DEPLOYMENT}." >&2
-    echo "  Authentication is disabled, so there is nothing to prove." >&2
+    echo "FATAL: deploy/${NKE_DEPLOYMENT} has no AUTH_CONFIG_PATH and apiAuth.enabled is not" >&2
+    echo "  true in its ${NVKE_CONTROLLER_CONFIGMAP}. Authentication is disabled, so there is nothing to prove." >&2
+    echo "  On an install that pins the old name, set NVKE_CONTROLLER_CONFIGMAP=nke-controller-config." >&2
     echo "  Redeploy with NKE_AUTH_ENABLED=true, or pass --mode explicitly." >&2
     exit 2
     ;;

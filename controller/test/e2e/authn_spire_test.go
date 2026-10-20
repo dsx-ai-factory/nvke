@@ -55,7 +55,7 @@ var _ = Describe("NVKE API authentication with a SPIRE JWT-SVID", Label("authn",
 		Expect(err).NotTo(HaveOccurred(), "read the NVKE deployment's enforcement mode")
 		if mode == authnModeDisabled {
 			authnAbsentf(
-				"authentication is OFF on Deployment %s/%s: %s is not set, so the middleware is not in the request chain and no SVID could be rejected",
+				"authentication is OFF on Deployment %s/%s: neither %s nor apiAuth.enabled in nvke-controller-config is set, so the middleware is not in the request chain and no SVID could be rejected",
 				controller.Namespace(), controller.Deployment(), authnConfigPathEnv,
 			)
 		}

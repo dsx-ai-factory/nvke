@@ -22,7 +22,7 @@ func setMinimumEnv(t *testing.T) {
 }
 
 // Unset AUTH_CONFIG_PATH parses as the disabled state. Permissive mode comes
-// from nke-controller-config.
+// from nvke-controller-config.
 func TestAuthEnvFields(t *testing.T) {
 	tests := []struct {
 		name     string

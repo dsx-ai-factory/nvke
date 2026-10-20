@@ -19,6 +19,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
@@ -56,7 +57,7 @@ var _ = Describe("NVKE API authentication", Label("authn"), func() {
 		}
 		if mode == authnModeDisabled {
 			authnAbsentf(
-				"authentication is OFF: %s is not set on Deployment %s/%s, so the authentication middleware is not in the request chain even though ConfigMap %s carries an audience",
+				"authentication is OFF: neither %s on Deployment %s/%s nor apiAuth.enabled in nvke-controller-config is set, so the authentication middleware is not in the request chain even though ConfigMap %s carries an audience",
 				authnConfigPathEnv, controller.Namespace(), controller.Deployment(), authtoken.ConfigMapName,
 			)
 		}
@@ -191,8 +192,9 @@ var _ = Describe("NVKE API authentication", Label("authn"), func() {
 // parameter binder with a 400 — hence 401 exactly, not "not 200".
 const authnProbeUUID = "00000000-0000-0000-0000-000000000000"
 
-// authnConfigPathEnv puts the middleware in the chain; permissiveMode in
-// nke-controller-config decides whether it enforces.
+// authnConfigPathEnv puts the middleware in the chain for a ConfigMap the chart
+// does not render; apiAuth.enabled in nvke-controller-config does it for one it
+// does. permissiveMode in nvke-controller-config decides whether either enforces.
 const authnConfigPathEnv = "AUTH_CONFIG_PATH"
 
 const (
@@ -213,7 +215,8 @@ const (
 const authnTimeout = 60 * time.Second
 
 // detectAuthnEnforcement reports whether the NVKE Deployment's authentication
-// middleware is absent, permissive or enforcing.
+// middleware is absent, permissive or enforcing, from AUTH_CONFIG_PATH on its
+// container and apiAuth.enabled and permissiveMode in its nvke-controller-config.
 func detectAuthnEnforcement(ctx context.Context, clientset kubernetes.Interface) (string, error) {
 	deployment, err := clientset.AppsV1().Deployments(controller.Namespace()).Get(ctx, controller.Deployment(), metav1.GetOptions{})
 	if err != nil {
@@ -225,14 +228,24 @@ func detectAuthnEnforcement(ctx context.Context, clientset kubernetes.Interface)
 		return "", fmt.Errorf("deployment %s/%s has no container named %s", controller.Namespace(), controller.Deployment(), controller.Deployment())
 	}
 
-	if _, found := containerEnvValue(container, authnConfigPathEnv); !found {
-		return authnModeDisabled, nil
-	}
+	_, fileConfigured := containerEnvValue(container, authnConfigPathEnv)
 
 	settings, err := clientset.CoreV1().ConfigMaps(controller.Namespace()).Get(ctx, nvke.ControllerConfigMap, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) && !fileConfigured {
+		// A controller older than the settings ConfigMap, with no file either.
+		return authnModeDisabled, nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("getting ConfigMap %s/%s: %w", controller.Namespace(), nvke.ControllerConfigMap, err)
 	}
+	inline, err := nvke.APIAuthEnabled(settings.Data)
+	if err != nil {
+		return "", err
+	}
+	if !fileConfigured && !inline {
+		return authnModeDisabled, nil
+	}
+
 	permissive, err := nvke.ControllerSetting(settings.Data, "permissiveMode")
 	if err != nil {
 		return "", err
@@ -420,10 +433,14 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 			},
 		}
 	}
-	settings := func(permissive bool) *corev1.ConfigMap {
+	settings := func(permissive, inline bool) *corev1.ConfigMap {
+		config := fmt.Sprintf("metricsListenAddress: 127.0.0.1:9090\npermissiveMode: %t\n", permissive)
+		if inline {
+			config += "apiAuth:\n  enabled: true\n"
+		}
 		return &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Namespace: controller.Namespace(), Name: nvke.ControllerConfigMap},
-			Data:       map[string]string{"config.yaml": fmt.Sprintf("metricsListenAddress: 127.0.0.1:9090\npermissiveMode: %t\n", permissive)},
+			Data:       map[string]string{"config.yaml": config},
 		}
 	}
 	authConfigPath := corev1.EnvVar{Name: "AUTH_CONFIG_PATH", Value: "/etc/nke/auth/auth.yaml"}
@@ -432,6 +449,7 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 		name       string
 		env        []corev1.EnvVar
 		permissive bool
+		inline     bool
 		want       string
 	}{
 		{
@@ -450,11 +468,22 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 			env:  []corev1.EnvVar{authConfigPath},
 			want: authnModeEnforcing,
 		},
+		{
+			name:   "apiAuth.enabled without AUTH_CONFIG_PATH is enforcing",
+			inline: true,
+			want:   authnModeEnforcing,
+		},
+		{
+			name:       "apiAuth.enabled with permissiveMode true is permissive",
+			inline:     true,
+			permissive: true,
+			want:       authnModePermissive,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := detectAuthnEnforcement(context.Background(), fake.NewClientset(deployment(tt.env...), settings(tt.permissive)))
+			got, err := detectAuthnEnforcement(context.Background(), fake.NewClientset(deployment(tt.env...), settings(tt.permissive, tt.inline)))
 			if err != nil {
 				t.Fatalf("detectAuthnEnforcement: %v", err)
 			}
@@ -464,9 +493,20 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 		})
 	}
 
-	t.Run("a missing nke-controller-config is an error, not a mode", func(t *testing.T) {
+	t.Run("a missing nvke-controller-config is an error, not a mode", func(t *testing.T) {
 		if _, err := detectAuthnEnforcement(context.Background(), fake.NewClientset(deployment(authConfigPath))); err == nil {
-			t.Fatal("expected an error when nke-controller-config cannot be read")
+			t.Fatal("expected an error when nvke-controller-config cannot be read")
+		}
+	})
+
+	t.Run("no AUTH_CONFIG_PATH and no nvke-controller-config is authentication off", func(t *testing.T) {
+		// A controller older than the settings ConfigMap, with no file either.
+		got, err := detectAuthnEnforcement(context.Background(), fake.NewClientset(deployment()))
+		if err != nil {
+			t.Fatalf("detectAuthnEnforcement: %v", err)
+		}
+		if got != authnModeDisabled {
+			t.Fatalf("detectAuthnEnforcement = %q, want %q", got, authnModeDisabled)
 		}
 	})
 

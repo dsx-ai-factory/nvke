@@ -124,6 +124,28 @@ render api-auth-permissive \
   --set apiAuth.enabled=true \
   --set apiAuth.permissive=true
 
+# apiAuth rendered by the chart, which the controller reads from config.yaml.
+cat > "${values}/api-auth-inline.yaml" <<'YAML'
+apiAuth:
+  enabled: true
+  configMap:
+    create: true
+  config:
+    audiences: ["https://nke.example.internal"]
+    issuers:
+      - name: local-kubernetes
+        issuer: "https://kubernetes.default.svc.cluster.local"
+        jwks:
+          uri: "https://kubernetes.default.svc/openid/v1/jwks"
+          caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+        algorithms: [RS256]
+        admit:
+          serviceAccounts:
+            - namespace: nke-clients
+YAML
+render api-auth-inline -f "${values}/api-auth-inline.yaml"
+
 # Empty strings fall back to Go defaults, which the template must render.
 render empty-strings \
   --set-string identity.fieldManagerName= \

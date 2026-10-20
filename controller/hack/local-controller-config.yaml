@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# nke-controller-config for host-local runs: make run, make run-local,
+# nvke-controller-config for host-local runs: make run, make run-local,
 # make run-remote, make debug, and the gofail e2e worker. A deployment gets the
 # same file from the chart instead. Every key is required, because
 # internal/controllerconfig has no defaults; TestLocalControllerConfig checks
@@ -100,3 +100,10 @@ teleport:
   tokenNamePrefix: nvke-controller-
   resourceGroupLabelValue: nvke
 permissiveMode: false
+# Off for host-local runs, as it was before the section existed. To run with
+# authentication, set enabled and give audiences and issuers the shape the
+# chart's apiAuth.config takes.
+apiAuth:
+  enabled: false
+  audiences: []
+  issuers: []

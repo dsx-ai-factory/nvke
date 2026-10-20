@@ -21,6 +21,9 @@
 #                              this to nke-auth-config)
 #   NKE_DEPLOYMENT             NVKE's Deployment (default nke-controller when it
 #                              exists in NVKE_CONTROLLER_NAMESPACE, else cloud-workflow-engine)
+#   NVKE_CONTROLLER_CONFIGMAP  NVKE's settings ConfigMap, read only when AUTH_CONFIG_PATH
+#                              is unset (default: the one the Deployment mounts, else the
+#                              first of nvke-controller-config and nke-controller-config)
 #   NKE_TOKEN_NAMESPACE        service account namespace (default nke-clients)
 #   NKE_TOKEN_SERVICE_ACCOUNT  service account (default nke-client)
 #   NKE_TOKEN_TTL              requested lifetime (default 30m)
@@ -142,14 +145,73 @@ auth_config_path="$(
   ${auth_config_path}
   Check KUBE_CONTEXT, NVKE_CONTROLLER_NAMESPACE and that this identity may read Deployments."
 
+# A configuration the chart renders reaches NVKE as apiAuth in its settings
+# ConfigMap instead, with no AUTH_CONFIG_PATH, so that ConfigMap is read only
+# when the path is unset. NVKE_CONTROLLER_CONFIGMAP names it outright; otherwise
+# the Deployment's own volume says which ConfigMap this controller mounts, and
+# nvke-controller-config then nke-controller-config are tried only when the
+# Deployment does not say. Read with awk, not yq, so kubectl stays this script's
+# only dependency. A controller older than the section, or than the ConfigMap,
+# has no such key, which is off.
+api_auth_enabled=""
 if [[ -z "${auth_config_path}" ]]; then
+  # stdout alone carries each answer: a kubectl warning on stderr must not read
+  # as a ConfigMap name, or as the first name existing and skip the second.
+  kubectl_stderr="$(mktemp)"
+  if [[ -n "${NVKE_CONTROLLER_CONFIGMAP:-}" ]]; then
+    controller_configmaps=("${NVKE_CONTROLLER_CONFIGMAP}")
+  else
+    # The volume is nvke-controller-config in current charts and was
+    # nke-controller-config before; its configMap.name is the object either way.
+    if ! mounted_configmap="$(
+      "${KUBECTL[@]}" get deploy "${NKE_DEPLOYMENT}" -n "${NVKE_CONTROLLER_NAMESPACE}" \
+        -o jsonpath="{.spec.template.spec.volumes[?(@.name=='nvke-controller-config')].configMap.name}{.spec.template.spec.volumes[?(@.name=='nke-controller-config')].configMap.name}" \
+        2>"${kubectl_stderr}"
+    )"; then
+      error="$(cat "${kubectl_stderr}")"
+      rm -f "${kubectl_stderr}"
+      die "cannot read deploy ${NVKE_CONTROLLER_NAMESPACE}/${NKE_DEPLOYMENT}:
+  ${error}
+  Check KUBE_CONTEXT, NVKE_CONTROLLER_NAMESPACE and that this identity may read Deployments."
+    fi
+    if [[ -n "${mounted_configmap}" ]]; then
+      controller_configmaps=("${mounted_configmap}")
+    else
+      controller_configmaps=(nvke-controller-config nke-controller-config)
+    fi
+  fi
+  controller_config=""
+  for configmap in "${controller_configmaps[@]}"; do
+    if ! controller_config="$(
+      "${KUBECTL[@]}" get configmap "${configmap}" -n "${NVKE_CONTROLLER_NAMESPACE}" \
+        --ignore-not-found -o jsonpath='{.data.config\.yaml}' 2>"${kubectl_stderr}"
+    )"; then
+      error="$(cat "${kubectl_stderr}")"
+      rm -f "${kubectl_stderr}"
+      die "cannot read configmap ${NVKE_CONTROLLER_NAMESPACE}/${configmap}:
+  ${error}
+  Check KUBE_CONTEXT, NVKE_CONTROLLER_NAMESPACE and that this identity may read ConfigMaps."
+    fi
+    if [[ -n "${controller_config}" ]]; then
+      break
+    fi
+  done
+  rm -f "${kubectl_stderr}"
+  api_auth_enabled="$(awk '
+    /^apiAuth:/ { section = 1; next }
+    section && /^[^[:space:]]/ { exit }
+    section && /^[[:space:]]+enabled:[[:space:]]*true[[:space:]]*$/ { print "true"; exit }
+  ' <<<"${controller_config}")"
+fi
+
+if [[ -z "${auth_config_path}" && "${api_auth_enabled}" != "true" ]]; then
   # Authentication is off. No token, no error, no output.
   exit 0
 fi
 
 AUDIENCE="${NKE_AUDIENCE:-$(cwe_discover_audience)}"
 if [[ -z "${AUDIENCE}" ]]; then
-  die "NVKE is authenticating (AUTH_CONFIG_PATH=${auth_config_path}) but no audience could be read
+  die "NVKE is authenticating but no audience could be read
   from configmap ${NVKE_CONTROLLER_NAMESPACE}/${NVKE_AUTH_CONFIGMAP}. Set NKE_AUDIENCE to override."
 fi
 
