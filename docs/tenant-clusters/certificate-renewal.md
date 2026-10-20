@@ -245,9 +245,10 @@ automatic retry needs scheduling enabled (`certRenewal.controllerEnabled`) and
 starts no earlier than both one hour after the failure and `nextCertRenewalDue`,
 so after a forced cycle that failed before its due time it can wait up to
 `certRenewal.interval`. That retry takes the lock, so a forced workflow started
-meanwhile is refused. If scheduling is disabled, or forced semantics are needed
-sooner, start a **new** uniquely named forced workflow once the lock is released
-and no automatic retry is running.
+meanwhile is refused. Wait for that automatic retry and inspect its result.
+Start a **new** uniquely named forced workflow only after it has finished and
+forced semantics are still needed, or, if scheduling is disabled, once the lock
+is released.
 For expired CA, external PKI or lost recovery keys, preserve backups and use a
 separately reviewed recovery plan. This guide provides no automatic PKI recovery.
 
