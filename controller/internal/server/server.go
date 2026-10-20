@@ -165,8 +165,8 @@ func NewServer(
 	//
 	// Authentication precedes managed-by so an unauthenticated caller never
 	// reaches it, and follows logging so a rejection still produces the usual
-	// request/response pair. Tracing stays outermost so a rejected request is
-	// still a span. Request log state is added before tracing so logging can pass
+	// request/response pair. Tracing still wraps request handling so a rejected
+	// request is a span. Request log state is added before tracing so logging can pass
 	// the instrumented request directly to the mux, preserving its matched route
 	// for the HTTP span name. TestDisabledServerLogsTheManagedByRejection pins the
 	// logging and managed-by order.
