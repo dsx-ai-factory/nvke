@@ -16,6 +16,7 @@ import (
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -166,7 +167,11 @@ func (t *Transport) Dial(ctx context.Context, node db.Node) (*grpc.ClientConn, f
 		}
 	}
 
-	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(transportCredentials))
+	conn, err := grpc.NewClient(
+		endpoint,
+		grpc.WithTransportCredentials(transportCredentials),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
 	if err != nil {
 		cleanup()
 		return nil, nil, fmt.Errorf("failed to connect to node agent: %w", err)
