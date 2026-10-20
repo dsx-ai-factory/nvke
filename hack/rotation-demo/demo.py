@@ -779,6 +779,9 @@ def run(c, scenario, approve, live_factory=Live):
         evidence["reason"] = str(error)
     except Exception:
         evidence["reason"] = "collector_input_or_protocol_error"
+    except KeyboardInterrupt:
+        # Return the report so main records the failure and any started workflow.
+        evidence["reason"] = "interrupted"
     finally:
         if traffic:
             try:

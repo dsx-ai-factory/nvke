@@ -409,6 +409,28 @@ class DemoTests(unittest.TestCase):
                 self.assertEqual(1, demo.main(argv))
             self.assertEqual({"status": "failed"}, json.loads(output.read_text()))
 
+    def test_interrupt_after_workflow_start_writes_failed_report_with_mutation(self):
+        class Interrupted(FakeLive):
+            def workflow(self, _owner, _expected_type):
+                raise KeyboardInterrupt
+        c = config()
+        FakeLive.failure = None
+        original = demo.run
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path, output = Path(tmp) / "config.json", Path(tmp) / "evidence.json"
+            config_path.write_text(json.dumps(c))
+            argv = ["run", "--config", str(config_path), "--scenario", "forced-renewal", "--approve-cluster", c["cluster_id"],
+                    "--output", str(output)]
+            with patch.object(demo, "Traffic", FakeTraffic), patch.object(demo, "wait_for", lambda check, _deadline: check()), \
+                    patch.object(demo, "run", lambda *args: original(*args, Interrupted)), \
+                    patch("builtins.print"):
+                self.assertEqual(1, demo.main(argv))
+            report = json.loads(output.read_text())
+        self.assertEqual("failed", report["status"])
+        self.assertEqual("interrupted", report["reason"])
+        self.assertTrue(report["mutation_started"])
+        self.assertRegex(report["workflow_hash"], "^[0-9a-f]{64}$")
+
     def test_source_provenance_uses_demo_worktree_from_another_directory(self):
         old = os.getcwd()
         try:
