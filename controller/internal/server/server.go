@@ -79,6 +79,7 @@ func NewServer(
 	strictHandler := api.NewStrictHandlerWithOptions(serverImpl, nil, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Error("OpenAPI StrictServer request error", "error", err)
+			recordRejectionReason(w, rejectionReasonRequestParsingFailed)
 			handleError(w, logger, err.Error(), http.StatusBadRequest)
 		},
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
@@ -100,13 +101,20 @@ func NewServer(
 				Options: openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc},
 				ErrorHandler: func(w http.ResponseWriter, message string, statusCode int) {
 					logger.Error("OpenAPI middleware validation error", "message", message)
+					if statusCode >= http.StatusBadRequest && statusCode < http.StatusInternalServerError {
+						recordRejectionReason(w, rejectionReasonRequestValidationFailed)
+					}
 					handleError(w, logger, message, statusCode)
 				},
 			}),
 		},
 		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Error("OpenAPI StdServer error", "error", err)
-			handleError(w, logger, err.Error(), stdServerErrorStatus(err))
+			statusCode := stdServerErrorStatus(err)
+			if statusCode >= http.StatusBadRequest && statusCode < http.StatusInternalServerError {
+				recordRejectionReason(w, rejectionReasonRequestParsingFailed)
+			}
+			handleError(w, logger, err.Error(), statusCode)
 		},
 	})
 

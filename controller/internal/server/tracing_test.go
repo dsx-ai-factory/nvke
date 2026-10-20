@@ -95,6 +95,18 @@ func TestRequestCompletedLogCarriesEventAndOutcome(t *testing.T) {
 	require.EqualValues(t, response.Code, record["status"])
 }
 
+func TestRequestCompletedLogCarriesValidationReason(t *testing.T) {
+	installTracerProvider(t)
+
+	response, records := requestLogs(t, false, "", "")
+
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Equal(t, "request_validation_failed", completedRecord(t, records)["reason"])
+	encodedLogs, err := json.Marshal(records)
+	require.NoError(t, err)
+	require.NotContains(t, string(encodedLogs), "not json")
+}
+
 func TestRequestStartsATraceWithoutExport(t *testing.T) {
 	installTracerProvider(t)
 

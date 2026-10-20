@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -256,7 +257,7 @@ func TestEnforcingServerAuthenticatesBeforeValidating(t *testing.T) {
 // tests and to middleware_test.go, which drives managedByMiddleware directly.
 func TestDisabledServerLogsTheManagedByRejection(t *testing.T) {
 	var logged bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	cfg := config.Config{
 		ManagedByK8sPlatform: true,
@@ -275,9 +276,23 @@ func TestDisabledServerLogsTheManagedByRejection(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, rr.Code,
 		"a mutating request with no managed-by header is still rejected when authentication is off")
 
-	out := logged.String()
-	assert.Contains(t, out, "Incoming request",
+	var incoming, completed map[string]any
+	for _, line := range bytes.Split(logged.Bytes(), []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var record map[string]any
+		require.NoError(t, json.Unmarshal(line, &record))
+		switch record["msg"] {
+		case "Incoming request":
+			incoming = record
+		case "Request completed":
+			completed = record
+		}
+	}
+	require.NotNil(t, incoming,
 		"logging now wraps managed-by, so the rejected request is logged on the way in")
-	assert.Contains(t, out, "Request completed",
+	require.NotNil(t, completed,
 		"and on the way out; before this change managed-by answered before logging ran")
+	require.Equal(t, "managed_by_header_required", completed["reason"])
 }

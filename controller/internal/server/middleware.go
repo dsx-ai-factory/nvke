@@ -83,6 +83,7 @@ func managedByMiddleware(enforce bool, logger *slog.Logger) func(http.Handler) h
 					"path", path,
 					"remote_addr", r.RemoteAddr,
 				)
+				recordRejectionReason(w, rejectionReasonManagedByHeaderRequired)
 				handleError(w, logger,
 					"This resource may be managed by the K8s Platform API. "+
 						"Direct modifications via this API could lead to synchronization conflicts. "+
