@@ -516,6 +516,31 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(0, summary["secret_read_errors"])
 
 
+class ManualCompletionTests(unittest.TestCase):
+    def test_initially_empty_marker_is_polled_until_it_becomes_valid(self):
+        c = config()
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "t1-completed.json"
+            c["manual_completion_file"] = str(marker)
+            valid = json.dumps({"cluster_id": c["cluster_id"], "kube_system_uid": c["kube_system_uid"], "completed": True})
+            # Each poll interval reveals the next stage of a shell redirect writing the marker.
+            stages = iter(["", '{"cluster_id": ', valid])
+            announced = []
+            def poll_interval(_seconds):
+                if announced:
+                    marker.write_text(next(stages, valid))
+            class Manual(FakeLive):
+                def certificates(self, after=0, manual=False):
+                    # The operator's runbook renewed the leaves once the marker is complete.
+                    self.started = marker.exists() and marker.read_text() == valid
+                    return super().certificates(after, manual)
+            FakeLive.failure = None
+            with patch.object(demo, "Traffic", FakeTraffic), patch.object(demo.time, "sleep", side_effect=poll_interval), \
+                    patch("builtins.print", side_effect=lambda *_args, **_kwargs: announced.append(True)):
+                result = demo.run(c, "manual-t1", c["cluster_id"], Manual)
+            self.assertEqual("passed", result["status"])
+
+
 class ScheduledRenewalTests(unittest.TestCase):
     def run_scheduled(self, changed_nodes=(0,), restarted_nodes=(0,), audit_change=None,
                       owner_outcome="renewed", scenario="scheduled-renewal", certificate_change=None, started_offset=0):

@@ -684,7 +684,12 @@ def run(c, scenario, approve, live_factory=Live):
             print("T1 baseline recorded and API observation running. Begin the approved manual runbook now.", flush=True)
             def completed():
                 require(Path(c["manual_completion_file"]).exists(), "manual_completion_not_observed")
-                marker = read_json(c["manual_completion_file"])
+                # A shell redirect creates the file before writing it; keep polling
+                # until the content is complete.
+                try:
+                    marker = read_json(c["manual_completion_file"])
+                except ValueError:
+                    raise CheckError("manual_completion_not_observed") from None
                 require(marker == {"cluster_id": c["cluster_id"], "kube_system_uid": c["kube_system_uid"], "completed": True}, "manual_marker_invalid")
             wait_for(completed, deadline)
         evidence["workflow_hash"] = audit_hash("workflow", workflow) if not manual else None
