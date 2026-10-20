@@ -627,6 +627,67 @@ func TestGetClusterControlPlane(t *testing.T) {
 		require.Equal(t, 1, out.Status.ReadyNodeCount)
 		require.Equal(t, 3, out.Config.DesiredCount)
 		require.Equal(t, map[string]string{"role": "cp"}, out.Config.NodeLabels)
+		require.Nil(t, out.Status.FailureDomains)
+		require.Nil(t, out.Status.FailureDomainSpread)
+		mockDB.AssertExpectations(t)
+	})
+
+	t.Run("controller-managed control plane surfaces failure-domain placement", func(t *testing.T) {
+		cluster := newCluster()
+		cluster.ControlPlaneFailureDomains = &db.ControlPlaneFailureDomains{
+			Eligible: []string{"rack-a", "rack-b", "rack-c"},
+			Spread:   db.NewCondition(false, "nodes share rack-a."),
+		}
+		cpNode := func(requested, observed string, ready bool) db.Node {
+			return db.Node{
+				ID: uuid.New(), ClusterID: clusterID, ControlPlane: true,
+				FailureDomain: requested, ObservedFailureDomain: observed,
+				Conditions: db.NodeConditions{KubernetesReady: db.NewCondition(ready, "")},
+			}
+		}
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil)
+		mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(cpFilter)).Return([]db.Node{
+			cpNode("rack-a", "", true),
+			cpNode("rack-b", "rack-a", false),
+			cpNode("rack-z", "", true),
+		}, nil)
+
+		svc := clusterService{db: mockDB}
+		resp, err := svc.GetClusterControlPlane(ctx, api.GetClusterControlPlaneRequestObject{ClusterID: clusterID})
+		require.NoError(t, err)
+
+		out := resp.(api.GetClusterControlPlane200JSONResponse)
+		require.NotNil(t, out.Status.FailureDomains)
+		assert.Equal(t, []api.ControlPlaneFailureDomain{
+			{Name: "rack-a", NodeCount: 2, ReadyNodeCount: 1},
+			{Name: "rack-b"},
+			{Name: "rack-c"},
+			{Name: "rack-z", NodeCount: 1, ReadyNodeCount: 1},
+		}, *out.Status.FailureDomains)
+		require.NotNil(t, out.Status.FailureDomainSpread)
+		assert.Equal(t, api.ConditionStatusFalse, out.Status.FailureDomainSpread.Status)
+		assert.Equal(t, "nodes share rack-a.", out.Status.FailureDomainSpread.Message)
+		mockDB.AssertExpectations(t)
+	})
+
+	t.Run("provider-owned placement lists the reported domains", func(t *testing.T) {
+		cluster := newCluster()
+		cluster.ControlPlaneFailureDomains = &db.ControlPlaneFailureDomains{Spread: db.NewCondition(true, "")}
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil)
+		mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(cpFilter)).Return([]db.Node{
+			{ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, ObservedFailureDomain: "rack-b"},
+			{ID: uuid.New(), ClusterID: clusterID, ControlPlane: true},
+		}, nil)
+
+		svc := clusterService{db: mockDB}
+		resp, err := svc.GetClusterControlPlane(ctx, api.GetClusterControlPlaneRequestObject{ClusterID: clusterID})
+		require.NoError(t, err)
+
+		out := resp.(api.GetClusterControlPlane200JSONResponse)
+		require.NotNil(t, out.Status.FailureDomains)
+		assert.Equal(t, []api.ControlPlaneFailureDomain{{Name: "rack-b", NodeCount: 1}}, *out.Status.FailureDomains)
 		mockDB.AssertExpectations(t)
 	})
 
@@ -945,4 +1006,21 @@ func TestValidateUpdateControlPlaneConfigProviderMatch_UnknownProvider(t *testin
 	var badRequest *badRequestError
 	require.ErrorAs(t, err, &badRequest)
 	require.EqualError(t, err, `unsupported cluster provider "bogus"`)
+}
+
+func TestApiNodeFromDB_FailureDomain(t *testing.T) {
+	tests := []struct {
+		name, requested, observed string
+		want                      *string
+	}{
+		{name: "none"},
+		{name: "requested only", requested: "rack-a", want: new("rack-a")},
+		{name: "observed wins", requested: "rack-a", observed: "rack-b", want: new("rack-b")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			node := apiNodeFromDB(&db.Node{FailureDomain: tc.requested, ObservedFailureDomain: tc.observed})
+			assert.Equal(t, tc.want, node.FailureDomain)
+		})
+	}
 }

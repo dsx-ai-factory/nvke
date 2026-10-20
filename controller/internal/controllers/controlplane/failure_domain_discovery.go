@@ -20,6 +20,8 @@ type failureDomains struct {
 	eligible []string
 	// observedByNodeName tracks active CAPI Machine placements for spread counts.
 	observedByNodeName map[string]string
+	// reportedByNodeName holds the domain each active Machine reports, empty until the provider reports one.
+	reportedByNodeName map[string]string
 }
 
 // readFailureDomains returns a complete snapshot of the control-plane-eligible
@@ -51,12 +53,9 @@ func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster)
 			discovered.eligible = append(discovered.eligible, domain.Name)
 		}
 	}
-	if len(discovered.eligible) == 0 {
-		return discovered, nil
-	}
 
-	// Collect active Machine placements to count existing nodes without writing
-	// their observed domains back to the database.
+	// Collect active Machine placements even without eligible domains, so the
+	// spread of a provider that places nodes itself is still reported.
 	machines := &clusterv1.MachineList{}
 	if err := r.k8sClient.List(ctx, machines,
 		client.InNamespace(r.cfg.ManagementNamespaceOrDefault()),
@@ -66,6 +65,7 @@ func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster)
 	}
 
 	discovered.observedByNodeName = make(map[string]string, len(machines.Items))
+	discovered.reportedByNodeName = make(map[string]string, len(machines.Items))
 	for i := range machines.Items {
 		machine := &machines.Items[i]
 		if _, controlPlane := machine.Labels[clusterv1.MachineControlPlaneLabel]; !controlPlane {
@@ -79,6 +79,7 @@ func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster)
 		if domain := cmp.Or(machine.Status.FailureDomain, machine.Spec.FailureDomain); domain != "" {
 			discovered.observedByNodeName[machine.Name] = domain
 		}
+		discovered.reportedByNodeName[machine.Name] = machine.Status.FailureDomain
 	}
 	return discovered, nil
 }

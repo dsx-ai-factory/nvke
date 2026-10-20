@@ -17,8 +17,10 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/mgmtns"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
@@ -114,12 +116,12 @@ func capdControlPlaneFailureDomainsAt(ctx context.Context, test *tenantTest, des
 		return nil, fmt.Errorf("CAPI Cluster published failure domains %v; want %v", gotPublished, wantPublished)
 	}
 
-	names, err := test.nvke.ControlPlaneNodeNames(ctx, test.cluster.ID)
+	nodes, err := test.nvke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true)
 	if err != nil {
 		return nil, err
 	}
-	if len(names) != desired {
-		return nil, fmt.Errorf("CWE reports %d control-plane nodes; want %d", len(names), desired)
+	if len(nodes) != desired {
+		return nil, fmt.Errorf("CWE reports %d control-plane nodes; want %d", len(nodes), desired)
 	}
 	machines := &unstructured.UnstructuredList{}
 	machines.SetGroupVersionKind(schema.GroupVersionKind{Group: "cluster.x-k8s.io", Version: "v1beta2", Kind: "MachineList"})
@@ -135,24 +137,30 @@ func capdControlPlaneFailureDomainsAt(ctx context.Context, test *tenantTest, des
 	if err != nil {
 		return nil, err
 	}
-	placements := make(map[string]string, len(names))
+	placements := make(map[string]string, len(nodes))
 	got := make(map[string]int, len(want))
-	for _, name := range names {
-		machine, ok := byName[name]
+	for _, node := range nodes {
+		machine, ok := byName[node.Name]
 		if !ok {
-			return nil, fmt.Errorf("CWE control-plane node %q has no CAPI Machine", name)
+			return nil, fmt.Errorf("CWE control-plane node %q has no CAPI Machine", node.Name)
 		}
 		requested, err := capdMachineDomainAt(machine, gotPublished, containers)
 		if err != nil {
 			return nil, err
 		}
-		placements[name] = requested
+		if reported := ptr.Deref(node.FailureDomain, ""); reported != requested {
+			return nil, fmt.Errorf("CWE reports node %q in failure domain %q; want %q", node.Name, reported, requested)
+		}
+		placements[node.Name] = requested
 		if requested != "" {
 			got[requested]++
 		}
 	}
 	if want != nil && !maps.Equal(got, want) {
 		return nil, fmt.Errorf("control-plane Machine placements %v; want %v", got, want)
+	}
+	if err := cweFailureDomainStatusAt(ctx, test, got, gotPublished); err != nil {
+		return nil, err
 	}
 	if eligible == 0 {
 		return placements, nil
@@ -168,6 +176,43 @@ func capdControlPlaneFailureDomainsAt(ctx context.Context, test *tenantTest, des
 		return nil, fmt.Errorf("control-plane Machine placements are unbalanced: %v", got)
 	}
 	return placements, nil
+}
+
+// cweFailureDomainStatusAt checks that the control-plane status reports the
+// placement CAPD shows: per-domain node counts, and the spread condition. A
+// domain holding a node is reported even when it is not published.
+func cweFailureDomainStatusAt(ctx context.Context, test *tenantTest, got map[string]int, published map[string]bool) error {
+	cp, err := test.nvke.GetClusterControlPlane(ctx, test.cluster.ID)
+	if err != nil {
+		return err
+	}
+	wantCounts := maps.Clone(got)
+	for name, controlPlane := range published {
+		if controlPlane {
+			wantCounts[name] = got[name]
+		}
+	}
+	gotCounts := make(map[string]int)
+	for _, domain := range ptr.Deref(cp.Status.FailureDomains, nil) {
+		gotCounts[domain.Name] = domain.NodeCount
+	}
+	if !maps.Equal(gotCounts, wantCounts) {
+		return fmt.Errorf("CWE reports control-plane nodes per failure domain %v; want %v", gotCounts, wantCounts)
+	}
+	wantSpread := api.ConditionStatusUnknown
+	if len(wantCounts) > 0 {
+		wantSpread = api.ConditionStatusTrue
+		for _, n := range got {
+			if n > 1 {
+				wantSpread = api.ConditionStatusFalse
+			}
+		}
+	}
+	spread := cp.Status.FailureDomainSpread
+	if spread == nil || spread.Status != wantSpread {
+		return fmt.Errorf("CWE reports failureDomainSpread %+v; want status %s", spread, wantSpread)
+	}
+	return nil
 }
 
 // capdContainerFailureDomains snapshots running containers in one Docker call.

@@ -157,7 +157,7 @@ func apiNodeFromDB(dbNode *db.Node) api.Node {
 		nodeConditions.ControlPlaneRolloutRequired = &cond
 	}
 
-	return api.Node{
+	node := api.Node{
 		ID:           dbNode.ID,
 		NodePoolID:   dbNode.NodePoolID,
 		NodeSetID:    dbNode.NodeSetID,
@@ -168,6 +168,10 @@ func apiNodeFromDB(dbNode *db.Node) api.Node {
 		ControlPlane: dbNode.ControlPlane,
 		Conditions:   nodeConditions,
 	}
+	if domain := dbNode.EffectiveFailureDomain(); domain != "" {
+		node.FailureDomain = &domain
+	}
+	return node
 }
 
 func apiLaunchLayerNodeProviderFromDB(provider *db.LaunchLayerNodeProvider) *api.LaunchLayerNodeProvider {

@@ -99,6 +99,9 @@ type Cluster struct {
 	// OIDCProviders is set only at creation; UpdateCluster never writes it.
 	OIDCProviders []ClusterOIDCProvider `bun:"oidc_providers,type:jsonb,nullzero"`
 
+	// ControlPlaneFailureDomains is maintained by the control-plane controller; UpdateCluster never writes it.
+	ControlPlaneFailureDomains *ControlPlaneFailureDomains `bun:"control_plane_failure_domains,type:jsonb,nullzero"`
+
 	// ControlPlaneConfig keeps the API/business shape while persisting these
 	// fields as real DB columns on clusters (configuration_id, cp_desired_count,
 	// cp_max_surge) via bun embed mapping.
@@ -473,6 +476,13 @@ type ClusterConditions struct {
 	UpdateFailed     *Condition        `json:"updateFailed,omitempty"`
 }
 
+// ControlPlaneFailureDomains is the control-plane controller's view of failure-domain placement.
+type ControlPlaneFailureDomains struct {
+	// Eligible are the domains the provider publishes for control-plane placement.
+	Eligible []string  `json:"eligible"`
+	Spread   Condition `json:"spread"`
+}
+
 type ClusterFilters struct {
 	ID     *uuid.UUID
 	Name   *string
@@ -532,6 +542,7 @@ type ClusterQueries interface {
 	CreateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
 	UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
 	UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error
+	UpdateClusterControlPlaneFailureDomains(ctx context.Context, clusterID uuid.UUID, domains *ControlPlaneFailureDomains) error
 	DeleteCluster(ctx context.Context, id uuid.UUID) error
 	// SyncClusterControlPlaneConfigFromCPNodePools sets control_plane_config from all control-plane
 	// node pools for the cluster that are not marked deleting.
@@ -608,12 +619,23 @@ func (q *queriesImpl) CreateCluster(ctx context.Context, cluster *Cluster) (Clus
 func (q *queriesImpl) UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error) {
 	cluster.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(cluster).
-		ExcludeColumn("oidc_providers").
-		WherePK().Returning("oidc_providers").Exec(ctx)
+		ExcludeColumn("oidc_providers", "control_plane_failure_domains").
+		WherePK().Returning("oidc_providers, control_plane_failure_domains").Exec(ctx)
 	if err != nil {
 		return Cluster{}, err
 	}
 	return *cluster, notFoundErrIfNoRowsAffected(res)
+}
+
+func (q *queriesImpl) UpdateClusterControlPlaneFailureDomains(ctx context.Context, clusterID uuid.UUID, domains *ControlPlaneFailureDomains) error {
+	res, err := q.db.NewUpdate().Model(&Cluster{}).
+		Set("control_plane_failure_domains = ?", domains).
+		Where("id = ?", clusterID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to update cluster control-plane failure domains: %w", err)
+	}
+	return notFoundErrIfNoRowsAffected(res)
 }
 
 func (q *queriesImpl) UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error {

@@ -75,6 +75,16 @@ func (m *MockDB) UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID 
 	return args.Error(0)
 }
 
+func (m *MockDB) UpdateClusterControlPlaneFailureDomains(ctx context.Context, clusterID uuid.UUID, domains *db.ControlPlaneFailureDomains) error {
+	args := m.Called(ctx, clusterID, domains)
+	return args.Error(0)
+}
+
+func (m *MockDB) UpdateNodeObservedFailureDomain(ctx context.Context, nodeID uuid.UUID, domain string) error {
+	args := m.Called(ctx, nodeID, domain)
+	return args.Error(0)
+}
+
 func (m *MockDB) DeleteCluster(ctx context.Context, clusterID uuid.UUID) error {
 	args := m.Called(ctx, clusterID)
 	return args.Error(0)
@@ -320,6 +330,16 @@ func (m *MockTx) UpdateCluster(ctx context.Context, cluster *db.Cluster) (db.Clu
 
 func (m *MockTx) UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error {
 	args := m.Called(ctx, clusterID, nextDue)
+	return args.Error(0)
+}
+
+func (m *MockTx) UpdateClusterControlPlaneFailureDomains(ctx context.Context, clusterID uuid.UUID, domains *db.ControlPlaneFailureDomains) error {
+	args := m.Called(ctx, clusterID, domains)
+	return args.Error(0)
+}
+
+func (m *MockTx) UpdateNodeObservedFailureDomain(ctx context.Context, nodeID uuid.UUID, domain string) error {
+	args := m.Called(ctx, nodeID, domain)
 	return args.Error(0)
 }
 

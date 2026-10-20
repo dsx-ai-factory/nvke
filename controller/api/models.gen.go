@@ -330,6 +330,18 @@ type ControlPlaneConfigHistory struct {
 	Changes []ControlPlaneConfigChange `json:"changes"`
 }
 
+// ControlPlaneFailureDomain One failure domain and the control-plane nodes placed in it.
+type ControlPlaneFailureDomain struct {
+	// Name Failure domain name, for example a rack.
+	Name string `json:"name"`
+
+	// NodeCount Control-plane nodes placed in this domain, including surge nodes.
+	NodeCount int `json:"nodeCount"`
+
+	// ReadyNodeCount Control-plane nodes in this domain reporting Kubernetes Ready.
+	ReadyNodeCount int `json:"readyNodeCount"`
+}
+
 // ControlPlaneRolloutChange One rollout-relevant field whose pinned value differs from the desired value, as plain strings.
 type ControlPlaneRolloutChange struct {
 	// Field The rollout-relevant field that changed (e.g. kubernetesVersion, release).
@@ -398,14 +410,24 @@ type ControlPlaneStatus struct {
 	// DeletingNodeCount Control-plane nodes being torn down. Deletes are serialized, so this is at most 1.
 	DeletingNodeCount int `json:"deletingNodeCount"`
 
+	// DeleteRequestedNodeCount Control-plane nodes with an accepted delete that has not started.
+	DeleteRequestedNodeCount int `json:"deleteRequestedNodeCount"`
+
+	// FailureDomains Control-plane failure domains and the nodes in each: the published domains, or the domains nodes report
+	// when the provider places them itself. Omitted when there are neither.
+	FailureDomains *[]ControlPlaneFailureDomain `json:"failureDomains,omitempty"`
+
 	// ControlPlaneUpgrading The control plane is being upgraded.
 	ControlPlaneUpgrading Condition `json:"controlPlaneUpgrading"`
 
 	// CpNodesRecycling Control-plane nodes are being replaced.
 	CpNodesRecycling Condition `json:"cpNodesRecycling"`
 
-	// DeleteRequestedNodeCount Control-plane nodes with an accepted delete that has not started.
-	DeleteRequestedNodeCount int `json:"deleteRequestedNodeCount"`
+	// FailureDomainSpread `True` when each control-plane node is in its own failure domain and each domain holding a provisioned
+	// node has a Ready one; empty domains and nodes being deleted do not count. `False` otherwise; the message
+	// names the domains. Without published domains, it checks the domains nodes report. `Unknown` when there
+	// are neither.
+	FailureDomainSpread *Condition `json:"failureDomainSpread,omitempty"`
 
 	// Rollout Rollout progress.
 	Rollout *ControlPlaneRolloutSummary `json:"rollout,omitempty"`
@@ -1082,6 +1104,9 @@ type Node struct {
 
 	// ControlPlane Whether the node is a control-plane node.
 	ControlPlane bool `json:"controlPlane"`
+
+	// FailureDomain Failure domain the node is placed in, or the one NVKE requested until the provider reports it.
+	FailureDomain *string `json:"failureDomain,omitempty"`
 
 	// Conditions Lifecycle and health conditions.
 	Conditions NodeConditions `json:"conditions"`

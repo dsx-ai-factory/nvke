@@ -88,6 +88,11 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	if err != nil {
 		return fmt.Errorf("discovering control-plane failure domains: %w", err)
 	}
+	// Status only; no membership change.
+	if err := r.reconcileFailureDomainStatus(ctx, cluster, controlPlane, failureDomains); err != nil {
+		return fmt.Errorf("reconciling control-plane failure-domain status: %w", err)
+	}
+
 	allocator := newControlPlaneDomainAllocator(controlPlane.nodes, failureDomains)
 
 	// Host creation only. A pending or in-flight delete must not stall it: the

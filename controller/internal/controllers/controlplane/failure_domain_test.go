@@ -90,10 +90,11 @@ func TestReadFailureDomains(t *testing.T) {
 			"cp-status": "fd-status",
 			"cp-spec":   "fd-spec",
 		}, domains.observedByNodeName)
+		assert.Equal(t, map[string]string{"cp-status": "fd-status", "cp-spec": "", "cp-unobserved": ""}, domains.reportedByNodeName)
 		assert.Equal(t, 1, k8sClient.listCalls)
 	})
 
-	t.Run("ready cluster without eligible domains skips machine listing", func(t *testing.T) {
+	t.Run("ready cluster without eligible domains still reads reported placement", func(t *testing.T) {
 		t.Parallel()
 
 		k8sClient := &listCountingClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(
@@ -103,6 +104,7 @@ func TestReadFailureDomains(t *testing.T) {
 					Initialization: infrastructureProvisionedStatus(),
 				},
 			},
+			failureDomainMachine(clusterName, "cp-1", "", "rack-a", true, nil),
 		).Build()}
 		r := &reconciler{
 			k8sClient: k8sClient,
@@ -113,7 +115,8 @@ func TestReadFailureDomains(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, domains)
 		assert.Empty(t, domains.eligible)
-		assert.Zero(t, k8sClient.listCalls)
+		assert.Equal(t, map[string]string{"cp-1": "rack-a"}, domains.reportedByNodeName)
+		assert.Equal(t, 1, k8sClient.listCalls)
 	})
 }
 

@@ -1214,6 +1214,50 @@ components:
           description: Control-plane nodes with an accepted delete that has not started.
           x-go-type-skip-optional-pointer: true
           x-order: 8
+        failureDomains:
+          type: array
+          readOnly: true
+          items:
+            $ref: "#/components/schemas/ControlPlaneFailureDomain"
+          description: |
+            Control-plane failure domains and the nodes in each: the published domains, or the domains nodes report
+            when the provider places them itself. Omitted when there are neither.
+          x-order: 9
+        failureDomainSpread:
+          allOf:
+            - $ref: "#/components/schemas/Condition"
+          readOnly: true
+          description: |
+            `True` when each control-plane node is in its own failure domain and each domain holding a provisioned
+            node has a Ready one; empty domains and nodes being deleted do not count. `False` otherwise; the message
+            names the domains. Without published domains, it checks the domains nodes report. `Unknown` when there
+            are neither.
+          x-order: 10
+
+    ControlPlaneFailureDomain:
+      type: object
+      additionalProperties: false
+      description: One failure domain and the control-plane nodes placed in it.
+      required:
+        - name
+        - nodeCount
+        - readyNodeCount
+      properties:
+        name:
+          type: string
+          description: Failure domain name, for example a rack.
+          example: rack-a
+          x-order: 1
+        nodeCount:
+          type: integer
+          description: Control-plane nodes placed in this domain, including surge nodes.
+          x-go-type-skip-optional-pointer: true
+          x-order: 2
+        readyNodeCount:
+          type: integer
+          description: Control-plane nodes in this domain reporting Kubernetes Ready.
+          x-go-type-skip-optional-pointer: true
+          x-order: 3
 
     CreateClusterControlPlaneConfig:
       type: object
@@ -2179,6 +2223,12 @@ components:
           type: boolean
           description: Whether the node is a control-plane node.
           x-order: 9
+        failureDomain:
+          type: string
+          readOnly: true
+          description: Failure domain the node is placed in, or the one NVKE requested until the provider reports it.
+          example: rack-a
+          x-order: 10
         conditions:
           allOf:
             - $ref: "#/components/schemas/NodeConditions"

@@ -4,10 +4,13 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -71,11 +74,42 @@ func (s *clusterService) GetClusterControlPlane(
 		CpNodesRecycling:         apiConditionFromDB(dbCluster.Conditions.CPNodesRecycling),
 		Rollout:                  controlPlaneRolloutSummary(dbCluster, cpNodes, rolloutByNode),
 	}
+	if fds := dbCluster.ControlPlaneFailureDomains; fds != nil {
+		status.FailureDomains = controlPlaneFailureDomains(fds.Eligible, cpNodes)
+		spread := apiConditionFromDB(fds.Spread)
+		status.FailureDomainSpread = &spread
+	}
 
 	return api.GetClusterControlPlane200JSONResponse(api.ClusterControlPlane{
 		Config: *apiControlPlaneConfigFromDB(dbCluster.ControlPlaneConfig),
 		Status: status,
 	}), nil
+}
+
+// controlPlaneFailureDomains lists eligible domains plus any other domain holding a node, sorted by name.
+func controlPlaneFailureDomains(eligible []string, cpNodes []db.Node) *[]api.ControlPlaneFailureDomain {
+	byName := map[string]api.ControlPlaneFailureDomain{}
+	for _, name := range eligible {
+		byName[name] = api.ControlPlaneFailureDomain{Name: name}
+	}
+	for i := range cpNodes {
+		name := cpNodes[i].EffectiveFailureDomain()
+		if name == "" {
+			continue
+		}
+		d := byName[name]
+		d.Name = name
+		d.NodeCount++
+		if db.BoolFromConditionStatus(cpNodes[i].Conditions.KubernetesReady.Status) {
+			d.ReadyNodeCount++
+		}
+		byName[name] = d
+	}
+	if len(byName) == 0 {
+		return nil
+	}
+	out := slices.SortedFunc(maps.Values(byName), func(a, b api.ControlPlaneFailureDomain) int { return cmp.Compare(a.Name, b.Name) })
+	return &out
 }
 
 // controlPlaneRolloutSummary rolls the per-node rollout state up to the cluster

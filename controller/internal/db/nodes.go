@@ -4,6 +4,7 @@
 package db
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -30,8 +31,10 @@ type Node struct {
 	ControlPlane bool      `bun:"type:boolean,notnull,default:false"`
 	Name         string    `bun:"type:text,notnull"`
 	// FailureDomain is the requested placement for this node. An empty string
-	// requests no specific domain.
+	// requests no specific domain. ObservedFailureDomain is where the provider
+	// placed it; UpdateNode never writes it.
 	FailureDomain                string                 `bun:"type:text,notnull,default:''"`
+	ObservedFailureDomain        string                 `bun:"type:text,notnull,default:''"`
 	IP                           string                 `bun:"type:text,notnull"`
 	SpiffeEnabled                bool                   `bun:"type:boolean,notnull,default:false"`
 	SpireAttestationMethod       SpireAttestationMethod `bun:"type:text,notnull"`
@@ -85,6 +88,11 @@ func (n Node) ValidateSecurityProfile() error {
 		return fmt.Errorf("node %s requires a TLS transport for TLS/JWT", n.ID)
 	}
 	return nil
+}
+
+// EffectiveFailureDomain is the observed domain, or the requested one until the provider reports it.
+func (n Node) EffectiveFailureDomain() string {
+	return cmp.Or(n.ObservedFailureDomain, n.FailureDomain)
 }
 
 // IsManagedByNodePool reports whether the node is managed by a node pool controller.
@@ -296,6 +304,7 @@ type NodeQueries interface {
 	GetNodeForUpdate(ctx context.Context, id uuid.UUID) (Node, error)
 	CreateNode(ctx context.Context, node *Node) (Node, error)
 	UpdateNode(ctx context.Context, node *Node) (Node, error)
+	UpdateNodeObservedFailureDomain(ctx context.Context, nodeID uuid.UUID, domain string) error
 	DeleteNode(ctx context.Context, id uuid.UUID) error
 
 	// TryAcquireNodeProvisioningLock tries to acquire a transaction-level advisory lock for a specific node.
@@ -501,12 +510,23 @@ func (q *queriesImpl) CreateNode(ctx context.Context, node *Node) (Node, error) 
 func (q *queriesImpl) UpdateNode(ctx context.Context, node *Node) (Node, error) {
 	node.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(node).
-		ExcludeColumn("spiffe_enabled", "spire_attestation_method", "node_agent_external_mtls_enabled", "node_agent_tls_jwt_enabled").
-		WherePK().Returning("id, spiffe_enabled, spire_attestation_method, node_agent_external_mtls_enabled, node_agent_tls_jwt_enabled").Exec(ctx)
+		ExcludeColumn("spiffe_enabled", "spire_attestation_method", "node_agent_external_mtls_enabled", "node_agent_tls_jwt_enabled", "observed_failure_domain").
+		WherePK().Returning("id, spiffe_enabled, spire_attestation_method, node_agent_external_mtls_enabled, node_agent_tls_jwt_enabled, observed_failure_domain").Exec(ctx)
 	if err != nil {
 		return Node{}, err
 	}
 	return *node, notFoundErrIfNoRowsAffected(res)
+}
+
+func (q *queriesImpl) UpdateNodeObservedFailureDomain(ctx context.Context, nodeID uuid.UUID, domain string) error {
+	res, err := q.db.NewUpdate().Model(&Node{}).
+		Set("observed_failure_domain = ?", domain).
+		Where("id = ?", nodeID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to update node observed failure domain: %w", err)
+	}
+	return notFoundErrIfNoRowsAffected(res)
 }
 
 func (q *queriesImpl) DeleteNode(ctx context.Context, id uuid.UUID) error {
