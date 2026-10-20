@@ -518,7 +518,7 @@ class DemoTests(unittest.TestCase):
 
 class ScheduledRenewalTests(unittest.TestCase):
     def run_scheduled(self, changed_nodes=(0,), restarted_nodes=(0,), audit_change=None,
-                      owner_outcome="renewed", scenario="scheduled-renewal", certificate_change=None):
+                      owner_outcome="renewed", scenario="scheduled-renewal", certificate_change=None, started_offset=0):
         c = config()
         clock = {"now": demo.timestamp("2026-10-07T00:00:00Z")}
         observed_at = demo.dt.datetime.fromtimestamp(clock["now"], demo.dt.timezone.utc).isoformat()
@@ -539,7 +539,8 @@ class ScheduledRenewalTests(unittest.TestCase):
                     self.owner = "renew-k8s-certs-" + c["cluster_id"] + "-1234567890"
                 result = super().cluster()
                 result["conditions"]["certificateRenewal"].update(
-                    forced=scenario != "scheduled-renewal", scheduledFor=observed_at, outcome=owner_outcome)
+                    forced=scenario != "scheduled-renewal", scheduledFor=observed_at, outcome=owner_outcome,
+                    startedAt=demo.dt.datetime.fromtimestamp(clock["now"] + started_offset, demo.dt.timezone.utc).isoformat())
                 return result
             def certificates(self, after=0, manual=False):
                 before, renewed = snapshot(c), snapshot(c, True)
@@ -597,6 +598,11 @@ class ScheduledRenewalTests(unittest.TestCase):
         with patch.object(demo, "Traffic", FakeTraffic), patch.object(demo, "wait_for", side_effect=instant), \
                 patch.object(demo.time, "time", side_effect=lambda: clock["now"]):
             return demo.run(c, scenario, c["cluster_id"], DueSubset)
+
+    def test_cycle_accepted_during_the_baseline_phase_is_not_credited_with_traffic(self):
+        result = self.run_scheduled(started_offset=-60)
+        self.assertEqual("failed", result["status"])
+        self.assertEqual("cycle_started_before_traffic", result["reason"])
 
     def test_one_due_node_and_two_healthy_unchanged_nodes_pass_whole_scheduled_lane(self):
         report = self.run_scheduled()
