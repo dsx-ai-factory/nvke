@@ -140,6 +140,16 @@ def validate_config(c, scenario):
     return c
 
 
+MANUAL_STEP_LIMIT = 99
+
+
+def manual_operation_hashes(run):
+    """Operation hashes of the run ID and its per-step IDs <run>/<action>-<n>, as the audit guide suggests."""
+    return {audit_hash("operation", run)} | {audit_hash("operation", run + "/" + action + "-" + str(step))
+                                              for action in ("check", "approve", "renew", "rotate", "verify")
+                                              for step in range(1, MANUAL_STEP_LIMIT + 1)}
+
+
 class Live:
     def __init__(self, c):
         self.c = c
@@ -395,14 +405,20 @@ class Live:
             events = [json.loads(line) for line in Path(self.c["manual_audit_file"]).read_text().splitlines() if line]
         else:
             events = self.sql("SELECT COALESCE(json_agg(event), '[]'::json) FROM credential_audit_events WHERE event #>> '{target,cluster_id}'='" + self.c["cluster_id"] + "' AND event #>> '{correlation,workflow_hash}'='" + audit_hash("workflow", workflow) + "'")
-        accepted = []
+        accepted, seen = [], set()
+        operations = manual_operation_hashes(self.c["manual_operation"]) if manual else set()
         for event in events:
             require(event["schema_version"] == "nke.credential-audit.v1" and HEX.fullmatch(event["event_id"]), "audit_schema_invalid")
             if timestamp(event["timestamp"]) < since:
                 continue
+            # event_id excludes the timestamp, so a duplicate is a repeated step
+            # without its own step identity; export deduplication would merge it.
+            require(event["event_id"] not in seen, "audit_event_duplicate")
+            seen.add(event["event_id"])
             if manual:
                 require(event.get("target", {}).get("cluster_hash") == audit_hash("cluster", self.c["kube_system_uid"]) and
-                        event.get("correlation", {}).get("operation_hash") == audit_hash("operation", self.c["manual_operation"]), "manual_audit_target_or_run_mismatch")
+                        event.get("correlation", {}).get("operation_hash") in operations,
+                        "manual_audit_target_or_run_mismatch")
                 require(event.get("actor", {}).get("kind") == "operator_reported", "manual_audit_actor_invalid")
             require(event["plane"] == ("t1" if manual else "t2"), "audit_plane_mismatch")
             require(event["credential_type"] == ("etcd_encryption_key" if self.c.get("scenario") == "etcd-key" else "kubeadm_leaf_bundle"), "audit_credential_mismatch")

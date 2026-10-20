@@ -1026,6 +1026,38 @@ class CollectorContractTests(unittest.TestCase):
             with self.assertRaisesRegex(demo.CheckError, "target_or_run_mismatch"):
                 demo.Live(c).audit("unused", time.time() - 10, True)
 
+    def test_manual_audit_accepts_per_step_identities_and_rejects_duplicate_events(self):
+        c = config()
+        c["scenario"] = "manual-t1"
+        def event(node, action, operation):
+            identity = {"plane": "t1", "credential_type": "kubeadm_leaf_bundle", "action": action, "outcome": "success",
+                        "target": {"cluster_hash": demo.audit_hash("cluster", c["kube_system_uid"]),
+                                   "node_hash": demo.audit_hash("node", node)},
+                        "actor": {"kind": "operator_reported"}, "correlation": {"operation_hash": demo.audit_hash("operation", operation)}}
+            return {"schema_version": "nke.credential-audit.v1", "event_id": demo.digest(json.dumps(identity, sort_keys=True)),
+                    "timestamp": demo.now(), **identity}
+        run = c["manual_operation"]
+        events = []
+        for n in c["nodes"]:
+            events += [event(n["name"], "check", run + "/check-1"), event(n["name"], "renew", run + "/renew-1"),
+                       event(n["name"], "verify", run + "/verify-1")]
+        # A failed renew repeated identically on one node keeps a distinct row through its step ID.
+        events.append(event(c["nodes"][0]["name"], "renew", run + "/renew-2"))
+        with tempfile.TemporaryDirectory() as tmp:
+            c["manual_audit_file"] = str(Path(tmp) / "audit.jsonl")
+            def save():
+                Path(c["manual_audit_file"]).write_text("\n".join(json.dumps(e) for e in events))
+            save()
+            self.assertEqual(10, len(demo.Live(c).audit("unused", time.time() - 10, True)))
+            events.append(event(c["nodes"][0]["name"], "renew", run + "/renew-2"))
+            save()
+            with self.assertRaisesRegex(demo.CheckError, "audit_event_duplicate"):
+                demo.Live(c).audit("unused", time.time() - 10, True)
+            events[-1] = event(c["nodes"][0]["name"], "renew", "another-run/renew-3")
+            save()
+            with self.assertRaisesRegex(demo.CheckError, "target_or_run_mismatch"):
+                demo.Live(c).audit("unused", time.time() - 10, True)
+
     def test_workflow_type_and_terminal_state_are_checked(self):
         live = demo.Live(config())
         info = {"workflowExecutionInfo": {"execution": {"workflowId": "expected"}, "type": {"name": "RenewK8sCertsV2"}, "status": "WORKFLOW_EXECUTION_STATUS_COMPLETED"}}
