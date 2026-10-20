@@ -397,7 +397,7 @@ jobs:
         if: matrix.suite == 'nico'
         working-directory: cli
         env:
-          NVKECTL_CONTROLLER_IMAGE: ${{ env.NVKE_CONTROLLER_IMAGE }}
+          NVKECTL_NVKE_CONTROLLER_IMAGE: ${{ env.NVKE_CONTROLLER_IMAGE }}
           OCI_BIN: nerdctl
           NVKECTL_E2E_NICO_NODES: "3"
         run: sudo -E env "PATH=$PATH" ./e2e/bootstrap/run-nico.sh

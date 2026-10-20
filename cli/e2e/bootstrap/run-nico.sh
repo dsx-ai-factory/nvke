@@ -119,8 +119,8 @@ export NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}"
 # nico-sim log, which the bootstrap cannot see.
 DIAGNOSTICS_FILE="${DIAGNOSTICS_DIR}/nico-lane.txt"
 
-: "${NVKECTL_CONTROLLER_IMAGE:?NVKECTL_CONTROLLER_IMAGE must name the controller image to deploy, already present in containerd (see run.sh)}"
-export NVKECTL_CONTROLLER_IMAGE
+: "${NVKECTL_NVKE_CONTROLLER_IMAGE:?NVKECTL_NVKE_CONTROLLER_IMAGE must name the controller image to deploy, already present in containerd (see run.sh)}"
+export NVKECTL_NVKE_CONTROLLER_IMAGE
 
 # `kind create cluster` merges into $KUBECONFIG; use a scratch path so this run
 # never takes ownership of the caller's. See run.sh for the sudo -E reasoning.
@@ -520,7 +520,7 @@ if [ -n "${CONTROL_PLANE_VIP}" ]; then
 fi
 
 log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 25m" \
-  "(NVKECTL_CONTROLLER_IMAGE=${NVKECTL_CONTROLLER_IMAGE}, NVKECTL_CONTROLLER_PROFILES_IMAGE=${NVKECTL_CONTROLLER_PROFILES_IMAGE})"
+  "(NVKECTL_NVKE_CONTROLLER_IMAGE=${NVKECTL_NVKE_CONTROLLER_IMAGE}, NVKECTL_CONTROLLER_PROFILES_IMAGE=${NVKECTL_CONTROLLER_PROFILES_IMAGE})"
 defer teardown_bootstrap_cluster
 setsid "${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" \
   --keep-bootstrap-cluster \

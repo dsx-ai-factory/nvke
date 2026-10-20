@@ -69,7 +69,6 @@ nvkectl bootstrap site [flags]
 
 ```
       --arch string                         Architecture of the release artifact to use, linux/amd64 or linux/arm64; default: the bootstrap host's, since the bootstrap CAPNICo runs in its Kind cluster. Only with --release.
-      --controller-image string             Controller image to deploy (overrides NVKECTL_CONTROLLER_IMAGE and the manifest default)
       --diagnostics-dir string              Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. Overrides NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR. (default "cluster-diagnostics")
       --disable-mtls                        Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. The agents must be running with --disable-mtls too. Development only.
       --dry-run                             Load and validate the site spec and print it, but do not dispatch any workflow
