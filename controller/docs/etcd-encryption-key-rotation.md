@@ -78,7 +78,14 @@ control-plane node UUIDs, topology, operator, time, and approved change window.
   `kubectl get secret --namespace <controller-namespace>
   etcd-encryption-key-<cluster-uuid> --output yaml` redirected straight into
   that store. Its `active` and `active-name` fields are the key and storage
-  name. Do not print or inspect the copied data.
+  name. Do not print or inspect the copied data. A Secret created before
+  storage names were recorded, or last rotated by an earlier controller, has no
+  `active-name` yet, so this copy lacks the storage name. Use the same tooling
+  to check only whether the field is present. If it is missing, copy the Secret
+  again once `conditions.etcdKeyRotation.phase` reports `add_secondary`, and
+  before it reaches `finalize`: the workflow records the old key's storage name
+  in `active-name` before that phase, and `active` keeps the old key until
+  finalization. Keep both copies with the etcd backups.
 
 The workflow snapshots the control-plane node set and runs health/preflight
 checks before rollout. Key updates hot-reload API server configuration; they do
@@ -229,9 +236,9 @@ the mutation lock. Do not delete the pending key, hand-edit encryption
 configuration, edit database conditions, start a competing rotation, or
 restore an old configuration after old keys were removed.
 
-While the original execution is running, each node key update already retries
-the agent's retry-safe `Unavailable` and `DeadlineExceeded` answers up to three
-times before the phase fails; prefer that over manual action. If it
+While the original execution is running, each node key update already makes
+up to three attempts on the agent's retry-safe `Unavailable` and
+`DeadlineExceeded` answers before the phase fails; prefer that over manual action. If it
 has failed/canceled in `add_secondary` or later, recover by **resetting that same
 workflow ID**, after proving all old key-update activity attempts are terminal
 and no conflicting node work
