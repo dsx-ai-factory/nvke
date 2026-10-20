@@ -151,12 +151,14 @@ test: ## Run this module's tests. (run by the merge gate)
 	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
 
 # Compile only the existing process-level test suite, never the supplied CLI.
+test-artifact: export NVKECTL := $(NVKECTL)
+test-artifact: export NVKECTL_EXPECTED_VERSION := $(NVKECTL_EXPECTED_VERSION)
 test-artifact: ## Test a supplied NVKECTL binary; requires NVKECTL_EXPECTED_VERSION.
-	@test -n "$(NVKECTL)" || { echo "NVKECTL is required" >&2; exit 1; }
-	@test -n "$(NVKECTL_EXPECTED_VERSION)" || { echo "NVKECTL_EXPECTED_VERSION is required" >&2; exit 1; }
-	@binary="$(NVKECTL)"; \
+	@test -n "$$NVKECTL" || { echo "NVKECTL is required" >&2; exit 1; }
+	@test -n "$$NVKECTL_EXPECTED_VERSION" || { echo "NVKECTL_EXPECTED_VERSION is required" >&2; exit 1; }
+	@binary="$$NVKECTL"; \
 	case "$$binary" in /*) ;; *) binary="$$PWD/$$binary" ;; esac; \
-	NVKECTL="$$binary" NVKECTL_EXPECTED_VERSION="$(NVKECTL_EXPECTED_VERSION)" \
+	NVKECTL="$$binary" NVKECTL_EXPECTED_VERSION="$$NVKECTL_EXPECTED_VERSION" \
 		$(GO) test $(GO_TEST_FLAGS) -count=1 -timeout=10m ./cmd/nvkectl/contract_test.go
 
 # e2e coverage for "nvkectl bootstrap site" specifically -- e2e/bootstrap/ is

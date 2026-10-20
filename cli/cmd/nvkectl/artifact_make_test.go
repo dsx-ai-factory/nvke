@@ -33,6 +33,9 @@ func TestArtifactMakeTargetInputs(t *testing.T) {
 		{name: "absolute spaced path", binary: filepath.Join(dir, "space path", "nvkectl"), version: "v1"},
 		{name: "relative spaced path", binary: "space path/nvkectl", version: "v1"},
 		{name: "relative path", binary: "bin/nvkectl", version: "v1"},
+		{name: "absolute backtick path", binary: filepath.Join(dir, "`printf changed`", "nvkectl"), version: "v1"},
+		{name: "relative backtick path", binary: "`printf changed`/nvkectl", version: "v1"},
+		{name: "backtick version", binary: "bin/nvkectl", version: "v1`printf changed`"},
 		{name: "missing artifact", version: "v1", wantErr: true},
 		{name: "missing version", binary: "space path/nvkectl", wantErr: true},
 	} {
