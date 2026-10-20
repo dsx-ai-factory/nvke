@@ -126,6 +126,7 @@ All metric names use the `nvke_controller_` prefix — never `cwe_` (legacy) (e.
 │   ├── server.gen.go       # Generated server interfaces
 │   └── client.gen.go       # Generated client
 ├── cmd/
+│   ├── credential-audit/   # Offline tool that records manual T1 credential audit evidence
 │   └── worker/             # Main CWE worker entrypoint
 ├── deploy/dashboards/      # Grafana reference JSON (import-only; see deploy/dashboards/AGENTS.md)
 ├── docs/                   # Developer guides (API authentication, BYO OS)
