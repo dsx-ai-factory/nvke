@@ -1222,31 +1222,52 @@ func TestReserveCertificateRenewalFencesOnlyV2(t *testing.T) {
 // TestV2RenewalRefusesUnfencedReservationOnSameNode keeps a V2 cycle from adopting
 // a V1 workflow's reservation: reattaching would run under the V1 operation ID
 // while workflow cleanup polls the cycle's own ID. Both V2 executors refuse the
-// node before any agent call and leave the V1 record untouched.
+// node before any agent call and leave the V1 record untouched. The retry cases
+// fail the first attempt's reservation transaction, so the V1 record is found on
+// attempt 2, which must still report NotDispatched so the cycle releases its lock.
 func TestV2RenewalRefusesUnfencedReservationOnSameNode(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		legacy bool
+		retry  bool
 	}{
 		{name: "typed dispatch"},
 		{name: "legacy dispatch", legacy: true},
+		{name: "typed dispatch on retry", retry: true},
+		{name: "legacy dispatch on retry", legacy: true, retry: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			node := certificateRenewalTestNode()
 			v1 := &db.NodeAgentCertificateRenewal{NodeID: node.ID, OperationID: "v1-operation"}
 			database := &agentAdmissionDatabase{node: node, cluster: db.Cluster{ID: node.ClusterID, CertificateRenewal: v1}}
+			flaky := &flakyReleaseDatabase{legacyAdmissionDatabase: legacyAdmissionDatabase{database}, fail: map[int]bool{1: test.retry}}
 			fake := &agenttest.FakeClient{}
-			a := &Activities{cfg: config.Config{RunbooksDir: t.TempDir()}, db: legacyAdmissionDatabase{database}, nodeAgentClient: fake}
-			env := (&testsuite.WorkflowTestSuite{}).NewTestActivityEnvironment()
+			a := &Activities{cfg: config.Config{RunbooksDir: t.TempDir()}, db: flaky, nodeAgentClient: fake}
 			renew := a.RenewKubernetesCertificates
 			if test.legacy {
 				renew = a.RenewLegacyKubernetesCertificates
 			}
-			env.RegisterActivity(renew)
-
-			_, err := env.ExecuteActivity(renew, KubernetesCertificateRenewalInput{
+			input := KubernetesCertificateRenewalInput{
 				NodeID: node.ID, OperationID: "cycle-operation", ThresholdDays: 14, ExpectedEtcdMembers: 3,
-			})
+			}
+
+			var err error
+			if test.retry {
+				env := (&testsuite.WorkflowTestSuite{}).NewTestWorkflowEnvironment()
+				env.RegisterActivity(renew)
+				env.ExecuteWorkflow(func(ctx workflow.Context) error {
+					ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+						StartToCloseTimeout: time.Minute, RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 3},
+					})
+					return workflow.ExecuteActivity(ctx, renew, input).Get(ctx, nil)
+				})
+				err = env.GetWorkflowError()
+				require.Equal(t, 2, flaky.calls, "attempt 2 refuses the node and is not retried")
+			} else {
+				env := (&testsuite.WorkflowTestSuite{}).NewTestActivityEnvironment()
+				env.RegisterActivity(renew)
+				_, err = env.ExecuteActivity(renew, input)
+			}
 
 			var appErr *temporal.ApplicationError
 			require.ErrorAs(t, err, &appErr)
