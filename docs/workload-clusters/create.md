@@ -87,7 +87,7 @@ The cluster spec is a YAML file that describes the cluster, its control plane an
 
    | Field | Default | Notes |
    |---|---|---|
-   | `controlPlaneConfig.desiredCount` | None, required | Number of control-plane nodes. Use an odd number so that etcd keeps a quorum. More than one requires `controlPlaneVIP` unless the controller enables the development override described below. Exactly two is excluded from automatic certificate renewal; use one, or three or more. |
+   | `controlPlaneConfig.desiredCount` | None, required | Number of control-plane nodes. Use an odd number so that etcd keeps a quorum. More than one requires `controlPlaneVIP` unless the controller enables the development override described below. Exactly two is excluded from automatic certificate renewal: create the cluster with one, or three or more. An existing two-node cluster cannot scale down to one and must be scaled to three or more. |
    | `controlPlaneConfig.maxSurge` | `0` | Extra control-plane nodes allowed during a rollout: `0` or `1`. |
    | `controlPlaneConfig.systemReservedMemory` | `16Gi` | Memory the kubelet reserves for system daemons. |
    | `controlPlaneConfig.nodeLabels` | None | Labels applied to each control-plane node after it joins. Set at creation; updating them is not supported, see [Preview status and known limitations](../overview/preview-status.md#workload-clusters-and-node-pools). Control-plane nodes take no custom taints. |
