@@ -171,7 +171,8 @@ two availability alerts, `NVKECertificateInspectionUnavailable` and
 `credential_monitoring_enabled` is 1, so disabling monitoring does not page for
 every node and cluster. Unknown observations must still not be mistaken for
 healthy credentials: with monitoring disabled, no rule reports expiring or missing
-certificates.
+certificates once the last observation is older than `observationMaxAge`. Until
+then, the expiry and missing alerts keep evaluating that last observation.
 
 ## Alert responses
 
