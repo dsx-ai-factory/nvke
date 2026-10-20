@@ -137,7 +137,8 @@ curl -X POST http://<MANAGEMENT_ADDRESS>:30080/api/clusters \
    | `Provisioning` | NVKE is requesting machines from NICo and forming the cluster. |
    | `Provisioned` | The first control-plane node ran `kubeadm init` and the Container Network Interface (CNI) plugin is installed. The other nodes join after this. |
    | `ProvisioningFailed` | Provisioning stopped. The `provisioning` condition's message gives the cause. |
-   | `Updating`, `Upgrading`, `Recycling` | A day-2 operation is running. |
+   | `Updating` | A day-2 operation is running, or a failed certificate renewal kept the cluster mutation lock. A failed certificate renewal whose node work was not confirmed terminal keeps `updateInProgress=certificate_renewal` (`conditions.certificateRenewal.state` is `failed`) until an operator clears it; see [Status and failure handling](../../controller/docs/certificate-renewal.md#status-and-failure-handling). |
+   | `Upgrading`, `Recycling` | A day-2 operation is running. |
    | `UpdateFailed` | The last day-2 operation failed. |
    | `Deleting` | The cluster is being deleted. |
 
