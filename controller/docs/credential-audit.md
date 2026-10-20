@@ -105,9 +105,11 @@ The manual tool rejects mixed PEM bundles and private-key PEM blocks.
   bundle check and a kubelet-serving check with available public fingerprints.
   These observations have no renewal workflow attribution. An observation that
   repeats the previous inspection's outcome, reason and fingerprints for the
-  same node and credential is not recorded again, so an unchanged node adds no
-  rows. That includes a probe that keeps failing the same way, such as a node
-  agent without the inspection RPC: only its first failure is recorded. Changes,
+  same node and credential is not recorded again once the previous observation
+  was recorded, so an unchanged node adds no rows. That includes a probe that
+  keeps failing the same way, such as a node agent without the inspection RPC:
+  only its first failure is recorded. If the ledger write for an inspection
+  fails, the next inspection is recorded even when unchanged. Changes,
   including a change of failure reason, are recorded. A failed probe emits
   unavailable evidence without claiming retained older fingerprints are fresh;
   a successful read does not prove renewal occurred or that a certificate is unexpired.

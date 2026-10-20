@@ -96,26 +96,54 @@ func TestInspectionAuditSkipsUnchangedObservations(t *testing.T) {
 			{Credential: "kubelet-serving", State: "available", CertificateSHA256: credentialaudit.Hash("certificate", serving)},
 		}}
 	}
+	// record mirrors Reconcile, which marks an inspection once its observations are stored.
+	record := func(previous, current *db.CertificateInspection) {
+		current.AuditRecorded = c.recordInspectionAudit(t.Context(), node, previous, current)
+	}
 	first := inspection("serving-1", "")
-	c.recordInspectionAudit(t.Context(), node, nil, first)
+	record(nil, first)
 	second := inspection("serving-1", "")
-	c.recordInspectionAudit(t.Context(), node, first, second)
+	record(first, second)
 	require.Len(t, store.events, 1, "an unchanged inspection records no row")
 
 	renewed := inspection("serving-2", "")
-	c.recordInspectionAudit(t.Context(), node, second, renewed)
+	record(second, renewed)
 	require.Len(t, store.events, 2, "a changed fingerprint is recorded")
 
 	unsupported := inspection("serving-2", inspectionUnsupported)
-	c.recordInspectionAudit(t.Context(), node, renewed, unsupported)
+	record(renewed, unsupported)
 	require.Len(t, store.events, 3, "a new failure is recorded")
 	require.Equal(t, credentialaudit.OutcomeFailure, store.events[2].Outcome)
 	again := inspection("serving-2", inspectionUnsupported)
-	c.recordInspectionAudit(t.Context(), node, unsupported, again)
+	record(unsupported, again)
 	require.Len(t, store.events, 3, "an identical failure records no row")
 
 	unavailable := inspection("serving-2", "unavailable")
-	c.recordInspectionAudit(t.Context(), node, again, unavailable)
+	record(again, unavailable)
 	require.Len(t, store.events, 4, "a changed failure reason is recorded")
 	require.Equal(t, credentialaudit.OutcomeFailure, store.events[3].Outcome)
+}
+
+// TestInspectionAuditRecordsRepeatAfterFailedWrite keeps a failed ledger write
+// from hiding a credential state until it changes: the previous inspection is
+// not in the ledger, so an identical inspection is still recorded.
+func TestInspectionAuditRecordsRepeatAfterFailedWrite(t *testing.T) {
+	store := &inspectionAuditStore{err: errors.New("ledger unavailable")}
+	c := &Controller{audit: credentialaudit.NewRecorder(store, slog.New(slog.DiscardHandler), nil)}
+	node := db.Node{ID: uuid.New(), ClusterID: uuid.New()}
+	attempt := time.Now().UTC()
+	inspection := func() *db.CertificateInspection {
+		attempt = attempt.Add(time.Hour)
+		return &db.CertificateInspection{Available: true, AttemptedAt: attempt, Certificates: []db.CertificateObservation{
+			{Credential: "kubelet-serving", State: "available", CertificateSHA256: credentialaudit.Hash("certificate", "serving")},
+		}}
+	}
+	first := inspection()
+	first.AuditRecorded = c.recordInspectionAudit(t.Context(), node, nil, first)
+	require.False(t, first.AuditRecorded)
+
+	store.err, store.events = nil, nil
+	second := inspection()
+	require.True(t, c.recordInspectionAudit(t.Context(), node, first, second))
+	require.Len(t, store.events, 1, "an identical inspection after a failed write is recorded")
 }

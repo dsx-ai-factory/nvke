@@ -53,24 +53,26 @@ func NewRecorder(store Store, logger *slog.Logger, observe func(string)) *Record
 
 // Record preserves operation cancellation while giving its audit write a bounded
 // independent context. It emits neither raw errors nor invalid input to logs.
-func (r *Recorder) Record(ctx context.Context, event Event) {
+// It reports whether the ledger holds the event.
+func (r *Recorder) Record(ctx context.Context, event Event) bool {
 	if r == nil {
-		return
+		return false
 	}
 	validated, err := New(event)
 	if err != nil {
 		r.report(WriteInvalid, "")
-		return
+		return false
 	}
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 	if r.store == nil || r.store.RecordCredentialAuditEvent(writeCtx, validated) != nil {
 		r.report(WriteFailed, validated.ID)
-		return
+		return false
 	}
 	if r.observe != nil {
 		r.observe(WriteStored)
 	}
+	return true
 }
 
 // RecordCSR records a CSR-derived event through the per-node bound. Tenants can
