@@ -55,7 +55,7 @@ const (
 	// DeadlineExceeded may safely retry.
 	encryptionReloadTimeout = 120 * time.Second
 
-	// defaultReloadPollInterval is how often the reload counter is polled.
+	// defaultReloadPollInterval is how often apiserver encryption metrics are polled.
 	defaultReloadPollInterval = 2 * time.Second
 
 	// encryptionMetricsFailLimit is the maximum duration of consecutive metric
