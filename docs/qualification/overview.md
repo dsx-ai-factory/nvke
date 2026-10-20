@@ -145,6 +145,9 @@ Every run uploads the same artifacts whether it passed or failed:
 | `qualify-e2e.junit.xml` | the same result, machine-readable |
 | `run-inputs.txt` | which versions and settings the run actually resolved, and which were overridden |
 | `nvkectl-diagnostics.tar.gz` | what `nvkectl` collected on the node — present only when it failed |
+| `site-cluster-state.txt` | the controller namespace and every pod, read on the node — present after a failure past the bootstrap |
+| `site-bundle*.tar.gz` | the failure bundle: the node's state and logs, the cluster's objects, events and pod logs, and a timeline — present after a failure; a `site-bundle*.txt` note in its place says why there is none |
+| `tenant-diagnostics.json` | the tenant's nodes as the controller API reports them — present when a tenant failed |
 | `tbot.log` | the Teleport bot, for when nothing could be reached at all |
 
 A red run is as likely to be the site as the code. [triage.md](triage.md) is how

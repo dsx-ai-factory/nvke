@@ -53,6 +53,30 @@ const (
 	envJumpHostPassword = "JUMP_HOST_PASSWORD"
 )
 
+// withheldFromEnvironment is every value in the run's environment that must
+// not reach an artifact: the jump hosts and the SSA issuer, which the
+// workflow's own step seds out of the text files it uploads, and the jump host
+// password when a run uses one. The archives the suite writes cannot be
+// sed-ed, so the suite carries the same list into its redaction. Each value
+// raw and without a trailing slash, as the workflow matches it.
+func withheldFromEnvironment() []string {
+	var values []string
+	for _, kv := range os.Environ() {
+		name, value, ok := strings.Cut(kv, "=")
+		if !ok || value == "" {
+			continue
+		}
+		if !strings.HasSuffix(name, "_JUMP_HOST") && name != "SSA_ISSUER" && name != envJumpHostPassword {
+			continue
+		}
+		values = append(values, value)
+		if trimmed := strings.TrimRight(value, "/"); trimmed != value {
+			values = append(values, trimmed)
+		}
+	}
+	return values
+}
+
 // The versions a site run is given in -e2e.versions, all required. A run that
 // names none of a version has not said what it qualifies, so the suite fails
 // before a machine exists instead of falling back to a constant the record
@@ -134,12 +158,14 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		// accelerator would put it on one. Nothing insists on a CPU machine
 		// either, so a site offering only GPU shapes can still host one.
 		capabilities map[string]string
-		// secrets is every credential on the node, for redacting the
-		// diagnostics archive. Empty until the deploy, which is correct:
-		// bootstrap stages a binary, an archive, images and a host list, and
-		// none of them is a credential.
+		// secrets is every value to redact from the diagnostics archives:
+		// what the environment withholds from artifacts at every stage, and
+		// from the full stage on, every credential the deploy places on the
+		// node. Bootstrap itself stages a binary, an archive, images and a
+		// host list, and none of them is a credential.
 		//
-		// Named by newStack, which reads or generates every one of them.
+		// The deploy's are named by newStack, which reads or generates every
+		// one of them.
 		secrets []string
 		// spec is the site to build, resolved in BeforeAll so a missing input
 		// fails the run before a machine exists.
@@ -177,6 +203,7 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		if err := os.Remove(siteDiagnostics); err != nil && !errors.Is(err, os.ErrNotExist) {
 			Fail(fmt.Sprintf("removing a stale %s: %v", siteDiagnostics, err))
 		}
+		removeStaleBundles()
 		cfg = expectSucceed(config.Load(cfgPath))
 		provider = expectSucceed(newInfraProvider(cfg))
 		capabilities = siteCapabilities(expectSucceed(runCapabilities()))
@@ -191,13 +218,26 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		// instance while unusedUsable is zero, and the tenant wait then spends
 		// its whole provision timeout reporting that. The site node has not
 		// been asked for yet, so a shortfall here releases nothing.
+		secrets = withheldFromEnvironment()
 		if siteStage == siteStageFull {
-			stack, secrets = expectSucceed2(newStack(cfg, capabilities[infra.CapabilityArch]))
+			var placed []string
+			stack, placed = expectSucceed2(newStack(cfg, capabilities[infra.CapabilityArch]))
+			secrets = append(secrets, placed...)
 			Expect(requireRunCapacity(context.Background(), provider)).To(Succeed())
 		}
 	})
 
-	AfterEach(func() { failed = failed || CurrentSpecReport().Failed() })
+	AfterEach(func() {
+		if !CurrentSpecReport().Failed() {
+			return
+		}
+		failed = true
+		// A failure after the first bundle is what makes a second one, from
+		// the teardown, worth its minutes.
+		if siteBundleCollected {
+			failedSinceBundle = true
+		}
+	})
 
 	It("provisions a node", func(ctx SpecContext) {
 		var err error
@@ -237,11 +277,16 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 				Skip("no node")
 			}
 			nvkectl := expectSucceed(nvkectlBinary(cfg, capabilities[infra.CapabilityArch]))
+			// From before the bootstrap, because the question a timeline
+			// answers -- which network a pod landed on, and when -- is
+			// decided while kubeadm and the CNI come up.
+			startSiteSampler(ctx, session)
 			var err error
 			cluster, err = site.Bootstrap(ctx, node, session, nvkectl, spec)
 			if err != nil {
 				collectSiteDiagnostics(ctx, session, secrets...)
 				collectSiteClusterState(ctx, session, secrets...)
+				collectSiteBundle(ctx, session, siteBundle, siteBundleBudget, secrets...)
 			}
 			Expect(err).NotTo(HaveOccurred(), "should bootstrap Kubernetes on the node")
 			GinkgoLogr.Info("site controller", "kubeconfig", cluster.Kubeconfig)
@@ -273,6 +318,8 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 			})
 			if err != nil {
 				collectSiteDiagnostics(ctx, session, secrets...)
+				collectSiteClusterState(ctx, session, secrets...)
+				collectSiteBundle(ctx, session, siteBundle, siteBundleBudget, secrets...)
 			}
 			Expect(err).NotTo(HaveOccurred(), "should install the NVKE stack")
 			deployed = true
@@ -365,6 +412,24 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 		if session == nil {
 			return
 		}
+		detached := context.WithoutCancel(ctx)
+		// On every path, a kept site included: the timeline it wrote is read
+		// by the bundle below, and nothing should keep sampling a node that
+		// is left for a person to look at.
+		stopSiteSampler(detached, session)
+		// The failing spec collects these itself, and the first two are a
+		// no-op when it did. They are here for everything after it: a tenant
+		// that never reaches Ready is a failure of the site's control plane,
+		// and the node holding that evidence is released below. Before the
+		// keep check, not after: a kept node is kept to be read, and the
+		// bundle is the record of what it looked like when the run failed.
+		if failed {
+			collectSiteDiagnostics(detached, session, secrets...)
+			collectSiteClusterState(detached, session, secrets...)
+			if !siteBundleCollected || failedSinceBundle {
+				collectSiteBundle(detached, session, siteBundleFinal, siteBundleFinalBudget, secrets...)
+			}
+		}
 		// SkipDelete as well as the other two. It keeps the tenant and skips
 		// the nvkectl sweep, and this node is what those tenants' instances
 		// hang off, so releasing it either deletes them through the sweep --
@@ -376,15 +441,6 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 				"reason", keepReason(keepSite, cfg.Lifecycle.SkipDelete))
 			GinkgoLogr.Info("the instance survives this run and must be released by hand", "name", node.Name)
 			return
-		}
-		detached := context.WithoutCancel(ctx)
-		// The bootstrap spec collects these itself, and this is a no-op when it
-		// did. It is here for everything after it: a tenant that never reaches
-		// Ready is a failure of the site's control plane, and the node holding
-		// that evidence is released three lines down.
-		if failed {
-			collectSiteDiagnostics(detached, session, secrets...)
-			collectSiteClusterState(detached, session, secrets...)
 		}
 		if cluster.Kubeconfig != "" {
 			if err := sweepSiteTenants(detached, cluster.Kubeconfig); err != nil {
@@ -831,6 +887,95 @@ func collectSiteClusterState(ctx context.Context, session infra.Session, secrets
 	}
 	siteClusterStateCollected = true
 	GinkgoLogr.Info("collected the site cluster's state", "path", siteClusterState)
+}
+
+// The failure bundles, beside the other two files: the node's state and logs,
+// the cluster's objects, events and pod logs across every namespace, and the
+// sampler's timeline. siteBundle is taken at the spec that failed, and
+// siteBundleFinal from the teardown when a later spec failed too. A note with
+// the same prefix takes a bundle's place when it could not be collected or
+// could not be shown clean, so an absent tarball in the artifact always comes
+// with a reason.
+const (
+	siteBundlePrefix = "site-bundle"
+	siteBundle       = siteBundlePrefix + ".tar.gz"
+	siteBundleFinal  = siteBundlePrefix + "-final.tar.gz"
+	// siteBundleBudget bounds a collection at a failing spec. The teardown's
+	// shares its 45 minutes with the tenant sweep and gets less.
+	siteBundleBudget      = 9 * time.Minute
+	siteBundleFinalBudget = 7 * time.Minute
+	// siteSamplerBudget bounds starting and stopping the sampler, which is a
+	// unit file and one systemctl call each way.
+	siteSamplerBudget = time.Minute
+)
+
+var (
+	// siteBundleCollected is set once a bundle has been written this run.
+	siteBundleCollected bool
+	// failedSinceBundle is set when a spec failed after that.
+	failedSinceBundle bool
+)
+
+// removeStaleBundles clears the bundles and notes an earlier run left in the
+// working directory, which describe another node.
+func removeStaleBundles() {
+	stale, _ := filepath.Glob(siteBundlePrefix + "*")
+	for _, p := range stale {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			Fail(fmt.Sprintf("removing a stale %s: %v", p, err))
+		}
+	}
+}
+
+// collectSiteBundle writes dest from the node. Best effort and never fails
+// the spec, like the two collectors above.
+//
+// Only while the spec's own context is alive: a spec that died on its timeout
+// has Ginkgo moving on after a grace period, and a nine-minute collection here
+// would run into the next spec. The teardown takes that case on its own clock,
+// which is why it passes a context of its own.
+func collectSiteBundle(ctx context.Context, session infra.Session, dest string, budget time.Duration, secrets ...string) {
+	if ctx.Err() != nil {
+		GinkgoLogr.Info("not collecting the site bundle from a spec whose time is up; the teardown will", "path", dest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), budget)
+	defer cancel()
+	report, err := site.CollectBundle(ctx, session, dest, budget, secrets...)
+	if err != nil {
+		GinkgoLogr.Error(err, "could not collect the site bundle", "path", dest)
+		// The redaction failure writes its own note, naming what it found.
+		if !errors.Is(err, site.ErrBundleRedaction) {
+			_ = os.WriteFile(dest+".collection-failed.txt", []byte("the site bundle was not collected: "+err.Error()+"\n"), 0o600)
+		}
+		return
+	}
+	siteBundleCollected = true
+	failedSinceBundle = false
+	GinkgoLogr.Info("collected the site bundle", "path", dest, "bytes", report.Bytes,
+		"sections", report.Sections, "failed", report.Failed, "skipped", report.Skipped,
+		"partial", report.Partial, "interrupted", report.Interrupted)
+}
+
+// startSiteSampler starts the timeline on the node. Best effort: a run
+// without a timeline still has everything else.
+func startSiteSampler(ctx context.Context, session infra.Session) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), siteSamplerBudget)
+	defer cancel()
+	if err := site.StartSampler(ctx, session); err != nil {
+		GinkgoLogr.Error(err, "could not start the site sampler; the bundle will have no timeline")
+		return
+	}
+	GinkgoLogr.Info("started the site sampler")
+}
+
+// stopSiteSampler stops it, leaving the timeline on the node for the bundle.
+func stopSiteSampler(ctx context.Context, session infra.Session) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), siteSamplerBudget)
+	defer cancel()
+	if err := site.StopSampler(ctx, session); err != nil {
+		GinkgoLogr.Error(err, "could not stop the site sampler")
+	}
 }
 
 // nodeInputs is what cloud-init writes onto the node. The agent's arguments

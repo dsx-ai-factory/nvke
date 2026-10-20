@@ -1753,17 +1753,28 @@ jobs:
       # recorded nothing beyond "did not become healthy within 10m0s". It
       # carries the Service endpoints, so it says whether the controller was unready or
       # merely unreachable.
+      #
+      # site-bundle*.tar.gz is the failure bundle the suite collects from the
+      # node when a spec fails: the node's state and logs, the cluster's
+      # objects, events and pod logs across every namespace, and a timeline
+      # sampled from the bootstrap on. Redacted and verified on the runner
+      # before it is written; a site-bundle*.txt note in its place says why
+      # there is no tarball, because collection failed or because the
+      # redaction could not be shown clean and the suite kept the archive
+      # back. The name carries the attempt, as the other lanes' do, so a
+      # re-run's upload does not collide with the first attempt's.
       - name: Upload the run log
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: forge-site-${{ env.SITE_STAGE }}-${{ matrix.stream }}-${{ github.run_id }}
+          name: forge-site-${{ env.SITE_STAGE }}-${{ matrix.stream }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             controller/test/e2e/qualify-e2e.log
             controller/test/e2e/qualify-e2e.junit.xml
             controller/test/e2e/nvkectl-diagnostics.tar.gz
             controller/test/e2e/tenant-diagnostics.json
             controller/test/e2e/site-cluster-state.txt
+            controller/test/e2e/site-bundle*
             qualify-result.json
             ${{ runner.temp }}/run-inputs.txt
             ${{ runner.temp }}/tbot.log

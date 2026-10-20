@@ -24,6 +24,10 @@ whichever of these the run produced:
 | `qualify-e2e.junit.xml` | The same result, machine-readable. |
 | `run-inputs.txt` | Which versions, images and settings the run actually resolved — including which were overridden. Answers "was it even testing what I thought?" |
 | `nvkectl-diagnostics.tar.gz` | What `nvkectl` collected **on the node**. Present only when nvkectl wrote a diagnostics directory, which it does when it fails. |
+| `site-cluster-state.txt` | The controller namespace and every pod, read with kubectl on the node. Present after any failure past the bootstrap. |
+| `site-bundle.tar.gz`, `site-bundle-final.tar.gz` | The failure bundle: the node's state and logs (`node/`), the cluster's objects, events and pod logs across every namespace (`cluster/`), and a timeline sampled every 15 s from the bootstrap on (`timeline/`). `index.tsv` lists every section with its exit status (124 is the section's timeout, 127 a tool the node lacks, 141 output cut by the byte cap); `manifest.txt` says whether the collection finished. The first is taken at the spec that failed, the second from the teardown when a later spec failed too. |
+| `site-bundle*.collection-failed.txt`, `site-bundle*.redaction-failed.txt` | In a bundle's place: why there is none. The second means the suite found something shaped like a credential after redaction and kept the archive back. |
+| `tenant-diagnostics.json` | The tenant cluster's nodes as the controller API reports them, when a tenant failed to provision or to become Ready. |
 | `tbot.log` | The Teleport bot. Only interesting when nothing could be reached at all. |
 
 **An absent `nvkectl-diagnostics.tar.gz` is normal and is information.** `nvkectl`

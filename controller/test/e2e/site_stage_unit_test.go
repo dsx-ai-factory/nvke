@@ -40,3 +40,24 @@ func TestFullStageSupported(t *testing.T) {
 		})
 	}
 }
+
+// The workflow seds the jump hosts and the SSA issuer out of the text files it
+// uploads; the suite has to carry the same values into the archives it
+// writes, raw and without the trailing slash the workflow also strips.
+func TestWithheldFromEnvironment(t *testing.T) {
+	t.Setenv("FORGE_JUMP_HOST", "jump.example.test/")
+	t.Setenv("DSX_REDSTONE_DEV1_DH2_JUMP_HOST", "10.1.2.3")
+	t.Setenv("SSA_ISSUER", "https://issuer.example.test/")
+	t.Setenv("JUMP_HOST_PASSWORD", "hunter2hunter2")
+	t.Setenv("FORGE_API_KEY", "not-withheld-by-this-list")
+
+	got := strings.Join(withheldFromEnvironment(), "\n")
+	for _, want := range []string{"jump.example.test/", "jump.example.test", "10.1.2.3", "https://issuer.example.test/", "https://issuer.example.test", "hunter2hunter2"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("withheldFromEnvironment lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "not-withheld-by-this-list") {
+		t.Errorf("withheldFromEnvironment carries the API key, which newStack names instead:\n%s", got)
+	}
+}
