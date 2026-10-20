@@ -103,10 +103,12 @@ The manual tool rejects mixed PEM bundles and private-key PEM blocks.
   reconcile that node's CSRs in the tenant cluster with the ledger.
 - Independent background certificate inspections record a control-plane leaf
   bundle check and a kubelet-serving check with available public fingerprints.
-  These observations have no renewal workflow attribution. A successful
-  observation that repeats the previous inspection's outcome and fingerprints
-  for the same node and credential is not recorded again, so an unchanged node
-  adds no rows; changes and every failed probe are recorded. A failed probe emits
+  These observations have no renewal workflow attribution. An observation that
+  repeats the previous inspection's outcome, reason and fingerprints for the
+  same node and credential is not recorded again, so an unchanged node adds no
+  rows. That includes a probe that keeps failing the same way, such as a node
+  agent without the inspection RPC: only its first failure is recorded. Changes,
+  including a change of failure reason, are recorded. A failed probe emits
   unavailable evidence without claiming retained older fingerprints are fresh;
   a successful read does not prove renewal occurred or that a certificate is unexpired.
 - T1 events are explicit operator observations accompanying the
@@ -256,8 +258,9 @@ Those stores can contain private material even though the audit schema does not.
 
 Set a retention interval covering Temporal workflow retention, incident response,
 release qualification, and the site's evidence requirements. There is no default
-expiration. Unchanged inspections and CSR churn are bounded as described above,
-so growth follows credential changes, failures and operations; still monitor
+expiration. Unchanged inspections, repeated identical inspection failures and
+CSR churn are bounded as described above, so growth follows credential changes,
+new failures and operations; still monitor
 table size. Verify exported records and backups before any
 operator-controlled deletion, and keep unresolved operation/recovery evidence.
 Pruning rows removes the deduplication record too; a delayed repeated write can
