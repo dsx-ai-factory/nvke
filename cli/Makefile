@@ -164,7 +164,8 @@ test-e2e-bootstrap: build
 # The same suite for `infra.provider: nico`: CAPNICo allocates the nodes from a
 # nico-sim running on the host, instead of fake hosts being listed in the site
 # spec. Needs everything run.sh does, plus a Go toolchain and gcc to build
-# nico-sim and network access to ghcr.io. See e2e/bootstrap/run-nico.sh.
+# nico-sim, network access to ghcr.io, and NVKECTL_NVKE_CONTROLLER_IMAGE set to a
+# controller image already in containerd. See e2e/bootstrap/run-nico.sh.
 test-e2e-bootstrap-nico: build
 	./e2e/bootstrap/run-nico.sh
 

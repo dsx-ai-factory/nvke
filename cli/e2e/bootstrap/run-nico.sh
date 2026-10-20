@@ -158,7 +158,14 @@ fail() {
 # defer registers a command for the EXIT trap, which runs registrations in
 # reverse order. Register the teardown *before* the operation it undoes.
 DEFERRED=()
-defer() { DEFERRED+=("$*"); }
+# Each argument is quoted as it is registered: cleanup() runs the entry through
+# eval, and a path with a space in it would otherwise split into several
+# arguments, which for `rm -rf` as root means deleting something else.
+defer() {
+  local cmd
+  printf -v cmd '%q ' "$@"
+  DEFERRED+=("${cmd}")
+}
 
 # shellcheck source=bgp-lib.sh
 source "${SCRIPT_DIR}/bgp-lib.sh"
@@ -522,6 +529,18 @@ fi
 log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 25m" \
   "(NVKECTL_NVKE_CONTROLLER_IMAGE=${NVKECTL_NVKE_CONTROLLER_IMAGE}, NVKECTL_CONTROLLER_PROFILES_IMAGE=${NVKECTL_CONTROLLER_PROFILES_IMAGE})"
 defer teardown_bootstrap_cluster
+# setsid puts nvkectl in a session of its own, so nothing else ends it when this
+# script exits early (a cancelled job, a signal during the bridging loop). It is
+# stopped before the cluster is torn down, after the diagnostics are collected:
+# deferred entries run in reverse, so this one is registered after the teardown.
+bootstrap_pid=""
+stop_bootstrap() {
+  [ -n "${bootstrap_pid}" ] || return 0
+  kill -- "-${bootstrap_pid}" 2>/dev/null || kill "${bootstrap_pid}" 2>/dev/null || true
+  wait "${bootstrap_pid}" 2>/dev/null || true
+  bootstrap_pid=""
+}
+defer stop_bootstrap
 setsid "${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" \
   --keep-bootstrap-cluster \
   --timeout 25m --kubeconfig-out "${TENANT_KUBECONFIG}" \
@@ -529,8 +548,7 @@ setsid "${NVKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" \
 bootstrap_pid=$!
 
 abort_bootstrap() {
-  kill -- "-${bootstrap_pid}" 2>/dev/null || kill "${bootstrap_pid}" 2>/dev/null || true
-  wait "${bootstrap_pid}" 2>/dev/null || true
+  stop_bootstrap
   cat "${BOOTSTRAP_LOG}" || true
   exit 1
 }
@@ -553,12 +571,12 @@ permit_cross_bridge_forwarding() {
   kind_bridge="$(bridge_of kind)" || return 1
   ip link show "${node_bridge}" >/dev/null || return 1
   ip link show "${kind_bridge}" >/dev/null || return 1
-  defer "remove_forward_rules ${kind_bridge} ${node_bridge}"
+  defer remove_forward_rules "${kind_bridge}" "${node_bridge}"
   iptables -I FORWARD 1 -i "${kind_bridge}" -o "${node_bridge}" -j ACCEPT || return 1
   iptables -I FORWARD 1 -i "${node_bridge}" -o "${kind_bridge}" -j ACCEPT || return 1
   # VIP traffic enters and leaves the same node bridge.
   if [ -n "${CONTROL_PLANE_VIP}" ]; then
-    defer "remove_vip_forward_rule ${node_bridge}"
+    defer remove_vip_forward_rule "${node_bridge}"
     iptables -I FORWARD 1 -i "${node_bridge}" -o "${node_bridge}" -j ACCEPT || return 1
   fi
 }
@@ -583,6 +601,7 @@ fi
 
 status=0
 wait "${bootstrap_pid}" || status=$?
+bootstrap_pid=""
 cat "${BOOTSTRAP_LOG}"
 output="$(cat "${BOOTSTRAP_LOG}")"
 
@@ -597,7 +616,7 @@ log "PASS: bootstrap site created the site cluster, allocating its machines thro
 bootstrap_kubeconfig="$(mktemp)"
 KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_CLUSTER}" \
   >"${bootstrap_kubeconfig}" || fail "could not read the bootstrap cluster's kubeconfig"
-defer "rm -f ${bootstrap_kubeconfig}"
+defer rm -f "${bootstrap_kubeconfig}"
 bk() { kubectl --kubeconfig "${bootstrap_kubeconfig}" "$@"; }
 
 # What the node login and infra.nico.releases asked for, which the
@@ -741,7 +760,7 @@ log "PASS: neither the NICo token nor the node password is in what nvkectl, the 
 # bootstrap cluster is still there, and, under another name that would not
 # collide, because the VIP already answers. Neither may stand anything up.
 
-sim_node_count() { nerdctl ps -q --filter "label=${SIM_LABEL}" | wc -l | tr -d ' '; }
+sim_node_count() { nerdctl ps -aq --filter "label=${SIM_LABEL}" | wc -l | tr -d ' '; }
 nodes_before="$(sim_node_count)"
 rerun_args=(bootstrap site -f "${RENDERED_SITESPEC}" --timeout 2m
   --kubeconfig-out "${SIM_STATE_DIR}/rerun.kubeconfig" --encryption-key-out "${SIM_STATE_DIR}/rerun-key.json")

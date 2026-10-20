@@ -2246,6 +2246,9 @@ func TestValidateProfilesImage(t *testing.T) {
 		{"controller-profiles:latest", "other than latest"},
 		{"controller-profiles", "other than latest"},
 		{"localhost:5000/team/profiles", "other than latest"},
+		{"registry.example.com/profiles:", "empty tag"},
+		{"localhost:5000/team/profiles:", "empty tag"},
+		{"registry.example.com/profiles:@sha256:abc123", "empty tag"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.image, func(t *testing.T) {

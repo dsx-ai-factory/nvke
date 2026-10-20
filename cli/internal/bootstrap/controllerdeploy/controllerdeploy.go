@@ -812,6 +812,11 @@ func ValidateProfilesImage(image string) error {
 	if image == "" {
 		return nil
 	}
+	// A colon with nothing after it is not a tag at all, and splitImageRef would
+	// report it as an empty one that the latest check below lets through.
+	if repo, _, _ := strings.Cut(image, "@"); strings.HasSuffix(repo, ":") {
+		return fmt.Errorf("controllerdeploy: the profiles image %q (%s) has an empty tag: nothing follows the colon", image, ProfilesImageEnv)
+	}
 	_, tag, digest := splitImageRef(image)
 	// splitImageRef reports an untagged reference as latest. Kubernetes pulls
 	// latest unconditionally, and the chart gives this image no pull policy to
