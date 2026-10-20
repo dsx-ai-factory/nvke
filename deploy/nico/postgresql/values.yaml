@@ -1,14 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Read back from a live site controller's release, which is the
+# Read back from a live management cluster's release, which is the
 # configuration that provisioned a real tenant.
 #
-# auth.postgresPassword is NOT here. It is a site secret and comes in through
-# --values-for postgresql=<file>, and the SAME value has to reach both of
-# Temporal's datastores -- default and visibility. Setting it on only one
-# leaves the Temporal schema job crash-looping with "password authentication
-# failed", which that run hit.
+# No password here: the render names the nvke-database Secret in
+# auth.existingSecret, and both of Temporal's datastores read the same one.
+# A hand install sets the SAME value on all three, or the Temporal schema
+# job crash-loops with "password authentication failed".
 auth:
   username: postgres
   database: postgres
@@ -52,7 +51,7 @@ primary:
 # week apart get different binaries with nothing in the tree to show it, which
 # for the component holding all controller state is the worst place for it.
 #
-# This digest is what `latest` resolved to on a live site controller, read
+# This digest is what `latest` resolved to on a live management cluster, read
 # back from the running pod's imageID. The chart's own appVersion claims 18.3.0;
 # that is chart metadata and not what was pulled.
 image:

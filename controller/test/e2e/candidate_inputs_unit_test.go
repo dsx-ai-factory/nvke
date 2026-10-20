@@ -711,3 +711,20 @@ func TestUnit_CandidateTimedObservationStopsWithMonitor(t *testing.T) {
 		t.Fatalf("timed observation child remains after monitor cleanup: %v", err)
 	}
 }
+
+// The actual candidate hook must forward the split configuration and keep
+// credentials in the process environment rather than command arguments.
+func TestUnit_CandidateStackConfigurationHandoff(t *testing.T) {
+	root := t.TempDir()
+	cli := filepath.Join(root, "nvkectl")
+	if err := os.WriteFile(cli, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n[ \"$NVKECTL_DATABASE_PASSWORD\" = synthetic-database ]\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), "bash", "-ec", `source "$1"; candidate_render_stack`, "contract", candidateLibrary(t))
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "NVKECTL_BIN=" + cli, "WORKSPACE_ROOT=/source", "STATE_DIR=/private/state", "NKE_E2E_CANDIDATE_SITESPEC=/private/site.json", "NKE_E2E_CANDIDATE_STACK_CONFIG=/private/stack.json", "NKE_E2E_CANDIDATE_RELEASE=/private/release.json", "NKE_E2E_CANDIDATE_LAYOUT=/private/layout", "NVKECTL_DATABASE_PASSWORD=synthetic-database"}
+	out, err := cmd.CombinedOutput()
+	want := "render\ndeploy-path\n--deploy-path\n/source/deploy/nico\n--sitespec\n/private/site.json\n--stack-config\n/private/stack.json\n--release\n/private/release.json\n--nvkr-run-dir\n/private/layout\n--arch\nlinux/arm64\n--out\n/private/state/rendered\n"
+	if err != nil || string(out) != want {
+		t.Fatalf("candidate render handoff: %s, %v", out, err)
+	}
+}

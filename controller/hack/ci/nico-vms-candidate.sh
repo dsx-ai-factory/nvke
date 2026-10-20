@@ -10,7 +10,7 @@
 # RELEASE (release-description/v1 JSON exported after parent verification),
 # LAYOUT (complete published artifacts), NVKECTL,
 # SIMULATOR, SEED, QCOW2 (absolute files, each with an exact _SHA256 blob pin),
-# SITESPEC (private local deployment), RELEASES (owner-generated profile CRs),
+# SITESPEC and STACK_CONFIG (separate public configuration), NKTP_VALUES, RELEASES (owner-generated profile CRs),
 # OS_PROFILE, KUBERNETES_VERSION, CONTROLLER_VERSION, SIMULATOR_ADDRESS,
 # SIMULATOR_ENDPOINT (exactly http://<SIMULATOR_ADDRESS>:18089),
 # MIN_AVAILABLE_MIB, MIN_DISK_MIB and RUNTIME_LOCK (precreated owned file).
@@ -333,6 +333,12 @@ candidate_cleanup() {
   exit "${rc}"
 }
 
+candidate_render_stack() {
+  "${NVKECTL_BIN}" render deploy-path --deploy-path "${WORKSPACE_ROOT}/deploy/nico" --sitespec "${NKE_E2E_CANDIDATE_SITESPEC}" \
+    --stack-config "${NKE_E2E_CANDIDATE_STACK_CONFIG}" \
+    --release "${NKE_E2E_CANDIDATE_RELEASE}" --nvkr-run-dir "${NKE_E2E_CANDIDATE_LAYOUT}" --arch linux/arm64 --out "${STATE_DIR}/rendered"
+}
+
 candidate_admit() {
   [[ "$(uname -s)" == Linux && "$(uname -m)" == aarch64 ]] || fail "the initial candidate VM profile requires native Linux ARM64"
   [[ -r /dev/kvm && -w /dev/kvm ]] || fail "candidate VM execution requires usable KVM"
@@ -343,7 +349,7 @@ candidate_admit() {
   for variable in NKE_E2E_CANDIDATE_RELEASE NKE_E2E_CANDIDATE_LAYOUT NKE_E2E_CANDIDATE_NVKECTL NKE_E2E_CANDIDATE_NVKECTL_SHA256 \
     NKE_E2E_CANDIDATE_SIMULATOR NKE_E2E_CANDIDATE_SIMULATOR_SHA256 NKE_E2E_CANDIDATE_SEED NKE_E2E_CANDIDATE_SEED_SHA256 \
     NKE_E2E_CANDIDATE_QCOW2 NKE_E2E_CANDIDATE_QCOW2_SHA256 \
-    NKE_E2E_CANDIDATE_SITESPEC NKE_E2E_CANDIDATE_RELEASES NKE_E2E_CANDIDATE_OS_PROFILE NKE_E2E_CANDIDATE_KUBERNETES_VERSION \
+    NKE_E2E_CANDIDATE_SITESPEC NKE_E2E_CANDIDATE_STACK_CONFIG NKE_E2E_CANDIDATE_NKTP_VALUES NKE_E2E_CANDIDATE_RELEASES NKE_E2E_CANDIDATE_OS_PROFILE NKE_E2E_CANDIDATE_KUBERNETES_VERSION \
     NKE_E2E_CANDIDATE_CONTROLLER_VERSION NKE_E2E_CANDIDATE_SIMULATOR_ENDPOINT NKE_E2E_CANDIDATE_SIMULATOR_ADDRESS NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB NKE_E2E_CANDIDATE_MIN_DISK_MIB \
     NKE_E2E_CANDIDATE_IMAGE_INPUTS NKE_E2E_CANDIDATE_VALUES; do candidate_require "${variable}"; done
   [[ "${NKE_E2E_CANDIDATE_SIMULATOR_ENDPOINT}" == "http://${NKE_E2E_CANDIDATE_SIMULATOR_ADDRESS}:18089" ]] || fail "candidate simulator API must use its exact admitted listener18089"
@@ -354,6 +360,10 @@ candidate_admit() {
   done
   [[ -x "${NKE_E2E_CANDIDATE_NVKECTL}" && -x "${NKE_E2E_CANDIDATE_SIMULATOR}" ]] || fail "candidate tools are not executable"
   [[ -f "${NKE_E2E_CANDIDATE_SITESPEC}" && ! -L "${NKE_E2E_CANDIDATE_SITESPEC}" && -d "${NKE_E2E_CANDIDATE_LAYOUT}" && -d "${NKE_E2E_CANDIDATE_RELEASES}" ]] || fail "candidate handoff omits site, release resources or layout"
+  for variable in NKE_E2E_CANDIDATE_STACK_CONFIG NKE_E2E_CANDIDATE_NKTP_VALUES; do
+    [[ "${!variable}" == /* && -f "${!variable}" && ! -L "${!variable}" ]] || fail "candidate stack inputs must be absolute regular files"
+  done
+  for variable in NVKECTL_NICO_TOKEN NVKECTL_NODE_USER NVKECTL_NODE_PASSWORD NVKECTL_DATABASE_PASSWORD NVKECTL_SPIRE_CA_CERT_FILE NVKECTL_SPIRE_CA_KEY_FILE; do candidate_require "${variable}"; done
   candidate_release_inputs
   "${NKE_E2E_CANDIDATE_NVKECTL}" validate sitespec -f "${NKE_E2E_CANDIDATE_SITESPEC}" >/dev/null
   candidate_image_inputs
@@ -475,8 +485,7 @@ run_candidate_e2e() {
   clusterctl init --core "cluster-api:$(make -C "${WORKSPACE_ROOT}" --no-print-directory print-CAPI_VERSION)" \
     --bootstrap "kubeadm:$(make -C "${WORKSPACE_ROOT}" --no-print-directory print-CAPI_VERSION)" \
     --control-plane "kubeadm:$(make -C "${WORKSPACE_ROOT}" --no-print-directory print-CAPI_VERSION)"
-  "${NVKECTL_BIN}" render deploy-path --deploy-path "${WORKSPACE_ROOT}/deploy/nico" --sitespec "${NKE_E2E_CANDIDATE_SITESPEC}" \
-    --release "${NKE_E2E_CANDIDATE_RELEASE}" --nvkr-run-dir "${NKE_E2E_CANDIDATE_LAYOUT}" --arch linux/arm64 --out "${STATE_DIR}/rendered"
+  candidate_render_stack
   # Matching MachineImage, ClusterRelease and NodePoolRelease resources are
   # supplied by the caller for the current internal.nvke.nvidia.com/v1 API.
   jq -n '{tenantAccess:{enabled:true},nvkeOIDCAuth:{enabled:true},apiAuth:{enabled:true,configMap:{name:"nke-auth-config"}}}' >"${STATE_DIR}/controller-values.json"
@@ -484,7 +493,8 @@ run_candidate_e2e() {
   CTR="docker exec -i ${KIND_CLUSTER_NAME}-control-plane ctr" bash "${WORKSPACE_ROOT}/deploy/nvke-deploy.sh" install \
     --deploy-path "${STATE_DIR}/rendered" --kubeconfig "${E2E_KUBECONFIG}" --values-for "controller=${STATE_DIR}/controller-values.json" \
     --values-for "spire=${NKE_E2E_CANDIDATE_VALUES}/spire.json" --values-for "postgresql=${NKE_E2E_CANDIDATE_VALUES}/postgresql.json" \
-    --values-for "temporal=${NKE_E2E_CANDIDATE_VALUES}/temporal.json"
+    --values-for "temporal=${NKE_E2E_CANDIDATE_VALUES}/temporal.json" \
+    --values-for "nktp=${NKE_E2E_CANDIDATE_NKTP_VALUES}"
   candidate_kubectl apply --server-side -f "${NKE_E2E_CANDIDATE_RELEASES}"
   bash "${CONTROLLER_ROOT}/hack/apply-capi-spiffe-exec-auth.sh" --kubeconfig "${E2E_KUBECONFIG}"
   for service in spire-server-np spire-oidc-provider-np; do
