@@ -342,6 +342,27 @@ class DemoTests(unittest.TestCase):
                     with self.assertRaisesRegex(demo.CheckError, "evidence_checks_missing"):
                         aggregate_reports(reports)
 
+    def test_passed_t2_reports_must_share_deployed_versions(self):
+        fake = self.run_fake()
+        versions = [{"component": "controller", "node_id": None, "reported_version_sha256": "a" * 64}]
+        with tempfile.TemporaryDirectory() as tmp:
+            def aggregate_with(changed):
+                paths = []
+                for scenario in demo.SCENARIOS:
+                    observed = versions
+                    if scenario == changed:
+                        observed = [{**versions[0], "reported_version_sha256": "b" * 64}]
+                    path = Path(tmp) / (str(changed) + "-" + scenario + ".json")
+                    demo.write_json(path, {**fake, "scenario": scenario, "live": True, "source_dirty": False,
+                                           "deployed_versions_before": observed, "checks": sorted(demo.required_checks(scenario))})
+                    paths.append(path)
+                return demo.aggregate(paths)
+            self.assertEqual("passed", aggregate_with(None)["status"])
+            # T1 runs on a different cluster, so its versions may differ.
+            self.assertEqual("passed", aggregate_with("manual-t1")["status"])
+            with self.assertRaisesRegex(demo.CheckError, "release_deployed_versions_mismatch"):
+                aggregate_with("etcd-key")
+
     def test_evidence_file_exclusive_and_private(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "evidence.json"

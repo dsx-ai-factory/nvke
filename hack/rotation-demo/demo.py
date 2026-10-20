@@ -865,6 +865,9 @@ def aggregate(paths):
     # T1 is a different cluster; T2 scenarios must identify the same source, cluster and profile.
     t2 = [r for r in reports if r["scenario"] != "manual-t1"]
     require(len({(r["source_revision"], r["cluster_id"], r["kube_system_uid"], r["profile"]) for r in t2}) <= 1, "release_target_or_revision_mismatch")
+    # A redeploy between lanes changes the observed build even when expected_versions is updated to match.
+    builds = {json.dumps(r.get("deployed_versions_before"), sort_keys=True) for r in t2 if r["status"] == "passed"}
+    require(len(builds) <= 1, "release_deployed_versions_mismatch")
     return {"schema": "nke.rotation-release.v1", "created_at": now(), "status": "passed" if passed and not missing else "incomplete",
             "missing_scenarios": missing, "scenarios": [{"scenario": r["scenario"], "status": r["status"],
                 "evidence_sha256": hashlib.sha256(Path(p).read_bytes()).hexdigest()} for p, r in zip(paths, reports)],
