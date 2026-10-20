@@ -128,7 +128,7 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		return reconcile.Result{}, fmt.Errorf("persist certificate inspection: %w", err)
 	}
 	if persisted {
-		c.recordInspectionAudit(ctx, node, observation)
+		c.recordInspectionAudit(ctx, node, node.CertificateInspection, observation)
 	}
 	return reconcile.Result{RequeueAfter: c.nextDelay(observation)}, nil
 }
