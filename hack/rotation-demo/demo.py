@@ -570,7 +570,7 @@ def wait_for(check, deadline):
             last = str(error)
             if last in {"workflow_failed", "workflow_identity_mismatch", "unsupported_workflow", "cycle_not_scheduled",
                         "cycle_not_scheduler_named", "cycle_started_before_traffic", "manual_marker_invalid", "audit_schema_invalid", "audit_values_invalid",
-                        "scheduled_cycle_did_not_renew"}:
+                        "audit_event_duplicate", "scheduled_cycle_did_not_renew"}:
                 raise
         time.sleep(2)
     raise CheckError(last)

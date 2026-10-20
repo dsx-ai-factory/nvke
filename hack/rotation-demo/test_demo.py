@@ -230,6 +230,17 @@ class DemoTests(unittest.TestCase):
                 demo.wait_for(finished_unchanged, time.monotonic() + 60)
         self.assertEqual(1, len(calls))
 
+    def test_duplicate_audit_event_fails_at_once_instead_of_polling_to_timeout(self):
+        # Ledger rows are never deleted, so a duplicate cannot clear by waiting.
+        calls = []
+        def duplicate():
+            calls.append(1)
+            demo.require(False, "audit_event_duplicate")
+        with patch.object(demo.time, "sleep", side_effect=AssertionError("must not retry")):
+            with self.assertRaisesRegex(demo.CheckError, "audit_event_duplicate"):
+                demo.wait_for(duplicate, time.monotonic() + 60)
+        self.assertEqual(1, len(calls))
+
     def test_expiry_fingerprint_and_ca_invariants(self):
         c = config()
         before, after = snapshot(c), snapshot(c, True)
