@@ -15,6 +15,15 @@ configured `certRenewal.thresholdDays` (default `30`). The original
 `RenewK8sCerts` type remains registered so existing v1 typed-activity histories
 can replay during rollout.
 
+While renewal is enabled, `certRenewal.interval` must be between `1h` and `24h`
+and `certRenewal.thresholdDays` between `7` and `90`. With credential monitoring
+also enabled (the default), `credentialMonitoring.warningDays` must exceed
+`certRenewal.thresholdDays` by at least two renewal intervals, so with the
+default `warningDays` of `45` and `interval` of `12h` the largest accepted
+`thresholdDays` is `44`. The controller refuses to start and the chart refuses
+to render otherwise; see
+[Credential monitoring configuration](credential-monitoring.md#configuration).
+
 The first time the controller sees a cluster without `nextCertRenewalDue`, it
 only sets that field one renewal interval ahead; no cycle starts. A new cluster
 has nothing to renew, and the cycle holds the cluster mutation lock, which would
