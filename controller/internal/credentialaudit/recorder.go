@@ -20,7 +20,9 @@ const (
 	// CSRAuditLimit bounds CSR-derived events per managed node within
 	// CSRAuditWindow, however many CSRs a tenant creates. Rejections of one node
 	// within one UTC hour share one event and use one slot. A valid CSR records
-	// check, approve and verify, so this admits about four of them per hour.
+	// three events (check, approve and verify), or four if an approval write fails
+	// and is retried, so this admits about four of them per hour, or three if
+	// their approvals are retried.
 	CSRAuditLimit  = 12
 	CSRAuditWindow = time.Hour
 )
