@@ -19,9 +19,10 @@
 #      the Kind bridge and the node bridge, which the CNI firewall otherwise
 #      drops. The command then deploys everything, including CAPNICo, which asks
 #      nico-sim for the machines.
-#   4. The cluster the command built: its nodes are Ready, each node's spire-agent
-#      attested to the bootstrap SPIRE server over TPM, and the allowlist that
-#      admitted it was filled in by CWE from the NicoMachine, not by the site spec.
+#   4. The cluster the command built: its nodes are Ready, it manages itself
+#      after the pivot, each node's spire-agent attested over TPM to the site's
+#      SPIRE server at the VIP, and the allowlist that admitted it was filled in
+#      by CWE from the NicoMachine, not by the site spec.
 #
 # Four inputs the bootstrap reads and this script prepares:
 #   - NVKECTL_NICO_CREDENTIALS: the token file for nico-sim's API.
@@ -42,9 +43,9 @@
 # it: the binary refuses a bad token file, an http endpoint without the opt-in
 # and a removed spec field before it touches anything; the site spec hands off to
 # the stack render; the etcd key it saves is the nodes' key; no credential reaches
-# the logs; a second bootstrap is refused while the first site answers; and the
-# documented release-first teardown releases every instance. That teardown
-# destroys the site, so it runs last.
+# the logs; and a second bootstrap is refused while the first site answers.
+# After the pivot the site manages itself, so the bootstrap cluster can no
+# longer delete it; the EXIT teardowns remove the nodes nico-sim made.
 #
 # Everything created is registered for teardown as it is created, and the EXIT
 # trap runs those registrations in reverse, whatever the exit.
@@ -101,9 +102,6 @@ NICO_INSTANCE_TYPE_ID="00000000-0000-0000-0000-000000000005"
 # file pair there; the config profile comes from the profiles image.
 OS_PROFILE="${NVKECTL_E2E_NICO_OS_PROFILE:-nvke-local-dev-kindest-arm64}"
 CONFIG_PROFILE="${NVKECTL_E2E_NICO_CONFIG_PROFILE:-dev-only-empty}"
-# The controller's API port on the bootstrap host, and the isolated nvkectl
-# config the teardown check writes its site entry to.
-CWE_PORT=30080
 
 SPIRE_TRUST_DOMAIN="${NVKECTL_E2E_SPIRE_TRUST_DOMAIN:-nvkectl-e2e.example.test}"
 # The controller's namespace in the bootstrap cluster, and the Secret
@@ -617,6 +615,7 @@ setsid env \
   NVKECTL_E2E_BOOTSTRAP_TIMEOUT=25m \
   NVKECTL_E2E_KEEP_BOOTSTRAP_CLUSTER=1 \
   NVKECTL_E2E_SITE_STACK_NAMESPACES="${SITE_STACK_NAMESPACES}" \
+  NVKECTL_E2E_PIVOT_CLUSTER="${E2E_CLUSTER_NAME}" \
   "${GO}" test -C "${CLI_DIR}" -tags e2e_bootstrap -timeout 0 -count=1 -v \
   ./e2e/bootstrap/bootstraptest/ -run '^TestE2E_' \
   >"${BOOTSTRAP_GO_TEST_LOG}" 2>&1 &
@@ -727,6 +726,13 @@ KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_
   >"${bootstrap_kubeconfig}" || fail "could not read the bootstrap cluster's kubeconfig"
 defer rm -f "${bootstrap_kubeconfig}"
 bk() { kubectl --kubeconfig "${bootstrap_kubeconfig}" "$@"; }
+sk() { kubectl --kubeconfig "${TENANT_KUBECONFIG}" "$@"; }
+
+# TestE2E_BootstrapSite checked the pivot (bootstraptest.VerifyPivot): the site
+# holds the Cluster API objects and the bootstrap controller is stopped.
+grep -q "bootstraptest: the pivot moved the management plane of ${E2E_CLUSTER_NAME} to the site" "${BOOTSTRAP_GO_TEST_LOG}" ||
+  fail "TestE2E_BootstrapSite did not check the pivot"
+log "PASS: the pivot moved the Cluster API objects to the site and stopped the bootstrap controller"
 
 # What the node login and infra.nico.releases asked for, which the
 # controller needed to create the first node at all.
@@ -755,41 +761,40 @@ if ! wait_until "${NVKECTL_E2E_NODE_READY_TIMEOUT_SECONDS:-600}" 5 nodes_ready; 
 fi
 log "PASS: all ${NODE_COUNT} node(s) are Ready in the cluster nvkectl built"
 
-# The address CWE wrote into each node's userdata is the one nodes can reach
-# before any cluster exists: the host on the node network, on the NodePort the
-# bootstrap publishes SPIRE on, not the in-cluster name.
+# The SPIRE handover repointed each node from the bootstrap SPIRE server at
+# spire.externalAddress to the site's, published on the same NodePort at the VIP.
 for node in $(nerdctl ps -q --filter "label=${SIM_LABEL}"); do
   agent_conf="$(nerdctl exec "${node}" cat /etc/spire-agent/agent.conf 2>/dev/null)" ||
     fail "could not read /etc/spire-agent/agent.conf on node ${node}"
-  grep -q "${GATEWAY}" <<<"${agent_conf}" ||
-    fail "node ${node}'s spire-agent is not configured for ${GATEWAY} (spire.externalAddress)" "${agent_conf}"
+  grep -q "${CONTROL_PLANE_VIP}" <<<"${agent_conf}" ||
+    fail "node ${node}'s spire-agent is not configured for the site's SPIRE server at ${CONTROL_PLANE_VIP}" "${agent_conf}"
   grep -q "30081" <<<"${agent_conf}" ||
     fail "node ${node}'s spire-agent is not configured for the published SPIRE NodePort 30081" "${agent_conf}"
 done
-log "PASS: each node's spire-agent points at spire.externalAddress ${GATEWAY}, on NodePort 30081"
+log "PASS: each node's spire-agent points at the site's SPIRE server ${CONTROL_PLANE_VIP}, on NodePort 30081"
 
 # The allowlist is the point of the dynamic path: nothing in the site spec
 # lists a thumbprint, so every hash SPIRE admits came from a NicoMachine.
-hashes="$(bk get nicomachines.infrastructure.cluster.x-k8s.io -A \
+hashes="$(sk get nicomachines.infrastructure.cluster.x-k8s.io -A \
   -o 'jsonpath={range .items[*]}{.status.tpmEkPubHash}{"\n"}{end}' | sed '/^$/d' | sort -u)"
 hash_count="$(printf '%s\n' "${hashes}" | sed '/^$/d' | wc -l | tr -d ' ')"
 [ "${hash_count}" -eq "${NODE_COUNT}" ] ||
   fail "${hash_count} NicoMachine(s) report a TPM EK hash, expected ${NODE_COUNT}"
-allowlist="$(bk -n spire-server get configmap tpm-pubhashes -o 'jsonpath={.data}' 2>/dev/null)"
+allowlist="$(sk -n spire-server get configmap tpm-pubhashes -o 'jsonpath={.data}' 2>/dev/null)"
 while read -r h; do
   [ -z "${h}" ] && continue
   grep -q "${h}" <<<"${allowlist}" || fail "the tpm-pubhashes allowlist is missing ${h}, which a NicoMachine reported"
 done <<<"${hashes}"
 log "PASS: CWE filled the SPIRE allowlist with the ${hash_count} EK hash(es) the NicoMachine(s) reported"
 
-agents="$(bk -n spire-server exec spire-server-0 -c spire-server -- \
+agents="$(sk -n spire-server exec spire-server-0 -c spire-server -- \
   /opt/spire/bin/spire-server agent list 2>/dev/null)"
 while read -r h; do
   [ -z "${h}" ] && continue
   grep -q "spiffe://${SPIRE_TRUST_DOMAIN}/spire/agent/tpm/${h}" <<<"${agents}" ||
     fail "no SPIRE agent attested by TPM with hash ${h}" "${agents}"
 done <<<"${hashes}"
-log "PASS: every node's spire-agent attested to the bootstrap SPIRE server over TPM"
+log "PASS: every node's spire-agent attested to the site's SPIRE server over TPM"
 
 if [ -n "${CONTROL_PLANE_VIP}" ]; then
   cp_node_ips="$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes \
@@ -891,31 +896,3 @@ fi
 [ "$(sim_node_count)" = "${nodes_before}" ] ||
   fail "the refused re-run changed the number of NICo machines: ${nodes_before} before, $(sim_node_count) after"
 log "PASS: a second bootstrap is refused, and allocates no machines"
-
-# ── Stage 8: the documented release-first teardown releases every instance ─
-#
-# Deleting the bootstrap Kind cluster runs no finalizers and would leave the
-# instances allocated. The recovery docs say to point nvkectl at the bootstrap
-# cluster's controller and delete the site cluster through it first. Follow
-# them, in an nvkectl config of this run's own, then check the machines are
-# released and the site is gone. This destroys the site, so it is last.
-
-export XDG_CONFIG_HOME="${SIM_STATE_DIR}/xdg"
-"${NVKECTL}" config set-site --name "${BOOTSTRAP_KIND_CLUSTER}" --url "http://127.0.0.1:${CWE_PORT}" \
-  --kubeconfig "${bootstrap_kubeconfig}" >/dev/null || fail "nvkectl config set-site did not accept the bootstrap controller"
-site_listed() { "${NVKECTL}" --site "${BOOTSTRAP_KIND_CLUSTER}" get clusters 2>/dev/null | grep -qw -- "${E2E_CLUSTER_NAME}"; }
-site_listed || fail "the bootstrap controller does not list ${E2E_CLUSTER_NAME} before it is deleted"
-"${NVKECTL}" --site "${BOOTSTRAP_KIND_CLUSTER}" delete cluster "${E2E_CLUSTER_NAME}" >/dev/null ||
-  fail "nvkectl delete cluster ${E2E_CLUSTER_NAME} failed against the bootstrap controller"
-site_unlisted() { ! site_listed; }
-wait_until "${NVKECTL_E2E_RELEASE_TIMEOUT_SECONDS:-900}" 5 site_unlisted ||
-  fail "the bootstrap controller still lists ${E2E_CLUSTER_NAME} after delete cluster"
-nodes_released() { [ "$(sim_node_count)" = 0 ]; }
-wait_until "${NVKECTL_E2E_RELEASE_TIMEOUT_SECONDS:-900}" 5 nodes_released ||
-  fail "delete cluster left $(sim_node_count) NICo machine(s) allocated"
-log "PASS: the release-first teardown deleted the site and released every NICo machine"
-site_unreachable() { ! vip_readyz; }
-if [ -n "${CONTROL_PLANE_VIP}" ]; then
-  wait_until 120 3 site_unreachable || fail "the API server still answers through the VIP after the site was deleted"
-  log "PASS: the VIP no longer answers"
-fi

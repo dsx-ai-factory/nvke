@@ -30,6 +30,7 @@ import (
 	bootstrapengine "github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/engine"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/etcdkey"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/nvkrrelease"
+	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/pivot"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/spireentrydump"
@@ -529,7 +530,13 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	// objects that the provisioned infrastructure provider binds to the
 	// site spec's hosts.
 	ctx = phases.enter(phaseSiteCluster, nil)
-	siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, cweCfg.CWEPort, logger)
+	cweURL := fmt.Sprintf("http://127.0.0.1:%d", cweCfg.CWEPort)
+	controller, err := clients.New(config.SiteConfig{URL: cweURL})
+	if err != nil {
+		return fmt.Errorf("building the controller client for %s: %w", cweURL, err)
+	}
+	var siteClusterID uuid.UUID
+	siteClusterID, siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, controller, logger)
 	if err != nil && siteClusterCreated {
 		return retainedClusterError(err, inv, cluster, cweCfg.CWEPort)
 	}
@@ -563,7 +570,10 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	}
 	if inv.IsNico() {
 		if err := deploySiteStack(ctx, inv, kubeconfigPath, cweCfg, opts.cweRunner, logger); err != nil {
-			return err
+			return seedManagesSiteError(err, cluster)
+		}
+		if err := pivotToSite(ctx, inv, cluster.KubeconfigPath, kubeconfigPath, cweCfg, controller, siteClusterID, logger); err != nil {
+			return pivotFailedError(err, cluster)
 		}
 	}
 
@@ -661,6 +671,47 @@ func siteDeployConfig(inv *sitespec.SiteSpec, seed controllerdeploy.Config) cont
 	return cfg
 }
 
+// seedManagesSiteError wraps err, from a failure after the site cluster was
+// built and before the pivot started. The bootstrap cluster then holds the
+// site's management plane, so the advice is to keep it.
+func seedManagesSiteError(err error, cluster *bootstrapengine.Cluster) error {
+	return &recoveryError{fmt.Errorf("%w; bootstrap cluster %q still manages the site cluster until the pivot completes, "+
+		"so it was retained and is not to be deleted (kubeconfig: %s)", err, cluster.Name, cluster.KubeconfigPath)}
+}
+
+// pivotFailedError wraps err, from the pivot, which names the step that
+// failed. Part of the management plane may already be on the site, so the
+// advice is to keep both clusters as they are.
+func pivotFailedError(err error, cluster *bootstrapengine.Cluster) error {
+	return &recoveryError{fmt.Errorf("%w; the pivot to the site cluster did not complete, so bootstrap cluster %q was "+
+		"retained: keep it and the site cluster as they are (kubeconfig: %s)", err, cluster.Name, cluster.KubeconfigPath)}
+}
+
+// pivotToSite moves the management plane of the cluster clusterID from the
+// bootstrap cluster, whose controller is controller, onto the site cluster,
+// which already runs the NVKE stack.
+func pivotToSite(
+	ctx context.Context,
+	inv *sitespec.SiteSpec,
+	seedKubeconfig, siteKubeconfig string,
+	cweCfg controllerdeploy.Config,
+	controller *clients.ControllerClient,
+	clusterID uuid.UUID,
+	logger *slog.Logger,
+) error {
+	logger.Info("moving the management plane onto the site cluster", "kubeconfig", siteKubeconfig)
+	return pivot.Run(ctx, pivot.Config{
+		SeedKubeconfig:   seedKubeconfig,
+		SiteKubeconfig:   siteKubeconfig,
+		Controller:       controller,
+		ClusterID:        clusterID,
+		ClusterName:      inv.ClusterName,
+		SiteSpireAddress: inv.Cluster.ControlPlaneVIP,
+		DisableMTLS:      cweCfg.DisableMTLS,
+		Logger:           logger,
+	})
+}
+
 // untaintTimeout bounds the whole untaint: one List and a few Updates.
 const untaintTimeout = 2 * time.Minute
 
@@ -715,34 +766,26 @@ func dumpSpireBootstrapEntries(
 	return dumper.Dump(ctx, outputDir)
 }
 
-// createSiteCluster posts the cluster to the controller, waits for it to come up, and
-// writes out its kubeconfig and etcd encryption key. The boolean reports
-// whether the controller accepted the create request, after which callers must preserve
-// the management cluster on failure so the in-progress site cluster remains
-// recoverable.
-//
-// The controller client is built here rather than being passed in because its address
-// is only settled once the bootstrap cluster exists: it is the host port the
-// NodePort Service was mapped to.
+// createSiteCluster posts the cluster to the controller through client, waits
+// for it to come up, and writes out its kubeconfig and etcd encryption key. It
+// returns the cluster's ID once the controller has created it. The boolean
+// reports whether the controller accepted the create request, after which
+// callers must preserve the management cluster on failure so the in-progress
+// site cluster remains recoverable.
 func createSiteCluster(
 	ctx context.Context,
 	bootstrapCluster *bootstrapengine.Cluster,
 	inv *sitespec.SiteSpec,
 	opts *bootstrapSiteOptions,
-	cwePort int32,
+	client sitecluster.ClusterAPI,
 	logger *slog.Logger,
-) (bool, error) {
-	cweURL := fmt.Sprintf("http://127.0.0.1:%d", cwePort)
-	client, err := clients.New(config.SiteConfig{URL: cweURL})
-	if err != nil {
-		return false, fmt.Errorf("building the controller client for %s: %w", cweURL, err)
-	}
+) (uuid.UUID, bool, error) {
 	created, err := sitecluster.Create(ctx, client, inv, logger)
 	if err != nil {
 		// With nico, a create the controller may have accepted may already be
 		// allocating NICo instances, which deleting the bootstrap cluster would
 		// leave unmanaged; it is kept as after any failure past the create.
-		return inv.IsNico() && errors.Is(err, sitecluster.ErrCreateUnconfirmed), err
+		return uuid.Nil, inv.IsNico() && errors.Is(err, sitecluster.ErrCreateUnconfirmed), err
 	}
 
 	// One budget spans both waits, because --timeout bounds the whole
@@ -758,7 +801,7 @@ func createSiteCluster(
 	logger.Info("waiting for the cluster to finish provisioning", "cluster", created.Name, "timeout", timeout)
 
 	if _, err := sitecluster.WaitProvisioned(ctx, client, created.ID, time.Until(deadline), logger); err != nil {
-		return true, err
+		return created.ID, true, err
 	}
 	logger.Info("cluster provisioned", "cluster", created.Name, "id", created.ID)
 
@@ -769,7 +812,7 @@ func createSiteCluster(
 	if err := sitecluster.WaitControlPlaneJoined(
 		ctx, client, created.ID, inv.ControlPlaneCount(), time.Until(deadline), logger,
 	); err != nil {
-		return true, err
+		return created.ID, true, err
 	}
 	logger.Info("all control plane nodes joined", "cluster", created.Name, "nodes", inv.ControlPlaneCount())
 
@@ -777,7 +820,7 @@ func createSiteCluster(
 	// the operator holding the admin credential of the cluster that was built.
 	kubeconfigPath, err := writeTenantKubeconfig(ctx, bootstrapCluster, created.Name, opts, logger)
 	if err != nil {
-		return true, &clusterJoinedError{err}
+		return created.ID, true, &clusterJoinedError{err}
 	}
 
 	// Every control-plane node holds the key now, and this is the last moment
@@ -786,10 +829,10 @@ func createSiteCluster(
 	if inv.Cluster.EtcdEncryptionEnabled() {
 		if err := saveEtcdEncryptionKey(ctx, bootstrapCluster, created.ID, inv.ClusterName,
 			etcdKeyPath(opts, inv.ClusterName), kubeconfigPath, opts, logger); err != nil {
-			return true, err
+			return created.ID, true, err
 		}
 	}
-	return true, nil
+	return created.ID, true, nil
 }
 
 // etcdKeyPath is where the cluster's etcd encryption key is written.

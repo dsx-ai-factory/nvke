@@ -44,6 +44,8 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/manifest"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nvke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nvke/cli/internal/clients"
+	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	"github.com/dsx-ai-factory/nvke/cli/internal/deploypath/stackconfig"
 	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 	api "github.com/dsx-ai-factory/nvke/controller/api"
@@ -1851,6 +1853,73 @@ func TestRunBootstrapSiteNicoSpireDumpFailureIsAdvisedAsAJoinedCluster(t *testin
 	}
 }
 
+func TestPivotFailedErrorKeepsBothClusters(t *testing.T) {
+	err := pivotFailedError(errors.New("pivot move-database: restore failed"),
+		&bootstrapengine.Cluster{Name: "nvkectl-bootstrap", KubeconfigPath: "/tmp/kind.kubeconfig"})
+	var recovery *recoveryError
+	require.ErrorAs(t, err, &recovery)
+	for _, want := range []string{
+		"pivot move-database", `bootstrap cluster "nvkectl-bootstrap" was retained`,
+		"keep it and the site cluster as they are", "/tmp/kind.kubeconfig",
+	} {
+		assert.Contains(t, err.Error(), want)
+	}
+	assert.NotContains(t, err.Error(), "still manages the site", "part of the management plane may already be on the site")
+}
+
+// siteCallsFail passes the bootstrap cluster's commands to next and fails
+// every command against the site cluster's kubeconfig.
+type siteCallsFail struct {
+	next controllerdeploy.CommandRunner
+	site string
+}
+
+func (r siteCallsFail) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if slices.Contains(args, r.site) {
+		return "", errors.New("site unreachable")
+	}
+	return r.next.Run(ctx, name, args...)
+}
+
+// TestRunBootstrapSiteNicoStackFailureKeepsTheSeed: until the pivot completes,
+// the bootstrap cluster is the site's only management plane. A failure
+// installing the stack on the site keeps it and says not to delete it.
+func TestRunBootstrapSiteNicoStackFailureKeepsTheSeed(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPIWithNodes(t, true, 3, 3)
+
+	siteKubeconfig := filepath.Join(t.TempDir(), "nvke-site.kubeconfig")
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec:            nicoSiteSpecFile(t),
+		bootstrapRunner:     runner,
+		cweRunner:           siteCallsFail{next: newFakeCWERunner(t), site: siteKubeconfig},
+		kubeconfigOut:       siteKubeconfig,
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		dumpSpireEntries:    func(context.Context, string, string) (int, error) { return 1, nil },
+	})
+	if err == nil {
+		t.Fatal("expected the site stack install to fail")
+	}
+	var recovery *recoveryError
+	if !errors.As(err, &recovery) {
+		t.Errorf("error %q carries no recovery advice", err)
+	}
+	if !strings.Contains(err.Error(), `bootstrap cluster "nvkectl-bootstrap" still manages the site cluster until the pivot completes, `+
+		"so it was retained and is not to be deleted") {
+		t.Errorf("error %q does not say to keep the bootstrap cluster", err)
+	}
+	if strings.Contains(err.Error(), "kind delete cluster") {
+		t.Errorf("error %q tells the operator to delete the bootstrap cluster", err)
+	}
+	if runner.sawArgs("delete", "cluster") {
+		t.Error("bootstrap cluster was deleted while it still managed the site")
+	}
+}
+
 // TestRunBootstrapSiteNicoRefusesWhenTheVIPAlreadyAnswers: the one address a
 // nico site's control plane is known by before it exists. When it answers, a
 // site for this spec is running, and a second bootstrap would allocate another
@@ -1935,7 +2004,11 @@ func TestCreateSiteCluster_KeepsKindAfterAnUnconfirmedNicoCreate(t *testing.T) {
 			defer srv.Close()
 			port := srv.Listener.Addr().(*net.TCPAddr).Port
 
-			kept, err := createSiteCluster(context.Background(), nil, tt.inv, &bootstrapSiteOptions{}, int32(port), slog.New(slog.DiscardHandler))
+			client, err := clients.New(config.SiteConfig{URL: fmt.Sprintf("http://127.0.0.1:%d", port)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, kept, err := createSiteCluster(context.Background(), nil, tt.inv, &bootstrapSiteOptions{}, client, slog.New(slog.DiscardHandler))
 			if err == nil {
 				t.Fatal("expected createSiteCluster to fail")
 			}
