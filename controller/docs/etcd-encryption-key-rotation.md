@@ -388,7 +388,8 @@ replaces the node only after the lock is released:
    at least `n/2+1` (integer division) others must be ready, so two of three,
    three of four, three of five. It then
    records the node under the rotation's retired nodes and marks it deleting.
-   After the transaction returns, it writes a credential audit event (`rotate`,
+   After the transaction returns, it writes a
+   [credential audit event](credential-audit.md) (`rotate`,
    `etcd_encryption_key`, reason `node_retired`, with the node and failed
    phase), best effort: a failed audit write does not undo the retirement. Any
    refusal or failed commit changes nothing and is audited as a failure. A repeat is an audited no-op that resumes the
@@ -412,7 +413,8 @@ replaces the node only after the lock is released:
    replacement, which joins with the finalized key.
 
 A retired node lost from the rotation is recorded in the cluster's
-`etcdKeyRotation` database status and in the audit ledger; the REST status does
+`etcdKeyRotation` database status and in the
+[audit ledger](credential-audit.md); the REST status does
 not list it. Until the rotation completes the control plane runs with one fewer
 etcd member. Retiring is refused in `finalize`: finalization does not contact
 nodes, so reset at the failed finalize activity; completion releases the lock
