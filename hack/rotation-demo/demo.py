@@ -131,6 +131,9 @@ def validate_config(c, scenario):
         require(c["cwe_url"].startswith("https://") and c["prometheus_url"].startswith("https://"), "insecure_service_url")
         expected = c["expected_versions"]
         require(expected["controller"] and set(expected["agents"]) == {n["id"] for n in c["nodes"]}, "missing_deployed_version_expectations")
+        # Serving-certificate proof reads these after the mutation; fail before it instead.
+        require(c.get("kubelet_ca_file") and Path(c["kubelet_ca_file"]).is_file(), "missing_kubelet_ca_file")
+        require(all(isinstance(n.get("kubelet_address"), str) and n["kubelet_address"] for n in c["nodes"]), "missing_kubelet_address")
     require(set(c["expected_versions"]["kubernetes"]) == {n["name"] for n in c["nodes"]}, "missing_kubernetes_version_expectations")
     require(bool(re.fullmatch(r"[a-f0-9]{40}", c["deployment_source_revision"])), "missing_deployment_revision")
     if scenario == "alert-renewal":

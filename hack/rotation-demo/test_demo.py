@@ -27,6 +27,8 @@ SPEC.loader.exec_module(receiver)
 def config():
     c = json.loads(Path(__file__).with_name("config.example.json").read_text())
     c["timeout_seconds"] = 10
+    # Validation requires an existing CA file; the offline fakes never read it.
+    c["kubelet_ca_file"] = str(Path(__file__).with_name("config.example.json"))
     c["deployment_source_revision"] = demo.command(["git", "-C", str(demo.SOURCE_ROOT), "rev-parse", "HEAD"]).decode().strip()
     return c
 
@@ -514,6 +516,32 @@ class DemoTests(unittest.TestCase):
         self.assertFalse(traffic.thread.is_alive())
         self.assertEqual(2, summary["samples"])
         self.assertEqual(0, summary["secret_read_errors"])
+
+
+class KubeletConfigTests(unittest.TestCase):
+    def test_t2_scenarios_reject_missing_kubelet_inputs_before_mutation(self):
+        for name, change, reason in (
+                ("no CA file", lambda c: c.pop("kubelet_ca_file"), "missing_kubelet_ca_file"),
+                ("CA file absent", lambda c: c.update(kubelet_ca_file="/nonexistent/ca.crt"), "missing_kubelet_ca_file"),
+                ("no kubelet address", lambda c: c["nodes"][1].pop("kubelet_address"), "missing_kubelet_address")):
+            with self.subTest(name):
+                c = config()
+                change(c)
+                with self.assertRaisesRegex(demo.CheckError, reason):
+                    demo.validate_config(c, "forced-renewal")
+                FakeLive.failure = None
+                created = []
+                def factory(config):
+                    created.append(FakeLive(config))
+                    return created[0]
+                with self.assertRaisesRegex(demo.CheckError, reason):
+                    demo.run(c, "forced-renewal", c["cluster_id"], factory)
+                self.assertEqual([], created, "nothing is contacted before validation passes")
+        c = config()
+        c.pop("kubelet_ca_file")
+        for n in c["nodes"]:
+            n.pop("kubelet_address")
+        demo.validate_config(c, "manual-t1")
 
 
 class ManualCompletionTests(unittest.TestCase):
