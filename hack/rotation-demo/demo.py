@@ -276,6 +276,7 @@ class Live:
                 expiry = timestamp(x["notAfter"])
                 require(expiry > time.time(), "certificate_expired")
                 result[(n["id"], name)] = {"sha256": x["certificateSHA256"], "not_after": x["notAfter"]}
+        require_distinct_node_certificates(result, {n["id"] for n in self.c["nodes"] if n["control_plane"]})
         return result
 
     def temporal(self, action, workflow, *args):
@@ -526,6 +527,18 @@ class Traffic:
         require(self.samples >= 2, "traffic_observation_incomplete")
         return {"samples": self.samples, "errors": self.errors, "secret_read_errors": self.secret_errors,
                 "max_latency_seconds": round(self.max_latency, 3)}
+
+
+NODE_UNIQUE = ("apiserver", "etcd-server", "etcd-peer")
+
+
+def require_distinct_node_certificates(certificates, control_planes):
+    """Each control plane serves its own apiserver and etcd leaves. Equal fingerprints
+    on two nodes mean one node's observation was attributed to another, for example
+    through a copy-pasted SSH destination."""
+    for credential in NODE_UNIQUE:
+        fingerprints = [certificates[(node, credential)]["sha256"] for node in control_planes if (node, credential) in certificates]
+        require(len(fingerprints) == len(set(fingerprints)), "node_certificate_attribution_ambiguous")
 
 
 def compare_certificates(before, after, changed, renewed_nodes=None):
