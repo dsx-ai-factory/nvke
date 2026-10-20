@@ -29,6 +29,16 @@ func (a *Activities) ensureRotationKeyNames(ctx context.Context, clusterID uuid.
 		}
 		secret.Data[constants.EtcdEncryptionKeyFieldPendingName] = []byte(pendingName)
 	}
+	// Record the old key's storage name too, as on the staging path:
+	// finalization overwrites it, and pre-rotation backups need it.
+	activeName, err := a.discoverEncryptionKeyName(ctx, clusterID, string(secret.Data[constants.EtcdEncryptionKeyFieldActive]), false)
+	if err != nil {
+		return err
+	}
+	if stored := string(secret.Data[constants.EtcdEncryptionKeyFieldActiveName]); stored != "" && stored != activeName {
+		return encryptionIdentityError("managed active encryption identity disagrees with the control plane")
+	}
+	secret.Data[constants.EtcdEncryptionKeyFieldActiveName] = []byte(activeName)
 	if err := a.k8sClient.Update(ctx, secret); err != nil {
 		return encryptionIdentityError("cannot persist pending encryption storage identity")
 	}
