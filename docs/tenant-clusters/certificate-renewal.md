@@ -1,6 +1,7 @@
 # Renew tenant Kubernetes leaf certificates
 
-This is the operator flow for the canonical CWE `RenewK8sCertsV2` workflow.
+This is the operator flow for the NVKE controller's canonical `RenewK8sCertsV2`
+workflow.
 Scheduled and forced cycles use the same health, executor and ownership gates.
 The [implementation and failure contract](../../controller/docs/certificate-renewal.md)
 describes receipt-aware fallback, static-pod restoration and retained-lock
@@ -12,7 +13,7 @@ for audit and public CA/leaf comparisons.
 
 ## Prerequisites and target selection
 
-Use a provisioned CWE-managed T2 cluster with kubeadm static pods, stacked local
+Use a provisioned controller-managed T2 cluster with kubeadm static pods, stacked local
 etcd, default PKI paths and healthy, nonexpired local CAs. Freeze control-plane
 membership and arrange a maintenance owner, console access and recovery backups.
 All control-plane nodes must be joined/Ready, their agents reachable, all etcd

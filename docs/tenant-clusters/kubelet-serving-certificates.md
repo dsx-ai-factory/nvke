@@ -1,9 +1,9 @@
 # Kubelet serving certificate renewal and troubleshooting
 
 T2 kubelets in NVKE's kubeadm profile use `serverTLSBootstrap: true`. They request
-serving certificates through `kubernetes.io/kubelet-serving` CSRs. The CWE tenant
-controller approves only requests matching its managed node identity; Kubernetes'
-signer issues the certificate and the kubelet installs it. This runs separately
+serving certificates through `kubernetes.io/kubelet-serving` CSRs. The NVKE
+controller's tenant CSR approver approves only requests matching its managed node
+identity; Kubernetes' signer issues the certificate and the kubelet installs it. This runs separately
 from `RenewK8sCertsV2`, which renews control-plane kubeadm leaves.
 
 Use the default `/var/lib/kubelet/pki/kubelet-server-current.pem` layout and
@@ -28,7 +28,7 @@ kubectl --kubeconfig "$TENANT_KUBECONFIG" --context "$TENANT_CONTEXT" get csr \
   -o custom-columns='NAME:.metadata.name,SIGNER:.spec.signerName,REQUESTOR:.spec.username,CREATED:.metadata.creationTimestamp,CONDITIONS:.status.conditions[*].type'
 ```
 
-Confirm node name and InternalIP match CWE's desired state, not just a
+Confirm node name and InternalIP match the controller's desired state, not just a
 Kubernetes Node object. Select a newly observed serving CSR for this node, then
 inspect bounded public fields and its signed certificate when issued:
 
@@ -50,10 +50,10 @@ subjects/SANs are public identity data; retain them only in the private diagnost
 record. An empty `status.certificate` makes the last command fail until issuance;
 that is an incomplete stage, not successful installation.
 
-CWE's identity allowlist requires all of the following:
+The controller's identity allowlist requires all of the following:
 
 - Requestor `system:node:<node>` and membership in `system:nodes`.
-- Node name present in CWE desired state, with its recorded IP.
+- Node name present in the controller's desired state, with its recorded IP.
 - One valid, signed PEM certificate request with subject CN
   `system:node:<node>` and organization `system:nodes`.
 - Usage `server auth`, with only optional `digital signature` and
@@ -64,7 +64,7 @@ CWE's identity allowlist requires all of the following:
 Expected progression is pending, `Approved=True` with reason
 `NKEValidatedNodeIdentity`, then a nonempty signed certificate. `Approved` alone
 does not establish signing, and signing alone does not establish node
-installation. A skipped identity mismatch remains pending; CWE does not deny
+installation. A skipped identity mismatch remains pending; the controller does not deny
 it as an automatic correction.
 
 ## Prove node installation
@@ -158,10 +158,10 @@ validated endpoint probe.
 | Observation | Check and recovery |
 | --- | --- |
 | No new serving CSR near expiry | Check installed expiry, `serverTLSBootstrap`, kubelet client authentication, API reachability and kubelet logs. Repair the supported kubelet profile; do not confuse a client CSR signer with the serving signer. |
-| Pending CSR with identity skip | Check CWE desired node name/IP against requestor, subject, usages and SANs. Correct the actual inventory/bootstrap problem, let kubelet request valid material, and verify a new request. Do not approve the mismatched request manually. |
-| Pending valid CSR with no decision | Check tenant-manager access, controller health and approval RBAC. Restore that access; CWE can reconcile pending requests. Preserve the failed interval for alert/audit evidence. |
+| Pending CSR with identity skip | Check the controller's desired node name/IP against requestor, subject, usages and SANs. Correct the actual inventory/bootstrap problem, let kubelet request valid material, and verify a new request. Do not approve the mismatched request manually. |
+| Pending valid CSR with no decision | Check tenant-manager access, controller health and approval RBAC. Restore that access; the controller can reconcile pending requests. Preserve the failed interval for alert/audit evidence. |
 | Approved but certificate empty | Check Kubernetes controller-manager signer availability, signing certificate/key configuration and failure conditions. Restore signing; approval is not the issuing operation. |
-| Denied or Failed | Treat the request as terminal; inspect the issuer/approver's recorded reason. CWE will not override denial. Repair the underlying cause and investigate whether kubelet requests new material. |
+| Denied or Failed | Treat the request as terminal; inspect the issuer/approver's recorded reason. The controller will not override denial. Repair the underlying cause and investigate whether kubelet requests new material. |
 | Issued but node still uses old certificate | Check kubelet logs, PKI permissions and installed current link. Repair under the site's node recovery procedure; a new serving certificate may not be loaded yet. Keep remaining nodes untouched during manual intervention. |
 | Missing/stale CSR metrics | Restore tenant-manager API observation. Cached zero counts do not establish absence of trouble. |
 
