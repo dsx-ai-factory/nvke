@@ -132,14 +132,19 @@ is a basic fallback; it must use this tenant's explicit kubeconfig/context.
 
 ## Forced renewal and terminal observation
 
-Configure the real Temporal address, namespace and task queue from the site.
-The examples below are placeholders. A forced cycle renews the entire leaf
+Start the workflow in the namespace and task queue the controller's workers
+poll: `temporal.namespace` and `temporal.taskQueue` in `nke-controller-config`
+(defaults `cloud-workflow-engine` and `cloud-workflow-engine-tasks`). A wrong
+queue starts a workflow no worker polls. Pass the Temporal CLI's address and TLS
+flags for the site's Temporal frontend; see the
+[forced renewal contract](../../controller/docs/certificate-renewal.md#forced-renewal).
+The address below is a placeholder. A forced cycle renews the entire leaf
 bundle even when the threshold check would have been a no-op.
 
 ```bash
 TEMPORAL_ADDRESS=temporal.example.invalid:7233
-TEMPORAL_NAMESPACE=example-namespace
-TEMPORAL_TASK_QUEUE=example-cwe-task-queue
+TEMPORAL_NAMESPACE=cloud-workflow-engine         # temporal.namespace
+TEMPORAL_TASK_QUEUE=cloud-workflow-engine-tasks  # temporal.taskQueue
 RENEWAL_WORKFLOW_ID="operator-k8s-cert-renewal-${CLUSTER_ID}-$(date -u +%Y%m%dT%H%M%SZ)"
 
 temporal workflow start --address "$TEMPORAL_ADDRESS" \
@@ -220,15 +225,23 @@ all delayed attempts and restoration, repair the node, and preserve durable
 receipt files. There is no public retained-lock release API. The recovery owner
 must review terminal evidence before a DBA can release only that failed cycle's
 lock under an ownership-checked cluster-row transaction. The workflow ID and
-lock type must both still match; an unexpected owner means stop and investigate.
+lock type must both still match, and `certificateRenewal.state` must be
+`failed`. An unexpected owner means stop and investigate. If the state is still
+`accepted`, for example because its workflow was terminated, stop and escalate
+without releasing the lock: the scheduler keeps requeuing an accepted cycle
+without dispatching it, so releasing it would stop automatic renewal.
 Do not use a generic condition-clearing SQL command, replay a successful renewal
 to obtain evidence, or delete receipts to unblock work.
 
 Once the failed owner's work is proven stopped, its ownership safely released
-and all preflight gates healthy, wait for the controller's automatic retry after
-the one-hour backoff. That retry takes the lock, so a forced workflow started
-meanwhile is refused. Use a **new** uniquely named forced workflow only when
-forced semantics are needed, after the automatic retry has finished.
+and all preflight gates healthy, the controller can retry automatically. The
+automatic retry needs scheduling enabled (`certRenewal.controllerEnabled`) and
+starts no earlier than both one hour after the failure and `nextCertRenewalDue`,
+so after a forced cycle that failed before its due time it can wait up to
+`certRenewal.interval`. That retry takes the lock, so a forced workflow started
+meanwhile is refused. If scheduling is disabled, or forced semantics are needed
+sooner, start a **new** uniquely named forced workflow once the lock is released
+and no automatic retry is running.
 For expired CA, external PKI or lost recovery keys, preserve backups and use a
 separately reviewed recovery plan. This guide provides no automatic PKI recovery.
 
