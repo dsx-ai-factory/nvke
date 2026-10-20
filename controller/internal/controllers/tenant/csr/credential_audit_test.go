@@ -99,20 +99,7 @@ func TestCSRAuditPreservesApprovalOnSinkFailureAndOmitsUntrustedNames(t *testing
 func TestCSRAuditObservesIssuedPublicCertificateWithoutReapproving(t *testing.T) {
 	clusterID, nodeID := uuid.New(), uuid.New()
 	csr := newServingCSR(t, "issued-serving", time.Now(), "system:node:worker-1", []string{"system:nodes"}, []string{"worker-1"}, nil, nil)
-	block, _ := pem.Decode(csr.Spec.Request)
-	require.NotNil(t, block)
-	request, err := x509.ParseCertificateRequest(block.Bytes)
-	require.NoError(t, err)
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	require.NoError(t, err)
-	template := &x509.Certificate{
-		SerialNumber: big.NewInt(1), Subject: request.Subject,
-		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
-	}
-	der, err := x509.CreateCertificate(rand.Reader, template, template, request.PublicKey, key)
-	require.NoError(t, err)
-	csr.Status.Certificate = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	csr.Status.Conditions = []certificatesv1.CertificateSigningRequestCondition{{Type: certificatesv1.CertificateApproved, Status: corev1.ConditionTrue}}
+	issueServingCertificate(t, csr)
 	require.True(t, kubeletServingCSRPredicate().Create(ctrlevent.CreateEvent{Object: csr}))
 	scheme := runtime.NewScheme()
 	require.NoError(t, certificatesv1.AddToScheme(scheme))
@@ -122,7 +109,7 @@ func TestCSRAuditObservesIssuedPublicCertificateWithoutReapproving(t *testing.T)
 		clusterID: clusterID, database: staticDatabase{nodes: []db.Node{{ID: nodeID, Name: "worker-1", IP: "192.0.2.10"}}},
 		client: tenantClient, logger: slog.New(slog.DiscardHandler), audit: credentialaudit.NewRecorder(store, slog.New(slog.DiscardHandler), nil),
 	}
-	_, err = r.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{Name: csr.Name}})
+	_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{Name: csr.Name}})
 	require.NoError(t, err)
 	require.Len(t, store.events, 1)
 	require.Equal(t, credentialaudit.ActionVerify, store.events[0].Action)
@@ -174,9 +161,31 @@ func TestCSRAuditRecordsSkipsOnlyForManagedNodes(t *testing.T) {
 	}
 }
 
+// issueServingCertificate marks csr approved and issued with a self-signed
+// certificate for its request's key.
+func issueServingCertificate(t *testing.T, csr *certificatesv1.CertificateSigningRequest) {
+	t.Helper()
+	block, _ := pem.Decode(csr.Spec.Request)
+	require.NotNil(t, block)
+	request, err := x509.ParseCertificateRequest(block.Bytes)
+	require.NoError(t, err)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: request.Subject,
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, request.PublicKey, key)
+	require.NoError(t, err)
+	csr.Status.Certificate = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	csr.Status.Conditions = []certificatesv1.CertificateSigningRequestCondition{{Type: certificatesv1.CertificateApproved, Status: corev1.ConditionTrue}}
+}
+
 // TestCSRAuditBoundsRowsPerManagedNode keeps a tenant that creates many CSRs
-// naming a managed node from writing unbounded ledger rows. Writes beyond the
-// per-node bound are counted as rate_limited; another node keeps its budget.
+// naming a managed node from writing unbounded ledger rows or using up the node's
+// bound. Rejections of one node within one UTC hour share one event, so a flood
+// leaves one row and a following valid CSR still records its check, approval
+// and issued certificate. Another node keeps its own budget.
 func TestCSRAuditBoundsRowsPerManagedNode(t *testing.T) {
 	clusterID, nodeID, otherID := uuid.New(), uuid.New(), uuid.New()
 	nodes := []db.Node{{ID: nodeID, Name: "worker-1", IP: "192.0.2.10"}, {ID: otherID, Name: "worker-2", IP: "192.0.2.11"}}
@@ -185,12 +194,8 @@ func TestCSRAuditBoundsRowsPerManagedNode(t *testing.T) {
 	store := &csrAuditStore{}
 	results := map[string]int{}
 	recorder := credentialaudit.NewRecorder(store, slog.New(slog.DiscardHandler), func(result string) { results[result]++ })
-	reconcileCSR := func(name, node string) {
+	reconcileCSR := func(csr *certificatesv1.CertificateSigningRequest) {
 		t.Helper()
-		// A SAN mismatch is rejected, so each fresh CSR writes one row until the bound.
-		csr := newServingCSR(t, name, time.Now(), "system:node:"+node, []string{"system:nodes"}, []string{"other"}, nil, nil)
-		csr.UID = types.UID(uuid.NewString())
-		csr.Spec.Username = "system:node:" + node
 		r := &Reconciler{
 			clusterID: clusterID, database: staticDatabase{nodes: nodes},
 			client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(csr).Build(), logger: slog.New(slog.DiscardHandler), audit: recorder,
@@ -198,14 +203,54 @@ func TestCSRAuditBoundsRowsPerManagedNode(t *testing.T) {
 		_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{Name: csr.Name}})
 		require.NoError(t, err)
 	}
+	newCSR := func(name, node, san string) *certificatesv1.CertificateSigningRequest {
+		t.Helper()
+		csr := newServingCSR(t, name, time.Now(), "system:node:"+node, []string{"system:nodes"}, []string{san}, nil, nil)
+		csr.UID = types.UID(uuid.NewString())
+		csr.Spec.Username = "system:node:" + node
+		return csr
+	}
+	countEvents := func(action, reason string) int {
+		count := 0
+		for _, event := range store.events {
+			if event.Target.NodeID == nodeID.String() && event.Action == action && event.Reason == reason {
+				count++
+			}
+		}
+		return count
+	}
+
+	firstHour := time.Now().UTC().Truncate(time.Hour)
 	attempts := 3 * credentialaudit.CSRAuditLimit
 	for index := range attempts {
-		reconcileCSR(fmt.Sprintf("flood-%d", index), "worker-1")
+		// A SAN mismatch is rejected.
+		reconcileCSR(newCSR(fmt.Sprintf("flood-%d", index), "worker-1", "other"))
 	}
-	require.Len(t, store.events, credentialaudit.CSRAuditLimit)
-	require.Equal(t, credentialaudit.CSRAuditLimit, results[credentialaudit.WriteStored])
-	require.Equal(t, attempts-credentialaudit.CSRAuditLimit, results[credentialaudit.WriteRateLimited])
-	reconcileCSR("other-node", "worker-2")
-	require.Len(t, store.events, credentialaudit.CSRAuditLimit+1)
+	wantRejections := 1
+	if !time.Now().UTC().Truncate(time.Hour).Equal(firstHour) {
+		wantRejections = 2 // The flood crossed an hour boundary.
+	}
+	require.Equal(t, wantRejections, countEvents(credentialaudit.ActionCheck, credentialaudit.ReasonRejected))
+	require.Zero(t, results[credentialaudit.WriteRateLimited])
+
+	valid := newCSR("valid", "worker-1", "worker-1")
+	reconcileCSR(valid)
+	issueServingCertificate(t, valid)
+	reconcileCSR(valid)
+	require.Equal(t, 1, countEvents(credentialaudit.ActionCheck, credentialaudit.ReasonVerified))
+	require.Equal(t, 1, countEvents(credentialaudit.ActionApprove, credentialaudit.ReasonCompleted))
+	require.Equal(t, 1, countEvents(credentialaudit.ActionVerify, credentialaudit.ReasonObserved))
+	require.Zero(t, results[credentialaudit.WriteRateLimited])
+
+	// Valid CSRs remain bounded: each records three events.
+	for index := range credentialaudit.CSRAuditLimit {
+		reconcileCSR(newCSR(fmt.Sprintf("valid-flood-%d", index), "worker-1", "worker-1"))
+	}
+	stored := len(store.events)
+	require.LessOrEqual(t, stored, credentialaudit.CSRAuditLimit)
+	require.Positive(t, results[credentialaudit.WriteRateLimited])
+
+	reconcileCSR(newCSR("other-node", "worker-2", "other"))
+	require.Len(t, store.events, stored+1)
 	require.Equal(t, otherID.String(), store.events[len(store.events)-1].Target.NodeID)
 }

@@ -174,12 +174,20 @@ func (r *Reconciler) csrAuditEvent(decision csrDecision, nodes []db.Node, action
 			break
 		}
 	}
+	now := time.Now().UTC()
+	operation := string(decision.CSR.UID)
+	if reason == credentialaudit.ReasonRejected {
+		// A tenant can create rejected CSRs naming a managed node at will. One
+		// identity per node and UTC hour gives them one event ID, so repeats are
+		// stored once and use one slot of the per-node bound, leaving the rest to
+		// approvals and issued certificates.
+		operation = target.NodeID + "/rejected/" + now.Truncate(time.Hour).Format(time.RFC3339)
+	}
 	return credentialaudit.Event{
-		Timestamp: time.Now().UTC(), Action: action, Credential: credentialaudit.TypeServing,
+		Timestamp: now, Action: action, Credential: credentialaudit.TypeServing,
 		Plane: credentialaudit.PlaneT2, Target: target, Actor: credentialaudit.Actor{Kind: credentialaudit.ActorAutomatic},
 		Outcome: outcome, Reason: reason,
-		Correlation: credentialaudit.Correlation{OperationHash: credentialaudit.Hash("operation",
-			string(decision.CSR.UID))},
+		Correlation: credentialaudit.Correlation{OperationHash: credentialaudit.Hash("operation", operation)},
 	}
 }
 
