@@ -5,7 +5,6 @@ package activities
 
 import (
 	"context"
-	"errors"
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
@@ -35,7 +34,7 @@ func (a *Activities) ensureRotationKeyNames(ctx context.Context, clusterID uuid.
 	// rotation that failed in remove_old_keys may have already dropped the old
 	// key from some nodes, so a name that cannot be proven is left unrecorded.
 	activeName, err := a.discoverEncryptionKeyName(ctx, clusterID, string(secret.Data[constants.EtcdEncryptionKeyFieldActive]), true)
-	if err != nil && !errors.Is(err, errIdentityAgentUnsupported) && !errors.Is(err, errIdentityNoJoinedNodes) {
+	if err != nil {
 		return err
 	}
 	if activeName != "" {
