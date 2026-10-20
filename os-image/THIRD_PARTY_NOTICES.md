@@ -17,13 +17,13 @@ notices-check` verifies it is up to date.
 
 | Package | License | Module | Source |
 |---------|---------|--------|--------|
-| `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.5` | https://github.com/go-jose/go-jose/blob/v4.1.5/LICENSE |
-| `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.5` | https://github.com/go-jose/go-jose/blob/v4.1.5/json/LICENSE |
+| `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.6` | https://github.com/go-jose/go-jose/blob/v4.1.6/LICENSE |
+| `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.6` | https://github.com/go-jose/go-jose/blob/v4.1.6/json/LICENSE |
 | `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.9.0` | https://github.com/spiffe/go-spiffe/blob/v2.9.0/LICENSE |
-| `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.60.0` | https://cs.opensource.google/go/x/net/+/v0.60.0:LICENSE |
+| `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.61.0` | https://cs.opensource.google/go/x/net/+/v0.61.0:LICENSE |
 | `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.49.0` | https://cs.opensource.google/go/x/sys/+/v0.49.0:LICENSE |
 | `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.43.0` | https://cs.opensource.google/go/x/text/+/v0.43.0:LICENSE |
-| `google.golang.org/genproto/googleapis/rpc/status` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260928230214-8a89bd6388cc` | https://github.com/googleapis/go-genproto/blob/8a89bd6388cc/googleapis/rpc/LICENSE |
+| `google.golang.org/genproto/googleapis/rpc/status` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20261005182115-fad411399dd8` | https://github.com/googleapis/go-genproto/blob/fad411399dd8/googleapis/rpc/LICENSE |
 | `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.84.0` | https://github.com/grpc/grpc-go/blob/v1.84.0/LICENSE |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | https://github.com/protocolbuffers/protobuf-go/blob/v1.36.12/LICENSE |
 
@@ -31,7 +31,7 @@ notices-check` verifies it is up to date.
 
 ### github.com/go-jose/go-jose/v4
 
-_Apache-2.0 — github.com/go-jose/go-jose/v4@v4.1.5_
+_Apache-2.0 — github.com/go-jose/go-jose/v4@v4.1.6_
 
 #### LICENSE
 
@@ -243,7 +243,7 @@ _Apache-2.0 — github.com/go-jose/go-jose/v4@v4.1.5_
 
 ### github.com/go-jose/go-jose/v4/json
 
-_BSD-3-Clause — github.com/go-jose/go-jose/v4@v4.1.5_
+_BSD-3-Clause — github.com/go-jose/go-jose/v4@v4.1.6_
 
 #### LICENSE
 
@@ -491,7 +491,7 @@ _Apache-2.0 — github.com/spiffe/go-spiffe/v2@v2.9.0_
 
 ### golang.org/x/net
 
-_BSD-3-Clause — golang.org/x/net@v0.60.0_
+_BSD-3-Clause — golang.org/x/net@v0.61.0_
 
 #### LICENSE
 
@@ -602,7 +602,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### google.golang.org/genproto/googleapis/rpc/status
 
-_Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20260928230214-8a89bd6388cc_
+_Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20261005182115-fad411399dd8_
 
 #### LICENSE
 
