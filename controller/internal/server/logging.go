@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -14,18 +15,35 @@ import (
 const (
 	maxUserAgentLogLength = 256
 
-	rejectionReasonRequestParsingFailed    = "request_parsing_failed"
-	rejectionReasonRequestValidationFailed = "request_validation_failed"
-	rejectionReasonManagedByHeaderRequired = "managed_by_header_required"
+	rejectionReasonRequestParsingFailed     = "request_parsing_failed"
+	rejectionReasonRequestValidationFailed  = "request_validation_failed"
+	rejectionReasonManagedByHeaderRequired  = "managed_by_header_required"
+	rejectionReasonClusterNameAlreadyExists = "cluster_name_already_exists"
+	rejectionReasonInvalidClusterNetwork    = "invalid_cluster_network"
 )
+
+type requestLogStateKey struct{}
+
+type requestLogState struct {
+	rejectionReason string
+}
+
+func (s *requestLogState) recordRejectionReason(reason string) {
+	if s.rejectionReason == "" {
+		s.rejectionReason = reason
+	}
+}
 
 func loggingMiddleware(next http.Handler, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		userAgent := truncate(r.UserAgent(), maxUserAgentLogLength)
 
-		// Create a response wrapper to capture the status code
-		wrapped := responseWriter{ResponseWriter: w, status: http.StatusOK}
+		// Create a response wrapper to capture the status code and share stable
+		// rejection metadata with handlers through the request context.
+		state := &requestLogState{}
+		wrapped := responseWriter{ResponseWriter: w, status: http.StatusOK, requestLogState: state}
+		requestContext := context.WithValue(r.Context(), requestLogStateKey{}, state)
 
 		level := slog.LevelInfo
 		if r.Method == http.MethodGet {
@@ -33,10 +51,10 @@ func loggingMiddleware(next http.Handler, logger *slog.Logger) http.Handler {
 		}
 
 		// Log the incoming request
-		logger.Log(r.Context(), level, "Incoming request", "method", r.Method, "path", r.URL.Path, "user_agent", userAgent)
+		logger.Log(requestContext, level, "Incoming request", "method", r.Method, "path", r.URL.Path, "user_agent", userAgent)
 
 		// Process the request
-		next.ServeHTTP(&wrapped, r)
+		next.ServeHTTP(&wrapped, r.WithContext(requestContext))
 
 		if wrapped.status >= 400 {
 			level = slog.LevelError
@@ -51,12 +69,12 @@ func loggingMiddleware(next http.Handler, logger *slog.Logger) http.Handler {
 			"user_agent", userAgent,
 			"duration", time.Since(start).String(),
 		}
-		if wrapped.rejectionReason != "" {
-			attrs = append(attrs, "reason", wrapped.rejectionReason)
+		if state.rejectionReason != "" {
+			attrs = append(attrs, "reason", state.rejectionReason)
 		}
 
 		// Log the completed request
-		logger.Log(r.Context(), level, "Request completed", attrs...)
+		logger.Log(requestContext, level, "Request completed", attrs...)
 	})
 }
 
@@ -87,7 +105,7 @@ func httpOutcome(status int) string {
 type responseWriter struct {
 	http.ResponseWriter
 	status          int
-	rejectionReason string
+	requestLogState *requestLogState
 	wroteHeader     bool
 }
 
@@ -102,9 +120,7 @@ func (rw *responseWriter) WriteHeader(code int) {
 	}
 	rw.wroteHeader = true
 	rw.status = code
-	if rw.rejectionReason == "" {
-		rw.rejectionReason = httpRejectionReason(code)
-	}
+	rw.recordRejectionReason(httpRejectionReason(code))
 	rw.ResponseWriter.WriteHeader(code)
 }
 
@@ -142,7 +158,7 @@ type rejectionReasonRecorder interface {
 }
 
 func (rw *responseWriter) recordRejectionReason(reason string) {
-	rw.rejectionReason = reason
+	rw.requestLogState.recordRejectionReason(reason)
 }
 
 // recordRejectionReason adds a stable reason to the request completion log
@@ -150,5 +166,13 @@ func (rw *responseWriter) recordRejectionReason(reason string) {
 func recordRejectionReason(w http.ResponseWriter, reason string) {
 	if recorder, ok := w.(rejectionReasonRecorder); ok {
 		recorder.recordRejectionReason(reason)
+	}
+}
+
+// recordRequestRejectionReason lets business handlers classify a rejection
+// without copying their client-facing response text into persistent logs.
+func recordRequestRejectionReason(ctx context.Context, reason string) {
+	if state, ok := ctx.Value(requestLogStateKey{}).(*requestLogState); ok {
+		state.recordRejectionReason(reason)
 	}
 }

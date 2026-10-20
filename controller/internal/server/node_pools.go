@@ -34,7 +34,8 @@ var (
 )
 
 type badRequestError struct {
-	message string
+	message         string
+	rejectionReason string
 }
 
 func (e *badRequestError) Error() string {
@@ -43,6 +44,13 @@ func (e *badRequestError) Error() string {
 
 func newBadRequestErrorf(format string, args ...any) error {
 	return &badRequestError{message: fmt.Sprintf(format, args...)}
+}
+
+func newClassifiedBadRequestErrorf(reason, format string, args ...any) error {
+	return &badRequestError{
+		message:         fmt.Sprintf(format, args...),
+		rejectionReason: reason,
+	}
 }
 
 type nodePoolService struct {

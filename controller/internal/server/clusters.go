@@ -179,6 +179,7 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 	if err != nil {
 		var badRequestErr *badRequestError
 		if errors.As(err, &badRequestErr) {
+			recordRequestRejectionReason(ctx, badRequestErr.rejectionReason)
 			return api.CreateCluster400JSONResponse{Message: badRequestErr.Error()}, nil
 		}
 		return nil, err
@@ -255,12 +256,14 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrClusterNameNotUnique) {
+			recordRequestRejectionReason(ctx, rejectionReasonClusterNameAlreadyExists)
 			return api.CreateCluster400JSONResponse{
 				Message: fmt.Sprintf("A cluster already exists with the name %q", req.Body.Name),
 			}, nil
 		}
 		var badRequestErr *badRequestError
 		if errors.As(err, &badRequestErr) {
+			recordRequestRejectionReason(ctx, badRequestErr.rejectionReason)
 			return api.CreateCluster400JSONResponse{Message: badRequestErr.Error()}, nil
 		}
 		return nil, err
@@ -278,7 +281,7 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 	}
 	network, err := resolveClusterNetwork(req.Network)
 	if err != nil {
-		return resolvedClusterNetwork{}, newBadRequestErrorf("%s", err)
+		return resolvedClusterNetwork{}, newClassifiedBadRequestErrorf(rejectionReasonInvalidClusterNetwork, "%s", err)
 	}
 	desiredNodes := 0
 	if req.NodePools != nil {

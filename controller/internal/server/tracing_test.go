@@ -13,12 +13,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nvke/controller/internal/server"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
@@ -44,6 +47,37 @@ func requestLogs(t *testing.T, exportEnabled bool, traceparent, userAgent string
 	}
 	response := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(response, req)
+
+	var records []map[string]any
+	for _, line := range bytes.Split(buf.Bytes(), []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var record map[string]any
+		require.NoError(t, json.Unmarshal(line, &record))
+		records = append(records, record)
+	}
+	return response, records
+}
+
+func createClusterRequestLogs(
+	t *testing.T,
+	database *testutil.MockDB,
+	request api.CreateClusterRequest,
+) (*httptest.ResponseRecorder, []map[string]any) {
+	t.Helper()
+
+	var buf bytes.Buffer
+	logger := slog.New(otelx.LogHandler{Handler: slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})})
+	srv, err := server.NewServer(config.Config{ProfilesDir: "./profiles"}, logger, database, nil, nil, nil)
+	require.NoError(t, err)
+
+	body, err := json.Marshal(request)
+	require.NoError(t, err)
+	httpRequest := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/clusters", bytes.NewReader(body))
+	httpRequest.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(response, httpRequest)
 
 	var records []map[string]any
 	for _, line := range bytes.Split(buf.Bytes(), []byte("\n")) {
@@ -105,6 +139,40 @@ func TestRequestCompletedLogCarriesValidationReason(t *testing.T) {
 	encodedLogs, err := json.Marshal(records)
 	require.NoError(t, err)
 	require.NotContains(t, string(encodedLogs), "not json")
+}
+
+func TestRequestCompletedLogClassifiesInvalidClusterNetwork(t *testing.T) {
+	installTracerProvider(t)
+	request := openAPIForgeCreateClusterRequest()
+	request.Network = &api.ClusterNetworkCreateConfig{PodCIDR: "not-a-cidr"}
+
+	response, records := createClusterRequestLogs(t, &testutil.MockDB{}, request)
+
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Equal(t, "invalid_cluster_network", completedRecord(t, records)["reason"])
+	encodedLogs, err := json.Marshal(records)
+	require.NoError(t, err)
+	require.NotContains(t, string(encodedLogs), "not-a-cidr")
+}
+
+func TestRequestCompletedLogClassifiesDuplicateClusterName(t *testing.T) {
+	installTracerProvider(t)
+	request := openAPIForgeCreateClusterRequest()
+	request.Name = "client-supplied-duplicate-name"
+	mockTx := &testutil.MockTx{}
+	mockTx.On("CreateCluster", mock.Anything, mock.Anything).Return(db.Cluster{}, db.ErrClusterNameNotUnique).Once()
+	database := &testutil.MockDB{MockTx: mockTx}
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+
+	response, records := createClusterRequestLogs(t, database, request)
+
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Equal(t, "cluster_name_already_exists", completedRecord(t, records)["reason"])
+	encodedLogs, err := json.Marshal(records)
+	require.NoError(t, err)
+	require.NotContains(t, string(encodedLogs), request.Name)
+	mockTx.AssertExpectations(t)
+	database.AssertExpectations(t)
 }
 
 func TestRequestStartsATraceWithoutExport(t *testing.T) {

@@ -57,7 +57,8 @@ func TestHTTPRejectionReason(t *testing.T) {
 
 func TestResponseWriterRetainsFirstFinalStatus(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	writer := responseWriter{ResponseWriter: recorder, status: http.StatusOK}
+	state := &requestLogState{}
+	writer := responseWriter{ResponseWriter: recorder, status: http.StatusOK, requestLogState: state}
 
 	writer.WriteHeader(http.StatusConflict)
 	writer.WriteHeader(http.StatusEarlyHints)
@@ -65,12 +66,12 @@ func TestResponseWriterRetainsFirstFinalStatus(t *testing.T) {
 
 	require.Equal(t, http.StatusConflict, recorder.Code)
 	require.Equal(t, http.StatusConflict, writer.status)
-	require.Equal(t, "conflict", writer.rejectionReason)
+	require.Equal(t, "conflict", state.rejectionReason)
 }
 
 func TestResponseWriterTreatsSwitchingProtocolsAsFinal(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	writer := responseWriter{ResponseWriter: recorder, status: http.StatusOK}
+	writer := responseWriter{ResponseWriter: recorder, status: http.StatusOK, requestLogState: &requestLogState{}}
 
 	writer.WriteHeader(http.StatusSwitchingProtocols)
 	writer.WriteHeader(http.StatusOK)
@@ -81,7 +82,8 @@ func TestResponseWriterTreatsSwitchingProtocolsAsFinal(t *testing.T) {
 
 func TestResponseWriterRetainsImplicitSuccessStatus(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	writer := responseWriter{ResponseWriter: recorder, status: http.StatusOK}
+	state := &requestLogState{}
+	writer := responseWriter{ResponseWriter: recorder, status: http.StatusOK, requestLogState: state}
 
 	_, err := writer.Write([]byte("ok"))
 	require.NoError(t, err)
@@ -89,5 +91,16 @@ func TestResponseWriterRetainsImplicitSuccessStatus(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Equal(t, http.StatusOK, writer.status)
-	require.Empty(t, writer.rejectionReason)
+	require.Empty(t, state.rejectionReason)
+}
+
+func TestResponseWriterRetainsSpecificRejectionReason(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	state := &requestLogState{}
+	writer := responseWriter{ResponseWriter: recorder, status: http.StatusOK, requestLogState: state}
+
+	writer.recordRejectionReason(rejectionReasonInvalidClusterNetwork)
+	writer.WriteHeader(http.StatusBadRequest)
+
+	require.Equal(t, rejectionReasonInvalidClusterNetwork, state.rejectionReason)
 }
