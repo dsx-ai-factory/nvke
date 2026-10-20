@@ -165,11 +165,13 @@ Prometheus instance loads `nvke-credential-lifecycle`, and its Alertmanager rout
 has a receiver for the rule severities. Add a separate scrape/target-down alert:
 these rules cannot report from a controller that is unreachable. With
 `credentialMonitoring.enabled=false`, the controller still exports the inspection
-and CSR availability series as unavailable, because nothing observes them. The
-two availability alerts, `NVKECertificateInspectionUnavailable` and
-`NVKEKubeletServingCSRObservationUnavailable`, therefore fire only while
-`credential_monitoring_enabled` is 1, so disabling monitoring does not page for
-every node and cluster. Unknown observations must still not be mistaken for
+and CSR availability series as unavailable, because nothing observes them, and
+keeps exporting the last stored CSR inventory, whose pending age keeps growing.
+The two availability alerts, `NVKECertificateInspectionUnavailable` and
+`NVKEKubeletServingCSRObservationUnavailable`, and the two CSR alerts,
+`NVKEKubeletServingCSRStale` and `NVKEKubeletServingCSRFailed`, therefore fire
+only while `credential_monitoring_enabled` is 1, so disabling monitoring does not
+page for every node and cluster or for a frozen CSR snapshot. Unknown observations must still not be mistaken for
 healthy credentials: with monitoring disabled, no rule reports expiring or missing
 certificates once the last observation is older than `observationMaxAge`. Until
 then, the expiry and missing alerts keep evaluating that last observation.
