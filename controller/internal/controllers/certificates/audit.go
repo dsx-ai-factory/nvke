@@ -5,6 +5,7 @@ package certificates
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	catalog "github.com/dsx-ai-factory/nvke/agent/pkg/certificates"
@@ -19,13 +20,36 @@ const (
 
 // recordInspectionAudit emits independent observations, not renewal completion
 // evidence. A failed probe must never report retained fingerprints as fresh.
-func (c *Controller) recordInspectionAudit(ctx context.Context, node db.Node, inspection *db.CertificateInspection) {
+// A successful observation that repeats the previous inspection's outcome and
+// fingerprints for the same credential is not recorded again, so an unchanged
+// node does not add rows every inspection interval; failures are always recorded.
+func (c *Controller) recordInspectionAudit(ctx context.Context, node db.Node, previous, inspection *db.CertificateInspection) {
 	if c.audit == nil || inspection == nil {
 		return
 	}
+	var before []credentialaudit.Event
+	if previous != nil {
+		before = inspectionAuditEvents(node, previous)
+	}
 	for _, event := range inspectionAuditEvents(node, inspection) {
+		if event.Outcome == credentialaudit.OutcomeSuccess && slices.ContainsFunc(before, func(prior credentialaudit.Event) bool {
+			return sameInspectionObservation(prior, event)
+		}) {
+			continue
+		}
 		c.audit.Record(ctx, event)
 	}
+}
+
+func sameInspectionObservation(a, b credentialaudit.Event) bool {
+	return a.Credential == b.Credential && a.Outcome == b.Outcome && a.Reason == b.Reason &&
+		slices.Equal(sortedFingerprints(a.Fingerprints), sortedFingerprints(b.Fingerprints))
+}
+
+func sortedFingerprints(fingerprints []string) []string {
+	sorted := slices.Clone(fingerprints)
+	slices.Sort(sorted)
+	return sorted
 }
 
 func inspectionAuditEvents(node db.Node, inspection *db.CertificateInspection) []credentialaudit.Event {
