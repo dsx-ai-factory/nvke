@@ -46,7 +46,6 @@ CWE_CURL_CONFIG=/secure/controller-curl.conf
 nvkectl config set-site --name "$SITE_NAME" --url "$CWE_URL" \
   --kubeconfig "$SITE_KUBECONFIG"
 nvkectl get kubeconfig "$CLUSTER_NAME" --output-file "$TENANT_KUBECONFIG"
-cp -p "$TENANT_KUBECONFIG" "$TENANT_KUBECONFIG.before"   # pre-renewal copy for later comparison
 kubectl --kubeconfig "$TENANT_KUBECONFIG" --context "$TENANT_CONTEXT" \
   get namespace kube-system -o jsonpath='{.metadata.uid}{"\n"}'
 kubectl --kubeconfig "$TENANT_KUBECONFIG" --context "$TENANT_CONTEXT" get nodes -o wide
@@ -178,36 +177,32 @@ membership and every endpoint, local APIs/mirror pods healthy, all nodes Ready,
 and traffic within the approved budget. A no-op scheduled cycle should retain
 leaf fingerprints and avoid renewal restarts; document that outcome explicitly.
 
-The downloaded admin credential is a separate copy. Retrieve the refreshed
-management-plane copy, overwriting `$TENANT_KUBECONFIG` while the preparation
-step's `$TENANT_KUBECONFIG.before` stays untouched, and verify it through the
-selected endpoint:
+Leaf renewal does not reissue the downloaded `nvke:breakglass` kubeconfig.
+`nvkectl get kubeconfig` returns the tenant-access breakglass client certificate,
+not a kubeadm leaf. Tenant access reissues it only when its remaining lifetime
+drops below `thresholdDays` or the cluster CA changes, and leaf renewal keeps the
+CA, so a healthy renewal normally leaves that kubeconfig unchanged; see
+[Kubernetes API access](kubernetes-api-access.md). Do not compare kubeconfig
+copies to judge renewal. Verify the renewed leaves on each node instead:
 
 ```bash
-nvkectl get kubeconfig "$CLUSTER_NAME" --output-file "$TENANT_KUBECONFIG"
+sudo kubeadm certs check-expiration
+```
+
+Every renewed leaf must show a later expiry than its baseline, and the CA rows
+must be unchanged. Together with the cluster status fields above
+(`certificateRenewal.state`, its outcome and completion time, and the advanced
+`nextCertRenewalDue`) and the node observations, that is the renewal evidence.
+Check that the retrieved kubeconfig still works through the selected endpoint:
+
+```bash
 kubectl --kubeconfig "$TENANT_KUBECONFIG" --context "$TENANT_CONTEXT" auth whoami
 kubectl --kubeconfig "$TENANT_KUBECONFIG" --context "$TENANT_CONTEXT" get nodes
 ```
 
-`auth whoami` and `get nodes` also succeed with the pre-renewal admin certificate,
-because leaf renewal keeps the CA. Treat retrieval as renewed only if the
-retrieved kubeconfig's embedded client certificate has a later NotAfter and a
-different SHA-256 fingerprint than `$TENANT_KUBECONFIG.before`. Compare only public
-certificate metadata, for example:
-
-```bash
-for f in "$TENANT_KUBECONFIG.before" "$TENANT_KUBECONFIG"; do
-  kubectl --kubeconfig "$f" --context "$TENANT_CONTEXT" config view --raw --minify \
-    -o jsonpath='{.users[0].user.client-certificate-data}' | base64 -d \
-    | openssl x509 -noout -enddate -fingerprint -sha256
-done
-```
-
-If the dates and fingerprint are unchanged, the tenant-access publication has not
-refreshed: investigate that controller/Secret publication path; downloaded files
-never update automatically. Distribute through the site's
-credential process and keep them, including the `.before` copy, out of maintenance evidence. Check fresh
-inspection metrics, any firing alerts and the
+Keep downloaded kubeconfigs out of maintenance evidence and distribute them
+only through the site's credential process. Check fresh inspection metrics, any
+firing alerts and the
 [T2 audit export](../../controller/docs/credential-audit.md#export-and-retention).
 
 ## Failure and recovery
