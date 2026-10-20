@@ -68,11 +68,22 @@ The manual tool rejects mixed PEM bundles and private-key PEM blocks.
   Retiring a permanently lost control-plane node from a failed rotation records
   `rotate/success` with reason `node_retired`, the node and the failed phase;
   refusals record `rotate/failure` and repeats `rotate/no_op`.
-- The kubelet-serving CSR controller records validation and approval
-  success/failure. A skipped CSR is recorded only when its requestor resolves to
-  a managed node; CSRs from other requestors are logged at debug level but never
-  written to the ledger. An observed signer result can supply public
-  fingerprints; `verify/observed` proves only that the CSR has a public
+- The kubelet-serving CSR controller records these `action/outcome/reason`
+  observations for CSRs whose requestor resolves to a managed node:
+
+  | Observation | Meaning |
+  | --- | --- |
+  | `check/success/verified` | the CSR matches the managed node's identity |
+  | `check/no_op/identity_not_approved` | the CSR was rejected and not approved; this is how a rejected identity appears, not as `failure` |
+  | `approve/success/completed` | the approval was written to the CSR |
+  | `approve/failure/approval_update_failed` | writing the approval failed; the CSR is retried |
+  | `verify/success/observed` | the signer issued a certificate, with its public fingerprints |
+  | `verify/failure/observation_unavailable` | the issued certificate could not be parsed |
+
+  To find rejected identities, filter on `reason_code =
+  'identity_not_approved'`; filtering on `outcome = 'failure'` misses them. CSRs
+  from other requestors are logged at debug level but never written to the
+  ledger. `verify/success/observed` proves only that the CSR has a public
   certificate, not that the kubelet installed it. Because a tenant
   cluster-admin can still create CSRs naming a managed node, CSR-derived writes
   are bounded per cluster and node: at most 12 events within any hour, counted
@@ -88,7 +99,8 @@ The manual tool rejects mixed PEM bundles and private-key PEM blocks.
   adds no rows; changes and every failed probe are recorded. A failed probe emits
   unavailable evidence without claiming retained older fingerprints are fresh;
   a successful read does not prove renewal occurred or that a certificate is unexpired.
-- T1 events are explicit operator observations accompanying the manual runbook.
+- T1 events are explicit operator observations accompanying the
+  [site-management certificate renewal runbook](../../docs/site-operations/certificate-renewal.md).
   NVKE does not automatically run, approve, or renew management-plane credentials.
 
 Effects occur in activities and reconcilers, never workflow replay code. Activity
@@ -166,8 +178,14 @@ in the same shell:
 ```bash
 cd controller
 evidence_dir="$(mktemp -d)" &&
-  go build -o "$evidence_dir/credential-audit" ./cmd/credential-audit &&
-  "$evidence_dir/credential-audit" \
+  go build -o "$evidence_dir/credential-audit" ./cmd/credential-audit
+```
+
+Record each observation only after you performed that step. For example, after
+the pre-renewal checks of the first node passed:
+
+```bash
+"$evidence_dir/credential-audit" \
   --plane t1 --credential kubeadm_leaf_bundle --action check \
   --cluster example-management-cluster --node example-control-plane-1 \
   --operation example-maintenance-run/check-1 --actor example-operator \
@@ -192,8 +210,10 @@ unchanged fields.
 For public certificate evidence, add `--certificate /path/to/public-certificate.pem`
 to `check` and `verify` observations. Maximum input is 1 MiB and 32 certificates.
 Take public certificate-only copies without exporting private keys or kubeconfig
-contents. Record before/after fingerprints with the runbook's health and CA
-checks; a changed fingerprint alone does not prove availability or CA stability.
+contents. Record before/after fingerprints with the runbook's
+[health checks](../../docs/site-operations/certificate-renewal.md#1-select-a-site-and-prepare-maintenance)
+and [post-renewal verification](../../docs/site-operations/certificate-renewal.md#4-verify-before-the-next-node);
+a changed fingerprint alone does not prove availability or CA stability.
 
 `--cluster-id` and `--node-id` accept managed UUIDs instead of hashed external
 identifiers. Stdout is one JSON line; schema/input/output failure exits nonzero.
