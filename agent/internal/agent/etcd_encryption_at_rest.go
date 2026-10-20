@@ -723,6 +723,36 @@ func (n *NodeAgentServer) createAPIEncryptionConfig(encryptionKey string, identi
 }
 
 func (n *NodeAgentServer) createNamedAPIEncryptionConfig(encryptionKey, keyName string, identityFirst bool, objects []string) error {
+	return n.writeAPIEncryptionConfig(encryptionKey, keyName, identityFirst, objects, false)
+}
+
+// createBootstrapAPIEncryptionConfig writes the encryption config for kubeadm init or join.
+// kubeadm reset leaves /etc/kubernetes/kube-api-encryption behind, so a config that no local
+// etcd data or kube-apiserver manifest still depends on is replaced rather than rejected.
+func (n *NodeAgentServer) createBootstrapAPIEncryptionConfig(encryptionKey, keyName string) error {
+	return n.writeAPIEncryptionConfig(encryptionKey, keyName, false, nil, true)
+}
+
+// localEncryptedDataMayExist reports whether this node still holds etcd member data or a
+// kube-apiserver static pod manifest, the state kubeadm reset removes. The agent cannot see a
+// non-default etcd dataDir, so it checks kubeadm's default /var/lib/etcd.
+func (n *NodeAgentServer) localEncryptedDataMayExist() (bool, error) {
+	if _, err := os.Stat(filepath.Join(n.RootPath, "/etc/kubernetes/manifests/kube-apiserver.yaml")); err == nil {
+		return true, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	entries, err := os.ReadDir(filepath.Join(n.RootPath, "/var/lib/etcd/member"))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return len(entries) > 0, nil
+}
+
+func (n *NodeAgentServer) writeAPIEncryptionConfig(encryptionKey, keyName string, identityFirst bool, objects []string, bootstrap bool) error {
 	n.encryptionMu.Lock()
 	defer n.encryptionMu.Unlock()
 	if keyName == "" {
@@ -739,12 +769,34 @@ func (n *NodeAgentServer) createNamedAPIEncryptionConfig(encryptionKey, keyName 
 		if err != nil {
 			return err
 		}
-		if err := cfg.validateMutationIdentity(&pb.UpdateEncryptionConfigRequest{
+		identityErr := cfg.validateMutationIdentity(&pb.UpdateEncryptionConfigRequest{
 			Operation: &pb.UpdateEncryptionConfigRequest_AddSecondaryKey{
 				AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: encryptionKey, KeyName: keyName},
 			},
-		}); err != nil {
-			return err
+		})
+		if identityErr != nil {
+			if !bootstrap {
+				return identityErr
+			}
+			protected, err := n.localEncryptedDataMayExist()
+			if err != nil {
+				return fmt.Errorf("checking for local etcd data before replacing encryption config: %w", err)
+			}
+			if protected {
+				return identityErr
+			}
+			var staleDigests []string
+			for _, keys := range cfg.secretboxKeySlices() {
+				for _, key := range *keys {
+					staleDigests = append(staleDigests, encryptionKeyDigest(key.Secret))
+				}
+			}
+			slog.Warn("replacing stale encryption config left without local etcd data",
+				"config_path", configPath,
+				"key_name", keyName,
+				"key_sha256", encryptionKeyDigest(encryptionKey),
+				"stale_key_sha256s", staleDigests,
+			)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
