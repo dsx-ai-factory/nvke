@@ -186,7 +186,7 @@ scan_output_for_secrets() {
     return 0
   fi
 
-  local work rc name shape fingerprint join_token plog
+  local work rc name shape fingerprint join_token plog trace_hex span_hex
   work="$(mktemp -d)"
 
   # The rules, proved on a sample of each shape: flagged with a value, clean with
@@ -208,9 +208,17 @@ scan_output_for_secrets() {
     "${fingerprint}" 1 1 >"${work}/clean/etcd-fingerprint.txt"
   printf 'msg="wrote the file" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
     "${fingerprint}" 1 1 >"${work}/flagged/etcd-other.txt"
-  # The SPIRE CA line, which holds file paths, and a key written to it instead.
-  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/cli/.local/spire-ca/ca.crt key=/w/cli/.local/spire-ca/ca.key trace_id=%032x span_id=%016x\n' \
-    1 1 >"${work}/clean/spire-ca-paths.txt"
+  # The SPIRE CA line, which holds file paths, and the same line with a field
+  # appended after the span ID, which the allowlist is anchored to refuse. The
+  # IDs are derived, and random-looking: with a trivial span ID the default rule
+  # would not flag the line even without the allowlist, and the sample would
+  # prove nothing.
+  trace_hex="$(printf t | sha256sum | cut -c1-32)"
+  span_hex="$(printf s | sha256sum | cut -c1-16)"
+  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/cli/.local/spire-ca/ca.crt key=/w/cli/.local/spire-ca/ca.key trace_id=%s span_id=%s\n' \
+    "${trace_hex}" "${span_hex}" >"${work}/clean/spire-ca-paths.txt"
+  printf 'time=x level=INFO msg="SPIRE upstream CA from the environment" component=x cert=/w/cli/.local/spire-ca/ca.crt key=/w/cli/.local/spire-ca/ca.key trace_id=%s span_id=%s extra=%s\n' \
+    "${trace_hex}" "${span_hex}" "${fingerprint}" >"${work}/flagged/spire-ca-extra.txt"
   # The two hashes the rules allow, and a join token and certificate key beside one
   # of them, which they must not. Computed here for the same reason as above.
   printf '{"msg":"update","api_encryption_key_sha256":"%s"}\n' "${fingerprint}" >"${work}/clean/key-fingerprint.txt"
