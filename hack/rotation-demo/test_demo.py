@@ -1014,13 +1014,48 @@ class CollectorContractTests(unittest.TestCase):
     def test_manual_public_inventory_excludes_kubelet_and_worker_credentials(self):
         c = config()
         live = demo.Live(c)
-        public = [{"credential": name, "state": "available", "certificateSHA256": demo.digest(name),
-                   "notAfter": "2028-01-01T00:00:00Z"} for name in demo.CA | demo.LEAF]
-        observation = json.dumps({"available": True, "observedAt": demo.now(), "certificates": public}).encode()
-        with patch.object(demo, "command", return_value=observation):
+        def observation(argv, _stdin=None, timeout=30):
+            # Each control plane has its own leaves; CAs are shared.
+            node = argv[argv.index("--") + 1]
+            public = [{"credential": name, "state": "available",
+                       "certificateSHA256": demo.digest(name if name in demo.CA else name + node),
+                       "notAfter": "2028-01-01T00:00:00Z"} for name in demo.CA | demo.LEAF]
+            return json.dumps({"available": True, "observedAt": demo.now(), "certificates": public}).encode()
+        with patch.object(demo, "command", side_effect=observation):
             result = live.certificates(manual=True)
         self.assertEqual(39, len(result))
         self.assertFalse(any(name.startswith("kubelet") for _node, name in result))
+
+    def test_two_control_planes_with_the_same_node_leaf_fail_attribution(self):
+        c = config()
+        control_planes = [n["id"] for n in c["nodes"] if n["control_plane"]]
+        demo.require_distinct_node_certificates(snapshot(c), set(control_planes))
+        for credential in demo.NODE_UNIQUE:
+            with self.subTest(credential=credential):
+                copied = snapshot(c)
+                copied[(control_planes[2], credential)] = copied[(control_planes[1], credential)]
+                with self.assertRaisesRegex(demo.CheckError, "node_certificate_attribution_ambiguous"):
+                    demo.require_distinct_node_certificates(copied, set(control_planes))
+        # Shared CAs are expected to be identical across nodes.
+        demo.require_distinct_node_certificates({(node, "kubernetes-ca"): {"sha256": "a" * 64} for node in control_planes}, set(control_planes))
+
+    def test_manual_t1_inventory_rejects_a_copy_pasted_ssh_destination(self):
+        c = config()
+        cp = [n for n in c["nodes"] if n["control_plane"]]
+        def node_inventory(node):
+            certificates = [{"credential": name, "state": "available", "certificateSHA256": demo.digest(name + node),
+                             "notAfter": "2027-01-01T00:00:00Z"} for name in sorted(demo.CA | demo.LEAF)]
+            for item in certificates:
+                if item["credential"] in demo.CA:
+                    item["certificateSHA256"] = demo.digest(item["credential"])
+            return json.dumps({"available": True, "observedAt": demo.now(), "certificates": certificates}).encode()
+        destinations = {n["ssh"]: n["name"] for n in cp}
+        cp[2]["ssh"] = cp[1]["ssh"]
+        def fake_command(argv, _stdin=None, timeout=30):
+            return node_inventory(destinations[argv[argv.index("--") + 1]])
+        with patch.object(demo, "command", side_effect=fake_command):
+            with self.assertRaisesRegex(demo.CheckError, "node_certificate_attribution_ambiguous"):
+                demo.Live(c).certificates(manual=True)
 
     def test_manual_audit_is_bound_to_exact_target_run_and_per_node_actions(self):
         c = config()
