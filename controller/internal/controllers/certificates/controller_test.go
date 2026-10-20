@@ -6,6 +6,7 @@ package certificates
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -234,39 +235,50 @@ func (t inspectionSQLiteTx) GetNodeForUpdate(ctx context.Context, id uuid.UUID) 
 	return t.Tx.GetNode(ctx, id)
 }
 
-// blockingInspector blocks the probe of one node until released.
+// blockingInspector holds every probe until released and closes concurrent once
+// two probes are in flight at the same time.
 type blockingInspector struct {
-	blocked  uuid.UUID
-	release  chan struct{}
-	response *pb.InspectKubernetesCertificatesResponse
+	mu         sync.Mutex
+	inFlight   int
+	concurrent chan struct{}
+	release    chan struct{}
+	response   *pb.InspectKubernetesCertificatesResponse
 }
 
-func (s *blockingInspector) InspectKubernetesCertificates(ctx context.Context, node db.Node) (*pb.InspectKubernetesCertificatesResponse, error) {
-	if node.ID == s.blocked {
-		select {
-		case <-s.release:
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+func (s *blockingInspector) InspectKubernetesCertificates(ctx context.Context, _ db.Node) (*pb.InspectKubernetesCertificatesResponse, error) {
+	s.mu.Lock()
+	s.inFlight++
+	if s.inFlight == 2 {
+		close(s.concurrent)
 	}
-	return s.response, nil
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.inFlight--
+		s.mu.Unlock()
+	}()
+	select {
+	case <-s.release:
+		return s.response, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // TestSetupWithManagerInspectsOtherNodesWhileOneProbeBlocks keeps an unreachable
 // agent, which holds its probe until the deadline, from delaying another due node.
+// Every probe blocks, so a second node is inspected only by a second worker,
+// whichever node the source lists first.
 func TestSetupWithManagerInspectsOtherNodesWhileOneProbeBlocks(t *testing.T) {
 	ctx := t.Context()
 	database := inspectionSQLiteDB{DB: db.NewDB(testutil.SetupDB(ctx, t, (*db.Cluster)(nil), (*db.NodePool)(nil), (*db.NodeSet)(nil), (*db.Node)(nil)))}
-	newNode := func(name string) db.Node {
-		t.Helper()
-		node, err := database.CreateNode(ctx, &db.Node{ID: uuid.New(), ClusterID: uuid.New(), Name: name, SpireAttestationMethod: db.SpireAttestationMethodTPM, Conditions: db.NodeConditions{Joined: db.NewCondition(true, "joined")}})
+	for _, name := range []string{"first-node", "second-node"} {
+		_, err := database.CreateNode(ctx, &db.Node{ID: uuid.New(), ClusterID: uuid.New(), Name: name, SpireAttestationMethod: db.SpireAttestationMethodTPM, Conditions: db.NodeConditions{Joined: db.NewCondition(true, "joined")}})
 		require.NoError(t, err)
-		return node
 	}
-	blocked, other := newNode("blocked-node"), newNode("other-node")
 	release := make(chan struct{})
 	defer close(release)
-	stub := &blockingInspector{blocked: blocked.ID, release: release, response: &pb.InspectKubernetesCertificatesResponse{}}
+	stub := &blockingInspector{concurrent: make(chan struct{}), release: release, response: &pb.InspectKubernetesCertificatesResponse{}}
 	mgr, err := controllertest.NewManager(nil)
 	require.NoError(t, err)
 	controller := NewController(config.Config{CertificateInspectionInterval: time.Hour}, dbwrapper.New(database, slog.New(slog.DiscardHandler)), stub)
@@ -274,11 +286,9 @@ func TestSetupWithManagerInspectsOtherNodesWhileOneProbeBlocks(t *testing.T) {
 	require.NoError(t, controller.SetupWithManager(mgr))
 	controllertest.Start(ctx, t, mgr)
 
-	require.Eventually(t, func() bool {
-		stored, err := database.GetNode(ctx, other.ID)
-		return err == nil && stored.CertificateInspection != nil
-	}, 10*time.Second, 10*time.Millisecond, "the other node was not inspected while one probe blocked")
-	stored, err := database.GetNode(ctx, blocked.ID)
-	require.NoError(t, err)
-	require.Nil(t, stored.CertificateInspection, "the blocked probe has not returned")
+	select {
+	case <-stub.concurrent:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the second node was not inspected while the first probe blocked")
+	}
 }
