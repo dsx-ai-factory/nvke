@@ -19,7 +19,9 @@
 #     bundle rather than none;
 #   - one collector per OUT: the script takes a lock on it and exits 73 when
 #     another run holds it, because a dropped SSH session does not kill the
-#     sudo'd script on the node and two runs on one directory would overlap.
+#     sudo'd script on the node and two runs on one directory would overlap;
+#   - what it writes on the node is root-only (umask 077): OUT and ARCHIVE are
+#     the unredacted copies, and a kept node keeps them.
 #
 # Environment:
 #   SITE_KUBECONFIG              admin kubeconfig on the node (default /var/lib/nke-e2e/site.kubeconfig)
@@ -36,6 +38,7 @@ CONTROLLER_NAMESPACE=${SITE_CONTROLLER_NAMESPACE:-nke-controller}
 TIMELINE_DIR=${SITE_BUNDLE_TIMELINE_DIR:-/var/lib/nke-e2e/site-timeline}
 DEADLINE_SECONDS=${SITE_BUNDLE_DEADLINE_SECONDS:-0}
 HOST_ROOT=${SITE_BUNDLE_HOST_ROOT:-}
+umask 077
 
 # The lock lives beside OUT, not in it, so it is not in the archive. Taken
 # before the EXIT trap is set: a run that leaves here must not tar the other
@@ -60,9 +63,11 @@ INTERRUPTED=no
 API_REACHABLE=unknown
 KUBECTL_TIMEOUT=20
 
-# OUT is this run's alone; the sampler's timeline lives in TIMELINE_DIR and
-# is copied in below.
+# OUT and ARCHIVE are this run's alone; the sampler's timeline lives in
+# TIMELINE_DIR and is copied in below. The old archive goes too, so a run that
+# dies before its EXIT trap cannot hand the suite an earlier run's evidence.
 rm -rf "$OUT"
+rm -f "$ARCHIVE" "$ARCHIVE.partial"
 mkdir -p "$OUT/node" "$OUT/cluster" "$TMP"
 printf 'section\texit\tbytes\tseconds\tcommand\n' >"$INDEX"
 
@@ -334,13 +339,20 @@ copy node/logs/nvke-agent-audit.log $((2 * M)) /var/log/nvke-agent-audit.log
 # Script arguments and output; scrubbed by the suite before upload.
 copy node/logs/nvke-execute-scripts.log $((2 * M)) /var/log/nvke-execute-scripts.log
 # The deploy path's own state and diagnostics, written under root's HOME.
+# nvke-deploy.sh renders the deploy path into renders/ there, and a rendered
+# item carries the site's credentials in its values, so renders/ is pruned
+# whole, along with every directory and name the suite's deny list refuses.
+# Pruned before the cap, so a denied file does not take one of the 20 slots,
+# and each copy keeps its relative path, so the deny list reads the same
+# names it would on the node.
 if [ -d "${HOST_ROOT}/root/.local/state/nvke" ]; then
 	run node/logs/deploy-state.listing.txt 10 $((256 * K)) find "${HOST_ROOT}/root/.local/state/nvke" -maxdepth 3 -ls
-	find "${HOST_ROOT}/root/.local/state/nvke" -type f ! -name '*kubeconfig*' 2>/dev/null | head -n 20 >"$TMP/deploy-state" || true
+	find "${HOST_ROOT}/root/.local/state/nvke" \( -type d \( -name renders -o -name values -o -name pki -o -name teleport -o -name .tsh \) -prune \) -o \
+		-type f ! -name '*kubeconfig*' ! -name 'admin.conf' ! -name 'super-admin.conf' ! -name 'controller-manager.conf' ! -name 'scheduler.conf' ! -name 'kubelet.conf' \
+		! -name 'sitespec.yaml' ! -name 'spire.env' ! -name 'spire-agent.env' ! -name '*.key' ! -name '*.pem' -print 2>/dev/null | head -n 20 >"$TMP/deploy-state" || true
 	while IFS= read -r f; do
 		[ -n "$f" ] || continue
-		rel=${f#"${HOST_ROOT}/root/.local/state/nvke/"}
-		copy "node/logs/deploy-state/$(printf '%s' "$rel" | tr '/' '_')" $((2 * M)) "${f#"$HOST_ROOT"}"
+		copy "node/logs/deploy-state/${f#"${HOST_ROOT}/root/.local/state/nvke/"}" $((2 * M)) "${f#"$HOST_ROOT"}"
 	done <"$TMP/deploy-state"
 else
 	skip node/logs/deploy-state "no /root/.local/state/nvke"

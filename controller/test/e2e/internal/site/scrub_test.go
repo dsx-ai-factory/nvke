@@ -55,6 +55,7 @@ func TestScrubPatterns(t *testing.T) {
 		{name: "containerd auth", in: "  auth = \"" + fakeBasic + "\"\n", gone: fakeBasic},
 		{name: "containerd identitytoken", in: "  identitytoken = \"" + fakeToken + "\"\n", gone: fakeToken},
 		{name: "registry token", in: "registrytoken: " + fakeToken + "\n", gone: fakeToken},
+		{name: "secret key", in: "secret_key = " + fakeToken + "\n", gone: fakeToken},
 		{
 			name: "pem private key",
 			in:   "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0Z3VS5JJcds3xfn\n-----END RSA PRIVATE KEY-----\n",
@@ -87,6 +88,7 @@ func TestScrubPatterns(t *testing.T) {
 		"capabilities = [\"pull\", \"resolve\"]\n",
 		"oauth: enabled12\nauthentication: webhook\nauth: none\n",
 		"a basic configuration with basic authentication\n",
+		"valueFrom:\n  secretKeyRef:\n    name: db\n    key: password\n",
 	} {
 		if out := string(scrubBytes([]byte(keep), patterns)); out != keep {
 			t.Errorf("harmless text was changed:\nbefore: %q\nafter:  %q", keep, out)

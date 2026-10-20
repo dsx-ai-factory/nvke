@@ -51,7 +51,7 @@ func scrubPatterns() []scrubPattern {
 		{name: "ca-cert-hash", re: regexp.MustCompile(`(discovery-token-ca-cert-hash[=[:space:]]+sha256:)[0-9a-fA-F]{64}`), replacement: keepKey},
 		{
 			name: "keyed-value",
-			re: regexp.MustCompile(`(?i)((?:password|passwd|pwd|api[_-]?key|access[_-]?key|client[_-]?secret|join[_-]?token|spireJoinToken|` +
+			re: regexp.MustCompile(`(?i)((?:password|passwd|pwd|api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|join[_-]?token|spireJoinToken|` +
 				`certificate[_-]?key|api[_-]?encryption[_-]?key|client-key-data|client-certificate-data|identitytoken|registrytoken|` +
 				// `auth` only at the start of a word: containerd's registry
 				// `auth = "<base64>"`, not the tail of `oauth`.

@@ -228,13 +228,16 @@ var _ = Describe("Site controller", Ordered, ContinueOnFailure, Label("site-cont
 	})
 
 	AfterEach(func() {
+		bundled := bundledThisSpec
+		bundledThisSpec = false
 		if !CurrentSpecReport().Failed() {
 			return
 		}
 		failed = true
-		// A failure after the first bundle is what makes a second one, from
-		// the teardown, worth its minutes.
-		if siteBundleCollected {
+		// The spec that collected the bundle is already in it. A failure in
+		// a later spec is what makes a second one, from the teardown, worth
+		// its minutes.
+		if siteBundleCollected && !bundled {
 			failedSinceBundle = true
 		}
 	})
@@ -914,6 +917,10 @@ var (
 	siteBundleCollected bool
 	// failedSinceBundle is set when a spec failed after that.
 	failedSinceBundle bool
+	// bundledThisSpec is set by a collection inside a spec and read, then
+	// cleared, by that spec's AfterEach, which otherwise could not tell the
+	// failure that was just bundled from a later one.
+	bundledThisSpec bool
 )
 
 // removeStaleBundles clears the bundles and notes an earlier run left in the
@@ -953,6 +960,7 @@ func collectSiteBundle(ctx context.Context, session infra.Session, dest string, 
 	}
 	siteBundleCollected = true
 	failedSinceBundle = false
+	bundledThisSpec = true
 	GinkgoLogr.Info("collected the site bundle", "path", dest, "bytes", report.Bytes,
 		"sections", report.Sections, "failed", report.Failed, "skipped", report.Skipped,
 		"partial", report.Partial, "interrupted", report.Interrupted)

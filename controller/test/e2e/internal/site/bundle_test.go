@@ -74,6 +74,13 @@ func TestBundlePathsAreDistinctPerDestination(t *testing.T) {
 	}
 }
 
+// excludesOnly reports whether a script line names paths only to leave them
+// out: find's `-prune` group and `! -name` tests. The deploy-state find is
+// the one place the collector spells the deny list, to exclude it.
+func excludesOnly(line string) bool {
+	return strings.Contains(line, "-prune") || strings.Contains(line, "! -name")
+}
+
 // The deny list in scrub.go is what the collector must never read. This is
 // the static half of that promise; redactBundle's member check is the other.
 func TestBundleScriptNeverReadsDeniedPaths(t *testing.T) {
@@ -83,7 +90,7 @@ func TestBundleScriptNeverReadsDeniedPaths(t *testing.T) {
 		".tsh", "/var/lib/teleport", `cat "$KUBECONFIG_PATH"`,
 	} {
 		for _, line := range scriptLines(collectSiteBundleScript) {
-			if strings.Contains(line, forbidden) {
+			if strings.Contains(line, forbidden) && !excludesOnly(line) {
 				t.Errorf("the collector reads %q:\n%s", forbidden, line)
 			}
 		}
@@ -126,8 +133,8 @@ func TestBundleScriptOnlyReads(t *testing.T) {
 				}
 			}
 		}
-		if strings.Contains(line, "rm ") && !strings.Contains(line, "$OUT") && !strings.Contains(line, "$out") && !strings.Contains(line, "$TMP") {
-			t.Errorf("the collector removes something outside its own directory:\n%s", line)
+		if strings.Contains(line, "rm ") && !strings.Contains(line, "$OUT") && !strings.Contains(line, "$out") && !strings.Contains(line, "$TMP") && !strings.Contains(line, "$ARCHIVE") {
+			t.Errorf("the collector removes something outside its own directory or archive:\n%s", line)
 		}
 	}
 }
@@ -213,9 +220,18 @@ func hostFixture(t *testing.T) string {
 		"var/log/cloud-init-output.log":                "done\n",
 		"var/lib/nvke/state.json": `{"status":"ready","joinInfo":{"controlPlaneJoinString":"kubeadm join 10.0.0.5:6443 --token abcdef.0123456789abcdef ` +
 			`--discovery-token-ca-cert-hash sha256:` + sixtyFour + ` --certificate-key ` + sixtyFour + `","workerJoinString":"kubeadm join 10.0.0.5:6443 --token abcdef.0123456789abcdef"}}`,
-		"root/.local/state/nvke/diagnostics/a.txt":            "deploy state\n",
-		"root/.local/state/nvke/site.kubeconfig":              "apiVersion: v1\nusers: []\n",
-		"var/lib/nke-e2e/site-timeline/timeline/timeline.log": "=== 2026-10-20T04:00:00Z\n--- /etc/cni/net.d\n",
+		// The deploy state: diagnostics and run state come along with their
+		// paths; the rendered deploy path, the deny-listed directories and
+		// names stay behind.
+		"root/.local/state/nvke/diagnostics/a.txt":                 "deploy state\n",
+		"root/.local/state/nvke/run/last-install.json":             "{\"step\":\"nico\"}\n",
+		"root/.local/state/nvke/site.kubeconfig":                   "apiVersion: v1\nusers: []\n",
+		"root/.local/state/nvke/sitespec.yaml":                     "name: site\n",
+		"root/.local/state/nvke/spire.env":                         "SPIRE_JOIN_TOKEN=x\n",
+		"root/.local/state/nvke/renders/site/postgres/values.yaml": "auth:\n  password: rendered\n",
+		"root/.local/state/nvke/values/stack.yaml":                 "nico:\n  token: rendered\n",
+		"root/.local/state/nvke/pki/ca.key":                        "not a key\n",
+		"var/lib/nke-e2e/site-timeline/timeline/timeline.log":      "=== 2026-10-20T04:00:00Z\n--- /etc/cni/net.d\n",
 		// A registry credential block, which the collector strips on the node.
 		"etc/containerd/config.toml": "[plugins.\"io.containerd.grpc.v1.cri\".registry.configs.\"registry.example\".auth]\n" +
 			"  username = \"nvke\"\n  password = \"" + fixtureRegistryPassword + "\"\n  auth = \"" + fixtureRegistryBasic + "\"\n",
@@ -362,8 +378,20 @@ func TestBundleScriptUnderStubbedTools(t *testing.T) {
 	if got := members["site-bundle/node/cni/net.d/nerdctl-bridge.conflist"]; !strings.Contains(got, "nerdctl0") {
 		t.Errorf("the CNI conflist was not copied: %q", got)
 	}
-	if _, ok := members["site-bundle/node/logs/deploy-state/diagnostics_a.txt"]; !ok {
-		t.Error("the deploy path's state was not copied")
+	for _, want := range []string{"site-bundle/node/logs/deploy-state/diagnostics/a.txt", "site-bundle/node/logs/deploy-state/run/last-install.json"} {
+		if _, ok := members[want]; !ok {
+			t.Errorf("the deploy path's state was not copied with its path: no %s", want)
+		}
+	}
+	for name := range members {
+		if !strings.Contains(name, "/deploy-state/") {
+			continue
+		}
+		for _, denied := range []string{"renders/", "values/", "pki/", "sitespec.yaml", "spire.env", "kubeconfig"} {
+			if strings.Contains(name, denied) {
+				t.Errorf("a denied deploy-state file was copied: %s", name)
+			}
+		}
 	}
 	if got := members["site-bundle/timeline/timeline.log"]; !strings.Contains(got, "/etc/cni/net.d") {
 		t.Errorf("the sampler's timeline was not copied in: %q", got)
