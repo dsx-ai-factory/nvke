@@ -252,7 +252,7 @@ func (v *validator) checkNicoControlPlane(cp NicoControlPlane) {
 		v.addf("%s.release is required", cpPath)
 	}
 	// configProfile is optional. The bootstrap controller's profiles directory is
-	// empty unless NVKECTL_CONTROLLER_PROFILES_IMAGE fills it, so a name
+	// empty unless NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE fills it, so a name
 	// otherwise never resolves and the controller treats it as an empty profile,
 	// the same as none.
 }

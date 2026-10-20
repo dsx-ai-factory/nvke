@@ -34,7 +34,7 @@
 #     resolves infra.nico.controlPlane.release from, copied from the in-repo
 #     fixtures. `bootstrap site` applies them before it creates the cluster.
 # One thing it does not supply, which this script hands it through an env hook:
-#   - NVKECTL_CONTROLLER_PROFILES_IMAGE: the config profile a cluster request
+#   - NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE: the config profile a cluster request
 #     names. The controller deploys with an empty profiles directory.
 #
 # Beyond building the cluster the lane checks what the bootstrap promises around
@@ -289,7 +289,7 @@ nerdctl build --file "${PROFILES_FIXTURE_DIR}/Dockerfile" --tag "${PROFILES_IMAG
   "${mirror_args[@]}" "${PROFILES_FIXTURE_DIR}" >/dev/null
 # nvkectl loads it into the Kind cluster from here, so it must be a tag other
 # than latest: the chart sets no pull policy on it.
-export NVKECTL_CONTROLLER_PROFILES_IMAGE="${PROFILES_IMAGE}"
+export NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE="${PROFILES_IMAGE}"
 log "PASS: the node and profiles images are in containerd"
 
 # ── Stage 2: nico-sim ──────────────────────────────────────────────────────
@@ -527,7 +527,7 @@ if [ -n "${CONTROL_PLANE_VIP}" ]; then
 fi
 
 log "running: nvkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 25m" \
-  "(NVKECTL_NVKE_CONTROLLER_IMAGE=${NVKECTL_NVKE_CONTROLLER_IMAGE}, NVKECTL_CONTROLLER_PROFILES_IMAGE=${NVKECTL_CONTROLLER_PROFILES_IMAGE})"
+  "(NVKECTL_NVKE_CONTROLLER_IMAGE=${NVKECTL_NVKE_CONTROLLER_IMAGE}, NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE=${NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE})"
 defer teardown_bootstrap_cluster
 # setsid puts nvkectl in a session of its own, so nothing else ends it when this
 # script exits early (a cancelled job, a signal during the bridging loop). It is

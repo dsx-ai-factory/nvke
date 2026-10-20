@@ -802,7 +802,7 @@ func (e *Engine) applyReleases(ctx context.Context, kubeconfigPath, path string)
 }
 
 // ProfilesImageEnv names the environment variable that sets Config.ProfilesImage.
-const ProfilesImageEnv = "NVKECTL_CONTROLLER_PROFILES_IMAGE"
+const ProfilesImageEnv = "NVKECTL_NVKE_CONTROLLER_PROFILES_IMAGE"
 
 // ValidateProfilesImage reports an error when image cannot be used as the
 // profiles image. An empty image is valid: no profiles image is deployed. The
