@@ -46,14 +46,14 @@ func TestRecorderFailureIsObservableAndDoesNotLeakErrorOrInput(t *testing.T) {
 	recorder := NewRecorder(store, slog.New(slog.NewJSONHandler(&logs, nil)), func(result string) {
 		observations = append(observations, result)
 	})
-	recorder.Record(t.Context(), validEvent())
+	require.False(t, recorder.Record(t.Context(), validEvent()))
 	require.Equal(t, []string{WriteFailed}, observations)
 	require.Contains(t, logs.String(), WriteFailed)
 	require.NotContains(t, logs.String(), "example-token")
 	require.Empty(t, store.events)
 	input := validEvent()
 	input.Reason = "example-token"
-	recorder.Record(t.Context(), input)
+	require.False(t, recorder.Record(t.Context(), input))
 	require.Equal(t, []string{WriteFailed, WriteInvalid}, observations)
 	require.NotContains(t, logs.String(), "example-token")
 }
@@ -64,9 +64,9 @@ func TestRecorderRetriesDeduplicateAndOutliveCancellationWithinBound(t *testing.
 	store := &testStore{}
 	recorder := NewRecorder(store, nil, nil)
 	input := validEvent()
-	recorder.Record(ctx, input)
+	require.True(t, recorder.Record(ctx, input))
 	input.Timestamp = input.Timestamp.Add(time.Hour)
-	recorder.Record(ctx, input)
+	require.True(t, recorder.Record(ctx, input), "a repeated ID is held by the ledger")
 	require.NoError(t, store.ctxErr)
 	require.Positive(t, store.bound)
 	require.LessOrEqual(t, store.bound, 2*time.Second)
@@ -75,5 +75,5 @@ func TestRecorderRetriesDeduplicateAndOutliveCancellationWithinBound(t *testing.
 		require.Equal(t, input.Timestamp.Add(-time.Hour), event.Timestamp)
 	}
 	var absent *Recorder
-	absent.Record(ctx, input)
+	require.False(t, absent.Record(ctx, input))
 }

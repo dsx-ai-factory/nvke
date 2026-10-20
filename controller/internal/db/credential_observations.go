@@ -26,6 +26,9 @@ type CertificateInspection struct {
 	// Retries counts consecutive attempts that were failed, or found a required credential
 	// unavailable, and so are repeated sooner than the inspection interval. Zero otherwise.
 	Retries int `json:"retries,omitempty"`
+	// AuditRecorded is set once the credential audit ledger holds this
+	// inspection's observations, so a later identical inspection may be skipped.
+	AuditRecorded bool `json:"auditRecorded,omitempty"`
 }
 
 // CredentialCSRObservation is a cluster aggregate; CSR names and requester identities are never retained.
