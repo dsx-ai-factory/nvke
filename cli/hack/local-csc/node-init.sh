@@ -21,4 +21,12 @@ SYSTEMD_OFFLINE=1 systemctl disable nke-container-network.service swtpm-local.se
 # A new netns copies the VM's value at creation; kubeadm preflight requires 1.
 sysctl -w net.ipv4.ip_forward=1
 
+# Calico's pool is 192.168.0.0/16. Until Calico routes a peer's pod block, its
+# traffic would follow the default route into Colima's user-mode NAT, which
+# dials it from the Mac and hangs; enough of those stall all VM egress. Fail it
+# here instead, keeping the VM network (192.168.5.0/24, its DNS) reachable.
+gw="$(ip -4 route show default | awk '{print $3; exit}')"
+ip route replace 192.168.5.0/24 via "${gw}"
+ip route replace unreachable 192.168.0.0/16
+
 exec /usr/local/bin/entrypoint /sbin/init

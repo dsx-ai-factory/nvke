@@ -42,6 +42,10 @@ After a VM or Mac restart the CSC does not survive (its etcd is on tmpfs). Run
 | `COLIMA_PROFILE` | `nvke` | `VM_CPUS`, `VM_MEMORY`, `VM_DISK` size it on first creation |
 | `CLUSTER_NAME` | `csc-local` | |
 | `NODE_NAME`, `NODE_IP` | `csc-node-0`, `10.4.1.10` | `NODE_IP` must be inside the `kind` network's subnet |
+| `NODE_COUNT` | `1` | hosts to start, `csc-node-<i>` at `NODE_IP` + i. Only host 0 is bootstrapped: `bootstrap site` needs a `controlPlaneVIP` for more, and DSX CSCs have none. Join the rest out of band. |
+| `IMPORT_TARGET` | `kind` | `csc` makes `import` install Cluster API on the CSC itself and import there (self-managed) instead of into a fresh kind cluster |
+| `MGMT_NAMESPACE` | `nke-system` | namespace `import` puts the CSC's CAPI objects in. A dedicated one lets RBAC and admission policy protect them as a whole. |
+| `IMPORT_EXTRA` | unset | for `import`: a JSON file of inventory hosts and Machine objects for out-of-band hosts. Their Machines are created first, so the endpoint holder's is the newest and KCP updates it last. |
 | `K8S_VERSION` | `1.34.8` | must match the node image's kubeadm |
 | `REBUILD_NODE_IMAGE` | unset | `1` makes `build` rebuild the node image, e.g. after an agent change |
 
@@ -54,6 +58,11 @@ After a VM or Mac restart the CSC does not survive (its etcd is on tmpfs). Run
   [`node-init.sh`](node-init.sh) runs before systemd. BuildKit in the Colima VM
   cannot build `FROM` a nerdctl-local image. Patching after boot is too late:
   `nke-container-network.service` moves the uplink into OVS on first boot.
+- **Pod traffic never leaves the VM.** `node-init.sh` makes Calico's
+  `192.168.0.0/16` unreachable on each node until Calico routes a block. With
+  more than one node, traffic to a peer's pods otherwise reaches Colima's
+  user-mode NAT, which dials it from the Mac; enough of those hang and stop all
+  VM egress, image pulls included.
 - **`up` may requeue the Machine.** CAPI can look up the Node a second before
   the provisioned provider sets its providerID, and then never look again. `up`
   and `import` annotate the Machine to requeue it.

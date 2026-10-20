@@ -20,9 +20,15 @@ REPO="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 : "${CLUSTER_NAME:=csc-local}"
 : "${NODE_NAME:=csc-node-0}"
 : "${NODE_IP:=10.4.1.10}"
+: "${NODE_COUNT:=1}"
+# Where import puts the CSC's CAPI objects; CWE writes them to nke-system in the bootstrap cluster.
+: "${MGMT_NAMESPACE:=nke-system}"
+# Where import puts them: kind (a fresh kind cluster) or csc (the CSC itself, self-managed).
+: "${IMPORT_TARGET:=kind}"
 : "${K8S_VERSION:=1.34.8}"
 
 BOOTSTRAP_CLUSTER=nvkectl-bootstrap
+BOOTSTRAP_NAMESPACE=nke-system
 MGMT_CLUSTER=csc-mgmt
 AGENT_PORT=15005
 NODE_IMAGE="cwe-capd-kindest-node:local"
@@ -42,9 +48,10 @@ export PATH="/usr/local/go/bin:${PATH}"
 log() { printf '\n==> %s\n' "$*" >&2; }
 die() { printf 'local-csc: %s\n' "$*" >&2; exit 1; }
 kind_() { sudo env KIND_EXPERIMENTAL_PROVIDER=nerdctl kind "$@"; }
-node_exec() { sudo nerdctl exec "${NODE_NAME}" "$@"; }
 k_boot() { sudo kubectl --context "kind-${BOOTSTRAP_CLUSTER}" "$@"; }
-k_mgmt() { sudo kubectl --context "kind-${MGMT_CLUSTER}" "$@"; }
+k_mgmt() {
+  if [[ "${IMPORT_TARGET}" == csc ]]; then k_csc "$@"; else sudo kubectl --context "kind-${MGMT_CLUSTER}" "$@"; fi
+}
 k_csc() { sudo kubectl --kubeconfig "${KUBECONFIG_OUT}" "$@"; }
 
 require_linux() {
@@ -58,6 +65,19 @@ kind_cluster_exists() {
   grep -qx "$1" <<<"${clusters}"
 }
 container_exists() { sudo nerdctl inspect "$1" >/dev/null 2>&1; }
+node_containers() {
+  {
+    echo "${NODE_NAME}"
+    sudo nerdctl ps -a --filter "label=local-csc.cluster=${CLUSTER_NAME}" --format '{{.Names}}'
+  } | sort -u
+}
+# Host i is NODE_NAME/NODE_IP with the trailing index and last octet advanced by i.
+host_name() { if (($1 == 0)); then echo "${NODE_NAME}"; else echo "${NODE_NAME%-*}-$1"; fi; }
+host_ip() {
+  local a b c d
+  IFS=. read -r a b c d <<<"${NODE_IP}"
+  echo "${a}.${b}.${c}.$((d + $1))"
+}
 image_exists() { sudo nerdctl image inspect "$1" >/dev/null 2>&1; }
 
 usage() {
@@ -72,7 +92,8 @@ In the VM (colima ssh --profile ${COLIMA_PROFILE}), preferably in tmux:
   build       build nvkectl, the controller and provider images, and the node image
   up          start the node and run 'nvkectl bootstrap site' against it
   status      show the node, the kind clusters, and the CAPI objects
-  import      copy the CSC's CAPI objects into a fresh management cluster '${MGMT_CLUSTER}'
+  import      copy the CSC's CAPI objects into a fresh management cluster '${MGMT_CLUSTER}',
+              or into the CSC itself with IMPORT_TARGET=csc
   down        delete the node, both kind clusters, and the CSC credentials
 
 State (site spec, kubeconfig, etcd key, logs) goes to STATE_DIR=${STATE_DIR}.
@@ -241,16 +262,19 @@ ensure_kind_network() {
   local subnet
   subnet="$(sudo nerdctl network inspect kind | jq -r '.[0].IPAM.Config[].Subnet' | grep -v : | head -1 || true)"
   [[ -n "${subnet}" ]] || die "kind network has no IPv4 subnet"
-  in_cidr "${NODE_IP}" "${subnet}" || die "NODE_IP=${NODE_IP} is outside the kind network ${subnet}"
+  local i
+  for ((i = 0; i < NODE_COUNT; i++)); do
+    in_cidr "$(host_ip "${i}")" "${subnet}" || die "host IP $(host_ip "${i}") is outside the kind network ${subnet}"
+  done
 }
 
 # A lease outlives its container across VM restarts and blocks a static --ip.
 release_stale_lease() {
-  local lease="${CNI_LEASE_DIR}/${NODE_IP}" owner
+  local ip="$1" lease="${CNI_LEASE_DIR}/$1" owner
   sudo test -f "${lease}" || return 0
   owner="$(sudo head -1 "${lease}")"
   if [[ -n "${owner}" ]] && container_exists "${owner}"; then
-    die "${NODE_IP} is held by container ${owner}; set NODE_IP or run down"
+    die "${ip} is held by container ${owner}; set NODE_IP or run down"
   fi
   sudo rm -f "${lease}"
 }
@@ -266,49 +290,58 @@ write_sitespec() {
 }
 
 start_node() {
-  log "starting ${NODE_NAME} at ${NODE_IP}"
-  sudo nerdctl run -d --name "${NODE_NAME}" --hostname "${NODE_NAME}" \
+  local name="$1" ip="$2"
+  log "starting ${name} at ${ip}"
+  sudo nerdctl run -d --name "${name}" --hostname "${name}" \
+    --label "local-csc.cluster=${CLUSTER_NAME}" \
     --privileged --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
     --tty --restart unless-stopped \
-    --network kind --ip "${NODE_IP}" \
+    --network kind --ip "${ip}" \
     --volume /lib/modules:/lib/modules:ro \
-    --volume "${NODE_NAME}-var:/var" --volume "${NODE_NAME}-containerd:/var/lib/containerd" \
+    --volume "${name}-var:/var" --volume "${name}-containerd:/var/lib/containerd" \
     --volume /dev/null:/proc/swaps:ro \
     --volume "${SCRIPT_DIR}/node-init.sh:/local-csc-node-init.sh:ro" \
     --tmpfs /tmp --tmpfs /run --tmpfs /var/lib/etcd:size=1g \
-    --env "NODE_NAME=${NODE_NAME}" \
+    --env "NODE_NAME=${name}" \
     --entrypoint /bin/bash \
     "${NODE_IMAGE}" /local-csc-node-init.sh >/dev/null
 }
 
 wait_node() {
-  local state=""
+  local name="$1" state=""
+  local -a ex=(sudo nerdctl exec "${name}")
   for _ in $(seq 60); do
-    state="$(node_exec systemctl is-system-running 2>/dev/null || true)"
+    state="$("${ex[@]}" systemctl is-system-running 2>/dev/null || true)"
     [[ "${state}" == running || "${state}" == degraded ]] && break
     sleep 2
   done
   if [[ "${state}" != running ]]; then
-    node_exec systemctl --failed --no-legend || true
-    die "${NODE_NAME} systemd is '${state:-unreachable}', not running"
+    "${ex[@]}" systemctl --failed --no-legend || true
+    die "${name} systemd is '${state:-unreachable}', not running"
   fi
-  node_exec sh -c "ss -tln | grep -q ':${AGENT_PORT} '" || die "nke-agent is not listening on ${AGENT_PORT}"
-  [[ "$(node_exec cloud-init status)" == *done* ]] || die "cloud-init status is not done"
-  [[ "$(node_exec cat /proc/sys/net/ipv4/ip_forward)" == 1 ]] || die "ip_forward is not 1 in the node"
-  node_exec dpkg -s "${CALICO_PACKAGE}" >/dev/null 2>&1 || die "${CALICO_PACKAGE} is not installed in the node image"
-  log "${NODE_NAME} is ready"
+  # systemd can report running a moment before nke-agent binds its port.
+  local i
+  for ((i = 0; i < 15; i++)); do
+    "${ex[@]}" sh -c "ss -tln | grep -q ':${AGENT_PORT} '" && break
+    sleep 2
+  done
+  ((i < 15)) || die "nke-agent is not listening on ${AGENT_PORT} in ${name}"
+  [[ "$("${ex[@]}" cloud-init status)" == *done* ]] || die "cloud-init status is not done in ${name}"
+  [[ "$("${ex[@]}" cat /proc/sys/net/ipv4/ip_forward)" == 1 ]] || die "ip_forward is not 1 in ${name}"
+  "${ex[@]}" dpkg -s "${CALICO_PACKAGE}" >/dev/null 2>&1 || die "${CALICO_PACKAGE} is not installed in the node image"
+  log "${name} is ready"
 }
 
 machine_name() {
-  sudo kubectl --context "$1" -n nke-system get machines.cluster.x-k8s.io \
+  sudo kubectl --context "$1" -n "${BOOTSTRAP_NAMESPACE}" get machines.cluster.x-k8s.io \
     -o jsonpath='{.items[0].metadata.name}'
 }
 
 # CAPI can look for the Node a second before the provider stamps its
 # providerID and not look again; a metadata change requeues the Machine.
 wait_noderef() {
-  local context="$1" machine="$2" ref="" i
-  local -a k=(sudo kubectl --context "${context}" -n nke-system)
+  local kubectl_fn="$1" namespace="$2" machine="$3" ref="" i
+  local -a k=("${kubectl_fn}" -n "${namespace}")
   for i in $(seq 48); do
     ref="$("${k[@]}" get machine.cluster.x-k8s.io "${machine}" -o jsonpath='{.status.nodeRef.name}' 2>/dev/null || true)"
     [[ -n "${ref}" ]] && break
@@ -321,7 +354,7 @@ wait_noderef() {
   done
   "${k[@]}" annotate machine.cluster.x-k8s.io "${machine}" local-csc/requeue- >/dev/null 2>&1 || true
   "${k[@]}" annotate cluster.cluster.x-k8s.io "${CLUSTER_NAME}" local-csc/requeue- >/dev/null 2>&1 || true
-  [[ -n "${ref}" ]] || die "Machine ${machine} still has no nodeRef in ${context}"
+  [[ -n "${ref}" ]] || die "Machine ${machine} still has no nodeRef"
   log "Machine ${machine} -> Node ${ref}"
 }
 
@@ -338,10 +371,18 @@ cmd_up() {
   mkdir -p "${STATE_DIR}"
 
   ensure_kind_network
-  release_stale_lease
+  local i
+  for ((i = 0; i < NODE_COUNT; i++)); do
+    container_exists "$(host_name "${i}")" && die "$(host_name "${i}") already exists; run down first"
+    release_stale_lease "$(host_ip "${i}")"
+  done
   write_sitespec
-  start_node
-  wait_node
+  for ((i = 0; i < NODE_COUNT; i++)); do start_node "$(host_name "${i}")" "$(host_ip "${i}")"; done
+  for ((i = 0; i < NODE_COUNT; i++)); do wait_node "$(host_name "${i}")"; done
+  if ((NODE_COUNT > 1)); then
+    # bootstrap site requires a controlPlaneVIP for more than one node; DSX CSCs have none.
+    log "bootstrapping ${NODE_NAME} only; hosts 1..$((NODE_COUNT - 1)) are left for an out-of-band join"
+  fi
 
   log "bootstrapping ${CLUSTER_NAME} (10-20 minutes; log: ${STATE_DIR}/bootstrap.log)"
   (cd "${STATE_DIR}" && sudo "${NVKECTL}" bootstrap site -f sitespec.yaml \
@@ -349,7 +390,7 @@ cmd_up() {
     --kubeconfig-out "${KUBECONFIG_OUT}" --encryption-key-out "${ETCD_KEY_OUT}" \
     --diagnostics-dir "${STATE_DIR}/diagnostics") 2>&1 | tee "${STATE_DIR}/bootstrap.log"
 
-  wait_noderef "kind-${BOOTSTRAP_CLUSTER}" "$(machine_name "kind-${BOOTSTRAP_CLUSTER}")"
+  wait_noderef k_boot "${BOOTSTRAP_NAMESPACE}" "$(machine_name "kind-${BOOTSTRAP_CLUSTER}")"
   cmd_status
 }
 
@@ -365,16 +406,53 @@ cmd_status() {
     log "CSC nodes (${KUBECONFIG_OUT})"
     k_csc get nodes -o wide || true
   fi
-  local cluster
+  local cluster ns
   for cluster in "${BOOTSTRAP_CLUSTER}" "${MGMT_CLUSTER}"; do
     kind_cluster_exists "${cluster}" || continue
-    log "CAPI objects in ${cluster}"
-    sudo kubectl --context "kind-${cluster}" -n nke-system \
+    ns="${BOOTSTRAP_NAMESPACE}"
+    [[ "${cluster}" == "${MGMT_CLUSTER}" ]] && ns="${MGMT_NAMESPACE}"
+    log "CAPI objects in ${cluster}/${ns}"
+    sudo kubectl --context "kind-${cluster}" -n "${ns}" \
       get clusters.cluster.x-k8s.io,machines.cluster.x-k8s.io,provisionedmachines 2>/dev/null || true
   done
+  if [[ "${IMPORT_TARGET}" == csc && -f "${KUBECONFIG_OUT}" ]]; then
+    log "CAPI objects on the CSC in ${MGMT_NAMESPACE}"
+    k_csc -n "${MGMT_NAMESPACE}" get clusters.cluster.x-k8s.io,machines.cluster.x-k8s.io,provisionedmachines 2>/dev/null || true
+  fi
 }
 
 # -------------------------------------------------------------------- import
+
+# IMPORT_EXTRA names a JSON file, {"hosts": [...], "items": [...]}, describing
+# hosts joined outside CWE: inventory entries for the ProvisionedCluster, and a
+# Machine, ProvisionedMachine and <machine>-bootstrap-data Secret per host.
+# Their Machines are created before the CWE-built node's so it, the
+# controlPlaneEndpoint holder, is the newest: KCP updates the oldest first.
+import_extra() {
+  local capi="$1" m
+  local -a machines
+  local node_objects='.kind == "Machine" or .kind == "ProvisionedMachine" or (.kind == "Secret" and (.metadata.name | endswith("-bootstrap-data")))'
+  jq --slurpfile extra "${IMPORT_EXTRA}" "(.items |= map(select(${node_objects} | not)))
+    | (.items[] | select(.kind == \"ProvisionedCluster\") | .spec.hosts) += \$extra[0].hosts" "${capi}" |
+    k_mgmt apply --server-side -f -
+  mapfile -t machines < <(jq -r '.items[] | select(.kind == "Machine") | .metadata.name' "${IMPORT_EXTRA}")
+  for m in "${machines[@]}"; do
+    jq --arg m "${m}" --arg ns "${MGMT_NAMESPACE}" '{apiVersion: "v1", kind: "List",
+      items: [.items[] | select(.metadata.name == $m or .metadata.name == ($m + "-bootstrap-data")) | .metadata.namespace = $ns]}' \
+      "${IMPORT_EXTRA}" | k_mgmt apply --server-side -f -
+    # creationTimestamp has one-second resolution.
+    sleep 2
+  done
+  jq "(.items |= map(select(${node_objects})))" "${capi}" | k_mgmt apply --server-side -f -
+}
+
+# A pod can land on any node, so every node's containerd gets the image.
+load_image_into_csc() {
+  local node
+  while read -r node; do
+    sudo nerdctl save "$1" | sudo nerdctl exec -i "${node}" ctr -n k8s.io images import - >/dev/null
+  done < <(node_containers)
+}
 
 cmd_import() {
   require_linux import
@@ -388,43 +466,58 @@ cmd_import() {
   curl -sf http://127.0.0.1:30080/api/clusters | jq . >"${dir}/cwe-clusters.json"
   curl -sf "http://127.0.0.1:30080/api/nodes?clusterName=${CLUSTER_NAME}" | jq . >"${dir}/cwe-nodes.json"
   k_csc get node "${machine}" -o yaml >"${dir}/node-before.yaml"
-  k_boot -n nke-system get "cluster.cluster.x-k8s.io/${CLUSTER_NAME}" "provisionedcluster/${CLUSTER_NAME}" \
+  k_boot -n "${BOOTSTRAP_NAMESPACE}" get "cluster.cluster.x-k8s.io/${CLUSTER_NAME}" "provisionedcluster/${CLUSTER_NAME}" \
     "machine.cluster.x-k8s.io/${machine}" "provisionedmachine/${machine}" \
     "secret/${CLUSTER_NAME}-kubeconfig" "secret/${machine}-bootstrap-data" -o json |
-    jq --arg ip "${NODE_IP}" '.items |= map(
+    jq --arg ip "${NODE_IP}" --arg ns "${MGMT_NAMESPACE}" '.items |= map(
         del(.status, .metadata.uid, .metadata.resourceVersion, .metadata.creationTimestamp,
             .metadata.generation, .metadata.managedFields, .metadata.ownerReferences, .metadata.finalizers)
+        | .metadata.namespace = $ns
         | if .kind == "Cluster"
           then .spec.paused = true | .spec.controlPlaneEndpoint = {host: $ip, port: 6443}
           else . end)' >"${dir}/${CLUSTER_NAME}-capi.json"
 
   log "pausing the source Cluster so only one management cluster acts on the node"
-  k_boot -n nke-system patch cluster.cluster.x-k8s.io "${CLUSTER_NAME}" --type merge -p '{"spec":{"paused":true}}'
+  k_boot -n "${BOOTSTRAP_NAMESPACE}" patch cluster.cluster.x-k8s.io "${CLUSTER_NAME}" --type merge -p '{"spec":{"paused":true}}'
 
-  if ! kind_cluster_exists "${MGMT_CLUSTER}"; then
+  local -a clusterctl_target=(--kubeconfig-context "kind-${MGMT_CLUSTER}")
+  if [[ "${IMPORT_TARGET}" == csc ]]; then
+    clusterctl_target=(--kubeconfig "${KUBECONFIG_OUT}")
+  elif ! kind_cluster_exists "${MGMT_CLUSTER}"; then
     log "creating ${MGMT_CLUSTER}"
     kind_ create cluster --name "${MGMT_CLUSTER}" --wait 3m
   fi
   if ! k_mgmt -n capi-system get deployment capi-controller-manager >/dev/null 2>&1; then
-    log "installing Cluster API ${capi_version}"
-    sudo clusterctl init --kubeconfig-context "kind-${MGMT_CLUSTER}" \
+    log "installing Cluster API ${capi_version} (${IMPORT_TARGET})"
+    sudo clusterctl init "${clusterctl_target[@]}" \
       --core "cluster-api:${capi_version}" --bootstrap "kubeadm:${capi_version}" \
       --control-plane "kubeadm:${capi_version}" --wait-providers
   fi
   log "installing the provisioned provider"
-  # Root creates it: fs.protected_regular stops root opening a user's file in /tmp.
-  archive="$(sudo mktemp)"
-  sudo nerdctl save -o "${archive}" "${PROVIDER_IMAGE}"
-  kind_ load image-archive "${archive}" --name "${MGMT_CLUSTER}"
-  sudo rm -f "${archive}"
+  if [[ "${IMPORT_TARGET}" == csc ]]; then
+    load_image_into_csc "${PROVIDER_IMAGE}"
+  else
+    # Root creates it: fs.protected_regular stops root opening a user's file in /tmp.
+    archive="$(sudo mktemp)"
+    sudo nerdctl save -o "${archive}" "${PROVIDER_IMAGE}"
+    kind_ load image-archive "${archive}" --name "${MGMT_CLUSTER}"
+    sudo rm -f "${archive}"
+  fi
   k_mgmt apply --server-side -f "${REPO}/cli/internal/bootstrap/controllerdeploy/manifests/provisioned-provider.yaml" >/dev/null
   k_mgmt -n provisioned-system rollout status deploy/provisioned-controller-manager --timeout 3m
 
   log "importing ${CLUSTER_NAME}"
-  k_mgmt create namespace nke-system --dry-run=client -o yaml | k_mgmt apply -f - >/dev/null
-  k_mgmt apply --server-side -f "${dir}/${CLUSTER_NAME}-capi.json"
-  k_mgmt -n nke-system patch cluster.cluster.x-k8s.io "${CLUSTER_NAME}" --type merge -p '{"spec":{"paused":false}}'
-  wait_noderef "kind-${MGMT_CLUSTER}" "${machine}"
+  k_mgmt create namespace "${MGMT_NAMESPACE}" --dry-run=client -o yaml | k_mgmt apply -f - >/dev/null
+  local -a extra_machines=()
+  if [[ -n "${IMPORT_EXTRA:-}" ]]; then
+    import_extra "${dir}/${CLUSTER_NAME}-capi.json"
+    mapfile -t extra_machines < <(jq -r '.items[] | select(.kind == "Machine") | .metadata.name' "${IMPORT_EXTRA}")
+  else
+    k_mgmt apply --server-side -f "${dir}/${CLUSTER_NAME}-capi.json"
+  fi
+  k_mgmt -n "${MGMT_NAMESPACE}" patch cluster.cluster.x-k8s.io "${CLUSTER_NAME}" --type merge -p '{"spec":{"paused":false}}'
+  local m
+  for m in "${extra_machines[@]}" "${machine}"; do wait_noderef k_mgmt "${MGMT_NAMESPACE}" "${m}"; done
 
   k_csc get node "${machine}" -o yaml >"${dir}/node-after.yaml"
   if diff <(grep -E 'providerID|cluster\.x-k8s\.io' "${dir}/node-before.yaml") \
@@ -464,10 +557,15 @@ cmd_down() {
   require_linux down
   delete_kind_cluster "${MGMT_CLUSTER}"
   delete_kind_cluster "${BOOTSTRAP_CLUSTER}"
-  log "removing ${NODE_NAME}"
-  remove_container "${NODE_NAME}"
-  sudo nerdctl volume rm "${NODE_NAME}-var" "${NODE_NAME}-containerd" >/dev/null 2>&1 || true
-  release_stale_lease
+  local name i
+  local -a names
+  mapfile -t names < <(node_containers)
+  for name in "${names[@]}"; do
+    log "removing ${name}"
+    remove_container "${name}"
+    sudo nerdctl volume rm "${name}-var" "${name}-containerd" >/dev/null 2>&1 || true
+  done
+  for ((i = 0; i < NODE_COUNT; i++)); do release_stale_lease "$(host_ip "${i}")"; done
   rm -f "${KUBECONFIG_OUT}" "${ETCD_KEY_OUT}"
   log "down; images, tools and ${STATE_DIR}/sitespec.yaml are kept"
 }
