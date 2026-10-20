@@ -318,7 +318,9 @@ func TestOpenAPIValidator_UpdateCluster(t *testing.T) {
 			Message string `json:"message"`
 		}
 		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &errBody))
-		assert.Equal(t, "readOnly property \"network\" in request", errBody.Message)
+		// kin-openapi 0.151 reports the violation through its schema error,
+		// prefixed with the schema and the field; the reason is what matters.
+		assert.Contains(t, errBody.Message, "readOnly property \"network\" in request")
 	})
 
 	t.Run("kubernetesVersion", func(t *testing.T) {
