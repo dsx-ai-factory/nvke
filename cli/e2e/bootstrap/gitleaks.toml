@@ -87,7 +87,8 @@ regexes = [
 # line, from "time=" to its end, and names every field, so a field added
 # anywhere on it is not allowed. A hash anywhere else still counts. The line is
 # matched, not the file or the value. (?m) is needed because gitleaks hands over
-# every line but the first with a newline in front, which a plain ^ would not match.
+# every line but the first with a newline in front, and a plain ^ would not
+# match after it.
 [[allowlists]]
 description = "the etcd encryption key's fingerprint that nvkectl logs"
 targetRules = ["generic-api-key"]

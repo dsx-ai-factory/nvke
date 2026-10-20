@@ -217,7 +217,7 @@ scan_output_for_secrets() {
   printf 'time=x level=INFO msg="wrote the file" component=x path=/x/.etcd-encryption-key.json sha256=%s trace_id=%032x span_id=%016x\n' \
     "${fingerprint}" 1 1 >"${work}/flagged/etcd-other.txt"
   # The SPIRE CA line, which holds file paths, and the same line with a field
-  # appended after the span ID, which the allowlist is anchored to refuse. The
+  # appended after the span ID, which the allowlist does not match. The
   # IDs are derived, and random-looking: with a trivial span ID the default rule
   # would not flag the line even without the allowlist, and the sample would
   # prove nothing.
@@ -234,10 +234,10 @@ scan_output_for_secrets() {
   join_token="$(printf a | sha256sum | cut -c1-6).$(printf b | sha256sum | cut -c1-16)"
   printf '{"args":["join","--token","%s","--discovery-token-ca-cert-hash","sha256:%s"]}\n' \
     "${join_token}" "${fingerprint}" >"${work}/flagged/join-token.txt"
-  # The allowed etcd and SPIRE lines with a credential-shaped field added on
-  # either side of the part the allowlist matches: between the message and the
-  # path, and before the message. Neither may be allowed. The value is derived,
-  # and long enough for the default rules to flag it under these names.
+  # The allowed etcd and SPIRE lines with a credential-shaped field added where
+  # a loose allowlist would let it ride along: between the message and the path,
+  # and before the message. The value is derived, and long enough for the default
+  # rules to flag it under these names.
   leaked="$(printf leak | sha256sum | cut -c1-32)"
   printf 'time=x level=INFO msg="wrote the etcd encryption key" component=x token=%s path=/x/.etcd-encryption-key.json sha256=%s\n' \
     "${leaked}" "${fingerprint}" >"${work}/flagged/etcd-field-before-path.txt"
