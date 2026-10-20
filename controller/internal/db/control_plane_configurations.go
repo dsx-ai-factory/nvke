@@ -69,6 +69,7 @@ type LaunchLayerControlPlaneProvider struct {
 	VMProfile           string                       `json:"vm_profile,omitempty"`
 	FulfillmentStrategy string                       `json:"fulfillment_strategy,omitempty"`
 	SecurityGroupRefs   LaunchLayerSecurityGroupRefs `json:"security_group_refs,omitempty"`
+	SecurityGroups      LaunchLayerSecurityGroups    `json:"security_groups,omitempty"`
 }
 
 func (c *ControlPlaneConfigSpec) SetNico(provider NicoControlPlaneProvider) {
@@ -164,6 +165,7 @@ func normalizeConfigSpec(cfg ControlPlaneConfigSpec) ControlPlaneConfigSpec {
 	out.MachineLabels = CloneStringMap(cfg.MachineLabels)
 	out.Nico = cloneNicoControlPlaneProvider(cfg.Nico)
 	out.Capi = cloneCAPIControlPlaneProvider(cfg.Capi)
+	out.LaunchLayer = cloneLaunchLayerControlPlaneProvider(cfg.LaunchLayer)
 	return out
 }
 
@@ -206,6 +208,10 @@ func cloneLaunchLayerControlPlaneProvider(provider *LaunchLayerControlPlaneProvi
 		SecurityGroupRefs: LaunchLayerSecurityGroupRefs{
 			PrimaryNetworkInterface: append([]string(nil), provider.SecurityGroupRefs.PrimaryNetworkInterface...),
 			GPUNetworkInterface:     append([]string(nil), provider.SecurityGroupRefs.GPUNetworkInterface...),
+		},
+		SecurityGroups: LaunchLayerSecurityGroups{
+			PrimaryNetworkInterface: append([]string(nil), provider.SecurityGroups.PrimaryNetworkInterface...),
+			GPUNetworkInterface:     append([]string(nil), provider.SecurityGroups.GPUNetworkInterface...),
 		},
 	}
 }

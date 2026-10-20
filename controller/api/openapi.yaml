@@ -2829,8 +2829,7 @@ components:
       description: |
         Names of the owning cluster's managed security groups to attach, per
         network interface. Mutually exclusive with securityGroups (existing
-        group IDs) per interface — CAPLL supports both but NVKE always creates
-        groups through the cluster, so NVKE only exposes refs.
+        group IDs) per interface.
       properties:
         primaryNetworkInterface:
           type: array
@@ -2843,6 +2842,29 @@ components:
           description: Managed security group names to attach to the GPU network interface.
           items:
             type: string
+          x-go-type-skip-optional-pointer: true
+
+    LaunchLayerSecurityGroups:
+      type: object
+      additionalProperties: false
+      description: |
+        Existing LaunchLayer security group IDs to attach, per network interface.
+        Mutually exclusive with securityGroupRefs on the same interface. These
+        groups remain externally managed and are not deleted with the cluster.
+      properties:
+        primaryNetworkInterface:
+          type: array
+          description: Existing security group IDs to attach to the primary network interface.
+          items:
+            type: string
+            minLength: 1
+          x-go-type-skip-optional-pointer: true
+        gpuNetworkInterface:
+          type: array
+          description: Existing security group IDs to attach to the GPU network interface.
+          items:
+            type: string
+            minLength: 1
           x-go-type-skip-optional-pointer: true
 
     LaunchLayerNodePoolProvider:
@@ -2872,13 +2894,15 @@ components:
           description: Controls how the Compute Allocation Operator places the request.
         securityGroupRefs:
           $ref: "#/components/schemas/LaunchLayerSecurityGroupRefs"
+        securityGroups:
+          $ref: "#/components/schemas/LaunchLayerSecurityGroups"
 
     LaunchLayerNodePoolProviderUpdate:
       type: object
       additionalProperties: false
       description: |
         All LaunchLayer node-pool fields (instanceType, hostOSProfile, vmProfile,
-        fulfillmentStrategy, securityGroupRefs) are fixed at creation: a request
+        fulfillmentStrategy, securityGroupRefs, securityGroups) are fixed at creation: a request
         carrying one is rejected with 400. A body echoed from GET must have them
         stripped.
 
@@ -2905,6 +2929,8 @@ components:
           description: Controls how the Compute Allocation Operator places the request.
         securityGroupRefs:
           $ref: "#/components/schemas/LaunchLayerSecurityGroupRefs"
+        securityGroups:
+          $ref: "#/components/schemas/LaunchLayerSecurityGroups"
 
     InfraNodePoolProvider:
       x-fern-ignore: true
@@ -3156,6 +3182,8 @@ components:
           description: Controls how the Compute Allocation Operator places the request.
         securityGroupRefs:
           $ref: "#/components/schemas/LaunchLayerSecurityGroupRefs"
+        securityGroups:
+          $ref: "#/components/schemas/LaunchLayerSecurityGroups"
 
     LaunchLayerControlPlaneProviderUpdate:
       type: object

@@ -408,6 +408,12 @@ func dbLaunchLayerControlPlaneProviderFromAPI(provider api.LaunchLayerControlPla
 			GPUNetworkInterface:     provider.SecurityGroupRefs.GpuNetworkInterface,
 		}
 	}
+	if provider.SecurityGroups != nil {
+		out.SecurityGroups = db.LaunchLayerSecurityGroups{
+			PrimaryNetworkInterface: provider.SecurityGroups.PrimaryNetworkInterface,
+			GPUNetworkInterface:     provider.SecurityGroups.GpuNetworkInterface,
+		}
+	}
 	return out
 }
 
@@ -464,5 +470,6 @@ func apiLaunchLayerControlPlaneProviderFromDB(provider *db.LaunchLayerControlPla
 			GpuNetworkInterface:     provider.SecurityGroupRefs.GPUNetworkInterface,
 		}
 	}
+	out.SecurityGroups = apiLaunchLayerSecurityGroupsFromDB(provider.SecurityGroups)
 	return out
 }

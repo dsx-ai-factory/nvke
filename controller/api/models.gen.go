@@ -734,9 +734,13 @@ type LaunchLayerControlPlaneProvider struct {
 
 	// SecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
 	// network interface. Mutually exclusive with securityGroups (existing
-	// group IDs) per interface — CAPLL supports both but NVKE always creates
-	// groups through the cluster, so NVKE only exposes refs.
+	// group IDs) per interface.
 	SecurityGroupRefs *LaunchLayerSecurityGroupRefs `json:"securityGroupRefs,omitempty"`
+
+	// SecurityGroups Existing LaunchLayer security group IDs to attach, per network interface.
+	// Mutually exclusive with securityGroupRefs on the same interface. These
+	// groups remain externally managed and are not deleted with the cluster.
+	SecurityGroups *LaunchLayerSecurityGroups `json:"securityGroups,omitempty"`
 
 	// VMProfile Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
 	VMProfile string `json:"vmProfile,omitempty"`
@@ -764,9 +768,13 @@ type LaunchLayerNodePoolProvider struct {
 
 	// SecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
 	// network interface. Mutually exclusive with securityGroups (existing
-	// group IDs) per interface — CAPLL supports both but NVKE always creates
-	// groups through the cluster, so NVKE only exposes refs.
+	// group IDs) per interface.
 	SecurityGroupRefs *LaunchLayerSecurityGroupRefs `json:"securityGroupRefs,omitempty"`
+
+	// SecurityGroups Existing LaunchLayer security group IDs to attach, per network interface.
+	// Mutually exclusive with securityGroupRefs on the same interface. These
+	// groups remain externally managed and are not deleted with the cluster.
+	SecurityGroups *LaunchLayerSecurityGroups `json:"securityGroups,omitempty"`
 
 	// VMProfile Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
 	VMProfile string `json:"vmProfile,omitempty"`
@@ -776,7 +784,7 @@ type LaunchLayerNodePoolProvider struct {
 type LaunchLayerNodePoolProviderFulfillmentStrategy string
 
 // LaunchLayerNodePoolProviderUpdate All LaunchLayer node-pool fields (instanceType, hostOSProfile, vmProfile,
-// fulfillmentStrategy, securityGroupRefs) are fixed at creation: a request
+// fulfillmentStrategy, securityGroupRefs, securityGroups) are fixed at creation: a request
 // carrying one is rejected with 400. A body echoed from GET must have them
 // stripped.
 type LaunchLayerNodePoolProviderUpdate = map[string]interface{}
@@ -808,9 +816,13 @@ type LaunchLayerNodeSetProvider struct {
 
 	// SecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
 	// network interface. Mutually exclusive with securityGroups (existing
-	// group IDs) per interface — CAPLL supports both but NVKE always creates
-	// groups through the cluster, so NVKE only exposes refs.
+	// group IDs) per interface.
 	SecurityGroupRefs *LaunchLayerSecurityGroupRefs `json:"securityGroupRefs,omitempty"`
+
+	// SecurityGroups Existing LaunchLayer security group IDs to attach, per network interface.
+	// Mutually exclusive with securityGroupRefs on the same interface. These
+	// groups remain externally managed and are not deleted with the cluster.
+	SecurityGroups *LaunchLayerSecurityGroups `json:"securityGroups,omitempty"`
 
 	// VMProfile Virtual profile, as "<name>" or "<name>:<version>". Mutually exclusive with hostOSProfile.
 	VMProfile string `json:"vmProfile,omitempty"`
@@ -840,13 +852,23 @@ type LaunchLayerSecurityGroupType string
 
 // LaunchLayerSecurityGroupRefs Names of the owning cluster's managed security groups to attach, per
 // network interface. Mutually exclusive with securityGroups (existing
-// group IDs) per interface — CAPLL supports both but NVKE always creates
-// groups through the cluster, so NVKE only exposes refs.
+// group IDs) per interface.
 type LaunchLayerSecurityGroupRefs struct {
 	// GpuNetworkInterface Managed security group names to attach to the GPU network interface.
 	GpuNetworkInterface []string `json:"gpuNetworkInterface,omitempty"`
 
 	// PrimaryNetworkInterface Managed security group names to attach to the primary network interface.
+	PrimaryNetworkInterface []string `json:"primaryNetworkInterface,omitempty"`
+}
+
+// LaunchLayerSecurityGroups Existing LaunchLayer security group IDs to attach, per network interface.
+// Mutually exclusive with securityGroupRefs on the same interface. These
+// groups remain externally managed and are not deleted with the cluster.
+type LaunchLayerSecurityGroups struct {
+	// GpuNetworkInterface Existing security group IDs to attach to the GPU network interface.
+	GpuNetworkInterface []string `json:"gpuNetworkInterface,omitempty"`
+
+	// PrimaryNetworkInterface Existing security group IDs to attach to the primary network interface.
 	PrimaryNetworkInterface []string `json:"primaryNetworkInterface,omitempty"`
 }
 
@@ -1517,7 +1539,7 @@ type UpdateNodePoolRequest struct {
 	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
 
 	// LaunchLayer All LaunchLayer node-pool fields (instanceType, hostOSProfile, vmProfile,
-	// fulfillmentStrategy, securityGroupRefs) are fixed at creation: a request
+	// fulfillmentStrategy, securityGroupRefs, securityGroups) are fixed at creation: a request
 	// carrying one is rejected with 400. A body echoed from GET must have them
 	// stripped.
 	LaunchLayer *LaunchLayerNodePoolProviderUpdate `json:"launchLayer,omitempty"`

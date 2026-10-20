@@ -386,6 +386,12 @@ func dbLaunchLayerNodePoolProviderFromAPI(provider api.LaunchLayerNodePoolProvid
 			GPUNetworkInterface:     provider.SecurityGroupRefs.GpuNetworkInterface,
 		}
 	}
+	if provider.SecurityGroups != nil {
+		out.SecurityGroups = db.LaunchLayerSecurityGroups{
+			PrimaryNetworkInterface: provider.SecurityGroups.PrimaryNetworkInterface,
+			GPUNetworkInterface:     provider.SecurityGroups.GpuNetworkInterface,
+		}
+	}
 	return out
 }
 
@@ -954,7 +960,18 @@ func apiLaunchLayerNodePoolProviderFromDB(provider *db.LaunchLayerNodePoolProvid
 			GpuNetworkInterface:     provider.SecurityGroupRefs.GPUNetworkInterface,
 		}
 	}
+	out.SecurityGroups = apiLaunchLayerSecurityGroupsFromDB(provider.SecurityGroups)
 	return out
+}
+
+func apiLaunchLayerSecurityGroupsFromDB(groups db.LaunchLayerSecurityGroups) *api.LaunchLayerSecurityGroups {
+	if len(groups.PrimaryNetworkInterface) == 0 && len(groups.GPUNetworkInterface) == 0 {
+		return nil
+	}
+	return &api.LaunchLayerSecurityGroups{
+		PrimaryNetworkInterface: groups.PrimaryNetworkInterface,
+		GpuNetworkInterface:     groups.GPUNetworkInterface,
+	}
 }
 
 // clonePtr copies the pointee so a normalized request never shares a scalar with

@@ -23,6 +23,7 @@ func (*Client) ApplyControlPlaneConfigPayloads(_ db.Node, snapshotCfg db.Control
 		VMProfile:           snapshotCfg.LaunchLayer.VMProfile,
 		FulfillmentStrategy: snapshotCfg.LaunchLayer.FulfillmentStrategy,
 		SecurityGroupRefs:   snapshotCfg.LaunchLayer.SecurityGroupRefs,
+		SecurityGroups:      snapshotCfg.LaunchLayer.SecurityGroups,
 	}
 	nodeSet.SetLaunchLayer(provider)
 	nodePool.SetLaunchLayer(provider)

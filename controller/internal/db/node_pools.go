@@ -59,6 +59,13 @@ type LaunchLayerSecurityGroupRefs struct {
 	GPUNetworkInterface     []string `json:"gpu_network_interface,omitempty"`
 }
 
+// LaunchLayerSecurityGroups holds externally managed security group IDs to
+// attach per interface, without transferring their ownership to the cluster.
+type LaunchLayerSecurityGroups struct {
+	PrimaryNetworkInterface []string `json:"primary_network_interface,omitempty"`
+	GPUNetworkInterface     []string `json:"gpu_network_interface,omitempty"`
+}
+
 // LaunchLayerNodePoolProvider is the LaunchLayer-specific node pool payload.
 // Reused for NodeSet, the same way NicoNodePoolProvider is.
 type LaunchLayerNodePoolProvider struct {
@@ -67,6 +74,7 @@ type LaunchLayerNodePoolProvider struct {
 	VMProfile           string                       `json:"vm_profile,omitempty"`
 	FulfillmentStrategy string                       `json:"fulfillment_strategy,omitempty"`
 	SecurityGroupRefs   LaunchLayerSecurityGroupRefs `json:"security_group_refs,omitempty"`
+	SecurityGroups      LaunchLayerSecurityGroups    `json:"security_groups,omitempty"`
 }
 
 // Equal reports whether two NicoNodePoolProvider values represent the same configuration.
@@ -94,7 +102,9 @@ func (l LaunchLayerNodePoolProvider) Equal(other LaunchLayerNodePoolProvider) bo
 		l.VMProfile == other.VMProfile &&
 		l.FulfillmentStrategy == other.FulfillmentStrategy &&
 		slices.Equal(l.SecurityGroupRefs.PrimaryNetworkInterface, other.SecurityGroupRefs.PrimaryNetworkInterface) &&
-		slices.Equal(l.SecurityGroupRefs.GPUNetworkInterface, other.SecurityGroupRefs.GPUNetworkInterface)
+		slices.Equal(l.SecurityGroupRefs.GPUNetworkInterface, other.SecurityGroupRefs.GPUNetworkInterface) &&
+		slices.Equal(l.SecurityGroups.PrimaryNetworkInterface, other.SecurityGroups.PrimaryNetworkInterface) &&
+		slices.Equal(l.SecurityGroups.GPUNetworkInterface, other.SecurityGroups.GPUNetworkInterface)
 }
 
 func uuidSlicesSetEqual(a, b []uuid.UUID) bool {
@@ -318,6 +328,10 @@ func cloneLaunchLayerNodePoolProvider(provider LaunchLayerNodePoolProvider) *Lau
 		SecurityGroupRefs: LaunchLayerSecurityGroupRefs{
 			PrimaryNetworkInterface: append([]string(nil), provider.SecurityGroupRefs.PrimaryNetworkInterface...),
 			GPUNetworkInterface:     append([]string(nil), provider.SecurityGroupRefs.GPUNetworkInterface...),
+		},
+		SecurityGroups: LaunchLayerSecurityGroups{
+			PrimaryNetworkInterface: append([]string(nil), provider.SecurityGroups.PrimaryNetworkInterface...),
+			GPUNetworkInterface:     append([]string(nil), provider.SecurityGroups.GPUNetworkInterface...),
 		},
 	}
 }

@@ -15,5 +15,8 @@ func (*Client) ValidateControlPlaneConfigPayload(spec db.ControlPlaneConfigSpec)
 	if err != nil {
 		return err
 	}
-	return validateLaunchLayerMachineFields(provider.InstanceType, provider.HostOSProfile, provider.VMProfile, "controlPlaneConfig.")
+	if err := validateLaunchLayerMachineFields(provider.InstanceType, provider.HostOSProfile, provider.VMProfile, "controlPlaneConfig."); err != nil {
+		return err
+	}
+	return validateSecurityGroupAttachments(provider.SecurityGroups, provider.SecurityGroupRefs, "controlPlaneConfig.launchLayer.")
 }

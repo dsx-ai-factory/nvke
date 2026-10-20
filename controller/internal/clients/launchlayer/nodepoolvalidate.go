@@ -18,7 +18,27 @@ func (*Client) ValidateNodePoolPayload(nodePool db.NodePool) error {
 	if err != nil {
 		return err
 	}
-	return validateLaunchLayerMachineFields(provider.InstanceType, provider.HostOSProfile, provider.VMProfile, "")
+	if err := validateLaunchLayerMachineFields(provider.InstanceType, provider.HostOSProfile, provider.VMProfile, ""); err != nil {
+		return err
+	}
+	return validateSecurityGroupAttachments(provider.SecurityGroups, provider.SecurityGroupRefs, "launchLayer.")
+}
+
+func validateSecurityGroupAttachments(groups db.LaunchLayerSecurityGroups, refs db.LaunchLayerSecurityGroupRefs, fieldPrefix string) error {
+	if len(groups.PrimaryNetworkInterface) > 0 && len(refs.PrimaryNetworkInterface) > 0 {
+		return fmt.Errorf("%ssecurityGroups and %ssecurityGroupRefs are mutually exclusive on primaryNetworkInterface", fieldPrefix, fieldPrefix)
+	}
+	if len(groups.GPUNetworkInterface) > 0 && len(refs.GPUNetworkInterface) > 0 {
+		return fmt.Errorf("%ssecurityGroups and %ssecurityGroupRefs are mutually exclusive on gpuNetworkInterface", fieldPrefix, fieldPrefix)
+	}
+	for _, ids := range [][]string{groups.PrimaryNetworkInterface, groups.GPUNetworkInterface} {
+		for _, id := range ids {
+			if id == "" {
+				return fmt.Errorf("%ssecurityGroups must not contain empty IDs", fieldPrefix)
+			}
+		}
+	}
+	return nil
 }
 
 // validateLaunchLayerMachineFields validates the fields shared by node-pool

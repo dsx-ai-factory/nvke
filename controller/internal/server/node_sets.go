@@ -122,6 +122,7 @@ func apiLaunchLayerNodeSetProviderFromDB(provider *db.LaunchLayerNodePoolProvide
 			GpuNetworkInterface:     provider.SecurityGroupRefs.GPUNetworkInterface,
 		}
 	}
+	out.SecurityGroups = apiLaunchLayerSecurityGroupsFromDB(provider.SecurityGroups)
 	return out
 }
 

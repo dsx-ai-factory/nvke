@@ -23,6 +23,9 @@ func buildInfraMachine(node db.Node, nodeSet db.NodeSet, cluster db.Cluster, con
 	if err != nil {
 		return nil, fmt.Errorf("failed to read node set launchlayer provider: %w", err)
 	}
+	if err := validateSecurityGroupAttachments(provider.SecurityGroups, provider.SecurityGroupRefs, "launchLayer."); err != nil {
+		return nil, fmt.Errorf("%w: %w", shared.ErrUnsupportedMachineConfig, err)
+	}
 
 	spec := map[string]any{"instanceType": provider.InstanceType}
 	if provider.HostOSProfile != "" {
@@ -34,8 +37,11 @@ func buildInfraMachine(node db.Node, nodeSet db.NodeSet, cluster db.Cluster, con
 	if provider.FulfillmentStrategy != "" {
 		spec["fulfillmentStrategy"] = provider.FulfillmentStrategy
 	}
-	if refs := buildSecurityGroupRefs(provider.SecurityGroupRefs); refs != nil {
+	if refs := buildInterfaceSecurityGroups(provider.SecurityGroupRefs.PrimaryNetworkInterface, provider.SecurityGroupRefs.GPUNetworkInterface); refs != nil {
 		spec["securityGroupRefs"] = refs
+	}
+	if groups := buildInterfaceSecurityGroups(provider.SecurityGroups.PrimaryNetworkInterface, provider.SecurityGroups.GPUNetworkInterface); groups != nil {
+		spec["securityGroups"] = groups
 	}
 
 	machine := &unstructured.Unstructured{Object: map[string]any{
@@ -51,16 +57,16 @@ func buildInfraMachine(node db.Node, nodeSet db.NodeSet, cluster db.Cluster, con
 	return machine, nil
 }
 
-func buildSecurityGroupRefs(refs db.LaunchLayerSecurityGroupRefs) map[string]any {
-	if len(refs.PrimaryNetworkInterface) == 0 && len(refs.GPUNetworkInterface) == 0 {
+func buildInterfaceSecurityGroups(primary, gpu []string) map[string]any {
+	if len(primary) == 0 && len(gpu) == 0 {
 		return nil
 	}
 	out := map[string]any{}
-	if len(refs.PrimaryNetworkInterface) > 0 {
-		out["primaryNetworkInterface"] = toAnySlice(refs.PrimaryNetworkInterface)
+	if len(primary) > 0 {
+		out["primaryNetworkInterface"] = toAnySlice(primary)
 	}
-	if len(refs.GPUNetworkInterface) > 0 {
-		out["gpuNetworkInterface"] = toAnySlice(refs.GPUNetworkInterface)
+	if len(gpu) > 0 {
+		out["gpuNetworkInterface"] = toAnySlice(gpu)
 	}
 	return out
 }
