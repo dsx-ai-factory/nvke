@@ -73,9 +73,8 @@ if [[ -n "${OVN_STREAMS:-}" ]]; then
 fi
 make -C "${repo_root}/os-image/packages/cni-ovn" debs "${cni_ovn_args[@]}"
 
-# The spire-agent deb: the upstream SPIRE agent, the TPM node attestor
-# plugin, and the DSX IMDS node attestor plugin, plus the units that run them.
-# Its lock pins both architectures.
+# The spire-agent deb: the upstream SPIRE agent and the TPM node attestor
+# plugin, plus the units that run them. Its lock pins both architectures.
 # A site cluster attests its nodes by TPM, so the image
 # needs the plugin to join one; without it the agent can only use a join token,
 # which the site cluster never mints.

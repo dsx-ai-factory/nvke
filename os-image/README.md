@@ -167,7 +167,7 @@ and both systemd units. Startup is deferred during the bake with
 and socket wait across package upgrades.
 The baked agent is whatever your checkout says — no prebuilt artifact is
 pulled. To bake a released agent, check out its `agent/vX.Y.Z` tag first.
-The SPIRE agent, TPM tools, and DSX IMDS node attestor come from
+The SPIRE agent and TPM tools come from
 the `spire-agent` .deb built at bake time out of
 [`packages/spire-agent/`](packages/spire-agent/), pinned by version and
 SHA-256 in its lock; the build installs that package into the image rather than

@@ -186,7 +186,6 @@ done
 systemctl cat nvke-agent.service | grep -Fx 'ExecStartPre=/usr/lib/nvke/wait-spiffe-socket.sh'
 test -x /usr/local/bin/spire-agent
 test -x /usr/local/lib/spire-agent/tpm_attestor_agent
-test -x /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent
 test -x /usr/local/bin/get_tpm_pubhash
 test -x /usr/lib/nvke/spire-configure.sh
 test -x /usr/lib/nvke/wait-spiffe-socket.sh
@@ -199,13 +198,10 @@ test "$(dpkg-query -S /usr/local/bin/spire-agent | cut -d: -f1)" = spire-agent
 test ! -e /etc/systemd/system/spire-agent.service
 id -u spire >/dev/null
 # A profile's agent.conf carries plugin_checksum = "${TPM_PLUGIN_CHECKSUM}"
-# or "${DSX_IMDS_PLUGIN_CHECKSUM}" verbatim. Without both halves of this, SPIRE
-# compares the plugin against that literal string, refuses to load it, and the
-# node never attests.
+# verbatim. Without both halves of this, SPIRE compares the plugin against that
+# literal string, refuses to load it, and the node never attests.
 test "$(. /etc/spire-agent/spire-agent.env; echo "${TPM_PLUGIN_CHECKSUM}")" \
     = "$(sha256sum /usr/local/lib/spire-agent/tpm_attestor_agent | cut -d' ' -f1)"
-test "$(. /etc/spire-agent/spire-agent.env; echo "${DSX_IMDS_PLUGIN_CHECKSUM}")" \
-    = "$(sha256sum /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent | cut -d' ' -f1)"
 grep -Fq -- -expandEnv /lib/systemd/system/spire-agent.service
 # Persistent upload scratch must not remain in the golden image.
 test ! -e /var/tmp/nke-image
