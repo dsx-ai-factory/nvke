@@ -576,12 +576,21 @@ def wait_for(check, deadline):
     raise CheckError(last)
 
 
-def alert_receipts(c, since, mutation_at, completed_at):
+def matching_receipts(c, since):
     entries = [json.loads(line) for line in Path(c["alert_receipts_file"]).read_text().splitlines() if line]
     selected = [e for e in entries if e.get("schema") == "nke.alert-receipt.v1" and
                 e.get("cluster_hash") == digest(c["cluster_name"]) and e.get("node_hash") == digest(c["alert_node"]) and
                 e.get("credential") == c["alert_credential"] and timestamp(e["received_at"]) >= since]
     require(all(HEX.fullmatch(e.get("receipt_id", "")) for e in selected), "notification_receipt_invalid")
+    return selected
+
+
+def firing_receipt_received(c, since, until):
+    return any(e["status"] == "firing" and timestamp(e["received_at"]) <= until for e in matching_receipts(c, since))
+
+
+def alert_receipts(c, since, mutation_at, completed_at):
+    selected = matching_receipts(c, since)
     for receipt in {e["receipt_id"] for e in selected}:
         same = [e for e in selected if e["receipt_id"] == receipt]
         firing = [e for e in same if e["status"] == "firing" and timestamp(e["received_at"]) <= mutation_at]
@@ -646,6 +655,10 @@ def run(c, scenario, approve, live_factory=Live):
             require(receipts_since is not None, "missing_notification_window")
             receipts_since = timestamp(receipts_since)
             require(receipts_since <= start and start - receipts_since <= 86400, "invalid_notification_window")
+            # Only the bundled receiver writes receipts the collector accepts; without its
+            # firing receipt now, the lane could only fail after the renewal.
+            require(Path(c["alert_receipts_file"]).is_file() and firing_receipt_received(c, receipts_since, time.time()),
+                    "firing_notification_not_received")
             passed("expiry_alert_firing_before_mutation")
         require(approve == c["cluster_id"], "operator_approval_required")
         workflow = "operator-rotation-demo-" + str(uuid.uuid4())

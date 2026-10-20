@@ -592,7 +592,8 @@ class ManualCompletionTests(unittest.TestCase):
 
 class ScheduledRenewalTests(unittest.TestCase):
     def run_scheduled(self, changed_nodes=(0,), restarted_nodes=(0,), audit_change=None,
-                      owner_outcome="renewed", scenario="scheduled-renewal", certificate_change=None, started_offset=0):
+                      owner_outcome="renewed", scenario="scheduled-renewal", certificate_change=None, started_offset=0,
+                      receipt_status="firing"):
         c = config()
         clock = {"now": demo.timestamp("2026-10-07T00:00:00Z")}
         observed_at = demo.dt.datetime.fromtimestamp(clock["now"], demo.dt.timezone.utc).isoformat()
@@ -669,9 +670,16 @@ class ScheduledRenewalTests(unittest.TestCase):
                 return self.prometheus.http(*args)
         def instant(check, _deadline):
             return check()
-        with patch.object(demo, "Traffic", FakeTraffic), patch.object(demo, "wait_for", side_effect=instant), \
-                patch.object(demo.time, "time", side_effect=lambda: clock["now"]):
-            return demo.run(c, scenario, c["cluster_id"], DueSubset)
+        with tempfile.TemporaryDirectory() as tmp:
+            # The bundled receiver already recorded the firing notification.
+            c["alert_receipts_file"] = str(Path(tmp) / "receipts")
+            Path(c["alert_receipts_file"]).write_text(json.dumps({
+                "schema": "nke.alert-receipt.v1", "cluster_hash": demo.digest(c["cluster_name"]),
+                "node_hash": demo.digest(c["alert_node"]), "credential": c["alert_credential"], "receipt_id": "a" * 64,
+                "status": receipt_status, "received_at": "2026-10-06T23:59:30Z"}) + "\n")
+            with patch.object(demo, "Traffic", FakeTraffic), patch.object(demo, "wait_for", side_effect=instant), \
+                    patch.object(demo.time, "time", side_effect=lambda: clock["now"]):
+                return demo.run(c, scenario, c["cluster_id"], DueSubset)
 
     def test_cycle_accepted_during_the_baseline_phase_is_not_credited_with_traffic(self):
         result = self.run_scheduled(started_offset=-60)
@@ -822,6 +830,13 @@ class ScheduledRenewalTests(unittest.TestCase):
                 with patch.object(FakeLive, "alert", return_value=True, create=True):
                     report = self.run_scheduled((0, 1, 2), (0,), scenario=scenario)
                 self.assertEqual("renewed_components_not_replaced", report["reason"])
+
+
+    def test_alert_lane_requires_a_firing_receipt_before_mutation(self):
+        with patch.object(FakeLive, "alert", return_value=True, create=True):
+            report = self.run_scheduled(scenario="alert-renewal", receipt_status="resolved")
+        self.assertEqual("firing_notification_not_received", report["reason"])
+        self.assertFalse(report["mutation_started"])
 
 
 class CollectorContractTests(unittest.TestCase):
