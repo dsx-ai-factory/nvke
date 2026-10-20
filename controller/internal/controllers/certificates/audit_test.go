@@ -90,7 +90,7 @@ func TestInspectionAuditSkipsUnchangedObservations(t *testing.T) {
 	c := &Controller{audit: credentialaudit.NewRecorder(store, slog.New(slog.DiscardHandler), nil)}
 	node := db.Node{ID: uuid.New(), ClusterID: uuid.New()}
 	attempt := time.Now().UTC()
-	inspection := func(serving string, reason string) *db.CertificateInspection {
+	inspection := func(serving, reason string) *db.CertificateInspection {
 		attempt = attempt.Add(time.Hour)
 		return &db.CertificateInspection{Available: reason == "", Reason: reason, AttemptedAt: attempt, Certificates: []db.CertificateObservation{
 			{Credential: "kubelet-serving", State: "available", CertificateSHA256: credentialaudit.Hash("certificate", serving)},
