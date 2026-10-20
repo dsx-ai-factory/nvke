@@ -387,6 +387,27 @@ class DemoTests(unittest.TestCase):
             Path(c["alert_receipts_file"]).write_text(json.dumps(firing) + "\n" + json.dumps(resolved) + "\n")
             self.assertEqual(["firing", "resolved"], [e["status"] for e in demo.alert_receipts(c, start - 10, start, start + 2)])
 
+    def test_resolution_between_mutation_and_completion_qualifies_unless_the_alert_refires(self):
+        c = config()
+        start = time.time()
+        def iso(seconds):
+            return demo.dt.datetime.fromtimestamp(seconds, demo.dt.timezone.utc).isoformat()
+        common = {"schema": "nke.alert-receipt.v1", "cluster_hash": demo.digest(c["cluster_name"]),
+                  "node_hash": demo.digest(c["alert_node"]), "credential": c["alert_credential"], "receipt_id": "a" * 64}
+        mutation_at, completed_at = start, start + 20
+        firing = {**common, "status": "firing", "received_at": iso(start - 5)}
+        resolved = {**common, "status": "resolved", "received_at": iso(start + 10)}
+        with tempfile.TemporaryDirectory() as tmp:
+            c["alert_receipts_file"] = str(Path(tmp) / "receipts")
+            Path(c["alert_receipts_file"]).write_text(json.dumps(firing) + "\n" + json.dumps(resolved) + "\n")
+            pair = demo.alert_receipts(c, start - 10, mutation_at, completed_at)
+            self.assertEqual(["firing", "resolved"], [e["status"] for e in pair])
+            refired = {**common, "status": "firing", "received_at": iso(start + 15)}
+            with Path(c["alert_receipts_file"]).open("a") as out:
+                out.write(json.dumps(refired) + "\n")
+            with self.assertRaisesRegex(demo.CheckError, "notification_refired_before_completion"):
+                demo.alert_receipts(c, start - 10, mutation_at, completed_at)
+
     def test_continuous_secret_failure_is_distinct_from_allowed_api_outage(self):
         class LocalLive:
             c = {"traffic_interval_seconds": 0.001}

@@ -551,11 +551,18 @@ def alert_receipts(c, since, mutation_at, completed_at):
                 e.get("credential") == c["alert_credential"] and timestamp(e["received_at"]) >= since]
     require(all(HEX.fullmatch(e.get("receipt_id", "")) for e in selected), "notification_receipt_invalid")
     for receipt in {e["receipt_id"] for e in selected}:
-        firing = [e for e in selected if e["receipt_id"] == receipt and e["status"] == "firing" and timestamp(e["received_at"]) <= mutation_at]
-        resolved = [e for e in selected if e["receipt_id"] == receipt and e["status"] == "resolved" and timestamp(e["received_at"]) >= completed_at]
+        same = [e for e in selected if e["receipt_id"] == receipt]
+        firing = [e for e in same if e["status"] == "firing" and timestamp(e["received_at"]) <= mutation_at]
+        # Renewal is one node at a time, so the alert node's inspection can resolve
+        # the alert before the last node finishes; accept any resolution after
+        # the mutation started, but the alert must not fire again before completion.
+        resolved = [e for e in same if e["status"] == "resolved" and timestamp(e["received_at"]) >= mutation_at]
         if firing and resolved:
             pair = [max(firing, key=lambda e: timestamp(e["received_at"])), min(resolved, key=lambda e: timestamp(e["received_at"]))]
             require(timestamp(pair[0]["received_at"]) < timestamp(pair[1]["received_at"]), "notification_order_invalid")
+            resolved_at = timestamp(pair[1]["received_at"])
+            require(not any(e["status"] == "firing" and resolved_at < timestamp(e["received_at"]) <= completed_at for e in same),
+                    "notification_refired_before_completion")
             return [{"status": e["status"], "received_at": e["received_at"], "receipt_id": e["receipt_id"]} for e in pair]
     raise CheckError("notification_delivery_incomplete")
 
