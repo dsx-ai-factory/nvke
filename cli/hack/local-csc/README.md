@@ -17,7 +17,7 @@ cli/hack/local-csc/local-csc.sh vm-up
 # In the VM
 colima ssh --profile nvke
 tmux new -s csc
-cd /Users/$USER/dev/oss/nke   # the repository, mounted at its macOS path (the VM's ~ differs)
+cd /Users/$USER/<checkout>   # this repository, mounted at its macOS path (the VM's ~ differs)
 cli/hack/local-csc/local-csc.sh build    # first time, and after code changes
 cli/hack/local-csc/local-csc.sh up       # node + bootstrap, 10-20 minutes
 cli/hack/local-csc/local-csc.sh status
