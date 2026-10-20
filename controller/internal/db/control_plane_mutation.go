@@ -8,7 +8,7 @@ import (
 )
 
 // ErrControlPlaneMutationBlocked reports retained credential mutation ownership.
-var ErrControlPlaneMutationBlocked = errors.New("control-plane changes are rejected while etcd encryption, etcd key rotation or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md)")
+var ErrControlPlaneMutationBlocked = errors.New("control-plane changes are rejected while etcd encryption, etcd key rotation or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md); a rotation that fails after prepare keeps the etcd_key_rotation lock until its workflow is reset and completes (see controller/docs/etcd-encryption-key-rotation.md#phase-aware-recovery)")
 
 // ControlPlaneMutationBlocked fences membership and configuration writers while
 // etcd encryption, etcd key rotation or certificate renewal owns the cluster,
