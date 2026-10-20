@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      # Pushing the branch this job commits to.
+      # Moving the branch ref and committing to it through the API.
       contents: write
       # Opening the pull request for it.
       pull-requests: write
@@ -106,22 +106,84 @@ jobs:
         if: steps.update.outputs.changed == 'true'
         run: make base-image-check
 
-      - name: Commit and push
+      # `main` requires verified signatures, and a commit written by `git` in a
+      # runner has none -- GITHUB_TOKEN authenticates the push, it does not sign
+      # the commit object. So the commit is created through the GraphQL
+      # `createCommitOnBranch` mutation instead, which GitHub signs with its own
+      # `web-flow` key on the way in. No signing key to hold or rotate; the cost
+      # is that the file contents travel as base64 in the mutation and the
+      # message carries its own sign-off.
+      - name: Commit as a signed commit
         if: steps.update.outputs.changed == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # -s: the DCO check is a required context and applies to this commit
-          # like any other.
-          git commit -s -a -m "build(deps): bump ARG-pinned base image digests"
-          # Force: the branch is this job's alone, and a rerun should replace
-          # last week's proposal rather than stack onto it.
-          git push --force \
-            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            "HEAD:refs/heads/${BRANCH}"
+
+          # One `additions` entry per rewritten file. The guard above has
+          # already established that this list is Dockerfiles and nothing else,
+          # and the script only ever rewrites files -- it never deletes one, so
+          # `fileChanges` needs no `deletions`.
+          additions="$(git diff --name-only | while IFS= read -r f; do
+            jq -n --arg path "${f}" --arg contents "$(base64 -w0 <"${f}")" \
+              '{path: $path, contents: $contents}'
+          done | jq -s '.')"
+
+          # Reset the branch to the commit this job checked out, so a rerun
+          # replaces last week's proposal rather than stacking onto it -- what
+          # `push --force` did before. Moving the ref keeps an open pull request
+          # attached to it; deleting and recreating the ref would close it.
+          if ! gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/heads/${BRANCH}" \
+              -f "sha=${BASE_SHA}" -F force=true >/dev/null 2>&1; then
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f "ref=refs/heads/${BRANCH}" -f "sha=${BASE_SHA}" >/dev/null
+          fi
+
+          # `git commit -s` wrote the trailer before; the mutation takes the
+          # whole message, so the sign-off is spelled out here. It has to match
+          # the author GitHub attributes the commit to -- the token's actor --
+          # or the required DCO context fails.
+          payload="${RUNNER_TEMP}/commit.json"
+          jq -n \
+            --arg repo "${GITHUB_REPOSITORY}" \
+            --arg branch "${BRANCH}" \
+            --arg oid "${BASE_SHA}" \
+            --argjson additions "${additions}" \
+            '{
+              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              variables: {
+                input: {
+                  branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+                  expectedHeadOid: $oid,
+                  message: {
+                    headline: "build(deps): bump ARG-pinned base image digests",
+                    body: "Signed-off-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+                  },
+                  fileChanges: {additions: $additions}
+                }
+              }
+            }' >"${payload}"
+
+          oid="$(gh api graphql --input "${payload}" \
+            --jq '.data.createCommitOnBranch.commit.oid')"
+          if [ -z "${oid}" ]; then
+            echo "::error::createCommitOnBranch returned no commit."
+            exit 1
+          fi
+          echo "Committed ${oid} on ${BRANCH}."
+
+          # The whole point of the mutation is the signature, so fail loudly
+          # rather than open a pull request that cannot be merged.
+          verified="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${oid}" \
+            --jq '.commit.verification.verified')"
+          if [ "${verified}" != "true" ]; then
+            reason="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${oid}" \
+              --jq '.commit.verification.reason')"
+            echo "::error::Commit ${oid} is not verified (${reason}); main requires" \
+                 "verified signatures, so this would not be mergeable."
+            exit 1
+          fi
 
       - name: Open or update the pull request
         if: steps.update.outputs.changed == 'true'
