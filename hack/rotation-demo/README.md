@@ -217,12 +217,14 @@ public snapshots rather than the T2 database inventory.
 
 Record check/renew/verify observations for each control-plane node through the
 existing [manual audit tool](../../controller/docs/credential-audit.md), using
-the exact `kube-system` UID as `--cluster`, node name as `--node`, and configured
-unique operation as `--operation`. The collector requires every recent manual
-audit row to match that single configured `manual_operation` hash exactly; rows
-with a different `--operation` (including the per-step suffixes the general audit
-guide allows) fail with `manual_audit_target_or_run_mismatch`. Keep the original
-audit records: do not delete rows or repeat maintenance to manufacture evidence.
+the exact `kube-system` UID as `--cluster`, node name as `--node`, and the
+configured `manual_operation` as `--operation`, with a per-step suffix
+`/<action>-<n>` (for example `example-operator-change-window/renew-2`) whenever
+a step repeats with otherwise identical flags. The collector rejects other
+operation values with `manual_audit_target_or_run_mismatch` and duplicate
+`event_id`s, which a repeated step without its own suffix produces, with
+`audit_event_duplicate`. Keep the original audit records: do not delete rows or
+repeat maintenance to manufacture evidence.
 Build the tool once from the repository root, as in the
 [audit guide](../../controller/docs/credential-audit.md#manual-t1-evidence).
 For example, after a verified step:
