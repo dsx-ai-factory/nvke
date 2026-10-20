@@ -116,6 +116,8 @@ BGP_FILES_DIR="${REPO_ROOT}/controller/hack/bgp-containers"
 BGP_RENDER_DIR="${SCRIPT_DIR}/.bgp"
 # shellcheck source=bgp-lib.sh
 source "${SCRIPT_DIR}/bgp-lib.sh"
+# shellcheck source=etcd-lib.sh
+source "${SCRIPT_DIR}/etcd-lib.sh"
 : "${NVKECTL_NVKE_CONTROLLER_IMAGE:?NVKECTL_NVKE_CONTROLLER_IMAGE must name the controller image to deploy, already present in containerd (see comment above)}"
 export NVKECTL_NVKE_CONTROLLER_IMAGE
 
