@@ -34,16 +34,24 @@ func (s *requestLogState) recordRejectionReason(reason string) {
 	}
 }
 
+func requestLogStateMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		state := &requestLogState{}
+		ctx := context.WithValue(r.Context(), requestLogStateKey{}, state)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 func loggingMiddleware(next http.Handler, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		userAgent := truncate(r.UserAgent(), maxUserAgentLogLength)
 
-		// Create a response wrapper to capture the status code and share stable
-		// rejection metadata with handlers through the request context.
-		state := &requestLogState{}
+		state := requestLogStateFromContext(r.Context())
+		if state == nil {
+			state = &requestLogState{}
+		}
 		wrapped := responseWriter{ResponseWriter: w, status: http.StatusOK, requestLogState: state}
-		requestContext := context.WithValue(r.Context(), requestLogStateKey{}, state)
 
 		level := slog.LevelInfo
 		if r.Method == http.MethodGet {
@@ -51,10 +59,10 @@ func loggingMiddleware(next http.Handler, logger *slog.Logger) http.Handler {
 		}
 
 		// Log the incoming request
-		logger.Log(requestContext, level, "Incoming request", "method", r.Method, "path", r.URL.Path, "user_agent", userAgent)
+		logger.Log(r.Context(), level, "Incoming request", "method", r.Method, "path", r.URL.Path, "user_agent", userAgent)
 
 		// Process the request
-		next.ServeHTTP(&wrapped, r.WithContext(requestContext))
+		next.ServeHTTP(&wrapped, r)
 
 		if wrapped.status >= 400 {
 			level = slog.LevelError
@@ -74,7 +82,7 @@ func loggingMiddleware(next http.Handler, logger *slog.Logger) http.Handler {
 		}
 
 		// Log the completed request
-		logger.Log(requestContext, level, "Request completed", attrs...)
+		logger.Log(r.Context(), level, "Request completed", attrs...)
 	})
 }
 
@@ -172,7 +180,12 @@ func recordRejectionReason(w http.ResponseWriter, reason string) {
 // recordRequestRejectionReason lets business handlers classify a rejection
 // without copying their client-facing response text into persistent logs.
 func recordRequestRejectionReason(ctx context.Context, reason string) {
-	if state, ok := ctx.Value(requestLogStateKey{}).(*requestLogState); ok {
+	if state := requestLogStateFromContext(ctx); state != nil {
 		state.recordRejectionReason(reason)
 	}
+}
+
+func requestLogStateFromContext(ctx context.Context) *requestLogState {
+	state, _ := ctx.Value(requestLogStateKey{}).(*requestLogState)
+	return state
 }

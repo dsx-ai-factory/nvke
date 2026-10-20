@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
@@ -102,12 +103,13 @@ func completedRecord(t *testing.T, records []map[string]any) map[string]any {
 	return nil
 }
 
-// installTracerProvider installs a provider with no span processor, the way
-// otelx.Init does when nothing is exported, for the duration of the test.
-func installTracerProvider(t *testing.T) {
+// installTracerProvider installs a provider that records spans in memory for
+// the duration of the test.
+func installTracerProvider(t *testing.T) *tracetest.SpanRecorder {
 	t.Helper()
 	previousProvider, previousPropagator := otel.GetTracerProvider(), otel.GetTextMapPropagator()
-	provider := sdktrace.NewTracerProvider()
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
 	otel.SetTracerProvider(provider)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 	t.Cleanup(func() {
@@ -115,6 +117,7 @@ func installTracerProvider(t *testing.T) {
 		otel.SetTextMapPropagator(previousPropagator)
 		require.NoError(t, provider.Shutdown(context.Background()))
 	})
+	return recorder
 }
 
 func TestRequestCompletedLogCarriesEventAndOutcome(t *testing.T) {
@@ -139,6 +142,19 @@ func TestRequestCompletedLogCarriesValidationReason(t *testing.T) {
 	encodedLogs, err := json.Marshal(records)
 	require.NoError(t, err)
 	require.NotContains(t, string(encodedLogs), "not json")
+}
+
+func TestRequestSpanUsesMatchedRoute(t *testing.T) {
+	recorder := installTracerProvider(t)
+
+	response, _ := requestLogs(t, false, "", "")
+
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	spanNames := make([]string, 0, len(recorder.Ended()))
+	for _, span := range recorder.Ended() {
+		spanNames = append(spanNames, span.Name())
+	}
+	require.Contains(t, spanNames, "POST /api/clusters")
 }
 
 func TestRequestCompletedLogClassifiesInvalidClusterNetwork(t *testing.T) {

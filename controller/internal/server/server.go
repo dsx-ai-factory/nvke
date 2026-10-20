@@ -161,13 +161,15 @@ func NewServer(
 	// produced, so the order below is the reverse of the order a request meets.
 	// A request runs
 	//
-	//	tracing -> logging -> authentication -> managed-by -> mux
+	//	request log state -> tracing -> logging -> authentication -> managed-by -> mux
 	//
 	// Authentication precedes managed-by so an unauthenticated caller never
 	// reaches it, and follows logging so a rejection still produces the usual
 	// request/response pair. Tracing stays outermost so a rejected request is
-	// still a span. TestDisabledServerLogsTheManagedByRejection pins the logging
-	// and managed-by order.
+	// still a span. Request log state is added before tracing so logging can pass
+	// the instrumented request directly to the mux, preserving its matched route
+	// for the HTTP span name. TestDisabledServerLogsTheManagedByRejection pins the
+	// logging and managed-by order.
 	handler := managedByMiddleware(cfg.ManagedByK8sPlatform, logger)(m)
 	if authn != nil {
 		handler = authn.Wrap(handler)
@@ -181,6 +183,7 @@ func NewServer(
 			return !isOperationalPath(pathpkg.Clean(r.URL.Path))
 		}),
 	)
+	handler = requestLogStateMiddleware(handler)
 
 	srv := &http.Server{
 		Addr:              cfg.ServerListenAddress,
