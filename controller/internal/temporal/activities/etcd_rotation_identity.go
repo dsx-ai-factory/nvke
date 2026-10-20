@@ -5,6 +5,7 @@ package activities
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
@@ -30,15 +31,19 @@ func (a *Activities) ensureRotationKeyNames(ctx context.Context, clusterID uuid.
 		secret.Data[constants.EtcdEncryptionKeyFieldPendingName] = []byte(pendingName)
 	}
 	// Record the old key's storage name too, as on the staging path:
-	// finalization overwrites it, and pre-rotation backups need it.
-	activeName, err := a.discoverEncryptionKeyName(ctx, clusterID, string(secret.Data[constants.EtcdEncryptionKeyFieldActive]), false)
-	if err != nil {
+	// finalization overwrites it, and pre-rotation backups need it. An earlier
+	// rotation that failed in remove_old_keys may have already dropped the old
+	// key from some nodes, so a name that cannot be proven is left unrecorded.
+	activeName, err := a.discoverEncryptionKeyName(ctx, clusterID, string(secret.Data[constants.EtcdEncryptionKeyFieldActive]), true)
+	if err != nil && !errors.Is(err, errIdentityAgentUnsupported) && !errors.Is(err, errIdentityNoJoinedNodes) {
 		return err
 	}
-	if stored := string(secret.Data[constants.EtcdEncryptionKeyFieldActiveName]); stored != "" && stored != activeName {
-		return encryptionIdentityError("managed active encryption identity disagrees with the control plane")
+	if activeName != "" {
+		if stored := string(secret.Data[constants.EtcdEncryptionKeyFieldActiveName]); stored != "" && stored != activeName {
+			return encryptionIdentityError("managed active encryption identity disagrees with the control plane")
+		}
+		secret.Data[constants.EtcdEncryptionKeyFieldActiveName] = []byte(activeName)
 	}
-	secret.Data[constants.EtcdEncryptionKeyFieldActiveName] = []byte(activeName)
 	if err := a.k8sClient.Update(ctx, secret); err != nil {
 		return encryptionIdentityError("cannot persist pending encryption storage identity")
 	}

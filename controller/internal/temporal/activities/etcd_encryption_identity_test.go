@@ -131,11 +131,15 @@ func TestRotationReusingPendingKeyRecordsActiveName(t *testing.T) {
 	for _, test := range []struct {
 		name             string
 		storedActiveName string
+		activeOn         map[string]bool
+		wantActiveName   string
 		wantError        string
 	}{
-		{name: "active name missing is recorded"},
-		{name: "matching active name is kept", storedActiveName: "kube-api-encryption-key-7"},
+		{name: "active name missing is recorded", wantActiveName: "kube-api-encryption-key-7"},
+		{name: "matching active name is kept", storedActiveName: "kube-api-encryption-key-7", wantActiveName: "kube-api-encryption-key-7"},
 		{name: "disagreeing active name is refused", storedActiveName: constants.LegacyAPIEncryptionKeyName, wantError: "active encryption identity disagrees"},
+		{name: "active key absent on one node is recorded from the other", activeOn: map[string]bool{"cp-2": true}, wantActiveName: "kube-api-encryption-key-7"},
+		{name: "active key absent on every node leaves active name empty", activeOn: map[string]bool{}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, clusterID := context.Background(), uuid.New()
@@ -149,8 +153,11 @@ func TestRotationReusingPendingKeyRecordsActiveName(t *testing.T) {
 			}
 			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "nke", Name: constants.EtcdEncryptionKeySecretName(clusterID)}, Data: data}
 			a := &Activities{cfg: config.Config{PodNamespace: "nke"}, k8sClient: fake.NewClientBuilder().WithObjects(secret).Build()}
-			withIdentityTestNodes(t, a, clusterID, func(_ db.Node, digest string) (string, error) {
+			withIdentityTestNodes(t, a, clusterID, func(node db.Node, digest string) (string, error) {
 				if digest == identityTestDigest("old-public-fixture-key") {
+					if test.activeOn != nil && !test.activeOn[node.Name] {
+						return "", nil
+					}
 					return "kube-api-encryption-key-7", nil
 				}
 				return "kube-api-encryption-key-8", nil
@@ -165,7 +172,7 @@ func TestRotationReusingPendingKeyRecordsActiveName(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, "pending-public-fixture-key", pending)
-			require.Equal(t, "kube-api-encryption-key-7", string(stored.Data[constants.EtcdEncryptionKeyFieldActiveName]))
+			require.Equal(t, test.wantActiveName, string(stored.Data[constants.EtcdEncryptionKeyFieldActiveName]))
 			require.Equal(t, "kube-api-encryption-key-8", string(stored.Data[constants.EtcdEncryptionKeyFieldPendingName]))
 		})
 	}

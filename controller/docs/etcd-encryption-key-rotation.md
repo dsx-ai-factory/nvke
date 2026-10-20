@@ -86,7 +86,11 @@ control-plane node UUIDs, topology, operator, time, and approved change window.
   before it reaches `finalize`: on either path, staging a new pending key or
   reusing one left by an earlier rotation, the workflow records the old key's
   storage name in `active-name` before that phase, and `active` keeps the old
-  key until finalization. Keep both copies with the etcd backups.
+  key until finalization. When reusing a pending key, `active-name` stays
+  missing if no node can prove the old key's name, for example because an
+  earlier rotation already removed it; then back up a control-plane node's
+  `/etc/kubernetes/kube-api-encryption/encryption-config.yaml` instead. Keep
+  both copies with the etcd backups.
 
 The workflow snapshots the control-plane node set and runs health/preflight
 checks before rollout. Key updates hot-reload API server configuration; they do
