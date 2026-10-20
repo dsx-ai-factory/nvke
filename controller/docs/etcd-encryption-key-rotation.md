@@ -473,7 +473,7 @@ make -C controller test-e2e \
 ```
 
 For an existing qualifying cluster, set `lifecycle.reuseCluster` in the external
-e2e configuration file (see [e2e configuration](../test/e2e/README.md#configuration)).
+e2e configuration file (see [e2e configuration](https://github.com/dsx-ai-factory/nvke/blob/main/controller/test/e2e/README.md#configuration)).
 The same selected specs then skip create/delete and run against that cluster.
 This command is mutating: run it only on the selected qualification environment.
 The corresponding NICo container lane replaces `capd` with `nico-containers`.

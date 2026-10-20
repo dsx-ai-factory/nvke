@@ -62,7 +62,7 @@ pods and successful `/readyz` checks. Stop on unexpected identity or health.
 operator must separately have network reachability to the tenant API.
 
 Use an existing mode-0600 curl configuration containing the site's authentication
-and trust settings; see [API authentication](../../controller/docs/authenticating-to-the-api.md).
+and trust settings; see [Call the API](../operate/api-authentication.md#call-the-api).
 Do not enable curl tracing or print that configuration. Read only the relevant
 operational cluster fields for private diagnosis, rather than exporting the
 complete cluster object. Review status diagnostics before including them in
@@ -187,7 +187,7 @@ Leaf renewal does not reissue the downloaded `nvke:breakglass` kubeconfig.
 not a kubeadm leaf. Tenant access reissues it only when its remaining lifetime
 drops below `thresholdDays` or the cluster CA changes, and leaf renewal keeps the
 CA, so a healthy renewal normally leaves that kubeconfig unchanged; see
-[Kubernetes API access](kubernetes-api-access.md). Do not compare kubeconfig
+[Kubernetes API access](https://github.com/dsx-ai-factory/nvke/blob/main/docs/tenant-clusters/kubernetes-api-access.md). Do not compare kubeconfig
 copies to judge renewal. Verify the renewed leaves on each node instead:
 
 ```bash
