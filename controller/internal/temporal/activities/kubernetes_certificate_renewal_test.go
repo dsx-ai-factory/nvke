@@ -1301,8 +1301,7 @@ func (d *flakyReleaseDatabase) RunInTx(ctx context.Context, fn func(context.Cont
 // TestLegacyRenewalSuccessRetriesRelease keeps one transient database error after
 // a successful legacy run from leaving the reservation set, which would refuse
 // the cycle's next node. After the last attempt V1 still returns the error and V2
-// still returns its result, leaving the reservation to the reconciler. The cases
-// wait the real backoff, a few seconds in total.
+// still returns its result, leaving the reservation to the reconciler.
 func TestLegacyRenewalSuccessRetriesRelease(t *testing.T) {
 	for _, test := range []struct {
 		name         string
@@ -1333,7 +1332,9 @@ func TestLegacyRenewalSuccessRetriesRelease(t *testing.T) {
 					return &nvkeproto.ExecuteScriptResponse{Output: "RENEWAL_OUTCOME=renewed\n"}, nil
 				},
 			}
-			a := &Activities{cfg: config.Config{RunbooksDir: t.TempDir()}, db: database, nodeAgentClient: fake}
+			a := &Activities{
+				cfg: config.Config{RunbooksDir: t.TempDir()}, db: database, nodeAgentClient: fake, certificateRenewalReleaseBackoff: time.Millisecond,
+			}
 			env := (&testsuite.WorkflowTestSuite{}).NewTestActivityEnvironment()
 			renew := a.RenewKubernetesCertificates
 			input := KubernetesCertificateRenewalInput{NodeID: node.ID, OperationID: "stable-operation", ThresholdDays: 14}
