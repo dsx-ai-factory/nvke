@@ -358,9 +358,16 @@ replaces the node only after the lock is released:
    stuck execution rather than terminating it, so its cleanup records the
    failure. Confirm no key update or rewrite is still running on a survivor.
 2. Start the operator workflow `RetireLostEtcdRotationNode` with a new workflow
-   ID, in the same namespace and task queue as the rotation:
+   ID, in the same namespace and task queue as the rotation. Set
+   `rotation_workflow_id` to the **retained owner's** ID, the
+   `conditions.etcdKeyRotation.workflowID` of `GET /api/clusters/{clusterID}`,
+   not a new rotation ID. Set `lost_node_id` to the lost node's UUID, the `id`
+   of its entry in `GET /api/nodes?clusterID={clusterID}&controlPlane=true`.
+   The values below are placeholders:
 
    ```bash
+   rotation_workflow_id=etcd-key-rotation-00000000-0000-0000-0000-000000000001-20260101T000000Z
+   lost_node_id=00000000-0000-0000-0000-000000000002
    temporal workflow start \
      --address "$rotation_temporal_address" \
      --namespace "$rotation_temporal_namespace" \
@@ -370,19 +377,21 @@ replaces the node only after the lock is released:
      --input "{\"clusterID\":\"$rotation_cluster_id\",\"rotationWorkflowID\":\"$rotation_workflow_id\",\"nodeID\":\"$lost_node_id\"}"
    ```
 
-   In one transaction under the cluster row lock it checks that the lock and the
+   It first probes the node's agent live, outside any transaction; a node whose
+   agent answers is refused. Then, in one transaction under the cluster row lock,
+   it checks that the lock and the
    recorded rotation belong to `rotationWorkflowID`, that the rotation failed in
    one of the phases above, that the node is a joined control-plane node of the
-   cluster with neither `NodeAgentReady` nor `KubernetesReady` true, that its
-   agent does not answer a live probe, that no other control-plane removal is in
-   flight, and that the ready survivors alone form a quorum of the current
+   cluster with neither `NodeAgentReady` nor `KubernetesReady` true, that no
+   other control-plane removal is in flight, and that the ready survivors alone form a quorum of the current
    membership, which still counts the lost node: with `n` control-plane members,
    at least `n/2+1` (integer division) others must be ready, so two of three,
    three of four, three of five. It then
-   records the node under the rotation's retired nodes, marks it deleting, and
-   writes a credential audit event (`rotate`, `etcd_encryption_key`, reason
-   `node_retired`, with the node and failed phase). Any refusal changes nothing
-   and is audited as a failure. A repeat is an audited no-op that resumes the
+   records the node under the rotation's retired nodes and marks it deleting.
+   After the transaction returns, it writes a credential audit event (`rotate`,
+   `etcd_encryption_key`, reason `node_retired`, with the node and failed
+   phase), best effort: a failed audit write does not undo the retirement. Any
+   refusal or failed commit changes nothing and is audited as a failure. A repeat is an audited no-op that resumes the
    teardown.
 3. The workflow then runs `TeardownNode` for that node only, with the unreachable
    path. Its etcd member removal runs on a survivor and keeps its quorum guard.
